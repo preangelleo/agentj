@@ -318,12 +318,12 @@ class IMessage:
         name = responsible()["name"]
         msg = {"zh": {"no_fda": f"iMessage 助手还读不到短信：需要「完全磁盘访问权限」。请在这台 Mac 上打开 系统设置 → 隐私与安全性 → "
                                 f"完全磁盘访问权限，加入并打开「{name}」，然后在手机设置里点「重新检测」。"
-                                f"手机上点「在电脑上打开授权页」会直接打开这一页。",
+                                f"手机上点「在Agent J 主机上打开授权页」会直接打开这一页。",
                       "no_db": "iMessage 助手找不到「信息」数据库：请先在这台 Mac 上用 Apple ID 登录「信息」App。",
                       "schema": "macOS 更新后「信息」数据库的结构变了，iMessage 助手暂停读取（不会出错乱读）。请把 Agent J 升级到最新版。"},
                "en": {"no_fda": f"The iMessage assistant cannot read messages yet: it needs Full Disk Access. On this Mac open System "
                                 f"Settings → Privacy & Security → Full Disk Access, add and turn on “{name}”, then tap “Check again” "
-                                f"in the phone settings. “Open on the computer” on the phone opens that pane.",
+                                f"in the phone settings. “Open on the Agent J host” on the phone opens that pane.",
                       "no_db": "The iMessage assistant found no Messages database: sign in to Messages on this Mac first.",
                       "schema": "After a macOS update the Messages database changed; the assistant paused. Update Agent J."}}[lang][st]
         with contextlib.suppress(Exception):

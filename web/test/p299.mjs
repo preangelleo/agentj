@@ -50,7 +50,7 @@ try{
   check(menuBg==='rgb(44, 43, 38)','canvas + header = Noir (owner 02:3x) '+name);
   check(await cev(p,`getComputedStyle(document.getElementById('five-title')).color`)==='rgb(250, 249, 245)','title = Lotion '+name);
   check(await cev(p,`document.querySelector('meta[name="theme-color"]').content`)==='#2c2b26','OS bar = Noir '+name);
-  check(await cev(p,`getComputedStyle(document.getElementById('status')).display!=='none'&&getComputedStyle(document.getElementById('srchBtn')).display==='none'`),'header = menu header (connection line, no search) '+name);
+  check(await cev(p,`getComputedStyle(document.getElementById('status')).display!=='none'&&getComputedStyle(document.getElementById('srchBtn')).display!=='none'`),'header = menu header (connection line and P363 search) '+name);
   check(await cev(p,`Math.abs(document.getElementById('five-page').getBoundingClientRect().top-document.querySelector('.top').getBoundingClientRect().bottom)<=1`),'page starts at the header edge '+name);
   check(await cev(p,`(()=>{const l=document.querySelector('#mWeek .lab'),r=l.getBoundingClientRect(),x=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);return r.width===0||!l.contains(x);})()`),'weekly label not peeking under the header '+name);
   check(await cev(p,`(()=>{const c=[...document.querySelectorAll('#five-body .fp-card')];return c.every((e,i)=>!i||e.getBoundingClientRect().top>=c[i-1].getBoundingClientRect().bottom+8);})()`),'cards do not overlap '+name);

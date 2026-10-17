@@ -1,3 +1,4 @@
+import {lang} from './t.js';
 // P332 (PROTOCOL §33) · Settings → 紧急修复: the second Settings item, three numbered cards in this order —
 //   ① 重置连接   signed `reset` (control-v1 action `reset`, object {"what":"connection"}): the host's reset ladder
 //   ② 请 Agent J Father 远程帮忙  signed `rescue_do` (action `rescue_do`, object {"action":"help"}): diagnose → support → ticket
@@ -160,7 +161,12 @@ function whyText(why) {
   if (why === 'offline') return tx('p332.offline');
   return '';
 }
-function helperLine(id) { const p = node('p', 'rshelper'); p.id = id; fillText(p, tx('p332.helper', { cmd: HELPER_CMD })); return p; }
+function helperLine(id) {
+  const p = node('p', 'rshelper'); p.id = id;
+  const a = node('a', 'hint__link', tx('p375.help'));
+  a.href = 'https://agentj.app/docs/reconnect-help/' + (lang() === 'en' ? '?lang=en' : '');
+  a.target = '_blank'; a.rel = 'noopener noreferrer'; p.append(a); return p;
+}
 function details(F, extra = []) {
   const lines = [...F.details, ...extra].filter(Boolean);
   if (!lines.length) return null;
@@ -338,7 +344,11 @@ function paintMode() {
   const n = el('rs-mode'); if (n) n.hidden = !on;
   document.body.toggleAttribute('data-rescue', on);
 }
-export function paint() { paintReset(); paintHelp(); paintAuth(); paintMode(); }
+export function paint() {
+  paintReset(); paintHelp(); paintAuth(); paintMode();
+  const block = el('set-s-rescue');
+  if (block && !el('rs-detail-help')) block.append(helperLine('rs-detail-help'));
+}
 
 // ---------------------------------------------------------------- entry points (app.js / relay.js / settings.js)
 /** ≡ 重置连接, `/reset`, the block's button: open the block and run ①. */

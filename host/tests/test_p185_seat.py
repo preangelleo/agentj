@@ -84,7 +84,7 @@ class Verdicts(Base):
         self.assertFalse(self.seat.allowed())
         self.assertFalse(self.seat.due(), "no account → the Dashboard is never asked")
         self.assertEqual(self.dash.calls, [])
-        self.assertIn("agentj.app/account", seatcert.message("unbound", "zh", cloud.app_url(self.st)))
+        self.assertIn("https://agentj.app/account", seatcert.message("unbound", "zh", cloud.app_url(self.st)))
         self.assertIsNone(self.seat.cert())
 
     def test_valid(self):
@@ -157,7 +157,7 @@ class Verdicts(Base):
         self.dash.mode = "ok"                # paid → the next ask restores it
         self.seat.refresh()
         self.assertEqual(self.seat.verdict(), "ok")
-        self.dash.mode = "not_bound"         # the owner removed this computer
+        self.dash.mode = "not_bound"         # the owner removed the Agent J host
         self.seat.refresh()
         self.assertEqual(self.seat.verdict(), "unbound")
 
@@ -223,7 +223,7 @@ class PreCheck(Base):
         chk = pairprep.precheck(self.st)
         self.assertEqual((chk["route"], chk["seat"]), ("seat", "unbound"))
         self.assertFalse(chk["account"])
-        self.assertIn("agentj.app/account", pairprep.both(chk))
+        self.assertIn("https://agentj.app/account", pairprep.both(chk))
         self.assertIn("席位", pairprep.message(chk, "zh"))
 
     def test_bound_with_a_seat_keeps_the_account_route(self):
@@ -259,7 +259,7 @@ class ServeDoors(unittest.IsolatedAsyncioTestCase):
         res = [m for m in self.sent if m.get("t") == "say_res"]
         self.assertEqual([(m["ok"], m["why"]) for m in res], [(False, "seat"), (False, "seat")])
         self.assertEqual(len(self.notices), 1, "one notice per SEAT_NOTE, not one per message")
-        self.assertIn("agentj.app/account", self.notices[0])
+        self.assertIn("https://agentj.app/account", self.notices[0])
         self.assertIn('"reason": "seat"', self.st.log_path.read_text())
 
     async def test_phone_message_passes_with_a_seat(self):
@@ -333,7 +333,7 @@ class TelegramDoor(_TgBase):
         sent = self.bot.sent('sendMessage')
         self.assertEqual(len(sent), 1)
         self.assertEqual(sent[0]['fields']['chat_id'], 123)
-        self.assertIn('agentj.app/account', sent[0]['fields']['text'])
+        self.assertIn('https://agentj.app/account', sent[0]['fields']['text'])
         self.assertIn('"reason": "seat"', self.st.log_path.read_text())
 
     async def test_owner_message_passes_with_a_seat(self):

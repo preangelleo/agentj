@@ -40,12 +40,12 @@ MAX_FRAME = 2 * 1024 * 1024
 # Host-generated channel names; the fallback derives the harness from the
 # channel argument already baked into every installed hook command.
 CHANNELS = {'claude': 'shared-claude.sock', 'codex': 'shared-codex.sock', 'opencode': 'shared-opencode.sock'}
-UNAVAILABLE = 'Agent J phone not connected — confirm on this computer.'
+UNAVAILABLE = 'Agent J phone not connected — confirm on the Agent J host.'
 TOKEN_DIR = 'shared-hook'        # <state>/shared-hook/<claude pid>.token (0600): the served session's hook token (A14)
 SPOOL = 'shared-missed.jsonl'     # requests that stayed with the native dialog while the host was unreachable
 RECONNECT_S = 150                 # PermissionRequest: keep trying a host that is restarting (< the 180 s hook timeout)
 # P147: a new / resumed / cleared / compacted Claude Code session whose Agent J is not answering learns how to reconnect.
-RECONNECT = ("[Agent J] The owner's phone link (Agent J) is not answering on this computer, so the phone/web page may show "
+RECONNECT = ("[Agent J] The owner's phone link (Agent J) is not answering on the Agent J host, so the phone/web page may show "
              "grey or disconnected. Run `agentj status --json`; if agent_status is not idle or working, run "
              "`agentj doctor --reconnect` here (it repairs the service, the relay and attaches the session that runs it) and "
              "tell the owner its one-line result. If it still fails, follow the agentj-manual support steps.")
@@ -360,7 +360,7 @@ def _risk(event):
     """Local classification for the unavailable path: (why, verdict) when the call is high-risk or rewrites hooks."""
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     from agentj import danger
-    v = danger.classify_shared(event.get('tool_name'), event.get('tool_input'))
+    v = danger.classify_shared(event.get('tool_name'), event.get('tool_input'), cwd=event.get('cwd'))
     return v.why if v.cats else None
 
 
@@ -369,7 +369,7 @@ def fallback(name, family, event, valid_execution):
 
     None means "no decision": native rules and the native dialog decide. P139 (A5): Claude's high-risk / hook-file
     PreToolUse is never silently handed back to native rules (which may auto-allow it) — it returns ask, so a person
-    confirms it at this computer. Codex/OpenCode cannot ask from PreToolUse: native rules, as before. P147: SessionStart of a Claude session only
+    confirms it at the Agent J host. Codex/OpenCode cannot ask from PreToolUse: native rules, as before. P147: SessionStart of a Claude session only
     adds context (how to reconnect) — never a decision.
     """
     if name == 'SessionStart' and family == 'claude' and not event.get('agent_id'):
@@ -430,7 +430,7 @@ def main():
         blocking = event.get('hook_event_name') in ('PermissionRequest', 'PreToolUse')
         if event.get('hook_event_name') == 'PermissionRequest' and family_of(sys.argv[1]) == 'claude':
             # P139: a restarting host (update, crash) still gets this request onto the phone; the native dialog is on
-            # screen meanwhile, so the person at the computer is never blocked by the wait.
+            # screen meanwhile, so the person at the Agent J host is never blocked by the wait.
             import time
             wait = float(os.environ.get('AGENTJ_HOOK_RECONNECT_S', RECONNECT_S))
             deadline = time.monotonic() + wait

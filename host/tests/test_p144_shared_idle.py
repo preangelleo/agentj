@@ -148,6 +148,6 @@ class Commands(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(self.a.cur_cmd.cancelled)
     def test_waiting_card_and_cancelled_result_not_overwritten(self):
         Host.cmd_waiting(self.host,self.a.cur_cmd)
-        self.host.hist_update.assert_called_with(9,text='等电脑这一轮忙完，我马上执行。',end='open',card={'cmd':'clear','cancel_wait':True})
+        self.host.hist_update.assert_called_with(9,text='等Agent J 主机这一轮忙完，我马上执行。',end='open',card={'cmd':'clear','cancel_wait':True})
         self.a.cur_cmd.cancelled=True; self.host.hist_update.reset_mock()
         Host.cmd_done(self.host,self.a.cur_cmd,Mock()); self.host.hist_update.assert_not_called()

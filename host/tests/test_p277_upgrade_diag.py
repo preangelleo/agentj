@@ -296,7 +296,7 @@ class Report(_Env):
         self.assertIn("reason: download_failed", text)
         self.assertIn("step: download", text)
         self.assertIn("support: sent (st_", text)
-        self.assertIn("tell_owner: 升级到 9.9.9 没成功（下载安装包失败，网络或 agentj.app 暂时连不上）；电脑仍是", text)
+        self.assertIn("tell_owner: 升级到 9.9.9 没成功（下载安装包失败，网络或 agentj.app 暂时连不上）；Agent J 主机仍是", text)
 
 
 class Heartbeat(_Env):

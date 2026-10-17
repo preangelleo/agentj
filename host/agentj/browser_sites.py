@@ -276,7 +276,7 @@ def check(st: State, sites=None, if_stale: bool = False, reason: str = "manual",
 
 
 def open_url(st: State, url) -> dict:
-    """Open a page in a visible tab of Agent J's browser (the owner signs in there on this computer)."""
+    """Open a page in a visible tab of Agent J's browser (the owner signs in there on the Agent J host)."""
     if not isinstance(url, str) or not re.fullmatch(r"https?://[^\s]{1,2000}", url):
         return {"ok": False, "reason": "shape", "detail": "an http(s) URL"}
     rt = browser.runtime(st)
@@ -285,7 +285,7 @@ def open_url(st: State, url) -> dict:
     with CDP(rt["ws"]) as cdp:
         cdp.new_tab(url, background=False)
     return {"ok": True, "headless": bool(rt.get("headless")),
-            "note": "opened on this computer's screen" if not rt.get("headless") else
+            "note": "opened on the Agent J host's screen" if not rt.get("headless") else
                     "no screen here (headless): use a QR sign-in from the phone, or a computer with a screen"}
 
 
@@ -327,7 +327,7 @@ def ensure_item_sites(st: State, item: str) -> list[str]:
 
 
 def open_login(st: State, item: str, _cdp=None) -> dict:
-    """The owner's tap "open on the computer and sign in": the first not-signed-in site of the item opens in a FOREGROUND tab
+    """The owner's tap "open on the Agent J host and sign in": the first not-signed-in site of the item opens in a FOREGROUND tab
     of Agent J's browser (own or adopted) and the window is brought to the front where the desktop allows it. The tab stays
     open for the owner; nothing is typed, clicked or read."""
     ids = ensure_item_sites(st, item)

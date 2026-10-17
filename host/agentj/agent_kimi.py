@@ -150,10 +150,10 @@ def key_environment(env: dict, region: str | None, model: str | None, source: di
 def login_text(region: str | None, lang: str = "zh") -> str:
     r = region if region in REGIONS else "mainland-cn"
     if lang == "en":
-        return (f"Kimi Code is not signed in. On the phone: Settings → Emergency repair → AI login rescue (device code, {SITE[r]}); or at the computer "
+        return (f"Kimi Code is not signed in. On the phone: Settings → Emergency repair → AI login rescue (device code, {SITE[r]}); or at the Agent J host "
                 f"`kimi login --region {r}` (where you bought it: kimi.com = mainland-cn, kimi.ai = global; a kimi.com key works on both). With a "
                 f"Kimi Code console key instead: the Agent sends a key card (`agentj secret request --name {KEY_ENV} …`).")
-    return (f"Kimi Code 没登录。手机 设置 → 紧急修复 →「AI 登录救援」用设备码登录（{SITE[r]}）；或在电脑上运行 `kimi login --region {r}`"
+    return (f"Kimi Code 没登录。手机 设置 → 紧急修复 →「AI 登录救援」用设备码登录（{SITE[r]}）；或在Agent J 主机上运行 `kimi login --region {r}`"
             f"（按会员在哪个站买的选：kimi.com = mainland-cn，kimi.ai = global；kimi.com 的 key 两个地址都能用）。用 Kimi Code 控制台的 key 也行："
             f"让 Agent 发手机密钥卡（`agentj secret request --name {KEY_ENV} …`），不要把 key 发在对话里。")
 

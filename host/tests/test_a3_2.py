@@ -402,13 +402,13 @@ class Cli(unittest.TestCase):
         self.assertFalse(self.st.report_machine())
         with FakeCP(interval=4, bound_after=1) as cp:
             r = self.agentj("login", "--api", cp.url, "--yes", "--account", "acme-co", env={"AGENTJ_APP_URL": cp.url})
-            self.assertIn("账号后台不显示这台电脑的名字", r.stdout)
+            self.assertIn("账号后台不显示这台Agent J 主机的名字", r.stdout)
             self.assertIsNone(cp.reports[-1]["machine"])
         self.agentj("unlink")
         self.agentj("report-hostname", "on")
         with FakeCP(interval=4, bound_after=1) as cp:
             r = self.agentj("login", "--api", cp.url, "--yes", "--account", "acme-co", env={"AGENTJ_APP_URL": cp.url})
-            self.assertIn("账号后台会显示这台电脑的名字", r.stdout)
+            self.assertIn("账号后台会显示这台Agent J 主机的名字", r.stdout)
             self.assertIn("agentj report-hostname off", r.stdout)
             self.assertEqual(cp.reports[-1]["machine"], text.machine_name())
 
@@ -458,7 +458,7 @@ class Cli(unittest.TestCase):
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertEqual(cp.renames[-1]["name"], "Nova")
             self.assertEqual(self.st.agent_name(), "Nova")
-            self.assertIn("账号后台和这台电脑都改好了", r.stdout)
+            self.assertIn("账号后台和这台Agent J 主机都改好了", r.stdout)
             self.assertTrue(any(rep.get("agent_name") == "Nova" for rep in cp.reports), "a report acknowledges the new name")
             r = self.agentj("name", "wren")
             self.assertNotEqual(r.returncode, 0)
@@ -930,9 +930,9 @@ class Page(unittest.TestCase):
                          [f"https://agentj.app/{p}/" for p in ("contact", "docs", "privacy", "security")])
         zh = json.loads((admin.ASSET_DIR / "i18n/admin.zh.json").read_text())
         words = "\n".join(zh.values())
-        for needle in ("建议一个人用一个 Agent", "一个 Agent 就是一个计费席位，只能运行在一台电脑或服务器上。它的名字只是个标签，就像给宠物起名，叫什么都行。",
+        for needle in ("建议一个人用一个 Agent", "一个 Agent 就是一个计费席位，只能运行在一台Agent J 主机或服务器上。它的名字只是个标签，就像给宠物起名，叫什么都行。",
                        "127.0.0.1", "agentj pair", "看着手机，输入手机上的 6 位码", "显示链接", "从账号后台解绑", "给这个 Agent 起个名字",
-                       "6 位码只显示在手机上，这个页面永远不会显示它", "正在添加手机遥控器", "只在这台电脑上能打开"):
+                       "6 位码只显示在手机上，这个页面永远不会显示它", "正在添加手机遥控器", "只在这台Agent J 主机上能打开"):
             self.assertIn(needle, words, needle)
         for needle in ("history.replaceState", "sessionStorage", "Authorization", "/api/session/end", "review A32-04"):
             self.assertIn(needle, js, needle)

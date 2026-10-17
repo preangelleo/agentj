@@ -1,6 +1,6 @@
 """Fixes from a real end-to-end install on a Mac (an AI driving install.md):
 
-- `agentj handover [--lang zh|en]`: the Step 13 note with this computer's facts; read-only (no migration, nothing created).
+- `agentj handover [--lang zh|en]`: the Step 13 note with the Agent J host's facts; read-only (no migration, nothing created).
 - `agentj docs-rule --write --harness …`: the program asks y/N itself; a pipe never writes; append once; no symlinks.
 - `agentj pair --link`: the iPhone line; the half-block QR fits in 80 columns and maps back to the exact module matrix.
 - `agentj feedback check`: the server's required fields / shape before anything is written; a plain exit-3 message.
@@ -78,7 +78,7 @@ class Handover(unittest.TestCase):
             self.assertIn("7 天", text)
             self.assertIn("不要用 Safari 打开", text)
             for bad in ("公司", "主机", "员工", "客户"):
-                self.assertNotIn(bad, text, bad)
+                self.assertNotIn(bad, text.replace("Agent J 主机", ""), bad)
         else:
             self.assertIn("7 days", text)
             self.assertIn("not in Safari", text.replace("don't open it in Safari", "not in Safari"))
@@ -94,7 +94,7 @@ class Handover(unittest.TestCase):
             self.assertEqual(r.stderr, "")
         self.assertEqual(_tree(self.home), [], "read-only: nothing created under HOME")
         r = _cli(self.home, "handover")
-        self.assertIn("Agent J is not set up on this computer yet", r.stdout, "default language = en")
+        self.assertIn("Agent J is not set up on the Agent J host yet", r.stdout, "default language = en")
 
     def test_unmigrated_old_state_is_not_adopted_and_not_moved(self):
         # P127: an old (≤ 0.9) identity nobody chose to adopt is never used silently — not even read for the note
@@ -129,7 +129,7 @@ class Handover(unittest.TestCase):
         self.assertIn("Not in an Agent J account yet", r.stdout)
         self.assertIn("Phones paired: 2 (up to 10)", r.stdout)   # P171: 10 remotes per seat
         self.assertIn('Agent name: "Assistant One"', r.stdout)
-        self.assertIn('Claude Code on this computer; it works in the folder "~/agentj-work"', r.stdout)
+        self.assertIn('Claude Code on the Agent J host; it works in the folder "~/agentj-work"', r.stdout)
         self.assertNotIn('"Unlink"', r.stdout, "the dashboard route only for a computer in an account")
         _bind(st)
         before = _tree(self.home)
@@ -197,7 +197,7 @@ class DocsRuleWrite(unittest.TestCase):
     def test_zh_rule_says_search_yourself(self):
         zh = docsrule.block("zh")
         self.assertIn("自己搜一下广场", zh)
-        self.assertNotIn("请主人在电脑上搜", zh)
+        self.assertNotIn("请主人在Agent J 主机上搜", zh)
         self.assertIn("Run it yourself", docsrule.block("en"))
 
     def test_yes_creates_0600_then_idempotent(self):

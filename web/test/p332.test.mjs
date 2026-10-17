@@ -68,7 +68,8 @@ test('≡ 重置连接 + /reset run ①; the offline card and the rescue banner 
   assert.match(app, /resetConn: rescue\.resetFromCommand/);
   assert.match(app, /\$\('offRescue'\)\.addEventListener\('click', \(\) => \{ offline\.later\(\); rescue\.openBlock\(\); \}\)/);
   assert.match(html, /<button id="offRescue" type="button" data-i18n="p332\.offBtn">/);
-  assert.match(html, /<li id="offTip3" data-i18n="p332\.offHelper">/);
+  assert.ok(!html.includes('id="offTip3"'), "P375: helper command moved to website, menu stays the first hop");
+  assert.match(rescue, /rs-detail-help/);
   assert.match(html, /<div id="rescue-banner" class="setup-banner rsbanner" role="status" hidden>/);
   assert.match(app, /case 'rescue': rescue\.onRescue\(m\); return;/);
 });
@@ -93,10 +94,10 @@ test('dictionaries: every p332 key in zh / src / override / en, same placeholder
   assert.equal(zh['p332.title'], '紧急修复'); assert.equal(en['p332.title'], 'Emergency repair');
   assert.equal(zh['p332.reset.title'], '重置连接'); assert.equal(zh['p332.help.title'], '请 Agent J Father 远程帮忙');
   assert.equal(zh['p332.auth.title'], 'AI 账号登录失效'); assert.equal(zh['p332.ok'], '好了，可以回去聊天了');
-  assert.equal(zh['p332.reset.fail'], '电脑上的 Agent J 可能卡死了。请试试下面的第 ② 步。');
-  assert.equal(zh['p332.banner'], '电脑上的 Agent J 没响应，救援守护在线');
+  assert.equal(zh['p332.reset.fail'], 'Agent J 主机上的 Agent J 可能卡死了。请试试下面的第 ② 步。');
+  assert.equal(zh['p332.banner'], 'Agent J 主机上的 Agent J 没响应，救援守护在线');
   assert.equal(zh['p332.help.first'].startsWith('建议先试第 ① 步'), true);
-  assert.match(zh['p332.offHelper'], /`curl -fsSL https:\/\/agentj\.app\/rescue \| sh`/);
+  assert.equal(zh['p332.offHelper'], '打开紧急恢复，按步骤检查连接。');
   // every §33 refusal has a plain sentence
   for (const w of ['shape', 'stale', 'no_key', 'bad_signature', 'replay', 'busy', 'unavailable']) assert.ok(zh['p332.why.' + w] && en['p332.why.' + w], w);
 });

@@ -1,7 +1,7 @@
 // P342 (#46) — the locked recording card's 4th icon 「说完直接发送」, in real Chromium (Android profile: touch, fake microphone)
 // + the Noise fake host. Per language (zh, en) and width (390 phone, 344 / 280 folded outer screens):
 //   - locked → the icons in one row under the circle (P346: cancel · end · send), none cut off, send rightmost;
-//   - the send icon ends the take AND sends it: the transcribed words reach the computer as a message, the field is left
+//   - the send icon ends the take AND sends it: the transcribed words reach the Agent J host as a message, the field is left
 //     empty, no second tap — also with the page blurred behind the card (P346 replaced the dimmed card);
 //   - control: the end icon still only puts the words into the field (nothing sent).
 // iOS Safari's engine: p342_rec_send_webkit.mjs. Shots → reports/qa/p342/rec-send-*.png.

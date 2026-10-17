@@ -4,7 +4,7 @@
 //   header-order       🔍 sits left of the gear, the gear is rightmost; same icon geometry (44 button, 22 icon)
 //   local-ranking      pages on the phone are found at once: AND of the words, case / width / Traditional insensitive, input
 //                      beats reply, ties newest first, highlights on every hit; 按时间 = newest first
-//   host-older         a page only the computer still has comes in after the local ones (status says so), opens, flashes
+//   host-older         a page only the Agent J host still has comes in after the local ones (status says so), opens, flashes
 //   jump-flash         a hit closes the card, the deck turns to that page, both cards flash, the words get a mark
 //   reopen-restores    🔍 again = the last results page, same words, same scroll position
 //   history-switch     every search is a page: 「第 N/共 M 次搜索：…」, ‹ › / ← → / a sideways swipe step through them
@@ -138,13 +138,13 @@ try {
       assert.deepEqual(await rowIds(p), [...expect('部署', CHAT, p.base)].sort((a, b) => b - a));
       await click(p, '#srchSort [data-sort="score"]'); await sleep(80);
       assert.deepEqual(await rowIds(p), expect('部署', CHAT, p.base));
-      assert.equal(fake.st.finds.length, 0, 'everything is on the phone: the computer is not asked');
+      assert.equal(fake.st.finds.length, 0, 'everything is on the phone: the Agent J host is not asked');
       noProblems(p);
     } finally { await p.dispose(); }
   });
 
   await C('host-older', async () => {
-    // 60 filler pages, then the conversation: the phone gets the newest 50, the oldest of CHAT are only on the computer
+    // 60 filler pages, then the conversation: the phone gets the newest 50, the oldest of CHAT are only on the Agent J host
     const old = [['很久以前的部署记录 alpha', '那次部署失败了']];
     const chat = old.concat(Array.from({ length: 55 }, (_, i) => ['闲聊 ' + i, '收到 ' + i]), [['最近一次部署 beta', '部署成功']]);
     const p = await paired({ chat, olderDelay: 5000 });   // the phone has the newest 50; paging back to the rest takes 5 s
@@ -153,14 +153,14 @@ try {
       await openSearch(p);
       await type(p, '部署');
       assert.deepEqual(await rowIds(p), [p.id(chat.length)], 'at once: the page on the phone');
-      assert.match(await ev(p, `document.getElementById('srchStatus').textContent`), /正在搜电脑上更早的记录/);
+      assert.match(await ev(p, `document.getElementById('srchStatus').textContent`), /正在搜Agent J 主机上更早的记录/);
       if (process.env.AJ_P188_DEBUG) { await sleep(2000); console.log(JSON.stringify(await dbg(p)), JSON.stringify(fake.st.finds), await ev(p, `document.getElementById('srchStatus').textContent`), p.problems); }
       await waitFor(p, `document.querySelectorAll('#srchList .srhit').length === 2`, 4000);
       assert.deepEqual(await rowIds(p), [p.id(1), p.id(chat.length)].sort((a, b) => expect('部署', chat, p.base).indexOf(a) - expect('部署', chat, p.base).indexOf(b)));
-      assert.match(await ev(p, `document.getElementById('srchStatus').textContent`), /其中 1 条来自电脑上更早的记录/);
+      assert.match(await ev(p, `document.getElementById('srchStatus').textContent`), /其中 1 条来自Agent J 主机上更早的记录/);
       const f = fake.st.finds.at(-1);
       assert.deepEqual([f.q, f.sort, f.limit], ['部署', 'score', 50]);
-      // opening the computer-only page pages back until it is on the phone
+      // opening the Agent J host-only page pages back until it is on the phone
       await click(p, `#srchList .srhit[data-id="${p.id(1)}"]`);
       await waitFor(p, `document.getElementById('omText').textContent.includes('很久以前的部署记录')`, 8000);
       assert.equal(await ev(p, shown('srch')), false);
@@ -334,7 +334,7 @@ try {
       await type(p, '回滚'); await key(p, 'Enter');
       await waitFor(p, `document.getElementById('omText').textContent.includes('回滚')`);
       // the shortcut sheet lists it
-      assert.match(await ev(p, `document.getElementById('keys').textContent`), /搜索聊天记录/);
+      assert.match(await ev(p, `document.getElementById('keys').textContent`), /搜索当前这一页[\s\S]*聊天里搜聊天记录/);
       noProblems(p);
     } finally { await p.dispose(); }
   });

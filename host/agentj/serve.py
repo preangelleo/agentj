@@ -6,7 +6,7 @@ Spec: protocol/PROTOCOL.md. Logs (host.log) carry metadata only, never message t
 Relay parity (PROTOCOL §10, PROMPT-33): a device that announces capability `p33` in its hello gets the bigger limits (60 KiB
 messages, 20 000-unit text, `frag` for anything larger), the persistent history instead of §8's `msg` stream (history.py:
 every message, reply, notice, command result and task run is a page), `say` with attachments / quote / withdraw (compose.py),
-end-to-end blobs (uploads.py → inbox.py), voice transcribed on this computer (asr.py), questions as signed cards, meters, the
+end-to-end blobs (uploads.py → inbox.py), voice transcribed on the Agent J host (asr.py), questions as signed cards, meters, the
 model / effort pill and the menu (menu.py); after it is ready the relay is told to raise its frame budget (op 0x03 BULK). An
 older device keeps exactly §3 / §8.
 """
@@ -38,7 +38,7 @@ from . import agent as agents
 from .shared import SharedClaudeAgent
 from . import notices, activity, approvals, cloud, controls, danger, fence, gate, memory, slash, tasks, update, webpush, wire
 from . import asr as asr_mod
-from . import compose, history, hsearch, humane, inbox, menu, uploads, preferences, proxy, provenance
+from . import cmdrun, compose, history, hsearch, humane, inbox, menu, uploads, preferences, proxy, provenance
 from . import receipts as receipts_mod  # P313: say receipts on disk — a restart never runs a phone message twice
 from . import meeting  # P182: /会议总结 → minutes, recipients only from the owner's words
 from . import diskq  # P142: fsync'ed state writes off the loop (one ordered writer)
@@ -47,6 +47,7 @@ from . import goal as goal_mod  # P158: /goal — one signed grant, reversible s
 from . import approval_level  # P336: safe / standard / full, goal without the opening card, cards while no remote is online
 from . import bg  # P192 (B18): swallowed errors on connection / approval paths leave a (rate-limited) line
 from . import loopwatch  # P136: what was running when the loop stalled
+from . import jcards  # P360 (§34): Agent J Cards — the logo menu from card 6 on (template cards, read-only data)
 from . import relaydiag  # P317: why a relay leg is not up (journal / status / doctor)
 from . import reset as reset_mod  # P332 (§33): 紧急修复 — the reset ladder, support help, repair actions
 from . import media as media_mod  # F21: files the Agent shows to the phone (PROTOCOL §13)
@@ -143,7 +144,7 @@ _RID = re.compile(r"[A-Za-z0-9_-]{1,32}")
 FRIEND_READS = ("fr_list", "fr_hist", "fr_usage", "fr_ctx_get")   # P71 §17.7 (+ P73 fr_ctx_get); writes = controls.FRIEND_ACTIONS
 WF_READS = ("wf_list", "wf_doc", "skill_get")   # P244 (§30.2): answered to the asking session only, read-only
 PHONE_CONTROLS = ("mem_list", "mem_rm", "mem_undo", "act_list", "task_list", "task_set", "estop", "resume",
-                  "systask_list")   # P207 §2: the computer's own scheduled tasks, read-only (systasks.py)
+                  "systask_list")   # P207 §2: the Agent J host's own scheduled tasks, read-only (systasks.py)
 # §10 (PROMPT-33)
 Q_TTL = _ttl("AGENTJ_TEST_Q_TTL", 180)     # a question nobody answers is ended (relay's default)
 MAX_QUESTIONS = 4                           # open at once; more are answered "nobody answered" at once
@@ -164,6 +165,8 @@ FF_DEMUX = {"video/mp4": "mov", "audio/webm": "matroska", "audio/ogg": "ogg", "a
             "video/x-matroska": "matroska", "video/mpeg": "mpeg", "video/x-msvideo": "avi"}
 MODEL_SET_COALESCE = 2.0   # P239: pill switches closer than this collapse to the last one (host-side backstop)
 MODEL_REFRESH_TIMEOUT = 8.0                # Background catalogue work never stalls the relay reader.
+NEWS_TIMEOUT = 8.0                          # P374: one /v1/host/news call, off the loop
+NEWS_INFLIGHT = 4                           # P374: news calls running at once (a burst of taps never piles up threads)
 METER_GAP = 2.0                             # ≤ 1 meter message per 2 s
 HIST_READY = 50                             # turns a p33 device gets on ready (it pages for more)
 SWEEP_EVERY = 60
@@ -175,9 +178,10 @@ P33_ONLY = ("say", "say_cancel", "cmd_cancel", "blob_open", "blob_chunk", "blob_
             "dev_rename",    # P179 (§10.16a): a remote renames itself
             "hist_find", "hist_read",     # P188 · P247 (owner-level read sync) (§28): chat search, a read like hist_get
             "auth_get", "auth_start", "auth_cancel", "auth_press",   # P258 (§31): AI 登录救援
-            "imsg_check", "imsg_fda",   # P274 (§10.21): the iMessage card's 「重新检测」 / 「在电脑上打开授权页」
+            "imsg_check", "imsg_fda",   # P274 (§10.21): the iMessage card's 「重新检测」 / 「在Agent J 主机上打开授权页」
             "qr_cancel",                # P314 (§32): cancel the automatic continue after a used-up usage limit
-            "keys_get", "keys_op", "keys_set")   # P352: 「模型和 API Key」 key manager (keys.py)
+            "keys_get", "keys_op", "keys_set",   # P352: 「模型和 API Key」 key manager (keys.py)
+            "notify_get", "notify_set", "hook_list", "hook_set", "news_get", "news_set")          # P365: the settings list of automations allowed to post (notify.py)
 # F14: paired phones may change optional warnings, session mode, isolation, docker and the upgrade mode (F19); native permissions stay authoritative.
 PREF_SET_KEYS = ("updates.mode", "appearance.language", "appearance.theme", "voice.wake_enabled", "voice.speak_replies",
                  "agent.high_risk_warnings", "agent.session_mode", "agent.isolation", "agent.allow_docker")
@@ -195,12 +199,38 @@ PREF_SET_KEYS += ("ui.composer_buttons",)        # P340: the order of the four b
 # stay off this list: the phone shows them, the Agent changes them with `agentj imessage …` at the owner's word.
 PREF_SET_KEYS += ("imessage.enabled", "imessage.interval_minutes", "imessage.delivery", "imessage.digest_at",
                   "imessage.quiet_hours", "imessage.strictness", "imessage.codes", "imessage.groups", "imessage.llm")
+PREF_SET_KEYS += ("notify.enabled",)             # P365: 「允许自动化往这里发消息」 master switch (notify.py)
 PREF_SET_KEYS += ("quota.auto_switch",)          # P302: the phone's 「额度告警时交给其他 AI 账号」 switch (P254 drew it, never whitelisted)
 METER_KEYS = ("model", "model_name", "effort", "ctx", "h5", "week", "quota_windows", "shared_status", "shared_writer", "source_at")
 Q_CANCEL = "用户在手机上取消了这个问题，没有选择任何选项。请不要替他做选择，停下来等他直接输入文字。"
 Q_TIMEOUT = "没有人作答，请改用文字列出选项"
 ASR_WHY = {"not_installed": "not_installed", "bad_audio": "bad_audio", "timeout": "timeout", "busy": "busy",
            "engine_failed": "broken", "off": "off", "broken": "broken", "no_speech": "no_speech"}
+
+
+def page_asr(files: list) -> dict:
+    """P363 (#72): what the owner's page shows under each voice attachment — the transcript (≤ wire.MAX_TEXT_P33 units, the
+    rest marked `cut`; the full text stays in the inbox file the Agent got) or why there is none. Index = the attachment's
+    place in src.att (the same blob order as `files`); a file without an `asr` (a picture, a silent video) is left out."""
+    out = {}
+    for i, f in enumerate(files):
+        a = f.get("asr")
+        if not isinstance(a, dict):
+            continue
+        body = (a.get("text") or "").strip() if a.get("ok") else ""
+        if body:
+            cut = len(body.encode("utf-16-le")) // 2 > wire.MAX_TEXT_P33
+            r = {"ok": True, "text": body.encode("utf-16-le")[:wire.MAX_TEXT_P33 * 2].decode("utf-16-le", "ignore") if cut else body}
+            if cut or a.get("file"):
+                r["cut"] = True
+            if a.get("partial"):
+                r["partial"] = str(a["partial"])[:32]
+        else:
+            r = {"ok": False, "why": str(a.get("why") or "broken")[:32] if not a.get("ok") else "no_speech"}
+        if a.get("secs"):
+            r["secs"] = round(float(a["secs"]), 1)
+        out[i] = r
+    return out
 
 
 @dataclass
@@ -336,11 +366,11 @@ class Pairing:
 # P128: approval card text in ONE language (appearance.language, the same value the phone UI uses); what the phone signs
 # is exactly this text, so the host picks the language, not the phone.
 CARD_TEXT = {
-    "zh": {"change": "{tool} · 改密码或密钥。\n具体内容只在电脑上看，凭据不会发到手机。",
-           "read": "{tool} · 查看密码或密钥（内容会显示在电脑屏幕上）。\n具体内容只在电脑上看，凭据不会发到手机。",
+    "zh": {"change": "{tool} · 改密码或密钥。\n具体内容只在Agent J 主机上看，凭据不会发到手机。",
+           "read": "{tool} · 查看密码或密钥（内容会显示在Agent J 主机屏幕上）。\n具体内容只在Agent J 主机上看，凭据不会发到手机。",
            "risk_scope": "\n本回合内同类高危动作一并批准。"},
-    "en": {"change": "{tool} · Changes passwords or keys.\nCheck the exact details on the computer; credentials never go to the phone.",
-           "read": "{tool} · Shows passwords or keys (on the computer's screen).\nCheck the exact details on the computer; credentials never go to the phone.",
+    "en": {"change": "{tool} · Changes passwords or keys.\nCheck the exact details on the Agent J host; credentials never go to the phone.",
+           "read": "{tool} · Shows passwords or keys (on the Agent J host's screen).\nCheck the exact details on the Agent J host; credentials never go to the phone.",
            "risk_scope": "\nAlso approves this kind of high-risk action for the rest of this turn."}}
 
 
@@ -414,6 +444,7 @@ class Host:
         self.read_stdin = read_stdin
         self.telegram = None
         self.mail = None                  # P170: the e-mail channel (mail.py), started with serve
+        self._news_inflight = 0           # P374: /v1/host/news calls running (on_news)
         self.ws = None
         self.sessions: dict[int, Session] = {}
         from .remote_pair import RemotePair
@@ -512,10 +543,12 @@ class Host:
         from .auth_rescue import Rescue
         self.auth_rescue = Rescue(self)          # P258: AI 登录救援 (subscription login expired → re-login from the phone)
         self.reset_desk = reset_mod.Desk(self)    # P332 (§33): reset / rescue_do, one run at a time, also during an e-stop
+        self.cmd_desk = cmdrun.Desk(self)         # P361 (§34): Settings 「执行」, one run at a time
         from .capability import Capabilities
         self.capabilities = Capabilities(self)  # 0.18 (ADR-A193): capability.sock, opening cards, dispatch
         self.goals = goal_mod.Goals(self)       # P158: <state>/goal.json, `agentj goal …` over capability.sock
         self.peers = None                       # P71: Agent friends (peer_service.PeerService, PROTOCOL §17), set in run()
+        self.hooks = None                       # P366: webhooks (hook_service.HookService, AGENTJ-HOOKS-SPEC), set in run()
         self.upg: dict | None = None            # P203: the open upgrade confirmation card (one at a time, §29)
         from . import busy as busy_mod
         self.busy = busy_mod.Board(st.root, on_change=self.busy_changed)   # P150 (§22): who works in the background
@@ -557,7 +590,7 @@ class Host:
         elif ev == "agent_name":   # a §1-valid name (no control / format / line-break chars), quoted, after the "· " marker
             print(f"· Agent 名已按账号后台改为「{kw['name']}」", flush=True)
         elif ev == "agent_name_refused":
-            print("· 账号后台发来的 Agent 名用不了，这台电脑保留原名", flush=True)
+            print("· 账号后台发来的 Agent 名用不了，这台Agent J 主机保留原名", flush=True)
         elif ev == "remote_unbind":
             print(f"· 账号后台请求解绑遥控器 {kw.get('name') or ''} {kw['device']}：{kw['result']}", flush=True)
         elif ev == "agent_msg":
@@ -756,7 +789,7 @@ class Host:
 
     def seat_refusal(self, feature: str | None = None) -> str | None:
         """P185: None while this host may serve (seat ok / bootstrap grace / exempt), else the one-language reason with where
-        to fix it. Shown to the phones as a 「在电脑上处理」 notice at most every SEAT_NOTE seconds.
+        to fix it. Shown to the phones as a 「在Agent J 主机上处理」 notice at most every SEAT_NOTE seconds.
         P199: `feature` (plaza / support / friends / bots) → the same verdict, worded for that feature (seatcert.feature_message)."""
         seat = getattr(self, "seat", None)
         if seat is None:
@@ -1080,6 +1113,9 @@ class Host:
         elif t in WF_READS:             # P244 (§30): 工作流 · 技能 · 记忆 · Agent J pages, read-only
             if s.p33:
                 await self.on_wf(s, t, obj)
+        elif t in jcards.PHONE_TYPES:   # P360 (§34): Agent J Cards — the list, one card's data + buttons, a card's switch
+            if s.p33:
+                await self.on_jcard(s, t, obj)
         elif t in REMOTES_TYPES:        # P171 (§24): list / rename / unbind / add remotes from a paired remote
             if s.p33:
                 await self.remotes.on_phone(s, t, obj)
@@ -1092,6 +1128,9 @@ class Host:
         elif t == "approval_set":       # P336 (§8): approval level / goal without the opening card — signed, never pref_set
             if s.p33:
                 await self.on_approval_set(s, obj)
+        elif t == "cmd_run":            # P361 (§34): Settings 「执行」 — signed + Face ID, whitelisted names only (cmdrun.py)
+            if s.p33:
+                await self.cmd_desk.on_phone(s, obj)
         elif t == "slash":              # a command from the phone's ≡「全部命令」 menu (or typed: the page sends it like this)
             name, arg = obj.get("cmd"), obj.get("arg", "")
             if isinstance(name, str) and isinstance(arg, str) and len(name) <= 32 and text_units(arg) <= slash.ARG_MAX:
@@ -1835,7 +1874,7 @@ class Host:
         from . import ctl_auth
         from .shared_hook import peer_pid
         info = getattr(w, "get_extra_info", None)
-        pid, _ = peer_pid(info("socket")) if info else (None, None)
+        pid, puid = peer_pid(info("socket")) if info else (None, None)
         try:
             while line := await r.readline():
                 req = json.loads(line)
@@ -2066,6 +2105,9 @@ class Host:
                         self.recall.bind_history()
                     self.hist_meta_all()
                     await self._ctl_send(w, {"ok": True, "on": self.hist.on})
+                elif cmd == "notify":                # P365: the owner's own automation → one page on the phones
+                    from . import notify
+                    await self._ctl_send(w, await notify.post(self, req, puid))
                 elif cmd == "send":
                     text = str(req.get("text", ""))
                     if text_units(text) > wire.MAX_TEXT:
@@ -2270,7 +2312,7 @@ class Host:
         for did in devices:
             await self.revoke(did)
         self.st.log("seat_unbound", remotes=len(devices))
-        self.emit("agent_notice", text=("This seat was unbound; existing remotes were disconnected. Chat history stays on this computer." if self.lang == "en" else "这个席位已解绑，已有遥控器已断开；聊天记录仍在这台电脑上。"))
+        self.emit("agent_notice", text=("This seat was unbound; existing remotes were disconnected. Chat history stays on the Agent J host." if self.lang == "en" else "这个席位已解绑，已有遥控器已断开；聊天记录仍在这台Agent J 主机上。"))
 
     def adopt_name(self, name: tuple) -> None:
         """A3.2 §3: the sync answer's canonical Agent name. Adopted when valid and different (logged, printed, and a report
@@ -2298,7 +2340,7 @@ class Host:
 
     async def broadcast(self, text: str, frm: str = "host") -> int:
         """Callers check text_units(text) <= MAX_TEXT first. Kept in the in-memory backlog for devices that reconnect; a page
-        `src.k: host` for p33 devices (what the human at the computer said to the phones)."""
+        `src.k: host` for p33 devices (what the human at the Agent J host said to the phones)."""
         if frm == "notice":
             text = one(self.lang, text)
         entry = self._remember(frm, text)
@@ -2528,7 +2570,7 @@ class Host:
         value = preferences.merge(value, {})
         # Local executable configuration never belongs on the phone.
         value.get("voice", {}).get("tts", {}).pop("command", None)
-        value.pop("proxy", None)        # P59: host-only (local proxy addresses / variable names stay on the computer)
+        value.pop("proxy", None)        # P59: host-only (local proxy addresses / variable names stay on the Agent J host)
         if not preferences.get(value, "voice.wake_word"):
             preferences.put(value, "voice.wake_word", "嘿 " + (self.st.agent_name() or "Agent J"))
         from . import wake
@@ -2541,7 +2583,7 @@ class Host:
         return {"t": "preferences", "value": value, "problem": self.config_problem, "host": self.host_info()}
 
     def host_info(self) -> dict:
-        """P44 (C6): read-only facts the phone's settings panel shows next to `value` — this computer's program version,
+        """P44 (C6): read-only facts the phone's settings panel shows next to `value` — the Agent J host's program version,
         when its language was last set (A1), the phone-settable keys, and the paired phones (metadata only: id, label,
         paired_at, online now). The safety switches are in `value.agent.*`; the panel shows them read-only with the
         `agentj config …` command."""
@@ -2558,6 +2600,7 @@ class Host:
         info = {"version": update.__version__, "language_at": at, "settable": list(PREF_SET_KEYS), "devices": devs,
                 "limit": MAX_DEVICES}   # P171: 「已用 N / 10」
         info["signed_prefs"] = list(approval_level.KEYS)   # P336: changed only by the signed `approval_set` control
+        info["run_cmds"] = list(cmdrun.RUN_CMDS)           # P361 (§34): the names Settings may 「执行」
         info["approval"] = {"level": approval_level.level(self.preferences, self.st),       # P336: what is in force
                             "goal_nocard": approval_level.goal_preauth(self.st, self.preferences) is not None}
         from . import service as _svc
@@ -2824,7 +2867,7 @@ class Host:
             parts.append("The main Agent restarts before its next message, same conversation." if en else "主 Agent 会在下一条消息前重启，对话接着原来的。")
         elif h.get("when") == "own":
             parts.append("The shared session is your own program: restart it yourself to pick up Agent settings."
-                         if en else "共享会话是你电脑上自己的程序：Agent 设置要你自己重启它才生效。")
+                         if en else "共享会话是你Agent J 主机上自己的程序：Agent 设置要你自己重启它才生效。")
         if r.get("pending"):
             keys = ", ".join(r["pending"][:6])
             parts.append(f"Security settings ({keys}) wait for your approval on the phone card." if en else f"安全设置（{keys}）要你在手机卡片上批准后才生效。")
@@ -2932,7 +2975,7 @@ class Host:
         async def ack(result: dict) -> None:
             await res(bool(result.get("ok")), None if result.get("ok") else
                       ("busy" if result.get("error") == "busy" else "rejected"), reload=bool(result.get("reload")))
-            if not result.get("ok") and key == "agent.session_mode" and str(result.get("error", "")).startswith("电脑上的服务没有 Claude 登录"):
+            if not result.get("ok") and key == "agent.session_mode" and str(result.get("error", "")).startswith("Agent J 主机上的服务没有 Claude 登录"):
                 from . import claude_auth
                 self.agent_notice(claude_auth.failure_notice(self.lang))
         self.st.log("pref_set", device=s.device, status=key)
@@ -3458,7 +3501,7 @@ class Host:
             return
         _hb_touch(self)
         self.desktop_end()
-        self.desktop_turn = self.hist_add({"k": "host", "name": pick(self.lang, "电脑", "Desktop"), "text": text}, "", "open")["id"]
+        self.desktop_turn = self.hist_add({"k": "host", "name": pick(self.lang, "Agent J 主机", "Desktop"), "text": text}, "", "open")["id"]
 
     def turn_queued_note(self, on: bool) -> None:     # P133: busy shared session, message in its queue
         tid, note = self.cur_turn, humane.of(self, "shared.busy_queued")
@@ -3536,8 +3579,8 @@ class Host:
         self.hist_add({"k": "sys", "text": "", **({"local": True} if local else {})}, text, "done")
 
     def local_notice(self, text: str) -> None:
-        """§10.8: something only the human at the computer can answer: a `sys` page with `local: true` (relay's
-        「在电脑上处理」 card) — a notice for older phones (the same agent_notice path, marked)."""
+        """§10.8: something only the human at the Agent J host can answer: a `sys` page with `local: true` (relay's
+        「在Agent J 主机上处理」 card) — a notice for older phones (the same agent_notice path, marked)."""
         self.notice_local = True
         try:
             self.agent_notice(text)
@@ -3679,7 +3722,7 @@ class Host:
 
     async def _receipt_context(self) -> tuple:
         """P320 (Leo 10-15 22:49): the upgrade receipt checks the page's served version first (no 「稍后上线」 when it is
-        already out) and names this computer (several computers, several receipts)."""
+        already out) and names the Agent J host (several computers, several receipts)."""
         from .text import machine_name
         try:
             web = await asyncio.to_thread(update.web_state, (self.cfg or {}).get("web"))
@@ -3704,7 +3747,8 @@ class Host:
         # thread before `turn/start` (measured 46–65 s on a busy Mac) — the phone must stop calling it "queued, not handed
         # to the Agent" while the Agent is already working on it (`delivered` still follows at the write).
         if send is not None and isinstance(getattr(send, "sid", None), str) and not any(
-                getattr(send, k, None) for k in ("heartbeat_key", "bot_handoff_id", "official_notice_id", "quota_resume_id")):
+                getattr(send, k, None) for k in ("heartbeat_key", "bot_handoff_id", "official_notice_id", "quota_resume_id",
+                                                 "auto_notify", "hook_notice")):
             self._post(self._send_device, send.device, {"t": "say_state", "sid": send.sid, "s": "taken"})
 
     def agent_turn_end(self) -> None:
@@ -3720,9 +3764,9 @@ class Host:
             from .harness import LABEL
             label = LABEL.get(self.agent.kind, self.agent.kind) if self.agent else "Agent"
             self.agent_notice(pick(self.lang, f"{label} 没有处理这条消息：这一轮 {secs:.0f} 秒就结束了，一个字也没回。再发一次试试；"
-                                              "还是这样，在电脑上运行 agentj doctor。",
+                                              "还是这样，在Agent J 主机上运行 agentj doctor。",
                                    f"{label} did not handle this message: the turn ended after {secs:.0f} s without a word. "
-                                   "Send it again; if it keeps happening, run agentj doctor on the computer."))
+                                   "Send it again; if it keeps happening, run agentj doctor on the Agent J host."))
             self.cur_failed = True
         self.turn_at = (getattr(self, "turn_at", (0.0,))[0], time.time(), bool(self.cur_failed))
         self.activity("turn_end", secs=round(time.monotonic() - self.turn_t0, 1) if self.turn_t0 else None,
@@ -4127,7 +4171,7 @@ class Host:
             from . import fence
             batch = False
             if card_lang(self.lang) == "en":
-                why = {"no_bwrap": "bubblewrap (bwrap) is missing; on the computer run: sudo apt-get install -y bubblewrap socat (Ubuntu / Debian / WSL)",
+                why = {"no_bwrap": "bubblewrap (bwrap) is missing; on the Agent J host run: sudo apt-get install -y bubblewrap socat (Ubuntu / Debian / WSL)",
                        "bwrap_failed": "bubblewrap failed; check user namespaces and container policy",
                        "apparmor_userns": "AppArmor blocks user namespaces; ask for agentj doctor repair guidance",
                        "no_sandbox_exec": "macOS sandbox-exec is missing",
@@ -4144,7 +4188,7 @@ class Host:
             summary += CARD_TEXT[card_lang(self.lang)]["risk_scope"]
         if tool == "AuthRescue" and isinstance(tool_input.get("summary"), str):
             summary = tool_input["summary"][:600]   # P258: the rescue card shows (and the phone signs) exactly this text
-        if tool in (goal_mod.TOOL, goal_mod.TOOL_GRANT) and isinstance(tool_input.get("card"), str):
+        if tool in (goal_mod.TOOL, goal_mod.TOOL_GRANT, "AgentJHook") and isinstance(tool_input.get("card"), str):
             summary = tool_input["card"]            # P158 / P339: the goal card shows (and the phone signs) exactly this text
         if origin:
             summary += "\n" + str(origin)[:120]     # last line: the first stays the command (notices, push)
@@ -4259,7 +4303,7 @@ class Host:
             pass                                # P158: a suspected attack never goes to Jev — the red card
         elif lv == "safe":
             pass                                # P336: no Jev layer 2 under the safe level — the card
-        elif not require_passkey and approval_jev.gray(v) and approval_jev.available():
+        elif not require_passkey and not approval_level.host_card(tool) and approval_jev.gray(v) and approval_jev.available():
             # P157 layer 2: only a "can't tell" verdict, never a clear danger; any failure falls through to the card
             ctx = context if context is not None else {"owner": getattr(self, "jev_owner", ""), "plan": getattr(self, "jev_plan", "")}
             thr = approval_jev.threshold(self.preferences)
@@ -4360,7 +4404,8 @@ class Host:
             if reason == "goal_auto":
                 self.goals.count("auto")
             elif decision != "allow" and a.goal in ("hold", "attack") and reason in ("device", "timeout"):
-                self.goals.block(summary, a.goal_why or a.goal, tool=tool, cats=a.cats, human_text=a.goal_what, who=a.goal_who)
+                self.goals.block(summary, a.goal_why or a.goal, tool=tool, cats=a.cats, human_text=a.goal_what, who=a.goal_who,
+                                 rule=a.why, rule_en=a.why_en)
             elif decision == "allow" and reason == "device":
                 self._goal_grant_tap(a, did, picks)
         raw = decision
@@ -4384,7 +4429,10 @@ class Host:
                 answer["allow_add"] = picks
             return answer
         if a.goal in ("hold", "attack") and reason in ("device", "timeout"):
-            return {"behavior": "deny", "message": goal_mod.hold_message(a.goal_why or a.goal, card_lang(self.lang))}
+            from .privacy import owner_text
+            gl = card_lang(self.lang)
+            return {"behavior": "deny", "message": goal_mod.hold_message(a.goal_why or a.goal, gl, reason,
+                                                                         owner_text(a.why_en if gl == "en" and a.why_en else a.why))}
         msg = {"device": "用户在手机上拒绝了这个操作。", "timeout": f"手机上 {int(self.ask_ttl)} 秒内没有批准：默认拒绝。",
                "serve_stop": "agentj serve 已停止：默认拒绝。", "estop": "已急停（全部停下）：默认拒绝。"}.get(reason, "已拒绝。")
         return {"behavior": "deny", "message": msg}
@@ -4392,7 +4440,7 @@ class Host:
     def _classify(self, tool, tool_input):
         cfg = self.agent_cfg or {}
         if cfg.get("session_mode") == "shared":
-            return danger.classify_shared(tool, tool_input, self.danger_extra, cfg.get("approvals", "standard"))
+            return danger.classify_shared(tool, tool_input, self.danger_extra, cfg.get("approvals", "standard"), cfg.get("dir"))
         return danger.classify(tool, tool_input, self.danger_extra)
 
     def policy_refused(self, tool: str, tool_input: dict, why: str, notice: str) -> None:
@@ -4599,6 +4647,8 @@ class Host:
         self.elevate.cancel_all("stopped")            # F17: open sudo / secret cards end (a running command finishes)
         if self.peers is not None:                    # P71 §17.9: no mailbox frame leaves, every peer session ends
             await self.peers.estop(True)
+        if self.hooks is not None:                    # P366: every hook answers 423, `agentj hook wait` returns stopped
+            self.hooks.estop(True)
         busy = False
         if self.agent:
             busy = await self.agent.halt(clear_queue=True)
@@ -4689,7 +4739,7 @@ class Host:
                 x["running"] = self.scheduler.current_id == x["id"]
             return await self._send_chunks(s, {"t": "tasks", "r": r}, "items", rows,
                                            {"paused": self.stopped(), "agent": self.agent_cfg["kind"] if self.agent_cfg else None})
-        if t == "systask_list":         # P207 §2: read-only list of the computer's own timers / cron / LaunchAgents / schtasks
+        if t == "systask_list":         # P207 §2: read-only list of the Agent J host's own timers / cron / LaunchAgents / schtasks
             from . import systasks
             items = await asyncio.to_thread(systasks.rows)
             return await self._send_chunks(s, {"t": "systasks", "r": r}, "items", items, {"max": systasks.MAX})
@@ -4752,7 +4802,7 @@ class Host:
         return {"relay_up": self.relay_up, "agent": self.agent.kind if self.agent else None}
 
     def push_setup(self, snap: dict, show: bool = True) -> None:
-        """The checklist card to every ready remote (phone and this computer's browser show the same revision)."""
+        """The checklist card to every ready remote (phone and the Agent J host's browser show the same revision)."""
         show = show and not snap.get("closed")      # P131 追加2: a closed checklist never shows itself again (older pages too)
         msg = {"t": "setup_card", "show": show, **{k: snap[k] for k in snap if k not in ("ok", "result", "r")}}
         self._post(self._send_ready, lambda s: msg)
@@ -4865,6 +4915,50 @@ class Host:
         else:
             res = await asyncio.to_thread(self.wf.skill, obj.get("id"))
         await self.send_app(s, {"t": t, "r": r, **res})
+
+    async def jcard_open(self, req: dict) -> dict:
+        """P360 (§34): `agentj card open <id> [--at <anchor>]` → `{"t": "jcard_open", id, at?}` to every ready phone, which
+        opens that card (or system page) and scrolls to the place. Navigation only — nothing is read, sent or changed, so
+        no approval; the target is checked again here (a switched-on card, or a page; a well-formed anchor)."""
+        r = await asyncio.to_thread(jcards.open_target, self.st.root, req.get("id"), req.get("at"))
+        if not r["ok"]:
+            return {"ok": False, "why": r["why"]}
+        now = time.monotonic()                 # an Agent may call it with no approval: never faster than one push per 2 s
+        if now - getattr(self, "_jcard_open_at", -1e9) < jcards.OPEN_GAP:
+            return {"ok": False, "why": "too_soon"}
+        self._jcard_open_at = now
+        msg = {"t": "jcard_open", "id": r["id"], **({"at": r["at"]} if r.get("at") else {})}
+        n = sum(1 for s in self.sessions.values() if s.state == "ready" and s.p33 and self.st.is_allowed(s.pub))
+        self._post(self._send_p33, lambda s, m=msg: m)
+        self.st.log("jcard_open", status=r["id"])
+        return {"ok": True, "delivered": n}
+
+    async def on_jcard(self, s: Session, t: str, obj: dict) -> None:
+        """P360 (§34): Agent J Cards, answered to the asking session only. jcard_list / jcard_get read; jcard_set flips one
+        card's switch (display only — a card never acts by itself: its buttons become chat messages the owner confirms)."""
+        r = obj.get("r")
+        if not isinstance(r, str) or not _RID.fullmatch(r):
+            return
+        lang = obj.get("lang") if obj.get("lang") in ("zh", "en") else self.lang
+        cid, on = obj.get("id"), obj.get("on")
+        try:                            # whatever an Agent left under agentperm/cards, the phone gets an answer, never a closed session
+            if t == "jcard_list":
+                res = {"t": "jcard_items", **await asyncio.to_thread(jcards.phone_list, self.st.root, lang)}
+            elif t == "jcard_get":
+                res = {"t": "jcard_get", **await asyncio.to_thread(jcards.phone_get, self.st.root, cid, lang)}
+            else:
+                ok = isinstance(cid, str) and type(on) is bool and await asyncio.to_thread(jcards.set_on, self.st.root, cid, on)
+                res = None
+        except Exception as e:  # noqa: BLE001
+            self.st.log("jcard_failed", device=s.device, reason=type(e).__name__)
+            res = {"jcard_list": {"t": "jcard_items", "cards": []}, "jcard_get": {"t": "jcard_get", "ok": False, "why": "not_found"}}.get(
+                t, {"t": "jcard_res", "ok": False, "id": None, "on": None})
+            ok = False
+        if res is not None:
+            return await self.send_app(s, {**res, "r": r})
+        if ok:
+            self.st.log("jcard_set", device=s.device, status=f"{cid}:{'on' if on else 'off'}")
+        await self.send_app(s, {"t": "jcard_res", "r": r, "ok": bool(ok), "id": cid if ok else None, "on": on if ok else None})
 
     async def _wf_first_sweep(self) -> None:
         """P276: one bounded scan of the working root at start (workflows.SCAN_BUDGET), adding new WDB folders to the CEO
@@ -5031,7 +5125,7 @@ class Host:
         if getattr(item, "background_done_ids", None):
             self.background_done.complete(item)
         if getattr(item, "heartbeat_key", None) or getattr(item, "background_done_ids", None) \
-                or getattr(item, "quota_resume_id", None):
+                or getattr(item, "quota_resume_id", None) or getattr(item, "auto_notify", None) or getattr(item, "hook_notice", None):
             item.state = "cancelled"
             self.hist_update(item.turn, end="stopped")
             return
@@ -5119,7 +5213,7 @@ class Host:
             self.phone_upgrade_task = asyncio.create_task(self.phone_upgrade(turn, by))
             return turn
         if not self.agent:
-            return done(slash.Result(slash.HELP if name == "help" else "还没接 Agent：在电脑上运行 agentj agent claude --dir <目录>。",
+            return done(slash.Result(slash.HELP if name == "help" else "还没接 Agent：在Agent J 主机上运行 agentj agent claude --dir <目录>。",
                                      "info" if name == "help" else "error"))
         if name not in slash.WHITELIST + slash.INTERNAL or (name in slash.INTERNAL and typed):
             if self.agent.kind == "claude" and not getattr(self.agent, "init", None):
@@ -5160,13 +5254,13 @@ class Host:
                     web, machine = await self._receipt_context() if rec.get("reason") in ("upgraded", "doctor_failed") else ("older", None)
                     self.cmd_card("update", slash.Result(phone_update.text(rec, self.lang, web, machine), "ok" if rec.get("result") == "ok" else "error"), by, turn)
                     return
-            self.cmd_card("update", slash.Result("Upgrade timed out: run agentj doctor" if self.lang == "en" else "升级超时：在电脑运行 agentj doctor", "error"), by, turn)
+            self.cmd_card("update", slash.Result("Upgrade timed out: run agentj doctor" if self.lang == "en" else "升级超时：在Agent J 主机运行 agentj doctor", "error"), by, turn)
         except Exception as e:
             from . import service as _svc
             if isinstance(e, _svc.ServiceError) and e.reason in _svc.NO_MANAGER:     # P278: no systemd to run the upgrade job
                 self.cmd_card("update", slash.Result(_svc.MESSAGES[e.reason], "error"), by, turn)
                 return
-            self.cmd_card("update", slash.Result("Could not start upgrade: run agentj update apply" if self.lang == "en" else "无法启动升级：在电脑运行 agentj update apply", "error"), by, turn)
+            self.cmd_card("update", slash.Result("Could not start upgrade: run agentj update apply" if self.lang == "en" else "无法启动升级：在Agent J 主机运行 agentj update apply", "error"), by, turn)
         finally:
             if not launched or not phone_update.busy(self.st):
                 phone_update.release(self.st)
@@ -5250,17 +5344,19 @@ class Host:
             caps.append("tgfile")                          # shows the icon and, while Telegram is not linked, says where to link it
         caps.append("busyget")                 # P160 (§22): a tap on one 「在办」 row asks for its detail
         caps.append("contacts")          # P184 (§25): address book, contact cards, 「转发到邮箱」 (mail ready or not: the dialog says)
-        caps.append(hsearch.CAP)                               # P188 (§28): this computer answers hist_find
+        caps.append(hsearch.CAP)                               # P188 (§28): the Agent J host answers hist_find
         caps += ["cards1", "upg1"]       # P203 (§29): signed open-cards snapshot · upgrade impact + confirmation card
-        caps.append("systasks")                                # P207 §2: answers systask_list (the computer's own scheduled tasks)
+        caps.append("systasks")                                # P207 §2: answers systask_list (the Agent J host's own scheduled tasks)
         caps.append("wf1")                                     # P244 §30: answers wf_list / wf_doc / skill_get (the five pages)
+        caps.append(jcards.CAP)                                # P360 §34: Agent J Cards (jcard_list / jcard_get / jcard_set)
         caps.append(compose.CAP_MQ)                            # P286 §10.6: takes quote_more (≤ 5 quotes in one say)
+        caps.append("hooks1")                                  # P366: answers hook_list / hook_set (Settings → Webhook)
         m = {"caps": caps, "asr": self.asr_state(), "hist": "on" if self.hist.on else "off"}
         m.update(self._host_kind())
         return m
 
     def _host_kind(self) -> dict:
-        """P287 (§10.0): `plat` + `boot`, so a phone that later finds this computer offline can say why in its own words
+        """P287 (§10.0): `plat` + `boot`, so a phone that later finds the Agent J host offline can say why in its own words
         (it cannot hear from us then). `boot` may need loginctl: worked out once in the background; until then only `plat`."""
         from . import service
         k = getattr(self, "_hk", None)
@@ -5402,6 +5498,45 @@ class Host:
             await answer(res)
             self._post(self._send_ready, lambda s2: self.preferences_msg())
         self._bg(run(), t)
+
+    def on_news(self, s: Session, t: str, obj: dict) -> asyncio.Task | None:
+        """P374 (PROTOCOL §10.20a): read / switch the account's Daily AI News through one signed `/v1/host/news` (cloud.news),
+        in a thread with an 8 s budget, never on the reader. The answer goes to the asking session only; the log line has the
+        status word, never the e-mail."""
+        on = obj.get("on")
+        if t == "news_set" and not isinstance(on, bool):
+            return None
+        r = obj.get("r")
+        rid = {"r": r} if wire.is_rid(r) else {}
+
+        async def answer(m: dict) -> None:
+            if self.sessions.get(s.cid) is s and s.state == "ready" and self.st.is_allowed(s.pub):
+                await self.send_app(s, {"t": "news_res", **rid, **m})
+
+        async def run() -> None:
+            res = None
+            try:
+                if self._news_inflight >= NEWS_INFLIGHT:
+                    res = cloud.NewsResult("rate_limited", status="busy")
+                else:
+                    self._news_inflight += 1
+                    try:
+                        post = lambda url, payload: cloud.post_json(url, payload, timeout=NEWS_TIMEOUT - 1)  # noqa: E731
+                        res = await asyncio.wait_for(asyncio.to_thread(
+                            cloud.news, self.st, on if t == "news_set" else None, post=post), NEWS_TIMEOUT)
+                    finally:
+                        self._news_inflight -= 1
+            except asyncio.TimeoutError:
+                res = cloud.NewsResult("unreachable", status="timeout")
+            except Exception:  # noqa: BLE001 — a bad key file / state read: the phone gets "fail", never a hang
+                res = cloud.NewsResult("fail", status="error")
+            self.st.log(t, device=s.device, status=res.kind, http=res.status, **({"on": res.on} if res.kind == "ok" else {}))
+            if res.kind == "ok":
+                await answer({"ok": True, "on": res.on, "email": res.email, "sample_url": res.sample_url,
+                              "queued": res.queued, "seats": res.seats})
+            else:
+                await answer({"ok": False, "problem": cloud.news_problem(res.kind)})
+        return self._bg(run(), t)
 
     async def on_mail(self, s: Session, t: str, obj: dict) -> None:
         """P170 (PROTOCOL §10.20): the paired phone's e-mail settings. The app password never comes this way — 「设置授权码」
@@ -5549,6 +5684,8 @@ class Host:
             return
         if t.startswith("mail_"):          # P170: the e-mail channel's settings page
             return await self.on_mail(s, t, obj)
+        if t in ("news_get", "news_set"):  # P374: the account's Daily AI News switch
+            return self.on_news(s, t, obj)
         if t.startswith("auth_"):          # P258: AI 登录救援
             return await self.on_auth(s, t, obj)
         if t in ("imsg_check", "imsg_fda"):  # P274 (§10.21): the iMessage card
@@ -5667,6 +5804,11 @@ class Host:
             res = await asyncio.to_thread(menu.for_phone, wd, skills, self.lang, preferences.get(self.preferences, "menu.items", []))
             return await self.send_app(s, {"t": "menu", "r": r, **res, "upgrade": update.phone_view(self.st), "reload": True,
                                            "reset": True})   # P320: ≡ Reload · P332: ≡ 重置连接
+        if t in ("notify_get", "notify_set"):          # P365: which automations may post here
+            from . import notify
+            return await notify.on_phone(self, s, t, obj)
+        if t in ("hook_list", "hook_set") and self.hooks is not None:   # P366: the 「Webhook」 list (no secret ever leaves)
+            return await self.hooks.on_phone(s, t, obj)
         if t in ("keys_get", "keys_op", "keys_set"):   # P352: names only; a copied value goes to this session alone
             from . import keys
             return await keys.on_phone(self, s, t, obj)
@@ -5911,6 +6053,8 @@ class Host:
                     if f["asr"]["file"]:
                         f["asr"]["text"] = f["asr"]["text"][:compose.ASR_INLINE]
             send.text = compose.render(text, files, self.lang, quote_text) + getattr(send, "onboarding_note", "")
+            with contextlib.suppress(Exception):           # P363 (#72): the transcript back onto the owner's page, every remote
+                self.hist_update(send.turn, att_asr=page_asr(files))
             with contextlib.suppress(Exception):           # P182: the latest recording group, for a later /会议总结 without files
                 meeting.remember(self.st, files)
         finally:
@@ -6071,6 +6215,11 @@ class Host:
         if getattr(send, 'quota_resume_id', None):     # P314: no phone, no attachments
             self.st.log("quota_resume_delivery", outcome="delivered")
             return
+        if getattr(send, 'auto_notify', None):         # P365: `agentj notify` copy for the main Agent (notify.py)
+            self.st.log("notify_agent_delivery", outcome="delivered")
+        if getattr(send, 'hook_notice', None):         # P366: a webhook's triage notice for the main Agent
+            self.st.log("hook_agent_delivery", outcome="delivered")
+            return
         if getattr(send, 'bot_handoff_id', None):
             self.st.log("bot_handoff_delivery", id=send.bot_handoff_id, outcome="delivered")
             return
@@ -6099,6 +6248,11 @@ class Host:
             return
         if getattr(send, 'quota_resume_id', None):     # P314: never replayed
             self.st.log("quota_resume_delivery", outcome="uncertain")
+            return
+        if getattr(send, 'auto_notify', None):         # P365: never replayed
+            self.st.log("notify_agent_delivery", outcome="uncertain")
+        if getattr(send, 'hook_notice', None):         # P366: never replayed (the delivery is on disk)
+            self.st.log("hook_agent_delivery", outcome="uncertain")
             return
         if getattr(send, 'official_notice_id', None):
             # Native transport may have accepted it: do not replay auto-upgrade authority on an uncertain write.
@@ -6541,6 +6695,16 @@ class Host:
                  asyncio.create_task(self.update_loop()), asyncio.create_task(self.preferences_loop()),
                  asyncio.create_task(self.busy_loop()), asyncio.create_task(self.seat_loop())]
         perm_server = None
+        order_server = None
+        from .core import enabled as _core_on
+        if _core_on():                       # P359: Agent J Harness CEOs ask the phone through <state>/orders/ask.sock
+            try:
+                from .core import askbridge, dispatcher as _disp
+                order_server = await askbridge.Server(self.ask, self.st.root).start()
+                lost = await asyncio.to_thread(_disp.reconcile, self.st.root)
+                self.st.log("orders_bridge", lost=len(lost))
+            except Exception as e:  # noqa: BLE001 — orders never stop serve
+                bg.swallowed(self.st.log, "orders_bridge_failed", e, every=0)
         if self.agent_cfg:
             psock = self.st.perm_sock_path
             self.st.perm_dir.mkdir(mode=0o700, exist_ok=True)
@@ -6576,7 +6740,7 @@ class Host:
             from . import capability as _cap, heartbeat as _hb, peer_service as _peer, recall as _recall
             for env, name in ((elevate.ENV, elevate.SOCK_NAME), (_cap.ENV, _cap.SOCK_NAME), (_recall.ENV, _recall.SOCK_NAME),
                               (_hb.ENV, _hb.SOCK_NAME), ("AGENTJ_IMESSAGE_SOCK", "imessage.sock"),
-                              (_peer.ENV, getattr(_peer, "SOCK_NAME", "friends.sock"))):
+                              (_peer.ENV, getattr(_peer, "SOCK_NAME", "friends.sock")), ("AGENTJ_HOOKS_SOCK", "hooks.sock")):
                 os.environ[env] = str(self.st.perm_dir / name)
             from . import harness_setup                # P219: the harness's one-time terminal questions, answered ahead
             if harness_setup.enabled() and not self.agent_cfg.get("_workflow_ceo"):
@@ -6616,6 +6780,12 @@ class Host:
             await self.peers.start()
         except Exception as e:  # noqa: BLE001 — friends never keep serve from running
             self.st.log("peer_start_failed", reason=type(e).__name__)
+        from .hook_service import HookService     # P366: webhooks + <state>/agentperm/hooks.sock (after peers: same seat cert)
+        self.hooks = HookService(self)
+        try:
+            await self.hooks.start()
+        except Exception as e:  # noqa: BLE001 — webhooks never keep serve from running
+            self.st.log("hook_start_failed", reason=type(e).__name__)
         from . import telegram as telegram_mod
         from .telegram import Telegram
         telegram_mod.IN_SERVE = True              # P142 (B14): key checks in this process read serve's own environment
@@ -6656,6 +6826,9 @@ class Host:
             if self.peers is not None:
                 with contextlib.suppress(Exception):
                     await self.peers.stop()
+            if self.hooks is not None:
+                with contextlib.suppress(Exception):
+                    await self.hooks.stop()
             if self.agent:
                 await self.agent.stop()
             with contextlib.suppress(Exception):         # the resident ASR worker (§10.9) goes with serve
@@ -6668,6 +6841,8 @@ class Host:
                 perm_server.close()
                 with contextlib.suppress(FileNotFoundError):
                     self.st.perm_sock_path.unlink()
+            if order_server:
+                await order_server.close()
             with contextlib.suppress(FileNotFoundError):
                 sock.unlink()
             self.st.log("serve_stop")

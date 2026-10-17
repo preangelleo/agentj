@@ -235,7 +235,7 @@ class InstallSkill(Base):
                                       "linked_at": 1, "last_seq": 0})
         ok = "https://agentj.app/api/v1/plaza/dl/" + fx.URL_PART
         self.assertEqual(cloud.transfer_url(self.e.st, ok, "dl"), ok)
-        host = "agentj.app/api"
+        host = "https://agentj.app/api"
         origins = ("http://" + host, "https://" + host + ":8443", "https://user" + "@" + host, "https://" + host + ".evil.example",
                    "https://agentj.app/account")
         for bad in (o + "/v1/plaza/dl/" + fx.URL_PART for o in origins):

@@ -52,7 +52,7 @@ function card(lang) {
     optional: [{ id: 'cap-cred-research-api-key', capability_id: 'cred-research-api-key', why: { zh: '可选：调研服务，没有也能完成', en: 'Optional: research service; works without it' },
       how: { zh: '用手机上的专用密钥卡填一次，Agent 看不到值', en: "Fill in once on the phone's secret card; the Agent never sees the value" },
       reuse: { zh: '同服务任务可复用', en: 'Reusable for this service' }, status: 'missing', action_kind: 'secret_card' }] };
-  const brief = { goal: zh ? '每周一 09:00 生成三家竞品的公开资料简报，存在电脑上并推到你手机。' : 'Every Monday 09:00, a public-sources brief on three competitors, saved on the computer and sent to your phone.',
+  const brief = { goal: zh ? '每周一 09:00 生成三家竞品的公开资料简报，存在Agent J 主机上并推到你手机。' : 'Every Monday 09:00, a public-sources brief on three competitors, saved on the Agent J host and sent to your phone.',
     acceptance: [zh ? '三家各有至少两条可追溯来源' : 'Each competitor has two traceable sources'], red_lines: [zh ? '不付费、不外发' : 'No payments, nothing sent outside'],
     deliverables: [{ path: 'reports/weekly.md', format: 'markdown', audience: 'owner' }],
     plan: { kind: 'weekly', schedule_task_ref: 'competitor-brief/task.json', timezone: 'Asia/Tokyo', human_enable_required: true },

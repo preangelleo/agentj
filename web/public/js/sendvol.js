@@ -1,3 +1,4 @@
+import {focusDraft} from './composer-focus.js';
 // P154 追加 12 · hold the grey (empty) Send button → a vertical volume slider grows up out of it. The same setting as
 // Settings' 「提示音音量」 (js/sfx.js: phone-local, live, persisted). Leo, 2026-10-12: 「长按……原地往上长出来一个音量控制按钮」.
 // - Only while the message box is empty and Send is grey; with text, a press of Send is unchanged.
@@ -81,7 +82,7 @@ export function close(refocus = false) {
   pop.hidden = true;
   drag = null;
   delete document.body.dataset.volpop;
-  if (refocus && input) try { input.focus({ preventScroll: true }); } catch (_) {}
+  if (refocus && input) try { focusDraft(input, { preventScroll: true }); } catch (_) {}
 }
 /** The finger at clientY, relative to where the slide began → a level (up = louder; one track height = 100 %). */
 function levelAt(y) {

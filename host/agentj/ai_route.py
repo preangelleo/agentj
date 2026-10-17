@@ -1,10 +1,10 @@
 """P279 (Leo, 2026-10-14): which AI route to recommend at install / first run — `agentj agent route [--json]`.
 
-Decided by what actually works from this computer, not by guessing: one unauthenticated GET each to api.anthropic.com
+Decided by what actually works from the Agent J host, not by guessing: one unauthenticated GET each to api.anthropic.com
 (Claude Code), api.openai.com (Codex, chatgpt_reach) and api.kimi.com (the Kimi route itself). No key is sent; only the
 status code and the provider's error type are read — the same answer the provider gives to every unsupported region
 (Anthropic 403 "Request not allowed", OpenAI 403 unsupported_country). Optional local signals (time zone, locale) only
-break a tie; they are read on this computer and never sent anywhere.
+break a tie; they are read on the Agent J host and never sent anywhere.
 
   any official service answers        → "official"  (the install.md harness rule as before: Claude Code / Codex)
   both refused or unreachable         → "kimi"      (P335: mainland → Volcano Ark Coding Plan first (ark.py), Hong Kong /
@@ -310,7 +310,7 @@ def kimi_cli_steps(lang: str) -> list[str]:
     if lang == "zh":
         return ["装 Kimi Code CLI（官方，2.2.0 或更新）：`curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash`"
                 "（不用 Node.js；也可以 `npm install -g @moonshot-ai/kimi-code`）。",
-                "登录（二选一）：手机 设置 → 紧急修复 →「AI 登录救援」→ Kimi Code 设备码登录；或主人在电脑终端运行 `kimi login --region mainland-cn`"
+                "登录（二选一）：手机 设置 → 紧急修复 →「AI 登录救援」→ Kimi Code 设备码登录；或主人在Agent J 主机终端运行 `kimi login --region mainland-cn`"
                 "（海外站 kimi.ai 的会员用 `--region global`）。也可以用上面第 3 步的手机密钥卡存 KIMI_API_KEY。",
                 "`agentj agent switch kimi`（kimi.ai 的会员加 `--region global`）：先无头测试，能用才切，失败自动切回。"]
     return ["Install Kimi Code CLI (official, 2.2.0 or newer): `curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash` "
@@ -329,20 +329,20 @@ def link_line(inv: dict, lang: str) -> str:
 
 
 HEAD = {
-    "official": ("Claude Code / Codex 在这台电脑上能连通：按 install.md 的规则选（只有一个能用就用它，多个就问主人）。",
-                 "Claude Code / Codex can be reached from this computer: follow the install.md rule (one usable → that one; "
+    "official": ("Claude Code / Codex 在这台Agent J 主机上能连通：按 install.md 的规则选（只有一个能用就用它，多个就问主人）。",
+                 "Claude Code / Codex can be reached from the Agent J host: follow the install.md rule (one usable → that one; "
                  "several → ask the owner)."),
-    "kimi": ("这台电脑所在地区用不了 Claude Code 和 Codex。按下面选，让主人拍板：",
-             "Claude Code and Codex are not available where this computer is. Pick by the rule below and let the owner decide:"),
-    "offline": ("Claude Code、Codex、Kimi 都连不上：先检查这台电脑的网络，再运行一次 `agentj agent route`。",
-                "Neither Claude Code, Codex nor Kimi can be reached: check this computer's network first, then run "
+    "kimi": ("这台Agent J 主机所在地区用不了 Claude Code 和 Codex。按下面选，让主人拍板：",
+             "Claude Code and Codex are not available where the Agent J host is. Pick by the rule below and let the owner decide:"),
+    "offline": ("Claude Code、Codex、Kimi 都连不上：先检查这台Agent J 主机的网络，再运行一次 `agentj agent route`。",
+                "Neither Claude Code, Codex nor Kimi can be reached: check the Agent J host's network first, then run "
                 "`agentj agent route` again."),
     "unsure": ("没能确认 Claude Code / Codex 在这里能不能用：先按 install.md 的规则试；第一条消息就失败（地区不支持）时，按下面选：",
                "Could not confirm whether Claude Code / Codex work here: try them first (install.md rule); if the first "
                "message fails (region not supported), pick by the rule below:"),
 }
 HINT_NOTE = ("（只按本机时区判断，没有实测成功；装好后用 `agentj agent switch --scan` 确认。）",
-             "(Judged from this computer's time zone only, not measured; confirm with `agentj agent switch --scan` later.)")
+             "(Judged from the Agent J host's time zone only, not measured; confirm with `agentj agent switch --scan` later.)")
 PICK = (("  · 中国大陆、从零开始：首推 **火山方舟 Coding Plan**，先买 **Lite**（和 Pro 能力一样，只差 5 倍用量）。",
          "  · 香港 / 海外：**Kimi 会员** Plus 或更高档（海外访问按美元收费）。",
          "  · 已经有其中某一家的：继续用那一家，不用再买。"),

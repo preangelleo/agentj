@@ -8,7 +8,7 @@
 //      after /customize, with the page's sentence, never again under 主 Agent; the owner's own commands still listed
 //   b) a 0.20.1a1 host whose answer lost it: the page still offers it (the host knows the command since 0.18.6)
 //   c) a 0.18.5 host: not offered (the words would only reach the Agent as text)
-//   d) one tap sends 「/switch-harness」 to the computer as typed (serve hands it to the main Agent: list → choose → probe →
+//   d) one tap sends 「/switch-harness」 to the Agent J host as typed (serve hands it to the main Agent: list → choose → probe →
 //      switch / switch back), with a toast; typed + Send does the same
 //   e) typing 「/sw」 finds it in the type-ahead
 // Shots (zh/en × 390/1440) → reports/qa/p238/*.png

@@ -91,8 +91,8 @@ async function run() {
         await waitFor(p, `${visible('setup-view')} && ${$('setup-title')} && ${$('setup-title')}.textContent.length > 0`);
         assert.equal(await evaluate(p, `${$('setup-title')}.textContent`), lang === 'zh' ? '专用浏览器' : 'Agent browser', tag);
         assert.equal(await evaluate(p, `${$('setup-sticky')}.textContent`), lang === 'zh'
-          ? '这些步骤在电脑上做；手机上看进度。卡住了直接在聊天里告诉我。' : 'Do these steps on the computer; watch progress on the phone. Stuck? Just tell me in the chat.');
-        assert.match(await evaluate(p, `${$('setup-where')}.textContent`), lang === 'zh' ? /^在电脑上做 · / : /^On the computer · /);
+          ? '这些步骤在Agent J 主机上做；手机上看进度。卡住了直接在聊天里告诉我。' : 'Do these steps on the Agent J host; watch progress on the phone. Stuck? Just tell me in the chat.');
+        assert.match(await evaluate(p, `${$('setup-where')}.textContent`), lang === 'zh' ? /^在Agent J 主机上做 · / : /^On the Agent J host · /);
         assert.match(await evaluate(p, `${$('setup-fact')}.textContent`), /9222/);
         assert.match(await evaluate(p, `${$('setup-src')}.textContent`), /9222/);
         assert.equal(await evaluate(p, `document.querySelector('#setup-main .setup-actions .aj-btn').id`), 'setup-adopt-browser', tag + ' adopt first');

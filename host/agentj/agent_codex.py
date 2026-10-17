@@ -125,9 +125,9 @@ def perm_text(p) -> str:
 FULL = ("dangerFullAccess", "externalSandbox")
 NET_CMDS = frozenset({"curl", "wget", "http", "https", "xh", "nc", "ncat", "netcat", "telnet", "ssh", "scp", "sftp", "ftp",
                       "ping", "dig", "nslookup", "host", "whois", "aria2c"})
-POLICY_NOTICE = "这一步超出了你 Codex 自己的沙箱设置，已拒绝；要放开请在电脑上改 Codex 的设置。"
+POLICY_NOTICE = "这一步超出了你 Codex 自己的沙箱设置，已拒绝；要放开请在Agent J 主机上改 Codex 的设置。"
 # F30 (ADR-A175): ADR-A73 now only bites when the owner explicitly restricted Codex (config.toml / the desktop thread)
-CONFIG_NOTICE = ("（你在 config.toml 顶层写了 sandbox_mode = {mode}。想让 Agent 像在终端里一样直接跑：电脑上运行 "
+CONFIG_NOTICE = ("（你在 config.toml 顶层写了 sandbox_mode = {mode}。想让 Agent 像在终端里一样直接跑：Agent J 主机上运行 "
                  "`agentj codex-sandbox default`，再 `agentj service restart`；同一段对话也会按新设置。）")
 DESKTOP_NOTICE = ("这一步超出了这条 Codex 对话在桌面 App 里设的权限（{mode}），已拒绝；要放开请在 Codex 桌面 App 里把这条对话的权限"
                   "改成「完全访问」（Full access），然后从手机重发。")
@@ -425,7 +425,7 @@ class CodexAgent(Agent):
     async def _spawn(self) -> bool:
         if not _agentmod._bin("AGENTJ_CODEX_BIN", "codex"):
             self.failed_start = True
-            self.fail_notice("这台电脑上没找到 Codex（codex 命令）。装好并登录后再试。")
+            self.fail_notice("这台Agent J 主机上没找到 Codex（codex 命令）。装好并登录后再试。")
             return False
         argv = await self.authorized_launch_argv(self.argv())
         if argv is None:
@@ -839,14 +839,14 @@ class CodexAgent(Agent):
         elif method == "mcpServer/elicitation/request":                   # nobody on the phone can fill a form: decline
             self._answer(rid, {"action": "decline"})
             if not self.research:
-                self.local_only("Codex 要你填一张表（MCP elicitation）：手机上填不了，已拒绝；需要的话在电脑上处理。")
+                self.local_only("Codex 要你填一张表（MCP elicitation）：手机上填不了，已拒绝；需要的话在Agent J 主机上处理。")
         elif method == "item/tool/requestUserInput":                      # §10.7: a question card on the phone
             qs = p.get("questions") if isinstance(p.get("questions"), list) else []
             card = question_card(qs)
             if card is None or self.research:
                 self._answer(rid, {"answers": {}})
                 if not self.research:
-                    self.local_only("这个问题需要在电脑上回答（Codex 问的是要保密或要自己填写的内容）。")
+                    self.local_only("这个问题需要在Agent J 主机上回答（Codex 问的是要保密或要自己填写的内容）。")
                 return
             self._bg(self._ask_user(rid, qs, card))
         else:

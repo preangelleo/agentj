@@ -51,7 +51,7 @@ def _is_ours(link: str, path: str | None) -> bool:
 
 
 def migrated() -> bool:
-    """Did this computer move a 0.9 state directory (migrated.json with migrated_from)? Only then may `jarvis` exist."""
+    """Did the Agent J host move a 0.9 state directory (migrated.json with migrated_from)? Only then may `jarvis` exist."""
     from . import migrate
     from .state import State, state_dir
     try:
@@ -123,7 +123,7 @@ def remove_all(path: str | None = None) -> list[dict]:
 
 
 def status_all(path: str | None = None) -> list[dict]:
-    """`aj` always; `jarvis` when it is ours or this computer migrated (otherwise there is nothing to say about it)."""
+    """`aj` always; `jarvis` when it is ours or the Agent J host migrated (otherwise there is nothing to say about it)."""
     out = [status(path, NAME)]
     c = status(path, COMPAT)
     if c["state"] == "installed" or migrated():

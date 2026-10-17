@@ -1,9 +1,9 @@
 // P160 (PROTOCOL §22): Codex / OpenCode sub-agents are the same robots as Claude's, and one row of the 「在办」 dialog opens
-// that task's own card (P154's 24 px robot) with the read-only detail the computer gives (`busy_get` → `busy_info`).
+// that task's own card (P154's 24 px robot) with the read-only detail the Agent J host gives (`busy_get` → `busy_info`).
 // Real page + local fake host, independent headless Chromium (never :9222).
 //   a) three sources in one list (a dispatch unit, a Codex sub-agent, an OpenCode sub-agent) → three robots, three rows
 //   b) a tap on a row → the card: its robot at 24 px, who as the title, the whole title, where it runs + how long, the
-//      latest step; the computer is asked again while it stays open (the step changes on screen); 返回 → the list
+//      latest step; the Agent J host is asked again while it stays open (the step changes on screen); 返回 → the list
 //   c) a dispatch's card shows the report path + its first line; a report not written yet says so
 //   d) the task finishes while its card is open → 「已经做完了」, 返回 with nothing left closes the dialog
 //   e) an older computer (no `busyget` cap): the card shows what the list knows + a note, and asks nothing
@@ -109,7 +109,7 @@ export async function runP160() {
           check(await evaluate(p, `getComputedStyle(${$('busyList')}).display==='none'`), 'list hidden on the card');
           check(await evaluate(p, `!${$('busyBack')}.hidden && document.activeElement.id==='busyBack'`), 'back shown and focused');
           check(await txt(p, '#busyBack') === s.back, 'back label ' + lang);
-          check(asked.includes('k1'), 'asked the computer for k1 only');
+          check(asked.includes('k1'), 'asked the Agent J host for k1 only');
           await freeze(); await save('card-codex'); await play();
           if (lang === 'zh' && theme === 'light') {          // polling: the step changes while the card stays open (once)
             const n = asked.length;

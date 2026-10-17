@@ -46,7 +46,7 @@ test('md.js: a local image is a slot (source text inside), a remote image a link
   assert.ok(slot, 'a slot for the local picture');
   assert.equal(slot.tag, 'span');
   assert.equal(slot.getAttribute('data-ref'), 'out/chart.png');
-  assert.equal(slot.textContent, '![图表](out/chart.png)', 'until the computer sends it, the source text shows');
+  assert.equal(slot.textContent, '![图表](out/chart.png)', 'until the Agent J host sends it, the source text shows');
   assert.equal(r.all().filter((n) => n.tag === 'img').length, 0, 'md.js never creates an <img>');
   r = render('![远程](https://example.com/a.png)');
   const a = r.all().find((n) => n.tag === 'a');

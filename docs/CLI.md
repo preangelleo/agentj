@@ -134,14 +134,14 @@ agentj --help
 
 ```text
 usage: agentj [-h] [-V] [--migrate-legacy] [--instance N] [--fresh]
-              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,status,name,admin,login,report,unlink,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,keep-awake,browser,setup,google,mail,contacts,ask,workflows,sudo,secret,provider,sudo-helper,docs-rule,handover,telegram-cursor,plaza,support,capability,goal,heartbeat,quota,imessage,busy,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
+              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,keep-awake,browser,setup,google,mail,report,contacts,hook,ask,workflows,sudo,secret,provider,sudo-helper,docs-rule,handover,telegram-cursor,plaza,support,data,capability,goal,heartbeat,quota,imessage,busy,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
 ```
 
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `-V / --version` | `null` | false | — | `show program's version number and exit` |
-| `--migrate-legacy` | `false` | false | — | `keep using an older identity found on this computer` |
+| `--migrate-legacy` | `false` | false | — | `keep using an older identity found on the Agent J host` |
 | `--instance` | `null` | false | — | `instance N on this OS user (1–10; 1 = the original): one seat and one folder per instance — see agentj instances` |
 | `--fresh` | `false` | false | — | `不用旧身份，开一个全新的（旧目录原样保留）/ ignore an older identity and start fresh (the old folder stays as it is)` |
 
@@ -188,7 +188,7 @@ usage: agentj admin [-h] [--port PORT] [--events {text,jsonl}]
 | `--events` | `"text"` | false | `text`, `jsonl` | `journal；后台运行请用 --url-file` |
 | `--url-file` | `null` | false | — | `把链接（同样的 jsonl 行）写进这个新建的文件（0600，必须还不存在），stdout 不再出现链接` |
 | `--no-stdin` | `false` | false | — | `不读终端输入（后台运行时用）` |
-| `--open` | `false` | false | — | `用这台电脑的默认浏览器直接打开管理页（链接不打印、只用一次；命令立刻返回，页面 30 分钟不用自动关闭）/ open the admin page in this computer's default browser (link never printed; returns at once)` |
+| `--open` | `false` | false | — | `用这台Agent J 主机的默认浏览器直接打开管理页（链接不打印、只用一次；命令立刻返回，页面 30 分钟不用自动关闭）/ open the admin page in the Agent J host's default browser (link never printed; returns at once)` |
 | `--open-child` | `false` | false | — | `internal option (hidden from --help)` |
 
 ### agentj agent
@@ -205,8 +205,8 @@ agentj agent --help
 usage: agentj agent [-h] [--probe] [--dry-run] [--result] [--scan] [--undo]
                     [--force] [--json] [--dir DIR]
                     [--region {mainland-cn,global}] [--base-url BASE_URL]
-                    [--model MODEL] [--unfenced] [--allow-docker] [--shared |
-                    --independent]
+                    [--model MODEL] [--preset {ark}] [--plan {coding,payg}]
+                    [--unfenced] [--allow-docker] [--shared | --independent]
                     [{claude,codex,opencode,kimi,qwen,dsh,off,reset,restart,status,detect,switch,route}]
                     [{claude,codex,opencode,kimi,qwen,dsh}]
 ```
@@ -229,6 +229,8 @@ usage: agentj agent [-h] [--probe] [--dry-run] [--result] [--scan] [--undo]
 | `--region` | `null` | false | `mainland-cn`, `global` | `kimi: which Kimi site the membership was bought on (a kimi.com key works on both api.kimi.com and api.kimi.ai)` |
 | `--base-url` | `null` | false | — | `dsh: an OpenAI-compatible server (Olares Router …), with --model` |
 | `--model` | `null` | false | — | `模型（默认用你自己的设置）；OpenCode 写成 服务商/模型，例如 zhipuai/glm-5.3` |
+| `--preset` | `null` | false | `ark` | `arkcli、缺 key 给密钥卡命令、写方舟服务商、实测一次才切 / ark = OpenCode on Volcano Ark: detect, key card if missing, write the provider, one real call before switching` |
+| `--plan` | `null` | false | `coding`, `payg` | `coding = the Coding Plan address (coding agents only) · payg = pay-as-you-go /api/v3` |
 | `--unfenced` | `false` | false | — | `不隔离运行 Agent（按底层 harness 自己的权限）。默认 Agent 在 bubblewrap 里运行，看不到 Agent J 的状态` |
 | `--allow-docker` | `false` | false | — | `podman（默认不开；主人要求时可直接打开）。默认容器引擎的 socket 对 Agent 隐藏` |
 | `--shared` | `null` | false | — | `shared session (advanced): attach to your own open session` |
@@ -237,7 +239,7 @@ usage: agentj agent [-h] [--probe] [--dry-run] [--result] [--scan] [--undo]
 ### agentj alias
 
 ```text
-短命令 aj（迁移过的电脑另有旧命令 jarvis）：status · install · remove（同名已存在就不装）/ the short command `aj` (+ `jarvis` on a migrated computer)
+短命令 aj（迁移过的Agent J 主机另有旧命令 jarvis）：status · install · remove（同名已存在就不装）/ the short command `aj` (+ `jarvis` on a migrated computer)
 ```
 
 ```bash
@@ -758,7 +760,7 @@ usage: agentj browser enable [-h] [--json]
 ### agentj browser endpoint
 
 ```text
-本机 CDP 地址（只在本机用）/ local CDP endpoint (this computer only)
+本机 CDP 地址（只在本机用）/ local CDP endpoint (the Agent J host only)
 ```
 
 ```bash
@@ -798,7 +800,7 @@ usage: agentj browser login [-h] [--wait] [--json] site
 ### agentj browser open
 
 ```text
-在本机浏览器打开网页（主人在电脑前登录用）/ open a page on this computer
+在本机浏览器打开网页（主人在Agent J 主机前登录用）/ open a page on the Agent J host
 ```
 
 ```bash
@@ -1016,7 +1018,7 @@ usage: agentj busy [-h] {list,start,run,capacity,show,stop} ...
 ### agentj busy capacity
 
 ```text
-how many more background jobs this computer can take now
+how many more background jobs the Agent J host can take now
 ```
 
 ```bash
@@ -1360,6 +1362,205 @@ usage: agentj capability sync [-h] [--force] [--json]
 | `--force` | `false` | false | — | `` |
 | `--json` | `false` | false | — | `` |
 
+### agentj card
+
+```text
+the phone's own cards
+```
+
+```bash
+agentj card --help
+```
+
+```text
+usage: agentj card [-h]
+                   {list,validate,apply,on,off,remove,export,open,schema} ...
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj card apply
+
+```text
+check, then put it on the phone (the old version sleeps)
+```
+
+```bash
+agentj card apply --help
+```
+
+```text
+usage: agentj card apply [-h] [--json] folder
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `folder` | `null` | true | — | `卡片文件夹（card.json 所在）/ the card folder (where card.json is)` |
+| `--json` | `false` | false | — | `machine-readable output` |
+
+### agentj card export
+
+```text
+copy an official card to start from
+```
+
+```bash
+agentj card export --help
+```
+
+```text
+usage: agentj card export [-h] [--json] which dest
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `which` | `null` | true | — | `an official card: notes · todo` |
+| `dest` | `null` | true | — | `a new, empty folder` |
+| `--json` | `false` | false | — | `machine-readable output` |
+
+### agentj card list
+
+```text
+every card and its switch
+```
+
+```bash
+agentj card list --help
+```
+
+```text
+usage: agentj card list [-h] [--json]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `machine-readable output` |
+
+### agentj card off
+
+```text
+switch a card off
+```
+
+```bash
+agentj card off --help
+```
+
+```text
+usage: agentj card off [-h] [--json] id
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `id` | `null` | true | — | `卡片 id（agentj card list）/ a card id (agentj card list)` |
+| `--json` | `false` | false | — | `machine-readable output` |
+
+### agentj card on
+
+```text
+switch a card on
+```
+
+```bash
+agentj card on --help
+```
+
+```text
+usage: agentj card on [-h] [--json] id
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `id` | `null` | true | — | `卡片 id（agentj card list）/ a card id (agentj card list)` |
+| `--json` | `false` | false | — | `machine-readable output` |
+
+### agentj card open
+
+```text
+make the phone open a card (or a place in it); navigation only
+```
+
+```bash
+agentj card open --help
+```
+
+```text
+usage: agentj card open [-h] [--at ANCHOR] [--json] id
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `id` | `null` | true | — | `a card id, or a system page: chat · workflows · skills · memory · agentj · cards` |
+| `--at` | `null` | false | — | `actions / links）/ a place in the card` |
+| `--json` | `false` | false | — | `machine-readable output` |
+
+### agentj card remove
+
+```text
+take your card off (its data stays)
+```
+
+```bash
+agentj card remove --help
+```
+
+```text
+usage: agentj card remove [-h] [--json] id
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `id` | `null` | true | — | `卡片 id（agentj card list）/ a card id (agentj card list)` |
+| `--json` | `false` | false | — | `machine-readable output` |
+
+### agentj card schema
+
+```text
+print the schema
+```
+
+```bash
+agentj card schema --help
+```
+
+```text
+usage: agentj card schema [-h] [--path]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--path` | `false` | false | — | `only its path` |
+
+### agentj card validate
+
+```text
+check a card folder
+```
+
+```bash
+agentj card validate --help
+```
+
+```text
+usage: agentj card validate [-h] [--json] folder
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `folder` | `null` | true | — | `卡片文件夹（card.json 所在）/ the card folder (where card.json is)` |
+| `--json` | `false` | false | — | `machine-readable output` |
+
 ### agentj channel
 
 ```text
@@ -1597,6 +1798,127 @@ usage: agentj contacts [-h] [--name NAME] [--nick NICK] [--email EMAIL]
 | `--vcard-version` | `null` | false | `3.0`, `4.0` | `` |
 | `--dry-run` | `false` | false | — | `count only` |
 | `--en` | `false` | false | — | `English messages` |
+| `--json` | `false` | false | — | `` |
+
+### agentj data
+
+```text
+paid content libraries (Agent J credits)
+```
+
+```bash
+agentj data --help
+```
+
+```text
+usage: agentj data [-h] {list,get,search,coverage} ...
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj data coverage
+
+```text
+判断「这个话题讲过没有」（2 点数）/ has this topic been covered (2 credits)
+```
+
+```bash
+agentj data coverage --help
+```
+
+```text
+usage: agentj data coverage [-h] [--max MAX] [--idem IDEM] [--source SOURCE]
+                            [--json]
+                            text [text ...]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `text` | `null` | true | — | `` |
+| `--max` | `5` | false | — | `` |
+| `--idem` | `null` | false | — | `` |
+| `--source` | `null` | false | — | `哪个内容库（见它的广场技能；不写 = 服务器默认）/ which library (see its plaza skill; none = the server's default)` |
+| `--json` | `false` | false | — | `` |
+
+### agentj data get
+
+```text
+取一条的全文（1 点数）/ one item's full text (1 credit)
+```
+
+```bash
+agentj data get --help
+```
+
+```text
+usage: agentj data get [-h] [--source SOURCE] [--json] id
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `id` | `null` | true | — | `` |
+| `--source` | `null` | false | — | `哪个内容库（见它的广场技能；不写 = 服务器默认）/ which library (see its plaza skill; none = the server's default)` |
+| `--json` | `false` | false | — | `` |
+
+### agentj data list
+
+```text
+按关键词 / 话题 / 日期列内容（1 点数）/ list items (1 credit)
+```
+
+```bash
+agentj data list --help
+```
+
+```text
+usage: agentj data list [-h] [--topic TOPIC] [--from FROM_] [--to TO]
+                        [--sort {newest,oldest}] [--page-size PAGE_SIZE]
+                        [--cursor CURSOR] [--source SOURCE] [--json]
+                        [q ...]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `q` | `null` | false | — | `关键词（可空）/ keywords (optional)` |
+| `--topic` | `null` | false | — | `topic id` |
+| `--from` | `null` | false | — | `起始日期 YYYY-MM-DD` |
+| `--to` | `null` | false | — | `截止日期 YYYY-MM-DD` |
+| `--sort` | `null` | false | `newest`, `oldest` | `` |
+| `--page-size` | `10` | false | — | `` |
+| `--cursor` | `null` | false | — | `the cursor the last page printed` |
+| `--source` | `null` | false | — | `哪个内容库（见它的广场技能；不写 = 服务器默认）/ which library (see its plaza skill; none = the server's default)` |
+| `--json` | `false` | false | — | `` |
+
+### agentj data search
+
+```text
+语义搜索相似内容（2 点数）/ semantic search (2 credits)
+```
+
+```bash
+agentj data search --help
+```
+
+```text
+usage: agentj data search [-h] [--top-k TOP_K] [--from FROM_] [--to TO]
+                          [--idem IDEM] [--source SOURCE] [--json]
+                          text [text ...]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `text` | `null` | true | — | `` |
+| `--top-k` | `5` | false | — | `` |
+| `--from` | `null` | false | — | `` |
+| `--to` | `null` | false | — | `` |
+| `--idem` | `null` | false | — | `idempotency key: a retry with it is free` |
+| `--source` | `null` | false | — | `哪个内容库（见它的广场技能；不写 = 服务器默认）/ which library (see its plaza skill; none = the server's default)` |
 | `--json` | `false` | false | — | `` |
 
 ### agentj devices
@@ -2293,7 +2615,7 @@ usage: agentj google [-h]
 ### agentj handover
 
 ```text
-打印交接说明（按这台电脑的实际情况填好）/ print the handover note, filled with this computer's facts
+打印交接说明（按这台Agent J 主机的实际情况填好）/ print the handover note, filled with this computer's facts
 ```
 
 ```bash
@@ -2533,7 +2855,7 @@ usage: agentj heartbeat status [-h] [--json]
 ### agentj history
 
 ```text
-the phone's pages, kept on this computer
+the phone's pages, kept on the Agent J host
 ```
 
 ```bash
@@ -2553,6 +2875,335 @@ usage: agentj history [-h] [--time] [--json] [--all]
 | `--time` | `false` | false | — | `search 按时间排，最新的在前（默认按相关度）/ search: newest first (default: best match)` |
 | `--json` | `false` | false | — | `` |
 | `--all` | `false` | false | — | `clear：连同全部归档立即删除（不能撤销）/ with clear: delete current + every archive` |
+
+### agentj hook
+
+```text
+webhooks
+```
+
+```bash
+agentj hook --help
+```
+
+```text
+usage: agentj hook [-h]
+                   {create,list,show,revoke,test,logs,update,rotate,forward,wait,triage,presets} ...
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj hook create
+
+```text
+建一个 hook（预置见 agentj hook presets）/ create a hook
+```
+
+```bash
+agentj hook create --help
+```
+
+```text
+usage: agentj hook create [-h]
+                          [--preset {alert,bearer,callback,form,github,hmac,ping,stripe}]
+                          [--name NAME] [--life {once,ttl,resident}]
+                          [--ttl TTL] [--target TARGET]
+                          [--auth {stripe,github,hmac,bearer,token}]
+                          [--header HEADER] [--algo {sha1,sha256,sha512}]
+                          [--encoding {hex,base64}] [--prefix PREFIX]
+                          [--signed {body,ts.body}] [--ts-header TS_HEADER]
+                          [--id-header ID_HEADER] [--ip IP] [--note NOTE]
+                          [--secret-file SECRET_FILE]
+                          [--secret-out SECRET_OUT] [--order ORDER]
+                          [--encrypt] [--file FILE] [--json]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--preset` | `null` | false | `alert`, `bearer`, `callback`, `form`, `github`, `hmac`, `ping`, `stripe` | `scenario preset` |
+| `--name` | `null` | false | — | `名字（≤ 40 字）` |
+| `--life` | `null` | false | `once`, `ttl`, `resident` | `once 一次性 · ttl 临时 · resident 常驻（要主人手机批准）` |
+| `--ttl` | `null` | false | — | `有效期：30m · 24h · 7d（once ≤ 7d，ttl ≤ 30d）` |
+| `--target` | `null` | false | — | `送到：main · owner · wait · order:<单号> · bot:<id>` |
+| `--auth` | `null` | false | `stripe`, `github`, `hmac`, `bearer`, `token` | `signature check` |
+| `--header` | `null` | false | — | `签名 / 令牌所在的请求头` |
+| `--algo` | `null` | false | `sha1`, `sha256`, `sha512` | `HMAC 算法` |
+| `--encoding` | `null` | false | `hex`, `base64` | `HMAC 编码` |
+| `--prefix` | `null` | false | — | `签名前缀，如 sha256=` |
+| `--signed` | `null` | false | `body`, `ts.body` | `签名内容` |
+| `--ts-header` | `null` | false | — | `时间戳请求头（ts.body 用）` |
+| `--id-header` | `null` | false | — | `去重用的事件 id 请求头` |
+| `--ip` | `null` | false | — | `CIDR 白名单（可重复）` |
+| `--note` | `null` | false | — | `给主 Agent 的一句话用途说明（≤ 200 字）` |
+| `--secret-file` | `null` | false | — | `用别人生成的密钥（如 Stripe 的 whsec_…），从这个文件读` |
+| `--secret-out` | `null` | false | — | `生成的密钥写到 file:<路径> 或 env:<文件>#KEY（默认 ~/.local/share/agentj-hooks/<id>.secret）` |
+| `--order` | `null` | false | — | `sub-agent：给自己的单建（默认读 AGENTJ_ORDER_ID）` |
+| `--encrypt` | `false` | false | — | `GitHub 不能用）/ end-to-end encrypted delivery` |
+| `--file` | `null` | false | — | `hook 定义 JSON（hooks.schema.json），参数覆盖文件` |
+| `--json` | `false` | false | — | `` |
+
+### agentj hook forward
+
+```text
+自建入口验签后把事件转进来（本机）
+```
+
+```bash
+agentj hook forward --help
+```
+
+```text
+usage: agentj hook forward [-h] [--order ORDER] [--json] [--body BODY]
+                           [--header HEADER] [--token TOKEN]
+                           id
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `id` | `null` | true | — | `hook id（前 8 位或名字也行）` |
+| `--order` | `null` | false | — | `派单号（默认读 AGENTJ_ORDER_ID）` |
+| `--json` | `false` | false | — | `` |
+| `--body` | `null` | false | — | `载荷文字，@文件 读文件，- 读标准输入` |
+| `--header` | `null` | false | — | `请求头 K: V（可重复；按这个 hook 的验签方式带上签名 / 令牌）` |
+| `--token` | `null` | false | — | `URL 令牌方式的令牌` |
+
+### agentj hook list
+
+```text
+生效中的 hook、最近投递、今天用量
+```
+
+```bash
+agentj hook list --help
+```
+
+```text
+usage: agentj hook list [-h] [--all] [--json]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--all` | `false` | false | — | `含 7 天内作废的` |
+| `--json` | `false` | false | — | `` |
+
+### agentj hook logs
+
+```text
+投递记录
+```
+
+```bash
+agentj hook logs --help
+```
+
+```text
+usage: agentj hook logs [-h] [--order ORDER] [--json] [--limit LIMIT]
+                        [--show SHOW]
+                        id
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `id` | `null` | true | — | `hook id（前 8 位或名字也行）` |
+| `--order` | `null` | false | — | `派单号（默认读 AGENTJ_ORDER_ID）` |
+| `--json` | `false` | false | — | `` |
+| `--limit` | `20` | false | — | `` |
+| `--show` | `null` | false | — | `看一条投递原文（包信封）` |
+
+### agentj hook presets
+
+```text
+场景预置与默认值
+```
+
+```bash
+agentj hook presets --help
+```
+
+```text
+usage: agentj hook presets [-h] [--json]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `` |
+
+### agentj hook revoke
+
+```text
+立刻作废
+```
+
+```bash
+agentj hook revoke --help
+```
+
+```text
+usage: agentj hook revoke [-h] [--order ORDER] [--json] id
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `id` | `null` | true | — | `hook id（前 8 位或名字也行）` |
+| `--order` | `null` | false | — | `派单号（默认读 AGENTJ_ORDER_ID）` |
+| `--json` | `false` | false | — | `` |
+
+### agentj hook rotate
+
+```text
+换密钥（旧的宽限期内仍有效）
+```
+
+```bash
+agentj hook rotate --help
+```
+
+```text
+usage: agentj hook rotate [-h] [--order ORDER] [--json] [--grace GRACE]
+                          [--secret-file SECRET_FILE]
+                          [--secret-out SECRET_OUT] [--enc-key]
+                          id
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `id` | `null` | true | — | `hook id（前 8 位或名字也行）` |
+| `--order` | `null` | false | — | `派单号（默认读 AGENTJ_ORDER_ID）` |
+| `--json` | `false` | false | — | `` |
+| `--grace` | `"24h"` | false | — | `旧密钥宽限：0 · 1h · 24h · 7d（默认 24h）` |
+| `--secret-file` | `null` | false | — | `换成别人生成的新密钥（如 Stripe）` |
+| `--secret-out` | `null` | false | — | `新密钥写到哪（同 create）` |
+| `--enc-key` | `false` | false | — | `换端到端加密的投递密钥对（新公钥要交给发送方；旧私钥宽限期内仍能解密）` |
+
+### agentj hook show
+
+```text
+一个 hook 的定义 + 最近 10 条投递
+```
+
+```bash
+agentj hook show --help
+```
+
+```text
+usage: agentj hook show [-h] [--order ORDER] [--json] id
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `id` | `null` | true | — | `hook id（前 8 位或名字也行）` |
+| `--order` | `null` | false | — | `派单号（默认读 AGENTJ_ORDER_ID）` |
+| `--json` | `false` | false | — | `` |
+
+### agentj hook test
+
+```text
+按这个 hook 的方式自签一条走一遍（不占额度）
+```
+
+```bash
+agentj hook test --help
+```
+
+```text
+usage: agentj hook test [-h] [--order ORDER] [--json] [--body BODY] id
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `id` | `null` | true | — | `hook id（前 8 位或名字也行）` |
+| `--order` | `null` | false | — | `派单号（默认读 AGENTJ_ORDER_ID）` |
+| `--json` | `false` | false | — | `` |
+| `--body` | `null` | false | — | `载荷文字，@文件 读文件` |
+
+### agentj hook triage
+
+```text
+记录主 Agent 的分诊结论
+```
+
+```bash
+agentj hook triage --help
+```
+
+```text
+usage: agentj hook triage [-h] [--why WHY] delivery {continue,ask,spam}
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `delivery` | `null` | true | — | `投递号 d…` |
+| `verdict` | `null` | true | `continue`, `ask`, `spam` | `` |
+| `--why` | `null` | false | — | `一句话理由` |
+
+### agentj hook update
+
+```text
+IP / 开关；放宽常驻要主人批准
+```
+
+```bash
+agentj hook update --help
+```
+
+```text
+usage: agentj hook update [-h] [--order ORDER] [--json] [--name NAME]
+                          [--target TARGET] [--ttl TTL] [--note NOTE]
+                          [--life {resident}] [--ip IP] [--no-ip] [--enable |
+                          --disable] [--encrypt | --no-encrypt]
+                          id
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `id` | `null` | true | — | `hook id（前 8 位或名字也行）` |
+| `--order` | `null` | false | — | `派单号（默认读 AGENTJ_ORDER_ID）` |
+| `--json` | `false` | false | — | `` |
+| `--name` | `null` | false | — | `` |
+| `--target` | `null` | false | — | `` |
+| `--ttl` | `null` | false | — | `` |
+| `--note` | `null` | false | — | `` |
+| `--life` | `null` | false | `resident` | `改成常驻（要主人手机批准）` |
+| `--ip` | `null` | false | — | `` |
+| `--no-ip` | `false` | false | — | `去掉 IP 白名单（常驻要批准）` |
+| `--enable` | `false` | false | — | `` |
+| `--disable` | `false` | false | — | `` |
+| `--encrypt` | `false` | false | — | `改成端到端加密投递（立即生效）` |
+| `--no-encrypt` | `false` | false | — | `改回明文经过中继（常驻要批准）` |
+
+### agentj hook wait
+
+```text
+挂起等这个 hook 的下一条投递（退出码 0 有 · 2 超时 · 3 已作废 · 4 急停）
+```
+
+```bash
+agentj hook wait --help
+```
+
+```text
+usage: agentj hook wait [-h] [--timeout TIMEOUT] [--json] id
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `id` | `null` | true | — | `` |
+| `--timeout` | `"30m"` | false | — | `最长等多久：90s · 30m · 24h（默认 30m）` |
+| `--json` | `false` | false | — | `` |
 
 ### agentj imessage
 
@@ -2947,7 +3598,7 @@ usage: agentj label [-h] [text ...]
 ### agentj login
 
 ```text
-把这台电脑加到你的 Agent J 账号（占 1 个席位）/ add this computer to your Agent J account (uses 1 seat)
+把这台Agent J 主机加到你的 Agent J 账号（占 1 个席位）/ add the Agent J host to your Agent J account (uses 1 seat)
 ```
 
 ```bash
@@ -3120,7 +3771,7 @@ usage: agentj migrate [-h] [--json] [{status,rollback}]
 ### agentj name
 
 ```text
-查看 / 修改这台电脑上 Agent 的名字（加入了 Agent J 账号的话，先在账号后台改，改好了才改这台电脑上的）
+查看 / 修改这台Agent J 主机上 Agent 的名字（加入了 Agent J 账号的话，先在账号后台改，改好了才改这台Agent J 主机上的）
 ```
 
 ```bash
@@ -3136,10 +3787,59 @@ usage: agentj name [-h] [name]
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `name` | `null` | false | — | `新名字（中文最多 8 个字，英文 / 数字 / 横杠最多 13 个；混写时中文算 1.6、合计 ≤ 13）；不填 = 查看` |
 
+### agentj news
+
+```text
+the daily "Musk + AI 24h" digest (in Chinese) to the account email (default off)
+```
+
+```bash
+agentj news --help
+```
+
+```text
+usage: agentj news [-h] [--json] [{status,on,off}]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `mode` | `"status"` | false | `status`, `on`, `off` | `` |
+| `--json` | `false` | false | — | `machine-readable output` |
+
+### agentj notify
+
+```text
+your own automation posts to the phone (never an Agent)
+```
+
+```bash
+agentj notify --help
+```
+
+```text
+usage: agentj notify [-h] [--from NAME] [--title TITLE] [--text TEXT]
+                     [--file PATH] [--json] [--list | --allow NAME |
+                     --deny NAME | --forget NAME]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--from` | `null` | false | — | `自动化的名字（先 'agentj notify --allow NAME' 登记）` |
+| `--title` | `null` | false | — | `标题（≤ 64 字）` |
+| `--text` | `null` | false | — | `正文（≤ 4000 字；- = 从标准输入读）` |
+| `--file` | `null` | false | — | `附件：png jpg gif webp pdf txt md，≤ 20 MB，最多 4 个（可重复）` |
+| `--json` | `false` | false | — | `files / bytes / agent: queued\|no_agent\|failed）` |
+| `--list` | `false` | false | — | `列出登记的自动化和开关` |
+| `--allow` | `null` | false | — | `登记并打开一个自动化（建自动化时就决定）` |
+| `--deny` | `null` | false | — | `关掉一个自动化（它再发会被拒绝）` |
+| `--forget` | `null` | false | — | `删除一个自动化的登记` |
+
 ### agentj onboarding
 
 ```text
-first-use progress: seat, this computer's browser, main phone, welcome
+first-use progress: seat, the Agent J host's browser, main phone, welcome
 ```
 
 ```bash
@@ -3566,7 +4266,7 @@ usage: agentj provider [-h] [--base-url BASE_URL] [--model MODEL]
                        [--api {anthropic,openai}] [--name NAME]
                        [--key-env KEY_ENV] [--vision | --no-vision]
                        [--max-output MAX_OUTPUT] [--context CONTEXT]
-                       [--plan {token-plan,coding-plan}]
+                       [--plan {token-plan,coding-plan,payg}]
                        [--harness {opencode,claude}] [--lang {zh,en}]
                        [--dry-run] [--json]
                        {add,list,remove,bailian,ark} [id]
@@ -3585,7 +4285,7 @@ usage: agentj provider [-h] [--base-url BASE_URL] [--model MODEL]
 | `--vision / --no-vision` | `null` | false | — | `add：这些模型能看图（--no-vision = 纯文本）/ the models read images (--no-vision: text only)` |
 | `--max-output` | `null` | false | — | `output limit in tokens` |
 | `--context` | `null` | false | — | `add：上下文长度 token（配 --max-output，默认 128000）/ context window` |
-| `--plan` | `null` | false | `token-plan`, `coding-plan` | `which Bailian plan` |
+| `--plan` | `null` | false | `token-plan`, `coding-plan`, `payg` | `which Bailian plan; ark: payg = pay-as-you-go /api/v3 (default: the Coding Plan)` |
 | `--harness` | `null` | false | `opencode`, `claude` | `ark：opencode（默认）或 claude（打印 Claude Code 的 profile 三步）/ ark: which harness` |
 | `--lang` | `null` | false | `zh`, `en` | `ark：说明文字的语言 / text language` |
 | `--dry-run` | `false` | false | — | `` |
@@ -3905,7 +4605,7 @@ usage: agentj remote-pair [-h] [{on,off,status}]
 ### agentj remote-unbind
 
 ```text
-允许 / 禁止在账号后台解绑这台电脑的手机遥控器（默认允许）/ allow unlinking phone remotes from the account dashboard
+允许 / 禁止在账号后台解绑这台Agent J 主机的手机遥控器（默认允许）/ allow unlinking phone remotes from the account dashboard
 ```
 
 ```bash
@@ -3924,7 +4624,7 @@ usage: agentj remote-unbind [-h] [{on,off,status}]
 ### agentj report
 
 ```text
-report this computer's status to the account dashboard now
+alone: report this computer's status to the account dashboard now · with an action: template publishing (data JSON → schema check → web page or mail)
 ```
 
 ```bash
@@ -3932,17 +4632,41 @@ agentj report --help
 ```
 
 ```text
-usage: agentj report [-h]
+usage: agentj report [-h] [--data DATA_OPT] [--template TEMPLATE] [--email]
+                     [--out OUT] [--to TO] [--to-owner] [--cc CC] [--bcc BCC]
+                     [--subject SUBJECT] [--attach ATTACH] [--id ID]
+                     [--expires EXPIRES] [--access ACCESS] [--dry-run] [--en]
+                     [--json]
+                     [{templates,schema,example,recommend,validate,render,new-template,publish,send}]
+                     [data]
 ```
 
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `action` | `null` | false | `templates`, `schema`, `example`, `recommend`, `validate`, `render`, `new-template`, `publish`, `send` | `none = the dashboard status report` |
+| `data` | `null` | false | — | `example：模板；new-template：目录）/ the data JSON (schema / example: a template; new-template: a folder)` |
+| `--data` | `null` | false | — | `the data JSON as an option` |
+| `--template / -t` | `null` | false | — | `id（默认 R15）/ template id or folder (default R15)` |
+| `--email` | `false` | false | — | `R02 / R14 与带 email.html 的自定义模板）/ mail-safe version` |
+| `--out / -o` | `null` | false | — | `output folder or .html file` |
+| `--to` | `null` | false | — | `send：收件人——邮箱或通讯录名字（可多次；规则同 agentj mail send）/ recipient` |
+| `--to-owner` | `false` | false | — | `to the owner's own addresses` |
+| `--cc` | `null` | false | — | `Cc` |
+| `--bcc` | `null` | false | — | `Bcc` |
+| `--subject` | `null` | false | — | `send：标题（默认 = 数据里的 title）/ subject (default: the data's title)` |
+| `--attach` | `null` | false | — | `attachment` |
+| `--id` | `null` | false | — | `new-template：模板 id（默认用目录名）/ the template id` |
+| `--expires` | `null` | false | — | `expiry (7d, 30d, never …)` |
+| `--access` | `null` | false | — | `access (public, code, email-domain:…, email-any)` |
+| `--dry-run` | `false` | false | — | `check and render only` |
+| `--en` | `false` | false | — | `English messages` |
+| `--json` | `false` | false | — | `` |
 
 ### agentj report-hostname
 
 ```text
-账号后台是否显示这台电脑的名字（默认显示）/ show this computer's name in the account dashboard
+账号后台是否显示这台 Agent J 主机的名字（默认显示）/ show the Agent J host's name in the account dashboard
 ```
 
 ```bash
@@ -4117,7 +4841,7 @@ usage: agentj service [-h] [--json]
 ### agentj setup
 
 ```text
-first-run checklist while you are at the computer
+first-run checklist while you are at the Agent J host
 ```
 
 ```bash
@@ -4349,7 +5073,7 @@ usage: agentj support feedback [-h] [--kind {bug,report}] [--file FILE]
 ### agentj support list
 
 ```text
-threads this computer opened
+threads the Agent J host opened
 ```
 
 ```bash
@@ -4713,7 +5437,7 @@ usage: agentj theme validate [-h] [--json] folder
 ### agentj unlink
 
 ```text
-把这台电脑移出 Agent J 账号（删掉这台电脑上的账号记录）/ take this computer out of the Agent J account
+把这台 Agent J 主机移出 Agent J 账号（删掉这台 Agent J 主机上的账号记录）/ take the Agent J host out of the Agent J account
 ```
 
 ```bash
@@ -5064,7 +5788,7 @@ order: 18
 
 由 CLI 自动生成，构建时校验；不要手改。未提供独立翻译的 help 保留原文。
 
-[装好 AI 命令行工具](/docs/setup-agents/) · [电脑上怎么用](/docs/computer/) · [安装 Agent J](/docs/install/)
+[装好 AI 命令行工具](/docs/setup-agents/) · [Agent J 主机上怎么用](/docs/computer/) · [安装 Agent J](/docs/install/)
 
 ## 常用急救
 
@@ -5188,7 +5912,7 @@ agentj --help
 
 ```text
 usage: agentj [-h] [-V] [--migrate-legacy] [--instance N] [--fresh]
-              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,status,name,admin,login,report,unlink,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,keep-awake,browser,setup,google,mail,contacts,ask,workflows,sudo,secret,provider,sudo-helper,docs-rule,handover,telegram-cursor,plaza,support,capability,goal,heartbeat,quota,imessage,busy,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
+              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,keep-awake,browser,setup,google,mail,report,contacts,hook,ask,workflows,sudo,secret,provider,sudo-helper,docs-rule,handover,telegram-cursor,plaza,support,data,capability,goal,heartbeat,quota,imessage,busy,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -5242,7 +5966,7 @@ usage: agentj admin [-h] [--port PORT] [--events {text,jsonl}]
 | `--events` | `"text"` | false | `text`, `jsonl` | `jsonl：每个新链接打印一行 {"ev":"admin","url","port","expires_in"}（脚本 / 测试用）。注意 url 里的 #t= 就是登录密钥：别把 stdout 接到日志` |
 | `--url-file` | `null` | false | — | `把链接（同样的 jsonl 行）写进这个新建的文件（0600，必须还不存在），stdout 不再出现链接` |
 | `--no-stdin` | `false` | false | — | `不读终端输入（后台运行时用）` |
-| `--open` | `false` | false | — | `用这台电脑的默认浏览器直接打开管理页（链接不打印、只用一次；命令立刻返回，页面 30 分钟不用自动关闭）/ open the admin page in this computer's default browser (link never printed; returns at once)` |
+| `--open` | `false` | false | — | `用这台Agent J 主机的默认浏览器直接打开管理页（链接不打印、只用一次；命令立刻返回，页面 30 分钟不用自动关闭）/ open the admin page in the Agent J host's default browser (link never printed; returns at once)` |
 | `--open-child` | `false` | false | — | `内部参数（--help 隐藏）` |
 
 ### agentj agent
@@ -5259,8 +5983,8 @@ agentj agent --help
 usage: agentj agent [-h] [--probe] [--dry-run] [--result] [--scan] [--undo]
                     [--force] [--json] [--dir DIR]
                     [--region {mainland-cn,global}] [--base-url BASE_URL]
-                    [--model MODEL] [--unfenced] [--allow-docker] [--shared |
-                    --independent]
+                    [--model MODEL] [--preset {ark}] [--plan {coding,payg}]
+                    [--unfenced] [--allow-docker] [--shared | --independent]
                     [{claude,codex,opencode,kimi,qwen,dsh,off,reset,restart,status,detect,switch,route}]
                     [{claude,codex,opencode,kimi,qwen,dsh}]
 ```
@@ -5283,15 +6007,17 @@ usage: agentj agent [-h] [--probe] [--dry-run] [--result] [--scan] [--undo]
 | `--region` | `null` | false | `mainland-cn`, `global` | `kimi：Kimi 会员在哪个站买的 —— mainland-cn = kimi.com（默认）· global = kimi.ai；kimi.com 的 key 在 api.kimi.com 和 api.kimi.ai 都能用` |
 | `--base-url` | `null` | false | — | `dsh：OpenAI 兼容服务的地址（Olares Router、LiteLLM、Ollama…），写成 https://<服务>/v1，配 --model` |
 | `--model` | `null` | false | — | `模型（默认用你自己的设置）；OpenCode 写成 服务商/模型，例如 zhipuai/glm-5.3` |
+| `--preset` | `null` | false | `ark` | `switch opencode：ark =「OpenCode · 火山方舟」——探测 OpenCode` |
+| `--plan` | `null` | false | `coding`, `payg` | `--preset ark：coding = Coding Plan 套餐（…/api/coding/v3，只给编程 Agent 用）· payg = 按量付费（…/api/v3）` |
 | `--unfenced` | `false` | false | — | `不隔离运行 Agent（按底层 harness 自己的权限）。默认 Agent 在 bubblewrap 里运行，看不到 Agent J 的状态` |
 | `--allow-docker` | `false` | false | — | `隔离里也让 Agent 用 docker` |
-| `--shared` | `null` | false | — | `共享会话（高级）：手机接你电脑上正开着的会话` |
+| `--shared` | `null` | false | — | `共享会话（高级）：手机接你Agent J 主机上正开着的会话` |
 | `--independent` | `null` | false | — | `独立会话（默认）：Agent J 自己开一个、在隔离里运行` |
 
 ### agentj alias
 
 ```text
-短命令 aj（迁移过的电脑另有旧命令 jarvis）：status · install · remove（同名已存在就不装）/ the short command `aj` (+ `jarvis` on a migrated computer)
+短命令 aj（迁移过的Agent J 主机另有旧命令 jarvis）：status · install · remove（同名已存在就不装）/ the short command `aj` (+ `jarvis` on a migrated computer)
 ```
 
 ```bash
@@ -5812,7 +6538,7 @@ usage: agentj browser enable [-h] [--json]
 ### agentj browser endpoint
 
 ```text
-本机 CDP 地址（只在本机用）/ local CDP endpoint (this computer only)
+本机 CDP 地址（只在本机用）/ local CDP endpoint (the Agent J host only)
 ```
 
 ```bash
@@ -5852,7 +6578,7 @@ usage: agentj browser login [-h] [--wait] [--json] site
 ### agentj browser open
 
 ```text
-在本机浏览器打开网页（主人在电脑前登录用）/ open a page on this computer
+在本机浏览器打开网页（主人在Agent J 主机前登录用）/ open a page on the Agent J host
 ```
 
 ```bash
@@ -6414,6 +7140,205 @@ usage: agentj capability sync [-h] [--force] [--json]
 | `--force` | `false` | false | — | `` |
 | `--json` | `false` | false | — | `` |
 
+### agentj card
+
+```text
+Agent J Cards：手机 logo 菜单里第 6 张起的卡片
+```
+
+```bash
+agentj card --help
+```
+
+```text
+usage: agentj card [-h]
+                   {list,validate,apply,on,off,remove,export,open,schema} ...
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj card apply
+
+```text
+检查后装上，同 id 的旧版休眠
+```
+
+```bash
+agentj card apply --help
+```
+
+```text
+usage: agentj card apply [-h] [--json] folder
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `folder` | `null` | true | — | `卡片文件夹（card.json 所在）/ the card folder (where card.json is)` |
+| `--json` | `false` | false | — | `机器可读输出` |
+
+### agentj card export
+
+```text
+把官方卡复制出来当模板
+```
+
+```bash
+agentj card export --help
+```
+
+```text
+usage: agentj card export [-h] [--json] which dest
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `which` | `null` | true | — | `官方卡` |
+| `dest` | `null` | true | — | `新的空文件夹` |
+| `--json` | `false` | false | — | `机器可读输出` |
+
+### agentj card list
+
+```text
+所有卡片和开关
+```
+
+```bash
+agentj card list --help
+```
+
+```text
+usage: agentj card list [-h] [--json]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `机器可读输出` |
+
+### agentj card off
+
+```text
+关掉一张卡
+```
+
+```bash
+agentj card off --help
+```
+
+```text
+usage: agentj card off [-h] [--json] id
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `id` | `null` | true | — | `卡片 id（agentj card list）/ a card id (agentj card list)` |
+| `--json` | `false` | false | — | `机器可读输出` |
+
+### agentj card on
+
+```text
+打开一张卡
+```
+
+```bash
+agentj card on --help
+```
+
+```text
+usage: agentj card on [-h] [--json] id
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `id` | `null` | true | — | `卡片 id（agentj card list）/ a card id (agentj card list)` |
+| `--json` | `false` | false | — | `机器可读输出` |
+
+### agentj card open
+
+```text
+让手机打开一张卡（或卡里的一个位置），只导航
+```
+
+```bash
+agentj card open --help
+```
+
+```text
+usage: agentj card open [-h] [--at ANCHOR] [--json] id
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `id` | `null` | true | — | `卡片 id，或系统页` |
+| `--at` | `null` | false | — | `卡里的位置（anchors、待办条目 id、top` |
+| `--json` | `false` | false | — | `机器可读输出` |
+
+### agentj card remove
+
+```text
+拿掉自己的卡，数据留着
+```
+
+```bash
+agentj card remove --help
+```
+
+```text
+usage: agentj card remove [-h] [--json] id
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `id` | `null` | true | — | `卡片 id（agentj card list）/ a card id (agentj card list)` |
+| `--json` | `false` | false | — | `机器可读输出` |
+
+### agentj card schema
+
+```text
+打印 card.json 的 JSON Schema
+```
+
+```bash
+agentj card schema --help
+```
+
+```text
+usage: agentj card schema [-h] [--path]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--path` | `false` | false | — | `只打印文件路径` |
+
+### agentj card validate
+
+```text
+检查一个卡片文件夹
+```
+
+```bash
+agentj card validate --help
+```
+
+```text
+usage: agentj card validate [-h] [--json] folder
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `folder` | `null` | true | — | `卡片文件夹（card.json 所在）/ the card folder (where card.json is)` |
+| `--json` | `false` | false | — | `机器可读输出` |
+
 ### agentj channel
 
 ```text
@@ -6651,6 +7576,127 @@ usage: agentj contacts [-h] [--name NAME] [--nick NICK] [--email EMAIL]
 | `--vcard-version` | `null` | false | `3.0`, `4.0` | `` |
 | `--dry-run` | `false` | false | — | `import：只数不写` |
 | `--en` | `false` | false | — | `English messages` |
+| `--json` | `false` | false | — | `` |
+
+### agentj data
+
+```text
+付费内容库（用 Agent J 点数）：列表 / 全文 / 搜索 / 判断讲没讲过
+```
+
+```bash
+agentj data --help
+```
+
+```text
+usage: agentj data [-h] {list,get,search,coverage} ...
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj data coverage
+
+```text
+判断「这个话题讲过没有」（2 点数）/ has this topic been covered (2 credits)
+```
+
+```bash
+agentj data coverage --help
+```
+
+```text
+usage: agentj data coverage [-h] [--max MAX] [--idem IDEM] [--source SOURCE]
+                            [--json]
+                            text [text ...]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `text` | `null` | true | — | `` |
+| `--max` | `5` | false | — | `` |
+| `--idem` | `null` | false | — | `` |
+| `--source` | `null` | false | — | `哪个内容库（见它的广场技能；不写 = 服务器默认）/ which library (see its plaza skill; none = the server's default)` |
+| `--json` | `false` | false | — | `` |
+
+### agentj data get
+
+```text
+取一条的全文（1 点数）/ one item's full text (1 credit)
+```
+
+```bash
+agentj data get --help
+```
+
+```text
+usage: agentj data get [-h] [--source SOURCE] [--json] id
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `id` | `null` | true | — | `` |
+| `--source` | `null` | false | — | `哪个内容库（见它的广场技能；不写 = 服务器默认）/ which library (see its plaza skill; none = the server's default)` |
+| `--json` | `false` | false | — | `` |
+
+### agentj data list
+
+```text
+按关键词 / 话题 / 日期列内容（1 点数）/ list items (1 credit)
+```
+
+```bash
+agentj data list --help
+```
+
+```text
+usage: agentj data list [-h] [--topic TOPIC] [--from FROM_] [--to TO]
+                        [--sort {newest,oldest}] [--page-size PAGE_SIZE]
+                        [--cursor CURSOR] [--source SOURCE] [--json]
+                        [q ...]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `q` | `null` | false | — | `关键词（可空）/ keywords (optional)` |
+| `--topic` | `null` | false | — | `话题 id 0–10` |
+| `--from` | `null` | false | — | `起始日期 YYYY-MM-DD` |
+| `--to` | `null` | false | — | `截止日期 YYYY-MM-DD` |
+| `--sort` | `null` | false | `newest`, `oldest` | `` |
+| `--page-size` | `10` | false | — | `` |
+| `--cursor` | `null` | false | — | `上一页给的游标` |
+| `--source` | `null` | false | — | `哪个内容库（见它的广场技能；不写 = 服务器默认）/ which library (see its plaza skill; none = the server's default)` |
+| `--json` | `false` | false | — | `` |
+
+### agentj data search
+
+```text
+语义搜索相似内容（2 点数）/ semantic search (2 credits)
+```
+
+```bash
+agentj data search --help
+```
+
+```text
+usage: agentj data search [-h] [--top-k TOP_K] [--from FROM_] [--to TO]
+                          [--idem IDEM] [--source SOURCE] [--json]
+                          text [text ...]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `text` | `null` | true | — | `` |
+| `--top-k` | `5` | false | — | `` |
+| `--from` | `null` | false | — | `` |
+| `--to` | `null` | false | — | `` |
+| `--idem` | `null` | false | — | `幂等键：同一个键重试不重复扣点数` |
+| `--source` | `null` | false | — | `哪个内容库（见它的广场技能；不写 = 服务器默认）/ which library (see its plaza skill; none = the server's default)` |
 | `--json` | `false` | false | — | `` |
 
 ### agentj devices
@@ -7347,7 +8393,7 @@ usage: agentj google [-h]
 ### agentj handover
 
 ```text
-打印交接说明（按这台电脑的实际情况填好）/ print the handover note, filled with this computer's facts
+打印交接说明（按这台Agent J 主机的实际情况填好）/ print the handover note, filled with this computer's facts
 ```
 
 ```bash
@@ -7587,7 +8633,7 @@ usage: agentj heartbeat status [-h] [--json]
 ### agentj history
 
 ```text
-聊天记录（手机翻页看到的，存在这台电脑上）：status · show <页> · search <关键词> · clear · on · off
+聊天记录（手机翻页看到的，存在这台Agent J 主机上）：status · show <页> · search <关键词> · clear · on · off
 ```
 
 ```bash
@@ -7607,6 +8653,335 @@ usage: agentj history [-h] [--time] [--json] [--all]
 | `--time` | `false` | false | — | `search 按时间排，最新的在前（默认按相关度）/ search: newest first (default: best match)` |
 | `--json` | `false` | false | — | `` |
 | `--all` | `false` | false | — | `clear：连同全部归档立即删除（不能撤销）/ with clear: delete current + every archive` |
+
+### agentj hook
+
+```text
+Webhook：create · list · show · update · rotate · revoke · test · logs · wait · triage · forward · presets
+```
+
+```bash
+agentj hook --help
+```
+
+```text
+usage: agentj hook [-h]
+                   {create,list,show,revoke,test,logs,update,rotate,forward,wait,triage,presets} ...
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj hook create
+
+```text
+建一个 hook（预置见 agentj hook presets）/ create a hook
+```
+
+```bash
+agentj hook create --help
+```
+
+```text
+usage: agentj hook create [-h]
+                          [--preset {alert,bearer,callback,form,github,hmac,ping,stripe}]
+                          [--name NAME] [--life {once,ttl,resident}]
+                          [--ttl TTL] [--target TARGET]
+                          [--auth {stripe,github,hmac,bearer,token}]
+                          [--header HEADER] [--algo {sha1,sha256,sha512}]
+                          [--encoding {hex,base64}] [--prefix PREFIX]
+                          [--signed {body,ts.body}] [--ts-header TS_HEADER]
+                          [--id-header ID_HEADER] [--ip IP] [--note NOTE]
+                          [--secret-file SECRET_FILE]
+                          [--secret-out SECRET_OUT] [--order ORDER]
+                          [--encrypt] [--file FILE] [--json]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--preset` | `null` | false | `alert`, `bearer`, `callback`, `form`, `github`, `hmac`, `ping`, `stripe` | `场景预置` |
+| `--name` | `null` | false | — | `名字（≤ 40 字）` |
+| `--life` | `null` | false | `once`, `ttl`, `resident` | `once 一次性 · ttl 临时 · resident 常驻（要主人手机批准）` |
+| `--ttl` | `null` | false | — | `有效期：30m · 24h · 7d（once ≤ 7d，ttl ≤ 30d）` |
+| `--target` | `null` | false | — | `送到：main · owner · wait · order:<单号> · bot:<id>` |
+| `--auth` | `null` | false | `stripe`, `github`, `hmac`, `bearer`, `token` | `验签方式` |
+| `--header` | `null` | false | — | `签名 / 令牌所在的请求头` |
+| `--algo` | `null` | false | `sha1`, `sha256`, `sha512` | `HMAC 算法` |
+| `--encoding` | `null` | false | `hex`, `base64` | `HMAC 编码` |
+| `--prefix` | `null` | false | — | `签名前缀，如 sha256=` |
+| `--signed` | `null` | false | `body`, `ts.body` | `签名内容` |
+| `--ts-header` | `null` | false | — | `时间戳请求头（ts.body 用）` |
+| `--id-header` | `null` | false | — | `去重用的事件 id 请求头` |
+| `--ip` | `null` | false | — | `来源 IP` |
+| `--note` | `null` | false | — | `给主 Agent 的一句话用途说明（≤ 200 字）` |
+| `--secret-file` | `null` | false | — | `用别人生成的密钥（如 Stripe 的 whsec_…），从这个文件读` |
+| `--secret-out` | `null` | false | — | `生成的密钥写到 file:<路径> 或 env:<文件>#KEY（默认 ~/.local/share/agentj-hooks/<id>.secret）` |
+| `--order` | `null` | false | — | `派单 CEO` |
+| `--encrypt` | `false` | false | — | `端到端加密投递：发送方用这个 hook 的公钥加密 body，中继只转发密文（只配 --auth hmac，签名默认 ts.body；Stripe` |
+| `--file` | `null` | false | — | `hook 定义 JSON（hooks.schema.json），参数覆盖文件` |
+| `--json` | `false` | false | — | `` |
+
+### agentj hook forward
+
+```text
+自建入口验签后把事件转进来（本机）
+```
+
+```bash
+agentj hook forward --help
+```
+
+```text
+usage: agentj hook forward [-h] [--order ORDER] [--json] [--body BODY]
+                           [--header HEADER] [--token TOKEN]
+                           id
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `id` | `null` | true | — | `hook id（前 8 位或名字也行）` |
+| `--order` | `null` | false | — | `派单号（默认读 AGENTJ_ORDER_ID）` |
+| `--json` | `false` | false | — | `` |
+| `--body` | `null` | false | — | `载荷文字，@文件 读文件，- 读标准输入` |
+| `--header` | `null` | false | — | `请求头 K: V（可重复；按这个 hook 的验签方式带上签名 / 令牌）` |
+| `--token` | `null` | false | — | `URL 令牌方式的令牌` |
+
+### agentj hook list
+
+```text
+生效中的 hook、最近投递、今天用量
+```
+
+```bash
+agentj hook list --help
+```
+
+```text
+usage: agentj hook list [-h] [--all] [--json]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--all` | `false` | false | — | `含 7 天内作废的` |
+| `--json` | `false` | false | — | `` |
+
+### agentj hook logs
+
+```text
+投递记录
+```
+
+```bash
+agentj hook logs --help
+```
+
+```text
+usage: agentj hook logs [-h] [--order ORDER] [--json] [--limit LIMIT]
+                        [--show SHOW]
+                        id
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `id` | `null` | true | — | `hook id（前 8 位或名字也行）` |
+| `--order` | `null` | false | — | `派单号（默认读 AGENTJ_ORDER_ID）` |
+| `--json` | `false` | false | — | `` |
+| `--limit` | `20` | false | — | `` |
+| `--show` | `null` | false | — | `看一条投递原文（包信封）` |
+
+### agentj hook presets
+
+```text
+场景预置与默认值
+```
+
+```bash
+agentj hook presets --help
+```
+
+```text
+usage: agentj hook presets [-h] [--json]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `` |
+
+### agentj hook revoke
+
+```text
+立刻作废
+```
+
+```bash
+agentj hook revoke --help
+```
+
+```text
+usage: agentj hook revoke [-h] [--order ORDER] [--json] id
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `id` | `null` | true | — | `hook id（前 8 位或名字也行）` |
+| `--order` | `null` | false | — | `派单号（默认读 AGENTJ_ORDER_ID）` |
+| `--json` | `false` | false | — | `` |
+
+### agentj hook rotate
+
+```text
+换密钥（旧的宽限期内仍有效）
+```
+
+```bash
+agentj hook rotate --help
+```
+
+```text
+usage: agentj hook rotate [-h] [--order ORDER] [--json] [--grace GRACE]
+                          [--secret-file SECRET_FILE]
+                          [--secret-out SECRET_OUT] [--enc-key]
+                          id
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `id` | `null` | true | — | `hook id（前 8 位或名字也行）` |
+| `--order` | `null` | false | — | `派单号（默认读 AGENTJ_ORDER_ID）` |
+| `--json` | `false` | false | — | `` |
+| `--grace` | `"24h"` | false | — | `旧密钥宽限：0 · 1h · 24h · 7d（默认 24h）` |
+| `--secret-file` | `null` | false | — | `换成别人生成的新密钥（如 Stripe）` |
+| `--secret-out` | `null` | false | — | `新密钥写到哪（同 create）` |
+| `--enc-key` | `false` | false | — | `换端到端加密的投递密钥对（新公钥要交给发送方；旧私钥宽限期内仍能解密）` |
+
+### agentj hook show
+
+```text
+一个 hook 的定义 + 最近 10 条投递
+```
+
+```bash
+agentj hook show --help
+```
+
+```text
+usage: agentj hook show [-h] [--order ORDER] [--json] id
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `id` | `null` | true | — | `hook id（前 8 位或名字也行）` |
+| `--order` | `null` | false | — | `派单号（默认读 AGENTJ_ORDER_ID）` |
+| `--json` | `false` | false | — | `` |
+
+### agentj hook test
+
+```text
+按这个 hook 的方式自签一条走一遍（不占额度）
+```
+
+```bash
+agentj hook test --help
+```
+
+```text
+usage: agentj hook test [-h] [--order ORDER] [--json] [--body BODY] id
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `id` | `null` | true | — | `hook id（前 8 位或名字也行）` |
+| `--order` | `null` | false | — | `派单号（默认读 AGENTJ_ORDER_ID）` |
+| `--json` | `false` | false | — | `` |
+| `--body` | `null` | false | — | `载荷文字，@文件 读文件` |
+
+### agentj hook triage
+
+```text
+记录主 Agent 的分诊结论
+```
+
+```bash
+agentj hook triage --help
+```
+
+```text
+usage: agentj hook triage [-h] [--why WHY] delivery {continue,ask,spam}
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `delivery` | `null` | true | — | `投递号 d…` |
+| `verdict` | `null` | true | `continue`, `ask`, `spam` | `` |
+| `--why` | `null` | false | — | `一句话理由` |
+
+### agentj hook update
+
+```text
+改名字 / 目标 / 有效期
+```
+
+```bash
+agentj hook update --help
+```
+
+```text
+usage: agentj hook update [-h] [--order ORDER] [--json] [--name NAME]
+                          [--target TARGET] [--ttl TTL] [--note NOTE]
+                          [--life {resident}] [--ip IP] [--no-ip] [--enable |
+                          --disable] [--encrypt | --no-encrypt]
+                          id
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `id` | `null` | true | — | `hook id（前 8 位或名字也行）` |
+| `--order` | `null` | false | — | `派单号（默认读 AGENTJ_ORDER_ID）` |
+| `--json` | `false` | false | — | `` |
+| `--name` | `null` | false | — | `` |
+| `--target` | `null` | false | — | `` |
+| `--ttl` | `null` | false | — | `` |
+| `--note` | `null` | false | — | `` |
+| `--life` | `null` | false | `resident` | `改成常驻（要主人手机批准）` |
+| `--ip` | `null` | false | — | `` |
+| `--no-ip` | `false` | false | — | `去掉 IP 白名单（常驻要批准）` |
+| `--enable` | `false` | false | — | `` |
+| `--disable` | `false` | false | — | `` |
+| `--encrypt` | `false` | false | — | `改成端到端加密投递（立即生效）` |
+| `--no-encrypt` | `false` | false | — | `改回明文经过中继（常驻要批准）` |
+
+### agentj hook wait
+
+```text
+挂起等这个 hook 的下一条投递（退出码 0 有 · 2 超时 · 3 已作废 · 4 急停）
+```
+
+```bash
+agentj hook wait --help
+```
+
+```text
+usage: agentj hook wait [-h] [--timeout TIMEOUT] [--json] id
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `id` | `null` | true | — | `` |
+| `--timeout` | `"30m"` | false | — | `最长等多久：90s · 30m · 24h（默认 30m）` |
+| `--json` | `false` | false | — | `` |
 
 ### agentj imessage
 
@@ -8001,7 +9376,7 @@ usage: agentj label [-h] [text ...]
 ### agentj login
 
 ```text
-把这台电脑加到你的 Agent J 账号（占 1 个席位）/ add this computer to your Agent J account (uses 1 seat)
+把这台Agent J 主机加到你的 Agent J 账号（占 1 个席位）/ add the Agent J host to your Agent J account (uses 1 seat)
 ```
 
 ```bash
@@ -8020,10 +9395,10 @@ usage: agentj login [-h] [--api API] [--account ACCOUNT_ID] [--seat CODE |
 | `--api` | `null` | false | — | `服务器地址（默认 $AGENTJ_API_URL 或 https://agentj.app/api）` |
 | `--yes` | `false` | false | — | `内部参数（--help 隐藏）` |
 | `--account` | `null` | false | — | `你的 Agent J 账号 ID：账号后台报回来的账号不是它就拒绝，什么都不写（退出码 2）/ your Agent J account ID: if the account dashboard reports another account, nothing is written (exit 2)` |
-| `--seat` | `null` | false | — | `用账号后台给的设置码（ajt_…）直接加入，不用电脑绑定码、不问 y/N；'-' = 从标准输入读一行` |
+| `--seat` | `null` | false | — | `用账号后台给的设置码（ajt_…）直接加入，不用Agent J 主机绑定码、不问 y/N；'-' = 从标准输入读一行` |
 | `--seat-file` | `null` | false | — | `从文件读设置码（文件必须 0600），这样它不进命令行和 shell 历史` |
 | `--paste` | `false` | false | — | `在终端里粘贴设置码或安装码（不显示、不进命令行；整段提示词也行）。在终端里直接运行 agentj login 也会先问` |
-| `--install-code-file` | `null` | false | — | `从 0600 文件读取 AJI 安装码，给已安装的电脑绑定席位` |
+| `--install-code-file` | `null` | false | — | `从 0600 文件读取 AJI 安装码，给已安装的Agent J 主机绑定席位` |
 | `--name` | `null` | false | — | `和 --seat 一起：本机 Agent 的名字（1–32 个字；不给就在终端里问，回车或非交互时用主机名，重名自动加序号）/ with --seat: the Agent's name (1–32 characters; if omitted it is asked, Enter or no terminal = the host name, numbered on a clash). 退出码` |
 
 ### agentj mail
@@ -8174,7 +9549,7 @@ usage: agentj migrate [-h] [--json] [{status,rollback}]
 ### agentj name
 
 ```text
-查看 / 修改这台电脑上 Agent 的名字（加入了 Agent J 账号的话，先在账号后台改，改好了才改这台电脑上的）
+查看 / 修改这台Agent J 主机上 Agent 的名字（加入了 Agent J 账号的话，先在账号后台改，改好了才改这台Agent J 主机上的）
 ```
 
 ```bash
@@ -8190,10 +9565,59 @@ usage: agentj name [-h] [name]
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `name` | `null` | false | — | `新名字（中文最多 8 个字，英文 / 数字 / 横杠最多 13 个；混写时中文算 1.6、合计 ≤ 13）；不填 = 查看` |
 
+### agentj news
+
+```text
+Daily AI News：每天早上把《Musk + AI 24h》（中文）发到账号邮箱（默认关）：status · on · off
+```
+
+```bash
+agentj news --help
+```
+
+```text
+usage: agentj news [-h] [--json] [{status,on,off}]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `mode` | `"status"` | false | `status`, `on`, `off` | `` |
+| `--json` | `false` | false | — | `机器可读输出` |
+
+### agentj notify
+
+```text
+主人自己的自动化往手机发一条消息（可带图片/PDF/文本文件）；Agent 不能用
+```
+
+```bash
+agentj notify --help
+```
+
+```text
+usage: agentj notify [-h] [--from NAME] [--title TITLE] [--text TEXT]
+                     [--file PATH] [--json] [--list | --allow NAME |
+                     --deny NAME | --forget NAME]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--from` | `null` | false | — | `自动化的名字（先 'agentj notify --allow NAME' 登记）` |
+| `--title` | `null` | false | — | `标题（≤ 64 字）` |
+| `--text` | `null` | false | — | `正文（≤ 4000 字；- = 从标准输入读）` |
+| `--file` | `null` | false | — | `附件：png jpg gif webp pdf txt md，≤ 20 MB，最多 4 个（可重复）` |
+| `--json` | `false` | false | — | `输出 JSON（delivered` |
+| `--list` | `false` | false | — | `列出登记的自动化和开关` |
+| `--allow` | `null` | false | — | `登记并打开一个自动化（建自动化时就决定）` |
+| `--deny` | `null` | false | — | `关掉一个自动化（它再发会被拒绝）` |
+| `--forget` | `null` | false | — | `删除一个自动化的登记` |
+
 ### agentj onboarding
 
 ```text
-首次使用进度：席位、这台电脑的浏览器、主力手机、欢迎消息
+首次使用进度：席位、这台Agent J 主机的浏览器、主力手机、欢迎消息
 ```
 
 ```bash
@@ -8620,7 +10044,7 @@ usage: agentj provider [-h] [--base-url BASE_URL] [--model MODEL]
                        [--api {anthropic,openai}] [--name NAME]
                        [--key-env KEY_ENV] [--vision | --no-vision]
                        [--max-output MAX_OUTPUT] [--context CONTEXT]
-                       [--plan {token-plan,coding-plan}]
+                       [--plan {token-plan,coding-plan,payg}]
                        [--harness {opencode,claude}] [--lang {zh,en}]
                        [--dry-run] [--json]
                        {add,list,remove,bailian,ark} [id]
@@ -8639,7 +10063,7 @@ usage: agentj provider [-h] [--base-url BASE_URL] [--model MODEL]
 | `--vision / --no-vision` | `null` | false | — | `add：这些模型能看图（--no-vision = 纯文本）/ the models read images (--no-vision: text only)` |
 | `--max-output` | `null` | false | — | `add：输出上限 token` |
 | `--context` | `null` | false | — | `add：上下文长度 token（配 --max-output，默认 128000）/ context window` |
-| `--plan` | `null` | false | `token-plan`, `coding-plan` | `bailian：token-plan（默认，个人版，含 Qwen 3.8 Max）或 coding-plan` |
+| `--plan` | `null` | false | `token-plan`, `coding-plan`, `payg` | `bailian：token-plan（默认，个人版，含 Qwen 3.8 Max）或 coding-plan；ark：payg = 按量付费 …/api/v3（默认 Coding Plan）` |
 | `--harness` | `null` | false | `opencode`, `claude` | `ark：opencode（默认）或 claude（打印 Claude Code 的 profile 三步）/ ark: which harness` |
 | `--lang` | `null` | false | `zh`, `en` | `bailian` |
 | `--dry-run` | `false` | false | — | `` |
@@ -8959,7 +10383,7 @@ usage: agentj remote-pair [-h] [{on,off,status}]
 ### agentj remote-unbind
 
 ```text
-允许 / 禁止在账号后台解绑这台电脑的手机遥控器（默认允许）/ allow unlinking phone remotes from the account dashboard
+允许 / 禁止在账号后台解绑这台Agent J 主机的手机遥控器（默认允许）/ allow unlinking phone remotes from the account dashboard
 ```
 
 ```bash
@@ -8978,7 +10402,7 @@ usage: agentj remote-unbind [-h] [{on,off,status}]
 ### agentj report
 
 ```text
-马上向账号后台报一次这台电脑的状态
+不带参数：马上向账号后台报一次这台Agent J 主机的状态 · 带动作：模板化发布 templates · schema · example · validate · render [--email] · send · new-template · publish
 ```
 
 ```bash
@@ -8986,17 +10410,41 @@ agentj report --help
 ```
 
 ```text
-usage: agentj report [-h]
+usage: agentj report [-h] [--data DATA_OPT] [--template TEMPLATE] [--email]
+                     [--out OUT] [--to TO] [--to-owner] [--cc CC] [--bcc BCC]
+                     [--subject SUBJECT] [--attach ATTACH] [--id ID]
+                     [--expires EXPIRES] [--access ACCESS] [--dry-run] [--en]
+                     [--json]
+                     [{templates,schema,example,recommend,validate,render,new-template,publish,send}]
+                     [data]
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `action` | `null` | false | `templates`, `schema`, `example`, `recommend`, `validate`, `render`, `new-template`, `publish`, `send` | `不写 = 向账号后台上报状态` |
+| `data` | `null` | false | — | `数据 JSON（schema` |
+| `--data` | `null` | false | — | `同上，写成选项` |
+| `--template / -t` | `null` | false | — | `模板：R01–R15、短名，或自定义模板的目录` |
+| `--email` | `false` | false | — | `render：邮件安全版（R15` |
+| `--out / -o` | `null` | false | — | `render：输出目录或 .html 文件；send --dry-run：把邮件存到这里` |
+| `--to` | `null` | false | — | `send：收件人——邮箱或通讯录名字（可多次；规则同 agentj mail send）/ recipient` |
+| `--to-owner` | `false` | false | — | `send：发给主人本人` |
+| `--cc` | `null` | false | — | `send：抄送` |
+| `--bcc` | `null` | false | — | `send：密送` |
+| `--subject` | `null` | false | — | `send：标题（默认 = 数据里的 title）/ subject (default: the data's title)` |
+| `--attach` | `null` | false | — | `send：附件` |
+| `--id` | `null` | false | — | `new-template：模板 id（默认用目录名）/ the template id` |
+| `--expires` | `null` | false | — | `publish：有效期` |
+| `--access` | `null` | false | — | `publish：访问方式` |
+| `--dry-run` | `false` | false | — | `send：只校验和渲染，不发 · publish：不上传` |
+| `--en` | `false` | false | — | `English messages` |
+| `--json` | `false` | false | — | `` |
 
 ### agentj report-hostname
 
 ```text
-账号后台是否显示这台电脑的名字（默认显示）/ show this computer's name in the account dashboard
+账号后台是否显示这台 Agent J 主机的名字（默认显示）/ show the Agent J host's name in the account dashboard
 ```
 
 ```bash
@@ -9171,7 +10619,7 @@ usage: agentj service [-h] [--json]
 ### agentj setup
 
 ```text
-首次准备：电脑前一次做完
+首次准备：Agent J 主机前一次做完
 ```
 
 ```bash
@@ -9209,7 +10657,7 @@ usage: agentj setup checklist [-h] [--resume | --check |
 | `--check` | `false` | false | — | `实时只读复查` |
 | `--item` | `null` | false | `seat`, `harness`, `desktop`, `phone`, `passkey`, `admin`, `phonepermissions`, `sudo`, `awake`, `service`, `updates`, `network`, `browser`, `gmail`, `youtube`, `bili`, `douyin`, `wechat`, `sites`, `google`, `keyring`, `files`, `fda`, `accessibility`, `automation`, `screen`, `hardware`, `tg`, `mail`, `botkey`, `exit` | `只复查这一项（网站项会真去查一次登录）/ re-check one item` |
 | `--open` | `false` | false | — | `主人说要重开时：重新显示已收起的清单` |
-| `--close / --pause` | `false` | false | — | `收起清单：手机/电脑网页立即收起，不再自动弹出；菜单里可重开` |
+| `--close / --pause` | `false` | false | — | `收起清单：手机/Agent J 主机网页立即收起，不再自动弹出；菜单里可重开` |
 | `--json` | `false` | false | — | `` |
 
 ### agentj skill
@@ -9403,7 +10851,7 @@ usage: agentj support feedback [-h] [--kind {bug,report}] [--file FILE]
 ### agentj support list
 
 ```text
-这台电脑开过的客服会话
+这台Agent J 主机开过的客服会话
 ```
 
 ```bash
@@ -9767,7 +11215,7 @@ usage: agentj theme validate [-h] [--json] folder
 ### agentj unlink
 
 ```text
-把这台电脑移出 Agent J 账号（删掉这台电脑上的账号记录）/ take this computer out of the Agent J account
+把这台 Agent J 主机移出 Agent J 账号（删掉这台 Agent J 主机上的账号记录）/ take the Agent J host out of the Agent J account
 ```
 
 ```bash

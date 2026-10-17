@@ -1,7 +1,7 @@
 // P274 · Settings → iMessage 助手 (PROTOCOL §10.21): shown only when the computer is a Mac (host_info.platform). The switch
 // and the parameters go through settings.js setPref → `pref_set` (the host's one validator, the same one `agentj imessage
 // set` uses); the rules text, VIP and mute lists are read-only here — 「让 Agent J 帮我改」 puts a request in the chat
-// box (never sends). 「重新检测」 / 「在电脑上打开授权页」 = `imsg_check` / `imsg_fda` → `imsg_res`. No message text is ever
+// box (never sends). 「重新检测」 / 「在Agent J 主机上打开授权页」 = `imsg_check` / `imsg_fda` → `imsg_res`. No message text is ever
 // shown on this page; everything is inside the Noise session and rendered with textContent.
 import { t } from './t.js';
 import { el } from './ui.js';

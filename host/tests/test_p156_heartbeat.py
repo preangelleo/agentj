@@ -97,7 +97,7 @@ class Pure(unittest.TestCase):
 
     def test_hook_context_names_the_host(self):
         ctx = provenance.hook_context(provenance.system())
-        self.assertIn("Agent J host by itself", ctx)
+        self.assertIn("Agent J host itself", ctx)
         self.assertIn("grants no new permission", ctx)
         self.assertNotIn("paired phone", ctx)
         self.assertIn("ScheduleWakeup", ctx)

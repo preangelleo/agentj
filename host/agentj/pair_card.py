@@ -21,7 +21,7 @@ PK_KIND = "pair"        # passkey.elevate_challenge kind for this card
 
 TEXT = {
     "zh": {"head": "有新遥控器申请绑定：{name}",
-           "kind": {"phone": "手机或平板", "computer": "电脑浏览器", "other": "其他设备"},
+           "kind": {"phone": "手机或平板", "computer": "遥控器浏览器", "other": "其他设备"},
            "line": "类型：{kind} · 申请时间：{when}",
            "code": "对照码：{code}（新设备屏幕上应显示同一串数字；不一致就点取消）",
            "replaces": "批准后会替换同一浏览器之前的记录「{name}」。",

@@ -1,6 +1,6 @@
 ---
 name: agentj-first-run
-description: First-run "at your computer" checklist — prepare everything remote work will need while the owner is still at the computer. Use after the first installation's welcome, or when the owner says "电脑前一次做完", "继续首次准备", "离开电脑前检查", "prepare everything while I am at my computer", "continue first-run setup", "check before I leave".
+description: First-run "at your computer" checklist — prepare everything remote work will need while the owner is still at the computer. Use after the first installation's welcome, or when the owner says "Agent J 主机前一次做完", "继续首次准备", "离开Agent J 主机前检查", "prepare everything while I am at my computer", "continue first-run setup", "check before I leave".
 ---
 You are the one main Agent; only you talk to the owner. The host owns the checklist journal and every check; you guide.
 
@@ -51,19 +51,19 @@ You are the one main Agent; only you talk to the owner. The host owns the checkl
 10. **The first workflow** (P215). A fresh computer has no workflows yet, and an assistant with nothing to run looks lost.
    When the checklist is ready, closed or declined — or right away if the owner only wants to chat for now — ask one question
    in the owner's language: 「你每周重复做的三件事是什么？」 / "What are three things you do again and again every week?"
-   Then follow documentation/WORKFLOW.md in the working root ("A new computer with no workflows yet" / 「新电脑、还没有工作流时
+   Then follow documentation/WORKFLOW.md in the working root ("A new computer with no workflows yet" / 「新Agent J 主机、还没有工作流时
    怎么起步」): pick the one that repeats most and is easiest to check, propose it in one line as a workflow (folder + code
    name, its own CEO and documents, run once by hand, scheduled only after a yes), and on a yes build it with the
    agentj-capability skill (the workflow wizard's goal mode, built on the Workflow Design Bible). Record who the owner is in
    documentation/MEMORY.md and rewrite documentation/NEXT_SESSION.md. Ask once; if they say not now, drop it.
 
-中文要点：先 `agentj setup checklist --json` 只读；主人同意才 `--resume`，手机和电脑网页的聊天上方出现一条细横幅，点开是独立的清单页，
-绝不挡住聊天。告诉主人：步骤都在电脑上做、手机看进度、卡住了直接在聊天里说。主人点 ✕ 或说「关掉清单」就 `--close`，之后
+中文要点：先 `agentj setup checklist --json` 只读；主人同意才 `--resume`，手机和Agent J 主机网页的聊天上方出现一条细横幅，点开是独立的清单页，
+绝不挡住聊天。告诉主人：步骤都在Agent J 主机上做、手机看进度、卡住了直接在聊天里说。主人点 ✕ 或说「关掉清单」就 `--close`，之后
 `--resume`/`--check`/重启都不会再弹；只有主人要看时才 `--open` 或让他点菜单重开。网站项会写明查的是哪个浏览器；主人已有登录好的本机浏览器时用 `agentj browser adopt --endpoint http://127.0.0.1:<端口>`
 提议，主人在页面上点「用我已有的浏览器」才生效。一次讲清六组全貌，再按卡片顺序一项一项做。
 「要用 / 我不用 / 稍后」只能主人在卡片上点；你不能替主人标记、不能写就绪、必需项不能「我不用」。主人说「做完了」只运行 `--check`。
 主 AI 一项：用不了 Claude Code / Codex 的地区（`agentj agent route` 结果为 kimi）按命令打印的规则：中国大陆从零开始首推火山方舟 Coding Plan、先买 Lite（和 Pro 能力一样，只差 5 倍用量）；香港 / 海外推荐 Kimi 会员 Plus 及以上（Go 档没有编程额度）；已有某一家就继续用；主人有自己的模型服务（Olares Router 等）可用 DeepSeek Harness（`agentj agent dsh --base-url … --model …`）。百炼 Token Plan 要讲清自己的定时任务可用但长时间后台任务可能限流、客服 bot 不能用、数据会被用于模型优化。
 Kimi 的邀请链接后面紧跟「这是 Agent J 官方的邀请链接，您和我们各得一次抽奖」，同时列出备选；key 只走手机密钥卡。失败只暂停相关项。网站登录检查与 Google API（0.18.1）没接上时如实说「当前版本还不支持」。最后的离机检查：主人点「开始离机检查」，
-电脑熄屏、手机切蜂窝发一句话；清单显示就绪才说「可以离开电脑」，并列出未启用的事项和仍可能要回电脑的情况。密码和密钥只走手机卡。
-清单就绪、关掉或主人不做时，问一句「你每周重复做的三件事是什么？」，按工作根目录 documentation/WORKFLOW.md「新电脑、还没有工作流时怎么起步」
+Agent J 主机熄屏、手机切蜂窝发一句话；清单显示就绪才说「可以离开Agent J 主机」，并列出未启用的事项和仍可能要回Agent J 主机的情况。密码和密钥只走手机卡。
+清单就绪、关掉或主人不做时，问一句「你每周重复做的三件事是什么？」，按工作根目录 documentation/WORKFLOW.md「新Agent J 主机、还没有工作流时怎么起步」
 提议第一个工作流（一句话：文件夹 + 代号、自带 CEO 和文档、先手动跑一次、定时等点头），主人点头才用 agentj-capability 搭；主人说先不用就不再提。

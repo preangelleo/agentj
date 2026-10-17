@@ -43,6 +43,7 @@ ACTIONS += ("cards_get",)           # P203 (§29.1): the signed read of every op
 ACTIONS += ("mail_allow",)          # P207 (§25): the address book adds an address to the e-mail channel's allowlist (P170)
 ACTIONS += ("reset", "rescue_do")    # P332 (§33): 紧急修复 — ① reset the connection · a whitelisted repair action (reset.py)
 ACTIONS += ("approval_set",)        # P336 (§8): the approval level / goal-without-card switch (approval_level.py)
+ACTIONS += ("cmd_run",)             # P361 (§34): Settings 「执行」 — one whitelisted command name (cmdrun.RUN_CMDS)
 TS_SKEW_MS = 120_000
 NONCE_KEEP_S = 600
 _NONCE = re.compile(r"[0-9a-f]{32}")
@@ -96,6 +97,8 @@ def object_text(action: str, obj: dict) -> str:
         return str(obj["what"])
     if action == "rescue_do":        # P332: the whitelisted action's name (reset.RESCUE_ACTIONS); no argument travels
         return str(obj["action"])
+    if action == "cmd_run":          # P361: the whitelisted command's name (cmdrun.RUN_CMDS); no argument travels
+        return str(obj["cmd"])
     if action == "approval_set":     # P336: key \n value (a boolean as true / false)
         v = obj["value"]
         return f"{obj['key']}\n{('true' if v else 'false') if isinstance(v, bool) else v}"

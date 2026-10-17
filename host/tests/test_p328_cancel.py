@@ -1,5 +1,5 @@
 """P328: the phone's × (while the Agent works) is /stop for every harness. A shared Claude Code whose terminal offers no
-safe interrupt route must SAY so — 「请在电脑上按 Esc」 — never stay silent; an idle pane is not an error; a sent Esc says
+safe interrupt route must SAY so — 「请在Agent J 主机上按 Esc」 — never stay silent; an idle pane is not an error; a sent Esc says
 nothing extra; the approval-dialog guard is unchanged (Esc never answers a native permission prompt)."""
 import _hermetic  # noqa: F401
 from _testtmp import TEST_TMP  # noqa: E402
@@ -44,7 +44,7 @@ class SharedClaudeStop(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(await self.halt_with('unavailable'))
         text = self.host.agent_notice.call_args.args[0]
         self.assertIn("can't be stopped from the phone", text)
-        self.assertIn('press Esc on the computer', text)
+        self.assertIn('press Esc on the Agent J host', text)
 
     async def test_sent_is_quiet_and_true(self):
         self.assertTrue(await self.halt_with('sent'))
@@ -152,7 +152,7 @@ SID = '44444444-4444-4444-4444-444444444444'
 
 
 class CodexStop(unittest.IsolatedAsyncioTestCase):
-    """Shared Codex: the phone's own turn → turn/interrupt + 「停下了」; the owner's desktop turn → 「请在电脑上按 Esc」."""
+    """Shared Codex: the phone's own turn → turn/interrupt + 「停下了」; the owner's desktop turn → 「请在Agent J 主机上按 Esc」."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix='p328c-', dir=TEST_TMP)
@@ -204,9 +204,9 @@ class CodexStop(unittest.IsolatedAsyncioTestCase):
 
     async def test_desktop_turn_cannot_be_stopped(self):
         self.rollout(active=True)
-        self.a.status = 'idle'                # the owner's turn on the computer; no phone turn
+        self.a.status = 'idle'                # the owner's turn on the Agent J host; no phone turn
         r = await stop(fake_host(self.a))
-        self.assertIn('电脑上发给 Codex', r.text)
+        self.assertIn('Agent J 主机上发给 Codex', r.text)
         self.assertIn('按 Esc', r.text)
         self.assertNotIn(NONE_ZH, r.text)
         self.a.call.assert_not_called()       # nothing sent to an app-server that does not run that turn
@@ -267,7 +267,7 @@ class OpenCodeStop(unittest.IsolatedAsyncioTestCase):
         a, ah = self.make(cls)
         a.desktop_turn, a.turn_done, a.status = True, None, 'idle'
         r = await stop(fake_host(a))
-        self.assertIn('电脑上的 OpenCode', r.text)
+        self.assertIn('Agent J 主机上的 OpenCode', r.text)
         self.assertIn('按 Esc', r.text)
         self.assertNotIn(NONE_ZH, r.text)
         a.client.request.assert_not_called()

@@ -172,10 +172,16 @@ def validate(doc,raw=''):
     for lk in ('imessage.vip','imessage.mute'):   # P274: numbers / e-mails / keywords, matched exactly; never names guessed
         lv=get(doc,lk,[])
         if len(lv)>200 or any(not isinstance(x,str) or not x.strip() or len(x)>100 or any(ord(c)<32 for c in x) for x in lv): raise ConfigError(lk,'a list of up to 200 numbers, e-mails or keywords (each 1–100 characters)')
+    from .notify import rows_problem as notify_problem   # P365: [{id, allow}] — the --from names and Agent J tasks' switches
+    why = notify_problem(get(doc, 'notify.automations', []))
+    if why: raise ConfigError('notify.automations', why, _line(raw, 'notify.automations'))
     cats = get(doc, 'updates.skill_categories', [])
     if len(cats)>4 or any(c not in ('content','app','commerce','general') for c in cats): raise ConfigError('updates.skill_categories','allowed: content, app, commerce, general')
     order = get(doc, 'ui.composer_buttons')   # P340: a permutation of the four ids; anything else is refused (the phone keeps the default)
     if order is not None and not composer_order_ok(order): raise ConfigError('ui.composer_buttons','expected each of '+', '.join(COMPOSER_BUTTONS)+' exactly once, e.g. ["mic","file","image","camera"]',_line(raw,'ui.composer_buttons'))
+    xf = get(doc, 'api_keys.extra_env_files', [])   # P362: paths only; keys_found reads each one safely, names + tails only
+    if len(xf)>8 or any(not isinstance(x,str) or not (x.startswith('/') or x.startswith('~/')) or len(x)>1024 or any(ord(c)<32 for c in x) for x in xf):
+        raise ConfigError('api_keys.extra_env_files','up to 8 local file paths, each absolute or ~/path, e.g. ["~/projects/.env"]',_line(raw,'api_keys.extra_env_files'))
     pif = get(doc, 'agent.private_instructions_file', '')
     if pif and not (pif.startswith('/') or pif.startswith('~/')):
         raise ConfigError('agent.private_instructions_file', 'use an absolute path or ~/path (a local file, never a URL)')

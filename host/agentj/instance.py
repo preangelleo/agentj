@@ -140,7 +140,7 @@ def exists(n: int, home=None) -> bool:
 
 
 def numbers(home=None) -> list[int]:
-    """Instances present on this computer (1 is listed whenever it exists)."""
+    """Instances present on the Agent J host (1 is listed whenever it exists)."""
     return [n for n in range(1, MAX + 1) if exists(n, home)]
 
 

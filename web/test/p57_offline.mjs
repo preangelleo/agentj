@@ -1,6 +1,6 @@
 // 0.15.2 (P57 lane "offline"): the offline queue in the real page (public/js/outbox.js + relay.js), end to end against
 // fakehost.mjs. Ready → the network goes (CDP offline + the socket dropped) → 3 sends → the one line 「网络恢复后自动发送」
-// → the network is back but the computer is away → reload → still 3 pending → the computer comes back → the host gets
+// → the network is back but the Agent J host is away → reload → still 3 pending → the Agent J host comes back → the host gets
 // exactly 3 messages in order although the first say_res is lost on the way (the page resends that sid, the host answers
 // dup) → the pending lines are gone, the pages are normal. Then: /stop offline is not queued; a message with a file
 // queued offline loses its file in a reload, says so, and on reconnect its words come back to the field.
@@ -77,7 +77,7 @@ try {
   writeFileSync(`${SHOTS}/offline-pending-390.png`, await shoot(page));
   step('3 sends queued, sealed in IndexedDB, nothing sent');
 
-  // ---- /stop offline is not queued: it says 「没连上电脑…」 and leaves the queue as it is
+  // ---- /stop offline is not queued: it says 「没连上Agent J 主机…」 and leaves the queue as it is
   await evaluate(page, `(() => { const i = document.getElementById('input'); i.value = '/stop'; i.dispatchEvent(new Event('input')); document.getElementById('send').click(); })()`);
   await waitFor(page, `document.getElementById('toast').textContent.includes('停下和清空要连上')`);
   assert.equal((await pending(page)).length, 3);
@@ -85,7 +85,7 @@ try {
   await evaluate(page, `(() => { const i = document.getElementById('input'); i.value = ''; i.dispatchEvent(new Event('input')); })()`);
   step('/stop offline is refused with one line, not queued');
 
-  // ---- the network is back, the computer is away; the page is reloaded (an app kill) → the same 3 come back
+  // ---- the network is back, the Agent J host is away; the page is reloaded (an app kill) → the same 3 come back
   fake.setUp(false);
   await page.send('Network.emulateNetworkConditions', { offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
   await navigate(page, server.url);
@@ -94,9 +94,9 @@ try {
   await waitFor(page, `window.__ajState === 'waiting-host'`);
   assert.equal(await line(page), '网络恢复后自动发送');
   writeFileSync(`${SHOTS}/offline-after-reload-390.png`, await shoot(page));
-  step('reload with the computer away: still 3 pending, in order');
+  step('reload with the Agent J host away: still 3 pending, in order');
 
-  // ---- the computer is back; the first say_res is lost (socket dropped while the host holds it), the page resends
+  // ---- the Agent J host is back; the first say_res is lost (socket dropped while the host holds it), the page resends
   st.dropNext = true;                            // say_res for the first message never arrives
   fake.setUp(true);
   await waitFor(page, `window.__ajState === 'ready'`, 15000);

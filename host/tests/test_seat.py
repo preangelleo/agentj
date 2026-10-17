@@ -290,7 +290,7 @@ class SeatCli(unittest.TestCase):
             r = self.agentj("login", "--api", cp.url, "--seat", self.code, "--name", "Wren7")
             self.assertEqual(r.returncode, 0, "replay of the same code from the same key → the same 200")
             self.assertEqual(json.loads(self.st.cloud_path.read_text())["via"], "seat")
-            self.assertIn("it also takes this computer out of that account", r.stdout)
+            self.assertIn("it also takes the Agent J host out of that account", r.stdout)
 
     def test_unlink_of_a_seat_link_leaves_the_company(self):
         """Review SS-02: `agentj unlink` of a seat link sends a signed seat-leave first, then removes cloud.json."""
@@ -299,8 +299,8 @@ class SeatCli(unittest.TestCase):
             self.assertEqual(self.agentj("login", "--api", cp.url, "--seat", self.code, "--name", "Leaver").returncode, 0)
             r = self.agentj("unlink")
             self.assertEqual(r.returncode, 0, r.stderr)
-            self.assertIn("已经把这台电脑移出账号 acme-co", r.stdout)
-            self.assertNotIn("还要在账号后台里把这台电脑移除", r.stdout)
+            self.assertIn("已经把这台Agent J 主机移出账号 acme-co", r.stdout)
+            self.assertNotIn("还要在账号后台里把这台Agent J 主机移除", r.stdout)
             self.assertFalse(self.st.cloud_path.exists())
             self.assertEqual(len(cp.seat_leaves), 1)
             self.assertEqual(set(cp.seat_leaves[0]), {"v", "t", "channel", "ts"})
@@ -344,7 +344,7 @@ class SeatCli(unittest.TestCase):
             r = self.agentj("unlink")
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertEqual(cp.seat_leaves, [], "a code-bound link sends nothing")
-            self.assertIn("还要在账号后台里把这台电脑移除", r.stdout)
+            self.assertIn("还要在账号后台里把这台Agent J 主机移除", r.stdout)
             self.assertFalse(self.st.cloud_path.exists())
 
     def test_help_is_bilingual(self):

@@ -42,6 +42,11 @@ class Slug(unittest.TestCase):
         for u in SLUGS:
             self.assertEqual(privacy.redact(u), u)
 
+    def test_mixed_case_random_chunks_are_not_title_words(self):
+        token = "aBcDeF-gHiJkL-" + "mNoPqR-sTuVwX-yZaBcD-1234"
+        self.assertFalse(privacy._sluglike(token))
+        self.assertTrue(taskspec.secret_like("token " + token))
+
     def test_real_keys_still_caught(self):
         for k in ("wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", "Zx9" + secrets.token_urlsafe(32), "sk-ant-api03-" + "Ab9" * 30):
             self.assertTrue(taskspec.secret_like(f"token {k}"), k[:8])

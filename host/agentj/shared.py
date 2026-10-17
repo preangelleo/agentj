@@ -64,7 +64,7 @@ def card_digest(tool, inp) -> str:
 def ask_answer_text(answers: dict, lang: str = "zh") -> str:
     """P307: the owner's phone answer as a message to the session (rescue when the native dialog did not take it)."""
     lines = "\n".join(f"- {str(q)[:300]} → {str(a)[:300]}" for q, a in list(answers.items())[:8])
-    return pick(lang, "〔Agent J〕主人已经在手机上回答了你刚才的问卷（AskUserQuestion），但电脑上的问卷弹窗没有收到这个回答。"
+    return pick(lang, "〔Agent J〕主人已经在手机上回答了你刚才的问卷（AskUserQuestion），但Agent J 主机上的问卷弹窗没有收到这个回答。"
                       "主人的回答：\n" + lines + "\n请按这个回答继续，不要再问一遍。",
                 "[Agent J] The owner answered your question (AskUserQuestion) on the phone, but the question dialog on this "
                 "computer did not take the answer. The owner's answer:\n" + lines + "\nContinue with it; do not ask again.")
@@ -338,7 +338,7 @@ class SharedClaudeAgent(Agent):
         if self.phone_turn and (self.phone_seen or self.phone_claim):
             self.phone_reply_seen = True
             if self.phone_claim:
-                self.host.turn_queued_note(False)   # the reply replaces 「电脑正忙，消息已排队」, never follows it
+                self.host.turn_queued_note(False)   # the reply replaces 「Agent J 主机正忙，消息已排队」, never follows it
             if public_text(reply).strip() not in self.streamed:     # P151b: already on the phone mid-turn
                 self.host.agent_text(public_text(reply))
             self.done.set()
@@ -430,7 +430,7 @@ class SharedClaudeAgent(Agent):
         if gone:
             shared_hook.install(self.cfg["dir"], self.channel.path)
             self.host.st.log("shared_hook_restored", events=",".join(gone)[:200])
-            self.host.agent_notice("电脑上的 Claude 会话的 Agent J 审批钩子被改掉了（" + ", ".join(gone)[:80] + "），已自动恢复。"
+            self.host.agent_notice("Agent J 主机上的 Claude 会话的 Agent J 审批钩子被改掉了（" + ", ".join(gone)[:80] + "），已自动恢复。"
                                    "如果不是你本人改的，请留意这个会话在做什么。 / Agent J's approval hooks were removed from the "
                                    "shared Claude session's settings; restored automatically.")
             push = getattr(self.host, "push_notify", None)
@@ -452,9 +452,9 @@ class SharedClaudeAgent(Agent):
                 tools.append(str(json.loads(ln).get("tool") or "?")[:40])
         if tools:
             self.host.st.log("shared_missed", count=len(tools))
-            self.host.agent_notice(f"Agent J 刚才不在线时，电脑上有 {len(tools)} 个审批请求（" + "、".join(dict.fromkeys(tools))[:120]
-                                   + "）只能在电脑上的原生对话框里处理。之后的审批会照常发到手机。 / "
-                                   f"{len(tools)} approval request(s) went to the computer's own dialog while Agent J was offline; "
+            self.host.agent_notice(f"Agent J 刚才不在线时，Agent J 主机上有 {len(tools)} 个审批请求（" + "、".join(dict.fromkeys(tools))[:120]
+                                   + "）只能在Agent J 主机上的原生对话框里处理。之后的审批会照常发到手机。 / "
+                                   f"{len(tools)} approval request(s) went to the Agent J host's own dialog while Agent J was offline; "
                                    "new ones reach the phone again.")
         return len(tools)
 
@@ -539,22 +539,22 @@ class SharedClaudeAgent(Agent):
         return quiet >= BUSY_FALLBACK_S, "quiet"
 
     def _wait_detail(self, name, why) -> str | None:
-        """P243: the waiting card's line — None = the plain 「等电脑空下来再执行」."""
+        """P243: the waiting card's line — None = the plain 「等Agent J 主机空下来再执行」."""
         lang = getattr(self.host, "lang", "zh")
         n = len(self.bg_live)
         act = pick(lang, {"compact": "压缩", "clear": "清空"}.get(name, "执行"), name)
         if why == "bg":
-            return pick(lang, (f"电脑上有 {n} 个后台任务在跑" if n else "电脑上有后台任务在跑") + f"，前台已空闲：马上照常{act}，后台任务不受影响",
-                        (f"{n} background task(s) running on the computer" if n else "Background work running on the computer")
+            return pick(lang, (f"Agent J 主机上有 {n} 个后台任务在跑" if n else "Agent J 主机上有后台任务在跑") + f"，前台已空闲：马上照常{act}，后台任务不受影响",
+                        (f"{n} background task(s) running on the Agent J host" if n else "Background work running on the Agent J host")
                         + f"; the foreground is idle — /{name} goes in a moment, background work keeps running")
         if why == "quiet":
-            return pick(lang, f"电脑上的会话仍显示忙（多半是后台任务），前台回合已结束；{int(BUSY_FALLBACK_S)} 秒内没有新回合就照常{act}",
+            return pick(lang, f"Agent J 主机上的会话仍显示忙（多半是后台任务），前台回合已结束；{int(BUSY_FALLBACK_S)} 秒内没有新回合就照常{act}",
                         f"The desktop session still reports busy (most likely background work) though its turn ended; "
                         f"/{name} goes if no new turn starts within {int(BUSY_FALLBACK_S)} s")
         if self.state.status == "waiting":
-            return pick(lang, f"电脑上有个确认框在等你处理，处理完就{act}", f"A dialog on the computer is waiting for you; /{name} goes after it")
+            return pick(lang, f"Agent J 主机上有个确认框在等你处理，处理完就{act}", f"A dialog on the Agent J host is waiting for you; /{name} goes after it")
         if n:
-            return pick(lang, f"等电脑这一轮结束再{act}（另有 {n} 个后台任务在跑，不用等它们）",
+            return pick(lang, f"等Agent J 主机这一轮结束再{act}（另有 {n} 个后台任务在跑，不用等它们）",
                         f"Waiting for the desktop turn to end ({n} background task(s) running — not waited for)")
         return None
 
@@ -563,10 +563,10 @@ class SharedClaudeAgent(Agent):
         mins = int(DESKTOP_IDLE_WAIT // 60) or 1
         act = pick(lang, {"compact": "压缩", "clear": "清空"}.get(name, "执行"), name)
         if self.state.status == "waiting":
-            return pick(lang, f"没{act}：等待超时——{mins} 分钟里电脑上一直有个确认框没处理，命令没有发送。处理完再发 /{name} 即可。",
-                        f"No change: timed out — a dialog on the computer waited {mins} min; /{name} was not sent. Answer it, then send /{name} again.")
-        return pick(lang, f"没{act}：等待超时——{mins} 分钟里电脑上的这一轮一直没结束，命令没有发送。可以稍后再发，或在电脑上直接输入 /{name}。",
-                    f"No change: timed out — the desktop turn did not end within {mins} min; /{name} was not sent. Try again later or type /{name} on the computer.")
+            return pick(lang, f"没{act}：等待超时——{mins} 分钟里Agent J 主机上一直有个确认框没处理，命令没有发送。处理完再发 /{name} 即可。",
+                        f"No change: timed out — a dialog on the Agent J host waited {mins} min; /{name} was not sent. Answer it, then send /{name} again.")
+        return pick(lang, f"没{act}：等待超时——{mins} 分钟里Agent J 主机上的这一轮一直没结束，命令没有发送。可以稍后再发，或在Agent J 主机上直接输入 /{name}。",
+                    f"No change: timed out — the desktop turn did not end within {mins} min; /{name} was not sent. Try again later or type /{name} on the Agent J host.")
 
     def _note_agent(self, name, event):
         """P172: who is asking — the main thread or a sub-agent (its type and the description it was dispatched with)."""
@@ -755,7 +755,7 @@ class SharedClaudeAgent(Agent):
                 self.risk_grants.pop(cat, None)
         if name == "PreToolUse":
             verdict = danger.classify_shared(event.get("tool_name"), event.get("tool_input"), self.cfg.get("danger_extra"),
-                                             self.cfg.get("approvals", "standard"))
+                                             self.cfg.get("approvals", "standard"), event.get("cwd") or self.cfg.get("dir"))
             # P198: the five clear dangers ask on the phone (P128's documented `standard`); from 0.15 (F14) to 0.20.0 the
             # default kept only hook-file writes (A5) — now only under agent.approvals = native
             keys = danger.shared_keys(verdict, self.cfg)
@@ -838,6 +838,9 @@ class SharedClaudeAgent(Agent):
                         self.risk_denied.update(cats)
             decision = {"behavior": "allow"} if answer.get("behavior") == "allow" else {
                 "behavior": "deny", "message": "Denied by paired phone or timeout."}
+            if decision["behavior"] == "deny" and tool != "AskUserQuestion" and isinstance(answer.get("message"), str) \
+                    and answer["message"].strip():
+                decision["message"] = answer["message"][:1000]   # P358 (#68): the host's why (goal hold / timeout / nobody)
             if tool == "AskUserQuestion":
                 # P307 (Leo 10-15 11:0x, probed live 2.1.296): a bare allow leaves the terminal's question dialog open and
                 # the phone's answer lost — the answers ride in updatedInput (the host built them from the signed picks).
@@ -847,7 +850,7 @@ class SharedClaudeAgent(Agent):
                     decision["updatedInput"] = upd
                     self._ask_watch(digest, upd["answers"])
                 elif decision["behavior"] == "allow":
-                    return {}                       # no answers to hand over: the dialog at the computer decides
+                    return {}                       # no answers to hand over: the dialog at the Agent J host decides
                 elif isinstance(answer.get("message"), str) and answer["message"]:
                     decision["message"] = answer["message"][:500]
             if decision["behavior"] == "deny":
@@ -1080,7 +1083,7 @@ class SharedClaudeAgent(Agent):
             except asyncio.TimeoutError:
                 return Result(pick(getattr(self.host, "lang", "zh"), "没清成：未收到原生回执，结果未确认；请核实桌面，勿重复发送。", "No confirmed change: native receipt timeout; check desktop before retrying."), "error")
             if self.halting or self.host.stopped() is True:
-                return Result(pick(getattr(self.host, "lang", "zh"), "控制结果尚未确认，已停止等待；请核实电脑。", "Control unconfirmed; waiting stopped, check the desktop."), "error")
+                return Result(pick(getattr(self.host, "lang", "zh"), "控制结果尚未确认，已停止等待；请核实Agent J 主机。", "Control unconfirmed; waiting stopped, check the desktop."), "error")
             self.read_statusline()
             if name == 'clear' and not self.clear_history_ok:
                 return Result(pick(getattr(self.host, "lang", "zh"), "桌面已清空，但手机历史归档失败，旧页仍保留；请检查本机磁盘。", "Desktop cleared, but phone history archive failed; check local disk."), "error")
@@ -1323,11 +1326,11 @@ class SharedClaudeAgent(Agent):
     def heal_notice(self) -> str:
         lang = getattr(self.host, "lang", "zh")
         ids = "、".join(c[:8] for c in self.heal_choices) if lang != "en" else ", ".join(c[:8] for c in self.heal_choices)
-        return pick(lang, f"电脑上这个目录开着 {len(self.heal_choices)} 个 Claude Code 会话（{ids}），之前那个已经关了，Agent J 不确定接哪个。"
-                          "在你要用的那个会话里说一句「接上手机」，或在电脑上运行 agentj doctor --reconnect。",
+        return pick(lang, f"Agent J 主机上这个目录开着 {len(self.heal_choices)} 个 Claude Code 会话（{ids}），之前那个已经关了，Agent J 不确定接哪个。"
+                          "在你要用的那个会话里说一句「接上手机」，或在Agent J 主机上运行 agentj doctor --reconnect。",
                     f"{len(self.heal_choices)} Claude Code sessions are open in this folder ({ids}) and the previous one is gone; "
                     "Agent J cannot tell which one to follow. In the one you want, say \"connect my phone\", or run "
-                    "agentj doctor --reconnect on the computer.")
+                    "agentj doctor --reconnect on the Agent J host.")
 
     def _unattached_hint(self, sid):
         """SessionStart of an owner session Agent J does not serve while it serves none: tell that session how to attach
@@ -1398,7 +1401,7 @@ class SharedClaudeAgent(Agent):
                 self.failed_start = True
                 return False
             if not self.failed_start:
-                self.local_fail(pick(getattr(self.host, "lang", "zh"), "共享 Claude 会话不存在或有多个匹配：在电脑指定 session id。", "Choose one live Claude session ID."))
+                self.local_fail(pick(getattr(self.host, "lang", "zh"), "共享 Claude 会话不存在或有多个匹配：在Agent J 主机指定 session id。", "Choose one live Claude session ID."))
             self.failed_start = True
             return False
         self.session = sessions[0]
@@ -1488,7 +1491,7 @@ class SharedClaudeAgent(Agent):
     def _reconcile_native(self, status):
         """P198: native_turn is set by assistant lines and cleared by the turn's Stop. When it is still set while Claude Code's
         own registry and our hook state have both said idle for NATIVE_STALE_S, no turn is running: clear it (else the next
-        phone message waits as 「电脑正忙」 and the compaction recovery gives up as busy)."""
+        phone message waits as 「Agent J 主机正忙」 and the compaction recovery gives up as busy)."""
         import time
         if not (self.native_turn and status == "idle" and self.state.status in ("idle", "none") and not self.phone_turn):
             self._native_idle_since = None
@@ -1708,7 +1711,7 @@ class SharedClaudeAgent(Agent):
             ident = b.get("tool_use_id")
             digest = self.tool_digests.pop(ident, None)
             if digest:
-                # P307: the call has its result — answered at the computer (incl. Esc on a question dialog, which sends no
+                # P307: the call has its result — answered at the Agent J host (incl. Esc on a question dialog, which sends no
                 # PostToolUse(Failure) and no Stop) or by our hook: the phone card for it is withdrawn now
                 self.ask_answered.pop(digest, None)
                 futs = [f for f in self.open_cards.pop(digest, []) if not f.done()]
@@ -1736,7 +1739,7 @@ class SharedClaudeAgent(Agent):
 
     def _ask_rescue(self, digest, why="timer"):
         """P307: the session did not take the phone's answer (its native question dialog stayed open — Leo 10-15). Send the
-        answer as a message (queued by Claude Code until the dialog closes) and tell the phone what to do at the computer.
+        answer as a message (queued by Claude Code until the dialog closes) and tell the phone what to do at the Agent J host.
         Once per answer; the log keeps no question or answer text."""
         keys = [digest] if digest is not None else list(self.ask_answered)
         for d in keys:
@@ -1756,11 +1759,11 @@ class SharedClaudeAgent(Agent):
         self.host.st.log("shared_ask_rescue", why=why, result="sent" if ok else "error", n=len(answers))
         with contextlib.suppress(Exception):
             self.host.agent_notice(pick(lang,
-                "电脑上的问卷弹窗没有收到你在手机上的回答。" + ("已把你的回答作为文字发给 Agent；" if ok else "回答没能转交给 Agent；")
-                + "如果电脑上那个问卷还开着，在电脑上按 Esc 关掉它，Agent 就会按你的回答继续。",
-                "The question dialog on the computer did not take your phone answer. "
+                "Agent J 主机上的问卷弹窗没有收到你在手机上的回答。" + ("已把你的回答作为文字发给 Agent；" if ok else "回答没能转交给 Agent；")
+                + "如果Agent J 主机上那个问卷还开着，在Agent J 主机上按 Esc 关掉它，Agent 就会按你的回答继续。",
+                "The question dialog on the Agent J host did not take your phone answer. "
                 + ("Your answer was sent to the Agent as text; " if ok else "The answer could not be handed to the Agent; ")
-                + "if the question is still open on the computer, press Esc there and the Agent continues with your answer."))
+                + "if the question is still open on the Agent J host, press Esc there and the Agent continues with your answer."))
 
     def _schedule_empty_stop(self):
         loop = self.loop
@@ -2005,14 +2008,14 @@ class SharedClaudeAgent(Agent):
         except asyncio.TimeoutError:
             if await self._idle_reply():
                 return
-            if self.streamed:           # P151b (追加 5): its text is on the phone; the turn simply runs on at the computer
+            if self.streamed:           # P151b (追加 5): its text is on the phone; the turn simply runs on at the Agent J host
                 self.host.st.log("shared_turn_end_streamed")
                 self.phone_reply_seen = True
                 return
             lang = getattr(self.host, "lang", "zh")
             why = self._wait_line(lang, self._turn_waited())
             text = (pick(lang, "共享 Claude 没有确认这一回合结束：", "The shared Claude never confirmed the end of this turn: ")
-                    + why + pick(lang, "。请在电脑核实。", ". Please check the computer."))
+                    + why + pick(lang, "。请在Agent J 主机核实。", ". Please check the Agent J host."))
             note = getattr(self.host, "turn_wait_note", None)
             if note:                    # P151b: the reason on the page itself, no separate 「这一页没有你的输入」 page
                 fn = getattr(self.host, "turn_failed", None)
@@ -2109,7 +2112,7 @@ class SharedClaudeAgent(Agent):
                 or self.status == "compacting")
 
     async def _wait_busy_input(self, claude_inbound) -> bool:
-        # P133: busy, not held → 「电脑正忙，消息已排队」 and keep waiting.
+        # P133: busy, not held → 「Agent J 主机正忙，消息已排队」 and keep waiting.
         # P135: a message injected into a native turn already running (a background-task notification, a desktop turn)
         # gets no UserPromptSubmit: the next committed Stop — whichever turn it ends — answers this page (phone_claim).
         # More phone messages meanwhile go in too; the reply lands on the last page, earlier ones say 「已合并到下一条回复」.
@@ -2184,9 +2187,9 @@ class SharedClaudeAgent(Agent):
             self.done.set()
         elif result != "idle":      # P328: the phone's × / /stop reached a turn the phone cannot stop — say what to do instead
             self.cannot_halt(pick(getattr(self.host, "lang", "zh"),
-                                  "电脑上的 Claude Code 会话不能从手机中断（它的终端没有安全的中断通道），请在电脑上按 Esc。",
-                                  "The Claude Code session on the computer can't be stopped from the phone (its terminal has "
-                                  "no safe interrupt route) — press Esc on the computer."))
+                                  "Agent J 主机上的 Claude Code 会话不能从手机中断（它的终端没有安全的中断通道），请在Agent J 主机上按 Esc。",
+                                  "The Claude Code session on the Agent J host can't be stopped from the phone (its terminal has "
+                                  "no safe interrupt route) — press Esc on the Agent J host."))
         return result == "sent"
 
     async def stop(self):
@@ -2237,9 +2240,9 @@ def owner_password_note() -> str:
         env_file = service.env_file(service.name())
     except Exception:  # noqa: BLE001 — the note must never fail
         env_file = "<Agent J 服务的环境文件 / the Agent J service env file>"
-    cmd = (f"agentj secret request --name OPENCODE_SERVER_PASSWORD --purpose '你电脑上 OpenCode server 的密码' "
+    cmd = (f"agentj secret request --name OPENCODE_SERVER_PASSWORD --purpose '你Agent J 主机上 OpenCode server 的密码' "
            f"--dest env:{env_file}#OPENCODE_SERVER_PASSWORD")
-    return ("你电脑上开着的 OpenCode server 要密码，Agent J 还没有这把密码（它不会去读别的程序的环境变量）。在电脑上运行："
+    return ("你Agent J 主机上开着的 OpenCode server 要密码，Agent J 还没有这把密码（它不会去读别的程序的环境变量）。在Agent J 主机上运行："
             f"`{cmd}`，在手机的密钥卡片里贴上你启动 server 时设的 OPENCODE_SERVER_PASSWORD（用户名不是 opencode 的话，再用同样的方法存"
             " OPENCODE_SERVER_USERNAME），然后运行 `agentj service restart`。"
             f" / Your OpenCode server needs a password Agent J does not have (it never reads another program's environment). Run `{cmd}`,"
@@ -2253,16 +2256,16 @@ OC_SESSION = re.compile(r"ses[A-Za-z0-9_-]+")     # an OpenCode session id (Clau
 _UNSET = "agentj config unset agent.shared_opencode_port && agentj service restart"
 OWNER_PORT_BAD = {
     "zh": f"设置里的 OpenCode 端口（agent.shared_opencode_port）不是有效端口，Agent J 没法连上你的 OpenCode。想让 Agent J 自己启动、"
-          f"管理 OpenCode，在电脑上运行：`{_UNSET}`；要连你自己开着的 OpenCode server，就把它改成那个 server 的端口号。",
+          f"管理 OpenCode，在Agent J 主机上运行：`{_UNSET}`；要连你自己开着的 OpenCode server，就把它改成那个 server 的端口号。",
     "en": f"The OpenCode port in the settings (agent.shared_opencode_port) is not a valid port, so Agent J cannot reach your "
-          f"OpenCode. To let Agent J start and manage OpenCode itself, run on the computer: `{_UNSET}`; to use your own running "
+          f"OpenCode. To let Agent J start and manage OpenCode itself, run on the Agent J host: `{_UNSET}`; to use your own running "
           f"OpenCode server, set it to that server's port."}
 OWNER_ATTACH_FAIL = {
     "zh": "设置里指定了你自己的 OpenCode server（端口 {port}），但 Agent J 连不上它或它里面没有指定的会话，这条消息没有交给它。"
-          "先确认那个 OpenCode 正开着、端口和会话 ID 没写错；想让 Agent J 自己启动、管理 OpenCode，在电脑上运行：`" + _UNSET + "`。",
+          "先确认那个 OpenCode 正开着、端口和会话 ID 没写错；想让 Agent J 自己启动、管理 OpenCode，在Agent J 主机上运行：`" + _UNSET + "`。",
     "en": "The settings name your own OpenCode server (port {port}), but Agent J cannot reach it or the pinned session is not "
           "there; this message was not handed over. Check that OpenCode is running and the port / session ID are right; to let "
-          "Agent J start and manage OpenCode itself, run on the computer: `" + _UNSET + "`."}
+          "Agent J start and manage OpenCode itself, run on the Agent J host: `" + _UNSET + "`."}
 
 
 class SharedOpenCodeAgent(OpenCodeAgent):
@@ -2659,9 +2662,9 @@ def owner_opencode_turn(agent) -> bool:
 
 def opencode_cannot_stop(agent) -> str:
     return pick(getattr(agent.host, "lang", "zh"),
-                "电脑上的 OpenCode 正在回答电脑上发的这一轮，手机停不了它，请在电脑上按 Esc。",
-                "OpenCode on the computer is answering a turn typed on the computer; the phone can't stop it — "
-                "press Esc on the computer.")
+                "Agent J 主机上的 OpenCode 正在回答Agent J 主机上发的这一轮，手机停不了它，请在Agent J 主机上按 Esc。",
+                "OpenCode on the Agent J host is answering a turn typed on the Agent J host; the phone can't stop it — "
+                "press Esc on the Agent J host.")
 
 
 def make_shared(host, cfg):

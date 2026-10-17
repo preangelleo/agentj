@@ -108,6 +108,9 @@ try {
   await select(page,0,3);await waitN(page,1);await page.locator('#replyBtn').click();await waitN(page,2);
   check((await page.locator('#qbX').getAttribute('aria-label'))===(lang==='zh'?'清空全部引用（Esc）':'Clear all quotes (Esc)'),'× = clear all with two or more');
   await page.locator('#qbX').click();await waitN(page,0);
+  check(await page.evaluate(()=>document.activeElement?.id!=='input'),'clear quotes keeps the touch keyboard closed');
+  // P375 no longer focuses the composer: dispatch the collapse before starting a fresh selection gesture.
+  await page.evaluate(()=>{getSelection().removeAllRanges();document.dispatchEvent(new Event('selectionchange'));});
   await select(page,0,3);await waitN(page,1);await unselect(page);await select(page,4,7);await waitN(page,2);
   await unselect(page);await page.evaluate(()=>document.activeElement?.blur());await page.keyboard.press('Escape');await waitN(page,0);
   check(true,'Esc clears all');
@@ -117,11 +120,11 @@ try {
  {
   const {ctx,page,errors}=await setup('zh',{width:390,height:844,mobile:true,mq:false});
   await select(page,0,6);await waitN(page,1);await unselect(page);await select(page,8,14);await waitN(page,2);
-  await page.locator('#input').fill('旧电脑');await page.locator('#send').click();
+  await page.locator('#input').fill('旧Agent J 主机');await page.locator('#send').click();
   await page.waitForFunction(()=>document.getElementById('qbar').hidden,null,{timeout:5000});
   const s=lastSay();
   check(s.quote_more===undefined&&s.excerpt===R.zh[2].slice(0,6),'older host: the first as before, no quote_more');
-  check(s.text.startsWith('旧电脑\n\n（下面是我另外引用的 1 段')&&s.text.includes('引用 2 · #')&&s.text.includes('> '+R.zh[2].slice(8,14)),'older host: the rest in the text '+JSON.stringify(s.text));
+  check(s.text.startsWith('旧Agent J 主机\n\n（下面是我另外引用的 1 段')&&s.text.includes('引用 2 · #')&&s.text.includes('> '+R.zh[2].slice(8,14)),'older host: the rest in the text '+JSON.stringify(s.text));
   check(errors.length===0,errors.join('\n'));await ctx.close();
  }
  // screenshots: 390 / 1440 × 1–5 quotes (light), 390 dark × 5

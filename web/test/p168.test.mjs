@@ -62,7 +62,7 @@ test('P168 offline card: both dictionaries, same placeholders; the two promised 
   assert.equal(DICT.zh['off.long'], '长时间连不上？写信到 feedback@agentj.app');
   assert.equal(DICT.en['off.long'], "Still can't connect? Email feedback@agentj.app");
   for (const l of ['zh', 'en']) {
-    assert.ok(DICT[l]['off.tip2'].includes('`agentj doctor --reconnect`'), 'the real CLI flag (host cli.py doctor --reconnect)');
+    assert.ok(!DICT[l]['off.tip2'].includes('agentj '), 'P375: offline card uses the menu recovery entry, commands stay on the website');
     assert.ok(DICT[l]['help.support'].includes('`agentj support`'));
     assert.ok(DICT[l]['help.mail'].includes('feedback@agentj.app'));
   }

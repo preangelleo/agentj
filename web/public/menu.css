@@ -491,6 +491,10 @@ body:is([data-view="mem"],[data-view="act"],[data-view="tasks"],[data-view="mode
 /* P207: a row with many keys (Ctrl+A · Ctrl+E · …) wraps inside its column instead of squeezing the descriptions */
 #keys .keydl{grid-template-columns:fit-content(45%) minmax(0,1fr)}
 #keys .keydl dt{white-space:normal}
+/* P363 (#69): each combination of a row on its own line (stacked, left-aligned); a line never wraps inside itself, so the
+   column's width = the longest single combination and the descriptions get the rest of the row */
+#keys .keydl dt{flex-direction:column;align-items:flex-start;justify-content:center;flex-wrap:nowrap;gap:6px}
+#keys .keydl .kcombo{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
 /* the smaller menu type must not shrink a two-character link (隐私 / 条款) under the 44 px tap */
 #settings .setlinks a{min-width:var(--ui-tap);justify-content:center}
 
@@ -523,6 +527,36 @@ body:not([data-view="chat"]) #set-actions .bulb{display:flex}
 #set-auth .arrow .mailadv>*+*{margin-top:var(--ui-space-control)}
 #set-auth #ar-list+.setnote{margin-top:var(--ui-space-content)}
 #set-auth .arflow{margin:var(--ui-space-content) 0}
+/* P366 · Settings → Webhook (js/webhooks.js): today's count + connection, live rows (name · state chip · plain-words lines ·
+   actions), ended rows in the muted ink (still ≥ 4.5:1 on Sooty), 「最近投递」 one line per delivery; spacing = the P302 tokens */
+#set-hooks .hooks-box>*{margin:0}
+#set-hooks .whtop{display:flex;flex-wrap:wrap;align-items:center;gap:var(--ui-space-control);font-size:var(--ui-fs-small);color:var(--menu-text)}
+#set-hooks .whup::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:var(--sp-2);background:currentColor;vertical-align:middle}
+#set-hooks .whup--on{color:var(--menu-accent)}
+#set-hooks .whup--off{color:var(--menu-muted)}
+#set-hooks .whmsg{margin-bottom:var(--ui-space-control)}
+#set-hooks .whempty{margin-top:var(--ui-space-content);color:var(--menu-text)}
+#set-hooks .hooks-box>.setg{margin-top:var(--ui-space-section)}
+#set-hooks .whlist{list-style:none;margin:0;padding:0}
+#set-hooks .whrow{display:flex;flex-direction:column;gap:var(--sp-1);padding-block:var(--ui-space-line);border-bottom:1px solid var(--menu-line)}
+#set-hooks .whrow>*{margin:0}
+#set-hooks .whhead{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-2) var(--ui-space-control)}
+#set-hooks .whname{font:600 var(--ui-fs-body)/1.3 var(--font-body);color:var(--menu-text);overflow-wrap:anywhere}
+#set-hooks .whchip{padding:0 var(--sp-2);border:1px solid currentColor;border-radius:var(--ui-radius-pill);font-size:var(--ui-fs-caption);line-height:1.6;color:var(--menu-muted)}
+#set-hooks .whchip--pending{color:var(--c-peachy-feeling)}
+#set-hooks .whchip--paused{color:var(--menu-text)}
+#set-hooks .whline{font-size:var(--ui-fs-small);line-height:1.45;color:var(--menu-muted);overflow-wrap:anywhere}
+#set-hooks .whmode--e2e{color:var(--menu-text)}
+#set-hooks .whacts{display:flex;flex-wrap:wrap;gap:var(--ui-space-btn);margin-top:var(--ui-space-control)}
+#set-hooks .whrow--ended .whname{color:var(--menu-muted);font-weight:500}
+#set-hooks .whdel{display:flex;flex-wrap:wrap;align-items:baseline;gap:var(--sp-1) var(--ui-space-control);padding-block:var(--ui-space-line);
+  border-bottom:1px solid var(--menu-line);font-size:var(--ui-fs-small);color:var(--menu-text)}
+#set-hooks .whdel-at{font-variant-numeric:tabular-nums;color:var(--menu-muted)}
+#set-hooks .whdel-name{flex:1 1 8em;min-width:0;overflow-wrap:anywhere}
+#set-hooks .whdel-res--no{color:var(--menu-danger)}
+#set-hooks .whdel-tri{color:var(--menu-muted)}
+#set-hooks .whdel-tri--ask{color:var(--c-peachy-feeling)}
+#set-hooks .whroutes{margin-top:var(--ui-space-section)}
 /* P302 追加 28 (owner 10-15: 「所有弹窗……最高只到 message card 的顶部」): the question / approval sheet never rises above the sheet
    ceiling (js/fit.js syncCeil → --ui-sheet-stage-top; DESIGN_TOKENS.md「Sheet ceiling」); a long one scrolls inside */
 #stage>.sheet{max-height:calc(100% - var(--ui-sheet-stage-top,0px))}
@@ -597,6 +631,20 @@ body:not([data-view="chat"]) #set-actions .bulb{display:flex}
 #settings .rscard[data-state="ok"] .aj-btn--primary:hover{background:var(--c-noir);border-color:var(--c-noir)}
 #settings .rsmode{padding:var(--ui-space-line) var(--ui-space-control);border-radius:var(--ui-radius-control);background:var(--menu-chip);
   border-left:3px solid var(--menu-danger)}
+/* P361: 电脑上的命令 — one row per whitelisted command (code + note, 「执行」 on the right), one result block under the list */
+#settings .rscmds{margin-top:var(--ui-space-content);padding-top:var(--ui-space-content);border-top:1px solid var(--menu-line)}
+#settings .rscmdlist{list-style:none;margin:var(--ui-space-control) 0 0;padding:0;display:flex;flex-direction:column}
+#settings .rscmd{display:flex;align-items:center;gap:var(--ui-space-control);padding-block:var(--ui-space-line);border-bottom:1px solid var(--menu-line)}
+#settings .rscmdmain{flex:1;min-width:0;display:flex;flex-direction:column;gap:var(--sp-1)}
+#settings .rscmdmain code{overflow-wrap:anywhere}
+#settings .rscmdmain small{color:var(--menu-muted);font-size:var(--ui-fs-small);line-height:var(--ui-leading)}
+#settings .rscmdgo{flex:none;min-height:var(--ui-btn-h);padding-inline:var(--ui-btn-px)}
+#settings .rscmdgo:disabled{opacity:.55;cursor:default}
+#settings .rscmdres{margin-top:var(--ui-space-control);display:flex;flex-direction:column;gap:var(--ui-space-control)}
+#settings .rscmdres>*{margin:0}
+#settings .rscmdhead{font:600 var(--ui-fs-small)/1.4 var(--font-mono);color:var(--menu-muted);overflow-wrap:anywhere}
+#settings .rsout{margin:0;max-height:22rem;overflow:auto;padding:var(--ui-space-control);border-radius:var(--ui-radius-control);
+  background:var(--menu-chip);font:var(--ui-fs-caption)/1.45 var(--font-mono);white-space:pre-wrap;overflow-wrap:anywhere}
 /* P344: the shortcut sheet's own search — magnifier at the top right, one field under the header bar lined up with the
    cards (same side padding as .menuhead), text kept clear of the field's edges; "no match" in the muted text colour. */
 #keysFindBtn[aria-expanded="true"]{background:var(--menu-chip)}
@@ -672,3 +720,34 @@ body:not([data-view="chat"]) #set-actions .bulb{display:flex}
 #models-view .kadd-err[hidden]{display:none}
 #models-view .keys-status{color:var(--menu-muted)}
 #models-view .keys-status[hidden]{display:none}
+/* P362: where else a key already is on the computer (「电脑上已有 · 来源 X」 + 「收进 Agent J」), which login is really used, and the
+   places the host looked in. Same palette: muted caption text, Sage Sensation for 正在使用, Lama for 重启后生效. */
+#models-view .kuseline{font-size:var(--ui-fs-caption);color:var(--menu-text);overflow-wrap:anywhere}
+#models-view .kpending{margin-left:var(--sp-2);color:var(--lama)}
+#models-view .kfound{display:flex;align-items:center;flex-wrap:wrap;gap:var(--sp-2);font-size:var(--ui-fs-caption);color:var(--menu-muted)}
+#models-view .kfound-t{flex:1 1 12em;min-width:0;overflow-wrap:anywhere}
+#models-view .kimp{flex:none;min-height:var(--ui-tap);padding:0 var(--sp-3);font-size:var(--ui-fs-small)}
+#models-view .ksrc{display:flex;flex-direction:column;gap:var(--sp-2);font-size:var(--ui-fs-caption);color:var(--menu-muted)}
+#models-view .ksrc-h{margin:0;font-size:var(--ui-fs-small);font-weight:600;color:var(--menu-text)}
+#models-view .ksrc-l{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;overflow-wrap:anywhere}
+#models-view .ksrc-i[data-skip="1"]{color:var(--lama)}
+#models-view .ksrc-hint{margin:0}
+.kimp-opt{display:flex;align-items:flex-start;gap:var(--sp-2);margin:0 0 var(--sp-3);font-size:var(--ui-fs-small);line-height:1.45;cursor:pointer}
+.kimp-opt input{flex:none;width:20px;height:20px;margin:2px 0 0}
+
+/* ---- P363 (#70): the per-page search field (js/pagefind.js; the shortcut sheet's look, P344) ------------------------------- */
+.pfind{position:sticky;top:0;z-index:3;padding:var(--sp-2) 0 var(--sp-3);background:var(--menu-bg)}   /* the page's own side padding lines it up with the cards */
+.pfind[hidden]{display:none}
+.pfind input{width:100%;min-height:var(--ui-tap);padding:0 var(--sp-3);box-sizing:border-box;background:var(--menu-card);color:var(--menu-text);
+  border:1px solid var(--menu-line);border-radius:var(--ui-radius-control);font:400 var(--ui-fs-body)/1.3 var(--font-body);-webkit-appearance:none;appearance:none}
+.pfind input::placeholder{color:var(--menu-muted)}
+.pfind input:focus-visible{outline:var(--ui-focus-w) solid var(--menu-accent);outline-offset:var(--ui-focus-gap)}
+.pfind-n{margin:var(--ui-space-line) 0 0;color:var(--menu-muted);font-size:var(--ui-fs-small)}
+.pfind-n[hidden]{display:none}
+.fp-sticky>.pfind{position:static;padding:var(--sp-2) var(--menu-pad) var(--sp-3)}
+::highlight(aj-find){background:color-mix(in srgb,var(--menu-accent) 34%,transparent);color:inherit}
+::highlight(aj-find-cur){background:var(--menu-accent);color:var(--menu-bg)}
+/* P374 「Daily AI News」 (js/news.js): one switch in 账号和帮助; the sample / account links and the lines show only when they apply.
+   A switch that cannot be used yet (asking, older computer, not linked) dims only itself — the words keep full contrast. */
+#set-news-row .setlinks[hidden],#set-news-row .setnote[hidden],#set-news-row a[hidden]{display:none}
+#set-news:disabled{opacity:.45}

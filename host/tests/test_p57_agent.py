@@ -121,7 +121,7 @@ class Skills(unittest.TestCase):
             self.assertIn(needle, t)
         self.assertIn("name: agentj-manual", (personalize.SKILLS / "agentj-manual" / "SKILL.md").read_text())   # F23: generated from the guide
         for f in ("manual.zh.md", "manual.en.md"):
-            self.assertIn("agentj.app/docs/manual/", (personalize.SKILLS / "agentj-manual" / f).read_text())
+            self.assertIn("https://agentj.app/docs/manual/", (personalize.SKILLS / "agentj-manual" / f).read_text())
 
     @unittest.skipUnless(shutil.which("uv"), "uv not installed")
     def test_wheel_carries_skills_identity_and_modules(self):
@@ -206,7 +206,7 @@ class Recall(unittest.TestCase):
         work.mkdir()
         self.st.set_agent_config("claude", str(work))
         if fence.problem(self.st, str(work)) is not None:
-            self.skipTest("no fence on this computer: " + str(fence.problem(self.st, str(work))))
+            self.skipTest("no fence on the Agent J host: " + str(fence.problem(self.st, str(work))))
         _fill(self.st)
         from test_l1 import _host
         host = _host(self.st, [])
@@ -249,7 +249,7 @@ class Recall(unittest.TestCase):
 # ------------------------------------------------------------------ identity
 class Identity(unittest.TestCase):
     def test_core_v4_rules_and_hashes(self):
-        self.assertEqual(main_identity.verify_core()["version"], 16)   # P156: v11; P244: v12
+        self.assertEqual(main_identity.verify_core()["version"], 17)   # P156: v11; P244: v12
         man = json.loads((main_identity.DATA / "manifest.json").read_text())
         self.assertEqual(man, {"version": main_identity.VERSION, "hashes": main_identity.HASHES})
         zh = main_identity.prompt({"language": "zh"})
@@ -263,7 +263,7 @@ class Identity(unittest.TestCase):
             from test_l1 import _state
             rows = doctor.check_main_identity(_state(td))
         self.assertEqual((rows[0]["id"], rows[0]["status"]), ("main-core", "ok"))
-        self.assertIn("core v16:", rows[0]["summary"])
+        self.assertIn("core v17:", rows[0]["summary"])
 
     def test_bare_word_compact_is_the_command_only_when_alone(self):
         for t in ("压缩", "压缩一下", " 压缩。", "compact", "Compact"):

@@ -112,7 +112,9 @@ class Listing(Base):
         self.assertEqual(len(base), 12)
         self.assertEqual(base["ark"]["name"], {"zh": "火山方舟", "en": "Volcano Ark"})
         a = base["anthropic"]["rows"]
-        self.assertEqual(a[0], {"type": "oauth", "name": "claude", "set": True, "state": "in"})
+        self.assertEqual({k: a[0][k] for k in ("type", "name", "set", "state")},
+                         {"type": "oauth", "name": "claude", "set": True, "state": "in"})
+        self.assertEqual((a[0]["use"], a[0]["use_name"], a[0]["use_src"]), ("key", "ANTHROPIC_API_KEY", "agentj"), "P362")
         self.assertEqual(a[1], {"type": "sub", "name": "CLAUDE_CODE_OAUTH_TOKEN", "set": False})
         self.assertEqual(a[2]["name"], "ANTHROPIC_API_KEY")
         self.assertEqual((a[2]["set"], a[2]["tail"]), (True, LONG[-4:]))

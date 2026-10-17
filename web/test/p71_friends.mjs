@@ -238,7 +238,7 @@ try {
     check(lastWrite(F).id === 'g-vip' && lastWrite(F).sigOk && !F.groups.some((g) => g.id === 'g-vip'), 'group: delete my group = signed pg_del');
     results['friends-groups'] = failures.length ? 'fail' : 'pass';
 
-    // ---------- 2f. fr_changed: something changed on the computer → re-read within 2 s
+    // ---------- 2f. fr_changed: something changed on the Agent J host → re-read within 2 s
     await click(p, '#fr-back');
     await waitFor(p, `document.getElementById('friends-view').dataset.fv === 'list'`);
     F.friends.push({ id: 'AJ-NEW0-0000-0000-0009', name: '新朋友', owner: '', intro: '', group: 'default', state: 'friend', blocked: false, last: Date.now(), unread: 1 });

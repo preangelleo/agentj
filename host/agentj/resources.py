@@ -1,4 +1,4 @@
-"""P181 「负载卡五项」 (PROTOCOL §22.1): CPU, memory, GPU, disk and network of this computer, for the load card on the phone.
+"""P181 「负载卡五项」 (PROTOCOL §22.1): CPU, memory, GPU, disk and network of the Agent J host, for the load card on the phone.
 
 Cost rule (owner, 2026-10-12: 「在不影响后台、不增加后台负担的情况下」): nothing here runs unless a phone has the load card
 open. The page sends `{"t":"res_watch","on":true}` when the card opens (again every RENEW s while it stays open) and
@@ -15,9 +15,9 @@ watch ends or expires (WATCH_TTL — a phone that vanished never keeps it runnin
 - Windows: GetSystemTimes (CPU), GlobalMemoryStatusEx (memory), free space; disk busy / network / GPU (unless
   nvidia-smi is on PATH) are None.
 
-Every field is None when this computer cannot say (the phone shows 「—」, never a guessed number). Rates need two samples, so
+Every field is None when the Agent J host cannot say (the phone shows 「—」, never a guessed number). Rates need two samples, so
 the very first answer after a watch starts carries memory, GPU and free space only; the next one (≤ EVERY s later) has all.
-Display only: nothing here changes anything on the computer.
+Display only: nothing here changes anything on the Agent J host.
 """
 from __future__ import annotations
 

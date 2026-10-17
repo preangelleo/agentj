@@ -24,34 +24,34 @@ ROUTES = ("seat", "account", "passphrase", "set_passphrase")
 
 TEXT = {
     "zh": {
-        "account": "这台电脑已绑定账号：在账户页 {url} 这台电脑的席位卡点「添加遥控器」，用通行密钥（或这台电脑的遥控器配对密码）确认后扫码。"
-                   "在这台电脑的终端配对（`agentj pair`）要有遥控器配对密码：还没设，它会先请你设一个（至少 8 位）。",
-        "account_with_pass": "这台电脑已绑定账号：可以在账户页 {url} 这台电脑的席位卡点「添加遥控器」，用通行密钥或遥控器配对密码确认，"
+        "account": "这台Agent J 主机已绑定账号：在账户页 {url} 这台Agent J 主机的席位卡点「添加遥控器」，用通行密钥（或这台Agent J 主机的遥控器配对密码）确认后扫码。"
+                   "在这台Agent J 主机的终端配对（`agentj pair`）要有遥控器配对密码：还没设，它会先请你设一个（至少 8 位）。",
+        "account_with_pass": "这台Agent J 主机已绑定账号：可以在账户页 {url} 这台Agent J 主机的席位卡点「添加遥控器」，用通行密钥或遥控器配对密码确认，"
                              "也可以在这里输手机上的 6 位码和遥控器配对密码。",
         "passphrase": "遥控器配对密码已设置：扫码后输入手机上的 6 位码和遥控器配对密码即可。",
-        "set_passphrase": "在终端配对要先设遥控器配对密码（只存在这台电脑上）：请你自己在这台电脑的终端运行 `agentj pair`，"
+        "set_passphrase": "在终端配对要先设遥控器配对密码（只存在这台Agent J 主机上）：请你自己在这台Agent J 主机的终端运行 `agentj pair`，"
                           "它会先请你设密码（至少 8 位），别让 Agent 代劳。",
-        "set_passphrase_bound": "这台电脑已绑定账号，但账户页现在批准不了（{why}）。请你自己在终端运行 `agentj pair`（会先请你设遥控器配对密码），"
+        "set_passphrase_bound": "这台Agent J 主机已绑定账号，但账户页现在批准不了（{why}）。请你自己在终端运行 `agentj pair`（会先请你设遥控器配对密码），"
                                 "或者等{fix}后到账户页 {url} 添加遥控器。",
-        "why_offline": "这台电脑还没连上中继", "fix_offline": "连上",
+        "why_offline": "这台Agent J 主机还没连上中继", "fix_offline": "连上",
         "why_off": "账户页添加遥控器已关闭", "fix_off": "运行 `agentj remote-pair on`",
     },
     "en": {
-        "account": "This computer is bound to your account: on the account page {url}, choose Add a remote on this computer's seat "
-                   "card, confirm with your passkey (or this computer's remote pairing password) and scan. Pairing at this "
+        "account": "the Agent J host is bound to your account: on the account page {url}, choose Add a remote on the Agent J host's seat "
+                   "card, confirm with your passkey (or the Agent J host's remote pairing password) and scan. Pairing at this "
                    "computer's terminal (`agentj pair`) needs a remote pairing password; if none is set, it asks you to set one "
                    "first (at least 8 characters).",
-        "account_with_pass": "This computer is bound to your account: choose Add a remote on the account page {url} and confirm with "
+        "account_with_pass": "the Agent J host is bound to your account: choose Add a remote on the account page {url} and confirm with "
                              "your passkey or the remote pairing password, or type the phone's 6-digit code and the remote pairing "
                              "password here.",
         "passphrase": "Remote pairing password is set: after the scan, type the phone's 6-digit code and the remote pairing password.",
-        "set_passphrase": "Pairing at the terminal needs a remote pairing password first (kept on this computer only): run "
-                          "`agentj pair` in a terminal on this computer yourself; it asks you to set one (at least 8 characters). "
+        "set_passphrase": "Pairing at the terminal needs a remote pairing password first (kept on the Agent J host only): run "
+                          "`agentj pair` in a terminal on the Agent J host yourself; it asks you to set one (at least 8 characters). "
                           "Never through an Agent.",
-        "set_passphrase_bound": "This computer is bound, but the account page cannot approve right now ({why}). Run `agentj pair` "
+        "set_passphrase_bound": "the Agent J host is bound, but the account page cannot approve right now ({why}). Run `agentj pair` "
                                 "yourself in a terminal (it asks you to set a remote pairing password first), or {fix} and add a "
                                 "remote on the account page {url}.",
-        "why_offline": "this computer is not connected to the relay yet", "fix_offline": "wait until it connects",
+        "why_offline": "the Agent J host is not connected to the relay yet", "fix_offline": "wait until it connects",
         "why_off": "account-page pairing is off", "fix_off": "run `agentj remote-pair on`",
     },
 }

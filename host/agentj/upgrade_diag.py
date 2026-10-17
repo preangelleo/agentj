@@ -276,26 +276,26 @@ REASON_WORDS = {
     "not_upgraded": ("装完后版本没有变成目标版本", "after installing, the version was not the target"),
     "doctor_failed": ("升级后自检没通过", "the post-upgrade self-check failed"),
     "self_check_failed": ("升级后新程序跑不起来", "the new program could not run after the upgrade"),
-    "unsupported_install": ("这台电脑的安装方式不能自动升级", "this installation cannot be upgraded automatically"),
+    "unsupported_install": ("这台Agent J 主机的安装方式不能自动升级", "this installation cannot be upgraded automatically"),
 }
 
 
 def owner_sentence(res: dict, rep: dict, lang: str = "zh") -> str:
-    """One plain sentence for the owner: what failed, where the computer is now, whether support already has it."""
+    """One plain sentence for the owner: what failed, where the Agent J host is now, whether support already has it."""
     en = lang == "en"
     why = REASON_WORDS.get(res.get("reason"), (f"原因 {res.get('reason')}", f"reason {res.get('reason')}"))[1 if en else 0]
     to, frm = res.get("to") or "?", res.get("from") or __version__
     if res.get("rollback") == "ok" or res.get("reason") in ("download_failed", "signature_or_hash_mismatch", "unsupported_install"):
-        where = f"still on {frm}, working as before" if en else f"电脑仍是 {frm}，照常可用"
+        where = f"still on {frm}, working as before" if en else f"Agent J 主机仍是 {frm}，照常可用"
     elif res.get("service") == "no_systemd":     # P278
-        where = (f"{to} is installed, but this computer has no systemd to restart the background service: turn it on as the "
+        where = (f"{to} is installed, but the Agent J host has no systemd to restart the background service: turn it on as the "
                  "result's fix line says, or restart `agentj serve` where it runs" if en else
-                 f"{to} 已经装好，但这台电脑没有可用的 systemd 来重启后台服务：按结果里的 fix 行开启，或在运行 agentj serve 的地方重新运行一次")
+                 f"{to} 已经装好，但这台Agent J 主机没有可用的 systemd 来重启后台服务：按结果里的 fix 行开启，或在运行 agentj serve 的地方重新运行一次")
     elif res.get("recover"):
         where = ("the rollback failed too; I will run the recover command in the result to put the previous version back" if en else
                  "回滚也没成功，我会运行结果里的 recover 命令装回原版本")
     else:
-        where = "run `agentj doctor` to check the computer" if en else "请让我运行 agentj doctor 检查一下"
+        where = "run `agentj doctor` to check the Agent J host" if en else "请让我运行 agentj doctor 检查一下"
     s = rep.get("status")
     if s in ("sent", "already"):
         tail_ = (f"the details went to Agent J support automatically ({rep['thread']}); nothing for you to do" if en else

@@ -14,7 +14,15 @@ export const plain = (str) => String(str).replace(/`/g, '');
 /** `x` → <code>x</code> wired by copycode.js (⧉ beside it, one click copies); everything else text nodes. */
 export function fillText(node, str) {
   const parts = String(str).split('`');
-  node.replaceChildren(...parts.map((p, i) => { if (i % 2 === 0) return document.createTextNode(p); const c = document.createElement('code'); c.textContent = p; return copyable(c, { label: 'set.copy' }); }));
+  node.replaceChildren(...parts.map((p, i) => { if (i % 2 === 0) {
+    const part = document.createDocumentFragment(); let at = 0;
+    for (const m of p.matchAll(/https:\/\/(?:m\.)?agentj\.app\/[A-Za-z0-9_/?#=&.%:-]*/g)) {
+      part.append(document.createTextNode(p.slice(at, m.index)));
+      const a = document.createElement('a'); a.className = 'hint__link'; a.href = m[0]; a.textContent = m[0];
+      a.target = '_blank'; a.rel = 'noopener noreferrer'; part.append(a); at = m.index + m[0].length;
+    }
+    part.append(document.createTextNode(p.slice(at))); return part;
+  } const c = document.createElement('code'); c.textContent = p; return copyable(c, { label: 'set.copy' }); }));
 }
 /** Static markup: [data-i18n] text and [data-i18n-attr] attributes. */
 export function applyStatic(root = document) {

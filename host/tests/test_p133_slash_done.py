@@ -1,4 +1,4 @@
-"""P133: a finished /compact or /clear ends its page on 「✓ …」 — no desktop echo page left 「已送达，等待电脑接手…」."""
+"""P133: a finished /compact or /clear ends its page on 「✓ …」 — no desktop echo page left 「已送达，等待Agent J 主机接手…」."""
 import _hermetic  # noqa: F401,I001
 import tempfile
 import time
@@ -74,7 +74,7 @@ class ControlEcho(unittest.TestCase):
         a._control_sent = ("/compact", time.monotonic())
         self.assertFalse(a._control_echo("/clear"))
         self.assertTrue(a._control_echo(" /compact\n"))
-        self.assertFalse(a._control_echo("/compact"), "only once: a later /compact typed at the computer is a turn")
+        self.assertFalse(a._control_echo("/compact"), "only once: a later /compact typed at the Agent J host is a turn")
         a._control_sent = ("/compact", time.monotonic() - shared.CONTROL_WAIT - 1)
         self.assertFalse(a._control_echo("/compact"), "stale")
 
@@ -114,7 +114,7 @@ class BusyIsNotHeld(unittest.TestCase):
     def test_busy_session_queues_and_says_so(self):
         a = self.agent("working")
         self.assertTrue(self.run_wait(a, None, taken_after=.05))
-        self.assertEqual(a.notes, [True, False], "「电脑正忙，消息已排队」 shown, then removed when taken")
+        self.assertEqual(a.notes, [True, False], "「Agent J 主机正忙，消息已排队」 shown, then removed when taken")
         a = self.agent("idle", compacting=True)
         self.assertTrue(self.run_wait(a, None, taken_after=.05), "compacting counts as busy")
 

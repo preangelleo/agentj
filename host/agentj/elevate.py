@@ -241,7 +241,7 @@ def norm_sudo(req: dict) -> dict:
         raise Refused("why", WHY_DETAIL)
     effect = _text(req.get("effect"), 300, required=False, field="effect")
     if local_auth_risk():
-        effect = (effect[:50] + "\n" + "本机 sudo 启用了生物验证，可能弹 Touch ID；此命令将拒绝执行。请在电脑前关闭 sudo Touch ID，见 /docs/keep-awake/。 / Local sudo biometrics may open Touch ID. Command will be refused; disable sudo Touch ID locally first. See /docs/keep-awake/.").strip()
+        effect = (effect[:50] + "\n" + "本机 sudo 启用了生物验证，可能弹 Touch ID；此命令将拒绝执行。请在Agent J 主机前关闭 sudo Touch ID，见 /docs/keep-awake/。 / Local sudo biometrics may open Touch ID. Command will be refused; disable sudo Touch ID locally first. See /docs/keep-awake/.").strip()
     return {"kind": "sudo", "argv": list(argv), "cmd": cmd, "cwd": cwd, "timeout": timeout,
             "why": why, "effect": effect, "interpreter": interpreter_command(argv)}
 
@@ -318,9 +318,9 @@ def norm_secret(req: dict, state_root: pathlib.Path) -> dict:
 
 
 # ---------------------------------------------------------------- running sudo
-LOCAL_AUTH_HINT = ("本机可能弹 Touch ID/Apple Watch 验证，远程时无法继续；请在电脑前用 sudoedit /etc/pam.d/sudo_local "
+LOCAL_AUTH_HINT = ("本机可能弹 Touch ID/Apple Watch 验证，远程时无法继续；请在Agent J 主机前用 sudoedit /etc/pam.d/sudo_local "
                    "注释启用的 pam_tid.so/pam_reattach.so 行（旧配置检查 /etc/pam.d/sudo），保留密码认证；不要远程自动修改 PAM。"
-                   " / Local Touch ID/Watch authorization may block remote use. At the computer, use sudoedit to disable the "
+                   " / Local Touch ID/Watch authorization may block remote use. At the Agent J host, use sudoedit to disable the "
                    "enabled biometric PAM lines, preserving password authentication. See /docs/keep-awake/.")
 
 
@@ -1141,6 +1141,14 @@ class Elevator:
                 await w.drain()
                 w.close()
                 return
+            if isinstance(req, dict) and req.get("t") == "jcard_open":
+                # P360 (§34): `agentj card open` — inside the Agent fence too (control.sock is hidden there). Navigation only:
+                # serve checks the target, throttles, and pushes {"t":"jcard_open"} to the phones; no card, no data.
+                res = await self.host.jcard_open(req)
+                w.write((json.dumps(res) + "\n").encode())
+                await w.drain()
+                w.close()
+                return
             if isinstance(req, dict) and req.get("t") == "admin_open":
                 # P163: `agentj admin --open` from inside the Agent fence (state hidden, own pid namespace): serve opens
                 # the local admin page in the owner's default browser. The one-time link stays in the page process;
@@ -1262,7 +1270,7 @@ MSG = {
     "group_source": "这一轮来自 Telegram 群成员，不是主人本人，不能向主人要批准，没有发卡片。/ This turn came from a Telegram group member, not the owner; no card was sent.",
     "unavailable": "Agent J 没在运行（agentj service status）。/ Agent J is not running.",
     "local_auth_required": LOCAL_AUTH_HINT,
-    "no_sudo": "这台电脑上没有 sudo。/ No sudo on this computer.",
+    "no_sudo": "这台Agent J 主机上没有 sudo。/ No sudo on the Agent J host.",
     "failed": "没有完成：{why}。/ Not done: {why}.",
     "refused": "请求不合格：{detail}。/ Request refused: {detail}.",
 }
@@ -1394,7 +1402,7 @@ def add_parser(sub) -> None:
     sp = sub.add_parser("sudo", help="请手机上的人批准并输入管理员密码，执行一条 sudo 命令（Agent 只拿到输出）/ run one command "
                                      "with sudo after the human approves it and types the password on the phone",
                         description="The phone shows the exact command, why, and what it changes; the password is typed "
-                                    "there, sealed to this computer and given to `sudo -S -k` on stdin. You only get the output.")
+                                    "there, sealed to the Agent J host and given to `sudo -S -k` on stdin. You only get the output.")
     sp.add_argument("--why", required=True, help="这条命令是做什么用的，用大白话写（手机上第一行显示；至少 6 个汉字或 12 个英文字符，"
                                                   "不能只是重复命令）/ what the command is for, in plain words (shown first on the "
                                                   "phone; ≥ 6 CJK or 12 Latin characters, not the command repeated)")

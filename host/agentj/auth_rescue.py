@@ -1,4 +1,4 @@
-"""P258: AI 登录救援 — re-log a harness whose SUBSCRIPTION login expired, from the paired phone, without touching the computer.
+"""P258: AI 登录救援 — re-log a harness whose SUBSCRIPTION login expired, from the paired phone, without touching the Agent J host.
 
 The whole chain is deterministic serve code; the (logged-out) Agent is never asked to help itself.
 
@@ -845,10 +845,10 @@ def heartbeat_line(st, lang: str) -> str | None:
 # ------------------------------------------------------------------ the manager serve owns
 TEXT = {
     "zh": {
-        "alert_login": "{h} 的订阅登录已过期，Agent J 暂时不能回复。打开 设置 → 紧急修复 → AI 登录救援，在手机上一键重新登录（不用回电脑）。",
+        "alert_login": "{h} 的订阅登录已过期，Agent J 暂时不能回复。打开 设置 → 紧急修复 → AI 登录救援，在手机上一键重新登录（不用回Agent J 主机）。",
         "alert_balance": "{h} 的余额 / 额度不足：到服务商网站充值即可，不需要重新登录。",
-        "warn_token": "Claude Code 登录还有 {d} 天到期（{e}）。打开 设置 → 紧急修复 → AI 登录救援 → 现在续期：在手机上授权一次就换上新的，不用回电脑。",
-        "warn_today": "Claude Code 登录今天到期（{e}）。打开 设置 → 紧急修复 → AI 登录救援 → 现在续期：在手机上授权一次就换上新的，不用回电脑。",
+        "warn_token": "Claude Code 登录还有 {d} 天到期（{e}）。打开 设置 → 紧急修复 → AI 登录救援 → 现在续期：在手机上授权一次就换上新的，不用回Agent J 主机。",
+        "warn_today": "Claude Code 登录今天到期（{e}）。打开 设置 → 紧急修复 → AI 登录救援 → 现在续期：在手机上授权一次就换上新的，不用回Agent J 主机。",
         "health_login": "每日体检：{h} 的登录已失效（可能在网页上退出了全部设备，或被官方撤销）。打开 设置 → 紧急修复 → AI 登录救援，在手机上重新登录。",
         "recovered": "{h} 已重新登录并恢复：重启后没有待确认的界面，测试消息已拿到回复。",
         "partial": "{h} 新登录已写入，但自检没有通过：{why}",
@@ -856,12 +856,12 @@ TEXT = {
     },
     "en": {
         "alert_login": "{h}'s subscription login expired; Agent J cannot reply. Open Settings → Emergency repair → AI login rescue to sign in "
-                       "again from the phone (no need to go back to the computer).",
+                       "again from the phone (no need to go back to the Agent J host).",
         "alert_balance": "{h} is out of balance / quota: top up on the provider's site — no new sign-in needed.",
         "warn_token": "The Claude Code login expires in {d} days ({e}). Settings → Emergency repair → AI login rescue → Renew now: approve once on "
-                      "the phone and the new one is in place — no need to go back to the computer.",
+                      "the phone and the new one is in place — no need to go back to the Agent J host.",
         "warn_today": "The Claude Code login expires today ({e}). Settings → Emergency repair → AI login rescue → Renew now: approve once on the "
-                      "phone and the new one is in place — no need to go back to the computer.",
+                      "phone and the new one is in place — no need to go back to the Agent J host.",
         "health_login": "Daily check: {h}'s login no longer works (signed out of all devices on the web, or revoked). Open "
                         "Settings → Emergency repair → AI login rescue to sign in again from the phone.",
         "recovered": "{h} is signed in again: no prompt waiting after the restart, and a test message got a reply.",
@@ -871,32 +871,32 @@ TEXT = {
 }
 LABEL = {"claude": "Claude Code", "codex": "Codex", "opencode": "OpenCode", "kimi": "Kimi Code"}
 WHY = {
-    "zh": {"no_binary": "这台电脑上找不到这个程序", "no_url": "官方登录命令没有给出授权链接", "no_code": "Codex 没有给出设备码",
+    "zh": {"no_binary": "这台Agent J 主机上找不到这个程序", "no_url": "官方登录命令没有给出授权链接", "no_code": "Codex 没有给出设备码",
            "device_disabled": "Codex 设备码登录未开启：先在 ChatGPT 设置 → 安全 里打开「设备码登录」（官方要求），再点一次",
            "expired": "这次登录已超时，请重新开始", "bad_code": "授权码格式不对（只粘贴浏览器给出的那一串）",
            "rejected": "官方拒绝了这个授权码（过期或已用过），请重新开始", "timeout": "等待超时，请重新开始",
            "bad_token": "这不是 Claude 长期 token（应以 sk-ant-oat01- 开头）", "verify": "用这个 token 发测试消息没有拿到回复（token 无效或已撤销）",
-           "conflict": "这台电脑还设置了 {n}，它的优先级高于订阅 token：请删掉它（在服务 env 文件或环境变量里）",
+           "conflict": "这台Agent J 主机还设置了 {n}，它的优先级高于订阅 token：请删掉它（在服务 env 文件或环境变量里）",
            "cancelled": "已取消", "failed": "官方登录命令失败", "busy": "已有一次救援在进行", "passkey": "需要主人通行密钥确认",
            "probe": "测试消息没有拿到回复", "io": "写入失败", "unsupported": "这个 AI 不支持这种方式",
            "verify_codex": "新的 Codex 登录发测试消息没有拿到回复：已保留原来的登录，请重新开始",
            "no_code_kimi": "Kimi Code 没有给出设备码（kimi 版本太旧或连不上 kimi.com / kimi.ai）",
            "verify_kimi": "新的 Kimi Code 登录发测试消息没有拿到回复：已恢复原来的登录文件，请重新开始",
-           "owner_session": "你在电脑上自己开的 {h} 窗口要重开一次才会用到新登录（Agent J 自己的会话已恢复）"},
+           "owner_session": "你在Agent J 主机上自己开的 {h} 窗口要重开一次才会用到新登录（Agent J 自己的会话已恢复）"},
     "en": {"no_binary": "this program is not installed here", "no_url": "the official login did not print an authorize link",
            "no_code": "Codex did not print a device code",
            "device_disabled": "Codex device-code login is off: turn on 'device code login' in ChatGPT → Settings → Security (official requirement), then retry",
            "expired": "this sign-in timed out, start again", "bad_code": "that is not an authorization code (paste only the code the browser shows)",
            "rejected": "the official service refused the code (expired or used), start again", "timeout": "timed out, start again",
            "bad_token": "not a long-lived Claude token (starts with sk-ant-oat01-)", "verify": "a test message with this token got no reply (invalid or revoked)",
-           "conflict": "this computer also sets {n}, which outranks the subscription token: remove it (service env file or environment)",
+           "conflict": "the Agent J host also sets {n}, which outranks the subscription token: remove it (service env file or environment)",
            "cancelled": "cancelled", "failed": "the official login command failed", "busy": "a rescue is already running",
            "passkey": "the owner's passkey is required", "probe": "the test message got no reply", "io": "could not write",
            "verify_codex": "a test message with the new Codex login got no reply: the previous login is kept, start again",
            "no_code_kimi": "Kimi Code did not print a device code (kimi too old, or kimi.com / kimi.ai unreachable)",
            "verify_kimi": "a test message with the new Kimi Code login got no reply: the previous login files are back, start again",
            "unsupported": "not supported for this AI",
-           "owner_session": "the {h} window you opened yourself on the computer must be reopened to use the new login (Agent J's own session is back)"},
+           "owner_session": "the {h} window you opened yourself on the Agent J host must be reopened to use the new login (Agent J's own session is back)"},
 }
 
 
@@ -1072,10 +1072,10 @@ class Rescue:
 
     def _summary(self, kind: str) -> str:
         if self.lang() == "en":
-            return (self.t("confirm_title", h=LABEL[kind]) + ".\nAgent J runs the official login command on this computer "
-                    "and shows you its link / code. The new credential is stored only on this computer (0600). Owner passkey required.")
-        return (self.t("confirm_title", h=LABEL[kind]) + "。\nAgent J 会在这台电脑上运行官方登录命令，把授权链接 / 设备码给你；"
-                "新凭据只存在这台电脑上（0600）。需主人通行密钥批准。")
+            return (self.t("confirm_title", h=LABEL[kind]) + ".\nAgent J runs the official login command on the Agent J host "
+                    "and shows you its link / code. The new credential is stored only on the Agent J host (0600). Owner passkey required.")
+        return (self.t("confirm_title", h=LABEL[kind]) + "。\nAgent J 会在这台Agent J 主机上运行官方登录命令，把授权链接 / 设备码给你；"
+                "新凭据只存在这台Agent J 主机上（0600）。需主人通行密钥批准。")
 
     def _end(self, kind, result, why=None, **extra):
         self.flow = {"kind": kind, "route": (self.flow or {}).get("route"), "stage": "done" if result == "recovered" else "failed",
@@ -1200,10 +1200,10 @@ class Rescue:
             return self._store_token(tok, outcome)
 
         card = self._card("CLAUDE_CODE_OAUTH_TOKEN",
-                          "在任何一台装了 Claude Code 的电脑运行 `claude setup-token` 得到的长期 token（sk-ant-oat01-…）；先实测再存进本机服务 env 文件（0600）"
+                          "在任何一台装了 Claude Code 的Agent J 主机运行 `claude setup-token` 得到的长期 token（sk-ant-oat01-…）；先实测再存进本机服务 env 文件（0600）"
                           if self.lang() == "zh" else
                           "The long-lived token from `claude setup-token` on any computer with Claude Code (sk-ant-oat01-…); "
-                          "live-checked, then stored in this computer's service env file (0600)", sink)
+                          "live-checked, then stored in the Agent J host's service env file (0600)", sink)
         res = await self.host.elevate.request(card)
         if res.get("result") != "saved":
             return self._end("claude", "failed", outcome.get("why") or "cancelled")
@@ -1212,7 +1212,7 @@ class Rescue:
     def _card(self, name, purpose, sink) -> dict:
         zh = self.lang() == "zh"
         return {"kind": "secret", "name": name, "purpose": purpose,
-                "dest": "本机 Agent J 服务 env 文件（0600）" if zh else "this computer's Agent J service env file (0600)",
+                "dest": "本机 Agent J 服务 env 文件（0600）" if zh else "the Agent J host's Agent J service env file (0600)",
                 "dest_spec": {"mode": "auth", "path": service_env_path() or "", "key": name, "show": "auth"},
                 "cwd": "/", "verify": "claude -p (live)", "verify_url": "", "verify_header": "", "verify_cmd": "", "sink": sink}
 

@@ -102,9 +102,9 @@ def run(st, lang="zh", session=None, ask=None, out=None, ctl=None, service=None,
         if not up(res) or res.get("relay_state") != "up":
             from . import relaydiag     # P317: where the host leg sticks (phase / reason / close code), not a guess
             last = res.get("relay_last") if isinstance(res, dict) else None
-            return finish(False, "电脑连不上 Agent J 中继，手机暂时联系不到它" + (f"：卡在 {relaydiag.text(last, 'zh')}" if last else
+            return finish(False, "Agent J 主机连不上 Agent J 中继，手机暂时联系不到它" + (f"：卡在 {relaydiag.text(last, 'zh')}" if last else
                           "（网络或账户问题）") + "。运行 agentj doctor 看主机腿探测。",
-                          "This computer cannot reach the Agent J relay, so the phone cannot reach it" + (
+                          "the Agent J host cannot reach the Agent J relay, so the phone cannot reach it" + (
                           f": stuck at {relaydiag.text(last, 'en')}" if last else " (network or account)")
                           + ". Run agentj doctor for the host-leg probe.", broken="relay", relay_last=last)
         steps.append(_say(lang, "中继已连上", "relay connected"))
@@ -144,7 +144,7 @@ def run(st, lang="zh", session=None, ask=None, out=None, ctl=None, service=None,
             res2 = _wait(st, ctl, sleep, 30, lambda x: up(x) and x.get("agent_status") in OK_AGENT)
             r = {"ok": up(res2) and res2.get("agent_status") in OK_AGENT}
         if not r.get("ok"):
-            return finish(False, "Agent J 还是接不上：电脑上这个目录里没有开着的会话。在工作目录里打开 Claude Code（或 Codex / OpenCode），"
+            return finish(False, "Agent J 还是接不上：Agent J 主机上这个目录里没有开着的会话。在工作目录里打开 Claude Code（或 Codex / OpenCode），"
                                  "它会自动接上；不行就运行 agentj doctor 并按 agentj-manual 的求助步骤。",
                           "Agent J still is not attached: no session is open in its folder. Open Claude Code (or Codex / "
                           "OpenCode) in the working folder and it attaches by itself; otherwise run agentj doctor and follow "

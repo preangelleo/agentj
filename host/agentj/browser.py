@@ -11,10 +11,10 @@
   real port from DevToolsActivePort, proves ownership (pid + start time + executable + profile) and that nothing listens
   on another address, then writes `runtime.json` (0600). No display (a server): headless, QR sign-in still works.
 - CDP has no authentication. Loopback keeps it off the network; a malicious process of the same OS user can still use it
-  and read the profile — the profile isolates data, it is not a sandbox. The endpoint never leaves this computer: no
+  and read the profile — the profile isolates data, it is not a sandbox. The endpoint never leaves the Agent J host: no
   tunnel, no forwarding, never on the relay. Cookies, storage, passwords and auth headers are never read into logs or chat.
 - `enabled=false` stops the service and the checks; the profile stays (deleting it is the owner's explicit delete).
-- P131 adopt: an owner who already runs a CDP browser on this computer (e.g. a long-lived Chromium on 127.0.0.1:9222 with
+- P131 adopt: an owner who already runs a CDP browser on the Agent J host (e.g. a long-lived Chromium on 127.0.0.1:9222 with
   every site signed in) can register it instead — `agentj browser adopt --endpoint http://127.0.0.1:<port>` only proposes it
   (loopback only, verified to listen on loopback only); the owner confirms once on the paired phone's checklist (signed
   `setup_mark adopt_browser`). Adopted, it is Agent J's browser for status / check / sign-in, but Agent J never installs a
@@ -746,7 +746,7 @@ def service_stop(st: State, remove: bool = False) -> dict:
             if remove:
                 with contextlib.suppress(FileNotFoundError):
                     os.unlink(os.path.join(os.path.expanduser("~"), "Library", "LaunchAgents", f"{n}.plist"))
-    rec = _read_json(runtime_path(st))     # a browser this computer's `run` started (verified pid) also goes
+    rec = _read_json(runtime_path(st))     # a browser the Agent J host's `run` started (verified pid) also goes
     if isinstance(rec, dict) and type(rec.get("pid")) is int and proc_start_time(rec["pid"]) == rec.get("starttime"):
         with contextlib.suppress(ProcessLookupError, PermissionError):
             os.killpg(rec["pid"], signal.SIGTERM)
@@ -807,13 +807,13 @@ def offer_path(st: State) -> pathlib.Path:
 
 
 def parse_endpoint(url) -> int:
-    """http://127.0.0.1:<port> (or localhost) → port. Anything that is not this computer's loopback is refused."""
+    """http://127.0.0.1:<port> (or localhost) → port. Anything that is not the Agent J host's loopback is refused."""
     from urllib.parse import urlsplit
     if not isinstance(url, str) or len(url) > 200:
         raise BrowserError("shape", "--endpoint http://127.0.0.1:<port>")
     u = urlsplit(url if "://" in url else "http://" + url)
     if u.scheme not in ("http", "ws") or (u.hostname or "") not in _LOOPBACK_HOSTS or u.username or u.password:
-        raise BrowserError("not_loopback", "only http://127.0.0.1:<port> on this computer can be adopted")
+        raise BrowserError("not_loopback", "only http://127.0.0.1:<port> on the Agent J host can be adopted")
     try:
         port = u.port
     except ValueError:
@@ -873,7 +873,7 @@ def _probe_adopted(port: int) -> dict | None:
 
 
 def detect_existing(st: State, ports=None) -> list[dict]:
-    """CDP browsers already running on this computer's usual debugging ports (not Agent J's own). Read-only (/json/version).
+    """CDP browsers already running on the Agent J host's usual debugging ports (not Agent J's own). Read-only (/json/version).
     AGENTJ_BROWSER_DETECT=off turns detection off (tests; an owner who never wants the question)."""
     if os.environ.get("AGENTJ_BROWSER_DETECT") == "off":
         return []
@@ -1115,7 +1115,7 @@ def status(st: State) -> dict:
 
 
 def endpoint(st: State) -> dict:
-    """The local CDP HTTP endpoint for tools on THIS computer (Playwright connect_over_cdp). Never send it anywhere."""
+    """The local CDP HTTP endpoint for tools on the Agent J host (Playwright connect_over_cdp). Never send it anywhere."""
     rt = runtime(st)
     if not rt:
         return {"ok": False, "reason": "not_running", "hint": HINTS["not_running"]}
@@ -1151,11 +1151,11 @@ def _set_pref(st: State, key: str, value) -> dict:
         os.close(fd)
 
 
-ENDPOINT_NOTE = ("Local only: connect with Playwright `chromium.connect_over_cdp(endpoint)` on this computer. Never send it to "
+ENDPOINT_NOTE = ("Local only: connect with Playwright `chromium.connect_over_cdp(endpoint)` on the Agent J host. Never send it to "
                  "chat, the cloud or another machine; open your own tabs and close only the tabs you opened. / 只在本机使用。")
 
 HINTS = {
-    "unsupported": "这台电脑的系统/架构不在支持列表（macOS、Linux x64/arm64、Windows 的 WSL2+WSLg）/ unsupported OS or CPU",
+    "unsupported": "这台Agent J 主机的系统/架构不在支持列表（macOS、Linux x64/arm64、Windows 的 WSL2+WSLg）/ unsupported OS or CPU",
     "no_space": "空间不够：浏览器约需 1.5 GB，清理后运行 agentj browser setup / free about 1.5 GB, then agentj browser setup",
     "download_failed": "下载失败：检查网络或代理，稍后运行 agentj browser setup（国内网络可设 browser.mirror 为同字节镜像）/ download failed",
     "download_timeout": "下载超过 5 分钟：稍后运行 agentj browser setup / the download took too long",
@@ -1169,7 +1169,7 @@ HINTS = {
     "start_failed": "浏览器启动失败：看 agentj browser status 和 agentj doctor / the browser did not start",
     "sandbox_blocked": "这台 Linux（Ubuntu 23.10+ 等）限制了浏览器沙箱：运行 agentj browser sandbox-fix，主人在手机密码卡上批准后只为本用户的 Agent J 浏览器开启；绝不用 --no-sandbox / this Linux blocks the browser sandbox: agentj browser sandbox-fix (phone password card)",
     "not_loopback": "调试端口不只监听本机，已停止（安全）/ the debugging port was not loopback-only and was stopped",
-    "adopt_not_running": "你登记的浏览器没在运行：请在电脑上把它打开（Agent J 不会替你启动它）/ the browser you registered is not running; start it on the computer",
+    "adopt_not_running": "你登记的浏览器没在运行：请在Agent J 主机上把它打开（Agent J 不会替你启动它）/ the browser you registered is not running; start it on the Agent J host",
     "existing_found": "发现你已有一个浏览器（端口 {port}），要直接用它吗？主人在手机清单里点「用它」；要另装专用的：agentj browser setup --own / "
                       "found a browser you already run (port {port}); use it from the phone checklist, or install a separate one with agentj browser setup --own",
     "shape": "用法：agentj browser adopt --endpoint http://127.0.0.1:<端口> / usage: --endpoint http://127.0.0.1:<port>",
@@ -1233,10 +1233,10 @@ LOGIN_MSG = {
             "/ A sign-in QR card is on the owner's paired phone ({ttl} s). Success is confirmed by the browser itself.",
     "done": "已登录，体检已确认。/ Signed in; confirmed by a check.",
     "already": "这个网站已经是登录状态。/ Already signed in.",
-    "host_login": "这个网站不支持扫码：已在这台电脑的 Agent J 浏览器打开登录页，请主人在电脑前登录，然后运行 agentj browser check --site {site}。"
-                  "/ No QR for this site: the sign-in page is open on this computer; the owner signs in there.",
-    "host_login_unavailable": "这台电脑没有屏幕，这个网站又不支持扫码：请在有屏幕的电脑上登录，或换支持扫码的网站。/ No screen and no QR sign-in.",
-    "no_qr": "登录页上没找到二维码（页面可能改版或要求别的验证）：请主人在电脑前登录。/ No QR found on the sign-in page.",
+    "host_login": "这个网站不支持扫码：已在这台Agent J 主机的 Agent J 浏览器打开登录页，请主人在Agent J 主机前登录，然后运行 agentj browser check --site {site}。"
+                  "/ No QR for this site: the sign-in page is open on the Agent J host; the owner signs in there.",
+    "host_login_unavailable": "这台Agent J 主机没有屏幕，这个网站又不支持扫码：请在有屏幕的Agent J 主机上登录，或换支持扫码的网站。/ No screen and no QR sign-in.",
+    "no_qr": "登录页上没找到二维码（页面可能改版或要求别的验证）：请主人在Agent J 主机前登录。/ No QR found on the sign-in page.",
     "expired": "二维码已过期，没有扫码。主人可以在卡片上点「刷新」，或稍后再说「早上好」。不要反复发。/ The QR expired unscanned. Do not resend repeatedly.",
     "cancelled": "主人在手机上关掉了登录卡。不要追问。/ The owner closed the card.",
     "no_device": "没有已配对的手机。/ No paired phone.",
@@ -1306,7 +1306,7 @@ def add_parser(sub) -> None:
     for name, h in (("setup", "下载校验并启动（幂等）/ download, verify, start (idempotent)"),
                     ("status", "浏览器与各网站登录状态 / browser and site sign-in status"),
                     ("enable", "打开并启动 / turn on"), ("disable", "关闭，保留登录资料 / turn off, keep sign-ins"),
-                    ("endpoint", "本机 CDP 地址（只在本机用）/ local CDP endpoint (this computer only)"),
+                    ("endpoint", "本机 CDP 地址（只在本机用）/ local CDP endpoint (the Agent J host only)"),
                     ("sandbox-fix", "Ubuntu 23.10+ 沙箱受限时，经手机密码卡安装 AppArmor 规则 / AppArmor profile via the phone card"),
                     ("run", "（服务内部用）常驻浏览器 / (service) keep the browser running")):
         sp = b.add_parser(name, help=h)
@@ -1322,7 +1322,7 @@ def add_parser(sub) -> None:
     sp.add_argument("--site", action="append", help="with --dry-run: read-only sign-in check of a template site (repeatable)")
     sp.add_argument("--forget", action="store_true", help="不再用登记的浏览器（它继续运行）/ stop using it (it keeps running)")
     sp.add_argument("--json", action="store_true")
-    sp = b.add_parser("open", help="在本机浏览器打开网页（主人在电脑前登录用）/ open a page on this computer")
+    sp = b.add_parser("open", help="在本机浏览器打开网页（主人在Agent J 主机前登录用）/ open a page on the Agent J host")
     sp.add_argument("url")
     sp.add_argument("--json", action="store_true")
     sp = b.add_parser("check", help="只读登录体检 / read-only sign-in check")

@@ -314,7 +314,7 @@ class Whitelist(Base):
         res = self.wd.do("restart", "zh", lambda *a: steps.append(a))
         self.assertTrue(res["ok"])
         self.assertEqual(self.calls, ["restart"])
-        self.assertEqual(steps[0], (1, "run", "电脑上的 Agent J 没响应，正在重启它…"))
+        self.assertEqual(steps[0], (1, "run", "Agent J 主机上的 Agent J 没响应，正在重启它…"))
         for _step, _state, text in steps:
             self.assertNotRegex(text, "(?i)relay|serve|harness|session|中继")
 
@@ -326,7 +326,7 @@ class Whitelist(Base):
             def help_flow(lang, emit, run_action, *, with_doctor=False, tag="help", **kw):
                 seen["with_doctor"] = with_doctor
                 seen["estop"] = kw.get("estop")
-                emit(1, "run", "正在检查这台电脑…")
+                emit(1, "run", "正在检查这台Agent J 主机…")
                 seen["bash"] = run_action("bash")
                 seen["shutdown"] = run_action("help")             # not something support may ask for
                 seen["restart"] = run_action("restart")

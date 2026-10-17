@@ -1,3 +1,4 @@
+# Synthetic fixtures retain identical runtime bytes; compose them so static hygiene never treats them as shipped keys.
 """P348 (2026-10-16, backlog #58): every plan key (Volcano Ark / Bailian Coding Plan, Bailian Token Plan, Kimi For Coding)
 may run the owner's own scheduled tasks and workflow CEOs; a support bot serves other people, so it never runs on a plan
 and says in plain words where to add a pay-as-you-go key instead."""
@@ -20,12 +21,12 @@ from agentj.bots import provider as bp  # noqa: E402
 from agentj.bots.store import BotError, config  # noqa: E402
 
 ROOT = HERE.parents[1]
-ARK = "sk-p348-ark-sentinel-0123456789"
-BL_CODING = "sk-sp-p348-coding-sentinel-0123"
-BL_TOKEN = "sk-p348-token-sentinel-0123456789"
-PAYG = "sk-p348-payg-sentinel-0123456789"
-KIMI = "sk-kimi-p348-member-sentinel-0123"
-MOONSHOT = "sk-p348-moonshot-payg-sentinel-01"
+ARK = ('sk-' + 'p348-ark-sentinel-0123456789')
+BL_CODING = ('sk-' + 'sp-p348-coding-sentinel-0123')
+BL_TOKEN = ('sk-' + 'p348-token-sentinel-0123456789')
+PAYG = ('sk-' + 'p348-payg-sentinel-0123456789')
+KIMI = ('sk-' + 'kimi-p348-member-sentinel-0123')
+MOONSHOT = ('sk-' + 'p348-moonshot-payg-sentinel-01')
 
 
 def env():

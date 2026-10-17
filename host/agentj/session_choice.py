@@ -31,7 +31,7 @@ from . import preferences
 KEY = "agent.session_mode"
 PIN = "agent.shared_session_id"
 MARK = "session-mode-choice.json"
-LABEL = {"claude": "Claude Code", "codex": "Codex", "opencode": "OpenCode", "kimi": "Kimi Code", "qwen": "Qwen Code", "dsh": "DeepSeek Harness"}
+LABEL = {"claude": "Claude Code", "codex": "Codex", "opencode": "OpenCode", "kimi": "Kimi Code", "qwen": "Qwen Code", "dsh": "DeepSeek Harness", "core": "Agent J Harness"}
 
 
 # ------------------------------------------------------------------ the owner's recorded choice
@@ -128,8 +128,8 @@ def explain(new: str, old: str | None = None, lang: str = "zh") -> dict:
     back = "independent" if new == "shared" else "shared"
     rollback = f"agentj config set {KEY} {back}" if old in ("shared", "independent") and old != new else ""
     if new == "shared":
-        zh = ("共享会话（高级）：手机接入你在这台电脑上正开着的 Claude Code / Codex / OpenCode 会话，按那个工具自己的权限运行，"
-              "不在 Agent J 的隔离里；Claude Code 会被设置成接收手机消息（先备份设置）。电脑上没开会话时，手机第一条消息会新开一个。"
+        zh = ("共享会话（高级）：手机接入你在这台Agent J 主机上正开着的 Claude Code / Codex / OpenCode 会话，按那个工具自己的权限运行，"
+              "不在 Agent J 的隔离里；Claude Code 会被设置成接收手机消息（先备份设置）。Agent J 主机上没开会话时，手机第一条消息会新开一个。"
               "重启服务后生效：agentj service restart。")
         en = ("Shared session (advanced): the phone attaches to the Claude Code / Codex / OpenCode session you have open on this "
               "computer, with that tool's own permissions, outside Agent J's fence; Claude Code is set to accept phone messages "

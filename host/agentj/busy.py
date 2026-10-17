@@ -136,7 +136,7 @@ def task_meta(meta):
 
 
 def sys_load(getloadavg=getattr(os, "getloadavg", None), cpus=os.cpu_count) -> float | None:
-    """P154: how busy this computer is, 0..1 — the 1-minute load average per core (1 = every core has work). None where
+    """P154: how busy the Agent J host is, 0..1 — the 1-minute load average per core (1 = every core has work). None where
     the system has no load average (Windows) or it cannot be read."""
     if getloadavg is None:
         return None
@@ -680,7 +680,7 @@ class Board:
         self.sent = None
         self.load: float | None = None         # P154: the last load value published (changes only by > LOAD_STEP)
         self.load_at = 0.0
-        self.cap: int | None = None            # P154 追加 11: running + how many more the computer can take (P156 capacity)
+        self.cap: int | None = None            # P154 追加 11: running + how many more the Agent J host can take (P156 capacity)
         self.last: dict[str, dict] = {}        # P160: key → {text, at}, a sub-agent's latest tool call (detail only)
         self.alias: dict[str, str] = {}        # P160: a child id (Claude tool_use, Codex thread, OpenCode session) → item key
         self.child: dict[str, dict] = {}       # P160: Codex child thread / OpenCode v2 child session → {who, label}
@@ -1162,7 +1162,7 @@ class Board:
         return changed
 
     def sample_cap(self) -> int | None:
-        """P154 追加 11: how many background Agents this computer can run at once = what runs now + P156's `capacity()`
+        """P154 追加 11: how many background Agents the Agent J host can run at once = what runs now + P156's `capacity()`
         can_start. None until that function exists (it ships with P156) or when it fails; the phone then shows 6 robots."""
         fn = globals().get("capacity")
         if fn is None:
@@ -1257,7 +1257,7 @@ def _mem_available_mib() -> int | None:
 
 
 def capacity(running: int = 0, cores: int | None = None, load: float | None = -1.0, avail_mib: int | None = -1) -> dict:
-    """How many more background Agents this computer can take now — by load, not a fixed number (the owner, 2026-10-12: 「按负载的
+    """How many more background Agents the Agent J host can take now — by load, not a fixed number (the owner, 2026-10-12: 「按负载的
     动态规则……主机配置高就多起一些」). CPU room = 80 % of the cores minus the 1-minute load (without a load average: half the
     cores minus what runs); memory room = (available − 1 GiB) / 700 MiB. The smaller wins; a harness's own limit still applies."""
     cores = cores if cores is not None else (os.cpu_count() or 1)
@@ -1397,7 +1397,7 @@ def add_parser(sub) -> None:
         else:
             x.add_argument("command", nargs=argparse.REMAINDER)
     x = ps.add_parser("capacity", help="还能再起几条后台活：核数、负载、可用内存、在跑的条数 → 建议 / how many more background "
-                                         "jobs this computer can take now")
+                                         "jobs the Agent J host can take now")
     x.add_argument("--json", action="store_true")
     x = ps.add_parser("show", help="一条的详情：最近一步、报告首行（只读）/ one item's detail: latest step, report's first line")
     x.add_argument("id", help="`busy list --json` 里的 id / the id from `busy list --json`")

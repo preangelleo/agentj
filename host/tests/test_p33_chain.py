@@ -5,7 +5,7 @@ message with their inbox path, quote / excerpt, withdraw (cancelled / already_de
 again), a slash command typed as a say, /clear → archive + new epoch → 「撤销清空」 → restored, a restart keeps the pages,
 meters (exact numbers only), the model / effort pill (Claude Code restarts with --effort, Codex turn/start effort, OpenCode no
 effort), questions (AskUserQuestion / requestUserInput / question.asked) answered by a signed pick, cancelled, timed out,
-stopped, refused when the signature is wrong — each a line in approvals.log without the text; things only the computer can
+stopped, refused when the signature is wrong — each a line in approvals.log without the text; things only the Agent J host can
 answer as `local` pages; voice (asr blob → asr_res, a long recording transcribed at send time) with a stand-in engine.
 """
 import _hermetic  # noqa: F401,I001  (never the real ~/.local/state; see _hermetic.py)
@@ -472,7 +472,7 @@ class CodexChain(_Chain):
             secret = [{**qs[0], "isSecret": True}]
             r2, t2 = await c["said"]("ASK: " + json.dumps(secret))
             self.assertIn("ANSWERS: {}", t2["reply"]["text"])
-            self.assertTrue(any(t["src"].get("local") for t in c["turns"]().values()), "a 「在电脑上处理」 page")
+            self.assertTrue(any(t["src"].get("local") for t in c["turns"]().values()), "a 「在Agent J 主机上处理」 page")
             r3, t3 = await c["said"]("FORM")
             self.assertIn('"action": "decline"', t3["reply"]["text"])
         self.run_chain(script)

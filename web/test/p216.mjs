@@ -95,7 +95,7 @@ export async function runP216() {
           const before = fake.st.says.length;
           await press('#webReportBtn');
           await waitFor(p, `${$('input')}.value===${JSON.stringify(CMD + ' ')}`);
-          check(await evaluate(p, `document.activeElement===${$('input')} && ${$('input')}.selectionStart===${$('input')}.value.length`), 'focused, cursor after the command');
+          check(await evaluate(p, `(document.activeElement===${$('input')})===${!touch} && ${$('input')}.selectionStart===${$('input')}.value.length`), 'touch preserves keyboard state; desktop focuses; cursor after the command');
           await waitFor(p, `${$('toast')}.textContent.includes(${JSON.stringify(s.hint)})`);
           check(!(await evaluate(p, `${$('toast')}.textContent`)).includes(s.from), 'newest card: plain hint');
           check(await evaluate(p, `${$('qbar')}.hidden`), 'newest card: no quote strip');

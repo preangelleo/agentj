@@ -34,9 +34,9 @@ test('checklist is a page behind a closable banner, never a dialog over the chat
 });
 
 test('every row says where it is done; a failure says what, what it affects and what to tap', () => {
-  assert.equal(zh.setup.sticky, '这些步骤在电脑上做；手机上看进度。卡住了直接在聊天里告诉我。');
-  assert.deepEqual(zh.setup.where, { auto: '我来做', local: '在电脑上做', phone: '在手机上点', unsupported: '本版还不支持' });
-  assert.equal(zh.setup.next.open_login, '在电脑上打开并登录');
+  assert.equal(zh.setup.sticky, '这些步骤在Agent J 主机上做；手机上看进度。卡住了直接在聊天里告诉我。');
+  assert.deepEqual(zh.setup.where, { auto: '我来做', local: '在Agent J 主机上做', phone: '在手机上点', unsupported: '本版还不支持' });
+  assert.equal(zh.setup.next.open_login, '在Agent J 主机上打开并登录');
   assert.match(zh.setup.act.opened, /请在刚弹到前面的 Agent J 浏览器里登录/);
   for (const k of ['banner', 'bannerClose', 'closeList', 'menu']) assert.equal(typeof en.setup[k], 'string', k);
   assert.ok(!JSON.stringify(zh.setup).includes('这一项没通过，只会暂停依赖它的事'), 'the ambiguous sentence is gone');

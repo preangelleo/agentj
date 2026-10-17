@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { buttonAuditSource } from '../../brand/test/button-audit.mjs';
+import { rowAuditSource } from '../../brand/test/row-audit.mjs';   // P369 (#81): one line of a row shares a top
 // Web client: screenshots + layout audit + full client flow + relay-parity cases against a local fake relay/host, in an
 // INDEPENDENT headless Chromium (test/browser.mjs: own profile, random debugging port — never the shared CDP on :9222;
 // Chromium's fake camera + microphone). public/ is served by test/serve.mjs (Worker headers, connect-src ws://127.0.0.1:*).
@@ -73,6 +74,8 @@ async function layoutOk(p, label) {
   })()`);
   const spacingErrors = await evaluate(p, spacingAuditSource);
   check(!spacingErrors.length, label + ': spacing ≥ shared token ' + JSON.stringify(spacingErrors));
+  const rowErrors = await evaluate(p, rowAuditSource);
+  check(!rowErrors.length, label + ': row items share a top ' + JSON.stringify(rowErrors));
   check(r.sw <= r.iw && r.wide.length === 0, `${label}: no horizontal overflow (scrollWidth ${r.sw} <= ${r.iw}${r.wide.length ? '; sticks out: ' + r.wide.join(', ') : ''})`);
   check(r.waves.every(w=>Math.abs(w.width-2*w.parent)<1), `${label}: decorative waves retain exactly two parent widths`);
   check(r.small.length === 0, `${label}: every visible tap target ≥ 44×44 px${r.small.length ? ' — ' + r.small.join(', ') : ''}`);
@@ -322,9 +325,9 @@ try {
       await fake.approve();
       await waitState(p, 'ready');
       check((await evaluate(p, `document.getElementById('input').maxLength`)) === 4000, 'old host: the field caps at 4 000');
-      await typeAndEnter(p, '老版本电脑');
-      check(await waitReply(p, 'echo: 老版本电脑'), 'old host: msg out, msg back → a page (source + reply)');
-      check((await text(p, '#omText')) === '老版本电脑' && fake.st.says.some((m) => m.t === 'msg'), 'old host: the device sent §8 msg, not say');
+      await typeAndEnter(p, '老版本Agent J 主机');
+      check(await waitReply(p, 'echo: 老版本Agent J 主机'), 'old host: msg out, msg back → a page (source + reply)');
+      check((await text(p, '#omText')) === '老版本Agent J 主机' && fake.st.says.some((m) => m.t === 'msg'), 'old host: the device sent §8 msg, not say');
       noProblems(p, 'old host');
       await p.dispose();
       fake.st.p33 = true;
@@ -596,7 +599,7 @@ try {
       check(om.src === 'tg' && om.label === 'Telegram' && om.icon, `${tag}: Telegram source card with its label and icon (${JSON.stringify(om)})`);
       check(!['rgba(0, 0, 0, 0)', 'transparent', 'rgb(255, 226, 146)', 'rgb(193, 225, 240)'].includes(om.bg), `${tag}: its own opaque fill, not the phone's yellow / another device's blue (${om.bg})`);
       check(om.text === '帮我看看明天的会', `${tag}: the words without 「Telegram owner private chat.」 (got 「${om.text}」)`);
-      check((await text(p, '#words')) === plain(L['r.replyPending']), `${tag}: before the compaction the open page waits for the computer`);
+      check((await text(p, '#words')) === plain(L['r.replyPending']), `${tag}: before the compaction the open page waits for the Agent J host`);
       await fake.send({ t: 'status', s: 'compacting', agent: 'claude', name: 'Wren' });
       let sank = false;
       try { await waitFor(p, `document.getElementById('water').dataset.compacting === '1'`, 4000); sank = true; } catch {}

@@ -178,7 +178,7 @@ def execute(action='status', power='ac', dry_run=False, st=None):
                 st.write_private(path, json.dumps(record).encode())
             for argv in commands:
                 receipt = elevate.client_request(st, {'t': 'sudo', 'argv': argv, 'cwd': '/', 'timeout': 60,
-                    'why': 'Keep computer reachable / 保持电脑可远程连接',
+                    'why': 'Keep computer reachable / 保持Agent J 主机可远程连接',
                     'effect': ('Disable idle sleep; battery use can increase / 关闭主机自动休眠，可能增加耗电' if action == 'on' else 'Restore saved sleep settings / 恢复保存的休眠设置')})
                 if receipt.get('result') != 'done' or receipt.get('code') != 0:
                     return {**result, 'ok': False, 'receipt': receipt, 'after': status(), 'restore_retained': True}

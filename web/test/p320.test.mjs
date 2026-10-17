@@ -22,7 +22,7 @@ test('Alt+Shift+A replies to the current page from anywhere, also inside the mes
   }
   // the action quotes the current page and leaves the caret at the end of the field
   assert.match(relay, /"card\.reply": \(\) => startReply\(currentPage\(\)\)/);
-  assert.match(relay, /function startReply\(p\)\{[\s\S]{0,200}input\.focus\(\);/);
+  assert.match(relay, /function startReply\(p\)\{[\s\S]{0,200}focusComposer\(\);/);
 });
 
 test('Reload: ≡ row only for a host that answers /reload, Alt+Shift+L, the same action', () => {

@@ -13,7 +13,7 @@ import time
 import unittest
 from types import SimpleNamespace
 from unittest import mock
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
@@ -385,7 +385,11 @@ class Tasks(unittest.TestCase):
                 sch.limit = {"harness": kind, "at": time.time() + 2 * H}
                 return "", 1
             return "VERDICT: ok — 写好了", 0
-        with patch.object(tasks, "find", return_value=self.e), patch.object(sch, "_exec", side_effect=fake_exec), \
+        # A provider may report a limit after an unalarmed launch. This suite exercises that post-limit path;
+        # preemptive routing (including 90% refusal) is covered by P254/P375, without probing real installed CLIs here.
+        from contextlib import nullcontext
+        route_at_launch = patch.object(quota, "route", new=AsyncMock(return_value=(h.agent_cfg["kind"], None))) if outcome == "limit" else nullcontext()
+        with route_at_launch, patch.object(tasks, "find", return_value=self.e), patch.object(sch, "_exec", side_effect=fake_exec), \
                 patch.object(sch, "_save", return_value=None), patch.object(tasks.Scheduler, "_check_report"), \
                 patch.object(quota, "report", return_value=rep or quota.report(self.st.root, NOW, sources=[])), \
                 patch.object(quota, "handshake", return_value=True), \

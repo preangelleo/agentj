@@ -104,7 +104,7 @@ export async function startFakeHost() {
     firsts: [], errors: [], cards: false, cardsMute: false, cardGets: [], upgItems: [], upgOpen: null, upgOffs: [],   // P203
     prefs: null, prefSet: true, prefSets: [], approvalSets: [], signedPrefs: true, approvalWhy: null, approvalPasskey: false, approvalFaFail: false, approvalUnsigned: false, version: null,
     hfind: true, finds: [], findMute: false, findDelay: 0, olderDelay: 0,   // P188: the host answers hist_find (false = an older host)
-    platform: 'linux', imsg: null, imsgCheck: null, imsgCalls: [],   // P274: the computer's OS + the iMessage card's status
+    platform: 'linux', imsg: null, imsgCheck: null, imsgCalls: [],   // P274: the Agent J host's OS + the iMessage card's status
   };
 
   // one ordered send queue per connection: CipherState nonces must hit the socket in the order they were taken
@@ -319,6 +319,20 @@ export async function startFakeHost() {
       await broadcast(prefsMsg());
       return;
     }
+    if ((m.t === 'notify_get' || m.t === 'notify_set') && st.notify) {   // P365: notify.py on_phone (st.notify = {automations, tasks})
+      const N = st.notify, NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+      if (m.t === 'notify_set') {
+        (N.sets = N.sets || []).push({ id: m.id, allow: m.allow });
+        if (typeof m.id !== 'string' || !NAME.test(m.id) || (m.allow !== null && typeof m.allow !== 'boolean') || (m.allow === null && m.id.startsWith('task.')))
+          return sendApp(c, { t: 'notify_list', r: m.r, ok: false, why: 'shape' });
+        if (N.refuse) { N.refuse = false; return sendApp(c, { t: 'notify_list', r: m.r, ok: false, why: 'rejected' }); }
+        N.automations = N.automations.filter((x) => x.id !== m.id).concat(m.allow === null ? [] : [{ id: m.id, allow: m.allow }]);
+      }
+      const sw = (id) => N.automations.find((x) => x.id === id)?.allow;
+      return sendApp(c, { t: 'notify_list', r: m.r, ok: true, enabled: st.prefs?.notify?.enabled !== false,
+        automations: N.automations.filter((x) => !x.id.startsWith('task.')),
+        tasks: N.tasks.map((x) => ({ ...x, allow: sw('task.' + x.id) ?? x.declared })) });
+    }
     if (m.t === 'pref_set') {                       // F13 · C6 / Amendment A1: user-tier whitelist only; older hosts (prefSet:false) ignore it
       st.prefSets.push(m);
       if (!st.prefSet) return;
@@ -452,9 +466,11 @@ export async function startFakeHost() {
   // the `preferences` message; a 0.15 host adds its `host` block (version, phone-settable keys, paired phones — metadata)
   function prefsMsg(value = st.prefs) {
     const m = { t: 'preferences', value, problem: null };
-    if (st.prefSet) m.host = { version: st.version || '0.15.0a1', language_at: 0, settable: Object.keys(PREF_ENUM),
+    if (st.prefSet) m.host = { version: st.version || '0.15.0a1', language_at: 0, settable: Object.keys(PREF_ENUM).filter((k) => k !== 'notify.enabled' || st.notify),   // P365: only a host with `agentj notify`
+     
       devices: [...conns].filter((c) => c.devId).map((c) => ({ id: c.devId, name: lastLabel || '', online: !!c.isReady, paired_at: 0 })),
       platform: st.platform, ...(st.platform === 'macos' && st.imsg ? { imessage: st.imsg } : {}),   // P274
+      ...(st.runCmds ? { run_cmds: st.runCmds } : {}),   // P361: the names Settings may 「执行」
       ...(st.signedPrefs ? { signed_prefs: ['approval.level', 'approval.goal_nocard'],   // P336 (+ what is in force)
         approval: { level: st.approvalUnsigned ? 'standard' : (value?.approval?.level ?? 'standard'),
           goal_nocard: !st.approvalUnsigned && value?.approval?.goal_nocard === true } } : {}) };
@@ -575,7 +591,7 @@ export async function startFakeHost() {
       c.hs = await new Handshake({ protocol: IK, initiator: false, prologue: Uint8Array.from(resumePrologue(channel)), s: hostKp }).init();
       const info = JSON.parse(dec.decode(await c.hs.readMessage(b.subarray(1))));
       if (st.refuseResumes > 0) { st.refuseResumes--; return c.close(4010); }
-      if (st.muteResumes > 0) { st.muteResumes--; return; }      // P133: a resume the computer never answers (the socket stays open)
+      if (st.muteResumes > 0) { st.muteResumes--; return; }      // P133: a resume the Agent J host never answers (the socket stays open)
       c.removed = !allow.has(b64u(c.hs.rs));   // modern host explicitly authenticates removal
       const a = allow.get(b64u(c.hs.rs)); if (a && !a.sk && info.sk) a.sk = info.sk;
       c.mode = 'resume';
@@ -693,7 +709,7 @@ export async function startFakeHost() {
         resWatch: [], res: null, renames: [], renameWhy: null, busyget: false,
         hfind: true, finds: [], findMute: false, findDelay: 0, olderDelay: 0,
         cards: false, cardsMute: false, cardGets: [], upgItems: [], upgOpen: null, upgOffs: [],   // P203
-        platform: 'linux', imsg: null, imsgCheck: null, imsgCalls: [], readyMode: null });   // P274 · P332
+        platform: 'linux', imsg: null, imsgCheck: null, imsgCalls: [], readyMode: null, notify: null });   // P365: notify   // P274 · P332
       st.asksOpen = new Map();
       log.length = 0;
     },
@@ -713,6 +729,7 @@ PREF_ENUM['heartbeat.interval_minutes'] = (v) => Number.isInteger(v) && v >= 5 &
 PREF_ENUM['heartbeat.daily_at'] = (v) => v === '' || (typeof v === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(v));
 PREF_ENUM['ui.card_hot_action'] = (v) => typeof v === 'string' && /^\/?[A-Za-z0-9][A-Za-z0-9_:.\-]{0,62}$/.test(v);   // P285: the schema's pattern
 PREF_ENUM['ui.composer_buttons'] = (v) => Array.isArray(v) && v.length === 4 && v.every((x) => typeof x === 'string') && [...v].sort().join() === 'camera,file,image,mic';   // P340: a permutation of the four ids (preferences.composer_order_ok)
+PREF_ENUM['notify.enabled'] = [true, false];   // P365: listed in settable only when st.notify (an older host has no `agentj notify`)
 // P274: the iMessage card's parameters (the real host's schema; refused with not_macos unless st.platform === 'macos')
 const HM = '([01]\\d|2[0-3]):[0-5]\\d';
 Object.assign(PREF_ENUM, { 'imessage.enabled': [true, false], 'imessage.interval_minutes': (v) => Number.isInteger(v) && v >= 1 && v <= 1440,

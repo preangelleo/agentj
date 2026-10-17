@@ -1,5 +1,5 @@
 """P320: `agentj reload` (config tiers hot / reload / restart:serve, no serve restart), the phone's /reload, the automatic
-reload after an Agent's `agentj config set`, and the upgrade receipt that checks the web page's version and names the computer.
+reload after an Agent's `agentj config set`, and the upgrade receipt that checks the web page's version and names the Agent J host.
 Local fake HOME only: no harness, no network, never the developer's real ~/.config/agentj."""
 import _hermetic  # noqa: F401
 import asyncio
@@ -269,7 +269,7 @@ class Receipt(unittest.TestCase):
     def test_completion_text(self):
         rec = {'to': '0.22.0a1', 'from': '0.21.0'}
         zh = update.completion_text(rec, (10, 0, 0), 'zh', web='same', machine='office-pc')
-        self.assertIn('电脑「office-pc」', zh)
+        self.assertIn('Agent J 主机「office-pc」', zh)
         self.assertIn('刷新页面即可', zh)
         self.assertNotIn('稍后上线', zh)
         en = update.completion_text(rec, (10, 0, 0), 'en', web='same', machine='mac-mini')
@@ -278,7 +278,7 @@ class Receipt(unittest.TestCase):
         self.assertIn('稍后上线', update.completion_text(rec, (10, 0, 0), 'zh', web='older'))
         unknown = update.completion_text(rec, (10, 0, 0), 'zh', web=None)
         self.assertNotIn('稍后上线', unknown)
-        self.assertIn('电脑上的 Agent J 程序已升级', update.completion_text(rec, (10, 0, 0), 'zh'))   # no name known: as before
+        self.assertIn('Agent J 主机上的 Agent J 程序已升级', update.completion_text(rec, (10, 0, 0), 'zh'))   # no name known: as before
         self.assertIn('office-pc', phone_update.text({'reason': 'upgraded', **rec, 'counts': (1, 0, 0)}, 'zh', 'same', 'office-pc'))
 
 

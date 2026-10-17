@@ -137,7 +137,7 @@ export async function runP184() {
           check(await evaluate(p, `document.querySelector('#ctFwd .ct-mode[data-mode=me]').getAttribute('aria-checked')`) === 'false', 'picking someone else unticks 发给我自己');
           await evaluate(p, `(()=>{const i=${$('ctFwd-q')};i.focus();i.value='zhangsan';i.dispatchEvent(new Event('input'))})()`);
           await waitFor(p, `document.querySelectorAll('#ctFwd-list .ct-person').length===1`);
-          check(last('ct_list').q === 'zhangsan', 'search on the computer (pinyin)');
+          check(last('ct_list').q === 'zhangsan', 'search on the Agent J host (pinyin)');
           await tapEl(p, '#ctFwd-list [data-addr="zhangsan@hongyuan.cn"]');
           await evaluate(p, `(()=>{const i=${$('ctFwd-q')};i.value='王总';i.dispatchEvent(new Event('input'))})()`);
           await waitFor(p, `${$('ctFwd-add')}?.open && ${$('ctFwd-nick')}.value==='王总'`);

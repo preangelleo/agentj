@@ -219,7 +219,7 @@ try{
     if(await ev(p,`!document.getElementById('confirm').hidden`)){await click(p,'#confirm-yes');await sleep(400);}
     const after=await ev(p,`document.getElementById('${id}').getAttribute('aria-checked')`),sent=fake.st.prefSets.slice(n0);
     check(after!==before&&sent.length>0&&(!key||sent.some(m=>m.key===key)),`switch ${id} writes ${key||sent.map(m=>m.key).join('+')} and stays flipped (${before}→${after})`);
-    if(key==='quota.auto_switch')check(fake.st.prefs.quota&&fake.st.prefs.quota.auto_switch===(after==='true'),'quota.auto_switch saved on the computer');
+    if(key==='quota.auto_switch')check(fake.st.prefs.quota&&fake.st.prefs.quota.auto_switch===(after==='true'),'quota.auto_switch saved on the Agent J host');
    }
    // a refused save puts the switch back AND says why in a centred card (not only a line far up the page)
    fake.st.prefRefuse='busy';const q0=await ev(p,`document.getElementById('set-qswitch').getAttribute('aria-checked')`);

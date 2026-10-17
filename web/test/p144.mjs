@@ -12,7 +12,7 @@ try{
   await navigate(p,fake.newPairing(web.url+'?lang='+lang));await waitState(p,'awaiting-approval');await fake.approve();await waitState(p,'ready');
   await evaluate(p,"if(!document.getElementById('a2hs').hidden)document.getElementById('a2hs-ok').click()");
   const dev=await evaluate(p,"import('./js/api.js').then(api=>api.myDeviceId())");
-  const text=lang==='zh'?'等电脑空下来再执行':'Waiting for the computer to become idle';
+  const text=lang==='zh'?'等Agent J 主机空下来再执行':'Waiting for the Agent J host to become idle';
   const turn=await fake.addTurn({k:'cmd',dev,text:'/clear'},text,'open',{cmd:'clear',cancel_wait:true});
   await waitFor(p,"document.querySelector('[data-cmd-cancel]') && !document.getElementById('cmdx').hidden");
   assert.ok(await evaluate(p,`document.getElementById('words').textContent.includes(${JSON.stringify(text)})`));

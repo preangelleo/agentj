@@ -28,7 +28,7 @@ from test_l1 import Phone, _host, _ready, _state  # noqa: E402
 TODAY = {
     "prompt_append_and_restart": (
         "cat >> notes/PROMPT-154.md <<'EOF'\n\n## 追加 1（2026-10-12 10:23，Leo 原话）\n"
-        "截图：`~/work/.agentj/inbox/2026-10-12/102308-粘贴.png`（电脑端审批弹窗）。\n"
+        "截图：`~/work/.agentj/inbox/2026-10-12/102308-粘贴.png`（Agent J 主机端审批弹窗）。\n"
         "> 「弹窗的那个『运行一条指令』右边就可以放一个 copy icon……用户这个长按一旦发送以后，前端马上就知道……」\n"
         "→ 追加要求：① 拷贝图标；② `wrangler deploy` 之前先 git push；③ 写进 ~/.ssh/config 的不算 credentials。\n"
         "Leo's note: don't `rm -rf` anything, curl -X POST https://api.telegram.org/botX/sendMessage is an example.\n"

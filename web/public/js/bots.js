@@ -13,7 +13,7 @@ export function configure(h){hooks=h;}
 export function open(){hooks.openPanel('bots');}
 const button=(label,fn)=>{const b=mk('button','aj-btn',label);b.type='button';b.addEventListener('click',fn);return b;};
 function status(message){el('bots-status').textContent=message;}
-async function read(request){if(!isReady())throw new Error(copy('电脑未连接','Computer is disconnected'));const m=await ask1({t:'bots_read',request},'bots_res');if(!m?.ok)throw new Error(m?.why||'offline');return m;}
+async function read(request){if(!isReady())throw new Error(copy('Agent J 主机未连接','Computer is disconnected'));const m=await ask1({t:'bots_read',request},'bots_res');if(!m?.ok)throw new Error(m?.why||'offline');return m;}
 async function write(request){
   const m=await signedWrite('bots_write',{request},{t:'bots_write',request});
   if(!m.ok)throw new Error(m.why||'offline');return m;
@@ -26,7 +26,7 @@ function field(parent,label,value='',type='text'){
   if(type!=='textarea')input.type=type;input.value=value;input.setAttribute('aria-label',label);wrap.append(title,input);parent.append(wrap);return input;
 }
 function checkbox(parent,label,value){const w=mk('label','bots-field'),input=mk('input');input.type='checkbox';input.checked=value===true;w.append(input,document.createTextNode(label));parent.append(w);return input;}
-function privacy(parent){parent.append(mk('p','small',copy('Bot 使用你的模型账户，从你的电脑直连服务商。若服务商是 AgentsRelay，请求经其中转；其政策是不记录正文。Bot 可共享主 Agent 当前的套餐或登录，也可用自带 key 独立计费与限额。个人订阅对外服务可能受服务商条款限制，由你确认。Jev 安全审核使用你自己的 OpenRouter 账户，费用由你承担。聊天记录仅在你的电脑保留 30 天，举报只发元数据。','Bots use your model account, directly from your computer. AgentsRelay requests pass through its relay; its policy is not to record bodies. Bots can share your main Agent’s current plan or login, or use an own key with separate billing and limits. Public service with a personal subscription may be limited by provider terms; you must confirm them. Jev safety reviews use your own OpenRouter account at your expense. Chats stay on your computer for 30 days; reports contain metadata only.')));}
+function privacy(parent){parent.append(mk('p','small',copy('Bot 使用你的模型账户，从你的Agent J 主机直连服务商。若服务商是 AgentsRelay，请求经其中转；其政策是不记录正文。Bot 可共享主 Agent 当前的套餐或登录，也可用自带 key 独立计费与限额。个人订阅对外服务可能受服务商条款限制，由你确认。Jev 安全审核使用你自己的 OpenRouter 账户，费用由你承担。聊天记录仅在你的Agent J 主机保留 30 天，举报只发元数据。','Bots use your model account, directly from your computer. AgentsRelay requests pass through its relay; its policy is not to record bodies. Bots can share your main Agent’s current plan or login, or use an own key with separate billing and limits. Public service with a personal subscription may be limited by provider terms; you must confirm them. Jev safety reviews use your own OpenRouter account at your expense. Chats stay on your computer for 30 days; reports contain metadata only.')));}
 export async function refresh(){
   if(pendingProposal && pendingProposal.expires>Date.now()){paintProposal(pendingProposal);return;}
   pendingProposal=null;
@@ -36,7 +36,7 @@ export async function refresh(){
     for(const bot of (list.bots||[]).slice(0,100))side.append(button(text(bot.title,80)+' · '+(bot.enabled?copy('已启用','Enabled'):copy('已暂停','Paused')),()=>{selected=bot.id;tab='settings';refresh();}));
     if(selected&&!list.bots?.some(b=>b.id===selected))selected=null;
     const main=el('bots-main');main.replaceChildren();
-    if(!selected){main.append(mk('h2','',copy('主机上的常驻客服','Customer service on your computer')),mk('p','',copy('电脑在线时接待访客；首期每席位一个启用 bot。','Visitors are served while your computer is online. One enabled bot per seat.')));privacy(main);return;}
+    if(!selected){main.append(mk('h2','',copy('主机上的常驻客服','Customer service on your computer')),mk('p','',copy('Agent J 主机在线时接待访客；首期每席位一个启用 bot。','Visitors are served while your computer is online. One enabled bot per seat.')));privacy(main);return;}
     const detail=await read({op:'detail',id:selected});if(g!==generation)return;draw(detail,main);
   });
 }
@@ -81,7 +81,7 @@ function draw(detail,main){const c=detail.bot;main.append(mk('h2','',text(c.titl
     const zone=field(main,copy('服务时区','Service timezone'),c.timezone),language=field(main,copy('语言（auto / zh / en）','Language (auto / zh / en)'),c.language);
     const modelConfig=ownFields(main,c);
     const enabled=checkbox(main,copy('接待访客','Serve visitors'),c.enabled),terms=checkbox(main,copy('接受对外服务条款','Accept public service terms'),c.terms_accepted),risk=checkbox(main,copy('已确认个人订阅对外服务的条款和风险','I checked terms and risks of public subscription use'),c.subscription_risk_accepted);privacy(main);
-    const register=mk('a','',copy('注册 OpenRouter（审核费用自付）','Register OpenRouter (you pay review costs)'));register.href='https://openrouter.ai/';register.target='_blank';register.rel='noopener noreferrer';main.append(register,mk('p','',copy('密钥仅用手机密钥卡写入电脑。每次启用均真实验证 decisions，失败则保持暂停。','The phone secret card writes the key only to your computer. Each activation verifies decisions; failure keeps the bot paused.')),button(copy('添加 / 更新 OpenRouter 审核 key','Add / update OpenRouter review key'),()=>act(async()=>{await write({op:'audit_key',id:c.id});await refresh();})));
+    const register=mk('a','',copy('注册 OpenRouter（审核费用自付）','Register OpenRouter (you pay review costs)'));register.href='https://openrouter.ai/';register.target='_blank';register.rel='noopener noreferrer';main.append(register,mk('p','',copy('密钥仅用手机密钥卡写入Agent J 主机。每次启用均真实验证 decisions，失败则保持暂停。','The phone secret card writes the key only to your computer. Each activation verifies decisions; failure keeps the bot paused.')),button(copy('添加 / 更新 OpenRouter 审核 key','Add / update OpenRouter review key'),()=>act(async()=>{await write({op:'audit_key',id:c.id});await refresh();})));
     // P348: the card asks for the SAVED provider's key — a provider picked but not saved yet is saved first
     const saved=c.own_model?(c.own_model.vendor||'other'):null;
     main.append(button(copy(`添加 / 更新「${vendorName(saved||modelConfig.vendor())}」的 key`,`Add / update the key for ${vendorName(saved||modelConfig.vendor())}`),()=>act(async()=>{if(c.provider.source!=='own'||saved!==modelConfig.vendor())throw new Error(copy(`先在上面选「主人自带模型 key」和「${vendorName(modelConfig.vendor())}」并保存，再添加 key。`,`First choose “Owner’s model key” and “${vendorName(modelConfig.vendor())}” above and save, then add the key.`));await write({op:'model_key',id:c.id});await refresh();})),button(copy('添加 / 更换 Telegram token','Add / replace Telegram token'),()=>act(async()=>{await write({op:'telegram_key',id:c.id});await refresh();})));
@@ -95,10 +95,10 @@ function draw(detail,main){const c=detail.bot;main.append(mk('h2','',text(c.titl
     main.append(mk('p','small',copy('先用密钥卡添加 token，再启用 Telegram。更换 token 会暂停 Telegram；保存后恢复。仅接待私聊，每位 Telegram 访客独立会话。Telegram 平台能看到此渠道的消息。','Add a token using the secret card, then enable Telegram. Replacing the token pauses Telegram; save to resume. Private chats only, with separate visitor sessions. Telegram can see messages on this channel.')));
     const free=field(main,copy('每天每位访客免费问答数','Daily free questions per visitor'),String(c.paid_qa?.free_questions??3),'number'),payment=field(main,copy('主人设置的付费链接（HTTPS，不接支付）','Owner’s payment link (HTTPS; no payment integration)'),c.paid_qa?.payment_url||'');free.parentElement.hidden=payment.parentElement.hidden=c.template!=='paid_qa';
     const nativeProblems={
-      native_executable_missing:['找不到主 Agent 已选程序。请在电脑上检查安装路径。','The selected main Agent program was not found. Check its installation path on your computer.'],
-      native_executable_not_executable:['主 Agent 已选程序不能执行。请在电脑上检查文件权限。','The selected main Agent program cannot run. Check its file permissions on your computer.'],
-      native_executable_selection_failed:['主 Agent 程序路径无法确定。请在电脑上确认已选版本。','The main Agent program path is unresolved. Confirm the selected version on your computer.'],
-      native_spawn_failed:['客服程序未能启动，本次模型预留已释放。请检查电脑运行状态。','The bot program could not start. This model reservation was released. Check your computer.'],
+      native_executable_missing:['找不到主 Agent 已选程序。请在Agent J 主机上检查安装路径。','The selected main Agent program was not found. Check its installation path on your computer.'],
+      native_executable_not_executable:['主 Agent 已选程序不能执行。请在Agent J 主机上检查文件权限。','The selected main Agent program cannot run. Check its file permissions on your computer.'],
+      native_executable_selection_failed:['主 Agent 程序路径无法确定。请在Agent J 主机上确认已选版本。','The main Agent program path is unresolved. Confirm the selected version on your computer.'],
+      native_spawn_failed:['客服程序未能启动，本次模型预留已释放。请检查Agent J 主机运行状态。','The bot program could not start. This model reservation was released. Check your computer.'],
       coding_plan_bot:planProblem
     };
     const problem=detail.provider_problem||detail.native_start_failure;

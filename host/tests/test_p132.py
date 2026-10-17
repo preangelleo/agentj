@@ -46,8 +46,8 @@ class AgentSource(unittest.TestCase):
 
     def test_desktop_input_clears_a_pending_via(self):
         h = self.host()
-        h.proactive_turn('loop'); h.desktop_input('typed on the computer')
-        self.assertEqual(h.added[0][0], {'k': 'host', 'name': h.added[0][0]['name'], 'text': 'typed on the computer'})
+        h.proactive_turn('loop'); h.desktop_input('typed on the Agent J host')
+        self.assertEqual(h.added[0][0], {'k': 'host', 'name': h.added[0][0]['name'], 'text': 'typed on the Agent J host'})
         self.assertIsNone(h.proactive_via)
 
 

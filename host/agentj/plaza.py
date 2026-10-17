@@ -23,7 +23,7 @@ Posting / replying goes out only after the privacy gate and the human:
 
 Exit codes (post / reply): 0 previewed with layer 2 OK, or sent · 2 layer 2 flagged it · 3 layer 2 unavailable (no key) ·
 4 digest mismatch (the text changed since the human saw it) · 1 any other error. Every plaza command except `installed`:
-6 this computer has no usable Agent J seat (P199 — the message says where to renew or bind; nothing was sent).
+6 the Agent J host has no usable Agent J seat (P199 — the message says where to renew or bind; nothing was sent).
 """
 from __future__ import annotations
 
@@ -214,7 +214,7 @@ def json_out(obj: dict) -> str:
 # ------------------------------------------------------------------ calls
 ERRORS = {
     "plaza_requires_seat": "广场只对有付费席位的账号开放 / the plaza is open to accounts with a paid seat",
-    "not_bound": "这台电脑不在任何 Agent J 账号里（agentj login）/ this computer is not in an Agent J account (agentj login)",
+    "not_bound": "这台Agent J 主机不在任何 Agent J 账号里（agentj login）/ the Agent J host is not in an Agent J account (agentj login)",
     "rate_limited": "太频繁了，稍后再试 / too many requests, try later",
     "not_found": "没有这个帖子（或已被删除 / 待复核）/ no such post (or removed / held for review)",
     "not_author": "只有发帖的账号能标记已解决 / only the account that asked can mark it resolved",
@@ -224,7 +224,7 @@ ERRORS = {
     "secret_found": "服务器的密钥扫描拦下了：里面还有像密钥 / 邮箱的东西 / the server's secret scan refused it",
     "bad_title": "标题要 1–120 个字 / the title must be 1–120 characters",
     "bad_body": "正文为空或太长 / the body is empty or too long",
-    "unlinked": "这台电脑还没加到 Agent J 账号：先 agentj login / not in an Agent J account yet: agentj login",
+    "unlinked": "这台Agent J 主机还没加到 Agent J 账号：先 agentj login / not in an Agent J account yet: agentj login",
 }
 
 

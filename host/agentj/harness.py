@@ -1,4 +1,4 @@
-"""`agentj agent detect [--json]` (seat setup §4.1, item 9): which agent harnesses this computer has, and which are usable.
+"""`agentj agent detect [--json]` (seat setup §4.1, item 9): which agent harnesses the Agent J host has, and which are usable.
 
 For `claude`, `codex` and `opencode`: installed = the binary is on PATH (or AGENTJ_CLAUDE_BIN / AGENTJ_CODEX_BIN /
 AGENTJ_OPENCODE_BIN, the same lookup `serve` uses) and `--version` answers; logged in = a credential file / Keychain item
@@ -25,7 +25,8 @@ from .service import tilde
 from .envcompat import getenv
 from .text import clean_line
 
-LABEL = {"claude": "Claude Code", "codex": "Codex", "opencode": "OpenCode", "kimi": "Kimi Code", "qwen": "Qwen Code", "dsh": "DeepSeek Harness"}
+LABEL = {"claude": "Claude Code", "codex": "Codex", "opencode": "OpenCode", "kimi": "Kimi Code", "qwen": "Qwen Code", "dsh": "DeepSeek Harness",
+         "core": "Agent J Harness"}   # P359: our own kernel (agentj/core), offered only with AGENTJ_CORE=1
 BIN_ENV = {"claude": "AGENTJ_CLAUDE_BIN", "codex": "AGENTJ_CODEX_BIN", "opencode": "AGENTJ_OPENCODE_BIN", "kimi": "AGENTJ_KIMI_BIN",
            "qwen": "AGENTJ_QWEN_BIN", "dsh": "AGENTJ_DSH_BIN"}
 # P305: Kimi Code CLI (`kimi` 2.2.0+) over ACP (agent_kimi.py / acp.py)
@@ -234,7 +235,16 @@ def login_of(name: str) -> tuple[str, str]:
     return {"claude": claude_login, "codex": codex_login, "opencode": opencode_login}[name]()
 
 
+def names() -> tuple:
+    """NAMES, plus Agent J Harness when the owner turned it on (P359: off by default, AGENTJ_CORE=1)."""
+    from .core import enabled
+    return NAMES + (("core",) if enabled() else ())
+
+
 def _one(name: str, environ=None) -> dict:
+    if name == "core":                  # P359: built in — nothing to install; "logged in" = a preset key name is set
+        from .core.presets import record
+        return record(environ)
     from .binaries import resolve, installations, wrapper
     resolution = resolve(name, environ)
     exe = resolution["path"]
@@ -316,7 +326,7 @@ def _one(name: str, environ=None) -> dict:
 
 def detect(environ=None) -> dict:
     """{"harnesses": [{name, installed, logged_in, supported, version[, note]}], "usable": [...], "decision": ...}."""
-    hs = [_one(n, environ) for n in NAMES]
+    hs = [_one(n, environ) for n in names()]
     usable = [h["name"] for h in hs if h["supported"] and h["installed"] and h["logged_in"] is not False]
     decision = "none" if not usable else f"use:{usable[0]}" if len(usable) == 1 else "ask_owner"
     return {"harnesses": hs, "usable": usable, "decision": decision}
@@ -397,7 +407,13 @@ def probe(only: tuple | list | None = None, model: str | None = None, timeout: f
                 (root / "system.md").write_text("Reply to the supplied greeting only. No tools are available.")
                 cfg = SimpleNamespace(name=h["name"], model=model if only is not None and len(only) == 1 else None)
                 oc_model = (cfg.model or opencode_model()) if h["name"] == "opencode" else None
-                if h["name"] == "kimi":          # P305: over ACP (stdin), plan mode, every permission refused
+                if h["name"] == "core":          # P359: one tool-free call on the chosen preset, key by name
+                    from .core.llm import hello
+                    try:
+                        reply = hello(cfg.model, timeout)
+                    except Exception as e:  # noqa: BLE001 — a fixed code, never the vendor's text
+                        raise BotError("not_logged_in" if getattr(e, "kind", "") == "auth" else "call_failed") from None
+                elif h["name"] == "kimi":          # P305: over ACP (stdin), plan mode, every permission refused
                     from . import agent_kimi
                     try:
                         reply = agent_kimi.probe(h["executable"], env, timeout, cfg.model, _kimi_region())

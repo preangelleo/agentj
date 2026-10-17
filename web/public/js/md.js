@@ -71,6 +71,19 @@ const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", i
     if (/^file:/i.test(s)) return s;
     return /^[A-Za-z][A-Za-z0-9+.-]*:/.test(s) ? null : s;
   }
+  // P368 (#78): [派](reply:派) — a one-tap answer the Agent offers. Returns the words a tap would send (the label when the
+  // destination is just "reply:"), or null: not reply:, empty, over REPLY_MAX, several lines / control or bidi characters, or a
+  // command ("/…" would run instead of being said). Here it only becomes an inert <span class="rlink">: the label as text
+  // (what every other surface shows); relay.js (replybtn.js) alone turns one into a button, on the Agent's own words.
+  const REPLY_MAX = 200;
+  function replyRef(raw, label) {
+    if (typeof raw !== "string" || !/^reply:/i.test(raw)) return null;
+    let v = raw.slice(6);
+    try { v = decodeURIComponent(v); } catch (_) { /* keep it as written */ }
+    v = (v || String(label || "")).trim();
+    if (!v || Array.from(v).length > REPLY_MAX || /[\u0000-\u001f\u007f-\u009f\u2028\u2029\u200e\u200f\u202a-\u202e\u2066-\u2069]/.test(v) || /^[/\uff0f]/.test(v)) return null;
+    return v;
+  }
   // The destination a reader should see next to the words: the host (the address for mailto:), or null when the words
   // already are that address (a bare URL, an autolink, a link whose words are its own address, a mailto: showing its address).
   function shownTarget(href, words) {
@@ -182,10 +195,11 @@ const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", i
       dest = s.slice(p + 1, e); p = e + 1;
     } else {
       let par = 0; const st = p;
+      const rep = /^reply:/i.test(s.slice(st, st + 6));   // P368: [用方案 A](reply:用方案 A) — the words may hold spaces (one line)
       for (; p < s.length; p++) {
         const ch = s[p];
         if (ch === "\\") { p++; continue; }
-        if (/\s/.test(ch)) break;
+        if (rep ? /[\n\r]/.test(ch) : /\s/.test(ch)) break;
         if (ch === "(") par++;
         else if (ch === ")") { if (par === 0) break; par--; }
       }
@@ -300,7 +314,9 @@ const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", i
         flush();
         // F21 (§13): an image of a local file → a slot media.js fills with the file the computer sent (the source text
         // stays inside it until then, and for good when nothing was sent); never fetched from the path itself
-        if (!href && img && localRef(dest)) out.push({ tag: "mslot", ref: localRef(dest), children: [text(s.slice(i, L.end))] });
+        const rp = !img && !inLink && !href ? replyRef(dest, flatText(parseInline(L.label, depth + 1, true))) : null;
+        if (rp) out.push({ tag: "rlink", say: rp, children: parseInline(L.label, depth + 1, true) });
+        else if (!href && img && localRef(dest)) out.push({ tag: "mslot", ref: localRef(dest), children: [text(s.slice(i, L.end))] });
         // P59 (ADR-A164): a link to a local file too — media.js puts the file's card there (label kept as words); the
         // source text stays when the computer sent nothing for it
         else if (!href && !inLink && localRef(dest)) out.push({ tag: "mslot", ref: localRef(dest), link: true, label: flatText(parseInline(L.label, depth + 1, true)), children: [text(s.slice(i, L.end))] });
@@ -689,6 +705,14 @@ const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", i
       budget.left--;
       if (n.tag === "pre") { parent.appendChild(n.lang === "details" ? detailsBlock(n, doc) : codeBlock(n, doc)); continue; }
       if (n.tag === "math") { parent.appendChild(mathEl(n, doc)); continue; }
+      if (n.tag === "rlink") {                       // P368: <span class="rlink" data-say="…"> + the label
+        const sp = doc.createElement("span");
+        sp.className = "rlink";
+        sp.setAttribute("data-say", String(n.say == null ? "" : n.say).slice(0, 4 * REPLY_MAX));
+        toDOM(n.children, doc, sp, budget);
+        parent.appendChild(sp);
+        continue;
+      }
       if (n.tag === "mslot") {                       // F21: <span class="mslot" data-ref="…"> + the source text
         const sp = doc.createElement("span");
         sp.className = "mslot";
@@ -769,7 +793,7 @@ const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", i
     return legacyCopy(t, doc);
   }
 
-  root.RelayMD = { parse, parseInline: (s) => { linkWork = 0; cellBudget = MAX_CELLS; clearCodeCache(); const out = parseInline(s); clearCodeCache(); return out; }, toDOM, safeHref, localRef, shownTarget, copyText, legacyCopy, LABELS,
+  root.RelayMD = { parse, parseInline: (s) => { linkWork = 0; cellBudget = MAX_CELLS; clearCodeCache(); const out = parseInline(s); clearCodeCache(); return out; }, toDOM, safeHref, localRef, replyRef, REPLY_MAX, shownTarget, copyText, legacyCopy, LABELS,
     LIMITS: { MAX_INPUT, MAX_COLS, MAX_ROWS, MAX_CELLS, MAX_NODES, MAX_CODE_HL, MAX_TEX, MAX_MERMAID } };
 })(MOD);
 export const RelayMD = MOD.RelayMD;

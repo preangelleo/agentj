@@ -1,0 +1,88 @@
+// P361 (PROTOCOL §34) · Settings → 紧急修复 → 「电脑上的命令」: the commands the owner used to copy and paste at the computer,
+// each with ⧉ and 「执行」. Only the names the host lists in `host.run_cmds` (its whitelist, host/agentj/cmdrun.py) are shown;
+// the phone sends a NAME, never a command line. Every run: signed `cmd_run` → the host answers `passkey_required` + the
+// challenge → Face ID (started inside the tap of the sheet's button, iOS gesture rule) → the same signed object with `fa` →
+// `ctl_pending` → `ctl_res {ok, cmd, code, out, cut?}`. The output is already masked on the computer; it is shown as text
+// (textContent), never stored. A phone without a passkey is told so and offered the F20 「设置 Face ID」 — no fallback.
+import { signedWriteFa, whyText } from './controls.js';
+import { approve as faApprove, canAssert } from './faceid.js';
+import { unb64u } from '../proto/wire.js';
+import { isReady } from './session.js';
+import { copyable } from './copycode.js';
+import { t, onLang } from './t.js';
+import { el, mk, confirmSheet, toastAction } from './ui.js';
+
+export const CMDS = { doctor: 'doctor', reconnect: 'doctor --reconnect', status: 'status', service_status: 'service status',
+  rescue_status: 'rescue status', update_check: 'update check' };
+const line = (name) => 'agentj ' + CMDS[name];
+let H = { setupFaceId() {} }, names = [], R = null;   // R: the last run {name, st: run|done|fail, code, out, cut, why}
+
+export function configure(h) { H = { ...H, ...h }; onLang(paint); }
+/** settings.js render(): the host block decides which rows exist (an older host: the card stays hidden). */
+export function render(info) {
+  const list = info && Array.isArray(info.run_cmds) ? info.run_cmds.filter((n) => typeof n === 'string' && Object.hasOwn(CMDS, n)) : [];
+  if (list.join() !== names.join()) { names = list; paint(); }
+}
+function row(name) {
+  const li = mk('li', 'rscmd'); li.dataset.cmd = name;
+  const main = mk('div', 'rscmdmain'), code = mk('code', '', line(name));
+  main.append(copyable(code, { variant: 'inline' }), mk('small', '', t('p361.cmd.' + name)));
+  const b = mk('button', 'aj-btn rscmdgo', t('p361.run')); b.type = 'button'; b.id = 'rs-cmd-' + name;
+  b.setAttribute('aria-label', t('p361.runAria', { cmd: line(name) }));
+  b.disabled = !!(R && R.st === 'run');
+  b.addEventListener('click', () => run(name));
+  li.append(main, b);
+  return li;
+}
+function result() {
+  if (!R) return [];
+  const head = mk('p', 'rscmdhead', line(R.name)); head.id = 'rs-cmd-head';
+  if (R.st === 'run') return [head, mk('p', 'rsnow', t('p361.running'))];
+  const out = [head];
+  if (Number.isInteger(R.code) && R.code >= 0) out.push(mk('p', R.code === 0 ? 'rsok' : 'rsmsg rsfail', t(R.code === 0 ? 'p361.ok' : 'p361.fail', { code: R.code })));
+  else out.push(mk('p', 'rsmsg rsfail', ['busy', 'timeout', 'no_passkey', 'dropped'].includes(R.why) ? t('p361.why.' + R.why) : whyText(R.why) || t('p361.failed')));
+  if (R.out) { const pre = mk('pre', 'rsout', R.out); pre.id = 'rs-cmd-out-text'; pre.tabIndex = 0; out.push(copyable(pre, { variant: 'block', click: false })); }
+  if (R.cut) out.push(mk('p', 'rsnote', t('p361.cut')));
+  if (R.out) out.push(mk('p', 'rsnote', t('p361.masked')));
+  return out;
+}
+export function paint() {
+  const box = el('rs-cmds'), ul = el('rs-cmd-list'), res = el('rs-cmd-out');
+  if (!box || !ul || !res) return;
+  box.hidden = !names.length;
+  ul.replaceChildren(...names.map(row));
+  res.replaceChildren(...result());
+  res.hidden = !R;
+}
+/** The Face ID step: one sheet; its button starts get() synchronously inside the tap. null = cancelled. */
+async function faceId(res) {
+  if (typeof res.fa !== 'string' || typeof res.fa_ch !== 'string' || !canAssert()) return Promise.reject(new Error('passkey_failed'));
+  const yes = el('confirm-yes');
+  let p = null;
+  const grab = () => { p = faApprove(unb64u(res.fa_ch), res.fa); p.catch(() => {}); };
+  yes.addEventListener('click', grab);
+  const ok = await confirmSheet(t('p361.faTitle'), t('p361.faText', { cmd: line(R.name) }), t('p361.faYes'));
+  yes.removeEventListener('click', grab);
+  if (!ok || !p) return null;
+  R.st = 'run'; paint();
+  return p;
+}
+export async function run(name) {
+  if (!Object.hasOwn(CMDS, name) || !names.includes(name) || (R && R.st === 'run')) return;
+  R = { name, st: 'ask' };
+  if (!isReady()) { R = { name, st: 'fail', why: 'offline' }; return paint(); }
+  paint();
+  const m = await signedWriteFa('cmd_run', { cmd: name }, { t: 'cmd_run', cmd: name }, faceId);
+  if (m.why === 'cancel') { R = null; return paint(); }
+  const str = (v) => (typeof v === 'string' ? v.slice(0, 20000) : '');
+  // the link dropped while the computer ran it (doctor --reconnect may restart Agent J there): say so, not a bare failure
+  if (m.why === 'offline' && R && R.st === 'run') m.why = 'dropped';
+  R = { name, st: m.ok ? 'done' : 'fail', code: Number.isInteger(m.code) ? m.code : -1, out: str(m.out), cut: m.cut === true,
+    why: m.ok ? '' : String(m.why || '') };
+  if (m.why === 'no_passkey') toastAction(t('p361.why.no_passkey'), t('sout.setup'), () => H.setupFaceId(), 8000);
+  paint();
+  el('rs-cmd-out')?.scrollIntoView({ block: 'nearest' });
+}
+// tests
+export const _debug = () => ({ names: [...names], R: R && { ...R } });
+export function _reset() { names = []; R = null; paint(); }

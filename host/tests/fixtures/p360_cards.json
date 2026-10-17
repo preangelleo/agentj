@@ -1,0 +1,345 @@
+{
+ "list": {
+  "cards": [
+   {
+    "id": "notes",
+    "name": {
+     "zh": "记事本",
+     "en": "Notebook"
+    },
+    "desc": {
+     "zh": "你和 Agent 一起管的记事本：在手机上看，让 Agent 记、改、整理。",
+     "en": "A notebook you keep with your Agent: read it here, the Agent writes, edits and tidies it."
+    },
+    "icon": "note",
+    "accent": "emerald-oasis",
+    "template": "notes",
+    "official": true,
+    "on": true,
+    "plus": "agentj-add-note"
+   },
+   {
+    "id": "todo",
+    "name": {
+     "zh": "待办",
+     "en": "To-do"
+    },
+    "desc": {
+     "zh": "待办清单：点一条让 Agent 标完成或撤回，新增和整理也交给它。",
+     "en": "Your to-do list: tap an item and the Agent ticks it off or reopens it; it adds and sorts items too."
+    },
+    "icon": "checklist",
+    "accent": "windstorm",
+    "template": "checklist",
+    "official": true,
+    "on": true,
+    "plus": "agentj-add-todo"
+   },
+   {
+    "id": "reading-list",
+    "name": {
+     "zh": "书单",
+     "en": "Reading list"
+    },
+    "desc": {
+     "zh": "待办清单：点一条让 Agent 标完成或撤回，新增和整理也交给它。",
+     "en": "Your to-do list: tap an item and the Agent ticks it off or reopens it; it adds and sorts items too."
+    },
+    "icon": "book",
+    "accent": "magic-carpet",
+    "template": "checklist",
+    "official": false,
+    "on": true,
+    "plus": "agentj-add-todo"
+   }
+  ]
+ },
+ "get": {
+  "zh": {
+   "notes": {
+    "ok": true,
+    "id": "notes",
+    "template": "notes",
+    "path": "~/.local/state/agentj/agentperm/cards-data/notes/notes.md",
+    "actions": [
+     {
+      "id": "add",
+      "label": "记一条",
+      "prompt": "〔来自卡片：记事本〕在记事本 ~/.local/state/agentj/agentperm/cards-data/notes/notes.md 最上面记一条（带今天的日期）：",
+      "draft": true
+     },
+     {
+      "id": "tidy",
+      "label": "帮我整理",
+      "prompt": "〔来自卡片：记事本〕帮我整理记事本 ~/.local/state/agentj/agentperm/cards-data/notes/notes.md：合并重复的、按主题加小标题、过期的移到最后「已归档」一节。只改这一个文件，改完用一两句话告诉我改了什么。"
+     }
+    ],
+    "plus": "agentj-add-note",
+    "links": [],
+    "anchors": [],
+    "text": "# 本周\n\n- 周三下午和设计师过一遍 Cards 的样式\n- 给安卓真机截图\n\n## 想法\n\n卡片背后的活都交给电脑上的 Agent。\n"
+   },
+   "todo": {
+    "ok": true,
+    "id": "todo",
+    "template": "checklist",
+    "path": "~/.local/state/agentj/agentperm/cards-data/todo/todo.json",
+    "actions": [
+     {
+      "id": "add",
+      "label": "加一条",
+      "prompt": "〔来自卡片：待办〕在待办清单 ~/.local/state/agentj/agentperm/cards-data/todo/todo.json 里加一条（格式见文件里的 items，done 为 false）：",
+      "draft": true
+     },
+     {
+      "id": "sort",
+      "label": "排个先后",
+      "prompt": "〔来自卡片：待办〕帮我给待办清单 ~/.local/state/agentj/agentperm/cards-data/todo/todo.json 排个先后：没做完的按紧急程度排前面，做完的放最后。只改这一个文件，保持 JSON 格式不变。"
+     }
+    ],
+    "plus": "agentj-add-todo",
+    "links": [],
+    "anchors": [],
+    "items": [
+     {
+      "id": "t1",
+      "text": "写 Agent J Cards 规范",
+      "done": true,
+      "acts": [
+       {
+        "id": "toggle",
+        "label": "完成 / 撤回",
+        "prompt": "〔来自卡片：待办〕待办清单 ~/.local/state/agentj/agentperm/cards-data/todo/todo.json 里 id 为 t1 的一条 「写 Agent J Cards 规范」 现在是「已完成」，请把它改成相反的状态。只改这一条。"
+       }
+      ]
+     },
+     {
+      "id": "t2",
+      "text": "做记事本和待办两张样板卡",
+      "done": true,
+      "acts": [
+       {
+        "id": "toggle",
+        "label": "完成 / 撤回",
+        "prompt": "〔来自卡片：待办〕待办清单 ~/.local/state/agentj/agentperm/cards-data/todo/todo.json 里 id 为 t2 的一条 「做记事本和待办两张样板卡」 现在是「已完成」，请把它改成相反的状态。只改这一条。"
+       }
+      ]
+     },
+     {
+      "id": "t3",
+      "text": "iPhone 和安卓宽度各截一张图",
+      "done": false,
+      "acts": [
+       {
+        "id": "toggle",
+        "label": "完成 / 撤回",
+        "prompt": "〔来自卡片：待办〕待办清单 ~/.local/state/agentj/agentperm/cards-data/todo/todo.json 里 id 为 t3 的一条 「iPhone 和安卓宽度各截一张图」 现在是「未完成」，请把它改成相反的状态。只改这一条。"
+       }
+      ]
+     },
+     {
+      "id": "t4",
+      "text": "等 Leo 拍板第二期开不开放网页卡",
+      "done": false,
+      "acts": [
+       {
+        "id": "toggle",
+        "label": "完成 / 撤回",
+        "prompt": "〔来自卡片：待办〕待办清单 ~/.local/state/agentj/agentperm/cards-data/todo/todo.json 里 id 为 t4 的一条 「等 Leo 拍板第二期开不开放网页卡」 现在是「未完成」，请把它改成相反的状态。只改这一条。"
+       }
+      ]
+     }
+    ]
+   },
+   "reading-list": {
+    "ok": true,
+    "id": "reading-list",
+    "template": "checklist",
+    "path": "~/.local/state/agentj/agentperm/cards-data/reading-list/todo.json",
+    "actions": [
+     {
+      "id": "add",
+      "label": "加一条",
+      "prompt": "〔来自卡片：书单〕在待办清单 ~/.local/state/agentj/agentperm/cards-data/reading-list/todo.json 里加一条（格式见文件里的 items，done 为 false）：",
+      "draft": true
+     },
+     {
+      "id": "sort",
+      "label": "排个先后",
+      "prompt": "〔来自卡片：书单〕帮我给待办清单 ~/.local/state/agentj/agentperm/cards-data/reading-list/todo.json 排个先后：没做完的按紧急程度排前面，做完的放最后。只改这一个文件，保持 JSON 格式不变。"
+     }
+    ],
+    "plus": "agentj-add-todo",
+    "links": [
+     {
+      "id": "web",
+      "label": "开放图书馆",
+      "href": "https://openlibrary.org/search?q=agent"
+     },
+     {
+      "id": "skills",
+      "label": "技能页",
+      "jlink": "page/skills"
+     },
+     {
+      "id": "todo",
+      "label": "看第三条",
+      "jlink": "card/todo#t3"
+     }
+    ],
+    "anchors": [
+     {
+      "id": "buttons",
+      "label": "按钮",
+      "block": "actions"
+     }
+    ],
+    "problem": "empty",
+    "items": []
+   }
+  },
+  "en": {
+   "notes": {
+    "ok": true,
+    "id": "notes",
+    "template": "notes",
+    "path": "~/.local/state/agentj/agentperm/cards-data/notes/notes.md",
+    "actions": [
+     {
+      "id": "add",
+      "label": "Add a note",
+      "prompt": "[From card: Notebook] Add a note at the top of my notebook ~/.local/state/agentj/agentperm/cards-data/notes/notes.md (with today's date): ",
+      "draft": true
+     },
+     {
+      "id": "tidy",
+      "label": "Tidy it up",
+      "prompt": "[From card: Notebook] Tidy up my notebook ~/.local/state/agentj/agentperm/cards-data/notes/notes.md: merge duplicates, add headings by topic, move stale notes to an \"Archived\" section at the end. Change only this file and tell me in a sentence or two what changed."
+     }
+    ],
+    "plus": "agentj-add-note",
+    "links": [],
+    "anchors": [],
+    "text": "# 本周\n\n- 周三下午和设计师过一遍 Cards 的样式\n- 给安卓真机截图\n\n## 想法\n\n卡片背后的活都交给电脑上的 Agent。\n"
+   },
+   "todo": {
+    "ok": true,
+    "id": "todo",
+    "template": "checklist",
+    "path": "~/.local/state/agentj/agentperm/cards-data/todo/todo.json",
+    "actions": [
+     {
+      "id": "add",
+      "label": "Add an item",
+      "prompt": "[From card: To-do] Add an item to my to-do list ~/.local/state/agentj/agentperm/cards-data/todo/todo.json (same shape as the items there, done false): ",
+      "draft": true
+     },
+     {
+      "id": "sort",
+      "label": "Prioritise",
+      "prompt": "[From card: To-do] Prioritise my to-do list ~/.local/state/agentj/agentperm/cards-data/todo/todo.json: open items by urgency first, done items last. Change only this file and keep its JSON shape."
+     }
+    ],
+    "plus": "agentj-add-todo",
+    "links": [],
+    "anchors": [],
+    "items": [
+     {
+      "id": "t1",
+      "text": "写 Agent J Cards 规范",
+      "done": true,
+      "acts": [
+       {
+        "id": "toggle",
+        "label": "Done / undo",
+        "prompt": "[From card: To-do] In my to-do list ~/.local/state/agentj/agentperm/cards-data/todo/todo.json, the item t1 「写 Agent J Cards 规范」 is now \"done\": flip it. Change only that item."
+       }
+      ]
+     },
+     {
+      "id": "t2",
+      "text": "做记事本和待办两张样板卡",
+      "done": true,
+      "acts": [
+       {
+        "id": "toggle",
+        "label": "Done / undo",
+        "prompt": "[From card: To-do] In my to-do list ~/.local/state/agentj/agentperm/cards-data/todo/todo.json, the item t2 「做记事本和待办两张样板卡」 is now \"done\": flip it. Change only that item."
+       }
+      ]
+     },
+     {
+      "id": "t3",
+      "text": "iPhone 和安卓宽度各截一张图",
+      "done": false,
+      "acts": [
+       {
+        "id": "toggle",
+        "label": "Done / undo",
+        "prompt": "[From card: To-do] In my to-do list ~/.local/state/agentj/agentperm/cards-data/todo/todo.json, the item t3 「iPhone 和安卓宽度各截一张图」 is now \"open\": flip it. Change only that item."
+       }
+      ]
+     },
+     {
+      "id": "t4",
+      "text": "等 Leo 拍板第二期开不开放网页卡",
+      "done": false,
+      "acts": [
+       {
+        "id": "toggle",
+        "label": "Done / undo",
+        "prompt": "[From card: To-do] In my to-do list ~/.local/state/agentj/agentperm/cards-data/todo/todo.json, the item t4 「等 Leo 拍板第二期开不开放网页卡」 is now \"open\": flip it. Change only that item."
+       }
+      ]
+     }
+    ]
+   },
+   "reading-list": {
+    "ok": true,
+    "id": "reading-list",
+    "template": "checklist",
+    "path": "~/.local/state/agentj/agentperm/cards-data/reading-list/todo.json",
+    "actions": [
+     {
+      "id": "add",
+      "label": "Add an item",
+      "prompt": "[From card: Reading list] Add an item to my to-do list ~/.local/state/agentj/agentperm/cards-data/reading-list/todo.json (same shape as the items there, done false): ",
+      "draft": true
+     },
+     {
+      "id": "sort",
+      "label": "Prioritise",
+      "prompt": "[From card: Reading list] Prioritise my to-do list ~/.local/state/agentj/agentperm/cards-data/reading-list/todo.json: open items by urgency first, done items last. Change only this file and keep its JSON shape."
+     }
+    ],
+    "plus": "agentj-add-todo",
+    "links": [
+     {
+      "id": "web",
+      "label": "Open Library",
+      "href": "https://openlibrary.org/search?q=agent"
+     },
+     {
+      "id": "skills",
+      "label": "Skills",
+      "jlink": "page/skills"
+     },
+     {
+      "id": "todo",
+      "label": "Item three",
+      "jlink": "card/todo#t3"
+     }
+    ],
+    "anchors": [
+     {
+      "id": "buttons",
+      "label": "Buttons",
+      "block": "actions"
+     }
+    ],
+    "problem": "empty",
+    "items": []
+   }
+  }
+ }
+}

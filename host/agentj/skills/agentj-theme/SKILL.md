@@ -35,7 +35,7 @@ Never edit files under the state folder by hand; never skip validate. Light / da
 
 Custom colours do not need to come from any palette. Cannot change (official whatever the theme says): pairing, safety
 code, security, offline and removed screens; the 网页版 badge; the menu's shield line; the home-screen icon; fonts; every
-agentj.app page.
+[https://agentj.app/](https://agentj.app/) page.
 
 ## Robots (pixel art)
 - N robots (1–16), `names` one per robot (zh ≤ 6, en ≤ 12), top to bottom.

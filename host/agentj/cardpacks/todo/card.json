@@ -1,0 +1,24 @@
+{
+  "$schema": "https://agentj.app/schema/agentj-card-1.json",
+  "schemaVersion": 1,
+  "id": "todo",
+  "version": "1.0.0",
+  "name": {"zh": "待办", "en": "To-do"},
+  "description": {"zh": "待办清单：点一条让 Agent 标完成或撤回，新增和整理也交给它。", "en": "Your to-do list: tap an item and the Agent ticks it off or reopens it; it adds and sorts items too."},
+  "author": "Agent J",
+  "icon": "checklist",
+  "accent": "windstorm",
+  "template": "checklist",
+  "plus": "agentj-add-todo",
+  "data": {"file": "todo.json", "maxBytes": 65536},
+  "actions": [
+    {"id": "add", "label": {"zh": "加一条", "en": "Add an item"}, "draft": true,
+     "prompt": {"zh": "在待办清单 {{data.path}} 里加一条（格式见文件里的 items，done 为 false）：", "en": "Add an item to my to-do list {{data.path}} (same shape as the items there, done false): "}},
+    {"id": "sort", "label": {"zh": "排个先后", "en": "Prioritise"},
+     "prompt": {"zh": "帮我给待办清单 {{data.path}} 排个先后：没做完的按紧急程度排前面，做完的放最后。只改这一个文件，保持 JSON 格式不变。", "en": "Prioritise my to-do list {{data.path}}: open items by urgency first, done items last. Change only this file and keep its JSON shape."}}
+  ],
+  "itemActions": [
+    {"id": "toggle", "label": {"zh": "完成 / 撤回", "en": "Done / undo"},
+     "prompt": {"zh": "待办清单 {{data.path}} 里 id 为 {{item.id}} 的一条 {{item.text}} 现在是「{{item.done}}」，请把它改成相反的状态。只改这一条。", "en": "In my to-do list {{data.path}}, the item {{item.id}} {{item.text}} is now \"{{item.done}}\": flip it. Change only that item."}}
+  ]
+}

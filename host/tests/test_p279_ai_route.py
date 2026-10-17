@@ -282,7 +282,7 @@ class Wiring(unittest.TestCase):
 
     def test_cli_route_before_init(self):
         with tempfile.TemporaryDirectory() as d:
-            env = {**os.environ, "AGENTJ_STATE_DIR": os.path.join(d, "none"), "TZ": "Asia/Hong_Kong", "LANG": "zh_HK.UTF-8"}
+            env = {**os.environ, "AGENTJ_STATE_DIR": os.path.join(d, "none"), "TZ": "Asia/Hong_Kong", "LANG": "zh_HK.UTF-8", "LC_ALL": "zh_HK.UTF-8", "LC_MESSAGES": "zh_HK.UTF-8"}
             r = subprocess.run([sys.executable, "-m", "agentj.cli", "agent", "route", "--json"], cwd=HOST, env=env,
                                capture_output=True, text=True, timeout=60)
             self.assertEqual(r.returncode, 0, r.stderr)

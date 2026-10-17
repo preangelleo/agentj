@@ -304,7 +304,7 @@ class IdleAutoUpdate(unittest.TestCase):
 
     def test_notice_says_while_idle(self):
         r = {"result": "ok", "to": "0.20.2", "when": "idle"}
-        self.assertIn("电脑空闲时已自动升级到 0.20.2", auto_update.notice(r))
+        self.assertIn("Agent J 主机空闲时已自动升级到 0.20.2", auto_update.notice(r))
         self.assertIn("while idle", auto_update.notice(r, "en"))
         self.assertIn("夜里", auto_update.notice({"result": "ok", "to": "0.20.2"}))
 

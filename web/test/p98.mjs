@@ -44,7 +44,7 @@ try {
    assert.equal(await evaluate(p,`document.getElementById('shared-status').hidden`),true);
    const before=await evaluate(p,`document.querySelector('.composer').getBoundingClientRect().top`);
    const text=await evaluate(p,`document.getElementById('toast').textContent`);
-   assert.match(text,language==='zh'?/在跟着电脑/:/following the computer/);   // P280 wording
+   assert.match(text,language==='zh'?/在跟着Agent J 主机/:/following the Agent J host/);   // P280 wording
    const box=await evaluate(p,`(()=>{const r=document.getElementById('toast').getBoundingClientRect();return {left:r.left,right:r.right}})()`);
    assert.ok(box.left>=0 && box.right<=360,'narrow toast within viewport');
    writeFileSync(new URL(agent+'-'+language+'-visible.png',out),await shoot(p,''));

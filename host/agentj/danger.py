@@ -37,10 +37,12 @@ Standard library only (the hook starts once per tool call).
 from __future__ import annotations
 
 import base64
+import contextlib
 import json
 import os
 import posixpath
 import re
+import stat
 import sys
 from dataclasses import dataclass, field
 
@@ -54,7 +56,7 @@ CAT_TEXT = {"zh": {"spend": "花钱", "delete": "删除", "send": "对外发送"
             "en": {"spend": "Spends money", "delete": "Deletes", "send": "Sends out", "credentials": "Changes passwords or keys",
                    "price": "Changes prices", "credentials_read": "Shows passwords or keys",
                    "opaque": "Can't tell what this does"}}
-_EN_CAT = {"spend": "Spends money", "delete": "Deletes something", "send": "Sends something out of this computer",
+_EN_CAT = {"spend": "Spends money", "delete": "Deletes something", "send": "Sends something out of the Agent J host",
            "credentials": "Changes a password, key or sign-in", "price": "Changes a price, discount or budget",
            "opaque": "This command is encoded or assembled; Agent J cannot confirm what it will do"}
 _EN_RULE = {
@@ -2098,20 +2100,452 @@ def _names_only(args: list) -> bool:
 
 # ---- P137 (audit A3): shared-mode credential-show through glob / variable / substitution / a non-whitelist reader
 _CRED_SAMPLES = (".env", ".env.production", ".npmrc", ".netrc", ".pgpass", ".git-credentials", "credentials",
-                 "credentials.json", "id_rsa", "id_ed25519", "secrets.json", "auth.json", "token.json", ".vault-token")
+                 "credentials.json", "id_rsa", "id_ed25519", "secrets.json", "auth.json", "token.json", ".vault-token",
+                 "server.pem", "tls.key", "cert.p12", "vault.kdbx", "cert.pfx", "putty.ppk", "app.jks", "app.keystore",
+                 "site.crt", "site.cer", "vpn.ovpn")       # P358: key / certificate files for a find selection
 _ENV_DUMP = {"env", "printenv"}
 # archivers / encoders whose file operand is read as content (not a show command, which _shown_creds already handles)
 _EXFIL_READERS = {"tar", "gtar", "bsdtar", "zip", "7z", "7za", "gzip", "gunzip", "bzip2", "xz", "zstd", "lz4", "dd",
                   "cpio", "pax", "uuencode", "scp", "rsync"}
 
 
+# P358 (#68): ordinary names a glob that aims at everything also matches — `*`, `*.json`, `*/.git/*` are not aimed at a credential
+_PLAIN_SAMPLES = ("README.md", "main.py", "index.js", "package.json", "notes.txt", "Makefile", "config.yaml", "app.log",
+                  "data.csv", "src", "x")
+_CRED_PATHS = ("./.env", "./app/.env.local", "./.git-credentials", "./.ssh/id_rsa", "./u/.aws/credentials",
+               "./config/secrets.json", "./.npmrc", "./.netrc", "./certs/server.pem", "./.vault-token")
+_CRED_DIR_SAMPLES = (".ssh", ".aws", ".gnupg", ".docker", ".kube", ".azure", ".password-store", "gcloud", "keyrings")
+_PLAIN_DIR_SAMPLES = ("src", "scripts", "docs", "build", "node_modules", "static", ".git", ".github", ".vscode", "tests", "x")
+_PLAIN_PATHS = ("./src/main.py", "./README.md", "./node_modules/x/index.js", "./.git/config", "./.git/objects/ab/cd",
+                "./build/app.log", "./docs/notes.txt", "./package.json")
+
+
 def _glob_cred(word: str) -> bool:
-    """A glob argument that could match a credential file (`cat .e*`, `cat ~/.ssh/id_*`)."""
+    """A glob argument aimed at a credential file (`cat .e*`, `cat ~/.ssh/id_*`, `*credentials*`). P358 (#68): it must match a
+    credential name and no ordinary one — `*` / `*.json` / `*/.git/*` could reach .git-credentials but are not aimed at it."""
     import fnmatch
     if not re.search(r"[*?\[]", word):
         return False
-    base = word.strip("'\"").rsplit("/", 1)[-1]
-    return any(fnmatch.fnmatch(name, base) for name in _CRED_SAMPLES)
+    parts = word.strip("'\"").split("/")
+    for seg in parts[:-1]:                   # `cat ~/.s*/*`: a directory segment aimed at a credential directory
+        if re.search(r"[*?\[]", seg) and any(fnmatch.fnmatchcase(d, seg) for d in _CRED_DIR_SAMPLES) and \
+                not any(fnmatch.fnmatchcase(d, seg) for d in _PLAIN_DIR_SAMPLES):
+            return True
+    base = parts[-1]
+    return any(fnmatch.fnmatchcase(name, base) for name in _CRED_SAMPLES) and \
+        not any(fnmatch.fnmatchcase(name, base) for name in _PLAIN_SAMPLES)
+
+
+def _braces(word: str) -> list:
+    """`.env{,.local}` → [.env, .env.local] (one level, P358); a word without a brace list → []."""
+    m = re.search(r"\{([^{}]*,[^{}]*)\}", word)
+    if not m:
+        return []
+    return [word[:m.start()] + alt + word[m.end():] for alt in m.group(1).split(",")][:16]
+
+
+def _filter_cred(opt: str, pat: str) -> bool:
+    """A find selection (`-name` / `-path` / `-regex` …) or a grep / rg include pattern that picks credential files."""
+    import fnmatch
+    pat = pat.strip("'\"")
+    if opt not in ("-regex", "-iregex"):
+        pat = re.sub(r"\\(.)", r"\1", pat)  # find's `-name '\.env'` is `.env`
+    if not pat:
+        return False
+    icase = opt.startswith(("-i", "--i")) or opt in ("--iglob",)
+    if opt in ("-regex", "-iregex"):
+        def hit(s):
+            try:
+                return re.fullmatch(pat, s, re.I if icase else 0) is not None
+            except re.error:
+                return True                      # an unreadable regex is not trusted to miss
+        return any(hit(p) for p in _CRED_PATHS) and not any(hit(p) for p in _PLAIN_PATHS)
+    f = (lambda n, p: fnmatch.fnmatchcase(n.lower(), p.lower())) if icase else fnmatch.fnmatchcase
+    if opt in ("-path", "-ipath", "-wholename", "-iwholename"):
+        if not re.search(r"[*?\[]", pat):
+            return bool(cred_path(pat))
+        return any(f(p, pat) for p in _CRED_PATHS) and not any(f(p, pat) for p in _PLAIN_PATHS)
+    base = pat.rsplit("/", 1)[-1]
+    if not re.search(r"[*?\[]", base):
+        return bool(cred_path(base) or cred_path(pat))
+    return any(f(n, base) for n in _CRED_SAMPLES) and not any(f(n, base) for n in _PLAIN_SAMPLES)
+
+
+# P358: programs that only name, count or test their file operands — a glob there reads no content
+_NAMES_ONLY = _QUIET | {"ls", "stat", "du", "file", "basename", "dirname", "realpath", "readlink", "test", "[", "echo",
+                        "printf", "find"}
+_FIND_SELECT = ("-name", "-iname", "-path", "-ipath", "-wholename", "-iwholename", "-regex", "-iregex", "-lname", "-ilname")
+_FIND_VALUE = set(_FIND_SELECT) | {"-newer", "-anewer", "-cnewer", "-samefile", "-newermt", "-newerat", "-newerct", "-type",
+                                   "-xtype", "-user", "-group", "-perm", "-size", "-mtime", "-mmin", "-atime", "-amin", "-ctime",
+                                   "-cmin", "-maxdepth", "-mindepth", "-printf", "-fprint", "-fprintf", "-fls", "-fprint0",
+                                   "-inum", "-links", "-uid", "-gid", "-used", "-fstype", "-context", "-files0-from"}
+_FIND_EXEC = ("-exec", "-execdir", "-ok", "-okdir")
+_GREP_LIKE = ("grep", "egrep", "fgrep", "rg", "ag", "ack")
+_GREP_VALUE = {"-e", "-f", "-m", "-A", "-B", "-C", "-d", "-D", "--regexp", "--file", "--max-count", "--after-context",
+               "--before-context", "--context", "--label", "--exclude", "--exclude-dir", "--include", "--exclude-from"}
+_RG_VALUE = {"-e", "-f", "-m", "-A", "-B", "-C", "--regexp", "--file", "--max-count", "--after-context", "--before-context",
+             "--context", "-g", "--glob", "--iglob", "-t", "-T", "--type", "--type-not", "-M", "-j", "--max-depth", "-E",
+             "--encoding", "--pre", "--ignore-file", "-r", "--replace", "--ignore", "--ignore-dir", "-G",
+             "--file-search-regex"}
+_AG_VALUE = {"-A", "-B", "-C", "-m", "--max-count", "--after", "--before", "--context", "-G", "--file-search-regex",
+             "--ignore", "--ignore-dir", "--ignore-file", "-p", "--path-to-ignore", "--depth", "-g", "--type-set"}
+_GREP_INCLUDE = ("--include", "-g", "--glob", "--iglob", "-G", "--file-search-regex")
+
+
+def _reader(prog: list) -> bool:
+    """Does a program find -exec / xargs runs put the content of the files it gets on the screen? Unknown → yes."""
+    if not prog:
+        return False
+    name = _base(prog[0])
+    if name in _NAMES_ONLY or name in ("rm", "chmod", "chown", "touch", "mv", "cp", "ln", "mkdir"):
+        return False
+    quiet = set("qcl") if name == "rg" else set("qclL")        # rg -L follows symlinks and still prints content
+    if name in _GREP_LIKE and any(a in ("--files", "-q", "--quiet", "--silent", "-c", "--count", "-l", "--files-with-matches",
+                                        "--files-without-match") or (a == "-L" and name != "rg") or
+                                  (a.startswith("-") and not a.startswith("--") and set(a[1:]) & quiet) for a in prog[1:]):
+        return False
+    return True
+
+
+_PASS_NAMES = {"sort", "uniq", "head", "tail", "grep", "egrep", "fgrep", "rg", "cut", "tr", "sed", "awk", "gawk", "tee",
+               "nl", "tac", "rev", "cat"}
+
+
+def _feeds_reader(cs: list, ci: int, c) -> list | None:
+    """P358: the program the NAMES this command prints go on to (`| xargs cat`, `| sort | sudo xargs cat`, `| while read f`,
+    `cat $(…)`, `xargs cat < <(…)`, `X=$(…)`, `> list` for a later `xargs -a`); None = nobody reads them as files."""
+    if [o for o in c.outs if o not in ("/dev/stdout", "/dev/stderr", "/dev/tty", "/dev/null")]:
+        return ["(file)"]
+    if c.owner is not None:
+        xs = unwrap(c.owner)
+        return xs[0].raw if xs else ["(variable)"]
+    for d in cs[ci + 1:]:
+        if d.owner is not c.owner:
+            continue
+        if not d.piped:
+            break
+        if d.words and d.words[0] in ("while", "until", "for", "do", "{", "("):
+            return ["(loop)"]
+        if any(_base(w) in ("xargs", "parallel") for w in d.words[:6]):
+            xs = unwrap(d)
+            return xs[0].raw if xs else ["echo"]
+        if {x.name for x in unwrap(d)} <= _PASS_NAMES:
+            continue
+        return None
+    return None
+
+
+def _find_cred_read(args: list, piped_prog: list | None, cwds: list | None = None, remote: bool = False,
+                    dump_prog: list | None = None, dump: bool = True) -> str | None:
+    """P358 (#68): find only names files; its -name / -path / -not -path … patterns are filters, not files it reads. It reads
+    credentials when it runs a content reader (-exec cat {}, | xargs cat) on a selection aimed at credential files — or
+    (addendum) on an untargeted selection (`find . -type f -exec cat {} +`) that, walked on this computer, holds one.
+    `dump_prog`: the downstream reader for that walk (a `> list` nobody reads later is not one)."""
+    k, starts = 0, []
+    while k < len(args) and (args[k] in ("-H", "-L", "-P") or re.fullmatch(r"-O\d", args[k]) or args[k] == "-D"):
+        k += 2 if args[k] == "-D" else 1          # find -L ~/.ssh …: options before the start points
+    follow = "-L" in args[:k]
+    while k < len(args) and not (args[k].startswith("-") or args[k] in ("(", "\\(", "!")):
+        starts.append(args[k])
+        k += 1
+    picks, readers, neg = [], [], False
+    chain, negs, prunes, types, depth, unsure = [], [], [], set(), {}, False
+    while k < len(args):
+        a = args[k]
+        if a in ("!", "-not"):
+            neg = True
+            k += 1
+            continue
+        if a in ("(", "\\(", ")", "\\)", ","):
+            unsure, neg = True, False             # a group: the walk below keeps every file (filters not trusted)
+            k += 1
+            continue
+        if a in ("-o", "-or"):
+            if args[k - 1:k] == ["-prune"]:
+                chain, negs = [], []              # `X -prune -o …`: the selection starts again after the prune
+            else:
+                unsure = True
+            k, neg = k + 1, False
+            continue
+        if a in _FIND_EXEC:
+            j = k + 1
+            while j < len(args) and args[j] not in (";", "+", "\\;"):
+                j += 1
+            readers.append(args[k + 1:j])
+            k, neg = j + 1, False
+            continue
+        if a in _FIND_SELECT and k + 1 < len(args):
+            pruned = args[k + 2:k + 4] in (["-prune", "-o"], ["-prune", "-or"])   # `-path X -prune -o …`: X is skipped
+            if pruned:
+                prunes.append((a, args[k + 1]))
+            elif neg:
+                negs.append((a, args[k + 1]))
+            else:
+                picks.append((a, args[k + 1]))
+                chain.append((a, args[k + 1]))
+            k, neg = k + 2, False
+            continue
+        if a in ("-maxdepth", "-mindepth") and k + 1 < len(args):
+            depth[a] = args[k + 1]
+        if a in ("-type", "-xtype") and k + 1 < len(args) and not neg:
+            types |= set(args[k + 1].split(","))
+        if a in _FIND_VALUE:
+            k += 2
+        else:
+            k += 1
+        neg = False
+    if piped_prog is not None:
+        readers.append(piped_prog)
+    if not any(_reader(r) for r in readers + ([dump_prog] if dump_prog is not None else [])):
+        return None
+    for s in starts:
+        why = cred_path(s.strip("'\"")) or (_glob_cred(s) and "凭据文件")
+        if why:
+            return f"用 find 读取{why}"
+    for opt, pat in picks:
+        if _filter_cred(opt, pat):
+            return f"用 find 读取匹配 {pat.strip(chr(39) + chr(34))} 的凭据文件"
+    # ---- the addendum: an untargeted selection is walked where it runs
+    dump_readers = [r for r in readers if r is not piped_prog] + ([dump_prog] if dump_prog is not None else [])
+    if not dump or not any(_reader(r) for r in dump_readers) or (types and not types & {"f", "l"}):
+        return None
+    if unsure:
+        chain, negs = [], []
+    keep = lambda p: all(_find_match(o, pt, p) for o, pt in chain) and not any(_find_match(o, pt, p, False) for o, pt in negs)
+    if not any(keep(p) for p in _CRED_PATHS):
+        return None                               # `-name '*.py'`: the selection cannot reach a credential name, no walk
+    prune = (lambda p: any(_find_match(o, pt, p, False) for o, pt in prunes)) if prunes else None
+    num = lambda v: int(v) if isinstance(v, str) and v.isdigit() else None
+    md, mn = num(depth.get("-maxdepth")), num(depth.get("-mindepth")) or 0
+    import glob as globmod
+    for s in starts or ["."]:
+        if remote:
+            return f"用 find 读取远程电脑上 {s} 里的全部文件{_UNSURE}"
+        for cwd in cwds or [None]:
+            root = _place(s, cwd)
+            if root is None:
+                return f"用 find 读取 {s} 里的全部文件{_UNSURE}"
+            many = re.search(r"[*?\[]", s)
+            for r in (sorted(globmod.glob(root))[:64] if many else [root]):
+                show = (r if os.path.isabs(s.strip("'\"")) else os.path.relpath(r, cwd)) if many else s.strip("'\"")
+                why = _tree_cred(r, show, keep, prune, md, mn, follow)
+                if why is None:
+                    return f"用 find 读取 {s} 里的全部文件{_UNSURE}"
+                if why:
+                    return f"用 find 读取 {s} 里的全部文件，会连带读到{why}"
+    return None
+
+def _read_operands(sc) -> list:
+    """The words a program reads as files (P358): for grep / rg the pattern and the option values (--exclude-dir '*', -g
+    '!*/.git/*') are not files; programs that only name / count / test their operands read none."""
+    if sc.name in _NAMES_ONLY:
+        return list(sc.ins)
+    if sc.name in _GREP_LIKE:
+        pos = _positionals(sc.args, _GREP_VALUE if sc.name in ("grep", "egrep", "fgrep") else
+                           _RG_VALUE if sc.name == "rg" else _AG_VALUE)
+        given = "--files" in sc.args or any(a in ("-e", "-f", "--regexp", "--file") or a.startswith(("--regexp=", "--file="))
+                                            or re.fullmatch(r"-[ef].+", a) for a in sc.args)
+        return (pos if given else pos[1:]) + list(sc.ins) + list(sc.redirs)
+    return _positionals(sc.args) + list(sc.ins) + list(sc.redirs)
+
+
+def _grep_include_cred(sc, feeds=None) -> str | None:
+    """`grep -r KEY --include='.env*' .` / `rg KEY -g '.env*'`: the include pattern picks the credential files it shows
+    (or, with -l / --files, names them for a reader downstream: `feeds`)."""
+    if sc.name not in _GREP_LIKE or not (_reader([sc.name] + sc.args) or (feeds and _reader(feeds))):
+        return None
+    vals = []
+    for j, a in enumerate(sc.args):
+        for opt in _GREP_INCLUDE:
+            if a == opt and j + 1 < len(sc.args):
+                vals.append((opt, sc.args[j + 1]))
+            elif a.startswith(opt + "=") and opt.startswith("--"):
+                vals.append((opt, a.split("=", 1)[1]))
+    for opt, v in vals:
+        v = v.strip("'\"")
+        if v.startswith("!"):
+            continue                             # rg -g '!x': an exclusion
+        if _filter_cred("--iglob" if opt == "--iglob" else "-name", v):
+            return f"读取匹配 {v} 的凭据文件"
+    return None
+
+
+# ---- P358 addendum (贾维斯 10-17): an untargeted dump (`cat *`, `find . -type f -exec cat {} +`) reads every file of a folder.
+# It asks when that folder, looked at on this computer, really holds a credential file; a folder the host cannot look at
+# (a remote command, a variable, no known working folder, too many files) asks too. `cat *.json` beside package.json passes.
+_DUMP_MAX = 20000
+_DUMP_SECONDS = 1.5                           # a slow / network folder: stop looking and ask
+_UNSURE = "（看不到这个文件夹里有没有凭据文件，先问一下）"
+
+
+def _could_cred(word: str) -> bool:
+    """A glob that could reach a credential name at all (the pre-P358 rule) — bash's `*` skips dot names unless the pattern
+    starts with a dot, so `*/*.py` never reaches ~/.ssh."""
+    import fnmatch
+    parts = word.strip("'\"").split("/")
+    ok = lambda pat, name: (pat.startswith(".") or not name.startswith(".")) and fnmatch.fnmatchcase(name, pat)
+    return any(ok(parts[-1], n) for n in _CRED_SAMPLES) or any(
+        re.search(r"[*?\[]", s) and any(ok(s, d) for d in _CRED_DIR_SAMPLES) for s in parts[:-1])
+
+
+def _place(p: str, cwd) -> str | None:
+    """A path / pattern on this computer, absolute; None = the host cannot tell where (a variable, ~user, no folder)."""
+    p = p.strip("'\"")
+    if cwd:
+        p = re.sub(r"\$\{?PWD\}?(?!\w)|\$\(pwd\)|`pwd`", lambda _m: cwd, p)
+    if not p or re.search(r"[$`]", p) or (p.startswith("~") and p != "~" and not p.startswith("~/")):
+        return None
+    p = os.path.expanduser(p)
+    if not os.path.isabs(p):
+        if not cwd:
+            return None
+        p = os.path.join(cwd, p)
+    return os.path.normpath(p)
+
+
+def _tree_cred(root: str, show: str, keep=None, prune=None, maxdepth=None, mindepth=0, follow=False):
+    """The first credential file under `root` (shown as `show/…`, as find prints it) that `keep` selects → its why;
+    False = none; None = cannot tell (more than _DUMP_MAX entries)."""
+    if not os.path.isdir(root):
+        if not os.path.lexists(root) or mindepth > 0:
+            return False
+        why = cred_path(root) or cred_path(show)
+        return why if why and (keep is None or keep(show)) else False
+    import time
+    n, top, end = 0, root.rstrip("/").count("/"), time.monotonic() + _DUMP_SECONDS
+    for d, dirs, files in os.walk(root, followlinks=follow):
+        depth = d.rstrip("/").count("/") - top
+        rel = os.path.relpath(d, root)
+        sd = show if rel == "." else show.rstrip("/") + "/" + rel
+        n += len(dirs) + len(files)
+        if n > _DUMP_MAX or time.monotonic() > end:
+            return None
+        if prune:
+            dirs[:] = [x for x in dirs if not prune(sd.rstrip("/") + "/" + x)]
+        if maxdepth is not None and depth + 1 >= maxdepth:
+            dirs[:] = []
+        if (maxdepth is not None and depth + 1 > maxdepth) or depth + 1 < mindepth:
+            continue
+        for f in files:
+            sp = sd.rstrip("/") + "/" + f
+            why = _cred_file(os.path.join(d, f)) or cred_path(sp)
+            if why and (keep is None or keep(sp)):
+                return why
+    return False
+
+
+def _find_match(opt: str, pat: str, shown: str, unknown: bool = True) -> bool:
+    """Does a find test (-name / -path / -regex …) select the path find prints as `shown`? `unknown`: answer for -lname."""
+    import fnmatch
+    pat = pat.strip("'\"")
+    icase = opt.startswith("-i")
+    if opt in ("-regex", "-iregex"):
+        try:
+            return re.fullmatch(pat, shown, re.I if icase else 0) is not None
+        except re.error:
+            return unknown
+    if opt in ("-lname", "-ilname"):
+        return unknown
+    pat = re.sub(r"\\(.)", r"\1", pat)
+    s = shown if opt in ("-path", "-ipath", "-wholename", "-iwholename") else shown.rstrip("/").rsplit("/", 1)[-1]
+    return fnmatch.fnmatchcase(s.lower(), pat.lower()) if icase else fnmatch.fnmatchcase(s, pat)
+
+
+def _cred_file(p: str) -> str | None:
+    """cred_path of a file on this computer, through a symlink too (`ln -s ~/.ssh/id_rsa k; cat *`)."""
+    why = cred_path(p)
+    if not why and os.path.islink(p):
+        why = cred_path(os.path.realpath(p))
+    if not why:
+        with contextlib.suppress(OSError):
+            st = os.stat(p)
+            if stat.S_ISREG(st.st_mode) and st.st_nlink > 1:   # a hard link: maybe a key under a plain name
+                why = f"硬链接文件 {os.path.basename(p)}（可能是凭据文件的另一个名字）"
+    return why
+
+
+def _bare(src: str) -> str:
+    """The shell text outside quotes and $(( )) arithmetic — where `*(` is a glob, not code (`python3 -c 'print(2*(3))'`)."""
+    return re.sub(r"'[^']*'|\"(?:[^\"\\]|\\.)*\"|\$\(\([^)]*\)\)", " ", src)
+
+
+def _glob_opts(src: str) -> set:
+    """How the line changes glob expansion: "hidden" (dotglob / globdots), "star" (globstar), "unsure" (GLOBIGNORE, extglob,
+    other setopt / set -o, a zsh qualifier `*(D)`) — the host mirrors the first two and cannot mirror the third."""
+    o = set()
+    src = _bare(src)
+    if re.search(r"dotglob|globdots|\bGLOB_DOTS\b", src, re.I):
+        o.add("hidden")
+    if re.search(r"globstar", src):
+        o.add("star")
+    if re.search(r"GLOBIGNORE|extglob|\bsetopt\b(?!\s+(?:globdots|glob_dots)\s*(?:[;&|\n]|$))|\bset\s+-o|[*?\]]\(", src):
+        o.add("unsure")
+    return o
+
+
+def _glob_dump(word: str, cwds: list, deep: bool = False, remote: bool = False, odd=frozenset()) -> str | None:
+    """`cat *` / `head */*` / `tar czf x.tgz *`: why when the glob, expanded on this computer, reaches a credential file (deep:
+    also inside a folder it matches — tar / zip / grep -r), or the host cannot look; None = it reads none.
+    odd: _glob_opts of the line (dotglob / globstar mirrored; anything else → ask)."""
+    import glob as globmod
+    raw = word.strip("'\"")
+    hidden = "hidden" in odd
+    if not re.search(r"[*?\[^]", raw) or re.search(r"[\s;]", raw):   # a word with a space was quoted: no expansion
+        return None
+    if "unsure" in odd or "(" in raw or ")" in raw:     # zsh qualifiers `*(D)` / `^x`, extglob `@(…)`: not mirrored
+        return f"读取 {raw}{_UNSURE}"
+    if not re.search(r"[*?\[]", raw) or not (_could_cred(raw) or hidden and _could_cred("." + raw.lstrip("."))):
+        return None
+    if remote:
+        return f"在远程电脑上读取 {raw}{_UNSURE}"
+    for cwd in cwds:
+        pat = _place(raw, cwd)
+        if pat is None:
+            return f"读取 {raw}{_UNSURE}"
+        import time
+        n, end = 0, time.monotonic() + _DUMP_SECONDS
+        for hit in globmod.iglob(pat, recursive="**" in raw, include_hidden=hidden):     # zsh: `**` always descends
+            n += 1
+            if n > _DUMP_MAX or time.monotonic() > end:
+                return f"读取 {raw}{_UNSURE}"
+            why = _cred_file(hit)
+            if not why and deep and os.path.isdir(hit):
+                why = _tree_cred(hit, hit)
+                if why is None:
+                    return f"读取 {raw}{_UNSURE}"
+            if why:
+                return f"读取 {raw} 会连带读到{why}"
+    return None
+
+
+def _grep_tree_dump(sc, cwds: list) -> str | None:
+    """`grep -r KEY --include='*' .`: a recursive search whose include pattern could reach a credential name reads the
+    credential files the folder really holds (the include pattern aimed at one is _grep_include_cred)."""
+    import fnmatch
+    if sc.name not in ("grep", "egrep", "fgrep") or not _reader([sc.name] + sc.args) or not any(
+            a in ("--recursive", "--dereference-recursive") or re.fullmatch(r"-[a-zA-Z]*[rR][a-zA-Z]*", a) for a in sc.args):
+        return None
+    inc = [a.split("=", 1)[1] if "=" in a else sc.args[j + 1] for j, a in enumerate(sc.args)
+           if a.startswith("--include=") or (a == "--include" and j + 1 < len(sc.args))]
+    inc = [v.strip("'\"") for v in inc if any(fnmatch.fnmatchcase(n, v.strip("'\"")) for n in _CRED_SAMPLES)]
+    pos = _read_operands(sc)
+    pats = [a for j, a in enumerate(sc.args) if j and sc.args[j - 1] in ("-e", "--regexp")] or \
+        [w for w in _positionals(sc.args, _GREP_VALUE)[:1]]
+    if not inc and not any(" " not in v and re.fullmatch(r"\^?\.?\*?\$?|\.|\.\*", v.strip("'\"")) for v in pats):
+        return None                              # a match-all pattern (`grep -r '' .`) prints every line of every file
+    inc = inc or ["*"]
+    pos = pos or ["."]
+    for w in pos:
+        for cwd in cwds:
+            root = _place(w, cwd)
+            if root is None or "remote" in sc.flags:
+                return f"在 {w} 里递归搜索{_UNSURE}"
+            why = _tree_cred(root, w, keep=lambda p: any(fnmatch.fnmatchcase(p.rsplit("/", 1)[-1], v) for v in inc))
+            if why is None:
+                return f"在 {w} 里递归搜索{_UNSURE}"
+            if why:
+                return f"在 {w} 里递归搜索会连带读到{why}"
+    return None
 
 
 def _expand_assign(text: str) -> str:
@@ -2124,10 +2558,11 @@ def _expand_assign(text: str) -> str:
     return exp
 
 
-def _shared_cred_read(command: str) -> tuple[str, str] | None:
+def _shared_cred_read(command: str, cwd: str | None = None) -> tuple[str, str] | None:
     """P137 A3: in shared standard mode, a credential read that is VISIBLE in the command through a glob, a variable, a
     substitution, an env dump, or a non-whitelist program's operand → ask (strict here). A program that merely reads a
-    credential by a name it never shows (python app.py) is still judged by its name only (G-A57) and does not ask."""
+    credential by a name it never shows (python app.py) is still judged by its name only (G-A57) and does not ask.
+    `cwd` (P358 addendum): the folder the command runs in, where an untargeted dump (`cat *`) is looked at; None = unknown."""
     text = code_text(command[:MAX_CMD])
     cmds = lex(text)
     for idx, c in enumerate(cmds):                        # env dump: `env`/`printenv` with no program after it
@@ -2140,15 +2575,109 @@ def _shared_cred_read(command: str) -> tuple[str, str] | None:
         if nxt is not None and nxt.piped and nxt.owner is c.owner and {x.name for x in unwrap(nxt)} <= _QUIET:
             continue                                      # `env | wc -l`: only a count is shown, not the values
         return ("shared.credential_show", "把环境变量（含密钥）显示到屏幕上")
-    for src in (text, _expand_assign(text)):
-        for c in lex(src):
+    expanded = _expand_assign(text)
+    for src in (text, expanded):
+        dumps = src is expanded or expanded == text   # `d=.; cat $d/*`: the folder is judged once it is known
+        cs = lex(src)
+        cwds = [cwd if isinstance(cwd, str) and os.path.isabs(cwd) else None]
+        odd = _glob_opts(src)
+        if dumps and "unsure" in odd and re.search(r"[!@+?*]\(", _bare(src)) and any(
+                x.name not in _NAMES_ONLY and _reader([x.name] + x.args) for d in cs for x in unwrap(d)):
+            return ("shared.credential_show", f"读取扩展通配符匹配的文件{_UNSURE}")    # `cat !(*.py)` (extglob)
+        # the line also names a credential file (`cat ~/.ssh/id_rsa > k; cat *`): a dump after it may read a copy
+        named = any(cred_path(w) for d in cs for w in d.words + d.ins)
+        for ci, c in enumerate(cs):
+            if c.words and _base(c.words[0]) == "env" and any(w in ("-C", "--chdir") or w.startswith(("--chdir=", "-C"))
+                                                               for w in c.words[1:]):
+                cwds = list(dict.fromkeys(cwds + [None]))
+            if not c.words and c.ins and c.owner is not None:     # `echo "$(<.env)"`: bash reads the file into the owner
+                for w in c.ins:
+                    if _glob_cred(w) or cred_path(w):
+                        return ("shared.credential_show", f"读取{cred_path(w) or w}")
             for sc in unwrap(c):
+                if sc.name in ("cd", "pushd"):           # every folder the line may be in afterwards (`sh -c 'cd x && …'`)
+                    t = next((w for w in sc.args if not w.startswith("-")), "~")
+                    cwds = list(dict.fromkeys(cwds + [None if t == "-" else _place(t, x) for x in cwds]))[:8]
+                    continue
                 if sc.name in ("grep", "egrep", "fgrep", "rg") and _names_only(sc.args):
                     continue                             # P137 误报: prints key NAMES, not secret values
-                operands = _positionals(sc.args) + list(sc.ins) + list(sc.redirs)
+                feeds = _feeds_reader(cs, ci, c)
+                dfeeds = feeds
+                lists = [o for o in c.outs if o != "/dev/null"] + [sc.args[j + 1] for j, a in enumerate(sc.args[:-1])
+                                                                   if sc.name == "find" and a in ("-fprint", "-fprint0", "-fls")]
+                used = any(o in w for d in cs[ci + 1:] for w in d.words + d.ins for o in lists)
+                if feeds == ["(file)"] and not used:
+                    dfeeds = None                        # `find . -type f > list`: a list nobody here reads back
+                elif feeds is None and used:
+                    dfeeds = ["(file)"]                  # `find . -fprint l; xargs -a l cat`
+                remote = "remote" in sc.flags
+                if sc.name == "find":                    # P358 (#68): its patterns are filters; it reads only via -exec / xargs
+                    why = _find_cred_read(sc.args, feeds, cwds, remote, dfeeds, dumps)
+                    if why:
+                        return ("shared.credential_show", why)
+                    continue
+                why = _grep_include_cred(sc, feeds) or _grep_tree_dump(sc, cwds)
+                if why:
+                    return ("shared.credential_show", why)
+                if sc.name in _NAMES_ONLY or (sc.name in _GREP_LIKE and not _reader([sc.name] + sc.args)):
+                    if feeds and _reader(feeds):         # `echo .e* | xargs cat`, `cat $(ls ~/.ssh/id_*)`: names to a reader
+                        for w in _positionals(sc.args):
+                            hit = _glob_cred(w) or cred_path(w.strip("'\"")) or any(cred_path(x) for x in _braces(w))
+                            if hit:
+                                return ("shared.credential_show", f"把匹配 {w.strip(chr(39) + chr(34))} 的凭据文件交给程序读取")
+                    if dumps and dfeeds and _reader(dfeeds):   # `echo * | xargs cat`, `ls | xargs cat`: a dump through the names
+                        pos = _positionals(sc.args)
+                        if sc.name == "ls":              # `ls`, `ls dir`: the folder's names
+                            dot = any(re.fullmatch(r"-[a-zA-Z]*[aA][a-zA-Z]*", a) for a in sc.args)
+                            pos = [g for w in (pos or ["."]) for g in (
+                                [w] if re.search(r"[*?\[]", w) else
+                                [w.rstrip("/") + "/*"] + ([w.rstrip("/") + "/.*"] if dot else []))]
+                        for w in pos:
+                            why = _glob_dump(w, cwds, remote=remote, odd=odd) or (named and _could_cred(w) and
+                                                                                 "读取这条命令里碰过凭据文件之后的整个文件夹")
+                            if why:
+                                return ("shared.credential_show", why)
+                    if sc.name in _NAMES_ONLY:
+                        continue
+                operands = _read_operands(sc)
+                for w in list(operands):
+                    for x in _braces(w):                 # `cat .env{,.local}`
+                        if cred_path(x):
+                            return ("shared.credential_show", f"读取{cred_path(x)}")
+                        operands.append(x)
                 for w in operands:
                     if _glob_cred(w):                    # glob that can match a credential file (any program)
                         return ("shared.credential_show", f"读取匹配 {w.strip(chr(39)+chr(34))} 的凭据文件")
+                if dumps and re.search(r"[*?\[]", sc.name) and any(d.words and _reader(d.words) for d in cs[ci + 1:]):
+                    why = _glob_dump(sc.name, cwds, False, remote, odd)    # `a=(*); cat "${a[@]}"`
+                    if why:
+                        return ("shared.credential_show", why)
+                if dumps and sc.name in _EXFIL_READERS:  # `tar cf - . | base64`, `zip -r - src`: a folder it packs
+                    here = [None] if any(a in ("-C", "--directory") or a.startswith("--directory=") for a in sc.args) else cwds
+                    for w in _positionals(sc.args):
+                        if re.search(r"[*?\[$`]", w) or w == "-":
+                            continue
+                        for x in here:
+                            q = _place(w, x)
+                            if q is None:
+                                why = w.rstrip("/") in (".", "..", "~", "") and f"打包 {w}{_UNSURE}"    # the whole folder
+                            else:
+                                why = os.path.isdir(q) and _tree_cred(q, w)
+                                why = f"打包 {w}{_UNSURE}" if why is None else why and f"打包 {w} 会连带读到{why}"
+                            if why:
+                                return ("shared.credential_show", why)
+                if dumps and _reader(sc.raw or [sc.name]):   # P358 addendum: `cat *` reads what the folder really holds
+                    deep = sc.name in _EXFIL_READERS or (sc.name in _GREP_LIKE and any(
+                        a in ("--recursive", "--dereference-recursive") or re.fullmatch(r"-[a-zA-Z]*[rR][a-zA-Z]*", a)
+                        for a in sc.args))
+                    for w in operands:
+                        why = _glob_dump(w, cwds, deep, remote, odd) or (
+                            named and re.search(r"[*?\[]", w) and _could_cred(w) and "读取这条命令里碰过凭据文件之后的整个文件夹")
+                        if not why and cwds[0] and not re.search(r"[*?\[$`]", w):      # `cat link` → ~/.ssh/id_rsa
+                            q = _place(w, cwds[0])
+                            why = q and os.path.islink(q) and _cred_file(q) and f"读取指向{_cred_file(q)} 的链接 {w}"
+                        if why:
+                            return ("shared.credential_show", why)
                 if sc.name in _EXFIL_READERS:            # an archiver / encoder reading a credential path (tar cf - ~/.ssh)
                     for w in operands:
                         why = cred_path(w)
@@ -2175,7 +2704,9 @@ def _shown_creds(text: str) -> list[str]:
                 continue
             args = sc.args
             files = [a for a in _positionals(args, {"-e", "-f", "-m", "-A", "-B", "-C", "-n", "-c", "-d", "-F", "-o",
-                                                    "--output", "-s", "-t", "-w", "-g"}) if cred_path(a)]
+                                                    "--output", "-s", "-t", "-w", "-g"} |
+                                             ({"--exclude", "--exclude-dir", "--include", "--exclude-from", "--glob", "--iglob"}
+                                              if sc.name in _GREP_LIKE else set())) if cred_path(a)]   # P358: filters
             files += [a.split("=", 1)[1] for a in args if a.startswith(("--file=", "-in=", "--in=")) and cred_path(a.split("=", 1)[1])]
             files += [args[j + 1] for j, a in enumerate(args[:-1]) if a in ("-in", "-f", "--file", "-T", "--upload-file",
                                                                               "-d", "--data", "--data-binary", "-F")
@@ -2225,7 +2756,7 @@ def _shown_creds(text: str) -> list[str]:
     return out
 
 
-def classify_shared(tool: str, tool_input, extra=None, mode: str = "standard") -> Verdict:
+def classify_shared(tool: str, tool_input, extra=None, mode: str = "standard", cwd: str | None = None) -> Verdict:
     """Only spending, public deletion, external delivery and credentials.
 
     Uses the independent classifier/lexer/path rules; local file deletion and price edits are not a new shared-mode approval
@@ -2233,6 +2764,7 @@ def classify_shared(tool: str, tool_input, extra=None, mode: str = "standard") -
     reading .env by name, or a note / commit message that merely mentions it, does not ask; "strict" = the P40 rule (any
     credential path anywhere in the call asks). Spend / send / public delete rules are the same in both modes.
     P336 "safe" (the owner's safe approval level) = strict + every deletion, local files too.
+    P358 `cwd`: the folder a shell command runs in — an untargeted dump (`cat *`) asks when it really holds a credential file.
     """
     strict = mode in ("strict", "safe")
     alldel = mode == "safe"
@@ -2292,7 +2824,7 @@ def classify_shared(tool: str, tool_input, extra=None, mode: str = "standard") -
                 if shown:
                     read_rule = ('shared.credential_show', f"把{cred_path(shown[0])} 的内容显示到屏幕上")
                 else:
-                    read_rule = _shared_cred_read(command)   # P137 A3: glob / subst / env / archiver-reader / inline code
+                    read_rule = _shared_cred_read(command, cwd)   # P137 A3: glob / subst / env / archiver-reader / inline code
         else:
             p = next((inp.get(k) for k in ('file_path', 'path', 'notebook_path', 'target', 'destination')
                       if isinstance(inp.get(k), str) and cred_path(inp.get(k))), None)

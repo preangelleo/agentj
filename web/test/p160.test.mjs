@@ -1,4 +1,4 @@
-// P160 (PROTOCOL §22 busy_get / busy_info): one 「在办」 row's read-only card — the computer's detail is display text
+// P160 (PROTOCOL §22 busy_get / busy_info): one 「在办」 row's read-only card — the Agent J host's detail is display text
 // (bounded, plain, known sources only), durations read naturally, the card's strings exist in both languages, and the
 // page asks only a computer that announced `busyget`.
 import test from 'node:test';

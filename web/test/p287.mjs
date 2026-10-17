@@ -1,5 +1,5 @@
 // P287: 「重启后请登录」 only as the phone's own offline line. Owned headless browser + encrypted fake host (never production).
-// 1. service restart (computer gone ~10 s) → only 「电脑离线」, no hint;  2. upgrade (~40 s) → the same;
+// 1. service restart (computer gone ~10 s) → only 「Agent J 主机离线」, no hint;  2. upgrade (~40 s) → the same;
 // 3. OS restart (gone past the threshold, page reloaded cold meanwhile) → the Mac line, from what the last ready said;
 // back online → the line is gone. Shots → reports/qa/p287/.
 import assert from 'node:assert/strict';
@@ -32,10 +32,10 @@ try {
     await waitFor(p, `document.body.dataset.conn === 'off'`, 3000);
     await sleep(secs * 1000);
     fake.setUp(true); await waitState(p, 'ready'); await sleep(300);
-    ok((await evaluate(p, `window.p287`)).every((x) => !x), `${name} (${secs} s offline): only 「电脑离线」, never the reboot line`);
+    ok((await evaluate(p, `window.p287`)).every((x) => !x), `${name} (${secs} s offline): only 「Agent J 主机离线」, never the reboot line`);
   }
 
-  // OS restart: the computer goes away and stays away; the phone page is even closed and reopened in between
+  // OS restart: the Agent J host goes away and stays away; the phone page is even closed and reopened in between
   fake.setUp(false);
   await waitFor(p, `document.body.dataset.conn === 'off'`, 3000);
   writeFileSync(join(OUT, 'zh-offline-early.png'), await shoot(p));

@@ -346,3 +346,8 @@ button, .aj-btn, [role="tab"] { white-space: nowrap; }
 .aj-flow.aj-flow > :is(h1,h2,h3,h4) + :not([hidden]) { margin-block-start:var(--space-content); }
 :is(.aj-actions,.aj-row,.aj-hero__actions,.confirm-row,.fr-acts,.ajrow,.model-options) { gap:var(--space-control); }
 .aj-card + .aj-card { margin-block-start:var(--space-section); }
+/* P369 (#81) 「一行里第一张总被抬高」: the sibling rhythm rules (`.aj-card + .aj-card` above, `.ajmodal li+li`, `* + *`) are
+   for STACKED blocks, but they also match the items of a row grid, where every item but the first gets the margin and the
+   first stands taller. A row is spaced by its own gap, so its items never take a block-start margin — every row container
+   is listed here, one place (brand/test/row-audit.mjs reports a row that is missing). */
+:is(.aj-rowset, .site-cards, .toolsort) > * { margin-block-start:0 !important; }

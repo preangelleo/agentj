@@ -1,4 +1,4 @@
-// P210 「连上你的电脑」: the unpaired page is a set of numbered, mutually exclusive method cards (任选一种).
+// P210 「连上你的Agent J 主机」: the unpaired page is a set of numbered, mutually exclusive method cards (任选一种).
 // The visible cards are numbered here (no reverse-pairing code in this browser → the rest become 方法一 / 方法二), the copy
 // icons copy the command next to them, and 「以前配过？」 shows only together with its Face ID button.
 import { RelayMD } from './md.js';

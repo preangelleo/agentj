@@ -106,36 +106,14 @@ async function offline(p, fake, s, tag, touch, save) {
   await waitFor(p, `!${$('offDlg')}.hidden`, 6000);
   await sleep(350);
   await wired(p, tag + ' offline');
-  const btn = '#offTip2 .cc-btn', code = '#offTip2 code';
-  check(await evaluate(p, `!!document.querySelector(${JSON.stringify(btn)})`), tag + ': ⧉ beside `agentj doctor --reconnect`');
-  const b = await box(p, btn), c = await box(p, code);
-  check(b.w >= 43.5 && b.h >= 43.5, `${tag}: a ≥ 44 px target (${b.w}×${b.h})`);
-  check(Math.abs((b.t + b.h / 2) - (c.t + c.h / 2)) < 4 || (b.t + b.h / 2 > c.t && b.t + b.h / 2 < c.b), `${tag}: ⧉ on the code's line (${JSON.stringify([b, c])})`);
-  check(b.l >= c.r - 10 && b.l <= c.r + 2, `${tag}: ⧉ right after the code, not over it (${b.l} vs ${c.r})`);
-  check(await evaluate(p, `document.querySelector('#offDlg .sq').scrollWidth <= document.querySelector('#offDlg .sq').clientWidth + 1`), tag + ': no overflow in the card');
-  check(await evaluate(p, `document.querySelector(${JSON.stringify(btn)}).getAttribute('aria-label')`) === s.copyCmd, tag + ': aria-label 复制命令');
-  check(await evaluate(p, `getComputedStyle(document.querySelector(${JSON.stringify(code)})).userSelect`) !== 'none', tag + ': the code stays selectable');
+  // P375 moves recovery to the retry/help flow; command-copy coverage below
+  // remains on approvals, replies and Settings where commands still appear.
+  check(await evaluate(p, `!document.querySelector('#offTip2 code')`), tag + ': offline help uses network/retry guidance');
+  check(await evaluate(p, `document.querySelector('#offTip2').textContent.trim().length>0`), tag + ': guidance is visible');
+  const retry = await box(p, '#offRetry');
+  check(retry.w >= 43.5 && retry.h >= 43.5, tag + ': retry target ≥44px');
+  check(await evaluate(p, `document.querySelector('#offDlg .sq').scrollWidth <= document.querySelector('#offDlg .sq').clientWidth + 1`), tag + ': no overflow');
   await save('offline');
-  // a press that selected text is the owner's own copy, not ours
-  const n0 = await copies(p);
-  await evaluate(p, `(()=>{const c=document.querySelector(${JSON.stringify(code)});const r=document.createRange();r.selectNodeContents(c);getSelection().removeAllRanges();getSelection().addRange(r);c.click();})()`);
-  await sleep(250);
-  check(await copies(p) === n0, tag + ': a click that ends a selection does not copy');
-  await evaluate(p, `getSelection().removeAllRanges()`);
-  // one real click on the code itself
-  await copiesExactly(p, code, 'agentj doctor --reconnect', touch, tag + ' offline code');
-  await waitFor(p, `document.querySelector(${JSON.stringify(btn)}).dataset.done==='1'`, 2000);
-  check(await evaluate(p, `document.querySelector(${JSON.stringify(btn)}).dataset.tip`) === s.copied, tag + ': 「已复制」 in place');
-  await save('offline-copied');
-  await sleep(1600);
-  check(!(await evaluate(p, `document.querySelector(${JSON.stringify(btn)}).dataset.done`)), tag + ': back to ⧉ after ~1.4 s');
-  // keyboard: the icon is a button (Tab target); Enter copies
-  const n1 = await copies(p);
-  await evaluate(p, `document.querySelector(${JSON.stringify(btn)}).focus()`);
-  check(await evaluate(p, `document.activeElement===document.querySelector(${JSON.stringify(btn)})`), tag + ': ⧉ takes focus');
-  await key(p, 'Enter', { text: '\r' });
-  await waitFor(p, `window.__cc.length > ${n1}`, 3000);
-  check((await clip(p)).witness === 'agentj doctor --reconnect', tag + ': Enter on ⧉ copies');
   fake.setUp(true);
   await waitState(p, 'ready', 15000);
   await waitFor(p, `${$('offDlg')}.hidden`, 4000);

@@ -139,7 +139,8 @@ export const CONTROL_ACTIONS = ['mem_rm', 'mem_undo', 'estop', 'resume', 'task_o
   'cards_get',                                                              // P203 (§29.1): the signed open-cards snapshot (a read)
   'mail_allow',                                                             // P207 (§25): add an address to the mail allowlist
   'reset', 'rescue_do',                                                    // P332 (§33): 紧急修复 ① reset connection · ② support help
-  'approval_set'];                                                          // P336: approval level / goal without the opening card
+  'approval_set',                                                           // P336: approval level / goal without the opening card
+  'cmd_run'];                                                               // P361 (§34): Settings 「执行」 — a whitelisted command name
 /** The text whose SHA-256 a control signature covers (the target, with the content hash the phone saw). */
 export function controlObject(action, o) {
   if (action === 'bots_write') return canonicalJson(o.request);
@@ -152,6 +153,7 @@ export function controlObject(action, o) {
   if (action === 'mail_allow') return `${o.addr}\n${o.role}`;   // P207: address as sent \n owner | guest
   if (action === 'reset') return String(o.what);                 // P332 (§33): object {"what":"connection"} → "connection"
   if (action === 'rescue_do') return String(o.action);           // P332 (§33): object {"action":<action>} → the action name
+  if (action === 'cmd_run') return String(o.cmd);                // P361 (§34): object {"cmd":<name>} → the name
   if (action === 'approval_set') return `${o.key}\n${typeof o.value === 'boolean' ? (o.value ? 'true' : 'false') : o.value}`;   // P336
   if (action === 'dev_unbind') return String(o.device);
   if (action === 'dev_add') return o.rv ? `rv\n${o.rv}` : 'new';   // P190 (§27): a reverse pairing names the scanned code's channel

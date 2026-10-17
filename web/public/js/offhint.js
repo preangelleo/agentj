@@ -1,4 +1,4 @@
-// P287: the line under 「电脑离线」. While the computer is offline it cannot tell the phone anything, so the words live in this
+// P287: the line under 「Agent J 主机离线」. While the computer is offline it cannot tell the phone anything, so the words live in this
 // page and the phone picks them from what the computer said while it was still up: `plat` / `boot` in approved / ready
 // (PROTOCOL §10.0, kept in the IndexedDB host record for a cold start). Never while connected; never for a short drop (a
 // service restart or an upgrade is back within seconds); an unknown computer gets the general line, not a guess.
@@ -12,7 +12,7 @@ export function hostKind(m) {
   return { plat: PLATS.includes(m?.plat) ? m.plat : null, boot: BOOTS.includes(m?.boot) ? m.boot : null };
 }
 
-/** The i18n key to show after `downMs` of 「电脑离线」, or null (not yet / not offline). */
+/** The i18n key to show after `downMs` of 「Agent J 主机离线」, or null (not yet / not offline). */
 export function hintKey(kind, downMs) {
   if (!(downMs >= HINT_AFTER_MS)) return null;
   const { plat, boot } = hostKind(kind);

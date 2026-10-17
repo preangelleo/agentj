@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-// P207 §2 · 定时任务 shows the computer's own scheduled tasks. Real page + local fake host, own headless Chromium (never :9222).
+// P207 §2 · 定时任务 shows the Agent J host's own scheduled tasks. Real page + local fake host, own headless Chromium (never :9222).
 //   groups      a host announcing `systasks`: the page shows 「Agent J 的定时任务」 (unchanged cards, 启用/停用) and below it
-//               「这台电脑上的其它定时任务」 — one read-only card per row (name, state tag, source tag, schedule in words, next /
+//               「这台Agent J 主机上的其它定时任务」 — one read-only card per row (name, state tag, source tag, schedule in words, next /
 //               last run), the read-only note, no button inside the group, the count line
 //   schedules   cron / @daily / every N / at start-up / systemd OnCalendar / Windows raw text all become one readable line
-//   empty       the host found nothing → 「这台电脑上没有读到其它定时任务。」
+//   empty       the host found nothing → 「这台Agent J 主机上没有读到其它定时任务。」
 //   old-host    a host without the capability is never asked (`systask_list` not sent) and the group stays hidden
 //   leak        the rendered page never contains anything the host did not send (no command text exists to leak)
 // Shots (zh/en, dark, 1440 + 390) → agentjarvis/reports/qa/p207/tasks/.
@@ -88,8 +88,8 @@ await C('groups', async () => {
   const s = await ev(p, STATE);
   assert.equal(s.ownHead, 'Agent J 的定时任务');
   assert.deepEqual(s.own, [{ title: '每日简报', btn: true }], 'Agent J\'s own task unchanged, still with 启用/停用');
-  assert.ok(s.sysShown && s.order, 'the computer\'s group is shown below Agent J\'s');
-  assert.equal(s.sysHead, '这台电脑上的其它定时任务');
+  assert.ok(s.sysShown && s.order, 'the Agent J host\'s group is shown below Agent J\'s');
+  assert.equal(s.sysHead, '这台Agent J 主机上的其它定时任务');
   assert.match(s.note, /只能看，不能修改或删除/);
   assert.equal(s.buttons, 0, 'read-only: no control in the group');
   assert.equal(s.status, '共 7 个');
@@ -124,7 +124,7 @@ await C('shots', async () => {
     await waitFor(p, `document.querySelectorAll('#systasks-list .systask-card').length === ${SYS.length}`);
     const s = await ev(p, STATE);
     if (lang === 'en') {
-      assert.equal(s.sysHead, 'Other scheduled tasks on this computer');
+      assert.equal(s.sysHead, 'Other scheduled tasks on the Agent J host');
       assert.match(s.note, /only look at them here/);
       assert.equal(s.ownHead, "Agent J's scheduled tasks");
     }
@@ -141,7 +141,7 @@ await C('shots', async () => {
 await C('empty', async () => {
   const p = await paired({ sys: [] });
   await openTasks(p);
-  await waitFor(p, `document.getElementById('systasks-status').textContent === '这台电脑上没有读到其它定时任务。'`);
+  await waitFor(p, `document.getElementById('systasks-status').textContent === '这台Agent J 主机上没有读到其它定时任务。'`);
   assert.equal(await ev(p, `document.querySelectorAll('#systasks-list li').length`), 0);
   noProblems(p);
   await p.close();

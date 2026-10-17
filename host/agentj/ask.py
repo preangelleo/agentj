@@ -54,6 +54,17 @@ NOTE = {
             "en": "The card is malformed and was not shown: {detail}. Fix it and retry, or ask in text."},
 }
 
+# P368 (#79): what the phone shows must fit a phone row — an option label ≤ 12 字, the text under it (description, preview,
+# each) ≤ 60 字. 字 = one CJK / full-width character, or two narrow ones (so 24 letters for an English label). Over → bad.
+LABEL_MAX, UNDER_MAX = 12, 60
+
+
+def zi(s: str) -> float:
+    """Length in 字: a wide (CJK / full-width) character counts 1, any other 0.5."""
+    import unicodedata
+    return sum(1 if unicodedata.east_asian_width(c) in "WF" else 0.5 for c in s)
+
+
 EXIT = {"answered": 0, "cancelled": 3, "pending": 4, "bad": 2, "not_running": 1}
 
 
@@ -92,6 +103,12 @@ def build(questions, lang: str = "zh") -> tuple[list, list]:
             d, pv = o.get("description") or "", o.get("preview") or ""
             if not isinstance(d, str) or not isinstance(pv, str):
                 raise AskError(f"question {i}: description / preview must be text")
+            lb = o.get("label")
+            if isinstance(lb, str) and zi(lb.strip()) > LABEL_MAX:
+                raise AskError(f"question {i}: option label \"{lb[:24]}…\" is over {LABEL_MAX} 字 (24 letters) — shorten it")
+            for what, v in (("description", d), ("preview", pv)):
+                if zi(v.strip()) > UNDER_MAX:
+                    raise AskError(f"question {i}: an option {what} is over {UNDER_MAX} 字 (120 letters) — shorten it")
             out.append({"label": o.get("label"), "description": (d + "\n" + pv if d and pv else d or pv)})
         is_open = not out
         other = None

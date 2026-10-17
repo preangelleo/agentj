@@ -1,3 +1,4 @@
+import {focusDraft} from '../public/js/composer-focus.js';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -6,8 +7,8 @@ function fixture(){
  const handlers={},nodes=[];
  const document={activeElement:null,body:{},addEventListener(k,fn){handlers[k]=fn;}};
  const node=id=>{const n={id,isConnected:true,tabIndex:0,children:[],getClientRects:()=>[{}],closest:()=>null,matches:()=>true,contains(e){return e===this||this.children.includes(e);},querySelectorAll(){return this.children;},focus(){document.activeElement=this;}};nodes.push(n);return n;};
- const ctx=vm.createContext({document,MutationObserver:class{observe(){}},console});
- vm.runInContext(readFileSync(new URL('../public/js/layers.js',import.meta.url),'utf8').replaceAll('export ','' )+';globalThis.api={registerLayer,initLayers};',ctx);ctx.api.initLayers();
+ const ctx=vm.createContext({focusDraft,document,MutationObserver:class{observe(){}},console});
+ vm.runInContext(readFileSync(new URL('../public/js/layers.js',import.meta.url),'utf8').replace(/^import .*;\n/gm,'').replaceAll('export ','' )+';globalThis.api={registerLayer,initLayers};',ctx);ctx.api.initLayers();
  const key=(key,shiftKey=false)=>{const e={key,shiftKey,preventDefault(){this.prevented=true;},stopImmediatePropagation(){this.stopped=true;}};handlers.keydown(e);return e;};
  return {ctx,document,node,key,handlers};
 }

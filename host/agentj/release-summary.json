@@ -1,6 +1,6 @@
 {
-  "version": "0.23.0a1",
-  "major": true,
-  "zh": "0.23：手机上一键紧急修复、审批三档、Key 管理页、带格式邮件与抄送、支持 DeepSeek Harness；Agent J 开源了。",
-  "en": "One-tap emergency repair on the phone, three approval levels, a key manager page, formatted e-mail with Cc, DeepSeek Harness; Agent J is open source."
+  "version": "0.23.1a1",
+  "major": false,
+  "zh": "新增卡片、Webhook、每日 AI 新闻订阅和内容库查询；支持主机密钥发现、方舟预设，改进搜索、通知和网页报告。",
+  "en": "Adds Cards, Webhooks, Daily AI News and library queries; discovers host keys, supports Ark, and improves search, notifications and reports."
 }

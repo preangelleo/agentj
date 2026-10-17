@@ -488,7 +488,7 @@ class CodexChain(_Chain):
                 await c["wait"](lambda: any(m["text"] == want for m in c["msgs"]()))
                 await c["idle"]()
                 self.assertEqual(c["asks"](), [], f"{text}: no card")
-                self.assertTrue(any(n.startswith("这一步超出了你 Codex 自己的沙箱设置，已拒绝；要放开请在电脑上改 Codex 的设置")
+                self.assertTrue(any(n.startswith("这一步超出了你 Codex 自己的沙箱设置，已拒绝；要放开请在Agent J 主机上改 Codex 的设置")
                                     for n in notices()[n0:]), (text, notices()[n0:]))
             self.assertTrue((self.work / "victim.txt").exists())
             self.assertFalse((self.work / "made.txt").exists() or (self.work / "new.txt").exists())

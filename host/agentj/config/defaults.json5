@@ -187,4 +187,17 @@
     // New tasks to another AI account when quota runs low, without asking / 额度告警时新任务自动交给其他 AI 账号; default=false
     "auto_switch": false,
   },
+  "api_keys":
+  {
+    // P362: extra .env files the keys page scans (names + last 4 only) / 「模型和 API Key」页额外扫描的 .env 文件; default=[]
+    "extra_env_files": [],
+  },
+  // P365: the owner's own automations post to the phone with `agentj notify --from <name>` (never an Agent's tool call).
+  "notify":
+  {
+    // Master switch / 总开关; default=true
+    "enabled": true,
+    // [{"id": "<--from name | task.<task id>>", "allow": true|false}]; not listed = refused / 每个自动化的开关; default=[]
+    "automations": [],
+  },
 }

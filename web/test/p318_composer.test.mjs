@@ -68,10 +68,11 @@ test('P318 (b): the cap note — from 90 % of the cap, n / max, both languages',
   assert.match(css, /\.capnote\[hidden\]\{display:none\}/);
 });
 
-test('P318 (c): the header label wraps to two lines and runs up to the badge at the end of the middle third', () => {
+test('P318 (c): the header label wraps to two lines and runs up to the badge (P369 #80: the badge now sits at the card centre)', () => {
   assert.match(css, /\.om-first \.omfl>b\{white-space:normal;[^}]*-webkit-line-clamp:2/);
   assert.match(css, /\.om-first \.omfl\{[^}]*width:max-content;max-width:calc\(200% - 8px\)/);
-  assert.match(css, /\.om\[data-unread="1"\] \.om-first \.omfl\{max-width:calc\(200% - 6px - 2\.8em\)\}/);
-  assert.match(css, /\.om-unread\{grid-column:2;[^}]*place-items:center end/);
+  assert.match(css, /\.om\[data-unread="1"\] \.om-first \.omfl\{max-width:calc\(150% - 6px - 1\.4em\)\}/);
+  assert.match(css, /\.om-unread\{place-items:center\}/);
+  assert.match(css, /@media \(max-width:439px\)\{ \.om\[data-unread="1"\] \.om-first \.omfl>\.t\{display:none\} \}/, 'a phone: the time steps aside while the badge shows');
   assert.doesNotMatch(css, /calc\(150% - 20px\)/, 'the label no longer stops half-way into the middle third');
 });

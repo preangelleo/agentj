@@ -16,7 +16,7 @@ Full access reduces repeated approval dialogs during phone control. Risk: the AI
 
 Just want Agent J plus one AI, without setting up each tool? Use [one command](/docs/install/#one-command); it runs this page's script when it needs it.
 
-[Install Agent J](/docs/install/) · [On your computer](/docs/computer/) · [agentj command reference](/docs/cli/)
+[Install Agent J](/docs/install/) · [On the Agent J host](/docs/computer/) · [agentj command reference](/docs/cli/)
 
 ## One-command setup
 
@@ -114,7 +114,7 @@ command -v brew
 ```
 
 
-No Homebrew: its official installer may request your computer password and Command Line Tools.
+No Homebrew: its official installer may request the Agent J host password and Command Line Tools.
 
 
 ```bash
@@ -272,7 +272,7 @@ command -v nano
 ```
 
 
-apt works before curl is installed. Enter sudo’s password on your computer; omit sudo when already root.
+apt works before curl is installed. Enter sudo’s password on the Agent J host; omit sudo when already root.
 
 
 ```bash
@@ -918,7 +918,7 @@ gemini --yolo --sandbox=false
 
 [Gemini CLI official guide](https://geminicli.com/docs/get-started/installation/)
 
-Google has discontinued personal Gemini CLI login. Use a paid Gemini API key, entered only in your own terminal. Gemini is optional: select it explicitly; setup does not recommend it by default. The defaultApprovalMode setting does not accept yolo; keep --yolo in the launch command. Agent J currently connects to Claude/Codex/OpenCode; Gemini works on the computer but is not yet an Agent J host adapter.
+Google has discontinued personal Gemini CLI login. Use a paid Gemini API key, entered only in your own terminal. Gemini is optional: select it explicitly; setup does not recommend it by default. The defaultApprovalMode setting does not accept yolo; keep --yolo in the launch command. Agent J currently connects to Claude/Codex/OpenCode; Gemini works on the Agent J host but is not yet an Agent J host adapter.
 
 ## Full-access launch (three ways) {#full-access}
 
@@ -1300,7 +1300,7 @@ Anthropic and OpenAI do not serve Hong Kong, Macau, mainland China and some othe
 - **Hong Kong or overseas:** a Kimi membership, Plus or higher, used through OpenCode or Kimi Code. Outside the mainland it is billed in USD. The Go plan has no coding quota and does not work.
 - **Already paying for one of them** (Ark, Kimi or an [Alibaba Cloud Bailian Token Plan](/docs/setup-agents/#bailian)): keep it.
 
-After installing Agent J, your Agent checks what really works from your computer:
+After installing Agent J, your Agent checks what really works from the Agent J host:
 
 ```bash
 agentj agent route
@@ -1339,7 +1339,7 @@ Please download https://agentj.app/install.md with curl, read the whole file wit
 
 [Installation steps](/docs/install/) · [install.md](/install/) · [Command reference](/docs/cli/)
 
-[Keep your computer awake](/docs/keep-awake/): commands, system settings and a request to send your Agent.
+[Keep the Agent J host awake](/docs/keep-awake/): commands, system settings and a request to send your Agent.
 
 ## Kimi Code CLI {#kimi-cli}
 
@@ -1393,7 +1393,7 @@ dsh (`DeepSeek Harness`, MIT) is DeepSeek's own coding agent, still a developer 
 
 Check with `dsh --version`; Agent J needs 0.2.0-rc.2 or newer. Then choose where its model comes from:
 
-- **Your own model server** (Olares Router, LiteLLM, Ollama, llama.cpp, vLLM or any OpenAI-compatible server): ask your Agent to run `agentj agent dsh --dir <folder> --base-url https://<server>/v1 --model <model id>`. Agent J saves the address and the model in `~/.dsh/agentj-route.yml`; no key is written there. Plain `http://` works only for this computer or your home network. If the server needs a key, a key card opens on your phone (`DSH_ROUTER_API_KEY`): paste it there and nowhere else. Then just send your message again; no restart.
+- **Your own model server** (Olares Router, LiteLLM, Ollama, llama.cpp, vLLM or any OpenAI-compatible server): ask your Agent to run `agentj agent dsh --dir <folder> --base-url https://<server>/v1 --model <model id>`. Agent J saves the address and the model in `~/.dsh/agentj-route.yml`; no key is written there. Plain `http://` works only for the Agent J host or your home network. If the server needs a key, a key card opens on your phone (`DSH_ROUTER_API_KEY`): paste it there and nowhere else. Then just send your message again; no restart.
 - **DeepSeek's own API** (pay as you go): the same kind of phone key card, for `DEEPSEEK_API_KEY`.
 - **You already set dsh up yourself** (for example on the Models page of `dsh web`): your own settings are used.
 

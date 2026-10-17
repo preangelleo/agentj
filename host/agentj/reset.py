@@ -50,33 +50,33 @@ STEP = {   # (run, ok, fail) per ladder step — plain words in the owner's lang
         ("新对话开好了，下一条消息从这里开始；之前的对话保存着，随时能找回。",
          "A new conversation is ready; your next message starts it. The old one is kept and can be brought back."),
         ("开新对话没成功，试下一步。", "Could not start a new conversation; trying the next step.")),
-    4: (("正在重启电脑上的 Agent J…", "Restarting Agent J on the computer…"),
+    4: (("正在重启Agent J 主机上的 Agent J…", "Restarting Agent J on the Agent J host…"),
         ("正在重启，大约半分钟后会自动连回来，然后就可以继续聊天了。",
          "Restarting — it reconnects by itself in about half a minute, then you can chat again."),
         ("重启没成功，请试试「请 Agent J Father 远程帮忙」。", "The restart did not work; try \"Ask Agent J Father for remote help\".")),
 }
-SKIP3 = ("这个对话开在电脑上的窗口里，新对话要在电脑上开，这一步跳过。",
-         "This conversation lives in a window on the computer; a new one has to be opened there, so this step is skipped.")
+SKIP3 = ("这个对话开在Agent J 主机上的窗口里，新对话要在Agent J 主机上开，这一步跳过。",
+         "This conversation lives in a window on the Agent J host; a new one has to be opened there, so this step is skipped.")
 STOP = {"estop": ("连接好了；Agent J 现在是「全部停下」状态，点「恢复」后才会回复。",
                   "Connected; Agent J is stopped — tap Resume and it answers again."),
-        "no_agent": ("连接好了，但电脑上还没选好 AI 助手，需要在电脑上设置一次。",
-                     "Connected, but no AI assistant is chosen on the computer yet; it has to be set up there once.")}
+        "no_agent": ("连接好了，但Agent J 主机上还没选好 AI 助手，需要在Agent J 主机上设置一次。",
+                     "Connected, but no AI assistant is chosen on the Agent J host yet; it has to be set up there once.")}
 NOT_FIXED = ("还没修好，请试试「请 Agent J Father 远程帮忙」。", "Not fixed yet; try \"Ask Agent J Father for remote help\".")
 WORDS = {   # executor results → plain sentences
     "linger": {True: ("已设好：没人登录时 Agent J 也会运行。", "Done: Agent J now runs even when nobody is logged in."),
-               False: ("没设成，需要电脑主人在电脑上开一次（loginctl enable-linger）。",
-                       "Not done: the computer's owner has to turn it on there once (loginctl enable-linger).")},
+               False: ("没设成，需要Agent J 主机主人在Agent J 主机上开一次（loginctl enable-linger）。",
+                       "Not done: the Agent J host's owner has to turn it on there once (loginctl enable-linger).")},
     "rollback": {True: ("已退回上一个版本 {version}。", "Back on the previous version {version}."),
                  False: ("没能退回上一个版本。", "Could not go back to the previous version.")},
-    "restart": {True: ("正在重启电脑上的 Agent J。", "Restarting Agent J on the computer."),
+    "restart": {True: ("正在重启Agent J 主机上的 Agent J。", "Restarting Agent J on the Agent J host."),
                 False: ("重启没成功。", "The restart did not work.")},
     "reconnect": {True: ("连接好了，Agent J 在线。", "Connected — Agent J is online."),
                   False: ("重新连接后 Agent J 还是没回应。", "Agent J still does not answer after reconnecting.")},
     "new_session": {True: ("新对话开好了，之前的对话保存着。", "A new conversation is ready; the old one is kept."),
                     False: ("开新对话没成功。", "Could not start a new conversation.")},
 }
-UNAVAILABLE = ("这台电脑上没有这一步可做。", "This step is not available on this computer.")
-RESTART_SCHEDULED = ("马上重启电脑上的 Agent J（报告发出后）。", "Agent J on the computer restarts right after this report.")
+UNAVAILABLE = ("这台Agent J 主机上没有这一步可做。", "This step is not available on the Agent J host.")
+RESTART_SCHEDULED = ("马上重启Agent J 主机上的 Agent J（报告发出后）。", "Agent J on the Agent J host restarts right after this report.")
 OFFERABLE = ("reconnect", "restart", "linger", "rollback", "new_session")
 
 
@@ -385,13 +385,13 @@ class Desk:
                 await emit(1, "ok" if res.get("ok") else "fail", text, res.get("why"))
                 restart_after = flow == "rollback" and bool(res.get("ok"))
                 if restart_after:
-                    text += pick(lang, "正在重启电脑上的 Agent J…", " Restarting Agent J on the computer…")
+                    text += pick(lang, "正在重启Agent J 主机上的 Agent J…", " Restarting Agent J on the Agent J host…")
                 await finish({"ok": bool(res.get("ok")), "step": 1, "text": text,
                               **({"why": res["why"]} if not res.get("ok") and res.get("why") == "unavailable" else {})})
             elif flow == "report":
                 from . import rescue_kit
-                await emit(1, "run", pick(lang, "正在检查电脑并把去掉隐私的报告发给 Agent J Father…",
-                                          "Checking the computer and sending a privacy-cleaned report to Agent J Father…"))
+                await emit(1, "run", pick(lang, "正在检查Agent J 主机并把去掉隐私的报告发给 Agent J Father…",
+                                          "Checking the Agent J host and sending a privacy-cleaned report to Agent J Father…"))
                 ticket, _healthy, _err = await asyncio.to_thread(rescue_kit.report_only, lang, "report")
                 text = (pick(lang, f"报告已发出，工单号 {ticket}。", f"Report sent, ticket {ticket}.") if ticket else
                         pick(lang, "报告没发出去，请稍后再试。", "The report could not be sent; try again later."))

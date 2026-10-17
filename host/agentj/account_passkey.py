@@ -3,7 +3,7 @@
 Today an account-page request (remote_pair.py) is trusted because the Dashboard signed it; the host never sees the passkey.
 The target (documentation/product/12_ZERO_ACCESS.md §8b ①, P191): the browser makes a fresh WebAuthn `get` whose challenge
 binds the exact signed request (`challenge`), the Dashboard forwards the assertion inside the request, and the host checks it
-against account passkey public keys it pinned while the owner was at the computer (`verify`). A compromised control plane can
+against account passkey public keys it pinned while the owner was at the Agent J host (`verify`). A compromised control plane can
 then still sign, but cannot produce the owner's passkey signature.
 
 Pins mirror what the Dashboard stores per credential (webauthn.ts `Registered`): {"id": b64u credential id, "alg": COSE alg,

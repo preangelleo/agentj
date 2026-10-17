@@ -8,7 +8,7 @@ WSL2 Ubuntu), and Agent J's Claude Code defaults to Opus 5.5 · medium.
   the folder; codex / opencode keep their own defaults.
 ③ The Claude adapter: `api_retry` (the model service unreachable) → one phone card per turn; a 400 "model not supported"
   → switches to the default model and sends the message again, once, with a card and no error reply; a terminal question
-  printed outside stream-json → a 「在电脑上处理」 card quoting it (redacted); nothing at all on a fresh process → a
+  printed outside stream-json → a 「在Agent J 主机上处理」 card quoting it (redacted); nothing at all on a fresh process → a
   "still no answer" card; root + bypassPermissions → `--permission-mode default` (stricter, never wider).
 ④ The phone's model label names the version ("Opus 5.5"), aliases resolved.
 ⑤ doctor: harness first-run setup, folder trust, socat.
@@ -340,7 +340,7 @@ class Adapter(unittest.IsolatedAsyncioTestCase):
                 await t
         self.assertEqual(len(self.host.local), 1, self.host.local)
         card = self.host.local[0]
-        self.assertIn("卡在电脑终端", card)
+        self.assertIn("卡在Agent J 主机终端", card)
         self.assertIn("Do you trust the files in this folder?", card)
         self.assertIn("agentj agent claude", card)
         self.assertNotIn(_secret()[:20], card)

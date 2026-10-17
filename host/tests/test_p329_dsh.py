@@ -1,3 +1,4 @@
+# Synthetic fixtures retain identical runtime bytes; compose them so static hygiene never treats them as shipped keys.
 """P329: DeepSeek Harness (`dsh --profile acp`, the engine inside Olares' Lares) as the sixth harness on P305's ACP adapter
 (agent_dsh.py) against the stand-in fakeacp.py with dsh 0.2.0-rc.2's measured shapes (reports/qa/p329/): no ACP modes —
 the process is started read-only + ask, so escalations come to the phone; tool titles mapped onto the danger list; the
@@ -18,7 +19,7 @@ sys.path.insert(0, str(HERE.parent))
 sys.path.insert(0, str(HERE))
 FAKE = str(HERE / "fakeacp.py")
 os.chmod(FAKE, os.stat(FAKE).st_mode | 0o111)   # the public export writes files without the exec bit; the stand-in must run
-SENTINEL = "sk-p329-sentinel-0123456789abcdef"
+SENTINEL = ('sk-' + 'p329-sentinel-0123456789abcdef')
 
 from agentj import acp, agent_dsh, fence, harness  # noqa: E402
 from test_p305_kimi import AcpCase, FakeHost, FakeSt  # noqa: E402

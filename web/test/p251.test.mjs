@@ -1,3 +1,4 @@
+import {focusDraft} from '../public/js/composer-focus.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 globalThis.window={};
@@ -11,8 +12,8 @@ test('P251 automatic follow requires the same newer host and server, and never r
 import vm from 'node:vm';
 import {readFileSync} from 'node:fs';
 const uiSrc=readFileSync(new URL('../public/js/ui.js',import.meta.url),'utf8');
-const flashSrc=uiSrc.match(/export const FLASH_MS[\s\S]*?\n\}\n/)[0].replaceAll('export ','');
-const src=flashSrc+readFileSync(new URL('../public/js/version-notice.js',import.meta.url),'utf8').replace(/^import .*;$/gm,'').replaceAll('export ','');
+const flashSrc=uiSrc.match(/export const FLASH_MS[\s\S]*?\n\}\n/)[0].replace(/^import .*;\n/gm,'').replaceAll('export ','');
+const src=flashSrc+readFileSync(new URL('../public/js/version-notice.js',import.meta.url),'utf8').replace(/^import .*;$/gm,'').replace(/^import .*;\n/gm,'').replaceAll('export ','');
 function fixture(seed={}){
  let now=1000,blocked=false,saveOK=true,version='0.21.0a1',refreshes=0,saves=0;
  const listeners={},nodes={},storage=new Map(Object.entries(seed)),timers=[];
@@ -63,14 +64,14 @@ test('P251 refresh guard protects recording, sends, attachments, selections, app
 });
 
 test('P251 hiding a non-modal version notice preserves editing focus; modal restoration remains intact',()=>{
- const layerSrc=readFileSync(new URL('../public/js/layers.js',import.meta.url),'utf8').replaceAll('export ','');
+ const layerSrc=readFileSync(new URL('../public/js/layers.js',import.meta.url),'utf8').replace(/^import .*;\n/gm,'').replaceAll('export ','');
  for(const [trap,preserveOutsideFocus] of [[false,true],[true,true],[false,false]]){
   let open=true;
   const body={isConnected:true,getClientRects:()=>[{}],closest:()=>null,matches:()=>false};
   const doc={activeElement:body};
   const node=()=>({isConnected:true,getClientRects:()=>[{}],closest:()=>null,matches:()=>true,focus(){doc.activeElement=this;}});
   const input=node(),fallback=node();const box={contains:()=>false};
-  const ctx={document:doc};vm.runInNewContext(layerSrc+';this.reg=registerLayer;this.flush=sync;',ctx);
+  const ctx={focusDraft,document:doc};vm.runInNewContext(layerSrc+';this.reg=registerLayer;this.flush=sync;',ctx);
   ctx.reg({element:()=>box,open:()=>open,close(){},fallback:()=>fallback,trap,preserveOutsideFocus});
   doc.activeElement=input;open=false;ctx.flush();assert.equal(doc.activeElement,!trap&&preserveOutsideFocus?input:fallback);
  }

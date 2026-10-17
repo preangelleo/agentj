@@ -54,7 +54,7 @@ const PREFS = { appearance: { language: 'zh', theme: 'system' }, voice: { speak_
 async function paired({ w = 1440, h = 900, scheme = 'light', lang = 'zh', remotes = true, silent = false } = {}) {
   fake.reset();
   fake.st.prefs = structuredClone(PREFS);
-  fake.st.prefs.appearance.language = lang;   // A1: the computer's language wins over ?lang=
+  fake.st.prefs.appearance.language = lang;   // A1: the Agent J host's language wins over ?lang=
   if (remotes) fake.remotes({ limit: 10, items: DEVICES(), link: LINK, qr: QR, code: '482913', silent });
   const p = await newPage(B, w, h, scheme, { allow: [web.url, fake.relay + '/'], touch: w < 500 });
   await navigate(p, fake.newPairing(web.url + (lang === 'en' ? '?lang=en' : '')));
@@ -246,7 +246,7 @@ try {
       await waitFor(p, `document.getElementById('rm-addbox').hidden`);
       await waitFor(p, `true`);
       await sleep(200);
-      assert.equal(fake.st.remotes.cancels, 1, 'cancel tells the computer');
+      assert.equal(fake.st.remotes.cancels, 1, 'cancel tells the Agent J host');
       const a = await ev(p, AUDIT);
       assert.deepEqual(a.small, [], 'taps: ' + a.small); assert.deepEqual(a.tight, []); assert.equal(a.overflowX, false);
       noProblems(p);
@@ -264,7 +264,7 @@ try {
       await waitFor(p, `document.getElementById('toast').classList.contains('on')`);
       assert.match(await ev(p, `document.getElementById('toast').textContent`), /agentj remote-pair on/);
       assert.equal(await ev(p, `document.getElementById('rm-addbox').hidden && !document.getElementById('rm-add').disabled`), true);
-      // unbinding THIS device = a signed unbind of itself, then the page forgets the computer (pairing screen)
+      // unbinding THIS device = a signed unbind of itself, then the page forgets the Agent J host (pairing screen)
       await click(p, '#rm-list .rmitem[data-me="1"] [data-act="unbind"]');
       await waitFor(p, `!document.getElementById('confirm').hidden`);
       assert.match(await ev(p, `document.getElementById('confirm-title').textContent`), /这台设备/);

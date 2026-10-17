@@ -253,7 +253,7 @@ class Protocol(Env):
              mock.patch("agentj.protocol_handler.installed", return_value=True):
             instance.apply(2)
             service._register_pair_protocol([])
-            self.assertEqual(calls, [], "instance 2 does not rewrite the computer's one handler")
+            self.assertEqual(calls, [], "instance 2 does not rewrite the Agent J host's one handler")
             instance.apply(1)
             service._register_pair_protocol([])
             self.assertEqual(calls, [1])

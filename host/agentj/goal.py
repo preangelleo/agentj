@@ -52,7 +52,7 @@ MAX_ALL_GRANTS = 20                       # P339: grants of a goal including the
 ADD_MAX = 20                              # P339: the uses a one-tap 「批准，并加进目标授权」 grant allows
 ADD_CATS = ("delete", "send")             # P339: one tap never grants money (spend / price): that is a proposal card
 CAP_MAX = 500
-SOFT_EXEMPT = ("SandboxOnce", "AuthRescue", TOOL, TOOL_GRANT, "agentj quota switch")  # each retains its own approval card
+SOFT_EXEMPT = ("SandboxOnce", "AuthRescue", TOOL, TOOL_GRANT, "agentj quota switch", "AgentJHook")  # each retains its own approval card
 # P137 rules that mean "the text runs something it fetched / decoded" — the injection shapes Leo named (base64|sh, curl|sh)
 ATTACK_RULES = frozenset({"opaque.piped_shell", "opaque.piped_interp", "opaque.source", "opaque.dynamic_code", "opaque.ansi"})
 _SETTINGS = re.compile(
@@ -254,10 +254,10 @@ def card_text(g: dict, lang: str = "zh") -> str:
             lines.append("· " + grant_line(x, lang))
     else:
         lines.append("Nothing dangerous pre-approved." if en else "没有预先放行任何危险动作。")
-    lines.append("Not listed = not approved. Outside the list: a step the computer can undo asks with a 10-second countdown "
+    lines.append("Not listed = not approved. Outside the list: a step the Agent J host can undo asks with a 10-second countdown "
                  "(no answer = approved); anything else, and anything that looks like an attack, waits for you."
                  if en else
-                 "没列进去的不算授权。范围外：电脑能撤回的动作弹 10 秒倒计时卡，不点 = 同意；不可逆的和疑似攻击的一律等你决定。")
+                 "没列进去的不算授权。范围外：Agent J 主机能撤回的动作弹 10 秒倒计时卡，不点 = 同意；不可逆的和疑似攻击的一律等你决定。")
     return "\n".join(lines)
 
 
@@ -895,16 +895,29 @@ def why_text(key: str, lang: str = "zh") -> str:
     return WHY["en" if lang == "en" else "zh"].get(key, key)
 
 
-def hold_message(key: str, lang: str = "zh") -> str:
-    """What the Agent reads when a held step was not allowed (dispatch-stop-rule-scope: only this branch waits)."""
-    if lang == "en":
-        return (f"Goal mode: this step needs the owner's decision ({why_text(key, 'en')}); it was not approved and is listed "
-                "in the goal's result card. Do not retry it now — carry on with the other independent parts of the goal. "
-                "If more of the goal needs this kind of action, ask once for an extra grant with `agentj goal grant` "
-                "(one card on the phone) instead of hitting a card per step.")
-    return (f"目标模式：这一步需要主人亲自决定（{why_text(key)}），这次没有批准，已记进目标结束报告「等你决定」。"
-            "现在不要重试，先把目标里其它不依赖它的部分做完。后面还要做同类动作的话，用 `agentj goal grant` 一次性申请追加授权"
-            "（手机上只出一张卡），不要一步一张卡地撞。")
+def hold_message(key: str, lang: str = "zh", reason: str = "", rule: str = "") -> str:
+    """What the Agent reads when a held step was not allowed (dispatch-stop-rule-scope: only this branch waits).
+    P358 (#68): a card nobody answered says so (the owner may be away) and names the rule that held it (`rule`, the card's
+    why — patterns and file names, never a value); a credentials hold suggests a read-only way round it."""
+    en = lang == "en"
+    rule = " ".join(str(rule or "").split())[:160]
+    why = why_text(key, "en" if en else "zh") + ((" — " if en else "：") + rule if rule else "")
+    if reason == "timeout":
+        head = (f"Goal mode: the card for this step timed out unanswered (the owner may be away). It waited because: {why}. "
+                if en else f"目标模式：这一步的卡片超时没人批（主人可能不在）。卡住的原因：{why}。")
+    else:
+        head = (f"Goal mode: this step needs the owner's decision ({why}); it was not approved. " if en else
+                f"目标模式：这一步需要主人亲自决定（{why}），这次没有批准。")
+    if key == "credentials":
+        head += ("If this was only a read-only check, try again with a form that does not read credential files (leave out "
+                 "the .env / key files, print key names only, or count). " if en else
+                 "如果这只是只读检查，可以改用不碰凭据文件的写法再试（不读 .env / 密钥文件，只看键名或只数行数）。")
+    if en:
+        return (head + "It is listed in the goal's result card. Do not retry the same step now — carry on with the other "
+                "independent parts of the goal. If more of the goal needs this kind of action, ask once for an extra grant "
+                "with `agentj goal grant` (one card on the phone) instead of hitting a card per step.")
+    return (head + "已记进目标结束报告「等你决定」。现在不要原样重试，先把目标里其它不依赖它的部分做完。后面还要做同类动作的话，"
+            "用 `agentj goal grant` 一次性申请追加授权（手机上只出一张卡），不要一步一张卡地撞。")
 
 
 # ------------------------------------------------------------------ P339: plain words for a held step (deterministic, no model)
@@ -1206,9 +1219,32 @@ def status_text(st, d: dict | None, lang: str = "zh", now: float | None = None) 
               f"等你决定 {len(d.get('blocked') or [])} 件")]
     if d.get("milestones"):
         lines.append(("Latest: " if en else "最新进度：") + d["milestones"][-1]["text"])
+    lines += blocked_lines(d, en)
     if not is_live(st, d, now):
         lines.append("(no longer valid: it ends now)" if en else "（已失效，马上结束）")
     return "\n".join(lines)
+
+
+def blocked_lines(d: dict, en: bool, n: int = 10) -> list[str]:
+    """P358 (#68): what each of the 「等你决定 N 件」 is — the tool and one plain-words reason (the plain phrase, or the
+    rule that held it), never the command itself (it may carry a credential; the result card folds the raw text)."""
+    blocked = (d.get("blocked") or [])[-n:]
+    if not blocked:
+        return []
+    k = "en" if en else "zh"
+    out = []
+    for i, b in enumerate(blocked, 1):
+        tool = str(b.get("tool") or "?")[:40]
+        what = str(b.get("human") or "").strip()
+        rule = str((b.get("rule_en") if en else None) or b.get("rule") or "").strip()
+        why = why_text(str(b.get("why") or ""), k)
+        if not what:
+            what = rule or why
+            rule = ""
+        tail = ("; " if en else "；").join(x for x in (rule, why) if x and x != what)
+        out.append(f"  {i}. [{tool}] {what}" + (f" ({tail})" if tail else "") if en else
+                   f"  {i}.【{tool}】{what}" + (f"（{tail}）" if tail else ""))
+    return out
 
 
 RESULT = {"zh": {"achieved": "达成", "not_achieved": "未达成", "expired": "到期", "stopped": "已停止", "estop": "全部停下",
@@ -1376,16 +1412,23 @@ class Goals:
                 u[str(i)] = int(u.get(str(i), 0)) + 1
         self._update(f)
 
-    def block(self, summary: str, why: str, tool: str = "", cats=(), human_text: str = "", who: str = "") -> None:
-        """P339: also the tool, its danger categories, the plain phrase, who asked and the raw command (≤ 400, redacted)."""
+    def block(self, summary: str, why: str, tool: str = "", cats=(), human_text: str = "", who: str = "", rule: str = "",
+              rule_en: str = "") -> None:
+        """P339: also the tool, its danger categories, the plain phrase, who asked and the raw command (≤ 400, redacted).
+        P358: `rule` / `rule_en` = the card's why (which rule held it, redacted) for `agentj goal status`."""
         def f(d):
             b = d.setdefault("blocked", [])
             from .privacy import owner_text
             line = owner_text((summary or "").split("\n", 1)[0])[:160]     # review #3: redacted like raw
             raw = raw_text(summary)
             if not any(x.get("summary") == line and x.get("raw", raw) == raw for x in b):
-                b.append({"at": int(time.time()), "summary": line, "why": why, "tool": str(tool)[:64],
-                          "cats": [str(c) for c in cats][:6], "human": str(human_text)[:160], "who": str(who)[:60], "raw": raw})
+                rec = {"at": int(time.time()), "summary": line, "why": why, "tool": str(tool)[:64],
+                       "cats": [str(c) for c in cats][:6], "human": str(human_text)[:160], "who": str(who)[:60], "raw": raw}
+                if rule:
+                    rec["rule"] = owner_text(" ".join(str(rule).split()))[:160]
+                if rule_en:
+                    rec["rule_en"] = owner_text(" ".join(str(rule_en).split()))[:160]
+                b.append(rec)
             del b[:-MAX_BLOCKED]
         self._update(f)
 

@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentj.app/schema/agentj-card-1.json",
+  "title": "Agent J card (card.json, schemaVersion 1 — phase 1: template cards)",
+  "description": "One card in the phone's logo menu, from card 6 on. Checked by `agentj card validate` (this schema plus the rules it cannot say: reserved ids, credential-looking file names, prompt variables, folder contents). Spec: agentjarvis/docs/specs/AGENTJ-CARDS-SPEC.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "version", "name", "description", "icon", "accent", "template", "data"],
+  "properties": {
+    "$schema": {"const": "https://agentj.app/schema/agentj-card-1.json"},
+    "schemaVersion": {"const": 1},
+    "id": {"type": "string", "pattern": "^[a-z][a-z0-9-]{1,31}$", "description": "permanent; agentj-*, official-*, the official and system card ids are reserved"},
+    "version": {"type": "string", "pattern": "^\\d{1,4}(\\.\\d{1,4}){0,2}$"},
+    "name": {"$ref": "#/$defs/text", "description": "zh ≤ 12, en ≤ 24 characters"},
+    "description": {"$ref": "#/$defs/text", "description": "zh ≤ 60, en ≤ 120 characters"},
+    "author": {"type": "string", "minLength": 1, "maxLength": 40},
+    "icon": {"enum": ["note", "checklist", "calendar", "folder", "board", "book", "star", "bolt"], "description": "a built-in line icon (phase 1 takes no image files)"},
+    "accent": {"enum": ["emerald-oasis", "windstorm", "magic-carpet", "peachy-feeling", "noir"], "description": "the deck card's fill, from Leo's closed palette; no custom colours"},
+    "template": {"enum": ["notes", "checklist"]},
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file"],
+      "properties": {
+        "file": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$", "description": "one file name in <state>/agentperm/cards-data/<id>/; notes: .md / .txt, checklist: .json"},
+        "maxBytes": {"type": "integer", "minimum": 1024, "maximum": 262144, "default": 65536}
+      }
+    },
+    "actions": {"type": "array", "maxItems": 4, "items": {"$ref": "#/$defs/action"}, "description": "buttons under the card; variables {{card.name}} {{data.path}}"},
+    "itemActions": {"type": "array", "maxItems": 2, "items": {"$ref": "#/$defs/action"}, "description": "checklist only: buttons on every item; also {{item.id}} {{item.text}} {{item.done}}"},
+    "plus": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]{1,63}$", "description": "the header's + on this card's page: one slash skill (no /) the phone puts in the message box, e.g. agentj-add-note; nothing is sent. Missing: agentj-cards"},
+    "anchors": {"type": "array", "maxItems": 20, "items": {"$ref": "#/$defs/anchor"}, "description": "named places card/<id>#<anchor> scrolls to; every card also has top · actions · links, a checklist's item ids are anchors too"},
+    "links": {"type": "array", "maxItems": 6, "items": {"$ref": "#/$defs/link"}, "description": "links on the card's page: href = a web page in a new tab (the phone shows the address first), jlink = an Agent J internal link"}
+  },
+  "$defs": {
+    "text": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {"zh": {"type": "string", "minLength": 1}, "en": {"type": "string", "minLength": 1}}
+    },
+    "anchor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$", "not": {"enum": ["top", "actions", "links"]}},
+        "label": {"$ref": "#/$defs/text", "description": "zh ≤ 8, en ≤ 20 characters"},
+        "block": {"enum": ["top", "content", "actions", "links"]},
+        "heading": {"type": "string", "minLength": 1, "maxLength": 80, "description": "notes template only: the first Markdown heading with this text"}
+      },
+      "oneOf": [{"required": ["block"]}, {"required": ["heading"]}]
+    },
+    "link": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z][a-z0-9-]{1,31}$"},
+        "label": {"$ref": "#/$defs/text", "description": "zh ≤ 8, en ≤ 20 characters"},
+        "href": {"type": "string", "maxLength": 512, "pattern": "^https?://[^\\s@/?#]+([/?#][^\\s]*)?$", "description": "http / https only; no user:password@, no token / key / secret / password / auth / session / signature parameter"},
+        "jlink": {"type": "string", "pattern": "^(skill/[a-z0-9][a-z0-9-]{1,63}|workflow/[A-Za-z0-9][A-Za-z0-9._-]{0,79}|doc/([A-Za-z0-9][A-Za-z0-9._-]{0,79}/)?[A-Za-z0-9][A-Za-z0-9._-]{0,79}\\.md|card/[a-z][a-z0-9-]{1,31}(#[A-Za-z0-9][A-Za-z0-9_-]{0,63})?|page/(chat|workflows|skills|memory|agentj|cards))$", "description": "skill/<name> · workflow/<folder> · doc/[<folder>/]<file>.md · card/<id>[#<anchor>] · page/<page> — opens inside Agent J"}
+      },
+      "oneOf": [{"required": ["href"]}, {"required": ["jlink"]}]
+    },
+    "action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "prompt"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z][a-z0-9-]{1,31}$"},
+        "label": {"$ref": "#/$defs/text", "description": "zh ≤ 8, en ≤ 20 characters"},
+        "prompt": {
+          "description": "the chat message the button proposes (≤ 2000 characters); the phone shows it in full and sends only after the owner confirms",
+          "oneOf": [{"type": "string", "minLength": 1, "maxLength": 2000}, {"$ref": "#/$defs/text"}]
+        },
+        "draft": {"type": "boolean", "description": "true: the message goes into the message box for the owner to finish, nothing is sent"}
+      }
+    }
+  }
+}

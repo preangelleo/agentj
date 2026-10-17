@@ -147,7 +147,7 @@ class _F27:
             c["host"].asr = FakeASR("not_installed")
             att = await c["upload"](wav(2.0), mime="audio/wav", purpose="att", origin="recording", secs=2, name="v3.wav")
             r, t = await c["said"]("", att=[att])
-            self.assertIn("转写失败（电脑上还没装语音转写）", t["reply"]["text"])
+            self.assertIn("转写失败（Agent J 主机上还没装语音转写）", t["reply"]["text"])
             # nothing at all, or spaces alone: refused as before
             for text in ("", "  \n"):
                 sid = wire.b64u(os.urandom(16))
@@ -253,7 +253,7 @@ class TelegramNoCaption(_Bot, unittest.IsolatedAsyncioTestCase):
         m = self.nocap(voice={"file_id": "v2", "duration": 4, "mime_type": "audio/ogg", "file_size": 68})
         self.assertTrue(await self.t.incoming(m, self.cfg))
         text = self.host._accept.call_args.args[1]
-        self.assertIn("没能在本地转写（电脑上还没装语音转写）", text)     # P166: says why, in the owner's language
+        self.assertIn("没能在本地转写（Agent J 主机上还没装语音转写）", text)     # P166: says why, in the owner's language
         self.assertEqual(len(self.host._accept.call_args.kwargs["blobs"]), 1)
 
 

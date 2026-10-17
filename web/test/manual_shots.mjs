@@ -258,7 +258,7 @@ async function run(lang) {
   await shot(p, 'voice', lang);
   await p.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: r.x, y: r.y - 120 }] });
   await p.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-  // F17 cards: the computer asks for the admin password / a key; the phone seals it to a one-time key
+  // F17 cards: the Agent J host asks for the admin password / a key; the phone seals it to a one-time key
   const card = async (kind, extra) => {
     const kp = await webcrypto.subtle.generateKey({ name: 'X25519' }, true, ['deriveBits']);
     const epk = new Uint8Array(await webcrypto.subtle.exportKey('raw', kp.publicKey));

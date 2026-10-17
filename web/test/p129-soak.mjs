@@ -3,7 +3,7 @@
 //   node web/test/p129-soak.mjs --minutes 60 --public <dir of web/public> --out <file.json>
 // Faults (seconds from start, repeating): a busy computer whose pong is 12.5 s late while other frames keep flowing
 // (every 300 s), a relay / network blink that closes the socket (every 420 s), a computer that is silent for 11 s (every
-// 660 s), the computer restarting for 1.5 s (every 1200 s). These are the classes the host.log evidence points at.
+// 660 s), the Agent J host restarting for 1.5 s (every 1200 s). These are the classes the host.log evidence points at.
 import {writeFileSync} from 'node:fs';
 import {startWebServer} from './serve.mjs';
 import {startFakeHost} from './fakehost.mjs';

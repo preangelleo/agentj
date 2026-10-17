@@ -44,7 +44,8 @@ test('P341: the host code span for a goal-result command renders as code with $ 
 
 test('P341: relay renders host-written system pages without TeX', () => {
   const src = readFileSync(new URL('../public/js/relay.js', import.meta.url), 'utf8');
-  assert.match(src, /const sysPage = \(p\) => !!\(p && p\.source && p\.source\.k === "sys"\);/);
+  // P365 widened it to the owner's automation pages too (k "auto"): sys must stay in
+  assert.match(src, /const sysPage = \(p\) => !!\(p && p\.source && (p\.source\.k === "sys"\)|\(p\.source\.k === "sys" \|\| p\.source\.k === "auto"\)\));/);
   assert.match(src, /RelayMD\.parse\(tx, \{math: !sys\}\)/);
   assert.match(src, /: progress, hostWait, sysPage\(p\)\);/);
   assert.equal(src.match(/fill\(el\("rdWords"\), tx, false, sys(Page\(p\))?\)/g).length, 3, 'the reader too');

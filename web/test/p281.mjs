@@ -21,7 +21,7 @@ const NAME = 'Jarvis Mac';
 const PREFS = { appearance: { language: 'zh', theme: 'system' }, voice: { speak_replies: false, wake_enabled: false }, agent: { high_risk_warnings: false, session_mode: 'independent' } };
 const RUNS = [['light', 390, 844, true], ['dark', 390, 844, true], ['light', 1440, 900, false], ['dark', 1440, 900, false]];
 const PROGRESS = '正在探测 Codex（2/3），每个最多 1 分钟…';
-const ANSWER = '董事长，先用大白话说一下：harness 就是这台电脑上真正在思考、在干活的那个 AI 程序，可以是 Claude Code、Codex 或 OpenCode。';
+const ANSWER = '董事长，先用大白话说一下：harness 就是这台Agent J 主机上真正在思考、在干活的那个 AI 程序，可以是 Claude Code、Codex 或 OpenCode。';
 
 const look = (p) => evaluate(p, `(()=>{const w=document.getElementById('words'),th=document.getElementById('thinking');
   const vis=(e)=>!!e&&getComputedStyle(e).display!=='none'&&e.getBoundingClientRect().height>0;

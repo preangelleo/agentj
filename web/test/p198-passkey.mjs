@@ -153,7 +153,7 @@ try {
   await e1.waitFor(visible('#confirm'), 10000).catch(() => false);
   await e1.tap('#confirm-no');                        // 「以后再说」
   await sleep(500);
-  check((await e1.eval(hostRec))?.pk === false, 'E: the computer offered to save one → the record says it has none');
+  check((await e1.eval(hostRec))?.pk === false, 'E: the Agent J host offered to save one → the record says it has none');
   await e1.eval(seedRec({ approved: false, removed: 'replaced' }));
   await e1.goto(WEB);
   s = await takenOver(e1);
@@ -168,7 +168,7 @@ try {
   check(note.startsWith('没能用 Face ID 验证') && await e1.state() === 'revoked' && await e1.eval(visible('#takeover-pk')),
     `E: no passkey on this phone → 「${note}」, still here, the button stays (pkErr ${await e1.eval('document.body.dataset.pkErr')})`);
   await e1.shot(join(SHOTS, 'E-none-zh.png'));
-  check(Object.keys(readDevs()).length === 2, 'E: nothing changed on the computer (A + E)');
+  check(Object.keys(readDevs()).length === 2, 'E: nothing changed on the Agent J host (A + E)');
   const errs = [e1].flatMap((p) => p.pageErrors());
   check(errs.length === 0, `no page errors ${errs.length ? JSON.stringify(errs.slice(0, 3)) : ''}`);
 } catch (e) {

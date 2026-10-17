@@ -1,4 +1,4 @@
-"""P244 (PROTOCOL §30): the five pages' read-only picture of the computer — the working root's workflow folders, skills,
+"""P244 (PROTOCOL §30): the five pages' read-only picture of the Agent J host — the working root's workflow folders, skills,
 memory files and the Agent J constitution layer. Nothing here writes a file except the colour table <state>/workflows.json.
 
 Safety: a name matching CRED is never listed, never counted by name and never readable (only an anonymous `hidden` count);

@@ -27,7 +27,7 @@ class Provider:
     def public(self):
         from urllib.parse import urlsplit
         return {'provider':self.name,'model':self.model,'endpoint':self.base_url,'api':self.api,'via_agentsrelay':urlsplit(self.base_url).hostname in ('agentsrelay.net','api.agentsrelay.net'),
-                'privacy':'Requests go from your computer to your model provider using your account. / 请求从你的电脑直达模型服务商，使用你的账户。'}
+                'privacy':'Requests go from the Agent J host to your model provider using your account. / 请求从你的Agent J 主机直达模型服务商，使用你的账户。'}
 
 def _load(path):
     try:

@@ -12,6 +12,11 @@ names, set / not set, at most the last 4 characters of a long value — never th
 - Edit / Add open the ordinary elevate secret card (its 同意 already needs Face ID when the device has a passkey): the
   value never passes through the Agent.
 - Every copy / delete / set request is one line in `elevate.log` — name, op, result, device; never the value or its tail.
+- P362 (backlog #71): rows also say where else on this computer a NAME already is (keys_found.py: environment.d, the
+  systemd user environment, the owner's `api_keys.extra_env_files`) — source label, at most a tail, whether it equals the
+  managed value; never a value. 「收进 Agent J 管理」 = op "import" (same Face ID, digest over NAME + source id + keep /
+  comment): the value is copied into the key file on the computer, the old source kept or (owner's choice) commented out.
+  The Claude / Codex sign-in rows say which login the harness really uses (keys_found.claude_active / codex_active).
 """
 from __future__ import annotations
 
@@ -31,13 +36,15 @@ from . import elevate, passkey, wire
 
 CTX = "agentjarvis-keys-v1"
 PHONE_TYPES = ("keys_get", "keys_op", "keys_set")
-OPS = ("copy", "delete")
+OPS = ("copy", "delete", "import")
 NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,63}")
 THIRD_RE = re.compile(r".*(KEY|TOKEN|SECRET|PASSWORD|PASS)$", re.I)
 THIRD_SKIP = ("AGENTJ_", "AGENTJARVIS_")
 TAIL_MIN = 24                 # a tail of 4 only for values at least this long
 TOKENS_PER_DEVICE = 4
+THIRD_MAX = 200
 _HEX32 = re.compile(r"[0-9a-f]{32}")
+_HEX16 = re.compile(r"[0-9a-f]{16}")
 
 # (id, {zh, en}, [(type, NAME)]) — type: oauth (status only) · sub (subscription / plan key) · key (pay-as-you-go)
 CATALOG = (
@@ -68,8 +75,19 @@ def env_path() -> str:
     return provider_runtime.env_path()
 
 
-def digest(op: str, name: str) -> str:
-    return hashlib.sha256(f"{CTX}\n{op}\n{name}".encode()).hexdigest()
+def digest(op: str, name: str, extra: str | None = None) -> str:
+    return hashlib.sha256((f"{CTX}\n{op}\n{name}" + (f"\n{extra}" if extra else "")).encode()).hexdigest()
+
+
+def import_extra(src: str, keep: bool, fp: str) -> str:
+    """P362: what an import's Face ID also signs — which source, keep or comment out the old lines, and which exact value
+    (keys_found.fingerprint, as listed): a value changed after the owner looked is refused."""
+    return src + "\n" + ("keep" if keep else "comment") + "\n" + fp
+
+
+def importable(name: str) -> bool:
+    """The names the page itself offers: a catalog key or a secret-looking third-party name (never AGENTJ_* / LD_PRELOAD …)."""
+    return name in CATALOG_NAMES or (bool(THIRD_RE.fullmatch(name)) and not name.upper().startswith(THIRD_SKIP))
 
 
 def kind(op: str) -> str:
@@ -142,12 +160,16 @@ def delete_name(name: str, path: str | None = None) -> bool:
 
 
 # ---------------------------------------------------------------- the listing
-def in_use_names(host) -> set:
-    """Best effort: the env names the current harness reads, or the current OpenCode provider's key name."""
+def in_use_names(host, environ: dict | None = None) -> set:
+    """Claude / Codex (P362): the one name the harness really authenticates with under `environ`; OpenCode: the current
+    provider's key name (best effort)."""
     cfg = getattr(host, "agent_cfg", None) or {}
     k = cfg.get("kind")
     if k in HARNESS_NAMES:
-        return set(HARNESS_NAMES[k])
+        from . import keys_found as kf
+        env = dict(os.environ) if environ is None else environ
+        n = (kf.claude_active if k == "claude" else kf.codex_active)(env)[1]
+        return {n} if n else set()
     if k == "opencode":
         model = cfg.get("model")
         if isinstance(model, str) and "/" in model:
@@ -168,38 +190,93 @@ def _login_state(which: str) -> str:
     return "in" if r[0] in ("ok", "env") else "out"
 
 
-def _row(typ: str, name: str, env: dict, used: set) -> dict:
+def _found(name: str, v: str, srcs: list, live: dict, tid: str | None = None) -> list:
+    """P362: where else NAME is on this computer — {src, tail?, same? (equals the managed value), live? (the running service
+    uses exactly this copy, the key file has none equal)}. Never a value."""
+    from . import keys_found as kf
+    out = []
+    for s in srcs:
+        w = s["values"].get(name)
+        if not w:
+            continue
+        f = {"src": s["id"]}
+        if len(w) >= TAIL_MIN:
+            f["tail"] = w[-4:]
+        if v:
+            f["same"] = kf.same(v, w)
+        if live.get(name) and kf.same(live[name], w) and not (v and kf.same(v, live[name])):
+            f["live"] = True
+        if tid and not v and importable(name):
+            f["fp"] = kf.fingerprint(tid, name, s["id"], w)
+        out.append(f)
+    return out[:kf.MAX_FOUND]
+
+
+def _row(typ: str, name: str, env: dict, used: set, srcs: list = (), live: dict | None = None, tid: str | None = None) -> dict:
     v = env.get(name) or ""
     row = {"type": typ, "name": name, "set": bool(v)}
     if v and len(v) >= TAIL_MIN:
         row["tail"] = v[-4:]
-    if v and name in used:
+    found = _found(name, v, srcs, live or {}, tid)
+    if found:
+        row["found"] = found
+    if (v or found) and name in used:
         row["in_use"] = True
     return row
 
 
-def scan(host, path: str | None = None) -> dict:
-    """{base, third} — blocking (file read, login probes): call it in a thread."""
-    env = read_env(path)
-    used = in_use_names(host)
+def _use(which: str, env: dict, live: dict, srcs: list) -> dict:
+    """P362: which login the harness really uses (after the key file is applied) — {use, use_name?, use_src?, pending?}."""
+    from . import keys_found as kf
+    fn = kf.claude_active if which == "claude" else kf.codex_active
+    eff = {**live, **env}
+    use, name = fn(eff)
+    m = {"use": use}
+    if name:
+        m["use_name"] = name
+        if env.get(name):
+            m["use_src"] = "agentj"
+        else:
+            hit = next((s["id"] for s in srcs if s["values"].get(name) and eff.get(name)
+                        and kf.same(s["values"][name], eff[name])), None)
+            if hit:
+                m["use_src"] = hit
+    if fn(live) != (use, name):
+        m["pending"] = True                         # the key file changed since the service started: after a restart
+    return m
+
+
+def scan(host, path: str | None = None, tid: str | None = None) -> dict:
+    """{base, third, src} — blocking (file reads, login probes): call it in a thread. `tid` (the page token) → each
+    importable found copy carries its value fingerprint."""
+    from . import keys_found as kf
+    managed = path or env_path()
+    env = read_env(managed)
+    try:
+        srcs = kf.sources(host, managed)
+    except Exception:  # noqa: BLE001 — a scan problem never takes the managed keys off the page
+        srcs = []
+    live = dict(os.environ)
+    used = in_use_names(host, {**live, **env})
     base = []
     for vid, vname, rows in CATALOG:
         out = []
         for typ, name in rows:
             if typ == "oauth":
                 st = _login_state(name)
-                out.append({"type": "oauth", "name": name, "set": st == "in", "state": st})
+                out.append({"type": "oauth", "name": name, "set": st == "in", "state": st, **_use(name, env, live, srcs)})
             else:
-                out.append(_row(typ, name, env, used))
+                out.append(_row(typ, name, env, used, srcs, live, tid))
         base.append({"id": vid, "name": dict(vname), "rows": out})
     third = []
-    for name in sorted(env):
-        if name in CATALOG_NAMES or name.upper().startswith(THIRD_SKIP) or not THIRD_RE.fullmatch(name) or not env[name]:
+    names = set(n for n in env if env[n]) | {n for s in srcs for n in s["values"]}
+    for name in sorted(names):
+        if name in CATALOG_NAMES or name.upper().startswith(THIRD_SKIP) or not THIRD_RE.fullmatch(name):
             continue
-        r = _row("key", name, env, used)
+        r = _row("key", name, env, used, srcs, live, tid)
         r.pop("type")
         third.append(r)
-    return {"base": base, "third": third}
+    return {"base": base, "third": third[:THIRD_MAX], "src": kf.public(srcs)}
 
 
 # ---------------------------------------------------------------- page tokens + one-time nonces (per device)
@@ -228,8 +305,8 @@ def rearm(host, device: str, tid: str) -> str | None:
 
 def listing(host, s, path: str | None = None) -> dict:
     """The `keys` message body (without t / r): {id, n, fa?, base, third}."""
-    body = scan(host, path)
     tid, n = issue(host, s.device)
+    body = scan(host, path, tid)
     m = {"id": tid, "n": n}
     pk = host.st.passkey_of_device(s.device) if getattr(s, "device", None) else None
     if pk:
@@ -265,7 +342,8 @@ def check(host, s, obj: dict) -> str | None:
         f = passkey.approval_fields(obj["fa"])
         if f["id"] != pk["id"]:
             raise passkey.PasskeyError("bad", "credential")
-        ch = passkey.elevate_challenge(host.channel, s.device, tid, kind(op), n, digest(op, name))
+        extra = import_extra(obj["src"], obj["keep"] is True, obj["fp"]) if op == "import" else None
+        ch = passkey.elevate_challenge(host.channel, s.device, tid, kind(op), n, digest(op, name, extra))
         count = passkey.verify_assertion(pk, f, ch)
     except (passkey.PasskeyError, ValueError) as e:
         host.st.log("keys_passkey", device=s.device, reason=getattr(e, "detail", "bad"))
@@ -303,7 +381,11 @@ async def _op(host, s, r, obj: dict) -> None:
             m["n"] = n
         await host.send_app(s, m)
 
-    if not opv or not shown or not isinstance(obj.get("id"), str) or not _HEX32.fullmatch(obj["id"]):
+    from . import keys_found as kf
+    bad_import = opv == "import" and not (isinstance(obj.get("src"), str) and kf.SRC_RE.fullmatch(obj["src"])
+                                          and isinstance(obj.get("keep"), bool) and isinstance(obj.get("fp"), str)
+                                          and _HEX16.fullmatch(obj["fp"]) and importable(shown))
+    if not opv or not shown or bad_import or not isinstance(obj.get("id"), str) or not _HEX32.fullmatch(obj["id"]):
         host.st.log("keys_refused", device=s.device, reason="shape")
         return await reply(False, "shape")
     if not host.st.sign_key(s.device):                 # only an approved device (same as F17 / F32)
@@ -315,6 +397,13 @@ async def _op(host, s, r, obj: dict) -> None:
         host.st.log("keys_refused", device=s.device, reason=why)
         audit(host, opv, shown, "refused", s.device, reason=why)
         return await reply(False, why)
+    if opv == "import":
+        res, why, extra = await asyncio.to_thread(do_import, host, shown, obj["src"], obj["keep"], obj["id"], obj["fp"])
+        audit(host, opv, shown, res, s.device, passkey="uv", **extra)
+        host.st.log("keys_import", device=s.device, result=res)
+        if why:
+            return await reply(False, why)
+        return await reply(True, old=extra.get("old"))
     if opv == "copy":
         env = await asyncio.to_thread(read_env)
         v = env.get(shown) or ""
@@ -338,6 +427,49 @@ async def _op(host, s, r, obj: dict) -> None:
     audit(host, opv, shown, "deleted" if done else "missing", s.device, passkey="uv")
     host.st.log("keys_delete", device=s.device, result="deleted" if done else "missing")
     return await reply(True) if done else await reply(False, "missing")
+
+
+def do_import(host, name: str, sid: str, keep: bool, tid: str = "", fp: str = "") -> tuple[str, str | None, dict]:
+    """P362 「收进 Agent J 管理」: copy NAME's value from source `sid` into the key file (the ordinary env writer: one line
+    replaced or appended, 0600, temp + rename), then — only when not `keep` — comment out NAME's lines in that source file.
+    → (audit result, why refused or None, audit extras: src label, old = kept | commented | comment_failed)."""
+    from . import keys_found as kf
+    if not importable(name):
+        return "refused", "shape", {}
+    managed = env_path()
+    if read_env(managed).get(name):
+        return "refused", "exists", {}
+    src = next((x for x in kf.sources(host, managed) if x["id"] == sid), None)
+    if src is None or src.get("why"):
+        return "refused", "gone", {}
+    info = {"src": src["label"]}
+    v = src["values"].get(name)
+    if not v:
+        return "missing", "missing", info
+    if not kf.same(kf.fingerprint(tid, name, sid, v), fp):
+        return "refused", "changed", info              # the value changed after the owner looked: re-list, nothing copied
+    if not keep and src["kind"] == "systemd":
+        return "refused", "shape", info
+    p = pathlib.Path(managed)
+    if not p.parent.exists():
+        with contextlib.suppress(OSError):
+            p.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    b = bytearray(v.encode("utf-8"))
+    v = None  # noqa: F841 — str cannot be wiped; drop the reference
+    try:
+        spec = elevate.parse_dest("env:" + str(p) + "#" + name, name, None, host.st.root)
+        elevate.write_secret(spec, b)
+    except (elevate.Refused, OSError):
+        return "failed", "write", info
+    finally:
+        elevate.wipe(b)
+    if keep:
+        return "imported", None, {**info, "old": "kept"}
+    try:
+        done = kf.comment_out(src["path"], name)
+    except (kf.Unsafe, OSError, UnicodeError):
+        done = False
+    return "imported", None, {**info, "old": "commented" if done else "comment_failed"}
 
 
 def _purpose(host, name: str) -> str:

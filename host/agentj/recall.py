@@ -408,7 +408,7 @@ def from_index(args: dict) -> dict | None:
 
 def add_parser(sub) -> None:
     rc = sub.add_parser("recall", help="找以前聊过的事：关键词 + 日期（主 Agent 用）/ find an earlier conversation by keyword and date",
-                        description="Searches the phone's pages on this computer (current conversation + the archives /clear "
+                        description="Searches the phone's pages on the Agent J host (current conversation + the archives /clear "
                                     "kept): every word must match. Read-only; excerpts are redacted. Works inside the fence "
                                     "through serve.")
     rc.add_argument("query", nargs="*", help="关键词（全部匹配）/ keywords (all must match); empty = the newest pages")
@@ -441,7 +441,7 @@ def cmd_recall(a) -> None:
         print(json.dumps({**res, "via": via}, ensure_ascii=False, indent=1))
         sys.exit(0 if res.get("ok") else 1)
     if not res.get("ok"):
-        sys.exit("找不到聊天记录：Agent J（serve）没有在运行，或这台电脑上还没有记录 / no history reachable: serve is not "
+        sys.exit("找不到聊天记录：Agent J（serve）没有在运行，或这台Agent J 主机上还没有记录 / no history reachable: serve is not "
                  "running or nothing is kept yet")
     hits = res.get("hits") or []
     if not hits:

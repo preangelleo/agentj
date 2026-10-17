@@ -1,0 +1,66 @@
+{
+  "schema": "agentj.core.presets/v1",
+  "_comment": "P359: Agent J Harness model presets (AGENTJ-CORE-SPEC 2.3). Data only; keys are read by NAME from the process environment, never stored here. order = the empty-computer recommendation order (D9: Volcano Ark first at home and abroad). verified = measured end to end by P359 (reports/qa/p359/); unverified rows follow the vendor docs / ark.json and are measured in C6. edit_mode (omp #1): every preset model uses exact-text replacement (Pi's edit) until the M1 edit benchmark says otherwise. roles (omp #2): main / ceo / sub / tiny; fallback = tried in order on 429 / 5xx / an unavailable model. plan = a Coding Plan key: allowed for background CEOs (D15, Leo 10-16), the settings page carries one line about rate limits.",
+  "order": ["ark", "byteplus", "ark-coding-plan", "agentsrelay"],
+  "providers": {
+    "ark": {
+      "label": "火山方舟（按量） · Volcano Ark (pay as you go)",
+      "protocol": "openai-chat",
+      "base_url": "https://ark.cn-beijing.volces.com/api/v3",
+      "key_env": "ARK_API_KEY",
+      "verified": false,
+      "models": {
+        "doubao-seed-2.1-pro": {"tier": "large", "context": 1048576, "edit_mode": "str_replace"},
+        "doubao-seed-2.1-lite": {"tier": "small", "context": 262144, "edit_mode": "str_replace"},
+        "deepseek-v4-pro": {"tier": "large", "context": 393216, "edit_mode": "str_replace", "replay_reasoning": true},
+        "kimi-k3": {"tier": "large", "context": 262144, "edit_mode": "str_replace"}
+      },
+      "roles": {"main": "doubao-seed-2.1-pro", "ceo": "doubao-seed-2.1-pro", "sub": "doubao-seed-2.1-lite", "tiny": "doubao-seed-2.1-lite"},
+      "fallback": ["deepseek-v4-pro", "kimi-k3"]
+    },
+    "byteplus": {
+      "label": "BytePlus ModelArk",
+      "protocol": "openai-chat",
+      "base_url": "https://ark.ap-southeast.bytepluses.com/api/v3",
+      "key_env": "BYTEPLUS_API_KEY",
+      "verified": false,
+      "models": {
+        "seed-2-1-pro": {"tier": "large", "context": 262144, "edit_mode": "str_replace"},
+        "deepseek-v4-pro": {"tier": "large", "context": 393216, "edit_mode": "str_replace", "replay_reasoning": true}
+      },
+      "roles": {"main": "seed-2-1-pro", "ceo": "seed-2-1-pro", "sub": "seed-2-1-pro", "tiny": "seed-2-1-pro"},
+      "fallback": ["deepseek-v4-pro"]
+    },
+    "ark-coding-plan": {
+      "label": "火山方舟 Coding Plan · Volcano Ark Coding Plan",
+      "protocol": "openai-chat",
+      "base_url": "https://ark.cn-beijing.volces.com/api/coding/v3",
+      "key_env": "ARK_CODING_PLAN_API_KEY",
+      "plan": true,
+      "verified": false,
+      "models": {
+        "ark-code-latest": {"tier": "large", "context": 262144, "edit_mode": "str_replace"},
+        "doubao-seed-2.1-pro": {"tier": "large", "context": 1048576, "edit_mode": "str_replace"},
+        "glm-5.3": {"tier": "large", "context": 204800, "edit_mode": "str_replace"},
+        "deepseek-v4-pro": {"tier": "large", "context": 393216, "edit_mode": "str_replace", "replay_reasoning": true},
+        "kimi-k3": {"tier": "large", "context": 262144, "edit_mode": "str_replace"}
+      },
+      "roles": {"main": "doubao-seed-2.1-pro", "ceo": "doubao-seed-2.1-pro", "sub": "ark-code-latest", "tiny": "ark-code-latest"},
+      "fallback": ["ark-code-latest", "glm-5.3"]
+    },
+    "agentsrelay": {
+      "label": "AgentsRelay",
+      "protocol": "openai-chat",
+      "base_url": "https://agentsrelay.net/v1",
+      "key_env": "AGENTSRELAY_OPENAI_KEY",
+      "verified": true,
+      "models": {
+        "gpt-5.4-mini": {"tier": "small", "context": 272000, "edit_mode": "str_replace"},
+        "gpt-5.4": {"tier": "large", "context": 272000, "edit_mode": "str_replace"},
+        "gpt-6.1-sol": {"tier": "large", "context": 272000, "edit_mode": "str_replace"}
+      },
+      "roles": {"main": "gpt-5.4", "ceo": "gpt-5.4", "sub": "gpt-5.4-mini", "tiny": "gpt-5.4-mini"},
+      "fallback": ["gpt-6.1-sol"]
+    }
+  }
+}

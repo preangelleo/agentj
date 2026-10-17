@@ -160,8 +160,8 @@ def check_browser(st: State) -> dict:
 # being upgraded from runs this doctor) only knows ok / warn / fail and would read anything else as a failure.
 UNVERIFIABLE = ("在 Agent 的隔离环境里看不到主机状态，无法在这里核对 / inside the Agent's isolated environment the host's state is "
                 "hidden, so it cannot be checked here")
-UNVERIFIABLE_HINT = ("请主人在手机上看版本，或在隔离外（电脑终端）运行 agentj doctor / ask the owner to check the version on the "
-                     "phone, or run agentj doctor outside the fence (a terminal on the computer)")
+UNVERIFIABLE_HINT = ("请主人在手机上看版本，或在隔离外（Agent J 主机终端）运行 agentj doctor / ask the owner to check the version on the "
+                     "phone, or run agentj doctor outside the fence (a terminal on the Agent J host)")
 
 
 def _unverifiable(cid: str) -> dict:
@@ -211,7 +211,7 @@ def probe_relay(relay: str, timeout: float = NET_TIMEOUT) -> tuple[bool, str]:
 
 
 def probe_host_leg(st: State, relay: str, timeout: float = NET_TIMEOUT) -> tuple[bool, dict | None]:
-    """P317: this computer's own signed host leg — identity files agree (the channel is the signing key's), then a short
+    """P317: the Agent J host's own signed host leg — identity files agree (the channel is the signing key's), then a short
     host socket: challenge → signed auth (+ seat certificate) → the relay's `ok`, closed at once. Never while serve's link
     is up (an authenticated host socket replaces the current one). The key stays in this process; nothing is printed."""
     from websockets.sync.client import connect
@@ -345,12 +345,12 @@ def check_agent(st: State) -> dict:
     fz = "shared (native owner session; outside independent fence)" if c.get("session_mode") == "shared" else "fenced" if c.get("fence", True) else "UNFENCED (--unfenced)"
     if c.get("fence", True) and c.get("docker"):
         return _c("agent", WARN, f"{AGENT_LABEL[c['kind']]} · {tilde(c['dir'])} · fenced, docker allowed (--allow-docker): "
-                  "容器引擎能挂载整台电脑的文件 / the container engine can mount every file", f"agentj agent {c['kind']} --dir <folder>  (docker hidden again)")
+                  "容器引擎能挂载整台Agent J 主机的文件 / the container engine can mount every file", f"agentj agent {c['kind']} --dir <folder>  (docker hidden again)")
     return _c("agent", OK, f"{AGENT_LABEL[c['kind']]} · {tilde(c['dir'])} · {fz}")
 
 
 def check_harness_setup(st: State) -> dict | None:
-    """P219: nothing on this computer will stop the Agent's first message at a terminal prompt nobody sees — the harness's
+    """P219: nothing on the Agent J host will stop the Agent's first message at a terminal prompt nobody sees — the harness's
     one-time questions answered for the working folder, Claude Code startable as this user, the fence's tools present."""
     from . import harness_setup
     c = st.agent_config() if st.exists() else None
@@ -406,14 +406,14 @@ def check_codex_shared(st: State) -> dict | None:
                 then = (f"手机下一条消息会改接 {nxt[:8]} / the next phone message follows {nxt[:8]}" if nxt else
                         "手机下一条消息会弹卡让你选接哪个 / the next phone message asks which thread to follow" if how == "ambiguous"
                         else "手机下一条消息会新开一个 / the next phone message starts a new one")
-                return _c("codex_shared", WARN, f"Codex 共享：共享会话找不到了（{sid[:8]} 在这台电脑上已经没有记录）；{then} / "
-                          f"the shared session {sid[:8]} no longer exists on this computer",
+                return _c("codex_shared", WARN, f"Codex 共享：共享会话找不到了（{sid[:8]} 在这台Agent J 主机上已经没有记录）；{then} / "
+                          f"the shared session {sid[:8]} no longer exists on the Agent J host",
                           "想指定：`agentj config set agent.shared_session_id <会话 ID>` / to choose: "
                           "`agentj config set agent.shared_session_id <thread ID>`")
             zh, en = shared_codex.REASONS.get(shared_codex.brief(e), ("所选会话不可用。", "The selected thread is unavailable."))
             return _c("codex_shared", WARN, f"Codex 共享：{zh}手机第一条消息会新开一个 Codex 会话 / {en} The first phone message starts a new Codex session",
-                      "电脑上 `codex resume` 选好会话后在设置里填它的 ID；或者不管它 / pick a thread on the computer, or leave it")
-        busy = "；电脑上正在回答，手机消息会排队 / desktop turn running, phone messages queue" if active else ""
+                      "Agent J 主机上 `codex resume` 选好会话后在设置里填它的 ID；或者不管它 / pick a thread on the Agent J host, or leave it")
+        busy = "；Agent J 主机上正在回答，手机消息会排队 / desktop turn running, phone messages queue" if active else ""
         perms = "" if ctx else "；还没有完整一轮，按你的 Codex 默认权限 / no completed turn yet, your Codex defaults apply"
         return _c("codex_shared", OK, f"Codex 共享：接续会话 {sid[:8]}{busy}{perms} / continuing thread {sid[:8]}")
     found = shared_codex.discover(c["dir"])
@@ -421,7 +421,7 @@ def check_codex_shared(st: State) -> dict | None:
         return _c("codex_shared", OK, f"Codex 共享：没指定会话，接续这个目录最近的 {found[:8]} / no thread selected; continuing the newest one here ({found[:8]})")
     return _c("codex_shared", WARN, "Codex 共享：这个目录还没有 Codex 会话，手机第一条消息会新开一个 / "
               "no Codex thread in this folder yet; the first phone message starts one",
-              f"想接着电脑上的会话：在 {tilde(c['dir'])} 里先跑一次 `codex` / to share a desktop session, run `codex` in that folder first")
+              f"想接着Agent J 主机上的会话：在 {tilde(c['dir'])} 里先跑一次 `codex` / to share a desktop session, run `codex` in that folder first")
 
 
 def check_codex_perm(st: State) -> dict | None:
@@ -468,7 +468,7 @@ def check_shared_inbound(st: State) -> dict | None:
         return _c("shared_inbound", OK, claude_inbound.diagnostic(st))
     text = claude_inbound.reason_text(reason, "zh") + " / " + claude_inbound.reason_text(reason, "en")
     if reason == "stale":
-        return _c("shared_inbound", WARN, text, "在电脑上对该 Claude Code 会话执行 /clear 或新开会话 / Run /clear or start a new session")
+        return _c("shared_inbound", WARN, text, "在Agent J 主机上对该 Claude Code 会话执行 /clear 或新开会话 / Run /clear or start a new session")
     if reason == "managed":
         return _c("shared_inbound", FAIL, text, "Agent J 不改组织策略 / Agent J never changes managed policy")
     return _c("shared_inbound", FAIL, text, "agentj config claude-inbound on")
@@ -560,7 +560,7 @@ def check_agent_cli(st: State, svc: dict) -> dict:
     s = f"{AGENT_LABEL[k]} {ver} · {tilde(os.path.abspath(exe))} · {where}"
     s += " · selection: " + resolve(k, binary_env)["reason"]
     if k == "claude" and c and c.get("session_mode") == "shared":
-        return _c("agent_cli", OK, s + " · 共享模式沿用电脑活会话的登录；服务无需另登录 / Shared mode uses the desktop session login; no separate service login needed")
+        return _c("agent_cli", OK, s + " · 共享模式沿用Agent J 主机活会话的登录；服务无需另登录 / Shared mode uses the desktop session login; no separate service login needed")
     if k == "claude":
         from . import claude_auth
         try:
@@ -598,7 +598,7 @@ def check_agent_cli(st: State, svc: dict) -> dict:
             return _c('agent_cli', FAIL if connected is False or reason in ('login', 'no_key', 'region', 'balance', 'model') else WARN,
                       s + (' · selected provider disconnected' if connected is False else ' · provider connection recorded; key validity unverified'),
                       (PROVIDER_NOTES[reason].replace('{provider}', '<provider>') + ' ' if reason else '') +
-                      '优先使用 Claude Code。OpenCode /provider.connected 只证明已配置连接；核实选中 provider/model。换 key 后 Agent J 在下一条消息前自动重启它启动的 OpenCode，接着原对话（也可运行 agentj agent restart）；附着的电脑 OpenCode 要你自己重启。 / Prefer Claude Code. Connected is not a live key test. After a key change Agent J restarts its own OpenCode before the next message (or `agentj agent restart`); restart an attached desktop server yourself.')
+                      '优先使用 Claude Code。OpenCode /provider.connected 只证明已配置连接；核实选中 provider/model。换 key 后 Agent J 在下一条消息前自动重启它启动的 OpenCode，接着原对话（也可运行 agentj agent restart）；附着的Agent J 主机 OpenCode 要你自己重启。 / Prefer Claude Code. Connected is not a live key test. After a key change Agent J restarts its own OpenCode before the next message (or `agentj agent restart`); restart an attached desktop server yourself.')
         return _c('agent_cli', WARN, s + ' · runtime provider authentication unknown',
                   '优先使用 Claude Code；OpenCode 需运行中的 GET /provider.connected 才能确认所选连接。凭据文件或数据库存在不等于已登录；换 key 后 Agent J 会在下一条消息前自动重启它启动的 OpenCode。 / Prefer Claude Code; store existence is not authentication. Check the running provider connection; Agent J restarts its own OpenCode after a key change.')
     if k == "kimi":                                 # P305: Kimi's own config that a phone card cannot cover (names only)
@@ -753,7 +753,7 @@ def check_passphrase(st: State) -> dict:
     from . import cloud
     if cloud.read_cloud(st):
         return _c("passphrase", OK, "未设置，账户页用通行密钥添加遥控器 / not set: add remotes on the account page with a passkey",
-                  "可选，推荐设：别的电脑上批准新遥控器、在终端配对都要用 / optional, recommended (other computers, terminal pairing): agentj passphrase set")
+                  "可选，推荐设：别的Agent J 主机上批准新遥控器、在终端配对都要用 / optional, recommended (other computers, terminal pairing): agentj passphrase set")
     return _c("passphrase", WARN, "未设置 / not set", "agentj passphrase set   (自己在终端里输 / type it yourself, never via an agent)")
 
 
@@ -779,7 +779,7 @@ def check_harness(svc=None) -> dict:
 def check_bound(st: State) -> dict:
     link = cloud.read_cloud(st) if st.exists() else None
     if link:
-        via = "用设置码加入 / joined with a setup code" if link["via"] == "seat" else "用电脑绑定码加入 / joined with a computer binding code"
+        via = "用设置码加入 / joined with a setup code" if link["via"] == "seat" else "用Agent J 主机绑定码加入 / joined with a computer binding code"
         return _c("bound", OK, f"Agent J 账号 / Agent J account {link['tenant']['slug']} · {via}")
     return _c("bound", WARN, "还没加到 Agent J 账号 / not in an Agent J account yet", "agentj login")
 
@@ -834,7 +834,7 @@ def check_jev_key(svc: dict) -> dict | None:
 
 
 def check_onboarding(st: State) -> dict:
-    """F28 (P72): the seat and the two required remotes (this computer's browser, the main phone). Never ✗."""
+    """F28 (P72): the seat and the two required remotes (the Agent J host's browser, the main phone). Never ✗."""
     if not st.exists():
         return _c("onboard", WARN, "还没初始化 / not initialised yet", "agentj init")
     try:
@@ -1175,7 +1175,7 @@ def run(st: State | None = None, offline: bool = False) -> list[dict]:
 
 
 def check_chatgpt(st: State, offline: bool = False) -> dict | None:
-    """P175: the Agent is Codex (or none is chosen yet and Codex is installed) → can this computer reach OpenAI through the
+    """P175: the Agent is Codex (or none is chosen yet and Codex is installed) → can the Agent J host reach OpenAI through the
     proxy the service uses? Warn at most; a mainland-China install is pointed at OpenCode + a local model before the first
     turn fails, not after."""
     c = st.agent_config() if st.exists() else None

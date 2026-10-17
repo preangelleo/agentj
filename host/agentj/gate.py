@@ -130,7 +130,7 @@ def reset(st) -> None:
 
 
 MESSAGES = {
-    "not_set": "还没有设置遥控器配对密码：在这台电脑的终端里运行 `agentj pair`（会先请你设）或 `agentj passphrase set`（只有你知道，别让 Agent 替你设）。",
+    "not_set": "还没有设置遥控器配对密码：在这台Agent J 主机的终端里运行 `agentj pair`（会先请你设）或 `agentj passphrase set`（只有你知道，别让 Agent 替你设）。",
     "locked": "遥控器配对密码连续输错，已暂时锁定，请稍后再试。",
     "wrong": "遥控器配对密码不对。",
     "too_short": f"遥控器配对密码至少 {MIN_LEN} 个字符。",

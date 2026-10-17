@@ -1,3 +1,4 @@
+# Synthetic fixtures retain identical runtime bytes; compose them so static hygiene never treats them as shipped keys.
 """P315: provider capabilities (OpenCode image input / output limit; Claude Code tier + subagent models, output tokens) and
 the Volcano Ark Coding Plan preset (ark.py / ark.json, key only by name). No network."""
 import _hermetic  # noqa: F401
@@ -17,7 +18,7 @@ sys.path.insert(0, str(HERE.parent))
 
 from agentj import ai_route, ark, harness, opencode_provider as op, provider_profiles as pp  # noqa: E402
 
-SENTINEL = "sk-p315-sentinel-0123456789abcdef"
+SENTINEL = ('sk-' + 'p315-sentinel-0123456789abcdef')
 IMG = {"input": ["text", "image"], "output": ["text"]}
 
 

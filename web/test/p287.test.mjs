@@ -7,13 +7,13 @@ const { hintKey, hostKind, HINT_AFTER_MS } = await import('../public/js/offhint.
 const dict = (f) => JSON.parse(readFileSync(new URL('../i18n/' + f, import.meta.url), 'utf8'));
 const zh = dict('web.zh.json'), en = dict('web.en.json');
 
-test('P287 offhint: a short outage (service restart ~10 s, upgrade ~40 s) says nothing beyond 「电脑离线」', () => {
+test('P287 offhint: a short outage (service restart ~10 s, upgrade ~40 s) says nothing beyond 「Agent J 主机离线」', () => {
   for (const ms of [0, 10_000, 40_000, HINT_AFTER_MS - 1, NaN, undefined])
     assert.equal(hintKey({ plat: 'macos', boot: 'login' }, ms), null, String(ms));
   assert.ok(HINT_AFTER_MS >= 60_000, 'an upgrade restart must fit inside the threshold');
 });
 
-test('P287 offhint: an OS restart picks the line by what the computer said while it was up', () => {
+test('P287 offhint: an OS restart picks the line by what the Agent J host said while it was up', () => {
   const at = HINT_AFTER_MS;
   assert.equal(hintKey({ plat: 'macos', boot: 'login' }, at), 'offhint.macos');
   assert.equal(hintKey({ plat: 'macos' }, at), 'offhint.macos');

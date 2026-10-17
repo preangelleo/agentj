@@ -18,7 +18,7 @@ import {startFakeHost} from './fakehost.mjs';
 import {launch, newPage, navigate, waitFor, waitState, evaluate, shoot, rect, tap, key, sleep} from './browser.mjs';
 import {wavBytes} from '../public/js/wav.js';
 
-const out = fileURLToPath(new URL('../../../reports/qa/p346/', import.meta.url)); mkdirSync(out, {recursive: true});
+const out = process.env.AJ_P375_VOICE_OUT || fileURLToPath(new URL('../../../reports/qa/p346/', import.meta.url)); mkdirSync(out, {recursive: true});
 const WORDS = '这是转写出来的文字';
 const LABELS = {zh: ['取消录音', '结束录音', '说完直接发送'], en: ['Cancel recording', 'End recording', 'Stop and send']};
 const STATES = [['idle', ''], ['working', ''], ['waiting', ''], ['question', 'question'], ['offline', '']];
@@ -130,6 +130,7 @@ try {
       await waitFor(p, gone, 4000);
       for (let i = 0; i < 100 && sent(S) === b0; i++) await sleep(100);
       assert.equal(sent(S), b0 + 1, `${tag}: send sends`);
+      assert.equal(await evaluate(p, `['input','workflow-compose'].includes(document.activeElement.id)`), false, `${tag}: P375 voice send releases composer focus`);
       results[`send-${tag}`] = 'PASS';
       assert.deepEqual(p.problems, []); assert.deepEqual(p.offsite, []);
     } finally { await fake.stop(); await web.stop(); }

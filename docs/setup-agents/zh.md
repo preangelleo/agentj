@@ -1,14 +1,14 @@
 ---
 title: 装好 AI 命令行工具
 nav: 手动安装 AI 工具
-summary: 空电脑也能开始：三个系统的基础依赖、四个 AI 工具、PATH、登录和全权限设置。
+summary: 空Agent J 主机也能开始：三个系统的基础依赖、四个 AI 工具、PATH、登录和全权限设置。
 order: 17
 ---
 
 
 # 装好 AI 命令行工具
 
-先选系统，再按菜单完成基础依赖和工具安装。所有命令在自己的电脑终端执行。
+先选系统，再按菜单完成基础依赖和工具安装。所有命令在自己的Agent J 主机终端执行。
 
 只想先用 OpenCode 接着安装 Agent J？装好 curl 后直接看下方 OpenCode 段的最快上手路线，不需要先装 Homebrew、Node 或 npm。Node 步骤只用于 npm 安装路线；Claude Code 和 Codex 的官方脚本也不需要 Node。
 
@@ -16,7 +16,7 @@ order: 17
 
 只想装好 Agent J 加一个 AI，不想逐个工具配置？用 [一条命令自己装](/docs/install/#one-command)，它会按需调用本页的脚本。
 
-[安装 Agent J](/docs/install/) · [电脑上怎么用](/docs/computer/) · [agentj 命令参考](/docs/cli/)
+[安装 Agent J](/docs/install/) · [Agent J 主机上怎么用](/docs/computer/) · [agentj 命令参考](/docs/cli/)
 
 ## 一键安装
 
@@ -114,7 +114,7 @@ command -v brew
 ```
 
 
-没有 Homebrew：官方安装器可能要求电脑密码和 Command Line Tools。
+没有 Homebrew：官方安装器可能要求Agent J 主机密码和 Command Line Tools。
 
 
 ```bash
@@ -272,7 +272,7 @@ command -v nano
 ```
 
 
-没有 curl 也能先执行 apt；sudo 要你在电脑上输入密码。容器/root 可去掉 sudo。
+没有 curl 也能先执行 apt；sudo 要你在Agent J 主机上输入密码。容器/root 可去掉 sudo。
 
 
 ```bash
@@ -920,11 +920,11 @@ gemini --yolo --sandbox=false
 
 [Gemini CLI 官方指南](https://geminicli.com/docs/get-started/installation/)
 
-Google 已停用 Gemini CLI 个人登录，只能使用付费 Gemini API key；当前 Gemini 默认审批设置不能填 yolo，必须在启动命令里带 --yolo。Agent J 当前可接 Claude/Codex/OpenCode；Gemini 可在电脑上使用，但尚不能作为 Agent J 主 Agent。
+Google 已停用 Gemini CLI 个人登录，只能使用付费 Gemini API key；当前 Gemini 默认审批设置不能填 yolo，必须在启动命令里带 --yolo。Agent J 当前可接 Claude/Codex/OpenCode；Gemini 可在Agent J 主机上使用，但尚不能作为 Agent J 主 Agent。
 
 ## 全权限启动（三种方式） {#full-access}
 
-全权限意味着 Agent 可不经询问执行命令、修改文件；只在自己的电脑和信任的目录里用。公司管理策略、显式禁止规则仍可能生效。
+全权限意味着 Agent 可不经询问执行命令、修改文件；只在自己的Agent J 主机和信任的目录里用。公司管理策略、显式禁止规则仍可能生效。
 
 ### 1. 命令参数
 
@@ -1300,7 +1300,7 @@ Anthropic 和 OpenAI 不服务香港、澳门、中国大陆等地区。在这�
 - **香港或海外**：Kimi 会员 Plus 或更高档，用 OpenCode 或 Kimi Code 接入。在海外访问按美元收费。Go 档没有编程额度，用不了。
 - **已经有其中一家**（方舟、Kimi 或[阿里百炼 Token Plan](/docs/setup-agents/#bailian)）：继续用那一家。
 
-装好 Agent J 后，Agent 会实测你这台电脑能用什么：
+装好 Agent J 后，Agent 会实测你这台Agent J 主机能用什么：
 
 ```bash
 agentj agent route
@@ -1310,7 +1310,7 @@ agentj agent route
 
 ## 运行要求 {#requirements}
 
-macOS：先试运行 `opencode --version`（或所选 Agent 的 `--version`）；能正常运行就能继续安装，不按系统版本号拦截。一键安装会实际试运行它下载的固定版 OpenCode；若实际出现 dyld / _ubrk_clone 或无法运行，才提示失败原因。PATH 或 npm 重装不能修复系统库，请升级系统、换电脑，或用能正常运行的其他 Agent 按手动路线安装。Intel Mac 使用 x86_64 工具与 /usr/local Homebrew，Apple Silicon 使用 arm64 与 /opt/homebrew；不要混用架构。Gemini 当前官方列 macOS 15+。物理 Intel Mac/Windows 安装尚需对应机器验证。
+macOS：先试运行 `opencode --version`（或所选 Agent 的 `--version`）；能正常运行就能继续安装，不按系统版本号拦截。一键安装会实际试运行它下载的固定版 OpenCode；若实际出现 dyld / _ubrk_clone 或无法运行，才提示失败原因。PATH 或 npm 重装不能修复系统库，请升级系统、换Agent J 主机，或用能正常运行的其他 Agent 按手动路线安装。Intel Mac 使用 x86_64 工具与 /usr/local Homebrew，Apple Silicon 使用 arm64 与 /opt/homebrew；不要混用架构。Gemini 当前官方列 macOS 15+。物理 Intel Mac/Windows 安装尚需对应机器验证。
 
 中国大陆：Claude Code / Codex 官方服务不可用，npm 镜像只帮你下载，不能解锁服务。选择 OpenCode + 国产模型，或使用有对应套餐/模型的 AgentsRelay；需自己核对服务提供方和地区条款。Windows 只走 WSL2。
 
@@ -1337,7 +1337,7 @@ Please download https://agentj.app/install.md with curl, read the whole file wit
 
 [安装流程](/docs/install/) · [install.md](/install/) · [命令参考](/docs/cli/)
 
-[让电脑保持唤醒](/docs/keep-awake/)：命令、系统设置和可发给 Agent 的请求。
+[让Agent J 主机保持唤醒](/docs/keep-awake/)：命令、系统设置和可发给 Agent 的请求。
 
 仅有 Gemini 时，安装助手会提示：Agent J 主 Agent 暂不支持 Gemini，请再登录 Codex / Claude Code / OpenCode 之一或用 AgentsRelay。setup-agents 仍可安装 Gemini。
 

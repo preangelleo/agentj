@@ -1,3 +1,4 @@
+import {focusDraft, touchComposer} from './composer-focus.js';
 // P244: editable text with atomic, non-editable workflow mentions. The existing textarea remains the plain-text
 // transport / draft / ASR boundary. No markup is sent, stored, copied or pasted.
 const CMD_RE=/^[/\uFF0F][^\s/\uFF0F]+(?=\s)/;
@@ -16,11 +17,11 @@ export function composeMentions(input, getMentions) {
   // P302 (owner: 「slash command 放在文本输入框没有给颜色……Peek-a-Blue」): a finished leading /command (followed by a space)
   // is a chip too — Peek-a-Blue ground, Noir text; still plain text in the field, the host reads it as before
   const cmd=CMD_RE.exec(text)?.[0]||'';
-  if(!entries.length&&!cmd){const wasEditing=!editor.hidden;editor.hidden=true;input.classList.remove('workflow-backed');last=text;if(focus&&wasEditing){input.focus();input.setSelectionRange(text.length,text.length);}return;}
+  if(!entries.length&&!cmd){const wasEditing=!editor.hidden;editor.hidden=true;input.classList.remove('workflow-backed');last=text;if(focus&&wasEditing){focusDraft(input, );input.setSelectionRange(text.length,text.length);}return;}
   last=text;editor.replaceChildren();let at=0;
   if(cmd){const chip=document.createElement('span');chip.className='workflow-token cmd-token';chip.contentEditable='false';chip.dataset.mention=cmd;chip.textContent=cmd;editor.append(chip);at=cmd.length;}
   while(at<text.length){const w=entries.find(w=>text.startsWith(w.text,at));if(w){const pill=document.createElement('span');pill.className='workflow-token';pill.contentEditable='false';pill.dataset.mention=w.text;pill.textContent=w.label;pill.title=w.text;editor.append(pill);at+=w.text.length;}else{let end=at+1;while(end<text.length&&!entries.some(w=>text.startsWith(w.text,end)))end++;editor.append(document.createTextNode(text.slice(at,end)));at=end;}}
-  editor.hidden=false;input.classList.add('workflow-backed');if(focus){editor.focus();tail();}
+  editor.hidden=false;input.classList.add('workflow-backed');if(focus&&!touchComposer()){focusDraft(editor);tail();}
   if(!frame)frame=requestAnimationFrame(watch);
  }
  function watch(){frame=0;if(editor.hidden)return;if(!composing&&input.value!==last)paint(document.activeElement===editor);if(!editor.hidden)frame=requestAnimationFrame(watch);}

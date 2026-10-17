@@ -216,8 +216,8 @@ def check(timeout: float = TIMEOUT) -> dict:
 EXPLAIN = {
     "newer": "有新版本，Agent 自己运行 `agentj update apply`，重启并自检后回报。/ A newer version is available; the Agent upgrades, restarts and self-checks.",
     "current": "已经是最新版，不用做什么。/ Up to date. Nothing to do.",
-    "ahead": "这台电脑上的版本比公开仓库里最新的发布版还新。这不是错误，不用做什么：通常是从 agentj.app 下载安装的版本比 GitHub "
-             "上的副本先更新了。/ This computer runs a newer build than the public repo's newest release. Not an error, nothing "
+    "ahead": "这台Agent J 主机上的版本比公开仓库里最新的发布版还新。这不是错误，不用做什么：通常是从 agentj.app 下载安装的版本比 GitHub "
+             "上的副本先更新了。/ the Agent J host runs a newer build than the public repo's newest release. Not an error, nothing "
              "to do: usually it was installed from agentj.app before the GitHub copy caught up.",
     "unknown": "这次没查到最新版本。这不是错误，不用做什么：多半是网络不通或 GitHub 暂时连不上，过一会儿再运行 `agentj update check` "
                "就行。/ Could not check this time. Not an error, nothing to do: usually there is no network or GitHub could not "
@@ -390,9 +390,9 @@ def _spent_here(st, code: str, version: str) -> bool:
 
 
 NO_MANAGER_EXIT = 78    # = service.NO_MANAGER_EXIT: the new CLI's `service install --deferred` found no systemd (P278)
-NO_MANAGER_WHY = ("新版已装好，但这台电脑没有可用的 systemd，后台服务没法自动重启接管；没有回滚（回滚也一样没法重启）。按 fix 行开启 "
+NO_MANAGER_WHY = ("新版已装好，但这台Agent J 主机没有可用的 systemd，后台服务没法自动重启接管；没有回滚（回滚也一样没法重启）。按 fix 行开启 "
                   "systemd，或在运行 `agentj serve` 的终端里 Ctrl-C 后重新运行一次",
-                  "the new version is installed, but this computer has no usable systemd, so the background service could not "
+                  "the new version is installed, but the Agent J host has no usable systemd, so the background service could not "
                   "restart on it; no rollback (the old version could not restart either). Turn systemd on as the fix line says, or "
                   "Ctrl-C the terminal running `agentj serve` and run it again")
 
@@ -479,7 +479,7 @@ def roll_back(st, info: dict, wheel, frm: str, run) -> bool:
 def recover_of(info: dict, wheel, rb: str) -> dict:
     """P277 (container check of the WSL case): a failed `uv tool install --force` can delete the tool's own environment, so
     `agentj` itself is gone and the automatic rollback fails with it. Then the block names the one command that puts the
-    cached previous version back (a local path on this computer; never sent anywhere)."""
+    cached previous version back (a local path on the Agent J host; never sent anywhere)."""
     if rb != "failed" or not wheel or wheel == HOST_WHEEL:
         return {}
     try:
@@ -513,7 +513,7 @@ def take_marker(st, now: float | None = None) -> dict | None:
 
 def web_state(web: str | None, version: str | None = None, timeout: float = 5.0) -> str | None:
     """P320 (Leo 10-15 22:49): what the phone/web page serves right now, before the upgrade receipt talks about it. Reads
-    `<web>/version.json` (the page's own file, HTTPS only). → "same" (the page already serves this computer's version or a
+    `<web>/version.json` (the page's own file, HTTPS only). → "same" (the page already serves the Agent J host's version or a
     newer one: just refresh) · "older" (the page's new version is still on its way) · None (could not tell)."""
     version = version or __version__
     try:
@@ -545,15 +545,15 @@ def web_refresh_text(lang="zh", web: str | None = "older") -> str:
     if lang == "en":
         return ('The phone/web page updates separately: when its new version is out, the page shows "Server upgraded" — tap '
                 'Refresh (or the settings icon at the top right → "Update and reload"). Until then a small line under the header says the new page is on its way.')
-    # P240: the page's new version can lag the computer (batch B after A); telling the owner to refresh now sent them round a
+    # P240: the page's new version can lag the Agent J host (batch B after A); telling the owner to refresh now sent them round a
     # refresh loop on the old page (Leo 10-13 23:13). The page itself now offers a refresh only when one would help.
-    return '手机/网页的新版会单独上线：上线后页面会弹「服务器已升级」，点「刷新」就行（也可以点右上角设置图标 →「更新并刷新」）；在那之前页眉下有一行小字「电脑已升级，新版网页稍后上线」。'
+    return '手机/网页的新版会单独上线：上线后页面会弹「服务器已升级」，点「刷新」就行（也可以点右上角设置图标 →「更新并刷新」）；在那之前页眉下有一行小字「Agent J 主机已升级，新版网页稍后上线」。'
 
 
 def health_text(counts, lang="zh", rows=None) -> str:
     if not counts:
-        return ("Self-check could not finish; run `agentj doctor` on the computer." if lang == "en" else
-                "自检未能完成，请在电脑运行 `agentj doctor`。")
+        return ("Self-check could not finish; run `agentj doctor` on the Agent J host." if lang == "en" else
+                "自检未能完成，请在Agent J 主机运行 `agentj doctor`。")
     if counts[2]:
         # Only known row IDs get user-facing labels; arbitrary detail can contain private data.
         labels = {"version": ("程序版本", "program version"), "python": ("运行环境", "runtime"),
@@ -568,9 +568,9 @@ def health_text(counts, lang="zh", rows=None) -> str:
                   "codex_perm": ("Codex 权限", "Codex permissions"), "codex_shared": ("Codex 共享会话", "shared Codex session"),
                   "danger": ("Agent 权限设置", "Agent permissions"), "estop": ("暂停状态", "pause state"),
                   "fence": ("Agent 隔离", "Agent isolation"), "friends": ("Agent 好友", "Agent friends"),
-                  "hardware": ("电脑硬件", "computer hardware"), "harness": ("Agent 接入", "Agent connection"),
+                  "hardware": ("Agent J 主机硬件", "computer hardware"), "harness": ("Agent 接入", "Agent connection"),
                   "keep-awake": ("防休眠", "keep-awake"), "linger": ("后台常驻", "background persistence"),
-                  "login-session": ("电脑登录会话", "computer login session"), "migrate": ("本机数据迁移", "local data migration"),
+                  "login-session": ("Agent J 主机登录会话", "computer login session"), "migrate": ("本机数据迁移", "local data migration"),
                   "onboard": ("安装初始化", "installation setup"), "passphrase": ("配对口令", "pairing passphrase"),
                   "root-migrate": ("工作目录迁移", "working-folder migration"), "shared_inbound": ("手机消息接入", "phone message delivery"),
                   "skills": ("内置技能", "built-in skills"), "tasks": ("定时任务", "scheduled tasks"),
@@ -581,21 +581,21 @@ def health_text(counts, lang="zh", rows=None) -> str:
                  if isinstance(r, dict) and r.get("status") == "fail" and r.get("id") in labels]
         detail = "、".join(dict.fromkeys(names)) if lang != "en" else ", ".join(dict.fromkeys(names))
         if lang == "en":
-            return f"Self-check found {counts[2]} failed check{'s' if counts[2] != 1 else ''}{': ' + detail if detail else ''}; run `agentj doctor` on the computer and follow its repair guidance."
-        return f"自检有 {counts[2]} 项未通过{'：' + detail if detail else ''}；请在电脑运行 `agentj doctor`，按提示修复。"
+            return f"Self-check found {counts[2]} failed check{'s' if counts[2] != 1 else ''}{': ' + detail if detail else ''}; run `agentj doctor` on the Agent J host and follow its repair guidance."
+        return f"自检有 {counts[2]} 项未通过{'：' + detail if detail else ''}；请在Agent J 主机运行 `agentj doctor`，按提示修复。"
     if lang == "en":
         return f"Self-check passed ({counts[1]} reminder{'s' if counts[1] != 1 else ''}, no failed checks)." if counts[1] else "All self-checks passed."
     return f"自检通过（有 {counts[1]} 项提醒，没有未通过项）。" if counts[1] else "自检全部通过。"
 
 
 def completion_text(rec, counts, lang="zh", rows=None, web: str | None = "older", machine: str | None = None) -> str:
-    """P320: `machine` = this computer's name (several computers each send their own receipt — the owner must tell which);
+    """P320: `machine` = the Agent J host's name (several computers each send their own receipt — the owner must tell which);
     `web` = web_state() before the sentence about the page."""
     if lang == "en":
-        where = f'Agent J on the computer "{machine}"' if machine else "Agent J on your computer"
+        where = f'Agent J on the Agent J host "{machine}"' if machine else "Agent J on the Agent J host"
         head = f"{where} has been upgraded to {rec['to']} (previously {rec.get('from', '—')})."
     else:
-        where = f"电脑「{machine}」上的 Agent J 程序" if machine else "电脑上的 Agent J 程序"
+        where = f"Agent J 主机「{machine}」上的 Agent J 程序" if machine else "Agent J 主机上的 Agent J 程序"
         head = f"{where}已升级到 {rec['to']}（原 {rec.get('from', '—')}）。"
     return head + " " + health_text(counts, lang, rows) + "\n\n" + web_refresh_text(lang, web)
 
@@ -605,8 +605,8 @@ def upgraded_text(rec: dict, counts: tuple[int, int, int] | None, lang: str = "z
     if rec["to"] == __version__:
         return completion_text(rec, counts, lang, rows, web, machine)
     if lang == "en":
-        return f"The upgrade to {rec['to']} did not take effect: this computer still runs {__version__}. " + health_text(counts, lang, rows)
-    return f"升级到 {rec['to']} 没有生效：这台电脑仍运行 {__version__}。" + health_text(counts, lang, rows)
+        return f"The upgrade to {rec['to']} did not take effect: the Agent J host still runs {__version__}. " + health_text(counts, lang, rows)
+    return f"升级到 {rec['to']} 没有生效：这台Agent J 主机仍运行 {__version__}。" + health_text(counts, lang, rows)
 
 
 def doctor_counts(rows) -> tuple[int, int, int] | None:
@@ -643,42 +643,42 @@ AUTH_REASONS = {
     "read_only": (2, "程序目录是只读的：在 Agent 隔离（独立模式的 fence）里升级不了，也看不到主机的密钥。要在隔离外运行：由 Agent 在现有共享会话运行，"
                      "或由共享会话里的 Agent 运行", "agentj's own files are read-only here: inside the Agent fence (independent mode) it cannot "
                      "upgrade and cannot see the host key. Run it outside the fence: the Agent of the existing shared session"),
-    "not_initialised": (2, "这台电脑还没有 Agent J 身份（agentj init）", "this computer has no Agent J identity yet (agentj init)"),
-    "not_linked": (2, "这台电脑没有加到 Agent J 账号，授权码验证不了。先 `agentj login`（主人在场），或由 Agent 运行 `agentj update apply`",
-                   "this computer is not added to an Agent J account, so the code cannot be checked: `agentj login` first (with your human), "
+    "not_initialised": (2, "这台Agent J 主机还没有 Agent J 身份（agentj init）", "the Agent J host has no Agent J identity yet (agentj init)"),
+    "not_linked": (2, "这台Agent J 主机没有加到 Agent J 账号，授权码验证不了。先 `agentj login`（主人在场），或由 Agent 运行 `agentj update apply`",
+                   "the Agent J host is not added to an Agent J account, so the code cannot be checked: `agentj login` first (with your human), "
                    "or the Agent runs `agentj update apply`"),
     "unknown": (1, "查不到最新版本（网络不通或 GitHub 连不上），没有升级，授权码也没有用掉。稍后再运行同一条命令",
                 "could not find out the latest version (offline or GitHub unreachable); nothing was installed and the code was not used. Run the same command again later"),
-    "not_newer": (2, "这台电脑已经不比公开仓库里的最新版旧，没有可升级的", "this computer is not older than the newest public release; nothing to upgrade"),
+    "not_newer": (2, "这台Agent J 主机已经不比公开仓库里的最新版旧，没有可升级的", "the Agent J host is not older than the newest public release; nothing to upgrade"),
     "doctor_failed": (1, "升级后自检失败，Agent 查看 doctor 结果并修复", "post-upgrade doctor failed; inspect and repair"),
     "self_check_failed": (1, "升级后命令无法运行，Agent 先诊断并修复", "post-upgrade command could not run; diagnose and repair"),
     "not_latest": (2, "邮件授权的版本不是公开仓库里的最新发布版，没有升级，授权码没有用掉。请主人确认邮件是不是最新的一封",
                    "the authorized version is not the newest public release; nothing installed, the code was not used. Ask your human whether this is the newest upgrade email"),
-    "invalid_authorization": (3, "授权码无效：不存在、不属于这台电脑所在的账号，或这台电脑没有绑定。不要再试别的码；请主人确认",
-                              "invalid authorization: unknown, from another account, or this computer is not bound. Do not try other codes; ask your human"),
-    "not_bound": (3, "这台电脑在 Agent J 账号里已不是绑定状态", "this computer is no longer bound in the Agent J account"),
+    "invalid_authorization": (3, "授权码无效：不存在、不属于这台Agent J 主机所在的账号，或这台Agent J 主机没有绑定。不要再试别的码；请主人确认",
+                              "invalid authorization: unknown, from another account, or the Agent J host is not bound. Do not try other codes; ask your human"),
+    "not_bound": (3, "这台Agent J 主机在 Agent J 账号里已不是绑定状态", "the Agent J host is no longer bound in the Agent J account"),
     "version_mismatch": (4, "这个授权码是给另一个版本的", "this authorization code is for another version"),
     "expired": (5, "授权码已过期（14 天）。请主人等下一封升级邮件，或自己在终端运行 `agentj update apply`",
                 "the authorization code expired (14 days); wait for the next upgrade email, or the Agent runs `agentj update apply`"),
-    "already_used": (6, "这台电脑已经用过这个授权码", "this computer already used this authorization code"),
+    "already_used": (6, "这台Agent J 主机已经用过这个授权码", "the Agent J host already used this authorization code"),
     "rate_limited": (7, "试得太频繁，一小时后再试", "too many tries; try again in an hour"),
-    "unsupported": (8, "Agent J 服务器还不支持升级授权（服务器比这台电脑的 agentj 旧），没有升级，授权码没有用掉。稍后再运行同一条命令，"
+    "unsupported": (8, "Agent J 服务器还不支持升级授权（服务器比这台Agent J 主机的 agentj 旧），没有升级，授权码没有用掉。稍后再运行同一条命令，"
                        "或由 Agent 运行 `agentj update apply`",
                     "the Agent J server does not support upgrade authorization yet (it is older than this agentj); nothing installed, "
                     "the code was not used. Run the same command again later, or the Agent runs `agentj update apply`"),
     "unreachable": (1, "连不上 Agent J 服务器，没有升级，授权码没有用掉。稍后再运行同一条命令",
                     "could not reach the Agent J server; nothing installed, the code was not used. Run the same command again later"),
     "fail": (1, "服务器的回答不对，没有升级", "unexpected answer from the server; nothing installed"),
-    "install_failed": (1, "升级命令失败。授权已经记在这台电脑上：网络恢复后再运行同一条命令即可继续",
-                       "the upgrade command failed. The authorization is recorded on this computer: run the same command again to retry"),
+    "install_failed": (1, "升级命令失败。授权已经记在这台Agent J 主机上：网络恢复后再运行同一条命令即可继续",
+                       "the upgrade command failed. The authorization is recorded on the Agent J host: run the same command again to retry"),
     "not_upgraded": (1, "命令跑完了，但程序版本没有变成目标版本", "the commands ran but the program is not at the target version"),
     "already_current": (0, "已经是目标版本，不用再升级", "already at the target version; nothing to do"),
     # P63: a formal failure (apply() used to hit KeyError here and print a traceback instead of UPGRADE_RESULT)
     # P203: a restart now would interrupt something — nothing was installed; the owner decides
-    "confirm_on_phone": (10, "现在升级会打断上面列出的事：手机上出了一张升级确认卡，主人点「现在升级」后电脑自己升级并回报。不要再运行这条命令，"
+    "confirm_on_phone": (10, "现在升级会打断上面列出的事：手机上出了一张升级确认卡，主人点「现在升级」后Agent J 主机自己升级并回报。不要再运行这条命令，"
                              "也不要加 --yes 绕过（除非主人明确说不管这些、直接升级）",
                          "upgrading now would interrupt the items above: an upgrade confirmation card is on the phone; when your human taps "
-                         "Upgrade now the computer upgrades and reports. Do not run this command again or bypass it with --yes (unless your "
+                         "Upgrade now the Agent J host upgrades and reports. Do not run this command again or bypass it with --yes (unless your "
                          "human explicitly says to upgrade anyway)"),
     "not_confirmed": (10, "没有确认，没有升级", "not confirmed; nothing was installed"),
     "service_failed": (1, "程序已升级，但服务没能重新安装：运行 `agentj service install`",
@@ -696,7 +696,7 @@ AUTH_REASONS = {
     "service_restart_failed": (1, "新版已装好，但后台服务没能重启接管；已尝试回滚。运行 `agentj doctor`，再按提示 `agentj service start`",
                                "the new version installed but the background service did not restart; a rollback was tried. "
                                "Run `agentj doctor`, then `agentj service start` as it says"),
-    "unsupported_install": (1, "这台电脑的安装方式（源码目录或旧名安装）不能自动升级，什么都没装；按 install.md 重新安装",
+    "unsupported_install": (1, "这台Agent J 主机的安装方式（源码目录或旧名安装）不能自动升级，什么都没装；按 install.md 重新安装",
                             "this installation (a source checkout or the old package name) cannot be upgraded automatically; "
                             "nothing was installed — reinstall as install.md says"),
 }
@@ -764,7 +764,7 @@ def _authorized_apply(st, code: str | None, target: str | None, *, mail: dict | 
         return done("not_latest", latest=r["latest"])
     a = auth_fn(st, code, target)
     if a["status"] == "already_used" and _spent_here(st, code, target):
-        say("· 这台电脑之前已用这个授权码授权过这个版本，继续安装 / this computer already holds this authorization; installing")
+        say("· 这台Agent J 主机之前已用这个授权码授权过这个版本，继续安装 / the Agent J host already holds this authorization; installing")
     elif a["status"] != "ok":
         reason = a["status"] if a["status"] in AUTH_REASONS else "fail"
         return done(reason, **({"granted": a["version"]} if a.get("version") else {}))
@@ -1126,7 +1126,7 @@ def result_block(res: dict) -> str:
 
 
 UNVERIFIABLE_NEXT = ("tell your human: the program is upgraded; please confirm the version on the phone (Settings), or run "
-                     "`agentj doctor` in a terminal outside the Agent fence / 请主人在手机「设置」里确认版本，或在电脑终端（隔离外）运行 agentj doctor")
+                     "`agentj doctor` in a terminal outside the Agent fence / 请主人在手机「设置」里确认版本，或在Agent J 主机终端（隔离外）运行 agentj doctor")
 REASON_EXTRA = {
     "unverifiable_in_fence": ("程序已升级并通过版本核对；但在 Agent 的隔离环境里看不到主机状态，后台服务和本机数据这两项无法在这里核对，"
                               "也没有失败项", "upgraded and the version verified; inside the Agent fence the host's state is hidden, "

@@ -86,6 +86,15 @@ function close() {
 
 function paint() {
   const d = $('offDlg');
+  const composer = document.querySelector('.composer');
+  const fit = () => {
+    if (!composer) return;
+    const cs = getComputedStyle(composer);
+    const width = composer.getBoundingClientRect().width - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    if (width > 0) d.style.setProperty('--off-compose-width', width + 'px');
+  };
+  fit(); if (composer) new ResizeObserver(fit).observe(composer);
+
   if (!d) return;
   const t0 = now();
   const long = mode === 'down' && isLong(t0 - since);

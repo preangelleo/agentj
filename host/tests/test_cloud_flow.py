@@ -62,7 +62,7 @@ class Flow(unittest.TestCase):
         with FakeCP(interval=4, bound_after=2) as cp:
             r = self.agentj("login", "--api", cp.url, env={"AGENTJ_APP_URL": cp.url}, input="y\n")
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-            self.assertIn(f"这台电脑的通道号：{self.st.config()['channel']}（账号后台里显示的应该一样）", r.stdout)
+            self.assertIn(f"这台Agent J 主机的通道号：{self.st.config()['channel']}（账号后台里显示的应该一样）", r.stdout)
             self.assertIn("BCDF-2345", r.stdout)
             self.assertIn(cp.url + "/link", r.stdout, "the server's URI is shown: it is on the configured Dashboard origin")
             self.assertIn("加到 Agent J 账号 acme-co（Acme [2J Co）？[y/N]", r.stdout)
@@ -112,8 +112,8 @@ class Flow(unittest.TestCase):
                 r = self.agentj("login", "--api", cp.url, input=answer)
                 self.assertNotEqual(r.returncode, 0, answer)
                 self.assertIn("加到 Agent J 账号 acme-co", r.stdout)
-                self.assertIn("这台电脑什么都没写", r.stderr)
-                self.assertIn("把这台电脑移除", r.stderr)
+                self.assertIn("这台Agent J 主机什么都没写", r.stderr)
+                self.assertIn("把这台Agent J 主机移除", r.stderr)
                 self.assertFalse(self.st.cloud_path.exists(), answer)
                 self.assertEqual(cp.reports, [], "nothing reported")
         self.assertEqual(self.st.devices_path.read_bytes(), before)
@@ -124,7 +124,7 @@ class Flow(unittest.TestCase):
         with FakeCP(interval=4, bound_after=1) as cp:
             r = self.agentj("login", "--api", cp.url, "--yes", "--account", "acme-co", env={"AGENTJ_APP_URL": "https://agentj.app/account"})
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-            self.assertIn("到账户页「Agent（席位）→ 添加 Agent」填这个电脑绑定码：https://agentj.app/account/#add-agent\n", r.stdout)
+            self.assertIn("到账户页「Agent（席位）→ 添加 Agent」填这个Agent J 主机绑定码：https://agentj.app/account/#add-agent\n", r.stdout)
             self.assertNotIn(cp.url, r.stdout)
             self.assertIn("y（--yes --account）", r.stdout)
             self.assertTrue(self.st.cloud_path.exists())
@@ -158,7 +158,7 @@ class Flow(unittest.TestCase):
             cp.script = ["unbound"]
             r = self.agentj("report")
             self.assertNotEqual(r.returncode, 0)
-            self.assertIn("已经把这台电脑移除了", r.stderr)
+            self.assertIn("已经把这台Agent J 主机移除了", r.stderr)
             self.assertTrue(any(e["ev"] == "report_unbound" for e in self.log()))
             self.assertTrue(self.st.cloud_path.exists())
 

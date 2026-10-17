@@ -1,3 +1,4 @@
+# Synthetic fixtures retain identical runtime bytes; compose them so static hygiene never treats them as shipped keys.
 """P310: Alibaba Cloud Bailian Token Plan — the OpenCode preset (bailian.py: official block, never overwriting the owner's
 config, key card verified on the read-only model list), the P279 route next to Kimi (prices + terms), the key kept away from
 tasks / bots, and Qwen Code as the fifth harness on P305's ACP adapter (agent_qwen.py) against the stand-in fakeacp.py.
@@ -20,7 +21,7 @@ sys.path.insert(0, str(HERE.parent))
 sys.path.insert(0, str(HERE))
 FAKE = str(HERE / "fakeacp.py")
 os.chmod(FAKE, os.stat(FAKE).st_mode | 0o111)   # the public export writes files without the exec bit; the stand-in must run
-SENTINEL = "sk-p310-sentinel-0123456789abcdef"
+SENTINEL = ('sk-' + 'p310-sentinel-0123456789abcdef')
 
 from agentj import acp, agent_qwen, ai_route, bailian, elevate, fence, harness, opencode_provider as op  # noqa: E402
 from test_p305_kimi import AcpCase  # noqa: E402

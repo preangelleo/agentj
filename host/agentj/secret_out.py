@@ -298,7 +298,7 @@ MSG = {
     "sent": "已发到主人的手机：「{name}」，{secs} 秒内可领（Face ID 验证后才显示）。不要在回复里重复这个值；告诉主人去手机上领取。"
             "/ Sent to the owner's phone; it can be picked up for {secs} s after Face ID. Do not repeat the value in your reply.",
     "picked": "主人已在手机上领取。/ The owner picked it up on the phone.",
-    "expired": "没人领取，已过期并从电脑内存里清除。需要的话重新发一张。/ Not picked up; it expired and was wiped. Send a new one if needed.",
+    "expired": "没人领取，已过期并从Agent J 主机内存里清除。需要的话重新发一张。/ Not picked up; it expired and was wiped. Send a new one if needed.",
     "declined": "主人在手机上点了「不要了」，卡片已作废。/ The owner declined it on the phone; the card is void.",
     "gone": "Agent J 停止或重启，卡片作废（值已清除）。/ Agent J stopped or restarted; the card is void.",
     "stopped": "已急停，卡片作废（值已清除）。/ Everything was stopped; the card is void.",

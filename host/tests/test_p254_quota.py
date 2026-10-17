@@ -214,7 +214,7 @@ class FiveHour(unittest.TestCase):
         self.assertEqual(quota.assess(quota.analyse(self.h5src(h5=79.9), [], NOW)), [])
         self.assertNotIn("h5", quota.analyse(self.h5src(h5=95, reset_in=-60), [], NOW), "the window already reset")
         self.assertNotIn("h5", quota.analyse(self.h5src(h5=95, reset_in=DAY), [], NOW), "not a 5-hour window")
-        self.assertEqual(quota.assess(quota.analyse(self.h5src(h5=90, status="unknown"), [], NOW)), ["h5_high"],
+        self.assertEqual(quota.assess(quota.analyse(self.h5src(h5=90, status="unknown"), [], NOW)), ["h5_stop"],
                          "a 5-hour reading alone still carries the duty")
         t = quota.reminder_text(a, "h5_high", "zh")
         self.assertIn("5 小时额度已用 80%", t)
@@ -321,10 +321,10 @@ class AutoSwitch(unittest.TestCase):
     def test_failed_handshake_or_no_room_stays_and_does_not_ask(self):
         h = SwitchHost(self.st, {})
         self.assertEqual(self.route(h, self.rep(), ok=False), ("claude", None))
-        self.assertEqual((self.probed, h.asks), (["codex"], []))
+        self.assertEqual((self.probed, h.asks), (["codex", "opencode"], []))
         self.probed.clear()
-        self.assertEqual(self.route(h, self.rep(codex_week=95)), ("claude", None), "the other one is out too")
-        self.assertEqual(self.probed, [])
+        self.assertEqual(self.route(h, self.rep(codex_week=95))[0], "opencode", "P375: unknown quota still needs a real logged-in handshake")
+        self.assertEqual(self.probed, ["opencode"])
 
     def test_workflow_named_harness_is_respected(self):
         h = SwitchHost(self.st, {"quota": {"auto_switch": True}})

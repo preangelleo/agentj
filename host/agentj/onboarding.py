@@ -1,7 +1,7 @@
 """F28 (P72): first-install onboarding — seat → the two required remotes → one welcome, then a short guided tour.
 
 Owner request 2026-10-07: after a friend's agent installs Agent J, the main Agent itself carries the owner forward: activate the seat,
-pair ① this computer's browser and ② the main phone (both required; other phones / pads / computers only when the owner
+pair ① the Agent J host's browser and ② the main phone (both required; other phones / pads / computers only when the owner
 asks), and on the FIRST pairing say who it is on that new remote and walk the owner through the screen one small step at a
 time. No new buttons or UI (PRODUCT_SPEC §0.1): everything is chat text from the one main Agent.
 
@@ -9,7 +9,7 @@ State: `<state>/onboarding.json` (0600), persistent, so a restart / upgrade / re
 twice. A host that already had remotes before this version is seeded as welcomed (no welcome on upgrade).
   {"v":1, "welcomed": {"at","device","kind"} | null, "computer": {"at","device"} | null, "phone": {"at","device"} | null,
    "announced": [device ids that already got their one line], "tour_left": n, "tour_until": ts, "remind_at": ts}
-Seat = this computer is linked to an Agent J account (`cloud.json`, setup code or 8-character code).
+Seat = the Agent J host is linked to an Agent J account (`cloud.json`, setup code or 8-character code).
 
 Delivery (serve.py): the welcome is a host-originated turn for the main Agent (`WelcomeSend`, like official notices), so
 Claude Code / Codex / OpenCode all write it in their own voice into the chat; with no Agent running the host posts a fixed
@@ -40,7 +40,7 @@ _COMPUTER = re.compile(r"\b(macos|mac|windows|linux|chromeos|cros)\b", re.I)
 
 def kind_of(label: str) -> str:
     """The device label the web client sends (`网页 · iOS Safari`, `网页 · Linux Chrome`, `网页 · Android 主屏幕`) → phone |
-    computer | other. Phones and tablets count as the phone; a desktop OS browser counts as this computer's browser (the
+    computer | other. Phones and tablets count as the phone; a desktop OS browser counts as the Agent J host's browser (the
     host cannot prove which computer a browser runs on; a desktop browser is what install.md pairs first)."""
     s = str(label or "")
     if _PHONE.search(s):
@@ -151,16 +151,16 @@ def paired(st, device: str, label: str, now: float | None = None) -> str | None:
 
 
 # ------------------------------------------------------------------ texts
-KIND = {"zh": {"computer": "这台电脑的浏览器", "phone": "主力手机", "other": "遥控器"},
-        "en": {"computer": "this computer's browser", "phone": "the main phone", "other": "remote"}}
+KIND = {"zh": {"computer": "这台Agent J 主机的浏览器", "phone": "主力手机", "other": "遥控器"},
+        "en": {"computer": "the Agent J host's browser", "phone": "the main phone", "other": "remote"}}
 
 HOW = {
-    "zh": {"computer": "已绑定账号时，在账户页这台电脑的席位卡点「添加遥控器」，用通行密钥或这台电脑的遥控器配对密码确认（终端里配对用 agentj pair，会先请你设遥控器配对密码；本机管理页 agentj admin 也能扫码），用这台电脑的浏览器打开 https://m.agentj.app 扫码或粘贴配对链接",
-           "phone": "手机打开 https://m.agentj.app，先添加到主屏幕，在账户页这台电脑的席位卡点「添加遥控器」，用通行密钥确认后显示二维码，用主屏幕图标里的「扫二维码」扫",
-           "seat": "这台电脑还没加进 Agent J 账号的席位：在账号页空席位上「复制安装提示词」拿设置码，交给我用 agentj login --seat-file 激活"},
-    "en": {"computer": "on a bound host, choose Add a remote on its account-page seat card and confirm with a passkey or this computer's remote pairing password (pairing at the terminal: agentj pair asks you to set that password first; the local agentj admin page also shows a QR) and open https://m.agentj.app in this computer's browser to scan or paste the pairing link",
+    "zh": {"computer": "已绑定账号时，在账户页这台Agent J 主机的席位卡点「添加遥控器」，用通行密钥或这台Agent J 主机的遥控器配对密码确认（终端里配对用 agentj pair，会先请你设遥控器配对密码；本机管理页 agentj admin 也能扫码），用这台Agent J 主机的浏览器打开 https://m.agentj.app 扫码或粘贴配对链接",
+           "phone": "手机打开 https://m.agentj.app，先添加到主屏幕，在账户页这台Agent J 主机的席位卡点「添加遥控器」，用通行密钥确认后显示二维码，用主屏幕图标里的「扫二维码」扫",
+           "seat": "这台Agent J 主机还没加进 Agent J 账号的席位：在账号页空席位上「复制安装提示词」拿设置码，交给我用 agentj login --seat-file 激活"},
+    "en": {"computer": "on a bound host, choose Add a remote on its account-page seat card and confirm with a passkey or the Agent J host's remote pairing password (pairing at the terminal: agentj pair asks you to set that password first; the local agentj admin page also shows a QR) and open https://m.agentj.app in the Agent J host's browser to scan or paste the pairing link",
            "phone": "open https://m.agentj.app on the phone, add it to the Home Screen, choose Add a remote on its account-page seat card, confirm with a passkey and use Scan QR code inside the Home Screen icon",
-           "seat": "this computer is not in an Agent J seat yet: copy the installation prompt on an empty seat in the account page and give me the setup code for agentj login --seat-file"},
+           "seat": "the Agent J host is not in an Agent J seat yet: copy the installation prompt on an empty seat in the account page and give me the setup code for agentj login --seat-file"},
 }
 
 
@@ -168,8 +168,8 @@ def missing_text(s: dict, lang: str) -> str:
     lang = "en" if lang == "en" else "zh"
     miss = [k for k in ("computer", "phone") if not s[k]]
     if not miss:
-        return "两个必做的遥控器（这台电脑的浏览器、主力手机）都配好了。" if lang == "zh" else \
-            "Both required remotes (this computer's browser and the main phone) are paired."
+        return "两个必做的遥控器（这台Agent J 主机的浏览器、主力手机）都配好了。" if lang == "zh" else \
+            "Both required remotes (the Agent J host's browser and the main phone) are paired."
     names = ("、" if lang == "zh" else " and ").join(KIND[lang][k] for k in miss)
     return f"必做的遥控器还差：{names}。" if lang == "zh" else f"Required remote still missing: {names}."
 
@@ -190,7 +190,7 @@ def welcome_prompt(kind: str, label: str, s: dict, lang: str) -> str:
             "of staff → each workflow's CEO → its staff, so you hand work out and report back instead of doing it all yourself; "
             "and when the owner says \"you don't need to ask me about this kind of thing\", you remember it and just do it next "
             "time (dangerous operations still need their approval).\n"
-            "2. Suggest that from now on the two of you talk in this window, not in the main Agent's terminal on the computer.\n"
+            "2. Suggest that from now on the two of you talk in this window, not in the main Agent's terminal on the Agent J host.\n"
             "3. Say you will show the window in a few small steps, one per reply: the owner answers (\"ok\", \"next\") and you "
             "give the next; \"skip\" ends the tour at once.\n"
             "4. In this message give step 1 only: the screen colour is your state — green waiting for the owner, blue working "
@@ -201,14 +201,14 @@ def welcome_prompt(kind: str, label: str, s: dict, lang: str) -> str:
             "it later in Settings.\n"
             "Later steps, one per owner reply, in order: (2) the thin line under the title is this week's quota, the line above "
             "the input box the 5-hour quota, the rising water in the background this conversation's context; tap a line for "
-            "percentages. (3) Hold the microphone to talk (released = text on the computer, never through us); Files / Photos / "
-            "Camera above the input box send attachments. (4) Approval cards: anything that changes the computer turns the "
+            "percentages. (3) Hold the microphone to talk (released = text on the Agent J host, never through us); Files / Photos / "
+            "Camera above the input box send attachments. (4) Approval cards: anything that changes the Agent J host turns the "
             "screen orange with a card; press and hold \"Hold to approve\" about a second, or tap \"Deny\"; no answer in "
             "2 minutes = denied; offer to try one now (create a scratch file and delete it). (5) Close: " + missing_text(s, "en")
             + " For a missing one say how, in one sentence: " + "; ".join(HOW["en"][x] for x in ("computer", "phone") if not s[x])
             + (". " if not (s["computer"] and s["phone"]) else " ")
             + "Then give the full guide " + MANUAL["en"] + " and say they can simply ask you anything about the screen. Finally "
-            "offer, in one sentence, to prepare everything for remote use while they are still at the computer (a first-run "
+            "offer, in one sentence, to prepare everything for remote use while they are still at the Agent J host (a first-run "
             "checklist); only if they agree, run `agentj setup checklist --resume --json`. Once that is settled (or declined), ask once \"What are "
             "three things you do again and again every week?\" and propose the first workflow as documentation/WORKFLOW.md says.\n"
             "Other phones, pads or computers: only when the owner asks.")
@@ -220,19 +220,19 @@ def welcome_prompt(kind: str, label: str, s: dict, lang: str) -> str:
         "第一个遥控器也配好了。只说真实情况，不要编造工作流或 Agent 的数量。再加两句讲清怎么干活：董事长 → 你这个董事长助理 → "
         "各工作流的 CEO → CEO 手下的员工，所以活由你派出去、你盯着、你汇报，不是你一个人全扛；主人说「这类事不用问我」，"
         "你会记住，下次直接办（危险操作照样要主人批准）。\n"
-        "2. 建议以后你们俩的对话都在这个窗口里进行，不用再回电脑上的主 Agent 那边打字。\n"
+        "2. 建议以后你们俩的对话都在这个窗口里进行，不用再回Agent J 主机上的主 Agent 那边打字。\n"
         "3. 说接下来分几小步带主人认识这个窗口，每次只讲一步：主人回一句（「好」「下一步」）再讲下一步；主人说「跳过」就马上结束。\n"
         "4. 这一条只讲第 1 步：屏幕颜色就是你的状态——绿色在等主人说话，蓝色在干活（这时也能发，消息会排队），"
         "橙色有个操作等主人批准，紫色有个问题等主人回答，灰色是没连上或已全部停下。\n"
         "这条消息发出约半分钟后，屏幕上会升起一张「你的联系方式」卡片（通讯录 0 号位）：用一句话说明以后「发给我自己」的邮件和报告都发到这里，"
         "可以先跳过、之后在设置里补。\n"
         "后面的步骤，主人每回应一次讲一步，按顺序：② 标题下面那条细线是本周额度，输入框上方那条是 5 小时额度，"
-        "背景里慢慢升高的水面是这段对话的上下文；点一下线能看到百分比。③ 按住麦克风说话，松开在电脑上转成文字，不经过我们；"
-        "输入框上方「文件」「相册」「拍照」发附件。④ 审批卡：要动电脑的事，屏幕变橙、升起卡片；按住「长按批准」约一秒才算批准，"
+        "背景里慢慢升高的水面是这段对话的上下文；点一下线能看到百分比。③ 按住麦克风说话，松开在Agent J 主机上转成文字，不经过我们；"
+        "输入框上方「文件」「相册」「拍照」发附件。④ 审批卡：要动Agent J 主机的事，屏幕变橙、升起卡片；按住「长按批准」约一秒才算批准，"
         "点「拒绝」就拒绝，2 分钟没处理算拒绝；可以提议现在试一次（建个临时文件再删掉）。⑤ 收尾：" + missing_text(s, "zh")
         + ("没配的那个，用一句话说怎么配：" + "；".join(HOW["zh"][x] for x in ("computer", "phone") if not s[x]) + "。"
            if not (s["computer"] and s["phone"]) else "")
-        + "最后给完整使用说明 " + MANUAL["zh"] + " ，并告诉主人屏幕上有什么不懂直接问你；再用一句话提议「趁你在电脑前，"
+        + "最后给完整使用说明 " + MANUAL["zh"] + " ，并告诉主人屏幕上有什么不懂直接问你；再用一句话提议「趁你在Agent J 主机前，"
         "我把以后远程要用的事一次准备好」，主人同意才运行 agentj setup checklist --resume --json。这件事定下来（或主人不做）之后，"
         "问一次「你每周重复做的三件事是什么？」，按 documentation/WORKFLOW.md 提议第一个工作流。\n"
         "其他手机、平板、电脑：主人问的时候再帮他配。")
@@ -296,9 +296,9 @@ def turn_note(st, lang: str, now: float | None = None) -> str:
     if offer:
         if lang == "en":
             return ("\n\n[Agent J system note, not from the owner; do not repeat it] Setup is complete. After answering the owner, "
-                    "unless you already offered it in this conversation, offer once, in one sentence, to prepare everything for remote use while they are at the computer; only if "
+                    "unless you already offered it in this conversation, offer once, in one sentence, to prepare everything for remote use while they are at the Agent J host; only if "
                     "they agree, run `agentj setup checklist --resume --json`. If they say not now, drop it.")
-        return ("\n\n〔Agent J 系统提示，不是主人说的话，不要复述〕安装已完成。先回答主人；这段对话里还没提过的话，再用一句话提议「趁你在电脑前，把以后远程要用的事一次准备好」，"
+        return ("\n\n〔Agent J 系统提示，不是主人说的话，不要复述〕安装已完成。先回答主人；这段对话里还没提过的话，再用一句话提议「趁你在Agent J 主机前，把以后远程要用的事一次准备好」，"
                 "主人同意才运行 agentj setup checklist --resume --json。主人说先不用就别再提。")
     nxt = "seat" if not seat else "computer" if not s["computer"] else "phone" if not s["phone"] else None
     if tour:
@@ -340,11 +340,11 @@ def doctor_row(st) -> tuple[str, str, str]:
     s = status(st)
     def mark(b):
         return "✓" if b else "✗"
-    summary = (f"席位 {mark(s['seat'])} · 电脑浏览器 {mark(s['computer'])} · 主力手机 {mark(s['phone'])}"
-               f" / seat {mark(s['seat'])} · this computer's browser {mark(s['computer'])} · main phone {mark(s['phone'])}")
+    summary = (f"席位 {mark(s['seat'])} · 遥控器浏览器 {mark(s['computer'])} · 主力手机 {mark(s['phone'])}"
+               f" / seat {mark(s['seat'])} · the Agent J host's browser {mark(s['computer'])} · main phone {mark(s['phone'])}")
     if s["complete"]:
         return "ok", summary, ""
-    hint = {"seat": "agentj login --seat-file <file> --name <name>", "computer": "agentj admin  (pair this computer's browser)",
+    hint = {"seat": "agentj login --seat-file <file> --name <name>", "computer": "agentj admin  (pair the Agent J host's browser)",
             "phone": "agentj admin  (pair the main phone)"}[s["next"]]
     from . import pairprep   # P127: the same pairing pre-check as `agentj pair --check` / the admin page
     if s["seat"]:
@@ -362,7 +362,7 @@ def command(args, st) -> int:
     if getattr(args, "json", False):
         print(json.dumps(s, ensure_ascii=False))
         return 0
-    rows = [("席位已激活 / seat activated", s["seat"]), ("这台电脑的浏览器已配对 / this computer's browser paired", s["computer"]),
+    rows = [("席位已激活 / seat activated", s["seat"]), ("这台Agent J 主机的浏览器已配对 / the Agent J host's browser paired", s["computer"]),
             ("主力手机已配对 / main phone paired", s["phone"]), ("第一条欢迎已发 / welcome sent", s["welcomed"])]
     for name, ok in rows:
         print(("✓ " if ok else "· ") + name)

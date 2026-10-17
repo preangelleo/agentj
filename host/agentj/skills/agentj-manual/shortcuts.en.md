@@ -24,7 +24,7 @@ Function keys also work while a text field is focused. System or input-method sh
 | `Alt+Shift+W` | Tap the load line under the Agent's name | See how busy the computer is (system load) |
 | `Alt+Shift+M` | Hold the model or the effort | Back to the default model and effort (at once) |
 | `Alt+Shift+O` | Tap the gear | Open Settings |
-| `Alt+Shift+K` | Tap the magnifier | Search the chat, or settings while Settings is open (inside the message box Ctrl+K still deletes to the end); press again to close |
+| `Alt+Shift+K` | Tap the magnifier | Search the page you are on: the chat history in the chat, the cards on Workflows / Skills / Memory / Agent J, the text of Settings, a menu page or an open document (inside the message box Ctrl+K still deletes to the end); press again to clear and close |
 | `Alt+Shift+H` | Tap Keyboard shortcuts in Settings | Show this list of shortcuts |
 | `Alt+Shift+U` | Tap Upgrade computer in Settings | Upgrade computer (confirm on phone) |
 | `Alt+Shift+R` | Tap Update and reload in Settings | Update and reload page |
@@ -52,7 +52,7 @@ Function keys also work while a text field is focused. System or input-method sh
 | `t` | Tap the arrow icon | Forward this reply to yourself (the phone's share sheet when forwarding is not set up) |
 | `e` | Tap the envelope icon | Forward this one by e-mail (when the e-mail channel is on) |
 | `y` | Tap the copy icon | Copy the whole reply |
-| `Y` | — | Copy the whole message |
+| `Y` | Tap the copy icon just left of expand / collapse at the card's bottom right | Copy the whole message (a voice-only message: its transcript) |
 | `r` | Tap the curved-arrow icon | Reply to this one (the quote shows above the message box, focus stays in it; Esc cancels); Alt+Shift+A also works while typing |
 | `W` | Tap the round share icon at the bottom left | Hot key: by default share as a web report (puts /web-page-report in the message box, never sends; on an older reply also quotes it); once rebound, runs the command or skill you chose — /clear still asks first |
 | `v` | Tap the file card, picture or Full screen; double-tap a non-audio file card to view that file full screen | Preview the first file on this page (← → in the preview for the others) |
@@ -71,7 +71,7 @@ Function keys also work while a text field is focused. System or input-method sh
 | `Alt+R` | Tap the effort level | Switch to the next effort level (shown at once, applied after 5 s without another tap) |
 | `C` | Tap the scan icon; hold the camera button | Scan a QR code (a new device's pairing code, a friend's card, or anything else) |
 | `s` · `⌘+,` / `Ctrl+,` | Tap the gear | Open Settings |
-| `⌘+K` / `Ctrl+K` | Tap the magnifier | Search the chat, or settings while Settings is open (inside the message box Ctrl+K still deletes to the end); press again to close |
+| `⌘+K` / `Ctrl+K` | Tap the magnifier | Search the page you are on: the chat history in the chat, the cards on Workflows / Skills / Memory / Agent J, the text of Settings, a menu page or an open document (inside the message box Ctrl+K still deletes to the end); press again to clear and close |
 | `?` | Tap Keyboard shortcuts in Settings | Show this list of shortcuts |
 | `Alt+P` | Tap Pending | Reopen the approval or question card you put away |
 | `Alt+W` | Tap the logo | Open the five-page menu |
@@ -135,6 +135,7 @@ Function keys also work while a text field is focused. System or input-method sh
 | `t` | Tap the arrow icon | Forward this reply to yourself (the phone's share sheet when forwarding is not set up) |
 | `e` | Tap the envelope icon | Forward this one by e-mail (when the e-mail channel is on) |
 | `Alt+Shift+Y` · `y` | Tap the copy icon | Copy the whole reply |
+| `Y` | Tap the copy icon just left of expand / collapse at the card's bottom right | Copy the whole message (a voice-only message: its transcript) |
 | `Alt+Shift+A` · `r` | Tap the curved-arrow icon | Reply to this one (the quote shows above the message box, focus stays in it; Esc cancels); Alt+Shift+A also works while typing |
 | — | Select words in the reply | Select some words to quote them; each further selection adds one more (up to 5, from any replies, also in the full-screen reader) |
 | `W` | Tap the round share icon at the bottom left | Hot key: by default share as a web report (puts /web-page-report in the message box, never sends; on an older reply also quotes it); once rebound, runs the command or skill you chose — /clear still asks first |
@@ -155,7 +156,7 @@ Function keys also work while a text field is focused. System or input-method sh
 | `Alt+Shift+M` | Hold the model or the effort | Back to the default model and effort (at once) |
 | `C` | Tap the scan icon; hold the camera button | Scan a QR code (a new device's pairing code, a friend's card, or anything else) |
 | `Alt+Shift+O` · `s` · `⌘+,` / `Ctrl+,` | Tap the gear | Open Settings |
-| `Alt+Shift+K` · `⌘+K` / `Ctrl+K` | Tap the magnifier | Search the chat, or settings while Settings is open (inside the message box Ctrl+K still deletes to the end); press again to close |
+| `Alt+Shift+K` · `⌘+K` / `Ctrl+K` | Tap the magnifier | Search the page you are on: the chat history in the chat, the cards on Workflows / Skills / Memory / Agent J, the text of Settings, a menu page or an open document (inside the message box Ctrl+K still deletes to the end); press again to clear and close |
 | `Alt+Shift+H` · `?` | Tap Keyboard shortcuts in Settings | Show this list of shortcuts |
 | `Alt+P` | Tap Pending | Reopen the approval or question card you put away |
 | — | Tap "Scan QR code" | On the unpaired page, scan the pairing QR code from the terminal or the account page |

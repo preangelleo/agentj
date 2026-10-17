@@ -265,11 +265,11 @@ def diagnostic(st, lang="zh", config=None) -> str:
                 ("组织 managed 策略只读，需管理员改为 accept。" if layer == "managed" else
                  "运行 agentj doctor 修正可写设置。"))
     return (f"Claude settings: {layer} crossSessionInbound=accept. Sessions started before the change "
-            "may still hold messages; start a new session or run /clear on the computer for it to take effect. "
+            "may still hold messages; start a new session or run /clear on the Agent J host for it to take effect. "
             "Session/CLI and remote managed overrides cannot be verified from these files."
             if lang == "en" else
             f"Claude 实际文件设置：{layer} 层 crossSessionInbound=accept。设置前启动的会话仍可能扣住消息，"
-            "需新会话或在电脑运行 /clear 生效；会话/CLI 与远程 managed 覆盖无法从文件核实。")
+            "需新会话或在Agent J 主机运行 /clear 生效；会话/CLI 与远程 managed 覆盖无法从文件核实。")
 
 
 def hold_reason(directory=None) -> str | None:
@@ -300,12 +300,12 @@ def hold_reason(directory=None) -> str | None:
 
 
 _REASONS = {
-    "managed": ("组织策略（managed settings）要求跨会话消息等电脑批准，Agent J 不会改它。请在电脑上批准，或请管理员调整。",
+    "managed": ("组织策略（managed settings）要求跨会话消息等Agent J 主机批准，Agent J 不会改它。请在Agent J 主机上批准，或请管理员调整。",
                 "your organization's managed policy holds cross-session messages for desktop approval; Agent J never "
-                "changes it. Approve it on the computer or ask your administrator."),
-    "owner_off": ("你之前运行过 agentj config claude-inbound off，所以手机消息要在电脑上逐条批准。想恢复运行 "
+                "changes it. Approve it on the Agent J host or ask your administrator."),
+    "owner_off": ("你之前运行过 agentj config claude-inbound off，所以手机消息要在Agent J 主机上逐条批准。想恢复运行 "
                   "agentj config claude-inbound on。",
-                  "you ran agentj config claude-inbound off earlier, so phone messages wait for approval on the computer. "
+                  "you ran agentj config claude-inbound off earlier, so phone messages wait for approval on the Agent J host. "
                   "Run agentj config claude-inbound on to turn it back on."),
     "project": ("这个文件夹的项目设置（.claude/settings.json）拦下了跨会话消息。运行 agentj config claude-inbound on "
                 "会在你本机的私有层（settings.local.json）覆盖，不改团队共享文件。",
@@ -318,16 +318,16 @@ _REASONS = {
     "user": ("你的 Claude Code 用户设置（~/.claude/settings.json）拦下了跨会话消息。运行 agentj config claude-inbound on。",
              "your Claude Code user settings (~/.claude/settings.json) hold cross-session messages. "
              "Run agentj config claude-inbound on."),
-    "default": ("Claude Code 默认把跨会话消息拦下等你在电脑上批准。运行 agentj config claude-inbound on 后不再逐条确认。",
+    "default": ("Claude Code 默认把跨会话消息拦下等你在Agent J 主机上批准。运行 agentj config claude-inbound on 后不再逐条确认。",
                 "Claude Code holds cross-session messages for desktop approval by default. Run agentj config "
                 "claude-inbound on to stop confirming each one."),
-    "stale": ("这个 Claude Code 会话是在开启手机消息之前启动的，还在用旧设置。在电脑上对它执行 /clear 或开一个新会话后生效。",
+    "stale": ("这个 Claude Code 会话是在开启手机消息之前启动的，还在用旧设置。在Agent J 主机上对它执行 /clear 或开一个新会话后生效。",
               "this Claude Code session started before phone messages were enabled and still uses the old setting. "
-              "Run /clear in it on the computer, or start a new session."),
+              "Run /clear in it on the Agent J host, or start a new session."),
     "unreadable": ("Claude 设置无法读取（JSON 损坏、软链或权限），Agent J 没有改它。运行 agentj doctor 查看。",
                    "Claude settings could not be read (broken JSON, a symlink or permissions); Agent J did not change "
                    "them. Run agentj doctor."),
-    "busy": ("设置已允许手机消息，它多半正忙（在跑工具或等你处理电脑上的对话框）。",
+    "busy": ("设置已允许手机消息，它多半正忙（在跑工具或等你处理Agent J 主机上的对话框）。",
              "phone messages are allowed, so it is most likely busy (running a tool or waiting on a desktop dialog)."),
 }
 
@@ -341,9 +341,9 @@ def turn_notice(directory, lang: str = "zh") -> str:
     """The phone's specific explanation when Claude Code did not acknowledge a message in time."""
     reason = hold_reason(directory)
     if lang == "en":
-        return ("Claude Code on the computer has not taken this message: " + reason_text(reason, "en") +
+        return ("Claude Code on the Agent J host has not taken this message: " + reason_text(reason, "en") +
                 " Check the desktop before resending: the original may still arrive.")
-    return "电脑上的 Claude Code 尚未接收这条消息：" + reason_text(reason, "zh") + "请先在电脑核实，别重复发送，原消息仍可能送达。"
+    return "Agent J 主机上的 Claude Code 尚未接收这条消息：" + reason_text(reason, "zh") + "请先在Agent J 主机核实，别重复发送，原消息仍可能送达。"
 
 
 def default_notice(st, lang="zh") -> str | None:
@@ -367,10 +367,10 @@ def default_notice(st, lang="zh") -> str | None:
             texts.append(diagnostic(st, lang))
             st.write_private(p, b'{"pending":false}\n')
         else:
-            texts.append(("Enabled: phone messages no longer need individual confirmation on the computer; "
+            texts.append(("Enabled: phone messages no longer need individual confirmation on the Agent J host; "
                           "to disable, run agentj config claude-inbound off. This only affects Claude Code."
                           if lang == "en" else
-                          "已开启：手机消息不用在电脑上逐条确认；想关运行 agentj config claude-inbound off。仅影响 Claude Code。")
+                          "已开启：手机消息不用在Agent J 主机上逐条确认；想关运行 agentj config claude-inbound off。仅影响 Claude Code。")
                          + " " + diagnostic(st, lang))
     try:
         from . import claude_statusline

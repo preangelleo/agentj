@@ -88,7 +88,7 @@ async function run() {
         await sleep(300);
         assert.equal(marks.length, 1, 'a check sends no setup_mark');
         await fake.send({ t: 'setup_card', show: true, ...ready(snap) });
-        await waitFor(p, `${$('setup-title')}.textContent === ${JSON.stringify(lang === 'zh' ? '可以离开电脑了' : 'You can leave the computer')}`);
+        await waitFor(p, `${$('setup-title')}.textContent === ${JSON.stringify(lang === 'zh' ? '可以离开Agent J 主机了' : 'You can leave the Agent J host')}`);
         writeFileSync(resolve(OUT, `done-${tag}.png`), await shoot(p, ''));
         assert.deepEqual(p.problems.filter((x) => !/favicon/.test(x)), [], tag + ' console');
         facts.push({ tag, ok: true });

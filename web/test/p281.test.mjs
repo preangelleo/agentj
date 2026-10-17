@@ -51,7 +51,7 @@ test('P281 the robot leads every wait line, never a finished reply or a dead end
   run(`renderWords('',true,'正在探测 Codex（2/3），每个最多 1 分钟…')`); assert.equal(robots.at(-1),true,'a progress / queue label');
   assert.equal(painted.at(-1)[0],'正在探测 Codex（2/3），每个最多 1 分钟…');
   run(`renderWords('正在写的回复',true)`); assert.equal(robots.at(-1),false,'streaming words: the robot sits under them (.thinking)');
-  run(`renderWords('电脑正忙，消息已排队，忙完就接手。',true,'',true)`); assert.equal(robots.at(-1),true,'the host\'s own wait line');
+  run(`renderWords('Agent J 主机正忙，消息已排队，忙完就接手。',true,'',true)`); assert.equal(robots.at(-1),true,'the host\'s own wait line');
   run(`renderWords('答完了',false)`); assert.equal(robots.at(-1),false);
   run(`cur={status:'idle',hostStatus:'stopped'}`); run(`renderWords('',true)`);
   assert.equal(robots.at(-1),false,'「已停下」 is no wait');

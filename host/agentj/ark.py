@@ -14,12 +14,23 @@ yes; glm-5.3, deepseek-v4-pro text only) and output limits (GLM-5.3's thinking u
 
 The key only through the phone's key card (`agentj secret request`); this module never reads it. Ark's coding address has
 no published read-only check, so the card stores without one (like Bailian's Coding Plan) and the first reply is the check.
+
+P371 (Leo, 2026-10-17) — 「OpenCode · 火山方舟」 as one switch: `agentj agent switch opencode --preset ark [--plan coding|payg]`.
+Two ways in: the plan (`coding`, …/api/coding/v3, only coding tools may use it — Ark's terms) or pay-as-you-go (`payg`,
+the standard …/api/v3, billed per token, provider `ark-api`, key ARK_API_KEY, read-only check GET …/api/v3/models). `switch`
+looks for OpenCode and Ark's own CLI (arkcli — detected only: its `helper configure` needs an SSO login in a terminal), stops
+with the key card's command when the key is known to be missing, writes the block, then hands over to switch_harness.request —
+whose job makes one real call through OpenCode before switching and switches back on any failure. A block this call added is
+removed again when the switch fails. Agent J's own product code never calls a plan address; only the owner's OpenCode does.
 """
 from __future__ import annotations
 
 import json
 import os
 import pathlib
+import re
+import shutil
+import subprocess
 import sys
 
 from . import opencode_provider as op
@@ -41,8 +52,31 @@ PRO_NOTE = {"zh": "（kimi-k3 扣额度快，方舟建议 Pro 套餐用；Lite �
             "en": " (kimi-k3 uses quota fast: Ark suggests it for Pro, but Lite can pick it too)"}
 
 
+PLANS = ("coding", "payg")
+PAYG_TERMS = {   # P371
+    "zh": "按量付费走方舟标准地址 …/api/v3：按 token 从账户余额扣费，任何程序都能调用（不占套餐额度）。同一把方舟 API Key 两个地址都能用，"
+          "是地址决定扣套餐还是扣余额。",
+    "en": "Pay-as-you-go uses Ark's standard address …/api/v3: billed per token from the account balance, any program may call "
+          "it (no plan quota). One Ark API key works on both addresses — the address decides whether the plan or the balance pays.",
+}
+PLAN_ONLY = {   # P371: said wherever the plan address is offered (Ark's terms)
+    "zh": "套餐地址（…/api/coding）只给编程 Agent 用（OpenCode、Claude Code 等）；别的程序拿它调用会被方舟判为滥用、可能封号。",
+    "en": "The plan address (…/api/coding) is for coding Agents only (OpenCode, Claude Code …); any other program calling it "
+          "may be treated by Ark as abuse and the account banned.",
+}
+_PAYG_ID = re.compile(r"[a-z0-9][a-z0-9.-]{2,80}")
+
+
 def data() -> dict:
     return json.loads(DATA.read_text(encoding="utf-8"))
+
+
+def plan_data(plan: str = "coding") -> dict:
+    """The preset for one way in: the plan (top level of ark.json) or pay-as-you-go (`payg`)."""
+    d = data()
+    if plan == "payg":
+        return {**d["payg"], "console_url": d["console_url"], "pro_suggested": []}
+    return d
 
 
 def vision(model: str) -> bool:
@@ -53,49 +87,76 @@ def vision(model: str) -> bool:
 def verify_for(pid: str | None) -> tuple[str, str] | None:
     """Same contract as bailian.verify_for: ("", "") = an Ark provider without a read-only check; None = not Ark."""
     d = data()
+    if pid == d["payg"]["provider"]:      # P371: pay-as-you-go has a read-only check (GET …/api/v3/models)
+        return d["payg"]["verify_url"], op.HEADER["openai"]
     if pid != d["provider"]:
         return None
     return (d["verify_url"], op.HEADER["openai"]) if d.get("verify_url") else ("", "")
 
 
-def _model(model: str | None) -> str:
-    d = data()
+def _model(model: str | None, plan: str = "coding") -> str:
+    d = plan_data(plan)
+    if model and "/" in model and model.split("/", 1)[0] == d["provider"]:
+        model = model.split("/", 1)[1]
     model = model or d["model"]
-    if model not in d["block"]["models"]:
-        raise op.ProviderError(f"火山方舟 Coding Plan 没有模型 {model}（可选：{', '.join(sorted(d['block']['models']))}）")
-    return model
+    if model in d["block"]["models"]:
+        return model
+    if plan == "payg" and _PAYG_ID.fullmatch(model):   # P371: any model id the account has opened (text-only unless listed)
+        return model
+    if plan == "payg":
+        raise op.ProviderError(f"方舟模型 id 写成 doubao-seed-2-1-pro-260915 这样（控制台「模型广场」可查）：{model} 不对")
+    raise op.ProviderError(f"火山方舟 Coding Plan 没有模型 {model}（可选：{', '.join(sorted(d['block']['models']))}）")
 
 
-def install(model: str | None = None, dry_run: bool = False, environ=None) -> dict:
-    """Add the Coding Plan block to OpenCode's config unless a provider with the same id is there (then: kept untouched)."""
-    d = data()
-    pid, model = d["provider"], _model(model)
+def install(model: str | None = None, dry_run: bool = False, environ=None, plan: str = "coding") -> dict:
+    """Add the preset's block to OpenCode's config unless a provider with the same id is there (then: kept untouched — P371:
+    except that a pay-as-you-go model it lacks is added on its own, text-only)."""
+    d = plan_data(plan)
+    pid, model = d["provider"], _model(model, plan)
     path = op.config_file(environ)
     cfg = op._load(path)
     prov = cfg.get("provider")
     if prov is not None and not isinstance(prov, dict):
         raise op.ProviderError(f"{path} 里的 provider 不是对象：没有改它")
     kept = isinstance(prov, dict) and pid in prov
+    block = json.loads(json.dumps(d["block"]))
+    added_model = False
+    if model not in block["models"]:
+        block["models"][model] = {"name": model, "modalities": {"input": ["text"], "output": ["text"]}}
     if not kept:
-        cfg["provider"] = {**(prov or {}), pid: json.loads(json.dumps(d["block"]))}
-        if not dry_run:
-            op._write(path, cfg)
-    models = sorted(d["block"]["models"])
-    return {"file": path, "harness": "opencode", "provider": pid, "kept": kept, "written": not kept and not dry_run,
-            "model": f"{pid}/{model}", "vision": vision(model), "key_env": d["key_env"],
-            "models": [f"{pid}/{m}" for m in models], "vision_models": [f"{pid}/{m}" for m in models if vision(m)],
-            "pro_suggested": d["pro_suggested"], "next": steps(model)}
+        cfg["provider"] = {**(prov or {}), pid: block}
+    elif plan == "payg" and isinstance(prov[pid], dict) and model not in (prov[pid].get("models") or {}):
+        mine = prov[pid].get("models") if isinstance(prov[pid].get("models"), dict) else {}
+        cfg["provider"] = {**prov, pid: {**prov[pid], "models": {**mine, model: block["models"][model]}}}
+        added_model = True
+    if (not kept or added_model) and not dry_run:
+        op._write(path, cfg)
+    models = sorted(block["models"])
+    see = lambda m: "image" in ((block["models"].get(m) or {}).get("modalities") or {}).get("input", [])   # noqa: E731
+    return {"file": path, "harness": "opencode", "provider": pid, "plan": plan, "kept": kept,
+            "written": (not kept or added_model) and not dry_run, "added_model": added_model,
+            "model": f"{pid}/{model}", "vision": see(model), "key_env": d["key_env"],
+            "models": [f"{pid}/{m}" for m in models], "vision_models": [f"{pid}/{m}" for m in models if see(m)],
+            "pro_suggested": d["pro_suggested"], "next": steps(model, plan)}
 
 
-def steps(model: str | None = None) -> list[str]:
+def card(plan: str = "coding") -> str:
+    """The phone key card's command for one way in (pay-as-you-go: with Ark's read-only model list as the check)."""
     from . import service
-    d = data()
+    d = plan_data(plan)
     env_file = service.env_file(service.name())
-    card = (f"agentj secret request --name {d['key_env']} --purpose '火山方舟 Coding Plan 的 API Key（OpenCode 用）' "
-            f"--dest env:{env_file}#{d['key_env']}")
+    what = "火山方舟 按量付费的 API Key（OpenCode 用）" if plan == "payg" else "火山方舟 Coding Plan 的 API Key（OpenCode 用）"
+    c = f"agentj secret request --name {d['key_env']} --purpose '{what}' --dest env:{env_file}#{d['key_env']}"
     if d.get("verify_url"):
-        card += f" --verify-url {d['verify_url']}"
-    return [card, "agentj service restart", f"agentj agent switch opencode --model {d['provider']}/{_model(model)}"]
+        c += f" --verify-url {d['verify_url']} --verify-header '{op.HEADER['openai']}'"
+    return c
+
+
+def steps(model: str | None = None, plan: str = "coding") -> list[str]:
+    d = plan_data(plan)
+    tail = f" --preset ark --plan payg --model {_model(model, plan)}" if plan == "payg" else \
+        f" --model {d['provider']}/{_model(model, plan)}"
+    return [card(plan), "agentj service restart", "agentj agent switch opencode" + tail]
 
 
 def claude_steps(model: str | None = None) -> list[str]:
@@ -129,6 +190,11 @@ def model_note(model: str | None, lang: str = "zh") -> str | None:
     """A one-line note when the selected OpenCode model is the Coding Plan's (terms + whether it reads images)."""
     d = data()
     pid, _, m = (model or "").partition("/")
+    if pid == d["payg"]["provider"]:      # P371: pay-as-you-go — billed per token, no plan terms
+        g = d["payg"]
+        see = "image" in (((g["block"]["models"].get(m) or {}).get("modalities") or {}).get("input", []))
+        return PAYG_TERMS[lang] + ("" if see else (f"（{m} 不能看图：要看截图时换 {pid}/{g['model']}）" if lang == "zh" else
+                                                   f" ({m} cannot read images: for screenshots use {pid}/{g['model']})"))
     if pid != d["provider"]:
         return None
     eye = ("" if vision(m) else
@@ -151,6 +217,8 @@ def render(r: dict, lang: str = "zh") -> str:
                           "  The HAIKU / SONNET / OPUS defaults and the subagent model all point at the same Ark model (others: --haiku-model …).",
                           "⚠ " + TERMS["en"]])
     eyes = ", ".join(m.split("/", 1)[1] for m in r["vision_models"])
+    if r.get("plan") == "payg":       # P371
+        return render_payg(r, eyes, lang)
     if lang == "zh":
         head = (f"{r['file']} 里已经有 {r['provider']}：保持你原来的配置，没有改。" if r["kept"] else
                 ("已写入" if r["written"] else "（预演，未写入）") + f" {r['file']}：服务商 {r['provider']}（{len(r['models'])} 个模型），"
@@ -168,17 +236,142 @@ def render(r: dict, lang: str = "zh") -> str:
                       "For Claude Code: `agentj provider ark --harness claude`.", "⚠ " + TERMS["en"]])
 
 
+def render_payg(r: dict, eyes: str, lang: str) -> str:
+    if lang == "zh":
+        head = (f"{r['file']} 里已经有 {r['provider']}：保持你原来的配置" + ("，只补上了这个模型。" if r["added_model"] else "，没有改。")
+                if r["kept"] else ("已写入" if r["written"] else "（预演，未写入）") +
+                f" {r['file']}：服务商 {r['provider']}（方舟按量付费 …/api/v3，{len(r['models'])} 个模型），key 从环境变量 {r['key_env']} 读（这里不存 key）。")
+        return "\n".join([head, f"能看图的模型：{eyes}；deepseek、glm 是纯文本。其他已开通的模型：--model <模型 id>。", "接下来：",
+                          f"  1. {r['next'][0]}\n     （手机上弹出密钥卡，主人只把方舟控制台的 API Key 贴进卡片；卡片会用方舟的模型列表核对一次，Agent 看不到值）",
+                          f"  2. {r['next'][1]}", f"  3. {r['next'][2]}（先真实调用一次，通不了自动切回）", "ℹ " + PAYG_TERMS["zh"]])
+    head = (f"{r['provider']} already exists in {r['file']}: kept" + (", only this model was added." if r["added_model"] else " unchanged.")
+            if r["kept"] else ("Written" if r["written"] else "(dry run, nothing written)") +
+            f" {r['file']}: provider {r['provider']} (Ark pay-as-you-go …/api/v3, {len(r['models'])} models), key read from {r['key_env']}.")
+    return "\n".join([head, f"Models that read images: {eyes}; deepseek and glm are text only. Others you opened: --model <model id>.",
+                      "Next:", f"  1. {r['next'][0]}\n     (a key card opens on the phone, checked once against Ark's model list)",
+                      f"  2. {r['next'][1]}", f"  3. {r['next'][2]} (one real call first; on failure it switches back)", "ℹ " + PAYG_TERMS["en"]])
+
+
+# ------------------------------------------------------------------ P371: 「OpenCode · 火山方舟」 as one switch
+def detect(which=shutil.which, run=subprocess.run) -> dict:
+    """OpenCode (needed) and Ark's own CLI (arkcli, optional): installed + version. Never logs in, never reads a key."""
+    out = {}
+    for name, exe in (("opencode", "opencode"), ("arkcli", "arkcli")):
+        path = which(exe)
+        ver = None
+        if path:
+            try:
+                p = run([path, "--version"], capture_output=True, text=True, timeout=15)
+                m = re.search(r"\d+\.\d+\.\d+", (p.stdout or "") + (p.stderr or ""))
+                ver = m.group(0) if m else "?"
+            except (OSError, subprocess.SubprocessError):
+                ver = "?"
+        out[name] = ver
+    return out
+
+
+def key_known(name: str, environ=None) -> bool | None:
+    """True / False when the service's environment file is readable here; None inside the fence (the job checks)."""
+    from . import provider_runtime
+    e = os.environ if environ is None else environ
+    if e.get(name):
+        return True
+    try:
+        pathlib.Path(provider_runtime.env_path()).read_text()
+    except (OSError, ValueError):
+        return None
+    except Exception:  # noqa: BLE001 — no service at all
+        return None
+    return bool(provider_runtime.fresh_environment({}, extra=(name,)).get(name))
+
+
+def switch(st, plan: str = "coding", model: str | None = None, dry_run: bool = False, *, request=None, detector=None,
+           key=None, environ=None) -> dict:
+    """detect → key (card command when it is known to be missing) → write the block → switch_harness.request (one real call
+    through OpenCode in the service's environment, switch, switch back on failure). A block added here is removed again
+    when the switch fails; one that was already there stays exactly as it was."""
+    if plan not in PLANS:
+        return {"ok": False, "reason": "bad_plan", "preset": "ark"}
+    found = (detector or detect)()
+    d = plan_data(plan)
+    base = {"preset": "ark", "plan": plan, "target": "opencode", "arkcli": found.get("arkcli")}
+    if not found.get("opencode"):
+        return {**base, "ok": False, "reason": "not_installed", "install": "npm i -g opencode-ai"}
+    try:
+        model = _model(model, plan)
+    except op.ProviderError as e:
+        return {**base, "ok": False, "reason": "bad_model", "error": str(e)}
+    has = (key or key_known)(d["key_env"], environ)
+    if has is False:
+        return {**base, "ok": False, "reason": "need_key", "key_env": d["key_env"], "next": steps(model, plan)}
+    try:
+        inst = install(model, environ=environ, plan=plan)
+    except op.ProviderError as e:
+        return {**base, "ok": False, "reason": "invalid_native_config", "error": str(e)}
+    if request is None:
+        from .switch_harness import request
+    r = request(st, "opencode", inst["model"], dry_run=dry_run)
+    out = {**r, **base, "model": inst["model"], "config": inst["file"], "written": inst["written"]}
+    if r.get("reason") == "same":          # already on OpenCode: keep the block, change the model instead
+        return {**out, "hint": f"agentj agent opencode --model {inst['model']}"}
+    if not r.get("ok") and not r.get("pending"):
+        if inst["written"] and not inst["kept"]:
+            op.remove(d["provider"], environ)
+            out["config_restored"] = True
+        if has is None and r.get("reason") not in ("same", "busy", "too_soon"):
+            out["next"] = steps(model, plan)       # inside the fence nobody could tell whether the key is there
+    return out
+
+
+def say_switch(r: dict, lang: str = "zh") -> str:
+    from .switch_harness import _say
+    zh = lang != "en"
+    tool = ("arkcli " + r["arkcli"] + "（已装，仅探测：它的 helper 要在终端里 SSO 登录，Agent J 自己写等价配置）" if zh else
+            "arkcli " + r["arkcli"] + " (found, detected only: its helper needs an SSO login in a terminal)") \
+        if r.get("arkcli") else ("没有装 arkcli（不需要）" if zh else "arkcli not installed (not needed)")
+    way = ("按量付费 …/api/v3" if r.get("plan") == "payg" else "Coding Plan 套餐 …/api/coding/v3") if zh else \
+        ("pay-as-you-go …/api/v3" if r.get("plan") == "payg" else "Coding Plan …/api/coding/v3")
+    head = (f"OpenCode · 火山方舟（{way}）· {tool}" if zh else f"OpenCode · Volcano Ark ({way}) · {tool}")
+    reason = r.get("reason")
+    if reason == "not_installed":
+        body = ("还没装 OpenCode：先装 `npm i -g opencode-ai`，再来切。" if zh else "OpenCode is not installed: `npm i -g opencode-ai` first.")
+    elif reason == "need_key":
+        body = ("服务环境里还没有 " + r["key_env"] + "：先让主人在手机密钥卡里填 key（Agent 看不到值），再重新切换：\n  " if zh else
+                r["key_env"] + " is not in the service's environment yet: the owner fills the key card first, then switch again:\n  ") \
+            + "\n  ".join(r["next"])
+    elif reason in ("bad_model", "bad_plan", "invalid_native_config"):
+        body = r.get("error") or reason
+    elif reason == "same":
+        body = ("现在用的就是 OpenCode：方舟服务商已写好，换成方舟的模型：\n  " if zh else
+                "Already on OpenCode: the Ark provider is in place; change the model:\n  ") + r["hint"] + "\n  agentj service restart"
+    else:
+        body = _say(r, lang)
+        if r.get("config_restored"):
+            body += ("\n刚写进 OpenCode 配置的方舟服务商已经撤掉，配置和切换前一样。" if zh else
+                     "\nThe Ark provider just added to OpenCode's config was removed again: the config is as before.")
+        if r.get("next"):
+            body += ("\n如果是 key 还没填：\n  " if zh else "\nIf the key is missing:\n  ") + "\n  ".join(r["next"])
+    terms = (PAYG_TERMS if r.get("plan") == "payg" else PLAN_ONLY)["zh" if zh else "en"]
+    if r.get("ok") and r.get("plan") == "payg" and r.get("privacy"):     # model_note already said it
+        return "\n".join([head, body])
+    return "\n".join([head, body, ("ℹ " if r.get("plan") == "payg" else "⚠ ") + terms])
+
+
 def cmd(a) -> int:
     lang = "en" if getattr(a, "lang", None) == "en" else "zh"
     model = (a.model or [None])[0]
+    plan = "payg" if getattr(a, "plan", None) == "payg" else "coding"
     try:
         if getattr(a, "harness", None) == "claude":
+            if plan == "payg":
+                raise op.ProviderError("Claude Code 只接方舟的 Coding Plan 地址（Anthropic 兼容）；按量付费请用 OpenCode")
             r = {"harness": "claude", "model": _model(model), "next": claude_steps(model)}
         else:
-            r = install(model, a.dry_run)
+            r = install(model, a.dry_run, plan=plan)
     except op.ProviderError as e:
         print(json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False) if a.json else f"没有改：{e}",
               file=sys.stdout if a.json else sys.stderr)
         return 2
-    print(json.dumps({"ok": True, **r, "terms": TERMS}, ensure_ascii=False) if a.json else render(r, lang))
+    terms = PAYG_TERMS if plan == "payg" else TERMS
+    print(json.dumps({"ok": True, **r, "terms": terms}, ensure_ascii=False) if a.json else render(r, lang))
     return 0

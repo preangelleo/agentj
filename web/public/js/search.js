@@ -270,7 +270,11 @@ export function close() {
   box().hidden = true;
   delete document.body.dataset.srch;
 }
-export function toggle() { if (isOpen()) close(); else open(); }
+// P363 (#70): the magnifier searches the page it is on — a five page, a menu page, an open document take it first (scope()
+// → true); only the chat itself opens 搜索聊天记录. app.js sets the scope (it knows which page is on screen).
+let scope = null;
+export function setScope(fn) { scope = fn; }
+export function toggle() { if (isOpen()) close(); else if (!(scope && scope())) open(); }
 function step(d) {
   const cur = current();
   seal();                                     // an empty page being typed into goes; its neighbours stay where they were
@@ -371,6 +375,15 @@ export function init(ctx) {
     if (Math.abs(dx) >= SWIPE_PX && Math.abs(dy) < Math.abs(dx) * 0.58) step(dx > 0 ? -1 : 1);   // within 30°; right = the earlier search
   }, { passive: true });
   card.addEventListener('touchmove', (e) => { if (sw && e.touches.length === 1) { const dx = e.touches[0].clientX - sw.x, dy = e.touches[0].clientY - sw.y; if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy) * 1.7) e.preventDefault(); } }, { passive: false });
+}
+/** P368 (#78): a #tag tapped in a reply → 搜索聊天记录 opened on that tag (a new search page; every page carrying it). */
+export async function find(q) {
+  if (!X || typeof q !== 'string' || !q.trim()) return;
+  if (!isOpen()) await open();
+  const input = el('srchInput');
+  input.value = q.slice(0, Q_MAX);
+  sealed = true;                                // a new page, never a rewrite of the one on screen
+  onType();
 }
 /** For the test: the cache as it stands. */
 export function debug() { return { at, sealed, pages: pages.map((p) => ({ q: p.q, sort: p.sort, n: p.hits.length, host: p.host, ids: ranked(p).map((h) => h.id), scroll: p.scroll, bytes: sizeOf(p) })) }; }

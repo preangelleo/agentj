@@ -1,4 +1,4 @@
-"""P184: the owner's address book — kept by the Agent, on this computer only (`<state>/contacts/contacts.json`, 0600).
+"""P184: the owner's address book — kept by the Agent, on the Agent J host only (`<state>/contacts/contacts.json`, 0600).
 
 Leo (10-12): the Agent remembers every address its owner had it mail, imports a whole CSV / vCard export once, and finds
 「张珊」 when the owner says 「张三」. Fields follow vCard 4.0 (RFC 6350) and the Google / Outlook CSV exports:
@@ -17,7 +17,7 @@ person → fields are merged (union of e-mails, phones, addresses, nicknames; an
 are appended once). Same name and nothing that disagrees (no two different e-mails, no two different phones) → merged; same
 name with different e-mails → two contacts (two 张伟 are common).
 
-Nothing here leaves the computer: no cloud, no relay copy; the phone reads it inside the Noise session (contacts_serve).
+Nothing here leaves the Agent J host: no cloud, no relay copy; the phone reads it inside the Noise session (contacts_serve).
 """
 from __future__ import annotations
 
@@ -1151,9 +1151,9 @@ def owner_cmd(st, a, zh: bool, out, run) -> int:
 def add_parser(sub) -> None:
     import sys
     p = sub.add_parser("contacts", help="通讯录：list · find · add · edit · rm · import · export · card · owner / the owner's address book",
-                       description="主人的通讯录，只存在这台电脑上。find 按姓名、昵称、拼音（含谐音、声母）、邮箱模糊查找；"
+                       description="主人的通讯录，只存在这台Agent J 主机上。find 按姓名、昵称、拼音（含谐音、声母）、邮箱模糊查找；"
                                    "import 吃 Google / Outlook / Apple / QQ / 163 导出的 .vcf .csv .json；card 在手机上弹联系人卡片让主人确认保存。"
-                                   " / The owner's address book, on this computer only: fuzzy find by name, nickname, pinyin, e-mail; "
+                                   " / The owner's address book, on the Agent J host only: fuzzy find by name, nickname, pinyin, e-mail; "
                                    "import vCard / CSV / JSON exports; `card` asks the owner on the phone.")
     p.add_argument("action", choices=["list", "find", "add", "edit", "rm", "import", "export", "card", "owner"])
     p.add_argument("query", nargs="?", help="find：要找的人 · edit/rm/card：id 或名字 · import/export：文件（- = 标准输入/输出）"

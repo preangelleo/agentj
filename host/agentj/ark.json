@@ -237,5 +237,156 @@
         }
       }
     }
+  },
+  "_comment_payg": "P371: the pay-as-you-go preset (standard /api/v3, billed per token, any program may call it — unlike the plan address). Model ids, image input and limits read from GET /api/v3/models on 2026-10-17 (that endpoint is also the read-only key check). OpenCode's built-in `volcengine` provider reads the same ARK_API_KEY but its list lacks the newest ids (no doubao-seed-2-1-pro-260915 in 1.18.34), so this is our own `ark-api` block. One Ark API key works on both addresses: the address decides whether the plan or the balance pays.",
+  "payg": {
+    "provider": "ark-api",
+    "key_env": "ARK_API_KEY",
+    "verify_url": "https://ark.cn-beijing.volces.com/api/v3/models",
+    "model": "doubao-seed-2-1-pro-260915",
+    "models_checked": "2026-10-17",
+    "block": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "火山方舟 按量付费（/api/v3）",
+      "options": {
+        "baseURL": "https://ark.cn-beijing.volces.com/api/v3",
+        "apiKey": "{env:ARK_API_KEY}"
+      },
+      "models": {
+        "doubao-seed-2-1-pro-260915": {
+          "name": "Doubao Seed 2.1 Pro（260915）",
+          "attachment": true,
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          },
+          "limit": {
+            "context": 1048576,
+            "output": 262144
+          }
+        },
+        "doubao-seed-2-1-lite-260915": {
+          "name": "Doubao Seed 2.1 Lite（260915）",
+          "attachment": true,
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          },
+          "limit": {
+            "context": 1048576,
+            "output": 262144
+          }
+        },
+        "doubao-seed-2-1-turbo-260628": {
+          "name": "Doubao Seed 2.1 Turbo（260628）",
+          "attachment": true,
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          },
+          "limit": {
+            "context": 262144,
+            "output": 262144
+          }
+        },
+        "doubao-seed-2-0-code-preview-260215": {
+          "name": "Doubao Seed 2.0 Code Preview",
+          "attachment": true,
+          "modalities": {
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
+          },
+          "limit": {
+            "context": 262144,
+            "output": 131072
+          }
+        },
+        "deepseek-v4-pro-ga-260813": {
+          "name": "DeepSeek V4 Pro（260813）",
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          },
+          "limit": {
+            "context": 1048576,
+            "output": 393216
+          }
+        },
+        "deepseek-v4-1-flash-260910": {
+          "name": "DeepSeek V4.1 Flash（260910）",
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          },
+          "limit": {
+            "context": 1048576,
+            "output": 393216
+          }
+        },
+        "glm-5-2-260617": {
+          "name": "GLM-5.2（260617）",
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          },
+          "limit": {
+            "context": 1048576,
+            "output": 131072
+          }
+        },
+        "glm-5-3-flash-260828": {
+          "name": "GLM-5.3 Flash（260828）",
+          "modalities": {
+            "input": [
+              "text"
+            ],
+            "output": [
+              "text"
+            ]
+          },
+          "limit": {
+            "context": 1048576,
+            "output": 131072
+          }
+        }
+      }
+    }
+  },
+  "arkcli": {
+    "npm": "@volcengine/ark-cli",
+    "checked": "1.0.39",
+    "_comment": "P371: Ark's official CLI. `arkcli helper configure opencode` needs an SSO login in a terminal (TTY), has no --dry-run and is not used here: Agent J writes the same kind of provider block with the key as an {env:…} NAME. arkcli is only detected (version) and used by the ark-media plaza package for +gen when the owner already has it."
   }
 }

@@ -15,8 +15,8 @@ check-up the owner starts; support may only pick repairs from a fixed list). ③
   the reset put aside; run it again to flip back), then tell the owner in one sentence.
 - `agentj rescue status` — the rescue watchdog (installed by `agentj service install` and every update; it answers the phone
   when `agentj serve` is frozen). Not installed → `agentj rescue install`.
-- Someone at the computer and the phone cannot reach it at all → they paste `curl -fsSL https://agentj.app/rescue | sh`
-  (Windows PowerShell: `irm https://agentj.app/rescue.ps1 | iex`; page https://agentj.app/rescue/).
+- Someone at the Agent J host and the phone cannot reach it at all → first use the menu’s Emergency repair. If it fails, share https://agentj.app/docs/reconnect-help/ for OS-specific terminal instructions, rescue commands, privacy explanation and recovery checks. Keep commands on that page, not in the offline dialog.
+
 
 1. `agentj status --json`
    - Not running (`running: false`) → step 2.
@@ -47,7 +47,7 @@ A grey phone is not a broken relay — the three links are separate:
 
 中文：手机/网页变灰，先 `agentj status --json`，不正常就在本会话运行 `agentj doctor --reconnect`（依次查后台服务、中继、
 Agent 三段，哪段断了修哪段，并把运行它的会话接上手机），把最后那句结论原话告诉主人；列出多个会话时用
-`--session <ID>` 指定；仍失败按 agentj-manual 求助。手机灰 ≠ 中继坏，多半是电脑上换了新会话。
+`--session <ID>` 指定；仍失败按 agentj-manual 求助。手机灰 ≠ 中继坏，多半是Agent J 主机上换了新会话。
 主人说手机卡住/不回消息：先让他点 设置 →「紧急修复」→ ①「重置连接」，不行再点 ②；主人要「找回原来的对话」就运行
-`agentj rescue undo`；`agentj rescue status` 查看救援守护；电脑旁边有人时请他运行 `curl -fsSL https://agentj.app/rescue | sh`。
+`agentj rescue undo`；`agentj rescue status` 查看救援守护；Agent J 主机旁边有人时先走菜单紧急恢复，仍失败再看 https://agentj.app/docs/reconnect-help/。
 Docs: https://agentj.app/docs/reconnect/zh.md · https://agentj.app/docs/reconnect/en.md

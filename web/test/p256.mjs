@@ -97,7 +97,7 @@ try {
       const p = await paired(lang);
       try {
         for (const f of fixture.filter(x=>x.lang===lang)) {
-          const card = await hostCard('secret',{name:'AGENTJ_MAIL_PASSWORD',purpose:f.purpose,dest:'Agent J mail channel (encrypted on this computer)',verify:'IMAP + SMTP login'});
+          const card = await hostCard('secret',{name:'AGENTJ_MAIL_PASSWORD',purpose:f.purpose,dest:'Agent J mail channel (encrypted on the Agent J host)',verify:'IMAP + SMTP login'});
           await ev(p, `document.getElementById('toast').classList.remove('on')`);
           await fake.send(card.m);
           await waitFor(p, `document.getElementById('elev') && !document.getElementById('elev').hidden`);

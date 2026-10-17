@@ -594,7 +594,7 @@ class State:
         return name
 
     # ------------------------------------------------------------ agent bridge (L1, PROTOCOL §8)
-    AGENT_KINDS = ("claude", "codex", "opencode", "kimi", "qwen", "dsh")
+    AGENT_KINDS = ("claude", "codex", "opencode", "kimi", "qwen", "dsh", "core")   # P359: core = Agent J Harness
 
     def agent_config(self) -> dict | None:
         """{"kind": "claude"|"codex"|"opencode", "dir": absolute path, "model": str|None} or None (no agent: terminal chat as in A2)."""

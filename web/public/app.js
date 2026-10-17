@@ -1,6 +1,8 @@
 import { capturePage } from './js/pageshot.js';
 import * as shotcopy from './js/shotcopy.js';   // P340 #27: the screenshot also goes to the clipboard
 import * as fivePages from './js/five-pages.js';
+import * as search from './js/search.js';
+import * as pagefind from './js/pagefind.js';   // P363 (#70): the magnifier searches the page on screen
 import { describeDevice } from './js/device-label.js';
 // agentj web client. Spec: agentjarvis/protocol/PROTOCOL.md §2–§4, §8–§10; design agentjarvis/parity/DESIGN.md (PROMPT-33).
 // The chat screen is relay's phone page (js/relay.js) on Agent J's end-to-end session; this module boots the page and owns
@@ -30,11 +32,13 @@ import {initVersionNotice,setHostVersion} from './js/version-notice.js';
 import {initShare, onShareReady, forgetShare} from './js/share.js';
 import * as elevate from './js/elevate.js';     // F17: sudo / secret cards (§11)
 import * as authrescue from './js/authrescue.js';   // P258: AI 登录救援 (red dot + pushes)
+import * as webhooks from './js/webhooks.js';   // P366: Settings → Webhook re-reads on hook_changed
 import * as qresume from './js/qresume.js';         // P314 (§32): 「额度用完，预计 HH:MM 自动继续」 banner
 import * as rescue from './js/rescue.js';           // P332 (§33): Settings → 紧急修复 + the rescue-mode banner
 import { registerMailForward } from './js/mailfwd.js';   // P189: file card → the dialog below
 import * as contacts from './js/contacts.js';   // P184 (§25): contact cards + 「转发到邮箱」
 import * as secretout from './js/secretout.js'; // F32: secret pickup cards (§18)
+import * as cmdrun from './js/cmdrun.js';     // P361: Settings 「执行」
 import * as keys from './js/keys.js';         // P352: 「模型和 API Key」 key manager
 import * as longtask from './js/longtask.js';   // 0.18: opening card + 「我的 Agent 会什么」 (§20)
 import * as logincard from './js/logincard.js'; // P114: sign-in QR cards (ADR-A194)
@@ -227,6 +231,7 @@ const VIEWS = { pair: 'pair-view', scan: 'scan-view', models: 'models-view', sas
 const PAIRED_VIEWS = ['chat', 'mem', 'act', 'tasks', 'models', 'friends', 'bots', 'setup'];
 function show(v) {
   view = v;
+  pagefind.close();
   if (v !== 'pair') rvpair.stopCode();
   if (v === 'chat') backToSettings = false;
   document.body.dataset.view = v;
@@ -400,7 +405,9 @@ function onApp(m) {
     case 'pair_ev': settings.onPairEv(m); return;    // P153 (§3.3): how the pairing this remote opened went
     case 'bots_tool_request': bots.toolRequest(m); return;
     case 'bots_proposal': bots.proposal(m); return;
+    case 'jcard_open': fivePages.pushOpen(m.id, m.at); return;   // P360 (§34): `agentj card open` — go to that card / place
     case 'fr_changed': friends.changed(m); return;   // §17.7: something changed on the computer → the friends page re-reads
+    case 'hook_changed': webhooks.changed(); return;   // P366: a webhook changed on the computer → the open Webhook page re-reads
     case 'elev': elevate.add(m); return;             // F17 (§11)
     case 'auth_rescue': authrescue.onPush(m); return;   // P258 (§31)
     case 'quota_resume': qresume.onPush(m); return;     // P314 (§32)
@@ -606,6 +613,7 @@ async function setupFaceId() {
 }
 secretout.configure({ setupFaceId });
 keys.configure({ setupFaceId });   // P352: 拷贝 / 删除 on a phone without a passkey offer the same F20 setup
+cmdrun.configure({ setupFaceId }); // P361: 「执行」 on a phone without a passkey — the same F20 offer
 let phoneEnvironment = null, phoneHintAfterPair = false, phoneHintDismissed = false;
 function renderPhoneEnvironment(force = false) {
   const e = phoneEnvironment;
@@ -1041,6 +1049,10 @@ function wire() {
   layer('confirm', closeConfirm, 'setBtn', 60);
   layer('badge-panel', () => toggleBadge(false), 'menu-about', 40);
   layer('settings', settings.back, 'setBtn', 40);
+  // P363 (#70): one magnifier, the page on screen as its scope — a five page / document (five-pages.js), a menu page (记忆 /
+  // 活动 / 后台任务 / 模型和 API Key / 好友 / Bot / 首次准备: in-text find), else the chat's 搜索聊天记录
+  search.setScope(() => fivePages.find() || (['mem','act','tasks','models','friends','bots','setup'].includes(view) && pagefind.openIn($(VIEWS[view]))));
+  pagefind.initLayer(registerLayer, () => $('srchBtn'));
   registerLayer({element: () => $(VIEWS[view]), open: () => ['mem','act','tasks','models','friends','bots','setup','scan'].includes(view),
     close: () => { if(view === 'scan') stopScan(); else if(view === 'friends') friends.back(); else leavePage(); },
     trigger: () => $('setBtn'), fallback: () => $('setBtn'), rank: 1, trap: false});

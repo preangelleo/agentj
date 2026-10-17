@@ -258,7 +258,7 @@ def default_notice(st, lang='zh'):
         return None
     return ('Enabled: the phone now shows Claude\'s 5-hour/weekly usage and context level (your status line still '
             'shows as before); to disable, run agentj config claude-statusline off.' if lang == 'en' else
-            '已开启：手机显示 Claude 的 5 小时/周额度和上下文水位（电脑上原状态栏照常显示）；想关运行 agentj config claude-statusline off。')
+            '已开启：手机显示 Claude 的 5 小时/周额度和上下文水位（Agent J 主机上原状态栏照常显示）；想关运行 agentj config claude-statusline off。')
 
 
 def notice_delivered(st):

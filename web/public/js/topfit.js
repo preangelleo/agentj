@@ -4,7 +4,10 @@
 // the header keeps its old spacing; in between the gap slides linearly, so a fold opening / a window resize never jumps.
 // The room this frees goes to the model pill on the left (the scan button's auto margin takes it).
 export const NARROW = 390, WIDE = 600;
-export const IDS = ['scanBtn', 'srchBtn', 'setBtn'];
+// P360: the one place for the right-hand icons' order — + (new card; chat and card wall only) · 扫码 · 搜索 · 设置 — and, with
+// NARROW / WIDE / MIN below, their spacing. Hidden ones drop out of the fit. P363 (the three fixed on every page) starts here.
+export const TOP_ORDER = ['cardPlus', 'scanBtn', 'srchBtn', 'setBtn'];
+export const IDS = TOP_ORDER;
 
 /** The drawn gap wanted between two header glyphs at viewport width w (natural = today's gap, m = the gear's margin). */
 export function topGap(w, natural, m){

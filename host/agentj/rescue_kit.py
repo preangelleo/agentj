@@ -200,7 +200,7 @@ def _entropic(tok: str) -> bool:
 
 def redact(text: str) -> str:
     """Deterministic, conservative: credentials, emails, IPs, MACs, UUIDs, phone-like numbers, home paths, user / host
-    names. Agent J's own privacy.redact runs first when this computer has it (same rules as `agentj support`)."""
+    names. Agent J's own privacy.redact runs first when the Agent J host has it (same rules as `agentj support`)."""
     user, host = _identity()
     try:
         from agentj import privacy as _p  # type: ignore[import-not-found]
@@ -236,7 +236,7 @@ def redact(text: str) -> str:
 
 
 def _channel() -> str | None:
-    """This computer's relay channel id (state config.json), so no report carries it (P332 security review MEDIUM-3)."""
+    """the Agent J host's relay channel id (state config.json), so no report carries it (P332 security review MEDIUM-3)."""
     try:
         ch = json.loads((state_dir() / "config.json").read_text()).get("channel")
     except (OSError, ValueError, AttributeError):
@@ -355,7 +355,7 @@ def check_sleep(r: Report):
             r.facts["suspends_24h"] = n_sleep
             if n_sleep:
                 r.add("suspend", WARN, f"过去 24 小时挂起过 {n_sleep} 次，最近一次醒来 {resumes[-1] if resumes else '未知'}——挂起期间手机必然离线",
-                      f"suspended {n_sleep}× in 24 h; the phone is offline while the computer sleeps")
+                      f"suspended {n_sleep}× in 24 h; the phone is offline while the Agent J host sleeps")
             else:
                 r.add("suspend", OK, "过去 24 小时没有挂起", "no suspend in the last 24 h")
             r.detail("suspend / resume (system journal, 24 h)", "\n".join(_sleep_lines(out)[-12:]))
@@ -488,7 +488,7 @@ def check_agentj(r: Report):
     b = agentj_bin()
     r.facts["agentj"] = bool(b)
     if not b:
-        r.add("agentj", FAIL, "没有找到 agentj 命令：这台电脑没装 Agent J，或装坏了", "agentj not found (not installed or broken)")
+        r.add("agentj", FAIL, "没有找到 agentj 命令：这台Agent J 主机没装 Agent J，或装坏了", "agentj not found (not installed or broken)")
         return
     rc, out = run([b, "--version"], 25)
     ver = out.strip().splitlines()[-1] if out.strip() else ""
@@ -639,9 +639,9 @@ def check_network(r: Report):
             skew = time.time() - parsedate_to_datetime(date).timestamp()
             r.facts["clock_skew_s"] = round(skew)
             if abs(skew) > 120:
-                r.add("clock", FAIL, f"电脑时间差了 {skew:+.0f} 秒：签名会被拒，手机连不上", f"clock off by {skew:+.0f} s: signatures are refused")
+                r.add("clock", FAIL, f"Agent J 主机时间差了 {skew:+.0f} 秒：签名会被拒，手机连不上", f"clock off by {skew:+.0f} s: signatures are refused")
             else:
-                r.add("clock", OK, f"电脑时间准确（差 {skew:+.0f} 秒）", "clock ok")
+                r.add("clock", OK, f"Agent J 主机时间准确（差 {skew:+.0f} 秒）", "clock ok")
     except Exception as e:   # noqa: BLE001
         r.facts["https"] = False
         r.add("https", FAIL, f"HTTPS 访问 {SITE_HOST} 失败（{type(e).__name__}）：报告可能发不出去", f"HTTPS to {SITE_HOST} failed")
@@ -702,7 +702,7 @@ def check_doctor(r: Report):
 
 def diagnose(with_doctor=True) -> Report:
     r = Report()
-    say("\n" + T("【1/3】检查这台电脑（只读，不改任何东西）", "[1/3] Checking this computer (read-only)"))
+    say("\n" + T("【1/3】检查这台Agent J 主机（只读，不改任何东西）", "[1/3] Checking the Agent J host (read-only)"))
     for fn in (check_system, check_agentj, check_service, check_network, check_hostlog, check_sleep):
         try:
             fn(r)
@@ -724,7 +724,7 @@ def repair(r: Report, dry: bool = False) -> list:
             done.append((T(zh, en), "dry-run"))
             return True
         if foreign_manager(argv):
-            say("    " + T("跳过：这是测试用的家目录，不碰这台电脑真正的服务管理器", "skipped: a test home never touches the real service manager"))
+            say("    " + T("跳过：这是测试用的家目录，不碰这台Agent J 主机真正的服务管理器", "skipped: a test home never touches the real service manager"))
             done.append((T(zh, en), "skipped: test home"))
             return False
         rc, out = run(argv, timeout)
@@ -737,7 +737,7 @@ def repair(r: Report, dry: bool = False) -> list:
     if k == "linux" and r.facts.get("linger") == "no":
         user = _identity()[0] or ""
         if not step("打开 linger，让服务在没人登录时也能运行", "turning on linger", ["loginctl", "enable-linger", user], 20):
-            say("    " + T(f"需要管理员权限：请电脑主人运行 sudo loginctl enable-linger {user}", "needs admin: sudo loginctl enable-linger <user>"))
+            say("    " + T(f"需要管理员权限：请Agent J 主机主人运行 sudo loginctl enable-linger {user}", "needs admin: sudo loginctl enable-linger <user>"))
     if k in ("linux", "wsl") and not r.facts.get("no_user_manager"):
         unit = r.facts.get("unit") or {}
         if unit.get("LoadState") == "not-found" and b:
@@ -770,7 +770,7 @@ def repair(r: Report, dry: bool = False) -> list:
         except (ValueError, IndexError):
             rs = None
         if isinstance(rs, dict) and not rs.get("installed"):
-            step("装上救援守护：以后电脑上的 Agent J 没响应时，手机「设置 → 紧急修复」也能修", "installing the rescue watchdog "
+            step("装上救援守护：以后Agent J 主机上的 Agent J 没响应时，手机「设置 → 紧急修复」也能修", "installing the rescue watchdog "
                  "(the phone's Settings → Emergency repair then works even when Agent J stops answering)", [b, "rescue", "install"], 60)
         elif rs is None:
             r.facts["no_watchdog"] = True   # an older Agent J: `agentj update` brings the watchdog
@@ -778,13 +778,13 @@ def repair(r: Report, dry: bool = False) -> list:
         step("让手机重新连上（agentj doctor --reconnect：服务、relay、AI 会话逐个检查，坏哪个修哪个）",
              "bringing the phone back (agentj doctor --reconnect)", [b, "doctor", "--reconnect"], 180)
     if r.get("clock") == FAIL:
-        say("  ! " + T("电脑时间不准：请主人在系统设置里打开「自动设置时间」（Linux: sudo timedatectl set-ntp true）",
+        say("  ! " + T("Agent J 主机时间不准：请主人在系统设置里打开「自动设置时间」（Linux: sudo timedatectl set-ntp true）",
                        "clock is wrong: turn on automatic time (Linux: sudo timedatectl set-ntp true)"))
     if any(r.get(c) == FAIL for c in ("disk_home", "disk_tmp")):
         say("  ! " + T("磁盘快满了：我不会删任何文件，请主人清理后再运行一次", "disk is almost full: nothing is deleted; free space and run again"))
     if r.get("idle_suspend") == WARN or r.get("logind_idle") == WARN:
-        say("  ! " + T("这台电脑空闲会自动挂起/睡眠，挂起时手机一定离线；要一直在线请在电源设置里关掉自动挂起（我不改系统设置）",
-                       "this computer suspends when idle; turn auto-suspend off to stay reachable (not changed by this script)"))
+        say("  ! " + T("这台Agent J 主机空闲会自动挂起/睡眠，挂起时手机一定离线；要一直在线请在电源设置里关掉自动挂起（我不改系统设置）",
+                       "the Agent J host suspends when idle; turn auto-suspend off to stay reachable (not changed by this script)"))
     if not done:
         say("  · " + T("没有需要自动修的项目", "nothing to repair automatically"))
     return done
@@ -849,7 +849,7 @@ def _private_write(path: pathlib.Path, text: str):
 
 
 def session_token(http=_http) -> str:
-    """This computer's rescue install session (FEEDBACK_API.md: no auth to create, 30 days, kept 0600 here — never printed)."""
+    """the Agent J host's rescue install session (FEEDBACK_API.md: no auth to create, 30 days, kept 0600 here — never printed)."""
     p = DIR / "session.json"
     try:
         s = json.loads(p.read_text())
@@ -984,27 +984,27 @@ def _wait_support(thread, after, seconds, http, clock):
 
 
 _H = {   # plain sentences: never relay / serve / harness / session id (§33)
-    "diag": ("正在检查这台电脑（只看不改）…", "Checking the computer (read-only)…"),
+    "diag": ("正在检查这台Agent J 主机（只看不改）…", "Checking the Agent J host (read-only)…"),
     "diag_ok": ("检查完了：{n} 项有问题。", "Checked: {n} problem(s) found."),
     "send": ("正在把去掉隐私的报告发给 Agent J Father…", "Sending a privacy-cleaned report to Agent J Father…"),
     "sent": ("报告已发出，工单号 {t}。", "Report sent, ticket {t}."),
-    "send_fail": ("报告没发出去，请稍后再试，或让电脑旁的人运行救援命令。", "The report could not be sent; try again later, or ask someone at the computer to run the rescue line."),
+    "send_fail": ("报告没发出去，请稍后再试，或让Agent J 主机旁的人运行救援命令。", "The report could not be sent; try again later, or ask someone at the Agent J host to run the rescue line."),
     "wait": ("正在等 Agent J Father 回复（最多 {m} 分钟）…", "Waiting for Agent J Father (up to {m} minutes)…"),
     "no_reply": ("Agent J Father 还没回复，回复会留在工单 {t} 里。", "No reply yet from Agent J Father; it will arrive on ticket {t}."),
     "advice": ("Agent J Father 的建议：{a}", "Agent J Father suggests: {a}"),
-    "act": ("Agent J Father 请电脑做这一步：{x}", "Agent J Father asked the computer to: {x}"),
+    "act": ("Agent J Father 请Agent J 主机做这一步：{x}", "Agent J Father asked the Agent J host to: {x}"),
     "offer": ("客服建议：{x}（点下面的按钮确认后才会做）", "Support suggests: {x} (tap the button below to confirm; nothing runs before that)"),
     "done_offer": ("客服建议的修复要你点按钮确认后才会做，工单号 {t}。", "Support's suggested repairs run only after you confirm them with the buttons; ticket {t}."),
-    "scheduled": ("马上重启电脑上的 Agent J（报告发出后），大约半分钟后自动连回来。",
-                  "Agent J on the computer restarts right after this report; it reconnects by itself in about half a minute."),
+    "scheduled": ("马上重启Agent J 主机上的 Agent J（报告发出后），大约半分钟后自动连回来。",
+                  "Agent J on the Agent J host restarts right after this report; it reconnects by itself in about half a minute."),
     "posted": ("结果已告诉 Agent J Father。", "The results went back to Agent J Father."),
     "done_ok": ("Agent J Father 建议的修复都做完了。", "Every repair Agent J Father suggested is done."),
-    "done_advice": ("Agent J Father 给了建议（没有需要电脑自动做的事），工单号 {t}。", "Agent J Father replied with advice (nothing for the computer to run); ticket {t}."),
+    "done_advice": ("Agent J Father 给了建议（没有需要Agent J 主机自动做的事），工单号 {t}。", "Agent J Father replied with advice (nothing for the Agent J host to run); ticket {t}."),
     "done_fail": ("还有修复没成功，Agent J Father 会继续看工单 {t}。", "Some repairs did not work; Agent J Father keeps working on ticket {t}."),
     "budget": ("时间到了，Agent J Father 会继续看工单 {t}。", "Time is up; Agent J Father keeps working on ticket {t}."),
     "error": ("出了点意外，请稍后再试。", "Something unexpected happened; please try again later."),
 }
-ACTION_WORDS = {"reconnect": ("重新连接", "reconnect"), "restart": ("重启电脑上的 Agent J", "restart Agent J on the computer"),
+ACTION_WORDS = {"reconnect": ("重新连接", "reconnect"), "restart": ("重启Agent J 主机上的 Agent J", "restart Agent J on the Agent J host"),
                 "linger": ("让 Agent J 在没人登录时也能运行", "keep Agent J running when nobody is logged in"),
                 "rollback": ("退回上一个版本", "go back to the previous version"),
                 "new_session": ("开一个新对话", "start a new conversation")}
@@ -1127,7 +1127,7 @@ def help_flow(lang, emit, run_action, *, with_doctor=False, http=_http, rounds=3
                 say_step(4, "skip", H("offer", x=words), offer=new_offers)
                 results += [f"- {n}: offered to the owner (runs only after the owner confirms)" for n in new_offers]
                 if estop:
-                    results.append("- note: the computer is in stop-everything mode: nothing ran")
+                    results.append("- note: the Agent J host is in stop-everything mode: nothing ran")
             step = 5
             try:
                 send(redact("\n".join([MARKER + " [result]"] + results)), "", http, thread=ticket)
@@ -1170,7 +1170,7 @@ def main(argv=None) -> int:
     global LANG
     ap = argparse.ArgumentParser(prog="rescue", description="Agent J emergency rescue (read-only diagnosis, safe repairs, redacted report)")
     ap.add_argument("--no-fix", action="store_true", help="diagnose and report only")
-    ap.add_argument("--no-send", action="store_true", help="keep the report on this computer")
+    ap.add_argument("--no-send", action="store_true", help="keep the report on the Agent J host")
     ap.add_argument("--dry-run", action="store_true", help="show the repairs without running them; nothing is sent")
     ap.add_argument("--yes", "-y", action="store_true", help="send without the 20-second confirmation")
     ap.add_argument("--en", action="store_true", help="English only")
@@ -1197,8 +1197,8 @@ def main(argv=None) -> int:
         return 2
     say("=" * 64)
     say(T("Agent J 紧急救援", "Agent J emergency rescue"))
-    say(T("会做三件事：① 检查这台电脑 ② 自动修好能修的 ③ 把去掉隐私的报告发给 Agent J Father。",
-          "Three steps: (1) check this computer (2) fix what is safe to fix (3) send a redacted report to Agent J Father."))
+    say(T("会做三件事：① 检查这台Agent J 主机 ② 自动修好能修的 ③ 把去掉隐私的报告发给 Agent J Father。",
+          "Three steps: (1) check the Agent J host (2) fix what is safe to fix (3) send a redacted report to Agent J Father."))
     say(T("不会读取或发送任何密码、密钥；不删文件；不用管理员权限。随时按 Ctrl+C 退出。",
           "Never reads or sends passwords or keys; deletes nothing; no admin rights. Ctrl+C stops it at any time."))
     say("=" * 64)

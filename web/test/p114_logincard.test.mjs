@@ -27,7 +27,7 @@ test('P114 sign-in card strings exist in both languages, the channel name only a
   const keys = (o, p = '') => Object.entries(o).flatMap(([k, v]) => (typeof v === 'object' ? keys(v, p + k + '.') : [p + k]));
   assert.deepEqual(keys(zh.lqr).sort(), keys(en.lqr).sort());
   for (const d of [zh.lqr, en.lqr]) {
-    assert.ok(!JSON.stringify(d).includes('Telegram'), 'the channel name arrives from the computer as data');
+    assert.ok(!JSON.stringify(d).includes('Telegram'), 'the channel name arrives from the Agent J host as data');
     assert.match(d.tgTextNote, /\{channel\}/);
     for (const k of ['title', 'alt', 'signedIn']) assert.match(d[k], /\{site\}/, k);
   }

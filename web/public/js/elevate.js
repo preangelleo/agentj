@@ -41,7 +41,7 @@ function build() {
   const empty = node('p', 'elev-empty', 'elev-bad');
   empty.hidden = true;
   // P73 (ADR-A180): the main action alone on its row; 「拒绝 / 不提供」 a quiet text button on its own line under it, so a
-  // thumb aiming at 「保存到电脑」 cannot land on it. The keyboard's Enter / 完成 key only ever submits.
+  // thumb aiming at 「保存到Agent J 主机」 cannot land on it. The keyboard's Enter / 完成 key only ever submits.
   const acts = mk('div', 'ajrow confirm-row elev-acts');
   const allow = node('button', 'elev-allow', 'aj-btn aj-btn--primary'); allow.type = 'submit';
   acts.append(allow);

@@ -174,23 +174,30 @@ export function dropReplacement(s) {
   if (!s.includes('\ufffd')) return s;
   return s.replace(/^\s*\ufffd[\s\ufffd]*|[\s\ufffd]*\ufffd\s*$/g, '').replace(/^[ \t]*\ufffd+[ \t]*(?:\n|$)/gm, '');
 }
+/** P363 (#72): a voice attachment's transcript (host ≥ 0.23, PROTOCOL §10.5) → {asr: {ok, text, cut} | {ok: false, why}}. */
+export function asrOf(a) {
+  if (!a || typeof a !== 'object') return {};
+  if (a.ok === true && typeof a.text === 'string' && a.text.trim()) return { asr: { ok: true, text: dropReplacement(a.text.slice(0, 20000)), cut: a.cut === true } };
+  if (a.ok === false) return { asr: { ok: false, why: typeof a.why === 'string' ? a.why.slice(0, 32) : 'broken' } };
+  return {};
+}
 /** Agent J turn (wire) → the page's turn {id, ts (s), source, reply, end, card, part, pre?}. */
 export function toPage(t) {
   if (!t || !Number.isInteger(t.id) || t.id < 0) return null;
   const src = t.src && typeof t.src === 'object' ? t.src : {};
-  const k = ['phone', 'host', 'agent', 'sys', 'task', 'cmd', 'telegram', 'email'].includes(src.k) ? src.k : 'sys';
+  const k = ['phone', 'host', 'agent', 'sys', 'task', 'cmd', 'telegram', 'email', 'auto'].includes(src.k) ? src.k : 'sys';   // P365: auto = the owner's own automation (`agentj notify`)
   const q1 = (x) => x && typeof x === 'object' && Number.isInteger(x.id) ? {
     id: x.id, who: typeof x.who === 'string' ? x.who.slice(0, 64) : '', ts: Number(x.ts) || null,
     text: typeof x.text === 'string' ? x.text.slice(0, 2000) : '', excerpt: x.ex === true } : null;
   const q = q1(src.quote);
   if (q && Array.isArray(src.quote.more)) q.more = src.quote.more.slice(0, 4).map(q1).filter(Boolean);   // P286: quotes 2…5
   const att = Array.isArray(src.att) ? src.att.slice(0, 10).filter((a) => a && typeof a.name === 'string')
-    .map((a) => ({ name: a.name.slice(0, 128), mime: typeof a.mime === 'string' ? a.mime : '', bytes: Number(a.bytes) || 0, kind: ['image', 'file', 'audio'].includes(a.kind) ? a.kind : 'file' })) : [];
+    .map((a) => ({ name: a.name.slice(0, 128), mime: typeof a.mime === 'string' ? a.mime : '', bytes: Number(a.bytes) || 0, kind: ['image', 'file', 'audio'].includes(a.kind) ? a.kind : 'file', ...asrOf(a.asr) })) : [];
   const reply = t.reply && typeof t.reply === 'object' ? t.reply : { text: typeof t.reply === 'string' ? t.reply : '' };
   return {
     id: t.id, ts: typeof t.ts === 'number' ? t.ts / 1000 : null,
     source: { k, dev: typeof src.dev === 'string' ? src.dev : null, name: typeof src.name === 'string' ? src.name.slice(0, 64) : '',
-      text: typeof src.text !== 'string' ? '' : k === 'telegram' ? src.text.replace(TG_SOURCE_LINE, '') : src.text, quote: q, att, local: src.local === true, ...(k === 'sys' && typeof src.notice_id === 'string' && /^[A-Za-z0-9_-]{22}$/.test(src.notice_id) ? {notice_id:src.notice_id} : {}), ...(k === 'agent' && ['loop', 'task', 'quota'].includes(src.via) ? {via: src.via} : {}) },
+      text: typeof src.text !== 'string' ? '' : k === 'telegram' ? src.text.replace(TG_SOURCE_LINE, '') : src.text, quote: q, att, local: src.local === true, ...(k === 'sys' && typeof src.notice_id === 'string' && /^[A-Za-z0-9_-]{22}$/.test(src.notice_id) ? {notice_id:src.notice_id} : {}), ...(k === 'agent' && ['loop', 'task', 'quota', 'auto', 'hook'].includes(src.via) ? {via: src.via} : {}) },
     reply: typeof reply.text === 'string' ? dropReplacement(reply.text) : '',
     part: Array.isArray(reply.part) && reply.part.length === 2 ? reply.part.map(Number) : null,
     ...(typeof reply.pre === 'string' && reply.pre ? { pre: dropReplacement(reply.pre) } : {}),   // P351: a silent turn's notes
@@ -255,7 +262,7 @@ export function findHistory(q, sort = 'score') {
         return { id: h.id, ts: typeof h.ts === 'number' ? h.ts / 1000 : null, score: Number(h.score) || 0,
           where: Array.isArray(h.where) ? h.where.filter((f) => f in snip) : Object.keys(snip), snip,
           src: { k: str(src.k, 16) || 'sys', dev: str(src.dev, 64) || null, name: str(src.name, 64), local: src.local === true,
-            ...(src.k === 'agent' && ['loop', 'task', 'quota'].includes(src.via) ? { via: src.via } : {}) } };
+            ...(src.k === 'agent' && ['loop', 'task', 'quota', 'auto', 'hook'].includes(src.via) ? { via: src.via } : {}) } };
       });
       resolve({ epoch: Number(m.epoch) || 0, hits, n: Number(m.n) || hits.length, more: m.more === true });
     });

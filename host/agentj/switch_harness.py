@@ -32,6 +32,8 @@ from . import harness, opencode_free, service
 from .compose import Send
 
 KINDS = ("claude", "codex", "opencode", "kimi", "qwen", "dsh")
+if harness.names()[-1:] == ("core",):   # P359: Agent J Harness joins the switch only when the owner turned it on
+    KINDS += ("core",)
 LABEL = harness.LABEL
 CMD = "switch-harness"
 RECEIPT = "harness-switch.json"
@@ -62,7 +64,7 @@ REASON = {
            "launch_failed": "安排不了切换任务", "restart_failed": "重启 Agent J 失败",
            "wrong_agent": "重启后接上的不是 {x}", "agent_down": "重启后 {x} 没有接上",
            "hello_refused": "重启后 {x} 不接收消息", "no_reply": "{x} 切换后一直没有自报家门", "not_idle": "{x} 回答后一直没有空下来",
-           "start_failed": "{x} 的长驻会话打不开", "start_timeout": "{x} 的长驻会话 150 秒内没打开（MCP 服务器 / 插件太多，或电脑太忙）",
+           "start_failed": "{x} 的长驻会话打不开", "start_timeout": "{x} 的长驻会话 150 秒内没打开（MCP 服务器 / 插件太多，或Agent J 主机太忙）",
            "owner_unreachable": "设置里指定的 {x} server（agent.shared_opencode_port）连不上；让 Agent J 自己管 {x}：agentj config unset agent.shared_opencode_port",
            "owner_password": "设置里指定的 {x} server 要密码，Agent J 还没有（agentj secret request --name OPENCODE_SERVER_PASSWORD）",
            "owner_session": "设置里指定的 {x} server 里没有指定的会话（agent.shared_session_id）",
@@ -95,14 +97,14 @@ REASON = {
 
 # P312: why a new Agent stayed silent (serve's status.agent_phase) + the owner's next step
 DETAIL = {
-    "zh": {"starting": "：一直还在启动（加载 MCP 服务器 / 插件、打开会话）。下一步：电脑空一些再切，或在它的配置里停用用不上的 MCP / 插件",
+    "zh": {"starting": "：一直还在启动（加载 MCP 服务器 / 插件、打开会话）。下一步：Agent J 主机空一些再切，或在它的配置里停用用不上的 MCP / 插件",
            "prompt": "：卡在终端里的确认提示上。下一步：在 Agent J 的工作目录里手动运行一次 {cmd}，处理掉提示再切",
            "approval": "：在等手机上的批准卡。下一步：处理掉那张卡再切",
            "failed": "：启动失败。下一步：运行 agentj doctor，修好再切",
            "turn": "：会话已打开但一直没说话（多半是模型服务慢或网络 / 代理不稳）。下一步：稍后再切；还不行在工作目录里运行 {cmd} 计时",
            "idle": "：没有接手自报家门的消息。下一步：再切一次；还不行运行 agentj doctor",
            "empty": "：自报家门那一轮一下子就结束了，一个字也没说（会话没真正接上）。下一步：运行 agentj doctor，修好再切"},
-    "en": {"starting": ": still starting (loading MCP servers / plugins, opening the session). Next: switch again when the computer "
+    "en": {"starting": ": still starting (loading MCP servers / plugins, opening the session). Next: switch again when the Agent J host "
                        "is less busy, or turn off unused MCP servers / plugins in its config",
            "prompt": ": stuck on a terminal prompt. Next: run {cmd} once by hand in Agent J's working folder, answer it, switch again",
            "approval": ": waiting for an approval card on the phone. Next: answer it, then switch again",
@@ -159,7 +161,10 @@ LOGIN_HINT = {
                    "agentj agent route），再 agentj service restart",
            # P329: DeepSeek Harness — Agent J's OpenAI-compatible route (Olares Router …) or a DeepSeek key on the key card
            "dsh": "{x} 没有模型路线。Olares / 任何 OpenAI 兼容服务：agentj agent dsh --base-url https://<Router>/v1 --model <模型 id>"
-                  "（要 key 时让 Agent 发密钥卡存 DSH_ROUTER_API_KEY）；用 DeepSeek 官方 API：密钥卡存 DEEPSEEK_API_KEY，再 agentj service restart"},
+                  "（要 key 时让 Agent 发密钥卡存 DSH_ROUTER_API_KEY）；用 DeepSeek 官方 API：密钥卡存 DEEPSEEK_API_KEY，再 agentj service restart",
+           # P359: Agent J Harness — built in; it needs one model key (Volcano Ark first, D9)
+           "core": "{x} 没有模型 key。让 Agent 发手机密钥卡存一把模型 key（火山方舟 ARK_API_KEY；海外 BytePlus BYTEPLUS_API_KEY），"
+                   "再 agentj service restart"},
     "en": {"claude": "the background service finds no {x} login (it probably lives only in your terminal's environment, e.g. "
                      "CLAUDE_CODE_OAUTH_TOKEN in ~/.zshenv, which the service cannot read). Either run claude in a terminal and "
                      "/login once (the login is stored in {store}, which the service can use too), or in a terminal where claude "
@@ -178,7 +183,9 @@ LOGIN_HINT = {
                    "(BAILIAN_TOKEN_PLAN_API_KEY; agentj agent route shows prices and terms), then agentj service restart",
            "dsh": "{x} has no model route. Olares or any OpenAI-compatible server: agentj agent dsh --base-url https://<router>/v1 "
                   "--model <model id> (a key card for DSH_ROUTER_API_KEY if it needs a key); DeepSeek's own API: a key card for "
-                  "DEEPSEEK_API_KEY, then agentj service restart"},
+                  "DEEPSEEK_API_KEY, then agentj service restart",
+           "core": "{x} has no model key. Have the Agent send a key card for a model key (Volcano Ark ARK_API_KEY; abroad "
+                   "BytePlus BYTEPLUS_API_KEY), then agentj service restart"},
 }
 
 
@@ -211,19 +218,30 @@ def agent_text(text, lang: str = "zh") -> str | None:
     if not m:
         return None
     arg = m.group(1).strip()
+    ark = bool(_ARK_WORDS.search(arg))       # P371: 「OpenCode · 火山方舟」 has its own one-step switch
     if lang == "en":
         head = ("[Menu command /switch-harness] The owner sent \"switch harness\" from the phone menu. Follow the bundled "
                 "skill agentj-switch-harness (scan, probe headless, switch only through its gate).")
         tail = (" The owner added: " + arg) if arg else (
             " The owner added nothing: first explain in two or three plain sentences what a harness is, then scan this "
             "computer and say which ones it can switch to now; to switch, the owner replies \"switch to Claude Code / Codex / "
-            "OpenCode / Kimi Code / Qwen Code\".")
-        return head + tail
+            "OpenCode / OpenCode · Volcano Ark / Kimi Code / Qwen Code\".")
+        return head + tail + (ARK_HINT["en"] if ark else "")
     head = "〔菜单命令 /switch-harness〕主人从手机菜单发来「切换 harness」。按随包技能 agentj-switch-harness 处理（先扫描、无头探测，过了闸门才切换）。"
     tail = ("主人附加的话：" + arg) if arg else (
-        "主人没有附加说明：先用两三句大白话解释什么是 harness，再扫描这台电脑，告诉主人现在能切到哪些；"
-        "要切换就回复「切换到 Claude Code / Codex / OpenCode / Kimi Code / Qwen Code」。")
-    return head + tail
+        "主人没有附加说明：先用两三句大白话解释什么是 harness，再扫描这台 Agent J 主机，告诉主人现在能切到哪些；"
+        "要切换就回复「切换到 Claude Code / Codex / OpenCode / OpenCode · 火山方舟 / Kimi Code / Qwen Code」。")
+    return head + tail + (ARK_HINT["zh"] if ark else "")
+
+
+_ARK_WORDS = re.compile(r"方舟|火山|豆包|doubao|\bark\b|volcano|volcengine|seed-?2", re.I)
+ARK_HINT = {   # P371
+    "zh": "（这是「OpenCode · 火山方舟」：先问主人用 Coding Plan 套餐还是按量付费，再运行 "
+          "`agentj agent switch opencode --preset ark --plan coding|payg`，它会探测、缺 key 时给密钥卡命令、实测一次才切。）",
+    "en": " (This is \"OpenCode · Volcano Ark\": ask whether the owner has the Coding Plan or pays as they go, then run "
+          "`agentj agent switch opencode --preset ark --plan coding|payg` — it detects, prints the key card if needed, and "
+          "makes one real call before switching.)",
+}
 
 
 class HelloSend(Send):
@@ -301,7 +319,7 @@ def hello_prompt(kind: str, req: dict, lang: str = "zh", where: str | None = Non
 # takes minutes never leaves the phone on an empty card. In-turn phases go on the asking page (its wait line); the rest
 # (the turn has ended, Agent J restarts) are pages of their own.
 PROGRESS = {
-    "zh": {"scanning": "正在探测这台电脑上的 harness：Claude Code、Codex、OpenCode、Kimi Code、Qwen Code 各试一次，每个最多 1 分钟…",
+    "zh": {"scanning": "正在探测这台Agent J 主机上的 harness：Claude Code、Codex、OpenCode、Kimi Code、Qwen Code 各试一次，每个最多 1 分钟…",
            "scan_one": "正在探测 {t}（{k}/{n}），每个最多 1 分钟…",
            "probing": "正在测试 {t}：先发一条测试消息，能正常回答才切换（最多 1 分钟）…",
            "waiting": "{t} 测试通过，等这一轮说完就开始切换…",
@@ -309,7 +327,7 @@ PROGRESS = {
            "switched": "已切换到 {t}，它正在跟您打招呼…",
            "back": "切换到 {t} 没成功，正在切回 {f}…",
            "back_ok": "已切回 {f}，它马上跟您说明原因。"},
-    "en": {"scanning": "Probing the harnesses on this computer: Claude Code, Codex, OpenCode, Kimi Code and Qwen Code, one try each, up to 1 minute each…",
+    "en": {"scanning": "Probing the harnesses on the Agent J host: Claude Code, Codex, OpenCode, Kimi Code and Qwen Code, one try each, up to 1 minute each…",
            "scan_one": "Probing {t} ({k}/{n}), up to 1 minute each…",
            "probing": "Trying {t}: one test message first; it switches only if that is answered (up to 1 minute)…",
            "waiting": "{t} passed the test; the switch starts when this turn is done…",
@@ -1200,7 +1218,7 @@ def _say(r: dict, lang: str) -> str:
     slow = r.get("start_secs") if isinstance(r.get("start_secs"), int) and r["start_secs"] >= 20 else None
     if r.get("ok") and slow:          # P312: said before the switch, so a long wait after the restart is expected
         r = {**r, "note": (f" Its session took {slow} s to start here, so the switch waits longer for it." if lang == "en" else
-                           f"这台电脑上它的会话启动要 {slow} 秒，切换后会多等它一会儿。")}
+                           f"这台Agent J 主机上它的会话启动要 {slow} 秒，切换后会多等它一会儿。")}
     if r.get("ok"):
         back = (f" If it does not come up, Agent J switches back to {F} by itself and says why." if F and lang == "en" else
                 f"如果新的那边没起来，会自动切回 {F} 并说明原因。" if F else "")
@@ -1268,8 +1286,13 @@ def cli(a, st, lang: str) -> int:
         r = request(st, None, undo=True)
         print(json.dumps(r, ensure_ascii=False) if a.json else _say(r, lang))
         return 0 if r.get("ok") else 4 if r.get("pending") else 3
+    if getattr(a, "preset", None) == "ark" and target == "opencode":    # P371: 「OpenCode · 火山方舟」
+        from . import ark
+        r = ark.switch(st, getattr(a, "plan", None) or "coding", a.model, dry_run=getattr(a, "dry_run", False))
+        print(json.dumps(r, ensure_ascii=False) if a.json else ark.say_switch(r, lang))
+        return 0 if r.get("ok") else 4 if r.get("pending") else 3
     if target not in KINDS:
-        print("agentj agent switch <claude|codex|opencode> [--model M] [--dry-run] [--force] [--json] · agentj agent switch --scan · --undo · --result",
+        print("agentj agent switch <claude|codex|opencode> [--model M] [--dry-run] [--force] [--json] · agentj agent switch opencode --preset ark [--plan coding|payg] · --scan · --undo · --result",
               file=sys.stderr)
         return 2
     r = request(st, target, a.model, dry_run=getattr(a, "dry_run", False), force=getattr(a, "force", False))

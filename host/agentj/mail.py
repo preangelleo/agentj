@@ -71,7 +71,7 @@ REPLY_FILES_MAX = 20 * 1024 * 1024
 KEEP_IDS = 500
 KEEP_BLOCKED = 20
 TIMEOUT = 30
-EHLO = "[127.0.0.1]"        # an address literal: no reverse-DNS wait (getfqdn), and the computer's name is not sent out
+EHLO = "[127.0.0.1]"        # an address literal: no reverse-DNS wait (getfqdn), and the Agent J host's name is not sent out
 MARK = "X-AgentJ"                                 # on every mail we send; a mail carrying it is never a task
 ADDR = re.compile(r"[A-Za-z0-9._%+'=-]{1,64}@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+")
 HOST = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?")
@@ -1712,7 +1712,7 @@ class Mail:
                                                    "verify": "ok" if res["ok"] else "fail", "detail": "IMAP+SMTP" if res["ok"] else st2["last_error"]}}
         card = {"kind": "secret", "name": "AGENTJ_MAIL_PASSWORD",
                 "purpose": password_purpose(cfg, self.lang()),
-                "dest": "Agent J 邮件通道（本机加密）" if zh else "Agent J mail channel (encrypted on this computer)",
+                "dest": "Agent J 邮件通道（本机加密）" if zh else "Agent J mail channel (encrypted on the Agent J host)",
                 "dest_spec": {"mode": "mail", "path": path, "key": "AGENTJ_MAIL_PASSWORD", "show": "mail"},
                 "cwd": "/", "verify": "IMAP + SMTP login", "verify_url": "", "verify_header": "", "verify_cmd": "", "sink": sink}
         el = getattr(self.host, "elevate", None)
@@ -1758,7 +1758,7 @@ WHY = {
            "smtp_tls": "SMTP 加密连接失败", "imap_timeout": "IMAP 超时", "smtp_timeout": "SMTP 超时", "imap_select": "打不开收件箱",
            "no_password": "还没设置授权码", "incomplete": "邮箱地址或服务器没填完", "off": "邮件通道是关着的",
            "not_running": "Agent J 没在运行（agentj service status）", "address": "邮箱地址格式不对", "preset": "没有这个邮箱预设",
-           "not_configured": "电脑上还没配好邮件通道：请在手机「设置 → 沟通渠道 → 邮件通道」填邮箱并设置授权码",
+           "not_configured": "Agent J 主机上还没配好邮件通道：请在手机「设置 → 沟通渠道 → 邮件通道」填邮箱并设置授权码",
            "not_named": "只能发给主人自己写过的邮箱地址（在 /会议总结 后面或之后的消息里写上地址）",
            "no_owner_address": "还没有主人本人的邮箱：请主人在手机「设置 → 通讯录」填 0 号位（我本人）的邮箱，或用 agentj mail allow <地址> 加进白名单", "no_recipient": "没有收件人", "too_many": "收件人太多（最多 10 个）",
            "body": "纪要是空的或太长", "limited": "已到每小时发信上限，请稍后再发",

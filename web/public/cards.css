@@ -1,0 +1,87 @@
+/* P360 Agent J Cards — the cards global CSS (spec agentjarvis/docs/specs/AGENTJ-CARDS-SPEC.md §5).
+   Visual style only, and deliberately small: one fill per accent (the system deck's five, Leo's closed palette) with the ink
+   that reads on it (≥ 4.5:1, host/agentj/jcards.py ACCENTS — test_p360 checks both sides), the Wallet stack, and the
+   template pages drawn in the menu colours. A card names an accent; it never brings a colour, font or rule of its own. */
+:root{--jc-peek-min:64px;--jc-peek-max:120px;--jc-card-h:220px}
+.jc-accent-emerald-oasis{--jc-fill:#629887;--jc-ink:#141414}
+.jc-accent-windstorm{--jc-fill:#6a9bcc;--jc-ink:#141414}
+.jc-accent-magic-carpet{--jc-fill:#827dbd;--jc-ink:#141414}
+.jc-accent-peachy-feeling{--jc-fill:#d97757;--jc-ink:#141414}
+.jc-accent-noir{--jc-fill:#2c2b26;--jc-ink:#faf9f5}
+
+/* ---- Wallet stack (Leo 10-17: 「以后就变成一种固定的堆叠方式……超过屏幕的就自己往下翻」). Fixed geometry, nothing measured
+   from the screen: every card — the five system cards and the owner's — is the same size on phone, iPad and computer, and
+   every covered card shows the same fixed strip (--jc-peek = 1/5 of the card = 44 px: the touch-target floor, the title
+   reads in it). The deck is as tall as its cards and scrolls past the screen; five cards no longer fill it.
+   Left edge = the logo's left edge (--fp-left, five-pages.js place(); fallback the header gutter) — a menu unfolding from
+   the logo, the same margin as the header on every device. Width min(screen − 2 × that margin, 360 px). */
+:root{--jc-card-h:220px;--jc-peek:44px;--jc-card-w:360px;--jc-deck-pad:16px}
+#five-menu{overflow-y:auto}
+.fp-menu-deck{position:relative;box-sizing:border-box;max-width:none;width:100%;margin:0;padding:0;
+  height:calc(var(--jc-deck-pad) * 2 + var(--jc-peek) * (var(--fp-n,5) - 1) + var(--jc-card-h))}
+.fp-menu-card,.fp-menu-card.jc-card{box-sizing:border-box;left:var(--fp-left,var(--rg,16px));right:auto;
+  width:min(calc(100vw - 2 * var(--fp-left,var(--rg,16px))),var(--jc-card-w));height:var(--jc-card-h);
+  top:calc(var(--jc-deck-pad) + var(--fp-i) * var(--jc-peek));padding:0;border-radius:20px}
+.fp-menu-card.jc-card{background:var(--jc-fill);color:var(--jc-ink)}
+.fp-menu-card.jc-accent-noir{box-shadow:inset 0 0 0 1.5px color-mix(in srgb,var(--c-lotion) 32%,transparent)}   /* Noir on the Noir canvas keeps an edge */
+/* the title strip: icon · title · (the system cards' count) in one row, centred in the peek */
+.fp-menu-card .fp-menu-head{position:absolute;left:20px;right:20px;top:calc((var(--jc-peek) - 28px) / 2);height:28px;
+  display:flex;align-items:center;justify-content:flex-start;gap:12px}
+.fp-menu-card .fp-menu-head>:is(svg,img){flex:none;width:28px;height:28px}
+.fp-menu-card .fp-current{margin-left:auto;flex:none;white-space:nowrap}
+.fp-menu-card h2,.jc-card .jc-name{position:absolute;left:60px;right:20px;top:calc((var(--jc-peek) - 28px) / 2);margin:0;
+  font:700 18px/28px var(--font-body);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fp-menu-card:has(.fp-current:not(:empty)) h2{right:132px}
+.fp-menu-card p,.jc-card .jc-desc{position:absolute;left:20px;right:20px;top:calc(var(--jc-peek) + 12px);margin:0;
+  font-size:15px;line-height:1.45;white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;line-clamp:3;overflow:hidden}
+/* a covered card shows its strip only (its description would sit under the next card anyway) */
+.fp-menu-card:not(:last-child) p{visibility:hidden}
+.fp-menu-card.jc-card:focus-visible{outline:2px solid var(--jc-ink);outline-offset:-6px}
+
+/* ---- the header's + (P360; order js/topfit.js TOP_ORDER, gaps topfit's): when it shows, it takes the push to the right */
+.top .plusbtn[hidden]{display:none}
+.top .plusbtn{margin-left:auto}
+.top .plusbtn:not([hidden])~.scanbtn{margin-left:0}
+
+/* ---- one card's page (inside #five-page: Noir menu canvas, Lotion text — the theme's menu colours repaint it) */
+.jc-body{border-top:6px solid var(--jc-fill,var(--menu-accent));background:var(--menu-panel);color:var(--menu-text);border-radius:16px;
+  padding:var(--ui-space-content);line-height:var(--ui-leading,1.5)}
+.jc-note{margin:0 0 var(--ui-space-control);color:var(--menu-muted,inherit)}
+.jc-notes{margin:0 0 var(--ui-space-content)}
+.jc-list{list-style:none;margin:0 0 var(--ui-space-content);padding:0}
+.jc-item{display:flex;align-items:center;gap:var(--ui-space-btn);border-bottom:1px dashed var(--menu-line)}
+.jc-row{flex:1;display:flex;align-items:center;gap:var(--ui-space-control);min-height:52px;min-width:0;padding:var(--ui-space-line) 0;border:0;
+  background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}
+.jc-row:disabled{cursor:default}
+.jc-check{flex:none;width:24px;height:24px}
+.jc-text{min-width:0;overflow-wrap:anywhere}
+.jc-item[data-done="1"] .jc-text{text-decoration:line-through;color:var(--menu-muted,inherit)}
+.jc-item[data-done="1"] .jc-check{color:var(--menu-accent)}
+.jc-chip{flex:none;min-height:44px;padding:0 var(--ui-space-control);border:1px solid var(--menu-line);border-radius:22px;background:transparent;color:inherit;font:inherit;cursor:pointer}
+.jc-actions{display:flex;flex-wrap:wrap;gap:var(--ui-space-btn);margin:0 0 var(--ui-space-control)}
+.jc-actions .jc-action{margin:0;background:var(--jc-fill,var(--menu-accent));color:var(--jc-ink,var(--menu-on-accent))}
+.jc-actions .jc-action[data-draft]{background:transparent;color:inherit;border:1.5px solid currentColor}
+.jc-path{margin:0;font-size:13px;overflow-wrap:anywhere}
+/* links: an internal link reads like the five pages' links (a chip), a web link carries ↗ and opens only after the address */
+.jc-links{display:flex;flex-wrap:wrap;gap:var(--ui-space-btn);margin:0 0 var(--ui-space-control)}
+.jc-link{display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:0 var(--ui-space-control);border:1px dashed var(--menu-line);
+  border-radius:22px;background:var(--menu-chip,transparent);color:inherit;font:inherit;font-weight:600;cursor:pointer;text-decoration:underline;
+  text-decoration-color:var(--jc-fill,var(--menu-accent));text-decoration-thickness:2px;text-underline-offset:3px}
+.jc-link-icon{flex:none;width:16px;height:16px}
+/* card/<id>#<anchor>: the place lands under the sticky header and flashes once */
+.jc-body,.jc-body :is(.jc-item,.jc-actions,.jc-links,.jc-notes,.jc-list,h1,h2,h3,h4,h5,h6){scroll-margin-top:calc(var(--fp-sticky-h,64px) + 12px)}
+.jc-flash{outline:2px solid var(--jc-fill,var(--menu-accent));outline-offset:4px;border-radius:8px;transition:outline-color 1.4s ease-out}
+/* @cards and card/<id> in messages: the five pages' link look, Emerald Oasis underline */
+.fp-link-card{color:#c7dedc}.fp-prose .fp-link-card,.om .fp-link-card{color:inherit;text-decoration-color:#629887}
+.fp-mention-card .jc-dot{width:32px;height:32px;border-radius:10px}.fp-mention-card .jc-dot-icon{width:20px;height:20px}
+.jc-choose{display:flex;align-items:center;gap:12px}
+
+/* ---- Settings → Cards */
+.jc-setrow{display:flex;align-items:center;gap:var(--ui-space-control)}
+.jc-setlab{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.jc-setlab b{font-weight:600}
+.jc-setlab small{color:var(--menu-muted,inherit);font-size:13px;line-height:1.4;font-weight:400}
+#set-cards .imsg-assist{margin-top:var(--ui-space-content)}
+.jc-dot{flex:none;display:grid;place-items:center;width:40px;height:40px;border-radius:12px;background:var(--jc-fill);color:var(--jc-ink)}
+.jc-dot-icon{width:24px;height:24px}
+.jc-setlist .setg{margin-top:var(--ui-space-content)}

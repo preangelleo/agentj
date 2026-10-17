@@ -217,7 +217,7 @@ class AcpAgent(Agent):
     async def _spawn(self) -> bool:
         if not _agentmod._bin(self.BIN_ENV, self.BIN_NAME):
             self.failed_start = True
-            self.fail_notice(f"这台电脑上没找到 {self.LABEL}（{self.BIN_NAME} 命令）。装好并登录后再试。")
+            self.fail_notice(f"这台Agent J 主机上没找到 {self.LABEL}（{self.BIN_NAME} 命令）。装好并登录后再试。")
             return False
         argv = await self.authorized_launch_argv(self.argv())
         if argv is None:
@@ -596,7 +596,7 @@ class AcpAgent(Agent):
         if card is None or self.research:
             self._answer(rid, selected(reject))
             if not self.research:
-                self.local_only(f"这个问题需要在电脑上回答（{self.LABEL} 问的内容手机卡片放不下）。")
+                self.local_only(f"这个问题需要在Agent J 主机上回答（{self.LABEL} 问的内容手机卡片放不下）。")
             return
         gone = asyncio.get_running_loop().create_future()
         self.pending[rid] = gone

@@ -521,11 +521,11 @@ def key_note(n: str, key: str = JEV_KEY_ENV, environ: dict | None = None) -> str
                 f"in the background service, so Jev (approval layer 2, P157) is off there. Import it in one step (the value "
                 f"is never shown): `agentj service import-key {key}`, then `agentj service restart`.")
     target = tilde(path)
-    return (f"后台服务没有 {key}：Jev（手机审批第二层，可选）不生效。要开：在电脑上运行 `agentj secret request --name {key} "
+    return (f"后台服务没有 {key}：Jev（手机审批第二层，可选）不生效。要开：在Agent J 主机上运行 `agentj secret request --name {key} "
             f"--purpose 'OpenRouter key（Jev 审批第二层）' --dest env:{target}#{key} --verify-url https://openrouter.ai/api/v1/key`，"
             f"在手机的密钥卡片里贴上 key，再 `agentj service restart`。 / The background service has no {key}: Jev (optional "
             f"approval layer 2) is off. To turn it on: run `agentj secret request --name {key} --purpose 'OpenRouter key (Jev)' "
-            f"--dest env:{target}#{key} --verify-url https://openrouter.ai/api/v1/key` on the computer, paste the key on the "
+            f"--dest env:{target}#{key} --verify-url https://openrouter.ai/api/v1/key` on the Agent J host, paste the key on the "
             f"phone's secret card, then `agentj service restart`.")
 
 
@@ -1037,9 +1037,9 @@ def install_rescue(st) -> dict:
 
 
 # macOS shows a new login item ("Background Items Added") the first time the watchdog is registered: say what it is.
-MAC_LOGIN_ITEM_NOTE = ("macOS 可能提示新增了一个登录项 / 后台项目：那是「Agent J 救援守护」——电脑上的 Agent J 卡住时，让手机还能救它。"
+MAC_LOGIN_ITEM_NOTE = ("macOS 可能提示新增了一个登录项 / 后台项目：那是「Agent J 救援守护」——Agent J 主机上的 Agent J 卡住时，让手机还能救它。"
                        "请保持开启 / macOS may say a login item (background item) was added: it is the Agent J rescue "
-                       "watchdog — when Agent J on this computer gets stuck, your phone can still rescue it. Keep it on.")
+                       "watchdog — when Agent J on the Agent J host gets stuck, your phone can still rescue it. Keep it on.")
 
 
 def uninstall_rescue(st=None) -> dict:
@@ -1340,10 +1340,10 @@ def status() -> dict:
 
 def token_hint(n: str) -> str:
     f = tilde(env_file(n))
-    return ("电脑上的服务没有 Claude 登录：在电脑终端运行 `claude` 并 /login 一次（macOS 存进钥匙串），"
+    return ("Agent J 主机上的服务没有 Claude 登录：在Agent J 主机终端运行 `claude` 并 /login 一次（macOS 存进钥匙串），"
             "或运行 `claude setup-token` 后自己写入服务专用 env 文件 " + f + "（chmod 600，"
             "CLAUDE_CODE_OAUTH_TOKEN=<token>），再运行 `agentj service restart`。不要把 token 发到聊天里。 / "
-            "The computer's service has no Claude login. Run `claude` and /login in a computer terminal "
+            "the Agent J host's service has no Claude login. Run `claude` and /login in a computer terminal "
             "(Keychain on macOS), or run `claude setup-token` and write CLAUDE_CODE_OAUTH_TOKEN=<token> "
             "to the service env file " + f + " yourself (chmod 600), then `agentj service restart`. "
             "Never paste the token into chat.")
@@ -1404,8 +1404,8 @@ MESSAGES.update({
 
 
 def login_reminder(lang=None):
-    """Shown at the computer only (service install, `agentj doctor`): never pushed to the phone (P287). The phone shows its
-    own offline line when the computer really is unreachable."""
+    """Shown at the Agent J host only (service install, `agentj doctor`): never pushed to the phone (P287). The phone shows its
+    own offline line when the Agent J host really is unreachable."""
     zh = "提醒一下：这台 Mac 重启后，要先登录一次您的账户，我才能在后台继续干活；登录后切到别的用户，我照常运行。"
     en = "A reminder: after this Mac restarts, log in to your account once so I can keep working in the background; after that you can switch to another user and I keep running."
     return en if lang == "en" else zh if lang == "zh" else zh + " / " + en

@@ -1,6 +1,6 @@
-"""P92 / ADR-A196: the first-run "at your computer" checklist — `agentj setup checklist [--resume | --check | --item ID]`.
+"""P92 / ADR-A196: the first-run "at the Agent J host" checklist — `agentj setup checklist [--resume | --check | --item ID]`.
 
-One main Agent walks the owner through everything that later needs them at the computer, once, while they are still there
+One main Agent walks the owner through everything that later needs them at the Agent J host, once, while they are still there
 (Leo approved the four P92 defaults, 2026-10-09): offered automatically after the FIRST installation's welcome, on demand for
 existing hosts; "I won't use this" is remembered per item; the leave-the-computer confirmation covers only the selected, verified
 items and lists the rest; 0.18.0 is the first P86 scenario, the full Google API connection follows in 0.18.1 (P91) and the remote
@@ -56,11 +56,11 @@ ACTIONS = MARKS[4:]
 # Titles and the one-line "what you do" are the card's text; the Agent explains more in chat.
 ITEMS = [
     ("seat", "core", "required", "local", [], "账号与席位绑定", "Account and seat",
-     "用设置码把这台电脑加入你的 Agent J 账号。", "Join this computer to your Agent J account with the setup code."),
+     "用设置码把这台Agent J 主机加入你的 Agent J 账号。", "Join the Agent J host to your Agent J account with the setup code."),
     ("harness", "core", "required", "local", ["seat"], "主 AI 登录与权限", "Main AI login and access",
-     "在电脑上登录你选的 AI 工具（Claude Code / Codex / OpenCode）。", "Sign in to your chosen AI tool on this computer."),
-    ("desktop", "core", "required", "local", ["harness"], "电脑浏览器配对", "Pair this computer's browser",
-     "在这台电脑的浏览器里打开配对页并批准。", "Open the pairing page in this computer's browser and approve it."),
+     "在Agent J 主机上登录你选的 AI 工具（Claude Code / Codex / OpenCode）。", "Sign in to your chosen AI tool on the Agent J host."),
+    ("desktop", "core", "required", "local", ["harness"], "遥控器浏览器配对", "Pair the Agent J host's browser",
+     "在这台Agent J 主机的浏览器里打开配对页并批准。", "Open the pairing page in the Agent J host's browser and approve it."),
     ("phone", "core", "required", "local", ["desktop"], "主力手机配对", "Pair your main phone",
      "用手机扫码配对，并发一条消息试试。", "Scan the pairing code with your phone and send a message."),
     ("passkey", "core", "required", "phone", ["phone"], "手机通行密钥", "Phone passkey",
@@ -68,23 +68,23 @@ ITEMS = [
     ("admin", "core", "required", "phone", ["phone"], "手机批准钥匙", "Phone approval key",
      "手机已配对后自动具备；用于密码卡、密钥卡和审批。", "Comes with pairing; used for password, key and approval cards."),
     ("phonepermissions", "core", "optional", "phone", ["phone"], "手机麦克风与相机", "Phone microphone and camera",
-     "语音和拍照要用时在手机上允许，不必回电脑。", "Allow them on the phone when you want voice or photos; no computer needed."),
+     "语音和拍照要用时在手机上允许，不必回Agent J 主机。", "Allow them on the phone when you want voice or photos; no computer needed."),
     ("sudo", "machine", "conditional", "local", ["admin"], "Mac 本机 Touch ID 诊断", "Mac local Touch ID check",
-     "若 sudo 要求本机 Touch ID，远程会卡住；我只诊断并告诉你怎么在电脑上处理。",
-     "If sudo asks for local Touch ID, remote work stalls; I only diagnose and tell you what to do at the computer."),
+     "若 sudo 要求本机 Touch ID，远程会卡住；我只诊断并告诉你怎么在Agent J 主机上处理。",
+     "If sudo asks for local Touch ID, remote work stalls; I only diagnose and tell you what to do at the Agent J host."),
     ("awake", "machine", "required", "auto", ["admin"], "接电源、不睡眠", "Plugged in, no sleep",
      "插上电源，我来关闭自动睡眠（屏幕可以关）；改系统设置会发手机密码卡。",
      "Plug in; I turn off idle sleep (the screen may turn off). System changes come as a phone password card."),
     ("service", "machine", "required", "auto", ["harness"], "后台服务", "Background service",
-     "让 Agent J 随电脑登录自动运行。", "Keep Agent J running whenever you are logged in."),
+     "让 Agent J 随Agent J 主机登录自动运行。", "Keep Agent J running whenever you are logged in."),
     ("updates", "machine", "required", "phone", ["phone"], "夜间自动升级策略", "Night-time automatic updates",
      "默认开启，可以说「关掉自动升级」。", "On by default; say \"turn off automatic updates\" to stop them."),
     ("network", "machine", "required", "auto", ["service"], "网络连通", "Network connection",
-     "电脑能连上中转；不需要你操作。", "The computer reaches the relay; nothing to do."),
+     "Agent J 主机能连上中转；不需要你操作。", "the Agent J host reaches the relay; nothing to do."),
     ("browser", "browser", "optional", "auto", ["service"], "专用浏览器", "Agent browser",
      "给 Agent 用的浏览器，用来登录你常用的网站。", "A browser for the Agent, used for your sites."),
     ("gmail", "browser", "optional", "local", ["browser"], "Gmail 网页登录", "Gmail website sign-in",
-     "推荐第一个：在电脑的正式登录页登录 Google。", "Recommended first: sign in to Google on the real sign-in page on this computer."),
+     "推荐第一个：在Agent J 主机的正式登录页登录 Google。", "Recommended first: sign in to Google on the real sign-in page on the Agent J host."),
     ("youtube", "browser", "optional", "local", ["gmail"], "YouTube Studio 网页", "YouTube Studio website",
      "要发布视频时再登录。", "Sign in when you publish videos."),
     ("bili", "browser", "optional", "local", ["browser"], "B站", "Bilibili", "需要时登录。", "Sign in if you use it."),
@@ -96,7 +96,7 @@ ITEMS = [
      "选好用途后，在你自己的 Google 项目里授权；完整一键接入在 0.18.1。",
      "Choose the uses, then authorize your own Google project; the full guided connection arrives in 0.18.1."),
     ("keyring", "google", "conditional", "auto", ["service"], "本机钥匙串", "Local keychain",
-     "授权凭据保存在电脑的系统钥匙串里。", "Authorization is stored in the computer's system keychain."),
+     "授权凭据保存在Agent J 主机的系统钥匙串里。", "Authorization is stored in the Agent J host's system keychain."),
     ("files", "privacy", "conditional", "auto", ["harness"], "工作文件夹", "Work folder",
      "Agent 能读写的工作文件夹。", "The folder the Agent works in."),
     ("fda", "privacy", "optional", "local", ["files"], "Mac 完全磁盘访问", "Mac Full Disk Access",
@@ -107,8 +107,8 @@ ITEMS = [
      "只有要控制其他 Mac 应用时才开。", "Only for controlling other Mac apps."),
     ("screen", "privacy", "optional", "local", ["harness"], "屏幕录制", "Screen recording",
      "只有要截屏或以后远程查看时才开。", "Only for screen capture or a future remote view."),
-    ("hardware", "privacy", "optional", "local", ["harness"], "电脑摄像头 / 麦克风", "Computer camera / microphone",
-     "只有任务要用电脑硬件时才开。", "Only when a task uses the computer's hardware."),
+    ("hardware", "privacy", "optional", "local", ["harness"], "Agent J 主机摄像头 / 麦克风", "Computer camera / microphone",
+     "只有任务要用Agent J 主机硬件时才开。", "Only when a task uses the Agent J host's hardware."),
     ("tg", "optional", "optional", "phone", ["phone"], "Telegram 提醒", "Telegram notifications",
      "可选；不用就说「我不用」。", "Optional; say \"I won't use this\" if not needed."),
     ("mail", "optional", "optional", "phone", ["admin"], "邮件通道（QQ / 163 / 企业邮箱等）", "E-mail channel (any IMAP/SMTP mailbox)",
@@ -117,8 +117,8 @@ ITEMS = [
     ("botkey", "optional", "optional", "phone", ["admin"], "客服 Bot 模型服务", "Customer-service bot model",
      "可选；要做网站客服时再用手机密钥卡配置。", "Optional; configure it with a phone key card when you run a website bot."),
     ("exit", "core", "required", "phone", ["desktop", "phone", "service", "awake", "network"], "离机前手机检查", "Phone check before leaving",
-     "让电脑屏幕熄灭，手机关掉 Wi-Fi 用蜂窝网络发一句话，收到回复就完成。",
-     "Let the computer's screen turn off, switch the phone to mobile data and send a message; a reply completes it."),
+     "让Agent J 主机屏幕熄灭，手机关掉 Wi-Fi 用蜂窝网络发一句话，收到回复就完成。",
+     "Let the Agent J host's screen turn off, switch the phone to mobile data and send a message; a reply completes it."),
 ]
 BY_ID = {i[0]: i for i in ITEMS}
 REQUIRED = tuple(i[0] for i in ITEMS if i[2] == "required")
@@ -255,7 +255,7 @@ def _keyring_ok() -> tuple[str, str]:
 
 
 def probe(st, iid: str, ctx: dict) -> tuple[str, str | None]:
-    """(state, reason) for one item, from the real state of this computer. ctx carries one-run facts (serve status…)."""
+    """(state, reason) for one item, from the real state of the Agent J host. ctx carries one-run facts (serve status…)."""
     if iid in _ADAPTERS:
         try:
             return _ADAPTERS[iid](st, ctx)
@@ -479,11 +479,11 @@ SITE_ITEMS = ("gmail", "youtube", "bili", "douyin", "wechat")
 # reason → (zh, en) fact. {title} = this item, {browser} = which browser was checked, {port} = the adopted / found port.
 FACT = {
     "browser_not_installed": ("没通过：Agent J 的专用浏览器还没安装。", "Not passed: Agent J's own browser is not installed yet."),
-    "existing_browser_found": ("你电脑上已经有一个浏览器在运行（端口 {port}）。可以直接用它——你在里面的登录都能用，不用再装一个。",
-                               "A browser is already running on your computer (port {port}). You can use it — your sign-ins there "
+    "existing_browser_found": ("你Agent J 主机上已经有一个浏览器在运行（端口 {port}）。可以直接用它——你在里面的登录都能用，不用再装一个。",
+                               "A browser is already running on the Agent J host (port {port}). You can use it — your sign-ins there "
                                "work and nothing else gets installed."),
-    "adopted_not_running": ("没通过：你登记的浏览器（端口 {port}）现在没在运行。请在电脑上把它打开，再点「检查」；Agent J 不会替你启动或关闭它。",
-                            "Not passed: the browser you registered (port {port}) is not running. Start it on your computer, "
+    "adopted_not_running": ("没通过：你登记的浏览器（端口 {port}）现在没在运行。请在Agent J 主机上把它打开，再点「检查」；Agent J 不会替你启动或关闭它。",
+                            "Not passed: the browser you registered (port {port}) is not running. Start it on the Agent J host, "
                             "then tap Check; Agent J never starts or stops it."),
     "browser_not_running": ("没通过：Agent J 的专用浏览器装好了，但现在没在运行。", "Not passed: Agent J's browser is installed but not running."),
     "browser_off": ("你关闭了 Agent J 的浏览器（browser.enabled=false）。要用网站时在聊天里说「打开浏览器」。",
@@ -495,31 +495,31 @@ FACT = {
     "site_check_stale": ("还没确认：{title} 上次检查已超过 15 分钟。", "Not confirmed: the last {title} check is older than 15 minutes."),
     "site_check_needed": ("还没确认：上次检查 {title} 没得出结果（网络或页面原因，不代表没登录）。",
                           "Not confirmed: the last {title} check had no result (network or page — not the same as signed out)."),
-    "not_bound": ("还没完成：这台电脑还没加入你的 Agent J 账号。", "Not done: this computer has not joined your Agent J account."),
+    "not_bound": ("还没完成：这台Agent J 主机还没加入你的 Agent J 账号。", "Not done: the Agent J host has not joined your Agent J account."),
     "no_agent": ("还没完成：还没选主 AI。", "Not done: no main AI chosen yet."),
     "agent_not_running": ("没通过：主 AI 现在没在运行。", "Not passed: the main AI is not running."),
-    "no_agent_kimi": ("还没完成：还没选主 AI。这台电脑所在地区用不了 Claude Code 和 Codex。中国大陆从零开始首推火山方舟 Coding Plan，"
+    "no_agent_kimi": ("还没完成：还没选主 AI。这台Agent J 主机所在地区用不了 Claude Code 和 Codex。中国大陆从零开始首推火山方舟 Coding Plan，"
                       "先买 Lite（和 Pro 能力一样，只差 5 倍用量；`agentj provider ark`）；香港 / 海外推荐 Kimi 会员 Plus 或更高档"
                       "（Go 档没有编程额度），用 OpenCode 接入：{kimi}。已经有其中一家的就继续用。详细步骤：`agentj agent route`。"
                       "订阅后让 Agent 发手机密钥卡收 key。",
-                      "Not done: no main AI chosen yet. Claude Code and Codex are not available where this computer is. In "
+                      "Not done: no main AI chosen yet. Claude Code and Codex are not available where the Agent J host is. In "
                       "mainland China, starting from zero, we recommend Volcano Ark Coding Plan — buy Lite first (same as Pro, "
                       "only 1/5 of the quota; `agentj provider ark`). In Hong Kong / overseas, a Kimi membership, Plus or higher "
                       "(Go has no coding quota), through OpenCode: {kimi}. Already paying for one of them? Keep it. Step by step: "
                       "`agentj agent route`. After subscribing, ask your Agent for the phone key card."),
-    "agent_not_running_kimi": ("没通过：主 AI 现在没在运行，而这台电脑所在地区用不了 Claude Code 和 Codex。中国大陆推荐改用火山方舟 "
+    "agent_not_running_kimi": ("没通过：主 AI 现在没在运行，而这台Agent J 主机所在地区用不了 Claude Code 和 Codex。中国大陆推荐改用火山方舟 "
                                "Coding Plan（先买 Lite），香港 / 海外推荐 Kimi 会员 Plus 或更高档（OpenCode）：{kimi}；已经有其中一家的"
                                "就用它（`agentj agent route`）。",
                                "Not passed: the main AI is not running, and Claude Code and Codex are not available where "
-                               "this computer is. In mainland China, switch to Volcano Ark Coding Plan (Lite first); in Hong Kong / "
+                               "the Agent J host is. In mainland China, switch to Volcano Ark Coding Plan (Lite first); in Hong Kong / "
                                "overseas, a Kimi membership, Plus or higher (OpenCode): {kimi}. Already paying for one of them? "
                                "Use it (`agentj agent route`)."),
     "not_paired": ("还没完成：还没配对。", "Not done: not paired yet."),
     "no_passkey": ("还没完成：手机上还没设通行密钥（Face ID / 指纹）。", "Not done: no passkey (Face ID / fingerprint) on the phone yet."),
-    "sleep_enabled": ("没通过：这台电脑还会自动睡眠，睡着时手机就找不到它。", "Not passed: this computer still sleeps when idle; the phone can't reach it then."),
+    "sleep_enabled": ("没通过：这台Agent J 主机还会自动睡眠，睡着时手机就找不到它。", "Not passed: the Agent J host still sleeps when idle; the phone can't reach it then."),
     "not_active": ("没通过：后台服务装了但没在运行。", "Not passed: the background service is installed but not running."),
     "serve_not_running": ("没通过：Agent J 现在没在运行。", "Not passed: Agent J is not running."),
-    "relay_down": ("没通过：电脑现在连不上中转。", "Not passed: the computer can't reach the relay right now."),
+    "relay_down": ("没通过：Agent J 主机现在连不上中转。", "Not passed: the Agent J host can't reach the relay right now."),
     "no_secret_service": ("没通过：这台 Linux 没有系统钥匙串服务。", "Not passed: this Linux has no system keychain service."),
     "local_touch_id": ("没通过：sudo 要求本机 Touch ID，远程操作会卡住。", "Not passed: sudo asks for local Touch ID, so remote work stalls."),
 }
@@ -556,7 +556,7 @@ def explain(rec: dict, iid: str) -> dict | None:
     if reason in FACT:
         fact = {lang: FACT[reason][k].format(**fill[lang]) for k, lang in enumerate(("zh", "en"))}
     elif row["state"] == "waiting_local":
-        fact = {"zh": "等你在电脑上完成这一步。", "en": "Waiting for you to do this on the computer."}
+        fact = {"zh": "等你在Agent J 主机上完成这一步。", "en": "Waiting for you to do this on the Agent J host."}
     elif row["state"] == "attention":
         fact = {"zh": f"没通过（原因代码：{reason or '未知'}）。", "en": f"Not passed (reason code: {reason or 'unknown'})."}
     elif row["state"] == "unsupported":
@@ -797,7 +797,7 @@ def reopen(st) -> dict:
 def doctor_row(st) -> tuple[str, str, str]:
     rec = read(st)
     if rec is None:
-        return "ok", "首次准备：未开始（可说「电脑前一次做完」）/ first-run checklist: not started", ""
+        return "ok", "首次准备：未开始（可说「Agent J 主机前一次做完」）/ first-run checklist: not started", ""
     ready, block = remote_ready(rec)
     if ready:
         return "ok", "首次准备：已选事项均已验证，可离机 / first-run: selected items verified, ready to leave", ""
@@ -817,12 +817,12 @@ def leave_text(rec: dict, lang: str = "zh") -> str:
     if ready:
         ok = [title[i] for i, r in rec["items"].items() if r["choice"] == "selected" and fresh(r)]
         if lang == "zh":
-            return (f"从现在起，你可以离开电脑，用手机继续处理已选并验证的事项。截至 {at}：{sep.join(ok)} 已就绪。"
+            return (f"从现在起，你可以离开Agent J 主机，用手机继续处理已选并验证的事项。截至 {at}：{sep.join(ok)} 已就绪。"
                     + (f"未启用：{sep.join(unused)}。" if unused else "")
-                    + "断电、重启后解锁、新的系统权限或账号安全检查仍可能需要你回到电脑。")
-        return (f"You can now leave your computer and continue the selected, verified tasks from your phone. As of {at}: "
+                    + "断电、重启后解锁、新的系统权限或账号安全检查仍可能需要你回到Agent J 主机。")
+        return (f"You can now leave the Agent J host and continue the selected, verified tasks from your phone. As of {at}: "
                 f"{sep.join(ok)} ready." + (f" Not enabled: {sep.join(unused)}." if unused else "")
-                + " Power loss, a restart that needs unlocking, a new system permission or an account security check may still need you at the computer.")
+                + " Power loss, a restart that needs unlocking, a new system permission or an account security check may still need you at the Agent J host.")
     left = [title[i] for i in block]
     if lang == "zh":
         return f"手机对话已可用，离机检查还有 {len(left)} 项：{sep.join(left)}。"
@@ -885,7 +885,7 @@ def cmd(a) -> int:
 
 
 def add_parser(sub) -> None:
-    p = sub.add_parser("setup", help="首次准备：电脑前一次做完 / first-run checklist while you are at the computer")
+    p = sub.add_parser("setup", help="首次准备：Agent J 主机前一次做完 / first-run checklist while you are at the Agent J host")
     ss = p.add_subparsers(dest="setup_cmd", required=True)
     c = ss.add_parser("checklist", help="首次准备清单：只读，或 --resume 开始/继续 / the checklist: read-only, or --resume to start")
     g = c.add_mutually_exclusive_group()
@@ -895,6 +895,6 @@ def add_parser(sub) -> None:
     g.add_argument("--open", dest="reopen", action="store_true",
                    help="主人说要重开时：重新显示已收起的清单 / reopen a closed checklist (only when the owner asks)")
     g.add_argument("--close", "--pause", dest="close", action="store_true",
-                   help="收起清单：手机/电脑网页立即收起，不再自动弹出；菜单里可重开 / close it now; reopen from the menu")
+                   help="收起清单：手机/Agent J 主机网页立即收起，不再自动弹出；菜单里可重开 / close it now; reopen from the menu")
     c.add_argument("--json", action="store_true")
     c.set_defaults(fn=lambda a: sys.exit(cmd(a)))

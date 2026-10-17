@@ -46,7 +46,7 @@ test('the mark survives a reload (another createUnread reads localStorage) and d
   assert.deepEqual(b.list([21, 22, 24, 25]), [21, 22, 24]);
 });
 
-test('another epoch (a /clear on the computer): every reply of the new session is unread until seen', () => {
+test('another epoch (a /clear on the Agent J host): every reply of the new session is unread until seen', () => {
   mem.clear();
   const u = createUnread();
   u.sync(1, [40]);

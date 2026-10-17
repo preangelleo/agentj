@@ -539,20 +539,6 @@ class Scheduler:
         res["readonly"] = research
         kind = host.agent_cfg["kind"] if host.agent_cfg else None
         note = None
-        try:                                         # P254: quota alarm → this run on another AI account (or the owner's card)
-            from . import quota
-            if resume and resume.get("to"):          # P314: the switch was decided when the limit was hit
-                kind, note = resume["to"], (f"(run on {resume['to']}: {resume['harness']} usage limit used up)"
-                                            if getattr(host, "lang", "zh") == "en" else
-                                            f"（{resume['harness']} 额度用完，这次改用 {resume['to']} 运行）")
-            else:
-                kind, note = await quota.route(host, kind, e["task"], title)
-        except asyncio.CancelledError:
-            res.update(line="已急停，没有运行", stopped=True)
-            self._finish(e, res)
-            return res
-        except Exception:  # noqa: BLE001 — any failure keeps the main Agent's harness
-            pass
         host.activity("task_run", id=tid, title=title, trigger=trigger, mode=e["task"]["mode"])
         host.st.log("task_run", id=tid, kind=trigger)
         t0 = time.monotonic()
@@ -570,6 +556,21 @@ class Scheduler:
                 on = load(self.st)["on"].get(tid)
                 if trigger == "schedule" and (not on or on.get("tsha") != e["tsha"]):
                     raise TaskError("changed", "定时任务已禁用，没有运行 / Schedule disabled; did not run")
+                # P375: measure at launch, after waiting for the chat lock; resumes obey the same 90% rule.
+                from . import quota
+                if resume and resume.get("to"):
+                    kind = resume["to"]
+                    note = (f"(run on {kind}: {resume['harness']} usage limit used up)" if getattr(host, "lang", "zh") == "en" else
+                            f"（{resume['harness']} 额度用完，这次改用 {kind} 运行）")
+                try:
+                    routed, route_note = await quota.route(host, kind, e["task"], title)
+                    if route_note is not None or routed != kind:
+                        note = route_note
+                    kind = routed
+                except quota.QuotaBlocked as exc:
+                    raise TaskError("quota", str(exc)) from exc
+                except Exception:  # unavailable readings preserve the configured harness, never invented limits
+                    pass
                 update(self.st, lambda d: d["runs"][rid].update(status="running", started_at=int(time.time())))
                 caps = getattr(host, "capabilities", None)
                 if caps is not None and trigger == "dispatch":
@@ -612,6 +613,11 @@ class Scheduler:
                 await self._limit_hit(e, title, kind, trigger, resume)
             res["report"] = await asyncio.to_thread(self._save, e, out, research, rid)
             self._check_report(e, res, run_started)
+            from . import notify                     # P365: notify_webapp — this run's report files ride its page
+            if not research and notify.task_allowed(getattr(host, "preferences", None), tid, e["task"]):
+                extra = await asyncio.to_thread(notify.task_files, e["dir"], run_started)
+                if extra:
+                    res["deliver"] = list(dict.fromkeys([*(res.get("deliver") or []), *extra]))
         except asyncio.TimeoutError:
             res["status"] = "interrupted"
             res["line"] = f"超过 {int(RUN_TIMEOUT // 60) or 1} 分钟，已中断"

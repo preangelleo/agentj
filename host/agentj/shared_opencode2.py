@@ -207,7 +207,7 @@ class OwnerOpenCodeV2Agent(SharedOpenCodeV2Agent):
         except (OSError, ValueError, HTTPError, asyncio.TimeoutError):
             self.proc = None
             self.failed_start = True
-            self.fail_notice(pick(getattr(self.host, "lang", "zh"), "不能附着电脑 OpenCode server/session。", "Cannot attach the desktop OpenCode server/session."))
+            self.fail_notice(pick(getattr(self.host, "lang", "zh"), "不能附着Agent J 主机 OpenCode server/session。", "Cannot attach the desktop OpenCode server/session."))
             return False
         self.failed_start = False
         self.host.st.log("agent_attach", agent=self.kind, protocol="v2", owner=True)

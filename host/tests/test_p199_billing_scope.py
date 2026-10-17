@@ -105,7 +105,7 @@ class Seat(unittest.TestCase):
         self.assertIsNotNone(seatcert.refusal(st, "plaza"))
 
     def test_one_language_for_serve(self):
-        self.assertEqual(seatcert.feature_message("friends", "suspended", "en", "https://x.example/account").split(" This")[0],
+        self.assertEqual(seatcert.feature_message("friends", "suspended", "en", "https://x.example/account").split(" the Agent J host")[0],
                          "Agent friends needs a valid Agent J seat.")
         self.assertNotIn("\n", seatcert.feature_message("friends", "suspended", "zh", "u"))
 
@@ -235,7 +235,7 @@ class FriendsServeWording(unittest.TestCase):
         st.init(relay=PROD_RELAY)
         host = serve.Host(st, events="quiet", read_stdin=False)
         self.assertTrue(host.seat_refusal("friends").startswith("Agent 好友需要有效的 Agent J 席位。"))
-        self.assertTrue(host.seat_refusal().startswith("这台电脑还没有绑定 Agent J 席位"), "P185 wording unchanged without a feature")
+        self.assertTrue(host.seat_refusal().startswith("这台Agent J 主机还没有绑定 Agent J 席位"), "P185 wording unchanged without a feature")
         bind(st)
         host.seat.post = fake_dash("ok")
         host.seat.refresh()

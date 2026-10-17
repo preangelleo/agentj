@@ -212,9 +212,9 @@ def _codex_relay_hint(kind: str, provider: dict | None, stale: bool, en: bool) -
     if stale or (provider and provider.get("relay")):
         out += (" Already topped up or changed the key and still seeing this? Send /clear for a new conversation (it reads "
                 "the relay address and key from config.toml again) and resend; if that does not help, run "
-                "`agentj agent restart` on this computer." if en else
+                "`agentj agent restart` on the Agent J host." if en else
                 "已经充值或换了 key 还报这个：发 /clear 开新对话再试（新对话会重新读 config.toml 里的中转地址和 key）；"
-                "还不行就在电脑上运行 `agentj agent restart`。")
+                "还不行就在Agent J 主机上运行 `agentj agent restart`。")
     return out
 
 
@@ -248,11 +248,11 @@ def codex_failure(raw, model: str | None, lang: str = "zh", provider: dict | Non
         kind = "model"
     elif has(_CODEX_REGION) or code == 451:
         text = ("ChatGPT is not available from where you are (OpenAI does not serve this region). Codex needs a working "
-                "proxy/VPN: on this computer run `agentj config set proxy.https http://127.0.0.1:7890` (your own proxy "
+                "proxy/VPN: on the Agent J host run `agentj config set proxy.https http://127.0.0.1:7890` (your own proxy "
                 "address), then resend. Or switch to Claude Code, or OpenCode with a model that works here: "
                 "`agentj agent opencode --dir <folder> --model zhipuai/glm-5.3` (install guide Step 3a)."
                 if en else
-                "你所在地区连不上 ChatGPT（OpenAI 不支持这个地区）。Codex 需要可用的代理/VPN：在电脑上运行 "
+                "你所在地区连不上 ChatGPT（OpenAI 不支持这个地区）。Codex 需要可用的代理/VPN：在Agent J 主机上运行 "
                 "`agentj config set proxy.https http://127.0.0.1:7890`（换成你自己的代理地址）后重发。"
                 "或者改用 Claude Code，或 OpenCode + 国内模型：`agentj agent opencode --dir <文件夹> --model zhipuai/glm-5.3`"
                 "（安装说明第 3a 步）。")
@@ -300,40 +300,40 @@ def codex_failure(raw, model: str | None, lang: str = "zh", provider: dict | Non
                 if en else
                 (f"Codex 用量到上限了，恢复时间：{when}（Codex 给的时间）。" if when else
                  "Codex 用量到上限了（原文没给恢复时间，可在 ChatGPT 设置 → 用量 里看）。")
-                + "等不及的话：点顶部模型名换个更省的模型，或在电脑上改用 Claude Code / OpenCode"
+                + "等不及的话：点顶部模型名换个更省的模型，或在Agent J 主机上改用 Claude Code / OpenCode"
                   "（`agentj agent claude` / `agentj agent opencode`）。")
         kind = "usage"
     elif has(_CODEX_PLAN):
         text = ("This ChatGPT account's plan does not include Codex (free plan, or Plus has expired). Renew/upgrade at "
-                "https://chatgpt.com/explore/plus, then on this computer run `codex login` again and resend."
+                "https://chatgpt.com/explore/plus, then on the Agent J host run `codex login` again and resend."
                 if en else
                 "这个 ChatGPT 账号的套餐不含 Codex（免费版，或 Plus 已过期）。到 https://chatgpt.com/explore/plus 续费/升级，"
-                "再在电脑上运行 `codex login` 重新登录后重发。")
+                "再在Agent J 主机上运行 `codex login` 重新登录后重发。")
         kind = "plan"
     elif has(_CODEX_WORKSPACE):
         text = ("Your ChatGPT workspace/organisation does not allow this login to use Codex. Ask your workspace admin to "
-                "enable Codex, or run `codex login` on this computer with a personal account, then resend."
+                "enable Codex, or run `codex login` on the Agent J host with a personal account, then resend."
                 if en else
                 "你的 ChatGPT 工作区/组织不允许这个登录使用 Codex。请工作区管理员开通 Codex，"
-                "或在电脑上运行 `codex login` 换成个人账号登录后重发。")
+                "或在Agent J 主机上运行 `codex login` 换成个人账号登录后重发。")
         kind = "workspace"
     elif relay and re.search(r"\b401\b|unauthori[sz]ed|invalid.{0,10}(?:api.?key|token)|incorrect api key", low):
         pid = clean_line(str(provider.get("id") or "?"), 60)
         text = (f"Your relay service {where} rejected the key (401). Check the key [model_providers.{pid}] uses in "
                 "~/.codex/config.toml; if it comes from an environment variable, the background service must see it too "
-                "(after changing it run `agentj service install` on this computer)." if en else
+                "(after changing it run `agentj service install` on the Agent J host)." if en else
                 f"你用的中转服务 {where} 拒绝了这把 key（401）。检查 ~/.codex/config.toml 里 [model_providers.{pid}] 用的 key；"
-                "key 放在环境变量里的话，后台服务也要读得到（改完在电脑上运行 `agentj service install`）。")
+                "key 放在环境变量里的话，后台服务也要读得到（改完在Agent J 主机上运行 `agentj service install`）。")
         kind = "auth"
     elif re.search(r"\b401\b|unauthori[sz]ed|authentication.*(?:failed|required)|token.*(?:expired|rejected)|"
                    r"refresh token|sign in again|log ?in again", low):
         from . import harness
         logged_before = harness.codex_login()[0] != "warn"
         expired = logged_before and bool(re.search(r"\b401\b|refresh token|token.*(?:expired|rejected)", low))
-        text = (("Codex login has expired. Run `codex login` on this computer, then resend."
-                 if en else "Codex 登录已失效，在这台电脑上运行 `codex login` 重新登录后再发。") if expired else
-                ("Codex is not logged in yet. Run `codex login` on this computer, then resend."
-                 if en else "还没登录 Codex，在这台电脑上运行 `codex login` 后再发。"))
+        text = (("Codex login has expired. Run `codex login` on the Agent J host, then resend."
+                 if en else "Codex 登录已失效，在这台Agent J 主机上运行 `codex login` 重新登录后再发。") if expired else
+                ("Codex is not logged in yet. Run `codex login` on the Agent J host, then resend."
+                 if en else "还没登录 Codex，在这台Agent J 主机上运行 `codex login` 后再发。"))
         kind = "auth"
     elif has(_CODEX_CONTEXT):
         text = ("This conversation is too long for the model. Send /compact to shrink it (or /clear to start fresh), then resend."
@@ -350,40 +350,40 @@ def codex_failure(raw, model: str | None, lang: str = "zh", provider: dict | Non
         kind = "server"
     elif has(_CODEX_SANDBOX):
         text = ("The sandbox blocked a step Codex tried (a safety fence, not a fault). Ask Agent J to do it another way, "
-                "or approve the wider permission when the card asks; `agentj doctor` on this computer shows the fence state."
+                "or approve the wider permission when the card asks; `agentj doctor` on the Agent J host shows the fence state."
                 if en else
                 "沙箱拦下了 Codex 的某一步（这是安全隔离，不是故障）。让 Agent J 换个做法，或在卡片弹出时批准放宽权限；"
-                "电脑上运行 `agentj doctor` 可看隔离状态。")
+                "Agent J 主机上运行 `agentj doctor` 可看隔离状态。")
         kind = "sandbox"
     elif code == 403 or re.search(r"\b403\b|forbidden", low):
         text = ("ChatGPT refused access (403). Most often this region is not served or the proxy node is blocked: switch "
                 "proxy/VPN node and resend. If it persists, your account/workspace may not have Codex — run `codex login` again."
                 if en else
                 "ChatGPT 拒绝了访问（403）。最常见是所在地区不受支持或代理节点被封：换个代理/VPN 节点后重发；"
-                "一直这样的话，可能是账号/工作区没开通 Codex，在电脑上重新运行 `codex login`。")
+                "一直这样的话，可能是账号/工作区没开通 Codex，在Agent J 主机上重新运行 `codex login`。")
         kind = "access"
     elif any(w in re.sub(r"（[a-z]*error）", "", low) for w in _CODEX_NETWORK):   # not our own "（TimeoutError）" start wrapper
         text = ("Cannot connect to ChatGPT. Check your proxy/VPN, then resend (the proxy Agent J uses: "
-                "`agentj config get proxy.https` on this computer)."
-                if en else "连不上 ChatGPT，检查代理/VPN 后重发（Agent J 用的代理：电脑上运行 `agentj config get proxy.https`）。")
+                "`agentj config get proxy.https` on the Agent J host)."
+                if en else "连不上 ChatGPT，检查代理/VPN 后重发（Agent J 用的代理：Agent J 主机上运行 `agentj config get proxy.https`）。")
         kind = "network"
     elif exit_code is not None:
         sig = {"-9": "SIGKILL", "137": "SIGKILL", "-15": "SIGTERM", "143": "SIGTERM", "-11": "SIGSEGV", "139": "SIGSEGV"}.get(exit_code)
         if exit_code == "start":
-            text = ("Codex did not start. On this computer run `codex --version` and `agentj doctor`, then `agentj agent restart`."
-                    if en else "Codex 没能启动。在电脑上运行 `codex --version` 和 `agentj doctor`，再运行 `agentj agent restart`。")
+            text = ("Codex did not start. On the Agent J host run `codex --version` and `agentj doctor`, then `agentj agent restart`."
+                    if en else "Codex 没能启动。在Agent J 主机上运行 `codex --version` 和 `agentj doctor`，再运行 `agentj agent restart`。")
         else:
             why = (" — killed by the system, often out of memory" if en else "，被系统强制结束，常见是内存不足") if sig == "SIGKILL" else ""
             text = (f"Codex stopped unexpectedly (exit {exit_code}{why}). Just resend once; if it happens again, run "
-                    "`agentj doctor` then `agentj agent restart` on this computer."
+                    "`agentj doctor` then `agentj agent restart` on the Agent J host."
                     if en else
-                    f"Codex 进程意外退出（退出码 {exit_code}{why}）。先直接重发一次；再出现就在电脑上运行 `agentj doctor`，"
+                    f"Codex 进程意外退出（退出码 {exit_code}{why}）。先直接重发一次；再出现就在Agent J 主机上运行 `agentj doctor`，"
                     "再运行 `agentj agent restart`。")
         kind = "crash"
     elif "没找到 Codex" in raw or "codex: command not found" in low:
-        text = ("Codex is not installed on this computer (or not on the service's PATH). Install it, run `codex login`, then "
+        text = ("Codex is not installed on the Agent J host (or not on the service's PATH). Install it, run `codex login`, then "
                 "`agentj service install`, and resend."
-                if en else "这台电脑上找不到 Codex（或后台服务的 PATH 里没有）。装好并运行 `codex login`，再运行 "
+                if en else "这台Agent J 主机上找不到 Codex（或后台服务的 PATH 里没有）。装好并运行 `codex login`，再运行 "
                            "`agentj service install` 后重发。")
         kind = "missing"
     else:
@@ -440,22 +440,22 @@ def tty_waiting(pid: int) -> bool:
 
 
 def stall_text(kind: str, reason: str, excerpt: str, secs: int, lang: str = "zh") -> str:
-    """The phone's card for a stalled turn (P219): where it is stuck, the harness's own words, what to do at the computer."""
+    """The phone's card for a stalled turn (P219): where it is stuck, the harness's own words, what to do at the Agent J host."""
     cmd = HARNESS_CMD.get(kind, kind)
     en = lang == "en"
     shown = ("\n```text\n" + excerpt.replace("```", "` ` `") + "\n```") if excerpt else ""
     if reason in ("tty", "prompt"):
-        return (f"Agent J has been waiting {secs} s for an answer in a terminal on the computer — the phone cannot answer it."
-                f"{' It printed:' if shown else ''}{shown}\nAt the computer: run `agentj agent {kind}` (answers the one-time "
+        return (f"Agent J has been waiting {secs} s for an answer in a terminal on the Agent J host — the phone cannot answer it."
+                f"{' It printed:' if shown else ''}{shown}\nAt the Agent J host: run `agentj agent {kind}` (answers the one-time "
                 f"setup ahead), or run `{cmd}` once in the working folder and answer it there; then send the message again."
                 if en else
-                f"Agent J 卡在电脑终端里的一个确认上（已等 {secs} 秒），手机上没法回答。{'它显示的是：' if shown else ''}{shown}\n"
-                f"在电脑上处理：运行 `agentj agent {kind}`（预先完成首次设置），或在工作目录里运行一次 `{cmd}` 把它答掉；然后在手机上重发这条消息。")
+                f"Agent J 卡在Agent J 主机终端里的一个确认上（已等 {secs} 秒），手机上没法回答。{'它显示的是：' if shown else ''}{shown}\n"
+                f"在Agent J 主机上处理：运行 `agentj agent {kind}`（预先完成首次设置），或在工作目录里运行一次 `{cmd}` 把它答掉；然后在手机上重发这条消息。")
     return (f"No answer from Agent J for {secs} s; its process is still running. It may be thinking for a long time, or the "
-            f"connection to the model service is very slow. If nothing changes: at the computer run `agentj doctor`, or tap Stop "
+            f"connection to the model service is very slow. If nothing changes: at the Agent J host run `agentj doctor`, or tap Stop "
             f"and send again." if en else
             f"Agent J 已经 {secs} 秒没有任何回应，进程还在运行：可能在长时间思考，也可能连模型服务很慢。"
-            f"一直没有动静的话：在电脑上运行 `agentj doctor` 查看，或在手机上按「停止」后重发。")
+            f"一直没有动静的话：在Agent J 主机上运行 `agentj doctor` 查看，或在手机上按「停止」后重发。")
 
 
 class Agent:
@@ -521,14 +521,14 @@ class Agent:
         self.host.agent_notice(text)
 
     def local_fail(self, text: str) -> None:
-        """A turn that cannot run until the human changes something on the computer (fence / hooks): failed + 「在电脑上处理」."""
+        """A turn that cannot run until the human changes something on the Agent J host (fence / hooks): failed + 「在Agent J 主机上处理」."""
         fn = getattr(self.host, "turn_failed", None)
         if fn:
             fn()
         self.local_only(text)
 
     def local_only(self, text: str) -> None:
-        """§10.8: something only the human at the computer can answer — a page with relay's 「在电脑上处理」 card."""
+        """§10.8: something only the human at the Agent J host can answer — a page with relay's 「在Agent J 主机上处理」 card."""
         fn = getattr(self.host, "local_notice", None)
         (fn or self.host.agent_notice)(text)
 
@@ -1162,7 +1162,7 @@ class ClaudeAgent(Agent):
         exe = _bin("AGENTJ_CLAUDE_BIN", "claude")
         if not exe:
             self.failed_start = True
-            self.fail_notice("这台电脑上没找到 Claude Code（claude 命令）。装好并登录后再试。")
+            self.fail_notice("这台Agent J 主机上没找到 Claude Code（claude 命令）。装好并登录后再试。")
             return False
         why = hooks_blocked(self.cfg["dir"]) if self.cfg.get("high_risk_warnings", False) or self.cfg.get("_research") else None
         if why:
@@ -1423,11 +1423,11 @@ class ClaudeAgent(Agent):
         self.host.agent_notice(
             f"Claude Code cannot reach its model service ({why}, {what}) and is retrying by itself: attempt {attempt}"
             f"{f' of {most}' if isinstance(most, int) else ''}. Giving up takes about 3 minutes; it continues on its own when the "
-            "network or provider recovers. At the computer: `agentj doctor`, and check the provider (e.g. Agents Relay) status."
+            "network or provider recovers. At the Agent J host: `agentj doctor`, and check the provider (e.g. Agents Relay) status."
             if en else
             f"Claude Code 连不上模型服务（{why}，{what}），正在自动重试：第 {attempt}"
             f"{f'/{most}' if isinstance(most, int) else ''} 次。全部失败约需 3 分钟；网络或服务商恢复后会自己接上。"
-            "在电脑上可以运行 `agentj doctor`，并检查服务商（例如 Agents Relay）是否正常。")
+            "在Agent J 主机上可以运行 `agentj doctor`，并检查服务商（例如 Agents Relay）是否正常。")
 
     def _unsupported_model(self, ev: dict) -> bool:
         """P219: a 400 that says the model is not served (a relay without Fable: 「Claude Fable 5.1 is not supported」) on a
@@ -1755,6 +1755,9 @@ def make(host, cfg: dict | None):
     if cfg["kind"] == "dsh":                        # P329: DeepSeek Harness over the same ACP adapter, independent sessions only
         from .agent_dsh import DshAgent
         return DshAgent(host, cfg)
+    if cfg["kind"] == "core":                       # P359: Agent J Harness — our own kernel, in serve's process
+        from .core.adapter import CoreAgent
+        return CoreAgent(host, cfg)
     if cfg.get("session_mode") == "shared" and not cfg.get("_workflow_ceo"):
         from .shared import make_shared
         return make_shared(host, cfg)

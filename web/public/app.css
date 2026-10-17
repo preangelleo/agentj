@@ -809,7 +809,7 @@ body[data-kb="1"] .composer{padding-bottom:12px}   /* keyboard up: no home-indic
    circle. Every take blurs the page in its own colour (P346, below; P346 removed P205's dim-to-black mode at Leo's request). */
 .ptt{position:fixed;inset:0;z-index:60;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;
   padding:var(--space-content);pointer-events:none;background:rgba(20,20,20,.28);user-select:none;-webkit-user-select:none;
-  transition:background .25s}
+  transition:none} /* The P346 veil must follow the page colour immediately, including Safari. */
 .ptt[hidden]{display:none}
 .pttc{position:relative;width:min(66vw,252px);aspect-ratio:1;border-radius:50%;flex:none;
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;padding:0 30px;text-align:center;
@@ -1100,6 +1100,18 @@ textarea::placeholder{color:var(--ink-soft);font-size:calc(13.6px*var(--fz));lin
 .qs .opt.multi .n{border-radius:7px}
 .qs .opt .t{display:flex;flex-direction:column;gap:2px;min-width:0}
 .qs .opt .d{font-size:calc(13px*var(--fz));color:var(--ink-soft)}
+/* P368 (#79): `.qs li span` (mono, flex:none) leaked onto the option's own words — the text block now shrinks and wraps in
+   the body font; the words under the label show at most 2 lines, 「…展开」 (a sibling button, never nested) opens the rest.
+   The number circle stays centred on the whole block (.opt align-items:center). */
+.qs .opt .t{flex:1 1 auto;font:inherit;color:inherit;overflow-wrap:anywhere}
+.qs .opt .t>span{flex:none;font:inherit;color:inherit}
+.qs .opt .t>.d{font:400 calc(13px*var(--fz))/1.45 var(--font-body);color:var(--ink-soft);white-space:pre-line;
+  display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden}
+.qs .opt .t>.d.open{display:block;-webkit-line-clamp:unset;line-clamp:none}
+.qs .optli{flex-direction:column;align-items:stretch;gap:0;padding:0;background:none}
+.qs .qmore{align-self:flex-end;min-height:32px;margin:2px 6px 0 0;padding:4px 10px;border:0;border-radius:var(--r-pill);
+  background:transparent;color:var(--ink-soft);font:500 calc(13px*var(--fz))/1 var(--font-body);cursor:pointer}
+.qs .qmore[hidden]{display:none}
 .qs .opt[aria-pressed="true"]{border-color:var(--ink);background:color-mix(in oklab,var(--surface) 70%,var(--ink))}
 .qs .opt[aria-pressed="true"] .n{background:var(--ink);color:var(--state);box-shadow:none}
 .qs .opt:disabled{opacity:.6}
@@ -1421,7 +1433,7 @@ body[data-agent="stopped"]{--state:var(--c-offline)}
 .hint__title{font-weight:700;margin:0}
 .hint .small{color:inherit;opacity:.88}
 .hint__row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:var(--sp-2);margin-top:var(--sp-2)}
-.hint__link{display:inline-flex;align-items:center;min-height:44px;color:inherit;font-weight:500}
+.hint__link{display:inline-flex;align-items:center;min-width:44px;min-height:44px;max-width:100%;overflow-wrap:anywhere;color:inherit;font-weight:500}
 .pair{padding-top:var(--sp-4)}
 .pair__hero{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-3)}
 .pair__hero img{width:72px;height:72px}
@@ -1577,6 +1589,12 @@ main{padding:6px 20px 24px}
   background:var(--menu-accent,var(--accent));border-color:var(--menu-accent,var(--accent));color:var(--c-noir,#111);font-weight:600}
 :is(#settings) .setimsg .imsg-assist:hover{filter:brightness(1.05);background:var(--menu-accent,var(--accent));border-color:var(--menu-accent,var(--accent))}
 .setimsg [data-imsg]:disabled{opacity:.55}
+/* P365 · Settings → 自动化消息: a row = name (or task title) | 移除 + switch; a note under a task the owner overrode */
+.setntf .ntfname{font-weight:500;overflow-wrap:anywhere}
+.setntf .ntfrow[data-kind="auto"] .ntfname{font-family:var(--font-mono);font-size:var(--fs-sm)}
+.setntf .ntfctl{display:flex;align-items:center;gap:var(--sp-3)}
+.setntf .ntfctl .tgl:disabled,.setntf .ntfrm:disabled{opacity:.55}
+.setntf[data-off="1"] .ntflist{opacity:.6}
 @media (max-width:600px){.setmail .mailsrv{grid-template-columns:minmax(0,1fr) 5rem}.setmail .mailsrv .mailport:last-child{grid-column:1 / -1}
   .setmail .mailadd{grid-template-columns:minmax(0,1fr) auto}.setmail .mailadd .aj-btn{grid-column:1 / -1}}
 .setmail .setphones{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
@@ -2357,6 +2375,9 @@ i.bd.still{animation:none}
   .setside button[hidden]{display:none}
   .setside button:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
   .setcards{columns:2 26rem;column-gap:var(--space-section)}
+  /* P369 (#77, owner 10-17: 「跑到了最左边……这一行应该放到右边」): the side column is navigation only; the Brand Kit row
+     sits under the content (after 「账号和帮助」), as wide as the content column. A phone keeps it last in the one column. */
+  #set-brandkit{grid-column:2}
 }
 @media (max-width:599px){
   .setmain,.setsub{padding:var(--space-content) var(--space-content) calc(var(--space-content) + env(safe-area-inset-bottom))}
@@ -2730,6 +2751,16 @@ body[data-scan-paused="1"] .scan-finder .sf-sweep{animation-play-state:paused;op
 .om-first #omIcon{display:inline-flex}
 .om[data-unread="1"] .om-first .omfl{max-width:calc(200% - 6px - 2.8em)}
 .om-unread{grid-column:2;position:relative;z-index:1;display:grid;place-items:center end;background:transparent;cursor:default}
+/* P369 (#80, owner 10-17: 「新消息显示没有正放到正中间」): the badge sits at the centre of the card, not at the end of the
+   middle third — the middle third is centred in the header and the header's side insets are equal, so its centre is the
+   card's (test: |badge centre − card centre| ≤ 1 px). The label stops 6 px before the badge's left half (1.4em = half the
+   widest 「99+」 badge) and wraps / ellipsises there, so a long label never runs under it. */
+.om-unread{place-items:center}
+.om[data-unread="1"] .om-first .omfl{max-width:calc(150% - 6px - 1.4em)}
+/* a phone: the left half minus the badge is ~140 px, too narrow for a long English label (「Background task finished」) and
+   the time together — while the badge shows, the time steps aside so the label keeps whole words (P318); it is back once
+   the reply is read. Tablets and wider keep both. */
+@media (max-width:439px){ .om[data-unread="1"] .om-first .omfl>.t{display:none} }
 .om[data-unread="1"] .om-unread{cursor:pointer}
 .om-unread .unb{display:none;min-width:22px;height:22px;padding:0 6px;box-sizing:border-box;border-radius:999px;
   border:1px solid rgba(250,249,245,.6);background:var(--sage-sensation);color:var(--sooty);
@@ -2895,3 +2926,46 @@ code[data-cc],pre[data-cc],.cc-in{cursor:copy}
 .top .bulb.tfit{position:relative;padding:0}
 .top .bulb.tfit::after{content:"";position:absolute;left:50%;top:0;width:44px;height:100%;transform:translateX(-50%)}
 .top .bulb svg{transform:translateX(var(--tfx,0px))}   /* P340 返工: 扫码's glyph slides inside its full 44 px box */
+/* P363 (#73, owner 10-17: 「展开、收起都在右下角……永远在一个位置上」): the input card's tools sit at its bottom right in both
+   states — folded: on the last line of the words; open: under them, kept in view (sticky) while the open card scrolls. A copy
+   button lives just left of 展开 / 收起 (between the 📎 count and it), in both states. The words keep clear of the tools. */
+.om{--om-tools:92px}
+.om.has-att{--om-tools:calc(92px + 3.4em)}
+.omtools{top:auto;bottom:calc(1.283333em - 10px);gap:0}
+.omcopy{flex:none;min-width:var(--ui-tap,44px);height:44px;display:grid;place-items:center;padding:0;border:0;background:transparent;
+  color:var(--noir);cursor:pointer;-webkit-tap-highlight-color:transparent}
+.omcopy svg{width:calc(18px*var(--fz));height:calc(18px*var(--fz))}
+.om-att-count{margin-right:2px}
+.om.open .omtools{position:sticky;bottom:0;top:auto;right:auto;height:44px;display:flex;align-items:center;justify-content:flex-end;
+  width:auto;margin:6px 0 0;background:inherit;border-radius:0 0 22px 22px}   /* a full-width strip: the words scroll under it, never beside the buttons */
+.om.open .ommore{margin:0}
+/* the strip reaches the card's bottom edge (over the card's bottom padding), the buttons where the folded card has them */
+.om.open .omtools{height:auto;min-height:44px;padding-bottom:calc(1.283333em - 10px);bottom:-20px;margin-bottom:-20px}
+.deck .om.open .omtools{bottom:calc(-12px - .533333em);margin-bottom:calc(-12px - .533333em)}
+.om[data-header="1"] .omcopy{visibility:hidden;pointer-events:none}
+.om[data-header="1"]{--om-tools:48px}   /* a page header has no words to copy: its line keeps the old room (P132 same size) */
+/* P363 (#72): a voice note's transcript under its attachment (open card), and in place of 「（只有附件）」 when folded */
+.omasr{flex-basis:100%;margin:2px 0 6px;font-size:calc(14px*var(--fz))}
+.omasr summary{cursor:pointer;font-weight:600;opacity:.75;min-height:32px;display:flex;align-items:center;gap:.4em}
+.omasr-text{margin:2px 0 0;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.5;-webkit-user-select:text;user-select:text}
+.omtxt.asr::before{content:"🎤 "}
+.om.open .omtxt.asr{display:none}   /* open: the transcript stands once, under its attachment */
+/* P363 (#70): the menu pages (记忆 / 记录 / 后台任务 / 模型和 API Key / 好友 / Bot / 首次准备) keep the magnifier too — it finds
+   text on that page (js/pagefind.js) */
+body:is([data-view="mem"],[data-view="act"],[data-view="tasks"],[data-view="models"],[data-view="friends"],[data-view="bots"],[data-view="setup"]) #srchBtn{display:grid}
+/* P368 (#78): the Agent's one-tap answers ([派](reply:派), js/replybtn.js) — pills in the words' own ink, room around the
+   label; tapped → that one stays marked, the group greys out with 「已回复：…」. #tags = .fp-link's underline, dotted (a search, not a page). */
+.words .rbtn{display:inline-flex;align-items:baseline;gap:.4em;min-height:36px;margin:.2em .45em .2em 0;padding:.3em .95em;
+  border:1.5px solid rgba(20,20,20,.55);border-radius:999px;background:rgba(20,20,20,.10);color:inherit;
+  font:600 .92em/1.3 var(--font-body);letter-spacing:.02em;cursor:pointer;vertical-align:baseline;touch-action:manipulation}
+.words .rbtn:active{background:rgba(20,20,20,.24)}
+.words .rbtn:focus-visible{outline:2px solid currentColor;outline-offset:2px}
+.words .rbtn .rbtn-say{font-weight:400;font-size:.8em;opacity:.7}
+.words .rbtn.rb-off{opacity:.45;cursor:default;border-style:dashed}
+.words .rbtn.rb-picked{opacity:1;border-style:solid;background:rgba(20,20,20,.22)}
+.words .rb-note{display:inline-block;margin:.2em 0;font-size:.82em;color:var(--ink-soft)}
+.words .rtag{display:inline;min-height:0;padding:0;border:0;background:transparent;color:inherit;font:inherit;cursor:pointer;
+  text-decoration:underline dotted;text-decoration-thickness:1.5px;text-underline-offset:3px}   /* .fp-link's line, dotted = a search */
+
+/* P375: the offline card follows the actual message card, without the global square's height floor. */
+.gdlg.offdlg .sq{width:min(100%,var(--off-compose-width,960px));min-height:0;max-height:100%;border-radius:24px;background:#141414;color:#faf9f5}

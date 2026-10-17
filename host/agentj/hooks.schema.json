@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentj.app/schema/hook.v1.json",
+  "title": "Agent J webhook (P366, AGENTJ-HOOKS-SPEC §8.1)",
+  "description": "One hosted webhook: https://hook.agentj.app/<hb>/<id>[/<token>]. `agentj hook create --file <this>` accepts every field except id, created, approved and state (the host sets those); command-line flags override the file. Secrets are never part of a definition.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "id": {"type": "string", "pattern": "^[A-Za-z0-9_-]{22}$", "readOnly": true},
+    "name": {"type": "string", "maxLength": 40},
+    "preset": {"enum": ["alert", "bearer", "callback", "form", "github", "hmac", "ping", "stripe"]},
+    "life": {"enum": ["once", "ttl", "resident"], "description": "once: void after the first accepted delivery (≤ 7 d) · ttl: until it expires (≤ 30 d) · resident: until revoked, needs the owner's approval on the paired phone"},
+    "ttl": {"type": ["string", "integer"], "description": "30m · 24h · 7d or seconds (create / update only)"},
+    "expires": {"type": ["integer", "null"], "readOnly": true},
+    "target": {"type": "string", "pattern": "^(main|owner|wait|order:o\\d{8}-\\d{6}-[0-9a-f]{4}|bot:[a-f0-9]{32})$"},
+    "auth": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {"enum": ["stripe", "github", "hmac", "bearer", "token"]},
+        "header": {"type": "string", "pattern": "^[A-Za-z0-9-]{1,64}$"},
+        "algo": {"enum": ["sha1", "sha256", "sha512"]},
+        "encoding": {"enum": ["hex", "base64"]},
+        "prefix": {"type": "string", "maxLength": 16},
+        "signed": {"enum": ["body", "ts.body"]},
+        "ts_header": {"type": "string", "pattern": "^([A-Za-z0-9-]{1,64})?$"},
+        "id_header": {"type": "string", "pattern": "^([A-Za-z0-9-]{1,64})?$"}
+      }
+    },
+    "ip_allow": {"type": "array", "maxItems": 64, "items": {"type": "string", "description": "IPv4 / IPv6 address or CIDR"}},
+    "enabled": {"type": "boolean"},
+    "e2e": {"type": "boolean", "description": "end-to-end encrypted delivery: the sender seals the body to `seal.pub` (RFC 9180 HPKE base, DHKEM(X25519, HKDF-SHA256), HKDF-SHA256, ChaCha20-Poly1305; info \"agentj-hook-seal-v1\\n\" + id; body = enc ‖ ciphertext; header X-AgentJ-Seal: v1; kid=<kid>) and our relay forwards ciphertext only. Needs auth.kind hmac (signed over the plaintext). false (default) = the request crosses our relay in the clear, in memory only"},
+    "seal": {"type": ["object", "null"], "readOnly": true, "properties": {"pub": {"type": "string", "description": "X25519 public key, b64url (not a secret)"}, "kid": {"type": "string", "pattern": "^[A-Za-z0-9_-]{8}$"}}},
+    "note": {"type": "string", "maxLength": 200, "description": "one line for the main Agent: what this hook is for"},
+    "created": {"type": "object", "readOnly": true},
+    "approved": {"type": ["object", "null"], "readOnly": true},
+    "state": {"enum": ["active", "pending", "used", "revoked", "expired"], "readOnly": true}
+  }
+}

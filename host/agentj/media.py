@@ -494,6 +494,16 @@ class Media:
         skips = skips[:MAX_ITEMS * 2]
         return items, skips, [(sk, r) for sk, r in keys if any(sk is x for x in skips)]
 
+    def register(self, rec: dict, page: int) -> dict:
+        """P365: a file serve itself copied for the owner (notify.stage — private copy, already typed and checked) → the §13
+        item of `page`; served by window() like any card."""
+        mid = wire.b64u(secrets.token_bytes(16))
+        with self.lock:
+            self.table[mid] = {**rec, "page": page, "ts": self.clock()}
+            self._prune()
+            self._save()
+        return {"mid": mid, **{k: rec[k] for k in ("name", "mime", "kind", "bytes", "sha256", "ref")}}
+
     def window(self, mid: str, o: int) -> list[tuple[int, bytes, bool]]:
         """≤ WINDOW chunks from offset o, re-opened safely and re-checked. Raises Gone."""
         with self.lock:

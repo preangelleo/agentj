@@ -1,4 +1,4 @@
-// P150 (PROTOCOL §22): the busy list from the computer is display text — bounded, plain, one valid colour each, neighbours
+// P150 (PROTOCOL §22): the busy list from the Agent J host is display text — bounded, plain, one valid colour each, neighbours
 // never the same colour; a helper without a name is 「临时助理」; a run without a label says how it was started.
 import test from 'node:test';
 import assert from 'node:assert/strict';

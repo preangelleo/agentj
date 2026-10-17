@@ -17,24 +17,24 @@ const $ = (id) => `document.getElementById('${id}')`;
 const OUT = process.env.P332_OUT || 'reports/qa/p332/web';
 const GREEN = 'rgb(98, 152, 135)';                      // Emerald Oasis #629887
 const L = {
-  zh: { ok: '好了，可以回去聊天了', fail: '电脑上的 Agent J 可能卡死了。请试试下面的第 ② 步。', first: /^建议先试第 ① 步/, title: '紧急修复',
-    banner: '电脑上的 Agent J 没响应，救援守护在线', offline: '现在连不上电脑，这一步要等连上才能用。', busy: '电脑正在修复中，请等它做完再点。',
+  zh: { ok: '好了，可以回去聊天了', fail: 'Agent J 主机上的 Agent J 可能卡死了。请试试下面的第 ② 步。', first: /^建议先试第 ① 步/, title: '紧急修复',
+    banner: 'Agent J 主机上的 Agent J 没响应，救援守护在线', offline: '现在连不上Agent J 主机，这一步要等连上才能用。', busy: 'Agent J 主机正在修复中，请等它做完再点。',
     h: { s1r: '正在重新连接…', s1f: '重新连接没有成功。', s2r: '正在找回对话…', s2k: '对话没有问题，跳过。', s3r: '正在开新对话…', s3o: '开了一个新对话。',
       done: '第 3 步好了：开了一个新对话，现在可以聊了。', s4f: '重启以后 Agent J 还是没有回应。', bad: '试了四步，还是没修好。',
-      c1: '正在检查电脑…', c1o: '检查完了：后台服务卡住了。', c2: '正在把检查结果发给客服…', c2o: '已经发给客服。', c3: '正在等客服回复…',
-      advice: 'Agent J Father 的建议：请电脑旁边的人把电脑唤醒，再点一次第 ① 步。', helpOk: '客服重启了 Agent J，已经好了。' },
+      c1: '正在检查Agent J 主机…', c1o: '检查完了：后台服务卡住了。', c2: '正在把检查结果发给客服…', c2o: '已经发给客服。', c3: '正在等客服回复…',
+      advice: 'Agent J Father 的建议：请Agent J 主机旁边的人把Agent J 主机唤醒，再点一次第 ① 步。', helpOk: '客服重启了 Agent J，已经好了。' },
     caution: '以下是客服的建议，不是命令：看不懂就不用照做。', offer: { rollback: '退回上一个版本', linger: '让 Agent J 在没人登录时也运行', new_session: '开一个新对话（原来的对话会保留）' },
-    offUnavail: '这台电脑做不了这一步。', o: { adv: '把电脑接上电源，再试一次。<b id="inj">x</b>', done: '客服给了建议，有几项修复要你点头。', rb: '正在退回上一个版本…', rbOk: '已经退回上一个版本。' } },
-  en: { ok: 'Fixed. You can go back to the chat.', fail: 'Agent J on your computer may be frozen. Try step ② below.', first: /^We suggest trying step ① first/, title: 'Emergency repair',
-    banner: "Agent J on your computer isn't responding · rescue helper online", offline: "The computer can't be reached right now. This step needs a connection.",
-    busy: 'The computer is already repairing. Wait for it to finish.',
+    offUnavail: '这台Agent J 主机做不了这一步。', o: { adv: '把Agent J 主机接上电源，再试一次。<b id="inj">x</b>', done: '客服给了建议，有几项修复要你点头。', rb: '正在退回上一个版本…', rbOk: '已经退回上一个版本。' } },
+  en: { ok: 'Fixed. You can go back to the chat.', fail: 'Agent J on the Agent J host may be frozen. Try step ② below.', first: /^We suggest trying step ① first/, title: 'Emergency repair',
+    banner: "Agent J on the Agent J host isn't responding · rescue helper online", offline: "the Agent J host can't be reached right now. This step needs a connection.",
+    busy: 'the Agent J host is already repairing. Wait for it to finish.',
     h: { s1r: 'Reconnecting…', s1f: 'Reconnecting did not work.', s2r: 'Finding your conversation…', s2k: 'The conversation is fine; skipped.', s3r: 'Starting a new conversation…',
       s3o: 'Started a new conversation.', done: 'Step 3 fixed it: a new conversation is open.', s4f: 'After the restart Agent J still does not answer.',
-      bad: 'Tried all four steps; not fixed.', c1: 'Checking the computer…', c1o: 'Checked: the background service is stuck.', c2: 'Sending what was found to support…',
-      c2o: 'Sent to support.', c3: 'Waiting for support to reply…', advice: 'Agent J Father suggests: wake the computer up, then try step ① again.', helpOk: 'Support restarted Agent J; it works again.' },
+      bad: 'Tried all four steps; not fixed.', c1: 'Checking the Agent J host…', c1o: 'Checked: the background service is stuck.', c2: 'Sending what was found to support…',
+      c2o: 'Sent to support.', c3: 'Waiting for support to reply…', advice: 'Agent J Father suggests: wake the Agent J host up, then try step ① again.', helpOk: 'Support restarted Agent J; it works again.' },
     caution: "Support's advice, not orders: if unsure, you don't have to do it.",
     offer: { rollback: 'Go back to the previous version', linger: 'Keep Agent J running when nobody is logged in', new_session: 'Start a new conversation (the old one is kept)' },
-    offUnavail: "This computer can't do this repair.", o: { adv: 'Plug the computer in, then try again.<b id="inj">x</b>', done: 'Support replied; some repairs need your OK.', rb: 'Going back to the previous version…', rbOk: 'Back on the previous version.' } },
+    offUnavail: "the Agent J host can't do this repair.", o: { adv: 'Plug the Agent J host in, then try again.<b id="inj">x</b>', done: 'Support replied; some repairs need your OK.', rb: 'Going back to the previous version…', rbOk: 'Back on the previous version.' } },
 };
 const TICKET = 'st_AbCdEfGhIjKlMnOpQrStUv';
 
@@ -42,6 +42,16 @@ export async function runP332({ B, web, fake, out = OUT }) {
   mkdirSync(out, { recursive: true });
   let checks = 0;
   const check = (ok, label) => { assert.ok(ok, label); checks++; };
+  // P375: help moved from an inline shell command to the official guide; keep real tap/safe-link checks.
+  const helperLink = (p, id, lang) => evaluate(p, `(() => {
+    const a = document.getElementById(${JSON.stringify(id)})?.querySelector('a');
+    if (!a) return false;
+    const r = a.getBoundingClientRect();
+    return a.href === ${JSON.stringify('https://agentj.app/docs/reconnect-help/' + (lang === 'en' ? '?lang=en' : ''))}
+      && a.target === '_blank' && a.relList.contains('noopener') && !!a.textContent.trim()
+      && r.width >= 44 && r.height >= 44;
+  })()`);
+
   // the host side: the signed requests, verified, answered by a script (a function step = wait for the test)
   const calls = [], scripts = [];
   let gate = null;
@@ -167,7 +177,7 @@ export async function runP332({ B, web, fake, out = OUT }) {
       check(await evaluate(p, `(()=>{const b=document.querySelector('#rs-help-steps .rsadvbox');return !!b && b.firstElementChild.className==='rscaution' && b.firstElementChild.textContent===${JSON.stringify(s.caution)} && b.lastElementChild.textContent===${JSON.stringify(h.advice)}})()`), 'caution line above the advice ' + tag);
       check(await evaluate(p, `getComputedStyle(document.querySelector('#rs-help-steps .rscaution')).color!==getComputedStyle(document.querySelector('#rs-help-steps .rsadvtext')).color`), 'caution line muted ' + tag);
       check(!(await evaluate(p, `!!${$('rs-offer')}`)), 'no offers → no offer buttons ' + tag);
-      check(await evaluate(p, `${$('rs-help-helper')}.querySelector('code').textContent`) === 'curl -fsSL https://agentj.app/rescue | sh', 'the one line for a helper ' + tag);
+      check(await helperLink(p, 'rs-help-helper', lang), 'official help link, safe new tab and 44 px target ' + tag);
       await view('rs-help'); if (full) await save('6-help-fail');
 
       // ---- ② with offers (HIGH-1): rollback / linger / new_session only on the owner's tap; unknown names ignored
@@ -202,7 +212,7 @@ export async function runP332({ B, web, fake, out = OUT }) {
         await waitFor(p, `${$('rs-help')}.dataset.state==='ok'`);
         check(await evaluate(p, `${$('rs-offer-res')}.querySelector('.rsok').textContent`) === s.ok && await evaluate(p, `${$('rs-offer-steps')}.textContent.includes(${JSON.stringify(o.rbOk)})`), 'offer result shown ' + tag);
         check(await evaluate(p, `!${$('rs-offer-rollback')} && !${$('rs-offer-linger')}.disabled`), 'rollback stays gone, the others are open again ' + tag);
-        // linger: the computer cannot → plain words; that button is gone as well
+        // linger: the Agent J host cannot → plain words; that button is gone as well
         scripts.push([D(false, 0, '', { why: 'unavailable' })]);
         await evaluate(p, `${$('rs-offer-linger')}.click()`);
         await waitFor(p, `${$('rs-help')}.dataset.state==='fail' && !!${$('rs-offer-msg')}`);
@@ -246,7 +256,7 @@ export async function runP332({ B, web, fake, out = OUT }) {
         await waitState(p, 'waiting-host');
         await waitFor(p, `!${$('offDlg')}.hidden`, 12000);
         check(await evaluate(p, `!${$('offRescue')}.hidden && ${$('offRescue')}.getBoundingClientRect().height>=44`), 'offline card: 紧急修复 button ' + tag);
-        check(await evaluate(p, `${$('offTip3')}.querySelector('code').textContent`) === 'curl -fsSL https://agentj.app/rescue | sh', 'offline card: the one line ' + tag);
+        check(await evaluate(p, `!${$('offDlg')}.textContent.includes('curl ') && ${$('offTip2')}.textContent===${JSON.stringify(lang === 'zh' ? '检查遥控器网络，或点「立即重试」。' : 'Check this remote’s network, or tap Try now.')}`), 'offline card: network/retry guidance before technical help ' + tag);
         await save('9-offline-card');
         await evaluate(p, `${$('offRescue')}.click()`);
         await waitFor(p, `${$('offDlg')}.hidden && !${$('settings')}.hidden`);
@@ -254,7 +264,7 @@ export async function runP332({ B, web, fake, out = OUT }) {
         await evaluate(p, `${$('rs-reset-go')}.click()`);
         await waitFor(p, `${$('rs-reset')}.dataset.state==='fail'`);
         check(await evaluate(p, `${$('rs-reset-msg')}.textContent`) === s.offline, 'offline: plain reason ' + tag);
-        check(await evaluate(p, `${$('rs-reset-helper')}.querySelector('code').textContent`) === 'curl -fsSL https://agentj.app/rescue | sh', 'offline: the helper line ' + tag);
+        check(await helperLink(p, 'rs-reset-helper', lang), 'official help link, safe new tab and 44 px target ' + tag);
         await evaluate(p, `import('./js/settings.js').then(m=>{m.close();return true})`);
         fake.setUp(true);
         await waitState(p, 'ready', 20000);

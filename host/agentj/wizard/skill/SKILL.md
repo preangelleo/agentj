@@ -60,7 +60,7 @@ child directory per workflow. Keep existing workflow files in place and record l
 ## Step 1 — the first message
 
 Say, in their language and in about four lines: what this is (「我会问你最多 20 个小问题，一次一个，大约十几分钟，然后在
-这台电脑上生成你公司的工作手册」), that any question can be skipped, that you will never ask for a password or key, and that
+这台Agent J 主机上生成你公司的工作手册」), that any question can be skipped, that you will never ask for a password or key, and that
 everything stays on this computer. Then ask question 1.
 
 ## Step 2 — the interview
@@ -132,7 +132,8 @@ Used by the agentj-capability skill when the owner asked for a goal (「做每�
 1. Step 0 as usual (look, never ask). The root documents already exist; you only add one workflow.
 2. From what the owner already said, stage ONE new child folder `<id>/` (lowercase-hyphen): `CLAUDE.md` / `AGENTS.md`
    (thin entry, pointing to its own short constitution with red lines), `RUN.md`, `DRYRUN.md`, `task.json`
-   (`"enabled": false`, `"mode": "normal"` so the CEO can write its deliverables and report, a cron for a weekly plan),
+   (`"enabled": false`, `"mode": "normal"` so the CEO can write its deliverables and report, a cron for a weekly plan,
+   `"notify_webapp": true|false` — whether its reports/ files go to the phone, default false; see agentj-capability),
    `brief.json` (see the agentj-capability skill), its staff (`<id>/.claude/agents/<role>.md`, "Staff" below), and a ROLES.md /
    STRUCTURE.json update for the root (the new CEO, `workflows: [{id, ceo_entry, execution, reports}]`).
    RUN.md tells the CEO to use its web fetch and write / edit tools only (no shell: an unattended run must not need taps)

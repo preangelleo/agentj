@@ -2,7 +2,7 @@
 
 Phone (approved devices only, inside the Noise session; routed through elevate.PHONE_TYPES):
 - `ct_list {r, sort?, q?, limit?}` → `ct_res {r, ok, contacts, count, me, mail}` — `me` = the owner's own addresses (the
-  e-mail channel's allowlist rows with role owner), `mail` = can this computer send (P170 SMTP + app password).
+  e-mail channel's allowlist rows with role owner), `mail` = can the Agent J host send (P170 SMTP + app password).
 - `ct_save {r, contact, id?}` → `ct_res` — the forward dialog's 「新增」 (address + nickname) or an edit.
 - `mail_fwd {r, to: [{addr, name?}], turn?, mid?, input?, again?}` → `mail_fwd_res {r, ok, why?, sent?, files?, skipped?,
   skips?, limit?, refused?, ago?}` — a reply

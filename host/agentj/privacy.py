@@ -122,12 +122,15 @@ def _entropy(s: str) -> float:
 
 
 def _sluglike(tok: str) -> bool:
-    """P295: a web page's hyphenated title slug (`Asus-ExpertBook-B9-OLED-review-…`) is words, not a key: ≥ 6 hyphen-joined
-    chunks, each all letters, all digits or ≤ 4 characters, at least four of them words (≥ 3 letters). A random base64url
-    key almost never splits that way (measured: 1 in 3 × 10⁶ `token_urlsafe(30 | 40 | 64)`)."""
+    """Recognize title slugs using at least four ordinary-cased words.
+
+    Mixed-case product names may appear alongside those words. Mixed-case random
+    chunks alone must not exempt a base64url credential from the entropy scan.
+    """
     parts = tok.split("-")
     return (len(parts) >= 6 and all(p and (p.isalpha() or p.isdigit() or len(p) <= 4) for p in parts)
-            and sum(len(p) >= 3 and p.isalpha() for p in parts) >= 4)
+            and sum(bool(re.fullmatch(r"(?:[a-z]{3,}|[A-Z][a-z]{2,}|[A-Z]{3,})", p)) for p in parts) >= 4)
+
 
 
 def _entropic(tok: str) -> bool:

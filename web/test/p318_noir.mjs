@@ -14,9 +14,9 @@ const SPECS = [
   {name: 'info', spec: {kind: 'info', text: '已切换到 Codex'}},
   {name: 'success', spec: {kind: 'success', title: '已提交', text: '你的回答已发给 Agent，它会接着做。'}},
   {name: 'confirm', spec: {kind: 'confirm', text: '已删除 3 条引用'}, act: '撤销'},
-  {name: 'error', spec: {kind: 'error', text: '没切换：电脑不在线'}},
+  {name: 'error', spec: {kind: 'error', text: '没切换：Agent J 主机不在线'}},
   {name: 'progress', spec: {kind: 'progress', text: '正在上传 2 / 5…'}},
-  {name: 'circle', spec: {kind: 'success', shape: 'circle', text: '已保存到电脑'}},
+  {name: 'circle', spec: {kind: 'success', shape: 'circle', text: '已保存到Agent J 主机'}},
 ];
 const web = await startWebServer(), fake = await startFakeHost(), B = await launch();
 const rows = [];

@@ -27,7 +27,7 @@ class RiskGuard:
 
     async def check(self, tool, inp):
         a=self.adapter
-        verdict=danger.classify_shared(tool,inp,a.cfg.get('danger_extra'),a.cfg.get('approvals','standard'))
+        verdict=danger.classify_shared(tool,inp,a.cfg.get('danger_extra'),a.cfg.get('approvals','standard'),a.cfg.get('dir'))
         if not verdict.danger:
             return True
         keys=danger.shared_keys(verdict,a.cfg)   # P198: the five clear dangers ask (was: only with high_risk_warnings)

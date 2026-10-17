@@ -147,7 +147,7 @@ export async function runCases({ B, web, fake, only }) {
   await C('origin-card', async () => { ok((await text('#omText')) === '问题 4' && (await text('#omLabel')) === T('r.src.otherDevice'), 'the source card says who said what'); });
   await C('page-counter', async () => { ok(/^\d+ \/ \d+$/.test(await pg()), 'n / total'); });
   await C('page-time', async () => { ok(/^· \d\d:\d\d$/.test(await text('#rmTime')) && /^· \d\d:\d\d$/.test(await text('#omTime')), 'HH:MM on both cards'); });
-  await C('history-sync', async () => { await fake.addTurn({ k: 'host', text: '电脑上发的' }, '收到'); await wait(`document.getElementById('pg').textContent === '6 / 6' && document.getElementById('words').textContent === '收到'`); });
+  await C('history-sync', async () => { await fake.addTurn({ k: 'host', text: 'Agent J 主机上发的' }, '收到'); await wait(`document.getElementById('pg').textContent === '6 / 6' && document.getElementById('words').textContent === '收到'`); });
   await C('source-kinds', async () => {
     const kinds = [];
     const srcs = [[{ k: 'phone', dev: await ev(`(${'async () => null'})()`) }, 'leo'], [{ k: 'phone', dev: 'zz', name: 'iPad' }, 'dev'], [{ k: 'host' }, 'host'], [{ k: 'agent' }, 'agent'],
@@ -709,7 +709,7 @@ export async function runCases({ B, web, fake, only }) {
     ok(fake.st.turns.length === before + 1 && fake.st.turns[before].card?.withdrawn === true, 'the host page is marked withdrawn');
     ok((await pg()).split('/ ')[1] === total0, 'the withdrawn page is not counted: ' + await pg() + ' vs ' + total0);
     await clearField();
-    // the other path: queued, then the computer takes it — only then the pending line and the × go; the field stays empty
+    // the other path: queued, then the Agent J host takes it — only then the pending line and the × go; the field stays empty
     await sendText('被接手的话');
     await wait(`document.getElementById('words').textContent.includes(${JSON.stringify(T('r.queue.card'))})`, 3000);
     ok(await ev(`!document.getElementById('sayCancel').hidden && document.getElementById('outbox').hidden && document.getElementById('input').value === ''`), 'queued: × in the field, no pending line, field empty');
@@ -1041,7 +1041,7 @@ export async function runCases({ B, web, fake, only }) {
   await C('local-only-card', async () => {
     await sleep(6500);
     await fake.send({ t: 'status', s: 'idle', agent: 'claude', name: 'Wren' });
-    await fake.addTurn({ k: 'sys', local: true }, '这个问题需要在电脑上回答');
+    await fake.addTurn({ k: 'sys', local: true }, '这个问题需要在Agent J 主机上回答');
     await wait(`!document.getElementById('localNote').hidden && document.getElementById('omLabel').textContent === ${JSON.stringify(T('r.src.local'))}`);
   });
 

@@ -1,4 +1,4 @@
-// P203 (PROTOCOL §29.2): the upgrade confirmation card. Before a manual upgrade — ≡ /update, Settings 「升级电脑上的 Agent J」,
+// P203 (PROTOCOL §29.2): the upgrade confirmation card. Before a manual upgrade — ≡ /update, Settings 「升级Agent J 主机上的 Agent J」,
 // or the Agent running `agentj update apply` for the owner — the computer lists what a restart now would interrupt (a turn
 // in progress, queued messages, cards waiting, scheduled / background tasks, friend sessions). Nothing → upgrade at once,
 // one tap. Something → this card; 「现在升级」 is this phone's own signed /update, 「取消」 closes it on every remote.

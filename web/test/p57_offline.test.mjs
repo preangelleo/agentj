@@ -52,7 +52,7 @@ test('P57 offline: verdict — ok / dup leave the queue, too_many / timeout wait
   for (const w of ['stopped', 'shape', 'too_long', 'reply_unknown', 'no_agent', 'too_many_att', 'att_lost', 'att_failed', 'other']) assert.equal(verdict({ ok: false, why: w }), 'drop', w);
 });
 
-test('P57 offline: the queue is sealed in IndexedDB ({v, iv, ct}, no plaintext), survives a reload in order, and is bound to the computer', async () => {
+test('P57 offline: the queue is sealed in IndexedDB ({v, iv, ct}, no plaintext), survives a reload in order, and is bound to the Agent J host', async () => {
   DATA.clear();
   await dbPut('host', HOST_A);
   assert.equal(await pairedHost(), keyOf(HOST_A));

@@ -47,7 +47,7 @@ LEVELS = ("safe", "standard", "full")
 DEFAULT = "standard"
 REDLINE_CATS = ("credentials", "spend", "price")
 # host cards that are a decision of their own, never auto-allowed by a level (pairing, sandbox, login rescue, goal, quota)
-HOST_CARDS = ("pair_device", "SandboxOnce", "AuthRescue", "DoomLoop", "task", "AskUserQuestion")
+HOST_CARDS = ("pair_device", "SandboxOnce", "AuthRescue", "DoomLoop", "task", "AskUserQuestion", "AgentJHook")   # P366: resident hook
 
 PARK_GRACE = 20          # seconds a card waits for a remote to come online before the Agent is told nobody is there
 PARK_SECS = 1800         # a parked card stays on the phone this long

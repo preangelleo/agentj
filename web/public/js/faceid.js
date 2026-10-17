@@ -80,7 +80,7 @@ export async function prepareRestore(x25519Pub, ed25519Pub, now = Date.now()) {
 const buf = (x) => new Uint8Array(x);
 
 /** Create the passkey for this phone ↔ computer (call straight from a tap). → the pk_reg message. Throws on refusal. */
-export async function register(offerNonce, { relayIndex: ri, channel, hostPub, name = 'Agent J', rpName = 'Agent J', displaySuffix = ' · 电脑' }) {
+export async function register(offerNonce, { relayIndex: ri, channel, hostPub, name = 'Agent J', rpName = 'Agent J', displaySuffix = ' · Agent J 主机' }) {
   const cred = await navigator.credentials.create({ publicKey: {
     rp: { id: location.hostname, name: rpName },
     user: { id: encodeHandle({ relayIndex: ri, channel, hostPub }), name, displayName: name + displaySuffix },
@@ -157,6 +157,6 @@ export async function secretOutDigest(fields) {
 // Same Face ID assertion as above (elevateChallenge), kind "key_" + op, over this digest of the one thing the tap acts on
 // (pure; the host's agentj/keys.py computes the same): hex SHA-256(UTF-8("agentjarvis-keys-v1\n" + op + "\n" + NAME)).
 export const KEYS_CTX = 'agentjarvis-keys-v1';
-export async function keysDigest(op, name) {
-  return hexOf(await sha256(new TextEncoder().encode(KEYS_CTX + '\n' + op + '\n' + name)));
+export async function keysDigest(op, name, extra) {   // P362: extra = importExtra(src, keep) for op import
+  return hexOf(await sha256(new TextEncoder().encode(KEYS_CTX + '\n' + op + '\n' + name + (extra ? '\n' + extra : ''))));
 }

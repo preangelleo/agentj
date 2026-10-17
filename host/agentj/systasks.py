@@ -1,7 +1,7 @@
-"""The computer's own scheduled tasks, read-only, for the phone's 「定时任务」 page (P207 §2, PROTOCOL §8 `systask_list`).
+"""the Agent J host's own scheduled tasks, read-only, for the phone's 「定时任务」 page (P207 §2, PROTOCOL §8 `systask_list`).
 
-Agent J's own tasks live in tasks.py; this module only *lists* what the computer already schedules by itself, so the page
-can show 「这台电脑上的其它定时任务」 next to them. Nothing here can create, change, start or delete anything.
+Agent J's own tasks live in tasks.py; this module only *lists* what the Agent J host already schedules by itself, so the page
+can show 「这台Agent J 主机上的其它定时任务」 next to them. Nothing here can create, change, start or delete anything.
 
 Sources: Linux = systemd --user timers (`systemctl --user list-timers --all --output=json`, text fallback; Description and
 state from `systemctl --user show` — never ExecStart) + `crontab -l`; macOS = ~/Library/LaunchAgents/*.plist with

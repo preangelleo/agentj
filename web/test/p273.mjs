@@ -149,12 +149,12 @@ try {
   await tap('#rdCopyBtn');await page.waitForFunction(()=>document.getElementById('rd').hidden);
   const clip=await page.evaluate(()=>navigator.clipboard.readText().catch(()=>''));
   check(/第四条|Fourth/.test(clip),'copy put the reply on the clipboard');
-  // reply: quotes this one, leaves, focuses the field
+  // P375: touch reply quotes this one and leaves without opening the keyboard
   await openReader(page);await swipe(140);check((await words(page)).includes(ATT[lang]),'older again');
   await tap('#rdReplyBtn');await page.waitForFunction(()=>document.getElementById('rd').hidden);
   await page.waitForTimeout(250);
   check(await page.locator('#qbar').isVisible(),'reply quotes the reader page');
-  check(await page.evaluate(()=>document.activeElement?.id==='input'),'reply focuses the field');
+  check(await page.evaluate(()=>document.activeElement?.id!=='input'),'touch reply keeps the keyboard closed');
   check((await page.locator('#qbText').textContent()).includes(ATT[lang].slice(0,6)),'the quote is the reader page');
   await page.keyboard.press('Escape');await page.evaluate(()=>document.activeElement?.blur());
   // the book in the footer leaves; double tap on the words leaves; the screen reader's exit leaves (shown while focused)

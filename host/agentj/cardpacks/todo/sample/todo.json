@@ -1,0 +1,6 @@
+{
+  "items": [
+    {"id": "t1", "text": "试一下：点这一条，让 Agent 把它标成完成 / Try it: tap this item and let the Agent tick it off", "done": false},
+    {"id": "t2", "text": "在设置 → Cards 里看看还有哪些卡 / See the other cards in Settings → Cards", "done": true}
+  ]
+}

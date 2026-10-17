@@ -1,4 +1,4 @@
-"""P175: can this computer reach OpenAI (what Codex needs), asked before the owner picks Codex — not after the first turn
+"""P175: can the Agent J host reach OpenAI (what Codex needs), asked before the owner picks Codex — not after the first turn
 fails. One unauthenticated GET to api.openai.com (no key is sent, nothing is read but the status and the error code):
   401 → "ok" (reachable, and OpenAI serves this region) · 403 + unsupported_country… → "region" ·
   no answer (DNS / connect / TLS / timeout) → "unreachable" · anything else → "unknown".
@@ -14,11 +14,11 @@ TIMEOUT = 5.0
 REGION_WORDS = ("unsupported_country", "country, region, or territory", "not available in your")
 
 ADVICE = {
-    "region": "OpenAI 不服务这台电脑所在的地区：选 Codex 的话第一条消息就会失败。建议改用 Claude Code，或 OpenCode + 国内模型"
-              "（install.md 第 3a 步）。 / OpenAI does not serve this computer's region: with Codex the first message would "
+    "region": "OpenAI 不服务这台Agent J 主机所在的地区：选 Codex 的话第一条消息就会失败。建议改用 Claude Code，或 OpenCode + 国内模型"
+              "（install.md 第 3a 步）。 / OpenAI does not serve the Agent J host's region: with Codex the first message would "
               "fail. Prefer Claude Code, or OpenCode with a model available here (install.md Step 3a).",
-    "unreachable": "这台电脑连不上 OpenAI（api.openai.com）：选 Codex 的话第一条消息就会失败。在中国大陆请用 OpenCode + 国内模型"
-                   "（install.md 第 3a 步）；其他地区先查网络。 / This computer cannot reach OpenAI: with Codex the first "
+    "unreachable": "这台Agent J 主机连不上 OpenAI（api.openai.com）：选 Codex 的话第一条消息就会失败。在中国大陆请用 OpenCode + 国内模型"
+                   "（install.md 第 3a 步）；其他地区先查网络。 / the Agent J host cannot reach OpenAI: with Codex the first "
                    "message would fail. In mainland China use OpenCode with a local model (install.md Step 3a); elsewhere "
                    "check the network first.",
 }

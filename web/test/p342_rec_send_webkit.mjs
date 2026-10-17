@@ -1,6 +1,6 @@
 // P342 (#46) — 「说完直接发送」 on Safari's engine (Playwright WebKit, iPhone 13 profile; 390 and a 280px narrow screen).
 // WebKit on Linux has no audio stack, so the microphone and MediaRecorder are stand-ins that hand the page a real WAV take
-// (audio/wav: the page sends it to the computer for transcription as is); everything after that is the page's own code:
+// (audio/wav: the page sends it to the Agent J host for transcription as is); everything after that is the page's own code:
 // double tap locks, the card shows its icons in a row (P346: three), the send icon ends the take and the transcribed words reach the
 // computer as a message with no second tap; the end icon still only fills the field. Shots → reports/qa/p342/rec-send-webkit-*.png.
 // Usage: node web/test/p342_rec_send_webkit.mjs

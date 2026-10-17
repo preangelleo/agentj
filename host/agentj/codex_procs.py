@@ -391,31 +391,31 @@ TEXT = {
                        "An Agent J leftover background process (codex app-server) held this session; it was cleaned up automatically "
                        "and the session goes on."),
     "agentj": ("是 Agent J 上次留下的后台进程（codex app-server，PID {pid}）占着这个会话，自动清理没成功，手机现在只读。"
-               "电脑上运行 `agentj service restart` 后重发；还不行就重启电脑。",
+               "Agent J 主机上运行 `agentj service restart` 后重发；还不行就重启Agent J 主机。",
                "An Agent J leftover background process (codex app-server, PID {pid}) holds this session and could not be ended; "
-               "the phone is read-only. Run `agentj service restart` on the computer and resend; restart the computer if it persists."),
-    "chatgpt_app": ("是电脑上 ChatGPT App 里的 Codex 正在使用这个会话，手机现在只读。完全退出 ChatGPT App（不只是关窗口）后重发。",
-                    "The Codex inside the ChatGPT App on your computer is using this session; the phone is read-only. Quit the "
+               "the phone is read-only. Run `agentj service restart` on the Agent J host and resend; restart the Agent J host if it persists."),
+    "chatgpt_app": ("是Agent J 主机上 ChatGPT App 里的 Codex 正在使用这个会话，手机现在只读。完全退出 ChatGPT App（不只是关窗口）后重发。",
+                    "The Codex inside the ChatGPT App on the Agent J host is using this session; the phone is read-only. Quit the "
                     "ChatGPT App completely (not just its window), then resend."),
-    "codex_app": ("电脑上的 Codex App 正在使用这个会话，手机现在只读。完全退出 Codex App 后重发，就能接着同一个会话。",
-                  "The Codex App on your computer is using this session; the phone is read-only. Quit the Codex App completely, "
+    "codex_app": ("Agent J 主机上的 Codex App 正在使用这个会话，手机现在只读。完全退出 Codex App 后重发，就能接着同一个会话。",
+                  "The Codex App on the Agent J host is using this session; the phone is read-only. Quit the Codex App completely, "
                   "then resend to continue this same session."),
     "terminal": ("是终端里的 codex（PID {pid}）正在使用这个会话，手机现在只读。在那个终端里完全退出 codex（/quit 或 Ctrl+C）后重发。",
                  "A `codex` in a terminal (PID {pid}) is using this session; the phone is read-only. Quit that codex completely "
                  "(/quit or Ctrl+C), then resend."),
     "terminal_daemon": ("是终端里的 codex（PID {pid}）正在使用这个会话（经 Codex 后台服务 PID {via} 写入），手机现在只读。"
-                        "在那个终端里完全退出 codex（/quit 或 Ctrl+C）后重发；退出后还是只读，就在电脑上运行 `kill {via}` 再重发。",
+                        "在那个终端里完全退出 codex（/quit 或 Ctrl+C）后重发；退出后还是只读，就在Agent J 主机上运行 `kill {via}` 再重发。",
                         "A `codex` in a terminal (PID {pid}) is using this session (writing through the Codex background service, "
                         "PID {via}); the phone is read-only. Quit that codex completely (/quit or Ctrl+C), then resend; if it is "
-                        "still read-only afterwards, run `kill {via}` on the computer and resend."),
+                        "still read-only afterwards, run `kill {via}` on the Agent J host and resend."),
     "app_server": ("是另一个 Codex 后台进程（codex app-server，PID {pid}，可能是编辑器插件或 Codex App 的后台）正在使用这个会话，"
                    "手机现在只读。完全退出它（或它所属的程序）后重发。",
                    "Another Codex background process (codex app-server, PID {pid}; an editor extension or the Codex App's "
                    "background) is using this session; the phone is read-only. Quit it completely (or its app), then resend."),
-    "unknown": ("有别的 Codex 程序正在使用这个会话，但查不到是谁，手机现在只读。完全退出电脑上的 Codex App、ChatGPT App 和终端里的 "
-                "codex 后重发；还不行就重启电脑。",
+    "unknown": ("有别的 Codex 程序正在使用这个会话，但查不到是谁，手机现在只读。完全退出Agent J 主机上的 Codex App、ChatGPT App 和终端里的 "
+                "codex 后重发；还不行就重启Agent J 主机。",
                 "Another Codex program is using this session, but Agent J could not find which; the phone is read-only. Quit the "
-                "Codex App, the ChatGPT App and any terminal codex completely, then resend; restart the computer if it persists."),
+                "Codex App, the ChatGPT App and any terminal codex completely, then resend; restart the Agent J host if it persists."),
 }
 
 

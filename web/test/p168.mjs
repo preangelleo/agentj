@@ -1,13 +1,13 @@
 // P168: the disconnected card + the human fallback mailbox feedback@agentj.app. Real page + local fake host (real Noise),
 // own headless Chromium (never :9222). Per language × theme at 390×844 (touch):
-//   a) the computer goes away → for the quiet window nothing; then the grey page is blurred behind the P150 square:
-//      「电脑可能关机或睡着了」 · 已断开不到 1 分钟 · 转发服务器能连上… · the two tips (`agentj doctor --reconnect`); focus stays
+//   a) the Agent J host goes away → for the quiet window nothing; then the grey page is blurred behind the P150 square:
+//      「Agent J 主机可能关机或睡着了」 · 已断开不到 1 分钟 · 转发服务器能连上… · the two tips (`agentj doctor --reconnect`); focus stays
 //      in the field; every target ≥ 44 px; centred
 //   b) 「立即重试」 opens a new connection (session.reconnectNow / resume), the card stays while still offline
 //   c) 「稍后」 hides it; past the 30-minute threshold (page clock moved, no sleeping) it comes back with 「长时间连不上？写信到
 //      feedback@agentj.app」: mailto with subject + body template and none of the pairing data; one-tap copy of the address
 //   d) ESC hides it again and it stays hidden (the long section was shown once)
-//   e) the computer is back → ready → the card closes by itself and the stored outage start is cleared
+//   e) the Agent J host is back → ready → the card closes by itself and the stored outage start is cleared
 //   f) (zh light) a reload during the outage keeps its start (host record downAt)
 //   g) (zh light, en dark) a reconnect ladder shows 「正在重新连接…」 with the real attempt count; reduced motion stops the pulse
 //   h) (zh light, en dark) Settings → 帮助和反馈, the error page and the removed page name feedback@agentj.app (+ `agentj support`)
@@ -28,13 +28,13 @@ const $ = (id) => `document.getElementById('${id}')`;
 const NAME = 'AgentJ-Father';
 const MIN31 = 31 * 60 * 1000;
 const S = {
-  zh: { computer: '电脑可能关机或睡着了', reconnecting: '正在重新连接…', lt1: '已断开不到 1 分钟', min31: /^已断开 31 分钟$/, wait: '转发服务器能连上，电脑一上线就会自动接上。',
+  zh: { computer: 'Agent J 主机可能关机或睡着了', reconnecting: '正在重新连接…', lt1: '已断开不到 1 分钟', min31: /^已断开 31 分钟$/, wait: '转发服务器能连上，Agent J 主机一上线就会自动接上。',
     attempt: /^(自动重连：第 \d+ 次，\d+ 秒后再试|正在自动重连（第 \d+ 次）…)$/, long: '长时间连不上？写信到 feedback@agentj.app', subject: 'Agent J 连不上', copied: '邮箱地址已复制',
-    tip1: '确认电脑开着、连着网', help: /内置客服/, mailLine: /完全连不上时，写信到 feedback@agentj\.app/ },
-  en: { computer: 'Your computer may be off or asleep', reconnecting: 'Reconnecting…', lt1: 'Disconnected for less than a minute', min31: /^Disconnected for 31 min$/,
-    wait: 'The relay server is reachable. We reconnect by ourselves as soon as your computer is back online.',
+    tip1: '确认 Agent J 主机开着、连着网', help: /内置客服/, mailLine: /完全连不上时，写信到 feedback@agentj\.app/ },
+  en: { computer: 'the Agent J host may be off or asleep', reconnecting: 'Reconnecting…', lt1: 'Disconnected for less than a minute', min31: /^Disconnected for 31 min$/,
+    wait: 'The relay server is reachable. We reconnect by ourselves as soon as the Agent J host is back online.',
     attempt: /^(Automatic reconnect: attempt \d+, next try in \d+ s|Reconnecting automatically \(attempt \d+\)…)$/, long: "Still can't connect? Email feedback@agentj.app",
-    subject: "Agent J can't connect", copied: 'Email address copied', tip1: 'Check that your computer is on and online', help: /built-in support/, mailLine: /email feedback@agentj\.app/ },
+    subject: "Agent J can't connect", copied: 'Email address copied', tip1: 'Check that the Agent J host is on and online', help: /built-in support/, mailLine: /email feedback@agentj\.app/ },
 };
 export const CASES = { a: 'offline-card-blur', b: 'offline-card-retry', c: 'offline-card-long-mail', d: 'offline-card-dismiss', e: 'offline-card-reconnect-close',
   f: 'offline-card-reload-persist', g: 'offline-card-reconnecting-reduced-motion', h: 'feedback-help-lines', i: 'offline-card-desktop' };
@@ -98,13 +98,13 @@ export async function runP168() {
           check(Date.now() - t0 >= 5500, `shown after the quiet window (${Date.now() - t0} ms) ${tag}`);
           check(await evaluate(p, `document.body.dataset.offlineCard`) === 'short', 'short card ' + tag);
           check(/blur\(8px\)/.test(await evaluate(p, `getComputedStyle(${$('offDlg')}).backdropFilter`)), 'the page behind is blurred ' + tag);
-          check(await evaluate(p, `${$('offDlg')}.classList.contains('gdlg') && getComputedStyle(${$('offDlg')}.querySelector('.sq')).borderTopLeftRadius`) === '36px', 'the P150 square ' + tag);
+          check(await evaluate(p, `${$('offDlg')}.classList.contains('gdlg') && getComputedStyle(${$('offDlg')}.querySelector('.sq')).borderTopLeftRadius`) === '24px', 'the P375 composer-aligned card ' + tag);
           check(await evaluate(p, `document.activeElement.id`) === 'input', 'focus stays in the field ' + tag);
           check(await evaluate(p, `${$('offTitle')}.textContent`) === s.computer, 'title ' + tag);
           check(await evaluate(p, `${$('offSince')}.textContent`) === s.lt1, 'duration ' + tag);
-          check(await evaluate(p, `${$('offProg')}.textContent`) === s.wait, 'progress: waiting for the computer ' + tag);
+          check(await evaluate(p, `${$('offProg')}.textContent`) === s.wait, 'progress: waiting for the Agent J host ' + tag);
           check(await evaluate(p, `document.querySelector('#offDlg .off-tips li').textContent`) === s.tip1, 'tip 1 ' + tag);
-          check(await evaluate(p, `${$('offTip2')}.querySelector('code').textContent`) === 'agentj doctor --reconnect', 'tip 2 = the real command ' + tag);
+          check(await evaluate(p, `${$('offTip2')}.textContent`) === (lang === 'zh' ? '检查遥控器网络，或点「立即重试」。' : 'Check this remote’s network, or tap Try now.'), 'tip 2 = network and retry guidance ' + tag);
           check(await evaluate(p, `${$('offLong')}.hidden`), 'no mailbox before 30 minutes ' + tag);
           const sq = await box(p, '#offDlg .sq');
           check(Math.abs(sq.l + sq.w / 2 - 195) < 2 && sq.t >= 0 && sq.b <= 844, `centred, inside the screen (${sq.l},${sq.t},${sq.b}) ${tag}`);

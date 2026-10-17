@@ -66,7 +66,7 @@ def install() -> dict:
 
 def _wrong_computer(opener):
     # Static local explanation, no token, host data or cloud request.
-    html='<meta charset="utf-8"><title>Agent J</title><p>请在装了这个 Agent 的电脑上打开账号页，再点「添加遥控器」。</p><p>Open the account page on the computer running this Agent, then choose Add a remote.</p>'
+    html='<meta charset="utf-8"><title>Agent J</title><p>请在装了这个 Agent 的Agent J 主机上打开账号页，再点「添加遥控器」。</p><p>Open the account page on the Agent J host running this Agent, then choose Add a remote.</p>'
     opener('data:text/html;charset=utf-8,' + urllib.parse.quote(html))
 
 
@@ -97,7 +97,7 @@ def open_pair(url: str, *, stop=None, opener=webbrowser.open, lifetime=600) -> N
     except ValueError as e:
         if str(e) != 'wrong_computer':
             raise
-        st = _instance_for(url)     # P180: the link names another instance's channel on this computer
+        st = _instance_for(url)     # P180: the link names another instance's channel on the Agent J host
         if st is None:
             _wrong_computer(opener)
             return

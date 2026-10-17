@@ -1,3 +1,4 @@
+import {focusDraft} from './composer-focus.js';
 // P244: in-memory, read-only catalogue over the existing paired Noise session. DOM only; no HTML parser or persistence.
 import {request, done, peer, isReady, ask1} from './session.js';
 import {registerLayer} from './layers.js';
@@ -6,6 +7,8 @@ import {fitAbove} from './fit.js';
 import {settleRobots} from './robot-color.js';
 import {RelayMD} from './md.js';
 import {t, lang, onLang} from './t.js';
+import * as jc from './jcards.js';   // P360: Agent J Cards — deck cards 6+ and their pages
+import * as PF from './pagefind.js';
 export const mentionText = w => `@${w.folder}\uFF08CEO ${w.ceo || w.folder}\uFF09`;
 export function mentionAt(text, at=text.length) {
  const s=text.slice(0,at), m=/(^|[\s\u3000，。！？；：、（(【\[\p{Script=Han}])@([^\s，。！？；：、（）()【】\[\]]*)$/u.exec(s);
@@ -13,7 +16,9 @@ export function mentionAt(text, at=text.length) {
 }
 export function robotFor(folder, role, ceo=0){let h=2166136261;const text=`${folder}/${role}`;for(let i=0;i<text.length;i++){h^=text.charCodeAt(i);h=Math.imul(h,16777619);}const pool=Array.from({length:16},(_,i)=>i).filter(i=>i!==ceo&&i!==14);return pool[(h>>>0)%pool.length];}
 let composer;
-let H, pic=null, current='chat', busy=false, epoch=0, filter='all', selected=null, timer;
+let H, pic=null, current='chat', busy=false, epoch=0, filter='all', selected=null, anchor=null, timer;
+// P363 (#70): findQ = the page's own search (top-right magnifier, / , Ctrl+K); pinned = the workflow a link opened, first and open
+let findQ='', pinned=null, pinScroll=false;
 const $=id=>document.getElementById(id);
 const names=()=>[['chat',t('p244.fivepages1'),'◌'],['workflows',t('p244.fivepages2'),'⌘'],['skills',t('p244.fivepages3'),'✧'],['memory',t('p244.fivepages4'),'◇'],['agentj','Agent J','△']];
 function node(tag,text,cls){const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n;}
@@ -24,8 +29,10 @@ function icon(key){const ns='http://www.w3.org/2000/svg',s=document.createElemen
 }
 function iconButton(key,label,fn){const b=button('',fn,'fp-back menuicon');b.setAttribute('aria-label',label);b.title=label;b.append(icon(key));return b;}
 function robot(r,working=false){const n=node('span',undefined,'fp-robot');n.dataset.r=String(r||0);n.style.backgroundPositionY=`-${(r||0)*24}px`;if(working)n.classList.add('working');return n;}
-export function clear(){composer?.clear();epoch++;clearTimeout(timer);pic=null;busy=false;selected=null;closeDetail();closeMenu();go('chat');}
+export function clear(){composer?.clear();jc.clear();epoch++;clearTimeout(timer);pic=null;busy=false;selected=null;closeDetail();closeMenu();go('chat');}
 export function refresh(){
+ syncPlus();if(H&&isReady())jc.refresh();
+ if(current==='card'){render();return;}
  if(!H||busy||!isReady())return;
  if(!peer.wf1){pic=null;if(current!=='chat')render();return;}
  busy=true;const e=epoch, items=[],skills=[],memory=[];
@@ -40,12 +47,15 @@ export function refresh(){
  function finish(failed=false){done(r);clearTimeout(timer);busy=false;if(failed)pic=null;if(current!=='chat')render();}
  if(!r){busy=false;return;} timer=setTimeout(()=>finish(true),15000);
 }
-export function go(page,folder){
- if(!H)return;current=page;selected=folder||null;closeMenu();closeDetail();
+export function go(page,folder,at){
+ if(!H)return;if(page!==current||folder)dropFind();current=page;selected=folder||null;anchor=at||null;pinned=page==='workflows'&&folder||null;pinScroll=!!pinned;closeMenu();closeDetail();
+ $('srchBtn')?.setAttribute('aria-label',t(page==='chat'?'r.find.btn':'p363.find'));
  $('five-page').hidden=page==='chat';document.body.dataset.fivePage=page;place();$('five-page').scrollTop=0;
- if(page==='chat'){H.chat();arm();return;}H.chat();render();refresh();arm();
+ if(page==='chat'){H.chat();arm();return;}H.chat();render();if(page!=='card')refresh();arm();
 }
-export function toggleMenu(){if(!$('five-menu'))return;const e=$('five-menu');if(!e.hidden){closeMenu();return;}place();
+export function toggleMenu(){if(!$('five-menu'))return;const e=$('five-menu');if(!e.hidden){closeMenu();return;}place();buildDeck(true);jc.refresh();}
+// P360: rebuilt in place when the computer's card list changes while the menu is open (focus stays on the same card)
+function buildDeck(focus){const e=$('five-menu'),was=document.activeElement?.closest?.('.fp-menu-card'),key=was&&(was.dataset.page||'card:'+was.dataset.card);
  e.replaceChildren();const deck=node('div',undefined,'fp-menu-deck');
  for(const [i,[key,title,icon]] of names().entries()){
   const b=button('',()=>go(key),'fp-menu-card fp-dark-'+i);b.dataset.page=key;
@@ -53,7 +63,10 @@ export function toggleMenu(){if(!$('five-menu'))return;const e=$('five-menu');if
   if(key==='agentj'){const img=node('img');img.src='assets/five-robot.png';img.alt='';head.append(img);}else head.append(globalIcon(key));
   head.append(node('span',[current===key&&t('p244.fivepages5'),menuCount(key)].filter(Boolean).join(' · '),'fp-current'));
   b.append(head,node('h2',title),node('p',[t('p244.fivepages6'),t('p244.fivepages7'),t('p244.fivepages8'),t('p244.fivepages9'),t('p244.fivepages10')][i]));deck.append(b);
- }e.append(deck);e.hidden=false;deck.querySelector('button').focus();arm();
+ }
+ // P360: the owner's cards stack below the five (Apple Wallet: one fixed peek and card size, cards.css — the deck scrolls)
+ const mine=jc.deck();mine.forEach((c,j)=>deck.append(jc.deckCard(c,5+j,()=>go('card',c.id))));deck.style.setProperty('--fp-n',String(5+mine.length));deck.dataset.n=String(5+mine.length);
+ deck.onclick=ev=>{if(ev.target===deck)closeMenu();};e.append(deck);e.hidden=false;const back=key&&[...deck.children].find(b=>(b.dataset.page||'card:'+b.dataset.card)===key);if(focus||back)(back||deck.querySelector('button')).focus({preventScroll:!focus});arm();
 }
 // P302 (owner: 「右边看到工作流是 2……这个 2 代表什么呢？」): it was the card's position (1–5), read as a count. Now the corner
 // carries the same total the page shows (「35 家公司」, 「120 个技能」) — or nothing until the computer answered
@@ -74,13 +87,36 @@ function starters(body){body.append(node('h3',t('p276.starterTitle'),'fp-group')
   c.append(node('small',t('p276.starterTag')),button(t('p276.install'),()=>say(t('p276.installPrompt',{id,name})),'fp-action fp-secondary'));body.append(c);});}
 function card(title,note,i,fn){const c=node('article',undefined,'fp-card fp-tint-'+i%10);const head=button('',fn,'fp-card-head');if(current!=='workflows')head.append(globalIcon(current==='agentj'?'doc':current));head.append(node('span',title,'fp-card-title'));c.append(head);if(note)c.append(node('p',note));return c;}
 function empty(text){$('five-body').append(node('p',text,'fp-empty'));}
-function render(){renderNow();settleRobots($('five-body'));}
-function renderNow(){const body=$('five-body'),bar=$('five-bar');body.replaceChildren();bar.replaceChildren();bar.hidden=true;$('five-title').textContent=names().find(x=>x[0]===current)?.[1]||'';
+let shown=0;
+function render(){renderNow();settleRobots($('five-body'));
+ // P363 (#70): the company a link opened stands right under the header, open — once (later renders keep the owner's scroll)
+ if(pinScroll&&pic&&current==='workflows')pinTo(20);
+ const b=$('five-find');if(b)PF.say(b,findQ.trim()&&pic?(shown?t('p363.cards',{n:shown}):t('p363.none')):'');}
+// the list may still be growing (robots, the computer's fresh list): try for a few frames until the card is in place
+function pinTo(n){requestAnimationFrame(()=>{const c=$('five-body').querySelector('.fp-card[data-open]'),page=$('five-page');if(!c||!pinScroll||page.hidden||current!=='workflows'){if(n>0&&pinScroll&&!page.hidden)pinTo(n-1);return;}
+ const d=c.getBoundingClientRect().top-page.querySelector('.fp-sticky').getBoundingClientRect().bottom-12;page.scrollTop+=d;if(Math.abs(d)<2||n<=0)pinScroll=false;else pinTo(n-1);});}
+// P363 (#70): the magnifier on a five page searches that page (its cards: names, CEO, folder, aliases, descriptions); on an
+// open document it is the in-text find; on the card wall the five cards (the wall's header is P360's). → false = not ours.
+const FIND_PH={workflows:'p363.findWf',skills:'p363.findSkills',memory:'p363.findMem',agentj:'p363.findAgentj'};
+export function find(){
+ if($('five-detail')&&!$('five-detail').hidden)return PF.openIn($('five-detail'),'p363.findDoc');
+ if($('five-menu')&&!$('five-menu').hidden)return PF.openIn($('five-menu'),'p363.findCards');
+ if(!$('five-page')||$('five-page').hidden||current==='chat')return false;
+ const b=$('five-find');if(!b.hidden){closeFind();return true;}
+ PF.label(b,FIND_PH[current]||'p363.findPage');b.hidden=false;const i=b.querySelector('input');i.focus();i.select();return true;}
+// Esc / the magnifier again: the query goes and every card is back; the next Esc leaves the page (layers, rank 4 > page 3)
+function closeFind(){const b=$('five-find');if(!b)return false;const was=!b.hidden||!!findQ;const q=findQ;dropFind();if(q&&current!=='chat')render();if(document.activeElement===b.querySelector('input'))$('srchBtn')?.focus();return was;}
+function dropFind(){findQ='';const b=$('five-find');if(!b)return;b.hidden=true;b.querySelector('input').value='';PF.say(b,'');}
+export const findOpen=()=>!!$('five-find')&&!$('five-find').hidden&&!$('five-page').hidden;
+function renderNow(){shown=0;const body=$('five-body'),bar=$('five-bar');body.replaceChildren();bar.replaceChildren();bar.hidden=true;$('five-title').textContent=names().find(x=>x[0]===current)?.[1]||'';
+ if(current==='card'){jc.render(body,selected,{title:x=>{$('five-title').textContent=x;},say,draft:x=>{go('chat');H.insert(x);},nav:openJlink,at:anchor});anchor=null;return;}   // P360
  if(!pic){empty(isReady()&&!peer.wf1?t('p244.fivepages11'):t('p244.fivepages12'));return;}
  if(current==='workflows'){
   body.append(node('p',`${pic.root_name} · ${pic.counts.wdb} ${t('p244.fivepages13')} · ${pic.counts.busy} ${t('p244.fivepages14')}`,'fp-meta'),orgBar());
   if(!pic.counts.wdb)starters(body);
-  pic.items.forEach((w,i)=>{const c=card(w.company||w.folder,w.one||t('p244.fivepages15'),i,()=>toggleCard(c,w));c.dataset.folder=w.folder;if(w.wdb)c.dataset.lap=String(w.lap||0);
+  const ts=PF.terms(findQ),hit=(...xs)=>!ts.length||PF.matches(xs.filter(Boolean).join(' '),ts);
+  const ws=pic.items.filter(w=>w.folder===pinned).concat(pic.items.filter(w=>w.folder!==pinned)).filter(w=>hit(w.company,w.folder,w.ceo,w.one,w.py,(w.agents||[]).map(a=>`${a.name} ${a.title||''}`).join(' ')));shown=ws.length;
+  ws.forEach((w,i)=>{const c=card(w.company||w.folder,w.one||t('p244.fivepages15'),i,()=>toggleCard(c,w));c.dataset.folder=w.folder;if(w.wdb)c.dataset.lap=String(w.lap||0);
    c.querySelector('button').prepend(robot(w.wdb?w.robot:14,w.busy));c.append(node('small',w.ceo?`CEO ${w.ceo} · ${w.folder}`:w.folder));
    if(w.wdb)c.append(button('@',()=>insertMention(w), 'fp-at'));if(w.wdb&&w.reg===false)c.append(node('small',t('p276.unreg'),'fp-unreg'));if(w.wdb&&w.staff===0)c.append(node('small',t('p308.nostaff'),'fp-unreg fp-nostaff'));
    if(selected===w.folder)openCard(c,w);body.append(c);
@@ -88,13 +124,17 @@ function renderNow(){const body=$('five-body'),bar=$('five-bar');body.replaceChi
  }else if(current==='skills'){
   // P302: the three tabs live in the sticky bar under the header, so they switch from anywhere in a long list
   const tabs=node('div',undefined,'fp-tabs');for(const [k,label] of [['all',t('p244.fivepages20')],['global',t('p244.fivepages21')],['local',t('p244.fivepages22')]]){const b=button(label,()=>{filter=k;render();$('five-page').scrollTop=0;},'fp-tab');b.dataset.k=k;const mark=globalIcon(k);mark.classList.add('fp-category-icon','fp-category-'+k);b.prepend(mark);b.setAttribute('aria-pressed',filter===k);tabs.append(b);}bar.append(tabs);bar.hidden=false;
-  let group='';pic.skills.filter(s=>filter==='all'||(filter==='global'?s.scope!=='local':s.scope==='local')).forEach((s,i)=>{const g=s.folder||t('p244.fivepages23');if(g!==group){body.append(node('h3',g,'fp-group'));group=g;}body.append(card('/'+s.name,skillLine(s),i,()=>skill(s)));});
+  const ts=PF.terms(findQ),sk=pic.skills.filter(s=>filter==='all'||(filter==='global'?s.scope!=='local':s.scope==='local')).filter(s=>!ts.length||PF.matches(['/'+s.name,...(s.aliases||[]),s.desc,s.desc_zh,s.folder,skillLine(s)].filter(Boolean).join(' '),ts));shown=sk.length;
+  let group='';sk.forEach((s,i)=>{const g=s.folder||t('p244.fivepages23');if(g!==group){body.append(node('h3',g,'fp-group'));group=g;}body.append(card('/'+s.name,skillLine(s),i,()=>skill(s)));});
  }else if(current==='agentj'){
-  body.append(card(t('p244.fivepages24'),t('p244.fivepages25'),1,()=>doc('@core','core',true)));
-  const lock=icon('lock');lock.classList.add('fp-lock');body.lastChild.querySelector('.fp-line-icon')?.remove();body.lastChild.querySelector('button').prepend(lock);
-  (pic.agentj.docs||[]).forEach((d,i)=>body.append(card(d.title||d.name,d.name,i+2,()=>doc('',d.name))));if(pic.agentj.hidden)body.append(node('p',t('p244.fivepages26'),'fp-meta'));
+  const ts=PF.terms(findQ),hit=(...xs)=>!ts.length||PF.matches(xs.filter(Boolean).join(' '),ts);shown=0;
+  if(hit(t('p244.fivepages24'),t('p244.fivepages25'),'core')){shown++;body.append(card(t('p244.fivepages24'),t('p244.fivepages25'),1,()=>doc('@core','core',true)));
+  const lock=icon('lock');lock.classList.add('fp-lock');body.lastChild.querySelector('.fp-line-icon')?.remove();body.lastChild.querySelector('button').prepend(lock);}
+  (pic.agentj.docs||[]).filter(d=>hit(d.title,d.name)).forEach((d,i)=>{shown++;body.append(card(d.title||d.name,d.name,i+2,()=>doc('',d.name)));});if(pic.agentj.hidden)body.append(node('p',t('p244.fivepages26'),'fp-meta'));
  }else if(current==='memory'){
-  pic.memory.forEach((m,i)=>{const w=pic.items.find(w=>w.folder===m.owner),title=m.owner==='agent'?t('p244.fivepages27'):(w?.company||m.owner);const c=card(title,`${m.files.length} ${t('p244.fivepages28')}`,i,()=>{});
+  const ts=PF.terms(findQ);shown=0;
+  pic.memory.forEach((m,i)=>{const w=pic.items.find(w=>w.folder===m.owner),title=m.owner==='agent'?t('p244.fivepages27'):(w?.company||m.owner);
+   if(ts.length&&!PF.matches([title,m.owner,w?.ceo,...m.files.map(f=>`${f.title||''} ${f.name}`)].filter(Boolean).join(' '),ts))return;shown++;const c=card(title,`${m.files.length} ${t('p244.fivepages28')}`,i,()=>{});
    for(const f of m.files){if(m.owner==='agent'&&f.src!=='root'){c.append(node('p',f.name));continue;}c.append(button(f.title||f.name,()=>doc(m.owner==='agent'?'':m.owner,f.name),'fp-file'));}if(m.owner==='agent')c.append(button(t('p244.fivepages29'),()=>{go('chat');H.memory();}));body.append(c);});
  }
 }
@@ -128,7 +168,36 @@ function armNow(){const on=fiveOpen();
  else if(!on&&armed){armed=false;if(history.state?.ajFive)history.back();}}
 function stepBack(){if(!$('five-detail').hidden)closeDetail();else if(!$('five-menu').hidden)closeMenu();else if(!$('five-page').hidden)go('chat');}
 // P299: the page's top edge = the header's bottom edge (measured: the header height depends on the safe area and font size)
-function place(){const t=document.querySelector('.top');if(t)document.documentElement.style.setProperty('--fp-top',Math.round(t.getBoundingClientRect().bottom)+'px');}
+// P360 (Leo 10-17: 「卡的左边界和左上角 icon 的左边界垂直对齐」): the deck's left edge = the logo's left edge
+function place(){const t=document.querySelector('.top'),o=$('orb'),r=document.documentElement.style;if(t)r.setProperty('--fp-top',Math.round(t.getBoundingClientRect().bottom)+'px');
+ const x=o&&o.getClientRects().length?Math.round(o.getBoundingClientRect().left):0;if(x>0)r.setProperty('--fp-left',x+'px');}
+// P360 (Leo 10-17: 「右上角这个加号……在所有的页面都可以保留……本质上在所有的页面上它都是一个 Skill」): the header's + (cards.css ·
+// topfit.js TOP_ORDER) is on every page and names the page's adding skill — a card's page: the card's own `plus` (card.json;
+// none → agentj-cards). It puts `/<skill> ` (a chip, workflow-compose.js) at the front of the message box and returns to the
+// chat; nothing is sent — the owner says what to add, and the skill tells the Agent where.
+export const PLUS={chat:'agentj-cards',cards:'agentj-cards',workflows:'agentj-capability',skills:'agentj-commands',memory:'agentj-add-memory',agentj:'agentj-add-doc'};
+const SKILL_NAME=/^[a-z0-9][a-z0-9-]{1,63}$/;
+export function plusSkill(){if($('five-menu')?.hidden===false)return PLUS.cards;if(current==='card'){const c=jc.cards().find(x=>x.id===selected);return c&&SKILL_NAME.test(c.plus||'')?c.plus:PLUS.cards;}return PLUS[current]||PLUS.chat;}
+export function plusShown(){return document.body.dataset.view==='chat'&&jc.available()&&isReady();}
+function syncPlus(){const b=$('cardPlus');if(!b)return;const on=plusShown();if(b.hidden===on)b.hidden=!on;const k=plusSkill();if(b.dataset.skill!==k||b.dataset.lang!==lang()){b.dataset.skill=k;b.dataset.lang=lang();b.title=t('p360.plusTitle',{cmd:'/'+k});b.setAttribute('aria-label',`${t('p360.plus')} /${k}`);}}
+export function plusCard(){const cmd='/'+plusSkill()+' ',known=new Set([...Object.values(PLUS),...jc.cards().map(c=>c.plus)]);go('chat');const input=$('input');
+ const m=/^[/\uFF0F]([a-z0-9][a-z0-9-]{1,63})(?:\s+|$)/.exec(input.value),rest=(m&&known.has(m[1])?input.value.slice(m[0].length):input.value).replace(/^\s+/,'');
+ input.value=cmd+rest;input.setSelectionRange(cmd.length,cmd.length);input.dispatchEvent(new Event('input'));try{input.focus({preventScroll:true});}catch(_){}composer?.paint(true);}
+// P360 (Leo 10-17: 「首先是定位某个卡片，其次是卡片上的某个位置」): one internal address form for everything the phone opens —
+// skill/<name> · workflow/<folder> · doc/[<folder>/]<file>.md · card/<id>[#<anchor>] · page/<page> (host jcards.JLINK_RE).
+// A card's links, `agentj card open` (§34 jcard_open) and card addresses / @mentions in messages all land here.
+const SYS=['chat','workflows','skills','memory','agentj'];
+const sysNames=()=>names().map(x=>x[1]);
+export function openTarget(id,at){if(!H||typeof id!=='string')return;const a=typeof at==='string'&&jc.ANCHOR.test(at)?at:null;
+ if(id==='cards'){go('chat');if($('five-menu').hidden)toggleMenu();return;}if(SYS.includes(id)){go(id);return;}if(jc.ID.test(id))go('card',id,a);}
+// the computer's push (`agentj card open`): never while the owner is reading a confirmation, or is in Settings / another view
+export function pushOpen(id,at){const c=$('confirm'),st=$('settings');if((c&&!c.hidden)||(st&&!st.hidden)||document.body.dataset.view!=='chat')return;openTarget(id,at);}
+export function openJlink(s){s=String(s||'');if(!jc.JLINK.test(s))return;const i0=s.indexOf('/'),k=s.slice(0,i0),v=s.slice(i0+1);
+ if(k==='page')return openTarget(v);if(k==='card'){const [id,at]=v.split('#');return openTarget(id,at);}if(k==='workflow')return go('workflows',v);
+ if(k==='skill'){const sk=pic?.skills.find(x=>x.name===v||x.aliases?.includes(v));if(sk)skill(sk);else go('skills');return;}
+ const i=v.lastIndexOf('/');if(/\.md$/.test(v))doc(i<0?'':v.slice(0,i),v.slice(i+1));}
+// two cards with one name, written bare (`@记事本`): which one
+function chooseCard(list){const box=sheet();box.append(node('h2',t('p360.choose'),'fp-detail-title'));for(const m of list){const b=button(m.label.slice(1),()=>openTarget(m.c.id),'fp-file jc-choose');b.dataset.card=m.c.id;b.prepend(jc.icon(m.c.icon,'fp-line-icon'));box.append(b);}}
 // P299: the owner's language first — a Chinese owner sees the host's desc_zh, not the English trigger list
 const shipped=(s,k)=>{if(s.scope!=='bundled')return '';const key=`p299.${k}.${s.name}`,v=t(key);return v===key?'':v;};
 const skillLine=s=>(lang()==='zh'&&s.desc_zh)||shipped(s,'sk')||s.desc;
@@ -147,33 +216,56 @@ async function skill(s){const e=epoch,box=sheet(),zh=lang()==='zh';box.append(no
  box.append(sum,button(t('p244.fivepages37'),()=>{go('chat');H.insert('/'+s.name+' ');}));
  const raw=node('details',undefined,'fp-raw'),sm=node('summary',t('p299.raw'));const wait=node('p',t('p244.fivepages31'),'fp-meta');raw.append(sm,wait);box.append(raw);
  const m=await ask1({t:'skill_get',id:s.id},'skill_get',15000);if(e!==epoch||box.hidden)return;wait.replaceWith(prose(m));}
-function insertMention(w,replace){go('chat');const input=$('input');if(replace){input.setRangeText(mentionText(w)+' ',replace.start,input.selectionStart,'end');input.dispatchEvent(new Event('input'));input.focus();}else H.insert(mentionText(w)+' ');composer?.paint(true);}
-export function linkify(box){if(!pic)return;const ws=pic.items.filter(w=>w.wdb),sk=pic.skills;const entries=[];
+function insertCard(m,replace){go('chat');const input=$('input');if(replace){input.setRangeText(m.text+' ',replace.start,input.selectionStart,'end');input.dispatchEvent(new Event('input'));focusDraft(input);}else H.insert(m.text+' ');composer?.paint(true);}
+function insertMention(w,replace){go('chat');const input=$('input');if(replace){input.setRangeText(mentionText(w)+' ',replace.start,input.selectionStart,'end');input.dispatchEvent(new Event('input'));focusDraft(input);}else H.insert(mentionText(w)+' ');composer?.paint(true);}
+// cardsOnly (the owner's own input card, P360): only @cards and card addresses become links there
+export function linkify(box,cardsOnly=false){const cards=jc.available()?jc.mentions(sysNames()):[];if((!pic||cardsOnly)&&!jc.available())return;const ws=pic&&!cardsOnly?pic.items.filter(w=>w.wdb):[],sk=pic&&!cardsOnly?pic.skills:[];const entries=[];
  for(const s of sk)for(const name of [s.name,...(s.aliases||[])])entries.push({text:'/'+name,type:'skill',fn:()=>skill(s)});
  for(const w of ws){for(const text of [mentionText(w),w.folder,w.company].filter(x=>x&&x.length>=3))entries.push({text,type:'workflow',fn:()=>go('workflows',w.folder)});if(w.ceo)entries.push({text:w.ceo,type:'person',fn:()=>go('workflows',w.folder)});for(const d of w.docs)entries.push({text:d.name,type:'doc',fn:()=>doc(w.folder,d.name)});}
- entries.push({text:'\u5DE5\u4F5C\u6D41',type:'workflow',fn:()=>go('workflows')},{text:'workflow',type:'workflow',fn:()=>go('workflows')},{text:'workflows',type:'workflow',fn:()=>go('workflows')},{text:t('p244.fivepages4'),type:'memory',fn:()=>go('memory')});entries.sort((a,b)=>b.text.length-a.text.length);
+ if(!cardsOnly)entries.push({text:'\u5DE5\u4F5C\u6D41',type:'workflow',fn:()=>go('workflows')},{text:'workflow',type:'workflow',fn:()=>go('workflows')},{text:'workflows',type:'workflow',fn:()=>go('workflows')},{text:t('p244.fivepages4'),type:'memory',fn:()=>go('memory')});
+ // P360 @cards: `@名（card/id）` (what a mention writes) shows as `@名`; a bare `@名` opens the one card with that name (two: a chooser)
+ const by=new Map();for(const m of cards){entries.push({text:m.text,label:m.label,type:'card',card:m.c.id,fn:()=>openTarget(m.c.id)});const n='@'+jc.nameOf(m.c);if(!by.has(n))by.set(n,[]);by.get(n).push(m);}
+ for(const [n,list] of by)entries.push({text:n,type:'card',card:list.length>1?'':list[0].c.id,fn:list.length>1?()=>chooseCard(list):()=>openTarget(list[0].c.id)});
+ entries.sort((a,b)=>b.text.length-a.text.length);
+ // a card address card/<id>[#<anchor>] (an Agent's reply): linked when the id is a page or a card this computer has; a `code`
+ // span that is exactly one address becomes the link too
+ const known=id=>id==='cards'||SYS.includes(id)||jc.cards().some(c=>c.id===id&&c.on),addr=(s,at)=>{if(!jc.available()||!s.startsWith('card/',at)||/[A-Za-z0-9_/.-]/.test(s[at-1]||''))return null;const m=jc.ADDR.exec(s.slice(at));return m&&known(m[1])&&!/[A-Za-z0-9_/-]/.test(s[at+m[0].length]||'')?m:null;};
+ const cardLink=m=>{const b=button(m[0],e=>{e.stopPropagation();openTarget(m[1],m[2]);},'fp-link fp-link-card');b.dataset.card=m[1];if(m[2])b.dataset.at=m[2];return b;};
+ for(const c of box.querySelectorAll('code')){if(c.closest('pre,a,button'))continue;const s=c.textContent,m=addr(s,0);if(m&&m[0]===s)c.replaceWith(cardLink(m));}
  const walker=document.createTreeWalker(box,NodeFilter.SHOW_TEXT),nodes=[];while(walker.nextNode())if(!walker.currentNode.parentElement.closest('a,button,code,pre,.fp-link'))nodes.push(walker.currentNode);
  for(const n of nodes){const s=n.textContent;let out=document.createDocumentFragment(),at=0,changed=false,inBook=false;while(at<s.length){if(s[at]==='《')inBook=true;let match=!inBook&&entries.find(e=>s.startsWith(e.text,at)&&(!/[A-Za-z0-9_]/.test(e.text[0])||!/[A-Za-z0-9_/.-]/.test(s[at-1]||''))&&(!e.text.startsWith('/')||!at||/[\s，。！？；：、（(【\[]/u.test(s[at-1]))&&(!/[A-Za-z0-9_/-]/.test(e.text.at(-1))||!/[A-Za-z0-9_/-]/.test(s[at+e.text.length]||'')));
- if(match){const b=button(match.text,match.fn,'fp-link fp-link-'+match.type);out.append(b);at+=match.text.length;changed=true;}else{out.append(document.createTextNode(s[at]));if(s[at]==='》')inBook=false;at++;}}if(changed)n.replaceWith(out);}
+ const ad=!match&&addr(s,at);if(ad){out.append(cardLink(ad));at+=ad[0].length;changed=true;continue;}
+ if(match){const b=button(match.label||match.text,match.fn,'fp-link fp-link-'+match.type);if(match.card!==undefined){b.dataset.card=match.card;b.addEventListener('click',e=>e.stopPropagation());}out.append(b);at+=match.text.length;changed=true;}else{out.append(document.createTextNode(s[at]));if(s[at]==='》')inBook=false;at++;}}if(changed)n.replaceWith(out);}
 }
-export function init(h){H=h;const page=node('section');page.id='five-page';page.hidden=true;const head=node('header',undefined,'fp-header');head.append(iconButton('back',t('p299.back'),()=>go('chat')));const title=node('h1');title.id='five-title';head.append(title,iconButton('reload',t('p299.reload'),refresh));const body=node('div');body.id='five-body';
- const stick=node('div',undefined,'fp-sticky'),bar=node('div',undefined,'fp-bar');bar.id='five-bar';bar.hidden=true;stick.append(head,bar);page.append(stick,body);
+export function init(h){H=h;$('cardPlus')?.addEventListener('click',plusCard);
+ // the + follows the view (body data-view / data-five-page), the three five surfaces and the computer's capability
+ const mo=window.MutationObserver&&new MutationObserver(syncPlus);mo?.observe(document.body,{attributes:true,attributeFilter:['data-view','data-five-page','data-conn']});
+ // 搜索 on the card wall searches the chat: the wall steps aside first
+ $('srchBtn')?.addEventListener('click',()=>{if($('five-menu')&&!$('five-menu').hidden)go('chat');},true);jc.onChange(()=>{syncPlus();if($('five-menu')&&!$('five-menu').hidden)buildDeck(false);});const page=node('section');page.id='five-page';page.hidden=true;const head=node('header',undefined,'fp-header');head.append(iconButton('back',t('p299.back'),()=>go('chat')));const title=node('h1');title.id='five-title';head.append(title,iconButton('reload',t('p299.reload'),refresh));const body=node('div');body.id='five-body';
+ const stick=node('div',undefined,'fp-sticky'),bar=node('div',undefined,'fp-bar');bar.id='five-bar';bar.hidden=true;const fbox=PF.field('five-find','p363.findWf');fbox.querySelector('input').addEventListener('input',e=>{findQ=e.target.value;render();page.scrollTop=0;});stick.append(head,bar,fbox);page.append(stick,body);
  if(window.ResizeObserver)new ResizeObserver(()=>page.style.setProperty('--fp-sticky-h',Math.round(stick.getBoundingClientRect().height)+'px')).observe(stick);
  const menu=node('section');menu.id='five-menu';menu.hidden=true;menu.setAttribute('role','dialog');menu.setAttribute('aria-label',t('p244.fivepages42'));menu.onclick=e=>{if(e.target===menu)closeMenu();};
  const sheet=node('section');sheet.id='five-detail';sheet.hidden=true;sheet.setAttribute('role','dialog');sheet.setAttribute('aria-label',t('p244.fivepages43'));
- const pop=node('div');pop.id='five-mentions';pop.hidden=true;pop.setAttribute('role','listbox');document.body.append(page,menu,sheet,pop);
+ const pop=node('div');pop.id='five-mentions';pop.hidden=true;pop.setAttribute('role','listbox');document.body.append(page,menu,sheet,pop);for(const n of [page,menu,sheet])mo?.observe(n,{attributes:true,attributeFilter:['hidden']});syncPlus();
  registerLayer({element:()=>page,open:()=>!page.hidden,close:()=>go('chat'),fallback:()=>$('orb'),rank:3,trap:false});registerLayer({element:()=>menu,open:()=>!menu.hidden,close:closeMenu,fallback:()=>$('orb'),rank:35});
  addEventListener('popstate',()=>{if(!armed)return;armed=false;stepBack();});registerLayer({element:()=>sheet,open:()=>!sheet.hidden,close:closeDetail,fallback:()=>$('orb'),rank:36});
- const input=$('input');composer=composeMentions(input,()=>pic?.items.filter(w=>w.wdb).map(w=>({text:mentionText(w),label:'@'+(w.ceo||w.folder)+' '+w.folder}))||[]);let options=[],at=null,index=0;
- function suggestions(){at=mentionAt(input.value,input.selectionStart);if(!at||!pic){pop.hidden=true;return;}options=pic.items.filter(w=>w.wdb&&`${w.folder} ${w.ceo} ${w.company} ${w.py||''}`.toLowerCase().includes(at.query.toLowerCase())).slice(0,20);index=0;paint();}
- function paint(){pop.replaceChildren();options.forEach((w,i)=>{const b=button(`${w.company||w.folder} · ${w.ceo||''}`,()=>pick(i),'fp-mention');b.prepend(robot(w.robot,w.busy));b.setAttribute('role','option');b.setAttribute('aria-selected',i===index);pop.append(b);});pop.hidden=!options.length;settleRobots(pop);fit();}
+ registerLayer({element:()=>fbox,open:()=>findOpen()&&sheet.hidden&&menu.hidden,close:closeFind,fallback:()=>$('srchBtn'),rank:4,trap:false});
+ // P363 (#70): / on a five page opens (or focuses) its search, as on the shortcut sheet — never from a field
+ addEventListener('keydown',e=>{if(e.key!=='/'||e.ctrlKey||e.metaKey||e.altKey||e.isComposing||page.hidden||current==='chat'||!sheet.hidden||!menu.hidden)return;const g=e.target;if(g&&(g.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(g.tagName)))return;e.preventDefault();e.stopImmediatePropagation();if(fbox.hidden)find();else fbox.querySelector('input').focus();},true);
+ // P360: @ also names the owner's cards (chip 「@记事本」, the message carries 「@记事本（card/notes）」 for the Agent)
+ const input=$('input');composer=composeMentions(input,()=>[...(pic?.items.filter(w=>w.wdb).map(w=>({text:mentionText(w),label:'@'+(w.ceo||w.folder)+' '+w.folder}))||[]),...(jc.available()?jc.mentions(sysNames()).map(m=>({text:m.text,label:m.label})):[])]);let options=[],at=null,index=0;
+ function suggestions(){at=mentionAt(input.value,input.selectionStart);if(!at||(!pic&&!jc.available())){pop.hidden=true;return;}const q=at.query.toLowerCase();
+  options=[...(pic?pic.items.filter(w=>w.wdb&&`${w.folder} ${w.ceo} ${w.company} ${w.py||''}`.toLowerCase().includes(q)):[]),
+   ...(jc.available()?jc.mentions(sysNames()).filter(m=>`${jc.nameOf(m.c)} ${m.c.id}`.toLowerCase().includes(q)):[])].slice(0,20);index=0;paint();}
+ function paint(){pop.replaceChildren();options.forEach((o,i)=>{let b;if(o.c){b=button(o.label.slice(1),()=>pick(i),'fp-mention fp-mention-card');b.dataset.card=o.c.id;const dot=node('span',undefined,'jc-dot jc-accent-'+o.c.accent);dot.append(jc.icon(o.c.icon,'jc-dot-icon'));b.prepend(dot);}
+  else{b=button(`${o.company||o.folder} · ${o.ceo||''}`,()=>pick(i),'fp-mention');b.prepend(robot(o.robot,o.busy));}b.setAttribute('role','option');b.setAttribute('aria-selected',i===index);pop.append(b);});pop.hidden=!options.length;settleRobots(pop);fit();}
  // P302: above the composer, never under the status bar (keyboard up or not)
  // while the list is open it follows the composer (the body follows the keyboard a few frames later, or animates)
  let fitAt=null,fitF=0;function fit(){fitAt=null;if(!fitF)fitF=requestAnimationFrame(()=>fitNow());fitNow(true);}
  function fitNow(direct){if(!direct)fitF=0;if(pop.hidden)return;const c=input.closest('.composer')||input,top=c.getBoundingClientRect().top,vt=window.visualViewport?.offsetTop||0,k=top+'/'+vt;if(k!==fitAt){fitAt=k;fitAbove(pop,top);}if(!fitF)fitF=requestAnimationFrame(()=>fitNow());}
  window.visualViewport?.addEventListener('resize',fit);if(window.ResizeObserver&&input.closest('.composer'))new ResizeObserver(fit).observe(input.closest('.composer'));window.visualViewport?.addEventListener('scroll',fit);addEventListener('resize',fit);
- function pick(i){const where=at;pop.hidden=true;insertMention(options[i],where);}
+ function pick(i){const where=at,o=options[i];pop.hidden=true;if(o.c)insertCard(o,where);else insertMention(o,where);}
  input.addEventListener('input',suggestions);input.addEventListener('click',suggestions);input.addEventListener('keydown',e=>{if(pop.hidden)return;if(['ArrowDown','ArrowUp','Enter','Tab','Escape'].includes(e.key)){e.preventDefault();e.stopImmediatePropagation();if(e.key==='Escape')pop.hidden=true;else if(e.key==='Enter'||e.key==='Tab')pick(index);else{index=(index+(e.key==='ArrowDown'?1:-1)+options.length)%options.length;paint();}}},true);
-onLang(()=>{if(current!=='chat')render();});addEventListener('resize',place);
+onLang(()=>{syncPlus();if(current!=='chat')render();});addEventListener('resize',place);
  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')refresh();});
 }

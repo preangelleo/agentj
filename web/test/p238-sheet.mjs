@@ -171,7 +171,7 @@ await C('tap-fills-the-field-outside-esc-x-close', async () => {
 
 await C('upgrade-row-follows-the-version-on-disk', async () => {
   const cases = [
-    [{ current: '0.20.1a1', latest: '0.20.2a1', installed: '0.20.2a1' }, { zh: /^已装好 0\.20\.2a1，电脑空闲时自动重启生效$/, en: /^0\.20\.2a1 is installed/ }, true],
+    [{ current: '0.20.1a1', latest: '0.20.2a1', installed: '0.20.2a1' }, { zh: /^已装好 0\.20\.2a1，Agent J 主机空闲时自动重启生效$/, en: /^0\.20\.2a1 is installed/ }, true],
     [{ current: '0.20.2a1', latest: '0.20.2a1' }, { zh: /已是最新$/, en: /Already up to date$/ }, true],
     [{ current: '0.20.1a1', latest: '0.20.2a1' }, { zh: /^0\.20\.1a1 → 0\.20\.2a1 · 点击即授权升级$/, en: /Tap to authorize upgrade$/ }, false],
     [{ current: '0.20.3a1', latest: '0.20.2a1' }, { zh: /已是最新$/, en: /Already up to date$/ }, true],

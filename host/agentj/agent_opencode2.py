@@ -40,7 +40,7 @@ from .text import clean_line, strip_reasoning
 IDENTITY_KEY = "agentj.identity"
 # v2 keeps several keys per provider (「DeepSeek 2」): a second key that is saved but not active is never used (measured:
 # `auth import` keeps the first one active; 401 until `auth switch`). A running v2 serve uses the newly active key at once.
-V2_SWITCH = (" 同一服务商存了好几把 key 时（例如「DeepSeek 2」），在电脑运行 `opencode auth switch {provider}` 选中正确的那一把。"
+V2_SWITCH = (" 同一服务商存了好几把 key 时（例如「DeepSeek 2」），在Agent J 主机运行 `opencode auth switch {provider}` 选中正确的那一把。"
              " / Several keys for one provider: pick the right one with `opencode auth switch {provider}`.")
 AGENT_TRIES = 40
 END = ("session.execution.succeeded", "session.execution.failed", "session.execution.interrupted")

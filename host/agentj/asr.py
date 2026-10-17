@@ -252,7 +252,7 @@ def platform_key() -> tuple[str, str, str] | None:
 
 
 def no_platform_reason() -> str:
-    return (f"没有适合这台电脑的 sherpa-onnx {SHERPA_VERSION} / no sherpa-onnx wheel for {sys.platform} "
+    return (f"没有适合这台Agent J 主机的 sherpa-onnx {SHERPA_VERSION} / no sherpa-onnx wheel for {sys.platform} "
             f"{platform.machine()} Python {sys.version_info[0]}.{sys.version_info[1]}"
             + (f" ({platform.libc_ver()[0] or 'unknown libc'})" if sys.platform.startswith("linux") else ""))
 
@@ -333,10 +333,10 @@ def doctor_rows(state_dir=None, engine_override=None) -> list[dict]:
         row = (WARN, f"本机转写坏了 / local speech-to-text is broken: {s['problem']}",
                "agentj asr remove && agentj asr install")
     elif s["engine"] == "voxtype":
-        row = (WARN, "选了 voxtype，但这台电脑上找不到 voxtype / engine voxtype, but voxtype is not on PATH",
+        row = (WARN, "选了 voxtype，但这台Agent J 主机上找不到 voxtype / engine voxtype, but voxtype is not on PATH",
                "agentj asr engine auto")
     elif not s["platform_ok"]:
-        row = (WARN, "没装语音转写；这台电脑装不了本地转写 / no speech-to-text; " + no_platform_reason(),
+        row = (WARN, "没装语音转写；这台Agent J 主机装不了本地转写 / no speech-to-text; " + no_platform_reason(),
                "手机输入法自带的听写可以用 / use the phone keyboard's dictation")
     else:
         row = (WARN, "没装语音转写（手机录音不能转成文字）/ speech-to-text not installed (voice takes stay untranscribed)",
@@ -547,7 +547,7 @@ def transcribe(wav_path: str, *, timeout_s: float, state_dir=None, engine_overri
     if not vox:
         installed, problem = _installed_ok(d)
         if not installed:
-            return _fail("not_installed", "run `agentj asr install` on this computer")
+            return _fail("not_installed", "run `agentj asr install` on the Agent J host")
         if problem:
             return _fail("engine_failed", problem)
     try:
@@ -831,7 +831,7 @@ def _confirm(prompt: str, inp, out) -> bool:
     return ans.strip().lower() in ("y", "yes", "是", "好")
 
 
-FALLBACK = ("这台电脑装不了本地转写（{reason}）。可以：① 装 voxtype 后运行 `agentj asr engine voxtype`；② 先用手机输入法自带的听写。"
+FALLBACK = ("这台Agent J 主机装不了本地转写（{reason}）。可以：① 装 voxtype 后运行 `agentj asr engine voxtype`；② 先用手机输入法自带的听写。"
             " / Local speech-to-text could not be installed here ({reason}). Instead: ① install voxtype, then run "
             "`agentj asr engine voxtype`; ② use the phone keyboard's dictation for now.")
 
@@ -855,8 +855,8 @@ def install(state_dir=None, mirror: str = "auto", yes: bool = False, out=print, 
     mb = download_mb(first, key)
     src = "github.com + pypi.org" if first == "github" else (
         "hf-mirror.com + pypi.tuna.tsinghua.edu.cn" if first == "hf-mirror" else "modelscope.cn + mirrors.aliyun.com")
-    out(f"本机语音转写：SenseVoice-Small（中/英/日/韩/粤）+ sherpa-onnx {SHERPA_VERSION}，全在这台电脑上运行，录音和文字不出这台电脑。\n"
-        f"Local speech-to-text: SenseVoice-Small (zh/en/ja/ko/yue) + sherpa-onnx {SHERPA_VERSION}; runs on this computer only.\n"
+    out(f"本机语音转写：SenseVoice-Small（中/英/日/韩/粤）+ sherpa-onnx {SHERPA_VERSION}，全在这台Agent J 主机上运行，录音和文字不出这台Agent J 主机。\n"
+        f"Local speech-to-text: SenseVoice-Small (zh/en/ja/ko/yue) + sherpa-onnx {SHERPA_VERSION}; runs on the Agent J host only.\n"
         f"  下载 / download ≈ {mb} MB from {src}（每个文件都核对 SHA-256 / every file SHA-256-checked）\n"
         f"  占用磁盘 / disk ≈ {DISK_MB} MB in {_tilde(d)} · 转写时内存 / memory while in use ≈ 400 MB\n"
         f"  模型许可 / model licence: FunASR Model License 1.1 (attribution: FunAudioLLM SenseVoice)")
@@ -1030,7 +1030,7 @@ def cli_main(argv, *, state_dir=None, out=print, inp=None) -> int:
         return 0
     if a.cmd == "engine":
         if not _set_setting(state_dir, engine=a.engine):
-            out("✗ 这台电脑还没初始化 / not initialised: agentj init")
+            out("✗ 这台Agent J 主机还没初始化 / not initialised: agentj init")
             return 1
         s = status(state_dir)
         out(f"✓ engine = {a.engine} → {s['state']}" + (

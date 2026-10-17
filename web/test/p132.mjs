@@ -99,12 +99,12 @@ export async function runP132({B,web,fake,out='reports/qa/p132',rec=parityRecord
    await fake.addTurn({k:'agent',text:'',via:'task'},s.task);
    await waitFor(p,`${$('pg')}.textContent==='8 / 8' && ${$('pgCorner')}.dataset.unread==='0'`);
    // b) a pending desktop input stays behind the reply, and its reply, when it lands, takes him there (no stuck page)
-   const t=await fake.addTurn({k:'host',name:'电脑',text:s.ask(9)},'','open');
+   const t=await fake.addTurn({k:'host',name:'Agent J 主机',text:s.ask(9)},'','open');
    await sleep(300);
    assert.equal(await pg(p),'8 / 9','pending input does not cover the reply');
    await fake.updateTurn(t.id,{reply:{text:s.ans(9)},end:'done'});
    await waitFor(p,`${$('pg')}.textContent==='9 / 9' && ${$('pgCorner')}.dataset.unread==='0'`);
-   assert.equal(await evaluate(p,`${$('omLabel')}.textContent`),lang==='zh'?'电脑上的输入':'Typed on the computer');
+   assert.equal(await evaluate(p,`${$('omLabel')}.textContent`),lang==='zh'?'Agent J 主机上的输入':'Typed on the Agent J host');
    // silent turns stay silent: no page, no flash, no move
    await fake.addTurn({k:'agent',text:'',via:'loop'},'〔不回群〕');await sleep(300);
    assert.equal(await pg(p),'9 / 9');assert.equal(await evaluate(p,`${$('pgCorner')}.dataset.unread`),'0');

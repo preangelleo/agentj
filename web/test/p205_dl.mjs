@@ -153,7 +153,7 @@ try {
       await downloadOne(p, ITEMS[0], false);
     } finally { await p.dispose(); rmSync(p.dir, { recursive: true, force: true }); }
   });
-  await C('p205-dl-fail: a file the computer no longer has — the icon says so and the owner is told (no silent nothing)', async () => {
+  await C('p205-dl-fail: a file the Agent J host no longer has — the icon says so and the owner is told (no silent nothing)', async () => {
     const p = await paired(390, 844, true);
     try {
       const m = ITEMS[5];                                       // the big one: not loaded until a tap

@@ -127,17 +127,17 @@ try {
       await click(p, '#setBtn');
       assert.equal(await ev(p, `document.getElementById('set-speak').getAttribute('aria-checked')`), 'false');
       await click(p, '#set-speak');
-      await waitFor(p, `(document.getElementById('toast').classList.contains('on') ? document.getElementById('toast').textContent : '') === '已保存到电脑'`);
+      await waitFor(p, `(document.getElementById('toast').classList.contains('on') ? document.getElementById('toast').textContent : '') === '已保存到Agent J 主机'`);
       assert.deepEqual(fake.st.prefSets.map((m) => [m.t, m.key, m.value]), [['pref_set', 'voice.speak_replies', true]]);
       assert.ok(typeof fake.st.prefSets[0].r === 'string' && fake.st.prefSets[0].r.length > 0, 'request id r');
       await waitFor(p, `document.getElementById('set-speak').getAttribute('aria-checked') === 'true'`);
       await click(p, '#set-wake');
-      await waitFor(p, `document.getElementById('set-wake').getAttribute('aria-checked') === 'true' && (document.getElementById('toast').classList.contains('on') ? document.getElementById('toast').textContent : '') === '已保存到电脑'`);
+      await waitFor(p, `document.getElementById('set-wake').getAttribute('aria-checked') === 'true' && (document.getElementById('toast').classList.contains('on') ? document.getElementById('toast').textContent : '') === '已保存到Agent J 主机'`);
       assert.equal(fake.st.prefs.voice.wake_enabled, true);
       // theme: the page follows at once and the host stores it
       await click(p, '[data-set-theme="dark"]');
       await waitFor(p, `document.documentElement.getAttribute('data-theme') === 'dark' && document.querySelector('[data-set-theme="dark"]').getAttribute('aria-pressed') === 'true'`);
-      await waitFor(p, `(document.getElementById('toast').classList.contains('on') ? document.getElementById('toast').textContent : '') === '已保存到电脑'`);
+      await waitFor(p, `(document.getElementById('toast').classList.contains('on') ? document.getElementById('toast').textContent : '') === '已保存到Agent J 主机'`);
       assert.equal(fake.st.prefs.appearance.theme, 'dark');
       assert.equal(await ev(p, `localStorage.getItem('aj.theme')`), 'dark', 'persisted through the page\'s own theme switch');
       await click(p, '[data-set-theme="system"]');
@@ -145,7 +145,7 @@ try {
       // language: ONE value (Amendment A1) — the page switches and the host's appearance.language follows
       await click(p, '[data-set-lang="en"]');
       await waitFor(p, `document.documentElement.lang === 'en' && document.getElementById('set-title').textContent === 'Settings'`);
-      await waitFor(p, `(document.getElementById('toast').classList.contains('on') ? document.getElementById('toast').textContent : '') === 'Saved on the computer'`);
+      await waitFor(p, `(document.getElementById('toast').classList.contains('on') ? document.getElementById('toast').textContent : '') === 'Saved on the Agent J host'`);
       assert.equal(fake.st.prefs.appearance.language, 'en');
       assert.match(await ev(p, `document.querySelector('#set-lang-row .setnote').textContent`), /emails we send you/);
       // a value the host refuses → its problem is shown, nothing changes
@@ -154,8 +154,8 @@ try {
       assert.equal(fake.st.prefSets.some((m) => m.key === 'appearance.font_scale'), false);
       await click(p, '[data-set-lang="zh"]');
       await waitFor(p, `document.documentElement.lang === 'zh-CN'`);
-      await waitFor(p, `(document.getElementById('toast').classList.contains('on') ? document.getElementById('toast').textContent : '') === '已保存到电脑'`);
-      // the host's own broadcast (e.g. `agentj config set …` on the computer) re-renders the open panel
+      await waitFor(p, `(document.getElementById('toast').classList.contains('on') ? document.getElementById('toast').textContent : '') === '已保存到Agent J 主机'`);
+      // the host's own broadcast (e.g. `agentj config set …` on the Agent J host) re-renders the open panel
       await fake.send(fake.prefsMsg({ ...fake.st.prefs, voice: { speak_replies: false, wake_enabled: false } }));
       await waitFor(p, `document.getElementById('set-speak').getAttribute('aria-checked') === 'false' && document.getElementById('set-wake').getAttribute('aria-checked') === 'false'`);
       assert.equal(fake.st.prefSets.every((m) => ['appearance.language', 'appearance.theme', 'voice.speak_replies', 'voice.wake_enabled'].includes(m.key)), true);
@@ -421,7 +421,7 @@ try {
         assert.match(await ev(p, `document.getElementById('imsg-status').textContent`), /待授权/);
         await click(p, '#imsg-fda-open');
         for (let i = 0; i < 50 && !fake.st.imsgCalls.includes('imsg_fda'); i++) await sleep(100);
-        await waitFor(p, `/已在电脑上打开/.test(document.getElementById('imsg-msg').textContent)`);
+        await waitFor(p, `/已在Agent J 主机上打开/.test(document.getElementById('imsg-msg').textContent)`);
         await click(p, '#imsg-check');
         await waitFor(p, `/运行中/.test(document.getElementById('imsg-status').textContent)`);
         assert.equal(await ev(p, `document.getElementById('imsg-fda').hidden`), true, 'authorised: the guide goes');
@@ -434,11 +434,11 @@ try {
         await click(p, '#imsg-groups');
         for (let i = 0; i < 50 && fake.st.prefSets.at(-1)?.key !== 'imessage.groups'; i++) await sleep(100);
         assert.deepEqual([fake.st.prefSets.at(-1).key, fake.st.prefSets.at(-1).value], ['imessage.groups', false]);
-        // a value set on the computer (agentj imessage set interval_minutes 7) shows as its own option
+        // a value set on the Agent J host (agentj imessage set interval_minutes 7) shows as its own option
         fake.st.prefs.imessage.interval_minutes = 7;
         await fake.send({ t: 'preferences', value: fake.st.prefs, problem: null, host: { version: '0.20.4a1', language_at: 0, settable: ['imessage.enabled', 'imessage.interval_minutes', 'imessage.groups', 'imessage.quiet_hours'], platform: 'macos', imessage: fake.st.imsg } });
         await waitFor(p, `document.getElementById('imsg-every').value === '7'`);
-        assert.match(await ev(p, `document.getElementById('imsg-every').selectedOptions[0].textContent`), /每 7 分钟（在电脑上设的）/);
+        assert.match(await ev(p, `document.getElementById('imsg-every').selectedOptions[0].textContent`), /每 7 分钟（在Agent J 主机上设的）/);
         await key(p, 'Escape', { code: 'Escape' });
         await waitFor(p, `document.getElementById('set-imessage').hidden && !document.getElementById('set-main').hidden`);
         await click(p, '#set-imsg-nav');
@@ -464,9 +464,9 @@ try {
     try {
       await click(p, '#setBtn');
       assert.equal(await ev(p, `document.getElementById('set-webver').textContent`), `网页版：${VERSION.version}`);
-      assert.equal(await ev(p, `document.getElementById('set-hostver').textContent`), '电脑端程序：0.15.0a1');
+      assert.equal(await ev(p, `document.getElementById('set-hostver').textContent`), 'Agent J 主机端程序：0.15.0a1');
       assert.match(await ev(p, `document.getElementById('set-computer').textContent`), /Agent J · 已连上/);
-      // the phones this computer paired (host metadata), this one marked — P171: on the 遥控器管理 page; a host without §24
+      // the phones the Agent J host paired (host metadata), this one marked — P171: on the 遥控器管理 page; a host without §24
       // (this fake answers no dev_list) → the same list from the preferences host block, read-only
       await click(p, '#set-remotes-open');
       await waitFor(p, `document.querySelectorAll('#rm-list .rmitem').length === 1 && !document.getElementById('rm-legacy').hidden`, 9000);
@@ -476,7 +476,7 @@ try {
     const q = await paired({ before: (st) => { st.prefs = structuredClone(PREFS); st.prefSet = false; } });   // a host before 0.15: preferences without the host block
     try {
       await click(q, '#setBtn');
-      assert.equal(await ev(q, `document.getElementById('set-hostver').textContent`), '电脑端程序：没有报告版本号');
+      assert.equal(await ev(q, `document.getElementById('set-hostver').textContent`), 'Agent J 主机端程序：没有报告版本号');
       noProblems(q);
     } finally { await q.dispose(); }
   });

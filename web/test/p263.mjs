@@ -10,7 +10,8 @@ const rec=parityRecorder('web/test/p263.mjs');
 const out='reports/qa/p263/screens/';mkdirSync(out,{recursive:true});
 const web=await startWebServer({port:0,relayCsp:'ws://127.0.0.1:*'}),fake=await startFakeHost(),B=await launch();
 let checks=0;const check=(ok,label)=>{assert.ok(ok,label);checks++;};
-const click=async(p,s)=>{const r=await rect(p,s);await tap(p,r.x,r.y);};
+// P360 Wallet stack: only the 44 px title strip of a covered card is tappable; its centre hits a later card.
+const click=async(p,s)=>{const r=await rect(p,s);const card=s.startsWith('.fp-menu-card');const y=card?r.top+Math.min(22,r.h/2):r.y;if(card)assert.ok(await ev(p,`!!document.elementFromPoint(${r.x},${y})?.closest(${JSON.stringify(s)})`),'the visible Wallet title strip receives the native tap');await tap(p,r.x,y);};
 const states=['idle','working','waiting','question','offline'];
 const M=hostMessages();
 const group={...M.custom,logo:{disc:true,states:Object.fromEntries(states.map(s=>[s,readFileSync(`agentjarvis/brand/img/robot-${s}-128.png`).toString('base64')]))}};

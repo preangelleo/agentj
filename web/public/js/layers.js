@@ -1,3 +1,4 @@
+import {focusDraft} from './composer-focus.js';
 // P119: one keyboard owner for transient UI. Owners supply their existing close/back action;
 // hiding a DOM node here would skip camera cleanup, confirmation resolution or reader history.
 const layers=[];
@@ -9,7 +10,7 @@ function restore(l){
  if(!l.trap&&l.preserveOutsideFocus&&visible(document.activeElement)&&!l.element()?.contains(document.activeElement)&&document.activeElement.matches?.(focusable))return;
  if(layers.some(other=>other!==l&&other.open()&&other.element()?.contains(document.activeElement)&&visible(document.activeElement)))return;
  const target=visible(l.opener)&&l.opener.matches?.(focusable)?l.opener:l.fallback?.();
- if(visible(target)&&target.matches?.(focusable))target.focus({preventScroll:true});
+ if(visible(target)&&target.matches?.(focusable))(/^(input|workflow-compose)$/.test(target.id) ? focusDraft(target,{preventScroll:true}) : target.focus({preventScroll:true}));
 }
 function sync(){
  for(const l of layers){const on=l.open();

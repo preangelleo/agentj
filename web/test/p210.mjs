@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// P210 「连上你的电脑」 — the unpaired page as numbered, mutually exclusive method cards (任选一种).
+// P210 「连上你的Agent J 主机」 — the unpaired page as numbered, mutually exclusive method cards (任选一种).
 // Real page against fakehost.mjs: phone 390×844 + desktop 1440×900 × light / dark × 中文 / English, full-page shots
 // → reports/qa/p210/screens/<tag>-*.png (AJ_P210_TAG=before|after, default after) and checks on the "after" layout:
 // method order + numbering, each card = title + ≤ 3 steps + one primary button, the copy icon copies the command,
@@ -95,8 +95,8 @@ try {
         await evaluate(p, `document.getElementById('pm-copy-link').click()`);
         await sleep(300);
         check((await evaluate(p, `navigator.clipboard.readText()`)) === 'agentj pair --link', 'second copy icon puts 「agentj pair --link」 on the clipboard', 'copy');
-        // the account method's link opens agentj.app/account in a new tab
-        check(await evaluate(p, `(() => { const a = document.querySelector('#pm-acct a[href]'); return a && a.href === 'https://agentj.app/account/' && a.target === '_blank'; })()`), 'account method links agentj.app/account in a new tab', 'account');
+        // the account method's link opens https://agentj.app/account in a new tab
+        check(await evaluate(p, `(() => { const a = document.querySelector('#pm-acct a[href]'); return a && a.href === 'https://agentj.app/account/' && a.target === '_blank'; })()`), 'account method links https://agentj.app/account in a new tab', 'account');
         // both scan buttons start the same in-page scanner
         check(await evaluate(p, `document.querySelectorAll('#pair-view [data-pair-scan]').length === 2`), 'terminal + account cards each have a 「扫二维码」 primary', 'account');
         // the 「以前配过？」 section: shown only with the Face ID button, after the last method

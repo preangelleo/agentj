@@ -741,7 +741,7 @@ def _cap_item(cid: str, e: dict | None, required: bool) -> dict:
     k = (e or {}).get("kind", "cli")
     t = (e or {}).get("title") or {"zh": cid, "en": cid}
     how = {"secret_card": ("用手机上的专用密钥卡填一次，Agent 看不到值", "Fill in once on the phone's secret card; the Agent never sees the value"),
-           "login": ("在这台电脑的浏览器里登录一次", "Sign in once in this computer's browser"),
+           "login": ("在这台Agent J 主机的浏览器里登录一次", "Sign in once in the Agent J host's browser"),
            "verify": ("我会自动检查；没通过会告诉你下一步", "I check it automatically and tell you the next step if it fails")}[_action_kind(k)]
     st = (e or {}).get("status")
     item_status = {"ready": "ready", "missing": "missing", "unavailable": "failed", "conflict": "failed"}.get(st, "unverified")
@@ -1096,7 +1096,7 @@ class Capabilities:
         for s in old:                     # an older phone page: one plain line, never a silent confirmation
             await self.host.send_app(s, {"t": "msg", "id": secrets.token_hex(8), "ts": int(time.time() * 1000),
                                          "seq": getattr(self.host, "seq", 0), "from": "notice",
-                                         "text": "电脑上有一张开工确认卡：请刷新手机页面（更新到 0.18）后确认。/ A start card is "
+                                         "text": "Agent J 主机上有一张开工确认卡：请刷新手机页面（更新到 0.18）后确认。/ A start card is "
                                                  "waiting: reload this page (0.18) to confirm it."})
         return n
 

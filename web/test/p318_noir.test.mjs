@@ -81,8 +81,8 @@ test('notifyFormat: kind → accent / icon / ms / shape', async () => {
   assert.equal(notifyFormat({ kind: 'progress' }).ms, 0, 'progress holds');
   assert.equal(notifyFormat({ kind: 'confirm' }).ms, 0, 'confirm holds');
   assert.equal(notifyFormat({ kind: 'info', ms: 6000 }).ms, 6000);
-  assert.equal(notifyFormat({ kind: 'success', shape: 'circle', text: '已保存到电脑' }).shape, 'circle');
-  assert.equal(notifyFormat({ kind: 'success', shape: 'circle', text: '已保存到电脑'.repeat(5) }).shape, 'rect', 'long text → rect');
+  assert.equal(notifyFormat({ kind: 'success', shape: 'circle', text: '已保存到Agent J 主机' }).shape, 'circle');
+  assert.equal(notifyFormat({ kind: 'success', shape: 'circle', text: '已保存到Agent J 主机'.repeat(5) }).shape, 'rect', 'long text → rect');
   assert.equal(notifyFormat({ kind: 'confirm', shape: 'circle', text: 'x', actions: [{ label: 'a', fn() {} }] }).shape, 'rect', 'buttons → rect');
   assert.equal(notifyFormat({ kind: 'error' }).accent, '--peachy-feeling');
   assert.equal(notifyFormat({ kind: 'progress' }).accent, '--magic-carpet');
@@ -115,13 +115,13 @@ test('notify(): title + text in #toast, kind / shape classes, action button .und
   const { notify, toast, toastAction, toastOff } = await import('../public/js/ui.js');
   const box = fakeDom();
   try {
-    notify({ kind: 'success', title: 'Saved', text: 'to your computer' });
-    assert.equal(box.textContent, 'Savedto your computer');
+    notify({ kind: 'success', title: 'Saved', text: 'to the Agent J host' });
+    assert.equal(box.textContent, 'Savedto the Agent J host');
     assert.ok(box.classList.contains('on') && box.classList.contains('rect'));
     assert.equal(box.dataset.kind, 'success');
     assert.equal(box.style.props['--nt-accent'], 'var(--emerald-oasis)');
     assert.ok(!box.dataset.hold, 'success is timed');
-    notify({ kind: 'success', shape: 'circle', text: '已保存到电脑' });
+    notify({ kind: 'success', shape: 'circle', text: '已保存到Agent J 主机' });
     assert.ok(box.classList.contains('circle') && !box.classList.contains('rect'));
     let hit = 0; toastAction('Deleted', 'Undo', () => { hit++; });
     assert.ok(box.classList.contains('act'));

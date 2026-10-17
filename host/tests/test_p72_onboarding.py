@@ -156,7 +156,7 @@ class Notes(unittest.TestCase):
         t0 = 1_800_000_000
         onboarding.paired(self.st, "d1", PHONE, now=t0)
         n = onboarding.turn_note(self.st, "zh", now=t0 + onboarding.TOUR_SECS + 1)
-        self.assertIn("这台电脑的浏览器", n)
+        self.assertIn("这台Agent J 主机的浏览器", n)
         self.assertIn("agentj admin", n)
         os.unlink(self.st.cloud_path)
         n = onboarding.turn_note(self.st, "zh", now=t0 + onboarding.TOUR_SECS + 2 + onboarding.REMIND_SECS)
@@ -175,7 +175,7 @@ class Notes(unittest.TestCase):
         both = {"computer": True, "phone": True, "seat": True}
         self.assertIn("都配好了", onboarding.welcome_prompt("phone", PHONE, both, "zh"))
         self.assertEqual(onboarding.also_text("phone", PHONE, both, "zh"),
-                         "这台（主力手机）「网页 · iOS Safari」也连上了。两个必做的遥控器（这台电脑的浏览器、主力手机）都配好了。")
+                         "这台（主力手机）「网页 · iOS Safari」也连上了。两个必做的遥控器（这台Agent J 主机的浏览器、主力手机）都配好了。")
         self.assertTrue(onboarding.also_text("other", "", both, "en").startswith("This remote is connected too."))
         self.assertIn("董事长助理", onboarding.fallback_welcome("computer", s, "zh"))
 
@@ -286,7 +286,7 @@ class Serve(unittest.TestCase):
             self.assertIsInstance(w, onboarding.WelcomeSend)
             self.assertEqual((w.turn, w.by), (0, "Agent J"))
             self.assertIn("董事长助理", w.text)
-            self.assertIn("这台电脑的浏览器", w.text)
+            self.assertIn("这台Agent J 主机的浏览器", w.text)
             await self._pair(8, PHONE)
             self.assertEqual(len(self.submitted), 1, "no second welcome")
             lines = [t for t in self.host.hist.page(limit=50)[0] if t["src"].get("k") == "sys"

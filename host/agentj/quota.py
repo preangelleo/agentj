@@ -42,6 +42,7 @@ BEHIND_DAYS = 1.0                   # rule ①: more than one day's share behind
 LATE_DAYS = 3.0                     # rule ②: the second half of the week — at most 3 days left
 EXPIRING_DAYS = 7.0                 # rule ③: a reset that expires within a week
 EXHAUSTED_PCT = 95.0                # rule ④: "见底"
+H5_STOP_PCT = 90.0                  # no new headless work on this harness
 H5_WARN_PCT = 80.0                  # 5-hour window: warn at 80 %
 WEEK_WARN_PCT = 90.0                # weekly: near the bottom with no recorded reset
 H5_S = 5 * 3600
@@ -51,7 +52,7 @@ HARNESSES = ("claude", "codex", "opencode")
 NAMES = {"claude": "Claude Code", "codex": "Codex", "opencode": "OpenCode"}
 TAIL_BYTES = 1 << 20                # read at most the last 1 MiB of a Codex session log
 MAX_RESETS = 16
-KINDS = ("h5_high", "week_high", "underuse", "late_surplus", "reset_expiring", "reset_now")
+KINDS = ("h5_stop", "h5_high", "week_high", "underuse", "late_surplus", "reset_expiring", "reset_now")
 
 
 # ------------------------------------------------------------------ sources (never raise)
@@ -303,7 +304,8 @@ def analyse(src: dict, resets: list[dict], now: float) -> dict:
 
 def assess(a: dict) -> list[str]:
     """Deterministic reminder kinds for one analysed harness, most urgent first."""
-    kinds = ["h5_high"] if (a.get("h5") or {}).get("used_pct", 0) >= H5_WARN_PCT else []
+    pct = (a.get("h5") or {}).get("used_pct", 0)
+    kinds = ["h5_stop"] if pct >= H5_STOP_PCT else ["h5_high"] if pct >= H5_WARN_PCT else []
     if a.get("status") != "ok":
         return kinds
     used, left, behind, elapsed = a["used_pct"], a["days_left"], a["behind_days"], a["elapsed_days"]
@@ -331,7 +333,7 @@ def headroom(rep_or_list, harness: str) -> list[dict]:
     hs = rep_or_list["harnesses"] if isinstance(rep_or_list, dict) else rep_or_list
     out = []
     for b in hs:
-        if b["harness"] == harness or b.get("status") != "ok" or b["used_pct"] >= WEEK_WARN_PCT:
+        if b["harness"] == harness or b.get("status") not in ("ok", "partial") or b["used_pct"] >= WEEK_WARN_PCT:
             continue
         if (b.get("h5") or {}).get("used_pct", 0) >= H5_WARN_PCT:
             continue
@@ -350,8 +352,11 @@ def _alt(alts: list[dict], en: bool) -> str:
 
 def reminder_text(a: dict, kind: str, lang: str = "zh", alts: list[dict] | None = None) -> str:
     n, en = a["name"], lang == "en"
-    if kind == "h5_high":
+    if kind in ("h5_high", "h5_stop"):
         h = a["h5"]
+        if kind == "h5_stop":
+            return (f"{n}: 5-hour quota {h['used_pct']:.0f}% used; no new headless work until {_when(h['reset_at'], lang)}. Use another available AI account." if en else
+                    f"{n} 的 5 小时额度已用 {h['used_pct']:.0f}%，重置（{_when(h['reset_at'], lang)}）前停止新起本账号无头任务；可改派其他可用 AI 账号。") + _alt(alts or [], en)
         return (f"{n}: the 5-hour window is {h['used_pct']:.0f}% used (resets {_when(h['reset_at'], lang)}). From now on a big "
                 "job may be stopped by the server at any moment — just so the owner knows." if en else
                 f"{n} 的 5 小时额度已用 {h['used_pct']:.0f}%（{_when(h['reset_at'], lang)} 重置）。从现在起，大一点的活随时可能"
@@ -433,8 +438,8 @@ def due(rep: dict, state_root, day: str | None = None, mark: bool = True) -> lis
     out = []
     for a in rep["harnesses"]:
         for k in a.get("reminders", []):
-            if k == "h5_high":                         # once per 5-hour window, whatever the day
-                key = f"{a['harness']}:h5_high:{int(a['h5']['reset_at'])}"
+            if k in ("h5_high", "h5_stop"):                         # once per 5-hour window, whatever the day
+                key = f"{a['harness']}:{k}:{int(a['h5']['reset_at'])}"
                 if key in d["sent"]:
                     continue
             else:
@@ -473,8 +478,12 @@ def heartbeat_lines(state_root, prefs: dict | None, lang: str = "zh", now: float
 SWITCH_TOOL = "agentj quota switch"          # the phone card's tool name (approvals.log); never sorted by a goal tier
 
 
+class QuotaBlocked(RuntimeError):
+    """A measured active 5-hour window forbids a new headless run."""
+
+
 def alarmed(a: dict) -> bool:
-    return (a.get("h5") or {}).get("used_pct", 0) >= H5_WARN_PCT or (a.get("status") == "ok" and a["used_pct"] >= WEEK_WARN_PCT)
+    return (a.get("h5") or {}).get("used_pct", 0) >= H5_WARN_PCT or (a.get("status") in ("ok", "partial") and a["used_pct"] >= WEEK_WARN_PCT)
 
 
 def auto_switch_on(prefs: dict | None) -> bool:
@@ -513,7 +522,7 @@ def switch_text(cur: dict, alt: str, title: str, lang: str = "zh") -> str:
     h = cur.get("h5") or {}
     if h.get("used_pct", 0) >= H5_WARN_PCT:
         why.append(f"5-hour {h['used_pct']:.0f}%" if lang == "en" else f"5 小时额度 {h['used_pct']:.0f}%")
-    if cur.get("status") == "ok" and cur["used_pct"] >= WEEK_WARN_PCT:
+    if cur.get("status") in ("ok", "partial") and cur["used_pct"] >= WEEK_WARN_PCT:
         why.append(f"weekly {cur['used_pct']:.0f}%" if lang == "en" else f"周额度 {cur['used_pct']:.0f}%")
     return (f"{cur['name']} is low ({', '.join(why)}). Run 「{title}」 on {NAMES[alt]} instead? (checked: it answers)"
             if lang == "en" else
@@ -521,11 +530,17 @@ def switch_text(cur: dict, alt: str, title: str, lang: str = "zh") -> str:
 
 
 async def pick_alt(rep: dict, kind: str, allowed: tuple, probe=handshake) -> str | None:
-    """The first other harness whose own readings show room and which answers a tool-free handshake, or None."""
+    """Prefer measured headroom; an unknown quota is not exhaustion. Always require a live, tool-free reply.
+
+    Unknown quotas never appear as a made-up percentage in the reminder. Known high readings disqualify a candidate.
+    """
     import asyncio
-    for c in headroom(rep, kind):
-        if c["harness"] in allowed and await asyncio.to_thread(probe, c["harness"]):
-            return c["harness"]
+    preferred = [c["harness"] for c in headroom(rep, kind)]
+    candidates = preferred + [a["harness"] for a in rep["harnesses"]
+                              if a["harness"] != kind and a["harness"] not in preferred and not alarmed(a)]
+    for name in candidates:
+        if name in allowed and await asyncio.to_thread(probe, name):
+            return name
     return None
 
 
@@ -544,15 +559,21 @@ async def route(host, kind: str | None, task: dict | None, title: str, rep: dict
         return kind, None
     lang = "en" if getattr(host, "lang", "zh") == "en" else "zh"
     alt = await pick_alt(rep, kind, allowed, probe)
+    def original():
+        if (cur.get("h5") or {}).get("used_pct", 0) >= H5_STOP_PCT:
+            host.st.log("quota_switch", result="blocked", frm=kind)
+            raise QuotaBlocked("5 小时额度已用 ≥90%，停止新起本账号无头任务，重置后再试 / 5-hour quota ≥90%; wait for reset or use another AI account")
+        return kind, None
+
     if alt is None:
         host.st.log("quota_switch", result="none", frm=kind)
-        return kind, None
+        return original()
     auto = auto_switch_on(getattr(host, "preferences", None))
     if not auto:
         ans = await host.ask(SWITCH_TOOL, {"summary": switch_text(cur, alt, title, lang)}, batch=False)
         if ans.get("behavior") != "allow":
             host.st.log("quota_switch", result="declined", frm=kind, to=alt)
-            return kind, None
+            return original()
     host.st.log("quota_switch", result="auto" if auto else "allowed", frm=kind, to=alt)
     return alt, (f"(run on {NAMES[alt]}: {cur['name']} quota warning)" if lang == "en" else
                  f"（{cur['name']} 额度告警，这次改用 {NAMES[alt]} 运行）")

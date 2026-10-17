@@ -687,7 +687,7 @@ class Telegram:
         command = raw.split(None,1)[0].split('@',1)[0].lower() if raw.strip() else ''
         if group and command in ('/approve','/deny','/pair','/resume','/config','/model'):return False
         if not forwarded and command in ('/approve','/deny','/pair','/resume','/config','/model'):
-            await asyncio.to_thread(api,cfg,'sendMessage',{'chat_id':chat_id,'text':pick(getattr(self.host,'lang','zh'),'这个操作请在已配对的手机或电脑终端上做。','Use your paired phone or local terminal for this action.')});return False
+            await asyncio.to_thread(api,cfg,'sendMessage',{'chat_id':chat_id,'text':pick(getattr(self.host,'lang','zh'),'这个操作请在已配对的手机或浏览器终端上做。','Use your paired phone or local terminal for this action.')});return False
         if command == '/stop' and owner:
             await self.host.stop_turn('telegram owner', answered=False);return True
         if owner and len(msgs)==1 and not media_present(m):
@@ -1138,12 +1138,12 @@ MEDIA_NOTE={
           'type_owner':'这个附件的类型无法识别，没有收到。请改用 Agent J 网页的「文件」按钮发送。',
           'count':'一次最多 10 个附件，没有收到，请分开发。',
           'rate':'群成员每小时可发的附件总量已用完，没有收到，请稍后再发。',
-          'quota':'电脑上的附件收件箱已满（2 GB），没有收到。请先清理旧附件再发。',
+          'quota':'Agent J 主机上的附件收件箱已满（2 GB），没有收到。请先清理旧附件再发。',
           'download':'从 Telegram 下载附件失败，没有收到。请再发一次；还不行就改用 Agent J 网页的「文件」按钮。',
-          'local':'电脑在本地处理这个附件时出错（保存或转写），没有收到。请再发一次，或改用 Agent J 网页的「文件」按钮。',
+          'local':'Agent J 主机在本地处理这个附件时出错（保存或转写），没有收到。请再发一次，或改用 Agent J 网页的「文件」按钮。',
           'asr_fail':'[语音没能在本地转写（{why}），原件已附上]',
           'asr_notice':'语音没能在本地转写（{why}），原件已交给 Agent J。',
-          'asr_why':{'timeout':'处理超时','not_installed':'电脑上还没装语音转写','off':'语音转写已关闭','format':'音频格式无法解码',
+          'asr_why':{'timeout':'处理超时','not_installed':'Agent J 主机上还没装语音转写','off':'语音转写已关闭','format':'音频格式无法解码',
                      'bad_audio':'音频格式不对','busy':'转写器忙','no_speech':'没有听到说话','broken':'转写器出错'}},
     'en':{'size':'Not received: this attachment is over 20 MB, the most a Telegram bot can download (a Telegram limit).',
           'size_owner':'Not received: this attachment is over 20 MB, the most a Telegram bot can download (a Telegram limit). '
@@ -1153,9 +1153,9 @@ MEDIA_NOTE={
           'type_owner':'Not received: the attachment type could not be read. Send it with the File button in the Agent J web app.',
           'count':'Not received: at most 10 attachments at once; send them in parts.',
           'rate':"Not received: this member's hourly attachment allowance is used up; try again later.",
-          'quota':"Not received: the computer's attachment inbox is full (2 GB). Clear old attachments first.",
+          'quota':"Not received: the Agent J host's attachment inbox is full (2 GB). Clear old attachments first.",
           'download':'Not received: downloading it from Telegram failed. Send it again, or use the File button in the Agent J web app.',
-          'local':'Not received: the computer could not process it locally (saving or transcribing). Send it again, or use the File button in the Agent J web app.',
+          'local':'Not received: the Agent J host could not process it locally (saving or transcribing). Send it again, or use the File button in the Agent J web app.',
           'asr_fail':'[Local voice transcription failed ({why}); original attached]',
           'asr_notice':'The voice could not be transcribed locally ({why}); the original went to Agent J.',
           'asr_why':{'timeout':'timed out','not_installed':'transcription is not installed','off':'transcription is off',

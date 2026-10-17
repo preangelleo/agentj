@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // P181 · the load card's five resources, long-press shortcuts, the source card's double tap, press-to-talk cancel and the
 // double-tap lock. Real page + local fake host (signatures checked like the real host), own headless Chromium (never :9222).
-//   a) load card: opening it asks the computer to sample (res_watch on), closing stops it (off); five rows, unknown = 「—」
+//   a) load card: opening it asks the Agent J host to sample (res_watch on), closing stops it (off); five rows, unknown = 「—」
 //   b) long-press the header name → rename dialog (rule hint, too long refused here, signed agent_name, refusal + suggestions, Esc)
 //   c) robots card: 「换个样子」 sends the theme preset as the owner; a long press on the robots sends it without opening the card
 //   d) ≡: a long press sends the commands preset; the list has /customize (tap → the same); typing /customize + Send → the same

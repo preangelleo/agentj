@@ -47,7 +47,7 @@ REASONS = {
     'thread rollout unavailable or ambiguous': ('找不到所选 Codex 会话的记录（可能已删除）。', 'The selected Codex thread record was not found (maybe deleted).'),
     'wrong thread/project': ('所选 Codex 会话属于别的项目目录。', 'The selected Codex thread belongs to another project folder.'),
     'no original turn permissions': ('所选 Codex 会话还没有完整的一轮对话，读不到它的权限。', 'The selected Codex thread has no completed turn, so its permissions are unknown.'),
-    'desktop turn active; alternate turns': ('电脑上的 Codex 正在回答。', 'The desktop Codex is still answering.'),
+    'desktop turn active; alternate turns': ('Agent J 主机上的 Codex 正在回答。', 'The desktop Codex is still answering.'),
     'unverified original permission profile': ('所选会话用了 Agent J 还没核对过的权限配置。', 'The selected thread uses a permission profile Agent J has not verified.'),
     'original permissions unavailable': ('读不到所选会话的权限。', 'The selected thread permissions are unreadable.'),
     'unsupported original sandbox': ('所选会话的沙箱类型 Agent J 不认识。', 'The selected thread uses an unknown sandbox type.'),
@@ -55,35 +55,35 @@ REASONS = {
     'native resume changed original approval policy': ('Codex 接续后审批策略和原会话不一致。', 'Codex resumed with a different approval policy.'),
     'native resume changed original profile': ('Codex 接续后权限配置和原会话不一致。', 'Codex resumed with a different permission profile.'),
     'shared pre-execution hook unavailable': ('这个 Codex 版本没装上高危提醒钩子。', 'This Codex version did not load the high-risk warning hook.'),
-    'desktop writer active': ('电脑上的 Codex App 正在使用这个会话，手机现在只读。完全退出 Codex App 后重发，就能接着同一个会话。', 'The Codex App on your computer is using this session; the phone is read-only. Quit the Codex App completely, then resend to continue this same session.'),
-    'desktop turn did not finish': ('电脑上的 Codex 回合 30 分钟还没结束。', 'The desktop Codex turn has not finished for 30 minutes.'),
-    'shared session lost': ('共享会话找不到了：原来接着的那个 Codex 会话在这台电脑上已经没有记录。',
-                            'The shared session is gone: the Codex thread it followed no longer exists on this computer.'),
+    'desktop writer active': ('Agent J 主机上的 Codex App 正在使用这个会话，手机现在只读。完全退出 Codex App 后重发，就能接着同一个会话。', 'The Codex App on the Agent J host is using this session; the phone is read-only. Quit the Codex App completely, then resend to continue this same session.'),
+    'desktop turn did not finish': ('Agent J 主机上的 Codex 回合 30 分钟还没结束。', 'The desktop Codex turn has not finished for 30 minutes.'),
+    'shared session lost': ('共享会话找不到了：原来接着的那个 Codex 会话在这台Agent J 主机上已经没有记录。',
+                            'The shared session is gone: the Codex thread it followed no longer exists on the Agent J host.'),
 }
 
 # P330 (FEEDBACK 26): the pinned thread's rollout is gone (Mac: cc99e6c3 deleted, the desktop on 01a13a75)
 LOST = {
-    'auto': ('共享会话找不到了（原来的 {old} 在这台电脑上已经没有记录），已改接电脑上最近在用的 Codex 会话 {new}。',
-             'The shared session is gone ({old} no longer exists on this computer); now following the Codex thread the '
+    'auto': ('共享会话找不到了（原来的 {old} 在这台Agent J 主机上已经没有记录），已改接Agent J 主机上最近在用的 Codex 会话 {new}。',
+             'The shared session is gone ({old} no longer exists on the Agent J host); now following the Codex thread the '
              'computer used last, {new}.'),
     'chosen': ('好，共享会话改接 Codex 会话 {new}。', 'OK — the shared session now follows Codex thread {new}.'),
-    'new': ('共享会话找不到了（原来的 {old} 在这台电脑上已经没有记录），这个目录里也没有别的 Codex 会话，已为你新开一个。',
-            'The shared session is gone ({old} no longer exists on this computer) and this folder has no other Codex '
+    'new': ('共享会话找不到了（原来的 {old} 在这台Agent J 主机上已经没有记录），这个目录里也没有别的 Codex 会话，已为你新开一个。',
+            'The shared session is gone ({old} no longer exists on the Agent J host) and this folder has no other Codex '
             'thread, so a new one was started.'),
-    'refused': ('共享会话找不到了（原来的 {old} 在这台电脑上已经没有记录），这条没有发出。重发一次会再让你选接哪个会话；'
-                '也可以在电脑上运行 `agentj config set agent.shared_session_id <会话 ID>` 指定。',
-                'The shared session is gone ({old} no longer exists on this computer); this message was not sent. Resend to '
-                'pick the thread to follow, or run `agentj config set agent.shared_session_id <thread ID>` on the computer.'),
-    'open_failed': ('共享会话找不到了（原来的 {old} 已经没有记录），Agent J 想接电脑上的会话或新开一个，但 Codex 没打开（{why}）。'
-                    '先直接重发一次；还不行在电脑上运行 `agentj doctor`。',
+    'refused': ('共享会话找不到了（原来的 {old} 在这台Agent J 主机上已经没有记录），这条没有发出。重发一次会再让你选接哪个会话；'
+                '也可以在Agent J 主机上运行 `agentj config set agent.shared_session_id <会话 ID>` 指定。',
+                'The shared session is gone ({old} no longer exists on the Agent J host); this message was not sent. Resend to '
+                'pick the thread to follow, or run `agentj config set agent.shared_session_id <thread ID>` on the Agent J host.'),
+    'open_failed': ('共享会话找不到了（原来的 {old} 已经没有记录），Agent J 想接Agent J 主机上的会话或新开一个，但 Codex 没打开（{why}）。'
+                    '先直接重发一次；还不行在Agent J 主机上运行 `agentj doctor`。',
                     'The shared session is gone ({old} no longer exists) and Codex did not open the replacement ({why}). '
-                    'Resend once; if it fails again run `agentj doctor` on the computer.'),
+                    'Resend once; if it fails again run `agentj doctor` on the Agent J host.'),
     'q': ('原来的共享会话 {old} 找不到了。这个目录里有几个 Codex 会话，手机接哪一个？',
           'The shared session {old} is gone. Several Codex threads are in this folder — which one should the phone follow?'),
     'h': ('接哪个会话', 'Which thread'),
     'opt': ('{sid} · {ago}更新', '{sid} · updated {ago} ago'),
     'new_opt': ('新开一个对话', 'Start a new conversation'),
-    'new_desc': ('电脑上要接着它，运行 codex resume <新 ID>', 'continue it on the computer with codex resume <new ID>'),
+    'new_desc': ('Agent J 主机上要接着它，运行 codex resume <新 ID>', 'continue it on the Agent J host with codex resume <new ID>'),
 }
 
 
@@ -835,8 +835,8 @@ class SharedCodexAgent(CodexAgent):
         elif why == 'shared session lost':               # P330: the pinned thread is gone and nothing else is here
             self.host.agent_notice(self._lost_text('new', old=(self.lost_pin or '?')[:8]) + f' `codex resume {sid}`')
         else:
-            self.host.agent_notice(f'已为你新开一个 Codex 会话（电脑上 `codex resume {sid}` 可以接着聊）。 / '
-                                   f'Started a new Codex session for you (continue it on the computer with `codex resume {sid}`).')
+            self.host.agent_notice(f'已为你新开一个 Codex 会话（Agent J 主机上 `codex resume {sid}` 可以接着聊）。 / '
+                                   f'Started a new Codex session for you (continue it on the Agent J host with `codex resume {sid}`).')
         return res
 
     async def _thread(self):
@@ -947,8 +947,8 @@ class SharedCodexAgent(CodexAgent):
             elif reason == 'shared session lost':
                 self.local_fail(self._lost_text('refused', old=(self.lost_pin or '?')[:8]))
             elif zh:
-                self.local_fail(f'Codex 没收到这条消息：{zh}在电脑上处理后重发；看原因跑 `agentj activity`。 / '
-                                f'Not delivered to Codex: {en} Fix it on the computer and resend; `agentj activity` shows why.')
+                self.local_fail(f'Codex 没收到这条消息：{zh}在Agent J 主机上处理后重发；看原因跑 `agentj activity`。 / '
+                                f'Not delivered to Codex: {en} Fix it on the Agent J host and resend; `agentj activity` shows why.')
             elif isinstance(error, RPCError):
                 self.local_fail(pick(getattr(self.host, "lang", "zh"), f'Codex 拒绝了这条消息：{reason}。', f'Codex refused this message: {reason}.'))
             else:
@@ -975,8 +975,8 @@ class SharedCodexAgent(CodexAgent):
 
     async def halt(self,clear_queue=True):
         """/stop · the stop switch. The phone's own turn: app-server `turn/interrupt` (confirmed by the caller). P328: a turn
-        the owner started on the computer runs in the desktop's own Codex — not our app-server's — so the phone cannot stop
-        it: say so (Esc / Ctrl+C on the computer); a phone message queued behind it (wait_desktop) is withdrawn, as before."""
+        the owner started on the Agent J host runs in the desktop's own Codex — not our app-server's — so the phone cannot stop
+        it: say so (Esc / Ctrl+C on the Agent J host); a phone message queued behind it (wait_desktop) is withdrawn, as before."""
         busy=self.status=='working'
         if clear_queue:
             while not self.q.empty():

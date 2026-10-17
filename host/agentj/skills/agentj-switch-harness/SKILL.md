@@ -1,6 +1,6 @@
 ---
 name: agentj-switch-harness
-description: Switch the AI harness under Agent J — the phone menu's `/switch-harness` (with or without words), 「切换 harness」「换底层」「切换到 Codex / OpenCode / Claude Code / Kimi Code / Qwen Code / DeepSeek Harness」「切回 Claude Code」「能换成别的 AI 吗」, "switch harness", "switch to Codex / OpenCode / Claude Code / Kimi Code / Qwen Code / DeepSeek Harness", "use another agent". Explains what a harness is, scans which harnesses are installed, probes each one headless with the owner's own login (≤ 60 s, nothing written), reports what can be switched to, helps install and guides the owner through login, and switches only through the `agentj agent switch` gate (auto switch-back on failure).
+description: Switch the AI harness under Agent J — the phone menu's `/switch-harness` (with or without words), 「切换 harness」「换底层」「切换到 Codex / OpenCode / Claude Code / Kimi Code / Qwen Code / DeepSeek Harness」「切换到 OpenCode · 火山方舟 / 豆包」「切回 Claude Code」「能换成别的 AI 吗」, "switch harness", "switch to Codex / OpenCode / Claude Code / Kimi Code / Qwen Code / DeepSeek Harness", "use another agent". Explains what a harness is, scans which harnesses are installed, probes each one headless with the owner's own login (≤ 60 s, nothing written), reports what can be switched to, helps install and guides the owner through login, and switches only through the `agentj agent switch` gate (auto switch-back on failure).
 ---
 # Switch the harness — carefully (切换底层 harness)
 
@@ -22,7 +22,7 @@ switching back resumes that one. To switch, the owner just replies 「切换到 
    phone also shows Agent J's own line under the dancing robot (「正在探测 Codex（2/3）…」, then 「正在切换 / 已切回」 during a
    switch); never leave the page empty and never put a placeholder character or a lone emoji first.
 2. **Report** in one short message: which one runs now, and 「现在能切到：X、Y」 (only `callable: true` ones) — or
-   「这台电脑只有现在这一个能用，没法切换；要切换得先装一个别的」. For each installed-but-not-callable one say why
+   「这台Agent J 主机只有现在这一个能用，没法切换；要切换得先装一个别的」. For each installed-but-not-callable one say why
    (not signed in / token expired / timed out — network or proxy). `not signed in` here means the SERVICE sees no login
    (e.g. Claude Code's token only in the owner's `~/.zshenv`): the scan line already says the one step — repeat it in plain
    words (`claude` → `/login` once, the login goes to the Keychain / credentials file the service can read; or
@@ -41,6 +41,11 @@ switching back resumes that one. To switch, the owner just replies 「切换到 
    `agentj agent switch qwen`). Always tell the owner its terms in plain words: their own scheduled tasks may use it (long continuous background
    runs may be rate-limited — then a pay-as-you-go key), support bots never get it, and inputs / outputs are used by
    Alibaba Cloud to improve its models.
+   **OpenCode · Volcano Ark (P371)** in one step: `agentj agent switch opencode --preset ark --plan coding|payg [--model …]`.
+   Ask first: Coding Plan (…/api/coding/v3 — coding Agents only; other programs using it can get the account banned) or
+   pay-as-you-go (…/api/v3, per token, `ARK_API_KEY`, checked against Ark's model list). It finds OpenCode (arkcli only
+   detected), prints the key card when the key is missing (run it, then the same command again), writes the provider and
+   switches only after one real call; on failure it switches back and removes the provider it added.
 3. **Not installed / not signed in** — offer, never push:
    - Install only after the owner says yes: follow https://agentj.app/docs/setup-agents/en.md (one-command `setup-agents.sh`
      with `--cli <name>`, or that page's per-OS steps). Needs admin rights → `agentj sudo --why '…' -- <cmd>`.
@@ -109,11 +114,11 @@ handoff's next step (nothing in progress → wait for the owner).
 中文：主人发 `/switch-harness`（没带话就先解释什么是 harness），或说「切换到 X」时：① 先说一句「我先扫描一下，大约 1–3 分钟」，再扫描 + 无头探测（`agentj agent switch --scan`，用服务的环境，每个 ≤ 60 秒、只读、不打印凭据；手机上会自己显示「正在探测 / 正在切换 / 已切回」）；② 告诉主人现在能切到哪些，只有一个就说没法切、要先装别的；③ 没装的经主人
 同意按 setup-agents 文档帮装，登录由主人在自己的终端完成（你一步步指导；密钥走 `agentj secret request` 手机卡片，绝不进聊天），
 Kimi Code 用 `kimi login --region mainland-cn`（海外站 `global`）或手机 设置 →「紧急修复」→ ③ →「AI 登录救援」设备码，只支持独立会话，审批全走手机；Qwen Code（`qwen`）没有自己的登录，用手机密钥卡存阿里百炼 Token Plan 的 key（`BAILIAN_TOKEN_PLAN_API_KEY`），同样只支持独立会话；DeepSeek Harness（`dsh`）用主人自己的 dsh 设置，或 `agentj agent dsh --base-url https://<服务>/v1 --model <模型>` 接 Olares Router 等 OpenAI 兼容服务（要 key 走密钥卡 `DSH_ROUTER_API_KEY`），只支持独立会话；装好登好再回到 ①；④ 目标探测通过、主人明确要切，先说「会断开几秒自动重连，新 harness 会先自报家门，不通会自动切回」，再运行
-`agentj agent switch <目标>`——电脑上的独立任务用服务的环境再探测一次（闸门；`--dry-run` 只探测不切），切换、重启、自检
+`agentj agent switch <目标>`——Agent J 主机上的独立任务用服务的环境再探测一次（闸门；`--dry-run` 只探测不切），切换、重启、自检
 都由它完成，失败自动切回原 harness 并说明；闸门还会试「回头路」（现在这个），回不来就不切（`no_way_back`），先帮主人修好，
 主人坚持才加 `--force`；切换前 Agent J 会发〔Agent J 系统提示〕让你按 agentj-handoff 格式把交接写进它点名的 `switch.md`（只留要点、≤ 150 行、
 不写凭据），写完回一句就停；新 harness 先读交接再打招呼，随后接着干，3 分钟没写成也照切并告诉主人；⑤ `agentj agent switch --result` 看结果（带原因和下一步，照着转告主人）；⑥ 切回上一个却过不了检查时，用 `agentj agent switch --undo`
 不经预检原样切回（起不来自动回到现在这个）。「没登录」指后台服务看不到登录：照扫描结果那句一步做法讲给主人（`claude` 里 `/login`
-一次，或 `agentj service import-key CLAUDE_CODE_OAUTH_TOKEN` 再 `agentj service restart`）；你自己会话里能用不算数。OpenCode 没 key 时可以先用它的免费模型（`--model opencode/<免费模型>`），切换结果里那句数据提示原样转告主人。绝不绕过闸门直接改配置或重启服务。
+一次，或 `agentj service import-key CLAUDE_CODE_OAUTH_TOKEN` 再 `agentj service restart`）；你自己会话里能用不算数。「OpenCode · 火山方舟」一步到位：先问主人用 Coding Plan 套餐（只给编程 Agent 用，别的程序调用会被判滥用封号）还是按量付费（…/api/v3），再运行 `agentj agent switch opencode --preset ark --plan coding|payg`，缺 key 它会给密钥卡命令，实测一次才切、不通自动切回。OpenCode 没 key 时可以先用它的免费模型（`--model opencode/<免费模型>`），切换结果里那句数据提示原样转告主人。绝不绕过闸门直接改配置或重启服务。
 切换、扫描、`--undo` 不需要管理员权限，也不需要主人开终端（经 Agent J 自己的通道，隔离里也能用）：绝不为此用 `agentj sudo`，不让主人跑 `agentj service start` 或 launchctl；`agentj service status` 说 serve 在应答就是在运行；失败只转告打印的原因。
 Docs: https://agentj.app/docs/switch-harness/zh.md · https://agentj.app/docs/switch-harness/en.md

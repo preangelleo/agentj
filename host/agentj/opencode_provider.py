@@ -258,8 +258,9 @@ def add_parser(sub) -> None:
                     help="add：这些模型能看图（--no-vision = 纯文本）/ the models read images (--no-vision: text only)")
     sp.add_argument("--max-output", dest="max_output", type=int, help="add：输出上限 token / output limit in tokens")
     sp.add_argument("--context", type=int, help="add：上下文长度 token（配 --max-output，默认 128000）/ context window")
-    sp.add_argument("--plan", choices=["token-plan", "coding-plan"],
-                    help="bailian：token-plan（默认，个人版，含 Qwen 3.8 Max）或 coding-plan / which Bailian plan")
+    sp.add_argument("--plan", choices=["token-plan", "coding-plan", "payg"],
+                    help="bailian：token-plan（默认，个人版，含 Qwen 3.8 Max）或 coding-plan；ark：payg = 按量付费 …/api/v3（默认 Coding Plan）"
+                         " / which Bailian plan; ark: payg = pay-as-you-go /api/v3 (default: the Coding Plan)")
     sp.add_argument("--harness", choices=["opencode", "claude"],
                     help="ark：opencode（默认）或 claude（打印 Claude Code 的 profile 三步）/ ark: which harness")
     sp.add_argument("--lang", choices=["zh", "en"], help="bailian / ark：说明文字的语言 / text language")

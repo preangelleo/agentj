@@ -27,7 +27,8 @@ const MODULES = ['api', 'blobs', 'boot', 'controls', 'md', 'push', 'relay', 'ses
   'media', 'mediawire', 'preview', 'mailfwd', 'icons', 'search',   // P183: the file cards, the preview views and the mail-dialog door
   'unread', 'interactions.gen',   // P207: this device's unread mark (turn ids only) + the key table generated from interactions.json
   'version-notice', 'five-pages', 'workflow-compose',
-  'toolorder', 'toolsort'];   // P340: the composer buttons' order (aj.toolOrder, four ids) + its Settings row   // P240: the version check (its one metadata GET had a branch below but the file was never in this list)
+  'toolorder', 'toolsort',   // P340: the composer buttons' order (aj.toolOrder, four ids) + its Settings row   // P240: the version check (its one metadata GET had a branch below but the file was never in this list)
+  'jcards'];   // P360: Agent J Cards (deck cards 6+, one card's template page, Settings → Cards)
 const OURS_FILES = ['app.js', ...MODULES.map((m) => `js/${m}.js`)];
 const OURS = OURS_FILES.map((r) => read(pub(r))).join('\n');
 const HTML = read(pub('index.html'));
@@ -60,7 +61,7 @@ test('version.json / version.js match the shipped files', () => {
 // CSP default-src 'self' + connect-src = the relays enforce that too), plus — in app.js only — the new web origin the
 // legacy host sends an unpaired visitor to. The relay URLs live only in the Worker CSP config (app.js pins relay HOSTS).
 // (F1: the menu's 「邀请与积分」 opens the account page at its invite block — the one link with a fragment)
-const SITE_LINK = /^https:\/\/agentj\.app\/(?:hotkeys?|(?:[a-z]+\/)*(?:#invite|#brand-kit)?)$/;
+const SITE_LINK = /^https:\/\/agentj\.app\/(?:hotkeys?|(?:[a-z-]+\/)*[a-z-]*(?:#invite|#credits|#brand-kit)?)$/;
 const MAIL_LINK = /^mailto:feedback@agentj\.app$/;   // F13 / P168: Settings → 帮助和反馈, the error / removed pages, the disconnected card (the human fallback mailbox)
 const NEW_WEB_ORIGIN = 'https://m.agentj.app';
 const LICENCE_TEXT = new Set(['brand/fonts/UFL-1.0-ubuntu.txt', 'brand/fonts/OFL-1.1-lexend.txt', 'brand/fonts/README.md',
@@ -111,13 +112,14 @@ test('no URLs to anywhere in shipped files except links to agentj.app pages', ()
         if (rel(f) === 'js/icons.js' && m[0] === 'http://www.w3.org/2000/svg') continue;     // P183: the file card's icons
         if (rel(f) === 'js/contacts.js' && m[0] === 'http://www.w3.org/2000/svg') continue;  // P184: the dialog icons
         if (rel(f) === 'js/copycode.js' && m[0] === 'http://www.w3.org/2000/svg') continue;  // P292: the copy icon
+        if (rel(f) === 'js/jcards.js' && m[0] === 'http://www.w3.org/2000/svg') continue;    // P360: the cards' line icons
         // P210: the pairing page says the link 「以 https:// 开头」 — a bare scheme in text, no address at all
         if (/^https:\/\/[.)）]?$/.test(m[0]) && ['index.html', 'i18n.js'].includes(rel(f))) continue;
         if (rel(f) === 'brand/lang.js' && m[0] === 'http://www.w3.org/2000/svg') continue;  // P236: the header's globe / tick icons
         if ((rel(f) === 'js/five-pages.js' || rel(f) === 'js/vendor-marks.js' || /^assets\/vendors\/[^/]+\.svg$/.test(rel(f))) && ['http://www.w3.org/2000/svg','http://www.w3.org/1999/xlink'].includes(m[0].replace(/\\$/, ''))) continue; // P244: XML namespace, never a request
         // P266: owner-clicked ChatGPT security settings; never fetched by this page.
         if (rel(f) === 'js/authrescue.js' && m[0] === 'https://chatgpt.com/#settings/Security') continue;
-        // P332 (§33): the one line a helper at the computer pastes (`curl -fsSL https://agentj.app/rescue | sh`) — command text, never fetched
+        // P332 (§33): the one line a helper at the Agent J host pastes (`curl -fsSL https://agentj.app/rescue | sh`) — command text, never fetched
         if (['i18n.js', 'index.html', 'js/rescue.js'].includes(rel(f)) && m[0] === 'https://agentj.app/rescue') continue;
         assert.match(m[0], SITE_LINK, `${rel(f)} contains URL ${m[0]}`);
       }
@@ -205,7 +207,7 @@ test('app.js + js/*.js: only WebSocket egress, non-extractable keys, no plaintex
   const ls = OURS_FILES.flatMap((r) => [...code(read(pub(r))).matchAll(/localStorage\.(\w+)\(([^,)]*)/g)].map((m) => `${m[1]}(${m[2]})`));
   // F13: + the reply text size from Settings (FONT_KEY = "aj.fontScale", a number 0.8 … 1.6).
   // 0.15.1 (P55): + the install id (IID_KEY = "aj.iid", 16 random bytes, b64url) and the paired marker (PAIRED_KEY =
-  // "aj.paired", a unix time) — no key, no channel, nothing about the computer.
+  // "aj.paired", a unix time) — no key, no channel, nothing about the Agent J host.
   assert.deepEqual(ls.sort(), ['getItem("aj.chrome")', 'getItem("aj.test.segMs")', 'getItem(A2HS_KEY)', 'getItem(RD_KEY)', 'getItem(FONT_KEY)', 'setItem("aj.chrome")', 'setItem(A2HS_KEY)', 'setItem(RD_KEY)', 'setItem(FONT_KEY)',
     'getItem(IID_KEY)', 'setItem(IID_KEY)', 'getItem(PAIRED_KEY)', 'setItem(PAIRED_KEY)', 'removeItem(PAIRED_KEY)', "getItem('aj.homeInstalled')", "setItem('aj.homeInstalled')",
     // P154: the Send-sound volume (VOLUME_KEY = "aj.sfxVolume", 0 … 100) and the screenshot switch (SHOT_KEY = "aj.shotClip", "1"/"0")
@@ -251,7 +253,7 @@ test('app.js + js/*.js: only WebSocket egress, non-extractable keys, no plaintex
   assert.match(read(pub('js/store.js')), /unwrapKey\('pkcs8', d\.ct, d\.kek, WRAP\(d\.iv\), \{ name: 'X25519' \}, false, \['deriveBits'\]\)/, 'the wrapped device key unwraps non-extractable');
   assert.match(read(pub('js/store.js')), /generateKey\(\{ name: 'AES-GCM', length: 256 \}, false, \['wrapKey', 'unwrapKey'\]\)/, 'wrapping key not extractable');
   const sealed = [...new Set(OURS_FILES.flatMap((r) => [...read(pub(r)).matchAll(/putSealed\("(\w+)"/g)].map((m) => m[1])))].sort();
-  // P188: + 'srch', the search pages of this computer and session (search.js) — AES-GCM like the drafts, gone with /clear and unpair
+  // P188: + 'srch', the search pages of the Agent J host and session (search.js) — AES-GCM like the drafts, gone with /clear and unpair
   assert.deepEqual(sealed, ['draft', 'ihist', 'outbox', 'srch'], 'sealed records: draft + input history + the offline queue (0.15.2) + search pages (P188)');
   const STORE = read(pub('js/store.js'));
   assert.match(STORE, /export async function putSealed\(name, obj\) \{\n  const w = wipes;\n  const rec = await seal\(obj\);\n  if \(w === wipes\) await dbPut\(name, rec\);\n\}/, 'putSealed writes only ciphertext, and never after a wipe');
@@ -442,7 +444,7 @@ test('i18n: no internal terms or banned words in either dictionary, the page tex
     for (const p of GLOSSARY.banned_patterns_zh) assert.doesNotMatch(v, new RegExp(p), `zh ${k}: banned pattern ${p}`);
   }
   // every user-visible Chinese string lives in the dictionary: app.js code has no Chinese except the device label sent to
-  // the host ("网页 · Chrome" is data for the computer's device list; 0.15.1: "网页 · iOS 主屏幕" for the Home Screen app) and comments
+  // the host ("网页 · Chrome" is data for the Agent J host's device list; 0.15.1: "网页 · iOS 主屏幕" for the Home Screen app) and comments
   const appCode = (APP + read(pub('js/device-label.js'))).replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
   const cjk = [...new Set(appCode.match(/[㐀-鿿]+/g) || [])];
   assert.ok(cjk.includes('网页') && cjk.every((w) => ['浏览器', '网页', '主屏幕', '华为手机', '华为平板'].includes(w)), `app.js has UI Chinese outside the dictionary: ${cjk.join(' ')}`);

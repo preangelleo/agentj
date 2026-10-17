@@ -1,14 +1,14 @@
 <!-- generated from https://agentj.app/docs/share-screenshot/en.md by agentjarvis/tools/manual_skill.mjs — do not edit -->
 # Share screenshots and files with Agent J
 
-Recordings, screenshots, Word / Excel / PowerPoint files, archives — any file can go to the Agent on your computer. It lands in the attachment tray under the composer; add a note if you like ("summarise this recording"), then send. Sharing never sends anything by itself.
+Recordings, screenshots, Word / Excel / PowerPoint files, archives — any file can go to the Agent on the Agent J host. It lands in the attachment tray under the composer; add a note if you like ("summarise this recording"), then send. Sharing never sends anything by itself.
 
 ## What you can send {#limits}
 
 - Any file type, up to 10 at once and 200 MiB each — enough for an hour of phone audio.
-- Audio and video are transcribed locally on your computer: the Agent gets the transcript and the path of the original. Long recordings are transcribed in 10-minute segments, up to 2 hours; if transcription fails the original still arrives and the Agent sees why. A video without sound is just a file.
+- Audio and video are transcribed locally on the Agent J host: the Agent gets the transcript and the path of the original. Long recordings are transcribed in 10-minute segments, up to 2 hours; if transcription fails the original still arrives and the Agent sees why. A video without sound is just a file.
 - Files travel only through the end to end encrypted attachment path, at about 1 MB per second; 200 MiB takes about 4 minutes.
-- While the computer runs an older Agent J, the limit is still 25 MiB and only common formats; update it to lift that.
+- While the Agent J host runs an older Agent J, the limit is still 25 MiB and only common formats; update it to lift that.
 
 The simplest route: in any app, save to Files first, then tap the "File" button next to the composer in the Agent J web app and pick it. The two routes below save a few taps.
 
@@ -19,7 +19,7 @@ The simplest route: in any app, save to Files first, then tap the "File" button 
 3. Check the attachment tray, add an optional note, then send. If this browser is not paired, pair first and share again.
 
 （Screenshot：Android share received in the attachment tray, local Chromium acceptance screenshot — https://agentj.app/docs/share-screenshot/android.en.png）
-Intake stays on the phone; if it is not collected within five minutes or the system closes the page, share again. When offline, reconnect your computer; there is no ordinary upload fallback.
+Intake stays on the phone; if it is not collected within five minutes or the system closes the page, share again. When offline, reconnect the Agent J host; there is no ordinary upload fallback.
 
 > **Tip:** if Agent J is missing from the share menu, or only takes images, open its Home Screen icon and update the page. An older installation may need reinstalling. Make sure the browser or installed app that opens has its own pairing.
 

@@ -730,6 +730,8 @@ class WheelInstall(unittest.TestCase):
         # over the line above → an explicit 2 KiB (soft, +0.08 %; ADR-P312 budget-soft line), flagged to Jarvis.
         core_0200+=2048
         core_0200+=4096           # P307 AskUserQuestion phone/terminal race (shared.py): measured +1922 bytes; flagged to Jarvis
+        # P376: Jarvis approved the temporary 0.23.1 ceiling; slim the core in 0.24.
+        core_0200 = 3100000
         self.assertLess(pathlib.Path(self.wheel).stat().st_size-allocs,core_0200,'P118 approved bounded core ceiling + 0.18.x increments + P165 (0.20.0) + P198 (0.20.1) + 0.20.2 increments (P201 P203 P205 P207 P211 P214 P215 P217 + P218 integration) + 0.20.3 increments (P219 P221 + P240 integration) + P254')
         self.assertLess(pathlib.Path(self.wheel).stat().st_size,core_0200+65536+49152+49152+32768+4096+12288+8192+16384+20480+49152+24576+8192+12288+28672+4096+20480+8192+12288+12288+8192+28672+20480,   # + P244 bounded catalogue + P275 avatar
                         'combined bounded allocations')
@@ -787,7 +789,7 @@ class WheelInstall(unittest.TestCase):
             self.assertEqual({c["id"]: c["status"] for c in d_["checks"]}["state"], "ok")
             core = next(c for c in d_["checks"] if c["id"] == "main-core")
             self.assertEqual(core["status"], "ok")
-            self.assertIn("core v16:", core["summary"])
+            self.assertIn("core v17:", core["summary"])
 
     @unittest.skipUnless((sys.platform.startswith("linux") and shutil.which("bwrap")) or
                          (sys.platform == "darwin" and os.access(fence.SANDBOX_EXEC, os.X_OK)),

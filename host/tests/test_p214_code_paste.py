@@ -32,7 +32,7 @@ class PastedCode(unittest.TestCase):
 
     def test_setup_code_in_the_seat_sentence(self):
         tok = "ajt_" + secrets.token_urlsafe(32)
-        self.assertEqual(read(f"这台电脑用的是 Agent J 账号「acme」的一个席位，设置码是：{tok}（7 天内有效，只能用一次）"), tok)
+        self.assertEqual(read(f"这台Agent J 主机用的是 Agent J 账号「acme」的一个席位，设置码是：{tok}（7 天内有效，只能用一次）"), tok)
         self.assertEqual(read(f"The seat setup code is {tok} (valid 7 days)."), tok)
         self.assertEqual(read(tok + "\n"), tok)
 
@@ -83,7 +83,7 @@ class PasteLogin(unittest.TestCase):
     def test_login_help_and_device_text(self):
         src = (HERE.parent / "agentj" / "cli.py").read_text()
         self.assertIn('"--paste"', src)
-        self.assertIn("电脑绑定码：", src)
+        self.assertIn("Agent J 主机绑定码：", src)
         self.assertIn("#add-agent", src)
         self.assertIn("不是通行密钥转移码", src)
 
@@ -213,7 +213,7 @@ class AfterBind(unittest.TestCase):
 
 class PasteLoginPty(unittest.TestCase):
     """The real `agentj login` on a pseudo-terminal: the owner pastes the whole seat prompt (several lines, CRLF), types a
-    name, and the computer joins — no --seat-file, no device code, the code never echoed."""
+    name, and the Agent J host joins — no --seat-file, no device code, the code never echoed."""
     def test_paste_whole_prompt_at_a_terminal(self):
         import os, pty, select, shutil, subprocess, tempfile, time
         sys.path.insert(0, str(HERE))
@@ -244,7 +244,7 @@ class PasteLoginPty(unittest.TestCase):
                                 break
                     return needle in out
                 self.assertTrue(until("> ".encode()), out.decode(errors="replace"))
-                os.write(master, f"请用 curl 下载 install.md……\r这台电脑用的是一个席位，设置码是：{tok}（7 天内有效）\r需要我动手的时候跟我说。\r".encode())
+                os.write(master, f"请用 curl 下载 install.md……\r这台Agent J 主机用的是一个席位，设置码是：{tok}（7 天内有效）\r需要我动手的时候跟我说。\r".encode())
                 self.assertTrue(until("起个名字".encode()), out.decode(errors="replace"))   # P214 追加 5: asked after the code
                 os.write(master, "运营部\r".encode())
                 until("首次上报".encode())
@@ -254,7 +254,7 @@ class PasteLoginPty(unittest.TestCase):
                 text = out.decode(errors="replace")
                 self.assertEqual(p.returncode, 0, text)
                 self.assertNotIn(tok, text, "the pasted code is never echoed")
-                self.assertNotIn("电脑绑定码：", text, "no device code when a code was pasted")
+                self.assertNotIn("Agent J 主机绑定码：", text, "no device code when a code was pasted")
                 self.assertIn("Agent 名「运营部」", text)
                 self.assertEqual(cp.seat_binds[0]["token"], tok)
                 self.assertEqual(len(cp.seat_binds), 1)

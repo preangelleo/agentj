@@ -327,7 +327,7 @@ class Checklist(unittest.TestCase):
             self.assertIsNone(first_run.phone_round_trip(self.st, "computer"), "only a phone counts")
             snap = first_run.phone_round_trip(self.st, "phone", "cellular")
             self.assertTrue(snap["remote_ready"])
-            self.assertIn("从现在起，你可以离开电脑", first_run.leave_text(first_run.read(self.st), "zh"))
+            self.assertIn("从现在起，你可以离开Agent J 主机", first_run.leave_text(first_run.read(self.st), "zh"))
             rec = first_run.read(self.st)
             self.assertEqual(rec["exit"]["evidence"]["net"], "cellular")
             # stale: verified items expire (browser 15 min, others 24 h) and the round trip is only good for 2 h

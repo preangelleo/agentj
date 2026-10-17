@@ -377,7 +377,7 @@ def notice(r, lang='zh', prefs=None):
     from . import humane
     if r.get('result') == 'ok' and r.get('when') == 'idle':
         return (f"Updated automatically while idle to {r['to']} ({r.get('summary_en') or 'latest published fixes'})." if lang == 'en' else
-                f"电脑空闲时已自动升级到 {r['to']}（{r.get('summary') or '安装最新正式发布的改进'}）。")
+                f"Agent J 主机空闲时已自动升级到 {r['to']}（{r.get('summary') or '安装最新正式发布的改进'}）。")
     if r.get('result') == 'ok':
         summary = (r.get('summary_en') if lang == 'en' else r.get('summary')) or humane.say('update.auto_ok_default', lang)
         return humane.say('update.auto_ok', lang, prefs, to=r['to'], summary=str(summary).rstrip('。.'))

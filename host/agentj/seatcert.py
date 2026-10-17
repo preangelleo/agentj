@@ -39,19 +39,19 @@ ALLOWED = ("ok", "grace", "exempt", "unenforced")
 
 TEXT = {
     "zh": {
-        "unbound": "这台电脑还没有绑定 Agent J 席位，所以手机和 Telegram 的消息不会交给 Agent，也不能配对新遥控器。"
-                   "在账户页 {url} 买一个席位、点「复制安装提示词」，把那句话交给电脑上的 Agent（或自己运行 `agentj login --seat-file …`）完成绑定。",
-        "suspended": "这台电脑的 Agent J 席位已暂停（超出已付席位、宽限期已过），消息不会交给 Agent。到账户页 {url} 续费或调整席位后自动恢复。",
-        "expired": "这台电脑超过 72 小时没能和 Agent J 账户服务确认席位，暂时停用。检查网络后运行 `agentj doctor`；恢复联系后自动继续。",
+        "unbound": "这台Agent J 主机还没有绑定 Agent J 席位，所以手机和 Telegram 的消息不会交给 Agent，也不能配对新遥控器。"
+                   "在账户页 {url} 买一个席位、点「复制安装提示词」，把那句话交给Agent J 主机上的 Agent（或自己运行 `agentj login --seat-file …`）完成绑定。",
+        "suspended": "这台Agent J 主机的 Agent J 席位已暂停（超出已付席位、宽限期已过），消息不会交给 Agent。到账户页 {url} 续费或调整席位后自动恢复。",
+        "expired": "这台Agent J 主机超过 72 小时没能和 Agent J 账户服务确认席位，暂时停用。检查网络后运行 `agentj doctor`；恢复联系后自动继续。",
         "pair": "配对新遥控器需要有效的 Agent J 席位。",
     },
     "en": {
-        "unbound": "This computer is not bound to an Agent J seat, so phone and Telegram messages are not passed to the Agent and no new "
+        "unbound": "the Agent J host is not bound to an Agent J seat, so phone and Telegram messages are not passed to the Agent and no new "
                    "remote can be paired. Buy a seat on the account page {url}, press “Copy installation prompt” and give that sentence "
-                   "to the Agent on this computer (or run `agentj login --seat-file …` yourself).",
-        "suspended": "This computer's Agent J seat is suspended (beyond the paid seats, past the grace period); messages are not passed "
+                   "to the Agent on the Agent J host (or run `agentj login --seat-file …` yourself).",
+        "suspended": "the Agent J host's Agent J seat is suspended (beyond the paid seats, past the grace period); messages are not passed "
                      "to the Agent. Renew or adjust seats on the account page {url} — it resumes by itself.",
-        "expired": "This computer could not confirm its seat with the Agent J account service for more than 72 hours and is paused. "
+        "expired": "the Agent J host could not confirm its seat with the Agent J account service for more than 72 hours and is paused. "
                    "Check the network, then run `agentj doctor`; it continues once the service is reachable.",
         "pair": "Pairing a new remote needs a valid Agent J seat.",
     },
@@ -67,16 +67,16 @@ FEATURE = {
 FEATURE_TEXT = {
     "zh": {
         "need": "{feature}需要有效的 Agent J 席位。",
-        "unbound": "这台电脑还没有绑定席位：在账户页 {url} 买一个席位、点「复制安装提示词」完成绑定（`agentj login --seat-file …`）后即可使用。",
-        "suspended": "这台电脑的席位已暂停：到账户页 {url} 续费或调整席位后自动恢复。",
-        "expired": "这台电脑超过 72 小时没能和 Agent J 账户服务确认席位：检查网络后运行 `agentj doctor`，恢复联系后自动继续。",
+        "unbound": "这台Agent J 主机还没有绑定席位：在账户页 {url} 买一个席位、点「复制安装提示词」完成绑定（`agentj login --seat-file …`）后即可使用。",
+        "suspended": "这台Agent J 主机的席位已暂停：到账户页 {url} 续费或调整席位后自动恢复。",
+        "expired": "这台Agent J 主机超过 72 小时没能和 Agent J 账户服务确认席位：检查网络后运行 `agentj doctor`，恢复联系后自动继续。",
     },
     "en": {
         "need": "{feature} needs a valid Agent J seat.",
-        "unbound": " This computer is not bound to a seat yet: buy one on the account page {url}, press “Copy installation prompt” and "
+        "unbound": " the Agent J host is not bound to a seat yet: buy one on the account page {url}, press “Copy installation prompt” and "
                    "finish binding (`agentj login --seat-file …`).",
-        "suspended": " This computer's seat is suspended: renew or adjust seats on the account page {url} — it resumes by itself.",
-        "expired": " This computer could not confirm its seat with the Agent J account service for more than 72 hours: check the "
+        "suspended": " the Agent J host's seat is suspended: renew or adjust seats on the account page {url} — it resumes by itself.",
+        "expired": " the Agent J host could not confirm its seat with the Agent J account service for more than 72 hours: check the "
                    "network, then run `agentj doctor`; it continues once the service is reachable.",
     },
 }

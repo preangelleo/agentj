@@ -15,8 +15,8 @@ const OUT = fileURLToPath(new URL('../../../reports/qa/p158/', import.meta.url))
 mkdirSync(OUT, { recursive: true });
 const hex = (n) => Array.from(webcrypto.getRandomValues(new Uint8Array(n)), (b) => b.toString(16).padStart(2, '0')).join('');
 const GRANT = {
-  zh: '🎯 目标模式 · 开工授权（一次签名）\n目标：今晚把报告改完发给王总\n✓ 验收：报告已发出\n截止：10-13 08:00\n预先放行（目标期内不再弹卡，全部记日志）：\n· [对外发送] 向 wang@example.com 发邮件 — 含 「wang@example.com」; 最多 2 次\n没列进去的不算授权。范围外：电脑能撤回的动作弹 10 秒倒计时卡，不点 = 同意；不可逆的和疑似攻击的一律等你决定。',
-  en: '🎯 Goal mode — one approval for the whole goal\nGoal: finish the report tonight and send it to Wang\n✓ Done when: the report is sent\nUntil: 10-13 08:00\nPre-approved (no card while the goal runs):\n· [Send out] email wang@example.com — contains 「wang@example.com」; ≤ 2 times\nNot listed = not approved. Outside the list: a step the computer can undo asks with a 10-second countdown (no answer = approved); anything else, and anything that looks like an attack, waits for you.',
+  zh: '🎯 目标模式 · 开工授权（一次签名）\n目标：今晚把报告改完发给王总\n✓ 验收：报告已发出\n截止：10-13 08:00\n预先放行（目标期内不再弹卡，全部记日志）：\n· [对外发送] 向 wang@example.com 发邮件 — 含 「wang@example.com」; 最多 2 次\n没列进去的不算授权。范围外：Agent J 主机能撤回的动作弹 10 秒倒计时卡，不点 = 同意；不可逆的和疑似攻击的一律等你决定。',
+  en: '🎯 Goal mode — one approval for the whole goal\nGoal: finish the report tonight and send it to Wang\n✓ Done when: the report is sent\nUntil: 10-13 08:00\nPre-approved (no card while the goal runs):\n· [Send out] email wang@example.com — contains 「wang@example.com」; ≤ 2 times\nNot listed = not approved. Outside the list: a step the Agent J host can undo asks with a 10-second countdown (no answer = approved); anything else, and anything that looks like an attack, waits for you.',
 };
 const KINDS = {
   grant: { tool: 'agentj goal', summary: GRANT, cat: [], goal: 'grant', ttl: 600, tag: { zh: '开工授权', en: 'opening grant' } },

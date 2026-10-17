@@ -63,7 +63,7 @@ SAMPLES = {
                 "workspace routing discovery failed", "connection timed out", "DNS lookup failed"],
     "crash": ["Codex 退出了（137）", "Codex 退出了（1）：thread 'main' panicked at core/src/codex.rs:1:1",
               "Codex（app-server）没有启动（TimeoutError）。"],
-    "missing": ["这台电脑上没找到 Codex（codex 命令）。装好并登录后再试。"],
+    "missing": ["这台Agent J 主机上没找到 Codex（codex 命令）。装好并登录后再试。"],
     "other": ["something nobody has seen before", ""],
 }
 VAGUE = ("Codex 没能完成这条请求，查看详情后重试。", "Codex could not finish this request. Check the details and retry.")

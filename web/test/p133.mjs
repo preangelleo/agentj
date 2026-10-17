@@ -1,5 +1,5 @@
 // P133: the grey 「正在恢复连接…」 page comes back fast — the retry ladder stops at 5 s, the network coming back retries at
-// once, a resume the computer never answers is abandoned and retried, every resume tells the computer why it reconnected,
+// once, a resume the Agent J host never answers is abandoned and retried, every resume tells the Agent J host why it reconnected,
 // and what was typed during the outage stays in the field and goes out on reconnect. Owned headless browser + fake host.
 import assert from 'node:assert/strict';
 import {startWebServer} from './serve.mjs';
@@ -33,7 +33,7 @@ try{
   let hello=fake.log.slice(n0).find(m=>m.t==='hello');
   ok(hello&&hello.rc&&hello.rc.why==='offline','the resume hello says rc why=offline');
 
-  // 3. a resume the computer never answers (socket open, no reply) is abandoned after 15 s and retried — rc why=stall
+  // 3. a resume the Agent J host never answers (socket open, no reply) is abandoned after 15 s and retried — rc why=stall
   await sleep(300);
   fake.st.muteResumes=1;
   n0=fake.log.length;t0=Date.now();

@@ -8,6 +8,8 @@ scheduler and the stop-everything switch (later rounds). Shape (exact key set �
      "mode": "normal" | "research", "enabled": false, "needs": ["<which service, never a key>"], "outputs": ["reports/…"]}
     optional (P254): "harness": "claude" | "codex" | "opencode" | [one or more of them] — the only harnesses this workflow may
     run on; the quota steward never moves it elsewhere. Absent = any (normally the main Agent's own).
+    optional (P365): "notify_webapp": true | false — decided when the task is made, default false: true = the files this run
+    writes under reports/ go to the phone as file cards on its result page (notify.py; the phone's settings can override).
 
 - `enabled` is turned on only by a human (the scheduler round); the wizard and `add-template` always write `false`.
 - `mode: "research"` = the read-only run profile (reports only). `normal` workflows may draft, but every step that spends
@@ -22,7 +24,7 @@ import json
 import re
 
 KEYS = ("v", "id", "title", "schedule", "tz", "prompt_file", "dry_run_prompt_file", "mode", "enabled", "needs", "outputs")
-OPTIONAL = ("harness",)
+OPTIONAL = ("harness", "notify_webapp")   # P365: notify_webapp, see notify.py
 HARNESS_NAMES = ("claude", "codex", "opencode", "kimi", "qwen", "dsh")   # P305: + Kimi Code (ACP, tasks.py)
 MODES = ("normal", "research")
 ID_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,39}")
@@ -107,6 +109,8 @@ def problems(obj: object, expect_id: str | None = None) -> list[str]:
     h = obj.get("harness")
     if "harness" in obj and not (h in HARNESS_NAMES or (isinstance(h, list) and 0 < len(h) <= len(HARNESS_NAMES) and all(x in HARNESS_NAMES for x in h))):
         out.append("harness must be claude, codex, opencode, kimi, qwen or dsh, or a list of them")
+    if "notify_webapp" in obj and type(obj["notify_webapp"]) is not bool:
+        out.append("notify_webapp must be true or false")
     outs = obj.get("outputs")
     if "outputs" in obj and not (isinstance(outs, list) and 0 < len(outs) <= 10 and all(
             isinstance(x, str) and _OUT_RE.fullmatch(x) and ".." not in x.split("/") for x in outs)):

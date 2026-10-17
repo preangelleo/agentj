@@ -10,6 +10,12 @@
 //   · 修改 / 填写 (and 「添加」 for a new NAME) ask the host for the EXISTING encrypted key card (keys_set): the value is typed
 //     on that card, whose 「同意」 asks for Face ID itself — the Agent never sees it.
 //   · no passkey on this phone (`fa` absent): 拷贝 / 删除 say so and offer 「设置 Face ID」 (F20), never a fallback.
+// P362 (backlog #71): a row also lists where else on the computer that NAME already is (`found`: source id, ≤ 4-char tail,
+//   same / different from Agent J's copy, the one in use) with 「收进 Agent J」 when Agent J has none: a confirmation (keep
+//   the old source by default; a box to comment its line out instead), Face ID over keysDigest("import", NAME,
+//   source + keep|comment) started in the 「收进来」 tap, then the host copies the value on the computer — never through the
+//   phone. The Claude / Codex sign-in rows say which login is really used (`use`, `use_name`, `use_src`, `pending`), and the
+//   page ends with the places the host looked in (`src`) and why a place was skipped.
 import { channel } from './session.js';
 import * as api from './api.js';
 import { t, lang, onLang } from './t.js';
@@ -23,6 +29,11 @@ export const NAME_MAX = 64;
 export const HOLD_MS = 30000;                     // a value the clipboard refused waits this long for 「再点一次拷贝」
 const HEX32 = /^[0-9a-f]{32}$/;
 const TYPES = new Set(['oauth', 'sub', 'key']);
+const SRC_ID = /^(?:systemd|s[0-9a-f]{16})$/;
+const SRC_KINDS = new Set(['envd', 'systemd', 'file']);
+const USES = new Set(['login', 'sub', 'key', 'cloud', 'helper', 'none']);
+export const WHYS = new Set(['missing', 'symlink', 'foreign_owner', 'unsafe_permissions', 'unsafe_parent', 'not_regular', 'too_large', 'unreadable', 'not_absolute', 'state_dir', 'hard_link', 'system_dir']);
+const TAIL = /^[\x21-\x7e]{1,4}$/;
 
 // line icons, 24-unit grid, stroke 1.9, round caps (the reply card's / icons.js style)
 export const KEY_GLYPH = {
@@ -45,11 +56,37 @@ export function keyGlyph(name) {
 const str = (v, n) => (typeof v === 'string' && v.length > 0 && v.length <= n ? v : null);
 const okName = (v) => typeof v === 'string' && v.length <= NAME_MAX && NAME_RE.test(v);
 const label = (nm) => (nm && typeof nm === 'object' ? (lang() === 'en' ? nm.en || nm.zh : nm.zh || nm.en) : null);
+function found(f) {
+  if (!f || !SRC_ID.test(f.src || '')) return null;
+  const o = { src: f.src, tail: typeof f.tail === 'string' && TAIL.test(f.tail) ? f.tail : null };
+  if (typeof f.same === 'boolean') o.same = f.same;
+  if (f.live === true) o.live = true;
+  if (/^[0-9a-f]{16}$/.test(f.fp || '')) o.fp = f.fp;          // the listed value's fingerprint: offered for 收进 only with it
+  return o;
+}
 function row(r) {
   if (!r || !TYPES.has(r.type) || !okName(r.name)) return null;
-  if (r.type === 'oauth') return { type: 'oauth', name: r.name, state: r.state === 'in' ? 'in' : 'out' };
-  const tail = typeof r.tail === 'string' && /^[\x21-\x7e]{1,4}$/.test(r.tail) ? r.tail : null;
-  return { type: r.type, name: r.name, set: r.set === true, tail: r.set === true ? tail : null, in_use: r.in_use === true };
+  if (r.type === 'oauth') {
+    const o = { type: 'oauth', name: r.name, state: r.state === 'in' ? 'in' : 'out' };
+    if (USES.has(r.use)) {                                     // P362: which login the harness really uses
+      o.use = r.use;
+      if (okName(r.use_name)) o.use_name = r.use_name;
+      if (r.use_src === 'agentj' || SRC_ID.test(r.use_src || '')) o.use_src = r.use_src;
+      if (r.pending === true) o.pending = true;
+    }
+    return o;
+  }
+  const tail = typeof r.tail === 'string' && TAIL.test(r.tail) ? r.tail : null;
+  const o = { type: r.type, name: r.name, set: r.set === true, tail: r.set === true ? tail : null, in_use: r.in_use === true };
+  const fd = (Array.isArray(r.found) ? r.found.slice(0, 6) : []).map(found).filter(Boolean);
+  if (fd.length) o.found = fd;
+  return o;
+}
+function source(x) {
+  if (!x || !SRC_ID.test(x.id || '') || !SRC_KINDS.has(x.kind) || !str(x.label, 300)) return null;
+  const o = { id: x.id, kind: x.kind, label: x.label, count: Number.isInteger(x.count) && x.count >= 0 ? x.count : 0 };
+  if (WHYS.has(x.why)) o.why = x.why;
+  return o;
 }
 /** A `keys` message → the page model, or null (pure; unit-tested). Anything malformed is dropped, never shown. */
 export function parse(m) {
@@ -62,9 +99,10 @@ export function parse(m) {
     const rows = (Array.isArray(v.rows) ? v.rows.slice(0, 12) : []).map(row).filter(Boolean);
     if (rows.length) base.push({ id: v.id, name, rows });
   }
-  const third = (Array.isArray(m.third) ? m.third.slice(0, 200) : []).map((r) => row({ ...r, type: 'key', set: true })).filter(Boolean);
+  const third = (Array.isArray(m.third) ? m.third.slice(0, 200) : []).map((r) => row({ ...r, type: 'key', set: r?.set !== false })).filter(Boolean);
   const fa = typeof m.fa === 'string' && m.fa.length > 0 && m.fa.length <= 1400 ? m.fa : null;
-  return { id: m.id, n: m.n, fa, base, third };
+  const src = (Array.isArray(m.src) ? m.src.slice(0, 80) : []).map(source).filter(Boolean);
+  return { id: m.id, n: m.n, fa, base, third, src };
 }
 
 let S = null;                       // the page model (names / states only) + the armed challenges
@@ -81,12 +119,32 @@ async function arm(n) {
   S.n = n;
   const dev = await api.myDeviceId(), ch = channel(), id = S.id;
   for (const r of [...S.base.flatMap((v) => v.rows), ...S.third]) {
-    if (r.type === 'oauth' || !r.set) continue;
+    if (r.type === 'oauth') continue;
+    if (!r.set) {                                    // P362: 「收进 Agent J」 from each place it was found, keep or comment out
+      for (const f of (r.found || []).filter((x) => x.fp)) {
+        for (const keep of srcOf(f.src)?.kind === 'systemd' ? [true] : [true, false]) {
+          const extra = importExtra(f.src, keep, f.fp);
+          const c = await elevateChallenge(ch, dev, id, 'key_import', n, await keysDigest('import', r.name, extra));
+          if (S && S.n === n && S.id === id) chs.set('import\n' + r.name + '\n' + extra, c);
+        }
+      }
+      continue;
+    }
     for (const op of ['copy', 'delete']) {
       const c = await elevateChallenge(ch, dev, id, 'key_' + op, n, await keysDigest(op, r.name));
       if (S && S.n === n && S.id === id) chs.set(op + '\n' + r.name, c);
     }
   }
+}
+/** What an import's Face ID also signs (agentj/keys.py import_extra). */
+export const importExtra = (src, keep, fp) => src + '\n' + (keep ? 'keep' : 'comment') + '\n' + fp;
+const srcOf = (id) => (S && S.src ? S.src.find((x) => x.id === id) : null) || null;
+/** A source's label for the page: environment.d / extra files by path, the systemd manager / Agent J's own file by name. */
+export function srcLabel(id, list) {
+  if (id === 'agentj') return t('p362.srcAgentj');
+  const x = (list || S?.src || []).find((y) => y.id === id);
+  if (!x) return '?';
+  return x.kind === 'systemd' ? t('p362.srcSystemd') : x.label;
 }
 function rearm(n) { if (S && HEX32.test(n || '')) arm(n).catch(() => chs.clear()); }
 
@@ -136,9 +194,11 @@ function rowNode(r, vendor) {
   const st = mk('div', 'kstate');
   if (r.type === 'oauth') { st.textContent = t(r.state === 'in' ? 'p352.signedIn' : 'p352.signedOut'); st.dataset.on = r.state === 'in' ? '1' : '0'; }
   else if (r.set) { st.textContent = '••••••••' + (r.tail || ''); st.dataset.on = '1'; }
-  else { st.textContent = t('p352.notSet'); st.dataset.on = '0'; }
-  if (r.in_use) st.append(mk('span', 'kuse', t('p352.inUse')));
+  else { st.textContent = t(r.found ? 'p362.notInAgentJ' : 'p352.notSet'); st.dataset.on = '0'; }
+  if (r.in_use && (r.set || r.type === 'oauth')) st.append(mk('span', 'kuse', t('p352.inUse')));   // a found-only copy says it on its own line
   main.append(st);
+  if (r.type === 'oauth' && r.use) main.append(useLine(r));
+  for (const f of r.found || []) main.append(foundLine(r, f, vendor));
   li.append(main);
   if (r.type !== 'oauth') {
     const acts = mk('div', 'kacts');
@@ -147,6 +207,52 @@ function rowNode(r, vendor) {
     li.append(acts);
   }
   return li;
+}
+/** P362: 「正在用：订阅 token（CLAUDE_CODE_OAUTH_TOKEN）· 来源 …」 under a sign-in row. */
+function useLine(r) {
+  const d = mk('div', 'kuseline'); d.dataset.use = r.use;
+  let text = t('p362.use.' + r.use, { name: r.use_name || '' });
+  if (r.use_src) text += ' · ' + t('p362.from', { src: srcLabel(r.use_src) });
+  d.textContent = text;
+  if (r.pending) d.append(mk('span', 'kpending', t('p362.pending')));
+  return d;
+}
+/** P362: 「电脑上已有 · 来源 X · ••••abcd」 (+ same / different, in use) and 「收进 Agent J」 when Agent J has none. */
+function foundLine(r, f, vendor) {
+  const d = mk('div', 'kfound'); d.dataset.src = f.src;
+  const txt = mk('span', 'kfound-t');
+  const bits = [t(r.set ? 'p362.foundAlso' : 'p362.found', { src: srcLabel(f.src) })];
+  if (f.tail) bits.push('••••' + f.tail);
+  if (f.same === true) bits.push(t('p362.same'));
+  if (f.same === false) bits.push(t('p362.differ'));
+  txt.textContent = bits.join(' · ');
+  if (f.live) txt.append(mk('span', 'kuse', t('p352.inUse')));
+  d.append(txt);
+  if (!r.set && f.fp) {
+    const b = mk('button', 'aj-btn kimp', t('p362.import')); b.type = 'button';
+    b.dataset.name = r.name; b.dataset.src = f.src;
+    b.setAttribute('aria-label', t('p362.import') + ' ' + r.name);
+    b.addEventListener('click', () => importKey(r, f));
+    d.append(b);
+  }
+  return d;
+}
+/** P362: where the host looked, and why a place was skipped; a hint to add more files when none is registered. */
+function sourcesNode() {
+  const box = mk('section', 'ksrc');
+  box.append(mk('h3', 'ksrc-h', t('p362.scanned')));
+  const ul = mk('ul', 'ksrc-l');
+  for (const x of S.src) {
+    const li = mk('li', 'ksrc-i'); li.dataset.kind = x.kind;
+    li.textContent = (x.kind === 'systemd' ? t('p362.srcSystemd') : x.label) + ' · ' +
+      (x.why ? t('p362.skip', { why: t('p362.why.' + x.why) }) : t('p362.count', { n: x.count }));
+    if (x.why) li.dataset.skip = '1';
+    ul.append(li);
+  }
+  if (!S.src.length) ul.append(mk('li', 'ksrc-i', t('p362.none')));
+  box.append(ul);
+  if (!S.src.some((x) => x.kind === 'file')) box.append(mk('p', 'ksrc-hint', t('p362.moreHint')));
+  return box;
 }
 function draw() {
   if (!root || !S) return;
@@ -171,6 +277,7 @@ function draw() {
   for (const r of S.third) ul.append(rowNode(r, null));
   if (!S.third.length) card.append(mk('p', 'kempty', t('p352.thirdEmpty')));
   card.append(ul); kids.push(card);
+  kids.push(sourcesNode());
   root.replaceChildren(...kids);
 }
 
@@ -231,14 +338,14 @@ async function requestCard(name) {
 }
 
 /** One operation's round trip after Face ID: → the host's keys_res (with a fresh nonce re-armed). Not async before fa. */
-async function run(op, name, faP) {
+async function run(op, name, faP, more) {
   const id = S.id, n = S.n;
   busy = true;
   try {
     let fa;
     try { fa = await faP; } catch (e) { return { ok: false, why: e && e.name === 'NotAllowedError' ? 'cancel' : 'fa_error' }; }   // the owner closed the sheet = quiet
     chs.clear();                                       // this nonce is spent the moment it is sent
-    const res = await api.keysOp(op, name, id, n, fa);
+    const res = await api.keysOp(op, name, id, n, fa, more);
     if (res.n) rearm(res.n);
     return res;
   } finally { busy = false; }
@@ -289,6 +396,41 @@ export const holding = () => !!held;
 if (typeof document !== 'undefined') {
   addEventListener('pagehide', () => { if (held) { wipe(); toastOff(); } });
   document.addEventListener('visibilitychange', () => { if (document.hidden && held) { wipe(); toastOff(); } });
+}
+
+/** P362 「收进 Agent J」: a confirmation (keep the old source by default; a box to comment it out), Face ID in the 「收进来」 tap. */
+async function importKey(r, f) {
+  if (busy) return toast(t('p352.busy'));
+  if (!S || !S.fa || !canAssert()) return noPasskey();
+  const x = srcOf(f.src);
+  const label = srcLabel(f.src);
+  const yes = document.getElementById('confirm-yes'), body = document.getElementById('confirm-text');
+  let opt = null;
+  if (x && x.kind !== 'systemd') {
+    opt = mk('label', 'kimp-opt');
+    const cb = document.createElement('input'); cb.type = 'checkbox'; cb.id = 'kimp-comment';
+    opt.append(cb, mk('span', '', t('p362.importComment', { src: label })));
+  }
+  let faP = null, keep = true;
+  const pre = () => {
+    keep = !(opt && opt.querySelector('input').checked);
+    const ch = chs.get('import\n' + r.name + '\n' + importExtra(f.src, keep, f.fp));
+    if (ch) { faP = approve(ch, S.fa); faP.catch(() => {}); }
+  };
+  yes.addEventListener('click', pre);
+  const shown = confirmSheet(t('p362.importTitle', { name: r.name }), t('p362.importText', { name: r.name, src: label }), t('p362.importGo'));
+  if (opt) body.after(opt);
+  let ok;
+  try { ok = await shown; } finally { yes.removeEventListener('click', pre); if (opt) opt.remove(); }
+  if (!ok) return;
+  if (!faP) return toast(t('p352.busy'));
+  const res = await run('import', r.name, faP, { src: f.src, keep, fp: f.fp });
+  if (res.ok) {
+    toast(t(res.old === 'commented' ? 'p362.importedCommented' : res.old === 'comment_failed' ? 'p362.commentFailed' : 'p362.imported', { name: r.name }), 4200, 'success');
+    return load();
+  }
+  if (res.why !== 'cancel') toast(t(res.why === 'exists' ? 'p362.exists' : res.why === 'changed' ? 'p362.changed' : why(res.why)), 4200);
+  if (['gone', 'missing', 'exists', 'changed'].includes(res.why)) load();
 }
 
 /** 删除: a confirmation naming the key (stronger when it is the one in use); Face ID starts in the 「删除」 tap itself. */

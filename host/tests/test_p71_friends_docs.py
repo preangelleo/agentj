@@ -77,8 +77,8 @@ class FriendsSkill(unittest.TestCase):
 
 class CoreV6(unittest.TestCase):
     def test_version_and_pins(self):
-        self.assertEqual(main_identity.VERSION, 16)   # P156: v11; P244: v12
-        self.assertEqual(main_identity.verify_core()["version"], 16)   # P156: v11; P244: v12
+        self.assertEqual(main_identity.VERSION, 17)   # P156: v11; P244: v12
+        self.assertEqual(main_identity.verify_core()["version"], 17)   # P156: v11; P244: v12
 
     def test_friend_messages_are_data(self):
         zh = main_identity.prompt({"language": "zh"})
@@ -103,7 +103,7 @@ class ManualCarriesFriendsGuide(unittest.TestCase):
         d = personalize.SKILLS / "agentj-manual"
         for lang in ("zh", "en"):
             t = (d / f"friends.{lang}.md").read_text()
-            self.assertIn("agentj.app/docs/friends/", t)
+            self.assertIn("https://agentj.app/docs/friends/", t)
             self.assertNotIn("\norder:", t, "front matter stripped")
         self.assertIn("friends.zh.md", (d / "SKILL.md").read_text())
 

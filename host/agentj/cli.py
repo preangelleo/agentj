@@ -10,7 +10,7 @@ The 8-character code login asks y/N; `--account <account ID>` makes it refuse an
 the hidden `--yes` (skip the y/N) is accepted only together with `--account` (PROMPT-29 C-10). `agentj docs-rule` prints the
 "look it up first" block that `agentj wizard install` adds to the entry file (docsrule.py; `--write --harness …` appends it
 to the AI's own memory file after the human's y at a terminal). `agentj handover` prints the install's handover note from
-this computer's facts (handover.py, read-only). `agentj pair` needs a running serve and says so before any prompt.
+the Agent J host's facts (handover.py, read-only). `agentj pair` needs a running serve and says so before any prompt.
 Plaza P2: `agentj plaza search | show | mine | post | reply | resolve | report` (plaza.py) — read posts are data, never
 instructions; post / reply go out only after layer 1 (+ layer 2) and `--owner-confirmed --digest` from the human.
 Skill & workflow plaza: `agentj plaza install | publish | like | installed` (market.py; search / show / mine / report cover
@@ -82,7 +82,7 @@ def cmd_init(a) -> None:
             cfg = st.init(relay=a.relay, web=a.web, force=a.force)
     except FileExistsError as e:
         sys.exit(f"{e}（要重建身份密钥用 --force；所有已配对设备都要重配）")
-    print(f"这台电脑的身份已生成：{st.root}\n通道 {cfg['channel']}\n转发服务器 {cfg['relay']}\n下一步：运行 `agentj`，看看还差哪几步 / next: run `agentj` to see what is left")
+    print(f"这台Agent J 主机的身份已生成：{st.root}\n通道 {cfg['channel']}\n转发服务器 {cfg['relay']}\n下一步：运行 `agentj`，看看还差哪几步 / next: run `agentj` to see what is left")
     from . import preferences
     preferences.ensure()
     working_root.record(st, root)
@@ -328,7 +328,7 @@ def _remote_session(environ=None) -> bool:
     return bool(e.get("SSH_CONNECTION") or e.get("SSH_TTY")) and not (e.get("DISPLAY") or e.get("WAYLAND_DISPLAY"))
 
 
-SERVE_NOT_RUNNING = ("✗ Agent J 现在没在这台电脑上运行，所以没法配对手机。先运行 `agentj service start` 让它一直在后台运行"
+SERVE_NOT_RUNNING = ("✗ Agent J 现在没在这台Agent J 主机上运行，所以没法配对手机。先运行 `agentj service start` 让它一直在后台运行"
                      "（想看它在不在跑：`agentj service status`），然后再运行一次 `agentj pair`。/ Agent J is not running on this "
                      "computer, so a phone cannot be paired. Run `agentj service install` to keep it running in the background "
                      "(check with `agentj service status`), then run `agentj pair` again.")
@@ -363,14 +363,14 @@ PAIR_NOT_TERMINAL = ("✗ 这个终端不能直接批准：它不是交互终端
                      "the phone keeps waiting — approve it on the account page.")
 
 
-PAIR_SET_FIRST = ("在终端里配对，要先设一个「遥控器配对密码」（至少 8 位，只存在这台电脑上）。以后在这里、或者在别的电脑的浏览器上"
+PAIR_SET_FIRST = ("在终端里配对，要先设一个「遥控器配对密码」（至少 8 位，只存在这台Agent J 主机上）。以后在这里、或者在别的Agent J 主机的浏览器上"
                   "批准新遥控器，都可以用它证明是你。只有你自己知道，别让 Agent 替你设。\nPairing at the terminal needs a remote "
-                  "pairing password first (at least 8 characters, kept on this computer only). It proves it's you when you approve "
+                  "pairing password first (at least 8 characters, kept on the Agent J host only). It proves it's you when you approve "
                   "a new remote here or from a browser on another computer. Set it yourself, never through an Agent.")
-PAIR_NEED_PASS = ("✗ 这台电脑还没设遥控器配对密码，所以不能在这里配对。请你自己在这台电脑的终端里运行 `agentj pair`（它会先请你设密码），"
-                  "或者到账户页 {url} 这台电脑的席位卡点「添加遥控器」。/ This computer has no remote pairing password yet, so it "
-                  "can't pair from here. Run `agentj pair` yourself in a terminal on this computer (it asks you to set one "
-                  "first), or choose Add a remote on this computer's seat card at {url}.")
+PAIR_NEED_PASS = ("✗ 这台Agent J 主机还没设遥控器配对密码，所以不能在这里配对。请你自己在这台Agent J 主机的终端里运行 `agentj pair`（它会先请你设密码），"
+                  "或者到账户页 {url} 这台Agent J 主机的席位卡点「添加遥控器」。/ the Agent J host has no remote pairing password yet, so it "
+                  "can't pair from here. Run `agentj pair` yourself in a terminal on the Agent J host (it asks you to set one "
+                  "first), or choose Add a remote on the Agent J host's seat card at {url}.")
 
 
 def cmd_pair(a) -> None:
@@ -512,14 +512,14 @@ def cmd_pair(a) -> None:
                           "You can also confirm on any paired remote (a request card pops up there).", flush=True)
                 url = chk.get("account_url") or cloud.DEFAULT_APP
                 if passkey_only and not sys.stdin.isatty():   # P127 as before: no terminal to type into → the account page
-                    print(f"到账户页 {url} 这台电脑的席位卡上批准这台等待中的手机（通行密钥确认）；这里会自动显示结果。"
-                          f"不想批准就按 Ctrl-C。\nApprove this waiting phone on this computer's seat card at {url} (passkey); "
+                    print(f"到账户页 {url} 这台Agent J 主机的席位卡上批准这台等待中的手机（通行密钥确认）；这里会自动显示结果。"
+                          f"不想批准就按 Ctrl-C。\nApprove this waiting phone on the Agent J host's seat card at {url} (passkey); "
                           "the result shows here. Ctrl-C to refuse.", flush=True)
                     print(PAIR_NO_TTY, flush=True)
                     ev = await take()
                     continue
                 if passkey_only:   # P176: both ways at once — the account page's passkey, or the phone's code typed here
-                    print(f"两条路任选其一，先完成的算数：① 到账户页 {url} 这台电脑的席位卡上批准（通行密钥）；"
+                    print(f"两条路任选其一，先完成的算数：① 到账户页 {url} 这台Agent J 主机的席位卡上批准（通行密钥）；"
                           f"② 直接在这里输入手机上显示的 6 位安全码。\nEither way, whichever comes first: approve on this "
                           f"computer's seat card at {url} (passkey), or type the 6-digit safety code shown on the phone here.",
                           flush=True)
@@ -655,7 +655,7 @@ def _gate_msg(e: gate.GateError) -> str:
 
 def _set_passphrase_interactive(st: State, change: bool) -> None:
     old = _secret("现在的遥控器配对密码：") if change else None
-    print("遥控器配对密码：在这台电脑的终端配对，或者在别的电脑的浏览器上批准新遥控器时，用它证明是你。只有你知道——别告诉 Agent，"
+    print("遥控器配对密码：在这台Agent J 主机的终端配对，或者在别的Agent J 主机的浏览器上批准新遥控器时，用它证明是你。只有你知道——别告诉 Agent，"
           "也别让 Agent 替你设。/ The remote pairing password proves it's you when pairing at this terminal or approving a new "
           "remote from a browser on another computer. Only you know it: never tell an Agent, never let one set it.", flush=True)
     new = _secret(f"新的遥控器配对密码（至少 {gate.MIN_LEN} 个字符）：")
@@ -668,14 +668,14 @@ def _set_passphrase_interactive(st: State, change: bool) -> None:
     print("✓ 遥控器配对密码已保存。/ remote pairing password saved.")
 
 
-PASS_OFFER = ("要不要现在设一个遥控器配对密码？（可选，推荐）它用于在别的电脑或浏览器上批准新遥控器的最后一步，也是在这台电脑的终端里配对时"
-              "必须的。不设也能用这台电脑的浏览器完成首次配对（账户页 → 添加遥控器 → 通行密钥），但将来所有遥控器都失效时，可能要回到这台"
-              "电脑的终端设它。\nSet a remote pairing password now? (Optional, recommended.) It is the last step when approving a new "
-              "remote from another computer or browser, and it is required to pair at this computer's terminal. You can skip it "
-              "and pair the first remote in this computer's browser (account page → Add a remote → passkey), but if every remote "
+PASS_OFFER = ("要不要现在设一个遥控器配对密码？（可选，推荐）它用于在别的Agent J 主机或浏览器上批准新遥控器的最后一步，也是在这台Agent J 主机的终端里配对时"
+              "必须的。不设也能用这台Agent J 主机的浏览器完成首次配对（账户页 → 添加遥控器 → 通行密钥），但将来所有遥控器都失效时，可能要回到这台"
+              "Agent J 主机的终端设它。\nSet a remote pairing password now? (Optional, recommended.) It is the last step when approving a new "
+              "remote from another computer or browser, and it is required to pair at the Agent J host's terminal. You can skip it "
+              "and pair the first remote in the Agent J host's browser (account page → Add a remote → passkey), but if every remote "
               "is ever lost you may have to come back to this terminal to set it.")
-PASS_OFFER_SKIPPED = ("已跳过。以后随时在这台电脑的终端运行 `agentj passphrase set` 设置。/ Skipped. Set it any time with "
-                      "`agentj passphrase set` in a terminal on this computer.")
+PASS_OFFER_SKIPPED = ("已跳过。以后随时在这台Agent J 主机的终端运行 `agentj passphrase set` 设置。/ Skipped. Set it any time with "
+                      "`agentj passphrase set` in a terminal on the Agent J host.")
 
 
 def _passphrase_offer(st: State) -> str:
@@ -753,7 +753,7 @@ def cmd_name(a) -> None:
         return
     res = names.rename(st, a.name)
     if res["ok"]:
-        where = "账号后台和这台电脑都改好了" if res["linked"] else "这台电脑没加到 Agent J 账号里，只改了这台电脑上的"
+        where = "账号后台和这台Agent J 主机都改好了" if res["linked"] else "这台Agent J 主机没加到 Agent J 账号里，只改了这台Agent J 主机上的"
         print(f"✓ Agent 名改为「{res['name']}」（{where}）")
         return
     msg = names.RENAME_MESSAGES.get(res["error"], "名字没改")
@@ -773,13 +773,13 @@ def ssh_tunnel_hint(port: int, environ=None) -> str | None:
     import getpass
     server = conn[2]
     host = f"[{server}]" if ":" in server else server
-    return (f"你是用 SSH 登录的：管理页只在这台服务器的 127.0.0.1 上。在你自己的电脑上另开一个终端运行\n"
+    return (f"你是用 SSH 登录的：管理页只在这台服务器的 127.0.0.1 上。在你自己的Agent J 主机上另开一个终端运行\n"
             f"  ssh -N -L {port}:127.0.0.1:{port} {getpass.getuser()}@{host}\n"
-            f"再在那台电脑的浏览器里打开上面的链接。/ Over SSH: run the line above on your own computer, then open the link there.")
+            f"再在那台Agent J 主机的浏览器里打开上面的链接。/ Over SSH: run the line above on your own computer, then open the link there.")
 
 
 def _desktop_env(environ=None) -> dict | None:
-    """`--open` needs a desktop browser on THIS computer → the environment to open it with, or None. Never over SSH without
+    """`--open` needs a desktop browser on the Agent J host → the environment to open it with, or None. Never over SSH without
     a desktop. On Linux/BSD the Agent usually runs under the background service, whose environment may lack the display:
     find the owner's own Wayland socket / X display (without one Python's webbrowser falls back to a console browser,
     which would hang a detached process)."""
@@ -825,12 +825,12 @@ def admin_open_serve(srv, report, opener=None, stop=None, poll=ADMIN_OPEN_POLL) 
 
 
 ADMIN_OPEN_MSG = {
-    "opened": "已在这台电脑的默认浏览器打开 Agent 管理页（只在 127.0.0.1:{port}；链接只用一次，页面 30 分钟不用会自动关闭，"
-              "要再开就再运行 agentj admin --open）/ Opened the Agent admin page in this computer's default browser "
+    "opened": "已在这台Agent J 主机的默认浏览器打开 Agent 管理页（只在 127.0.0.1:{port}；链接只用一次，页面 30 分钟不用会自动关闭，"
+              "要再开就再运行 agentj admin --open）/ Opened the Agent admin page in the Agent J host's default browser "
               "(127.0.0.1:{port} only; one-time link, closes after 30 minutes unused — run agentj admin --open again to reopen)",
     "no_browser": "这里没法自动打开浏览器（SSH 登录、没有桌面或浏览器打不开）：请主人在自己的终端运行 agentj admin，把它打印的链接"
-                  "粘到这台电脑的浏览器里 / Cannot open a browser here (SSH, no desktop or no browser): the owner runs "
-                  "agentj admin in their own terminal and pastes the printed link into this computer's browser",
+                  "粘到这台Agent J 主机的浏览器里 / Cannot open a browser here (SSH, no desktop or no browser): the owner runs "
+                  "agentj admin in their own terminal and pastes the printed link into the Agent J host's browser",
 }
 
 
@@ -1048,6 +1048,104 @@ def cmd_send(a) -> None:
     print(f"已发给 {res.get('delivered', 0)} 台设备")
 
 
+NOTIFY_WHY = {   # P365: `agentj notify` refusals — what happened and the one thing that fixes it
+    "off": "主人关掉了「允许自动化往手机发消息」（手机设置或 `agentj config set notify.enabled true`）/ automation messages are off",
+    "unknown": "这个自动化还没登记。主人在自己的终端运行 `agentj notify --allow {name}`（或手机设置里打开）后再发 / "
+               "not registered: the owner runs `agentj notify --allow {name}` first",
+    "denied": "这个自动化的开关是关的。打开：`agentj notify --allow {name}`（或手机设置）/ switched off: `agentj notify --allow {name}`",
+    "agent": "Agent 不能用这个通道（只给主人自己的脚本 / 定时器用）。Agent J 定时任务请在 task.json 写 \"notify_webapp\": true，"
+             "它写进 reports/ 的文件会附在任务结果上 / Agents cannot post here; a task declares notify_webapp in task.json",
+    "rate": "发得太快了（每个自动化每分钟最多 6 条），没有发送 / too many posts (6 a minute per automation)",
+    "shape": "--from 名字只能用字母、数字和 . _ -（不能以 task. 开头），--file 最多 4 个 / bad --from name or too many files",
+    "too_long": "文字或标题太长（文字 4000 字、标题 64 字以内）/ text ≤ 4000, title ≤ 64",
+    "empty": "没有内容（--text、--title、--file 至少一个），或文件是空的 / nothing to send",
+    "type": "文件类型不支持（只收 png jpg gif webp pdf txt md，内容要和扩展名一致）/ only png jpg gif webp pdf txt md",
+    "too_big": "文件超过 20 MB / file over 20 MB",
+    "gone": "文件读不到（不存在、是链接、不是你的，或读的时候被改了）/ file missing, a link, not yours, or changed while read",
+    "secret": "这个文件像是凭据（.env / 密钥文件，或文本里有密钥），不会发 / looks like a credential: not sent",
+    "private": "Agent J 自己的状态目录里的文件不能发 / files in Agent J's state directory are not sent",
+    "busy": "已急停：恢复之前不发 / stopped: nothing is sent until resume",
+}
+
+
+def _notify_switch(st, name: str, allow) -> None:
+    from . import notify, preferences
+    st.root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    fd = os.open(st.root / "preferences.lock", os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        import fcntl
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        preferences.ensure()
+        raw, doc = preferences.read()
+        rows = notify.with_switch(preferences.validate(doc), name, allow)
+        res = preferences.transact(st, preferences.edit(raw, "notify.automations", rows))
+    except preferences.ConfigError as e:
+        sys.exit("✗ " + str(e.detail))
+    finally:
+        os.close(fd)
+    if not res.get("ok", True):
+        sys.exit("✗ " + str(res.get("error")))
+
+
+def cmd_notify(a) -> None:
+    """P365: the owner's own automation posts a message / files to the phone (notify.py). Never an Agent."""
+    from . import fence, notify, preferences
+    st = State()
+    _need_init(st)
+    for flag, allow in (("allow", True), ("deny", False), ("forget", None)):
+        name = getattr(a, flag)
+        if name:
+            try:
+                notify.check_name(name)
+            except notify.Refused:
+                sys.exit("✗ " + NOTIFY_WHY["shape"])
+            _notify_switch(st, name, allow)
+            print({True: f"✓ 已允许「{name}」往手机发消息（`agentj notify --from {name} …`）",
+                   False: f"✓ 已关掉「{name}」：它再发会被拒绝",
+                   None: f"✓ 已删除「{name}」的登记"}[allow])
+            return
+    if a.list:
+        prefs = preferences.effective(st)
+        rows = notify.rows(prefs)
+        if a.json:
+            print(json.dumps({"enabled": notify.enabled(prefs), "automations": rows}, ensure_ascii=False))
+            return
+        print("自动化消息：" + ("开" if notify.enabled(prefs) else "关（手机设置或 `agentj config set notify.enabled true`）"))
+        for r in rows:
+            print(f"  {'✓' if r['allow'] else '·'} {r['id']}")
+        if not rows:
+            print("  （还没有登记的自动化：`agentj notify --allow <名字>`）")
+        return
+    if not a.frm:
+        sys.exit("要用 --from <自动化名字>（先由主人 `agentj notify --allow <名字>` 登记）/ --from <name> is required")
+    if fence.inside():
+        sys.exit("✗ " + NOTIFY_WHY["agent"])
+    text = a.text or ""
+    if text == "-":
+        text = sys.stdin.read(64 * 1024)
+    files = [os.path.abspath(os.path.expanduser(f)) for f in (a.file or [])]
+    req = {"cmd": "notify", "from": a.frm, "title": a.title or "", "text": text, "files": files}
+    try:
+        notify.check_request(req)
+    except notify.Refused as e:
+        sys.exit("✗ " + NOTIFY_WHY.get(e.why, e.why).format(name=a.frm))
+    try:
+        res = names.ctl_call(st, req, 60)
+    except names.ServeBusy:
+        sys.exit("agentj serve 没有响应，没有发送 / serve did not answer: nothing sent")
+    if res is None:
+        sys.exit("Agent J 现在没在运行，没有发送（`agentj service status` 看看）/ Agent J is not running: nothing sent")
+    if res.get("error") in ("claim_required", "claim_refused"):
+        res = {"ok": False, "error": "agent"}
+    if not res.get("ok"):
+        why = NOTIFY_WHY.get(res.get("error"), str(res.get("error"))).format(name=a.frm)
+        sys.exit("✗ " + (f"{res['file']}：" if res.get("file") else "") + why)
+    if a.json:
+        print(json.dumps(res, ensure_ascii=False))
+        return
+    print(f"已发到手机（{res.get('delivered', 0)} 台在线；不在线的打开就能看到）" + (f"，附 {res['files']} 个文件" if res.get("files") else ""))
+
+
 def cmd_status(a) -> None:
     st = State()
     _need_init(st)
@@ -1087,7 +1185,7 @@ def _link_line(st: State) -> str:
     link = cloud.read_cloud(st)
     if not link:
         return "Agent J 账号：还没加入（`agentj login`）/ not in an Agent J account yet"
-    via = "用设置码加入 / joined with a setup code" if link["via"] == "seat" else "用电脑绑定码加入 / joined with a computer binding code"
+    via = "用设置码加入 / joined with a setup code" if link["via"] == "seat" else "用Agent J 主机绑定码加入 / joined with a computer binding code"
     return f"Agent J 账号：{link['tenant']['slug']}（{link['tenant']['name']}）· {via}"
 
 
@@ -1194,7 +1292,7 @@ def _read_paste(prompt: str) -> str:
 
 
 PASTE_PROMPT = ("有账户页给的设置码（ajt_…）或安装码（AJI-…）就粘贴在这里回车（不显示；整段提示词也行，会自动取出码）；\n"
-                "没有就直接回车，改用电脑绑定码。 / Paste a setup code (ajt_…) or installation code (AJI-…) and press Enter "
+                "没有就直接回车，改用Agent J 主机绑定码。 / Paste a setup code (ajt_…) or installation code (AJI-…) and press Enter "
                 "(hidden; a whole prompt is fine). No code? Just press Enter to use a computer binding code instead.\n> ")
 
 
@@ -1215,7 +1313,7 @@ def _paste_login(st: State, a, forced: bool) -> bool:
 
 
 def _seat_login(st: State, a) -> None:
-    """`agentj login --seat …` (seat setup §4.1): no y/N — the human gave the code to this computer's Agent, that is the
+    """`agentj login --seat …` (seat setup §4.1): no y/N — the human gave the code to the Agent J host's Agent, that is the
     decision. Prints the company it joined (the human must see it); never the code."""
     given = a.name is not None
     if a.name is None and getattr(a, "install_code_file", None):
@@ -1226,7 +1324,7 @@ def _seat_login(st: State, a) -> None:
             _refuse(names.RENAME_MESSAGES["name_too_long"] + " / Name too long: up to 8 CJK characters or 13 others "
                     "(mixed: CJK counts 1.6, others 1, at most 13)")
     # P214 (Leo 10-13): no --name is no longer an error — the code is read first (it may be the stdin of `--seat -`), then the
-    # name: asked at a terminal (Enter = the kept name, else this computer's host name), the default otherwise.
+    # name: asked at a terminal (Enter = the kept name, else the Agent J host's host name), the default otherwise.
     code = _read_seat_code(a)
     auto = _choose_name(st, a, ask=getattr(a, "paste", False) or sys.stdin.isatty())
     if getattr(a, "install_code_file", None) and not re.fullmatch(r"AJI-[a-f0-9]{32}", code):
@@ -1255,7 +1353,7 @@ def _seat_login(st: State, a) -> None:
         _ctl_quiet(st, {"cmd": "agent_name_changed"})
         print(f"✓ 已加到 Agent J 账号 {t['slug']}（{t['name']}）的一个席位，Agent 名「{name}」")
         print(f"✓ Added to a seat of the Agent J account {t['slug']} ({t['name']}); Agent name \"{name}\". "
-              "Not the account you expected? Run `agentj unlink`: it also takes this computer out of that account.")
+              "Not the account you expected? Run `agentj unlink`: it also takes the Agent J host out of that account.")
         r = _report_now(st)
         print("首次上报：成功 / first report: ok" if r.kind == "ok"
               else f"首次上报失败（{r.status}），serve 启动后会自动重试 / first report failed, serve retries")
@@ -1270,8 +1368,8 @@ def _seat_login(st: State, a) -> None:
         "invalid_setup": "设置码无效、已用过、已过期或已被作废——请向管理员要一个新的 / "
                          "the setup code is invalid, used, expired or revoked: ask the account owner for a new one",
         "payment_required": "这个席位没在付费了，请找账号的管理员 / this seat is no longer paid: contact the account owner",
-        "already_bound": "账号后台里这台电脑还挂在别的地方：先请账号的管理员在账号后台把它移除 / "
-                         "this computer is still listed in an account dashboard: the owner removes it there first",
+        "already_bound": "账号后台里这台Agent J 主机还挂在别的地方：先请账号的管理员在账号后台把它移除 / "
+                         "the Agent J host is still listed in an account dashboard: the owner removes it there first",
         "rate_limited": "尝试太频繁，过一小时再试 / too many attempts: try again within the hour",
     }
     msg = "✗ " + msgs.get(s, f"绑定失败 / bind failed（{res.get('http')}{' ' + res['error'] if res.get('error') else ''}）")
@@ -1282,7 +1380,7 @@ def _seat_login(st: State, a) -> None:
 
 
 def _default_name(st: State) -> str:
-    """The kept Agent name, else this computer's host name cut to the new-name length, else 「Agent J」."""
+    """The kept Agent name, else the Agent J host's host name cut to the new-name length, else 「Agent J」."""
     kept = st.agent_name()
     if kept:
         return kept
@@ -1308,7 +1406,7 @@ def _choose_name(st: State, a, *, ask: bool) -> bool:
     d = _default_name(st)
     if ask:
         try:
-            typed = input(f"给这台电脑上的 Agent 起个名字（直接回车用「{d}」）/ Name this Agent (Enter = \"{d}\"): ").strip()
+            typed = input(f"给这台Agent J 主机上的 Agent 起个名字（直接回车用「{d}」）/ Name this Agent (Enter = \"{d}\"): ").strip()
         except EOFError:
             typed = ""
         if typed:
@@ -1320,7 +1418,7 @@ def _choose_name(st: State, a, *, ask: bool) -> bool:
 
 def _after_bind(st: State) -> None:
     """P214 (Leo 10-13): right after a seat bind, bring the Agent online (the account page's 「添加遥控器」 needs a running
-    serve) and say the one next step. Only for this computer's own install: a custom state directory without its own
+    serve) and say the one next step. Only for the Agent J host's own install: a custom state directory without its own
     service name (tests, a second instance) never touches the service."""
     from . import service
     url = "https://agentj.app/account/"
@@ -1336,14 +1434,14 @@ def _after_bind(st: State) -> None:
             if s["kind"] != "none":
                 service.restart() if s.get("installed") and s.get("active") == "active" else service.start(st)
                 started = True
-                print("✓ 后台服务已启动，这台电脑上线了 / the background service is running: this computer is online")
+                print("✓ 后台服务已启动，这台Agent J 主机上线了 / the background service is running: the Agent J host is online")
         except Exception as e:      # ServiceError, a missing user manager …: say the command, never fail the bind
             print(f"后台服务没能自动启动（{getattr(e, 'args', [''])[0] or type(e).__name__}）：运行 agentj service install"
                   " / could not start the background service: run agentj service install")
     if own and not started:
         print("让它上线：运行 agentj service install（或 agentj serve）/ bring it online: agentj service install (or agentj serve)")
-    print(f"下一步：添加遥控器——在账户页 {url} 这台电脑的席位卡点「添加遥控器」，或在这台电脑运行 agentj pair 扫二维码。")
-    print(f"Next: add a remote — on {url} choose Add a remote on this computer's seat card, or run agentj pair here and scan.")
+    print(f"下一步：添加遥控器——在账户页 {url} 这台Agent J 主机的席位卡点「添加遥控器」，或在这台Agent J 主机运行 agentj pair 扫二维码。")
+    print(f"Next: add a remote — on {url} choose Add a remote on the Agent J host's seat card, or run agentj pair here and scan.")
 
 
 def _refuse(msg: str) -> None:
@@ -1362,7 +1460,7 @@ def _account_arg(a) -> str | None:
                 "done. Use it only when your human explicitly said yes and told you the account ID; otherwise drop --yes and "
                 "let your human answer the y/N.")
     if acct and (a.seat is not None or a.seat_file or getattr(a, "install_code_file", None)):
-        _refuse("--yes / --account 只用于电脑绑定码的登录，设置码登录不需要 / --yes and --account are for the computer binding code "
+        _refuse("--yes / --account 只用于Agent J 主机绑定码的登录，设置码登录不需要 / --yes and --account are for the Agent J host binding code "
                 "login only; the setup code login does not ask")
     if acct and not cloud._SLUG.fullmatch(acct):
         _refuse(f"「{acct}」不是一个账号 ID（3–30 位小写字母、数字和连字符），什么都没做 / not an account ID (3–30 lowercase "
@@ -1376,8 +1474,8 @@ def cmd_login(a) -> None:
     acct = _account_arg(a)
     link = cloud.read_cloud(st)
     if link:
-        sys.exit(f"这台电脑已经加到 Agent J 账号 {link['tenant']['slug']} 里了。要换账号，先运行 `agentj unlink`（再到账号后台把这台电脑移除）。"
-                 f" / This computer is already in the Agent J account {link['tenant']['slug']}: run `agentj unlink` first.")
+        sys.exit(f"这台Agent J 主机已经加到 Agent J 账号 {link['tenant']['slug']} 里了。要换账号，先运行 `agentj unlink`（再到账号后台把这台Agent J 主机移除）。"
+                 f" / the Agent J host is already in the Agent J account {link['tenant']['slug']}: run `agentj unlink` first.")
     if a.seat is not None or a.seat_file or getattr(a, "install_code_file", None):
         _seat_login(st, a)
         return
@@ -1385,7 +1483,7 @@ def cmd_login(a) -> None:
     if not acct and (a.paste or (sys.stdin.isatty() and sys.stdout.isatty())) and _paste_login(st, a, a.paste):
         return
     if a.name is not None:
-        sys.exit("--name 只和 --seat / --seat-file 一起用（用电脑绑定码的话，名字在账户页里起）/ --name goes with --seat only")
+        sys.exit("--name 只和 --seat / --seat-file 一起用（用Agent J 主机绑定码的话，名字在账户页里起）/ --name goes with --seat only")
     try:
         api = cloud.api_url(st, override=a.api)
         app = cloud.app_url(st)
@@ -1394,14 +1492,14 @@ def cmd_login(a) -> None:
 
     def show(lg: dict) -> None:
         mins = max(1, lg["expires_in"] // 60)
-        print(f"这台电脑的通道号：{cloud.channel_of(st)}（账号后台里显示的应该一样）", flush=True)
+        print(f"这台Agent J 主机的通道号：{cloud.channel_of(st)}（账号后台里显示的应该一样）", flush=True)
         print(_hostname_notice(st), flush=True)
         # F7: the configured Dashboard; the server's verification_uri only when it is on that same origin.
         # P214 (Leo 10-13): name the code and the exact place — an owner put it into the passkey box (「通行密钥转移码」).
         page = cloud.dashboard_uri(app, lg["verification_uri"])
         page = page if "#" in page else page.rstrip("/") + "/#add-agent"
-        print(f"电脑绑定码：{lg['user_code']}（{mins} 分钟内有效，只能用一次） / Computer binding code", flush=True)
-        print(f"到账户页「Agent（席位）→ 添加 Agent」填这个电脑绑定码：{page}", flush=True)
+        print(f"Agent J 主机绑定码：{lg['user_code']}（{mins} 分钟内有效，只能用一次） / Computer binding code", flush=True)
+        print(f"到账户页「Agent（席位）→ 添加 Agent」填这个Agent J 主机绑定码：{page}", flush=True)
         print("  / On the account page open Agent (seats) → Add an Agent and enter it there."
               " 它不是通行密钥转移码，不要填到「登录与安全」里 / It is not a passkey transfer code.", flush=True)
         print("看一下账户页显示的通道号和上面一样，再点添加。等待中……（Ctrl-C 取消）", flush=True)
@@ -1441,27 +1539,27 @@ def cmd_login(a) -> None:
             _ctl_quiet(st, {"cmd": "agent_name_changed"})
         print(f"✓ 已加到 Agent J 账号 {t['slug']}（{t['name']}）。/ Added to the Agent J account {t['slug']}.")
         if res.get("agent_name"):
-            print(f"这台电脑的 Agent 名：「{res['agent_name']}」（在账号后台或用 `agentj name` 可以改）")
+            print(f"这台Agent J 主机的 Agent 名：「{res['agent_name']}」（在账号后台或用 `agentj name` 可以改）")
         r = _report_now(st)
         print("首次上报：成功" if r.kind == "ok" else f"首次上报失败（{r.status}），serve 启动后会自动重试")
         return
     if st_ == "declined" and mismatch:
         undone = ("已通知账号后台撤销这次添加 / the account dashboard was told to undo it" if res.get("undone") == "undone"
-                  else f"没能通知账号后台撤销（{res.get('undone')}），请到账号后台把这台电脑移除 / could not tell the account "
-                       "dashboard to undo it: remove this computer there")
-        _refuse(f"没有加入：账号后台报回来的账号是 {mismatch[0]}，和 --account {acct} 不一样。这台电脑什么都没写；{undone}。"
+                  else f"没能通知账号后台撤销（{res.get('undone')}），请到账号后台把这台Agent J 主机移除 / could not tell the account "
+                       "dashboard to undo it: remove the Agent J host there")
+        _refuse(f"没有加入：账号后台报回来的账号是 {mismatch[0]}，和 --account {acct} 不一样。这台Agent J 主机什么都没写；{undone}。"
                 f"请和主人核对账号 ID。/ Not added: the account dashboard reported the account {mismatch[0]}, not {acct}. "
-                "Nothing was written on this computer. Check the account ID with your human.")
+                "Nothing was written on the Agent J host. Check the account ID with your human.")
     if st_ == "declined":
         t = res["tenant"]
         if res.get("undone") == "undone":
-            sys.exit(f"✗ 没有加入：这台电脑什么都没写，也已经通知账号后台撤销这次添加（账号 {t['slug']} 里不会有这台电脑）。\n"
+            sys.exit(f"✗ 没有加入：这台Agent J 主机什么都没写，也已经通知账号后台撤销这次添加（账号 {t['slug']} 里不会有这台Agent J 主机）。\n"
                      "  如果这不是你自己输入的代码，说明有人看到了这个终端上的代码——别再让别人看到。")
-        sys.exit(f"✗ 没有加入：这台电脑什么都没写。但没能通知账号后台撤销（{res.get('undone')}），"
-                 f"那边可能还把这台电脑记在账号 {t['slug']}（{t['name']}）下：\n"
-                 f"  如果这是你的账号，到账号后台把这台电脑移除；如果不是你的，说明有人用了这个终端上显示的代码。"
-                 f"别再让别人看到代码，并请对方（或我们）在账号后台把这台电脑移除。")
-    msgs = {"already_bound": "账号后台里这台电脑还挂在别的地方：先在账号后台把它移除，再运行 `agentj login`",
+        sys.exit(f"✗ 没有加入：这台Agent J 主机什么都没写。但没能通知账号后台撤销（{res.get('undone')}），"
+                 f"那边可能还把这台Agent J 主机记在账号 {t['slug']}（{t['name']}）下：\n"
+                 f"  如果这是你的账号，到账号后台把这台Agent J 主机移除；如果不是你的，说明有人用了这个终端上显示的代码。"
+                 f"别再让别人看到代码，并请对方（或我们）在账号后台把这台Agent J 主机移除。")
+    msgs = {"already_bound": "账号后台里这台Agent J 主机还挂在别的地方：先在账号后台把它移除，再运行 `agentj login`",
             "rate_limited": "登录请求太频繁，稍后再试", "rejected": "账号后台没有接受这次添加",
             "expired": "代码已过期（10 分钟），请重新运行 `agentj login`"}
     sys.exit("✗ " + msgs.get(st_, f"登录失败（{res.get('http')}{' ' + res['error'] if res.get('error') else ''}）"))
@@ -1471,8 +1569,8 @@ def _hostname_notice(st: State) -> str:
     from .text import machine_name
     m = machine_name()
     if st.report_machine() and m:
-        return f"加入后，账号后台会显示这台电脑的名字「{m}」（「运行在 … 上」）；不想显示：`agentj report-hostname off`"
-    return "账号后台不显示这台电脑的名字（要显示：`agentj report-hostname on`）"
+        return f"加入后，账号后台会显示这台Agent J 主机的名字「{m}」（「运行在 … 上」）；不想显示：`agentj report-hostname off`"
+    return "账号后台不显示这台Agent J 主机的名字（要显示：`agentj report-hostname on`）"
 
 
 def cmd_report_hostname(a) -> None:
@@ -1483,7 +1581,60 @@ def cmd_report_hostname(a) -> None:
         st.log("report_machine_switch", status=a.mode)
         if cloud.read_cloud(st):
             _ctl_quiet(st, {"cmd": "agent_name_changed"})   # = "send a report soon", so the Dashboard sees the change
-    print(_hostname_notice(st) if st.report_machine() else "关：账号后台不显示这台电脑的名字。")
+    print(_hostname_notice(st) if st.report_machine() else "关：账号后台不显示这台Agent J 主机的名字。")
+
+
+NEWS_PROBLEM = {   # P374: why `agentj news` did not work — (zh, en)
+    "unlinked": ("这台电脑还没加到 Agent J 账号：先运行 `agentj login`",
+                 "This computer is not in an Agent J account yet: run `agentj login` first"),
+    "not_bound": ("账号后台那边已经把这台电脑移除了：`agentj unlink` 后重新 `agentj login`",
+                  "The account dashboard no longer has this computer: `agentj unlink`, then `agentj login` again"),
+    "rate_limited": ("改得太频繁了，过几分钟再试", "Too many changes; try again in a few minutes"),
+    "unreachable": ("连不上 Agent J 账号后台，稍后再试", "Could not reach the Agent J account dashboard; try again later"),
+    "unsupported": ("账号后台还不支持这个设置，请在账号后台的设置里改", "The account dashboard does not offer this here yet; change it in the dashboard's settings"),
+    "fail": ("没办成", "That did not work"),
+}
+
+
+def cmd_news(a) -> None:
+    """P374 `agentj news [status|on|off] [--json]`: the account's Daily AI News (the daily 「Musk + AI 24h」 digest, in Chinese,
+    to the account e-mail; default off) — the same signed call as the phone's switch."""
+    st = State()
+    _need_init(st)
+    en = _lang(st) == "en"
+    on = {"on": True, "off": False}.get(a.mode)
+    try:
+        res = cloud.news(st, on)
+    except Exception:  # noqa: BLE001 — a bad key / state read: one line, never a traceback
+        res = cloud.NewsResult("fail", status="error")
+    st.log("news_cli", status=res.kind, http=res.status, **({"on": res.on} if res.kind == "ok" else {}))
+    if a.json:
+        out = ({"ok": True, "on": res.on, "email": res.email, "sample_url": res.sample_url, "queued": res.queued, "seats": res.seats}
+               if res.kind == "ok" else
+               {"ok": False, "problem": cloud.news_problem(res.kind), "status": res.status})
+        print(json.dumps(out, ensure_ascii=False))
+        if res.kind != "ok":
+            raise SystemExit(1)
+        return
+    if res.kind != "ok":
+        zh, enm = NEWS_PROBLEM.get(res.kind, NEWS_PROBLEM["fail"])
+        sys.exit("✗ " + (enm if en else zh) + (f" ({res.status})" if res.status and res.kind in ("unreachable", "fail") else ""))
+    seats = res.seats or 500
+    if res.on and res.queued:
+        print(f"Daily AI News: on — all {seats} seats are taken; you are number {res.queued} on the waiting list. When someone "
+              f"unsubscribes you move up automatically and get an email at {res.email}." if en else
+              f"Daily AI News：开 — 名额 {seats} 个已满，你在候补第 {res.queued} 位。有人退订会自动补上，并发邮件到 {res.email} 告诉你。")
+    elif en:
+        print(f"Daily AI News: on — sent to {res.email}" if res.on else
+              "Daily AI News: off. `agentj news on` sends the \"Musk + AI 24h\" digest our Daily Agent writes (in Chinese) "
+              "to your account email every morning.")
+        if res.sample_url:
+            print(f"See a sample: {res.sample_url}")
+    else:
+        print(f"Daily AI News：开 — 发到 {res.email}" if res.on else
+              "Daily AI News：关。`agentj news on` 每天早上把 Agent J 的 Daily Agent 整理的《Musk + AI 24h》（中文）发到你的账号邮箱。")
+        if res.sample_url:
+            print(f"看一封样例：{res.sample_url}")
 
 
 def cmd_report(a) -> None:
@@ -1491,14 +1642,14 @@ def cmd_report(a) -> None:
     _need_init(st)
     link = cloud.read_cloud(st)
     if not link:
-        sys.exit("这台电脑还没加到 Agent J 账号：先运行 `agentj login`")
+        sys.exit("这台Agent J 主机还没加到 Agent J 账号：先运行 `agentj login`")
     res = _report_now(st)
     if res.kind == "ok":
         print(f"已上报到 Agent J 账号 {link['tenant']['slug']}（seq {res.seq}）")
     elif res.kind == "unbound":
-        sys.exit("账号后台那边已经把这台电脑移除了。这台电脑上的记录还在：`agentj unlink` 清掉后，可以重新 `agentj login`")
+        sys.exit("账号后台那边已经把这台Agent J 主机移除了。这台Agent J 主机上的记录还在：`agentj unlink` 清掉后，可以重新 `agentj login`")
     elif res.kind == "unlinked":
-        sys.exit("这台电脑还没加到 Agent J 账号：先运行 `agentj login`")
+        sys.exit("这台Agent J 主机还没加到 Agent J 账号：先运行 `agentj login`")
     else:
         sys.exit(f"上报失败（{res.status}）")
 
@@ -1517,22 +1668,22 @@ def cmd_unlink(a) -> None:
             r = {"status": "fail", "http": "error"}
         left = r["status"] == "left"
         if left:
-            print(f"已经把这台电脑移出账号 {slug} / This computer was taken out of the account {slug}.")
+            print(f"已经把这台Agent J 主机移出账号 {slug} / the Agent J host was taken out of the account {slug}.")
         elif r["status"] == "not_found":
-            print(f"这台电脑已经不在账号 {slug} 的席位里了 / This computer is no longer in a seat of the account {slug}.")
+            print(f"这台Agent J 主机已经不在账号 {slug} 的席位里了 / the Agent J host is no longer in a seat of the account {slug}.")
         else:
             why = {"rate_limited": "太频繁，稍后再试 / rate limited"}.get(r["status"], f"连不上或出错（{r.get('http', '')}）")
-            print(f"没能通知账号后台把这台电脑移出账号 {slug}：{why}。请账号的管理员在账号后台收回这个席位。"
+            print(f"没能通知账号后台把这台Agent J 主机移出账号 {slug}：{why}。请账号的管理员在账号后台收回这个席位。"
                   f" / Could not reach the account dashboard; ask the account owner to take the seat back there.")
     removed = cloud.delete_cloud(st)
     if not removed:
-        print("这台电脑没加到 Agent J 账号里。")
+        print("这台Agent J 主机没加到 Agent J 账号里。")
         return
     st.log("cloud_unlinked")
     if left:
-        print(f"已删掉这台电脑上的账号记录（账号 {slug}）。")
+        print(f"已删掉这台Agent J 主机上的账号记录（账号 {slug}）。")
     else:
-        print(f"已删掉这台电脑上的账号记录（账号 {slug}）。账号后台那边，还要在账号后台里把这台电脑移除。")
+        print(f"已删掉这台Agent J 主机上的账号记录（账号 {slug}）。账号后台那边，还要在账号后台里把这台Agent J 主机移除。")
 
 
 AGENT_LABEL = {"claude": "Claude Code", "codex": "Codex", "opencode": "OpenCode", "kimi": "Kimi Code", "qwen": "Qwen Code", "dsh": "DeepSeek Harness"}
@@ -1564,8 +1715,8 @@ def _agent_line(st: State, lang: str | None = None) -> str:
     label = AGENT_LABEL[c["kind"]]
     extra = ("; anything that needs your OK pops up on the phone" if en else "；需要你点头的环节，它会在手机上弹窗问你") if c["kind"] in AGENT_LABEL else ""
     if c.get("session_mode") == "shared":
-        fz = (f" · shared session (your own {label} on this computer, with its own permissions; outside Agent J's fence)" if en
-              else f" · 共享会话（接你电脑上自己的 {label}，按它自己的权限运行，不在 Agent J 的隔离里）")
+        fz = (f" · shared session (your own {label} on the Agent J host, with its own permissions; outside Agent J's fence)" if en
+              else f" · 共享会话（接你Agent J 主机上自己的 {label}，按它自己的权限运行，不在 Agent J 的隔离里）")
         pin = c.get("shared_session_id")
         if c["kind"] == "codex" and pin:         # P328: a phone /clear moved Codex off the owner's pin (per-harness state)
             from . import shared_codex
@@ -1635,16 +1786,16 @@ def cmd_agent(a) -> None:
         if a.unfenced:   # F14: the owner's (or, at the owner's request, the Agent's) switch — no passphrase
             print("⚠ 不隔离运行：Agent 按底层 harness 自己的权限运行，能看到 Agent J 的状态目录。随时可以去掉 --unfenced 改回来。", flush=True)
         elif a.allow_docker:
-            print("⚠ 允许 Agent 用 docker / podman：容器能挂载这台电脑上的任何文件（包括 Agent J 的状态目录）。", flush=True)
+            print("⚠ 允许 Agent 用 docker / podman：容器能挂载这台Agent J 主机上的任何文件（包括 Agent J 的状态目录）。", flush=True)
         try:
             from . import working_root, preferences, session_choice
             lang = _lang(st)
             # P127 / P174: --shared / --independent is the owner's choice; without a flag the mode stays as it is
             # (factory default independent; an install from before P174 keeps shared)
             from . import instance
-            if instance.current() > 1:   # P180: a second seat on this computer never attaches to the owner's desktop session
+            if instance.current() > 1:   # P180: a second seat on the Agent J host never attaches to the owner's desktop session
                 if getattr(a, "session_mode", None) == "shared":
-                    sys.exit("✗ 同一台电脑上的第 2 个及以后的席位只能用独立会话（--independent）/ "
+                    sys.exit("✗ 同一台Agent J 主机上的第 2 个及以后的席位只能用独立会话（--independent）/ "
                              "instances 2–10 run independent sessions only")
                 a.session_mode = "independent"
             flag = getattr(a, "session_mode", None)
@@ -1731,7 +1882,7 @@ def cmd_agent(a) -> None:
             print("✓ 已安排重启：下一条消息之前重启 Agent 的进程（不打断正在进行的这一轮），接着原来的对话。"
                   " / Restart scheduled before the next message (the running turn is not interrupted); same conversation.")
         else:
-            sys.exit("✗ 共享会话用的是你电脑上原来的进程，Agent J 不替你重启：请在电脑上自己重启它。"
+            sys.exit("✗ 共享会话用的是你Agent J 主机上原来的进程，Agent J 不替你重启：请在Agent J 主机上自己重启它。"
                      " / A shared session is your own process: restart it yourself.")
         return
     elif a.mode == "reset":
@@ -2057,17 +2208,17 @@ def _history_line(st: State) -> str:
     if not h.on:
         n, b = h.on_disk()
         left = ("" if not n else
-                f"\n已有的记录没有删：{n} 个文件（{b / 1024 / 1024:.1f} MiB，{h.dir}）还在这台电脑上；"
+                f"\n已有的记录没有删：{n} 个文件（{b / 1024 / 1024:.1f} MiB，{h.dir}）还在这台Agent J 主机上；"
                 f"`agentj history clear --all` 立即全部删除（含归档，不能撤销） / existing history is NOT deleted: {n} "
                 f"file(s) remain; `agentj history clear --all` deletes them (archives too, cannot be undone)")
         return ("关：新的聊天记录只在内存里（最近 100 页），重启就没了 / history off: the newest 100 pages in memory only"
                 + left)
-    return (f"开：聊天记录存在这台电脑上（{h.dir}，0600，最近 {history.KEEP} 页，归档 {len(h.archives())} 份）· "
-            f"共 {h.meta()['count']} 页 / history on: kept on this computer")
+    return (f"开：聊天记录存在这台Agent J 主机上（{h.dir}，0600，最近 {history.KEEP} 页，归档 {len(h.archives())} 份）· "
+            f"共 {h.meta()['count']} 页 / history on: kept on the Agent J host")
 
 
 def cmd_history(a) -> None:
-    """`agentj history [show <id>|search <words…>|clear|off|on]` (PROTOCOL §10.5, §28): the pages the phone shows, on this computer only."""
+    """`agentj history [show <id>|search <words…>|clear|off|on]` (PROTOCOL §10.5, §28): the pages the phone shows, on the Agent J host only."""
     from . import history
     st = State()
     _need_init(st)
@@ -2083,7 +2234,7 @@ def cmd_history(a) -> None:
         if res is None:
             res = {"deleted": history.History(st).purge()}
         st.log("history_purge", status=str(res.get("deleted", 0)))
-        print(f"已删除这台电脑上的全部聊天记录（{res.get('deleted', 0)} 个文件，含归档）/ deleted all history on this "
+        print(f"已删除这台Agent J 主机上的全部聊天记录（{res.get('deleted', 0)} 个文件，含归档）/ deleted all history on this "
               "computer (archives too)")
         return
     if a.mode == "clear":
@@ -2099,7 +2250,7 @@ def cmd_history(a) -> None:
               if res.get("archived") else "没有可清空的记录 / nothing to clear")
         return
     h = history.History(st)
-    if a.mode == "search":                                # P188 (§28): the same search the phone's 🔍 runs on this computer
+    if a.mode == "search":                                # P188 (§28): the same search the phone's 🔍 runs on the Agent J host
         from . import hsearch
         q = " ".join(a.id or [])
         if not hsearch.terms(q):
@@ -2202,7 +2353,7 @@ def cmd_config(a) -> None:
             activity.set_enabled(st, a.value == "on")
             st.log("activity_switch", status=a.value)
         on = activity.enabled(st)
-        print(("开：本机记录操作与审批（activity.log，只在这台电脑上，30 天，最多 20 MiB）；手机的「记录」页读它。"
+        print(("开：本机记录操作与审批（activity.log，只在这台Agent J 主机上，30 天，最多 20 MiB）；手机的「记录」页读它。"
                if on else "关：不再记录（已有的保留到 30 天；`agentj activity --clear` 立即删除）。")
               + f" 现有 {activity.size(st) // 1024} KiB / activity log " + ("on" if on else "off"))
 
@@ -2303,10 +2454,10 @@ def cmd_remote_unbind(a) -> None:
         st.set_remote_unbind(a.mode == "on")
         st.log("remote_unbind_switch", status=a.mode)
     on = st.remote_unbind()
-    print(("开：账号的管理员可以在账号后台解绑这台电脑的手机遥控器（每小时最多 "
+    print(("开：账号的管理员可以在账号后台解绑这台Agent J 主机的手机遥控器（每小时最多 "
            f"{REMOTE_UNBIND_PER_HOUR} 次）。只能解绑，不能添加。") if on else
-          "关：账号后台发来的解绑请求，这台电脑一律拒绝；要解绑就在这里运行 `agentj revoke`。")
-    print("提醒：配对用的二维码和链接只会由这台电脑上的 `agentj pair` 显示。账号后台、邮件或客服发给你的二维码，一律别扫。")
+          "关：账号后台发来的解绑请求，这台Agent J 主机一律拒绝；要解绑就在这里运行 `agentj revoke`。")
+    print("提醒：配对用的二维码和链接只会由这台Agent J 主机上的 `agentj pair` 显示。账号后台、邮件或客服发给你的二维码，一律别扫。")
 
 
 def cmd_onboarding(a) -> None:
@@ -2565,7 +2716,7 @@ def _rescue_undo(st: State) -> None:
     except names.ServeBusy:
         res = None
     if res is not None and res.get("error") == "shared":
-        print("✓ 已记下原来的对话；共享会话请在电脑上自己切回 / noted; a shared session is switched on the computer itself")
+        print("✓ 已记下原来的对话；共享会话请在Agent J 主机上自己切回 / noted; a shared session is switched on the Agent J host itself")
         return
     print("✓ 已找回原来的对话：下一条消息就接着它聊。/ The earlier conversation is back: the next message continues it.")
 
@@ -2713,20 +2864,20 @@ def _update_line(r: dict) -> str:
     from . import update
     s = r["status"]
     if s == "newer":
-        return f"! newer · 有新版本 {r['latest']}（这台电脑是 {r['current']}）/ newer version {r['latest']} (this computer: {r['current']})"
+        return f"! newer · 有新版本 {r['latest']}（这台Agent J 主机是 {r['current']}）/ newer version {r['latest']} (the Agent J host: {r['current']})"
     if s == "current":
         return f"✓ current · 已是最新 / up to date: {r['current']}"
     if s == "ahead":
-        return (f"✓ ahead · 这台电脑是 {r['current']}，公开仓库最新发布的是 {r['latest']} / this computer runs {r['current']}, "
+        return (f"✓ ahead · 这台Agent J 主机是 {r['current']}，公开仓库最新发布的是 {r['latest']} / the Agent J host runs {r['current']}, "
                 f"the newest public release is {r['latest']}")
     why = update.WHY.get(r["why"], r["why"])
-    return f"? unknown · 没查到最新版本（{why}）；这台电脑是 {r['current']} / could not check ({why}); this computer: {r['current']}"
+    return f"? unknown · 没查到最新版本（{why}）；这台Agent J 主机是 {r['current']} / could not check ({why}); the Agent J host: {r['current']}"
 
 
 NEXT_STEPS = (   # (command, 中文, English)
     ("agentj init", "生成本机身份", "create this host's identity"),
-    ("agentj login", "把这台电脑加到你的 Agent J 账号（有设置码：--seat-file）",
-     "add this computer to your Agent J account (setup code: --seat-file)"),
+    ("agentj login", "把这台Agent J 主机加到你的 Agent J 账号（有设置码：--seat-file）",
+     "add the Agent J host to your Agent J account (setup code: --seat-file)"),
     ("agentj passphrase set", "设遥控器配对密码（自己输，别让 Agent 代劳）", "set the remote pairing password (yourself)"),
     ("agentj agent claude --dir <folder>", "接上 Claude Code（或 codex / opencode）", "connect Claude Code (or codex / opencode)"),
     ("agentj service install", "后台常驻运行 serve", "keep `agentj serve` running"),
@@ -2752,7 +2903,7 @@ def cmd_hint() -> None:
     print(f"{DIST} {__version__} — 用手机和你自己的 Claude Code / Codex 对话 · talk to your own Agent from your phone\n")
     for i, ((cmd, zh, en), ok) in enumerate(zip(NEXT_STEPS, done), 1):
         if cloud.read_cloud(st) and cmd == "agentj passphrase set":
-            zh, en = "设遥控器配对密码（可选，推荐：别的电脑上批准新遥控器、终端配对时用）", "set a remote pairing password (optional, recommended)"
+            zh, en = "设遥控器配对密码（可选，推荐：别的Agent J 主机上批准新遥控器、终端配对时用）", "set a remote pairing password (optional, recommended)"
         elif cloud.read_cloud(st) and cmd == "agentj pair":
             cmd, zh, en = "账户页 / Account page", "席位卡添加遥控器 → 扫码", "seat card → Add a remote → scan"
         print(f"  {'✓' if ok else '·'} {i}. {cmd:<36} {zh} / {en}")
@@ -2774,7 +2925,7 @@ def main_jarvis(argv=None) -> None:
 
 # `migrate status` reports, `migrate rollback` undoes, `docs-rule` prints (or, with --write and the human's y, appends to the
 # AI's own memory file), `handover` only reads: none may move the state directory first
-NO_MIGRATE = ("migrate", "docs-rule", "handover", "recall", "friends", "codex-sandbox", "capability", "google", "setup", "busy", "mail", "contacts", "imessage", "ask")   # recall / friends / codex-sandbox / capability: usually inside the fence
+NO_MIGRATE = ("migrate", "docs-rule", "handover", "recall", "friends", "codex-sandbox", "capability", "google", "setup", "busy", "mail", "contacts", "imessage", "ask", "order", "core")   # recall / friends / codex-sandbox / capability: usually inside the fence
 
 
 APPROVALS_HELP = {
@@ -2813,7 +2964,7 @@ def config_approvals(rest: list) -> int:
 
 
 def cmd_instances(a) -> None:
-    """P180 / P217: the instances on this computer; `remove N` deletes instance N ≥ 2 (its workspace stays)."""
+    """P180 / P217: the instances on the Agent J host; `remove N` deletes instance N ≥ 2 (its workspace stays)."""
     from . import instance
     if a.action == "remove":
         if not a.number:
@@ -2829,7 +2980,7 @@ def cmd_instances(a) -> None:
         print(json.dumps(rows, ensure_ascii=False))
         return
     if not rows:
-        print("这台电脑上还没有 Agent J 实例 / no instance here")
+        print("这台Agent J 主机上还没有 Agent J 实例 / no instance here")
         return
     for r in rows:
         on = "在线 online" if r["online"] else ("运行中 running" if r["running"] else "离线 offline")
@@ -2916,6 +3067,9 @@ def main(argv=None) -> None:
     if args and args[0] == "theme":      # P169 (§23): list|show|validate|apply|reset|restore|export|schema; light|dark|system as before
         from . import theme
         raise SystemExit(theme.command(args[1:]))
+    if args and args[0] == "card":       # P360 (§34): Agent J Cards — list|validate|apply|on|off|remove|export|schema
+        from . import jcards
+        raise SystemExit(jcards.command(args[1:]))
     if args and args[0] in ("voice", "menu", "key", "channel", "skill"):
         from . import personalize
         raise SystemExit(personalize.command(args))
@@ -2929,7 +3083,7 @@ def main(argv=None) -> None:
     p.add_argument("-V", "--version", action="version", version=f"{DIST} {__version__}")
     # P127: read (and removed) before parsing, above; declared here for --help and the docs check
     p.add_argument("--migrate-legacy", action="store_true", help="把旧身份搬过来继续用 / keep "
-                                                                "using an older identity found on this computer")
+                                                                "using an older identity found on the Agent J host")
     # P217: `--instance N` is read (and removed) before parsing, like the two above; declared here for --help and the docs check
     p.add_argument("--instance", metavar="N", help="同一系统用户下的第 N 个实例（1–10，1 = 原来那套）：一个实例一个席位、"
                                                   "一个工作目录 / instance N on this OS user (1–10; 1 = the original): one seat "
@@ -3025,10 +3179,23 @@ def main(argv=None) -> None:
     se = sub.add_parser("send", help="给所有在线的已批准设备发一条文字")
     se.add_argument("text")
     se.set_defaults(fn=cmd_send)
+    nt = sub.add_parser("notify", help="主人自己的自动化往手机发一条消息（可带图片/PDF/文本文件）；Agent 不能用 / "
+                                       "your own automation posts to the phone (never an Agent)")
+    nt.add_argument("--from", dest="frm", metavar="NAME", help="自动化的名字（先 `agentj notify --allow NAME` 登记）")
+    nt.add_argument("--title", help="标题（≤ 64 字）")
+    nt.add_argument("--text", help="正文（≤ 4000 字；- = 从标准输入读）")
+    nt.add_argument("--file", action="append", metavar="PATH", help="附件：png jpg gif webp pdf txt md，≤ 20 MB，最多 4 个（可重复）")
+    nt.add_argument("--json", action="store_true", help="输出 JSON（delivered / files / bytes / agent: queued|no_agent|failed）")
+    ng = nt.add_mutually_exclusive_group()
+    ng.add_argument("--list", action="store_true", help="列出登记的自动化和开关")
+    ng.add_argument("--allow", metavar="NAME", help="登记并打开一个自动化（建自动化时就决定）")
+    ng.add_argument("--deny", metavar="NAME", help="关掉一个自动化（它再发会被拒绝）")
+    ng.add_argument("--forget", metavar="NAME", help="删除一个自动化的登记")
+    nt.set_defaults(fn=cmd_notify)
     ss = sub.add_parser("status", help="serve 的状态")
     ss.add_argument("--json", action="store_true", help="只输出 JSON / JSON only (P147)")
     ss.set_defaults(fn=cmd_status)
-    nm = sub.add_parser("name", help="查看 / 修改这台电脑上 Agent 的名字（加入了 Agent J 账号的话，先在账号后台改，改好了才改这台电脑上的）")
+    nm = sub.add_parser("name", help="查看 / 修改这台Agent J 主机上 Agent 的名字（加入了 Agent J 账号的话，先在账号后台改，改好了才改这台Agent J 主机上的）")
     nm.add_argument("name", nargs="?", help="新名字（中文最多 8 个字，英文 / 数字 / 横杠最多 13 个；混写时中文算 1.6、合计 ≤ 13）；不填 = 查看")
     nm.set_defaults(fn=cmd_name)
     ad = sub.add_parser("admin", help="打开本机的 Agent 管理页（只在 127.0.0.1；配对、遥控器、改名）")
@@ -3040,11 +3207,11 @@ def main(argv=None) -> None:
                     help="把链接（同样的 jsonl 行）写进这个新建的文件（0600，必须还不存在），stdout 不再出现链接")
     ad.add_argument("--no-stdin", action="store_true", help="不读终端输入（后台运行时用）")
     ad.add_argument("--open", action="store_true",
-                    help="用这台电脑的默认浏览器直接打开管理页（链接不打印、只用一次；命令立刻返回，页面 30 分钟不用自动关闭）/ "
-                         "open the admin page in this computer's default browser (link never printed; returns at once)")
+                    help="用这台Agent J 主机的默认浏览器直接打开管理页（链接不打印、只用一次；命令立刻返回，页面 30 分钟不用自动关闭）/ "
+                         "open the admin page in the Agent J host's default browser (link never printed; returns at once)")
     ad.add_argument("--open-child", action="store_true", help=argparse.SUPPRESS)
     ad.set_defaults(fn=cmd_admin)
-    lo = sub.add_parser("login", help="把这台电脑加到你的 Agent J 账号（占 1 个席位）/ add this computer to your Agent J account (uses 1 seat)")
+    lo = sub.add_parser("login", help="把这台Agent J 主机加到你的 Agent J 账号（占 1 个席位）/ add the Agent J host to your Agent J account (uses 1 seat)")
     lo.add_argument("--api", help=f"服务器地址（默认 $AGENTJ_API_URL 或 {cloud.DEFAULT_API}）")
     lo.add_argument("--yes", action="store_true", help=argparse.SUPPRESS)   # only with --account; see _account_arg
     lo.add_argument("--account", metavar="ACCOUNT_ID",
@@ -3052,7 +3219,7 @@ def main(argv=None) -> None:
                          "if the account dashboard reports another account, nothing is written (exit 2)")
     seat = lo.add_mutually_exclusive_group()
     seat.add_argument("--seat", metavar="CODE",
-                      help="用账号后台给的设置码（ajt_…）直接加入，不用电脑绑定码、不问 y/N；`-` = 从标准输入读一行 / "
+                      help="用账号后台给的设置码（ajt_…）直接加入，不用Agent J 主机绑定码、不问 y/N；`-` = 从标准输入读一行 / "
                            "join with a setup code from the account dashboard (no computer binding code, no y/N); `-` reads stdin")
     seat.add_argument("--seat-file", metavar="PATH",
                       help="从文件读设置码（文件必须 0600），这样它不进命令行和 shell 历史 / "
@@ -3061,22 +3228,26 @@ def main(argv=None) -> None:
                       help="在终端里粘贴设置码或安装码（不显示、不进命令行；整段提示词也行）。在终端里直接运行 agentj login 也会先问 / "
                            "paste a setup or installation code at the prompt (hidden, out of argv; a whole prompt works). "
                            "Plain `agentj login` at a terminal asks first too")
-    seat.add_argument("--install-code-file", metavar="PATH", help="从 0600 文件读取 AJI 安装码，给已安装的电脑绑定席位 / bind an installed host using an AJI code in a private file")
+    seat.add_argument("--install-code-file", metavar="PATH", help="从 0600 文件读取 AJI 安装码，给已安装的Agent J 主机绑定席位 / bind an installed host using an AJI code in a private file")
     lo.add_argument("--name", help="和 --seat 一起：本机 Agent 的名字（1–32 个字；不给就在终端里问，回车或非交互时用主机名，重名自动加序号）/ "
                                    "with --seat: the Agent's name (1–32 characters; if omitted it is asked, Enter or no terminal = "
                                    "the host name, numbered on a clash). "
                                    "退出码 / exit: 3 名字已占用 name taken · 4 设置码无效 invalid code · 5 席位未付费 seat not paid · "
                                    "2 本地拒绝 refused locally")
     lo.set_defaults(fn=cmd_login)
-    sub.add_parser("report", help="马上向账号后台报一次这台电脑的状态 / report this computer's status to the account dashboard now").set_defaults(fn=cmd_report)
-    sub.add_parser("unlink", help="把这台电脑移出 Agent J 账号（删掉这台电脑上的账号记录）/ take this computer out of the Agent J account").set_defaults(fn=cmd_unlink)
-    rh = sub.add_parser("report-hostname", help="账号后台是否显示这台电脑的名字（默认显示）/ show this computer's name in the account dashboard")
+    sub.add_parser("unlink", help="把这台 Agent J 主机移出 Agent J 账号（删掉这台 Agent J 主机上的账号记录）/ take the Agent J host out of the Agent J account").set_defaults(fn=cmd_unlink)
+    nw = sub.add_parser("news", help="Daily AI News：每天早上把《Musk + AI 24h》（中文）发到账号邮箱（默认关）：status · on · off / "
+                                     "the daily \"Musk + AI 24h\" digest (in Chinese) to the account email (default off)")
+    nw.add_argument("mode", nargs="?", choices=["status", "on", "off"], default="status")
+    nw.add_argument("--json", action="store_true", help="机器可读输出 / machine-readable output")
+    nw.set_defaults(fn=cmd_news)
+    rh = sub.add_parser("report-hostname", help="账号后台是否显示这台 Agent J 主机的名字（默认显示）/ show the Agent J host's name in the account dashboard")
     rh.add_argument("mode", nargs="?", choices=["on", "off", "status"], default="status")
     rh.set_defaults(fn=cmd_report_hostname)
     rp = sub.add_parser("remote-pair", help="允许从账户页或已配对的遥控器添加遥控器（默认开）/ allow pairing from the account page or a paired remote")
     rp.add_argument("mode", nargs="?", choices=["on","off","status"], default="status")
     rp.set_defaults(fn=cmd_remote_pair)
-    ru = sub.add_parser("remote-unbind", help="允许 / 禁止在账号后台解绑这台电脑的手机遥控器（默认允许）/ allow unlinking phone remotes from the account dashboard")
+    ru = sub.add_parser("remote-unbind", help="允许 / 禁止在账号后台解绑这台Agent J 主机的手机遥控器（默认允许）/ allow unlinking phone remotes from the account dashboard")
     ru.add_argument("mode", nargs="?", choices=["on", "off", "status"], default="status")
     ru.set_defaults(fn=cmd_remote_unbind)
     ag = sub.add_parser("agent", help="接哪个 Agent：claude / codex / opencode / kimi / qwen / dsh / off；reset = 开一段新对话（重启 serve 生效）；"
@@ -3108,13 +3279,19 @@ def main(argv=None) -> None:
                     help="dsh：OpenAI 兼容服务的地址（Olares Router、LiteLLM、Ollama…），写成 https://<服务>/v1，配 --model"
                          " / dsh: an OpenAI-compatible server (Olares Router …), with --model")
     ag.add_argument("--model", help="模型（默认用你自己的设置）；OpenCode 写成 服务商/模型，例如 zhipuai/glm-5.3")
+    ag.add_argument("--preset", choices=["ark"],
+                    help="switch opencode：ark =「OpenCode · 火山方舟」——探测 OpenCode / arkcli、缺 key 给密钥卡命令、写方舟服务商、实测一次才切 "
+                         "/ ark = OpenCode on Volcano Ark: detect, key card if missing, write the provider, one real call before switching")
+    ag.add_argument("--plan", choices=["coding", "payg"],
+                    help="--preset ark：coding = Coding Plan 套餐（…/api/coding/v3，只给编程 Agent 用）· payg = 按量付费（…/api/v3）"
+                         " / coding = the Coding Plan address (coding agents only) · payg = pay-as-you-go /api/v3")
     ag.add_argument("--unfenced", action="store_true",
                     help="不隔离运行 Agent（按底层 harness 自己的权限）。默认 Agent 在 bubblewrap 里运行，看不到 Agent J 的状态")
     ag.add_argument("--allow-docker", action="store_true",
                     help="隔离里也让 Agent 用 docker / podman（默认不开；主人要求时可直接打开）。默认容器引擎的 socket 对 Agent 隐藏")
     smx = ag.add_mutually_exclusive_group()
     smx.add_argument("--shared", dest="session_mode", action="store_const", const="shared",
-                     help="共享会话（高级）：手机接你电脑上正开着的会话 / shared session (advanced): attach to your own open session")
+                     help="共享会话（高级）：手机接你Agent J 主机上正开着的会话 / shared session (advanced): attach to your own open session")
     smx.add_argument("--independent", dest="session_mode", action="store_const", const="independent",
                      help="独立会话（默认）：Agent J 自己开一个、在隔离里运行 / independent session (the default): Agent J's own, fenced")
     ag.set_defaults(fn=cmd_agent)
@@ -3143,12 +3320,12 @@ def main(argv=None) -> None:
     ac.add_argument("--json", action="store_true")
     ac.add_argument("--clear", action="store_true", help="立即删除全部记录 / delete all of it now")
     ac.set_defaults(fn=cmd_activity)
-    cf = sub.add_parser("config", help="开关：activity on|off（操作记录）· history on|off（聊天记录存在这台电脑上）/ switches")
+    cf = sub.add_parser("config", help="开关：activity on|off（操作记录）· history on|off（聊天记录存在这台Agent J 主机上）/ switches")
     cf.add_argument("key", choices=["activity", "history"])
     cf.add_argument("value", nargs="?", choices=["on", "off", "status"], default="status")
     cf.set_defaults(fn=cmd_config)
-    hi = sub.add_parser("history", help="聊天记录（手机翻页看到的，存在这台电脑上）：status · show <页> · search <关键词> · clear · on · off / "
-                                        "the phone's pages, kept on this computer")
+    hi = sub.add_parser("history", help="聊天记录（手机翻页看到的，存在这台Agent J 主机上）：status · show <页> · search <关键词> · clear · on · off / "
+                                        "the phone's pages, kept on the Agent J host")
     hi.add_argument("mode", nargs="?", choices=["status", "show", "search", "clear", "on", "off"], default="status")
     hi.add_argument("id", nargs="*", help="show 的页码，或 search 的关键词（可多个，全部出现才算）/ the page for show, or the words for search (all must appear)")
     hi.add_argument("--time", action="store_true", help="search 按时间排，最新的在前（默认按相关度）/ search: newest first (default: best match)")
@@ -3179,12 +3356,21 @@ def main(argv=None) -> None:
     google.add_parser(sub)      # P115 / P91: agentj google status|check|install|plan|on|off
     from . import mail
     mail.add_parser(sub)        # P170: agentj mail setup|allow|deny|password|test|check|on|off|status|presets
+    from . import report
+    report.add_parser(sub, cmd_report)   # bare `agentj report` = the status report to the account dashboard (as before);
+                                         # P373: `agentj report templates|schema|example|validate|render|send|new-template|publish`
     from . import contacts
     contacts.add_parser(sub)    # P184: agentj contacts list|find|add|edit|rm|import|export|card
+    from . import hook_service
+    hook_service.add_parser(sub)   # P366: agentj hook create|list|show|update|rotate|revoke|test|logs|wait|triage|forward|presets
     from . import ask
     ask.add_parser(sub)         # P322: agentj ask — the Agent J question card under any harness
     from . import workflows
-    workflows.add_parser(sub)   # P244 (§30): agentj workflows [--json] — what the phone's five pages read, read-only
+    workflows.add_parser(sub)
+    from .core import enabled as _core_on
+    if _core_on():
+        from .core import cli as core_cli
+        core_cli.add_parser(sub)    # P359: agentj order … · agentj core … (Agent J Harness, AGENTJ_CORE=1 only)   # P244 (§30): agentj workflows [--json] — what the phone's five pages read, read-only
     elevate.add_parser(sub)   # F17: agentj sudo · agentj secret request
     from . import opencode_provider
     opencode_provider.add_parser(sub)   # P60 / F25: agentj provider add|list|remove (OpenCode base_url + key)
@@ -3195,6 +3381,8 @@ def main(argv=None) -> None:
     tg_cursor.add_parser(sub)   # B3 (P117): agentj telegram-cursor status · fence · import · export (ids only)
     plaza.add_parser(sub)
     support.add_parser(sub)   # F18: agentj support ask | report | thread | list
+    from . import library
+    library.add_parser(sub)   # P367: agentj data list | get | search | coverage [--source] (Agent J points)
     from . import capability
     capability.add_parser(sub)
     from . import goal as goal_cli
@@ -3220,7 +3408,7 @@ def main(argv=None) -> None:
     mg.add_argument("mode", nargs="?", choices=["status", "rollback"], default="status")
     mg.add_argument("--json", action="store_true")
     mg.set_defaults(fn=cmd_migrate)
-    al = sub.add_parser("alias", help="短命令 aj（迁移过的电脑另有旧命令 jarvis）：status · install · remove（同名已存在就不装）/ "
+    al = sub.add_parser("alias", help="短命令 aj（迁移过的Agent J 主机另有旧命令 jarvis）：status · install · remove（同名已存在就不装）/ "
                                       "the short command `aj` (+ `jarvis` on a migrated computer)",
                         description="只在 PATH 里没有任何 aj 时，在 agentj 旁边建一个链接 aj → agentj；remove 只删我们自己的链接 / "
                                     "`aj` → agentj, only when no other `aj` exists; remove deletes only our own link")
@@ -3237,12 +3425,12 @@ def main(argv=None) -> None:
                                        "(shown only by agentj instances)")   # P180: `agentj --instance N label <note>`
     lb.add_argument("text", nargs="*")
     lb.set_defaults(fn=cmd_label)
-    ob = sub.add_parser("onboarding", help="首次使用进度：席位、这台电脑的浏览器、主力手机、欢迎消息 / first-use progress: seat, "
-                                           "this computer's browser, main phone, welcome")
+    ob = sub.add_parser("onboarding", help="首次使用进度：席位、这台Agent J 主机的浏览器、主力手机、欢迎消息 / first-use progress: seat, "
+                                           "the Agent J host's browser, main phone, welcome")
     ob.add_argument("--json", action="store_true")
     ob.set_defaults(fn=cmd_onboarding)
     a = p.parse_args(argv)
-    if a.cmd not in NO_MIGRATE and a.cmd not in ("keep-awake", "browser") and not (a.cmd == "doctor" and a.isolation_only):
+    if a.cmd not in NO_MIGRATE and not (a.cmd == "report" and getattr(a, "action", None)) and a.cmd not in ("keep-awake", "browser") and not (a.cmd == "doctor" and a.isolation_only):
         from . import migrate
         try:
             # P127: `serve` without a terminal is the owner's own service restarting (auto-update / reboot): a 0.9 install

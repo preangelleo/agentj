@@ -18,7 +18,7 @@ sessions included). Plain JSON files, each read-modify-write under one flock (`p
 - `hist/<id>.jsonl` one line per message {mid, dir, text, ts, s, auto} — the only place a friend's words are kept.
 - `profile.md`    「可以告诉好友的事」, written by the owner (or the main Agent for them).
 - `friends/<id>/context.md` (P73, ADR-A176) the owner's 「补充设定」 for this one friend (≤ 4000 characters): extra context,
-  persona, wording to keep — the last layer of that friend's peer-session prompt. Never leaves this computer.
+  persona, wording to keep — the last layer of that friend's peer-session prompt. Never leaves the Agent J host.
 
 Tokens come only from the harness's own usage report (record_turn); a turn without one marks the friend's tokens 「—」 (null)
 and only the message limits apply to them — never an estimate (ADR §6.1 step 7).
@@ -100,7 +100,7 @@ def _int(v) -> int:
 
 class FriendStore:
     def __init__(self, st, clock=time.time, tz=None):
-        """st: state.State; clock: unix seconds (tests); tz: a tzinfo for the windows, None = this computer's local time."""
+        """st: state.State; clock: unix seconds (tests); tz: a tzinfo for the windows, None = the Agent J host's local time."""
         self.st, self.clock, self.tz = st, clock, tz
 
     # ------------------------------------------------------------ files

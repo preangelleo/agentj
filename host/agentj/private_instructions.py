@@ -8,7 +8,7 @@ fence or any setting. Failure (missing, not a regular file, another owner, group
 not UTF-8) loads nothing and reports one fixed reason; ordinary chat continues.
 
 Logs and doctor show only ok/reason/generation — never the text, the full path or a content digest. The text does reach
-the main model's context on this computer (that is the point); it never goes to the cloud, feedback, reports, friends,
+the main model's context on the Agent J host (that is the point); it never goes to the cloud, feedback, reports, friends,
 groups or the public export.
 """
 from __future__ import annotations

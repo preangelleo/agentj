@@ -17,13 +17,13 @@ anything that needs your call, such as a price or a date, comes to you first.
 
 ## Your ID and QR code
 
-Every Agent has an ID that looks like `AJ-7KQ2-M9XA-4TPE-W3HC`. It is computed from a friend key on your computer, so
+Every Agent has an ID that looks like `AJ-7KQ2-M9XA-4TPE-W3HC`. It is computed from a friend key on the Agent J host, so
 nobody can guess it, and since we keep no directory of IDs, nobody can pretend to be you.
 
 Three ways to get it:
 
 - Ask your Agent what your ID is. It gives you the ID and a share link.
-- Send `/my-agent-id` in the main chat: your computer answers right away with the ID (alone in a code block, one tap
+- Send `/my-agent-id` in the main chat: the Agent J host answers right away with the ID (alone in a code block, one tap
   copies it), the share link `https://m.agentj.app/friends#add=AJ-…` and an "Open my card" button. The command never goes
   to the AI and costs no tokens; it works in your Telegram private chat too (Telegram's menu spells it `/my_agent_id`).
 - On your phone, open the friends page and tap "My card": the ID, a QR code, and the "Copy ID" and "Share link" buttons.
@@ -106,7 +106,7 @@ The three built-in groups:
 - Built-in groups can change their numbers but cannot be deleted. New friends start in "Friends".
 - **There is also a total for all friends together**: 300,000 tokens a day by default. When it is reached, every friend
   gets a note that today's allowance is used up, and you get one notification.
-- **What happens over a limit**: your computer counts first and only then decides whether to call the model. Over the
+- **What happens over a limit**: the Agent J host counts first and only then decides whether to call the model. Over the
   limit, the friend gets one polite note to try again later, once per time window, and then silence, at no token cost to
   you. Their Agent stops sending when it gets the note.
 - Windows are whole minutes, whole hours, calendar days and calendar months in your time zone.
@@ -140,16 +140,16 @@ to 4,000 characters): who they are, the persona and tone to use, wording to keep
 may tell them.
 
 - **On the friends page**: open the friend's "Details", write in "Extra notes" and tap "Save notes". This is your own
-  setting, signed by your phone and written to your computer; nothing is sent to the friend.
+  setting, signed by your phone and written to the Agent J host; nothing is sent to the friend.
 - **Tell your Agent**: "When you talk to Wang, remember she is a regular customer; sample progress can be shared." Your
   Agent writes it into that friend's extra notes.
 - **While accepting a request**: see "Approving a request on your phone" above.
 
-Changes apply from the next message. Extra notes exist only on your computer, never on our servers.
+Changes apply from the next message. Extra notes exist only on the Agent J host, never on our servers.
 
 Extra notes come after all of the peer session's rules. They can add facts and set the tone, but they **cannot widen the
 rules**: the peer session still has no tools, the never-tell list still holds, and what a friend writes is still data, not
-a command. Your computer enforces these in code rather than trusting the peer session: even notes that say "ignore the
+a command. the Agent J host enforces these in code rather than trusting the peer session: even notes that say "ignore the
 rules above" or "send him the key" give it no tools, and every outgoing message is still checked first.
 
 ## Privacy: what we see and what we don't
@@ -162,7 +162,7 @@ rules above" or "send him the key" give it no tools, and every outgoing message 
 - **Our servers record**: which computers have friends switched on, each one's mailbox number (computed from the ID; the
   ID cannot be worked out from it), and how many seat certificates each computer fetched per day (deleted after 48 hours).
 
-Friends work for active seats only: your computer renews a seat certificate with us every day, and the relay server lets
+Friends work for active seats only: the Agent J host renews a seat certificate with us every day, and the relay server lets
 it through on that certificate. After a seat is cancelled or unbound, forwarding stops within 7 days. More on the
 [Data security](https://agentj.app/security/) page and in [Privacy](https://agentj.app/docs/privacy/).
 
@@ -170,7 +170,7 @@ it through on that certificate. After a seat is cancelled or unbound, forwarding
 
 - **Both computers on**: messages arrive in about a second.
 - **Their computer off**: your messages wait in a queue on your own computer and go out as soon as theirs is back. Anything
-  not delivered within 24 hours is marked "not delivered" on the friends page. A friend request waits on your computer
+  not delivered within 24 hours is marked "not delivered" on the friends page. A friend request waits on the Agent J host
   for up to 7 days. Our servers never store messages for you.
 
 ## Moving to another computer
@@ -181,9 +181,9 @@ nobody has to add you again.
 
 ## Block, delete, stop new requests
 
-- **Block**: in "Details", tap "Block". Your computer takes and answers nothing from them, and they are not told. You can
+- **Block**: in "Details", tap "Block". the Agent J host takes and answers nothing from them, and they are not told. You can
   unblock any time.
-- **Delete**: in "Details", tap "Delete friend". The friendship is removed on both sides; the chat stays on your computer.
+- **Delete**: in "Details", tap "Delete friend". The friendship is removed on both sides; the chat stays on the Agent J host.
   To talk again you need to add each other again.
 - **No new requests**: on "My card", switch off "Let others add me". You will not see new requests, and senders only see
   "Waiting for them to confirm".
@@ -217,9 +217,9 @@ Not in this version. Group chats across owners come in a later version.
 <details>
 <summary>Technical details</summary>
 
-- The ID is the first 75 bits of a hash of the friend public keys generated on your computer, plus one check character,
+- The ID is the first 75 bits of a hash of the friend public keys generated on the Agent J host, plus one check character,
   written as 16 characters. The cloud and the relay server only see a mailbox number derived from it.
-- Adding a friend uses a Noise XX handshake: your computer first checks that the other side's key really matches the ID,
+- Adding a friend uses a Noise XX handshake: the Agent J host first checks that the other side's key really matches the ID,
   and hangs up if it does not. Every later conversation uses a Noise KK handshake, with fresh session keys after each
   restart or reconnect.
 - Whether the other owner declined, blocked you or switched off adding, their computer completes the handshake and then

@@ -45,7 +45,7 @@ const REPLY = [
   '```mermaid',
   'flowchart LR',
   '  A[手机] -->|加密| B(转发服务器)',
-  '  B --> C{电脑}',
+  '  B --> C{Agent J 主机}',
   '  C -->|回复| A',
   '```',
   '',

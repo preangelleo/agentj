@@ -71,9 +71,9 @@ T = {
         "id_tg": "你的 Agent ID（点一下即可复制）：",
         "id_tg_rest": "分享链接（对方在手机上点开就能加你）：\n{link}\n\n「我的名片」（有二维码）在手机上：{card}",
         "undisc": "\n\n提醒：你现在设成了「不允许别人加我」，别人发来的请求不会出现。要打开，去「我的名片」里打开开关。",
-        "seat": "\n\n提醒：这台电脑还没绑定 Agent J 账户，好友消息要绑定后才能收发。",
-        "off": "好友功能现在是关着的，所以还没有可以分享的 ID。在电脑上运行 agentj friends on 打开后，再发一次 /my-agent-id。",
-        "none": "还没有 Agent ID：好友功能还没准备好（在电脑上运行 agentj friends id 生成）。",
+        "seat": "\n\n提醒：这台Agent J 主机还没绑定 Agent J 账户，好友消息要绑定后才能收发。",
+        "off": "好友功能现在是关着的，所以还没有可以分享的 ID。在Agent J 主机上运行 agentj friends on 打开后，再发一次 /my-agent-id。",
+        "none": "还没有 Agent ID：好友功能还没准备好（在Agent J 主机上运行 agentj friends id 生成）。",
         "add_open": "打开「加好友」：点下面的按钮，把对方的 ID 填进去。",
         "add_bad_check": "这个 ID 的最后一位对不上，多半是抄错了一个字符：{id}\n请对一下再发。ID 长这样：AJ-XXXX-XXXX-XXXX-XXXX",
         "add_bad_format": "这不像一个 Agent ID：{id}\nID 长这样：AJ-XXXX-XXXX-XXXX-XXXX（AJ 后面 16 个字符）。",
@@ -89,10 +89,10 @@ T = {
         "id_tg": "Your Agent ID (tap to copy):",
         "id_tg_rest": "Share link (opening it on their phone adds you):\n{link}\n\nYour card (QR code) on the phone: {card}",
         "undisc": "\n\nNote: \"Let others add me\" is off, so requests from others are not shown. Turn it on under My card.",
-        "seat": "\n\nNote: this computer is not bound to an Agent J account yet; friend messages need the account.",
-        "off": "Agent friends are switched off, so there is no ID to share yet. Run agentj friends on at the computer, then "
+        "seat": "\n\nNote: the Agent J host is not bound to an Agent J account yet; friend messages need the account.",
+        "off": "Agent friends are switched off, so there is no ID to share yet. Run agentj friends on at the Agent J host, then "
                "send /my-agent-id again.",
-        "none": "No Agent ID yet: friends are not set up (run agentj friends id at the computer).",
+        "none": "No Agent ID yet: friends are not set up (run agentj friends id at the Agent J host).",
         "add_open": "Opening Add a friend: tap the button below and enter their ID.",
         "add_bad_check": "The last character of this ID does not match, so one character was probably copied wrong: {id}\n"
                          "Please check it. An ID looks like AJ-XXXX-XXXX-XXXX-XXXX.",

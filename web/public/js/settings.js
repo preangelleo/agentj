@@ -19,11 +19,17 @@ import * as authrescue from './authrescue.js';   // P258
 import * as contacts from './contacts.js';
 import * as ctmanage from './ctmanage.js';   // P207 §3: Settings → 通讯录
 import * as imsg from './imessage.js';      // P274: Settings → iMessage 助手 (Mac hosts only)
+import * as webhooks from './webhooks.js';   // P366: Settings → Webhook
 import { signedWriteFa, whyText } from './controls.js';
 import { approve as faApprove, canAssert } from './faceid.js';
 import { unb64u } from '../proto/wire.js';   // P336: approval level / goal without cards = signed approval_set
 import * as toolsort from './toolsort.js';   // P340: Settings → 输入框按钮顺序 (drag / hold-drag / tap / ← →)
 import * as toolorder from './toolorder.js';
+import * as jcards from './jcards.js';   // P360: Settings → Cards (official cards default off + the owner's own)
+import * as cmdrun from './cmdrun.js';     // P361: 紧急修复 → 电脑上的命令 (「执行」)
+import * as pagefind from './pagefind.js';   // P363 (#70): in-place find on a Settings sub-page
+import * as ntf from './notify.js';      // P365: Settings → 自动化消息 (`agentj notify`)
+import * as news from './news.js';         // P374: 账号和帮助 → 「Daily AI News」 (news_get / news_set → news_res)
 
 let H = { agentName: () => 'Agent J', paired: () => false, connected: () => false, unpair: () => {}, reload: () => location.reload(),
   view: () => document.body.dataset.view, forget: () => {} };
@@ -31,7 +37,7 @@ let prefs = null;                                    // the last `preferences` v
 let hostInfo = null;                                 // its `host` block (host ≥ 0.15: version, settable keys, paired phones)
 let noPrefSet = false;                               // the host never answered a pref_set → show commands
 let prefFail = null;                                 // P302: why the last setPref returned false (old / fail / offline + text)
-let sub = 'main';                                    // 'main' | 'ios' | 'remotes' | 'mail' | 'contacts' | 'imessage'
+let sub = 'main';                                    // 'main' | 'ios' | 'remotes' | 'mail' | 'contacts' | 'imessage' | 'notify'
 
 // ---------------------------------------------------------------- reply text size (phone-local)
 const CHAN = 'Telegram';
@@ -135,6 +141,7 @@ PREF_KEYS.push(...imsg.PREF_KEYS);       // P274: the iMessage card's parameters
 PREF_KEYS.push('heartbeat.daily_at');   // P207 §3: 「每天固定时间唤醒」 "HH:MM" | "" (host ≥ 0.20.2 lists it in settable)
 PREF_KEYS.push('ui.card_hot_action');   // P285: the reply card's bottom-left hot key (hotkey.js writes it from its own sheet)
 PREF_KEYS.push(toolorder.TOOL_KEY);     // P340: the composer buttons' order (toolsort.js writes it; an older host: this device only)
+PREF_KEYS.push(ntf.PREF_KEY);           // P365: 「允许自动化往这里发消息」 (notify.js; host ≥ P365 lists it in settable)
 // P207 §3 (was P156's ⇄ stepper): the idle interval is a dropdown of these (minutes) + a custom number 5–1440; a value set
 // elsewhere (agentj heartbeat set 45m) shows as 「自定义」 with that number
 export const HB_STEPS = [30, 60, 120, 180, 240, 360, 480, 720, 1440];
@@ -381,8 +388,13 @@ export function render() {
   el('set-owner-nav').hidden = !contacts.forwardAvailable();   // P194: slot 0 needs a host with the address book
   el('set-contacts-nav').hidden = !contacts.forwardAvailable(); // P207: the address book page, same host support
   el('set-imsg-nav').hidden = !imsg.available();               // P274: only when the computer is a Mac
+  el('set-cards-nav').hidden = !jcards.available();            // P360: a computer that answers jcard_*
   toolsort.render();                                            // P340
+  cmdrun.render(hostInfo);                                      // P361: rows only for the host's whitelist
+  news.render();                                                // P374
   if (sub === 'imessage') { if (imsg.available()) imsg.render(); else showSub('main'); }
+  el('set-notify-nav').hidden = !ntf.available();              // P365: an older host has no `agentj notify`
+  if (sub === 'notify') { if (ntf.available()) ntf.render(); else showSub('main'); }
 }
 /** 「遥控器管理」 row: 已用 N / 10 (from the last dev_list / devs, else the preferences host block). */
 function renderRemotesRow() {
@@ -407,9 +419,10 @@ export function setPrefs(value, host) {
 
 // ---------------------------------------------------------------- open / close / sub-view
 export const isOpen = () => !el('settings').hidden;
-const SUB_TITLE = { main: 'set.title', ios: 'set.iosTitle', remotes: 'rm.title', mail: 'mail.nav', contacts: 'p207set.ct.nav', auth: 'ar.nav', imessage: 'imsg.nav' };
+const SUB_TITLE = { main: 'set.title', ios: 'set.iosTitle', remotes: 'rm.title', mail: 'mail.nav', contacts: 'p207set.ct.nav', auth: 'ar.nav', imessage: 'imsg.nav', cards: 'p360.nav', notify: 'p365.nav', hooks: 'p366.nav' };
 function showSub(v, add = false) {
   const from = sub;
+  pagefind.close();
   sub = v;
   el('set-main').hidden = v !== 'main';
   el('set-ios').hidden = v !== 'ios';
@@ -418,21 +431,30 @@ function showSub(v, add = false) {
   el('set-contacts').hidden = v !== 'contacts';
   el('set-auth').hidden = v !== 'auth';
   el('set-imessage').hidden = v !== 'imessage';
+  el('set-cards').hidden = v !== 'cards';
+  el('set-notify').hidden = v !== 'notify';
+  el('set-hooks').hidden = v !== 'hooks';
   el('set-back').hidden = v === 'main';
   el('set-title').textContent = t(SUB_TITLE[v]);
   el('settings').dataset.sub = v;
   if (from === 'remotes' && v !== 'remotes') remotes.close();
   if (from === 'contacts' && v !== 'contacts') ctmanage.close();
   if (from === 'auth' && v !== 'auth') authrescue.close();
+  if (from === 'hooks' && v !== 'hooks') webhooks.close();
+  if (from === 'notify' && v !== 'notify') ntf.close();
   if (v === 'remotes') { remotes.open({add}); return; }
-  const back = { ios: 'set-a2hs', remotes: 'set-remotes-open', mail: 'set-mail-nav', contacts: 'set-contacts-nav', auth: 'set-auth-nav', imessage: 'set-imsg-nav' }[from];
+  const back = { ios: 'set-a2hs', remotes: 'set-remotes-open', mail: 'set-mail-nav', contacts: 'set-contacts-nav', auth: 'set-auth-nav', imessage: 'set-imsg-nav', cards: 'set-cards-nav', notify: 'set-notify-nav', hooks: 'set-hooks-nav' }[from];
   (v === 'main' ? el(back || 'set-close') : el('set-back')).focus({ preventScroll: v === 'main' && !back });
   if (v === 'main') renderRemotesRow();
   if (v === 'mail') mail.load();   // P170
   if (v === 'auth') authrescue.load();   // P258
   if (v === 'contacts') ctmanage.open();   // P207
   if (v === 'imessage') imsg.load();       // P274
+  if (v === 'cards') { jcards.renderSettings(cardHooks); jcards.refresh().then(() => { if (sub === 'cards') jcards.renderSettings(cardHooks); }); }   // P360
+  if (v === 'notify') ntf.load();          // P365
+  if (v === 'hooks') webhooks.show(el('hooks-box'));   // P366
 }
+const cardHooks = { note: (text) => say(text, false, 'p360.setFailed') };
 /** Opens Settings (any view but the camera); `page` = 'remotes' lands straight on 遥控器管理. */
 export function open(page = 'main', add = false) {
   if (document.body.dataset.view === 'scan') return;
@@ -445,6 +467,9 @@ export function open(page = 'main', add = false) {
   sub = 'main'; el('set-main').hidden = false; el('set-ios').hidden = true; el('set-remotes').hidden = true; el('set-mail').hidden = true; el('set-auth').hidden = true; el('set-back').hidden = true;
   el('set-contacts').hidden = true;
   el('set-imessage').hidden = true;
+  el('set-cards').hidden = true;
+  el('set-notify').hidden = true;
+  el('set-hooks').hidden = true;
   box.dataset.sub = 'main';
   el('set-title').textContent = t('set.title');
   el('setBtn').setAttribute('aria-expanded', 'true');
@@ -454,6 +479,7 @@ export function open(page = 'main', add = false) {
   el('settings').querySelector('.setbox').focus();
   if (page === 'remotes' && H.paired()) showSub('remotes', add);
   else if (H.paired() && isReady()) remotes.refresh().then(renderRemotesRow);   // 已用 N / 10 from the computer itself
+  if (H.paired()) news.load();   // P374: one news_get per opening (the account may have changed it in between)
 }
 export function back() { if (sub !== 'main') showSub('main'); else close(); }
 /** P184: 「转发到邮箱」 with no mailbox yet → Settings → 邮件通道. */
@@ -475,6 +501,7 @@ export function close() {
   if (box.hidden) return;
   if (sub === 'remotes') remotes.close();
   if (sub === 'contacts') ctmanage.close();
+  webhooks.close();   // P366
   toolsort.close();   // P340: a picked-up button is put down
   sub = 'main';
   say('');
@@ -634,7 +661,14 @@ export function configure(hooks) {
   el('set-contacts-nav').addEventListener('click', () => showSub('contacts'));   // P207: 通讯录
   mail.configure();
   el('set-imsg-nav').addEventListener('click', () => showSub('imessage'));   // P274
+  el('set-cards-nav').addEventListener('click', () => showSub('cards'));   // P360
+  el('set-cards-assist').addEventListener('click', () => { close(); if (H.assist) H.assist(t('p360.assistText')); });
+  jcards.onChange(() => { if (isOpen() && sub === 'cards') jcards.renderSettings(cardHooks); });
+  el('set-hooks-nav').addEventListener('click', () => showSub('hooks'));     // P366
   imsg.configure({ pget, setPref, hostInfo: () => hostInfo, assist: (text) => { close(); if (H.assist) H.assist(text); } });
+  el('set-notify-nav').addEventListener('click', () => showSub('notify'));   // P365
+  ntf.configure({ el, ready: isReady, ask: ask1, pget, setPref, settable: prefSettable, confirm: confirmSheet, explain: explainPrefFail });
+  news.configure();   // P374
   toolsort.configure({ setPref, settable: () => prefSettable(toolorder.TOOL_KEY), explain: explainPrefFail });   // P340
   // P207 §3: copy = an icon button; ✓ for 1.6 s on success (plus the fading notice for screen readers)
   // P283: 「重新绑定 Telegram」 — the host answers /telegram-pair with a one-time code card in the chat (no Agent, no model)
@@ -679,11 +713,12 @@ export function upgradeFromKey() { return H.upgradeHost?.(); }
 /** P265 / P241 pairing key: reuse the existing signed Add flow and show its QR, never toggle it away. */
 export function pairFromKey() { if (sub === 'remotes' && isOpen()) return remotes.open({add: true}); return open('remotes', true); }
 // P264: only public labels / descriptions, never input values or secret cards, form the local search index.
-export function closeSearch() { el('set-find').hidden = true; el('set-find-input').value = ''; el('set-find-results').replaceChildren(); }
+export function closeSearch() { pagefind.close(); el('set-find').hidden = true; el('set-find-input').value = ''; el('set-find-results').replaceChildren(); }
 export function toggleSearch() {
   if (!isOpen()) return;
   if (!el('set-find').hidden) { closeSearch(); return; }
-  if (sub !== 'main') showSub('main');
+  // P363 (#70): a sub-page (遥控器管理, 邮件通道, AI 登录救援, 联系人, iMessage, iOS) searches itself, in place
+  if (sub !== 'main') { const page = el('set-' + sub); if (page && !page.hidden) { pagefind.openIn(page, 'p363.findSet'); return; } showSub('main'); }
   el('set-find').hidden = false; el('set-find-input').focus();
 }
 export function searchItems(query) {

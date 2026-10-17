@@ -242,9 +242,9 @@ export async function keysGet() {
   return m.t === 'keys' ? m : null;
 }
 /** op copy | delete, after Face ID (fa = the assertion over keysDigest). → keys_res (copy: {ok, value, n}) or {ok:false, why}. */
-export async function keysOp(op, name, id, n, fa) {
+export async function keysOp(op, name, id, n, fa, more) {   // P362: more = {src, keep, fp} for op import
   if (!isReady()) return {ok:false,why:'offline'};
-  const m = await ask1({t:'keys_op',op,name,id,n,fa}, 'keys_res', 30000);
+  const m = await ask1({t:'keys_op',op,name,id,n,fa,...(op === 'import' && more ? {src:more.src,keep:more.keep === true,fp:more.fp} : {})}, 'keys_res', 30000);
   return m.t === 'keys_res' ? m : {ok:false,why:m.t};
 }
 /** Edit / Add: the host opens the existing encrypted key card for `name` (its 同意 asks for Face ID itself). */

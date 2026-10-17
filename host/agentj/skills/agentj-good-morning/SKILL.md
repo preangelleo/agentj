@@ -7,7 +7,7 @@ Only you (the main Agent) speak; there is no button for this. Reply in the owner
 
 1. **What is configured.** `agentj browser status --json` (+ `--registry` when a task tool needs capability entries) and the
    CEO roster / workflow reports in the working root. Nothing configured (no sites): say in two sentences what this does —
-   「早上好！我会每天检查自动化要用的网站账号是不是还登录着，掉线了就带你扫码或在电脑上重新登录。先选一个要自动化的网站吧，
+   「早上好！我会每天检查自动化要用的网站账号是不是还登录着，掉线了就带你扫码或在Agent J 主机上重新登录。先选一个要自动化的网站吧，
    推荐从 Gmail 开始，也可以先选 B站 或公众号。」 / "Good morning! I check whether the accounts your automations use are still
    signed in, and help you reconnect. Pick a first site — Gmail is a good start, or a social platform you use." Then
    `agentj browser sites add <site>` and go to step 3. Adding a site never enables a task. Browser `attention` /

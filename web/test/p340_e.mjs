@@ -7,7 +7,7 @@
 //   tools-tap          tap 拍照 (picked up, aria-pressed), tap 文件's place → 拍照 goes there; Esc puts a picked one down
 //   tools-reset        「恢复默认」 → the default order, pref_set with the default, the button disabled again
 //   tools-sync         a second paired remote (its own browser profile) repaints its message box from the preferences
-//                      broadcast; an invalid order from the computer reads as the default
+//                      broadcast; an invalid order from the Agent J host reads as the default
 //   tools-old-host     a computer that does not list the key: no pref_set, the 「只保存在这台设备上」 note, the order survives a
 //                      reload on this device
 // Shots: zh/en × light/dark × 350 (folded outer screen) / 390 / 690 (unfolded inner) / 1440 — the Settings row and the
@@ -135,7 +135,7 @@ export async function runP340E() {
           check(eq(await composer(p), MIC_LEFT), 'the message box shows it at once');
           await settle();
           check(eq(sets(fake).slice(n0), [MIC_LEFT]), 'one pref_set with the new order: ' + JSON.stringify(sets(fake).slice(n0)));
-          check(eq(fake.st.prefs.ui.composer_buttons, MIC_LEFT), 'the computer holds it');
+          check(eq(fake.st.prefs.ui.composer_buttons, MIC_LEFT), 'the Agent J host holds it');
           check(!(await evaluate(p, `${$('set-tools-reset')}.disabled`)), 'reset enabled');
           check(await evaluate(p, `!document.querySelector('#set-tools [aria-pressed="true"]')`), 'a drag is not a tap (nothing picked up)');
           await save('settings-after');
@@ -215,7 +215,7 @@ export async function runP340E() {
               await fake.send({ t: 'preferences', value: { ...fake.st.prefs, ui: { ...fake.st.prefs.ui, composer_buttons: ['mic', 'mic', 'image', 'camera'] } }, problem: null,
                 host: { version: '0.23.0a1', language_at: 0, settable: [KEY, 'appearance.language'], devices: [] } });
               await waitFor(q, `[...${$('tools')}.children].map(n=>n.id).join()==='tDoc,tPhoto,tCamera,mic'`);
-              check(eq(await composer(q), DEF), 'an invalid order from the computer = the default');
+              check(eq(await composer(q), DEF), 'an invalid order from the Agent J host = the default');
             } finally { await q.dispose(); }
             await closeSet(p);
           });
@@ -232,7 +232,7 @@ export async function runP340E() {
             await settle();
             check(fake.st.prefSets.length === n0, 'nothing sent to an older computer');
             check(eq(await composer(p), LOCAL), 'still shown at once');
-            check(await evaluate(p, `${$('set-pref-cmd')}.hidden && ${$('set-lang-cmd')}.hidden`), 'no command line for a setting that never needs the computer');
+            check(await evaluate(p, `${$('set-pref-cmd')}.hidden && ${$('set-lang-cmd')}.hidden`), 'no command line for a setting that never needs the Agent J host');
             if (w < 500) await save('settings-old-host');
             await closeSet(p);
             fake.st.prefSet = false; fake.st.prefs = { appearance: fake.st.prefs.appearance };   // the older computer after the reload too

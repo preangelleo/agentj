@@ -1,4 +1,4 @@
-// P135: an open page the computer stays quiet about says so after 30 s (stopped: at once) and offers a refresh;
+// P135: an open page the Agent J host stays quiet about says so after 30 s (stopped: at once) and offers a refresh;
 // a failed head fetch retries with backoff from 5 s instead of leaving 「正在恢复…」 on screen forever.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';

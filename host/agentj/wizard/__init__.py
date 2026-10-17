@@ -3,7 +3,7 @@
 The customer's own Agent (Claude Code / Codex / OpenCode, running fenced under `agentj serve`) interviews its human on the
 phone, one question at a time, following the skill in `skill/SKILL.md`, and then lays out a small, business-specific document
 system in its working folder: the entry file (`CLAUDE.md` for Claude Code, `AGENTS.md` for Codex / OpenCode), the seven
-boot-set documents under `documentation/` and `documentation/STRUCTURE.json`. Everything stays on this computer.
+boot-set documents under `documentation/` and `documentation/STRUCTURE.json`. Everything stays on the Agent J host.
 
 Subcommands (deterministic parts only — the model decides wording, this code decides what lands on disk):
   install        put the skill where the harness discovers it (`.claude/skills/`, `.agents/skills/`, `.opencode/skills/`)
@@ -1259,7 +1259,7 @@ def dry_run(st, root: Path, tid: str, *, harness: str | None = None, model: str 
     exe = _bin(kind)
     res = {"id": tid, "harness": kind, "fenced": False, "verdict": None, "summary": "", "seconds": 0.0, "report": None}
     if not exe:
-        res["skipped"] = f"{kind} is not installed on this computer"
+        res["skipped"] = f"{kind} is not installed on the Agent J host"
         return res
     if not st.exists():
         raise WizardError("run `agentj init` first (the dry run starts the Agent inside the same fence as `agentj serve`)")

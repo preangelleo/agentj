@@ -1,3 +1,4 @@
+import {focusDraft, releaseDraft} from './composer-focus.js';
 import { bindReaderSwipe } from './reader-swipe.js';
 import { DOUBLE_MS as RD_DTAP_MS, TAP_MS as RD_TAP_MS, TAP_PX as RD_TAP_PX, PAIR_PX as RD_PAIR_PX } from './file-gestures.js';
 import { linkify } from './five-pages.js';
@@ -44,6 +45,7 @@ import { lookup as ixLookup, ROWS as IX_ROWS, GROUPS as IX_GROUPS, dispatchFunct
 import { createUnread } from './unread.js';   // P207 (追加 2): this device's unread mark
 import { open as openAgentName } from './agentname.js';
 import { askKind as friendAsk, renderAsk as renderFriendAsk, addFriendCmd, openFromCmd } from './friends.js';   // §17.7: friend request / friend's question cards
+import * as replyBtn from './replybtn.js';   // P368 (#78): [派](reply:派) one-tap answers + #tags in the reply
 
 let C = null;                        // ctx from app.js: api, myDev(), estopOn(), canSign(), panels …
 const VERBS = ['Bash', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Read', 'WebFetch', 'WebSearch', 'Delete', 'ExternalDirectory', 'CodexPermissions'];
@@ -89,8 +91,8 @@ function noteQuiet(k){
 const STREAM_MS = 150;   // P193 (B10): an open page's growing reply is redrawn at most this often
 let wordsAt = 0, wordsTimer = null;
 // pending: an open page whose reply has not come yet — no words at all (the thinking dots say it), never the
-// empty-history line 「已连上你的电脑…」 (relay never showed a page before its reply; Agent J shows the say's page at once)
-// P281: wait words that are not a wait — 「已停下」 is over, 「电脑没有回音」 needs the owner — get no robot
+// empty-history line 「已连上你的Agent J 主机…」 (relay never showed a page before its reply; Agent J shows the say's page at once)
+// P281: wait words that are not a wait — 「已停下」 is over, 「Agent J 主机没有回音」 needs the owner — get no robot
 const NOT_WAITING = ["r.replyStopped", "r.replyNoEcho"];
 let themeGen = 0;          // P281: a new theme redraws the wait robot (its sheet) on the page shown
 function renderWords(text, pending = false, label = "", waitLine = false, sys = false){
@@ -122,7 +124,8 @@ function renderWords(text, pending = false, label = "", waitLine = false, sys = 
 }
 // P341 (#19): a host-written system page (k "sys": goal results, notices) quotes commands — "$(…)" / "$HOME" — so it
 // renders Markdown without TeX; the Agent's own replies keep math.
-const sysPage = (p) => !!(p && p.source && p.source.k === "sys");
+// P365: an automation's message (k "auto", `agentj notify`) is the owner's own script text — prices and $VARS, no TeX either
+const sysPage = (p) => !!(p && p.source && (p.source.k === "sys" || p.source.k === "auto"));
 function fill(w, tx, plain = false, sys = false){
   if (tx && !plain){
     try{
@@ -246,6 +249,24 @@ function askComplete(a){
   return askSel.id === a.id && a.questions.every((_, i) => (askSel.picks[i] || []).length > 0);
 }
 
+// P368 (#79): the words under an option show 2 lines; when they are longer, a 「…展开」 button under the option (a sibling —
+// a tap on it never picks the option) opens / folds them. Shown only when the clamp actually cut something.
+function qMore(d){
+  const m = document.createElement("button");
+  m.type = "button"; m.className = "qmore"; m.hidden = true; m.textContent = t('p368.qMore');
+  m.addEventListener("click", (e) => { e.stopPropagation(); const on = d.classList.toggle("open"); m.textContent = t(on ? 'p368.qLess' : 'p368.qMore'); m.setAttribute("aria-expanded", on ? "true" : "false"); });
+  return m;
+}
+function fitQMore(box, tries = 0){
+  let unseen = false;
+  for (const m of box.querySelectorAll(".qmore")){
+    const d = m.previousElementSibling && m.previousElementSibling.querySelector(".d");
+    if (!d || d.classList.contains("open")) continue;
+    if (!d.clientHeight){ unseen = true; continue; }
+    m.hidden = d.scrollHeight <= d.clientHeight + 1;
+  }
+  if (unseen && tries < 20) requestAnimationFrame(() => fitQMore(box, tries + 1));   // the sheet is still sliding in
+}
 function renderQuestion(card, a){
   const qs = a ? a.questions : [];
   const st = askState(a);
@@ -274,13 +295,17 @@ function renderQuestion(card, a){
         const n = document.createElement("span"); n.className = "n"; n.textContent = item.multi ? "" : String(k + 1);
         const tt = document.createElement("span"); tt.className = "t";
         const l = document.createElement("span"); l.textContent = o.label; tt.appendChild(l);
-        if (o.description){ const d = document.createElement("span"); d.className = "d"; d.textContent = o.description; tt.appendChild(d); }
+        let d = null;
+        if (o.description){ d = document.createElement("span"); d.className = "d"; d.textContent = o.description; tt.appendChild(d); }
         b.append(n, tt); b.disabled = !live;
-        li.appendChild(b); ol.appendChild(li);
+        li.appendChild(b);
+        if (d) li.appendChild(qMore(d));   // P368 (#79): 2 lines, then 「…展开」
+        ol.appendChild(li);
       });
       box.appendChild(ol);
     });
   }
+  fitQMore(box);
   const picks = a && askSel.id === a.id ? askSel.picks : (a && !open ? (a.choices || []) : []);
   box.querySelectorAll(".opt").forEach(b => {
     const on = (picks[+b.dataset.q] || []).includes(+b.dataset.n);
@@ -1166,10 +1191,13 @@ function sourceOf(src){
   if (src.k === "host") return {kind: "host", label: t('r.src.host')};
   // P132: a page the Agent started itself says why — a /loop or wake-up check, a background task, or just reporting in
   // P156: the host's own heartbeat check (its prompt is not shown — a folded label; a quiet beat has no page at all)
-  if (src.k === "agent") return {kind: "agent", label: src.via === "heartbeat" ? t('r.src.heartbeat') : src.via === "quota" ? t('p314.src') : src.via === "loop" ? t('r.src.loop') : src.via === "task" ? t('r.src.bgTask')
+  if (src.k === "agent") return {kind: "agent", label: src.via === "heartbeat" ? t('r.src.heartbeat') : src.via === "quota" ? t('p314.src') : src.via === "hook" ? t('p366.src') : src.via === "loop" ? t('r.src.loop') : src.via === "task" ? t('r.src.bgTask')
+    : src.via === "auto" ? t('p365.src.about', {name: src.name || ''})   // P365: the main Agent's own follow-up about an automation's message
     : t(src.text?.trim() ? 'r.src.agent' : 'r.src.agentReport', {name: C.agentName()})};
   if (src.k === "task") return {kind: "task", label: src.name ? t('r.src.taskNamed', {name: src.name}) : t('r.src.task')};
   if (src.k === "cmd") return {kind: "cmd", label: t('r.src.cmd')};
+  // P365: the owner's own script / timer (`agentj notify --from <name>`): the quiet system colour, its registered name
+  if (src.k === "auto") return {kind: "sys", label: t('p365.src.auto', {name: src.name || ''})};
   return {kind: "sys", label: src.local ? t('r.src.local') : t('r.src.sys')};
 }
 function showPage(){
@@ -1215,8 +1243,12 @@ function showPage(){
   el("omTime").textContent = p.ts ? "· " + hhmm(p.ts) : "";
   const tx = src && typeof src.text === "string" ? src.text.trim() : "";
   const ot = el("omText");
-  ot.textContent = tx || (src && src.att && src.att.length ? t('r.om.attOnly') : t('r.om.none'));
-  ot.classList.toggle("none", !tx);
+  // P363 (#72): a voice-only message shows what was said (the computer's transcript) instead of 「（只有附件）」
+  const heard = tx ? "" : transcriptOf(src), failed = !tx && !heard ? asrFailOf(src) : "";
+  ot.textContent = tx || heard || failed || (src && src.att && src.att.length ? t('r.om.attOnly') : t('r.om.none'));
+  ot.classList.toggle("none", !tx && !heard);
+  ot.classList.toggle("asr", !tx && !!heard);
+  if (tx) linkify(ot, true);   // P360: card links also in the owner's input
   // P132: no input of the owner's (the Agent reported in, a check or a background task) → the same card as a page header:
   // same place and size, the source label, the page capsule, both corner gestures and the new-message flash.
   const header = !tx && !src?.att?.length && !src?.quote;
@@ -1278,6 +1310,7 @@ function showPage(){
   paintThinking(visibleReply(p) && !hostWait ? progress : "");
   el("words").classList.toggle("empty", !visibleReply(p));
   renderMedia(el("words"), p);
+  replyBtn.paint(el("words"), p, {pages, say: sayReply, find: search.find});   // P368
   if (rdAt && rdAt.key === shownKey) renderReaderMedia(el("rdWords"), p);   // P59: the reader's slots, same Blobs
   if (rdOpen()) rdSync();                                                   // P273: the reader follows every jump
   document.body.dataset.pageOpen = p.end === "open" ? "1" : "0";
@@ -1345,7 +1378,7 @@ function paintCmdx(p){
 const newestUndoId = () => { for (let i = hist.turns.length - 1; i >= 0; i--){ const x = hist.turns[i]; if (x.card && (x.card.cmd === "clear" || x.card.cmd === "undo_clear")) return x.card.undo ? x.id : -1; } return -1; };
 // P280: 「撤销清空」 lasts until the new conversation starts — the first message after the clear (phone, Telegram, desktop or the
 // Agent's own) opens it, and the host refuses an undo from then on.
-const NEW_TALK = new Set(["phone", "telegram", "host", "agent"]);
+const NEW_TALK = new Set(["phone", "telegram", "host", "agent", "auto"]);   // P365: an automation's message reaches the Agent too
 const undoExpired = (id) => hist.turns.some(x => x.id > id && x.source && NEW_TALK.has(x.source.k));
 // P261: folded source cards show only a count; attachment cards exist only while open.
 function paintOmAttachments(src = currentPage()?.source){
@@ -1358,8 +1391,27 @@ function paintOmAttachments(src = currentPage()?.source){
   att.replaceChildren();
   if (open) for (const a of list){
     const s = document.createElement("span"); s.className = "omchip"; s.dataset.kind = a.kind; s.textContent = a.name; att.appendChild(s);
+    if (a.asr) att.appendChild(asrBlock(a.asr));
   }
   att.hidden = !open || !list.length;
+}
+// P363 (#72): under a voice attachment of the open card, the computer's transcript — folded / unfolded with its own line
+// (open by default), selectable (long press copies); a failed one says why. Every remote and every read-back get it (the
+// host updates the page, PROTOCOL §10.5 Src.att[].asr).
+const asrTexts = (src) => (src?.att || []).map(a => a.asr && a.asr.ok ? a.asr.text : "").filter(Boolean);
+function transcriptOf(src){ return asrTexts(src).join("\n\n"); }
+function asrFailOf(src){
+  const bad = (src?.att || []).find(a => a.asr && !a.asr.ok);
+  return bad ? t('p363.asrFail', {why: asrWhy(bad.asr.why)}) : "";
+}
+const asrWhy = (w) => { const k = 'p363.why.' + w, v = t(k); return v === k ? t('p363.why.broken') : v; };
+function asrBlock(a){
+  const d = document.createElement("details"); d.className = "omasr"; d.open = true;
+  const sm = document.createElement("summary"); sm.textContent = t(a.ok ? 'p363.asrTitle' : 'p363.asrFailTitle');
+  const p = document.createElement("p"); p.className = "omasr-text";
+  p.textContent = a.ok ? a.text + (a.cut ? "\n" + t('p363.asrCut') : "") : t('p363.asrFail', {why: asrWhy(a.why)});
+  d.append(sm, p);
+  return d;
 }
 function setOm(open){
   const om = el("om");
@@ -1468,7 +1520,8 @@ function copyOut(text, doneMsg){
   RelayMD.copyText(text).then(ok => toast(ok ? doneMsg : t('r.copy.fail'), ok ? 1400 : 2200));
 }
 function copyReply(){ copyOut(currentPage().reply || "", t('r.copy.reply')); }
-function copySource(){ const p = currentPage(); copyOut(p.source && p.source.text || "", t('r.copy.source')); }
+// P363 (#73): the input card's copy button and Y — the owner's words; a voice note's transcript after them (voice only: the transcript)
+function copySource(){ const p = currentPage(), s = p && p.source; copyOut([(s && s.text || "").trim(), transcriptOf(s)].filter(Boolean).join("\n\n"), t('r.copy.source')); }
 
 // ---- reply actions: 阅读 · 朗读 · 分享 · 复制 · 回复 (relay ADR-037) ---------------------
 // Each acts on a turn by its id — never a page number.
@@ -1573,7 +1626,7 @@ function slashOn(p, cmd, hint, hintFrom){
   const rest = input.value.replace(re, "").replace(/^\s+/, "");
   input.value = cmd + " " + rest;
   paintActs();
-  input.focus();
+  focusComposer();
   input.setSelectionRange(input.value.length, input.value.length);
   autosize(); refreshSend(); saveDraft();
   toast(older ? hintFrom : hint, 5200);
@@ -1612,7 +1665,7 @@ function plainLine(md){
 function startReply(p){
   if (!p || p.id === null) return;
   if (addQuote(pageQuote(p)) === "full") toast(t('r.quote.max'), 2600);
-  input.focus();
+  focusComposer();
   input.setSelectionRange(input.value.length, input.value.length);
 }
 // a chip's source tag: time · Agent, just the time from three chips on (the words need the room); no 「已复制」 here
@@ -1659,7 +1712,7 @@ function paintReply(){
   if (meta){ const s = document.createElement("span"); s.textContent = meta; head.appendChild(s); }
   el("qbText").textContent = quoteWords(q);
 }
-function removeQuote(q){ quotes = quotes.filter(x => !(x.id === q.id && (x.excerpt ?? null) === (q.excerpt ?? null))); paintReply(); paintActs(); if (!quotes.length) input.focus({preventScroll: true}); }
+function removeQuote(q){ quotes = quotes.filter(x => !(x.id === q.id && (x.excerpt ?? null) === (q.excerpt ?? null))); paintReply(); paintActs(); if (!quotes.length) focusComposer({preventScroll: true}); }
 function cancelReply(){ if (!quotes.length) return; quotes = []; paintReply(); paintActs(); }
 // The full words of one quote (the chips only show the first characters), its source, 跳到原文 / 删掉
 let qdlgAt = null, qdlgFrom = null;
@@ -1673,7 +1726,7 @@ function openQuote(q){
 function closeQuote(){
   if (el("quoteDlg").hidden) return;
   el("quoteDlg").hidden = true; qdlgAt = null;
-  if (qdlgFrom && qdlgFrom.isConnected) qdlgFrom.focus({preventScroll: true}); else input.focus({preventScroll: true});
+  if (qdlgFrom && qdlgFrom.isConnected) focusDraft(qdlgFrom, {preventScroll: true}); else focusComposer({preventScroll: true});
 }
 // 跳回原卡并高亮该段: the page by its id, then the excerpt marked with the CSS Highlight API (a selection would quote it again)
 async function jumpToQuote(q){
@@ -1762,7 +1815,7 @@ async function selCommit(type){
   else if (r === "ok" && rdOpen()) toast(t('r.quote.added', {i: quotes.length, n: QMAX}), 1600);   // the strip is under the reader
   await selCopy(text);
   if (r === "ok" && !rdOpen() && quoted(id, text) && selFocus(type)){
-    input.focus({preventScroll: true});
+    focusComposer({preventScroll: true});
     input.setSelectionRange(input.value.length, input.value.length);
   }
 }
@@ -1990,7 +2043,7 @@ function rdReply(){
   // this one runs after it, still inside the tap, so the caret ends in the field (and the phone keyboard opens)
   queueMicrotask(() => {
     if (!quotes.some(q => q.id === p.id) || document.activeElement === input) return;
-    input.focus(); input.setSelectionRange(input.value.length, input.value.length);
+    focusComposer(); input.setSelectionRange(input.value.length, input.value.length);
   });
 }
 // The type-size popover (footer, left): − · slider · + — pinch and + / - keep working without it.
@@ -2222,7 +2275,11 @@ let composing = false;
 // (while say_res is on its way, or after the field was cleared): within ECHO_MS such an echo is dropped, never re-typed.
 const ECHO_MS = 3000;
 let lastSent = null;      // {text, until}
+// P375: programmatic composer focus is desktop-only. Touch owners focus by tapping the field.
+function focusComposer(options){ focusDraft(input, options); }
+function releaseComposer(){ releaseDraft(input); }
 function settleField(text){
+  releaseComposer();
   lastSent = {text, until: Date.now() + ECHO_MS};
   if (input.value === text || isEcho(input.value, text)) input.value = "";
   closeSug();      // P280: the `/clear` suggestion reopened when the confirm sheet gave the focus back — it must not linger
@@ -2691,7 +2748,10 @@ export async function sayPreset(kind){
 }
 // P238: one tap on /switch-harness sends it as typed — serve hands it to the main Agent, which lists the harnesses first
 const saySwitch = () => sayWords(SWITCH_CMD, t('p238.sent'));
+// P368: a one-tap answer in the reply = the owner typing those words and tapping Send (same signed say)
+const sayReply = (words) => sayWords(words, t('p368.sent', {say: words}));
 async function sayWords(text, done){
+  releaseComposer();
   if (C.estopOn()){ toast(t('r.say.stopped'), 3200); return false; }
   if (!C.connected()){ toast(t('p181.offline'), 3000); return false; }
   sendFollow();
@@ -2720,6 +2780,7 @@ function quoteArgs(text, qs){
   return {...out, text: (text.trim() ? text + "\n\n" : "") + lines.join("\n")};
 }
 async function say(voiceReady = false){
+  releaseComposer();
   const text = input.value;
   if (!hasSayable() || sending || (asrBusy && voiceReady !== true)) return;                 // F27: files alone (no words) go too
   // P73 (ADR-A176): /add-friend is the friends page's signed fr_add, sent from here (the approval key never leaves the page);
@@ -2951,7 +3012,7 @@ let menuItems = [];           // what the type-ahead filters: [cmd, desc, group]
 function insertSlash(cmd){
   const v = input.value;
   input.value = (v && !v.endsWith(" ") ? v + " " : v) + cmd + " ";
-  input.focus();
+  focusComposer();
   input.setSelectionRange(input.value.length, input.value.length);
   autosize();
 }
@@ -3181,7 +3242,7 @@ function pickSug(i){
   const it = sugList[i]; if (!it) return;
   input.value = it[0] + " ";
   closeSug();
-  input.focus();
+  focusComposer();
   input.setSelectionRange(input.value.length, input.value.length);
   input.dispatchEvent(new Event("input"));
 }
@@ -3652,7 +3713,7 @@ function appendText(tx){
   }
   input.value = v + (tx ? sep : "") + tx;
   autosize(); draftSoon();
-  try{ input.focus({preventScroll: true}); }catch(_){}
+  try{ focusComposer({preventScroll: true}); }catch(_){}
   input.setSelectionRange(input.value.length, input.value.length);
   input.scrollTop = input.scrollHeight;
 }
@@ -3790,12 +3851,15 @@ function paintKeys(){
     for (const [id, keys, hasGesture] of rows){
       const dt = document.createElement("dt"), dd = document.createElement("dd");
       dt.dataset.ix = id;
-      keys.forEach(([combo, how], i) => {
-        if (i) dt.append(" · ");
-        if (how === "hold") dt.append(t('ixw.hold') + " ");
+      // P363 (#69): one combination per line, top to bottom — the key column is only as wide as the longest single
+      // combination, the description gets the rest (Ctrl+A · Ctrl+E · … used to wrap into a wide block)
+      keys.forEach(([combo, how]) => {
+        const line = document.createElement("span"); line.className = "kcombo";
+        if (how === "hold") line.append(t('ixw.hold') + " ");
         const one = () => { const f = document.createDocumentFragment(); kbdTokens(combo, mac).forEach((tok, j) => { if (j) f.append("+"); const k = document.createElement("kbd"); k.textContent = tok || t('ixw.space'); f.append(k); }); return f; };
-        dt.append(one());
-        if (how === "double"){ dt.append(" "); dt.append(one()); }
+        line.append(one());
+        if (how === "double"){ line.append(" "); line.append(one()); }
+        dt.append(line);
       });
       dd.textContent = t('ix.' + id);
       if (hasGesture){ const sm = document.createElement("small"); sm.className = "keyges"; sm.textContent = t('ixw.gesture') + t('ixges.' + id); dd.append(sm); }
@@ -3887,7 +3951,7 @@ export async function pasteClipText(){
   }
   const v = input.value, a = input.selectionStart ?? v.length, b = input.selectionEnd ?? v.length;
   input.value = v.slice(0, a) + text + v.slice(b);
-  input.focus();
+  focusComposer();
   input.setSelectionRange(a + text.length, a + text.length);
   input.dispatchEvent(new Event("input"));
   toast(t('p181.clip.inserted'), 1600);
@@ -3912,7 +3976,7 @@ export function attachShot(file, quiet = false){
 export function prepareSetupDraft(text) {
   input.value = text + (input.value.trim() ? '\n\n' + input.value : '') + '\n';
   input.dispatchEvent(new Event('input'));
-  input.focus({preventScroll: true}); input.setSelectionRange(input.value.length, input.value.length);
+  focusComposer({preventScroll: true}); input.setSelectionRange(input.value.length, input.value.length);
 }
 export function insertText(text){
   const at = document.activeElement === input ? input.selectionStart : input.value.length;
@@ -3920,7 +3984,7 @@ export function insertText(text){
   const pre = at > 0 && !/\s$/.test(input.value.slice(0, at)) ? " " : "";
   input.setRangeText(pre + text, at, end, "end");
   input.dispatchEvent(new Event("input"));
-  try { input.focus({preventScroll: true}); } catch { /* */ }
+  try { focusComposer({preventScroll: true}); } catch { /* */ }
 }
 export function importShare({images, text}){
   if (images.length) takeFiles(images, 'r.verb2.paste', 'paste');
@@ -4148,6 +4212,7 @@ export function init(ctx){
   pressable(el("orb"), () => C.menuPages(), () => C.goChat());   // @ix app.pages_menu page.go_chat
 
   el("omMore").addEventListener("click", () => setOm(!el("om").classList.contains("open")));   // @ix page.expand
+  el("omCopy").addEventListener("click", (e) => { e.stopPropagation(); copySource(); });   // @ix card.copy_source (P363 #73)
   // P181: a double tap / double click on the source card's words = 「…」 / O (open ⇄ close here, never the full-screen reader);
   // a long press still selects text, and a double click no longer selects a word first.
   dblTap(el("omText"), rdTarget, () => setOm(!el("om").classList.contains("open")));
@@ -4618,7 +4683,7 @@ export function init(ctx){
   });
   clr.addEventListener("click", e => {   // @ix compose.clear
     e.preventDefault(); e.stopPropagation();
-    if (clr._keep || document.activeElement === clr) input.focus();
+    if (clr._keep || document.activeElement === clr) focusComposer();
     clr._keep = false;
     const text = input.value;
     if (!text) return;
@@ -4627,7 +4692,7 @@ export function init(ctx){
     toastAction(t('r.clr.done'), t('r.clr.undo'), () => {
       input.value = (text + input.value).slice(0, MAX_TEXT());
       input.dispatchEvent(new Event("input"));
-      input.focus();
+      focusComposer();
       input.setSelectionRange(input.value.length, input.value.length);
     }, 5000);
   });
@@ -4723,12 +4788,12 @@ export function init(ctx){
     "app.bots": () => keyNav(() => C.bots && C.bots()),
     "app.setup": () => keyNav(() => C.setup && C.setup()),
     "app.pending": () => { if (shown("pendTag")) el("pendTag").click(); },
-    "compose.focus": () => { closeMenu(); input.focus(); input.setSelectionRange(input.value.length, input.value.length); },
+    "compose.focus": () => { closeMenu(); focusComposer(); input.setSelectionRange(input.value.length, input.value.length); },
     // P154 追加 8: "/" outside the field = into the field with the "/" typed at the end of the draft — the same input event
     // as typing it there, so an empty draft opens the slash-command menu. Not while a dialog / Settings is open, not from
     // another field, never on a held key.
     "compose.slash": () => {
-      closeMenu(); input.focus();
+      closeMenu(); focusComposer();
       const n = input.value.length;
       input.setRangeText("/", n, n, "end");
       input.dispatchEvent(new InputEvent("input", {inputType: "insertText", data: "/", bubbles: true}));
@@ -4891,7 +4956,7 @@ document.addEventListener('keydown',e=>{
   const combo=[e.ctrlKey?'ctrl':null,e.altKey?'alt':null,e.shiftKey?'shift':null,e.metaKey?'meta':null,e.key.toLowerCase()].filter(Boolean).join('+');
   const binding=(userPreferences.keyboard?.bindings||[]).find(x=>x.combo===combo);
   if(!binding)return;
-  const fn={'open-menu':toggleMenu,'read-reply':speakTap,'stop-speech':()=>speaker?.stop(),'focus-input':()=>input?.focus(),'interrupt':()=>C.api.slash('stop')}[binding.action];
+  const fn={'open-menu':toggleMenu,'read-reply':speakTap,'stop-speech':()=>speaker?.stop(),'focus-input':()=>focusComposer(),'interrupt':()=>C.api.slash('stop')}[binding.action];
   if(fn){e.preventDefault();e.stopImmediatePropagation();fn();}
 },true);
 

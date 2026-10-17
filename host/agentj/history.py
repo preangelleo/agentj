@@ -1,5 +1,5 @@
 """Persistent chat history (PROTOCOL §10.5, PROMPT-33; relay `bridge/history.py`): every page the phone shows is one turn
-{source, reply}, kept on THIS computer so a host restart loses nothing and a phone can page back.
+{source, reply}, kept on the Agent J host so a host restart loses nothing and a phone can page back.
 
 Store (`config.json` `history`, default on): `<state>/history/current.jsonl` (dir 0700, file 0600) — one JSON line per change
 of a turn, appended (the last line of an id wins), rewritten atomically to the newest KEEP turns once it passes COMPACT_AT
@@ -8,14 +8,14 @@ lines — and `<state>/history/meta.json` {epoch, next_id, undo}. `history off` 
 
 A turn: {"id", "ts" (ms), "src": Src, "reply": {"text", "part"?: [k, N], "pre"?}, "end": open|done|stopped|failed, "card"?,
 "media"?, "media_skip"? (F21, PROTOCOL §13: files the finished reply shows — media.py)}.
-Src = {"k": phone|host|agent|sys|task|cmd|telegram, "dev"?, "name"?, "text", "quote"?, "att"?, "local"?, "via"? (agent only, P132: loop|task)}. The reply of a turn = every
+Src = {"k": phone|host|agent|sys|task|cmd|telegram|auto, "dev"?, "name"?, "text", "quote"?, "att"?, "local"?, "via"? (agent only, P132: loop|task)}. The reply of a turn = every
 finished reply text of that Agent turn joined by a blank line — results only, never tool calls; a reply over PART_MAX UTF-16
 units continues on the next page (`part`), nothing is truncated.
 
 Reset (`/clear`): current.jsonl → `archive/<epoch>-<UTC stamp>.jsonl` (newest ARCHIVE_KEEP kept), epoch + 1, ids keep growing;
 undo (「撤销清空」) moves that archive back as current with epoch + 1 again (what was said after the clear is archived in turn,
 never lost). Text on disk is the customer's own, next to where the harness keeps its own transcript (Invariant 23); it
-leaves this computer only inside §3 transport messages.
+leaves the Agent J host only inside §3 transport messages.
 """
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ PAGE_MAX = 50
 PAGE_BYTES = 2 * 1024 * 1024
 FILE_MAX = 32 * 1024 * 1024  # current.jsonl is compacted once it passes this many bytes (P33-C06), as well as COMPACT_AT lines
 KEEP_BYTES = 16 * 1024 * 1024  # what compaction (and memory) keeps: the newest turns up to KEEP and up to this many JSON bytes
-SRC_KINDS = ("phone", "host", "agent", "sys", "task", "cmd", "telegram")
+SRC_KINDS = ("phone", "host", "agent", "sys", "task", "cmd", "telegram", "auto")   # P365 auto: `agentj notify`
 ENDS = ("open", "done", "stopped", "failed")
 SEP = "\n\n"
 
@@ -218,7 +218,8 @@ class History:
         return self.turns.get(tid) if type(tid) is int else None
 
     def update(self, tid: int, *, append: str | None = None, end: str | None = None, card: dict | None = None,
-               text: str | None = None, media: tuple | None = None, pre: str | None = None) -> list[dict]:
+               text: str | None = None, media: tuple | None = None, pre: str | None = None,
+               att_asr: dict | None = None) -> list[dict]:
         """Change one turn; returns every turn that changed (an append past PART_MAX adds a continuation page and renumbers
         the parts), the last one being where the next append goes. [] when the id is gone. text = replace the reply (a
         command's interim line → its result). pre (P351) = the process notes a silent turn folds away ("" drops them)."""
@@ -226,6 +227,11 @@ class History:
         if t is None:
             return []
         changed = [t]
+        if att_asr:                            # P363 (#72): {attachment index: transcript result} onto the owner's own page
+            att = t["src"].get("att") if isinstance(t.get("src"), dict) else None
+            for i, a in att_asr.items():
+                if isinstance(att, list) and type(i) is int and 0 <= i < len(att) and isinstance(att[i], dict):
+                    att[i]["asr"] = a
         if text is not None:
             t["reply"]["text"] = text[:_cut_units(text, PART_MAX)]
         if pre is not None:
@@ -371,7 +377,7 @@ class History:
         return True
 
     def on_disk(self) -> tuple[int, int]:
-        """(files, bytes) of history on this computer — current.jsonl + every archive — whether history is on or off now
+        """(files, bytes) of history on the Agent J host — current.jsonl + every archive — whether history is on or off now
         (`history off` stops writing; it does not delete what is there, P33-C07)."""
         n = b = 0
         for p in [self.cur_path, *(self.arch_dir.glob("*.jsonl") if self.arch_dir.is_dir() else [])]:

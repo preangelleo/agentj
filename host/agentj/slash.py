@@ -16,7 +16,7 @@ interprets a short whitelist itself and carries each one out through the harness
 - `/clear` is the host's own for all three: the conversation id is put aside (kept for 「撤销清空」) and the next message
   starts a new one; `/stop` = the stop switch's interrupt, for this turn only (nothing is paused).
 
-Anything else that looks like a command is not run: 「这个命令请在电脑上执行」. Usage figures are only what the harness reports
+Anything else that looks like a command is not run: 「这个命令请在Agent J 主机上执行」. Usage figures are only what the harness reports
 exactly; when there is none the phone shows "—" (never an estimate of what is left).
 """
 from __future__ import annotations
@@ -38,7 +38,7 @@ LABEL = {"clear": "清空", "compact": "压缩", "model": "换模型", "context"
 ARG_MAX = 200
 _CMD = re.compile(r"^/([A-Za-z][\w:.-]{0,63})(?:[ \t]+(.*))?$", re.S)
 MODEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/\[\]@+-]{0,99}$")
-REFUSE = ("这个命令请在电脑上执行。手机上能用的：/clear /new /compact /model /context /cost /usage /status /help /stop"
+REFUSE = ("这个命令请在Agent J 主机上执行。手机上能用的：/clear /new /compact /model /context /cost /usage /status /help /stop"
           " /my-agent-id /add-friend /telegram-pair /update /reload /reset /switch-harness /goal")
 NONE = "—"
 # F24: the whole message, nothing else (「把这个文件压缩一下」 stays a message)
@@ -147,8 +147,8 @@ HELP = ("手机上能用的命令（也可以点输入框左边的 ≡「全部�
         "/cost 本会话花费 · /usage 套餐用量 · /status 状态 · /stop 停下这一轮 · /help 这条说明\n"
         "/update 升级 Agent J（发送即授权安装、重启、自检）\n"
         "/reload 重新加载配置（不重启后台服务；改了设置后用）\n"
-        "/reset 重置连接（手机连不上电脑上的 Agent J 时用，逐步修复）\n"
+        "/reset 重置连接（手机连不上Agent J 主机上的 Agent J 时用，逐步修复）\n"
         "/switch-harness [切换到 Codex] 换底层 harness：交给主 Agent，先检查、能用才切\n"
         "好友：/my-agent-id 我的 Agent ID 和分享链接 · /add-friend <ID> [附言] 加好友\n"
         "Telegram：/telegram-pair 重新绑定 Telegram（手机上出一次性配对码）\n"
-        "别的命令（比如改设置的）请在电脑上执行。")
+        "别的命令（比如改设置的）请在Agent J 主机上执行。")

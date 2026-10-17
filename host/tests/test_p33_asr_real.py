@@ -203,7 +203,7 @@ class RealEngineServe(_Chain):
             self.assertEqual((await take(zh, "none.wav"))["why"], "not_installed")
             att = await c["upload"](zh, mime="audio/wav", purpose="att", origin="recording", secs=6, name="none.wav")
             r, t = await c["said"]("没装", att=[att])
-            self.assertIn("转写失败（电脑上还没装语音转写）", t["reply"]["text"])
+            self.assertIn("转写失败（Agent J 主机上还没装语音转写）", t["reply"]["text"])
         self.run_chain(script)
 
 

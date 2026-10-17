@@ -49,11 +49,11 @@ def text(rec, lang="zh", web="older", machine=None):
         from . import humane
         return humane.say("update.current", lang, to=rec["to"])
     reason = str(rec.get("reason", "unknown"))
-    if rec.get("tell_owner"):          # P277: the plain sentence (what failed, where the computer is, whether support has it)
+    if rec.get("tell_owner"):          # P277: the plain sentence (what failed, where the Agent J host is, whether support has it)
         from . import upgrade_diag
         return upgrade_diag.owner_sentence(rec, _rep_of(rec), lang)
-    return (f"Upgrade failed ({reason}). Run `agentj update check`, then `agentj update apply` on the computer." if lang == "en" else
-            f"升级未完成（{reason}）。在电脑运行 `agentj update check`，再运行 `agentj update apply` 重试。")
+    return (f"Upgrade failed ({reason}). Run `agentj update check`, then `agentj update apply` on the Agent J host." if lang == "en" else
+            f"升级未完成（{reason}）。在Agent J 主机运行 `agentj update check`，再运行 `agentj update apply` 重试。")
 
 def _rep_of(rec):
     import re

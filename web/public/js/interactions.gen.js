@@ -19,7 +19,7 @@ export const ROWS = [
   ["card.forward",[["t","press"]],1],
   ["card.mail",[["e","press"]],1],
   ["card.copy",[["Alt+Shift+Y","press"],["y","press"]],1],
-  ["card.copy_source",[["Y","press"]],0],
+  ["card.copy_source",[["Y","press"]],1],
   ["card.reply",[["Alt+Shift+A","press"],["r","press"]],1],
   ["card.quote_selection",[],1],
   ["card.web_report",[["W","press"]],1],

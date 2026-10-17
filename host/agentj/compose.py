@@ -54,8 +54,8 @@ T = {
         "mq_head": "【引用 {i}/{n} · 你的回复 #{id} · {when}】",
         "mq_ctx": "（选自这条回复，它的开头：{line}）",
         "voice_only_fail": "（这条消息只有语音、没有文字，而且语音没转写出来。请简短告诉对方没听清，请他再说一遍或者打字——不要自己猜他说了什么。）",
-        "who": {"phone": "你", "host": "电脑", "agent": "Agent", "sys": "系统", "task": "定时任务", "cmd": "命令"},
-        "why": {"timeout": "处理超时", "no_speech": "没有听到说话", "not_installed": "电脑上还没装语音转写",
+        "who": {"phone": "你", "host": "Agent J 主机", "agent": "Agent", "sys": "系统", "task": "定时任务", "cmd": "命令"},
+        "why": {"timeout": "处理超时", "no_speech": "没有听到说话", "not_installed": "Agent J 主机上还没装语音转写",
                 "off": "语音转写已关闭", "broken": "转写器出错", "busy": "转写器忙", "bad_audio": "音频格式不对",
                 "format": "格式", "cancelled": "已取消", "cut": "超过 2 小时的部分没有转写"},
         # P342 (#28): a Telegram message the human replied to — same shape as 「回复 #N」, but Telegram has no page id

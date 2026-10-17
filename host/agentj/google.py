@@ -5,7 +5,7 @@ What 0.18.0 does (Leo approved the five P91 defaults, 2026-10-09):
   its own isolated home `<state>/google/gog-home/` (GOG_HOME). It never touches a gog / gcloud / gws the owner already has,
   never inherits ADC or token environment variables. gcloud is installed only when a 0.18.1 setup needs it; gws is optional.
 - A failed or skipped install never blocks binding, pairing or chat (the owner can say "I won't use Google": `agentj google off`).
-- Reads (never changes) what already exists on the computer: gog / gcloud / gws on PATH and whether their config files exist.
+- Reads (never changes) what already exists on the Agent J host: gog / gcloud / gws on PATH and whether their config files exist.
   It never runs the owner's own tools and never opens a keyring, so no token, email or client secret is read.
 - Lists Google purposes with the minimum scope each needs, API and website sign-in as separate rows. In 0.18.0 no purpose is
   authorized by Agent J: the own-project / In production / PKCE / local token-owner flow is 0.18.1 (approved staging), so API
@@ -473,7 +473,7 @@ def plan(ids: list[str]) -> dict:
     return {"ok": True, "purposes": ids, "apis": sorted({p["api"] for p in chosen.values()}),
             "scopes": sorted({s for p in chosen.values() for s in p["scopes"]}),
             "classes": sorted({p["class"] for p in chosen.values()}),
-            "owner_steps": ["sign in to Google on this computer (password / 2-step there, never in chat)",
+            "owner_steps": ["sign in to Google on the Agent J host (password / 2-step there, never in chat)",
                             "accept Google Cloud terms yourself if asked",
                             "on the unverified-app warning: check it is YOUR new project, then Advanced → Continue",
                             "approve exactly the listed permissions"],
@@ -534,7 +534,7 @@ def _say(res: dict) -> str:
         ex = res["existing"]
         found = [k for k, v in ex.items() if v["on_path"] or v["config"]]
         if found:
-            rows.append("  已有工具（只看是否存在，不读内容）/ already on this computer (presence only): " + ", ".join(found))
+            rows.append("  已有工具（只看是否存在，不读内容）/ already on the Agent J host (presence only): " + ", ".join(found))
         rows.append("  用途 / purposes: " + ", ".join(r["id"] for r in res["purposes"]))
         return "\n".join(rows)
     return json.dumps(res, ensure_ascii=False)

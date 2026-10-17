@@ -9,8 +9,8 @@ import {launch,newPage,navigate,waitState,evaluate,waitFor,shoot,sleep,key} from
 const web=await startWebServer(),fake=await startFakeHost(),B=await launch();
 const out='reports/qa/p280/phone';mkdirSync(out,{recursive:true});
 const COPY={
- zh:{greet:'董事长，翻开新一页，晚上咱们做点啥？\n上一段对话我替您收好了，发新消息之前都能撤销。',msg:'帮我看看明天的日程',undo:'撤销清空',gone:'新对话已经开始，来不及撤销了（旧对话存在电脑上）'},
- en:{greet:"New page, boss. What shall we do tonight?\nI've put the last conversation away — you can undo until you send a new message.",msg:"What's on tomorrow?",undo:'Undo clear',gone:'The new conversation has started — too late to undo (the old one is saved on your computer)'},
+ zh:{greet:'董事长，翻开新一页，晚上咱们做点啥？\n上一段对话我替您收好了，发新消息之前都能撤销。',msg:'帮我看看明天的日程',undo:'撤销清空',gone:'新对话已经开始，来不及撤销了（旧对话存在Agent J 主机上）'},
+ en:{greet:"New page, boss. What shall we do tonight?\nI've put the last conversation away — you can undo until you send a new message.",msg:"What's on tomorrow?",undo:'Undo clear',gone:'The new conversation has started — too late to undo (the old one is saved on the Agent J host)'},
 };
 try{
  for(const lang of ['zh','en'])for(const [w,h] of [[390,844],[1440,900]]){

@@ -36,7 +36,7 @@ test('md.js: [label](local file) → a link slot with the label as plain text, t
   assert.ok(s, 'a slot');
   assert.equal(s.tag, 'span');
   assert.deepEqual(s.attrs, { 'data-ref': 'out/report.pdf', 'data-link': '1', 'data-label': '季度报告' });
-  assert.equal(s.textContent, '[**季度**报告](out/report.pdf)', 'until the computer sends it, the source text shows');
+  assert.equal(s.textContent, '[**季度**报告](out/report.pdf)', 'until the Agent J host sends it, the source text shows');
   assert.equal(r.all().filter((n) => n.tag === 'a').length, 0, 'never an <a href> to a local path');
   for (const [src, ref] of [['[a](~/x.csv)', '~/x.csv'], ['[a](./a b.png)', null], ['[a](<a b.zip>)', 'a b.zip'], ['[a](file:///tmp/x.pdf)', 'file:///tmp/x.pdf']]) {
     const got = slots(render(src))[0];

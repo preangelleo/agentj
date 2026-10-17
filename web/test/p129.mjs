@@ -54,13 +54,13 @@ try{
   ok(s.every(x=>x.startsWith('on|')),'the heartbeat reconnect was quiet too');
   fake.st.onApp=null;
 
-  // 4. the computer going offline on a steady session is news: shown at once (as before)
+  // 4. the Agent J host going offline on a steady session is news: shown at once (as before)
   fake.setUp(false);
   await waitFor(p,`document.body.dataset.conn==='off'`,2000);
   ok(true,'host down on a steady session → shown at once');
   fake.setUp(true);await waitState(p,'ready');
 
-  // 5. a relay deploy / restart drops both ends: the page is back first, hears "computer offline", the computer follows a
+  // 5. a relay deploy / restart drops both ends: the page is back first, hears "computer offline", the Agent J host follows a
   //    second later — all inside the quiet window, nothing shown
   await sleep(300);
   await evaluate(p,sampler);

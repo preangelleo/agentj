@@ -207,22 +207,22 @@ def provider_error_reason(name, data, connected=None, provider=None):
 # model client (with its key) per provider/model inside serve, without an invalidation hook — so a changed key needs a
 # restart of `opencode serve`: Agent J does that itself before the next message (auth_fingerprint, P59 / A167).
 PROVIDER_NOTES = {
-    "login": "模型服务登录失败或 key 无效：在电脑运行 `opencode auth login` 换好 key，再发一条消息即可——Agent J 发现 key 变了会自动重启 OpenCode，接着这段对话。 / Provider login/key failed: run `opencode auth login`; Agent J restarts its OpenCode on the next message and keeps the conversation.",
-    "region": "服务商不支持你所在的地区：让电脑上的 Agent 配好代理（例如说「帮我把代理设成 http://127.0.0.1:7890」），或改用 Claude Code。 / Provider unavailable in your region: set a proxy (agentj config set proxy.https …) or use Claude Code.",
+    "login": "模型服务登录失败或 key 无效：在Agent J 主机运行 `opencode auth login` 换好 key，再发一条消息即可——Agent J 发现 key 变了会自动重启 OpenCode，接着这段对话。 / Provider login/key failed: run `opencode auth login`; Agent J restarts its OpenCode on the next message and keeps the conversation.",
+    "region": "服务商不支持你所在的地区：让Agent J 主机上的 Agent 配好代理（例如说「帮我把代理设成 http://127.0.0.1:7890」），或改用 Claude Code。 / Provider unavailable in your region: set a proxy (agentj config set proxy.https …) or use Claude Code.",
     "access": "服务商拒绝访问（403）：核实地区、代理、账户权限及模型授权；403 不一定是 key 无效。 / Provider access denied: check region, proxy and account/model permission; 403 does not prove an invalid key.",
     "balance": "模型服务余额或额度不足：在服务商后台充值或查看额度，然后再试。 / Provider balance or quota exhausted; check your provider account.",
     "quota_window": "本周/本期额度已用完：到重置时间再试，或在服务商处升级套餐。 / Weekly/current-period quota exhausted: wait until the reset time or upgrade your plan with the provider.",
     "rate_limit": "模型服务限流：等一会儿再发；这条消息不会自动重发。 / Provider rate limit; wait and retry manually.",
-    "no_key": "OpenCode 里没有「{provider}」可用的 key：只在终端里 export 的 key，后台运行的 Agent J 看不到。在电脑运行 `opencode auth login` 选 {provider} 存好 key，再发一条消息即可——Agent J 会自动重启 OpenCode 读到它。 / OpenCode has no key for {provider} (a key exported only in your shell is invisible to the Agent J service): store it with `opencode auth login`, then just send again.",
+    "no_key": "OpenCode 里没有「{provider}」可用的 key：只在终端里 export 的 key，后台运行的 Agent J 看不到。在Agent J 主机运行 `opencode auth login` 选 {provider} 存好 key，再发一条消息即可——Agent J 会自动重启 OpenCode 读到它。 / OpenCode has no key for {provider} (a key exported only in your shell is invisible to the Agent J service): store it with `opencode auth login`, then just send again.",
     "model": "模型名称不可用：运行 `opencode models` 核实服务商/模型 ID，再用 `agentj agent opencode --model <provider/model>` 更新。 / Run `opencode models`, then update the model ID.",
     "network": "连不上模型服务：核实网络与代理设置（`agentj config get proxy.https`）。 / Provider connection failed; check network and proxy.",
-    "internal": "OpenCode 内部错误：在电脑运行 `agentj doctor`，再让 Agent 运行 `agentj agent restart`。 / OpenCode internal error; run `agentj doctor`, then `agentj agent restart`.",
+    "internal": "OpenCode 内部错误：在Agent J 主机运行 `agentj doctor`，再让 Agent 运行 `agentj agent restart`。 / OpenCode internal error; run `agentj doctor`, then `agentj agent restart`.",
     "free_tier": "OpenCode 的免费通道暂时不让用（刚装好的头一两分钟常见，也可能是免费额度用完或这个免费模型下线了）：过一两分钟再发；还不行就在「模型和 API Key」换一个免费模型（opencode/…-free），或用你自己的模型。 / OpenCode's free tier refused for now (common right after installing; or the free quota is used up / the model was withdrawn): send again in a minute or two, or pick another free model or one of your own in Models & API keys.",
-    "provider": "模型服务或 OpenCode 报错：在电脑运行 `agentj doctor`，核实模型名称、余额和网络。 / Provider/OpenCode error; run `agentj doctor`, then check model, balance and network.",
+    "provider": "模型服务或 OpenCode 报错：在Agent J 主机运行 `agentj doctor`，核实模型名称、余额和网络。 / Provider/OpenCode error; run `agentj doctor`, then check model, balance and network.",
 }
 
 
-PROVIDER_LOGIN_ATTACHED = ("模型服务登录失败或 key 无效：在电脑运行 `opencode auth login` 换好 key，然后重启你电脑上原来的 OpenCode（它不是 Agent J 启动的）。"
+PROVIDER_LOGIN_ATTACHED = ("模型服务登录失败或 key 无效：在Agent J 主机运行 `opencode auth login` 换好 key，然后重启你Agent J 主机上原来的 OpenCode（它不是 Agent J 启动的）。"
                            " / Provider login/key failed: run `opencode auth login`, then restart your own OpenCode server.")
 
 
@@ -523,7 +523,7 @@ class OpenCodeAgent(Agent):
     async def _spawn(self) -> bool:
         if not _bin("AGENTJ_OPENCODE_BIN", "opencode"):
             self.failed_start = True
-            self.fail_notice("这台电脑上没找到 OpenCode（opencode 命令）。装好并配好模型后再试。")
+            self.fail_notice("这台Agent J 主机上没找到 OpenCode（opencode 命令）。装好并配好模型后再试。")
             return False
         from .harness import version_of, opencode_v2
         version = await asyncio.to_thread(version_of, _bin('AGENTJ_OPENCODE_BIN', 'opencode'))
@@ -536,7 +536,7 @@ class OpenCodeAgent(Agent):
             return False
         if self.cfg.get("model") and not split_model(self.cfg["model"]):
             self.failed_start = True
-            self.fail_notice("OpenCode 的模型要写成「服务商/模型」，例如 zhipuai/glm-5.3：在电脑终端重新运行 "
+            self.fail_notice("OpenCode 的模型要写成「服务商/模型」，例如 zhipuai/glm-5.3：在Agent J 主机终端重新运行 "
                                    "`agentj agent opencode --dir … --model zhipuai/glm-5.3`。")
             return False
         port, password = free_port(), secrets.token_urlsafe(32)
@@ -594,7 +594,7 @@ class OpenCodeAgent(Agent):
             reason = "process exited" if proc.returncode is not None else "startup limit reached" if time.monotonic() - started >= START_MAX else "no startup progress"
             self.host.st.log("agent_startup_timeout", agent=self.kind, reason=reason)
             self.failed_start = True
-            self.fail_notice("主机已连接，但 OpenCode 启动失败或长时间没有启动进度。这条消息没有交给它。请在电脑运行 `agentj doctor`，核实真实可执行文件；然后运行 `agentj service install`。 / Host connected; OpenCode did not start (" + reason + "). Run `agentj doctor`, then `agentj service install`.")
+            self.fail_notice("主机已连接，但 OpenCode 启动失败或长时间没有启动进度。这条消息没有交给它。请在Agent J 主机运行 `agentj doctor`，核实真实可执行文件；然后运行 `agentj service install`。 / Host connected; OpenCode did not start (" + reason + "). Run `agentj doctor`, then `agentj service install`.")
             return False
         self._bg(self._drain(proc.stdout))
         self._bg(self._watch(proc))
@@ -948,7 +948,7 @@ class OpenCodeAgent(Agent):
         p = self.proc
         self.host.st.log("agent_tamper", agent=self.kind, reason=why)
         self.host.agent_notice("有程序绕过手机操作了 OpenCode（直接批准请求、替你回答问题或改了会话规则）：为了安全，已停止 OpenCode。"
-                               "下一条消息会重新启动它；如果不是你做的，检查这台电脑上 Agent 最近运行过的程序。")
+                               "下一条消息会重新启动它；如果不是你做的，检查这台Agent J 主机上 Agent 最近运行过的程序。")
         if p:
             self.quiet_exit = True
             self._bg(self._kill(p))

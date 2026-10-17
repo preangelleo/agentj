@@ -18,12 +18,12 @@ const hex = (n) => Array.from(webcrypto.getRandomValues(new Uint8Array(n)), (b) 
 // what serve sends (serve.CARD_TEXT / danger.classify_shared), per host language
 const CARDS = {
   zh: {
-    read: { summary: 'Bash · 查看密码或密钥（内容会显示在电脑屏幕上）。\n具体内容只在电脑上看，凭据不会发到手机。\n本回合内同类高危动作一并批准。', why: '把凭据文件 .env 的内容显示到屏幕上', tag: '查看密码或密钥' },
-    change: { summary: 'Bash · 改密码或密钥。\n具体内容只在电脑上看，凭据不会发到手机。\n本回合内同类高危动作一并批准。', why: '写入凭据文件 credentials', tag: '改密码或密钥' },
+    read: { summary: 'Bash · 查看密码或密钥（内容会显示在Agent J 主机屏幕上）。\n具体内容只在Agent J 主机上看，凭据不会发到手机。\n本回合内同类高危动作一并批准。', why: '把凭据文件 .env 的内容显示到屏幕上', tag: '查看密码或密钥' },
+    change: { summary: 'Bash · 改密码或密钥。\n具体内容只在Agent J 主机上看，凭据不会发到手机。\n本回合内同类高危动作一并批准。', why: '写入凭据文件 credentials', tag: '改密码或密钥' },
   },
   en: {
-    read: { summary: 'Bash · Shows passwords or keys (on the computer\'s screen).\nCheck the exact details on the computer; credentials never go to the phone.\nAlso approves this kind of high-risk action for the rest of this turn.', why: '把凭据文件 .env 的内容显示到屏幕上', tag: 'Shows passwords or keys' },
-    change: { summary: 'Bash · Changes passwords or keys.\nCheck the exact details on the computer; credentials never go to the phone.\nAlso approves this kind of high-risk action for the rest of this turn.', why: '写入凭据文件 credentials', tag: 'Changes passwords or keys' },
+    read: { summary: 'Bash · Shows passwords or keys (on the Agent J host\'s screen).\nCheck the exact details on the Agent J host; credentials never go to the phone.\nAlso approves this kind of high-risk action for the rest of this turn.', why: '把凭据文件 .env 的内容显示到屏幕上', tag: 'Shows passwords or keys' },
+    change: { summary: 'Bash · Changes passwords or keys.\nCheck the exact details on the Agent J host; credentials never go to the phone.\nAlso approves this kind of high-risk action for the rest of this turn.', why: '写入凭据文件 credentials', tag: 'Changes passwords or keys' },
   },
 };
 const WHY_EN = { read: 'Shows credential contents on screen', change: 'Writes a credential file' };
@@ -61,7 +61,7 @@ try {
       const check = (ok, what) => { if (!ok) fails.push(`${lang}/${kind}: ${what} — ${JSON.stringify(all)}`); };
       check(tags.includes(c.tag), 'tag ' + c.tag);
       if (lang === 'en') check(!CJK.test(all), 'no Chinese on an English card');
-      else check(!/[A-Za-z]{3,}/.test(all.replace(/\bBash\b/g, '').replace(/文件 [^的\s]+/g, '')), 'no English words on a Chinese card');
+      else check(!/[A-Za-z]{3,}/.test(all.replace(/\bAgent J\b/g, '').replace(/\bBash\b/g, '').replace(/文件 [^的\s]+/g, '')), 'no English words on a Chinese card');
       check(!all.includes(' / '), 'no "中文 / English" concatenation');
       await p.dispose();
     }

@@ -27,7 +27,7 @@ test('autoLoad: pictures / PDFs ≤ 5 MiB, the rest ≤ 2 MiB; never on data sav
   assert.equal(W.autoLoad(null), false);
 });
 
-test('previewKind: every kind the computer sends has a view or an honest "not supported"', () => {
+test('previewKind: every kind the Agent J host sends has a view or an honest "not supported"', () => {
   const k = (name, mime, kind = 'file') => W.previewKind({ name, mime, kind });
   assert.equal(k('a.png', 'image/png', 'image'), 'image');
   assert.equal(k('a.pdf', 'application/pdf', 'pdf'), 'pdf');

@@ -86,7 +86,7 @@ class Settings(unittest.TestCase):
             host=Mock();a=ClaudeAgent(host,{"kind":"claude","dir":str(self.home),"_workflow_ceo":True,"language":lang})
             a.on_event({"type":"result","is_error":True,"result":"Not logged in · Please run /login"})
             notice=host.agent_notice.call_args.args[0];self.assertIn("setup-token",notice);self.assertNotIn("Not logged in ·",notice)
-            self.assertEqual("电脑" in notice,lang=="zh")
+            self.assertEqual("Agent J 主机" in notice,lang=="zh")
 
 class Runtime(unittest.IsolatedAsyncioTestCase):
     async def test_phone_transition_failed_stays_shared_success_commits(self):

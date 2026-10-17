@@ -57,7 +57,7 @@ try {
       await evaluate(p, `document.getElementById('lqr-check').click()`); await waitFor(p, 'true'); await sleep(300);
       assert.deepEqual(got.map((m) => [m.t, m.id, m.n]), [['login_qr_check', cid, 'b'.repeat(32)]]);
       await fake.send({ t: 'login_qr_state', id: cid, state: 'waiting' }); await sleep(200);
-      assert.ok(await evaluate(p, `document.body.textContent.includes(${JSON.stringify('电脑还没看到登录成功')})`)); ok('check:waiting-toast');
+      assert.ok(await evaluate(p, `document.body.textContent.includes(${JSON.stringify('Agent J 主机还没看到登录成功')})`)); ok('check:waiting-toast');
       await evaluate(p, `document.getElementById('lqr-tg').click()`); await sleep(300);
       assert.deepEqual([got.at(-1).t, got.at(-1).on], ['login_qr_tg', true]);
       await fake.send({ t: 'login_qr_state', id: cid, state: 'settings', tg: 'qr' }); await sleep(200);

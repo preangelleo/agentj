@@ -274,7 +274,7 @@ try {
           ok(await ev(p, `document.querySelectorAll('#ctm-list li').length`) === 4, 'listed');
           if (lang === 'en') { await save(p, 'en-phone-contacts'); continue; }
           await ev(p, `(() => { const i = document.getElementById('ctm-q'); i.value = '李'; i.dispatchEvent(new Event('input', { bubbles: true })); })()`); await sleep(600);
-          ok(fake.st.got.some((m) => m.t === 'ct_list' && m.q === '李'), 'search asks the computer');
+          ok(fake.st.got.some((m) => m.t === 'ct_list' && m.q === '李'), 'search asks the Agent J host');
           ok(await ev(p, `document.querySelectorAll('#ctm-list li').length`) === 1, 'filtered');
           await ev(p, `(() => { const i = document.getElementById('ctm-q'); i.value = ''; i.dispatchEvent(new Event('input', { bubbles: true })); })()`); await sleep(600);
           // allowlist: one tap → signed mail_allow

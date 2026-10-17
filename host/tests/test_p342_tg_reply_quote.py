@@ -41,7 +41,7 @@ def msg(text='hello', uid=OWNER, cid=OWNER, mid=1, **extra):
                         'chat': {'id': cid, 'type': 'private' if cid > 0 else 'supergroup'}, 'text': text, **extra}}
 
 
-def bot_msg(text='明天 9 点开会，记得带电脑。', **extra):
+def bot_msg(text='明天 9 点开会，记得带Agent J 主机。', **extra):
     return {'message_id': 50, 'from': {'id': BOT, 'is_bot': True, 'first_name': 'Agent J', 'username': 'test_bot'},
             'date': WHEN, 'chat': {'id': OWNER, 'type': 'private'}, **({'text': text} if text is not None else {}), **extra}
 
@@ -80,10 +80,10 @@ class OwnerPrivate(_Base):
         self.assertTrue(await self.t.incoming(msg('这个是你发的吗', reply_to_message=bot_msg()), self.cfg))
         c = self.call()
         self.assertEqual(c.args[1], tg.OWNER_PRIVATE + '这个是你发的吗', 'the owner\'s words are untouched')
-        self.assertEqual(c.kwargs['quote_text'], f'【回复 Telegram 消息 · {BOT_LABEL_ZH} · {HHMM}】\n> 明天 9 点开会，记得带电脑。')
+        self.assertEqual(c.kwargs['quote_text'], f'【回复 Telegram 消息 · {BOT_LABEL_ZH} · {HHMM}】\n> 明天 9 点开会，记得带Agent J 主机。')
         self.assertEqual(self.prompt(), c.kwargs['quote_text'] + '\n\n' + tg.OWNER_PRIVATE + '这个是你发的吗')
         q = c.kwargs['quote']
-        self.assertEqual((q['who'], q['text'], q['ex'], q['ts']), (BOT_LABEL_ZH, '明天 9 点开会，记得带电脑。', False, WHEN * 1000))
+        self.assertEqual((q['who'], q['text'], q['ex'], q['ts']), (BOT_LABEL_ZH, '明天 9 点开会，记得带Agent J 主机。', False, WHEN * 1000))
         self.assertEqual(self.bot.sent('sendMessage'), [], 'nothing refused, nothing said back')
 
     async def test_reply_to_the_owners_own_message(self):

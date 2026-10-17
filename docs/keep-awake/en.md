@@ -1,21 +1,21 @@
 ---
-title: Keep your computer awake
+title: Keep the Agent J host awake
 nav: Keep awake
 summary: Keep the host reachable while its screen is off, with reversible commands and system settings for Mac, Linux and Windows.
 order: 19
 ---
-# Keep your computer awake
+# Keep the Agent J host awake
 
-Your phone needs the computer to stay on and connected. **The screen can turn off while the computer keeps working.** Start with mains power and an open laptop lid. Keeping a battery-powered laptop awake increases heat and drain; never put a running laptop in a bag. This does not prevent shutdown, battery exhaustion, firmware safety actions or network outages.
+Your phone needs the Agent J host to stay on and connected. **The screen can turn off while the Agent J host keeps working.** Start with mains power and an open laptop lid. Keeping a battery-powered laptop awake increases heat and drain; never put a running laptop in a bag. This does not prevent shutdown, battery exhaustion, firmware safety actions or network outages.
 
-[AI tool setup](/docs/setup-agents/) · [Install Agent J](/docs/install/) · [On your computer](/docs/computer/) · [Manual installation](/install/)
+[AI tool setup](/docs/setup-agents/) · [Install Agent J](/docs/install/) · [On the Agent J host](/docs/computer/) · [Manual installation](/install/)
 
 ## Give this to your Agent
 
 Copy this request into your Agent conversation. With Agent J, the administrator password belongs on the paired phone card, never in chat. The button copies the same request and opens your Agent J phone page; select your paired computer and paste/send it yourself. The website does not send commands to a host.
 
 ```text
-Configure this computer to remain reachable for remote Agent work while allowing its display to turn off. Identify macOS, a native Linux systemd host, or Windows/WSL first. Read https://agentj.app/docs/keep-awake/en.md. Prefer the installed agentj keep-awake command: status --json, on --dry-run --json, then on --json; allow the shell call up to 10 minutes for paired-phone approval. Default to AC power on macOS; keep the lid open and do not change battery policy without explaining heat/drain and obtaining the owner's preference. Root operations must use Agent J's existing phone password card; never request a password in chat, ask the owner to type terminal commands, use osascript with administrator privileges, or open a local authorization dialog. If the command is unavailable, inspect supported OS-native commands and preserve original settings before applying equivalent changes through agentj sudo. WSL changes cannot keep Windows awake: report the host operation needed, never claim success inside WSL. Do not edit PAM, disable Touch ID/Watch or set disablesleep automatically. If sudo reports local biometric authorization, explain that remote password submission alone cannot finish it and stop only that dependent operation. Read back the effective settings after applying; report AC/battery sleep policy, screen/lid limitations, whether verification passed, any reboot or host-side step needed, and how to restore the saved originals with agentj keep-awake off. Never infer success from an exit code alone.
+Configure the Agent J host to remain reachable for remote Agent work while allowing its display to turn off. Identify macOS, a native Linux systemd host, or Windows/WSL first. Read https://agentj.app/docs/keep-awake/en.md. Prefer the installed agentj keep-awake command: status --json, on --dry-run --json, then on --json; allow the shell call up to 10 minutes for paired-phone approval. Default to AC power on macOS; keep the lid open and do not change battery policy without explaining heat/drain and obtaining the owner's preference. Root operations must use Agent J's existing phone password card; never request a password in chat, ask the owner to type terminal commands, use osascript with administrator privileges, or open a local authorization dialog. If the command is unavailable, inspect supported OS-native commands and preserve original settings before applying equivalent changes through agentj sudo. WSL changes cannot keep Windows awake: report the host operation needed, never claim success inside WSL. Do not edit PAM, disable Touch ID/Watch or set disablesleep automatically. If sudo reports local biometric authorization, explain that remote password submission alone cannot finish it and stop only that dependent operation. Read back the effective settings after applying; report AC/battery sleep policy, screen/lid limitations, whether verification passed, any reboot or host-side step needed, and how to restore the saved originals with agentj keep-awake off. Never infer success from an exit code alone.
 ```
 
 Candidate command: available after installing the host release that contains this feature. An older host may report an unknown command; it does not mean your password is wrong.
@@ -87,7 +87,7 @@ sudo pmset -c sleep 20
 
 Illustration, not a real screenshot. Mac window capture was unavailable in this environment. [Apple sleep settings](https://support.apple.com/guide/mac-help/set-sleep-and-wake-settings-mchle41a6ccd/mac)
 
-### A second password or Touch ID dialog on the computer
+### A second password or Touch ID dialog on the Agent J host
 
 The phone may ask Face ID/passkey to approve its card, then a computer login password. Those are separate expected checks **on the phone**. A further dialog **on the Mac** is different. `sudo -S -k` accepts a password on stdin, but a configured `pam_tid.so`/`pam_reattach.so`/Watch module may request local authorization before password authentication. Agent J detects known enabled modules, warns on the signed card and refuses the password sudo execution rather than hanging on a remote dialog. The preflight cannot prove arbitrary third-party PAM modules are safe.
 
@@ -101,7 +101,7 @@ cat /etc/pam.d/sudo
 cat /etc/pam.d/sudo_local
 ```
 
-If active biometric lines are present, an owner **at the computer** can review them with the commands below and comment only those biometric lines, preserving the password path. Back up the file first; do not replace the entire PAM file. This is a local recovery instruction, not an Agent's remote action.
+If active biometric lines are present, an owner **at the Agent J host** can review them with the commands below and comment only those biometric lines, preserving the password path. Back up the file first; do not replace the entire PAM file. This is a local recovery instruction, not an Agent's remote action.
 
 ```bash
 sudoedit /etc/pam.d/sudo_local
@@ -180,7 +180,7 @@ Illustration, not a real screenshot. This Linux machine has no GNOME/KDE power s
 
 ### Command line (Windows host, including WSL users)
 
-Run these in **Windows PowerShell on the host**. WSL's `agentj keep-awake` prints guidance and does not execute Windows power changes or open a local UAC prompt. If elevated rights are required by your policy, perform that host-side step while at the computer; Agent J's Unix phone sudo card cannot approve Windows UAC.
+Run these in **Windows PowerShell on the host**. WSL's `agentj keep-awake` prints guidance and does not execute Windows power changes or open a local UAC prompt. If elevated rights are required by your policy, perform that host-side step while at the Agent J host; Agent J's Unix phone sudo card cannot approve Windows UAC.
 
 Record the active plan and its sleep/hibernate/lid values:
 
@@ -239,4 +239,4 @@ powercfg /change hibernate-timeout-ac 60
 
 Illustration, not a real screenshot. A physical Windows screenshot is still needed.
 
-Keeping the computer awake is one item of the [first-run checklist](/docs/first-run/); your Agent checks there that it actually took effect.
+Keeping the Agent J host awake is one item of the [first-run checklist](/docs/first-run/); your Agent checks there that it actually took effect.

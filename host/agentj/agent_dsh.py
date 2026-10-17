@@ -18,7 +18,7 @@ Measured on 0.2.0-rc.2 in an isolated HOME / DSH_HOME, against an Olares Router 
 - dsh loads `<process cwd>/.env` into its own environment, and the model's shell sees it. So the process starts in DSH_HOME
   (the owner's own dsh folder, whose .env dsh reads anyway), never in the working folder, which may hold a project's or the
   owner's keys; each session still opens in the working folder (`session/new` cwd) — shell and edits happen there.
-- telemetry: off (DSH_TELEMETRY_MODE=DISABLED — no session record leaves the computer, not even after /feedback).
+- telemetry: off (DSH_TELEMETRY_MODE=DISABLED — no session record leaves the Agent J host, not even after /feedback).
 
 Logins (the owner's, never the Agent's):
 - the owner's own dsh setup: `$DSH_HOME/.credentials.yaml` (dsh web's Models page), `$DSH_HOME/.env`, or providers in
@@ -101,7 +101,7 @@ def route_path(environ=None) -> Path:
 
 
 def check_url(url: str) -> str | None:
-    """None when usable; else a reason. https anywhere, http only on this computer / a private LAN address."""
+    """None when usable; else a reason. https anywhere, http only on the Agent J host / a private LAN address."""
     try:
         u = urlparse(url)
     except ValueError:
@@ -403,9 +403,9 @@ def login_text(lang: str = "zh", routed: bool = False) -> str:
     if routed:      # P329 live: the route is there, the server refused (no key yet, or a wrong one)
         if lang == "en":
             return (f"DeepSeek Harness's model server refused the login (no key yet, or a wrong one). The Agent J command "
-                    f"at the computer: `{key_card()}` — paste the key only on the phone's key card, then send your message "
+                    f"at the Agent J host: `{key_card()}` — paste the key only on the phone's key card, then send your message "
                     f"again. Never paste a key into chat.")
-        return (f"DeepSeek Harness 的模型服务拒绝登录（还没有 key，或 key 不对）。在电脑上运行 `{key_card()}`，"
+        return (f"DeepSeek Harness 的模型服务拒绝登录（还没有 key，或 key 不对）。在Agent J 主机上运行 `{key_card()}`，"
                 f"只在手机密钥卡里贴 key，存好后再发一次消息。不要把 key 发在对话里。")
     if lang == "en":
         return ("DeepSeek Harness has no model route. On Olares or with any OpenAI-compatible server: `agentj agent dsh "
@@ -563,10 +563,10 @@ def config_text(why: str, lang: str = "zh") -> str:
     w = clean_line(why, 120)
     if lang == "en":
         return (f"DeepSeek Harness was not started: ~/.dsh would change its approvals or plugins ({w}). Agent J only starts dsh "
-                "when every write / command still asks the phone. Move that file aside at the computer (or rerun `agentj agent "
+                "when every write / command still asks the phone. Move that file aside at the Agent J host (or rerun `agentj agent "
                 "dsh --base-url … --model …`), then send the message again.")
     return (f"没有启动 DeepSeek Harness：~/.dsh 里的设置会改动它的审批或插件（{w}）。Agent J 只在每次写文件 / 执行命令都还会问手机时"
-            "才启动 dsh。请在电脑上把那个文件挪走（或重新运行 `agentj agent dsh --base-url … --model …`），再发一次消息。")
+            "才启动 dsh。请在Agent J 主机上把那个文件挪走（或重新运行 `agentj agent dsh --base-url … --model …`），再发一次消息。")
 
 
 def tilde_route() -> str:

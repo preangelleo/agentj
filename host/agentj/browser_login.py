@@ -118,8 +118,8 @@ class LoginCards:
             return {"result": "already", "site": site}
         if got["state"] != "qr":
             return {"result": "no_qr", "headless": bool(rt.get("headless")), "site": site,
-                    "hint": "请在这台电脑上 Agent J 的专用浏览器里登录 / sign in on this computer's Agent J browser"
-                    if not rt.get("headless") else "这台电脑没有屏幕，也没找到二维码 / no screen and no QR code on this page"}
+                    "hint": "请在这台Agent J 主机上 Agent J 的专用浏览器里登录 / sign in on the Agent J host's Agent J browser"
+                    if not rt.get("headless") else "这台Agent J 主机没有屏幕，也没找到二维码 / no screen and no QR code on this page"}
         ttl = min(TTL_MAX, int((t.get("qr") or {}).get("ttl") or TTL_MAX))
         cid, nonce = secrets.token_hex(16), secrets.token_hex(16)
         until = int(time.time()) + ttl
@@ -143,11 +143,11 @@ class LoginCards:
         url = t.get("login_url") or rec.get("check_url")
         if rt.get("headless"):
             return {"result": "host_login_unavailable", "site": site,
-                    "hint": "这台电脑没有屏幕：请在有屏幕的电脑上登录这个网站，或选支持扫码的网站 / no screen here"}
+                    "hint": "这台Agent J 主机没有屏幕：请在有屏幕的Agent J 主机上登录这个网站，或选支持扫码的网站 / no screen here"}
         res = await asyncio.to_thread(bs.open_url, self.st, url)
         return {"result": "host_login", "site": site, "opened": bool(res.get("ok")),
-                "hint": "已在这台电脑的 Agent J 浏览器打开登录页：请主人在电脑前登录，然后运行 agentj browser check --site " + site
-                        + " / opened the sign-in page on this computer"}
+                "hint": "已在这台Agent J 主机的 Agent J 浏览器打开登录页：请主人在Agent J 主机前登录，然后运行 agentj browser check --site " + site
+                        + " / opened the sign-in page on the Agent J host"}
 
     def _open_and_capture(self, rt: dict, site: str, t: dict) -> dict:
         """(thread) Reuse or open the login tab, wait up to 15 s for the QR element, crop it. The CDP connection stays with
@@ -362,7 +362,7 @@ async def notify_lost(host, lost: list[dict]) -> None:
     titles = {x["site"]: x["title"] for x in bs.summary(st)}
     names = "、".join(titles.get(c["site"], c["site"]) for c in lost)
     zh = getattr(host, "lang", "zh") != "en"
-    text = (f"每日登录体检：{names} 需要重新登录。方便时对我说「早上好」，我带你扫码或在电脑上登录。" if zh else
+    text = (f"每日登录体检：{names} 需要重新登录。方便时对我说「早上好」，我带你扫码或在Agent J 主机上登录。" if zh else
             f"Daily sign-in check: {names} needs a fresh sign-in. Say “good morning” when convenient and I will walk you through it.")
     with contextlib.suppress(Exception):
         host.agent_notice(text)

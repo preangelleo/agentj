@@ -99,7 +99,7 @@ class Dictionaries(unittest.TestCase):
 
     def test_fixed_terms_in_chinese(self):
         zh = "\n".join(_dicts()["zh"].values())
-        for term in ("Agent 管理页", "手机遥控器", "遥控器配对密码", "6 位码", "账号后台", "Agent J 账号", "转发服务器", "电脑端程序", "席位"):
+        for term in ("Agent 管理页", "手机遥控器", "遥控器配对密码", "6 位码", "账号后台", "Agent J 账号", "转发服务器", "Agent J 主机端程序", "席位"):
             self.assertIn(term, zh)
 
 

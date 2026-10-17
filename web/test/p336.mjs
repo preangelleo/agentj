@@ -127,7 +127,7 @@ try {
     await click(p, '[data-set-level="standard"]');
     await waitFor(p, `!document.getElementById('confirm').hidden`);
     await click(p, '#confirm-yes');
-    await waitFor(p, `document.getElementById('toast').classList.contains('on')&&document.getElementById('toast').textContent.includes(${JSON.stringify(L('电脑没有接受这个值', "didn't accept"))})`);
+    await waitFor(p, `document.getElementById('toast').classList.contains('on')&&document.getElementById('toast').textContent.includes(${JSON.stringify(L('Agent J 主机没有接受这个值', "didn't accept"))})`);
     check(await pressed(p) === 'full', 'refused → level unchanged ' + name);
     await key(p, 'Escape'); await sleep(300);   // close Settings
 

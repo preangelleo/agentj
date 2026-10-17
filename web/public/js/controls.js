@@ -32,6 +32,7 @@ function command(obj) {                               // pending acknowledgement
     const r = request(obj, (m) => {
       if (m.t === 'ctl_res' || m.t === 'offline') finish(m.t === 'offline' ? { ok: false, why: 'offline' } : m);
       else if (!extended && m.t === 'ctl_pending' && obj.t === 'bots_write' && m.action === 'bots_write' && m.timeout_ms === 620000) { extended = true; arm(620000); }
+      else if (!extended && m.t === 'ctl_pending' && obj.t === 'cmd_run' && m.action === 'cmd_run' && m.timeout_ms === 150000) { extended = true; arm(150000); }   // P361
     }, obj[GEN] ?? gen());
     if (!r) resolve({ ok: false, why: 'offline' });
     else arm(20000);

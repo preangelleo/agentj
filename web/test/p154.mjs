@@ -358,7 +358,7 @@ export async function runP154() {
           await waitFor(p, `${$('busyDots')}.querySelectorAll('i.rb').length===2`, 600);
           check(!(await evaluate(p, `!!${$('busyDots')}.querySelector('.bye,.in')`)), 'reduced motion: no bow, no pop');
         } finally { await p.dispose(); }
-        // 追加 11: 16 robots; one task keeps its robot; the header limit follows the computer's capacity (wide screens only)
+        // 追加 11: 16 robots; one task keeps its robot; the header limit follows the Agent J host's capacity (wide screens only)
         for (const [w, h] of [[390, 844], [1280, 800]]) {
           const q = await paired(B, web, fake, lang, w, h, { touch: w < 600 });
           try {
@@ -382,7 +382,7 @@ export async function runP154() {
             check(rs2.slice(0, 11).every((x) => was[x.split('=')[0]] === x.split('=')[1]), 'the ones still working keep their robots');
             check(rs2[11] === 'zz=0', `the new one takes its colour's robot, now free (${rs2[11]})`);
             await evaluate(q, `${$('busyClose')}.click()`);
-            // no cap from the computer → 6
+            // no cap from the Agent J host → 6
             await fake.send({ t: 'busy', by: 'AgentJ-Father', tasks: all });
             await waitFor(q, `${$('busyDots')}.dataset.n==='16' && ${$('busyDots')}.querySelectorAll('i.rb:not(.bye)').length===5`, 4000);
             check(true, `${w}px: no cap → 5 + 「+11」`);
@@ -512,7 +512,7 @@ export async function runP154() {
         for (const theme of ['light', 'dark']) {
           const p = await paired(B, web, fake, lang, 390, 844, { touch: true, theme });
           try {
-            await fake.say(lang === 'zh' ? '负荷分割线：电脑越忙，线上那段亮色（浅色）滑得越快。' : 'The load line: the busier the computer, the faster the bright (light) segment glides.', 'agent');
+            await fake.say(lang === 'zh' ? '负荷分割线：Agent J 主机越忙，线上那段亮色（浅色）滑得越快。' : 'The load line: the busier the Agent J host, the faster the bright (light) segment glides.', 'agent');
             await waitFor(p, `${$('rmTime')}.textContent.length>0`);
             const after = () => evaluate(p, `(()=>{const c=getComputedStyle(${$('loadLine')},'::after');return {d:c.display,n:c.animationName,dur:c.animationDuration}})()`);
             check((await after()).d === 'none', 'no load yet: no glide');
@@ -697,13 +697,17 @@ export async function runP154() {
           try {
             await evaluate(p, `${$('input')}.value='';${$('input')}.dispatchEvent(new Event('input'));${$('input')}.blur()`);
             const sb = await box(p, '#send'), x = sb.l + sb.w / 2, y = sb.t + sb.h / 2;
+            // A CDP command acknowledgement alone does not assert delivery of each intended native pointer move.
+            await evaluate(p, `window.__p154VolumeMoveY=null;document.addEventListener('pointermove',e=>{window.__p154VolumeMoveY=e.clientY},true)`);
             await p.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
             await sleep(650);
             check(await open(p), 'phone: a finger hold opens it');
             const rb = await box(p, '#volPop input');
             check(rb.t > 0 && rb.r <= 390 && rb.l >= 0, `phone: on screen (${JSON.stringify(rb)})`);
             for (let i = 1; i <= 8; i++) {
-              await p.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: y - (y - rb.t + 10) * i / 8 }] });
+              const moveY = y - (y - rb.t + 10) * i / 8;
+              await p.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: moveY }] });
+              await waitFor(p, `window.__p154VolumeMoveY!==null && Math.abs(window.__p154VolumeMoveY-${moveY})<1`, 1000);
               await sleep(20);
             }
             await p.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });

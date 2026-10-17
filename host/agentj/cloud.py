@@ -20,6 +20,7 @@ import http.client
 import json
 import os
 import re
+import secrets
 import socket
 import ssl
 import time
@@ -44,6 +45,7 @@ CTX_SEAT_LEAVE = "agentjarvis-host-seat-leave-v1"   # review SS-02: take this se
 CTX_UPGRADE_AUTH = "agentjarvis-host-upgrade-auth-v1"   # F12 / contract C2: spend an upgrade authorization code (update.py)
 CTX_PEER_CERT = "agentjarvis-host-peer-cert-v1"   # P71 (PROTOCOL §17.3): the Agent friends seat certificate for one mailbox
 CTX_RELAY_CERT = "agentjarvis-host-relay-cert-v1"   # P185 (PROTOCOL §2 seat certificate): the relay seat certificate for this host's channel
+CTX_NEWS = "agentjarvis-host-news-v1"   # P374 (PROTOCOL §7 /v1/host/news): read / switch the account's Daily AI News
 # Agent plaza P2 (PROTOCOL §7 plaza routes; agentj/plaza.py): one context per route, so no signature is valid on two
 PLAZA_KINDS = ("search", "get", "mine", "post", "reply", "resolve", "report")
 CTX_PLAZA = {k: f"agentjarvis-host-plaza-{k}-v1" for k in PLAZA_KINDS}   # wire strings: never renamed
@@ -995,6 +997,97 @@ def relay_cert(st, *, post: Callable = post_json, now: Callable = time.time) -> 
     return PeerCertResult("fail", status=status_class(status) if err is None else err)
 
 
+# ------------------------------------------------------------------ Daily AI News (P374, PROTOCOL §7 /v1/host/news)
+MAX_EMAIL = 254
+
+
+class NewsResult(NamedTuple):
+    kind: str                       # ok | unlinked | not_bound | rate_limited | unreachable | unsupported | fail
+    on: bool | None = None          # ok: the account's switch after this call
+    email: str | None = None        # ok: the account e-mail the digest goes to (shown to the owner; never logged)
+    sample_url: str | None = None   # ok: the public sample page on our API / Dashboard origin (else <Dashboard>/news/sample)
+    status: str = ""
+    queued: int | None = None       # ok + on: place in the waiting list (all seats taken; 1 = next), else None
+    seats: int | None = None        # ok: how many accounts get the digest at most (500); None from a Dashboard before the seats
+
+
+def news_problem(kind: str) -> str:
+    """The phone's `news_res.problem` word (PROTOCOL §10.20a): an older Dashboard without the route reads as "fail"."""
+    return kind if kind in ("unlinked", "not_bound", "unreachable", "rate_limited") else "fail"
+
+
+def _news_email(v) -> str | None:
+    import unicodedata
+    if not isinstance(v, str) or not 3 <= len(v) <= MAX_EMAIL or v.count("@") != 1:
+        return None
+    local, _, domain = v.partition("@")
+    if not local or not domain or any(c.isspace() or c in '<>"\\' or unicodedata.category(c)[0] == "C" for c in v):
+        return None
+    return v
+
+
+def _news_sample(v, origins: set) -> str | None:
+    """https (plain http only to loopback, tests), no credentials / query / fragment, on the API or the Dashboard origin."""
+    if not isinstance(v, str) or not _PRINTABLE_URL.fullmatch(v):
+        return None
+    u = urllib.parse.urlsplit(v)
+    host = (u.hostname or "").lower()
+    if u.username or u.password or u.query or u.fragment or not host:
+        return None
+    if not (u.scheme == "https" or (u.scheme == "http" and host in LOOPBACK)):
+        return None
+    try:
+        return v if _origin(v) in origins else None
+    except ValueError:      # a malformed port
+        return None
+
+
+def news(st, on: bool | None, *, post: Callable = post_json, now: Callable = time.time) -> NewsResult:
+    """P374: one signed `/v1/host/news` (blocking). on=None reads the account's Daily AI News switch (free); True / False
+    switches it (the Dashboard's host_sync_write budget). Writes nothing locally. The answer is whitelisted: on (bool),
+    email (≤ 254, one '@', no controls), sample_url (on our API / Dashboard origin, else the configured Dashboard's
+    /news/sample — a compromised control plane cannot send the owner to a look-alike page), queued / seats (ints in range,
+    else None: all seats taken → the owner's place in the waiting list)."""
+    if on is not None and not isinstance(on, bool):
+        raise ValueError("on")
+    cloud = read_cloud(st)
+    if not cloud:
+        return NewsResult("unlinked")
+    try:
+        api = api_url(st, cloud)
+        url = api + "/v1/host/news"
+    except CloudError as e:
+        return NewsResult("fail", status=e.kind)
+    inner = {"v": 1, "t": "news", "channel": channel_of(st), "ts": int(now()), "on": on}
+    try:
+        status, obj = post(url, envelope(CTX_NEWS, inner, st.signing_key()))
+    except CloudError as e:
+        return NewsResult("unreachable", status=e.kind)
+    err = parse_error(obj)
+    if status == 200:
+        got, email = obj.get("on"), _news_email(obj.get("email"))
+        if obj.get("ok") is not True or not isinstance(got, bool) or email is None:
+            return NewsResult("fail", status="bad_response")
+        origins, app = {_origin(api)}, None
+        with contextlib.suppress(CloudError, ValueError):
+            app = app_url(st)
+            origins.add(_origin(app))
+        sample = _news_sample(obj.get("sample_url"), origins) or (app + "/news/sample" if app else None)
+        q, seats = obj.get("queued"), obj.get("seats")
+        queued = q if got and type(q) is int and 1 <= q <= 10**7 else None
+        seats = seats if type(seats) is int and 0 <= seats <= 10**7 else None
+        return NewsResult("ok", got, email, sample, "200", queued, seats)
+    if status == 403 and err == "not_bound":
+        return NewsResult("not_bound", status=status_class(status))
+    if status == 429:
+        return NewsResult("rate_limited", status=status_class(status))
+    if status == 404:       # a Dashboard older than this route (its catch-all 404)
+        return NewsResult("unsupported", status=status_class(status))
+    if status >= 500:
+        return NewsResult("unreachable", status=status_class(status))
+    return NewsResult("fail", status=status_class(status) if err is None else err)
+
+
 # ------------------------------------------------------------------ Agent plaza P2 (agentj/plaza.py builds and renders)
 def plaza_call(st, kind: str, fields: dict, *, post: Callable = post_json, now: Callable = time.time) -> tuple[int, dict]:
     """One signed `/v1/host/plaza/<kind>` (PROTOCOL §7). Needs a Dashboard link (cloud.json): raises CloudError("unlinked")
@@ -1130,3 +1223,24 @@ def plaza_upload(st, url, body: bytes, *, put: Callable = http_put) -> tuple[int
     if len(body) > MAX_BUNDLE:
         raise CloudError("too_large")
     return put(url, body, timeout=TRANSFER_TIMEOUT)
+
+
+# ------------------------------------------------------------------ P367 paid content libraries (agentj/library.py builds and renders)
+CTX_DATA = "agentjarvis-host-data-v1"   # wire string (PROTOCOL §7): never renamed
+MAX_DATA_RESPONSE = 4 * 1024 * 1024   # one episode's full text
+DATA_TIMEOUT = 25                     # the Dashboard waits ≤ 10 s for the library
+
+
+def data_call(st, fields: dict, *, post: Callable = post_json, now: Callable = time.time) -> tuple[int, dict]:
+    """One signed `POST /v1/host/data` (`fields` = op [+ source] + its fields; a fresh nonce is added here). The Dashboard
+    holds the owner's credits, forwards with its own key for that library and answers what it charged. Same rules as
+    plaza_call; the answer is whitelisted by library.py and never executed."""
+    cloud = read_cloud(st)
+    if not cloud:
+        raise CloudError("unlinked")
+    url = api_url(st, cloud) + "/v1/host/data"
+    inner = {"v": 1, "t": "data", "channel": channel_of(st), "ts": int(now()), "nonce": secrets.token_urlsafe(16), **fields}
+    env = envelope(CTX_DATA, inner, st.signing_key())
+    if len(json.dumps(env, separators=(",", ":"))) > MAX_ENVELOPE:
+        raise CloudError("too_large")
+    return post(url, env, max_response=MAX_DATA_RESPONSE, timeout=DATA_TIMEOUT)

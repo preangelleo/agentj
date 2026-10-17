@@ -2,8 +2,8 @@
 // 1. a card the page never heard (made while it was frozen / offline) appears when the page comes back to the front;
 // 2. a card answered on another remote while this one was away closes quietly; one whose time ran out says 「已过期」;
 // 3. the snapshot request is signed with this device's approval key (the fake verifies it like the real host);
-// 4. ≡ /update and Settings 「升级电脑上的 Agent J」: something in the way → the card lists it, 「现在升级」 = the signed /update,
-//    nothing in the way → one tap; the computer's own card (the Agent ran `agentj update apply`): 「先不升」 closes it on the
+// 4. ≡ /update and Settings 「升级Agent J 主机上的 Agent J」: something in the way → the card lists it, 「现在升级」 = the signed /update,
+//    nothing in the way → one tap; the Agent J host's own card (the Agent ran `agentj update apply`): 「先不升」 closes it on the
 //    computer, a remote's /update closes it here; 5. the one 「空闲时自动更新」 switch writes both keys.
 // zh + en; screenshots → reports/qa/p203/.
 import assert from 'node:assert/strict';
@@ -79,7 +79,7 @@ try {
     results['expired-card-says-so-' + language] = 'PASS';
     await waitFor(p, `document.body.dataset.sheet === '0'`, 9000);
 
-    // 4. Settings → 升级电脑上的 Agent J with something in the way: the card lists it, 「现在升级」 sends the signed /update
+    // 4. Settings → 升级Agent J 主机上的 Agent J with something in the way: the card lists it, 「现在升级」 sends the signed /update
     fake.st.upgItems = [{k: 'turn', n: 1}, {k: 'ask', n: 2}];
     await click(p, 'setBtn'); await waitFor(p, `!document.getElementById('settings').hidden`);
     // P218: the merged 升级方式 is P207's two-way switch — left (aria-checked false) = 自动 = install when idle (P203's on)
@@ -109,7 +109,7 @@ try {
     assert.equal(await evaluate(p, `document.getElementById('confirm').hidden`), true, 'no card when nothing is in the way');
     results['upgrade-nothing-in-the-way-one-tap-' + language] = 'PASS';
 
-    // the computer's own card (the Agent ran `agentj update apply`): 「先不升」 closes it on the computer
+    // the Agent J host's own card (the Agent ran `agentj update apply`): 「先不升」 closes it on the Agent J host
     const u1 = id32();
     await fake.upgCard({id: u1, items: [{k: 'shared_turn', n: 1}, {k: 'task_soon', n: 1}], from: '0.20.1', to: '0.20.2', ttl: 600});
     await waitFor(p, `!document.getElementById('confirm').hidden && document.getElementById('confirm-title').textContent.includes('0.20.2')`, 8000);

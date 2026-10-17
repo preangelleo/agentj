@@ -4,7 +4,7 @@ Owner (2026-10-12): 「小白用户他也没这个概念，所以我们需要把
 进程，看看董事长的待办事项……Claude Code 有这个能力不代表其他 harness 也有……每个 Agent J 都可以修改自己的 heartbeat
 频率……每个 heartbeat 后边还可以跟一个固定的 prompt……如果 prompt 的 hash 更新了就重读」.
 
-How it works (all on this computer, never through the relay — a cloud push cannot wake a computer that does not answer):
+How it works (all on the Agent J host, never through the relay — a cloud push cannot wake a computer that does not answer):
 - serve's `Heartbeat.loop` looks every TICK s. A beat is due when `heartbeat.interval_minutes` have passed since the last
   turn of any kind ended (phone, Telegram, desktop, scheduled, an earlier beat) and since serve started. It waits while the
   Agent works, a message is queued, an approval / question card is open, a compaction runs, a scheduled run or friend
