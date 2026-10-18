@@ -65,12 +65,12 @@ def pair_telegram(key_env):
     """P283: ask the running serve for a one-time Telegram pairing code. The code appears only on the paired phone's card;
     whoever sends `/start <code>` to the bot in a private chat becomes the owner. No numeric ID to look up anywhere."""
     from .state import State
-    from .names import ctl_call, ServeBusy
+    from .names import ctl_call, ServeBusy, control_unavailable
     st=State()
     try:res=ctl_call(st,{'cmd':'telegram_pair','key_env':key_env},30) if st.exists() else None
     except ServeBusy:res={'ok':False,'error':'busy'}
     if res is None:
-        print(json.dumps({'ok':False,'error':'not_running','detail':'Agent J is not running: start it (agentj service install, or agentj service restart), then run this again'}));return 2
+        print(json.dumps(control_unavailable(), ensure_ascii=False));return 2
     if not res.get('ok'):
         print(json.dumps({k:res[k] for k in ('ok','error','detail') if k in res}));return 2
     res.pop('code',None)

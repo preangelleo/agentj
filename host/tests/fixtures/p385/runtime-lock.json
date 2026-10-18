@@ -1,0 +1,39 @@
+{
+  "Linux-x86_64": {
+    "url": "https://registry.npmjs.org/opencode-linux-x64/-/opencode-linux-x64-1.18.34.tgz",
+    "integrity": "sha512-RTAMjCve4euxP2QKLuvRmdoW5J5DQK1DiZqt+7slfixyjAEi79QC2Df2oYKogibaAI4IEU8uzenoJeEl3k+UEw==",
+    "uv_target": "x86_64-unknown-linux-gnu",
+    "uv_sha256": "788f18abea7c5f55d6216e4f5613fd89d4d59b631efeec117b2b07fe72f1da21",
+    "host_constraints": [
+      "python-socks[asyncio]>=2.5,<3"
+    ]
+  },
+  "Linux-aarch64": {
+    "url": "https://registry.npmjs.org/opencode-linux-arm64/-/opencode-linux-arm64-1.18.34.tgz",
+    "integrity": "sha512-ZSjqcH0MEbAzLEmkRC9Aop1PbWZxe2NuKONAE/x8MRQdjKdOepX7M50UpjbsNoiLMkP584Z98Mg4a42fJhouvA==",
+    "uv_target": "aarch64-unknown-linux-gnu",
+    "uv_sha256": "66393193038dd7eb108abd7a218d9cec04ac70ab98242b0720fa94de19223b7c",
+    "host_constraints": [
+      "python-socks[asyncio]>=2.5,<3"
+    ]
+  },
+  "Darwin-x86_64": {
+    "url": "https://registry.npmjs.org/opencode-darwin-x64/-/opencode-darwin-x64-1.18.34.tgz",
+    "integrity": "sha512-o8KXQ4jP5zfEHJAYpCz5Ifs0aa5dX+26wyLbxHEvfyGJu8hrBoNiJed3PE0uiPIlHCrj5yzF0b6k5aWonaPcTw==",
+    "uv_target": "x86_64-apple-darwin",
+    "uv_sha256": "06b8ae1da8c2661c5434507a66f8c2b0b835933bf955b5958a9ac357a37d1959",
+    "host_constraints": [
+      "cryptography<49",
+      "python-socks[asyncio]>=2.5,<3"
+    ]
+  },
+  "Darwin-arm64": {
+    "url": "https://registry.npmjs.org/opencode-darwin-arm64/-/opencode-darwin-arm64-1.18.34.tgz",
+    "integrity": "sha512-ioBEvc3nUA64waDIVsphh92LgJgyTbq+uRd0OurdqqT9WEI9rp4J7NrA24NfL6epCa1Xr06TnRx5+th9W3T/sA==",
+    "uv_target": "aarch64-apple-darwin",
+    "uv_sha256": "127ebdda7ad953cdf198e964b570ea5771b85467ea93eb7cb6d6f8e6f55408f3",
+    "host_constraints": [
+      "python-socks[asyncio]>=2.5,<3"
+    ]
+  }
+}

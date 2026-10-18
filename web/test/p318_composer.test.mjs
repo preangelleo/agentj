@@ -29,11 +29,18 @@ function toolLabelRules() {
   return out;
 }
 
-test('P318 (a): the tool buttons never show a text label — hidden at every width, no width-gated rule', () => {
+test('P318 (a): ready tools remain icon-only at every width; P387 preparation alone shows status', () => {
   const rules = toolLabelRules();
   const hide = rules.filter((r) => /display\s*:\s*none/.test(r.body));
   assert.ok(hide.some((r) => !r.media && /^\.tools \.tool span$/.test(r.sel)), 'one unconditional `.tools .tool span{display:none}`');
+  const preparing=rules.filter(r=>r.sel==='.tools .tool.mic[data-preparing] #micLabel');
+  assert.equal(preparing.length,1,'one narrowly scoped preparation status exception');
+  assert.match(preparing[0].body,/display\s*:\s*block/);
+  assert.equal(preparing[0].media,'','preparation status is available at every width');
+  assert.match(relay,/const preparing = C\?\.asr\(\) !== 'ready';/,'ready microphone removes the status exception');
+  assert.match(relay,/toggleAttribute\('data-preparing', preparing\)/);
   for (const r of rules) {
+    if(r===preparing[0])continue; // Approved P387 unavailable-state status, never the ready tool label.
     if (/\*/.test(r.sel) && /pointer-events/.test(r.body) && !/display/.test(r.body)) continue;   // .mic *{pointer-events:none}
     assert.ok(/display\s*:\s*none/.test(r.body) && !r.media, `no rule shows or width-gates a tool label: ${r.media} ${r.sel}{${r.body}}`);
   }

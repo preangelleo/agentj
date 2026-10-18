@@ -1,3 +1,4 @@
+import {cardColor} from './jcard-color.js';
 import {focusDraft} from './composer-focus.js';
 // P244: in-memory, read-only catalogue over the existing paired Noise session. DOM only; no HTML parser or persistence.
 import {request, done, peer, isReady, ask1} from './session.js';
@@ -58,7 +59,7 @@ export function toggleMenu(){if(!$('five-menu'))return;const e=$('five-menu');if
 function buildDeck(focus){const e=$('five-menu'),was=document.activeElement?.closest?.('.fp-menu-card'),key=was&&(was.dataset.page||'card:'+was.dataset.card);
  e.replaceChildren();const deck=node('div',undefined,'fp-menu-deck');
  for(const [i,[key,title,icon]] of names().entries()){
-  const b=button('',()=>go(key),'fp-menu-card fp-dark-'+i);b.dataset.page=key;
+  const b=button('',()=>go(key),'fp-menu-card fp-dark-'+i);b.dataset.page=key;cardColor(b,key);
   const head=node('div',undefined,'fp-menu-head');
   if(key==='agentj'){const img=node('img');img.src='assets/five-robot.png';img.alt='';head.append(img);}else head.append(globalIcon(key));
   head.append(node('span',[current===key&&t('p244.fivepages5'),menuCount(key)].filter(Boolean).join(' · '),'fp-current'));
@@ -191,7 +192,7 @@ const sysNames=()=>names().map(x=>x[1]);
 export function openTarget(id,at){if(!H||typeof id!=='string')return;const a=typeof at==='string'&&jc.ANCHOR.test(at)?at:null;
  if(id==='cards'){go('chat');if($('five-menu').hidden)toggleMenu();return;}if(SYS.includes(id)){go(id);return;}if(jc.ID.test(id))go('card',id,a);}
 // the computer's push (`agentj card open`): never while the owner is reading a confirmation, or is in Settings / another view
-export function pushOpen(id,at){const c=$('confirm'),st=$('settings');if((c&&!c.hidden)||(st&&!st.hidden)||document.body.dataset.view!=='chat')return;openTarget(id,at);}
+export function pushOpen(id,at){const c=$('confirm'),st=$('settings');if((c&&!c.hidden)||(st&&!st.hidden)||document.querySelector('.jc-dialog[open]')||document.body.dataset.view!=='chat')return;openTarget(id,at);}
 export function openJlink(s){s=String(s||'');if(!jc.JLINK.test(s))return;const i0=s.indexOf('/'),k=s.slice(0,i0),v=s.slice(i0+1);
  if(k==='page')return openTarget(v);if(k==='card'){const [id,at]=v.split('#');return openTarget(id,at);}if(k==='workflow')return go('workflows',v);
  if(k==='skill'){const sk=pic?.skills.find(x=>x.name===v||x.aliases?.includes(v));if(sk)skill(sk);else go('skills');return;}
@@ -268,4 +269,13 @@ export function init(h){H=h;$('cardPlus')?.addEventListener('click',plusCard);
  input.addEventListener('input',suggestions);input.addEventListener('click',suggestions);input.addEventListener('keydown',e=>{if(pop.hidden)return;if(['ArrowDown','ArrowUp','Enter','Tab','Escape'].includes(e.key)){e.preventDefault();e.stopImmediatePropagation();if(e.key==='Escape')pop.hidden=true;else if(e.key==='Enter'||e.key==='Tab')pick(index);else{index=(index+(e.key==='ArrowDown'?1:-1)+options.length)%options.length;paint();}}},true);
 onLang(()=>{syncPlus();if(current!=='chat')render();});addEventListener('resize',place);
  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')refresh();});
+}
+
+// P387: the deck order is the vertical remote order (system cards, then owner cards).
+export function remoteStep(dir){
+ const items=[...names().map(([id])=>({id})),...jc.deck().map(c=>({id:'card',folder:c.id}))];
+ const at=items.findIndex(x=>x.id===current&&(x.id!=='card'||x.folder===selected));
+ const target=items[Math.max(0,Math.min(items.length-1,at+dir))];
+ if(target)go(target.id,target.folder);
+ return document.getElementById(current==='chat'?'rm':'five-page');
 }

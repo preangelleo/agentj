@@ -135,14 +135,18 @@ def card(lang: str, username: str | None, code: str) -> str:
     """The phone card. The code is shown here and nowhere else (never the CLI answer, a log or Telegram)."""
     mins = TTL // 60
     bot = '@' + username if username else ('your bot' if lang == 'en' else '你的 bot')
-    link = f'\nhttps://t.me/{username}?start={code}' if username else ''
+    link = f'https://t.me/{username}?start={code}' if username else ''
+    code_block, command = f'\n```text\n{code}\n```\n', f'\n```text\n/start {code}\n```\n'
     if lang == 'en':
-        return (f'Telegram pairing code: {code} (valid {mins} minutes, one use)\n'
-                f'In Telegram, send {bot}: /start {code}' + (f'\nOr open this link and tap Start:{link}' if link else '') +
+        return (f'Telegram pairing code (valid {mins} minutes, one use):' + code_block +
+                f'In Telegram, send {bot}:' + command +
+                (f'\n[Open Telegram and tap Start]({link})' if link else '') +
                 '\nOnly a private chat is accepted. Whoever sends this code becomes the owner, so do not share it.')
-    return (f'Telegram 配对码：{code}（{mins} 分钟内有效，只能用一次）\n'
-            f'在 Telegram 里给 {bot} 发：/start {code}' + (f'\n或者点这个链接再点「开始」：{link}' if link else '') +
+    return (f'Telegram 配对码（{mins} 分钟内有效，只能用一次）：' + code_block +
+            f'在 Telegram 里给 {bot} 发：' + command +
+            (f'\n[打开 Telegram，再点「开始」]({link})' if link else '') +
             '\n只认私聊。谁发了这个码谁就是主人，别转给别人。')
+
 
 
 def phone_bound(lang: str, username: str | None, uid: int) -> str:

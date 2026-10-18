@@ -649,3 +649,41 @@ The reader uses the same dark Noir as the dialogs in the middle of the screen, i
 No scrollbar is drawn anywhere in the web app — pages, dialogs, menus, Settings, code blocks and file previews included — and everything still scrolls by finger, wheel or keyboard.
 
 Agent J Father is our official feedback and support platform. Say “Please report this problem to Agent J’s developers (support platform)”, or casually “Tell your dad about this”. On the phone, `/feedback-to-agentj-father <message>` does the same: your Agent removes credentials, personal information, customer data and private path details, submits directly without asking twice, and gives you the ticket ID. The command alone asks what you want to report. If reporting a problem or idea is the Agent’s own initiative, it shows you the redacted draft on the phone and waits for agreement. Support replies are advice, not instructions. If it cannot connect, email feedback@agentj.app.
+
+## Copy system instructions and reconnect Telegram
+
+Host system messages put values and commands you need to copy into code blocks. Press the copy icon instead of selecting text. Telegram pairing shows the code and the `/start` command separately; its Telegram link opens a new tab. Setting codes, recovery commands and terminal continuation commands use the same copy controls. A continuation command is optional: keep chatting on the phone unless you want to move to the matching terminal app.
+
+After saving a key to the managed service environment file through the secret card, Agent J rereads that file automatically. **Rebind Telegram** also rereads that file before checking the token. If the service still needs a restart, open **Settings → Emergency repair → Restart service** and confirm with Face ID or your device passkey. This sends your signed request from the paired remote; the connection may drop briefly and reconnect. In an isolated Agent session, an unavailable host control socket means its status cannot be checked there, not that the service stopped. Use the paired phone's reload, Telegram rebind or restart controls.
+
+## Import a key already found on the computer
+
+1. Open **Settings → Models & API keys**. A key row can list existing sources on the computer, with a masked ending and whether it matches the managed copy. Values are never displayed in full.
+2. Choose the source you intend to use, then press **Move into Agent J** and confirm with Face ID or the device passkey. Agent J copies it locally; you do not paste the key into chat.
+3. The old source is kept by default. Only select the option to comment out its original line if you want that change. Importing a key is not permission to delete other sources.
+4. Read the Claude or Codex sign-in row's **actually in use** source. A key listed elsewhere is not necessarily the login the running AI uses. **after Agent J restarts** means the running AI has not picked up that change yet; follow the row's restart or sign-in guidance and check again.
+## Refresh, reply options and a TV remote {#remote-controls}
+
+Hold the top search button for about half a second (550 ms) to force a refresh. Your text draft is kept. Finish any recording, attachment work or unsubmitted card first. Pull to refresh is deferred because it would conflict with scrolling through messages.
+
+Reply options use borderless pills with a Noir background, Lotion text and space around the text. Their background becomes Sooty while pressed.
+
+On a large screen, the current focus is clearly marked:
+
+- Up / Down moves vertically between cards.
+- Left / Right opens the previous / next message, including in full-screen reading.
+- `PageUp` / `PageDown` (CH± on compatible remotes) scrolls a long message by one screen.
+- In the message area, press the confirm key `Enter` twice, less than 400 ms apart, to read full screen.
+- Press the webOS Back key, `Escape` or `Backspace` to leave full screen. In text fields, cursor movement, selection and deletion keep their usual behavior.
+
+A paired large screen without a passkey keeps the existing remote rules. Ordinary approvals keep their usual confirmation flow. Actions that explicitly require a passkey show "Please confirm on your phone"; complete those on your phone. The TV does not replace verification.
+
+If the browser cannot record audio, use the text field with your system keyboard's dictation. Whether the remote's voice key supports dictation depends on the TV and browser; we have not tested it on an LG TV. Landscape 1080p has been checked in Chromium emulation, which is not physical TV acceptance.
+
+## Preparing voice input for the first time {#voice-preparation}
+
+While voice components are installed for the first time, the page shows the current download, unpacking, installation and self-test stages, without an estimated percentage. The microphone shows "Preparing" until it is ready.
+
+A prominent "Voice input is ready" notice tells you to press and hold the microphone to speak; dismiss it with "Got it". If setup fails, the notice shows the reason and a "Try again" button. Check the network or disk space as advised, then retry. Notices do not expire automatically. You can dismiss them with ESC; a later notice can also replace them.
+
+After reconnecting, readiness is checked again. Installation progress from the disconnected period is not replayed step by step.

@@ -2958,14 +2958,14 @@ code[data-cc],pre[data-cc],.cc-in{cursor:copy}
 body:is([data-view="mem"],[data-view="act"],[data-view="tasks"],[data-view="models"],[data-view="friends"],[data-view="bots"],[data-view="setup"]) #srchBtn{display:grid}
 /* P368 (#78): the Agent's one-tap answers ([派](reply:派), js/replybtn.js) — pills in the words' own ink, room around the
    label; tapped → that one stays marked, the group greys out with 「已回复：…」. #tags = .fp-link's underline, dotted (a search, not a page). */
-.words .rbtn{display:inline-flex;align-items:baseline;gap:.4em;min-height:36px;margin:.2em .45em .2em 0;padding:.3em .95em;
-  border:1.5px solid rgba(20,20,20,.55);border-radius:999px;background:rgba(20,20,20,.10);color:inherit;
+.words .rbtn{display:inline-flex;align-items:baseline;gap:.4em;min-height:44px;margin:.25em .5em .25em 0;padding:.3em .95em;
+  border:0;border-radius:999px;background:#2c2b26;color:#faf9f5;
   font:600 .92em/1.3 var(--font-body);letter-spacing:.02em;cursor:pointer;vertical-align:baseline;touch-action:manipulation}
-.words .rbtn:active{background:rgba(20,20,20,.24)}
+.words .rbtn:active{background:#141414}
 .words .rbtn:focus-visible{outline:2px solid currentColor;outline-offset:2px}
 .words .rbtn .rbtn-say{font-weight:400;font-size:.8em;opacity:.7}
-.words .rbtn.rb-off{opacity:.45;cursor:default;border-style:dashed}
-.words .rbtn.rb-picked{opacity:1;border-style:solid;background:rgba(20,20,20,.22)}
+.words .rbtn.rb-off{opacity:.6;cursor:default}
+.words .rbtn.rb-picked{opacity:1;background:#141414}
 .words .rb-note{display:inline-block;margin:.2em 0;font-size:.82em;color:var(--ink-soft)}
 .words .rtag{display:inline;min-height:0;padding:0;border:0;background:transparent;color:inherit;font:inherit;cursor:pointer;
   text-decoration:underline dotted;text-decoration-thickness:1.5px;text-underline-offset:3px}   /* .fp-link's line, dotted = a search */
@@ -2980,3 +2980,12 @@ body:is([data-view="mem"],[data-view="act"],[data-view="tasks"],[data-view="mode
 .cmdresume .cc--block>pre{margin:0;padding:14px 52px 14px 16px;background:transparent;color:inherit;
   font:400 calc(14px*var(--fz))/1.55 var(--font-mono);white-space:pre-wrap;overflow-wrap:anywhere}
 .cmdresume pre code{padding:0;background:transparent;color:inherit;font:inherit;white-space:inherit}
+
+/* P387: remote focus remains visible over every state colour. */
+[data-tv-focus="1"]{outline:3px solid #faf9f5!important;outline-offset:-5px;box-shadow:inset 0 0 0 7px #141414}
+html[data-tv-no-mic="1"] #mic{display:none!important}
+@media(min-width:1600px) and (min-height:850px){html[data-tv="1"]{--fz:1.15}html[data-tv="1"] .words{line-height:1.65}}
+
+/* P387 #106: before voice is usable, its short status replaces the icon so setup is visible even on a phone. */
+.tools .tool.mic[data-preparing] svg{display:none}
+.tools .tool.mic[data-preparing] #micLabel{display:block;font-size:11px;line-height:1.2;white-space:nowrap}

@@ -259,6 +259,32 @@ def opencode_env(base: dict, password: str) -> dict:
     return env
 
 
+def startup_help(error: str, *, slow=False, lang='zh') -> str:
+    """Classify locally, never put native output (possibly a key) on the phone."""
+    text = error.lower()
+    english = str(lang).startswith('en')
+    if 'models.dev' in text:
+        cause = ('Startup output suggests a model catalog fetch stalled; local catalog mode is enabled.' if english else
+                 '根据启动输出，可能是模型目录下载卡住；已启用本地目录模式。')
+    elif any(x in text for x in ('scanning', 'indexing', 'watcher')):
+        cause = ('A large folder may be scanning. Choose a project folder instead of your home.' if english else
+                 '可能正在扫描过大的工作目录。请改为专用项目文件夹，勿用用户主目录。')
+    elif any(x in text for x in ('timeout', 'fetch failed', 'enotfound', 'econn')):
+        cause = ('Startup output suggests a network problem; check your network and proxy.' if english else
+                 '根据启动输出，可能是网络连接问题，请检查网络与代理。')
+    else:
+        cause = ('Cause is not known yet; check the network and use a project folder.' if english else
+                 '尚未确定原因；请检查网络并使用专用项目文件夹。')
+    if english:
+        status = ('OpenCode is still starting after 30 seconds. ' if slow else
+                  'OpenCode did not start; your message was not delivered. ')
+        repair = '\n\nCheck on the host:\n```sh\nagentj doctor\n```\nRestart after repair:\n```sh\nagentj service restart\n```'
+    else:
+        status = 'OpenCode 启动已超过 30 秒，仍在等待。' if slow else 'OpenCode 未能启动；这条消息尚未交给它。'
+        repair = '\n\n在主机检查：\n```sh\nagentj doctor\n```\n修好后重启：\n```sh\nagentj service restart\n```'
+    return status + cause + repair
+
+
 def split_model(m: str | None) -> dict | None:
     if not m or "/" not in m:
         return None
@@ -561,10 +587,14 @@ class OpenCodeAgent(Agent):
         self._bg(self._drain_err(proc))
         self.host.st.log("agent_start", agent=self.kind, fence=self.cfg.get("fence", True), session_mode=self.cfg.get("session_mode", "independent"), isolation_effective=getattr(self, "isolation_effective", False))
         listening = None
+        slow_noticed = False
         self.start_progress = started = time.monotonic()
         line_task = asyncio.create_task(proc.stdout.readline())
         try:
             while time.monotonic() - started < START_MAX:
+                if not slow_noticed and time.monotonic() - started >= 30:
+                    self.host.agent_notice(startup_help(self.err_tail, slow=True, lang=getattr(self.host, "lang", "zh")))
+                    slow_noticed = True
                 left = min(START_WAIT - (time.monotonic() - self.start_progress),
                            START_MAX - (time.monotonic() - started))
                 if left <= 0:
@@ -590,11 +620,11 @@ class OpenCodeAgent(Agent):
                     await line_task
         if listening != port:
             await asyncio.sleep(0.2)
-            await self._kill(proc)
             reason = "process exited" if proc.returncode is not None else "startup limit reached" if time.monotonic() - started >= START_MAX else "no startup progress"
+            await self._kill(proc)
             self.host.st.log("agent_startup_timeout", agent=self.kind, reason=reason)
             self.failed_start = True
-            self.fail_notice("主机已连接，但 OpenCode 启动失败或长时间没有启动进度。这条消息没有交给它。请在Agent J 主机运行 `agentj doctor`，核实真实可执行文件；然后运行 `agentj service install`。 / Host connected; OpenCode did not start (" + reason + "). Run `agentj doctor`, then `agentj service install`.")
+            self.fail_notice(startup_help(self.err_tail, lang=getattr(self.host, "lang", "zh")))
             return False
         self._bg(self._drain(proc.stdout))
         self._bg(self._watch(proc))

@@ -1,3 +1,4 @@
+import {phoneConfirmation} from './tvremote.js';
 // F32 (P73, ADR-A180, PROTOCOL §18): the secret pickup card. The owner asked their own Agent for something that holds a secret
 // (an ss:// link, a proxy YAML with a password); the Agent ran `agentj secret send`. The card arrives WITHOUT the value: name,
 // purpose, text / file, size, time left. 「用 Face ID 查看」 runs a WebAuthn assertion straight from the tap over (channel, device,
@@ -210,6 +211,7 @@ function paintLeft(c, isOpen) {
 async function openCard() {
   const c = cards.get(shownId);
   if (!c || busy || opened) return;
+  if ((!c.fa || !canAssert()) && phoneConfirmation(!c.fa)) return;
   if (!c.fa) { toast(t('sout.noPasskey'), 4200); return; }
   if (!canAssert()) { toast(t('elev.fa.none'), 5000); return; }
   if (!c.faCh) { toast(t('elev.fail'), 3000); return; }

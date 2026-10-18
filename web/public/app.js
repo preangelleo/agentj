@@ -1,3 +1,5 @@
+import {initRemote} from './js/tvremote.js';
+import {longPress} from './js/longpress.js';
 import { capturePage } from './js/pageshot.js';
 import * as shotcopy from './js/shotcopy.js';   // P340 #27: the screenshot also goes to the clipboard
 import * as fivePages from './js/five-pages.js';
@@ -22,6 +24,7 @@ import { b64u, unb64u } from './proto/wire.js';
 import * as session from './js/session.js';
 import * as snap from './js/snap.js';
 import * as api from './js/api.js';
+import { createAsrSetup } from './js/asr-setup.js';
 import * as blobs from './js/blobs.js';
 import * as media from './js/media.js';       // F21: files the Agent shows (§13)
 import * as controls from './js/controls.js';
@@ -998,14 +1001,13 @@ async function openModels() {
   }
   if (!c?.models?.length) modelBox.textContent = t('r.pill.unsupported');
 }
-let asrInstalling = false;
-async function installAsr() {
-  if (asrInstalling) return toast(t('asrFix.busy'));
-  if (!(await confirmSheet(t('asrFix.title'), t('asrFix.note'), t('asrFix.install')))) return;
-  asrInstalling = true; toast(t('asrFix.busy'), 6000);
-  try { const r = await api.asrInstall(); if(r.ok) session.peer.asr = r.state || 'ready'; toast(t(r.ok ? 'asrFix.ready' : 'asrFix.failed'), 5000); }
-  finally { asrInstalling = false; }
-}
+const asrSetup = createAsrSetup({t, notify,
+  confirm: () => confirmSheet(t('asrFix.title'), t('asrFix.note'), t('asrFix.install')),
+  install: api.asrInstall,
+  ready: () => { session.peer.asr = 'ready'; },
+  repaint: () => relay.paintVoiceReadiness(),
+});
+const installAsr = () => asrSetup.run();
 
 // ---------------------------------------------------------------- wiring
 // P171: the ≡ menu is gone — its rows live in the full-screen Settings page; leaving it for a sub-view closes it first.
@@ -1042,6 +1044,7 @@ function wire() {
   });
   onLang(() => renderPhoneEnvironment());
   $('menu-about').addEventListener('click', () => toggleBadge(true));   // above Settings; closing it returns there
+  initRemote({card:fivePages.remoteStep,message:relay.remoteMessage,reader:relay.remoteReader,reading:relay.remoteReading,scroll:relay.remoteScroll});
   initLayers({onEscape:relay.resetEscape});
   initEdgeBack();
   wireTopFit();
@@ -1138,6 +1141,12 @@ function wire() {
     relay.prepareSetupDraft(t('p264.' + kind));
   };
   for (const kind of ['friends', 'bots']) $('assist-' + kind).addEventListener('click', () => assist(kind));
+  // P387 #98: same sealed-draft and busy guards as automatic refresh; a hold suppresses its tap.
+  longPress($('srchBtn'), async () => { // @ix app.refresh_hold
+    const ready=async()=>!relay.refreshBlocked()&&await relay.saveDraft()&&!relay.refreshBlocked();
+    if(!await ready()){toast(t('p387.refreshBusy'),4000);return;}
+    await settings.refreshApp({silent:true,beforeReload:ready});
+  });
   $('srchBtn').addEventListener('click', () => { if (settings.isOpen()) settings.toggleSearch(); });
   document.addEventListener('keydown', e => {
     if (e.isComposing || e.repeat || !PAIRED_VIEWS.includes(view)) return;

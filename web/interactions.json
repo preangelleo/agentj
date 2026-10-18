@@ -2439,6 +2439,29 @@
       "gesture_en": ""
     },
     {
+      "id": "app.card_color",
+      "since": "0.24.0",
+      "impl": "code",
+      "scope": "any",
+      "target": {
+        "selector": "[data-color-card]",
+        "zh": "卡片右上角",
+        "en": "Card top-right corner"
+      },
+      "gestures": [
+        {
+          "type": "long-press",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "打开卡片调色板",
+      "en": "Open the card color palette",
+      "gesture_zh": "长按右上角的隐形圆形区域",
+      "gesture_en": "Hold the invisible circular area in the top-right corner",
+      "nokey": "Pointer Easter egg"
+    },
+    {
       "id": "keys.search",
       "since": "0.22.2",
       "impl": "code",
@@ -2758,6 +2781,51 @@
       "en": "Forward by e-mail; after the dialog you are still in the reader",
       "gesture_zh": "点信封图标",
       "gesture_en": "Tap the envelope icon"
+    },
+    {
+      "id": "card.remote_reader",
+      "since": "0.24.0",
+      "impl": "code",
+      "scope": "chat",
+      "target": {
+        "selector": "#rm",
+        "zh": "大屏回复卡",
+        "en": "Large-screen reply card"
+      },
+      "gestures": [],
+      "keys": [
+        {
+          "combo": "Enter",
+          "how": "double"
+        }
+      ],
+      "zh": "大屏全屏阅读（两次确认间隔小于 400 毫秒）",
+      "en": "Large-screen full-screen reader (two OK presses under 400 ms)",
+      "gesture_zh": "大屏遥控器双击确认键",
+      "gesture_en": "Double-press OK on a large-screen remote"
+    },
+    {
+      "id": "app.refresh_hold",
+      "since": "0.24.0",
+      "impl": "code",
+      "scope": "chat",
+      "target": {
+        "selector": "#srchBtn",
+        "zh": "右上角放大镜",
+        "en": "Top-right magnifier"
+      },
+      "gestures": [
+        {
+          "type": "long-press",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "保存草稿并强制刷新网页",
+      "en": "Save draft and force refresh",
+      "gesture_zh": "长按搜索（录音、附件或未提交卡片时不刷新）",
+      "gesture_en": "Hold Search (blocked by recording, attachments or an unsubmitted card)",
+      "nokey": "Uses the existing Alt+Shift+R refresh shortcut"
     }
   ]
 }

@@ -109,7 +109,7 @@ export async function runP360() {
         await click(p, '.jc-card[data-card="notes"]');
         await waitFor(p, `!!document.querySelector('.jc-body[data-card="notes"] .jc-notes')`);
         check(await ev(p, `document.getElementById('five-title').textContent===${q(T.notes)}`), `notes: title ${name}`);
-        check(await ev(p, `document.querySelector('.jc-notes').textContent.includes('Cards')&&!!document.querySelector('.jc-notes h1')`), `notes: markdown drawn from the host text ${name}`);
+        check(await ev(p, `document.querySelector('.jc-notes').textContent.includes('Cards')&&document.querySelectorAll('.jc-entry').length===3`), `notes: host entries drawn as individual note cards ${name}`);
         check(await ev(p, `document.querySelectorAll('.jc-actions .jc-action').length===2`), `notes: two buttons ${name}`);
         check(await ev(p, `(()=>{const b=document.getElementById('five-page');return b.scrollWidth<=b.clientWidth&&[...document.querySelectorAll('.jc-action')].every(x=>x.getBoundingClientRect().height>=44);})()`), `notes: no overflow, taps ≥ 44 px ${name}`);
         writeFileSync(join(OUT, `notes-${name}.png`), await shoot(p, ''));
@@ -117,7 +117,7 @@ export async function runP360() {
         await click(p, '.jc-action[data-act="tidy"]');
         await waitFor(p, `!document.getElementById('confirm').hidden`);
         const want = FX.get[lang].notes.actions.find((a) => a.id === 'tidy').prompt;
-        check(want.startsWith(T.label), `notes: host label ${name}`);
+        check(want==='/agentj-add-note tidy', `notes: managing skill slash command ${name}`);
         check(await ev(p, `document.getElementById('confirm-text').textContent===${q(want)} && document.getElementById('confirm-yes').textContent===${q(T.send)}`), `notes: the whole message on the official confirm card ${name}`);
         writeFileSync(join(OUT, `confirm-${name}.png`), await shoot(p, ''));
         await click(p, '#confirm-yes');
@@ -274,9 +274,9 @@ export async function runP360() {
         await ev(p, `document.getElementById('settings').hidden && document.getElementById('setBtn').click()`);
         await waitFor(p, `!document.getElementById('settings').hidden && !document.getElementById('set-cards-nav').hidden`);
         await click(p, '#set-cards-nav');
-        await waitFor(p, `document.querySelectorAll('#set-cards-list .jc-setrow').length===3`);
+        await waitFor(p, `document.querySelectorAll('#set-cards-list .jc-setrow').length===4`);
         check(await ev(p, `document.getElementById('set-title').textContent===${q(T.nav)}`), `settings: page title ${name}`);
-        check(await ev(p, `[...document.querySelectorAll('#set-cards-list .tgl')].every(b=>b.getAttribute('aria-checked')==='true')`), `settings: switches show the computer's state ${name}`);
+        check(await ev(p, `[...document.querySelectorAll('#set-cards-list .jc-setrow')].every(row=>row.querySelector('.tgl').getAttribute('aria-checked')===(row.dataset.card==='automation'?'false':'true'))`), `settings: switches show the computer's state ${name}`);
         writeFileSync(join(OUT, `settings-${name}.png`), await shoot(p, ''));
         await click(p, '#set-cards-list .jc-setrow[data-card="reading-list"] .tgl');
         await waitFor(p, `document.querySelector('#set-cards-list .jc-setrow[data-card="reading-list"] .tgl').getAttribute('aria-checked')==='false'`);
@@ -293,7 +293,7 @@ export async function runP360() {
 
     for (const [w, h] of [[360, 780], [390, 844], [412, 915]]) await step('many', async () => {
       host();
-      for (let i = 0; i < 27; i++) cards.push({ ...cards[2], id: `c${i}`, name: { zh: `卡片 ${i + 4}`, en: `Card ${i + 4}` }, accent: ['emerald-oasis', 'windstorm', 'magic-carpet', 'peachy-feeling', 'noir'][i % 5] });
+      for (let i = 0; i < 27; i++) cards.push({ ...cards.find(c=>c.id==='reading-list'), id: `c${i}`, name: { zh: `卡片 ${i + 4}`, en: `Card ${i + 4}` }, accent: ['emerald-oasis', 'windstorm', 'magic-carpet', 'peachy-feeling', 'noir'][i % 5] });
       const p = await newPage(B, w, h, 'dark', { allow: [web.url, fake.relay + '/'], touch: true });
       await pair(p, 'zh');
       await openMenu(p, 35);

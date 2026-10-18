@@ -836,7 +836,9 @@ FALLBACK = ("这台Agent J 主机装不了本地转写（{reason}）。可以：
             "`agentj asr engine voxtype`; ② use the phone keyboard's dictation for now.")
 
 
-def install(state_dir=None, mirror: str = "auto", yes: bool = False, out=print, inp=None) -> int:
+def install(state_dir=None, mirror: str = "auto", yes: bool = False, out=print, inp=None, progress=None) -> int:
+    # Structured stages only: never expose terminal output or local paths to a remote.
+    progress = progress or (lambda stage: None)
     inp = inp or sys.stdin
     d = asr_dir(state_dir)
     key = platform_key()
@@ -868,6 +870,7 @@ def install(state_dir=None, mirror: str = "auto", yes: bool = False, out=print, 
     (d / "last_error.json").unlink(missing_ok=True)
     _clean_partial(d)
     try:
+        progress("download")
         # 1. wheels — every route's PyPI hosts, the chosen route's first
         pypi = []
         for r in order + [x for x in ROUTES if x not in order]:
@@ -883,10 +886,13 @@ def install(state_dir=None, mirror: str = "auto", yes: bool = False, out=print, 
         used, errors = None, []
         for r in order:
             route = ROUTES[r]
+            if r != first:
+                progress("download")  # mirror fallback resumes real downloads after any extraction attempt
             try:
                 if "tarball" in route:
                     tp = dl / TARBALL["name"]
                     _fetch([route["tarball"]], tp, TARBALL["size"], TARBALL["sha256"], out, "model")
+                    progress("extract")
                     out("  解压 / extracting …")
                     _safe_extract(tp, staging, list(FILES))
                 else:
@@ -906,12 +912,14 @@ def install(state_dir=None, mirror: str = "auto", yes: bool = False, out=print, 
         if used is None:
             raise InstallError("model download failed — " + " · ".join(errors))
         # 3. venv + wheels
+        progress("install")
         out("  安装 sherpa-onnx / installing sherpa-onnx …")
         _make_venv(d, wpaths, wshas)
         os.replace(staging, d / "model")
         os.chmod(d / "model", 0o700)
         os.chmod(d / "venv", 0o700)
         # 4. self-test in a fresh worker
+        progress("test")
         out("  自测 / self-test …")
         _self_test(d, settings(state_dir)["threads"])
         rec = {"v": 1, "sherpa_version": SHERPA_VERSION, "model": MODEL_ID, "route": used, "installed": int(time.time()),

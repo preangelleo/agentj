@@ -6,6 +6,8 @@ import {ask1, peer, isReady} from './session.js';
 import {RelayMD} from './md.js';
 import {t, lang} from './t.js';
 import {confirmSheet} from './ui.js';
+import {sysWhen, cronText} from './controls.js';
+import {cardColor, setColors, resetColors} from './jcard-color.js';
 
 let list = null, busy = null, epoch = 0, view = 0;
 const subs = [];
@@ -15,7 +17,7 @@ export const cards = () => list || [];
 export const deck = () => cards().filter((c) => c.on);
 export const nameOf = (c) => pick(c && c.name);
 export function onChange(fn) { subs.push(fn); }
-export function clear() { list = null; busy = null; epoch++; }
+export function clear() { list = null; busy = null; epoch++; view++; resetColors(); for(const d of document.querySelectorAll('.jc-dialog'))d.dispatchEvent(new Event('cancel',{cancelable:true})); }
 // P360 (Leo 10-17: 「每个卡片都有一个 unique internal URL」): a card's address is its id — card/<id>[#<anchor>] (the name may
 // repeat). ID / ANCHOR mirror host jcards.ID_RE / ANCHOR_RE.
 export const ID = /^[a-z][a-z0-9-]{1,31}$/, ANCHOR = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
@@ -49,6 +51,7 @@ export function refresh() {
     busy = null;
     if (e !== epoch || !Array.isArray(m.cards)) return cards();
     const before = JSON.stringify(list);
+    setColors(m.colors || {});
     list = m.cards.filter((c) => c && typeof c.id === 'string');
     if (JSON.stringify(list) !== before) changed();
     return list;
@@ -77,6 +80,9 @@ const PATHS = {
   bolt: 'M13 2 4 14h7l-1 8 9-12h-7z',
   check: 'M5 12.5l4 4L19 7',
   box: 'M5 5h14v14H5z',
+  copy: 'M9 8h11v13H9zM5 16H3V3h11v2',
+  edit: 'm4 16-1 5 5-1L20 8l-4-4zM13 7l4 4',
+  delete: 'M3 6h18M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7M14 10v7',
   out: 'M14 4h6v6M20 4l-9 9M18 14v6H4V6h6',
 };
 export function icon(key, cls = 'fp-line-icon') {
@@ -92,6 +98,7 @@ export function deckCard(c, i, open) {
   const head = node('div', undefined, 'fp-menu-head jc-head');
   head.append(icon(c.icon, 'fp-line-icon jc-icon'));
   b.append(head, node('h2', nameOf(c), 'jc-name'), node('p', pick(c.desc), 'jc-desc'));   // one strip look with the five
+  cardColor(b, c.id);
   return b;
 }
 
@@ -100,13 +107,31 @@ const PROBLEM = { empty: 'p360.empty', refused: 'p360.refused', bad_data: 'p360.
 
 /** The element of place `at` on a drawn card page (null: not there — the page stays at its top). */
 function place(box, at, m) {
+  if (at === 'latest') return box.querySelector('.jc-entry') || [...box.querySelectorAll('.jc-item')].at(-1) || box;
   if (!at || !ANCHOR.test(at)) return null;
   const block = (b) => b === 'top' ? box : b === 'content' ? box.querySelector('.jc-notes,.jc-list') : box.querySelector(b === 'actions' ? '.jc-actions' : '.jc-links');
   if (at === 'top' || at === 'actions' || at === 'links') return block(at);
   const a = (Array.isArray(m.anchors) ? m.anchors : []).find((x) => x && x.id === at);
   if (a && a.block) return block(a.block);
-  if (a && a.heading) return [...box.querySelectorAll('.jc-notes :is(h1,h2,h3,h4,h5,h6)')].find((h) => h.textContent.trim() === String(a.heading).trim()) || null;
-  return [...box.querySelectorAll('.jc-item')].find((li) => li.dataset.item === at) || null;   // a checklist row
+  if (a && a.heading) return [...box.querySelectorAll('.jc-notes :is(h1,h2,h3,h4,h5,h6)')].find((h) => h.textContent.trim() === String(a.heading).trim()) || headingEntry(box, a.heading, m);
+  return [...box.querySelectorAll('.jc-item,.jc-entry')].find((li) => li.dataset.item === at) || null;   // a checklist row
+}
+// Legacy heading anchors retain their source-order semantics after paragraphs become cards.
+// Mirror the host's note span boundaries; entry text equality would confuse duplicate notes.
+function headingEntry(box, heading, m) {
+  if (!Array.isArray(m.entries)) return null;
+  let count=0, active=false, found=false;
+  for (const line of String(m.text||'').split(/\r?\n/)) {
+    const head=/^#{1,6}\s/.test(line), boundary=!line.trim()||head||/^\s*([-*_])(?:\s*\1){2,}\s*$/.test(line),bullet=/^(?:[-+*]|\d+[.)])\s+/.test(line);
+    if (boundary||bullet) active=false;
+    if (head) {
+      if(found)return box; // An empty section stays at the card top.
+      const parsed=node('div');parsed.append(RelayMD.toDOM(RelayMD.parse(line),document));
+      if(parsed.textContent.trim()===String(heading).trim())found=true;
+    }
+    if(!boundary&&!active){if(found)return box.querySelectorAll('.jc-entry')[count]||box;count++;active=true;}
+  }
+  return found?box:null;
 }
 const WEB = /^https?:\/\/[^\s@/?#]+([/?#]\S*)?$/;
 /** A card's web link: the address is shown whole first; the new tab gets no opener and no referrer (this page's address
@@ -135,7 +160,38 @@ export async function render(body, id, hooks) {
   body.append(box);
   if (!m.ok) { box.append(node('p', t(PROBLEM[m.why] || (m.t === 'offline' || m.t === 'timeout' ? 'p360.offline' : 'p360.gone')), 'jc-note')); return; }
   if (m.problem) box.append(node('p', t(PROBLEM[m.problem] || 'p360.unreadable'), 'jc-note'));
-  if (m.template === 'notes' && m.text) {
+  if (m.template === 'notes' && Array.isArray(m.entries)) {
+    const stack = node('div', undefined, 'jc-notes jc-stack');
+    for (const it of m.entries) {
+      const entry = node('article', undefined, 'jc-entry'); entry.dataset.item = it.id;
+      const acts = node('div', undefined, 'jc-entry-actions');
+      for (const [op, key] of [['copy','copy'],['edit','edit'],['delete','delete']]) {
+        const b = button('', async () => {
+          if (op === 'copy') { try { await navigator.clipboard.writeText(it.text); b.setAttribute('aria-label',t('p386.copied')); } catch { b.setAttribute('aria-label',t('p386.failed')); } return; }
+          const text = op === 'edit' ? await editNote(it.text) : undefined;
+          if (op === 'edit' && text === null) return;
+          if (op === 'delete' && !await confirmSheet(t('p386.delete'), it.text, t('p386.delete'))) return;
+          if (e !== view || !body.isConnected) return;
+          b.disabled = true;
+          const result = await ask1({t:'jcard_note',id,entry:it.id,revision:m.revision,op,...(op==='edit'?{text}:{})},'jcard_note',15000);
+          if (e !== view || !body.isConnected) return;
+          if (result.ok) render(body,id,hooks); else if (result.why === 'conflict' || result.why === 'changed') { const expected=view+1; await render(body,id,hooks); if(view===expected&&body.isConnected)body.prepend(node('p',t('p386.changed'),'jc-note')); } else { b.disabled=false; const error=node('p',t(result.why==='changed'?'p386.changed':'p386.failed'),'jc-note'); entry.append(error); }
+        }, 'jc-entry-icon');
+        if (op === 'edit' && it.editable === false) b.disabled = true;
+        b.setAttribute('aria-label', t('p386.'+op)); b.title=t('p386.'+op); b.dataset.noteOp=op; b.append(icon(key)); acts.append(b);
+      }
+      const prose=node('div',undefined,'fp-prose'); prose.append(RelayMD.toDOM(RelayMD.parse(String(it.text)),document)); entry.append(acts,prose); stack.append(entry);
+    }
+    box.append(stack);
+  } else if (m.template === 'automation' && Array.isArray(m.items)) {
+    const stack=node('div',undefined,'jc-stack');
+    for(const it of m.items) {
+      const row=node('article',undefined,'jc-entry jc-automation'); row.dataset.item=it.id;
+      row.append(node('h2',it.name));
+      const at=button('@',()=>hooks.draft(String(it.prompt||'/agentj-automation @'+it.name)+' '),'jc-auto-at'); at.setAttribute('aria-label',t('p386.ask',{name:it.name})); row.append(at);
+      const fields=node('dl'); for(const key of ['schedule','repeat','next','harness','model','description','source']) { let value=it[key]; if(Array.isArray(value))value=sysWhen(value); else if(key==='schedule' && value) { let when=it.when; if(!when && typeof value==='string' && value.startsWith('[')){try{when=JSON.parse(value);}catch{}} value=Array.isArray(when)?sysWhen(when):cronText(value); } if(key==='next' && typeof value==='number') { const date=new Date(value>1e14?value/1000:value>1e11?value:value*1000); value=Number.isFinite(date.getTime())?date.toLocaleString(lang()==='zh'?'zh-CN':'en-GB'):null; } fields.append(node('dt',t('p386.'+key)),node('dd',value||t('p386.unknown'))); } row.append(fields);stack.append(row);
+    } box.append(stack);
+  } else if (m.template === 'notes' && m.text) {
     const prose = node('div', undefined, 'fp-prose jc-notes');
     prose.append(RelayMD.toDOM(RelayMD.parse(String(m.text)), document));
     box.append(prose);
@@ -175,7 +231,7 @@ export async function render(body, id, hooks) {
     at.dataset.at = '1'; at.scrollIntoView({ block: 'start' }); at.classList.add('jc-flash');
     setTimeout(() => { at.classList.remove('jc-flash'); delete at.dataset.at; }, 1600);
   }
-  box.append(node('p', t('p360.where', { path: String(m.path || '') }), 'fp-meta jc-path'));
+  // Storage paths belong to the managing skill, not the owner's card surface.
 }
 
 /** A button: a draft goes into the message box; anything else is shown whole on the official confirm card first. */
@@ -214,4 +270,14 @@ export function renderSettings(hooks) {
       row.append(ic, lab, sw); box.append(row);
     }
   }
+}
+
+// An entry editor stays on the card; Escape or Cancel discards the draft.
+function editNote(value) {
+  return new Promise(resolve=>{
+    const dialog=node('dialog',undefined,'jc-dialog'), title=node('h2',t('p386.edit')), input=node('textarea'); input.value=value; input.setAttribute('aria-label',t('p386.edit')); input.maxLength=16000;
+    const done=v=>{dialog.close();dialog.remove();resolve(v);};
+    dialog.append(title,input,button(t('p386.cancel'),()=>done(null)),button(t('p386.save'),()=>done(input.value)));
+    dialog.addEventListener('cancel',e=>{e.preventDefault();done(null);});document.body.append(dialog);dialog.showModal();
+  });
 }

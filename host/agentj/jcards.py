@@ -39,9 +39,9 @@ PKG = pathlib.Path(__file__).resolve().parent / "cardpacks"
 SCHEMA_PATH = PKG / "card.schema.json"
 SCHEMA_ID = "https://agentj.app/schema/agentj-card-1.json"
 CAP = "jcards1"
-PHONE_TYPES = ("jcard_list", "jcard_get", "jcard_set")
-SUBCOMMANDS = ("list", "validate", "apply", "on", "off", "remove", "export", "open", "schema")   # agentj card … (parser() builds these)
-OFFICIAL = ("notes", "todo")             # shipped in phase 1, default off (Settings → Cards)
+PHONE_TYPES = ("jcard_list", "jcard_get", "jcard_set", "jcard_note", "jcard_color")
+SUBCOMMANDS = ("list", "validate", "apply", "on", "off", "remove", "export", "open", "note", "automation", "schema")   # agentj card … (parser() builds these)
+OFFICIAL = ("notes", "todo", "automation")             # shipped in phase 1, default off (Settings → Cards)
 PLANNED = ("obsidian", "calendar", "files")   # official cards of the next phases: their ids are reserved now
 SYSTEM = ("chat", "workflows", "skills", "memory", "agentj")   # the five system cards of the logo menu
 PAGE_IDS = ("cards", "settings")         # the card wall and Settings: page names, never a card id (card/<id> must stay unambiguous)
@@ -655,7 +655,7 @@ def render(card: dict, tpl, lang: str, root, item: dict | None = None) -> str:
         vals.update({"item.id": item["id"], "item.text": "「" + _clean(item["text"], ITEM_VAR_MAX) + "」",
                      "item.done": DONE_WORD[lang if lang in DONE_WORD else "en"][int(item["done"])]})
     body = VAR_RE.sub(lambda m: vals.get(m.group(1), ""), _pick(tpl, lang))
-    return (LABEL.get(lang, LABEL["en"]).format(name=name) + body)[:PROMPT_MAX + 64]
+    return body[:PROMPT_MAX] if body.startswith("/") else (LABEL.get(lang, LABEL["en"]).format(name=name) + body)[:PROMPT_MAX + 64]
 
 
 def _read(root, card: dict) -> tuple[bytes | None, str | None, bool]:
@@ -704,10 +704,11 @@ def phone_list(root, lang: str = "zh") -> dict:
         d = c["doc"]
         rows.append({"id": c["id"], "name": d["name"], "desc": d["description"], "icon": d["icon"], "accent": d["accent"],
                      "template": d["template"], "official": c["official"], "on": c["on"], "plus": d.get("plus") or PLUS_DEFAULT})
-    return {"cards": rows}
+    from . import jcards_data
+    return {"cards": rows, "colors": jcards_data.colors(root)}
 
 
-def phone_get(root, cid, lang: str = "zh") -> dict:
+def phone_get(root, cid, lang: str = "zh", agent_cfg=None) -> dict:
     """§34 jcard_get: one card's data, read now, plus every button with its finished chat message."""
     from . import privacy
     lang = lang if lang in ("zh", "en") else "zh"
@@ -717,6 +718,9 @@ def phone_get(root, cid, lang: str = "zh") -> dict:
     if not c["on"]:
         return {"ok": False, "why": "off"}
     d = c["doc"]
+    if cid == "automation":
+        from . import jcards_data
+        return {"ok": True, "id": cid, "template": "automation", "items": jcards_data.automations(root, agent_cfg, lang), "actions": [], "links": [], "anchors": [], "plus": "agentj-automation"}
     res = {"ok": True, "id": c["id"], "template": d["template"],
            "path": _short(data_dir(root, c["id"]) / d["data"]["file"]),
            "actions": [{"id": a["id"], "label": _pick(a["label"], lang), "prompt": render(c, a["prompt"], lang, root),
@@ -731,9 +735,14 @@ def phone_get(root, cid, lang: str = "zh") -> dict:
         res["problem"] = problem
     if d["template"] == "notes":
         text = raw.decode("utf-8", "replace") if raw else ""
-        if cut and re.search(r"\s", text):   # a key cut in half might no longer look like one: drop the partial last word
-            text = text[:max(m.start() for m in re.finditer(r"\s", text))]
-        res["text"] = privacy.redact(text)
+        if cut:   # a cut credential may lose its recognizable shape; omit the entire trailing token
+            whitespace = list(re.finditer(r"\s", text))
+            text = text[:whitespace[-1].start()] if whitespace else ""
+        res["text"] = privacy.redact(text, owner=True)
+        from . import jcards_data
+        res.update(jcards_data.note_snapshot(text.encode("utf-8") if cut else (raw or b"")))
+        if cut:
+            res["entries"] = [{**e, "editable": False} for e in res["entries"]]
     else:
         items, bad = _items(raw) if raw else ([], None)
         if bad:
@@ -826,6 +835,16 @@ def parser() -> argparse.ArgumentParser:
     x.add_argument("id", help="卡片 id，或系统页 / a card id, or a system page: " + " · ".join(PAGES))
     x.add_argument("--at", metavar="ANCHOR", help="卡里的位置（anchors、待办条目 id、top / actions / links）/ a place in the card")
     x.add_argument("--json", action="store_true", help="机器可读输出 / machine-readable output")
+    x = ps.add_parser("note", help="Manage notebook entries atomically")
+    x.add_argument("op", choices=("list", "add", "edit", "delete"))
+    x.add_argument("--id", default="notes")
+    x.add_argument("--entry")
+    x.add_argument("--revision")
+    x.add_argument("--text")
+    x.add_argument("--json", action="store_true")
+    x = ps.add_parser("automation", help="Read-only automation catalogue with stable names")
+    x.add_argument("op", choices=("list",))
+    x.add_argument("--json", action="store_true")
     x = ps.add_parser("schema", help="打印 card.json 的 JSON Schema / print the schema")
     x.add_argument("--path", action="store_true", help="只打印文件路径 / only its path")
     return p
@@ -836,6 +855,16 @@ def command(args: list) -> int:
     a = parser().parse_args(args)
     root, js = state_dir(), getattr(a, "json", False)
     out = (lambda o: print(json.dumps(o, ensure_ascii=False))) if js else None
+    if a.cmd == "automation":
+        from . import jcards_data
+        from .state import State
+        print(json.dumps({"ok": True, "items": jcards_data.automations(root, State(root).agent_config())}, ensure_ascii=False))
+        return 0
+    if a.cmd == "note":
+        from . import jcards_data
+        r = phone_get(root, a.id) if a.op == "list" else jcards_data.note_change(root, a.id, a.op, a.entry, a.revision, a.text)
+        print(json.dumps(r, ensure_ascii=False))
+        return 0 if r.get("ok") else 1
     if a.cmd == "schema":
         print(str(SCHEMA_PATH) if a.path else SCHEMA_PATH.read_text(encoding="utf-8"), end="\n" if a.path else "")
         return 0

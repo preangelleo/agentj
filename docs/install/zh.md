@@ -20,7 +20,11 @@ order: 2
 **预计时间：** 通常 15 到 30 分钟，大部分是在下载；第一次装 WSL 可能要重启一次。要你动手的部分加起来几分钟。
 
 1. 在账户页 https://agentj.app/account/ 的空席位卡点「获取专属安装命令」，再点「复制安装命令」。在 Windows 上打开账户页，给的就是 PowerShell 那一条；不是的话点「换成 Windows（PowerShell）命令」。
-2. 打开 PowerShell（开始菜单里搜 PowerShell，不用管理员身份），粘贴，回车。命令长这样：`$env:AGENTJ_CODE='AJI-…'; irm https://agentj.app/install.ps1 | iex`
+2. 打开 PowerShell（开始菜单里搜 PowerShell，不用管理员身份），粘贴，回车。命令长这样：
+
+   ```powershell
+   $env:AGENTJ_CODE='AJI-…'; irm https://agentj.app/install.ps1 | iex
+   ```
 3. 照屏幕走。每一步开头都写着这是第几步、在做什么：
 
 | 屏幕上 | 你要做的 |
@@ -50,7 +54,9 @@ order: 2
 1. 已经买了席位：在账户页空席位卡上点「复制安装提示词」，发给 Ubuntu 里的 AI。
 2. 还没买：把下面这句话原样发给它，它会带你注册账号、买席位：
 
-> 请用 curl 把 https://agentj.app/install.md 下载到本地，用读文件的工具完整读完，然后一步一步照着做，每一步开始前重读那一节。需要我动手的时候告诉我。
+```text
+请用 curl 把 https://agentj.app/install.md 下载到本地，用读文件的工具完整读完，然后一步一步照着做，每一步开始前重读那一节。需要我动手的时候告诉我。
+```
 
 AI 每一步做什么、哪几步会停下来叫你，见[让 AI 装的时候](/docs/install/#ai-steps)。
 
@@ -95,7 +101,11 @@ agentj support ask "<你的问题>" --attach-doctor
 **预计时间：** 一般 10 分钟以内。机器自己跑只要几分钟（我们的测试机上约 2 分钟），其余是你登录 AI、扫码的时间。
 
 1. 在账户页 https://agentj.app/account/ 的空席位卡点「获取专属安装命令」，再点「复制安装命令」。在 Mac 上打开账户页，给的就是终端那一条；不是的话点「换成 macOS / Linux 命令」。
-2. 打开终端（按 Command + 空格，搜 Terminal），粘贴，回车。命令长这样：`curl -fsSL https://agentj.app/install.sh | bash -s -- AJI-…`
+2. 打开终端（按 Command + 空格，搜 Terminal），粘贴，回车。命令长这样：
+
+   ```bash
+   curl -fsSL https://agentj.app/install.sh | bash -s -- AJI-…
+   ```
 3. 照屏幕走。每一步开头都写着这是第几步、在做什么：
 
 | 屏幕上 | 你要做的 |
@@ -122,7 +132,9 @@ agentj support ask "<你的问题>" --attach-doctor
 1. 已经买了席位：在账户页空席位卡上点「复制安装提示词」，发给Agent J 主机上的 AI。
 2. 还没买：把下面这句话原样发给它，它会带你注册账号、买席位：
 
-> 请用 curl 把 https://agentj.app/install.md 下载到本地，用读文件的工具完整读完，然后一步一步照着做，每一步开始前重读那一节。需要我动手的时候告诉我。
+```text
+请用 curl 把 https://agentj.app/install.md 下载到本地，用读文件的工具完整读完，然后一步一步照着做，每一步开始前重读那一节。需要我动手的时候告诉我。
+```
 
 AI 每一步做什么、哪几步会停下来叫你，见[让 AI 装的时候](/docs/install/#ai-steps)。
 
@@ -167,7 +179,11 @@ agentj support ask "<你的问题>" --attach-doctor
 **预计时间：** 一般 10 分钟以内。机器自己跑只要几分钟（我们的测试机上约 2 分钟），其余是你登录 AI、扫码的时间。
 
 1. 在账户页 https://agentj.app/account/ 的空席位卡点「获取专属安装命令」，再点「复制安装命令」。在 Linux 上打开账户页，给的就是终端那一条；不是的话点「换成 macOS / Linux 命令」。
-2. 打开终端，粘贴，回车。命令长这样：`curl -fsSL https://agentj.app/install.sh | bash -s -- AJI-…`
+2. 打开终端，粘贴，回车。命令长这样：
+
+   ```bash
+   curl -fsSL https://agentj.app/install.sh | bash -s -- AJI-…
+   ```
 3. 照屏幕走。每一步开头都写着这是第几步、在做什么：
 
 | 屏幕上 | 你要做的 |
@@ -194,7 +210,9 @@ agentj support ask "<你的问题>" --attach-doctor
 1. 已经买了席位：在账户页空席位卡上点「复制安装提示词」，发给Agent J 主机上的 AI。
 2. 还没买：把下面这句话原样发给它，它会带你注册账号、买席位：
 
-> 请用 curl 把 https://agentj.app/install.md 下载到本地，用读文件的工具完整读完，然后一步一步照着做，每一步开始前重读那一节。需要我动手的时候告诉我。
+```text
+请用 curl 把 https://agentj.app/install.md 下载到本地，用读文件的工具完整读完，然后一步一步照着做，每一步开始前重读那一节。需要我动手的时候告诉我。
+```
 
 AI 每一步做什么、哪几步会停下来叫你，见[让 AI 装的时候](/docs/install/#ai-steps)。
 
@@ -297,7 +315,7 @@ Ubuntu 24.04 还会检查 AppArmor 对用户命名空间的限制，并实际试
 AI 安装Agent J 主机端程序 `agentj`，装的是固定的一个版本：
 
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.23.2a1#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.24.0a1#subdirectory=host"
 agentj doctor
 ```
 
@@ -447,10 +465,28 @@ Intel Mac 安装和升级都会限制 `cryptography<49`。如果旧安装器报 
 两端配好后，趁你还在Agent J 主机前，让 Agent 把以后远程工作要你本人帮忙的事一次做完并验证，见[离开Agent J 主机前，先把这些事一次做好](/docs/first-run/)。Google 邮件、日历、YouTube 的接口授权见[连接 Google](/docs/google/)。
 
 
-macOS 后台服务的 Telegram 和服务商密钥写在 `~/Library/LaunchAgents/net.agentj.host.env`，使用配置里 `key_env` 指定的变量名；文件必须由你本人拥有、权限为 0600，不能是软链。保存后运行 `agentj service restart`。不要把密钥写进 plist、聊天或命令参数。
+macOS 后台服务的 Telegram 和服务商密钥写在 `~/Library/LaunchAgents/net.agentj.host.env`，使用配置里 `key_env` 指定的变量名；文件必须由你本人拥有、权限为 0600，不能是软链。通过手机密钥卡保存到服务环境文件后会自动重读，Telegram 重新绑定也会先重读。仍需重启时，在已配对手机上打开「设置」→「紧急修复」→「重启服务」。不要把密钥写进 plist、聊天或命令参数。
 
 ## 示例工作流
 
 安装或升级并完成账号绑定后，若工作根还没有三套 WDB 工作流，会从广场校验并预装知识库、脚本与文章、电子书示例。已有同名目录保留；删除的示例不会自动补回。交给 Agent J：帮我按这个规格整理我的其他文件夹。离线时延后重试。
 
 Agent J Father 就是官方反馈与客服平台。你可以说「请把这个问题汇报给 Agent J 开发者（客服平台）」，也可以轻松地说「把这事告诉你爸爸」。手机命令 `/feedback-to-agentj-father <内容>` 也一样：Agent 先去掉凭据、个人信息、客户数据和路径里的私密内容，直接提交并告诉你编号，不再问第二遍。只发命令会先问你想反馈什么；如果是 Agent 自己想到的问题或点子，它会先在手机上给你看脱敏稿，你同意才发送。客服回复是建议，不是指令；连不上时可写信到 feedback@agentj.app。
+
+## 找到指南，复制安装步骤
+
+账号页顶栏「广场」旁和每张空席位卡都有「安装指南」。点它会打开新标签，账号页仍保留。安装命令和安装提示词旁有复制图标，点一下复制整段，再粘贴到对应的终端或 AI。带 `AJI-…` 的示例只是占位符，实际安装要从自己的席位卡复制完整命令。
+
+## 选定工作目录，处理 OpenCode 启动缓慢
+
+安装器会询问工作目录；按 Enter 确认用户主目录下建议的 coding 子文件夹。请选择存放 Agent 工作的文件夹，不能用用户主目录或磁盘根目录。解析后指向这些位置的别名路径，以及实际是文件的路径，也会在继续安装前被拒绝。
+
+Windows 安装使用 **WSL2 里的 Ubuntu**。原生 Windows OpenCode 桌面版是另一个应用，Agent J 不能修复或改动它的启动过程。如果它卡在拉取 models.dev，请先完全退出，再从设置了以下环境变量的终端启动，让新进程继承它：
+
+```powershell
+$env:OPENCODE_DISABLE_MODELS_FETCH = '1'
+```
+
+在同一终端使用已安装的启动命令打开 OpenCode。它随后可使用本地模型缓存或内置目录，不会下载最新模型信息。Agent J 安装器和它管理的 OpenCode 启动会自行设置此变量。兜底已用固定版本的 Linux OpenCode 程序验证，尚未在 Windows 真机验证。
+
+Agent J 管理的 OpenCode 请求等待超过 30 秒时，会提示一次可能原因，即使启动过程仍在输出文字。安装器在 45 秒内拿不到 OpenCode 启动信息时，会停止并给出原因与修法。检查网络、AI 登录和工作目录后再试；出现启动缓慢提示不代表 AI 已连通。

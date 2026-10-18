@@ -63,6 +63,18 @@ def ctl_call(st, req: dict, timeout: float | None = None, max_bytes: int = 64 * 
         s.close()
 
 
+def control_unavailable() -> dict:
+    """A missing socket inside isolation cannot establish whether the host is running."""
+    from . import fence
+    if fence.inside():
+        return {"ok": False, "error": "host_unreachable", "detail":
+                "隔离会话内看不到主机控制通道，无法确认运行状态；请在已配对手机上重新加载或重新绑定 Telegram。 / "
+                "The host control channel is hidden in this isolated session; its running state is unknown. "
+                "Use Reload or Rebind Telegram on the paired phone."}
+    return {"ok": False, "error": "not_running", "detail":
+            "Agent J is not running: start it (agentj service start), then try again."}
+
+
 def elevate_sock(st):
     """P339: the Agent-facing elevate.sock — reachable inside the fence, where control.sock is hidden. Inside a fence the
     path serve exported wins (the fence unsets AGENTJ_STATE_DIR, so State() differs there); outside, the state's."""

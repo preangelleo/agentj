@@ -55,6 +55,7 @@ Function keys also work while a text field is focused. System or input-method sh
 | `Y` | Tap the copy icon just left of expand / collapse at the card's bottom right | Copy the whole message (a voice-only message: its transcript) |
 | `r` | Tap the curved-arrow icon | Reply to this one (the quote shows above the message box, focus stays in it; Esc cancels); Alt+Shift+A also works while typing |
 | `W` | Tap the round share icon at the bottom left | Hot key: by default share as a web report (puts /web-page-report in the message box, never sends; on an older reply also quotes it); once rebound, runs the command or skill you chose — /clear still asks first |
+| `Enter` `Enter` | Double-press OK on a large-screen remote | Large-screen full-screen reader (two OK presses under 400 ms) |
 | `v` | Tap the file card, picture or Full screen; double-tap a non-audio file card to view that file full screen | Preview the first file on this page (← → in the preview for the others) |
 | `d` | Tap the download icon | Download the first file on this page |
 | `x` | Tap the share icon | Share the first file on this page with the system share sheet |
@@ -168,6 +169,8 @@ Function keys also work while a text field is focused. System or input-method sh
 | `Alt+Shift+C` | Hold the gear; help via right-click or Keyboard shortcuts | Capture this page as an attachment and copy it to the clipboard |
 | `Alt+Shift+F` | Settings → Friends | Open Friends |
 | `Alt+Shift+E` | Settings → Bots | Open Customer service |
+| — | Hold the invisible circular area in the top-right corner | Open the card color palette |
+| — | Hold Search (blocked by recording, attachments or an unsubmitted card) | Save draft and force refresh |
 | `/` · `⌘+K` / `Ctrl+K` | Tap the magnifier at the top right of the list | Search the shortcut list: type a word to filter by action, key or gesture, in Chinese or English |
 | `Esc` | Tap the magnifier again | Clear and close the search box; Esc again closes the shortcut list |
 | `i` · `Esc` | Tap the message box | Into the message box; Esc in it leaves (the draft stays) |

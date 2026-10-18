@@ -1,3 +1,4 @@
+import {phoneConfirmation} from './tvremote.js';
 // F17 (PROTOCOL §11): the sudo card and the secret card. The Agent asked for an admin password (to run one exact command)
 // or for an API key (to be saved on the computer); the human types it here into a masked field. It is sealed to the card's
 // one-time host key and signed with this device's approval key, then the field and the bytes are cleared. Nothing of it is
@@ -241,6 +242,7 @@ async function decide(ok) {
   // ADR-A163: Face ID first, straight from the tap (before any await). Cancel / failure → nothing sent, the card stays.
   let fa = null;
   if (ok && c.fa) {
+    if (!canAssert() && phoneConfirmation()) return;
     if (!canAssert()) { toast(t('elev.fa.none'), 5000); return; }
     if (!c.faCh) { toast(t('elev.fail'), 3000); return; }
     busy = true; paintButtons();

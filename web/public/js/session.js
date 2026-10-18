@@ -425,9 +425,9 @@ export function request(obj, onMsg, g = gen()) {
 }
 export function done(r) { pending.delete(r); }
 /** One request → the first answer of type `want` (or {t:'timeout'} / {t:'offline'}). */
-export function ask1(obj, want, ms = 20000) {
+export function ask1(obj, want, ms = 20000, onUpdate = null) {
   return new Promise((resolve) => {
-    const r = request(obj, (m) => { if (m.t === want) { pending.delete(r); resolve(m); } });
+    const r = request(obj, (m) => { if (m.t === want || m.t === 'offline') { pending.delete(r); resolve(m); } else { onUpdate?.(m); } });
     if (!r) { resolve({ t: 'offline' }); return; }
     setTimeout(() => { if (pending.delete(r)) resolve({ t: 'timeout' }); }, ms);
   });

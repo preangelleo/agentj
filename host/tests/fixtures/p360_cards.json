@@ -36,6 +36,23 @@
     "plus": "agentj-add-todo"
    },
    {
+    "id": "automation",
+    "name": {
+     "zh": "自动化",
+     "en": "Automation"
+    },
+    "desc": {
+     "zh": "主机后台的自动化，只读查看，@ 名称询问 Agent。",
+     "en": "Read-only host schedules. Ask your Agent about an automation by its unique name."
+    },
+    "icon": "bolt",
+    "accent": "magic-carpet",
+    "template": "notes",
+    "official": true,
+    "on": false,
+    "plus": "agentj-automation"
+   },
+   {
     "id": "reading-list",
     "name": {
      "zh": "书单",
@@ -52,7 +69,8 @@
     "on": true,
     "plus": "agentj-add-todo"
    }
-  ]
+  ],
+  "colors": {}
  },
  "get": {
   "zh": {
@@ -65,19 +83,37 @@
      {
       "id": "add",
       "label": "记一条",
-      "prompt": "〔来自卡片：记事本〕在记事本 ~/.local/state/agentj/agentperm/cards-data/notes/notes.md 最上面记一条（带今天的日期）：",
+      "prompt": "/agentj-add-note",
       "draft": true
      },
      {
       "id": "tidy",
       "label": "帮我整理",
-      "prompt": "〔来自卡片：记事本〕帮我整理记事本 ~/.local/state/agentj/agentperm/cards-data/notes/notes.md：合并重复的、按主题加小标题、过期的移到最后「已归档」一节。只改这一个文件，改完用一两句话告诉我改了什么。"
+      "prompt": "/agentj-add-note tidy"
      }
     ],
     "plus": "agentj-add-note",
     "links": [],
     "anchors": [],
-    "text": "# 本周\n\n- 周三下午和设计师过一遍 Cards 的样式\n- 给安卓真机截图\n\n## 想法\n\n卡片背后的活都交给电脑上的 Agent。\n"
+    "text": "# 本周\n\n- 周三下午和设计师过一遍 Cards 的样式\n- 给安卓真机截图\n\n## 想法\n\n卡片背后的活都交给电脑上的 Agent。\n",
+    "revision": "982784a0f2166375c7b6a8f8d74fce33adaefbeb94d4557c92111b4e91b2cc93",
+    "entries": [
+     {
+      "id": "n-a0e357d6345d7f551a00-1",
+      "text": "周三下午和设计师过一遍 Cards 的样式",
+      "editable": true
+     },
+     {
+      "id": "n-3612216d229ea951d4af-1",
+      "text": "给安卓真机截图",
+      "editable": true
+     },
+     {
+      "id": "n-6d04aad40408845fb96d-1",
+      "text": "卡片背后的活都交给电脑上的 Agent。",
+      "editable": true
+     }
+    ]
    },
    "todo": {
     "ok": true,
@@ -88,13 +124,13 @@
      {
       "id": "add",
       "label": "加一条",
-      "prompt": "〔来自卡片：待办〕在待办清单 ~/.local/state/agentj/agentperm/cards-data/todo/todo.json 里加一条（格式见文件里的 items，done 为 false）：",
+      "prompt": "/agentj-add-todo",
       "draft": true
      },
      {
       "id": "sort",
       "label": "排个先后",
-      "prompt": "〔来自卡片：待办〕帮我给待办清单 ~/.local/state/agentj/agentperm/cards-data/todo/todo.json 排个先后：没做完的按紧急程度排前面，做完的放最后。只改这一个文件，保持 JSON 格式不变。"
+      "prompt": "/agentj-add-todo sort"
      }
     ],
     "plus": "agentj-add-todo",
@@ -109,7 +145,7 @@
        {
         "id": "toggle",
         "label": "完成 / 撤回",
-        "prompt": "〔来自卡片：待办〕待办清单 ~/.local/state/agentj/agentperm/cards-data/todo/todo.json 里 id 为 t1 的一条 「写 Agent J Cards 规范」 现在是「已完成」，请把它改成相反的状态。只改这一条。"
+        "prompt": "/agentj-add-todo toggle t1"
        }
       ]
      },
@@ -121,7 +157,7 @@
        {
         "id": "toggle",
         "label": "完成 / 撤回",
-        "prompt": "〔来自卡片：待办〕待办清单 ~/.local/state/agentj/agentperm/cards-data/todo/todo.json 里 id 为 t2 的一条 「做记事本和待办两张样板卡」 现在是「已完成」，请把它改成相反的状态。只改这一条。"
+        "prompt": "/agentj-add-todo toggle t2"
        }
       ]
      },
@@ -133,7 +169,7 @@
        {
         "id": "toggle",
         "label": "完成 / 撤回",
-        "prompt": "〔来自卡片：待办〕待办清单 ~/.local/state/agentj/agentperm/cards-data/todo/todo.json 里 id 为 t3 的一条 「iPhone 和安卓宽度各截一张图」 现在是「未完成」，请把它改成相反的状态。只改这一条。"
+        "prompt": "/agentj-add-todo toggle t3"
        }
       ]
      },
@@ -145,7 +181,7 @@
        {
         "id": "toggle",
         "label": "完成 / 撤回",
-        "prompt": "〔来自卡片：待办〕待办清单 ~/.local/state/agentj/agentperm/cards-data/todo/todo.json 里 id 为 t4 的一条 「等 Leo 拍板第二期开不开放网页卡」 现在是「未完成」，请把它改成相反的状态。只改这一条。"
+        "prompt": "/agentj-add-todo toggle t4"
        }
       ]
      }
@@ -160,13 +196,13 @@
      {
       "id": "add",
       "label": "加一条",
-      "prompt": "〔来自卡片：书单〕在待办清单 ~/.local/state/agentj/agentperm/cards-data/reading-list/todo.json 里加一条（格式见文件里的 items，done 为 false）：",
+      "prompt": "/agentj-add-todo",
       "draft": true
      },
      {
       "id": "sort",
       "label": "排个先后",
-      "prompt": "〔来自卡片：书单〕帮我给待办清单 ~/.local/state/agentj/agentperm/cards-data/reading-list/todo.json 排个先后：没做完的按紧急程度排前面，做完的放最后。只改这一个文件，保持 JSON 格式不变。"
+      "prompt": "/agentj-add-todo sort"
      }
     ],
     "plus": "agentj-add-todo",
@@ -208,19 +244,37 @@
      {
       "id": "add",
       "label": "Add a note",
-      "prompt": "[From card: Notebook] Add a note at the top of my notebook ~/.local/state/agentj/agentperm/cards-data/notes/notes.md (with today's date): ",
+      "prompt": "/agentj-add-note",
       "draft": true
      },
      {
       "id": "tidy",
       "label": "Tidy it up",
-      "prompt": "[From card: Notebook] Tidy up my notebook ~/.local/state/agentj/agentperm/cards-data/notes/notes.md: merge duplicates, add headings by topic, move stale notes to an \"Archived\" section at the end. Change only this file and tell me in a sentence or two what changed."
+      "prompt": "/agentj-add-note tidy"
      }
     ],
     "plus": "agentj-add-note",
     "links": [],
     "anchors": [],
-    "text": "# 本周\n\n- 周三下午和设计师过一遍 Cards 的样式\n- 给安卓真机截图\n\n## 想法\n\n卡片背后的活都交给电脑上的 Agent。\n"
+    "text": "# 本周\n\n- 周三下午和设计师过一遍 Cards 的样式\n- 给安卓真机截图\n\n## 想法\n\n卡片背后的活都交给电脑上的 Agent。\n",
+    "revision": "982784a0f2166375c7b6a8f8d74fce33adaefbeb94d4557c92111b4e91b2cc93",
+    "entries": [
+     {
+      "id": "n-a0e357d6345d7f551a00-1",
+      "text": "周三下午和设计师过一遍 Cards 的样式",
+      "editable": true
+     },
+     {
+      "id": "n-3612216d229ea951d4af-1",
+      "text": "给安卓真机截图",
+      "editable": true
+     },
+     {
+      "id": "n-6d04aad40408845fb96d-1",
+      "text": "卡片背后的活都交给电脑上的 Agent。",
+      "editable": true
+     }
+    ]
    },
    "todo": {
     "ok": true,
@@ -231,13 +285,13 @@
      {
       "id": "add",
       "label": "Add an item",
-      "prompt": "[From card: To-do] Add an item to my to-do list ~/.local/state/agentj/agentperm/cards-data/todo/todo.json (same shape as the items there, done false): ",
+      "prompt": "/agentj-add-todo",
       "draft": true
      },
      {
       "id": "sort",
       "label": "Prioritise",
-      "prompt": "[From card: To-do] Prioritise my to-do list ~/.local/state/agentj/agentperm/cards-data/todo/todo.json: open items by urgency first, done items last. Change only this file and keep its JSON shape."
+      "prompt": "/agentj-add-todo sort"
      }
     ],
     "plus": "agentj-add-todo",
@@ -252,7 +306,7 @@
        {
         "id": "toggle",
         "label": "Done / undo",
-        "prompt": "[From card: To-do] In my to-do list ~/.local/state/agentj/agentperm/cards-data/todo/todo.json, the item t1 「写 Agent J Cards 规范」 is now \"done\": flip it. Change only that item."
+        "prompt": "/agentj-add-todo toggle t1"
        }
       ]
      },
@@ -264,7 +318,7 @@
        {
         "id": "toggle",
         "label": "Done / undo",
-        "prompt": "[From card: To-do] In my to-do list ~/.local/state/agentj/agentperm/cards-data/todo/todo.json, the item t2 「做记事本和待办两张样板卡」 is now \"done\": flip it. Change only that item."
+        "prompt": "/agentj-add-todo toggle t2"
        }
       ]
      },
@@ -276,7 +330,7 @@
        {
         "id": "toggle",
         "label": "Done / undo",
-        "prompt": "[From card: To-do] In my to-do list ~/.local/state/agentj/agentperm/cards-data/todo/todo.json, the item t3 「iPhone 和安卓宽度各截一张图」 is now \"open\": flip it. Change only that item."
+        "prompt": "/agentj-add-todo toggle t3"
        }
       ]
      },
@@ -288,7 +342,7 @@
        {
         "id": "toggle",
         "label": "Done / undo",
-        "prompt": "[From card: To-do] In my to-do list ~/.local/state/agentj/agentperm/cards-data/todo/todo.json, the item t4 「等 Leo 拍板第二期开不开放网页卡」 is now \"open\": flip it. Change only that item."
+        "prompt": "/agentj-add-todo toggle t4"
        }
       ]
      }
@@ -303,13 +357,13 @@
      {
       "id": "add",
       "label": "Add an item",
-      "prompt": "[From card: Reading list] Add an item to my to-do list ~/.local/state/agentj/agentperm/cards-data/reading-list/todo.json (same shape as the items there, done false): ",
+      "prompt": "/agentj-add-todo",
       "draft": true
      },
      {
       "id": "sort",
       "label": "Prioritise",
-      "prompt": "[From card: Reading list] Prioritise my to-do list ~/.local/state/agentj/agentperm/cards-data/reading-list/todo.json: open items by urgency first, done items last. Change only this file and keep its JSON shape."
+      "prompt": "/agentj-add-todo sort"
      }
     ],
     "plus": "agentj-add-todo",

@@ -536,9 +536,9 @@ def missing_key_message(key_name: str, environment="CLI") -> str:
     if environment == "service":
         if platform() == "macos":
             fix = ("write it locally to " + tilde(env_file(name())) +
-                   " (owner-owned regular file, chmod 600; no symlink), then run agentj service restart")
+                   " (owner-owned regular file, chmod 600; no symlink), then run `agentj service restart`")
         else:
-            fix = "set it in the service environment file, then run agentj service restart"
+            fix = "set it in the service environment file, then run `agentj service restart`"
     else:
         fix = "set it in this terminal's environment, then retry the command"
     return f"{key_name} is absent from the {environment} environment; {fix}; never paste the value in chat"
@@ -1366,7 +1366,7 @@ def _write(path: str, data: bytes, mode: int) -> None:
 
 
 MESSAGES = {
-    "bad_service_env": "Service env must be an owner-owned regular 0600 file with valid assignments; no symlinks. Fix ~/Library/LaunchAgents/net.agentj.host.env locally (chmod 600), then run agentj service restart; never paste values in chat",
+    "bad_service_env": "Service env must be an owner-owned regular 0600 file with valid assignments; no symlinks. Fix ~/Library/LaunchAgents/net.agentj.host.env locally (chmod 600), then run `agentj service restart`; never paste values in chat",
     "bad_key_name": "变量名不合规（大写字母、数字、下划线）/ not a variable name (A–Z, 0–9, _)",
     "bad_claude_env": "Claude 服务 env 文件须为主人所有的普通 0600 文件，且赋值格式正确 / Claude service env must be an owner-owned regular 0600 file with valid assignments",
     "bad_binary_env": "AGENTJ_*_BIN 路径格式无效：检查服务 env 文件 / invalid harness path in service environment file",

@@ -1,6 +1,6 @@
-# Agent J 0.23.2a1 release notes
+# Agent J 0.24.0a1 release notes
 
-Host 0.23.2a1 / install 0.25.2; phone-web scope.
+Host 0.24.0a1 / install 0.26.0; phone-web scope.
 Phone parity must pass --strict. Full Android/Telegram parity is incomplete.
 Full Android/Telegram parity is incomplete.
 No APK is included in this release. Android source is for review, not a released app.
@@ -8,19 +8,25 @@ No APK is included in this release. Android source is for review, not a released
 Publication status: local preparation only. Live site verification is DEFERRED until
 the public commit and tag are pushed, the site is deployed, and cold installation passes.
 
-On failure restore v0.23.1a1 host/site/phone and the captured Dashboard Worker version. Release order: C (Dashboard Worker only, no D1 migration), then A signed host/site/downloads then B phone web immediately after. Normal publication windows remain C 05:00–07:00 JST and A/B 23:00–08:00 JST; emergency overrides require the recorded owner authorization. No relay change. This combined hotfix includes P379 updater recovery, P380 commands/todo/clear/Daily AI News fixes, #86 iOS safe areas and #102 pairing-page guidance. A preserves the already-published P381–P383 website content, checked against the P383 publication receipt. Older clients missing the installer must recover it locally before upgrading.
+On failure restore v0.23.2a1 host/site/phone and the captured Dashboard Worker version. Release order: C (Dashboard Worker only, no D1 migration), then A signed host/site/downloads then B phone web immediately after. Normal publication windows remain C 05:00–07:00 JST and A/B 23:00–08:00 JST; outside-window publication requires recorded owner authorization. No relay change. A preserves the already-published P381–P383 website content, checked against the P383 publication receipt and published baseline. Notebook records, card colours and Automation, large-screen controls, onboarding and Telegram recovery ship together. Native Windows, LG TV and physical iOS acceptance are not claimed.
 ## Changes
 
-- The unpaired page links to the official website to learn more and sign up.
-- Resolve persistent installers before updates; include redacted installer failures and local recovery commands.
-- Allow Daily AI News settings for hosts bound through owner installation codes.
-- Dismiss host command results, wrap long to-dos and fold resume commands into the original clear-success card.
-- Keep iPhone and iPad top and bottom safe areas dark while chat status colours continue to work.
-- 未配对页底部新增官网了解和注册入口。
-- 修复自动升级找不到安装器时安装和回滚连续失败；失败报告保留脱敏安装输出，回滚失败时给主人本地恢复命令。
-- 修复自用安装码绑定的主机无法开关 Daily AI News。
-- 主机命令结果可关闭，长待办正常换行，清空成功卡默认收起续聊命令。
-- iPhone 和 iPad 顶部、底部安全区固定为深色，聊天状态色保持原有显示。
+- Browse, copy, edit and confirm deletion of notebook records, and choose your own card colours.
+- Enable the optional read-only Automation card to inspect schedules and ask your Agent about a job.
+- Use direction keys, double-confirm full-screen reading and page scrolling on large screens.
+- Open installation help in a new account-page tab; copy system commands and Telegram pairing codes directly.
+- Follow real first-time voice preparation stages, completion notices and retry guidance.
+- Hold Search to refresh while preserving a draft; email headers and footers follow system appearance.
+- Reload service keys after saving or rebinding Telegram; verify your identity to restart through Emergency repair.
+- Confirm the working folder before installation; OpenCode setup help uses its offline catalogue and startup guidance.
+- 记事本按记录浏览、复制、编辑和确认删除，卡片支持自己的颜色。
+- 新增默认关闭的只读自动化卡片，可查看计划并询问 Agent。
+- 大屏遥控器支持方向键、双击确认全屏阅读和翻页。
+- 安装指南从账号页新标签打开，系统指令与 Telegram 配对码可直接复制。
+- 首次语音准备显示实际阶段、完成提示与失败重试。
+- 长按搜索可保留草稿刷新，邮件顶栏和页脚跟随系统深浅色。
+- 保存密钥和重绑 Telegram 时重新读取服务环境；紧急修复可验证身份后重启服务。
+- 安装前确认工作目录，OpenCode 安装说明使用离线目录并提供启动等待提示。
 
 ## Material acceptance limits
 

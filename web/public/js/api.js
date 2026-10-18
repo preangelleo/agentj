@@ -253,9 +253,9 @@ export async function keysSet(name) {
   const m = await ask1({t:'keys_set',name}, 'keys_res', 15000);
   return m.t === 'keys_res' ? m : {ok:false,why:m.t};
 }
-export async function asrInstall() {
+export async function asrInstall(onProgress) {
   if (!isReady()) return {ok:false,why:'offline'};
-  const m = await ask1({t:'asr_install',enable:true}, 'asr_install_res', 600000);
+  const m = await ask1({t:'asr_install',enable:true}, 'asr_install_res', 600000, m => { if (m.t === 'asr_install_progress') onProgress?.(m.stage); });
   return m.t === 'asr_install_res' ? m : {ok:false,why:m.t};
 }
 

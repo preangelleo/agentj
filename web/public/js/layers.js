@@ -43,3 +43,6 @@ export function initLayers({onEscape}={}){
  },true);
  new MutationObserver(sync).observe(document.body,{subtree:true,attributes:true,attributeFilter:['hidden','open','class','data-view','data-sheet'],childList:true});
 }
+
+// P387: remote Back uses the very same top-layer owner and close action as Escape.
+export function activeLayer(){sync();return layers.filter(l=>l.on).sort((a,b)=>b.rank-a.rank||b.order-a.order)[0]||null;}

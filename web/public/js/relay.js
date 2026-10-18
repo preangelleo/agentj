@@ -1,3 +1,4 @@
+import {phoneConfirmation} from './tvremote.js';
 import {focusDraft, releaseDraft} from './composer-focus.js';
 import { bindReaderSwipe } from './reader-swipe.js';
 import { DOUBLE_MS as RD_DTAP_MS, TAP_MS as RD_TAP_MS, TAP_PX as RD_TAP_PX, PAIR_PX as RD_PAIR_PX } from './file-gestures.js';
@@ -583,6 +584,7 @@ function toggleCmd(){
   measureCmd();
 }
 async function apprPost(p, action){
+  if(action!=="deny"&&p.passkey_required&&phoneConfirmation(!p.fa))return;
   // A passkey approval waits for the passkey sheet, so only that one stays up until it is signed.
   const now = !(p.passkey_required && action !== "deny") && cur && cur.card;
   apprFail = null;
@@ -3293,7 +3295,7 @@ function pttUI(p){
   b.classList.toggle("rec", !!p && !p.cancel);
   b.classList.toggle("cancel", !!p && p.cancel);
   b.classList.toggle("lock", !!p && p.locked);
-  if (!p){ box.hidden = true; box.classList.remove("lock", "cancel"); document.body.classList.remove("recblur"); el("pttSeg").hidden = true; el("pttAct").hidden = true; el("pttNote").hidden = true; el("micLabel").textContent = asrBusy ? t('r.asr.tag') : t('r.mic.hold'); return; }
+  if (!p){ box.hidden = true; box.classList.remove("lock", "cancel"); document.body.classList.remove("recblur"); el("pttSeg").hidden = true; el("pttAct").hidden = true; el("pttNote").hidden = true; el("micLabel").textContent = asrBusy ? t('r.asr.tag') : restingMicLabel(); return; }
   box.hidden = false;
   box.classList.toggle("cancel", p.cancel);
   box.classList.toggle("lock", p.locked);
@@ -3725,12 +3727,23 @@ function appendText(tx){
   input.setSelectionRange(input.value.length, input.value.length);
   input.scrollTop = input.scrollHeight;
 }
+function restingMicLabel(){
+  return t(C?.asr() === 'ready' ? 'r.mic.hold' : 'p387Voice.preparing');
+}
+export function paintVoiceReadiness(){
+  if (!ptt && !asrBusy) {
+    const preparing = C?.asr() !== 'ready';
+    el('micLabel').textContent = restingMicLabel();
+    el('mic').toggleAttribute('data-preparing', preparing);
+    el('mic').setAttribute('aria-label', restingMicLabel());
+  }
+}
 function asrUI(){
   const on = asrBusy > 0;
   el("asrTag").hidden = !on;
   input.placeholder = on ? t('r.asr.tag') : restingPlaceholder();
   el("mic").classList.toggle("asr", on);
-  if (!ptt) el("micLabel").textContent = on ? t('r.asr.tag') : t('r.mic.hold');
+  if (!ptt) el("micLabel").textContent = on ? t('r.asr.tag') : restingMicLabel();
   refreshSend();
 }
 const fullH = {};
@@ -4936,9 +4949,9 @@ export function init(ctx){
   paintTray();
 }
 /** Called when the session becomes ready again (a new host turn source, menu). */
-export function onReady(){ refreshNewest(); paintPlaceholder(); refreshSend(); loadMenu(); paintActs(); renderMenu(); setTimeout(() => recRecover().catch(() => {}), 800); }
+export function onReady(){ paintVoiceReadiness(); refreshNewest(); paintPlaceholder(); refreshSend(); loadMenu(); paintActs(); renderMenu(); setTimeout(() => recRecover().catch(() => {}), 800); }
 export function onEstop(){ paintPlaceholder(); renderMenu(); refreshSend(); }
-export function rerender(){ if (cur) render(cur); else showPage(); }
+export function rerender(){ paintVoiceReadiness(); if (cur) render(cur); else showPage(); }
 /** For the screens test: internal state worth asserting. */
 export function debug(){ return {search: search.debug(), pageAt, follow, pages: pages().length, total: totalPages(), atts: atts.map(a => ({st: a.st, name: a.name, id: a.id || null, origin: a.origin})), queued: queued.length, asrBusy, hist: hist.turns.map(x => x.id), menuItems: menuItems.map(x => x[0]), ptt: ptt ? {locked: ptt.locked, cancel: ptt.cancel} : null, lockCount, histMem: histMem.slice(), killBuf}; }
 
@@ -4983,3 +4996,9 @@ window.agentjNative=Object.freeze({snapshot:()=>({
 
 // A dismissal must never become the first half of the inherited double-Escape action.
 export function resetEscape(){ escAt=0; }
+
+// P387: reuse the normal message navigation and reader lifecycle for TV keys.
+export function remoteMessage(dir){return rdOpen()?rdPage(dir):goPage(dir);}
+export function remoteReader(open){if(open)openReader();else if(rdOpen())closeReader();}
+export function remoteReading(){return rdOpen();}
+export function remoteScroll(dir){const node=rdOpen()?el('rdScroll'):mainEl;if(node)node.scrollBy({top:dir*node.clientHeight,behavior:'instant'});}

@@ -2379,7 +2379,8 @@
       "reply": "Reply to this one (the quote shows above the message box, focus stays in it; Esc cancels); Alt+Shift+A also works while typing",
       "quote_selection": "Select some words to quote them; each further selection adds one more (up to 5, from any replies, also in the full-screen reader)",
       "web_report": "Hot key: by default share as a web report (puts /web-page-report in the message box, never sends; on an older reply also quotes it); once rebound, runs the command or skill you chose — /clear still asks first",
-      "hot_pick": "Change which command or skill the hot key runs (search, confirm, saved; the icon stays the same)"
+      "hot_pick": "Change which command or skill the hot key runs (search, confirm, saved; the icon stays the same)",
+      "remote_reader": "Large-screen full-screen reader (two OK presses under 400 ms)"
     },
     "file": {
       "preview": "Preview the first file on this page (← → in the preview for the others)",
@@ -2414,7 +2415,9 @@
       "screenshot": "Capture this page as an attachment and copy it to the clipboard",
       "friends": "Open Friends",
       "bots": "Open Customer service",
-      "setup": "Open Setup"
+      "setup": "Open Setup",
+      "card_color": "Open the card color palette",
+      "refresh_hold": "Save draft and force refresh"
     },
     "keys": {
       "search": "Search the shortcut list: type a word to filter by action, key or gesture, in Chinese or English",
@@ -2496,7 +2499,8 @@
       "reply": "Tap the curved-arrow icon",
       "quote_selection": "Select words in the reply",
       "web_report": "Tap the round share icon at the bottom left",
-      "hot_pick": "Hold the round share icon at the bottom left"
+      "hot_pick": "Hold the round share icon at the bottom left",
+      "remote_reader": "Double-press OK on a large-screen remote"
     },
     "file": {
       "preview": "Tap the file card, picture or Full screen; double-tap a non-audio file card to view that file full screen",
@@ -2529,7 +2533,9 @@
       "reload_host": "Tap Reload configuration in ≡ All commands",
       "screenshot": "Hold the gear; help via right-click or Keyboard shortcuts",
       "friends": "Settings → Friends",
-      "bots": "Settings → Bots"
+      "bots": "Settings → Bots",
+      "card_color": "Hold the invisible circular area in the top-right corner",
+      "refresh_hold": "Hold Search (blocked by recording, attachments or an unsubmitted card)"
     },
     "keys": {
       "search": "Tap the magnifier at the top right of the list",
@@ -3508,5 +3514,60 @@
   "p374.offline": "The phone isn't connected to the Agent J host. Open Settings again once it is.",
   "p374.queued": "All {seats} seats are taken. You're number {n} on the waiting list: when someone unsubscribes you move up automatically, and we email you.",
   "p375.help": "Still stuck? Read the detailed help →",
-  "p380.closeResult": "Close command result"
+  "p380.closeResult": "Close command result",
+  "p385.restart.go": "Restart service",
+  "p385.restart.note": "Restarts Agent J and reloads saved keys. The connection may drop briefly, then reconnect.",
+  "p385.restart.wait": "Restarting the service. Waiting for the connection to return.",
+  "p386.copy": "Copy",
+  "p386.copied": "Copied",
+  "p386.edit": "Edit",
+  "p386.delete": "Delete",
+  "p386.cancel": "Cancel",
+  "p386.save": "Save",
+  "p386.failed": "Could not save. Please try again.",
+  "p386.changed": "The notes changed. Reopen the card and try again.",
+  "p386.ask": "Ask about {name}",
+  "p386.schedule": "Schedule",
+  "p386.next": "Next run",
+  "p386.harness": "AI coding tool",
+  "p386.model": "Model",
+  "p386.description": "What it does",
+  "p386.source": "Automation type",
+  "p386.unknown": "Not available",
+  "p386.color": "Card color",
+  "p386.reset": "Restore default",
+  "p386.contrast": "Text contrast",
+  "p386.value": "Enter a valid HEX or RGB value.",
+  "p386.preview": "Text preview",
+  "p386.tones": "Color family / tones",
+  "p386.lowContrast": "Adjust the brightness so text contrast reaches 4.5:1.",
+  "p386.repeat": "Repeat",
+  "p299.sk.agentj-automation": "Ask about a background job: its purpose, schedule, next run, AI coding tool and model.",
+  "p299.su.agentj-automation": "What does this automation do? When will it run?",
+  "p387.phoneConfirm": "Please confirm on your phone",
+  "p387.refreshBusy": "Finish recording, attachments or the unsubmitted card before holding to refresh.",
+  "p387Voice": {
+    "preparing": "Preparing",
+    "prepare": "Preparing voice input…",
+    "download": "Downloading voice components…",
+    "extract": "Unpacking the voice model…",
+    "install": "Installing voice components…",
+    "test": "Testing voice input…",
+    "readyTitle": "Voice input is ready",
+    "ready": "Press and hold the microphone to speak.",
+    "dismiss": "Got it",
+    "failedTitle": "Voice setup did not finish",
+    "retry": "Try again",
+    "download_failed": "The download failed. Check your host network, then try again.",
+    "extract_failed": "The model could not be unpacked. Check available disk space, then try again.",
+    "install_failed": "The voice components could not be installed. Check available disk space, then try again.",
+    "test_failed": "The voice input self-test failed. Try installing again.",
+    "prepare_failed": "Your host could not prepare voice input. Check that this system supports local voice input.",
+    "off": "Voice transcription is turned off. Ask your Agent to enable it.",
+    "broken": "The voice engine is not ready. Try installing again.",
+    "busy": "Your host is already installing voice input. Wait a moment, then try again.",
+    "offline": "The host connection was interrupted. Reconnect, then try again.",
+    "timeout": "Setup took longer than expected. Reconnect to check the host, then try again.",
+    "failed": "Installation did not complete. Check your host network and disk space, then try again."
+  }
 }

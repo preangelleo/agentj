@@ -2477,6 +2477,12 @@ def cmd_reload(a) -> None:
     except names.ServeBusy:
         sys.exit("✗ agentj serve 在运行但没有响应：没有重新加载 / serve is running but not answering")
     if res is None:
+        unavailable = names.control_unavailable()
+        if unavailable["error"] == "host_unreachable":
+            if a.json:
+                print(json.dumps(unavailable, ensure_ascii=False))
+                raise SystemExit(1)
+            sys.exit(unavailable["detail"])
         print("agentj serve 没有在运行：下次启动时直接读最新配置，不需要 reload。 / serve is not running: it reads the newest "
               "configuration when it starts.")
         return

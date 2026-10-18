@@ -1,6 +1,6 @@
 {
-  "version": "0.23.2a1",
-  "major": false,
-  "zh": "修复自动升级安装器查找和失败恢复、自用安装码的新闻开关；命令结果可关闭、待办换行、清空续聊说明折叠；iOS 安全区固定深色，未配对页新增官网入口。",
-  "en": "Fix update recovery, owner-install news, command results, to-do wrapping and clear cards; dark iOS safe areas and a pairing-page website link."
+  "version": "0.24.0a1",
+  "major": true,
+  "zh": "记事本逐条复制编辑，卡片自选颜色；新增只读自动化与大屏遥控器；安装、密钥重读、Telegram 和语音准备更清楚。",
+  "en": "Notebook records, card colours, read-only Automation and large-screen controls; clearer installation, key reload, Telegram and voice setup."
 }

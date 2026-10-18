@@ -1374,7 +1374,7 @@ agentj card --help
 
 ```text
 usage: agentj card [-h]
-                   {list,validate,apply,on,off,remove,export,open,schema} ...
+                   {list,validate,apply,on,off,remove,export,open,note,automation,schema} ...
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -1401,6 +1401,26 @@ usage: agentj card apply [-h] [--json] folder
 | `folder` | `null` | true | — | `卡片文件夹（card.json 所在）/ the card folder (where card.json is)` |
 | `--json` | `false` | false | — | `machine-readable output` |
 
+### agentj card automation
+
+```text
+Read-only automation catalogue with stable names
+```
+
+```bash
+agentj card automation --help
+```
+
+```text
+usage: agentj card automation [-h] [--json] {list}
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `op` | `null` | true | `list` | `` |
+| `--json` | `false` | false | — | `` |
+
 ### agentj card export
 
 ```text
@@ -1418,7 +1438,7 @@ usage: agentj card export [-h] [--json] which dest
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `which` | `null` | true | — | `an official card: notes · todo` |
+| `which` | `null` | true | — | `an official card: notes · todo · automation` |
 | `dest` | `null` | true | — | `a new, empty folder` |
 | `--json` | `false` | false | — | `machine-readable output` |
 
@@ -1440,6 +1460,32 @@ usage: agentj card list [-h] [--json]
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--json` | `false` | false | — | `machine-readable output` |
+
+### agentj card note
+
+```text
+Manage notebook entries atomically
+```
+
+```bash
+agentj card note --help
+```
+
+```text
+usage: agentj card note [-h] [--id ID] [--entry ENTRY] [--revision REVISION]
+                        [--text TEXT] [--json]
+                        {list,add,edit,delete}
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `op` | `null` | true | `list`, `add`, `edit`, `delete` | `` |
+| `--id` | `"notes"` | false | — | `` |
+| `--entry` | `null` | false | — | `` |
+| `--revision` | `null` | false | — | `` |
+| `--text` | `null` | false | — | `` |
+| `--json` | `false` | false | — | `` |
 
 ### agentj card off
 
@@ -5774,6 +5820,15 @@ The approval level (`approval.level`) and "Goal mode: no cards" (`approval.goal_
 
 For AI tool full-access flags, configuration, short aliases and rollback, see [Full-access launch (three ways)](/docs/setup-agents/#full-access).
 
+## Verify a secret and reload from an isolated session
+
+
+For `secret request --verify-url`, `{value}` can appear in the URL path or query as well as verification headers. Path and query substitutions are percent-encoded. Do not put the placeholder in the URL's scheme, host, user information or port: those locations are refused. Keep the entered value out of command arguments, chat and logs; verification errors do not print the expanded URL.
+
+A secret saved to the managed service environment file through the phone card triggers a reread of that file; Telegram rebind rereads it too. Reload adds or updates saved keys. Removing a key from that file still requires a service restart to remove its existing process value.
+
+Inside isolation, `agentj reload` or `agentj channel add` may be unable to reach the host control socket. The message explains that status is unknown from there. Use the paired phone to reload or rebind Telegram; **Settings → Emergency repair → Restart service** is the owner-confirmed restart route. No administrator password can make a hidden socket visible inside that session.
+
 ---
 
 ---
@@ -7152,7 +7207,7 @@ agentj card --help
 
 ```text
 usage: agentj card [-h]
-                   {list,validate,apply,on,off,remove,export,open,schema} ...
+                   {list,validate,apply,on,off,remove,export,open,note,automation,schema} ...
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -7178,6 +7233,26 @@ usage: agentj card apply [-h] [--json] folder
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `folder` | `null` | true | — | `卡片文件夹（card.json 所在）/ the card folder (where card.json is)` |
 | `--json` | `false` | false | — | `机器可读输出` |
+
+### agentj card automation
+
+```text
+Read-only automation catalogue with stable names
+```
+
+```bash
+agentj card automation --help
+```
+
+```text
+usage: agentj card automation [-h] [--json] {list}
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `op` | `null` | true | `list` | `` |
+| `--json` | `false` | false | — | `` |
 
 ### agentj card export
 
@@ -7218,6 +7293,32 @@ usage: agentj card list [-h] [--json]
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--json` | `false` | false | — | `机器可读输出` |
+
+### agentj card note
+
+```text
+Manage notebook entries atomically
+```
+
+```bash
+agentj card note --help
+```
+
+```text
+usage: agentj card note [-h] [--id ID] [--entry ENTRY] [--revision REVISION]
+                        [--text TEXT] [--json]
+                        {list,add,edit,delete}
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `op` | `null` | true | `list`, `add`, `edit`, `delete` | `` |
+| `--id` | `"notes"` | false | — | `` |
+| `--entry` | `null` | false | — | `` |
+| `--revision` | `null` | false | — | `` |
+| `--text` | `null` | false | — | `` |
+| `--json` | `false` | false | — | `` |
 
 ### agentj card off
 
@@ -11551,3 +11652,12 @@ Agent J Father 是官方反馈平台。标准说法：请把问题汇报给 Agen
 审批档位（`approval.level`）和「设了目标就不弹窗」（`approval.goal_nocard`）只能在已配对手机的「设置 → 安全」里签名切换。Agent 里运行 `agentj config set approval.level full` 不会直接生效，只会在主人手机上弹一张确认卡。`agentj approvals --verify` 会逐条核对：按全放行（level_full）、设了目标就不弹窗（goal_preauth、goal_nocard）、离线留卡后重试（parked）自动批准的记录，都要追到手机上那次签名确认；没人在线时回给 Agent 的拒绝记为 offline 或 parked_wait。
 
 AI 工具的全权限启动参数、配置、短别名与回退方法：[全权限启动（三种方式）](/docs/setup-agents/#full-access)。
+
+## 验证密钥，在隔离会话中重新加载
+
+
+`secret request --verify-url` 的 `{value}` 除了验证请求头，还可放在 URL 路径或查询参数中。路径和查询参数替换时会做百分号编码。不要把占位符放在 URL 的协议、主机、用户信息或端口里，这些位置会被拒绝。输入的值不得进入命令参数、聊天或日志；验证错误不会打印替换后的 URL。
+
+手机密钥卡保存到服务环境文件后会触发重读，Telegram 重新绑定也会先重读。重新加载可以添加或更新已保存的密钥；从文件中删除密钥后，仍需重启服务才能清除进程里已有的值。
+
+隔离内执行 `agentj reload` 或 `agentj channel add`，可能无法访问主机控制 socket。提示会说明在这里无法核实状态。请从已配对手机重新加载或重新绑定 Telegram；需要重启时，用「设置」→「紧急修复」→「重启服务」并由主人确认。输入管理员密码也不能让隔离内看见被隐藏的 socket。

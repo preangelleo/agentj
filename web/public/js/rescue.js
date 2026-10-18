@@ -23,9 +23,9 @@ import { el, mk } from './ui.js';
 import * as authrescue from './authrescue.js';
 
 export const HELPER_CMD = 'curl -fsSL https://agentj.app/rescue | sh';
-export const STEPS = { reset: 4, help: 3, offer: 1 };          // §33: the reset ladder has four steps, the help flow three
+export const STEPS = { reset: 4, help: 3, offer: 1, restart: 1 };          // §33: the reset ladder has four steps, the help flow three
 export const FIRST_MS = 30000;                       // no answer at all this long → the host is stuck or too old
-export const IDLE_MS = { reset: 120000, help: 240000, offer: 240000 };   // then: silence this long between two messages = no answer
+export const IDLE_MS = { reset: 120000, help: 240000, offer: 240000, restart: 120000 };   // then: silence this long between two messages = no answer
 const WHY = ['shape', 'stale', 'no_key', 'bad_signature', 'replay', 'busy', 'unavailable'];
 const STATES = ['run', 'ok', 'fail', 'skip'];
 const TICKET = /^st_[A-Za-z0-9_-]{8,40}$/;
@@ -37,8 +37,8 @@ const ADVICE = /^(Agent J Father ?的建议：|Agent J Father suggests:)/;
 let H = { openSettings() {}, closeSettings() {}, toChat() {} };
 const fresh = () => ({ st: 'idle', step: 0, text: '', steps: [], details: [], ticket: '', old: '', why: '', r: null, timer: 0, heard: false, dropped: false,
   offers: [], used: [], name: '', advice: false });
-const S = { reset: fresh(), help: fresh(), offer: fresh(), failedOnce: false, askFirst: false, rescue: null, auth: null };
-const FLOWS = ['reset', 'help', 'offer'];
+const S = { reset: fresh(), help: fresh(), offer: fresh(), restart: fresh(), failedOnce: false, askFirst: false, rescue: null, auth: null };
+const FLOWS = ['reset', 'help', 'offer', 'restart'];
 
 const str = (v, n = 400) => (typeof v === 'string' ? v.replace(/[\u0000-\u0008\u000B-\u001F\u007F]/g, '').slice(0, n) : '');
 const tx = (k, vars) => t(k, vars);
@@ -344,8 +344,23 @@ function paintMode() {
   const n = el('rs-mode'); if (n) n.hidden = !on;
   document.body.toggleAttribute('data-rescue', on);
 }
+function paintRestart() {
+  const block = el('set-s-rescue');
+  if (!block) return;
+  let card = el('rs-restart');
+  if (!card) { card = node('div', 'rscard'); card.id = 'rs-restart'; block.append(card); }
+  const F = S.restart;
+  const go = btn('rs-restart-go', tx('p385.restart.go'), '', () => start('restart', 'restart'));
+  go.disabled = FLOWS.some(flow => S[flow].st === 'run');
+  const note = node('p', 'rsnote', tx('p385.restart.note')); note.id = 'rs-restart-note';
+  go.setAttribute('aria-describedby', note.id);
+  const status = node('p', 'rsmsg', F.st === 'idle' ? '' : F.st === 'run' ? tx('p385.restart.wait') : F.st === 'ok' ? tx('p332.reset.back') : whyText(F.why) || tx('p332.noAnswer'));
+  status.setAttribute('role', 'status');
+  card.dataset.state = F.st;
+  card.replaceChildren(node('h4', 'rstitle', tx('p385.restart.go')), note, acts(go), status);
+}
 export function paint() {
-  paintReset(); paintHelp(); paintAuth(); paintMode();
+  paintReset(); paintHelp(); paintAuth(); paintMode(); paintRestart();
   const block = el('set-s-rescue');
   if (block && !el('rs-detail-help')) block.append(helperLine('rs-detail-help'));
 }
@@ -363,7 +378,7 @@ export function onRescue(m) {
 }
 /** app.js: a broadcast `reset_done` (another remote's run, or an answer that outlived its request). */
 export function onDone(m) {
-  const flow = m && m.flow === 'help' ? 'help' : m && OFFERS.includes(m.flow) ? 'offer' : 'reset';
+  const flow = m && m.flow === 'restart' ? 'restart' : m && m.flow === 'help' ? 'help' : m && OFFERS.includes(m.flow) ? 'offer' : 'reset';
   if (flow === 'offer' && m.flow !== S.offer.name) return;
   if (S[flow].st === 'run' && S[flow].dropped) finish(flow, m);
 }

@@ -756,3 +756,7 @@ body:not([data-view="chat"]) #set-actions .bulb{display:flex}
 #settings .rscmdstatus{display:flex;align-items:center;gap:var(--ui-space-btn)}
 #settings .rscmdstatus>p{flex:1;min-width:0;margin:0;overflow-wrap:anywhere}
 #settings .rscmdclose{flex:none;align-self:flex-start;font-size:24px}
+/* P385: standalone restart action keeps the rescue card spacing and readable success text. */
+#settings #rs-restart{margin-block:var(--ui-space-control)}
+#settings #rs-restart[data-state="ok"]{color:var(--c-sooty);--menu-muted:var(--c-sooty);--menu-text:var(--c-sooty);--text:var(--c-sooty)}
+#settings #rs-restart[data-state="ok"] .aj-btn{color:var(--c-sooty);border-color:var(--c-sooty)}

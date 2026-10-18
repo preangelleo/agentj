@@ -1,3 +1,4 @@
+import {phoneConfirmation} from './tvremote.js';
 // P361 (PROTOCOL §34) · Settings → 紧急修复 → 「Agent J 主机上的命令」: terminal commands on the Agent J host,
 // each with ⧉ and 「执行」. Only the names the host lists in `host.run_cmds` (its whitelist, host/agentj/cmdrun.py) are shown;
 // the phone sends a NAME, never a command line. Every run: signed `cmd_run` → the host answers `passkey_required` + the
@@ -74,6 +75,7 @@ async function faceId(res) {
   return p;
 }
 export async function run(name) {
+  if(phoneConfirmation())return;
   if (!Object.hasOwn(CMDS, name) || !names.includes(name) || (R && R.st === 'run')) return;
   R = { name, st: 'ask' };
   if (!isReady()) { R = { name, st: 'fail', why: 'offline' }; return paint(); }
@@ -85,6 +87,7 @@ export async function run(name) {
   if (m.why === 'offline' && R && R.st === 'run') m.why = 'dropped';
   R = { name, st: m.ok ? 'done' : 'fail', code: Number.isInteger(m.code) ? m.code : -1, out: str(m.out), cut: m.cut === true,
     why: m.ok ? '' : String(m.why || '') };
+  if (m.why === 'no_passkey' && phoneConfirmation(true)) { paint(); return; }
   if (m.why === 'no_passkey') toastAction(t('p361.why.no_passkey'), t('sout.setup'), () => H.setupFaceId(), 8000);
   paint();
   el('rs-cmd-out')?.scrollIntoView({ block: 'nearest' });

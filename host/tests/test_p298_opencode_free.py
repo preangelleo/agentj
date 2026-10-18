@@ -155,7 +155,8 @@ class Fake(unittest.TestCase):
         env = {"AGENTJ_OPENCODE_BIN": self.exe, "XDG_DATA_HOME": str(self.bin / "data"), "AGENTJ_OC_FREE_LIST": "on",
                "XDG_CONFIG_HOME": str(self.bin / "conf"), "AGENTJ_STATE_DIR": str(self.bin / "state"),
                "AGENTJ_CLAUDE_BIN": str(self.bin / "none"), "AGENTJ_CODEX_BIN": str(self.bin / "none"),
-               "AGENTJ_DSH_BIN": str(self.bin / "none")}   # P329: a dsh on the developer's PATH would make it "ask_owner"
+               "AGENTJ_DSH_BIN": str(self.bin / "none"), "AGENTJ_KIMI_BIN": str(self.bin / "none"),
+               "AGENTJ_QWEN_BIN": str(self.bin / "none")}   # Only the fixture's OpenCode is installed, regardless of developer PATH.
         p = mock.patch.dict(os.environ, env)
         p.start()
         self.addCleanup(p.stop)
@@ -315,7 +316,8 @@ class Native(unittest.TestCase):
     def test_run_and_parse_name_free_tier(self):
         with tempfile.TemporaryDirectory() as d:
             exe = pathlib.Path(d) / "x"
-            exe.write_text('#!/bin/sh\necho \'{"type":"error","error":{"data":{"responseBody":"FreeTierError"}}}\'\nexit 1\n')
+            # Consume the prompt before exiting, like OpenCode: avoid a fast-exit stdin BrokenPipe race.
+            exe.write_text('#!/bin/sh\ncat >/dev/null\necho \'{"type":"error","error":{"data":{"responseBody":"FreeTierError"}}}\'\nexit 1\n')
             exe.chmod(0o755)
             with self.assertRaises(BotError) as e:
                 native.run([str(exe)], "hi", dict(os.environ), d, timeout=10)

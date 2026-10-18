@@ -112,7 +112,7 @@ test('no URLs to anywhere in shipped files except links to agentj.app pages', ()
         if (rel(f) === 'js/icons.js' && m[0] === 'http://www.w3.org/2000/svg') continue;     // P183: the file card's icons
         if (rel(f) === 'js/contacts.js' && m[0] === 'http://www.w3.org/2000/svg') continue;  // P184: the dialog icons
         if (rel(f) === 'js/copycode.js' && m[0] === 'http://www.w3.org/2000/svg') continue;  // P292: the copy icon
-        if (rel(f) === 'js/jcards.js' && m[0] === 'http://www.w3.org/2000/svg') continue;    // P360: the cards' line icons
+        if (['js/jcards.js', 'js/jcard-color.js'].includes(rel(f)) && m[0] === 'http://www.w3.org/2000/svg') continue;    // P360: the cards' line icons
         // P210: the pairing page says the link 「以 https:// 开头」 — a bare scheme in text, no address at all
         if (/^https:\/\/[.)）]?$/.test(m[0]) && ['index.html', 'i18n.js'].includes(rel(f))) continue;
         if (rel(f) === 'brand/lang.js' && m[0] === 'http://www.w3.org/2000/svg') continue;  // P236: the header's globe / tick icons

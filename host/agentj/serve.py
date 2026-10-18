@@ -2711,7 +2711,7 @@ class Host:
                     self.agent_notice(notice)
                     claude_inbound.notice_delivered(self.st)
         except (OSError, claude_inbound.SettingsError):
-            self.agent_notice("Could not enable Claude phone messages; check Claude settings and run agentj config claude-inbound on."
+            self.agent_notice("Could not enable Claude phone messages; check Claude settings and run `agentj config claude-inbound on`."
                               if self.lang == "en" else
                               "未能开启 Claude 手机消息；请检查 Claude 设置并运行 agentj config claude-inbound on。")
 
@@ -2873,7 +2873,7 @@ class Host:
             parts.append(f"Security settings ({keys}) wait for your approval on the phone card." if en else f"安全设置（{keys}）要你在手机卡片上批准后才生效。")
         if r.get("restart_serve"):
             keys = ", ".join(r["restart_serve"])
-            parts.append(f"{keys} still needs a service restart: agentj service restart." if en else f"{keys} 仍需重启后台服务才生效：agentj service restart。")
+            parts.append((f"{keys} still needs a service restart:" if en else f"{keys} 仍需重启后台服务才生效：") + "\n```sh\nagentj service restart\n```\n")
         return " ".join(parts)
 
     def language_changed(self, lang, from_account: bool = False) -> None:
@@ -3337,6 +3337,9 @@ class Host:
         self._post(self._send_p33, lambda s: m)
 
     def hist_add(self, src: dict, reply: str = "", end: str = "done", card: dict | None = None) -> dict:
+        if src.get("k") in ("sys", "cmd"):
+            from .system_text import remote
+            reply = remote(reply)
         t = self.hist.add(src, wire.well_formed(reply), end, card)
         self.hist_emit([t])
         return t
@@ -3570,7 +3573,8 @@ class Host:
         self.desktop_turn = None
 
     def agent_notice(self, text: str) -> None:
-        text = one(self.lang, text)       # P128: a legacy "中文 / English" notice reaches the phone in one language
+        from .system_text import remote
+        text = remote(one(self.lang, text))       # P128: a legacy "中文 / English" notice reaches the phone in one language
         local, self.notice_local = getattr(self, "notice_local", False), False
         self.turn_shown = True
         self.emit("agent_notice", text=text)
@@ -3764,9 +3768,9 @@ class Host:
             from .harness import LABEL
             label = LABEL.get(self.agent.kind, self.agent.kind) if self.agent else "Agent"
             self.agent_notice(pick(self.lang, f"{label} 没有处理这条消息：这一轮 {secs:.0f} 秒就结束了，一个字也没回。再发一次试试；"
-                                              "还是这样，在Agent J 主机上运行 agentj doctor。",
+                                              "还是这样，在Agent J 主机上运行 `agentj doctor`。",
                                    f"{label} did not handle this message: the turn ended after {secs:.0f} s without a word. "
-                                   "Send it again; if it keeps happening, run agentj doctor on the Agent J host."))
+                                   "Send it again; if it keeps happening, run `agentj doctor` on the Agent J host."))
             self.cur_failed = True
         self.turn_at = (getattr(self, "turn_at", (0.0,))[0], time.time(), bool(self.cur_failed))
         self.activity("turn_end", secs=round(time.monotonic() - self.turn_t0, 1) if self.turn_t0 else None,
@@ -4945,14 +4949,27 @@ class Host:
             if t == "jcard_list":
                 res = {"t": "jcard_items", **await asyncio.to_thread(jcards.phone_list, self.st.root, lang)}
             elif t == "jcard_get":
-                res = {"t": "jcard_get", **await asyncio.to_thread(jcards.phone_get, self.st.root, cid, lang)}
+                res = {"t": "jcard_get", **await asyncio.to_thread(jcards.phone_get, self.st.root, cid, lang, self.agent_cfg)}
+            elif t == "jcard_note":
+                from . import jcards_data
+                # Add belongs to the Agent skill/CLI; paired remotes only edit/delete existing entries.
+                if obj.get("op") not in ("edit", "delete"):
+                    res = {"t": t, "ok": False, "why": "bad_op"}
+                else:
+                    res = {"t": t, **await asyncio.to_thread(jcards_data.note_change, self.st.root, cid,
+                           obj.get("op"), obj.get("entry"), obj.get("revision"), obj.get("text"))}
+                self.st.log("jcard_note", device=s.device, status="ok" if res.get("ok") else "refused")
+            elif t == "jcard_color":
+                from . import jcards_data
+                res = {"t": t, **await asyncio.to_thread(jcards_data.set_color, self.st.root, cid, obj.get("color"))}
+                self.st.log("jcard_color", device=s.device, status="ok" if res.get("ok") else "refused")
             else:
                 ok = isinstance(cid, str) and type(on) is bool and await asyncio.to_thread(jcards.set_on, self.st.root, cid, on)
                 res = None
         except Exception as e:  # noqa: BLE001
             self.st.log("jcard_failed", device=s.device, reason=type(e).__name__)
             res = {"jcard_list": {"t": "jcard_items", "cards": []}, "jcard_get": {"t": "jcard_get", "ok": False, "why": "not_found"}}.get(
-                t, {"t": "jcard_res", "ok": False, "id": None, "on": None})
+                t, {"t": t if t in ("jcard_note", "jcard_color") else "jcard_res", "ok": False, "id": None, "on": None})
             ok = False
         if res is not None:
             return await self.send_app(s, {**res, "r": r})
@@ -5021,6 +5038,8 @@ class Host:
             x["by"] = by[:64]
         if not interim and res.kind == "ok":     # P133
             res.text = slash.with_done(name, res.text, self.lang, getattr(self, "preferences", None))
+        from .system_text import remote
+        res.text = remote(res.text)
         text = res.text if text_units(res.text) <= wire.MAX_TEXT else res.text[:3900] + " …"
         self.emit("agent_notice", text=f"/{name}：{text}")
         e = self._remember("cmd", text, x=x)
@@ -5237,7 +5256,7 @@ class Host:
             self.phone_upgrade_task = asyncio.create_task(self.phone_upgrade(turn, by))
             return turn
         if not self.agent:
-            return done(slash.Result(slash.HELP if name == "help" else "还没接 Agent：在Agent J 主机上运行 agentj agent claude --dir <目录>。",
+            return done(slash.Result(slash.HELP if name == "help" else "还没接 Agent：在Agent J 主机上运行 `agentj agent claude --dir <目录>`。",
                                      "info" if name == "help" else "error"))
         if name not in slash.WHITELIST + slash.INTERNAL or (name in slash.INTERNAL and typed):
             if self.agent.kind == "claude" and not getattr(self.agent, "init", None):
@@ -5278,13 +5297,13 @@ class Host:
                     web, machine = await self._receipt_context() if rec.get("reason") in ("upgraded", "doctor_failed") else ("older", None)
                     self.cmd_card("update", slash.Result(phone_update.text(rec, self.lang, web, machine), "ok" if rec.get("result") == "ok" else "error"), by, turn)
                     return
-            self.cmd_card("update", slash.Result("Upgrade timed out: run agentj doctor" if self.lang == "en" else "升级超时：在Agent J 主机运行 agentj doctor", "error"), by, turn)
+            self.cmd_card("update", slash.Result("Upgrade timed out: run `agentj doctor`" if self.lang == "en" else "升级超时：在Agent J 主机运行 `agentj doctor`", "error"), by, turn)
         except Exception as e:
             from . import service as _svc
             if isinstance(e, _svc.ServiceError) and e.reason in _svc.NO_MANAGER:     # P278: no systemd to run the upgrade job
                 self.cmd_card("update", slash.Result(_svc.MESSAGES[e.reason], "error"), by, turn)
                 return
-            self.cmd_card("update", slash.Result("Could not start upgrade: run agentj update apply" if self.lang == "en" else "无法启动升级：在Agent J 主机运行 agentj update apply", "error"), by, turn)
+            self.cmd_card("update", slash.Result("Could not start upgrade: run `agentj update apply`" if self.lang == "en" else "无法启动升级：在Agent J 主机运行 `agentj update apply`", "error"), by, turn)
         finally:
             if not launched or not phone_update.busy(self.st):
                 phone_update.release(self.st)
@@ -5308,7 +5327,15 @@ class Host:
     async def telegram_pair(self, key_env=None, by: str | None = None, turn: int | None = None) -> dict:
         """P283: start Telegram pairing. The code goes on a command card on the paired phones (history), never into the
         answer (the terminal or an Agent gets the bot name and how long it is valid), a log or Telegram."""
-        from . import tg_pair
+        from . import tg_pair, service
+        try:
+            changed = await asyncio.to_thread(service.reload_service_env, getattr(self, "preferences", {}))
+            if changed:
+                self._reload_runtime(True)
+                if self.telegram is not None:
+                    self.telegram.bot_id = None
+        except service.ServiceError:
+            self.st.log("telegram_env_reload", result="failed")
         lang = "en" if self.lang == "en" else "zh"
         if self.telegram is None:
             res = {"ok": False, "error": "telegram_unavailable"}
@@ -5852,23 +5879,55 @@ class Host:
                 if ok:
                     self._bg(provider_runtime.request_key(self, pid), "request_key")
                 return
-            if getattr(self, "_asr_installing", False):
+            delivery = getattr(self, "_asr_install_delivery", None)
+            if getattr(self, "_asr_installing", False) or (delivery is not None and not delivery.done()):
                 return await self.send_app(s, {"t": "asr_install_res", "r": r, "ok": False, "why": "busy"})
             self._asr_installing = True
             async def install_asr():
+                stage = "prepare"
+                loop = asyncio.get_running_loop()
+                # Best-effort delivery is independent of local activation. Bound memory even if
+                # a relay write stalls; never cancel an encrypted write and then reuse its nonce.
+                updates = asyncio.Queue(maxsize=4)
+                def enqueue(message):
+                    if updates.full():
+                        updates.get_nowait()  # coalesce old progress, always retain the terminal result
+                    updates.put_nowait(message)
+                def update(value):
+                    nonlocal stage
+                    stage = value
+                    enqueue({"t": "asr_install_progress", "r": r, "stage": value})
+                def progress(value):
+                    if value in ("download", "extract", "install", "test"):
+                        loop.call_soon_threadsafe(update, value)
+                async def report_progress():
+                    while True:
+                        message = await updates.get()
+                        try:
+                            await self.send_app(s, message)
+                        except Exception:
+                            pass  # detached/disappearing remote never aborts the local installer
+                        if message["t"] == "asr_install_res":
+                            return
+                self._asr_install_delivery = self._bg(report_progress(), "asr_install_progress")
+                result = {"t": "asr_install_res", "r": r, "ok": False, "why": "failed"}
                 try:
-                    code = await asyncio.to_thread(self.asr.install, state_dir=self.st.root, yes=True, out=lambda _: None)
+                    code = await asyncio.to_thread(self.asr.install, state_dir=self.st.root, yes=True, out=lambda _: None, progress=progress)
+                    # Flush thread-safe callbacks to capture the actual last installer stage.
+                    await asyncio.sleep(0)
                     if code == 0 and obj.get('enable') is True:
                         await self.set_pref('voice.asr.mode', 'local')
                         await self.set_pref('voice.asr.engine', 'auto')
                     state = self.asr_state()
                     ok = code == 0 and state == 'ready'
                     self.st.log("asr_install", device=s.device, result="ok" if ok else "failed")
-                    await self.send_app(s, {"t": "asr_install_res", "r": r, "ok": ok, "state": state, **({} if ok else {'why': state if code == 0 else 'failed'})})
+                    result = {"t": "asr_install_res", "r": r, "ok": ok, "state": state, **({} if ok else {'why': state if code == 0 else stage + '_failed'})}
                 except Exception:
-                    await self.send_app(s, {"t": "asr_install_res", "r": r, "ok": False, "why": "failed"})
+                    pass  # report the fixed failure code, never exception text
                 finally:
+                    # Transport backpressure cannot hold installation ownership or prevent activation.
                     self._asr_installing = False
+                    enqueue(result)
             self._bg(install_asr(), "install_asr")
             return
         if t == "models_get":

@@ -314,7 +314,7 @@ function calText(v) {                                   // systemd OnCalendar â†
   }
   return t('tasks.cal', { v });
 }
-function sysWhen(list) {
+export function sysWhen(list) {
   const parts = [];
   for (const w of Array.isArray(list) ? list.slice(0, 3) : []) {
     if (!w || typeof w !== 'object') continue;
@@ -370,7 +370,7 @@ function taskCard(tk, paused) {
   }
   return li;
 }
-function cronText(expr) {
+export function cronText(expr) {
   if (typeof expr !== 'string') return '?';
   const f = expr.split(' ');
   if (f.length !== 5) return expr;

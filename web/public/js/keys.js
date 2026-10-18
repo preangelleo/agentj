@@ -1,3 +1,4 @@
+import {phoneConfirmation} from './tvremote.js';
 // P352 「模型和 API Key」 (owner: the models page becomes the key manager). The host sends only NAMES and states of the keys
 // in its key file (`keys`): one dashed card per base-model vendor (catalog on the host, agentj/keys.py) and one list of the
 // owner's other keys. Row buttons are icons only:
@@ -317,6 +318,7 @@ registerLayer({ element: () => root?.querySelector('.kadd'), open: addOpen, clos
 
 // ---------------------------------------------------------------- the row actions
 function noPasskey() {
+  if(phoneConfirmation(!S?.fa))return;
   toastAction(t('p352.needFaceId'), t('sout.setup'), () => { if (hooks.setupFaceId) hooks.setupFaceId(); else toast(t('sout.noFaceId'), 4000); }, 8000);
 }
 const why = (w) => ({ busy: 'p352.cardBusy', no_passkey: 'p352.needFaceId', passkey: 'p352.faRefused', gone: 'p352.gone', missing: 'p352.gone', offline: 'p352.offline', timeout: 'p352.offline' }[w] || 'models.failed');

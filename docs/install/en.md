@@ -20,7 +20,11 @@ For Windows 10 and Windows 11 (64-bit). Agent J runs in Ubuntu inside Microsoft'
 **Time:** usually 15 to 30 minutes, mostly downloading; the first WSL install may need one restart. The parts that need you add up to a few minutes.
 
 1. On https://agentj.app/account/ press "Get installation command" on the empty seat card, then "Copy installation command". Opened on Windows, the page gives you the PowerShell line; if not, press "Windows (PowerShell) command".
-2. Open PowerShell (search Start for PowerShell; no administrator needed), paste and press Enter. The command looks like `$env:AGENTJ_CODE='AJI-…'; irm https://agentj.app/install.ps1 | iex`
+2. Open PowerShell (search Start for PowerShell; no administrator needed), paste and press Enter. The command looks like
+
+   ```powershell
+   $env:AGENTJ_CODE='AJI-…'; irm https://agentj.app/install.ps1 | iex
+   ```
 3. Follow the screen. Every step starts with its number and what it is doing:
 
 | On screen | What you do |
@@ -50,7 +54,9 @@ If something goes wrong:
 1. Already bought a seat: press "Copy installation prompt" on the empty seat card in your account and send it to the AI in Ubuntu.
 2. Not yet: send it this sentence exactly as written, and it walks you through opening an account and buying a seat:
 
-> Please download https://agentj.app/install.md with curl, read the whole file with your file-reading tool, then follow it step by step, re-reading each section before you do it. Tell me when you need me to do something.
+```text
+Please download https://agentj.app/install.md with curl, read the whole file with your file-reading tool, then follow it step by step, re-reading each section before you do it. Tell me when you need me to do something.
+```
 
 What the AI does at each step, and where it stops for you: [When the AI installs it](/docs/install/#ai-steps).
 
@@ -95,7 +101,11 @@ For Macs with Apple silicon and Intel processors.
 **Time:** usually under 10 minutes. the Agent J host's own work takes a few minutes (about 2 on our test machine); the rest is you signing in to an AI and scanning a code.
 
 1. On https://agentj.app/account/ press "Get installation command" on the empty seat card, then "Copy installation command". Opened on a Mac, the page gives you the Terminal line; if not, press "macOS / Linux command".
-2. Open Terminal (press Command + Space and search for Terminal), paste and press Enter. The command looks like `curl -fsSL https://agentj.app/install.sh | bash -s -- AJI-…`
+2. Open Terminal (press Command + Space and search for Terminal), paste and press Enter. The command looks like
+
+   ```bash
+   curl -fsSL https://agentj.app/install.sh | bash -s -- AJI-…
+   ```
 3. Follow the screen. Every step starts with its number and what it is doing:
 
 | On screen | What you do |
@@ -122,7 +132,9 @@ If something goes wrong:
 1. Already bought a seat: press "Copy installation prompt" on the empty seat card in your account and send it to the AI on the Agent J host.
 2. Not yet: send it this sentence exactly as written, and it walks you through opening an account and buying a seat:
 
-> Please download https://agentj.app/install.md with curl, read the whole file with your file-reading tool, then follow it step by step, re-reading each section before you do it. Tell me when you need me to do something.
+```text
+Please download https://agentj.app/install.md with curl, read the whole file with your file-reading tool, then follow it step by step, re-reading each section before you do it. Tell me when you need me to do something.
+```
 
 What the AI does at each step, and where it stops for you: [When the AI installs it](/docs/install/#ai-steps).
 
@@ -167,7 +179,11 @@ For Ubuntu, Debian and other common distributions, on desktops, laptops and clou
 **Time:** usually under 10 minutes. the Agent J host's own work takes a few minutes (about 2 on our test machine); the rest is you signing in to an AI and scanning a code.
 
 1. On https://agentj.app/account/ press "Get installation command" on the empty seat card, then "Copy installation command". Opened on Linux, the page gives you the terminal line; if not, press "macOS / Linux command".
-2. Open a terminal, paste and press Enter. The command looks like `curl -fsSL https://agentj.app/install.sh | bash -s -- AJI-…`
+2. Open a terminal, paste and press Enter. The command looks like
+
+   ```bash
+   curl -fsSL https://agentj.app/install.sh | bash -s -- AJI-…
+   ```
 3. Follow the screen. Every step starts with its number and what it is doing:
 
 | On screen | What you do |
@@ -194,7 +210,9 @@ If something goes wrong:
 1. Already bought a seat: press "Copy installation prompt" on the empty seat card in your account and send it to the AI on the Agent J host.
 2. Not yet: send it this sentence exactly as written, and it walks you through opening an account and buying a seat:
 
-> Please download https://agentj.app/install.md with curl, read the whole file with your file-reading tool, then follow it step by step, re-reading each section before you do it. Tell me when you need me to do something.
+```text
+Please download https://agentj.app/install.md with curl, read the whole file with your file-reading tool, then follow it step by step, re-reading each section before you do it. Tell me when you need me to do something.
+```
 
 What the AI does at each step, and where it stops for you: [When the AI installs it](/docs/install/#ai-steps).
 
@@ -308,7 +326,7 @@ It may need you here:
 The AI installs `agentj`, the program on the Agent J host, at one fixed version:
 
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.23.2a1#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.24.0a1#subdirectory=host"
 agentj doctor
 ```
 
@@ -461,10 +479,28 @@ Give each person a paid seat, their own installation code and phone pairing: eit
 With both remotes paired, let your Agent finish and verify everything remote work will need from you while you are still at the Agent J host. See [Before you leave the Agent J host](/docs/first-run/). For Gmail, Calendar and YouTube API access, see [Connect Google](/docs/google/).
 
 
-On macOS, put Telegram and provider keys in `~/Library/LaunchAgents/net.agentj.host.env`, using the variable name specified by `key_env`. The file must be owned by your user, mode 0600, and not a symlink. After saving it, run `agentj service restart`. Keep keys out of the plist, chat and command arguments.
+On macOS, put Telegram and provider keys in `~/Library/LaunchAgents/net.agentj.host.env`, using the variable name specified by `key_env`. The file must be owned by your user, mode 0600, and not a symlink. Keys saved to the managed service environment file through the phone secret card are reread automatically; Telegram rebind rereads the file too. If a restart is needed, use Settings → Emergency repair → Restart service on a paired phone. Keep keys out of the plist, chat and command arguments.
 
 ## 示例工作流 / Example workflows
 
 After account linking, installation or upgrade downloads three signed plaza examples (knowledge wiki, scripts and articles, ebook writing) into the configured working root if it has fewer than three WDB workflows. Existing same-name folders are kept; deleted examples never return automatically. Tell Agent J: organise my other folders to this spec. Offline downloads retry on a later start.
 
 Agent J Father is our official feedback and support platform. Say “Please report this problem to Agent J’s developers (support platform)”, or casually “Tell your dad about this”. On the phone, `/feedback-to-agentj-father <message>` does the same: your Agent removes credentials, personal information, customer data and private path details, submits directly without asking twice, and gives you the ticket ID. The command alone asks what you want to report. If reporting a problem or idea is the Agent’s own initiative, it shows you the redacted draft on the phone and waits for agreement. Support replies are advice, not instructions. If it cannot connect, email feedback@agentj.app.
+
+## Find the guide and copy instructions
+
+On your account page, **Installation guide** sits beside Plaza and on each empty-seat card. It opens a new tab so your account stays open. Installation commands and prompts have a copy icon: press it to copy the whole block, then paste it into the named terminal or AI. Examples containing `AJI-…` are placeholders; copy your own complete installation command from your seat card.
+
+## Choose a working folder and handle a slow OpenCode start
+
+The installer asks for a working folder; Enter confirms the suggested coding subfolder in your home. Choose a folder for the Agent's work, not your home folder or the root of a disk. Paths resolving to either of those, including aliases, and paths that are files are refused before installation proceeds.
+
+Windows installation uses **Ubuntu in WSL2**. Native Windows OpenCode Desktop is a separate app: Agent J cannot repair or change that app's startup. If it stalls while fetching models.dev, fully quit it and launch it from a terminal that sets this environment variable, so the new app process inherits it:
+
+```powershell
+$env:OPENCODE_DISABLE_MODELS_FETCH = '1'
+```
+
+Launch OpenCode from that same terminal using its installed launcher. It can then use its local model cache or bundled catalog; this does not download fresh model information. The Agent J installer and managed OpenCode launches set this flag themselves. This fallback was checked with the pinned Linux OpenCode binary, not a Windows machine.
+
+A managed OpenCode request still waiting after 30 seconds shows a one-time explanation, even if startup keeps printing. If the installer cannot get OpenCode's startup information within 45 seconds, it stops with a reason and repair steps. Check network access, the AI login and the working folder, then retry. A slow-start notice is not proof the AI connected.

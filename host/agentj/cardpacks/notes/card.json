@@ -3,18 +3,46 @@
   "schemaVersion": 1,
   "id": "notes",
   "version": "1.0.0",
-  "name": {"zh": "记事本", "en": "Notebook"},
-  "description": {"zh": "你和 Agent 一起管的记事本：在手机上看，让 Agent 记、改、整理。", "en": "A notebook you keep with your Agent: read it here, the Agent writes, edits and tidies it."},
+  "name": {
+    "zh": "记事本",
+    "en": "Notebook"
+  },
+  "description": {
+    "zh": "你和 Agent 一起管的记事本：在手机上看，让 Agent 记、改、整理。",
+    "en": "A notebook you keep with your Agent: read it here, the Agent writes, edits and tidies it."
+  },
   "author": "Agent J",
   "icon": "note",
   "accent": "emerald-oasis",
   "template": "notes",
   "plus": "agentj-add-note",
-  "data": {"file": "notes.md", "maxBytes": 65536},
+  "data": {
+    "file": "notes.md",
+    "maxBytes": 65536
+  },
   "actions": [
-    {"id": "add", "label": {"zh": "记一条", "en": "Add a note"}, "draft": true,
-     "prompt": {"zh": "在记事本 {{data.path}} 最上面记一条（带今天的日期）：", "en": "Add a note at the top of my notebook {{data.path}} (with today's date): "}},
-    {"id": "tidy", "label": {"zh": "帮我整理", "en": "Tidy it up"},
-     "prompt": {"zh": "帮我整理记事本 {{data.path}}：合并重复的、按主题加小标题、过期的移到最后「已归档」一节。只改这一个文件，改完用一两句话告诉我改了什么。", "en": "Tidy up my notebook {{data.path}}: merge duplicates, add headings by topic, move stale notes to an \"Archived\" section at the end. Change only this file and tell me in a sentence or two what changed."}}
+    {
+      "id": "add",
+      "label": {
+        "zh": "记一条",
+        "en": "Add a note"
+      },
+      "draft": true,
+      "prompt": {
+        "zh": "/agentj-add-note",
+        "en": "/agentj-add-note"
+      }
+    },
+    {
+      "id": "tidy",
+      "label": {
+        "zh": "帮我整理",
+        "en": "Tidy it up"
+      },
+      "prompt": {
+        "zh": "/agentj-add-note tidy",
+        "en": "/agentj-add-note tidy"
+      }
+    }
   ]
 }

@@ -1,0 +1,23 @@
+{
+  "$schema": "https://agentj.app/schema/agentj-card-1.json",
+  "schemaVersion": 1,
+  "id": "automation",
+  "version": "1.0.0",
+  "name": {
+    "zh": "自动化",
+    "en": "Automation"
+  },
+  "description": {
+    "zh": "主机后台的自动化，只读查看，@ 名称询问 Agent。",
+    "en": "Read-only host schedules. Ask your Agent about an automation by its unique name."
+  },
+  "author": "Agent J",
+  "icon": "bolt",
+  "accent": "magic-carpet",
+  "template": "notes",
+  "plus": "agentj-automation",
+  "data": {
+    "file": "automation.md"
+  },
+  "actions": []
+}

@@ -304,7 +304,7 @@ def norm_secret(req: dict, state_root: pathlib.Path) -> dict:
         u = urllib.parse.urlsplit(vu if isinstance(vu, str) else "")
         local = u.hostname in ("127.0.0.1", "localhost", "::1")
         if not isinstance(vu, str) or len(vu) > 500 or wire.text_problem(vu, 500) or not u.hostname or \
-                not (u.scheme == "https" or (u.scheme == "http" and local)):
+                not (u.scheme == "https" or (u.scheme == "http" and local)) or "{value}" in u.netloc or "{value}" in u.scheme:
             raise Refused("shape", "verify-url: an https:// address")
         vh = vh or "Authorization: Bearer {value}"
         if not isinstance(vh, str) or len(vh) > 200 or wire.text_problem(vh, 200) or vh.count("{value}") != 1 or ":" not in vh \
@@ -503,7 +503,8 @@ def verify_secret(card: dict, value: bytearray) -> dict:
     try:
         if card.get("verify_url"):
             name, tmpl = card["verify_header"].split(":", 1)
-            req = urllib.request.Request(card["verify_url"], method="GET",
+            url = card["verify_url"].replace("{value}", urllib.parse.quote(sval, safe=""))
+            req = urllib.request.Request(url, method="GET",
                                          headers={name.strip(): tmpl.strip().replace("{value}", sval), "User-Agent": "agentj"})
             opener = urllib.request.build_opener(_NoRedirect)
             try:
@@ -518,6 +519,8 @@ def verify_secret(card: dict, value: bytearray) -> dict:
             # Defense in depth: even an old or internal card cannot run a command.
             return {"verify": "fail", "detail": "command_disabled"}
         return {"verify": "skipped", "detail": ""}
+    except (urllib.error.URLError, OSError, ValueError):
+        return {"verify": "fail", "detail": "network"}
     finally:
         sval = None  # noqa: F841
 
@@ -898,6 +901,8 @@ class Elevator:
                 res = await asyncio.to_thread(run_sudo, c["argv"], value, c["cwd"], c["timeout"], self.sudo)
             else:
                 res = await asyncio.to_thread(self._save, c, value)
+                if res.get("result") == "saved":
+                    await self._reload_saved_env(c, res)
         finally:
             wipe(value)
         if res["result"] == "bad_password":
@@ -980,6 +985,23 @@ class Elevator:
         ev, self._admin_page = spawn_admin_open(0)
         self.st.log("admin_open", trigger="agent", result=ev["ev"])
         return {"ev": ev["ev"], "port": ev.get("port")}
+
+    async def _reload_saved_env(self, card: dict, result: dict) -> None:
+        """Only a saved assignment to the managed service file triggers an in-process reload."""
+        from . import service
+        dest = card.get("dest_spec") or {}
+        managed = os.environ.get("AGENTJ_SERVICE_ENV_FILE") or service.env_file(service.name())
+        if dest.get("mode") != "env" or pathlib.Path(dest.get("path", "")).resolve() != pathlib.Path(managed).resolve():
+            return
+        try:
+            changed = await asyncio.to_thread(service.reload_service_env, self.host.preferences)
+            self.host._reload_runtime(bool(changed))
+            if changed and self.host.telegram is not None:
+                self.host.telegram.bot_id = None
+            result["receipt"]["env_reloaded"] = True
+        except service.ServiceError:
+            result["receipt"]["env_reloaded"] = False
+            self.st.log("secret_env_reload", result="failed")
 
     def _save(self, c: dict, value: bytearray) -> dict:
         if len(value) > MAX_VALUE:

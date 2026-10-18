@@ -62,7 +62,7 @@ class TaskError(Exception):
 # ------------------------------------------------------------------ discovery
 def _regular(path: str) -> bytes | None:
     try:
-        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0))
     except OSError:
         return None
     try:

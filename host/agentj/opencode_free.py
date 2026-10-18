@@ -59,7 +59,7 @@ _cache: dict = {}
 
 def _env(base=None) -> dict:
     env = dict(os.environ if base is None else base)
-    env.update(OPENCODE_DISABLE_AUTOUPDATE="1", OPENCODE_DISABLE_SHARE="1")
+    env.update(OPENCODE_DISABLE_MODELS_FETCH="1", OPENCODE_DISABLE_AUTOUPDATE="1", OPENCODE_DISABLE_SHARE="1")
     return env
 
 
