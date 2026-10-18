@@ -26,7 +26,7 @@ import { unb64u } from '../proto/wire.js';   // P336: approval level / goal with
 import * as toolsort from './toolsort.js';   // P340: Settings → 输入框按钮顺序 (drag / hold-drag / tap / ← →)
 import * as toolorder from './toolorder.js';
 import * as jcards from './jcards.js';   // P360: Settings → Cards (official cards default off + the owner's own)
-import * as cmdrun from './cmdrun.js';     // P361: 紧急修复 → 电脑上的命令 (「执行」)
+import * as cmdrun from './cmdrun.js';     // P361: 紧急修复 → Agent J 主机上的命令 (「执行」)
 import * as pagefind from './pagefind.js';   // P363 (#70): in-place find on a Settings sub-page
 import * as ntf from './notify.js';      // P365: Settings → 自动化消息 (`agentj notify`)
 import * as news from './news.js';         // P374: 账号和帮助 → 「Daily AI News」 (news_get / news_set → news_res)

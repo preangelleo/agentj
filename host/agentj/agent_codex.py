@@ -535,7 +535,7 @@ class CodexAgent(Agent):
         self.thread_at = time.time()
         self.usage = None
         if self.persist:
-            self.host.st.set_agent_session(self.kind, self.tid)
+            self.record_session(self.tid)
             m = self.cur_model()
             self.meter(model=m, model_name=self.model_name(m), effort=self.cur_effort())
             if not self.models_cache:

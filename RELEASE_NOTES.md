@@ -1,6 +1,6 @@
-# Agent J 0.23.1a1 release notes
+# Agent J 0.23.2a1 release notes
 
-Host 0.23.1a1 / install 0.25.1; phone-web scope.
+Host 0.23.2a1 / install 0.25.2; phone-web scope.
 Phone parity must pass --strict. Full Android/Telegram parity is incomplete.
 Full Android/Telegram parity is incomplete.
 No APK is included in this release. Android source is for review, not a released app.
@@ -8,31 +8,19 @@ No APK is included in this release. Android source is for review, not a released
 Publication status: local preparation only. Live site verification is DEFERRED until
 the public commit and tag are pushed, the site is deployed, and cold installation passes.
 
-On failure restore v0.23.0a1. Release order: C (Dashboard and pending additive app migrations 0028, 0029, 0030) in 05:00–07:00 JST; then the relay hook domain and v5-hooks migration; web-page-report 1.3.0 before or with host A; A signed host/site/downloads followed immediately by B phone web in the same window.
+On failure restore v0.23.1a1 host/site/phone and the captured Dashboard Worker version. Release order: C (Dashboard Worker only, no D1 migration), then A signed host/site/downloads then B phone web immediately after. Normal publication windows remain C 05:00–07:00 JST and A/B 23:00–08:00 JST; emergency overrides require the recorded owner authorization. No relay change. This combined hotfix includes P379 updater recovery, P380 commands/todo/clear/Daily AI News fixes, #86 iOS safe areas and #102 pairing-page guidance. A preserves the already-published P381–P383 website content, checked against the P383 publication receipt. Older clients missing the installer must recover it locally before upgrading.
 ## Changes
 
-- Cards brings notes, to-dos and your own cards to the logo menu, with card links and @ mentions.
-- External services can notify the Agent through Webhooks; your scripts can send messages and pictures to your phone.
-- Run common diagnostics from Settings after Face ID; keys are masked before results appear.
-- Subscribe to the Daily AI News email in Settings; use credits to query the linked content library.
-- Reports share a template and data-validation workflow, with email layouts and send-to-owner support.
-- Search across cards, skills and Settings; voice transcripts fill the input card and copy in one tap.
-- Models & API keys discovers keys already on the Agent J host; Face ID can copy them into Agent J.
-- OpenCode · Volcano Ark presets and quota-aware routing for new background work.
-- Read-only searches no longer trigger false approval prompts; folder dumps that include credential files still ask.
-- Corrected the splash icon background, robot centering, badges and card row alignment.
-- Clearer offline help, a platform recovery guide and keyboard dismissal after sending.
-- Cards 卡片：在左上角菜单集中放记事本、待办和你自己的卡片，支持卡片链接与 @ 提及。
-- 外部服务可通过 Webhook 通知 Agent；自己的脚本也能把消息和图片发到手机。
-- 设置页常用诊断命令可以用 Face ID 确认后直接执行，结果先遮住密钥再显示。
-- Daily AI News 每日邮件可在设置中订阅；内容库支持按点数查询宏观阿尔法资料。
-- 网页报告有统一模板与邮件版，可以校验数据、选模板、发给自己。
-- 全局搜索覆盖卡片、技能和设置；语音转写补回输入卡，原话一键复制。
-- 模型和 API Key 页可发现 Agent J 主机已有的 key，经 Face ID 后收进 Agent J。
-- 支持 OpenCode · 火山方舟预设；额度接近上限时，新后台任务按配置改派。
-- 修复只读查找误弹审批，同时恢复对会连带读出凭据的整目录命令的提醒。
-- 修复启动图标白底与机器人偏移、徽标和卡片行对齐。
-- 断线提示更清楚，发送后收起软键盘，恢复指南覆盖各平台。
+- The unpaired page links to the official website to learn more and sign up.
+- Resolve persistent installers before updates; include redacted installer failures and local recovery commands.
+- Allow Daily AI News settings for hosts bound through owner installation codes.
+- Dismiss host command results, wrap long to-dos and fold resume commands into the original clear-success card.
+- Keep iPhone and iPad top and bottom safe areas dark while chat status colours continue to work.
+- 未配对页底部新增官网了解和注册入口。
+- 修复自动升级找不到安装器时安装和回滚连续失败；失败报告保留脱敏安装输出，回滚失败时给主人本地恢复命令。
+- 修复自用安装码绑定的主机无法开关 Daily AI News。
+- 主机命令结果可关闭，长待办正常换行，清空成功卡默认收起续聊命令。
+- iPhone 和 iPad 顶部、底部安全区固定为深色，聊天状态色保持原有显示。
 
 ## Material acceptance limits
 

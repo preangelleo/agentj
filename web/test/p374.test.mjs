@@ -75,7 +75,7 @@ test('dictionaries: contract copy, both languages, same placeholders, no emoji',
   assert.equal(en['p374.help'], 'Every morning, the “Musk + AI 24h” digest our Daily Agent writes (in Chinese) lands in your account email — see what a daily automation can do. Turn it off any time.');
   assert.equal(zh['p374.sample'], '看一封样例'); assert.equal(en['p374.sample'], 'See a sample');
   assert.equal(zh['p374.sentTo'], '发到 {email}'); assert.equal(en['p374.sentTo'], 'Sent to {email}');
-  assert.equal(zh['p374.unlinked'], '先把这台电脑连上 Agent J 账号。');
+  assert.equal(zh['p374.unlinked'], '先把这台 Agent J 主机连上 Agent J 账号。');
   assert.equal(zh['p374.queued'], '名额 {seats} 个已满，你在候补第 {n} 位。有人退订会自动补上，并发邮件告诉你。');
 });
 

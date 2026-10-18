@@ -830,8 +830,8 @@ class SharedCodexAgent(CodexAgent):
         self.perm_source='codex'
         self.cfg['shared_session_id']=sid
         self.note('shared_new_thread', why)
-        if why in ('phone clear', 'owner chose new'):   # P328: the new conversation the phone's /clear asked for
-            self.host.agent_notice(humane.of(self, 'codex.cleared_new') + f' `codex resume {sid}`')
+        if why == 'phone clear':   # P328/P380: only /clear owns an existing greeting card to update
+            self.host.clear_resume(self.kind, sid)
         elif why == 'shared session lost':               # P330: the pinned thread is gone and nothing else is here
             self.host.agent_notice(self._lost_text('new', old=(self.lost_pin or '?')[:8]) + f' `codex resume {sid}`')
         else:

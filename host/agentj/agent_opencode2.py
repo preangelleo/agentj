@@ -198,7 +198,7 @@ class OpenCodeV2Agent(OpenCodeAgent):
                 raise HTTPError(f"session {st}")
             sid = _data(s)["id"]
             if self.persist:
-                self.host.st.set_agent_session(self.kind, sid)
+                self.record_session(sid)
         st, s = await self.client.request("GET", f"/api/session/{quote(sid)}")
         if st != 200 or not isinstance(_data(s), dict):
             raise HTTPError("session not found")

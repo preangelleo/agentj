@@ -84,6 +84,10 @@ class Restart(unittest.IsolatedAsyncioTestCase):
                     host.stopping.set()
                     with __import__("contextlib").suppress(Exception, asyncio.CancelledError):
                         await asyncio.wait_for(task, 20)
+                    # Discovery runs in to_thread and may outlive host.run(); keep its state directory alive.
+                    initial_sync = getattr(host.capabilities, "host_task", None)
+                    if initial_sync is not None:
+                        await asyncio.shield(initial_sync)
             return sent
 
     async def test_shared_phone_leaves_grey_without_a_message(self):

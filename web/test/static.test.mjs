@@ -131,7 +131,7 @@ test('no URLs to anywhere in shipped files except links to agentj.app pages', ()
     if (m[1] === 'a') assert.match(m[3], MAIL_LINK.test(m[3]) ? MAIL_LINK : SITE_LINK, `index.html links to ${m[3]}`);
     else assert.match(m[3], /^(data:,|[a-z][\w./-]*(\?v=[0-9a-f]{8})?)$/, `index.html loads ${m[3]}`);
   }
-  for (const m of HTML.matchAll(/<a\b[^>]*>/g)) assert.match(m[0], /rel="noopener"/, 'site links open with rel=noopener');
+  for (const m of HTML.matchAll(/<a\b[^>]*>/g)) assert.ok(new Set((m[0].match(/\brel="([^"]*)"/)?.[1] || "").split(/\s+/)).has("noopener"), "site links open with rel=noopener");
 });
 
 test('no innerHTML / eval / new Function / string timers / document.write anywhere', () => {

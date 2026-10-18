@@ -674,6 +674,7 @@ function toHex(c){
   return "#" + v.map(x => Math.round(Math.min(255, Math.max(0, x * k))).toString(16).padStart(2, "0")).join("");
 }
 function chromeTarget(){
+  if (document.documentElement.dataset.ios === "1") return "#141414"; // P384: iOS system / gesture areas stay Sooty.
   // The topmost full-screen surface owns the OS bar; nested Settings pages use the same menu background.
   const pages = [...document.querySelectorAll('.menupage:not([hidden]),.setpage:not([hidden]),.ajpages:not([hidden]),#five-page:not([hidden]),#five-detail:not([hidden]),#five-menu:not([hidden])')]   // P302: the five-card menu is Noir from the moment it opens
     .filter(n => n.getClientRects().length);
@@ -703,7 +704,7 @@ export function paintChrome(force){
   if (!hex) return;
   document.documentElement.style.backgroundColor = hex;
   saveChrome(hex);
-  if (force !== true){ setThemeColor(hex); return; }
+  if (force !== true || document.documentElement.dataset.ios === "1"){ setThemeColor(hex); return; }
   setThemeColor(hex.slice(0, 5) + (parseInt(hex.slice(5, 7), 16) ^ 1).toString(16).padStart(2, "0"));
   let done = false;
   const settle = () => { if (done) return; done = true; const h = chromeTarget(); if (h) setThemeColor(h); };
@@ -1322,6 +1323,7 @@ function paintCmdx(p){
   const box = el("cmdx"), c = p.card;
   box.replaceChildren();
   const isCmd = !!c && p.source && p.source.k === "cmd";
+  const resume = isCmd && c.cmd === "clear" && c.resume && typeof c.resume.title === "string" && typeof c.resume.command === "string" ? c.resume : null;
   const cancelWait = isCmd && c.cancel_wait === true && p.end === "open" && p.source.dev === C.myDev();
   const openBtn = isCmd && typeof c.open === "string" && /^fr_(card|add)(:[A-Z0-9-]{1,40})?$/.test(c.open);   // P73
   // P151b: a phone turn the shared Claude has not ended after 5 min — 「继续等」 (another round) or 「中断」 (/stop)
@@ -1337,7 +1339,7 @@ function paintCmdx(p){
     box.append(more, stop);
     return;
   }
-  box.hidden = !isCmd || !((Array.isArray(c.models) && c.models.length) || c.undo === true || openBtn || cancelWait);
+  box.hidden = !isCmd || !((Array.isArray(c.models) && c.models.length) || c.undo === true || openBtn || cancelWait || resume);
   if (box.hidden) return;
   if (cancelWait){
     const b = document.createElement("button"); b.type = "button"; b.className = "cmdundo";
@@ -1373,6 +1375,12 @@ function paintCmdx(p){
       u.addEventListener("click", () => { u.disabled = true; C.api.slash("undo_clear"); });
       box.appendChild(u);
     }
+  }
+  if (resume){
+    const d = document.createElement("details"); d.className = "cmdresume";
+    const summary = document.createElement("summary"); summary.textContent = resume.title;
+    const pre = document.createElement("pre"), code = document.createElement("code"); code.textContent = resume.command;
+    pre.appendChild(code); d.append(summary, copyable(pre)); box.appendChild(d);
   }
 }
 const newestUndoId = () => { for (let i = hist.turns.length - 1; i >= 0; i--){ const x = hist.turns[i]; if (x.card && (x.card.cmd === "clear" || x.card.cmd === "undo_clear")) return x.card.undo ? x.id : -1; } return -1; };

@@ -811,7 +811,12 @@ a revoke in the middle stops the message there (P33-X07).
   Who: `phone` (a paired device; the page shows 「你」 when `dev` is its own id, else the label = 「另一台设备」), `host`
   (`agentj send` on the computer), `agent` (a turn the Agent started itself — e.g. Claude Code's background `task-notification`),
   `sys` (a host notice; `local:true` = 「在电脑上处理」, §10.8), `task` (a scheduled task's run and VERDICT), `cmd` (a slash
-  command: `src.text` = `/compact`, `card` = §8's result fields `{cmd, ok, kind, models?, undo?, sep?}`). The reply of one
+  command: `src.text` = `/compact`, `card` = §8's result fields `{cmd, ok, kind, models?, undo?, sep?}`). P380: a successful
+  `/clear` card also has `clear_harness` and optional `resume: {title, command}`. The phone renders `resume` at the bottom
+  of this same greeting card as a **default-collapsed** details section; the command is a copyable code block. Only known
+  harnesses and a real, validated session id get a command. If the id is created on the next turn, the host updates this
+  original card via `hist_turn`; it never sends a second resume notice. The card persists across history/reconnect and
+  later replies are untouched. No resume command means no section. The reply of one
   turn = every finished reply text of that turn, joined by a blank line — results only, never tool calls. A reply over
   200 000 code units continues on the next page(s) (`part`); nothing is truncated.
   `pre` (P351): a silent turn's earlier notes — the turn's final reply was exactly 〔不回群〕 (`text` = the marker), and

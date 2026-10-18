@@ -5003,6 +5003,12 @@ class Host:
         """A command result → one chat entry `from: "cmd"` (kept in the backlog like every message) on every older phone, and
         the command's page (§10.5 `src.k: cmd`, `card` = the same fields) for p33 phones. interim = 「这一轮结束后执行。」."""
         x = {"cmd": name, "ok": res.kind in ("ok", "info"), "kind": res.kind}
+        if name == "clear" and not interim and res.kind == "ok" and self.agent is not None:
+            kind = self.agent.kind
+            x["clear_harness"] = kind
+            resume = humane.clear_resume(self, kind, self.st.agent_session(kind))
+            if resume:
+                x["resume"] = resume
         if res.models:
             x["models"] = res.models[:40]
         if res.undo:
@@ -5026,6 +5032,24 @@ class Host:
             self.hist_add({"k": "cmd", "text": "/" + name, **({"name": by[:64]} if by else {})}, res.text, "done", x)
         if self.telegram and turn is not None and not interim:      # P59: the owner's Telegram /compact gets its result line
             self.telegram.cmd_result(turn, res.text)
+
+    def clear_resume(self, kind: str, sid: str) -> None:
+        """P380: fill the existing clear card when the harness creates its real session, also after restart.
+
+        The card's harness marker belongs to that clear, not the newest chat reply. Undo or a later clear
+        ends the search; no new message is emitted and the greeting/undo metadata remain intact.
+        """
+        resume = humane.clear_resume(self, kind, sid)
+        if not resume:
+            return
+        for page in reversed(list(self.hist.turns.values())):
+            card = page.get("card") or {}
+            if card.get("cmd") == "undo_clear":
+                return
+            if card.get("cmd") == "clear":
+                if card.get("clear_harness") == kind and "resume" not in card:
+                    self.hist_update(page["id"], card={**card, "resume": resume})
+                return
 
     def cmd_waiting(self, cmd, detail: str | None = None) -> None:
         """A queued shared /clear or /compact waiting for the desktop; P243: `detail` says why (background tasks, a dialog)."""

@@ -193,6 +193,8 @@ class Lost(Base):
         await a._thread()
         self.assertTrue(any(m == 'thread/start' for m, _ in self.calls))
         self.assertIn('codex resume', self.notices())
+        self.assertIn('已为你新开一个 Codex 会话', self.notices())
+        self.host.clear_resume.assert_not_called()  # recovery choice has no /clear greeting card
 
     async def test_nothing_here_opens_new_and_says_lost(self):
         a = self.agent(DEAD)

@@ -1,4 +1,4 @@
-// P361 (PROTOCOL §34) · Settings → 紧急修复 → 「电脑上的命令」: the commands the owner used to copy and paste at the computer,
+// P361 (PROTOCOL §34) · Settings → 紧急修复 → 「Agent J 主机上的命令」: terminal commands on the Agent J host,
 // each with ⧉ and 「执行」. Only the names the host lists in `host.run_cmds` (its whitelist, host/agentj/cmdrun.py) are shown;
 // the phone sends a NAME, never a command line. Every run: signed `cmd_run` → the host answers `passkey_required` + the
 // challenge → Face ID (started inside the tap of the sheet's button, iOS gesture rule) → the same signed object with `fa` →
@@ -37,10 +37,16 @@ function row(name) {
 function result() {
   if (!R) return [];
   const head = mk('p', 'rscmdhead', line(R.name)); head.id = 'rs-cmd-head';
+  if (R.st === 'ask') return [head];
   if (R.st === 'run') return [head, mk('p', 'rsnow', t('p361.running'))];
   const out = [head];
-  if (Number.isInteger(R.code) && R.code >= 0) out.push(mk('p', R.code === 0 ? 'rsok' : 'rsmsg rsfail', t(R.code === 0 ? 'p361.ok' : 'p361.fail', { code: R.code })));
-  else out.push(mk('p', 'rsmsg rsfail', ['busy', 'timeout', 'no_passkey', 'dropped'].includes(R.why) ? t('p361.why.' + R.why) : whyText(R.why) || t('p361.failed')));
+  const bar = mk('div', 'rscmdstatus');
+  const close = mk('button', 'menuicon rscmdclose', '×'); close.type = 'button'; close.id = 'rs-cmd-close';
+  close.setAttribute('aria-label', t('p380.closeResult')); close.title = t('p380.closeResult');
+  close.addEventListener('click', () => { const name = R.name; R = null; paint(); el('rs-cmd-' + name)?.focus(); });
+  if (Number.isInteger(R.code) && R.code >= 0) bar.append(mk('p', R.code === 0 ? 'rsok' : 'rsmsg rsfail', t(R.code === 0 ? 'p361.ok' : 'p361.fail', { code: R.code })));
+  else bar.append(mk('p', 'rsmsg rsfail', ['busy', 'timeout', 'no_passkey', 'dropped'].includes(R.why) ? t('p361.why.' + R.why) : whyText(R.why) || t('p361.failed')));
+  bar.append(close); out.push(bar);
   if (R.out) { const pre = mk('pre', 'rsout', R.out); pre.id = 'rs-cmd-out-text'; pre.tabIndex = 0; out.push(copyable(pre, { variant: 'block', click: false })); }
   if (R.cut) out.push(mk('p', 'rsnote', t('p361.cut')));
   if (R.out) out.push(mk('p', 'rsnote', t('p361.masked')));

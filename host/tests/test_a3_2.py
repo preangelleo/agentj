@@ -383,14 +383,14 @@ class Cli(unittest.TestCase):
         lsock.bind(str(self.st.sock_path))
         lsock.listen(8)
         try:
-            r = self.agentj("revoke", did)
+            r = self.agentj("revoke", "--", did)
         finally:
             lsock.close()
             self.st.sock_path.unlink()
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("没有响应", r.stderr)
         self.assertIn(did, self.st.devices())
-        r = self.agentj("revoke", did)          # no socket file = serve not running → direct, locked edit
+        r = self.agentj("revoke", "--", did)          # no socket file = serve not running → direct, locked edit
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertNotIn(did, self.st.devices())
 

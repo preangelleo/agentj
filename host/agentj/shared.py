@@ -2371,7 +2371,7 @@ class SharedOpenCodeAgent(OpenCodeAgent):
         self.sid = session["id"]
         self.rules = []
         self.cfg["shared_session_id"] = self.sid
-        self.host.st.set_agent_session(self.kind, self.sid)
+        self.record_session(self.sid)
         await self._prime()
 
     async def _spawn(self):

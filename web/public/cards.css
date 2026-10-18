@@ -54,7 +54,7 @@
   background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}
 .jc-row:disabled{cursor:default}
 .jc-check{flex:none;width:24px;height:24px}
-.jc-text{min-width:0;overflow-wrap:anywhere}
+.jc-text{flex:1;min-width:0;white-space:normal;overflow-wrap:anywhere}
 .jc-item[data-done="1"] .jc-text{text-decoration:line-through;color:var(--menu-muted,inherit)}
 .jc-item[data-done="1"] .jc-check{color:var(--menu-accent)}
 .jc-chip{flex:none;min-height:44px;padding:0 var(--ui-space-control);border:1px solid var(--menu-line);border-radius:22px;background:transparent;color:inherit;font:inherit;cursor:pointer}

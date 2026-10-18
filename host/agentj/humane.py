@@ -69,3 +69,18 @@ def variants(key: str, lang: str) -> list[str]:
     if isinstance(v, dict):
         return [x for p in v.values() for x in (p if isinstance(p, list) else [p])]
     return list(v) if isinstance(v, list) else [v]
+
+
+def clear_resume(host, kind: str, sid: str | None = None) -> dict | None:
+    """P380: optional native continuation, after /clear has a real new session id.
+
+    These explanatory sentences are separate from the short rotating state lines.
+    Only known harnesses get a command; never interpolate an untrusted shell id.
+    """
+    h = getattr(host, "host", None) if not hasattr(host, "preferences") else host
+    h = h if h is not None else host
+    lang = _lang(getattr(h, "lang", "zh"))
+    row = DATA["clear_resume"].get(kind)
+    if not row or not isinstance(sid, str) or not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_-]{0,127}", sid):
+        return None
+    return {"title": row[lang], "command": row["command"] + " " + sid}

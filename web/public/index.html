@@ -10,11 +10,11 @@
 <script src="brand/lang.js"></script>
 <meta name="theme-color" content="#faf9f5" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#141414" media="(prefers-color-scheme: dark)">
-<script src="js/boot.js"></script>
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Agent J">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
+<script src="js/boot.js"></script>
 <link rel="icon" href="favicon.ico?v=61e0069c" sizes="any">
 <link rel="icon" href="brand/img/favicon-32.png?v=431f7864" type="image/png" sizes="32x32">
 <link rel="apple-touch-icon" href="apple-touch-icon.png?v=43300e13">
@@ -569,6 +569,7 @@
         <a href="https://agentj.app/security/" target="_blank" rel="noopener" data-i18n="menu.security">数据安全</a>
         <a href="https://agentj.app/privacy/" target="_blank" rel="noopener" data-i18n="menu.privacy">隐私</a>
       </nav>
+      <a id="pair-learn" class="aj-btn aj-btn--primary aj-btn--block" href="https://agentj.app/" target="_blank" rel="noopener noreferrer" data-i18n="pair.learn">还没有 Agent J？去官网了解和注册 →</a>
     </section>
 
     <section id="scan-view" class="camera-page view" hidden>
@@ -768,8 +769,8 @@
             </ol>
             <!-- P361 (PROTOCOL §34): 电脑上的命令 — whitelisted commands with ⧉ and 「执行」 (Face ID every run). js/cmdrun.js -->
             <div class="rscmds" id="rs-cmds" hidden>
-              <h4 class="rstitle" id="rs-cmds-h" data-i18n="p361.title">电脑上的命令</h4>
-              <p class="rsnote" data-i18n="p361.note">以前得回到电脑前复制、粘贴的命令，现在点「执行」就在电脑上跑，结果直接显示在下面。每次执行都得先用 Face ID 确认，并且记入操作记录。这里只有几条只查看或只修连接的安全命令；会改设置、删东西、停服务的命令不在这里。</p>
+              <h4 class="rstitle" id="rs-cmds-h" data-i18n="p361.title">Agent J 主机上的命令</h4>
+              <p class="rsnote" data-i18n="p361.note">在 Agent J 主机上执行的终端指令。</p>
               <ul class="rscmdlist" id="rs-cmd-list" aria-labelledby="rs-cmds-h"></ul>
               <div class="rscmdres" id="rs-cmd-out" role="status" aria-live="polite" hidden></div>
             </div>

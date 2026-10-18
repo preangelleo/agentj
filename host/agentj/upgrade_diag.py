@@ -95,8 +95,10 @@ def tail(text, identity=None) -> str:
         text = text.decode("utf-8", "replace")
     if not isinstance(text, str) or not text.strip():
         return ""
-    lines = [ln.rstrip()[:LINE_MAX] for ln in text.replace("\r", "\n").splitlines() if ln.strip()][-TAIL_LINES:]
-    return redact("\n".join(lines), identity)[-TAIL_MAX:]
+    # Redact the complete input first: truncating can remove a private-key header or split a credential value.
+    safe = redact(text.replace("\r", "\n"), identity)
+    lines = [ln.rstrip()[:LINE_MAX] for ln in safe.splitlines() if ln.strip()][-TAIL_LINES:]
+    return "\n".join(lines)[-TAIL_MAX:]
 
 
 def run_step(run, cmd, say, catch: bool = True) -> tuple[int, str]:

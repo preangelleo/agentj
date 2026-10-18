@@ -20,13 +20,13 @@ const EMAIL = 'owner@example.com';                        // never a real accoun
 const SAMPLE = 'https://agentj.app/account/news/sample';
 const L = {
   zh: { label: 'Daily AI News', help: /^每天早上把 Agent J 的 Daily Agent 整理的《Musk \+ AI 24h》/, sample: '看一封样例', to: '发到 ' + EMAIL,
-    unlinked: '先把这台电脑连上 Agent J 账号。', acct: '打开账号后台', rate: '改得太频繁了，请过一会儿再试。', title: '这个开关没有改成',
-    old: '电脑上的 Agent J 还不支持这一项，升级后就能打开。', noAnswer: '电脑没有及时回应，开关已经恢复原样。稍后再试。', find: '每日',
+    unlinked: '先把这台 Agent J 主机连上 Agent J 账号。', acct: '打开账号后台', rate: '改得太频繁了，请过一会儿再试。', title: '这个开关没有改成',
+    old: 'Agent J 主机还不支持这一项，升级后就能打开。', noAnswer: 'Agent J 主机没有及时回应，开关已经恢复原样。稍后再试。', find: '每日',
     queued: '名额 500 个已满，你在候补第 3 位。有人退订会自动补上，并发邮件告诉你。' },
   en: { label: 'Daily AI News', help: /^Every morning, the “Musk \+ AI 24h” digest/, sample: 'See a sample', to: 'Sent to ' + EMAIL,
-    unlinked: 'Link this computer to your Agent J account first.', acct: 'Open the account dashboard', rate: 'Too many changes. Try again in a little while.',
-    title: 'This switch did not change', old: "Agent J on your computer doesn't support this yet. Update it to turn this on.",
-    noAnswer: "The computer didn't answer in time, so the switch is back where it was. Try again later.", find: 'newsletter',
+    unlinked: 'Link this Agent J host to your Agent J account first.', acct: 'Open the account dashboard', rate: 'Too many changes. Try again in a little while.',
+    title: 'This switch did not change', old: "Your Agent J host doesn't support this yet. Update it to turn this on.",
+    noAnswer: "The Agent J host didn't answer in time, so the switch is back where it was. Try again later.", find: 'newsletter',
     queued: "All 500 seats are taken. You're number 3 on the waiting list: when someone unsubscribes you move up automatically, and we email you." },
 };
 
@@ -44,7 +44,7 @@ export async function runP374({ B, web, fake, out = OUT }) {
     return true;
   };
   const combos = BEFORE ? [['zh', 'light', 390], ['zh', 'dark', 390], ['en', 'light', 390], ['en', 'dark', 390], ['zh', 'dark', 1440]]
-    : [['zh', 'light', 390], ['zh', 'dark', 390], ['en', 'light', 390], ['en', 'dark', 390], ['zh', 'light', 1440], ['zh', 'dark', 1440]];
+    : [['zh', 'light', 390], ['zh', 'dark', 390], ['en', 'light', 390], ['en', 'dark', 390], ['zh', 'light', 1440], ['zh', 'dark', 1440], ['en', 'light', 1440], ['en', 'dark', 1440]];
   for (const [lang, theme, w] of combos) {
     const s = L[lang], tag = `${lang}-${theme}-${w}`, deep = tag === 'zh-light-390';   // the two 10 s waits run once
     fake.reset(); fake.setUp(true); calls.length = 0; answers.length = 0;
@@ -56,6 +56,11 @@ export async function runP374({ B, web, fake, out = OUT }) {
     const checked = () => evaluate(p, `${$('set-news')}.getAttribute('aria-checked')`);
     try {
       await navigate(p, fake.newPairing(web.url + '?lang=' + lang)); await waitState(p, 'awaiting-approval'); await fake.approve(); await waitState(p, 'ready');
+      // P380 QA: the persisted theme overrides emulated media; explicitly select and verify each visual variant.
+      await evaluate(p, `import('./js/settings.js').then(m=>{m.applyThemeLocal('${theme}');return true})`);
+      assert.equal(await evaluate(p, `document.documentElement.getAttribute('data-theme')`), theme);
+      const expectedBg = theme === 'light' ? '#faf9f5' : '#141414';
+      assert.equal(await evaluate(p, `getComputedStyle(document.documentElement).getPropertyValue('--bg').trim()`), expectedBg);
       await evaluate(p, `if(!${$('a2hs')}.hidden)${$('a2hs-ok')}.click(); ${$('phone-env-dismiss')}?.click(); true`);
       if (BEFORE) {
         await openSet(); await view('set-s-help'); await save('help-card');
@@ -124,6 +129,13 @@ export async function runP374({ B, web, fake, out = OUT }) {
       check(await evaluate(p, `${$('set-news')}.disabled && ${$('set-news')}.getAttribute('aria-checked')==='false' && ${$('set-news-to')}.hidden`), 'unlinked: disabled, off, no e-mail line ' + tag);
       await audit('unlinked');
       await view('set-news-row'); await save('4-unlinked');
+
+      // P380: an authenticated-but-rejected host must remain disabled with a precise binding hint.
+      await closeSet(); answers.push({ ok: false, problem: 'not_bound' }); await openSet();
+      await waitFor(p, `!${$('set-news-msg')}.hidden`);
+      check(await evaluate(p, `${$('set-news-msg')}.textContent`) === (lang === 'zh' ? '这台 Agent J 主机还没连在你的 Agent J 账号下，请在账号后台重新连接。' : "This Agent J host isn't linked to your Agent J account. Link it again in your account dashboard."), 'not_bound hint ' + tag);
+      check(await evaluate(p, `${$('set-news')}.disabled && !${$('set-news-acct')}.hidden`), 'not_bound remains disabled with dashboard link ' + tag);
+      await view('set-news-row'); await save('7-not-bound');
 
       // ---- P374 追加: all seats taken → on + 「名额 500 个已满，你在候补第 3 位…」 instead of 「发到」
       await closeSet();

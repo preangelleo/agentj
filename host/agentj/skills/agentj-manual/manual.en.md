@@ -168,6 +168,8 @@ Replies are laid out for you:
 （Screenshot：Further down: a diagram, a file to download and a line about a file that was not sent — https://agentj.app/docs/manual/rich-more.en.webp）
 ### Search the chat
 
+The magnifier and search shortcut search the page you are on: chat history in the conversation, cards in Workflows, Skills, Memory and Agent J, or the current text in Settings, a menu page or an open document.
+
 The magnifier left of Settings at the top right (`⌘K` / `Ctrl+K` on a computer) opens the search: type words into the dark
 card in the middle of the screen and it searches what you sent, quotes, attachment names and the Agent's replies at once.
 Separate words with spaces; a page matches when all of them appear. Case, full-width / half-width and Traditional /
@@ -395,7 +397,7 @@ Settings → Emergency repair is the second item. Use it when the chat is stuck,
 
 When Agent J on the Agent J host stops answering, a small rescue helper there answers instead: a banner says "Agent J on the Agent J host isn't responding · rescue helper online", and ① and ② still work. The offline card has an **Emergency repair** button too, plus a line for someone at the Agent J host: `curl -fsSL https://agentj.app/rescue | sh`. See [Phone grey or disconnected?](https://agentj.app/docs/reconnect/).
 
-Under Emergency repair there is also Commands on the computer: `agentj doctor`, `agentj doctor --reconnect`, `agentj status` and the other commands you used to copy and paste at the computer, each with Run. Tap it, confirm with Face ID, and the computer runs it; the result shows below, with anything that looks like a password or key hidden on the computer first. Every run is recorded. Only commands that look or repair the connection are here; a phone without Face ID set up cannot run them.
+Under Emergency repair there is also Commands on the Agent J host: terminal commands that run on the Agent J host, such as `agentj doctor`, `agentj doctor --reconnect` and `agentj status`, each with Run. Tap it, confirm with Face ID, and the Agent J host runs it; the result shows below, with anything that looks like a password or key hidden on the Agent J host first. Every run is recorded. Tap × at the right of the result heading to close the result. Only commands that look or repair the connection are here; a phone without Face ID set up cannot run them.
 
 ### Models & API keys
 
@@ -429,7 +431,7 @@ ready to use as the avatar of your Telegram bot, your email or any other bot.
 （Screenshot：Remotes — https://agentj.app/docs/manual/remotes.en.webp）
 Settings → Remotes is its own page: how many of the 10 remotes are in use, every paired phone or browser (online or not,
 when paired and last used, how it was added; this one marked "This one"), Rename and Unbind on each row, and "Add a remote":
-a one-time QR / link for 5 minutes; the new device shows a 6-digit code, you type it here and tap Approve (one try).
+a one-time QR / link for 5 minutes. Compare the six digits shown on the new device and the paired remote’s confirmation card, then approve on a paired remote.
 
 The scan icon at the top right (or holding the camera button) reads QR codes: a new device's pairing code adds it as a remote (both screens show the same 6 digits; tap "They match — add it" only if they do); any other code goes into the message field as text, never opened or sent by itself. A new device needs no computer: open [https://m.agentj.app/](https://m.agentj.app/) and the code at the top is for a paired phone to scan. The "Web app" tag now lives in Settings → "How safe is this web app?".
 
@@ -462,34 +464,29 @@ On a computer browser or a tablet with a keyboard, press `?` for the full list (
 
 ## Pairing and Face ID
 
-（Screenshot：Not paired yet: scan the QR code on the Agent J host — https://agentj.app/docs/manual/pair.en.webp）
-The first time: scan the QR code on the Agent J host, then type the phone's 6-digit code and your remote pairing password on
-the Agent J host (see [Using your phone](https://agentj.app/docs/phone/)).
+**Start on any device by opening [https://m.agentj.app/](https://m.agentj.app/) in its browser.** The unpaired page displays a QR code. Scan it with another paired, connected remote, compare the six digits on both screens and confirm. The new device joins the conversation without visiting the host, and does not need a camera or Face ID. If its browser cannot generate this code, use scanning or a pasted link below.
 
-（Screenshot：The 6-digit code during pairing — https://agentj.app/docs/manual/pair-code.en.webp）
-### If the code will not scan
+For your first remote, run `agentj pair` on the host. Scan the host's code using the scanner inside the new device's page, then enter the six digits and remote pairing password at the host's prompt. Without a camera, run `agentj pair --link`, copy its pairing link into the new device's link box and start pairing. An online host linked to your account can also add a remote from the account page. See [Using your phone](https://agentj.app/docs/phone/) for the full steps.
 
-- Let the QR code fill most of the middle of the picture and hold the phone steady, not too close (too close and it
-  cannot focus). Turn the Agent J host's screen brighter and avoid reflections.
-- After 10 seconds without a result the scanner suggests another way:
-  - In a browser tab: scan the code on the Agent J host with the phone's own Camera app; it opens the pairing page.
-  - In the page opened from the Home Screen icon: run `agentj pair --link` on the Agent J host, send the printed link to
-    this phone, tap Back and paste it into the box on the pairing screen.
-- That link is the pairing key: valid 5 minutes, works once, never send it to anyone else.
+An existing remote can also generate a code or copy a link from Remotes in Settings. Have the new device scan or paste it, compare the match codes and approve on a paired remote's confirmation card.
 
-**Pairing once is enough.** As long as the Agent J host hasn't unpaired this phone, opening the page connects by itself. Safari on iPhone clears what websites store; from 0.17.4 the page then reconnects to the same computer with an automatic sign-in token kept on the phone (only the Agent J host recognises it; it is replaced on each use) — no QR code, no Face ID. You only scan again when the Agent J host has unpaired this phone (for example after you lost it); the pairing screen then says that automatic sign-in no longer works.
+> **Screenshots pending:** the previous pairing images omit the new-device QR code and comparison on both screens. They are not shown as examples of the current interface; follow these steps and the live page.
 
-After a successful pairing the phone asks once whether to remember this phone with Face ID. Save it and confirm with
-Face ID. From then on, when you open Agent J somewhere else on the same phone — from the Home Screen, in a new private
-tab, after clearing browser data — the pairing screen offers to reconnect with Face ID: **no QR code, no approval on the
-computer**. the Agent J host's device list keeps counting this phone once.
+### Pairing links and reconnecting
 
-- Not now? Skip it and pair with the QR code as usual.
-- Face ID only proves "this is the phone you already approved"; it grants nothing more. Unpairing the phone on the
-  computer cancels its Face ID record too.
-- An iPhone syncs this record through iCloud Keychain to your other Apple devices on the same Apple ID. They can
-  reconnect with Face ID as well, but take this phone's place rather than adding another.
-- Browsers without Face ID / passkey support never show the offer; pairing works by QR code as before.
+A pairing link is a key: it works once and expires after five minutes. Never send it through chat, a group or email, or give it to an AI. On iPhone, add the page to your Home Screen first, then scan or paste inside that icon. Opening the link with the system camera pairs a separate Safari page.
+
+Opening the same browser or Home Screen icon normally reconnects automatically, with rotating renewal credentials where available. Recovery is not guaranteed after clearing website data or credentials, expiry, or unpairing on the host. See [Reconnecting](https://agentj.app/docs/reconnect/) and [Privacy](https://agentj.app/docs/privacy/).
+
+After pairing, you can save a remote passkey: Face ID on iPhone, or fingerprint or system unlock on other devices. When the pairing page offers Face ID reconnect, verifying restores the existing device slot without a new scan or host approval. A passkey synced to another device can replace the original device's slot. Unpairing on the host invalidates this route.
+
+### Remotes without Face ID or passkeys
+
+A device without passkey support, or without a saved passkey, can pair by scanning, displaying its code or pasting a link. It can read conversations, send messages and attachments, use voice, approve ordinary operations with its signing key and manage remotes. This reduced capability does not make it read-only.
+
+It cannot reconnect using a passkey or complete operations that explicitly require one: picking up a secret, copying or deleting API keys, importing keys discovered on the host, running host commands in Emergency repair, or approving a launch without isolation. Use a remote with a saved passkey, or set one up on a supported device. Administrator authorization and secret-entry cards still work as their prompts allow; a device that already has a passkey must verify its user for those cards and cannot skip verification to fall back.
+
+A browser that also lacks signing support cannot approve operations or send controls that require signatures. The page asks you to update your browser and pair again. Ordinary signatures and passkeys are separate capabilities.
 
 ## Things one sentence does
 
@@ -535,7 +532,7 @@ For older Agent J versions that keep an old model/provider, start a new Codex co
 
 Shared Claude makes the phone-message setting Claude Code really uses in the work folder accept (organization policy > the folder's private `.claude/settings.local.json` > its `.claude/settings.json` > `~/.claude/settings.json`), at selection, startup and upgrade, backing up the file first; the phone is told once. A hold in user or private local settings is changed where it is; a hold in the shared project file is overridden from the private local layer. Organization policy, `refuse` and an explicit `agentj config claude-inbound off` are only reported. Enabled: phone messages no longer need individual confirmation on the Agent J host; to disable, run `agentj config claude-inbound off`. A session started before the change needs /clear or a new session. Only Claude Code is affected; Codex/OpenCode have no equivalent mechanism. When a message is not acknowledged, the phone names the reason (organization policy, project settings, turned off, needs /clear, computer busy); check the Agent J host before resending. The phone's model/quota bars (`agentj config claude-statusline`) are turned on at the same moment unless the owner turned them off, chained at the status-line layer in effect; `agentj doctor` reports a layer that hides them.
 
-Shared mode: Claude `/clear` and `/compact` wait for the current desktop turn and confirm native hook receipts. A successful clear archives phone pages and starts at zero, including clears typed on the desktop. Context uses only new-session/post-compaction measurements; pending readings show “—”, never the previous value. A timeout reports an unconfirmed change; check the desktop before retrying. Shared Claude has no native undo-clear button: history remains archived locally; use desktop `/resume` to restore a conversation. Independent mode retains undo. Attached Codex clears from the phone with `/clear`: the next phone message opens a new Codex conversation, the phone archives its earlier pages as usual, and Undo clear works until that message is sent. The Codex App / terminal on the Agent J host does not follow by itself; once the new conversation is open the phone shows `codex resume <id>` to run there. While the desktop Codex is mid-answer nothing is cleared; clear again when it finishes. Attached OpenCode supports `/compact`; use desktop `/new` and select the new session to clear. Agent J's own Claude PTY accepts controls directly; an existing terminal requires an exact-session Herdr input route, otherwise the phone explains the reason and native command. Shared `/context`, `/usage`, `/status` and `/model` without an argument read measured data; unavailable values show “—”.
+Shared mode: Claude `/clear` and `/compact` wait for the current desktop turn and confirm native hook receipts. A successful clear archives phone pages and starts at zero, including clears typed on the desktop. Context uses only new-session/post-compaction measurements; pending readings show “—”, never the previous value. A timeout reports an unconfirmed change; check the desktop before retrying. Shared Claude has no native undo-clear button: history remains archived locally; use desktop `/resume` to restore a conversation. Independent mode retains undo. Attached Codex clears from the phone with `/clear`: the next phone message opens a new Codex conversation, the phone archives its earlier pages as usual, and Undo clear works until that message is sent. Once the new conversation is open, keep chatting on your phone; no extra action is needed. An optional continuation section at the bottom of the clear-success card stays collapsed by default; no second message is sent. Expand it to copy a command only if you want to continue the same conversation in a terminal or the matching app on the Agent J host. The command follows your current AI tool, Claude Code, Codex or OpenCode; it is hidden when no resume command is available. While the desktop Codex is mid-answer nothing is cleared; clear again when it finishes. Attached OpenCode supports `/compact`; use desktop `/new` and select the new session to clear. Agent J's own Claude PTY accepts controls directly; an existing terminal requires an exact-session Herdr input route, otherwise the phone explains the reason and native command. Shared `/context`, `/usage`, `/status` and `/model` without an argument read measured data; unavailable values show “—”.
 
 The 5h line remains visible at 1%; 0% has a start marker. No text beside it means no reported measurement. Expanding the input card reduces the reply reading area while keeping the action row and composer fixed; long inputs and replies scroll within their cards.
 
@@ -608,7 +605,7 @@ Support bots process Telegram private chats independently, preserving order with
 - The phone can't reach the Agent J host, or the chat is stuck: Settings → Emergency repair, starting with ① (above).
 - If it can't connect at all (offline, the install failed, it can't reach our servers), or [https://agentj.app/](https://agentj.app/) won't open (for example in mainland China), email feedback@agentj.app — email gets through from anywhere. Include your account ID, what happened and when, and a screenshot.
 
-## Five pages (candidate after 0.20.3)
+## Page menu
 
 Tap the logo for Chat, Workflows, Skills, Memory or Agent J; hold it to return to Chat. These pages read the Agent J host's documents and hide credential files. A workflow's @ inserts an atomic mention that sends as plain text. Tap the dancing robots for Working (AI tool and reported model) or Workflow (CEO, people and reporting lines); unassigned workers are temporary helpers. Alt+W opens the menu; Z still cycles text size and M still records.
 

@@ -18,7 +18,7 @@ order: 19
 请把这台Agent J 主机设置为适合远程 Agent 工作的持续在线状态，同时允许屏幕关闭。先判别 macOS、原生 Linux systemd 主机或 Windows/WSL，阅读 https://agentj.app/docs/keep-awake/zh.md。优先使用已安装的 agentj keep-awake 命令：先 status --json，再 on --dry-run --json，确认后执行 on --json；shell 超时设为 10 分钟，给手机审批留足时间。macOS 默认只调整接电源的策略，保持开盖；调整电池策略前说明耗电和发热，并确认主人的偏好。所有 root 操作必须走 Agent J 已有的手机密码卡，不在对话里索要密码，不让主人开终端敲命令，不使用 osascript with administrator privileges，也不触发Agent J 主机本机授权窗口。若命令尚未提供，先检查系统支持的原生命令并保存原设置，再通过 agentj sudo 做等价调整。WSL 内的修改不能阻止 Windows 宿主休眠，必须明确报告宿主侧需要的操作，不冒充已成功。不要自动修改 PAM、关闭 Touch ID/Apple Watch 或设置 disablesleep。若 sudo 报告本机生物验证风险，说明手机提交密码不能独立完成，只暂停依赖这项提权的操作。完成后读回有效设置，报告接电源/电池休眠策略、屏幕与合盖限制、验证是否通过、是否需要重启或宿主侧操作，以及用 agentj keep-awake off 恢复本次修改前设置的方法。不能只凭退出码宣称成功。
 ```
 
-这是候选功能：需安装包含本功能的主机版本。旧版本提示未知命令，不能据此判断密码错误。
+当前版本已支持此命令。旧版本提示未知命令时，先升级主机程序，不能据此判断密码错误。
 
 ## macOS
 

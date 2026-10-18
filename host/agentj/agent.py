@@ -950,6 +950,14 @@ class Agent:
         st.set_agent_session(self.kind, None)
         return Result(humane.of(self, "clear.kept"), sep=True, undo=True)
 
+    def record_session(self, sid: str) -> None:
+        """Persist a real harness id; one optional continuation hint after /clear."""
+        st = self.host.st
+        cleared = not st.agent_session(self.kind) and bool(st.agent_session(self.kind + ".prev"))
+        st.set_agent_session(self.kind, sid)
+        if cleared:
+            self.host.clear_resume(self.kind, sid)
+
     async def cmd_undo_clear(self, arg: str) -> Result:
         """「撤销清空」 works until the new conversation starts (P280): once a message opened a new session, the undo window
         is over — the phone has already taken the button away, and an older phone's tap is refused here, never half-done."""
@@ -1334,7 +1342,7 @@ class ClaudeAgent(Agent):
             self.init = ev
             sid = ev.get("session_id")
             if isinstance(sid, str):
-                self.host.st.set_agent_session(self.kind, sid)
+                self.record_session(sid)
             if first:
                 m = self.cur_model()
                 self.meter(model=m, model_name=self.model_name(m), effort=self.cur_effort())

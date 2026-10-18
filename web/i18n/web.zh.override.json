@@ -1,4 +1,5 @@
 {
+  "pair.learn": "还没有 Agent J？去官网了解和注册 →",
   "tasks.next": " · 下次 {at}",
   "r.say.failedLater": "这条没能交给 Agent J，再发一次吧",
   "revoked.draft": "没发出去的草稿、输入记录和加密它们的密钥，都已从这台手机上删除。",
@@ -1596,5 +1597,19 @@
   "p352.offline": "Agent J 主机没回应，什么也没做。",
   "p352.delText": "删除后，Agent J 主机上靠 {name} 使用 {vendor} 的功能会停止工作，直到你重新填写。删除前要先用 Face ID 确认。",
   "p352.delTextThird": "删除后，Agent J 主机上用到 {name} 的工具会停止工作，直到你重新填写。删除前要先用 Face ID 确认。",
-  "p375.help": "还不行？看详细求助页 →"
+  "p375.help": "还不行？看详细求助页 →",
+  "p361.title": "Agent J 主机上的命令",
+  "p361.note": "在 Agent J 主机上执行的终端指令。",
+  "p380.closeResult": "关闭执行结果",
+  "p374.unlinked": "先把这台 Agent J 主机连上 Agent J 账号。",
+  "p374.notBound": "这台 Agent J 主机还没连在你的 Agent J 账号下，请在账号后台重新连接。",
+  "p374.noAnswer": "Agent J 主机没有及时回应，开关已经恢复原样。稍后再试。",
+  "p374.old": "Agent J 主机还不支持这一项，升级后就能打开。",
+  "p374.offline": "手机和 Agent J 主机现在没连上，连上后再打开设置看看。",
+  "p361.runAria": "在 Agent J 主机上执行 {cmd}",
+  "p361.running": "正在 Agent J 主机上执行，最多等 2 分钟…",
+  "p361.masked": "结果里像密码、密钥的内容已经在 Agent J 主机上遮住了。",
+  "p361.faText": "确认后，在 Agent J 主机上执行：{cmd}",
+  "p361.why.timeout": "Agent J 主机上 2 分钟没执行完，没有拿到结果。",
+  "p361.why.dropped": "连接断了：Agent J 主机可能正在重启 Agent J。连回来以后点「agentj status」的「执行」看看结果。"
 }

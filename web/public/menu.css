@@ -631,7 +631,7 @@ body:not([data-view="chat"]) #set-actions .bulb{display:flex}
 #settings .rscard[data-state="ok"] .aj-btn--primary:hover{background:var(--c-noir);border-color:var(--c-noir)}
 #settings .rsmode{padding:var(--ui-space-line) var(--ui-space-control);border-radius:var(--ui-radius-control);background:var(--menu-chip);
   border-left:3px solid var(--menu-danger)}
-/* P361: 电脑上的命令 — one row per whitelisted command (code + note, 「执行」 on the right), one result block under the list */
+/* P361: Agent J 主机上的命令 — one row per whitelisted command (code + note, 「执行」 on the right), one result block under the list */
 #settings .rscmds{margin-top:var(--ui-space-content);padding-top:var(--ui-space-content);border-top:1px solid var(--menu-line)}
 #settings .rscmdlist{list-style:none;margin:var(--ui-space-control) 0 0;padding:0;display:flex;flex-direction:column}
 #settings .rscmd{display:flex;align-items:center;gap:var(--ui-space-control);padding-block:var(--ui-space-line);border-bottom:1px solid var(--menu-line)}
@@ -751,3 +751,8 @@ body:not([data-view="chat"]) #set-actions .bulb{display:flex}
    A switch that cannot be used yet (asking, older computer, not linked) dims only itself — the words keep full contrast. */
 #set-news-row .setlinks[hidden],#set-news-row .setnote[hidden],#set-news-row a[hidden]{display:none}
 #set-news:disabled{opacity:.45}
+
+/* P380: the finished command result can be dismissed without affecting its signed execution. */
+#settings .rscmdstatus{display:flex;align-items:center;gap:var(--ui-space-btn)}
+#settings .rscmdstatus>p{flex:1;min-width:0;margin:0;overflow-wrap:anywhere}
+#settings .rscmdclose{flex:none;align-self:flex-start;font-size:24px}

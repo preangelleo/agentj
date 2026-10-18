@@ -10,7 +10,6 @@ import json
 import os
 from pathlib import Path
 import secrets
-import shutil
 import subprocess
 import sys
 import time
@@ -305,9 +304,9 @@ def install_commands(info, wheel):
     if info.get('legacy') or info['kind'] == 'checkout':
         raise ValueError('unsupported_install')
     if info['kind'] == 'uv':
-        return [[shutil.which('uv') or 'uv', 'tool', 'install', '--force', str(wheel)]]
+        return [[update.installer_binary('uv'), 'tool', 'install', '--force', str(wheel)]]
     if info['kind'] == 'pipx':
-        return [[shutil.which('pipx') or 'pipx', 'install', '--force', str(wheel)]]
+        return [[update.installer_binary('pipx'), 'install', '--force', str(wheel)]]
     return [[str(Path(info['where'])/'bin/python'), '-m', 'pip', 'install', '--no-deps', '--force-reinstall', str(wheel)]]
 
 
@@ -383,8 +382,12 @@ def notice(r, lang='zh', prefs=None):
         return humane.say('update.auto_ok', lang, prefs, to=r['to'], summary=str(summary).rstrip('。.'))
     if r.get('result') == 'rolled_back':
         return humane.say('update.auto_rollback', lang, prefs, **{'from': r['from'], 'reason': r['reason']})
-    return (f"Automatic update did not complete ({r['reason']}); run agentj doctor." if lang == 'en' else
+    text = (f"Automatic update did not complete ({r['reason']}); run agentj doctor." if lang == 'en' else
             f"自动升级未完成，原因：{r['reason']}；请运行 agentj doctor。")
+    if r.get('recover'):
+        text += (" Rollback also failed; restore the previous version: " if lang == 'en' else
+                 " 回滚也没成功；请运行这一条装回原版本：") + r['recover']
+    return text
 
 
 def take_notice(st, lang='zh', prefs=None):
@@ -421,7 +424,7 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
     def save(phase):
         job['phase'] = phase
         write(st, job, JOB)
-    def install(wheel):
+    def install(wheel, *, diagnose=True):
         p = Path(wheel)
         rec = json.loads(p.with_suffix('.verified.json').read_text())
         data = p.read_bytes()
@@ -431,12 +434,21 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
         if str(p) == job.get('new') and minisign.verify(data, rec.get('signature', ''), minisign.keyring('release')) != f"agentj-host/v1 version={job['to']} sha256={digest}":
             raise ValueError('artifact_signature_mismatch')
         for argv in install_commands(job['install'], wheel):
-            r = runner(argv)
+            from .upgrade_diag import tail
+            try:
+                r = runner(argv)
+            except (OSError, subprocess.SubprocessError) as e:
+                if diagnose:
+                    # Never stringify the exception: it can contain argv, URLs or owner paths.
+                    diag['stderr_tail'] = (tail(getattr(e, 'stderr', '') or '')
+                                           or tail(getattr(e, 'stdout', '') or '')
+                                           or type(e).__name__ + ': installer could not complete')
+                raise ValueError('install_failed') from None
             if r.returncode:
-                from .upgrade_diag import tail
-                diag['stderr_tail'] = tail(getattr(r, 'stderr', '') or '') or tail(getattr(r, 'stdout', '') or '')
+                if diagnose:
+                    diag['stderr_tail'] = tail(getattr(r, 'stderr', '') or '') or tail(getattr(r, 'stdout', '') or '')
                 raise ValueError('install_failed')
-    def verify(version):
+    def verify(version, *, diagnose=True):
         argv = job['argv']
         v = runner(argv + ['--version'])
         if v.returncode or version not in (v.stdout or '').split():
@@ -447,7 +459,8 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
             r = runner(argv + ['service', 'install', '--deferred', version])
             if r.returncode:
                 from .upgrade_diag import tail
-                diag['stderr_tail'] = tail(getattr(r, 'stderr', '') or '')
+                if diagnose:
+                    diag['stderr_tail'] = tail(getattr(r, 'stderr', '') or '')
                 raise ValueError('restart_failed')
             end = time.monotonic() + 90 + service_recovery.READY_LIMIT   # P142: the worker may wait for an idle serve
             while True:
@@ -527,11 +540,12 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
             job['failure'] = reason
             save('rollback')
             try:
-                install(job['old'])
-                verify(job['from'])
+                install(job['old'], diagnose=False)
+                verify(job['from'], diagnose=False)
                 result['result'] = 'rolled_back'
             except Exception:
                 result['reason'] = 'rollback_failed'
+                result.update(update.recover_of(job['install'], job.get('old'), 'failed'))
         finish(st, result, diag)
         if job.get('phase'):
             save('done')

@@ -46,7 +46,7 @@
     "codex.waiting": {"zh": "Agent J 主机上的 Codex 正在回答，等它说完我就把您的消息递过去。", "en": "The desktop Codex is mid-answer; I'll hand over your message when it finishes."},
     "codex.clear_next": {"zh": "下条消息起是新的 Codex 对话，Agent J 主机上的原对话不动。", "en": "Your next message starts a new Codex conversation; the one on the Agent J host stays as it is."},
     "codex.clear_busy": {"zh": "Agent J 主机上的 Codex 正在回答，这次没清空；等它说完再清。", "en": "The desktop Codex is mid-answer, so nothing was cleared. Clear again once it finishes."},
-    "codex.cleared_new": {"zh": "新对话已开。Agent J 主机的 Codex 不会自动跟过来；继续请运行：", "en": "New conversation started. The desktop Codex won't follow by itself; to continue it there, run:"},
+    "codex.cleared_new": {"zh": "新对话已开始。", "en": "New conversation started."},
     "codex.cant_stop": {"zh": "Agent J 主机上发给 Codex，手机停不了；请在主机按 Esc。", "en": "Codex is answering a turn started on the Agent J host; the phone can't stop it. Press Esc (or Ctrl+C) there."},
     "codex.cant_stop_withdrawn": {"zh": "您排在它后面的那条消息已撤回，没有发出。", "en": "Your message waiting behind it was withdrawn and not sent."},
     "model.switched_now": {"zh": "换好了，现在用 {model}，重启后也一样。", "en": "Switched to {model} — effective now, and it sticks after restarts."},
@@ -61,5 +61,6 @@
     "update.auto_ok": {"zh": "{title}，我夜里自己升级到 {to} 了：{summary}。", "en": "{title}, I updated myself to {to} overnight: {summary}."},
     "update.auto_ok_default": {"zh": "装上了最新正式版的改进", "en": "the latest published fixes"},
     "update.auto_rollback": {"zh": "{title}，夜里升级没成功，已回滚到 {from}，原因：{reason}。", "en": "{title}, last night's update failed; I rolled back to {from} ({reason})."}
-  }
+  },
+  "clear_resume": {"codex": {"command": "codex resume", "zh": "如果您也想在终端或 Codex App 里接着用这个对话", "en": "To continue this same conversation in a terminal or the Codex app"}, "claude": {"command": "claude --resume", "zh": "如果您也想在终端的 Claude Code 里接着用这个对话", "en": "To continue this same conversation in Claude Code in a terminal"}, "opencode": {"command": "opencode -s", "zh": "如果您也想在终端或 OpenCode 里接着用这个对话", "en": "To continue this same conversation in a terminal or OpenCode"}}
 }

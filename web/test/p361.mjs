@@ -19,10 +19,10 @@ import { launch, newPage, navigate, waitFor, waitState, evaluate, shoot, sleep, 
 const OUT = process.env.P361_OUT || 'reports/qa/p361/web';
 const NAMES = ['doctor', 'reconnect', 'status', 'service_status', 'rescue_status', 'update_check'];
 const L = {
-  zh: { title: '电脑上的命令', run: '执行', fa: '用 Face ID 确认', ok: '执行完成（退出码 0）', fail: '执行完成，有需要处理的项（退出码 1）', masked: '结果里像密码、密钥的内容已经在电脑上遮住了。',
+  zh: { title: 'Agent J 主机上的命令', run: '执行', fa: '用 Face ID 确认', ok: '执行完成（退出码 0）', fail: '执行完成，有需要处理的项（退出码 1）', masked: '结果里像密码、密钥的内容已经在 Agent J 主机上遮住了。',
     busy: '上一条命令还在执行，请等它结束。', nopk: '执行命令前要先用 Face ID 确认，这台手机还没设置 Face ID。', cut: '结果太长，只显示前面一部分。' },
-  en: { title: 'Commands on the computer', run: 'Run', fa: 'Confirm with Face ID', ok: 'Done (exit code 0)', fail: 'Done, with items that need attention (exit code 1)',
-    masked: 'Anything that looks like a password or key was hidden on the computer.', busy: 'The previous command is still running; wait for it to finish.',
+  en: { title: 'Commands on the Agent J host', run: 'Run', fa: 'Confirm with Face ID', ok: 'Done (exit code 0)', fail: 'Done, with items that need attention (exit code 1)',
+    masked: 'Anything that looks like a password or key was hidden on the Agent J host.', busy: 'The previous command is still running; wait for it to finish.',
     nopk: 'Running a command needs Face ID first, and this phone has not set it up yet.', cut: 'The result is long; only the first part is shown.' },
 };
 const DOCTOR = '✓ version    agentj 0.23.0a1\n✓ relay      wss://relay.agentj.app (TLS + WebSocket)\n! asr        speech-to-text not installed\n✓ serve      running · relay connected\nOPENROUTER_API_KEY=[REDACTED]\n<b id="inj">x</b>\n';
@@ -63,7 +63,7 @@ export async function runP361({ B, web, fake, out = OUT }) {
   const gate = () => { let open; const p = new Promise((r) => { open = r; }); H.hold = { p, open }; };
   const release = () => { const g = H.hold; H.hold = null; g?.open(); };
 
-  const combos = [['zh', 'light', 390], ['zh', 'dark', 390], ['en', 'light', 390], ['en', 'dark', 390], ['zh', 'light', 1440], ['zh', 'dark', 1440]];
+  const combos = [['zh', 'light', 390], ['zh', 'dark', 390], ['en', 'light', 390], ['en', 'dark', 390], ['zh', 'light', 1440], ['zh', 'dark', 1440], ['en', 'light', 1440], ['en', 'dark', 1440]];
   for (const [lang, theme, w] of combos) {
     const s = L[lang], tag = `${lang}-${theme}-${w}`, full = w === 390 && theme === 'light';
     fake.reset(); fake.setUp(true); fake.st.runCmds = [...NAMES, 'rm_rf']; fake.st.prefs = { appearance: { language: lang, theme } }; H.calls.length = 0; H.ran.length = 0; H.passkey = true;
@@ -83,6 +83,11 @@ export async function runP361({ B, web, fake, out = OUT }) {
     };
     try {
       await navigate(p, fake.newPairing(PAGE + '?lang=' + lang)); await waitState(p, 'awaiting-approval'); await fake.approve(); await waitState(p, 'ready');
+      // P380 QA: the persisted theme overrides emulated media; explicitly select and verify each visual variant.
+      await evaluate(p, `import('./js/settings.js').then(m=>{m.applyThemeLocal('${theme}');return true})`);
+      assert.equal(await evaluate(p, `document.documentElement.getAttribute('data-theme')`), theme);
+      const expectedBg = theme === 'light' ? '#faf9f5' : '#141414';
+      assert.equal(await evaluate(p, `getComputedStyle(document.documentElement).getPropertyValue('--bg').trim()`), expectedBg);
       await evaluate(p, `if(!${$('a2hs')}.hidden)${$('a2hs-ok')}.click(); ${$('phone-env-dismiss')}?.click(); true`);
       await evaluate(p, `import('./js/settings.js').then(m=>{m.openRescue();return true})`);
       await waitFor(p, `!${$('settings')}.hidden && !${$('rs-cmds')}.hidden`);
@@ -97,6 +102,7 @@ export async function runP361({ B, web, fake, out = OUT }) {
         const a = await evaluate(p, `(()=>{const b=document.getElementById('rs-cmds');const small=[...b.querySelectorAll('button')].filter(e=>e.getClientRects().length).map(e=>{const r=e.getBoundingClientRect();return {id:e.id||e.className,w:Math.round(r.width),h:Math.round(r.height)}}).filter(x=>x.h<44||x.w<44);return {small,over:document.getElementById('set-main').scrollWidth>document.getElementById('set-main').clientWidth+1}})()`);
         check(!a.small.length && !a.over, `${label}: taps ≥ 44 px, no overflow ${tag} ${JSON.stringify(a)}`);
       };
+      check(await evaluate(p, `${$('rs-cmds')}.querySelector('.rsnote').textContent`) === (lang === 'zh' ? '在 Agent J 主机上执行的终端指令。' : 'Terminal commands that run on the Agent J host.'), 'plain current-purpose description ' + tag);
       await audit('idle');
       await view('rs-cmds'); await save('1-list');
 
@@ -111,7 +117,7 @@ export async function runP361({ B, web, fake, out = OUT }) {
       await waitFor(p, `!!document.querySelector('#rs-cmd-out .rsnow')`, 10000);
       for (let i = 0; i < 100 && !H.ran.length; i++) await sleep(50);   // the host side is held at ctl_pending
       check(H.calls.length === 2 && H.calls[1].sigOk && H.calls[1].fa && H.ran.join() === 'doctor', 'resent with a real assertion over the host challenge → ran ' + tag);
-      check(await evaluate(p, `[...document.querySelectorAll('.rscmdgo')].every(b=>b.disabled)`), 'one at a time: buttons wait ' + tag);
+      check(await evaluate(p, `!${$('rs-cmd-close')} && [...document.querySelectorAll('.rscmdgo')].every(b=>b.disabled)`), 'one at a time: buttons wait ' + tag);
       await view('rs-cmd-out', 'center'); if (full || w === 1440) await save('3-running');
       release();
       await waitFor(p, `!!${$('rs-cmd-out-text')}`);
@@ -122,6 +128,12 @@ export async function runP361({ B, web, fake, out = OUT }) {
       check(!(await evaluate(p, `JSON.stringify(localStorage).includes('OPENROUTER_API_KEY')`)), 'output not stored ' + tag);
       await audit('result');
       await view('rs-cmd-out', 'end'); await save('4-doctor-done');
+
+      const callsBeforeClose = H.calls.length, ranBeforeClose = H.ran.length;
+      await click('rs-cmd-close');
+      check(await evaluate(p, `${$('rs-cmd-out')}.hidden && !${$('rs-cmd-out-text')} && document.activeElement.id === 'rs-cmd-doctor'`), 'close clears result DOM and restores focus ' + tag);
+      check(await evaluate(p, `import('./js/cmdrun.js').then(m=>m._debug().R===null)`), 'close clears in-memory output ' + tag);
+      check(H.calls.length === callsBeforeClose && H.ran.length === ranBeforeClose, 'close sends no control request ' + tag);
 
       // ---- exit ≠ 0: still shows the output, says what it means; a cut result says so
       H.next = { ok: false, code: 1, out: '✗ relay      reconnecting\n    → agentj doctor --reconnect\n', cut: true, ms: 900 };
@@ -141,6 +153,10 @@ export async function runP361({ B, web, fake, out = OUT }) {
       H.busy = true;
       await click('rs-cmd-status'); await waitFor(p, `!${$('confirm')}.hidden`); await click('confirm-yes');
       await waitFor(p, `document.querySelector('#rs-cmd-out .rsfail')?.textContent===${JSON.stringify(s.busy)}`, 10000);
+      const callsBeforeFailClose = H.calls.length, ranBeforeFailClose = H.ran.length;
+      await click('rs-cmd-close');
+      check(await evaluate(p, `${$('rs-cmd-out')}.hidden`), 'failed result can close ' + tag);
+      check(H.calls.length === callsBeforeFailClose && H.ran.length === ranBeforeFailClose, 'failed close sends no control request ' + tag);
       H.busy = false;
       check(H.ran.length === ran, 'busy → nothing ran ' + tag);
 

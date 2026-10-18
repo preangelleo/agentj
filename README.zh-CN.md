@@ -7,7 +7,7 @@
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="License: Apache-2.0"></a>
   <img src="https://img.shields.io/badge/python-%E2%89%A53.11-3776AB.svg" alt="Python 3.11 or newer">
-  <a href="https://github.com/preangelleo/agentj/releases/tag/v0.23.1a1"><img src="https://img.shields.io/badge/release-v0.23.1a1-orange.svg" alt="Latest release: v0.23.1a1"></a>
+  <a href="https://github.com/preangelleo/agentj/releases/tag/v0.23.2a1"><img src="https://img.shields.io/badge/release-v0.23.2a1-orange.svg" alt="Latest release: v0.23.2a1"></a>
   <img src="https://img.shields.io/badge/status-beta-yellow.svg" alt="Status: beta">
 </p>
 
@@ -78,7 +78,7 @@ Agent J 由两部分组成，都由你自己运行，代码都在本仓库：
 只装主机程序，锁定到发布标签（需要 Python 3.11 或更新；版本太旧的话 uv 会自己下载一个）：
 
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.23.1a1#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.23.2a1#subdirectory=host"
 agentj --version
 ```
 

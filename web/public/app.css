@@ -167,6 +167,9 @@ html[data-sbar=black] .satband{background:#000}
 .sabband{position:fixed;left:0;right:0;bottom:0;height:env(safe-area-inset-bottom,0px);
   z-index:30;pointer-events:none;background:var(--pg);transition:none!important}
 body[data-kb="1"] .sabband{display:none}
+/* P384 #86: only iOS fixes both safe areas to Sooty, including reader / custom themes.
+   Android retains its page-colour bars. Insets and keyboard spacing are unchanged. */
+html[data-ios="1"] .satband,html[data-ios="1"] .sabband{background:var(--c-sooty)!important;z-index:101}
 
 
 button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
@@ -2969,3 +2972,11 @@ body:is([data-view="mem"],[data-view="act"],[data-view="tasks"],[data-view="mode
 
 /* P375: the offline card follows the actual message card, without the global square's height floor. */
 .gdlg.offdlg .sq{width:min(100%,var(--off-compose-width,960px));min-height:0;max-height:100%;border-radius:24px;background:#141414;color:#faf9f5}
+
+/* P380: optional native continuation belongs to the original clear card. */
+.cmdresume{width:100%;font:400 calc(13px*var(--fz))/1.5 var(--font-body)}
+.cmdresume summary{cursor:pointer;min-height:44px;display:list-item;align-content:center;overflow-wrap:anywhere}
+.cmdresume .cc--block{margin-top:8px;border-radius:14px;background:color-mix(in srgb,var(--c-sooty) 30%,transparent);color:var(--ink)}
+.cmdresume .cc--block>pre{margin:0;padding:14px 52px 14px 16px;background:transparent;color:inherit;
+  font:400 calc(14px*var(--fz))/1.55 var(--font-mono);white-space:pre-wrap;overflow-wrap:anywhere}
+.cmdresume pre code{padding:0;background:transparent;color:inherit;font:inherit;white-space:inherit}

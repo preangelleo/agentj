@@ -149,26 +149,41 @@ def install_kind(prefix: str | None = None) -> dict:
     return {"kind": "pip", "where": prefix, "legacy": False}
 
 
+def installer_binary(name: str) -> str:
+    """Service PATH can omit uv/pipx's user install directory. Keep PATH precedence;
+    fall back only to their standard per-user locations, never a shell or arbitrary search.
+    """
+    found = shutil.which(name)
+    if found:
+        return found
+    locations = ('.local/bin', '.cargo/bin') if name == 'uv' else ('.local/bin',)
+    for directory in locations:
+        candidate = Path.home() / directory / name
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return str(candidate)
+    return name
+
+
 def commands(info: dict, latest: str | None = None) -> list[list[str]]:
     """The upgrade, as argv lists run one after the other (stop at the first failure). With `latest` known, uv / pipx / pip
     install exactly the tag `v<latest>` (spec_at) — the version the check reported, also for a copy pinned to an older tag."""
     k = info["kind"]
     pinned = spec_at(latest) if latest else None
     if k == "uv":
-        uv = shutil.which("uv") or "uv"
+        uv = installer_binary("uv")
         if info.get("legacy"):         # registered as agentjarvis-host: `upgrade` cannot rename a tool — reinstall it
             return [[uv, "tool", "uninstall", LEGACY_DIST], [uv, "tool", "install", pinned or SPEC]]
         if pinned:
             return [[uv, "tool", "install", "--force", pinned]]
         return [[uv, "tool", "upgrade", DIST]]
     if k == "pipx":
-        px = shutil.which("pipx") or "pipx"
+        px = installer_binary("pipx")
         if info.get("legacy"):
             return [[px, "uninstall", LEGACY_DIST], [px, "install", pinned or SPEC]]
         return [[px, "install", "--force", pinned or info.get("spec") or SPEC]]
     if k == "checkout":
         src = info["where"]
-        return [["git", "-C", src, "pull", "--ff-only"], [shutil.which("uv") or "uv", "sync", "--project", src]]
+        return [["git", "-C", src, "pull", "--ff-only"], [installer_binary("uv"), "sync", "--project", src]]
     return [[os.path.join(info["where"], "bin", "python"), "-m", "pip", "install", "--upgrade", pinned or SPEC]]
 
 

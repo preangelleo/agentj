@@ -667,7 +667,7 @@ class OpenCodeAgent(Agent):
                 raise HTTPError(f"session {st}")
             sid = s["id"]
             if self.persist:
-                self.host.st.set_agent_session(self.kind, sid)
+                self.record_session(sid)
         st, s = await self.client.request("GET", f"/session/{sid}")
         if st != 200 or not isinstance(s, dict) or not ends_with_ours(s.get("permission"), self.rules):
             raise HTTPError("rules not in place")        # never prompt a session whose last rules are not ours

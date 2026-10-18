@@ -81,10 +81,20 @@ class ClearRepins(Base):
         self.assertEqual([m for m, _ in self.calls], ['thread/start'])
         self.assertEqual(self.calls[0][1], {'cwd': str(self.proj)})
         self.assertEqual(a.tid, NEW); self.assertEqual(self.st.agent_session('codex'), NEW); self.assertFalse(a.cleared)
-        self.assertIn(f'`codex resume {NEW}`', self.notices()); self.assertIn('不会自动跟过来', self.notices())
+        self.host.clear_resume.assert_called_once_with('codex', NEW)
+        self.assertEqual(self.notices(), '')
         self.host.set_pref.assert_not_called()                   # the global pin is never written with a Codex id
         b = self.agent()                                         # serve restarted: still the new thread
         self.assertEqual(b.cfg['shared_session_id'], NEW); self.assertFalse(b.cleared)
+
+    async def test_clear_notice_explains_optional_terminal_or_app_resume_in_english(self):
+        self.host.lang = 'en'
+        self.rollout(OLD)
+        a = self.agent(OLD)
+        await a.command('clear', '')
+        await a._thread()
+        self.host.clear_resume.assert_called_once_with('codex', NEW)
+        self.assertEqual(self.notices(), '', 'resume updates the original clear card; no second message')
 
     async def test_clear_off_an_owner_pin_survives_restart_without_touching_the_pin(self):
         self.rollout(OWNER)
