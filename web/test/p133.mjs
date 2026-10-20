@@ -18,7 +18,7 @@ try{
   const waits=await evaluate(p,`import('./js/session.js').then(m=>{const seen=[];const st=window.__ajSetStatus;
     const o=window.setTimeout;window.setTimeout=(f,ms,...a)=>{seen.push(ms);return o(f,ms,...a)};
     try{m.closeSession();for(let i=0;i<10;i++)m.scheduleReconnect();}finally{window.setTimeout=o}return seen;})`);
-  const ladder=waits.filter(x=>x!==6000);   // 6000 = P129's quiet window, not a retry
+  const ladder=waits[0]===5000?waits.slice(1):waits;   // the first timer = the quiet window (P129; P393: the 5 s link gate), not a retry
   // P193 (B12): every later step is jittered into [½, 1] × 250·2ⁿ (capped at 5 s)
   const step=i=>Math.min(250*2**i,5000);
   ok(ladder.length===10&&ladder[0]===250&&Math.max(...ladder)<=5000&&ladder.every((x,i)=>x>=step(i)/2&&x<=step(i))&&ladder.slice(-4).every(x=>x>=2500),`retry waits ${JSON.stringify(waits)}: first 250 ms, then jittered, capped at 5 s (was 30 s)`);

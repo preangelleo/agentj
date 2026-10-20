@@ -26,6 +26,7 @@ import { unb64u } from '../proto/wire.js';   // P336: approval level / goal with
 import * as toolsort from './toolsort.js';   // P340: Settings → 输入框按钮顺序 (drag / hold-drag / tap / ← →)
 import * as toolorder from './toolorder.js';
 import * as jcards from './jcards.js';   // P360: Settings → Cards (official cards default off + the owner's own)
+import * as rescue from './rescue.js';     // P393: fold ended 紧急修复 results when Settings opens again
 import * as cmdrun from './cmdrun.js';     // P361: 紧急修复 → Agent J 主机上的命令 (「执行」)
 import * as pagefind from './pagefind.js';   // P363 (#70): in-place find on a Settings sub-page
 import * as ntf from './notify.js';      // P365: Settings → 自动化消息 (`agentj notify`)
@@ -480,6 +481,8 @@ export function open(page = 'main', add = false) {
   if (page === 'remotes' && H.paired()) showSub('remotes', add);
   else if (H.paired() && isReady()) remotes.refresh().then(renderRemotesRow);   // 已用 N / 10 from the computer itself
   if (H.paired()) news.load();   // P374: one news_get per opening (the account may have changed it in between)
+  rescue.foldEnded();            // P393: earlier repair results open as one line each (their log under 「详情」)
+  cmdrun.foldEnded();
 }
 export function back() { if (sub !== 'main') showSub('main'); else close(); }
 /** P184: 「转发到邮箱」 with no mailbox yet → Settings → 邮件通道. */
@@ -713,28 +716,133 @@ export function upgradeFromKey() { return H.upgradeHost?.(); }
 /** P265 / P241 pairing key: reuse the existing signed Add flow and show its QR, never toggle it away. */
 export function pairFromKey() { if (sub === 'remotes' && isOpen()) return remotes.open({add: true}); return open('remotes', true); }
 // P264: only public labels / descriptions, never input values or secret cards, form the local search index.
-export function closeSearch() { pagefind.close(); el('set-find').hidden = true; el('set-find-input').value = ''; el('set-find-results').replaceChildren(); }
+export function closeSearch() { pagefind.close(); el('set-find').hidden = true; el('set-find-input').value = ''; el('set-find-results').replaceChildren(); filterMain(''); }
 export function toggleSearch() {
   if (!isOpen()) return;
   if (!el('set-find').hidden) { closeSearch(); return; }
   // P363 (#70): a sub-page (遥控器管理, 邮件通道, AI 登录救援, 联系人, iMessage, iOS) searches itself, in place
+  // P393: 通讯录 already has its own search over the whole address book (the computer searches name, nickname, pinyin and
+  // address) — the magnifier goes to that field instead of marking only the rows loaded on screen
+  if (sub === 'contacts' && el('ctm-q') && el('ctm-q').getClientRects().length) { el('ctm-q').focus(); el('ctm-q').select(); return; }
   if (sub !== 'main') { const page = el('set-' + sub); if (page && !page.hidden) { pagefind.openIn(page, 'p363.findSet'); return; } showSub('main'); }
   el('set-find').hidden = false; el('set-find-input').focus();
 }
+// P393 (#124 「搜 Telegram 只列出一行……下面整页不过滤、不跳转、不高亮」): typing filters the main page itself (rows that do not
+// match step aside, a section whose title matches stays whole, every hit is marked, the first one scrolled into view); the list
+// under the field names every matching row — the main page's and the sub-pages' (「邮件通道 › …」) — and a tap opens the
+// right page and scrolls to + flashes that row. #set-main[data-find] switches the filter on, so measuring stays honest.
+const unfiltered = (fn) => { const m = el('set-main'), was = m.dataset.find; delete m.dataset.find; try { return fn(); } finally { if (was) m.dataset.find = was; } };
+const keywordsOf = (n) => [n, ...n.querySelectorAll('[data-keywords]')].map((x) => x.dataset?.keywords || '').join(' ');
+function filterMain(q) {
+  const main = el('set-main'), ts = pagefind.terms(q);
+  for (const n of main.querySelectorAll('[data-find-out]')) delete n.dataset.findOut;
+  delete main.dataset.find;
+  if (!ts.length) { if (!pagefind.isOpen()) pagefind.clearMarks(); return 0; }
+  let n = 0;
+  for (const card of main.querySelectorAll('.setcards > .setcard')) {
+    if (!card.getClientRects().length) continue;
+    if (pagefind.matches(card.querySelector(':scope > h3')?.textContent || '', ts)) { n++; continue; }
+    let any = false;
+    for (const u of card.children) {
+      if (u.matches('h3, img, template') || !u.getClientRects().length) continue;
+      if (pagefind.matches(u.textContent + ' ' + keywordsOf(u), ts)) { any = true; n++; } else u.dataset.findOut = '1';
+    }
+    if (!any) card.dataset.findOut = '1';
+  }
+  for (const x of main.querySelectorAll('.setcards > :not(.setcard), .setmain > a.setnav')) if (x.getClientRects().length && !pagefind.matches(x.textContent, ts)) x.dataset.findOut = '1';
+  for (const b of main.querySelectorAll('.setside [data-set-jump]')) if (el(b.dataset.setJump)?.dataset.findOut) b.dataset.findOut = '1';   // the wide screen's section list follows
+  main.dataset.find = '1';
+  const marks = pagefind.mark(main, q);
+  if (marks) pagefind.step(1); else main.scrollTop = 0;
+  return n;
+}
 export function searchItems(query) {
   const q = query.trim().toLocaleLowerCase(); if (!q) return [];
-  return [...el('set-main').querySelectorAll('.setrow, .setnav, .setlinks')].filter(n => n.getClientRects().length &&
-    [...n.querySelectorAll('.setlab, .setnote, b, small, a')].map(x => x.textContent).join(' ').concat(' ', n.dataset.keywords || '', n.closest('.setcard')?.querySelector('h3')?.textContent || '').toLocaleLowerCase().includes(q));
+  return unfiltered(() => [...el('set-main').querySelectorAll('.setrow, .setnav, .setlinks')].filter(n => n.getClientRects().length &&
+    [...n.querySelectorAll('.setlab, .setnote, b, small, a')].map(x => x.textContent).join(' ').concat(' ', n.dataset.keywords || '', n.closest('.setcard')?.querySelector('h3')?.textContent || '').toLocaleLowerCase().includes(q)));
+}
+// the sub-pages a main-page row opens (only those whose row is there for this computer)
+const SUBS = [['ios', 'set-a2hs'], ['mail', 'set-mail-nav'], ['contacts', 'set-contacts-nav'], ['auth', 'set-auth-nav'], ['imessage', 'set-imsg-nav'], ['cards', 'set-cards-nav'], ['notify', 'set-notify-nav'], ['hooks', 'set-hooks-nav']];
+const SUB_UNIT = '.setrow, .setnav, h3.setg, label.mailf, .setnote, .jc-setrow';
+/** Rows of the Settings sub-pages that match (public labels / notes only, never input values) → [{sub, node, label}]. */
+export function subItems(query) {
+  const ts = pagefind.terms(query); if (!ts.length) return [];
+  const out = [];
+  unfiltered(() => {
+    for (const [v, nav] of SUBS) {
+      const page = el('set-' + v), b = el(nav);
+      if (!page || !b || !b.getClientRects().length) continue;
+      for (const u of page.querySelectorAll(SUB_UNIT)) {
+        if (u.parentElement.closest(SUB_UNIT) || u.closest('template') || u.closest('[hidden]') !== page) continue;
+        const text = u.textContent.replace(/\s+/g, ' ').trim();
+        if (!text || !pagefind.matches(text + ' ' + keywordsOf(u), ts)) continue;
+        const lab = (u.querySelector('b, .setlab')?.textContent || text).trim();
+        out.push({ sub: v, node: u, label: lab.length > 60 ? lab.slice(0, 59) + '…' : lab });
+      }
+    }
+  });
+  return out;
+}
+/** Scroll a row to the middle, flash it and mark the words in it (cleared with the flash). */
+function flashRow(row, q) {
+  row.scrollIntoView({ block: 'center' });
+  row.classList.remove('set-found'); void row.offsetWidth; row.classList.add('set-found');
+  if (!row.matches('button, a, input, [tabindex]')) row.tabIndex = -1;
+  row.focus({ preventScroll: true });
+  if (q && !pagefind.isOpen()) pagefind.mark(row, q);
+  setTimeout(() => { row.classList.remove('set-found'); if (pagefind.markedIn() === row) pagefind.clearMarks(); }, 2400);
+}
+function hitButton(where, label, go) {
+  const b = document.createElement('button'); b.type = 'button'; b.className = 'setnav set-hit';
+  const w = document.createElement('small'); w.textContent = where;
+  const l = document.createElement('b'); l.textContent = label;
+  const col = document.createElement('span'); col.append(l, w);
+  b.append(col); b.addEventListener('click', go);
+  return b;
 }
 function renderSearch() {
   const box = el('set-find-results'); box.replaceChildren();
-  const found = searchItems(el('set-find-input').value);
+  const q = el('set-find-input').value;
+  const found = searchItems(q), more = subItems(q);
   for (const row of found) {
-    const b = document.createElement('button'); b.type = 'button'; b.className = 'setnav';
-    b.textContent = row.querySelector('.setlab, b, a')?.textContent || row.textContent;
-    b.addEventListener('click', () => { closeSearch(); row.scrollIntoView({block: 'center'}); row.classList.remove('set-found'); void row.offsetWidth; row.classList.add('set-found'); row.tabIndex = -1; row.focus({preventScroll:true}); setTimeout(() => row.classList.remove('set-found'), 2400); });
-    box.append(b);
+    const where = row.closest('.setcard')?.querySelector(':scope > h3')?.textContent || t('set.title');
+    box.append(hitButton(where, (row.querySelector('.setlab, b, a')?.textContent || row.textContent).trim(), () => { closeSearch(); flashRow(row, q); }));
   }
-  if (!found.length && el('set-find-input').value.trim()) box.textContent = t('p264.noResults');
+  for (const h of more) {
+    box.append(hitButton(t(SUB_TITLE[h.sub]), h.label, () => {
+      closeSearch(); showSub(h.sub);
+      requestAnimationFrame(() => { if (h.node.isConnected && h.node.getClientRects().length) flashRow(h.node, q); });
+    }));
+  }
+  if (!found.length && !more.length && q.trim()) box.textContent = t('p264.noResults');
+  filterMain(q);
 }
 el('set-find-input').addEventListener('input', renderSearch);
+el('set-find-input').addEventListener('keydown', (e) => {   // Enter = the first result
+  if (e.isComposing || e.keyCode === 229 || e.key !== 'Enter') return;
+  const b = el('set-find-results').querySelector('button'); if (b) { e.preventDefault(); b.click(); }
+});
+
+// P392: this lives in the fixed Settings header, including every full-screen sub-page.
+let connectionState = null, connectionRecovered = false, connectionPending = false;
+/** P392 live dot; P393 `pending` = a drop still inside the five-second window (reconnect.js): an amber 「正在重新连接…」,
+ *  no notice and no red — the red line and 「连接已断开」 only come once the window is over. */
+export function connectionChanged(on, pending = false) {
+  connectionPending = !on && pending;
+  if (connectionPending) {
+    const n = el('set-connection');
+    if (n) { n.dataset.online = 'pending'; n.textContent = t('p393.reconnecting'); n.setAttribute('aria-label', n.textContent); n.title = n.textContent; }
+    return;
+  }
+  const changed = connectionState !== null && connectionState !== on;
+  if (changed && on) connectionRecovered = true;
+  connectionState = on;
+  const n = el('set-connection');
+  if (n) {
+    n.dataset.online = String(on);
+    n.textContent = t(on ? (connectionRecovered ? 'p392.restored' : 'p392.connected') : 'p392.disconnected');
+    n.setAttribute('aria-label', n.textContent); n.title = n.textContent;
+  }
+  if (changed && isOpen()) toast(t(on ? 'p392.restored' : 'p392.disconnected'), 3600);
+}
+onLang(() => { if (connectionState !== null || connectionPending) connectionChanged(!!connectionState && !connectionPending, connectionPending); });

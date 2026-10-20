@@ -27,21 +27,22 @@ def _run(zone, signals=BLOCKED):
 
 
 class Primary(unittest.TestCase):
-    def test_mainland_from_zero_is_ark_lite(self):
+    def test_mainland_from_zero_is_ark_agent_plan(self):
+        """P395 (#141): Ark sells the Agent Plan now — Medium first (Kimi K3 from Medium up)."""
         r = _run("Asia/Shanghai")
         self.assertEqual((r["route"], r["primary"]), ("kimi", "ark"))
-        self.assertEqual(r["ark"]["start_tier"], "Lite")
-        self.assertEqual([t["name"] for t in r["ark"]["tiers"]], ["Lite", "Pro"])
-        self.assertEqual(r["ark"]["model"], "ark-coding-plan/doubao-seed-2.1-pro")
+        self.assertEqual(r["ark"]["start_tier"], "Medium")
+        self.assertEqual([t["name"] for t in r["ark"]["tiers"]], ["Small", "Medium", "Large", "Max"])
+        self.assertEqual(r["ark"]["model"], "ark-agent-plan/doubao-seed-2.1-pro")
         zh, en = ai_route.render(r, "zh"), ai_route.render(r, "en")
-        self.assertIn("中国大陆、从零开始：首推 **火山方舟 Coding Plan**，先买 **Lite**", zh)
-        self.assertIn("和 Pro 能力一样，只差 5 倍用量", zh)
-        self.assertIn("first choice **Volcano Ark Coding Plan** — buy **Lite** first", en)
-        self.assertIn("Pro only gives 5x the quota", en)
+        self.assertIn("中国大陆、从零开始：首推 **火山方舟 Agent Plan**，先买 **Medium**", zh)
+        self.assertIn("订阅 → Agent Plan → 使用配置", zh)
+        self.assertIn("first choice **Volcano Ark Agent Plan** — buy **Medium** first", en)
+        self.assertIn("--plan coding", en)
         for text in (zh, en):
             self.assertIn("agentj provider ark", text)
-            self.assertIn("ark-coding-plan/doubao-seed-2.1-pro", text)
-            self.assertIn("¥40", text)
+            self.assertIn("ark-agent-plan/doubao-seed-2.1-pro", text)
+            self.assertIn("¥49.9", text)
             self.assertLess(text.index("agentj provider ark"), text.index(ai_route.data()["invite_url"]),
                             "mainland: Ark's steps come before Kimi's")
             self.assertEqual(text.count("`agentj provider ark`"), 1, "no duplicate Ark line in the alternatives")
@@ -93,7 +94,7 @@ class Primary(unittest.TestCase):
         r = _run("Asia/Shanghai")
         got = json.loads(json.dumps(r, ensure_ascii=False))
         self.assertEqual(got["primary"], "ark")
-        self.assertEqual(got["ark"]["key_env"], "ARK_CODING_PLAN_API_KEY")
+        self.assertEqual(got["ark"]["key_env"], "ARK_AGENT_PLAN_API_KEY")      # P395
         self.assertEqual(got["ark"]["harness_options"], ["opencode", "claude"])
 
 
@@ -147,7 +148,7 @@ class Docs(unittest.TestCase):
                 self.assertNotIn(bad, t, (rel, bad))
 
     def test_mainland_ark_first(self):
-        pairs = (("documentation/product/install.md", "buy **Lite** first"),
+        pairs = (("documentation/product/install.md", "buy **Medium** first"),      # P395: the Agent Plan in install.md
                  ("agentjarvis/site/content/docs/17-setup-agents/en.md", "Buy Lite first"),
                  ("agentjarvis/site/content/docs/17-setup-agents/zh.src.md", "先买 Lite"),
                  ("agentjarvis/site/content/docs/17-setup-agents/zh.md", "先买 Lite"))

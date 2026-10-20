@@ -140,9 +140,11 @@ def agent_name_units(text: str) -> float:
 def new_agent_name_problem(text) -> str | None:
     """agent_name_problem, plus "name_too_long" when the normalised name is over NEW_NAME_UNITS units."""
     err = agent_name_problem(text)
+    n = normalise_agent_name(text)
+    if err == "bad_name" and n and len(n) > AGENT_NAME_MAX and agent_name_problem(n[:AGENT_NAME_MAX]) is None:
+        return "name_too_long"       # P393: only the length is wrong — say so (it used to read "bad name, 1–32 characters")
     if err:
         return err
-    n = normalise_agent_name(text)
     wide = sum(1 for ch in n if unicodedata.east_asian_width(ch) in ("W", "F"))
     return "name_too_long" if 8 * wide + 5 * (len(n) - wide) > 5 * NEW_NAME_UNITS else None
 

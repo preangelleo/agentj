@@ -30,6 +30,14 @@ dl/ (partial downloads, kept only after a failed install so a rerun resumes)}`, 
 host runs this code outside the fence and the fenced Agent cannot see or write the state dir (Invariant 14); not in
 agentj's own venv because every upgrade (`uv tool install --force`) recreates that venv.
 
+Shared across instances (P393): one OS user's instances (`agentj --instance N`) share one verified copy in
+`~/.local/state/agentj-shared/asr/{model/, wheels/, manifest.json, .lock}` (hidden from every Agent like a state dir). The
+first installer downloads under the lock and publishes; later instances hard-link the model into their own `model/`
+(re-hashed there) and build their own venv offline from the shared wheels — no download, and `ready.asr` is already
+`ready` (the first take links it in). A damaged shared copy is dropped and downloaded again; `remove` deletes only this
+instance's folder. `agentj asr engine voxtype` first reads voxtype's config and refuses an English-only model unless
+`--force`.
+
 ## Sources and mirrors (`--mirror`; `auto` = GitHub unless `UV_DEFAULT_INDEX` / `PIP_INDEX_URL` is a mainland mirror or github.com does not answer in 5 s, then the others as fallbacks)
 
 | route | wheels | model | download |

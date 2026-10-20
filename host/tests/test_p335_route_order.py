@@ -25,18 +25,18 @@ class Order(unittest.TestCase):
         for zone in ("Asia/Shanghai", None):            # no zone known: the mainland order (most blocked hosts are there)
             r = _res(zone)
             self.assertEqual(r["route"], "kimi")       # the route keeps its name (first-run journals store it)
-            self.assertEqual(r["ark"]["model"], "ark-coding-plan/doubao-seed-2.1-pro")
-            for lang, ark_head, kimi_head in (("zh", "火山方舟 Coding Plan（中国大陆首推", "Kimi 会员（香港"),
-                                              ("en", "Volcano Ark Coding Plan (first choice", "Kimi membership (first")):
+            self.assertEqual(r["ark"]["model"], "ark-agent-plan/doubao-seed-2.1-pro")     # P395: the Agent Plan
+            for lang, ark_head, kimi_head in (("zh", "火山方舟 Agent Plan（中国大陆首推", "Kimi 会员（香港"),
+                                              ("en", "Volcano Ark Agent Plan (first choice", "Kimi membership (first")):
                 text = ai_route.render(r, lang)
                 self.assertLess(text.index(ark_head), text.index(kimi_head), (zone, lang))
                 self.assertIn("agentj provider ark", text)
-                self.assertIn("Lite", text)
+                self.assertIn("Medium", text)
 
     def test_hong_kong_lists_kimi_first(self):
         r = _res("Asia/Hong_Kong")
-        for lang, ark_head, kimi_head in (("zh", "火山方舟 Coding Plan（中国大陆首推", "Kimi 会员（香港"),
-                                          ("en", "Volcano Ark Coding Plan (first choice", "Kimi membership (first")):
+        for lang, ark_head, kimi_head in (("zh", "火山方舟 Agent Plan（中国大陆首推", "Kimi 会员（香港"),
+                                          ("en", "Volcano Ark Agent Plan (first choice", "Kimi membership (first")):
             text = ai_route.render(r, lang)
             self.assertLess(text.index(kimi_head), text.index(ark_head), lang)
             self.assertIn(ai_route.DISCLOSURE[lang], text)

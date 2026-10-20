@@ -229,6 +229,13 @@ class Engines(Tmp):
         self.bin = self.tmp / "bin"
         self.bin.mkdir()
         self.wav = write_wav(self.tmp / "a.wav", silence(1))
+        # P393: switching to voxtype first reads its config — a Chinese-capable one here (never the developer's own)
+        vt = self.tmp / "xdg" / "voxtype" / "config.toml"
+        vt.parent.mkdir(parents=True)
+        vt.write_text('engine = "sensevoice"\n[sensevoice]\nmodel = "sensevoice-small"\n')
+        m = mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": str(self.tmp / "xdg")})
+        m.start()
+        self.addCleanup(m.stop)
 
     def fake_voxtype(self, text="你好", sleep="", rc="0"):
         p = self.bin / "voxtype"
@@ -656,8 +663,11 @@ class RealEngine(unittest.TestCase):
         if not self.owned:
             self.skipTest("never removes an engine this test did not install")
         lines = []
+        shared = asr.shared_present()
         self.assertEqual(asr.cli_main(["remove"], state_dir=self.state, out=lines.append), 0)
         self.assertFalse(asr.asr_dir(self.state).exists())
+        self.assertEqual(asr.shared_present(), shared)          # P393: remove never takes the copy other instances share
+        shutil.rmtree(asr.shared_dir(), ignore_errors=True)       # the test's own shared folder (tests/_hermetic.py)
         self.assertEqual(asr.status(self.state)["state"], "not_installed")
         self.assertEqual(asr.settings(self.state)["engine"], "auto")
 

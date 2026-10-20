@@ -238,6 +238,25 @@
       }
     }
   },
+  "_comment_agent": "P395 (#141, 2026-10-19): Ark now sells the Agent Plan (Small / Medium / Large / Max) — the recommended way in. Its own addresses: OpenAI-compatible …/api/plan/v3, Anthropic-compatible …/api/plan (measured with a Medium key: /api/plan/v3/chat/completions and /api/plan/v1/messages answer; the same key on /api/coding/v3 → 401). Its key is the plan's own key from 订阅 → Agent Plan → 使用配置, not one from API Key management. Never /api/v3 (billed extra). Models: the Coding Plan's list minus `unsupported` (each id called once on 2026-10-19; doubao-seed-2.0-lite → UnsupportedModel); image input and limits as the Coding Plan's. Kimi K3 from Medium up (Ark's plan page).",
+  "agent": {
+    "provider": "ark-agent-plan",
+    "key_env": "ARK_AGENT_PLAN_API_KEY",
+    "name": "火山方舟 Agent Plan",
+    "base_url": "https://ark.cn-beijing.volces.com/api/plan/v3",
+    "anthropic_base": "https://ark.cn-beijing.volces.com/api/plan/v1",
+    "unsupported": ["doubao-seed-2.0-lite"],
+    "models_checked": "2026-10-19",
+    "tiers": [
+      ["Small", 9.9],
+      ["Medium", 49.9],
+      ["Large", 500],
+      ["Max", 1000]
+    ],
+    "start_tier": "Medium",
+    "medium_up": ["kimi-k3"],
+    "prices_checked": "2026-10-19"
+  },
   "_comment_payg": "P371: the pay-as-you-go preset (standard /api/v3, billed per token, any program may call it — unlike the plan address). Model ids, image input and limits read from GET /api/v3/models on 2026-10-17 (that endpoint is also the read-only key check). OpenCode's built-in `volcengine` provider reads the same ARK_API_KEY but its list lacks the newest ids (no doubao-seed-2-1-pro-260915 in 1.18.34), so this is our own `ark-api` block. One Ark API key works on both addresses: the address decides whether the plan or the balance pays.",
   "payg": {
     "provider": "ark-api",

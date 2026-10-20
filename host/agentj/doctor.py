@@ -779,7 +779,7 @@ def check_harness(svc=None) -> dict:
 def check_bound(st: State) -> dict:
     link = cloud.read_cloud(st) if st.exists() else None
     if link:
-        via = "用设置码加入 / joined with a setup code" if link["via"] == "seat" else "用Agent J 主机绑定码加入 / joined with a computer binding code"
+        via = "用设置码加入 / joined with a setup code" if link["via"] == "seat" else "用Agent J 主机绑定码加入 / joined with a host binding code"
         return _c("bound", OK, f"Agent J 账号 / Agent J account {link['tenant']['slug']} · {via}")
     return _c("bound", WARN, "还没加到 Agent J 账号 / not in an Agent J account yet", "agentj login")
 

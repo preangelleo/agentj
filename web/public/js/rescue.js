@@ -34,10 +34,16 @@ export const OFFERS = ['rollback', 'linger', 'new_session'];   // §33 ②: the 
 // support's advice row (rescue_kit `_H.advice`); an explicit `"advice":true` on the step is honoured as well
 const ADVICE = /^(Agent J Father ?的建议：|Agent J Father suggests:)/;
 
-let H = { openSettings() {}, closeSettings() {}, toChat() {} };
+// P393 · a finished result never stays forever: × clears it (the P380 command-result close), a success folds to one line
+// FOLD_MS after it ended on a live link (and every ended result folds once the link is back), and opening Settings again
+// shows only the one-line summary — the earlier steps and log stay under 「详情」. ① tapped while the link is reconnecting
+// waits silently (the five-second rule, reconnect.js) and runs once connected; only an outage past that says why it can't
+// run and what to do next, with the time of the check so a second tap visibly answers.
+export const FOLD_MS = 30000;
+let H = { openSettings() {}, closeSettings() {}, toChat() {}, linkState: () => (isReady() ? 'up' : 'down') };
 const fresh = () => ({ st: 'idle', step: 0, text: '', steps: [], details: [], ticket: '', old: '', why: '', r: null, timer: 0, heard: false, dropped: false,
-  offers: [], used: [], name: '', advice: false });
-const S = { reset: fresh(), help: fresh(), offer: fresh(), restart: fresh(), failedOnce: false, askFirst: false, rescue: null, auth: null };
+  offers: [], used: [], name: '', advice: false, fold: false, foldTimer: 0, wait: false, at: 0 });
+const S = { reset: fresh(), help: fresh(), offer: fresh(), restart: fresh(), failedOnce: false, askFirst: false, rescue: null, auth: null, authFold: '', authHide: '' };
 const FLOWS = ['reset', 'help', 'offer', 'restart'];
 
 const str = (v, n = 400) => (typeof v === 'string' ? v.replace(/[\u0000-\u0008\u000B-\u001F\u007F]/g, '').slice(0, n) : '');
@@ -48,8 +54,10 @@ async function start(flow, action = '') {
   const F = S[flow];
   if (F.st === 'run') return;
   if (flow === 'help' && S.offer.st === 'run') return;          // one repair at a time (the host would answer `busy`)
+  clearTimeout(F.foldTimer);
   Object.assign(F, fresh(), { st: 'run', name: action, text: tx(flow === 'help' ? 'p332.help.start' : 'p332.reset.start') });
   if (flow === 'help') { S.askFirst = false; S.offer = fresh(); }   // a new ② run: the earlier offers and their result go
+  if (!isReady() && H.linkState() === 'quiet') { F.wait = true; F.text = tx('p393.waitLink'); paint(); return; }   // starts once connected
   paint();
   if (!isReady()) return finish(flow, { ok: false, why: 'offline' });
   let obj;
@@ -129,7 +137,8 @@ function finish(flow, m) {
   F.text = str(m.text, flow === 'help' ? 1600 : 400);
   const d = str(m.detail, 600);
   if (d) F.details.push(d);
-  F.st = ok ? 'ok' : 'fail';
+  F.st = ok ? 'ok' : 'fail'; F.wait = false; F.at = Date.now();
+  if (ok && isReady()) foldLater(flow);
   if (flow === 'help' && F.text && (m.advice === true || ADVICE.test(F.text))) F.advice = true;
   // ① did not bring the link back (a real failure, or a computer that never answered) → ② is the next thing to try
   if (!ok && flow === 'reset' && !['offline', 'no_key', 'shape', 'stale', 'bad_signature', 'replay', 'busy'].includes(F.why)) S.failedOnce = true;
@@ -189,6 +198,49 @@ function okBlock(flow, F) {
   if (F.old) { const p = node('p', 'rsmsg rsold'); p.id = 'rs-' + flow + '-old'; fillText(p, tx('p332.oldSession', { id: F.old })); out.push(p); }
   return out;
 }
+/** P393: the P380 command-result close (same look, same words). */
+function closeBtn(id, fn) {
+  const b = node('button', 'menuicon rscmdclose', '×'); b.type = 'button'; b.id = id;
+  b.setAttribute('aria-label', tx('p380.closeResult')); b.title = tx('p380.closeResult');
+  b.addEventListener('click', fn);
+  return b;
+}
+/** The first line of an ended result with its × on the right. */
+function headBar(flow, first, onClose) {
+  const bar = node('div', 'rscmdstatus rshead2'); bar.id = 'rs-' + flow + '-bar2';
+  bar.append(first, closeBtn('rs-' + flow + '-close', onClose));
+  return bar;
+}
+const hm = (ms) => { const d = new Date(ms || Date.now()); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
+/** A folded result: one line (what happened, when) + × ; everything it said before stays under 「详情」. */
+function folded(flow, F, lines, onClose) {
+  const sum = node('p', 'rssum ' + (F.st === 'ok' ? 'rsok1' : 'rsfail'), tx(F.st === 'ok' ? 'p393.sumOk' : 'p393.sumFail', { time: hm(F.at) }));
+  sum.id = 'rs-' + flow + '-sum';
+  const out = [headBar(flow, sum, onClose)];
+  const all = lines.filter(Boolean);
+  if (all.length) {
+    const d = node('details', 'rsmore'); d.id = 'rs-' + flow + '-log';
+    d.append(node('summary', '', tx('p332.details')));
+    const ul = node('ul'); for (const l of all.slice(-30)) ul.append(node('li', '', l));
+    d.append(ul); out.push(d);
+  }
+  return out;
+}
+const logOf = (F) => [F.text, ...F.steps.map((x) => x.text), ...F.details, F.why && !['timeout', 'failed'].includes(F.why) ? 'why: ' + F.why : ''];
+function clearFlow(flow) {
+  const F = S[flow];
+  if (F.st === 'run') return;
+  clearTimeout(F.foldTimer);
+  S[flow] = fresh();
+  if (flow === 'help') { clearTimeout(S.offer.foldTimer); S.offer = fresh(); }
+  paint();
+  el(flow === 'help' ? 'rs-help-go' : 'rs-' + flow + '-go')?.focus({ preventScroll: true });
+}
+function foldLater(flow) {
+  const F = S[flow];
+  clearTimeout(F.foldTimer);
+  F.foldTimer = setTimeout(() => { F.foldTimer = 0; if (F.st === 'ok' || F.st === 'fail') { F.fold = true; paint(); } }, FOLD_MS);
+}
 function acts(...bs) { const p = node('div', 'rsacts'); p.append(...bs.filter(Boolean)); return p; }
 const backBtn = (flow) => btn('rs-' + flow + '-chat', tx('p332.backChat'), 'aj-btn--primary', () => H.toChat());
 
@@ -197,14 +249,25 @@ function paintReset() {
   if (!card || !body) return;
   const F = S.reset;
   card.dataset.state = F.st;
+  card.toggleAttribute('data-fold', F.fold);
   const parts = [];
+  if (F.fold && F.st !== 'run' && F.st !== 'idle') {
+    body.replaceChildren(...folded('reset', F, logOf(F), () => clearFlow('reset')), acts(btn('rs-reset-go', tx('p332.reset.go'), '', () => start('reset'))));
+    return;
+  }
   if (F.st === 'run') parts.push(bar('reset', F, STEPS.reset));
-  if (F.st === 'ok') parts.push(...okBlock('reset', F), acts(backBtn('reset'), btn('rs-reset-go', tx('p332.again'), '', () => start('reset'))));
+  if (F.st === 'ok') { const [first, ...rest] = okBlock('reset', F); parts.push(headBar('reset', first, () => clearFlow('reset')), ...rest, acts(backBtn('reset'), btn('rs-reset-go', tx('p332.again'), '', () => start('reset')))); }
   if (F.st === 'fail') {
     const known = whyText(F.why);
     const msg = node('p', 'rsmsg rsfail', known || (F.why === 'timeout' && !F.heard ? tx('p332.noAnswer') : tx('p332.reset.fail')));
     msg.id = 'rs-reset-msg';
-    parts.push(msg);
+    parts.push(headBar('reset', msg, () => clearFlow('reset')));
+    if (F.why === 'offline') {               // why it can't run now is the line above; this is what to do next + when we checked
+      const next = node('p', 'rsmsg rsnext'); next.id = 'rs-reset-next'; fillText(next, tx('p393.offlineNext'));
+      const at = node('p', 'rsnote'); at.id = 'rs-reset-at'; at.setAttribute('role', 'status');
+      at.textContent = tx('p393.checkedAt', { time: new Date(F.at || Date.now()).toTimeString().slice(0, 8) });
+      parts.push(next, at);
+    }
     if (!known && F.text) parts.push(node('p', 'rsmsg', F.text));
     if (F.why === 'offline' || F.why === 'unavailable') parts.push(helperLine('rs-reset-helper'));
     parts.push(acts(btn('rs-reset-go', tx('p332.again'), '', () => start('reset'))));
@@ -223,6 +286,16 @@ function paintHelp() {
   card.toggleAttribute('data-dim', F.st === 'idle' && !S.failedOnce && !S.askFirst);
   card.toggleAttribute('data-hl', F.st === 'idle' && S.failedOnce);
   const parts = [];
+  const ended = (F.st === 'ok' || F.st === 'fail') && O.st !== 'run';
+  const fold = ended && (F.fold || (O.st !== 'idle' && O.fold));
+  card.toggleAttribute('data-fold', fold);
+  if (fold) {
+    const end = O.st !== 'idle' ? O : F;
+    body.replaceChildren(...folded('help', { ...end, at: Math.max(F.at, O.at) }, [...logOf(F), F.ticket ? tx('p332.help.ticket', { ticket: F.ticket }).replace(/`/g, '') : '', ...(O.st !== 'idle' ? logOf(O) : [])], () => clearFlow('help')),
+      acts(btn('rs-help-go', tx('p332.help.go'), '', askHelp)));
+    return;
+  }
+  if (ended) parts.push(headBar('help', node('p', 'rsnote', tx('p393.ended', { time: hm(Math.max(F.at, O.at)) })), () => clearFlow('help')));
   if (S.failedOnce && F.st === 'idle') parts.push(node('p', 'rstag', tx('p332.next')));
   if (F.st === 'run' || ((F.st === 'ok' || F.st === 'fail') && F.steps.length)) {
     if (F.st === 'run') parts.push(bar('help', F, STEPS.help));
@@ -320,17 +393,25 @@ function paintAuth() {
   const v = S.auth, f = v && v.flow;
   let st = 'idle';
   const parts = [];
+  const sig = authSig(f);
+  card.toggleAttribute('data-fold', !!sig && S.authFold === sig && S.authHide !== sig);
+  if (sig && S.authHide === sig) { card.dataset.state = 'idle'; body.replaceChildren(); return; }   // × : gone until the next login run
+  if (sig && S.authFold === sig) {
+    card.dataset.state = f.stage === 'done' ? 'ok' : 'fail';
+    body.replaceChildren(...folded('auth', { st: f.stage === 'done' ? 'ok' : 'fail', at: S.authAt }, [f.stage === 'done' ? tx('ar.done') : str(f.why, 200)], hideAuth));
+    return;
+  }
   if (f && AUTH_STEP[f.stage] && f.stage !== 'done') {
     st = 'run';
     const text = f.stage === 'starting' ? tx('ar.stStarting') : f.stage === 'verifying' ? tx('ar.verifying') : tx('p332.auth.wait');
     parts.push(bar('auth', { st, step: AUTH_STEP[f.stage], text }, 4));
   } else if (f && f.stage === 'done') {
     st = 'ok';
-    parts.push(node('p', 'rsok', tx('p332.ok')), node('p', 'rsmsg', tx('ar.done')), acts(backBtn('auth')));
+    parts.push(headBar('auth', node('p', 'rsok', tx('p332.ok')), hideAuth), node('p', 'rsmsg', tx('ar.done')), acts(backBtn('auth')));
   } else if (f && f.stage === 'failed') {
     st = 'fail';
     const p = node('p', 'rsmsg rsfail', tx('p332.auth.fail', { why: str(f.why, 200) || tx('ar.failed') })); p.id = 'rs-auth-msg';
-    parts.push(p);
+    parts.push(headBar('auth', p, hideAuth));
   } else if (v && Array.isArray(v.harnesses)) {
     const need = v.harnesses.filter((h) => h && h.state === 'login' && typeof h.label === 'string').map((h) => h.label.slice(0, 40));
     if (need.length) { const p = node('p', 'rsmsg rsfail', tx('p332.auth.need', { name: need.join(' / ') })); p.id = 'rs-auth-msg'; parts.push(p); }
@@ -338,6 +419,9 @@ function paintAuth() {
   card.dataset.state = st;
   body.replaceChildren(...parts);
 }
+/** ③'s ended runs are told apart by stage + kind + reason (authrescue keeps no run id). */
+function authSig(f) { return f && (f.stage === 'done' || f.stage === 'failed') ? [f.stage, f.kind || '', f.route || '', str(f.why, 200)].join('|') : ''; }
+function hideAuth() { S.authHide = authSig(S.auth && S.auth.flow); paintAuth(); }
 function paintMode() {
   const on = !!(S.rescue && S.rescue.on);
   const b = el('rescue-banner'); if (b) b.hidden = !on;
@@ -354,7 +438,7 @@ function paintRestart() {
   go.disabled = FLOWS.some(flow => S[flow].st === 'run');
   const note = node('p', 'rsnote', tx('p385.restart.note')); note.id = 'rs-restart-note';
   go.setAttribute('aria-describedby', note.id);
-  const status = node('p', 'rsmsg', F.st === 'idle' ? '' : F.st === 'run' ? tx('p385.restart.wait') : F.st === 'ok' ? tx('p332.reset.back') : whyText(F.why) || tx('p332.noAnswer'));
+  const status = node('p', 'rsmsg', F.st === 'idle' || F.fold ? '' : F.st === 'run' ? tx('p385.restart.wait') : F.st === 'ok' ? tx('p332.reset.back') : whyText(F.why) || tx('p332.noAnswer'));
   status.setAttribute('role', 'status');
   card.dataset.state = F.st;
   card.replaceChildren(node('h4', 'rstitle', tx('p385.restart.go')), note, acts(go), status);
@@ -389,18 +473,32 @@ export function onReady() {
   else if (!S.rescue) S.rescue = { on: true, why: '', since: 0, actions: [] };
   for (const flow of FLOWS) {
     const F = S[flow];
+    if (F.st === 'run' && F.wait) { F.st = 'idle'; F.wait = false; start(flow, F.name); continue; }   // P393: tapped while reconnecting
+    if (F.st === 'fail' && F.why === 'offline' && !peer.rescue) finish(flow, { ok: true, text: tx('p392.restored') });
     if (F.st === 'run' && F.dropped && !peer.rescue) finish(flow, { ok: true, step: F.step, ticket: F.ticket, text: tx('p332.reset.back') });
+    if ((F.st === 'ok' || F.st === 'fail') && !F.fold && !F.foldTimer) foldLater(flow);   // the link is back: ended results fold
   }
   paintMode();
+}
+/** P393 (app.js): the link has been unreachable for the full five seconds: a tap that was waiting for it says why now. */
+export function onLinkDown() { for (const flow of FLOWS) if (S[flow].st === 'run' && S[flow].wait) finish(flow, { ok: false, why: 'offline' }); }
+/** P393 (settings.js open): opening Settings again shows ended results as one line each; their log stays under 「详情」. */
+export function foldEnded() {
+  let any = false;
+  for (const flow of FLOWS) { const F = S[flow]; if ((F.st === 'ok' || F.st === 'fail') && !F.fold) { clearTimeout(F.foldTimer); F.foldTimer = 0; F.fold = true; any = true; } }
+  const sig = authSig(S.auth && S.auth.flow);
+  if (sig && S.authFold !== sig) { S.authFold = sig; any = true; }
+  if (any) paint();
 }
 export const inRescue = () => !!(S.rescue && S.rescue.on);
 export function configure(hooks) {
   H = { ...H, ...hooks };
-  authrescue.watch((v) => { S.auth = v; paintAuth(); });
+  authrescue.watch((v) => { const was = authSig(S.auth && S.auth.flow); S.auth = v; const now = authSig(v && v.flow); if (now !== was) S.authAt = Date.now(); if (v && v.flow && !now) S.authFold = S.authHide = ''; paintAuth(); });
   el('rescue-banner-go')?.addEventListener('click', openBlock);
   onLang(paint);
   paint();
 }
 // tests
-export const _debug = () => ({ reset: { ...S.reset, timer: !!S.reset.timer }, help: { ...S.help, timer: !!S.help.timer }, offer: { ...S.offer, timer: !!S.offer.timer }, failedOnce: S.failedOnce, askFirst: S.askFirst, rescue: S.rescue });
-export function _reset() { for (const f of FLOWS) { clearTimeout(S[f].timer); if (S[f].r) done(S[f].r); S[f] = fresh(); } S.failedOnce = false; S.askFirst = false; paint(); }
+export const _debug = () => ({ reset: { ...S.reset, timer: !!S.reset.timer, foldTimer: !!S.reset.foldTimer }, help: { ...S.help, timer: !!S.help.timer, foldTimer: !!S.help.foldTimer }, offer: { ...S.offer, timer: !!S.offer.timer }, failedOnce: S.failedOnce, askFirst: S.askFirst, rescue: S.rescue });
+export function _reset() { for (const f of FLOWS) { clearTimeout(S[f].timer); clearTimeout(S[f].foldTimer); if (S[f].r) done(S[f].r); S[f] = fresh(); } S.failedOnce = false; S.askFirst = false; S.authFold = S.authHide = ''; paint(); }
+export function _foldNow() { for (const f of FLOWS) { const F = S[f]; if (F.foldTimer) { clearTimeout(F.foldTimer); F.foldTimer = 0; if (F.st === 'ok' || F.st === 'fail') F.fold = true; } } paint(); }

@@ -278,7 +278,7 @@ function renderMain(force = true) {
 }
 
 // ---- a conversation (read only)
-const S_KNOWN = ['pending', 'sent', 'got', 'replied', 'undelivered', 'queued_for_owner', 'limited', 'withheld', 'silent'];
+const S_KNOWN = ['pending', 'sent', 'got', 'replied', 'undelivered', 'queued_for_owner', 'limited', 'withheld', 'silent', 'blocked'];
 function viewChat(box) {
   const f = friendOf(V.friend);
   if (!f) { box.append(mk('p', 'small', t('fr.gone'))); return; }
@@ -297,7 +297,8 @@ function viewChat(box) {
     if (x.dir === 'out') meta.push(x.auto ? t('fr.s.auto') : t('fr.s.owner'));
     if (S_KNOWN.includes(x.s)) meta.push(t('fr.s.' + x.s));
     li.append(mk('p', 'fr-msg__meta small', meta.filter(Boolean).join(' · ')), mk('p', 'fr-msg__text', x.text));
-    if (x.s === 'undelivered' || x.s === 'withheld') li.classList.add('fr-msg--bad');
+    if (x.s === 'blocked') li.append(mk('p', 'small fr-blocked-reason', t('p392.friendBlocked')));
+    if (x.s === 'blocked' || x.s === 'undelivered' || x.s === 'withheld') li.classList.add('fr-msg--bad');
     ul.append(li);
   }
   box.append(ul);

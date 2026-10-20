@@ -38,7 +38,8 @@ OPENCODE_KEY_ENV = ("ZHIPU_API_KEY", "DEEPSEEK_API_KEY", "DASHSCOPE_API_KEY", "M
                     "MINIMAX_API_KEY", "SILICONFLOW_CN_API_KEY", "OPENROUTER_API_KEY", "OPENCODE_API_KEY", "OPENAI_API_KEY",
                     "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY",
                     "BAILIAN_TOKEN_PLAN_API_KEY", "BAILIAN_CODING_PLAN_API_KEY",   # P310: bailian.py presets
-                    "ARK_CODING_PLAN_API_KEY")   # P315: ark.py preset
+                    "ARK_CODING_PLAN_API_KEY",   # P315: ark.py preset
+                    "ARK_AGENT_PLAN_API_KEY")    # P395: ark.py Agent Plan preset
 NAMES = ("claude", "codex", "opencode", "kimi", "qwen", "dsh")
 LATER = "coming in a later version"
 VERSION_TIMEOUT = 15
@@ -365,6 +366,23 @@ def _formal_probe(exe, model, env, timeout) -> str:
         raise BotError(str(e.args[0]) if e.args else "call_failed") from None
 
 
+def _v1_line(out: str, env: dict) -> str | None:
+    """P395: OpenCode 1.x `run --format json` says a failure as an `error` event ({error: {name, data: {message, statusCode}}})
+    → the same one redacted line as 2.x (agent_opencode2.probe_line)."""
+    from .agent_opencode2 import probe_line
+    for raw in reversed(out.splitlines()):
+        try:
+            ev = json.loads(raw)
+        except ValueError:
+            continue
+        err = ev.get("error") if isinstance(ev, dict) and ev.get("type") == "error" else None
+        if isinstance(err, dict):
+            data = err.get("data") if isinstance(err.get("data"), dict) else {}
+            return probe_line({"type": err.get("name"), "status": data.get("statusCode"), "message": data.get("message")},
+                              [v for k, v in env.items() if k.endswith(("_KEY", "_TOKEN"))])
+    return None
+
+
 def _kimi_region() -> str | None:
     try:
         from .state import State
@@ -431,15 +449,28 @@ def probe(only: tuple | list | None = None, model: str | None = None, timeout: f
                         reply = agent_dsh.probe(h["executable"], env, timeout, cfg.model)
                     except agent_kimi.ProbeError as e:
                         raise BotError(str(e.args[0]) if e.args else "call_failed") from None
+                elif h["name"] == "opencode" and opencode_v2(h.get("version")):   # P395 (#144): 2.x on its own /api
+                    from . import agent_opencode2, opencode_free
+                    try:
+                        reply = agent_opencode2.probe(h["executable"], oc_model, env, timeout,
+                                                      waits=opencode_free.WARM_WAITS if _free_path(oc_model, h) else ())
+                    except opencode_free.ProbeError as e:
+                        if len(e.args) > 1 and e.args[1]:
+                            h["probe_error"] = e.args[1]
+                        raise BotError(str(e.args[0]) if e.args else "call_failed") from None
                 elif h["name"] == "opencode" and _free_path(oc_model, h):
                     reply = _formal_probe(h["executable"], oc_model, env, timeout)   # P298: the free tier's own path
                 else:
                     cmd = native.command(cfg, root, env, selected=h["executable"])
+                    why = [] if h["name"] == "opencode" else None
                     try:
                         reply, _ = native.parse(h["name"], native.run(cmd, "Hello. Reply with a short greeting only.", env,
-                                                                      root, timeout=timeout))
+                                                                      root, timeout=timeout, why=why))
                     except BotError as e:      # P298: refused as "not OpenCode's own client" → the formal chat path
                         if h["name"] != "opencode" or not e.args or e.args[0] != "free_tier":
+                            line = _v1_line(why[0] if why else "", env)
+                            if line:
+                                h["probe_error"] = line       # P395: OpenCode's own error, one redacted line
                             raise
                         reply = _formal_probe(h["executable"], oc_model, env, timeout)
                 if not isinstance(reply, str) or not reply.strip():

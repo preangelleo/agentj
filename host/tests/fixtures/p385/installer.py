@@ -361,6 +361,95 @@ def configured_harness(agentj, *, run=command, prompt=input):
     return out
 
 
+# P390 (Leo 10-18 21:31): one extra option, never the default — 「用 OpenCode 自带的免费模型先跑起来」. Zero-retention
+# families first (OpenCode Zen docs, 10-18: Space Bunny Free, LongCat 2.5 Preview Free — "does not use your data for
+# model training"); the host's own pick (agentj agent detect → free_model) leads, at most FREE_TRIES real calls.
+FREE_FIRST = ('space-bunny', 'longcat')
+FREE_TRIES = 3
+FREE_TERMS = (   # OpenCode Zen's own docs (10-18), the same families as the host's opencode_free.DATA_TERMS
+    (FREE_FIRST, '按 OpenCode 官方说明，它的供应商不留存、不拿对话训练（免费期条款随时可能变）',
+     "per OpenCode's docs its provider keeps no data and does not train on it (free-period terms can change)"),
+    (('mimo', 'big-pickle'), '免费期间的对话可能被拿去改进模型', 'conversations may be used to improve the model during the free period'),
+    (('muse-spark',), '对话会被拿去训练模型', 'conversations are used to train models'),
+    (('nemotron',), '对话会被记录（官方要求别发个人或机密信息）', 'usage is logged (the provider asks for no personal or confidential data)'),
+)
+FREE_TERMS_UNKNOWN = ('数据条款以 OpenCode 官方页为准，可能用于训练', "check OpenCode's page for its data terms; it may be used for training")
+
+
+def free_text(model):
+    """P390: the plain free-model note — on the phone's first page, the terminal and the summary."""
+    mid = model.split('/', 1)[-1]
+    zh, en = next(((z, e) for fams, z, e in FREE_TERMS if mid.startswith(fams)), FREE_TERMS_UNKNOWN)
+    return ('当前用的是 OpenCode 自带的免费模型 ' + model + '（不用 key）：对话和代码会发给 OpenCode 和它的模型供应商；' + zh +
+            '；有限流，随时可能下线，敏感工作请换成自己的模型。'
+            '换成自己的模型：手机 ≡ 菜单「模型与 Key」（或发 /model），也可以直接跟 Agent 说「换成我自己的模型」，'
+            '它会弹出安全的密钥卡或登录引导；key 只在密钥卡或你自己的终端里输入。\n'
+            'You are on one of OpenCode\'s own free models, ' + model + ' (no key): conversations and code go to OpenCode and '
+            'its model provider; ' + en + '; it is rate-limited and '
+            'may disappear, so switch to a model of your own for sensitive work — ≡ menu → Models & Key (or send /model), '
+            'or tell the Agent "switch to my own model"; the key goes only into a key card or your own terminal.')
+
+
+def free_candidates(first, listed):
+    """Free model ids to try, best first: the host's pick, zero-retention families, the rest; big-pickle never."""
+    ids = [m for m in [first, *listed] if isinstance(m, str) and re.fullmatch(r'opencode/[A-Za-z0-9._-]{1,80}', m)
+           and m != 'opencode/big-pickle' and (m == first or m.endswith('-free'))]
+    rank = lambda m: (m != first, next((i for i, f in enumerate(FREE_FIRST) if m.split('/', 1)[1].startswith(f)), len(FREE_FIRST)))
+    return sorted(dict.fromkeys(ids), key=rank)[:FREE_TRIES]
+
+
+def free_harness(agentj, oc, *, run=command):
+    """P390: the owner chose OpenCode's own free model. The installed host lists, ranks and makes the real call (its
+    probe takes the free tier's formal chat path and waits out the first-minute FreeTierError); None = clear fallback."""
+    env = {k: v for k, v in os.environ.items() if k in ('HOME', 'PATH', 'LANG', 'LC_ALL', 'TZ', 'SHELL', 'SSL_CERT_FILE',
+           'SSL_CERT_DIR', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_STATE_HOME', 'XDG_CACHE_HOME')}
+    env['AGENTJ_OPENCODE_BIN'] = str(oc)
+    try:
+        report = json.loads(run([str(agentj), 'agent', 'detect', 'opencode', '--json'], timeout=120, env=env,
+                                stdin=subprocess.DEVNULL))
+        row = next((r for r in report.get('harnesses', []) if isinstance(r, dict) and r.get('name') == 'opencode'), {})
+        first = row.get('free_model')
+    except (InstallError, ValueError, TypeError, AttributeError):
+        first = None
+    try:
+        listed = run([str(oc), 'models', 'opencode'], timeout=60, env=env, stdin=subprocess.DEVNULL).decode(errors='replace').split()
+    except (InstallError, subprocess.CalledProcessError, AttributeError):
+        listed = []
+    for model in free_candidates(first, listed):
+        print('试一下免费模型 ' + model + '（第一次可能要等一两分钟）… / Trying free model ' + model + '…')
+        try:
+            again = json.loads(run([str(agentj), 'agent', 'detect', 'opencode', '--probe', '--model', model, '--json'],
+                                   timeout=300, env=env, stdin=subprocess.DEVNULL))
+            row = next((r for r in again.get('harnesses', []) if isinstance(r, dict) and r.get('name') == 'opencode'), {})
+        except (InstallError, ValueError, TypeError, AttributeError):
+            continue
+        if row.get('callable') is True:
+            return {'name': 'opencode', 'executable': str(oc), 'model': model, 'free': True}
+    print('OpenCode 的免费模型现在用不了（免费通道繁忙、限流或已下线）：继续原来的引导，接自己的 AI。'
+          ' / OpenCode\'s free models do not answer right now: continuing with the usual way to connect your own AI.')
+    return None
+
+
+def free_notice(agentj, model, *, run=command):
+    """P390: the phone's first page says plainly that this is one of OpenCode's free models, and where to switch. The owner's own
+    `agentj notify` (stored, so a remote paired next sees it first), then the one-off registration is removed."""
+    try:
+        run([str(agentj), 'notify', '--allow', 'agentj-install'])
+        for wait in (0, 5, 15):       # serve was (re)started a moment ago; its control socket may not answer yet
+            time.sleep(wait)
+            try:
+                run([str(agentj), 'notify', '--from', 'agentj-install', '--title', 'OpenCode 免费模型 / OpenCode free model',
+                     '--text', free_text(model)])
+                break
+            except InstallError:
+                if wait == 15: raise
+    except InstallError:
+        print('免费模型的提示没发到手机。/ The free-model note did not reach the phone.')
+    finally:
+        try: run([str(agentj), 'notify', '--forget', 'agentj-install'])
+        except InstallError: pass
+
+
 def prepare_google(agentj, run=command):
     """P115 (P91): pre-install Agent J's pinned Google tool (gog). Optional: a failure or no network never fails the
     installation; the running service retries quietly, and `agentj google off` means the owner won't use it."""
@@ -451,7 +540,7 @@ def write_result(home, **facts):
 
 
 def install(code, uv, working_root, *, post=request, run=command, approve=consent, home=None, prompt=input, pair=None, resume=False,
-            one_command=False, ai_later=False):
+            one_command=False, ai_later=False, free_model=False):
     static_base = artifact_base()  # Validate before consent, redemption or any external request.
     code = extract_code(code)
     if not code: raise InstallError('invalid_installation_code')
@@ -553,7 +642,9 @@ def install(code, uv, working_root, *, post=request, run=command, approve=consen
             run([str(agentj), 'init', '--working-root', str(working_root)])
             # Start disconnected; never install temporary key into user's actual OpenCode auth.
             run([str(agentj), 'agent', 'off'])
-            selected = configured_harness(agentj, run=run, prompt=prompt)
+            # P390: the extra option 「用 OpenCode 自带的免费模型先跑起来」 only when the owner chose it; else unchanged
+            selected = (free_harness(agentj, persistent_oc, run=run) if free_model else None) or \
+                configured_harness(agentj, run=run, prompt=prompt)
             formal_env = os.environ.copy()
             if selected:
                 formal_env['AGENTJ_' + selected['name'].upper() + '_BIN'] = selected['executable']
@@ -565,6 +656,8 @@ def install(code, uv, working_root, *, post=request, run=command, approve=consen
             run([str(agentj), 'doctor'])
             browser_setup(agentj, run=run)          # P114: default on; a failure is an open item, never an install failure
             print('✓ Agent J 已装好，后台服务在运行。/ Agent J is installed and its background service is running.')
+            if selected and selected.get('free'):
+                free_notice(agentj, selected['model'], run=run)   # before pairing: the phone's first page
             # P220: the same AJI code links the paid seat (no device code, no Stripe detour); an already linked resume keeps it
             linked = paired = True
             if not (resuming and approve('本机已加入 Agent J 账号，保留绑定？ / Host already linked; keep its account binding?')):
@@ -592,6 +685,8 @@ def install(code, uv, working_root, *, post=request, run=command, approve=consen
                 label = {'claude': 'Claude Code', 'codex': 'Codex', 'opencode': 'OpenCode'}.get(selected['name'], selected['name'])
                 print('✅ ' + label + ' 已接上，刚才真实回复过一次。去手机上的 Agent J 发一句「你好」。'
                       ' / ' + label + ' is connected and answered a real call. Say hello from your phone.')
+                if selected.get('free'):
+                    print(free_text(selected['model']))
                 write_result(home, linked=linked, paired=paired, ai=selected['name'])
                 progress.unlink()
                 return True
@@ -656,7 +751,8 @@ def main(argv=None):
     p=argparse.ArgumentParser(description='Local installation assistant; no remote shell')
     p.add_argument('code', nargs='?'); p.add_argument('--code-file', default=os.environ.get('AGENTJ_CODE_FILE'), help=argparse.SUPPRESS)
     p.add_argument('--one-command', action='store_true', help='Run by https://agentj.app/install.sh: no duplicate questions')
-    p.add_argument('--ai-later', action='store_true', help='The owner chose to connect an AI later'); p.add_argument('--resume', action='store_true', help='Resume only this installer-owned partial installation; preserve pairing and credentials'); p.add_argument('--uv', default=shutil.which('uv')); p.add_argument('--working-root', type=Path)
+    p.add_argument('--ai-later', action='store_true', help='The owner chose to connect an AI later')
+    p.add_argument('--free-model', action='store_true', help="The owner chose OpenCode's own free model to start with (P390)"); p.add_argument('--resume', action='store_true', help='Resume only this installer-owned partial installation; preserve pairing and credentials'); p.add_argument('--uv', default=shutil.which('uv')); p.add_argument('--working-root', type=Path)
     a=p.parse_args(argv)
     try:
         if not a.uv: raise InstallError('verified_uv_required')
@@ -670,7 +766,7 @@ def main(argv=None):
             resume=consent('发现未完成的本安装器任务，继续并保留数据？ / Resume this installer-owned incomplete installation and preserve data?')
         if resume and recovery.exists() and not recovery.is_symlink():
             root=Path(json.loads(recovery.read_text())['working_root'])
-        install(a.code, a.uv, root, resume=resume, one_command=a.one_command, ai_later=a.ai_later)
+        install(a.code, a.uv, root, resume=resume, one_command=a.one_command, ai_later=a.ai_later, free_model=a.free_model)
     except (InstallError, KeyboardInterrupt, subprocess.CalledProcessError, OSError, ValueError, KeyError, TypeError) as exc:
         print(failure_message(exc, (Path.home()/'.local/share/agentj/installation-progress.json').exists()), file=sys.stderr)
         return 1

@@ -54,10 +54,13 @@ try{
   ok(s.every(x=>x.startsWith('on|')),'the heartbeat reconnect was quiet too');
   fake.st.onApp=null;
 
-  // 4. the Agent J host going offline on a steady session is news: shown at once (as before)
+  // 4. P393 (#122): the Agent J host going offline on a steady session waits out the same five-second window (was: at once)
+  const t4=Date.now();
   fake.setUp(false);
-  await waitFor(p,`document.body.dataset.conn==='off'`,2000);
-  ok(true,'host down on a steady session → shown at once');
+  await sleep(2000);
+  ok(await evaluate(p,`document.body.dataset.conn==='on' && document.body.hasAttribute('data-relink')`),'host down: the first seconds show only the dot');
+  await waitFor(p,`document.body.dataset.conn==='off'`,7000);
+  ok(Date.now()-t4>=4900,`host down on a steady session → shown after five seconds (${Date.now()-t4} ms)`);
   fake.setUp(true);await waitState(p,'ready');
 
   // 5. a relay deploy / restart drops both ends: the page is back first, hears "computer offline", the Agent J host follows a
@@ -78,7 +81,7 @@ try{
   ok(await evaluate(p,`document.body.dataset.conn==='on'`),'first seconds of an outage stay quiet');
   await waitFor(p,`document.body.dataset.conn==='off'`,6000);
   const shown=Date.now()-t1;
-  ok(shown>=5500&&shown<=9000,`a longer outage is shown after the quiet window (${shown} ms)`);
+  ok(shown>=4900&&shown<=9000,`a longer outage is shown after the quiet window (${shown} ms)`);
   fake.setUp(true);await waitState(p,'ready');
   ok(await evaluate(p,`document.body.dataset.conn==='on'`),'and clears when it is back');
 

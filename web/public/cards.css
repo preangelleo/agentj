@@ -1,12 +1,12 @@
 /* P360 Agent J Cards — the cards global CSS (spec agentjarvis/docs/specs/AGENTJ-CARDS-SPEC.md §5).
-   Visual style only, and deliberately small: one fill per accent (the system deck's five, Leo's closed palette) with the ink
-   that reads on it (≥ 4.5:1, host/agentj/jcards.py ACCENTS — test_p360 checks both sides), the Wallet stack, and the
+   Visual style only, and deliberately small: one fill per accent (the system deck's five, Leo's closed palette) with Lotion
+   ink on every fill, like the system cards (P393 #132; host/agentj/jcards.py ACCENTS — test_p360 checks both sides), the Wallet stack, and the
    template pages drawn in the menu colours. A card names an accent; it never brings a colour, font or rule of its own. */
 :root{--jc-peek-min:64px;--jc-peek-max:120px;--jc-card-h:220px}
-.jc-accent-emerald-oasis{--jc-fill:#629887;--jc-ink:#141414}
-.jc-accent-windstorm{--jc-fill:#6a9bcc;--jc-ink:#141414}
-.jc-accent-magic-carpet{--jc-fill:#827dbd;--jc-ink:#141414}
-.jc-accent-peachy-feeling{--jc-fill:#d97757;--jc-ink:#141414}
+.jc-accent-emerald-oasis{--jc-fill:#629887;--jc-ink:#faf9f5}
+.jc-accent-windstorm{--jc-fill:#6a9bcc;--jc-ink:#faf9f5}
+.jc-accent-magic-carpet{--jc-fill:#827dbd;--jc-ink:#faf9f5}
+.jc-accent-peachy-feeling{--jc-fill:#d97757;--jc-ink:#faf9f5}
 .jc-accent-noir{--jc-fill:#2c2b26;--jc-ink:#faf9f5}
 
 /* ---- Wallet stack (Leo 10-17: 「以后就变成一种固定的堆叠方式……超过屏幕的就自己往下翻」). Fixed geometry, nothing measured
@@ -58,6 +58,21 @@
 .jc-item[data-done="1"] .jc-text{text-decoration:line-through;color:var(--menu-muted,inherit)}
 .jc-item[data-done="1"] .jc-check{color:var(--menu-accent)}
 .jc-chip{flex:none;min-height:44px;padding:0 var(--ui-space-control);border:1px solid var(--menu-line);border-radius:22px;background:transparent;color:inherit;font:inherit;cursor:pointer}
+/* P394 the To-do card: owner filter, owner / state tags, a due mark (peachy edge + tag), the start / end line */
+.jc-filter{display:flex;flex-wrap:wrap;gap:var(--ui-space-btn);margin:0 0 var(--ui-space-control)}
+.jc-filter-chip[aria-pressed="true"]{background:var(--jc-fill,var(--menu-accent));color:var(--jc-ink,var(--menu-on-accent));border-color:transparent;font-weight:600}
+.jc-item[data-owner-out]{display:none}
+.jc-todo-body{flex:1;min-width:0;white-space:normal;display:flex;flex-direction:column;gap:4px}
+.jc-todo-meta{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;font-size:13px;color:var(--menu-muted,inherit)}
+.jc-when{min-width:0;max-width:100%;overflow-wrap:anywhere}
+.jc-todo-note{font-size:13px;color:var(--menu-muted,inherit);overflow-wrap:anywhere}
+.jc-tag{display:inline-block;padding:0 8px;border:1px solid var(--menu-line);border-radius:10px;line-height:20px}
+.jc-tag-agent{border-color:var(--jc-fill,var(--menu-accent))}
+.jc-flag{border-color:transparent;background:var(--menu-chip,rgba(127,127,127,.18));color:var(--menu-text)}
+.jc-filter~.jc-list .jc-item{padding-left:10px}
+.jc-item[data-mark]{box-shadow:inset 4px 0 0 var(--c-peachy-feeling,#d97757)}
+.jc-item[data-mark] .jc-flag:not(.jc-flag-ready){background:var(--c-peachy-feeling,#d97757);color:var(--c-sooty,#141414);font-weight:600}
+.jc-item[data-status="cancelled"] .jc-text{opacity:.7}
 .jc-actions{display:flex;flex-wrap:wrap;gap:var(--ui-space-btn);margin:0 0 var(--ui-space-control)}
 .jc-actions .jc-action{margin:0;background:var(--jc-fill,var(--menu-accent));color:var(--jc-ink,var(--menu-on-accent))}
 .jc-actions .jc-action[data-draft]{background:transparent;color:inherit;border:1.5px solid currentColor}
@@ -92,3 +107,6 @@
 .jc-ring-svg{position:absolute;inset:0;width:230px;height:230px}.jc-ring-svg path{cursor:pointer}.jc-ring-svg path:focus-visible{stroke:var(--c-lotion);stroke-width:3;outline:none}.jc-color-center{z-index:1;pointer-events:none}
 
 .jc-dialog-actions .fp-action{background:var(--c-salt);color:var(--c-sooty)}
+
+/* P393: a card record that does not match the page search steps aside (jcards.filter) */
+.jc-body [data-find-out]{display:none!important}

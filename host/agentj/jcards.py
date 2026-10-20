@@ -12,7 +12,8 @@ Everything is computed here; the phone is the remote control:
 - buttons only ever become a **chat message the owner confirms on the phone** (or a draft in the message box): the host
   renders each prompt from the manifest with whitelisted variables, quoted and cut, behind a 「来自卡片」 label. A card
   has no other way to act — no command, no approval, no network, no credential (the manifest has no field for one).
-- switches: <state>/agentperm/cards/state.json `{"on": {id: bool}}` — official cards default off, the owner's own default on.
+- switches: <state>/agentperm/cards/state.json `{"on": {id: bool}}` — every card defaults on (P393 #129: official cards too,
+  the owner turns them off; a switch the owner never touched follows the default), the five system pages are never switches.
 
 Storage: official cards ship read-only in cardpacks/<id>/ (card.json + sample/); the owner's cards are applied to
 <state>/agentperm/cards/active/<id>/ (the previous version of the same id sleeps in dormant/<when>-<id>/, newest
@@ -40,18 +41,20 @@ SCHEMA_PATH = PKG / "card.schema.json"
 SCHEMA_ID = "https://agentj.app/schema/agentj-card-1.json"
 CAP = "jcards1"
 PHONE_TYPES = ("jcard_list", "jcard_get", "jcard_set", "jcard_note", "jcard_color")
-SUBCOMMANDS = ("list", "validate", "apply", "on", "off", "remove", "export", "open", "note", "automation", "schema")   # agentj card … (parser() builds these)
-OFFICIAL = ("notes", "todo", "automation")             # shipped in phase 1, default off (Settings → Cards)
+SUBCOMMANDS = ("list", "validate", "apply", "on", "off", "remove", "export", "open", "note", "todo", "automation", "schema")   # agentj card … (parser() builds these)
+OFFICIAL = ("notes", "todo", "automation")             # shipped in phase 1, default on (Settings → Cards turns them off)
 PLANNED = ("obsidian", "calendar", "files")   # official cards of the next phases: their ids are reserved now
 SYSTEM = ("chat", "workflows", "skills", "memory", "agentj")   # the five system cards of the logo menu
 PAGE_IDS = ("cards", "settings")         # the card wall and Settings: page names, never a card id (card/<id> must stay unambiguous)
 RESERVED_PREFIX = ("agentj-", "official-")
 TEMPLATES = {"notes": ("md", "txt"), "checklist": ("json",)}
 ICONS = ("note", "checklist", "calendar", "folder", "board", "book", "star", "bolt")
-# the deck card's fill (the system cards' five, from Leo's closed palette) → the ink the cards CSS writes on it: whichever of
-# Lotion / Sooty reads better, ≥ 4.5:1 for every accent (the card face has 15 px text). A card names the fill, never the ink.
-ACCENTS = {"emerald-oasis": ("#629887", "#141414"), "windstorm": ("#6a9bcc", "#141414"), "magic-carpet": ("#827dbd", "#141414"),
-           "peachy-feeling": ("#d97757", "#141414"), "noir": ("#2c2b26", "#faf9f5")}
+# the deck card's fill (the system cards' five, from Leo's closed palette) → the ink the cards CSS writes on it. A card names
+# the fill, never the ink.
+# P393 #132 (Leo 10-19: 「背景色是可以改的，但字体颜色统一就是 Lotion。然后 logo 那个 icon 也是 Lotion」): the ink is Lotion on
+# every fill, exactly like the five system cards of the logo menu (same fills, same Lotion words).
+ACCENTS = {"emerald-oasis": ("#629887", "#faf9f5"), "windstorm": ("#6a9bcc", "#faf9f5"), "magic-carpet": ("#827dbd", "#faf9f5"),
+           "peachy-feeling": ("#d97757", "#faf9f5"), "noir": ("#2c2b26", "#faf9f5")}
 ID_RE = re.compile(r"[a-z][a-z0-9-]{1,31}")
 FILE_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
 VERSION_RE = re.compile(r"\d{1,4}(\.\d{1,4}){0,2}")
@@ -456,7 +459,10 @@ def cards(root) -> list:
     for cid in OFFICIAL:
         doc, errs = load(official_dir(cid))
         if doc and not errs:
-            out.append({"id": cid, "doc": doc, "official": True, "on": s.get(cid, False), "dir": official_dir(cid)})
+            on = s.get(cid, True)
+            if on and cid not in s:               # on by default, never switched: the sample once, so it is never blank
+                _seed(root, cid, doc, _read_file(official_dir(cid) / "sample" / doc["data"]["file"], DATA_MAX))
+            out.append({"id": cid, "doc": doc, "official": True, "on": on, "dir": official_dir(cid)})
     mine = []
     try:
         with _dirfd(root, ("cards", "active")) as afd:
@@ -744,7 +750,12 @@ def phone_get(root, cid, lang: str = "zh", agent_cfg=None) -> dict:
         if cut:
             res["entries"] = [{**e, "editable": False} for e in res["entries"]]
     else:
-        items, bad = _items(raw) if raw else ([], None)
+        if c["id"] == "todo" and c["official"]:   # P394: owner, status, start / end, marks, the card's order
+            from . import jcards_todo
+            items, bad = jcards_todo.phone_items(raw, lang)
+            res["todo"] = {"counts": {w: sum(1 for i in items if w == "all" or i["owner"] == w) for w in ("all", "agent", "owner")}}
+        else:
+            items, bad = _items(raw) if raw else ([], None)
         if bad:
             res["problem"] = bad
         acts = d.get("itemActions", [])
@@ -842,6 +853,20 @@ def parser() -> argparse.ArgumentParser:
     x.add_argument("--revision")
     x.add_argument("--text")
     x.add_argument("--json", action="store_true")
+    # P394 (#130): the To-do card kept by the Agent and the owner together (jcards_todo; flags spelled out here for the docs checker)
+    x = ps.add_parser("todo", help="待办卡：加、改、标完成 / 取消，列出现在该处理的 / the To-do card: add, change, close, list what is due")
+    x.add_argument("op", choices=["add", "edit", "done", "cancel", "reopen", "start", "toggle", "list", "due"],
+                   help="add 新加 · edit 改字段 · done 完成 · cancel 取消 · reopen 撤回 · start 开始做 · toggle 完成/撤回 · list 全部 · due 现在该处理的")
+    x.add_argument("--entry", metavar="ID", help="哪一条（t3）/ which item (t3)")
+    x.add_argument("--text", help="标题，一行 / the title, one line")
+    x.add_argument("--owner", choices=["agent", "owner"], help="责任人：agent = Agent J，owner = 主人 / who is responsible")
+    x.add_argument("--start", metavar="WHEN", help="开始：2026-10-20[T09:00] · +2h · after:t3 · 或一句话条件 / a time, after:<id> or a condition")
+    x.add_argument("--end", metavar="WHEN", help="截止：同上 / deadline: the same three kinds")
+    x.add_argument("--status", choices=["pending", "active", "done", "cancelled"], help="状态 / status")
+    x.add_argument("--by", choices=["agent", "owner"], help="谁记的（add 默认 agent）/ who wrote it down (add: agent)")
+    x.add_argument("--source", help="来源：哪段对话 / which conversation it came from")
+    x.add_argument("--note", help="备注 / a note")
+    x.add_argument("--json", action="store_true", help="机器可读输出 / machine-readable output")
     x = ps.add_parser("automation", help="Read-only automation catalogue with stable names")
     x.add_argument("op", choices=("list",))
     x.add_argument("--json", action="store_true")
@@ -860,6 +885,9 @@ def command(args: list) -> int:
         from .state import State
         print(json.dumps({"ok": True, "items": jcards_data.automations(root, State(root).agent_config())}, ensure_ascii=False))
         return 0
+    if a.cmd == "todo":
+        from . import jcards_todo
+        return jcards_todo.command(a, root)
     if a.cmd == "note":
         from . import jcards_data
         r = phone_get(root, a.id) if a.op == "list" else jcards_data.note_change(root, a.id, a.op, a.entry, a.revision, a.text)

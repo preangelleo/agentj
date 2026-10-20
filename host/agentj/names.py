@@ -10,7 +10,7 @@ import json
 import socket
 
 from . import cloud
-from .text import new_agent_name_problem, normalise_agent_name
+from .text import NEW_NAME_UNITS, agent_name_units, new_agent_name_problem, normalise_agent_name
 
 CTL_TIMEOUT = 5
 
@@ -158,10 +158,20 @@ def rename(st, raw, *, post=None, notify=True) -> dict:
     return {"ok": True, "name": name, "linked": linked}
 
 
+def too_long_message(name) -> str:
+    """P393: the too-long refusal with the given name's own length against the limit (both languages, one line)."""
+    n = normalise_agent_name(name) if isinstance(name, str) else None
+    n = n if n is not None else str(name)
+    u = f"{round(agent_name_units(n), 1):g}"
+    return (f"名字太长：「{n}」算下来是 {u}，最多 {NEW_NAME_UNITS}（中文每个字算 1.6，英文字母、数字、空格和符号每个算 1；"
+            f"纯中文最多 8 个字，纯英文最多 13 个字母） / Name too long: \"{n}\" counts {u}, the limit is {NEW_NAME_UNITS} "
+            "(each Chinese character counts 1.6, each letter, digit, space or symbol 1: up to 8 Chinese characters or 13 letters)")
+
+
 RENAME_MESSAGES = {
     "name_required": "名字不能是空的",
-    "bad_name": "名字不合规：1–32 个字，不能有控制字符、不可见字符或换行（首尾空格会去掉，连续空格合成一个）",
-    "name_too_long": "名字太长：中文最多 8 个字，英文 / 数字 / 横杠最多 13 个；混着写时中文每个算 1.6、其他算 1，合计不超过 13",
+    "bad_name": "名字不合规：不能有控制字符、不可见字符或换行（首尾空格会去掉，连续空格合成一个）",
+    "name_too_long": "名字太长：长度最多 13，中文每个字算 1.6，其他字符每个算 1（纯中文最多 8 个字，纯英文最多 13 个字母）",
     "name_taken": "这个账号里已经有叫这个名字的 Agent 了",
     "unreachable": "连不上账号后台，名字没改",
     "not_bound": "账号后台那边已经把这台Agent J 主机移除了，名字没改（运行 `agentj unlink` 清掉这台Agent J 主机上的账号记录后，可以只改这台Agent J 主机上的名字）",

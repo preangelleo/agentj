@@ -21,6 +21,11 @@ JOB = 'auto-update-job.json'
 IDLE = 1800
 MAX_WHEEL = 32 * 1024 * 1024
 ORIGIN = 'https://agentj.app/dl/'
+# P393 (#121): the post-upgrade doctor is asked again (up to SELF_CHECK_TRIES, SELF_CHECK_WAIT s apart) while the only
+# blockers are a just-restarted serve / service manager that has not answered yet.
+SELF_CHECK_TRIES = 3
+SELF_CHECK_WAIT = 10
+TRANSIENT_CHECKS = frozenset(('serve', 'service'))
 
 
 def read(st, name=RECORD):
@@ -344,7 +349,9 @@ def _diagnose(st, result, diag):
     try:
         from . import upgrade_diag
         res = {**result, 'reason': upgrade_diag.category(result.get('reason')), 'step': diag.get('step') or 'install',
-               **({'stderr_tail': diag['stderr_tail']} if diag.get('stderr_tail') else {})}
+               **({'stderr_tail': diag['stderr_tail']} if diag.get('stderr_tail') else {}),
+               **({'failed_checks': update.check_ids(diag['failed_checks'])} if diag.get('failed_checks') else {}),
+               **({'detail': diag['detail']} if diag.get('detail') else {})}
         if result.get('result') == 'rolled_back':
             res.update(result='failed', rollback='ok')
         elif result.get('result') == 'failed' and result.get('reason') == 'rollback_failed':
@@ -470,9 +477,23 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
                 if rec.get('status') == 'failed' or time.monotonic() >= end:
                     raise ValueError('restart_failed')
                 time.sleep(.25)
-        h = runner(argv + ['doctor', '--upgrade-only', '--json'])
-        rows = json.loads(h.stdout)['checks']
-        if update.upgrade_health(rows)[0]:
+        for attempt in range(SELF_CHECK_TRIES):
+            h = runner(argv + ['doctor', '--upgrade-only', '--json'])
+            try:
+                rows = json.loads(h.stdout)['checks']
+            except (ValueError, TypeError, KeyError, AttributeError):
+                rows = None         # P393: reported as its own id, never a bare exception type
+            blockers = update.upgrade_blockers(rows)[0]
+            # A just-restarted serve / service manager can take a moment to answer: look again before rolling back.
+            if not blockers or not set(blockers) <= TRANSIENT_CHECKS or attempt == SELF_CHECK_TRIES - 1:
+                break
+            time.sleep(SELF_CHECK_WAIT)
+        if blockers:
+            if diagnose:
+                diag['failed_checks'] = update.check_ids(blockers)
+                if update.DOCTOR_UNPARSABLE in blockers:
+                    rc = getattr(h, 'returncode', None)
+                    diag['detail'] = f"doctor exit {rc}" if isinstance(rc, int) else 'doctor output unreadable'
             raise ValueError('upgrade_self_check_failed')
     try:
         if job.get('phase') == 'done':

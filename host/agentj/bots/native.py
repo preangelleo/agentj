@@ -86,8 +86,9 @@ def command(p,root,env,selected=None):
         return [selected,'run','--pure','--agent','agentj-bot','--format','json',*model]
     raise BotError('harness_unavailable')
 
-def run(cmd,prompt,env,cwd,timeout=90):
-    """Bound output/time and terminate only this invocation's process group."""
+def run(cmd,prompt,env,cwd,timeout=90,why=None):
+    """Bound output/time and terminate only this invocation's process group. P395: `why` (a list, the switch gate's probe
+    only — never the visitor-facing bots) receives the failed run's stdout so the caller can show OpenCode's own error line."""
     proc=None
     try:
         try:
@@ -110,6 +111,7 @@ def run(cmd,prompt,env,cwd,timeout=90):
                     out.extend(raw)
                     if len(out)>MAX_BYTES:raise BotError('native_output_limit')
         if proc.wait(timeout=max(.1,deadline-time.monotonic())):
+            if why is not None:why.append(bytes(out[-65536:]).decode('utf-8','replace'))
             # P298: OpenCode's free tier refuses this tool-free agent as "not OpenCode's own client" (403 FreeTierError)
             raise BotError('free_tier' if b'FreeTierError' in out else 'native_failed')
         return out.decode('utf-8')

@@ -95,6 +95,7 @@ T = {
         "global": "今天所有好友合计的 tokens 到上限了（{limit}），好友的新消息先不处理，明天自动恢复。",
         "summary": "{day} 好友消息：收到 {n_in} 条，自动回复 {n_auto} 条，{n_ask} 条等你决定。",
         "withheld": "（疑似密钥，已拦下，原文没有保存）",
+        "send_blocked": "给 {name} 的消息被对方拦截：疑似索要或携带密钥。请改成只问任务进度，不索要或附上凭据。",
         "draft_blocked": "回复草稿里像有密钥或「绝不外说」的内容（{rule}），没有发出。",
     },
     "en": {
@@ -115,6 +116,7 @@ T = {
         "global": "All friends together reached today's token limit ({limit}); new friend messages wait until tomorrow.",
         "summary": "Friends on {day}: {n_in} messages in, {n_auto} answered automatically, {n_ask} waiting for you.",
         "withheld": "(looked like a secret; stopped, not kept)",
+        "send_blocked": "Your message to {name} was blocked by the recipient: it appeared to request or contain credentials. Rewrite it to ask only about task progress, without requesting or including credential values.",
         "draft_blocked": "The draft looked like it holds a secret or something on the never-tell list ({rule}); not sent.",
     },
 }
@@ -577,7 +579,20 @@ class PeerService:
         if f is None:
             return
         if t == "pack":
+            if obj.get("s") == "blocked" and isinstance(obj.get("mid"), str):
+                # Only an existing outgoing message can be rejected. Copy no peer text
+                # into notices: the authenticated receipt is still untrusted content.
+                items = self.store._hist_all(fid)
+                if any(it.get("mid") == obj["mid"] and it.get("dir") == "out"
+                       and it.get("s") in ("sent", "got", "queued_for_owner") for it in items):
+                    self.store.hist_set_status(fid, obj["mid"], "blocked")
+                    self.notice(self.tx("send_blocked", name=self.store.name_of(fid)))
+                    self.changed(fid)
+                return
             if obj.get("s") in HIST_S and isinstance(obj.get("mid"), str):
+                if any(it.get("mid") == obj["mid"] and it.get("s") == "blocked"
+                       for it in self.store._hist_all(fid)):
+                    return  # a delayed transport receipt cannot erase a policy rejection
                 if self.store.hist_set_status(fid, obj["mid"], obj["s"]):
                     self.changed(fid)
         elif t == "limited":
@@ -636,7 +651,7 @@ class PeerService:
         if key in self.seen:                       # a retry: repeat the receipt, never a second turn
             s = self.seen[key]
             if s:
-                self._send(fid, {"t": "pack", "mid": mid, "s": s})
+                self._send(fid, {"t": "pack", "mid": mid, "s": s, **({"rule": "secret_policy"} if s == "blocked" else {})})
             return
         lim = self.store.precheck(fid, text)
         if lim:
@@ -659,8 +674,8 @@ class PeerService:
         v = peer_guard.inbound(text)
         if not v.ok:
             self.store.hist_add(fid, {"mid": mid, "dir": "in", "text": self.tx("withheld"), "ts": int(self.clock() * 1000), "s": "withheld"})
-            self._seen_put(key, "got")
-            self._send(fid, {"t": "pack", "mid": mid, "s": "got"})
+            self._seen_put(key, "blocked")
+            self._send(fid, {"t": "pack", "mid": mid, "s": "blocked", "rule": "secret_policy"})
             self.log("peer_msg", result="inbound_gate", reason=v.rule)
             self.notice(self.tx("inbound", name=self.store.name_of(fid), rule=v.rule))
             return self.changed(fid)
@@ -1198,9 +1213,12 @@ class PeerService:
         if self.store.is_blocked(fid):
             return {"ok": False, "why": "blocked"}
         v = await self._outbound(text)
+        if v.ok:
+            v = peer_guard.inbound(text)  # same deterministic recipient policy; no remote config
         if not v.ok:
             self.log("peer_msg", result="outbound_gate", reason=v.rule)
-            return {"ok": False, "why": "gate", "rule": v.rule}
+            return {"ok": False, "why": "gate", "rule": v.rule,
+                    "suggestion": "只询问任务进度，不索要或附上凭据 / Ask about task progress without credential values"}
         if self.net is None:
             self._ensure_net(run=False)
         mid = self._send_pmsg(fid, text, None, auto=False)
@@ -1545,7 +1563,8 @@ def cmd_friends(a) -> None:
         why = res.get("why")
         if why == "seat" and isinstance(res.get("message"), str):     # P199: the serve's own words (where to renew / bind)
             sys.exit("没成功：" + res["message"])
-        sys.exit("没成功：" + WHY_ZH.get(why, str(why)) + (f"（{res['rule']}）" if res.get("rule") else ""))
+        sys.exit("没成功：" + WHY_ZH.get(why, str(why)) + (f"（{res['rule']}）" if res.get("rule") else "")
+                 + ("。" + res["suggestion"] if res.get("suggestion") else ""))
     _print(req["t"], res)
 
 
@@ -1581,7 +1600,7 @@ def _print(t: str, res: dict) -> None:
     elif t == "add":
         print(f"好友请求已发给 {res['id']}（对方主人同意前一直显示「等待对方确认」）")
     elif t == "tell":
-        print(f"已发给 {res['name']}")
+        print(f"已排队给 {res['name']}，等待对方确认（可用 agentj friends history 查看回执） / Queued; awaiting recipient confirmation")
     elif t == "context":
         if res.get("op") == "show":
             print(res.get("context") or f"（还没给 {res['name']} 写补充设定：agentj friends context <好友> --set \"…\"）")

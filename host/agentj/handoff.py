@@ -89,8 +89,17 @@ def prep_text(lang: str) -> str:
             "绝对路径、坑、下一步；不写任何凭据）。写完只回一句「交接写好了」，不要做别的事。")
 
 
+# P394 (#130): every recovery also checks the To-do card for what is due.
+RECOVER_DUE = {"zh": "接着跑一次 agentj card todo due，到期的待办先办。",
+               "en": " Then run agentj card todo due once and handle what is due first."}
+
+
 def recover_text(lang: str, kind: str, has: bool, where: Path | None = None) -> str:
     """The host's message after a compaction (kind 'compact') or a /clear with a handoff (kind 'clear')."""
+    return _recover_text(lang, kind, has, where) + RECOVER_DUE["en" if lang == "en" else "zh"]
+
+
+def _recover_text(lang: str, kind: str, has: bool, where: Path | None = None) -> str:
     p = shown(where or path(COMPACT))
     if lang == "en":
         if kind == "clear":

@@ -205,8 +205,9 @@ agentj agent --help
 usage: agentj agent [-h] [--probe] [--dry-run] [--result] [--scan] [--undo]
                     [--force] [--json] [--dir DIR]
                     [--region {mainland-cn,global}] [--base-url BASE_URL]
-                    [--model MODEL] [--preset {ark}] [--plan {coding,payg}]
-                    [--unfenced] [--allow-docker] [--shared | --independent]
+                    [--model MODEL] [--preset {ark}]
+                    [--plan {agent,coding,payg}] [--unfenced] [--allow-docker]
+                    [--shared | --independent]
                     [{claude,codex,opencode,kimi,qwen,dsh,off,reset,restart,status,detect,switch,route}]
                     [{claude,codex,opencode,kimi,qwen,dsh}]
 ```
@@ -230,7 +231,7 @@ usage: agentj agent [-h] [--probe] [--dry-run] [--result] [--scan] [--undo]
 | `--base-url` | `null` | false | — | `dsh: an OpenAI-compatible server (Olares Router …), with --model` |
 | `--model` | `null` | false | — | `模型（默认用你自己的设置）；OpenCode 写成 服务商/模型，例如 zhipuai/glm-5.3` |
 | `--preset` | `null` | false | `ark` | `arkcli、缺 key 给密钥卡命令、写方舟服务商、实测一次才切 / ark = OpenCode on Volcano Ark: detect, key card if missing, write the provider, one real call before switching` |
-| `--plan` | `null` | false | `coding`, `payg` | `coding = the Coding Plan address (coding agents only) · payg = pay-as-you-go /api/v3` |
+| `--plan` | `null` | false | `agent`, `coding`, `payg` | `agent = the Agent Plan (default) · coding = the Coding Plan address (coding agents only) · payg = pay-as-you-go /api/v3` |
 | `--unfenced` | `false` | false | — | `不隔离运行 Agent（按底层 harness 自己的权限）。默认 Agent 在 bubblewrap 里运行，看不到 Agent J 的状态` |
 | `--allow-docker` | `false` | false | — | `podman（默认不开；主人要求时可直接打开）。默认容器引擎的 socket 对 Agent 隐藏` |
 | `--shared` | `null` | false | — | `shared session (advanced): attach to your own open session` |
@@ -338,13 +339,14 @@ agentj asr engine --help
 ```
 
 ```text
-usage: agentj asr engine [-h] {auto,sherpa,voxtype,off}
+usage: agentj asr engine [-h] [--force] {auto,sherpa,voxtype,off}
 ```
 
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `engine` | `null` | true | `auto`, `sherpa`, `voxtype`, `off` | `` |
+| `--force` | `false` | false | — | `voxtype: switch even when its model looks English-only` |
 
 ### agentj asr install
 
@@ -1374,7 +1376,7 @@ agentj card --help
 
 ```text
 usage: agentj card [-h]
-                   {list,validate,apply,on,off,remove,export,open,note,automation,schema} ...
+                   {list,validate,apply,on,off,remove,export,open,note,todo,automation,schema} ...
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -1586,6 +1588,40 @@ usage: agentj card schema [-h] [--path]
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--path` | `false` | false | — | `only its path` |
+
+### agentj card todo
+
+```text
+the To-do card: add, change, close, list what is due
+```
+
+```bash
+agentj card todo --help
+```
+
+```text
+usage: agentj card todo [-h] [--entry ID] [--text TEXT]
+                        [--owner {agent,owner}] [--start WHEN] [--end WHEN]
+                        [--status {pending,active,done,cancelled}]
+                        [--by {agent,owner}] [--source SOURCE] [--note NOTE]
+                        [--json]
+                        {add,edit,done,cancel,reopen,start,toggle,list,due}
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `op` | `null` | true | `add`, `edit`, `done`, `cancel`, `reopen`, `start`, `toggle`, `list`, `due` | `add 新加 · edit 改字段 · done 完成 · cancel 取消 · reopen 撤回 · start 开始做 · toggle 完成/撤回 · list 全部 · due 现在该处理的` |
+| `--entry` | `null` | false | — | `哪一条（t3）/ which item (t3)` |
+| `--text` | `null` | false | — | `the title, one line` |
+| `--owner` | `null` | false | `agent`, `owner` | `who is responsible` |
+| `--start` | `null` | false | — | `a time, after:<id> or a condition` |
+| `--end` | `null` | false | — | `deadline: the same three kinds` |
+| `--status` | `null` | false | `pending`, `active`, `done`, `cancelled` | `status` |
+| `--by` | `null` | false | `agent`, `owner` | `谁记的（add 默认 agent）/ who wrote it down (add: agent)` |
+| `--source` | `null` | false | — | `which conversation it came from` |
+| `--note` | `null` | false | — | `a note` |
+| `--json` | `false` | false | — | `machine-readable output` |
 
 ### agentj card validate
 
@@ -3667,7 +3703,7 @@ usage: agentj login [-h] [--api API] [--account ACCOUNT_ID] [--seat CODE |
 | `--seat-file` | `null` | false | — | `read the setup code from a 0600 file, so it stays out of argv and shell history` |
 | `--paste` | `false` | false | — | `paste a setup or installation code at the prompt (hidden, out of argv; a whole prompt works). Plain 'agentj login' at a terminal asks first too` |
 | `--install-code-file` | `null` | false | — | `bind an installed host using an AJI code in a private file` |
-| `--name` | `null` | false | — | `exit: 3 名字已占用 name taken · 4 设置码无效 invalid code · 5 席位未付费 seat not paid · 2 本地拒绝 refused locally` |
+| `--name` | `null` | false | — | `exit: 3 名字已占用 name taken · 4 设置码无效 invalid code · 5 席位未付费 seat not paid · 6 账单处理中，几分钟后重试 billing change in progress, retry in a few minutes · 2 本地拒绝 refused locally` |
 
 ### agentj mail
 
@@ -3836,7 +3872,7 @@ usage: agentj name [-h] [name]
 ### agentj news
 
 ```text
-the daily "Musk + AI 24h" digest (in Chinese) to the account email (default off)
+the daily "Musk + AI 24h" digest (in Chinese) to the email of this Agent J host's own user (default off); with no email yet, email <address> sends a code and verify <address> <code> confirms it
 ```
 
 ```bash
@@ -3844,13 +3880,14 @@ agentj news --help
 ```
 
 ```text
-usage: agentj news [-h] [--json] [{status,on,off}]
+usage: agentj news [-h] [--json] [{status,on,off,email,verify}] [arg ...]
 ```
 
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `mode` | `"status"` | false | `status`, `on`, `off` | `` |
+| `mode` | `"status"` | false | `status`, `on`, `off`, `email`, `verify` | `` |
+| `args` | `null` | false | — | `email <address>; verify <address> <code>` |
 | `--json` | `false` | false | — | `machine-readable output` |
 
 ### agentj notify
@@ -3926,7 +3963,7 @@ usage: agentj pair [-h] [--no-qr] [--link] [--check] [--json]
 ### agentj passphrase
 
 ```text
-遥控器配对密码：set 设置 · change 修改 · reset 忘了（会吊销全部遥控器）· status · offer（安装结束时问一句，回车跳过）
+遥控器配对密码（只存在这台Agent J 主机上）：set 设置 · change 修改 · reset 忘了（会吊销全部遥控器；加 --phone 由已配对手机确认、保留全部遥控器）· status · offer（安装结束时问一句，回车跳过）
 ```
 
 ```bash
@@ -3934,13 +3971,15 @@ agentj passphrase --help
 ```
 
 ```text
-usage: agentj passphrase [-h] [--json] [{set,change,reset,status,offer}]
+usage: agentj passphrase [-h] [--phone] [--json]
+                         [{set,change,reset,status,offer}]
 ```
 
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `mode` | `"status"` | false | `set`, `change`, `reset`, `status`, `offer` | `` |
+| `--phone` | `false` | false | — | `with reset: a paired phone confirms, you type the new password here, every remote stays paired` |
 | `--json` | `false` | false | — | `与 offer 一起：最后一行输出 JSON（安装脚本用）` |
 
 ### agentj plaza
@@ -4300,7 +4339,7 @@ usage: agentj protocol open [-h] url
 ### agentj provider
 
 ```text
-list / remove；ark = 火山方舟 Coding Plan 预设（中国大陆首推，先买 Lite）；bailian = 阿里百炼 Token Plan 预设 · a third-party model service for OpenCode (base URL + key); ark = the Volcano Ark Coding Plan preset (first choice in mainland China, Lite first); bailian = the Alibaba Cloud Bailian Token Plan preset
+list / remove；ark = 火山方舟 Agent Plan 预设（中国大陆首推；--plan coding 仍可接 Coding Plan）；bailian = 阿里百炼 Token Plan 预设 · a third-party model service for OpenCode (base URL + key); ark = the Volcano Ark Agent Plan preset (first choice in mainland China; --plan coding for the Coding Plan); bailian = the Alibaba Cloud Bailian Token Plan preset
 ```
 
 ```bash
@@ -4312,7 +4351,7 @@ usage: agentj provider [-h] [--base-url BASE_URL] [--model MODEL]
                        [--api {anthropic,openai}] [--name NAME]
                        [--key-env KEY_ENV] [--vision | --no-vision]
                        [--max-output MAX_OUTPUT] [--context CONTEXT]
-                       [--plan {token-plan,coding-plan,payg}]
+                       [--plan {token-plan,coding-plan,agent,coding,payg}]
                        [--harness {opencode,claude}] [--lang {zh,en}]
                        [--dry-run] [--json]
                        {add,list,remove,bailian,ark} [id]
@@ -4331,7 +4370,7 @@ usage: agentj provider [-h] [--base-url BASE_URL] [--model MODEL]
 | `--vision / --no-vision` | `null` | false | — | `add：这些模型能看图（--no-vision = 纯文本）/ the models read images (--no-vision: text only)` |
 | `--max-output` | `null` | false | — | `output limit in tokens` |
 | `--context` | `null` | false | — | `add：上下文长度 token（配 --max-output，默认 128000）/ context window` |
-| `--plan` | `null` | false | `token-plan`, `coding-plan`, `payg` | `which Bailian plan; ark: payg = pay-as-you-go /api/v3 (default: the Coding Plan)` |
+| `--plan` | `null` | false | `token-plan`, `coding-plan`, `agent`, `coding`, `payg` | `which Bailian plan; ark: agent = the Agent Plan (default), coding = the Coding Plan, payg = pay-as-you-go /api/v3` |
 | `--harness` | `null` | false | `opencode`, `claude` | `ark：opencode（默认）或 claude（打印 Claude Code 的 profile 三步）/ ark: which harness` |
 | `--lang` | `null` | false | `zh`, `en` | `ark：说明文字的语言 / text language` |
 | `--dry-run` | `false` | false | — | `` |
@@ -4405,7 +4444,7 @@ agentj provider profile save --help
 ```text
 usage: agentj provider profile save [-h] --harness {claude,codex,opencode}
                                     [--base-url BASE_URL]
-                                    [--preset {openai,anthropic,agentsrelay,ark-coding}]
+                                    [--preset {openai,anthropic,agentsrelay,ark-coding,ark-agent}]
                                     --model MODEL [--api {openai,anthropic}]
                                     [--haiku-model HAIKU_MODEL]
                                     [--sonnet-model SONNET_MODEL]
@@ -4422,7 +4461,7 @@ usage: agentj provider profile save [-h] --harness {claude,codex,opencode}
 | `id` | `null` | true | — | `` |
 | `--harness` | `null` | true | `claude`, `codex`, `opencode` | `` |
 | `--base-url` | `null` | false | — | `` |
-| `--preset` | `null` | false | `openai`, `anthropic`, `agentsrelay`, `ark-coding` | `` |
+| `--preset` | `null` | false | `openai`, `anthropic`, `agentsrelay`, `ark-coding`, `ark-agent` | `` |
 | `--model` | `null` | true | — | `` |
 | `--api` | `null` | false | `openai`, `anthropic` | `default: anthropic for claude, openai otherwise` |
 | `--haiku-model` | `null` | false | — | `` |
@@ -4712,7 +4751,7 @@ usage: agentj report [-h] [--data DATA_OPT] [--template TEMPLATE] [--email]
 ### agentj report-hostname
 
 ```text
-账号后台是否显示这台 Agent J 主机的名字（默认显示）/ show the Agent J host's name in the account dashboard
+账号后台是否显示这台Agent J 主机的名字（默认显示）/ show the Agent J host's name in the account dashboard
 ```
 
 ```bash
@@ -5483,7 +5522,7 @@ usage: agentj theme validate [-h] [--json] folder
 ### agentj unlink
 
 ```text
-把这台 Agent J 主机移出 Agent J 账号（删掉这台 Agent J 主机上的账号记录）/ take the Agent J host out of the Agent J account
+把这台Agent J 主机移出 Agent J 账号（删掉这台Agent J 主机上的账号记录）/ take the Agent J host out of the Agent J account
 ```
 
 ```bash
@@ -6038,8 +6077,9 @@ agentj agent --help
 usage: agentj agent [-h] [--probe] [--dry-run] [--result] [--scan] [--undo]
                     [--force] [--json] [--dir DIR]
                     [--region {mainland-cn,global}] [--base-url BASE_URL]
-                    [--model MODEL] [--preset {ark}] [--plan {coding,payg}]
-                    [--unfenced] [--allow-docker] [--shared | --independent]
+                    [--model MODEL] [--preset {ark}]
+                    [--plan {agent,coding,payg}] [--unfenced] [--allow-docker]
+                    [--shared | --independent]
                     [{claude,codex,opencode,kimi,qwen,dsh,off,reset,restart,status,detect,switch,route}]
                     [{claude,codex,opencode,kimi,qwen,dsh}]
 ```
@@ -6063,7 +6103,7 @@ usage: agentj agent [-h] [--probe] [--dry-run] [--result] [--scan] [--undo]
 | `--base-url` | `null` | false | — | `dsh：OpenAI 兼容服务的地址（Olares Router、LiteLLM、Ollama…），写成 https://<服务>/v1，配 --model` |
 | `--model` | `null` | false | — | `模型（默认用你自己的设置）；OpenCode 写成 服务商/模型，例如 zhipuai/glm-5.3` |
 | `--preset` | `null` | false | `ark` | `switch opencode：ark =「OpenCode · 火山方舟」——探测 OpenCode` |
-| `--plan` | `null` | false | `coding`, `payg` | `--preset ark：coding = Coding Plan 套餐（…/api/coding/v3，只给编程 Agent 用）· payg = 按量付费（…/api/v3）` |
+| `--plan` | `null` | false | `agent`, `coding`, `payg` | `--preset ark：agent = Agent Plan 套餐（默认，…/api/plan/v3）· coding = Coding Plan 套餐（…/api/coding/v3，只给编程 Agent 用）· payg = 按量付费（…/api/v3）` |
 | `--unfenced` | `false` | false | — | `不隔离运行 Agent（按底层 harness 自己的权限）。默认 Agent 在 bubblewrap 里运行，看不到 Agent J 的状态` |
 | `--allow-docker` | `false` | false | — | `隔离里也让 Agent 用 docker` |
 | `--shared` | `null` | false | — | `共享会话（高级）：手机接你Agent J 主机上正开着的会话` |
@@ -6171,13 +6211,14 @@ agentj asr engine --help
 ```
 
 ```text
-usage: agentj asr engine [-h] {auto,sherpa,voxtype,off}
+usage: agentj asr engine [-h] [--force] {auto,sherpa,voxtype,off}
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `engine` | `null` | true | `auto`, `sherpa`, `voxtype`, `off` | `` |
+| `--force` | `false` | false | — | `voxtype: switch even when its model looks English-only` |
 
 ### agentj asr install
 
@@ -7207,7 +7248,7 @@ agentj card --help
 
 ```text
 usage: agentj card [-h]
-                   {list,validate,apply,on,off,remove,export,open,note,automation,schema} ...
+                   {list,validate,apply,on,off,remove,export,open,note,todo,automation,schema} ...
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -7419,6 +7460,40 @@ usage: agentj card schema [-h] [--path]
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--path` | `false` | false | — | `只打印文件路径` |
+
+### agentj card todo
+
+```text
+待办卡：加、改、标完成 / 取消，列出现在该处理的
+```
+
+```bash
+agentj card todo --help
+```
+
+```text
+usage: agentj card todo [-h] [--entry ID] [--text TEXT]
+                        [--owner {agent,owner}] [--start WHEN] [--end WHEN]
+                        [--status {pending,active,done,cancelled}]
+                        [--by {agent,owner}] [--source SOURCE] [--note NOTE]
+                        [--json]
+                        {add,edit,done,cancel,reopen,start,toggle,list,due}
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `op` | `null` | true | `add`, `edit`, `done`, `cancel`, `reopen`, `start`, `toggle`, `list`, `due` | `add 新加 · edit 改字段 · done 完成 · cancel 取消 · reopen 撤回 · start 开始做 · toggle 完成/撤回 · list 全部 · due 现在该处理的` |
+| `--entry` | `null` | false | — | `哪一条（t3）/ which item (t3)` |
+| `--text` | `null` | false | — | `标题，一行` |
+| `--owner` | `null` | false | `agent`, `owner` | `责任人：agent = Agent J，owner = 主人` |
+| `--start` | `null` | false | — | `开始：2026-10-20[T09:00] · +2h · after:t3 · 或一句话条件` |
+| `--end` | `null` | false | — | `截止：同上` |
+| `--status` | `null` | false | `pending`, `active`, `done`, `cancelled` | `状态` |
+| `--by` | `null` | false | `agent`, `owner` | `谁记的（add 默认 agent）/ who wrote it down (add: agent)` |
+| `--source` | `null` | false | — | `来源：哪段对话` |
+| `--note` | `null` | false | — | `备注` |
+| `--json` | `false` | false | — | `机器可读输出` |
 
 ### agentj card validate
 
@@ -9500,7 +9575,7 @@ usage: agentj login [-h] [--api API] [--account ACCOUNT_ID] [--seat CODE |
 | `--seat-file` | `null` | false | — | `从文件读设置码（文件必须 0600），这样它不进命令行和 shell 历史` |
 | `--paste` | `false` | false | — | `在终端里粘贴设置码或安装码（不显示、不进命令行；整段提示词也行）。在终端里直接运行 agentj login 也会先问` |
 | `--install-code-file` | `null` | false | — | `从 0600 文件读取 AJI 安装码，给已安装的Agent J 主机绑定席位` |
-| `--name` | `null` | false | — | `和 --seat 一起：本机 Agent 的名字（1–32 个字；不给就在终端里问，回车或非交互时用主机名，重名自动加序号）/ with --seat: the Agent's name (1–32 characters; if omitted it is asked, Enter or no terminal = the host name, numbered on a clash). 退出码` |
+| `--name` | `null` | false | — | `和 --seat 一起：本机 Agent 的名字（长度最多 13：中文每个字算 1.6，其他字符每个算 1，即纯中文最多 8 个字、纯英文最多 13 个字母；不给就在终端里问，回车或非交互时用主机名，重名自动加序号）/ with --seat: the Agent's name (length at most 13: each Chinese character counts 1.6, any other character 1, i.e. up to 8 Chinese characters or 13 letters; if omitted it is asked, Enter or no terminal = the host name, numbered on a clash). 退出码` |
 
 ### agentj mail
 
@@ -9669,7 +9744,7 @@ usage: agentj name [-h] [name]
 ### agentj news
 
 ```text
-Daily AI News：每天早上把《Musk + AI 24h》（中文）发到账号邮箱（默认关）：status · on · off
+Daily AI News：每天早上把《Musk + AI 24h》（中文）发到这台 Agent J 主机的使用者自己的邮箱（默认关）：status · on · off；还没有邮箱时 email <邮箱> 收验证码、verify <邮箱> <验证码> 确认
 ```
 
 ```bash
@@ -9677,13 +9752,14 @@ agentj news --help
 ```
 
 ```text
-usage: agentj news [-h] [--json] [{status,on,off}]
+usage: agentj news [-h] [--json] [{status,on,off,email,verify}] [arg ...]
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `mode` | `"status"` | false | `status`, `on`, `off` | `` |
+| `mode` | `"status"` | false | `status`, `on`, `off`, `email`, `verify` | `` |
+| `args` | `null` | false | — | `email <邮箱>；verify <邮箱> <验证码>` |
 | `--json` | `false` | false | — | `机器可读输出` |
 
 ### agentj notify
@@ -9759,7 +9835,7 @@ usage: agentj pair [-h] [--no-qr] [--link] [--check] [--json]
 ### agentj passphrase
 
 ```text
-遥控器配对密码：set 设置 · change 修改 · reset 忘了（会吊销全部遥控器）· status · offer（安装结束时问一句，回车跳过）
+遥控器配对密码（只存在这台Agent J 主机上）：set 设置 · change 修改 · reset 忘了（会吊销全部遥控器；加 --phone 由已配对手机确认、保留全部遥控器）· status · offer（安装结束时问一句，回车跳过）
 ```
 
 ```bash
@@ -9767,13 +9843,15 @@ agentj passphrase --help
 ```
 
 ```text
-usage: agentj passphrase [-h] [--json] [{set,change,reset,status,offer}]
+usage: agentj passphrase [-h] [--phone] [--json]
+                         [{set,change,reset,status,offer}]
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `mode` | `"status"` | false | `set`, `change`, `reset`, `status`, `offer` | `` |
+| `--phone` | `false` | false | — | `与 reset 一起：已配对手机确认后在终端输入新密码，全部遥控器保持配对` |
 | `--json` | `false` | false | — | `与 offer 一起：最后一行输出 JSON（安装脚本用）` |
 
 ### agentj plaza
@@ -10145,7 +10223,7 @@ usage: agentj provider [-h] [--base-url BASE_URL] [--model MODEL]
                        [--api {anthropic,openai}] [--name NAME]
                        [--key-env KEY_ENV] [--vision | --no-vision]
                        [--max-output MAX_OUTPUT] [--context CONTEXT]
-                       [--plan {token-plan,coding-plan,payg}]
+                       [--plan {token-plan,coding-plan,agent,coding,payg}]
                        [--harness {opencode,claude}] [--lang {zh,en}]
                        [--dry-run] [--json]
                        {add,list,remove,bailian,ark} [id]
@@ -10164,7 +10242,7 @@ usage: agentj provider [-h] [--base-url BASE_URL] [--model MODEL]
 | `--vision / --no-vision` | `null` | false | — | `add：这些模型能看图（--no-vision = 纯文本）/ the models read images (--no-vision: text only)` |
 | `--max-output` | `null` | false | — | `add：输出上限 token` |
 | `--context` | `null` | false | — | `add：上下文长度 token（配 --max-output，默认 128000）/ context window` |
-| `--plan` | `null` | false | `token-plan`, `coding-plan`, `payg` | `bailian：token-plan（默认，个人版，含 Qwen 3.8 Max）或 coding-plan；ark：payg = 按量付费 …/api/v3（默认 Coding Plan）` |
+| `--plan` | `null` | false | `token-plan`, `coding-plan`, `agent`, `coding`, `payg` | `bailian：token-plan（默认，个人版，含 Qwen 3.8 Max）或 coding-plan；ark：agent = Agent Plan（默认，…/api/plan/v3）· coding = Coding Plan · payg = 按量付费 …/api/v3` |
 | `--harness` | `null` | false | `opencode`, `claude` | `ark：opencode（默认）或 claude（打印 Claude Code 的 profile 三步）/ ark: which harness` |
 | `--lang` | `null` | false | `zh`, `en` | `bailian` |
 | `--dry-run` | `false` | false | — | `` |
@@ -10238,7 +10316,7 @@ agentj provider profile save --help
 ```text
 usage: agentj provider profile save [-h] --harness {claude,codex,opencode}
                                     [--base-url BASE_URL]
-                                    [--preset {openai,anthropic,agentsrelay,ark-coding}]
+                                    [--preset {openai,anthropic,agentsrelay,ark-coding,ark-agent}]
                                     --model MODEL [--api {openai,anthropic}]
                                     [--haiku-model HAIKU_MODEL]
                                     [--sonnet-model SONNET_MODEL]
@@ -10255,7 +10333,7 @@ usage: agentj provider profile save [-h] --harness {claude,codex,opencode}
 | `id` | `null` | true | — | `` |
 | `--harness` | `null` | true | `claude`, `codex`, `opencode` | `` |
 | `--base-url` | `null` | false | — | `` |
-| `--preset` | `null` | false | `openai`, `anthropic`, `agentsrelay`, `ark-coding` | `` |
+| `--preset` | `null` | false | `openai`, `anthropic`, `agentsrelay`, `ark-coding`, `ark-agent` | `` |
 | `--model` | `null` | true | — | `` |
 | `--api` | `null` | false | `openai`, `anthropic` | `default: anthropic for claude, openai otherwise` |
 | `--haiku-model` | `null` | false | — | `` |
@@ -10545,7 +10623,7 @@ usage: agentj report [-h] [--data DATA_OPT] [--template TEMPLATE] [--email]
 ### agentj report-hostname
 
 ```text
-账号后台是否显示这台 Agent J 主机的名字（默认显示）/ show the Agent J host's name in the account dashboard
+账号后台是否显示这台Agent J 主机的名字（默认显示）/ show the Agent J host's name in the account dashboard
 ```
 
 ```bash
@@ -11316,7 +11394,7 @@ usage: agentj theme validate [-h] [--json] folder
 ### agentj unlink
 
 ```text
-把这台 Agent J 主机移出 Agent J 账号（删掉这台 Agent J 主机上的账号记录）/ take the Agent J host out of the Agent J account
+把这台Agent J 主机移出 Agent J 账号（删掉这台Agent J 主机上的账号记录）/ take the Agent J host out of the Agent J account
 ```
 
 ```bash

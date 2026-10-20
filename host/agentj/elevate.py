@@ -38,6 +38,8 @@ import os
 import pathlib
 import re
 import secrets
+import selectors
+import threading
 import shlex
 import shutil
 import socket
@@ -69,11 +71,13 @@ TS_SKEW_MS = 120_000
 MAX_OPEN = 4
 MAX_VALUE = 8192                # bytes of a password / secret
 MAX_OUT = 256 * 1024            # bytes of stdout / stderr returned to the Agent (each)
+PROMPT_WAIT = 5.0               # s to wait for sudo's own prompt before closing its stdin unwritten
 MAX_FRAME = 512 * 1024          # one request line from the CLI (a `secret send` file ≤ 256 KiB travels base64 in it)
 CMD_TIMEOUT, CMD_TIMEOUT_MAX = 600, 3600
 SOCK_NAME = "elevate.sock"
 ENV = "AGENTJ_ELEVATE_SOCK"
 PHONE_TYPES = ("elev_answer", "secret_out_open", "secret_out_decline")   # the last two: F32 (secret_out.py)
+PHONE_TYPES += ("elev_revoke",)   # #116: 「收回授权」 (elevate_grant.py)
 PHONE_TYPES += ("login_qr_check", "login_qr_cancel", "login_qr_tg", "login_qr_refresh")   # P114: browser_login.py
 PHONE_TYPES += ("ct_list", "ct_save", "ct_card_answer", "mail_fwd")   # P184: contacts_serve.py (address book, forward to e-mail)
 PHONE_TYPES += ("ct_rm", "ct_export", "ct_import")   # P207: contacts_serve.py (delete one, export vcf/csv, import a file)
@@ -122,10 +126,12 @@ def shown_digest(kind: str, fields: list[str]) -> str:
 
 
 def signed_message(channel: str, device: str, rid: str, kind: str, decision: str, nonce: str, ts: int, digest: str,
-                   ct_sha: str | None) -> bytes:
+                   ct_sha: str | None, grant: str | None = None) -> bytes:
+    """`grant` (#116, §11.1): the class hash of the card's 10-minute toggle, only when the owner switched it on."""
     if decision not in ("allow", "deny") or kind not in KINDS:
         raise ValueError("bad decision")
-    return "\n".join([SIG_CONTEXT, channel, device, rid, kind, decision, nonce, str(ts), digest, ct_sha or "-"]).encode()
+    tail = ["grant:" + grant] if grant else []
+    return "\n".join([SIG_CONTEXT, channel, device, rid, kind, decision, nonce, str(ts), digest, ct_sha or "-"] + tail).encode()
 
 
 def seal_aad(channel: str, device: str, rid: str, kind: str, nonce: str, digest: str) -> bytes:
@@ -176,10 +182,18 @@ def _text(v, limit: int, *, required: bool, field: str) -> str:
     return v
 
 
+_INTERP = re.compile(r"(?:r?bash|sh|ash|dash|zsh|ksh|mksh|t?csh|fish|busybox|python[^/]*|pypy[^/]*|node(?:js)?|perl(?:[0-9.]+)?"
+                     r"|lua(?:jit)?[0-9.]*|ruby[0-9.]*|irb[0-9.]*|php[0-9.]*|tclsh[0-9.]*|wish[0-9.]*|deno|bun|java|jshell"
+                     r"|osascript|pwsh|mise|asdf|rtx)")
+
+
 def interpreter_command(argv: list[str]) -> bool:
-    """Executable identity, including a symlink, never an Agent-supplied risk flag."""
-    return any(re.fullmatch(r"(?:sh|bash|dash|zsh|ksh|fish|python[^/]*|node(?:js)?|perl(?:[0-9.]+)?)", name)
-               for name in (os.path.basename(argv[0]), os.path.basename(os.path.realpath(argv[0]))))
+    """Executable identity, including a symlink and the program a bare name resolves to on PATH (#116: rbash, mise shims),
+    never an Agent-supplied risk flag."""
+    names = {os.path.basename(argv[0]), os.path.basename(os.path.realpath(argv[0]))}
+    if "/" not in argv[0] and (hit := shutil.which(argv[0])):
+        names |= {os.path.basename(hit), os.path.basename(os.path.realpath(hit))}
+    return any(_INTERP.fullmatch(n) for n in names)
 
 
 _CJK = re.compile(r"[\u3040-\u30ff\u3400-\u9fff\uf900-\ufaff\uac00-\ud7af]")
@@ -362,10 +376,101 @@ def _cap(b: bytes) -> tuple[str, bool]:
     return b[:MAX_OUT].decode("utf-8", "replace"), len(b) > MAX_OUT
 
 
-def run_sudo(argv: list[str], password: bytearray, cwd: str, timeout: int, sudo: str | None = None) -> dict:
-    """`sudo -S -k -p <random marker> -- argv`, the password + newline on stdin and nothing else; → {result, code, stdout,
-    stderr, truncated}. result: done (the command ran; `code` is its exit status) · bad_password · timeout · no_sudo.
-    A wrong password shows as a second prompt (sudo asks again after "Sorry, try again", then gets EOF)."""
+def collect_command(p, timeout: float, cancel=None, input_data=None, gate: bytes | None = None) -> tuple[bytes, bytes, bool, bool]:
+    """Drain bounded output off-loop; TERM/KILL and pipe drain have finite grace periods.
+
+    Only byte counts/liveness may reach phones; command output remains on the CLI path.
+    `gate` (sudo's random prompt marker): `input_data` is written only after the marker shows on stderr before any stdout
+    byte. No marker (sudo did not ask: NOPASSWD / !authenticate) means stdin is closed unwritten once the command prints or
+    PROMPT_WAIT passes, so the password can never become the command's own input.
+    """
+    deadline = time.monotonic() + timeout
+    buffers = [bytearray(), bytearray()]
+    truncated, timed_out, stage = False, False, 0
+    armed, tail, wait_until = gate is None, b"", time.monotonic() + PROMPT_WAIT
+    with selectors.DefaultSelector() as sel:
+        offset = 0
+        def close_input():
+            if p.stdin is not None and not p.stdin.closed:
+                with contextlib.suppress(KeyError):
+                    sel.unregister(p.stdin)
+                p.stdin.close()
+            if input_data is not None:
+                wipe(input_data)
+        if p.stdin is not None:
+            os.set_blocking(p.stdin.fileno(), False)
+            if input_data and armed:
+                sel.register(p.stdin, selectors.EVENT_WRITE, 2)
+            elif not input_data:
+                close_input()
+        for index, stream in enumerate((p.stdout, p.stderr)):
+            os.set_blocking(stream.fileno(), False)
+            sel.register(stream, selectors.EVENT_READ, index)
+        while sel.get_map() or p.poll() is None:
+            now = time.monotonic()
+            if not armed and now >= wait_until:
+                armed = True                       # sudo never asked: the command gets EOF, never the password
+                close_input()
+            if now >= deadline or (not stage and cancel is not None and cancel.is_set()):
+                timed_out = True
+                close_input()
+                if stage == 2:
+                    break  # A privileged descendant may hold a pipe; never wait forever for EOF.
+                with contextlib.suppress(ProcessLookupError, PermissionError):
+                    os.killpg(p.pid, 15 if stage == 0 else 9)
+                stage += 1
+                deadline = now + .5
+            for key, _ in sel.select(.05):
+                if key.data == 2:
+                    try:
+                        view = memoryview(input_data)
+                        try:
+                            offset += os.write(key.fileobj.fileno(), view[offset:offset + 4096])
+                        finally:
+                            view.release()
+                    except BlockingIOError:
+                        continue
+                    except (BrokenPipeError, OSError):
+                        close_input()
+                        continue
+                    if offset == len(input_data):
+                        close_input()
+                    continue
+                try:
+                    data = os.read(key.fileobj.fileno(), 65536)
+                except BlockingIOError:
+                    continue
+                if not data:
+                    sel.unregister(key.fileobj)
+                    continue
+                if not armed:
+                    if key.data == 0:
+                        armed = True               # the command already runs (sudo did not ask): close, never write
+                        close_input()
+                    elif gate in tail + data:
+                        armed = True
+                        if p.stdin is not None and not p.stdin.closed:
+                            sel.register(p.stdin, selectors.EVENT_WRITE, 2)
+                    else:
+                        tail = (tail + data)[-(len(gate) - 1):]
+                buf = buffers[key.data]
+                remaining = MAX_OUT + 256 - len(buf)
+                buf.extend(data[:max(0, remaining)])
+                truncated |= len(data) > remaining
+        close_input()
+        for stream in (p.stdout, p.stderr):
+            stream.close()
+    with contextlib.suppress(subprocess.TimeoutExpired):
+        p.wait(timeout=.5)
+    return bytes(buffers[0]), bytes(buffers[1]), timed_out, truncated
+
+
+def run_sudo(argv: list[str], password: bytearray, cwd: str, timeout: int, sudo: str | None = None, cancel=None) -> dict:
+    """`sudo -S -k -p <random marker> -- argv`; the password + newline goes to stdin once, only after sudo printed the marker
+    (collect_command `gate`), then stdin closes; → {result, code, stdout, stderr, truncated, prompts}. result: done (the
+    command ran; `code` is its exit status) · bad_password · timeout · no_sudo. `prompts` = how many times sudo asked:
+    exactly 1 on a done run means sudo really checked this password (0 = it never asked, NOPASSWD; the password was not
+    sent). A wrong password shows as a second prompt (sudo asks again after "Sorry, try again", then gets EOF)."""
     if local_auth_risk():
         return {"result": "failed", "why": "local_auth_required", "code": None, "stdout": "", "stderr": "", "truncated": False,
                 "detail": LOCAL_AUTH_HINT}
@@ -385,28 +490,11 @@ def run_sudo(argv: list[str], password: bytearray, cwd: str, timeout: int, sudo:
         wipe(buf)
         return {"result": "no_sudo", "code": None, "stdout": "", "stderr": "", "truncated": False}
     try:
-        try:
-            view = memoryview(buf)
-            off = 0
-            while off < len(buf):
-                off += os.write(p.stdin.fileno(), view[off:])
-            view.release()
-        except OSError:
-            pass                     # sudo did not need it (NOPASSWD) and exited, or closed stdin
-        finally:
-            wipe(buf)
-            with contextlib.suppress(OSError):
-                p.stdin.close()
-            p.stdin = None           # Python 3.11's communicate() flushes a closed stdin ("flush of closed file"); 3.12+ tolerates it
-        try:
-            out, err = p.communicate(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            with contextlib.suppress(ProcessLookupError, PermissionError):
-                os.killpg(p.pid, 15)
-            out, err = p.communicate()
+        out, err, timed_out, overflow = collect_command(p, timeout, cancel, buf, marker.encode())
+        if timed_out:
             o, t1 = _cap(out)
             e, t2 = _cap(err.replace(marker.encode(), b""))
-            return {"result": "timeout", "code": None, "stdout": o, "stderr": e, "truncated": t1 or t2}
+            return {"result": "timeout", "code": None, "stdout": o, "stderr": e, "truncated": overflow or t1 or t2}
     finally:
         wipe(buf)
     prompts = err.count(marker.encode())
@@ -417,7 +505,8 @@ def run_sudo(argv: list[str], password: bytearray, cwd: str, timeout: int, sudo:
         return {"result": "bad_password", "code": p.returncode, "stdout": "", "stderr": "", "truncated": False}
     o, t1 = _cap(out)
     e, t2 = _cap(err)
-    return {"result": "done", "code": p.returncode, "stdout": o, "stderr": e, "truncated": t1 or t2}
+    return {"result": "done", "code": p.returncode, "stdout": o, "stderr": e, "truncated": overflow or t1 or t2,
+            "prompts": prompts}
 
 
 # ---------------------------------------------------------------- writing a secret
@@ -625,7 +714,7 @@ def check_record(st, r: dict) -> str:
     try:
         sk, sig = wire.unb64u(r.get("sk") or ""), wire.unb64u(r["sig"])
         msg = signed_message(r["channel"], r["device"], r["id"], r["kind"], r["decision"], r["n"], r["sig_ts"],
-                             r["shown_sha256"], r.get("ct_sha256"))
+                             r["shown_sha256"], r.get("ct_sha256"), r.get("grant_sha256"))
         Ed25519PublicKey.from_public_bytes(sk).verify(sig, msg)
     except (InvalidSignature, ValueError, KeyError, TypeError):
         return "bad"
@@ -642,6 +731,8 @@ class Elevator:
         self.host = host
         self.st = host.st
         self.cards: dict[str, dict] = {}
+        self.bg: set[asyncio.Task] = set()
+        self.completed: dict[str, dict] = {}
         self.server = None
         self.sudo = None             # tests: a stand-in sudo; else AGENTJ_SUDO_BIN / PATH
         self.helper_status = None    # tests: a stand-in for elevate_helper.status()
@@ -653,6 +744,8 @@ class Elevator:
         from .contacts_serve import ContactService
         self.contacts = ContactService(self)  # P184: address book, contact cards, 「转发到邮箱」, `agentj mail send`
         self._upgrade_mem: dict = {}  # P205: the fenced `update apply`'s cached old wheel (update.host_op)
+        from .elevate_grant import GrantBook
+        self.grants = GrantBook(self)  # #116: 10-minute same-class approval (memory only)
 
     @property
     def sock_path(self) -> pathlib.Path:
@@ -678,6 +771,12 @@ class Elevator:
     async def stop(self) -> None:
         if os.environ.get(ENV) == str(self.sock_path):
             os.environ.pop(ENV, None)
+        for c in self.cards.values():
+            if c.get("cancel") is not None:
+                c["cancel"].set()
+        self.grants.clear("gone")
+        if self.bg:
+            await asyncio.gather(*list(self.bg), return_exceptions=True)
         self.cancel_all("gone")
         self.out.end_all("gone")
         self.login.end_all("gone")
@@ -702,12 +801,16 @@ class Elevator:
     def card_msg(self, c: dict, s=None) -> dict:
         m = {"t": "elev", "id": c["id"], "kind": c["kind"], "n": c["nonce"], "epk": wire.b64u(c["epk"]),
              "ttl": max(0, int(c["deadline"] - time.monotonic())), "tries": TRIES - c["fails"]}
+        if c.get("busy"):
+            m.update(state="running", ttl=0, elapsed=max(0, int(time.monotonic() - c["started"])), timeout=c.get("timeout", 0))
         if c["fails"]:
             m["bad"] = c["fails"]
         if c["kind"] == "sudo":
             m.update(cmd=c["cmd"], why=c["why"], effect=c.get("effect") or "", interpreter=interpreter_command(c["argv"]))
             if c.get("helper"):
                 m["helper"] = list(c["helper"])       # these phones may approve without a password (elevate_helper)
+            if c.get("grant"):
+                m["grant"] = dict(c["grant"])         # #116: the opt-in toggle (off by default): program, options, hash
         else:
             m.update(name=c["name"], purpose=c["purpose"], dest=c["dest"], verify=c.get("verify") or "")
         pk = self.st.passkey_of_device(s.device) if s is not None and s.device else None
@@ -729,15 +832,19 @@ class Elevator:
 
     def open_msgs(self, s) -> list[dict]:
         """P203: the open sudo / secret cards as this device sees them (on_ready's replay and the cards_get snapshot)."""
-        return [self.card_msg(c, s) for c in list(self.cards.values()) if not c["fut"].done() and not c.get("busy")]
+        return [self.card_msg(c, s) for c in list(self.cards.values()) if not c["fut"].done()]
 
     def all_open_msgs(self, s) -> list[dict]:
         """P203: these and the pickup / sign-in / contact cards this module also owns."""
         return self.open_msgs(s) + self.out.open_msgs(s) + self.login.open_msgs(s) + self.contacts.open_msgs(s)
 
+    def completed_msgs(self, s=None) -> list[dict]:
+        return [dict(m) for m in self.completed.values()]
+
     async def on_ready(self, s) -> None:
-        for m in self.open_msgs(s):
+        for m in self.completed_msgs(s) + self.open_msgs(s):
             await self.host.send_app(s, m)
+        await self.grants.on_ready(s)
         await self.out.on_ready(s)
         await self.login.on_ready(s)
         await self.contacts.on_ready(s)
@@ -751,6 +858,7 @@ class Elevator:
             if not c.get("busy"):
                 self._finish(c, {"result": result})
         if result == "stopped":                    # Stop everything also voids pickup cards (and wipes their values)
+            self.grants.clear(result)              # … and every 10-minute approval
             self.out.end_all(result)
             self.login.end_all(result)
             self.contacts.end_all(result)
@@ -772,9 +880,13 @@ class Elevator:
             return {"result": "locked", "secs": left}
         if not self.host._approvers():
             return {"result": "no_device"}
+        if card["kind"] == "sudo" and (auto := await self.grants.auto(card, gone)) is not None:
+            return auto                            # #116: same class within the owner's 10-minute approval, logged
         c = dict(card, id=secrets.token_hex(16), fails=0, fut=asyncio.get_running_loop().create_future())
         if c["kind"] == "sudo":
             c["helper"] = [] if interpreter_command(c["argv"]) else self.helper_devices()
+            from .elevate_grant import scope_of
+            c["scope"], c["grant"] = scope_of(self.host), self.grants.offer(c)
         c["digest"] = shown_digest(c["kind"], shown_fields(c))
         self._arm(c)
         self.cards[c["id"]] = c
@@ -832,6 +944,16 @@ class Elevator:
             done_msg["verify"] = res["receipt"]["verify"]
         if c["kind"] == "secret" and (res.get("key_hint") or (res.get("receipt") or {}).get("key_hint")):
             done_msg["key_hint"] = "short"          # P163: one word from the length, never the key
+        self.completed[c["id"]] = dict(done_msg)
+        while len(self.completed) > RESULTS_KEEP:
+            self.completed.pop(next(iter(self.completed)))
+        if c["kind"] == "sudo":
+            labels = {"done": ("已完成", "completed") if res.get("code") == 0 else ("执行失败", "failed"),
+                      "timeout": ("执行超时", "timed out"), "denied": ("已拒绝", "denied"),
+                      "gone": ("已取消", "cancelled"), "stopped": ("已停止", "stopped")}
+            zh, en = labels.get(res["result"], ("执行失败", "failed"))
+            code = f" ({res['code']})" if res.get("code") is not None else ""
+            self.host.agent_notice(f"管理员命令{zh}{code} · {c['id'][:8]} / Admin command {en}{code} · {c['id'][:8]}")
         await self._to_phones(lambda s: done_msg)
         self.st.log("elev_done", id=c["id"], kind=c["kind"], result=res["result"])
         if c["kind"] == "secret":
@@ -844,6 +966,8 @@ class Elevator:
     contacts_types = ("ct_list", "ct_save", "ct_card_answer", "mail_fwd", "ct_rm", "ct_export", "ct_import")   # + P207
 
     async def on_phone(self, s, obj: dict) -> None:
+        if obj.get("t") == "elev_revoke":                                # #116
+            return await self.grants.on_phone(s, obj)
         if obj.get("t") in ("secret_out_open", "secret_out_decline"):   # F32
             return await self.out.on_phone(s, obj)
         if isinstance(obj.get("t"), str) and obj["t"].startswith("login_qr_"):   # P114: may wait on the browser (≤ 15 s) —
@@ -873,18 +997,55 @@ class Elevator:
         ct_sha = hashlib.sha256(wire.unb64u(obj["ct"])).hexdigest() if ok and "ct" in obj else None
         signed = dict(device=s.device, sk=wire.b64u(sk), sig=obj["sig"], n=obj["n"], sig_ts=obj["ts"],
                       decision="allow" if ok else "deny", ct_sha256=ct_sha, channel=self.host.channel,
+                      grant_sha256=obj.get("grant") if ok else None,   # #116: signed — the owner switched the toggle on
                       passkey="uv" if ok and self.st.passkey_of_device(s.device) else None)
         if not ok:
             audit(self.st, c, result="denied", reason="device", **signed)
             return self._finish(c, {"result": "denied", "_logged": True})
         c["busy"] = True
-        nonce, priv = c["nonce"], c["priv"]
-        c["nonce"] = None                          # one attempt per nonce: a replay of this answer finds no match
+        c["want_grant"] = obj.get("grant") if ok else None   # #116: checked and signed in _check
+        c["started"] = time.monotonic()
+        c["cancel"] = threading.Event()
+        nonce, priv = c["nonce"], c.pop("priv")
+        c["nonce"] = None  # reserve the one-time approval BEFORE returning to the receive loop
+        task = asyncio.create_task(self._execute(c, s, obj, signed, nonce, priv))
+        self.bg.add(task)
+        task.add_done_callback(self.bg.discard)
+
+    async def _progress(self, c) -> None:
+        while c.get("busy") and not c["fut"].done():
+            with contextlib.suppress(Exception):
+                await self._to_phones(lambda s: {"t": "elev_progress", "id": c["id"], "kind": c["kind"],
+                                               "state": "running", "elapsed": int(time.monotonic() - c["started"]),
+                                               "timeout": c.get("timeout", 0)})
+            await asyncio.sleep(5)
+
+    async def _execute(self, c, s, obj, signed, nonce, priv) -> None:
+        progress = asyncio.create_task(self._progress(c))
+        worker = asyncio.create_task(self._execute_approved(c, s, obj, signed, nonce, priv))
+        try:
+            try:
+                await asyncio.shield(worker)
+            except asyncio.CancelledError:
+                c["cancel"].set()
+                # to_thread cannot be cancelled: let the bounded child stop before wiping its input.
+                await worker
+                raise
+        except Exception:  # never log exception strings: a verifier / subprocess may include private data
+            c["busy"] = False
+            audit(self.st, c, result="failed", reason="execution", **signed)
+            self._finish(c, {"result": "failed", "why": "execution", "_logged": True})
+        finally:
+            progress.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await progress
+
+    async def _execute_approved(self, c, s, obj, signed, nonce, priv) -> None:
         if "ct" not in obj:                        # approve-only: the admin helper checks the same signature as root
             from . import elevate_helper
             req = {"channel": self.host.channel, "device": s.device, "id": c["id"], "n": nonce, "ts": obj["ts"], "sig": obj["sig"],
                    "argv": c["argv"], "why": c["why"], "effect": c.get("effect") or "", "cwd": c["cwd"]}
-            res = await asyncio.to_thread(elevate_helper.run, req, c["timeout"], self.sudo, self.helper_cmd)
+            res = await asyncio.to_thread(elevate_helper.run, req, c["timeout"], self.sudo, self.helper_cmd, c["cancel"])
             audit(self.st, c, result=res["result"], reason="helper", code=res.get("code"), **signed)
             res["_logged"] = True
             c["busy"] = False
@@ -896,15 +1057,23 @@ class Elevator:
             c["busy"] = False
             audit(self.st, c, result="refused", reason="seal", **signed)
             return self._finish(c, {"result": "failed", "why": "seal", "_logged": True})
+        keep = bytearray(value) if c.get("want_grant") and c["kind"] == "sudo" else None   # #116: zeroed unless granted
+        res = None
         try:
             if c["kind"] == "sudo":
-                res = await asyncio.to_thread(run_sudo, c["argv"], value, c["cwd"], c["timeout"], self.sudo)
+                res = await asyncio.to_thread(run_sudo, c["argv"], value, c["cwd"], c["timeout"], self.sudo, c["cancel"])
             else:
                 res = await asyncio.to_thread(self._save, c, value)
                 if res.get("result") == "saved":
                     await self._reload_saved_env(c, res)
         finally:
             wipe(value)
+            if keep is not None and ((res or {}).get("result") != "done" or res.get("prompts") != 1):
+                # #116: only a password sudo actually asked for and accepted (exactly one prompt) may be kept
+                wipe(keep)
+                keep = None
+        if keep is not None:                       # the password was right: the approving device's 10-minute window
+            self.grants.create(c, s.device, wire.unb64u(signed["sk"]), keep)
         if res["result"] == "bad_password":
             c["fails"] += 1
             lock = note_password(self.st, False)
@@ -934,6 +1103,8 @@ class Elevator:
                 return "shape"                      # approve-only exists only for a phone the admin helper accepts
         elif ok and (not isinstance(obj.get("epk"), str) or not isinstance(obj.get("ct"), str) or len(obj["ct"]) > 12000):
             return "shape"
+        if "grant" in obj and not (ok and "ct" in obj and c.get("grant") and obj["grant"] == c["grant"]["h"]):
+            return "shape"                          # #116: only the hash this card offered, only with the password
         if time.monotonic() > c["deadline"]:
             return "late"
         if abs(time.time() * 1000 - ts) > TS_SKEW_MS:
@@ -949,7 +1120,7 @@ class Elevator:
             if ok and "ct" in obj:
                 wire.unb64u(obj["epk"])
             msg = signed_message(self.host.channel, s.device, c["id"], c["kind"], "allow" if ok else "deny", n, ts,
-                                 c["digest"], ct_sha)
+                                 c["digest"], ct_sha, obj.get("grant"))
             Ed25519PublicKey.from_public_bytes(sk).verify(sigb, msg)
         except (InvalidSignature, ValueError):
             return "bad_signature"

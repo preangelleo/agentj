@@ -331,11 +331,14 @@ export async function elevateDigest(kind, fields) {
   return hex(await sha256(enc.encode(lines.join('\n'))));
 }
 /** The exact bytes a device signs for a card: decision allow | deny, the card's one-time nonce, ts (ms), the shown digest and
- *  hex SHA-256 of the sealed value ('-' for deny). */
-export function elevateMessage(channel, device, id, kind, decision, nonce, ts, digest, ctSha) {
+ *  hex SHA-256 of the sealed value ('-' for deny). `grant` (§11.1): the card's 10-minute class hash, only when the owner
+ *  switched that toggle on — then one more line `grant:<hash>`. */
+export function elevateMessage(channel, device, id, kind, decision, nonce, ts, digest, ctSha, grant) {
   if (decision !== 'allow' && decision !== 'deny') throw new Error('bad decision');
   if (!Number.isInteger(ts)) throw new Error('bad ts');
-  return enc.encode([ELEVATE_CONTEXT, channel, device, id, kind, decision, nonce, String(ts), digest, ctSha || '-'].join('\n'));
+  const lines = [ELEVATE_CONTEXT, channel, device, id, kind, decision, nonce, String(ts), digest, ctSha || '-'];
+  if (grant) lines.push('grant:' + grant);
+  return enc.encode(lines.join('\n'));
 }
 /** Seal a password / secret to the card's one-time host key: ephemeral X25519, HKDF-SHA256(salt = host_epk ‖ epk,
  *  info = SEAL_CONTEXT), AES-256-GCM with AAD = SEAL_CONTEXT\nchannel\ndevice\nid\nkind\nnonce\ndigest. → { epk, ct = iv ‖

@@ -138,7 +138,10 @@ body:is([data-five-page]:not([data-five-page="chat"]),:has(>#five-detail:not([hi
 .fp-detail-bar>.fp-back{margin-left:calc(-1 * var(--sp-2))}
 #five-detail .fp-action{margin:var(--ui-space-control) var(--ui-space-btn) var(--ui-space-control) 0}
 #five-menu{background:var(--menu-bg);backdrop-filter:none;-webkit-backdrop-filter:none}
-.fp-dark-4{background:var(--lama);color:var(--c-noir);box-shadow:none}.fp-dark-4:focus-visible{outline-color:var(--c-noir)}
+/* P393 #132 (Leo 10-19: 「主菜单的卡片都是用较深的底色和较浅的字体……字体颜色统一就是 Lotion」): the 「Agent J」 card joins the
+   other four — Lotion words on a deep fill. Lama under Lotion would read 1.9:1, so its default fill is Noir with the same Lotion
+   edge as a Noir owner card (it keeps an edge on the Noir canvas); the owner can still recolour it (jcard-color.js). */
+.fp-dark-4{background:var(--c-noir);color:var(--c-lotion);box-shadow:inset 0 0 0 1.5px color-mix(in srgb,var(--c-lotion) 32%,transparent)}.fp-dark-4:focus-visible{outline-color:var(--c-lotion)}
 /* a light palette tint is a light ground: everything on it reads in Noir (the menu tokens re-bound for the card) */
 .fp-card{--menu-text:var(--c-noir);--menu-muted:var(--c-noir);--menu-line:color-mix(in srgb,var(--c-noir) 28%,transparent)}
 .fp-card .fp-tabs{gap:var(--ui-space-btn);margin:var(--ui-space-control) 0}

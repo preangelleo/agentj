@@ -170,6 +170,10 @@ body[data-kb="1"] .sabband{display:none}
 /* P384 #86: only iOS fixes both safe areas to Sooty, including reader / custom themes.
    Android retains its page-colour bars. Insets and keyboard spacing are unchanged. */
 html[data-ios="1"] .satband,html[data-ios="1"] .sabband{background:var(--c-sooty)!important;z-index:101}
+/* P393 #134 (#86 regression): iOS reads the status-bar style only from the HTML it parsed (the runtime switch in boot.js was
+   ignored, the bar stayed opaque and sampled an old state colour), so index.html now says black-translucent itself
+   (Apple-only meta). If the bar is opaque anyway, the topmost fixed strip is still Sooty for iOS 26 edge sampling. */
+html[data-ios="1"] .satband{min-height:1px}
 
 
 button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
@@ -1384,7 +1388,8 @@ body[data-agent="stopped"]{--state:var(--c-offline)}
 .cmdmodel:disabled{opacity:.4;cursor:default;color:var(--ink-soft)}
 .cmdmodel[aria-current="true"]{box-shadow:inset 0 0 0 2px var(--ink)}
 .cmdmodel b{font:600 calc(15px*var(--fz))/1.3 var(--font-body)}
-.cmdmodel span{font:400 calc(12px*var(--fz))/1.35 var(--font-mono);color:var(--ink-soft);word-break:break-all}
+.cmdmodel span{font:400 calc(12px*var(--fz))/1.35 var(--font-mono);color:var(--ink-soft);overflow-wrap:anywhere}
+.cmdmodel,.cmdmodel b,.cmdmodel span{max-width:100%;min-width:0;white-space:normal}   /* #136: buttons are nowrap page-wide — the /model option line wraps inside its card, at a space or 「·」 first */
 .cmdundo{align-self:flex-start;min-height:44px;padding:0 18px;border-radius:var(--r-pill);background:var(--btn-strong-bg);color:var(--btn-strong-ink);
   font:600 calc(14px*var(--fz))/1 var(--font-body)}
 .cmdundogone{align-self:flex-start;font:500 calc(13px*var(--fz))/1.4 var(--font-body);opacity:.72}
@@ -2958,7 +2963,7 @@ code[data-cc],pre[data-cc],.cc-in{cursor:copy}
 body:is([data-view="mem"],[data-view="act"],[data-view="tasks"],[data-view="models"],[data-view="friends"],[data-view="bots"],[data-view="setup"]) #srchBtn{display:grid}
 /* P368 (#78): the Agent's one-tap answers ([派](reply:派), js/replybtn.js) — pills in the words' own ink, room around the
    label; tapped → that one stays marked, the group greys out with 「已回复：…」. #tags = .fp-link's underline, dotted (a search, not a page). */
-.words .rbtn{display:inline-flex;align-items:baseline;gap:.4em;min-height:44px;margin:.25em .5em .25em 0;padding:.3em .95em;
+.words .rbtn{display:inline-flex;align-items:center;justify-content:center;gap:.4em;text-align:center;min-height:44px;margin:.25em .5em .25em 0;padding:.3em .95em;
   border:0;border-radius:999px;background:#2c2b26;color:#faf9f5;
   font:600 .92em/1.3 var(--font-body);letter-spacing:.02em;cursor:pointer;vertical-align:baseline;touch-action:manipulation}
 .words .rbtn:active{background:#141414}
@@ -2989,3 +2994,38 @@ html[data-tv-no-mic="1"] #mic{display:none!important}
 /* P387 #106: before voice is usable, its short status replaces the icon so setup is visible even on a phone. */
 .tools .tool.mic[data-preparing] svg{display:none}
 .tools .tool.mic[data-preparing] #micLabel{display:block;font-size:11px;line-height:1.2;white-space:nowrap}
+/* P393: reconnecting inside the five-second window (js/reconnect.js) shows only in the header dot: a hollow amber ring. */
+body[data-relink] .dot{background:transparent;box-shadow:inset 0 0 0 2px var(--c-peachy-feeling);animation:none}
+body[data-relink] .dot::after{animation:none}
+/* #116: an active 10-minute same-class admin approval — one quiet dialog-layer bar above the composer (never under a toast),
+   「立即收回授权」 at its end. */
+.elev-grant{position:fixed;left:50%;bottom:calc(216px + env(safe-area-inset-bottom));z-index:8;transform:translateX(-50%);
+  box-sizing:border-box;width:min(560px,calc(100vw - 2 * var(--rg,16px)));display:flex;align-items:center;gap:10px;
+  padding:6px 6px 6px 14px;border-radius:var(--dlg-radius-rect);background:var(--dlg-bg);color:var(--dlg-fg);
+  box-shadow:inset 3px 0 0 var(--windstorm),var(--dlg-shadow);color-scheme:dark;font-size:calc(13px*var(--fz,1));line-height:1.35}
+.elev-grant[hidden]{display:none}
+.elev-grant .elev-grant-text{flex:1;min-width:0;overflow-wrap:anywhere}
+.elev-grant .elev-grant-revoke{flex:none;min-height:36px;padding:0 12px;color:var(--dlg-fg);white-space:nowrap}
+/* #116: the sudo card's 10-minute toggle (off by default) — a real checkbox row with the covered format under it. */
+.elev .elev-grant-opt{display:flex;align-items:flex-start;gap:10px;margin-top:var(--sp-3);min-height:44px;cursor:pointer;
+  font-size:calc(14px*var(--fz));line-height:1.45;color:var(--text)}
+.elev .elev-grant-opt[hidden]{display:none}
+.elev .elev-grant-opt input{flex:none;width:22px;height:22px;margin:1px 0 0;accent-color:var(--accent,var(--text))}
+.elev .elev-grant-opt small{display:block;margin-top:2px;font-family:var(--font-mono);font-size:calc(12px*var(--fz));
+  color:var(--text-muted);overflow-wrap:anywhere}
+/* P393 #126: the one-tap answers' label sits in the vertical middle of its pill (was align-items:baseline, which pinned the
+   words to the top of the 44 px minimum) — one or two lines (a long one wraps instead of running past the card), Chinese or English, every font size and theme. */
+.words .rbtn{max-width:100%;box-sizing:border-box;white-space:normal;overflow-wrap:anywhere}   /* a long answer wraps inside the card (buttons are nowrap page-wide) */
+.words .rbtn .rbtn-say{align-self:center}
+/* P393 #127: an external link (http/https) in the Agent's reply is Peachy Feeling, underlined. Pure #d97757 on the reply card
+   measures 2.1–2.5:1 in the dark theme (kept as asked) but 1.4–1.7:1 in the light theme, and on the waiting card it is the
+   card's own hue; there the same hue is lifted 60 % toward Lotion (#edc5b6 · 2.7–4.4:1, palette rule: keep the hue, gain
+   contrast). The full-screen reader is Noir on every state → pure Peachy (4.6:1). File cards / internal links unchanged. */
+:root{--xlink-lift:60%}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){ --xlink-lift:0%; } }
+:root[data-theme="dark"]{--xlink-lift:0%}
+body[data-status=waiting]:not([data-kind=question]){--xlink-lift:60%}
+#words a[href^="http"]:not(.mtap):not(.mcard a){color:color-mix(in srgb,var(--c-peachy-feeling) calc(100% - var(--xlink-lift)),var(--c-lotion));
+  font-weight:600;text-decoration-color:currentColor;text-decoration-thickness:1.5px}
+#rdWords a[href^="http"]:not(.mtap):not(.mcard a){color:var(--c-peachy-feeling);font-weight:600;text-decoration-color:currentColor;
+  text-decoration-thickness:1.5px}

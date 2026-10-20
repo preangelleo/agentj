@@ -1,15 +1,15 @@
 ---
 document: agentj-install
-version: 0.26.0
-released: 2026-10-18
+version: 0.26.1
+released: 2026-10-19
 status: beta (anyone can sign up; not advertised yet, pages are not indexed)
 host_package: agentj (the `agentj` command)
-host_version: 0.24.0a1
-source_tag: v0.24.0a1
-host_wheel: agentj-0.24.0a1-py3-none-any.whl
-host_wheel_sha256: 469458a2983cd4f9731ea68d2d8769118b353b3985dee24f3db9dbb4e99ffe0d
-host_sdist: agentj-0.24.0a1.tar.gz
-host_sdist_sha256: c767fc1256db324d2a0860b44f3aebd70037223b955cc4d8a307ded82f86437a
+host_version: 0.24.1a1
+source_tag: v0.24.1a1
+host_wheel: agentj-0.24.1a1-py3-none-any.whl
+host_wheel_sha256: 42696e3d14bbdb699d9e97de0da871d71d4cd5496a3cda13b750318130099a31
+host_sdist: agentj-0.24.1a1.tar.gz
+host_sdist_sha256: 0310537c6e18a1ed3280bdb50d6a75ac8115ab8686892170ad3251168bacaf76
 canonical_url: https://agentj.app/install.md
 sha256_url: https://agentj.app/install.md.sha256
 alias: https://agentjarvis.net/install.md (the older address: the same file, kept for one more version)
@@ -104,8 +104,9 @@ https://agentj.app/docs/support/
    - trying it on the phone (sending a message, holding **长按批准**) — Step 12;
    - saying yes or no to the completion feedback (Step 12) and to the docs-first rule (Step 13; with a yes you run
      `agentj docs-rule --write` yourself);
-   - later: `agentj passphrase reset`, and lifting their own stop — 「恢复」 on a paired phone (or `agentj resume`, which
-     asks the remote pairing password when one is set; you never lift their stop);
+   - later: `agentj passphrase reset` (or `reset --phone`, confirmed on a paired phone), and lifting their own stop —
+     「恢复」 on a paired phone (or `agentj resume`, which asks the remote pairing password when one is set; you never
+     lift their stop);
    - authorizing feedback (Step 2; an explicit request already authorizes it) and saying "yes" to each plaza post (Section P);
    - saying "yes" to every plaza install after seeing its preview — each package, each skill it depends on, installing an
      unverified one, replacing an existing folder — to every command a package suggests running afterwards, and to the
@@ -367,9 +368,15 @@ account, key or payment: Step 3c).
 - **None is usable** → install **OpenCode** with a model the human registers for themselves (Step 3a). This is also the
   route in **mainland China**: Claude Code and Codex are not offered there — do not suggest a VPN, a proxy or another
   region's account to get them.
+- **One extra option, never the default** — when the human has not chosen OpenCode with a key of their own, or none is
+  usable: offer, next to the routes here, **「用 OpenCode 自带的免费模型先跑起来」** (start now with OpenCode's own free model,
+  Step 3c): no account, key or payment; the conversation and code go to OpenCode Zen and its model provider; rate-limited,
+  and it may disappear. It adds a choice and changes nothing else: never pick it for the human, never drop the other
+  routes. If they choose it, prefer a model whose provider does not train on the conversation (Step 3c), and they can
+  move to a model of their own any time.
 - **Claude Code and Codex are not offered where the Agent J host is** (Hong Kong, Macau, mainland China and the other places
-  Anthropic / OpenAI do not serve) → **mainland China, starting from zero:** a **Volcano Ark (火山方舟) Coding Plan** —
-  buy **Lite** first: the same models and tools as Pro, Pro only gives 5x the quota (Step 3h). **Hong Kong / overseas:** a
+  Anthropic / OpenAI do not serve) → **mainland China, starting from zero:** a **Volcano Ark (火山方舟) Agent Plan** —
+  buy **Medium** first (Kimi K3 from Medium up; Step 3h). An existing Ark Coding Plan (Lite / Pro) keeps working. **Hong Kong / overseas:** a
   **Kimi membership**, Plus or higher, billed in USD outside the mainland, in OpenCode (Step 3d) or Kimi Code CLI (Step 3e).
   **Already paying for one of them** (Ark, Kimi, or an Alibaba Cloud Bailian Token Plan — Steps 3f / 3g): keep it, never
   sell a second plan. The human decides. After Step 4, `agentj agent route` checks what really answers here, not a guess.
@@ -388,7 +395,7 @@ refused, like Codex's `request_user_input` outside Plan mode — the Agent runs 
 
 OpenCode (open source, MIT: https://opencode.ai/docs/) is the agent; the model behind it comes from a model vendor the
 human signs up with **themselves**. Where Claude Code and Codex are not offered: mainland China from zero → a Volcano Ark
-Coding Plan, Lite first (Step 3h); Hong Kong / overseas → a Kimi membership (Step 3d); already on one of them (Bailian:
+Agent Plan, Medium first (Step 3h); Hong Kong / overseas → a Kimi membership (Step 3d); already on one of them (Bailian:
 Step 3f) → keep it. Pay-as-you-go alternatives for mainland China: **GLM-5.3** (Zhipu) as the main model,
 plus **DeepSeek V4.1-Flash** (`deepseek-flash`, cheaper, can read images) for simple or image tasks.
 
@@ -489,6 +496,17 @@ agentj agent | grep -F "<free_model>"                         # script self-chec
   retry by themselves (about 70 s). Still refused → `free_tier`: wait a minute, or pick another free model.
 - **Check by script, not by memory:** after any harness/model command, read the setting back (`agentj agent`) before you
   report it done — a model can undo a step it just did and still say "OK".
+- **Which free model:** prefer one whose provider keeps no data and does not train on it. OpenCode Zen's own page
+  (https://opencode.ai/docs/zen/, section "Privacy") says which ones; `free_model` already lists those first. Never
+  choose `big-pickle` (its free period may use your data). If every free model on offer may train on the conversation,
+  take the best one and tell your human that plainly before Step 9.
+- **The one-line installer offers the same option** as item 6 of its AI menu (`--free-model`): it tries up to three free
+  models with a real call, connects the first that answers, and its first page on the phone says it is one of OpenCode's
+  free models and where to switch (the phone's Models & Key menu, `/model`, or asking the Agent). If none answers it says so
+  and the usual route continues.
+- **Tell your human, in one sentence, before you finish:** this is one of OpenCode's free models (the conversation goes
+  to OpenCode Zen and its provider; rate-limited, may disappear; sensitive work belongs on a model of their own), and
+  switching later is the phone's Models & Key menu or asking you.
 
 ### 3d. Where Claude Code and Codex are not offered: the route, and a Kimi membership in OpenCode
 
@@ -501,8 +519,8 @@ and the provider's region error; the time zone / language of the Agent J host on
 `"route": "kimi"` (both refused or unreachable, Kimi reachable) → tell your human, in their language, the rule it prints
 (`"primary"` in `--json`: `"ark"` for a mainland time zone, `"kimi"` for Hong Kong / Macau, `null` when unknown — then ask
 where they are):
-- **mainland China, starting from zero:** a **Volcano Ark Coding Plan, Lite first** — same models and tools as Pro, Pro
-  only gives 5x the quota (Step 3h; the command prints the prices and sign-up steps).
+- **mainland China, starting from zero:** a **Volcano Ark Agent Plan, Medium first** — Kimi K3 from Medium up (Step 3h;
+  the command prints the prices and sign-up steps).
 - **Hong Kong / overseas:** a **Kimi membership, Plus or higher** (billed in USD outside the mainland). **Go has no coding
   quota** — it does not work here.
 - **already paying for Ark, Kimi or a Bailian Token Plan (Step 3f):** keep it — do not sell them a second plan.
@@ -584,10 +602,23 @@ Code up (`~/.qwen/settings.json`, e.g. with `bl config agent --agent qwen-code`)
 `agentj agent qwen --dir <folder>` (add `--model qwen3.8-flash` to save Credits). Independent sessions only. Qwen reads `~/.qwen/skills` and
 `~/.agents/skills`.
 
-### 3h. Mainland China: a Volcano Ark (火山方舟) Coding Plan in OpenCode or Claude Code
+### 3h. Mainland China: a Volcano Ark (火山方舟) Agent Plan or Coding Plan in OpenCode or Claude Code
 
-Who it is for: **the first recommendation in mainland China for a human starting from zero**, and anyone who already has
-one. Tell them to buy **Lite** first: Lite and Pro have the same models (ByteDance Doubao, Kimi K3, GLM, DeepSeek, MiniMax)
+**Agent Plan — what Ark sells now, and the default** (2026-10-19): Small / Medium / Large / Max a month (`agentj agent
+route` prints the list prices; the order page is authoritative); Kimi K3 from Medium up, so tell the human to buy **Medium** first. It has its own
+addresses — OpenAI-compatible `https://ark.cn-beijing.volces.com/api/plan/v3`, Anthropic-compatible
+`https://ark.cn-beijing.volces.com/api/plan` — and its own key: ✋ the human copies the plan's own API key from the Ark
+console under 订阅 → Agent Plan → 使用配置 (Subscription → Agent Plan → Usage configuration) — **not** a key from API Key
+management, which gets 401 there (and the Agent Plan key gets 401 on the Coding Plan's `…/api/coding`). Never point it at
+`…/api/v3`: that is pay-as-you-go, billed on top. Then you, after Step 4: `agentj provider ark` (OpenCode: provider
+`ark-agent-plan`, the Coding Plan's models except `doubao-seed-2.0-lite`; `--harness claude` for Claude Code: the
+`ark-agent-claude` profile with the `ark-agent` preset), the printed key card (`agentj secret request --name
+ARK_AGENT_PLAN_API_KEY …`) right after pairing (Step 11), `agentj service restart`, then
+`agentj agent switch opencode --model ark-agent-plan/doubao-seed-2.1-pro` — it asks OpenCode one real question first
+(OpenCode 1.x and 2.x alike) and, if that fails, shows OpenCode's own error line. Everything below about image input and
+terms holds for both plans.
+
+**Coding Plan — a human who already has one** keeps it (`agentj provider ark --plan coding`, below): Lite and Pro have the same models (ByteDance Doubao, Kimi K3, GLM, DeepSeek, MiniMax)
 and tools; Pro only gives 5x the quota, so they upgrade only if it runs short. `agentj agent route` prints the list prices
 read on 2026-10-16 and the sign-up page; the order page is authoritative — never quote prices from memory. What the owner
 measured (2026-10-15): **reads images**
@@ -601,8 +632,8 @@ gives this key to tasks or bots.
 ✋ The human signs up at https://www.volcengine.com/activity/codingplan (phone number, real-name verification), subscribes
 to the Coding Plan and creates an API key in the Ark console (https://console.volcengine.com/ark/). Then you, after Step 4:
 ```bash
-agentj provider ark                      # OpenCode: all 16 plan models, with image input and output limits; anything already there stays
-agentj provider ark --harness claude     # Claude Code instead: prints the three provider-profile commands
+agentj provider ark --plan coding                      # OpenCode: all 16 plan models, with image input and output limits; anything already there stays
+agentj provider ark --harness claude --plan coding     # Claude Code instead: prints the three provider-profile commands
 ```
 OpenCode: run the printed key card (`agentj secret request --name ARK_CODING_PLAN_API_KEY …`) right after pairing
 (Step 11) — Ark publishes no read-only check, so the first reply is the check — then `agentj service restart` and
@@ -654,7 +685,7 @@ DeepSeek says a preview may break; Agent J was measured on 0.2.0-rc.2.
 carry over). So start every command line from here on with `export PATH="$HOME/.local/bin:$PATH";` — or call
 `~/.local/bin/agentj` by its full path. This document writes `agentj` for short.
 
-The program is pinned to one release: the tag `v0.24.0a1` (front matter `source_tag`). The tag never moves, and its
+The program is pinned to one release: the tag `v0.24.1a1` (front matter `source_tag`). The tag never moves, and its
 `host/` folder is byte for byte the same code as the two files on our site whose SHA-256 is in this document's front matter.
 ```bash
 cd ~/.agentj-install
@@ -665,7 +696,7 @@ uv tool install "./$W"
 
 Intel Mac: this release keeps `cryptography<49` because newer releases lack an Intel macOS wheel. If an older installer tries to compile OpenSSL (`openssl-sys` / OpenSSL not found), rerun `uv tool install --with "cryptography<49" "./$W"`. The same platform constraint applies to `agentj update apply`.
 
-export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.24.0a1
+export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.24.1a1
 export PATH="$HOME/.local/bin:$PATH"; agentj doctor
 ```
 **Your human's own terminal must find `agentj` too** — they may use `agentj passphrase set` and `agentj pair` as a local alternative
@@ -693,16 +724,16 @@ echo "$WS  $W" | sha256sum -c - && echo "$SS  $S" | sha256sum -c -    # macOS: s
 uv tool install "./$W"          # the wheel; its dependencies come from PyPI or the mirror in UV_DEFAULT_INDEX
 ```
 `uv tool install "./$S"` installs from the checked source archive instead (it builds the same program).
-`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.24.0a1`); it is
-numbered separately from this document (`0.26.0`).
+`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.24.1a1`); it is
+numbered separately from this document (`0.26.1`).
 
-Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.24.0a1#subdirectory=host"`.
+Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.24.1a1#subdirectory=host"`.
 
-Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.24.0a1#subdirectory=host"` (needs Python 3.11+).
+Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.24.1a1#subdirectory=host"` (needs Python 3.11+).
 
 **What each route checks.** The wheel and the source archive above are checked against the SHA-256 in this document. Each
 also has a minisign signature beside it (`<file>.minisig`, key `B79F925B0585F9D4` — front matter `signature`), which
-`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.24.0a1`
+`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.24.1a1`
 routes check **neither**: Git trusts GitHub's HTTPS and the tag name, and nothing compares that code with this document.
 Use them only when the checked files cannot be downloaded, and say so in the final feedback.
 `agentj doctor` lists what is ready and what is not (prerequisites, the fence, connectivity, which agents are usable).
@@ -821,8 +852,9 @@ Wait until they say it is done. You never see the email code, the card or the pr
 
 **(a) With a seat setup code** (from someone who gave the Agent J host a seat, or the sentence your human made in Step 6)
 — you run this yourself; there is no yes/no question (giving you the code was your human's decision).
-1. ✋ Ask your human what this Agent should be called (1–32 characters, e.g. 「助理一号」, 「Wren」, 「店铺助手」, or
-   their own). Do not invent a name.
+1. ✋ Ask your human what this Agent should be called (e.g. 「助理一号」, 「Wren」, 「店铺助手」, or their own; length at
+   most 13, where each Chinese character counts 1.6 and any other character 1 — up to 8 Chinese characters or 13 letters).
+   Do not invent a name.
 2. Put the code in a private file — never in the command line you show, never printed back (use your file tool, or):
    ```bash
    ( umask 077; printf '%s\n' 'ajt_…the code from the sentence…' > ~/.agentj-install/seat-code )
@@ -840,12 +872,13 @@ Wait until they say it is done. You never see the email code, the card or the pr
    | `3` | that Agent name is already used in the account (suggestions printed) | ask your human for another name (or one of the suggestions), run it again |
    | `4` | the code is invalid, already used, expired or revoked | `rm` the file; your human presses 「复制安装提示词」 ("Copy installation prompt") on that seat card for a new sentence — or asks the person who gave them the seat |
    | `5` | this seat is no longer paid for | `rm` the file; tell your human (their billing, or the person who gave them the seat) |
-   | `2` | refused before sending (the code is not `ajt_` + 43 characters, or the name is not allowed) | re-copy the code exactly / pick another name |
+   | `6` | a billing change of the account (e.g. seats just added) is being processed; the code is still unused | keep the file, wait a few minutes, run the same command again; still `6` after about an hour and a half → tell your human |
+   | `2` | refused before sending (the code is not `ajt_` + 43 characters, or the name is not allowed or too long — the message says how long it counts against 13) | re-copy the code exactly / pick another name |
    | `1` | anything else (network, rate limit, already bound) | report it with the printed text (never the code) |
    The code binds this one computer to that one seat, once. Pairing the phone and approving it still happen only here
    (Steps 8 and 11).
 4. **Delete the code file — always, as soon as the command has finished** (exit `0` and your human confirmed the account,
-   or any exit other than a network retry). This is not optional; the file must not outlive Step 7:
+   or any exit other than a network retry or `6`). This is not optional; the file must not outlive Step 7:
    ```bash
    rm -f ~/.agentj-install/seat-code && test ! -e ~/.agentj-install/seat-code && echo "seat code file removed"
    ```
@@ -913,8 +946,12 @@ agentj passphrase set
 It must be **at least 8 characters**; there is no other rule. Suggest a short sentence they will remember that they use
 nowhere else. Every phone approved at the Agent J host needs it together with the phone's 6-digit code, and the account page
 accepts it instead of a passkey; `agentj resume` at the terminal asks it too (on a paired phone 「恢复」 is one tap). It is what stops an agent — you, or anything that tricks you later — from adding a phone on
-its own. **Forgetting it costs a re-pairing:** `agentj passphrase reset` (they type `RESET`) deletes it **and unpairs every
-phone**; then a new `agentj passphrase set` and Step 11 again. Check: `agentj passphrase status` → 已设置 (set).
+its own. It is kept only on this host, never on our server; a bound host adds phones from its account seat card without
+it. **Forgotten, with a paired phone:** the owner runs `agentj passphrase reset --phone` in their own terminal, confirms the
+card on a paired phone (its passkey too, if it has one) and types the new password at the terminal; every phone stays
+paired. An Agent's shell or a pipe cannot run it — never run it yourself. **Forgotten, no paired phone:**
+`agentj passphrase reset` (they type `RESET`) deletes it **and unpairs every phone**; then a new `agentj passphrase set`
+and Step 11 again. Check: `agentj passphrase status` → 已设置 (set).
 
 ---
 
@@ -1610,7 +1647,7 @@ and the block says so (`support: sent (st_…)` / `off` / `not_sent`). Tell your
 do not send a second support question for the same failure. The heartbeat carries only the last attempt's version, result,
 reason and time (never the output), so the account page shows a seat whose upgrade failed.
 中文：0.20.4 起升级失败时结果块写出失败步骤 `step:`、细分原因 `reason:`（download_failed / signature_or_hash_mismatch / uv_failed / service_restart_failed …）和安装命令最后约 20 行 `stderr:`（本机先脱敏：密钥、令牌、家目录路径、用户名和主机名）；回滚也失败时多一行 `recover:`（装回原版本的那条命令）。除非主人关了 `updates.report_failures`，失败会自动发给 Agent J 客服（`support:` 行），同一版本同一原因一天一次；把 `tell_owner:` 那句原样告诉主人，不要为同一次失败再问一次客服。心跳只带最近一次升级的版本、结果、原因和时间（不带原文），账户页据此标出升级失败的席位。
-**0.24.0a1: installer missing from the service PATH.** An older host can report `step: install`, `reason: unknown`,
+**0.24.1a1: installer missing from the service PATH.** An older host can report `step: install`, `reason: unknown`,
 `rollback: failed` while its previous service keeps running: both installation and rollback can fail to start `uv` when
 its directory is absent from the service PATH. The new updater also checks executable `uv` at `~/.local/bin/uv` and
 `~/.cargo/bin/uv`; it records a redacted output tail for a command that cannot start. A new wheel alone cannot repair an
@@ -1627,7 +1664,7 @@ run the locally provided `recover:` command to restore the previous version, the
 local and are never included in automatic support reports or heartbeats.
 
 中文：旧主机的服务 PATH 缺少 `uv` 所在目录时，安装和回滚都可能无法启动 `uv`，结果为 `step: install`、
-`reason: unknown`、`rollback: failed`，旧版服务仍在运行。0.24.0a1 的升级器也会检查 `~/.local/bin/uv` 和
+`reason: unknown`、`rollback: failed`，旧版服务仍在运行。0.24.1a1 的升级器也会检查 `~/.local/bin/uv` 和
 `~/.cargo/bin/uv`，命令无法启动时保留脱敏的输出尾部。新 wheel 本身不能修复无法启动安装器的旧升级器。
 先用 `command -v uv` 或上述两个路径找到可执行文件，以完整路径运行 `uv --version` 确认，再把上面命令中的占位符换成
 实际目录执行。升级成功后，必须运行带正确 PATH 的 `agentj service install` 重新记录服务环境，仅 restart 不够。
@@ -1650,7 +1687,7 @@ Nightly automatic installation is enabled by default and verifies the official w
 In a shared session (the default of 0.13–0.19), reinstall directly using Step 4's checked wheel (SHA-256 must match this document and
 its public GitHub copy), preserving the host's identity, paired phones, account and preferences:
 ```bash
-uv tool install --force "./agentj-0.24.0a1-py3-none-any.whl"
+uv tool install --force "./agentj-0.24.1a1-py3-none-any.whl"
 agentj --version
 agentj service install
 agentj service restart
@@ -1659,7 +1696,7 @@ agentj doctor
 The matching published tag is another source, after verifying the tag object against the upgrade email (no signature or
 hash check on this route — Step 4):
 ```bash
-uv tool install --force "git+https://github.com/preangelleo/agentj@v0.24.0a1#subdirectory=host"
+uv tool install --force "git+https://github.com/preangelleo/agentj@v0.24.1a1#subdirectory=host"
 ```
 **0.14 independent session** (`agent.session_mode=independent`): 0.14's fence keeps Agent J's own program read-only and
 hides the service manager, so the Agent on the phone cannot reinstall or restart from inside it (measured: the install
@@ -1685,11 +1722,11 @@ prints something and `uv tool list` (or `pipx list`) shows `agentjarvis-host`, t
 the new name, then:
 ```bash
 jarvis service uninstall      # stop the old service first (Step 10 used tmux / nohup instead? stop that process)
-uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.24.0a1#subdirectory=host"
+uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.24.1a1#subdirectory=host"
 agentj doctor
 agentj service install        # start it again under the new name (or the tmux / nohup fallback, Step 10)
 ```
-With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.24.0a1#subdirectory=host"`.
+With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.24.1a1#subdirectory=host"`.
 - After the move, `agentj` puts back a `jarvis` command (a link to `agentj`, only if no other `jarvis` exists) for one more
   version; it prints a notice that points here. New installs never get `jarvis`.
 - The state moves from `~/.local/state/agentjarvis-alpha` to `~/.local/state/agentj` on the first run of `agentj` **after your
@@ -3022,6 +3059,10 @@ Below the five system cards of the phone's top-left logo menu, the owner's own c
 卡片墙按固定尺寸叠放：每张卡同样大、露出同样一条标题，左边和 logo 对齐，超出屏幕往下翻。右上角的 + 在每一页都有，点它会把这一页的添加命令（比如在待办卡里是 `/agentj-add-todo`）放进输入框，你接着说要加什么，不会自动发送。每张卡有自己的地址 `card/<id>`，还能指到卡里的某一处（`card/todo#t3`）；在输入框里打 @ 可以选卡片，消息里的 @卡片名和卡片地址点一下就跳过去；跟 Agent 说打开日历，它会用 `agentj card open` 让手机直接打开那张卡。卡片里的网页链接会先给你看完整网址，确认后才在新标签页打开。
 
 Cards stack at one fixed size: every card is the same size and shows the same title strip, its left edge lines up with the logo, and the deck scrolls past the screen. The + at the top right is on every page and puts that page's adding command in the message box (on the To-do card, `/agentj-add-todo`) — then say what to add; nothing is sent by itself. Every card has its own address `card/<id>`, also for one place in it (`card/todo#t3`); type @ in the message box to pick a card, and tap an @card name or a card address in a message to go there. Ask the Agent to open your calendar and it runs `agentj card open` to open that card on the phone. A web link on a card shows you the whole address first and opens in a new tab only after you confirm.
+
+待办卡由主人和 Agent J 共同维护：Agent 答应主人之后再做的事（明天、下周、等某事完成后）当场用 `agentj card todo add --owner agent` 记上卡，为提醒主人记的责任人是主人；每条写明责任人、开始和截止（时间、`after:<id>` 或一句话条件）、状态。卡顶可以按全部、Agent J 负责、我负责筛选，到期的有醒目标记排在前面，做完的划线。新会话、压缩恢复、心跳和晨报都先跑 `agentj card todo due`，到期的先办，做完自己标完成。旧的待办照常显示，原条目算主人负责。
+
+The To-do card is kept by the owner and Agent J together: whatever the Agent promises to do later (tomorrow, next week, once something is finished) goes on the card at once with `agentj card todo add --owner agent`, and things noted to remind the owner are the owner's; each item has an owner, a start and a due point (a time, `after:<id>` or a condition in words) and a status. The card filters by All, Agent J's and Mine, marks what is due and puts it first, and strikes through finished items. A new session, a compaction, a heartbeat and the morning briefing first run `agentj card todo due`: the Agent handles what is due and marks it done itself. Older to-do lists still show; their items count as the owner's.
 
 ## Agent J Father
 

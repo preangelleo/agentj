@@ -88,8 +88,8 @@ class Manifest(Base):
         css = (AJ / "web/public/cards.css").read_text(encoding="utf-8")
         for name, (fill, ink) in jcards.ACCENTS.items():
             self.assertTrue({fill, ink} <= palette, name)
-            hi, lo = sorted((lum(fill), lum(ink)), reverse=True)
-            self.assertGreaterEqual((hi + 0.05) / (lo + 0.05), 4.5, name)
+            self.assertEqual(ink, "#faf9f5", name)                   # P393 #132: Lotion words on every fill
+            self.assertGreaterEqual((lum(ink) + 0.05) / (lum(fill) + 0.05), 2.75, name)   # ≥ the logo menu's Windstorm card
             self.assertIn(f".jc-accent-{name}{{--jc-fill:{fill};--jc-ink:{ink}}}", css)   # the web draws the same pair
 
     def test_refusals(self):
@@ -182,6 +182,7 @@ class Manifest(Base):
         self.assertEqual(jcards.open_target(self.root, "skills"), {"ok": True, "id": "skills"})
         self.assertEqual(jcards.open_target(self.root, "cards"), {"ok": True, "id": "cards"})
         self.assertEqual(jcards.open_target(self.root, "skills", "top")["why"], "bad_anchor")
+        jcards.set_on(self.root, "todo", False)                   # official cards are on by default (P393 #129)
         self.assertEqual(jcards.open_target(self.root, "todo")["why"], "off")
         jcards.set_on(self.root, "todo", True)
         self.assertEqual(jcards.open_target(self.root, "todo", "t3"), {"ok": True, "id": "todo", "at": "t3"})
@@ -202,11 +203,17 @@ class Manifest(Base):
 
 
 class Storage(Base):
-    def test_official_default_off_then_seeded(self):
+    def test_official_default_on_then_seeded(self):
+        # P393 #129: official cards are on until the owner turns one off; the never-touched one shows with its sample
         rows = {c["id"]: c for c in jcards.cards(self.root)}
         self.assertEqual(list(rows), list(jcards.OFFICIAL))
-        self.assertFalse(any(c["on"] for c in rows.values()))
+        self.assertTrue(all(c["on"] for c in rows.values()))
+        self.assertTrue((jcards.data_dir(self.root, "todo") / "todo.json").is_file())
+        self.assertTrue(jcards.set_on(self.root, "notes", False))
+        self.assertFalse(jcards.find(self.root, "notes")["on"])
         self.assertEqual(jcards.phone_get(self.root, "notes")["why"], "off")
+        self.assertTrue(jcards.find(self.root, "todo")["on"])         # untouched → the new default
+        (jcards.data_dir(self.root, "notes") / "notes.md").unlink()
         self.assertTrue(jcards.set_on(self.root, "notes", True))
         self.assertTrue((jcards.data_dir(self.root, "notes") / "notes.md").is_file())
         g = jcards.phone_get(self.root, "notes", "zh")

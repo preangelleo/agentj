@@ -17,7 +17,7 @@ break a tie; they are read on the Agent J host and never sent anywhere.
   otherwise                           → "unsure"    (official rule; Kimi named as the fallback)
 
 P328 (Leo, 2026-10-16) — what the "kimi" route recommends, by the local region hint (cn-coding-plans 1.0.1):
-  mainland China, starting from zero → Volcano Ark Coding Plan, Lite first (same models as Pro, Pro = 5x quota; ark.py)
+  mainland China, starting from zero → Volcano Ark Agent Plan, Medium first (P395; Kimi K3 from Medium up; ark.py)
   Hong Kong / Macau / overseas        → a Kimi membership (billed in USD outside the mainland)
   already paying for one of them      → keep it (said in words: this module never reads keys or configs)
   region unknown                      → both, each labelled with where it applies (Ark first)
@@ -217,12 +217,13 @@ def primary(region: str | None) -> str | None:
 
 
 def ark_info() -> dict:
+    """P395: Ark sells the Agent Plan now — the recommendation (the Coding Plan stays as `--plan coding`)."""
     from . import ark
-    d = ark.data()
-    return {"provider": d["provider"], "model": f"{d['provider']}/{d['model']}", "key_env": d["key_env"],
-            "signup_url": d["signup_url"], "console_url": d["console_url"], "start_tier": "Lite",
+    d = ark.plan_data("agent")
+    return {"provider": d["provider"], "model": f"{d['provider']}/{d['model']}", "key_env": d["key_env"], "plan": "agent",
+            "signup_url": d["signup_url"], "console_url": d["console_url"], "start_tier": d["start_tier"],
             "tiers": [{"name": n, "cny_month": c} for n, c in d["tiers"]], "prices_checked": d["prices_checked"],
-            "harness_options": ["opencode", "claude"], "terms": ark.TERMS}
+            "harness_options": ["opencode", "claude"], "terms": ark.TERMS_AGENT, "key_hint": ark.KEY_HINT}
 
 
 def ark_steps(lang: str) -> list[str]:
@@ -230,26 +231,25 @@ def ark_steps(lang: str) -> list[str]:
     a = ark_info()
     tiers = " · ".join(f"{t['name']} ¥{t['cny_month']}/" + ("月" if lang == "zh" else "month") for t in a["tiers"])
     if lang == "zh":
-        return [f"价格（{a['prices_checked']} 火山引擎官网价，以下单页为准）：{tiers}；限时活动价看下单页。先买 **Lite**："
-                "和 Pro 的模型、工具完全一样（含 Kimi K3），Pro 只是 5 倍用量，不够再升级。",
-                f"主人打开 {a['signup_url']} ，用手机号注册火山引擎、完成实名，订阅 Coding Plan；再到方舟控制台 {a['console_url']}"
-                " →「API Key 管理」新建一把 key（不要发到聊天里）。",
-                "你运行 `agentj provider ark`：把套餐里的模型写进 OpenCode 配置（已有的配置不动），并打印密钥卡命令；"
+        return [f"方舟 Agent Plan 价格（{a['prices_checked']} 火山引擎官网价，以下单页为准）：{tiers}。先买 **{a['start_tier']}**："
+                "Kimi K3 从 Medium 起才有，不够再升级。",
+                f"主人在方舟控制台 {a['console_url']} 用手机号注册火山引擎、完成实名，订阅 Agent Plan；key 在 {a['key_hint']['zh']}"
+                "（不要发到聊天里）。",
+                "你运行 `agentj provider ark`：把 Agent Plan 的模型写进 OpenCode 配置（已有的配置不动），并打印密钥卡命令；"
                 f"主人只把 key 粘贴进手机密钥卡（{a['key_env']}）。",
                 f"`agentj service restart`，然后 `agentj agent switch opencode --model {a['model']}`（能看图；方舟没有只读核对，"
-                "第一条回复就是核对）。想用 Claude Code：`agentj provider ark --harness claude`。",
-                "⚠ " + ark.TERMS["zh"]]
-    return [f"Prices (Volcano Engine's page on {a['prices_checked']}; the order page is authoritative): {tiers}; time-limited "
-            "offers are on the order page. Start with **Lite**: the same models and tools as Pro (Kimi K3 included) — Pro only "
-            "gives 5x the quota; upgrade if it runs short.",
-            f"The owner opens {a['signup_url']} , signs up to Volcano Engine with a phone number, verifies their identity and "
-            f"subscribes to Coding Plan; then creates a key under API Key management in the Ark console {a['console_url']} "
-            "(never paste it into chat).",
-            "You run `agentj provider ark`: it adds the plan's models to OpenCode's config (existing settings untouched) and "
+                "第一条回复就是核对）。想用 Claude Code：`agentj provider ark --harness claude`。还在用旧的 Coding Plan：加 `--plan coding`。",
+                "⚠ " + ark.TERMS_AGENT["zh"]]
+    return [f"Ark Agent Plan prices (Volcano Engine's page on {a['prices_checked']}; the order page is authoritative): {tiers}. "
+            f"Start with **{a['start_tier']}**: Kimi K3 needs Medium or above; upgrade if it runs short.",
+            f"The owner signs up to Volcano Engine in the Ark console {a['console_url']} with a phone number, verifies their identity "
+            f"and subscribes to the Agent Plan; the key is under {a['key_hint']['en']} (never paste it into chat).",
+            "You run `agentj provider ark`: it adds the Agent Plan's models to OpenCode's config (existing settings untouched) and "
             f"prints the key-card command; the owner pastes the key only into the phone's key card ({a['key_env']}).",
             f"`agentj service restart`, then `agentj agent switch opencode --model {a['model']}` (reads images; Ark has no "
-            "read-only check, so the first reply is the check). For Claude Code: `agentj provider ark --harness claude`.",
-            "⚠ " + ark.TERMS["en"]]
+            "read-only check, so the first reply is the check). For Claude Code: `agentj provider ark --harness claude`. "
+            "Still on the older Coding Plan: add `--plan coding`.",
+            "⚠ " + ark.TERMS_AGENT["en"]]
 
 
 def steps(lang: str, env_file: str) -> list[str]:
@@ -343,15 +343,15 @@ HEAD = {
 }
 HINT_NOTE = ("（只按本机时区判断，没有实测成功；装好后用 `agentj agent switch --scan` 确认。）",
              "(Judged from the Agent J host's time zone only, not measured; confirm with `agentj agent switch --scan` later.)")
-PICK = (("  · 中国大陆、从零开始：首推 **火山方舟 Coding Plan**，先买 **Lite**（和 Pro 能力一样，只差 5 倍用量）。",
+PICK = (("  · 中国大陆、从零开始：首推 **火山方舟 Agent Plan**，先买 **Medium**（含 Kimi K3）。",
          "  · 香港 / 海外：**Kimi 会员** Plus 或更高档（海外访问按美元收费）。",
          "  · 已经有其中某一家的：继续用那一家，不用再买。"),
-        ("  · Mainland China, starting from zero: first choice **Volcano Ark Coding Plan** — buy **Lite** first (same models "
-         "and tools as Pro; Pro only gives 5x the quota).",
+        ("  · Mainland China, starting from zero: first choice **Volcano Ark Agent Plan** — buy **Medium** first (it includes "
+         "Kimi K3).",
          "  · Hong Kong / overseas: a **Kimi membership**, Plus or higher (billed in USD outside the mainland).",
          "  · Already paying for one of them: keep using it — no second plan."))
-ARK_HEAD = ("火山方舟 Coding Plan（中国大陆首推；OpenCode 或 Claude Code）：",
-            "Volcano Ark Coding Plan (first choice in mainland China; OpenCode or Claude Code):")
+ARK_HEAD = ("火山方舟 Agent Plan（中国大陆首推；OpenCode 或 Claude Code）：",
+            "Volcano Ark Agent Plan (first choice in mainland China; OpenCode or Claude Code):")
 KIMI_HEAD = ("Kimi 会员（香港 / 海外首推，澳门也是，大陆也能用；Plus 或更高档，用 OpenCode 接入）：",
              "Kimi membership (first choice in Hong Kong / Macau / overseas; works in the mainland too; Plus or higher, through OpenCode):")
 GLOBAL_NOTE = ("  注：kimi.com 买的会员，key 在 api.kimi.com 和 api.kimi.ai 两个地址都能用（实测）。在海外站 kimi.ai 买的会员用 "

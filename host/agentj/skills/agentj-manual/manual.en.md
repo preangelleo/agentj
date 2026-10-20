@@ -506,7 +506,7 @@ Agent J is the only Agent you deal with, so most things are a sentence, not a bu
 - "Set up a weekly competitor brief" and other recurring work: it checks its capabilities and sends one start card for
   you to confirm, see [Long tasks](https://agentj.app/docs/long-tasks/).
 - "What can you do": a capability page opens on your phone — what is ready and what needs setup.
-- Want the Daily AI News email every morning: say so and it runs `agentj news on` (the same switch as in Settings, see [Daily AI News](https://agentj.app/docs/account/#daily-ai-news)).
+- Want the Daily AI News email every morning: say so and it runs `agentj news on` (the same switch as in Settings, see [Daily AI News](https://agentj.app/docs/account/#daily-ai-news)). The email goes to your own address; with no email yet, it asks you for one first and confirms it with the 6-digit code from the email.
 
 Silent turns do not take up chat pages. Open ≡ → View silent history to read them. Esc or the backdrop closes the read-only panel; /clear clears it too.
 
@@ -583,7 +583,7 @@ On a new computer it is usually one of four, and the phone says which: the model
 
 If an independent session's sandbox cannot start, the Agent stays stopped. The phone card explains the cause (such as missing bubblewrap) and repair. Tap **Run this launch without isolation** and verify with the owner's passkey to allow this launch only; the next launch checks isolation again. This launch may access local files and credentials. Set up a passkey in the phone menu if needed. Denial or timeout never starts the Agent.
 
-The sudo card labels what it's for and the effect as **Agent claim**, what it's for first; a purpose that is too short or only repeats the command, or a request to manage Agent J's own background service, shows no card. Shell or interpreter commands are marked red and require an admin password even with the passwordless helper installed. Secret cards support URL verification; `--verify-cmd` is disabled and runs no command outside the sandbox. Scheduled tasks and native customer-service bots authenticate from native storage and do not inherit host-service API keys or tokens.
+The sudo card labels what it's for and the effect as **Agent claim**, what it's for first; a purpose that is too short or only repeats the command, or a request to manage Agent J's own background service, shows no card. Shell or interpreter commands are marked red and require an admin password even with the passwordless helper installed. A few read-only commands offer a switch on their card, off by default: turn it on and approve with the password, and for 10 minutes the same program with the same options, only on other files, runs without a card, each noted in the chat; sensitive files and shell or interpreter commands still ask every time, and "Revoke" ends it at any time. Secret cards support URL verification; `--verify-cmd` is disabled and runs no command outside the sandbox. Scheduled tasks and native customer-service bots authenticate from native storage and do not inherit host-service API keys or tokens.
 
 ### Connecting Telegram
 

@@ -63,6 +63,7 @@ agentj --instance 2 passphrase status     # set or not (and lock time left)
 agentj --instance 2 passphrase set        # choose one (typed twice, hidden)
 agentj --instance 2 passphrase change     # needs the current one
 agentj --instance 2 passphrase reset      # forgotten: deletes it AND unpairs every remote of instance 2 (type RESET)
+agentj --instance 2 passphrase reset --phone  # forgotten, a phone still paired: confirm on it, type the new one; all stay paired
 ```
 
 **Without `--instance N` these act on instance 1** — the original owner's passphrase. `export AGENTJ_INSTANCE=2` in that terminal

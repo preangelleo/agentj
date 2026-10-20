@@ -8,6 +8,7 @@ import {t, lang} from './t.js';
 import {confirmSheet} from './ui.js';
 import {sysWhen, cronText} from './controls.js';
 import {cardColor, setColors, resetColors} from './jcard-color.js';
+import * as PF from './pagefind.js';
 
 let list = null, busy = null, epoch = 0, view = 0;
 const subs = [];
@@ -18,7 +19,7 @@ export const deck = () => cards().filter((c) => c.on);
 export const nameOf = (c) => pick(c && c.name);
 export function onChange(fn) { subs.push(fn); }
 export function clear() { list = null; busy = null; epoch++; view++; resetColors(); for(const d of document.querySelectorAll('.jc-dialog'))d.dispatchEvent(new Event('cancel',{cancelable:true})); }
-// P360 (Leo 10-17: 「每个卡片都有一个 unique internal URL」): a card's address is its id — card/<id>[#<anchor>] (the name may
+// P360 (every card has a unique internal URL): a card's address is its id — card/<id>[#<anchor>] (the name may
 // repeat). ID / ANCHOR mirror host jcards.ID_RE / ANCHOR_RE.
 export const ID = /^[a-z][a-z0-9-]{1,31}$/, ANCHOR = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 export const ADDR = /^card\/([a-z][a-z0-9-]{1,31})(?:#([A-Za-z0-9][A-Za-z0-9_-]{0,63}))?/;
@@ -80,6 +81,7 @@ const PATHS = {
   bolt: 'M13 2 4 14h7l-1 8 9-12h-7z',
   check: 'M5 12.5l4 4L19 7',
   box: 'M5 5h14v14H5z',
+  cancel: 'M5 5h14v14H5zM9 9l6 6M15 9l-6 6',
   copy: 'M9 8h11v13H9zM5 16H3V3h11v2',
   edit: 'm4 16-1 5 5-1L20 8l-4-4zM13 7l4 4',
   delete: 'M3 6h18M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7M14 10v7',
@@ -180,7 +182,7 @@ export async function render(body, id, hooks) {
         if (op === 'edit' && it.editable === false) b.disabled = true;
         b.setAttribute('aria-label', t('p386.'+op)); b.title=t('p386.'+op); b.dataset.noteOp=op; b.append(icon(key)); acts.append(b);
       }
-      const prose=node('div',undefined,'fp-prose'); prose.append(RelayMD.toDOM(RelayMD.parse(String(it.text)),document)); entry.append(acts,prose); stack.append(entry);
+      const prose=node('div',undefined,'fp-prose'); prose.append(RelayMD.toDOM(RelayMD.parse(String(it.text)),document)); entry.append(acts,prose); RAW.set(entry,String(it.text)); stack.append(entry);
     }
     box.append(stack);
   } else if (m.template === 'automation' && Array.isArray(m.items)) {
@@ -196,18 +198,21 @@ export async function render(body, id, hooks) {
     prose.append(RelayMD.toDOM(RelayMD.parse(String(m.text)), document));
     box.append(prose);
   } else if (m.template === 'checklist' && Array.isArray(m.items) && m.items.length) {
+    const todo = !!(m.todo && typeof m.todo === 'object');
     const ul = node('ul', undefined, 'jc-list');
+    if (todo) box.append(todoFilter(id, ul, m.todo.counts || {}));
     for (const it of m.items) {
       const li = node('li', undefined, 'jc-item'), acts = Array.isArray(it.acts) ? it.acts : [];
       li.dataset.item = it.id; li.dataset.done = it.done ? '1' : '0';
       const main = button('', acts[0] ? () => run(acts[0], hooks) : null, 'jc-row');
-      main.append(icon(it.done ? 'check' : 'box', 'jc-check'), node('span', String(it.text || ''), 'jc-text'));
+      if (todo) todoRow(li, main, it); else main.append(icon(it.done ? 'check' : 'box', 'jc-check'), node('span', String(it.text || ''), 'jc-text'));
       if (acts[0]) main.setAttribute('aria-label', `${acts[0].label}：${it.text}`); else main.disabled = true;
       li.append(main);
       for (const a of acts.slice(1)) li.append(button(a.label, () => run(a, hooks), 'jc-chip'));
       ul.append(li);
     }
     box.append(ul);
+    if (todo) applyFilter(id, ul);
   }
   if (m.cut) box.append(node('p', t('p360.cut'), 'jc-note'));
   if (Array.isArray(m.actions) && m.actions.length) {
@@ -215,7 +220,7 @@ export async function render(body, id, hooks) {
     for (const a of m.actions) { const b = button(a.label, () => run(a, hooks), 'fp-action jc-action'); b.dataset.act = a.id; if (a.draft) b.dataset.draft = '1'; row.append(b); }
     box.append(row);
   }
-  // links (Leo 10-17: 「Hyperlink……新浏览器 Tab；internal link……直接导航过去」): href → the web page, jlink → inside Agent J
+  // links (a hyperlink opens a new browser tab; an internal link navigates in place): href → the web page, jlink → inside Agent J
   if (Array.isArray(m.links) && m.links.length) {
     const row = node('div', undefined, 'jc-links');
     for (const l of m.links) {
@@ -226,6 +231,7 @@ export async function render(body, id, hooks) {
     }
     box.append(row);
   }
+  if (hooks.drawn) hooks.drawn();   // P393: the page's search runs again over what was just drawn
   const at = place(box, hooks.at, m);
   if (at) {
     at.dataset.at = '1'; at.scrollIntoView({ block: 'start' }); at.classList.add('jc-flash');
@@ -234,11 +240,81 @@ export async function render(body, id, hooks) {
   // Storage paths belong to the managing skill, not the owner's card surface.
 }
 
+// P393 (#124 「搜「免费」显示没找到，但第一条就含「永久免费码」」): the magnifier on a card page searches the card's own records —
+// every note / checklist row / automation as drawn (plus a note's raw text, so a link's address counts too). Rows that do not
+// match step aside (the DOM is kept, nothing is fetched again), every hit is marked, the first one scrolled into view; a card
+// drawn as one block of prose (an older computer) gets the in-text find. → { n, unit: 'entry' | 'hit' }.
+const RAW = new WeakMap();
+export function filter(body, q) {
+  const ts = PF.terms(q), units = body ? [...body.querySelectorAll('.jc-entry, .jc-item')] : [];
+  for (const u of units) {
+    const on = !ts.length || PF.matches(u.textContent + ' ' + (RAW.get(u) || ''), ts);
+    if (on) delete u.dataset.findOut; else u.dataset.findOut = '1';
+  }
+  if (!ts.length) { PF.clearMarks(); return { n: 0, unit: 'entry' }; }
+  const box = body.querySelector('.jc-body') || body;
+  const marks = PF.mark(box, q);
+  if (units.length) {
+    const shown = units.filter((u) => !u.dataset.findOut);
+    if (shown[0]) shown[0].scrollIntoView({ block: 'nearest' });
+    return { n: shown.length, unit: 'entry' };
+  }
+  if (marks) PF.step(1);
+  return { n: marks, unit: 'hit' };
+}
+
+// P393 #131: a draft that ends in a slash command (`/agentj-add-todo`) goes in with a trailing space, so the box shows the
+// command as an internal link at once instead of waiting for the owner's own space.
+export const draftText = (text) => /(?:^|\s)[/\uFF0F][a-z0-9][a-z0-9-]{1,63}$/.test(text) ? text + ' ' : text;
+
+// ---------------------------------------------------------------- the To-do card (P394 #130)
+// P394: a label filter — only Agent J's items, only the owner's items — the host sends owner, status, start / end and
+// what is due (jcards_todo.phone_items, already in the card's order); this page only draws them and filters by owner. The
+// filter lives in this page's memory (nothing is stored on the phone).
+const FILTERS = ['all', 'agent', 'owner'], filterOf = new Map();
+const FLAG = { overdue: 'p394.overdue', due_soon: 'p394.dueSoon', end_met: 'p394.endMet', ready: 'p394.ready' };   // a free-text condition shows as its words
+function todoFilter(id, ul, counts) {
+  const row = node('div', undefined, 'jc-filter'); row.setAttribute('role', 'group'); row.setAttribute('aria-label', t('p394.filter'));
+  for (const w of FILTERS) {
+    const b = button(t('p394.f.' + w) + (Number.isFinite(counts[w]) ? ' ' + counts[w] : ''), () => { filterOf.set(id, w); applyFilter(id, ul); }, 'jc-chip jc-filter-chip');
+    b.dataset.filter = w; row.append(b);
+  }
+  return row;
+}
+function applyFilter(id, ul) {
+  const w = filterOf.get(id) || 'all';
+  for (const li of ul.querySelectorAll('.jc-item')) { if (w === 'all' || li.dataset.owner === w) delete li.dataset.ownerOut; else li.dataset.ownerOut = '1'; }
+  for (const b of ul.parentNode ? ul.parentNode.querySelectorAll('.jc-filter-chip') : []) b.setAttribute('aria-pressed', String(b.dataset.filter === w));
+}
+function when(c, kind) {
+  if (!c || typeof c !== 'object') return '';
+  let v = String(c.text || '');
+  if (c.kind === 'at' && Number.isFinite(c.at)) {
+    const d = new Date(c.at), loc = lang() === 'zh' ? 'zh-CN' : 'en-GB';
+    v = c.date ? d.toLocaleDateString(loc, { month: 'short', day: 'numeric' }) : d.toLocaleString(loc, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  } else if (c.kind === 'after') v = t('p394.after', { what: v });
+  return t('p394.' + kind, { when: v });
+}
+function todoRow(li, main, it) {
+  const closed = it.status === 'done' || it.status === 'cancelled';
+  li.dataset.owner = it.owner === 'agent' ? 'agent' : 'owner'; li.dataset.status = String(it.status || 'pending'); li.dataset.state = String(it.state || '');
+  const flags = Array.isArray(it.flags) ? it.flags : [];
+  if (!closed && flags.some((f) => f in FLAG && f !== 'check')) li.dataset.mark = flags.includes('overdue') ? 'overdue' : flags.includes('ready') && flags.length === 1 ? 'ready' : 'due';
+  const body = node('span', undefined, 'jc-todo-body'), meta = node('span', undefined, 'jc-todo-meta');
+  meta.append(node('span', t(li.dataset.owner === 'agent' ? 'p394.byAgent' : 'p394.byOwner'), 'jc-tag jc-tag-' + li.dataset.owner));
+  if (it.status === 'active' || it.status === 'cancelled') meta.append(node('span', t('p394.s.' + it.status), 'jc-tag'));
+  if (!closed) for (const f of flags) if (FLAG[f]) meta.append(node('span', t(FLAG[f]), 'jc-tag jc-flag jc-flag-' + f));
+  for (const [k, c] of [['start', it.start], ['end', it.end]]) { const w = when(c, k); if (w) meta.append(node('span', w, 'jc-when')); }
+  body.append(node('span', String(it.text || ''), 'jc-text'), meta);
+  if (it.note) body.append(node('span', String(it.note), 'jc-todo-note'));
+  main.append(icon(it.status === 'done' ? 'check' : it.status === 'cancelled' ? 'cancel' : 'box', 'jc-check'), body);
+}
+
 /** A button: a draft goes into the message box; anything else is shown whole on the official confirm card first. */
 async function run(a, hooks) {
   const text = String(a.prompt || '');
   if (!text) return;
-  if (a.draft) { hooks.draft(text); return; }
+  if (a.draft) { hooks.draft(draftText(text)); return; }
   const ask = confirmSheet(t('p360.confirmTitle'), text, t('p360.send'));
   const shown = document.getElementById('confirm-text');
   if (shown) shown.textContent = text;   // exactly what will be sent (the sheet's fillText would turn `…` into code)
@@ -246,7 +322,7 @@ async function run(a, hooks) {
 }
 
 // ---------------------------------------------------------------- Settings → Cards
-/** Fills #set-cards-list: official cards (default off) and the owner's own, each with its switch. hooks: { note(text) }. */
+/** Fills #set-cards-list: official cards (default on, P393 #129) and the owner's own, each with its switch. hooks: { note(text) }. */
 export function renderSettings(hooks) {
   const box = document.getElementById('set-cards-list');
   if (!box) return;

@@ -95,7 +95,7 @@ export async function runP168() {
           await sleep(1500);
           check(await evaluate(p, `${$('offDlg')}.hidden`), 'nothing blurs during the quiet window ' + tag);
           await waitFor(p, `!${$('offDlg')}.hidden`, 10000);
-          check(Date.now() - t0 >= 5500, `shown after the quiet window (${Date.now() - t0} ms) ${tag}`);
+          check(Date.now() - t0 >= 4900, `shown after the quiet window (${Date.now() - t0} ms) ${tag}`);   // P393: 5 s rule (was 6 s)
           check(await evaluate(p, `document.body.dataset.offlineCard`) === 'short', 'short card ' + tag);
           check(/blur\(8px\)/.test(await evaluate(p, `getComputedStyle(${$('offDlg')}).backdropFilter`)), 'the page behind is blurred ' + tag);
           check(await evaluate(p, `${$('offDlg')}.classList.contains('gdlg') && getComputedStyle(${$('offDlg')}.querySelector('.sq')).borderTopLeftRadius`) === '24px', 'the P375 composer-aligned card ' + tag);

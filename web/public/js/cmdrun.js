@@ -45,9 +45,17 @@ function result() {
   const close = mk('button', 'menuicon rscmdclose', '×'); close.type = 'button'; close.id = 'rs-cmd-close';
   close.setAttribute('aria-label', t('p380.closeResult')); close.title = t('p380.closeResult');
   close.addEventListener('click', () => { const name = R.name; R = null; paint(); el('rs-cmd-' + name)?.focus(); });
-  if (Number.isInteger(R.code) && R.code >= 0) bar.append(mk('p', R.code === 0 ? 'rsok' : 'rsmsg rsfail', t(R.code === 0 ? 'p361.ok' : 'p361.fail', { code: R.code })));
+  if (R.why === 'restored') bar.append(mk('p', 'rsok', t('p392.restored')));   // P393: the 「连不上」 of a tap made offline turns green
+  else if (R.fold) bar.append(mk('p', R.code === 0 ? 'rsok' : 'rsmsg rsfail', t(R.code === 0 ? 'p393.sumOk' : 'p393.sumFail', { time: R.hm || '' })));
+  else if (Number.isInteger(R.code) && R.code >= 0) bar.append(mk('p', R.code === 0 ? 'rsok' : 'rsmsg rsfail', t(R.code === 0 ? 'p361.ok' : 'p361.fail', { code: R.code })));
   else bar.append(mk('p', 'rsmsg rsfail', ['busy', 'timeout', 'no_passkey', 'dropped'].includes(R.why) ? t('p361.why.' + R.why) : whyText(R.why) || t('p361.failed')));
   bar.append(close); out.push(bar);
+  if (R.fold) {                        // P393: Settings opened again — one line; the output stays under 「详情」
+    if (!R.out) return out;
+    const d = mk('details', 'rsmore'); d.id = 'rs-cmd-log'; d.append(mk('summary', '', t('p332.details')));
+    const pre = mk('pre', 'rsout', R.out); pre.id = 'rs-cmd-out-text'; pre.tabIndex = 0; d.append(copyable(pre, { variant: 'block', click: false }));
+    out.push(d); return out;
+  }
   if (R.out) { const pre = mk('pre', 'rsout', R.out); pre.id = 'rs-cmd-out-text'; pre.tabIndex = 0; out.push(copyable(pre, { variant: 'block', click: false })); }
   if (R.cut) out.push(mk('p', 'rsnote', t('p361.cut')));
   if (R.out) out.push(mk('p', 'rsnote', t('p361.masked')));
@@ -78,7 +86,7 @@ export async function run(name) {
   if(phoneConfirmation())return;
   if (!Object.hasOwn(CMDS, name) || !names.includes(name) || (R && R.st === 'run')) return;
   R = { name, st: 'ask' };
-  if (!isReady()) { R = { name, st: 'fail', why: 'offline' }; return paint(); }
+  if (!isReady()) { R = { name, st: 'fail', why: 'offline', hm: new Date().toTimeString().slice(0, 5) }; return paint(); }
   paint();
   const m = await signedWriteFa('cmd_run', { cmd: name }, { t: 'cmd_run', cmd: name }, faceId);
   if (m.why === 'cancel') { R = null; return paint(); }
@@ -86,12 +94,16 @@ export async function run(name) {
   // the link dropped while the computer ran it (doctor --reconnect may restart Agent J there): say so, not a bare failure
   if (m.why === 'offline' && R && R.st === 'run') m.why = 'dropped';
   R = { name, st: m.ok ? 'done' : 'fail', code: Number.isInteger(m.code) ? m.code : -1, out: str(m.out), cut: m.cut === true,
-    why: m.ok ? '' : String(m.why || '') };
+    why: m.ok ? '' : String(m.why || ''), hm: new Date().toTimeString().slice(0, 5) };
   if (m.why === 'no_passkey' && phoneConfirmation(true)) { paint(); return; }
   if (m.why === 'no_passkey') toastAction(t('p361.why.no_passkey'), t('sout.setup'), () => H.setupFaceId(), 8000);
   paint();
   el('rs-cmd-out')?.scrollIntoView({ block: 'nearest' });
 }
+/** P393 · settings.js open(): an ended result opens folded to one line (× still closes it). */
+export function foldEnded() { if (R && (R.st === 'done' || R.st === 'fail') && !R.fold) { R.fold = true; paint(); } }
+/** P393 · app.js onReady: a tap refused because the link was down now says the link is back. */
+export function onReady() { if (R && R.st === 'fail' && R.why === 'offline') { R.why = 'restored'; paint(); } }
 // tests
 export const _debug = () => ({ names: [...names], R: R && { ...R } });
 export function _reset() { names = []; R = null; paint(); }

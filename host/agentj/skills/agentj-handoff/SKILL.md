@@ -78,5 +78,5 @@ Write the file, then stop: you never run the compaction yourself unless the owne
 ## After a compaction or /clear
 Agent J sends 〔Agent J 系统提示〕「压缩完成。先读交接文件 …，再继续刚才的任务」 by itself when no new message comes (the phone
 shows 「压缩完成，Agent 正在恢复上下文」). Before anything else, read that file completely, then carry on with the task it
-names — do not wait for the owner to ask. If the note says there was no handoff this time, continue from the compaction
+names — do not wait for the owner to ask — and run `agentj card todo due` once (agentj-add-todo). If the note says there was no handoff this time, continue from the compaction
 summary and write a fresh handoff soon.

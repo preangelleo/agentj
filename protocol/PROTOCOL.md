@@ -167,6 +167,14 @@ First byte = message kind (visible to the relay — see §5):
    - **Why the SAS stays:** it is still the only thing that binds the human's decision to THIS handshake. A copied QR whose
      holder wins the race produces a card whose code the owner's new device does not show (that device's own attempt fails
      `pair_unknown_or_used`); comparing two screens keeps that check while removing the typing.
+   - **Resetting the remote pairing password, keeping every remote (#118, 0.24.1).** `agentj passphrase reset --phone`
+     (owner's terminal only: control.sock `passphrase_consent` needs a claim + a terminal on the caller's stdin) puts ONE §8
+     `ask` on every ready session: `tool:"passphrase_reset"`, `summary` = host-language text with a 6-digit match code the
+     terminal printed, `cat:[]`, no batch, 300 s; passkey rules as `pair_device` (kind `"passphrase"`). The first valid
+     signed answer decides; every session gets `ask_done`. An allow gives that terminal process a one-use ticket (300 s);
+     the new password is typed at the terminal and sent only over control.sock (`passphrase_replace`) — never on the
+     channel. All remotes stay paired; the phones get one `sys` notice naming the approving remote. `approvals.log` keeps
+     tool `passphrase_reset`, the input digest, the shown digest, the device, its key and signature.
 
 ## 5. What the relay (and Cloudflare) can see
 Channel id, connection times and IPs, message kind byte, pairing id (once, one-time), frame sizes (padded to 256 B),
@@ -222,8 +230,10 @@ stale 401 `stale` · then per endpoint. Vector: `protocol/vectors/host-envelope.
 | `POST /v1/host/sync` (A3.1) | `{"v":1,"t":"sync","channel","ts","results":[{"id","result"}]}` (≤ 10; result ∈ `revoked` `unknown_device` `disabled` `rate_limited`) | 200 `{"unbind":[{"id","device"}],"agent_name"}` (≤ 10, this host's pending requests; A3.2 `agent_name` = canonical name, string or null) · 403 `not_bound` · 429 `rate_limited` (L2: a sync **with** results costs one of ≤ 60 per host per hour; over it nothing is written — keep the results, retry later; a sync without results is never limited) |
 | `POST /v1/host/report` | `{"v":1,"t":"report","channel","ts","seq","agent","devices":[{"id","name","paired_at","online"}],"pending":{"count","since"}}` + optional (A3.2) `"agent_name"` (string per §7 Agent-name rules, or null) and `"machine"` (hostname via `clean_label`, ≤ 64, or null) + optional (A1, 0.15) `"language"` (`zh`\|`en`) and `"language_at"` (integer ms, 0 = never set on this host) — see **Language sync** below | 200 `{"ok":true}` (A1: + `"language","language_at"` = the account's value after the merge) · 403 `not_bound` · 409 `replay` (seq ≤ last) · 429 `rate_limited` |
 | `POST /v1/host/rename` (A3.2) | `{"v":1,"t":"rename","channel","ts","name"}` | 200 `{"ok":true,"name"}` · 400 `bad_name` · 409 `{"error":"name_taken","suggestions":[…]}` (≤ 3) · 403 `not_bound` · 429 `rate_limited` (≤ 20 successes per host per hour; and ≤ 60 failures — 400 / 409 — per host per hour, claimed before the name is checked, so past it nothing is checked or revealed) |
-| `POST /v1/host/news` (P374) | `{"v":1,"t":"news","channel","ts","on"}` (`on` = `true` \| `false` \| `null`; null = read only, free); context `agentjarvis-host-news-v1`; the account = `bound_by` of the bound host with this key | 200 `{"ok":true,"on":bool,"queued":int\|null,"seats":int,"email","sample_url"}` (the account's Daily AI News switch after the call — `on` = opted in; `queued` = place in the waiting list when all seats are taken, the account e-mail, `<app>/news/sample`) · 403 `not_bound` · 429 `rate_limited` (writes only: the `host_sync_write` budget) · 400 `bad_request`. Writes record `source:"phone"`. The host whitelists the answer: `on` bool, `email` ≤ 254 with one `@` and no controls (else the call failed), `sample_url` only on the API / Dashboard origin (else the configured Dashboard's `/news/sample`); 404 (an older Dashboard) = unsupported |
-| `POST /v1/host/seat-bind` (seat setup) | `{"v":1,"t":"seat_bind","channel","ts","token","name"}` (`token` matches `^ajt_[A-Za-z0-9_-]{43}$`; `name` already normalised per the Agent-name rules) | 200 `{"status":"bound","host_id","tenant":{"slug","name"},"agent_name"}` (also for an idempotent **replay**: the channel is already bound by this same key through the setup this code belongs to — same answer, nothing written) · 404 `invalid_setup` (unknown, expired, revoked or already used — one answer) · 409 `{"error":"name_taken","suggestions":[…]}` · 402 `payment_required` (the company no longer pays for that seat) · 409 `already_bound` · 400 `bad_name` / `name_required` / `bad_request` · 429 `rate_limited` (`retry-after`; ≤ 10 failed seat-binds per IP bucket per hour, ≤ 10 per channel per hour, claimed before the code is looked at) |
+| `POST /v1/host/news` (P374 · P393 #128) | `{"v":1,"t":"news","channel","ts","on"}` + optional `"lang":"zh"|"en"` (P393: the language of an account a switch-ON creates for the seat's invited address; default zh) (`on` = `true` \| `false` \| `null`; null = read only, free); context `agentjarvis-host-news-v1`; the switch is the **host's own person's** (DASHBOARD_API §15.1: a `jarvis login` host or the owner installation = `bound_by`; a seat = its holder, else the confirmed / invited address; never the issuer by default) | 200 `{"ok":true,"on":bool,"queued":int\|null,"seats":int,"email","sample_url"}` (the person's Daily AI News switch after the call — `on` = opted in; `queued` = place in the waiting list when all seats are taken, the person's e-mail, `<app>/news/sample`) · 200 `{"ok":true,"on":false,"queued":null,"seats":int,"need_email":true,"sample_url"}` (P393: the seat has no person yet — no `email` key; the phone asks for an address) · 409 `need_email` (`on:true` with no person; nothing written) · 403 `not_bound` · 429 `rate_limited` (writes only: the `host_sync_write` budget) · 400 `bad_request`. Writes record `source:"phone"`. The host whitelists the answer: `on` bool, `email` ≤ 254 with one `@` and no controls (else the call failed), `sample_url` only on the API / Dashboard origin (else the configured Dashboard's `/news/sample`); 404 (an older Dashboard) = unsupported |
+| `POST /v1/host/news/email` (P393 #128) | `{"v":1,"t":"news_email","channel","ts","email","lang"}` (`lang` = `"zh"` \| `"en"`); context `agentjarvis-host-news-email-v1`; only for a seat whose person is not an account's own (DASHBOARD_API §15.1 cases 4–6) | 200 `{"ok":true,"expires_in":600}` (a 6-digit code mailed to that address; one live code per host, 10 min, ≤ 5 tries) · 400 `bad_email` / `bad_request` (lang) · 409 `account_email` (a `jarvis login` host, a claimed seat or the owner installation: the address is changed on the account page) · 429 `rate_limited` + `retry-after` (per host ≤ 5 / hour; per address ≤ 5 / hour, ≤ 20 / day) · 503 `unavailable` (no mail configured) · 502 `mail_failed` · 403 `not_bound` |
+| `POST /v1/host/news/verify` (P393 #128) | `{"v":1,"t":"news_verify","channel","ts","email","code"}`; context `agentjarvis-host-news-verify-v1` | 200 = exactly the `/v1/host/news` read answer for the confirmed address (`{"ok":true,"on","queued","seats","email","sample_url"}`; the seat's person is now that address's account, created if new) · 401 `invalid_code` (wrong, expired, used up after 5 tries, never sent, not 6 digits; a code is bound to the host that asked for it) · 400 `bad_email` · 409 `account_email` · 403 `not_bound` · 503 `unavailable` |
+| `POST /v1/host/seat-bind` (seat setup) | `{"v":1,"t":"seat_bind","channel","ts","token","name"}` (`token` matches `^ajt_[A-Za-z0-9_-]{43}$`; `name` already normalised per the Agent-name rules) | 200 `{"status":"bound","host_id","tenant":{"slug","name"},"agent_name"}` (also for an idempotent **replay**: the channel is already bound by this same key through the setup this code belongs to — same answer, nothing written) · 404 `invalid_setup` (unknown, expired, revoked or already used — one answer) · 409 `{"error":"name_taken","suggestions":[…]}` · 402 `payment_required` (the company no longer pays for that seat) · 409 `already_bound` (this channel is bound) · 409 `billing_busy` (a billing change of the company is being processed; nothing used — retry in a few minutes; `agentj login` exits 6) · 500 `internal` (any other server failure; nothing used) · 400 `bad_name` / `name_required` / `bad_request` · 429 `rate_limited` (`retry-after`; ≤ 10 failed seat-binds per IP bucket per hour, ≤ 10 per channel per hour, claimed before the code is looked at) |
 | `POST /v1/host/seat-leave` (seat setup, review SS-02) | `{"v":1,"t":"seat_leave","channel","ts"}` | 200 `{"status":"left"}` · 404 `not_found` (this channel is not bound with this key, or it was bound with the 8-character code, not a seat setup) · 429 `rate_limited` (≤ 10 per channel per hour, `retry-after`) |
 | `POST /v1/host/templates` (L3.5) | `{"v":1,"t":"templates","channel","ts","nonce"}` (`nonce` = 16 random bytes, b64url) | 200 `{"templates":[{"id","version","title":{"zh","en"},"sha256","files","bytes"}]}` · 403 `not_bound` · 402 `payment_required` (seat not paid / comp: grace or suspended) · 409 `replay` (this nonce was answered before) · 429 `rate_limited` (≤ 60 template requests per host per hour, list and packages together, `retry-after`) |
 | `POST /v1/host/templates/<id>` (L3.5) | `{"v":1,"t":"template","channel","ts","nonce","id"}` (`id` = the path's, `^[a-z0-9][a-z0-9-]{0,39}$`) | 200 `{"id","version","title","sha256","files":[{"path","sha256","content"}]}` · 404 `unknown_template` · the same 403 / 402 / 409 / 429 |
@@ -565,7 +575,7 @@ App messages (all inside §3 transport messages):
   switch on) a request that would have asked is allowed at once and the phone gets `{"t":"auto","id","tool","summary","by":
   "full"|"goal"}` (no card, no push); the red lines (suspected attack incl. download-and-run in one call; credentials changed, shown or
   leaving with a send — any credential path or an environment dump in the call; spend / price) and the host's own cards
-  (`agentj …`, `pair_device`, `SandboxOnce`, `AuthRescue`, OpenCode `DoomLoop` / `task`, `AskUserQuestion`) still ask; Codex
+  (`agentj …`, `pair_device`, `passphrase_reset`, `SandboxOnce`, `AuthRescue`, OpenCode `DoomLoop` / `task`, `AskUserQuestion`) still ask; Codex
   sandbox / network escalations are allowed.
 - **A card while no remote is online (P336, #36)**. Online = a ready session of a paired device with an approval key. With
   none online when a card is made, the `ask` is queued as usual (sent first thing after `ready`, included in `cards_get`), the
@@ -1138,17 +1148,35 @@ an owner claim) becomes an approval card (`agentj mail`, the changes listed) and
 
 P256: `mail_key` continues to open the same sealed §11 secret card as `agentj mail password` (no password fields in `mail_*`). Provider-specific label, steps, official URLs and server summary are in its signed `purpose` (up to 2000 characters for the host-generated mail card). Gmail display spaces are removed on the host only. Host saves encrypted first and runs a read-only test; final `mail_res` additionally has `verify: "ok" | "fail"` and a fixed safe `detail` reason. `ok:true` means saved even when verification failed. No message is sent by the test. Existing pairing, signature, passkey, nonce and seal rules apply unchanged.
 
-### 10.20a Daily AI News — `news_get` · `news_set` / `news_res` (P374)
+### 10.20a Daily AI News — `news_get` · `news_set` · `news_email` · `news_verify` / `news_res` (P374 · P393 #128)
 
 Device → host (p33 sessions only, ready and allowlisted, inside Noise): `{"t":"news_get"}` · `{"t":"news_set","on":true|false}`
-(optional `"r":<rid>`, echoed). A `news_set` without a boolean `on` is dropped. The host makes one signed `/v1/host/news` call
-(§7; `on:null` for `news_get`) in a thread with an 8 s budget (≤ 4 at once; more answer `rate_limited`) and answers the asking
-session only: `{"t":"news_res","ok":true,"on":bool,"email","sample_url","queued","seats"}` (`queued` = place in the waiting list
-when all seats are taken, else null; the phone then shows 「名额 {seats} 个已满，你在候补第 {n} 位…」 instead of 「发到」) or
-`{"t":"news_res","ok":false,"problem":"unlinked"|"not_bound"|"unreachable"|"rate_limited"|"fail"}` — `unlinked` = no Dashboard
-link on this host (`cloud.json`); timeouts, network errors and 5xx are `unreachable`; an older Dashboard without the route
-(404) and malformed answers are `fail`. The host stores nothing; host.log has the status word only, never the e-mail.
-`agentj news [status|on|off] [--json]` is the same call from the owner's terminal.
+· `{"t":"news_email","email":<string>}` · `{"t":"news_verify","email":<string>,"code":<string>}` (optional `"r":<rid>`,
+echoed; `news_email` may carry `"lang":"zh"|"en"` for the code mail, else the host's display language). A `news_set` without
+a boolean `on`, a `news_email` / `news_verify` without a string `email`, or a `news_verify` without a string `code` is dropped.
+The digest goes to **this host's own person** (the seat user; never the company owner by default, §7 `/v1/host/news`). The
+host makes one signed call — `news_get` / `news_set` → `/v1/host/news` (`on:null` for `news_get`), `news_email` →
+`/v1/host/news/email`, `news_verify` → `/v1/host/news/verify` (§7) — in a thread with an 8 s budget (≤ 4 news calls at once
+across all four; more answer `rate_limited`). The e-mail is checked on the host first (≤ 254, one `@`, no whitespace /
+controls / `<>"\`, else `bad_email`, nothing sent) and the code must be exactly 6 ASCII digits (else `invalid_code`, nothing
+sent). The host answers the asking session only:
+
+- state: `{"t":"news_res","ok":true,"on":bool,"email","sample_url","queued","seats"}` (`queued` = place in the waiting list
+  when all seats are taken, else null; the phone then shows 「名额 {seats} 个已满，你在候补第 {n} 位…」 instead of 「发到」). A
+  successful `news_verify` answers this same state for the newly confirmed address. When the seat has no person yet the
+  state carries `"need_email":true` with `"on":false` and `"email":null` — the phone asks for an address and confirms it with
+  a mailed code.
+- code sent (`news_email` only): `{"t":"news_res","ok":true,"sent":true,"expires_in":<seconds>}`.
+- problem: `{"t":"news_res","ok":false,"problem":<word>}` (+ `"retry_after":<seconds>` on `rate_limited` when the Dashboard
+  said so). Words: `unlinked` = no Dashboard link on this host (`cloud.json`) · `not_bound` = the Dashboard does not have
+  this host · `need_email` = switching on with no person yet · `invalid_code` = wrong, expired or used-up code ·
+  `bad_email` · `account_email` = this host uses the account's own e-mail, changed on the account page · `rate_limited` ·
+  `mail_failed` = the code mail could not be sent · `unreachable` = timeouts, network errors and other 5xx (including a
+  Dashboard without mail configured) · `fail` = an older Dashboard without the route (404) and malformed answers.
+
+The host stores nothing; host.log has status words only, never the e-mail or the code. `agentj news [status|on|off]
+[--json]`, `agentj news email <address>` and `agentj news verify <address> <code>` are the same calls from the owner's
+terminal.
 
 ### 10.21 The iMessage assistant's card — `host.platform` · `host.imessage` · `imsg_check` · `imsg_fda` (P274)
 
@@ -1223,14 +1251,62 @@ to every ready allowlisted session and again after a resume; a wrong password re
 `{"t":"elev_done","id","result"[,"code"][,"verify"]}` ends it everywhere. Web Push kind `ask` wakes the phone.
 TTL: sudo 120 s, secret 600 s (from each arming; 300 s before P73, §18.1).
 
-**Device → host.** `{"t":"elev_answer","id","ok":bool,"n","ts":<ms>,"sig"[,"epk","ct"]}`.
+P392: once a signed approval is accepted, its nonce is reserved before the receive handler returns.
+Execution and bounded stdout/stderr drain run outside the event loop, including the optional helper path;
+chat, Noise receive and connection heartbeats keep running. The command limit defaults to 600 s and is
+bounded to 1–3600 s. On timeout the host attempts process-group TERM, then KILL, with bounded signal and
+pipe-drain grace periods. These signals are best effort: an unprivileged host cannot guarantee termination
+of arbitrary privileged descendants; a timeout receipt reports the bounded wait outcome, not proof that
+every descendant has stopped.
+During execution the open `elev` snapshot adds `state:"running", ttl:0, elapsed:s, timeout:s` (`n:null`
+is no longer an approvable nonce), and `{"t":"elev_progress","id","kind","state":"running","elapsed","timeout"}`
+is sent every 5 s. Progress carries liveness/time only, never command output. The page stops the approval
+countdown and shows running; completion closes the card and the host adds a bilingual result summary to chat.
+The newest 100 completion receipts stay in serve memory, replayed on ready and `cards_get` alongside open
+cards by id. A host restart clears this receipt cache; it is not a persistent sudo result store.
+
+**§11.1 10-minute same-format approval (#116, `host/agentj/elevate_grant.py`).** Allowlist only. An `elev` sudo card MAY carry
+`"grant":{"secs":600,"prog":<basename>,"fmt":<program [subcommand] options>,"h":<64 hex>}` when its command has a class:
+the program resolves (PATH → realpath) to a file that it and every folder above it are root-owned and not group/other-writable,
+its basename equals argv[0]'s basename (no alias / multi-call applet: unxz → xz gets no offer), it is in `ALLOW` (cat, head,
+tail, ls, stat, du, df, wc, file, sha*/md5/b2 sums, grep, zcat, gzip/gunzip/xz/bzip2/zstd only with -c|-l|-t, xzcat, bzcat,
+zstdcat, journalctl, dmesg, ss, lsof, systemctl status|show|is-active|is-enabled|is-failed|list-units|list-timers|cat, findmnt,
+lsblk, blkid, uptime, free), every option is one its entry lists (exact spelling; short clusters split; a value-taking option's
+value is part of the class), and every path operand is absolute, `..`-free, symlink-free (path == realpath), a regular file or
+folder in folders only root can change, and outside the sensitive set (/root, account homes, /home, /proc, /sys, /dev, /run,
+/boot, /etc/ssh, /etc/ssl/private, sudoers, shadow/gshadow, `.ssh`, `id_*`, `*.pem|*.key|*_key`, `.env`/`*.env`, tokens,
+secrets, credentials, keytabs …). The cwd must not be sensitive. Class key = (realpath, systemctl subcommand, sorted option set, folder);
+folder = the one realpath folder every path operand belongs to (a file's folder, a folder operand itself; operands in two
+folders = no class; "" without path operands) — for every program, not only those that print contents;
+`h` = hex SHA-256(`"agentjarvis-elevate-grant-v1\n" realpath \n sub \n` option lines `\n\n` secs `\n` folder). Interpreters (§11 red style)
+never get an offer; `interpreter_command` also judges the program a bare name resolves to on PATH and covers rbash, ash, mksh,
+csh, busybox, pypy, lua*, ruby*, irb, php*, tclsh, wish, deno, bun, java, jshell, pwsh, mise/asdf/rtx shims.
+The page shows the offer as a toggle naming `prog` and `fmt`, OFF on every card shown. Only when the owner switches it on and
+approves with the password, `elev_answer` carries `"grant":<h>` AND the signature gets one more line `\ngrant:<h>`; the host
+refuses a `grant` that is not this card's `h` (`shape`) or not signed (`bad_signature`), and stores it as `grant_sha256` in the
+signed audit record (`check_record` verifies it). After that command ran with the right password the host keeps, in memory
+only, {class, approving device + its approval key, the Agent session (harness kind, a random 128-bit nonce stored on the agent
+object, native session id), origin card, deadline = approval + 600 s (use never extends it), the password as a bytearray}. A
+later `agentj sudo` with the same class key (only operands differ, each re-checked) from the same Agent session, while that
+device keeps the same approval key, runs at once with the pinned executable path, timeout = min(requested, seconds left in the
+window, 600), no card: the CLI gets the normal sudo result (+ `"auto":true`), chat gets a bilingual record, phones get
+`{"t":"elev_auto","id","g","exe":<basename>,"result"[,"code"],"left"}`. A stored password sudo rejects ends the grant and shows a
+normal card. Host → device `{"t":"elev_grants","items":[{"g":<16 hex>,"exe","fmt","dev","left"}]}` on every change and on
+ready; device → host `{"t":"elev_revoke"[,"g"]}` from any ready paired device with an approval key ends one / all
+(「收回授权」). Ends also on expiry, unpair / re-pair (`_drop_device`, key mismatch), Stop everything, serve stop/restart;
+the password copy is zeroed. `elevate.log`: `grant_on` (`cls` = h) / `grant_off` (`reason`: expired · revoked · unpaired ·
+stopped · gone · replaced · bad_password) and one line per auto-pass (`reason:"grant"`, `grant`, `origin`, `device`, `exe`,
+`timeout`, id, code) — never the password or the command text. The approve-only helper path never creates a grant.
+
+
+**Device → host.** `{"t":"elev_answer","id","ok":bool,"n","ts":<ms>,"sig"[,"epk","ct"][,"grant"]}` (`grant`: §11.1).
 - digest `D` = hex SHA-256(`"agentjarvis-elevate-v1\n" + kind + "\n"` + one line per shown field `hex SHA-256(field)`, joined
   by `\n`); fields sudo: cmd, why, effect · secret: name, purpose, dest, verify (`""` when absent).
 - seal (`ok` only): phone ephemeral X25519 `e`; `k = HKDF-SHA256(ikm = X25519(e, epk), salt = epk ‖ e_pub, info =
   "agentjarvis-seal-v1")`; `ct = iv(12) ‖ AES-256-GCM(k, iv, value, AAD = "agentjarvis-seal-v1\n" channel \n device \n id \n
   kind \n n \n D)`. The value is UTF-8 (≤ 8 KiB); the page clears the field and zeroes the bytes after sealing.
 - signature: Ed25519(device approval key, `"agentjarvis-elevate-v1\n" channel \n device \n id \n kind \n (allow|deny) \n n \n
-  ts \n D \n (hex SHA-256(ct) | "-")`).
+  ts \n D \n (hex SHA-256(ct) | "-")` [+ `\n grant:<h>` only when the §11.1 toggle was switched on]).
 - The host acts only for a ready session of an allowlisted device with an approval key, an open card before its deadline,
   `n` equal to the card's CURRENT nonce (then cleared: one attempt per nonce), `|now − ts| ≤ 120 s`, and a signature that
   verifies over what IT stored; anything else changes nothing (`elev_refused` in host.log, a `refused` line with the reason in
@@ -1554,8 +1630,8 @@ scheduled run (§10 tasks). Code: `agentj/compactprep.py`, `agentj/recall.py`.
 ### 15.2 After a compaction
 - Every finished compaction (ours, or Claude Code's own — a `compact_boundary` outside a command) starts a new epoch for
   that conversation. When the handover was written during the epoch that ended, the **next user message** (`say` / `msg` /
-  Telegram) reaches the harness with one host line in front — zh 「（Agent J：压缩前的交接在 <path>，先读它再继续。）」 / en
-  "(Agent J: the handover written before the compaction is at <path>; read it first, then carry on.)" — once, and only if
+  Telegram) reaches the harness with one host line in front — zh 「（Agent J：压缩前的交接在 <path>，先读它，再跑 agentj card todo due 看到期待办，然后继续。）」 / en
+  "(Agent J: the handover written before the compaction is at <path>; read it first, run agentj card todo due for what is due, then carry on.)" (P394) — once, and only if
   the file still exists. The phone's page shows the user's own text (§10.5 `src.text` is never changed).
 - OpenCode: the host re-reads the context meter right after `summarize` (§10.10 `ctx`), so the water level drops at once.
 
@@ -1693,7 +1769,7 @@ statics = `peer_x25519`; vectors `protocol/vectors/noise-xx-kk.json`. Prologues:
 |---|---|
 | `{"t":"facc","rid","card"}` | B's owner accepted request `rid` (sent by B over a fresh KK). Refusal / block / expiry: nothing |
 | `{"t":"pmsg","mid":"<16 hex>","thread":"<16 hex>","irt":mid\|null,"text","ts":ms[,"ctx":"<≤ 200>"][,"end":true]}` | a message; `mid` = idempotency key; `ctx` echoed back unchanged on replies; `end` = "nothing more from me on this thread" |
-| `{"t":"pack","mid","s":"got"\|"replied"\|"queued_for_owner"}` | receipt |
+| `{"t":"pack","mid","s":"got"\|"replied"\|"queued_for_owner"\|"blocked"[,"rule":"secret_policy"]}` | receipt; blocked means the inbound credential policy rejected it |
 | `{"t":"limited","scope":"msg_min"\|"msg_hour"\|"msg_day"\|"msg_month"\|"tok_min"\|…\|"tok_month"\|"interval"\|"length"\|"global","retry":s}` | rate receipt, at most once per window per friend; the sender holds that friend's queue for `retry` s |
 | `{"t":"card","card"}` · `{"t":"bye"}` | card update · unfriend (the other side deletes the relation, stops handshaking) |
 - **Card** = `{"v":1,"id","name","owner","intro"(≤ 140),"lang","caps":["chat"],"ts","sig"}`, `sig` = b64url Ed25519 by
@@ -1710,7 +1786,7 @@ statics = `peer_x25519`; vectors `protocol/vectors/noise-xx-kk.json`. Prologues:
 1. decrypt; sender is a friend and not blocked (else drop, answer nothing) · 2. policy pre-check (counts only, no model):
 length, interval, message and token windows, account-wide daily total → over: `limited` once per window, count the block, stop ·
 3. inbound gate (`peer_guard.inbound`: `tg_guard` normalisation + credential rules) → a credential-looking message is not
-given to the model; the owner is told · 4. wrap as data `{"from_friend":{id,name},"untrusted":true,"text":<escaped>}` ·
+given to the model; the owner is told, and the sender gets `pack blocked` with fixed `rule:"secret_policy"` · 4. wrap as data `{"from_friend":{id,name},"untrusted":true,"text":<escaped>}` ·
 5. one turn of that friend's peer session (§17.8) → `{"decision":"reply"|"ask_owner"|"silent","text","topic"}` · 6. outbound
 gate (`peer_guard.outbound`: secret fragments of the host's own env files + never-tell list) → hit: not sent, a
 `peer_question` card says why · 7. ledger (tokens only from the harness's own usage; none → 「—」 and only message limits
@@ -1718,6 +1794,17 @@ apply) · 8. send `pmsg` / `pack`. `ask_owner` → `pack queued_for_owner` + a `
 Consecutive automatic replies to one friend without an owner action ≥ the group's `max_auto_rounds` → the last reply carries
 `end:true`, auto replies to that friend pause, and the owner gets one notice. The side that receives `end:true` keeps the message without
 a peer-session turn, tells its owner once and restarts its own count.
+
+P392: bounded whole-clause task-status questions about credential migration/rotation are allowed; a mention
+of “password” alone is not a request for its value. Each remaining clause still passes the request gate,
+including mixed Chinese/English asks; credential shapes and local secret fragments remain blocked.
+Owner `friends tell` prechecks the same deterministic inbound policy plus the existing outbound gate;
+local rejection returns `ok:false, why:"gate", rule, suggestion` without queueing. Successful CLI output
+means queued, awaiting recipient confirmation, not delivered. An authenticated remote `pack blocked`
+updates only an existing outgoing history item to `blocked`, shows fixed localized reason/rewrite advice,
+and notifies the owner once. Repeated blocks are idempotent; delayed `got` cannot erase a blocked state.
+No peer-supplied reason string is displayed. Older recipients that return `got` on rejection cannot supply
+the new rejection detail.
 
 ### 17.7 Phone ↔ host (inside §3 sessions of a paired p33 device)
 | direction | message | notes |
@@ -2735,9 +2822,9 @@ Messages (p33 sessions of a paired, ready device; answered to the asking session
 | direction | message | notes |
 |---|---|---|
 | device → host | `{"t":"jcard_list","r","lang"?}` | |
-| host → device | `{"t":"jcard_items","r","cards":[C…]}` | `C` = `{"id","name":{zh,en},"desc":{zh,en},"icon","accent","template","official","on","plus"}`; `jcard_items` also carries `colors:{id:"#rrggbb"}` — official cards first (default off), then the owner's own by apply time (default on); no paths, no messages |
+| host → device | `{"t":"jcard_items","r","cards":[C…]}` | `C` = `{"id","name":{zh,en},"desc":{zh,en},"icon","accent","template","official","on","plus"}`; `jcard_items` also carries `colors:{id:"#rrggbb"}` — official cards first (default on since P393 #129), then the owner's own by apply time (default on); no paths, no messages |
 | device → host | `{"t":"jcard_get","r","id","lang"?}` | |
-| host → device | `{"t":"jcard_get","r","ok":true,"id","template","path","text"?\|"items"?,"actions":[A…],"plus","links":[L…],"anchors":[N…],"problem"?,"cut"?}` | `notes` → legacy `text` plus `entries:[{id,text,editable}]` and SHA256 `revision`; `checklist` → `items:[{"id","text","done","acts":[A…]}]` (≤ 200); `problem` ∈ `empty` · `refused` · `unreadable` · `bad_data`; `ok:false` → `why` ∈ `not_found` · `off` |
+| host → device | `{"t":"jcard_get","r","ok":true,"id","template","path","text"?\|"items"?,"actions":[A…],"plus","links":[L…],"anchors":[N…],"problem"?,"cut"?}` | `notes` → legacy `text` plus `entries:[{id,text,editable}]` and SHA256 `revision`; `checklist` → `items:[{"id","text","done","acts":[A…]}]` (≤ 200); the official `todo` card (P394) adds `todo:{counts:{all,agent,owner}}` and per item `status` (pending · active · done · cancelled; `done` = closed), `owner`/`by` (agent · owner), `start`/`end` (null or `{kind:"at",at:<ms>,date,text}` · `{kind:"after",id,met,text}` · `{kind:"when",text}`), `note`, `source`, `created`, `finished`, `state` (overdue · due · active · ready · open · waiting · done · cancelled — the order the items come in) and `flags` (overdue · due_soon · end_met · ready · waiting · check), all redacted; `problem` ∈ `empty` · `refused` · `unreadable` · `bad_data`; `ok:false` → `why` ∈ `not_found` · `off` |
 | device → host | `{"t":"jcard_set","r","id","on"}` | one card's switch; display only |
 | host → device | `{"t":"jcard_res","r","ok","id","on"}` | serve logs `jcard_set` (device, `id:on\|off`) |
 | device → host | `{"t":"jcard_note","r","id","entry","revision","op":"edit"\|"delete","text"?}` | paired-owner direct entry edit/delete only; no phone add; no arbitrary file path |

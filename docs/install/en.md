@@ -38,6 +38,8 @@ For Windows 10 and Windows 11 (64-bit). Agent J runs in Ubuntu inside Microsoft'
 | Phone | A QR code appears: open https://m.agentj.app on **your own phone**, tap "Scan QR code" and scan it |
 | Connect the AI | Nothing: the AI must answer one real request before it is connected |
 
+> **One more option**: the AI step's menu also has item 6, 「用 OpenCode 自带的免费模型先跑起来」 (start now with OpenCode's own free model): no sign-in, no key, ready at once; your conversations and code go to OpenCode and its model provider. It prefers free models whose provider does not train on your conversations; free models are rate-limited and can disappear, so switch to a model of your own for sensitive work later (Models & Key on the phone). The other choices and the recommended default are unchanged.
+
 4. When you see "✅ 全部完成" (all done), say hello to it from your phone. To use `agentj` on the Agent J host later, open "Ubuntu" from the Start menu, not PowerShell.
 
 If something goes wrong:
@@ -117,6 +119,8 @@ For Macs with Apple silicon and Intel processors.
 | Phone | A QR code appears: open https://m.agentj.app on **your own phone**, tap "Scan QR code" and scan it |
 | Connect the AI | Nothing: the AI must answer one real request before it is connected |
 
+> **One more option**: the AI step's menu also has item 6, 「用 OpenCode 自带的免费模型先跑起来」 (start now with OpenCode's own free model): no sign-in, no key, ready at once; your conversations and code go to OpenCode and its model provider. It prefers free models whose provider does not train on your conversations; free models are rate-limited and can disappear, so switch to a model of your own for sensitive work later (Models & Key on the phone). The other choices and the recommended default are unchanged.
+
 4. When you see "✅ 全部完成" (all done), say hello to it from your phone. Afterwards `agentj status` works in **the same Terminal window**.
 
 If something goes wrong:
@@ -194,6 +198,8 @@ For Ubuntu, Debian and other common distributions, on desktops, laptops and clou
 | Agent J | Nothing: it installs, starts the background service and links this seat with the same code |
 | Phone | A QR code appears: open https://m.agentj.app on **your own phone**, tap "Scan QR code" and scan it |
 | Connect the AI | Nothing: the AI must answer one real request before it is connected |
+
+> **One more option**: the AI step's menu also has item 6, 「用 OpenCode 自带的免费模型先跑起来」 (start now with OpenCode's own free model): no sign-in, no key, ready at once; your conversations and code go to OpenCode and its model provider. It prefers free models whose provider does not train on your conversations; free models are rate-limited and can disappear, so switch to a model of your own for sensitive work later (Models & Key on the phone). The other choices and the recommended default are unchanged.
 
 4. When you see "✅ 全部完成" (all done), say hello to it from your phone. Afterwards `agentj status` works in **the same terminal window**.
 
@@ -326,7 +332,7 @@ It may need you here:
 The AI installs `agentj`, the program on the Agent J host, at one fixed version:
 
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.24.0a1#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.24.1a1#subdirectory=host"
 agentj doctor
 ```
 
@@ -358,7 +364,7 @@ Stripe's payment page shows the price in US dollars, and the merchant is AgentJ.
 
 ### Step 7: ✋ Add the Agent J host to the Agent J account
 
-First the AI asks what the Agent should be called: 1 to 32 characters — "Wren", "Shop assistant", whatever you like. Then it uses the setup code in the sentence to add the Agent J host to that seat of your account, and tells you which account it joined. Please check the account ID; if it's wrong, the AI leaves that account right away. Afterwards it deletes the temporary file that held the setup code.
+First the AI asks what the Agent should be called — "Wren", "Shop assistant", whatever you like. Length: at most 13, where each Chinese character counts 1.6 and each letter, digit, space or symbol counts 1 — up to 8 Chinese characters or 13 letters. Then it uses the setup code in the sentence to add the Agent J host to that seat of your account, and tells you which account it joined. Please check the account ID; if it's wrong, the AI leaves that account right away. Afterwards it deletes the temporary file that held the setup code.
 
 If setup instructions fail, copy the installation prompt from the same empty seat again. It issues a new seven-day single-use code and invalidates the previous unused code. The old eight-character login entry has retired; do not buy another seat to retry.
 
@@ -425,7 +431,7 @@ Then the AI asks whether it may send us a short "finished" report — how long i
 
 ### Step 13: Handover
 
-Finally the AI runs `agentj handover --lang en` and passes on, word for word, the handover note the program writes with the real facts of the Agent J host: the Agent's name, the account ID, the paired phones, https://m.agentj.app on the phone, what to do if you lose a phone (`agentj devices` to find its id, then `agentj revoke <id>`) or forget the passphrase (`agentj passphrase reset`, which unpairs every phone), updates, where "Resume", "Schedules" and "Commands" are, refunds, and that uninstalling doesn't cancel the billing. The program writes it; the AI doesn't change it or add commands.
+Finally the AI runs `agentj handover --lang en` and passes on, word for word, the handover note the program writes with the real facts of the Agent J host: the Agent's name, the account ID, the paired phones, https://m.agentj.app on the phone, what to do if you lose a phone (`agentj devices` to find its id, then `agentj revoke <id>`) or forget the remote pairing password (it is kept only on this Agent J host; with a paired phone, `agentj passphrase reset --phone` keeps every phone paired after you confirm on the phone and type the new one in the terminal; without one, `agentj passphrase reset` unpairs every phone), updates, where "Resume", "Schedules" and "Commands" are, refunds, and that uninstalling doesn't cancel the billing. The program writes it; the AI doesn't change it or add commands.
 
 It also asks whether you want the "look it up first" rule in its long-term memory. If you do, it runs `agentj docs-rule --write` itself; the program adds the rule once to the end of the AI's memory file and shows what it added. From then on, when you ask it about Agent J in a later conversation, it checks these pages first and asks us for you if they don't answer it. The Agent on your phone already knows that rule.
 

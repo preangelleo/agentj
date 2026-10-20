@@ -187,6 +187,34 @@ def _stop(proc) -> None:
         proc.stdout.close()
 
 
+def serve(exe: str, senv: dict, root: str, port: int, up_by: float, clock=time.monotonic):
+    """`opencode serve` on 127.0.0.1:<port> in `root`, once it says it listens (by `up_by`); else ProbeError. P395: shared by
+    the 2.x probe (agent_opencode2.probe) — the caller stops the process (_stop)."""
+    try:
+        proc = subprocess.Popen([exe, "serve", "--hostname", "127.0.0.1", "--port", str(port)], cwd=root, env=senv,
+                                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                start_new_session=True)
+    except OSError:
+        raise ProbeError("native_spawn_failed") from None
+    import selectors
+    try:
+        with selectors.DefaultSelector() as sel:
+            sel.register(proc.stdout, selectors.EVENT_READ)
+            buf = b""
+            while b"listening on" not in buf:
+                if clock() >= up_by or proc.poll() is not None:
+                    raise ProbeError("native_spawn_failed")
+                if sel.select(min(1.0, max(0.0, up_by - clock()))):
+                    chunk = os.read(proc.stdout.fileno(), 4096)
+                    if not chunk:
+                        raise ProbeError("native_spawn_failed")
+                    buf = (buf + chunk)[-4096:]
+    except BaseException:
+        _stop(proc)
+        raise
+    return proc
+
+
 def probe(exe: str, model: str | None, env: dict, timeout: float, *, sleep=time.sleep, clock=time.monotonic,
           waits=None) -> str:
     """One greeting through `opencode serve` with Agent J's read-only session rules, in an empty scratch folder; the
@@ -222,26 +250,7 @@ def probe(exe: str, model: str | None, env: dict, timeout: float, *, sleep=time.
             raise ProbeError("native_failed") from None
 
     try:
-        senv = opencode_env(_env(env), password)
-        try:
-            proc = subprocess.Popen([exe, "serve", "--hostname", "127.0.0.1", "--port", str(port)], cwd=root, env=senv,
-                                    stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                                    start_new_session=True)
-        except OSError:
-            raise ProbeError("native_spawn_failed") from None
-        up_by = min(deadline, clock() + START_WAIT)
-        import selectors
-        with selectors.DefaultSelector() as sel:
-            sel.register(proc.stdout, selectors.EVENT_READ)
-            buf = b""
-            while b"listening on" not in buf:
-                if clock() >= up_by or proc.poll() is not None:
-                    raise ProbeError("native_spawn_failed")
-                if sel.select(min(1.0, max(0.0, up_by - clock()))):
-                    chunk = os.read(proc.stdout.fileno(), 4096)
-                    if not chunk:
-                        raise ProbeError("native_spawn_failed")
-                    buf = (buf + chunk)[-4096:]
+        proc = serve(exe, opencode_env(_env(env), password), root, port, min(deadline, clock() + START_WAIT), clock)
         rules = session_rules([], research=True) + [_rule("webfetch", "*", "deny")]
         st, ses = call("POST", "/session", {"title": "Agent J probe", "permission": rules})
         if st != 200 or not isinstance(ses, dict) or not isinstance(ses.get("id"), str):

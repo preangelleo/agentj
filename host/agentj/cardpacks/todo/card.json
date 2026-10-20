@@ -2,14 +2,14 @@
   "$schema": "https://agentj.app/schema/agentj-card-1.json",
   "schemaVersion": 1,
   "id": "todo",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "name": {
     "zh": "待办",
     "en": "To-do"
   },
   "description": {
-    "zh": "待办清单：点一条让 Agent 标完成或撤回，新增和整理也交给它。",
-    "en": "Your to-do list: tap an item and the Agent ticks it off or reopens it; it adds and sorts items too."
+    "zh": "你和 Agent J 一起维护的待办：写明谁负责、何时开始、何时截止，做完划掉。",
+    "en": "To-dos you and Agent J keep together: who does it, when it starts, when it is due; done ones are struck through."
   },
   "author": "Agent J",
   "icon": "checklist",

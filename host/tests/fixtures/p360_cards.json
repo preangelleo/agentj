@@ -25,8 +25,8 @@
      "en": "To-do"
     },
     "desc": {
-     "zh": "待办清单：点一条让 Agent 标完成或撤回，新增和整理也交给它。",
-     "en": "Your to-do list: tap an item and the Agent ticks it off or reopens it; it adds and sorts items too."
+     "zh": "你和 Agent J 一起维护的待办：写明谁负责、何时开始、何时截止，做完划掉。",
+     "en": "To-dos you and Agent J keep together: who does it, when it starts, when it is due; done ones are struck through."
     },
     "icon": "checklist",
     "accent": "windstorm",
@@ -49,7 +49,7 @@
     "accent": "magic-carpet",
     "template": "notes",
     "official": true,
-    "on": false,
+    "on": true,
     "plus": "agentj-automation"
    },
    {
@@ -59,8 +59,8 @@
      "en": "Reading list"
     },
     "desc": {
-     "zh": "待办清单：点一条让 Agent 标完成或撤回，新增和整理也交给它。",
-     "en": "Your to-do list: tap an item and the Agent ticks it off or reopens it; it adds and sorts items too."
+     "zh": "你和 Agent J 一起维护的待办：写明谁负责、何时开始、何时截止，做完划掉。",
+     "en": "To-dos you and Agent J keep together: who does it, when it starts, when it is due; done ones are struck through."
     },
     "icon": "book",
     "accent": "magic-carpet",
@@ -136,35 +136,29 @@
     "plus": "agentj-add-todo",
     "links": [],
     "anchors": [],
+    "todo": {
+     "counts": {
+      "all": 4,
+      "agent": 0,
+      "owner": 4
+     }
+    },
     "items": [
-     {
-      "id": "t1",
-      "text": "写 Agent J Cards 规范",
-      "done": true,
-      "acts": [
-       {
-        "id": "toggle",
-        "label": "完成 / 撤回",
-        "prompt": "/agentj-add-todo toggle t1"
-       }
-      ]
-     },
-     {
-      "id": "t2",
-      "text": "做记事本和待办两张样板卡",
-      "done": true,
-      "acts": [
-       {
-        "id": "toggle",
-        "label": "完成 / 撤回",
-        "prompt": "/agentj-add-todo toggle t2"
-       }
-      ]
-     },
      {
       "id": "t3",
       "text": "iPhone 和安卓宽度各截一张图",
       "done": false,
+      "status": "pending",
+      "owner": "owner",
+      "by": "owner",
+      "start": null,
+      "end": null,
+      "note": null,
+      "source": null,
+      "created": null,
+      "finished": null,
+      "state": "open",
+      "flags": [],
       "acts": [
        {
         "id": "toggle",
@@ -177,11 +171,68 @@
       "id": "t4",
       "text": "等 Leo 拍板第二期开不开放网页卡",
       "done": false,
+      "status": "pending",
+      "owner": "owner",
+      "by": "owner",
+      "start": null,
+      "end": null,
+      "note": null,
+      "source": null,
+      "created": null,
+      "finished": null,
+      "state": "open",
+      "flags": [],
       "acts": [
        {
         "id": "toggle",
         "label": "完成 / 撤回",
         "prompt": "/agentj-add-todo toggle t4"
+       }
+      ]
+     },
+     {
+      "id": "t1",
+      "text": "写 Agent J Cards 规范",
+      "done": true,
+      "status": "done",
+      "owner": "owner",
+      "by": "owner",
+      "start": null,
+      "end": null,
+      "note": null,
+      "source": null,
+      "created": null,
+      "finished": null,
+      "state": "done",
+      "flags": [],
+      "acts": [
+       {
+        "id": "toggle",
+        "label": "完成 / 撤回",
+        "prompt": "/agentj-add-todo toggle t1"
+       }
+      ]
+     },
+     {
+      "id": "t2",
+      "text": "做记事本和待办两张样板卡",
+      "done": true,
+      "status": "done",
+      "owner": "owner",
+      "by": "owner",
+      "start": null,
+      "end": null,
+      "note": null,
+      "source": null,
+      "created": null,
+      "finished": null,
+      "state": "done",
+      "flags": [],
+      "acts": [
+       {
+        "id": "toggle",
+        "label": "完成 / 撤回",
+        "prompt": "/agentj-add-todo toggle t2"
        }
       ]
      }
@@ -297,35 +348,29 @@
     "plus": "agentj-add-todo",
     "links": [],
     "anchors": [],
+    "todo": {
+     "counts": {
+      "all": 4,
+      "agent": 0,
+      "owner": 4
+     }
+    },
     "items": [
-     {
-      "id": "t1",
-      "text": "写 Agent J Cards 规范",
-      "done": true,
-      "acts": [
-       {
-        "id": "toggle",
-        "label": "Done / undo",
-        "prompt": "/agentj-add-todo toggle t1"
-       }
-      ]
-     },
-     {
-      "id": "t2",
-      "text": "做记事本和待办两张样板卡",
-      "done": true,
-      "acts": [
-       {
-        "id": "toggle",
-        "label": "Done / undo",
-        "prompt": "/agentj-add-todo toggle t2"
-       }
-      ]
-     },
      {
       "id": "t3",
       "text": "iPhone 和安卓宽度各截一张图",
       "done": false,
+      "status": "pending",
+      "owner": "owner",
+      "by": "owner",
+      "start": null,
+      "end": null,
+      "note": null,
+      "source": null,
+      "created": null,
+      "finished": null,
+      "state": "open",
+      "flags": [],
       "acts": [
        {
         "id": "toggle",
@@ -338,11 +383,68 @@
       "id": "t4",
       "text": "等 Leo 拍板第二期开不开放网页卡",
       "done": false,
+      "status": "pending",
+      "owner": "owner",
+      "by": "owner",
+      "start": null,
+      "end": null,
+      "note": null,
+      "source": null,
+      "created": null,
+      "finished": null,
+      "state": "open",
+      "flags": [],
       "acts": [
        {
         "id": "toggle",
         "label": "Done / undo",
         "prompt": "/agentj-add-todo toggle t4"
+       }
+      ]
+     },
+     {
+      "id": "t1",
+      "text": "写 Agent J Cards 规范",
+      "done": true,
+      "status": "done",
+      "owner": "owner",
+      "by": "owner",
+      "start": null,
+      "end": null,
+      "note": null,
+      "source": null,
+      "created": null,
+      "finished": null,
+      "state": "done",
+      "flags": [],
+      "acts": [
+       {
+        "id": "toggle",
+        "label": "Done / undo",
+        "prompt": "/agentj-add-todo toggle t1"
+       }
+      ]
+     },
+     {
+      "id": "t2",
+      "text": "做记事本和待办两张样板卡",
+      "done": true,
+      "status": "done",
+      "owner": "owner",
+      "by": "owner",
+      "start": null,
+      "end": null,
+      "note": null,
+      "source": null,
+      "created": null,
+      "finished": null,
+      "state": "done",
+      "flags": [],
+      "acts": [
+       {
+        "id": "toggle",
+        "label": "Done / undo",
+        "prompt": "/agentj-add-todo toggle t2"
        }
       ]
      }

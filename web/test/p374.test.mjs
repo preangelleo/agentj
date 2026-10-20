@@ -21,7 +21,11 @@ test('the row: one switch, default off, in 账号和帮助 right after 账号和
   assert.ok(help.includes('id="set-news-row"'), 'lives in 账号和帮助');
   assert.ok(help.indexOf('id="set-account"') < help.indexOf('id="set-news-row"'), 'after the account row');
   assert.equal([...row.matchAll(/role="switch"/g)].length, 1, 'one switch, nothing else to set');
-  assert.equal([...row.matchAll(/<(button|select|input)\b/g)].length, 1, 'no other control');
+  // P393 #128: the only other controls are the e-mail step's (hidden unless this host's person has no address yet)
+  const mail = row.slice(row.indexOf('<form class="newsmail" id="set-news-mail" novalidate hidden>'), row.indexOf('</form>') + 7);
+  assert.ok(mail.length > 100, 'the e-mail step is one hidden form');
+  assert.equal([...row.replace(mail, '').matchAll(/<(button|select|input)\b/g)].length, 1, 'no other control');
+  assert.equal([...mail.matchAll(/<input\b/g)].length, 2, 'e-mail + code'); assert.equal([...mail.matchAll(/<button\b/g)].length, 4, 'send, confirm, resend, change');
   assert.match(row, /id="set-news" disabled/, 'disabled until the computer answers');
   assert.match(row, /role="switch" aria-checked="false"/, 'default off');
   assert.match(row, /data-paired/, 'only with a paired computer');
@@ -37,9 +41,9 @@ test('the row: one switch, default off, in 账号和帮助 right after 账号和
 test('wire = contract §5: news_get / news_set {on} → news_res; asked once per opening; ~8 s host budget', () => {
   assert.match(news, /ask1\(\{ t: 'news_get' \}, 'news_res', WAIT_MS\)/);
   assert.match(news, /ask1\(\{ t: 'news_set', on: want \}, 'news_res', WAIT_MS\)/);
-  assert.equal([...news.matchAll(/ask1\(/g)].length, 2, 'no other message');
+  assert.equal([...news.matchAll(/ask1\(/g)].length, 4, 'no other message (P393 #128 adds news_email / news_verify)');
   assert.match(news, /export const WAIT_MS = 10000;/);
-  assert.match(news, /const PROBLEMS = \['unlinked', 'not_bound', 'unreachable', 'rate_limited', 'fail'\];/);
+  assert.match(news, /const PROBLEMS = \['unlinked', 'not_bound', 'unreachable', 'rate_limited', 'fail', 'need_email', 'invalid_code', 'bad_email', 'account_email', 'mail_failed'\];/);
   assert.match(news, /if \(S\.state === 'wait' \|\| S\.busy\) return;/, 'a second open while one is out sends nothing');
   assert.match(settings, /import \* as news from '\.\/news\.js';/);
   assert.match(settings, /if \(H\.paired\(\)\) news\.load\(\);/, 'open() asks');
@@ -54,8 +58,10 @@ test('behaviour: revert + P302 card on failure, unlinked → account link, e-mai
   assert.match(news, /noticeSheet\(t\('p302\.prefTitle'\), text, t\('p302\.ok'\)\)/, 'the P302 centred card');
   assert.match(news, /else if \(m\.t === 'timeout'\) S\.state = 'old';/, 'no news_res on open = a computer before P374');
   assert.match(news, /why = m\.t === 'timeout' \? 'noanswer' : 'offline'/, 'no answer to a write = reverted + said');
-  assert.match(news, /el\('set-news-acct'\)\.hidden = !\(S\.state === 'problem' && \(S\.problem === 'unlinked' \|\| S\.problem === 'not_bound'\)\)/);
-  assert.match(news, /to\.hidden = !\(S\.state === 'ok' && S\.on && \(S\.email \|\| queued\)\);/, 'the e-mail / queue line only when on');
+  assert.match(news, /el\('set-news-acct'\)\.hidden = !\(S\.state === 'problem' && \(S\.problem === 'unlinked' \|\| S\.problem === 'not_bound' \|\| S\.problem === 'account_email'\)\)/);
+  // P393 #128: … or right after this host's address was confirmed (still off: 「发到 x」 = where it will go)
+  assert.match(news, /to\.hidden = !\(S\.state === 'ok' && !M\.need && \(S\.on \|\| M\.verified\) && \(S\.email \|\| queued\)\);/, 'the e-mail / queue line only when on');
+  assert.match(news, /S\.state = 'wait'; M\.verified = false;/, 'a fresh opening forgets the just-confirmed line');
   assert.match(news, /S\.queued = S\.on \? posInt\(m\.queued\) : 0;/, 'a queue place only while on, a positive integer');
   assert.match(news, /queued \? t\('p374\.queued', \{ n: String\(S\.queued\), seats: String\(S\.seats\) \}\) : t\('p374\.sentTo'/, 'all seats taken → the queue line');
   assert.match(news, /to\.textContent = /, 'host text is text, never markup');
@@ -71,8 +77,8 @@ test('dictionaries: contract copy, both languages, same placeholders, no emoji',
     for (const s of [zh[k], en[k]]) assert.doesNotMatch(s, /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u, k);
   }
   assert.equal(zh['p374.label'], 'Daily AI News'); assert.equal(en['p374.label'], 'Daily AI News');
-  assert.equal(zh['p374.help'], '每天早上把 Agent J 的 Daily Agent 整理的《Musk + AI 24h》（中文）发到你的账号邮箱，看看一个每日自动化能做成什么样。随时可关。');
-  assert.equal(en['p374.help'], 'Every morning, the “Musk + AI 24h” digest our Daily Agent writes (in Chinese) lands in your account email — see what a daily automation can do. Turn it off any time.');
+  assert.equal(zh['p374.help'], '每天早上把 Agent J 的 Daily Agent 整理的《Musk + AI 24h》（中文）发到用这台 Agent J 的人自己的邮箱，看看一个每日自动化能做成什么样。随时可关。');
+  assert.equal(en['p374.help'], 'Every morning, the “Musk + AI 24h” digest our Daily Agent writes (in Chinese) lands in the inbox of whoever uses this Agent J — see what a daily automation can do. Turn it off any time.');
   assert.equal(zh['p374.sample'], '看一封样例'); assert.equal(en['p374.sample'], 'See a sample');
   assert.equal(zh['p374.sentTo'], '发到 {email}'); assert.equal(en['p374.sentTo'], 'Sent to {email}');
   assert.equal(zh['p374.unlinked'], '先把这台 Agent J 主机连上 Agent J 账号。');

@@ -41,7 +41,7 @@
   /* palette entries this page uses that brand/palette.css does not carry (leo-palette.json names, same hex) */
   --milky-waves:#71bbde;               /* Heavy blue — the accent (the retired Assassin's successor) */
   --strawberry-field:#f7827e;          /* Heavy red — danger on a dark surface */
-  --lama:#dbb293;                      /* Heavy brown — the 「Agent J」 menu card on the Noir canvas (P302) */
+  --lama:#dbb293;                      /* Heavy brown (P302 「Agent J」 card fill until P393 #132 made it Noir + Lotion) */
   /* P340 (owner 10-16: 「logo 和底色相同……heavy 的颜色上字体不能用黑色，要用我们指定的白色」): the action fill is ONE pair.
      The fill is the logo green, so the robot mark (whose body IS that green) never stands on it bare: it gets a Lotion disc
      (the header orb's look). Text on it is Lotion — 深底必白字. test/p340_contrast.test.mjs + p340_contrast.mjs hold it. */
@@ -508,7 +508,12 @@ body:is([data-view="mem"],[data-view="act"],[data-view="tasks"],[data-view="mode
 .set-find{flex:none;padding:var(--sp-3);background:var(--menu-bg);max-height:45%;overflow:auto}
 .set-find[hidden]{display:none}
 #set-find-input{width:100%;min-height:var(--ui-tap);background:var(--menu-card);color:var(--menu-text);border:1px solid var(--menu-line)}
-.set-found{outline:2px solid var(--menu-accent);outline-offset:-2px}
+.set-found{outline:2px solid var(--menu-accent);outline-offset:-2px;animation:set-found 2.4s ease-out}
+@media (prefers-reduced-motion:reduce){.set-found{animation:none}}
+@keyframes set-found{0%,40%{background-color:color-mix(in srgb,var(--menu-accent) 22%,transparent)}100%{background-color:transparent}}
+/* P393: the Settings search filters the page itself — rows / sections that do not match step aside while the field has words */
+#set-main[data-find] [data-find-out]{display:none!important}
+#set-find-results .set-hit{min-height:var(--ui-tap)}
 .setup-assist{display:flex;align-items:center;justify-content:center;gap:var(--ui-space-control);width:100%;min-height:64px;padding:var(--sp-3);background:var(--ui-action-bg);color:var(--ui-action-fg);border:0;border-radius:var(--ui-radius-control);font:inherit;font-weight:700;cursor:pointer}
 /* P340: the robot on the green action = on its Lotion disc (as in the header orb), never green on green */
 .setup-assist img,.setimsg .imsg-assist img{flex:none;box-sizing:border-box;width:40px;height:40px;padding:4px;background:var(--ui-mark-disc);border-radius:50%;object-fit:contain;image-rendering:pixelated}
@@ -751,6 +756,17 @@ body:not([data-view="chat"]) #set-actions .bulb{display:flex}
    A switch that cannot be used yet (asking, older computer, not linked) dims only itself — the words keep full contrast. */
 #set-news-row .setlinks[hidden],#set-news-row .setnote[hidden],#set-news-row a[hidden]{display:none}
 #set-news:disabled{opacity:.45}
+/* P393 (backlog 128): no address yet → the e-mail step under the switch: field + button on one line (stacked on a phone), the
+   「重新发送」 countdown / 「换一个邮箱」 as text buttons. Existing input / button looks; sizes follow the font scale. */
+#set-news-row .newsmail{grid-column:1 / -1;margin:var(--ui-space-control) 0 0;display:flex;flex-direction:column;gap:var(--ui-space-control)}
+#set-news-row .newsmail[hidden],#set-news-row .newsmail [hidden]{display:none}
+#set-news-row .newsmail__row{display:flex;align-items:center;gap:var(--ui-space-control);margin:0}
+#set-news-row .newsmail__row .aj-input{flex:1 1 auto;min-width:0;max-width:24rem;font-size:max(16px,var(--ui-fs-body))}
+#set-news-row .newsmail__row .aj-btn{flex:none;min-height:var(--ui-tap)}
+#set-news-row #set-news-code{max-width:16rem;font-variant-numeric:tabular-nums}
+#set-news-row #set-news-code:not(:placeholder-shown){letter-spacing:.2em}
+#set-news-row .newsmail__again{gap:0 var(--ui-space-control)}
+@media (max-width:420px){ #set-news-row .newsmail__row{flex-wrap:wrap} #set-news-row .newsmail__row .aj-input{flex-basis:100%;max-width:none} }
 
 /* P380: the finished command result can be dismissed without affecting its signed execution. */
 #settings .rscmdstatus{display:flex;align-items:center;gap:var(--ui-space-btn)}
@@ -760,3 +776,19 @@ body:not([data-view="chat"]) #set-actions .bulb{display:flex}
 #settings #rs-restart{margin-block:var(--ui-space-control)}
 #settings #rs-restart[data-state="ok"]{color:var(--c-sooty);--menu-muted:var(--c-sooty);--menu-text:var(--c-sooty);--text:var(--c-sooty)}
 #settings #rs-restart[data-state="ok"] .aj-btn{color:var(--c-sooty);border-color:var(--c-sooty)}
+
+/* P392: palette Emerald Oasis / Strawberry Red; dot remains visible in the fixed header. */
+.setconnection{display:flex;align-items:center;gap:6px;font-size:12px;line-height:1.3;max-width:160px;color:var(--c-strawberry-field)}
+.setconnection::before{content:"";width:9px;height:9px;border-radius:50%;background:currentColor;flex-shrink:0}
+.setconnection[data-online="true"]{color:var(--c-lotion)}
+.setconnection[data-online="true"]::before{background:var(--c-shield)}   /* P393: the dot keeps the green; 12 px words on Noir need 4.5:1 (Shield is 4.3) */
+@media(max-width:520px){.setconnection{max-width:9px;font-size:0;gap:0}.sethead .setesc{display:none}}
+
+body:has(#settings:not([hidden])) .toast{position:fixed;z-index:90}
+
+/* P393: a drop inside the five-second window is only a dot — amber 「正在重新连接…」, never the red line; ended repair results
+   carry the P380 × on their first line and fold to one summary line (their log under 「详情」). */
+.setconnection[data-online="pending"]{color:var(--c-peachy-feeling)}
+#settings .rshead2>p{margin:0}
+#settings .rssum{font-weight:600}
+#settings .rsnext code{overflow-wrap:anywhere}

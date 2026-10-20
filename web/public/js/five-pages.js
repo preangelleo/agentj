@@ -92,7 +92,10 @@ let shown=0;
 function render(){renderNow();settleRobots($('five-body'));
  // P363 (#70): the company a link opened stands right under the header, open — once (later renders keep the owner's scroll)
  if(pinScroll&&pic&&current==='workflows')pinTo(20);
+ if(current==='card')return;   // P393: a card page says its count once its records are drawn (cardFind)
  const b=$('five-find');if(b)PF.say(b,findQ.trim()&&pic?(shown?t('p363.cards',{n:shown}):t('p363.none')):'');}
+// P393 (#124): a card page's search = its own records (jcards.filter), in place — no new jcard_get per keystroke
+function cardFind(){const b=$('five-find');if(current!=='card'||!b)return;const r=jc.filter($('five-body'),findQ);PF.say(b,findQ.trim()?(r.n?t(r.unit==='hit'?'p363.hits':'p393.entries',{n:r.n}):t('p363.none')):'');}
 // the list may still be growing (robots, the computer's fresh list): try for a few frames until the card is in place
 function pinTo(n){requestAnimationFrame(()=>{const c=$('five-body').querySelector('.fp-card[data-open]'),page=$('five-page');if(!c||!pinScroll||page.hidden||current!=='workflows'){if(n>0&&pinScroll&&!page.hidden)pinTo(n-1);return;}
  const d=c.getBoundingClientRect().top-page.querySelector('.fp-sticky').getBoundingClientRect().bottom-12;page.scrollTop+=d;if(Math.abs(d)<2||n<=0)pinScroll=false;else pinTo(n-1);});}
@@ -104,13 +107,13 @@ export function find(){
  if($('five-menu')&&!$('five-menu').hidden)return PF.openIn($('five-menu'),'p363.findCards');
  if(!$('five-page')||$('five-page').hidden||current==='chat')return false;
  const b=$('five-find');if(!b.hidden){closeFind();return true;}
- PF.label(b,FIND_PH[current]||'p363.findPage');b.hidden=false;const i=b.querySelector('input');i.focus();i.select();return true;}
+ PF.label(b,FIND_PH[current]||(current==='card'?'p393.findCard':'p363.findPage'));b.hidden=false;const i=b.querySelector('input');i.focus();i.select();return true;}
 // Esc / the magnifier again: the query goes and every card is back; the next Esc leaves the page (layers, rank 4 > page 3)
-function closeFind(){const b=$('five-find');if(!b)return false;const was=!b.hidden||!!findQ;const q=findQ;dropFind();if(q&&current!=='chat')render();if(document.activeElement===b.querySelector('input'))$('srchBtn')?.focus();return was;}
+function closeFind(){const b=$('five-find');if(!b)return false;const was=!b.hidden||!!findQ;const q=findQ;dropFind();if(q&&current==='card')cardFind();else if(q&&current!=='chat')render();if(document.activeElement===b.querySelector('input'))$('srchBtn')?.focus();return was;}
 function dropFind(){findQ='';const b=$('five-find');if(!b)return;b.hidden=true;b.querySelector('input').value='';PF.say(b,'');}
 export const findOpen=()=>!!$('five-find')&&!$('five-find').hidden&&!$('five-page').hidden;
 function renderNow(){shown=0;const body=$('five-body'),bar=$('five-bar');body.replaceChildren();bar.replaceChildren();bar.hidden=true;$('five-title').textContent=names().find(x=>x[0]===current)?.[1]||'';
- if(current==='card'){jc.render(body,selected,{title:x=>{$('five-title').textContent=x;},say,draft:x=>{go('chat');H.insert(x);},nav:openJlink,at:anchor});anchor=null;return;}   // P360
+ if(current==='card'){jc.render(body,selected,{title:x=>{$('five-title').textContent=x;},drawn:()=>{if(findQ.trim())cardFind();},say,draft:x=>{go('chat');H.insert(x);},nav:openJlink,at:anchor});anchor=null;return;}   // P360
  if(!pic){empty(isReady()&&!peer.wf1?t('p244.fivepages11'):t('p244.fivepages12'));return;}
  if(current==='workflows'){
   body.append(node('p',`${pic.root_name} · ${pic.counts.wdb} ${t('p244.fivepages13')} · ${pic.counts.busy} ${t('p244.fivepages14')}`,'fp-meta'),orgBar());
@@ -243,7 +246,7 @@ export function init(h){H=h;$('cardPlus')?.addEventListener('click',plusCard);
  const mo=window.MutationObserver&&new MutationObserver(syncPlus);mo?.observe(document.body,{attributes:true,attributeFilter:['data-view','data-five-page','data-conn']});
  // 搜索 on the card wall searches the chat: the wall steps aside first
  $('srchBtn')?.addEventListener('click',()=>{if($('five-menu')&&!$('five-menu').hidden)go('chat');},true);jc.onChange(()=>{syncPlus();if($('five-menu')&&!$('five-menu').hidden)buildDeck(false);});const page=node('section');page.id='five-page';page.hidden=true;const head=node('header',undefined,'fp-header');head.append(iconButton('back',t('p299.back'),()=>go('chat')));const title=node('h1');title.id='five-title';head.append(title,iconButton('reload',t('p299.reload'),refresh));const body=node('div');body.id='five-body';
- const stick=node('div',undefined,'fp-sticky'),bar=node('div',undefined,'fp-bar');bar.id='five-bar';bar.hidden=true;const fbox=PF.field('five-find','p363.findWf');fbox.querySelector('input').addEventListener('input',e=>{findQ=e.target.value;render();page.scrollTop=0;});stick.append(head,bar,fbox);page.append(stick,body);
+ const stick=node('div',undefined,'fp-sticky'),bar=node('div',undefined,'fp-bar');bar.id='five-bar';bar.hidden=true;const fbox=PF.field('five-find','p363.findWf');fbox.querySelector('input').addEventListener('input',e=>{findQ=e.target.value;if(current==='card'){page.scrollTop=0;cardFind();return;}render();page.scrollTop=0;});stick.append(head,bar,fbox);page.append(stick,body);
  if(window.ResizeObserver)new ResizeObserver(()=>page.style.setProperty('--fp-sticky-h',Math.round(stick.getBoundingClientRect().height)+'px')).observe(stick);
  const menu=node('section');menu.id='five-menu';menu.hidden=true;menu.setAttribute('role','dialog');menu.setAttribute('aria-label',t('p244.fivepages42'));menu.onclick=e=>{if(e.target===menu)closeMenu();};
  const sheet=node('section');sheet.id='five-detail';sheet.hidden=true;sheet.setAttribute('role','dialog');sheet.setAttribute('aria-label',t('p244.fivepages43'));

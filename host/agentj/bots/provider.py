@@ -49,9 +49,9 @@ def _valid(url,model,api,key,name):
 # plans are for the owner's own use (the owner's scheduled tasks may use the Coding Plan: fence.PLAN_KEY_ENV). The owner
 # adds a pay-as-you-go key instead (「主人自带模型 key」, the phone's secret card). Hosts / path prefixes of ark.json and
 # bailian.json (test_p348 checks every address there is caught).
-PLAN_URLS=(('ark.cn-beijing.volces.com','/api/coding'),('coding.dashscope.aliyuncs.com',''),('token-plan.cn-beijing.maas.aliyuncs.com',''),
+PLAN_URLS=(('ark.cn-beijing.volces.com','/api/coding'),('ark.cn-beijing.volces.com','/api/plan'),('coding.dashscope.aliyuncs.com',''),('token-plan.cn-beijing.maas.aliyuncs.com',''),
          ('api.kimi.com','/coding'),('api.kimi.ai','/coding'))   # + Kimi For Coding (agent_kimi.CODING_BASE, ai_route.json)
-PLAN_PROVIDERS=('ark-coding-plan','bailian-coding-plan','bailian-token-plan-personal','kimi-code-plan-cn','kimi-code-plan-global')
+PLAN_PROVIDERS=('ark-coding-plan','ark-agent-plan','bailian-coding-plan','bailian-token-plan-personal','kimi-code-plan-cn','kimi-code-plan-global')
 
 def coding_plan(url='',model=''):
     """True when a model address or an OpenCode `provider/model` belongs to a Coding Plan / Token Plan."""

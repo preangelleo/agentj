@@ -263,31 +263,32 @@ def helper_for(st, device: str) -> bool:
     return s["installed"] and s["channel"] == st.config()["channel"] and device in s["devices"]
 
 
-def run(req: dict, timeout: int, sudo: str | None = None, helper_cmd: list[str] | None = None) -> dict:
+def run(req: dict, timeout: int, sudo: str | None = None, helper_cmd: list[str] | None = None, cancel=None) -> dict:
     """serve → `sudo -n <helper>` with the signed request on stdin (no password anywhere)."""
     import subprocess
-    from .elevate import sudo_bin, _cap
+    from .elevate import sudo_bin, _cap, collect_command
     sudo = sudo or sudo_bin()
     if not sudo:
         return {"result": "no_sudo", "code": None, "stdout": "", "stderr": "", "truncated": False}
     env = {k: v for k, v in os.environ.items() if k in ("PATH", "HOME", "USER", "LOGNAME", "TZ")}
     env.update(LC_ALL="C", LANG="C")
     try:
-        p = subprocess.run([sudo, "-n", "--", *(helper_cmd or HELPER_CMD)], input=json.dumps(req).encode(), capture_output=True,
-                           env=env, cwd="/", timeout=timeout)
-    except subprocess.TimeoutExpired as e:
-        o, t1 = _cap(e.stdout or b"")
-        er, t2 = _cap(e.stderr or b"")
-        return {"result": "timeout", "code": None, "stdout": o, "stderr": er, "truncated": t1 or t2}
+        p = subprocess.Popen([sudo, "-n", "--", *(helper_cmd or HELPER_CMD)], stdin=subprocess.PIPE,
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, cwd="/", start_new_session=True)
+        out, err, timed_out, overflow = collect_command(p, timeout, cancel, bytearray(json.dumps(req).encode()))
+        if timed_out:
+            o, t1 = _cap(out)
+            er, t2 = _cap(err)
+            return {"result": "timeout", "code": None, "stdout": o, "stderr": er, "truncated": overflow or t1 or t2}
     except OSError:
         return {"result": "no_sudo", "code": None, "stdout": "", "stderr": "", "truncated": False}
-    o, t1 = _cap(p.stdout)
-    er, t2 = _cap(p.stderr)
-    if p.returncode == 126 and b"agentj-elevate: refused" in p.stderr:
+    o, t1 = _cap(out)
+    er, t2 = _cap(err)
+    if p.returncode == 126 and b"agentj-elevate: refused" in err:
         return {"result": "failed", "why": "helper_refused", "code": None, "stdout": "", "stderr": er, "truncated": False}
-    if p.returncode == 1 and b"a password is required" in p.stderr:
+    if p.returncode == 1 and b"a password is required" in err:
         return {"result": "failed", "why": "helper_missing", "code": None, "stdout": "", "stderr": "", "truncated": False}
-    return {"result": "done", "code": p.returncode, "stdout": o, "stderr": er, "truncated": t1 or t2}
+    return {"result": "done", "code": p.returncode, "stdout": o, "stderr": er, "truncated": overflow or t1 or t2}
 
 
 # ---------------------------------------------------------------- CLI: agentj sudo-helper install | sync | uninstall | status

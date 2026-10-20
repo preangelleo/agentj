@@ -2,6 +2,7 @@ import copy
 import json
 from pathlib import Path
 import tempfile
+import threading
 import unittest
 from unittest.mock import patch
 from agentj import keep_awake as k, elevate, doctor, main_identity
@@ -123,7 +124,9 @@ class SocketFlows(unittest.TestCase):
 
     def test_host_owned_policy_uses_signed_phone_card_and_readback(self):
         current = {'system':'macos','sleep':{'ac':20,'battery':5},'awake':False}
-        def apply(argv,password,cwd,timeout,sudo):
+        def apply(argv,password,cwd,timeout,sudo,cancel):
+            self.assertIsInstance(cancel, threading.Event)
+            self.assertFalse(cancel.is_set())
             self.assertEqual(argv, ['/usr/bin/pmset','-c','sleep','0'])
             self.assertEqual(bytes(password).decode(), f17.PW)
             current['sleep']['ac']=0

@@ -276,6 +276,7 @@ try {
 
       fake.setUp(false);
       await waitState(p, 'waiting-host');
+      await waitFor(p, `document.getElementById('status').textContent === ${JSON.stringify(ZH['st.hostDown'])}`, 8000).catch(() => {});   // P393: after the five-second window
       check((await text(p, '#status')) === ZH['st.hostDown'], `${tag}: host down → ${ZH['st.hostDown']}`);
       fake.setUp(true);
       await waitState(p, 'ready');
@@ -493,6 +494,7 @@ try {
       await fake.send({ t: 'status', s: 'idle', agent: 'claude', name: NAME });
       fake.setUp(false);
       await waitState(p, 'waiting-host');
+      await waitFor(p, `document.getElementById('status').textContent === ${JSON.stringify(L['st.hostDown'])}`, 8000).catch(() => {});   // P393: after the five-second window
       check((await text(p, '#status')) === L['st.hostDown'], `${tag}: offline status in ${lang}`);
       await shot('22-computer-offline');
       fake.setUp(true);

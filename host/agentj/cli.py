@@ -29,6 +29,7 @@ import contextlib
 import json
 import os
 import re
+import secrets
 import signal
 import sys
 import threading
@@ -658,6 +659,7 @@ def _set_passphrase_interactive(st: State, change: bool) -> None:
     print("遥控器配对密码：在这台Agent J 主机的终端配对，或者在别的Agent J 主机的浏览器上批准新遥控器时，用它证明是你。只有你知道——别告诉 Agent，"
           "也别让 Agent 替你设。/ The remote pairing password proves it's you when pairing at this terminal or approving a new "
           "remote from a browser on another computer. Only you know it: never tell an Agent, never let one set it.", flush=True)
+    print(PASS_WHERE, flush=True)
     new = _secret(f"新的遥控器配对密码（至少 {gate.MIN_LEN} 个字符）：")
     if _secret("再输一次：") != new:
         sys.exit("✗ " + gate.MESSAGES["mismatch"])
@@ -668,12 +670,17 @@ def _set_passphrase_interactive(st: State, change: bool) -> None:
     print("✓ 遥控器配对密码已保存。/ remote pairing password saved.")
 
 
+PASS_WHERE = ("它只存在这台Agent J 主机上（我们的服务器上没有），请自己记好；已绑定账号的Agent J 主机在账户页席位卡上加手机，用不到它；忘了就在这台Agent J 主机上"
+              "重设（`agentj passphrase reset --phone`：已配对手机确认，所有手机保持配对）。\nIt is kept only on this Agent J host (never on "
+              "our server), so note it somewhere safe. An Agent J host bound to the account adds phones from the account-page seat card "
+              "without it. Forgot it? Reset it on this Agent J host (`agentj passphrase reset --phone`: a paired phone confirms, every "
+              "phone stays paired).")
 PASS_OFFER = ("要不要现在设一个遥控器配对密码？（可选，推荐）它用于在别的Agent J 主机或浏览器上批准新遥控器的最后一步，也是在这台Agent J 主机的终端里配对时"
               "必须的。不设也能用这台Agent J 主机的浏览器完成首次配对（账户页 → 添加遥控器 → 通行密钥），但将来所有遥控器都失效时，可能要回到这台"
-              "Agent J 主机的终端设它。\nSet a remote pairing password now? (Optional, recommended.) It is the last step when approving a new "
+              "Agent J 主机的终端设它。它只存在这台Agent J 主机上。\nSet a remote pairing password now? (Optional, recommended.) It is the last step when approving a new "
               "remote from another computer or browser, and it is required to pair at the Agent J host's terminal. You can skip it "
               "and pair the first remote in the Agent J host's browser (account page → Add a remote → passkey), but if every remote "
-              "is ever lost you may have to come back to this terminal to set it.")
+              "is ever lost you may have to come back to this terminal to set it. It is kept only on this Agent J host.")
 PASS_OFFER_SKIPPED = ("已跳过。以后随时在这台Agent J 主机的终端运行 `agentj passphrase set` 设置。/ Skipped. Set it any time with "
                       "`agentj passphrase set` in a terminal on the Agent J host.")
 
@@ -714,8 +721,13 @@ def cmd_passphrase(a) -> None:
         if not gate.is_set(st):
             sys.exit(gate.MESSAGES["not_set"])
         _set_passphrase_interactive(st, change=True)
+    elif a.mode == "reset" and getattr(a, "phone", False):
+        _passphrase_reset_phone(st)
     elif a.mode == "reset":
         n = len(st.devices())
+        if n:                    # #118: with a paired remote the owner can keep them all
+            print("想保留所有遥控器：改用 `agentj passphrase reset --phone`，在已配对手机上确认即可。/ To keep every remote, run "
+                  "`agentj passphrase reset --phone` and confirm on a paired phone.", flush=True)
         print(f"忘了遥控器配对密码：重置会删除它，并吊销本机全部 {n} 台遥控器（之后用新密码重新配对）。", flush=True)
         if input("确认重置？输入 RESET 回车：").strip() != "RESET":
             sys.exit("没有重置。")
@@ -735,6 +747,70 @@ def cmd_passphrase(a) -> None:
         left = gate.lock_left(st)
         print(("已设置" + (f"（锁定中，还要 {max(1, left // 60)} 分钟）" if left else "")) if gate.is_set(st)
               else "还没设置：运行 `agentj passphrase set`")
+
+
+PASS_PHONE_ERR = {
+    "no_device": "没有已配对的遥控器可以确认：改用 `agentj passphrase reset`（会吊销全部遥控器）。/ No paired remote can confirm: "
+                 "use `agentj passphrase reset` (unpairs every remote).",
+    "not_set": gate.MESSAGES["not_set"],
+    "denied": "手机上拒绝了：遥控器配对密码没变。/ Denied on the phone: nothing changed.",
+    "timeout": "5 分钟内没人在手机上确认：遥控器配对密码没变。/ Nobody confirmed on a phone in 5 minutes: nothing changed.",
+    "stopped": "已急停（全部停下）：先恢复再重设。/ Everything is stopped: resume first.",
+    "busy": "已经有一张重设卡片在等手机确认。/ A reset card is already waiting on the phones.",
+    "ticket": "确认已过期：重新运行 `agentj passphrase reset --phone`。/ The confirmation expired: run it again.",
+}
+
+
+def _passphrase_reset_phone(st: State) -> None:
+    """#118 (pass_reset.py): a paired remote confirms, the owner types the new password HERE, every remote stays paired."""
+    from . import ctl_auth, pass_reset
+    if set(os.environ) & set(ctl_auth.AGENT_ENV) or not sys.stdin.isatty():
+        sys.exit("✗ 只有主人能在自己的终端里重设遥控器配对密码，Agent 和脚本做不了。/ Only the owner, typing in their own "
+                 "terminal, can reset the remote pairing password — not an Agent or a script.")
+    if not gate.is_set(st):
+        sys.exit("✗ " + gate.MESSAGES["not_set"])
+    if not st.devices():
+        sys.exit("✗ " + PASS_PHONE_ERR["no_device"])
+    code = f"{secrets.randbelow(10 ** 6):06d}"
+    print(f"已在已配对的手机上发出确认卡片，对照码 {code[:3]} {code[3:]}。请在手机上核对后确认（5 分钟内；有通行密钥的手机要验证本人）。\n"
+          f"A card went to your paired phones with match code {code[:3]} {code[3:]}. Check it and confirm there (within 5 "
+          f"minutes; a phone with a passkey asks you to verify it's you).", flush=True)
+    try:
+        res = names.ctl_call(st, {"cmd": "passphrase_consent", "code": code}, pass_reset.CARD_TTL + 30)
+    except names.ServeBusy:
+        sys.exit("✗ agentj serve 在运行但没有响应：没有重设。/ agentj serve is running but not answering: nothing changed.")
+    if res is None:
+        sys.exit("✗ agentj serve 没在运行，手机收不到卡片。先启动服务（`agentj service start`），或改用 `agentj passphrase reset`"
+                 "（会吊销全部遥控器）。/ agentj serve is not running, so no phone can confirm.")
+    if not res.get("ok"):
+        if res.get("error") in ("claim_required", "claim_refused"):
+            sys.exit("✗ " + _ctl_refused_msg(res))
+        sys.exit("✗ " + PASS_PHONE_ERR.get(res.get("error"), "没有重设 / nothing changed"))
+    print(f"✓ 「{res.get('by') or '?'}」已确认。现在在这里输入新的遥控器配对密码（只存在这台Agent J 主机上）。/ Confirmed on the phone. "
+          "Type the new remote pairing password here (it is kept only on this Agent J host).", flush=True)
+    for _ in range(3):
+        new = _secret(f"新的遥控器配对密码（至少 {gate.MIN_LEN} 个字符）：")
+        if _secret("再输一次：") != new:
+            print("✗ " + gate.MESSAGES["mismatch"], flush=True)
+            continue
+        try:
+            gate.check_new(new)
+        except gate.GateError as e:
+            print("✗ " + _gate_msg(e), flush=True)
+            continue
+        try:
+            out = names.ctl_call(st, {"cmd": "passphrase_replace", "ticket": res["ticket"], "new": new}, 30)
+        except names.ServeBusy:
+            sys.exit("✗ agentj serve 没有响应：没有重设。/ agentj serve is not answering: nothing changed.")
+        if out and out.get("ok"):
+            print(f"✓ 遥控器配对密码已重设，{out.get('kept', 0)} 台遥控器都保持配对。/ Remote pairing password reset; every "
+                  "remote stays paired.")
+            return
+        if out and out.get("error") == "passphrase":
+            print("✗ " + gate.MESSAGES.get(out.get("reason"), "没有重设"), flush=True)
+            continue
+        sys.exit("✗ " + PASS_PHONE_ERR.get((out or {}).get("error"), "没有重设 / nothing changed"))
+    sys.exit("✗ 没有重设：遥控器配对密码没变。/ Nothing changed.")
 
 
 def _name_or_unset(st: State) -> str:
@@ -757,6 +833,8 @@ def cmd_name(a) -> None:
         print(f"✓ Agent 名改为「{res['name']}」（{where}）")
         return
     msg = names.RENAME_MESSAGES.get(res["error"], "名字没改")
+    if res["error"] == "name_too_long":
+        msg = names.too_long_message(a.name)                 # P393: how long it is against the limit
     if res["error"] == "name_taken" and res["suggestions"]:
         msg += "。可以试试：" + "、".join(f"「{x}」" for x in res["suggestions"])
     elif res["error"] == "name_taken":
@@ -1185,7 +1263,7 @@ def _link_line(st: State) -> str:
     link = cloud.read_cloud(st)
     if not link:
         return "Agent J 账号：还没加入（`agentj login`）/ not in an Agent J account yet"
-    via = "用设置码加入 / joined with a setup code" if link["via"] == "seat" else "用Agent J 主机绑定码加入 / joined with a computer binding code"
+    via = "用设置码加入 / joined with a setup code" if link["via"] == "seat" else "用Agent J 主机绑定码加入 / joined with a host binding code"
     return f"Agent J 账号：{link['tenant']['slug']}（{link['tenant']['name']}）· {via}"
 
 
@@ -1214,7 +1292,7 @@ _POLL_NOTES = {"slow_down": "服务器要求放慢，轮询间隔 +5 秒", "time
 
 SEAT_FILE_MAX = 256
 # exit codes of `agentj login --seat` (seat setup §4.1); everything else is 1 like `agentj login`, 2 = refused locally
-SEAT_EXIT = {"name_taken": 3, "invalid_setup": 4, "payment_required": 5, "bad_code": 2, "bad_name": 2, "name_required": 2}
+SEAT_EXIT = {"name_taken": 3, "invalid_setup": 4, "payment_required": 5, "billing_busy": 6, "bad_code": 2, "bad_name": 2, "name_required": 2}
 
 
 def _read_seat_code(a) -> str:
@@ -1293,7 +1371,7 @@ def _read_paste(prompt: str) -> str:
 
 PASTE_PROMPT = ("有账户页给的设置码（ajt_…）或安装码（AJI-…）就粘贴在这里回车（不显示；整段提示词也行，会自动取出码）；\n"
                 "没有就直接回车，改用Agent J 主机绑定码。 / Paste a setup code (ajt_…) or installation code (AJI-…) and press Enter "
-                "(hidden; a whole prompt is fine). No code? Just press Enter to use a computer binding code instead.\n> ")
+                "(hidden; a whole prompt is fine). No code? Just press Enter to use a host binding code instead.\n> ")
 
 
 def _paste_login(st: State, a, forced: bool) -> bool:
@@ -1321,8 +1399,7 @@ def _seat_login(st: State, a) -> None:
     if given:
         from .text import new_agent_name_problem
         if new_agent_name_problem(a.name) == "name_too_long":   # P154: a new name must be short; the kept one is not re-checked
-            _refuse(names.RENAME_MESSAGES["name_too_long"] + " / Name too long: up to 8 CJK characters or 13 others "
-                    "(mixed: CJK counts 1.6, others 1, at most 13)")
+            _refuse(names.too_long_message(a.name))             # P393: says how long the given name is against the limit
     # P214 (Leo 10-13): no --name is no longer an error — the code is read first (it may be the stdin of `--seat -`), then the
     # name: asked at a terminal (Enter = the kept name, else the Agent J host's host name), the default otherwise.
     code = _read_seat_code(a)
@@ -1362,7 +1439,7 @@ def _seat_login(st: State, a) -> None:
         return
     msgs = {
         "bad_code": "设置码格式不对（应是 ajt_ 加 43 个字符）：从那句话里原样复制 / not a setup code (ajt_ + 43 characters): copy it exactly",
-        "bad_name": "Agent 名不合规（1–32 个字，不能有控制字符）/ bad Agent name (1–32 characters, no control characters)",
+        "bad_name": "Agent 名不合规（不能有控制字符、不可见字符或换行）/ bad Agent name (no control or invisible characters, no line breaks)",
         "name_required": "Agent 名不能为空 / the Agent name is required",
         "name_taken": "这个账号里已经有叫这个名字的 Agent 了，换一个 / this account already has an Agent with that name",
         "invalid_setup": "设置码无效、已用过、已过期或已被作废——请向管理员要一个新的 / "
@@ -1371,6 +1448,13 @@ def _seat_login(st: State, a) -> None:
         "already_bound": "账号后台里这台Agent J 主机还挂在别的地方：先请账号的管理员在账号后台把它移除 / "
                          "the Agent J host is still listed in an account dashboard: the owner removes it there first",
         "rate_limited": "尝试太频繁，过一小时再试 / too many attempts: try again within the hour",
+        # P393: these two used to read as already_bound ("remove it in the dashboard first") — wrong advice for both
+        "billing_busy": "账单正在处理中（比如刚在账号后台加了席位），这时不能绑定新的 Agent J 主机。设置码没有用掉，请几分钟后再运行一次；"
+                        "一个多小时后还是这样，请联系账号的管理员 / a billing change is being processed for this account (for example, "
+                        "seats were just added), so no Agent J host can be added right now. The setup code is still unused: run this "
+                        "again in a few minutes; if it still says this after an hour or so, contact the account owner",
+        "server_error": "Agent J 服务器这次出错了，没有绑定，设置码也没有用掉，请稍后再试 / the Agent J server hit an error: nothing "
+                        "was bound and the setup code is still unused. Try again later",
     }
     msg = "✗ " + msgs.get(s, f"绑定失败 / bind failed（{res.get('http')}{' ' + res['error'] if res.get('error') else ''}）")
     if s == "name_taken" and res.get("suggestions"):
@@ -1498,8 +1582,9 @@ def cmd_login(a) -> None:
         # P214 (Leo 10-13): name the code and the exact place — an owner put it into the passkey box (「通行密钥转移码」).
         page = cloud.dashboard_uri(app, lg["verification_uri"])
         page = page if "#" in page else page.rstrip("/") + "/#add-agent"
-        print(f"Agent J 主机绑定码：{lg['user_code']}（{mins} 分钟内有效，只能用一次） / Computer binding code", flush=True)
-        print(f"到账户页「Agent（席位）→ 添加 Agent」填这个Agent J 主机绑定码：{page}", flush=True)
+        print(f"Agent J 主机绑定码：{lg['user_code']}（{mins} 分钟内有效，只能用一次） / Host binding code", flush=True)
+        # P389 (#110): the code fills one seat; its box is in each empty seat card of the account page
+        print(f"到账户页一张空席位卡的「已经装好 Agent J？用 Agent J 主机绑定码」里填它，这台Agent J 主机就绑到那个席位：{page}", flush=True)
         print("  / On the account page open Agent (seats) → Add an Agent and enter it there."
               " 它不是通行密钥转移码，不要填到「登录与安全」里 / It is not a passkey transfer code.", flush=True)
         print("看一下账户页显示的通道号和上面一样，再点添加。等待中……（Ctrl-C 取消）", flush=True)
@@ -1593,32 +1678,75 @@ NEWS_PROBLEM = {   # P374: why `agentj news` did not work — (zh, en)
     "unreachable": ("连不上 Agent J 账号后台，稍后再试", "Could not reach the Agent J account dashboard; try again later"),
     "unsupported": ("账号后台还不支持这个设置，请在账号后台的设置里改", "The account dashboard does not offer this here yet; change it in the dashboard's settings"),
     "fail": ("没办成", "That did not work"),
+    # P393 #128: the digest goes to this Agent J host's own person; a seat with no e-mail yet confirms one with a code
+    "need_email": ("这台 Agent J 的新闻发到你自己的邮箱，但还没有邮箱：`agentj news email <你的邮箱>` 收验证码，"
+                   "再 `agentj news verify <你的邮箱> <验证码>`",
+                   "This Agent J host's news goes to your own email, and there is none yet: `agentj news email <your email>` "
+                   "sends a code, then `agentj news verify <your email> <code>`"),
+    "account_email": ("这台 Agent J 用的是你账号的邮箱：要换邮箱请在账号后台的设置里改",
+                      "This Agent J host uses your account's email: change it in the account dashboard's settings"),
+    "bad_email": ("这个邮箱地址不对，检查一下再试", "That email address does not look right; check it and try again"),
+    "invalid_code": ("验证码不对或已过期：重新 `agentj news email <你的邮箱>` 收一个新的",
+                     "The code is wrong or expired: run `agentj news email <your email>` for a new one"),
+    "mail_failed": ("验证码邮件没发出去，过一会儿再试", "The code email could not be sent; try again in a while"),
 }
 
 
 def cmd_news(a) -> None:
-    """P374 `agentj news [status|on|off] [--json]`: the account's Daily AI News (the daily 「Musk + AI 24h」 digest, in Chinese,
-    to the account e-mail; default off) — the same signed call as the phone's switch."""
+    """P374 `agentj news [status|on|off] [--json]`: this Agent J host's Daily AI News (the daily 「Musk + AI 24h」 digest, in
+    Chinese; default off) — the same signed call as the phone's switch. P393 #128: the digest goes to the seat's own person;
+    `agentj news email <address>` mails a code to confirm one when the seat has none, `agentj news verify <address> <code>`
+    confirms it. The e-mail and the code are never logged."""
     st = State()
     _need_init(st)
     en = _lang(st) == "en"
-    on = {"on": True, "off": False}.get(a.mode)
+    args = [str(x).strip() for x in (getattr(a, "args", None) or [])]
+    want = {"email": 1, "verify": 2}.get(a.mode, 0)
+    if len(args) != want:
+        usage = {"email": "agentj news email <address>", "verify": "agentj news verify <address> <code>"}.get(
+            a.mode, f"agentj news {a.mode}")
+        print(("usage: " if en else "用法：") + usage, file=sys.stderr)
+        raise SystemExit(2)
     try:
-        res = cloud.news(st, on)
+        if a.mode == "email":
+            res = cloud.news_email(st, args[0], "en" if en else "zh")
+        elif a.mode == "verify":
+            res = cloud.news_verify(st, args[0], args[1])
+        else:
+            res = cloud.news(st, {"on": True, "off": False}.get(a.mode))
     except Exception:  # noqa: BLE001 — a bad key / state read: one line, never a traceback
         res = cloud.NewsResult("fail", status="error")
-    st.log("news_cli", status=res.kind, http=res.status, **({"on": res.on} if res.kind == "ok" else {}))
+    st.log("news_cli", mode=a.mode, status=res.kind, http=res.status, **({"on": res.on} if res.kind == "ok" else {}))
     if a.json:
-        out = ({"ok": True, "on": res.on, "email": res.email, "sample_url": res.sample_url, "queued": res.queued, "seats": res.seats}
-               if res.kind == "ok" else
-               {"ok": False, "problem": cloud.news_problem(res.kind), "status": res.status})
+        if res.kind == "sent":
+            out = {"ok": True, "sent": True, "expires_in": res.expires_in}
+        elif cloud.news_is_state(res):
+            out = {"ok": True, "on": res.on, "email": res.email, "sample_url": res.sample_url, "queued": res.queued,
+                   "seats": res.seats, **({"need_email": True} if res.kind == "need_email" else {})}
+        else:
+            out = {"ok": False, "problem": cloud.news_problem(res.kind), "status": res.status,
+                   **({"retry_after": res.retry_after} if res.retry_after else {})}
         print(json.dumps(out, ensure_ascii=False))
-        if res.kind != "ok":
+        if not out["ok"]:
             raise SystemExit(1)
+        return
+    if res.kind == "sent":
+        mins = max(1, (res.expires_in or 600) // 60)
+        print(f"Code sent to {args[0]} (good for {mins} minutes). Then: agentj news verify {args[0]} <code>" if en else
+              f"验证码已发到 {args[0]}（{mins} 分钟内有效）。收到后运行：agentj news verify {args[0]} <验证码>")
+        return
+    if res.kind == "need_email" and cloud.news_is_state(res):
+        print("Daily AI News: off — " + NEWS_PROBLEM["need_email"][1] if en else
+              "Daily AI News：关 — " + NEWS_PROBLEM["need_email"][0])
+        if res.sample_url:
+            print(f"See a sample: {res.sample_url}" if en else f"看一封样例：{res.sample_url}")
         return
     if res.kind != "ok":
         zh, enm = NEWS_PROBLEM.get(res.kind, NEWS_PROBLEM["fail"])
         sys.exit("✗ " + (enm if en else zh) + (f" ({res.status})" if res.status and res.kind in ("unreachable", "fail") else ""))
+    if a.mode == "verify":
+        print(f"Confirmed: this Agent J host's Daily AI News goes to {res.email}." if en else
+              f"已确认：这台 Agent J 的 Daily AI News 发到 {res.email}。")
     seats = res.seats or 500
     if res.on and res.queued:
         print(f"Daily AI News: on — all {seats} seats are taken; you are number {res.queued} on the waiting list. When someone "
@@ -1626,13 +1754,13 @@ def cmd_news(a) -> None:
               f"Daily AI News：开 — 名额 {seats} 个已满，你在候补第 {res.queued} 位。有人退订会自动补上，并发邮件到 {res.email} 告诉你。")
     elif en:
         print(f"Daily AI News: on — sent to {res.email}" if res.on else
-              "Daily AI News: off. `agentj news on` sends the \"Musk + AI 24h\" digest our Daily Agent writes (in Chinese) "
-              "to your account email every morning.")
+              f"Daily AI News: off. `agentj news on` sends the \"Musk + AI 24h\" digest our Daily Agent writes (in Chinese) "
+              f"to {res.email} every morning.")
         if res.sample_url:
             print(f"See a sample: {res.sample_url}")
     else:
         print(f"Daily AI News：开 — 发到 {res.email}" if res.on else
-              "Daily AI News：关。`agentj news on` 每天早上把 Agent J 的 Daily Agent 整理的《Musk + AI 24h》（中文）发到你的账号邮箱。")
+              f"Daily AI News：关。`agentj news on` 每天早上把 Agent J 的 Daily Agent 整理的《Musk + AI 24h》（中文）发到 {res.email}。")
         if res.sample_url:
             print(f"看一封样例：{res.sample_url}")
 
@@ -2331,12 +2459,21 @@ def cmd_asr(a) -> None:
     from . import asr
     st = State()
     _need_init(st)
+    from . import preferences
     args=list(a.args or [])
-    if len(args)==2 and args[0]=='engine':
-        from . import preferences
+    if len(args) in (2,3) and args[0]=='engine' and set(args[2:]) <= {'--force'}:
         selected={'auto':'sensevoice','sherpa':'sensevoice','voxtype':'voxtype','off':'off'}.get(args[1])
+        if selected=='voxtype':   # P393 (#120): some desktops ship voxtype as English-only Whisper unless the human changed it
+            go,line=asr.voxtype_guard('--force' in args)
+            if line:print(line)
+            if not go:sys.exit(2)
         if selected:sys.exit(preferences.command(['set','voice.asr.engine',selected]))
-    sys.exit(asr.cli_main(args, state_dir=st.root))
+    # P393: status / test follow the same engine setting as serve, doctor and the phone (voice.asr.engine)
+    try:
+        override=preferences.get(preferences.effective(st),'voice.asr.engine')
+    except Exception:  # noqa: BLE001 — unreadable preferences: config.json's asr.engine alone, as before
+        override=None
+    sys.exit(asr.cli_main(args, state_dir=st.root, engine_override=override))
 
 
 def cmd_config(a) -> None:
@@ -3235,19 +3372,26 @@ def main(argv=None) -> None:
                            "paste a setup or installation code at the prompt (hidden, out of argv; a whole prompt works). "
                            "Plain `agentj login` at a terminal asks first too")
     seat.add_argument("--install-code-file", metavar="PATH", help="从 0600 文件读取 AJI 安装码，给已安装的Agent J 主机绑定席位 / bind an installed host using an AJI code in a private file")
-    lo.add_argument("--name", help="和 --seat 一起：本机 Agent 的名字（1–32 个字；不给就在终端里问，回车或非交互时用主机名，重名自动加序号）/ "
-                                   "with --seat: the Agent's name (1–32 characters; if omitted it is asked, Enter or no terminal = "
+    lo.add_argument("--name", help="和 --seat 一起：本机 Agent 的名字（长度最多 13：中文每个字算 1.6，其他字符每个算 1，即纯中文最多 8 个字、"
+                                   "纯英文最多 13 个字母；不给就在终端里问，回车或非交互时用主机名，重名自动加序号）/ "
+                                   "with --seat: the Agent's name (length at most 13: each Chinese character counts 1.6, any other "
+                                   "character 1, i.e. up to 8 Chinese characters or 13 letters; if omitted it is asked, Enter or no terminal = "
                                    "the host name, numbered on a clash). "
                                    "退出码 / exit: 3 名字已占用 name taken · 4 设置码无效 invalid code · 5 席位未付费 seat not paid · "
+                                   "6 账单处理中，几分钟后重试 billing change in progress, retry in a few minutes · "
                                    "2 本地拒绝 refused locally")
     lo.set_defaults(fn=cmd_login)
-    sub.add_parser("unlink", help="把这台 Agent J 主机移出 Agent J 账号（删掉这台 Agent J 主机上的账号记录）/ take the Agent J host out of the Agent J account").set_defaults(fn=cmd_unlink)
-    nw = sub.add_parser("news", help="Daily AI News：每天早上把《Musk + AI 24h》（中文）发到账号邮箱（默认关）：status · on · off / "
-                                     "the daily \"Musk + AI 24h\" digest (in Chinese) to the account email (default off)")
-    nw.add_argument("mode", nargs="?", choices=["status", "on", "off"], default="status")
+    sub.add_parser("unlink", help="把这台Agent J 主机移出 Agent J 账号（删掉这台Agent J 主机上的账号记录）/ take the Agent J host out of the Agent J account").set_defaults(fn=cmd_unlink)
+    nw = sub.add_parser("news", help="Daily AI News：每天早上把《Musk + AI 24h》（中文）发到这台 Agent J 主机的使用者自己的邮箱（默认关）："
+                                     "status · on · off；还没有邮箱时 email <邮箱> 收验证码、verify <邮箱> <验证码> 确认 / "
+                                     "the daily \"Musk + AI 24h\" digest (in Chinese) to the email of this Agent J host's own user "
+                                     "(default off); with no email yet, email <address> sends a code and verify <address> <code> "
+                                     "confirms it")
+    nw.add_argument("mode", nargs="?", choices=["status", "on", "off", "email", "verify"], default="status")
+    nw.add_argument("args", nargs="*", metavar="arg", help="email <邮箱>；verify <邮箱> <验证码> / email <address>; verify <address> <code>")
     nw.add_argument("--json", action="store_true", help="机器可读输出 / machine-readable output")
     nw.set_defaults(fn=cmd_news)
-    rh = sub.add_parser("report-hostname", help="账号后台是否显示这台 Agent J 主机的名字（默认显示）/ show the Agent J host's name in the account dashboard")
+    rh = sub.add_parser("report-hostname", help="账号后台是否显示这台Agent J 主机的名字（默认显示）/ show the Agent J host's name in the account dashboard")
     rh.add_argument("mode", nargs="?", choices=["on", "off", "status"], default="status")
     rh.set_defaults(fn=cmd_report_hostname)
     rp = sub.add_parser("remote-pair", help="允许从账户页或已配对的遥控器添加遥控器（默认开）/ allow pairing from the account page or a paired remote")
@@ -3288,9 +3432,10 @@ def main(argv=None) -> None:
     ag.add_argument("--preset", choices=["ark"],
                     help="switch opencode：ark =「OpenCode · 火山方舟」——探测 OpenCode / arkcli、缺 key 给密钥卡命令、写方舟服务商、实测一次才切 "
                          "/ ark = OpenCode on Volcano Ark: detect, key card if missing, write the provider, one real call before switching")
-    ag.add_argument("--plan", choices=["coding", "payg"],
-                    help="--preset ark：coding = Coding Plan 套餐（…/api/coding/v3，只给编程 Agent 用）· payg = 按量付费（…/api/v3）"
-                         " / coding = the Coding Plan address (coding agents only) · payg = pay-as-you-go /api/v3")
+    ag.add_argument("--plan", choices=["agent", "coding", "payg"],
+                    help="--preset ark：agent = Agent Plan 套餐（默认，…/api/plan/v3）· coding = Coding Plan 套餐（…/api/coding/v3，只给编程 Agent 用）"
+                         "· payg = 按量付费（…/api/v3） / agent = the Agent Plan (default) · coding = the Coding Plan address (coding agents"
+                         " only) · payg = pay-as-you-go /api/v3")
     ag.add_argument("--unfenced", action="store_true",
                     help="不隔离运行 Agent（按底层 harness 自己的权限）。默认 Agent 在 bubblewrap 里运行，看不到 Agent J 的状态")
     ag.add_argument("--allow-docker", action="store_true",
@@ -3301,8 +3446,12 @@ def main(argv=None) -> None:
     smx.add_argument("--independent", dest="session_mode", action="store_const", const="independent",
                      help="独立会话（默认）：Agent J 自己开一个、在隔离里运行 / independent session (the default): Agent J's own, fenced")
     ag.set_defaults(fn=cmd_agent)
-    pp = sub.add_parser("passphrase", help="遥控器配对密码：set 设置 · change 修改 · reset 忘了（会吊销全部遥控器）· status · offer（安装结束时问一句，回车跳过）")
+    pp = sub.add_parser("passphrase", help="遥控器配对密码（只存在这台Agent J 主机上）：set 设置 · change 修改 · reset 忘了（会吊销全部遥控器；"
+                        "加 --phone 由已配对手机确认、保留全部遥控器）· status · offer（安装结束时问一句，回车跳过）")
     pp.add_argument("mode", nargs="?", choices=["set", "change", "reset", "status", "offer"], default="status")
+    pp.add_argument("--phone", action="store_true",
+                    help="与 reset 一起：已配对手机确认后在终端输入新密码，全部遥控器保持配对 / with reset: a paired phone "
+                         "confirms, you type the new password here, every remote stays paired")
     pp.add_argument("--json", action="store_true", help="与 offer 一起：最后一行输出 JSON（安装脚本用）")
     pp.set_defaults(fn=cmd_passphrase)
     ap = sub.add_parser("approvals", help="手机批准记录（approvals.log；不含命令内容，只有哈希）")

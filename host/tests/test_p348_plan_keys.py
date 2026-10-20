@@ -53,7 +53,8 @@ class TaskEnvironment(unittest.TestCase):
                 self.assertNotIn(PAYG, blob)          # pay-as-you-go keys stay native-storage only, as before
                 self.assertNotIn(MOONSHOT, blob)
         self.assertEqual(set(fence.PLAN_KEY_ENV), {"ARK_CODING_PLAN_API_KEY", "BAILIAN_CODING_PLAN_API_KEY",
-                                                   "BAILIAN_TOKEN_PLAN_API_KEY", "KIMI_API_KEY"})
+                                                   "BAILIAN_TOKEN_PLAN_API_KEY", "KIMI_API_KEY",
+                                                   "ARK_AGENT_PLAN_API_KEY"})     # P395
 
     def test_bots_and_default_get_no_plan_key(self):
         for kind in ("opencode", "qwen", "claude", "codex"):

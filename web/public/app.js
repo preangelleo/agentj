@@ -58,6 +58,7 @@ import { applyTheme } from './js/theme.js';  // P169 (§23): the owner's theme (
 import * as shotclip from './js/shotclip.js'; // P154: a screenshot copied on a computer → the attachment tray
 import * as offline from './js/offline-card.js'; // P168: the disconnected card (blur + gdlg square, feedback@ after 30 min)
 import { hintKey, hostKind, HINT_AFTER_MS } from './js/offhint.js';   // P287: the offline line under 「电脑离线」
+import { createGate, DOWN_DEBOUNCE_MS } from './js/reconnect.js';   // P393: the five-second rule (one constant for every 「连不上」)
 import { parseAgentId } from './proto/wire.js';
 import { SCAN_CONSTRAINTS, SCAN_FALLBACK, SCAN_SLOW_MS, scanFrame } from './js/scan.js';   // F29 (ADR-A177)
 import { classifyScan, RV_PREFIX } from './proto/wire.js';
@@ -167,21 +168,33 @@ let statusKey = ['st.idle'];
 // P129: a drop from a ready session is first retried silently. For up to QUIET_MS the screen keeps looking connected (no
 // grey page, no 「正在恢复连接…」, no stale line) while the session reconnects underneath; sends already go to the offline
 // queue (connected() reads `state`, which is updated at once). Only a reconnect that takes longer is shown.
-const QUIET_MS = 6000;
-let quietTimer = 0, painted = 'idle';
+// P393: the window is the link gate (js/reconnect.js): DOWN_DEBOUNCE_MS of foreground time, started again when the page
+// comes back to the front; the relay's 「Agent J 主机离线」 waits it out too. During it only the dots say so (data-relink).
+const QUIET_MS = DOWN_DEBOUNCE_MS;
+let quietPaint = false, painted = 'idle';
+const link = createGate({ ms: QUIET_MS, onChange: (v) => {
+  document.body.toggleAttribute('data-relink', v === 'quiet');
+  if (v === 'quiet') offline.hush();
+  if (v === 'down') { quietPaint = false; paintStatus(); rescue.onLinkDown(); }
+  else settings.connectionChanged(state === 'ready', v === 'quiet');
+} });
+/** Foreground / resume / network change: a drop that is not over gets a fresh silent window (no flash on unlock). */
+function wakeLink() { link.restart(); }
 let downSince = 0, hintTimer = 0, knownHost = { plat: null, boot: null };   // P287: see paintOffHint
 function setStatus(s, key, vars) {
   state = s;
   statusKey = [key, vars];
   if (s === 'ready' || s === 'idle' || s === 'revoked') downSince = 0;
   else if (s === 'waiting-host' && key === 'st.hostDown' && !downSince) downSince = Date.now();
-  // The relay saying the computer itself is offline (st.hostDown) on a steady session is news: shown at once. Right after
-  // our own drop it is not (a relay deploy or restart drops both ends; the computer is back a second after the page).
-  if ((s === 'connecting' || (s === 'waiting-host' && (key !== 'st.hostDown' || quietTimer))) && (painted === 'ready' || quietTimer)) {
-    if (!quietTimer) { quietTimer = setTimeout(() => { quietTimer = 0; paintStatus(); }, QUIET_MS); relay.connLost(); offline.dropped(); }
-    return;
+  // P393: the relay saying the computer itself is offline (st.hostDown) waits out the window like our own drop does (a
+  // relay deploy, a phone back from the lock screen: the computer is back a second later).
+  const down = s === 'connecting' || s === 'waiting-host';
+  if (down && (painted === 'ready' || quietPaint)) {
+    if (link.drop()) { quietPaint = true; relay.connLost(); offline.dropped(); }
+    if (quietPaint) return;
   }
-  clearTimeout(quietTimer); quietTimer = 0;
+  if (down && PAIRED_VIEWS.includes(view) && link.drop()) offline.dropped();   // a paired page starting without a link
+  if (!down) { quietPaint = false; link.up(); }
   paintStatus();
 }
 function paintStatus() {
@@ -195,6 +208,7 @@ function paintStatus() {
   snap.S.conn = on;
   $('meta').hidden = !on;
   relay.setConn(on, st.textContent);
+  settings.connectionChanged(on, !on && link.state() === 'quiet');
   paintOffHint();
   renderLogo();
   rerender();
@@ -203,7 +217,7 @@ function paintStatus() {
 }
 // P168: what the disconnected card should do for the painted state + view (offline-card.js update()).
 function offMode() {
-  if (quietTimer || (painted === 'idle' && PAIRED_VIEWS.includes(view))) return null;   // quiet window / boot: no news yet
+  if (link.state() === 'quiet' || (painted === 'idle' && PAIRED_VIEWS.includes(view))) return null;   // quiet window / boot: no news yet
   if (painted === 'ready') return 'ready';
   if (['idle', 'pairing', 'awaiting-approval', 'revoked'].includes(painted)) return 'gone';
   return (painted === 'connecting' || painted === 'waiting-host') && PAIRED_VIEWS.includes(view) ? 'down' : 'other';
@@ -297,7 +311,7 @@ let lastSeq = 0;
 function onHostGone() {
   snap.S.asks.clear(); snap.S.qs.clear(); snap.S.order = [];   // the host re-sends every request still open after ready
   controls.clearGrants();
-  elevate.clear();                                    // F17: the host re-sends open sudo / secret cards after ready
+  // P392: retain pending/running ids until authoritative cards sync or a terminal receipt.
   contacts.clear({ keepForward: true });              // P184: open contact cards come again after ready
   secretout.clear({ keepOpened: true });              // F32: and open pickup cards (a value on screen stays)
   longtask.clear();                                   // 0.18: the host re-sends open opening cards after ready
@@ -350,6 +364,7 @@ session.configure({
     if (pendingRv) { const c = pendingRv; pendingRv = null; rvpair.approve(c).catch(() => {}); }
     api.myDeviceId().then(() => rerender());
     relay.onReady();
+    cmdrun.onReady();                                 // P393: 「连不上」 on the command card turns into 「已恢复连接」
     rescue.onReady();                                 // P332: rescue mode on / off; a repair that dropped the link and came back
     if (!session.peer.rescue) {                       // P332: the rescue watchdog answers nothing else — ask it nothing else
       fivePages.refresh();
@@ -380,12 +395,14 @@ controls.configure({ show, estopChanged: () => { relay.onEstop(); rerender(); },
 bots.configure({openPanel:controls.openPanel});
 setupcard.configure({ openPanel: controls.openPanel, view: () => view });   // P131: the checklist page + chat banner
 friends.configure({ openPanel: controls.openPanel, leave: () => leavePage(), agentName: () => agentName ?? DEFAULT_NAME });
+elevate.configure({ recover: () => cardsync.sync() }); // P392: no circular module dependency
 contacts.configure({ openSettingsMail: () => settings.openMail() });   // P184: no mailbox yet → Settings → 邮件通道
 upgcard.configure({ upgrade: () => api.upgradeNow() });   // P203: 「现在升级」 = this phone's signed /update
 authrescue.configure({ openAuth: () => settings.openAuth() });   // P288: the chat's 「现在续期」 banner → Settings → AI 登录救援
 qresume.configure();                                           // P314: ✕ on the quota banner = qr_cancel
 rescue.configure({                                             // P332: 紧急修复 — the block, ≡ 重置连接, /reset, the banner
   openSettings: () => settings.openRescue(),
+  linkState: () => (session.isReady() ? 'up' : link.state() === 'quiet' ? 'quiet' : 'down'),   // P393: wait out a blink
   toChat: () => { settings.close(); if (controls.panel !== 'chat') controls.openPanel('chat'); },
 });
 api.setUpgradeFlow(() => upgcard.start());                 // ≡ /update and Settings ask the computer first
@@ -417,8 +434,11 @@ function onApp(m) {
     case 'rescue': rescue.onRescue(m); return;          // P332 (§33): the rescue watchdog answers instead of Agent J
     case 'reset_done': rescue.onDone(m); return;        // P332: a repair's end that reached this remote without its request
     case 'reset_step': return;                          // (steps of another remote's repair: its own card shows them)
+    case 'elev_progress': elevate.progress(m); return;
     case 'elev_done': elevate.done(m); return;
     case 'elev_refused': elevate.refused(m); return;   // ADR-A163: Face ID not accepted, the card stays open
+    case 'elev_grants': elevate.grants(m); return;     // #116 (§11.1): 10-minute same-class approvals + 「收回授权」
+    case 'elev_auto': elevate.auto(m); return;         // #116: ran under that approval, no card
     case 'ct_card': contacts.card(m); return;         // P184 (§25): save / complete a contact (the owner's tap)
     case 'ct_card_done': contacts.cardDone(m); return;
     case 'ct_card_err': contacts.cardErr(m); return;
@@ -1203,11 +1223,14 @@ function wire() {
     startPairing(l);
   });
   // relay's revive: back online or back in the foreground → reconnect at once (no waiting out the backoff)
-  addEventListener('online', session.reconnectNow);
+  addEventListener('online', () => { wakeLink(); session.reconnectNow(); });
   addEventListener('online', ticketWhenIdle);         // P122: a ticket restore that could not reach the origin, again
-  window.addEventListener('pageshow', (e) => { if (e.persisted) session.reconnectNow(); });
+  window.addEventListener('pageshow', (e) => { wakeLink(); if (e.persisted) session.reconnectNow(); });
+  document.addEventListener('resume', () => { wakeLink(); session.reconnectNow(); });   // P393: a frozen page thawed
+  navigator.connection?.addEventListener?.('change', () => { if (!document.hidden) { wakeLink(); session.reconnectNow(); } });   // P393: Wi-Fi ↔ mobile data
   document.addEventListener('visibilitychange', () => {
     const fg = document.visibilityState === 'visible';
+    if (fg) wakeLink();                                // P393: back in front — reconnect silently for a fresh five seconds
     if (session.isReady()) session.sendApp({ t: 'vis', fg }).catch(() => {});   // the host pushes only while hidden
     if (fg) session.reconnectNow();
     if (fg && session.isReady()) cardsync.sync();   // P203: back in front on a live session — cards sent while frozen

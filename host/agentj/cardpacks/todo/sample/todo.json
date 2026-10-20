@@ -1,6 +1,47 @@
 {
-  "items": [
-    {"id": "t1", "text": "试一下：点这一条，让 Agent 把它标成完成 / Try it: tap this item and let the Agent tick it off", "done": false},
-    {"id": "t2", "text": "在设置 → Cards 里看看还有哪些卡 / See the other cards in Settings → Cards", "done": true}
-  ]
+ "schema": 2,
+ "items": [
+  {
+   "id": "t1",
+   "text": "试一下：点这一条，让 Agent 把它标成完成 / Try it: tap this item and let the Agent tick it off",
+   "owner": "owner",
+   "status": "pending",
+   "done": false,
+   "start": null,
+   "end": null,
+   "by": "agent",
+   "source": null,
+   "note": null,
+   "created": null,
+   "finished": null
+  },
+  {
+   "id": "t2",
+   "text": "Agent J 答应你的后续事项也记在这里，责任人是 Agent J / What Agent J promises to do later is kept here too, with Agent J as owner",
+   "owner": "agent",
+   "status": "pending",
+   "done": false,
+   "start": null,
+   "end": null,
+   "by": "agent",
+   "source": null,
+   "note": null,
+   "created": null,
+   "finished": null
+  },
+  {
+   "id": "t3",
+   "text": "在设置 → Cards 里看看还有哪些卡 / See the other cards in Settings → Cards",
+   "owner": "owner",
+   "status": "done",
+   "done": true,
+   "start": null,
+   "end": null,
+   "by": "agent",
+   "source": null,
+   "note": null,
+   "created": null,
+   "finished": null
+  }
+ ]
 }

@@ -4,7 +4,7 @@ import { bindReaderSwipe } from './reader-swipe.js';
 import { DOUBLE_MS as RD_DTAP_MS, TAP_MS as RD_TAP_MS, TAP_PX as RD_TAP_PX, PAIR_PX as RD_PAIR_PX } from './file-gestures.js';
 import { linkify } from './five-pages.js';
 import { capAbove, sheetCeil, wireCeil } from './fit.js';
-import { registerLayer } from './layers.js';
+import { registerLayer, activeLayer } from './layers.js';
 import { applyViewport, watchViewport } from './viewport.js';
 import { historyDoubleTap, longPress as cornerLongPress } from './history-corners.js';   // P179 (P165: renamed — P181's longpress.js owns longPress)
 import { open as openRename } from './dev-rename.js';
@@ -337,6 +337,7 @@ function paintTags(item){
   const box = el("askTags"); box.replaceChildren();
   if (item && item.kind === "permission"){
     if (item.tool === "pair_device") { const s = document.createElement("span"); s.className = "atag danger"; s.textContent = t(item.passkey_required ? "pair.card.tagFace" : "pair.card.tag"); box.appendChild(s); }   // P153
+    else if (item.tool === "passphrase_reset") { const s = document.createElement("span"); s.className = "atag danger"; s.textContent = t(item.passkey_required ? "ppReset.tagFace" : "ppReset.tag"); box.appendChild(s); }   // #118
     else if (item.passkey_required) { const s = document.createElement("span"); s.className = "atag danger"; s.textContent = t("ask.sandboxOnce"); box.appendChild(s); }
     else if (item.cats && item.cats.length) for (const c of item.cats){ const s = document.createElement("span"); s.className = "atag danger"; s.dataset.cat = c; s.textContent = t('ask.cat.' + catKey(c, item)); box.appendChild(s); }
     else if (item.goal !== "grant" && item.goal !== "attack") { const s = document.createElement("span"); s.className = "atag low"; s.textContent = t('ask.low'); box.appendChild(s); }   // P339: an attack card is never tagged low
@@ -447,10 +448,11 @@ function renderPermission(card, p){
   el("cmdBox").hidden = false; el("qs").hidden = true;
   el("askCancel").hidden = true; el("askSend").hidden = true;
   const tool = (p && p.tool) || (card && card.tool_name) || "?";
-  const pairAsk = !!(p && p.tool === "pair_device");   // P153 (§3.3): a new remote waits; the host wrote the card text
+  const ppAsk = !!(p && p.tool === "passphrase_reset");   // #118: reset the remote pairing password; the host wrote the text
+  const pairAsk = !!(p && p.tool === "pair_device") || ppAsk;   // P153 (§3.3): a new remote waits; the host wrote the card text
   const danger = !!(p && (p.passkey_required || pairAsk || (p.cats && p.cats.length) || p.goal === "attack"));
   el("sheet").classList.toggle("danger", danger);
-  el("sheetTitle").textContent = pairAsk ? t("pair.card.title") : p && p.passkey_required ? t("ask.sandboxTitle") : danger ? t('r.verb.danger', {verb: verb(tool)}) : verb(tool);
+  el("sheetTitle").textContent = ppAsk ? t("ppReset.title") : pairAsk ? t("pair.card.title") : p && p.passkey_required ? t("ask.sandboxTitle") : danger ? t('r.verb.danger', {verb: verb(tool)}) : verb(tool);
   // P339: a goal card the host put in plain words — 「目标进行中：{who} 想{what}…」, the three lines under it, and the raw
   // command (tool tag, 展开全部, description) folded behind 「详情」 (closed for every new card).
   const human = goalHuman(p);
@@ -480,8 +482,8 @@ function renderPermission(card, p){
   el("apprDeny").disabled = apprBusy;
   el("apprAllow").hidden = !p || p.local_only;
   el("apprAllow").disabled = apprBusy;
-  el("apprAllowLbl").textContent = pairAsk ? t(p.passkey_required ? 'pair.card.allowFace' : 'pair.card.allow') : p && p.passkey_required ? t('ask.sandboxOnce') : t('r.appr.hold');   // P154 追加 9: 「长按批准」 on every card, ⚠ cards too — the room goes to the ⌘↩ hint
-  el("apprDeny").firstElementChild.textContent = pairAsk ? t('pair.card.deny') : t('r.appr.deny');
+  el("apprAllowLbl").textContent = ppAsk ? t(p.passkey_required ? 'ppReset.allowFace' : 'ppReset.allow') : pairAsk ? t(p.passkey_required ? 'pair.card.allowFace' : 'pair.card.allow') : p && p.passkey_required ? t('ask.sandboxOnce') : t('r.appr.hold');   // P154 追加 9: 「长按批准」 on every card, ⚠ cards too — the room goes to the ⌘↩ hint
+  el("apprDeny").firstElementChild.textContent = ppAsk ? t('r.appr.deny') : pairAsk ? t('pair.card.deny') : t('r.appr.deny');
   const kbd = apprKbd();                                       // P154 追加 2: ⌘↩ / Ctrl↩ on a computer only
   el("apprKbd").textContent = kbd; el("apprKbd").hidden = !kbd;
   if (kbd) el("apprAllow").setAttribute("aria-keyshortcuts", IS_MAC ? "Meta+Enter" : "Control+Enter");
@@ -495,7 +497,7 @@ function renderPermission(card, p){
   const text = p ? (open && !sign ? t('ask.noSign') : open && apprFail && apprFail.id === p.id ? apprFail.text : apprText(p)) : "";
   el("askState").hidden = !text;
   el("askState").textContent = text;
-  el("elsewhereText").textContent = pairAsk && open ? t('pair.card.where') : !p ? t('r.appr.elsewhere') : p.local_only ? t('r.appr.st.localOnlyShort') : open ? t('r.appr.elsewhereLive') : t('r.appr.elsewhere');
+  el("elsewhereText").textContent = ppAsk && open ? t('ppReset.where') : pairAsk && open ? t('pair.card.where') : !p ? t('r.appr.elsewhere') : p.local_only ? t('r.appr.st.localOnlyShort') : open ? t('r.appr.elsewhereLive') : t('r.appr.elsewhere');
   paintTags(p || null);
 }
 // P339: the goal card's plain title (null = an older host's card: it renders exactly as before).
@@ -2160,7 +2162,10 @@ function swipeEnd(){
 
 // ---- connection (relay's transport section, now the Noise session's state) ------------------------
 /** P129: the session dropped but the screen stays quiet for a moment (app.js QUIET_MS): stop an in-flight send now. */
-export function connLost(){ outbox.lost(); }
+// P393 #122: a drop that heals inside the five-second quiet window never paints "off", so setConn(true) below sees no
+// off→on edge; connLost marks it so an upload the drop cut (why "net") still resumes when the link is back.
+let quietLost = false;
+export function connLost(){ quietLost = true; outbox.lost(); }
 /** on: a ready session with the host up. text: what the screen reader says while off. */
 export function setConn(on, text){
   if (!C) return;
@@ -2176,7 +2181,8 @@ export function setConn(on, text){
       stale.classList.add("has");
     }
   }
-  if (on && !was) uploadsResume();
+  if (on && (!was || quietLost)) uploadsResume();
+  if (on) quietLost = false;
   if (on) drainOut(); else outbox.lost();          // 0.15.2: the offline queue goes out on ready, stops on a drop
   paintOut();
   wordsSrc = null; showPage(); paintChrome(); refreshSend(); paintSayCancel();
@@ -4396,7 +4402,7 @@ export function init(ctx){
   document.addEventListener("visibilitychange", () => { if (!document.hidden) paintPlaceholder(); else saveDraft(); });
   try{ let phW = -1; new ResizeObserver(() => { if (input.clientWidth !== phW){ phW = input.clientWidth; paintPlaceholder(); } }).observe(input); }catch(_){}
   try{ document.fonts.addEventListener("loadingdone", paintPlaceholder); }catch(_){}
-  input.addEventListener("paste", e => {
+  const takePaste = e => {
     const cd = e.clipboardData;
     if (!cd) return;
     const text = cd.getData("text/plain");
@@ -4412,6 +4418,24 @@ export function init(ctx){
     const full = atts.length >= MAX_ATT;
     addFiles([new File([text], `${t('r.file.paste')}-${stamp()}.txt`, {type: "text/plain"})], "paste");
     if (!full) toast(t('r.paste.long'), 2600);
+  };
+  input.addEventListener("paste", takePaste);
+  // P393 #143 (Leo): ⌘V / Ctrl+V with the focus on no field (the page itself, a button) pastes into the composer — the
+  // same path as a paste in it. Never while a menu / page / sheet / dialog is open; a field (key card, search) keeps its own.
+  const editable = n => !!n && (n.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(n.tagName));
+  document.addEventListener("paste", e => {
+    const cd = e.clipboardData, l = activeLayer();
+    if (e.defaultPrevented || !cd || editable(e.target) || editable(document.activeElement) || modalOpen() || (l && l.rank >= 0)
+        || input.disabled || !input.getClientRects().length) return;
+    const text = cd.getData("text/plain");
+    if (!text && !clipFiles(cd).length) return;
+    takePaste(e);
+    const keep = e.defaultPrevented;
+    e.preventDefault(); focusComposer();
+    if (!text || keep) return;
+    const n = input.value.length;
+    input.setRangeText(text, n, n, "end");
+    input.dispatchEvent(new Event("input", {bubbles: true}));
   });
 
   // drag and drop

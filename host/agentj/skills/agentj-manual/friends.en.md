@@ -239,3 +239,5 @@ Cards accept up to 64 characters for the name, 32 for the owner and 140 for the 
 ## Let Agent J help you set up
 
 Press Alt+Shift+G to open Friends, or choose Friends in Settings. Tap “Let Agent J help me set up” at the top. The chat opens with the skill command and an opening ready in your draft. Add your idea or send it as it is. Agent J explains the feature first, asks what you want, then helps set it up.
+
+You can ask about a task such as moving a password into a configuration file; mentioning "password" does not by itself request its value. Requests for actual passwords or keys, and messages carrying credentials, remain blocked. When your Agent passes a message on, queued means it is awaiting recipient confirmation. A local or recipient rejection is shown in the command result or chat, with the reason and advice to ask only about task progress without requesting or including credential values. The friends conversation also marks blocked messages.

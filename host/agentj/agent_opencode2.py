@@ -616,3 +616,157 @@ def describe_error(err) -> str:
     name, data = v2_error(err)
     return provider_error_reason(name, data)
 
+
+
+# ------------------------------------------------ P395 (#144): the switch gate's probe on 2.x
+# Before: every OpenCode probe ran the bots' v1 one-shot `opencode run --pure --agent agentj-bot`; 2.x refuses `--pure`
+# ("Unrecognized flag") and never sees an agent defined in OPENCODE_CONFIG_CONTENT, so no 2.x owner could switch to OpenCode.
+# Now 2.x is probed the way its session runs: our own `opencode serve`, a session with Agent J's read-only rules in v2's
+# shape, one greeting, the session's outcome (measured on 2.0.24: `outcome` + `time.idle` on the session, the reply in its
+# messages; a provider error on `session.execution.failed` and — when a step ran — on the assistant message). The probe
+# session is deleted (DELETE → 204, measured).
+PROBE_POLL = 0.5
+LINE_MAX = 200
+
+
+def probe_line(err, secrets_in=()) -> str | None:
+    """OpenCode's own error as one line the owner may see: type, status, message — credentials redacted, ≤ 200 chars."""
+    if not isinstance(err, dict):
+        return None
+    import re
+    from .privacy import redact
+    from .text import clean_line
+    msg = str(err.get("message") or "")
+    for s in secrets_in:
+        if isinstance(s, str) and len(s) >= 8:
+            msg = msg.replace(s, "…")
+    msg = re.sub(r"[A-Za-z0-9_\-]{32,}", "…", redact(msg))
+    status = err.get("status") if isinstance(err.get("status"), int) else None
+    line = clean_line(" ".join(x for x in (str(err.get("type") or ""), str(status or ""), msg) if x), LINE_MAX)
+    return line or None
+
+
+def probe(exe: str, model: str | None, env: dict, timeout: float, *, waits=(), sleep=time.sleep,
+          clock=time.monotonic) -> str:
+    """One greeting through a 2.x `opencode serve` in an empty scratch folder → the reply text; raises
+    opencode_free.ProbeError(code, line) — `line` is OpenCode's own error (probe_line) or None. A free-tier refusal / 429 is
+    retried after each of `waits` while `timeout + sum(waits)` allows."""
+    import base64
+    import json
+    import secrets
+    import shutil
+    import tempfile
+    import threading
+    import urllib.error
+    import urllib.request
+    from .agent_opencode import _rule, opencode_env
+    from .opencode_free import PROMPT, START_WAIT, ProbeError, _env, _port, _stop, serve
+    deadline = clock() + timeout + sum(waits)
+    password = secrets.token_urlsafe(32)
+    root = tempfile.mkdtemp(prefix="agentj-oc2-probe-")
+    port = _port()
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))      # 127.0.0.1 never through a proxy
+    auth = "Basic " + base64.b64encode(f"opencode:{password}".encode()).decode()
+    events: list = []
+    keys = [v for k, v in env.items() if k.endswith(("_KEY", "_TOKEN")) and isinstance(v, str)]
+    proc = None
+
+    def req(method, path, body=None):
+        return urllib.request.Request(f"http://127.0.0.1:{port}{path}", method=method,
+                                      data=None if body is None else json.dumps(body).encode(),
+                                      headers={"Authorization": auth, "Content-Type": "application/json"})
+
+    def call(method, path, body=None, grace=0.0):
+        left = deadline + grace - clock()
+        if left <= 0:
+            raise ProbeError("native_timeout", None)
+        try:
+            with opener.open(req(method, path, body), timeout=min(left, timeout)) as r:
+                raw = r.read(4 * 1024 * 1024)
+                return r.status, _data(json.loads(raw)) if raw.strip() else None
+        except urllib.error.HTTPError as e:
+            return e.code, None
+        except (TimeoutError, OSError) as e:
+            raise ProbeError("native_timeout" if "timed out" in str(e) or isinstance(e, TimeoutError) else "native_failed",
+                             None) from None
+        except ValueError:
+            raise ProbeError("native_failed", None) from None
+
+    def listen():                     # the event stream: only where a provider error is said for a failure with no step
+        try:
+            with opener.open(req("GET", "/api/event"), timeout=max(1.0, deadline - clock())) as r:
+                for raw in r:
+                    if raw.startswith(b"data:"):
+                        try:
+                            events.append(json.loads(raw[5:]))
+                        except ValueError:
+                            pass
+        except Exception:  # noqa: BLE001 — ended with the server, or timed out: polling decides alone
+            pass
+
+    def ended(sid, t0, seen):
+        st, s = call("GET", f"/api/session/{quote(sid)}")
+        idle = ((s or {}).get("time") or {}).get("idle") if isinstance(s, dict) else None
+        if isinstance(idle, (int, float)) and idle >= t0 and s.get("outcome"):
+            return s["outcome"]
+        for e in events[seen:]:
+            d = e.get("data") if isinstance(e, dict) and isinstance(e.get("data"), dict) else {}
+            if d.get("sessionID") == sid and e.get("type") in END:
+                return e["type"].rsplit(".", 1)[1]
+        return None
+
+    try:
+        proc = serve(exe, opencode_env(_env(env), password), root, port, min(deadline, clock() + START_WAIT), clock)
+        threading.Thread(target=listen, daemon=True).start()
+        up = clock() + 3
+        while not events and clock() < up:             # `server.connected` first, so no failure event is missed
+            sleep(0.05)
+        rules = rules_to_v2(session_rules([], research=True) + [_rule("webfetch", "*", "deny")])
+        body = {"title": "Agent J probe", "location": {"directory": root}, "permissions": rules}
+        m = split_model(model) if model else None
+        if m:
+            body["model"] = {"id": m["modelID"], "providerID": m["providerID"]}
+        st, ses = call("POST", "/api/session", body)
+        if st != 200 or not isinstance(ses, dict) or not isinstance(ses.get("id"), str):
+            raise ProbeError("native_failed", None)
+        sid = ses["id"]
+        try:
+            for wait in (*waits, None):
+                t0 = int(time.time() * 1000) - 1000
+                seen = len(events)
+                st, _ = call("POST", f"/api/session/{quote(sid)}/prompt", {"text": PROMPT})
+                if st != 200:
+                    raise ProbeError("native_failed", None)
+                outcome = None
+                while outcome is None:
+                    if clock() >= deadline:
+                        raise ProbeError("native_timeout", None)
+                    sleep(PROBE_POLL)
+                    outcome = ended(sid, t0, seen)
+                st, msgs = call("GET", f"/api/session/{quote(sid)}/message")
+                last = next((x for x in (msgs if isinstance(msgs, list) else []) if isinstance(x, dict)
+                             and x.get("type") == "assistant" and ((x.get("time") or {}).get("created") or 0) >= t0), {})
+                text = "\n".join(c.get("text") or "" for c in last.get("content") or []
+                                 if isinstance(c, dict) and c.get("type") == "text").strip()
+                if outcome == "succeeded" and text:
+                    return text
+                err = last.get("error") if isinstance(last.get("error"), dict) else next(
+                    (e["data"]["error"] for e in events[seen:] if isinstance(e, dict) and isinstance(e.get("data"), dict)
+                     and e["data"].get("sessionID") == sid and isinstance(e["data"].get("error"), dict)), None)
+                if outcome == "succeeded" and not err:
+                    raise ProbeError("empty_probe_reply", None)
+                blob = json.dumps(err or {})
+                code = ("free_tier" if "FreeTierError" in blob or (err or {}).get("status") == 429 else
+                        "provider_unavailable" if (err or {}).get("type") == "provider.no-route" else "native_failed")
+                if code != "free_tier" or wait is None or clock() + wait >= deadline:
+                    raise ProbeError(code, probe_line(err, keys))
+                sleep(wait)
+            raise ProbeError("free_tier", None)
+        finally:
+            try:
+                call("DELETE", f"/api/session/{quote(sid)}", grace=5.0)     # no probe session left in the owner's list
+            except ProbeError:
+                pass
+    finally:
+        _stop(proc)
+        shutil.rmtree(root, ignore_errors=True)

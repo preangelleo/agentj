@@ -637,12 +637,50 @@ def doctor_counts(rows) -> tuple[int, int, int] | None:
 UPGRADE_CHECKS = frozenset(("version", "python", "platform", "state", "relay", "dashboard", "service", "serve", "upgrade-restart", "main-core", "main-inject"))
 
 def upgrade_health(rows):
+    blockers, existing = upgrade_blockers(rows)
+    return bool(blockers), existing
+
+
+# P393 (#121): fixed ids the automatic report may carry — never a summary, hint, path or stderr.
+CHECK_ID_RE = re.compile(r"^[a-z][a-z0-9_-]{0,31}$")
+DOCTOR_UNPARSABLE = "doctor_unparsable"     # the doctor's output was not the {"checks": [...]} it promises
+DOCTOR_UNNAMED = "unnamed_check"            # a failed row without a usable id
+# The main Agent has not been asked anything since the service restarted (or must refresh its identity): that is the
+# expected state right after every upgrade, never a reason to roll back — even from a doctor that marks it ✗.
+_WAITING = ("no verified main Agent launch", "restart main Agent: identity metadata differs", "服务重启后还没收到手机消息",
+            "升级后从手机发一句话")
+
+
+def benign_waiting(row) -> bool:
+    return (isinstance(row, dict) and row.get("id") == "main-inject"
+            and any(str(row.get(k) or "").startswith(_WAITING) for k in ("summary", "detail")))
+
+
+def upgrade_blockers(rows):
+    """→ (blocking check ids, existing non-upgrade failures). An empty first list means the self-check passed. Output that
+    is not a list of ok/warn/fail rows is DOCTOR_UNPARSABLE; an unknown/unnamed failed row is not safe to dismiss."""
     if not isinstance(rows, list) or not rows or any(not isinstance(r, dict) or r.get("status") not in ("ok", "warn", "fail") for r in rows):
-        return True, []
-    failures = [r for r in rows if r["status"] == "fail"]
-    # An unknown/unnamed failed row is not safe to dismiss.
-    blocking = any(r.get("id") in UPGRADE_CHECKS or not r.get("id") for r in failures)
-    return blocking, [r["id"] for r in failures if r.get("id") and r["id"] not in UPGRADE_CHECKS]
+        return [DOCTOR_UNPARSABLE], []
+    failures = [r for r in rows if r["status"] == "fail" and not benign_waiting(r)]
+    blockers = []
+    for r in failures:
+        cid = r.get("id")
+        if not cid or not isinstance(cid, str):
+            cid = DOCTOR_UNNAMED
+        elif cid not in UPGRADE_CHECKS:
+            continue
+        if cid not in blockers:
+            blockers.append(cid)
+    return blockers, [r["id"] for r in failures if isinstance(r.get("id"), str) and r["id"] and r["id"] not in UPGRADE_CHECKS]
+
+
+def check_ids(ids) -> list:
+    """The ids a report may carry: fixed-shape, at most ten, no duplicates."""
+    out = []
+    for i in ids if isinstance(ids, (list, tuple)) else []:
+        if isinstance(i, str) and CHECK_ID_RE.fullmatch(i) and i not in out:
+            out.append(i)
+    return out[:10]
 
 
 # result block reasons: (exit code, 中文, English)
@@ -1008,17 +1046,17 @@ def _apply(st, target=None, *, prefix=None, check_fn=None, run=None, say=None, s
             if rows is None:
                 out["health"] = "unverifiable"
         if rows is not None:
-            failed, existing = upgrade_health(rows)
+            blockers, existing = upgrade_blockers(rows)
         else:
             health = run(argv + ["doctor", "--json"], stdin=subprocess.DEVNULL, capture_output=True, text=True)
             try:
                 rows = json.loads(health.stdout)["checks"]
-                failed, existing = upgrade_health(rows)
+                blockers, existing = upgrade_blockers(rows)
             except (ValueError, TypeError, KeyError, AttributeError):
-                failed, existing = bool(health.returncode), []
+                blockers, existing = ([DOCTOR_UNPARSABLE] if health.returncode else []), []
         out["existing_issues"] = existing
-        if failed:
-            return {**out, "result": "failed", "reason": "doctor_failed", "exit": 1}
+        if blockers:
+            return {**out, "result": "failed", "reason": "doctor_failed", "failed_checks": check_ids(blockers), "exit": 1}
     except OSError:
         if not handed:
             return back("self_check_failed", **({"service": "failed"} if svc_on else {}))
@@ -1111,6 +1149,8 @@ def result_block(res: dict) -> str:
         lines.append("existing_issues: " + ", ".join(res["existing_issues"]) + " — 升级已完成，这些其他问题请另行检查 / upgrade completed; review these other issues separately")
     if res.get("result") != "ok" and res.get("step"):        # P277: where it failed, the installer's own words (redacted)
         lines.append(f"step: {res['step']}")
+    if res.get("failed_checks") and res.get("result") != "ok":   # P393: which self-check blocked (fixed ids)
+        lines.append("failed_checks: " + ", ".join(check_ids(res["failed_checks"])))
     if res.get("detail") and res.get("result") != "ok":
         lines.append(f"detail: {res['detail']}")
     if res.get("stderr_tail") and res.get("result") != "ok":

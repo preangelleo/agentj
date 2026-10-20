@@ -194,7 +194,8 @@ class FakeCP:
                 step = self.seat_script.pop(0) if self.seat_script else None
                 answers = {"invalid": (404, {"error": "invalid_setup"}), "payment": (402, {"error": "payment_required"}),
                            "rate": (429, {"error": "rate_limited"}), "already_bound": (409, {"error": "already_bound"}),
-                           "bad_name": (400, {"error": "bad_name"}), "garbled": (200, {"status": "bound", "host_id": "!"})}
+                           "bad_name": (400, {"error": "bad_name"}), "garbled": (200, {"status": "bound", "host_id": "!"}),
+                           "billing_busy": (409, {"error": "billing_busy"})}
                 if step in answers:
                     return answers[step]
                 if isinstance(step, int):

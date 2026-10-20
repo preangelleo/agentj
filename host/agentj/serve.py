@@ -181,7 +181,8 @@ P33_ONLY = ("say", "say_cancel", "cmd_cancel", "blob_open", "blob_chunk", "blob_
             "imsg_check", "imsg_fda",   # P274 (§10.21): the iMessage card's 「重新检测」 / 「在Agent J 主机上打开授权页」
             "qr_cancel",                # P314 (§32): cancel the automatic continue after a used-up usage limit
             "keys_get", "keys_op", "keys_set",   # P352: 「模型和 API Key」 key manager (keys.py)
-            "notify_get", "notify_set", "hook_list", "hook_set", "news_get", "news_set")          # P365: the settings list of automations allowed to post (notify.py)
+            "notify_get", "notify_set", "hook_list", "hook_set", "news_get", "news_set",
+            "news_email", "news_verify")          # P365: the settings list of automations allowed to post (notify.py)
 # F14: paired phones may change optional warnings, session mode, isolation, docker and the upgrade mode (F19); native permissions stay authoritative.
 PREF_SET_KEYS = ("updates.mode", "appearance.language", "appearance.theme", "voice.wake_enabled", "voice.speak_replies",
                  "agent.high_risk_warnings", "agent.session_mode", "agent.isolation", "agent.allow_docker")
@@ -1353,6 +1354,87 @@ class Host:
         self.push_notify("ask")
         self._bg(self._pair_card_wait(p, s, a), "pair_card")
 
+    # ------------------------------------------------------------ #118: reset the remote pairing password, keep every remote
+    async def _pass_consent(self, req: dict, pid) -> dict:
+        """`agentj passphrase reset --phone` (pass_reset.py): ONE card on every ready paired remote; the first signed answer
+        (+ its passkey when it has one) decides. An allow gives this peer process a one-use ticket; nothing else changes."""
+        from . import pass_reset
+        code = req.get("code")
+        if not isinstance(code, str) or not pass_reset.CODE.fullmatch(code):
+            return {"ok": False, "error": "shape"}
+        if self.stopped():
+            return {"ok": False, "error": "stopped"}
+        if not gate.is_set(self.st):
+            return {"ok": False, "error": "not_set"}
+        if not self._approvers():
+            return {"ok": False, "error": "no_device"}
+        if any(a.tool == pass_reset.TOOL and not a.fut.done() for a in self.asks.values()):
+            return {"ok": False, "error": "busy"}
+        text = pass_reset.summary(self.lang, code)
+        target = {"op": pass_reset.TOOL, "code": code}
+        rid = secrets.token_hex(16)
+        a = Ask(rid, pass_reset.TOOL, text, approvals.shown_digest(pass_reset.TOOL, text), target,
+                approvals.input_digest(target), time.monotonic() + pass_reset.CARD_TTL,
+                asyncio.get_running_loop().create_future(), pk_if_any=True, pk_kind=pass_reset.PK_KIND)
+        self.asks[rid] = a
+        self.st.log("ask", id=rid, tool=pass_reset.TOOL, agent="host", kind="passphrase")
+        self.activity("ask", id=rid, tool=pass_reset.TOOL, summary=text.split("\n", 1)[0])
+        self.emit("ask", id=rid, tool=pass_reset.TOOL, summary=text)
+        self._post(self._send_ready, lambda s: self._ask_msg(a, s))
+        self.status_changed()
+        self.push_notify("ask")
+        try:
+            await asyncio.wait({a.fut}, timeout=max(0.0, a.deadline - time.monotonic()))
+            if not a.fut.done():
+                a.fut.set_result(("timeout", None, None, None))
+            decision, did, sk, sig = a.fut.result()
+        finally:
+            self.asks.pop(rid, None)
+        if did and decision == "allow":
+            result, reason = "allow", "device"
+        elif did:
+            result, reason = "deny", "device"
+        else:
+            result = reason = "timeout" if decision == "timeout" else ("estop" if self.stopped() else "serve_stop")
+        approvals.record(self.st, rid=rid, agent="host", tool=pass_reset.TOOL, input_sha256=a.input_sha,
+                         shown_sha256=a.digest, decision="allow" if result == "allow" else "deny", reason=reason,
+                         device=did if reason == "device" else None, sign_pub=sk, sig=sig)
+        self.st.log("ask_done", id=rid, tool=pass_reset.TOOL, decision="allow" if result == "allow" else "deny",
+                    reason=reason, device=did)
+        self.activity("decision", id=rid, tool=pass_reset.TOOL, result=result, reason=reason,
+                      by=self._dname(did) if did else None, summary=text.split("\n", 1)[0])
+        self.emit("ask_done", id=rid, result=result, reason=reason, device=did)
+        self._post(self._send_ready, lambda x: {"t": "ask_done", "id": rid, "result": result})
+        self.status_changed()
+        if result != "allow":
+            return {"ok": False, "error": "denied" if result == "deny" else reason}
+        tok = secrets.token_urlsafe(24)
+        now = time.monotonic()
+        self._pp_tickets = {t: v for t, v in self.__dict__.get("_pp_tickets", {}).items() if v[1] > now}
+        self._pp_tickets[tok] = (pid, now + pass_reset.TICKET_TTL, did)
+        return {"ok": True, "ticket": tok, "by": self._dname(did)}
+
+    async def _pass_replace(self, req: dict, pid) -> dict:
+        """The new password, typed at the terminal that asked, with the ticket a remote's allow gave that same process."""
+        from . import pass_reset
+        tok, new = req.get("ticket"), req.get("new")
+        tickets = self.__dict__.get("_pp_tickets", {})
+        rec = tickets.pop(tok, None) if isinstance(tok, str) else None
+        if not rec or rec[0] != pid or time.monotonic() > rec[1]:
+            self.st.log("ctl_refused", cmd="passphrase_replace", reason="ticket")
+            return {"ok": False, "error": "ticket"}
+        if not isinstance(new, str):
+            tickets[tok] = rec
+            return {"ok": False, "error": "shape"}
+        try:
+            await asyncio.to_thread(gate.replace, self.st, new, rec[2])   # scrypt: never on the event loop
+        except gate.GateError as e:
+            tickets[tok] = rec                                             # too short / long: the owner may try again
+            return {"ok": False, "error": "passphrase", "reason": e.reason}
+        self.agent_notice(pass_reset.notice(self.lang, self._dname(rec[2])))
+        self.push_notify("security")
+        return {"ok": True, "kept": len(self.st.devices())}
+
     def _pair_card_end(self, s: Session) -> None:
         a = self.asks.get(s.card)
         s.card = ""
@@ -1715,6 +1797,10 @@ class Host:
                 self.st.log("ctl_refused", cmd=cmd, reason="no_terminal")
                 await self._ctl_send(w, {"ok": False, "error": "claim_required", "why": "terminal"})
                 return False
+        if claimed and cmd in ("passphrase_consent", "passphrase_replace") and not ctl_auth.has_tty(pid):
+            self.st.log("ctl_refused", cmd=cmd, reason="no_terminal")      # #118: the owner types at a terminal
+            await self._ctl_send(w, {"ok": False, "error": "claim_required", "why": "terminal"})
+            return False
         if claimed:
             return True
         if cmd == "config_apply":
@@ -2055,6 +2141,10 @@ class Host:
                 elif cmd == "pair":
                     await self._ctl_pair(r, w, pid)
                     return
+                elif cmd == "passphrase_consent":   # #118: a paired remote's signed allow → a one-use ticket
+                    await self._ctl_send(w, await self._pass_consent(req, pid))
+                elif cmd == "passphrase_replace":   # #118: the new password typed at that terminal, with the ticket
+                    await self._ctl_send(w, await self._pass_replace(req, pid))
                 elif cmd == "revoke":
                     removed, closed = await self.revoke(str(req.get("device", "")))
                     await self._ctl_send(w, {"ok": removed, "closed": closed})
@@ -2143,6 +2233,8 @@ class Host:
         victims = [c for c, s in list(self.sessions.items()) if s.device == did]
         for c in victims:
             self._detach(c)
+        if getattr(self, "elevate", None) is not None:
+            self.elevate.grants.drop_device(did, "unpaired")   # #116: its 10-minute admin approval ends with it
         if removed:
             self.st.log("revoked", device=did, reason=why)
             self.reporter.trigger("revoke")
@@ -3838,6 +3930,10 @@ class Host:
             if m.get("id") not in have:
                 await self.send_app(s, m)
                 sent += 1
+        # P392: a lost terminal broadcast must close its request-bound card even without reconnecting.
+        for m in self.elevate.completed_msgs(s):
+            if m["id"] in have:
+                await self.send_app(s, m)
         ids = [m["id"] for m in self.open_cards(s) if isinstance(m.get("id"), str)]   # what is open right now
         self.st.log("cards_snap", cid=s.cid, device=s.device, n=len(ids), sent=sent)
         await self.send_app(s, {"t": "cards", "r": r, "ok": True, "open": ids[:CARDS_OPEN_MAX]})
@@ -5551,14 +5647,29 @@ class Host:
         self._bg(run(), t)
 
     def on_news(self, s: Session, t: str, obj: dict) -> asyncio.Task | None:
-        """P374 (PROTOCOL §10.20a): read / switch the account's Daily AI News through one signed `/v1/host/news` (cloud.news),
-        in a thread with an 8 s budget, never on the reader. The answer goes to the asking session only; the log line has the
-        status word, never the e-mail."""
+        """P374 (PROTOCOL §10.20a): read / switch this host's person's Daily AI News through one signed `/v1/host/news`
+        (cloud.news); P393 #128: `news_email` mails a code to the seat person's own address (cloud.news_email) and
+        `news_verify` confirms it (cloud.news_verify). In a thread with an 8 s budget, never on the reader, ≤ NEWS_INFLIGHT
+        at once across all four. The answer goes to the asking session only; the log line has status words only, never the
+        e-mail or the code."""
         on = obj.get("on")
         if t == "news_set" and not isinstance(on, bool):
             return None
+        email, code = obj.get("email"), obj.get("code")
+        if t in ("news_email", "news_verify") and not isinstance(email, str):
+            return None
+        if t == "news_verify" and not isinstance(code, str):
+            return None
+        lang = obj.get("lang") if obj.get("lang") in ("zh", "en") else self.onboarding_lang()
         r = obj.get("r")
         rid = {"r": r} if wire.is_rid(r) else {}
+
+        def call(post):
+            if t == "news_email":
+                return cloud.news_email(self.st, email, lang, post=post)
+            if t == "news_verify":
+                return cloud.news_verify(self.st, email, code, post=post)
+            return cloud.news(self.st, on if t == "news_set" else None, post=post)
 
         async def answer(m: dict) -> None:
             if self.sessions.get(s.cid) is s and s.state == "ready" and self.st.is_allowed(s.pub):
@@ -5573,8 +5684,7 @@ class Host:
                     self._news_inflight += 1
                     try:
                         post = lambda url, payload: cloud.post_json(url, payload, timeout=NEWS_TIMEOUT - 1)  # noqa: E731
-                        res = await asyncio.wait_for(asyncio.to_thread(
-                            cloud.news, self.st, on if t == "news_set" else None, post=post), NEWS_TIMEOUT)
+                        res = await asyncio.wait_for(asyncio.to_thread(call, post), NEWS_TIMEOUT)
                     finally:
                         self._news_inflight -= 1
             except asyncio.TimeoutError:
@@ -5582,11 +5692,14 @@ class Host:
             except Exception:  # noqa: BLE001 — a bad key file / state read: the phone gets "fail", never a hang
                 res = cloud.NewsResult("fail", status="error")
             self.st.log(t, device=s.device, status=res.kind, http=res.status, **({"on": res.on} if res.kind == "ok" else {}))
-            if res.kind == "ok":
+            if cloud.news_is_state(res):
                 await answer({"ok": True, "on": res.on, "email": res.email, "sample_url": res.sample_url,
-                              "queued": res.queued, "seats": res.seats})
+                              "queued": res.queued, "seats": res.seats, **({"need_email": True} if res.kind == "need_email" else {})})
+            elif res.kind == "sent":
+                await answer({"ok": True, "sent": True, "expires_in": res.expires_in})
             else:
-                await answer({"ok": False, "problem": cloud.news_problem(res.kind)})
+                await answer({"ok": False, "problem": cloud.news_problem(res.kind),
+                              **({"retry_after": res.retry_after} if res.retry_after else {})})
         return self._bg(run(), t)
 
     async def on_mail(self, s: Session, t: str, obj: dict) -> None:
@@ -5735,7 +5848,7 @@ class Host:
             return
         if t.startswith("mail_"):          # P170: the e-mail channel's settings page
             return await self.on_mail(s, t, obj)
-        if t in ("news_get", "news_set"):  # P374: the account's Daily AI News switch
+        if t in ("news_get", "news_set", "news_email", "news_verify"):  # P374 · P393 #128: Daily AI News
             return self.on_news(s, t, obj)
         if t.startswith("auth_"):          # P258: AI 登录救援
             return await self.on_auth(s, t, obj)

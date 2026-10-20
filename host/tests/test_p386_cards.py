@@ -70,13 +70,15 @@ class Cards(unittest.TestCase):
         self.assertTrue(jcards_data.set_color(self.root, 'chat', None)['ok'])
         self.assertNotIn('chat', jcards_data.colors(self.root))
 
-    def test_official_slash_actions_and_automation_default_off(self):
+    def test_official_slash_actions_and_automation_default_on(self):
         for cid in ('notes', 'todo'):
             jcards.set_on(self.root, cid, True)
             doc = jcards.phone_get(self.root, cid)
             for act in doc['actions']:
                 self.assertTrue(act['prompt'].startswith('/agentj-add-'))
                 self.assertNotIn(str(self.root), act['prompt'])
+        self.assertTrue(jcards.find(self.root, 'automation')['on'])   # P393 #129: official cards default on
+        self.assertTrue(jcards.set_on(self.root, 'automation', False))
         self.assertFalse(jcards.find(self.root, 'automation')['on'])
         self.assertTrue(jcards.set_on(self.root, 'automation', True))
         with patch('agentj.systasks.scan', return_value=[]):

@@ -141,7 +141,19 @@ def entry(res: dict, now: float | None = None) -> dict | None:
             rec["stderr_tail"] = str(res["stderr_tail"])[-TAIL_MAX:]
         if res.get("detail"):
             rec["detail"] = str(res["detail"])[:120]
+        checks = failed_checks(res)
+        if checks:
+            rec["failed_checks"] = checks
     return rec
+
+
+def failed_checks(res) -> list:
+    """P393 (#121): the self-check ids that blocked the upgrade — fixed ids only (update.CHECK_ID_RE), never a summary."""
+    try:
+        from .update import check_ids
+        return check_ids(res.get("failed_checks")) if isinstance(res, dict) else []
+    except Exception:  # noqa: BLE001
+        return []
 
 
 def valid(rec) -> bool:
@@ -225,6 +237,11 @@ def body(res: dict, kind: str | None = None) -> str:
              + (f" · rollback: {res['rollback']}" if res.get("rollback") else "")
              + (f" · service: {res['service']}" if res.get("service") else ""),
              f"install: {kind or '?'} · {_platform()}"]
+    checks = failed_checks(res)
+    if checks:
+        lines.append("failed checks: " + ", ".join(checks))
+    elif category(res.get("reason")) == "doctor_failed":
+        lines.append("failed checks: not recorded")
     if res.get("detail"):
         lines.append("detail: " + str(res["detail"])[:120])
     if res.get("stderr_tail"):

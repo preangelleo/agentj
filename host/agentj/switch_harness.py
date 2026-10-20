@@ -30,6 +30,7 @@ from pathlib import Path
 
 from . import harness, opencode_free, service
 from .compose import Send
+from .text import clean_line
 
 KINDS = ("claude", "codex", "opencode", "kimi", "qwen", "dsh")
 if harness.names()[-1:] == ("core",):   # P359: Agent J Harness joins the switch only when the owner turned it on
@@ -189,9 +190,14 @@ LOGIN_HINT = {
 }
 
 
-def reason_text(code: str, target: str, lang: str = "zh", detail: str | None = None, err: str | None = None) -> str:
+def reason_text(code: str, target: str, lang: str = "zh", detail: str | None = None, err: str | None = None,
+                line: str | None = None) -> str:
+    """P395: `line` = the harness's own error, one redacted line from the probe (harness.probe → probe_error)."""
     l = "en" if lang == "en" else "zh"
     t = REASON[l]
+    if isinstance(line, str) and line.strip() and code != "not_logged_in":
+        said = LABEL.get(target, target) + (" said: " if l == "en" else " 原话：") + clean_line(line, 200)
+        return reason_text(code, target, lang, detail, err) + (f" ({said})" if l == "en" else f"（{said}）")
     if code == "not_logged_in":
         hint = LOGIN_HINT[l].get(target)
         if hint:
@@ -511,7 +517,8 @@ def gate(target: str, model: str | None = None, probe=None) -> dict:
     if h.get("callable"):
         return {"ok": True, "version": h.get("version")}
     code = h.get("probe_reason") or "call_failed"
-    return {"ok": False, "reason": code if _CODE.fullmatch(code) else "call_failed", "version": h.get("version")}
+    return {"ok": False, "reason": code if _CODE.fullmatch(code) else "call_failed", "version": h.get("version"),
+            **({"line": h["probe_error"]} if isinstance(h.get("probe_error"), str) else {})}   # P395
 
 
 def start_probe(st, target: str, cfg: dict, limit: float = START_LIMIT) -> dict | None:
@@ -590,7 +597,7 @@ def request(st, target: str | None, model: str | None = None, dry_run: bool = Fa
             **({"model": m} if m else {}), **({"privacy": note} if note else {}),
             **({"back": rec["back"]} if isinstance(rec.get("back"), str) else {}), **({"undo": True} if undo else {}),
             **({"undo_possible": True} if not undo and (_previous(st) or {}).get("kind") == target else {}),
-            **{k: rec[k] for k in ("err", "start_secs") if k in rec}}
+            **{k: rec[k] for k in ("err", "start_secs", "line") if k in rec}}
     if rec["status"] == "probe_ok":
         return {"ok": True, "dry_run": True, **base}
     if rec["status"] == "failed":
@@ -778,6 +785,7 @@ def scan_worker(st, job: str | None, probe=None, ctl=None) -> int:
                      "callable": bool(h.get("callable")), **({"model": model} if isinstance(model, str) and model else {}),
                      **({"reason": h["probe_reason"]} if not h.get("callable") and _CODE.fullmatch(str(h.get("probe_reason") or ""))
                         else {}), **_where(h),
+                     **({"line": h["probe_error"]} if not h.get("callable") and isinstance(h.get("probe_error"), str) else {}),
                      **({"login": "free"} if h.get("login") == "free" else {}),        # P298: OpenCode free model, no key
                      **({"privacy": opencode_free.privacy_note(model, _lang_of(st))}
                         if name == "opencode" and opencode_free.privacy_note(model) else {})})
@@ -817,7 +825,8 @@ def _say_scan(r: dict, lang: str) -> str:
         elif h["callable"]:
             lines.append(f"{name} {h.get('version') or ''}: " + ("works now" if en else "现在能用") + mark)
         else:
-            lines.append(f"{name} {h.get('version') or ''}: " + reason_text(h.get("reason") or "call_failed", h["name"], lang) + mark)
+            lines.append(f"{name} {h.get('version') or ''}: " + reason_text(h.get("reason") or "call_failed", h["name"], lang,
+                                                                          line=h.get("line")) + mark)
         lines.extend("  " + x for x in _where_lines(h, lang))
         if h.get("privacy"):
             lines.append("  " + h["privacy"])
@@ -1047,6 +1056,8 @@ def worker(st, target: str | None, model: str | None = None, *, job: str | None 
         g = gate(target, model, probe)
         version = g.get("version")
         if not g["ok"]:
+            if g.get("line"):
+                extra["line"] = g["line"]         # P395: OpenCode's own error, one redacted line, into the receipt
             return done("failed", g["reason"])
         # P282: and the way back — the harness running now must pass the same gate, or a later 「切回」 is refused by it
         # (Mac seat 10-14: OpenCode was the only one the service could call; switching to it would have been one-way)
@@ -1236,7 +1247,7 @@ def _say(r: dict, lang: str) -> str:
                 f"then goes back with no check). Nothing was changed." if lang == "en" else
                 f"✗ 没有切到 {T}：{T} 能用，但切过去以后就切不回 {F} 了，{F} 在后台服务里过不了同样的检查。原因：{why}。"
                 f"先把 {F} 修好；确定要切就加 --force，之后用 agentj agent switch --undo 不经检查直接切回。没有改任何东西。")
-    why = reason_text(r.get("reason") or "call_failed", r.get("target") or "", lang, None, r.get("err"))
+    why = reason_text(r.get("reason") or "call_failed", r.get("target") or "", lang, None, r.get("err"), r.get("line"))
     undo = ((" It is the harness used before the last switch: agentj agent switch --undo goes back to it with no check "
              "(if it does not come up, Agent J returns here by itself).") if lang == "en" else
             "这是上次切走前用的那个：agentj agent switch --undo 可以不经检查直接切回（起不来会自动回到现在这个）。"
@@ -1266,7 +1277,7 @@ def _say_receipt(rec: dict | None, lang: str) -> str:
         return f"{when} ✓ {T}: " + ("passed the check (dry run)" if lang == "en" else "检查通过（只检查，没切换）")
     if st == "failed":
         return f"{when} ✗ {F} → {T}: " + reason_text(rec.get("reason") or "", rec.get("target") or "", lang, None,
-                                                     rec.get("err")) + secs
+                                                     rec.get("err"), rec.get("line")) + secs
     return f"{when} … {F} → {T}: {st}"
 
 
@@ -1288,7 +1299,7 @@ def cli(a, st, lang: str) -> int:
         return 0 if r.get("ok") else 4 if r.get("pending") else 3
     if getattr(a, "preset", None) == "ark" and target == "opencode":    # P371: 「OpenCode · 火山方舟」
         from . import ark
-        r = ark.switch(st, getattr(a, "plan", None) or "coding", a.model, dry_run=getattr(a, "dry_run", False))
+        r = ark.switch(st, getattr(a, "plan", None) or ark.DEFAULT_PLAN, a.model, dry_run=getattr(a, "dry_run", False))
         print(json.dumps(r, ensure_ascii=False) if a.json else ark.say_switch(r, lang))
         return 0 if r.get("ok") else 4 if r.get("pending") else 3
     if target not in KINDS:

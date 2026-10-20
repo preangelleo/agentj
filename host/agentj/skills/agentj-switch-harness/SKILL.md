@@ -30,22 +30,23 @@ switching back resumes that one. To switch, the owner just replies 「切换到 
    works in YOUR session is not proof — only the scan counts. A line saying an old saved path was replaced (a harness that
    updated itself) needs nothing; another install listed as unused may be removed if the owner wants.
    Claude Code / Codex fail with "region not supported", or the owner is in Hong Kong / Macau / mainland China: run
-   `agentj agent route` — where they are not offered: mainland China from zero → Volcano Ark Coding Plan, Lite first (same
-   models as Pro, Pro = 5x quota; `agentj provider ark`); Hong Kong / overseas → Kimi membership Plus or higher (Go has no
+   `agentj agent route` — where they are not offered: mainland China from zero → Volcano Ark Agent Plan, Medium first (Kimi
+   K3 from Medium; `agentj provider ark`; an existing Coding Plan: `--plan coding`); Hong Kong / overseas → Kimi membership Plus or higher (Go has no
    coding quota) in OpenCode or Kimi Code CLI (`kimi`); already on one → keep it. The owner decides. Give Kimi's link with the sentence right after it, never apart: 「这是 Agent J 官方的邀请链接，您和我们各得一次抽奖」
    (en: "This is Agent J's official invite link: you and we each get one prize draw"), plus its alternatives; the key only
-   via the phone key card it prints (`KIMI_API_KEY` / `ARK_CODING_PLAN_API_KEY`), then `agentj service restart` and scan again. Also
+   via the phone key card it prints (`KIMI_API_KEY` / `ARK_AGENT_PLAN_API_KEY` — the Agent Plan's own key from 订阅 → Agent Plan → 使用配置, not API Key management), then `agentj service restart` and scan again. Also
    possible on the mainland: an Alibaba Cloud Bailian Token Plan, personal (¥39–499 a month; Qwen 3.8 Max / Flash read images):
    `agentj provider bailian` writes OpenCode's config without touching what is there and prints the key card
    (`BAILIAN_TOKEN_PLAN_API_KEY`); then `agentj agent switch opencode --model bailian-token-plan-personal/qwen3.8-max` (or
    `agentj agent switch qwen`). Always tell the owner its terms in plain words: their own scheduled tasks may use it (long continuous background
    runs may be rate-limited — then a pay-as-you-go key), support bots never get it, and inputs / outputs are used by
    Alibaba Cloud to improve its models.
-   **OpenCode · Volcano Ark (P371)** in one step: `agentj agent switch opencode --preset ark --plan coding|payg [--model …]`.
-   Ask first: Coding Plan (…/api/coding/v3 — coding Agents only; other programs using it can get the account banned) or
+   **OpenCode · Volcano Ark (P371)** in one step: `agentj agent switch opencode --preset ark --plan agent|coding|payg [--model …]`.
+   Ask first: Agent Plan (default, …/api/plan/v3, `ARK_AGENT_PLAN_API_KEY`), Coding Plan (…/api/coding/v3 — both plans are for coding Agents only; other programs using them can get the account banned) or
    pay-as-you-go (…/api/v3, per token, `ARK_API_KEY`, checked against Ark's model list). It finds OpenCode (arkcli only
    detected), prints the key card when the key is missing (run it, then the same command again), writes the provider and
-   switches only after one real call; on failure it switches back and removes the provider it added.
+   switches only after one real call; on failure it switches back and removes the provider it added. A failed check (any
+   harness) may end with OpenCode's own one-line error — read it to the owner as it is (credentials are already redacted).
 3. **Not installed / not signed in** — offer, never push:
    - Install only after the owner says yes: follow https://agentj.app/docs/setup-agents/en.md (one-command `setup-agents.sh`
      with `--cli <name>`, or that page's per-OS steps). Needs admin rights → `agentj sudo --why '…' -- <cmd>`.

@@ -197,8 +197,9 @@ class RealEngineServe(_Chain):
             (link / "installed.json").write_text('{"sherpa_version": "1.13.8"}')
             self.assertEqual(c["host"]._caps()["asr"], "broken")
             self.assertEqual((await take(zh, "broken.wav"))["why"], "broken")
-            # not_installed: nothing there
+            # not_installed: nothing there (P393: nor a shared copy another instance could lend — the test's own folder)
             shutil.rmtree(link)
+            shutil.rmtree(asr.shared_dir(), ignore_errors=True)
             self.assertEqual(c["host"]._caps()["asr"], "not_installed")
             self.assertEqual((await take(zh, "none.wav"))["why"], "not_installed")
             att = await c["upload"](zh, mime="audio/wav", purpose="att", origin="recording", secs=6, name="none.wav")

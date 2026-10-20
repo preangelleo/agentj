@@ -10,6 +10,8 @@ owner's phone off) — need a one-time claim, asked for on the same connection (
   session), carries an Agent harness marker in its environment, or cannot be identified at all.
 - `resume` additionally needs the remote pairing password, verified here by serve (the CLI checks it too), or — without one — a
   terminal on the caller's stdin.
+- `passphrase_consent` / `passphrase_replace` (#118, pass_reset.py) also need a terminal on the caller's stdin, a paired
+  remote's signed allow, and the one-use ticket that allow gave this same peer process.
 - `config_apply` without a claim (an Agent running `agentj config set`, e.g. the agentj-config skill) still applies ordinary
   keys; a change to a SECURITY key becomes a signed approval card on the phone and is applied only after the owner allows it.
 
@@ -22,7 +24,8 @@ import subprocess
 import sys
 
 SENSITIVE = frozenset({"resume", "config_apply", "send", "revoke", "mail_cfg",   # P170: mail_cfg widening → the owner's card
-                       "notify"})    # P365: the owner's own automations only — never an Agent (notify.py)
+                       "notify",     # P365: the owner's own automations only — never an Agent (notify.py)
+                       "passphrase_consent", "passphrase_replace"})   # #118: owner's terminal + a paired remote (pass_reset)
 CLAIM_TTL = 30
 AGENT_ENV = ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CODEX_SANDBOX", "CODEX_SANDBOX_NETWORK_DISABLED",
              "OPENCODE", "AGENTJ_PERM_TOKEN", "AGENTJ_PERM_SOCK", "AGENTJ_FENCED")

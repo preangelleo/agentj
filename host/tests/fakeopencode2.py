@@ -17,6 +17,9 @@ What a prompt does (its text):
     anything else  "ECHO: <text>"
 FAKE_OC_LOG = JSONL of every request (method, path, body); FAKE_OC2_CONNECTED = comma list of integrations with a connection
 (default "opencode"); FAKE_OC2_CONFIG_PROVIDERS = comma list of providers declared in the config.
+P395: FAKE_OC2_FAIL = NOKEY | BADKEY makes every prompt fail that way (FAKE_OC2_ERROR_MSG replaces BADKEY's message); like
+2.0.24 (measured) a finished run sets the session's `outcome`, a BADKEY step leaves the error on its assistant message, and
+DELETE /api/session/{id} answers 204.
 """
 import base64
 import json
@@ -77,11 +80,13 @@ def finish(sid, kind="succeeded", **extra):
     s = SESSIONS[sid]
     s["busy"] = False
     s["time"]["idle"] = int(time.time() * 1000)
+    s["outcome"] = kind
     emit("session.execution." + kind, {"sessionID": sid, **extra})
 
 
 def work(sid, prompt):
     s = SESSIONS[sid]
+    prompt = os.environ.get("FAKE_OC2_FAIL") or prompt
     emit("session.inbox.delivered", {"sessionID": sid})
     emit("session.execution.started", {"sessionID": sid})
     if prompt.startswith("RUN: "):
@@ -113,8 +118,12 @@ def work(sid, prompt):
         finish(sid, "failed", error={"type": "provider.no-route",
                                      "message": f"Model unavailable: {m.get('providerID')}/{m.get('id')}"})
     elif prompt == "BADKEY":
-        err = {"type": "provider.auth", "message": "User not found.", "status": 401, "response": {"body": "{}"}}
-        emit("session.step.failed", {"sessionID": sid, "assistantMessageID": nid("msg"), "error": err})
+        err = {"type": "provider.auth", "message": os.environ.get("FAKE_OC2_ERROR_MSG") or "User not found.", "status": 401,
+               "response": {"body": "{}"}}
+        mid = nid("msg")
+        s["messages"].insert(0, {"id": mid, "type": "assistant", "time": {"created": int(time.time() * 1000)}, "content": [],
+                                 "finish": "error", "error": err})
+        emit("session.step.failed", {"sessionID": sid, "assistantMessageID": mid, "error": err})
         finish(sid, "failed", error=err)
     elif prompt == "WHOAMI":
         text(sid, "RUN-ID: " + RUN)
@@ -210,6 +219,9 @@ class H(BaseHTTPRequestHandler):
             rest = parts[2:]
             if not rest and method == "GET":
                 return self._send(200, {"data": self._info(sid)})
+            if not rest and method == "DELETE":
+                SESSIONS.pop(sid, None)
+                return self._send(204)
             if not rest and method == "PATCH":
                 if "permissions" in (body or {}):
                     s["permissions"] = body["permissions"]
@@ -270,6 +282,7 @@ class H(BaseHTTPRequestHandler):
     def _info(self, sid):
         s = SESSIONS[sid]
         return {"id": sid, "projectID": "p", "model": s["model"], "permissions": s["permissions"], "cost": s["cost"],
+                **({"outcome": s["outcome"]} if s.get("outcome") else {}),
                 "tokens": s["tokens"], "time": s["time"], "title": "Agent J", "location": {"directory": os.getcwd()}}
 
     def do_GET(self):

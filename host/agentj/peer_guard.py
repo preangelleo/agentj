@@ -73,9 +73,48 @@ def credential_shape(text: str) -> str | None:
     return None
 
 
+# A task-status question may mention a credential category without requesting its value.
+# Full-clause grammar only: no blanket exemption for “progress” or negation. Each other
+# clause still passes the original gate, and credential shapes always scan the original.
+_TASK_STATUS = re.compile(
+    r"(?ix)^(?:请|麻烦)?(?:告诉我|跟我说(?:一下)?|说说)?\s*"
+    r"(?:[A-Za-z][A-Za-z0-9_-]{0,31}\s+)?(?:密码|密钥|私钥|token|api[ _-]?key)\s*"
+    r"(?:挪进配置文件|移入配置文件|迁移(?:到配置文件)?|轮换|更新|配置|存储)"
+    r"(?:任务|那件事|这件事)?(?:的)?\s*(?:[，,]\s*)?(?:进展|进度|状态)(?:如何|怎么样|怎样)?$"
+    r"|^(?:(?:please\s+)?tell\s+me\s+(?:the\s+)?)?"
+    r"(?:[A-Za-z][A-Za-z0-9_-]{0,31}\s+)?(?:password|token|api[ _-]?key|private\s+key)\s+"
+    r"(?:migration|rotation|configuration|storage)(?:\s+task)?\s+(?:progress|status)$")
+
+
+_MIXED_ASK = re.compile(
+    r"(?i)(?:\b(?:private[ _-]?key|passwords?|passwd|seed phrase|ssh[ _-]?key)\b"
+    + tg_guard._GAP + tg_guard._ASK_CN + r"|"
+    r"\b(?:send|give|share|show|tell|paste|reveal|print|export|dump)\b"
+    + tg_guard._GAP + tg_guard._NOUN + r"|"
+    r"(?:发|给|告诉|贴|分享|导出|提供|透露|读出|打印|输出)"
+    + tg_guard._GAP + r"\b(?:private[ _-]?key|passwords?|passwd|seed phrase|ssh[ _-]?key)\b)")
+
+
+def _request_hit(text: str) -> str | None:
+    return tg_guard.rule_hit(text, "proxy") or ("mixed_ask_secret" if any(
+        _MIXED_ASK.search(f) for f in _forms(text)) else None)
+
+
+def _asks_secret(text: str) -> str | None:
+    spaced, _ = _forms(text)
+    # Keep the original whole-message test too: splitting punctuation must not weaken
+    # shell-file reads or other cross-clause rules.
+    hit = _request_hit(text)
+    if not hit:
+        return None
+    clauses = re.split(r"([。！？!?;；\n]+)", spaced)
+    remaining = "".join("" if _TASK_STATUS.fullmatch(c.strip()) else c for c in clauses)
+    return _request_hit(remaining)
+
+
 def inbound(text: str) -> Verdict:
     """§17.6 step 3. ok=False → do not give it to the model; tell the owner (the rule names the reason, not the content)."""
-    hit = tg_guard.rule_hit(text or "", "proxy")
+    hit = _asks_secret(text or "")
     if hit:
         return Verdict(False, f"asks_secret:{hit}")
     kind = credential_shape(text)

@@ -438,7 +438,7 @@ class Pipeline(Base):
         self.svc.on_app(k.id, m)
         await settle()
         self.assertEqual(self.sess.calls, [])
-        self.assertEqual(self.net.of("pack")[-1][1]["s"], "got")
+        self.assertEqual(self.net.of("pack")[-1][1]["s"], "blocked")
         items, _ = self.store.hist_page(k.id)
         self.assertEqual(items[0]["s"], "withheld")
         self.assertNotIn("sk-ant", items[0]["text"])

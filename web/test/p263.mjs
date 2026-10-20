@@ -52,7 +52,7 @@ try{
    const urls=await ev(p,`import('./js/theme.js').then(m=>${JSON.stringify(states)}.map(s=>m.themeLogo(s)))`);
    check(new Set(urls).size===5 && urls.every(u=>u.startsWith('blob:')),'five distinct preloaded URLs');
    for(const malformed of [{...group.logo,states:{idle:group.logo.states.idle}},{...group.logo,states:{...group.logo.states,working:'bad'}},{...group.logo,states:{...group.logo.states,working:readFileSync('agentjarvis/brand/img/logo-mark.png').toString('base64')}}]){
-    await fake.send({...group,id:'invalid-logo',logo:malformed});await waitFor(p,`document.documentElement.dataset.look==='invalid-logo' && !document.getElementById('orb').src.startsWith('blob:')`);check(true,'invalid group falls back');
+    await fake.send({...group,id:'invalid-logo',logo:malformed});await waitFor(p,`document.documentElement.dataset.look==='invalid-logo' && !${JSON.stringify(urls)}.includes(document.getElementById('orb').src)`);check(true,'invalid group falls back');   // P393 #137: the official robot, maybe repainted in the theme's state colour (its own blob:), never the group's logo
    }
    await fake.send(M.custom);await waitFor(p,`document.documentElement.dataset.look==='night-owl' && document.getElementById('orb').src.startsWith('blob:')`);
    const singles=await ev(p,`import('./js/theme.js').then(m=>${JSON.stringify(states)}.map(s=>m.themeLogo(s)))`);check(new Set(singles).size===1,'legacy single across five states');

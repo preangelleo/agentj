@@ -10,9 +10,10 @@
 import { t, onLang, plain } from './t.js';
 import { registerLayer } from './layers.js';
 import { RelayMD } from './md.js';
+import { DOWN_DEBOUNCE_MS } from './reconnect.js';
 
 export const LONG_OFFLINE_MS = 30 * 60 * 1000;       // Leo: 「超过 30 分钟无法连接，那可以写邮件到 feedback」
-export const SHOW_AFTER_MS = 6000;                   // = app.js QUIET_MS: a blink never blurs the page
+export const SHOW_AFTER_MS = DOWN_DEBOUNCE_MS;       // = app.js QUIET_MS (P393: five seconds): a blink never blurs the page
 export const FEEDBACK_EMAIL = 'feedback@agentj.app';
 const MAX_SINCE_MS = 30 * 86400 * 1000;              // an older stored start is not believed
 
@@ -60,11 +61,20 @@ export function restore(at) {
 /** app.js: a ready session just dropped (the screen stays quiet for QUIET_MS while it reconnects underneath). */
 export function dropped() { if (!since) since = now(); if (!dropSeen) dropSeen = now(); }
 
+/** P393 · app.js: the link gate (reconnect.js) is in its silent window — a drop just began, or the page came back to the
+ *  front: the card steps away (no flash on unlock) and keeps the outage start, the 「稍后」 choice and the stored record. */
+export function hush() {
+  if (mode === 'down') { mode = 'quiet'; if (timer) { clearInterval(timer); timer = 0; } }
+  dropSeen = now();
+  paint();
+}
+
 /** app.js, on every painted status / view: m = 'down' | 'ready' | 'other' | 'gone'. */
 export function update(m, statusKey = '') {
   key = statusKey;
   if (m === 'down') {
-    if (mode !== 'down') { seen = dropSeen || now(); dropSeen = 0; dismissed = false; if (!since) since = now(); }
+    // after a drop app.js only reports 'down' once the gate's full window is over: the card may show at once
+    if (mode !== 'down') { seen = dropSeen ? Math.min(dropSeen, now() - SHOW_AFTER_MS) : now(); dropSeen = 0; if (mode !== 'quiet') dismissed = false; if (!since) since = now(); }
   } else if (m === 'ready' || m === 'gone') {
     if (persisted) H.persist(null);
     since = 0; seen = 0; dropSeen = 0; persisted = false; dismissed = false; dismissedLong = false;
@@ -99,7 +109,9 @@ function paint() {
   const t0 = now();
   const long = mode === 'down' && isLong(t0 - since);
   if (mode === 'down' && !persisted && t0 - seen >= SHOW_AFTER_MS) { persisted = true; H.persist(since); }
-  const show = mode === 'down' && t0 - seen >= SHOW_AFTER_MS && (!dismissed || (long && !dismissedLong));
+  // P393: full-screen Settings carries its own live dot + notice (P392); the card waits behind it, back when it closes
+  const inSettings = !!$('settings') && !$('settings').hidden;
+  const show = mode === 'down' && !inSettings && t0 - seen >= SHOW_AFTER_MS && (!dismissed || (long && !dismissedLong));
   if (!show) { if (!d.hidden) d.hidden = true; document.body.removeAttribute('data-offline-card'); return; }
   if (dismissed && long) dismissed = false;           // the long-offline section is news: shown again once
   const host = key === 'st.hostDown';

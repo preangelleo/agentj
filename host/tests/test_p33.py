@@ -410,7 +410,7 @@ class Blobs(unittest.TestCase):
         # sha mismatch, size mismatch, magic bytes
         bad = png(500)
         b, m, _ = self.open(bad)
-        self.send(b, bad[:-1] + b"\x00")
+        self.send(b, bad[:-1] + bytes([bad[-1] ^ 0xFF]))     # always a different last byte (a 0x00 one was 1 in 256 the same)
         self.assertEqual(self.up.end(self.dev, b)[0][-1]["why"], "sha_mismatch")
         self.assertFalse((self.st.root / "uploads" / self.dev / f"{b}.part").exists(), "the partial is deleted")
         b, m, _ = self.open(bad)

@@ -34,6 +34,11 @@ if not _ours("XDG_CONFIG_HOME"):
     _c = tempfile.mkdtemp(prefix="aj-tests-config-")
     os.environ["XDG_CONFIG_HOME"] = _c
     atexit.register(shutil.rmtree, _c, True)
+# P393: the per-user shared ASR model folder (asr.shared_dir; the fence creates it) — never ~/.local/state/agentj-shared.
+if not _ours("AGENTJ_ASR_SHARED_DIR"):
+    _a = tempfile.mkdtemp(prefix="aj-tests-asr-shared-")
+    os.environ["AGENTJ_ASR_SHARED_DIR"] = os.path.join(_a, "asr")
+    atexit.register(shutil.rmtree, _a, True)
 # P57: `serve` links the bundled skills into ~/.claude/skills etc. (personalize.ensure) — never into the developer's real home
 # from a test (the tests run serve with the real HOME); test_p57_agent tests ensure() itself with a patched home.
 os.environ.setdefault("AGENTJ_SKILL_LINK", "off")

@@ -5,6 +5,8 @@ Engine `sherpa`: sherpa-onnx 1.13.8 (Apache-2.0) + SenseVoice-Small int8 2024-07
 dir is invisible to the fenced Agent (Invariant 14), so the code this host runs *outside* the fence cannot be rewritten by
 it; and `uv tool install --force` (every agentj upgrade) recreates agentj's own venv, which would drop a wheel put there.
 The model runs in a resident worker (`asr_worker.py`: one model load, idle exit) so a crash never takes `serve` down.
+Instances of one OS user share one verified copy of the model + wheels (P393, `shared_dir()`; see the section below):
+each still builds its own venv and keeps its own hard-linked `model/`.
 
 Engine `voxtype` is opt-in only (`agentj asr engine voxtype`), never picked automatically: voxtype follows the human's own
 configuration, which may be a remote service — automatic use could send audio off the machine (PR1).
@@ -285,7 +287,19 @@ def ready_state(state_dir=None, engine_override=None) -> str:
     if s["engine"] == "voxtype":
         return "ready" if shutil.which("voxtype") else "not_installed"
     installed, problem = _installed_ok(asr_dir(state_dir))
+    if not installed and _shared_usable(state_dir):
+        return "ready"          # P393: another instance's model is here; the first take links it in (no download)
     return ("broken" if problem else "ready") if installed else "not_installed"
+
+
+def _shared_usable(state_dir=None) -> bool:
+    """A shared copy this instance can be set up from, unless setting up from it already failed here."""
+    try:
+        if _read_json(asr_dir(state_dir) / "last_error.json").get("shared_failed"):
+            return False
+        return shared_present()
+    except Exception:  # noqa: BLE001 — a status word, never a crash
+        return False
 
 
 def status(state_dir=None, engine_override=None) -> dict:
@@ -305,8 +319,12 @@ def status(state_dir=None, engine_override=None) -> dict:
         state, active = ("ready", "voxtype") if vox else ("not_installed", None)
     elif installed:
         state, active = ("broken", None) if problem else ("ready", "sherpa")
+    elif _shared_usable(state_dir):
+        state, active = "ready", "sherpa"
     else:
         state, active = "not_installed", None
+    sd = shared_dir()
+    shared = {"dir": str(sd), "present": shared_present(), "used": rec.get("route") == "shared"}
     w = _RESIDENTS.get(str(d))
     out = {"state": state, "engine": eng, "active": active, "installed": installed, "problem": problem,
            "sherpa_version": rec.get("sherpa_version"), "model": rec.get("model"), "route": rec.get("route"),
@@ -314,14 +332,17 @@ def status(state_dir=None, engine_override=None) -> dict:
            "model_bytes": _tree_bytes(d / "model") if (d / "model").exists() else 0,
            "threads": s["threads"], "voxtype": vox, "platform_ok": platform_key() is not None,
            "worker": {"running": bool(w and w.alive()), "pid": w.proc.pid if w and w.alive() else None},
-           "last_error": _read_json(d / "last_error.json").get("detail")}
+           "last_error": _read_json(d / "last_error.json").get("detail"), "shared": shared}
     return out
 
 
 def doctor_rows(state_dir=None, engine_override=None) -> list[dict]:
     """Rows in doctor.py's shape ({"id","status","summary","hint"}, status ok|warn|fail). ASR is optional: never a ✗."""
     s = status(state_dir,engine_override=engine_override)
-    if s["state"] == "ready" and s["active"] == "sherpa":
+    if s["state"] == "ready" and s["active"] == "sherpa" and not s["installed"]:
+        row = (OK, "本机转写可用：用这台电脑上已装好的共享模型，第一次说话时接入，不再下载 / local speech-to-text ready: the model "
+                   "already on this computer is shared and is linked in on first use, no download", "")
+    elif s["state"] == "ready" and s["active"] == "sherpa":
         row = (OK, f"本机转写可用 / local speech-to-text ready · SenseVoice-Small · sherpa-onnx {s['sherpa_version']} · "
                    f"{s['threads']} 线程 / threads · {s['disk_bytes'] // 1_000_000} MB", "")
     elif s["state"] == "ready":
@@ -546,6 +567,9 @@ def transcribe(wav_path: str, *, timeout_s: float, state_dir=None, engine_overri
         return _fail("not_installed", "engine voxtype, but voxtype is not on PATH")
     if not vox:
         installed, problem = _installed_ok(d)
+        if not installed and _shared_usable(state_dir):
+            installed = adopt_shared(state_dir, max(1.0, deadline - time.monotonic()))
+            installed, problem = _installed_ok(d) if installed else (False, None)
         if not installed:
             return _fail("not_installed", "run `agentj asr install` on the Agent J host")
         if problem:
@@ -831,6 +855,330 @@ def _confirm(prompt: str, inp, out) -> bool:
     return ans.strip().lower() in ("y", "yes", "是", "好")
 
 
+# ------------------------------------------------------------------ P393 (#120): one model per OS user, shared by instances
+# Several instances (`agentj --instance N`) of one OS user each installed their own ≈ 296 MB copy. Now whoever installs first
+# publishes the verified model and wheels to SHARED (one folder per OS user, a sibling of the instance state folders, hidden
+# from every instance's Agent like those: fence.other_states); later instances hard-link (or, across file systems, copy) the
+# model into their own `<state>/asr/model` and build their own small venv from the shared wheels, offline — no download. The
+# venv (code run outside the fence) is never shared. Every byte is SHA-256-checked again in the instance's private folder
+# before it is used; a damaged shared copy is dropped (names only — instances keep their own links) and downloaded again.
+# One installer at a time: an flock on SHARED/.lock; the second waits, then reuses. Existing per-instance installs keep
+# working untouched and seed the shared folder lazily (their verified files are linked in, never moved or deleted).
+SHARED_ENV = "AGENTJ_ASR_SHARED_DIR"     # tests / operators: the shared ASR folder itself
+SHARED_ROOT = "~/.local/state/agentj-shared"
+SHARED_MANIFEST = "manifest.json"
+_ADOPT = threading.Lock()                # one lazy adoption per process
+
+
+def shared_root(home=None) -> pathlib.Path:
+    """The folder the fence hides from every instance's Agent (the env override hides itself)."""
+    v = os.environ.get(SHARED_ENV)
+    if v:
+        return pathlib.Path(v)
+    return pathlib.Path(os.path.join(home, SHARED_ROOT[2:]) if home else os.path.expanduser(SHARED_ROOT))
+
+
+def shared_dir(home=None) -> pathlib.Path:
+    return shared_root(home) if os.environ.get(SHARED_ENV) else shared_root(home) / "asr"
+
+
+def _own_dir(p: pathlib.Path) -> bool:
+    try:
+        s = os.lstat(p)
+    except OSError:
+        return False
+    import stat as _stat
+    return _stat.S_ISDIR(s.st_mode) and s.st_uid == os.getuid()
+
+
+def _shared_ready_dir(create: bool = False) -> pathlib.Path | None:
+    """SHARED when it is a real directory of this user (never a symlink), 0700; created on request. None otherwise."""
+    d = shared_dir()
+    try:
+        if create:
+            for p in ([d.parent, d] if not os.environ.get(SHARED_ENV) else [d]):
+                if not os.path.lexists(p):
+                    os.makedirs(p, mode=0o700, exist_ok=True)
+                if not _own_dir(p):
+                    return None
+                os.chmod(p, 0o700)
+        elif not _own_dir(d):
+            return None
+    except OSError:
+        return None
+    return d
+
+
+@contextlib.contextmanager
+def _shared_lock(d: pathlib.Path, deadline: float | None = None):
+    """Exclusive across processes and instances; raises TimeoutError past `deadline` (None: wait)."""
+    import fcntl
+    fd = os.open(d / ".lock", os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    try:
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | (fcntl.LOCK_NB if deadline is not None else 0))
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise TimeoutError from None
+                time.sleep(0.2)
+        yield
+    finally:
+        os.close(fd)
+
+
+def _wheel_names(key) -> list[str]:
+    return [w[0].rsplit("/", 1)[1] for w in _wheels_for(key)]
+
+
+def _shared_manifest(d: pathlib.Path, key) -> dict | None:
+    """The manifest when it names this model and this platform's wheels and every listed file has its pinned size."""
+    m = _read_json(d / SHARED_MANIFEST)
+    files, wheels = m.get("files"), m.get("wheels")
+    if m.get("v") != 1 or m.get("model") != MODEL_ID or not isinstance(files, dict) or not isinstance(wheels, dict):
+        return None
+    if not set(REQUIRED) <= set(files) or any(n not in FILES or files[n] != FILES[n][2] for n in files):
+        return None
+    try:
+        for n in files:
+            p = d / "model" / n
+            if p.is_symlink() or p.stat().st_size != FILES[n][1]:
+                return None
+    except OSError:
+        return None
+    return m
+
+
+def _shared_wheel(d: pathlib.Path, n: str, size: int, sha: str) -> pathlib.Path | None:
+    """A shared wheel the manifest lists with this pin and that has its size (hashed again after linking)."""
+    p = d / "wheels" / n
+    try:
+        ok = _read_json(d / SHARED_MANIFEST).get("wheels", {}).get(n) == sha and not p.is_symlink() and p.stat().st_size == size
+    except (OSError, AttributeError):
+        ok = False
+    return p if ok else None
+
+
+def shared_present(key=None) -> bool:
+    """Cheap (sizes, no hashing): a later instance can be set up from the shared copy without downloading."""
+    key = key or platform_key()
+    d = _shared_ready_dir()
+    return bool(key and d and _shared_manifest(d, key))
+
+
+def _link_or_copy(src: pathlib.Path, dst: pathlib.Path) -> None:
+    """dst (absent) becomes the same bytes as src: a hard link (one copy on disk), across file systems a private copy."""
+    if src.is_symlink():
+        raise InstallError(f"{src.name}: unexpected link")
+    try:
+        os.link(src, dst, follow_symlinks=False)
+        return
+    except OSError:
+        pass
+    fd = os.open(dst, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    with os.fdopen(fd, "wb") as out, open(src, "rb") as inp:
+        shutil.copyfileobj(inp, out, 1 << 20)
+
+
+def _drop_shared(d: pathlib.Path) -> None:
+    """Forget a damaged shared copy: unlink its names only (instances that linked it keep their own names)."""
+    (d / SHARED_MANIFEST).unlink(missing_ok=True)
+    for sub in ("model", "wheels"):
+        shutil.rmtree(d / sub, ignore_errors=True)
+
+
+def _publish(d: pathlib.Path, model: pathlib.Path, wheels: list[pathlib.Path], key) -> bool:
+    """Under the shared lock: put verified model files + wheels into SHARED (staging, then rename; manifest last)."""
+    try:
+        files = {n: FILES[n][2] for n in FILES if (model / n).is_file() and not (model / n).is_symlink()}
+        if not set(REQUIRED) <= set(files):
+            return False
+        _drop_shared(d)
+        tag = f"{os.getpid()}.{threading.get_ident()}"
+        stage = _private_dir(d / f"model.staging.{tag}")
+        for n in files:
+            _link_or_copy(model / n, stage / n)
+        wst = _private_dir(d / f"wheels.staging.{tag}")
+        pins = {w[0].rsplit("/", 1)[1]: w[2] for w in _wheels_for(key)}
+        for w in wheels:
+            _link_or_copy(w, wst / w.name)
+        pins = {n: sha for n, sha in pins.items() if (wst / n).exists()}
+        os.replace(stage, d / "model")
+        os.replace(wst, d / "wheels")
+        _write_json(d / SHARED_MANIFEST, {"v": 1, "model": MODEL_ID, "sherpa_version": SHERPA_VERSION, "files": files,
+                                          "wheels": pins, "published": int(time.time())})
+        return True
+    except (OSError, InstallError):
+        for p in d.glob("*.staging.*"):
+            shutil.rmtree(p, ignore_errors=True)
+        return False
+
+
+def _seed_from(d: pathlib.Path, own: pathlib.Path, key) -> bool:
+    """Lazy migration: a working per-instance install (this one or a sibling instance's) becomes the shared copy. Its model
+    is re-hashed first. Installs older than this release kept no wheels: the first instance set up from such a seed fetches
+    just the two small sherpa-onnx wheels (≈ 15 MB, pinned) into SHARED — never the model again."""
+    try:
+        if not _read_json(own / "installed.json"):
+            return False
+        for n in REQUIRED:
+            p = own / "model" / n
+            if p.is_symlink() or p.stat().st_size != FILES[n][1] or _sha256(p) != FILES[n][2]:
+                return False
+        wheels = []
+        for (_p, size, sha), n in zip(_wheels_for(key), _wheel_names(key)):
+            w = own / "wheels" / n
+            if w.is_file() and not w.is_symlink() and w.stat().st_size == size and _sha256(w) == sha:
+                wheels.append(w)
+    except OSError:
+        return False
+    return _publish(d, own / "model", wheels, key)
+
+
+def _siblings(state_dir=None) -> list[pathlib.Path]:
+    """The other instances' ASR folders of this OS user (read only — never changed or deleted)."""
+    me = os.path.realpath(str(asr_dir(state_dir)))
+    out = []
+    try:
+        from .instance import MAX, state_root
+        for n in range(1, MAX + 1):
+            p = state_root(n) / "asr"
+            if os.path.realpath(str(p)) != me and _own_dir(p):
+                out.append(p)
+    except Exception:  # noqa: BLE001
+        pass
+    return out
+
+
+def _adopt(d: pathlib.Path, sd: pathlib.Path, key, out, progress, self_test: bool, threads: int) -> None:
+    """This instance from the shared copy, offline: link the model in, hash the private names, build the venv from the
+    shared wheels (--require-hashes). Raises InstallError("shared copy damaged …") when a byte does not match."""
+    m = _shared_manifest(sd, key)
+    if not m:
+        raise InstallError("shared copy damaged: manifest")
+    _private_dir(d)
+    _clean_partial(d)
+    dl = _private_dir(d / "dl")
+    stage = _private_dir(d / "model.staging")
+    try:
+        progress("install")
+        out(f"  共用已装好的模型，不再下载 / reusing the model already on this computer, no download ({_tilde(sd)})")
+        for n in m["files"]:
+            _link_or_copy(sd / "model" / n, stage / n)
+            if _sha256(stage / n) != FILES[n][2]:
+                raise InstallError(f"shared copy damaged: {n}")
+        wpaths, wshas = [], []
+        for (path, size, sha), n in zip(_wheels_for(key), _wheel_names(key)):
+            src = _shared_wheel(sd, n, size, sha)
+            if src is None:          # seeded from an install that kept no wheels: fetch only this small pinned wheel, once
+                progress("download")
+                wdir = _private_dir(sd / "wheels")
+                hosts = []
+                for r in route_order("auto") + list(ROUTES):
+                    hosts += [u for u in ROUTES[r]["pypi"] if u not in hosts]
+                _fetch([u + path for u in hosts], wdir / n, size, sha, out, n.split("-")[0] + " wheel")
+                rec = _read_json(sd / SHARED_MANIFEST)
+                rec.setdefault("wheels", {})[n] = sha
+                _write_json(sd / SHARED_MANIFEST, rec)
+                src = wdir / n
+                progress("install")
+            w = dl / n
+            w.unlink(missing_ok=True)
+            _link_or_copy(src, w)
+            if w.stat().st_size != size or _sha256(w) != sha:
+                raise InstallError(f"shared copy damaged: {n}")
+            wpaths.append(w)
+            wshas.append(sha)
+        out("  安装 sherpa-onnx / installing sherpa-onnx …")
+        _make_venv(d, wpaths, wshas)
+        os.replace(stage, d / "model")
+        os.chmod(d / "model", 0o700)
+        os.chmod(d / "venv", 0o700)
+        if self_test:
+            progress("test")
+            out("  自测 / self-test …")
+            _self_test(d, threads)
+        _write_json(d / "installed.json", {"v": 1, "sherpa_version": SHERPA_VERSION, "model": MODEL_ID, "route": "shared",
+                                           "installed": int(time.time()), "python": sys.executable,
+                                           "files": {n: FILES[n][2] for n in m["files"]}})
+        (d / "last_error.json").unlink(missing_ok=True)
+    except (InstallError, OSError):
+        _clean_partial(d)
+        raise
+    finally:
+        shutil.rmtree(dl, ignore_errors=True)
+
+
+def _reuse_locked(sd: pathlib.Path, d: pathlib.Path, key, *, state_dir, out, progress, self_test: bool) -> str:
+    """Caller holds the shared lock. → "adopted" | "absent" (nothing to reuse: download) | "damaged" (dropped: download)."""
+    if not _shared_manifest(sd, key):
+        if not any(_seed_from(sd, s, key) for s in _siblings(state_dir)):
+            return "absent"
+    try:
+        _adopt(d, sd, key, out, progress, self_test, settings(state_dir)["threads"])
+        return "adopted"
+    except InstallError as e:
+        if "shared copy damaged" not in str(e):
+            raise
+        _drop_shared(sd)
+        return "damaged"
+
+
+def _try_shared(d: pathlib.Path, key, *, state_dir, out, progress, self_test: bool, deadline=None) -> str:
+    """_reuse_locked under the shared lock. Raises TimeoutError past deadline."""
+    sd = _shared_ready_dir(create=True)
+    if sd is None:
+        return "absent"
+    with _shared_lock(sd, deadline):
+        return _reuse_locked(sd, d, key, state_dir=state_dir, out=out, progress=progress, self_test=self_test)
+
+
+def _share_existing(d: pathlib.Path, key) -> None:
+    """An instance installed before shared copies existed: offer its verified model to the others (skip when busy)."""
+    try:
+        sd = _shared_ready_dir(create=True)
+        if sd is None or _shared_manifest(sd, key):
+            return
+        with _shared_lock(sd, time.monotonic()):
+            if not _shared_manifest(sd, key):
+                _seed_from(sd, d, key)
+    except (OSError, TimeoutError, InstallError):
+        pass
+
+
+def adopt_shared(state_dir=None, timeout_s: float = 120) -> bool:
+    """transcribe()'s lazy step: a not-installed instance with a shared copy sets itself up (no self-test, no download)."""
+    key = platform_key()
+    d = asr_dir(state_dir)
+    if not key or not shared_present(key):
+        return False
+    with _ADOPT:
+        if _installed_ok(d) == (True, None):
+            return True
+        try:
+            r = _try_shared(d, key, state_dir=state_dir, out=lambda _: None, progress=lambda _: None, self_test=False,
+                            deadline=time.monotonic() + timeout_s)
+        except (InstallError, OSError, TimeoutError) as e:
+            with contextlib.suppress(OSError):
+                _private_dir(d)
+                _write_json(d / "last_error.json", {"at": int(time.time()), "detail": f"shared: {str(e)[:200]}",
+                                                    "shared_failed": True})
+            return False
+        return r == "adopted"
+
+
+def _keep_wheels_for_sharing(d: pathlib.Path, wheels: list[pathlib.Path]) -> None:
+    """After an own install: keep the verified wheels next to the model so this install can seed SHARED later."""
+    try:
+        w = _private_dir(d / "wheels")
+        for p in wheels:
+            if not (w / p.name).exists():
+                _link_or_copy(p, w / p.name)
+    except (OSError, InstallError):
+        pass
+
+
 FALLBACK = ("这台Agent J 主机装不了本地转写（{reason}）。可以：① 装 voxtype 后运行 `agentj asr engine voxtype`；② 先用手机输入法自带的听写。"
             " / Local speech-to-text could not be installed here ({reason}). Instead: ① install voxtype, then run "
             "`agentj asr engine voxtype`; ② use the phone keyboard's dictation for now.")
@@ -847,12 +1195,51 @@ def install(state_dir=None, mirror: str = "auto", yes: bool = False, out=print, 
         return 1
     installed, problem = _installed_ok(d)
     if installed and not problem:
+        _share_existing(d, key)
         out(f"✓ 已经装好了 / already installed ({_tilde(d)}); `agentj asr test` 试一下 / to try it")
         return 0
     if mirror not in MIRRORS:
         out(f"✗ --mirror 只能是 / must be one of {', '.join(MIRRORS)}")
         return 2
+    sd = _shared_ready_dir(create=True)
+    reuse = bool(sd and shared_present(key))
+    if reuse:      # P393: another instance already put the model here — no download, nothing to confirm
+        progress("install")
+        try:
+            with _shared_lock(sd):
+                r = _reuse_locked(sd, d, key, state_dir=state_dir, out=out, progress=progress, self_test=True)
+        except (InstallError, OSError) as e:
+            r = None
+            reason = str(e) if isinstance(e, InstallError) else f"{type(e).__name__}"
+            _write_json(_private_dir(d) / "last_error.json", {"at": int(time.time()), "detail": reason[:500]})
+            out("✗ " + FALLBACK.format(reason=reason[:300]))
+            return 1
+        if r == "adopted":
+            return _installed_message(d, state_dir, out)
     order = route_order(mirror)
+    if not _describe(d, key, order, yes=yes, out=out, inp=inp):     # asked before waiting for the lock
+        return 1
+    with (_shared_lock(sd) if sd else contextlib.nullcontext()):
+        if sd:     # another instance may have finished installing while we waited for the lock: reuse, do not download
+            try:
+                if _reuse_locked(sd, d, key, state_dir=state_dir, out=out, progress=progress, self_test=True) == "adopted":
+                    return _installed_message(d, state_dir, out)
+            except (InstallError, OSError):
+                pass
+        return _download_install(d, key, sd, order=order, state_dir=state_dir, out=out, progress=progress)
+
+
+def _installed_message(d: pathlib.Path, state_dir, out) -> int:
+    cur = settings(state_dir)["engine"]
+    if cur != "voxtype":
+        _set_setting(state_dir, engine="sherpa")
+    out(f"✓ 装好了 / installed: {_tilde(d)} ({_tree_bytes(d) // 1_000_000} MB)"
+        + ("；引擎仍是你选的 voxtype（换用：agentj asr engine sherpa）/ engine stays voxtype (switch: agentj asr engine sherpa)"
+           if cur == "voxtype" else ""))
+    return 0
+
+
+def _describe(d: pathlib.Path, key, order, *, yes, out, inp) -> bool:
     first = order[0]
     mb = download_mb(first, key)
     src = "github.com + pypi.org" if first == "github" else (
@@ -864,7 +1251,13 @@ def install(state_dir=None, mirror: str = "auto", yes: bool = False, out=print, 
         f"  模型许可 / model licence: FunASR Model License 1.1 (attribution: FunAudioLLM SenseVoice)")
     if not yes and not _confirm("继续？/ Continue? [y/N] ", inp, out):
         out("没有安装（需要确认：在终端里回答 y，或加 --yes）/ not installed (answer y in a terminal, or pass --yes)")
-        return 1
+        return False
+    return True
+
+
+def _download_install(d: pathlib.Path, key, sd, *, order, state_dir, out, progress) -> int:
+    """The download path (under the shared lock when there is a shared folder); publishes the result to it."""
+    first = order[0]
     _private_dir(d)
     dl = _private_dir(d / "dl")
     (d / "last_error.json").unlink(missing_ok=True)
@@ -932,14 +1325,11 @@ def install(state_dir=None, mirror: str = "auto", yes: bool = False, out=print, 
         out("✗ " + FALLBACK.format(reason=reason[:300]))
         out("  已下载的部分留在 / partial downloads kept in " + _tilde(dl) + "，再运行一次会接着下 / rerun to resume")
         return 1
+    _keep_wheels_for_sharing(d, wpaths)
+    if sd is not None:
+        _publish(sd, d / "model", [d / "wheels" / p.name for p in wpaths if (d / "wheels" / p.name).exists()], key)
     shutil.rmtree(dl, ignore_errors=True)
-    cur = settings(state_dir)["engine"]
-    if cur != "voxtype":
-        _set_setting(state_dir, engine="sherpa")
-    out(f"✓ 装好了 / installed: {_tilde(d)} ({_tree_bytes(d) // 1_000_000} MB)"
-        + ("；引擎仍是你选的 voxtype（换用：agentj asr engine sherpa）/ engine stays voxtype (switch: agentj asr engine sherpa)"
-           if cur == "voxtype" else ""))
-    return 0
+    return _installed_message(d, state_dir, out)
 
 
 def _self_test(d: pathlib.Path, threads: int) -> None:
@@ -990,6 +1380,71 @@ def remove(state_dir=None, out=print) -> int:
     return 0
 
 
+# ------------------------------------------------------------------ P393 (#120): is the human's voxtype Chinese-capable?
+# voxtype follows its own config (`~/.config/voxtype/config.toml`); some Linux desktops ship it with English-only Whisper `base.en`.
+# Read the file only (never run voxtype for this): the engine and its model / language decide. False = it cannot transcribe
+# Chinese (refused unless --force); None = cannot tell (a remote service, an engine we do not know): a warning only.
+VOXTYPE_ZH = ("sensevoice", "paraformer", "dolphin", "funasr", "fireredasr", "qwen")
+VOXTYPE_EN_ONLY = ("parakeet", "moonshine")
+
+
+def voxtype_config_path() -> pathlib.Path:
+    base = os.environ.get("XDG_CONFIG_HOME") or os.path.join(os.path.expanduser("~"), ".config")
+    return pathlib.Path(base) / "voxtype" / "config.toml"
+
+
+def voxtype_language(path=None) -> dict:
+    """→ {"engine", "model", "chinese": True | False | None, "why"}. No values other than engine / model names are read."""
+    p = pathlib.Path(path) if path else voxtype_config_path()
+    try:
+        import tomllib
+        with open(p, "rb") as f:
+            cfg = tomllib.load(f)
+    except FileNotFoundError:
+        cfg = {}           # voxtype's own defaults: Whisper base.en
+    except (OSError, ValueError):
+        return {"engine": None, "model": None, "chinese": None, "why": "unreadable"}
+    engine = str(cfg.get("engine") or "whisper").strip().lower()
+    sec = cfg.get(engine) if isinstance(cfg.get(engine), dict) else {}
+    model = str(sec.get("model") or ("base.en" if engine == "whisper" else "")).strip()
+    hint = (engine + " " + model + " " + str(sec.get("remote_model") or "")).lower()
+    if any(z in hint for z in VOXTYPE_ZH):
+        return {"engine": engine, "model": model, "chinese": True, "why": "chinese_model"}
+    if engine in VOXTYPE_EN_ONLY:
+        return {"engine": engine, "model": model, "chinese": False, "why": "english_engine"}
+    if engine == "whisper":
+        if str(sec.get("mode") or "local").lower() == "remote":
+            return {"engine": engine, "model": str(sec.get("remote_model") or model), "chinese": None, "why": "remote"}
+        lang = sec.get("language", "en")
+        langs = [str(x).lower() for x in (lang if isinstance(lang, list) else [lang])]
+        if model.lower().endswith((".en", "-en", "_en")):
+            return {"engine": engine, "model": model, "chinese": False, "why": "english_model"}
+        if any(x in ("zh", "auto", "yue") for x in langs):
+            return {"engine": engine, "model": model, "chinese": True, "why": "multilingual"}
+        return {"engine": engine, "model": model, "chinese": False, "why": "language_" + "_".join(langs)[:20]}
+    return {"engine": engine, "model": model, "chinese": None, "why": "unknown_engine"}
+
+
+def voxtype_guard(force: bool = False) -> tuple[bool, str]:
+    """Before switching to voxtype. → (go ahead, a bilingual line to print — empty when nothing needs saying)."""
+    if not shutil.which("voxtype"):
+        return True, ""
+    v = voxtype_language()
+    name = f"{v['engine'] or '?'}" + (f" / {v['model']}" if v.get("model") else "")
+    if v["chinese"] is True:
+        return True, f"voxtype 当前用 {name}，能识别中文 / voxtype uses {name}, which understands Chinese."
+    if v["chinese"] is None:
+        return True, (f"⚠ 看不出 voxtype 当前的 {name} 能不能识别中文（{v['why']}），先用一句中文试试 / cannot tell whether "
+                      f"voxtype's {name} understands Chinese ({v['why']}); try one Chinese sentence first.")
+    if force:
+        return True, (f"⚠ voxtype 当前的 {name} 只认英文，按 --force 照样切换了 / voxtype's {name} is English-only; switched "
+                      "anyway (--force).")
+    return False, (f"✗ 没有切换：voxtype 当前的 {name} 只认英文，中文会转错。先在 voxtype 里换成 SenseVoice 或多语言 Whisper"
+                   f"（例如 voxtype 设置里 engine = \"sensevoice\"），或加 --force 照样切换 / not switched: voxtype's {name} is "
+                   "English-only, so Chinese would come out wrong. Switch voxtype to SenseVoice or a multilingual Whisper model "
+                   "first (e.g. engine = \"sensevoice\" in voxtype's settings), or pass --force to switch anyway.")
+
+
 # ------------------------------------------------------------------ CLI
 def _print_status(s: dict, out) -> None:
     label = {"ready": "可用 / ready", "not_installed": "没装 / not installed", "off": "关闭 / off", "broken": "坏了 / broken"}
@@ -1004,13 +1459,19 @@ def _print_status(s: dict, out) -> None:
         out(f"  voxtype: {_tilde(s['voxtype'])}" + ("" if s["engine"] == "voxtype" else " （要用：agentj asr engine voxtype / to use it)"))
     if s["worker"]["running"]:
         out(f"  worker pid {s['worker']['pid']}")
+    sh = s.get("shared") or {}
+    if sh.get("used"):
+        out(f"  共用模型 / shared model: {_tilde(sh['dir'])}（同一用户的各实例共用一份 / one copy for every instance of this user）")
+    elif sh.get("present") and not s["installed"]:
+        out(f"  共用模型已在 / shared model present: {_tilde(sh['dir'])} → 第一次说话时接入，不再下载 / linked in on first use, no download")
     if s["last_error"] and not s["installed"]:
         out(f"  上次安装失败 / last install failed: {s['last_error']}")
     if s["state"] == "not_installed" and s["engine"] != "voxtype":
         out(f"  安装 / install: agentj asr install（≈ {download_mb('github')} MB）")
 
 
-def cli_main(argv, *, state_dir=None, out=print, inp=None) -> int:
+def cli_main(argv, *, state_dir=None, out=print, inp=None, engine_override=None) -> int:
+    """engine_override: preferences `voice.asr.engine` (what serve, doctor and the phone use) — status shows the same."""
     ap = argparse.ArgumentParser(prog="agentj asr", description="本机语音转写 / local speech-to-text (PROTOCOL §10.9)")
     sub = ap.add_subparsers(dest="cmd", required=True)
     i = sub.add_parser("install", help=f"装 sherpa-onnx + SenseVoice（≈ {download_mb('github')} MB）/ install")
@@ -1022,6 +1483,7 @@ def cli_main(argv, *, state_dir=None, out=print, inp=None) -> int:
     t.add_argument("wav", nargs="?")
     e = sub.add_parser("engine", help="auto · sherpa · voxtype · off")
     e.add_argument("engine", choices=ENGINES)
+    e.add_argument("--force", action="store_true", help="voxtype: switch even when its model looks English-only")
     sub.add_parser("remove", help="删掉模型和 sherpa-onnx / remove the model and sherpa-onnx")
     try:
         a = ap.parse_args(argv)
@@ -1030,13 +1492,19 @@ def cli_main(argv, *, state_dir=None, out=print, inp=None) -> int:
     if a.cmd == "install":
         return install(state_dir, a.mirror, a.yes, out, inp)
     if a.cmd == "status":
-        s = status(state_dir)
+        s = status(state_dir, engine_override=engine_override)
         if a.json:
             out(json.dumps(s, ensure_ascii=False, indent=1))
         else:
             _print_status(s, out)
         return 0
     if a.cmd == "engine":
+        if a.engine == "voxtype":
+            go, line = voxtype_guard(a.force)
+            if line:
+                out(line)
+            if not go:
+                return 2
         if not _set_setting(state_dir, engine=a.engine):
             out("✗ 这台Agent J 主机还没初始化 / not initialised: agentj init")
             return 1
@@ -1052,7 +1520,7 @@ def cli_main(argv, *, state_dir=None, out=print, inp=None) -> int:
         out("✗ 没有这个文件 / no such file" + ("" if a.wav else "（这份模型没带示例，请给一个 WAV / this model copy has no sample: "
                                                           "pass a WAV)"))
         return 2
-    r = transcribe(wav, timeout_s=120, state_dir=state_dir)
+    r = transcribe(wav, timeout_s=120, state_dir=state_dir, engine_override=engine_override)
     shutdown()
     if r["ok"]:
         out(f"✓ [{r['engine']}, {r['ms']} ms] {r['text']}")

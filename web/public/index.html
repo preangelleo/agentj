@@ -13,7 +13,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Agent J">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <script src="js/boot.js"></script>
 <link rel="icon" href="favicon.ico?v=61e0069c" sizes="any">
 <link rel="icon" href="brand/img/favicon-32.png?v=431f7864" type="image/png" sizes="32x32">
@@ -709,6 +709,7 @@
       <div class="sethead menuhead">
         <button type="button" id="set-back" class="setx menuicon" hidden data-i18n-attr="aria-label=set.back,title=set.back" aria-label="返回设置" title="返回设置"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
         <h2 id="set-title" data-i18n="set.title">设置</h2>
+        <span id="set-connection" class="setconnection" role="status" aria-live="polite"></span>
         <kbd class="setesc" aria-hidden="true">Esc</kbd>
         <div id="set-actions" class="set-actions"></div>
       </div>
@@ -998,8 +999,15 @@
             <div class="setrow" id="set-news-row" data-paired data-keywords="email mail newsletter digest musk ai news 邮件 邮箱 订阅 新闻 动态">
               <span class="setlab" data-i18n="p374.label">Daily AI News</span>
               <button type="button" role="switch" aria-checked="false" class="setswitch" id="set-news" disabled data-i18n-attr="aria-label=p374.label" aria-label="Daily AI News"></button>
-              <p class="setnote" data-i18n="p374.help">每天早上把 Agent J 的 Daily Agent 整理的《Musk + AI 24h》（中文）发到你的账号邮箱，看看一个每日自动化能做成什么样。随时可关。</p>
+              <p class="setnote" data-i18n="p374.help">每天早上把 Agent J 的 Daily Agent 整理的《Musk + AI 24h》（中文）发到用这台 Agent J 的人自己的邮箱，看看一个每日自动化能做成什么样。随时可关。</p>
               <p class="setnote" id="set-news-to" hidden></p>
+              <form class="newsmail" id="set-news-mail" novalidate hidden>
+                <p class="setnote" data-i18n="p393news.need">这台 Agent J 的新闻发到你自己的邮箱。填一个邮箱，我们发验证码确认。</p>
+                <p class="newsmail__row" id="set-news-step1"><input id="set-news-email" class="aj-input" type="email" inputmode="email" autocomplete="email" autocapitalize="off" spellcheck="false" maxlength="254" enterkeyhint="send" data-i18n-attr="placeholder=p393news.emailPh,aria-label=p393news.emailLab" placeholder="你常用的邮箱" aria-label="你的邮箱"><button type="submit" id="set-news-send" class="aj-btn aj-btn--sm aj-btn--primary" data-i18n="p393news.send">发验证码</button></p>
+                <p class="setnote newsmail__sent" id="set-news-sent" hidden></p>
+                <p class="newsmail__row" id="set-news-step2" hidden><input id="set-news-code" class="aj-input" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" spellcheck="false" enterkeyhint="done" data-i18n-attr="placeholder=p393news.codeLab,aria-label=p393news.codeLab" placeholder="邮件里的 6 位验证码" aria-label="邮件里的 6 位验证码"><button type="submit" id="set-news-verify" class="aj-btn aj-btn--sm aj-btn--primary" data-i18n="p393news.verify" disabled>确认</button></p>
+                <p class="setlinks newsmail__again" id="set-news-again" hidden><button type="button" id="set-news-resend" class="setlink" disabled></button><button type="button" id="set-news-change" class="setlink" data-i18n="p393news.change">换一个邮箱</button></p>
+              </form>
               <p class="setnote" id="set-news-msg" role="status" aria-live="polite" hidden></p>
               <p class="setlinks" id="set-news-links" hidden><a id="set-news-acct" href="https://agentj.app/account/" target="_blank" rel="noopener" data-i18n="set.accountOpen" hidden>打开账号后台</a><a id="set-news-sample" target="_blank" rel="noopener" data-i18n="p374.sample" hidden>看一封样例</a></p>
             </div>

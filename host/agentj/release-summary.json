@@ -1,6 +1,6 @@
 {
-  "version": "0.24.0a1",
-  "major": true,
-  "zh": "记事本逐条复制编辑，卡片自选颜色；新增只读自动化与大屏遥控器；安装、密钥重读、Telegram 和语音准备更清楚。",
-  "en": "Notebook records, card colours, read-only Automation and large-screen controls; clearer installation, key reload, Telegram and voice setup."
+  "version": "0.24.1a1",
+  "major": false,
+  "zh": "每页搜索只搜本页；断开 5 秒内静默重连；可选 10 分钟管理员授权；手机确认重设配对密码；多实例共用语音模型；升级自检写明原因。",
+  "en": "Per-page search, quiet reconnect within 5 s, optional 10-minute admin approval, phone-confirmed password reset, a shared speech model, clearer upgrade checks."
 }

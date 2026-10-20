@@ -149,6 +149,20 @@ def other_states(st, home: str | None = None) -> list[str]:
             out.append(r)
     from .instance import foreign_paths   # P180: the other instances' state / preferences, the other seats' workspaces
     out += [p for p in foreign_paths(st, home) if p not in out]
+    # P393 (#120): the per-user shared ASR model folder — host data like a state folder, hidden from every instance's Agent.
+    # Created (empty, 0700) here outside the fence so it is already hidden before the first install fills it.
+    try:
+        from .asr import shared_root
+        shared = shared_root(home)
+        if not inside() and not os.path.lexists(shared):
+            os.makedirs(shared, mode=0o700, exist_ok=True)
+        r = _real(str(shared))
+        h = _real(home or os.path.expanduser("~"))
+        if (os.path.isdir(r) and not os.path.islink(shared) and r not in out and not _under(r, root) and not _under(root, r)
+                and r != h and not _under(h, r)):
+            out.append(r)
+    except Exception:  # noqa: BLE001 — never a reason not to start the fence
+        pass
     return out
 
 
@@ -237,7 +251,8 @@ def launch_environment(base=None, allow_docker: bool = False, kind: str = "codex
 # P348 (2026-10-16): the owner's own automation — scheduled tasks, workflow CEOs, goal countdowns — may use any plan key
 # (Ark / Bailian Coding Plan, Bailian Token Plan, Kimi For Coding membership); a support bot serves other people, so it
 # never gets one (bots/provider.py asks for a pay-as-you-go key).
-PLAN_KEY_ENV = ("ARK_CODING_PLAN_API_KEY", "BAILIAN_CODING_PLAN_API_KEY", "BAILIAN_TOKEN_PLAN_API_KEY", "KIMI_API_KEY")
+PLAN_KEY_ENV = ("ARK_CODING_PLAN_API_KEY", "BAILIAN_CODING_PLAN_API_KEY", "BAILIAN_TOKEN_PLAN_API_KEY", "KIMI_API_KEY",
+                "ARK_AGENT_PLAN_API_KEY")   # P395: Ark's Agent Plan
 
 
 def auxiliary_environment(base=None, kind: str = "claude", extra_keep=(), plan_keys: bool = False) -> dict:

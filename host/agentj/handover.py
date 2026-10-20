@@ -127,7 +127,9 @@ def _zh(f: dict) -> str:
         "**手机丢了**：在这台Agent J 主机上运行 `agentj devices` 找到那部手机的设备号，再运行 `agentj revoke <设备号>`，它马上就断开了。"
         + ("不在Agent J 主机旁边的话，在账号后台的 Agent 卡片上找到那部手机点「解绑」，Agent J 主机在线时大约 20 秒内生效。" if f["account"] else ""),
         "",
-        "**忘了遥控器配对密码**：在这台Agent J 主机的终端里运行 `agentj passphrase reset`（输入 RESET 确认）。所有手机都会被解除配对，"
+        "**忘了遥控器配对密码**：它只存在这台Agent J 主机上，我们的服务器上没有；已绑定账号的Agent J 主机在账户页席位卡上加手机，用不到它。"
+        "要重设：手边有已配对的手机，就在这台Agent J 主机的终端里运行 `agentj passphrase reset --phone`，在手机上确认后在终端输新密码，"
+        "所有手机保持配对；没有已配对的手机，运行 `agentj passphrase reset`（输入 RESET 确认），所有手机都会被解除配对，"
         "之后运行 `agentj pair` 重新配对，它会先请你设一个新的遥控器配对密码。",
         "",
         "**有新版本时**：手机上会收到一句提醒。它不会自己升级。想看看有没有新版本：`agentj update check`；"
@@ -211,7 +213,10 @@ def _en(f: dict) -> str:
         + (" Away from the Agent J host? In the account dashboard, find the phone on the Agent card and tap \"Unlink\"; it "
            "takes effect within about 20 seconds while the Agent J host is online." if f["account"] else ""),
         "",
-        "**Forgot the remote pairing password:** run `agentj passphrase reset` in a terminal on the Agent J host (type RESET to "
+        "**Forgot the remote pairing password:** it is kept only on this Agent J host, never on our server; an Agent J host bound "
+        "to the account adds phones from the account-page seat card without it. To reset it with a paired phone at hand, run "
+        "`agentj passphrase reset --phone` in a terminal on the Agent J host, confirm on the phone and type the new one in "
+        "the terminal: every phone stays paired. Without a paired phone, run `agentj passphrase reset` (type RESET to "
         "confirm). Every phone is unpaired; then run `agentj pair` to pair again, and it asks you to choose a new "
         "remote pairing password first.",
         "",

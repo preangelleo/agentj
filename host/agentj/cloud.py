@@ -46,6 +46,8 @@ CTX_UPGRADE_AUTH = "agentjarvis-host-upgrade-auth-v1"   # F12 / contract C2: spe
 CTX_PEER_CERT = "agentjarvis-host-peer-cert-v1"   # P71 (PROTOCOL §17.3): the Agent friends seat certificate for one mailbox
 CTX_RELAY_CERT = "agentjarvis-host-relay-cert-v1"   # P185 (PROTOCOL §2 seat certificate): the relay seat certificate for this host's channel
 CTX_NEWS = "agentjarvis-host-news-v1"   # P374 (PROTOCOL §7 /v1/host/news): read / switch the account's Daily AI News
+CTX_NEWS_EMAIL = "agentjarvis-host-news-email-v1"     # P393 #128: mail a 6-digit code to the seat person's own address
+CTX_NEWS_VERIFY = "agentjarvis-host-news-verify-v1"   # P393 #128: confirm that code → the address becomes this seat's person
 # Agent plaza P2 (PROTOCOL §7 plaza routes; agentj/plaza.py): one context per route, so no signature is valid on two
 PLAZA_KINDS = ("search", "get", "mine", "post", "reply", "resolve", "report")
 CTX_PLAZA = {k: f"agentjarvis-host-plaza-{k}-v1" for k in PLAZA_KINDS}   # wire strings: never renamed
@@ -632,8 +634,8 @@ def login(st, api: str, *, show: Callable[[dict], None], confirm: Callable[[dict
 
 
 # ------------------------------------------------------------------ seat bind (seat setup §4: a setup code from the owner)
-SEAT_RESULTS = ("bound", "name_taken", "invalid_setup", "payment_required", "already_bound", "bad_name", "name_required",
-                "bad_code", "rate_limited", "error")
+SEAT_RESULTS = ("bound", "name_taken", "invalid_setup", "payment_required", "already_bound", "billing_busy", "server_error",
+                "bad_name", "name_required", "bad_code", "rate_limited", "error")
 
 
 def seat_code_ok(code) -> bool:
@@ -673,6 +675,8 @@ def seat_bind(st, api: str, token: str, name: str, *, post: Callable = post_json
         return {"status": "bound", "tenant": p["tenant"], "host_id": p["host_id"], "agent_name": p["agent_name"] or name}
     kind = ("name_taken" if status == 409 and err == "name_taken" else
             "already_bound" if status == 409 and err == "already_bound" else
+            "billing_busy" if status == 409 and err == "billing_busy" else          # P393: the account's billing change in flight
+            "server_error" if status >= 500 and err == "internal" else              # P393: the server failed; nothing was bound
             "invalid_setup" if status in (404, 410) else
             "payment_required" if status == 402 else
             "rate_limited" if status == 429 else
@@ -1002,18 +1006,35 @@ MAX_EMAIL = 254
 
 
 class NewsResult(NamedTuple):
-    kind: str                       # ok | unlinked | not_bound | rate_limited | unreachable | unsupported | fail
-    on: bool | None = None          # ok: the account's switch after this call
-    email: str | None = None        # ok: the account e-mail the digest goes to (shown to the owner; never logged)
+    # ok | need_email (P393: the seat has no person yet — no e-mail, the phone asks for one) | sent (news_email: a code went
+    # out) | unlinked | not_bound | rate_limited | unreachable | unsupported | account_email | bad_email | invalid_code |
+    # mail_failed | fail
+    kind: str
+    on: bool | None = None          # ok: the switch after this call (need_email: False)
+    email: str | None = None        # ok: the seat person's e-mail the digest goes to (shown to the owner; never logged)
     sample_url: str | None = None   # ok: the public sample page on our API / Dashboard origin (else <Dashboard>/news/sample)
     status: str = ""
     queued: int | None = None       # ok + on: place in the waiting list (all seats taken; 1 = next), else None
     seats: int | None = None        # ok: how many accounts get the digest at most (500); None from a Dashboard before the seats
+    expires_in: int | None = None   # sent: seconds the mailed code stays good
+    retry_after: int | None = None  # rate_limited: seconds the Dashboard asked to wait (when it said so)
+
+
+NEWS_PROBLEMS = ("unlinked", "not_bound", "unreachable", "rate_limited", "need_email", "invalid_code", "bad_email",
+                 "account_email", "mail_failed")
+_NEWS_CODE = re.compile(r"[0-9]{6}")
+_NEWS_409 = ("need_email", "account_email")
 
 
 def news_problem(kind: str) -> str:
     """The phone's `news_res.problem` word (PROTOCOL §10.20a): an older Dashboard without the route reads as "fail"."""
-    return kind if kind in ("unlinked", "not_bound", "unreachable", "rate_limited") else "fail"
+    return kind if kind in NEWS_PROBLEMS else "fail"
+
+
+def news_is_state(res: NewsResult) -> bool:
+    """A news answer the phone / CLI shows as the switch's state: ok, or the 200 need_email (on False). A 409 need_email
+    (switching ON with no person yet) has on None and is a problem."""
+    return res.kind == "ok" or (res.kind == "need_email" and res.on is False)
 
 
 def _news_email(v) -> str | None:
@@ -1042,50 +1063,114 @@ def _news_sample(v, origins: set) -> str | None:
         return None
 
 
-def news(st, on: bool | None, *, post: Callable = post_json, now: Callable = time.time) -> NewsResult:
-    """P374: one signed `/v1/host/news` (blocking). on=None reads the account's Daily AI News switch (free); True / False
-    switches it (the Dashboard's host_sync_write budget). Writes nothing locally. The answer is whitelisted: on (bool),
-    email (≤ 254, one '@', no controls), sample_url (on our API / Dashboard origin, else the configured Dashboard's
-    /news/sample — a compromised control plane cannot send the owner to a look-alike page), queued / seats (ints in range,
-    else None: all seats taken → the owner's place in the waiting list)."""
-    if on is not None and not isinstance(on, bool):
-        raise ValueError("on")
+def _news_call(st, path: str, ctx: str, inner: dict, post: Callable) -> tuple[NewsResult | None, str, int, dict]:
+    """One signed news route: (early result | None, api, status, obj)."""
     cloud = read_cloud(st)
     if not cloud:
-        return NewsResult("unlinked")
+        return NewsResult("unlinked"), "", 0, {}
     try:
         api = api_url(st, cloud)
-        url = api + "/v1/host/news"
+        url = api + path
     except CloudError as e:
-        return NewsResult("fail", status=e.kind)
-    inner = {"v": 1, "t": "news", "channel": channel_of(st), "ts": int(now()), "on": on}
+        return NewsResult("fail", status=e.kind), "", 0, {}
+    inner = {"v": 1, "t": inner.pop("t"), "channel": channel_of(st), **inner}
     try:
-        status, obj = post(url, envelope(CTX_NEWS, inner, st.signing_key()))
+        status, obj = post(url, envelope(ctx, inner, st.signing_key()))
     except CloudError as e:
-        return NewsResult("unreachable", status=e.kind)
+        return NewsResult("unreachable", status=e.kind), api, 0, {}
+    return None, api, status, obj
+
+
+def _news_state(st, api: str, obj: dict) -> NewsResult:
+    """A 200 news answer (a read / switch, or a successful verify), whitelisted: on (bool), email (≤ 254, one '@', no
+    controls), sample_url (on our API / Dashboard origin, else the configured Dashboard's /news/sample — a compromised
+    control plane cannot send the owner to a look-alike page), queued / seats (ints in range, else None). P393: `need_email:
+    true` with on false and no e-mail = this seat has no person yet → kind need_email (the e-mail is never taken from it)."""
+    got, need = obj.get("on"), obj.get("need_email") is True
+    email = None if need else _news_email(obj.get("email"))
+    if obj.get("ok") is not True or not isinstance(got, bool) or (need and got) or (not need and email is None):
+        return NewsResult("fail", status="bad_response")
+    origins, app = {_origin(api)}, None
+    with contextlib.suppress(CloudError, ValueError):
+        app = app_url(st)
+        origins.add(_origin(app))
+    sample = _news_sample(obj.get("sample_url"), origins) or (app + "/news/sample" if app else None)
+    q, seats = obj.get("queued"), obj.get("seats")
+    queued = q if got and type(q) is int and 1 <= q <= 10**7 else None
+    seats = seats if type(seats) is int and 0 <= seats <= 10**7 else None
+    if need:
+        return NewsResult("need_email", False, None, sample, "200", None, seats)
+    return NewsResult("ok", got, email, sample, "200", queued, seats)
+
+
+def _news_error(status: int, obj: dict) -> NewsResult:
     err = parse_error(obj)
-    if status == 200:
-        got, email = obj.get("on"), _news_email(obj.get("email"))
-        if obj.get("ok") is not True or not isinstance(got, bool) or email is None:
-            return NewsResult("fail", status="bad_response")
-        origins, app = {_origin(api)}, None
-        with contextlib.suppress(CloudError, ValueError):
-            app = app_url(st)
-            origins.add(_origin(app))
-        sample = _news_sample(obj.get("sample_url"), origins) or (app + "/news/sample" if app else None)
-        q, seats = obj.get("queued"), obj.get("seats")
-        queued = q if got and type(q) is int and 1 <= q <= 10**7 else None
-        seats = seats if type(seats) is int and 0 <= seats <= 10**7 else None
-        return NewsResult("ok", got, email, sample, "200", queued, seats)
     if status == 403 and err == "not_bound":
         return NewsResult("not_bound", status=status_class(status))
+    if status == 409 and err in _NEWS_409:
+        return NewsResult(err, status=status_class(status))
+    if status == 400 and err == "bad_email":
+        return NewsResult("bad_email", status=status_class(status))
+    if status == 401 and err == "invalid_code":
+        return NewsResult("invalid_code", status=status_class(status))
     if status == 429:
-        return NewsResult("rate_limited", status=status_class(status))
+        ra = obj.get("retry_after")
+        return NewsResult("rate_limited", status=status_class(status),
+                          retry_after=ra if type(ra) is int and 1 <= ra <= 86_400 else None)
     if status == 404:       # a Dashboard older than this route (its catch-all 404)
         return NewsResult("unsupported", status=status_class(status))
+    if status == 502 and err == "mail_failed":
+        return NewsResult("mail_failed", status=status_class(status))
     if status >= 500:
         return NewsResult("unreachable", status=status_class(status))
     return NewsResult("fail", status=status_class(status) if err is None else err)
+
+
+def news(st, on: bool | None, *, post: Callable = post_json, now: Callable = time.time) -> NewsResult:
+    """P374: one signed `/v1/host/news` (blocking). on=None reads this host's person's Daily AI News switch (free); True /
+    False switches it (the Dashboard's host_sync_write budget). Writes nothing locally. The answer: `_news_state`. P393:
+    the person is the seat's own (never the company owner by default); none yet → need_email (200 on a read, 409 on ON)."""
+    if on is not None and not isinstance(on, bool):
+        raise ValueError("on")
+    early, api, status, obj = _news_call(st, "/v1/host/news", CTX_NEWS, {"t": "news", "ts": int(now()), "on": on}, post)
+    if early:
+        return early
+    return _news_state(st, api, obj) if status == 200 else _news_error(status, obj)
+
+
+def news_email(st, email, lang: str = "zh", *, post: Callable = post_json, now: Callable = time.time) -> NewsResult:
+    """P393 #128: one signed `/v1/host/news/email` (blocking) — the Dashboard mails a 6-digit code to `email` to confirm it
+    as this seat's own Daily AI News address. 200 → kind sent (+ expires_in). The e-mail is checked here first (a bad one
+    never leaves the host) and never logged."""
+    addr = _news_email(email.strip() if isinstance(email, str) else email)
+    if addr is None:
+        return NewsResult("bad_email", status="local")
+    inner = {"t": "news_email", "ts": int(now()), "email": addr, "lang": "en" if lang == "en" else "zh"}
+    early, _api, status, obj = _news_call(st, "/v1/host/news/email", CTX_NEWS_EMAIL, inner, post)
+    if early:
+        return early
+    if status == 200:
+        exp = obj.get("expires_in")
+        if obj.get("ok") is not True or type(exp) is not int or not 1 <= exp <= 86_400:
+            return NewsResult("fail", status="bad_response")
+        return NewsResult("sent", status="200", expires_in=exp)
+    return _news_error(status, obj)
+
+
+def news_verify(st, email, code, *, post: Callable = post_json, now: Callable = time.time) -> NewsResult:
+    """P393 #128: one signed `/v1/host/news/verify` (blocking) with the mailed code (exactly 6 ASCII digits). Success = the
+    Dashboard's news answer for the now-confirmed person (parsed like `news`); a wrong / expired / burnt code → invalid_code."""
+    addr = _news_email(email.strip() if isinstance(email, str) else email)
+    if addr is None:
+        return NewsResult("bad_email", status="local")
+    code = code.strip() if isinstance(code, str) else code
+    if not isinstance(code, str) or not _NEWS_CODE.fullmatch(code):
+        return NewsResult("invalid_code", status="local")
+    inner = {"t": "news_verify", "ts": int(now()), "email": addr, "code": code}
+    early, api, status, obj = _news_call(st, "/v1/host/news/verify", CTX_NEWS_VERIFY, inner, post)
+    if early:
+        return early
+    return _news_state(st, api, obj) if status == 200 else _news_error(status, obj)
 
 
 # ------------------------------------------------------------------ Agent plaza P2 (agentj/plaza.py builds and renders)

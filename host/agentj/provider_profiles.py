@@ -32,7 +32,10 @@ from .opencode_provider import ID_RE, MODEL_RE, ProviderError, _check_url, block
 PRESETS = {'openai': 'https://api.openai.com/v1', 'anthropic': 'https://api.anthropic.com/v1',
            'agentsrelay': 'https://agentsrelay.net/v1',
            'ark-coding': {'anthropic': 'https://ark.cn-beijing.volces.com/api/coding/v1',
-                          'openai': 'https://ark.cn-beijing.volces.com/api/coding/v3'}}
+                          'openai': 'https://ark.cn-beijing.volces.com/api/coding/v3'},
+           # P395: Ark's Agent Plan — Anthropic …/api/plan (measured /api/plan/v1/messages), OpenAI …/api/plan/v3
+           'ark-agent': {'anthropic': 'https://ark.cn-beijing.volces.com/api/plan/v1',
+                         'openai': 'https://ark.cn-beijing.volces.com/api/plan/v3'}}
 TIERS = {'haiku': 'ANTHROPIC_DEFAULT_HAIKU_MODEL', 'sonnet': 'ANTHROPIC_DEFAULT_SONNET_MODEL',
          'opus': 'ANTHROPIC_DEFAULT_OPUS_MODEL', 'subagent': 'CLAUDE_CODE_SUBAGENT_MODEL'}
 MAX_OUTPUT_ENV = 'CLAUDE_CODE_MAX_OUTPUT_TOKENS'

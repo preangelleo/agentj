@@ -129,6 +129,19 @@ def reset(st) -> None:
     st.log("passphrase_reset")
 
 
+def replace(st, new: str, device: str | None = None) -> None:
+    """#118: a forgotten passphrase replaced WITHOUT unpairing anyone. Only serve calls it, after a paired remote's signed
+    approval (+ its passkey when it has one) on a request from the owner's own terminal (serve._ctl_passphrase_*); the new
+    value was typed there. The failure ledger starts afresh."""
+    check_new(new)
+    with st.config_lock():
+        salt = secrets.token_bytes(16)
+        rec = {"v": 1, "kdf": "scrypt", "n": N, "r": R, "p": P, "salt": salt.hex(), "hash": _hash(new, salt).hex(),
+               "set_at": int(time.time()), "fails": 0, "locks": 0, "locked_until": 0}
+        st.write_private(st.approver_path, json.dumps(rec).encode())
+    st.log("passphrase_reset", by="remote", device=device, count=len(st.devices()))
+
+
 MESSAGES = {
     "not_set": "还没有设置遥控器配对密码：在这台Agent J 主机的终端里运行 `agentj pair`（会先请你设）或 `agentj passphrase set`（只有你知道，别让 Agent 替你设）。",
     "locked": "遥控器配对密码连续输错，已暂时锁定，请稍后再试。",
@@ -136,5 +149,5 @@ MESSAGES = {
     "too_short": f"遥控器配对密码至少 {MIN_LEN} 个字符。",
     "too_long": f"遥控器配对密码最多 {MAX_LEN} 个字符。",
     "mismatch": "两次输入不一致。",
-    "exists": "已经设置过遥控器配对密码；要改用 `agentj passphrase change`，忘了就用 `agentj passphrase reset`（所有手机都要重新配对）。",
+    "exists": "已经设置过遥控器配对密码；要改用 `agentj passphrase change`，忘了就在这台主机上重设：有已配对手机用 `agentj passphrase reset --phone`（手机确认，所有手机保持配对），没有就用 `agentj passphrase reset`（所有手机都要重新配对）。",
 }

@@ -81,7 +81,7 @@ class SeatBindUnit(unittest.TestCase):
     def test_every_answer(self):
         code = new_code()
         cases = [("invalid", "invalid_setup"), ("payment", "payment_required"), ("rate", "rate_limited"),
-                 ("already_bound", "already_bound"), ("bad_name", "bad_name"), ("garbled", "error"), (500, "error"),
+                 ("already_bound", "already_bound"), ("bad_name", "bad_name"), ("garbled", "error"), (500, "server_error"),
                  ("taken", "name_taken")]
         with FakeCP() as cp:
             cp.seat_tokens.add(code)
@@ -251,7 +251,7 @@ class SeatCli(unittest.TestCase):
             cp.seat_tokens.add(self.code)
             for step, rc, text in (("taken", 3, "已经有叫这个名字"), ("invalid", 4, "向管理员要一个新的"),
                                    ("payment", 5, "没在付费了"), ("rate", 1, "太频繁"), ("already_bound", 1, "还挂在别的地方"),
-                                   (503, 1, "http_5xx")):
+                                   (503, 1, "服务器这次出错了")):   # P393: 5xx internal is the server's fault, said so
                 cp.seat_script = [step]
                 r = self.agentj("login", "--api", cp.url, "--seat", self.code, "--name", "Wren")
                 self.assertEqual(r.returncode, rc, (step, r.stderr))

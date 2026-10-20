@@ -15,8 +15,9 @@ const DICT = (await import('../public/i18n.js')).default;
 test('P168 offline card: the 30-minute threshold is a named constant; duration text', () => {
   assert.equal(OC.LONG_OFFLINE_MS, 30 * 60 * 1000);
   assert.equal(OC.FEEDBACK_EMAIL, 'feedback@agentj.app');
-  assert.equal(OC.SHOW_AFTER_MS, 6000);
-  assert.match(APP, /const QUIET_MS = 6000;/, 'the card waits exactly the quiet window (a blink never blurs the page)');
+  // P393 (#122): the window is the single five-second link gate (js/reconnect.js); was 6000 before
+  assert.equal(OC.SHOW_AFTER_MS, 5000);
+  assert.match(APP, /const QUIET_MS = DOWN_DEBOUNCE_MS;/, 'the card waits exactly the quiet window (a blink never blurs the page)');
   assert.equal(OC.isLong(30 * 60 * 1000), false);
   assert.equal(OC.isLong(30 * 60 * 1000 + 1), true);
   assert.deepEqual(OC.sinceText(59_000), ['off.since.lt1', {}]);

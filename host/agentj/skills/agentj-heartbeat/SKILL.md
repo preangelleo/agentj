@@ -22,7 +22,8 @@ beat from a regular one by its text — handle both the same way.
    - "Prompt unchanged — no need to re-read": follow the one you already have. If you no longer remember it, run
      `agentj heartbeat prompt show`.
 2. Do what the prompt says — typically: background sub-Agents, headless jobs and scheduled tasks (`agentj busy list`,
-   `agentj capability list`), the newest run reports (never trust an exit code), the owner's to-dos and promises, work that
+   `agentj capability list`), the newest run reports (never trust an exit code), the To-do card (`agentj card todo due` —
+   every beat starts with it; mark what you finish done) and your promises, work that
    died half-way (pick it up or dispatch it to its CEO as usual).
 3. Report only what the owner needs to know or decide, in a sentence or two. **Nothing to report → your final reply is
    exactly `〔不回群〕`**, with no progress note written first (nothing reaches the phone: no page, no notification; notes

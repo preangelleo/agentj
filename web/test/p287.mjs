@@ -29,7 +29,7 @@ try {
   for (const [name, secs] of [['service restart', 10], ['upgrade', 40]]) {
     await evaluate(p, sampler);
     fake.setUp(false);
-    await waitFor(p, `document.body.dataset.conn === 'off'`, 3000);
+    await waitFor(p, `document.body.dataset.conn === 'off'`, 8000);   // P393: after the five-second window
     await sleep(secs * 1000);
     fake.setUp(true); await waitState(p, 'ready'); await sleep(300);
     ok((await evaluate(p, `window.p287`)).every((x) => !x), `${name} (${secs} s offline): only 「Agent J 主机离线」, never the reboot line`);
@@ -37,7 +37,7 @@ try {
 
   // OS restart: the Agent J host goes away and stays away; the phone page is even closed and reopened in between
   fake.setUp(false);
-  await waitFor(p, `document.body.dataset.conn === 'off'`, 3000);
+  await waitFor(p, `document.body.dataset.conn === 'off'`, 8000);   // P393: shown after the five-second window
   writeFileSync(join(OUT, 'zh-offline-early.png'), await shoot(p));
   await navigate(p, web.url);
   await waitState(p, 'waiting-host', 15000);

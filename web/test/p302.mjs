@@ -68,12 +68,12 @@ try{
   const spacing=async(sel,label)=>{const bad=await ev(p,`(${SPACING})(${JSON.stringify(sel)})`);audit[label+' '+name]=bad;check(!bad.length,'spacing '+label+' '+name+' '+bad.join(' · '));};
   const open=async page=>{if(await ev(p,`document.getElementById('five-menu').hidden`)){await click(p,'#orb');await waitFor(p,`!document.getElementById('five-menu').hidden`);}await click(p,`.fp-menu-card[data-page="${page}"]`);await sleep(300);};
   const scroller=`(document.querySelector('#five-page .fp-scroll')||document.getElementById('five-page'))`;
-  // ---- 0 the five-card menu: Noir from the moment it opens; the fifth card Lama with Noir text ----
+  // ---- 0 the five-card menu: Noir from the moment it opens; the fifth card Noir with Lotion text (P393 #132; was Lama + Noir) ----
   await click(p,'#orb');await waitFor(p,`!document.getElementById('five-menu').hidden`);await sleep(300);await snap('0-menu');
   check(await cev(p,`getComputedStyle(document.getElementById('five-menu')).backgroundColor==='rgb(44, 43, 38)'`),'menu canvas = Noir as it opens '+name);
   check(await cev(p,`getComputedStyle(document.querySelector('.top')).backgroundColor==='rgb(44, 43, 38)'`),'header = Noir with the menu open '+name);
   check(await cev(p,`document.querySelector('meta[name="theme-color"]').content==='#2c2b26'`),'OS bar = Noir with the menu open '+name);
-  check(await cev(p,`(()=>{const c=document.querySelector('.fp-menu-card[data-page="agentj"]'),s=getComputedStyle(c);return s.backgroundColor==='rgb(219, 178, 147)'&&s.color==='rgb(44, 43, 38)';})()`),'「Agent J」 card = Lama #dbb293 + Noir text '+name);
+  check(await cev(p,`(()=>{const c=document.querySelector('.fp-menu-card[data-page="agentj"]'),s=getComputedStyle(c);return s.backgroundColor==='rgb(44, 43, 38)'&&s.color==='rgb(250, 249, 245)';})()`),'「Agent J」 card = Noir + Lotion text (P393 #132) '+name);
   // the four Heavy cards keep P244's Lotion text (2.8–3.6:1, reported to Jarvis, not changed in a hotfix); the Lama card reads ≥ 4.5:1
   check(await cev(p,`(()=>{const c=document.querySelector('.fp-menu-card[data-page="agentj"]');return (${CONTRAST})(c.querySelector('h2'))>=4.5&&(${CONTRAST})(c.querySelector('p'))>=4.5;})()`),'「Agent J」 card text ≥ 4.5:1 '+name);
   await esc();check(await cev(p,`document.getElementById('five-menu').hidden`),'Esc closes the menu '+name);
