@@ -1,15 +1,15 @@
 ---
 document: agentj-install
-version: 0.26.1
-released: 2026-10-19
+version: 0.26.2
+released: 2026-10-20
 status: beta (anyone can sign up; not advertised yet, pages are not indexed)
 host_package: agentj (the `agentj` command)
-host_version: 0.24.1a1
-source_tag: v0.24.1a1
-host_wheel: agentj-0.24.1a1-py3-none-any.whl
-host_wheel_sha256: 42696e3d14bbdb699d9e97de0da871d71d4cd5496a3cda13b750318130099a31
-host_sdist: agentj-0.24.1a1.tar.gz
-host_sdist_sha256: 0310537c6e18a1ed3280bdb50d6a75ac8115ab8686892170ad3251168bacaf76
+host_version: 0.24.1a2
+source_tag: v0.24.1a2
+host_wheel: agentj-0.24.1a2-py3-none-any.whl
+host_wheel_sha256: c32ca00e5f3dc06e996c6eb2fa67a40db3c71c9bda8e0de2e952e0778466fba8
+host_sdist: agentj-0.24.1a2.tar.gz
+host_sdist_sha256: c32ce6516b563bd1b03c6b272a191f5eec8e50676136a363356fc8a3795bdef7
 canonical_url: https://agentj.app/install.md
 sha256_url: https://agentj.app/install.md.sha256
 alias: https://agentjarvis.net/install.md (the older address: the same file, kept for one more version)
@@ -685,7 +685,7 @@ DeepSeek says a preview may break; Agent J was measured on 0.2.0-rc.2.
 carry over). So start every command line from here on with `export PATH="$HOME/.local/bin:$PATH";` — or call
 `~/.local/bin/agentj` by its full path. This document writes `agentj` for short.
 
-The program is pinned to one release: the tag `v0.24.1a1` (front matter `source_tag`). The tag never moves, and its
+The program is pinned to one release: the tag `v0.24.1a2` (front matter `source_tag`). The tag never moves, and its
 `host/` folder is byte for byte the same code as the two files on our site whose SHA-256 is in this document's front matter.
 ```bash
 cd ~/.agentj-install
@@ -696,7 +696,7 @@ uv tool install "./$W"
 
 Intel Mac: this release keeps `cryptography<49` because newer releases lack an Intel macOS wheel. If an older installer tries to compile OpenSSL (`openssl-sys` / OpenSSL not found), rerun `uv tool install --with "cryptography<49" "./$W"`. The same platform constraint applies to `agentj update apply`.
 
-export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.24.1a1
+export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.24.1a2
 export PATH="$HOME/.local/bin:$PATH"; agentj doctor
 ```
 **Your human's own terminal must find `agentj` too** — they may use `agentj passphrase set` and `agentj pair` as a local alternative
@@ -724,16 +724,16 @@ echo "$WS  $W" | sha256sum -c - && echo "$SS  $S" | sha256sum -c -    # macOS: s
 uv tool install "./$W"          # the wheel; its dependencies come from PyPI or the mirror in UV_DEFAULT_INDEX
 ```
 `uv tool install "./$S"` installs from the checked source archive instead (it builds the same program).
-`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.24.1a1`); it is
-numbered separately from this document (`0.26.1`).
+`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.24.1a2`); it is
+numbered separately from this document (`0.26.2`).
 
-Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.24.1a1#subdirectory=host"`.
+Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.24.1a2#subdirectory=host"`.
 
-Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.24.1a1#subdirectory=host"` (needs Python 3.11+).
+Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.24.1a2#subdirectory=host"` (needs Python 3.11+).
 
 **What each route checks.** The wheel and the source archive above are checked against the SHA-256 in this document. Each
 also has a minisign signature beside it (`<file>.minisig`, key `B79F925B0585F9D4` — front matter `signature`), which
-`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.24.1a1`
+`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.24.1a2`
 routes check **neither**: Git trusts GitHub's HTTPS and the tag name, and nothing compares that code with this document.
 Use them only when the checked files cannot be downloaded, and say so in the final feedback.
 `agentj doctor` lists what is ready and what is not (prerequisites, the fence, connectivity, which agents are usable).
@@ -1647,7 +1647,7 @@ and the block says so (`support: sent (st_…)` / `off` / `not_sent`). Tell your
 do not send a second support question for the same failure. The heartbeat carries only the last attempt's version, result,
 reason and time (never the output), so the account page shows a seat whose upgrade failed.
 中文：0.20.4 起升级失败时结果块写出失败步骤 `step:`、细分原因 `reason:`（download_failed / signature_or_hash_mismatch / uv_failed / service_restart_failed …）和安装命令最后约 20 行 `stderr:`（本机先脱敏：密钥、令牌、家目录路径、用户名和主机名）；回滚也失败时多一行 `recover:`（装回原版本的那条命令）。除非主人关了 `updates.report_failures`，失败会自动发给 Agent J 客服（`support:` 行），同一版本同一原因一天一次；把 `tell_owner:` 那句原样告诉主人，不要为同一次失败再问一次客服。心跳只带最近一次升级的版本、结果、原因和时间（不带原文），账户页据此标出升级失败的席位。
-**0.24.1a1: installer missing from the service PATH.** An older host can report `step: install`, `reason: unknown`,
+**0.24.1a2: installer missing from the service PATH.** An older host can report `step: install`, `reason: unknown`,
 `rollback: failed` while its previous service keeps running: both installation and rollback can fail to start `uv` when
 its directory is absent from the service PATH. The new updater also checks executable `uv` at `~/.local/bin/uv` and
 `~/.cargo/bin/uv`; it records a redacted output tail for a command that cannot start. A new wheel alone cannot repair an
@@ -1664,7 +1664,7 @@ run the locally provided `recover:` command to restore the previous version, the
 local and are never included in automatic support reports or heartbeats.
 
 中文：旧主机的服务 PATH 缺少 `uv` 所在目录时，安装和回滚都可能无法启动 `uv`，结果为 `step: install`、
-`reason: unknown`、`rollback: failed`，旧版服务仍在运行。0.24.1a1 的升级器也会检查 `~/.local/bin/uv` 和
+`reason: unknown`、`rollback: failed`，旧版服务仍在运行。0.24.1a2 的升级器也会检查 `~/.local/bin/uv` 和
 `~/.cargo/bin/uv`，命令无法启动时保留脱敏的输出尾部。新 wheel 本身不能修复无法启动安装器的旧升级器。
 先用 `command -v uv` 或上述两个路径找到可执行文件，以完整路径运行 `uv --version` 确认，再把上面命令中的占位符换成
 实际目录执行。升级成功后，必须运行带正确 PATH 的 `agentj service install` 重新记录服务环境，仅 restart 不够。
@@ -1687,7 +1687,7 @@ Nightly automatic installation is enabled by default and verifies the official w
 In a shared session (the default of 0.13–0.19), reinstall directly using Step 4's checked wheel (SHA-256 must match this document and
 its public GitHub copy), preserving the host's identity, paired phones, account and preferences:
 ```bash
-uv tool install --force "./agentj-0.24.1a1-py3-none-any.whl"
+uv tool install --force "./agentj-0.24.1a2-py3-none-any.whl"
 agentj --version
 agentj service install
 agentj service restart
@@ -1696,7 +1696,7 @@ agentj doctor
 The matching published tag is another source, after verifying the tag object against the upgrade email (no signature or
 hash check on this route — Step 4):
 ```bash
-uv tool install --force "git+https://github.com/preangelleo/agentj@v0.24.1a1#subdirectory=host"
+uv tool install --force "git+https://github.com/preangelleo/agentj@v0.24.1a2#subdirectory=host"
 ```
 **0.14 independent session** (`agent.session_mode=independent`): 0.14's fence keeps Agent J's own program read-only and
 hides the service manager, so the Agent on the phone cannot reinstall or restart from inside it (measured: the install
@@ -1722,11 +1722,11 @@ prints something and `uv tool list` (or `pipx list`) shows `agentjarvis-host`, t
 the new name, then:
 ```bash
 jarvis service uninstall      # stop the old service first (Step 10 used tmux / nohup instead? stop that process)
-uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.24.1a1#subdirectory=host"
+uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.24.1a2#subdirectory=host"
 agentj doctor
 agentj service install        # start it again under the new name (or the tmux / nohup fallback, Step 10)
 ```
-With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.24.1a1#subdirectory=host"`.
+With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.24.1a2#subdirectory=host"`.
 - After the move, `agentj` puts back a `jarvis` command (a link to `agentj`, only if no other `jarvis` exists) for one more
   version; it prints a notice that points here. New installs never get `jarvis`.
 - The state moves from `~/.local/state/agentjarvis-alpha` to `~/.local/state/agentj` on the first run of `agentj` **after your
@@ -2417,6 +2417,8 @@ For pairing choose **「添加遥控器（手机或浏览器）」** ("Add a rem
 
 ## Agent friends (0.20.0)
 
+Tapping confirm or decline clears the waiting colour immediately, even while the host is processing the answer. This is not a success receipt. If confirmation fails, the phone says to try again and lets you retry. A friend’s question expires after 120 seconds with no reply, and the owner is notified. Friend requests still last 7 days.
+
 Agent friends let this Agent talk to another owner's Agent: it has an Agent ID (`AJ-XXXX-XXXX-XXXX-XXXX`) and a QR card.
 It stays off until your human says so; when they ask for it ("turn on friends", 「打开好友功能」), the built-in
 `agentj-friends` skill does the rest. A friend request only counts once the other owner taps 「同意」 ("Accept") on their
@@ -3079,3 +3081,17 @@ With quota.auto_switch on, a 5-hour reading ≥80% sends new work to another cal
 Offline: Open emergency recovery → the menu’s recovery steps → [detailed reconnect help](https://agentj.app/docs/reconnect-help/). The Agent J host is the machine running the agent; the phone/browser is its remote. Touch remotes focus the composer only when the owner taps it; sending releases focus.
 
 Olares: open [https://agentj.app/account](https://agentj.app/account), register and buy a seat if needed, copy the entire installation prompt from an empty seat and paste all of it into the setup page. No need to extract a code. Olares app image updates carry the host version; binding does not upgrade the image.
+
+### Optional read-only model fallback (P401)
+
+After the owner's model fails, Agent J diagnoses through a fresh free DeepSeek Flash listing, then LongCat only while OpenCode's current official terms explicitly promise zero retention and no training, then optional local Ollama qwen3.5:9b. Space Bunny/MiniMax M3.1 Flash are excluded. The reply is labelled as fallback; the original task is not replayed or marked successful. Cloud receives fixed error signals only, not the original task, attachments, keys or work files. A disappeared free DeepSeek is skipped with one notice. Offline or unverified terms skip the relevant cloud layers.
+
+Offer local fallback only on Apple Silicon with at least 16GB RAM and 20GB free disk; explain ~6.6GB download, ~8GB runtime memory and possible inaccurate details before the owner chooses. Intel and CPU-only Linux have no default offer. Install/start Ollama first, then `agentj local-model install` (or pass `--local-model` to the one-command installer); `agentj local-model status` checks it, `off` disables it. The optional component may fail without blocking installation. Model loads only on demand and unloads afterwards; tools only read the supplied failure snapshot and return a report, never execute repairs or send data to support. Ask for the original error and check `agentj doctor` rather than trusting invented repair steps.
+
+## 自动升级失败与恢复 / Automatic upgrade failure and recovery (P397)
+
+自动升级失败时，本机 `last-upgrade.json` 和自动客服报告会保留安装命令模板、实际退出码（进程未启动或超时没有退出码时记录异常类型）和脱敏 stderr 尾部。安装工具缺失、权限不足、只读文件系统、超时会分别说明。uv 回滚用独立的基础 Python 安装缓存旧 wheel；失败结果中的 `recover` 命令只留在本机，供恢复原版本，不要复制到客服报告。若 uv 本身不在服务 PATH，先恢复或定位实际 uv，再用包含其目录的 PATH 升级，成功后以同样 PATH 重新运行 `agentj service install`。旧版升级器须先成功装上新版才能得到这些改进。
+
+An automatic upgrade failure keeps an installer command template, the actual exit code (or exception type when no exit code exists) and a redacted stderr tail in local `last-upgrade.json` and the automatic support report. Missing installer, permission, read-only filesystem and timeout are separate reasons. uv rollback installs the cached previous wheel with an independent base Python. The failed result's `recover` command stays on the host; do not copy it into support reports. If the service cannot find uv, locate or restore it, upgrade with its directory in PATH, then run `agentj service install` with the same PATH after success. An older updater receives these repairs only after a successful upgrade.
+
+Olares 应用市场里的 Agent J 随 Market 更新，镜像根目录只读；不要在该容器里强行重装。直接装在 Olares 宿主机上的普通 uv 安装与 Market 应用不同，使用普通主机升级流程。 / The Olares Market application updates through Market and has a read-only image root. Do not force an in-container reinstall. A normal uv installation directly on the Olares host uses the ordinary host upgrade flow.

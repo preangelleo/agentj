@@ -110,7 +110,7 @@ class Worker(_Env):
         result = self.attempt(None)
         self.assertEqual(result['reason'], 'rollback_failed')
         rec = upgrade_diag.read(self.st)
-        self.assertEqual(rec['reason'], 'uv_failed')
+        self.assertEqual(rec['reason'], 'permission_denied')
         self.assertIn('Permission denied', rec['stderr_tail'])
         self.assertNotIn('rollback second failure', rec['stderr_tail'])
         self.assertNotIn(FAKE_GH, rec['stderr_tail'])
@@ -123,7 +123,7 @@ class Worker(_Env):
     def test_install_timeout_captures_partial_stderr_not_exception_command(self):
         result = self.attempt(subprocess.TimeoutExpired(['private-command'], 900, stderr=UV_ERR.encode()))
         rec = upgrade_diag.read(self.st)
-        self.assertEqual((rec['reason'], rec['step']), ('uv_failed', 'install'))
+        self.assertEqual((rec['reason'], rec['step']), ('installer_timeout', 'install'))
         self.assertIn('Permission denied', rec['stderr_tail'])
         self.assertNotIn('private-command', str(rec))
         self.assertIn('recover', result)
@@ -131,7 +131,7 @@ class Worker(_Env):
     def test_install_spawn_failure_is_install_category_and_safe_type(self):
         self.attempt(FileNotFoundError('/private/path/secret'))
         rec = upgrade_diag.read(self.st)
-        self.assertEqual(rec['reason'], 'uv_failed')
+        self.assertEqual(rec['reason'], 'installer_missing')
         self.assertIn('FileNotFoundError', rec['stderr_tail'])
         self.assertNotIn('/private/path', str(rec))
 

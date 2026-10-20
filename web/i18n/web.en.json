@@ -1,4 +1,5 @@
 {
+  "fr.ask.failed": "Your confirmation did not take effect. Please try again.",
   "meta": {
     "title": "Agent J · Phone remote"
   },
@@ -3629,5 +3630,14 @@
   "p394.ready": "Can start",
   "p394.start": "Starts: {when}",
   "p394.end": "Due: {when}",
-  "p394.after": "after “{what}” is done"
+  "p394.after": "after “{what}” is done",
+  "p398.delivered": "Delivered",
+  "p398.deliveredAria": "Delivered to your Agent; it can no longer be cancelled",
+  "p398.stopTurn": "Stop this turn",
+  "p403.stopShort": "Stop",
+  "p398.writing": "Your Agent is still writing; tap once it is done",
+  "p398.dup": "{n} already in the attachments; not added twice",
+  "p398.autoChip": "Auto-added · off in Settings",
+  "p398.autoChipTitle": "Added by \"Screenshots to attachments\". Tap to open its switch in Settings",
+  "p398.shotDesktopOnly": "Only in Chrome or Edge on a computer: open Agent J in the computer's browser and switch it there in Settings."
 }

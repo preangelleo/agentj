@@ -9,6 +9,8 @@ import { sanitize as mediaOf } from './mediawire.js';   // F21 (§13)
 export const S = {
   conn: false,                 // a ready session with the host up
   status: 'none', agent: null, kind: null,
+  handledWaiting: false,
+  touched: new Set(),
   asks: new Map(),             // id → approval request (§8 ask)
   qs: new Map(),               // id → question (§10.7)
   order: [],                   // ids in arrival order (asks and questions)
@@ -38,7 +40,7 @@ export function goalWords(m) {
 export function addAsk(m) {
   if (typeof m.id !== 'string' || !/^[0-9a-f]{32}$/.test(m.id) || typeof m.tool !== 'string' || typeof m.summary !== 'string') return;
   if (S.asks.has(m.id)) return;
-  // §17.7 friend cards: a friend request waits up to 7 days, a friend's question up to a day (both shown with their own text)
+  // §17.7 friend requests wait up to 7 days; tolerate an old host's 24h question deadline.
   const maxTtl = m.tool === 'friend_request' ? 604800 : m.tool === 'peer_question' ? 86400 : 600;
   const ttl = Number.isInteger(m.ttl) && m.ttl >= 0 && m.ttl <= maxTtl ? m.ttl : 120;
   const cats = Array.isArray(m.cat) ? m.cat.filter((c) => CATS.includes(c)) : [];
@@ -51,10 +53,35 @@ export function addAsk(m) {
     allow_offer: m.tool === 'agentj mail send' && Array.isArray(m.allow_offer) ? m.allow_offer.filter((a) => typeof a === 'string' && a.length <= 254).slice(0, 10) : [],   // P296
     goal: ['auto', 'hold', 'attack', 'grant'].includes(m.goal) ? m.goal : '', goal_why: typeof m.goal_why === 'string' ? m.goal_why.slice(0, 120) : '',   // P158
     ...goalWords(m),                                                                                                       // P339
-    at: nowS(), deadline: Date.now() + ttl * 1000, state: 'open', final_at: null,
+    at: nowS(), deadline: Date.now() + ttl * 1000, state: 'open', final_at: null, touched: S.touched.has(m.id),
     ...(m.tool === 'friend_request' && m.fr && typeof m.fr === 'object' ? { fr: m.fr } : {}),     // display-only copies (friends.js)
     ...(m.tool === 'peer_question' && m.pq && typeof m.pq === 'object' ? { pq: m.pq } : {}) });
   S.order.push(m.id);
+  onChange();
+}
+// P396: waiting means an owner action is still needed. A tapped card may stay visible for a receipt/retry.
+export function touch(id) {
+  const a = S.asks.get(id) || S.qs.get(id);
+  if (a) {
+    a.touched = true; S.handledWaiting = true; S.touched.add(id);
+    if (S.touched.size > 256) S.touched.delete(S.touched.values().next().value);
+    onChange();
+  }
+}
+export function answerRefused(m) {
+  const a = S.asks.get(m.id);
+  if (!a) return;
+  // Never sign a digest supplied by a caller. Replace the stale card with the host's current shown text.
+  if (m.ask && m.ask.id === a.id && m.ask.tool === a.tool) {
+    S.asks.delete(a.id);
+    S.order = S.order.filter((id) => id !== a.id);
+    S.touched.add(a.id);
+    addAsk(m.ask);
+    const fresh = S.asks.get(a.id);
+    if (fresh) fresh.touched = true;
+  }
+  const current = S.asks.get(m.id);
+  if (current) { current.touched = true; current.answer_failed = true; }
   onChange();
 }
 const ASK_RESULT = { allow: 'approved', deny: 'denied', timeout: 'timeout', expired: 'expired', gone: 'ended', stopped: 'stopped' };
@@ -112,6 +139,7 @@ export const openCount = () => S.order.length;
 export function setStatus(m) {
   const ok = ['none', 'idle', 'working', 'compacting', 'waiting', 'down', 'stopped'];
   S.status = ok.includes(m.s) ? m.s : 'none';
+  if (S.status !== 'waiting') S.handledWaiting = false;
   S.agent = ['claude', 'codex', 'opencode'].includes(m.agent) ? m.agent : null;
   S.kind = m.kind === 'question' ? 'question' : null;
   S.tg = m.tg === 'down';                 // P129: the host's Telegram channel is down (status area line, app.js renderTg)
@@ -147,7 +175,8 @@ export function snapshot() {
   const it = openItem();
   let status;
   if (!S.conn) status = 'unknown';
-  else if (it) status = 'waiting';
+  else if ([...S.asks.values(), ...S.qs.values()].some((a) => !a.touched)) status = 'waiting';
+  else if (S.handledWaiting && S.status === 'waiting') status = 'working';
   else status = { idle: 'idle', working: 'working', compacting: 'working', waiting: 'waiting' }[S.status] || 'unknown';
   const kind = status === 'waiting' ? (it ? it.kind : (S.kind === 'question' ? 'question' : 'permission')) : null;
   const card = it ? { kind: it.kind, id: it.id, tool_name: it.tool, summary: it.summary, received_at: it.at } : null;

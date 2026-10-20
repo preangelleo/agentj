@@ -304,7 +304,7 @@ The Agent wants you to choose: tap an answer and confirm. If none fits, cancel t
 
 ### One-tap answers: the quickest way to reply
 
-A reply sometimes ends with a few rounded buttons, such as "Dispatch" and "Not yet". One tap is the same as typing those words and tapping Send: the message goes out at once as yours, and the Agent carries on. The group then greys out and says "Replied: Dispatch"; each group can be tapped only once. It also greys out when you have already typed an answer, or tapped on another remote.
+A reply sometimes ends with a few rounded buttons, such as "Dispatch" and "Not yet". One tap is the same as typing those words and tapping Send: the message goes out at once as yours, and the Agent carries on. The group then greys out and says "Replied: Dispatch"; each group can be tapped only once. It also greys out when you have already typed an answer, or tapped on another remote. Talking about something else in between does not close it: page back and tap, and it goes as a reply that quotes that message, so the Agent knows which question you answered.
 
 Buttons or a card:
 

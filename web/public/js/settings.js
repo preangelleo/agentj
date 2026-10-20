@@ -95,11 +95,23 @@ function setSfx(v, hear) {
   if (hear && now > 0) sfx.preview();
 }
 
-// P154 截图自动进附件: only where a page can read the clipboard (computer Chromium); hidden elsewhere.
+// P154 截图自动进附件: only where a page can read the clipboard (computer Chromium). P398 (#156, Leo 10-20: 「在设置里面我也
+// 没找到这个按钮」 — he looked on his Android phone): the row is in 「网页版 App」 and always there; where it cannot work the
+// switch steps aside and the row says where to turn it on or off (on the computer's Settings).
 async function renderShot() {
   const ok = await shotclip.supported();
-  el('set-shot-row').hidden = !ok;
+  el('set-shot-row').hidden = false;
+  el('set-shot').hidden = !ok;
+  el('set-shot-na').hidden = ok;
   if (ok) tgl('set-shot', shotclip.enabled());
+}
+/** P398 (#156): the auto-added screenshot's chip → Settings, on the 截图自动进附件 row. */
+export function openShot() {
+  if (!isOpen()) open(); else if (sub !== 'main') showSub('main');
+  const row = el('set-shot-row');
+  if (!isOpen() || !row) return;
+  closeSearch();
+  renderShot().then(() => flashRow(row));
 }
 
 // ---------------------------------------------------------------- Add to Home Screen (Android prompt / iOS guide)

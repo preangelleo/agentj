@@ -32,7 +32,9 @@ test('P328 A: one mode function — send / queued / turn (blue, connected, not s
 
 test('P328 A: a tap in turn mode is the real /stop (slash stop), at most once per 2.5 s; send / queued keep say_cancel', () => {
   const cancel = relay.match(/async function cancelSay\(\)\{[\s\S]*?\n\}/)[0];
-  assert.match(cancel, /^async function cancelSay\(\)\{\n  if \(el\("sayCancel"\)\.dataset\.mode === "turn" && sayCancelMode\(\) === "turn"\) return stopTurn\(\);/);
+  // P398 (#155): the stop only when the pill SHOWED 停止这一轮 and still is; a message's 取消 never becomes a stop
+  assert.match(cancel, /^async function cancelSay\(\)\{\n  const shown = el\("sayCancel"\)\.dataset\.mode, now = sayCancelMode\(\);\n/);
+  assert.match(cancel, /\n  if \(shown === "turn" && now === "turn"\) return stopTurn\(\);\n  if \(now === "turn" \|\| !now\) return;/);
   assert.match(cancel, /C\.api\.sayCancel\(S\.sid\)/);
   const stop = relay.match(/function stopTurn\(\)\{[\s\S]*?\n\}/)[0];
   assert.match(stop, /C\.api\.slash\("stop"\)/);
@@ -40,7 +42,8 @@ test('P328 A: a tap in turn mode is the real /stop (slash stop), at most once pe
   assert.match(stop, /t\('p328\.stopSent'\)/);
   assert.match(relay, /const STOP_AGAIN_MS = 2500;/);
   // the label for assistive tech follows the job (and survives a language switch: data-i18n-attr is rewritten)
-  assert.match(relay, /const k = mode === "turn" \? "p328\.stopAria" : "r\.say\.cancelAria";\n    b\.setAttribute\("data-i18n-attr", `aria-label=\$\{k\},title=\$\{k\}`\);/);
+  assert.match(relay, /const PILL_ARIA = \{send: "r\.say\.cancelAria", queued: "r\.say\.cancelAria", delivered: "p398\.deliveredAria", turn: "p328\.stopAria"\};/);
+  assert.match(relay, /const k = PILL_ARIA\[mode\], w = b\.querySelector\("\[data-i18n\]"\);\n    b\.setAttribute\("data-i18n-attr", `aria-label=\$\{k\},title=\$\{k\}`\);/);
 });
 
 test('P328 A: centred on the field by layout; the words and the clear-× keep out of its way', () => {

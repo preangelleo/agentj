@@ -151,7 +151,7 @@ export async function startFakeHost() {
     if (!a) return false;
     const decision = m.batch ? 'allow_batch' : m.ok ? 'allow' : 'deny';
     // §17.7: a friend_request accepted into a group signs one more line (friendAnswerMessage)
-    const msg = a.tool === 'friend_request' && m.ok && (m.group != null || m.ctx != null)
+    const msg = ['friend_request', 'peer_question'].includes(a.tool) && m.ok && (m.group != null || m.ctx != null)
       ? await wire.friendAnswerMessage(channel, c.devId, m.id, 'allow', a.tool, a.summary, m.group, m.ctx)
       : m.ok && !m.batch && Array.isArray(m.allow_add)   // P296: ticked 「加入白名单」 boxes, signed with the allow (serve._answer)
         ? await wire.mailAllowMessage(channel, c.devId, m.id, a.tool, a.summary, m.allow_add)
@@ -199,6 +199,14 @@ export async function startFakeHost() {
         return sendApp(c, { t: 'say_cancel_res', sid: m.sid, r: 'cancelled' });
       }
       return sendApp(c, { t: 'say_cancel_res', sid: m.sid, r: st.says.some((x) => x.sid === m.sid) ? 'already_delivered' : 'not_found' });
+    }
+    if (m.t === 'say_sync') {   // P398: like serve say_sync_state — nothing while queued, delivered once handed over, done if unknown
+      (st.syncs ||= []).push(m.sids);
+      for (const sid of Array.isArray(m.sids) ? m.sids : []) {
+        if (st.queued.has(sid)) continue;
+        await sendApp(c, { t: 'say_state', sid, s: st.says.some((x) => x.sid === sid) ? 'delivered' : 'done' });
+      }
+      return;
     }
     if (m.t === 'blob_open' || m.t === 'blob_chunk' || m.t === 'blob_end' || m.t === 'blob_drop') return onBlob(c, m);
     if (m.t === 'hist_read' && st.ownerRead) {
@@ -659,6 +667,10 @@ export async function startFakeHost() {
     /** P282: the Agent took the queued says (say_state taken) but has not written them to the harness yet */
     async takeQueued() {
       for (const [sid, q] of st.queued) await sendApp(q.c, { t: 'say_state', sid, s: 'taken' });
+    },
+    /** P398 (#155): the Agent took the queued says while the phone was away — no say_state reaches it */
+    deliverQueuedUnheard() {
+      for (const [sid] of st.queued) { st.queued.delete(sid); st.says.push({ sid }); }
     },
     async deliverQueued(reply = true) {
       for (const [sid, q] of st.queued) {

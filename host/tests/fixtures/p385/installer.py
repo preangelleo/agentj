@@ -362,9 +362,9 @@ def configured_harness(agentj, *, run=command, prompt=input):
 
 
 # P390 (Leo 10-18 21:31): one extra option, never the default — 「用 OpenCode 自带的免费模型先跑起来」. Zero-retention
-# families first (OpenCode Zen docs, 10-18: Space Bunny Free, LongCat 2.5 Preview Free — "does not use your data for
+# families first (OpenCode Zen docs, 10-18: DeepSeek Flash Free, LongCat 2.5 Preview Free — "does not use your data for
 # model training"); the host's own pick (agentj agent detect → free_model) leads, at most FREE_TRIES real calls.
-FREE_FIRST = ('space-bunny', 'longcat')
+FREE_FIRST = ('deepseek-', 'longcat')
 FREE_TRIES = 3
 FREE_TERMS = (   # OpenCode Zen's own docs (10-18), the same families as the host's opencode_free.DATA_TERMS
     (FREE_FIRST, '按 OpenCode 官方说明，它的供应商不留存、不拿对话训练（免费期条款随时可能变）',
@@ -393,7 +393,7 @@ def free_text(model):
 def free_candidates(first, listed):
     """Free model ids to try, best first: the host's pick, zero-retention families, the rest; big-pickle never."""
     ids = [m for m in [first, *listed] if isinstance(m, str) and re.fullmatch(r'opencode/[A-Za-z0-9._-]{1,80}', m)
-           and m != 'opencode/big-pickle' and (m == first or m.endswith('-free'))]
+           and not m.split('/', 1)[1].startswith(('space-bunny', 'minimax-m3.1-flash', 'big-pickle')) and m in listed and m.endswith('-free')]
     rank = lambda m: (m != first, next((i for i, f in enumerate(FREE_FIRST) if m.split('/', 1)[1].startswith(f)), len(FREE_FIRST)))
     return sorted(dict.fromkeys(ids), key=rank)[:FREE_TRIES]
 
@@ -540,7 +540,7 @@ def write_result(home, **facts):
 
 
 def install(code, uv, working_root, *, post=request, run=command, approve=consent, home=None, prompt=input, pair=None, resume=False,
-            one_command=False, ai_later=False, free_model=False):
+            one_command=False, ai_later=False, free_model=False, local_model=False):
     static_base = artifact_base()  # Validate before consent, redemption or any external request.
     code = extract_code(code)
     if not code: raise InstallError('invalid_installation_code')
@@ -640,6 +640,11 @@ def install(code, uv, working_root, *, post=request, run=command, approve=consen
                 created_oc=True
                 with os.fdopen(fd,'wb') as f: f.write(oc.read_bytes())
             run([str(agentj), 'init', '--working-root', str(working_root)])
+            if local_model:
+                try:
+                    run([str(agentj), 'local-model', 'install'], timeout=1800)
+                except (InstallError, subprocess.CalledProcessError):
+                    print('本地兜底未装好；Agent J 继续安装。需 Apple Silicon 16GB+、20GB 空闲和已运行的 Ollama；之后运行 agentj local-model install。 / Local fallback unavailable; continuing Agent J setup. Retry agentj local-model install after installing and starting Ollama.')
             # Start disconnected; never install temporary key into user's actual OpenCode auth.
             run([str(agentj), 'agent', 'off'])
             # P390: the extra option 「用 OpenCode 自带的免费模型先跑起来」 only when the owner chose it; else unchanged
@@ -752,6 +757,7 @@ def main(argv=None):
     p.add_argument('code', nargs='?'); p.add_argument('--code-file', default=os.environ.get('AGENTJ_CODE_FILE'), help=argparse.SUPPRESS)
     p.add_argument('--one-command', action='store_true', help='Run by https://agentj.app/install.sh: no duplicate questions')
     p.add_argument('--ai-later', action='store_true', help='The owner chose to connect an AI later')
+    p.add_argument('--local-model', action='store_true', help='Optional Ollama qwen3.5:9b fallback (Apple Silicon 16GB+)')
     p.add_argument('--free-model', action='store_true', help="The owner chose OpenCode's own free model to start with (P390)"); p.add_argument('--resume', action='store_true', help='Resume only this installer-owned partial installation; preserve pairing and credentials'); p.add_argument('--uv', default=shutil.which('uv')); p.add_argument('--working-root', type=Path)
     a=p.parse_args(argv)
     try:
@@ -766,7 +772,7 @@ def main(argv=None):
             resume=consent('发现未完成的本安装器任务，继续并保留数据？ / Resume this installer-owned incomplete installation and preserve data?')
         if resume and recovery.exists() and not recovery.is_symlink():
             root=Path(json.loads(recovery.read_text())['working_root'])
-        install(a.code, a.uv, root, resume=resume, one_command=a.one_command, ai_later=a.ai_later, free_model=a.free_model)
+        install(a.code, a.uv, root, resume=resume, one_command=a.one_command, ai_later=a.ai_later, free_model=a.free_model, local_model=a.local_model)
     except (InstallError, KeyboardInterrupt, subprocess.CalledProcessError, OSError, ValueError, KeyError, TypeError) as exc:
         print(failure_message(exc, (Path.home()/'.local/share/agentj/installation-progress.json').exists()), file=sys.stderr)
         return 1

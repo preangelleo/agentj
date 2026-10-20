@@ -367,18 +367,18 @@ export function canonicalJson(o) {
   return JSON.stringify(o === undefined ? null : o);
 }
 /** §17.7 the bytes a device signs to answer a friend_request card: approveMessage, plus — for allow with a group — one more
- *  line hex(SHA-256("group:" + group)), so the host knows the owner picked THAT group. Every other ask = approveMessage. */
+ *  line hex(SHA-256("group:" + group)), so the host knows the owner picked THAT group. peer_question allow may sign group:colleague; ctx stays friend_request-only. */
 export const GROUP_ID_RE = /^[a-z0-9-]{1,32}$/;
 export async function friendAnswerMessage(channel, device, id, decision, tool, summary, group, ctx) {
   const base = await approveMessage(channel, device, id, decision, tool, summary);
-  if (tool !== 'friend_request' || decision !== 'allow') return base;
+  if (!['friend_request', 'peer_question'].includes(tool) || decision !== 'allow') return base;
   let out = base;
   if (group != null && group !== '') {
-    if (!GROUP_ID_RE.test(group)) throw new Error('bad group');
+    if (!GROUP_ID_RE.test(group) || (tool === 'peer_question' && group !== 'colleague')) throw new Error('bad group');
     out = concat(out, enc.encode(`\n${hex(await sha256(enc.encode('group:' + group)))}`));
   }
   // P73 (ADR-A176): 「同意」 may carry this friend's 「补充设定」 — one more line hex(SHA-256("ctx:" + ctx)), after the group line
-  if (typeof ctx === 'string' && ctx !== '') {
+  if (tool === 'friend_request' && typeof ctx === 'string' && ctx !== '') {
     if ([...ctx].length > FRIEND_CTX_MAX) throw new Error('ctx too long');
     out = concat(out, enc.encode(`\n${hex(await sha256(enc.encode('ctx:' + ctx)))}`));
   }

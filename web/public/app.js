@@ -421,7 +421,8 @@ function onApp(m) {
       // (hold to confirm, no typing) is in front; the page's code field stays one tap away.
       if (m && m.tool === 'pair_device' && settings.isOpen()) { settings.onPairCard(); settings.close(); }
       return;
-    case 'ask_done': snap.askDone(m); return;
+    case 'ask_done': friends.answerDone(m); snap.askDone(m); return;
+    case 'answer_refused': relay.answerRefused(m); friends.answerRefused(m); snap.answerRefused(m); toast(t('fr.ask.failed'), 5000); return;
     case 'pair_ev': settings.onPairEv(m); return;    // P153 (§3.3): how the pairing this remote opened went
     case 'bots_tool_request': bots.toolRequest(m); return;
     case 'bots_proposal': bots.proposal(m); return;
@@ -558,6 +559,7 @@ async function forgetLocal() {
   forgetShare();
   relay.forgetLocal();
   friends.forget();
+  snap.S.touched.clear(); snap.S.handledWaiting = false;
   blobs.forgetAll();
   elevate.clear();
   contacts.clear();
@@ -1112,7 +1114,7 @@ function wire() {
   initVersionNotice(settings.refreshApp, {blocked: relay.refreshBlocked, save: relay.saveDraft});
   busy.init({ name: () => agentName ?? DEFAULT_NAME, prompt: (k) => relay.sayPreset(k), detail: api.busyDetail });   // P160: a row → its read-only card
   agentname.init({ name: () => agentName ?? DEFAULT_NAME, canRename: () => session.isReady() });
-  shotclip.init({ attach: relay.attachShot, say: () => toast(t('set.shotDenied'), 4000) });
+  shotclip.init({ attach: (f) => relay.attachShot(f, false, true), say: () => toast(t('set.shotDenied'), 4000) });   // P398: auto
   offline.configure({
     retry: () => { if (session.retryInfo().nextAt) session.reconnectNow('manual'); else resume().catch(() => {}); },
     retryInfo: session.retryInfo,
@@ -1139,7 +1141,7 @@ function wire() {
     const clip = shotcopy.copyImage(shot);
     shot.then(async (file) => {
       settings.close(); show('chat');
-      const tray = relay.attachShot(file, true);
+      const tray = await relay.attachShot(file, true);
       const r = await clip;
       if (r === 'ok') shotclip.remember();
       shotNotice(file, r, tray);
@@ -1280,6 +1282,7 @@ async function main() {
     saidOld: (text) => snap.synthSaid(text, api.myIdSync()),
     settings: settings.toggleFromKey,
     openSettings: () => settings.open(),
+    openShotSetting: () => settings.openShot(),     // P398 (#156): the 「自动放入 · 设置里可关」 chip
     resetConn: rescue.resetFromCommand,              // P332: ≡ 重置连接 and /reset
     upgradeHost: settings.upgradeFromKey,
     refreshApp: settings.refreshApp,

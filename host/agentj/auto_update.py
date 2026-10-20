@@ -315,6 +315,21 @@ def install_commands(info, wheel):
     return [[str(Path(info['where'])/'bin/python'), '-m', 'pip', 'install', '--no-deps', '--force-reinstall', str(wheel)]]
 
 
+def recovery_commands(info, wheel):
+    """Use the cached old wheel with uv's independent base interpreter, even if --force removed the tool env."""
+    cmds = install_commands(info, wheel)
+    if info['kind'] == 'uv':
+        base = os.path.realpath(getattr(sys, '_base_executable', sys.executable))
+        cmds[0] += ['--python', base]
+    return cmds
+
+
+def install_template(info):
+    # Command metadata is an allowlisted template, never exception.cmd or owner-local argv.
+    return {'uv': 'uv tool install --force <wheel>', 'pipx': 'pipx install --force <wheel>'}.get(
+        info['kind'], 'python -m pip install --no-deps --force-reinstall <wheel>')
+
+
 def launch(st):
     from . import phone_update, service_recovery
     if not phone_update.reserve(st):
@@ -348,7 +363,7 @@ def _diagnose(st, result, diag):
     the redacted installer tail; `updates.report_failures`). Never raises: the phone notice above is already recorded."""
     try:
         from . import upgrade_diag
-        res = {**result, 'reason': upgrade_diag.category(result.get('reason')), 'step': diag.get('step') or 'install',
+        res = {**result, **upgrade_diag.installer_fields(diag), 'reason': upgrade_diag.category(result.get('reason')), 'step': diag.get('step') or 'install',
                **({'stderr_tail': diag['stderr_tail']} if diag.get('stderr_tail') else {}),
                **({'failed_checks': update.check_ids(diag['failed_checks'])} if diag.get('failed_checks') else {}),
                **({'detail': diag['detail']} if diag.get('detail') else {})}
@@ -423,11 +438,12 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
     """Journal before mutations. A killed installing worker restores the cached old wheel.
     A manager retries abnormal termination; a file lock excludes competing workers.
     """
-    from . import phone_update, service_recovery
+    # Load result/notice/redaction code before uv can remove this tool environment.
+    from . import phone_update, service_recovery, upgrade_diag, humane, privacy  # noqa: F401
     fd = os.open(st.root/'auto-update-worker.lock', os.O_CREAT | os.O_RDWR, 0o600)
     fcntl.flock(fd, fcntl.LOCK_EX)
     job = read(st, JOB)
-    diag = {}                       # P277: the failed step and the installer's redacted stderr tail
+    diag = job.get('diagnostic') or {}  # Preserve the first failure across a manager retry during rollback.
     def save(phase):
         job['phase'] = phase
         write(st, job, JOB)
@@ -440,20 +456,30 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
             raise ValueError('artifact_hash_mismatch')
         if str(p) == job.get('new') and minisign.verify(data, rec.get('signature', ''), minisign.keyring('release')) != f"agentj-host/v1 version={job['to']} sha256={digest}":
             raise ValueError('artifact_signature_mismatch')
-        for argv in install_commands(job['install'], wheel):
+        cmds = (recovery_commands(job['install'], wheel) if not diagnose else install_commands(job['install'], wheel))
+        for argv in cmds:
             from .upgrade_diag import tail
+            if diagnose:
+                diag['command'] = install_template(job['install'])
             try:
                 r = runner(argv)
             except (OSError, subprocess.SubprocessError) as e:
                 if diagnose:
                     # Never stringify the exception: it can contain argv, URLs or owner paths.
+                    diag['exception'] = type(e).__name__
+                    if type(getattr(e, 'returncode', None)) is int:
+                        diag['exit'] = e.returncode
                     diag['stderr_tail'] = (tail(getattr(e, 'stderr', '') or '')
                                            or tail(getattr(e, 'stdout', '') or '')
                                            or type(e).__name__ + ': installer could not complete')
+                if diagnose:
+                    diag['failure'] = upgrade_diag.installer_reason(e, diag.get('stderr_tail', ''))
                 raise ValueError('install_failed') from None
             if r.returncode:
                 if diagnose:
+                    diag['exit'] = r.returncode
                     diag['stderr_tail'] = tail(getattr(r, 'stderr', '') or '') or tail(getattr(r, 'stdout', '') or '')
+                    diag['failure'] = upgrade_diag.installer_reason(stderr=diag['stderr_tail'])
                 raise ValueError('install_failed')
     def verify(version, *, diagnose=True):
         argv = job['argv']
@@ -511,6 +537,7 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
                    'argv': update.new_argv(info), 'when': 'idle' if read(st).get('decision') == 'idle' else 'night'}
             # Rollback old releases predate artifact signatures; retain hash-verified wheel.
             old = cache(st, job['from'], require_signature=False)
+            job['old'] = str(old)
             new = cache(st, job['to'], require_signature=True)
             import zipfile
             with zipfile.ZipFile(new) as z:
@@ -553,12 +580,24 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
         # Exception details may contain URLs or owner content: fixed codes only.
         reason = str(e) if isinstance(e, ValueError) and str(e) in {
             'install_failed','version_mismatch','restart_failed','upgrade_self_check_failed','worker_interrupted',
-            'artifact_hash_mismatch','artifact_signature_mismatch','artifact_identity_mismatch','unsupported_install'} else type(e).__name__
+            'artifact_hash_mismatch','artifact_signature_mismatch','artifact_identity_mismatch','unsupported_install',
+            *upgrade_diag.CATEGORY.values(), 'read_only_filesystem'} else type(e).__name__
         result = {'attempt': job.get('attempt'), 'from': job.get('from', __version__), 'to': job.get('to'), 'result': 'failed', 'reason': reason}
-        diag.update(failure=reason, step='service' if reason == 'restart_failed' else {
+        if reason == 'install_failed':
+            reason = diag.get('failure') or 'uv_failed'
+        elif not isinstance(e, ValueError):
+            reason = upgrade_diag.category(e)
+        result['reason'] = reason
+        diag['failure'] = reason
+        diag.setdefault('step', 'service' if reason in ('restart_failed', 'service_restart_failed') else {
             None: 'download', 'prepared': 'download', 'installing': 'install', 'installed': 'verify'}.get(job.get('phase'), 'install'))
+        # The old wheel's owner-local command is available even if rollback/verification fails.
+        if job.get('old'):
+            import shlex
+            result['recover'] = ' && '.join(shlex.join(c) for c in recovery_commands(job['install'], job['old']))
         if job.get('phase') in ('installing','installed','rollback'):
             job['failure'] = reason
+            job['diagnostic'] = dict(diag)
             save('rollback')
             try:
                 install(job['old'], diagnose=False)
@@ -566,7 +605,7 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
                 result['result'] = 'rolled_back'
             except Exception:
                 result['reason'] = 'rollback_failed'
-                result.update(update.recover_of(job['install'], job.get('old'), 'failed'))
+                # Keep the independent recover command prepared above, not the missing venv's Python.
         finish(st, result, diag)
         if job.get('phase'):
             save('done')

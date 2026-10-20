@@ -647,7 +647,7 @@ def probe_line(err, secrets_in=()) -> str | None:
 
 
 def probe(exe: str, model: str | None, env: dict, timeout: float, *, waits=(), sleep=time.sleep,
-          clock=time.monotonic) -> str:
+          clock=time.monotonic, prompt=None, diagnostic=False) -> str:
     """One greeting through a 2.x `opencode serve` in an empty scratch folder → the reply text; raises
     opencode_free.ProbeError(code, line) — `line` is OpenCode's own error (probe_line) or None. A free-tier refusal / 429 is
     retried after each of `waits` while `timeout + sum(waits)` allows."""
@@ -722,6 +722,8 @@ def probe(exe: str, model: str | None, env: dict, timeout: float, *, waits=(), s
         while not events and clock() < up:             # `server.connected` first, so no failure event is missed
             sleep(0.05)
         rules = rules_to_v2(session_rules([], research=True) + [_rule("webfetch", "*", "deny")])
+        if diagnostic:
+            rules = rules_to_v2([_rule("*", "*", "deny"), _rule("read", root + "/*", "allow")])
         body = {"title": "Agent J probe", "location": {"directory": root}, "permissions": rules}
         m = split_model(model) if model else None
         if m:
@@ -734,7 +736,7 @@ def probe(exe: str, model: str | None, env: dict, timeout: float, *, waits=(), s
             for wait in (*waits, None):
                 t0 = int(time.time() * 1000) - 1000
                 seen = len(events)
-                st, _ = call("POST", f"/api/session/{quote(sid)}/prompt", {"text": PROMPT})
+                st, _ = call("POST", f"/api/session/{quote(sid)}/prompt", {"text": prompt if prompt is not None else PROMPT})
                 if st != 200:
                     raise ProbeError("native_failed", None)
                 outcome = None

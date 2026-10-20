@@ -78,6 +78,12 @@ body[data-conn=off]{--state:var(--c-offline)}
    only during keyboard navigation (js/ui.js sets <html data-kbd> on Tab / arrows, any pointer clears it) — there one
    quiet ring in the theme's accent. --ring is the one token; every relay / menu focus rule below only places it. */
 :root{--ring:var(--focus,var(--accent))}
+/* P398 (#157, Leo 10-20: 「设置里边最下边的下载 Agent J Brand Kit……没有给足够的 margin……太贴近底部了」): the bottom safe
+   area is now a solid band (P271 / P384 #86) and a phone's screen corners are rounded, so a page that scrolls to its end
+   keeps the safe area + the corner's arc + a normal section gap below its last row. --page-end is that bottom padding for
+   every menu page (Settings main / sub-pages, the ≡ pages, the aj-flow pages); a computer has no arc. */
+:root{--corner-arc:0px;--page-end:calc(var(--space-section) + var(--corner-arc) + env(safe-area-inset-bottom,0px))}
+@media (pointer:coarse){:root{--corner-arc:28px}}
 :focus:not(:focus-visible){outline:none}
 html:not([data-kbd]) :focus,html:not([data-kbd]) :focus-visible{outline:none!important}
 html:not([data-kbd]) .omq:focus-visible{box-shadow:none}
@@ -750,6 +756,11 @@ body[data-conn=on] .offhint,.offhint[hidden]{display:none}
 .chip.img{padding-left:5px}
 .chip .thumb{width:30px;height:30px;flex:none;border-radius:8px;object-fit:cover;display:block;background:var(--line)}
 .chip .nm{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* P398 (#156): a screenshot 截图自动进附件 put here says so under its name, and a tap there opens that switch in Settings */
+.chip.autochip{max-width:240px}
+.chip .nmcol{min-width:0;display:flex;flex-direction:column;justify-content:center;line-height:1.15}
+.chip .auto{min-width:0;padding:0;border:0;background:none;color:var(--text-muted);font:500 calc(11px*var(--fz))/1.2 var(--font-body);
+  text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-decoration:underline;text-underline-offset:2px;cursor:pointer}
 .chip .pg{position:absolute;left:10px;right:10px;bottom:4px;height:2px;border-radius:1px;
   background:rgba(250,249,245,.22);overflow:hidden}
 .chip .pg i{display:block;height:100%;width:0;background:var(--ink);transition:width .2s linear}
@@ -1280,7 +1291,7 @@ body{--deepen:var(--deep)}
 /* The chat screen and Agent J's pages share the header; one of the two fills the rest. */
 .chatv{flex:1;min-height:0;display:flex;flex-direction:column;position:relative}
 .ajpages{flex:1;min-height:0;overflow-x:hidden;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;
-  position:relative;z-index:3;padding:0 var(--rg) calc(24px + env(safe-area-inset-bottom));color:var(--text);
+  position:relative;z-index:3;padding:0 var(--rg) var(--page-end);color:var(--text);
   font-size:var(--fs-md);line-height:var(--lh-body)}
 body[data-view="chat"] .ajpages{display:none}
 body:not([data-view="chat"]) .chatv,
@@ -1398,6 +1409,9 @@ body[data-agent="stopped"]{--state:var(--c-offline)}
 .localnote{margin:16px 0 0;padding-top:12px}
 .localnote[hidden]{display:none}
 .saycancel[data-mode="queued"] b{background:var(--lotion);color:var(--sooty)}
+/* P398 (#155): 「已送达」 is a state, not a control (a tap only says so); 「停止这一轮」 reads as the stop it is */
+.saycancel[data-mode="delivered"] b{background:var(--surface,var(--lotion));color:var(--text-muted);box-shadow:none;border:1px solid var(--line)}
+.saycancel[data-mode="delivered"] svg{display:none}
 .slashmenu .estopitem b{color:var(--c-danger)}
 .keys dd code{display:inline-block;min-width:1.6em;padding:0 6px;border:1px solid var(--line);border-radius:6px;background:var(--surface);
   text-align:center;font:500 .9em/1.5 var(--font-mono);color:var(--ink)}
@@ -1640,6 +1654,7 @@ p.setval{grid-column:1 / -1;text-align:left;margin:0}
 .seg button+button{border-left:1px solid var(--border)}
 .seg button[aria-pressed="true"]{background:var(--primary-bg);color:var(--primary-fg)}
 .tgl{width:56px;height:44px;padding:0;border:0;background:none;display:grid;place-items:center;cursor:pointer}
+.tgl[hidden]{display:none}   /* P398 #156: 截图自动进附件 on a phone: the row stays, the switch steps aside */
 .tgl i{position:relative;width:46px;height:28px;border-radius:14px;background:var(--border);transition:background .2s}
 .tgl i::after{content:"";position:absolute;left:3px;top:3px;width:22px;height:22px;border-radius:50%;background:var(--bg);
   box-shadow:0 1px 3px rgba(20,20,20,.3);transition:transform .2s var(--re)}
@@ -2350,9 +2365,12 @@ i.bd.still{animation:none}
 .setstatus{flex:none;margin:0;padding:var(--sp-2) max(var(--gutter), calc((100% - var(--page-wide)) / 2));background:var(--callout-info);
   color:var(--callout-fg);font-size:var(--fs-sm)}
 .setmain,.setsub{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;
-  padding:var(--space-section) max(var(--gutter), calc((100% - var(--page-wide)) / 2)) calc(var(--space-section) + env(safe-area-inset-bottom))}
+  padding:var(--space-section) max(var(--gutter), calc((100% - var(--page-wide)) / 2)) var(--page-end)}
 .setmain[hidden],.setsub[hidden]{display:none}
 .setmain{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--space-section);align-items:start}
+/* P398 (#157): auto rows sized the Brand Kit row from a narrower guess (64 px for a 97 px row on a 390 px phone), so the
+   row hung 33 px into the bottom padding — the 「太贴近底部」. max-content rows are as tall as what is in them. */
+.setmain{grid-auto-rows:max-content}
 .setside{display:none}
 .setcards{min-width:0}
 .setcard{break-inside:avoid;margin:0 0 var(--space-section);padding:var(--space-section);border:1px solid var(--border);
@@ -2388,7 +2406,7 @@ i.bd.still{animation:none}
   #set-brandkit{grid-column:2}
 }
 @media (max-width:599px){
-  .setmain,.setsub{padding:var(--space-content) var(--space-content) calc(var(--space-content) + env(safe-area-inset-bottom))}
+  .setmain,.setsub{padding:var(--space-content) var(--space-content) var(--page-end)}
   .setcard{padding:var(--space-content);margin-bottom:var(--space-content)}
   .sethead{min-height:56px;padding-inline:var(--space-content)}
   .sethead .setx:first-child{margin-left:-10px}

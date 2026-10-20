@@ -1,4 +1,5 @@
 {
+  "fr.ask.failed": "确认没生效，请再点一次。",
   "meta": {
     "title": "Agent J · 手机遥控器"
   },
@@ -3629,5 +3630,14 @@
   "p394.ready": "可以开始",
   "p394.start": "开始：{when}",
   "p394.end": "截止：{when}",
-  "p394.after": "等「{what}」完成"
+  "p394.after": "等「{what}」完成",
+  "p398.delivered": "已送达",
+  "p398.deliveredAria": "已送达 Agent，不能再取消了",
+  "p398.stopTurn": "停止这一轮",
+  "p403.stopShort": "停止",
+  "p398.writing": "Agent 还在写，写完就能点",
+  "p398.dup": "{n} 个文件已经在附件里了，没有重复放入",
+  "p398.autoChip": "自动放入 · 设置里可关",
+  "p398.autoChipTitle": "「截图自动进附件」放进来的，点这里打开设置里的开关",
+  "p398.shotDesktopOnly": "仅电脑上的 Chrome 或 Edge 可用：在电脑浏览器里打开 Agent J，到那里的设置里开关。"
 }

@@ -171,7 +171,7 @@ METER_GAP = 2.0                             # ≤ 1 meter message per 2 s
 HIST_READY = 50                             # turns a p33 device gets on ready (it pages for more)
 SWEEP_EVERY = 60
 RETAIN_EVERY = 86_400
-P33_ONLY = ("say", "say_cancel", "cmd_cancel", "blob_open", "blob_chunk", "blob_end", "blob_drop", "hist_get", "menu_get", "model_set",
+P33_ONLY = ("say", "say_cancel", "say_sync", "cmd_cancel", "blob_open", "blob_chunk", "blob_end", "blob_drop", "hist_get", "menu_get", "model_set",
             "q_answer", "tts_get", "pref_set", "notice_read", "media_get", "provider_get", "provider_key", "asr_install", "models_get", "ping",
             "tg_fwd", "turn_wait", "res_watch", "busy_get",   # P181 (§22.1) load card resources; P160 (§22) one 「在办」 row's detail
             "mail_get", "mail_set", "mail_key", "mail_test", "mail_check",   # P170 (§10.20)
@@ -413,6 +413,16 @@ def _rcpt(host, device, sid, state: str, turn: int | None = None) -> None:
     rc = getattr(host, "receipts", None)
     if rc is not None and isinstance(device, str) and isinstance(sid, str) and rc.used(device, sid):
         rc.mark(device, sid, state, turn)
+
+
+def say_sync_state(send, receipt: str | None) -> str | None:
+    """P398 (#155): one sid's say_state for `say_sync` — None while it still waits (the phone keeps 「取消」)."""
+    if send is not None:
+        return {"delivered": "delivered", "uncertain": "delivered", "cancelled": "cancelled",
+                "failed": "failed"}.get(send.state)
+    if receipt in ("recv",):
+        return None
+    return {"deliv": "delivered", "lost": "failed"}.get(receipt, "done")   # done / unknown: nothing left to withdraw
 
 
 def _rcpt_turn(host, tid) -> None:
@@ -3686,6 +3696,10 @@ class Host:
     def turn_failed(self) -> None:
         self.cur_failed = True
 
+    def fallback_failure(self, text: str) -> None:
+        from .privacy import owner_text
+        self._fallback_error = owner_text(text[:4000])
+
     def official_notices(self, items: list) -> None:
         """Only cloud's pinned-signature inbox reaches here. Body stays data; trusted local policy owns behavior."""
         cats = notices.local_categories(self.st, self.preferences)
@@ -3831,6 +3845,7 @@ class Host:
         return web, machine
 
     def agent_turn_start(self, text: str, send=None) -> None:
+        self._fallback_error, self._fallback_used = "", False
         self.turn_t0 = time.monotonic()
         self.turn_shown, self.turn_at = False, (time.time(), 0.0, False)
         _hb_touch(self)
@@ -4570,8 +4585,15 @@ class Host:
         self.emit("grant", id=g.rid, scope=g.text)
         self._post(self._send_ready, lambda s: self._grant_msg(g))
 
+    async def _answer_refused(self, s: Session, a: Ask, reason: str) -> None:
+        self.st.log("answer_refused", id=a.rid, device=s.device, reason=reason)
+        await self.send_app(s, {"t": "answer_refused", "id": a.rid, "why": reason, "ask": self._ask_msg(a, s)})
+
     async def _answer(self, s: Session, obj: dict) -> None:
-        if self.peers is not None and self.peers.answer(s.device, obj):
+        refused = []
+        if self.peers is not None and self.peers.answer(s.device, obj, refuse=refused.append):
+            for receipt in refused:
+                await self.send_app(s, receipt)
             return                         # P71: a friend card (friend_request / peer_question), decided by its own rules
         rid, ok, sig, batch = obj.get("id"), obj.get("ok"), obj.get("sig"), obj.get("batch", False)
         a = self.asks.get(rid) if isinstance(rid, str) else None
@@ -4579,11 +4601,11 @@ class Host:
             return                         # unknown or already decided (another phone, timeout): nothing to do
         if not isinstance(ok, bool) or not isinstance(sig, str) or not isinstance(batch, bool) \
                 or time.monotonic() > a.deadline:
-            self.st.log("answer_refused", id=rid, device=s.device, reason="shape_or_late")
+            await self._answer_refused(s, a, "shape_or_late")
             return
         if batch and (not ok or a.scope is None or a.cats):
             # a dangerous request (or one that was not offered for batching) can only be decided one by one (ADR-A47)
-            self.st.log("answer_refused", id=rid, device=s.device, reason="no_batch")
+            await self._answer_refused(s, a, "no_batch")
             return
         sk = self.st.sign_key(s.device)
         try:
@@ -4596,13 +4618,13 @@ class Host:
         if picks is not None:             # P296: ticked boxes — only on an allow, only addresses this card offered, in its order
             if not (ok and not batch and isinstance(picks, list) and picks and all(isinstance(x, str) for x in picks)
                     and len(set(picks)) == len(picks) and picks == [x for x in a.allow_offer if x in picks]):
-                self.st.log("answer_refused", id=rid, device=s.device, reason="allow_add")
+                await self._answer_refused(s, a, "allow_add")
                 return
         if not sk or not approvals.verify(sk, sigb, self.channel, s.device, rid, decision, a.digest, scope, picks):
-            self.st.log("answer_refused", id=rid, device=s.device, reason="no_key" if not sk else "bad_signature")
+            await self._answer_refused(s, a, "no_key" if not sk else "bad_signature")
             return
         if a.tool == pair_card.TOOL and not s.pair1:
-            self.st.log("answer_refused", id=rid, device=s.device, reason="no_pair1")   # only a page that showed the card
+            await self._answer_refused(s, a, "no_pair1")   # only a page that showed the card
             return
         pk = self.st.passkey_of_device(s.device) if ok and (a.require_passkey or a.pk_if_any) else None
         if ok and (a.require_passkey or (a.pk_if_any and pk)):
@@ -4616,7 +4638,7 @@ class Host:
                 count = passkey.verify_assertion(pk, f, challenge)
                 self.st.passkey_count(s.device, pk["id"], count)
             except (passkey.PasskeyError, ValueError):
-                self.st.log("answer_refused", id=rid, device=s.device, reason="passkey_required")
+                await self._answer_refused(s, a, "passkey_required")
                 return
         a.allow_add = list(picks or [])
         a.fut.set_result((decision, s.device, sk, sigb))
@@ -5498,6 +5520,7 @@ class Host:
         caps.append(jcards.CAP)                                # P360 §34: Agent J Cards (jcard_list / jcard_get / jcard_set)
         caps.append(compose.CAP_MQ)                            # P286 §10.6: takes quote_more (≤ 5 quotes in one say)
         caps.append("hooks1")                                  # P366: answers hook_list / hook_set (Settings → Webhook)
+        caps.append(compose.CAP_SYNC)                          # P398 §10.2: answers say_sync (queued sends after a reconnect)
         m = {"caps": caps, "asr": self.asr_state(), "hist": "on" if self.hist.on else "off"}
         m.update(self._host_kind())
         return m
@@ -5900,6 +5923,21 @@ class Host:
                 self.st.log("say_cancel", cid=s.cid, device=s.device, result=r)
                 self._post(self._send_device, s.device, {"t": "say_state", "sid": sid, "s": "cancelled"})
             await self.send_app(s, {"t": "say_cancel_res", "sid": sid, "r": r})
+            return
+        if t == "say_sync":
+            # P398 (#155): after a reconnect the phone asks where its still-queued sends are — a say_state lost while it was
+            # away (the Agent took it, it was withdrawn elsewhere) would otherwise leave 「排队中 · 取消」 on a message the
+            # Agent already has. The answer is this host's own record (compose.Sends, then the receipts on disk), never a guess.
+            sids = obj.get("sids")
+            if not isinstance(sids, list):
+                return
+            rc = getattr(self, "receipts", None)
+            for sid in sids[:compose.MAX_SENDS * 2]:
+                if not wire.is_id22(sid):
+                    continue
+                st = say_sync_state(self.sends.get(s.device, sid), rc.state(s.device, sid) if rc is not None else None)
+                if st is not None:
+                    await self.send_app(s, {"t": "say_state", "sid": sid, "s": st})
             return
         if t == "blob_open":
             for m in self.uploads.open(s.device, obj):

@@ -5,7 +5,8 @@
 //   identity-examples  the three examples written in the shipped identity (main_identity.REPLY_LINE) render as buttons
 //   tap-sends          one tap = a say with exactly those words (the same signed say as typing); the group greys out,
 //                      「已回复：派」, a second tap sends nothing
-//   answered-before    the owner already answered on the next page (typed, or from another remote) → the group is off
+//   answered-before    the owner already answered on the next page (typed, or from another remote) → the group is off;
+//                      a different message after it leaves the group on (P398 #154)
 //   injection          never a button: a quote, inline / fenced code, a host system page, a task page, a command (/stop),
 //                      several lines, over 200 字, a page still being written — those stay plain words, a tap sends nothing
 //   tags               #发布 in a reply → 搜索聊天记录 opened on that tag; colours (#629887) stay words
@@ -135,12 +136,12 @@ try {
       await ev(p, `document.querySelector('#words button.rbtn').click()`); await sleep(300);
       assert.equal(phoneSays().length, n);
     } finally { await p.dispose(); }
-    // a different typed answer: the group is simply closed, nothing marked
+    // P398 (#154): a later message about something else does not close the group — it stays tappable, nothing marked
     const p2 = await paired({ turns: [[{ ...ME, text: '补货' }, ASK_ZH], [{ ...ME, text: '等我看完再说' }, '好。']] });
     try {
       await ev(p2, `document.getElementById('pgPrev').click()`); await sleep(250);
       const b = await btns(p2);
-      assert.ok(b.length === 2 && b.every((x) => x.off && !x.picked)); assert.equal(await note(p2), '');
+      assert.ok(b.length === 2 && b.every((x) => !x.off && !x.picked)); assert.equal(await note(p2), '');
     } finally { await p2.dispose(); }
   });
 

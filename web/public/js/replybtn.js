@@ -4,7 +4,11 @@
 // Agent's own words become buttons: one tap sends the words AS THE OWNER through the same signed say as typing them
 // (relay.js sayWords), the whole group greys out and says 「已回复：派」 — once per group. Never a button: a link inside a
 // quote (blockquote), code, a host system / task / command page, a page still being written, or once the owner has
-// already answered after it (typed, or another remote). Words ≤ md.REPLY_MAX, never a /command (md.replyRef).
+// answered it (typed, or another remote). Words ≤ md.REPLY_MAX, never a /command (md.replyRef).
+// P398 (#154, Leo 10-20: 「如果我当时没有点，先发了另外一条消息给你，然后再回过消息来点的时候，就已经不能点了」): a later
+// message about something else no longer closes the group. Only an answer closes it — the owner's first message after it
+// being one of its words (the old one-tap / typed answer), or any later message quoting this page (「回复 #N」) with one of
+// its words. A tap on an older page goes as a reply to it (reply_to = its id), so the Agent knows which question it answers.
 // #标签 in a reply → the chat search (P188) with that tag, every page that carries it.
 import { t } from './t.js';
 
@@ -15,13 +19,18 @@ const SKIP = 'blockquote,pre,code,a,button,.mslot,.math,.mermaid-src,details';
 const picked = new Map();                           // page id → the words this phone sent (until the next page shows it)
 const ctxOf = new WeakMap();                        // root → the latest ctx (a click reads it)
 
-/** The words of the owner's first page after `p` (null: none yet), from the page list. */
-function nextOwner(p, pages) {
+/** The words that answered `p` (null: not answered yet), from the page list: the owner's first page after it when its
+    words are one of `says` and it quotes nothing else, or any later owner page quoting `p` with one of `says`. */
+function answerOf(p, pages, says) {
   const i = pages.indexOf(p);
   if (i < 0) return null;
+  let first = true;
   for (const q of pages.slice(i + 1)) {
     const s = q && q.source;
-    if (s && OWNER.includes(s.k)) return typeof s.text === 'string' ? s.text.trim() : '';
+    if (!s || !OWNER.includes(s.k)) continue;
+    const text = typeof s.text === 'string' ? s.text.trim() : '', qid = s.quote ? s.quote.id : null;
+    if (says.includes(text) && (qid === p.id || (first && qid === null))) return text;
+    first = false;
   }
   return null;
 }
@@ -29,11 +38,13 @@ function nextOwner(p, pages) {
 export function stateOf(p, pages, says) {
   if (!p || !Number.isInteger(p.id)) return { on: false, said: null };
   const mine = picked.get(p.id);
-  const next = nextOwner(p, pages || []);
-  if (next !== null) return { on: false, said: says.includes(next) ? next : (mine && next === mine ? mine : null) };
+  const ans = answerOf(p, pages || [], mine && !says.includes(mine) ? [...says, mine] : says);
+  if (ans !== null) return { on: false, said: ans };
   if (mine) return { on: false, said: mine };
   return { on: p.end !== 'open', said: null };
 }
+/** A tap on a page the owner has written after (a later page exists): it goes as a reply to that page. */
+export const older = (p, pages) => { const i = (pages || []).indexOf(p); return i >= 0 && i < pages.length - 1; };
 export const agentWords = (p) => !!p && !NOT_AGENT.includes((p.source || {}).k);
 
 /** Inside a quote / code / link … of the reply itself. The reply's own box is a <blockquote> (#words): only what lies
@@ -64,7 +75,7 @@ async function tap(root, b) {
   const p = c.page, say = b.dataset.say;
   picked.set(p.id, say); paintGroup(root, c);
   let ok = false;
-  try { ok = await c.say(say); } catch (_) { ok = false; }
+  try { ok = await c.say(say, older(p, c.pages()) ? p : null); } catch (_) { ok = false; }
   if (!ok && picked.get(p.id) === say) { picked.delete(p.id); paintGroup(root, c); }
 }
 const says = (root) => [...root.querySelectorAll('button.rbtn')].map((b) => b.dataset.say);
@@ -76,7 +87,7 @@ function paintGroup(root, c) {
     b.setAttribute('aria-disabled', st.on ? 'false' : 'true');
     b.classList.toggle('rb-off', !st.on);
     b.classList.toggle('rb-picked', !!st.said && b.dataset.say === st.said);
-    b.title = st.on ? t('p368.tapSends', { say: b.dataset.say }) : st.said ? t('p368.said', { say: st.said }) : t('p368.closed');
+    b.title = st.on ? t('p368.tapSends', { say: b.dataset.say }) : st.said ? t('p368.said', { say: st.said }) : t(c.page.end === 'open' ? 'p398.writing' : 'p368.closed');
   }
   let note = root.querySelector('.rb-note');
   if (st.said) {

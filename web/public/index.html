@@ -871,11 +871,6 @@
               <p class="setnote" data-i18n="set.wakeNote">说出唤醒词就能开始说话。只在 Agent J 的安卓 App 里起作用，网页版没有这个功能。</p>
             </div>
             <p class="setcmd" id="set-pref-cmd" hidden><span class="setnote" data-i18n="set.readOnly">这台Agent J 主机上的程序还不能从手机改设置。要改，在Agent J 主机上运行：</span><code id="set-pref-cmd-code" data-cc="ext"></code><button type="button" class="setcopy" data-copy="set-pref-cmd-code" data-i18n-attr="aria-label=set.copy,title=set.copy" aria-label="复制命令" title="复制命令"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect class="ic-copy" x="8.5" y="8.5" width="11.5" height="11.5" rx="2.5"/><path class="ic-copy" d="M15.5 8.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7.5a2 2 0 0 0 2 2h2.5"/><path class="ic-done" d="M5 12.5l4.5 4.5L19 7.5"/></svg></button></p>
-            <div class="setrow" id="set-shot-row" hidden>
-              <span class="setlab" data-i18n="set.shot">截图自动进附件</span>
-              <button type="button" id="set-shot" class="tgl" role="switch" aria-checked="false" data-i18n-attr="aria-label=set.shot" aria-label="截图自动进附件"><i></i></button>
-              <p class="setnote" data-i18n="set.shotNote">在当前遥控设备上截图（截到剪贴板的那种，比如 Windows 的 Win+Shift+S）后回到这个页面，截图会自动放进附件，等你点发送。打开时浏览器会问一次能不能读剪贴板。手机浏览器不支持。</p>
-            </div>
           </section>
 
           <section class="setcard" id="set-s-notify" data-paired aria-labelledby="set-h-notify">
@@ -985,6 +980,12 @@
               <span class="setlab" data-i18n="set.a2hs">添加到主屏幕</span>
               <button type="button" id="set-a2hs" class="aj-btn aj-btn--sm" hidden></button>
               <p class="setnote" id="set-a2hs-text" data-i18n="set.a2hsNote">添加以后，打开它就像打开一个 App，也能收到锁屏提醒。</p>
+            </div>
+            <div class="setrow" id="set-shot-row" data-keywords="截图 剪贴板 附件 screenshot clipboard attachment">
+              <span class="setlab" data-i18n="set.shot">截图自动进附件</span>
+              <button type="button" id="set-shot" class="tgl" role="switch" aria-checked="false" data-i18n-attr="aria-label=set.shot" aria-label="截图自动进附件"><i></i></button>
+              <p class="setnote setna" id="set-shot-na" hidden data-i18n="p398.shotDesktopOnly">仅电脑上的 Chrome 或 Edge 可用：在电脑浏览器里打开 Agent J，到那里的设置里开关。</p>
+              <p class="setnote" data-i18n="set.shotNote">在当前遥控设备上截图（截到剪贴板的那种，比如 Windows 的 Win+Shift+S）后回到这个页面，截图会自动放进附件，等你点发送。打开时浏览器会问一次能不能读剪贴板。手机浏览器不支持。</p>
             </div>
             <button type="button" id="keysBtn" class="setnav" data-paired data-i18n-attr="title=r.keys.btnTitle" title="快捷键（?）"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="2"/><path d="M6.5 10h.01M10 10h.01M14 10h.01M17.5 10h.01M7.5 14h9"/></svg><span><b data-i18n="set.keys">键盘快捷键</b><small data-i18n="set.keysNote">在对话页按 ? 也能打开。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
           </section>

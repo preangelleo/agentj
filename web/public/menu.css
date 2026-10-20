@@ -171,7 +171,7 @@ body:is([data-view="mem"],[data-view="act"],[data-view="tasks"],[data-view="mode
 .hotask button:disabled{opacity:.45;cursor:default}
 @media (prefers-reduced-motion:reduce){.hotask{animation:none}}
 .menubody{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none;
-  padding:var(--menu-gap) max(var(--menu-pad), calc((100% - var(--menu-max)) / 2)) calc(var(--menu-gap) + env(safe-area-inset-bottom))}
+  padding:var(--menu-gap) max(var(--menu-pad), calc((100% - var(--menu-max)) / 2)) var(--page-end)}   /* P398 #157 (app.css) */
 .menubody::-webkit-scrollbar{display:none}
 .menunarrow{max-width:var(--menu-narrow);margin:0 auto;display:flex;flex-direction:column;gap:var(--menu-gap)}
 .menucols{columns:2 26rem;column-gap:var(--menu-gap)}

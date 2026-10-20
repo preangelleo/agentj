@@ -14,10 +14,12 @@ const posts=[];web.server.on('request',r=>{if(r.method==='POST'&&r.url!=='/.aj/r
 const sender=createServer((req,res)=>res.end('<!doctype html><title>Synthetic screenshot share fixture</title><p>Local share sender</p>'));
 await new Promise(r=>sender.listen(0,'127.0.0.1',r));const senderUrl=`http://127.0.0.1:${sender.address().port}/`;
 const results={};
-async function navigateShare(p,base64,{images=2,text='P110 private screenshot canary',mime='image/png'}={}){
+// P403: the second shared image differs in pixels — P398 (#156) takes the same picture once (a duplicate never doubles the tray)
+const SECOND_PNG='iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAEUlEQVR4nGM4IRf1H4QZYAwATywI/UCxqVcAAAAASUVORK5CYII=';
+async function navigateShare(p,base64,{images=2,text='P110 private screenshot canary',mime='image/png',second=SECOND_PNG}={}){
  await navigate(p,senderUrl);
  // A sender outside the receiving app navigates with multipart, just as the OS share target does.
- await evaluate(p,`(()=>{const form=document.createElement('form');form.method='POST';form.enctype='multipart/form-data';form.action=${JSON.stringify(web.url+'share-target')};const input=document.createElement('input');input.type='file';input.name='images';input.multiple=true;const dt=new DataTransfer();const bytes=Uint8Array.from(atob(${JSON.stringify(base64)}),c=>c.charCodeAt(0));for(let i=0;i<${images};i++)dt.items.add(new File([bytes],'screen-'+i+'.png',{type:${JSON.stringify(mime)}}));input.files=dt.files;form.append(input);const note=document.createElement('input');note.name='text';note.value=${JSON.stringify(text)};form.append(note);document.body.append(form);form.submit()})()`);
+ await evaluate(p,`(()=>{const form=document.createElement('form');form.method='POST';form.enctype='multipart/form-data';form.action=${JSON.stringify(web.url+'share-target')};const input=document.createElement('input');input.type='file';input.name='images';input.multiple=true;const dt=new DataTransfer();const bytes=Uint8Array.from(atob(${JSON.stringify(base64)}),c=>c.charCodeAt(0));const bytes2=Uint8Array.from(atob(${JSON.stringify(second)}),c=>c.charCodeAt(0));for(let i=0;i<${images};i++)dt.items.add(new File([i?bytes2:bytes],'screen-'+i+'.png',{type:${JSON.stringify(mime)}}));input.files=dt.files;form.append(input);const note=document.createElement('input');note.name='text';note.value=${JSON.stringify(text)};form.append(note);document.body.append(form);form.submit()})()`);
  await waitFor(p,`location.origin===${JSON.stringify(new URL(web.url).origin)} && document.getElementById('share-status')?.textContent.length>0`);
 }
 async function click(p,id){const b=await evaluate(p,`(()=>{const r=document.getElementById(${JSON.stringify(id)}).getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`);await p.send('Input.dispatchMouseEvent',{type:'mousePressed',button:'left',clickCount:1,...b});await p.send('Input.dispatchMouseEvent',{type:'mouseReleased',button:'left',clickCount:1,...b});}
@@ -37,7 +39,7 @@ try{
   assert.equal(fake.st.says.length,before,'intake never auto-sends');assert.deepEqual(posts,[],'multipart was consumed locally; web server received no POST');
   assert.equal(await evaluate(p,'location.search.includes("share=")'),false,'one-time handle stripped');
   const received=[...fake.st.blobs.entries()].filter(([id,b])=>!oldBlobs.has(id)&&b.bytes).map(([,b])=>b);assert.equal(received.length,2);
-  for(const b of received)assert.ok(b.bytes.equals(image),'Noise receiver gets exact screenshot bytes');
+  assert.deepEqual(received.map(b=>b.bytes.equals(image)?'shot':b.bytes.equals(Buffer.from(SECOND_PNG,'base64'))?'second':'other').sort(),['second','shot'],'Noise receiver gets exact screenshot bytes');
   const shot=await shoot(p,'');if(process.env.P110_DOC_SHOTS==='1')writeFileSync(new URL('android.'+language+'.png',docs),shot);writeFileSync(new URL('android-'+language+'.png',out),shot);
   await click(p,'send');await waitFor(p,`document.querySelectorAll('#tray .chip').length===0`);assert.equal(fake.st.says.length,before+1);assert.equal(fake.st.says.at(-1).att.length,2);
   assert.ok(frames.length>0);for(const f of frames){const bytes=f.opcode===2?Buffer.from(f.payloadData,'base64'):Buffer.from(f.payloadData);assert.ok(!bytes.includes(Buffer.from('P110 private screenshot canary')));assert.ok(!bytes.includes(image.subarray(0,64)));}

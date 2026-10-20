@@ -1,6 +1,6 @@
 {
-  "version": "0.24.1a1",
+  "version": "0.24.1a2",
   "major": false,
-  "zh": "每页搜索只搜本页；断开 5 秒内静默重连；可选 10 分钟管理员授权；手机确认重设配对密码；多实例共用语音模型；升级自检写明原因。",
-  "en": "Per-page search, quiet reconnect within 5 s, optional 10-minute admin approval, phone-confirmed password reset, a shared speech model, clearer upgrade checks."
+  "zh": "模型出错时兜底模型只读诊断；回复按钮回头点照样可点；先「已送达」再「停止这一轮」；好友作答修好；升级失败写明原因并自动回退。",
+  "en": "Read-only fallback diagnosis when your model fails; reply buttons stay tappable; Delivered before Stop; friend answers fixed; clearer upgrade failures."
 }

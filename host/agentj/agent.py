@@ -518,6 +518,9 @@ class Agent:
         fn = getattr(self.host, "turn_failed", None)
         if fn:
             fn()
+        capture = getattr(self.host, "fallback_failure", None)
+        if capture:
+            capture(text)
         self.host.agent_notice(text)
 
     def local_fail(self, text: str) -> None:
@@ -620,6 +623,9 @@ class Agent:
                     except Exception as e:  # noqa: BLE001 — an adapter bug costs one turn, never serve
                         self.fail_notice(f"Agent J 出错（{type(e).__name__}），这条没有完成。")
                     finally:
+                        if not asyncio.current_task().cancelling():
+                            from .fallback import after_failure
+                            await after_failure(self.host, self)
                         self.cur_send = None
                     self.host.agent_turn_end()
                     try:                                    # P59: context nearly full → the handover before the harness
@@ -679,6 +685,8 @@ class Agent:
                     raise
                 except Exception as e:  # noqa: BLE001 — an adapter bug costs one turn, never serve
                     self.fail_notice(f"Agent J 出错（{type(e).__name__}），这条没有完成。")
+                from .fallback import after_failure
+                await after_failure(self.host, self)
                 self.host.agent_turn_end()
                 if self.q.empty():
                     self.set_status("down" if self.is_down() else "idle")

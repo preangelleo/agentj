@@ -63,8 +63,8 @@ test('§17.7 friendAnswerMessage: allow + group adds hex(SHA-256("group:"+g)) on
   assert.equal(dec.decode(await wire.friendAnswerMessage(...args, 'allow', 'friend_request', 'card + note', null)), base);
   assert.equal(dec.decode(await wire.friendAnswerMessage(...args, 'deny', 'friend_request', 'card + note', 'colleague')),
     dec.decode(await wire.approveMessage(...args, 'deny', 'friend_request', 'card + note')));
-  assert.equal(dec.decode(await wire.friendAnswerMessage(...args, 'allow', 'peer_question', 's', 'colleague')),
-    dec.decode(await wire.approveMessage(...args, 'allow', 'peer_question', 's')));
+  assert.equal(dec.decode(await wire.friendAnswerMessage(...args, 'allow', 'Bash', 's', 'colleague')),
+    dec.decode(await wire.approveMessage(...args, 'allow', 'Bash', 's')));
   await assert.rejects(wire.friendAnswerMessage(...args, 'allow', 'friend_request', 's', 'Bad Group'), /bad group/);
 });
 

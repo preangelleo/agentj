@@ -17,6 +17,7 @@ no installer output, no support thread, no Dashboard trace. Now every upgrade at
 """
 from __future__ import annotations
 
+import errno
 import io
 import json
 import os
@@ -48,14 +49,45 @@ CATEGORY = {"install_failed": "uv_failed", "restart_failed": "service_restart_fa
             "artifact_identity_mismatch": "signature_or_hash_mismatch", "artifact_refused": "signature_or_hash_mismatch",
             "upgrade_self_check_failed": "doctor_failed", "service_failed": "service_restart_failed",
             "URLError": "download_failed", "HTTPError": "download_failed", "TimeoutError": "download_failed",
-            "ConnectionError": "download_failed", "ConnectionResetError": "download_failed", "OSError": "download_failed",
+            "ConnectionError": "download_failed", "ConnectionResetError": "download_failed", "OSError": "os_error",
+            "CalledProcessError": "uv_failed", "FileNotFoundError": "installer_missing",
+            "PermissionError": "permission_denied", "TimeoutExpired": "installer_timeout",
             "artifact_too_large": "download_failed", "insecure_update_redirect": "download_failed"}
 
 
 def category(reason) -> str:
-    r = str(reason or "unknown")
+    if isinstance(reason, OSError) and reason.errno == errno.EROFS:
+        return "read_only_filesystem"
+    r = type(reason).__name__ if isinstance(reason, BaseException) else str(reason or "unknown")
     r = CATEGORY.get(r, r)
     return r if REASON_RE.fullmatch(r) else "unknown"
+
+
+def installer_reason(exc=None, stderr="") -> str:
+    """Fixed reasons from errno or installer output; never expose exception messages/argv."""
+    if isinstance(exc, (FileNotFoundError, PermissionError, subprocess.TimeoutExpired)):
+        return category(exc)
+    text = stderr.lower() if isinstance(stderr, str) else ""
+    if getattr(exc, "errno", None) == errno.EROFS or "read-only file system" in text or "os error 30" in text:
+        return "read_only_filesystem"
+    if "permission denied" in text or "os error 13" in text:
+        return "permission_denied"
+    return category(exc) if exc is not None else "uv_failed"
+
+
+def installer_fields(res):
+    """Only known command templates and scalar metadata may leave the host. No owner paths/argv."""
+    out = {}
+    if res.get("command") in (
+        "uv tool install --force <wheel>", "uv tool install --force <wheel> --python <python>",
+        "pipx install --force <wheel>", "python -m pip install --no-deps --force-reinstall <wheel>",
+    ):
+        out["command"] = res["command"]
+    if type(res.get("exit")) is int:
+        out["exit"] = res["exit"]
+    if res.get("exception") in CATEGORY:
+        out["exception"] = res["exception"]
+    return out
 
 
 def plan_reason(e: BaseException) -> str:
@@ -137,6 +169,7 @@ def entry(res: dict, now: float | None = None) -> dict | None:
            "reason": category(res.get("reason")), "at": int(time.time() if now is None else now)}
     if result != "ok":
         rec["step"] = res["step"] if res.get("step") in STEPS else "install"
+        rec.update(installer_fields(res))
         if res.get("stderr_tail"):
             rec["stderr_tail"] = str(res["stderr_tail"])[-TAIL_MAX:]
         if res.get("detail"):
@@ -237,6 +270,8 @@ def body(res: dict, kind: str | None = None) -> str:
              + (f" · rollback: {res['rollback']}" if res.get("rollback") else "")
              + (f" · service: {res['service']}" if res.get("service") else ""),
              f"install: {kind or '?'} · {_platform()}"]
+    for key, value in installer_fields(res).items():
+        lines.append(f"{key}: {value}")
     checks = failed_checks(res)
     if checks:
         lines.append("failed checks: " + ", ".join(checks))
@@ -290,6 +325,11 @@ def report(st, res: dict, *, send=None, now: float | None = None, kind: str | No
 REASON_WORDS = {
     "download_failed": ("下载安装包失败，网络或 agentj.app 暂时连不上", "the release download failed: no network or agentj.app unreachable"),
     "signature_or_hash_mismatch": ("安装包的签名或校验值对不上，已拒绝安装", "the package's signature or checksum did not match, so it was refused"),
+    "installer_missing": ("找不到安装工具，请先恢复 uv / pipx", "the installer is missing; restore uv / pipx first"),
+    "permission_denied": ("安装目录权限不足", "the installation directory is not writable"),
+    "read_only_filesystem": ("安装位置是只读文件系统", "the installation is on a read-only filesystem"),
+    "installer_timeout": ("安装命令超时", "the installer timed out"),
+    "os_error": ("安装遇到系统错误", "an operating-system error prevented installation"),
     "uv_failed": ("安装命令执行失败", "the install command failed"),
     "service_restart_failed": ("新版装好了但后台服务没能重启", "the new version installed but the background service did not restart"),
     "not_upgraded": ("装完后版本没有变成目标版本", "after installing, the version was not the target"),

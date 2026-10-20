@@ -1,6 +1,6 @@
-# Agent J 0.24.1a1 release notes
+# Agent J 0.24.1a2 release notes
 
-Host 0.24.1a1 / install 0.26.1; phone-web scope.
+Host 0.24.1a2 / install 0.26.2; phone-web scope.
 Phone parity must pass --strict. Full Android/Telegram parity is incomplete.
 Full Android/Telegram parity is incomplete.
 No APK is included in this release. Android source is for review, not a released app.
@@ -8,59 +8,27 @@ No APK is included in this release. Android source is for review, not a released
 Publication status: local preparation only. Live site verification is DEFERRED until
 the public commit and tag are pushed, the site is deployed, and cold installation passes.
 
-On failure restore v0.24.0a1 host/site/phone and the captured Dashboard Worker version (the additive app migration 0031 stays in place; it is never re-applied). Release order: C (additive app D1 migration 0031, then the Dashboard Worker; feedback database unchanged), then A signed host/site/downloads then B phone web immediately after. Normal publication windows remain C 05:00–07:00 JST and A/B 23:00–08:00 JST; outside-window publication requires recorded owner authorization. No relay change. Page search, the five-second reconnect rule, the optional 10-minute admin approval, passphrase reset from a paired phone, billing and seat-binding fixes, a shared speech model and upgrade check names ship together. Native Windows, LG TV and physical iOS acceptance are not claimed.
+On failure restore v0.24.1a1 host/site/phone. Patch release: A signed host/site/downloads then B phone web immediately after, in the same 23:00–08:00 JST window; outside-window publication requires recorded owner authorization. No relay, Dashboard or D1 change. The read-only fallback model after a failed turn (optional local model on Apple Silicon), reply buttons that stay tappable, Delivered before Stop this turn, attachment de-duplication, friend answer signatures and upgrade failure diagnostics ship together. Physical iPhone/Android and real Apple Silicon local-model acceptance are not claimed.
 ## Changes
 
-- Search at the top right of every page searches that page: card pages filter their records in place, and a Settings result opens the right item and flashes it.
-- Admin command cards have an optional switch (off by default; you tick it yourself): for 10 minutes, read-only commands in the same format and the same folder are not asked again; shells and scripts always ask, and you can revoke it at any time.
-- Forgot the remote pairing password? Run `agentj passphrase reset --phone` on the computer and confirm on a paired phone; every remote stays paired.
-- The To-do card now gives every item an owner (Agent J or you), a start and a due time, and can show only Agent J's or only your items; Agent J checks what is due when it wakes and marks its own items done.
-- Drops shorter than 5 seconds reconnect quietly; the disconnected notice appears only when the link is really gone. Emergency repair results can be closed and fold away after about 30 seconds.
-- Several instances on one computer share one speech model; later instances need no download.
-- An empty seat card on the account page shows its own host binding code and binds to that seat.
-- The install assistant can choose a free OpenCode model.
-- The To-do, Notes and Automation cards are on by default and can be switched off in Settings; card titles and icons use one light ink.
-- Daily AI News is switched on in each computer's own settings and goes to the email of the person using that seat.
-- A command a card's + puts in the message box now ends with a space, so it shows as a command link at once.
-- In a desktop browser, ⌘V or Ctrl+V with no field selected puts the text at the end of the message box and a picture into the attachments; in another field, or with a menu or Settings open, pasting works there as usual.
-- `agentj provider ark` now sets up the Volcano Engine Ark Agent Plan by default (`--plan agent`); the Coding Plan stays as `--plan coding`.
-- Settings has a connection dot: green when connected, red when not, and a short "Connection restored" notice when it comes back.
-- Fewer messages between friends are blocked by mistake; when one is blocked, the sender sees why and how to rephrase it.
-- After a drop of a few seconds (for example the Agent J host restarting), an attachment that was uploading carries on to the end; no need to pick it again.
-- The post-upgrade self-check names the check that blocked it; waiting for a phone message no longer counts as a failure.
-- Stuck billing changes are verified and unlocked automatically; binding failures say what really happened; the Agent name length rule is the same in the command line, account page and docs.
-- Admin commands now run in the background: the phone keeps sending and receiving while a long one runs, the card shows it is running, and when it ends the card closes and the chat keeps a short result.
-- Content library citations prefer the archive page.
-- Reply option buttons centre their text vertically; outside links in Agent replies use a clearer colour.
-- On iPhone and iPad the top status bar and bottom area stay dark after the computer connects instead of following the state colour.
-- The description lines on /model and similar option cards wrap inside the card, even on narrow screens and large text.
-- The robot logo at the top left now takes the colour of the current state (blue while working), including a theme's own state colours; a logo you chose yourself stays as it is.
-- Computers with OpenCode 2.x can now switch to OpenCode; when the check before the switch fails, it shows OpenCode's own error line.
-- 每一页右上角的搜索只搜这一页：卡片页原地筛选记录，设置页点结果直接打开对应项并闪一下。
-- 管理员命令卡片新增一个可选开关（默认关，要你自己勾选）：打开后 10 分钟内，同一个文件夹里同样格式的只读命令不再重复询问；shell 和脚本类命令每次都问，随时可以收回。
-- 忘了遥控器配对密码时，在电脑上运行 `agentj passphrase reset --phone`，用已配对的手机确认后重设，所有遥控器保持配对。
-- 待办卡升级：每条有责任人（Agent J 或你）、开始和截止，卡上可以只看 Agent J 负责或你负责的；Agent J 醒来先查该做的事，做完自己标完成。
-- 断开 5 秒内会悄悄重连，只有真的连不上才弹出提示；紧急修复的结果可以关闭，约 30 秒后自动收起。
-- 同一台电脑上的多个实例共用一份语音模型，后装的实例不用再下载。
-- 账户页的空席位卡片直接显示主机绑定码，绑定到这个席位。
-- 安装助手可以选择 OpenCode 的免费模型。
-- 待办、记事本、自动化三张官方卡默认打开，不需要可以在设置里关掉；卡片标题和图标统一用浅色字。
-- Daily AI News 在每台主机自己的设置里开关，发到这个席位使用者自己的邮箱。
-- 卡片「+」放进输入框的命令自动带一个空格，命令链接立即显示。
-- 在电脑浏览器里不用先点输入框，直接按 ⌘V 或 Ctrl+V，文字接到输入框末尾、图片进附件；在别的输入框里或菜单、设置开着时照常粘到那里。
-- `agentj provider ark` 默认接入火山方舟 Agent Plan（`--plan agent`），原来的 Coding Plan 用 `--plan coding` 保留。
-- 设置页有一个连接圆点：绿色是连着，红色是断开，恢复后会提示「已恢复连接」。
-- 好友之间的消息误拦更少；真被拦下时，发送方能看到原因和改写建议。
-- 断线几秒后恢复（比如电脑上的 Agent J 重启），正在上传的附件会接着传完，不用重选。
-- 升级后的自检报告写明是哪一项没通过；等待手机消息不再算作失败。
-- 卡住的账单操作会自动核对并解锁；绑定失败时说出真正的原因；Agent 名字长度规则在命令行、账户页和文档里保持一致。
-- 管理员命令改在后台执行：长命令跑着时手机照常收发消息，卡片显示「执行中」，执行完卡片关闭、聊天里留一条结果摘要。
-- 内容库引用优先指向存档页。
-- 回复里的选项按钮文字上下居中；Agent 回复里的外部链接换成更醒目的颜色。
-- iPhone 和 iPad 上顶部状态栏和底部区域连上电脑后也始终保持深色，不再跟着状态变色。
-- /model 等选项卡片里的说明文字在卡片内自动换行，窄屏和大字号下也不再超出卡片。
-- 左上角的机器人 logo 跟着当前状态变色（工作中是蓝色），换了主题配色也跟着变；自己换的 logo 保持原样。
-- 用 OpenCode 2.x 的电脑现在可以切换到 OpenCode；切换前的检查没通过时，会附上 OpenCode 自己的一行报错。
+- When your own model fails a turn, a fallback model looks at the error, read-only, and tells you what to do next: free DeepSeek Flash first, then LongCat while its terms promise no retention or training, then a local model you chose to install. The reply starts with "This is a fallback model answer"; the task is not resent, and the cloud sees only a fixed error signal.
+- Apple Silicon Macs with 16 GB of memory or more can add the local fallback model: install and open Ollama, then run `agentj local-model install` (or add `--local-model` to the one-command install); `agentj local-model status` checks it and `agentj local-model off` switches it off.
+- Reply option buttons still work after you have sent something else in between; a tap goes out as a reply to that message, and the buttons only grey out once that question has been answered.
+- Right after a message is delivered, the button in the message box shows "Delivered" for two seconds before it becomes "Stop this turn", so a tap meant to cancel no longer stops the new turn; after a reconnect, queued messages catch up with their real state.
+- Pressing ⌘V after a screenshot has already been added to the attachments no longer adds it twice; the automatic screenshot switch now lives under Settings > Web app, and the note under the attachment opens it.
+- The last row on Settings and menu pages (such as "Download Agent J Brand Kit") keeps a proper gap above the bottom edge of the screen.
+- A failed automatic upgrade now records which step failed, the exit code and the reason (installer missing, permission denied, read-only disk or timeout) on the computer and in the automatic support report, and puts the previous version back by itself.
+- When a friend asks a question, "let my agent answer" or a refusal sometimes did not take effect and the card kept its waiting colour: the signature now matches what the computer checks; if it still does not go through, the card says "Your confirmation did not take effect. Please try again.", and the waiting colour clears the moment you tap.
+- A friend's question now expires after 2 minutes without an answer and you get a short notice, instead of waiting for a whole day.
+- 你的模型这一轮出错时，Agent J 会请兜底模型只读地看一眼出错原因，告诉你下一步怎么办：先用免费的 DeepSeek Flash，没有就用条款写明不留存、不训练的 LongCat，最后是你自己选装的本地小模型。回复开头标明「这是兜底模型的回答」，原任务不会自动重发，云端只拿到固定的错误信号。
+- Apple Silicon、内存 16GB 以上的 Mac 可以选装本地兜底模型：先装好并打开 Ollama，再运行 `agentj local-model install`（一键安装时加 `--local-model`）；`agentj local-model status` 查看，`agentj local-model off` 关掉。
+- 回复里的选项按钮，中间发过别的消息再回头点也照样能点，点出去的是对那一条的回复；只有那个问题已经被回答过才会变灰。
+- 刚发出的消息送达后，输入框的按钮先显示「已送达」，过两秒才变成「停止这一轮」，不会再一点「取消」就停掉新的一轮；断线重连后，排队中的消息状态会自动对齐。
+- 截图自动放进附件后再按一次 ⌘V 不会重复添加；「截图自动进附件」开关挪到设置的「网页版 App」里，附件下方可以直接点过去。
+- 设置和菜单页最底下一行（比如「下载 Agent J Brand Kit」）离屏幕底边留足空间，不再贴着圆角。
+- 自动升级失败时，本机记录和自动客服报告会写明是哪一步、退出码和原因（找不到安装工具、没有权限、只读磁盘、超时分别说明），失败后会自动装回上一版。
+- 好友来问问题时，选「让分身自己回」或拒绝有时不生效、卡片一直亮着等待色：现在签名和电脑核对一致；万一没生效，卡片会提示「确认没生效，请再点一次」；你一点确认或拒绝，等待色立刻消失。
+- 好友的问题 2 分钟没回就自动过期，并告诉你一声，不再挂一整天。
 
 ## Material acceptance limits
 

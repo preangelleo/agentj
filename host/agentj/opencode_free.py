@@ -52,7 +52,7 @@ TERMS_TEXT = {
 }
 # zero retention per the same pages — preferred when a free model has to be picked; never big-pickle first (its free tier
 # refused `opencode run` in the report)
-PREFERRED = ("space-bunny", "longcat")
+PREFERRED = ("deepseek-", "longcat")
 
 _cache: dict = {}
 
@@ -115,7 +115,7 @@ def status(model: str | None, exe: str | None) -> str | None:
 
 def pick(models: list[str] | None) -> str | None:
     """The free model to suggest: zero retention first, then the rest in OpenCode's order (big-pickle last)."""
-    models = [m for m in models or [] if _MODEL.fullmatch(m)]
+    models = [m for m in models or [] if _MODEL.fullmatch(m) and not m.split("/", 1)[1].startswith(("space-bunny", "minimax-m3.1-flash"))]
     for fam in PREFERRED:
         for m in models:
             if m.split("/", 1)[1].startswith(fam):
@@ -216,7 +216,7 @@ def serve(exe: str, senv: dict, root: str, port: int, up_by: float, clock=time.m
 
 
 def probe(exe: str, model: str | None, env: dict, timeout: float, *, sleep=time.sleep, clock=time.monotonic,
-          waits=None) -> str:
+          waits=None, prompt=None, diagnostic=False) -> str:
     """One greeting through `opencode serve` with Agent J's read-only session rules, in an empty scratch folder; the
     session is deleted afterwards. Returns the reply text; raises ProbeError(code). A FreeTierError / 429 is retried after
     each of `waits` (the warm-up) while the overall bound `timeout + sum(waits)` allows."""
@@ -252,11 +252,14 @@ def probe(exe: str, model: str | None, env: dict, timeout: float, *, sleep=time.
     try:
         proc = serve(exe, opencode_env(_env(env), password), root, port, min(deadline, clock() + START_WAIT), clock)
         rules = session_rules([], research=True) + [_rule("webfetch", "*", "deny")]
+        if diagnostic:
+            # Only scratch reads; no shell, skills, LSP, network or external files, even if the model asks.
+            rules = [_rule("*", "*", "deny"), _rule("read", root + "/*", "allow")]
         st, ses = call("POST", "/session", {"title": "Agent J probe", "permission": rules})
         if st != 200 or not isinstance(ses, dict) or not isinstance(ses.get("id"), str):
             raise ProbeError("native_failed")
         sid = ses["id"]
-        body = {"parts": [{"type": "text", "text": PROMPT}]}
+        body = {"parts": [{"type": "text", "text": prompt if prompt is not None else PROMPT}]}
         m = split_model(model) if model else None
         if m:
             body["model"] = m

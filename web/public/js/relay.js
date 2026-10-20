@@ -28,6 +28,7 @@ import { el, toast, toastOff, toastAction, human, stamp, mmss, confirmSheet } fr
 import * as sfx from './sfx.js';
 import * as sendvol from './sendvol.js';   // P154 追加 12: hold the grey Send → the send-sound slider
 import * as shotclip from './shotclip.js';
+import * as attkeys from './attkeys.js';   // P398 (#156): the same content twice in the tray → once
 import { Upload, TYPES as DROP_TYPES, MAX_BYTES as UPLOAD_MAX, MAX_ATT, ASR_MAX_BYTES, anyMime } from './blobs.js';
 import { renderPage as renderMedia, forgetAll as forgetMedia, renderReader as renderReaderMedia, clearReader as clearReaderMedia, closeViewer as closeMediaViewer, viewerOpen as mediaViewerOpen } from './media.js';   // F21: files the reply shows (§13); P59: in the reader too
 import { toWav, GAP_MIN_MS, GAP_SKIP_MS } from './wav.js';
@@ -365,7 +366,7 @@ function paintLeft(item){
 
 function renderCard(s){
   const card = s.card, a = s.ask || null, p = s.approval || null;
-  const pending = s.status === "waiting" && !!card;
+  const pending = !!card;   // P396: a retry card remains usable after its owner cleared the waiting colour
   const folded = pending && foldedCard === cardKey(card);
   if (!pending) foldedCard = null;
   const fin = !!a && ASK_FINAL.includes(a.state);
@@ -606,6 +607,13 @@ async function apprPost(p, action){
     toast(why, 3000);
   }
   if (cur) renderCard(cur);
+}
+// P396: refusal is a retryable failure, never a terminal decision and never proof of approval.
+export function answerRefused(m) {
+  if (apprSent.id === m.id) apprSent = {id: null, state: null};
+  if (apprOpt && apprOpt.id === m.id) apprOpt = null;
+  apprDismissed = null; foldedCard = null;
+  apprFail = {id: m.id, text: t('fr.ask.failed')};
 }
 // P154 追加 2 (owner, 2026-10-12): on a computer ⌘+Enter (Mac) / Ctrl+Enter = 长按批准 finished — the same apprPost, so the
 // same device signature and passkey check; never a way around them. Only while the card is up; it wins over the text
@@ -1009,6 +1017,7 @@ function paintLogo(st, kind){ paintHeader(st, kind); }
 // the newest page whose turn has no visible reply yet (a pending input stays behind the reply he reads, P87) — the intent
 // survives, so that reply, when it lands, still takes him there.
 const hist = {turns: [], count: 0, firstId: 0, lastId: 0, epoch: 0, route: true, busy: false, want: 0, older: false};
+let histSettled = () => false;   // P398: settleQueued (the queue section sets it) — a page the host updated may end a queued send
 let pageAt = -1, follow = true, tailWait = false, pagesCache = null, shownKey = null, unreadReply = false;
 const noticeReads = new Set();
 const isSilent = text => typeof text === "string" && text.trim() === "\u3014\u4e0d\u56de\u7fa4\u3015";
@@ -1072,6 +1081,7 @@ export function upsertTurn(p){
   } else return;
   pagesCache = null;
   if (p.source && ["phone","cmd"].includes(p.source.k) && p.source.dev === C.myDev() && p.end === "open" && !previous && onNewestPage()){ follow = true; shownKey = null; }
+  if (histSettled()) return;             // P398: dequeue → paintQueued → showPage
   showPage();
 }
 export function historyReset(ep){ resetHistory(ep); showPage(); }
@@ -1112,7 +1122,7 @@ async function refreshNewest(retry = false){
       historyRetry = setTimeout(() => { historyRetry = null; if (generation === historyGeneration) refreshNewest(true); }, historyDelay);
     }
   }
-  finally{ if (generation === historyGeneration){ wordsSrc = null; showPage(); } }
+  finally{ if (generation === historyGeneration){ wordsSrc = null; if (!histSettled()) showPage(); } }
 }
 async function syncHistory(want){
   hist.want = Math.max(hist.want, want || 0);
@@ -2379,6 +2389,13 @@ function paintChip(a){
     x.addEventListener("click", e => { e.stopPropagation(); removeAtt(a); });
     c.append(a.kind === "image" ? thumb(a) : icon(a.kind), nm, pg, x);
     c.title = `${t('r.kind.' + a.kind)} · ${a.name} · ${human(a.file.size)}`;
+    if (a.auto){
+      const go = document.createElement("button"); go.type = "button"; go.className = "auto";
+      go.textContent = t('p398.autoChip'); go.title = t('p398.autoChipTitle');
+      go.addEventListener("click", e => { e.stopPropagation(); if (C && C.openShotSetting) C.openShotSetting(); });
+      nm.replaceWith(Object.assign(document.createElement("span"), {className: "nmcol"}));
+      c.querySelector(".nmcol").append(nm, go); c.classList.add("autochip");
+    }
     a.node = c; tray.appendChild(c);
   }
   a.node.dataset.st = a.st;
@@ -2417,7 +2434,7 @@ function uploadsResume(){ for (const a of atts) if (a.retry && a.st === "up"){ a
 // dur: a recording's length in seconds — set BEFORE stage() so blob_open carries `secs` (§10.3; the host's transcript
 // heading 「语音转写（N 秒，…）」 comes from it)
 // bid: P182 — the upload id a recovered recording segment had before the reload (the host resumes its partial)
-function addFiles(list, origin = "file", dur, bid){
+function addFiles(list, origin = "file", dur, bid, auto = false){
   let dropped = 0;
   const added = [];
   for (const f of list){
@@ -2427,6 +2444,7 @@ function addFiles(list, origin = "file", dur, bid){
     const a = {file: f, name: f.name || "upload", kind: kindOf(f), origin};
     if (dur > 0) a.dur = dur;
     if (typeof bid === "string") a.bid = bid;
+    if (auto) a.auto = true;                       // P398 (#156): 截图自动进附件 put it here — its chip says where to switch that off
     atts.push(a); added.push(a);
     stage(a);
   }
@@ -2484,16 +2502,28 @@ function dropUI(n){
   requestAnimationFrame(() => z.classList.add("on"));
 }
 // The drop's rules, shared with paste and ≡「粘贴图片」: all or none past MAX_ATT, only the allowed formats.
-function takeFiles(files, verbKey, origin){
-  if (!files.length) return;
+// P398 (#156): one take at a time (an automatic screenshot and a ⌘V of it arrive together), each compared by content with
+// the tray first — a file already there is not added again, and the owner hears so. → the attachments added.
+let takeChain = Promise.resolve();
+function takeFiles(files, verbKey, origin, auto = false){
+  if (!files.length) return Promise.resolve([]);
+  const run = takeChain.then(() => takeNow(files, verbKey, origin, auto));
+  takeChain = run.catch(() => {});
+  return run;
+}
+async function takeNow(all, verbKey, origin, auto){
+  const files = await attkeys.unique(all, atts.map(a => a.file));
+  if (files.length < all.length) toast(t('p398.dup', {n: all.length - files.length}), 2600);
+  if (!files.length) return [];
   if (atts.length + files.length > MAX_ATT){
     toast(t('r.take.tooMany', {max: MAX_ATT, have: atts.length, verb: t(verbKey), n: files.length}), 3600);
-    return;
+    return [];
   }
   const ok = files.map(droppable).filter(Boolean), skipped = files.length - ok.length;
-  if (!ok.length){ toast(t('r.take.none'), 3000); return; }
-  addFiles(ok, origin);
+  if (!ok.length){ toast(t('r.take.none'), 3000); return []; }
+  const added = addFiles(ok, origin, undefined, undefined, auto);
   if (skipped) toast(t('r.take.skipped', {n: skipped}), 3200);
+  return added;
 }
 
 // ---- in-page camera (desktop: preview, 拍照 / 重拍 / 使用这张; phones keep the native capture picker) ---------
@@ -2638,13 +2668,27 @@ function queuedAhead(id){ const i = queued.findIndex(q => q.turn === id); return
 // Claude Code — which has the message in its TUI within milliseconds (say delivered) — lost it at once while the Agent kept
 // working, and a shared Codex (whose say stays queued until its app-server takes it) kept it: the same blue, two answers.
 // Now every harness shows it while blue; one that cannot be stopped from the phone says so in /stop's own answer.
+// P398 (#155, Leo 10-20: 「显示还没发出去……我就点了取消，结果这个取消导致了新的消息的 Stop」): the pill said 「取消」 in all
+// three jobs, so the instant this phone's message was handed over the same 「取消」 under the owner's thumb became /stop of
+// the turn that message had just started. Now a send / queued message that is handed over reads 「已送达」 for DELIVERED_MS
+// (a tap does nothing, it says so), and the turn job is worded 「停止这一轮」 — a stop is never a message's 取消.
+const DELIVERED_MS = 2200;
+let deliveredAt = 0, deliveredTimer = 0;
+function sawDelivered(){
+  deliveredAt = Date.now();
+  clearTimeout(deliveredTimer);
+  deliveredTimer = setTimeout(paintSayCancel, DELIVERED_MS + 20);
+}
 function sayCancelMode(){
   const blue = cur && cur.status === "working" && document.body.dataset.conn === "on";
   if (inflight) return document.body.dataset.sending === "1" || blue ? "send" : null;   // idle: only after 400 ms (no flash)
   if (queued.length) return "queued";
+  if (blue && Date.now() - deliveredAt < DELIVERED_MS) return "delivered";
   if (blue && !(C && C.estopOn())) return "turn";
   return null;
 }
+const PILL_WORD = {send: "r.say.cancel", queued: "r.say.cancel", delivered: "p398.delivered", turn: "p398.stopTurn"};
+const PILL_ARIA = {send: "r.say.cancelAria", queued: "r.say.cancelAria", delivered: "p398.deliveredAria", turn: "p328.stopAria"};
 let sayCancelShown = null;
 function paintSayCancel(){
   const b = el("sayCancel");
@@ -2654,9 +2698,10 @@ function paintSayCancel(){
   if (mode) b.dataset.mode = mode;
   if (mode) document.body.dataset.saycancel = "1"; else delete document.body.dataset.saycancel;
   if (mode && mode !== sayCancelShown){
-    const k = mode === "turn" ? "p328.stopAria" : "r.say.cancelAria";
+    const k = PILL_ARIA[mode], w = b.querySelector("[data-i18n]");
     b.setAttribute("data-i18n-attr", `aria-label=${k},title=${k}`);
     b.setAttribute("aria-label", t(k)); b.title = t(k);
+    if (w){ w.setAttribute("data-i18n", PILL_WORD[mode]); w.textContent = t(PILL_WORD[mode]); }
   }
   sayCancelShown = mode;
   padForCancel();
@@ -2670,6 +2715,12 @@ function padForCancel(){
   if (b.hidden){ if (f.style.paddingRight){ f.style.paddingRight = ""; autosize(); } return; }
   const pad = Math.ceil(f.getBoundingClientRect().right - b.getBoundingClientRect().left + 4) + "px";
   if (f.style.paddingRight !== pad){ f.style.paddingRight = pad; autosize(); }
+  // P403: on a narrow phone in English 「Stop this turn」 left the message box 22 px wide (< the 44 px tap floor): the pill
+  // then says the short word; its aria-label / title keep the full meaning, and the next mode change restores the long word.
+  const w = b.querySelector("[data-i18n]");
+  if (w && b.dataset.mode === "turn" && w.getAttribute("data-i18n") === PILL_WORD.turn && input.getBoundingClientRect().width < 44){
+    w.setAttribute("data-i18n", "p403.stopShort"); w.textContent = t("p403.stopShort"); padForCancel();
+  }
 }
 let stopAskedAt = 0;
 const STOP_AGAIN_MS = 2500;
@@ -2689,7 +2740,10 @@ function paintQueued(){
   if (hist.turns.length) showPage();
 }
 async function cancelSay(){
-  if (el("sayCancel").dataset.mode === "turn" && sayCancelMode() === "turn") return stopTurn();
+  const shown = el("sayCancel").dataset.mode, now = sayCancelMode();
+  if (shown === "delivered" || now === "delivered"){ toast(t('r.say.tooLate'), 2600); return; }
+  if (shown === "turn" && now === "turn") return stopTurn();
+  if (now === "turn" || !now) return;   // P398: what the thumb aimed at (a message) is gone — never a stop in its place
   const S = inflight;
   if (S){
     if (S.cancelling || S.cancelled || S.delivered) return;
@@ -2738,10 +2792,31 @@ export function onSayState(m){
     if (m.s === "taken" || m.s === "delivered"){ early.set(m.sid, m.s); if (early.size > 32) early.delete(early.keys().next().value); }
     return;
   }
-  if (m.s === "delivered" || m.s === "taken"){ activeTurn = q.turn; dequeue(m.sid); }   // P282: taken = the Agent is on it (a shared Codex opens first)
+  if (m.s === "delivered" || m.s === "taken"){ activeTurn = q.turn; sawDelivered(); dequeue(m.sid); }   // P282: taken = the Agent is on it (a shared Codex opens first)
   else if (m.s === "cancelled") withdrawn(q);
   else if (m.s === "failed"){ dequeue(m.sid); toast(t('r.say.failedLater'), 3200); }
+  else if (m.s === "done") dequeue(m.sid);         // P398 say_sync: finished / unknown on the host — nothing left to withdraw
 }
+// P398 (#155): the host's word on this phone's queued sends after a reconnect (a say_state sent while the phone was away is
+// lost): `say_sync` asks, the answers come back as say_state. A host without it (no "ss1"): the pages themselves settle it.
+function syncQueued(){
+  if (!queued.length || !C.api.saySync) return;
+  C.api.saySync(queued.map(q => q.sid));
+}
+/** A queued send whose page shows it was taken (a reply under way, or the page closed) is no longer queued — the page is
+    the host's own record too. True when something was dequeued (the page was repainted). */
+function settleQueued(){
+  let hit = false;
+  for (const q of queued.slice()){
+    const p = Number.isInteger(q.turn) ? hist.turns.find(x => x.id === q.turn) : null;
+    if (!p) continue;
+    const c = p.card || {};
+    if (p.end !== "open"){ if (c.withdrawn === true) withdrawn(q); else dequeue(q.sid); hit = true; }
+    else if (c.queued !== true && c.wait !== true && visibleReply(p)){ activeTurn = q.turn; sawDelivered(); dequeue(q.sid); hit = true; }
+  }
+  return hit;
+}
+histSettled = settleQueued;
 // The whitelist commands (§8) run as commands when typed; /clear asks first. Anything else starting with / is text.
 const CMDS = ["clear", "new", "compact", "model", "context", "cost", "usage", "status", "help", "stop", "update"];
 const CMD_RE = /^\/([A-Za-z][\w:.-]{0,63})(?:[ \t]+([\s\S]*))?$/;
@@ -2765,14 +2840,15 @@ export async function sayPreset(kind){
 // P238: one tap on /switch-harness sends it as typed — serve hands it to the main Agent, which lists the harnesses first
 const saySwitch = () => sayWords(SWITCH_CMD, t('p238.sent'));
 // P368: a one-tap answer in the reply = the owner typing those words and tapping Send (same signed say)
-const sayReply = (words) => sayWords(words, t('p368.sent', {say: words}));
-async function sayWords(text, done){
+// P398 (#154): a tap on an older page = a reply to it (the same reply_to / excerpt as 回复), 「回复 #N」 on both sides
+const sayReply = (words, p = null) => sayWords(words, t('p368.sent', {say: words}), p && Number.isInteger(p.id) ? p.id : null);
+async function sayWords(text, done, replyTo = null){
   releaseComposer();
   if (C.estopOn()){ toast(t('r.say.stopped'), 3200); return false; }
   if (!C.connected()){ toast(t('p181.offline'), 3000); return false; }
   sendFollow();
   let r;
-  try{ r = await C.api.say({sid: C.api.newSid(), text, att: [], reply_to: null, excerpt: null}); }
+  try{ r = await C.api.say({sid: C.api.newSid(), text, att: [], reply_to: replyTo, excerpt: null}); }
   catch(_){ r = {ok: false, why: "other"}; }
   if (!r.ok){ toast(r.why === "stopped" ? t('r.say.stopped') : t('r.say.err.' + (SAY_ERR.includes(r.why) ? r.why : "other")), 3000); return false; }
   if (!C.p33()) C.saidOld(text);
@@ -2865,7 +2941,7 @@ async function say(voiceReady = false){
       if (rt.length && quotes === rt) cancelReply();
       settleField(text);     // P127: also when a dictation 「。」 / IME commit landed while say_res was on its way
       if (r.state === "queued" && !early.has(S.sid)) queued.push({sid: S.sid, text, atts: live.slice(), rt, turn: r.turn, at: Date.now()});
-      else if (Number.isInteger(r.turn)) activeTurn = r.turn;
+      else if (Number.isInteger(r.turn)){ activeTurn = r.turn; sawDelivered(); }
       early.delete(S.sid);
       for (const a of live) removeAtt(a, false);
       saveDraft();
@@ -2953,7 +3029,7 @@ function outDone(e, r, kind){
   held.delete(e.sid);
   if (kind === "sent"){
     if (r.ok && r.state === "queued" && !early.has(e.sid)) queued.push({sid: e.sid, text: e.text, atts: list.slice(), rt: null, turn: r.turn, at: Date.now()});
-    else if (r.ok && Number.isInteger(r.turn)) activeTurn = r.turn;
+    else if (r.ok && Number.isInteger(r.turn)){ activeTurn = r.turn; sawDelivered(); }
     early.delete(e.sid);
     for (const a of list) if (a.url){ URL.revokeObjectURL(a.url); a.url = null; }
     for (const a of list) if (a.rec){ LR.dropSeg(a.rec.take, a.rec.seg); a.rec = null; }   // P182
@@ -3990,10 +4066,9 @@ export async function pasteClipImage(){
 // P154 截图自动进附件 (js/shotclip.js): a new clipboard image after a screenshot round trip → the tray, like paste
 // (MAX_ATT and its message included); never sent by itself.
 // P340 #27: quiet = the caller says it in its own notice (screenshot + clipboard); → {added, n, max}
-export function attachShot(file, quiet = false){
-  const before = atts.length;
-  takeFiles([pastedName(file, 0, 1)], 'r.verb2.shot', "paste");
-  const added = atts.length > before;
+// P398 (#156): auto = 截图自动进附件 took it (not the gear / a paste) — its chip says 「自动放入 · 设置里可关」; → a Promise now
+export async function attachShot(file, quiet = false, auto = false){
+  const added = (await takeFiles([pastedName(file, 0, 1)], 'r.verb2.shot', "paste", auto)).length > 0;
   if (added && !quiet) toast(t('r.shot.added', {n: atts.length, max: MAX_ATT}), 2600);
   return {added, n: atts.length, max: MAX_ATT};
 }
@@ -4973,7 +5048,7 @@ export function init(ctx){
   paintTray();
 }
 /** Called when the session becomes ready again (a new host turn source, menu). */
-export function onReady(){ paintVoiceReadiness(); refreshNewest(); paintPlaceholder(); refreshSend(); loadMenu(); paintActs(); renderMenu(); setTimeout(() => recRecover().catch(() => {}), 800); }
+export function onReady(){ syncQueued(); paintVoiceReadiness(); refreshNewest(); paintPlaceholder(); refreshSend(); loadMenu(); paintActs(); renderMenu(); setTimeout(() => recRecover().catch(() => {}), 800); }
 export function onEstop(){ paintPlaceholder(); renderMenu(); refreshSend(); }
 export function rerender(){ paintVoiceReadiness(); if (cur) render(cur); else showPage(); }
 /** For the screens test: internal state worth asserting. */

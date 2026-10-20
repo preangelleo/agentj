@@ -1,4 +1,5 @@
 {
+  "fr.ask.failed": "确认没生效，请再点一次。",
   "pair.learn": "还没有 Agent J？去官网了解和注册 →",
   "tasks.next": " · 下次 {at}",
   "r.say.failedLater": "这条没能交给 Agent J，再发一次吧",
@@ -1753,5 +1754,6 @@
   "p394.ready": "可以开始",
   "p394.start": "开始：{when}",
   "p394.end": "截止：{when}",
-  "p394.after": "等「{what}」完成"
+  "p394.after": "等「{what}」完成",
+  "p403.stopShort": "停止"
 }

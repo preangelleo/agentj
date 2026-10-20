@@ -1,3 +1,4 @@
+import { touch } from './snap.js';
 // The adapter: relay's HTTP calls → Agent J's end-to-end app messages (agentjarvis/parity/DESIGN.md §a table). Every call
 // resolves with the shape the ported page expects and never rejects; "offline" when there is no ready session.
 //   POST /say · /say/cancel        → say → say_res / say_state · say_cancel → say_cancel_res        (§10.2)
@@ -73,6 +74,13 @@ export async function say({ sid, text, att = [], reply_to = null, excerpt = null
   return r.ok === true ? { ok: true, state: r.state === 'queued' ? 'queued' : 'delivered', turn: r.turn } : { ok: false, why: typeof r.why === 'string' ? r.why : 'other', att: r.att };
 }
 
+/** P398 (§10.2): after a reconnect, where this device's still-queued sends are — the answers come back as say_state. */
+export function saySync(sids) {
+  const g = gen();
+  if (!g || !peer.p33 || !peer.ss || !Array.isArray(sids) || !sids.length) return false;
+  sendApp({ t: 'say_sync', sids: sids.slice(0, 32) }, g).catch(() => {});
+  return true;
+}
 export async function sayCancel(sid) {
   const g = gen();
   if (!g || !peer.p33) return 'offline';
@@ -109,6 +117,7 @@ export function allowPicks(p, allowAdd) {
 /** action: allow | deny | batch. Signed over exactly what the sheet shows (§8). allowAdd (P296, a mail card): the ticked
  *  「以后发给 X 不用再确认」 addresses, in the card's order — signed with the allow (mailAllowMessage). */
 export async function approve(p, action, allowAdd) {
+  touch(p.id);
   const g = gen();
   if (!g) return { ok: false, why: 'offline' };
   let fa = null;
@@ -134,6 +143,7 @@ export async function approve(p, action, allowAdd) {
 
 /** picks = [[1,3],[2]] (1-based) or null = 取消问题. Signed over the questions as shown (§10.7). */
 export async function answerQ(q, picks) {
+  touch(q.id);
   const g = gen();
   if (!g) return { ok: false, why: 'offline' };
   const sk = await signKey();

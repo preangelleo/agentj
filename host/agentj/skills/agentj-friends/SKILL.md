@@ -62,3 +62,5 @@ Explain in plain everyday language what this feature does and how the owner uses
 and ask what they have in mind. This opening alone is not permission to create or change anything. If they add a concrete
 request, proceed within that request and this skill's existing approval rules. An otherwise empty opening still gets
 the explanation and the question. Never request or repeat a key or password in chat; use the existing local credential flow.
+
+Friend-question cards expire after 120 seconds: no reply, with an owner notice. Tapping a decision clears the phone’s waiting colour immediately; it is not a host success receipt. A refused or unconfirmed answer offers a retry; never claim the reply was delivered without its receipt. Friend requests still last 7 days.

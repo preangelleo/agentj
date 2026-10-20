@@ -22,6 +22,7 @@ QUOTE_CHARS = 300
 EXCERPT_MAX = 2000
 QUOTES_MAX = 5                  # P286: one say quotes ≤ 5 places (reply_to + excerpt, then quote_more ≤ 4)
 CAP_MQ = "mq5"                  # P286: `ready` caps — this host takes `quote_more`
+CAP_SYNC = "ss1"                # P398: `ready` caps — this host answers `say_sync` (where the phone's queued sends are)
 SEND_TTL = 600
 MAX_SENDS = 16                  # not yet handed to the Agent, per device (the 17th is refused: too_many)
 SEEN_MAX = 1024                 # sids remembered per device (dup), independent of SEND_TTL

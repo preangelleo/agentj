@@ -1,3 +1,4 @@
+import { touch } from './snap.js';
 // Agent friends (PROTOCOL §17.7, 0.16): the /friends page and the two cards the host puts in the main chat.
 // The page is READ-ONLY for conversations: there is no field that sends text to a friend (the host would refuse it anyway,
 // `fr_send_refused`); the owner speaks to a friend only through the main Agent. What the page can do is what Leo asked for:
@@ -722,6 +723,24 @@ const why = (code) => (FR_WHY.includes(code) ? t('fr.why.' + code) : whyText(cod
 // 拒绝 = a plain deny. peer_question: the friend's words + the draft; 照草稿回 = allow, 不回 = deny, 我来说 = deny + the main
 // chat field prefilled. The signature covers tool + summary (what the host composed), never the structured copy shown here.
 const sentAsk = new Map();           // ask id → 'allow' | 'deny' | 'tell' (sent, waiting for ask_done)
+const receiptTimers = new Map();
+export function answerRefused(m) {
+  if (!sentAsk.has(m.id)) return;
+  sentAsk.delete(m.id);
+  clearTimeout(receiptTimers.get(m.id)); receiptTimers.delete(m.id);
+  toast(t('fr.ask.failed'), 5000);
+}
+export function answerDone(m) {
+  clearTimeout(receiptTimers.get(m.id)); receiptTimers.delete(m.id);
+  sentAsk.delete(m.id);
+}
+function pending(p, action, ctx) {
+  touch(p.id);
+  sentAsk.set(p.id, action);
+  clearTimeout(receiptTimers.get(p.id));
+  receiptTimers.set(p.id, setTimeout(() => { p.answer_failed = true; answerRefused(p); ctx.repaint(); }, 10000));
+  ctx.repaint();
+}
 const pickedGroup = new Map();       // ask id → the group chosen on the card
 const pickedCtx = new Map();         // ask id → the 「补充设定」 typed on the card (P73)
 export const askKind = (p) => (p && (p.tool === 'friend_request' || p.tool === 'peer_question') ? p.tool : null);
@@ -799,17 +818,21 @@ export function renderAsk(p, ctx) {
     if (x.reason) box.append(mk('p', 'small fr-askfoot', t('fr.q.reason', { why: x.reason })));
   }
   let text = '';
-  if (ctx.open && !ctx.sign) text = t('ask.noSign');
+  if (p.answer_failed) text = t('fr.ask.failed');
+  else if (ctx.open && !ctx.sign) text = t('ask.noSign');
   else if (ctx.open && st !== 'open') text = t('fr.ask.sent.' + st);
   else if (!ctx.open && final) text = t('fr.ask.done.' + (kind === 'friend_request' ? 'fr_' : 'pq_') + final);
   if (text) { const s = mk('p', 'askstate fr-askstate', text); s.id = 'frAskState'; s.setAttribute('role', 'status'); box.append(s); }
 }
 async function answerFriend(p, ok, group, ctx, ctxText0) {
+  touch(p.id);
   const g = gen();
   const sk = await signKey();
   if (!g || !sk) { toast(t(sk ? 'r.appr.net' : 'ask.noSign'), 3000); return; }
   const note = ok && typeof ctxText0 === 'string' && ctxText0.trim() ? ctxText0.replace(/\r\n?/g, '\n') : '';
   if (cps(note) > FRIEND_CTX_MAX) { toast(t('fr.ctx.tooLong', { max: FRIEND_CTX_MAX }), 3000); return; }
+  p.answer_failed = false;
+  pending(p, ok ? 'allow' : 'deny', ctx);
   try {
     const grp = ok && group && GROUP_ID_RE.test(group) ? group : null;
     const msg = await friendAnswerMessage(channel(), await myDeviceId(), p.id, ok ? 'allow' : 'deny', p.tool, p.summary, grp, note || null);
@@ -817,20 +840,21 @@ async function answerFriend(p, ok, group, ctx, ctxText0) {
     const ans = grp ? { t: 'answer', id: p.id, ok: true, sig, group: grp } : { t: 'answer', id: p.id, ok, sig };
     if (note) ans.ctx = note;
     await sendApp(ans, g);
-    sentAsk.set(p.id, ok ? 'allow' : 'deny');
-  } catch { toast(t('r.appr.net'), 3000); }
+  } catch { answerRefused(p); }
   ctx.repaint();
 }
 async function answerQuestion(p, action, x, ctx) {
+  p.answer_failed = false;
+  pending(p, action, ctx);
   const r = await approve(p, action === 'allow' ? 'allow' : 'deny');
-  if (!r.ok) { toast(r.why === 'offline' ? t('r.appr.net') : t('r.appr.fail'), 3000); ctx.repaint(); return; }
-  sentAsk.set(p.id, action);
+  if (!r.ok) { answerRefused(p); toast(r.why === 'offline' ? t('r.appr.net') : t('r.appr.fail'), 3000); ctx.repaint(); return; }
   ctx.repaint();
   if (action === 'tell') { ctx.dismiss(); tellAgent(x.name); }
 }
 /** Unpair / re-pair / revoke: nothing of the previous computer's friends stays on screen or in memory. */
 export function forget() {
-  sentAsk.clear(); pickedGroup.clear(); pickedCtx.clear();
+  for (const timer of receiptTimers.values()) clearTimeout(timer);
+  receiptTimers.clear(); sentAsk.clear(); pickedGroup.clear(); pickedCtx.clear();
   data = null; usage = null; ctxText = { friend: null, text: null }; ctxDraft = { friend: null, text: null }; hist = { friend: null, items: [], more: false, loading: false };
   Object.assign(V, { view: 'list', friend: null, group: null, addId: '', addNote: '', sent: false });
 }

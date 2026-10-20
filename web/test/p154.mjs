@@ -396,7 +396,8 @@ export async function runP154() {
         try {
           await evaluate(phone, `import('./js/settings.js').then(m=>m.open())`);
           await sleep(300);
-          check(await evaluate(phone, `${$('set-shot-row')}.hidden`), 'phones: the switch is not offered');
+          // P398 (#156): the row stays on a phone (so it can be found), the switch steps aside, a note says where it works
+          check(await evaluate(phone, `!${$('set-shot-row')}.hidden && ${$('set-shot')}.hidden && !${$('set-shot-na')}.hidden`), 'phones: the switch is not offered, the row says where');
         } finally { await phone.dispose(); }
         const p = await paired(B, web, fake, lang, 1280, 800, {});
         try {
@@ -408,7 +409,7 @@ export async function runP154() {
           await shot(1); await roundTrip();
           check(await chips() === 0, 'off by default: nothing taken');
           await evaluate(p, `import('./js/settings.js').then(m=>m.open())`);
-          await waitFor(p, `!${$('set-shot-row')}.hidden`);
+          await waitFor(p, `!${$('set-shot')}.hidden && ${$('set-shot-na')}.hidden`);
           await evaluate(p, `${$('set-shot-row')}.scrollIntoView({block:'center'})`);
           await evaluate(p, `${$('set-shot')}.click()`);
           await waitFor(p, `${$('set-shot')}.getAttribute('aria-checked')==='true'`);

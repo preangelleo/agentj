@@ -51,3 +51,9 @@ Agent 三段，哪段断了修哪段，并把运行它的会话接上手机）�
 主人说手机卡住/不回消息：先让他点 设置 →「紧急修复」→ ①「重置连接」，不行再点 ②；主人要「找回原来的对话」就运行
 `agentj rescue undo`；`agentj rescue status` 查看救援守护；Agent J 主机旁边有人时先走菜单紧急恢复，仍失败再看 https://agentj.app/docs/reconnect-help/。
 Docs: https://agentj.app/docs/reconnect/zh.md · https://agentj.app/docs/reconnect/en.md
+
+## Model fallback (P401)
+
+A failed owner turn may receive a separate read-only diagnostic labelled “This is a fallback model answer” / 「这是兜底模型的回答」. Order: the owner's model → freshly listed free OpenCode DeepSeek Flash → currently documented zero-retention/no-training LongCat → explicitly installed Ollama qwen3.5:9b. Space Bunny / MiniMax M3.1 Flash are excluded. Missing DeepSeek triggers one persistent notice; unavailable terms/catalog skip the cloud layer. The host does not change the main harness or resend the task. Cloud sees only fixed error signals, not the owner prompt/files/keys. Local diagnosis sees the redacted failure notice, quotes it, and cannot act. Treat model guesses as uncertain; never claim it repaired or completed the failed task.
+
+On Apple Silicon 16GB+ with 20GB free, offer the optional ~6.6GB download after explaining ~8GB runtime memory and imperfect accuracy: install/start Ollama, then `agentj local-model install`; `status` reports eligibility/enabled, `off` disables. The installer accepts `--local-model`. Intel/CPU Linux are not offered it by default. It loads on demand and unloads after use. Installing weights requires the owner's choice. These commands do not change pairing, accounts, approvals or the owner's main model.

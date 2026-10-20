@@ -65,7 +65,7 @@ TEST_CERT_ENV = "AGENTJ_TEST_PEER_CERT_KEY"
 LINK = "https://m.agentj.app/friends#add="
 CARD_LINK = "https://m.agentj.app/friends#card"     # P73: opens 「我的名片」 (QR code) on the paired phone
 REQ_MAX = 64 * 1024              # one JSON line on friends.sock
-PQ_TTL = 86400                   # a peer_question card
+PQ_TTL = 120                   # a peer_question card
 REQUESTS_PER_DAY = 20            # new friend requests kept per (owner's) day; more are dropped silently
 CERT_RENEW = 86400               # renew a certificate older than this …
 CERT_MIN_LEFT = 2 * 86400        # … or with less than this left
@@ -85,6 +85,7 @@ T = {
         "fr_summary": "好友请求：{name}{owner}\nID：{id}{intro}{note}",
         "owner": "（主人 {owner}）", "intro": "\n简介：{intro}", "note": "\n附言：{note}",
         "pq_summary": "{name} 说：\n{text}\n\n草稿：\n{draft}",
+        "pq_timeout": "好友提问已过期，已按不回复处理。",
         "no_draft": "（没有草稿）",
         "r_ask": "超出自动回复范围，要你决定", "r_gate": "回复草稿里像有密钥或「绝不外说」的内容（{rule}），没有发出，也不显示",
         "r_tool": "分身试图调用工具，已拦下", "r_error": "分身没能回答（{error}）",
@@ -117,6 +118,7 @@ T = {
         "summary": "Friends on {day}: {n_in} messages in, {n_auto} answered automatically, {n_ask} waiting for you.",
         "withheld": "(looked like a secret; stopped, not kept)",
         "send_blocked": "Your message to {name} was blocked by the recipient: it appeared to request or contain credentials. Rewrite it to ask only about task progress, without requesting or including credential values.",
+        "pq_timeout": "The friend’s question expired; no reply was sent.",
         "draft_blocked": "The draft looked like it holds a secret or something on the never-tell list ({rule}); not sent.",
     },
 }
@@ -870,7 +872,7 @@ class PeerService:
 
     def _save_question(self, a: FriendAsk) -> None:
         with self.store._edit(self._q_path(), {}) as d:
-            d[a.rid] = {"summary": a.summary, "exp": a.exp, "why": a.why, "extra": a.extra, "data": a.data}
+            d[a.rid] = {"created": a.exp - PQ_TTL, "summary": a.summary, "exp": a.exp, "why": a.why, "extra": a.extra, "data": a.data}
 
     def _drop_question(self, rid: str) -> None:
         with self.store._edit(self._q_path(), {}) as d:
@@ -889,38 +891,46 @@ class PeerService:
             for rid in list(d):
                 q = d[rid]
                 ok = isinstance(q, dict) and _RID.fullmatch(rid) and isinstance(q.get("summary"), str) \
-                    and isinstance(q.get("exp"), (int, float)) and q["exp"] > now and isinstance(q.get("data"), dict) \
+                    and isinstance(q.get("exp"), (int, float)) and isinstance(q.get("data"), dict) \
                     and isinstance(q.get("extra"), dict)
                 if not ok:
                     del d[rid]
                     continue
+                # Old 24h cards retain their creation time, not another 24h after upgrade.
+                created = q.get("created", q["exp"] - 86400)
+                exp = min(q["exp"], created + PQ_TTL) if isinstance(created, (int, float)) else now
+                q["created"], q["exp"] = created, exp
                 self.asks[rid] = FriendAsk(rid, "peer_question", q["summary"],
-                                           approvals.shown_digest("peer_question", q["summary"]), float(q["exp"]),
+                                           approvals.shown_digest("peer_question", q["summary"]), float(exp),
                                            str(q.get("why") or ""), q["extra"], q["data"])
+
+        self.expire_asks()
 
     def has_ask(self, rid) -> bool:
         return isinstance(rid, str) and rid in self.asks
 
-    def answer(self, device: str, obj: dict) -> bool:
+    def answer(self, device: str, obj: dict, *, refuse=None) -> bool:
         """A device's `answer` for a friend card. False = not one of ours (serve's own asks then). A friend_request allow may
         carry `group`: the signed text then has one more line hex(SHA-256("group:" + group)) (wire.js friendAnswerMessage)."""
         rid = obj.get("id")
         a = self.asks.get(rid) if isinstance(rid, str) else None
         if a is None:
             return False
+        def rejected(reason):
+            self.log("answer_refused", id=rid, device=device, reason=reason)
+            if refuse:
+                refuse({"t": "answer_refused", "id": rid, "why": reason, "ask": self.ask_msg(a)})
+            return True
         ok, sig, group, ctx = obj.get("ok"), obj.get("sig"), obj.get("group"), obj.get("ctx")
         if not isinstance(ok, bool) or not isinstance(sig, str) or len(sig) > 100 or obj.get("batch") \
                 or self.clock() > a.exp:
-            self.log("answer_refused", id=rid, device=device, reason="shape_or_late")
-            return True
+            return rejected("shape_or_late")
         if group is not None and not (a.tool in ("friend_request", "peer_question") and ok and isinstance(group, str)
                                       and GROUP_ID.fullmatch(group) and (a.tool == "friend_request" or group == "colleague")):
-            self.log("answer_refused", id=rid, device=device, reason="shape")
-            return True
+            return rejected("shape")
         if ctx is not None and not (a.tool == "friend_request" and ok and isinstance(ctx, str) and ctx
                                     and len(ctx) <= MAX_CONTEXT and "\x00" not in ctx):
-            self.log("answer_refused", id=rid, device=device, reason="shape")   # P73: 「补充设定」 only on an accept, ≤ 4000
-            return True
+            return rejected("shape")   # P73: context only on accept, ≤4000
         sk = self.st.sign_key(device)
         try:
             sigb = wire.unb64u(sig)
@@ -943,8 +953,7 @@ class PeerService:
             except Exception:  # InvalidSignature
                 good = False
         if not good:
-            self.log("answer_refused", id=rid, device=device, reason="no_key" if not sk else "bad_signature")
-            return True
+            return rejected("no_key" if not sk else "bad_signature")
         self._decided(a, decision, "device", device=device, sk=sk, sig=sigb, scope=scope, group=group, ctx=ctx)
         return True
 
@@ -980,6 +989,8 @@ class PeerService:
             else:
                 self.changed(None)
             return
+        if reason == "timeout":
+            self.notice(self.tx("pq_timeout"))
         fid = a.data.get("friend")
         if not isinstance(fid, str) or self.store.get(fid) is None:
             return
