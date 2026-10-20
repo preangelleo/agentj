@@ -198,6 +198,14 @@ def _ms(ts) -> int:
 def local_cmd(st, store: FriendStore, req: dict, lang: str = "zh") -> dict | None:
     """`id` · `card` · `profile` · `groups` · `on` / `off` straight on the files. None = not one of these."""
     t = req.get("t")
+    if t == "relay-policy":
+        values = {k: req[k] for k in ("relay_per_minute", "relay_claim_seconds", "relay_pending_seconds") if req.get(k) is not None}
+        for k, v in values.items():
+            if type(v) is not int or not 1 <= v <= (10000 if k == "relay_per_minute" else 2592000):
+                return {"ok": False, "why": "bad_value"}
+        for k, v in values.items():
+            store.set_setting(k, v)
+        return {"ok": True, **{k: store.settings()[k] for k in ("relay_per_minute", "relay_claim_seconds", "relay_pending_seconds")}}
     if t == "id":
         keys = PeerKeys.load_or_create(st)
         return {"ok": True, "id": keys.id, "link": link_of(keys.id), "on": store.on, "discoverable": store.discoverable}
@@ -275,6 +283,10 @@ class PeerService:
         self.mbox_up = False
         self.asks: dict[str, FriendAsk] = {}
         self.seen: OrderedDict = OrderedDict()   # (friend, mid) → the pack status to repeat (None = still working)
+        from .same_owner import SameOwner
+        self.same_owner = SameOwner(self)
+        from .relay_guards import RelayGuards
+        self.guards = RelayGuards(self)
         self.threads: dict[str, str] = {}        # friend → the last thread id
         self.leaving: dict[str, tuple] = {}      # friend → (x, ed, until): a bye still to deliver after the relation is gone
         self.jobs: set = set()
@@ -580,13 +592,40 @@ class PeerService:
         f = self.store.get(fid)
         if f is None:
             return
+        if t in ("same_owner", "owner_status", "owner_status_res"):
+            if not self.store.is_blocked(fid):
+                self.same_owner.on_app(fid, obj)
+            return
+        if t == "relay_cancel":
+            mid = obj.get("mid")
+            if isinstance(mid, str) and _HEX16.fullmatch(mid) and not self.store.is_blocked(fid):
+                if not self.guards.row(fid, mid):
+                    # A cancellation can beat the original message across reconnects.
+                    self.guards.remember(fid, {"mid": mid, "thread": "", "relay": None})
+                if self.guards.state(fid, mid, "cancelled"):
+                    self.guards.receipt(fid, mid, "cancelled")
+            return
+        if t == "relay_state":
+            if not self.store.is_blocked(fid):
+                self.guards.receive(fid, obj)
+            return
         if t == "pack":
+            from .relay_guards import FINAL
+            lease = self.guards.row(fid, obj.get("mid"), "out")
+            # A late pack never erases a terminal lease; only `replied` may still land on a `done` one (the
+            # receiver's done receipt precedes its replied pack) so the sender's line keeps P71's "replied".
+            if lease and ((lease["state"] in FINAL and not (lease["state"] == "done" and obj.get("s") == "replied"))
+                          or (lease["state"] == "claimed" and obj.get("s") != "replied")):
+                return
+            if obj.get("s") == "replied":
+                self.guards.state(fid, obj.get("mid"), "done", "out")
             if obj.get("s") == "blocked" and isinstance(obj.get("mid"), str):
                 # Only an existing outgoing message can be rejected. Copy no peer text
                 # into notices: the authenticated receipt is still untrusted content.
                 items = self.store._hist_all(fid)
                 if any(it.get("mid") == obj["mid"] and it.get("dir") == "out"
-                       and it.get("s") in ("sent", "got", "queued_for_owner") for it in items):
+                       and it.get("s") in ("sent", "got", "queued_for_owner", "claimed") for it in items):
+                    self.guards.state(fid, obj["mid"], "blocked", "out")
                     self.store.hist_set_status(fid, obj["mid"], "blocked")
                     self.notice(self.tx("send_blocked", name=self.store.name_of(fid)))
                     self.changed(fid)
@@ -655,6 +694,8 @@ class PeerService:
             if s:
                 self._send(fid, {"t": "pack", "mid": mid, "s": s, **({"rule": "secret_policy"} if s == "blocked" else {})})
             return
+        if not self.guards.accept(fid, m):
+            return
         lim = self.store.precheck(fid, text)
         if lim:
             scope, retry = lim
@@ -675,6 +716,7 @@ class PeerService:
             return self.changed(fid)
         v = peer_guard.inbound(text)
         if not v.ok:
+            self.guards.state(fid, mid, "blocked")
             self.store.hist_add(fid, {"mid": mid, "dir": "in", "text": self.tx("withheld"), "ts": int(self.clock() * 1000), "s": "withheld"})
             self._seen_put(key, "blocked")
             self._send(fid, {"t": "pack", "mid": mid, "s": "blocked", "rule": "secret_policy"})
@@ -682,6 +724,21 @@ class PeerService:
             self.notice(self.tx("inbound", name=self.store.name_of(fid), rule=v.rule))
             return self.changed(fid)
         self.store.hist_add(fid, {"mid": mid, "dir": "in", "text": text, "ts": int(self.clock() * 1000), "s": "got"})
+        if (self.store.get(fid) or {}).get("hold_for_owner") and not (m.get("irt") or m.get("end")):
+            if len(text) > SHOW_MAX:
+                self.guards.state(fid, mid, "shape")
+                self.guards.receipt(fid, mid, "shape")
+                return
+            self._question(fid, m, "", "先压着等我批 / Hold until I approve", handover=True)
+            self._finish(fid, mid, "queued_for_owner")
+            return
+        if self.same_owner.active(fid):
+            self._seen_put(key, "queued_for_owner")
+            self._send(fid, {"t": "pack", "mid": mid, "s": "queued_for_owner"})
+            job = asyncio.create_task(self.same_owner.forward(fid, m, auto=True))
+            self.jobs.add(job)
+            job.add_done_callback(self.jobs.discard)
+            return self.changed(fid)
         group = self.store.group_of(fid)
         rounds, cap = self.store.auto_rounds(fid), group["auto"]["max_auto_rounds"]
         if m.get("end") is True or rounds >= cap:
@@ -705,6 +762,15 @@ class PeerService:
     async def _turn(self, fid: str, m: dict, group: dict) -> None:
         mid, key = m["mid"], (fid, m["mid"])
         try:
+            if not self.guards.claim(fid, m):
+                return
+            reviewed = await asyncio.to_thread(peer_guard.review, m["text"], st=self.host.st, prefs=getattr(self.host, "preferences", {}))
+            if not reviewed.ok:
+                self.guards.state(fid, mid, "blocked")
+                self._send(fid, {"t": "pack", "mid": mid, "s": "blocked", "rule": "secret_policy"})
+                self.notice(self.tx("inbound", name=self.store.name_of(fid), rule=reviewed.rule))
+                self._finish(fid, mid, "blocked", hist_s="withheld")
+                return
             friend = self.store.get(fid) or {"id": fid}
             res = await self.sessions.turn(friend, group, peer_guard.wrap(fid, self.store.name_of(fid), m["text"]))
             if res.error == "stopped" or self.host.stopped():
@@ -757,21 +823,37 @@ class PeerService:
             self._seen_put(key, "got")
 
     def _finish(self, fid: str, mid: str, pack_s: str, hist_s: str | None = None) -> None:
+        if pack_s == "replied":
+            self.guards.complete(fid, mid)
         self._seen_put((fid, mid), pack_s)
         self._send(fid, {"t": "pack", "mid": mid, "s": pack_s})
         self.store.hist_set_status(fid, mid, hist_s or pack_s)
         self.changed(fid)
 
     def _send_pmsg(self, fid: str, text: str, m_in: dict | None, auto: bool, end: bool = False) -> str | None:
+        self.last_relay_refusal = None
         mid = secrets.token_hex(8)
         thread = (m_in or {}).get("thread") or self.threads.get(fid) or secrets.token_hex(8)
         obj = {"t": "pmsg", "mid": mid, "thread": thread, "irt": (m_in or {}).get("mid"), "text": text,
                "ts": int(self.clock() * 1000)}
+        agent = getattr(self.host, "agent", None)
+        current = getattr(agent, "cur_send", None)
+        source = (getattr(current, "source", None) if current is not None else getattr(agent, "pending_source", None)) or {}
+        parent = (m_in or {}).get("relay") or (source.get("relay") if isinstance(source, dict) else None)
+        obj["relay"] = dict(parent) if m_in and self.guards.envelope(parent) else self.guards.outgoing(parent)
+        if not m_in and obj["relay"]["hops"] > 4:
+            from .relay_guards import message
+            self.notice(message("hops", self.lang))
+            self.last_relay_refusal = "hops"
+            return None
         if m_in and isinstance(m_in.get("ctx"), str):
             obj["ctx"] = m_in["ctx"]
         if end:
             obj["end"] = True
+        if not (obj.get("irt") or obj.get("end")) and not self.guards.remember(fid, obj, "out"):
+            return None
         if not self._send(fid, obj):
+            self.guards.state(fid, mid, "cancelled", "out")
             return None
         self.threads[fid] = thread
         self.store.hist_add(fid, {"mid": mid, "dir": "out", "text": text, "ts": obj["ts"], "s": "sent", "auto": auto})
@@ -782,7 +864,8 @@ class PeerService:
             wd = (getattr(self.host, "agent_cfg", None) or {}).get("dir")
             self.index = await asyncio.to_thread(peer_guard.SecretIndex.build, None, (), wd)
             self.index_at = time.monotonic()
-        return peer_guard.outbound(text, self.index, self.store.never_tell_extra)
+        local = peer_guard.outbound(text, self.index, self.store.never_tell_extra)
+        return await asyncio.to_thread(peer_guard.review, text, st=self.host.st, prefs=getattr(self.host, "preferences", {})) if local.ok else local
 
     def _global_limit(self) -> None:
         """The account-wide daily token total is reached: every friend gets `limited scope=global` (once a day each), the owner
@@ -833,15 +916,19 @@ class PeerService:
         return FriendAsk(ask_id, "friend_request", summary, approvals.shown_digest("friend_request", summary), float(exp),
                          "", fr, {"rid": rid, "friend": req.get("id")})
 
-    def _question(self, fid: str, m: dict, draft: str, reason: str) -> None:
+    def _question(self, fid: str, m: dict, draft: str, reason: str, *, pairing=False, handover=False) -> None:
         name = self.store.name_of(fid)
         text = clean(m["text"], SHOW_MAX)
         draft = clean(draft or "", DRAFT_MAX)
         summary = self.tx("pq_summary", name=name, text=text, draft=draft or self.tx("no_draft"))
         a = FriendAsk(secrets.token_hex(16), "peer_question", summary, approvals.shown_digest("peer_question", summary),
-                      self.clock() + PQ_TTL, reason, {"friend": fid, "name": name, "text": text, "draft": draft,
-                                                      "reason": reason, "high_risk": reason.startswith(self.tx("r_gate", rule="").split("(")[0].split("（")[0])},
-                      {"friend": fid, "mid": m["mid"], "thread": m["thread"], "ctx": m.get("ctx"), "draft": draft, "text": m["text"]})
+                      (self.same_owner.row(fid).get("expires", self.clock() + 86400) if pairing else self.clock() + PQ_TTL), reason, {**({"handover": True} if handover else {}), "friend": fid, "name": name, "text": text, "draft": draft,
+                                                      **({"same_owner": True} if self.same_owner.active(fid) else {}), **({"pairing": True, "code": self.same_owner.code(fid), "challenge": self.same_owner.challenge(fid)} if pairing else {}), "reason": reason, "high_risk": reason.startswith(self.tx("r_gate", rule="").split("(")[0].split("（")[0])},
+                      {"friend": fid, "mid": m["mid"], "thread": m["thread"], "ctx": m.get("ctx"), "draft": draft, "text": m["text"], "relay": m.get("relay"), "handover": handover})
+        if handover:
+            a.exp = self.clock() + self.store.settings()["relay_pending_seconds"]
+            a.summary = reason + "\n" + name + "\n" + text
+            a.digest = approvals.shown_digest("peer_question", a.summary)
         self._count("n_ask")
         self._save_question(a)
         self._open(a)
@@ -872,7 +959,7 @@ class PeerService:
 
     def _save_question(self, a: FriendAsk) -> None:
         with self.store._edit(self._q_path(), {}) as d:
-            d[a.rid] = {"created": a.exp - PQ_TTL, "summary": a.summary, "exp": a.exp, "why": a.why, "extra": a.extra, "data": a.data}
+            d[a.rid] = {"created": self.clock(), "summary": a.summary, "exp": a.exp, "why": a.why, "extra": a.extra, "data": a.data}
 
     def _drop_question(self, rid: str) -> None:
         with self.store._edit(self._q_path(), {}) as d:
@@ -898,7 +985,7 @@ class PeerService:
                     continue
                 # Old 24h cards retain their creation time, not another 24h after upgrade.
                 created = q.get("created", q["exp"] - 86400)
-                exp = min(q["exp"], created + PQ_TTL) if isinstance(created, (int, float)) else now
+                exp = min(q["exp"], created + (self.store.settings()["relay_pending_seconds"] if q["extra"].get("handover") else 86400 if q["extra"].get("pairing") else PQ_TTL)) if isinstance(created, (int, float)) else now
                 q["created"], q["exp"] = created, exp
                 self.asks[rid] = FriendAsk(rid, "peer_question", q["summary"],
                                            approvals.shown_digest("peer_question", q["summary"]), float(exp),
@@ -926,11 +1013,17 @@ class PeerService:
                 or self.clock() > a.exp:
             return rejected("shape_or_late")
         if group is not None and not (a.tool in ("friend_request", "peer_question") and ok and isinstance(group, str)
-                                      and GROUP_ID.fullmatch(group) and (a.tool == "friend_request" or group == "colleague")):
+                                      and GROUP_ID.fullmatch(group) and (a.tool == "friend_request" or group in ("colleague", "main"))):
             return rejected("shape")
         if ctx is not None and not (a.tool == "friend_request" and ok and isinstance(ctx, str) and ctx
                                     and len(ctx) <= MAX_CONTEXT and "\x00" not in ctx):
             return rejected("shape")   # P73: context only on accept, ≤4000
+        if a.extra.get("pairing"):
+            return rejected("phone_control_required")
+        if a.data.get("handover") and group is not None:
+            return rejected("shape")
+        if group in ("main",) and not self.same_owner.active(a.data.get("friend")):
+            return rejected("same_owner_required")
         sk = self.st.sign_key(device)
         try:
             sigb = wire.unb64u(sig)
@@ -989,6 +1082,21 @@ class PeerService:
             else:
                 self.changed(None)
             return
+        if a.extra.get("pairing"):
+            if reason == "timeout":
+                self.notice("同一个主人邀请已过期" if self.lang == "zh" else "Same owner invitation expired")
+                self.same_owner.consent(a.data.get("friend"), False)
+            return
+        if a.data.get("handover"):
+            fid = a.data["friend"]
+            if decision == "allow" and reason == "device":
+                job = asyncio.create_task(self.same_owner.forward(fid, a.data, approved=True))
+                self.jobs.add(job)
+                job.add_done_callback(self.jobs.discard)
+            else:
+                if self.guards.state(fid, a.data["mid"], "cancelled"):
+                    self.guards.receipt(fid, a.data["mid"], "cancelled")
+            return
         if reason == "timeout":
             self.notice(self.tx("pq_timeout"))
         fid = a.data.get("friend")
@@ -998,6 +1106,12 @@ class PeerService:
             self.store.auto_round(fid, reset=True)            # an owner action
         draft = a.data.get("draft") or ""
         if decision == "allow" and reason == "device":
+            if group in ("main",):
+                job = asyncio.create_task(self.same_owner.forward(fid, a.data))
+                self.jobs.add(job)
+                job.add_done_callback(self.jobs.discard)
+                self.changed(fid)
+                return
             if group == "colleague":
                 self.store.set_group(fid, "colleague")
             j = asyncio.get_running_loop().create_task(self._owner_reply(fid, a, draft))
@@ -1038,6 +1152,7 @@ class PeerService:
         while True:
             await asyncio.sleep(self.HOUSEKEEP)
             try:
+                self.guards.sweep()
                 self.expire_asks()
                 self._count(None)
                 now = self.clock()
@@ -1077,6 +1192,7 @@ class PeerService:
     def list_view(self) -> dict:
         v = self.store.list_view()
         for f in v["friends"]:
+            f["same_owner"] = self.same_owner.view(f["id"])
             items, _ = self.store.hist_page(f["id"], None, 1)
             f["last"] = {"ts": _ms(items[0].get("ts")) if items else _ms(f.get("last")),
                          "text": clean_line(str(items[0].get("text") or ""), 120) if items else ""}
@@ -1112,13 +1228,49 @@ class PeerService:
         return None
 
     # ------------------------------------------------------------ writes (signed on the phone, or the owner's CLI)
-    async def write(self, action: str, target: dict) -> tuple[bool, str | None, str | None]:
+    async def write(self, action: str, target: dict, *, device=None, proof=None) -> tuple[bool, str | None, str | None]:
         """Apply one friends-page write. → (ok, why, friend id that changed)."""
         if action == "fr_set":
             fid, op, value = target.get("friend"), target.get("op"), target.get("value")
-            if not isinstance(fid, str) or op not in ("group", "block", "unblock", "delete"):
+            if not isinstance(fid, str) or op not in ("group", "block", "unblock", "delete", "owner-confirm", "owner-reject", "hold-for-owner"):
                 return False, "shape", None
             pid = parse_id(fid) or fid
+            if op == "hold-for-owner":
+                if value not in ("on", "off") or not device or not proof or not self.st.sign_key(device):
+                    return False, "phone_required", pid
+                with self.store._edit("friends.json", {}) as rows:
+                    if pid not in rows:
+                        return False, "not_friend", pid
+                    rows[pid]["hold_for_owner"] = value == "on"
+                self.log("fr_hold", result=value, device=device)
+                return True, None, pid
+            if op == "group" and value == "same-owner":
+                if not device or not self.st.sign_key(device) or not proof:
+                    return False, "phone_required", pid
+                if self.store.get(pid) is None or self.store.is_blocked(pid):
+                    return False, "not_friend", pid
+                if self.net is None:
+                    self._ensure_net(run=False)
+                self.same_owner.propose(pid, proof["pub"])
+                return True, None, pid
+            if op in ("owner-confirm", "owner-reject"):
+                r = self.same_owner.row(pid)
+                if not device or not proof or not self.st.sign_key(device):
+                    return False, "phone_required", pid
+                if (not value or value != self.same_owner.challenge(pid)
+                        or r.get('expires', 0) <= self.clock()):
+                    return False, "expired", pid
+                if op == "owner-confirm":
+                    if proof['pub'] != r.get('pub'):
+                        return False, "phone_required", pid
+                    self.same_owner.consent(pid, True, proof)
+                else:
+                    self.same_owner.consent(pid, False)
+                self.same_owner.clear_requests(pid)
+                return True, None, pid
+            if op in ("group", "block", "delete") and (self.same_owner.row(pid).get('token') or self.same_owner.row(pid).get('remote')):
+                self.same_owner.consent(pid, False)
+                self.same_owner.clear_requests(pid)
             if op == "group":
                 why = self.store.set_group(pid, value if isinstance(value, str) else "")
                 if why:
@@ -1210,7 +1362,15 @@ class PeerService:
         return False, "shape", None
 
     # ------------------------------------------------------------ the owner speaking through the main Agent
-    async def tell(self, ref: str, text: str) -> dict:
+    def cancel_request(self, fid, mid):
+        if not self.guards.row(fid, mid, "out"):
+            return {"ok": False, "why": "not_found"}
+        changed = self.guards.state(fid, mid, "cancelled", "out")
+        if changed:
+            self._send(fid, {"t": "relay_cancel", "mid": mid})
+        return {"ok": changed}
+
+    async def tell(self, ref: str, text: str, reply_to=None) -> dict:
         if not isinstance(text, str) or not text.strip() or wire.text_problem(text, wire.MAX_TEXT_P33) is not None:
             return {"ok": False, "why": "bad_text"}
         if self.host.stopped():
@@ -1232,12 +1392,23 @@ class PeerService:
                     "suggestion": "只询问任务进度，不索要或附上凭据 / Ask about task progress without credential values"}
         if self.net is None:
             self._ensure_net(run=False)
-        mid = self._send_pmsg(fid, text, None, auto=False)
+        reply = None
+        if reply_to is not None:
+            thread = (self.same_owner.row(fid).get('responses') or {}).get(reply_to) if isinstance(reply_to, str) else None
+            if not thread:
+                return {"ok": False, "why": "bad_reply"}
+            row = self.guards.row(fid, reply_to)
+            reply = {"mid": reply_to, "thread": thread, "relay": row.get("relay") if row else None}
+        mid = self._send_pmsg(fid, text, reply, auto=False, end=reply is not None)
         if mid is None:
-            return {"ok": False, "why": "bad_text"}
+            from .relay_guards import message
+            why = self.last_relay_refusal or "bad_text"
+            return {"ok": False, "why": why, **({"message": message(why, self.lang)} if why == "hops" else {})}
+        if reply_to:
+            self.guards.complete(fid, reply_to)
         self.store.auto_round(fid, reset=True)
         self.changed(fid)
-        return {"ok": True, "friend": fid, "name": self.store.name_of(fid), "mid": mid}
+        return {"ok": True, "friend": fid, "name": self.store.name_of(fid), "mid": mid, "route": "main" if self.same_owner.active(fid) else "peer"}
 
     # ------------------------------------------------------------ friends.sock (agentj friends …)
     @property
@@ -1293,7 +1464,7 @@ class PeerService:
 
     async def cli(self, req: dict) -> dict:
         t = req.get("t")
-        if t in ("id", "card", "profile", "groups", "on", "off"):
+        if t in ("id", "card", "profile", "groups", "on", "off", "relay-policy"):
             res = local_cmd(self.st, self.store, req, self.lang)
             if t == "id":
                 self._ensure_keys()
@@ -1312,6 +1483,12 @@ class PeerService:
             if ok:
                 self.changed(fid)
             return {"ok": ok, "why": why, "id": fid, **({"message": self.seat_refusal()} if why == "seat" else {})}
+        if t == "cancel":
+            fid = self.store.find(req.get("friend", ""))
+            return self.cancel_request(fid, req.get("mid")) if fid else {"ok": False, "why": "not_friend"}
+        if t == "status":
+            fid, why = self._resolve(req.get("friend"))
+            return await self.same_owner.status(fid) if fid else {"ok": False, "why": why}
         if t == "history":
             fid, why = self._resolve(req.get("friend"))
             if not fid:
@@ -1324,7 +1501,7 @@ class PeerService:
                             "instructions.",
                     "friend": {"id": fid, **card_view(f.get("card"))}, "items": items, "more": more}
         if t == "tell":
-            return await self.tell(req.get("friend"), req.get("text"))
+            return await self.tell(req.get("friend"), req.get("text"), req.get("reply_to"))
         if t == "context":                   # P73: `agentj friends context <friend> [--set|--append|--file|--show|--clear]`
             fid, why = self._resolve(req.get("friend"))
             if not fid:
@@ -1437,6 +1614,13 @@ def add_parser(sub) -> None:
         def add_parser(name, **kw):
             return fr_sub.add_parser(name, parents=[sub_json], **kw)
     s = _S
+    rp = s.add_parser("relay-policy", help="转交限流和租约 / handover limits and leases")
+    rp.add_argument("--per-minute", type=int)
+    rp.add_argument("--claim-seconds", type=int)
+    rp.add_argument("--pending-seconds", type=int)
+    cancel = s.add_parser("cancel", help="取消已发出的请求状态 / cancel a sent request")
+    cancel.add_argument("friend")
+    cancel.add_argument("mid")
     s.add_parser("id", help="我的 Agent ID 和加好友链接")
     c = s.add_parser("card", help="我的名片（--owner 主人名字 · --intro 一句话简介）")
     c.add_argument("--name", help="名片上的名字就是 Agent 的名字（用 agentj name 改）")
@@ -1446,12 +1630,14 @@ def add_parser(sub) -> None:
     a.add_argument("id")
     a.add_argument("--note", default="")
     s.add_parser("list", help="好友、请求、组")
+    s.add_parser("status", help="同一个主人好友的聚合状态 / same-owner aggregate status").add_argument("friend")
     h = s.add_parser("history", help="和某个好友的消息（不可信数据，JSON）")
     h.add_argument("friend")
     h.add_argument("--before", type=int, help="只看这个时间（毫秒）之前的")
     t = s.add_parser("tell", help="替主人对好友说一句：tell <好友> <内容>")
     t.add_argument("friend")
     t.add_argument("text", nargs="+")
+    t.add_argument("--reply-to", help="回复同一个主人任务的消息 ID（避免当成新任务） / task reply id")
     g = s.add_parser("group", help="把好友放进一个组：group <好友> <组>")
     g.add_argument("friend")
     g.add_argument("group")
@@ -1487,10 +1673,12 @@ def _req(a) -> dict:
                 **({"intro": a.intro} if a.intro is not None else {})}
     if f == "add":
         return {"t": "add", "id": a.id, "note": a.note}
+    if f == "status":
+        return {"t": "status", "friend": a.friend}
     if f == "history":
         return {"t": "history", "friend": a.friend, "before": a.before}
     if f == "tell":
-        return {"t": "tell", "friend": a.friend, "text": " ".join(a.text)}
+        return {"t": "tell", "friend": a.friend, "text": " ".join(a.text), **({"reply_to": a.reply_to} if a.reply_to else {})}
     if f == "group":
         return {"t": "group", "friend": a.friend, "group": a.group}
     if f in ("block", "unblock", "remove"):
@@ -1501,6 +1689,10 @@ def _req(a) -> dict:
         return {"t": "profile", **({"set": a.set} if a.set is not None else {})}
     if f == "usage":
         return {"t": "usage", "friend": a.friend}
+    if f == "relay-policy":
+        return {"t": f, "relay_per_minute": a.per_minute, "relay_claim_seconds": a.claim_seconds, "relay_pending_seconds": a.pending_seconds}
+    if f == "cancel":
+        return {"t": f, "friend": a.friend, "mid": a.mid}
     if f == "context":
         if a.set is not None:
             return {"t": "context", "friend": a.friend, "op": "set", "text": a.set}
@@ -1558,7 +1750,7 @@ def cmd_friends(a) -> None:
     if res is None:
         from .state import State
         st = State()
-        if req["t"] in ("id", "card", "profile", "groups", "on", "off", "context") and st.exists():
+        if req["t"] in ("id", "card", "profile", "groups", "on", "off", "context", "relay-policy") and st.exists():
             res = local_cmd(st, FriendStore(st), req)
         else:
             if a.json or getattr(a, "json_sub", False):
@@ -1610,8 +1802,13 @@ def _print(t: str, res: dict) -> None:
             print("还没有好友：agentj friends add <ID>")
     elif t == "add":
         print(f"好友请求已发给 {res['id']}（对方主人同意前一直显示「等待对方确认」）")
+    elif t == "status":
+        print(json.dumps(res.get("status"), ensure_ascii=False, indent=1))
     elif t == "tell":
-        print(f"已排队给 {res['name']}，等待对方确认（可用 agentj friends history 查看回执） / Queued; awaiting recipient confirmation")
+        if res.get("route") == "main":
+            print(f"已排队给 {res['name']} 的主 Agent J（可用 agentj friends history 查看回执） / Queued for main Agent J")
+        else:
+            print(f"已排队给 {res['name']}，等待对方确认（可用 agentj friends history 查看回执） / Queued; awaiting recipient confirmation")
     elif t == "context":
         if res.get("op") == "show":
             print(res.get("context") or f"（还没给 {res['name']} 写补充设定：agentj friends context <好友> --set \"…\"）")

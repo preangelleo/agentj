@@ -156,8 +156,15 @@ try {
       await p.send('Input.insertText',{text:short});
       assert.equal(await ev(p,`document.getElementById('input').value`),draft.slice(0,12)+short+draft.slice(12));
       const snapshot=await ev(p,`document.getElementById('input').value`);
-      assert.equal(await paste('oversized line\n'.repeat(500)),true,'large clipboard alone intercepted');
-      assert.equal(await ev(p,`document.getElementById('input').value`),snapshot);
+      // P406 #168 (Leo): with words already in the box a paste joins them — whatever its length or height — unless together
+      // they pass one message's limit; then only this paste becomes the attachment (was: a large clipboard was always intercepted)
+      assert.equal(await paste('oversized line\n'.repeat(500)),false,'#168: a large clipboard joins the words already in the box');
+      const max=await ev(p,`document.getElementById('input').maxLength`);
+      assert.equal(await paste('y'.repeat(max)),true,'#168: together over the message limit → intercepted');
+      assert.equal(await ev(p,`document.getElementById('input').value`),snapshot,'#168: the words already there are kept');
+      assert.match(await ev(p,`document.getElementById('toast').textContent`),/合起来超过/);
+      // an empty box: this clipboard alone decides, by characters (zero-width ones count)
+      await ev(p, `(()=>{const i=document.getElementById('input');i.value='';i.dispatchEvent(new Event('input'));})()`);
       assert.equal(await paste('\u200b'.repeat(2200)),true,'length limit also catches zero-width text');
       assert.match(await ev(p,`document.getElementById('toast').textContent`),/刚粘贴/);
       await ev(p, `navigator.clipboard.writeText('short@example.com')`);
@@ -166,7 +173,10 @@ try {
       const count=await ev(p,`import('./js/relay.js').then(m=>m.debug().atts.length)`);
       await ev(p,`navigator.clipboard.writeText('x'.repeat(3000))`);
       await ev(p,`import('./js/relay.js').then(m=>m.pasteClipText())`);
-      assert.equal(await ev(p,`import('./js/relay.js').then(m=>m.debug().atts.length)`),count+1);
+      assert.equal(await ev(p,`import('./js/relay.js').then(m=>m.debug().atts.length)`),count,'#168: the held button joins words in the box too');
+      await ev(p, `(()=>{const i=document.getElementById('input');i.value='';i.dispatchEvent(new Event('input'));})()`);
+      await ev(p,`import('./js/relay.js').then(m=>m.pasteClipText())`);
+      assert.equal(await ev(p,`import('./js/relay.js').then(m=>m.debug().atts.length)`),count+1,'an empty box: over 2000 characters → an attachment');
       assert.equal(p.problems.length,0,p.problems.join('\n'));
     }finally{await p.dispose();}
   });

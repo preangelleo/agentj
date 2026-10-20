@@ -3520,6 +3520,8 @@ def main(argv=None) -> None:
     hook_service.add_parser(sub)   # P366: agentj hook create|list|show|update|rotate|revoke|test|logs|wait|triage|forward|presets
     from . import ask
     ask.add_parser(sub)         # P322: agentj ask — the Agent J question card under any harness
+    from . import screenhelp
+    screenhelp.add_parser(sub)  # P411: agentj qr push / agentj screen ask|wait|cancel — screen help on the phone
     from . import workflows
     workflows.add_parser(sub)
     from .core import enabled as _core_on
@@ -3527,6 +3529,8 @@ def main(argv=None) -> None:
         from .core import cli as core_cli
         core_cli.add_parser(sub)    # P359: agentj order … · agentj core … (Agent J Harness, AGENTJ_CORE=1 only)   # P244 (§30): agentj workflows [--json] — what the phone's five pages read, read-only
     elevate.add_parser(sub)   # F17: agentj sudo · agentj secret request
+    from . import term_cli
+    term_cli.add_parser(sub)  # P408: agentj terminal status|enable|allow|deny|disable|forget|logs (the web terminal)
     from . import opencode_provider
     opencode_provider.add_parser(sub)   # P60 / F25: agentj provider add|list|remove (OpenCode base_url + key)
     elevate_helper.add_parser(sub)   # F17: agentj sudo-helper install · sync · uninstall · status

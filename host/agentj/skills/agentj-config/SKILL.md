@@ -369,3 +369,21 @@ paste its whole body into chat. So with this mailbox the owner can let you regis
 Ordinary research/design reports mentioning variable names, `secret=true` or placeholder JSON stay ordinary files; do not proactively send a pickup card for those words. Actual credential files still use `agentj secret send --file`. After Face ID, the owner can tap the preview’s top-right fullscreen icon or double-tap its text; Markdown is typeset, with scrolling and original-text copy. Esc or Back returns to the card; Finish, hiding the page or two minutes clears it.
 
 P251: When the host and page server both have the same newer version, the page reloads after ten seconds without input, preserving the draft; recording and unsubmitted card actions block it. Otherwise only offer a refresh. Keyboard: Alt+Shift+U upgrades the host through the existing phone confirmation; Alt+Shift+R updates and reloads the page.
+
+## Three choices for safety review (Jev)
+
+Choose a review route during setup. If you have neither a key nor a choice, `agentj onboarding` prompts you to finish this step. Recommended: register with [TypeSafe](https://typesafe.ai), create a key and add a small balance, then enter `TYPESAFE_API_KEY` using the secret card in the Jev section near the top of Models & API keys. An existing [OpenRouter](https://openrouter.ai) account also works: enter `OPENROUTER_API_KEY`. Existing keys are selected automatically (OpenRouter when both exist); change the route in Settings → Safety.
+
+Jev adds model review to bot and friend messages, rechecks redacted content and helps approvals assess unclear commands. Necessary redacted text goes directly to the selected provider, charged to your account under its data policy. TypeSafe uses its official API; OpenRouter routes to Jev. Review can misjudge and adds delay. An unavailable selected provider retains the channel's existing failure handling; it never silently turns review off.
+
+You can turn the master switch off in Settings → Safety and explicitly confirm “Skip — I understand safety is weaker”. The host records `jev.mode=off`, the signing device and confirmation time. All Jev model review is then bypassed and bot/friend flows continue; local patterns, credential filters, permission approvals and tool authorization remain. Off avoids model delay and false positives while removing this protection, even when a key is present. The Agent cannot sign for you or disable review by editing configuration. Only your paired phone's signed choice counts; unpairing that signing device invalidates the off authorization.
+
+## 安全审核（Jev）的三种选择
+
+初始化时请先选一种审核方式；没填 key 也没选择时，`agentj onboarding` 会提示继续设置。推荐到 [TypeSafe](https://typesafe.ai) 注册账号、创建 key、充值少量金额，在「模型和 API Key」靠上的 Jev 区域用密钥卡填写 `TYPESAFE_API_KEY`。已有 [OpenRouter](https://openrouter.ai) 账号，也可填写 `OPENROUTER_API_KEY`。已有 key 会自动沿用（同时存在时沿用 OpenRouter），也能在 设置 → 安全 选择来源。
+
+Jev 会给客服、好友消息增加模型审核，也会复查脱敏内容、辅助审批判断；必要的脱敏文本直达所选服务商，费用由你的账号承担。TypeSafe 走官方接口，OpenRouter 走其中的 Jev 模型，两者受各自的数据政策约束。模型可能误判，也会增加延迟。选择的服务不可用时保留该通道的失败处理，不会自动变成关闭。
+
+你也可在 设置 → 安全 关闭总开关，明确确认「跳过，我知道安全性会弱一点」。主机会记录 `jev.mode=off`、签名设备与确认时间。关闭后所有 Jev 模型审核都跳过，客服和好友流程可继续；本地正则、凭据过滤、权限审批和工具授权仍保留。关闭可减少延迟与误拦，同时失去这层防护。即使有 key 也能关闭。Agent 不能代签或通过改配置自行关闭；只有主人在已配对手机上的签名选择才生效，签名设备被解绑后这份关闭授权失效。
+
+For configuration help, open a key card, never ask for the key in chat: `agentj secret request --name TYPESAFE_API_KEY --purpose "Jev safety review" --dest env:<service-env-file>#TYPESAFE_API_KEY`. Find the existing service env path through `agentj service status`; keep it host-local. Use OPENROUTER_API_KEY for OpenRouter. Do not call either provider as an installation test without the owner’s consent. Never choose off for the owner; direct them to the signed phone switch.

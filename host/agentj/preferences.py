@@ -367,7 +367,7 @@ def history(st,old):
     os.chmod(d,0o700)
     target=d/(str(time.time_ns())+'.json5');_write_private(target,old.encode());return target
 
-def commit_files(st,newraw,candidate):
+def commit_files(st,newraw,candidate,*,signed_key=None):
     """All durable writes precede in-memory activation. Restore both files on any failure."""
     ensure(); old=path().read_bytes(); last=runtime(st)
     oldgood=last.read_bytes() if last.exists() else None
@@ -384,6 +384,9 @@ def commit_files(st,newraw,candidate):
     for previous in sorted(snapshot.parent.glob("*.json5"))[:-20]:
         try:previous.unlink()
         except OSError:st.log("config_history_cleanup_failed")
+    if signed_key != "jev.mode" and get(validate(parse(old.decode())), "jev.mode") != get(candidate, "jev.mode"):
+        from . import approval_level
+        approval_level.drop_signer(st, "jev.mode")
     note_language(st,candidate)
     from . import session_choice  # P127: a committed session-mode change is the owner's recorded choice
     session_choice.note_commit(st,old.decode(),newraw,candidate)

@@ -645,6 +645,11 @@ body:not([data-view="chat"]) #set-actions .bulb{display:flex}
 #settings .rscmdmain small{color:var(--menu-muted);font-size:var(--ui-fs-small);line-height:var(--ui-leading)}
 #settings .rscmdgo{flex:none;min-height:var(--ui-btn-h);padding-inline:var(--ui-btn-px)}
 #settings .rscmdgo:disabled{opacity:.55;cursor:default}
+/* P408: 「在终端里打开」 next to 「执行」; on a phone both buttons share the line under the command */
+#settings .rscmdterm{flex:none;min-height:var(--ui-btn-h);padding-inline:var(--ui-btn-px)}
+@media (max-width:560px){ #settings .rscmd:has(.rscmdterm){flex-wrap:wrap} #settings .rscmd:has(.rscmdterm) .rscmdmain{flex-basis:100%} }
+#settings .setrow>.setacts{grid-column:1 / -1}
+#settings .setterm-last{color:var(--menu-text);font-weight:600}
 #settings .rscmdres{margin-top:var(--ui-space-control);display:flex;flex-direction:column;gap:var(--ui-space-control)}
 #settings .rscmdres>*{margin:0}
 #settings .rscmdhead{font:600 var(--ui-fs-small)/1.4 var(--font-mono);color:var(--menu-muted);overflow-wrap:anywhere}

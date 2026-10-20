@@ -679,6 +679,8 @@
       <p id="error-text" class="lead"></p>
       <div class="ajrow"><button type="button" id="retry" class="aj-btn aj-btn--primary aj-btn--block" data-i18n="error.retry">重试</button></div>
       <p class="small helpline" id="error-help-support" data-i18n="help.support">Agent J 还能回话时：直接告诉它「我要反馈一个问题」，它会用内置客服 agentj support 帮你报告。</p>
+      <p class="small helpline" id="error-help-online" data-i18n="p400.help">Agent J 不回话时，也能在网页上问在线客服，不用配对。</p>
+      <p class="helpmail"><a id="error-support" href="https://support.agentj.app/" target="_blank" rel="noopener">support.agentj.app</a></p>
       <p class="small helpline" id="error-help-mail" data-i18n="help.mail">完全连不上时，写信到 feedback@agentj.app，附上账号 ID、发生了什么和截图。</p>
       <p class="helpmail"><a href="mailto:feedback@agentj.app" rel="noopener">feedback@agentj.app</a></p>
     </section>
@@ -775,6 +777,8 @@
               <ul class="rscmdlist" id="rs-cmd-list" aria-labelledby="rs-cmds-h"></ul>
               <div class="rscmdres" id="rs-cmd-out" role="status" aria-live="polite" hidden></div>
             </div>
+            <div class="rssupport" id="rs-support-box"><p class="setnote" id="rs-support-note" data-i18n="p400.rescue">也可以在网页上问在线客服，不用配对。</p>
+            <p class="setlinks"><a id="rs-support" href="https://support.agentj.app/" target="_blank" rel="noopener" data-i18n="p400.link">在线客服</a></p></div>
           </section>
 
           <section class="setcard" id="set-s-tools" data-paired aria-labelledby="set-h-tools">
@@ -912,6 +916,14 @@
               <p class="setnote" data-i18n="set.riskNote">额外高危提醒默认是关着的。你可以在这儿开关；底层工具自身的权限规则一直生效。</p>
               <p class="setcmd"><code id="set-risk-cmd" data-cc="ext"></code><button type="button" class="setcopy" data-copy="set-risk-cmd" data-i18n-attr="aria-label=set.copy,title=set.copy" aria-label="复制命令" title="复制命令"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect class="ic-copy" x="8.5" y="8.5" width="11.5" height="11.5" rx="2.5"/><path class="ic-copy" d="M15.5 8.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7.5a2 2 0 0 0 2 2h2.5"/><path class="ic-done" d="M5 12.5l4.5 4.5L19 7.5"/></svg></button></p>
             </div>
+            <div class="setrow" data-paired id="set-jev-mode-row" hidden>
+              <span class="setlab" data-i18n="p409.title">安全审核（Jev）</span>
+              <button type="button" class="setswitch" id="set-jev-enabled" role="switch" aria-checked="true" data-i18n-attr="aria-label=p409.title" aria-label="安全审核（Jev）"></button>
+              <p class="setnote" id="set-jev-current"></p>
+              <select id="set-jev-source" class="aj-select" data-i18n-attr="aria-label=p409.source" aria-label="Jev 密钥来源"><option value="typesafe">TypeSafe</option><option value="openrouter">OpenRouter</option></select>
+              <p class="setnote" data-i18n="p409.note">Jev 会审核客服和好友消息、复查脱敏内容，也会帮审批识别拿不准的命令。打开可增加一道防护，但会有误判和延迟。关掉后消息不经过 Jev，效率更高、误拦更少，安全性会弱一点。本地凭据过滤、危险操作审批仍然保留。已有 OpenRouter key 就能用，也可单独填写 TypeSafe 官方 key；密钥请在「模型和 API Key」的密钥卡填写。</p>
+              <p class="setlinks"><a href="https://typesafe.ai" target="_blank" rel="noopener noreferrer" data-i18n="p409.signup">推荐 TypeSafe：注册、获取 key、充值少量金额</a></p>
+            </div>
             <div class="setrow" data-paired>
               <span class="setlab" data-i18n="set.jev">Jev 判断阈值</span>
               <div class="fontstep">
@@ -919,7 +931,7 @@
                 <output id="set-jev-val" aria-live="polite">0.70</output>
                 <button type="button" id="set-jev-plus" data-i18n-attr="aria-label=set.jevPlus,title=set.jevPlus" aria-label="调高（弹窗更多）" title="调高（弹窗更多）"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14M12 5v14"/></svg></button>
               </div>
-              <p class="setnote" data-i18n="set.jevNote">配置 Jev（Agent J 主机上的 OPENROUTER_API_KEY）后可以少弹审批卡：Agent J 看不清的命令会先问 Jev 是否与当前任务一致，概率不低于这个值就直接放行，并记进记录。调低弹窗更少，调高更谨慎（0.50–0.95，默认 0.70）。花钱、删除、对外发送、改凭据、改价这五类明确危险的动作不受影响，一律弹卡。</p>
+              <p class="setnote" data-i18n="set.jevNote">Jev 打开后，Agent J 看不清的命令会先问它是否与当前任务一致，概率不低于这个值就直接放行，并记进记录。调低弹窗更少，调高更谨慎（0.50–0.95，默认 0.70）。花钱、删除、对外发送、改凭据、改价这五类明确危险的动作不受影响，一律弹卡。</p>
               <p class="setcmd"><code id="set-jev-cmd" data-cc="ext"></code><button type="button" class="setcopy" data-copy="set-jev-cmd" data-i18n-attr="aria-label=set.copy,title=set.copy" aria-label="复制命令" title="复制命令"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect class="ic-copy" x="8.5" y="8.5" width="11.5" height="11.5" rx="2.5"/><path class="ic-copy" d="M15.5 8.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7.5a2 2 0 0 0 2 2h2.5"/><path class="ic-done" d="M5 12.5l4.5 4.5L19 7.5"/></svg></button></p>
             </div>
             <div class="setrow" data-paired>
@@ -954,6 +966,17 @@
               <p class="setnote" data-i18n="set.dockerNote">依附于隔离运行，只对隔离中的 Agent 生效。默认关闭；开启后它们可以使用 docker / podman，容器能挂载Agent J 主机上的任何文件。</p>
               <p class="setnote setscope" id="set-docker-off" hidden data-i18n="set.dockerOff">隔离运行已关闭，这一项暂时不生效。</p>
               <p class="setcmd"><code id="set-docker-cmd" data-cc="ext"></code><button type="button" class="setcopy" data-copy="set-docker-cmd" data-i18n-attr="aria-label=set.copy,title=set.copy" aria-label="复制命令" title="复制命令"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect class="ic-copy" x="8.5" y="8.5" width="11.5" height="11.5" rx="2.5"/><path class="ic-copy" d="M15.5 8.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7.5a2 2 0 0 0 2 2h2.5"/><path class="ic-done" d="M5 12.5l4.5 4.5L19 7.5"/></svg></button></p>
+            </div>
+            <!-- P408 (PROTOCOL §38): 网页终端 — only when the host block `terminal` exists and its platform has one. Off / not on the list:
+                 the command to run at the computer (the phone never switches it on). On + allowed: the entry button, the password mode in
+                 plain words, 「清除已记住的电脑密码」. js/termhook.js (the page itself, js/terminal.js, loads on the first open) -->
+            <div class="setrow setterm" data-paired id="set-term-row" hidden>
+              <span class="setlab" data-i18n="p408.row">网页终端</span>
+              <p class="setnote" id="set-term-state"></p>
+              <p class="setcmd" id="set-term-cmdline" hidden><code id="set-term-cmd" data-cc="ext"></code><button type="button" class="setcopy" data-copy="set-term-cmd" data-i18n-attr="aria-label=set.copy,title=set.copy" aria-label="复制命令" title="复制命令"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect class="ic-copy" x="8.5" y="8.5" width="11.5" height="11.5" rx="2.5"/><path class="ic-copy" d="M15.5 8.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7.5a2 2 0 0 0 2 2h2.5"/><path class="ic-done" d="M5 12.5l4.5 4.5L19 7.5"/></svg></button></p>
+              <div class="setacts" id="set-term-acts" hidden><button type="button" id="set-term-open" class="aj-btn aj-btn--primary" data-i18n="p408.open">打开网页终端</button><button type="button" id="set-term-forget" class="aj-btn" data-i18n="p408.forget">清除已记住的电脑密码</button></div>
+              <p class="setnote setterm-last" id="set-term-last" role="status" hidden></p>
+              <p class="setnote" id="set-term-note"></p>
             </div>
             <button type="button" id="menu-about" class="setnav"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-4.5"/></svg><span><b><span data-i18n="menu.about">这个网页版有多安全</span> <span id="badge" class="badge__chip setchip" data-i18n="badge.label">网页版</span></b><small data-i18n="set.aboutNote">加密、本页的版本号，以及怎么核对。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
           </section>
@@ -1016,7 +1039,7 @@
               <span class="setlab" data-i18n="set.help">帮助和反馈</span>
               <p class="setnote" data-i18n="set.helpNote">遇到问题，直接告诉 Agent J「我要反馈一个问题」。它会先给你看要发出去的内容，你同意了才发。</p>
               <p class="setnote" id="set-help-mail" data-i18n="help.mail">完全连不上时，写信到 feedback@agentj.app，附上账号 ID、发生了什么和截图。</p>
-              <p class="setlinks"><a href="https://agentj.app/docs/phone/" target="_blank" rel="noopener" data-i18n="set.helpDocs">手机怎么用</a><a href="mailto:feedback@agentj.app" rel="noopener" data-i18n="set.helpMail">写信给我们</a></p>
+              <p class="setlinks"><a href="https://agentj.app/docs/phone/" target="_blank" rel="noopener" data-i18n="set.helpDocs">手机怎么用</a><a href="mailto:feedback@agentj.app" rel="noopener" data-i18n="set.helpMail">写信给我们</a><a id="set-help-support" href="https://support.agentj.app/" target="_blank" rel="noopener" data-i18n="p400.link">在线客服</a></p>
             </div>
             <div class="setrow">
               <span class="setlab" data-i18n="set.legal">数据和条款</span>

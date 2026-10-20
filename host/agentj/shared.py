@@ -770,7 +770,7 @@ class SharedClaudeAgent(Agent):
                 self.risk_requests[(ident, digest)] = keys
                 return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "ask",
                     "permissionDecisionReason": "Agent J: " + danger.card_why(verdict, getattr(self.host, "lang", "zh"))}}
-        if name == "PermissionRequest" and provenance.untrusted_turn(self):
+        if name == "PermissionRequest" and provenance.untrusted_turn(self) and not provenance.delegated_turn(self):
             # B1: a group member's turn never reaches the owner's approval, nor a category grant from an owner turn
             self.host.st.log("ask_done", tool=event.get("tool_name"), decision="deny", reason="group_source")
             return {"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": {"behavior": "deny",

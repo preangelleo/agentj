@@ -1350,6 +1350,8 @@ def cmd_install(a) -> int:
         return 0
     print(f"工作流设计向导已装进 {root}（{', '.join(hs)}）/ workflow design wizard installed:")
     _say(rows)
+    from .. import jev
+    print(jev.instructions("en" if a.lang == "en" else "zh"))
     print("下一步 / next: 配对好手机后，在手机上对 Agent 说「帮我设计工作流」——大约十几分钟，一次只问一题。\n"
           "  After pairing, say \"help me design my workflows\" on the phone — about 15 minutes, one question at a time.\n"
           "  模板（agentj wizard templates / add-template）装好是休眠的，启用由你决定 / templates install dormant; you decide.")

@@ -48,6 +48,7 @@ _HEX16 = re.compile(r"[0-9a-f]{16}")
 
 # (id, {zh, en}, [(type, NAME)]) — type: oauth (status only) · sub (subscription / plan key) · key (pay-as-you-go)
 CATALOG = (
+    ("jev", {"zh": "Jev · 安全审核", "en": "Jev · Safety review"}, (("key", "TYPESAFE_API_KEY"), ("key", "OPENROUTER_API_KEY"))),
     ("anthropic", {"zh": "Anthropic · Claude", "en": "Anthropic · Claude"},
      (("oauth", "claude"), ("sub", "CLAUDE_CODE_OAUTH_TOKEN"), ("key", "ANTHROPIC_API_KEY"))),
     ("openai", {"zh": "OpenAI · Codex", "en": "OpenAI · Codex"}, (("oauth", "codex"), ("key", "OPENAI_API_KEY"))),
@@ -59,7 +60,6 @@ CATALOG = (
     ("deepseek", {"zh": "DeepSeek", "en": "DeepSeek"}, (("key", "DEEPSEEK_API_KEY"),)),
     ("zhipu", {"zh": "智谱 GLM", "en": "Zhipu GLM"}, (("key", "ZHIPU_API_KEY"),)),
     ("minimax", {"zh": "MiniMax", "en": "MiniMax"}, (("key", "MINIMAX_API_KEY"),)),
-    ("openrouter", {"zh": "OpenRouter", "en": "OpenRouter"}, (("key", "OPENROUTER_API_KEY"),)),
     ("agentsrelay", {"zh": "AgentsRelay", "en": "AgentsRelay"},
      (("key", "AGENTSRELAY_OPENAI_KEY"), ("key", "AGENTSRELAY_CLAUDE_KEY"))),
     ("google", {"zh": "Google Gemini", "en": "Google Gemini"}, (("key", "GEMINI_API_KEY"),)),
@@ -277,6 +277,9 @@ def scan(host, path: str | None = None, tid: str | None = None) -> dict:
         r = _row("key", name, env, used, srcs, live, tid)
         r.pop("type")
         third.append(r)
+    from . import jev
+    route = jev.resolve(st=host.st, prefs=getattr(host, "preferences", None), env={**live, **env})
+    base[0]["name"] = {"zh": "Jev · 安全审核 · " + (route.mode or "待选择"), "en": "Jev · Safety review · " + (route.mode or "Choose a route")}
     return {"base": base, "third": third[:THIRD_MAX], "src": kf.public(srcs)}
 
 

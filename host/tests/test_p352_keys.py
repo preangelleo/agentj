@@ -108,7 +108,8 @@ class Listing(Base):
         self.assertTrue(wire.is_rid(page["r"]) and len(page["id"]) == 32 and len(page["n"]) == 32)
         self.assertNotIn("fa", page, "no passkey on this device")
         base = {v["id"]: v for v in page["base"]}
-        self.assertEqual(list(base)[:2], ["anthropic", "openai"])
+        self.assertEqual(list(base)[:3], ["jev", "anthropic", "openai"])
+        self.assertEqual([r["name"] for r in base["jev"]["rows"]], ["TYPESAFE_API_KEY", "OPENROUTER_API_KEY"])
         self.assertEqual(len(base), 12)
         self.assertEqual(base["ark"]["name"], {"zh": "火山方舟", "en": "Volcano Ark"})
         a = base["anthropic"]["rows"]
@@ -133,9 +134,9 @@ class Listing(Base):
         self.host.agent_cfg = {"kind": "claude", "dir": str(self.d)}
         page = self.get()
         self.assertEqual(page["fa"], wire.b64u(self.a.id))
-        row = [r for r in page["base"][0]["rows"] if r["name"] == "ANTHROPIC_API_KEY"][0]
+        row = [r for r in next(v for v in page["base"] if v["id"] == "anthropic")["rows"] if r["name"] == "ANTHROPIC_API_KEY"][0]
         self.assertTrue(row.get("in_use"))
-        self.assertNotIn("in_use", [r for r in page["base"][0]["rows"] if r["name"] == "CLAUDE_CODE_OAUTH_TOKEN"][0])
+        self.assertNotIn("in_use", [r for r in next(v for v in page["base"] if v["id"] == "anthropic")["rows"] if r["name"] == "CLAUDE_CODE_OAUTH_TOKEN"][0])
 
     def test_missing_file_lists_nothing_set(self):
         self.envf.unlink()

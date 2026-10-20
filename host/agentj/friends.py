@@ -82,7 +82,7 @@ NEVER_TELL_EN = ("credentials, API keys, tokens", "passwords", "private keys",
                  "the owner's main conversation")
 
 DEFAULT_SETTINGS = {"on": True, "discoverable": True, "owner": "", "intro": "", "global_tok_day": 300000,
-                    "never_tell_extra": []}
+                    "never_tell_extra": [], "relay_per_minute": 30, "relay_claim_seconds": 1800, "relay_pending_seconds": 86400}
 
 
 def norm_id(ref: str) -> str:
@@ -167,6 +167,8 @@ class FriendStore:
         if key == "intro" and not (isinstance(value, str) and len(value) <= 140):
             return "bad_intro"
         if key == "global_tok_day" and not (isinstance(value, int) and not isinstance(value, bool) and 0 < value <= 10**10):
+            return "bad_value"
+        if key in ("relay_per_minute", "relay_claim_seconds", "relay_pending_seconds") and not (type(value) is int and 1 <= value <= (10000 if key == "relay_per_minute" else 2592000)):
             return "bad_value"
         if key == "never_tell_extra":
             if not (isinstance(value, list) and len(value) <= MAX_NEVER_TELL_EXTRA
@@ -780,6 +782,7 @@ class FriendStore:
             paused = _int(v.get("auto_rounds")) >= maxr.get(gid, 6)
             friends.append({"id": fid, "name": str(card.get("name") or ""), "owner": str(card.get("owner") or ""),
                             "intro": str(card.get("intro") or ""), "group": gid,
+                            "hold_for_owner": v.get("hold_for_owner") is True,
                             "state": "paused" if paused else "friend", "blocked": bool(v.get("blocked")),
                             "last": _int(v.get("last")), "unread": _int(v.get("unread"))})
         p = self._pending(now)

@@ -2162,6 +2162,33 @@ body[data-view="chat"] .share-notice{position:static;margin:0 var(--space-contro
 .lqr .lqr-tg,.lqr .lqr-later{display:block;margin:var(--sp-3) auto 0;min-height:44px;width:auto;padding:0 var(--sp-4);white-space:nowrap;
   color:var(--text-muted);font-weight:400;text-decoration:underline;text-underline-offset:3px}
 .lqr [hidden]{display:none}
+/* P411 (#172): the screen-help card — a QR code on white (like the sign-in card) or a whole screenshot (tap = full screen,
+   pinch / scroll there), the time left, an answer field when the caller wants text, full-width actions ≥ 56 px. Never stored. */
+.ajmodal.hlp{z-index:43}
+.hlp .elev-kicker{margin:0 0 var(--sp-1);font:500 calc(12px*var(--fz))/1.2 var(--font-title);letter-spacing:.06em;color:var(--accent,var(--text-muted))}
+.hlp .hlp-text{margin:var(--sp-2) 0 0;font-size:calc(15px*var(--fz));line-height:1.5;color:var(--text);overflow-wrap:anywhere}
+.hlp .hlp-frame{margin:var(--sp-3) auto 0;border-radius:16px;border:1px solid var(--border);background:#fff;display:grid;place-items:center;overflow:hidden}
+.hlp[data-kind="qr"] .hlp-frame{padding:12px;width:min(280px,100%);aspect-ratio:1}
+.hlp[data-kind="screen"] .hlp-frame{width:100%;max-height:min(46dvh,420px);cursor:zoom-in;background:var(--surface-2)}
+.hlp .hlp-img{display:block;max-width:100%;max-height:100%;object-fit:contain;-webkit-touch-callout:default}
+.hlp[data-kind="qr"] .hlp-img{width:100%;height:100%;image-rendering:pixelated}
+.hlp[data-kind="screen"] .hlp-img{width:100%;height:auto;max-height:min(46dvh,420px)}
+.hlp.zoom .hlp-frame{position:fixed;inset:0;z-index:2;margin:0;border:0;border-radius:0;max-height:none;width:auto;aspect-ratio:auto;
+  display:block;overflow:auto;background:var(--bg);cursor:zoom-out;touch-action:pan-x pan-y pinch-zoom}
+.hlp.zoom .hlp-img{max-width:none;max-height:none;width:auto;height:auto;min-width:100%;margin:auto}
+.hlp .elev-note,.hlp .elev-left{margin:var(--sp-2) 0 0;font-size:calc(13px*var(--fz));line-height:1.5;color:var(--text-muted)}
+.hlp .elev-left{text-align:center;font-weight:500;color:var(--text)}
+.hlp .elev-left.low{color:var(--danger)}
+.hlp .hlp-form{display:flex;flex-direction:column;gap:var(--sp-2);margin-top:var(--sp-3)}
+.hlp .hlp-label{font-size:calc(13px*var(--fz));color:var(--text-muted)}
+.hlp .hlp-input{min-height:52px;padding:0 var(--sp-3);border-radius:14px;border:1px solid var(--border);background:var(--surface-2);
+  color:var(--text);font-size:max(16px,calc(17px*var(--fz)));letter-spacing:.08em;width:100%;box-sizing:border-box}
+.hlp .hlp-form .aj-btn,.hlp .hlp-acts .aj-btn{width:100%;min-height:56px;margin-top:0;white-space:nowrap}
+.hlp .hlp-acts{display:flex;flex-direction:column;gap:var(--sp-2);margin-top:var(--sp-2)}
+.hlp .hlp-later{display:block;margin:var(--sp-3) auto 0;min-height:44px;width:auto;padding:0 var(--sp-4);white-space:nowrap;
+  color:var(--text-muted);font-weight:400;text-decoration:underline;text-underline-offset:3px}
+.hlp .hlp-more{text-align:center}
+.hlp [hidden]{display:none}
 /* P115 + P131: first-run checklist (setup.js) — its own page (never a dialog over the chat) + a thin closable banner above the
    chat; the input stays usable. Touch targets ≥ 56px on the page, ≥ 44px on the banner. */
 .setup-banner{position:relative;z-index:3;flex-shrink:0;display:flex;align-items:stretch;gap:0;margin:0;background:var(--surface);
@@ -2202,7 +2229,7 @@ body[data-view="chat"] .share-notice{position:static;margin:0 var(--space-contro
 .om[data-header="1"] .ommore{visibility:hidden;pointer-events:none}
 
 /* P138: interpreter commands require a password even with the admin helper. */
-.elev.interpreter #elev-title,.elev.interpreter #elev-note,.elev.interpreter .mono{color:var(--danger,#c62828)}
+.elev.interpreter #elev-title,.elev.interpreter #elev-note,.elev.interpreter .mono{color:var(--danger)}
 
 #cmd.sandbox{font-family:var(--font-body,sans-serif);white-space:pre-wrap;word-break:normal;overflow-wrap:break-word}
 
@@ -2617,6 +2644,7 @@ i.bd.still{animation:none}
 .state-view .helpline+.helpline{margin-top:var(--sp-2)}
 .state-view .helpmail{margin:var(--sp-1) 0 0}
 .state-view .helpmail a{display:inline-flex;align-items:center;min-height:44px;font-weight:600}
+.setcard>.rssupport{margin-top:var(--space-control)}
 /* ---- P179: rename this remote (long-press the source label) ---- */
 .om-first{-webkit-touch-callout:none}
 .gdlg .ren-input{width:100%;margin-top:var(--space-control);min-height:44px;padding:0 14px;border-radius:14px;border:1.5px solid currentColor;
@@ -3047,3 +3075,41 @@ body[data-status=waiting]:not([data-kind=question]){--xlink-lift:60%}
   font-weight:600;text-decoration-color:currentColor;text-decoration-thickness:1.5px}
 #rdWords a[href^="http"]:not(.mtap):not(.mcard a){color:var(--c-peachy-feeling);font-weight:600;text-decoration-color:currentColor;
   text-decoration-thickness:1.5px}
+/* P406 #173: the sudo card's 「收起」 (down arrow, top right — collapsing never declines) and the status strip above the composer:
+   a collapsed card / a running command (tap → its masked output, 「停止」) / a just-finished result. */
+.elev .box{position:relative}
+.elev .elev-hide{position:absolute;top:10px;right:10px;width:44px;height:44px;display:grid;place-items:center;padding:0;border:0;
+  border-radius:50%;background:transparent;color:var(--text-muted);cursor:pointer}
+.elev .elev-hide:hover,.elev .elev-hide:focus-visible{background:color-mix(in srgb,var(--text) 8%,transparent);color:var(--text)}
+.elev .elev-hide svg{width:24px;height:24px}
+.elev .elev-kicker{padding-right:44px}
+.elev-run{position:fixed;left:50%;bottom:calc(216px + env(safe-area-inset-bottom));z-index:9;transform:translateX(-50%);
+  box-sizing:border-box;width:min(560px,calc(100vw - 2 * var(--rg,16px)));display:flex;flex-direction:column;gap:6px;
+  padding:4px;border-radius:var(--dlg-radius-rect);background:var(--dlg-bg);color:var(--dlg-fg);
+  box-shadow:inset 3px 0 0 var(--windstorm),var(--dlg-shadow);color-scheme:dark;font-size:calc(13px*var(--fz,1));line-height:1.35}
+.elev-run[hidden],.elev-run [hidden]{display:none}
+.elev-run[data-state="ask"]{box-shadow:inset 3px 0 0 var(--c-peachy-feeling),var(--dlg-shadow)}
+.elev-run[data-state="done"][data-ok="1"]{box-shadow:inset 3px 0 0 var(--emerald-oasis),var(--dlg-shadow)}
+.elev-run[data-state="done"][data-ok="0"]{box-shadow:inset 3px 0 0 var(--c-danger,#c0392b),var(--dlg-shadow)}
+.elev-run .elev-run-row{display:flex;align-items:center;gap:4px}
+.elev-run .elev-run-main{flex:1;min-width:0;min-height:40px;display:flex;align-items:center;gap:8px;padding:0 8px 0 10px;border:0;
+  background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer;border-radius:calc(var(--dlg-radius-rect) - 2px)}
+.elev-run .elev-run-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums}
+.elev-run .elev-run-dot{flex:none;width:8px;height:8px;border-radius:50%;background:var(--windstorm)}
+.elev-run[data-state="running"] .elev-run-dot{animation:elevRunPulse 1.4s ease-in-out infinite}
+.elev-run[data-state="ask"] .elev-run-dot{background:var(--c-peachy-feeling)}
+.elev-run[data-state="done"][data-ok="1"] .elev-run-dot{background:var(--emerald-oasis)}
+.elev-run[data-state="done"][data-ok="0"] .elev-run-dot{background:var(--c-danger,#c0392b)}
+.elev-run .elev-run-ch{flex:none;display:grid;place-items:center;transform:rotate(180deg);transition:transform .15s}
+.elev-run.open .elev-run-ch{transform:none}
+.elev-run[data-state="ask"] .elev-run-ch,.elev-run[data-state="verify"] .elev-run-ch{transform:rotate(180deg)}
+.elev-run .elev-run-ch svg{width:18px;height:18px}
+.elev-run .elev-run-stop,.elev-run .elev-run-x{flex:none;min-height:36px;padding:0 12px;color:var(--dlg-fg);white-space:nowrap}
+.elev-run .elev-run-panel{padding:6px 6px 0}
+.elev-run .elev-run-out{margin:0;max-height:min(40vh,320px);overflow:auto;padding:8px 10px;border-radius:10px;
+  background:color-mix(in srgb,#000 35%,transparent);font:calc(12px*var(--fz,1))/1.45 var(--font-mono);white-space:pre-wrap;
+  overflow-wrap:anywhere}
+.elev-run .elev-run-note{margin:6px 4px 0;font-size:calc(11px*var(--fz,1));opacity:.75;overflow-wrap:anywhere}
+body[data-elevrun="1"] .elev-grant{bottom:calc(272px + env(safe-area-inset-bottom))}
+@keyframes elevRunPulse{50%{opacity:.35}}
+@media (prefers-reduced-motion:reduce){.elev-run[data-state="running"] .elev-run-dot{animation:none}}

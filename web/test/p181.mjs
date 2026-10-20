@@ -269,6 +269,8 @@ await C('clipboard-long-press', async () => {
     assert.equal(await ev(p, `${$('fDoc')}.files.length`), 0, 'the file picker did not open (no tap)');
     const big = 'x'.repeat(2500);
     await ev(p, `navigator.clipboard.writeText(${JSON.stringify(big)})`);
+    // P406 #168: with words in the box a paste joins them (up to one message's limit) — the .txt rule is for an empty box
+    await ev(p, `(() => { const i = ${$('input')}; i.value = ''; i.dispatchEvent(new Event('input')); })()`);
     await hold(p, '#tDoc', 750, touch);
     const atts = () => ev(p, `import('./js/relay.js').then((m) => m.debug().atts.map((a) => a.name))`);
     await waitFor(p, `import('./js/relay.js').then((m) => m.debug().atts.some((a) => /\\.txt$/.test(a.name)))`, 5000);

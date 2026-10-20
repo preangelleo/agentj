@@ -321,7 +321,7 @@ Ubuntu 24.04 还会检查 AppArmor 对用户命名空间的限制，并实际试
 AI 安装Agent J 主机端程序 `agentj`，装的是固定的一个版本：
 
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.24.1a2#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.25.0a1#subdirectory=host"
 agentj doctor
 ```
 
@@ -496,3 +496,11 @@ $env:OPENCODE_DISABLE_MODELS_FETCH = '1'
 在同一终端使用已安装的启动命令打开 OpenCode。它随后可使用本地模型缓存或内置目录，不会下载最新模型信息。Agent J 安装器和它管理的 OpenCode 启动会自行设置此变量。兜底已用固定版本的 Linux OpenCode 程序验证，尚未在 Windows 真机验证。
 
 Agent J 管理的 OpenCode 请求等待超过 30 秒时，会提示一次可能原因，即使启动过程仍在输出文字。安装器在 45 秒内拿不到 OpenCode 启动信息时，会停止并给出原因与修法。检查网络、AI 登录和工作目录后再试；出现启动缓慢提示不代表 AI 已连通。
+
+## 安全审核（Jev）的三种选择
+
+初始化时请先选一种审核方式；没填 key 也没选择时，`agentj onboarding` 会提示继续设置。推荐到 [TypeSafe](https://typesafe.ai) 注册账号、创建 key、充值少量金额，在「模型和 API Key」靠上的 Jev 区域用密钥卡填写 `TYPESAFE_API_KEY`。已有 [OpenRouter](https://openrouter.ai) 账号，也可填写 `OPENROUTER_API_KEY`。已有 key 会自动沿用（同时存在时沿用 OpenRouter），也能在 设置 → 安全 选择来源。
+
+Jev 会给客服、好友消息增加模型审核，也会复查脱敏内容、辅助审批判断；必要的脱敏文本直达所选服务商，费用由你的账号承担。TypeSafe 走官方接口，OpenRouter 走其中的 Jev 模型，两者受各自的数据政策约束。模型可能误判，也会增加延迟。选择的服务不可用时保留该通道的失败处理，不会自动变成关闭。
+
+你也可在 设置 → 安全 关闭总开关，明确确认「跳过，我知道安全性会弱一点」。主机会记录 `jev.mode=off`、签名设备与确认时间。关闭后所有 Jev 模型审核都跳过，客服和好友流程可继续；本地正则、凭据过滤、权限审批和工具授权仍保留。关闭可减少延迟与误拦，同时失去这层防护。即使有 key 也能关闭。Agent 不能代签或通过改配置自行关闭；只有主人在已配对手机上的签名选择才生效，签名设备被解绑后这份关闭授权失效。

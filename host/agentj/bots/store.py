@@ -24,7 +24,7 @@ class BotError(Exception):
 
 ID = re.compile(r'[a-f0-9]{32}')
 RESERVED = {'agentj','jarvis','admin','support','api','friends','bots','login','verify','www','root','help','billing','account','dashboard','terms','privacy','null','undefined'}
-LIMITS = {'visitor_messages':20, 'bot_messages':100, 'host_messages':100, 'host_tokens':100000, 'concurrency':4}
+LIMITS = {'visitor_messages':20, 'bot_messages':100, 'host_messages':100, 'host_tokens':100000, 'concurrency':4, 'max_chars':2000, 'per_minute':6}
 
 def slug(value):
     if not isinstance(value,str): raise BotError('invalid_name')
@@ -42,7 +42,7 @@ def canonical(value):
 
 def config(raw):
     if not isinstance(raw,dict):raise BotError('invalid_config')
-    allowed={'slug','title','description','prompt','background','language','timezone','hours','enabled','terms_accepted','subscription_risk_accepted','limits','provider','outbound_domains','embed_origins','template','paid_qa','telegram','own_model'}
+    allowed={'slug','title','description','prompt','background','language','timezone','hours','enabled','terms_accepted','subscription_risk_accepted','limits','provider','outbound_domains','embed_origins','template','paid_qa','telegram','own_model','privacy','memory','outbound','knowledge','safety','messages','widget','handoff','service'}
     if set(raw)-allowed:raise BotError('invalid_config')
     from .templates import TEMPLATES
     template=raw.get('template','customer_service')
@@ -63,7 +63,8 @@ def config(raw):
     limits={**LIMITS,**out['limits']} if isinstance(out['limits'],dict) else {}
     if set(limits)!=set(LIMITS):raise BotError('invalid_limits')
     for k,v in limits.items():
-        ceiling=16 if k=='concurrency' else LIMITS[k]
+        from .policy import LIMIT_MAX
+        ceiling=LIMIT_MAX[k]
         if type(v) is not int or not 1<=v<=ceiling:raise BotError('invalid_limits')
     out['limits']=limits
     hours=out['hours']
@@ -95,10 +96,10 @@ def config(raw):
         _valid(own['base_url'],own['model'],'chat','validation','own')
         if coding_plan(own['base_url']):raise BotError('coding_plan_bot')   # P348: bots need a pay-as-you-go key
         if any(pattern.search(own[k]) for k in ('base_url','model') for _,pattern,_ in privacy._SECRETS):raise BotError('config_contains_secret')
-        if type(own['daily_tokens']) is not int or not 1<=own['daily_tokens']<=100000:raise BotError('invalid_own_model')
+        if type(own['daily_tokens']) is not int or not 1<=own['daily_tokens']<=50000000:raise BotError('invalid_own_model')
     p=out['provider']
-    if not isinstance(p,dict) or p.get('source') not in ('main','profile','own') or set(p)-{'source','id'} or p['source']=='profile' and not re.fullmatch(r'[a-z0-9][a-z0-9_-]{0,39}',p.get('id','')):raise BotError('invalid_provider')
-    if p['source']=='own' and (p!={'source':'own'} or own is None):raise BotError('invalid_provider')
+    if not isinstance(p,dict) or p.get('source') not in ('main','profile','own') or set(p)-{'source','id','chain','docs_links','thinking'} or p['source']=='profile' and not re.fullmatch(r'[a-z0-9][a-z0-9_-]{0,39}',p.get('id','')):raise BotError('invalid_provider')
+    if p['source']=='own' and (set(p)-{'source','chain','docs_links','thinking'} or own is None):raise BotError('invalid_provider')
     domains=out['outbound_domains']
     if not isinstance(domains,list) or len(domains)>20 or any(not isinstance(x,str) or not re.fullmatch(r'[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?',x) or '.' not in x for x in domains):raise BotError('invalid_domains')
     from urllib.parse import urlsplit
@@ -109,7 +110,8 @@ def config(raw):
         except (ValueError,TypeError):raise BotError('invalid_origins') from None
         if not isinstance(origin,str) or any(c.isspace() or c=='*' for c in origin) or u.scheme!='https' or not u.hostname or u.username or u.password or u.path or u.query or u.fragment:raise BotError('invalid_origins')
     if out['enabled'] and not out['terms_accepted']:raise BotError('accept_terms')
-    return out
+    from .policy import sections
+    return sections(out)
 
 class Store:
     def __init__(self,root:Path,timezone='UTC',secret_root=None):
@@ -225,26 +227,29 @@ class Store:
         return json.loads(row[0])
     def start(self,bid,vid,rid,text):
         ident(rid)
-        if not isinstance(text,str) or not text or len(text)>2000:raise BotError('invalid_message')
         c=self.get(bid);day=self.day()
+        if not isinstance(text,str) or not text or len(text)>c['limits']['max_chars']:raise BotError('invalid_message')
+        from .policy import inbound
+        text=inbound(text)
         if not c['enabled']:raise BotError('offline')
         now=dt.datetime.fromtimestamp(self.now(),ZoneInfo(c['timezone']));hours=c['hours']
-        if hours is not None and (now.weekday() not in hours['days'] or not (hours['start']<=now.hour<hours['end'] if hours['start']<hours['end'] else now.hour>=hours['start'] or now.hour<hours['end'])):raise BotError('outside_hours')
+        outside=hours is not None and (now.weekday() not in hours['days'] or not (hours['start']<=now.hour<hours['end'] if hours['start']<hours['end'] else now.hour>=hours['start'] or now.hour<hours['end']))
+        if outside and c['service']['after_hours']=='refuse':raise BotError('outside_hours')
         with self.transaction():
             prior=self.db.execute('SELECT status,answer FROM turns WHERE bot=? AND visitor=? AND request=?',(bid,vid,rid)).fetchone()
             if prior:return dict(prior)
             if self.db.execute("SELECT 1 FROM turns WHERE bot=? AND visitor=? AND status='running'",(bid,vid)).fetchone():raise BotError('session_busy')
             if self.db.execute("SELECT count(*) FROM turns WHERE status='running'").fetchone()[0]>=c['limits']['concurrency']:raise BotError('busy')
-            checks=[('day=?',(day,),c['limits']['host_messages']),('day=? AND bot=?',(day,bid),c['limits']['bot_messages']),('day=? AND bot=? AND visitor=?',(day,bid,vid),c['limits']['visitor_messages']),('created>? AND bot=? AND visitor=?',(self.now()-60,bid,vid),6)]
+            checks=[('day=?',(day,),c['limits']['host_messages']),('day=? AND bot=?',(day,bid),c['limits']['bot_messages']),('day=? AND bot=? AND visitor=?',(day,bid,vid),c['limits']['visitor_messages']),('created>? AND bot=? AND visitor=?',(self.now()-60,bid,vid),c['limits']['per_minute'])]
             for where,args,maximum in checks:
-                if self.db.execute('SELECT count(*) FROM turns WHERE '+where,args).fetchone()[0]>=maximum:raise BotError('message_limit')
+                if self.db.execute('SELECT count(*) FROM turns WHERE '+where,args).fetchone()[0]>=maximum:raise BotError('minute_limit' if where.startswith('created>') else 'message_limit')
             self.touch(bid,vid)
             self.db.execute('INSERT INTO turns VALUES(?,?,?,?,?,?,?)',(bid,vid,rid,day,'running',None,self.now()))
             self.db.execute('INSERT INTO messages VALUES(?,?,?,?,?,?)',(bid,vid,rid,'user',text,self.now()))
         if c['template']=='paid_qa':
             used=self.db.execute("SELECT count(*) FROM turns WHERE bot=? AND visitor=? AND day=? AND status!='payment_required'",(bid,vid,day)).fetchone()[0]-1
             if used>=c['paid_qa']['free_questions']:return {'payment_required':True}
-        return None
+        return {'after_hours':c['service']['after_hours']} if outside else None
     def reserve(self,bid,vid,rid,maximum,kind,remaining=False):
         if type(maximum) is not int or maximum<1:raise BotError('invalid_reservation')
         day=self.day();call=secrets.token_hex(16)
@@ -276,20 +281,29 @@ class Store:
             if answer:self.db.execute('INSERT INTO messages VALUES(?,?,?,?,?,?)',(bid,vid,rid,'assistant',answer,self.now()))
         self.event(bid,vid,'turn',status)
     def history(self,bid,vid):
-        return [dict(r) for r in self.db.execute('SELECT role,text AS content FROM messages WHERE bot=? AND visitor=? AND created>? ORDER BY rowid DESC LIMIT 40',(bid,vid,self.now()-86400))][::-1]
+        c=self.get(bid)['memory']
+        from .policy import inbound
+        from .. import peer_guard
+        # P409: a visitor line the local inbound filter refused never reaches a model, not even as a later turn's history.
+        return [{'role':r['role'],'content':inbound(r['content'])} for r in self.db.execute('SELECT role,text AS content FROM messages WHERE bot=? AND visitor=? AND created>? ORDER BY rowid DESC LIMIT ?',(bid,vid,self.now()-c['history_hours']*3600,c['max_turns']))
+                if r['role']!='user' or peer_guard.inbound(r['content']).ok][::-1]
     def recover(self):
         # No model is retried; its reservation remains. Call once at service startup.
         self.db.execute("UPDATE turns SET status='interrupted' WHERE status='running'")
         self.db.execute("UPDATE approvals SET status='expired' WHERE status='pending'")
     def prune(self):
-        cutoff=self.now()-30*86400
+        from .contact import setup
+        setup(self)
         with self.transaction():
-            self.db.execute('DELETE FROM visitors WHERE (bot,id) IN (SELECT bot,visitor FROM visitor_seen WHERE seen<?)',(cutoff,))
-            self.db.execute('DELETE FROM visitor_seen WHERE seen<?',(cutoff,))
-            self.db.execute('DELETE FROM visitor_bindings WHERE seen<?',(cutoff,))
-            for table in ('messages','turns','calls','activity','handoffs'):self.db.execute('DELETE FROM '+table+' WHERE created<?',(cutoff,))
-            self.db.execute('DELETE FROM approvals WHERE expires<?',(cutoff,))
-            self.db.execute('DELETE FROM tool_calls WHERE day<?',(dt.datetime.fromtimestamp(cutoff,self.timezone).date().isoformat(),))
+            for bot in self.listing(include_removed=True):
+                bid=bot['id'];cutoff=self.now()-bot['privacy']['retention_days']*86400
+                self.db.execute('DELETE FROM visitors WHERE bot=? AND id IN (SELECT visitor FROM visitor_seen WHERE bot=? AND seen<?)',(bid,bid,cutoff))
+                for table in ('visitor_seen','visitor_bindings'):self.db.execute('DELETE FROM '+table+' WHERE bot=? AND seen<?',(bid,cutoff))
+                for table in ('messages','turns','calls','activity','handoffs'):self.db.execute('DELETE FROM '+table+' WHERE bot=? AND created<?',(bid,cutoff))
+                # A still-active conversation keeps its durable three-mail cap. Only an expired visitor resets it.
+                for table in ('bot_contacts','bot_mail_sends'):self.db.execute('DELETE FROM '+table+' WHERE bot=? AND visitor NOT IN (SELECT id FROM visitors WHERE bot=?)',(bid,bid))
+                self.db.execute('DELETE FROM approvals WHERE bot=? AND expires<?',(bid,cutoff))
+                self.db.execute('DELETE FROM tool_calls WHERE bot=? AND day<?',(bid,dt.datetime.fromtimestamp(cutoff,self.timezone).date().isoformat()))
     def event(self,bid,vid,kind,outcome):
         self.db.execute('INSERT INTO activity VALUES(?,?,?,?,?)',(bid,vid,kind,outcome,self.now()))
     def statistics(self,bid):

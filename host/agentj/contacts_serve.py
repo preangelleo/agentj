@@ -480,10 +480,11 @@ class ContactService:
         body = str(req.get("body") or "")[:BODY_HTML_MAX if fmt == "html" else 100_000]
         if not subject and not body.strip():
             return {"ok": False, "why": "empty"}
+        delegated = provenance.delegated_turn(getattr(self.host, "agent", None))
         cfg, pw, why = self.mail_state()
         if why:
             return {"ok": False, "why": why}
-        if provenance.untrusted_turn(getattr(self.host, "agent", None)):
+        if provenance.untrusted_turn(getattr(self.host, "agent", None)) and not provenance.delegated_turn(getattr(self.host, "agent", None)):
             return {"ok": False, "why": "group_source"}
         recips, missing = [], []
         for key, who in [("to", w) for w in to_raw] + [(k, w) for k in ("cc", "bcc") for w in lists[k]]:
@@ -499,7 +500,7 @@ class ContactService:
                     "detail": "没找到这些人，请告诉主人「没找到叫 X 的人」，并用 agentj contacts card 请主人保存 / "
                               "not in the address book: tell the owner and offer `agentj contacts card`"}
         from . import owner_route, privacy
-        mine = await asyncio.to_thread(owner_route.all_owner, self.st, [r["addr"] for r in recips])
+        mine = not delegated and await asyncio.to_thread(owner_route.all_owner, self.st, [r["addr"] for r in recips])
         files, names, total = [], [], 0
         m = media_mod.Media(self.st, (getattr(self.host, "agent_cfg", None) or {}).get("dir"))
         for p in req.get("files") or []:
@@ -544,7 +545,7 @@ class ContactService:
                      ((f"；其中 {keys} 个密钥不随邮件发出，改成手机上的密钥领取卡" if zh else
                        f"; {keys} key(s) stay out of the mail and come as secret pickup cards") if keys else "")
                      if mine else ("发给外人：邮箱、电话、密钥等会打码" if zh else "To others: e-mail, phone numbers and keys are masked"))
-        listed = mine or await asyncio.to_thread(self.allowlisted, [r["addr"] for r in recips])
+        listed = not delegated and (mine or await asyncio.to_thread(self.allowlisted, [r["addr"] for r in recips]))
         if listed:      # P296: only the owner's own / allowlisted addresses — no card; logged, not asked
             if self.host.stopped():
                 return {"ok": False, "why": "stopped", "detail": "已急停，邮件没有发出 / Agent J is stopped; the mail was not sent"}
@@ -616,7 +617,7 @@ class ContactService:
         from . import provenance
         if self.host.stopped():
             return {"result": "stopped"}
-        if provenance.untrusted_turn(getattr(self.host, "agent", None)):
+        if provenance.untrusted_turn(getattr(self.host, "agent", None)) and not provenance.delegated_turn(getattr(self.host, "agent", None)):
             return {"result": "group_source"}
         base = None
         own = req.get("owner") is True or (req.get("id") == C.OWNER_ID and C.owner(C.read(self.st)) is not None)

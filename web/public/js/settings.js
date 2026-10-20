@@ -28,6 +28,7 @@ import * as toolorder from './toolorder.js';
 import * as jcards from './jcards.js';   // P360: Settings → Cards (official cards default off + the owner's own)
 import * as rescue from './rescue.js';     // P393: fold ended 紧急修复 results when Settings opens again
 import * as cmdrun from './cmdrun.js';     // P361: 紧急修复 → Agent J 主机上的命令 (「执行」)
+import * as termhook from './termhook.js'; // P408: 安全 → 网页终端 (row only; the page loads on first open)
 import * as pagefind from './pagefind.js';   // P363 (#70): in-place find on a Settings sub-page
 import * as ntf from './notify.js';      // P365: Settings → 自动化消息 (`agentj notify`)
 import * as news from './news.js';         // P374: 账号和帮助 → 「Daily AI News」 (news_get / news_set → news_res)
@@ -63,6 +64,12 @@ const jevAt = () => {
 };
 const jevStr = (n) => (n / 20).toFixed(2);
 function renderJev() {
+  const mode = hostInfo?.jev?.mode || '';
+  el('set-jev-mode-row').hidden = !H.paired() || !signedKey('jev.mode');
+  tgl('set-jev-enabled', mode !== 'off');
+  el('set-jev-source').value = ['typesafe', 'openrouter'].includes(mode) ? mode : 'typesafe';
+  el('set-jev-source').disabled = mode === 'off';
+  el('set-jev-current').textContent = t('p409.current', { mode: mode === 'off' ? t('p409.off') : mode === 'typesafe' ? 'TypeSafe' : mode === 'openrouter' ? 'OpenRouter' : t('p409.choose') });
   const n = jevAt();
   el('set-jev-val').textContent = jevStr(n);
   el('set-jev-minus').disabled = n <= JEV_MIN;
@@ -293,19 +300,21 @@ async function faceIdStep(res) {
 }
 /** confirm → signed approval_set → ctl_res; ok = follow at once (the `preferences` broadcast confirms), else say why. */
 async function approvalSet(key, value) {
-  const full = key === 'approval.level' && value === 'full', goal = key === 'approval.goal_nocard';
+  const jev = key === 'jev.mode';
+  const full = (key === 'approval.level' && value === 'full') || (jev && value === 'off'), goal = key === 'approval.goal_nocard';
   const name = goal ? t('p336.goal') : t('p336.' + value);
-  const title = goal ? t(value ? 'p336.goalOnTitle' : 'p336.goalOffTitle') : t('p336.confirmTitle', { name });
-  const text = full ? t('p336.fullText') : goal ? t(value ? 'p336.goalOnText' : 'p336.goalOffText') : t('p336.note.' + value) + ' ' + t('p336.signNote');
-  const yes = goal ? t(value ? 'p336.turnOn' : 'p336.turnOff') : full ? t('p336.fullYes') : t('p336.switch');
-  if (!await confirmSheet(title, text, yes, full)) return;
+  const title = jev ? t(value === 'off' ? 'p409.offTitle' : 'p409.onTitle') : goal ? t(value ? 'p336.goalOnTitle' : 'p336.goalOffTitle') : t('p336.confirmTitle', { name });
+  const text = jev ? t('p409.note') : full ? t('p336.fullText') : goal ? t(value ? 'p336.goalOnText' : 'p336.goalOffText') : t('p336.note.' + value) + ' ' + t('p336.signNote');
+  const yes = jev ? t(value === 'off' ? 'p409.offYes' : 'p409.onYes') : goal ? t(value ? 'p336.turnOn' : 'p336.turnOff') : full ? t('p336.fullYes') : t('p336.switch');
+  if (!await confirmSheet(title, text, yes, full)) { if (jev) render(); return; }
   if (!isReady()) { say(t('set.offline')); return; }
   say(t('set.saving'), true);
   const m = await signedWriteFa('approval_set', { key, value }, { t: 'approval_set', key, value }, faceIdStep);
   if (m.why === 'cancel') { say(''); render(); return; }
   if (m.ok) {
     if (prefs) { const [a, b] = key.split('.'); prefs[a] = { ...(prefs[a] || {}), [b]: value }; }
-    if (eff()) hostInfo.approval = { ...hostInfo.approval, [key === 'approval.level' ? 'level' : 'goal_nocard']: value };
+    if (jev && hostInfo) hostInfo.jev = { ...(hostInfo.jev || {}), mode: value };
+    if (!jev && eff()) hostInfo.approval = { ...hostInfo.approval, [key === 'approval.level' ? 'level' : 'goal_nocard']: value };
     notify({ kind: 'success', shape: 'circle', text: t('set.saved') });
   } else {
     say(''); toast(m.why === 'passkey_failed' ? whyText(m.why) : t('p336.fail', { why: whyText(m.why) }), 4000);
@@ -403,6 +412,7 @@ export function render() {
   el('set-imsg-nav').hidden = !imsg.available();               // P274: only when the computer is a Mac
   el('set-cards-nav').hidden = !jcards.available();            // P360: a computer that answers jcard_*
   toolsort.render();                                            // P340
+  termhook.render(hostInfo);                                    // P408: before cmdrun — its 「在终端里打开」 reads the state
   cmdrun.render(hostInfo);                                      // P361: rows only for the host's whitelist
   news.render();                                                // P374
   if (sub === 'imessage') { if (imsg.available()) imsg.render(); else showSub('main'); }
@@ -648,6 +658,8 @@ export function configure(hooks) {
   el('set-hostupg').addEventListener('click', () => { if (H.upgradeHost) H.upgradeHost(); });   // P203: impact → card → /update @ix app.upgrade_host
   for (const b of document.querySelectorAll('[data-set-level]')) b.addEventListener('click', () => { if (b.dataset.setLevel !== curLevel()) approvalSet('approval.level', b.dataset.setLevel); });
   el('set-gnc').addEventListener('click', () => approvalSet('approval.goal_nocard', !curGnc()));
+  el('set-jev-enabled').addEventListener('click', () => approvalSet('jev.mode', hostInfo?.jev?.mode === 'off' ? el('set-jev-source').value : 'off'));
+  el('set-jev-source').addEventListener('change', () => approvalSet('jev.mode', el('set-jev-source').value));
   el('set-jev-minus').addEventListener('click', () => setJev(jevAt() - 1));
   el('set-jev-plus').addEventListener('click', () => setJev(jevAt() + 1));
   el('set-font-minus').addEventListener('click', () => setFontStep(fontAt - 1));

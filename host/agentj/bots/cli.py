@@ -18,6 +18,8 @@ def send(req):
     except (OSError,ValueError):return {'ok':False,'why':'host_unavailable'}
 
 def command(a):
+    if a.op=='schema':
+        print(Path(__file__).with_name('config.schema.json').read_text());return 0
     if a.op=='tool':
         # Dry run is owner-proposed too; authenticated owner sample, no visitor privilege.
         req={'op':'tool_test','id':a.bot,'name':a.tool,'args':json.loads(a.args)}
@@ -33,6 +35,7 @@ def add_parser(sub):
     p=sub.add_parser('bots',help='Manage customer-service bots through signed owner authorization / 经主人签名管理客服 bot')
     sp=p.add_subparsers(dest='op',required=True)
     sp.add_parser('list').set_defaults(fn=command)
+    sp.add_parser('schema',help='Bot configuration reference, no credentials / Bot 配置参考，不含凭据').set_defaults(fn=command)
     for op in ('detail','history','statistics','handoffs'):
         q=sp.add_parser(op);q.add_argument('bot');q.add_argument('--visitor') if op=='history' else None;q.set_defaults(fn=command)
     q=sp.add_parser('request');q.add_argument('--file',required=True);q.set_defaults(fn=command)

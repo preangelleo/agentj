@@ -220,8 +220,11 @@ class DoctorAndCli(unittest.TestCase):
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             self.assertEqual(onboarding.command(SimpleNamespace(json=True), self.st), 0)
+        from agentj import jev   # P409: the safety-review (Jev) state and its setup line ride along; not set up yet
         self.assertEqual(json.loads(out.getvalue()), {"seat": True, "computer": True, "phone": False, "welcomed": True,
-                                                      "next": "phone", "complete": False})
+                                                      "next": "phone", "complete": False,
+                                                      "jev": {"mode": None, "ready": False, "confirmed_at": None},
+                                                      "jev_setup": jev.instructions()})
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             onboarding.command(SimpleNamespace(json=False), self.st)

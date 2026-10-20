@@ -17,7 +17,7 @@ from .store import BotError,canonical,ident
 
 DOMAIN=b'agentjarvis/visitor-bot-v1\n'
 MAX=16384
-ALLOWED={'say','identity','human'}
+ALLOWED={'say','identity','human','email_contact','email_verify'}
 
 def public(k):return k.public_key().public_bytes(serialization.Encoding.Raw,serialization.PublicFormat.Raw)
 
@@ -76,7 +76,7 @@ class VisitorSession:
         obj=self.cipher.open(frame)
         kind=obj.get('t')
         if kind not in ALLOWED:raise BotError('visitor_kind_refused')
-        keys={'say':{'t','r','text'},'identity':{'t','r','identity'},'human':{'t','r'}}[kind]
+        keys={'say':{'t','r','text'},'identity':{'t','r','identity'},'human':{'t','r'},'email_contact':{'t','r','email'},'email_verify':{'t','r','code'}}[kind]
         if set(obj)!=keys:raise BotError('visitor_kind_refused')
         ident(obj['r']);return obj
 

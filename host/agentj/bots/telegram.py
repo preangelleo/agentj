@@ -95,7 +95,9 @@ class Channel:
     def identity(self,uid):
         return hashlib.sha256(('telegram:'+str(uid)).encode()).hexdigest()[:32]
     def refusal(self,error):
-        return UNAVAILABLE
+        from .policy import phrase
+        why=str(error) if isinstance(error,BotError) else ''
+        return phrase(self.store.get(self.bid),'outside_hours' if why=='outside_hours' else 'limit' if why in ('minute_limit','message_limit','token_limit') else 'unavailable')
     async def no_text(self,chat):
         return None
     async def deliver(self,chat,result):
@@ -112,8 +114,8 @@ class Channel:
         if chat.get('type')!='private' or type(chat.get('id')) is not int or type(user.get('id')) is not int or user.get('is_bot') or chat['id']!=user['id']:return
         text=message.get('text')
         if not isinstance(text,str) or not text:return await self.no_text(chat['id'])
-        if len(text)>2000:
-            await self.deliver(chat['id'],{'text':TOO_LONG});return
+        if len(text)>self.store.get(self.bid)['limits']['max_chars']:
+            await self.deliver(chat['id'],{'text':TOO_LONG if self.store.get(self.bid)['limits']['max_chars']==2000 else f"Message too long / 消息太长（{self.store.get(self.bid)['limits']['max_chars']}）"});return
         if not self.enabled():return
         try:
             # Admission can fail before Engine.reply, and an upstream call can stall.

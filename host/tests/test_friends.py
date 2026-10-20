@@ -82,7 +82,7 @@ class Store(Base):
     def test_settings_defaults_and_validation(self):
         s = self.s.settings()
         self.assertEqual(s, {"on": True, "discoverable": True, "owner": "", "intro": "", "global_tok_day": 300000,
-                             "never_tell_extra": []})
+                             "never_tell_extra": [], "relay_per_minute": 30, "relay_claim_seconds": 1800, "relay_pending_seconds": 86400})
         self.assertIsNone(self.s.set_setting("on", False))
         self.assertFalse(self.s.on)
         self.assertEqual(self.s.set_setting("intro", "x" * 141), "bad_intro")
@@ -169,7 +169,7 @@ class Store(Base):
     def test_list_view_shape(self):
         v = self.s.list_view()
         self.assertEqual(set(v), {"friends", "pending", "groups", "global"})
-        self.assertEqual(set(v["friends"][0]), {"id", "name", "owner", "intro", "group", "state", "blocked", "last", "unread"})
+        self.assertEqual(set(v["friends"][0]), {"id", "name", "owner", "intro", "group", "state", "blocked", "last", "unread", "hold_for_owner"})
         self.assertEqual(v["friends"][0]["name"], "小明")
         self.assertEqual([g["id"] for g in v["groups"]], ["default", "friend", "colleague"])
         self.assertEqual(v["global"], {"used": 0, "limit": 300000})

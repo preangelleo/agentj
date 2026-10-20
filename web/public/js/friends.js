@@ -78,7 +78,7 @@ function normList(m) {
       card: { name: str(card.name, 64), owner: str(card.owner, 32), intro: str(card.intro, 140) } },
     friends: (Array.isArray(m.friends) ? m.friends : []).filter((f) => f && typeof f.id === 'string').slice(0, 500).map((f) => ({
       id: f.id.slice(0, 64), name: str(f.name, 64) || shortId(f.id), owner: str(f.owner, 32), intro: str(f.intro, 140), group: str(f.group, 32),
-      state: str(f.state, 32), blocked: f.blocked === true, last: lastOf(f.last), unread: Number.isInteger(f.unread) ? f.unread : f.unread ? 1 : 0 })),
+      holdForOwner: f.hold_for_owner === true, sameOwner: ['active', 'pending'].includes(f.same_owner) ? f.same_owner : 'none', state: str(f.state, 32), blocked: f.blocked === true, last: lastOf(f.last), unread: Number.isInteger(f.unread) ? f.unread : f.unread ? 1 : 0 })),
     pending: (Array.isArray(m.pending) ? m.pending : []).filter((p) => p && typeof p.id === 'string').slice(0, 100).map((p) => ({
       id: p.id.slice(0, 64), state: str(p.state, 32), ts: Number(p.ts) || 0, dir: p.dir === 'in' ? 'in' : 'out' })),
     groups: (Array.isArray(m.groups) ? m.groups : []).map(normGroup).filter(Boolean).slice(0, 64),
@@ -224,7 +224,10 @@ function renderSide() {
   if (!data) return;
   if (!data.me.on) box.append(cmdNote('note fr-off', 'fr.off'));
   const ul = mk('ul', 'fr-list'); ul.id = 'fr-list';
-  for (const f of data.friends) {
+  let deviceHeading = false, friendHeading = false;
+  for (const f of [...data.friends].sort((a,b) => Number(b.sameOwner === 'active') - Number(a.sameOwner === 'active'))) {
+    if (f.sameOwner === 'active' && !deviceHeading) { ul.append(mk('li', 'small', t('fr.myDevices'))); deviceHeading = true; }
+    if (f.sameOwner !== 'active' && deviceHeading && !friendHeading) { ul.append(mk('li', 'small', t('fr.g.friend'))); friendHeading = true; }
     const li = mk('li');
     const b = mk('button', 'fr-item'); b.type = 'button'; b.dataset.id = f.id;
     if (V.friend === f.id && (V.view === 'chat' || V.view === 'detail')) b.setAttribute('aria-current', 'true');
@@ -333,15 +336,31 @@ function viewDetail(box) {
   const row = mk('label', 'fr-row');
   row.append(mk('span', 'fr-row__label', t('fr.detail.group')));
   const sel = groupSelect(f.group, 'fr-group');
+  const ownerOption = mk('option', '', t('fr.sameOwner')); ownerOption.value = 'same-owner'; sel.insertBefore(ownerOption, sel.options[3] || null);
+  if (f.sameOwner !== 'none') sel.value = 'same-owner';
   sel.addEventListener('change', async () => {
+    if (sel.value === 'same-owner' && !await confirmSheet(t('fr.sameOwner'), t('fr.sameOwner.confirm'), t('fr.sameOwner.start'))) { refresh(); return; }
     sel.disabled = true;
     const res = await write('fr_set', { friend: f.id, op: 'group', value: sel.value });
     sel.disabled = false;
-    toast(res.ok ? t('fr.detail.groupDone', { group: groupName(groupById(sel.value)) }) : t('fr.fail', { why: why(res.why) }), 3000);
+    toast(res.ok ? t('fr.detail.groupDone', { group: sel.value === 'same-owner' ? t('fr.sameOwner') : groupName(groupById(sel.value)) }) : t('fr.fail', { why: why(res.why) }), 3000);
     refresh();
   });
   row.append(sel);
   box.append(row);
+  if (f.sameOwner !== 'none') box.append(mk('p', 'small', t('fr.sameOwner.' + f.sameOwner)));
+  const hold = mk('label', 'fr-row');
+  const toggle = mk('input'); toggle.type = 'checkbox'; toggle.id = 'fr-hold-for-owner'; toggle.checked = f.holdForOwner;
+  toggle.addEventListener('change', async () => {
+    toggle.disabled = true;
+    const res = await write('fr_set', { friend: f.id, op: 'hold-for-owner', value: toggle.checked ? 'on' : 'off' });
+    if (!res.ok) toggle.checked = !toggle.checked;
+    toggle.disabled = false;
+    toast(res.ok ? t('fr.saved') : t('fr.fail', { why: why(res.why) }));
+    refresh();
+  });
+  hold.append(mk('span', 'fr-row__label', t('fr.hold.label')), toggle);
+  box.append(hold, mk('p', 'small', t('fr.hold.hint')));
   // usage
   box.append(mk('h2', 'fr-h', t('fr.u.title')));
   if (!usage) box.append(mk('p', 'small', t('fr.loading')));
@@ -753,7 +772,7 @@ function frOf(p) {
 }
 function pqOf(p) {
   const x = p.pq && typeof p.pq === 'object' ? p.pq : {};
-  return { friend: str(x.friend, 64), name: str(x.name, 64) || shortId(x.friend), text: str(x.text, 4000), draft: str(x.draft, 4000), reason: str(x.reason, 200) || str(p.why, 200) };
+  return { handover: x.handover === true, code: str(x.code, 6), challenge: str(x.challenge, 32), pairing: x.pairing === true, sameOwner: x.same_owner === true, friend: str(x.friend, 64), name: str(x.name, 64) || shortId(x.friend), text: str(x.text, 4000), draft: str(x.draft, 4000), reason: str(x.reason, 200) || str(p.why, 200) };
 }
 /** Fill #frAsk (and the sheet title) for a friend card. ctx: {open, sign, repaint(), dismiss()}. */
 export function renderAsk(p, ctx) {
@@ -799,6 +818,34 @@ export function renderAsk(p, ctx) {
     }
   } else {
     const x = pqOf(p);
+    if (x.pairing) {
+      el('sheetTitle').textContent = t('fr.sameOwner');
+      box.append(mk('p', 'fr-askcard__note', t('fr.sameOwner.request', { name: x.name })));
+      box.append(mk('p', 'fr-owner-code', x.code));
+      if (st === 'open' && ctx.sign) {
+        const acts = mk('div', 'fr-askbtns');
+        const decide = async (on) => {
+          pending(p, on ? 'allow' : 'deny', ctx);
+          const res = await write('fr_set', { friend: x.friend, op: on ? 'owner-confirm' : 'owner-reject', value: x.challenge });
+          if (!res.ok) { answerRefused(p); ctx.repaint(); }
+        };
+        acts.append(btn('', t('fr.ask.deny'), () => decide(false), 'frOwnerDeny'),
+          btn('aj-btn--primary', t('fr.sameOwner.confirmAction'), () => decide(true), 'frOwnerAllow'));
+        box.append(acts);
+      }
+      return;
+    }
+    if (x.handover) {
+      el('sheetTitle').textContent = t('fr.hold.title', { name: x.name });
+      box.append(mk('p', 'fr-askcard__note', x.text), mk('p', 'small', t('fr.hold.scope')));
+      if (st === 'open' && ctx.sign) {
+        const acts = mk('div', 'fr-askbtns');
+        acts.append(btn('', t('fr.ask.deny'), () => answerQuestion(p, 'deny', x, ctx), 'frHoldDeny'),
+          btn('aj-btn--primary', t('fr.hold.allow'), () => answerQuestion(p, 'allow', x, ctx), 'frHoldAllow'));
+        box.append(acts);
+      }
+      return;
+    }
     el('sheetTitle').textContent = t('fr.q.title', { name: x.name });
     const card = mk('div', 'fr-askcard');
     if (x.text) card.append(mk('p', 'fr-askcard__note', q(x.text)));
@@ -813,6 +860,8 @@ export function renderAsk(p, ctx) {
       acts.append(send, btn('', t('fr.q.skip'), () => answerQuestion(p, 'deny', x, ctx), 'frQSkip'),
         btn('', t('fr.q.tell'), () => answerQuestion(p, 'tell', x, ctx), 'frQTell'));
       acts.append(btn('', t('fr.q.auto'), () => answerFriend(p, true, 'colleague', ctx), 'frQAuto'));
+      if (x.sameOwner) acts.prepend(btn('', t('fr.q.main'), () => answerFriend(p, true, 'main', ctx), 'frQMain'));
+
       box.append(acts);
     }
     if (x.reason) box.append(mk('p', 'small fr-askfoot', t('fr.q.reason', { why: x.reason })));

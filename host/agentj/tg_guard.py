@@ -156,13 +156,14 @@ def jev_request_body(text: str, profile: str = "proxy") -> dict:
 def jev_call(text: str, key: str | None = None, url: str = JEV_URL,
              timeout: float = JEV_TIMEOUT_S, profile: str = "proxy") -> float:
     """p(malicious) from the real Jev. Text only. Raises JevUnavailable."""
-    if key is None:
-        import os
-        key = os.environ.get(JEV_KEY_NAME)
-    if not key:
-        raise JevUnavailable(f"{JEV_KEY_NAME} not set")
-    req = urllib.request.Request(url, data=json.dumps(jev_request_body(_safe_text(text), profile)).encode(),
-                                 headers={"Authorization": "Bearer " + key,
+    from . import jev
+    route = jev.resolve(env=None if key is None else {JEV_KEY_NAME: key})
+    if route.mode == "off": return 0.0
+    if not route.key: raise JevUnavailable("Jev key not set")
+    body = jev_request_body(_safe_text(text), profile)
+    body["model"] = route.model
+    req = urllib.request.Request(route.endpoint, data=json.dumps(body).encode(),
+                                 headers={"Authorization": "Bearer " + route.key,
                                           "Content-Type": "application/json"})
     class NoRedirect(urllib.request.HTTPRedirectHandler):
         def redirect_request(self, *args): return None
@@ -229,6 +230,9 @@ def evaluate(texts, jev=None, timeout: float | None = None, profile: str = "prox
     if notify and NOTIFY_ONLY.match(text):
         return Verdict("notify", "pass", notify=True)
     if jev is None:
+        from . import jev as mode
+        if mode.resolve().mode == "off":
+            return Verdict("rule", "pass", notify=notify)
         def jev(t):
             return jev_call(t, profile=profile)
     budget = JEV_TIMEOUT_S if timeout is None else timeout

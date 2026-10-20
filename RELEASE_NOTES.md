@@ -1,6 +1,6 @@
-# Agent J 0.24.1a2 release notes
+# Agent J 0.25.0a1 release notes
 
-Host 0.24.1a2 / install 0.26.2; phone-web scope.
+Host 0.25.0a1 / install 0.27.0; phone-web scope.
 Phone parity must pass --strict. Full Android/Telegram parity is incomplete.
 Full Android/Telegram parity is incomplete.
 No APK is included in this release. Android source is for review, not a released app.
@@ -8,27 +8,29 @@ No APK is included in this release. Android source is for review, not a released
 Publication status: local preparation only. Live site verification is DEFERRED until
 the public commit and tag are pushed, the site is deployed, and cold installation passes.
 
-On failure restore v0.24.1a1 host/site/phone. Patch release: A signed host/site/downloads then B phone web immediately after, in the same 23:00–08:00 JST window; outside-window publication requires recorded owner authorization. No relay, Dashboard or D1 change. The read-only fallback model after a failed turn (optional local model on Apple Silicon), reply buttons that stay tappable, Delivered before Stop this turn, attachment de-duplication, friend answer signatures and upgrade failure diagnostics ship together. Physical iPhone/Android and real Apple Silicon local-model acceptance are not claimed.
+On failure restore v0.24.1a2 host/site/phone and the captured Dashboard Worker version (the additive migrations 0032 and 0033 stay in place; they are never re-applied). Release order: C (additive app D1 migration 0032 and feedback D1 migration 0033, then the Dashboard Worker), then A signed host/site/downloads then B phone web immediately after. Normal publication windows remain C 05:00–07:00 JST and A/B 23:00–08:00 JST; outside-window publication requires recorded owner authorization. No relay change. The website support chat, screen help, the web terminal, the Jev safety choice, Bots business settings, friend handover safeguards and the composer / admin-password card fixes ship together. Physical iPhone/Android, WebKit on a real device and the free help-runner deployment are not claimed.
 ## Changes
 
-- When your own model fails a turn, a fallback model looks at the error, read-only, and tells you what to do next: free DeepSeek Flash first, then LongCat while its terms promise no retention or training, then a local model you chose to install. The reply starts with "This is a fallback model answer"; the task is not resent, and the cloud sees only a fixed error signal.
-- Apple Silicon Macs with 16 GB of memory or more can add the local fallback model: install and open Ollama, then run `agentj local-model install` (or add `--local-model` to the one-command install); `agentj local-model status` checks it and `agentj local-model off` switches it off.
-- Reply option buttons still work after you have sent something else in between; a tap goes out as a reply to that message, and the buttons only grey out once that question has been answered.
-- Right after a message is delivered, the button in the message box shows "Delivered" for two seconds before it becomes "Stop this turn", so a tap meant to cancel no longer stops the new turn; after a reconnect, queued messages catch up with their real state.
-- Pressing ⌘V after a screenshot has already been added to the attachments no longer adds it twice; the automatic screenshot switch now lives under Settings > Web app, and the note under the attachment opens it.
-- The last row on Settings and menu pages (such as "Download Agent J Brand Kit") keeps a proper gap above the bottom edge of the screen.
-- A failed automatic upgrade now records which step failed, the exit code and the reason (installer missing, permission denied, read-only disk or timeout) on the computer and in the automatic support report, and puts the previous version back by itself.
-- When a friend asks a question, "let my agent answer" or a refusal sometimes did not take effect and the card kept its waiting colour: the signature now matches what the computer checks; if it still does not go through, the card says "Your confirmation did not take effect. Please try again.", and the waiting colour clears the moment you tap.
-- A friend's question now expires after 2 minutes without an answer and you get a short notice, instead of waiting for a whole day.
-- 你的模型这一轮出错时，Agent J 会请兜底模型只读地看一眼出错原因，告诉你下一步怎么办：先用免费的 DeepSeek Flash，没有就用条款写明不留存、不训练的 LongCat，最后是你自己选装的本地小模型。回复开头标明「这是兜底模型的回答」，原任务不会自动重发，云端只拿到固定的错误信号。
-- Apple Silicon、内存 16GB 以上的 Mac 可以选装本地兜底模型：先装好并打开 Ollama，再运行 `agentj local-model install`（一键安装时加 `--local-model`）；`agentj local-model status` 查看，`agentj local-model off` 关掉。
-- 回复里的选项按钮，中间发过别的消息再回头点也照样能点，点出去的是对那一条的回复；只有那个问题已经被回答过才会变灰。
-- 刚发出的消息送达后，输入框的按钮先显示「已送达」，过两秒才变成「停止这一轮」，不会再一点「取消」就停掉新的一轮；断线重连后，排队中的消息状态会自动对齐。
-- 截图自动放进附件后再按一次 ⌘V 不会重复添加；「截图自动进附件」开关挪到设置的「网页版 App」里，附件下方可以直接点过去。
-- 设置和菜单页最底下一行（比如「下载 Agent J Brand Kit」）离屏幕底边留足空间，不再贴着圆角。
-- 自动升级失败时，本机记录和自动客服报告会写明是哪一步、退出码和原因（找不到安装工具、没有权限、只读磁盘、超时分别说明），失败后会自动装回上一版。
-- 好友来问问题时，选「让分身自己回」或拒绝有时不生效、卡片一直亮着等待色：现在签名和电脑核对一致；万一没生效，卡片会提示「确认没生效，请再点一次」；你一点确认或拒绝，等待色立刻消失。
-- 好友的问题 2 分钟没回就自动过期，并告诉你一声，不再挂一整天。
+- Every agentj.app page now has an Agent J support button at the bottom right, and support.agentj.app opens the same chat: free, with four levels (guest, verified email, signed in, seat holder); a verified email can reach a person, and seat holders can send screenshots. Messages sent too quickly wait in a queue and go out together as one.
+- Screen help: when automation stops at a QR code, a verification code or a human check, Agent J puts the code or a full screenshot on your paired phone; you scan, tap "Done" or type the answer, and the work goes on (`agentj qr push`, `agentj screen ask`).
+- Web terminal: your computer's command line on the phone under Settings → Safety → Web terminal. Off by default, switched on only at the computer with `agentj terminal enable`, Face ID on every open, closed again by itself.
+- Jev safety review is now your choice of TypeSafe, OpenRouter or off, switched under Settings → Safety; setup asks you to pick one.
+- Bots business settings: per-bot limits, backup models, conversation retention, source links in answers, editable fixed phrases, and an encrypted support window you can put on your own website with one line.
+- Handing tasks between friends is safer: the number of hops is limited, loops are stopped, the rate is capped, and a request nobody picks up expires with a notice; you can also hold one friend's requests until you approve them.
+- Pasted text goes by length: if the message box already has words, the paste goes in too, and only when together they pass the single-message limit does the pasted part become an attachment; into an empty box, text over 2,000 characters becomes an attachment.
+- After picking a / command or an @ name, one space follows and the cursor sits after it, and the message box keeps the focus; the keyboard only goes away once a message has really been sent.
+- The phone's Help and feedback, Emergency repair and offline page now open the support chat directly.
+- After you type the admin password, the password card closes as soon as the command starts and becomes a small "sudo running…" strip you can expand for output or stop; only a wrong password keeps the card. Every password and key card has a collapse button and Esc collapses it too; collapsing never declines.
+- 官网每一页右下角多了 Agent J 客服按钮，也可以直接打开 support.agentj.app 问：免费，分游客、验证邮箱、已登录、有席位四档；验证邮箱后可以转人工，有席位的用户还能发截图。发得太快时消息会排队，到点合成一条发出。
+- 屏幕求助：自动化卡在二维码、验证码或人机验证时，Agent J 把二维码或整屏截图发到你配对好的手机上，你扫码、点「完成」或回一句答案，它接着干（`agentj qr push`、`agentj screen ask`）。
+- 网页终端：在手机的「设置 → 安全 → 网页终端」里用电脑的命令行。默认关闭，只能在电脑上运行 `agentj terminal enable` 打开，每次打开都要 Face ID，用完自动关。
+- Jev 安全审核可以三选一：TypeSafe、OpenRouter 或关闭，在「设置 → 安全」里切换；安装时也会请你选一种。
+- Bots 商用设置：每个 Bot 的额度、备用模型、对话保留期、回答附上来源、可改的固定话术，以及一行代码挂到你自己网站上的加密客服窗口。
+- 好友之间转交任务更稳：自动限制转交次数、防止绕圈、限速，没人接的请求到时自动过期并通知你；你也可以让某位好友的请求先等你批准。
+- 粘贴文字按长度决定去处：输入框里已经有字就接着贴进去，合起来超过一条消息的上限才把这次粘贴的内容变成附件；输入框空着时，超过 2000 字直接变成附件。
+- 选了 / 命令或 @ 之后，后面自动补一个空格，光标停在后面，输入框不会失去焦点；只有消息真正发出去，键盘才收起。
+- 手机端设置的「帮助和反馈」、紧急修复和断线页都能直接打开在线客服。
+- 输入管理员密码后，命令一开始执行密码卡就收起，变成一条「sudo 执行中…」的小状态条，可以展开看输出或停止；只有密码错了卡片才会留着。每张密码卡和密钥卡都有收起按钮，按 Esc 也能收起，收起不等于拒绝。
 
 ## Material acceptance limits
 

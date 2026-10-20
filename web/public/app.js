@@ -42,9 +42,11 @@ import { registerMailForward } from './js/mailfwd.js';   // P189: file card → 
 import * as contacts from './js/contacts.js';   // P184 (§25): contact cards + 「转发到邮箱」
 import * as secretout from './js/secretout.js'; // F32: secret pickup cards (§18)
 import * as cmdrun from './js/cmdrun.js';     // P361: Settings 「执行」
+import * as termhook from './js/termhook.js'; // P408 (§38): Settings → 安全 → 网页终端 (the page itself loads on first open)
 import * as keys from './js/keys.js';         // P352: 「模型和 API Key」 key manager
 import * as longtask from './js/longtask.js';   // 0.18: opening card + 「我的 Agent 会什么」 (§20)
 import * as logincard from './js/logincard.js'; // P114: sign-in QR cards (ADR-A194)
+import * as helpcard from './js/helpcard.js'; // P411: screen-help cards (`agentj qr push` / `agentj screen ask`)
 import * as passkey from './js/faceid.js';     // F20: the same phone without a second pairing (§12)
 import * as renew from './js/renew.js';        // P122: …and after the browser deleted this page's storage (§12.1)
 import * as bots from './js/bots.js';
@@ -316,6 +318,8 @@ function onHostGone() {
   secretout.clear({ keepOpened: true });              // F32: and open pickup cards (a value on screen stays)
   longtask.clear();                                   // 0.18: the host re-sends open opening cards after ready
   logincard.clear();                                  // P114: the host re-sends open sign-in cards after ready
+  helpcard.clear();                                   // P411: … and open screen-help cards
+  termhook.gone();                                    // P408: the terminal rode that session — the host has closed it
 }
 session.configure({
   setStatus,
@@ -429,15 +433,17 @@ function onApp(m) {
     case 'jcard_open': fivePages.pushOpen(m.id, m.at); return;   // P360 (§34): `agentj card open` — go to that card / place
     case 'fr_changed': friends.changed(m); return;   // §17.7: something changed on the computer → the friends page re-reads
     case 'hook_changed': webhooks.changed(); return;   // P366: a webhook changed on the computer → the open Webhook page re-reads
-    case 'elev': elevate.add(m); return;             // F17 (§11)
+    case 'elev': if (m.kind === 'login') termhook.msg(m); else elevate.add(m); return;   // F17 (§11) · P408: the terminal's login card stays in its page
     case 'auth_rescue': authrescue.onPush(m); return;   // P258 (§31)
     case 'quota_resume': qresume.onPush(m); return;     // P314 (§32)
     case 'rescue': rescue.onRescue(m); return;          // P332 (§33): the rescue watchdog answers instead of Agent J
     case 'reset_done': rescue.onDone(m); return;        // P332: a repair's end that reached this remote without its request
     case 'reset_step': return;                          // (steps of another remote's repair: its own card shows them)
     case 'elev_progress': elevate.progress(m); return;
-    case 'elev_done': elevate.done(m); return;
-    case 'elev_refused': elevate.refused(m); return;   // ADR-A163: Face ID not accepted, the card stays open
+    case 'elev_out': elevate.output(m); return;        // P406 (§11.2): a running sudo command's masked output (the strip)
+    case 'elev_done': termhook.msg(m); elevate.done(m); return;
+    case 'elev_refused': termhook.msg(m); elevate.refused(m); return;   // ADR-A163: Face ID not accepted, the card stays open
+    case 'term_out': case 'term_confirm': case 'term_sudo': case 'term_close': termhook.msg(m); return;   // P408 (§38)
     case 'elev_grants': elevate.grants(m); return;     // #116 (§11.1): 10-minute same-class approvals + 「收回授权」
     case 'elev_auto': elevate.auto(m); return;         // #116: ran under that approval, no card
     case 'ct_card': contacts.card(m); return;         // P184 (§25): save / complete a contact (the owner's tap)
@@ -454,6 +460,9 @@ function onApp(m) {
     case 'login_qr_done': logincard.done(m); return;
     case 'login_qr_state': logincard.state(m); return;
     case 'login_qr_err': logincard.failed(m); return;
+    case 'help_card': helpcard.add(m); return;          // P411: a screen-help card (QR / screenshot, never chat history)
+    case 'help_end': helpcard.end(m); return;
+    case 'help_err': helpcard.failed(m); return;
     case 'pk_reg_res': pkSaved(m).catch(() => {}); return;
     case 'lt_card': longtask.add(m); return;          // 0.18 (§20): the one opening card
     case 'lt_done': longtask.done(m); return;
@@ -566,6 +575,7 @@ async function forgetLocal() {
   secretout.clear();
   longtask.clear();
   logincard.clear();
+  helpcard.clear();
   setupcard.clear();
   await wipeLocal();
 }
@@ -638,7 +648,8 @@ async function setupFaceId() {
 }
 secretout.configure({ setupFaceId });
 keys.configure({ setupFaceId });   // P352: 拷贝 / 删除 on a phone without a passkey offer the same F20 setup
-cmdrun.configure({ setupFaceId }); // P361: 「执行」 on a phone without a passkey — the same F20 offer
+cmdrun.configure({ setupFaceId, openTerminal: (cmd) => termhook.open(cmd) }); // P361: 「执行」 on a phone without a passkey — the same F20 offer · P408: 「在终端里打开」
+termhook.configure({ setupFaceId, openSettings: () => { if (!settings.isOpen()) settings.open(); }, openRescue: () => settings.openRescue(), changed: () => cmdrun.paint() });   // P408
 let phoneEnvironment = null, phoneHintAfterPair = false, phoneHintDismissed = false;
 function renderPhoneEnvironment(force = false) {
   const e = phoneEnvironment;

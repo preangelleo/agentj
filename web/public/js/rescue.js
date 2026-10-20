@@ -447,6 +447,8 @@ export function paint() {
   paintReset(); paintHelp(); paintAuth(); paintMode(); paintRestart();
   const block = el('set-s-rescue');
   if (block && !el('rs-detail-help')) block.append(helperLine('rs-detail-help'));
+  const sup = el('rs-support-box');   // P400: 在线客服 (index.html) stays the block's last line, under the cards painted here
+  if (block && sup && block.lastElementChild !== sup) block.append(sup);
 }
 
 // ---------------------------------------------------------------- entry points (app.js / relay.js / settings.js)

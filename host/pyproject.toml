@@ -15,6 +15,9 @@ dependencies = [
   "json5>=0.12,<1", # pure-data commented user configuration
   "pypdf>=5,<7",       # P82: host-local PDF knowledge extraction (no executable actions)
   "segno>=1.6",         # terminal QR
+  # P411: find / cut a QR code in a screenshot (`agentj qr push`) — one ~1 MB wheel, no numpy / OpenCV; only where a wheel
+  # exists (glibc ≥ 2.28 x86_64 / aarch64, macOS): elsewhere the picture goes uncut (qrcrop.available() is False)
+  "zxing-cpp>=2.3,<4; (sys_platform == 'linux' and platform_machine in 'x86_64 aarch64') or sys_platform == 'darwin'",
 ]
 classifiers = [
   "Programming Language :: Python :: 3",

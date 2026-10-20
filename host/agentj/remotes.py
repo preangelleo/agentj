@@ -128,7 +128,7 @@ class Remotes:
             await h._ctl_res(s, r, t, result == "ok", **({} if result == "ok" else {"why": result}), **extra)
         if result == "ok" and t != "dev_add":
             await self.push_list()
-            await h._send_ready(lambda _: h.preferences_msg())
+            await h._send_ready(lambda x: h.preferences_msg(x))
 
     @staticmethod
     def _target(t: str, obj: dict) -> dict | None:
@@ -253,7 +253,7 @@ class Remotes:
                           frm="notice")
         h.push_notify("security")
         await self.push_list()
-        await h._send_ready(lambda _: h.preferences_msg())
+        await h._send_ready(lambda x: h.preferences_msg(x))
         extra = {"device": pend.device, "name": pend.name}
         for k in ("evicted", "replaced"):
             if res.get(k):

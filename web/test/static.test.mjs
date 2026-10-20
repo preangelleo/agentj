@@ -28,7 +28,8 @@ const MODULES = ['api', 'blobs', 'boot', 'controls', 'md', 'push', 'relay', 'ses
   'unread', 'interactions.gen',   // P207: this device's unread mark (turn ids only) + the key table generated from interactions.json
   'version-notice', 'five-pages', 'workflow-compose',
   'toolorder', 'toolsort',   // P340: the composer buttons' order (aj.toolOrder, four ids) + its Settings row   // P240: the version check (its one metadata GET had a branch below but the file was never in this list)
-  'jcards'];   // P360: Agent J Cards (deck cards 6+, one card's template page, Settings → Cards)
+  'jcards',   // P360: Agent J Cards (deck cards 6+, one card's template page, Settings → Cards)
+  'termhook', 'terminal'];   // P408: the web terminal's Settings row + its lazily loaded page (same rules: no storage, no import())
 const OURS_FILES = ['app.js', ...MODULES.map((m) => `js/${m}.js`)];
 const OURS = OURS_FILES.map((r) => read(pub(r))).join('\n');
 const HTML = read(pub('index.html'));
@@ -61,6 +62,7 @@ test('version.json / version.js match the shipped files', () => {
 // CSP default-src 'self' + connect-src = the relays enforce that too), plus — in app.js only — the new web origin the
 // legacy host sends an unpaired visitor to. The relay URLs live only in the Worker CSP config (app.js pins relay HOSTS).
 // (F1: the menu's 「邀请与积分」 opens the account page at its invite block — the one link with a fragment)
+const SUPPORT_LINK = 'https://support.agentj.app/';   // P400: exact, no path / query / fragment
 const SITE_LINK = /^https:\/\/agentj\.app\/(?:hotkeys?|(?:[a-z-]+\/)*[a-z-]*(?:#invite|#credits|#brand-kit)?)$/;
 const MAIL_LINK = /^mailto:feedback@agentj\.app$/;   // F13 / P168: Settings → 帮助和反馈, the error / removed pages, the disconnected card (the human fallback mailbox)
 const NEW_WEB_ORIGIN = 'https://m.agentj.app';
@@ -103,6 +105,13 @@ test('no URLs to anywhere in shipped files except links to agentj.app pages', ()
         if (rel(f) === 'proto/wire.js' && m[0] === 'wss://relay.agentj.app') continue;
         // P190 (§27): a reverse pairing code is text a new page shows as a QR; the page never requests it
         if (rel(f) === 'proto/wire.js' && m[0] === 'https://m.agentj.app/#j=') continue;
+        // P407: copied one-line embed text; the owner phone never fetches this script.
+        if (rel(f) === 'js/bots.js' && m[0] === 'https://agentj.app/bots/embed.js') continue;
+        // P409: exact owner-clicked TypeSafe registration link; never a browser API request.
+        if (rel(f) === 'index.html' && m[0] === 'https://typesafe.ai') {
+          assert.match(s, /<a href="https:\/\/typesafe\.ai" target="_blank" rel="noopener noreferrer" data-i18n="p409.signup"/);
+          continue;
+        }
         // P82 §6: owner-clicked registration link; no automated request.
         // P109: an editable API-address default sent inside the encrypted owner config, never fetched by the browser.
         if (rel(f) === 'js/bots.js' && ['https://openrouter.ai/','https://openrouter.ai/api/v1'].includes(m[0])) continue;
@@ -121,6 +130,8 @@ test('no URLs to anywhere in shipped files except links to agentj.app pages', ()
         if (rel(f) === 'js/authrescue.js' && m[0] === 'https://chatgpt.com/#settings/Security') continue;
         // P332 (§33): the one line a helper at the Agent J host pastes (`curl -fsSL https://agentj.app/rescue | sh`) — command text, never fetched
         if (['i18n.js', 'index.html', 'js/rescue.js'].includes(rel(f)) && m[0] === 'https://agentj.app/rescue') continue;
+        // P400 item 3 (Leo 10-20 named the subdomain): owner-clicked 「在线客服」 links to our own support chat (301 → agentj.app/support/); never fetched
+        if (rel(f) === 'index.html' && m[0] === SUPPORT_LINK) continue;
         assert.match(m[0], SITE_LINK, `${rel(f)} contains URL ${m[0]}`);
       }
     }
@@ -128,6 +139,11 @@ test('no URLs to anywhere in shipped files except links to agentj.app pages', ()
     if (!vendored[rel(f)]) assert.doesNotMatch(s, /@import/i, `${rel(f)} @import`);   // (hljs's CSS grammar names it)
   }
   for (const m of HTML.matchAll(/<(\w+)\b[^>]*\s(src|href)="([^"]*)"/g)) {
+    if (m[1] === 'a' && m[3] === SUPPORT_LINK) continue;   // P400: the support chat subdomain, exact address only
+    if (m[1] === 'a' && m[3] === 'https://typesafe.ai') {
+      assert.match(HTML, /<a href="https:\/\/typesafe\.ai" target="_blank" rel="noopener noreferrer" data-i18n="p409.signup"/);
+      continue;
+    }
     if (m[1] === 'a') assert.match(m[3], MAIL_LINK.test(m[3]) ? MAIL_LINK : SITE_LINK, `index.html links to ${m[3]}`);
     else assert.match(m[3], /^(data:,|[a-z][\w./-]*(\?v=[0-9a-f]{8})?)$/, `index.html loads ${m[3]}`);
   }
@@ -259,7 +275,7 @@ test('app.js + js/*.js: only WebSocket egress, non-extractable keys, no plaintex
   assert.match(STORE, /export async function putSealed\(name, obj\) \{\n  const w = wipes;\n  const rec = await seal\(obj\);\n  if \(w === wipes\) await dbPut\(name, rec\);\n\}/, 'putSealed writes only ciphertext, and never after a wipe');
   // §10.14 / P33-X13: revoke wipes like unpair — drafts, history, the sealing key, and everything in memory
   assert.match(APP, /async function revoked\(why = 'revoked'\) \{\n  session\.closeSession\(\);\n[^}]*await forgetLocal\(\);/, 'revoked() wipes local records');   // 0.15.1: + why
-  assert.match(APP, /async function forgetLocal\(\) \{\n  forgetShare\(\);\n  relay\.forgetLocal\(\);\n  friends\.forget\(\);\n  snap\.S\.touched\.clear\(\); snap\.S\.handledWaiting = false;\n  blobs\.forgetAll\(\);\n  elevate\.clear\(\);\n  contacts\.clear\(\);\n  secretout\.clear\(\);\n  longtask\.clear\(\);\n  logincard\.clear\(\);\n  setupcard\.clear\(\);\n  await wipeLocal\(\);\n\}/);   // F17: open sudo / secret cards go too; 0.16: the friends page's data too; F32: pickup cards (+ a shown value); 0.18: opening cards; P184: contact cards + the forward dialog
+  assert.match(APP, /async function forgetLocal\(\) \{\n  forgetShare\(\);\n  relay\.forgetLocal\(\);\n  friends\.forget\(\);\n  snap\.S\.touched\.clear\(\); snap\.S\.handledWaiting = false;\n  blobs\.forgetAll\(\);\n  elevate\.clear\(\);\n  contacts\.clear\(\);\n  secretout\.clear\(\);\n  longtask\.clear\(\);\n  logincard\.clear\(\);\n  helpcard\.clear\(\);\n  setupcard\.clear\(\);\n  await wipeLocal\(\);\n\}/);   // F17: open sudo / secret cards go too; 0.16: the friends page's data too; F32: pickup cards (+ a shown value); 0.18: opening cards; P184: contact cards + the forward dialog; P411: screen-help cards
   assert.doesNotMatch(APP.slice(APP.indexOf('async function revoked('), APP.indexOf('async function revoked(')+700), /saveDraft/, 'revocation never saves the draft');
   assert.match(STORE, /generateKey\(\{ name: 'AES-GCM', length: 256 \}, false, \['encrypt', 'decrypt'\]\)/, 'sealing key not extractable');
   assert.match(STORE, /for \(const k of \['draft', 'ihist', 'outbox', 'srch', 'local'\]\)/, 'unpair / re-pair wipes drafts, history, the offline queue, the search pages and the sealing key');

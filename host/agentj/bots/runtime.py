@@ -26,6 +26,7 @@ LEGACY_RECONNECT=240
 class Runtime:
     def __init__(self,manager):
         self.manager=manager;self.host=manager.host;self.seated=True;self.tasks={};self.active={};self.stopping=False;self.epochs={};self.synced={};self.pruned=0;self.telegram_tasks={};self.telegram_epochs={};self.telegram_targets={}
+        self.knowledge_tasks={}
         self.owner_guest=None   # P297: GuestChannel on the owner's own Telegram bot, or None
     def seat_ok(self):
         f=getattr(self.host,'seat_refusal',None)
@@ -66,11 +67,19 @@ class Runtime:
                         if self.synced.get(bid,(0,0))[0]!=epoch or time.monotonic()-self.synced.get(bid,(0,0))[1]>=60:
                             try:await self.register(bid);self.synced[bid]=(epoch,time.monotonic())
                             except Exception:self.host.st.log('bots',outcome='registration_unavailable')
+                for bid in list(self.knowledge_tasks):
+                    if bid not in wanted:
+                        self.knowledge_tasks[bid].cancel();await asyncio.gather(self.knowledge_tasks.pop(bid),return_exceptions=True)
                 for bid in wanted:
+                    if bid not in self.knowledge_tasks or self.knowledge_tasks[bid].done():
+                        from .knowledge import Knowledge
+                        self.knowledge_tasks[bid]=asyncio.create_task(Knowledge(self.manager.state(),bid).resync())
                     if bid not in self.tasks:
                         self.epochs[bid]=self.manager.state().lifecycle(bid)['epoch'];self.tasks[bid]=asyncio.create_task(self.serve_bot(bid))
                 await asyncio.sleep(2)
         finally:
+            for task in self.knowledge_tasks.values():task.cancel()
+            await asyncio.gather(*self.knowledge_tasks.values(),return_exceptions=True)
             if self.owner_guest is not None:await self.owner_guest.close();self.owner_guest=None
             for task in self.telegram_tasks.values():task.cancel()
             await asyncio.gather(*self.telegram_tasks.values(),return_exceptions=True);self.telegram_tasks.clear();self.telegram_targets.clear()
@@ -95,7 +104,7 @@ class Runtime:
     async def register(self,bid):
         store=self.manager.state();c=store.get(bid);now=int(time.time());life=store.lifecycle(bid);epoch=life['epoch']
         manifest={'bot':bid,'host':wire.b64u(public(self.host.sk)),'epoch':epoch,'expires':now+300,'slug':c['slug'],'title':c['title'],
-                  'description':c['description'],'language':c['language'],'enabled':c['enabled'],'status':'removed' if life['removed'] else 'enabled' if c['enabled'] else 'paused','embed_origins':c['embed_origins']}
+                  'description':c['description'],'language':c['language'],'enabled':c['enabled'],'status':'removed' if life['removed'] else 'enabled' if c['enabled'] else 'paused','embed_origins':c['embed_origins'],'widget':c['widget']}
         signature=wire.b64u(self.host.sk.sign(b'agentjarvis/bot-manifest-v1\n'+canonical(manifest).encode()))
         inner={'v':1,'t':'bots_register','channel':self.host.channel,'ts':now,'seq':time.time_ns()//1000000,'manifest':manifest,'manifest_sig':signature}
         code,value=await asyncio.to_thread(cloud.post_json,cloud.api_url(self.host.st)+'/v1/host/bots/register',cloud.envelope('agentjarvis-host-bots-register-v1',inner,self.host.sk))
@@ -140,7 +149,21 @@ class Runtime:
                             store=self.manager.state();store.authenticate(bid,session.visitor,cap)
                             if obj['t']=='say':result=await self.engine().reply(bid,session.visitor,cap,obj['r'],obj['text'])
                             elif obj['t']=='identity':store.set_identity(bid,session.visitor,obj['identity']);result={'status':'identity_saved'}
-                            else:await self.manager.handoff(bid,session.visitor,obj['r']);result={'status':'human_requested','text':'A human has been notified. / 已通知人工。'}
+                            elif obj['t'] in ('email_contact','email_verify'):
+                                from .contact import contact,verify
+                                if obj['t']=='email_contact':
+                                    contact(store,bid,session.visitor,obj['email'])
+                                    await self.manager.handoff(bid,session.visitor,obj['r'])
+                                else:verify(store,bid,session.visitor,obj['code'])
+                                result={'status':'contact_saved','text':'Contact saved; the owner must approve a verification email. / 联系方式已保存，验证邮件须主人批准。' if obj['t']=='email_contact' else 'Email verified / 邮箱已验证'}
+                            else:
+                                from .policy import phrase
+                                await self.manager.handoff(bid,session.visitor,obj['r']);result={'status':'human_requested','text':phrase(store.get(bid),'handoff_sent')}
+                        except BotError as error:
+                            from .policy import phrase
+                            why=str(error);c=self.manager.state().get(bid)
+                            result={'status':'refused','text':phrase(c,'outside_hours' if why=='outside_hours' else 'limit' if why in ('minute_limit','message_limit','token_limit') else 'unavailable')}
+                            if why in ('minute_limit','busy','session_busy'):result.update(status='queued',retry_after=60 if why=='minute_limit' else 1)
                         except Exception:result={'status':'refused','text':UNAVAILABLE}
                         with contextlib.suppress(Exception):await send(cid,session.cipher.seal({'t':'reply','r':obj.get('r','') if 'obj' in locals() else '',**result}))
                     try:
@@ -157,6 +180,9 @@ class Runtime:
                                     vid,cap=self.manager.state().admit_visitor(bid,session.visitor);session.visitor=vid
                                     sessions[cid]=(session,cap);seen[cid]=time.monotonic();self.active[(bid,vid)]=(cid,session,send)
                                     await send(cid,canonical(answer).encode())
+                                    from .policy import phrase
+                                    c=self.manager.state().get(bid)
+                                    await send(cid,session.cipher.seal({'t':'config','limits':c['limits'],'widget':c['widget'],'welcome':c['widget']['welcome'] or phrase(c,'welcome'),'link_domains':c['outbound']['link_domains'],'handoff_email':c['handoff']['email_enabled']}))
                                 elif op==1 and cid in sessions:
                                     session,cap=sessions[cid]
                                     try:obj=session.decode(raw[5:])

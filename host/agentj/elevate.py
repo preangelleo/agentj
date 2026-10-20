@@ -62,8 +62,8 @@ from . import diskq, passkey, wire
 
 SIG_CONTEXT = "agentjarvis-elevate-v1"
 SEAL_CONTEXT = "agentjarvis-seal-v1"
-KINDS = ("sudo", "secret")
-TTL = {"sudo": 120, "secret": 600}
+KINDS = ("sudo", "secret", "login")   # P408: `login` = the computer password for the web terminal (terminal.py), host-internal
+TTL = {"sudo": 120, "secret": 600, "login": 120}
 TRIES = 3                       # wrong sudo passwords per card before it ends
 LOCK_AFTER = 3                  # consecutive wrong sudo passwords (any card) before the lock
 LOCK_BASE, LOCK_MAX = 60, 3600
@@ -72,13 +72,15 @@ MAX_OPEN = 4
 MAX_VALUE = 8192                # bytes of a password / secret
 MAX_OUT = 256 * 1024            # bytes of stdout / stderr returned to the Agent (each)
 PROMPT_WAIT = 5.0               # s to wait for sudo's own prompt before closing its stdin unwritten
-MAX_FRAME = 512 * 1024          # one request line from the CLI (a `secret send` file ≤ 256 KiB travels base64 in it)
+MAX_FRAME = 2 * 1024 * 1024     # one request line from the CLI (P411: a screen-help picture ≤ 1.4 MB travels base64 in it)
 CMD_TIMEOUT, CMD_TIMEOUT_MAX = 600, 3600
 SOCK_NAME = "elevate.sock"
 ENV = "AGENTJ_ELEVATE_SOCK"
 PHONE_TYPES = ("elev_answer", "secret_out_open", "secret_out_decline")   # the last two: F32 (secret_out.py)
 PHONE_TYPES += ("elev_revoke",)   # #116: 「收回授权」 (elevate_grant.py)
+PHONE_TYPES += ("elev_stop", "elev_watch")   # P406 #173 (§11.2): Stop / show the output on the running-command strip (signed)
 PHONE_TYPES += ("login_qr_check", "login_qr_cancel", "login_qr_tg", "login_qr_refresh")   # P114: browser_login.py
+PHONE_TYPES += ("help_done", "help_text", "help_cancel")   # P411: screen-help cards (screenhelp.py)
 PHONE_TYPES += ("ct_list", "ct_save", "ct_card_answer", "mail_fwd")   # P184: contacts_serve.py (address book, forward to e-mail)
 PHONE_TYPES += ("ct_rm", "ct_export", "ct_import")   # P207: contacts_serve.py (delete one, export vcf/csv, import a file)
 RESULTS_NAME = "secret-results.json"
@@ -112,9 +114,12 @@ def _h(s: str) -> str:
 
 
 def shown_fields(card: dict) -> list[str]:
-    """The texts the phone displays, in a fixed order. sudo: cmd, why, effect. secret: name, purpose, dest, verify."""
+    """The texts the phone displays, in a fixed order. sudo: cmd, why, effect. secret: name, purpose, dest, verify.
+    login (P408): the `r` of the pending `term_open` it belongs to (the page shows its own fixed words for this card)."""
     if card["kind"] == "sudo":
         return [card["cmd"], card["why"], card.get("effect") or ""]
+    if card["kind"] == "login":
+        return [card["term"]]
     return [card["name"], card["purpose"], card["dest"], card.get("verify") or ""]
 
 
@@ -303,11 +308,30 @@ def parse_dest(dest: str, name: str, cwd: str | None, state_root: pathlib.Path) 
             "show": (f"{target} ({key}=…)" if mode == "env" else str(target))}
 
 
+# P408 (H4): the computer's own login / sudo password is asked for only by the host's `login` card (the web terminal) or an
+# `agentj sudo` card — never by an Agent's secret card, where it would be written to a file the Agent chose. Narrow on
+# purpose: a service's password (SMTP_PASSWORD, DB_PASSWORD, a mail app password) is still an ordinary secret.
+_SYS_PW_NAME = re.compile(r"^(?:SUDO|ROOT|COMPUTER|SYSTEM|LOGIN|MAC|LINUX)(?:_LOGIN|_USER)?_?(?:PASS|PASSWORD|PW|PASSWD)$|"
+                          r"^LOGIN_(?:PASS|PASSWORD|PW)$", re.I)   # R3 (M-3): the WHOLE name (MYSQL_ROOT_PASSWORD is a service's)
+_SYS_PW_TEXT = re.compile(r"(?:电脑|本机|这台(?:电脑|机器|主机)?|sudo|系统登录)\s*的?\s*(?:登录|开机|用户)?\s*密码|"
+                          r"\b(?:computer|sudo)(?:'s)?\s+password\b|\b(?:computer|mac|linux|system)(?:'s)?\s+login\s+password\b", re.I)
+# R3: no bare 管理员 / root (a router's admin); R4: no bare "login password" (Gmail / a NAS) and no USER_PASSWORD (an app's user)
+
+
+def system_password_ask(name: str, purpose: str) -> bool:
+    """P408 (H4): does this secret request look like the computer's login / sudo password?"""
+    return bool(_SYS_PW_NAME.search(name or "") or _SYS_PW_TEXT.search(purpose or ""))
+
+
 def norm_secret(req: dict, state_root: pathlib.Path) -> dict:
     name = req.get("name")
     if not isinstance(name, str) or not NAME_RE.fullmatch(name):
         raise Refused("shape", "name: a variable name like ELEVENLABS_API_KEY")
     purpose = _text(req.get("purpose"), 300, required=True, field="purpose")
+    if system_password_ask(name, purpose):
+        raise Refused("login_password", "这台电脑的登录 / 管理员密码不能用密钥卡要：管理员命令用 `agentj sudo`。/ The computer's "
+                                        "login or admin password is never asked for with a secret card; use `agentj sudo` "
+                                        "for an admin command.")
     cwd = req.get("cwd") if isinstance(req.get("cwd"), str) else None
     d = parse_dest(req.get("dest"), name, cwd, state_root)
     vu, vh, vc = req.get("verify_url") or "", req.get("verify_header") or "", req.get("verify_cmd") or ""
@@ -376,10 +400,12 @@ def _cap(b: bytes) -> tuple[str, bool]:
     return b[:MAX_OUT].decode("utf-8", "replace"), len(b) > MAX_OUT
 
 
-def collect_command(p, timeout: float, cancel=None, input_data=None, gate: bytes | None = None) -> tuple[bytes, bytes, bool, bool]:
+def collect_command(p, timeout: float, cancel=None, input_data=None, gate: bytes | None = None,
+                    watch=None) -> tuple[bytes, bytes, bool, bool]:
     """Drain bounded output off-loop; TERM/KILL and pipe drain have finite grace periods.
 
-    Only byte counts/liveness may reach phones; command output remains on the CLI path.
+    Only byte counts/liveness may reach phones from here; `watch` (P406, elevate_live.Live) sees every chunk read and a tick
+    per loop — it masks what goes to the phone's status strip (§11.2). The full output stays on the CLI path.
     `gate` (sudo's random prompt marker): `input_data` is written only after the marker shows on stderr before any stdout
     byte. No marker (sudo did not ask: NOPASSWD / !authenticate) means stdin is closed unwritten once the command prints or
     PROMPT_WAIT passes, so the password can never become the command's own input.
@@ -420,6 +446,8 @@ def collect_command(p, timeout: float, cancel=None, input_data=None, gate: bytes
                     os.killpg(p.pid, 15 if stage == 0 else 9)
                 stage += 1
                 deadline = now + .5
+            if watch is not None:
+                watch.tick(p.pid)
             for key, _ in sel.select(.05):
                 if key.data == 2:
                     try:
@@ -443,6 +471,8 @@ def collect_command(p, timeout: float, cancel=None, input_data=None, gate: bytes
                 if not data:
                     sel.unregister(key.fileobj)
                     continue
+                if watch is not None:
+                    watch.data(key.data, data)
                 if not armed:
                     if key.data == 0:
                         armed = True               # the command already runs (sudo did not ask): close, never write
@@ -465,7 +495,8 @@ def collect_command(p, timeout: float, cancel=None, input_data=None, gate: bytes
     return bytes(buffers[0]), bytes(buffers[1]), timed_out, truncated
 
 
-def run_sudo(argv: list[str], password: bytearray, cwd: str, timeout: int, sudo: str | None = None, cancel=None) -> dict:
+def run_sudo(argv: list[str], password: bytearray, cwd: str, timeout: int, sudo: str | None = None, cancel=None,
+             watch=None) -> dict:
     """`sudo -S -k -p <random marker> -- argv`; the password + newline goes to stdin once, only after sudo printed the marker
     (collect_command `gate`), then stdin closes; → {result, code, stdout, stderr, truncated, prompts}. result: done (the
     command ran; `code` is its exit status) · bad_password · timeout · no_sudo. `prompts` = how many times sudo asked:
@@ -478,6 +509,8 @@ def run_sudo(argv: list[str], password: bytearray, cwd: str, timeout: int, sudo:
     if not sudo:
         return {"result": "no_sudo", "code": None, "stdout": "", "stderr": "", "truncated": False}
     marker = "[agentj-" + secrets.token_hex(8) + "]"
+    if watch is not None:
+        watch.gate = marker.encode()           # P406: a second prompt = wrong password, never "started"
     env = {k: v for k, v in os.environ.items() if k in ("PATH", "HOME", "USER", "LOGNAME", "TZ", "TMPDIR")}
     env.update(LC_ALL="C", LANG="C")
     buf = bytearray(len(password) + 1)
@@ -490,7 +523,7 @@ def run_sudo(argv: list[str], password: bytearray, cwd: str, timeout: int, sudo:
         wipe(buf)
         return {"result": "no_sudo", "code": None, "stdout": "", "stderr": "", "truncated": False}
     try:
-        out, err, timed_out, overflow = collect_command(p, timeout, cancel, buf, marker.encode())
+        out, err, timed_out, overflow = collect_command(p, timeout, cancel, buf, marker.encode(), watch)
         if timed_out:
             o, t1 = _cap(out)
             e, t2 = _cap(err.replace(marker.encode(), b""))
@@ -659,6 +692,8 @@ def audit(st, card: dict | None, **kw) -> dict:
         rec.update(kind=card["kind"], id=card["id"], shown_sha256=card["digest"])
         if card["kind"] == "sudo":
             rec["argv_sha256"] = hashlib.sha256(json.dumps(card["argv"], ensure_ascii=False).encode()).hexdigest()
+        elif card["kind"] == "login":
+            rec["device"] = card.get("only")
         else:
             rec["name"] = card["name"]
             rec["dest_sha256"] = _h(card["dest_spec"]["path"])
@@ -713,6 +748,14 @@ def check_record(st, r: dict) -> str:
         return "unsigned"
     try:
         sk, sig = wire.unb64u(r.get("sk") or ""), wire.unb64u(r["sig"])
+        if r.get("decision") == "stop":            # P406: 「停止」 is a signed control action over the card id (controls.py)
+            from . import controls
+            ok = controls.verify(sk, sig, r["channel"], r["device"], "elev_stop", r["n"], r["sig_ts"],
+                                 controls.object_digest("elev_stop", {"id": r["id"]}))
+            if not ok:
+                raise ValueError("stop")
+            cur = st.sign_key(str(r.get("device")))
+            return "ok_removed" if cur is None else ("ok" if cur == sk else "bad")
         msg = signed_message(r["channel"], r["device"], r["id"], r["kind"], r["decision"], r["n"], r["sig_ts"],
                              r["shown_sha256"], r.get("ct_sha256"), r.get("grant_sha256"))
         Ed25519PublicKey.from_public_bytes(sk).verify(sig, msg)
@@ -741,6 +784,8 @@ class Elevator:
         self.out = Outbox(self)      # F32: outbound pickup cards (`agentj secret send`)
         from .browser_login import LoginCards
         self.login = LoginCards(self)  # P114: login QR cards (`agentj browser login`)
+        from .screenhelp import HelpCards
+        self.help = HelpCards(self)    # P411: `agentj qr push` / `agentj screen ask` (screen-help cards)
         from .contacts_serve import ContactService
         self.contacts = ContactService(self)  # P184: address book, contact cards, 「转发到邮箱」, `agentj mail send`
         self._upgrade_mem: dict = {}  # P205: the fenced `update apply`'s cached old wheel (update.host_op)
@@ -780,6 +825,7 @@ class Elevator:
         self.cancel_all("gone")
         self.out.end_all("gone")
         self.login.end_all("gone")
+        self.help.end_all("gone")
         self.contacts.end_all("gone")
         if self.server:
             self.server.close()
@@ -803,6 +849,8 @@ class Elevator:
              "ttl": max(0, int(c["deadline"] - time.monotonic())), "tries": TRIES - c["fails"]}
         if c.get("busy"):
             m.update(state="running", ttl=0, elapsed=max(0, int(time.monotonic() - c["started"])), timeout=c.get("timeout", 0))
+            if c.get("live") is not None and c["live"].started:
+                m["phase"] = "started"                # P406: the command runs — the page shows its strip, not the card
         if c["fails"]:
             m["bad"] = c["fails"]
         if c["kind"] == "sudo":
@@ -811,6 +859,8 @@ class Elevator:
                 m["helper"] = list(c["helper"])       # these phones may approve without a password (elevate_helper)
             if c.get("grant"):
                 m["grant"] = dict(c["grant"])         # #116: the opt-in toggle (off by default): program, options, hash
+        elif c["kind"] == "login":
+            m["term"] = c["term"]                     # P408: the pending term_open this password belongs to
         else:
             m.update(name=c["name"], purpose=c["purpose"], dest=c["dest"], verify=c.get("verify") or "")
         pk = self.st.passkey_of_device(s.device) if s is not None and s.device else None
@@ -818,8 +868,15 @@ class Elevator:
             m["fa"] = pk["id"]   # ADR-A163: this device saved a passkey → 「同意」 needs it (its own credential id only)
         return m
 
-    async def _to_phones(self, obj_fn) -> None:
-        await self.host._send_ready(obj_fn)
+    async def _to_phones(self, obj_fn, only: str | None = None) -> None:
+        if only is None:
+            return await self.host._send_ready(obj_fn)
+        for s in list(self.host.sessions.values()):     # P408: a `login` card goes to the opening device only
+            if s.state == "ready" and s.device == only and self.st.is_allowed(s.pub):
+                await self.host.send_app(s, obj_fn(s))
+
+    def _sees(self, c: dict, s) -> bool:
+        return not c.get("only") or (s is not None and s.device == c["only"])
 
     def _arm(self, c: dict) -> None:
         """A fresh one-time nonce and host key (first show, and after a wrong password)."""
@@ -832,11 +889,12 @@ class Elevator:
 
     def open_msgs(self, s) -> list[dict]:
         """P203: the open sudo / secret cards as this device sees them (on_ready's replay and the cards_get snapshot)."""
-        return [self.card_msg(c, s) for c in list(self.cards.values()) if not c["fut"].done()]
+        return [self.card_msg(c, s) for c in list(self.cards.values()) if not c["fut"].done() and self._sees(c, s)]
 
     def all_open_msgs(self, s) -> list[dict]:
         """P203: these and the pickup / sign-in / contact cards this module also owns."""
-        return self.open_msgs(s) + self.out.open_msgs(s) + self.login.open_msgs(s) + self.contacts.open_msgs(s)
+        return (self.open_msgs(s) + self.out.open_msgs(s) + self.login.open_msgs(s) + self.help.open_msgs(s)
+                + self.contacts.open_msgs(s))
 
     def completed_msgs(self, s=None) -> list[dict]:
         return [dict(m) for m in self.completed.values()]
@@ -847,6 +905,7 @@ class Elevator:
         await self.grants.on_ready(s)
         await self.out.on_ready(s)
         await self.login.on_ready(s)
+        await self.help.on_ready(s)
         await self.contacts.on_ready(s)
 
     def _finish(self, c: dict, result: dict) -> None:
@@ -861,6 +920,7 @@ class Elevator:
             self.grants.clear(result)              # … and every 10-minute approval
             self.out.end_all(result)
             self.login.end_all(result)
+            self.help.end_all(result)
             self.contacts.end_all(result)
 
     async def request(self, card: dict, gone: asyncio.Future | None = None, on_card=None) -> dict:
@@ -870,7 +930,7 @@ class Elevator:
         if self.host.stopped():
             return {"result": "stopped"}
         from . import provenance
-        if provenance.untrusted_turn(getattr(self.host, "agent", None)):
+        if card["kind"] != "login" and provenance.untrusted_turn(getattr(self.host, "agent", None)) and not provenance.delegated_turn(getattr(self.host, "agent", None)):
             audit(self.st, None, kind=card.get("kind"), result="group_source", reason="group_source")
             return {"result": "group_source"}      # B1 (P117): a group member's turn never reaches the owner's card
         if len([c for c in self.cards.values() if not c["fut"].done()]) >= MAX_OPEN:
@@ -880,13 +940,14 @@ class Elevator:
             return {"result": "locked", "secs": left}
         if not self.host._approvers():
             return {"result": "no_device"}
-        if card["kind"] == "sudo" and (auto := await self.grants.auto(card, gone)) is not None:
+        same_owner_task = provenance.same_owner_source(getattr(self.host, "agent", None))
+        if card["kind"] == "sudo" and not same_owner_task and (auto := await self.grants.auto(card, gone)) is not None:
             return auto                            # #116: same class within the owner's 10-minute approval, logged
         c = dict(card, id=secrets.token_hex(16), fails=0, fut=asyncio.get_running_loop().create_future())
         if c["kind"] == "sudo":
             c["helper"] = [] if interpreter_command(c["argv"]) else self.helper_devices()
             from .elevate_grant import scope_of
-            c["scope"], c["grant"] = scope_of(self.host), self.grants.offer(c)
+            c["scope"], c["grant"] = scope_of(self.host), None if same_owner_task else self.grants.offer(c)
         c["digest"] = shown_digest(c["kind"], shown_fields(c))
         self._arm(c)
         self.cards[c["id"]] = c
@@ -900,10 +961,12 @@ class Elevator:
             except Exception as e:  # noqa: BLE001 — P192 (B18): the card stays; its delivery hook failing is logged
                 from . import bg
                 bg.swallowed(self.st.log, "elev_card_hook_failed", e, why=c["kind"], every=0)
-        self.host.push_notify("ask")
+        if c["kind"] != "login":                   # P408: the login card shows inside the open terminal page only
+            self.host.push_notify("ask")
+        only = c.get("only")
         cancelled=False
         try:
-            await self._to_phones(lambda s: self.card_msg(c, s))
+            await self._to_phones(lambda s: self.card_msg(c, s), only)
             while True:
                 waits = [c["fut"]] + ([gone] if gone is not None else [])
                 left = c["deadline"] - time.monotonic()
@@ -912,7 +975,7 @@ class Elevator:
                     res = c["fut"].result()
                     if res.get("result") == "retry":       # wrong password: re-armed, shown again
                         c["fut"] = asyncio.get_running_loop().create_future()
-                        await self._to_phones(lambda s: self.card_msg(c, s))
+                        await self._to_phones(lambda s: self.card_msg(c, s), only)
                         continue
                     break
                 if gone is not None and gone.done() and not c.get("busy"):
@@ -925,7 +988,7 @@ class Elevator:
                     res = await c["fut"]
                     if res.get("result") == "retry":
                         c["fut"] = asyncio.get_running_loop().create_future()
-                        await self._to_phones(lambda s: self.card_msg(c, s))
+                        await self._to_phones(lambda s: self.card_msg(c, s), only)
                         continue
                     break
         except asyncio.CancelledError:
@@ -944,7 +1007,15 @@ class Elevator:
             done_msg["verify"] = res["receipt"]["verify"]
         if c["kind"] == "secret" and (res.get("key_hint") or (res.get("receipt") or {}).get("key_hint")):
             done_msg["key_hint"] = "short"          # P163: one word from the length, never the key
-        self.completed[c["id"]] = dict(done_msg)
+        if not only:                               # P408: a login card's end is replayed to nobody else
+            self.completed[c["id"]] = dict(done_msg)
+        live, tail = c.get("live"), None
+        if live is not None and live.started:      # P406 (§11.2): only a phone watching the output gets the masked tail
+            from .elevate_live import fit, DONE_TAIL
+            tail = fit(live.tail[-DONE_TAIL:])
+            if c.get("stop_by"):
+                done_msg["stop"] = True
+        watching = {x.cid for x in self._watchers(c)} if tail is not None else set()
         while len(self.completed) > RESULTS_KEEP:
             self.completed.pop(next(iter(self.completed)))
         if c["kind"] == "sudo":
@@ -954,7 +1025,7 @@ class Elevator:
             zh, en = labels.get(res["result"], ("执行失败", "failed"))
             code = f" ({res['code']})" if res.get("code") is not None else ""
             self.host.agent_notice(f"管理员命令{zh}{code} · {c['id'][:8]} / Admin command {en}{code} · {c['id'][:8]}")
-        await self._to_phones(lambda s: done_msg)
+        await self._to_phones(lambda s: dict(done_msg, tail=tail) if s.cid in watching else dict(done_msg), only)
         self.st.log("elev_done", id=c["id"], kind=c["kind"], result=res["result"])
         if c["kind"] == "secret":
             remember(self.st, c["id"], {"result": res["result"], "until": None,
@@ -975,6 +1046,8 @@ class Elevator:
             self.login.bg.add(task)
             task.add_done_callback(self.login.bg.discard)
             return
+        if obj.get("t") in ("help_done", "help_text", "help_cancel"):        # P411: screen-help cards
+            return await self.help.on_phone(s, obj)
         if obj.get("t") in self.contacts_types:                              # P184: SMTP / file reads take seconds
             task = asyncio.create_task(self.contacts.on_phone(s, obj))
             self.contacts.bg.add(task)
@@ -982,7 +1055,11 @@ class Elevator:
             return
         rid = obj.get("id")
         c = self.cards.get(rid) if isinstance(rid, str) and _ID.fullmatch(rid) else None
-        if c is None or c["fut"].done() or c.get("busy"):
+        if obj.get("t") == "elev_stop":
+            return await self._stop(s, c, obj)
+        if obj.get("t") == "elev_watch":
+            return self._watch(s, c, obj)
+        if c is None or c["fut"].done() or c.get("busy") or not self._sees(c, s):
             self.st.log("elev_refused", id=rid if isinstance(rid, str) else None, device=s.device, reason="unknown")
             return
         why = self._check(s, c, obj)
@@ -1006,6 +1083,11 @@ class Elevator:
         c["want_grant"] = obj.get("grant") if ok else None   # #116: checked and signed in _check
         c["started"] = time.monotonic()
         c["cancel"] = threading.Event()
+        if c["kind"] == "sudo":                    # P406: the approve-only helper has no password to check: running at once
+            from .elevate_live import Live
+            c["live"], c["wake"] = Live(started="ct" not in obj), asyncio.Event()
+            loop, ev = asyncio.get_running_loop(), c["wake"]
+            c["live"].wake = lambda: loop.call_soon_threadsafe(ev.set)
         nonce, priv = c["nonce"], c.pop("priv")
         c["nonce"] = None  # reserve the one-time approval BEFORE returning to the receive loop
         task = asyncio.create_task(self._execute(c, s, obj, signed, nonce, priv))
@@ -1013,12 +1095,94 @@ class Elevator:
         task.add_done_callback(self.bg.discard)
 
     async def _progress(self, c) -> None:
+        """Liveness every 5 s; P406: at once when the command started (`phase:"started"` → the page closes the card) and
+        the masked output as it comes (`elev_out`, at most every 0.3 s)."""
+        live, wake, shown, beat = c.get("live"), c.get("wake"), False, 0.0
+        c.setdefault("watch", {})
+        c.setdefault("shown_to", set())
         while c.get("busy") and not c["fut"].done():
-            with contextlib.suppress(Exception):
-                await self._to_phones(lambda s: {"t": "elev_progress", "id": c["id"], "kind": c["kind"],
-                                               "state": "running", "elapsed": int(time.monotonic() - c["started"]),
-                                               "timeout": c.get("timeout", 0)})
-            await asyncio.sleep(5)
+            if wake is not None:
+                wake.clear()                       # before reading: a chunk arriving from now on wakes the wait below
+            now = time.monotonic()
+            started = live is not None and live.started
+            if now >= beat or (started and not shown):
+                beat, shown = now + 5, started
+                m = {"t": "elev_progress", "id": c["id"], "kind": c["kind"], "state": "running",
+                     "elapsed": int(now - c["started"]), "timeout": c.get("timeout", 0)}
+                if started:
+                    m["phase"] = "started"
+                with contextlib.suppress(Exception):
+                    await self._to_phones(lambda s: dict(m), c.get("only"))
+            if started:                            # P406 F1: output only to the phones that asked (signed elev_watch)
+                text, tail = live.take()
+                for x in self._watchers(c):
+                    new = x.cid not in c["shown_to"]
+                    if new or text:
+                        c["shown_to"].add(x.cid)
+                        with contextlib.suppress(Exception):
+                            await self.host.send_app(x, {"t": "elev_out", "id": c["id"], "text": tail if new else text,
+                                                         **({"full": True} if new else {})})
+                c["shown_to"] &= set(c["watch"])
+            if wake is None:
+                await asyncio.sleep(5)
+                continue
+            with contextlib.suppress(asyncio.TimeoutError):
+                await asyncio.wait_for(wake.wait(), max(.05, beat - time.monotonic()))
+            await asyncio.sleep(.3)                # batch a chatty command's lines
+
+    def _watchers(self, c) -> list:
+        """The sessions that asked to see this card's output and may still see it: ready, allowlisted, with an approval key."""
+        out = []
+        for cid, x in list((c.get("watch") or {}).items()):
+            if self.host.sessions.get(cid) is x and x.state == "ready" and self.st.is_allowed(x.pub) and self.st.sign_key(x.device):
+                out.append(x)
+            else:
+                c["watch"].pop(cid, None)
+        return out
+
+    def _watch(self, s, c, obj) -> None:
+        """P406 F1 (§11.2): 「展开输出」 on the strip — a signed control action `elev_watch` (object = card id \n on|off) from a
+        ready allowlisted device with an approval key, for a running sudo card. Only that session then gets the masked output
+        (the tail so far, then what follows, then the result's tail); `on:false`, the end of the card or the session closing
+        stops it. Nothing of the output goes to any phone without it."""
+        rid, on = obj.get("id"), obj.get("on")
+        if c is None or c["kind"] != "sudo" or not c.get("busy") or c["fut"].done() or not self._sees(c, s) \
+                or not isinstance(on, bool):
+            self.st.log("elev_refused", id=rid if isinstance(rid, str) else None, device=s.device, reason="watch_unknown")
+            return
+        from . import controls
+        why = controls.check(self.st, self.host.nonces, self.host.channel, s.device, obj, "elev_watch", {"id": c["id"], "on": on})
+        if why:
+            self.st.log("elev_refused", id=c["id"], device=s.device, reason="watch_" + why)
+            return
+        c.setdefault("watch", {})
+        c.setdefault("shown_to", set())
+        if on:
+            c["watch"][s.cid] = s
+        else:
+            c["watch"].pop(s.cid, None)
+            c["shown_to"].discard(s.cid)
+        self.st.log("elev_watch", id=c["id"], device=s.device, on=on)
+        if c.get("wake") is not None:
+            c["wake"].set()
+
+    async def _stop(self, s, c, obj) -> None:
+        """P406 (§11.2): 「停止」 on the strip — a signed control action (controls.check, object = the card id) from any ready
+        allowlisted device with an approval key, for a sudo card whose command is running. Same path as a timeout:
+        process-group TERM, then KILL; the result is `stopped`."""
+        rid = obj.get("id")
+        if c is None or c["kind"] != "sudo" or not c.get("busy") or c["fut"].done() or not self._sees(c, s):
+            self.st.log("elev_refused", id=rid if isinstance(rid, str) else None, device=s.device, reason="stop_unknown")
+            return
+        from . import controls
+        why = controls.check(self.st, self.host.nonces, self.host.channel, s.device, obj, "elev_stop", {"id": c["id"]})
+        if why:
+            self.st.log("elev_refused", id=c["id"], device=s.device, reason="stop_" + why)
+            return
+        c["stop_by"] = s.device
+        c["cancel"].set()
+        audit(self.st, c, result="stop", reason="device", device=s.device, sk=wire.b64u(self.st.sign_key(s.device)),
+              sig=obj["sig"], n=obj["n"], sig_ts=obj["ts"], decision="stop", channel=self.host.channel)
 
     async def _execute(self, c, s, obj, signed, nonce, priv) -> None:
         progress = asyncio.create_task(self._progress(c))
@@ -1046,6 +1210,8 @@ class Elevator:
             req = {"channel": self.host.channel, "device": s.device, "id": c["id"], "n": nonce, "ts": obj["ts"], "sig": obj["sig"],
                    "argv": c["argv"], "why": c["why"], "effect": c.get("effect") or "", "cwd": c["cwd"]}
             res = await asyncio.to_thread(elevate_helper.run, req, c["timeout"], self.sudo, self.helper_cmd, c["cancel"])
+            if c.get("stop_by") and res.get("result") == "timeout":
+                res["result"] = "stopped"          # P406: the owner's Stop, not the time limit
             audit(self.st, c, result=res["result"], reason="helper", code=res.get("code"), **signed)
             res["_logged"] = True
             c["busy"] = False
@@ -1061,7 +1227,8 @@ class Elevator:
         res = None
         try:
             if c["kind"] == "sudo":
-                res = await asyncio.to_thread(run_sudo, c["argv"], value, c["cwd"], c["timeout"], self.sudo, c["cancel"])
+                res = await asyncio.to_thread(run_sudo, c["argv"], value, c["cwd"], c["timeout"], self.sudo, c["cancel"],
+                                              c.get("live"))
             else:
                 res = await asyncio.to_thread(self._save, c, value)
                 if res.get("result") == "saved":
@@ -1072,10 +1239,23 @@ class Elevator:
                 # #116: only a password sudo actually asked for and accepted (exactly one prompt) may be kept
                 wipe(keep)
                 keep = None
+        if c.get("live") is not None:
+            c["live"].close()                      # P406: release what the masker still holds (masked)
+        if c.get("stop_by") and res.get("result") == "timeout":
+            res["result"] = "stopped"              # P406: the owner's Stop on the strip, not the time limit
         if keep is not None:                       # the password was right: the approving device's 10-minute window
             self.grants.create(c, s.device, wire.unb64u(signed["sk"]), keep)
+        if c["kind"] == "login" and res.get("result") in ("retry", "locked", "bad_password"):
+            c["fails"] += 1                        # P408: terminal.py counts its own locks (term_store.note), never elevate.json
+            audit(self.st, c, result="bad_password", reason="device", **signed)
+            c["busy"] = False
+            if res["result"] == "retry" and c["fails"] < TRIES:
+                self._arm(c)
+                return self._finish(c, {"result": "retry"})
+            return self._finish(c, {**res, "result": "locked" if res["result"] == "locked" else "bad_password", "_logged": True})
         if res["result"] == "bad_password":
             c["fails"] += 1
+            c.pop("live", None)                    # P406: a wrong password never started anything (the card comes back)
             lock = note_password(self.st, False)
             audit(self.st, c, result="bad_password", reason="device", **signed)
             c["busy"] = False
@@ -1377,6 +1557,16 @@ class Elevator:
                 res = await self.login.request(req)
             elif isinstance(req, dict) and req.get("t") == "browser_login_result":
                 res = self.login.result(req)
+            elif isinstance(req, dict) and req.get("t") == "help_push":         # P411: a screen-help card (+ optional wait)
+                res = await self.help.push(req)
+            elif isinstance(req, dict) and req.get("t") == "help_wait":
+                res = await self.help.wait(req)
+            elif isinstance(req, dict) and req.get("t") == "help_end":
+                res = await self.help.end_req(req)
+            elif isinstance(req, dict) and req.get("t") == "help_capture":      # the browser page, fixed CDP calls only
+                res = await self.help.capture(req)
+            elif isinstance(req, dict) and req.get("t") == "help_page":
+                res = await self.help.page(req)
             elif isinstance(req, dict) and req.get("t") == "secret_result":     # P73: the outcome of an earlier card
                 res = await self.result_of(req)
             else:

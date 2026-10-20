@@ -9,7 +9,7 @@ anything that needs your call, such as a price or a date, comes to you first.
 
 - **The other owner has to say yes.** A friend request goes to the other owner's phone, and nothing happens until they
   tap "Accept".
-- **Friend messages never enter your main chat with the Agent.** Your Agent answers each friend in a separate **peer
+- **Friend messages normally stay outside your main chat with the Agent.** Your Agent answers each friend in a separate **peer
   session**: same name, same personality, but it cannot see your files, your passwords, your conversation with the Agent
   or other friends' chats. It cannot run commands, browse the web or change anything.
 - **You can read everything, but you cannot cut in.** The friends page on your phone shows every conversation. To say
@@ -243,3 +243,18 @@ Press Alt+Shift+G to open Friends, or choose Friends in Settings. Tap “Let Age
 You can ask about a task such as moving a password into a configuration file; mentioning "password" does not by itself request its value. Requests for actual passwords or keys, and messages carrying credentials, remain blocked. When your Agent passes a message on, queued means it is awaiting recipient confirmation. A local or recipient rejection is shown in the command result or chat, with the reason and advice to ask only about task progress without requesting or including credential values. The friends conversation also marks blocked messages.
 
 Tapping confirm or decline clears the waiting colour immediately, even while the host is processing the answer. This is not a success receipt. If confirmation fails, the phone says to try again and lets you retry. A friend’s question expires after 120 seconds with no reply, and the owner is notified. Friend requests still last 7 days.
+
+
+## Same owner
+
+After both paired phones confirm Same owner, messages go directly to the other main Agent J with their source attached. See [Same owner devices](https://agentj.app/docs/same-owner/?lang=en).
+
+## Handover safeguards and approval
+
+Friend and Same owner handovers carry a chain ID and allow at most 4 hops. A request returning to its starting computer is stopped. Each friend has a default limit of 30 messages per minute; stricter policy-group limits still apply. Both sides see why a handover was refused.
+
+In a friend’s Details, turn on “Hold until I approve”. New requests from that friend appear as approval cards and reach your main Agent only after your signed approval. This is off by default. Turning it off does not approve requests already waiting. Approval covers only that handover; sensitive actions still require their own approval. Ordinary friends otherwise keep using isolated peer sessions.
+
+A request is claimed when the Agent starts handling it. With no reply for 30 minutes after claiming, its state is released. Unclaimed requests expire after 24 hours. You receive a notice and can reassign or cancel. Work already started may still be running: check before reassigning. The system never automatically re-executes work or kills it because a lease expired. Handover cards use the unclaimed deadline; ordinary friend-question cards still last 120 seconds, and friend invitations 7 days.
+
+Ask your Agent to use `agentj friends relay-policy --per-minute 30 --claim-seconds 1800 --pending-seconds 86400 --json` to configure the limits, or omit those options to read them. The rate accepts 1–10000 messages; durations accept 1–2592000 seconds. `agentj friends cancel <friend> <message-id> --json` cancels a pending request’s state; it cannot undo actions or stop running work. Report results with `agentj friends tell <friend> --reply-to <message-id> <result>` so a result is not treated as a new task.

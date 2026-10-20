@@ -359,7 +359,7 @@ class Switch(Base):
         res = [o for _, o in self.sent if o["t"] == "pref_res"][-1]
         self.assertEqual((res["ok"], res["problem"]), (False, "not_allowed"))
         self.assertEqual(approval_level.level(self.host.preferences), "standard")
-        self.assertEqual(self.host.host_info()["signed_prefs"], ["approval.level", "approval.goal_nocard"])
+        self.assertEqual(self.host.host_info()["signed_prefs"], ["approval.level", "approval.goal_nocard", "jev.mode"])
 
     def test_the_agent_cannot_change_it(self):
         old = self.host.preferences

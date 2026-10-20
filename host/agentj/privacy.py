@@ -391,18 +391,22 @@ def layer2(draft, *, threshold: float = THRESHOLD, env=None, transport=None, tim
     crit_path, state_key, _ = GATES[gate]
     env = os.environ if env is None else env
     transport = transport or urllib_transport
-    key = (env.get(KEY_ENV) or "").strip()
+    from . import jev
+    route = jev.resolve(env=env)
+    if route.mode == "off":
+        return Verdict("ok", reason="Jev off: owner confirmed; local redaction only")
+    key = route.key
     if not key:
         return Verdict("unavailable", reason=f"no {KEY_ENV} in the environment")
     try:
         crit = criteria or load_criteria(crit_path)
     except (OSError, ValueError) as e:
         return Verdict("unavailable", reason=f"criteria unreadable ({type(e).__name__})")
-    body = json.dumps({"model": MODEL, "state": {state_key: draft}, "questions": crit["questions"]},
+    body = json.dumps({"model": route.model, "state": {state_key: draft}, "questions": crit["questions"]},
                       ensure_ascii=False).encode()
     headers = {"Authorization": "Bearer " + key, "Content-Type": "application/json", "User-Agent": UA}
     try:
-        status, raw = transport(ENDPOINT, headers, body, timeout)
+        status, raw = transport(route.endpoint, headers, body, timeout)
     except Exception as e:  # network, TLS, timeout — the class name only (messages could carry anything)
         return Verdict("unavailable", reason=f"network error ({type(e).__name__})", criteria_version=crit["version"])
     if status != 200:

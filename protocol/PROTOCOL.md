@@ -1261,7 +1261,8 @@ of arbitrary privileged descendants; a timeout receipt reports the bounded wait 
 every descendant has stopped.
 During execution the open `elev` snapshot adds `state:"running", ttl:0, elapsed:s, timeout:s` (`n:null`
 is no longer an approvable nonce), and `{"t":"elev_progress","id","kind","state":"running","elapsed","timeout"}`
-is sent every 5 s. Progress carries liveness/time only, never command output. The page stops the approval
+is sent every 5 s. Progress carries liveness/time only, never command output (P406: masked output travels only as §11.2
+`elev_out`, to a phone that asked for it). The page stops the approval
 countdown and shows running; completion closes the card and the host adds a bilingual result summary to chat.
 The newest 100 completion receipts stay in serve memory, replayed on ready and `cards_get` alongside open
 cards by id. A host restart clears this receipt cache; it is not a persistent sudo result store.
@@ -1339,6 +1340,39 @@ ledger, 10 min), logs `argv_sha256` and runs argv with a fixed PATH. The Agent (
 sign. A phone removed from Agent J must also be removed from the helper (`sync` / `uninstall`, each one password card).
 Face ID before 「同意」 for a phone that saved a passkey: §16.1 (0.15.3). Not covered: Windows, a macOS SMAppService helper (macOS gets the same
 sudoers helper, `root:wheel` + `shasum`; static tests only).
+
+**§11.2 Running sudo: the card closes, a status strip stays (P406 #173, `host/agentj/elevate_live.py`).** A password sudo card
+is *started* once sudo forked the command — a child of the sudo process seen on two looks ≥ 0.2 s apart (`/proc/<pid>/task/<pid>/children`,
+else a `/proc/*/stat` scan, else `pgrep -P`) or a byte on the command's stdout — and sudo has not printed its prompt marker a
+second time (sudo forks only after it accepted the password). An approve-only helper card is started at approval. Then the host
+sends at once `{"t":"elev_progress","id","kind":"sudo","state":"running","phase":"started","elapsed","timeout"}` (and every 5 s
+after); the open `elev` snapshot of a running card adds `"phase":"started"`. The page closes the card and shows a status strip
+instead. *Started* is a page hint only: a later second prompt still ends as `bad_password`, the card is re-sent (new `n`/`epk`,
+`bad`) and shown again; a wrong password before the start never closes it.
+- Output (P406 F1: on demand only): nothing of the command's output goes to any phone unless the owner opens it. Device → host
+  `{"t":"elev_watch","id","on":bool,"n","ts","sig"}` — a §8 control action `elev_watch` (object text = card id `\n` `on`|`off`;
+  `controls.check`: approval key required, ±120 s, nonce once) from a ready allowlisted session while that sudo card runs. Only that
+  session then gets `{"t":"elev_out","id","text"[,"full":true]}` (`full` first: the masked tail so far ≤ 4 000 chars; then appends,
+  at most every 0.3 s, JSON-escaped text ≤ 12 000 bytes per frame); `on:false`, the session closing / losing its approval key or
+  the card ending stops it. Masking: after the start each stream goes through `term_mask.Masker` (§38: escapes dropped, key-like
+  runs held / hidden, PEM blocks hidden, `privacy.owner_text`) plus, for this stream only, `name=value` / `name: value` with a
+  credential-looking name (psk, passphrase, secret, key, token, pass*, pwd, auth*, credential*; case-insensitive) masked to the end
+  of the line, and no idle flush (a held run is released only by a delimiter or at the end). Everything on stderr before the start
+  is dropped (sudo's prompt markers are only counted; a marker split across reads is cut out too). A bare password with no
+  label cannot be recognised — which is why output is opt-in. The Agent's CLI result is unchanged (full, unmasked stdout /
+  stderr). The password never passes through this path (it is written to sudo's stdin inside `collect_command` and wiped).
+- Result: `elev_done` of a started card carries `"stop":true` when it was stopped; `"tail"` (masked, ≤ 2 000 chars) goes only to a
+  session watching at that moment — every other session gets status + exit code only; the replayed receipt (`completed`, on
+  ready / `cards_get`) stays output-free. The chat summary is unchanged. `elev_progress` (`phase:"started"`) carries no output and
+  goes, like the card itself, to every ready allowlisted session.
+- Stop: device → host `{"t":"elev_stop","id","n","ts","sig"}` — a §8 control action `elev_stop` (object text = the card id;
+  `controls.check`: approval key, ±120 s, nonce once) from any ready allowlisted device, only while that sudo card is running.
+  The host sets the card's cancel (process-group TERM, then KILL — the timeout path) and the outcome is `stopped` (CLI
+  `SUDO_RESULT: stopped`). `elevate.log` gets `{result:"stop", decision:"stop", device, sk, sig, n, sig_ts, channel}` (re-checkable by
+  `check_record`); refusals are `elev_refused` in host.log (`stop_unknown`, `stop_<reason>`).
+- Collapse (page only): every sudo / secret card has a 「收起」 down arrow and ESC collapses it — nothing is sent (no deny), the
+  card stays open on the host; the strip reopens it. A collapsed asking card, a started command and a just-finished result
+  share one strip above the composer.
 
 ## 12. Passkey: the same phone without a second pairing (F20, 0.15.2)
 iOS keeps a Safari tab, the Home Screen app and a private tab in separate storage, so each used to need its own QR pairing.
@@ -2415,7 +2449,7 @@ announces `cards1` answers a snapshot; one that announces `upg1` answers the upg
 | direction | message | notes |
 |---|---|---|
 | device → host | `{"t":"cards_get","r","have":[id…≤256],"n","ts","sig"}` | p33 only. **Signed** like a phone control (§8, control-v1, action `cards_get`, object `"cards"`): only an approved remote with an approval key gets an answer; a read, it changes nothing. Refused → `{"t":"cards","r","ok":false,"why"}` (`shape` · `stale` · `no_key` · `bad_signature` · `replay`) and one `controls.log` line |
-| host → device | the open cards whose id is not in `have`, each exactly as on reconnect (`ask` — the pair card only to a `pair1` remote, Face ID fields for this device's passkey —, `grant`, `question`, friend `ask`, `elev`, `secret_out`, `login_qr`, `ct_card`, `lt_card` to an `lt1` remote, `upg_card`) | queued behind earlier broadcasts, so an `ask_done` sent before is delivered before |
+| host → device | the open cards whose id is not in `have`, each exactly as on reconnect (`ask` — the pair card only to a `pair1` remote, Face ID fields for this device's passkey —, `grant`, `question`, friend `ask`, `elev`, `secret_out`, `login_qr`, `help_card` (P411 §37), `ct_card`, `lt_card` to an `lt1` remote, `upg_card`) | queued behind earlier broadcasts, so an `ask_done` sent before is delivered before |
 | host → device | `{"t":"cards","r","ok":true,"open":[id…≤256]}` | every id open at the moment of the answer |
 
 The page asks when it becomes ready, when it comes back to the front on a live session (`visibilitychange`), and on reopen
@@ -2955,3 +2989,118 @@ The phone clears its waiting colour on the owner's tap, keeps failure separate, 
 no receipt after 10 seconds on a friend card also offers retry. A peer question expires after 120 seconds, including
 legacy 24h cards measured from their original creation time; timeout means no reply and an owner notice. Friend requests
 retain the 7-day lifetime. Actual WebCrypto Ed25519 → host verification: `test_p396_friend_signature.py` (`p396-host`).
+
+
+### §17.10 — Same owner (P405, quiet source candidate)
+Selecting signed `fr_set {friend,op:"group",value:"same-owner"}` creates a pairing proposal, not consent.
+Authenticated friend frames `same_owner {seq,nonce,pub,token,echo,proof}` exchange random 128-bit nonces and enrolled
+phone public keys. Each host derives the same SHA-256 challenge from the sorted endpoint IDs, pinned host signing
+keys, both phone keys and both nonces. Both cards display its 6-digit decimal short authentication code.
+Each owner compares the two displays, then signs `fr_set {friend,op:"owner-confirm",value:<challenge>}`.
+`owner-reject` binds the same challenge, cancels pairing and preserves the original policy group. No server-account check.
+Serve verifies local enrollment, nonce and signature before PeerService. Remote key claims alone grant nothing:
+both phone confirmations must bind the current comparison challenge. Tokens hash the signed proof; both current tokens
+and echoed local token are required. A new nonce/key invalidates confirmation. Increasing sequences and spent tokens
+refuse replay. Pairing cards persist a 24h deadline across restart, distinct from ordinary 120s friend questions.
+Expiry says Same owner invitation expired; it never acts as a normal no-reply decision.
+
+Confirmed messages go directly to main Agent J as non-owner request data. This changes destination only, never approval
+authority. Owner batch/goal/Jev/full-level/parked exemptions and mail allowlists do not authorize these actions; sensitive
+operations need individual signed phone cards, including sudo, iMessage and heartbeat changes. Admin grants cannot be used
+or created. Only confirmed peers see the legacy signed `main` handover option; there is no `main-auto` option.
+Inbound and outbound credential/private/never-tell filters and metadata-only handover audits remain mandatory.
+Revocation, block, deletion and Stop everything reject queued delivery; fresh encrypted remote status is checked before
+submission. Replies bind `--reply-to` to the original thread and use end:true as an informational result without reply loops.
+Status is E2E, aggregate-only and 403 for either unconfirmed endpoint; unknown/stale readings are null. No friends pick.
+
+### §17.11 — Handover safeguards (P410)
+
+`pmsg.relay = {chain: hex32, origin: canonical AJ ID, hops: integer 1..4}` is carried inside the existing authenticated Noise frame. Each new request starts at hop 1; main-Agent onward `tell` inherits the host-generated current Send.source.relay (or shared pending_source), increments hops, and never parses chain claims from text. Replies retain the envelope and `irt`; they are results, not new tasks. More than 4 hops or a new task returning to origin is refused before model or main submission. Locally generated chain tombstones also detect a changed-origin bounce. Existing peers without relay start a legacy chain at the pinned immediate sender; a legacy intermediary cannot preserve a multi-hop chain. This is cooperative chain metadata, not a proof against a malicious authenticated friend resetting it. Encryption, pairing and owner authority do not change.
+
+`peer/relay-rate.json` persists a sliding 60-second counter per friend, default 30. Existing group quotas remain additional gates. `peer/relay-requests.json` persists bounded metadata (8192 entries, only terminal entries evicted): friend, mid, thread, relay, direction, created, claimed, state. No body or secret goes in this ledger or host logs. Duplicate live/tombstoned requests repeat receipts, never execution. Claim occurs immediately before peer turn or adapter delivery; queued main work remains pending. Terminal release never resubmits or kills work. Default leases: pending 86400s from local receipt/send; claimed 1800s from local claim/receipt. Local `friends relay-policy` configures rate 1..10000 and durations 1..2592000s. A 30s housekeeping sweep (also before claim) releases/expires state, closes outstanding cards and withdraws the exact pending transport frame; cancellation tombstones prevent late delivery from starting work; peers offline receive receipts via the existing outbox.
+
+`relay_state {mid,state}` uses allowlisted states pending/claimed/done/released/expired/cancelled/loop/hops/rate/shape. It changes only an existing outbound request for that authenticated friend. Terminal states cannot be overwritten by later states or ordinary pack receipts. Rejection reasons are mapped locally to EN/ZH plain words; never display a peer-supplied reason string. A compatibility `pack got` stops transport retries. `relay_cancel {mid}` cancels only an existing incoming request, never running processes; local `friends cancel <friend> <mid>` owns only a sent request. Both sides receive local notices for rejection/release/expiry/cancellation. Results use `irt` to finish the corresponding lease; delayed results are informational and cannot revive a released request.
+
+Signed `fr_set {friend,op:"hold-for-owner",value:"on"|"off"}` uses the existing control digest, nonce/TTL, paired-device signature and metadata audit. FriendStore owns per-friend `hold_for_owner` (default false). New non-result pmsgs first pass guards and credential filtering, then create a persisted peer_question with handover=true and no draft, using the unclaimed lease deadline. Turning the switch off never approves an open card. Only a valid per-card phone signature allows one submission as `friend_task/role=task`, with from-name `friend-task-via-agentj(已批转交)`. This is non-owner data. Delegated sensitive-action cards are required, including sudo with no ten-minute grants, just as for same-owner tasks. Denial/expiry never submits. Existing ordinary question TTL120, friend invitations7d, and bilateral same-owner consent are unchanged.
+## 37. 屏幕求助 / 扫码求助 — screen-help cards (P411; the number is provisional until the merge)
+
+Browser automation stopped at a sign-in QR code, a captcha or a human check. The caller (the main Agent, or the owner's own
+script without an Agent session — backlog #76) puts a picture on this seat's paired remotes and waits for the owner. Code:
+`host/agentj/screenhelp.py` (cards + CLI), `host/agentj/qrcrop.py` (the crop), web `js/helpcard.js`.
+
+- **Caller → serve**: elevate.sock (§11 socket; SO_PEERCRED same uid; reachable from inside the Agent fence), one JSON line each
+  way. `t` = `help_capture {tab?, selector?}` → `{result: ok, img, mime, target, page}` (fixed CDP calls on Agent J's browser;
+  `page` = 16 hex of SHA-256(address), never the address) · `help_push {kind: qr|screen, img, text ≤ 120, ttl, reply: done|text,
+  by: agent|auto, from?, wait?}` → `{result: sent, id, ttl, devices}` or, with `wait`, the outcome · `help_wait {id, wait ≤ 170}` ·
+  `help_end {id, result: page_changed|withdrawn}` · `help_page {target, selector?}` → `{result: ok, page, present?}`.
+  Refusals: `bad` (not PNG / JPEG / WebP by leading bytes, > 1 400 000 bytes, bad shape) · `rate` (6 a minute per source, 20 in
+  total) · `busy` (4 open) · `no_device` · `stopped`. Request line ≤ 2 MiB (`elevate.MAX_FRAME`).
+- **Outcomes**: `done` · `answered` (+ `answer` once; later reads `answer_taken`) · `cancelled` · `expired` · `page_changed` ·
+  `withdrawn` · `stopped` · `gone` (serve stopped) · `pending` · `unknown`. Kept in serve's memory ≤ 30 min / 32 cards.
+- **host → device** (every ready session of an allowed device; never friends, Bots, Telegram or e-mail): `help_card {id, n, kind,
+  mime, img (base64), text, reply, by, from, ttl}` — also in the §29.1 `cards` snapshot and re-sent after ready · `help_end {id,
+  result}` · `help_err {id, why: secret|gone|shape}`.
+- **device → host** (a device holding an approval key; `n` must match): `help_done {id, n}` · `help_cancel {id, n}` ·
+  `help_text {id, n, text ≤ 200}` (`reply: text` cards only; a text that looks like a key / password → `help_err secret`, the
+  card stays open).
+- **Never**: the picture, the question or the answer in a log (`screen_help` / `screen_help_end` / `screen_help_refused`: id, kind,
+  caller, bytes, result, device); the picture in chat history or phone storage; the QR content anywhere (the crop compares
+  SHA-256 only). The picture is zeroed when the card ends.
+## 38. 网页终端 — the web terminal, line mode (P408)
+
+Design, security review and residual risks: ADR-P408-terminal (`agentjarvis/ARCHITECTURE.md`), spec
+`docs/specs/WEB-TERMINAL-SPEC.md`. Host `host/agentj/terminal.py`; page `web/public/js/terminal.js` (loaded on first open).
+Everything rides the p33 Noise session of a paired device; it is never a fallback for a broken relay.
+
+**Host block.** `preferences` host info gains `terminal` (absent on an older host → no row):
+`{"on": bool, "os": bool, "me": bool, "until"?: unix s, "sudo": "prf"|"local"|"session"|null, "web_ok": bool,
+"minutes": 15..60, "idle_s": 300, "open": bool}` — `os` false = this platform has no v1 terminal; `me` = this device is on the
+list; `sudo` = this device's cache mode (null = none yet); `open` = a terminal is running (on any device).
+
+**Open** (two steps; §8 control-v1 + §12 passkey; the host issues the nonce):
+1. phone → `{"t":"term_open","r"}` → host `{"t":"ctl_res","r","action":"term_open","ok":false,"why":"passkey_required",
+   "n":<32 hex, one use, 120 s>,"fa":<credential id>,"fa_ch":<b64url elevate_challenge(channel, device, n, "term_open", n,
+   sha256(object text))>,"salt":<b64url 32 B PRF salt of this device's cache or a fresh one>,"epk":<b64url one-time X25519>}`.
+   Object = `{"mode":"line"}`.
+2. phone → `{"t":"term_open","r","n","ts","sig","fa":{id,cd,ad,sig}[,"pepk","pct"]}` — `pct` = the WebAuthn `prf` output
+   (`eval.first = salt`) sealed with the §11 seal to `epk` (phone ephemeral `pepk`), AAD
+   `"agentjarvis-seal-v1\n" channel \n device \n n \n "term_prf" \n n \n sha256(object text)`; absent when the authenticator gave none.
+   → `{"t":"ctl_pending","r","action":"term_open","timeout_ms":180000}`, then, when the password is needed, an `elev` card of
+   kind **`login`** to this device only (`{t:"elev", id, kind:"login", n, epk, ttl, tries, term:r, fa?}`; answered exactly like a
+   sudo card, `elev_answer` with `epk`/`ct`), and finally `{"t":"term_ready","r","id":<16 hex>,"expires_at":<unix s>,"idle_s",
+   "sudo":<mode>,"cwd":<display path>}` or `{"t":"ctl_res","r","action":"term_open","ok":false,"why"}`.
+   why: `disabled` · `os` · `device_not_allowed` · `web_not_allowed` · `no_passkey` · `passkey_failed` · `stale` · `replay` ·
+   `bad_signature` · `busy` · `estop` · `locked` (+`secs`) · `bad_password` · `cancelled` · `shape`.
+
+**Lines and keys** (only from the device that opened it; anything else is ignored and logged):
+- `{"t":"term_line","id","seq","line"}` — `line` ≤ 4096 B UTF-8, no control characters (TAB included). Classified first.
+  Harmless → written to the shell. Dangerous → `{"t":"term_confirm","id","seq","line","why","why_en","n","fa_ch"}` where
+  `fa_ch = elevate_challenge(channel, device, id, "term_line", n, sha256(line))`; the phone, after the owner's 「运行」 + Face ID,
+  sends `{"t":"term_line","id","seq","line","n","ts","sig","fa"}` (control-v1 action `term_line`, object `{"id","line"}`). 「取消」
+  sends nothing more; the confirm expires in 120 s.
+- `{"t":"term_keys","id","key":"int"|"quit"}` — SIGINT / SIGQUIT to the shell's child processes. No Ctrl+D (on a shared pipe EOF
+  would end the shell) and no Ctrl+Z (no job control on a pipe).
+- `{"t":"term_resize"}` does not exist in line mode.
+
+**Output.** `{"t":"term_out","id","seq","data","prompt"?:true}` — masked text (no ANSI), ≤ 16 KiB per frame, ≤ 64 KiB/s.
+
+**sudo.** host → `{"t":"term_sudo","id","rid","argv","line","differs":bool,"n","fa_ch","salt","epk"}`
+(`fa_ch = elevate_challenge(channel, device, id, "term_sudo", n, sha256(argv joined by NUL))`); phone →
+`{"t":"term_sudo_ok","id","rid","n","ts","sig","fa"[,"pepk","pct"]}` (action `term_sudo`, object `{"id","rid"}`) or
+`{"t":"term_sudo_no","id","rid"}`. 60 s, then sudo is refused. `rid` = 16 hex; `salt` = this device's prf cache salt or `""`
+(no PRF needed); `pct` is sealed exactly like term_open's: AAD `… \n n \n "term_prf" \n n \n sha256(object text)` with the
+term_sudo object. A refused cached password (sudo's own "Sorry, try again" on a second askpass call) deletes the cache and
+says so in a `term_out` line ending `need_password`; the next open brings the `login` card again.
+
+**Close.** phone `{"t":"term_close","id"[,"why":"background"]}` (hidden 60 s; otherwise 「结束」 = `owner`); host `{"t":"term_close","id","why","minutes"}` — why `owner` · `timeout` · `idle` ·
+`background` · `relay_lost` · `estop` · `host` · `disabled`. `{"t":"term_forget","r","n","ts","sig"}` (action `term_forget`,
+object `{}`; no Face ID) deletes this device's cached password → `ctl_res`.
+
+**Signed object texts** (controls.object_text = wire.js controlObject): `term_open` → the mode (`line`); `term_line` →
+`id \n line`; `term_sudo` → `id \n rid`; `term_forget` → `forget`. The `login` card's shown fields (§11 digest) are `[term]`
+(the pending `r`); its seal and signature are §11's with kind `login`. `ctl_res why:"os"` also covers a password that sudo could
+not check (no sudo, NOPASSWD); `no_passkey` is said once for a listed device that lost its passkey, whose entry then goes.
+Host block `sudo`: the cache file's mode, or `session` only while this device's open terminal holds the password in memory.
+
+**Computer side.** `agentj terminal status|enable|allow|deny|disable|forget|logs` (control.sock `terminal_cfg`; widening =
+SENSITIVE claim + a terminal + an `AgentJTerminal` host card allowed with Face ID on a passkey remote).

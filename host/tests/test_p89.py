@@ -124,7 +124,7 @@ class SocketFlows(unittest.TestCase):
 
     def test_host_owned_policy_uses_signed_phone_card_and_readback(self):
         current = {'system':'macos','sleep':{'ac':20,'battery':5},'awake':False}
-        def apply(argv,password,cwd,timeout,sudo,cancel):
+        def apply(argv,password,cwd,timeout,sudo,cancel,watch=None):   # P406 #173: run_sudo's live-strip watcher
             self.assertIsInstance(cancel, threading.Event)
             self.assertFalse(cancel.is_set())
             self.assertEqual(argv, ['/usr/bin/pmset','-c','sleep','0'])

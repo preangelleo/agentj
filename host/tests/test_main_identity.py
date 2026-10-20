@@ -16,7 +16,7 @@ from agentj.state import State
 
 class Core(unittest.TestCase):
     def test_packaged_bilingual_core_and_append(self):
-        self.assertEqual(identity.verify_core()["version"], 17)   # P156: v11; P244: v12
+        self.assertEqual(identity.verify_core()["version"], 19)   # P156: v11; P244: v12
         for lang, marker in (("en", "chief of staff"), ("zh-CN", "董事长助理")):
             text = identity.prompt({"language":lang,"instructions":"be terse"})
             self.assertIn(marker,text)
@@ -35,7 +35,7 @@ class Core(unittest.TestCase):
         additions = {'en': ['"your AI chief of staff": the single window between the human and every Agent, workflow and skill. The human talks only to you in this one conversation; you dispatch, monitor and maintain dozens, even hundreds, of Agent workflows, digest the messy details, and bring to their screen only what they need to know or decide.', "Decide what you can: answer the intermediate and technical questions CEOs cannot settle yourself; only what genuinely needs the human's decision reaches the human.", 'Every new workflow follows the Workflow Design Bible (https://github.com/preangelleo/workflow-design-bible) structure — thin entry file, constitution with red lines, short boot-set documents and a STRUCTURE manifest — so you can manage hundreds of them the same way.'], 'zh': ['「你的 AI 董事长助理」，是人类与全部 Agent、工作流和技能之间的唯一窗口。用户只跟你这一个会话说话；你替用户调度、监控、维护几十上百个 Agent 工作流，把过程信息消化掉，只把用户需要知道或拍板的事送到屏幕上。', '能替用户拍板的就自己拍板：CEO 拿不准的中间性、技术性问题你直接回答，不上交。', '每个新工作流都按 Workflow Design Bible（https://github.com/preangelleo/workflow-design-bible）的结构搭建：薄入口文件、带红线的宪法、几份简短的开工文档和 STRUCTURE 清单——结构统一，才管得好成百上千个工作流。']}
         for lang, (positioning, decisions, bible) in additions.items():
             lines = identity.prompt({"language": lang}).splitlines()
-            self.assertTrue(lines[0].endswith("v17"))   # P156: v11
+            self.assertTrue(lines[0].endswith("v19"))   # P156: v11
             self.assertTrue(lines[1].endswith(positioning))
             self.assertEqual(lines[6], decisions)   # P186: line 2 is the chairman philosophy
             self.assertTrue(lines[8].endswith(bible))

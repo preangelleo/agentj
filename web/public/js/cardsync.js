@@ -12,12 +12,13 @@ import * as secretout from './secretout.js';
 import * as contacts from './contacts.js';
 import * as longtask from './longtask.js';
 import * as logincard from './logincard.js';
+import * as helpcard from './helpcard.js';
 import * as upgcard from './upgcard.js';
 
 const MODS = [
   [snap.cardIds, snap.prune], [controls.grantIds, controls.pruneGrants], [elevate.ids, elevate.prune],
   [secretout.ids, secretout.prune], [contacts.ids, contacts.prune], [longtask.ids, longtask.prune],
-  [logincard.ids, logincard.prune], [upgcard.ids, upgcard.prune],
+  [logincard.ids, logincard.prune], [upgcard.ids, upgcard.prune], [helpcard.ids, helpcard.prune],
 ];
 const GAP_MS = 1500;          // ready and 「回到前台」 often fire together: one request
 const HAVE_MAX = 256;         // the host reads at most this many (CARDS_HAVE_MAX)

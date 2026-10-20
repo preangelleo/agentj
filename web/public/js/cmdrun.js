@@ -12,17 +12,18 @@ import { isReady } from './session.js';
 import { copyable } from './copycode.js';
 import { t, onLang } from './t.js';
 import { el, mk, confirmSheet, toastAction } from './ui.js';
+import { usable as termUsable } from './termhook.js';   // P408: 「在终端里打开」 only while the terminal is on for this phone
 
 export const CMDS = { doctor: 'doctor', reconnect: 'doctor --reconnect', status: 'status', service_status: 'service status',
   rescue_status: 'rescue status', update_check: 'update check' };
 const line = (name) => 'agentj ' + CMDS[name];
-let H = { setupFaceId() {} }, names = [], R = null;   // R: the last run {name, st: run|done|fail, code, out, cut, why}
+let H = { setupFaceId() {}, openTerminal() {} }, names = [], R = null, term = false;   // R: the last run {name, st: run|done|fail, code, out, cut, why}
 
 export function configure(h) { H = { ...H, ...h }; onLang(paint); }
 /** settings.js render(): the host block decides which rows exist (an older host: the card stays hidden). */
 export function render(info) {
   const list = info && Array.isArray(info.run_cmds) ? info.run_cmds.filter((n) => typeof n === 'string' && Object.hasOwn(CMDS, n)) : [];
-  if (list.join() !== names.join()) { names = list; paint(); }
+  if (list.join() !== names.join() || term !== termUsable()) { names = list; term = termUsable(); paint(); }
 }
 function row(name) {
   const li = mk('li', 'rscmd'); li.dataset.cmd = name;
@@ -33,6 +34,12 @@ function row(name) {
   b.disabled = !!(R && R.st === 'run');
   b.addEventListener('click', () => run(name));
   li.append(main, b);
+  if (term) {                         // P408: prefilled in the terminal's input line; it runs only when the owner presses Enter
+    const o = mk('button', 'aj-btn rscmdterm', t('p408.inTerm')); o.type = 'button'; o.id = 'rs-cmd-term-' + name;
+    o.setAttribute('aria-label', t('p408.inTermAria', { cmd: line(name) }));
+    o.addEventListener('click', () => H.openTerminal(line(name)));
+    li.append(o);
+  }
   return li;
 }
 function result() {
@@ -62,6 +69,7 @@ function result() {
   return out;
 }
 export function paint() {
+  term = termUsable();
   const box = el('rs-cmds'), ul = el('rs-cmd-list'), res = el('rs-cmd-out');
   if (!box || !ul || !res) return;
   box.hidden = !names.length;

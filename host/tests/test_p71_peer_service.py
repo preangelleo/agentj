@@ -406,7 +406,9 @@ class Pipeline(Base):
         await settle()
         self.svc.on_app(k.id, dict(m))           # after: the receipt again, no second turn
         self.assertEqual(len(self.sess.calls), 1)
-        self.assertEqual([o["s"] for _, o in self.net.of("pack")], ["replied", "replied"])
+        # P410: the claim and done lease receipts each carry a transport `got` before the turn's `replied`
+        self.assertEqual([o["s"] for _, o in self.net.of("pack")], ["got", "got", "replied", "replied"])
+        self.assertEqual([o["state"] for _, o in self.net.of("relay_state")], ["claimed", "done"])
         self.assertEqual(len(self.net.of("pmsg")), 1)
 
     async def test_limited_once_per_window_never_calls_the_model(self):

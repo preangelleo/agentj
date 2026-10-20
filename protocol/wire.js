@@ -140,7 +140,9 @@ export const CONTROL_ACTIONS = ['mem_rm', 'mem_undo', 'estop', 'resume', 'task_o
   'mail_allow',                                                             // P207 (§25): add an address to the mail allowlist
   'reset', 'rescue_do',                                                    // P332 (§33): 紧急修复 ① reset connection · ② support help
   'approval_set',                                                           // P336: approval level / goal without the opening card
-  'cmd_run'];                                                               // P361 (§34): Settings 「执行」 — a whitelisted command name
+  'cmd_run',                                                                // P361 (§34): Settings 「执行」 — a whitelisted command name
+  'term_open', 'term_line', 'term_sudo', 'term_forget',                    // P408 (§38): the web terminal
+  'elev_stop', 'elev_watch'];                                               // P406 (§11.2): Stop / show a running sudo command's output
 /** The text whose SHA-256 a control signature covers (the target, with the content hash the phone saw). */
 export function controlObject(action, o) {
   if (action === 'bots_write') return canonicalJson(o.request);
@@ -154,6 +156,12 @@ export function controlObject(action, o) {
   if (action === 'reset') return String(o.what);                 // P332 (§33): object {"what":"connection"} → "connection"
   if (action === 'rescue_do') return String(o.action);           // P332 (§33): object {"action":<action>} → the action name
   if (action === 'cmd_run') return String(o.cmd);                // P361 (§34): object {"cmd":<name>} → the name
+  if (action === 'term_open') return String(o.mode);                // P408 (§38): object {"mode":"line"} → "line"
+  if (action === 'term_line') return `${o.id}\n${o.line}`;         // P408: terminal id \n the line (a confirmed dangerous line)
+  if (action === 'term_sudo') return `${o.id}\n${o.rid}`;          // P408: terminal id \n the host's sudo request id
+  if (action === 'term_forget') return 'forget';                   // P408: object {} (no Face ID)
+  if (action === 'elev_stop') return String(o.id);                 // P406 (§11.2): the running sudo card's id
+  if (action === 'elev_watch') return `${o.id}\n${o.on === true ? 'on' : 'off'}`;   // P406 F1: card id \n on | off
   if (action === 'approval_set') return `${o.key}\n${typeof o.value === 'boolean' ? (o.value ? 'true' : 'false') : o.value}`;   // P336
   if (action === 'dev_unbind') return String(o.device);
   if (action === 'dev_add') return o.rv ? `rv\n${o.rv}` : 'new';   // P190 (§27): a reverse pairing names the scanned code's channel
@@ -321,11 +329,12 @@ export const SEAL_CONTEXT = 'agentjarvis-seal-v1';
 export function elevateFields(c) {
   if (c.kind === 'sudo') return [c.cmd, c.why, c.effect || ''];
   if (c.kind === 'secret') return [c.name, c.purpose, c.dest, c.verify || ''];
+  if (c.kind === 'login') return [c.term];               // P408 (§38): the `r` of the pending term_open the password belongs to
   throw new Error('bad kind');
 }
 /** hex SHA-256 of `context\nkind\n` + one `sha256(field)` line per shown field. */
 export async function elevateDigest(kind, fields) {
-  if (kind !== 'sudo' && kind !== 'secret') throw new Error('bad kind');
+  if (kind !== 'sudo' && kind !== 'secret' && kind !== 'login') throw new Error('bad kind');
   const lines = [ELEVATE_CONTEXT, kind];
   for (const f of fields) lines.push(hex(await sha256(enc.encode(f))));
   return hex(await sha256(enc.encode(lines.join('\n'))));
@@ -374,7 +383,7 @@ export async function friendAnswerMessage(channel, device, id, decision, tool, s
   if (!['friend_request', 'peer_question'].includes(tool) || decision !== 'allow') return base;
   let out = base;
   if (group != null && group !== '') {
-    if (!GROUP_ID_RE.test(group) || (tool === 'peer_question' && group !== 'colleague')) throw new Error('bad group');
+    if (!GROUP_ID_RE.test(group) || (tool === 'peer_question' && !['colleague', 'main'].includes(group))) throw new Error('bad group');
     out = concat(out, enc.encode(`\n${hex(await sha256(enc.encode('group:' + group)))}`));
   }
   // P73 (ADR-A176): 「同意」 may carry this friend's 「补充设定」 — one more line hex(SHA-256("ctx:" + ctx)), after the group line

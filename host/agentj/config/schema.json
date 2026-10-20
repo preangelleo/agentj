@@ -1461,6 +1461,25 @@
    "apply": "hot",
    "verify": "agentj notify --list",
    "since": "0.23.0"
+  },
+  "jev.mode": {
+   "type": "string",
+   "default": "",
+   "description": "Jev safety route; empty prompts setup; off requires signed owner confirmation / Jev 审核来源；关闭须主人签名",
+   "aliases": [
+    "Jev 审核模式",
+    "Jev review mode"
+   ],
+   "tier": "user",
+   "apply": "hot",
+   "verify": "agentj onboarding --json",
+   "since": "0.24",
+   "enum": [
+    "",
+    "typesafe",
+    "openrouter",
+    "off"
+   ]
   }
  }
 }

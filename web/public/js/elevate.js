@@ -3,8 +3,9 @@ import {phoneConfirmation} from './tvremote.js';
 // or for an API key (to be saved on the computer); the human types it here into a masked field. It is sealed to the card's
 // one-time host key and signed with this device's approval key, then the field and the bytes are cleared. Nothing of it is
 // kept, logged, drafted or shown again — the Agent only ever gets the command's output or a receipt.
-import { sendApp, gen, channel } from './session.js';
-import { elevateFields, elevateDigest, elevateMessage, sealValue, b64u, unb64u } from '../proto/wire.js';
+import { sendApp, gen, channel, randHex } from './session.js';
+import { elevateFields, elevateDigest, elevateMessage, sealValue, controlMessage, b64u, unb64u } from '../proto/wire.js';
+import { SVG } from './icons.js';
 import { signKey } from './store.js';
 import { myDeviceId, myIdSync } from './api.js';
 import { t, onLang } from './t.js';
@@ -35,9 +36,9 @@ function build() {
   if (root) return root;
   root = mk('div', 'ajmodal dlgcard elev');
   root.id = 'elev';
-  // P142 (A16): a layer — ESC = the card's deny / 「不提供」 (a secret card's first press only arms it, as the button does)
+  // P142 (A16) → P406 #173: a layer — ESC collapses the card (never a deny: it stays open and the status strip reopens it)
   registerLayer({ element: () => root, open: () => !!root && !root.hidden, rank: 55, fallback: () => document.getElementById('input') || document.getElementById('setBtn'),
-    close: () => document.getElementById('elev-deny')?.click() });
+    close: () => collapse() });
   root.hidden = true;
   root.setAttribute('role', 'dialog');
   root.setAttribute('aria-modal', 'true');
@@ -66,12 +67,16 @@ function build() {
   const optText = mk('span', 'elev-grant-opt-text');
   optText.append(node('span', 'elev-grant-opt-main'), node('small', 'elev-grant-opt-fmt'));
   opt.append(box, optText);
-  form.append(node('p', 'elev-kicker', 'elev-kicker'), node('h2', 'elev-title'), node('dl', 'elev-rows', 'elev-rows'), bad, label, input,
+  // P406 #173: 「收起」 (down arrow) at every stage — the card leaves the screen, nothing is declined, the strip brings it back
+  const hide = node('button', 'elev-hide', 'elev-hide'); hide.type = 'button';
+  hide.append(chevron());
+  form.append(hide, node('p', 'elev-kicker', 'elev-kicker'), node('h2', 'elev-title'), node('dl', 'elev-rows', 'elev-rows'), bad, label, input,
     empty, opt, node('p', 'elev-note', 'elev-note'), node('p', 'elev-left', 'elev-left'), acts, deny);
   root.appendChild(form);
   document.body.appendChild(root);
   root.querySelector('#elev-form').addEventListener('submit', (e) => { e.preventDefault(); decide(true); });
   root.querySelector('#elev-deny').addEventListener('click', () => askDeny());
+  hide.addEventListener('click', () => collapse());
   root.querySelector('#elev-input').addEventListener('input', () => { $('elev-empty').hidden = true; paintButtons(); });
   root.querySelector('#elev-input').addEventListener('keydown', (e) => {
     if (e.key !== 'Enter' || e.isComposing) return;
@@ -118,8 +123,13 @@ export function add(m) {
   }
   if (completed.has(m.id)) return;
   c.running = m.state === 'running';
+  // P406 (§11.2): the command already runs (a replay after a reconnect) → straight to the strip, never the card
+  c.started = c.running && m.phase === 'started';
+  if (c.started) c.t0 = Date.now() - (Number.isInteger(m.elapsed) ? m.elapsed : 0) * 1000;
   const old = cards.get(m.id);
+  if (old) { c.out = old.out || ''; if (old.n === c.n) c.collapsed = old.collapsed; if (old.started && c.started) c.t0 = old.t0; }
   cards.set(m.id, c);
+  if (c.started && old?.watching && runShown === c.id && panelOpen) watch(c, true);   // a reconnect: ask again (a new session)
   if (old && shownId === m.id) { shownId = null; busy = false; }
   render();
 }
@@ -133,6 +143,10 @@ export function done(m) {
   if (completed.size > 100) completed.delete(completed.values().next().value);
   cards.delete(m.id);
   if (shownId === m.id) { shownId = null; busy = false; }
+  if (c?.started) {                               // P406: the strip shows the result (+ the masked output tail) a while
+    finished = { id: c.id, kind: c.kind, cmd: c.cmd, result: m.result, code: m.code, tail: str(m.tail, 20000) ?? c.out ?? '',
+      until: Date.now() + 12000 };
+  }
   const key = RESULT[m.result];
   if (key && c) {
     let text = t(key, { code: m.code ?? '' });
@@ -162,7 +176,8 @@ export function refused(m) {
 export function clear() {
   clearTimeout(recoveryTimer); recoveryTimer = 0;
   grants([]);
-  completed.clear(); cards.clear(); shownId = null; busy = false;
+  completed.clear(); cards.clear(); shownId = null; busy = false; finished = null; panelOpen = false;
+  if (runEl) paintRun();
   if (root) { $('elev-input').value = ''; root.hidden = true; }
   clearTimeout(timer);
 }
@@ -175,7 +190,22 @@ export function progress(m) {
   const c = cards.get(m.id);
   if (!c || m.state !== 'running') return;
   c.running = true;
+  if (m.phase === 'started' && !c.started) {     // P406 (§11.2): the password was accepted and the command runs — the card goes
+    c.started = true;
+    c.t0 = Date.now() - (Number.isInteger(m.elapsed) ? m.elapsed : 0) * 1000;
+    if (shownId === c.id) { shownId = null; busy = false; }
+    render();
+    return;
+  }
   if (shownId === c.id) { busy = true; clearTimeout(timer); paintButtons(); paintLeft(c); }
+}
+/** P406 (§11.2) `elev_out`: the running command's output, masked on the host; `full` replaces what this page has. */
+export function output(m) {
+  const c = cards.get(m.id);
+  const text = str(m.text, 20000);
+  if (!c || text === null) return;
+  c.out = ((m.full ? '' : c.out || '') + text).slice(-OUT_KEEP);
+  if (runShown === c.id && panelOpen) paintOut(c.out);
 }
 
 function row(dl, label, value, cls) {
@@ -186,12 +216,13 @@ function row(dl, label, value, cls) {
 }
 function render() {
   build();
-  const c = cards.values().next().value;
+  const c = [...cards.values()].find((x) => !x.started && !x.collapsed);   // P406: running / collapsed ones live in the strip
   clearTimeout(timer);
-  if (!c) { root.hidden = true; $('elev-input').value = ''; document.body.dataset.elev = '0'; return; }
+  paintRun();
+  if (!c) { root.hidden = true; $('elev-input').value = ''; document.body.dataset.elev = '0'; shownId = null; return; }
   document.body.dataset.elev = '1';
   if (shownId !== c.id) {
-    shownId = c.id;
+    shownId = c.id; busy = false;
     $('elev-input').value = '';
     const sudo = c.kind === 'sudo';
     const nopw = viaHelper(c);
@@ -229,6 +260,7 @@ function render() {
     $('elev-empty').hidden = true;
     $('elev-deny').textContent = t(sudo ? 'elev.deny' : 'elev.secret.cancel');
     $('elev-allow').textContent = t(nopw ? 'elev.sudo.allowHelper' : sudo ? 'elev.sudo.allow' : 'elev.secret.allow');
+    $('elev-hide').setAttribute('aria-label', t('p406.sudo.hide')); $('elev-hide').title = t('p406.sudo.hide');
     root.hidden = false;
     if (!nopw) setTimeout(() => { try { $('elev-input').focus({ preventScroll: true }); } catch { /* old browsers */ } }, 60);
   }
@@ -388,4 +420,157 @@ export function auto(m) {
   if (completed.size > 100) completed.delete(completed.values().next().value);
   const fail = m.result !== 'done' || (Number.isInteger(m.code) && m.code !== 0);
   notify({ kind: fail ? 'error' : 'info', text: t(fail ? 'elevGrant.autoFail' : 'elevGrant.autoRan', { exe: m.exe.slice(0, 64) }), ms: 3600 });
+}
+
+// P406 #173 (PROTOCOL §11.2): collapse never declines. A collapsed card, a command that runs and a just-finished result live in
+// one status strip above the composer: tap → the card again (asking / checking) or the masked output (running / finished);
+// 「停止」 (two taps) sends a signed `elev_stop`; the result stays a while with its output tail.
+const OUT_KEEP = 16000;
+let runEl = null, runShown = null, panelOpen = false, finished = null, runTimer = 0, stopArmed = 0;
+function chevron() {
+  const v = document.createElementNS(SVG, 'svg');
+  v.setAttribute('viewBox', '0 0 24 24'); v.setAttribute('aria-hidden', 'true'); v.setAttribute('fill', 'none');
+  v.setAttribute('stroke', 'currentColor'); v.setAttribute('stroke-width', '2'); v.setAttribute('stroke-linecap', 'round');
+  v.setAttribute('stroke-linejoin', 'round');
+  const p = document.createElementNS(SVG, 'path'); p.setAttribute('d', 'm6 9 6 6 6-6'); v.appendChild(p);
+  return v;
+}
+function collapse() {
+  const c = cards.get(shownId);
+  if (!c) return;
+  c.collapsed = true;
+  try { document.activeElement?.blur?.(); } catch { /* old browsers */ }
+  render();
+  toast(t('p406.sudo.collapsed'), 3000);
+}
+function runBar() {
+  if (runEl) return runEl;
+  runEl = mk('div', 'elev-run'); runEl.id = 'elev-run'; runEl.hidden = true;
+  runEl.setAttribute('role', 'status');
+  const panel = mk('div', 'elev-run-panel'); panel.id = 'elev-run-panel'; panel.hidden = true;
+  const out = mk('pre', 'elev-run-out'); out.id = 'elev-run-out'; out.tabIndex = 0;
+  const note = mk('p', 'elev-run-note'); note.id = 'elev-run-note';
+  panel.append(copyable(out, { variant: 'block', click: false }), note);   // P292: the masked output can be copied (⧉)
+  const row = mk('div', 'elev-run-row');
+  const main = mk('button', 'elev-run-main'); main.id = 'elev-run-main'; main.type = 'button';
+  const text = mk('span', 'elev-run-text'); text.id = 'elev-run-text';
+  const ch = mk('span', 'elev-run-ch'); ch.append(chevron());
+  main.append(mk('span', 'elev-run-dot'), text, ch);
+  const stop = mk('button', 'aj-btn aj-btn--quiet elev-run-stop'); stop.id = 'elev-run-stop'; stop.type = 'button';
+  const x = mk('button', 'aj-btn aj-btn--quiet elev-run-x'); x.id = 'elev-run-x'; x.type = 'button';
+  row.append(main, stop, x);
+  runEl.append(panel, row);
+  main.addEventListener('click', () => tapRun());
+  stop.addEventListener('click', () => stopRun());
+  x.addEventListener('click', () => { finished = null; panelOpen = false; paintRun(); });
+  document.body.appendChild(runEl);
+  // the open output panel is a layer: ESC / Back folds it (the command keeps running)
+  registerLayer({ element: () => runEl, open: () => !!runEl && !runEl.hidden && panelOpen, rank: 54, trap: false,
+    fallback: () => document.getElementById('input'), close: () => fold() });
+  onLang(() => paintRun());
+  return runEl;
+}
+const clock = (ms) => { const s = Math.max(0, Math.floor(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+function resultText(f) {
+  if (f.result === 'done') return Number.isInteger(f.code) && f.code !== 0 ? t('p406.sudo.doneFail', { code: f.code }) : t('p406.sudo.done');
+  return t({ stopped: 'p406.sudo.stopped', timeout: 'p406.sudo.timeout' }[f.result] || 'p406.sudo.failed');
+}
+function paintOut(text) {
+  const out = runEl.querySelector('#elev-run-out');
+  const end = out.scrollHeight - out.scrollTop - out.clientHeight < 24;
+  out.textContent = text || t('p406.sudo.noOutput');
+  if (end) out.scrollTop = out.scrollHeight;
+}
+function paintRun() {
+  const b = runBar();
+  clearTimeout(runTimer);
+  const list = [...cards.values()].filter((c) => c.started || c.collapsed);
+  const it = list.find((c) => c.collapsed && !c.running) || list.find((c) => c.started) || list[0] || null;
+  const fin = !it && finished && (panelOpen && runShown === finished.id || Date.now() < finished.until) ? finished : null;
+  if (!it && !fin) { b.hidden = true; panelOpen = false; runShown = null; document.body.dataset.elevrun = '0'; return; }
+  const id = it ? it.id : fin.id;
+  if (runShown !== id) { panelOpen = false; stopArmed = 0; }
+  runShown = id;
+  const state = it ? (it.started ? (it.stopping ? 'stopping' : 'running') : it.running ? 'verify' : 'ask') : 'done';
+  b.dataset.state = state;
+  if (fin) b.dataset.ok = fin.result === 'done' && fin.code === 0 ? '1' : '0'; else delete b.dataset.ok;
+  let text = state === 'ask' ? t(it.kind === 'sudo' ? 'p406.sudo.waiting' : 'p406.secret.waiting')
+    : state === 'verify' ? t('p406.sudo.verifying')
+    : state === 'running' ? t('p406.sudo.running', { time: clock(Date.now() - (it.t0 || Date.now())) })
+    : state === 'stopping' ? t('p406.sudo.stopping') : resultText(fin);
+  if (list.length > 1) text += ' ' + t('p406.sudo.more', { n: list.length - 1 });
+  b.querySelector('#elev-run-text').textContent = text;
+  const main = b.querySelector('#elev-run-main');
+  // P406 F1: output only after this phone asked for it (signed elev_watch); a result nobody watched has no tail to show
+  const outputs = state === 'running' || state === 'stopping' || (state === 'done' && !!fin.tail);
+  main.setAttribute('aria-expanded', outputs && panelOpen ? 'true' : 'false');
+  main.setAttribute('aria-label', text + ' · ' + t(outputs ? 'p406.sudo.expand' : 'p406.sudo.open'));
+  const stop = b.querySelector('#elev-run-stop');
+  stop.hidden = !(state === 'running' || state === 'stopping') || it.kind !== 'sudo';
+  stop.disabled = state === 'stopping';
+  stop.textContent = Date.now() < stopArmed ? t('p406.sudo.stopSure') : t('p406.sudo.stop');
+  const x = b.querySelector('#elev-run-x');
+  x.hidden = state !== 'done'; x.textContent = t('p406.sudo.dismiss');
+  const panel = b.querySelector('#elev-run-panel');
+  panel.hidden = !(outputs && panelOpen);
+  b.classList.toggle('open', !panel.hidden);
+  b.querySelector('.elev-run-ch').hidden = !outputs && state === 'done';
+  if (!panel.hidden) {
+    paintOut(it ? it.out : fin.tail);
+    b.querySelector('#elev-run-note').textContent = ((it || fin).cmd ? (it || fin).cmd + ' · ' : '') + t('p406.sudo.masked');
+  }
+  b.hidden = false;
+  document.body.dataset.elevrun = '1';
+  if (state === 'running' || state === 'stopping' || state === 'verify') recoverRunning();   // P392: a lost elev_done is re-read
+  if (state === 'running' || state === 'stopping') runTimer = setTimeout(paintRun, 1000);
+  else if (state === 'done' && !panelOpen) runTimer = setTimeout(paintRun, Math.max(50, finished.until - Date.now() + 20));
+}
+function tapRun() {
+  const c = cards.get(runShown);
+  if (c && !c.started) { c.collapsed = false; render(); return; }   // the card again, exactly as it was (nothing was declined)
+  if (!c && !(finished && finished.tail)) return;
+  if (panelOpen) return fold();
+  panelOpen = true;
+  if (c) watch(c, true);
+  paintRun();
+}
+function fold() {
+  panelOpen = false;
+  const c = cards.get(runShown);
+  if (c?.watching) watch(c, false);
+  if (finished) finished.until = Date.now() + 4000;
+  paintRun();
+}
+/** P406 F1 (§11.2): ask the host for this command's masked output (on) or stop it (off) — a signed `elev_watch`. */
+async function watch(c, on) {
+  c.watching = on;
+  try { await sendApp(await signedCtl('elev_watch', { id: c.id, on }, { t: 'elev_watch', id: c.id, on })); }
+  catch { if (on) { c.watching = false; toast(t('elev.fail'), 3000); } }
+}
+async function signedCtl(action, target, extra) {
+  const g = gen(), sk = await signKey();
+  if (!g) throw new Error('offline');
+  if (!sk) throw new Error('no_key');
+  const n = randHex(16), ts = Date.now();
+  const msg = await controlMessage(channel(), await myDeviceId(), action, n, ts, target);
+  return { ...extra, n, ts, sig: b64u(new Uint8Array(await crypto.subtle.sign({ name: 'Ed25519' }, sk.priv, msg))) };
+}
+async function stopRun() {
+  const c = cards.get(runShown);
+  if (!c || !c.started || c.stopping || c.kind !== 'sudo') return;
+  if (Date.now() >= stopArmed) { stopArmed = Date.now() + 4000; paintRun(); setTimeout(() => { if (Date.now() >= stopArmed) paintRun(); }, 4100); return; }
+  stopArmed = 0;
+  const g = gen();
+  if (!g) { toast(t('elev.net'), 3000); return; }
+  const sk = await signKey();
+  if (!sk) { toast(t('elev.noSign'), 3600); return; }
+  try {
+    const n = randHex(16), ts = Date.now();
+    const msg = await controlMessage(channel(), await myDeviceId(), 'elev_stop', n, ts, { id: c.id });
+    const sig = b64u(new Uint8Array(await crypto.subtle.sign({ name: 'Ed25519' }, sk.priv, msg)));
+    await sendApp({ t: 'elev_stop', id: c.id, n, ts, sig }, g);
+    c.stopping = true;
+    paintRun();
+    toast(t('p406.sudo.stopSent'), 2600);
+  } catch { toast(t('elev.fail'), 3000); }
 }

@@ -820,7 +820,11 @@ def check_jev_key(svc: dict) -> dict | None:
     does not (one-step import); a plain ✓ "off (optional)" when neither has it."""
     if not svc.get("installed") or service.platform() not in ("linux", "macos"):
         return None
-    key = service.JEV_KEY_ENV
+    from . import jev
+    route = jev.resolve()
+    if route.mode == "off":
+        return _c("jev", OK, "Jev 已由主人签名关闭；本地安全闸保留 / owner-confirmed off; local gates remain")
+    key = jev.ROUTES[route.mode][0] if route.mode in jev.ROUTES else service.JEV_KEY_ENV
     n = svc.get("name") or service.DEFAULT_UNIT
     has = service.env_file_has(service.env_file(n), key)
     if has:
@@ -830,7 +834,7 @@ def check_jev_key(svc: dict) -> dict | None:
     if (os.environ.get(key) or "").strip():
         return _c("jev", WARN, f"Jev 不生效：{key} 只在这个终端里，后台服务没有 / Jev is off: {key} is only in this terminal, "
                   "not in the background service", service.key_note(n, key) or "")
-    return _c("jev", OK, f"Jev（审批第二层，可选）未启用：没有 {key} / approval layer 2 (optional) is off: no {key}")
+    return _c("jev", OK, f"Jev 尚未配置：没有 {key}；请完成安全审核选择 / Jev setup pending: no {key}; choose a review route or confirm skip")
 
 
 def check_onboarding(st: State) -> dict:

@@ -1,6 +1,6 @@
 {
-  "version": "0.24.1a2",
-  "major": false,
-  "zh": "模型出错时兜底模型只读诊断；回复按钮回头点照样可点；先「已送达」再「停止这一轮」；好友作答修好；升级失败写明原因并自动回退。",
-  "en": "Read-only fallback diagnosis when your model fails; reply buttons stay tappable; Delivered before Stop; friend answers fixed; clearer upgrade failures."
+  "version": "0.25.0a1",
+  "major": true,
+  "zh": "官网在线客服；屏幕求助把二维码和验证码发到手机；手机上的网页终端；Jev 审核三选一；Bots 商用设置；好友转交更安全；粘贴按长度进附件；sudo 卡开始执行就收起。",
+  "en": "Website support chat; QR and code help on your phone; a web terminal; your choice of Jev review; Bots business settings; safer friend handovers."
 }

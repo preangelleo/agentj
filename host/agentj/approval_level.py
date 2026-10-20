@@ -42,12 +42,13 @@ from pathlib import Path
 KEY = "approval.level"
 GOAL_KEY = "approval.goal_nocard"
 OWNER_GOAL_SECS = 1800   # an owner's /goal lets ONE proposal start without the card within this window
-KEYS = (KEY, GOAL_KEY)
+KEYS = (KEY, GOAL_KEY, "jev.mode")
 LEVELS = ("safe", "standard", "full")
 DEFAULT = "standard"
 REDLINE_CATS = ("credentials", "spend", "price")
 # host cards that are a decision of their own, never auto-allowed by a level (pairing, sandbox, login rescue, goal, quota)
 HOST_CARDS = ("pair_device", "SandboxOnce", "AuthRescue", "DoomLoop", "task", "AskUserQuestion", "AgentJHook")   # P366: resident hook
+HOST_CARDS += ("AgentJTerminal",)   # P408: `agentj terminal enable|allow` — the owner at the computer + Face ID, never auto-allowed
 
 PARK_GRACE = 20          # seconds a card waits for a remote to come online before the Agent is told nobody is there
 PARK_SECS = 1800         # a parked card stays on the phone this long
@@ -248,6 +249,8 @@ NAME = {"zh": {"safe": "安全", "standard": "中等", "full": "全放行"},
 
 def changed_text(key: str, value, by: str, lang) -> str:
     en = _en(lang)
+    if key == "jev.mode":
+        return (f"🔐 Jev: {value} (confirmed on {by})." if en else f"🔐 Jev 已设为 {value}（由「{by}」确认）。")
     if key == KEY:
         n = NAME["en" if en else "zh"].get(value, str(value))
         return (f"🔐 Approval level is now {n} (confirmed on {by})." if en else f"🔐 审批档位已改为「{n}」（由「{by}」确认）。")

@@ -122,7 +122,9 @@ def status(st) -> dict:
     seat = cloud.read_cloud(st) is not None
     done = {k: rec[k] is not None for k in ("computer", "phone")}
     nxt = "seat" if not seat else "computer" if not done["computer"] else "phone" if not done["phone"] else None
-    return {"seat": seat, "computer": done["computer"], "phone": done["phone"], "welcomed": rec["welcomed"] is not None,
+    from . import jev
+    safety = jev.resolve(st=st).public()
+    return {"jev": safety, "jev_setup": jev.instructions(), "seat": seat, "computer": done["computer"], "phone": done["phone"], "welcomed": rec["welcomed"] is not None,
             "next": nxt, "complete": nxt is None}
 
 
@@ -359,6 +361,10 @@ def doctor_row(st) -> tuple[str, str, str]:
 def command(args, st) -> int:
     """`agentj onboarding [--json]`: what the installing Agent reads after each step to know what to tell the owner next."""
     s = status(st)
+    from . import jev
+    if not s["jev"]["ready"]:
+        s["next"] = s["next"] or "jev"
+        s["complete"] = False
     if getattr(args, "json", False):
         print(json.dumps(s, ensure_ascii=False))
         return 0
@@ -369,6 +375,9 @@ def command(args, st) -> int:
     for d in st.devices().values():
         if d.get("source") == "account":
             print("✓ 经账户页添加 / Added from account page: " + d.get("name", ""))
+    if s["next"] == "jev":
+        print(jev.instructions("zh") + "\n" + jev.instructions("en"))
+        return 0
     if s["next"]:
         print("下一步 / next: " + HOW["zh"][s["next"]] + "\n            " + HOW["en"][s["next"]])
         if s["next"] in ("computer", "phone"):

@@ -332,7 +332,7 @@ It may need you here:
 The AI installs `agentj`, the program on the Agent J host, at one fixed version:
 
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.24.1a2#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.25.0a1#subdirectory=host"
 agentj doctor
 ```
 
@@ -510,3 +510,11 @@ $env:OPENCODE_DISABLE_MODELS_FETCH = '1'
 Launch OpenCode from that same terminal using its installed launcher. It can then use its local model cache or bundled catalog; this does not download fresh model information. The Agent J installer and managed OpenCode launches set this flag themselves. This fallback was checked with the pinned Linux OpenCode binary, not a Windows machine.
 
 A managed OpenCode request still waiting after 30 seconds shows a one-time explanation, even if startup keeps printing. If the installer cannot get OpenCode's startup information within 45 seconds, it stops with a reason and repair steps. Check network access, the AI login and the working folder, then retry. A slow-start notice is not proof the AI connected.
+
+## Three choices for safety review (Jev)
+
+Choose a review route during setup. If you have neither a key nor a choice, `agentj onboarding` prompts you to finish this step. Recommended: register with [TypeSafe](https://typesafe.ai), create a key and add a small balance, then enter `TYPESAFE_API_KEY` using the secret card in the Jev section near the top of Models & API keys. An existing [OpenRouter](https://openrouter.ai) account also works: enter `OPENROUTER_API_KEY`. Existing keys are selected automatically (OpenRouter when both exist); change the route in Settings → Safety.
+
+Jev adds model review to bot and friend messages, rechecks redacted content and helps approvals assess unclear commands. Necessary redacted text goes directly to the selected provider, charged to your account under its data policy. TypeSafe uses its official API; OpenRouter routes to Jev. Review can misjudge and adds delay. An unavailable selected provider retains the channel's existing failure handling; it never silently turns review off.
+
+You can turn the master switch off in Settings → Safety and explicitly confirm “Skip — I understand safety is weaker”. The host records `jev.mode=off`, the signing device and confirmation time. All Jev model review is then bypassed and bot/friend flows continue; local patterns, credential filters, permission approvals and tool authorization remain. Off avoids model delay and false positives while removing this protection, even when a key is present. The Agent cannot sign for you or disable review by editing configuration. Only your paired phone's signed choice counts; unpairing that signing device invalidates the off authorization.

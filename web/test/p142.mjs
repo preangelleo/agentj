@@ -1,6 +1,7 @@
 // P142 item 8 (A16): the sign-in QR card, the secret pickup card and the sudo/secret card are layers — ESC does the card's own
-// quiet way out (never a hidden destructive step: the secret card's first ESC only arms 「不提供」, like its button), and no chat
-// shortcut ("?" = shortcuts, "s" = settings) leaks through any of them or the setup page. Owned headless Chromium + fake host;
+// quiet way out (never a hidden destructive step), and no chat
+// shortcut ("?" = shortcuts, "s" = settings) leaks through any of them or the setup page. P406 #173: the sudo / secret card's ESC
+// collapses it instead (never a decline; the status strip reopens it). Owned headless Chromium + fake host;
 // the browser and pages are reaped at the end (P142 item 9) and the run asserts nothing it started is left.
 import assert from 'node:assert/strict';
 import {randomBytes} from 'node:crypto';
@@ -49,15 +50,18 @@ try{
   ok(JSON.stringify(fake.log.slice(n0)).includes('secret_out_decline'),'secret pickup card: ESC = its 「不需要了」 (secret_out_decline sent)');
   await evaluate(p,`import('./js/secretout.js').then(m=>m.done({id:${JSON.stringify(sid)},result:'declined'}))`);
 
-  // 3. the secret card (F17): the first ESC only arms 「不提供」 — the card stays, nothing is sent
+  // 3. the secret card (F17): ESC collapses it (P406 #173 — Leo: every sudo / key card can be put away; collapsing is never
+  //    「不提供」): the card leaves the screen, nothing is sent, the status strip above the composer opens it again
   const eid=hex(),epk=Buffer.alloc(32,7).toString('base64url');
   await evaluate(p,`import('./js/elevate.js').then(m=>m.add({id:${JSON.stringify(eid)},n:${JSON.stringify(hex())},kind:'secret',epk:${JSON.stringify(epk)},name:'OPENAI_API_KEY',purpose:'P142 test',dest:'~/.config/x.env',ttl:600}))`);
   await waitFor(p,"document.getElementById('elev') && !document.getElementById('elev').hidden");
   await evaluate(p,"document.activeElement?.blur()");await noLeak('secret card');
-  const label0=await evaluate(p,"document.getElementById('elev-deny').textContent");
   n0=fake.log.length;await key(p,'Escape');await sleep(300);
-  ok(!(await evaluate(p,"document.getElementById('elev').hidden"))&&await evaluate(p,"document.getElementById('elev-deny').textContent")!==label0
-     &&fake.log.length===n0,'secret card: first ESC only arms 「不提供」 (card stays, nothing sent)');
+  ok(await evaluate(p,"document.getElementById('elev').hidden && document.getElementById('elev-run')?.hidden===false && document.getElementById('elev-run').dataset.state==='ask'")
+     &&fake.log.length===n0,'secret card: ESC collapses it (nothing sent, the strip keeps it reachable)');
+  await evaluate(p,"document.getElementById('elev-run-main').click()");
+  await waitFor(p,"!document.getElementById('elev').hidden");
+  ok(fake.log.length===n0,'secret card: the strip opens it again, still nothing sent');
   await evaluate(p,`import('./js/elevate.js').then(m=>m.done({id:${JSON.stringify(eid)},result:'gone'}))`);
 
   // 4. the setup page holds the keyboard too

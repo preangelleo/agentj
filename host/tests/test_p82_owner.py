@@ -94,6 +94,8 @@ class OwnerTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('approved answer',send.text);self.assertIn(vid,send.text)
         self.host.stopped=lambda:True;self.assertFalse(await send.wait_ready());self.host.stopped=lambda:False
         store.db.execute('UPDATE handoffs SET created=?',(store.now()-601,))
+        self.assertTrue(await send.wait_ready())  # P407: a human reply survives the former ten-minute window
+        store.db.execute('UPDATE handoffs SET created=?',(store.now()-48*3600-1,))
         self.assertFalse(await send.wait_ready())
         await self.manager.phone(self.session,self.message({'op':'human_reply','handoff':send.bot_handoff_id,'text':'late'}))
         self.assertEqual(self.sent[-1]['why'],'handoff_expired')

@@ -220,8 +220,10 @@ async function skill(s){const e=epoch,box=sheet(),zh=lang()==='zh';box.append(no
  box.append(sum,button(t('p244.fivepages37'),()=>{go('chat');H.insert('/'+s.name+' ');}));
  const raw=node('details',undefined,'fp-raw'),sm=node('summary',t('p299.raw'));const wait=node('p',t('p244.fivepages31'),'fp-meta');raw.append(sm,wait);box.append(raw);
  const m=await ask1({t:'skill_get',id:s.id},'skill_get',15000);if(e!==epoch||box.hidden)return;wait.replaceWith(prose(m));}
-function insertCard(m,replace){go('chat');const input=$('input');if(replace){input.setRangeText(m.text+' ',replace.start,input.selectionStart,'end');input.dispatchEvent(new Event('input'));focusDraft(input);}else H.insert(m.text+' ');composer?.paint(true);}
-function insertMention(w,replace){go('chat');const input=$('input');if(replace){input.setRangeText(mentionText(w)+' ',replace.start,input.selectionStart,'end');input.dispatchEvent(new Event('input'));focusDraft(input);}else H.insert(mentionText(w)+' ');composer?.paint(true);}
+// P406 #163: a picked @ token gets exactly one space after it (an existing one is reused), the caret after that space
+function putToken(input,text,start){const end=input.selectionStart,sp=/^[ \u00a0]/.test(input.value.slice(end));input.setRangeText(sp?text:text+' ',start,end,'end');if(sp)input.setSelectionRange(input.selectionEnd+1,input.selectionEnd+1);input.dispatchEvent(new Event('input'));focusDraft(input);}
+function insertCard(m,replace){go('chat');const input=$('input');if(replace)putToken(input,m.text,replace.start);else H.insert(m.text+' ');composer?.paint(true);}
+function insertMention(w,replace){go('chat');const input=$('input');if(replace)putToken(input,mentionText(w),replace.start);else H.insert(mentionText(w)+' ');composer?.paint(true);}
 // cardsOnly (the owner's own input card, P360): only @cards and card addresses become links there
 export function linkify(box,cardsOnly=false){const cards=jc.available()?jc.mentions(sysNames()):[];if((!pic||cardsOnly)&&!jc.available())return;const ws=pic&&!cardsOnly?pic.items.filter(w=>w.wdb):[],sk=pic&&!cardsOnly?pic.skills:[];const entries=[];
  for(const s of sk)for(const name of [s.name,...(s.aliases||[])])entries.push({text:'/'+name,type:'skill',fn:()=>skill(s)});
@@ -250,7 +252,7 @@ export function init(h){H=h;$('cardPlus')?.addEventListener('click',plusCard);
  if(window.ResizeObserver)new ResizeObserver(()=>page.style.setProperty('--fp-sticky-h',Math.round(stick.getBoundingClientRect().height)+'px')).observe(stick);
  const menu=node('section');menu.id='five-menu';menu.hidden=true;menu.setAttribute('role','dialog');menu.setAttribute('aria-label',t('p244.fivepages42'));menu.onclick=e=>{if(e.target===menu)closeMenu();};
  const sheet=node('section');sheet.id='five-detail';sheet.hidden=true;sheet.setAttribute('role','dialog');sheet.setAttribute('aria-label',t('p244.fivepages43'));
- const pop=node('div');pop.id='five-mentions';pop.hidden=true;pop.setAttribute('role','listbox');document.body.append(page,menu,sheet,pop);for(const n of [page,menu,sheet])mo?.observe(n,{attributes:true,attributeFilter:['hidden']});syncPlus();
+ const pop=node('div');pop.id='five-mentions';pop.hidden=true;pop.setAttribute('role','listbox');document.body.append(page,menu,sheet,pop);pop.addEventListener('mousedown',e=>e.preventDefault());for(const n of [page,menu,sheet])mo?.observe(n,{attributes:true,attributeFilter:['hidden']});syncPlus();
  registerLayer({element:()=>page,open:()=>!page.hidden,close:()=>go('chat'),fallback:()=>$('orb'),rank:3,trap:false});registerLayer({element:()=>menu,open:()=>!menu.hidden,close:closeMenu,fallback:()=>$('orb'),rank:35});
  addEventListener('popstate',()=>{if(!armed)return;armed=false;stepBack();});registerLayer({element:()=>sheet,open:()=>!sheet.hidden,close:closeDetail,fallback:()=>$('orb'),rank:36});
  registerLayer({element:()=>fbox,open:()=>findOpen()&&sheet.hidden&&menu.hidden,close:closeFind,fallback:()=>$('srchBtn'),rank:4,trap:false});

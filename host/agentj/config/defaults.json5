@@ -1,5 +1,6 @@
 // Factory defaults; put only your changes in the user override file.
 {
+  "jev": {"mode": ""},
   "updates": {"auto_install": true, "mode": "auto", "report_failures": true, "skill_categories": []},
   "agent": {
     // Empty preserves existing work folder; fresh init defaults to ~/coding.

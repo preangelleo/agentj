@@ -443,6 +443,13 @@ class PeerNet:
                                                     json.dumps(obj, ensure_ascii=False), ack, now, now + self.MSG_TTL))
         self._kick()
 
+    def cancel_message(self, peer_id: str, mid: str) -> None:
+        """P410: withdraw only this pending task frame; never another friend or process."""
+        pid = parse_id(peer_id)
+        if pid and isinstance(mid, str):
+            self.db.execute("DELETE FROM outbox WHERE kind='msg' AND peer=? AND mid=? AND ack=1", (pid, mid))
+            self._kick()
+
     def pause(self, peer_id: str, seconds: float) -> None:
         pid = parse_id(peer_id) or peer_id
         try:

@@ -121,15 +121,17 @@ def jev_layer(m: dict, sender_kind: str, rules: str, env=None, transport=None) -
     """p(important) from Jev on a redacted copy, or None (no key, network, odd answer). Codes never get here."""
     from . import approval_jev as aj
     env = os.environ if env is None else env
-    key = (env.get(aj.KEY_ENV) or "").strip()
+    from . import jev
+    route = jev.resolve(env=env)
+    key = route.key
     if not key:
         return None
     state = {"message": core.redact_for_model(m.get("text") or ""), "sender": sender_kind,
              "owner_rules": core.redact_for_model(rules or "（没有）", 1500)}
-    body = json.dumps({"model": aj.MODEL, "state": state, "questions": {
+    body = json.dumps({"model": route.model, "state": state, "questions": {
         "important": {"type": "noul", "instructions": QUESTION, "criteria": CRITERIA}}}, ensure_ascii=False).encode()
     try:
-        status, raw = (transport or aj.urllib_transport)(aj.ENDPOINT, _jev_headers(key), body, 5.0)
+        status, raw = (transport or aj.urllib_transport)(route.endpoint, _jev_headers(key), body, 5.0)
         if status != 200:
             return None
         p = float(json.loads(raw)["answers"]["important"]["noul"])
@@ -538,9 +540,13 @@ class IMessage:
         if op == "doctor":
             return await self.check()
         # changes: never while a message that is not the owner's is being handled (a text message, a group member …)
-        if provenance.untrusted_turn(getattr(self.host, "agent", None)):
+        if provenance.untrusted_turn(getattr(self.host, "agent", None)) and not provenance.delegated_turn(getattr(self.host, "agent", None)):
             self.host.st.log("imessage_refused", op=str(op)[:16], reason="untrusted_turn")
             return {"ok": False, "why": "untrusted_turn"}
+        if provenance.delegated_turn(getattr(self.host, "agent", None)):
+            ans = await self.host.ask("AgentJSameOwnerAction", {"summary": "Same owner: imessage " + str(op), "request": req}, batch=False)
+            if ans.get("behavior") != "allow":
+                return {"ok": False, "why": "denied"}
         if op == "set":
             return await self.set(req.get("key"), req.get("value"))
         if op == "scan":

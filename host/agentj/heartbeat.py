@@ -571,9 +571,13 @@ class Heartbeat:
         if op in quota_mod.READ_OPS:                   # P254: agentj quota (the fenced Agent cannot read the state directory)
             return await quota_mod.handle(self.host, req)
         # changes: never while a message that is not the owner's is being handled (a group member cannot rewrite them)
-        if provenance.untrusted_turn(getattr(self.host, "agent", None)):
+        if provenance.untrusted_turn(getattr(self.host, "agent", None)) and not provenance.delegated_turn(getattr(self.host, "agent", None)):
             self.host.st.log("heartbeat_refused", op=str(op)[:16], reason="untrusted_turn")
             return {"ok": False, "why": "untrusted_turn"}
+        if provenance.delegated_turn(getattr(self.host, "agent", None)):
+            ans = await self.host.ask("AgentJSameOwnerAction", {"summary": "Same owner: heartbeat " + str(op), "request": req}, batch=False)
+            if ans.get("behavior") != "allow":
+                return {"ok": False, "why": "denied"}
         if op in quota_mod.WRITE_OPS:                  # P254: reminders on/off, recorded resets, today's reminders marked given
             return await quota_mod.handle(self.host, req)
         if op == "now":

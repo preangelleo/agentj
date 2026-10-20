@@ -44,6 +44,9 @@ ACTIONS += ("mail_allow",)          # P207 (§25): the address book adds an addr
 ACTIONS += ("reset", "rescue_do")    # P332 (§33): 紧急修复 — ① reset the connection · a whitelisted repair action (reset.py)
 ACTIONS += ("approval_set",)        # P336 (§8): the approval level / goal-without-card switch (approval_level.py)
 ACTIONS += ("cmd_run",)             # P361 (§34): Settings 「执行」 — one whitelisted command name (cmdrun.RUN_CMDS)
+ACTIONS += ("term_open", "term_line", "term_sudo", "term_forget")   # P408 (§38): the web terminal (terminal.py)
+ACTIONS += ("elev_stop",)           # P406 (§11.2): 「停止」 on a running sudo command's strip (elevate.py)
+ACTIONS += ("elev_watch",)          # P406 F1 (§11.2): show / stop showing that command's masked output on this phone
 TS_SKEW_MS = 120_000
 NONCE_KEEP_S = 600
 _NONCE = re.compile(r"[0-9a-f]{32}")
@@ -73,6 +76,9 @@ def object_text(action: str, obj: dict) -> str:
     reset    : the `what` ("connection")                  (P332, §33)
     rescue_do : the action name (help | report | reconnect | restart | linger | rollback | new_session)
     approval_set : key (approval.level | approval.goal_nocard) \n value (safe | standard | full | true | false)  (P336)
+    term_open : the mode ("line")          term_line : terminal id \n the line          (P408, §38)
+    term_sudo : terminal id \n sudo request id          term_forget : "forget"
+    elev_stop : the running sudo card's id   (P406, §11.2)      elev_watch : card id \n on | off
     (a missing / null text field is "", as wire.js `?? ''`)
     """
     if action == "bots_write":
@@ -99,6 +105,18 @@ def object_text(action: str, obj: dict) -> str:
         return str(obj["action"])
     if action == "cmd_run":          # P361: the whitelisted command's name (cmdrun.RUN_CMDS); no argument travels
         return str(obj["cmd"])
+    if action == "term_open":        # P408 (§38): object {"mode": "line"} → "line"
+        return str(obj["mode"])
+    if action == "term_line":        # the terminal id \n the line exactly as sent (a confirmed dangerous line)
+        return f"{obj['id']}\n{obj['line']}"
+    if action == "term_sudo":        # the terminal id \n the host's sudo request id
+        return f"{obj['id']}\n{obj['rid']}"
+    if action == "term_forget":      # object {} — delete this device's cached computer password
+        return "forget"
+    if action == "elev_stop":        # P406 (§11.2): the running sudo card's id
+        return str(obj["id"])
+    if action == "elev_watch":       # P406 F1 (§11.2): the card's id \n on | off
+        return f"{obj['id']}\n{'on' if obj['on'] is True else 'off'}"
     if action == "approval_set":     # P336: key \n value (a boolean as true / false)
         v = obj["value"]
         return f"{obj['key']}\n{('true' if v else 'false') if isinstance(v, bool) else v}"

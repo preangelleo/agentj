@@ -134,7 +134,7 @@ agentj --help
 
 ```text
 usage: agentj [-h] [-V] [--migrate-legacy] [--instance N] [--fresh]
-              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,keep-awake,browser,setup,google,mail,report,contacts,hook,ask,workflows,sudo,secret,provider,sudo-helper,docs-rule,handover,telegram-cursor,plaza,support,data,capability,goal,heartbeat,quota,imessage,busy,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
+              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,keep-awake,browser,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,terminal,provider,sudo-helper,docs-rule,handover,telegram-cursor,plaza,support,data,capability,goal,heartbeat,quota,imessage,busy,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -437,7 +437,7 @@ agentj bots --help
 
 ```text
 usage: agentj bots [-h]
-                   {list,detail,history,statistics,handoffs,request,attach-telegram,result,avatar,tool} ...
+                   {list,schema,detail,history,statistics,handoffs,request,attach-telegram,result,avatar,tool} ...
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -597,6 +597,24 @@ usage: agentj bots result [-h] proposal
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `proposal` | `null` | true | — | `` |
+
+### agentj bots schema
+
+```text
+Bot 配置参考，不含凭据
+```
+
+```bash
+agentj bots schema --help
+```
+
+```text
+usage: agentj bots schema [-h]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
 
 ### agentj bots statistics
 
@@ -2161,7 +2179,7 @@ agentj friends --help
 
 ```text
 usage: agentj friends [-h] [--json]
-                      {id,card,add,list,history,tell,group,groups,block,unblock,remove,discoverable,profile,context,usage,on,off} ...
+                      {relay-policy,cancel,id,card,add,list,status,history,tell,group,groups,block,unblock,remove,discoverable,profile,context,usage,on,off} ...
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -2209,6 +2227,27 @@ usage: agentj friends block [-h] [--json] friend
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--json` | `false` | false | — | `machine-readable output` |
 | `friend` | `null` | true | — | `` |
+
+### agentj friends cancel
+
+```text
+cancel a sent request
+```
+
+```bash
+agentj friends cancel --help
+```
+
+```text
+usage: agentj friends cancel [-h] [--json] friend mid
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `machine-readable output` |
+| `friend` | `null` | true | — | `` |
+| `mid` | `null` | true | — | `` |
 
 ### agentj friends card
 
@@ -2439,6 +2478,30 @@ usage: agentj friends profile [-h] [--json] [--show] [--set SET] [--edit]
 | `--set` | `null` | false | — | `` |
 | `--edit` | `false` | false | — | `` |
 
+### agentj friends relay-policy
+
+```text
+handover limits and leases
+```
+
+```bash
+agentj friends relay-policy --help
+```
+
+```text
+usage: agentj friends relay-policy [-h] [--json] [--per-minute PER_MINUTE]
+                                   [--claim-seconds CLAIM_SECONDS]
+                                   [--pending-seconds PENDING_SECONDS]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `machine-readable output` |
+| `--per-minute` | `null` | false | — | `` |
+| `--claim-seconds` | `null` | false | — | `` |
+| `--pending-seconds` | `null` | false | — | `` |
+
 ### agentj friends remove
 
 ```text
@@ -2459,6 +2522,26 @@ usage: agentj friends remove [-h] [--json] friend
 | `--json` | `false` | false | — | `machine-readable output` |
 | `friend` | `null` | true | — | `` |
 
+### agentj friends status
+
+```text
+same-owner aggregate status
+```
+
+```bash
+agentj friends status --help
+```
+
+```text
+usage: agentj friends status [-h] [--json] friend
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `machine-readable output` |
+| `friend` | `null` | true | — | `` |
+
 ### agentj friends tell
 
 ```text
@@ -2470,7 +2553,8 @@ agentj friends tell --help
 ```
 
 ```text
-usage: agentj friends tell [-h] [--json] friend text [text ...]
+usage: agentj friends tell [-h] [--json] [--reply-to REPLY_TO]
+                           friend text [text ...]
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -2479,6 +2563,7 @@ usage: agentj friends tell [-h] [--json] friend text [text ...]
 | `--json` | `false` | false | — | `machine-readable output` |
 | `friend` | `null` | true | — | `` |
 | `text` | `null` | true | — | `` |
+| `--reply-to` | `null` | false | — | `task reply id` |
 
 ### agentj friends unblock
 
@@ -4509,6 +4594,58 @@ usage: agentj provider profile use [-h] id
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `id` | `null` | true | — | `` |
 
+### agentj qr
+
+```text
+push the page's QR code to the owner's phone
+```
+
+```bash
+agentj qr --help
+```
+
+```text
+usage: agentj qr [-h] {push} ...
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj qr push
+
+```text
+裁出二维码推到主人手机（大图 + 倒计时）/ cut the QR code out and push it to the owner's phone
+```
+
+```bash
+agentj qr push --help
+```
+
+```text
+usage: agentj qr push [-h] [--page] [--selector CSS] [--tab TEXT] [--ttl TTL]
+                      [--from NAME] [--wait-s WAIT_S] [--compact]
+                      [--text TEXT] [--wait-until {none,answered,page-change}]
+                      [--no-crop] [--vision]
+                      [image]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `image` | `null` | false | — | `a picture file; none = the current page of Agent J's browser` |
+| `--page` | `false` | false | — | `截 Agent J 浏览器当前页面（默认）/ capture the browser page (default)` |
+| `--selector` | `null` | false | — | `capture only this element` |
+| `--tab` | `null` | false | — | `the tab whose address contains this` |
+| `--ttl` | `null` | false | — | `卡片有效秒数（30–600，默认 120）/ seconds the card stays` |
+| `--from` | `null` | false | — | `来源名（主人自己的脚本用）/ the source name a script shows` |
+| `--wait-s` | `110` | false | — | `最多等几秒（单次 ≤ 170）/ seconds to wait` |
+| `--compact` | `false` | false | — | `one-line JSON` |
+| `--text` | `null` | false | — | `一句说明（≤ 120）/ one line under the code` |
+| `--wait-until` | `"none"` | false | `none`, `answered`, `page-change` | `when to return` |
+| `--no-crop` | `false` | false | — | `send the picture as it is` |
+| `--vision` | `false` | false | — | `本地认不出时用主人配置的视觉模型兜底（AGENTJ_VISION_URL / _MODEL / _API_KEY）/ fall back to the owner's vision model` |
+
 ### agentj quota
 
 ```text
@@ -4842,6 +4979,98 @@ usage: agentj revoke [-h] device
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `device` | `null` | true | — | `` |
+
+### agentj screen
+
+```text
+screen help
+```
+
+```bash
+agentj screen --help
+```
+
+```text
+usage: agentj screen [-h] {ask,wait,cancel} ...
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj screen ask
+
+```text
+push a screenshot with a question and wait
+```
+
+```bash
+agentj screen ask --help
+```
+
+```text
+usage: agentj screen ask [-h] [--page] [--selector CSS] [--tab TEXT]
+                         [--ttl TTL] [--from NAME] [--wait-s WAIT_S]
+                         [--compact] [--screen] [--question QUESTION]
+                         [--reply {text,done}]
+                         [image]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `image` | `null` | false | — | `a picture file; none = the current page of Agent J's browser` |
+| `--page` | `false` | false | — | `截 Agent J 浏览器当前页面（默认）/ capture the browser page (default)` |
+| `--selector` | `null` | false | — | `capture only this element` |
+| `--tab` | `null` | false | — | `the tab whose address contains this` |
+| `--ttl` | `null` | false | — | `卡片有效秒数（30–900，默认 300）/ seconds the card stays` |
+| `--from` | `null` | false | — | `来源名（主人自己的脚本用）/ the source name a script shows` |
+| `--wait-s` | `110` | false | — | `最多等几秒（单次 ≤ 170）/ seconds to wait` |
+| `--compact` | `false` | false | — | `one-line JSON` |
+| `--screen` | `false` | false | — | `截整个Agent J 主机屏幕（而不是浏览器页面）/ the whole screen` |
+| `--question / -q` | `null` | false | — | `问主人的一句话（≤ 120），如「请扫码」「验证码是什么」/ the question` |
+| `--reply` | `"text"` | false | `text`, `done` | `whether the owner can type an answer` |
+
+### agentj screen cancel
+
+```text
+withdraw a card
+```
+
+```bash
+agentj screen cancel --help
+```
+
+```text
+usage: agentj screen cancel [-h] [--compact] id
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `id` | `null` | true | — | `` |
+| `--compact` | `false` | false | — | `` |
+
+### agentj screen wait
+
+```text
+keep waiting for a card's outcome
+```
+
+```bash
+agentj screen wait --help
+```
+
+```text
+usage: agentj screen wait [-h] [--wait-s WAIT_S] [--compact] id
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `id` | `null` | true | — | `` |
+| `--wait-s` | `110` | false | — | `` |
+| `--compact` | `false` | false | — | `` |
 
 ### agentj secret
 
@@ -5360,6 +5589,33 @@ usage: agentj telegram-cursor status [-h]
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj terminal
+
+```text
+the web terminal (line mode)
+```
+
+```bash
+agentj terminal --help
+```
+
+```text
+usage: agentj terminal [-h] [--device DEVICE] [--minutes MINUTES]
+                       [--hours HOURS] [--allow-web] [--json]
+                       {status,enable,allow,deny,disable,forget,logs} [target]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `action` | `null` | true | `status`, `enable`, `allow`, `deny`, `disable`, `forget`, `logs` | `` |
+| `target` | `null` | false | — | `the remote (id or name) for allow, deny, forget` |
+| `--device` | `null` | false | — | `enable：能用的遥控器（可多次；默认 = 唯一有通行密钥的那台）/ a remote (repeatable)` |
+| `--minutes` | `null` | false | — | `enable：每次最长几分钟（1–60，默认 15）/ minutes per session` |
+| `--hours` | `null` | false | — | `allow：几小时后自动取消（1–24，默认 2）/ hours until it ends` |
+| `--allow-web` | `false` | false | — | `allow a web-version remote` |
+| `--json` | `false` | false | — | `` |
 
 ### agentj theme
 
@@ -6025,7 +6281,7 @@ agentj --help
 
 ```text
 usage: agentj [-h] [-V] [--migrate-legacy] [--instance N] [--fresh]
-              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,keep-awake,browser,setup,google,mail,report,contacts,hook,ask,workflows,sudo,secret,provider,sudo-helper,docs-rule,handover,telegram-cursor,plaza,support,data,capability,goal,heartbeat,quota,imessage,busy,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
+              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,keep-awake,browser,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,terminal,provider,sudo-helper,docs-rule,handover,telegram-cursor,plaza,support,data,capability,goal,heartbeat,quota,imessage,busy,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -6328,7 +6584,7 @@ agentj bots --help
 
 ```text
 usage: agentj bots [-h]
-                   {list,detail,history,statistics,handoffs,request,attach-telegram,result,avatar,tool} ...
+                   {list,schema,detail,history,statistics,handoffs,request,attach-telegram,result,avatar,tool} ...
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -6488,6 +6744,24 @@ usage: agentj bots result [-h] proposal
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `proposal` | `null` | true | — | `` |
+
+### agentj bots schema
+
+```text
+Bot configuration reference, no credentials
+```
+
+```bash
+agentj bots schema --help
+```
+
+```text
+usage: agentj bots schema [-h]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
 
 ### agentj bots statistics
 
@@ -8052,7 +8326,7 @@ agentj friends --help
 
 ```text
 usage: agentj friends [-h] [--json]
-                      {id,card,add,list,history,tell,group,groups,block,unblock,remove,discoverable,profile,context,usage,on,off} ...
+                      {relay-policy,cancel,id,card,add,list,status,history,tell,group,groups,block,unblock,remove,discoverable,profile,context,usage,on,off} ...
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -8100,6 +8374,27 @@ usage: agentj friends block [-h] [--json] friend
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--json` | `false` | false | — | `机器可读输出` |
 | `friend` | `null` | true | — | `` |
+
+### agentj friends cancel
+
+```text
+取消已发出的请求状态
+```
+
+```bash
+agentj friends cancel --help
+```
+
+```text
+usage: agentj friends cancel [-h] [--json] friend mid
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `机器可读输出` |
+| `friend` | `null` | true | — | `` |
+| `mid` | `null` | true | — | `` |
 
 ### agentj friends card
 
@@ -8330,6 +8625,30 @@ usage: agentj friends profile [-h] [--json] [--show] [--set SET] [--edit]
 | `--set` | `null` | false | — | `` |
 | `--edit` | `false` | false | — | `` |
 
+### agentj friends relay-policy
+
+```text
+转交限流和租约
+```
+
+```bash
+agentj friends relay-policy --help
+```
+
+```text
+usage: agentj friends relay-policy [-h] [--json] [--per-minute PER_MINUTE]
+                                   [--claim-seconds CLAIM_SECONDS]
+                                   [--pending-seconds PENDING_SECONDS]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `机器可读输出` |
+| `--per-minute` | `null` | false | — | `` |
+| `--claim-seconds` | `null` | false | — | `` |
+| `--pending-seconds` | `null` | false | — | `` |
+
 ### agentj friends remove
 
 ```text
@@ -8350,6 +8669,26 @@ usage: agentj friends remove [-h] [--json] friend
 | `--json` | `false` | false | — | `机器可读输出` |
 | `friend` | `null` | true | — | `` |
 
+### agentj friends status
+
+```text
+同一个主人好友的聚合状态
+```
+
+```bash
+agentj friends status --help
+```
+
+```text
+usage: agentj friends status [-h] [--json] friend
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `机器可读输出` |
+| `friend` | `null` | true | — | `` |
+
 ### agentj friends tell
 
 ```text
@@ -8361,7 +8700,8 @@ agentj friends tell --help
 ```
 
 ```text
-usage: agentj friends tell [-h] [--json] friend text [text ...]
+usage: agentj friends tell [-h] [--json] [--reply-to REPLY_TO]
+                           friend text [text ...]
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -8370,6 +8710,7 @@ usage: agentj friends tell [-h] [--json] friend text [text ...]
 | `--json` | `false` | false | — | `机器可读输出` |
 | `friend` | `null` | true | — | `` |
 | `text` | `null` | true | — | `` |
+| `--reply-to` | `null` | false | — | `回复同一个主人任务的消息 ID（避免当成新任务）` |
 
 ### agentj friends unblock
 
@@ -10400,6 +10741,58 @@ usage: agentj provider profile use [-h] id
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `id` | `null` | true | — | `` |
 
+### agentj qr
+
+```text
+扫码求助：把页面上的二维码裁好推到主人手机
+```
+
+```bash
+agentj qr --help
+```
+
+```text
+usage: agentj qr [-h] {push} ...
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj qr push
+
+```text
+裁出二维码推到主人手机（大图 + 倒计时）/ cut the QR code out and push it to the owner's phone
+```
+
+```bash
+agentj qr push --help
+```
+
+```text
+usage: agentj qr push [-h] [--page] [--selector CSS] [--tab TEXT] [--ttl TTL]
+                      [--from NAME] [--wait-s WAIT_S] [--compact]
+                      [--text TEXT] [--wait-until {none,answered,page-change}]
+                      [--no-crop] [--vision]
+                      [image]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `image` | `null` | false | — | `图片文件（PNG/JPEG/WebP）；不给 = 截 Agent J 浏览器当前页面` |
+| `--page` | `false` | false | — | `截 Agent J 浏览器当前页面（默认）/ capture the browser page (default)` |
+| `--selector` | `null` | false | — | `只截页面上这个元素` |
+| `--tab` | `null` | false | — | `网址里含这段文字的标签页` |
+| `--ttl` | `null` | false | — | `卡片有效秒数（30–600，默认 120）/ seconds the card stays` |
+| `--from` | `null` | false | — | `来源名（主人自己的脚本用）/ the source name a script shows` |
+| `--wait-s` | `110` | false | — | `最多等几秒（单次 ≤ 170）/ seconds to wait` |
+| `--compact` | `false` | false | — | `单行 JSON` |
+| `--text` | `null` | false | — | `一句说明（≤ 120）/ one line under the code` |
+| `--wait-until` | `"none"` | false | `none`, `answered`, `page-change` | `none 推完就返回；answered 等主人点「我扫好了」；page-change 盯着页面，变了就自动关卡` |
+| `--no-crop` | `false` | false | — | `不裁剪，发原图` |
+| `--vision` | `false` | false | — | `本地认不出时用主人配置的视觉模型兜底（AGENTJ_VISION_URL / _MODEL / _API_KEY）/ fall back to the owner's vision model` |
+
 ### agentj quota
 
 ```text
@@ -10733,6 +11126,98 @@ usage: agentj revoke [-h] device
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `device` | `null` | true | — | `` |
+
+### agentj screen
+
+```text
+屏幕求助：整页/整屏高清截图推给主人，等他扫码、点完成或回填文字
+```
+
+```bash
+agentj screen --help
+```
+
+```text
+usage: agentj screen [-h] {ask,wait,cancel} ...
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj screen ask
+
+```text
+把截图和一个问题推到主人手机并等答案
+```
+
+```bash
+agentj screen ask --help
+```
+
+```text
+usage: agentj screen ask [-h] [--page] [--selector CSS] [--tab TEXT]
+                         [--ttl TTL] [--from NAME] [--wait-s WAIT_S]
+                         [--compact] [--screen] [--question QUESTION]
+                         [--reply {text,done}]
+                         [image]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `image` | `null` | false | — | `图片文件（PNG/JPEG/WebP）；不给 = 截 Agent J 浏览器当前页面` |
+| `--page` | `false` | false | — | `截 Agent J 浏览器当前页面（默认）/ capture the browser page (default)` |
+| `--selector` | `null` | false | — | `只截页面上这个元素` |
+| `--tab` | `null` | false | — | `网址里含这段文字的标签页` |
+| `--ttl` | `null` | false | — | `卡片有效秒数（30–900，默认 300）/ seconds the card stays` |
+| `--from` | `null` | false | — | `来源名（主人自己的脚本用）/ the source name a script shows` |
+| `--wait-s` | `110` | false | — | `最多等几秒（单次 ≤ 170）/ seconds to wait` |
+| `--compact` | `false` | false | — | `单行 JSON` |
+| `--screen` | `false` | false | — | `截整个Agent J 主机屏幕（而不是浏览器页面）/ the whole screen` |
+| `--question / -q` | `null` | false | — | `问主人的一句话（≤ 120），如「请扫码」「验证码是什么」/ the question` |
+| `--reply` | `"text"` | false | `text`, `done` | `text = 可以回填文字（默认）；done = 只要点完成` |
+
+### agentj screen cancel
+
+```text
+撤回一张求助卡
+```
+
+```bash
+agentj screen cancel --help
+```
+
+```text
+usage: agentj screen cancel [-h] [--compact] id
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `id` | `null` | true | — | `` |
+| `--compact` | `false` | false | — | `` |
+
+### agentj screen wait
+
+```text
+继续等一张求助卡的结果
+```
+
+```bash
+agentj screen wait --help
+```
+
+```text
+usage: agentj screen wait [-h] [--wait-s WAIT_S] [--compact] id
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `id` | `null` | true | — | `` |
+| `--wait-s` | `110` | false | — | `` |
+| `--compact` | `false` | false | — | `` |
 
 ### agentj secret
 
@@ -11251,6 +11736,33 @@ usage: agentj telegram-cursor status [-h]
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj terminal
+
+```text
+网页终端：status · enable · allow · deny · disable · forget · logs
+```
+
+```bash
+agentj terminal --help
+```
+
+```text
+usage: agentj terminal [-h] [--device DEVICE] [--minutes MINUTES]
+                       [--hours HOURS] [--allow-web] [--json]
+                       {status,enable,allow,deny,disable,forget,logs} [target]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `action` | `null` | true | `status`, `enable`, `allow`, `deny`, `disable`, `forget`, `logs` | `` |
+| `target` | `null` | false | — | `遥控器（id 或名字），用于 allow、deny、forget` |
+| `--device` | `null` | false | — | `enable：能用的遥控器（可多次；默认 = 唯一有通行密钥的那台）/ a remote (repeatable)` |
+| `--minutes` | `null` | false | — | `enable：每次最长几分钟（1–60，默认 15）/ minutes per session` |
+| `--hours` | `null` | false | — | `allow：几小时后自动取消（1–24，默认 2）/ hours until it ends` |
+| `--allow-web` | `false` | false | — | `允许网页版遥控器` |
+| `--json` | `false` | false | — | `` |
 
 ### agentj theme
 

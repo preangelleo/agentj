@@ -1,5 +1,6 @@
 import {phoneConfirmation} from './tvremote.js';
 import {focusDraft, releaseDraft} from './composer-focus.js';
+import {pasteRoute, CLIP_TEXT_MAX} from './paste-route.js';
 import { bindReaderSwipe } from './reader-swipe.js';
 import { DOUBLE_MS as RD_DTAP_MS, TAP_MS as RD_TAP_MS, TAP_PX as RD_TAP_PX, PAIR_PX as RD_PAIR_PX } from './file-gestures.js';
 import { linkify } from './five-pages.js';
@@ -2872,7 +2873,8 @@ function quoteArgs(text, qs){
   return {...out, text: (text.trim() ? text + "\n\n" : "") + lines.join("\n")};
 }
 async function say(voiceReady = false){
-  releaseComposer();
+  // P406 #163 (Leo): the focus leaves the composer only once a message really went (settleField, or the send below starts);
+  // an Enter with nothing to send, while sending / transcribing or stopped, keeps the cursor where the words are
   const text = input.value;
   if (!hasSayable() || sending || (asrBusy && voiceReady !== true)) return;                 // F27: files alone (no words) go too
   // P73 (ADR-A176): /add-friend is the friends page's signed fr_add, sent from here (the approval key never leaves the page);
@@ -2903,6 +2905,7 @@ async function say(voiceReady = false){
     return;
   }
   sending = true; refreshSend();
+  releaseComposer();
   sendFollow();
   const batch = atts.slice();
   const S = inflight = {phase: "upload", batch, sid: null, cancelled: false, delivered: false, cancelling: false, wake: null};
@@ -4036,17 +4039,29 @@ export async function pasteClipImages(){
   files.forEach(f => shotclip.seen(f));        // P154: what the owner pasted is not a new screenshot
   takeFiles(files.map((f, i) => pastedName(f, i, files.length)), 'r.verb2.paste', "paste");
 }
-// P181: hold the file button → the clipboard's text: up to CLIP_TEXT_MAX characters at the cursor in the field, longer
-// ones as a .txt attachment. Hold the photo button → the clipboard's image(s) as attachments, a light hint when there is
-// none. Both run on the release (the browser's user gesture): iOS Safari shows its own 「粘贴」 bubble first.
-export const CLIP_TEXT_MAX = 2000;
+// P181: hold the file button → the clipboard's text at the cursor in the field, or a .txt attachment by pasteRoute
+// (P406 #168: characters only, never the field's height). Hold the photo button → the clipboard's image(s) as attachments,
+// a light hint when there is none. Both run on the release (the browser's user gesture): iOS Safari shows its own 「粘贴」 bubble first.
+export {CLIP_TEXT_MAX};
+// P406 #168: the words already in the field plus this paste pass one message's limit → this paste alone as a .txt
+// attachment, the field untouched, and a short note saying why
+function pasteOver(text){
+  const full = atts.length >= MAX_ATT;
+  addFiles([new File([text], `${t('r.file.paste')}-${stamp()}.txt`, {type: "text/plain"})], "paste");
+  if (!full) toast(t('p406.paste.over', {cap: capWords()}), 3600);
+}
 export async function pasteClipText(){
   if (!navigator.clipboard || !navigator.clipboard.readText){ toast(t('p181.clip.unsupported'), 3200); return; }
   let text;
   try{ text = await navigator.clipboard.readText(); }
   catch(err){ toast(err && err.name === "NotAllowedError" ? t('r.clip.denied') : t('r.clip.fail'), 3200); return; }
   if (!text){ toast(t('p181.clip.noText'), 2400); return; }
-  if ([...text].length > CLIP_TEXT_MAX || overflowsField(text)){
+  const route = pasteRoute({value: input.value, start: input.selectionStart, end: input.selectionEnd, text, max: MAX_TEXT()});
+  if (route === "over"){
+    if (atts.length >= MAX_ATT){ toast(t('r.take.tooMany', {max: MAX_ATT, have: atts.length, verb: t('r.verb2.paste'), n: 1}), 3600); return; }
+    pasteOver(text); return;
+  }
+  if (route === "file"){
     if (atts.length >= MAX_ATT){ toast(t('r.take.tooMany', {max: MAX_ATT, have: atts.length, verb: t('r.verb2.paste'), n: 1}), 3600); return; }
     addFiles([new File([text], `${t('r.file.paste')}-${stamp()}.txt`, {type: "text/plain"})], "paste");
     toast(t('p181.clip.asFile', {n: CLIP_TEXT_MAX}), 2600);
@@ -4477,7 +4492,8 @@ export function init(ctx){
   document.addEventListener("visibilitychange", () => { if (!document.hidden) paintPlaceholder(); else saveDraft(); });
   try{ let phW = -1; new ResizeObserver(() => { if (input.clientWidth !== phW){ phW = input.clientWidth; paintPlaceholder(); } }).observe(input); }catch(_){}
   try{ document.fonts.addEventListener("loadingdone", paintPlaceholder); }catch(_){}
-  const takePaste = e => {
+  // P406 #168: `at` = where the words will land (the ⌘V-anywhere path appends at the end); default: the field's selection
+  const takePaste = (e, at = null) => {
     const cd = e.clipboardData;
     if (!cd) return;
     const text = cd.getData("text/plain");
@@ -4488,8 +4504,10 @@ export function init(ctx){
       takeFiles(files.map((f, i) => pastedName(f, i, files.length)), 'r.verb2.paste', "paste");
     }
     if (!text) return;
-    if ([...text].length <= CLIP_TEXT_MAX && !overflowsField(text)) return;
+    const route = pasteRoute({value: input.value, start: at ?? input.selectionStart, end: at ?? input.selectionEnd, text, max: MAX_TEXT()});
+    if (route === "field" || route === "none") return;
     e.preventDefault();
+    if (route === "over"){ pasteOver(text); return; }
     const full = atts.length >= MAX_ATT;
     addFiles([new File([text], `${t('r.file.paste')}-${stamp()}.txt`, {type: "text/plain"})], "paste");
     if (!full) toast(t('r.paste.long'), 2600);
@@ -4504,7 +4522,7 @@ export function init(ctx){
         || input.disabled || !input.getClientRects().length) return;
     const text = cd.getData("text/plain");
     if (!text && !clipFiles(cd).length) return;
-    takePaste(e);
+    takePaste(e, input.value.length);
     const keep = e.defaultPrevented;
     e.preventDefault(); focusComposer();
     if (!text || keep) return;

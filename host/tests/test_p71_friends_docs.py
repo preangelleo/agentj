@@ -31,8 +31,8 @@ class FriendsSkill(unittest.TestCase):
             self.assertIn(cmd, t)
         # every command line in the skill uses a §17.9 subcommand (another agent owns cli.py; this pins the contract)
         subs = {"id", "card", "add", "list", "history", "tell", "group", "groups", "block", "unblock", "remove",
-                "discoverable", "profile", "usage", "on", "off", "context"}   # + P73 context (ADR-A176)
-        for sub in re.findall(r"agentj friends (\w+)", t):
+                "discoverable", "profile", "usage", "on", "off", "context", "status", "relay-policy", "cancel"}   # + P73 context (ADR-A176)
+        for sub in re.findall(r"agentj friends ([\w-]+)", t):
             self.assertIn(sub, subs, sub)
 
     def test_commands_parse_against_the_real_cli(self):
@@ -77,8 +77,8 @@ class FriendsSkill(unittest.TestCase):
 
 class CoreV6(unittest.TestCase):
     def test_version_and_pins(self):
-        self.assertEqual(main_identity.VERSION, 17)   # P156: v11; P244: v12
-        self.assertEqual(main_identity.verify_core()["version"], 17)   # P156: v11; P244: v12
+        self.assertEqual(main_identity.VERSION, 19)   # P156: v11; P244: v12
+        self.assertEqual(main_identity.verify_core()["version"], 19)   # P156: v11; P244: v12
 
     def test_friend_messages_are_data(self):
         zh = main_identity.prompt({"language": "zh"})

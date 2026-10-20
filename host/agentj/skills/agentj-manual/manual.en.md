@@ -198,7 +198,7 @@ On the Agent J host: `agentj history search <words>`.
   saying so — send it again yourself if you still need it.
 
 （Screenshot：Two messages sent offline wait above the message box — https://agentj.app/docs/manual/offline-queue.en.webp）
-- Type `/` at the start of the box to see the commands you can use.
+- Type `/` at the start of the box to see the commands you can use. A picked command (or a card or workflow picked with @) gets one space after it with the cursor behind it; the box keeps the focus until a message has really been sent.
 
 ### Sharing a Codex App session
 
@@ -219,8 +219,8 @@ With Codex, as long as you never wrote `sandbox_mode` at the top of `~/.codex/co
 （Screenshot：Attachments and a quote above the message box — https://agentj.app/docs/manual/attach.en.webp）
 - Three buttons above the message box: file, photo library, camera. You can also paste an image, or drag files in on a
   computer browser.
-- Hold "File" to paste the clipboard's text at the cursor; longer than 2,000 characters, it becomes a .txt attachment. Hold "Photos" to add the clipboard's image as an attachment. An iPhone may first show its own small paste bubble — tap it.
-- Up to 10 attachments at a time, 200 MB each, of any file type. Recordings and videos are transcribed on the Agent J host and the Agent gets the original too. Very long pasted text becomes an attachment automatically.
+- Hold "File" to paste the clipboard's text at the cursor. Into an empty box, text over 2,000 characters becomes a .txt attachment; if the box already has words, it goes in unless together they pass the single-message limit, and then only the pasted part becomes the attachment. Hold "Photos" to add the clipboard's image as an attachment. An iPhone may first show its own small paste bubble — tap it.
+- Up to 10 attachments at a time, 200 MB each, of any file type. Recordings and videos are transcribed on the Agent J host and the Agent gets the original too. Pasted text follows the same rule: words already in the box → it goes in unless the total passes the single-message limit; an empty box → over 2,000 characters becomes an attachment.
 - Attachments travel encrypted straight to the Agent J host, into the Agent's working folder, and are removed after 30 days.
 
 ## Voice: tap to lock, hold to talk and release to send
@@ -398,6 +398,10 @@ Settings → Emergency repair is the second item. Use it when the chat is stuck,
 When Agent J on the Agent J host stops answering, a small rescue helper there answers instead: a banner says "Agent J on the Agent J host isn't responding · rescue helper online", and ① and ② still work. The offline card has an **Emergency repair** button too, plus a line for someone at the Agent J host: `curl -fsSL https://agentj.app/rescue | sh`. See [Phone grey or disconnected?](https://agentj.app/docs/reconnect/).
 
 Under Emergency repair there is also Commands on the Agent J host: terminal commands that run on the Agent J host, such as `agentj doctor`, `agentj doctor --reconnect` and `agentj status`, each with Run. Tap it, confirm with Face ID, and the Agent J host runs it; the result shows below, with anything that looks like a password or key hidden on the Agent J host first. Every run is recorded. Tap × at the right of the result heading to close the result. Only commands that look or repair the connection are here; a phone without Face ID set up cannot run them.
+
+### Web terminal
+
+Settings → Safety → Web terminal gives you the computer's command line on the phone: you type a whole line, the computer runs it and the output shows on the phone. It is off by default and only you can switch it on, by running `agentj terminal enable` in the computer's terminal, checking the 6-digit match code and confirming with Face ID on a phone that has it. After that, every tap on Open web terminal needs Face ID; the first time you also type your computer login password once in the terminal page, encrypted before it leaves. A session lasts at most 15 minutes (up to 60) and closes after 5 minutes without input, after 60 seconds with the phone in the background or when the connection drops; it is recorded in full, and the recording stays on the computer for 30 days. Never type passwords into the terminal: `sudo` asks for Face ID on the phone instead. Risky lines need Run plus Face ID once more — that only catches slips. It does not work while the connection is down; use Emergency repair above then. Friends, web-version remotes, the three ways the password is kept and what each protects against: [Web terminal](https://agentj.app/docs/web-terminal/).
 
 ### Models & API keys
 

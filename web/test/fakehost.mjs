@@ -315,14 +315,15 @@ export async function startFakeHost() {
       const no = (why, more) => sendApp(c, { t: 'ctl_res', r: m.r, action: 'approval_set', ok: false, why, ...more });
       if (!ok) return no('bad_signature');
       // P336 addendum: a widening switch from a phone with a passkey (st.approvalPasskey) needs Face ID — any `fa` is accepted
-      const widen = (m.key === 'approval.level' && m.value === 'full') || (m.key === 'approval.goal_nocard' && m.value === true);
+      const widen = (m.key === 'approval.level' && m.value === 'full') || (m.key === 'approval.goal_nocard' && m.value === true) || (m.key === 'jev.mode' && m.value === 'off');
       if (widen && st.approvalPasskey && !m.fa) return no('passkey_required', { fa: 'Y3JlZC0x', fa_ch: 'Y2hhbGxlbmdlLWNoYWxsZW5nZS0zMmJ5dGVz' });
       if (widen && st.approvalPasskey && st.approvalFaFail) { st.approvalFaFail = false; return no('passkey_failed'); }
       if (st.approvalWhy) { const why = st.approvalWhy; st.approvalWhy = null; return no(why); }
-      const good = m.key === 'approval.level' ? ['safe', 'standard', 'full'].includes(m.value) : m.key === 'approval.goal_nocard' && typeof m.value === 'boolean';
+      const good = m.key === 'jev.mode' ? ['typesafe', 'openrouter', 'off'].includes(m.value) : m.key === 'approval.level' ? ['safe', 'standard', 'full'].includes(m.value) : m.key === 'approval.goal_nocard' && typeof m.value === 'boolean';
       if (!good) return no('shape');
       st.prefs = st.prefs || { appearance: { language: 'zh', theme: 'system' } };
-      st.prefs.approval = { ...(st.prefs.approval || {}), [m.key.split('.')[1]]: m.value };
+      const section = m.key.split('.')[0];
+      st.prefs[section] = { ...(st.prefs[section] || {}), [m.key.split('.')[1]]: m.value };
       await sendApp(c, { t: 'ctl_res', r: m.r, action: 'approval_set', ok: true, key: m.key, value: m.value });
       await broadcast(prefsMsg());
       return;
@@ -412,7 +413,8 @@ export async function startFakeHost() {
     const f = F.friends.find((x) => x.id === m.friend);
     if (m.t === 'fr_set') {
       if (!f) return reply({ t: 'ctl_res', ok: false, why: 'not_friend' });
-      if (m.op === 'group') f.group = m.value;
+      if (m.op === 'group') { if (m.value === 'same-owner') f.same_owner = 'pending'; else { f.group = m.value; f.same_owner = 'none'; } }
+      if (m.op === 'hold-for-owner') f.hold_for_owner = m.value === 'on';
       if (m.op === 'block' || m.op === 'unblock') f.blocked = m.op === 'block';
       if (m.op === 'delete') F.friends = F.friends.filter((x) => x !== f);
     }
@@ -479,7 +481,8 @@ export async function startFakeHost() {
       devices: [...conns].filter((c) => c.devId).map((c) => ({ id: c.devId, name: lastLabel || '', online: !!c.isReady, paired_at: 0 })),
       platform: st.platform, ...(st.platform === 'macos' && st.imsg ? { imessage: st.imsg } : {}),   // P274
       ...(st.runCmds ? { run_cmds: st.runCmds } : {}),   // P361: the names Settings may 「执行」
-      ...(st.signedPrefs ? { signed_prefs: ['approval.level', 'approval.goal_nocard'],   // P336 (+ what is in force)
+      ...(st.terminal ? { terminal: st.terminal } : {}),   // P408 (§38): the web terminal block (absent = an older host)
+      ...(st.signedPrefs ? { signed_prefs: ['approval.level', 'approval.goal_nocard', 'jev.mode'], jev: {mode: value?.jev?.mode || 'openrouter', ready: true},   // P336 (+ what is in force)
         approval: { level: st.approvalUnsigned ? 'standard' : (value?.approval?.level ?? 'standard'),
           goal_nocard: !st.approvalUnsigned && value?.approval?.goal_nocard === true } } : {}) };
     return m;

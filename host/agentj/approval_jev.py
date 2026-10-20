@@ -70,9 +70,10 @@ def threshold(prefs) -> float:
     return min(MAX_THRESHOLD, max(MIN_THRESHOLD, t))
 
 
-def available(env=None) -> bool:
-    env = os.environ if env is None else env
-    return bool((env.get(KEY_ENV) or "").strip())
+def available(env=None, *, st=None, prefs=None) -> bool:
+    from . import jev
+    route = jev.resolve(st=st, prefs=prefs, env=env)
+    return route.mode != "off" and bool(route.key)
 
 
 def _command_text(tool: str, tool_input) -> str:
@@ -117,19 +118,22 @@ def urllib_transport(url: str, headers: dict, body: bytes, timeout: float) -> tu
 
 
 def judge(tool: str, tool_input, context: dict | None, *, threshold: float = DEFAULT_THRESHOLD, env=None,
-          transport=None, timeout: float = TIMEOUT_S) -> Result:
+          transport=None, timeout: float = TIMEOUT_S, st=None, prefs=None) -> Result:
     """Never raises. "allow" only for p ≥ threshold; every failure is "unavailable" (the caller shows the card)."""
-    env = os.environ if env is None else env
-    key = (env.get(KEY_ENV) or "").strip()
+    from . import jev
+    route = jev.resolve(st=st, prefs=prefs, env=env)
+    key = route.key
     if not key:
         return Result("unavailable", reason=f"no {KEY_ENV}")
     try:
-        body = json.dumps(request_body(tool, tool_input, context), ensure_ascii=False).encode()
+        request = request_body(tool, tool_input, context)
+        request["model"] = route.model
+        body = json.dumps(request, ensure_ascii=False).encode()
     except Exception as e:  # noqa: BLE001
         return Result("unavailable", reason=f"request ({type(e).__name__})")
     headers = {"Authorization": "Bearer " + key, "Content-Type": "application/json", "User-Agent": UA}
     try:
-        status, raw = (transport or urllib_transport)(ENDPOINT, headers, body, timeout)
+        status, raw = (transport or urllib_transport)(route.endpoint, headers, body, timeout)
     except Exception as e:  # noqa: BLE001 — the class name only (a message could carry anything)
         return Result("unavailable", reason=f"network ({type(e).__name__})")
     if status != 200:
