@@ -2,7 +2,7 @@
 import VERSION from '../version.js';
 import {t,onLang} from './t.js';
 import {registerLayer} from './layers.js';
-import {flashLine} from './ui.js';
+import {notifyOnce} from './ui.js';
 export function compareVersion(a,b){
  const parse=v=>typeof v==='string'&&/^(\d+)\.(\d+)\.(\d+)(?:(a|b|rc)(\d+))?$/.exec(v);
  const x=parse(a),y=parse(b);if(!x||!y)return null;
@@ -82,11 +82,11 @@ function render(){
  document.getElementById('version-dismiss').textContent=t('ver.later');
  const line=document.getElementById('version-later');
  if(line){
-  // P302 #29: 「已更新到 x」 is a 5-second flash, once per version on this device (it used to stay forever because
-  // aj.verUpdated was never consumed). The DONE_KEY marker is taken on the first render after the silent reload.
+  // P425 #60: consume once, through the shared Noir Notification component.
   let updated=null;try{updated=localStorage.getItem(DONE_KEY);if(updated)localStorage.removeItem(DONE_KEY);}catch{}
-  if(updated===VERSION.version)flashLine(line,t('ver.updated',{v:VERSION.version}),'aj.verUpdatedSeen.'+VERSION.version);
-  if(line._flash)return;                     // the flash owns the line until it hides itself
+  if(updated===VERSION.version){
+   notifyOnce({kind:'success',shape:'rect',text:t('ver.updated',{v:VERSION.version}),ms:3000},'aj.verUpdatedSeen.'+VERSION.version);
+  }
   line.hidden=!later||!box.hidden;
   line.textContent=later?t('ver.later_line'):'';
  }

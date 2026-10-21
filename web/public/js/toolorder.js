@@ -49,6 +49,8 @@ export function paint(doc = globalThis.document) {
   if (now.every((n, i) => n === nodes[i])) return;
   const had = doc.activeElement;
   for (const n of nodes) row.append(n);
+  const full = doc.getElementById('tFull');   // P412: the full-screen button is not reordered — it stays the last one
+  if (full && full.parentElement === row) row.append(full);
   if (had && nodes.includes(had) && doc.activeElement !== had) had.focus({ preventScroll: true });
   row.dataset.order = cur.join(' ');
 }

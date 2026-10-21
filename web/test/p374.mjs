@@ -1,7 +1,7 @@
 // P374 「Daily AI News」 on the real page against the local fake host (real Noise; contract §5 news_get / news_set → news_res):
 // opening Settings sends ONE news_get · the switch (default off) sends news_set {on} · ok → on + 「发到 {email}」 (only when on) ·
 // the sample link (host's https sample_url, new tab, rel=noopener; a non-https URL is never used) · ok:false → back where it
-// was + the P302 centred card (Esc closes it) · unlinked → 「先把这台电脑连上 Agent J 账号」 + the 「打开账号后台」 link, switch
+// was + the P445 buttonless transient notice · unlinked → 「先把这台电脑连上 Agent J 账号」 + the 「打开账号后台」 link, switch
 // disabled · no news_res (a computer before P374) → disabled + hint · a set without an answer → reverted + 「没有及时回应」 ·
 // settings search finds the row · taps ≥ 44 px, no overflow · zh / en × light / dark × 390 (+ zh 1440).
 // Shots → reports/qa/p374/web/ (P374_OUT). P374_PUBLIC=<old public/> only shoots the 账号和帮助 card into before/ (修前).
@@ -54,6 +54,11 @@ export async function runP374({ B, web, fake, out = OUT }) {
     const openSet = async () => { await evaluate(p, `${$('setBtn')}.click()`); await waitFor(p, `!${$('settings')}.hidden`); };
     const closeSet = () => evaluate(p, `import('./js/settings.js').then(m=>{m.close();return true})`);
     const checked = () => evaluate(p, `${$('set-news')}.getAttribute('aria-checked')`);
+    const waitNotice = async (text, ms = 4000) => {
+      await waitFor(p, `document.getElementById('toast').classList.contains('on') && document.getElementById('toast').textContent===${JSON.stringify(text)}`, ms);
+      check(await evaluate(p, `document.getElementById('confirm').hidden && !!document.querySelector('#toast.circle.glance') && !document.querySelector('#toast button')`), 'P445: buttonless notice without a confirm card ' + tag);
+    };
+    const noticeGone = () => waitFor(p, `!document.getElementById('toast').classList.contains('on')`, 4000);
     try {
       await navigate(p, fake.newPairing(web.url + '?lang=' + lang)); await waitState(p, 'awaiting-approval'); await fake.approve(); await waitState(p, 'ready');
       // P380 QA: the persisted theme overrides emulated media; explicitly select and verify each visual variant.
@@ -96,18 +101,17 @@ export async function runP374({ B, web, fake, out = OUT }) {
       await audit('on');
       await view('set-news-row'); await save('2-on');
 
-      // ---- toggle off refused (rate_limited) → switch back on + the centred card; Esc closes it
+      // ---- toggle off refused → switch back on + the transient notice; it fades without a tap
       answers.push({ ok: false, problem: 'rate_limited' });
       await evaluate(p, `${$('set-news')}.click()`);
-      await waitFor(p, `!${$('confirm')}.hidden`);
+      await waitNotice(s.rate);
       check(calls[2].t === 'news_set' && calls[2].on === false, 'news_set {on:false} ' + tag);
       check(await checked() === 'true', 'refused → reverted to on ' + tag);
-      check(await evaluate(p, `${$('confirm-title')}.textContent`) === s.title && await evaluate(p, `${$('confirm-text')}.textContent`) === s.rate, 'rate_limited card ' + tag);
+      check(await evaluate(p, `${$('toast')}.textContent`) === s.rate, 'rate_limited notice ' + tag);
       check(await evaluate(p, `!${$('set-news-to')}.hidden`), 'still sent to the account ' + tag);
       if (w === 390) await save('3-refused');
-      await key(p, 'Escape');
-      await waitFor(p, `${$('confirm')}.hidden && !${$('settings')}.hidden`);
-      check(true, 'Esc closes the card, Settings stays ' + tag);
+      await noticeGone();
+      check(await evaluate(p, `${$('confirm')}.hidden && !${$('settings')}.hidden`), 'notice fades without a tap, Settings stays ' + tag);
 
       // ---- the settings search finds the row (data-keywords + label)
       await evaluate(p, `import('./js/settings.js').then(m=>{m.toggleSearch();return true})`);
@@ -154,9 +158,9 @@ export async function runP374({ B, web, fake, out = OUT }) {
         check(await evaluate(p, `${$('set-news-sample')}.href`) === SAMPLE, 'a non-https sample_url is never used (keeps the last good one) ' + tag);
         answers.push({ ok: false, problem: 'unlinked' });
         await evaluate(p, `${$('set-news')}.click()`);
-        await waitFor(p, `!${$('confirm')}.hidden`);
-        check(await checked() === 'false' && await evaluate(p, `${$('confirm-text')}.textContent`) === s.unlinked, 'unlinked on a write: reverted + card ' + tag);
-        await evaluate(p, `${$('confirm-yes')}.click()`);
+        await waitNotice(s.unlinked);
+        check(await checked() === 'false' && await evaluate(p, `${$('toast')}.textContent`) === s.unlinked, 'unlinked on a write: reverted + notice ' + tag);
+        await noticeGone();
         check(await evaluate(p, `!${$('set-news-acct')}.hidden && ${$('set-news')}.disabled`), 'unlinked on a write: link + disabled ' + tag);
         // a write without an answer (10 s) → reverted + 「没有及时回应」
         await closeSet();
@@ -164,9 +168,9 @@ export async function runP374({ B, web, fake, out = OUT }) {
         await openSet(); await waitFor(p, `${$('set-news')}.disabled===false`);
         await evaluate(p, `${$('set-news')}.click()`);
         check(await checked() === 'true', 'the switch moves at once while the write is out ' + tag);
-        await waitFor(p, `!${$('confirm')}.hidden`, 14000);
-        check(await checked() === 'false' && await evaluate(p, `${$('confirm-text')}.textContent`) === s.noAnswer, 'no answer → reverted + card ' + tag);
-        await evaluate(p, `${$('confirm-yes')}.click()`);
+        await waitNotice(s.noAnswer, 14000);
+        check(await checked() === 'false' && await evaluate(p, `${$('toast')}.textContent`) === s.noAnswer, 'no answer → reverted + notice ' + tag);
+        await noticeGone();
         // a computer before P374 (never answers news_get) → disabled + hint, no sample link from nowhere
         await closeSet();
         answers.push(null);

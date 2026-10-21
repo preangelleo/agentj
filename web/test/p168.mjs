@@ -148,8 +148,8 @@ export async function runP168() {
           const tiny = await small(p); check(!tiny.length, 'targets ≥ 44 px (long) ' + JSON.stringify(tiny));
           await save('long');
           await tapEl(p, '#offCopy');
-          await waitFor(p, `${$('offCopy')}.classList.contains('done')`, 3000);
-          check(await evaluate(p, `${$('offCopyNote')}.textContent`) === s.copied, 'copied, said on the card ' + tag);
+          await waitFor(p, `${$('offCopy')}.dataset.done==='1'`, 3000);
+          check(await evaluate(p, `${$('offCopy')}.dataset.done`) === '1', 'copied, visible shared button state ' + tag);
           check(await evaluate(p, `navigator.clipboard.readText()`) === 'feedback@agentj.app', 'the address is on the clipboard ' + tag);
           await save('long-copied');
         });

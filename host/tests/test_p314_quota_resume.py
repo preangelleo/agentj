@@ -285,7 +285,7 @@ class Adapters(unittest.TestCase):
     def test_claude_result_with_the_limit(self):
         a = agents.ClaudeAgent(self.host, {"kind": "claude", "dir": "/tmp", "model": None})
         a.halting, a.capture, a.turn_done = False, None, None
-        a.rate = {"status": "rejected", "resetsAt": time.time() + 2 * H}
+        a.on_event({"type": "rate_limit_event", "rate_limit_info": {"status": "rejected", "resetsAt": time.time() + 2 * H}})
         a.on_event({"type": "result", "is_error": True, "result": "You've hit your limit · resets 3pm"})
         args = self.r.hit.call_args.args
         self.assertEqual((args[0], args[1]), ("main", "claude"))

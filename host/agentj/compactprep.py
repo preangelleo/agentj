@@ -69,8 +69,8 @@ PREP = {
            "5. open questions.\nNo keys, tokens, passwords or other credentials. When it is written, reply with one line "
            "\"Handover written\" and do nothing else.)"),
 }
-NOTE = {"zh": "（Agent J：压缩前的交接在 {path}，先读它，再跑 agentj card todo due 看到期待办，然后继续。）",   # P394: + the due check
-        "en": "(Agent J: the handover written before the compaction is at {path}; read it first, run agentj card todo due for what is due, then carry on.)"}
+NOTE = {"zh": "（Agent J：压缩前的交接在 {path}，先读它，再跑 agentj card todo due + agentj card cal due 看到期待办，然后继续。）",   # P394: + the due check
+        "en": "(Agent J: the handover written before the compaction is at {path}; read it first, run agentj card todo due + agentj card cal due for what is due, then carry on.)"}
 REMIND = {"zh": "（Agent J：上下文已经用了一半多。请在这次回复的最后加一句：上下文过半了，方便时说「压缩」或发 /compact，"
                 "压缩前会自动先写好交接。）",
           "en": "(Agent J: the context is more than half full. At the end of this reply add one sentence: the context is past "

@@ -211,6 +211,29 @@ class AfterBind(unittest.TestCase):
         self.assertIn("添加遥控器", out)
 
 
+class HiddenPasteOrder(unittest.TestCase):
+    def test_echo_is_disabled_before_the_prompt_becomes_visible(self):
+        import io, os, pty, termios
+        from unittest.mock import patch
+        master, slave = pty.openpty()
+        old = termios.tcgetattr(slave)
+        stdin = os.fdopen(os.dup(slave), 'r')
+        case = self
+        class Output(io.StringIO):
+            def write(self, text):
+                if 'PASTE_READY' in text:
+                    case.assertFalse(termios.tcgetattr(slave)[3] & termios.ECHO,
+                                     'the visible prompt must never precede echo suppression')
+                return super().write(text)
+        try:
+            os.write(master, b'\n')
+            with patch.object(sys, 'stdin', stdin), patch.object(sys, 'stdout', Output()):
+                self.assertEqual(cli._read_paste('PASTE_READY> '), '\n')
+            self.assertEqual(termios.tcgetattr(slave), old)
+        finally:
+            stdin.close(); os.close(slave); os.close(master)
+
+
 class PasteLoginPty(unittest.TestCase):
     """The real `agentj login` on a pseudo-terminal: the owner pastes the whole seat prompt (several lines, CRLF), types a
     name, and the Agent J host joins — no --seat-file, no device code, the code never echoed."""

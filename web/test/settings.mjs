@@ -294,7 +294,7 @@ try {
       assert.equal(await ev(p, `document.getElementById('set-risk-cmd').textContent`), 'agentj config set agent.high_risk_warnings true');
       assert.equal(await ev(p, `document.getElementById('set-mode-cmd').textContent`), 'agentj config set agent.session_mode shared');
       await ev(p, `document.querySelector('[data-copy="set-risk-cmd"]').click()`);
-      await waitFor(p, `(document.getElementById('toast').classList.contains('on') ? document.getElementById('toast').textContent : '') === '命令已复制'`);
+      await waitFor(p, `(document.getElementById('toast').classList.contains('on') ? document.getElementById('toast').textContent : '') === '已复制'`);
       assert.equal(await ev(p, `navigator.clipboard.readText()`), 'agentj config set agent.high_risk_warnings true');
       await click(p, '#set-risk');
       await waitFor(p, `document.getElementById('set-risk').getAttribute('aria-checked') === 'true'`);
@@ -517,10 +517,13 @@ try {
     for (const [w, h, opts] of [[1440, 900, {}], [390, 844, { touch: true }], [360, 800, { touch: true }]]) {
       const p = await chat(w, h, opts);
       try {
+        assert.equal(await ev(p, `document.getElementById('toast').textContent`), '', 'initial notification is empty');
+        assert.equal(await ev(p, `document.getElementById('toast').getBoundingClientRect().height`), 0, 'empty notification reserves no reply space');
         const g = await ev(p, GEOMETRY);
         const words = parseFloat(g.words);
         if (w > 1000) {
-          assert.ok(g.deck.w <= 960 && g.deck.w >= 860, `card ${g.deck.w} px wide`);
+          // P412 (#174, Leo 10-20: 「拉多宽撑多宽」): no 960 px cap — the card fills the window between the paging columns
+          assert.ok(g.deck.w >= w - 2 * 120 && g.deck.w <= w, `card ${g.deck.w} px wide`);
           const left = await ev(p, `document.getElementById('deck').getBoundingClientRect().left`);
           assert.ok(Math.abs(left - (w - g.deck.w) / 2) <= 2, 'centred');
           assert.ok(words >= 16 && words <= 18, `desktop reply ${words} px`);

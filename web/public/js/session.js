@@ -129,7 +129,13 @@ async function onFrame(s, data) {
   if (s !== sess) return;
   if (typeof data === 'string') {                     // relay status; anything else from the relay is ignored
     let m; try { m = JSON.parse(data); } catch { return; }
-    if (m && m.t === 'host' && typeof m.up === 'boolean') return m.up ? hostUp(s) : hostDown(s);
+    if (m && m.t === 'host' && typeof m.up === 'boolean') {
+      // P424 (#145): `up` on a ready session = a newer host socket replaced the one this session talked to (serve back
+      // after its rescue watchdog, a restart quicker than the relay's close) — that session is gone: RESUME now on this
+      // socket, never sit on a dead session (and its rescue banner) until a frame fails.
+      if (m.up && s.phase === 'ready' && s.mode === 'resume') swapped(s);
+      return m.up ? hostUp(s) : hostDown(s);
+    }
     if (m && m.t === 'rate' && m.n === 240 && m.w === 10) { s.pacer.boost = true; H.onRate?.(true); }
     return;
   }
@@ -177,6 +183,8 @@ function rcField() { const rc = reconnectReason(); return rc ? { rc } : {}; }
 
 function readCaps(m) {
   peer.wf1 = Array.isArray(m.caps) && m.caps.includes('wf1');
+  peer.jpalette1 = Array.isArray(m.caps) && m.caps.includes('jpalette1'); // P420 global palette library
+  peer.sk1 = peer.wf1 && m.caps.includes('sk1');   // P426 (§39): skill health + skill_archive / skill_restore
   peer.jcards1 = Array.isArray(m.caps) && m.caps.includes('jcards1');   // P360 (§34): Agent J Cards
   peer.hooks1 = Array.isArray(m.caps) && m.caps.includes('hooks1');   // P366: Settings → Webhook (hook_list / hook_set)
   peer.heartbeat = Array.isArray(m.caps) && m.caps.includes('heartbeat');
@@ -285,6 +293,14 @@ function retryTicket() {
   closeSession();
   H.onHostDown();
   scheduleReconnect();
+}
+function swapped(s) {
+  dropped('host');
+  clearTimeout(heartbeatTimer); heartbeatTimer = null; heartbeatRun++;
+  resetCrypto(s);
+  s.phase = 'wait-host';
+  H.onHostDown();
+  H.setStatus('connecting', 'st.resuming');
 }
 function hostDown(s) {
   if (s.mode === 'restore' && s.ctx.rt && s.phase !== 'wait-host') return retryTicket();

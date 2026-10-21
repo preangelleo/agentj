@@ -110,7 +110,9 @@ admin.stop();s.close()
                     self.assertEqual(sum("也连上了" in line for line in lines), 1)
                     # P287: never pushed from the host (a host that can push it is logged in); the phone says it offline
                     self.assertFalse(any("重启后" in line or "快速切换用户" in line for line in lines))
-                    self.assertEqual(len(lines), 1, "OS residency guidance belongs in docs/doctor and the phone's offline line")
+                    # P418 (#183): residency is no longer docs-only — keep-awake + linger are the onboarding's last question,
+                    # asked once by the Agent (turn_note → `agentj keep-awake setup --phone`), never a pushed system line
+                    self.assertEqual(len(lines), 1, "no pushed residency line: the Agent asks keep-awake + linger at the end")
                     await fixture.host.on_ready(session, None)
                     await asyncio.sleep(.05)
                     self.assertEqual(system_lines(), lines, "reconnect must not repeat the reboot reminder")
@@ -120,6 +122,34 @@ admin.stop();s.close()
         for platform in ("linux", "macos"):
             with self.subTest(platform=platform):
                 asyncio.run(check(platform))
+
+    def test_linger_is_part_of_the_onboarding_last_question(self):
+        """P418 (#183, Leo 10-20): Linux turns linger on by default at the end of onboarding (was: doctor warns only)."""
+        import time
+        from agentj import keep_awake, onboarding, reset
+        from agentj.state import State
+        with tempfile.TemporaryDirectory() as d:
+            st = State(Path(d) / 'state'); st.root.mkdir(parents=True)
+            rec = onboarding._blank(); now = int(time.time())
+            rec.update(welcomed={"at": now, "device": "d", "kind": "computer"}, computer={"at": now, "device": "d"},
+                       phone={"at": now, "device": "p"})
+            onboarding._write(st, rec)
+            with mock.patch.object(onboarding.cloud, "read_cloud", return_value={"tenant": {}}):
+                self.assertIn("agentj keep-awake setup --phone", onboarding.turn_note(st, "zh"))
+            seen = []
+            lingers = iter(["no", "yes", "yes"])
+            with mock.patch.object(keep_awake, "system", return_value="linux"), \
+                    mock.patch.object(keep_awake.elevate, "client_request", side_effect=lambda st, req: seen.append(req) or {"ok": True, "verified": True}), \
+                    mock.patch.object(keep_awake, "status", return_value={"system": "linux", "awake": True, "lid_awake": True}), \
+                    mock.patch.object(service, "_linger", side_effect=lambda: next(lingers)), \
+                    mock.patch.object(reset, "run_linger", return_value={"ok": True}) as linger:
+                res = keep_awake.setup(st, "yes", None, "zh", out=lambda *_: None)
+            linger.assert_called_once()
+            self.assertTrue(res["ok"]); self.assertEqual(res["linger"]["state"], "enabled")
+            self.assertEqual(seen[0]["lid"], True, "Linux: the lid is kept awake by default")
+            self.assertEqual(keep_awake.offer_answer(st)["answer"], "yes")
+            with mock.patch.object(onboarding.cloud, "read_cloud", return_value={"tenant": {}}):
+                self.assertNotIn("keep-awake", onboarding.turn_note(st, "zh"), "asked once")
 
     def test_three_uid_helper_installations_do_not_overlap(self):
         import importlib.util

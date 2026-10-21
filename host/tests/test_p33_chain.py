@@ -296,8 +296,10 @@ class _Chain(unittest.TestCase):
             self.assertNotIn(text, line)
 
     async def meters_and_models(self, c, want_ctx, want_h5, want_week):
-        await c["wait"](lambda: c["host"].meter_state.get("ctx") == want_ctx and c["host"].meter_state.get("h5") == want_h5
-                        and c["host"].meter_state.get("week") == want_week)
+        def bare(w):                           # P433: each window also carries when it was measured ("at")
+            return {k: v for k, v in w.items() if k != "at"} if isinstance(w, dict) else w
+        await c["wait"](lambda: c["host"].meter_state.get("ctx") == want_ctx and bare(c["host"].meter_state.get("h5")) == want_h5
+                        and bare(c["host"].meter_state.get("week")) == want_week)
         await c["wait"](lambda: c["of"]("meter") and c["of"]("meter")[-1].get("ctx") == want_ctx, 6000)
         m = c["of"]("meter")[-1]
         follow = m.get("shared_follow")

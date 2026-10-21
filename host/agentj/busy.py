@@ -217,9 +217,10 @@ def read_items(root, now: float | None = None) -> list[dict]:
                       it.get("pid"), it.get("session"), it.get("ns"), it.get("report"), **task_meta(it))
             if "pid" in it and it.get("ns", me) != me:      # another PID namespace (inside the fence): its heartbeat
                 gone = now - p.stat().st_mtime > STALE
+                it["ns_other"] = True                       # P423 #160: its pid means nothing here (survives_restart)
             else:
                 gone = "pid" in it and not _alive(it["pid"])
-            if gone or now - it["since"] > ITEM_TTL:
+            if gone or ("pid" not in it and now - it["since"] > ITEM_TTL):
                 raise ValueError("gone")
             it.pop("ns", None)
         except (OSError, ValueError, TypeError):
@@ -385,6 +386,82 @@ def in_cgroup(pid, cg: str | None) -> bool:
     except OSError:
         return False
     return any((ln.split(":", 2)[-1] + "/").startswith(cg.rstrip("/") + "/") for ln in lines)
+
+
+# P423 #160: a serve restart (upgrade) ends serve's own process tree and, under systemd (agentj.service, default
+# KillMode=control-group), everything in serve's control group. A worker started elsewhere — a `systemd-run --user` unit,
+# a launchd job, another terminal — keeps running and is not "interrupted". Anything we cannot prove counts (as before).
+def _proc_ppid(pid: int, proc: Path) -> int | None:
+    try:
+        stat_ = (proc / str(pid) / "stat").read_text()
+        return int(stat_[stat_.rindex(")") + 2:].split()[1])
+    except (OSError, ValueError, IndexError):
+        return None
+
+
+def _own_cg(proc: Path) -> str | None:
+    try:
+        lines = (proc / "self" / "cgroup").read_text().splitlines()
+    except OSError:
+        return None
+    return next((ln.split(":", 2)[-1] for ln in lines if ln.startswith("0::")), None)
+
+
+def ps_parents(run=subprocess.run) -> dict[int, int] | None:
+    """macOS / BSD: pid → ppid of every process from one `ps` call; None when ps is unavailable."""
+    try:
+        r = run(["ps", "-A", "-o", "pid=,ppid="], capture_output=True, text=True, timeout=3)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    out = {}
+    for ln in (r.stdout or "").splitlines():
+        p = ln.split()
+        if len(p) == 2 and p[0].isdigit() and p[1].isdigit():
+            out[int(p[0])] = int(p[1])
+    return out or None
+
+
+def survives_restart(it: dict, serve_pid: int | None = None, proc: Path = Path("/proc"), parents=None) -> bool:
+    """True only when this outside item is known to run outside serve: a systemd unit / launchd job (`unit:`), or a pid
+    (in serve's PID namespace) whose parent chain does not reach serve and — when serve is a systemd service — that is not
+    in serve's control group. No pid, a fenced pid, an unreadable /proc or ps → False (it counts as interrupted)."""
+    if str(it.get("key", "")).startswith("unit:"):
+        return True
+    pid = it.get("pid")
+    if not isinstance(pid, int) or pid <= 1 or it.get("ns_other"):
+        return False
+    me = os.getpid() if serve_pid is None else serve_pid
+    if pid == me:
+        return False
+    linux = (proc / "self" / "stat").exists()
+    if not linux and parents is None:
+        parents = ps_parents()
+    get = (lambda p: _proc_ppid(p, proc)) if linux else (lambda p: (parents or {}).get(p))
+    cur, seen = pid, 0
+    while cur is not None and cur > 1 and seen < 256:
+        if cur == me:
+            return False                                 # serve's own descendant
+        cur, seen = get(cur), seen + 1
+    if cur is None or seen >= 256:
+        return False                                     # chain unreadable: conservative
+    if not linux:                                        # launchd stops a job's whole process group
+        try:
+            if os.getpgid(pid) == os.getpgid(me):
+                return False
+        except (OSError, AttributeError):
+            return False
+    if linux:
+        cg = _own_cg(proc)
+        if cg is None:
+            return False
+        if cg.rstrip("/").endswith(".service"):          # serve is a systemd service: its cgroup goes with it
+            try:
+                lines = (proc / str(pid) / "cgroup").read_text().splitlines()
+            except OSError:
+                return False
+            if any((ln.split(":", 2)[-1].rstrip("/") + "/").startswith(cg.rstrip("/") + "/") for ln in lines):
+                return False
+    return True
 
 
 def same_job(f: dict, u: dict) -> bool:
@@ -702,6 +779,8 @@ class Board:
         it["generation"] = old.get("generation") if old else uuid.uuid4().hex
         if old:
             it.update(task_meta(old))
+            if old.get("bg"):
+                it["bg"] = True        # P426: once background, its end is a 「后台活已结束」 one
         source = str(session or key).lower()
         harness = next((x for x in ("codex", "opencode", "claude") if x in source), None)
         if harness is None and source in ("own", "shared"):
@@ -721,19 +800,27 @@ class Board:
                 self.mem[key] = it
                 self.on_change()
 
-    def stop(self, key, exit_code=None) -> None:
+    def stop(self, key, exit_code=None, fg=False) -> None:
         it = self.mem.pop(key, None)
         if it is not None:
-            self.finish(it, exit_code=exit_code)
+            self.finish(it, exit_code=exit_code, fg=fg)
             self.on_change()
 
-    def finish(self, it, exit_code=None, ended=None):
-        self.finished.append({**it, "ended": ended or time.time(), "exit_code": exit_code})
+    def finish(self, it, exit_code=None, ended=None, fg=False):
+        """P426: `fg` = a foreground sub-agent (it ended inside the main turn that waited for it) — the main Agent already
+        has its result, so P262 does not wake it again; only background work ends with 「后台活已结束」."""
+        fg = (fg or it.get("fg") is True) and not it.get("bg")
+        self.finished.append({**it, "ended": ended or time.time(), "exit_code": exit_code, "fg": fg})
 
-    def stop_where(self, pred) -> None:
+    def mark_bg(self, key) -> None:
+        key = self.alias.get(key, key)
+        if key in self.mem:
+            self.mem[key] = {**self.mem[key], "bg": True}
+
+    def stop_where(self, pred, fg=False) -> None:
         gone = [k for k, v in self.mem.items() if pred(k, v)]
         for k in gone:
-            self.finish(self.mem.pop(k))
+            self.finish(self.mem.pop(k), fg=fg)
         if gone:
             self.on_change()
 
@@ -772,7 +859,8 @@ class Board:
         if name == "PreToolUse" and ev.get("tool_name") in AGENT_TOOLS and not ev.get("agent_id"):
             ti = ev.get("tool_input") if isinstance(ev.get("tool_input"), dict) else {}
             self.pending = (self.pending + [{"session": sid, "type": clean(ti.get("subagent_type"), WHO_MAX),
-                                             "desc": clean(ti.get("description"), 200), "model": ti.get("model"), "at": now}])[-16:]
+                                             "desc": clean(ti.get("description"), 200), "model": ti.get("model"), "at": now,
+                                             "bg": ti.get("run_in_background") is True}])[-16:]
         elif name == "SubagentStart":
             aid, typ = clean(ev.get("agent_id"), 80), clean(ev.get("agent_type"), WHO_MAX)
             match = next((p for p in self.pending if p["session"] == sid
@@ -784,10 +872,12 @@ class Board:
             self.start(f"{scope}:{sid}:{aid or uuid.uuid4().hex}", who_of(typ), "temp",
                        (match or {}).get("desc") or typ, session=f"{scope}:{sid}",
                        harness="claude", model=ev.get("model"), cwd=ev.get("cwd"), role=typ)
+            if (match or {}).get("bg"):
+                self.mark_bg(f"{scope}:{sid}:{aid}")
         elif name == "SubagentStop":
             aid = clean(ev.get("agent_id"), 80)
-            if aid:
-                self.stop(f"{scope}:{sid}:{aid}")
+            if aid:            # P426: foreground unless it was launched / listed as background work
+                self.stop(f"{scope}:{sid}:{aid}", fg=True)
         elif name == "PostToolUse" and not ev.get("agent_id"):
             # P291: the main thread's background work as soon as it is launched — a run_in_background Bash
             # (backgroundTaskId) is an item of its own; an async Agent whose SubagentStart never arrived is caught up here
@@ -810,16 +900,19 @@ class Board:
             # what is missing — a lost / refused SubagentStart, a background Bash — so the phone never under-reports.
             live = set()
             for t in ev["background_tasks"]:
+                if isinstance(t, dict) and t.get("id"):
+                    self.mark_bg(f"{scope}:{sid}:{clean(str(t.get('id')), 80)}")
                 if isinstance(t, dict) and t.get("id") and t.get("status") not in BG_DONE:
                     live.add(self._background(scope, sid, t))
             # foreground sub-agents are done when the main turn stops; background ones only when the harness drops them
-            self.stop_where(lambda k, v: v.get("session") == f"{scope}:{sid}" and k not in live)
+            self.stop_where(lambda k, v: v.get("session") == f"{scope}:{sid}" and k not in live, fg=True)
 
     def _background(self, scope: str, sid: str, t: dict) -> str:
         """P291: one entry of Claude Code's background list (Stop.background_tasks / a launch result) on the board; an item
         already there (SubagentStart's, with its better label) is kept as it is. → its key."""
         key = f"{scope}:{sid}:{clean(str(t.get('id')), 80)}"
         if key in self.mem:
+            self.mark_bg(key)
             return key
         typ = clean(t.get("type"), 24) or "task"
         if typ == "subagent":
@@ -832,6 +925,7 @@ class Board:
                 from .privacy import redact    # a bare command line may carry a token: scrubbed before it is a label
                 label = redact(clean(t["command"], 4 * LABEL_MAX), paths=True)
             self.start(key, None, "temp", label or typ, session=f"{scope}:{sid}", harness="claude", role=typ)
+        self.mark_bg(key)
         return key
 
     # -- the owned Claude session's stream-json (agent.py)
@@ -864,7 +958,7 @@ class Board:
                     if m:
                         self.rekey(key, f"{scope}:task:{m.group(1)}")
                 else:
-                    self.stop(key)
+                    self.stop(key, fg=True)   # P426: its result came back inside this turn
         elif t == "system" and ev.get("subtype") == "task_started":
             tid = clean(ev.get("task_id"), 80)
             if tid and f"{scope}:task:{tid}" not in self.mem and ev.get("task_type") in (None, "local_agent", "agent", "local_bash"):
@@ -974,7 +1068,7 @@ class Board:
                 self.stop(f"{scope}:th:{r}")
 
     # -- OpenCode events (agent_opencode.py v1 / agent_opencode2.py v2, owned and shared; P160)
-    def opencode_event(self, ev: dict, sid, scope: str = "opencode") -> None:
+    def opencode_event(self, ev: dict, sid, scope: str = "opencode", turn_on: bool = False) -> None:
         """v1 (`/event`, `{type, properties}`): the parent session's `task` tool part is the sub-agent — pending/running
         opens it (`input.description`, `input.subagent_type`), completed/error closes it; the child session's tool parts
         (child id from `state.metadata.sessionId`, or a `session.created` with our `parentID`) are its detail."""
@@ -1004,7 +1098,7 @@ class Board:
                     if isinstance(meta.get("sessionId"), str):
                         self._alias(f"{scope}:s:{clean(meta['sessionId'], 80)}", k)
                 elif st.get("status") in ("completed", "error"):
-                    self.stop(k)
+                    self.stop(k, fg=turn_on)   # P426: ended inside our turn = foreground
             elif isinstance(part.get("sessionID"), str):
                 self.note(f"{scope}:s:{clean(part['sessionID'], 80)}", tool_desc(part.get("tool"), inp) or clean(st.get("title"), 200))
         elif t == "session.created":
@@ -1017,7 +1111,7 @@ class Board:
                 if free:
                     self._alias(f"{scope}:s:{cid}", free[-1])
 
-    def opencode2_event(self, ev: dict, sid, scope: str = "opencode") -> None:
+    def opencode2_event(self, ev: dict, sid, scope: str = "opencode", turn_on: bool = False) -> None:
         """v2 (`/api/event`, `{type, data}`): a child session (`session.created` whose `parentID` is ours) is the sub-agent;
         its title "<description> (@<agent> subagent)" is the label and who; its `session.execution.succeeded / failed /
         interrupted` closes it, `session.execution.started` re-opens it; its tool events are the detail."""
@@ -1046,7 +1140,7 @@ class Board:
         if not cid or k not in self.child:
             return
         if t in ("session.execution.succeeded", "session.execution.failed", "session.execution.interrupted"):
-            self.stop(k)
+            self.stop(k, fg=turn_on)
         elif t == "session.execution.started":
             self.start(k, self.child[k].get("who"), "temp", self.child[k].get("label") or "", session=scope)
         elif t.startswith("session.tool"):
@@ -1118,6 +1212,18 @@ class Board:
             out.append({"id": v["key"][-40:], "who": v["who"], "kind": v["kind"], "label": v["label"],
                         **({"lk": v["lk"]} if v.get("lk") else {}), "since": v["since"], "c": c, **task_meta(v)})
         return out
+
+    def restart_split(self, survives=survives_restart) -> tuple[int, int]:
+        """P423 #160: (items a serve restart would interrupt, items that keep running) — the upgrade card counts only the
+        first. In-process items (owned / shared sessions, workflow runs) always count; an outside one only unless
+        `survives_restart` proves it runs on its own. One `ps` call at most (macOS)."""
+        listed = {v["id"] for v in self.items()}
+        outside = [v for v in self.outside if v["key"][-40:] in listed]
+        kw = {}
+        if any(isinstance(v.get("pid"), int) for v in outside) and not Path("/proc/self/stat").exists():
+            kw["parents"] = ps_parents()
+        keep = sum(1 for v in outside if survives(v, **kw))
+        return len(listed) - keep, keep
 
     def find(self, wid) -> tuple[dict, dict | None] | None:
         """P160: the item behind a wire id (a copy) and its latest step (a copy) — cheap, on the event loop."""

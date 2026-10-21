@@ -1,3 +1,4 @@
+import { copyButton } from './copycode.js';
 // P168: the disconnected state. When a paired phone cannot reach its computer for more than a blink, the grey page is
 // blurred behind the global centred dialog (P150 gdlg, the same square as 「在办事项」) that says, in plain words: what is
 // going on (reconnecting / the computer may be off or asleep), for how long (live), what the automatic reconnect is doing
@@ -139,14 +140,7 @@ function progress(host) {
 }
 
 async function copyAddress() {
-  const ok = await RelayMD.copyText(FEEDBACK_EMAIL);
-  const b = $('offCopy');
-  b.classList.toggle('done', ok);
-  const label = plain(t(ok ? 'off.copied' : 'r.copy.fail'));
-  b.setAttribute('aria-label', label); b.title = label;
-  $('offCopyNote').textContent = label;
-  clearTimeout(copiedTimer);
-  copiedTimer = setTimeout(() => { b.classList.remove('done'); relabel(); $('offCopyNote').textContent = ''; }, 1800);
+  await copyButton(FEEDBACK_EMAIL, $('offCopy'));
 }
 function relabel() { const l = plain(t('off.copy')); $('offCopy').setAttribute('aria-label', l); $('offCopy').title = l; }
 

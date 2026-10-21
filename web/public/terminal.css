@@ -6,7 +6,7 @@
   box-sizing:border-box;padding-top:env(safe-area-inset-top);background:#2c2b26;color:#faf9f5;font-family:var(--font-body);color-scheme:dark}
 .term[hidden]{display:none}
 .term *{box-sizing:border-box}
-.term-top{flex:none;display:flex;align-items:center;gap:8px;padding:6px 10px 6px 14px;border-bottom:1px solid rgba(250,249,245,.14)}
+.term-top{flex:none;position:relative;display:flex;align-items:center;gap:8px;padding:30px 10px 6px 14px}
 .term-title{flex:1;min-width:0;margin:0;font:600 1.0625rem/1.3 var(--font-title);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .term-rec{flex:none;display:inline-flex;align-items:center;gap:5px;font-size:.75rem;color:#faf9f5}
 .term-rec::before{content:"";width:10px;height:10px;border-radius:50%;background:#f7827e;animation:term-rec 1.6s ease-in-out infinite}
@@ -16,13 +16,11 @@
 .term-left{flex:none;font:500 .8125rem/1 var(--font-mono);font-variant-numeric:tabular-nums;color:rgba(250,249,245,.82)}
 .term-end{flex:none;min-height:44px;min-width:56px;padding:0 14px;border-radius:999px;border:1.5px solid #f7827e;background:transparent;
   color:#faf9f5;font:600 .9375rem/1 var(--font-body);cursor:pointer}
-.term-outbox{flex:1;min-height:0;display:flex;flex-direction:column;background:#141414}
-.term-outbox>.cc-btn{top:4px;right:4px;width:44px;height:44px;background:rgba(44,43,38,.85);border-radius:10px}
-.term-out{flex:1;min-height:0;margin:0;padding:12px 16px;overflow:auto;background:#141414;color:#faf9f5;font:400 14px/1.5 var(--font-mono);
+.term-outbox{flex:1;min-height:0;display:flex;flex-direction:column;background:#2c2b26}
+.term-out{flex:1;min-height:0;margin:0;padding:12px 16px;overflow:auto;background:#2c2b26;color:#faf9f5;font:400 14px/1.5 var(--font-mono);
   white-space:pre-wrap;overflow-wrap:anywhere;scrollbar-width:none;-webkit-overflow-scrolling:touch}
 .term-out::-webkit-scrollbar{display:none}
-.term-bottom{flex:none;display:flex;flex-direction:column;gap:8px;padding:10px 12px calc(10px + env(safe-area-inset-bottom));
-  border-top:1px solid rgba(250,249,245,.14)}
+.term-bottom{flex:none;display:flex;flex-direction:column;gap:8px;padding:10px 12px calc(10px + env(safe-area-inset-bottom))}
 .term-bottom>p{margin:0}
 .term-status{font-weight:600;line-height:1.5}
 .term-status[hidden],.term-hint[hidden],.term-acts[hidden],.term-form[hidden],.term-keys[hidden],.term-warn[hidden]{display:none}
@@ -65,3 +63,43 @@
   font:600 .9375rem/1 var(--font-body);cursor:pointer}
 .term-btn--yes{background:#faf9f5;border-color:#faf9f5;color:#141414}
 .term-stacts{justify-content:flex-start}
+
+/* ---- P414 (#179③, PROTOCOL §37.14): full screen like P412's editor — Noir ground, Lotion words, no header / footer rules
+   (above: the output shares the page's Noir, the two border lines are gone). The grabber (top centre) follows the finger or the
+   mouse; past the threshold the page leaves downwards, short of it it springs back. The exit icon (top right) and Esc collapse
+   it; the chip above the message box brings it back. No double-click / double-tap gesture anywhere. */
+.term{transition:none;will-change:transform}
+.term:not([hidden]){animation:term-up .2s ease-out}
+@keyframes term-up{from{transform:translateY(24px);opacity:.6}to{transform:none;opacity:1}}
+.term.drag{transition:none;cursor:grabbing}
+.term.spring{transition:transform .38s cubic-bezier(.34,1.56,.64,1)}
+.term.leaving{transition:transform .22s ease-in}
+@media (prefers-reduced-motion:reduce){.term:not([hidden]){animation:none}.term.spring,.term.leaving{transition:none}}
+.term-grab{position:absolute;left:50%;top:0;width:112px;height:44px;margin-left:-56px;padding:0;border:0;background:none;
+  display:grid;place-items:start center;padding-top:7px;cursor:grab;touch-action:none;z-index:1;-webkit-tap-highlight-color:transparent}
+.term-grab span{display:block;width:40px;height:5px;border-radius:3px;background:rgba(250,249,245,.35)}
+.term-grab:hover span,.term-grab:focus-visible span{background:rgba(250,249,245,.62)}
+.term-exit{flex:none;width:44px;height:44px;display:grid;place-items:center;padding:0;border-radius:12px;border:1px solid rgba(250,249,245,.22);
+  background:none;color:#faf9f5;cursor:pointer}
+.term-exit svg{width:22px;height:22px}
+.term-exit:hover{background:rgba(250,249,245,.08)}
+.term-grab[hidden],.term-exit[hidden],.term-tools[hidden],.term-gochip[hidden],.term-gonote[hidden]{display:none}
+.term-tools{display:flex;flex-wrap:wrap;gap:8px}
+.term-tool{min-height:44px;padding:0 16px;border-radius:999px;border:1px solid rgba(250,249,245,.32);background:none;color:#faf9f5;
+  font:600 .875rem/1 var(--font-body);cursor:pointer}
+.term-tool:hover{background:rgba(250,249,245,.08)}
+.term-gochip{min-height:44px;padding:8px 14px;border-radius:12px;border:1px dashed #71bbde;background:rgba(113,187,222,.12);color:#faf9f5;
+  font:500 .875rem/1.45 var(--font-mono);text-align:left;white-space:pre-wrap;overflow-wrap:anywhere;cursor:pointer}
+/* the chip above the message box while the session runs collapsed: the terminal's own colours in both themes */
+.termchip{flex:none;position:relative;z-index:2;display:flex;align-items:center;gap:8px;margin:8px var(--rg,16px) 0;padding:4px 4px 4px 14px;
+  border-radius:999px;background:#2c2b26;color:#faf9f5;font:500 .875rem/1.3 var(--font-body)}
+.termchip[hidden]{display:none}
+@media (orientation:landscape){.termchip{box-sizing:border-box;width:calc(100% - 2 * var(--rg,16px));max-width:960px;margin:8px auto 0}}   /* the composer's column */
+.termchip-text{flex:1;min-width:0;display:flex;align-items:center;gap:8px}
+.termchip-text svg{flex:none;width:18px;height:18px}
+.termchip-text span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.termchip[data-run="1"] .termchip-text span{font-family:var(--font-mono)}
+.termchip-btn{flex:none;min-height:44px;min-width:56px;padding:0 14px;border-radius:999px;border:1px solid rgba(250,249,245,.45);background:none;
+  color:#faf9f5;font:600 .875rem/1 var(--font-body);cursor:pointer}
+.termchip-open{background:#faf9f5;color:#141414;border-color:#faf9f5}
+.termchip-btn:focus-visible{outline:2px solid #71bbde;outline-offset:2px}

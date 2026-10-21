@@ -83,6 +83,12 @@ class GooglePins(unittest.TestCase):
             self.assertTrue(p["scopes"], pid)
             for s in p["scopes"]:
                 self.assertTrue(s.startswith("https://www.googleapis.com/auth/"), s)
+                if pid == "calendar-write" and s.endswith("/calendar"):
+                    # P428 decision (CALENDAR-SYNC-SPEC §1): gog 0.43.0 has no events-only scope; stated, and every call is
+                    # command-restricted (test_p428_google_connect). The only full-scope exception, and it must say so.
+                    self.assertIn("events-only", p["scope_note"])
+                    self.assertEqual(p["gog"], ["--services", "calendar"])
+                    continue
                 self.assertNotIn(s.rsplit("/", 1)[1], ("gmail.modify", "mail.google.com", "drive", "calendar", "youtube",
                                                        "webmasters", "cloud-platform"))
             for flag in p["gog"] or []:
@@ -374,6 +380,7 @@ class Checklist(unittest.TestCase):
                    phone={"at": now, "device": "p"})
         onboarding._write(self.st, rec)
         with mock.patch.object(onboarding.cloud, "read_cloud", return_value={"tenant": {}}):
+            self.assertIn("agentj keep-awake setup --phone", onboarding.turn_note(self.st, "zh"))   # P418: the last question first
             note = onboarding.turn_note(self.st, "zh")
             self.assertIn("agentj setup checklist --resume --json", note)
             self.assertEqual(onboarding.turn_note(self.st, "zh"), "", "offered once")

@@ -79,7 +79,7 @@ try {
 
   // ---- /stop offline is not queued: it says 「没连上Agent J 主机…」 and leaves the queue as it is
   await evaluate(page, `(() => { const i = document.getElementById('input'); i.value = '/stop'; i.dispatchEvent(new Event('input')); document.getElementById('send').click(); })()`);
-  await waitFor(page, `document.getElementById('toast').textContent.includes('停下和清空要连上')`);
+  await waitFor(page, `document.getElementById('toast').textContent === '没连上Agent J 主机：连上后再试这条命令'`);
   assert.equal((await pending(page)).length, 3);
   assert.equal(await evaluate(page, `document.getElementById('input').value`), '/stop', '/stop stays in the field');
   await evaluate(page, `(() => { const i = document.getElementById('input'); i.value = ''; i.dispatchEvent(new Event('input')); })()`);

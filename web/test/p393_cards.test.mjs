@@ -15,11 +15,12 @@ test('#131: a drafted slash command ends in a space, other drafts stay as writte
   assert.match(src('js/jcards.js'),/if \(a\.draft\) \{ hooks\.draft\(draftText\(text\)\); return; \}/);
   assert.match(src('js/five-pages.js'),/const cmd='\/'\+plusSkill\(\)\+' '/);   // the header + already does
 });
-test('#132: every card accent writes Lotion, the colour picker counts contrast against Lotion',()=>{
+test('#132 + P412 #177: card accents write Lotion; a fill too light for Lotion gets Sooty words instead of being refused',()=>{
   const css=src('cards.css');
   for(const a of ['emerald-oasis','windstorm','magic-carpet','peachy-feeling','noir']) assert.match(css,new RegExp(`\\.jc-accent-${a}\\{--jc-fill:#[0-9a-f]{6};--jc-ink:#faf9f5\\}`));
   const js=src('js/jcard-color.js');
-  assert.match(js,/export function ink\(hex\) \{ return \{color:LOTION,/);
+  assert.match(js,/export function ink\(hex\) \{ const l=ratio\(LOTION,hex\);return l>=FLOOR\?\{color:LOTION,ratio:l\}:\{color:SOOTY,/);
+  assert.match(js,/SOOTY='#141414'/);
   assert.doesNotMatch(js,/ratio<4\.5/);
   assert.match(js,/SYSTEM=\['#629887','#6a9bcc','#827dbd','#d97757','#2c2b26'\]/);
 });

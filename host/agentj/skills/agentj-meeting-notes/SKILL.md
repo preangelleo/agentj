@@ -7,6 +7,8 @@ The owner records a meeting on the phone (long recordings arrive as several orde
 `/会议总结` (en `/meeting-notes`), optionally followed by e-mail addresses. Agent J transcribes the audio on this computer
 before you see the message; the message tells you where the parts and transcripts are.
 
+Empty recordings shorter than 0.5 seconds or below the audio-data floor are discarded on the phone; old 0:00 drafts are cleaned without a recovery prompt. If the owner sees “录音太短，没有发出” / “Recording too short. Not sent.”, ask them to record again; do not infer a transcript. iPhone MP4/AAC keeps its audio/mp4 MIME and .m4a extension.
+
 ## Write the minutes
 1. Read every transcript, part 1 first. A part marked 转写失败 / transcription failed: say which part is missing; never fill it in.
    A long transcript is in a `…-transcript.txt` file next to the audio — read the whole file.

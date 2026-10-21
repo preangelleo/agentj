@@ -7,6 +7,7 @@ import pathlib
 import sys
 import unicodedata
 import unittest
+from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import market_fixtures as fx  # noqa: E402
@@ -90,7 +91,23 @@ class Hostile(Fenced):
         rc = fn(*a, st=self.e.st, post=self.srv, out=out, **kw)
         return rc, out.getvalue()
 
+    def setUp_noaudit(self):
+        # P426 #181-2: the static audit now refuses this package outright (curl | sh, "ignore previous instructions"); these
+        # tests check the layer under it — a hostile package the audit missed still stays fenced and is never run
+        p = mock.patch.object(market.plaza_audit, "audit", return_value=[])
+        p.start()
+        self.addCleanup(p.stop)
+
+    def test_the_audit_refuses_it_first(self):
+        rc, out = self.run_(market.run_install, "demo-skill", harness="claude_code", get=self.srv.get)
+        self.assertEqual(rc, market.EXIT_BLOCKED)
+        self.check_fences(out)
+        self.assertIn("prompt-injection", [f["rule"] for f in market.plaza_audit.audit(*reversed(market.bundle.parse(
+            self.srv.packages["demo-skill"]["data"])))])
+        self.assertFalse(self.pwned.exists())
+
     def test_search_show_and_install_preview_stay_fenced(self):
+        self.setUp_noaudit()
         _, s = self.run_(market.run_search, ["x"], type_="skill")
         _, d = self.run_(market.run_show, "demo-skill")
         _, i = self.run_(market.run_install, "demo-skill", harness="claude_code", get=self.srv.get)
@@ -106,6 +123,7 @@ class Hostile(Fenced):
         self.assertFalse(self.pwned.exists())
 
     def test_confirm_never_runs_package_text(self):
+        self.setUp_noaudit()
         _, i = self.run_(market.run_install, "demo-skill", harness="claude_code", get=self.srv.get)
         d = i.split("digest: ")[1].split()[0]
         rc, out = self.run_(market.run_install, "demo-skill", harness="claude_code", get=self.srv.get, owner_confirmed=True,

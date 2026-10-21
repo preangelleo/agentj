@@ -82,7 +82,25 @@ class SameOwner:
 
     def view(self, fid):
         r = self.row(fid)
-        return 'active' if self.active(fid) else 'pending' if r.get('nonce') else 'none'
+        return ('active' if self.active(fid) else 'pending' if r.get('nonce') and r.get('expires', 0) > self.svc.clock()
+                else 'none')
+
+    def info(self, fid):
+        """P417 #186: what the friends page shows in place — the read-only code ('' until the other computer answers),
+        whether this side already said yes (`wait`: only the other side's card is left), and why the last invitation
+        ended (declined / expired / ended), kept for a day."""
+        r, v = self.row(fid), self.view(fid)
+        out = {'same_owner': v}
+        if v == 'pending':
+            out['same_owner_code'] = self.code(fid) or ''
+            # our start counts as our yes unless the other computer is a 0.25.0a1 host (then our own card asks too)
+            out['same_owner_wait'] = bool(r.get('token') or (r.get('init') and (r.get('remote_v2') or not r.get('remote_nonce'))))
+        elif v == 'none':
+            end = r.get('end') if isinstance(r.get('end'), list) and len(r['end']) == 2 else None
+            why = 'expired' if r.get('nonce') else end[0] if end and self.svc.clock() - end[1] < 86400 else None
+            if why in ENDS:
+                out['same_owner_end'] = why
+        return out
 
     def challenge(self, fid):
         r = self.row(fid)
@@ -99,19 +117,56 @@ class SameOwner:
         challenge = self.challenge(fid)
         return f"{int(challenge, 16) % 1000000:06d}" if challenge else None
 
-    def propose(self, fid, pub):
+    def propose(self, fid, pub, *, init=None, announce=True):
+        """Start (or keep) this side's half of one invitation. P417 #186 (Leo 10-21): the owner's signed tap that STARTS
+        it (`init`) is also this side's consent — no card, no second tap here; the code shows on the page that tapped,
+        and the other host's remotes confirm it once. Both owners starting at once is still ONE invitation: the
+        challenge sorts both ends, each side keeps its own live nonce, and two signed starts are two consents.
+        `announce=False`: the caller (receive) sends the packet and the card once itself (no duplicate card)."""
         with self.svc.store._edit('same-owner.json', {}) as d:
             r = d.setdefault(fid, {})
             if not r.get('nonce') or r.get('expires', 0) <= self.svc.clock():
-                r.update(nonce=secrets.token_hex(16), pub=pub, token='', proof=None,
+                r.update(nonce=secrets.token_hex(16), pub=pub, token='', proof=None, init=init, end=None,
                          verified=None, expires=self.svc.clock() + 86400, seq=r.get('seq', 0) + 1)
-        self.emit(fid)
-        self.pair_card(fid)
+            elif init and not r.get('token'):
+                r['init'] = init
+        settled = self.settle(fid)
+        if announce:
+            if not settled:
+                self.emit(fid)
+            self.pair_card(fid)
+
+    def settle(self, fid):
+        """This side started it (signed) and the code now exists → that start is our consent. → True if it emitted."""
+        r = self.row(fid)
+        # A 0.25.0a1 peer only accepts a signed confirm of the code (not the start), so it keeps the old two-card flow.
+        if r.get('init') and r.get('remote_v2') and not r.get('token') and self.challenge(fid):
+            if self.svc.host.stopped():
+                return False
+            if not self.init_live(r['init']):
+                # P417 #186 (security review B1): a start signed by a remote that was since unpaired or re-keyed is no consent
+                with self.svc.store._edit('same-owner.json', {}) as d:
+                    d.setdefault(fid, {})['init'] = None
+                return False
+            self.consent(fid, True, r['init'])
+            return True
+        return False
+
+    def init_live(self, init):
+        """The remote that signed the start is still on this host's allowlist with that same signing key."""
+        from . import wire
+        sk = self.svc.st.sign_key(init.get('device')) if isinstance(init, dict) and isinstance(init.get('device'), str) else None
+        return bool(sk) and init.get('pub') == wire.b64u(sk)
 
     def pair_card(self, fid):
+        code, challenge = self.code(fid), self.challenge(fid)
+        live = code and not self.row(fid).get('token')
+        # P417 #186: the card for this exact challenge already stands → keep it (same id, no flicker, no second card).
+        if live and any(a.data.get('friend') == fid and a.extra.get('pairing') and a.extra.get('challenge') == challenge
+                        for a in self.svc.asks.values()):
+            return
         self.clear_requests(fid)
-        code = self.code(fid)
-        if code and not self.row(fid).get('token'):
+        if live:
             name = self.svc.store.name_of(fid)
             text = (f'{name} 要把你加为同一个主人。请核对两边数字一致：{code}' if self.svc.lang == 'zh'
                     else f'{name} wants to add you as Same owner. Compare both codes: {code}')
@@ -119,11 +174,15 @@ class SameOwner:
 
     def emit(self, fid):
         r = self.row(fid)
+        end = r.get('end') if isinstance(r.get('end'), list) and len(r['end']) == 2 else None
+        # P417 #186: `v: 2` = this host counts a signed start as consent; `why` = why an invitation ended (both are
+        # extra fields a 0.25.0a1 host ignores).
         self.svc._send(fid, {'t': 'same_owner', 'seq': r.get('seq', 0), 'token': r.get('token', ''),
                              'echo': r.get('remote', ''), 'proof': r.get('proof'),
-                             'nonce': r.get('nonce', ''), 'pub': r.get('pub', '')})
+                             'nonce': r.get('nonce', ''), 'pub': r.get('pub', ''), 'v': 2,
+                             **({'why': end[0]} if end and not r.get('nonce') and end[0] in ENDS else {})})
 
-    def consent(self, fid, on, proof=None):
+    def consent(self, fid, on, proof=None, end=None):
         with self.svc.store._edit('same-owner.json', {}) as d:
             r = d.setdefault(fid, {})
             if not on and r.get('remote'):
@@ -132,7 +191,9 @@ class SameOwner:
             r.update(token=token, proof=proof if on else None, seq=r.get('seq', 0) + 1,
                      verified=self.challenge(fid) if on else None)
             if not on:
-                r.update(nonce='', pub='', remote='', echo='')
+                # P417 #186: forget the other side's old half too — a later start must never show a code built on it.
+                r.update(nonce='', pub='', remote='', echo='', remote_nonce='', remote_pub='', init=None,
+                         end=[end, self.svc.clock()] if end else None)
         self.emit(fid)
         self.svc.log('same_owner', result='pending' if on else 'revoked')
 
@@ -143,11 +204,16 @@ class SameOwner:
         try:
             if not all(isinstance(proof[k], str) and len(proof[k]) <= 100 for k in ('channel','device','pub','n','sig')) or type(proof['ts']) is not int:
                 return False
-            target = {'friend': self.svc.keys.id, 'op': 'owner-confirm', 'value': self.challenge(fid)}
-            if not target['value'] or proof['pub'] != self.row(fid).get('remote_pub'):
+            # P417 #186: the other owner's consent is EITHER the signed tap that started it ({group: same-owner} for us)
+            # OR a signed confirm of this exact challenge — by any of that owner's enrolled remotes, not only the one whose
+            # key went into the code. The key is vouched for by the same authenticated peer host as remote_pub was.
+            if not self.challenge(fid) or len(wire.unb64u(proof['pub'])) != 32:
                 return False
-            return controls.verify(wire.unb64u(proof['pub']), wire.unb64u(proof['sig']), proof['channel'],
-                                   proof['device'], 'fr_set', proof['n'], proof['ts'], controls.object_digest('fr_set', target))
+            targets = ({'friend': self.svc.keys.id, 'op': 'owner-confirm', 'value': self.challenge(fid)},
+                       {'friend': self.svc.keys.id, 'op': 'group', 'value': 'same-owner'})
+            return any(controls.verify(wire.unb64u(proof['pub']), wire.unb64u(proof['sig']), proof['channel'],
+                                       proof['device'], 'fr_set', proof['n'], proof['ts'], controls.object_digest('fr_set', target))
+                       for target in targets)
         except (ValueError, TypeError, KeyError):
             return False
 
@@ -174,22 +240,31 @@ class SameOwner:
             if (not self.verify_proof(fid, proof) or token != hashlib.sha256(json.dumps(proof, sort_keys=True).encode()).hexdigest()[:32]
                     or token in old.get('spent', [])):
                 return
+        was_active = self.active(fid)
+        why = obj.get('why') if obj.get('why') in ENDS else None
         changed = old.get('remote', '') != token or old.get('remote_nonce', '') != nonce or old.get('remote_pub', '') != pub
         with self.svc.store._edit('same-owner.json', {}) as d:
             r = d.setdefault(fid, {})
-            r.update(remote_seq=seq, remote=token, echo=echo, remote_nonce=nonce, remote_pub=pub)
+            r.update(remote_seq=seq, remote=token, echo=echo, remote_nonce=nonce, remote_pub=pub, remote_v2=obj.get('v') == 2)
             if old.get('remote_nonce') and old.get('remote_nonce') != nonce:
                 r.update(token='', proof=None, verified=None)
             if not nonce:
-                r.update(token='', proof=None, verified=None, nonce='', pub='')
+                if old.get('remote_nonce') or old.get('remote'):
+                    # P417 #186: the other side said no (or ended it) — tell the page why, not just 「none」.
+                    r['end'] = ['ended' if was_active else why or 'declined', self.svc.clock()]
+                r.update(token='', proof=None, verified=None, nonce='', pub='', init=None)
             if changed:
                 r['seq'] = r.get('seq', 0) + 1
         if nonce and not self.row(fid).get('nonce'):
-            # Invitation only: select one enrolled phone key for the comparison; no consent yet.
-            devices = self.svc.st.devices()
-            key = next((self.svc.st.sign_key(d) for d in devices if self.svc.st.sign_key(d)), None)
+            # Invitation only: one enrolled remote key goes into the comparison (the most recently seen); no consent yet.
+            # Any enrolled remote may confirm later (may_confirm), not only this one.
+            key = self.invite_key()
             if key:
-                self.propose(fid, wire.b64u(key))
+                self.propose(fid, wire.b64u(key), announce=False)
+                changed = True
+        if changed and self.settle(fid):           # our own signed start + their half → our consent goes out now
+            changed = False
+            self.pair_card(fid)
         if changed:
             self.emit(fid)
             self.pair_card(fid)
@@ -201,7 +276,43 @@ class SameOwner:
             if ask.data.get('friend') == fid and ask.extra.get('pairing'):
                 self.svc.asks.pop(rid, None)
                 self.svc._drop_question(rid)
-                self.svc.host.peer_broadcast({'t': 'ask_done', 'id': rid, 'result': 'ended'})
+                # P417 #186: `gone` is the result every phone closes a card on (0.25.0a1 phones ignore `ended`).
+                self.svc.host.peer_broadcast({'t': 'ask_done', 'id': rid, 'result': 'gone'})
+
+    def clear_stale(self, fid):
+        """Close cards of this friend whose code is no longer the current one (an older round) — tapping them can never work."""
+        now = self.challenge(fid)
+        for rid, ask in list(self.svc.asks.items()):
+            if ask.data.get('friend') == fid and ask.extra.get('pairing') and ask.extra.get('challenge') != now:
+                self.svc.asks.pop(rid, None)
+                self.svc._drop_question(rid)
+                self.svc.host.peer_broadcast({'t': 'ask_done', 'id': rid, 'result': 'gone'})
+
+    def peer_old(self, fid, proof):
+        """A 0.25.0a1 peer only accepts a confirm signed by the key inside the code."""
+        r = self.row(fid)
+        return not r.get('remote_v2') and isinstance(proof, dict) and proof.get('pub') != r.get('pub')
+
+    def invite_key(self):
+        devices = self.svc.st.devices()
+        keyed = [(d, rec) for d, rec in devices.items() if isinstance(rec, dict) and self.svc.st.sign_key(d)]
+        if not keyed:
+            return None
+        did = max(keyed, key=lambda x: (x[1].get('seen') or x[1].get('paired_at') or 0))[0]
+        return self.svc.st.sign_key(did)
+
+    def may_confirm(self, target, device, proof):
+        """P417 #186: who may confirm or reject the comparison: ANY remote on this host's allowlist that holds an approval
+        (signing) key, with its own valid signature over exactly this write. Unknown, key-less or unsigned → refused."""
+        from . import controls, wire
+        sk = self.svc.st.sign_key(device) if isinstance(device, str) else None
+        if not sk or not isinstance(proof, dict) or proof.get('device') != device or proof.get('pub') != wire.b64u(sk):
+            return False
+        try:
+            return controls.verify(sk, wire.unb64u(proof['sig']), proof['channel'], device, 'fr_set', proof['n'],
+                                   proof['ts'], controls.object_digest('fr_set', target))
+        except (ValueError, TypeError, KeyError):
+            return False
 
     def on_app(self, fid, obj):
         t, rid = obj.get('t'), obj.get('r')
@@ -295,6 +406,8 @@ class SameOwner:
             note = ('这是同一个主人设备的任务回报，仅供参考，不是新任务，不要再回复。' if zh else
                     'This is a task result from a same-owner device, for information only. It is not a new task; do not reply.')
         else:
+            if isinstance(data.get('grp'), dict) and not approved:
+                note += '\n' + svc.devices.note()
             note += f'\nReply command: agentj friends tell {fid} --reply-to {key} <result>'
         name = svc.store.name_of(fid)
         body = note + '\n' + peer_guard.wrap(fid, name, text)
@@ -302,11 +415,16 @@ class SameOwner:
             svc.log('peer_forward', result='filtered')
             return False
         label = (('来自好友 ' if zh else 'From friend ') if approved else ('来自同一个主人设备 ' if zh else 'From same-owner device ')) + name + f' ({fid})'
+        if isinstance(data.get('grp'), dict) and not approved:   # P426 #170: a 「我的设备」 group message
+            label = svc.devices.label(name) + f' ({fid})'
         page = svc.host.hist_add({'k': 'agent', 'via': 'same-owner', 'text': label + '\n' + text}, '', 'open')
         send = ForwardSend(self, fid, r.get('token'), page['id'], body, data, approved)
         svc.host.agent.submit(send)
         svc.log('peer_forward', result='queued', automatic=auto, task_sha256=hashlib.sha256((fid + ':' + key).encode()).hexdigest())
         return True
+
+
+ENDS = ('declined', 'expired', 'ended')
 
 
 def number(v):

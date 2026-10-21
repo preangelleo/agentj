@@ -6,7 +6,7 @@
 // Slot 0 (the owner) stays on its own card (P194 「我的联系方式」): tapping it opens that card; it cannot be deleted here.
 // Names and addresses are textContent only; nothing is kept on the phone after the page closes.
 import { t, onLang } from './t.js';
-import { el, mk, toast, confirmSheet } from './ui.js';
+import { el, mk, toast, executionToast, confirmSheet } from './ui.js';
 import { ask1, isReady } from './session.js';
 import { registerLayer } from './layers.js';
 import { signedWrite, whyText } from './controls.js';
@@ -87,7 +87,7 @@ async function allow(c, addr, role, btn) {
   const res = await signedWrite('mail_allow', { addr, role }, { t: 'mail_allow', addr, role });
   if (res && res.ok) {
     S.allow.add(addr.toLowerCase());
-    toast(t(res.already ? 'p207set.ct.allowAlready' : 'p207set.ct.allowDone', { a: addr }), 2600);
+    executionToast(t(res.already ? 'p207set.ct.allowAlready' : 'p207set.ct.allowDone', { a: addr }), 2600);
     render();
     return;
   }

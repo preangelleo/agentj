@@ -206,6 +206,7 @@ _MAIN_ENV = frozenset({
     "FAKE_CLAUDE_LOG", "FAKE_CLAUDE_SCRIPT", "FAKE_CLAUDE_USER_SETTINGS", "FAKE_PREP_SLEEP", "FAKE_NO_HANDOVER",
     "FAKE_CTX_USED", "FAKE_FRESH_WINDOWS", "FAKE_CX_LOG", "FAKE_CX_SANDBOX", "FAKE_CX_POLICY", "FAKE_CX_THREADS",
     "FAKE_CX_THREAD_SANDBOX", "FAKE_OC_LOG", "FAKE_OC_AGENT_RULES", "FAKE_OC_STORE", "FAKE_OC_ENV_LOG", "FAKE_OC_SESSIONS",
+    "FAKE_OC_SUBAGENTS", "FAKE_OC2_SUBAGENTS", "FAKE_OC2_NO_INHERIT", "FAKE_OC2_GENERAL_RULES",    # P426 stand-ins (tests)
 })
 
 
@@ -251,7 +252,7 @@ def launch_environment(base=None, allow_docker: bool = False, kind: str = "codex
 # P348 (2026-10-16): the owner's own automation — scheduled tasks, workflow CEOs, goal countdowns — may use any plan key
 # (Ark / Bailian Coding Plan, Bailian Token Plan, Kimi For Coding membership); a support bot serves other people, so it
 # never gets one (bots/provider.py asks for a pay-as-you-go key).
-PLAN_KEY_ENV = ("ARK_CODING_PLAN_API_KEY", "BAILIAN_CODING_PLAN_API_KEY", "BAILIAN_TOKEN_PLAN_API_KEY", "KIMI_API_KEY",
+PLAN_KEY_ENV = ("ARK_CODING_PLAN_API_KEY", "BAILIAN_TOKEN_PLAN_API_KEY", "KIMI_API_KEY",
                 "ARK_AGENT_PLAN_API_KEY")   # P395: Ark's Agent Plan
 
 

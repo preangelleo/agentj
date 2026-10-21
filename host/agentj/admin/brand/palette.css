@@ -52,7 +52,7 @@
   --fs-3xl: clamp(2.125rem, 1.6rem + 2.6vw, 3.5rem);
   --lh-body: 1.7;
   --lh-tight: 1.25;
-  --measure: 72ch;      /* readable line length for prose */
+  --measure: 100%;      /* P434: prose follows its container */
 
   /* ---- spacing (4 px base) ---- */
   --sp-1: 0.25rem; --sp-2: 0.5rem; --sp-3: 0.75rem; --sp-4: 1rem; --sp-5: 1.5rem;

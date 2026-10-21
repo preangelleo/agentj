@@ -90,8 +90,8 @@ def prep_text(lang: str) -> str:
 
 
 # P394 (#130): every recovery also checks the To-do card for what is due.
-RECOVER_DUE = {"zh": "接着跑一次 agentj card todo due，到期的待办先办。",
-               "en": " Then run agentj card todo due once and handle what is due first."}
+RECOVER_DUE = {"zh": "接着跑一次 agentj card todo due + agentj card cal due，到期的待办先办。",
+               "en": " Then run agentj card todo due + agentj card cal due once and handle what is due first."}
 
 
 def recover_text(lang: str, kind: str, has: bool, where: Path | None = None) -> str:

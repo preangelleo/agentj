@@ -14,7 +14,7 @@ Logins (the owner's, never the Agent's):
 - the owner's own Qwen settings (`~/.qwen/settings.json` with an auth type or model providers, e.g. written by `bl config
   agent`): used as they are; Agent J adds nothing.
 - otherwise a key from the phone's key card: BAILIAN_TOKEN_PLAN_API_KEY (Token Plan, personal — recommended; Qwen 3.8 with
-  image input), BAILIAN_CODING_PLAN_API_KEY (Coding Plan) or DASHSCOPE_API_KEY (pay as you go). Agent J hands it to Qwen as
+  image input), DASHSCOPE_API_KEY (pay as you go). Agent J hands it to Qwen as
   its OpenAI-compatible variables (OPENAI_API_KEY / OPENAI_BASE_URL / OPENAI_MODEL) for this process only — nothing is written
   to Qwen's settings. The owner's own scheduled tasks / workflow CEOs get the plan keys too (P348, fence.PLAN_KEY_ENV: Token
   Plan, Coding Plan — never the pay-as-you-go DASHSCOPE_API_KEY), and support bots get none.
@@ -38,8 +38,6 @@ MIN_VERSION = (0, 25, 0)
 KEYS = (  # (key variable, OpenAI-compatible base, default model, models offered) — first one set wins
     ("BAILIAN_TOKEN_PLAN_API_KEY", "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1", "qwen3.8-max",
      ("qwen3.8-max", "qwen3.8-flash", "qwen3.7-plus", "qwen3.6-flash", "qwen3.7-max", "glm-5.3", "deepseek-v4-pro")),
-    ("BAILIAN_CODING_PLAN_API_KEY", "https://coding.dashscope.aliyuncs.com/v1", "qwen3.7-plus",
-     ("qwen3.7-plus", "qwen3.6-plus", "qwen3.5-plus", "kimi-k2.5", "glm-5")),
     ("DASHSCOPE_API_KEY", "https://dashscope.aliyuncs.com/compatible-mode/v1", "qwen3.7-plus",
      ("qwen3.7-plus", "qwen3.7-max", "qwen3.6-plus")),
 )

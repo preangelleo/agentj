@@ -2,7 +2,7 @@
 
 - Terminal: the line shows while a device waits — on the account route (passkey only) and on the local code + passphrase
   route — but only when this computer already has a paired remote to confirm on.
-- Admin page: the line exists in zh/en, sits in the pending block, and app.js shows it only when a remote is paired.
+- P444b admin page only links to the account page; the legacy pending block stays hidden. Terminal paired-remote guidance remains bilingual.
 """
 import _hermetic  # noqa: F401,I001
 import json
@@ -58,12 +58,16 @@ class TerminalLine(Base):
 
 
 class AdminPage(unittest.TestCase):
-    def test_line_in_both_languages_and_shown_only_with_a_remote(self):
+    def test_local_page_redirects_and_keeps_legacy_pending_hidden(self):
         html = (admin.ASSET_DIR / "index.html").read_text(encoding="utf-8")
         js = (admin.ASSET_DIR / "app.js").read_text(encoding="utf-8")
         pending = html[html.index('id="pair-pending"'):html.index('id="pair-local-approve"')]
         self.assertIn('id="pair-remote-confirm" data-i18n="pair.remote_confirm" hidden', pending)
-        self.assertIn("show('pair-remote-confirm', s.devices.length > 0);", js)
+        self.assertIn('id="pair-precheck-open" href="https://agentj.app/account/"', html)
+        renderer = js.split('function renderPairing(s) {', 1)[1].split('function passkeyOnly', 1)[0]
+        self.assertNotIn('s.pairing', renderer)
+        self.assertIn("'pair-pending'", renderer)
+        self.assertIn('show(id,false)', renderer)
         zh = json.loads((admin.ASSET_DIR / "i18n/admin.zh.json").read_text(encoding="utf-8"))["pair.remote_confirm"]
         en = json.loads((admin.ASSET_DIR / "i18n/admin.en.json").read_text(encoding="utf-8"))["pair.remote_confirm"]
         self.assertIn("已配对的遥控器", zh)

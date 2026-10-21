@@ -42,15 +42,17 @@ import signal
 import subprocess
 import sys
 import tempfile
+import time
 import tomllib
 import unicodedata
 import urllib.parse
 
-from . import bundle, cloud, fence, minisign, plaza, privacy
+from . import bundle, cloud, fence, market_guard, minisign, plaza, plaza_audit, plaza_perms, plaza_trust, privacy
 from .plaza import FENCE_CLOSE, FENCE_OPEN, META, NOTE, PlazaError, escape_data, json_out, plaza_clean
 from .text import clean_line
 
 EXIT_OK, EXIT_ERROR, EXIT_BLOCKED, EXIT_UNAVAILABLE, EXIT_DIGEST, EXIT_SIGNATURE = 0, 1, 2, 3, 4, 5
+EXIT_PERMISSION = 6          # P426 #181-1: the package needs more than the Agent may do and the owner did not allow it
 PKG_REASONS = ("spam", "malware", "privacy", "injection", "license", "other")
 HARNESSES = bundle.HARNESSES
 SORTS = ("new", "installs", "likes", "week")
@@ -103,6 +105,8 @@ ERRORS = {
     "too_large": "包太大（≤ 2 MiB）/ the package is too large (≤ 2 MiB)",
     "secret_found": "服务器的密钥扫描拦下了 / the server's secret scan refused it",
     "bad_request": "服务器不接受这个请求 / the server refused the request",
+    "bad_host_sig": "服务器认为发布方签名不对，没发 / the server says the publisher signature is wrong: not published",
+    "audit_blocked": "服务器的静态审计拦下了 / the server's static audit refused it",
 }
 
 
@@ -258,6 +262,10 @@ def parse_detail(x) -> dict | None:
         "files": files, "versions": versions,
         "license": _s(x.get("license"), 200), "summary_fields": summarize(x),
         "partners": parse_partners(x.get("partners")),
+        # P426 #47: the publisher's own signature, passed through as served (checked at install, never trusted as-is)
+        "host_sig": x["host_sig"] if isinstance(x.get("host_sig"), str) and len(x["host_sig"]) <= 100 else None,
+        "host_pubkey": x["host_pubkey"] if isinstance(x.get("host_pubkey"), str) and len(x["host_pubkey"]) <= 100 else None,
+        "host_signed_at": _int(x.get("host_signed_at")),
     })
     return it
 
@@ -321,7 +329,7 @@ def _track(it: dict) -> str:
 
 
 def _kind(t: str) -> str:
-    return "技能 skill" if t == "skill" else "工作流 workflow"
+    return "技能 skill" if t == "skill" else "卡片 card" if t == "card" else "工作流 workflow"
 
 
 def _item_lines(i: int, it: dict) -> list[str]:
@@ -570,7 +578,8 @@ def read_installed(st) -> list[dict]:
     out = []
     for r in items if isinstance(items, list) else []:
         if isinstance(r, dict) and isinstance(r.get("name"), str) and _NAME.fullmatch(r["name"]):
-            out.append({k: r.get(k) for k in ("name", "type", "version", "sha256", "harness", "target", "certified", "installed_at", "category")})
+            out.append({k: r.get(k) for k in ("name", "type", "version", "sha256", "harness", "target", "certified", "installed_at", "category")}
+                       | {k: r[k] for k in ("permissions", "perm_grant", "publisher_grant", "audit_grant") if isinstance(r.get(k), dict)})  # P426 #181-1
     return out
 
 
@@ -1389,7 +1398,7 @@ def _confirm_cmd(name, *, version, harness, workspace, params, params_file, sign
 
 def run_install(name: str, *, version=None, harness=None, workspace=None, params=None, params_file=None, accept_unverified=False,
                 sign_as=None, replace=False, skip_verify=False, owner_confirmed=False, digest=None, st=None, post=None, get=None,
-                keyring=None, now=None, out=None, _starter=False) -> int:
+                keyring=None, now=None, out=None, _starter=False, perm_call=None) -> int:
     out = out or sys.stdout
     if owner_confirmed and not (digest and _DIGEST.fullmatch(digest)):
         raise PlazaError("--owner-confirmed 要和预览时打印的 --digest 一起用：先不带它运行一次，把预览给你的人看 / "
@@ -1399,15 +1408,31 @@ def run_install(name: str, *, version=None, harness=None, workspace=None, params
     st = st or _state()
     if not cloud.read_cloud(st):
         raise PlazaError(ERRORS["unlinked"])
-    h = resolve_harness(harness, st)
     try:
         d, data, m, files = fetch(st, name, version, post=post, get=get)
         sha = bundle.sha256(data)
         certified = check_signature(d, data, m, keyring)
         downgrade = trust_check(st, m, certified, version)
-    except SignatureError as e:
+        pubr = market_guard.publisher(st, d, sha, m, d["track"] == "official")     # P426 #181-2: the publisher's own signature
+    except (SignatureError, market_guard.PublisherMismatch) as e:
         print(f"refused: {e}", file=out)
         return EXIT_SIGNATURE
+    findings = plaza_audit.audit(files, m)                                          # P426 #181-2: the static audit
+    # Jarvis ruling 3: an official signature does not exempt a block finding — refused, except that the owner may allow an
+    # officially signed package once with a signed phone card listing every finding (below, at confirm; never a starter)
+    if plaza_audit.blocked(findings) and (not certified or _starter):
+        print(market_guard.refusal(findings, "没有安装"), file=out)
+        st.log("plaza_pkg_install", name=m["name"], result="audit_blocked")
+        return EXIT_BLOCKED
+    audit_blk = market_guard.audit_items(findings) if certified else []
+
+    if m["type"] == "card":          # P432: a card is not for an AI coding tool — it goes onto the phone, switched off
+        if _starter or params or params_file or sign_as or workspace:
+            raise PlazaError("卡片没有参数、签名人和工作目录 / a card takes no --param, --sign-as or --workspace")
+        return _install_card(st, m, files, sha, certified, downgrade, name=name, version=version, replace=replace,
+                             accept_unverified=accept_unverified, owner_confirmed=owner_confirmed, digest=digest, post=post, out=out,
+                             pubr=pubr, findings=findings, audit_blk=audit_blk, perm_call=perm_call)
+    h = resolve_harness(harness, st)
     if _starter:
         from .starters import STARTERS
         if (name not in STARTERS or m['type'] != 'workflow' or not certified or version is not None
@@ -1428,13 +1453,22 @@ def run_install(name: str, *, version=None, harness=None, workspace=None, params
     elif params or params_file:
         raise PlazaError("技能没有参数 / a skill takes no --param")
     shown_params = {k: v for k, v in values.items() if k not in auto}
-    flags = {"replace": bool(replace), "sign_as": sign_as, "skip_verify": bool(skip_verify)}
+    flags = {"replace": bool(replace), "sign_as": sign_as, "skip_verify": bool(skip_verify), "publisher": pubr["fp"]}
     dg = install_digest(sha, target, h, shown_params, flags)
     install_date = str(values.get("install_date") or now.date().isoformat())
     if not _DATE.fullmatch(install_date):
         install_date = now.date().isoformat()
     # render now (preview too): a placeholder / JSON problem is found before the human is asked
     rendered = install_files(m, files, h, values, sign_as, install_date)
+    # P426 #181-1: declared ∪ inferred permissions (S1) vs what this harness already allows + what the owner approved before
+    try:
+        perm, perm_inferred, perm_under = plaza_perms.effective(m, files)
+    except plaza_perms.PermError as e:
+        raise PlazaError(f"包的权限声明不合格，不装 / the package's permissions declaration is malformed: {e}")
+    perm_allow, perm_src = plaza_perms.allowed(h)
+    perm_prev = plaza_perms.merge(*[r.get("permissions") for r in read_installed(st)
+                                    if r["name"] == m["name"] and r["harness"] == h and isinstance(r.get("permissions"), dict)])
+    perm_extra = plaza_perms.excess(perm, perm_allow, perm_prev)
     if _starter:
         owner_confirmed, digest = True, dg
     exists = os.path.lexists(target)
@@ -1449,6 +1483,9 @@ def run_install(name: str, *, version=None, harness=None, workspace=None, params
                      + (CERT_BADGE if certified else UNVERIFIED),
                      f"{META}包 bundle sha256 {sha} · {len(files)} 个文件 files · {sum(len(v) for v in files.values())} bytes",
                      *([f"{META}{downgrade}"] if downgrade else []),
+                     *market_guard.publisher_lines(pubr, d["track"] == "official"),
+                     *market_guard.audit_lines(findings, certified),
+                     *_perm_lines(perm, perm_inferred, perm_allow, perm_src, perm_extra, perm_under),
                      f"{META}标题 title:", *_t(m["title_zh"]), *_t(m["title_en"]), f"{META}简介 summary:", *_t(m["summary_zh"]),
                      *_t(m["summary_en"]), *_summary_lines(s)]
         if s["verify"]:
@@ -1509,6 +1546,30 @@ def run_install(name: str, *, version=None, harness=None, workspace=None, params
         raise PlazaError(f"{target} 已存在，不覆盖 / exists, never overwritten" + (
             "；要替换加 --replace / add --replace to move it to the backups" if owned else f"; {NOT_OURS}"))
 
+    # 0. P426 #181-1: more than the Agent may do, and/or (N4) a changed publisher → ONE signed card on the phone (no serve →
+    #    refused, with the way); no command-line flag replaces it
+    grant = pub_grant = audit_grant = None
+    pub_changed = pubr["changed"] and not _starter
+    if (perm_extra and not _starter) or pub_changed or audit_blk:
+        items = perm_extra if not _starter else []
+        under = bool(perm_under) and any(i in perm_under for i in items)
+        res = plaza_perms.ask_owner(st, m["name"], m["version"], sha, items, call=perm_call, under=under,
+                                    publisher={"prev": pubr["prev"], "new": pubr["fp"]} if pub_changed else None,
+                                    audit=audit_blk or None)
+        if res is None or not res.get("ok"):
+            print(_perm_refusal(name, res, bool(items), pub_changed, bool(audit_blk)), file=out)
+            st.log("plaza_pkg_install", name=m["name"], result=("permission_" if items else "publisher_" if pub_changed else "audit_")
+                   + ("no_serve" if res is None else str(res.get("why"))[:20]))
+            return EXIT_PERMISSION
+        g = {"rid": res.get("rid"), "device": res.get("device")}
+        grant = g if items else None
+        pub_grant = g if pub_changed else None
+        audit_grant = {**g, "findings": [a["rule"] for a in audit_blk]} if audit_blk else None
+        what = [x for x in (("权限", "these permissions") if items else None, ("新的发布方", "the new publisher") if pub_changed else None,
+                            ("审计拦下的这几处（只这一次）", "the audit findings (this one time)") if audit_blk else None) if x]
+        print("和".join(z for z, _ in what) + "：主人已在手机上签名允许 / the owner allowed " + " and ".join(e for _, e in what)
+              + " on the phone (signed)", file=out)
+
     # 1. install.verify — in a throw-away copy of the raw package (before rendering, FORMAT §7.7), only inside a real sandbox
     if s["verify"]:
         if skip_verify:
@@ -1567,15 +1628,148 @@ def run_install(name: str, *, version=None, harness=None, workspace=None, params
                   f"{old} ({e.strerror})", file=out)
             bak = old
     rec = {"name": m["name"], "type": m["type"], "version": m["version"], "sha256": sha, "harness": h, "target": str(target),
-           "category": m.get("category"), "certified": certified, "installed_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
+           "category": m.get("category"), "certified": certified, "installed_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+           "permissions": perm, **({"perm_grant": grant} if grant else {}), **({"publisher_grant": pub_grant} if pub_grant else {}),
+           **({"audit_grant": audit_grant} if audit_grant else {})}
     _record_install(st, rec)
+    if not pubr["known"] or pub_grant:
+        market_guard.record_publisher(st, m["name"], pubr["fp"])    # TOFU: the first publisher seen (unsigned too), or the allowed new one
     st.log("plaza_pkg_install", name=m["name"], result="ok")
     print(f"已安装 / installed: {m['name']} {m['version']} → {target}" + (f"（旧目录 old one → {bak}）" if bak else ""), file=out)
+    print("发布方签名 / publisher signature: " + (pubr["short"] or ("Agent J 官方 / official" if d["track"] == "official" else "未签名 unsigned")),
+          file=out)
     try:
         _call(st, "installed", {"nonce": _nonce(), "name": m["name"], "version": m["version"]}, post)
     except PlazaError as e:
         print(f"warning: 安装计数没报上去（不影响安装）/ the install count was not reported (the install is fine): {e}", file=out)
     _todo(m, s, target, workspace, st, out)
+    return EXIT_OK
+
+
+def _perm_lines(perm: dict, inferred: bool, allow, src: str, extra: list, under: list = ()) -> list[str]:
+    out = [f"{META}权限 permissions（" + ("包没写，按内容推断 / not declared: inferred from the content" if inferred else
+                                         "包自己声明的 + 按内容推断的 / declared by the package + inferred from the content")
+           + f"）: {plaza_perms.describe(perm)}"]
+    if under:
+        out.append(f"{META}⚠ 包声明的少于实际内容 / THE PACKAGE DECLARES LESS THAN ITS CONTENT SHOWS —— 按内容还找到这些，照样算进去、照样要你确认 / "
+                   "found in the content as well, counted and asked like the rest:")
+        out += [f"{META}  • {' / '.join(plaza_perms.item_text(it))}" for it in under]
+    out.append(f"{META}本机允许范围的依据 / allowed here per: {src}"
+               + ("（读不到，全部当作要你确认 / unreadable: every item needs your yes）" if allow is None else ""))
+    if not extra:
+        return out + [f"{META}都在你的 Agent 现在允许的范围内 / all within what your Agent may do now"]
+    out.append(f"{META}超出你的 Agent 现在允许的 / BEYOND what your Agent may do now —— 确认安装时手机上会弹一张确认卡，你签名允许才装 / "
+               "at confirm a card comes to your phone; it installs only after you allow it:")
+    for it in extra:
+        zh, en = plaza_perms.item_text(it)
+        out.append(f"{META}  • {zh} / {en}")
+    return out
+
+
+def _perm_refusal(name: str, res, items: bool = True, publisher: bool = False, audit: bool = False) -> str:
+    if res is None and audit and not items and not publisher:
+        return ("没有安装：这个官方签名包被静态审计拦下（预览里列着），只有你在手机上签名才能放行一次，但 Agent J 没在运行，确认卡发不到你的手机。"
+                "先打开 Agent J，再让 Agent 重新运行同一条安装命令，手机上会弹出逐条列出审计发现的确认卡 / NOT INSTALLED: the static "
+                "audit blocks this officially signed package (see the preview) and only your signed yes on the phone allows it "
+                "once, but Agent J is not running, so no card can reach your phone. Start Agent J, then have your Agent run the "
+                "same install command again.")
+    if res is None:
+        if publisher and not items:
+            return ("没有安装：这个包的发布方换了（预览里写着），要你在手机上签名同意，但 Agent J 没在运行，确认卡发不到你的手机；命令行加旗标也不行。"
+                    "先打开 Agent J（让它在这台电脑上运行），再让 Agent 重新运行同一条安装命令，手机上会弹出列着新旧指纹的确认卡，你点「允许」就会装 / "
+                    "NOT INSTALLED: the publisher of this package changed (see the preview) and only your signed yes on the phone "
+                    "accepts that, but Agent J is not running, so no card can reach your phone (no command-line flag replaces "
+                    "it). Start Agent J on this computer, then have your Agent run the same install command again.")
+        return ("没有安装：这个包要的权限超出你的 Agent 现在允许的" + ("，发布方也换了" if publisher else "")
+                + "，但 Agent J 没在运行，确认卡发不到你的手机。先打开 Agent J（让它在这台电脑上"
+                f"运行），再让 Agent 重新运行同一条安装命令（agentj plaza install {name} … --owner-confirmed --digest …），手机上会弹出"
+                "确认卡，你点「允许」就会装 / NOT INSTALLED: the package needs more than your Agent may do now and Agent J is not "
+                "running, so no card can reach your phone. Start Agent J on this computer, then have your Agent run the same install "
+                "command again: a card comes to your phone, and it installs once you allow it.")
+    if res.get("why") == "denied":
+        what = "和".join(x for x in (("这些权限" if items else ""), ("新的发布方" if publisher else ""),
+                                    ("审计拦下的这几处" if audit else "")) if x)
+        return (f"没有安装：你没有在手机上允许{what}（或确认卡超时了）/ NOT INSTALLED: it was not allowed on the phone "
+                "(or the card timed out)")
+    return f"没有安装：权限确认没完成 / NOT INSTALLED: the permission check did not complete ({clean_line(str(res.get('why')), 40)})"
+
+def _install_card(st, m, files, sha, certified, downgrade, *, name, version, replace, accept_unverified, owner_confirmed, digest,
+                  post, out, pubr=None, findings=(), audit_blk=(), perm_call=None) -> int:
+    """P432: a card package → the owner's deck, switched OFF until the owner reads its permission summary on the phone."""
+    from . import jcards, jcards_pkg
+    pubr = pubr or {"known": True, "changed": False, "prev": None, "fp": None}
+    probs = jcards_pkg.preflight(files)
+    if probs:
+        print("refused: 这张卡没通过上线检查，什么都没装 / the card fails the checks, nothing installed:\n  " + "\n  ".join(probs[:20]), file=out)
+        return EXIT_ERROR
+    doc = json.loads(files["card/card.json"])
+    cid, target = doc["id"], f"card/{doc['id']}"
+    have = jcards.find(st.root, cid)
+    mine = have and not have["official"] and (jcards_pkg.source(st.root, cid) or {}).get("name") == m["name"]
+    if have and not mine:
+        raise PlazaError(f"这台电脑上已有一张 id 为 {cid} 的卡，不是从这个包装的，不覆盖 / a card {cid} exists here that this package did not install: never replaced")
+    dg = install_digest(sha, pathlib.Path(target), "card", {}, {"replace": bool(replace)})
+    if not owner_confirmed:
+        q = shlex.quote
+        print("\n".join([FENCE_OPEN, f"{META}{NOTE}",
+                         f"{META}安装预览 install preview: {m['name']} · {_kind('card')} · v{m['version']} · " + (CERT_BADGE if certified else UNVERIFIED),
+                         f"{META}包 bundle sha256 {sha} · {len(files)} 个文件 files",
+                         *([f"{META}{downgrade}"] if downgrade else []),
+                         *market_guard.publisher_lines(pubr, certified),
+                         *market_guard.audit_lines(findings, certified),
+                         f"{META}标题 title:", *_t(m["title_zh"]), *_t(m["title_en"]),
+                         f"{META}这张卡能做什么 what the card can do（权限摘要 / permission summary）:",
+                         *_t(jcards_pkg.summary_text(doc, "zh", None)), *_t(jcards_pkg.summary_text(doc, "en", None)),
+                         f"{META}装到 target: 手机卡片 {target}" + ("（已装过，--replace 换新版，旧版休眠可回滚 / installed: --replace puts the old one to sleep）" if have else ""),
+                         f"{META}装上后先关着：主人在手机 设置 → Cards 看过权限摘要再打开 / installed switched OFF: the owner reads the summary on the phone, then turns it on",
+                         FENCE_CLOSE]), file=out)
+        if not certified:
+            print("这是待审核的社群卡：没有 Agent J 官方签名。确认时必须加 --accept-unverified / an UNVERIFIED community card: the confirm needs --accept-unverified", file=out)
+        print(f"digest: {dg}", file=out)
+        print("NOT INSTALLED. 把上面的预览原样给你的人看；他明确同意后才运行 / Show your human the preview; only after they agree: "
+              + " ".join(["agentj", "plaza", "install", q(name), *(["--version", q(version)] if version else []), *(["--replace"] if replace else []),
+                          *([] if certified else ["--accept-unverified"]), "--owner-confirmed", "--digest", dg]), file=out)
+        return EXIT_OK
+    if digest != dg:
+        print("refused: this is not the install your human confirmed (digest mismatch). Run the preview again.", file=out)
+        return EXIT_DIGEST
+    if not certified and not accept_unverified:
+        raise PlazaError("待审核的社群卡要加 --accept-unverified（你的人看过并同意了）/ an unverified community card needs --accept-unverified")
+    if have and not replace:
+        raise PlazaError(f"{target} 已装过；换新版加 --replace / installed already: add --replace for the new version")
+    pub_grant = audit_grant = None
+    if pubr["changed"] or audit_blk:
+        res = plaza_perms.ask_owner(st, m["name"], m["version"], sha, [], call=perm_call,
+                                    publisher={"prev": pubr["prev"], "new": pubr["fp"]} if pubr["changed"] else None,
+                                    audit=audit_blk or None)
+        if res is None or not res.get("ok"):
+            print(_perm_refusal(name, res, False, pubr["changed"], bool(audit_blk)), file=out)
+            return EXIT_PERMISSION
+        g = {"rid": res.get("rid"), "device": res.get("device")}
+        pub_grant = g if pubr["changed"] else None
+        audit_grant = {**g, "findings": [a["rule"] for a in audit_blk]} if audit_blk else None
+    r = jcards_pkg.install(st.root, files, {"name": m["name"], "version": m["version"], "sha256": sha, "certified": certified})
+    if not r.get("ok"):
+        print("refused: " + "; ".join(r.get("problems") or [e.get("en", "") for e in r.get("errors", [])] or [str(r.get("why"))]), file=out)
+        return EXIT_ERROR
+    _record_install(st, {"name": m["name"], "type": "card", "version": m["version"], "sha256": sha, "harness": "card", "target": target,
+                         "category": m.get("category"), "certified": certified,
+                         **({"publisher_grant": pub_grant} if pub_grant else {}),
+                         **({"audit_grant": audit_grant} if audit_grant else {}),
+                         "installed_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")})
+    st.log("plaza_pkg_install", name=m["name"], result="ok")
+    print(f"已安装 / installed: {m['name']} {m['version']} → {target}（关着 / switched off）" + (f"；旧版休眠为 {r['dormant']}，回滚 agentj card rollback {cid} / the old one sleeps: agentj card rollback {cid}" if r.get("dormant") else ""), file=out)
+    if not pubr["known"] or pub_grant:
+        market_guard.record_publisher(st, m["name"], pubr["fp"])
+    print("告诉你的人：在手机 设置 → Cards 找到它，看过权限摘要再打开 / tell your human: Settings → Cards, read the summary, then switch it on", file=out)
+    srv = doc.get("server") if isinstance(doc.get("server"), dict) else None
+    if srv:
+        print(f"它的本机服务没装：源码 {srv['repo']} @ {srv['ref']}，端口 {srv['port']}；按你的人的意思再装 / its local service is NOT installed "
+              f"(source {srv['repo']} @ {srv['ref']}, port {srv['port']}); install it only if your human asks", file=out)
+    try:
+        _call(st, "installed", {"nonce": _nonce(), "name": m["name"], "version": m["version"]}, post)
+    except PlazaError as e:
+        print(f"warning: 安装计数没报上去（不影响安装）/ the install count was not reported (the install is fine): {e}", file=out)
     return EXIT_OK
 
 
@@ -1704,6 +1898,24 @@ def layer2_draft(m: dict, files: dict) -> tuple[dict, str]:
     return draft, ", ".join(said)
 
 
+def _publish_call(st, fields: dict, signed: dict, post, out) -> tuple[dict, dict | None]:
+    """POST publish with the host's own signature (P426 #47). A server from before #47 refuses the unknown fields with
+    400 bad_request: then once more without them, said out loud — the package is then unsigned, which every verifier sees
+    (the operator's auto-certify leaves it to a human; installers show 「未签名」)."""
+    try:
+        status, obj = cloud.plaza_pkg_call(st, "publish", {**fields, **signed}, **({"post": post} if post else {}))
+    except cloud.CloudError as e:
+        raise PlazaError(ERRORS.get(e.kind) or f"连不上 Agent J 服务器 / cannot reach the Agent J server ({e.kind})")
+    if status == 400 and cloud.parse_error(obj) == "bad_request":
+        print("注意 / note: 服务器还不支持发布方签名，这次不带签名发布 / the server does not take publisher signatures yet: "
+              "publishing unsigned", file=out)
+        return _call(st, "publish", {**fields, "nonce": _nonce()}, post), None
+    if 200 <= status < 300:
+        return obj, signed
+    e = cloud.parse_error(obj) or f"http_{status}"
+    raise PlazaError(f"{ERRORS.get(e, e)} (HTTP {status})")
+
+
 def publish_digest(sha: str, show_name: bool) -> str:
     return hashlib.sha256(json.dumps({"sha256": sha, "show_name": bool(show_name)}, sort_keys=True).encode()).hexdigest()[:16]
 
@@ -1718,10 +1930,26 @@ def run_publish(directory: str, *, show_name=False, owner_confirmed=False, diges
         raise PlazaError(ERRORS["unlinked"])
     try:
         data, m = bundle.build(directory, {"certified": False, "author": "community"})
+        _, files = bundle.parse(data)
+        perm_inferred = "permissions" not in m                 # P426 #181-1: no declaration → the inferred one is published
+        if perm_inferred:
+            data, m = bundle.build(directory, {"certified": False, "author": "community",
+                                               "permissions": plaza_perms.infer(m, files)})
     except bundle.BundleError as e:
         raise PlazaError(f"包不合格，没发 / not a valid package, nothing sent: {e}")
     _, files = bundle.parse(data)
+    if m["type"] == "card":           # P432 上线关键点: only a card that passes every check goes out
+        from . import jcards_pkg
+        probs = jcards_pkg.preflight(files)
+        if probs:
+            print("这张卡没通过上线检查，什么都没发 / the card fails the checks, nothing sent:\n  " + "\n  ".join(probs[:20]), file=out)
+            return EXIT_BLOCKED
     sha = bundle.sha256(data)
+    findings = plaza_audit.audit(files, m)                                          # P426 #181-2: before anything else
+    if plaza_audit.blocked(findings):
+        print(market_guard.refusal(findings, "什么都没发"), file=out)
+        return EXIT_BLOCKED
+    warns = market_guard.audit_lines(findings, False) if findings else []
     hits = layer1(m, files, identity)
     if hits:
         print("layer 1 找到了可能的隐私 / 密钥，什么都没发；请你的人改原文件后重来（agentj 绝不替你改代码）/ layer 1 found possible "
@@ -1735,14 +1963,19 @@ def run_publish(directory: str, *, show_name=False, owner_confirmed=False, diges
             print("refused: the package is not the one your human confirmed (digest mismatch — a file or --show-agent-name "
                   "changed). Run the preview again.", file=out)
             return EXIT_DIGEST
-        obj = _call(st, "publish", {"nonce": _nonce(), "name": m["name"], "type": m["type"], "version": m["version"],
-                                    "sha256": sha, "bytes": len(data), "show_name": bool(show_name)}, post)
+        fields = {"nonce": _nonce(), "name": m["name"], "type": m["type"], "version": m["version"], "sha256": sha,
+                  "bytes": len(data), "show_name": bool(show_name)}
+        signed = plaza_trust.sign(st.signing_key(), m["name"], m["type"], m["version"], sha, int(time.time()))
+        obj, signed = _publish_call(st, fields, signed, post, out)
         up = obj.get("upload") if isinstance(obj.get("upload"), dict) else {}
         try:
             status, ans = cloud.plaza_upload(st, up.get("url"), data, **({"put": put} if put else {}))
         except cloud.CloudError as e:
             raise PlazaError("上传地址不是本机配置的 API，没传 / the upload URL is not on the configured API: not uploaded"
                              if e.kind == "refused_url" else f"上传失败 / upload failed ({e.kind})")
+        if status == 422 and cloud.parse_error(ans) == "audit_blocked":
+            raise PlazaError(f"{ERRORS['audit_blocked']} — {clean_line(str(ans.get('path', '')), 120)} line "
+                             f"{clean_line(str(ans.get('line', '')), 10)}: {clean_line(str(ans.get('rule', '')), 40)} (HTTP 422)")
         if status == 422 and cloud.parse_error(ans) == "secret_found":
             raise PlazaError(f"{ERRORS['secret_found']} — {clean_line(str(ans.get('path', '')), 120)}: "
                              f"{clean_line(str(ans.get('kind', '')), 40)} (HTTP 422)")
@@ -1752,7 +1985,14 @@ def run_publish(directory: str, *, show_name=False, owner_confirmed=False, diges
         st.log("plaza_pkg_publish", name=m["name"], result="ok")
         state = ans.get("state") if ans.get("state") in ("live", "uploading", "rejected") else "?"
         print(f"已公开发到广场 / published: {m['name']} {m['version']} · state {state}（社群 · 待审核 / community · pending review）", file=out)
+        if signed:
+            fp = plaza_trust.fingerprint(plaza_trust.unb64u(signed["host_pubkey"], 32))
+            print(f"发布方签名 / publisher signature: {plaza_trust.short_fp(fp)}（本机身份密钥签的，别人安装时会核对；完整指纹 / full "
+                  f"fingerprint {fp}）", file=out)
         print(f"别人这样装 / others install it with: agentj plaza install {m['name']}", file=out)
+        if warns:
+            print("\n".join(["发布回执里的审计提示（装的人也会看到）/ audit notes in this receipt (installers see them too):",
+                             FENCE_OPEN, *warns, FENCE_CLOSE]), file=out)
         return EXIT_OK
     draft, said = layer2_draft(m, files)
     v = privacy.layer2(draft, env=env, transport=transport, gate="plaza")
@@ -1769,6 +2009,19 @@ def run_publish(directory: str, *, show_name=False, owner_confirmed=False, diges
     print(f"作者显示为 shown as: " + (f"Agent「{name}」@ 你们账号的别名 your account's alias" if name else
                                     "匿名 Agent @ 你们账号的别名 / unnamed Agent @ your account's alias"), file=out)
     print("layer 1: nothing found (every text file, every path, every manifest string)", file=out)
+    print("权限声明 permissions: " + plaza_perms.describe(plaza_perms.parse(m["permissions"])) + (
+          "（manifest.json 里没写，这是按包内容推断的，会写进发布出去的 manifest；不对就在 manifest.json 里自己写 permissions 再重来 / "
+          "not in manifest.json: inferred from the content and published inside the manifest; if it is wrong, write "
+          "\"permissions\" into manifest.json and run again）" if perm_inferred else "（manifest.json 里声明的 / declared in manifest.json）"),
+          file=out)
+    under = [] if perm_inferred else plaza_perms.excess(plaza_perms.infer(m, files), plaza_perms.parse(m["permissions"]))
+    if under:                                                  # S1: installers count these anyway; say it before it is public
+        print("⚠ 包声明的少于实际内容 / the declaration is less than the content shows（装的人那边会照样算进去并要主人确认 / installers "
+              "count these anyway and ask their owner）: " + "; ".join(plaza_perms.item_text(it)[0] for it in under), file=out)
+    print("\n".join([FENCE_OPEN, *warns, FENCE_CLOSE]) if warns else "静态审计 static audit: 没发现问题 / nothing found", file=out)
+    fp = plaza_trust.fingerprint(st.signing_pub())
+    print(f"发布方签名 / publisher signature: 确认后用这台主机自己的身份密钥签名，指纹 {plaza_trust.short_fp(fp)}（私钥不离开本机）/ "
+          "signed at confirm with this host's own identity key (the private key never leaves this machine)", file=out)
     print(f"layer 2 saw / 发给 Jev 的: {said}", file=out)
     print(plaza._verdict_line(v), file=out)
     print(f"digest: {d}", file=out)
@@ -1780,7 +2033,7 @@ def run_publish(directory: str, *, show_name=False, owner_confirmed=False, diges
 
 # ------------------------------------------------------------------ argparse (plaza.py calls these)
 def add_arguments(ps, search, show, report) -> None:
-    search.add_argument("--type", choices=["all", "qa", "skill", "workflow"], default="all",
+    search.add_argument("--type", choices=["all", "qa", "skill", "workflow", "card"], default="all",
                         help="默认 all：先技能 / 工作流，再问答 / default all: packages first, then Q&A")
     search.add_argument("--sort", choices=list(SORTS), help="包的排序（默认：认证优先再按本周安装）/ package order")
     search.add_argument("--tag", help="包的标签 / package tag")

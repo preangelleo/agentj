@@ -81,8 +81,11 @@ class Worker(_Env):
         body = ud.body(self.sent[0])
         self.assertIn('exit: 7', body)
         self.assertIn('uv tool install', body)
-        for value in (FAKE_GH, 'private-command', str(self.old), 'rollback second failure'):
+        for value in (FAKE_GH, 'private-command', str(self.old)):
             self.assertNotIn(value, str(rec)+body)
+        # P423 #192: the rollback's own output is kept apart; it never replaces the first failure's tail
+        self.assertNotIn('rollback second failure', rec['stderr_tail'])
+        self.assertIn('rollback second failure', rec['rollback_tail'])
         self.assertNotIn('command', ud.heartbeat_field(self.st))
 
     def test_readonly_and_missing_installer_are_actionable_with_recover(self):

@@ -2,12 +2,14 @@ import {focusDraft} from './composer-focus.js';
 // P119: one keyboard owner for transient UI. Owners supply their existing close/back action;
 // hiding a DOM node here would skip camera cleanup, confirmation resolution or reader history.
 const layers=[];
-let serial=0,lastTarget=null;
+let serial=0,lastTarget=null,clickFocus;
 const visible=e=>!!e&&e.isConnected&&e.getClientRects().length&&!e.closest('[hidden]');
 const focusable='button:not([disabled]),a[href],summary,input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]';
 function restore(l){
  // A non-modal notice can disappear while the owner edits outside it. Keep that live focus.
  if(!l.trap&&l.preserveOutsideFocus&&visible(document.activeElement)&&!l.element()?.contains(document.activeElement)&&document.activeElement.matches?.(focusable))return;
+ // P417 #188: this very click put the caret in the message box (≡ 全部命令 → a command): never pull it back to ≡
+ const a=document.activeElement;if(clickFocus!==undefined&&a!==clickFocus&&/^(input|workflow-compose|fsText)$/.test(a?.id)&&visible(a)&&!l.element()?.contains(a))return;
  if(layers.some(other=>other!==l&&other.open()&&other.element()?.contains(document.activeElement)&&visible(document.activeElement)))return;
  const target=visible(l.opener)&&l.opener.matches?.(focusable)?l.opener:l.fallback?.();
  if(visible(target)&&target.matches?.(focusable))(/^(input|workflow-compose)$/.test(target.id) ? focusDraft(target,{preventScroll:true}) : target.focus({preventScroll:true}));
@@ -24,7 +26,7 @@ export function registerLayer({element,open,close,fallback,trigger,trap=true,ran
  const l={element,open,close,fallback,trigger,trap,rank,preserveOutsideFocus,on:false};layers.push(l);sync();return l;
 }
 export function initLayers({onEscape}={}){
- document.addEventListener('click',e=>{lastTarget=e.target.closest?.(focusable)||document.activeElement;},true);
+ document.addEventListener('click',e=>{lastTarget=e.target.closest?.(focusable)||document.activeElement;clickFocus=document.activeElement;setTimeout(()=>{clickFocus=undefined;});},true);
  document.addEventListener('pointerdown',e=>{lastTarget=e.target.closest?.(focusable)||document.activeElement;},true);
  document.addEventListener('keydown',e=>{
   // Keyboard activation is also an opener (including shortcut keys).

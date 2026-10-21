@@ -4,7 +4,8 @@ When a page ends, serve hands its reply text to `Media.scan` (in a thread). The 
 images / links `![a](p)` `[a](p)` (explicit), `` `p` `` and bare paths (implicit), `file://` URLs; never http(s) (nothing is
 fetched) and nothing inside a fenced code block (what the phone shows as code is not an attachment) — and checks each one:
 
-  * resolved with every symlink (`realpath`) against the Agent's folder (`agentj agent … --dir`, = the session cwd): the
+  * resolved with every symlink (`realpath`) against the Agent's folder (`agentj agent … --dir` / agent.working_root; P424
+    #64: toward the owner also the session's current folder, `Media.current` — a `cd` never narrows it): the
     result must lie inside that folder, outside agentj's state dir, and no component may be `.agentj` `.git` `credentials`
     `.ssh` `.aws` `.gnupg`, nor the file `.env` `.env.*` `*.key` `*.pem` `*.p12` `*.pfx` `id_rsa*` `id_ed25519*` `.netrc`
     `.npmrc` `.pypirc` (checked on the path as written AND as resolved);
@@ -102,6 +103,10 @@ KINDS = {
     ".doc": ("file", "application/msword"), ".xls": ("file", "application/vnd.ms-excel"),
     ".ppt": ("file", "application/vnd.ms-powerpoint"), ".odp": ("file", "application/vnd.oasis.opendocument.presentation"),
     ".tar": ("file", "application/x-tar"), ".7z": ("file", "application/x-7z-compressed"),
+    # P424 #142: scripts and source files are text cards — previewed as text on the phone (web/js/mediawire previewKind), never
+    # run; explicit links only (not DELIVERABLE), and like every text kind they go through the secret scan
+    **{e: ("file", "text/plain") for e in (".sh", ".bash", ".zsh", ".fish", ".ps1", ".psm1", ".bat", ".cmd", ".py", ".js",
+                                          ".mjs", ".ts", ".rb", ".pl", ".lua", ".sql", ".diff", ".patch")},
 }
 ZIPS = (".zip", ".docx", ".xlsx", ".pptx", ".odt", ".ods", ".odp", ".epub")
 OLE = (".doc", ".xls", ".ppt")
@@ -233,6 +238,19 @@ def _inner(parts) -> bool:
     return any(p.lower() in INNER_DIRS for p in parts)
 
 
+def _dot_part(parts: list[str]) -> bool:
+    """P424 #64 security: a folder below home with a dot-folder in its path (`~/.config/x`, `~/.docker`, `~/.kube`,
+    `~/.password-store`, `~/.local/share`, `~/.mozilla` …) never widens the scan by a `cd`. Only a project's worktree folder
+    (`<proj>/.worktrees/…`, `<proj>/.claude/worktrees/…`, never the first folder under home) is no dot-folder here."""
+    for i, x in enumerate(parts):
+        if not x.startswith("."):
+            continue
+        if i > 0 and (x == ".worktrees" or (x == ".claude" and parts[i + 1:i + 2] == ["worktrees"])):
+            continue
+        return True
+    return False
+
+
 def _inside(path: str, root: str) -> bool:
     return path == root or path.startswith(root.rstrip(os.sep) + os.sep)
 
@@ -294,31 +312,55 @@ def _sniff(mime: str, ext: str, head: bytes) -> bool:
     return b"\x00" not in head                                   # text: html, txt, md, csv, json …
 
 
-def _hash_and_scan(fd: int, size: int, texty: bool, html: bool, owner: bool = False) -> tuple[str, bool]:
-    """(sha256 hex, secret?) of the whole file read from fd (from offset 0)."""
+def _hash_and_scan(fd: int, size: int, texty: bool, html: bool, owner: bool = False, where: dict | None = None) -> tuple[str, bool]:
+    """(sha256 hex, secret?) of the whole file read from fd (from offset 0). P424 #142: `where` (a dict) receives the hit's
+    line and masked hint (taskspec.secret_where) — what the refusal note shows; left empty for a one-line file (its line
+    number says nothing)."""
     h = hashlib.sha256()
     tail = ""
     secret = False
     buf = bytearray()
     pos = 0
+    lines = 0                     # newlines before the current piece's start
+    nl, last = 0, b""             # newlines in the whole file, its last byte
     while True:
         b = os.pread(fd, SCAN_SLICE, pos)
         if not b:
             break
         pos += len(b)
         h.update(b)
+        nl += b.count(b"\n")
+        last = b[-1:]
         if texty and not secret:
             buf += b
             if len(buf) >= SCAN_SLICE:
                 piece = tail + bytes(buf).decode("utf-8", "replace")
                 buf.clear()
                 secret = _secret(piece, html, owner)
+                if secret:
+                    _where(where, piece, html, owner, lines)
+                lines += piece.count("\n") - piece[-SCAN_OVERLAP:].count("\n")
                 tail = piece[-SCAN_OVERLAP:]
     if texty and not secret and (buf or tail):
-        secret = _secret(tail + bytes(buf).decode("utf-8", "replace"), html, owner)
+        piece = tail + bytes(buf).decode("utf-8", "replace")
+        secret = _secret(piece, html, owner)
+        if secret:
+            _where(where, piece, html, owner, lines)
+    if where and nl - (last == b"\n") < 1:
+        where.clear()
     if pos != size:
         raise Gone("size")
     return h.hexdigest(), secret
+
+
+def _where(out: dict | None, piece: str, html: bool, owner: bool, lines: int) -> None:
+    if out is None:
+        return
+    if html:
+        piece = _DATA_URI.sub("data:", piece)
+    w = taskspec.secret_where(piece, owner=owner)
+    if w:
+        out.update({"line": lines + w["line"], "hint": w["hint"]})
 
 
 def _secret(text: str, html: bool, owner: bool = False) -> bool:
@@ -329,10 +371,18 @@ def _secret(text: str, html: bool, owner: bool = False) -> bool:
     return taskspec.secret_like(text)
 
 
+def _at(media, why: str) -> dict:
+    """P424 #142: a `secret` / `key_content` note carries where — {"line": n, "hint": "aB…"} (§13 media_skip, optional)."""
+    w = media.last_where() if why in ("secret", "key_content") else None
+    return {"line": w["line"], "hint": w["hint"]} if w and isinstance(w.get("line"), int) else {}
+
+
 # ------------------------------------------------------------------ the table and the scan
 class Media:
-    def __init__(self, st, workdir: str | None, clock=time.time):
+    def __init__(self, st, workdir: str | None, clock=time.time, cwd=None):
         self.st, self.workdir, self.clock = st, workdir, clock
+        self.cwd = cwd                # P424 #64: () → the session's current folder (the Agent's shell may `cd`), or None
+        self._tl = threading.local()  # P424 #142: this thread's last secret hit position (`last_where`)
         self.path = st.root / "media.json"
         self.lock = threading.Lock()
         self.table: dict[str, dict] = {}
@@ -355,21 +405,64 @@ class Media:
         except OSError:
             self.st.log("media_table_fail")
 
-    def check(self, ref: Ref, owner: bool = False) -> tuple[dict | None, str | None]:
+    def current(self) -> str | None:
+        """P424 #64: the session's current folder when it may widen the scan, else None. The configured folder stays the
+        floor (a `cd` into a sub-project never narrows it); the current one counts only when it is a plain folder of this
+        user whose written path has no link in it, is not `/`, the home folder or above it, is not inside / around agentj's
+        state, no component is a credential folder (KEY_DIRS), and — below home — no component is a dot-folder other than a
+        project's worktree folder (`_dot_part`). The configured working root's own rules are unchanged."""
+        f = self.cwd
+        if not callable(f):
+            return None
+        try:
+            c = f()
+        except Exception:  # noqa: BLE001 — a provider that fails widens nothing
+            return None
+        if not isinstance(c, str) or not c or "\x00" in c or not os.path.isabs(c):
+            return None
+        try:
+            n = os.path.normpath(c)
+            r = os.path.realpath(n)
+            if r != n or not os.path.isdir(r) or os.stat(r).st_uid != os.getuid():
+                return None
+            home = os.path.realpath(os.path.expanduser("~"))
+            state = os.path.realpath(str(self.st.root))
+        except OSError:
+            return None
+        if r == os.sep or _inside(home, r) or _inside(r, state) or _inside(state, r):
+            return None
+        if any(x.lower() in KEY_DIRS for x in r.split(os.sep)):
+            return None
+        if _inside(r, home) and _dot_part(os.path.relpath(r, home).split(os.sep)):
+            return None
+        return r
+
+    def check(self, ref: Ref, owner: bool = False, root: str | None = None) -> tuple[dict | None, str | None]:
         """One reference → (record, None) | (None, why) | (None, None) = not a file reference (silently ignored).
         owner=True (P211): the destination is the owner's own channel — see WHYS. A credential file / a text file with a real
-        key → (record, "key_file" | "key_content"): the record (hashed, re-readable) is what a pickup card would carry."""
-        root = self.workdir
+        key → (record, "key_file" | "key_content"): the record (hashed, re-readable) is what a pickup card would carry.
+        P424 #64: toward the owner the allowed folders are the configured one ∪ the session's current one (`current`); a
+        relative path is read from the current folder first. Toward anyone else only the configured folder."""
+        self._tl.where = None
+        explicit_root = root is not None
+        root = root or self.workdir
         if not root:
             return None, None
         try:
             rroot = os.path.realpath(root)
         except OSError:
             return None, None
+        here = self.current() if owner and not explicit_root else None
+        roots = [(root, rroot)] + ([(here, here)] if here and here != rroot else [])
         p = ref.path
         if p == "~" or p.startswith("~/"):
             p = os.path.expanduser(p)
-        raw = os.path.normpath(p if os.path.isabs(p) else os.path.join(root, p))
+        if os.path.isabs(p):
+            raw = os.path.normpath(p)
+        else:
+            raw = os.path.normpath(os.path.join(root, p))
+            if here and os.path.lexists(os.path.join(here, p)):
+                raw = os.path.normpath(os.path.join(here, p))
         quiet = not ref.explicit
         if not os.path.lexists(raw):
             return None, (None if quiet else "gone")
@@ -377,8 +470,10 @@ class Media:
         state = os.path.realpath(str(self.st.root))
         if _inside(real, state):
             return None, "private"
-        if not _inside(real, rroot):
+        hit = next(((g, r) for g, r in roots if _inside(real, r)), None)
+        if hit is None:
             return None, (None if quiet else "outside")
+        root, rroot = hit
         raw_parts = os.path.relpath(raw, os.path.normpath(root)).split(os.sep) if _inside(raw, os.path.normpath(root)) \
             else raw.split(os.sep)
         parts = os.path.relpath(real, rroot).split(os.sep)
@@ -415,8 +510,10 @@ class Media:
             if s.st_size == 0:
                 return None, None
             # binary media (typed by leading bytes above) is never read as text: only TEXTY kinds are scanned
-            sha, secret = _hash_and_scan(fd, s.st_size, mime in TEXTY, mime in ("text/html", "image/svg+xml"), owner)
+            at: dict = {}
+            sha, secret = _hash_and_scan(fd, s.st_size, mime in TEXTY, mime in ("text/html", "image/svg+xml"), owner, at)
             if secret:
+                self._tl.where = at or None           # P424 #142: the note says which line (scan_keys / tg_media read it)
                 if not owner:
                     return None, "secret"
                 rec = self._rec(parts, mime, kind, s, sha, ref, rroot)
@@ -426,6 +523,10 @@ class Media:
         finally:
             os.close(fd)
         return self._rec(parts, mime, kind, s, sha, ref, rroot), None
+
+    def last_where(self) -> dict | None:
+        """P424 #142: {"line", "hint"} of the secret this thread's last `check` refused (a masked two-character hint), or None."""
+        return getattr(self._tl, "where", None)
 
     @staticmethod
     def _rec(parts, mime, kind, s, sha, ref, rroot) -> dict:
@@ -471,7 +572,8 @@ class Media:
             except OSError:
                 rec, why = None, None
             if why:
-                skip = {"name": name, "why": why, **({"bytes": rec["bytes"]} if rec and why == "too_big" else {})}
+                skip = {"name": name, "why": why, **({"bytes": rec["bytes"]} if rec and why == "too_big" else {}),
+                        **_at(self, why)}
                 skips.append(skip)
                 if why in ("key_file", "key_content") and rec and "sha256" in rec and ref.explicit:
                     keys.append((skip, rec))

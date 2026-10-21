@@ -120,8 +120,9 @@ try {
     // ---- 拷贝 (Face ID → value → clipboard, never the DOM)
     await evaluate(p, `navigator.clipboard.writeText('p352-before')`);
     await click(p, '.krow[data-name="OPENAI_API_KEY"] .kbtn--copy');
-    try { await waitFor(p, `document.getElementById('toast').textContent.includes('已拷贝')`, 10000); }
+    try { await waitFor(p, `document.getElementById('toast').textContent.includes('已复制')`, 10000); }
     catch (e) { console.log('toast:', await evaluate(p, `document.getElementById('toast').textContent`), 'calls:', JSON.stringify(calls.map((c) => [c.op, c.name, c.fa])), 'problems:', JSON.stringify(p.problems)); throw e; }
+    ok(await evaluate(p, `document.querySelector('.krow[data-name="OPENAI_API_KEY"] .kbtn--copy').dataset.done==='1'`), 'copy: shared visible completed state');
     const got = await evaluate(p, `navigator.clipboard.readText()`);
     ok(got === FAKE_VALUE, 'copy: the value is in the clipboard');
     const c0 = calls.find((c) => c.op === 'copy');
@@ -202,7 +203,7 @@ try {
     const before = calls.length;
     await click(p, '.krow[data-name="OPENAI_API_KEY"] .kbtn--copy');
     await waitFor(p, `document.getElementById('toast').textContent.includes('Face ID')`);
-    ok(await evaluate(p, `[...document.querySelectorAll('#toast button')].some(b=>b.textContent==='设置 Face ID')`) && calls.length === before, 'no passkey: 「设置 Face ID」 offered, nothing sent');
+    ok(await evaluate(p, `[...document.querySelectorAll('#toast button')].some(b=>b.textContent==='开通审批通行密钥')`) && calls.length === before, 'no passkey: approval-passkey setup offered, nothing sent');
     await save(p, 'light-390x844-nopasskey');
 
     // ---- en

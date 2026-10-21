@@ -36,7 +36,7 @@ from websockets.asyncio.client import connect
 from .text import one, pick
 from . import agent as agents
 from .shared import SharedClaudeAgent
-from . import notices, activity, approvals, cloud, controls, danger, fence, gate, memory, slash, tasks, update, webpush, wire
+from . import harness_cmds, notices, activity, approvals, cloud, controls, danger, fence, gate, memory, slash, tasks, update, webpush, wire
 from . import asr as asr_mod
 from . import terminal as term_mod   # P408 (§38): the web terminal (terminal.py, term_*.py)
 from . import cmdrun, compose, history, hsearch, humane, inbox, menu, uploads, preferences, proxy, provenance
@@ -142,8 +142,9 @@ MAX_GRANTS = 8         # batch grants open at once
 CHUNK = 11 * 1024      # phone-control answers are split into app messages of about this many JSON bytes (MAX_JSON = 16 KiB)
 ITEM_SHOW = 6000       # a memory item longer than this is shown cut on the phone (its id still covers the whole text)
 _RID = re.compile(r"[A-Za-z0-9_-]{1,32}")
-FRIEND_READS = ("fr_list", "fr_hist", "fr_usage", "fr_ctx_get")   # P71 §17.7 (+ P73 fr_ctx_get); writes = controls.FRIEND_ACTIONS
+FRIEND_READS = ("fr_list", "fr_hist", "fr_usage", "fr_ctx_get", "fr_glog")   # P71 §17.7 (+ P73 fr_ctx_get); writes = controls.FRIEND_ACTIONS
 WF_READS = ("wf_list", "wf_doc", "skill_get")   # P244 (§30.2): answered to the asking session only, read-only
+SKILL_ACTS = ("skill_archive", "skill_restore")   # P426 #181-3 (§39): the owner's archive / restore taps on the 技能 page
 PHONE_CONTROLS = ("mem_list", "mem_rm", "mem_undo", "act_list", "task_list", "task_set", "estop", "resume",
                   "systask_list")   # P207 §2: the Agent J host's own scheduled tasks, read-only (systasks.py)
 # §10 (PROMPT-33)
@@ -173,7 +174,7 @@ HIST_READY = 50                             # turns a p33 device gets on ready (
 SWEEP_EVERY = 60
 RETAIN_EVERY = 86_400
 P33_ONLY = ("say", "say_cancel", "say_sync", "cmd_cancel", "blob_open", "blob_chunk", "blob_end", "blob_drop", "hist_get", "menu_get", "model_set",
-            "q_answer", "tts_get", "pref_set", "notice_read", "media_get", "provider_get", "provider_key", "asr_install", "models_get", "ping",
+            "q_answer", "tts_get", "pref_set", "notice_read", "media_get", "provider_get", "provider_key", "asr_install", "models_get", "ark_plan_get", "ping",
             "tg_fwd", "turn_wait", "res_watch", "busy_get",   # P181 (§22.1) load card resources; P160 (§22) one 「在办」 row's detail
             "mail_get", "mail_set", "mail_key", "mail_test", "mail_check",   # P170 (§10.20)
             "dev_rename",    # P179 (§10.16a): a remote renames itself
@@ -376,6 +377,17 @@ CARD_TEXT = {
            "risk_scope": "\nAlso approves this kind of high-risk action for the rest of this turn."}}
 
 
+def _echo_page(host, text: str) -> bool:
+    """P424 (#87): an input-less page whose reply is the newest page's finished reply word for word repeats it (one turn
+    ended twice) — not a second page. Logged, never shown."""
+    turns = getattr(getattr(host, "hist", None), "turns", None)
+    last = turns[max(turns)] if isinstance(turns, dict) and turns else None
+    if not last or last.get("end") == "open" or (last.get("reply") or {}).get("text", "").strip() != text.strip():
+        return False
+    host.st.log("hist_echo_dropped", turn=last.get("id"))
+    return True
+
+
 def _hb_touch(host) -> None:
     """P156: any turn, phone message or desktop input moves the next heartbeat back (tolerates partial test hosts)."""
     hb = getattr(host, "heartbeat", None)
@@ -532,7 +544,8 @@ class Host:
         self.lang = preferences.get(self.preferences, "appearance.language", "zh")
         self.uploads = uploads.Uploads(st, self.agent_cfg["dir"] if self.agent_cfg else None,
                                        asr_off=lambda: self.asr_state() == "off")
-        self.media = media_mod.Media(st, self.agent_cfg["dir"] if self.agent_cfg else None)   # F21 (§13)
+        self.media = media_mod.Media(st, self.agent_cfg["dir"] if self.agent_cfg else None,   # F21 (§13)
+                                     cwd=self._agent_cwd)                     # P424 #64: ∪ the session's current folder
         self.media_streams: dict[tuple, asyncio.Task] = {}   # (cid, mid) → the window being sent
         self.media_jobs: set = set()
         self.sends = compose.Sends()
@@ -1066,7 +1079,8 @@ class Host:
                                             "text": "已急停：这条没有交给 Agent J，也不会排队。恢复后再发。"})
                 return
             cmd = slash.parse(text)
-            if cmd and cmd[0] != "goal" and self.agent and cmd[0] not in slash.AGENT_CMDS and not self.agent.passthrough(cmd[0]):
+            if cmd and cmd[0] != "goal" and self.agent and cmd[0] not in slash.AGENT_CMDS and not self.agent.passthrough(cmd[0]) \
+                    and self.native_route(cmd[0]) not in ("run", "agent"):   # P412 #175: the harness's own → through / to the Agent
                 return await self.on_slash(s, cmd[0], cmd[1], confirm=False, typed=True)
             await self._accept(s, text, sid=None)
         elif t in P33_ONLY:
@@ -1128,6 +1142,9 @@ class Host:
         elif t in WF_READS:             # P244 (§30): 工作流 · 技能 · 记忆 · Agent J pages, read-only
             if s.p33:
                 await self.on_wf(s, t, obj)
+        elif t in SKILL_ACTS:           # P426 #181-3 (§39): archive / restore one skill (a paired, ready remote's own tap)
+            if s.p33:
+                await self.on_skill_act(s, t, obj)
         elif t in jcards.PHONE_TYPES:   # P360 (§34): Agent J Cards — the list, one card's data + buttons, a card's switch
             if s.p33:
                 await self.on_jcard(s, t, obj)
@@ -1517,6 +1534,26 @@ class Host:
                     "owner set, not proof of identity.〕")
         return f"\n\n〔发言的遥控器：「{label}」——这是主人给这台遥控器起的名字，用来分辨是谁在说话；只是标签，不是身份证明。〕"
 
+    def skill_turn_note(self, s: Session, text: str) -> str:
+        """P426 #181-3 / #181-4 (§39), the owner's own words only: `/<skill>` counts as one use of that skill; any other
+        instruction is counted by its normalised signature (skill_ops) — and the one-time 「存成技能？」 note rides here."""
+        if not provenance.is_owner(getattr(s, "provenance", None)) or not isinstance(text, str):
+            return ""
+        try:
+            from . import skill_ops, skill_usage
+            cfg = self.agent_cfg or {}
+            names = skill_usage.installed(cfg.get("kind"), cfg.get("dir"))
+            cmd = slash.parse(text)
+            if cmd:
+                if cmd[0] in names:
+                    skill_usage.note(self.st, skill_usage.canonical(cmd[0]), "phone")
+            else:
+                skill_ops.record(self.st, "ask", text, names)
+            return skill_ops.take_note(self.st, self.onboarding_lang(), getattr(self, "preferences", None))
+        except Exception:  # noqa: BLE001 — never costs the owner's message
+            self.st.log("skill_note", status="error")
+            return ""
+
     def onboarding_note(self) -> str:
         """The bracketed note for the Agent on the owner's next message (tour pace / a missing required remote), or ""."""
         try:
@@ -1539,6 +1576,7 @@ class Host:
             lang, kind = self.onboarding_lang(), onboarding.kind_of(s.name)
             now = await asyncio.to_thread(onboarding.status, self.st)
             if what == "welcome":           # P194: the owner card (slot 0 of the address book) follows the first welcome
+                await self.send_app(s, {"t": "pair_guide", "kind": kind})  # P447: first success only, no authority
                 self._bg(self._owner_card_after_welcome(), "owner-card")
             if what == "welcome" and self.agent and not self.stopped():
                 self.agent.submit(onboarding.WelcomeSend(onboarding.welcome_prompt(kind, s.name, now, lang)))
@@ -2139,6 +2177,9 @@ class Host:
                     await self._ctl_send(w, await self.apply_preferences(req.get("raw")))
                 elif cmd == "mail_cfg":             # P170: the owner's terminal (claimed) — applies at once
                     await self._ctl_mail(w, req, claimed=True)
+                elif cmd == "plaza_perm":           # P426 #181-1: a plaza package wants more than the Agent may do → signed card
+                    from . import plaza_perms
+                    await self._ctl_send(w, await plaza_perms.serve_card(self, req))
                 elif cmd == "mail_status":
                     await self._ctl_send(w, {"ok": True, **(self.mail.view() if self.mail else {})})
                 elif cmd == "mail_check":
@@ -2163,6 +2204,10 @@ class Host:
                 elif cmd == "terminal_cfg":         # P408: `agentj terminal …` (widening: claim + terminal + a passkey remote's card)
                     from . import term_cli
                     await self._ctl_send(w, await term_cli.ctl_cfg(self.term_desk, req))
+                elif cmd == "terminal_go":          # P414 (§37.13): `agentj terminal open [--cmd]` — shows a screen, sends nothing
+                    await self._ctl_send(w, await self.term_desk.ctl_go(req, pid))
+                elif cmd == "terminal_read":        # P414 (§37.13): `agentj terminal output` — the agent-masked transcript
+                    await self._ctl_send(w, await self.term_desk.ctl_read(req, pid))
                 elif cmd == "passphrase_consent":   # #118: a paired remote's signed allow → a one-use ticket
                     await self._ctl_send(w, await self._pass_consent(req, pid))
                 elif cmd == "passphrase_replace":   # #118: the new password typed at that terminal, with the ticket
@@ -2194,6 +2239,10 @@ class Host:
                             await self._ctl_send(w, {"ok": False, "error": "busy", "detail": "无法保存运行记录 / Could not save run journal"})
                         else:
                             await self._ctl_send(w, {"ok": True, "queued": tid, "run_id": rid})
+                elif cmd == "automation_resume":    # P426 #181-5: `agentj automation resume` (wfrun.py)
+                    from . import wfrun
+                    trusted = ctl_auth.refusal(pid, os.getpid(), self._agent_pids()) is None and ctl_auth.has_tty(pid)
+                    await self._ctl_send(w, await wfrun.resume(self, req.get("run"), bool(req.get("yes")), trusted))
                 elif cmd == "tasks_changed":
                     self.scheduler.wake.set()
                     await self._ctl_send(w, {"ok": True})
@@ -2494,6 +2543,9 @@ class Host:
         permission request still waiting."""
         if self.sessions.get(s.cid) is not s:
             return
+        from . import bailian
+        with contextlib.suppress(OSError):
+            bailian.notify_retired(self)
         from . import auto_update
         note = auto_update.take_notice(self.st, self.lang, self.preferences)
         if note:
@@ -2721,6 +2773,8 @@ class Host:
         info["run_cmds"] = list(cmdrun.RUN_CMDS)           # P361 (§34): the names Settings may 「执行」
         with contextlib.suppress(Exception):               # P408 (§38): this device's row (me / sudo mode / web_ok)
             info["terminal"] = self.term_desk.info(getattr(s, "device", None) or None)
+        with contextlib.suppress(Exception):               # P414 (§37.9): the computer-password vault, as this device sees it
+            info["vault"] = self.term_desk.vault_info(getattr(s, "device", None) or None)
         info["approval"] = {"level": approval_level.level(self.preferences, self.st),       # P336: what is in force
                             "goal_nocard": approval_level.goal_preauth(self.st, self.preferences) is not None}
         from . import service as _svc
@@ -3476,6 +3530,11 @@ class Host:
         return changed
 
     # ------------------------------------------------------------ media out (F21, PROTOCOL §13, media.py)
+    def _agent_cwd(self) -> str | None:
+        """P424 #64: where the session works now (a shared session's last hook `cwd` — it follows the Agent's `cd`), or None."""
+        c = getattr(getattr(self.agent, "state", None), "cwd", None)
+        return c if isinstance(c, str) else None
+
     def media_later(self, tid: int | None) -> None:
         """A page ended: find the files its reply shows (in a thread — hashing and the secret scan read them), then update
         the page with `media` / `media_skip`. Never delays the end itself."""
@@ -3535,6 +3594,11 @@ class Host:
                 await self.send_app(s, {"t": "media_err", "mid": mid, "why": "gone"})
             self.st.log("media_gone", device=s.device, reason=str(e)[:32])
             return
+        except Exception as e:  # noqa: BLE001 — P424 #142: a download that cannot be served says so at once (下载 → 「下载失败」)
+            if live():
+                await self.send_app(s, {"t": "media_err", "mid": mid, "why": "failed"})
+            self.st.log("media_window_fail", device=s.device, exception_type=type(e).__name__)
+            return
         for off, data, last in win:
             if not live():              # revoked / closed between two chunks: nothing more goes out
                 return
@@ -3563,6 +3627,24 @@ class Host:
     # callbacks from agent.Agent
     def agent_status(self, s: str) -> None:
         self.status_changed()
+
+    def native_route(self, name):
+        """P412 #175 定稿: "run" | "agent" | "none" for a typed `/name` of the current harness (harness_cmds.route), else None.
+        A shared session already passes every other `/name` to the owner's own session (relay parity), so never there."""
+        a = self.agent
+        if not a or isinstance(a, SharedClaudeAgent):
+            return None
+        return harness_cmds.route(a.kind, name, getattr(a, "init", None))
+
+    def native_text(self, text):
+        """The main Agent's words for a typed `agent` command (harness_cmds.agent_text) — the owner's page keeps what was typed."""
+        a = self.agent
+        if not a or isinstance(a, SharedClaudeAgent):
+            return None
+        p = slash.parse(text)
+        if not p or a.passthrough(p[0]):           # a skill of the same name (/focus, /import …) stays the skill
+            return None
+        return harness_cmds.agent_text(text, a.kind, getattr(a, "init", None), self.lang)
 
     def agent_text(self, text: str) -> None:
         text = drop_replacement(text)       # P281: every harness's reply text passes here — no stray 「◆?」 on any channel
@@ -3608,7 +3690,7 @@ class Host:
             changed = self.hist_update(self.cur_turn, append=text)
             if changed:
                 self.cur_turn = changed[-1]["id"]
-        else:                          # the Agent spoke outside a turn of ours (e.g. a background task finished)
+        elif not _echo_page(self, text):    # the Agent spoke outside a turn of ours (e.g. a background task finished)
             self.media_later(self.hist_add(self._agent_src(), text, "done")["id"])
 
     def proactive_turn(self, via: str) -> None:
@@ -3679,6 +3761,8 @@ class Host:
             return
         tid = getattr(self, "desktop_turn", None)
         if tid is None:     # P205 (6): a finished page of its own (e.g. 后台任务完成) — its files are offered like any page's
+            if _echo_page(self, text):
+                return
             self.media_later(self.hist_add(self._agent_src(), text, "done")["id"])
         else:
             changed = self.hist_update(tid, append=text)
@@ -3751,7 +3835,10 @@ class Host:
         await asyncio.sleep(UPDATE_FIRST)
         while True:
             try:
-                from . import auto_update
+                from . import auto_update, nightly_report
+                nightly = await asyncio.to_thread(nightly_report.check, self.st)
+                if nightly is not None:
+                    self.reporter.trigger("nightly_update")
                 # P203: the idle opportunity only when nothing at all would be interrupted (the upgrade card's list is empty)
                 idle_newer = auto_update.newer_known(self.st) and not auto_update.impact(self)
                 if auto_update.due(self.st, blocked=auto_update.busy(self), stopped=self.stopped(), newer=idle_newer):
@@ -3760,7 +3847,7 @@ class Host:
                     if job.get("phase") == "done":
                         (self.st.root / auto_update.JOB).unlink(missing_ok=True)
                     auto_update.launch(self.st)
-                note = await asyncio.to_thread(update.daily, self.st)
+                note = nightly["notice"] if nightly is not None else await asyncio.to_thread(update.daily, self.st)
             except Exception:  # noqa: BLE001 — a failed check costs nothing
                 note = None
             if note:
@@ -4676,7 +4763,7 @@ class Host:
         answered ctl_res. There is no message that sends text to a friend from a device: fr_send / fr_msg / anything else is
         dropped and logged."""
         r = obj.get("r")
-        if t not in FRIEND_READS and t not in controls.FRIEND_ACTIONS:
+        if t not in FRIEND_READS and t not in controls.FRIEND_ACTIONS and t != "fr_gsay":   # P426: fr_gsay = 「我的设备」 only
             self.st.log("fr_send_refused", device=s.device, kind=t[:24])
             return
         if not s.p33 or self.peers is None or not isinstance(r, str) or not _RID.fullmatch(r):
@@ -4704,6 +4791,9 @@ class Host:
         elif t == "fr_discoverable":
             target = {"on": obj.get("on")}
             bad = not isinstance(target["on"], bool)
+        elif t == "fr_gsay":                   # P426 #170: a 「我的设备」 group message — the owner's own devices only
+            target = {"text": obj.get("text")}
+            bad = not (isinstance(target["text"], str) and 0 < len(target["text"]) <= wire.MAX_TEXT_P33)
         elif t == "fr_ctx":                    # P73 (ADR-A176): a friend's 「补充设定」, ≤ 4000 characters — the owner's own setting
             target = {"friend": obj.get("friend"), "text": obj.get("text")}
             bad = not (isinstance(target["friend"], str) and len(target["friend"]) <= 64 and isinstance(target["text"], str))
@@ -4819,6 +4909,10 @@ class Host:
         self.activity("resume", by=name)
         if self.peers is not None:
             await self.peers.estop(False)
+        actor = self.agent
+        actor_task = getattr(actor, "task", None)
+        if actor is not None and callable(getattr(actor, "start", None)) and (actor_task is None or actor_task.done()):
+            actor.start()  # P435: a reopen interrupted by e-stop left a dormant, fresh adapter
         self.status_changed()
         m = self._estop_msg()
         self._post(self._send_ready, lambda s: m)
@@ -4827,6 +4921,14 @@ class Host:
         self._post(self._send_legacy, lambda s, e=e: self._render(e, s))
         self.hist_add({"k": "sys", "text": ""}, note, "done")
         self.scheduler.wake.set()
+
+    def task_notice(self, text: str) -> None:
+        """P418 (#183 ③): one scheduler notice (runs missed while the computer was off) — a page + a content-free push.
+        Unlike agent_notice it never marks the chat turn in progress as answered."""
+        e = self._remember("notice", clean(text, wire.MAX_TEXT))
+        self._post(self._send_legacy, lambda s, e=e: self._render(e, s))
+        self.hist_add({"k": "sys", "text": ""}, clean(text, wire.MAX_TEXT_P33), "done")
+        self.push_notify("reply")
 
     def task_finished(self, res: dict) -> None:
         """A scheduled run ended: its batch grants end with it; one notice to the phones (task name + the VERDICT sentence)."""
@@ -4839,6 +4941,9 @@ class Host:
             text = f"定时任务「{title}」：被急停中断"
         else:
             text = f"定时任务「{title}」：{res['verdict']} — {res['line']}" + ("（只读运行）" if res.get("readonly") else "")
+        if res.get("resume"):                 # P426 #181-5: a multi-step run that failed offers 「从失败处继续」
+            from . import wfrun
+            text += wfrun.hint(res, self.lang)
         self.st.log("task_done", id=res["id"], result=res["verdict"])
         self.emit("task_done", id=res["id"], verdict=res["verdict"], line=res["line"], report=res.get("report"))
         self.activity("task_done", id=res["id"], title=title, verdict=res["verdict"], line=res["line"], secs=res.get("secs"),
@@ -4903,7 +5008,25 @@ class Host:
             return await self._ctl_res(s, r, action, False, why="shape")
         if action in ("task_on", "task_off") and not isinstance(target["tsha"], str):
             target["tsha"] = ""
+        pk = self.st.passkey_of_device(s.device) if action == "resume" else None
+        ch = None
+        if pk:
+            n = obj.get("n")
+            if not isinstance(n, str) or not re.fullmatch(r"[0-9a-f]{32}", n):
+                return await self._ctl_res(s, r, action, False, why="shape")
+            ch = passkey.elevate_challenge(self.channel, s.device, n, action, n,
+                                           controls.object_digest(action, target))
+            if obj.get("fa") is None:
+                return await self._ctl_res(s, r, action, False, why="passkey_required", fa=pk["id"], fa_ch=wire.b64u(ch))
         why = controls.check(self.st, self.nonces, self.channel, s.device, obj, action, target)
+        if not why and pk:
+            try:
+                f = passkey.approval_fields(obj.get("fa"))
+                if f["id"] != pk["id"]:
+                    raise passkey.PasskeyError("bad", "credential")
+                self.st.passkey_count(s.device, pk["id"], passkey.verify_assertion(pk, f, ch))
+            except (passkey.PasskeyError, ValueError):
+                why = "passkey_failed"
         sig = obj.get("sig") if isinstance(obj.get("sig"), str) else None
         if why:
             self.st.log("control_refused", device=s.device, action=action, reason=why)
@@ -5065,6 +5188,32 @@ class Host:
             res = await asyncio.to_thread(self.wf.skill, obj.get("id"))
         await self.send_app(s, {"t": t, "r": r, **res})
 
+    async def on_skill_act(self, s: Session, t: str, obj: dict) -> None:
+        """P426 #181-3 (§39): the owner's 「归档」/「恢复」 on the 技能 page — moves one global, non-official skill folder to its
+        archive (or back); never deletes, never an official skill (skill_usage). A signed phone control like every phone
+        write (controls action skill_archive / skill_restore, object = op \\n name, S6): an unsigned or wrongly signed tap
+        changes nothing. Every accepted / refused tap is one controls.log line. → ctl_res {r, action, ok, name, why?}."""
+        r = obj.get("r")
+        if not wire.is_rid(r):
+            return
+        from . import skill_usage, skills_cli
+        op = "archive" if t == "skill_archive" else "restore"
+        name = obj.get("name")
+        if not isinstance(name, str) or not skill_usage.NAME.fullmatch(name):
+            return await self._ctl_res(s, r, t, False, why="shape", name="")
+        target = {"op": op, "name": name}
+        why = controls.check(self.st, self.nonces, self.channel, s.device, obj, t, target)
+        if why:
+            self.st.log("control_refused", device=s.device, action=t, reason=why)
+            controls.log(self.st, action=t, device=s.device, result="refused:" + why)
+            return await self._ctl_res(s, r, t, False, why=why, name=name)
+        res = await asyncio.to_thread(skills_cli.execute, self.st, {"op": op, "name": name, "by": "phone"},
+                                      self.agent_cfg or {}, self.lang, getattr(self, "preferences", None))
+        ok = bool(res.get("ok"))
+        controls.log(self.st, action=t, device=s.device, result="ok" if ok else str(res.get("why") or "?")[:16], obj=target,
+                     sig=obj.get("sig"), n=obj.get("n"), ts=obj.get("ts"))
+        await self._ctl_res(s, r, t, ok, name=name, **({} if ok else {"why": str(res.get("why") or "?")[:16]}))
+
     async def jcard_open(self, req: dict) -> dict:
         """P360 (§34): `agentj card open <id> [--at <anchor>]` → `{"t": "jcard_open", id, at?}` to every ready phone, which
         opens that card (or system page) and scrolls to the place. Navigation only — nothing is read, sent or changed, so
@@ -5095,26 +5244,56 @@ class Host:
                 res = {"t": "jcard_items", **await asyncio.to_thread(jcards.phone_list, self.st.root, lang)}
             elif t == "jcard_get":
                 res = {"t": "jcard_get", **await asyncio.to_thread(jcards.phone_get, self.st.root, cid, lang, self.agent_cfg)}
+            elif t == "jcard_cal":
+                from . import jcards_cal_remote
+                res = {"t": t, **await jcards_cal_remote.phone(self, obj)}
+                self.st.log("jcard_cal", device=s.device, status="ok" if res.get("ok") else "refused")
             elif t == "jcard_note":
                 from . import jcards_data
-                # Add belongs to the Agent skill/CLI; paired remotes only edit/delete existing entries.
-                if obj.get("op") not in ("edit", "delete"):
-                    res = {"t": t, "ok": False, "why": "bad_op"}
-                else:
-                    res = {"t": t, **await asyncio.to_thread(jcards_data.note_change, self.st.root, cid,
-                           obj.get("op"), obj.get("entry"), obj.get("revision"), obj.get("text"))}
+                res = {"t": t, **await asyncio.to_thread(jcards_data.phone_change, self.st.root, cid,
+                       obj.get("op"), obj.get("entry"), obj.get("revision"), obj.get("text"))}
                 self.st.log("jcard_note", device=s.device, status="ok" if res.get("ok") else "refused")
+            elif t == "jpalette":
+                from . import jpalettes
+                res = {"t": t, **await asyncio.to_thread(jpalettes.request, self.st.root, obj)}
+                self.st.log("jpalette", device=s.device, status="ok" if res.get("ok") else "refused")
             elif t == "jcard_color":
                 from . import jcards_data
                 res = {"t": t, **await asyncio.to_thread(jcards_data.set_color, self.st.root, cid, obj.get("color"))}
                 self.st.log("jcard_color", device=s.device, status="ok" if res.get("ok") else "refused")
+            elif t in ("jcard_files", "jcard_file"):   # P432: the official Files card (no-follow listing; a download = a §13 media item)
+                from . import jcards_files
+                c = await asyncio.to_thread(jcards.find, self.st.root, cid)
+                if t == "jcard_file" and self.stopped():
+                    res = {"t": t, "ok": False, "why": "stopped"}
+                elif not c or not c["official"] or cid != "files" or not c["on"]:
+                    res = {"t": t, "ok": False, "why": "off" if c else "not_found"}
+                elif t == "jcard_files":
+                    res = {"t": t, **await asyncio.to_thread(jcards_files.listing, self.st.root, self.agent_cfg, obj.get("root"), obj.get("path"))}
+                else:
+                    res = {"t": t, **await asyncio.to_thread(jcards_files.fetch, self.st.root, self.agent_cfg, self.media, obj.get("root"), obj.get("path"))}
+                    self.st.log("jcard_file", device=s.device, status="ok" if res.get("ok") else str(res.get("why"))[:16])
+            elif t == "jcard_call":     # P432: a confirmed button of a card's own server (127.0.0.1, declared route, bounded)
+                from . import jcards_server
+                res = ({"t": t, "ok": False, "id": None, "act": None, "why": "stopped"} if self.stopped() else   # e-stop: no side effects
+                       {"t": t, **await asyncio.to_thread(jcards_server.call, self.st.root, cid, obj.get("act"), obj.get("item"), lang)})
+                self.st.log("jcard_call", device=s.device, status=f"{res.get('id')}:{res.get('act')}:" + ("ok" if res.get("ok") else str(res.get("why") or "no"))[:24])
+            elif t == "jcard_perm":     # P432: a plaza card's permission summary (the owner reads it before switching it on)
+                from . import jcards_pkg
+                c = await asyncio.to_thread(jcards.find, self.st.root, cid)
+                if not c or c["official"]:
+                    res = {"t": t, "ok": False, "id": None, "why": "not_found"}
+                else:
+                    src = await asyncio.to_thread(jcards_pkg.source, self.st.root, cid, c["doc"])
+                    res = {"t": t, "ok": True, "id": cid, "text": jcards_pkg.summary_text(c["doc"], lang, src), "digest": jcards_pkg.digest(c["doc"])}
             else:
-                ok = isinstance(cid, str) and type(on) is bool and await asyncio.to_thread(jcards.set_on, self.st.root, cid, on)
+                seen = obj.get("seen") if isinstance(obj.get("seen"), str) else None
+                ok = isinstance(cid, str) and type(on) is bool and await asyncio.to_thread(jcards.set_on, self.st.root, cid, on, seen)
                 res = None
         except Exception as e:  # noqa: BLE001
             self.st.log("jcard_failed", device=s.device, reason=type(e).__name__)
             res = {"jcard_list": {"t": "jcard_items", "cards": []}, "jcard_get": {"t": "jcard_get", "ok": False, "why": "not_found"}}.get(
-                t, {"t": t if t in ("jcard_note", "jcard_color") else "jcard_res", "ok": False, "id": None, "on": None})
+                t, {"t": t if t in ("jcard_note", "jcard_color", "jcard_cal", "jpalette", "jcard_call", "jcard_files", "jcard_file", "jcard_perm") else "jcard_res", "ok": False, "id": None, "on": None})
             ok = False
         if res is not None:
             return await self.send_app(s, {**res, "r": r})
@@ -5341,6 +5520,10 @@ class Host:
         """A command from a ready session of a paired device (the only place one can come from). /stop and /help at once;
         the rest after the turn in front of it (the Agent's queue). Logged: command name + result class, never text.
         Returns the id of the command's history page (§10.5)."""
+        if name in ("stop-all", "stop_all", "estop"):
+            turn = self.cmd_turn(s, name)
+            self.cmd_card(name, slash.Result(pick(self.lang, "请到「设置 → 安全」操作「紧急停止所有 Agent」。", "Go to Settings → Safety → Emergency stop all Agents."), "info"), turn=turn)
+            return turn
         name = slash.ALIAS.get(name, name)    # P341: /new from an older or third-party page is /clear
         by = s.name or s.device
         if name in TG_PAIR_CMDS:               # P283: 「重新绑定 Telegram」 — the host's own answer, a new pairing code
@@ -5404,6 +5587,8 @@ class Host:
             return done(slash.Result(slash.HELP if name == "help" else "还没接 Agent：在Agent J 主机上运行 `agentj agent claude --dir <目录>`。",
                                      "info" if name == "help" else "error"))
         if name not in slash.WHITELIST + slash.INTERNAL or (name in slash.INTERNAL and typed):
+            if self.native_route(name) == "none":   # P412 #175: the harness's own, but no web page can do it — say why
+                return done(slash.Result(harness_cmds.none_note(self.agent.kind, name, self.lang), "refused"))
             if self.agent.kind == "claude" and not getattr(self.agent, "init", None):
                 return done(slash.Result("还不知道 Claude Code 有哪些技能：先发一条普通消息，再试一次。\n" + slash.REFUSE,
                                          "refused"))
@@ -5544,6 +5729,8 @@ class Host:
         caps += ["cards1", "upg1"]       # P203 (§29): signed open-cards snapshot · upgrade impact + confirmation card
         caps.append("systasks")                                # P207 §2: answers systask_list (the Agent J host's own scheduled tasks)
         caps.append("wf1")                                     # P244 §30: answers wf_list / wf_doc / skill_get (the five pages)
+        caps.append("jpalette1")  # P420 bounded host palette library
+        caps.append("sk1")                                     # P426 §39: skill health on the 技能 page + skill_archive / skill_restore
         caps.append(jcards.CAP)                                # P360 §34: Agent J Cards (jcard_list / jcard_get / jcard_set)
         caps.append(compose.CAP_MQ)                            # P286 §10.6: takes quote_more (≤ 5 quotes in one say)
         caps.append("hooks1")                                  # P366: answers hook_list / hook_set (Settings → Webhook)
@@ -5856,12 +6043,16 @@ class Host:
         await self._ctl_send(w, {"ok": True, "applied": True, "keys": keys})
 
     async def on_tg_fwd(self, s: Session, r: str, turn_id, mid=None) -> None:
-        if self.telegram is None:
-            res = {"ok": False, "why": "not_configured"}
-        elif mid is not None:      # P183: one file a reply showed (its §13 media id) instead of the reply's words
-            res = await self.telegram.forward_media(mid, s.device) if wire.is_id22(mid) else {"ok": False, "why": "not_found"}
-        else:
-            res = await self.telegram.forward(turn_id, s.device)
+        try:
+            if self.telegram is None:
+                res = {"ok": False, "why": "not_configured"}
+            elif mid is not None:      # P183: one file a reply showed (its §13 media id) instead of the reply's words
+                res = await self.telegram.forward_media(mid, s.device) if wire.is_id22(mid) else {"ok": False, "why": "not_found"}
+            else:
+                res = await self.telegram.forward(turn_id, s.device)
+        except Exception as e:  # noqa: BLE001 — P424 #142: the phone always gets an answer, never a spinner until its timeout
+            self.st.log("telegram_forward", device=s.device, result="error", exception_type=type(e).__name__)
+            res = {"ok": False, "why": "send_failed"}
         if self.sessions.get(s.cid) is s and s.state == "ready" and self.st.is_allowed(s.pub):
             await self.send_app(s, {"t": "tg_fwd_res", "r": r, **{k: v for k, v in res.items() if k in ("ok", "why", "parts")}})
 
@@ -5876,6 +6067,11 @@ class Host:
             await self.send_app(s, {"t": "busy_info", "r": r, "id": wid, "item": d})
 
     async def on_p33(self, s: Session, t: str, obj: dict) -> None:
+        if t == "ark_plan_get":
+            if wire.is_rid(obj.get("r")):
+                from . import ark_plan_fix
+                await self.send_app(s, {"t":"ark_plan", "r":obj["r"], **ark_plan_fix.view(self.st)})
+            return
         if t == "ping":
             r = obj.get("r")
             if wire.is_rid(r):
@@ -6031,8 +6227,12 @@ class Host:
                 skills = [x for x in (getattr(self.agent, "init", {}) or {}).get("skills") or [] if isinstance(x, str)]
             wd = self.agent_cfg["dir"] if self.agent_cfg else None
             res = await asyncio.to_thread(menu.for_phone, wd, skills, self.lang, preferences.get(self.preferences, "menu.items", []))
+            kind = self.agent.kind if self.agent else (self.agent_cfg or {}).get("kind")
+            native = harness_cmds.for_menu(kind, getattr(self.agent, "init", None) if self.agent else None,
+                                           [x["cmd"][1:] for x in res.get("skills") or []], self.lang)   # P412 (#175)
             return await self.send_app(s, {"t": "menu", "r": r, **res, "upgrade": update.phone_view(self.st), "reload": True,
-                                           "reset": True})   # P320: ≡ Reload · P332: ≡ 重置连接
+                                           "reset": True, "kind": kind if isinstance(kind, str) else None,
+                                           "native": native})   # P320: ≡ Reload · P332: ≡ 重置连接
         if t in ("notify_get", "notify_set"):          # P365: which automations may post here
             from . import notify
             return await notify.on_phone(self, s, t, obj)
@@ -6135,9 +6335,11 @@ class Host:
 
     # ------------------------------------------------------------ say (§10.2)
     async def _accept(self, s: Session, text: str, sid: str | None, blobs: list | None = None, quote: dict | None = None,
-                      quote_text: str | None = None) -> compose.Send | None:
+                      quote_text: str | None = None, agent_text: str | None = None, extra_src: dict | None = None) -> compose.Send | None:
         """A message for the Agent from a ready session: its page (src.k phone), the §8 entry for older phones, and the
-        queued Send (withdrawable until delivered). Returns the Send (None without an Agent)."""
+        queued Send (withdrawable until delivered). Returns the Send (None without an Agent).
+        P414 (§37.12): `extra_src` joins the page's src (a 「!」 line's `term`); `agent_text` = what the Agent reads instead
+        of `text` (host-built, never goal / meeting / slash parsing)."""
         blobs = blobs or []
         _hb_touch(self)                     # P156: a phone conversation pushes the heartbeat back
         await self._setup_round_trip(s)
@@ -6160,12 +6362,15 @@ class Host:
             src["quote"] = quote
         if blobs:
             src["att"] = [{"name": b.name[:128], "mime": b.mime, "bytes": b.size, "kind": b.kind} for b in blobs]
+        if extra_src:
+            src.update(extra_src)
         turn = self.hist_add(src, "", "open" if self.agent else "done")
         if not self.agent:
             return None
         send = compose.Send(s.device, sid or secrets.token_urlsafe(16), turn["id"], blobs=blobs, by=s.name or s.device)
         send.onboarding_note = (self.speaker_note(s) if getattr(s, "source_kind", None) != "telegram" else "") + self.onboarding_note()
-        gc = slash.parse(text) if not blobs else None
+        send.onboarding_note += self.skill_turn_note(s, text)   # P426 #181: skill use + "save it as a skill?" (once)
+        gc = slash.parse(text) if not blobs and agent_text is None else None
         if gc and gc[0] == "goal" and gc[1] and not goal_mod.host_cmd(gc[1]):   # P158: `/goal <what>` → the Agent proposes
             if provenance.is_owner(getattr(s, "provenance", None)):
                 self.goals.owner_asked()       # P336: only the owner's own /goal may start without the opening card
@@ -6176,12 +6381,15 @@ class Host:
                   "voice": getattr(b, "voice", "")} for b in blobs]
         # P166: every audio / video attachment with its private copy (a picked m4a too); Telegram transcribes its own first
         voice = [f for f in files if f["voice"] or (f["origin"] == "recording" and f["mime"].startswith("audio/"))]
-        text = self._meeting_text(s, text, bool(voice))
-        if voice:
+        if agent_text is None:
+            text = self._meeting_text(s, text, bool(voice))
+        if agent_text is not None:
+            send.text = agent_text
+        elif voice:
             send.ready = asyncio.get_running_loop().create_future()
             send.prep = asyncio.create_task(self._prep_say(send, text, files, voice, quote_text))
         else:
-            send.text = compose.render(text, files, self.lang, quote_text) + send.onboarding_note
+            send.text = compose.render(text, files, self.lang, quote_text, native=self.native_text) + send.onboarding_note
         self.sends.add(send)
         self.turn_by = s.name or s.device
         self.quota_resume.owner_spoke("main")   # P314: the owner moved on by hand; no automatic continue on top
@@ -6262,7 +6470,8 @@ class Host:
         if not self.agent:
             return await res(ok=False, why="no_agent")
         cmd = slash.parse(text) if not att and reply_to is None and not is_meeting else None
-        if cmd and cmd[0] != "goal" and cmd[0] not in slash.AGENT_CMDS and not self.agent.passthrough(cmd[0]):   # P155 /switch-harness, P158 `/goal <what>` → the Agent
+        if cmd and cmd[0] != "goal" and cmd[0] not in slash.AGENT_CMDS and not self.agent.passthrough(cmd[0]) \
+                and self.native_route(cmd[0]) not in ("run", "agent"):   # P155 /switch-harness, P158 `/goal <what>`, P412 #175 the harness's own → the Agent
             self.sends.add(compose.Send(s.device, sid, 0, state="delivered"))
             await _rcpt_recv(self, s.device, sid)
             turn = await self.on_slash(s, cmd[0], cmd[1], confirm=False, typed=True)
@@ -6293,6 +6502,22 @@ class Host:
         if send.prep is not None:
             self._post(self._send_device, s.device, {"t": "say_state", "sid": sid, "s": "transcribing"})
 
+    async def bang_turn(self, s: Session, sid: str, line: str, out: str, cut: bool, hidden: int, state: str, nonce: str) -> int:
+        """P414 (§37.12): a 「!」 line ran in the web terminal → its owner page (`term`) and, through the normal queue, the
+        Agent's turn (term_bang.agent_text: M1 fence). Owner page only while a non-owner turn is handled (H2), stopped, no
+        Agent / seat, or the sid is taken. `line` / `out` are already agent-masked (H3). → the page id."""
+        from .term_bang import agent_text
+        extra = {"term": {"out": out, "cut": bool(cut), "hidden": int(hidden), "state": state, "sid": sid}}
+        text = "!" + line
+        page_only = (provenance.untrusted_turn(self.agent) or not self.agent or self.stopped() or self.seat_refusal()
+                     or self.sends.used(s.device, sid) or self.sends.full(s.device))
+        if page_only:
+            src = {"k": "phone", "dev": s.device, "name": (s.name or s.device)[:64], "text": text, **extra}
+            self.st.log("term_bang_page", device=s.device, reason="page_only")
+            return self.hist_add(src, "", "done")["id"]
+        send = await self._accept(s, text, sid, agent_text=agent_text(line, out, state, cut, hidden, nonce), extra_src=extra)
+        return send.turn
+
     async def _prep_say(self, send: compose.Send, text: str, files: list, voice: list, quote_text: str | None) -> None:
         """Each recording gets its own processing allowance; failures still deliver the original audio.
         Queue waiting does not consume a later recording's processing allowance. Withdraw cancels this task.
@@ -6313,7 +6538,7 @@ class Host:
                     f["asr"]["file"] = await asyncio.to_thread(self._transcript_file, send.device, f)
                     if f["asr"]["file"]:
                         f["asr"]["text"] = f["asr"]["text"][:compose.ASR_INLINE]
-            send.text = compose.render(text, files, self.lang, quote_text) + getattr(send, "onboarding_note", "")
+            send.text = compose.render(text, files, self.lang, quote_text, native=self.native_text) + getattr(send, "onboarding_note", "")
             with contextlib.suppress(Exception):           # P363 (#72): the transcript back onto the owner's page, every remote
                 self.hist_update(send.turn, att_asr=page_asr(files))
             with contextlib.suppress(Exception):           # P182: the latest recording group, for a later /会议总结 without files
@@ -6732,7 +6957,7 @@ class Host:
 
     # ------------------------------------------------------------ questions (§10.7): an answer is an approval
     def _question_msg(self, q: Question) -> dict:
-        m = {"t": "question", "id": q.qid, "qs": q.qs, "ttl": max(0, int(q.deadline - time.monotonic()))}
+        m = {"t": "question", "id": q.qid, "qs": q.qs, "text_max": 2000, "ttl": max(0, int(q.deadline - time.monotonic()))}
         if q.task:
             m["task"] = q.task[:80]
         return m
@@ -6818,7 +7043,7 @@ class Host:
         if decision == "answer" and picks:
             ans = {}
             for q, p in zip(card, picks):
-                labels = [q["o"][n - 1]["l"] for n in p]
+                labels = [p] if isinstance(p, str) else [q["o"][n - 1]["l"] for n in p]
                 ans[q["q"]] = ", ".join(labels) if q["m"] else labels[0]
             return {"behavior": "allow", "updatedInput": {**tool_input, "answers": ans}}
         if decision == "cancel":
@@ -6993,6 +7218,8 @@ class Host:
                 self.st.log("root_docs_refresh_failed")
             if not self.agent_cfg.get("_workflow_ceo"):
                 jobs.append(asyncio.create_task(self._wf_first_sweep()))   # P276: scan + CEO roster once at start
+                from . import jcards_cal_remote            # P428: offline-queue runner, only when a two-way calendar exists
+                jobs.append(asyncio.create_task(jcards_cal_remote.start(self)))
             from .service import ensure_agentj_on_path   # P155: the skills' `agentj …` must run in the Agent's shell
             if ensure_agentj_on_path():
                 self.st.log("agentj_path_added")

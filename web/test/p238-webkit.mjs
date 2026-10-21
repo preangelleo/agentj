@@ -48,7 +48,10 @@ for (const [tag, menu] of Object.entries(CASES)) {
     assert.equal(rows[i + 1], '/switch-harness', JSON.stringify(rows));
     assert.equal(rows.filter((r) => r === '/switch-harness').length, 1);
     // RESUME (Leo 23:29): a card rising from the 5-hour bar — not full screen, no sideways scroll; a tap above it closes
-    await sleep(300);
+    // WebKit can paint the first opening frame after the fixed delay. Wait for the original geometry bounds.
+    await page.waitForFunction(() => { const s = document.getElementById('menuSheet').getBoundingClientRect(), b = document.getElementById('m5h').getBoundingClientRect(), body = document.getElementById('menuBody');
+      return s.height <= innerHeight * 0.6 + 1 && s.top > 40 && s.width < innerWidth && s.bottom <= b.top && b.top - s.bottom <= 24 && body.scrollWidth <= body.clientWidth;
+    }, null, { timeout: 5000 });
     const g = await page.evaluate(() => { const s = document.getElementById('menuSheet').getBoundingClientRect(), b = document.getElementById('m5h').getBoundingClientRect(), body = document.getElementById('menuBody');
       return { top: s.top, bottom: s.bottom, h: s.height, w: s.width, vw: innerWidth, vh: innerHeight, bar: b.top, sideways: body.scrollWidth > body.clientWidth }; });
     assert.ok(g.h <= g.vh * 0.6 + 1 && g.top > 40 && g.w < g.vw && g.bottom <= g.bar && g.bar - g.bottom <= 24 && !g.sideways, JSON.stringify(g));

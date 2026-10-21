@@ -4,22 +4,30 @@ import {phoneConfirmation} from './tvremote.js';
 // one-time host key and signed with this device's approval key, then the field and the bytes are cleared. Nothing of it is
 // kept, logged, drafted or shown again — the Agent only ever gets the command's output or a receipt.
 import { sendApp, gen, channel, randHex } from './session.js';
-import { elevateFields, elevateDigest, elevateMessage, sealValue, controlMessage, b64u, unb64u } from '../proto/wire.js';
+import { elevateFields, elevateDigest, elevateMessage, sealValue, controlMessage, sha256hex, b64u, unb64u } from '../proto/wire.js';
 import { SVG } from './icons.js';
 import { signKey } from './store.js';
 import { myDeviceId, myIdSync } from './api.js';
-import { t, onLang } from './t.js';
-import { mk, toast, notify } from './ui.js';
+import { t, lang, onLang } from './t.js';
+import { mk, executionToast as toast, notify, replyNotice } from './ui.js';
 import { registerLayer } from './layers.js';
 import { copyable } from './copycode.js';   // P292
 import { paintMailPassword } from './mail-password.js';
 import { elevateChallenge, canAssert, approve } from './faceid.js';
+// P414 (PROTOCOL §37.10 / §37.11, ADR-P414-bang): the computer-password vault on sudo cards — 「用 Face ID 填入电脑密码」 (the
+// PRF value sealed with kind `vault`, answer `vault:1`), a typed answer that also remembers it (`pepk`/`pct`, kind `vault_save`,
+// signed `save:` tail, M2), 「记住的电脑密码不对了」 after `stale`, and the `vshare` card (another remote asks to use it; 「同意」 =
+// Face ID + PRF over this remote's wrap salt, sealed kind `vshare`). PRF eval.second = the host's next salt `vn` (M3).
+import { assertPrf, sealPrf, salt32, prfSupport } from './vault.js';
+let prfCap = null;
+prfSupport().then((v) => { prfCap = v; }, () => {});
 
 const cards = new Map();           // id → card (in arrival order)
 const completed = new Set();
 let recoveryTimer = 0;
 let recoverCards = () => Promise.resolve();
-export function configure({ recover }) { if (typeof recover === 'function') recoverCards = recover; }
+let secretSaved = () => {};
+export function configure({ recover, onSecretSaved }) { if (typeof recover === 'function') recoverCards = recover; if (typeof onSecretSaved === 'function') secretSaved = onSecretSaved; }
 function recoverRunning() {
   if (recoveryTimer || ![...cards.values()].some(c => c.running)) return;
   recoveryTimer = setTimeout(async () => {
@@ -55,6 +63,12 @@ function build() {
   bad.hidden = true;
   const empty = node('p', 'elev-empty', 'elev-bad');
   empty.hidden = true;
+  // P414: 「用 Face ID 填入电脑密码」 first (the typed field below it is the second way), 「用 Face ID 记住」 under the field
+  const vault = node('button', 'elev-vault', 'aj-btn aj-btn--primary elev-vault'); vault.type = 'button'; vault.hidden = true;
+  const stale = node('p', 'elev-stale', 'elev-bad'); stale.hidden = true;
+  const saveOpt = node('label', 'elev-save-opt', 'elev-grant-opt elev-save-opt'); saveOpt.hidden = true;
+  const saveBox = node('input', 'elev-save-on', 'elev-grant-on'); saveBox.type = 'checkbox';
+  saveOpt.append(saveBox, node('span', 'elev-save-text'));
   // P73 (ADR-A180): the main action alone on its row; 「拒绝 / 不提供」 a quiet text button on its own line under it, so a
   // thumb aiming at 「保存到Agent J 主机」 cannot land on it. The keyboard's Enter / 完成 key only ever submits.
   const acts = mk('div', 'ajrow confirm-row elev-acts');
@@ -70,13 +84,15 @@ function build() {
   // P406 #173: 「收起」 (down arrow) at every stage — the card leaves the screen, nothing is declined, the strip brings it back
   const hide = node('button', 'elev-hide', 'elev-hide'); hide.type = 'button';
   hide.append(chevron());
-  form.append(hide, node('p', 'elev-kicker', 'elev-kicker'), node('h2', 'elev-title'), node('dl', 'elev-rows', 'elev-rows'), bad, label, input,
-    empty, opt, node('p', 'elev-note', 'elev-note'), node('p', 'elev-left', 'elev-left'), acts, deny);
+  form.append(hide, node('p', 'elev-kicker', 'elev-kicker'), node('h2', 'elev-title'), node('dl', 'elev-rows', 'elev-rows'), bad, stale, vault, label, input,
+    empty, opt, saveOpt, node('p', 'elev-note', 'elev-note'), node('p', 'elev-left', 'elev-left'), acts, deny);
   root.appendChild(form);
   document.body.appendChild(root);
   root.querySelector('#elev-form').addEventListener('submit', (e) => { e.preventDefault(); decide(true); });
   root.querySelector('#elev-deny').addEventListener('click', () => askDeny());
   hide.addEventListener('click', () => collapse());
+  root.querySelector('#elev-vault').addEventListener('click', () => decide(true, 'vault'));   // P414
+  root.querySelector('#elev-save-on').addEventListener('change', (e) => { $('elev-note').textContent = t(e.target.checked ? 'p414.e.saveNote' : 'elev.sudo.note'); });
   root.querySelector('#elev-input').addEventListener('input', () => { $('elev-empty').hidden = true; paintButtons(); });
   root.querySelector('#elev-input').addEventListener('keydown', (e) => {
     if (e.key !== 'Enter' || e.isComposing) return;
@@ -91,7 +107,7 @@ const $ = (id) => root.querySelector('#' + id);
 const str = (v, n) => (typeof v === 'string' && v.length <= n ? v : null);
 /** A card from the host (§11 `elev`); a re-sent one (wrong password → new nonce and key) replaces the old. */
 export function add(m) {
-  if (typeof m.id !== 'string' || !/^[0-9a-f]{32}$/.test(m.id) || (m.kind !== 'sudo' && m.kind !== 'secret')) return;
+  if (typeof m.id !== 'string' || !/^[0-9a-f]{32}$/.test(m.id) || !['sudo', 'secret', 'vshare'].includes(m.kind)) return;
   if ((m.state !== 'running' && !/^[0-9a-f]{32}$/.test(m.n || '')) || typeof m.epk !== 'string') return;
   let epk;
   try { epk = unb64u(m.epk); } catch { return; }
@@ -108,6 +124,15 @@ export function add(m) {
     const g = m.grant;
     c.grant = !c.interpreter && g && typeof g === 'object' && Number.isInteger(g.secs) && g.secs > 0 && g.secs <= 3600
       && str(g.prog, 64) && str(g.fmt, 400) && /^[0-9a-f]{64}$/.test(g.h || '') ? { secs: g.secs, prog: g.prog, fmt: g.fmt, h: g.h } : null;
+    c.v = vaultOf(m.v); c.stale = m.stale === 1 || m.stale === true;   // P414 (§37.10)
+  } else if (m.kind === 'vshare') {
+    // P414 (§37.11, M4): who asks — its id, passkey credential id, pairing date, flags; all of it inside the signed digest
+    // name: the host's label is ≤ 64 code points (an emoji = 2 UTF-16 units here)
+    c.dev = str(m.dev, 64); c.name = str(m.name ?? '', 128); c.cred = str(m.cred, 1400);
+    c.paired = Number.isInteger(m.paired) && m.paired >= 0 ? m.paired : null;
+    c.flags = Array.isArray(m.flags) && m.flags.length <= 4 && m.flags.every((f) => typeof f === 'string' && f.length <= 16 && !f.includes(',')) ? m.flags.slice() : null;
+    c.v = vaultOf(m.v);
+    if (!c.dev || !c.cred || c.paired === null || !c.flags || c.name === null || !c.v || !c.v.has) return;
   } else {
     c.name = str(m.name, 128); c.purpose = str(m.purpose, m.name === 'AGENTJ_MAIL_PASSWORD' ? 2000 : 300); c.dest = str(m.dest, 1100); c.verify = str(m.verify ?? '', 800);
     if (!c.name || c.purpose === null || c.dest === null || c.verify === null) return;
@@ -128,10 +153,19 @@ export function add(m) {
   if (c.started) c.t0 = Date.now() - (Number.isInteger(m.elapsed) ? m.elapsed : 0) * 1000;
   const old = cards.get(m.id);
   if (old) { c.out = old.out || ''; if (old.n === c.n) c.collapsed = old.collapsed; if (old.started && c.started) c.t0 = old.t0; }
+  // P414 (§37.10, host build): the same card re-armed after this remote's 「用 Face ID 填入电脑密码」 with `v.has` 0 and no
+  // `stale` = the remembered password did not open with this Face ID (nothing counted); say so above the field
+  if (c.kind === 'sudo' && c.v && !c.v.has && !c.stale && old && (old.sentVault || old.vaultMiss)) c.vaultMiss = true;
   cards.set(m.id, c);
   if (c.started && old?.watching && runShown === c.id && panelOpen) watch(c, true);   // a reconnect: ask again (a new session)
   if (old && shownId === m.id) { shownId = null; busy = false; }
   render();
+}
+/** P414 (§37.10): `v` of a sudo / vshare card → {has, vs, vn} (vs / vn = 32-byte salts) or null. Pure. */
+export function vaultOf(v) {
+  if (!v || typeof v !== 'object') return null;
+  const vs = salt32(v.vs);
+  return vs ? { has: v.has === 1 || v.has === true, vs, vn: salt32(v.vn) } : null;
 }
 const RESULT = { done: 'elev.r.done', saved: 'elev.r.saved', denied: 'elev.r.denied', timeout: 'elev.r.timeout', gone: 'elev.r.gone',
   stopped: 'elev.r.stopped', locked: 'elev.r.locked', bad_password: 'elev.r.badPassword', failed: 'elev.r.failed' };
@@ -142,6 +176,7 @@ export function done(m) {
   completed.add(m.id);
   if (completed.size > 100) completed.delete(completed.values().next().value);
   cards.delete(m.id);
+  if (c?.kind === 'secret' && ['saved','done'].includes(m.result)) secretSaved(c.name, m.verify);
   if (shownId === m.id) { shownId = null; busy = false; }
   if (c?.started) {                               // P406: the strip shows the result (+ the masked output tail) a while
     finished = { id: c.id, kind: c.kind, cmd: c.cmd, result: m.result, code: m.code, tail: str(m.tail, 20000) ?? c.out ?? '',
@@ -153,6 +188,8 @@ export function done(m) {
     if (m.result === 'done' && Number.isInteger(m.code) && m.code !== 0) text = t('elev.r.doneFail', { code: m.code });
     if (c.name === 'AGENTJ_MAIL_PASSWORD' && m.result === 'saved') text = t('mail.passwordSaved');
     if (c.kind === 'secret' && m.result === 'done') text = t('elev.r.saved');
+    if (c.kind === 'vshare' && (m.result === 'saved' || m.result === 'done')) text = t('p414.e.vsDone');   // P414: the host ends it `saved`
+    if (m.saved === 1 || m.saved === true) text += ' ' + t('p414.e.saved');       // P414 (§37.10): the typed password is remembered
     if (m.verify === 'ok') text += ' ' + t('elev.r.verifyOk');
     if (m.verify === 'fail') text += ' ' + t('elev.r.verifyFail');
     if (c.kind === 'secret' && m.key_hint === 'short') text += ' ' + t('elev.r.keyShort');   // P163: from the length only
@@ -160,7 +197,7 @@ export function done(m) {
     const fail = ['denied', 'bad_password', 'failed', 'locked'].includes(m.result) || (m.result === 'done' && Number.isInteger(m.code) && m.code !== 0) || m.verify === 'fail';
     const ok = !fail && (m.result === 'saved' || m.result === 'done') && m.key_hint !== 'short';
     const mailSaved = c.name === 'AGENTJ_MAIL_PASSWORD' && m.result === 'saved';
-    notify({ kind: fail ? 'error' : ok ? 'success' : 'info', text, ms: m.key_hint === 'short' ? 8000 : 3600, shape: mailSaved && ok ? 'circle' : undefined });
+    notify({ kind: fail ? 'error' : ok ? 'success' : 'info', text, ms: m.key_hint === 'short' ? 8000 : 3600, shape: c.kind === 'secret' && ok ? 'circle' : 'rect' });
   }
   render();
 }
@@ -224,16 +261,22 @@ function render() {
   if (shownId !== c.id) {
     shownId = c.id; busy = false;
     $('elev-input').value = '';
-    const sudo = c.kind === 'sudo';
-    const nopw = viaHelper(c);
+    const sudo = c.kind === 'sudo', vs = c.kind === 'vshare';
+    const nopw = viaHelper(c) || vs;
     root.classList.toggle('nopw', nopw);
     root.classList.toggle('interpreter', !!c.interpreter);
     $('elev-label').hidden = nopw; $('elev-input').hidden = nopw;
-    root.classList.toggle('secret', !sudo);
-    $('elev-kicker').textContent = t(sudo ? 'elev.sudo.kicker' : 'elev.secret.kicker');
-    $('elev-title').textContent = sudo ? t('elev.sudo.title') : t('elev.secret.title', { name: c.name });
+    root.classList.toggle('secret', c.kind === 'secret');
+    $('elev-kicker').textContent = t(sudo ? 'elev.sudo.kicker' : vs ? 'p414.e.vsKicker' : 'elev.secret.kicker');
+    $('elev-title').textContent = sudo ? t('elev.sudo.title') : vs ? t('p414.e.vsTitle', { name: c.name || c.dev }) : t('elev.secret.title', { name: c.name });
     const dl = $('elev-rows'); dl.replaceChildren();
-    if (sudo) {
+    if (vs) {   // P414 (§37.11, M4): the requesting remote, as the digest covers it
+      row(dl, t('p414.e.vsDev'), c.dev, 'mono');
+      row(dl, t('p414.e.vsCred'), c.cred.length > 16 ? c.cred.slice(0, 16) + '…' : c.cred, 'mono');
+      row(dl, t('p414.e.vsPaired'), c.paired ? new Date(c.paired * 1000).toLocaleDateString(lang() === 'en' ? 'en' : 'zh-CN') : t('p414.e.vsUnknown'));
+      const fl = c.flags.filter((f) => f === 'web' || f === 'account').map((f) => t('p414.e.flag.' + f));
+      row(dl, t('p414.e.vsKind'), fl.length ? fl.join(' · ') : t('p414.e.flag.app'));
+    } else if (sudo) {
       // P339 (backlog #44 ④): what it is for comes first and largest, right under the title; the command after it
       row(dl, t('elev.sudo.why') + ' · ' + t('elev.agentClaim'), c.why, 'purpose');
       row(dl, t('elev.sudo.cmd'), c.cmd, 'mono');
@@ -244,11 +287,25 @@ function render() {
       row(dl, t('elev.secret.dest'), c.dest, 'mono');
       row(dl, t('elev.secret.verify'), c.verify, 'mono');
     }
-    $('elev-label').textContent = t(sudo ? 'elev.sudo.label' : 'elev.secret.label', { name: c.name || '' });
+    $('elev-label').textContent = t(sudo || vs ? 'elev.sudo.label' : 'elev.secret.label', { name: c.name || '' });
     const mail = paintMailPassword(c, $('elev-label'), $('elev-input'), $('elev-rows'));
     if (mail) { $('elev-title').textContent = c.purpose.split('\n')[0]; $('elev-kicker').textContent = t('mail.key'); }
     $('elev-input').setAttribute('aria-label', $('elev-label').textContent);
-    $('elev-note').textContent = (c.interpreter ? t('elev.interpreter') + ' ' : '') + t(nopw ? 'elev.sudo.noteHelper' : sudo ? 'elev.sudo.note' : 'elev.secret.note');
+    $('elev-note').textContent = vs ? t('p414.e.vsNote') : (c.interpreter ? t('elev.interpreter') + ' ' : '') + t(nopw ? 'elev.sudo.noteHelper' : sudo ? 'elev.sudo.note' : 'elev.secret.note');
+    // P414 (§37.10): 「用 Face ID 填入电脑密码」 when this remote holds the vault (the field stays as the second way); else, when
+    // it could hold it, 「用 Face ID 记住」 (on by default); `stale` says the remembered one stopped working
+    const useV = useVault(c);
+    $('elev-vault').hidden = !useV;
+    $('elev-vault').textContent = t('p414.e.use');
+    $('elev-allow').classList.toggle('aj-btn--primary', !useV);
+    if (useV) $('elev-label').textContent = t('p414.e.orType');
+    const save = offerSave(c);
+    $('elev-save-opt').hidden = !save; $('elev-save-on').checked = save;
+    if (useV) $('elev-note').textContent = t('p414.e.useNote');
+    else if (save) $('elev-note').textContent = t('p414.e.saveNote');   // 「只用这一次，不保存」 is not true when it remembers
+    $('elev-save-text').textContent = t('p414.e.save');
+    $('elev-stale').hidden = !(sudo && (c.stale || c.vaultMiss));
+    $('elev-stale').textContent = c.stale ? t('p414.e.stale') : c.vaultMiss ? t('p414.e.noPrf') : '';
     const offer = sudo && !nopw && c.grant;   // #116: off by default on every card shown
     $('elev-grant-opt').hidden = !offer; $('elev-grant-on').checked = false;
     if (offer) {
@@ -258,11 +315,11 @@ function render() {
     if (mail) $('elev-note').textContent = t('mail.sealNote');
     denyArmed = 0;
     $('elev-empty').hidden = true;
-    $('elev-deny').textContent = t(sudo ? 'elev.deny' : 'elev.secret.cancel');
-    $('elev-allow').textContent = t(nopw ? 'elev.sudo.allowHelper' : sudo ? 'elev.sudo.allow' : 'elev.secret.allow');
+    $('elev-deny').textContent = t(sudo || vs ? 'elev.deny' : 'elev.secret.cancel');
+    $('elev-allow').textContent = vs ? t('p414.e.vsAllow') : t(nopw ? 'elev.sudo.allowHelper' : sudo ? 'elev.sudo.allow' : 'elev.secret.allow');
     $('elev-hide').setAttribute('aria-label', t('p406.sudo.hide')); $('elev-hide').title = t('p406.sudo.hide');
     root.hidden = false;
-    if (!nopw) setTimeout(() => { try { $('elev-input').focus({ preventScroll: true }); } catch { /* old browsers */ } }, 60);
+    if (!nopw && !useV) setTimeout(() => { try { $('elev-input').focus({ preventScroll: true }); } catch { /* old browsers */ } }, 60);
   }
   const bad = $('elev-bad');
   bad.hidden = !c.bad;
@@ -270,6 +327,10 @@ function render() {
   paintButtons();
   paintLeft(c);
 }
+/** P414: this remote holds the vault for its passkey (M5: `prf` wraps only) and the card asks for a typed password. */
+const useVault = (c) => c.kind === 'sudo' && !!c.v && c.v.has && !!c.fa && !viaHelper(c);
+/** P414: it could remember a typed one (a passkey; the browser does not say it lacks PRF). */
+const offerSave = (c) => c.kind === 'sudo' && !!c.v && !c.v.has && !!c.fa && !viaHelper(c) && prfCap !== false;
 /** The computer's admin helper accepts this phone's signature: 同意 alone, no password (elevate_helper on the host). */
 const viaHelper = (c) => c.kind === 'sudo' && !c.interpreter && !c.bad && c.helper && c.helper.length > 0 && c.helper.includes(myIdSync());
 function paintButtons() {
@@ -277,11 +338,12 @@ function paintButtons() {
   const c = cards.get(shownId);
   const v = $('elev-input').value;
   const pending = busy || !!c?.running;
-  if (c) $('elev-allow').textContent = c.running ? t('p392.executing') : t(viaHelper(c) ? 'elev.sudo.allowHelper' : c.kind === 'sudo' ? 'elev.sudo.allow' : 'elev.secret.allow');
+  if (c) $('elev-allow').textContent = c.running ? t('p392.executing') : c.kind === 'vshare' ? t('p414.e.vsAllow') : t(viaHelper(c) ? 'elev.sudo.allowHelper' : c.kind === 'sudo' ? 'elev.sudo.allow' : 'elev.secret.allow');
   $('elev-allow').disabled = pending || !c || (!viaHelper(c) && v.length > MAX_FIELD);   // empty: enabled, says what is missing
   $('elev-deny').disabled = pending;
   $('elev-input').disabled = pending;
   $('elev-grant-on').disabled = pending;
+  $('elev-vault').disabled = pending; $('elev-save-on').disabled = pending;   // P414
 }
 function paintLeft(c) {
   if (c.running) { recoverRunning(); $('elev-left').textContent = t('p392.executing'); return; }
@@ -304,12 +366,15 @@ function askDeny() {
   decide(false);
 }
 
-async function decide(ok) {
+/** `how` (P414): 'vault' = 「用 Face ID 填入电脑密码」 (no field). A `vshare` card's 「同意」 is the same Face ID + PRF. */
+async function decide(ok, how) {
   const c = cards.get(shownId);
   if (!c || busy || c.running) return;
   const input = $('elev-input');
   const nopw = viaHelper(c);
-  if (ok && !nopw && !(c.kind === 'secret' ? input.value.trim() : input.value)) {   // nothing typed: say so, never send false
+  const vaultUse = ok && (c.kind === 'vshare' || (how === 'vault' && useVault(c)));   // P414: the PRF value instead of a typed one
+  const typed = ok && !nopw && !vaultUse && c.kind !== 'vshare';
+  if (typed && !(c.kind === 'secret' ? input.value.trim() : input.value)) {   // nothing typed: say so, never send false
     const e = $('elev-empty');
     e.textContent = t(c.kind === 'secret' ? 'elev.secret.empty' : 'elev.sudo.empty', { name: c.name === 'AGENTJ_MAIL_PASSWORD' ? $('elev-label').textContent : c.name || '' });
     e.hidden = false;
@@ -319,21 +384,33 @@ async function decide(ok) {
   const g = gen();
   if (!g) { toast(t('elev.net'), 3000); return; }
   // ADR-A163: Face ID first, straight from the tap (before any await). Cancel / failure → nothing sent, the card stays.
-  let fa = null;
-  if (ok && c.fa) {
+  // P414: the same assertion carries the PRF — over the wrap salt (+ the next salt) to use the vault, over `vs` to remember a
+  // typed password (「用 Face ID 记住」 ticked).
+  const save = typed && c.kind === 'sudo' && offerSave(c) && $('elev-save-on').checked;
+  let fa = null, prf = null;
+  if (ok && (c.fa || vaultUse)) {
     if (!canAssert() && phoneConfirmation()) return;
-    if (!canAssert()) { toast(t('elev.fa.none'), 5000); return; }
+    if (!canAssert() || !c.fa) { toast(t('elev.fa.none'), 5000); return; }
     if (!c.faCh) { toast(t('elev.fail'), 3000); return; }
     busy = true; paintButtons();
-    try { fa = await approve(c.faCh, c.fa); } catch { fa = null; }
+    try {
+      if (vaultUse || save) { const r = await assertPrf(c.faCh, c.fa, c.v.vs, vaultUse ? c.v.vn : null); fa = r.fa; prf = r.prf; }
+      else fa = await approve(c.faCh, c.fa);
+    } catch { fa = null; }
     if (!fa || cards.get(c.id) !== c) {
+      prf?.fill(0);
       busy = false; paintButtons();
       if (!fa) toast(t('elev.fa.cancel'), 3000);
       return;
     }
+    if (vaultUse && !prf) {   // this authenticator gave no PRF: nothing sent, the typed field is the way
+      busy = false; paintButtons();
+      toast(t(c.kind === 'vshare' ? 'p414.e.vsNoPrf' : 'p414.e.noPrf'), 5000);
+      return;
+    }
   }
   const sk = await signKey();
-  if (!sk) { busy = false; paintButtons(); toast(t('elev.noSign'), 3600); return; }
+  if (!sk) { prf?.fill(0); busy = false; paintButtons(); toast(t('elev.noSign'), 3600); return; }
   busy = true; paintButtons();
   let value = null;
   try {
@@ -341,28 +418,41 @@ async function decide(ok) {
     const digest = await elevateDigest(c.kind, elevateFields(c));
     const ts = Date.now();
     const m = { t: 'elev_answer', id: c.id, ok, n: c.n, ts };
-    let ctSha = null;
+    let ctSha = null, saveSha = null;
     const grant = ok && !nopw && c.grant && $('elev-grant-on').checked ? c.grant.h : null;   // #116: only when switched on
-    if (ok && !nopw) {
+    if (vaultUse) {
+      // §37.10 / §37.11: the PRF value (prf1, or prf1 ‖ prf2 with the next salt) sealed kind `vault` / `vshare`; zeroed
+      const s = await sealPrf(c.epk, prf, ch, dev, c.id, c.kind === 'vshare' ? 'vshare' : 'vault', c.n, digest);
+      prf = null;
+      m.epk = b64u(s.epk); m.ct = b64u(s.ct); ctSha = s.ctSha;
+      if (c.kind === 'sudo') m.vault = 1;
+    } else if (typed) {
       value = new TextEncoder().encode(c.kind === 'secret' ? input.value.trim() : input.value);
       input.value = '';
       const s = await sealValue(c.epk, value, ch, dev, c.id, c.kind, c.n, digest);
       value.fill(0);
       m.epk = b64u(s.epk); m.ct = b64u(s.ct); ctSha = s.ctSha;
+      if (prf) {   // M2: 「用 Face ID 记住」 — bound to this answer (AAD digest|sha256(ct)) and signed (save:<sha256(pct)>)
+        const p2 = await sealPrf(c.epk, prf, ch, dev, c.id, 'vault_save', c.n, digest + '|' + ctSha);
+        prf = null;
+        m.pepk = b64u(p2.epk); m.pct = b64u(p2.ct); saveSha = await sha256hex(p2.ct);
+      }
     }
     input.value = '';
-    const sig = new Uint8Array(await crypto.subtle.sign({ name: 'Ed25519' }, sk.priv, elevateMessage(ch, dev, c.id, c.kind, ok ? 'allow' : 'deny', c.n, ts, digest, ctSha, grant)));
+    const sig = new Uint8Array(await crypto.subtle.sign({ name: 'Ed25519' }, sk.priv, elevateMessage(ch, dev, c.id, c.kind, ok ? 'allow' : 'deny', c.n, ts, digest, ctSha, grant, saveSha)));
     m.sig = b64u(sig);
     if (fa) m.fa = fa;
     if (grant) m.grant = grant;   // #116: inside the signature too — the audit proves the owner chose it
     await sendApp(m, g);
+    if (m.vault) c.sentVault = true;   // P414: a re-armed copy without `stale` then means this Face ID did not open it
     if (ok) { c.running = true; clearTimeout(timer); paintButtons(); paintLeft(c); }
-    toast(t(ok ? (c.kind === 'sudo' ? 'elev.sent.sudo' : 'elev.sent.secret') : 'elev.sent.deny'), 2600);
+    toast(t(!ok ? 'elev.sent.deny' : c.kind === 'vshare' ? 'p414.e.vsSent' : c.kind === 'sudo' ? 'elev.sent.sudo' : 'elev.sent.secret'), 2600);
   } catch {
     busy = false; paintButtons();
     toast(t('elev.fail'), 3000);
   } finally {
     if (value) value.fill(0);
+    prf?.fill(0);
     input.value = '';
   }
 }
@@ -378,7 +468,7 @@ function bar() {
   const btn = mk('button', 'aj-btn aj-btn--quiet elev-grant-revoke'); btn.id = 'elev-grant-revoke'; btn.type = 'button';
   btn.addEventListener('click', () => revokeAll());
   grantBar.append(text, btn);
-  document.body.appendChild(grantBar);
+  replyNotice(grantBar);
   onLang(() => paintGrants());
   return grantBar;
 }
@@ -419,7 +509,7 @@ export function auto(m) {
   completed.add(m.id);
   if (completed.size > 100) completed.delete(completed.values().next().value);
   const fail = m.result !== 'done' || (Number.isInteger(m.code) && m.code !== 0);
-  notify({ kind: fail ? 'error' : 'info', text: t(fail ? 'elevGrant.autoFail' : 'elevGrant.autoRan', { exe: m.exe.slice(0, 64) }), ms: 3600 });
+  notify({ kind: fail ? 'error' : 'info', text: t(fail ? 'elevGrant.autoFail' : 'elevGrant.autoRan', { exe: m.exe.slice(0, 64) }), ms: 3600, shape: 'rect' });
 }
 
 // P406 #173 (PROTOCOL §11.2): collapse never declines. A collapsed card, a command that runs and a just-finished result live in
@@ -463,7 +553,7 @@ function runBar() {
   main.addEventListener('click', () => tapRun());
   stop.addEventListener('click', () => stopRun());
   x.addEventListener('click', () => { finished = null; panelOpen = false; paintRun(); });
-  document.body.appendChild(runEl);
+  replyNotice(runEl);
   // the open output panel is a layer: ESC / Back folds it (the command keeps running)
   registerLayer({ element: () => runEl, open: () => !!runEl && !runEl.hidden && panelOpen, rank: 54, trap: false,
     fallback: () => document.getElementById('input'), close: () => fold() });

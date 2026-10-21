@@ -23,6 +23,8 @@ def configured():
 
 
 def key_name(provider):
+    if provider == "bailian-coding-plan":
+        return None
     p = configured().get(provider, {})
     opts = p.get('options') if isinstance(p.get('options'), dict) else {}
     val = opts.get('apiKey')

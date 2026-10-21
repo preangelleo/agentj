@@ -122,4 +122,8 @@ Kimi Code 用 `kimi login --region mainland-cn`（海外站 `global`）或手机
 不经预检原样切回（起不来自动回到现在这个）。「没登录」指后台服务看不到登录：照扫描结果那句一步做法讲给主人（`claude` 里 `/login`
 一次，或 `agentj service import-key CLAUDE_CODE_OAUTH_TOKEN` 再 `agentj service restart`）；你自己会话里能用不算数。「OpenCode · 火山方舟」一步到位：先问主人用 Coding Plan 套餐（只给编程 Agent 用，别的程序调用会被判滥用封号）还是按量付费（…/api/v3），再运行 `agentj agent switch opencode --preset ark --plan coding|payg`，缺 key 它会给密钥卡命令，实测一次才切、不通自动切回。OpenCode 没 key 时可以先用它的免费模型（`--model opencode/<免费模型>`），切换结果里那句数据提示原样转告主人。绝不绕过闸门直接改配置或重启服务。
 切换、扫描、`--undo` 不需要管理员权限，也不需要主人开终端（经 Agent J 自己的通道，隔离里也能用）：绝不为此用 `agentj sudo`，不让主人跑 `agentj service start` 或 launchctl；`agentj service status` 说 serve 在应答就是在运行；失败只转告打印的原因。
+Ark401: Agent Plan and Coding Plan keys are not interchangeable. A confirmed mismatch exposes a signed one-use phone button in the failure banner and Emergency repair: Use Agent Plan/Coding Plan and retry. Direct the owner to tap it; never request the same key again, copy it yourself, bypass the probe, or replay the failed message. The host reuses the exact local key, configures the matching provider and verifies the same model with native OpenCode before switching. Existing different target credentials/providers are retained. Show the redacted upstream error line from the switch result.
+
+方舟套餐误配时，把主人引导到失败提示或「紧急修复」的「改用 Agent Plan / Coding Plan 并重试」按钮；不用再贴 key，验证成功才切。
+
 Docs: https://agentj.app/docs/switch-harness/zh.md · https://agentj.app/docs/switch-harness/en.md

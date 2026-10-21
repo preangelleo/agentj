@@ -149,7 +149,10 @@ const mk = (tag, cls, text) => { const e = document.createElement(tag); if (cls)
 const mb = (n) => (Math.round(n / MIB * 10) / 10).toFixed(1);
 
 /** The note a refused file leaves on its page. */
-export function skipText(s) { return t('media.skip.' + s.why, { name: s.name, mb: mb(s.bytes || 0) }); }
+export function skipText(s) {
+  const at = s.line ? t('media.skip.at', { line: s.line, hint: s.hint || '' }) : '';   // P424 #142: 「（第 3 行：sk…）」
+  return t('media.skip.' + s.why, { name: s.name, mb: mb(s.bytes || 0) }) + at;
+}
 
 function strip(words) {
   let s = document.getElementById('mstrip');
@@ -418,6 +421,10 @@ function download(m, c, blob) {
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), DL_KEEP_MS);
   toast(t('media.dlStarted', { name: m.name }), 2400);
+}
+/** P432: the Files card's download — the same §13 media_get pull (SHA-256 checked) and save as a reply's 下载 icon. */
+export function save(m) {
+  return fetchMedia(m).then((blob) => download(m, null, blob), (e) => toast(t(e && e.why === 'gone' ? 'media.expired' : e && e.why === 'sha' ? 'media.shaBad' : 'media.dlFailed'), 2600));
 }
 /** The 下载 icon: fetch the bytes if needed (the icon breathes meanwhile), then save; a failed fetch marks the icon and says so. */
 function dlTap(m, c, load, b) {

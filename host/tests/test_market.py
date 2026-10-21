@@ -444,7 +444,8 @@ class Publish(Base):
         self.assertEqual(rc, 0, out2)
         call = self.srv.calls[0]
         self.assertEqual(call["url"], f"{fx.API}/v1/host/plaza/pkg/publish")
-        self.assertEqual(set(call["inner"]), {"v", "t", "channel", "ts", "nonce", "name", "type", "version", "sha256", "bytes", "show_name"})
+        self.assertEqual(set(call["inner"]), {"v", "t", "channel", "ts", "nonce", "name", "type", "version", "sha256", "bytes", "show_name",
+                                              "host_sig", "host_pubkey", "host_signed_at"})   # P426 #47: the publisher's own signature
         url, body = self.srv.puts[0]
         self.assertEqual(url, self.srv.upload_url)
         self.assertEqual(bundle.sha256(body), call["inner"]["sha256"])

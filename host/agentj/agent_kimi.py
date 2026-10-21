@@ -33,7 +33,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from .acp import AcpAgent, AUTH_REQUIRED, PROTOCOL, pick_options, selected
+from .acp import AcpAgent, AUTH_REQUIRED, PROTOCOL, err_text, pick_options, selected
 
 LABEL = "Kimi Code"
 REGIONS = ("mainland-cn", "global")
@@ -158,6 +158,18 @@ def login_text(region: str | None, lang: str = "zh") -> str:
             f"让 Agent 发手机密钥卡（`agentj secret request --name {KEY_ENV} …`），不要把 key 发在对话里。")
 
 
+def quota_text(region: str | None, lang: str = "zh") -> str:
+    """P423 #138: Kimi's monthly usage limit (sent as auth_required) — the membership's quota, not the login."""
+    r = region if region in REGIONS else "mainland-cn"
+    console = f"https://www.{SITE[r]}/code/console"
+    if lang == "en":
+        return (f"Kimi Code's usage for this month is used up — you are still signed in, no new login needed. Renew or add usage "
+                f"(usage and plan: Kimi Code console {console}), then send again; or switch to another Agent for now "
+                f"(/switch-harness).")
+    return (f"Kimi 本月额度已用完——不是没登录，不用重新登录。续费 / 加量后再试（用量和套餐看 Kimi Code 控制台 {console}），"
+            f"或先切到别的 Agent（菜单 /switch-harness）。")
+
+
 class KimiAgent(AcpAgent):
     """`kimi acp`, one session per conversation, approvals to the phone."""
     kind = "kimi"
@@ -177,6 +189,9 @@ class KimiAgent(AcpAgent):
 
     def login_hint(self) -> str:
         return login_text(self.cfg.get("region"), getattr(self.host, "lang", "zh"))
+
+    def quota_hint(self) -> str:
+        return quota_text(self.cfg.get("region"), getattr(self.host, "lang", "zh"))
 
 
 # ------------------------------------------------------------------ one tool-free call (the switch gate, harness.probe)
@@ -250,7 +265,11 @@ def probe(exe: str, env: dict, timeout: float = 60, model: str | None = None, re
                     elif m.get("id") == rid:
                         if "error" in m:
                             code = (m["error"] or {}).get("code") if isinstance(m["error"], dict) else None
-                            raise ProbeError("not_logged_in" if code == AUTH_REQUIRED else "native_failed")
+                            from . import auth_rescue     # P423 #138: a used-up quota (even as auth_required) is no login
+                            words = err_text(m["error"])
+                            cls = "balance" if auth_rescue.quota_used(words) else auth_rescue.classify("kimi", words)
+                            raise ProbeError("quota_exhausted" if cls == "balance" else "rate_limited" if cls == "rate_limit"
+                                             else "not_logged_in" if code == AUTH_REQUIRED else "native_failed")
                         return m.get("result") or {}
                     elif m.get("method") == "session/update":
                         u = (m.get("params") or {}).get("update") or {}

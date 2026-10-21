@@ -18,7 +18,9 @@ refuses 2.x; 1.x never updates itself to 2.x), `https://opencode.ai/v2/install`,
   {decision: once | reject, message}`, `form.created` (the v1 question tool);
 - permission rules are `{action, resource, effect}`; the shell tool's action is `shell` (v1: `bash`), a subagent's
   `subagent` (v1: `task`), write / patch ask as `edit` — renamed by `rules_to_v2` (P357, checked on 2.0.31 source);
-- which providers have a key: `GET /api/integration` → `connections` (env / key / oauth), never a value.
+- which providers have a key: `GET /api/integration` → `connections` (env / key / oauth), never a value;
+- a sub-agent's session takes its parent's session rules (P426, opencode_subagents): its `permission.asked` / `form.created`
+  carry the CHILD's sessionID (routed by `session.created` parentID, answered on the child's own route).
 
 Everything else (the fence, the phone's cards, danger.classify, the turn queue, tamper checks, key-failure restart) is the
 v1 adapter's, inherited. `OpenCodeAgent._spawn` switches an instance to this class when `opencode --version` says 2.x.
@@ -99,10 +101,17 @@ def to_v1_request(p: dict) -> dict:
     action = str(p.get("action") or "?")
     res = [x for x in (p.get("resources") or []) if isinstance(x, str)]
     md = p.get("metadata") if isinstance(p.get("metadata"), dict) else {}
+    sid = {"sessionID": p["sessionID"]} if isinstance(p.get("sessionID"), str) else {}
     if action == "shell":
-        return {"id": p.get("id"), "permission": "bash", "patterns": res,
+        return {"id": p.get("id"), "permission": "bash", "patterns": res, **sid,
                 "metadata": {**md, "command": md.get("command") if isinstance(md.get("command"), str) else "\n".join(res)}}
-    return {"id": p.get("id"), "permission": action, "patterns": res, "metadata": md}
+    return {"id": p.get("id"), "permission": V2_TO_V1.get(action, action), "patterns": res, "metadata": md, **sid}
+
+
+def _agents_v1(ags) -> list:
+    """GET /api/agent → the v1 shape opencode_subagents reads ({name = the v2 id, mode, permission})."""
+    return [{"name": a.get("id") or a.get("name"), "mode": a.get("mode"), "permission": rules_from_v2(a.get("permissions"))}
+            for a in ags or [] if isinstance(a, dict)]
 
 
 def form_questions(form: dict) -> tuple[list | None, list]:
@@ -148,10 +157,12 @@ class OpenCodeV2Agent(OpenCodeAgent):
             await asyncio.sleep(0.25)
         # no list yet: OpenCode's own rules still apply inside OpenCode; only our optional extra rules need the human's denies
         self.agent_rules = rules_from_v2(ag.get("permissions")) if ag else []
+        if ag is not None:
+            self.agent_rules = self._sub_plan(_agents_v1(ags), ag.get("id") or ag.get("name"), self.agent_rules)
         if ag is None and (self.research or self.cfg.get("high_risk_warnings", False)):
             raise HTTPError("no primary agent")
         hi = self.research or self.cfg.get("high_risk_warnings", False)
-        self.rules = rules_to_v2(session_rules(self.agent_rules, self.research)) if hi else []
+        self.rules = rules_to_v2(session_rules(self.agent_rules, self.research, self.sub_ok)) if hi else []
         self.connected_at_start = await self._connected()
         self.texts_seen: set = set()
         self.identity_sent: dict = {}
@@ -212,12 +223,21 @@ class OpenCodeV2Agent(OpenCodeAgent):
         t = ev.get("type")
         p = ev.get("data") if isinstance(ev.get("data"), dict) else {}
         mine = p.get("sessionID") == self.sid and self.sid is not None
+        kid = p.get("sessionID") in self.children           # P426: a sub-agent's session (parentID = ours)
         if mine:
             self.touch()                   # P219: progress on our session (stall watch)
         if mine and isinstance(t, str) and t.startswith("session."):
             self.turn_progress = time.monotonic()
-        if t == "permission.asked" and mine:
+        if t == "session.created":
+            self._child_seen(p.get("sessionID"), p.get("parentID"), p.get("agent"), p.get("title"), True, p.get("permissions"))
+        elif kid and t in END:
+            self._child_done(p["sessionID"])
+        elif kid and t == "session.execution.started":
+            self.children[p["sessionID"]].pop("done", None)
+        if t == "permission.asked" and (mine or kid):
             self._on_perm(to_v1_request(p))
+        elif t == "permission.asked" and isinstance(p.get("sessionID"), str) and self.sid:
+            self._bg(self._adopt(p["sessionID"], lambda: self._on_perm(to_v1_request(p))))
         elif t == "permission.replied":
             rid = p.get("requestID")
             f = self.pending.get(rid)
@@ -241,8 +261,12 @@ class OpenCodeV2Agent(OpenCodeAgent):
                 self._tamper("session_rules")
         elif t == "form.created" and self.client:
             form = p.get("form") if isinstance(p.get("form"), dict) else p
-            if form.get("sessionID") in (self.sid, None) and isinstance(form.get("id"), str) and form["id"] not in self.questions:
-                self._bg(self._form(form))
+            fsid = form.get("sessionID")
+            if isinstance(form.get("id"), str) and form["id"] not in self.questions:
+                if fsid in (self.sid, None) or fsid in self.children:
+                    self._bg(self._form(form))
+                elif isinstance(fsid, str) and self.sid:
+                    self._bg(self._adopt(fsid, lambda: self._bg(self._form(form))))
         elif t in ("form.replied", "form.cancelled"):
             rid = p.get("formID") or p.get("id")
             f = self.questions.get(rid)
@@ -298,19 +322,23 @@ class OpenCodeV2Agent(OpenCodeAgent):
         fid = form["id"]
         gone = asyncio.get_running_loop().create_future()
         self.questions[fid] = gone
-        client, sid = self.client, self.sid
+        client = self.client
+        sid = form.get("sessionID") if form.get("sessionID") in self.children else self.sid   # P426: a sub-agent's own form
         answer = None
         try:
             raw, keys = form_questions(form)
-            card = norm_questions(raw) if raw and not self.research else None
-            if card is not None:
-                outcome, picks = await self.host.question(card, gone, task=getattr(self.host, "task_label", None))
-                if outcome == "answer" and picks:
-                    answer = {}
-                    for (key, multi, values), q, pk in zip(keys, card, picks):
-                        labels = [q["o"][n - 1]["l"] for n in pk]
-                        vals = [values.get(lab, lab) for lab in labels]
-                        answer[key] = vals if multi else vals[0]
+            card = norm_questions(self._label(raw, sid)) if raw and not self.research else None
+            with self._src_ctx(sid):
+                if card is not None and self._req_src(sid) is not None and self._refused():
+                    card = None                         # S3: a group member's sub-agent asks the owner nothing
+                if card is not None:
+                    outcome, picks = await self.host.question(card, gone, task=getattr(self.host, "task_label", None))
+                    if outcome == "answer" and picks:
+                        answer = {}
+                        for (key, multi, values), q, pk in zip(keys, card, picks):
+                            labels = [pk] if isinstance(pk, str) else [q["o"][n - 1]["l"] for n in pk]
+                            vals = [pk] if isinstance(pk, str) else [values.get(lab, lab) for lab in labels]
+                            answer[key] = vals if multi else vals[0]
         except Exception:  # noqa: BLE001 — fail closed: cancelled
             answer = None
         finally:
@@ -324,9 +352,26 @@ class OpenCodeV2Agent(OpenCodeAgent):
             else:
                 await client.request("DELETE", f"/api/session/{quote(sid)}/form/{quote(fid)}")
 
-    async def _reply_permission(self, rid: str, reply: str, msg: str) -> None:
+    async def _reply_permission(self, rid: str, reply: str, msg: str, sid=None) -> None:
         body = {"decision": reply} if reply == "once" else {"decision": "reject", "message": msg}
-        await self.client.request("POST", f"/api/session/{quote(self.sid)}/permission/{quote(rid)}/reply", body)
+        sid = sid if sid in self.children else self.sid        # P426: a sub-agent's request is answered on its session
+        await self.client.request("POST", f"/api/session/{quote(sid)}/permission/{quote(rid)}/reply", body)
+
+    # ------------------------------------------------ P426: sub-agents (child sessions)
+    async def _sub_agents(self) -> list:
+        st, ags = await self.client.request("GET", "/api/agent")
+        return _agents_v1(_data(ags)) if st == 200 and isinstance(_data(ags), list) else []
+
+    async def _session_info(self, sid: str) -> dict:
+        st, s = await self.client.request("GET", f"/api/session/{quote(sid)}")
+        return _data(s) if st == 200 and isinstance(_data(s), dict) else {}
+
+    async def _child_stop(self, cid: str) -> None:
+        await self.client.request("POST", f"/api/session/{quote(cid)}/interrupt", None, timeout=3)
+
+    async def _children(self) -> list:
+        st, r = await self.client.request("GET", f"/api/session?parentID={quote(self.sid)}&limit=50")
+        return [k for k in _data(r) if isinstance(k, dict)] if st == 200 and isinstance(_data(r), list) else []
 
     async def _resync(self) -> None:
         c = self.client
@@ -341,6 +386,11 @@ class OpenCodeV2Agent(OpenCodeAgent):
                     if rid not in live and not f.done():
                         f.set_result(True)
                 for r in reqs:
+                    if isinstance(r, dict):
+                        self._on_perm(to_v1_request(r))
+            for cid in list(self.children)[-8:]:            # P426: a sub-agent's request that went by while it was down
+                st, reqs = await c.request("GET", f"/api/session/{quote(cid)}/permission")
+                for r in _data(reqs) if st == 200 and isinstance(_data(reqs), list) else []:
                     if isinstance(r, dict):
                         self._on_perm(to_v1_request(r))
             await self._catch_up()
@@ -415,6 +465,7 @@ class OpenCodeV2Agent(OpenCodeAgent):
             self.session_model = {"id": m["modelID"], "providerID": m["providerID"]}
 
     async def turn(self, text: str) -> None:
+        self._note_turn()
         if await self._protocol():
             return await self.turn(text)
         await self._creds_check()
@@ -595,9 +646,10 @@ class OpenCodeV2Agent(OpenCodeAgent):
         c = t.get("cache") if isinstance(t.get("cache"), dict) else {}
         return Result(f"本会话花费（OpenCode 报告）：{slash.money(s.get('cost'))}\ntoken：输入 {slash.tokens(t.get('input'))}"
                       f"（缓存读 {slash.tokens(c.get('read'))}）· 输出 {slash.tokens(t.get('output'))}"
-                      f"（含推理 {slash.tokens(t.get('reasoning'))}）")
+                      f"（含推理 {slash.tokens(t.get('reasoning'))}）" + await self._children_line(s.get("cost")))
 
     async def cmd_status(self, arg: str) -> Result:
+        from .opencode_subagents import state_text
         ver = ""
         if self.proc is not None or await self._spawn():
             with contextlib.suppress(OSError, HTTPError, AttributeError, asyncio.TimeoutError):
@@ -607,6 +659,7 @@ class OpenCodeV2Agent(OpenCodeAgent):
         lines = [f"Agent：OpenCode {ver}".rstrip(), f"对话：{self.host.st.agent_session(self.kind) or '（新对话）'}",
                  f"模型：{self.cfg.get('model') or '默认'}", f"目录：{self.cfg['dir']}",
                  "审批：OpenCode 自己的权限规则；它要问的都问手机",
+                 state_text(self.subagent_state()),
                  "隔离（fence）：" + ("开" if self.cfg.get("fence", True) else "关（--unfenced）")]
         return Result("\n".join(lines))
 

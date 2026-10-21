@@ -24,6 +24,14 @@ What a prompt does (the text of the message):
 Slash-command endpoints (PROMPT-26 7a): POST /session/{id}/summarize (a summary text part that is NOT a reply, then the
 assistant message with summary:true and small tokens), POST /session/{id}/abort, GET /config/providers, GET /global/health;
 GET /session/{id} carries cost + tokens, assistant messages carry modelID / providerID / tokens.
+P426: FAKE_OC_SUBAGENTS=1 adds the sub-agents general / explore to GET /agent (their rules = OpenCode 1.18's natives + what
+OPENCODE_CONFIG_CONTENT `agent.<n>.permission` injects + the trailing scratch-folder allow), and
+    TASK: <agent> :: <prompt>   the task tool: `task <agent>` asked on the parent's rules; then a child session (parentID,
+                                title "… (@<agent> subagent)", rules = the parent's denies, like 1.18) runs <prompt> (RUN: /
+                                ASK:) on the AGENT's own rules + its session's; the parent says "TASK DONE: <child's last text>"
+    TASKBG: <agent> :: <prompt> the same in the background: the parent turn ends at once; when the child is done the parent
+                                session runs again by itself ("BG DONE: …"), as 1.18 does with background subagents
+GET /session/{id}/children lists the child sessions (their assistant messages carry cost 0.01).
 Every request is logged (method, path, JSON body) to FAKE_OC_LOG (JSONL). FAKE_OC_AGENT_RULES = the build agent's ruleset
 (JSON); default = OpenCode's own defaults. FAKE_OC_ENV_LOG = file to dump the names of OPENCODE_* variables it got.
 """
@@ -100,6 +108,32 @@ def agent_rules():
     return json.loads(raw) if raw else DEFAULT_RULES
 
 
+def _from_config(obj):
+    out = []
+    for k, v in (obj or {}).items():
+        out += [{"permission": k, "pattern": "*", "action": v}] if isinstance(v, str) else \
+            [{"permission": k, "pattern": p, "action": a} for p, a in v.items()]
+    return out
+
+
+TOOL_OUT = {"permission": "external_directory", "pattern": "/fake/.local/share/opencode/tool-output/*", "action": "allow"}
+
+
+def sub_agents():
+    """P426: general / explore as 1.18 builds them: natives, then the config's agent.<n>.permission, then the scratch allow."""
+    if os.environ.get("FAKE_OC_SUBAGENTS") != "1":
+        return []
+    try:
+        inj = json.loads(os.environ.get("OPENCODE_CONFIG_CONTENT") or "{}").get("agent") or {}
+    except ValueError:
+        inj = {}
+    native = {"general": DEFAULT_RULES[:9] + [{"permission": "todowrite", "pattern": "*", "action": "deny"}],
+              "explore": DEFAULT_RULES[:9] + [{"permission": "*", "pattern": "*", "action": "deny"}] +
+              [{"permission": t, "pattern": "*", "action": "allow"} for t in ("grep", "glob", "list", "bash", "read")]}
+    return [{"name": n, "mode": "subagent", "permission": r + _from_config((inj.get(n) or {}).get("permission")) + [TOOL_OUT]}
+            for n, r in native.items()]
+
+
 def text_part(sid, msg, text):
     now = int(time.time() * 1000)
     part = {"id": nid("prt"), "sessionID": sid, "messageID": msg["info"]["id"], "type": "text", "text": text,
@@ -112,7 +146,7 @@ def text_part(sid, msg, text):
 
 def ask(sid, permission, patterns, metadata, foreign=False):
     """'allow' | 'deny' | ('once' | 'reject', message) — like Permission.ask."""
-    rules = [agent_rules(), SESSIONS[sid]["permission"]]
+    rules = [SESSIONS[sid].get("agent_rules") or agent_rules(), SESSIONS[sid]["permission"]]
     need = False
     for p in patterns:
         a = evaluate(permission, p, *rules)
@@ -191,6 +225,61 @@ def p57_notes(text, logf):
     return "\n".join(keep).strip("\n")
 
 
+def run_task(sid, msg, rest, background=False):
+    """P426: the task tool (1.18): `task <agent>` on the parent's rules, a child session with only the parent's denies."""
+    agent, _, inner = rest.partition(" :: ")
+    agent = agent.strip()
+    r = ask(sid, "task", [agent], {"subagent_type": agent})
+    ags = {a["name"]: a for a in sub_agents()}
+    if r == "deny" or agent not in ags or (r != "allow" and r[0] != "once"):
+        text_part(sid, msg, f"task denied: {agent}")
+        return
+    cid = nid("ses")
+    SESSIONS[cid] = {"permission": [x for x in SESSIONS[sid]["permission"] if x["action"] == "deny"
+                                    or x["permission"] == "external_directory"],
+                     "agent_rules": ags[agent]["permission"], "messages": [], "busy": False, "parent": sid}
+    publish("session.created", {"info": {"id": cid, "parentID": sid, "title": f"do it (@{agent} subagent)"}})
+
+    def child():
+        cm = {"info": {"id": nid("msg"), "role": "assistant", "time": {"created": int(time.time() * 1000)}, "cost": 0.01,
+                       "tokens": {"input": 300, "output": 7}}, "parts": []}
+        SESSIONS[cid]["messages"].append(cm)
+        publish("session.status", {"sessionID": cid, "status": {"type": "busy"}})
+        if inner.startswith("RUN: "):
+            bash_call(cid, cm, inner[5:].strip())
+        elif inner.startswith("ASK: "):
+            ask_question(cid, cm, inner[5:])
+        else:
+            text_part(cid, cm, "child: " + inner)
+        publish("session.status", {"sessionID": cid, "status": {"type": "idle"}})
+        publish("session.idle", {"sessionID": cid})
+        return cm["parts"][-1]["text"] if cm["parts"] else ""
+    if not background:
+        text_part(sid, msg, "TASK DONE: " + child())
+        return
+    text_part(sid, msg, "TASK STARTED")
+
+    def later():
+        time.sleep(0.6)
+        out = child()
+        time.sleep(0.2)
+        run_prompt(sid, "BGDONE " + out)
+    threading.Thread(target=later, daemon=True).start()
+
+
+def ask_question(sid, msg, raw):
+    if ask(sid, "question", ["*"], {}) == "deny":
+        text_part(sid, msg, "question tool denied")
+        return
+    qid = nid("que")
+    slot = {"ev": threading.Event(), "answers": None}
+    QUESTIONS[qid] = slot
+    publish("question.asked", {"id": qid, "sessionID": sid, "questions": json.loads(raw),
+                               "tool": {"messageID": msg["info"]["id"], "callID": "call_q"}})
+    slot["ev"].wait(600)
+    text_part(sid, msg, "REJECTED" if slot["answers"] is None else "ANSWERS: " + json.dumps(slot["answers"], ensure_ascii=False))
+
+
 def run_prompt(sid, text):
     if ("（Agent J：" in text or "(Agent J: " in text) and not text.startswith("[agentj:"):
         text = p57_notes(text, lambda ln: log(method="HOST_NOTE", path="", host_note=ln))
@@ -213,6 +302,10 @@ def run_prompt(sid, text):
             for c in text[8:].split(";;"):
                 if not bash_call(sid, msg, c.strip()):
                     break
+        elif text.startswith(("TASK: ", "TASKBG: ")):
+            run_task(sid, msg, text.split(": ", 1)[1], text.startswith("TASKBG"))
+        elif text.startswith("BGDONE "):
+            text_part(sid, msg, "BG DONE: " + text[7:])
         elif text.startswith("FOREIGN: "):
             bash_call(sid, msg, text[9:].strip(), foreign=True)
         elif text.startswith("EDIT: "):
@@ -324,7 +417,9 @@ class H(BaseHTTPRequestHandler):
         elif p == "/agent":
             self._send(200, [{"name": "build", "mode": "primary", "permission": agent_rules()},
                              {"name": "plan", "mode": "primary", "permission": agent_rules() + [
-                                 {"permission": "edit", "pattern": "*", "action": "deny"}]}])
+                                 {"permission": "edit", "pattern": "*", "action": "deny"}]}] + sub_agents())
+        elif len(parts) == 3 and parts[0] == "session" and parts[2] == "children":
+            self._send(200, [{"id": k, "parentID": parts[1]} for k, v in SESSIONS.items() if v.get("parent") == parts[1]])
         elif p == "/permission":
             with LOCK:
                 self._send(200, [v["info"] for v in PENDING.values()])
@@ -332,6 +427,7 @@ class H(BaseHTTPRequestHandler):
             self._send(200, {k: {"type": "busy"} for k, v in SESSIONS.items() if v["busy"]})
         elif len(parts) == 2 and parts[0] == "session" and parts[1] in SESSIONS:
             self._send(200, {"id": parts[1], "permission": SESSIONS[parts[1]]["permission"], "cost": 0, "directory": CWD,
+                             **({"parentID": SESSIONS[parts[1]]["parent"]} if SESSIONS[parts[1]].get("parent") else {}),
                              "tokens": {"input": 6178, "output": 5, "reasoning": 0, "cache": {"read": 1941, "write": 0}}})
         elif p in ("/provider", "/config/providers"):
             key = "all" if p == "/provider" else "providers"

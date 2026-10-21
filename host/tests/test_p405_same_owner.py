@@ -63,8 +63,8 @@ class SameOwnerTests(Base):
         self.assertEqual((await self.choose(self.svc, self.b, self.did, self.dsk))[:2], (True, None))
         await self.pump()
         self.assertFalse(self.svc.same_owner.active(self.b))
+        # P417 #186: the start was the starting side's consent; the other side confirms once
         await self.choose(self.remote, self.a, self.odid, self.osk, 'confirm')
-        await self.choose(self.svc, self.b, self.did, self.dsk, 'confirm')
         await self.pump()
         self.assertTrue(self.svc.same_owner.active(self.b))
         self.assertTrue(self.remote.same_owner.active(self.a))
@@ -150,6 +150,8 @@ class SameOwnerTests(Base):
         self.assertEqual(res['route'], 'main')
         packet = self.remote.net.of('pmsg')[-1][1]
         self.svc.on_app(self.b, packet)
+        if self.svc.jobs:
+            await asyncio.wait_for(asyncio.gather(*tuple(self.svc.jobs)), 2)
         await settle()
         self.assertEqual(len(self.sends), 1)
         self.assertFalse(self.sess.calls)
@@ -163,7 +165,8 @@ class SameOwnerTests(Base):
         ask = self.remote.ask_msgs()[-1]
         self.assertTrue(ask['pq']['pairing'])
         self.assertEqual(ask['ttl'], 86400)
-        self.assertEqual(ask['pq']['code'], self.svc.ask_msgs()[-1]['pq']['code'])
+        self.assertEqual(ask['pq']['code'], self.svc.same_owner.code(self.b))
+        self.assertFalse(self.svc.ask_msgs())          # P417 #186: the starting side has no card
         self.assertRegex(ask['pq']['code'], r'^\d{6}$')
         self.remote.store.set_group(self.a, 'colleague')
         self.assertFalse(self.remote.same_owner.active(self.a))
@@ -177,7 +180,6 @@ class SameOwnerTests(Base):
         await self.pump()
         self.assertTrue(self.remote.ask_msgs()[-1]['pq']['pairing'])
         await self.choose(self.remote, self.a, self.odid, self.osk, 'confirm')
-        await self.choose(self.svc, self.b, self.did, self.dsk, 'confirm')
         await self.pump()
         self.assertFalse(self.remote.asks)
         self.assertTrue(self.svc.same_owner.active(self.b))
@@ -282,17 +284,18 @@ class SameOwnerTests(Base):
         self.assertFalse(restored.active(self.b))
 
     async def test_peer_consent_without_phone_signature_and_tamper_refused(self):
-        await self.choose(self.remote, self.a, self.odid, self.osk)
+        await self.choose(self.svc, self.b, self.did, self.dsk)
         await self.pump()
         await self.choose(self.remote, self.a, self.odid, self.osk, 'confirm')
         packet = next(o for _,o in reversed(self.remote.net.sent) if o['t']=='same_owner' and o['token'])
         for bad in ({**packet, 'proof':None}, {**packet, 'proof':{**packet['proof'],'sig':'a'*86}},
-                    {**packet, 'proof':{**packet['proof'],'device':'fake-device'}}):
+                    {**packet, 'proof':{**packet['proof'],'device':'fake-device'}},
+                    {**packet, 'proof':{**packet['proof'],'pub':wire.b64u(self.remote.keys.ed_pub)}}):
             self.svc.on_app(self.b, bad)
             self.assertFalse(self.svc.same_owner.row(self.b).get('remote'))
+            self.assertFalse(self.svc.same_owner.active(self.b))
         self.svc.on_app(self.b, packet)
         self.assertTrue(self.svc.same_owner.row(self.b).get('remote'))
-        self.assertFalse(self.svc.same_owner.active(self.b))
 
     async def test_delayed_revoke_blocks_delivery_via_fresh_remote_check(self):
         await self.confirm()
@@ -366,15 +369,224 @@ class SameOwnerTests(Base):
         await self.choose(self.svc, self.b, self.did, self.dsk)
         await self.pump()
         self.clock.t += 121
-        self.svc.expire_asks()
-        self.assertTrue(self.svc.ask_msgs())
-        self.svc.restore_asks()
-        self.assertTrue(self.svc.ask_msgs())
+        self.remote.expire_asks()
+        self.assertTrue(self.remote.ask_msgs())
+        self.remote.restore_asks()
+        self.assertTrue(self.remote.ask_msgs())
         self.clock.t += 86400
-        self.svc.expire_asks()
-        self.assertFalse(self.svc.ask_msgs())
+        self.remote.expire_asks()
+        self.assertFalse(self.remote.ask_msgs())
+        self.assertFalse(self.remote.same_owner.active(self.a))
+        self.assertEqual((await self.choose(self.remote, self.a, self.odid, self.osk, 'confirm'))[1], 'expired')
+
+
+    # ---------------------------------------------------------------- P417 #186 (Leo 10-21: start = consent, other side once)
+    def pairing_asks(self, host):
+        return [o for o in host.out if o.get('t') == 'ask' and (o.get('pq') or {}).get('pairing')]
+
+    def info(self, svc, fid):
+        return next(f for f in svc.list_view()['friends'] if f['id'] == fid)
+
+    def proof_for(self, svc, fid, did, sk, op='owner-confirm', value=None, signer=None):
+        target = {'friend': fid, 'op': op, 'value': value if value is not None else svc.same_owner.challenge(fid)}
+        n, ts = __import__('secrets').token_hex(16), int(__import__('time').time()*1000)
+        sig = wire.b64u((signer or sk).sign(controls.signed_message(svc.host.channel, did, 'fr_set', n, ts, controls.object_digest('fr_set', target))))
+        return target, {'channel': svc.host.channel, 'device': did, 'pub': wire.b64u(sk.public_key().public_bytes_raw()), 'n': n, 'ts': ts, 'sig': sig}
+
+    async def test_p417_start_is_consent_initiator_gets_no_card_and_sees_code_in_place(self):
+        await self.choose(self.svc, self.b, self.did, self.dsk)
+        await self.pump()
+        self.assertFalse(self.svc.asks)
+        self.assertFalse(self.pairing_asks(self.host))               # the starting side never gets a card
+        self.assertEqual(len(self.pairing_asks(self.other)), 1)      # the other side's remotes: one card
+        mine, theirs = self.info(self.svc, self.b), self.info(self.remote, self.a)
+        code = self.remote.ask_msgs()[-1]['pq']['code']
+        self.assertRegex(code, r'^\d{6}$')
+        self.assertEqual((mine['same_owner'], mine['same_owner_code'], mine['same_owner_wait']), ('pending', code, True))
+        self.assertEqual((theirs['same_owner'], theirs['same_owner_code'], theirs['same_owner_wait']), ('pending', code, False))
+        # one tap on the other side completes it — no second tap on the starting side
+        rid = self.remote.ask_msgs()[-1]['id']
+        self.assertEqual((await self.choose(self.remote, self.a, self.odid, self.osk, 'confirm'))[:2], (True, None))
+        await self.pump()
+        self.assertTrue(self.svc.same_owner.active(self.b))
+        self.assertTrue(self.remote.same_owner.active(self.a))
+        self.assertEqual(self.info(self.svc, self.b)['same_owner'], 'active')
+        self.assertEqual(self.info(self.remote, self.a)['same_owner'], 'active')
+        self.assertNotIn('same_owner_code', self.info(self.svc, self.b))
+        self.assertEqual([o['result'] for o in self.other.of('ask_done') if o['id'] == rid], ['gone'])
+        self.assertFalse(self.remote.asks)
+
+    async def test_p417_start_by_a_since_unpaired_remote_is_no_consent(self):
+        # security review B1: the stored start is checked again when it would settle — an unpaired remote's tap never counts
+        await self.choose(self.svc, self.b, self.did, self.dsk)
+        self.host.st.remove_device(self.did)
+        await self.pump()
+        self.assertIsNone(self.svc.same_owner.row(self.b).get('init'))
+        self.assertFalse(self.svc.same_owner.row(self.b).get('token'))
+        await self.choose(self.remote, self.a, self.odid, self.osk, 'confirm')
+        await self.pump()
         self.assertFalse(self.svc.same_owner.active(self.b))
-        self.assertEqual((await self.choose(self.svc, self.b, self.did, self.dsk, 'confirm'))[1], 'expired')
+        self.assertFalse(self.remote.same_owner.active(self.a))
+
+    async def test_p417_any_enrolled_remote_confirms_not_first_nor_pinned(self):
+        second, ssk = device(self.other.st)
+        third, tsk = device(self.other.st)
+        await self.choose(self.svc, self.b, self.did, self.dsk)
+        await self.pump()
+        pinned = self.remote.same_owner.row(self.a)['pub']
+        first = next(iter(self.other.st.devices()))
+        did, sk = next((d, k) for d, k in ((self.odid, self.osk), (second, ssk), (third, tsk))
+                       if wire.b64u(k.public_key().public_bytes_raw()) != pinned and d != first)
+        self.assertEqual((await self.choose(self.remote, self.a, did, sk, 'confirm'))[:2], (True, None))
+        await self.pump()
+        self.assertTrue(self.svc.same_owner.active(self.b))
+        self.assertTrue(self.remote.same_owner.active(self.a))
+        # the starting side may be any of its remotes too: start again from another one = same invitation, no card
+        self.assertFalse(self.svc.asks)
+
+    async def test_p417_the_invited_side_puts_its_most_recently_seen_remote_in_the_code(self):
+        second, ssk = device(self.other.st)
+        with self.other.st.devices_lock():
+            d = self.other.st.devices()
+            d[second]['seen'] = int(__import__('time').time()) + 1000
+            from agentj.state import _write_private
+            _write_private(self.other.st.devices_path, json.dumps(d).encode())
+        await self.choose(self.svc, self.b, self.did, self.dsk)
+        await self.pump()
+        self.assertEqual(self.remote.same_owner.row(self.a)['pub'], wire.b64u(ssk.public_key().public_bytes_raw()))
+
+    async def test_p417_unenrolled_keyless_or_unsigned_remote_is_refused(self):
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        import os
+        await self.choose(self.svc, self.b, self.did, self.dsk)
+        await self.pump()
+        stranger = Ed25519PrivateKey.generate()
+        keyless = self.other.st.add_device(os.urandom(32), 'no-key')
+        cases = [
+            self.proof_for(self.remote, self.a, 'not-a-device', stranger),                 # not on the allowlist
+            self.proof_for(self.remote, self.a, keyless, stranger),                         # paired, no approval key
+            self.proof_for(self.remote, self.a, self.odid, self.osk, signer=stranger),      # enrolled, wrong signature
+        ]
+        t, pr = self.proof_for(self.remote, self.a, self.odid, self.osk)
+        cases.append((t, {**pr, 'device': keyless}))                                         # proof of another device
+        cases.append((t, {**pr, 'pub': wire.b64u(stranger.public_key().public_bytes_raw())}))  # a key it does not hold
+        for target, proof in cases:
+            res = await self.remote.write('fr_set', target, device=proof['device'], proof=proof)
+            self.assertEqual(res[:2], (False, 'phone_required'))
+        self.assertEqual((await self.remote.write('fr_set', t, device=self.odid))[:2], (False, 'phone_required'))
+        self.assertFalse(self.remote.same_owner.row(self.a).get('token'))
+        self.assertTrue(self.remote.asks)
+        # a start packet carrying a forged signature never counts as the other side's consent
+        await self.pump()
+        self.assertFalse(self.svc.same_owner.active(self.b))
+
+    async def test_p417_starting_again_keeps_one_invitation_and_one_card(self):
+        await self.choose(self.svc, self.b, self.did, self.dsk)
+        await self.pump()
+        code = self.info(self.svc, self.b)['same_owner_code']
+        await self.choose(self.svc, self.b, self.did, self.dsk)
+        await self.pump()
+        self.assertEqual(self.info(self.svc, self.b)['same_owner_code'], code)
+        self.assertEqual(len(self.pairing_asks(self.other)), 1)
+        self.assertFalse(self.other.of('ask_done'))
+        self.assertFalse(self.pairing_asks(self.host))
+
+    async def test_p417_both_sides_start_at_once_merge_into_one_invitation(self):
+        # both owners tap 「同一个主人」 before either packet arrives: two signed starts = two consents, one code
+        await self.choose(self.svc, self.b, self.did, self.dsk)
+        await self.choose(self.remote, self.a, self.odid, self.osk)
+        await self.pump()
+        self.assertEqual(self.svc.same_owner.challenge(self.b), self.remote.same_owner.challenge(self.a))
+        self.assertTrue(self.svc.same_owner.active(self.b))
+        self.assertTrue(self.remote.same_owner.active(self.a))
+        self.assertFalse(self.svc.asks or self.remote.asks)
+
+    async def test_p417_other_side_starting_while_its_card_stands_completes_it(self):
+        await self.choose(self.svc, self.b, self.did, self.dsk)
+        await self.pump()
+        code = self.remote.ask_msgs()[-1]['pq']['code']
+        rid = self.remote.ask_msgs()[-1]['id']
+        await self.choose(self.remote, self.a, self.odid, self.osk)        # taps start in Settings instead of the card
+        await self.pump()
+        self.assertEqual(self.svc.same_owner.code(self.b), code)          # same invitation, same code
+        self.assertTrue(self.svc.same_owner.active(self.b))
+        self.assertTrue(self.remote.same_owner.active(self.a))
+        self.assertEqual([o['result'] for o in self.other.of('ask_done') if o['id'] == rid], ['gone'])
+
+    async def test_p417_old_cards_close_with_gone(self):
+        await self.choose(self.svc, self.b, self.did, self.dsk)
+        await self.pump()
+        current = self.remote.ask_msgs()[-1]['id']
+        # a card from an older round (its code is not the current one) — e.g. left over from before the update
+        self.remote._question(self.a, {'mid': 'e' * 32, 'thread': 'e' * 32, 'text': 'old'}, '', '', pairing=True)
+        stale = next(a for a in self.remote.asks.values() if a.rid != current)
+        stale.extra['challenge'] = 'f' * 32
+        t, pr = self.proof_for(self.remote, self.a, self.odid, self.osk, op='owner-reject', value='f' * 32)
+        self.assertEqual((await self.remote.write('fr_set', t, device=self.odid, proof=pr))[:2], (False, 'expired'))
+        self.assertEqual([o['result'] for o in self.other.of('ask_done') if o['id'] == stale.rid], ['gone'])
+        self.assertIn(current, self.remote.asks)                            # the current card stays
+        # rejecting the current one closes it with `gone` too, and blocking closes a friend's cards the same way
+        self.assertEqual((await self.choose(self.remote, self.a, self.odid, self.osk, 'reject'))[:2], (True, None))
+        self.assertEqual([o['result'] for o in self.other.of('ask_done') if o['id'] == current], ['gone'])
+        self.svc._question(self.b, pmsg('检查服务'), '', '')
+        rid = self.svc.ask_msgs()[-1]['id']
+        await self.svc.write('fr_set', {'friend': self.b, 'op': 'block', 'value': ''}, device=self.did)
+        self.assertEqual([o['result'] for o in self.host.of('ask_done') if o['id'] == rid], ['gone'])
+        self.assertNotIn('ended', [o['result'] for o in self.host.of('ask_done') + self.other.of('ask_done')])
+
+    async def test_p417_reject_and_expiry_tell_both_pages_why(self):
+        await self.choose(self.svc, self.b, self.did, self.dsk)
+        await self.pump()
+        await self.choose(self.remote, self.a, self.odid, self.osk, 'reject')
+        await self.pump()
+        for svc, fid in ((self.svc, self.b), (self.remote, self.a)):
+            v = self.info(svc, fid)
+            self.assertEqual((v['same_owner'], v.get('same_owner_end')), ('none', 'declined'))
+        # a new start clears the old reason and never reuses the old code
+        await self.choose(self.remote, self.a, self.odid, self.osk)
+        self.assertIsNone(self.remote.same_owner.code(self.a))
+        self.assertNotIn('same_owner_end', self.info(self.remote, self.a))
+        await self.pump()
+        self.assertFalse(self.remote.asks)
+        self.assertEqual(len(self.svc.ask_msgs()), 1)
+        # this time nobody answers for 24 hours
+        self.clock.t += 86401
+        self.svc.expire_asks()
+        await self.pump()
+        for svc, fid in ((self.svc, self.b), (self.remote, self.a)):
+            v = self.info(svc, fid)
+            self.assertEqual((v['same_owner'], v.get('same_owner_end')), ('none', 'expired'))
+        self.clock.t += 86401                                               # the hint is kept for a day, then dropped
+        self.assertNotIn('same_owner_end', self.info(self.svc, self.b))
+
+    async def test_p417_older_peer_without_start_consent_keeps_the_two_card_flow(self):
+        # 0.25.0a1 host on the other side: its packets have no `v`, it only accepts a confirm signed by the key in the code
+        rows = []
+        async def old_pump():
+            for _ in range(20):
+                await settle()
+                n = 0
+                for i, (src, dst, fid, old) in enumerate(((self.svc, self.remote, self.a, False), (self.remote, self.svc, self.b, True))):
+                    for _, obj in src.net.sent[self.positions[i]:]:
+                        if obj['t'] == 'same_owner':
+                            dst.on_app(fid, {k: v for k, v in obj.items() if not (old and k == 'v')})
+                            n += 1
+                    self.positions[i] = len(src.net.sent)
+                if not n:
+                    return
+        await self.choose(self.svc, self.b, self.did, self.dsk)
+        await old_pump()
+        self.assertFalse(self.svc.same_owner.row(self.b).get('token'))      # our start is not sent as consent
+        self.assertEqual(len(self.svc.ask_msgs()), 1)                       # so this side gets the old card
+        self.assertFalse(self.info(self.svc, self.b)['same_owner_wait'])
+        second, ssk = device(self.host.st)
+        t, pr = self.proof_for(self.svc, self.b, second, ssk)
+        self.assertEqual((await self.svc.write('fr_set', t, device=second, proof=pr))[:2], (False, 'peer_old'))
+        self.assertEqual((await self.choose(self.svc, self.b, self.did, self.dsk, 'confirm'))[:2], (True, None))
+        await self.choose(self.remote, self.a, self.odid, self.osk, 'confirm')
+        await old_pump()
+        self.assertTrue(self.svc.same_owner.active(self.b))
+        self.assertTrue(self.remote.same_owner.active(self.a))
 
 
 class AdminApprovalTests(__import__('unittest').TestCase):

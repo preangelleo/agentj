@@ -249,8 +249,14 @@ class Env:
         env["HOME"] = str(self.home)
         self._patch = mock.patch.dict(os.environ, env, clear=True)
         self._patch.start()
+        # P426 #181-1: the temp HOME has no harness settings, so every declared permission would need the phone card; the
+        # older plaza tests are about other things — they run as a full-access Agent (test_p426_plaza.py covers the card)
+        from agentj import plaza_perms
+        self._perm = mock.patch.object(plaza_perms, "allowed", lambda h: (dict(plaza_perms.ALL), "tests: full access"))
+        self._perm.start()
 
     def close(self):
+        self._perm.stop()
         self._patch.stop()
         self.tmp.cleanup()
 

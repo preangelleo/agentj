@@ -33,13 +33,13 @@ class P221Pass(HostFlow):
         return await self.send(op='pass_hello', target=None)
 
     @staticmethod
-    def seal(hello, password, host):
+    def seal(hello, password, host, confirm=None):
         """What the account page does: seal {"pass"} to the host's one-use key; AAD = context, nonce, host."""
         e = X25519PrivateKey.generate()
         shared = e.exchange(X25519PublicKey.from_public_bytes(wire.unb64u(hello['hpk'])))
         aad = rp.pass_aad(hello['nonce'], host)
         iv = os.urandom(12)
-        data = AESGCM(hashlib.sha256(aad + shared).digest()).encrypt(iv, json.dumps({'pass': password}).encode(), aad)
+        data = AESGCM(hashlib.sha256(aad + shared).digest()).encrypt(iv, json.dumps({'pass': password, **({'confirm': confirm} if confirm is not None else {})}).encode(), aad)
         return {'nonce': hello['nonce'], 'epk': wire.b64u(raw(e.public_key())), 'iv': wire.b64u(iv), 'data': wire.b64u(data)}
 
     async def start(self, hello, password):
@@ -50,7 +50,7 @@ class P221Pass(HostFlow):
         self.assertEqual(h, {'status': 'pass_hello', 'set': False})
         self.assertIsNone(self.h.pairing)
 
-    async def test_right_password_makes_the_qr_and_the_scan_is_granted_as_account_pass(self):
+    async def test_password_qr_waits_then_exact_confirmation_grants_as_account_pass(self):
         gate.set_passphrase(self.st, PASSWORD)
         h = await self.hello()
         self.assertTrue(h['set']); self.assertEqual((h['left'], h['locked']), (gate.FREE_TRIES, 0))
@@ -58,10 +58,37 @@ class P221Pass(HostFlow):
         self.assertEqual(r['status'], 'link'); self.assertIsNotNone(self.h.pairing)
         p, s = await self.pending()
         await self.h.remote_pair.pending(p, s)
+        self.assertEqual(s.state, 'pending'); self.assertEqual(self.st.devices(), {})
+        hello = await self.hello()
+        target = self.seal(hello, PASSWORD, self.q['host'], {'device': s.device, 'handshake': rp.handshake(s)})
+        approved = await self.send(op='pass_start', target=target)
+        self.assertEqual(approved['status'], 'approved')
         self.assertEqual(s.state, 'ready'); self.assertEqual(self.st.devices()[s.device]['source'], 'account')
         self.assertIn('account_pass"', self.st.approvals_path.read_text())
         self.assertNotIn(PASSWORD, self.st.log_path.read_text() if self.st.log_path.exists() else '')
         self.assertNotIn(PASSWORD, json.dumps(self.h.remote_pair.results, default=str))
+
+    async def test_password_confirmation_is_bound_to_live_device_and_handshake(self):
+        gate.set_passphrase(self.st, PASSWORD)
+        await self.start(await self.hello(), PASSWORD)
+        p, s = await self.pending()
+        await self.h.remote_pair.pending(p, s)
+        pending = self.opened(p.remote)
+        self.assertEqual(pending['devices'][0]['code'], wire.safety_code(s.h))
+        self.assertNotIn(wire.safety_code(s.h), json.dumps(self.h.remote_pair.results[p.remote['id']][1]))
+        for confirm in ({'device': 'wrong', 'handshake': rp.handshake(s)},
+                        {'device': s.device, 'handshake': wire.b64u(b'x'*16)},
+                        {'device': s.device, 'handshake': rp.handshake(s), 'extra': True}, None):
+            hello = await self.hello()
+            target = self.seal(hello, PASSWORD, self.q['host'], confirm)
+            got = await self.send(op='pass_start', target=target)
+            self.assertNotEqual(got['status'], 'approved')
+            self.assertEqual(self.st.devices(), {})
+        s.deadline = time.monotonic() - 1
+        hello = await self.hello()
+        target = self.seal(hello, PASSWORD, self.q['host'], {'device': s.device, 'handshake': rp.handshake(s)})
+        self.assertEqual((await self.send(op='pass_start', target=target))['status'], 'gone')
+        self.assertEqual(self.st.devices(), {})
 
     async def test_wrong_password_counts_down_then_locks_and_never_makes_a_qr(self):
         gate.set_passphrase(self.st, PASSWORD)

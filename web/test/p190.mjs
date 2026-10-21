@@ -96,7 +96,8 @@ try {
   });
 
   await C('camera-hold', async () => {
-    assert.equal(await ev(p, `document.querySelectorAll('#tools > .tool').length`), 4, 'still four tools (no fifth button)');
+    // P412 added the full-screen button on purpose; scanning still needs no button of its own
+    assert.equal(await ev(p, `document.querySelectorAll('#tools > .tool:not(#tFull)').length`), 4, 'still four media tools (scan has no button of its own)');
     // a short tap: no scanner
     await ev(p, `(() => { const b = document.getElementById('tCamera'); b.dispatchEvent(new PointerEvent('pointerdown', {bubbles:true, button:0})); b.dispatchEvent(new PointerEvent('pointerup', {bubbles:true})); return true; })()`);
     await sleep(700);

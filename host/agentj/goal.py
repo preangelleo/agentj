@@ -52,7 +52,9 @@ MAX_ALL_GRANTS = 20                       # P339: grants of a goal including the
 ADD_MAX = 20                              # P339: the uses a one-tap 「批准，并加进目标授权」 grant allows
 ADD_CATS = ("delete", "send")             # P339: one tap never grants money (spend / price): that is a proposal card
 CAP_MAX = 500
-SOFT_EXEMPT = ("SandboxOnce", "AuthRescue", TOOL, TOOL_GRANT, "agentj quota switch", "AgentJHook")  # each retains its own approval card
+# "agentj plaza" = plaza_perms.CARD_TOOL (P426 security review N2: the plaza permission / publisher card must reach the phone)
+SOFT_EXEMPT = ("SandboxOnce", "AuthRescue", TOOL, TOOL_GRANT, "agentj quota switch", "AgentJHook",
+               "agentj automation resume", "agentj plaza")  # each retains its own approval card (P426: wfrun.TOOL, plaza_perms.CARD_TOOL)
 # P137 rules that mean "the text runs something it fetched / decoded" — the injection shapes Leo named (base64|sh, curl|sh)
 ATTACK_RULES = frozenset({"opaque.piped_shell", "opaque.piped_interp", "opaque.source", "opaque.dynamic_code", "opaque.ansi"})
 _SETTINGS = re.compile(

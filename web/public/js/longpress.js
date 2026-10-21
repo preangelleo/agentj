@@ -10,11 +10,13 @@ export const HOLD_MS = 550, SLOP_PX = 12, EAT_MS = 800;
 const buzz = (ms) => { try { if (navigator.vibrate) navigator.vibrate(ms); } catch (_) { /* no vibration */ } };
 
 export function longPress(node, action, { at = 'hold', ms = HOLD_MS } = {}) {
+  node.setAttribute?.('data-no-select', '');
   let p = null, eatUntil = 0;
   const end = () => { if (p) { clearTimeout(p.timer); node.classList.remove('held'); p = null; } };
   node.addEventListener('pointerdown', (e) => {
     if (e.button > 0 || !e.isPrimary) return;
     if (eatUntil && performance.now() >= eatUntil) eatUntil = 0;   // P285: a new press after the window is a plain tap again
+    if (e.cancelable) e.preventDefault(); // suppress native selection; click/keyboard paths stay intact
     end();
     const me = p = { x: e.clientX, y: e.clientY, armed: false };
     me.timer = setTimeout(() => {

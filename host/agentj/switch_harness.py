@@ -48,12 +48,14 @@ IDLE_WAIT = 120       # s for it to be idle again afterwards
 POLL = 2.0
 _CODE = re.compile(r"[a-z_]{1,40}")
 _OC_MODEL = re.compile(r"[A-Za-z0-9._-]+/[^\s/][^\s]*")
+_MODEL_MISSING = re.compile(r"model ?not ?found|modelnotfound", re.I)
 
 REASON = {
     "zh": {"not_installed": "{x} 没有安装", "not_supported": "{x} 暂不支持",
            "native_timeout": "{x} 60 秒内没有回答（多半是没登录、token 失效，或网络 / 代理不通）",
            "native_failed": "{x} 没能完成一次调用（多半是没登录或 token 失效）", "call_failed": "{x} 没能完成一次调用（多半是没登录或 token 失效）",
            "empty_probe_reply": "{x} 回了空话", "provider_unavailable": "{x} 配置的模型服务不可用",
+           "model_missing": "{x} 找不到所选的模型（服务商没配置，或模型名写错）——不是登录或 Key 的问题。下一步：在手机「模型和 API Key」换一个能用的模型再切",
            "invalid_native_config": "{x} 的配置文件有问题", "invalid_provider": "{x} 配置的模型服务地址不合规",
            "native_executable_missing": "找不到 {x} 的程序", "native_executable_not_executable": "{x} 的程序不能运行",
            "native_executable_selection_failed": "{x} 有多个安装、选不出该用哪一个", "native_spawn_failed": "{x} 启动不了",
@@ -75,6 +77,8 @@ REASON = {
            "native_failed": "{x} could not complete a call (usually not signed in or an expired token)",
            "call_failed": "{x} could not complete a call (usually not signed in or an expired token)",
            "empty_probe_reply": "{x} replied with nothing", "provider_unavailable": "{x}'s configured model service is unavailable",
+           "model_missing": "{x} cannot find the selected model (its provider is not set up, or the model name is wrong) — not a "
+                            "sign-in or key problem. Next: pick a working model in Models & API keys on the phone, then switch again",
            "invalid_native_config": "{x}'s config file has a problem", "invalid_provider": "{x}'s model service address is not allowed",
            "native_executable_missing": "{x}'s program was not found", "native_executable_not_executable": "{x}'s program cannot run",
            "native_executable_selection_failed": "{x} is installed more than once and none could be chosen",
@@ -128,6 +132,7 @@ ERR = {     # agent.codex_failure kinds of the harness's last stderr line
 }
 _TRY = {"codex": 'codex exec "say hi"', "claude": 'claude -p "say hi"', "opencode": 'opencode run "say hi"'}
 _TTY = {"codex": "codex", "claude": "claude", "opencode": "opencode"}
+SWITCH_CLI = ("claude", "codex", "opencode", "kimi", "qwen", "dsh")   # cli.py `agentj agent switch <target>` choices
 
 REASON["zh"].update({
     "free_tier": "{x} 的免费通道暂时不让用（刚装好的头一两分钟常见，也可能是免费额度用完或这个免费模型下线了）：过一两分钟再试，或换一个免费模型（opencode models 列出）",
@@ -144,6 +149,16 @@ REASON["zh"].update({"unknown_model": "{x} 没有这个模型（`kimi` 里 /mode
                      "native_tool_refused": "{x} 在测试消息里想调用工具（测试只许直接回答）"})
 REASON["en"].update({"unknown_model": "{x} does not offer this model (/model in kimi lists them)",
                      "native_tool_refused": "{x} tried to use a tool on the test message (the test allows a plain answer only)"})
+# P423 #138: a used-up quota / a rate limit is never 「没登录」 (Kimi says its monthly limit as auth_required)
+REASON["zh"].update({"quota_exhausted": "{x} 的额度 / 用量已用完——不是没登录，不用重新登录：续费或加量后再试，或先切到别的 Agent",
+                     "rate_limited": "{x} 正在限流（请求太频繁）——不是没登录：等一会儿再试"})
+REASON["en"].update({"quota_exhausted": "{x}'s quota / usage is used up — not a sign-in problem, no new login needed: renew or add "
+                                        "usage, then retry, or switch to another Agent for now",
+                     "rate_limited": "{x} is rate limited (too many requests) — not a sign-in problem: try again in a while"})
+QUOTA_WHERE = {"kimi": {"zh": "（Kimi 本月额度：用量和套餐看 Kimi Code 控制台 https://www.kimi.com/code/console ，kimi.ai 会员看 "
+                              "https://www.kimi.ai/code/console）",
+                        "en": " (Kimi's monthly usage: see the Kimi Code console https://www.kimi.com/code/console , or "
+                              "https://www.kimi.ai/code/console for kimi.ai)"}}
 # P282: no login the SERVICE can see (harness.probe → not_logged_in) — a one-step way, per harness (Mac seat 10-14: Claude
 # Code's token lived only in ~/.zshenv, so the service's probe counted it as "not signed in" while the owner's shell worked)
 LOGIN_HINT = {
@@ -195,6 +210,8 @@ def reason_text(code: str, target: str, lang: str = "zh", detail: str | None = N
     """P395: `line` = the harness's own error, one redacted line from the probe (harness.probe → probe_error)."""
     l = "en" if lang == "en" else "zh"
     t = REASON[l]
+    if code in harness.SIGNED_OUT_CODES and isinstance(line, str) and _MODEL_MISSING.search(line):
+        code = "model_missing"            # P423 #146: "Model not found: <p>/<m>" is never 「多半是没登录或 token 失效」
     if isinstance(line, str) and line.strip() and code != "not_logged_in":
         said = LABEL.get(target, target) + (" said: " if l == "en" else " 原话：") + clean_line(line, 200)
         return reason_text(code, target, lang, detail, err) + (f" ({said})" if l == "en" else f"（{said}）")
@@ -207,6 +224,8 @@ def reason_text(code: str, target: str, lang: str = "zh", detail: str | None = N
             return hint.format(x=LABEL.get(target, target), store=store)
         code = "native_failed"
     out = t.get(code, t["call_failed"]).format(x=LABEL.get(target, target))
+    if code == "quota_exhausted":
+        out += QUOTA_WHERE.get(target, {}).get(l, "")
     if detail in DETAIL[l]:
         out += DETAIL[l][detail].format(cmd=(_TTY if detail == "prompt" else _TRY).get(target, target))
     if err in ERR[l]:
@@ -597,7 +616,7 @@ def request(st, target: str | None, model: str | None = None, dry_run: bool = Fa
             **({"model": m} if m else {}), **({"privacy": note} if note else {}),
             **({"back": rec["back"]} if isinstance(rec.get("back"), str) else {}), **({"undo": True} if undo else {}),
             **({"undo_possible": True} if not undo and (_previous(st) or {}).get("kind") == target else {}),
-            **{k: rec[k] for k in ("err", "start_secs", "line") if k in rec}}
+            **{k: rec[k] for k in ("err", "start_secs", "line", "ark_plan_fix") if k in rec}}
     if rec["status"] == "probe_ok":
         return {"ok": True, "dry_run": True, **base}
     if rec["status"] == "failed":
@@ -830,9 +849,12 @@ def _say_scan(r: dict, lang: str) -> str:
         lines.extend("  " + x for x in _where_lines(h, lang))
         if h.get("privacy"):
             lines.append("  " + h["privacy"])
-    can = [LABEL[h["name"]] for h in r["harnesses"] if h["callable"] and h["name"] != r.get("current")]
+    ok = [h["name"] for h in r["harnesses"] if h["callable"] and h["name"] != r.get("current")]
+    can = [LABEL[n] for n in ok]
     lines.append(("→ can switch to: " + ", ".join(can)) if can and en else ("→ 现在能切到：" + "、".join(can)) if can else
                  ("→ only the current one works; install another one first" if en else "→ 只有现在这一个能用，要切换得先装一个别的"))
+    # P423 #138: the command to copy, per harness the `agentj agent switch` CLI takes (its argparse choices)
+    lines.extend("  agentj agent switch " + n for n in ok if n in SWITCH_CLI)
     return "\n".join(lines)
 
 
@@ -1056,6 +1078,11 @@ def worker(st, target: str | None, model: str | None = None, *, job: str | None 
         g = gate(target, model, probe)
         version = g.get("version")
         if not g["ok"]:
+            if target == "opencode" and isinstance(g.get("line"), str) and re.search(r"\b401\b", g["line"]):
+                from . import ark_plan_fix
+                fix = ark_plan_fix.diagnose(st, model, force=force)
+                if fix:
+                    extra["ark_plan_fix"] = fix
             if g.get("line"):
                 extra["line"] = g["line"]         # P395: OpenCode's own error, one redacted line, into the receipt
             return done("failed", g["reason"])
@@ -1218,6 +1245,9 @@ def _where_lines(h: dict, lang: str) -> list[str]:
 
 
 def _say(r: dict, lang: str) -> str:
+    if r.get("ark_plan_fix"):
+        from .ark_plan_fix import guidance
+        return _say({k:v for k,v in r.items() if k != "ark_plan_fix"}, lang) + "\n" + guidance(r["ark_plan_fix"], lang)
     T, F = LABEL.get(r.get("target"), r.get("target")), LABEL.get(r.get("from") or "", r.get("from") or "")
     if r.get("ok") and r.get("privacy"):        # P298: a free model whose provider keeps / trains on the conversation
         return _say({k: v for k, v in r.items() if k != "privacy"}, lang) + "\n" + r["privacy"]
@@ -1259,13 +1289,18 @@ def _say(r: dict, lang: str) -> str:
 
 
 def _say_receipt(rec: dict | None, lang: str) -> str:
+    if rec and rec.get("ark_plan_fix"):
+        from .ark_plan_fix import guidance
+        return _say_receipt({k:v for k,v in rec.items() if k != "ark_plan_fix"}, lang) + "\n" + guidance(rec["ark_plan_fix"], lang)
     if not rec:
         return "No switch yet." if lang == "en" else "还没有切换过。"
     T, F = LABEL.get(rec.get("target"), rec.get("target")), LABEL.get(rec.get("from") or "", rec.get("from") or "—")
     when = time.strftime("%m-%d %H:%M", time.localtime(rec["at"]))
     st = rec.get("status")
     if st == "ok":
-        return f"{when} ✓ {F} → {T}"
+        model = rec.get("model") or ""
+        plan = "Agent Plan" if model.startswith("ark-agent-plan/") else "Coding Plan" if model.startswith("ark-coding-plan/") else None
+        return f"{when} ✓ {F} → {T}" + ((f" · Now using Volcano {plan}" if lang == "en" else f" · 已改用火山 {plan}") if plan else "")
     waited = rec.get("waited")
     secs = ((f" (waited {waited} s)" if lang == "en" else f"（等了 {waited} 秒）") if isinstance(waited, int) else "") + (
         (f" · session start measured before the switch: {rec['start_secs']} s" if lang == "en" else

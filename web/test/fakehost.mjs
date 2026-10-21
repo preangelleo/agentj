@@ -393,7 +393,8 @@ export async function startFakeHost() {
   async function onFriends(c, m) {
     const F = st.friends;
     const reply = (o) => sendApp(c, { ...o, r: m.r });
-    if (m.t === 'fr_list') return reply({ t: 'fr_list_res', me: F.me, friends: F.friends, pending: F.pending, groups: F.groups, global: F.global });
+    if (m.t === 'fr_list') return reply({ t: 'fr_list_res', me: F.me, friends: F.friends, pending: F.pending, groups: F.groups, global: F.global, ...(F.devices ? { devices: F.devices } : {}) });
+    if (m.t === 'fr_glog') return reply({ t: 'fr_glog_res', ...(F.glog || { me: { id: F.me.id, name: F.me.card.name }, members: [], items: [], more: false }) });   // P426 #170
     if (m.t === 'fr_hist') {
       let items = (F.hist[m.friend] || []).slice();                       // newest first
       if (Number.isFinite(m.before)) items = items.filter((x) => x.ts < m.before);
@@ -405,11 +406,13 @@ export async function startFakeHost() {
       fr_set: () => ({ friend: m.friend, op: m.op, value: m.value }), pg_set: () => ({ group: m.group }), pg_del: () => ({ id: m.id }),
       fr_add: () => ({ id: m.id, note: m.note }), fr_discoverable: () => ({ on: m.on }), fr_card: () => ({ owner: m.owner, intro: m.intro }),
       fr_ctx: () => ({ friend: m.friend, text: m.text }),                                                   // P73
+      fr_gsay: () => ({ text: m.text }),                                                                    // P426 #170: 「我的设备」
     };
     if (!TARGET[m.t]) { F.refused.push(m.t); return; }
     const ok = await verifyControl(c, m.t, m, TARGET[m.t]());
     F.writes.push({ ...m, sigOk: ok });
     if (!ok) return reply({ t: 'ctl_res', ok: false, why: 'bad_signature' });
+    if (F.why) { const why = F.why; F.why = null; return reply({ t: 'ctl_res', ok: false, why }); }   // P417: a one-shot refusal
     const f = F.friends.find((x) => x.id === m.friend);
     if (m.t === 'fr_set') {
       if (!f) return reply({ t: 'ctl_res', ok: false, why: 'not_friend' });
@@ -428,6 +431,11 @@ export async function startFakeHost() {
     if (m.t === 'fr_add') F.pending.push({ id: m.id, state: 'pending', ts: Date.now(), dir: 'out' });
     if (m.t === 'fr_discoverable') F.me.discoverable = m.on === true;
     if (m.t === 'fr_card') F.me.card = { ...F.me.card, owner: m.owner, intro: m.intro };
+    if (m.t === 'fr_gsay') {                                                                                // P426 #170
+      const g = F.glog ||= { me: { id: F.me.id, name: F.me.card.name }, members: [], items: [], more: false };
+      const to = g.members.filter((x) => String(m.text).toLowerCase().includes('@' + x.name.toLowerCase()));
+      g.items.push({ gid: Date.now().toString(16).padStart(16, '0').slice(-16), from: g.me.id, self: true, name: g.me.name, by: 'phone', text: m.text, to, kind: 'msg', ts: Date.now() });
+    }
     if (m.t === 'fr_ctx') {
       if (!f) return reply({ t: 'ctl_res', ok: false, why: 'not_friend' });
       if ([...String(m.text)].length > 4000) return reply({ t: 'ctl_res', ok: false, why: 'too_long' });
@@ -482,6 +490,7 @@ export async function startFakeHost() {
       platform: st.platform, ...(st.platform === 'macos' && st.imsg ? { imessage: st.imsg } : {}),   // P274
       ...(st.runCmds ? { run_cmds: st.runCmds } : {}),   // P361: the names Settings may 「执行」
       ...(st.terminal ? { terminal: st.terminal } : {}),   // P408 (§38): the web terminal block (absent = an older host)
+      ...(st.vault ? { vault: st.vault } : {}),   // P414 (§38.9): the computer-password vault block (absent = an older host)
       ...(st.signedPrefs ? { signed_prefs: ['approval.level', 'approval.goal_nocard', 'jev.mode'], jev: {mode: value?.jev?.mode || 'openrouter', ready: true},   // P336 (+ what is in force)
         approval: { level: st.approvalUnsigned ? 'standard' : (value?.approval?.level ?? 'standard'),
           goal_nocard: !st.approvalUnsigned && value?.approval?.goal_nocard === true } } : {}) };
@@ -714,6 +723,9 @@ export async function startFakeHost() {
     refuseNextResumes(n) { st.refuseResumes = n; },
     muteNextResumes(n) { st.muteResumes = n; },
     kick(code = 1001) { for (const c of conns) c.close(code); },
+    /** P424 (#145): a newer host socket replaced the one the devices' sessions were with (serve back after its rescue
+     *  watchdog): every session is gone on this side, and the relay tells the still-open device sockets `up:true` */
+    swapHost() { for (const c of conns) { c.hs = c.send = c.recv = null; c.mode = null; c.awaiting = false; c.isReady = false; c.sendText(JSON.stringify({ t: 'host', up: true })); } },
     /** back to an empty host between test blocks (pairings and allowlist stay) */
     reset() {
       Object.assign(st, { ownerRead:false, ownerReadMute:false, ownerReadLose:0, ownerReadLost:0, ownerReadDropTo:null, ownerReadHeadDelay:0, read:0, kind: null, extraCaps: [], p33: true, asr: 'ready', asrText: '这是转写出来的文字', asrWhy: null, asrTexts: [], asrDelays: [], sayMode: 'delivered', sayDelay: 0,

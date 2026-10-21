@@ -176,11 +176,12 @@ class Refusals(_Base):
             f.truncate(media.CAPS["image"] + 1)                    # sparse: no real 10 MiB written
         self.put("out/fake.png", b"this is text, not a PNG")
         self.put("out/run.py", b"print(1)\n")
+        self.put("out/tool.exe", b"MZ\x90\x00")                  # P424 #142: scripts became text cards; a binary still isn't
         self.put("out/readme.md", b"# hi\n")
-        items, skips = self.scan("![](out/big.png) ![](out/fake.png) [s](out/run.py) `out/run.py` `out/readme.md`")
+        items, skips = self.scan("![](out/big.png) ![](out/fake.png) [s](out/tool.exe) `out/run.py` `out/readme.md`")
         self.assertEqual(items, [])
         self.assertEqual(skips, [{"name": "big.png", "why": "too_big", "bytes": media.CAPS["image"] + 1},
-                                 {"name": "fake.png", "why": "type"}, {"name": "run.py", "why": "type"}],
+                                 {"name": "fake.png", "why": "type"}, {"name": "tool.exe", "why": "type"}],
                          "implicit source / text files are silent; explicit ones say why")
         self.assertEqual(self.scan("[r](out/readme.md)")[0][0]["kind"], "file", "an explicit link offers a text file")
         n = media.MAX_ITEMS + 2

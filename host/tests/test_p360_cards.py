@@ -207,7 +207,7 @@ class Storage(Base):
         # P393 #129: official cards are on until the owner turns one off; the never-touched one shows with its sample
         rows = {c["id"]: c for c in jcards.cards(self.root)}
         self.assertEqual(list(rows), list(jcards.OFFICIAL))
-        self.assertTrue(all(c["on"] for c in rows.values()))
+        self.assertTrue(all(c["on"] == (cid not in jcards.DEFAULT_OFF) for cid, c in rows.items()))   # P432: Files starts off
         self.assertTrue((jcards.data_dir(self.root, "todo") / "todo.json").is_file())
         self.assertTrue(jcards.set_on(self.root, "notes", False))
         self.assertFalse(jcards.find(self.root, "notes")["on"])
@@ -301,9 +301,10 @@ class Phone(Base):
     def test_list_carries_no_paths_or_prompts(self):
         jcards.apply(self.root, self.folder(mine()))
         rows = jcards.phone_list(self.root)["cards"]
-        self.assertEqual([r["id"] for r in rows], ["notes", "todo", "automation", "reading-list"])
+        self.assertEqual([r["id"] for r in rows], [*jcards.OFFICIAL, "reading-list"])
         self.assertEqual({k for r in rows for k in r}, {"id", "name", "desc", "icon", "accent", "template", "official", "on", "plus"})
-        self.assertEqual({r["id"]: r["plus"] for r in rows}, {"notes": "agentj-add-note", "todo": "agentj-add-todo", "automation": "agentj-automation", "reading-list": "agentj-add-todo"})
+        plus = {r["id"]: r["plus"] for r in rows}
+        self.assertEqual({k: plus[k] for k in ("notes", "todo", "automation", "reading-list")}, {"notes": "agentj-add-note", "todo": "agentj-add-todo", "automation": "agentj-automation", "reading-list": "agentj-add-todo"})
         bare = mine(id="no-plus")
         del bare["plus"]
         self.assertTrue(jcards.apply(self.root, self.folder(bare, name="np"))["ok"])
@@ -413,9 +414,9 @@ class Hardening(Base):
         for bad in (mine(accent=[]), mine(template={}), mine(icon=[1]), mine(actions=[{"id": ["x"], "label": {"zh": "a", "en": "a"}, "prompt": "p"}])):
             self.assertTrue(self.codes(bad))
             p.write_text(json.dumps(bad))
-            self.assertEqual([c["id"] for c in jcards.cards(self.root)], ["notes", "todo", "automation"])
+            self.assertEqual([c["id"] for c in jcards.cards(self.root)], list(jcards.OFFICIAL))
         p.write_text("[" * 100000)
-        self.assertEqual(len(jcards.cards(self.root)), 3)
+        self.assertEqual(len(jcards.cards(self.root)), len(jcards.OFFICIAL))
 
     def test_a_huge_manifest_is_not_read_whole(self):
         d = self.tmp / "huge"
@@ -494,7 +495,7 @@ class Serve(Base):
         h, s = self.host(), SimpleNamespace(device="d1")
         asyncio.run(h.on_jcard(s, "jcard_list", {"r": "r1"}))
         m = h.send_app.call_args.args[1]
-        self.assertEqual((m["t"], m["r"], len(m["cards"])), ("jcard_items", "r1", 3))
+        self.assertEqual((m["t"], m["r"], len(m["cards"])), ("jcard_items", "r1", len(jcards.OFFICIAL)))
         asyncio.run(h.on_jcard(s, "jcard_set", {"r": "r2", "id": "todo", "on": True}))
         self.assertEqual(h.send_app.call_args.args[1], {"t": "jcard_res", "r": "r2", "ok": True, "id": "todo", "on": True})
         h.st.log.assert_called_with("jcard_set", device="d1", status="todo:on")
@@ -594,7 +595,7 @@ class Cli(Base):
         self.assertEqual(self.run_cli("apply", str(dest))[0], 0)
         self.assertTrue((jcards.data_dir(self.root, "shopping") / "todo.json").is_file())
         code, out = self.run_cli("list", "--json")
-        self.assertEqual([c["id"] for c in json.loads(out)["cards"]], ["notes", "todo", "automation", "shopping"])
+        self.assertEqual([c["id"] for c in json.loads(out)["cards"]], [*jcards.OFFICIAL, "shopping"])
         self.assertEqual(self.run_cli("off", "shopping")[0], 0)
         self.assertFalse(jcards.find(self.root, "shopping")["on"])
         self.assertEqual(self.run_cli("export", "nope", str(self.tmp / "x"))[0], 1)

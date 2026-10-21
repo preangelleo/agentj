@@ -121,10 +121,12 @@ test('friends.js: no field that sends text to a friend, no fr_send, every write 
   const src = readFileSync(new URL('../public/js/friends.js', import.meta.url), 'utf8').replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
   assert.doesNotMatch(src, /fr_send|fr_msg|'pmsg'|t: 'tell'/);
   const sent = [...src.matchAll(/\bt: '(\w+)'/g)].map((m) => m[1]);
-  assert.deepEqual([...new Set(sent)].sort(), ['answer', 'fr_add', 'fr_card', 'fr_discoverable', 'fr_hist', 'fr_list', 'fr_set', 'fr_usage', 'pg_del', 'pg_set',
-    'fr_ctx', 'fr_ctx_get'].sort());   // + P73: a friend's 「补充设定」 (the owner's own setting — not a message to the friend)
+  assert.deepEqual([...new Set(sent)].sort(), ['fr_add', 'fr_card', 'fr_discoverable', 'fr_hist', 'fr_list', 'fr_set', 'fr_usage', 'pg_del', 'pg_set',
+    'fr_ctx', 'fr_ctx_get',   // + P73: a friend's 「补充设定」 (the owner's own setting — not a message to the friend)
+    'fr_glog', 'fr_gsay'].sort());   // + P426 #170: 「我的设备」 — the owner's own Same owner devices only, a signed post (host checks membership)
+  assert.match(src, /friendAnswer\(channel\(\)/);   // P424: the card `answer` is built (and signed) by wire.friendAnswer only
   // the only text inputs: the friend ID + note (add), the card's owner name + intro, a group's name / numbers / topics
   const ids = [...src.matchAll(/\.id = '(fr-[\w-]+)'/g)].map((m) => m[1]).filter((id) => /add-id|add-note|owner|intro|fr-g-/.test(id));
   assert.ok(ids.includes('fr-add-id') && ids.includes('fr-add-note') && ids.includes('fr-owner') && ids.includes('fr-intro'));
-  assert.equal((src.match(/mk\('textarea'/g) || []).length, 5, 'textareas: the note, the intro, a group\'s topics, the 「补充设定」 (details + accept card, P73)');
+  assert.equal((src.match(/mk\('textarea'/g) || []).length, 6, 'textareas: the note, the intro, a group\'s topics, the 「补充设定」 (details + accept card, P73), the 「我的设备」 group post (P426)');
 });

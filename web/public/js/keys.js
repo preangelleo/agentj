@@ -1,4 +1,6 @@
+import { copyButton, copyFeedback } from './copycode.js';
 import {phoneConfirmation} from './tvremote.js';
+import {computerBrowser} from './termhook.js';
 // P352 「模型和 API Key」 (owner: the models page becomes the key manager). The host sends only NAMES and states of the keys
 // in its key file (`keys`): one dashed card per base-model vendor (catalog on the host, agentj/keys.py) and one list of the
 // owner's other keys. Row buttons are icons only:
@@ -108,6 +110,12 @@ export function parse(m) {
 
 let S = null;                       // the page model (names / states only) + the armed challenges
 let root = null, hooks = {}, busy = false, seq = 0, held = null, addForm = null;
+const verification = new Map();
+export function saved(name, verify) {
+  if (!okName(name)) return;
+  if (verify === 'ok' || verify === 'fail') verification.set(name, verify);
+  if (root?.isConnected) load();
+}
 const chs = new Map();              // `${op}\n${name}` → Face ID challenge for the current nonce
 
 /** app.js: {setupFaceId()} — the F20 「用 Face ID 记住这台手机？」 offer (same hook as the secret pickup card). */
@@ -175,7 +183,7 @@ function iconBtn(op, r, vendor) {
   const lab = t('p352.' + op);
   b.setAttribute('aria-label', lab + ' ' + r.name); b.title = lab; b.dataset.op = op; b.dataset.name = r.name;
   b.appendChild(keyGlyph(op === 'set' ? 'add' : op));
-  b.addEventListener('click', () => act(op, r, vendor));
+  b.addEventListener('click', e => act(op, r, vendor, e.currentTarget));
   return b;
 }
 /** NAME with a break chance after every underscore (long names wrap at word joints, not mid-word). */
@@ -184,19 +192,35 @@ function nameNode(name) {
   name.split('_').forEach((p, i, a) => { c.append(p + (i < a.length - 1 ? '_' : '')); if (i < a.length - 1) c.append(document.createElement('wbr')); });
   return c;
 }
+const PLAN_COPY = {
+  BAILIAN_TOKEN_PLAN_API_KEY: ['tokenTitle','tokenHint','https://bailian.console.aliyun.com/cn-beijing/subscription/overview'],
+  DASHSCOPE_API_KEY: ['payTitle','payHint','https://bailian.console.aliyun.com/cn-beijing/model/settings/api-key'],
+  ARK_AGENT_PLAN_API_KEY: ['arkAgentTitle','arkAgentHint','https://agentj.app/docs/ark/'],
+  ARK_CODING_PLAN_API_KEY: ['arkCodingTitle','arkCodingHint','https://agentj.app/docs/ark/'],
+};
 function rowNode(r, vendor) {
   const li = mk('li', 'krow'); li.dataset.name = r.name; li.dataset.type = r.type;
   const main = mk('div', 'kmain');
   const top = mk('div', 'ktop');
   if (vendor !== null) top.append(mk('span', 'ktag ktag--' + r.type, t('p352.tag.' + r.type)));   // third-party rows: no tag
   if (r.type === 'oauth') top.append(mk('span', 'kname kname--login', ['claude', 'codex'].includes(r.name) ? t('p352.login.' + r.name) : r.name));
-  else top.append(nameNode(r.name));
+  else {
+    const info = PLAN_COPY[r.name];
+    top.append(mk('span','kname',info ? t('p417.key.'+info[0]) : vendor ? t(r.type==='sub'?'p417.key.subTitle':'p417.key.apiTitle',{vendor}) : r.name));
+  }
   main.append(top);
+  if (r.type !== 'oauth' && vendor) {
+    const info = PLAN_COPY[r.name];
+    main.append(mk('p','keys-desc',t(info?'p417.key.'+info[1]:r.type==='sub'?'p417.key.subHint':'p417.key.apiHint')));
+    const link=mk('a','keys-help',t('p417.key.get'));link.href=info?info[2]:'https://agentj.app/docs/models/';link.target='_blank';link.rel='noopener noreferrer';main.append(link);
+    const details=mk('details','keys-details');details.append(mk('summary','',t('p417.key.details')),nameNode(r.name));main.append(details);
+  }
   const st = mk('div', 'kstate');
   if (r.type === 'oauth') { st.textContent = t(r.state === 'in' ? 'p352.signedIn' : 'p352.signedOut'); st.dataset.on = r.state === 'in' ? '1' : '0'; }
   else if (r.set) { st.textContent = '••••••••' + (r.tail || ''); st.dataset.on = '1'; }
   else { st.textContent = t(r.found ? 'p362.notInAgentJ' : 'p352.notSet'); st.dataset.on = '0'; }
   if (r.in_use && (r.set || r.type === 'oauth')) st.append(mk('span', 'kuse', t('p352.inUse')));   // a found-only copy says it on its own line
+  if (r.set && verification.has(r.name)) st.append(mk('span','kverify',t(verification.get(r.name)==='ok'?'elev.r.verifyOk':'elev.r.verifyFail')));
   main.append(st);
   if (r.type === 'oauth' && r.use) main.append(useLine(r));
   for (const f of r.found || []) main.append(foundLine(r, f, vendor));
@@ -317,19 +341,20 @@ const addOpen = () => !!root && !!root.querySelector('.kadd:not([hidden])') && !
 registerLayer({ element: () => root?.querySelector('.kadd'), open: addOpen, close: () => { closeAdd(); document.getElementById('keys-add')?.focus(); }, rank: 2, trap: false });
 
 // ---------------------------------------------------------------- the row actions
+const deviceNoun = () => t(computerBrowser()?'p417.key.computer':'p417.key.phone');
 function noPasskey() {
   if(phoneConfirmation(!S?.fa))return;
-  toastAction(t('p352.needFaceId'), t('sout.setup'), () => { if (hooks.setupFaceId) hooks.setupFaceId(); else toast(t('sout.noFaceId'), 4000); }, 8000);
+  toastAction(t('p352.needFaceId',{device:deviceNoun()}), t('p417.key.setupApproval'), () => { if (hooks.setupFaceId) hooks.setupFaceId(); else toast(t('sout.noFaceId'), 4000); }, 8000);
 }
 const why = (w) => ({ busy: 'p352.cardBusy', no_passkey: 'p352.needFaceId', passkey: 'p352.faRefused', gone: 'p352.gone', missing: 'p352.gone', offline: 'p352.offline', timeout: 'p352.offline' }[w] || 'models.failed');
 
-function act(op, r, vendor) {
+function act(op, r, vendor, button) {
   if (op === 'edit' || op === 'set') return requestCard(r.name);
   if (busy) return toast(t('p352.busy'));
   if (!S || !S.fa || !canAssert()) return noPasskey();
   const ch = chs.get(op + '\n' + r.name);
   if (!ch) return toast(t('p352.busy'));
-  if (op === 'copy') return copy(r, ch);
+  if (op === 'copy') return copy(r, ch, button);
   return remove(r, vendor, ch);
 }
 
@@ -354,7 +379,7 @@ async function run(op, name, faP, more) {
 }
 
 /** 拷贝: approve() and clipboard.write() both start in this tap. */
-function copy(r, ch) {
+function copy(r, ch, button) {
   let give, drop;
   const value = new Promise((ok, no) => { give = ok; drop = no; });
   const blob = value.then((v) => new Blob([v], { type: 'text/plain' }));
@@ -368,7 +393,7 @@ function copy(r, ch) {
   run('copy', r.name, faP).then(async (res) => {
     if (!res.ok || typeof res.value !== 'string') {
       drop(new Error('no value'));
-      if (res.why !== 'cancel') toast(t(why(res.why)), 4200);
+      if (res.why !== 'cancel') toast(t(why(res.why),{device:deviceNoun()}), 4200);
       if (res.why === 'gone' || res.why === 'missing') load();
       return;
     }
@@ -377,21 +402,21 @@ function copy(r, ch) {
     give(v);
     let ok = wrote ? await wrote : false;
     if (!ok && !wrote && nav?.clipboard?.writeText) ok = await nav.clipboard.writeText(v).then(() => true, () => false);
-    if (ok) { v = null; toast(t('p352.copied'), 2400, 'success'); return; }
-    hold(v); v = null;
+    if (ok) { v = null; copyFeedback(button, true); return; }
+    hold(v, button); v = null;
   });
 }
 /** The clipboard refused (no gesture left): one more tap copies it; gone after 30 s / pagehide / hidden. */
-function hold(v) {
+function hold(v, button) {
   wipe();
-  held = { v, timer: setTimeout(wipe, HOLD_MS) };
+  held = { v, button, timer: setTimeout(wipe, HOLD_MS) };
   notify({ kind: 'confirm', text: t('p352.copyAgain'), actions: [{ label: t('p352.copyAgainBtn'), fn: copyHeld }], ms: HOLD_MS });
 }
 function copyHeld() {
   if (!held) return toast(t('p352.copyExpired'), 3000);
-  const v = held.v;
+  const v = held.v, button = held.button;
   wipe();
-  navigator.clipboard.writeText(v).then(() => toast(t('p352.copied'), 2400, 'success'), () => toast(t('p352.copyFailed'), 4200));
+  copyButton(v, button, async value => { await navigator.clipboard.writeText(value); return true; });
 }
 export function wipe() { if (held) { clearTimeout(held.timer); held.v = null; held = null; } }
 export const holding = () => !!held;
@@ -449,7 +474,7 @@ async function remove(r, vendor, ch) {
   if (!ok || !faP) return;
   const res = await run('delete', r.name, faP);
   if (res.ok) { toast(t('p352.deleted', { name: r.name }), 3000, 'success'); return load(); }
-  if (res.why !== 'cancel') toast(t(why(res.why)), 4200);
+  if (res.why !== 'cancel') toast(t(why(res.why),{device:deviceNoun()}), 4200);
   if (res.why === 'gone' || res.why === 'missing') load();
 }
 

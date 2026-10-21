@@ -861,7 +861,7 @@ class CodexAgent(Agent):
             outcome, picks = await self.host.question(card, gone, task=getattr(self.host, "task_label", None))
             if outcome == "answer" and picks:
                 # the label comes from the signed card itself (P33-X04), the id from the request at the same position
-                ans = {"answers": {q["id"]: {"answers": [c["o"][p[0] - 1]["l"]]} for q, c, p in zip(qs, card, picks)}}
+                ans = {"answers": {q["id"]: {"answers": ([p] if isinstance(p, str) else [c["o"][p[0] - 1]["l"]])} for q, c, p in zip(qs, card, picks)}}
         except Exception:  # noqa: BLE001 — fail closed: nobody answered
             ans = {"answers": {}}
         finally:
@@ -877,7 +877,8 @@ class CodexAgent(Agent):
             if isinstance(w, dict) and isinstance(w.get("usedPercent"), (int, float)) and not isinstance(w.get("usedPercent"), bool):
                 key = {300: "h5", 10080: "week"}.get(w.get("windowDurationMins"))
                 if key:
-                    upd[key] = {"pct": float(w["usedPercent"]), "reset": _agentmod._unix(w.get("resetsAt"))}
+                    upd[key] = {"pct": float(w["usedPercent"]), "reset": _agentmod._unix(w.get("resetsAt")),
+                                "at": int(time.time())}      # P433: when it was measured (the phone shows it)
         if upd and self.persist:
             self.meter(**upd)
 

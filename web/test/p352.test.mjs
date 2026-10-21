@@ -68,7 +68,7 @@ test('every p352.* string the module uses exists in zh and en; the page title is
 });
 
 test('the value has no way into storage, logs or markup', () => {
-  for (const bad of ['localStorage', 'sessionStorage', 'indexedDB', 'dbPut', 'console.', 'innerHTML', 'outerHTML', 'insertAdjacentHTML', 'history.', 'dataset.value', 'setAttribute(\'value\'']) assert.ok(!SRC.includes(bad), bad);
+  for (const bad of ['localStorage', 'sessionStorage', 'indexedDB', 'dbPut', 'console.', 'innerHTML', 'outerHTML', 'insertAdjacentHTML', 'history.', 'dataset.value', 'setAttribute(\'value\'']) assert.ok(!SRC.replaceAll('https://bailian.console.aliyun.com/cn-beijing/subscription/overview','').replaceAll('https://bailian.console.aliyun.com/cn-beijing/model/settings/api-key','').includes(bad), bad);
   // the copy reply's value only goes to the clipboard promise / the held closure
   const uses = [...SRC.matchAll(/res\.value/g)].length;
   assert.equal(uses, 3, 'res.value: type check, read once, then cleared');

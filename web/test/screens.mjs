@@ -476,13 +476,15 @@ try {
       await waitFor(p, `document.querySelectorAll('#tasks-list li').length === 2`);
       await shot('19-scheduled-tasks');
       await evaluate(p, `document.querySelector('#tasks-view [data-back]').click()`);
-      await evaluate(p, `document.getElementById('slashBtn').click()`);
-      await evaluate(p, `document.querySelector('#menu [data-estop="stop"]').click()`);
+      check(!(await evaluate(p, `!!document.querySelector('#menu [data-estop="stop"]')`)), `${tag}: emergency stop lives only in Settings Safety`);
+      await evaluate(p, `(async()=>{const s=await import('/js/settings.js');s.open();})()`);
+      await evaluate(p, `document.getElementById('set-estop').click()`);
       await waitFor(p, `!document.getElementById('confirm').hidden`);
       check((await text(p, '#confirm-yes')) === L['estop.confirmYes'], `${tag}: stop-everything confirm in ${lang}`);
       await shot('20-stop-everything-confirm');
       await evaluate(p, `document.getElementById('confirm-yes').click()`);
       await waitFor(p, `!document.getElementById('estop-banner').hidden`);
+      await evaluate(p, `(async()=>{(await import('/js/settings.js')).close();})()`);
       await fake.send({ t: 'status', s: 'stopped', agent: 'claude', name: NAME });
       await waitFor(p, `document.body.dataset.agent === 'stopped'`);
       check((await evaluate(p, `document.getElementById('input').placeholder`)) === L['chat.placeholderStopped'], `${tag}: the field says everything is stopped`);

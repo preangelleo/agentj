@@ -1,0 +1,506 @@
+[
+  {
+    "file": "320x568-2-portrait-light.png",
+    "width": 640,
+    "height": 1136,
+    "media": "(device-width: 320px) and (device-height: 568px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait) and (prefers-color-scheme: light)",
+    "scheme": "light"
+  },
+  {
+    "file": "320x568-2-landscape-light.png",
+    "width": 1136,
+    "height": 640,
+    "media": "(device-width: 320px) and (device-height: 568px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape) and (prefers-color-scheme: light)",
+    "scheme": "light"
+  },
+  {
+    "file": "375x667-2-portrait-light.png",
+    "width": 750,
+    "height": 1334,
+    "media": "(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait) and (prefers-color-scheme: light)",
+    "scheme": "light"
+  },
+  {
+    "file": "375x667-2-landscape-light.png",
+    "width": 1334,
+    "height": 750,
+    "media": "(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape) and (prefers-color-scheme: light)",
+    "scheme": "light"
+  },
+  {
+    "file": "414x736-3-portrait-light.png",
+    "width": 1242,
+    "height": 2208,
+    "media": "(device-width: 414px) and (device-height: 736px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait) and (prefers-color-scheme: light)",
+    "scheme": "light"
+  },
+  {
+    "file": "414x736-3-landscape-light.png",
+    "width": 2208,
+    "height": 1242,
+    "media": "(device-width: 414px) and (device-height: 736px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape) and (prefers-color-scheme: light)",
+    "scheme": "light"
+  },
+  {
+    "file": "375x812-3-portrait-light.png",
+    "width": 1125,
+    "height": 2436,
+    "media": "(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait) and (prefers-color-scheme: light)",
+    "scheme": "light"
+  },
+  {
+    "file": "375x812-3-landscape-light.png",
+    "width": 2436,
+    "height": 1125,
+    "media": "(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape) and (prefers-color-scheme: light)",
+    "scheme": "light"
+  },
+  {
+    "file": "390x844-3-portrait-light.png",
+    "width": 1170,
+    "height": 2532,
+    "media": "(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait) and (prefers-color-scheme: light)",
+    "scheme": "light"
+  },
+  {
+    "file": "390x844-3-landscape-light.png",
+    "width": 2532,
+    "height": 1170,
+    "media": "(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape) and (prefers-color-scheme: light)",
+    "scheme": "light"
+  },
+  {
+    "file": "393x852-3-portrait-light.png",
+    "width": 1179,
+    "height": 2556,
+    "media": "(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait) and (prefers-color-scheme: light)",
+    "scheme": "light"
+  },
+  {
+    "file": "393x852-3-landscape-light.png",
+    "width": 2556,
+    "height": 1179,
+    "media": "(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape) and (prefers-color-scheme: light)",
+    "scheme": "light"
+  },
+  {
+    "file": "402x874-3-portrait-light.png",
+    "width": 1206,
+    "height": 2622,
+    "media": "(device-width: 402px) and (device-height: 874px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait) and (prefers-color-scheme: light)",
+    "scheme": "light"
+  },
+  {
+    "file": "402x874-3-landscape-light.png",
+    "width": 2622,
+    "height": 1206,
+    "media": "(device-width: 402px) and (device-height: 874px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape) and (prefers-color-scheme: light)",
+    "scheme": "light"
+  },
+  {
+    "file": "414x896-2-portrait-light.png",
+    "width": 828,
+    "height": 1792,
+    "media": "(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait) and (prefers-color-scheme: light)",
+    "scheme": "light"
+  },
+  {
+    "file": "414x896-2-landscape-light.png",
+    "width": 1792,
+    "height": 828,
+    "media": "(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape) and (prefers-color-scheme: light)",
+    "scheme": "light"
+  },
+  {
+    "file": "420x912-3-portrait-light.png",
+    "width": 1260,
+    "height": 2736,
+    "media": "(device-width: 420px) and (device-height: 912px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait) and (prefers-color-scheme: light)",
+    "scheme": "light"
+  },
+  {
+    "file": "420x912-3-landscape-light.png",
+    "width": 2736,
+    "height": 1260,
+    "media": "(device-width: 420px) and (device-height: 912px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape) and (prefers-color-scheme: light)",
+    "scheme": "light"
+  },
+  {
+    "file": "430x932-3-portrait-light.png",
+    "width": 1290,
+    "height": 2796,
+    "media": "(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait) and (prefers-color-scheme: light)",
+    "scheme": "light"
+  },
+  {
+    "file": "430x932-3-landscape-light.png",
+    "width": 2796,
+    "height": 1290,
+    "media": "(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape) and (prefers-color-scheme: light)",
+    "scheme": "light"
+  },
+  {
+    "file": "440x956-3-portrait-light.png",
+    "width": 1320,
+    "height": 2868,
+    "media": "(device-width: 440px) and (device-height: 956px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait) and (prefers-color-scheme: light)",
+    "scheme": "light"
+  },
+  {
+    "file": "440x956-3-landscape-light.png",
+    "width": 2868,
+    "height": 1320,
+    "media": "(device-width: 440px) and (device-height: 956px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape) and (prefers-color-scheme: light)",
+    "scheme": "light"
+  },
+  {
+    "file": "768x1024-2-portrait-light.png",
+    "width": 1536,
+    "height": 2048,
+    "media": "(device-width: 768px) and (device-height: 1024px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait) and (prefers-color-scheme: light)",
+    "scheme": "light"
+  },
+  {
+    "file": "768x1024-2-landscape-light.png",
+    "width": 2048,
+    "height": 1536,
+    "media": "(device-width: 768px) and (device-height: 1024px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape) and (prefers-color-scheme: light)",
+    "scheme": "light"
+  },
+  {
+    "file": "810x1080-2-portrait-light.png",
+    "width": 1620,
+    "height": 2160,
+    "media": "(device-width: 810px) and (device-height: 1080px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait) and (prefers-color-scheme: light)",
+    "scheme": "light"
+  },
+  {
+    "file": "810x1080-2-landscape-light.png",
+    "width": 2160,
+    "height": 1620,
+    "media": "(device-width: 810px) and (device-height: 1080px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape) and (prefers-color-scheme: light)",
+    "scheme": "light"
+  },
+  {
+    "file": "820x1180-2-portrait-light.png",
+    "width": 1640,
+    "height": 2360,
+    "media": "(device-width: 820px) and (device-height: 1180px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait) and (prefers-color-scheme: light)",
+    "scheme": "light"
+  },
+  {
+    "file": "820x1180-2-landscape-light.png",
+    "width": 2360,
+    "height": 1640,
+    "media": "(device-width: 820px) and (device-height: 1180px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape) and (prefers-color-scheme: light)",
+    "scheme": "light"
+  },
+  {
+    "file": "834x1194-2-portrait-light.png",
+    "width": 1668,
+    "height": 2388,
+    "media": "(device-width: 834px) and (device-height: 1194px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait) and (prefers-color-scheme: light)",
+    "scheme": "light"
+  },
+  {
+    "file": "834x1194-2-landscape-light.png",
+    "width": 2388,
+    "height": 1668,
+    "media": "(device-width: 834px) and (device-height: 1194px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape) and (prefers-color-scheme: light)",
+    "scheme": "light"
+  },
+  {
+    "file": "834x1210-2-portrait-light.png",
+    "width": 1668,
+    "height": 2420,
+    "media": "(device-width: 834px) and (device-height: 1210px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait) and (prefers-color-scheme: light)",
+    "scheme": "light"
+  },
+  {
+    "file": "834x1210-2-landscape-light.png",
+    "width": 2420,
+    "height": 1668,
+    "media": "(device-width: 834px) and (device-height: 1210px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape) and (prefers-color-scheme: light)",
+    "scheme": "light"
+  },
+  {
+    "file": "1024x1366-2-portrait-light.png",
+    "width": 2048,
+    "height": 2732,
+    "media": "(device-width: 1024px) and (device-height: 1366px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait) and (prefers-color-scheme: light)",
+    "scheme": "light"
+  },
+  {
+    "file": "1024x1366-2-landscape-light.png",
+    "width": 2732,
+    "height": 2048,
+    "media": "(device-width: 1024px) and (device-height: 1366px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape) and (prefers-color-scheme: light)",
+    "scheme": "light"
+  },
+  {
+    "file": "1032x1376-2-portrait-light.png",
+    "width": 2064,
+    "height": 2752,
+    "media": "(device-width: 1032px) and (device-height: 1376px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait) and (prefers-color-scheme: light)",
+    "scheme": "light"
+  },
+  {
+    "file": "1032x1376-2-landscape-light.png",
+    "width": 2752,
+    "height": 2064,
+    "media": "(device-width: 1032px) and (device-height: 1376px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape) and (prefers-color-scheme: light)",
+    "scheme": "light"
+  },
+  {
+    "file": "320x568-2-portrait-dark.png",
+    "width": 640,
+    "height": 1136,
+    "media": "(device-width: 320px) and (device-height: 568px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait) and (prefers-color-scheme: dark)",
+    "scheme": "dark"
+  },
+  {
+    "file": "320x568-2-landscape-dark.png",
+    "width": 1136,
+    "height": 640,
+    "media": "(device-width: 320px) and (device-height: 568px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape) and (prefers-color-scheme: dark)",
+    "scheme": "dark"
+  },
+  {
+    "file": "375x667-2-portrait-dark.png",
+    "width": 750,
+    "height": 1334,
+    "media": "(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait) and (prefers-color-scheme: dark)",
+    "scheme": "dark"
+  },
+  {
+    "file": "375x667-2-landscape-dark.png",
+    "width": 1334,
+    "height": 750,
+    "media": "(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape) and (prefers-color-scheme: dark)",
+    "scheme": "dark"
+  },
+  {
+    "file": "414x736-3-portrait-dark.png",
+    "width": 1242,
+    "height": 2208,
+    "media": "(device-width: 414px) and (device-height: 736px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait) and (prefers-color-scheme: dark)",
+    "scheme": "dark"
+  },
+  {
+    "file": "414x736-3-landscape-dark.png",
+    "width": 2208,
+    "height": 1242,
+    "media": "(device-width: 414px) and (device-height: 736px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape) and (prefers-color-scheme: dark)",
+    "scheme": "dark"
+  },
+  {
+    "file": "375x812-3-portrait-dark.png",
+    "width": 1125,
+    "height": 2436,
+    "media": "(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait) and (prefers-color-scheme: dark)",
+    "scheme": "dark"
+  },
+  {
+    "file": "375x812-3-landscape-dark.png",
+    "width": 2436,
+    "height": 1125,
+    "media": "(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape) and (prefers-color-scheme: dark)",
+    "scheme": "dark"
+  },
+  {
+    "file": "390x844-3-portrait-dark.png",
+    "width": 1170,
+    "height": 2532,
+    "media": "(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait) and (prefers-color-scheme: dark)",
+    "scheme": "dark"
+  },
+  {
+    "file": "390x844-3-landscape-dark.png",
+    "width": 2532,
+    "height": 1170,
+    "media": "(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape) and (prefers-color-scheme: dark)",
+    "scheme": "dark"
+  },
+  {
+    "file": "393x852-3-portrait-dark.png",
+    "width": 1179,
+    "height": 2556,
+    "media": "(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait) and (prefers-color-scheme: dark)",
+    "scheme": "dark"
+  },
+  {
+    "file": "393x852-3-landscape-dark.png",
+    "width": 2556,
+    "height": 1179,
+    "media": "(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape) and (prefers-color-scheme: dark)",
+    "scheme": "dark"
+  },
+  {
+    "file": "402x874-3-portrait-dark.png",
+    "width": 1206,
+    "height": 2622,
+    "media": "(device-width: 402px) and (device-height: 874px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait) and (prefers-color-scheme: dark)",
+    "scheme": "dark"
+  },
+  {
+    "file": "402x874-3-landscape-dark.png",
+    "width": 2622,
+    "height": 1206,
+    "media": "(device-width: 402px) and (device-height: 874px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape) and (prefers-color-scheme: dark)",
+    "scheme": "dark"
+  },
+  {
+    "file": "414x896-2-portrait-dark.png",
+    "width": 828,
+    "height": 1792,
+    "media": "(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait) and (prefers-color-scheme: dark)",
+    "scheme": "dark"
+  },
+  {
+    "file": "414x896-2-landscape-dark.png",
+    "width": 1792,
+    "height": 828,
+    "media": "(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape) and (prefers-color-scheme: dark)",
+    "scheme": "dark"
+  },
+  {
+    "file": "420x912-3-portrait-dark.png",
+    "width": 1260,
+    "height": 2736,
+    "media": "(device-width: 420px) and (device-height: 912px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait) and (prefers-color-scheme: dark)",
+    "scheme": "dark"
+  },
+  {
+    "file": "420x912-3-landscape-dark.png",
+    "width": 2736,
+    "height": 1260,
+    "media": "(device-width: 420px) and (device-height: 912px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape) and (prefers-color-scheme: dark)",
+    "scheme": "dark"
+  },
+  {
+    "file": "430x932-3-portrait-dark.png",
+    "width": 1290,
+    "height": 2796,
+    "media": "(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait) and (prefers-color-scheme: dark)",
+    "scheme": "dark"
+  },
+  {
+    "file": "430x932-3-landscape-dark.png",
+    "width": 2796,
+    "height": 1290,
+    "media": "(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape) and (prefers-color-scheme: dark)",
+    "scheme": "dark"
+  },
+  {
+    "file": "440x956-3-portrait-dark.png",
+    "width": 1320,
+    "height": 2868,
+    "media": "(device-width: 440px) and (device-height: 956px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait) and (prefers-color-scheme: dark)",
+    "scheme": "dark"
+  },
+  {
+    "file": "440x956-3-landscape-dark.png",
+    "width": 2868,
+    "height": 1320,
+    "media": "(device-width: 440px) and (device-height: 956px) and (-webkit-device-pixel-ratio: 3) and (orientation: landscape) and (prefers-color-scheme: dark)",
+    "scheme": "dark"
+  },
+  {
+    "file": "768x1024-2-portrait-dark.png",
+    "width": 1536,
+    "height": 2048,
+    "media": "(device-width: 768px) and (device-height: 1024px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait) and (prefers-color-scheme: dark)",
+    "scheme": "dark"
+  },
+  {
+    "file": "768x1024-2-landscape-dark.png",
+    "width": 2048,
+    "height": 1536,
+    "media": "(device-width: 768px) and (device-height: 1024px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape) and (prefers-color-scheme: dark)",
+    "scheme": "dark"
+  },
+  {
+    "file": "810x1080-2-portrait-dark.png",
+    "width": 1620,
+    "height": 2160,
+    "media": "(device-width: 810px) and (device-height: 1080px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait) and (prefers-color-scheme: dark)",
+    "scheme": "dark"
+  },
+  {
+    "file": "810x1080-2-landscape-dark.png",
+    "width": 2160,
+    "height": 1620,
+    "media": "(device-width: 810px) and (device-height: 1080px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape) and (prefers-color-scheme: dark)",
+    "scheme": "dark"
+  },
+  {
+    "file": "820x1180-2-portrait-dark.png",
+    "width": 1640,
+    "height": 2360,
+    "media": "(device-width: 820px) and (device-height: 1180px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait) and (prefers-color-scheme: dark)",
+    "scheme": "dark"
+  },
+  {
+    "file": "820x1180-2-landscape-dark.png",
+    "width": 2360,
+    "height": 1640,
+    "media": "(device-width: 820px) and (device-height: 1180px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape) and (prefers-color-scheme: dark)",
+    "scheme": "dark"
+  },
+  {
+    "file": "834x1194-2-portrait-dark.png",
+    "width": 1668,
+    "height": 2388,
+    "media": "(device-width: 834px) and (device-height: 1194px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait) and (prefers-color-scheme: dark)",
+    "scheme": "dark"
+  },
+  {
+    "file": "834x1194-2-landscape-dark.png",
+    "width": 2388,
+    "height": 1668,
+    "media": "(device-width: 834px) and (device-height: 1194px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape) and (prefers-color-scheme: dark)",
+    "scheme": "dark"
+  },
+  {
+    "file": "834x1210-2-portrait-dark.png",
+    "width": 1668,
+    "height": 2420,
+    "media": "(device-width: 834px) and (device-height: 1210px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait) and (prefers-color-scheme: dark)",
+    "scheme": "dark"
+  },
+  {
+    "file": "834x1210-2-landscape-dark.png",
+    "width": 2420,
+    "height": 1668,
+    "media": "(device-width: 834px) and (device-height: 1210px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape) and (prefers-color-scheme: dark)",
+    "scheme": "dark"
+  },
+  {
+    "file": "1024x1366-2-portrait-dark.png",
+    "width": 2048,
+    "height": 2732,
+    "media": "(device-width: 1024px) and (device-height: 1366px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait) and (prefers-color-scheme: dark)",
+    "scheme": "dark"
+  },
+  {
+    "file": "1024x1366-2-landscape-dark.png",
+    "width": 2732,
+    "height": 2048,
+    "media": "(device-width: 1024px) and (device-height: 1366px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape) and (prefers-color-scheme: dark)",
+    "scheme": "dark"
+  },
+  {
+    "file": "1032x1376-2-portrait-dark.png",
+    "width": 2064,
+    "height": 2752,
+    "media": "(device-width: 1032px) and (device-height: 1376px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait) and (prefers-color-scheme: dark)",
+    "scheme": "dark"
+  },
+  {
+    "file": "1032x1376-2-landscape-dark.png",
+    "width": 2752,
+    "height": 2064,
+    "media": "(device-width: 1032px) and (device-height: 1376px) and (-webkit-device-pixel-ratio: 2) and (orientation: landscape) and (prefers-color-scheme: dark)",
+    "scheme": "dark"
+  }
+]

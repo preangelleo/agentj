@@ -209,12 +209,12 @@ export async function runP340E() {
               const release = await (touch ? touchDrag : mouseDrag)('mic', 'file');
               await release();
               await settle();
-              await waitFor(q, `[...${$('tools')}.children].map(n=>n.id).join()==='mic,tDoc,tPhoto,tCamera'`);
+              await waitFor(q, `[...${$('tools')}.children].map(n=>n.id).join()==='mic,tDoc,tPhoto,tCamera,tFull'`);   // P412: full screen stays last
               check(eq(await composer(q), MIC_LEFT), 'the other remote follows the broadcast');
               writeFileSync(join(OUT, `${tag}-other-remote-synced.png`), await shoot(q, ''));
               await fake.send({ t: 'preferences', value: { ...fake.st.prefs, ui: { ...fake.st.prefs.ui, composer_buttons: ['mic', 'mic', 'image', 'camera'] } }, problem: null,
                 host: { version: '0.23.0a1', language_at: 0, settable: [KEY, 'appearance.language'], devices: [] } });
-              await waitFor(q, `[...${$('tools')}.children].map(n=>n.id).join()==='tDoc,tPhoto,tCamera,mic'`);
+              await waitFor(q, `[...${$('tools')}.children].map(n=>n.id).join()==='tDoc,tPhoto,tCamera,mic,tFull'`);
               check(eq(await composer(q), DEF), 'an invalid order from the Agent J host = the default');
             } finally { await q.dispose(); }
             await closeSet(p);

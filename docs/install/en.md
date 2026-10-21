@@ -37,6 +37,7 @@ For Windows 10 and Windows 11 (64-bit). Agent J runs in Ubuntu inside Microsoft'
 | Agent J | Nothing: it installs, starts the background service and links this seat with the same code |
 | Phone | A QR code appears: open https://m.agentj.app on **your own phone**, tap "Scan QR code" and scan it |
 | Connect the AI | Nothing: the AI must answer one real request before it is connected |
+| Keep it awake | Shows the Windows power steps to do in PowerShell yourself; nothing changes inside Ubuntu ([details](/docs/keep-awake/#windows)) |
 
 > **One more option**: the AI step's menu also has item 6, 「用 OpenCode 自带的免费模型先跑起来」 (start now with OpenCode's own free model): no sign-in, no key, ready at once; your conversations and code go to OpenCode and its model provider. It prefers free models whose provider does not train on your conversations; free models are rate-limited and can disappear, so switch to a model of your own for sensitive work later (Models & Key on the phone). The other choices and the recommended default are unchanged.
 
@@ -118,6 +119,7 @@ For Macs with Apple silicon and Intel processors.
 | Agent J | Nothing: it installs, starts the background service and links this seat with the same code |
 | Phone | A QR code appears: open https://m.agentj.app on **your own phone**, tap "Scan QR code" and scan it |
 | Connect the AI | Nothing: the AI must answer one real request before it is connected |
+| Keep it awake | Asked once your phone is paired. Press Enter for yes (recommended): no sleep while plugged in. A second question covers the closed lid; with that yes a closed Mac neither sleeps nor shuts down, so shut it down yourself before travel. Each change is a password card on your phone ([details](/docs/keep-awake/)) |
 
 > **One more option**: the AI step's menu also has item 6, 「用 OpenCode 自带的免费模型先跑起来」 (start now with OpenCode's own free model): no sign-in, no key, ready at once; your conversations and code go to OpenCode and its model provider. It prefers free models whose provider does not train on your conversations; free models are rate-limited and can disappear, so switch to a model of your own for sensitive work later (Models & Key on the phone). The other choices and the recommended default are unchanged.
 
@@ -198,6 +200,7 @@ For Ubuntu, Debian and other common distributions, on desktops, laptops and clou
 | Agent J | Nothing: it installs, starts the background service and links this seat with the same code |
 | Phone | A QR code appears: open https://m.agentj.app on **your own phone**, tap "Scan QR code" and scan it |
 | Connect the AI | Nothing: the AI must answer one real request before it is connected |
+| Keep it awake | Asked once your phone is paired. Press Enter for yes (recommended): no sleep while plugged in, also with the lid closed, and Agent J starts at boot without a login. Each change is a password card on your phone ([details](/docs/keep-awake/)) |
 
 > **One more option**: the AI step's menu also has item 6, 「用 OpenCode 自带的免费模型先跑起来」 (start now with OpenCode's own free model): no sign-in, no key, ready at once; your conversations and code go to OpenCode and its model provider. It prefers free models whose provider does not train on your conversations; free models are rate-limited and can disappear, so switch to a model of your own for sensitive work later (Models & Key on the phone). The other choices and the recommended default are unchanged.
 
@@ -332,7 +335,7 @@ It may need you here:
 The AI installs `agentj`, the program on the Agent J host, at one fixed version:
 
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.25.0a1#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.25.2a1#subdirectory=host"
 agentj doctor
 ```
 
@@ -414,7 +417,7 @@ Agent J has to be running on the Agent J host first (Step 10).
 1. On the phone, open https://m.agentj.app, add it to your Home Screen and open it from that icon. The top of the page says "Not paired yet".
 2. In the account dashboard, find the Agent J host’s seat card and choose Add a remote. Confirm with your passkey once; confirmation is reused for ten minutes on this session. The account page can be open on another computer.
 3. On the phone, tap Scan QR code and scan the code shown on the account page. If needed, use Copy pairing link and paste it into the Home Screen app under Or paste the pairing link. Do not paste it into an AI chat.
-4. This account-approved pairing needs no terminal code. Wait for the phone to connect.
+4. The account page automatically shows the waiting remote and six-digit confirmation code. Compare it with the phone, then choose **Approve**. The phone connects after approval.
 
 When the Agent J host is offline or account-page pairing is off (`agentj pair --check` tells you), the local alternative is `agentj pair` (or `agentj pair --link`): type the phone's six-digit code and the remote pairing password on that computer (it asks you to set one first if there is none).
 The link is the pairing key: it works once, for 5 minutes. Never send it through WeChat, a group chat or email, and never to any AI.
@@ -453,7 +456,7 @@ Every paid, unbound seat has its own one-line installation code. Two empty paid 
 
 ## Add a remote for another computer
 
-Once the target Agent J host is installed, account-bound and online, find its seat card on your account page and choose Add a remote. Confirm it's you, then scan with the phone; the target Agent J host's terminal isn't needed. Confirm either way: with your passkey (none on this device? choose Use a phone or tablet in the prompt and confirm on your phone), or with that computer's remote pairing password. After a passkey confirmation, the same session doesn't ask again for ten minutes; the QR expires after five minutes and adds one device. Pending devices can also be reviewed and approved on the seat card. Under More on the seat card, See what the Agent J host is waiting on you for is only for two cases: resuming after Stop everything, or enabling a scheduled task the Agent created. It has nothing to do with seats or billing; an unpaid bill never stops the tasks on the Agent J host.
+Once the host is installed, bound and online, choose Add a remote on its account-page seat card. Confirm with a passkey or the host’s remote pairing password, then scan. The page automatically shows the waiting remote, six-digit code and Approve; compare and approve. Password approval asks for the password again, encrypted to a fresh host key and bound to that exact device/handshake. The account page can be on another computer. Under More, See what the Agent J host is waiting on you for handles resuming after Stop everything and enabling a scheduled task; it is unrelated to billing.
 
 Account-page pairing is on by default. The target Agent J host’s owner can disable it with `agentj remote-pair off`. Offline hosts are never queued; turn them on and try again. Older hosts must run `agentj update apply` or update from a paired phone. Devices record “Added from account page” and other remotes receive a notice.
 
@@ -518,3 +521,17 @@ Choose a review route during setup. If you have neither a key nor a choice, `age
 Jev adds model review to bot and friend messages, rechecks redacted content and helps approvals assess unclear commands. Necessary redacted text goes directly to the selected provider, charged to your account under its data policy. TypeSafe uses its official API; OpenRouter routes to Jev. Review can misjudge and adds delay. An unavailable selected provider retains the channel's existing failure handling; it never silently turns review off.
 
 You can turn the master switch off in Settings → Safety and explicitly confirm “Skip — I understand safety is weaker”. The host records `jev.mode=off`, the signing device and confirmation time. All Jev model review is then bypassed and bot/friend flows continue; local patterns, credential filters, permission approvals and tool authorization remain. Off avoids model delay and false positives while removing this protection, even when a key is present. The Agent cannot sign for you or disable review by editing configuration. Only your paired phone's signed choice counts; unpairing that signing device invalidates the off authorization.
+
+Agent J uses a named, Developer ID-signed app with its own icon in macOS Login Items & Extensions. Host keeps the phone connected; Rescue watchdog helps when the host is stuck. Keep both enabled. Weekly tasks run on their schedules; disable tasks you no longer need. Upgrades rewrite Host and Rescue entries and migrate old weekly notification jobs. If the signed app download fails, go online and retry `agentj service install`.
+
+
+First remote: use Add a remote on the account-page seat card, or run `agentj pair` in your terminal. The local 127.0.0.1 settings page only links to the account page. Keep the account page open after it shows the QR: scanning automatically brings up the waiting remote, six-digit confirmation code and Approve. Compare the codes on both screens before approving. Later remotes open https://m.agentj.app to request pairing; a paired remote scans, compares the codes and approves.
+
+**First remote — choose your situation:**
+- **Own account**: open `account_url` returned by `agentj pair --check --json`, choose Add a remote on this host's seat card, scan, compare the six digits and approve.
+- **Seat only**: type this line yourself in the host's terminal: `agentj pair`. Set and enter your own remote pairing password (at least 8 characters), then enter the remote's six digits; AI must never set, read or type the password for you.
+- **Someone else opened the account**: ask the account manager to approve on the account page. If you have no account and prefer not to use the terminal, ask that manager for help.
+
+`agentj pair` shows both QR and link by default; `--link` remains compatible. Way 1: scan with your phone. Way 2: paste the same link into a computer browser's address bar. The link is a pairing key, valid for 5 minutes and one use; never share it with anyone or an AI. On iPhone paste into the pairing-link box inside the Home Screen icon.
+
+**After the first remote**: phone first → open https://m.agentj.app in your usual computer browser, scan its code with the paired phone, compare and confirm on the phone; computer first → on the computer open Settings → Remotes → Add a remote, scan with your main phone, compare and confirm on the computer. Finish installation after both remotes and the first message are verified.

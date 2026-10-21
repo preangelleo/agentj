@@ -39,7 +39,7 @@ MAX_TOTAL = 8 * 1024 * 1024
 MAX_MANIFEST = 64 * 1024              # the server stores the manifest JSON in one column (≤ 64 KiB)
 PATH_MAX, SEGMENT_MAX = 200, 80
 CATEGORIES = ("agent-ops", "security", "browser", "communication", "content", "media", "seo", "storage", "data", "workflow")
-TYPES = ("skill", "workflow")
+TYPES = ("skill", "workflow", "card")   # P432: card = one Agent J card (card/card.json + README + card/sample/), no code
 HARNESSES = ("claude_code", "codex", "opencode")
 
 NAME = re.compile(r"[a-z0-9][a-z0-9-]{1,39}")
@@ -155,12 +155,26 @@ def _hidden_error(where: str, text: str, i: int) -> BundleError:
                        "reviewer: refused", "hidden_characters")
 
 
+_TEXTISH_EXT = (".md", ".txt", ".rst", ".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".html", ".htm", ".css", ".csv",
+                ".sh", ".bash", ".zsh", ".py", ".js", ".mjs", ".cjs", ".ts", ".rb", ".pl", ".ps1", ".php", ".lua")
+
+
 def check_text_file(path: str, data: bytes) -> None:
-    """Every file that decodes as UTF-8: no hidden character (a leading BOM is fine)."""
+    """Every text file: no hidden character (a leading BOM is fine). Security review S2: a file that is not valid UTF-8 is
+    no longer skipped when it is meant to be text — a text / script extension, under scripts/ cli/ tools/ bin/, starting with
+    #!, or free of NUL bytes — it is decoded with errors="replace" and checked the same (one stray 0xFF must not hide a
+    U+202E). Only real binaries (they carry NUL bytes: images, archives) are skipped, where random bytes would read as
+    hidden characters."""
     try:
         text = data.decode("utf-8")
     except UnicodeDecodeError:
-        return
+        segs, low = path.split("/"), path.lower()
+        textish = (low.endswith(_TEXTISH_EXT) or data[:2] == b"#!" or b"\0" not in data
+                   or segs[0] in ("scripts", "cli", "tools", "bin")
+                   or (segs[0] == "scaffold" and len(segs) > 2 and segs[1] in ("scripts", "cli", "tools", "bin")))
+        if not textish:
+            return
+        text = data.decode("utf-8", "replace")
     i = hidden_character(text, file=True)
     if i is not None:
         raise _hidden_error(path, text, i)
@@ -284,6 +298,22 @@ def check_requires(r) -> None:
         raise BundleError("requires.skills: a list of package names")
 
 
+_TOOL_NAME = re.compile(r"[A-Za-z][A-Za-z0-9_]{0,63}")
+
+
+def check_permissions(v) -> None:
+    """P426 #181-1 `permissions` (optional): {tools ≤ 40 tool names, network bool, exec bool, secrets ≤ 60 env names}, nothing else."""
+    if not isinstance(v, dict) or set(v) - {"tools", "network", "exec", "secrets"}:
+        raise BundleError("manifest.permissions: an object with tools / network / exec / secrets only")
+    t, sc = v.get("tools", []), v.get("secrets", [])
+    if not (isinstance(t, list) and len(t) <= 40 and all(isinstance(x, str) and _TOOL_NAME.fullmatch(x) for x in t)):
+        raise BundleError("manifest.permissions.tools: ≤ 40 tool names")
+    if not (isinstance(sc, list) and len(sc) <= 60 and all(isinstance(x, str) and ENV_NAME.fullmatch(x) for x in sc)):
+        raise BundleError("manifest.permissions.secrets: ≤ 60 environment variable names")
+    if any(k in v and not isinstance(v[k], bool) for k in ("network", "exec")):
+        raise BundleError("manifest.permissions.network / exec: true or false")
+
+
 def check_manifest(m, paths=None) -> dict:
     """§1 manifest checks. `paths` = the set of file paths of the package (manifest.json excluded) when known."""
     if not isinstance(m, dict):
@@ -295,7 +325,7 @@ def check_manifest(m, paths=None) -> dict:
     if not (isinstance(m.get("name"), str) and NAME.fullmatch(m["name"])):
         raise BundleError("manifest.name: ^[a-z0-9][a-z0-9-]{1,39}$")
     if m.get("type") not in TYPES:
-        raise BundleError("manifest.type: skill or workflow")
+        raise BundleError("manifest.type: skill, workflow or card")
     if not (isinstance(m.get("version"), str) and SEMVER.fullmatch(m["version"])):
         raise BundleError("manifest.version: MAJOR.MINOR.PATCH[-pre]")
     for k in ("title_zh", "title_en"):
@@ -336,7 +366,14 @@ def check_manifest(m, paths=None) -> dict:
         raise BundleError("manifest.install.post_install: a list of strings")
     if "verify" in install and not (install["verify"] is None or _str(install["verify"], 0, 1000)):
         raise BundleError("manifest.install.verify: a string or null")
-    if m["type"] == "skill":
+    if m["type"] == "card":         # P432: no code, nothing to run — the card's own rules are checked by agentj (jcards_pkg)
+        if m.get("entry") != "card/card.json" or "README.md" not in have:
+            raise BundleError("a card needs README.md and entry card/card.json")
+        if any(p not in ("README.md", "card/card.json") and not re.fullmatch(r"card/sample/[A-Za-z0-9][A-Za-z0-9._-]{0,63}", p) for p in have):
+            raise BundleError("a card ships only README.md, card/card.json and card/sample/<data file>")
+        if install.get("post_install") or install.get("verify"):
+            raise BundleError("a card has no install commands")
+    elif m["type"] == "skill":
         for need in ("SKILL.md", "README.md"):
             if need not in have:
                 raise BundleError(f"a skill needs {need}")
@@ -352,6 +389,8 @@ def check_manifest(m, paths=None) -> dict:
             if k in m and not (_list_of_dicts(m[k]) and len(m[k]) <= 60):
                 raise BundleError(f"manifest.{k}: a list of objects")
     check_requires(m.get("requires"))
+    if "permissions" in m:
+        check_permissions(m["permissions"])
     if "certified" in m and not isinstance(m["certified"], bool):
         raise BundleError("manifest.certified: a boolean")
     if len(canonical_json(m)) > MAX_MANIFEST:

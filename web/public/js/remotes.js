@@ -1,3 +1,4 @@
+import { copyButton } from './copycode.js';
 // P171 · 遥控器管理 (Settings → its own second-level page, PROTOCOL §24): the remotes paired with this computer — list, add
 // (the computer makes a one-time pairing link + QR for THIS remote only; the new device shows a 6-digit safety code; the human
 // types it here), rename and unbind. Every write is a signed phone control (controls.signedWrite); reads are plain requests.
@@ -302,8 +303,7 @@ export function configure(hooks) {
   el('rm-cancel').addEventListener('click', () => cancelAdd(true));
   el('rm-copy').addEventListener('click', async () => {
     if (!add || !add.link) return;
-    const ok = await RelayMD.copyText(add.link);
-    toast(ok ? t('rm.copied') : t('r.copy.fail'), 3000);
+    await copyButton(add.link, el('rm-copy'));
   });
   el('rm-code').addEventListener('input', () => {
     const v = el('rm-code').value.replace(/[^0-9]/g, '').slice(0, 6);

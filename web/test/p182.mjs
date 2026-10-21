@@ -46,6 +46,7 @@ try {
     assert.equal(await evaluate(p, 'window.__wl.req'), 1, 'Screen Wake Lock requested at lock');
     assert.ok(await evaluate(p, idbCount('chunks')) >= 2, 'chunks sealed into IndexedDB while recording');
     writeFileSync(new URL(`recording-${language}.png`, out), await shoot(p, ''));
+    await sleep(650); // P435: record a valid final part, not a <0.5s tail that must be discarded
     await micTap(p);                                                        // end
     await waitFor(p, `document.getElementById('ptt').hidden && document.querySelectorAll('#tray .chip[data-st="ready"]').length === 3`, 15000);
     assert.equal(await evaluate(p, 'window.__wl.rel'), 1, 'Screen Wake Lock released at the end');

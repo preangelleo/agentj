@@ -1,6 +1,6 @@
-# Agent J 0.25.0a1 release notes
+# Agent J 0.25.2a1 release notes
 
-Host 0.25.0a1 / install 0.27.0; phone-web scope.
+Host 0.25.2a1 / install 0.27.2; phone-web scope.
 Phone parity must pass --strict. Full Android/Telegram parity is incomplete.
 Full Android/Telegram parity is incomplete.
 No APK is included in this release. Android source is for review, not a released app.
@@ -8,29 +8,95 @@ No APK is included in this release. Android source is for review, not a released
 Publication status: local preparation only. Live site verification is DEFERRED until
 the public commit and tag are pushed, the site is deployed, and cold installation passes.
 
-On failure restore v0.24.1a2 host/site/phone and the captured Dashboard Worker version (the additive migrations 0032 and 0033 stay in place; they are never re-applied). Release order: C (additive app D1 migration 0032 and feedback D1 migration 0033, then the Dashboard Worker), then A signed host/site/downloads then B phone web immediately after. Normal publication windows remain C 05:00–07:00 JST and A/B 23:00–08:00 JST; outside-window publication requires recorded owner authorization. No relay change. The website support chat, screen help, the web terminal, the Jev safety choice, Bots business settings, friend handover safeguards and the composer / admin-password card fixes ship together. Physical iPhone/Android, WebKit on a real device and the free help-runner deployment are not claimed.
+On failure restore v0.25.0a1 host/site/phone and the captured Dashboard Worker version (the additive app migrations 0034 and 0035 stay in place; it is never re-applied). Release order: C (additive app D1 migrations 0034 and 0035, then the Dashboard Worker; feedback database unchanged), then A signed host/site/downloads then B phone web immediately after. Normal publication windows remain C 05:00–07:00 JST and A/B 23:00–08:00 JST; outside-window publication requires recorded owner authorization. No relay change. The one-line message box with a full-screen editor, the Calendar card, chat ! commands, the computer password filled in with Face ID, the full-screen web terminal and direct Notebook / To-do saves ship together. Physical iPhone/Android and WebKit on a real device are not claimed.
 ## Changes
 
-- Every agentj.app page now has an Agent J support button at the bottom right, and support.agentj.app opens the same chat: free, with four levels (guest, verified email, signed in, seat holder); a verified email can reach a person, and seat holders can send screenshots. Messages sent too quickly wait in a queue and go out together as one.
-- Screen help: when automation stops at a QR code, a verification code or a human check, Agent J puts the code or a full screenshot on your paired phone; you scan, tap "Done" or type the answer, and the work goes on (`agentj qr push`, `agentj screen ask`).
-- Web terminal: your computer's command line on the phone under Settings → Safety → Web terminal. Off by default, switched on only at the computer with `agentj terminal enable`, Face ID on every open, closed again by itself.
-- Jev safety review is now your choice of TypeSafe, OpenRouter or off, switched under Settings → Safety; setup asks you to pick one.
-- Bots business settings: per-bot limits, backup models, conversation retention, source links in answers, editable fixed phrases, and an encrypted support window you can put on your own website with one line.
-- Handing tasks between friends is safer: the number of hops is limited, loops are stopped, the rate is capped, and a request nobody picks up expires with a notice; you can also hold one friend's requests until you approve them.
-- Pasted text goes by length: if the message box already has words, the paste goes in too, and only when together they pass the single-message limit does the pasted part become an attachment; into an empty box, text over 2,000 characters becomes an attachment.
-- After picking a / command or an @ name, one space follows and the cursor sits after it, and the message box keeps the focus; the keyboard only goes away once a message has really been sent.
-- The phone's Help and feedback, Emergency repair and offline page now open the support chat directly.
-- After you type the admin password, the password card closes as soon as the command starts and becomes a small "sudo running…" strip you can expand for output or stop; only a wrong password keeps the card. Every password and key card has a collapse button and Esc collapses it too; collapsing never declines.
-- 官网每一页右下角多了 Agent J 客服按钮，也可以直接打开 support.agentj.app 问：免费，分游客、验证邮箱、已登录、有席位四档；验证邮箱后可以转人工，有席位的用户还能发截图。发得太快时消息会排队，到点合成一条发出。
-- 屏幕求助：自动化卡在二维码、验证码或人机验证时，Agent J 把二维码或整屏截图发到你配对好的手机上，你扫码、点「完成」或回一句答案，它接着干（`agentj qr push`、`agentj screen ask`）。
-- 网页终端：在手机的「设置 → 安全 → 网页终端」里用电脑的命令行。默认关闭，只能在电脑上运行 `agentj terminal enable` 打开，每次打开都要 Face ID，用完自动关。
-- Jev 安全审核可以三选一：TypeSafe、OpenRouter 或关闭，在「设置 → 安全」里切换；安装时也会请你选一种。
-- Bots 商用设置：每个 Bot 的额度、备用模型、对话保留期、回答附上来源、可改的固定话术，以及一行代码挂到你自己网站上的加密客服窗口。
-- 好友之间转交任务更稳：自动限制转交次数、防止绕圈、限速，没人接的请求到时自动过期并通知你；你也可以让某位好友的请求先等你批准。
-- 粘贴文字按长度决定去处：输入框里已经有字就接着贴进去，合起来超过一条消息的上限才把这次粘贴的内容变成附件；输入框空着时，超过 2000 字直接变成附件。
-- 选了 / 命令或 @ 之后，后面自动补一个空格，光标停在后面，输入框不会失去焦点；只有消息真正发出去，键盘才收起。
-- 手机端设置的「帮助和反馈」、紧急修复和断线页都能直接打开在线客服。
-- 输入管理员密码后，命令一开始执行密码卡就收起，变成一条「sudo 执行中…」的小状态条，可以展开看输出或停止；只有密码错了卡片才会留着。每张密码卡和密钥卡都有收起按钮，按 Esc 也能收起，收起不等于拒绝。
+- Calendar saves directly; ICS and Google/iCloud sync keep conflicts recoverable.
+- Prefix chat with ! for terminal commands; output masks suspected passwords/keys.
+- Face ID fills sudo passwords, stored encrypted on your computer.
+- One-line input; fifth button, Ctrl+G or upward hold opens full-screen editing.
+- Optional keep-awake on plugged-in Mac/Linux. Linux runs with lid closed or after reboot before login; Mac lid needs approval. Shut down for travel; keep-awake off restores settings.
+- My devices groups confirmed same-owner computers; @ addresses their main Agent. friends pick recommends by load/usage.
+- Skills show last use/count, archive/restore; three similar tasks prompt a skill suggestion.
+- Resume a multi-step automation at the failed step.
+- Optional Files/Obsidian cards show chosen folders/notes; install cards from Plaza too.
+- First pairing shows a six-digit comparison code automatically; terminal includes QR and link.
+- Notebook/To-do save directly; Ask Agent J to collaborate starts AI help.
+- Computer: Settings → Security → Web terminal, Face ID, computer password once. Full-screen; Esc folds it while running.
+- The / list includes Claude Code, Codex and OpenCode commands.
+- Alt+Shift (Mac ⌥⇧) plus a card letter opens it; any background colour.
+- Optional palette card creates matching colours for card backgrounds.
+- Pull past the top to refresh; drafts stay. Phone safe areas stay dark.
+- Question cards accept typed answers.
+- Plaza checks safety/signatures; extra permissions need phone approval.
+- OpenCode sub-agents follow main-chat rules; approvals reach the phone.
+- Auto-update off and two versions behind: manual reminders at 09:00 Japan time.
+- Mixed-up Ark keys: Use Agent Plan and retry uses the saved correct key.
+- Support opens the same chat in a new tab; answers start with 2–4 lines and widen.
+- Replies show flowcharts/charts/steps; forms only prepare drafts.
+- First-connection guidance covers extra remotes, owners, seat holders and managed accounts.
+- Copy shows ✓ Copied; reader stays open and information notices fade.
+- Chat quota guidance starts with switching AI; background handover is explained separately.
+- Option groups in one reply work independently.
+- Stop has the same label in both languages.
+- Terminal history skips suspected password/key-setting commands.
+- One reply no longer appears on two pages.
+- Host recovery clears stalled banners and sends queued messages.
+- Files send after entering subfolders; paths/$VAR are not keys.
+- AI-confirmed quota wins; old phone readings get a stale warning.
+- Custom data folders no longer break updates; missing model is not a bad key.
+- OpenCode reconnects after upgrades, keeping the conversation.
+- Stop suppresses repeated Esc; quota notices cover only the active coding tool.
+- Saved keys refresh. Bailian: Token Plan/pay as you go; retired Coding Plan keys stay saved with a migration notice.
+- Approvals/sudo stay inside replies; reading safe areas stay dark.
+- Same owner: start on one side, compare on any authorized remote.
+- Verification preserves support routing; timeout fallback does not use a successful-answer allowance.
+- Holding icons avoids nearby text selection; hover/press/focus/disabled labels stay readable.
+- Promo-code errors distinguish unknown/expired/exhausted codes; uncertain reasons stay neutral.
+- The web-report glyph stays visible in normal, hover, pressed, focused and disabled states.
+- 日历直接存日程；支持只读 ICS、Google/iCloud 双向同步，冲突保留你的版本。
+- 以 `!` 开头（如 `!df -h`）在网页终端运行；结果卡和遮住疑似密码、密钥的输出交给 Agent。
+- sudo 卡上点「用 Face ID 填入电脑密码」，不用每次手打；密码只以加密形式存在电脑上。
+- 输入框永远一行；长内容点上方第 5 个按钮或按 Ctrl+G 全屏编辑，手机上按住输入框上滑也行。
+- 安装可选「永不休眠」：插电 Mac/Linux 不睡，Linux 合盖、重启未登录仍运行；Mac 合盖另确认。出门请关机，keep-awake off 还原。
+- 「我的设备」群：确认过同一个主人的几台电脑自动成群，@ 哪台就交给哪台的主 Agent；`agentj friends pick` 按负载和额度推荐一台。
+- 技能显示最近使用时间和次数，可归档恢复；同类事情做满 3 次，Agent 会问是否存为技能。
+- 分步自动化某一步失败时，可以从那一步继续，做完的步骤不重跑。
+- 文件和 Obsidian 卡（默认关闭）：在手机查看你选定的文件夹和笔记；也能安装广场上的卡片。
+- 首次配对更清楚：账号页扫码后自动显示六位确认码，核对一致再批准；终端同时给二维码和电脑链接。
+- 记事本和待办点 + 直接存到电脑，不经过 AI；想让 Agent 整理，点「请 Agent J 协作」。
+- 电脑浏览器：「设置→安全→网页终端」开启，Face ID 确认后输入一次电脑密码；全屏打开，Esc 收起继续运行。
+- 打 `/` 时也列出你用的 AI 编程工具（Claude Code、Codex 或 OpenCode）自己的命令。
+- 电脑上按 Alt+Shift（Mac 是 ⌥⇧）加卡片英文名的一个字母直接打开卡片；卡片底色任何颜色都能选。
+- 新的配色板卡（默认关闭）：一个颜色生成整组搭配色，点「存到我的配色」后每张卡片的底色都能用。
+- 消息滚到顶部继续下拉，看到「松开刷新」松手就刷新，草稿保留；手机顶部状态栏固定深色。
+- 问答卡里可以直接写答案，点「确认」就发回电脑。
+- 从广场装技能前先做安全检查、核对发布者签名；要的权限超出允许范围时，先在手机上问你。
+- OpenCode 派出的子 Agent 守和主对话同样的规则，审批照样到手机。
+- 关掉自动升级的电脑落后至少两个版本时，每天 09:00（日本时间）收到手动升级提醒。
+- 方舟 Agent Plan 和 Coding Plan 的 key 配反时，点「改用 Agent Plan 并重试」就用已存的 key 改好。
+- 官网客服在新标签延续对话，回答先给 2–4 行结论；正文跟着窗口变宽。
+- 回复里能直接看流程图、图表和步骤条；表单只帮你准备草稿。
+- 首次连上提示怎样添加手机或常用电脑；安装说明区分自己的账号、只有席位和别人管理的账号。
+- 拷贝按钮短暂显示 ✓「已复制」，阅读页拷贝后继续阅读；纯告知提示自动消失。
+- 聊天额度用完先指引切换 AI，后台任务的自动转交另有说明。
+- 一条回复里的几组选项按钮各点各的，互不影响。
+- 停止按钮中英文都显示「Stop」。
+- 网页终端的命令历史不记像设置密钥或密码的行。
+- 同一条回复不再出现两页。
+- 主机恢复后，没响应的横条自动消失，排队的消息自动补发。
+- Agent 进子文件夹后文件照常发到手机；路径和 `$VAR` 不再被当成密钥拦下。
+- AI 确认额度用完时以它为准，手机上没满的旧读数标「读数可能过期」。
+- 自定义过数据目录的电脑不再误报升级失败；找不到模型时不再说 Key 失效。
+- OpenCode 升级后自动重连，对话保留。
+- Stop 防止短时间重复发送 Esc；额度提醒只看当前主 AI 工具。
+- 密钥保存后立即刷新；百炼只提供 Token Plan 和按量付费入口，旧 Coding Plan 只提示迁移，不删除密钥。
+- 审批与 sudo 都显示在回复卡内部；阅读页上下固定深色。
+- 同一主人：一边看码，另一边有权遥控器核对确认。
+- 验证邮箱前后客服线路不变；上游超时给出明确回退，不扣成功回答次数。
+- 长按图标不再选中周边控件；按钮在悬停、按下、聚焦和暂不可用时保持清晰。
+- 优惠码提示区分不认识、过期、次数用完；原因不确定时给出中性提示。
+- 网页报告图案在正常、悬停、按下、聚焦和暂不可用时都保持清晰。
 
 ## Material acceptance limits
 

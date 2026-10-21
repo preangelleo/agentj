@@ -1,6 +1,6 @@
 {
-  "version": "0.25.0a1",
-  "major": true,
-  "zh": "官网在线客服；屏幕求助把二维码和验证码发到手机；手机上的网页终端；Jev 审核三选一；Bots 商用设置；好友转交更安全；粘贴按长度进附件；sudo 卡开始执行就收起。",
-  "en": "Website support chat; QR and code help on your phone; a web terminal; your choice of Jev review; Bots business settings; safer friend handovers."
+  "version": "0.25.2a1",
+  "major": false,
+  "zh": "日历与文件卡、电脑密码 Face ID 填入、全屏终端与编辑、记事待办直存；配对确认更清楚，复制与提示更顺手；技能和设备协作、恢复与安全修复。",
+  "en": "Calendar and file cards, Face ID password fill, full-screen terminal and editor, direct note saves, clearer pairing, copy feedback, teamwork and recovery fixes."
 }

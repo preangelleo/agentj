@@ -20,9 +20,10 @@
     "data": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["file"],
+      "oneOf": [{"required": ["file"]}, {"required": ["get"]}],
       "properties": {
         "file": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$", "description": "one file name in <state>/agentperm/cards-data/<id>/; notes: .md / .txt, checklist: .json"},
+        "get": {"type": "string", "maxLength": 200, "pattern": "^/([A-Za-z0-9._~-]{1,64}/?){0,16}$", "description": "P432, instead of file: GET http://127.0.0.1:<server.port><get> (needs server); no query, no .."},
         "maxBytes": {"type": "integer", "minimum": 1024, "maximum": 262144, "default": 65536}
       }
     },
@@ -30,7 +31,22 @@
     "itemActions": {"type": "array", "maxItems": 2, "items": {"$ref": "#/$defs/action"}, "description": "checklist only: buttons on every item; also {{item.id}} {{item.text}} {{item.done}}"},
     "plus": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]{1,63}$", "description": "the header's + on this card's page: one slash skill (no /) the phone puts in the message box, e.g. agentj-add-note; nothing is sent. Missing: agentj-cards"},
     "anchors": {"type": "array", "maxItems": 20, "items": {"$ref": "#/$defs/anchor"}, "description": "named places card/<id>#<anchor> scrolls to; every card also has top · actions · links, a checklist's item ids are anchors too"},
-    "links": {"type": "array", "maxItems": 6, "items": {"$ref": "#/$defs/link"}, "description": "links on the card's page: href = a web page in a new tab (the phone shows the address first), jlink = an Agent J internal link"}
+    "links": {"type": "array", "maxItems": 6, "items": {"$ref": "#/$defs/link"}, "description": "links on the card's page: href = a web page in a new tab (the phone shows the address first), jlink = an Agent J internal link"},
+    "server": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["port"],
+      "dependentRequired": {"repo": ["ref"], "ref": ["repo"]},
+      "description": "P432: the card's own server on this computer (the owner's Agent installs it). serve asks it on 127.0.0.1 only, sends and requires back X-AgentJ-Card: <id>, ≤ 5 s, bounded size and rate; the phone never reaches it",
+      "properties": {
+        "port": {"type": "integer", "minimum": 1024, "maximum": 65535, "not": {"enum": [2019, 2375, 2376, 2379, 2380, 3306, 4646, 5432, 5900, 5901, 5984, 6379, 6443, 8200, 8500, 8888, 9200, 9222, 9229, 11211, 11434, 15672, 27017]}},
+        "routes": {"type": "array", "maxItems": 4, "description": "POST routes a button may call (action.call); the host makes the body {card, action, item?, lang}",
+                   "items": {"type": "object", "additionalProperties": false, "required": ["id", "path"],
+                             "properties": {"id": {"type": "string", "pattern": "^[a-z][a-z0-9-]{1,31}$"}, "path": {"type": "string", "maxLength": 200, "pattern": "^/([A-Za-z0-9._~-]{1,64}/?){0,16}$"}}}},
+        "repo": {"type": "string", "pattern": "^https://github\\.com/[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9._-]{1,100}$", "description": "where the server's source lives (a plaza card: required, with ref)"},
+        "ref": {"type": "string", "pattern": "^[0-9a-f]{40}$", "description": "the exact commit of repo (never a branch name)"}
+      }
+    }
   },
   "$defs": {
     "text": {
@@ -66,10 +82,12 @@
     "action": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "label", "prompt"],
+      "required": ["id", "label"],
+      "oneOf": [{"required": ["prompt"]}, {"required": ["call"], "not": {"required": ["draft"]}}],
       "properties": {
         "id": {"type": "string", "pattern": "^[a-z][a-z0-9-]{1,31}$"},
         "label": {"$ref": "#/$defs/text", "description": "zh ≤ 8, en ≤ 20 characters"},
+        "call": {"type": "string", "pattern": "^[a-z][a-z0-9-]{1,31}$", "description": "P432, instead of prompt: one id of server.routes — the phone shows where it goes and asks the card's server on the owner's tap"},
         "prompt": {
           "description": "the chat message the button proposes (≤ 2000 characters); the phone shows it in full and sends only after the owner confirms",
           "oneOf": [{"type": "string", "minLength": 1, "maxLength": 2000}, {"$ref": "#/$defs/text"}]

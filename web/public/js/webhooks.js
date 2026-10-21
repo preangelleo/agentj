@@ -1,3 +1,4 @@
+import { copyButton } from './copycode.js';
 // P366 · Settings → Webhook (AGENTJ-HOOKS-SPEC §8.3): the computer's webhooks as a list the owner can read and steer, inside
 // the paired session (`hook_list` → `hook_list_res`; `hook_set {id, op: pause | resume | revoke}` → the same fresh list;
 // `hook_changed` from the host → re-read while the page is open, debounced). The host never sends a secret: a hook whose
@@ -153,11 +154,10 @@ async function revoke(h) {
   const yes = await D.confirm(t('p366.revokeTitle', { name: h.name }), t('p366.revokeText'), t('p366.revoke'), true);
   if (yes) await setOp(h, 'revoke');
 }
-async function copyUrl(h) {
+async function copyUrl(h, button) {
   const u = copyable(h);
   if (!u) { D.toast(t('p366.urlOnComputer'), 5000); return; }
-  const ok = await D.copy(u);
-  D.toast(t(ok ? 'p366.copied' : 'p366.copyFail'), 2400, ok ? 'success' : 'info');
+  await copyButton(u, button, D.copy);
 }
 
 function btn(label, cls, fn) {
@@ -182,7 +182,7 @@ function row(h, ended) {
   const acts = mk('div', 'whacts');
   if (h.state === 'active') {
     acts.append(btn(t(h.enabled ? 'p366.pause' : 'p366.resume'), 'whtoggle', () => setOp(h, h.enabled ? 'pause' : 'resume')));
-    acts.append(btn(t('p366.copyUrl'), 'whcopy', () => copyUrl(h)));
+    acts.append(btn(t('p366.copyUrl'), 'whcopy', e => copyUrl(h, e.currentTarget)));
   }
   acts.append(btn(t('p366.revoke'), 'aj-btn--danger whrevoke', () => revoke(h)));
   li.append(acts);

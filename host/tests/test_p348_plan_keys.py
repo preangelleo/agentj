@@ -46,13 +46,13 @@ class TaskEnvironment(unittest.TestCase):
             with self.subTest(kind=kind):
                 out = fence.auxiliary_environment(env(), kind, plan_keys=True)
                 self.assertEqual(out.get("ARK_CODING_PLAN_API_KEY"), ARK)
-                self.assertEqual(out.get("BAILIAN_CODING_PLAN_API_KEY"), BL_CODING)
+                self.assertNotIn("BAILIAN_CODING_PLAN_API_KEY", out)
                 self.assertEqual(out.get("BAILIAN_TOKEN_PLAN_API_KEY"), BL_TOKEN)   # 贾维斯 22:2x: all plans
                 self.assertEqual(out.get("KIMI_API_KEY"), KIMI)
                 blob = json.dumps(out)
                 self.assertNotIn(PAYG, blob)          # pay-as-you-go keys stay native-storage only, as before
                 self.assertNotIn(MOONSHOT, blob)
-        self.assertEqual(set(fence.PLAN_KEY_ENV), {"ARK_CODING_PLAN_API_KEY", "BAILIAN_CODING_PLAN_API_KEY",
+        self.assertEqual(set(fence.PLAN_KEY_ENV), {"ARK_CODING_PLAN_API_KEY",
                                                    "BAILIAN_TOKEN_PLAN_API_KEY", "KIMI_API_KEY",
                                                    "ARK_AGENT_PLAN_API_KEY"})     # P395
 
@@ -85,8 +85,8 @@ class TaskEnvironment(unittest.TestCase):
             self.assertEqual(agent_qwen.key_environment(e, None, source=e, names=agent_qwen.QwenAgent.names(chat))["OPENAI_API_KEY"],
                              BL_TOKEN)
             only_coding = {k: v for k, v in e.items() if k != "BAILIAN_TOKEN_PLAN_API_KEY"}
-            self.assertEqual(agent_qwen.key_environment(only_coding, None, source=only_coding,
-                                                        names=agent_qwen.QwenAgent.names(task))["OPENAI_API_KEY"], BL_CODING)
+            self.assertNotIn("OPENAI_API_KEY", agent_qwen.key_environment(only_coding, None, source=only_coding,
+                                                        names=agent_qwen.QwenAgent.names(task)))  # retired plan is not a fallback
             only_payg = {"HOME": d, "DASHSCOPE_API_KEY": PAYG}
             self.assertEqual(agent_qwen.key_environment(only_payg, None, source=only_payg,
                                                         names=agent_qwen.QwenAgent.names(task)), {})

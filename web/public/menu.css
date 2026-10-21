@@ -173,7 +173,7 @@ body:is([data-view="mem"],[data-view="act"],[data-view="tasks"],[data-view="mode
 .menubody{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none;
   padding:var(--menu-gap) max(var(--menu-pad), calc((100% - var(--menu-max)) / 2)) var(--page-end)}   /* P398 #157 (app.css) */
 .menubody::-webkit-scrollbar{display:none}
-.menunarrow{max-width:var(--menu-narrow);margin:0 auto;display:flex;flex-direction:column;gap:var(--menu-gap)}
+.menunarrow{margin:0;display:flex;flex-direction:column;gap:var(--menu-gap)}
 .menucols{columns:2 26rem;column-gap:var(--menu-gap)}
 .menucols>.menucard{break-inside:avoid;margin:0 0 var(--menu-gap)}
 .menunote{margin:0;color:var(--menu-muted);font-size:var(--ui-fs-small)}
@@ -789,7 +789,7 @@ body:not([data-view="chat"]) #set-actions .bulb{display:flex}
 .setconnection[data-online="true"]::before{background:var(--c-shield)}   /* P393: the dot keeps the green; 12 px words on Noir need 4.5:1 (Shield is 4.3) */
 @media(max-width:520px){.setconnection{max-width:9px;font-size:0;gap:0}.sethead .setesc{display:none}}
 
-body:has(#settings:not([hidden])) .toast{position:fixed;z-index:90}
+body:has(#settings:not([hidden])) .toast.circle{position:fixed;z-index:90}
 
 /* P393: a drop inside the five-second window is only a dot — amber 「正在重新连接…」, never the red line; ended repair results
    carry the P380 × on their first line and fold to one summary line (their log under 「详情」). */

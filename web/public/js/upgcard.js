@@ -4,7 +4,7 @@
 // one tap. Something → this card; 「现在升级」 is this phone's own signed /update, 「取消」 closes it on every remote.
 import { ask1, isReady, peer, sendApp } from './session.js';
 import { t } from './t.js';
-import { el, toast, confirmSheet, confirmOpen, closeConfirm } from './ui.js';
+import { el, toast, executionToast, confirmSheet, confirmOpen, closeConfirm } from './ui.js';
 
 export const KINDS = ['turn', 'shared_turn', 'queue', 'ask', 'question', 'secret', 'card', 'friend_card', 'friend', 'task',
   'task_queue', 'bots', 'bg', 'task_soon'];
@@ -56,7 +56,7 @@ export async function add(m) {
   showing = null;
   if (!card || card.id !== m.id) return;
   card = null;
-  if (yes) { if (await H.upgrade()) toast(t('upg.started'), 2600); }
+  if (yes) { if (await H.upgrade()) executionToast(t('upg.started'), 2600); }
   else sendApp({ t: 'upg_card_off', id: m.id }).catch(() => {});
 }
 /** host → `upg_card_done` (started by a remote's /update · cancelled · expired · replaced). */

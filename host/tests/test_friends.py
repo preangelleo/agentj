@@ -82,7 +82,8 @@ class Store(Base):
     def test_settings_defaults_and_validation(self):
         s = self.s.settings()
         self.assertEqual(s, {"on": True, "discoverable": True, "owner": "", "intro": "", "global_tok_day": 300000,
-                             "never_tell_extra": [], "relay_per_minute": 30, "relay_claim_seconds": 1800, "relay_pending_seconds": 86400})
+                             "never_tell_extra": [], "relay_per_minute": 30, "relay_claim_seconds": 1800, "relay_pending_seconds": 86400,
+                         "pick_rules": {}})   # + P426 #117
         self.assertIsNone(self.s.set_setting("on", False))
         self.assertFalse(self.s.on)
         self.assertEqual(self.s.set_setting("intro", "x" * 141), "bad_intro")
@@ -258,6 +259,20 @@ class Ledger(Base):
         self.s.record_in(A, now=self.now)
         self.assertEqual(self.s.precheck(A, "hi", now=self.now + 4), ("interval", 6))
         self.assertIsNone(self.s.precheck(A, "hi", now=self.now + 10))
+
+    def test_same_owner_skips_the_interval_but_keeps_a_per_minute_cap(self):
+        """Jarvis ruling 5: an active Same owner relation is not held to the group's spacing; relay_per_minute still caps it."""
+        self.s.set_group(A, "friend")
+        t = ts(2026, 10, 7, 12, 0, 0)
+        self.s.record_in(A, now=t)
+        self.assertEqual(self.s.precheck(A, "hi", now=t + 1), ("interval", 2), "an ordinary friend: 3 s apart")
+        self.assertIsNone(self.s.precheck(A, "hi", now=t + 1, same_owner=True))
+        for i in range(1, 30):
+            self.s.record_in(A, now=t + i * 0.5)
+        self.assertEqual(self.s.precheck(A, "hi", now=t + 20, same_owner=True), ("msg_min", 40), "30 in a minute: stopped")
+        self.assertEqual(self.s.set_setting("relay_per_minute", 60), None)
+        self.assertIsNone(self.s.precheck(A, "hi", now=t + 20, same_owner=True))
+        self.assertEqual(self.s.group("friend")["limits"]["min_interval_s"], 3, "the group itself is unchanged")
 
     def test_minute_window_and_boundary(self):
         t = ts(2026, 10, 7, 12, 0, 5)

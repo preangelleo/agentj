@@ -27,7 +27,9 @@ export function sanitize(t) {
     .map((m) => ({ mid: m.mid, name: base(m.name).slice(0, 128) || m.kind, mime: m.mime.toLowerCase(), kind: m.kind, bytes: m.bytes,
       sha256: m.sha256, ref: typeof m.ref === 'string' ? m.ref.slice(0, 512) : '' }));
   const skip = (Array.isArray(t && t.media_skip) ? t.media_skip : []).filter((s) => s && typeof s.name === 'string' && WHYS.includes(s.why))
-    .slice(0, MAX_ITEMS * 2).map((s) => ({ name: base(s.name).slice(0, 128), why: s.why, bytes: Number.isInteger(s.bytes) && s.bytes > 0 ? s.bytes : 0 }));
+    .slice(0, MAX_ITEMS * 2).map((s) => ({ name: base(s.name).slice(0, 128), why: s.why, bytes: Number.isInteger(s.bytes) && s.bytes > 0 ? s.bytes : 0,
+      // P424 #142: where a key-like refusal is — the line and a two-character masked hint (never the text)
+      ...(Number.isInteger(s.line) && s.line > 0 && s.line < 1e8 && typeof s.hint === 'string' && s.hint.length <= 4 ? { line: s.line, hint: s.hint } : {}) }));
   return { media, skip };
 }
 

@@ -927,7 +927,7 @@ class Page(unittest.TestCase):
         self.assertNotRegex(html, r"(?:src|srcset|action|formaction)\s*=\s*\"?https?:", "no third-party resources")
         self.assertNotRegex(html, r"<link[^>]+href=\"https?:", "no third-party stylesheets / icons / preloads")
         self.assertEqual(sorted(set(re.findall(r'href="(https?://[^"]+)"', html))),
-                         [f"https://agentj.app/{p}/" for p in ("contact", "docs", "privacy", "security")])
+                         [f"https://agentj.app/{p}/" for p in ("account", "contact", "docs", "privacy", "security")])
         zh = json.loads((admin.ASSET_DIR / "i18n/admin.zh.json").read_text())
         words = "\n".join(zh.values())
         for needle in ("建议一个人用一个 Agent", "一个 Agent 就是一个计费席位，只能运行在一台Agent J 主机或服务器上。它的名字只是个标签，就像给宠物起名，叫什么都行。",

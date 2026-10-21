@@ -185,3 +185,10 @@ asked then). Tests: `test/p332.test.mjs` (web-unit), `test/p332.mjs` (gate `p332
 - A sent message with 2–5 quotes shows one folded row `#omQuoteFold` (「引用 5 段」 · first quote · 「+4」, `om[data-qfold]`); a tap opens all (each row still jumps), another folds. Every page opens folded; one quote is unchanged.
 - Reading an older page: a send (say / sayWords / sayLater / typed command) and the own page's arrival no longer jump to the newest (`onNewestPage` / `sendFollow`); a short 「已发出，你还停在这一页」 toast; replies light the page number as before. From the newest page (or the page waiting for its reply) a send follows as before.
 - Tests: `node --test web/test/p340_b.test.mjs`; `node web/test/p340_b.mjs` (zh/en × light/dark × 350/360/390/690/1440 → `reports/qa/p340/b/`; `P340_PUBLIC=<old public>` writes the before shots to `before/`).
+
+
+## P445 transient information and shared copy feedback
+
+`ui.noticeSheet` is a buttonless centred glance (2 s); ASR readiness uses 1.8 s. Confirmations and retry actions retain their existing signed/action paths. `copycode.copyButton` and `copyFeedback` own all explicit copy controls: glyph, visible localized label, 1.5 s restoration and 1.8 s centred success/failure notice. Protected key and image writers keep their activation/approval contract. Clipboard values never enter feedback state. Reader copy stays in the reader. Audit and evidence: `test/p445.test.mjs`, `test/p445.mjs`, `reports/qa/p445`; related P292 and ASR regressions remain.
+
+P448: `public/controls.css` owns control-only selection/callout suppression and paired hover/active/focus/disabled colours. `js/control-gestures.js` delegates selectstart/contextmenu only for controls; content and editable fields retain selection. `test/p448.mjs` checks strict contrast and trusted touch gestures (390/1440 × zh/en × light/dark). No green/disabled contrast exception.

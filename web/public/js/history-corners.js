@@ -38,10 +38,12 @@ export const HOLD_MS = 500;
 /** A hold of `ms` without moving away calls fn(event). The click that ends a hold does nothing else; double taps are
  *  untouched (history-corners.js ignores taps longer than 300 ms). */
 export function longPress(node, fn, ms = HOLD_MS, now = () => performance.now()) {
+  node.setAttribute?.('data-no-select', '');
   let down = null, timer = null, fired = 0;
   const clear = () => { clearTimeout(timer); timer = null; down = null; };
   node.addEventListener('pointerdown', (e) => {
     if (!e.isPrimary || (e.pointerType === 'mouse' && e.button !== 0)) { clear(); return; }
+    if (e.cancelable) e.preventDefault();
     clear();
     down = { id: e.pointerId, x: e.clientX, y: e.clientY };
     timer = setTimeout(() => { timer = null; down = null; fired = now(); fn(e); }, ms);

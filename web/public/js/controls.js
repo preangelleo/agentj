@@ -6,11 +6,12 @@ import { request, done, isReady, channel, sendApp, randHex, gen, peer } from './
 import { signKey } from './store.js';
 import { myDeviceId } from './api.js';
 import { t, lang, locale, plain, fillText } from './t.js';
-import { el, mk, toast, toastAction, confirmSheet } from './ui.js';
+import { el, mk, toast, executionToast, toastAction, confirmSheet } from './ui.js';
 import { copyable } from './copycode.js';   // P292
 
 let H = null;          // {show(view), estopChanged(), friends()}
-export function configure(h) { H = h; }
+export function configure(h) { H = h; el('set-estop')?.addEventListener('click', onEstop); // @ix app.stop_all
+ }
 export let panel = 'chat';
 export const estop = { on: false, by: '' };
 
@@ -87,7 +88,7 @@ export async function onEstop() {
 }
 export async function onResume() {
   if (!await confirmSheet(t('estop.resumeTitle'), t('estop.resumeText'), t('estop.resumeYes'))) return;
-  const res = await command(await signed('resume', {}, { t: 'resume' }).catch(() => ({ t: 'resume' })));
+  const res = await signedWriteFa('resume', {}, { t: 'resume' }, H.faceId);
   if (!res.ok) toast(t('estop.resumeFail', { why: why(res.why) }), 4000);
 }
 
@@ -108,7 +109,7 @@ const GRANT_END = ['turn_end', 'revoked', 'limit', 'expired', 'device_gone', 'es
 export function endGrant(id, code) {
   if (!grants.delete(id)) return;
   renderGrants();
-  if (code !== 'turn_end') toast(t('grant.end.' + (GRANT_END.includes(code) ? code : 'other')), 3200);
+  if (code !== 'turn_end') executionToast(t('grant.end.' + (GRANT_END.includes(code) ? code : 'other')), 3200);
 }
 export function clearGrants() { grants.clear(); renderGrants(); }
 export const grantIds = () => [...grants.keys()];                                                     // P203 (§29.1)
@@ -119,7 +120,7 @@ export async function revokeGrants() {
 }
 export function showAuto(m) {
   if (typeof m.tool !== 'string' || typeof m.summary !== 'string') return;
-  toast(t(m.by === 'jev' ? 'ask.autoJev' : m.by === 'goal' ? 'ask.autoGoal' : m.by === 'full' ? 'p336.autoFull' : 'ask.auto', { tool: m.tool, summary: m.summary.slice(0, 120) }), 2600);
+  executionToast(t(m.by === 'jev' ? 'ask.autoJev' : m.by === 'goal' ? 'ask.autoGoal' : m.by === 'full' ? 'p336.autoFull' : 'ask.auto', { tool: m.tool, summary: m.summary.slice(0, 120) }), 2600);
 }
 
 // ---- 它记住了什么

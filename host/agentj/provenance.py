@@ -2,6 +2,8 @@
 from text. Group from-names differ from Relay's on purpose (Relay's Stop hook forwards on those exact strings)."""
 from __future__ import annotations
 
+import contextlib
+import contextvars
 import re
 import unicodedata
 
@@ -115,7 +117,34 @@ def is_owner(src) -> bool:
     return normalize(src)["role"] == "owner"
 
 
-def delegated_turn(agent) -> bool:
+def rank(src) -> int:
+    """0 the owner's side · 1 a delegated task (same owner / friend: a card, no owner-only path) · 2 anyone else (refused)."""
+    s = normalize(src)
+    return 0 if s["role"] == "owner" else (1 if s["kind"] in ("same_owner", "friend_task") else 2)
+
+
+def stricter(a, b):
+    """The less trusted of two sources (a on a tie)."""
+    return b if rank(b) > rank(a) else a
+
+
+_UNSET = object()
+_REQUEST = contextvars.ContextVar("agentj_request_source", default=_UNSET)
+
+
+@contextlib.contextmanager
+def request_source(src):
+    """P426 (S3): a request whose origin is not this turn's Send — an OpenCode sub-agent started in an earlier non-owner
+    turn, the main session OpenCode woke by itself after one finished. Inside, every check below takes the stricter of this
+    source and the current turn's (per asyncio task: a contextvar)."""
+    tok = _REQUEST.set(normalize(src))
+    try:
+        yield
+    finally:
+        _REQUEST.reset(tok)
+
+
+def _delegated(agent) -> bool:
     send = getattr(agent, "cur_send", None)
     src = getattr(send, "source", None)
     if send is None and callable(getattr(agent, "untrusted", None)) and agent.untrusted():
@@ -123,9 +152,32 @@ def delegated_turn(agent) -> bool:
     return normalize(src)["kind"] in ("same_owner", "friend_task")
 
 
+def _untrusted(agent) -> bool:
+    if agent is None:
+        return False
+    if not is_owner(getattr(getattr(agent, "cur_send", None), "source", None)):
+        return True
+    fn = getattr(agent, "untrusted", None)
+    return bool(fn and fn())
+
+
+def delegated_turn(agent) -> bool:
+    d = _delegated(agent)
+    o = _REQUEST.get()
+    if o is _UNSET:
+        return d
+    r = rank(o)
+    if r == 2 or (_untrusted(agent) and not d):     # a refused source on either side wins: refused, not a card
+        return False
+    return r == 1 or d
+
+
 def same_owner_source(agent) -> bool:
     """Is any same-owner task in play — this turn's Send, or (shared sessions, cur_send already cleared) the source the
     native session may still be running? Errs towards True: the owner's own turn then just asks again (P405)."""
+    o = _REQUEST.get()
+    if o is not _UNSET and rank(o) == 1:
+        return True
     if agent is None:
         return False
     return delegated_turn(agent) or normalize(getattr(agent, "pending_source", None))["kind"] in ("same_owner", "friend_task")
@@ -133,13 +185,10 @@ def same_owner_source(agent) -> bool:
 
 def untrusted_turn(agent) -> bool:
     """Is a non-owner message being handled? This turn's Send, or (shared sessions) a group envelope the native session
-    may still be running after Agent J stopped waiting for it. Approval paths refuse while True."""
-    if agent is None:
-        return False
-    if not is_owner(getattr(getattr(agent, "cur_send", None), "source", None)):
-        return True
-    fn = getattr(agent, "untrusted", None)
-    return bool(fn and fn())
+    may still be running after Agent J stopped waiting for it, or (P426 S3) a request carrying a non-owner source.
+    Approval paths refuse while True."""
+    o = _REQUEST.get()
+    return _untrusted(agent) or (o is not _UNSET and rank(o) > 0)
 
 
 def names_untrusted(text: str) -> bool:

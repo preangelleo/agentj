@@ -7,6 +7,7 @@
 //     → agentjarvis/site/content/docs/14-manual/<name>.<lang>.webp + agentjarvis/site/static/home-<state>.<lang>.webp
 // Every shot is a state the page really reaches; nothing is drawn by hand. Re-run after any visible change of the phone
 // page (logo, palette), then `node agentjarvis/site/build.mjs` (and `git checkout -- agentjarvis/site/public/dl/`).
+import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -113,6 +114,23 @@ async function paired(lang, form = DESK, shots = true) {
 // A large phone's CSS width at 2× (540×960 × 2 = 1080×1920), not 360 × 3: type and icons stay at their real size relative
 // to the screen, so a shot holds as much of a reply as an owner's own screen does. Each shot sits on a real conversation.
 const HOME_CSV = Buffer.from('item,left,daily,order\nmug,4,6,60\ncap,2,3,40\ntote,6,5,50\nbottle,9,4,30\n');
+// P427 #65: real protocol updates, with visible/dancing/distinct robots asserted before capture.
+async function homeRobots(p, lang, colors) {
+  await fake.send({ t: 'busy', by: 'Agent J', tasks: colors.map((c, i) => ({
+    id: 'home-' + c, kind: 'temp', who: null, c, since: 1792500000 + i,
+    label: lang === 'en' ? ['Check stock', 'Draft report', 'Review returns', 'Prepare charts', 'Compare suppliers', 'Summarise orders'][i]
+      : ['核对库存', '起草周报', '整理退货', '准备图表', '比较供应商', '汇总订单'][i],
+  })) });
+  await waitFor(p, `document.querySelectorAll('#busyDots i.rb').length === ${colors.length}`);
+  await waitFor(p, `[...document.querySelectorAll('#busyDots i.rb')].every(e => getComputedStyle(e).animationName === 'rb-dance-18')`);
+  const rows = await evaluate(p, `[...document.querySelectorAll('#busyDots i.rb')].map(e => {const r=e.getBoundingClientRect(); return {row:e.dataset.r, visible:r.width>0 && r.left>=0 && r.right<=innerWidth};})`);
+  assert.equal(new Set(rows.map(x => x.row)).size, colors.length);
+  assert.ok(rows.every(x => x.visible));
+  const prior = p._homeRobots || new Set();
+  assert.ok(rows.every(x => !prior.has(x.row)), "green and blue use different robots");
+  rows.forEach(x => prior.add(x.row)); p._homeRobots = prior;
+  console.log('P427 robots', lang, colors.length, JSON.stringify(rows));
+}
 async function home(lang) {
   const en = lang === 'en', NAME = 'Agent J', out = { dir: HOME_OUT, quality: 72 };
   const p = await paired(lang, HOME_PHONE, false);
@@ -132,6 +150,7 @@ async function home(lang) {
       : '## 今天\n\n**132 单**（比昨天多 18%），退货 2 单。有 4 个商品本周会断货：\n\n| 商品 | 剩余 | 日销 | 建议补 |\n|---|---|---|---|\n| 马克杯 | 4 | 6 | 60 |\n| 棒球帽 | 2 | 3 | 40 |\n| 帆布袋 | 6 | 5 | 50 |\n| 保温杯 | 9 | 4 | 30 |\n\n### 供应商\n\n- **A 家**：便宜 8%，5 天到\n- **B 家**：2 天到，赶得上周末活动\n\n清单：[restock.csv](restock.csv)\n\n要我向 B 家下单吗？');
   await fake.updateTurn(t.id, { media: [{ mid: 'R'.repeat(22), name: 'restock.csv', mime: 'text/csv', kind: 'file', bytes: HOME_CSV.length, sha256: sha(HOME_CSV), ref: 'restock.csv' }] });
   await waitFor(p, `document.getElementById('pg').textContent === '3 / 3' && !!document.querySelector('#words .mslot[data-mid]')`);
+  await homeRobots(p, lang, [0, 2, 3]);
   await shot(p, 'home-idle', lang, out);                                          // green
   // blue: the next request, half done — the reply streams in as the Agent works
   const w = await fake.addTurn(phone(en ? 'Order from B, then write this week’s report' : '向 B 家下单，然后把这周的周报写了'),
@@ -140,7 +159,9 @@ async function home(lang) {
   await meter(46, 24);
   await fake.send({ t: 'status', s: 'working', agent: 'claude', name: NAME });
   await waitFor(p, `document.body.dataset.status === 'working' && document.getElementById('pg').textContent === '4 / 4'`);
-  await shot(p, 'home-busy', lang, out);                                          // blue
+  await homeRobots(p, lang, [4, 5, 7, 8, 9, 10]);
+  await shot(p, 'home-busy', lang, out);
+  await fake.send({ t: 'busy', by: NAME, tasks: [] });                                          // blue
   // orange: step 4 wants to send mail on the owner's behalf
   await fake.send({ t: 'status', s: 'waiting', agent: 'claude', name: NAME });
   const ask = hex(16);
@@ -280,11 +301,12 @@ async function run(lang) {
   await sleep(3000);                                  // let the "Declined" toast fade before the stopped shot
   fake.answer('estop', () => [{ t: 'ctl_res', ok: true }, { t: 'estop_state', on: true, by: 'iPhone' }]);
   fake.answer('resume', () => [{ t: 'ctl_res', ok: true }, { t: 'estop_state', on: false }]);
-  await click(p, '#slashBtn');
-  await click(p, '#menu [data-estop="stop"]');
+  await evaluate(p, `(async()=>{(await import('/js/settings.js')).open();})()`);
+  await click(p, '#set-estop');
   await waitFor(p, `!document.getElementById('confirm').hidden`);
   await click(p, '#confirm-yes');
   await waitFor(p, `!document.getElementById('estop-banner').hidden`);
+  await evaluate(p, `(async()=>{(await import('/js/settings.js')).close();})()`);
   await fake.send({ t: 'status', s: 'stopped', agent: 'claude', name: NAME });
   await waitFor(p, `document.body.dataset.agent === 'stopped'`);
   await shot(p, 'stopped', lang);                                                 // grey + red banner

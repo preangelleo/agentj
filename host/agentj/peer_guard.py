@@ -21,7 +21,7 @@ import os
 import re
 import secrets
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from . import privacy, tg_guard
 
@@ -48,6 +48,7 @@ _VENDOR = [(k, p) for k, p, _ in privacy._SECRETS if k in VENDOR_KINDS]
 class Verdict:
     ok: bool
     rule: str | None = None
+    where: dict | None = field(default=None, compare=False)   # P424 #147: masked position (privacy.where)
 
 
 def _forms(text: str) -> tuple[str, str]:
@@ -63,7 +64,7 @@ def credential_shape(text: str) -> str | None:
         if PRIVATE_KEY.search(t):
             return "private_key"
     for t in (raw, spaced):
-        _, hits = privacy.redact_with_report(t)
+        _, hits = privacy.redact_with_report(t, paths=True)   # P424 #147: a path / file name / env-var name is no credential
         kinds = sorted(k for k in hits if k in CRED_KINDS)
         if kinds:
             return kinds[0]
@@ -119,8 +120,18 @@ def inbound(text: str) -> Verdict:
         return Verdict(False, f"asks_secret:{hit}")
     kind = credential_shape(text)
     if kind:
-        return Verdict(False, f"credential:{kind}")
+        return Verdict(False, f"credential:{kind}", locate(text, kind))
     return Verdict(True)
+
+
+def locate(text: str, kind: str | None = None) -> dict | None:
+    """P424 #147: where in `text` the refused fragment is (privacy.where: line, column, length, a two-character hint)."""
+    t = text or ""
+    span = privacy.secret_at(t, {kind} if kind in CRED_KINDS else None) or privacy.secret_at(t)
+    if span is None and kind == "private_key":
+        m = PRIVATE_KEY.search(t)
+        span = (kind, m.start(), m.end()) if m else None
+    return privacy.where(t, span)
 
 
 # ------------------------------------------------------------------ the host's own secrets
@@ -184,6 +195,17 @@ class SecretIndex:
         for i in range(len(v) - WINDOW + 1):
             self._set.add(self._h(v[i:i + WINDOW]))
 
+    def find(self, text: str) -> tuple[int, int] | None:
+        """P424 #147: (start, end) in `text` as written of the first window of a known secret value, or None (found only in a
+        squeezed / normalised spelling)."""
+        if not self._set or not text:
+            return None
+        for i in range(len(text)):
+            for n in sorted(self._lens):
+                if i + n <= len(text) and self._h(text[i:i + n]) in self._set:
+                    return i, i + n
+        return None
+
     def hits(self, text: str) -> bool:
         if not self._set or not text:
             return False
@@ -230,7 +252,9 @@ class SecretIndex:
                     body = fh.read()
             except OSError:
                 continue
-            for k, v in _parse_env(body):
+            pairs = _parse_env(body)
+            privacy.remember_env_names(k for k, _ in pairs)   # P424 security: key NAMES only (`KEY=OTHER_ENV_NAME`)
+            for k, v in pairs:
                 if SECRET_NAME.search(k) or _tokenish(v):
                     idx.add(v)
         return idx
@@ -243,10 +267,11 @@ def _kw_norm(s: str) -> str:
 def outbound(text: str, index: SecretIndex | None, never_tell_extra=()) -> Verdict:
     """§17.6 step 6. ok=False → not sent; a peer_question card tells the owner why (rule), never what matched."""
     if index is not None and index.hits(text or ""):
-        return Verdict(False, "secret_fragment")
+        at = index.find(text or "")
+        return Verdict(False, "secret_fragment", privacy.where(text, ("secret_fragment", *at)) if at else None)
     kind = credential_shape(text)
     if kind:
-        return Verdict(False, "private_key" if kind == "private_key" else f"credential:{kind}")
+        return Verdict(False, "private_key" if kind == "private_key" else f"credential:{kind}", locate(text, kind))
     squeezed = _kw_norm(text or "")
     for i, kw in enumerate(never_tell_extra or ()):
         if not isinstance(kw, str):

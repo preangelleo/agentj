@@ -13,7 +13,7 @@ Everything is computed here; the phone is the remote control:
   renders each prompt from the manifest with whitelisted variables, quoted and cut, behind a 「来自卡片」 label. A card
   has no other way to act — no command, no approval, no network, no credential (the manifest has no field for one).
 - switches: <state>/agentperm/cards/state.json `{"on": {id: bool}}` — every card defaults on (P393 #129: official cards too,
-  the owner turns them off; a switch the owner never touched follows the default), the five system pages are never switches.
+  palette is the explicit default-off exception (#178). The owner turns them off; a switch the owner never touched follows the default), the five system pages are never switches.
 
 Storage: official cards ship read-only in cardpacks/<id>/ (card.json + sample/); the owner's cards are applied to
 <state>/agentperm/cards/active/<id>/ (the previous version of the same id sleeps in dormant/<when>-<id>/, newest
@@ -40,10 +40,11 @@ PKG = pathlib.Path(__file__).resolve().parent / "cardpacks"
 SCHEMA_PATH = PKG / "card.schema.json"
 SCHEMA_ID = "https://agentj.app/schema/agentj-card-1.json"
 CAP = "jcards1"
-PHONE_TYPES = ("jcard_list", "jcard_get", "jcard_set", "jcard_note", "jcard_color")
-SUBCOMMANDS = ("list", "validate", "apply", "on", "off", "remove", "export", "open", "note", "todo", "automation", "schema")   # agentj card … (parser() builds these)
-OFFICIAL = ("notes", "todo", "automation")             # shipped in phase 1, default on (Settings → Cards turns them off)
-PLANNED = ("obsidian", "calendar", "files")   # official cards of the next phases: their ids are reserved now
+PHONE_TYPES = ("jcard_list", "jcard_get", "jcard_set", "jcard_note", "jcard_color", "jcard_cal", "jpalette", "jcard_call", "jcard_files", "jcard_file", "jcard_perm")
+SUBCOMMANDS = ("list", "validate", "apply", "on", "off", "remove", "export", "open", "note", "todo", "cal", "automation", "files", "obsidian", "pack", "rollback", "schema")
+OFFICIAL = ("notes", "todo", "automation", "calendar", "official-palette", "files", "obsidian")
+DEFAULT_OFF = ("official-palette", "files", "obsidian")
+PLANNED = ()
 SYSTEM = ("chat", "workflows", "skills", "memory", "agentj")   # the five system cards of the logo menu
 PAGE_IDS = ("cards", "settings")         # the card wall and Settings: page names, never a card id (card/<id> must stay unambiguous)
 RESERVED_PREFIX = ("agentj-", "official-")
@@ -74,7 +75,7 @@ ITEMS_MAX, ITEM_TEXT_MAX, ITEM_VAR_MAX = 200, 300, 200
 USER_MAX = 100                            # the deck has no count limit; this only bounds one list message
 DORMANT_KEEP = 20
 TOP_KEYS = {"$schema", "schemaVersion", "id", "version", "name", "description", "author", "icon", "accent", "template",
-            "data", "actions", "itemActions", "plus", "links", "anchors"}
+            "data", "actions", "itemActions", "plus", "links", "anchors", "server"}
 REQUIRED = ("schemaVersion", "id", "version", "name", "description", "icon", "accent", "template", "data")
 LABEL = {"zh": "〔来自卡片：{name}〕", "en": "[From card: {name}] "}
 DONE_WORD = {"zh": ("未完成", "已完成"), "en": ("open", "done")}
@@ -151,15 +152,17 @@ def _prompt_ok(p, allowed: tuple, errs: list, path: str) -> None:
 
 
 def _actions(doc, key: str, most: int, allowed: tuple, errs: list) -> None:
-    acts = doc.get(key, [])
+    from . import jcards_server
+    acts, routes = doc.get(key, []), jcards_server.route_ids(doc)
     if not isinstance(acts, list) or len(acts) > most:
         errs.append(_m("actions", key, f"{key} 是列表，最多 {most} 个", f"{key} is a list of at most {most}"))
         return
     seen = set()
     for i, a in enumerate(acts):
         p = f"{key}[{i}]"
-        if not isinstance(a, dict) or set(a) - {"id", "label", "prompt", "draft"}:
-            errs.append(_m("actions", p, f"{p} 只能有 id、label、prompt、draft", f"{p} may only have id, label, prompt, draft"))
+        if not isinstance(a, dict) or set(a) - {"id", "label", "prompt", "draft", "call"} or ("prompt" in a) == ("call" in a):
+            errs.append(_m("actions", p, f"{p} 只能有 id、label，加 prompt（可带 draft）或 call 二选一",
+                           f"{p} has id, label and either prompt (with draft?) or call"))
             continue
         if not isinstance(a.get("id"), str) or not ID_RE.fullmatch(a["id"]) or a["id"] in seen:
             errs.append(_m("actions", f"{p}.id", f"{p}.id 小写字母开头、只含小写字母数字和 -，不重复",
@@ -167,6 +170,11 @@ def _actions(doc, key: str, most: int, allowed: tuple, errs: list) -> None:
         if isinstance(a.get("id"), str):
             seen.add(a["id"])
         _text2(a, "label", LABEL_MAX, errs, f"{p}.label")
+        if "call" in a:      # P432: a button that asks the card's own server (declared route, POST, the owner confirms)
+            if a["call"] not in routes or "draft" in a:
+                errs.append(_m("call", f"{p}.call", f"{p}.call 写 server.routes 里的一个 id（不和 draft 一起用）",
+                               f"{p}.call names one id of server.routes (not with draft)"))
+            continue
         _prompt_ok(a.get("prompt"), allowed, errs, f"{p}.prompt")
         if "draft" in a and type(a["draft"]) is not bool:
             errs.append(_m("actions", f"{p}.draft", f"{p}.draft 是 true / false", f"{p}.draft is true / false"))
@@ -287,12 +295,19 @@ def check(doc, official: bool = False) -> list:
         errs.append(_m("template", "template", "第一期只开放模板卡：template 是 " + "、".join(TEMPLATES),
                        "phase 1 opens template cards only: template is one of " + ", ".join(TEMPLATES)))
     data = doc.get("data")
+    from . import jcards_server
+    jcards_server.check(doc, errs)
     if "data" in doc:
-        if not isinstance(data, dict) or set(data) - {"file", "maxBytes"} or "file" not in data:
-            errs.append(_m("data", "data", "data 写成 {\"file\": \"文件名\", \"maxBytes\"?: 数字}", "data is {\"file\": \"name\", \"maxBytes\"?: n}"))
+        if not isinstance(data, dict) or set(data) - {"file", "get", "maxBytes"} or ("file" in data) == ("get" in data):
+            errs.append(_m("data", "data", "data 写成 {\"file\": \"文件名\"} 或 {\"get\": \"/路径\"}（本机 server），二选一，可加 \"maxBytes\"",
+                           "data is {\"file\": \"name\"} or {\"get\": \"/path\"} (the card's server), one of the two, with \"maxBytes\"?"))
         else:
-            f = data["file"]
-            if not isinstance(f, str) or not FILE_RE.fullmatch(f) or ".." in f:
+            f = data.get("file")
+            if "get" in data:   # P432: the card's own server on this computer answers GET http://127.0.0.1:<port><get>
+                if not isinstance(doc.get("server"), dict) or not jcards_server.path_ok(data["get"]):
+                    errs.append(_m("data", "data.get", "data.get 是一个路径（/开头，不带 ? 和 ..），而且要写 server",
+                                   "data.get is a path (starting with /, no ? or ..) and needs server"))
+            elif not isinstance(f, str) or not FILE_RE.fullmatch(f) or ".." in f:
                 errs.append(_m("data", "data.file", "data.file 只写一个文件名（不带目录），字母数字和 . _ -",
                                "data.file is one file name (no folder): letters, digits, . _ -"))
             elif DENY_RE.search(f):
@@ -433,11 +448,18 @@ def _save_switches(root, s: dict) -> None:
     _write_json(root, ("cards",), "state.json", {"on": s})
 
 
-def set_on(root, cid: str, on: bool) -> bool:
+def set_on(root, cid: str, on: bool, seen: str | None = None) -> bool:
     c = find(root, cid)
     if not c:
         return False
-    if on and c["official"]:                  # first switch-on: the sample data, so the card is never blank
+    if on and not c["official"]:              # P432: a plaza card goes on only with the digest of the summary the owner read
+        from . import jcards_pkg
+        if jcards_pkg.source(root, cid):
+            if seen != jcards_pkg.digest(c["doc"]):
+                return False
+            if not jcards_pkg.approve(root, cid, c["doc"]):   # outside agentperm: the switch alone never turns a plaza card on
+                return False
+    if on and c["official"] and c["doc"]["data"].get("file"):   # first switch-on: the sample data, so the card is never blank
         _seed(root, cid, c["doc"], _read_file(c["dir"] / "sample" / c["doc"]["data"]["file"], DATA_MAX))
     s = switches(root)
     s[cid] = bool(on)
@@ -459,7 +481,7 @@ def cards(root) -> list:
     for cid in OFFICIAL:
         doc, errs = load(official_dir(cid))
         if doc and not errs:
-            on = s.get(cid, True)
+            on = s.get(cid, cid not in DEFAULT_OFF)
             if on and cid not in s:               # on by default, never switched: the sample once, so it is never blank
                 _seed(root, cid, doc, _read_file(official_dir(cid) / "sample" / doc["data"]["file"], DATA_MAX))
             out.append({"id": cid, "doc": doc, "official": True, "on": on, "dir": official_dir(cid)})
@@ -483,8 +505,11 @@ def cards(root) -> list:
                     continue
     except OSError:
         pass
+    from . import jcards_pkg
+    plaza = jcards_pkg.sources(root) if mine else {}
     for _t, cid, doc in sorted(mine)[:USER_MAX]:
-        out.append({"id": cid, "doc": doc, "official": False, "on": s.get(cid, True), "dir": home(root) / "active" / cid})
+        on = s.get(cid, True) and (cid not in plaza or jcards_pkg.approved(root, cid, doc, plaza))   # P432: plaza = approved digest
+        out.append({"id": cid, "doc": doc, "official": False, "on": on, "dir": home(root) / "active" / cid})
     return out
 
 
@@ -555,7 +580,7 @@ def _refused(path: str) -> dict:
     return {"ok": False, "errors": [_m("link", path, f"{path} 是符号链接，卡片目录里不收链接", f"{path} is a symbolic link; card folders take none")]}
 
 
-def apply(root, folder) -> dict:
+def apply(root, folder, on: bool = True) -> dict:
     """validate → copy into active/<id>/ (the old version of the same id sleeps) → switched on. → {ok, id?, errors?, dormant?}
     The bytes that are checked are the bytes that are installed; every step below agentperm/cards is relative to a directory
     fd opened without following links, so a link planted under agentperm can never redirect a write or a move."""
@@ -568,9 +593,9 @@ def apply(root, folder) -> dict:
                                            "official cards are not applied: switch them on in Settings → Cards (or agentj card on <id>)")]}
     manifest = _read_file(folder / "card.json", MANIFEST_MAX)
     doc2, errs2 = parse(manifest)
-    sample_path = folder / "sample" / doc["data"]["file"]
-    sample = _read_file(sample_path, DATA_MAX) if os.path.lexists(sample_path) else None
-    if errs2 or doc2 != doc or (os.path.lexists(sample_path) and sample is None):
+    sample_path = folder / "sample" / (doc["data"].get("file") or "-")
+    sample = _read_file(sample_path, DATA_MAX) if doc["data"].get("file") and os.path.lexists(sample_path) else None
+    if errs2 or doc2 != doc or (doc["data"].get("file") and os.path.lexists(sample_path) and sample is None):
         return {"ok": False, "errors": errs2 or [_m("changed", "", "文件在检查时变了（或样例是链接），再试一次",
                                                   "the folder changed while checking (or the sample is a link); try again")]}
     cid, stage = doc["id"], f".stage-{os.getpid()}"
@@ -598,7 +623,7 @@ def apply(root, folder) -> dict:
                                            f"cannot apply: {e.strerror} (a link or wrong permissions under the cards folder)")]}
     _seed(root, cid, doc, sample)
     s = switches(root)
-    s[cid] = True
+    s[cid] = bool(on)                         # P432: a plaza card arrives switched off
     with contextlib.suppress(OSError):        # a user card is on by default anyway (switches() falls back to on)
         _save_switches(root, s)
     return {"ok": True, "id": cid, **({"dormant": dormant} if dormant else {})}
@@ -656,7 +681,7 @@ def render(card: dict, tpl, lang: str, root, item: dict | None = None) -> str:
     Item text is data (it may come from anyone): quoted in 「」, one line, cut — never markup, never a second variable."""
     doc = card["doc"]
     name = _pick(doc["name"], lang)
-    vals = {"card.name": name, "data.path": _short(data_dir(root, card["id"]) / doc["data"]["file"])}
+    vals = {"card.name": name, "data.path": data_where(root, card)}
     if item is not None:
         vals.update({"item.id": item["id"], "item.text": "「" + _clean(item["text"], ITEM_VAR_MAX) + "」",
                      "item.done": DONE_WORD[lang if lang in DONE_WORD else "en"][int(item["done"])]})
@@ -664,11 +689,20 @@ def render(card: dict, tpl, lang: str, root, item: dict | None = None) -> str:
     return body[:PROMPT_MAX] if body.startswith("/") else (LABEL.get(lang, LABEL["en"]).format(name=name) + body)[:PROMPT_MAX + 64]
 
 
+def data_where(root, card: dict) -> str:
+    """Where a card's data lives: its file (~/…) or, P432, its server's GET address."""
+    d = card["doc"]["data"]
+    if "get" in d:
+        from . import jcards_server
+        return jcards_server.where(card["doc"], d["get"]).split(" ", 1)[1]
+    return _short(data_dir(root, card["id"]) / d["file"])
+
+
 def _read(root, card: dict) -> tuple[bytes | None, str | None, bool]:
     """→ (bytes, problem, cut). Only the card's own data folder, level by level, no link anywhere, a regular file only."""
     doc = card["doc"]
-    f, most = doc["data"]["file"], doc["data"].get("maxBytes", DATA_DEFAULT)
-    if not FILE_RE.fullmatch(f) or DENY_RE.search(f) or not ID_RE.fullmatch(card["id"]):
+    f, most = doc["data"].get("file"), doc["data"].get("maxBytes", DATA_DEFAULT)
+    if not isinstance(f, str) or not FILE_RE.fullmatch(f) or DENY_RE.search(f) or not ID_RE.fullmatch(card["id"]):
         return None, "refused", False
     try:
         with _dirfd(root, ("cards-data", card["id"])) as d:
@@ -705,13 +739,25 @@ def _items(raw: bytes) -> tuple[list, str | None]:
 
 def phone_list(root, lang: str = "zh") -> dict:
     """§34 jcard_items: what Settings → Cards and the deck draw. Names / descriptions in both languages (the phone picks)."""
-    rows = []
+    from . import jcards_pkg
+    rows, plaza = [], jcards_pkg.sources(root)
     for c in cards(root):
         d = c["doc"]
         rows.append({"id": c["id"], "name": d["name"], "desc": d["description"], "icon": d["icon"], "accent": d["accent"],
-                     "template": d["template"], "official": c["official"], "on": c["on"], "plus": d.get("plus") or PLUS_DEFAULT})
+                     "template": d["template"], "official": c["official"], "on": c["on"], "plus": d.get("plus") or PLUS_DEFAULT,
+                     **({"src": "plaza"} if not c["official"] and c["id"] in plaza else {})})
     from . import jcards_data
     return {"cards": rows, "colors": jcards_data.colors(root)}
+
+
+def _act(c: dict, a: dict, lang: str, root, item: dict | None = None) -> dict:
+    """One button as the phone gets it: the finished chat message — or, P432, a call of the card's server (where it goes)."""
+    if "call" in a:
+        from . import jcards_server
+        path = next(r["path"] for r in c["doc"]["server"]["routes"] if r["id"] == a["call"])
+        return {"id": a["id"], "label": _pick(a["label"], lang), "call": True, "where": jcards_server.where(c["doc"], path, "POST")}
+    return {"id": a["id"], "label": _pick(a["label"], lang), "prompt": render(c, a["prompt"], lang, root, item),
+            **({"draft": True} if a.get("draft") else {})}
 
 
 def phone_get(root, cid, lang: str = "zh", agent_cfg=None) -> dict:
@@ -724,19 +770,31 @@ def phone_get(root, cid, lang: str = "zh", agent_cfg=None) -> dict:
     if not c["on"]:
         return {"ok": False, "why": "off"}
     d = c["doc"]
+    if cid == "calendar":
+        from . import jcards_cal
+        return {**jcards_cal.listing(root), "template": "calendar", "plus": "agentj-calendar", "actions": [], "links": [], "anchors": []}
+    if cid == "official-palette":
+        return {"ok": True, "id": cid, "template": "palette", "actions": [], "links": [], "anchors": []}
+    if cid == "obsidian" and c["official"]:   # P432: the picked notes of one Obsidian vault (jcards_obsidian)
+        from . import jcards_obsidian
+        return jcards_obsidian.phone(root, c, lang)
+    if cid == "files" and c["official"]:   # P432: the listing comes with jcard_files (jcards_files), one folder at a time
+        return {"ok": True, "id": cid, "template": "files", "actions": [], "links": [], "anchors": [], "plus": d.get("plus") or PLUS_DEFAULT}
     if cid == "automation":
         from . import jcards_data
         return {"ok": True, "id": cid, "template": "automation", "items": jcards_data.automations(root, agent_cfg, lang), "actions": [], "links": [], "anchors": [], "plus": "agentj-automation"}
-    res = {"ok": True, "id": c["id"], "template": d["template"],
-           "path": _short(data_dir(root, c["id"]) / d["data"]["file"]),
-           "actions": [{"id": a["id"], "label": _pick(a["label"], lang), "prompt": render(c, a["prompt"], lang, root),
-                        **({"draft": True} if a.get("draft") else {})} for a in d.get("actions", [])],
+    res = {"ok": True, "id": c["id"], "template": d["template"], "path": data_where(root, c),
+           "actions": [_act(c, a, lang, root) for a in d.get("actions", [])],
            "plus": d.get("plus") or PLUS_DEFAULT,
            "links": [{"id": a["id"], "label": _pick(a["label"], lang), **({"href": a["href"]} if "href" in a else {"jlink": a["jlink"]})}
                      for a in d.get("links", [])],
            "anchors": [{"id": a["id"], "label": _pick(a["label"], lang), **({"block": a["block"]} if "block" in a else {"heading": a["heading"]})}
                        for a in d.get("anchors", [])]}
-    raw, problem, cut = _read(root, c)
+    if "get" in d["data"]:              # P432: the card's own server answers instead of a data file
+        from . import jcards_server
+        raw, problem, cut = jcards_server.get_data(c)
+    else:
+        raw, problem, cut = _read(root, c)
     if problem:
         res["problem"] = problem
     if d["template"] == "notes":
@@ -747,12 +805,14 @@ def phone_get(root, cid, lang: str = "zh", agent_cfg=None) -> dict:
         res["text"] = privacy.redact(text, owner=True)
         from . import jcards_data
         res.update(jcards_data.note_snapshot(text.encode("utf-8") if cut else (raw or b"")))
-        if cut:
+        if cut or "get" in d["data"]:     # a server's text is its own: shown, never edited here
             res["entries"] = [{**e, "editable": False} for e in res["entries"]]
     else:
         if c["id"] == "todo" and c["official"]:   # P394: owner, status, start / end, marks, the card's order
             from . import jcards_todo
             items, bad = jcards_todo.phone_items(raw, lang)
+            from .jcards_data import _revision
+            res["revision"] = _revision(raw or b"")
             res["todo"] = {"counts": {w: sum(1 for i in items if w == "all" or i["owner"] == w) for w in ("all", "agent", "owner")}}
         else:
             items, bad = _items(raw) if raw else ([], None)
@@ -761,8 +821,7 @@ def phone_get(root, cid, lang: str = "zh", agent_cfg=None) -> dict:
         acts = d.get("itemActions", [])
         safe = [{**it, "id": it["id"] if privacy.redact(it["id"]) == it["id"] else f"i{n + 1}"}
                 for n, it in enumerate(items)]   # redacted before anything uses it: the display AND the button message
-        res["items"] = [{**it, "acts": [{"id": a["id"], "label": _pick(a["label"], lang), "prompt": render(c, a["prompt"], lang, root, it),
-                                         **({"draft": True} if a.get("draft") else {})} for a in acts]} for it in safe]
+        res["items"] = [{**it, "acts": [_act(c, a, lang, root, it) for a in acts]} for it in safe]
     if cut:
         res["cut"] = True
     return res
@@ -867,9 +926,26 @@ def parser() -> argparse.ArgumentParser:
     x.add_argument("--source", help="来源：哪段对话 / which conversation it came from")
     x.add_argument("--note", help="备注 / a note")
     x.add_argument("--json", action="store_true", help="机器可读输出 / machine-readable output")
+    from . import jcards_cal
+    jcards_cal.add_parser(ps)
     x = ps.add_parser("automation", help="Read-only automation catalogue with stable names")
     x.add_argument("op", choices=("list",))
     x.add_argument("--json", action="store_true")
+    x = ps.add_parser("files", help="文件管理卡能浏览的文件夹（工作目录 + 主人加的）/ the folders the Files card may browse")
+    x.add_argument("op", choices=["list", "add", "remove"], help="list 列出 · add 加一个 · remove 去掉 / list · add · remove")
+    x.add_argument("folder", nargs="?", help="文件夹 / a folder (add / remove)")
+    x.add_argument("--json", action="store_true", help="机器可读输出 / machine-readable output")
+    x = ps.add_parser("obsidian", help="Obsidian 卡：找 vault、设 vault、选要显示的笔记 / the Obsidian card: find / set the vault, pick notes")
+    x.add_argument("op", choices=["find", "list", "vault", "pick", "unpick"], help="find 列出 Obsidian 知道的 vault · list 当前设置 · vault 设 vault · pick 加笔记 · unpick 去掉")
+    x.add_argument("args", nargs="*", help="vault：一个文件夹；pick / unpick：vault 里的 .md 路径 / a folder, or note paths")
+    x.add_argument("--json", action="store_true", help="机器可读输出 / machine-readable output")
+    x = ps.add_parser("pack", help="把自己的卡打成广场包文件夹（只带样例，先过上线检查）/ make a plaza package folder from your card (sample only, checked)")
+    x.add_argument("id", help="卡片 id / a card id")
+    x.add_argument("dest", help="新的空文件夹 / a new, empty folder")
+    x.add_argument("--json", action="store_true", help="机器可读输出 / machine-readable output")
+    x = ps.add_parser("rollback", help="换回这张卡休眠中的上一版（关着，看过摘要再开）/ bring the previous version back (switched off)")
+    x.add_argument("id", help="卡片 id / a card id")
+    x.add_argument("--json", action="store_true", help="机器可读输出 / machine-readable output")
     x = ps.add_parser("schema", help="打印 card.json 的 JSON Schema / print the schema")
     x.add_argument("--path", action="store_true", help="只打印文件路径 / only its path")
     return p
@@ -885,6 +961,34 @@ def command(args: list) -> int:
         from .state import State
         print(json.dumps({"ok": True, "items": jcards_data.automations(root, State(root).agent_config())}, ensure_ascii=False))
         return 0
+    if a.cmd == "cal":
+        from . import jcards_cal
+        return jcards_cal.command(a, root)
+    if a.cmd in ("pack", "rollback"):
+        from . import jcards_pkg
+        r = jcards_pkg.pack(root, a.id, a.dest) if a.cmd == "pack" else jcards_pkg.rollback(root, a.id)
+        if js:
+            print(json.dumps(r, ensure_ascii=False))
+        elif r["ok"]:
+            print(f"✓ → {r['dest']}（下一步 agentj plaza publish {r['dest']}）/ next: agentj plaza publish" if a.cmd == "pack"
+                  else f"✓ {a.id} v{r['version']} 回来了，关着：主人在手机上看过摘要再打开 / back, switched off")
+        else:
+            print(f"✗ {r['why']}" + "".join("\n  " + p for p in r.get("problems", [])))
+        return 0 if r["ok"] else 1
+    if a.cmd == "obsidian":
+        from . import jcards_obsidian
+        return jcards_obsidian.command(a, root)
+    if a.cmd == "files":
+        from . import jcards_files
+        from .state import State
+        if a.op != "list" and not a.folder:
+            print("✗ 写一个文件夹 / name a folder", file=sys.stderr)
+            return 2
+        r = jcards_files.change_roots(root, a.op, a.folder)
+        if a.op == "list":
+            r["browse"] = [x["label"] for x in jcards_files.roots(root, State(root).agent_config())]
+        print(json.dumps(r, ensure_ascii=False) if js else ("✓ " + " · ".join(r.get("browse") or r.get("roots") or ["—"])) if r["ok"] else f"✗ {r['why']}")
+        return 0 if r["ok"] else 1
     if a.cmd == "todo":
         from . import jcards_todo
         return jcards_todo.command(a, root)
@@ -907,7 +1011,7 @@ def command(args: list) -> int:
         return 0 if r["ok"] else 1
     if a.cmd == "list":
         rows = [{"id": c["id"], "name": c["doc"]["name"], "template": c["doc"]["template"], "official": c["official"],
-                 "on": c["on"], "data": _short(data_dir(root, c["id"]) / c["doc"]["data"]["file"])} for c in cards(root)]
+                 "on": c["on"], "data": data_where(root, c)} for c in cards(root)]
         if out:
             out({"cards": rows})
         else:
@@ -939,6 +1043,10 @@ def command(args: list) -> int:
         return 0 if r["ok"] else 1
     if a.cmd in ("on", "off"):
         ok = set_on(root, a.id, a.cmd == "on")
+        if not ok and a.cmd == "on" and find(root, a.id):   # P432: a plaza card — the owner turns it on from the phone
+            print(json.dumps({"ok": False, "id": a.id, "why": "review"}) if js else
+                  "✗ 这是广场卡：主人在手机 设置 → Cards 看过权限摘要再打开 / a plaza card: the owner turns it on in Settings → Cards after reading its summary")
+            return 1
         if out:
             out({"ok": ok, "id": a.id, "on": a.cmd == "on"})
         else:

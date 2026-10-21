@@ -61,8 +61,10 @@ class Classify(unittest.TestCase):
             a.cfg = {"model": "openrouter/deepseek/deepseek-v4-flash", "session_mode": "independent" if owned else "shared"}
             a.sid, a.connected_at_start, a.provider_fail_noted, a.restart_after_turn = "ses_1", ["opencode"], False, False
             a.host = SimpleNamespace(st=SimpleNamespace(log=mock.Mock()), agent_notice=notices.append)
-            a.on_event({"type": "session.error", "properties": {"sessionID": "ses_1", "error": {
-                "name": "UnknownError", "data": {"message": "Model not found: openrouter/deepseek/deepseek-v4-flash"}}}})
+            # P423 #146: openrouter is set up somewhere (its key just invisible to serve) — else it is model_missing
+            with mock.patch.object(oc, "set_up_providers", return_value={"openrouter"}):
+                a.on_event({"type": "session.error", "properties": {"sessionID": "ses_1", "error": {
+                    "name": "UnknownError", "data": {"message": "Model not found: openrouter/deepseek/deepseek-v4-flash"}}}})
             self.assertEqual(a.restart_after_turn, owned)
             self.assertEqual(a.last_provider_fail["reason"], "no_key")
         self.assertIn("openrouter", notices[0])

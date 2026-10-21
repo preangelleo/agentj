@@ -6,8 +6,12 @@ the human's decision, stored in the state directory (`tasks.json`, 0600), made a
 the remote pairing password) or on a paired phone (signed, controls.py). An enabling is bound to the task's contract hash
 (task.json + its prompt file): when either changes, the task stops running until a human enables it again.
 
-`serve` runs enabled tasks when their cron fields match the minute (in the task's `tz`), at most once per minute, no catch-up
-for minutes missed while serve was not running. A run waits until the chat turn is over (it takes the same lock — never two
+`serve` runs enabled tasks when their cron fields match the minute (in the task's `tz`), at most once per minute. P418 (#183 ③):
+minutes missed while serve was not running (computer off / asleep) are never replayed on their own: serve keeps a 0600
+`tasks_tick.json` (the last minute it was alive, written once a minute); after a gap it counts, per enabled task, the cron
+minutes it missed (since that tick, its enabling and 7 days ago at most; capped at 1000), sends the phones ONE summary
+notice and — unless everything is stopped — one multiple-choice card "run once: <task>"; each task the owner ticks runs
+once (trigger `catch_up`, the normal run path below). No answer / no phone = the notice only. A run waits until the chat turn is over (it takes the same lock — never two
 users of one Agent), then runs the configured harness once, headless, in the workspace root, inside the fence; Claude Code
 gets the usual permission tool + danger hook (approvals go to the phone as usual), and for `mode: research` the hook denies
 everything that is not read-only (danger.readonly); Codex (app-server) and OpenCode (serve) run their chat adapter once in a
@@ -49,6 +53,13 @@ def _ttl(env: str, default: float) -> float:
 
 RUN_TIMEOUT = _ttl("AGENTJ_TEST_TASK_TIMEOUT", 1800)
 TICK = _ttl("AGENTJ_TEST_TASK_TICK", 20)
+# P418 (#183 ③): missed runs while the computer was off / asleep
+CATCHUP_DAYS = 7                 # look back at most this far
+CATCHUP_MAX = 1000               # stop counting one task here ("1000+")
+CATCHUP_GAP = 180                # a gap in serve's minute ticks this long (s) = the computer was off / asleep
+CATCHUP_WAIT = _ttl("AGENTJ_TEST_CATCHUP_WAIT", 7200)   # wait this long for a paired phone to come online for the card
+CATCHUP_POLL = 5.0
+CATCHUP_OPTS = 15                # card options (approvals.Q_MAX_OPTS 16 − "run none")
 
 
 class TaskError(Exception):
@@ -117,6 +128,12 @@ def _discover_legacy(workdir: str | None, direct: bool = False) -> list[dict]:
             prompt = _regular(os.path.join(d, task["prompt_file"]))
             if prompt is None:
                 probs = [f"{task['prompt_file']} is missing, not a regular file or larger than 100 KiB"]
+            for step in task.get("steps") or ():   # P426 #181-5: every node's instructions join the contract
+                body = None if probs else _regular(os.path.join(d, step["prompt_file"]))
+                if body is None:
+                    probs = probs or [f"{step['prompt_file']} (step {step['id']}) is missing, not a regular file or larger than 100 KiB"]
+                    break
+                prompt += b"\0step:" + step["id"].encode() + b"\0" + body
         ent["task"] = task if isinstance(task, dict) else None
         extra = b""
         if not probs:                          # 0.18 (ADR-A193): a brief.json joins the contract with its scope digest
@@ -321,6 +338,147 @@ def next_run(expr: str, tz: str, now: dt.datetime | None = None) -> dt.datetime 
     return None
 
 
+# ------------------------------------------------------------------ P418 (#183 ③): runs missed while the computer was off
+def tick_path(st):
+    return st.root / "tasks_tick.json"
+
+
+def read_tick(st) -> int | None:
+    """The last minute (epoch, floored) serve's scheduler was alive; None = never recorded (first start: nothing is missed)."""
+    try:
+        v = json.loads(tick_path(st).read_text()).get("at")
+    except (OSError, ValueError, UnicodeDecodeError, AttributeError):
+        return None
+    return v if type(v) is int and v > 0 else None
+
+
+def write_tick(st, at: int) -> None:
+    st.write_private(tick_path(st), json.dumps({"v": 1, "at": int(at)}).encode())
+
+
+def missed_runs(expr: str, tz: str, since: float, until: float, ran_key: str | None = None, cap: int = CATCHUP_MAX) -> int:
+    """How many cron minutes fell strictly after `since`'s minute and before `until`'s minute (that one is the live tick's),
+    at most CATCHUP_DAYS back, `ran_key` (a minute that did run) excluded; counting stops at `cap`."""
+    c = parse_cron(expr)
+    lo = max(float(since), float(until) - CATCHUP_DAYS * 86400)
+    utc = dt.timezone.utc
+    start = _now(tz, dt.datetime.fromtimestamp(lo, utc)).replace(second=0, microsecond=0) + dt.timedelta(minutes=1)
+    end = _now(tz, dt.datetime.fromtimestamp(float(until), utc)).replace(second=0, microsecond=0)
+    n = 0
+    day0 = start.replace(hour=0, minute=0)
+    for k in range(CATCHUP_DAYS + 2):
+        d = day0 + dt.timedelta(days=k)
+        if d > end:
+            break
+        if not _day_ok(c, d):
+            continue
+        for h in sorted(c[1]):
+            for m in sorted(c[0]):
+                cand = d.replace(hour=h, minute=m)
+                if cand < start:
+                    continue
+                if cand >= end:
+                    return n
+                if ran_key and cand.strftime("%Y-%m-%dT%H:%M") == ran_key:
+                    continue
+                n += 1
+                if n >= cap:
+                    return n
+    return n
+
+
+def task_name(row: dict, lang: str) -> str:
+    """The owner's own title, made safe for a phone line (one line, no control characters, ≤ 64)."""
+    from .text import clean_line, pick
+    t = row.get("title") if isinstance(row.get("title"), dict) else {}
+    zh, en = t.get("zh"), t.get("en")
+    name = pick(lang, zh if isinstance(zh, str) else "", en if isinstance(en, str) else "") or \
+        (zh if isinstance(zh, str) else "") or row["id"]
+    return clean_line(name, 64) or row["id"]
+
+
+def missed(st, workdir: str | None, since: int, now: float | None = None, lang: str = "zh") -> list[dict]:
+    """[{id, name, n}] for every enabled task with ≥ 1 run missed between `since` and now (see missed_runs)."""
+    now = time.time() if now is None else now
+    d = load(st)
+    out = []
+    for r in rows(st, workdir):
+        if not r["enabled"]:
+            continue
+        on = d["on"].get(r["id"]) or {}
+        lo = max(since, on.get("at") or 0) if type(on.get("at")) is int else since
+        try:
+            n = missed_runs(r["schedule"], r["tz"], lo, now, d["ran"].get(r["id"]))
+        except Exception:  # noqa: BLE001 — a bad schedule is reported elsewhere, never here
+            continue
+        if n:
+            out.append({"id": r["id"], "name": task_name(r, lang), "n": n})
+    return out
+
+
+def _times(n: int, lang: str) -> str:
+    from .text import pick
+    k = f"{n}+" if n >= CATCHUP_MAX else str(n)
+    return pick(lang, f"{k} 次", f"{k}×")
+
+
+def missed_text(miss: list[dict], lang: str, offer: bool, stopped: bool = False) -> str:
+    """The one summary notice. Plain words for the owner; never names the machinery."""
+    from .text import pick
+    items = [f"{m['name']}（{_times(m['n'], lang)}）" if lang != "en" else f"{m['name']} ({_times(m['n'], lang)})"
+             for m in miss[:10]]
+    more = len(miss) - len(items)
+    lst = pick(lang, "、".join(items) + (f" 等 {len(miss)} 个" if more > 0 else ""),
+               ", ".join(items) + (f" and {more} more" if more > 0 else ""))
+    text = pick(lang, f"电脑关机或休眠期间，定时任务错过了：{lst}。", f"While the computer was off or asleep, scheduled tasks missed: {lst}.")
+    if stopped:
+        text += pick(lang, "现在是「全部停下」状态，不会补跑。", " Everything is stopped right now, so nothing is run to make up.")
+    elif offer:
+        text += pick(lang, "想补跑的话，在弹出的卡片里勾选——每个任务只补跑一次；不勾就不补跑。",
+                     " To make up, tick tasks on the card — each runs once; tick nothing and nothing runs.")
+    else:
+        text += pick(lang, "没有自动补跑。", " Nothing was run to make up.")
+    return text
+
+
+def _fit(s: str, room: float) -> str:
+    from .ask import zi
+    if zi(s) <= room:
+        return s
+    out = ""
+    for ch in s:
+        if zi(out + ch) > room - 1:
+            break
+        out += ch
+    return out.rstrip() + "…"
+
+
+def catchup_card(miss: list[dict], lang: str) -> tuple[list, list[str | None]]:
+    """The multiple-choice card (ask.build, no "Other"): one option per task (label ≤ ask.LABEL_MAX 字), then "run none".
+    → (card, the task id behind each option number − 1; None = run none)."""
+    from . import ask
+    from .text import pick
+    prefix = pick(lang, "补跑一次：", "Run once: ")
+    opts, ids, seen = [], [], set()
+    for i, m in enumerate(miss[:CATCHUP_OPTS], 1):
+        label = prefix + _fit(m["name"], ask.LABEL_MAX - ask.zi(prefix))
+        if label in seen:
+            label = prefix + _fit(f"{i}. {m['name']}", ask.LABEL_MAX - ask.zi(prefix))
+        seen.add(label)
+        desc = pick(lang, f"错过 {_times(m['n'], lang)} · {_fit(m['name'], 40)}",
+                    f"missed {_times(m['n'], lang)} · {_fit(m['name'], 40)}")
+        opts.append({"label": label, "description": desc})
+        ids.append(m["id"])
+    opts.append({"label": pick(lang, "都不补跑", "Run none"), "description": ""})
+    ids.append(None)
+    q = {"question": pick(lang, "电脑关机或休眠期间错过了这些定时任务。要补跑哪些？每个只补跑一次。",
+                          "These scheduled tasks were missed while the computer was off or asleep. Run which ones now? "
+                          "Each runs once."),
+         "header": pick(lang, "错过的定时任务", "Missed tasks"), "multiSelect": True, "options": opts, "other": False}
+    card, _ = ask.build([q], lang)
+    return card, ids
+
+
 def parse_verdict(text: str) -> tuple[str, str] | None:
     found = VERDICT_RE.findall(text or "")
     if not found:
@@ -329,9 +487,10 @@ def parse_verdict(text: str) -> tuple[str, str] | None:
     return v.lower(), why.strip()
 
 
-def prompt_for(e: dict, research: bool) -> str:
+def prompt_for(e: dict, research: bool, step: str = "") -> str:
+    """`step` (P426 #181-5, wfrun.step_text): one node's instructions + what the earlier nodes left, after RUN.md."""
     task = e["task"]
-    body = (_regular(os.path.join(e["dir"], task["prompt_file"])) or b"").decode("utf-8", "replace")
+    body = (_regular(os.path.join(e["dir"], task["prompt_file"])) or b"").decode("utf-8", "replace") + step
     relative = e.get("relative_dir", "workflows/" + e["id"])
     head = (f"[agentj 定时任务 / scheduled task] {relative}/{task['prompt_file']} — {task['title']['zh']} / "
             f"{task['title']['en']}. 说明里的相对路径以 {relative}/ 为准 / paths in the instructions are relative to "
@@ -368,6 +527,12 @@ class Scheduler:
         self.resume: dict[str, dict] = {}    # P314: tid → the quota_resume record its next run continues
         self.cur_resume: dict | None = None
         self.limit: dict | None = None       # P314: the running run ended on a used-up usage limit {harness, at}
+        self.last_tick: int | None = None    # P418 (#183 ③): the minute last recorded in tasks_tick.json
+        self.ticked = False
+        self.ticker: asyncio.Task | None = None
+        self.offer: asyncio.Task | None = None   # the open "run once?" card (one at a time)
+        self.plans: dict[str, dict] = {}     # P426 #181-5: tid → the resume plan its next `resume` run follows (wfrun.py)
+        self.step_state: dict | None = None  # P426: the running multi-step run's checkpoint record (wfrun.py)
 
     @property
     def st(self):
@@ -403,6 +568,12 @@ class Scheduler:
                 d["last"][rec["id"]] = dict(rec, at=rec["ended_at"])
                 recovered.append(dict(rec))
         update(self.st, change)
+        from . import wfrun                  # P426 #181-5: a multi-step run's checkpoint records where it was cut
+        for res in recovered:
+            with contextlib.suppress(Exception):
+                r = wfrun.mark_cut(self.st, res["run_id"], res["id"], getattr(self.host, "lang", "zh"))
+                if r:
+                    res["resume"] = r
         caps = getattr(self.host, "capabilities", None)
         if caps is not None:
             recovered.extend(caps.recover_runs(load(self.st)["runs"]))
@@ -437,6 +608,8 @@ class Scheduler:
 
     async def loop(self) -> None:
         self.recover()
+        if self.ticker is None:              # P418 (#183 ③): its own task — a 30-minute run must not look like a gap
+            self.ticker = asyncio.create_task(self._ticker())
         while True:
             try:
                 if not self.host.stopped():
@@ -471,6 +644,77 @@ class Scheduler:
             if d["ran"].get(r["id"]) == key:
                 continue
             self.request(r["id"], "schedule", minute=key)
+
+    # P418 (#183 ③): runs missed while the computer was off / asleep → one notice + an optional "run once" card
+    async def _ticker(self) -> None:
+        while True:
+            with contextlib.suppress(Exception):     # a scheduler bug must never reach serve
+                self.tick()
+            await asyncio.sleep(TICK)
+
+    def tick(self, now: float | None = None) -> list[dict]:
+        """Record this minute; after a gap (serve was not running, or the computer slept) report what was missed."""
+        now = time.time() if now is None else now
+        m = int(now // 60 * 60)
+        if not self.ticked:
+            self.last_tick, self.ticked = read_tick(self.st), True
+        prev = self.last_tick
+        if prev == m:
+            return []
+        self.last_tick = m
+        write_tick(self.st, m)                   # first: a crash below never reports the same gap twice
+        if prev is None or m - prev < CATCHUP_GAP or not self.host.agent_cfg:
+            return []
+        lang = getattr(self.host, "lang", "zh")
+        miss = missed(self.st, self.workdir(), prev, now, lang)
+        if miss:
+            self._missed(miss, lang)
+        return miss
+
+    def _missed(self, miss: list[dict], lang: str) -> None:
+        host = self.host
+        stopped = host.stopped()
+        offer = not stopped and (self.offer is None or self.offer.done())
+        self.st.log("task_missed", count=len(miss), result="stopped" if stopped else "offer" if offer else "notice")
+        text = missed_text(miss, lang, offer, stopped)
+        say = getattr(host, "task_notice", None) or getattr(host, "agent_notice", None)
+        if say is not None:
+            with contextlib.suppress(Exception):
+                say(text)
+        if offer:
+            self.offer = asyncio.get_running_loop().create_task(self._offer(miss, lang))
+
+    async def _offer(self, miss: list[dict], lang: str) -> list[str]:
+        """Wait (bounded) until a paired phone is online, show the card, request one run of each ticked task."""
+        host = self.host
+        online = getattr(host, "_online_approvers", None) or getattr(host, "_approvers", None)
+        end = time.monotonic() + CATCHUP_WAIT
+        while online is not None and not online():
+            if host.stopped() or time.monotonic() > end:
+                self.st.log("task_catchup", result="stopped" if host.stopped() else "no_device", count=0)
+                return []
+            await asyncio.sleep(CATCHUP_POLL)
+        if host.stopped():
+            self.st.log("task_catchup", result="stopped", count=0)
+            return []
+        card, ids = catchup_card(miss, lang)
+        decision, picks = await host.question(card, None, task=None)
+        chosen = []
+        if decision == "answer" and picks:
+            nums = picks[0] if picks and isinstance(picks[0], list) else []
+            if not any(0 < n <= len(ids) and ids[n - 1] is None for n in nums):     # "run none" wins over any tick
+                chosen = [ids[n - 1] for n in nums if 0 < n <= len(ids) and ids[n - 1] is not None]
+        started = []
+        for tid in chosen:
+            if host.stopped():
+                break
+            try:
+                self.request(tid, "catch_up")
+                started.append(tid)
+            except TaskError as e:
+                self.st.log("task_catchup_refused", id=tid, reason=e.reason)
+        self.st.log("task_catchup", result=decision, count=len(started))
+        return started
 
     async def stop_running(self) -> bool:
         """/stop: end the run in progress (if any); the queue and the schedule stay."""
@@ -508,6 +752,7 @@ class Scheduler:
         if (tid, trigger) in self.waiting:
             self.waiting.remove((tid, trigger))
         rec = load(self.st)["runs"][rid]
+        self.step_state = None
         res = {"id": tid, "run_id": rid, "status": "finished", "trigger": trigger, "verdict": "fail", "line": "", "readonly": False, "secs": 0.0}
         try:
             e = find(wd, tid)
@@ -529,7 +774,8 @@ class Scheduler:
         qr = getattr(host, "quota_resume", None)
         if qr is not None and trigger != "quota_resume":
             qr.owner_spoke("task:" + tid)              # P314: this run is the continuation; the waiting one is not needed
-        if trigger == "schedule" or (resume or {}).get("trigger") == "schedule":
+        # P418 (#183 ③): a catch-up run is a scheduled run — it needs the same live, unchanged enabling
+        if trigger in ("schedule", "catch_up") or (resume or {}).get("trigger") in ("schedule", "catch_up"):
             on = load(self.st)["on"].get(tid)
             if not on or on.get("tsha") != e["tsha"]:
                 res["line"] = "定时任务已禁用，没有运行 / Schedule disabled; did not run"
@@ -554,7 +800,7 @@ class Scheduler:
                 if e["problems"] or rec["tsha"] != e["tsha"]:
                     raise TaskError("changed", "合同已变更，没有运行 / Contract changed; did not run")
                 on = load(self.st)["on"].get(tid)
-                if trigger == "schedule" and (not on or on.get("tsha") != e["tsha"]):
+                if trigger in ("schedule", "catch_up") and (not on or on.get("tsha") != e["tsha"]):
                     raise TaskError("changed", "定时任务已禁用，没有运行 / Schedule disabled; did not run")
                 # P375: measure at launch, after waiting for the chat lock; resumes obey the same 90% rule.
                 from . import quota
@@ -594,7 +840,11 @@ class Scheduler:
                     if host.agent:
                         await host.agent.halt(clear_queue=False)   # resumes on the next message; queued controls stay
                     self.cur_resume, self.limit = resume, None
-                    out, code = await asyncio.wait_for(self._exec(kind, e, research), RUN_TIMEOUT)
+                    if e["task"].get("steps"):         # P426 #181-5: node by node, each checkpointed (wfrun.py)
+                        from . import wfrun
+                        out, code = await wfrun.run_steps(self, kind, e, research, rid, trigger)
+                    else:
+                        out, code = await asyncio.wait_for(self._exec(kind, e, research), RUN_TIMEOUT)
                 finally:
                     if busy is not None:
                         with contextlib.suppress(Exception):
@@ -633,6 +883,9 @@ class Scheduler:
             res.update(status="interrupted", line="运行异常中断 / Run interrupted by an error")
             await self._kill()
         res["secs"] = round(time.monotonic() - t0, 1)
+        if self.step_state is not None:
+            from . import wfrun
+            wfrun.res_fields(self, tid, res)
         self._finish(e, res)
         return res
 
@@ -653,7 +906,8 @@ class Scheduler:
                 to = await quota.pick_alt(rep, kind, quota.allowed_harnesses(e["task"]), quota.handshake)
         first = (resume or {}).get("trigger", trigger)
         qr.hit("task:" + e["id"], kind, time.time() + SWITCH_DELAY if to else lim.get("at"), title,
-               frm_resume=(resume or {}).get("id"), to=to, task={"trigger": first})
+               frm_resume=(resume or {}).get("id"), to=to, task={"trigger": first}, limit=lim.get("limit"),
+               stale=lim.get("stale"))
 
     @staticmethod
     def _check_report(e: dict, res: dict, since: float) -> None:
@@ -719,7 +973,7 @@ class Scheduler:
             await asyncio.wait_for(p.wait(), 5)
         _signal_tree(p, signal.SIGKILL)
 
-    async def _exec(self, kind: str | None, e: dict, research: bool) -> tuple[str, int | str]:
+    async def _exec(self, kind: str | None, e: dict, research: bool, prompt: str | None = None) -> tuple[str, int | str]:
         from . import agent as agents
         from . import fence
         host = self.host
@@ -731,7 +985,7 @@ class Scheduler:
         cfg.pop("working_root", None)
         cfg["dir"] = e["dir"]
         wd = cfg["dir"]
-        prompt = prompt_for(e, research)
+        prompt = prompt or prompt_for(e, research)
         if self.cur_resume:                          # P314: the automatic rerun after a used-up usage limit
             from .quota_resume import task_note
             prompt += task_note(self.cur_resume, getattr(host, "lang", "zh"))
@@ -818,9 +1072,12 @@ class Scheduler:
                 if isinstance(ev.get("result"), str):
                     last = ev["result"]
                 from . import quota_resume              # P314
-                if ev.get("is_error") and quota_resume.claude_limit(last):
-                    self.limit = {"harness": "claude", "at": quota_resume.reset_time(
-                        "claude", last, rate, None, host.st.root)}
+                v = quota_resume.judge("claude", last, rate, quota_resume.host_meters(host, "claude"), host.st.root) \
+                    if ev.get("is_error") else None
+                if v is not None:                       # P433: the same verdict and reset as the chat
+                    quota_resume.mark_stale(host, "claude", v)
+                    self.limit = {"harness": "claude", "at": v["at"], "limit": v["limit"],
+                                  **({"stale": v["stale"]} if v.get("stale") else {})}
                 break
         with contextlib.suppress(Exception):
             p.stdin.close()

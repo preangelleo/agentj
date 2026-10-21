@@ -1,0 +1,48 @@
+/* P448: control-only native gesture boundary. No rule targets message / prose / code containers. */
+:is(button,[role="button"],a.aj-btn,[role="toolbar"],.top,.rmtop,.omtools,.tools,[data-no-select]),
+:is(button,[role="button"],a.aj-btn,[role="toolbar"],.top,.rmtop,.omtools,.tools,[data-no-select]) *{
+  user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;
+}
+/* Editable controls inside toolbars keep their normal selection / paste menu. */
+:is(input,textarea,select,[contenteditable="true"]){user-select:text!important;-webkit-user-select:text!important;-webkit-touch-callout:default!important}
+/* Palette-only state pairs. A state always replaces BOTH colours; disabled is readable, with dashed border + cursor.
+   !important is the phone's final control contract over legacy per-screen hover/opacity rules, never geometry. */
+:root{--control-hover-bg:var(--c-noir);--control-hover-fg:var(--c-lotion);
+  --control-primary-bg:#b7e396;--control-primary-fg:var(--c-sooty)} /* Sage Sensation */
+:is(button,[role="button"],a.aj-btn):is(:hover,:active,:focus){
+  background-color:var(--control-hover-bg)!important;color:var(--control-hover-fg)!important;opacity:1!important;
+}
+:is(button,[role="button"],a.aj-btn):is(:disabled,[aria-disabled="true"]){
+  background-color:var(--c-noir)!important;color:var(--c-lotion)!important;opacity:1!important;
+  border:1px dashed var(--c-black-mana);cursor:not-allowed;
+}
+:is(button,[role="button"],a.aj-btn):is(:hover,:active,:focus,:disabled,[aria-disabled="true"]) :is(span,b,strong,small,code,h2,h3,p,label,i,em){color:inherit!important;opacity:1!important}
+:is(.aj-btn--primary,.apprallow,.setup-assist):not(:hover):not(:active):not(:focus):not(:disabled):not([aria-disabled="true"]){
+  background-color:var(--control-primary-bg)!important;color:var(--control-primary-fg)!important;opacity:1!important;
+}
+:is(.aj-btn--primary,.apprallow,.setup-assist) :is(.lbl,span,b,strong,small){color:inherit;opacity:1}
+/* Progress remains visible without painting over an approval label. */
+.apprallow .fill{background:var(--c-sooty);opacity:.12}
+
+/* Normal control labels also keep the full foreground, including captions and small warning badges. */
+.om-first .t{opacity:1}
+.rmbar .act :is(.err,.warn,.badge,.bang){background:var(--c-noir);color:var(--c-lotion);opacity:1}
+#settings .seg button[aria-pressed="true"]:not(:hover):not(:active):not(:focus):not(:disabled){background-color:var(--c-lotion)!important;color:var(--c-sooty)!important}
+
+/* Transparent toolbar icons used to inherit Lotion on the state hue (below 4.5:1). */
+:is(.top,.rmbar,.tools) button:not(:hover):not(:active):not(:focus):not(:disabled),
+#send:not(:hover):not(:active):not(:focus):not(:disabled){background-color:var(--c-noir);color:var(--c-lotion);opacity:1}
+
+/* Colour changes are atomic: cross-fading foreground/background can dip below the floor mid-transition. */
+:is(button,[role="button"],a.aj-btn){transition-property:transform,box-shadow,border-color!important}
+.segrow button:is(:hover,:active,:focus,:disabled,[aria-disabled="true"])::after{background-color:var(--c-noir)!important}
+/* Menu cards are buttons too: keep the owner's fill while choosing readable label ink. Custom fills use ink() below. */
+:is(.fp-dark-0,.fp-dark-1,.fp-dark-2,.fp-dark-3,.jc-accent-emerald-oasis,.jc-accent-windstorm,.jc-accent-magic-carpet,.jc-accent-peachy-feeling){color:var(--control-primary-fg)}
+.fp-menu-card :is(h2,p,span){opacity:1}
+
+/* The unread badge has its own light backing; keep its ink pair coherent in every parent-button state. */
+.om-unread .unb{color:var(--c-sooty);opacity:1}
+.om-unread:is(:hover,:active,:focus,:disabled,[aria-disabled="true"]) .unb{background:var(--c-noir)!important;color:var(--c-lotion)!important;animation:none}
+
+/* P449: the report glyph is drawn ON a Lotion disc, independently of its toolbar-button foreground. */
+.rmbar .wrbtn svg g{stroke:var(--c-noir)}

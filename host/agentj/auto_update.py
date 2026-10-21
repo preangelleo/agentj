@@ -152,7 +152,7 @@ def impact(host, caller=None, now=None):
     add('bots', len(getattr(getattr(host, 'bots', None), 'phone_tasks', None) or {}))
     board = getattr(host, 'busy', None)
     try:
-        add('bg', len(board.items()) if board is not None else 0)
+        add('bg', board.restart_split()[0] if board is not None else 0)   # P423 #160: independent workers keep running
     except Exception:  # noqa: BLE001 — a display list must never block an upgrade decision
         pass
     add('task_soon', soon(host, now))
@@ -305,11 +305,41 @@ def installed_wheel(st, version):
     return p
 
 
+class Command(list):
+    """P423 (#193): an installer argv plus the variables it runs with (`env`: names → paths, never a secret)."""
+    def __init__(self, argv, env=None):
+        super().__init__(argv)
+        self.env = dict(env or {})
+
+
+def install_env(info):
+    """P423 (#193): uv installs into its *current* tool directory (UV_TOOL_DIR, else $XDG_DATA_HOME/uv/tools, else
+    ~/.local/share/uv/tools). The service / fence environment can differ from the shell agentj was first installed from:
+    uv then exits 0 having installed a second copy elsewhere and the running venv stays old (not_upgraded at verify).
+    The install is pinned to the tools directory of the venv this process runs from (`<tools>/<name>`)."""
+    if info.get('kind') != 'uv' or not info.get('where'):
+        return {}
+    return {'UV_TOOL_DIR': os.path.dirname(os.path.normpath(os.path.abspath(info['where'])))}
+
+
+def run_env(cmd):
+    """The environment a Command runs with (None: inherit this process's unchanged)."""
+    extra = getattr(cmd, 'env', None)
+    return {**os.environ, **extra} if extra else None
+
+
+def command_line(cmd):
+    """A Command as one shell line (`NAME=value … argv`), for the progress lines and the owner-local recover command."""
+    import shlex
+    extra = getattr(cmd, 'env', None) or {}
+    return ' '.join([*(f'{k}={shlex.quote(str(v))}' for k, v in extra.items()), shlex.join(cmd)])
+
+
 def install_commands(info, wheel):
     if info.get('legacy') or info['kind'] == 'checkout':
         raise ValueError('unsupported_install')
     if info['kind'] == 'uv':
-        return [[update.installer_binary('uv'), 'tool', 'install', '--force', str(wheel)]]
+        return [Command([update.installer_binary('uv'), 'tool', 'install', '--force', str(wheel)], install_env(info))]
     if info['kind'] == 'pipx':
         return [[update.installer_binary('pipx'), 'install', '--force', str(wheel)]]
     return [[str(Path(info['where'])/'bin/python'), '-m', 'pip', 'install', '--no-deps', '--force-reinstall', str(wheel)]]
@@ -366,7 +396,8 @@ def _diagnose(st, result, diag):
         res = {**result, **upgrade_diag.installer_fields(diag), 'reason': upgrade_diag.category(result.get('reason')), 'step': diag.get('step') or 'install',
                **({'stderr_tail': diag['stderr_tail']} if diag.get('stderr_tail') else {}),
                **({'failed_checks': update.check_ids(diag['failed_checks'])} if diag.get('failed_checks') else {}),
-               **({'detail': diag['detail']} if diag.get('detail') else {})}
+               **({'detail': diag['detail']} if diag.get('detail') else {}),
+               **{k: diag[k] for k in ('rollback_failure', 'rollback_tail', 'rollback_check') if diag.get(k)}}
         if result.get('result') == 'rolled_back':
             res.update(result='failed', rollback='ok')
         elif result.get('result') == 'failed' and result.get('reason') == 'rollback_failed':
@@ -387,7 +418,7 @@ def _finish(st, result):
     rec = read(st)
     if rec.get('result') == result:
         return  # Manager retried after result persistence but before marking the job done.
-    rec.update(result=result, notice_pending=True)
+    rec.update(result=result, result_at=int(time.time()), notice_pending=True)
     write(st, rec)
     activity.record(st, 'auto_update', result=result['result'], to=result.get('to'),
                     reason=result.get('reason'), text=notice(result))
@@ -431,7 +462,37 @@ def _take_notice(st, lang='zh', prefs=None):
 
 
 def quiet(argv, **kw):
+    env = run_env(argv)
+    if env is not None and 'env' not in kw:     # P423 (#193): the pinned uv tool directory
+        kw['env'] = env
     return subprocess.run(argv, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=900, **kw)
+
+
+def fixed_reasons():
+    """The ValueError texts auto_update raises itself — the only exception text that may become a reason."""
+    from . import upgrade_diag
+    return {'install_failed', 'version_mismatch', 'restart_failed', 'upgrade_self_check_failed', 'worker_interrupted',
+            'artifact_hash_mismatch', 'artifact_signature_mismatch', 'artifact_identity_mismatch', 'unsupported_install',
+            'upgrade_cache_unreadable', *upgrade_diag.CATEGORY.values(), 'read_only_filesystem'}
+
+
+def failure_reason(e, d):
+    """#166/#192: one fixed category for a failure (the rollback's): the installer's own when it ran, else the code / type."""
+    from . import upgrade_diag
+    if isinstance(e, ValueError) and str(e) == 'install_failed':
+        return d.get('failure') or 'uv_failed'
+    return upgrade_diag.category(str(e) if isinstance(e, ValueError) and str(e) in fixed_reasons() else e)
+
+
+def installed_is(argv, version, runner):
+    """#192: after a failed rollback, is `version` still what this installation's agentj reports? Never raises."""
+    if not argv or not version:
+        return False
+    try:
+        v = runner(list(argv) + ['--version'])
+        return not v.returncode and version in (v.stdout or '').split()
+    except Exception:  # noqa: BLE001 — a missing / broken tool environment is a "no"
+        return False
 
 
 def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=None):
@@ -444,15 +505,22 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
     fcntl.flock(fd, fcntl.LOCK_EX)
     job = read(st, JOB)
     diag = job.get('diagnostic') or {}  # Preserve the first failure across a manager retry during rollback.
+    rb = {}                             # #166/#192: the rollback's own failure evidence (category, exit, redacted tail)
     def save(phase):
         job['phase'] = phase
         write(st, job, JOB)
     def install(wheel, *, diagnose=True):
+        # A rollback (diagnose=False) records into its own `rb` dict: the first failure's evidence in `diag` stays intact.
+        d = diag if diagnose else rb
         p = Path(wheel)
-        rec = json.loads(p.with_suffix('.verified.json').read_text())
-        data = p.read_bytes()
+        try:
+            rec = json.loads(p.with_suffix('.verified.json').read_text())
+            data = p.read_bytes()
+            want = rec['sha256']
+        except (OSError, ValueError, KeyError, TypeError):
+            raise ValueError('upgrade_cache_unreadable') from None   # #166: a fixed code, not a bare exception type
         digest = hashlib.sha256(data).hexdigest()
-        if digest != rec['sha256']:
+        if digest != want:
             raise ValueError('artifact_hash_mismatch')
         if str(p) == job.get('new') and minisign.verify(data, rec.get('signature', ''), minisign.keyring('release')) != f"agentj-host/v1 version={job['to']} sha256={digest}":
             raise ValueError('artifact_signature_mismatch')
@@ -464,27 +532,26 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
             try:
                 r = runner(argv)
             except (OSError, subprocess.SubprocessError) as e:
-                if diagnose:
-                    # Never stringify the exception: it can contain argv, URLs or owner paths.
-                    diag['exception'] = type(e).__name__
-                    if type(getattr(e, 'returncode', None)) is int:
-                        diag['exit'] = e.returncode
-                    diag['stderr_tail'] = (tail(getattr(e, 'stderr', '') or '')
-                                           or tail(getattr(e, 'stdout', '') or '')
-                                           or type(e).__name__ + ': installer could not complete')
-                if diagnose:
-                    diag['failure'] = upgrade_diag.installer_reason(e, diag.get('stderr_tail', ''))
+                # Never stringify the exception: it can contain argv, URLs or owner paths.
+                d['exception'] = type(e).__name__
+                if type(getattr(e, 'returncode', None)) is int:
+                    d['exit'] = e.returncode
+                d['stderr_tail'] = (tail(getattr(e, 'stderr', '') or '')
+                                    or tail(getattr(e, 'stdout', '') or '')
+                                    or type(e).__name__ + ': installer could not complete')
+                d['failure'] = upgrade_diag.installer_reason(e, d.get('stderr_tail', ''))
                 raise ValueError('install_failed') from None
             if r.returncode:
-                if diagnose:
-                    diag['exit'] = r.returncode
-                    diag['stderr_tail'] = tail(getattr(r, 'stderr', '') or '') or tail(getattr(r, 'stdout', '') or '')
-                    diag['failure'] = upgrade_diag.installer_reason(stderr=diag['stderr_tail'])
+                d['exit'] = r.returncode
+                d['stderr_tail'] = tail(getattr(r, 'stderr', '') or '') or tail(getattr(r, 'stdout', '') or '')
+                d['failure'] = upgrade_diag.installer_reason(stderr=d['stderr_tail'])
                 raise ValueError('install_failed')
     def verify(version, *, diagnose=True):
         argv = job['argv']
         v = runner(argv + ['--version'])
         if v.returncode or version not in (v.stdout or '').split():
+            if diagnose:            # P423 (#193): what --version said (redacted tail) and why it is not the target
+                diag.update(update.version_diag(v, version, job.get('from'), job['install']))
             raise ValueError('version_mismatch')
         if restart:
             restart(version)
@@ -492,8 +559,7 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
             r = runner(argv + ['service', 'install', '--deferred', version])
             if r.returncode:
                 from .upgrade_diag import tail
-                if diagnose:
-                    diag['stderr_tail'] = tail(getattr(r, 'stderr', '') or '')
+                (diag if diagnose else rb)['stderr_tail'] = tail(getattr(r, 'stderr', '') or '')
                 raise ValueError('restart_failed')
             end = time.monotonic() + 90 + service_recovery.READY_LIMIT   # P142: the worker may wait for an idle serve
             while True:
@@ -578,10 +644,7 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
             raise ValueError(job.get('failure', 'worker_interrupted'))
     except Exception as e:
         # Exception details may contain URLs or owner content: fixed codes only.
-        reason = str(e) if isinstance(e, ValueError) and str(e) in {
-            'install_failed','version_mismatch','restart_failed','upgrade_self_check_failed','worker_interrupted',
-            'artifact_hash_mismatch','artifact_signature_mismatch','artifact_identity_mismatch','unsupported_install',
-            *upgrade_diag.CATEGORY.values(), 'read_only_filesystem'} else type(e).__name__
+        reason = str(e) if isinstance(e, ValueError) and str(e) in fixed_reasons() else type(e).__name__
         result = {'attempt': job.get('attempt'), 'from': job.get('from', __version__), 'to': job.get('to'), 'result': 'failed', 'reason': reason}
         if reason == 'install_failed':
             reason = diag.get('failure') or 'uv_failed'
@@ -593,19 +656,30 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
             None: 'download', 'prepared': 'download', 'installing': 'install', 'installed': 'verify'}.get(job.get('phase'), 'install'))
         # The old wheel's owner-local command is available even if rollback/verification fails.
         if job.get('old'):
-            import shlex
-            result['recover'] = ' && '.join(shlex.join(c) for c in recovery_commands(job['install'], job['old']))
+            result['recover'] = ' && '.join(command_line(c) for c in recovery_commands(job['install'], job['old']))
         if job.get('phase') in ('installing','installed','rollback'):
             job['failure'] = reason
             job['diagnostic'] = dict(diag)
             save('rollback')
+            rb_step = 'install'
             try:
                 install(job['old'], diagnose=False)
+                rb_step = 'verify'
                 verify(job['from'], diagnose=False)
                 result['result'] = 'rolled_back'
-            except Exception:
-                result['reason'] = 'rollback_failed'
-                # Keep the independent recover command prepared above, not the missing venv's Python.
+            except Exception as r_e:
+                # #166/#192: say why the rollback failed (fixed category + its own redacted, bounded tail), then look at
+                # what is really installed: an installer that could not even start (no uv on the service PATH) changed
+                # nothing, so the previous version is still there — that is a rollback, not rollback_failed.
+                diag['rollback_failure'] = failure_reason(r_e, rb)
+                if rb.get('stderr_tail'):
+                    diag['rollback_tail'] = rb['stderr_tail']
+                if rb_step == 'install' and installed_is(job.get('argv'), job.get('from'), runner):
+                    result['result'] = 'rolled_back'
+                    diag['rollback_check'] = 'version_unchanged'
+                else:
+                    result['reason'] = 'rollback_failed'
+                    # Keep the independent recover command prepared above, not the missing venv's Python.
         finish(st, result, diag)
         if job.get('phase'):
             save('done')

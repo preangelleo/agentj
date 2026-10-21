@@ -145,8 +145,10 @@ try {
   await tap('#rdUnread');
   await page.waitForFunction(()=>/第四条|Fourth/.test(document.querySelector('#rdWords').textContent));
   check((await page.locator('#rdPg').textContent()).replace(/\s/g,'')==='4/4','unread badge → the new reply');
-  // copy: copies, then leaves
-  await tap('#rdCopyBtn');await page.waitForFunction(()=>document.getElementById('rd').hidden);
+  // copy: visible completed state, keeps reading
+  await tap('#rdCopyBtn');await page.waitForFunction(()=>document.getElementById('rdCopyBtn').dataset.done==='1');
+  check(await page.locator('#rd').isVisible(),'copy feedback stays visible in the reader');
+  await page.keyboard.press('Escape');await page.waitForFunction(()=>document.getElementById('rd').hidden);
   const clip=await page.evaluate(()=>navigator.clipboard.readText().catch(()=>''));
   check(/第四条|Fourth/.test(clip),'copy put the reply on the clipboard');
   // P375: touch reply quotes this one and leaves without opening the keyboard
@@ -165,11 +167,12 @@ try {
   const fx=await rect(page,'#rdClose'),fo=await page.locator('#rdClose').evaluate(n=>getComputedStyle(n).opacity);check(fo==='1'&&fx.h>=44,'the exit shows while it has the keyboard focus');
   await page.keyboard.press('Enter');await page.waitForFunction(()=>document.getElementById('rd').hidden);check(true,'the exit control leaves');
   await page.evaluate(()=>document.activeElement?.blur());
-  // keys: G first, g newest, y copy + leave
+  // keys: G first, g newest, y copy + keep reading
   await openReader(page);await page.keyboard.press('Shift+G');
   await page.waitForFunction(t=>document.querySelector('#rdWords').textContent.includes(t),LONG[lang].split('\n')[0]);check(true,'G → first');
   await page.keyboard.press('g');await page.waitForFunction(()=>/第四条|Fourth/.test(document.querySelector('#rdWords').textContent));check(true,'g → newest');
-  await page.keyboard.press('y');await page.waitForFunction(()=>document.getElementById('rd').hidden);check(true,'y copies and leaves');
+  await page.keyboard.press('y');await page.waitForFunction(()=>document.getElementById('rdCopyBtn').dataset.done==='1');check(await page.locator('#rd').isVisible(),'y copies and keeps reading');
+  await page.keyboard.press('Escape');await page.waitForFunction(()=>document.getElementById('rd').hidden);
   check(errors.length===0,errors.join('\n'));
   await ctx.close();
  }

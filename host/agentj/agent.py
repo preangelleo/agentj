@@ -122,7 +122,7 @@ def summarize(tool: str, tool_input) -> str:
         s = "删除 " + inp["file_path"] + (("\n" + inp["detail"]) if isinstance(inp.get("detail"), str) else "")
     elif tool == "CodexPermissions" and isinstance(inp.get("permissions"), str):   # Codex asks for more than its sandbox
         s = "Codex 要求本轮放宽沙箱：" + inp["permissions"] + (f"\n— {inp['reason']}" if isinstance(inp.get("reason"), str) else "")
-    elif tool in ("agentj mail send", "agentj mail") and isinstance(inp.get("summary"), str):   # P184 / P296: the host's text
+    elif tool in ("agentj mail send", "agentj mail", "agentj automation resume", "agentj plaza") and isinstance(inp.get("summary"), str):   # P184 / P296 / P426: the host's text
         s = inp["summary"]
     if s is None:
         s = json.dumps(inp, ensure_ascii=False, separators=(", ", ": "))
@@ -1133,6 +1133,7 @@ class ClaudeAgent(Agent):
         self.failed_start = False
         self.init: dict = {}                       # the last system/init (skills, model, version)
         self.rate: dict | None = None              # the last rate_limit_event.rate_limit_info (/usage)
+        self.turn_rate: dict | None = None         # P433: the same, only when it came during this turn (a stale reject lies)
         self.ctl: dict[str, asyncio.Future] = {}   # control request id → its control_response
         self.capture: list | None = None           # a local command (/compact, /cost): its text is the card, not a reply
         self.last_result: dict = {}
@@ -1376,14 +1377,20 @@ class ClaudeAgent(Agent):
                 f.set_result(r)
         elif t == "rate_limit_event":
             if isinstance(ev.get("rate_limit_info"), dict):
-                self.rate = ev["rate_limit_info"]
+                self.rate = self.turn_rate = ev["rate_limit_info"]
                 wins = self.rate.get("unifiedWindows") if isinstance(self.rate.get("unifiedWindows"), dict) else {}
-                upd = {}
+                upd, now = {}, int(time.time())
                 for k, key in (("five_hour", "h5"), ("seven_day", "week")):
                     w = wins.get(k)
                     if isinstance(w, dict) and isinstance(w.get("utilization"), (int, float)) \
                             and not isinstance(w.get("utilization"), bool):
-                        upd[key] = {"pct": round(100 * float(w["utilization"]), 1), "reset": _unix(w.get("resetsAt"))}
+                        upd[key] = {"pct": round(100 * float(w["utilization"]), 1), "reset": _unix(w.get("resetsAt")),
+                                    "at": now}
+                    # P433 (#196): Claude Code's windows are its cached header readings — a refusal of this very window
+                    # is the newer truth (the owner's page said 100 % while the cache said 39 %)
+                    if self.rate.get("status") == "rejected" and self.rate.get("rateLimitType") == k \
+                            and _unix(self.rate.get("resetsAt")):
+                        upd[key] = {"pct": 100.0, "reset": _unix(self.rate.get("resetsAt")), "at": now}
                 if upd:
                     self.meter(**upd)
         elif t == "assistant":
@@ -1396,6 +1403,8 @@ class ClaudeAgent(Agent):
                 return     # P219: the turn's result carries the same error (its notice, or the model fallback) — not a reply
             if not synthetic:
                 self.replay = False
+            if not synthetic:
+                self._note_tools(msg.get("content"), ev.get("parent_tool_use_id"))
             for block in msg.get("content") or []:
                 if isinstance(block, dict) and block.get("type") == "text" and isinstance(block.get("text"), str):
                     if self.capture is not None:
@@ -1418,9 +1427,27 @@ class ClaudeAgent(Agent):
                 from . import quota_resume      # P314: a used-up usage limit → continue by itself after the reset
                 if quota_resume.claude_limit(r):
                     with contextlib.suppress(Exception):
-                        quota_resume.main_hit(self, "claude", r, self.rate)
+                        quota_resume.main_hit(self, "claude", r, self.turn_rate)
             if self.turn_done:
                 self.turn_done.set()
+
+    def _note_tools(self, content, parent) -> None:
+        """P426 #181 (§39): an exact skill run (the Skill tool) and the main thread's shell commands worth a skill — names and
+        normalised signatures only (skill_usage / skill_ops). Never costs the turn."""
+        try:
+            from . import skill_ops, skill_usage
+            for b in content or []:
+                if not (isinstance(b, dict) and b.get("type") == "tool_use" and isinstance(b.get("input"), dict)):
+                    continue
+                if b.get("name") == "Skill":
+                    sk = b["input"].get("skill") or b["input"].get("command")
+                    if isinstance(sk, str):
+                        skill_usage.note(self.host.st, skill_usage.canonical(sk.strip().lstrip("/")), "claude")
+                elif b.get("name") == "Bash" and not parent and skill_ops.owner_turn(self):   # N5: the owner's turn only
+                    skill_ops.record(self.host.st, "cmd", b["input"].get("command"),
+                                     skill_usage.installed(self.kind, self.cfg.get("dir")))
+        except Exception:  # noqa: BLE001
+            pass
 
     def _api_retry(self, ev: dict) -> None:
         """P219: Claude Code retries a failing model request by itself (measured 2.1.296: 10 attempts, ≈ 3 min when the
@@ -1507,7 +1534,7 @@ class ClaudeAgent(Agent):
             self.native_goal_checked = True
             with contextlib.suppress(OSError, ConnectionError, ValueError):
                 await self.clear_native_goal()
-        self.retry_told, self.fallback, self.fell_back = False, None, False
+        self.retry_told, self.fallback, self.fell_back, self.turn_rate = False, None, False, None
         retried = False
         for attempt in range(3):
             if self.proc is None and not await self._spawn():

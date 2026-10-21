@@ -81,6 +81,9 @@ First byte = message kind (visible to the relay — see §5):
 - **Host restarts / relay reconnects**: all host-side sessions die with the host socket. The relay tells devices
   `{"t":"host","up":false}`; on the next `up:true` an approved device redoes RESUME on the same socket. The host treats data
   from a cid it has not seen `0x11` for as a new connection.
+  A `up:true` that reaches a **ready** session means a newer host socket replaced the one that session talked to (serve back
+  after its rescue watchdog, §33; a restart faster than the relay's close of the old socket): that session is gone, so the
+  device redoes RESUME on the same socket at once instead of waiting for a frame to fail (P424).
 
 ## 4. Pairing (QR) and approval — only on the host
 1. `agentj pair` asks the running `agentj serve` for a pairing: random `pairing_id` (16 B) and `psk` (32 B), expires in 5 min.
@@ -109,8 +112,7 @@ First byte = message kind (visible to the relay — see §5):
    **L2: a non-empty code also needs the approval passphrase** (`agentj passphrase set`, scrypt hash in `approver.json`, 0600):
    the control-socket message is `{"cmd":"code","code":…,"pass":…}`; `serve` checks the passphrase (after the 5-remote cap,
    before the code). Wrong → `{"ev":"pass_wrong","left":n}` and the device keeps waiting (the code is not used up); 5 wrong in a
-   row → locked 1 min, doubling up to 1 h (persisted), and the pairing ends `pass_locked`; none set → `pass_not_set`. The local
-   admin page (`agentj admin`) sends the same message, so a holder of its link or session still cannot approve without it.
+   row → locked 1 min, doubling up to 1 h (persisted), and the pairing ends `pass_locked`; none set → `pass_not_set`. P444b local settings (`agentj admin`) only links to the account page; its legacy API never bypasses the password gate.
 5. Approve → device static key + label go into the host's allowlist (`devices.json`, 0600), host sends `approved`. Deny/timeout →
    host closes the device socket; it never sends that device an application message.
 6. Later connections: RESUME_INIT (IK). The host learns the device static key from msg1. Accepted → HS_RESP, `hello` from device,
@@ -534,6 +536,7 @@ App messages (all inside §3 transport messages):
 | host → device | `{"t":"msg",…,"from":"cmd","cmd":"<name>"\|"refused","ok":bool,"kind":"ok"\|"info"\|"error"\|"refused"[,"models":[{"id","name","desc","cur"}]][,"undo":true][,"sep":true][,"by":"<≤ 64>"]}` | its result card (a chat entry: backlog, replay, every phone); `models` = buttons that send `/model <id>`; `undo` = 「撤销清空」; `sep` = a divider |
 | device → host | P207: `{"t":"mail_allow","r","addr","role":"owner"\|"guest",SIG}` → `ctl_res` (object `addr\nrole`; §25) | add an address to the e-mail allowlist |
 | device → host | P336: `{"t":"approval_set","r","key":"approval.level"\|"approval.goal_nocard","value",SIG}` → `ctl_res` (object `key\nvalue`, a boolean as `true` / `false`; below) | the owner's approval level / 「设了目标就不弹窗」 switch — never via `pref_set` |
+| device → host | P426: `{"t":"skill_archive"\|"skill_restore","r","name",SIG}` → `ctl_res` (object `archive\|restore` `\n` name; §39.1) | 「归档」/「恢复」 one skill on the 技能 page |
 | device → host | `{"t":"mem_rm","r","src","file","fsha","iid",SIG}` · `{"t":"mem_undo","r","id",SIG}` · `{"t":"estop","r",SIG}` · `{"t":"resume","r",SIG}` · `{"t":"task_set","r","id","on":bool,"tsha",SIG}` with SIG = `"n":"<32 hex>","ts":<ms>,"sig":"<b64url 64 B>"` → `{"t":"ctl_res","r","action","ok":bool[,"why"][,"undo","label"]}` | signed writes (below) |
 
 - **Phone controls (PROMPT-26 item 3; ARCHITECTURE ADR-A50 – A54)**. Reads (`mem_list`, `act_list`, `task_list`) are
@@ -606,6 +609,16 @@ App messages (all inside §3 transport messages):
   phone; research — Codex `sandbox: "read-only"` and every request that is not read-only declined without a card, OpenCode our
   rules with every "ask" turned into "deny". The result reaches the phones as one `notice`: 「定时任务「<title>」：
   <verdict> — <the VERDICT sentence>」(+「（只读运行）」).
+  P426 (#181-5, `host/agentj/wfrun.py`): a task.json with `steps` (2–12 nodes `{id, prompt_file, title?, outputs?,
+  idempotent?, retry?}`) runs node by node in the same run (each its own harness run, timeout and VERDICT; checkpoint
+  `<state>/wfruns/<run_id>.json` 0600, atomic). A failed node ends the run; the notice adds one line 「从失败处继续：跟 Agent 说
+  「从失败处继续 <id>」，或在电脑上运行 `agentj automation resume <run id>`。」 (en: "Continue from where it failed: …"). Resume =
+  control.sock `{"cmd":"automation_resume","run","yes"}` (owner's terminal; `yes` counts only for a peer with no Agent ancestry
+  and a terminal on stdin) or capability.sock `{"t":"automation_resume"|"automation_status","run"}` (an Agent; never `yes`) →
+  `{"result":"queued"|"needs_yes"|"declined"|"refused"|"status",…}`. Finished nodes are reused; an earlier node whose
+  instructions or fingerprinted outputs changed restarts there; re-running a node that is not `idempotent` asks the owner
+  with one host card (tool `agentj automation resume`, never batch / goal / full-level automatic). One resume per run (a claim
+  in the checkpoint under the `wfruns` flock); a damaged checkpoint is refused, never guessed.
 - **Slash commands** (PROMPT-26 7a; ARCHITECTURE ADR-A70 – A72; `host/agentj/slash.py`): only from a ready session of a
   paired device. Whitelist `/clear` `/compact` `/model [name]` `/context` `/cost` `/usage` `/status` `/help` `/stop` (+
   `undo_clear` from the clear card). P73: `/my-agent-id` and `/add-friend` (§17.7) are answered by the host before any of
@@ -878,9 +891,9 @@ ignore it). `reply_unknown` if any of them is gone.
 ### 10.7 Questions — AskUserQuestion and its equivalents; an answer is an approval
 | direction | message |
 |---|---|
-| host → device | `{"t":"question","id":"<32 hex>","qs":[{"q":"<≤ 1 000>","h":"<≤ 64>","m":bool,"o":[{"l":"<≤ 200>","d":"<≤ 500>"}]}],"ttl":s[,"task":"<≤ 80>"]}` — 1–8 questions, 1–16 options each, labels unique per question; `m` = several may be picked |
+| host → device | `{"t":"question","id":"<32 hex>","qs":[{"q":"<≤ 1 000>","h":"<≤ 64>","m":bool,"o":[{"l":"<≤ 200>","d":"<≤ 500>"}]}],"ttl":s[,"text_max":2000,"task":"<≤ 80>"]}` — 1–8 questions, 1–16 options each, labels unique per question; `m` = several may be picked |
 | host → device | `{"t":"question_done","id","result":"answered"\|"cancelled"\|"timeout"\|"gone"\|"stopped"}` |
-| device → host | `{"t":"q_answer","id","pick":[[i,…],…],"sig"}` (1-based option numbers per question, ascending; exactly one when `m` is false, ≥ 1 when true) · `{"t":"q_answer","id","cancel":true,"sig"}` (取消问题: "I will type it instead") |
+| device → host | `{"t":"q_answer","id","pick":[[i,…] | "<free answer>",…],"sig"}` (free text only on hosts advertising `text_max`; numeric picks are 1-based option numbers per question, ascending; exactly one when `m` is false, ≥ 1 when true) · `{"t":"q_answer","id","cancel":true,"sig"}` (取消问题: "I will type it instead") |
 - **Signature** (`agentjarvis-question-v1`, like §8's approvals): `Ed25519(device sk, UTF-8 "agentjarvis-question-v1\n" + channel
   + "\n" + device_id + "\n" + id + "\n" + ("answer"|"cancel") + "\n" + hex(SHA-256(Q)) + "\n" + P)`, where `P` = the picks as
   `1,3;2` (questions separated by `;`, numbers by `,`) or `-` for cancel, and `Q` = the lines, joined by `\n`, of
@@ -1035,6 +1048,13 @@ nothing. Disconnect ends the pending UI request; installation continues on the h
 - `{"t":"menu_get","r"}` → `{"t":"menu","r","source":"file"|"default","items":[…],"skills":[{"cmd","desc"}],"cmds":["clear",…],
   "problems":[…]?}`: `skills` = Claude Code's own skills (init `skills`; empty for Codex / OpenCode), `cmds` = §8's whitelist (the
   one-tap command buttons, which keep executing directly). `/` completion matches all three; picking one inserts it.
+  (P412, #175) `"kind"` = the current harness (`claude` / `codex` / `opencode` / …) and `"native":[{"cmd","desc","state"}]`
+  = that harness's own slash commands Agent J does not already list (Claude Code: its init `slash_commands` minus skills;
+  Codex / OpenCode: their documented TUI commands), after Agent J's own and the skills; the page asks again when
+  `status.agent` changes. `state` (#175 定稿) is the road a typed one takes: `"run"` — sent to the harness as typed;
+  `"agent"` — the host gives the main Agent 「〔菜单命令 /x〕主人想执行 /x <参数>」 instead and the Agent does it through its
+  normal path; `"none"` — refused with one sentence why (also in `desc` after 「 · 」), greyed on the page. An older host's
+  `"tui"` reads as `"none"`. §8's whitelist and ADR-A71 are unchanged (P412 ADR in ARCHITECTURE.md).
 - Default items when no file: the whitelist commands with Chinese / English descriptions (never Leo's private skills), then
   (P73) `/add-friend` and `/my-agent-id` in a 「好友」 / "Friends" group — inserted like every item, never in `cmds`.
   (P155) `/switch-harness` in a 「主 Agent」 / "Main Agent" group, inserted like every item, never in `cmds`; also appended to an
@@ -1547,6 +1567,10 @@ reference to a file that is not there; P194 `masked` = the reference holds a pri
 reply text was masked before the scan, so the file was never looked up and is NOT reported `gone`; `too_many` = past the
 per-page cap; ≤ 48 entries; an older phone drops the two new reasons; P211 `private` / `key_*` above — an older phone drops them like any unknown reason). `ref` (an addition to the brief) lets the phone put an item where the reply wrote `![](ref)`; it repeats
 text the reply already holds. A host without F21 sends neither field; an older phone ignores them.
+P424: a `secret` / `key_content` entry of a multi-line text file may add `"line":<1-based line>,"hint":"<first two characters>…"`
+(where the key-like text is; never the text) — the phone appends 「（第 n 行：xx…）」, an older phone drops both. Scripts and source
+files (`.sh` `.py` `.ps1` `.js` … explicit links only) are offered as `kind:"file"`, `mime:"text/plain"`: previewed, never run.
+The folder the scan resolves against is the configured working root ∪ (toward the owner) the session's current folder (#64).
 
 **Wire** (device → host; `p33` only, ready and allowlisted, unsigned like `hist_get` — a read of the shared history, §10.15;
 any approved device may fetch any page's media):
@@ -1555,7 +1579,7 @@ any approved device may fetch any page's media):
 |---|---|
 | device → host | `{"t":"media_get","mid","o":<byte offset>}` |
 | host → device | `{"t":"media_chunk","mid","o","d":"<base64url of ≤ 45 056 bytes>","last":bool}` — up to 8 per `media_get` |
-| host → device | `{"t":"media_err","mid","why":"gone"\|"shape"\|"busy"}` |
+| host → device | `{"t":"media_err","mid","why":"gone"\|"shape"\|"busy"\|"failed"}` — P424 `failed`: the host could not serve it (any other error), said at once |
 
 The phone asks for the next window when it holds the previous 8 chunks; a chunk at another offset than the bytes it holds is
 ignored. The host paces ≤ 22 chunks / s (the §10.3 boosted rate), re-checks before every chunk that the session is still
@@ -1854,7 +1878,8 @@ the new rejection detail.
 | device → host | `fr_set{r,friend,op:"group"\|"block"\|"unblock"\|"delete",value}` · `pg_set{r,group:Group}` · `pg_del{r,id}` · `fr_add{r,id,note}` · `fr_discoverable{r,on}` · `fr_card{r,owner,intro}` · `fr_ctx{r,friend,text}` (P73), each with §8 SIG | signed writes (§8 control signature, actions `fr_set` `pg_set` `pg_del` `fr_add` `fr_discoverable` `fr_card` `fr_ctx`); object text: `friend\nop\nvalue` · canonical JSON of the group (sorted keys, no spaces) · `id` · `id\nnote` · `on`/`off` · `owner\nintro` · `friend\ntext` → `ctl_res`. `fr_ctx`: friends only (`not_friend`), > 4000 code points → `too_long` (nothing changes), `""` clears; controls.log keeps its SHA-256, never the text; `fr_changed{friend}` follows. It is the owner's own setting, not a message: nothing goes to the friend |
 | host → device | `{"t":"fr_changed","friend":<id>\|null}` | something changed: re-read (sent within the same second as the change) |
 **There is no message that sends text to a friend from a device.** A `fr_send` / `fr_msg` / anything unknown is dropped and
-logged `fr_send_refused`. The owner speaks to a friend only through the main Agent (`agentj friends tell`, §17.9).
+logged `fr_send_refused`. The one exception is the owner's own 「我的设备」 group (P426, §17.12): signed `fr_gsay`, Same owner
+devices only. The owner speaks to a friend only through the main Agent (`agentj friends tell`, §17.9).
 
 **Friend slash commands (P73, ADR-A176, `host/agentj/friend_cmds.py`)** — answered by the host itself (no Agent, no model, no
 tokens; also while stopped), as a §8 `cmd` card whose `card.open` names a page button:
@@ -1885,7 +1910,8 @@ outbound gate (§17.6 step 6), the data wrapping (step 4). It never sees the mai
 `id` · `card [--name --owner --intro]` · `add <ID> [--note]` · `list` · `history <friend> [--before]` (output wrapped as
 untrusted data) · `tell <friend> <text>` · `group <friend> <group>` · `groups` · `block|unblock|remove <friend>` ·
 `discoverable on|off` · `profile [--edit|--show]` · `context <friend> [--set TEXT|--append TEXT|--file F|--show|--clear]` (P73;
-also without serve) · `usage [<friend>]` · `on|off`. `<friend>` = an ID or a unique name prefix.
+also without serve) · `usage [<friend>]` · `on|off` · (P426, §17.12) `pick [--task-size small|medium|large] [--explain] [--rules]` ·
+`pick-rules [show|order|set|unset|pace|reset] …` · `say <text>` · `devices [--before]`. `<friend>` = an ID or a unique name prefix.
 Stop-everything (§8) also stops every peer session and the mailbox sends; inbound messages are then answered nothing and kept
 for the owner.
 
@@ -1954,7 +1980,7 @@ only to the owner's own paired devices.
 
 ## 19. Account-authorized owner operations (P78, host0.16.3a1)
 
-Account seat cards can request one-use owner operations after a passkey ceremony (ten-minute server/session window). The request and encrypted return channel are specified by Dashboard API§13. The existing Noise IKpsk2 pairing handshake and phone wire format do not change. A remotely created Pairing retains the signed host/account-bound request; after its first successful hello, the host records source=account and approved without a local six-digit/passphrase entry. Locally created pending handshakes still wait until an exact device+handshake approval or local code+passphrase decision.
+Account seat cards can request one-use owner operations after a passkey ceremony (ten-minute server/session window). The request and encrypted return channel are specified by Dashboard API§13. The existing Noise IKpsk2 pairing handshake and phone wire format do not change. A remotely created Pairing retains the signed host/account-bound request; after its first successful hello, the host updates the original browser-encrypted reply to `{status:"pending",devices:[{device,name,handshake,code}]}`. `code` is the six-digit Noise SAS. The account page keeps polling, replaces its QR with the code and an explicit Approve button, and sends the existing signed `approve` operation bound to that device+handshake. Scanning alone never grants. Approval records source=account. P444b password fallback uses the unchanged signed `pass_start` envelope and one-use encrypted target; its plaintext is `{pass,confirm:{device,handshake}}` on the second, explicit approval. The host verifies the password and exact live pending handshake before granting; missing confirmation remains only a start request. Neither password nor SAS reaches the control plane in plaintext. Local settings only links to the account page; first pairing starts from the account page or `agentj pair`, later devices can use P190 reverse pairing. Locally created pending handshakes still wait until an exact device+handshake approval or local code+passphrase decision.
 
 Every grant records account_passkey in approvals.log plus activity and a notice to remotes. remote-pair off prevents subsequent account grants and cancels active remote Pairing. Preboot/stale/expired/replayed or cross-host/account requests never create control ability. A bound host need not set a local passphrase; an unbound/local-terminal owner operation keeps its original passphrase gate. Resume must match the current stop-state digest; task_on must match its current task/prompt contract digest. P130 device_name uses the same signed owner control, with exactly target={device,name}; device is a paired device id and the trimmed name is 1–64 characters without C0/DEL. The host only changes that record’s name and refreshes its report, leaving device keys and renewal tickets unchanged. It requires the existing online/remote-pair-on/passkey proof, host/account binding, expiry and replay checks; an absent device returns gone. No new D1 table or relay message is introduced. All command responses, including pending devices/task summaries, are encrypted to the requesting browser.
 
@@ -2502,7 +2528,8 @@ Before painting unread after ready/foreground, the client fetches the head (`his
 
 The logo opens a menu of five parallel pages (the chat page is one of them). Four of them read what is on the computer:
 the working root's workflow folders, skills, memory files and the Agent J constitution layer. **Read-only**: nothing in
-this section writes a file; changes go through 「跟 Agent 讨论」 (the page fills or sends a plain chat message). A host that
+this section writes a file; changes go through 「跟 Agent 讨论」 (the page fills or sends a plain chat message) — the one
+exception is §39's 「归档」 / 「恢复」 on the 技能 page (P426). A host that
 answers announces `wf1` in `ready.caps`; the page shows the four pages only then (an older host: the menu shows them
 greyed with 「电脑上的 Agent J 需要升级」).
 
@@ -2734,7 +2761,9 @@ redaction, support-desk transport; also the one-line fallback for a helper at th
 `{"t":"rescue_do","r","action","n","ts","sig"}` — action `rescue_do`, object `{"action":<action>}`, one of
 `help` (module ②: diagnose → redacted report to Agent J Father → ticket → carry out support's whitelisted actions) ·
 `report` (diagnose + send only) · `reconnect` · `restart` (restart serve) · `linger` (Linux `loginctl enable-linger <self>`) ·
-`rollback` (re-install the previous version from the local cache, when one exists) · `new_session`.
+`rollback` (re-install the previous version from the local cache, when one exists) · `new_session` · `restart_session` (P435, serve only).
+
+P435 `restart_session`: Settings → Emergency repair, immediately after Reset connection; one cancellable owner confirmation, then the existing signed `rescue_do` target. Never offered/run by support automation. The selected adapter stops and its native connection resumes the same conversation, falling back once to a fresh pinned conversation with old-session undo. Shared Claude termination requires exact local process identity; native launcher restrictions (`--restricted`, permission mode, tool limits and settings sources) are copied only in memory, never logged or put into cfg. E-stop/cancellation wins; existing queued sends close as not run; delivered/uncertain current sends end stopped without claiming they were unsent; main-turn grants close. Arrivals during the restart follow the replacement queue. A failed startup leaves a fresh receiving actor; after an e-stop only the owner’s signed Resume starts the dormant actor. `reset_step/reset_done` use flow `restart_session`, step 1; done may contain `new:true`. The rescue watchdog has no adapter and refuses this action; restore serve through Reset connection first.
 Refused → `{"t":"reset_done","r","flow","ok":false,"why"}` (`shape` · `stale` · `no_key` · `bad_signature` · `replay` · `busy` ·
 `unavailable`) and one `controls.log` line. Unknown actions are refused; nothing outside this list ever runs. No argument
 travels with an action: nothing the phone or support sends becomes part of a command line.
@@ -2862,7 +2891,7 @@ Messages (p33 sessions of a paired, ready device; answered to the asking session
 | host → device | `{"t":"jcard_get","r","ok":true,"id","template","path","text"?\|"items"?,"actions":[A…],"plus","links":[L…],"anchors":[N…],"problem"?,"cut"?}` | `notes` → legacy `text` plus `entries:[{id,text,editable}]` and SHA256 `revision`; `checklist` → `items:[{"id","text","done","acts":[A…]}]` (≤ 200); the official `todo` card (P394) adds `todo:{counts:{all,agent,owner}}` and per item `status` (pending · active · done · cancelled; `done` = closed), `owner`/`by` (agent · owner), `start`/`end` (null or `{kind:"at",at:<ms>,date,text}` · `{kind:"after",id,met,text}` · `{kind:"when",text}`), `note`, `source`, `created`, `finished`, `state` (overdue · due · active · ready · open · waiting · done · cancelled — the order the items come in) and `flags` (overdue · due_soon · end_met · ready · waiting · check), all redacted; `problem` ∈ `empty` · `refused` · `unreadable` · `bad_data`; `ok:false` → `why` ∈ `not_found` · `off` |
 | device → host | `{"t":"jcard_set","r","id","on"}` | one card's switch; display only |
 | host → device | `{"t":"jcard_res","r","ok","id","on"}` | serve logs `jcard_set` (device, `id:on\|off`) |
-| device → host | `{"t":"jcard_note","r","id","entry","revision","op":"edit"\|"delete","text"?}` | paired-owner direct entry edit/delete only; no phone add; no arbitrary file path |
+| device → host | `{"t":"jcard_note","r","id","entry","revision","op":"add"\|"edit"\|"delete","text"?}` | paired-owner direct notes/todo add/edit/delete; add uses text, edits/deletes require revision; add only on enabled official notes/todo; existing enabled custom notebook edits/deletes preserved; no arbitrary file path |
 | host → device | `{"t":"jcard_note","r","ok","id","why"?,"entries"?,"revision"?}` | stale revision → `conflict`; no write on refusal; redacted entries cannot be edited; delete targets the exact original byte span |
 | device → host | `{"t":"jcard_color","r","id","color":"#rrggbb"\|null}` | user override; null removes it; system page ids and installed cards only |
 | host → device | `{"t":"jcard_color","r","ok","id"?,"color"?,"why"?}` | saved under `agentperm/cards/colors.json`, separately from card packs |
@@ -2897,6 +2926,68 @@ address form shared by everything the page opens: `skill/<name>` · `workflow/<f
 `agentj card open <id> --at latest` (or the new item id) after a successful add, separately from the data write.
 A card's address is its id (unique on the computer; names may repeat). In messages the page links `card/<id>[#<anchor>]`
 and `@<card name>` (the composer writes `@<name>（card/<id>）`).
+
+**P432 — a card's own server on this computer.** `card.json` may add `server:{port,routes?:[{id,path}],repo?,ref?}`;
+`data:{"get":"/path"}` replaces `data.file`, and a button `{"id","label","call":"<route id>"}` replaces `prompt`. serve alone
+asks `http://127.0.0.1:<port><path>` (GET for data, POST for a button) with `X-AgentJ-Card: <id>` and shows nothing unless
+the answer is `200` and carries the same `X-AgentJ-Card: <id>`; a button's POST goes out only after `OPTIONS <route>`
+answered the same way (a local service that is not this card's server never receives it); port 1024–65535 except
+well-known local services (debuggers, container / database daemons, admin APIs); paths are plain segments (no query, no
+`..`); no redirects; ≤ 5 s for the whole exchange (a watchdog closes the socket); data ≤
+`maxBytes`, a button's reply ≤ 4 KiB; one request per card at a time, data at most once a second, a button at most once
+per 2 s. The answer goes through the same template pipeline (redaction, parsing, bounds; server notes are never
+editable). In `jcard_get` such a button is `A` = `{"id","label","call":true,"where":"POST http://127.0.0.1:<port><path>"}`
+and `path` is the GET address; `problem` adds `server_down` · `server_timeout` · `not_card` · `server_status` · `too_big` ·
+`busy` · `bad_reply` (and `stopped` for a button or a download during an emergency stop). The page shows label + `where`
+on the confirm card and, on 运行, sends
+
+| direction | message | notes |
+|---|---|---|
+| device → host | `{"t":"jcard_call","r","id","act","item"?,"lang"?}` | `item` = a checklist item id (`^[A-Za-z0-9_-]{1,32}$`) for an item button |
+| host → device | `{"t":"jcard_call","r","ok","id","act","message"?,"why"?}` | POST body made by the host: `{"card","action","item"?,"lang"}`; the reply `{"ok"?,"message"?}` (JSON) or text → one redacted line ≤ 200; `why` ∈ `not_found` · `off` · `bad_item` · `too_soon` · `busy` + the server problems; serve logs `jcard_call` (device, `id:act:result`) |
+
+The phone never reaches the server; it is a plain loopback client of the same Noise session (the Agent fence already
+shares the network, so this adds no reach). `server.repo` + `server.ref` (a GitHub repository and its 40-hex commit) say
+where the server's source lives; the host never fetches or runs it.
+
+**P432 — the official Files card** (`files`, default off). `jcard_get` answers `{"ok","id":"files","template":"files",…}`
+without data; the page then asks one folder at a time:
+
+| direction | message | notes |
+|---|---|---|
+| device → host | `{"t":"jcard_files","r","id":"files","root"?,"path"?}` | `root` = a root id from the answer (default the first), `path` = `/`-joined names under it |
+| host → device | `{"t":"jcard_files","r","ok","roots":[{id,label}],"root","path","label","entries":[{name,kind:"dir"\|"file",mtime,bytes?,dl?}],"more"?,"why"?}` | roots = the Agent's working folder (`r0`) + folders the owner added on the computer (`agentj card files add`, `<state>/cards/files-roots.json`, outside agentperm); never `/`, `/proc` `/sys` `/dev`, the state dir or a folder holding it, nor anything the Agent fence hides (fence.protected_paths: preferences, other instances, other seats' folders, the shared ASR folder — never entered, never listed); a root is opened once and its fd's real path must be the checked one; ≤ 500 rows, folders first; links, devices, hidden names and credential names (media `DENY_*`, jcards `DENY_RE`) never appear; every level opened with O_NOFOLLOW; `why` ∈ `no_root` · `not_found` · `refused` · `gone` · `off` |
+| device → host | `{"t":"jcard_file","r","id":"files","root","path"}` | |
+| host → device | `{"t":"jcard_file","r","ok","item"?,"why"?,"bytes"?}` | `item` = a §13 media item (`mid,name,mime,kind,bytes,sha256,ref`) registered after `Media.check(owner=True)` against that root — the same type sniffing, caps and key-file / key-content refusal (`secret`) as a reply's attachment; the page then pulls it with `media_get` and saves it; `why` ∈ `refused` · `gone` · `secret` · `too_big` · `type` · `not_found` · `off`; serve logs `jcard_file` (device, result; no name) |
+
+A file's `@` puts `@<label>/<name> ` in the message box (never sent) so the Agent reads it on the host.
+
+**P432 — the official Obsidian card** (`obsidian`, default off). `jcard_get` answers `{"ok","id":"obsidian","template":"obsidian",
+"vault"?,"entries":[{"id","path","title","text","problem"?,"cut"?}],"actions","plus":"agentj-obsidian","problem"?}`: the notes
+picked in `<state>/agentperm/cards-data/obsidian/selection.json` (`agentj card obsidian vault|pick|unpick`, ≤ 20). The
+vault must be a real folder with `.obsidian/` (not `/`, the state dir or a parent of it); a note is a `.md` path inside it,
+read one level at a time with O_NOFOLLOW, nothing hidden on the way (never `.obsidian/`), ≤ 32 KiB (cut at a word), then
+`privacy.redact(owner=True)`; the selection is checked again on every read. `problem` ∈ `not_set` · `no_vault` · `refused` ·
+`not_a_folder` · `no_notes`; an entry's `problem` ∈ `refused` · `gone`. A note's `@` drafts `/agentj-obsidian @<path> `
+(never sent); the Agent edits the vault on the host.
+
+**P432 — cards from the plaza** (package type `card`, PLAZA_PACKAGES §1 / §8). `agentj plaza install` puts such a card in the
+deck **switched off** and records its source — and later the digest the owner approved — in `<state>/cards/plaza.json`
+(outside agentperm: an Agent inside the fence can neither forge a reviewed record nor switch a plaza card on by editing the
+switches; a plaza card counts as on only while the approved digest matches the card as it is now); `jcard_items` marks it
+`"src":"plaza"`. Author strings in the summary are one quoted line each.
+Before switching it on the page asks for its permission summary and shows it word for word on the confirm card:
+
+| direction | message | notes |
+|---|---|---|
+| device → host | `{"t":"jcard_perm","r","id","lang"?}` | the owner's own (non-official) cards only |
+| host → device | `{"t":"jcard_perm","r","ok","id","text","digest"}` | `text` = the data source (file or server GET), every button's whole message template or server call, links, the server's `repo @ ref`, the plaza name / version / review state; `digest` = 16 hex of SHA-256 over the language-independent summary |
+| device → host | `{"t":"jcard_set","r","id","on":true,"seen":<digest>}` | a plaza card goes on only when `seen` equals the digest of the card as installed now (a changed card needs a new reading); `agentj card on` refuses it (`review`) |
+
+`agentj card pack <id> <folder>` builds the package from the owner's card (sample only, never the data folder) after the
+preflight (only README + card/card.json + card/sample/, a valid card, a server pinned to `server.repo` + 40-hex `server.ref`,
+a key-free sample that renders, every button message renders); `agentj plaza publish` repeats it. `--replace` installs a new
+version (the old one sleeps; off again); `agentj card rollback <id>` brings the newest sleeping version back, off.
 
 P386 colour UI: ≥44px invisible circular area at the deck card's upper-right, held with finger or mouse; no mark or icon.
 B2 hue ring, palette tones and HEX/RGB fields; Escape closes. The UI chooses Noir/Lotion ink and refuses a colour below
@@ -2990,6 +3081,12 @@ no receipt after 10 seconds on a friend card also offers retry. A peer question 
 legacy 24h cards measured from their original creation time; timeout means no reply and an owner notice. Friend requests
 retain the 7-day lifetime. Actual WebCrypto Ed25519 → host verification: `test_p396_friend_signature.py` (`p396-host`).
 
+P424 (#152) addition to §17.7: a friend-card `answer` may carry `dg` = the first 16 hex of the shown digest the phone
+signed. The host never trusts it: on `bad_signature` it only logs `status` = `dg_same|dg_differs|dg_none` and `why` = the
+variant the signature does fit (`unsigned_group` · `unsigned_ctx` · `decision` · `group_not_sent` · `none`); no text, not
+in the receipt. The web builds every friend answer with `wire.friendAnswer`, which sends `group` / `ctx` exactly when their
+line is signed and throws otherwise. Older hosts ignore `dg`; the signed bytes are unchanged.
+
 
 ### §17.10 — Same owner (P405, quiet source candidate)
 Selecting signed `fr_set {friend,op:"group",value:"same-owner"}` creates a pairing proposal, not consent.
@@ -3011,7 +3108,7 @@ or created. Only confirmed peers see the legacy signed `main` handover option; t
 Inbound and outbound credential/private/never-tell filters and metadata-only handover audits remain mandatory.
 Revocation, block, deletion and Stop everything reject queued delivery; fresh encrypted remote status is checked before
 submission. Replies bind `--reply-to` to the original thread and use end:true as an informational result without reply loops.
-Status is E2E, aggregate-only and 403 for either unconfirmed endpoint; unknown/stale readings are null. No friends pick.
+Status is E2E, aggregate-only and 403 for either unconfirmed endpoint; unknown/stale readings are null. `friends pick` (§17.12) only reads this status.
 
 ### §17.11 — Handover safeguards (P410)
 
@@ -3022,6 +3119,13 @@ Status is E2E, aggregate-only and 403 for either unconfirmed endpoint; unknown/s
 `relay_state {mid,state}` uses allowlisted states pending/claimed/done/released/expired/cancelled/loop/hops/rate/shape. It changes only an existing outbound request for that authenticated friend. Terminal states cannot be overwritten by later states or ordinary pack receipts. Rejection reasons are mapped locally to EN/ZH plain words; never display a peer-supplied reason string. A compatibility `pack got` stops transport retries. `relay_cancel {mid}` cancels only an existing incoming request, never running processes; local `friends cancel <friend> <mid>` owns only a sent request. Both sides receive local notices for rejection/release/expiry/cancellation. Results use `irt` to finish the corresponding lease; delayed results are informational and cannot revive a released request.
 
 Signed `fr_set {friend,op:"hold-for-owner",value:"on"|"off"}` uses the existing control digest, nonce/TTL, paired-device signature and metadata audit. FriendStore owns per-friend `hold_for_owner` (default false). New non-result pmsgs first pass guards and credential filtering, then create a persisted peer_question with handover=true and no draft, using the unclaimed lease deadline. Turning the switch off never approves an open card. Only a valid per-card phone signature allows one submission as `friend_task/role=task`, with from-name `friend-task-via-agentj(已批转交)`. This is non-owner data. Delegated sensitive-action cards are required, including sudo with no ten-minute grants, just as for same-owner tasks. Denial/expiry never submits. Existing ordinary question TTL120, friend invitations7d, and bilateral same-owner consent are unchanged.
+
+### §17.12 — `friends pick` and the 「我的设备」 group (P426)
+
+**pick** (`host/agentj/friends_pick.py`, CLI only, recommendation only): friends.sock `{"t":"pick","size":null|"small"|"medium"|"large"[,"rules":true]}`. Candidates = friends with bilateral Same owner (§17.10) plus this host (`self`); all `owner_status` requests run concurrently, each ≤ 10 s; a failure or 403 = `reachable:false`, never picked. Answer `{ok, task_size, rules:"owner"|"default", pace, pick:{id,name,self}|null, machines:[{id,name,self,reachable,eligible,recommended,rank,listed,rule,reasons:[code],facts:{week_used_pct,week_expected_pct,load_per_core,memory_available_gib,in_use,agents,background,harness,model},why:{zh,en}}], summary:{zh,en}, next, lang}`. `week_expected_pct = min(100, elapsed_days × pace)` from the weekly window's `reset_at`. Rules live in `peer/settings.json` key `pick_rules` = `{order:[id|"self"…≤32], pace:1..100 (% per day, default 100/7), machines:{id|"self":{week:0.05..10|null, load:0..64|null, mem:0..4096 GiB|null, in_use:bool, sizes:[small|medium|large]}}}`, validated by FriendStore.set_setting; edited with `{"t":"pick-rules","action":"show"|"order"|"set"|"unset"|"pace"|"reset","args":[…]}` (also without serve). Order: listed devices first in order, then unlisted ones by lowest load per core and most weekly headroom, this host last. Defaults without rules: not in use, load ≤ 1 per core; this host has no threshold and is never excluded for being in use (the asking Agent is itself a turn). An unknown number never passes a threshold. Reason codes: offline, size, in_use, in_use_unknown, load, load_unknown, mem, mem_unknown, week, week_unknown.
+
+**「我的设备」 group** (`host/agentj/owner_group.py`): members = friends with bilateral Same owner, not blocked — computed, never stored; nobody else can post or read. History `peer/my-devices.json` `{items:[{gid,from,by:"phone"|"agent",text,to:[id],re,mid,kind:"msg"|"reply",ts}] (newest 500), unread, rate}`, atomic writes under the friends lock. Posting: device → host signed `fr_gsay{r,text}` (§8 action `fr_gsay`, object text `"devices
+" + text`, `ctl_res`; Stop everything / no members / outbound or inbound filter hit → `ok:false` with `stopped` / `no_devices` / `gate`) or friends.sock `{"t":"say","text"}` from the main Agent. Mentions: `@<friend name>` (longest match, case-insensitive), `@<Agent ID>`, `@all` / `@everyone` / `@所有设备` / `@全部设备` / `@全部` / `@所有人`; an `@` right after an ASCII letter or digit is not a mention. Per member: mentioned → an ordinary `pmsg` plus `"grp":{"gid":hex16,"to":[id],"by","re":null}` (the full §17.6 / §17.10 / §17.11 path: relay envelope — a phone post starts a fresh chain —, rate, lease, hold-for-owner, filters, main-Agent delivery as `same_owner/role=task`, label 「来自本人设备 X（「我的设备」群）」); not mentioned → app message `{"t":"grp","gid","to","by","text","ts","re"}`, history only, no turn, ≤ 60 records a minute per member, credential-looking text kept as withheld. A malformed `grp`, or one from a friend that is not bilaterally Same owner, is ignored (the pmsg continues as an ordinary friend message). The receiving main Agent replies with `friends tell <friend> --reply-to <mid>`; that reply carries `grp {gid:new, to:[asker], by:"agent", re:<gid>}`, is recorded locally and sent as a `grp` record to every other member. On the asking host a reply whose `re` is a phone post is recorded, acknowledged `pack got` and announced (a notice without the text) with no Agent turn; a reply to an Agent post continues as the usual informational result (§17.10). Reads: `fr_list_res.devices = {n, unread, last:{ts,text}|null}`; device → host `{"t":"fr_glog","r","before"?}` → `{"t":"fr_glog_res","r","me":{id,name},"members":[{id,name}],"items":[{gid,from,self,name,by,text,to:[{id,name}],re,kind,ts,mid}],"more"}` (newest 50, read marks the group read); friends.sock `{"t":"devices"}` (untrusted-data wrapper). Same owner changes only the destination; it never grants approval authority.
 ## 37. 屏幕求助 / 扫码求助 — screen-help cards (P411; the number is provisional until the merge)
 
 Browser automation stopped at a sign-in QR code, a captcha or a human check. The caller (the main Agent, or the owner's own
@@ -3104,3 +3208,205 @@ Host block `sudo`: the cache file's mode, or `session` only while this device's 
 
 **Computer side.** `agentj terminal status|enable|allow|deny|disable|forget|logs` (control.sock `terminal_cfg`; widening =
 SENSITIVE claim + a terminal + an `AgentJTerminal` host card allowed with Face ID on a passkey remote).
+P413 calendar extension to §34 (jcards1): official calendar is default on, owner can turn off.
+`jcard_get {id:"calendar",r}` → `{t:"jcard_get",r,ok,template:"calendar",revision,events,plus:"agentj-calendar"}`.
+`jcard_cal {r,id:"calendar",op:"add"|"edit"|"delete",entry?,revision,event?}` →
+`{t:"jcard_cal",r,ok,why?,revision?,events?}` only to the requesting paired session.
+Timed events require explicit offsets, all-day end exclusive; reminder is minutes before, null disables.
+No sync, network or secret operation is accepted over this message; source snapshots and To-do projections are read-only.
+Mutations require current revision and card on. Host logs device/status only. No model call or added approval authority.
+
+### 37.9 电脑密码保险箱 — the vault (P414, #135; ADR-P414-bang)
+
+The computer password is stored on the host only as ciphertext under a random key K; K is wrapped per remote with that
+remote's WebAuthn PRF output (`prf` wraps) or, terminal only, with the host key (`local`, P408's fenced-only mode). Files:
+`<state>/terminal/vault-<kid>.json`, `wrap-<device>.json` (0600). Host block (per session, `preferences` host info):
+`"vault": {"has": bool, "any": bool, "peers": int, "mode": "prf"|"local"|null}` — `has` = this device holds a `prf` wrap for
+its current passkey; `any` = some vault exists; `peers` = OTHER paired remotes holding a `prf` wrap; `mode` = this device's wrap.
+(P408's `terminal.sudo` keeps its meaning: this device's wrap mode, or `session`.)
+
+**PRF evaluation and rotation (M3).** Wherever the host asks for a PRF it sends `salt` (or `vs`) and, when this device has a
+`prf` wrap, `vn` = a fresh 32-byte next salt. The phone calls WebAuthn with `extensions.prf.eval = {first: salt, second: vn}`
+(no `second` without `vn`); the value it seals is `prf1 ‖ prf2` (64 B) when both came back, else `prf1` (32 B). After a
+successful unwrap with `prf1` the host re-wraps K under (`prf2`, `vn`) and replaces the wrap; 32 B = no rotation.
+This applies to `term_open` (`salt`,`vn`; seal kind `term_prf`), `term_sudo` (`salt`,`vn`), §11 sudo cards (`v.vs`,`v.vn`; seal
+kind `vault`) and `vshare` cards (`v.vs`,`v.vn`; the card's `ct`).
+
+**Removal.** `term_forget` (P408) now deletes this device's wrap; a kid with no wrap left is deleted. A wrong cached password
+(sudo's own wrong-password message, English / zh_CN — N4 / L2) deletes that kid and all its wraps; any other failure keeps them.
+
+### 37.10 Sudo cards with the vault (§11 extension, P414)
+
+`elev` of kind `sudo` gains, per viewing device that has a passkey: `"v": {"has": 0|1, "vs": <b64url 32 B>[, "vn": <b64url 32 B>]}`.
+`has` counts `prf` wraps only (M5). `vs` = that wrap's salt when `has`, else a salt this card keeps for this device (saving).
+Answers (all other §11 rules unchanged — signature, passkey assertion, nonce, TTL, tries, #116 `grant`):
+- **Use the stored password**: `{"t":"elev_answer","id","ok":true,"n","ts","sig","fa","epk","ct","vault":1}` where `ct` =
+  §11 seal of the PRF value (37.9) with kind **`vault`**: AAD `seal_aad(channel, device, id, "vault", n, digest)`. The signature is
+  §11's over sha256(ct). Refused (`shape`) without a passkey assertion, for a device without a `prf` wrap, or on a non-sudo card.
+  A cached password that sudo rejects (37.9 rule) → the card is re-armed (new nonce / key), `v.has` 0 and `"stale":1`; it does NOT
+  count toward the wrong-password lock or the card's tries. (Host build:) a wrap that does not open with the sent PRF → the
+  card is re-armed the same way with `v.has` 0 for that remote (no `stale`); any other sudo failure with the stored password
+  (not sudo's own wrong-password words) ends the card `{"result":"failed","why":"sudo_failed"}` and keeps the kid.
+- **Typed, and remember it**: the usual `epk`/`ct` (password, kind `sudo`) plus `"pepk","pct"` = the PRF value (`prf1`, over `vs`)
+  sealed with kind **`vault_save`**, AAD digest field = `digest + "|" + sha256hex(ct)`; and the signed message gains the tail line
+  `save:<sha256hex(pct)>` after any `grant:` line (M2; wire.js `elevateMessage(..., grant, save)`). A `pct` without the tail is
+  refused (`shape`). After a verified sudo (done, exactly one prompt) the password is saved under a new kid for this device;
+  `elev_done` gains `"saved":1`.
+
+### 37.11 `vshare` — let another remote use the stored password (P414, #135)
+
+1. Requesting remote (no `prf` wrap, `vault.any`): `{"t":"vault_share","r"}` → `{"t":"ctl_res","r","action":"vault_share","ok":false,
+   "why":"passkey_required","n","fa","fa_ch":elevate_challenge(channel, device, n, "vault_share", n, sha256(object text)),
+   "salt":<fresh b64url 32 B>,"epk"}` — object `{}` (object text `share`).
+   Refusals: `no_vault` · `has` · `no_peer` (no other paired remote with a `prf` wrap) · `no_passkey` · `temporary` (a friend
+   entry) · `web_not_allowed` (a web remote whose terminal entry lacks `web`) · `busy` · `estop`.
+2. `{"t":"vault_share","r","n","ts","sig","fa","pepk","pct"}` (control-v1 action `vault_share`, object `{}`; `pct` = `prf1` sealed
+   kind `vault_share`, AAD `seal_aad(channel, device, n, "vault_share", n, sha256(object text))`) → `ctl_pending` (timeout 150 000 ms)
+   → an §11 card of kind **`vshare`** to every OTHER ready remote holding a `prf` wrap:
+   `{"t":"elev","id","kind":"vshare","n","epk","ttl":120,"tries":1,"dev":<requesting id>,"name":<its name>,"cred":<its credential id>,
+   "paired":<unix s>,"flags":["web"?,"account"?],"v":{"has":1,"vs","vn"?},"fa"}`; shown fields (digest) =
+   `[dev, cred, str(paired), ",".join(flags)]`. 「同意」 = Face ID with PRF → `elev_answer` with `epk`/`ct` (the PRF value sealed kind
+   `vshare`, the normal §11 seal + signature); 「拒绝」 as §11. The host unwraps K with it, wraps K for the requester, wipes.
+   → requester `{"t":"ctl_res","r","action":"vault_share","ok":true}` or `ok:false` with `denied` · `timeout` · `estop` · `failed`.
+   Every remote gets a notice 「已允许 <name> 使用记住的电脑密码」. controls.log `vshare` (both device ids).
+
+### 37.12 「!」 — a chat line that runs in the web terminal (P414, #179②)
+
+Phone-side only (L1): the host never treats chat text (phone, Telegram, e-mail, group) starting with `!` as a command.
+`term_line` (and its signed resend) gain `"bang": <the say sid, 22 chars>`. The line follows every §37 rule. The host keeps one
+running bang per terminal: `{"t":"term_bang","id","sid","ok":false,"why":"running"}` refuses a second one. A bang while the
+shell is not at its prompt (a program is reading input — a password, a passphrase) is refused with `"why":"program"` and NOT
+written: it reaches neither the Agent nor the owner page (R3-1); the phone does not send it in the first place and opens the
+terminal full screen so the owner answers the program there. When the next prompt
+comes (or 120 s, or the close) the host:
+- adds an owner page `src = {"k":"phone","dev","name","text":"!" + line,"term":{"out":<agent-masked output ≤ 16 000 chars>,
+  "cut":bool,"hidden":<N items the agent mask hid>,"state":"done"|"running"|"closed","sid"}}`;
+- sends the Agent (through the normal queue; not when `provenance.untrusted_turn`) 〔主人在网页终端运行了一条命令…〕 with
+  `$ line` and the output inside `<terminal-output nonce=…>…</terminal-output nonce=…>` (M1);
+- answers `{"t":"term_bang","id","sid","ok":true,"turn":<page id>,"state"}` (`{"ok":false,"why":"failed","state"}` if the page
+  could not be written).
+Output frames (`term_out`) flow as usual meanwhile. The Agent turn also stays an owner page only (no Agent text) when the host is
+stopped, has no Agent / seat, or the sid is already taken. A `term_line` refused for H1c gets one `term_out` line saying why.
+
+### 37.13 The Agent opens / reads the terminal (P414, #179③)
+
+- `agentj terminal open [--cmd "<line>"]` → control.sock `{"cmd":"terminal_go","line"?}` → host `{"t":"term_go","cmd"?,"h":<sha256hex(cmd)>}`
+  to every ready remote on the allowlist (no §11 card open on it). The phone shows the terminal full screen and puts `cmd` in
+  the input (never sent; a non-empty input is kept and `cmd` waits in a chip). A line sent unedited with that digest is always
+  confirmed (H1): the host compares sha256(line) with every `term_go` digest of this session from the last hour (≤ 16; R2-N1; with 16 kept a new `cmd` is refused `rate` — never an
+  eviction — until one expires, R3-2) and, on a match, sends
+  `term_confirm` with `"why":"Agent 填写的命令","why_en":"filled in by the Agent","agent":1`. Answer `{ok, reached:N}` or
+  `{ok:false, error: "disabled"|"nobody"|"offline"|"rate"|"untrusted_source"|"shape"}`.
+- `agentj terminal output [--lines N]` → control.sock `{"cmd":"terminal_read","lines":1..2000}` → `{ok, open, device_name,
+  started, closed?, text, cut, hidden}` (`hidden` = items the agent mask hid; nothing to read → `{ok:true, open:false, text:"",
+  cut:false}`): the agent-masked transcript (`$ line`, output, 「[输入给正在运行的程序，未记录]」) of the current
+  session or the last one (≤ 30 min after its close); never a temporary entry's (L3); memory only.
+- Both refused with `untrusted_source` while `provenance.untrusted_turn(agent)` or the caller descends from a friend's session
+  process (H2), or the caller's pid is unknown while any friend session is live (R3-3). The CLI asks on elevate.sock (`{"t":"terminal_go"|"terminal_read", …}` — same fields, same answers) so it works
+  inside the Agent fence, where control.sock is hidden; control.sock answers the `cmd` form. Every `term_line` / `term_go.cmd` refuses
+  Unicode Cf characters and runs of more than 8 spaces (H1c).
+
+### 37.14 Full-screen page (P414, #179③)
+
+No new messages. Collapse (grabber drag, exit icon, Esc) keeps the session; `term_close` only from 「结束」. A collapsed page
+still sends `term_close {why:"background"}` after the document is hidden 60 s, as before.
+P415: jcard_note add prefixes notebook text with the host local date. To-do responses include item.id; jcard_get supplies its full-file revision. Secret-shaped text is refused with looks_like_a_secret; no mutation dispatches to the Agent.
+
+
+### §34.4 P420 global palette library
+
+Host capability `jpalette1`; paired ready remotes may send `{t:"jpalette",r,op:"list"|"save"|"delete"}` over the
+existing Noise application channel. `save` includes `palette:{id,colors}`; id is a client-generated UUID-shaped
+36-character lower-case hex/hyphen string and colors is 5–10 #rrggbb values. No names, code, paths or theme assets.
+`delete` includes id. Reply `{t:"jpalette",r,ok,palettes? ,why?}`; failure reasons bad_op/bad_value/full/refused.
+The global host library holds ≤32 sets, newest first, in `agentperm/cards/palettes.json` (0600, bounded/no-follow
+read, atomic write under card-palettes lock). Repeating save with one id replaces only that id. Malformed files
+are never overwritten. Changes are read on component open/Refresh, with no live push guarantee.
+`jcard_get official-palette` returns built-in template `palette` only while its official switch is on (default off).
+Generating/selecting does not write a card background; existing `jcard_color` saves that separately.
+
+### P419 friend card cleanup
+`agentj friends asks --json` returns only id/tool/expiry. `--dismiss <ID|all>` denies through the normal audited decision path; no grant or reply is generated. Paired signed `rescue_do` action `clear_friend_asks` denies all pending friend cards through the same path. PID-backed busy registrations follow liveness (foreign namespaces: fresh heartbeat); ITEM_TTL applies only without a PID.
+
+### P419 Ark plan correction
+Paired read `ark_plan_get {r}` returns `ark_plan {r?,offer:null|{action,plan,model},current:null|model,outcome:null|ok|failed|rolled_back}`. The public offer never contains a key, hash, path or env name. An own native Ark401 can also broadcast it. `action=ark_fix_<24hex>` names an immutable host-private600s one-use record; the standard fresh signed `rescue_do {action}` authorizes that exact correction. It follows §33 reset_step/reset_done; `pending:true` means read-only outcome polling, never automatic replay of the mutation. The source key digest/name and target provider are rechecked before a local copy; pre-existing different credentials/custom provider refuse. Existing native OpenCode probes and normal cross-harness gates remain authoritative. A correction does not replay the original prompt.
+
+### P425 · §10.7 free answers
+New hosts advertise `text_max:2000` on question cards. Each `pick` slot is either the unchanged sorted option-number array or a nonempty string checked by the usual p33 text rules (≤2000 UTF-16 units; tab/newline allowed, lone surrogates and other controls rejected). A text slot signs `t:` followed by SHA-256 of its exact UTF-8 text instead of the numeric comma-list. Slots still join with `;`. Numeric-only and cancel signature bytes remain unchanged. The host reconstructs chosen labels; free text is explicitly the owner's answer, never a selected tool option or an approval. Audit stores only the text digest. Old hosts do not advertise the field; old phones continue using numeric picks.
+
+## 39. 技能健康度 · 「存成技能」建议 — skill health and save-as-skill offers (P426 #181-3 / #181-4; the number is provisional until the merge)
+
+Additive. A host that answers announces `sk1` in `ready.caps` (only together with `wf1`); an older page ignores the new fields,
+an older host sends none and the page shows nothing new.
+
+### 39.1 Skill health (#181-3, `host/agentj/skill_usage.py`)
+
+- **Ledger** `<state>/skill-usage.json` (0600, atomic, flock `skill-usage.lock`): per skill **name** `{"n","last","src":{"phone"|"claude": n}}`
+  plus `seen` (when this host first listed the name). No conversation text. Bounded to 400 names.
+- **Counted, exactly** (never estimated): `phone` — the owner's own `/<skill>` from a remote (owner provenance; an installed
+  skill or a bundled alias); `claude` — Claude Code's `Skill` tool (shared session hook PostToolUse; independent session
+  stream-json `tool_use`) and a `/<skill>` typed on the shared session's desktop (UserPromptSubmit, not a phone turn). The same
+  name within 30 s is one use (a phone `/x` also reaches the session's own prompt hook). Codex, OpenCode and the other harnesses
+  report no skill run Agent J can see: only phone `/<skill>` counts there.
+- **S** (§30.2) gains `"use":{"n","last"}` (absent = never seen used; the page shows 「—」), `"stale":true` and `"arch":true`.
+  `stale` only when the harness is tracked (`claude`), `seen` ≥ `skills.stale_days` (default 30, 7–365) ago and no use within
+  that many days. `arch` = a `global` skill that is not bundled and whose name is not reserved (contract §9: `agentj-` …) —
+  a workflow's own (`local`) skill is managed in that project. `"link":true` instead of `arch` (Jarvis ruling 4): the skill
+  folder, its skills root or the root's parent is a symbolic link — archive refuses it (`link`), so the page shows no 「归档」
+  and its detail sheet says why. The last `wf_items` tail gains
+  `"skill_use":{"tracked":bool,"days":n}` and `"skills_archived":[{"name","at"}≤40]`.
+- **Archive** = rename the folder to `<skills root>/../skills-archive/<dir>` (`-2`, `-3` … when taken); the harness does
+  not read that folder; nothing is deleted. The index is the host's own `<state>/skill-archive.json` (0600:
+  `{"v":1,"items":[{"root","dir","name","from","at"}]}`, `from` = the folder's old name inside that root); nothing in the
+  archive folder is trusted. **Restore** renames it back when the old place is free. Every move goes through no-follow
+  directory fds (renameat): a symbolic link at any level (harness folder, skills root, archive, the skill) or a place inside /
+  around the state directory refuses (`link` · `protected`). Never automatic; never an official / bundled skill.
+
+| direction | message | notes |
+|---|---|---|
+| device → host | `{"t":"skill_archive","r","name","n","ts","sig"}` · `{"t":"skill_restore",…}` | a signed phone control (§8; actions `skill_archive` / `skill_restore`, object `archive\|restore` `\n` name) from a paired, ready p33 remote; every accepted / refused tap is a controls.log line |
+| host → device | `{"t":"ctl_res","r","action":"skill_archive"\|"skill_restore","ok","name","why"?}` | `why`: the §8 refusals (`shape` · `stale` · `replay` · `no_key` · `bad_signature`) or `official` · `not_found` · `exists` · `link` · `protected` · `os`; the page then re-reads `wf_list` |
+
+**Page** (技能): each card `最近使用：x 天前 · y 次` / `最近使用：—`; `stale` → 「很久没用了（超过 N 天）」 + 「归档」 (when `arch`
+and `sk1`); the detail sheet shows the line and 「归档」 for any `arch` skill; a group 「已归档」 lists `skills_archived` with
+「恢复」. Untracked harness → one line above the list saying only phone `/` commands are counted.
+**CLI** `agentj skills health [--json]` · `archive <name>` · `restore <name>` — through elevate.sock `{"t":"skills","op"}`
+(the Agent fence hides the state directory), directly when serve is not running.
+
+### 39.2 「存成技能」建议 (#181-4, `host/agentj/skill_ops.py`)
+
+- **Seen**: `ask` — the owner's own words to the main Agent (serve._accept, owner provenance; a desktop prompt of the shared
+  Claude session); `cmd` — a main-thread shell command that chains (`|` `&&` `||` `;`) or runs a script (`*.py`, `*.sh` …),
+  not only look-around tools (ls, cat, git, grep, agentj …), not a skill's own script (`/skills/` in it).
+- **Signature**: `privacy.redact` first, then URLs, paths, quoted text and numbers replaced (a script keeps its file name),
+  whitespace / punctuation folded; acknowledgements and texts under 8 characters (asks under 4 words in ASCII) or over 300 are
+  ignored. Ledger `<state>/skill-ops.json` (0600, atomic, flock): `{id: {"k","sig"(≤ 60),"hits":[t…≤10],"state","at"?}}`,
+  `id` = sha256(kind + sig)[:12]; states `new` → `ready` → `told` → `yes` / `no`. No original text.
+- **Ready** = ≥ 3 hits within 14 days, not covered (the text names an installed skill / alias of ≥ 4 characters), never
+  answered. **Offer**: the next owner message (the 3rd itself included) — phone, Telegram / e-mail owner, or a desktop prompt
+  (its UserPromptSubmit `additionalContext`) — carries one short 〔Agent J 系统提示〕 (≤ 200 characters: finish this one, then
+  ask once; agentj-commands §5; `agentj skills suggest no <id>` on no). At most one offer per 24 h, each id once.
+  `skills.suggest: false` turns offers off (counting continues). No phone card; nothing in the identity hook.
+- **CLI** `agentj skills suggest [--all] [--json]` · `suggest yes <id>` · `suggest no <id>`. On yes the Agent builds the skill
+  by agentj-commands and adds a runnable self-check (`<skill>/tests/check.sh` or `check.py`).
+P428 two-way calendar additions to `jcard_cal` (supersedes "no sync" above for two-way remotes only; ICS stays CLI-only):
+`{r,id:"calendar",op:"undo",revision,entry?}` reverts the newest history entry (or that event's newest; undo twice = redo);
+`{r,id:"calendar",op:"resolve",revision,entry,keep:"local"|"remote"}` settles one conflict; both answer like add/edit/delete.
+`{r,id:"calendar",op:"sync",name}` (no revision; `name` of an enabled google/caldav remote, else `why:"not_two_way"`) →
+`{t:"jcard_cal",r,ok:true,...listing,sync:{ok,name,pulled,pushed,queued,conflicts,linked_duplicates,offline?,why?}}`;
+`sync.why` ∈ offline | auth | conflict | gone | failed | full | disabled | not_found (counts and words only).
+Listing fields (every `jcard_cal` / `jcard_get` calendar answer): each event adds `remote` (remote name or null), `pending`
+(queued for that remote), `conflict`; `readonly` also marks a remote's recurring instance. `subscriptions[]` =
+`{name,kind:"ics"|"google"|"caldav",enabled,last_sync,last_error,queued,conflicts,push_new,auto}`; `conflicts[]` =
+`{id,remote,at,remote_state:"changed"|"deleted",local:<event fields>|null}`; `undo` = history length. Never a key name, server,
+calendar id, remote event id, href or etag. A change that queued an op makes the host sync that remote 5 s later (debounced).
+Host log for every op stays `jcard_cal {device,status}`; elevate.sock `{"t":"calsync","op":"sync"|"kick"|"disconnect","name"}` /
+`{"t":"calsync","op":"connect","name","kind","calendar"?,"push_new"?,"auto"?}` serves the fenced CLI.
+CalDAV (`kind:"caldav"`, P428 item 3): connect adds `server` (https URL, no userinfo/query/fragment), `user_key`, `pass_key`
+(key-card NAMES `…_SECRET`; values read on the host only) and `calendar` = a display name; any of these on a google connect is a
+`shape` refusal. Connect answers `why` ∈ bad_server | bad_key_name | key_missing | no_calendar | auth | offline | failed. The
+discovered calendar href and partition host stay in calendar.json; no `jcard_cal` / `jcard_get` answer ever carries them.
+
+### P447 first-remote success hint
+
+After first approval and ready, host sends encrypted `{t:"pair_guide",kind:"phone"|"computer"|"other"}` once per host using the existing onboarding welcome marker. It is display-only. Phone suggests reverse-pairing the usual computer at m.agentj.app; computer suggests Settings → Remotes → Add a remote for the phone. Unknown kind is ignored. No control signature, password, key or authorization is conveyed. Reconnect and subsequent remotes do not trigger it.

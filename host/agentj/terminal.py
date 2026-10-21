@@ -5,10 +5,10 @@ Default off; `agentj terminal enable|allow` widens only from the owner's termina
 cmd_run); the computer password comes once through an end-to-end §11 card of kind `login` (only to the opening device),
 checked with `sudo -S -k true` (exactly one prompt) and cached per term_store (prf / local / session). One terminal at a time.
 
-The shell: `bash --noprofile --norc --noediting -i` on PIPES (no PTY, stderr merged, start_new_session), a scrubbed
-environment, a setup serve writes itself (`set +H +m`, PS1 with an OSC 133 marker — a UI hint only, HISTFILE under
-<state>/terminal/, `sudo(){ <checked sudo> -A "$@"; }`, `sudo -k`). Lines are classified (danger + redline + this module's
-own list): a dangerous one waits for a signed + Face ID resend (`term_confirm`). sudo asks serve through term_askpass.py and
+The shell: `bash --noprofile --norc --noediting -i` (macOS, P437: the owner's `zsh -f -i`, term_mac) on PIPES (no PTY,
+stderr merged, start_new_session), a scrubbed environment, a setup serve writes itself (`set +H +m`, PS1 with an OSC 133
+marker — a UI hint only, HISTFILE under <state>/terminal/, `sudo(){ <checked sudo> -A "$@"; }`, `sudo -k`). Lines are
+classified (danger + redline + this module's own list): a dangerous one waits for a signed + Face ID resend (`term_confirm`). sudo asks serve through term_askpass.py and
 the phone (`term_sudo` → Face ID → `term_sudo_ok`); a password never travels in a `term_*` message, a log, the cast, argv or
 the environment. Output: term_mask.Masker, ≤ 16 KiB frames, ≤ 64 KiB/s. Close: 15 (≤ 60) min, idle 5 min, hidden 60 s, the
 opening session gone (`relay_lost`), e-stop, serve stop, disable / deny; SIGHUP then SIGKILL to the group + the session /
@@ -27,17 +27,23 @@ import shlex
 import shutil
 import signal
 import socket
+import sys
 import time
 
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 
-from . import controls, passkey, term_store as store, wire
+from . import controls, passkey, term_store as store, term_vault as vault, wire
+from . import term_mac
 from .term_askpass import NO_PYTHON, TOKEN_ENV, Helper, SudoDesk, in_session, safe_python
+from .term_bang import BangDesk, line_problem
+from .term_vshare import VshareDesk
 from .term_mask import Masker
-from .term_shell import Term, _sha, checked_sudo, classify, local_ok, platform_ok, service_keys, shell_env
+from .term_shell import (HIST_SETUP, Term, _sha, checked_sudo, classify, local_ok, platform_ok, scrub_history, service_keys,
+                         shell_env)
 
 TOOL = "AgentJTerminal"            # the host card for `enable` / `allow` (approval_level.HOST_CARDS, never auto-allowed)
 PHONE_TYPES = ("term_open", "term_line", "term_keys", "term_close", "term_forget", "term_sudo_ok", "term_sudo_no")
+PHONE_TYPES += ("vault_share",)     # P414 (§37.11): term_vshare.py
 ESTOP_OK = ("term_close", "term_forget")
 NONCE_TTL, CONFIRM_TTL, PENDING_MS, CARD_TTL = 120, 120, 180000, 300
 HIDDEN_S, KILL_GRACE, CAST_DAYS = 60, 3.0, 30
@@ -46,8 +52,9 @@ UNRECORDED = "[输入给正在运行的程序，未记录]"
 _HEX32 = re.compile(r"[0-9a-f]{32}")
 
 
-class Desk(SudoDesk):
-    """serve's glue (`h` = serve.Host): phone messages, `terminal_cfg`, the host info block, close on e-stop / stop."""
+class Desk(SudoDesk, BangDesk, VshareDesk):
+    """serve's glue (`h` = serve.Host): phone messages, `terminal_cfg`, the host info block, close on e-stop / stop.
+    P414: BangDesk (term_bang.py: 「!」, transcript, terminal_go / terminal_read), VshareDesk (term_vshare.py)."""
 
     def __init__(self, host):
         self.h = host
@@ -59,7 +66,10 @@ class Desk(SudoDesk):
         self.os_ok = None                     # tests: force the platform answer
         self.proc = "/proc"
         self.python: str | None = None       # R3 (H-1): the helper's system interpreter ("" = none; tests may set it)
+        self.shell: str | None = None        # P437: "bash" / "zsh" (None = this platform's: zsh on macOS, bash elsewhere)
         self.watch: asyncio.Task | None = None
+        self._bang_init()
+        self._vshare_init()
 
     @property
     def st(self):
@@ -70,6 +80,11 @@ class Desk(SudoDesk):
 
     def sudo_path(self) -> str | None:
         return self.sudo or checked_sudo()
+
+    @staticmethod
+    def _scrub(path, shell: str) -> int:
+        """#184: bash's file through scrub_history; zsh's metafied one byte for byte (P437, term_mac)."""
+        return term_mac.scrub_history(path, True) if shell == "zsh" else scrub_history(path)
 
     def _log(self, action, device, result, obj=None, **kw):
         with contextlib.suppress(Exception):
@@ -94,19 +109,27 @@ class Desk(SudoDesk):
         mode = m["mode"] if m else ("session" if t and t.device == device and t.pw else None)
         out = {"on": cfg["on"], "os": self.supported(), "me": bool(e), "sudo": mode,
                "web_ok": bool(e) and (e["web"] or not store.is_web(self.st, device)), "minutes": cfg["minutes"],
-               "idle_s": store.IDLE_S, "open": t is not None}
+               "idle_s": store.IDLE_S, "open": t is not None,
+               "pk": bool(device) and self.st.passkey_of_device(device) is not None,   # P417 #185: 「先设置 Face ID」
+               "kind": store.device_kind(self.st, device)}   # P417 #185: phone → 「只能在电脑浏览器里操控」; desktop may enable
         if e and "until" in e:
             out["until"] = e["until"]
         return out
+
+    def vault_info(self, device: str | None) -> dict:
+        """P414 (§37.9): this session's `vault` host block."""
+        return vault.info(self.st, device)
 
     # ------------------------------------------------------------ phone messages
     async def on_phone(self, s, obj: dict) -> None:
         t = obj.get("t")
         if self.h.stopped() and t not in ESTOP_OK:
-            if t == "term_open" and wire.is_rid(obj.get("r")):
-                await self._res(s, obj["r"], "term_open", False, why="estop")
+            if t in ("term_open", "vault_share") and wire.is_rid(obj.get("r")):
+                await self._res(s, obj["r"], t, False, why="estop")
             self.st.log("control_refused", device=s.device, action=t, reason="estop")
             return
+        if t == "vault_share":
+            return await self.on_vshare(s, obj)
         if t == "term_open":
             return await self.on_open(s, obj)
         if t == "term_forget":
@@ -130,9 +153,23 @@ class Desk(SudoDesk):
         with contextlib.suppress(Exception):
             await self.h.send_app(s, {"t": "ctl_res", "r": r, "action": action, "ok": ok, **kw})
 
-    def _refusal(self, s):
+    def _refusal(self, s, enable: bool = False):
         if not self.supported():
             return "os", {}
+        kind = store.device_kind(self.st, s.device)
+        if kind == "phone":                   # P417 #185: never from a remote that paired as a phone (open or enable)
+            return "phone", {}
+        if enable:                            # P417 #185: switch on from this computer browser (+ the computer password)
+            if kind != "desktop":
+                return "device_type", {}
+            if not self.st.passkey_of_device(s.device):
+                return "no_passkey", {}
+            if self.term is not None or self.opening:
+                return "busy", {}
+            if self.h.stopped():
+                return "estop", {}
+            left = store.locked_for(self.st, s.device)
+            return ("locked", {"secs": left}) if left else (None, {})
         listed = store.entry(store.read_config(self.st), s.device) is not None
         if listed and not self.st.passkey_of_device(s.device):
             store.prune(self.st)              # the passkey was removed: its entry and cache go (said once as no_passkey)
@@ -160,12 +197,15 @@ class Desk(SudoDesk):
         r = obj.get("r")
         if not wire.is_rid(r):
             return
-        why, extra = self._refusal(s)
+        mode = obj.get("mode", "line")       # P417 #185: "enable" = switch on for this remote, then open
+        if mode not in ("line", "enable"):
+            return await self._res(s, r, "term_open", False, why="shape")
+        why, extra = self._refusal(s, mode == "enable")
         if why:
-            self._log("term_open", s.device, "refused:" + why)
+            self._log("term_open", s.device, "refused:" + why, {"mode": mode})
             return await self._res(s, r, "term_open", False, why=why, **extra)
         pk = self.st.passkey_of_device(s.device)
-        target = {"mode": "line"}
+        target = {"mode": mode}
         if "n" not in obj and "fa" not in obj:                       # step 1: the host issues the nonce (L5)
             now = self.clock()
             self.opens = {k: v for k, v in self.opens.items() if now - v["at"] < NONCE_TTL}
@@ -174,16 +214,19 @@ class Desk(SudoDesk):
             n = secrets.token_hex(16)
             m = store.meta(self.st, s.device)
             salt = m["salt"] if m and m["mode"] == "prf" else secrets.token_bytes(32)
+            vn = secrets.token_bytes(32) if m and m["mode"] == "prf" and m["cred"] == pk["id"] and mode == "line" else None   # P414 (M3)
             priv = X25519PrivateKey.generate()
             from .elevate import _raw_pub
-            self.opens[n] = {"device": s.device, "r": r, "at": now, "salt": salt, "priv": priv}
+            self.opens[n] = {"device": s.device, "r": r, "at": now, "salt": salt, "priv": priv, "vn": vn, "mode": mode}
             ch = passkey.elevate_challenge(self.h.channel, s.device, n, "term_open", n, controls.object_digest("term_open", target))
             return await self._res(s, r, "term_open", False, why="passkey_required", n=n, fa=pk["id"], fa_ch=wire.b64u(ch),
-                                   salt=wire.b64u(salt), epk=wire.b64u(_raw_pub(priv)))
+                                   salt=wire.b64u(salt), epk=wire.b64u(_raw_pub(priv)), **({"vn": wire.b64u(vn)} if vn else {}))
         n = obj.get("n")
         pend = self.opens.pop(n, None) if isinstance(n, str) else None
         if pend is None or pend["device"] != s.device:
             why = "replay" if isinstance(n, str) and _HEX32.fullmatch(n) else "shape"
+        elif pend["mode"] != mode:                       # P417: the step-1 nonce names what it is for (open ≠ enable)
+            why = "shape"
         elif self.clock() - pend["at"] > NONCE_TTL:
             why = "stale"
         else:
@@ -203,7 +246,7 @@ class Desk(SudoDesk):
             prf = self._open_prf(pend["priv"], obj, s.device, n, n, controls.object_digest("term_open", target))
             why = None if prf is not None else "shape"
         if not why:
-            why, extra = self._refusal(s)
+            why, extra = self._refusal(s, mode == "enable")
         if why:
             if prf is not None:
                 from .elevate import wipe
@@ -240,13 +283,15 @@ class Desk(SudoDesk):
         why, extra, pw = None, {}, None
         try:
             await asyncio.sleep(0)            # ctl_pending first
-            e = store.entry(store.read_config(self.st), s.device) or {}
+            enable = pend.get("mode") == "enable"
+            # P417 #185: switching on always takes the typed computer password (never a cached one); it becomes an owner entry
+            e = {} if enable else store.entry(store.read_config(self.st), s.device) or {}
             if not local_ok(self.h):
                 await asyncio.to_thread(store.drop_local, self.st)
             mode = self._mode(e, prf)
-            m = store.meta(self.st, s.device) if "until" not in e else None
+            m = store.meta(self.st, s.device) if "until" not in e and not enable else None
             if m:
-                got = await asyncio.to_thread(store.load, self.st, self.h.channel, s.device, pk["id"], prf)
+                got = await asyncio.to_thread(store.load, self.st, self.h.channel, s.device, pk["id"], prf, pend.get("vn"))
                 if got is not None:
                     mode = m["mode"]
                     from .elevate import wipe
@@ -254,12 +299,14 @@ class Desk(SudoDesk):
                 else:
                     m = None
             if m is None:
-                res = await self._login(s, r, pend, prf, pk, mode)
+                res = await self._login(s, r, pend, prf, pk, mode, enable)
                 pw = res.pop("_pw", None)
                 if res.get("result") != "saved":
                     rs = res.get("result")
                     why = {"locked": "locked", "bad_password": "bad_password"}.get(rs, "os" if rs == "failed" else "cancelled")
                     extra = {"secs": res["secs"]} if why == "locked" and res.get("secs") else {}
+                elif enable:
+                    self._enabled(s.device)
             if not why and (self.h.stopped() or self.term is not None):
                 why = "estop" if self.h.stopped() else "busy"
             if not why:
@@ -288,8 +335,23 @@ class Desk(SudoDesk):
             if not await self.h.send_app(s, m):
                 await self.h._send_device(s.device, m)
 
-    async def _login(self, s, r, pend, prf, pk, mode) -> dict:
-        """The `login` card (§11, this device only); its sink checks the password with sudo and stores it per `mode`."""
+    def _enabled(self, device: str) -> None:
+        """P417 #185: audit + a notice on every remote + fresh host blocks after a remote switched the terminal on."""
+        name = self.h._dname(device) or device
+        self.st.log("terminal_cfg", action="enable", via="remote", device=device)
+        self._log("terminal_cfg", device, "enable:remote")
+        web = store.is_web(self.st, device)   # security review A1: say so when it is the web version (no --web at the computer)
+        # RESUME 9 ② (Leo 10-21, ADR-P417 A1 exception): every remote is told which remote switched it on and the one-line way off
+        self._notice(f"网页终端已由遥控器「{name}」开启（Face ID + 电脑登录密码）" + ("，它是网页版遥控器" if web else "")
+                     + "。不是你本人开启的话，在电脑上运行 agentj terminal disable 立即关闭。",
+                     f"Web terminal switched on from the remote \"{name}\" (Face ID + the computer login password)"
+                     + (", which is the web version" if web else "")
+                     + ". If this was not you, run agentj terminal disable on the computer to switch it off at once.")
+        self._prefs()
+
+    async def _login(self, s, r, pend, prf, pk, mode, enable: bool = False) -> dict:
+        """The `login` card (§11, this device only); its sink checks the password with sudo and stores it per `mode`.
+        P417 #185 `enable`: only after sudo accepted the password does this device become an owner entry (term_store)."""
         loop, keep, salt = asyncio.get_running_loop(), {}, pend["salt"]
         sudo, channel, device, st = self.sudo_path(), self.h.channel, s.device, self.st
 
@@ -308,6 +370,8 @@ class Desk(SudoDesk):
             if res.get("result") != "done" or res.get("prompts") != 1:
                 return {"result": "failed", "why": "verify"}     # NOPASSWD / no sudo / timeout: not a checked password
             store.note(st, device, True)
+            if enable:
+                store.add_owner_entry(st, device, store.is_web(st, device))
             if mode in ("prf", "local"):
                 store.save(st, channel, device, pk["id"], mode, salt, value, prf if mode == "prf" else None)
             else:
@@ -326,6 +390,8 @@ class Desk(SudoDesk):
         cfg = store.read_config(self.st)
         x = Term(s, r, mode, pw, cfg["minutes"], self.clock, self.wall)
         self.term = x
+        self.tr_start(x, store.entry(cfg, s.device) or {})        # P414: the transcript (none for a friend's session, L3)
+        self.owner_acted()
         d = store.root(self.st)
         from . import main_identity, service
         cwd = str(main_identity.working_root(self.h.agent_cfg or {}))
@@ -345,25 +411,42 @@ class Desk(SudoDesk):
         hist = d / "history"
         os.close(os.open(hist, os.O_WRONLY | os.O_CREAT, 0o600))
         os.chmod(hist, 0o600)
+        shell = self.shell or (term_mac.pick_shell() if sys.platform == "darwin" else "bash")
+        x.shell = shell
         env = shell_env(dict(os.environ), await asyncio.to_thread(service_keys))
+        if sys.platform == "darwin":
+            env = term_mac.fix_env(env)                  # P437: launchd's bare PATH and C locale
         env.update(INPUTRC="/dev/null", TERM="dumb", **{TOKEN_ENV: x.token})
+        # #184: the shell reads this file at start-up, not ~/.bash_history / ~/.zsh_history, and the space-led setup lines
+        # are not recorded
+        env.update(HISTFILE=str(hist), HISTSIZE="2000", HISTFILESIZE="2000", HISTCONTROL="ignorespace")
         if x.helper is not None:
             env["SUDO_ASKPASS"] = str(x.helper.path)
         sudo = self.sudo_path()
         mark = x.prompt[len("\x1b]133;A;"):-1]
-        setup = ["set +o history", "set +H +m", f"HISTFILE={shlex.quote(str(hist))}; HISTSIZE=2000; HISTFILESIZE=2000"]
-        if sudo and x.helper is not None:   # R3 (H-2): -k on every call — sudo's own timestamp never skips the phone's card
-            setup += [f"sudo() {{ {shlex.quote(sudo)} -k -A \"$@\"; }}", f"{shlex.quote(sudo)} -k 2>/dev/null"]
-        elif sudo:
-            setup += [f"sudo() {{ printf '%s\\n' {shlex.quote(NO_PYTHON)} >&2; return 1; }}", f"{shlex.quote(sudo)} -k 2>/dev/null"]
-        setup += [f"PS1=$'\\\\[\\e]133;A;{mark}\\a\\\\]\\\\w \\\\$ '; PS2='> '", f"printf '\\033]133;R;{mark}\\007'",
-                  "set -o history"]
-        bash = "/bin/bash" if os.path.exists("/bin/bash") else (shutil.which("bash") or "bash")
+        await asyncio.to_thread(self._scrub, hist, shell)   # #184: a file an older version wrote is cleaned too
+        nopy = term_mac.NO_PYTHON if sys.platform == "darwin" else NO_PYTHON
+        if shell == "zsh":
+            from .term_shell import HIST_IGNORE
+            argv = list(term_mac.ZSH_ARGV)
+            setup = term_mac.zsh_setup(str(hist), sudo, x.helper is not None, mark, HIST_IGNORE, nopy)
+        else:
+            argv = ["/bin/bash" if os.path.exists("/bin/bash") else (shutil.which("bash") or "bash"), "--noprofile", "--norc",
+                    "--noediting", "-i"]
+            setup = [" set +o history", "set +H +m",
+                     f"HISTFILE={shlex.quote(str(hist))}; HISTSIZE=2000; HISTFILESIZE=2000; {HIST_SETUP}"]
+            if sudo and x.helper is not None:   # R3 (H-2): -k on every call — sudo's own timestamp never skips the phone's card
+                setup += [f"sudo() {{ {shlex.quote(sudo)} -k -A \"$@\"; }}", f"{shlex.quote(sudo)} -k 2>/dev/null"]
+            elif sudo:
+                setup += [f"sudo() {{ printf '%s\\n' {shlex.quote(nopy)} >&2; return 1; }}", f"{shlex.quote(sudo)} -k 2>/dev/null"]
+            # P414 (R3-1): history on in the SAME line as the ready marker — exactly one prompt follows the marker, so a line
+            # sent right after it never takes a stale setup prompt as its own (an empty 「!」 result); zsh_setup ends the same way
+            setup += [f"PS1=$'\\\\[\\e]133;A;{mark}\\a\\\\]\\\\w \\\\$ '; PS2='> '",
+                      f"set -o history; printf '\\033]133;R;{mark}\\007'"]
         ours, theirs = socket.socketpair()   # R3 (M-1): a socket, not a pipe — /proc/<pid>/fd/0 cannot be reopened (ENXIO)
         try:
-            x.proc = await asyncio.create_subprocess_exec(bash, "--noprofile", "--norc", "--noediting", "-i",
-                                                          stdin=theirs.fileno(), stdout=theirs.fileno(), stderr=theirs.fileno(),
-                                                          cwd=cwd, env=env, start_new_session=True)
+            x.proc = await asyncio.create_subprocess_exec(*argv, stdin=theirs.fileno(), stdout=theirs.fileno(),
+                                                          stderr=theirs.fileno(), cwd=cwd, env=env, start_new_session=True)
         finally:
             theirs.close()
         x.reader, x.writer = await asyncio.open_unix_connection(sock=ours)
@@ -389,6 +472,22 @@ class Desk(SudoDesk):
             self.st.log("control_refused", device=s.device, action="term_line", reason="shape")
             return
         x.last = self.clock()
+        self.owner_acted()                                   # P414 (L4): an owner action resets the term_go budget
+        bang = obj.get("bang")
+        if bang is not None and not wire.is_id22(bang):
+            self.st.log("control_refused", device=s.device, action="term_line", reason="shape")
+            return
+        if line_problem(line):                               # P414 (H1c): invisible / direction characters, > 8 spaces
+            self.st.log("control_refused", device=s.device, action="term_line", reason="invisible")
+            return await self._frame(x, "\n[这一行含有看不见的字符或一长串空格，没有运行 / the line has invisible characters or a long run "
+                                        "of spaces: not run]\n", False)
+        if bang is not None and getattr(x, "bang", None) is not None:
+            return await self.bang_refuse(x, bang)          # P414 (§37.12): one running 「!」 at a time
+        if bang is not None and not x.at_prompt and x.running:   # (before the first prompt nothing runs yet: not refused)
+            # P414 (R3-1): a program is reading input (a password, a passphrase…) — the line must reach neither the Agent nor
+            # the owner page as `$ line`, and is not written: the owner answers the program in the full-screen terminal.
+            self.st.log("control_refused", device=s.device, action="term_line", reason="program")
+            return await self.bang_refuse(x, bang, "program")
         if "n" in obj:                                       # the signed + Face ID resend of a confirmed line
             n = obj.get("n")
             c = x.confirms.pop(n, None) if isinstance(n, str) else None
@@ -405,18 +504,21 @@ class Desk(SudoDesk):
                       sig=obj.get("sig"), n=n, ts=obj.get("ts"))
             if why:
                 return
-            return await self._write(x, line)
+            return await self._write(x, line, bang)
         bad = classify(line)
+        agent = self.go_match(line)                          # P414 (H1): the Agent's term_go line, unedited → always confirmed
+        if agent:
+            bad = ("Agent 填写的命令", "filled in by the Agent")
         if bad:
             n = secrets.token_hex(16)
             x.confirms = {k: v for k, v in x.confirms.items() if v["exp"] > self.clock()}
             x.confirms[n] = {"line": line, "exp": self.clock() + CONFIRM_TTL}
             ch = passkey.elevate_challenge(self.h.channel, s.device, x.id, "term_line", n, _sha(line))
-            self._log("term_line", s.device, "confirm", {"id": x.id, "line": line})
+            self._log("term_line", s.device, "confirm:agent" if agent else "confirm", {"id": x.id, "line": line})
             await self.h.send_app(s, {"t": "term_confirm", "id": x.id, "seq": seq, "line": line, "why": bad[0], "why_en": bad[1],
-                                      "n": n, "fa_ch": wire.b64u(ch)})
+                                      "n": n, "fa_ch": wire.b64u(ch), **({"agent": 1} if agent else {})})
             return
-        await self._write(x, line)
+        await self._write(x, line, bang)
 
     def _assert(self, s, obj, rid, kind, n, digest) -> str | None:
         pk = self.st.passkey_of_device(s.device)
@@ -432,15 +534,24 @@ class Desk(SudoDesk):
             return "passkey_failed"
         return None
 
-    async def _write(self, x: Term, line: str) -> None:
+    async def _write(self, x: Term, line: str, bang: str | None = None) -> None:
         if x.proc is None or x.writer is None or x.closing:
             return
-        rec = line if x.at_prompt else UNRECORDED            # N5: input into a running program is not recorded
-        if x.at_prompt:
+        early = not x.at_prompt and not x.running            # P414 (R3-1): before the first prompt — a shell line, not N5 input
+        if early:
+            x.skip_prompt = 1                                # the setup's own prompt comes next: it is not this line's end
+        rec = line if x.at_prompt or early else UNRECORDED   # N5: input into a running program is not recorded
+        if x.at_prompt or early:
             x.line = line
-        x.at_prompt, x.running = False, True
         m = Masker()
-        await self._cast(x, "i", (m.feed(rec + "\n") + m.close()) if rec != UNRECORDED else rec + "\n")
+        shown = (m.feed(rec + "\n") + m.close()) if rec != UNRECORDED else rec + "\n"
+        # P414 (R2-N2): the transcript gets the line through the SAME owner masking as the cast (Masker → privacy.owner_text),
+        # never raw — a token typed in a line (`echo <tok>`, `curl -H "X-Api: <tok>"`) must not come back via terminal_read.
+        self.tr_add(x, ("$ " + shown) if rec != UNRECORDED else shown)
+        if bang is not None:
+            self.bang_start(x, bang, line)                   # P414 (§37.12): this line's output goes back as a chat turn
+        x.at_prompt, x.running = False, True
+        await self._cast(x, "i", shown)
         with contextlib.suppress(Exception):     # never await the pipe here: this runs in the relay receive loop
             if x.writer.transport.get_write_buffer_size() > 64 * 1024:
                 return await self._frame(x, "\n[电脑上的程序没有在读输入，这一行没有送出 / the program is not reading input]\n", False)
@@ -483,6 +594,8 @@ class Desk(SudoDesk):
                 parts = text.split(x.prompt)
                 for j, part in enumerate(parts):
                     prompt = j < len(parts) - 1
+                    if prompt and getattr(x, "skip_prompt", 0):
+                        x.skip_prompt, prompt = x.skip_prompt - 1, False   # P414 (R3-1): the setup's prompt, see _write
                     if prompt:
                         x.at_prompt, x.running = True, False
                     await self._out(x, x.masker.feed(part), prompt)
@@ -509,6 +622,8 @@ class Desk(SudoDesk):
             if not prompt:
                 return
         x.win_bytes += size
+        self.tr_add(x, data)                                 # P414: transcript + the running 「!」 get what the page gets
+        self.bang_out(x, data, prompt)
         await self._cast(x, "o", data)
         for k in range(0, max(1, len(data)), FRAME_CHARS):
             last = k + FRAME_CHARS >= len(data)
@@ -583,6 +698,7 @@ class Desk(SudoDesk):
             return await self.close("timeout")
         if now - x.last >= store.IDLE_S:
             return await self.close("idle")
+        self.bang_tick(x)
         x.hidden = None if s.fg else (x.hidden if x.hidden is not None else now)
         if x.hidden is not None and now - x.hidden >= HIDDEN_S:
             return await self.close("background")
@@ -615,13 +731,18 @@ class Desk(SudoDesk):
             (store.root(self.st) / "askpass.sock").unlink()
         if x.proc is not None:
             await self._kill(x)
+            with contextlib.suppress(OSError):           # #184: after the shell wrote it on SIGHUP
+                await asyncio.to_thread(self._scrub, store.root(self.st) / "history", x.shell)
         if x.writer is not None:
             with contextlib.suppress(Exception):
                 x.writer.close()
         tail = x.masker.close()
         if tail:
+            self.tr_add(x, tail)
+            self.bang_out(x, tail, False)
             await self._frame(x, tail, False)
             await self._cast(x, "o", tail)
+        self.tr_close(x)                                     # P414: a running 「!」 ends `closed`; the transcript stays ≤ 30 min
         if x.pw:
             from .elevate import wipe
             wipe(x.pw)

@@ -20,6 +20,11 @@
   `setup_mark adopt_browser`). Adopted, it is Agent J's browser for status / check / sign-in, but Agent J never installs a
   second one, never starts / kills / restarts it, never touches its profile or reads its cookies: it only opens and closes its
   own tabs. Not answering = "the browser you registered is not running". `setup` that finds such a browser asks first.
+- P418 (#183 ⑤): closed by the owner, or not back after a restart — an action that needs the browser (`open`, `check`,
+  `endpoint`) first starts Agent J's own service once (`systemctl --user reset-failed` + `start`, launchd `kickstart`; never
+  enable / install / restart), waits for a verified runtime (WAKE_WAIT), carries on and says so (`restarted: true`). It never
+  starts an adopted browser: the answer tells the owner to open it, or how to switch to Agent J's own. A failed start keeps
+  the action's own error and adds one `next` step. Start-at-login stays the service manager's job (unchanged).
 - P131 recognisable: Agent J's own window carries the title "Agent J 专用浏览器", its own start page and a brand-colour
   theme, and the checklist's "open and sign in" brings it to the front (Hyprland / X11 / macOS; elsewhere it says so).
 """
@@ -1176,11 +1181,79 @@ HINTS = {
 }
 
 
+# ---------------------------------------------------------------- P418 (#183 ⑤): start the browser again when it is needed
+CDP_ACTIONS = ("open", "check", "endpoint")      # the actions that talk to the browser itself
+WAKE_WAIT = 20.0                                 # seconds for a verified runtime after the start
+RESTARTED_NOTE = "浏览器刚才没开，已重新打开。/ The browser was closed; Agent J opened it again."
+ADOPT_DOWN = ("你的 Chrome 现在没开（或没开调试端口）：请在电脑上打开它；或者改用 Agent J 自己的浏览器：agentj browser adopt --forget，"
+              "再运行 agentj browser setup --own / Your Chrome is not open (or has no debugging port): open it on the computer, "
+              "or switch to Agent J's own browser: agentj browser adopt --forget, then agentj browser setup --own")
+WAKE_FAILED = ("没能重新打开浏览器：运行 agentj browser status 看原因，再运行 agentj browser setup / Could not open the browser "
+               "again: see agentj browser status, then run agentj browser setup")
+
+
+def service_start() -> bool:
+    """Start Agent J's own browser service once — only an installed one; never enable, install or restart anything."""
+    from . import service
+    try:
+        n = svc_name()
+        plat = service.platform()
+        if plat == "linux":
+            if not os.path.exists(os.path.join(service.unit_dir(), f"{n}.service")) or not shutil.which("systemctl"):
+                return False
+            service._systemctl("reset-failed", f"{n}.service", timeout=10)   # a closed window may have hit the start limit
+            return service._systemctl("start", f"{n}.service", timeout=15).returncode == 0
+        if plat == "macos":
+            path = os.path.join(os.path.expanduser("~"), "Library", "LaunchAgents", f"{n}.plist")
+            if not os.path.exists(path):
+                return False
+            if service._launchctl("kickstart", f"{service._gui()}/{n}", timeout=15).returncode == 0:
+                return True
+            return service._bootstrap(n, path).returncode == 0    # unloaded since: load it again (RunAtLoad starts it)
+    except Exception:  # noqa: BLE001 — the service manager's own failure kinds: the action reports its own error
+        return False
+    return False
+
+
+def wake(st: State) -> dict | None:
+    """Before an action that needs the browser. None = nothing to do (running, disabled, not installed: the action answers);
+    {"restarted": True}; {"reason": adopt_not_running | wake_failed, "next": …}."""
+    if not settings(st).get("enabled"):
+        return None
+    ad = adopted(st)
+    if ad:
+        if _probe_adopted(ad["port"]):
+            return None
+        st.log("browser_wake", result="adopted_down")
+        return {"reason": "adopt_not_running", "next": ADOPT_DOWN}     # the owner's browser: never started by Agent J
+    if runtime(st) or not installed(st):
+        return None
+    rt = wait_running(st, WAKE_WAIT) if service_start() else None
+    st.log("browser_wake", result="restarted" if rt else "failed")
+    return {"restarted": True} if rt else {"reason": "wake_failed", "next": WAKE_FAILED}
+
+
+def _woke(res: dict, w: dict | None) -> dict:
+    if not w:
+        return res
+    if w.get("restarted"):
+        return {**res, "restarted": True, "restarted_note": RESTARTED_NOTE}
+    out = {**res, "next": w["next"]}
+    if w["reason"] == "adopt_not_running" and out.get("reason") == "not_running":
+        out.update(reason="adopt_not_running", hint=ADOPT_DOWN)
+    return out
+
+
 def execute(req: dict, st: State | None = None) -> dict:
     """The host side of `agentj browser …` (serve's elevate.sock, or directly when serve is not running)."""
-    from . import browser_sites as bs
     st = st or State()
     a = req.get("action")
+    w = wake(st) if a in CDP_ACTIONS else None        # P418 (#183 ⑤)
+    return _woke(_execute(a, req, st), w)
+
+
+def _execute(a, req: dict, st: State) -> dict:
+    from . import browser_sites as bs
     if a == "status":
         out = status(st)
         out["sites"] = bs.summary(st)

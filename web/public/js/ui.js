@@ -2,6 +2,7 @@
 // two-step confirm dialog of Agent J's signed writes.
 import { fillText } from './t.js';
 import { SVG } from './icons.js';
+import { configureCopyNotice } from './copycode.js';
 export const el = (id) => document.getElementById(id);
 export function mk(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
 
@@ -20,29 +21,19 @@ if (typeof document !== 'undefined') {
 }
 
 export const CMD_TOAST_MS = 6000;
-// P302 #29 (Leo 10-15 12:08, Mac PWA: 「已更新到 0.21.1a1」 never went away): one auto-hide for transient lines.
-// flashLine shows `text` in `node` for FLASH_MS, then hides it; `onceKey` records it on this device (localStorage) so a
-// reload or reconnect never replays it. Returns false when it was already shown. toast() above is the glance version.
-export const FLASH_MS = 5000;
-export function flashLine(node, text, onceKey, ms = FLASH_MS) {
-  if (!node) return false;
-  if (onceKey) { try { if (localStorage.getItem(onceKey)) return false; localStorage.setItem(onceKey, '1'); } catch { /* no storage: show once this page */ } }
-  node.textContent = text; node.hidden = false;
-  clearTimeout(node._flash); node._flash = setTimeout(() => { node.hidden = true; node._flash = null; }, ms);
+// P425: once-per-device public-version marker; never stores message content.
+export function notifyOnce(spec, onceKey) {
+  if (onceKey) { try { if (localStorage.getItem(onceKey)) return false; localStorage.setItem(onceKey, '1'); } catch {} }
+  notify(spec);
   return true;
 }
-// P318 · Noir Notification (Leo 2026-10-15: no more light pill sliding down from the top). ONE popup component for every
-// transient or held notice: schema → format. Two shapes only — 'rect' (rounded rectangle as wide as the input-message card,
-// height by content: icon · title over body · buttons on the right) and 'circle' (a centred perfect circle with a big mark,
-// like the hold-to-talk circle). Both: Noir --dlg-bg, Lotion --dlg-fg, opaque. The accent (palette only) colours the icon,
-// the left rule and the button outline — never the background. app.css「Noir Notification」draws it; DESIGN_TOKENS.md has
-// the table; test/p318_noir.test.mjs keeps light toasts / ad-hoc notices from coming back.
-// ms: 0 = held until replaced, dismissed (✕ / Esc) or toastOff(); progress and confirm hold by default.
+// Two placements: a centred circle for short transient status; a rect inside the reply for execution / actions.
+// Colours and actions retain P318's Noir tokens. Held notices keep ms:0 and can be dismissed with Escape.
 export const CIRCLE_MAX = 48;
 export const NOTIFY_ACCENTS = ['--emerald-oasis', '--windstorm', '--peachy-feeling', '--magic-carpet'];
 export const FORMATS = Object.freeze({
-  success:  { accent: '--emerald-oasis',  icon: 'check',    ms: 1800, shape: 'rect' },
-  info:     { accent: '--windstorm',      icon: 'info',     ms: 1800, shape: 'rect' },
+  success:  { accent: '--emerald-oasis',  icon: 'check',    ms: 1800, shape: 'circle' },
+  info:     { accent: '--windstorm',      icon: 'info',     ms: 1800, shape: 'circle' },
   warn:     { accent: '--peachy-feeling', icon: 'warn',     ms: 3000, shape: 'rect' },
   error:    { accent: '--peachy-feeling', icon: 'error',    ms: 3000, shape: 'rect' },
   progress: { accent: '--magic-carpet',   icon: 'progress', ms: 0,    shape: 'rect' },
@@ -62,7 +53,7 @@ export function notifyFormat(spec = {}) {
   const kind = Object.prototype.hasOwnProperty.call(FORMATS, spec.kind) ? spec.kind : 'info', f = FORMATS[kind];
   let shape = spec.shape === 'circle' || spec.shape === 'rect' ? spec.shape : f.shape;
   // the circle holds a few words and no buttons; anything longer is the rect (a CJK character counts two)
-  if (shape === 'circle' && (String(spec.text ?? '').replace(/[^\x00-\xff]/g, '..').length > CIRCLE_MAX || (spec.actions || []).length)) shape = 'rect';
+  if (shape === 'circle' && !spec.glance && (String(spec.text ?? '').replace(/[^\x00-\xff]/g, '..').length > CIRCLE_MAX || (spec.actions || []).length || spec.title || spec.media)) shape = 'rect';
   const ms = spec.ms === undefined || spec.ms === null ? f.ms : Math.max(0, +spec.ms || 0);
   return { kind, accent: f.accent, icon: f.icon, shape, ms };
 }
@@ -72,19 +63,24 @@ function icon(name) {
   for (const d of ICONS[name] || ICONS.info) { const p = document.createElementNS(NS, 'path'); p.setAttribute('d', d); s.appendChild(p); }
   return s;
 }
-// rect width = the input-message card (#om when it is up — same rule as P303's usage card), else the composer card
-function fitNotify(box) {
-  let w = 0;
-  for (const n of [el('om'), document.querySelector('.composer')]) {
-    if (n && !n.hidden && n.getClientRects().length) { w = n.getBoundingClientRect().width; if (w > 200) break; }
-  }
-  if (w > 200) box.style.setProperty('--nt-w', Math.round(w) + 'px'); else box.style.removeProperty('--nt-w');
+// P440: execution / actionable notices belong to the current reply, never above the input card.
+export function replyNotice(node) {
+  const host = el('reply-notices');
+  if (host && node) host.appendChild(node);
+  return node;
+}
+export function executionToast(text, ms = 3600, kind = 'info') {
+  return notify({ text, ms, kind, shape: 'rect' });
+}
+if (typeof document !== 'undefined') {
+  for (const id of ['shared-status', 'version-later', 'setup-banner', 'ar-renew', 'qr-banner', 'rescue-banner', 'estop-banner', 'grant-bar', 'share-notice']) replyNotice(el(id));
 }
 export function notify(spec) {
   const f = notifyFormat(spec), box = el('toast');
   if (!box) return null;
   delete box.dataset.sharedFollow;
-  box.classList.remove('act', 'mail-saved', 'circle', 'rect');
+  box.classList.remove('act', 'mail-saved', 'circle', 'rect', 'glance');
+  box.classList.toggle('glance', !!spec.glance);
   box.dataset.kind = f.kind; box.style.setProperty('--nt-accent', 'var(' + f.accent + ')');
   box.setAttribute('role', f.kind === 'error' || f.kind === 'warn' ? 'alert' : 'status');
   const t = spec.text == null ? '' : String(spec.text), n = mk('span', 'nt-body'), kids = [icon(f.icon)];
@@ -103,14 +99,24 @@ export function notify(spec) {
     for (const a of acts) {
       const b = document.createElement('button'); b.type = 'button'; b.className = 'undo'; b.textContent = a.label;
       b.addEventListener('pointerdown', (e) => e.preventDefault());          // keep the field's focus
-      b.addEventListener('click', () => { toastOff(); a.fn(); });
+      b.addEventListener('click', () => { toastOff(); a.fn(b); });
       row.appendChild(b);
     }
     kids.push(row);
   }
   box.replaceChildren(...kids);
   box.classList.add(f.shape);
-  if (f.shape === 'rect') fitNotify(box);
+  if (f.shape === 'rect') {
+    // A non-chat page owns its local result card; do not hide errors behind Settings / the terminal.
+    const page = [el('term'), el('settings'), el('rd'), ...document.querySelectorAll('.view.sub, #five-page')].find((n) => n && !n.hidden && n.getClientRects().length);
+    const local = page && (page.querySelector('.setbox') || page);
+    if (local) {
+      let area = local.querySelector('.page-notices');
+      if (!area) { area = mk('div', 'reply-notices page-notices'); local.appendChild(area); }
+      area.appendChild(box);
+    } else replyNotice(box);
+  }
+  else if (box.parentElement && box.parentElement !== document.body) document.body.appendChild(box);
   box.classList.toggle('cmd', cmd); box.classList.toggle('act', !!acts.length && f.shape === 'rect');
   box.classList.toggle('media', kids.some((k) => k.classList && k.classList.contains('nt-media')));
   if (ms) delete box.dataset.hold; else box.dataset.hold = '1';
@@ -147,11 +153,10 @@ export function confirmSheet(title, text, yes, danger = false, no) {
     el('confirm-no').onclick = () => done(false);
   });
 }
-/** P302: a centred one-button notice on the confirm card (why a switch did not change) → resolves when dismissed. */
-export function noticeSheet(title, text, ok) {
-  const noBtn = el('confirm-no');
-  noBtn.hidden = true;
-  return confirmSheet(title, text, ok).then((v) => { noBtn.hidden = false; return v; });
+/** Pure information never requires acknowledgement. Long explanations wrap in the centred glance. */
+export function noticeSheet(title, text) {
+  notify({ kind: 'info', shape: 'circle', glance: true, text: String(text || title).replace(/`/g, ''), ms: 2000 });
+  return Promise.resolve();
 }
 export const confirmOpen = () => !el('confirm').hidden;
 export function closeConfirm() { if (!el('confirm').hidden) el('confirm-no').click(); }
@@ -161,3 +166,6 @@ export function human(n) {
 }
 export function stamp() { const d = new Date(); return [d.getHours(), d.getMinutes(), d.getSeconds()].map((n) => String(n).padStart(2, '0')).join(''); }
 export function mmss(s) { s = Math.round(s); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); }
+
+// Copy primitives remain usable by pure renderers without importing page event handlers.
+configureCopyNotice(spec => notify(spec));

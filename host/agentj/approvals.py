@@ -165,7 +165,7 @@ def question_digest(qs: list) -> str:
 
 def picks_text(picks) -> str:
     """P: `1,3;2` (questions by `;`, 1-based option numbers by `,`); `-` = cancel."""
-    return "-" if picks is None else ";".join(",".join(str(n) for n in p) for p in picks)
+    return "-" if picks is None else ";".join(("t:" + _h(p) if isinstance(p, str) else ",".join(str(n) for n in p)) for p in picks)
 
 
 def question_message(channel: str, device: str, qid: str, action: str, qs: list, picks) -> bytes:
@@ -181,6 +181,10 @@ def check_picks(qs: list, picks) -> bool:
     if not isinstance(picks, list) or len(picks) != len(qs):
         return False
     for q, p in zip(qs, picks):
+        if isinstance(p, str):
+            if not p.strip() or wire.text_problem(p, 2000):
+                return False
+            continue
         if not isinstance(p, list) or not p or not all(type(n) is int for n in p):
             return False
         if p != sorted(set(p)) or p[0] < 1 or p[-1] > len(q["o"]):

@@ -455,11 +455,13 @@ def due(rep: dict, state_root, day: str | None = None, mark: bool = True) -> lis
 
 
 def heartbeat_lines(state_root, prefs: dict | None, lang: str = "zh", now: float | None = None, env=None,
-                    meter_state: dict | None = None) -> str:
+                    meter_state: dict | None = None, active_harness: str | None = None) -> str:
     """What a heartbeat carries: the day's not-yet-given reminders (marked given), or ""."""
     if not reminders_on(prefs):
         return ""
     rep = report(state_root, now, env, meter_state=meter_state)
+    if active_harness is not None:
+        rep = {**rep, "harnesses": [a for a in rep["harnesses"] if a["harness"] == active_harness]}
     items = due(rep, state_root)
     if not items:
         return ""

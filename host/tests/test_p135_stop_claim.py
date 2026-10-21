@@ -127,8 +127,11 @@ class StopClaim(unittest.IsolatedAsyncioTestCase):
             with patch.object(shared, "claude_send"), patch.object(shared, "CLAUDE_INPUT_WAIT", .05), \
                     patch.object(claude_inbound, "hold_reason", return_value=None):
                 await asyncio.wait_for(a.turn("hi"), 2)
-            self.assertTrue(h.failed)
-            self.assertIn("尚未接收", h.notices[0])
+            # P424 #75: the reason sits on the message's own page (no page of its own), not a failed turn
+            self.assertFalse(h.failed)
+            self.assertEqual(h.notices, [])
+            self.assertIn("尚未接收", h.hist.get(s1.turn)["reply"]["text"])
+            self.assertEqual(h.hist.get(s1.turn)["card"]["held"], "pending")
 
     def test_merged_note_one_language(self):
         with tempfile.TemporaryDirectory() as root:

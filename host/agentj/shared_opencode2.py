@@ -51,6 +51,7 @@ def switch_shared(agent, version) -> bool:
 
 class SharedOpenCodeV2Agent(OpenCodeV2Agent):
     """Reached only by a class switch from shared.SharedOpenCodeAgent (owned_server, risk, attach_task already set)."""
+    SUBAGENTS = False       # P426: no per-agent injection; high-risk ask rules keep `subagent * deny`
     owned_server = True
 
     def _own_protocol(self) -> bool:

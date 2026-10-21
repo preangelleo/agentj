@@ -73,7 +73,7 @@ test('ui.js: notify with six kinds; FORMATS accents are the four palette colours
 test('notifyFormat: kind → accent / icon / ms / shape', async () => {
   globalThis.window = globalThis.window || {};
   const { notifyFormat, FORMATS } = await import('../public/js/ui.js');
-  assert.deepEqual(notifyFormat({ kind: 'success', text: 'ok' }), { kind: 'success', accent: '--emerald-oasis', icon: 'check', shape: 'rect', ms: FORMATS.success.ms });
+  assert.deepEqual(notifyFormat({ kind: 'success', text: 'ok' }), { kind: 'success', accent: '--emerald-oasis', icon: 'check', shape: 'circle', ms: FORMATS.success.ms });
   assert.equal(notifyFormat({ kind: 'nope' }).kind, 'info', 'an unknown kind is info');
   for (const k of ['success', 'info', 'warn', 'error']) {
     const ms = notifyFormat({ kind: k }).ms; assert.ok(ms >= 1800 && ms <= 3000, k + ' is transient 1.8–3 s (' + ms + ')');
@@ -105,7 +105,7 @@ function fakeDom() {
     set textContent(v) { this._text = String(v); this.children = []; }
   }
   const toastEl = new N('div');
-  globalThis.document = { getElementById: (id) => (id === 'toast' ? toastEl : null), querySelector: () => null,
+  globalThis.document = { getElementById: (id) => (id === 'toast' ? toastEl : null), querySelector: () => null, querySelectorAll: () => [],
     createElement: (t) => new N(t), createElementNS: (_ns, t) => new N(t), createTextNode: (t) => { const n = new N('#text'); n._text = t; return n; } };
   return toastEl;
 }

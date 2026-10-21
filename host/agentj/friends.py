@@ -11,7 +11,7 @@ sessions included). Plain JSON files, each read-modify-write under one flock (`p
 - `pending.json`  {"in": {rid: {..., ask_id, exp}}, "out": {rid: {id, note, ts, exp, state}}} — requests, 7 days.
 - `groups.json`   {gid: Group} — custom groups and the owner's edits of the built-ins (§17 Group; built-ins can change numbers,
   never their id, never disappear).
-- `settings.json` on (default on: serve opens the mailbox once the seat certificate comes), discoverable (Q10: default on), owner (Q11: default ""), intro, global_tok_day, never_tell_extra.
+- `settings.json` on (default on: serve opens the mailbox once the seat certificate comes), discoverable (Q10: default on), owner (Q11: default ""), intro, global_tok_day, never_tell_extra, relay_* (P410), pick_rules (P426: `friends pick`).
 - `ledger.json`   fixed-window counters per friend (minute / hour / calendar day / calendar month in the owner's time zone)
   and the account-wide daily token total. Counts only — never text.
 - `sessions.json` {friend: {harness: session id}} — the peer session to resume (peer_session.py).
@@ -82,7 +82,8 @@ NEVER_TELL_EN = ("credentials, API keys, tokens", "passwords", "private keys",
                  "the owner's main conversation")
 
 DEFAULT_SETTINGS = {"on": True, "discoverable": True, "owner": "", "intro": "", "global_tok_day": 300000,
-                    "never_tell_extra": [], "relay_per_minute": 30, "relay_claim_seconds": 1800, "relay_pending_seconds": 86400}
+                    "never_tell_extra": [], "relay_per_minute": 30, "relay_claim_seconds": 1800, "relay_pending_seconds": 86400,
+                    "pick_rules": {}}    # P426 #117: `agentj friends pick` rules (friends_pick.valid)
 
 
 def norm_id(ref: str) -> str:
@@ -170,6 +171,10 @@ class FriendStore:
             return "bad_value"
         if key in ("relay_per_minute", "relay_claim_seconds", "relay_pending_seconds") and not (type(value) is int and 1 <= value <= (10000 if key == "relay_per_minute" else 2592000)):
             return "bad_value"
+        if key == "pick_rules":
+            from .friends_pick import valid
+            if not valid(value):
+                return "bad_value"
         if key == "never_tell_extra":
             if not (isinstance(value, list) and len(value) <= MAX_NEVER_TELL_EXTRA
                     and all(isinstance(x, str) and 0 < len(x.strip()) <= 80 for x in value)):
@@ -532,12 +537,17 @@ class FriendStore:
             rec["limited"] = {}
         return rec
 
-    def precheck(self, friend_id: str, text: str, now: float | None = None):
+    def precheck(self, friend_id: str, text: str, now: float | None = None, same_owner: bool = False):
         """§17.6 step 2, counts only (no model): None = go on, else (scope, retry seconds). Order: length → interval →
-        message windows → token windows → account-wide daily tokens. Does not count the message (record_in does)."""
+        message windows → token windows → account-wide daily tokens. Does not count the message (record_in does).
+        `same_owner` (Jarvis ruling 5, an already-active Same owner relation): no min_interval_s — the owner's own devices
+        are not held to the group's spacing — and the per-minute message cap is `relay_per_minute` (default 30), so a
+        flood is still stopped; the other windows stay the group's."""
         now = self.clock() if now is None else now
         g = self.group_of(friend_id)
         lim = g["limits"]
+        if same_owner:
+            lim = {**lim, "min_interval_s": 0, "msg": {**lim["msg"], "min": self.settings()["relay_per_minute"]}}
         if len(text or "") > lim["max_len"]:
             return "length", 0
         led = self._read("ledger.json", {})

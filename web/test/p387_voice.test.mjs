@@ -10,14 +10,14 @@ function harness(install) {
     install, ready:()=>events.push('ready'), repaint:()=>events.push('repaint')});
   return {setup, notices, events};
 }
-test('truthful stages and held conspicuous completion; no invented percentage', async()=>{
+test('truthful stages and transient buttonless completion; no invented percentage', async()=>{
   const h = harness(async progress => { progress('download'); progress('extract'); progress('install'); progress('test'); return {ok:true,state:'ready'}; });
   await h.setup.run();
   assert.deepEqual(h.notices.slice(0,-1).map(n=>n.text), ['prepare','download','extract','install','test'].map(n=>'p387Voice.'+n));
   const done = h.notices.at(-1);
-  assert.equal(done.kind,'success'); assert.equal(done.ms,0);
-  assert.equal(done.title,'p387Voice.readyTitle'); assert.equal(done.text,'p387Voice.ready');
-  assert.equal(done.actions[0].label,'p387Voice.dismiss'); assert.ok(h.events.includes('ready'));
+  assert.equal(done.kind,'success'); assert.equal(done.ms,1800);
+  assert.equal(done.shape,'circle'); assert.equal(done.text,'p387Voice.readyTitle');
+  assert.equal(done.actions,undefined); assert.ok(h.events.includes('ready'));
 });
 test('failure shows safe localized reason and retry invokes the installer', async()=>{
   let count = 0;

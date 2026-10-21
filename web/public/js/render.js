@@ -18,6 +18,7 @@
 // While the shown page is still open (streaming), nothing is upgraded; it happens once the page is done.
 // Limits (also enforced by md.js, which does not mark bigger blocks): code 20 000, TeX 4 000, mermaid 10 000 chars.
 import { t } from './t.js';
+import { upgradeComponents } from './components.js';
 
 export const LIMIT = { code: 20000, tex: 4000, mermaid: 10000 };
 const LIBS = {
@@ -226,6 +227,7 @@ function scan(root) {
 /** Called after md.js has (re)filled `root` with the Agent's words. Cheap when there is nothing to upgrade. */
 export function upgrade(root) {
   if (!root || !root.querySelector) return;
+  upgradeComponents(root);
   clearTimeout(root._rx);
   root._rx = setTimeout(() => scan(root), SETTLE_MS);
 }

@@ -1,9 +1,12 @@
+import { copyButton } from './copycode.js';
 import {phoneConfirmation} from './tvremote.js';
-import {focusDraft, releaseDraft} from './composer-focus.js';
+import {focusDraft, releaseDraft, touchComposer} from './composer-focus.js';
 import {pasteRoute, CLIP_TEXT_MAX} from './paste-route.js';
+import { termKey, backslashEnter, killed, forget as forgetKill } from './termkeys.js';   // P412 (#174)
+import * as fsed from './fsedit.js';   // P412 (#174): the full-screen editor
 import { bindReaderSwipe } from './reader-swipe.js';
 import { DOUBLE_MS as RD_DTAP_MS, TAP_MS as RD_TAP_MS, TAP_PX as RD_TAP_PX, PAIR_PX as RD_PAIR_PX } from './file-gestures.js';
-import { linkify } from './five-pages.js';
+import { linkify, cardKeys } from './five-pages.js';
 import { capAbove, sheetCeil, wireCeil } from './fit.js';
 import { registerLayer, activeLayer } from './layers.js';
 import { applyViewport, watchViewport } from './viewport.js';
@@ -25,7 +28,7 @@ import { copyable } from './copycode.js';   // P292: every code / pre can be cop
 import { upgrade as upgradeWords, forget as forgetRendered } from './render.js';   // P57: lazy code / math / diagrams
 import { cmdGist } from './cmdgist.js';   // P341: the approval card's plain line when the Agent gave none
 import { t, lang, onLang, fillText, both } from './t.js';
-import { el, toast, toastOff, toastAction, human, stamp, mmss, confirmSheet } from './ui.js';
+import { el, toast, executionToast, toastOff, toastAction, human, stamp, mmss, confirmSheet, replyNotice } from './ui.js';
 import * as sfx from './sfx.js';
 import * as sendvol from './sendvol.js';   // P154 追加 12: hold the grey Send → the send-sound slider
 import * as shotclip from './shotclip.js';
@@ -48,6 +51,7 @@ import { lookup as ixLookup, ROWS as IX_ROWS, GROUPS as IX_GROUPS, dispatchFunct
 import { createUnread } from './unread.js';   // P207 (追加 2): this device's unread mark
 import { open as openAgentName } from './agentname.js';
 import { askKind as friendAsk, renderAsk as renderFriendAsk, addFriendCmd, openFromCmd } from './friends.js';   // §17.7: friend request / friend's question cards
+import { wireComponents } from './components.js';
 import * as replyBtn from './replybtn.js';   // P368 (#78): [派](reply:派) one-tap answers + #tags in the reply
 
 let C = null;                        // ctx from app.js: api, myDev(), estopOn(), canSign(), panels …
@@ -190,17 +194,11 @@ function copyCodeClick(e){
   const b = e.target.closest && e.target.closest(".copy");
   if (!b) return;
   const code = b.closest(".codeblock").querySelector("pre > code");
-  RelayMD.copyText(code ? code.textContent : "").then(ok => {
-    if (!ok){ toast(t('r.copy.fail'), 2200); return; }
-    b.textContent = t('r.md.copied'); b.classList.add("done");
-    clearTimeout(b._t);
-    b._t = setTimeout(() => { b.textContent = t('r.md.copy'); b.classList.remove("done"); }, 1600);
-  });
+  copyButton(code ? code.textContent : "", b);
 }
 
 function copiedNote(e){
-  if (!e.detail || e.detail.variant !== "bare") return;
-  toast(e.detail.ok ? t('r.md.inlineCopied') : t('r.copy.fail'), e.detail.ok ? 900 : 2200);
+  // copycode owns both the in-place and centred feedback, including bare inline code.
 }
 
 // "已等 N 分钟" from the request's arrival on this page.
@@ -239,7 +237,7 @@ function askState(a){
   return a.state === "open" && askSent.id === a.id ? askSent.state : a.state;
 }
 function askLabels(a){
-  return (a.choices || []).map((pick, i) => pick.map(n => {
+  return (a.choices || []).map((pick, i) => typeof pick === "string" ? pick : pick.map(n => {
     const o = ((a.questions[i] || {}).options || [])[n - 1]; return o ? o.label : String(n);
   }).join(t('r.list.sep'))).join(t('r.list.sep2'));
 }
@@ -306,12 +304,29 @@ function renderQuestion(card, a){
         ol.appendChild(li);
       });
       box.appendChild(ol);
+      if (a.textMax && open){
+        const label = document.createElement("label"); label.className = "qfree";
+        const title = document.createElement("span"); title.textContent = t('p425.free');
+        const field = document.createElement("textarea"); field.rows = 2; field.maxLength = a.textMax;
+        field.setAttribute("aria-label", t('p425.free')); field.placeholder = t('p425.freeHint'); field.disabled = !live;
+        const saved = askSel.id === a.id ? askSel.picks[qi] : null;
+        field.value = typeof saved === "string" ? saved : "";
+        field.addEventListener("input", () => {
+          if (askSel.id !== a.id) askSel = {id: a.id, picks: a.questions.map(() => [])};
+          askSel.picks[qi] = field.value.trim() ? field.value : [];
+          for (const button of ol.querySelectorAll('.opt')) button.setAttribute('aria-pressed', 'false');
+          el('askSend').disabled = !askComplete(a);
+        });
+        label.append(title, field); box.appendChild(label);
+      }
+
     });
   }
   fitQMore(box);
   const picks = a && askSel.id === a.id ? askSel.picks : (a && !open ? (a.choices || []) : []);
   box.querySelectorAll(".opt").forEach(b => {
-    const on = (picks[+b.dataset.q] || []).includes(+b.dataset.n);
+    const pick = picks[+b.dataset.q];
+    const on = Array.isArray(pick) && pick.includes(+b.dataset.n);
     b.setAttribute("aria-pressed", on ? "true" : "false");
     if (b.classList.contains("multi")) b.querySelector(".n").textContent = on ? "✓" : "";
   });
@@ -376,7 +391,7 @@ function renderCard(s){
   const result = fin && age < ASK_RESULT_S && !pending && askDismissed !== a.id;
   const pfin = !!p && APPR_FINAL.includes(p.state);
   const page = pfin && p.final_at ? Date.now() / 1000 - skew - p.final_at : Infinity;
-  if (pfin && page < ASK_RESULT_S && apprToasted !== p.id){ apprToasted = p.id; toast(apprText(p), 2600); }
+  if (pfin && page < ASK_RESULT_S && apprToasted !== p.id){ apprToasted = p.id; executionToast(apprText(p), 2600); }
   if (apprOpt && p && apprOpt.id === p.id && pfin){
     // P154: the host's verdict on a card this remote put away at once. The one we sent → done, quietly. Anything else
     // (timed out, ended, stopped first) → the result card comes back once to say so.
@@ -388,6 +403,7 @@ function renderCard(s){
   const left = result ? ASK_RESULT_S - age : presult ? ASK_RESULT_S - page : 0;
   if (left > 0) askResultTimer = setTimeout(() => { if (cur) renderCard(cur); }, left * 1000 + 50);
   document.body.dataset.sheet = (pending && !folded) || result || presult ? "1" : "0";
+  el("sheet").hidden = document.body.dataset.sheet !== "1";
   el("pendTag").hidden = !folded || (!!apprOpt && apprOpt.key === foldedCard);   // P154: a card answered here leaves no tag
   el("apprBtns").hidden = true; el("apprBatch").hidden = true; el("apprGoalAdd").hidden = true;
   el("goalInfo").hidden = true; el("cmdToggle").hidden = true;   // P339: only a goal card in plain words shows them
@@ -429,6 +445,7 @@ function apprState(p){
 const FR_DONE = {approved: "allow", denied: "deny", timeout: "timeout", expired: "timeout", ended: "ended", stopped: "stopped", terminal: "ended"};
 function apprText(p){
   const st = apprState(p);
+  if (friendAsk(p) && p.pq && p.pq.pairing === true && FR_DONE[st] === "ended") return t('p417.so.closed');   // #186
   if (friendAsk(p) && FR_DONE[st]) return t('fr.ask.done.' + (p.tool === "friend_request" ? "fr_" : "pq_") + FR_DONE[st]);
   if (st === "open") return p.local_only ? t('r.appr.st.localOnly') : "";
   return ["allow_sent", "deny_sent", "batch_sent", "approved", "denied", "terminal", "timeout", "expired", "ended", "stopped"].includes(st) ? t('r.appr.st.' + st) : "";
@@ -675,26 +692,9 @@ async function askPost(a, cancel){
 }
 
 // ---- the phone's status bar follows the page colour (relay ADR-022) ----------------
-// theme-color is rewritten as a NEW <meta> on every path that can change the page colour; the launch colour of an
-// iPhone home-screen app is the last colour actually painted (js/boot.js reads it before first paint).
-const STATUSBAR_MODE = "match";
-let LAUNCH_CHROME = (window.__ajLaunchChrome || "");
-function toHex(c){
-  const m = /^rgba?\(([^)]+)\)$/.exec(c) || /^color\(srgb ([^)]+)\)$/.exec(c);
-  if (!m) return "";
-  const v = m[1].split(/[\s,/]+/).filter(Boolean).slice(0, 3).map(Number);
-  const k = c.startsWith("color(") ? 255 : 1;
-  return "#" + v.map(x => Math.round(Math.min(255, Math.max(0, x * k))).toString(16).padStart(2, "0")).join("");
-}
+// P422: first paint and every repaint keep system chrome Sooty.
 function chromeTarget(){
-  if (document.documentElement.dataset.ios === "1") return "#141414"; // P384: iOS system / gesture areas stay Sooty.
-  // The topmost full-screen surface owns the OS bar; nested Settings pages use the same menu background.
-  const pages = [...document.querySelectorAll('.menupage:not([hidden]),.setpage:not([hidden]),.ajpages:not([hidden]),#five-page:not([hidden]),#five-detail:not([hidden]),#five-menu:not([hidden])')]   // P302: the five-card menu is Noir from the moment it opens
-    .filter(n => n.getClientRects().length);
-  if (pages.length){ pages.sort((a,b)=>(+getComputedStyle(a).zIndex||0)-(+getComputedStyle(b).zIndex||0)); return toHex(getComputedStyle(pages.at(-1)).backgroundColor); }
-
-  if (LAUNCH_CHROME){ if (document.body.dataset.conn !== "on") return LAUNCH_CHROME; LAUNCH_CHROME = ""; }
-  try{ return toHex(getComputedStyle(el("chromeProbe")).backgroundColor); }catch(_){ return ""; }
+  return "#141414"; // P422 #191/#86: system chrome never follows a state or custom theme.
 }
 function setThemeColor(hex){
   const old = [...document.querySelectorAll('meta[name="theme-color"]')];
@@ -704,24 +704,11 @@ function setThemeColor(hex){
   for (const o of old) o.remove();
   document.head.prepend(m);
 }
-let savedChrome = "";
-function saveChrome(hex){
-  if (STATUSBAR_MODE !== "match" || hex === savedChrome) return;
-  const b = document.body.dataset;
-  if (b.conn !== "on" || b.reader === "1" || b.view !== "chat") return;
-  savedChrome = hex;
-  try{ localStorage.setItem("aj.chrome", hex); }catch(_){}
-}
 export function paintChrome(force){
   const hex = chromeTarget();
   if (!hex) return;
   document.documentElement.style.backgroundColor = hex;
-  saveChrome(hex);
-  if (force !== true || document.documentElement.dataset.ios === "1"){ setThemeColor(hex); return; }
-  setThemeColor(hex.slice(0, 5) + (parseInt(hex.slice(5, 7), 16) ^ 1).toString(16).padStart(2, "0"));
-  let done = false;
-  const settle = () => { if (done) return; done = true; const h = chromeTarget(); if (h) setThemeColor(h); };
-  requestAnimationFrame(settle); setTimeout(settle, 50);
+  setThemeColor(hex);
 }
 
 // ---- dashboard numbers: "—" / an empty bar unless the host has an exact source --------
@@ -744,9 +731,11 @@ function paintUsage(u){
     // P303: WEEKLY n%（第 N 天）, and a faint glow — fast (weekly only), ≥ 80 % Mellow Marrow, ≥ 90 % Peachy Feeling
     const c = x ? cycle(x.window, x.reset || quotaReset(u, x.window)) : null, day = c && x.window === 'weekly' ? t('p303.day', {n: c.step}) : '';
     bar.dataset.glow = x ? tier(x.pct, c, {pace: x.window === 'weekly'}) : '';
-    bar.querySelector('.lab').textContent = x ? `${x.window} ${Math.round(x.pct)}%${day}` : '';
+    bar.querySelector('.lab').textContent = x ? `${x.window} ${Math.round(x.pct)}%${day}${readAge(x)}` : '';
     const label = x ? t('r.meter.' + ({weekly:'week',daily:'daily',monthly:'monthly','5h':'h5'}[x.window])) : '';
-    bar.setAttribute('aria-label', x ? t('r.meter.used', {label, pct:x.pct}) + (day ? ' ' + t('p303.dayAria', {n: c.step, of: c.steps}) : '') : '');
+    bar.dataset.stale = x && x.stale ? '1' : '0';
+    bar.setAttribute('aria-label', x ? t('r.meter.used', {label, pct:x.pct}) + (day ? ' ' + t('p303.dayAria', {n: c.step, of: c.steps}) : '')
+      + (x.stale ? ' · ' + t('p433.staleWhy') : x.at ? ' · ' + t('p433.updated', {t: hm(x.at)}) : '') : '');
     bar.title = bar.getAttribute('aria-label');
   }
   const w = el("water"), ctx = u.context_pct;
@@ -758,6 +747,14 @@ function paintUsage(u){
   w.setAttribute('aria-label', typeof ctx === 'number' ? t('r.usage.ctx', {p:ctx}) : t('r.usage.none'));
   w.title = Number.isFinite(u.context_used) ? (Number.isFinite(u.context_limit) && u.context_limit > 0 ? `${u.context_used} / ${u.context_limit}` : `${u.context_used} tokens`) : w.getAttribute('aria-label');
   if (Number.isFinite(u.context_used) && typeof ctx !== 'number') w.setAttribute('aria-label', w.title);
+}
+// P433 (#196): beside a reading — 「· 读数可能过期」 when a confirmed limit contradicted it, 「· 更新于 HH:MM」 once it is older
+// than READ_OLD (a fresh one needs no time), nothing when the host did not say when it was measured
+const READ_OLD = 30 * 60;
+const hm = (at) => { const d = new Date(at * 1000); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
+function readAge(x, now = Date.now() / 1000) {
+  if (x.stale) return ' · ' + t('p433.stale');
+  return x.at && now - x.at > READ_OLD ? ' · ' + t('p433.updated', {t: hm(x.at)}) : '';
 }
 const POST_COMPACT_LEVEL = 0.03;
 let postCompact = false;
@@ -784,7 +781,8 @@ function quotaReset(u, w){
 // P207 §1: the numbers open the global centred dark dialog (js/usagedlg.js), not a toast pill at the top
 function meterToast(e){
   const u = (cur && cur.usage) || {};
-  const windows = u.source ? quotaWindows(u).map(x => ({window: x.window, reset: x.reset || quotaReset(u, x.window), label: t('r.meter.' + ({weekly:'week',daily:'daily',monthly:'monthly','5h':'h5'}[x.window])), pct: x.pct})) : [];
+  const windows = u.source ? quotaWindows(u).map(x => ({window: x.window, reset: x.reset || quotaReset(u, x.window), label: t('r.meter.' + ({weekly:'week',daily:'daily',monthly:'monthly','5h':'h5'}[x.window])), pct: x.pct,
+    ...(x.at ? {at: x.at} : {}), ...(x.stale ? {stale: true} : {})})) : [];
   const ctx = typeof u.context_pct === 'number' ? u.context_pct : null;
   const ctxText = ctx != null ? null : Number.isFinite(u.context_used) ? `${u.context_used} tokens` : postCompact ? t('p207set.usage.ctxPost') : null;
   openUsage({source: !!u.source, windows, ctx, ctxText, age: u.age_s != null ? u.age_s : null}, e && e.currentTarget);
@@ -798,6 +796,7 @@ export function render(s){
   const st = s.status || "unknown";
   document.body.dataset.status = st;
   document.body.dataset.agent = s.hostStatus || "none";
+  kindSeen(s.agentKind);   // P412 (#175)
   if (st === "waiting" && s.kind) document.body.dataset.kind = s.kind;
   else delete document.body.dataset.kind;
   paintChrome();
@@ -963,6 +962,7 @@ async function pillSend(pick){
 }
 // One press handler for both hidden controls: a tap (released before HOLD_MS, finger still) or a hold.
 function pressable(node, onTap, onHold){
+  node.setAttribute('data-no-select', '');
   let p = null;
   const end = () => { if (p){ clearTimeout(p.t); p = null; } };
   node.addEventListener("pointerdown", e => {
@@ -1047,9 +1047,17 @@ function onNewestPage(){ return follow || tailWait || pageAt < 0 || pageAt >= pa
 let sentStay = false;
 function sendFollow(){ sentStay = !onNewestPage(); if (!sentStay) toNewest(); }
 const SRC_KINDS = ["leo", "dev", "host", "agent", "sys", "task", "cmd"];
+// P424 (#87): a page without the owner's input whose reply is the page before it, word for word (an older host ended one
+// turn twice: 「后台任务完成」 + the same reply) — not a second page; history already on disk keeps it, the phone folds it.
+function echoPage(p, prev){
+  const s = p.source;
+  return !!prev && !p.card && !!s && (s.k === "agent" || s.k === "sys") && !s.text?.trim() && !s.att?.length && !s.quote
+    && visibleReply(p) && typeof prev.reply === "string" && prev.reply.trim() === p.reply.trim();
+}
 function pages(){
   if (pagesCache) return pagesCache;
-  const out = hist.turns.filter(visiblePage);
+  const out = [];
+  for (const p of hist.turns) if (visiblePage(p) && !echoPage(p, out[out.length - 1])) out.push(p);
   if (!out.length) out.push({id: null, reply: "", source: null, ts: null});
   return (pagesCache = out);
 }
@@ -1302,6 +1310,7 @@ function showPage(){
   el("pgNext").disabled = pageAt >= ps.length - 1;
   el("localNote").hidden = !(src && src.local);
   paintCmdx(p);
+  C.termCard?.(p);                                       // P414 (§37.12): a 「!」 page's terminal result card (js/bang.js)
   if (key !== shownKey){
     const moved = shownKey !== null && shownKey.split("|")[0] !== key.split("|")[0];
     shownKey = key;
@@ -1326,6 +1335,7 @@ function showPage(){
   paintThinking(visibleReply(p) && !hostWait ? progress : "");
   el("words").classList.toggle("empty", !visibleReply(p));
   renderMedia(el("words"), p);
+  wireComponents(el("words"), replyBtn.agentWords(p) && p.end !== "open", text => appendText("\n" + text + "\n"));
   replyBtn.paint(el("words"), p, {pages, say: sayReply, find: search.find});   // P368
   if (rdAt && rdAt.key === shownKey) renderReaderMedia(el("rdWords"), p);   // P59: the reader's slots, same Blobs
   if (rdOpen()) rdSync();                                                   // P273: the reader follows every jump
@@ -1352,6 +1362,22 @@ function paintCmdx(p){
     stop.textContent = t('r.wait.stop');
     stop.addEventListener("click", () => { stop.disabled = more.disabled = true; C.api.slash('stop'); });
     box.append(more, stop);
+    return;
+  }
+  // P424 #75: the 「尚未接收」 notice sits on the owner's own page (host card.held); the settings diagnosis behind 「详情」
+  // (collapsed, never in the words), then one 「已送达」 mark once the message reached the Agent after all
+  const held = !isCmd && !!c && (c.held === "pending" || c.held === "delivered");
+  if (held){
+    if (c.held === "delivered"){
+      const m = document.createElement("span"); m.className = "heldok"; m.dataset.held = "delivered"; m.textContent = t('p398.delivered');
+      box.appendChild(m);
+    } else if (typeof c.detail === "string" && c.detail.trim()){
+      const d = document.createElement("details"); d.className = "cmdresume heldx";
+      const summary = document.createElement("summary"); summary.textContent = t('p339.details');
+      const body = document.createElement("p"); body.textContent = c.detail.trim().slice(0, 2000);
+      d.append(summary, body); box.appendChild(d);
+    }
+    box.hidden = !box.children.length;
     return;
   }
   box.hidden = !isCmd || !((Array.isArray(c.models) && c.models.length) || c.undo === true || openBtn || cancelWait || resume);
@@ -1538,13 +1564,13 @@ async function goFirstUnread(tell){
 }
 
 // Copy: y the reply, Y the input. What is copied is the stored text, not the rendering.
-function copyOut(text, doneMsg){
+function copyOut(text, doneMsg, button){
   if (!text){ toast(t('r.copy.nothing'), 1600); return; }
-  RelayMD.copyText(text).then(ok => toast(ok ? doneMsg : t('r.copy.fail'), ok ? 1400 : 2200));
+  copyButton(text, button);
 }
-function copyReply(){ copyOut(currentPage().reply || "", t('r.copy.reply')); }
+function copyReply(){ copyOut(currentPage().reply || "", t('r.copy.reply'), el('copyReply')); }
 // P363 (#73): the input card's copy button and Y — the owner's words; a voice note's transcript after them (voice only: the transcript)
-function copySource(){ const p = currentPage(), s = p && p.source; copyOut([(s && s.text || "").trim(), transcriptOf(s)].filter(Boolean).join("\n\n"), t('r.copy.source')); }
+function copySource(){ const p = currentPage(), s = p && p.source; copyOut([(s && s.text || "").trim(), transcriptOf(s)].filter(Boolean).join("\n\n"), t('r.copy.source'), el('omCopy')); }
 
 // ---- reply actions: 阅读 · 朗读 · 分享 · 复制 · 回复 (relay ADR-037) ---------------------
 // Each acts on a turn by its id — never a page number.
@@ -1659,7 +1685,7 @@ function slashOn(p, cmd, hint, hintFrom){
 export async function hotTap(p = currentPage()){
   const n = hotName(), k = hotKind(n);
   if (k === "report") return webReport(p);
-  if (k === "run" || k === "clear"){ if (await runCmd(n)){ toNewest(); toast(t('r.run.sent', {cmd: "/" + n}), 1600); } return; }
+  if (k === "run" || k === "clear"){ if (await runCmd(n)){ toNewest(); executionToast(t('r.run.sent', {cmd: "/" + n}), 1600); } return; }
   if (n === "customize") return sayPreset("cmds");
   if (n === "switch-harness") return saySwitch();
   const cmd = "/" + n;
@@ -1671,7 +1697,7 @@ export { openHot };
 export async function reloadHost(){
   if (hostMenu && !hostMenu.reload){ toast(t('p320.reloadOld'), 4000); return false; }
   const ok = await runCmd("reload");
-  if (ok){ toNewest(); toast(t('r.run.sent', {cmd: "/reload"}), 1600); }
+  if (ok){ toNewest(); executionToast(t('r.run.sent', {cmd: "/reload"}), 1600); }
   return ok;
 }
 function plainLine(md){
@@ -1903,9 +1929,8 @@ async function forwardTap(){
     try{ await navigator.share({text}); setFwd(id, "sent", 2000); return; }
     catch(e){ if (e && e.name === "AbortError"){ setFwd(id, "idle"); return; } }
   }
-  const ok = await RelayMD.copyText(text);
+  const ok = await copyButton(text, el(rdOpen() ? 'rdShareBtn' : 'shareBtn'));
   setFwd(id, ok ? "sent" : "failed", ok ? 2000 : 3000);
-  toast(ok ? t('r.share.copied') : t('r.copy.fail'), 2200);
 }
 
 // ---- 转发到邮箱 (P189): the whole turn — the owner's message, this reply, its files — through P184's dialog (contacts.js,
@@ -2032,7 +2057,7 @@ function rdSync(){
 }
 // The footer: the reply card's six icons, cloned once (same glyphs, same order — 阅读 · 朗读 · 转发 · 邮件 · 复制 · 回复,
 // 回复 in the corner) and kept in step with the card's buttons (disabled / hidden / state / label), which already follow the
-// page under the reader. 复制 and 回复 leave the reader (回复 quotes this reply and focuses the field); 朗读, Telegram and
+// page under the reader. 回复 leaves the reader (quotes this reply and focuses the field); 复制, 朗读, Telegram and
 // e-mail stay; the book = leave.
 const RD_ACTS = [["readBtn", "rdReadBtn"], ["speakBtn", "rdSpeakBtn"], ["fwdBtn", "rdFwdBtn"], ["mailBtn", "rdMailBtn"],
                  ["copyReply", "rdCopyBtn"], ["replyBtn", "rdReplyBtn"]];
@@ -2054,8 +2079,7 @@ function rdBuildActs(){
 }
 function rdCopy(){
   const tx = currentPage().reply || "";
-  copyOut(tx, t('r.copy.reply'));
-  closeReader();
+  copyOut(tx, t('r.copy.reply'), el('rdCopyBtn'));
 }
 function rdReply(){
   const p = currentPage();
@@ -2266,19 +2290,24 @@ function fieldMaxH(){
   const cs = getComputedStyle(input), lh = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.45 || 0;
   return Math.max(innerHeight * 0.3, Math.ceil((parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0) + lh * 1.5));
 }
+// P412 (#174, Leo 10-20: 「消息输入框的高度……永远是一行」): the box never grows. More lines scroll inside it (Shift+Enter still
+// adds one) and the full-screen button above it says 「N 行」. fieldMaxH() stays the measure of how much text "fits" (long
+// pastes and long takes still turn into a file past it).
+function lineBox(){
+  const cs = getComputedStyle(input), lh = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.45 || 24;
+  return {lh, pad: (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0)};
+}
 function autosize(){
-  input.style.height = "auto";
-  input.style.maxHeight = fieldMaxH() + "px";     // the CSS 30vh, raised to one line and a half when 30 vh is less
-  // P200: measured without the bar (full width); the bar comes back only when the words are taller than the cap, so an
-  // empty field (placeholder) or a line a pixel taller than line-height never shows one. Empty = back at the top.
-  input.classList.remove("ovf");
-  // scrollHeight is 0 while the chat view is hidden (a sub-view is open): a fixed "0px" would leave the field squashed to
-  // its padding when the view comes back, so stay "auto" — the visibility observer below measures again once it shows.
+  input.style.height = ""; input.style.maxHeight = "";
+  // scrollHeight is 0 while the chat view is hidden (a sub-view is open): measured again once it shows (observer below)
+  let n = 1;
   if (input.value && input.scrollHeight){
-    const max = fieldMaxH();
-    input.style.height = Math.min(input.scrollHeight, max) + "px";
-    if (input.scrollHeight > max + 1) input.classList.add("ovf");
+    const {lh, pad} = lineBox();
+    n = Math.max(1, Math.round((input.scrollHeight - pad) / lh));   // a fallback font's taller line box still counts as one
   } else input.scrollTop = 0;
+  input.classList.toggle("ovf", n > 1);
+  const badge = el("tFullN");
+  if (badge){ badge.hidden = n < 2; if (n > 1) badge.textContent = t('p412.lines', {n}); }
   refreshSend();
 }
 
@@ -2439,6 +2468,9 @@ function addFiles(list, origin = "file", dur, bid, auto = false){
   let dropped = 0;
   const added = [];
   for (const f of list){
+    if ((origin === "recording" && !LR.usable(f, dur)) || (f.type.startsWith("audio/") && f.size < LR.MIN_REC_BYTES)){
+      toast(t('r.rec.tooShort'), 2600); continue;
+    }
     if (!f.size){ toast(notReady(f), 3600); continue; }
     if (f.size > UPLOAD_MAX){ toast(uploadError("too_big"), 3000); continue; }
     if (atts.length >= MAX_ATT){ dropped++; continue; }
@@ -2672,7 +2704,7 @@ function queuedAhead(id){ const i = queued.findIndex(q => q.turn === id); return
 // P398 (#155, Leo 10-20: 「显示还没发出去……我就点了取消，结果这个取消导致了新的消息的 Stop」): the pill said 「取消」 in all
 // three jobs, so the instant this phone's message was handed over the same 「取消」 under the owner's thumb became /stop of
 // the turn that message had just started. Now a send / queued message that is handed over reads 「已送达」 for DELIVERED_MS
-// (a tap does nothing, it says so), and the turn job is worded 「停止这一轮」 — a stop is never a message's 取消.
+// (a tap does nothing, it says so), and the turn job is worded 「Stop」 — a stop is never a message's 取消.
 const DELIVERED_MS = 2200;
 let deliveredAt = 0, deliveredTimer = 0;
 function sawDelivered(){
@@ -2716,12 +2748,7 @@ function padForCancel(){
   if (b.hidden){ if (f.style.paddingRight){ f.style.paddingRight = ""; autosize(); } return; }
   const pad = Math.ceil(f.getBoundingClientRect().right - b.getBoundingClientRect().left + 4) + "px";
   if (f.style.paddingRight !== pad){ f.style.paddingRight = pad; autosize(); }
-  // P403: on a narrow phone in English 「Stop this turn」 left the message box 22 px wide (< the 44 px tap floor): the pill
-  // then says the short word; its aria-label / title keep the full meaning, and the next mode change restores the long word.
-  const w = b.querySelector("[data-i18n]");
-  if (w && b.dataset.mode === "turn" && w.getAttribute("data-i18n") === PILL_WORD.turn && input.getBoundingClientRect().width < 44){
-    w.setAttribute("data-i18n", "p403.stopShort"); w.textContent = t("p403.stopShort"); padForCancel();
-  }
+
 }
 let stopAskedAt = 0;
 const STOP_AGAIN_MS = 2500;
@@ -2730,7 +2757,7 @@ function stopTurn(){
   if (!C.api.slash("stop")){ toast(t('p328.stopNet'), 2400); return; }
   stopAskedAt = Date.now();
   toNewest();
-  toast(t('p328.stopSent'), 2200);
+  executionToast(t('p328.stopSent'), 2200);
 }
 function paintQueued(){
   paintSayCancel();
@@ -2821,6 +2848,10 @@ histSettled = settleQueued;
 // The whitelist commands (§8) run as commands when typed; /clear asks first. Anything else starting with / is text.
 const CMDS = ["clear", "new", "compact", "model", "context", "cost", "usage", "status", "help", "stop", "update"];
 const CMD_RE = /^\/([A-Za-z][\w:.-]{0,63})(?:[ \t]+([\s\S]*))?$/;
+// P424 (#145 security): a built-in command is "now or not at all" — the offline queue only carries words. A /clear, /model,
+// /compact … that waited out a rescue spell or a dropped link would land minutes later on whatever the session is by then.
+// Matched on the words alone (files / quotes riding along, a full-width ／ too), so nothing command-shaped slips into the queue.
+const isCmdText = (text) => { const m = /^[/\uff0f]([A-Za-z][\w:.-]{0,63})(?:\s|$)/.exec(String(text).trim()); return !!m && CMDS.includes(m[1].toLowerCase()); };
 async function runCmd(cmd, arg = ""){
   if (cmd === "new") cmd = "clear";                              // P341 (#50): /new is /clear (Codex users' word) — asks first too
   if (cmd === "model") pillDrop();                               // P239: typed /model is immediate; drop a waiting tap
@@ -2876,6 +2907,13 @@ async function say(voiceReady = false){
   // P406 #163 (Leo): the focus leaves the composer only once a message really went (settleField, or the send below starts);
   // an Enter with nothing to send, while sending / transcribing or stopped, keeps the cursor where the words are
   const text = input.value;
+  if (sending) return;
+  const emptyAudio = atts.filter(a => (a.origin === "recording" && !LR.usable(a.file, a.dur)) ||
+    (a.file.type.startsWith("audio/") && a.file.size < LR.MIN_REC_BYTES));
+  if (emptyAudio.length){
+    for (const a of emptyAudio) removeAtt(a);
+    toast(t('r.rec.tooShort'), 2600); return; // leave the words and other files for the owner to send
+  }
   if (!hasSayable() || sending || (asrBusy && voiceReady !== true)) return;                 // F27: files alone (no words) go too
   // P73 (ADR-A176): /add-friend is the friends page's signed fr_add, sent from here (the approval key never leaves the page);
   // it works while stopped (a request is not an Agent action) and opens the prefilled form when offline.
@@ -2895,9 +2933,13 @@ async function say(voiceReady = false){
     if (await sayPreset("cmds")){ pushHist(text); settleField(text); autosize(); saveDraft(); }
     return;
   }
+  // P414 (#179②): 「!」 + one line = a web terminal line (js/bang.js), never a chat message; it never queues offline either
+  const bang = !atts.length && !quotes.length && C.bang ? C.bang(text) : false;
+  if (bang){ if (await bang){ pushHist(text); settleField(text); autosize(); saveDraft(); } return; }
+  if (/^[/\uff0f](?:stop-all|stop_all|estop)$/i.test(text.trim())){ toast(t('p435.stopWhere'), 4000); return; }
   if (C.estopOn()){ toast(t('r.say.stopped'), 3200); return; }
   // 0.15.2: not connected, or older messages still waiting → it queues behind them (/stop, /clear never wait)
-  if (!C.connected() || (outbox.items.length && !/^\/(stop|clear|new)(\s|$)/i.test(text.trim()))) return sayLater(text);
+  if (!C.connected() || (outbox.items.length && !isCmdText(text))) return sayLater(text);
   const c = CMD_RE.exec(text.trim());
   if (c && CMDS.includes(c[1].toLowerCase()) && !atts.length && !quotes.length){
     if (!await runCmd(c[1].toLowerCase(), (c[2] || "").trim())) return;
@@ -2983,15 +3025,14 @@ function paintOut(){
   if (!C) return;
   // P282 (追加): a message queued behind a running turn shows in ONE place — its own page, marked 「排队中」 (showPage) —
   // never also as a pending line here; the field's 「取消」 still takes it back. This line is the offline outbox only.
-  paintOutbox(el("outbox"), outbox.items, {line: t('offline.line'), lostNote: t('offline.attLost'),
+  paintOutbox(el("outbox"), outbox.items, {line: t(peer.rescue ? 'p424.queueRescue' : 'offline.line'), lostNote: t('offline.attLost'),
     isLost: e => !!(e.att && e.att.length && !held.has(e.sid)), showLine: !C.connected() && (outbox.items.length > 0 || navigator.onLine === false)});
 }
 function drainOut(){ if (outbox.items.length) outbox.drain(); }
 function sayLater(text){
-  const c = CMD_RE.exec(text.trim());
-  const cmd = c && CMDS.includes(c[1].toLowerCase()) && !atts.length && !quotes.length ? c[1].toLowerCase() : null;
-  // 全部停下 / 清空 are "now or not at all": a stop that lands minutes later would cut whatever runs then
-  if (cmd === "stop" || cmd === "clear" || cmd === "new"){ toast(t('offline.now'), 2800); return; }
+  // 全部停下 / 清空 / 换模型 … are "now or not at all": a stop that lands minutes later would cut whatever runs then.
+  // P424 (#145 security): no built-in command queues — the words stay in the field, a line says to try again later.
+  if (isCmdText(text)){ toast(t(peer.rescue ? 'p424.cmdLater' : 'p424.cmdOffline'), 3200); return; }
   const bad = atts.filter(a => a.st === "failed");
   if (bad.length){ toast(t('r.say.badAtt', {n: bad.length}), 3200); return; }
   const list = atts.slice(), rt = quotes;
@@ -3027,10 +3068,13 @@ async function outSay(e){
     for (const a of live) if (gone.has(a.id)){ a.up = null; a.st = "up"; }
   }
 }
+let resent = 0, resentTimer = 0;
 function outDone(e, r, kind){
   const list = held.get(e.sid) || [];
   held.delete(e.sid);
   if (kind === "sent"){
+    resent++; clearTimeout(resentTimer);   // P424 (#145): what waited for the link is told once it went out
+    resentTimer = setTimeout(() => { if (resent) toast(t('p424.resent', {n: resent}), 3200); resent = 0; }, 800);
     if (r.ok && r.state === "queued" && !early.has(e.sid)) queued.push({sid: e.sid, text: e.text, atts: list.slice(), rt: null, turn: r.turn, at: Date.now()});
     else if (r.ok && Number.isInteger(r.turn)){ activeTurn = r.turn; sawDelivered(); }
     early.delete(e.sid);
@@ -3061,7 +3105,21 @@ const MENU_LIMITS = {items: 60, cmd: 64, desc: 200, group: 32};
 const MENU_CMD_RE = /^\/[A-Za-z0-9][A-Za-z0-9_:.\-]{0,62}$/;
 const RUN = ["compact", "clear", "new", "model", "context", "cost", "usage", "status", "stop", "update"];
 const runDescription = c => t('r.run.' + c);
-let hostMenu = null;          // {items:[[cmd, desc, group]], skills:[[cmd, desc]]}
+let hostMenu = null;          // {items:[[cmd, desc, group]], skills:[[cmd, desc]], native:[[cmd, desc, "", "run" | "agent" | "none"]], kind}
+// P412 (#175): the harness the list mirrors; a `status` naming another one (after /switch-harness) asks for the list again
+const HARNESS = {claude: "Claude Code", codex: "Codex", opencode: "OpenCode"};
+const harnessName = () => HARNESS[hostMenu?.kind] || hostMenu?.kind || "Agent";
+// #175 定稿 (Leo 20:2x): every one can be picked and typed; the host runs it (run), has the Agent do it (agent), or says why not (none)
+const tuiToast = (why) => toast(why || t('p412.tui', {h: harnessName()}), 2800);
+const NATIVE_ST = new Set(["run", "agent", "none"]);
+function nativeTag(st){ const i = document.createElement("i"); i.className = "ntag"; i.dataset.via = st; i.textContent = t(st === "run" ? 'p412.viaRun' : 'p412.viaAgent'); return i; }
+const noneWhy = (why) => (why || "").split(" · ").slice(1).join(" · ") || why;
+let menuKind = null;
+function kindSeen(k){
+  if (!k || k === menuKind) return;
+  const had = menuKind; menuKind = k;
+  if (had && hostMenu && hostMenu.kind !== k) loadMenu().catch(() => {});
+}
 // P238 (Leo 10-13 23:31): the version of the serve this connection talks to (every `preferences` message carries it). The
 // ⬆ row trusts it over a menu answer cached from before an upgrade's restart — the host log showed the phone back on the
 // new 0.20.2a1 serve at 23:29:07 and the row still saying 「0.20.1a1 → 0.20.2a1 · 点击即授权升级」 at 23:31.
@@ -3131,9 +3189,17 @@ function menuFromHost(j){
     seen.add(cmd);
     skills.push([cmd, typeof s.desc === "string" ? s.desc.slice(0, MENU_LIMITS.desc) : "", t('r.menu.skills')]);
   }
+  // P412 (#175): the harness's own commands (host harness_cmds.py) with their route; an older host's "tui" = none
+  const native = [];
+  for (const x of (Array.isArray(j.native) ? j.native : []).slice(0, 120)){
+    if (!x || typeof x.cmd !== "string" || !MENU_CMD_RE.test(x.cmd) || seen.has(x.cmd)) continue;
+    seen.add(x.cmd);
+    native.push([x.cmd, typeof x.desc === "string" ? x.desc.slice(0, MENU_LIMITS.desc) : "", "", NATIVE_ST.has(x.state) ? x.state : "none"]);
+  }
   const switchHarness = items.some(it => it[0] === SWITCH_CMD);
   const father = items.find(it => it[0] === "/feedback-to-agentj-father");
   return {father, items: items.filter(it => it[0] !== SWITCH_CMD && it !== father), skills: skills.filter(it => it[0] !== SWITCH_CMD), switchHarness, reload: j.reload === true,
+          native, kind: typeof j.kind === "string" ? j.kind.slice(0, 32) : null,
           upgrade: j.upgrade && typeof j.upgrade === "object" ? j.upgrade : {}, source: j.source === "file" ? "file" : "default"};
 }
 const IN_APP = / (?:JarvisApp|AgentJApp)\/\d/.test(navigator.userAgent);
@@ -3169,8 +3235,7 @@ function renderMenu(){
   item("/reset", t('p332.menuDesc'), {}).id = "resetEntry";   // P332 (§33): 紧急修复 ① — on every host (an old one simply never answers)
   item("/customize", t('p181.customize'), {prompt: "cmds"});   // P181: 定制命令 → the preset message (≡ hold does the same)
   for (const [cmd, why] of switchItems()) item(cmd, why, {}).id = "switchEntry";   // P238: one tap sends it
-  const stop = item("■", C.estopOn() ? t('estop.resume') : t('estop.btn'), {estop: C.estopOn() ? "resume" : "stop"});
-  stop.classList.add("estopitem");
+  if (C.estopOn()) { const resume = item("■", t('estop.resume'), {estop: "resume"}); menuIcon(resume, "stop"); }
   // P182: Agent J's own tools — inserted like a menu item (the human adds files / addresses and sends)
   group(t('r.menu.tools'));
   for (const [cmd, why] of toolItems()) item(cmd, why, {slash: cmd});
@@ -3187,6 +3252,16 @@ function renderMenu(){
   }
   if (host.skills.length){ group(t('r.menu.skills')); for (const [cmd, why] of host.skills) item(cmd, why, {slash: cmd}); }
   menuItems = RUN.map(c => ["/" + c, runDescription(c), ""]).concat(hostMenu?.reload ? [["/reload", t('p320.reloadDesc'), ""]] : [], [["/reset", t('p332.menuDesc'), ""]], [["/customize", t('p181.customize'), ""]], toolItems(true), switchItems(), fromHost, host.skills);
+  // P412 (#175): Agent J's own first — a harness command with the same name shows once (Agent J's)
+  const native = (host.native || []).filter(it => !menuItems.some(m => m[0] === it[0]));
+  if (native.length){
+    group(t('p412.native', {h: harnessName()}));
+    for (const [cmd, why, , st] of native){
+      if (st === "none"){ const b = item(cmd, why, {tui: noneWhy(why)}); b.classList.add("tui"); b.setAttribute("aria-disabled", "true"); }
+      else item(cmd, why, {slash: cmd}).querySelector("b").append(nativeTag(st));
+    }
+  }
+  menuItems = menuItems.concat(native);
   const k = item("?", t('r.keys.title'), {});
   k.className = "keysentry"; k.id = "keysEntry";
   if (CLIP_READ){ const c = item("📋", t('r.menu.clip'), {}); c.className = "clipentry"; c.id = "clipEntry"; }
@@ -3196,7 +3271,6 @@ function renderMenu(){
   // P187: the list's own entries wear the menu icon set (index.html #menuIcons) instead of a glyph
   const kinds = {keysEntry: "keys", clipEntry: "clip", modelsEntry: "models", appEntry: "app", silentEntry: "silent"};
   for (const b of nodes) if (kinds[b.id]) menuIcon(b, kinds[b.id]);
-  menuIcon(stop, "stop");
   menuList.replaceChildren(...nodes);
 }
 function menuIcon(b, kind){
@@ -3209,6 +3283,7 @@ async function loadMenu(){
   const j = await C.api.menu();
   if (!j) return;
   hostMenu = menuFromHost(j);
+  if (hostMenu?.kind) menuKind = menuKind || hostMenu.kind;
   renderMenu(); placeSheet();
 }
 function closeMenu(){ menu.hidden = true; delete el("menuSheet").dataset.drag; el("menuSheet").style.transform = ""; sheetDrag = null; }
@@ -3315,15 +3390,17 @@ function updateSug(){
   sugList = list;
   sugAt = 0;
   const q = m[1].toLowerCase();
-  sug.replaceChildren(...list.map(([cmd, why], i) => {
+  sug.replaceChildren(...list.map(([cmd, why, , st], i) => {
     const b = document.createElement("button");
     b.type = "button"; b.tabIndex = -1; b.id = "sug" + i; b.dataset.sug = String(i);
     b.setAttribute("role", "option");
+    if (st === "none"){ b.classList.add("tui"); b.setAttribute("aria-disabled", "true"); }
     const n = document.createElement("b");
     if (q && cmd.slice(1).toLowerCase().startsWith(q)){
       const mk = document.createElement("mark"); mk.textContent = cmd.slice(0, q.length + 1);
       n.append(mk, document.createTextNode(cmd.slice(q.length + 1)));
     } else n.textContent = cmd;
+    if (st === "run" || st === "agent") n.append(nativeTag(st));
     const d = document.createElement("span"); d.textContent = why;
     b.append(n, d);
     return b;
@@ -3335,6 +3412,7 @@ function updateSug(){
 }
 function pickSug(i){
   const it = sugList[i]; if (!it) return;
+  if (it[3] === "none"){ tuiToast(noneWhy(it[1])); return; }   // P412 (#175): no web page can do it — the typed text stays
   input.value = it[0] + " ";
   closeSug();
   focusComposer();
@@ -3617,7 +3695,7 @@ function segRoll(p){
 function segStop(p, n, chunks, rec, t0){
   const end = rec.closing || !p.over ? performance.now() : (p.recT1 || performance.now());
   const secs = Math.max(0, (end - t0) / 1000);
-  const type = (rec.mimeType || "audio/webm").split(";")[0];
+  const type = (rec.mimeType || chunks.find(b => b.type)?.type || "audio/webm").split(";")[0];
   if (rec !== p.rec || rec.closing && !rec.final){               // an earlier segment, cut while the take goes on
     if (chunks.length) segAttach(p, n, new Blob(chunks, {type}), secs);
     return;
@@ -3670,12 +3748,12 @@ function pttEnd(p, reason, quiet){
   p.recT1 = p.tUp || p.cutAt || performance.now();
   p.send = reason === "release" && !p.cancel && !!p.rec && (p.locked || p.interrupted || p.seg > 0 || held >= PTT_MIN_MS);
   if (!quiet){
-    if (reason === "release" && !p.cancel && !p.locked && !p.seg && held < PTT_MIN_MS) toast(t('r.ptt.short'), 1600);
+    if (reason === "release" && !p.cancel && !p.locked && !p.seg && held < PTT_MIN_MS) { /* empty tap: quietly discard */ }
     else if (!p.send && p.rec) toast(p.seg ? t('r.ptt.cancelledLast', {n: p.seg}) : t('r.ptt.cancelled'), p.seg ? 4200 : 1400);
   }
   if (p.rec){ p.rec.final = true; p.rec.closing = false; }
   if (p.rec && p.rec.state !== "inactive"){ try{ p.rec.stop(); }catch(_){ pttFinish(p, p.seg, null, 0); } }
-  else if (p.rec) pttFinish(p, p.seg, p.chunks.length ? new Blob(p.chunks, {type: (p.rec.mimeType || "audio/webm").split(";")[0]}) : null, recTotalMs(p) / 1000);
+  else if (p.rec) pttFinish(p, p.seg, p.chunks.length ? new Blob(p.chunks, {type: (p.rec.mimeType || p.chunks.find(b => b.type)?.type || "audio/webm").split(";")[0]}) : null, recTotalMs(p) / 1000);
   else if (p.stream) p.stream.getTracks().forEach(tr => tr.stop());
   pttUI(ptt);
 }
@@ -3689,6 +3767,7 @@ function audioExt(type){
 }
 // A segment of a long take → the tray at once (its upload starts while the recording goes on), in recording order.
 function segAttach(p, n, blob, secs, quiet){
+  if (!LR.usable(blob, secs)) { p.takeP?.then(id => id && LR.dropSeg(id, n)); return null; }
   const name = `${t('r.file.voice')}-${p.stampS}-${n + 1}.${audioExt(blob.type)}`;
   const f = new File([blob], name, {type: blob.type || "audio/webm"});
   if (f.size > UPLOAD_MAX){ toast(uploadError("too_big"), 3000); return null; }
@@ -3704,6 +3783,7 @@ function segAttach(p, n, blob, secs, quiet){
 function pttFinish(p, n, blob, secs){
   if (p.stream) p.stream.getTracks().forEach(tr => tr.stop());
   const dropTake = () => p.takeP?.then(id => id && LR.dropSeg(id, n));
+  if (!LR.usable(blob, secs)){ if (p.interrupted) intNote(p, n > 0 ? "tray" : "none"); dropTake(); return; }
   if (!p.send || !blob){ intNote(p, n > 0 ? "tray" : "none"); dropTake(); return; }   // P198: earlier parts are in the tray
   if (p.epoch !== localEpoch) return;
   if (n > 0 || secs > WAV_MAX_S){
@@ -3720,6 +3800,7 @@ let asrQueue = Promise.resolve();
 async function takeFinished(blob, dur, p){
   const takeEpoch = p?.epoch ?? localEpoch;
   const forget = () => p?.takeP?.then(id => id && LR.dropTake(id));
+  if (!LR.usable(blob, dur)){ forget(); return; }
   if (dur > voiceThresholdS()){
     if (atts.length < MAX_ATT){
       const w = blob.type === "audio/wav" ? {blob, secs: dur} : await toWav(blob);
@@ -3937,7 +4018,7 @@ async function moreSilent(){
 // P142 (A16): the sign-in QR / secret pickup / sudo-secret cards and the setup page also hold the keyboard (no shortcut leaks)
 const shownById = (id) => { const n = el(id); return !!n && !n.hidden; };
 const dialogOpen = () => search.isOpen() || !el("silent").hidden || !el("cam").hidden || !el("keys").hidden || !el("confirm").hidden || !el("badge-panel").hidden || !el("settings").hidden
-  || shownById("lqr") || shownById("sout") || shownById("elev") || shownById("setup-view");
+  || shownById("lqr") || shownById("sout") || shownById("elev") || shownById("setup-view") || fsed.isOpen();
 function openKeys(){ closeKeysFind(); paintKeys(); closeSug(); el("keys").hidden = false; el("keysClose").focus(); }   // P187: above the list / Settings
 // P207: the 「键盘快捷键」 page is drawn from interactions.json (interactions.gen.js ROWS + the ix* dictionary texts), never
 // written by hand: one card per group, a row per entry with a key — its keys, what it does and the mouse / touch gesture.
@@ -3973,6 +4054,20 @@ function paintKeys(){
     }
     sec.append(h, dl); cards.push(sec);
   }
+  // P412 #176: the cards' own keys, as they are given right now (Alt+Shift + a letter of the English title, or a digit)
+  const own = cardKeys().filter(c => !terms.length || terms.every(w => [c.title, c.combo, ...kbdTokens(c.combo, mac), ...both('ixw.cards'), ...both('ix.app.open_card')].join(' \n ').toLocaleLowerCase().includes(w)));
+  if (own.length){
+    const sec = document.createElement("section"); sec.className = "menucard"; sec.dataset.group = "cards";
+    const h = document.createElement("h3"); h.className = "setg"; h.textContent = t('ixw.cards');
+    const dl = document.createElement("dl"); dl.className = "keydl";
+    for (const c of own){
+      const dt = document.createElement("dt"), dd = document.createElement("dd"), line = document.createElement("span");
+      dt.dataset.card = c.key; line.className = "kcombo";
+      kbdTokens(c.combo, mac).forEach((tok, j) => { if (j) line.append("+"); const k = document.createElement("kbd"); k.textContent = tok; line.append(k); });
+      dt.append(line); dd.textContent = t('p412.openCard', {name: c.title}); dl.append(dt, dd);
+    }
+    sec.append(h, dl); cards.splice(cards[0] && cards[0].dataset.group === 'functional' ? 1 : 0, 0, sec);
+  }
   box.replaceChildren(...cards);
   const none = el("keysNone");
   if (none){ none.hidden = !(terms.length && !cards.length); none.textContent = none.hidden ? "" : t('r.keys.findNone'); }
@@ -3983,7 +4078,7 @@ function paintKeys(){
 const KEY_WORDS = {Mod: 'mod cmd command ctrl control ⌘', Alt: 'alt option opt ⌥', Shift: 'shift ⇧', Ctrl: 'ctrl control',
   Escape: 'esc escape', Enter: 'enter return', Space: 'space', Backspace: 'backspace delete ⌫'};
 function keysHay(g, [id, keys]){
-  const parts = [...both('ix.' + id), ...both('ixges.' + id), ...both('ixw.' + g), ...both('ixgrp.' + id.split('.')[0])];
+  const parts = [...both('ix.' + id), ...both('ixkw.' + id), ...both('ixges.' + id), ...both('ixw.' + g), ...both('ixgrp.' + id.split('.')[0])];
   for (const [combo, how] of keys){
     const drawn = [kbdTokens(combo, true), kbdTokens(combo, false)].map(x => x.join('+'));
     parts.push(combo, ...drawn, ...drawn.map(x => x.replace(/\+/g, '')), combo.replace(/\+/g, ''));
@@ -4114,40 +4209,7 @@ function clearComposer(){
   for (const a of atts.slice()) removeAtt(a);
   toast(t('r.clear.done'), 1400);
 }
-// readline editing in the composer
-var killBuf = "";
-function lineBounds(v, at){
-  const s0 = v.lastIndexOf("\n", at - 1) + 1;
-  let e0 = v.indexOf("\n", at); if (e0 < 0) e0 = v.length;
-  return [s0, e0];
-}
-function edit(a, b, ins){
-  const v = input.value, want = v.slice(0, a) + ins + v.slice(b);
-  input.setSelectionRange(a, b);
-  try{ document.execCommand(ins ? "insertText" : "delete", false, ins); }catch(_){}
-  if (input.value !== want){
-    input.value = want;
-    input.dispatchEvent(new Event("input"));
-  }
-  input.setSelectionRange(a + ins.length, a + ins.length);
-}
-function kill(a, b){
-  if (b <= a) return;
-  killBuf = input.value.slice(a, b);
-  edit(a, b, "");
-}
-const READLINE = {
-  a(){ const [s0] = lineBounds(input.value, input.selectionStart); input.setSelectionRange(s0, s0); },
-  e(){ const [, e0] = lineBounds(input.value, input.selectionEnd); input.setSelectionRange(e0, e0); },
-  u(){ const at = input.selectionStart, [s0] = lineBounds(input.value, at); kill(s0, at); },
-  k(){ const v = input.value, at = input.selectionStart, [, e0] = lineBounds(v, at);
-       kill(at, e0 === at && at < v.length ? at + 1 : e0); },
-  w(){ const v = input.value, at = input.selectionStart; let i = at;
-       while (i > 0 && /\s/.test(v[i - 1])) i--;
-       while (i > 0 && !/\s/.test(v[i - 1])) i--;
-       kill(i, at); },
-  y(){ if (killBuf) edit(input.selectionStart, input.selectionEnd, killBuf.slice(0, MAX_TEXT() - input.value.length)); },
-};
+// readline editing in the composer: js/termkeys.js (P412: shared with the full-screen editor)
 // ↑ / ↓ history of sent messages: the last 50, sealed in IndexedDB (§10.14), loaded once into memory.
 const HIST_MAX = 50;
 var histAt = -1, histMem = [];
@@ -4178,6 +4240,49 @@ function histKey(up){
   if (histAt >= h.length - 1){ histAt = -1; histShow(""); return true; }
   histAt++; histShow(h[histAt]); return true;
 }
+function openFull(){ closeSug(); closeMenu(); fsed.open(); }
+// A finger on the message box that moves up ≥ 56 px (more up than sideways) opens full screen. While the box's own lines can
+// still scroll that way the finger scrolls them as before; the 56 px count from where they reached their end.
+function swipeUpToFull(field){
+  if (!field) return;
+  let sw = null;
+  const atEnd = () => input.scrollTop + input.clientHeight >= input.scrollHeight - 1;
+  field.addEventListener("touchstart", e => {
+    sw = e.touches.length === 1 ? {x: e.touches[0].clientX, y: e.touches[0].clientY} : null;
+  }, {passive: true});
+  field.addEventListener("touchmove", e => {
+    if (!sw || e.touches.length !== 1) return;
+    const tt = e.touches[0];
+    if (!atEnd()){ sw.y = tt.clientY; sw.x = tt.clientX; return; }
+    const dx = tt.clientX - sw.x, dy = sw.y - tt.clientY;
+    if (dy >= 56 && dy > Math.abs(dx) * 1.5){ sw = null; openFull(); }
+  }, {passive: true});
+  field.addEventListener("touchend", () => { sw = null; }, {passive: true});
+}
+// P412 (#174): Ctrl+S puts the draft aside / brings it back (Claude Code's stash; this tab's memory only), Ctrl+R finds an
+// earlier message that contains what the box says (again = further back; the box's words are the search).
+let stash = null, hfind = null;
+function stashKey(){
+  const v = input.value;
+  if (!v && stash === null) return;
+  const back = stash; stash = v || null;
+  input.value = back || "";
+  input.dispatchEvent(new Event("input"));
+  input.setSelectionRange(input.value.length, input.value.length);
+  toast(t(back === null ? 'p412.stashed' : 'p412.unstashed'), 1800);
+}
+function histFind(){
+  const h = histLoad();
+  if (!hfind || input.value !== hfind.shown) hfind = {q: input.value.trim().toLowerCase(), at: h.length, shown: null};
+  for (let i = hfind.at - 1; i >= 0; i--){
+    if (hfind.q && !h[i].toLowerCase().includes(hfind.q)) continue;
+    hfind.at = i; hfind.shown = h[i];
+    histShow(h[i]);
+    toast(t('p412.histHit', {n: h.length - i}), 1400);
+    return;
+  }
+  toast(t('p412.histNone'), 1800);
+}
 /** Unpair / re-pair / revoke (§10.14, P33-X02 / X13): nothing typed, attached, queued or remembered for one computer
  *  survives in memory — the ↑↓ history, the field, the quote, the tray (object URLs revoked), the queued sends and the one in
  *  flight (cancelled; it never resumes). A transcription still on its way is dropped when it lands (localEpoch). */
@@ -4185,6 +4290,7 @@ let localEpoch = 0;
 export function forgetLocal(){
   localEpoch++;
   histMem = []; histAt = -1;
+  forgetKill(); stash = null; hfind = null; fsed.forget();   // P412: the kill ring, Ctrl+S and the full-screen copy too
   clearTimeout(draftTimer); lastSent = null;
   if (inflight){ inflight.cancelled = true; inflight.forgotten = true; if (inflight.wake) inflight.wake(); }
   queued.length = 0;
@@ -4222,6 +4328,7 @@ function relang(){
 const CAM_HOLD_MS = 500;
 export function init(ctx){
   C = ctx;
+  replyNotice(el("sheet")); el("sheet").hidden = true; document.body.dataset.permissionInset = "1";
   input = el("input"); mainEl = el("main"); deck = el("deck"); tray = el("tray"); menu = el("menu"); menuList = el("menuList"); sug = el("sug"); mic = el("mic");
   for(const [id,close,fallback,rank,trap] of [
     ['rd',closeReader,'readBtn',45,true],['cam',closeCam,'tCamera',50,true],
@@ -4277,7 +4384,8 @@ export function init(ctx){
     if (!b || b.disabled || !a || askState(a) !== "open" || askBusy) return;
     const qi = +b.dataset.q, n = +b.dataset.n, multi = !!(a.questions[qi] || {}).multi;
     if (askSel.id !== a.id) askSel = {id: a.id, picks: a.questions.map(() => [])};
-    const c0 = askSel.picks[qi] || [];
+    const c0 = Array.isArray(askSel.picks[qi]) ? askSel.picks[qi] : [];
+    const field = el("qs").querySelectorAll(".qfree textarea")[qi]; if (field) field.value = "";
     askSel.picks[qi] = multi ? (c0.includes(n) ? c0.filter(x => x !== n) : c0.concat([n]).sort((x, y) => x - y)) : (c0[0] === n ? [] : [n]);
     renderCard(cur);
   });
@@ -4519,7 +4627,7 @@ export function init(ctx){
   document.addEventListener("paste", e => {
     const cd = e.clipboardData, l = activeLayer();
     if (e.defaultPrevented || !cd || editable(e.target) || editable(document.activeElement) || modalOpen() || (l && l.rank >= 0)
-        || input.disabled || !input.getClientRects().length) return;
+        || document.querySelector("dialog[open]") || input.disabled || !input.getClientRects().length) return;
     const text = cd.getData("text/plain");
     if (!text && !clipFiles(cd).length) return;
     takePaste(e, input.value.length);
@@ -4657,9 +4765,10 @@ export function init(ctx){
     if (b.id === "clipEntry"){ closeMenu(); pasteClipImages(); return; }
     if (b.id === "switchEntry"){ closeMenu(); saySwitch(); return; }
     if (b.id === "resetEntry"){ closeMenu(); C.resetConn?.(); return; }   // P332: Settings → 紧急修复, ① starts
-    if (b.dataset.run){ closeMenu(); if (await runCmd(b.dataset.run)) { toNewest(); toast(t('r.run.sent', {cmd: "/" + b.dataset.run}), 1600); } return; }
+    if (b.dataset.run){ closeMenu(); if (await runCmd(b.dataset.run)) { toNewest(); executionToast(t('r.run.sent', {cmd: "/" + b.dataset.run}), 1600); } return; }
     if (b.dataset.prompt){ closeMenu(); sayPreset(b.dataset.prompt); return; }
     if (b.dataset.estop){ closeMenu(); C.estop(b.dataset.estop === "stop"); return; }
+    if (b.dataset.tui !== undefined){ tuiToast(b.dataset.tui); return; }   // P412 #175: listed with the reason it cannot be done here
     if (b.dataset.slash){ closeMenu(); insertSlash(b.dataset.slash); }
   });
   input.addEventListener("input", () => { if (!composing) updateSug(); });
@@ -4814,6 +4923,12 @@ export function init(ctx){
   sendvol.attach(el("send"), input);
   el("sayCancel").addEventListener("click", e => { e.stopPropagation(); cancelSay(); });
   if (window.ResizeObserver) new ResizeObserver(padForCancel).observe(el("sayCancel"));   // P328: language / type size
+  // P412 (#174): the full-screen editor — the tool row's fifth button (@ix compose.fullscreen), Ctrl+G, a swipe up on the box
+  fsed.init({input, maxText: MAX_TEXT, send: () => { unlockWhoosh(); say(); }, items: () => menuItems, tui: tuiToast, t, toastAction,
+             touch: touchComposer});
+  el("tFull").addEventListener("mousedown", e => e.preventDefault());   // the box keeps its caret
+  el("tFull").addEventListener("click", openFull);
+  swipeUpToFull(input.closest(".field"));
   const clr = el("clr");
   for (const ev of ["pointerdown", "mousedown"]) clr.addEventListener(ev, e => {
     clr._keep = clr._keep || document.activeElement === input;
@@ -4835,7 +4950,11 @@ export function init(ctx){
     }, 5000);
   });
   input.addEventListener("keydown", e => {
-    if (e.key === "Enter" && !e.shiftKey && !e.isComposing && e.keyCode !== 229){ e.preventDefault(); unlockWhoosh(); say(); }   // @ix compose.send
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing && e.keyCode !== 229){   // @ix compose.send compose.newline
+      e.preventDefault();
+      if (!e.ctrlKey && !e.metaKey && !e.altKey && backslashEnter(input)) return;   // P412: `\` + Enter = a new line
+      unlockWhoosh(); say();
+    }
   });
   el("silentClose").addEventListener("click", closeSilent);
   el("silentMore").addEventListener("click", moreSilent);
@@ -4936,6 +5055,12 @@ export function init(ctx){
       input.setRangeText("/", n, n, "end");
       input.dispatchEvent(new InputEvent("input", {inputType: "insertText", data: "/", bubbles: true}));
     },
+    "compose.mention": () => {
+      if (modalOpen() || activeLayer() || document.querySelector('dialog[open]') || input.disabled) return;
+      input.focus({preventScroll:true}); const n = input.value.length;   // the @ key: a keyboard is there, focus even on touch
+      input.setRangeText((n && !/\s$/.test(input.value) ? ' ' : '') + '@', n, n, 'end');
+      input.dispatchEvent(new InputEvent('input', {inputType:'insertText',data:'@',bubbles:true}));
+    },
     "compose.customize": () => { closeMenu(); sayPreset("cmds"); },
     "compose.file": () => pick("tDoc"),
     "compose.paste_text": () => pasteClipText(),
@@ -4951,12 +5076,13 @@ export function init(ctx){
     // Preserve the locked take's existing any-key release, then perform the deliberate function action.
     if (ptt && ptt.locked && !e.repeat) pttEnd(ptt, 'release');
     // Secret/approval layers keep ownership; never navigate away from an unanswered sensitive card.
-    const blocked = !el('confirm').hidden || shownById('lqr') || shownById('sout') || shownById('elev') || document.body.dataset.sheet === '1';
+    const blocked = !el('confirm').hidden || shownById('lqr') || shownById('sout') || shownById('elev') || document.body.dataset.sheet === '1' || fsed.isOpen();
     dispatchFunctional(e, ACT, C.paired?.(), blocked);
   }, true);
   document.addEventListener("keydown", e => {
     if (e.isComposing || (e.keyCode === 229 && !isM(e))) return;
     if (document.body.dataset.view !== "chat") return;
+    if (fsed.isOpen()) return;   // P412: the full-screen editor has its own keys (js/fsedit.js); Esc = layers.js
     const tg = e.target;
     if (e.key === "Escape"){
       if (!el("silent").hidden){ e.preventDefault(); closeSilent(); return; }
@@ -5003,10 +5129,16 @@ export function init(ctx){
       if (f){ e.preventDefault(); f(); }
       return;
     }
+    // @ix compose.fullscreen — P412 (#174): Ctrl+G (Claude Code's 「在编辑器里写」) opens the full-screen editor
+    if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && (e.key === "g" || e.key === "G" || e.code === "KeyG")
+        && (tg === input || !(typingIn(tg) || dialogOpen()))){ e.preventDefault(); openFull(); return; }
     if (tg === input){
       const k = e.key.length === 1 ? e.key.toLowerCase() : "";
-      // @ix compose.readline compose.history compose.edge_arrows
-      if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && READLINE[k]){ e.preventDefault(); READLINE[k](); return; }
+      const ctrl = e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey;
+      // @ix compose.readline compose.history compose.edge_arrows compose.stash compose.history_search
+      if (termKey(e, input, MAX_TEXT())) return;
+      if (ctrl && k === "s"){ e.preventDefault(); stashKey(); return; }
+      if (ctrl && k === "r"){ e.preventDefault(); histFind(); return; }
       if ((e.key === "ArrowUp" || e.key === "ArrowDown") && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey
           && !e.defaultPrevented && sug.hidden && histKey(e.key === "ArrowUp")){ e.preventDefault(); return; }
       // P150: ← / → turn the card when the caret has nowhere to go (empty field, or already at that end); never on a held key with text.
@@ -5070,7 +5202,7 @@ export function onReady(){ syncQueued(); paintVoiceReadiness(); refreshNewest();
 export function onEstop(){ paintPlaceholder(); renderMenu(); refreshSend(); }
 export function rerender(){ paintVoiceReadiness(); if (cur) render(cur); else showPage(); }
 /** For the screens test: internal state worth asserting. */
-export function debug(){ return {search: search.debug(), pageAt, follow, pages: pages().length, total: totalPages(), atts: atts.map(a => ({st: a.st, name: a.name, id: a.id || null, origin: a.origin})), queued: queued.length, asrBusy, hist: hist.turns.map(x => x.id), menuItems: menuItems.map(x => x[0]), ptt: ptt ? {locked: ptt.locked, cancel: ptt.cancel} : null, lockCount, histMem: histMem.slice(), killBuf}; }
+export function debug(){ return {search: search.debug(), pageAt, follow, pages: pages().length, total: totalPages(), atts: atts.map(a => ({st: a.st, name: a.name, id: a.id || null, origin: a.origin})), queued: queued.length, asrBusy, hist: hist.turns.map(x => x.id), menuItems: menuItems.map(x => x[0]), ptt: ptt ? {locked: ptt.locked, cancel: ptt.cancel} : null, lockCount, histMem: histMem.slice(), killBuf: killed()}; }
 
 
 let userPreferences={};

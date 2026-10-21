@@ -90,7 +90,7 @@ export async function runP332({ B, web, fake, out = OUT }) {
       check(order[0] === 'set-s-agent' && order[1] === 'set-s-rescue', 'Agent J first, 紧急修复 second ' + tag + ' ' + order.slice(0, 3));
       check(await evaluate(p, `${$('set-h-rescue')}.textContent`) === s.title, 'block title ' + tag);
       check(await evaluate(p, `!!${$('set-auth-nav')}.closest('#rs-auth') && !${$('set-s-agent')}.querySelector('#set-auth-nav')`), '③ = the moved AI login entry ' + tag);
-      check(await evaluate(p, `[...document.querySelectorAll('#set-s-rescue .rscard')].map(c=>c.id).join()`) === 'rs-reset,rs-help,rs-auth,rs-restart', 'cards ① ② ③ ' + tag);
+      check(await evaluate(p, `[...document.querySelectorAll('#set-s-rescue .rscard')].map(c=>c.id).join()`) === 'rs-reset,rs-session,rs-help,rs-auth,rs-restart', 'reset → reopen session → help → login → restart ' + tag);
       check(await evaluate(p, `${$('rs-help')}.hasAttribute('data-dim') && !${$('rs-help')}.hasAttribute('data-hl')`), '② dimmed before ① failed ' + tag);
       if (w >= 900) check(await evaluate(p, `[...document.querySelectorAll('.setside [data-set-jump]')].filter(b=>!b.hidden).map(b=>b.dataset.setJump).slice(0,2).join()`) === 'set-s-agent,set-s-rescue', 'side navigation: 紧急修复 second ' + tag);
       // every pressable thing in the block ≥ 44 px, nothing wider than the screen

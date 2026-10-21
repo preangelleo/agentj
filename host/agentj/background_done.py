@@ -68,7 +68,7 @@ class Notifier:
             self.seen.append(key)
             self.seen = self.seen[-512:]
             changed = True
-            if self.enabled():
+            if self.enabled() and not v.get("fg"):   # P426: a foreground sub-agent's result is already in the turn
                 self.pending[key] = {
                     "label": privacy.redact(v.get("label") or v.get("who") or "后台活", paths=True),
                     "since": v["since"], "ended": v["ended"], "exit_code": v.get("exit_code"),

@@ -40,21 +40,21 @@ try {
     await evaluate(p,`Object.assign(document.body.dataset,{status:${JSON.stringify(state==='question'?'waiting':state==='offline'?'unknown':state)},kind:${JSON.stringify(state==='question'?'question':'')},conn:${JSON.stringify(state==='offline'?'off':'on')}})`);
     await sleep(150);
     const r = await evaluate(p,`(() => {const b=document.getElementById('sabband'),s=getComputedStyle(b),r=b.getBoundingClientRect(),c=document.querySelector('.composer'),inp=document.getElementById('input'); return {band:s.backgroundColor,body:getComputedStyle(document.body).backgroundColor,theme:document.querySelector('meta[name=theme-color]').content,top:r.top,bottom:r.bottom,height:r.height,padding:parseFloat(getComputedStyle(c).paddingBottom),inputBottom:inp.getBoundingClientRect().bottom,hit:s.pointerEvents,topBand:getComputedStyle(document.getElementById('satband')).backgroundColor};})()`);
-    assert.deepEqual(rgb(r.band),name==='ios390'?[20,20,20]:rgb(r.body),`${name}/${scheme}/${state}: band = body`);
-    assert.deepEqual(rgb(r.topBand),name==='ios390'?[20,20,20]:rgb(r.body),'top status area remains correct');
-    assert.equal(r.theme,'#'+(name==='ios390'?[20,20,20]:rgb(r.body)).map(v=>v.toString(16).padStart(2,'0')).join(''));
+    assert.deepEqual(rgb(r.band),[20,20,20],`${name}/${scheme}/${state}: safe-area band remains Sooty (P422)`);
+    assert.deepEqual(rgb(r.topBand),[20,20,20],'top status area remains correct');
+    assert.equal(r.theme,'#'+([20,20,20]).map(v=>v.toString(16).padStart(2,'0')).join(''));
     assert.equal(r.height,inset); assert.equal(r.bottom,h); assert.equal(r.hit,'none');
     assert.equal(r.padding,12+inset); assert.ok(r.inputBottom<=h-inset);
     const file=`${out}${name}-${scheme}-${state}.png`;
     writeFileSync(file,await shoot(p));
-    if(inset) assert.deepEqual(rgb(pixel(file,5,h-2)),name==='ios390'?[20,20,20]:rgb(r.body),'actual bottom screenshot pixel = body');
+    if(inset) assert.deepEqual(rgb(pixel(file,5,h-2)),[20,20,20],'actual bottom screenshot pixel remains Sooty');
     results.push({name,scheme,state,...r});
    }
   }
   if(inset) {
    await evaluate(p,`document.body.dataset.reader='1'`);await sleep(100);
-   // P290 merge: P273's reader paints with the one dialog token (--dlg-bg, Noir); the band follows the reader, not a fixed Sooty
-   assert.deepEqual(rgb(await evaluate(p,`getComputedStyle(document.getElementById('sabband')).backgroundColor`)),name==='ios390'?[20,20,20]:rgb(await evaluate(p,`getComputedStyle(document.getElementById('rd')).backgroundColor`)),'reader band = the reader colour');
+   // P422 / P417 #205: system safe areas remain Sooty during reading on every device.
+   assert.deepEqual(rgb(await evaluate(p,`getComputedStyle(document.getElementById('sabband')).backgroundColor`)),[20,20,20],'reader safe-area band remains Sooty');
    await evaluate(p,`document.body.dataset.reader='0'`);
    // A positive control: water would tint the navigation area without the opaque band.
    await evaluate(p,`document.getElementById('water').style.cssText='display:block;height:100%;background:rgb(1,2,3)';document.getElementById('sabband').style.display='none'`);

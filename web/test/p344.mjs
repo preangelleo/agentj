@@ -54,7 +54,7 @@ try {
       check(pad >= 8, 'text kept off the field edge: ' + pad);
 
       // description, both languages, case, keys as written / drawn, gesture text
-      for (const [q, id] of [['截取', 'app.screenshot'], ['CAPTURE THIS', 'app.screenshot'], ['alt+shift+c', 'app.screenshot'], ['长按齿轮', 'app.screenshot'],
+      for (const [q, id] of [['截图', 'app.screenshot'], ['截屏', 'app.screenshot'], ['SCREENSHOT', 'app.screenshot'], ['snapshot', 'app.screenshot'], ['截取', 'app.screenshot'], ['CAPTURE THIS', 'app.screenshot'], ['alt+shift+c', 'app.screenshot'], ['长按齿轮', 'app.screenshot'],
         ['hold the gear', 'app.screenshot'], ['⌥⇧c', 'app.screenshot'], ['Ctrl+K', 'app.search'], ['cmd k', 'app.search'], ['esc', 'keys.search_close']]) {
         await type(p, q);
         const got = await rows(p);

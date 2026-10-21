@@ -212,6 +212,68 @@ def new_argv(info: dict) -> list[str]:
     return agentj_argv()
 
 
+def _pinned(run):
+    """P423 (#193): `run` that starts an installer Command with the variables it carries (auto_update.install_env: the uv
+    tool directory of the running venv); a plain argv runs as before."""
+    from .auto_update import run_env
+
+    def go(cmd, **kw):
+        env = run_env(cmd)
+        return run(cmd, **kw, **({"env": env} if env is not None and "env" not in kw else {}))
+    return go
+
+
+def uv_tool_dir(environ: dict | None = None) -> str | None:
+    """Where `uv tool install` puts tools with this environment (UV_TOOL_DIR, else $XDG_DATA_HOME/uv/tools, else
+    ~/.local/share/uv/tools); None on Windows (not mirrored here)."""
+    e = os.environ if environ is None else environ
+    if os.name == "nt":
+        return None
+    if e.get("UV_TOOL_DIR"):
+        return os.path.expanduser(e["UV_TOOL_DIR"])
+    data = e.get("XDG_DATA_HOME") if os.path.isabs(e.get("XDG_DATA_HOME") or "") else os.path.expanduser("~/.local/share")
+    return os.path.join(data, "uv", "tools")
+
+
+VERIFY_KINDS = ("old_version", "other_version", "no_version", "exit_nonzero", "not_found", "not_runnable")
+
+
+def version_diag(v, target: str, frm: str | None, info: dict, environ: dict | None = None) -> dict:
+    """P423 (#193): why the verify step did not see `target`. `v` = the `--version` CompletedProcess, or the OSError that
+    kept it from starting. → {"verify": one of VERIFY_KINDS, "detail": fixed words (P277 carries it to support), and
+    "stderr_tail": the redacted, bounded output when there was any}. For a uv install the detail also says whether this
+    environment's own uv tool directory is the running venv's (same / differs) — a category, never a path."""
+    from .upgrade_diag import tail
+    out = {}
+    if isinstance(v, OSError):
+        kind = "not_found" if isinstance(v, FileNotFoundError) else "not_runnable"
+    else:
+        text = ((getattr(v, "stdout", None) or "") + "\n" + (getattr(v, "stderr", None) or ""))
+        words = text.split()
+        if getattr(v, "returncode", 0):
+            kind = "exit_nonzero"
+        elif frm and frm in words:
+            kind = "old_version"
+        elif any(parse(w) for w in words):
+            kind = "other_version"
+        else:
+            kind = "no_version"
+        t = tail(text)
+        if t:
+            out["stderr_tail"] = t
+    detail = "verify: " + kind + (f" (exit {v.returncode})" if kind == "exit_nonzero" and isinstance(v.returncode, int) else "")
+    if info.get("kind") == "uv" and info.get("where"):
+        try:
+            mine = os.path.realpath(os.path.dirname(os.path.normpath(os.path.abspath(info["where"]))))
+            theirs = uv_tool_dir(environ)
+            if theirs:
+                out["tool_dir"] = "same" if os.path.realpath(theirs) == mine else "differs"
+                detail += " · uv tool dir: " + out["tool_dir"]
+        except (OSError, ValueError):
+            pass
+    return {**out, "verify": kind, "detail": detail}
+
+
 def command_text(info: dict, latest: str | None = None) -> str:
     return " && ".join(shlex.join(c) for c in commands(info, latest))
 
@@ -469,6 +531,7 @@ def rollback_wheel(st):
 def roll_back(st, info: dict, wheel, frm: str, run) -> bool:
     """Reinstall the cached old wheel (auto_update.install_commands, hash re-checked) and confirm `--version`. The marker
     and the pending record go: nothing may announce the failed version."""
+    run = _pinned(run)          # P423 (#193): the old wheel goes back into the same uv tool directory
     try:
         (st.root / UPGRADED).unlink(missing_ok=True)
         (st.root / PENDING).unlink(missing_ok=True)
@@ -502,7 +565,7 @@ def recover_of(info: dict, wheel, rb: str) -> dict:
         cmds = auto_update.install_commands(info, wheel)
     except Exception:  # noqa: BLE001
         return {}
-    return {"recover": " && ".join(shlex.join(c) for c in cmds)} if cmds else {}
+    return {"recover": " && ".join(auto_update.command_line(c) for c in cmds)} if cmds else {}
 
 
 def take_marker(st, now: float | None = None) -> dict | None:
@@ -841,9 +904,10 @@ def _authorized_apply(st, code: str | None, target: str | None, *, mail: dict | 
         st.log("upgrade_rollback", status=rb, reason=reason)
         return done(reason, rollback=rb, **recover_of(info, old, rb), **kw)
     out["step"] = "install"
+    from .auto_update import command_line
     for c in plan:
-        say("$ " + shlex.join(c))
-        rc, tl = run_step(run, c, say)
+        say("$ " + command_line(c))
+        rc, tl = run_step(_pinned(run), c, say)
         if rc != 0:
             st.log("upgrade_failed", status=str(rc))
             return back("uv_failed", stderr_tail=tl)
@@ -852,11 +916,11 @@ def _authorized_apply(st, code: str | None, target: str | None, *, mail: dict | 
     try:
         v = run(argv + ["--version"], stdin=subprocess.DEVNULL, capture_output=True, text=True)
         now_v = ((v.stdout or "") + " " + (v.stderr or "")).split()
-    except OSError:
-        now_v = []
+    except OSError as e:
+        v, now_v = e, []
     if target not in now_v:
         st.log("upgrade_failed", status="version")
-        return back("not_upgraded")
+        return back("not_upgraded", **version_diag(v, target, __version__, info))
     st.log("upgrade_done", status=target)
     if svc_on is None:
         from . import service
@@ -996,9 +1060,10 @@ def _apply(st, target=None, *, prefix=None, check_fn=None, run=None, say=None, s
             st.log("upgrade_rollback", status=rb, reason=reason)
         return done(reason, rollback=rb, **recover_of(info, old, rb), **kw)
     out["step"] = "install"
+    from .auto_update import command_line
     for cmd in plan:
-        say("$ " + shlex.join(cmd))
-        rc, tl = run_step(run, cmd, say)
+        say("$ " + command_line(cmd))
+        rc, tl = run_step(_pinned(run), cmd, say)
         if rc:
             if not fenced and st.exists():
                 st.log("upgrade_failed", status=str(rc))
@@ -1020,7 +1085,7 @@ def _apply(st, target=None, *, prefix=None, check_fn=None, run=None, say=None, s
     try:
         v = run(argv + ["--version"], stdin=subprocess.DEVNULL, capture_output=True, text=True)
         if v.returncode or target not in ((v.stdout or "") + " " + (v.stderr or "")).split():
-            return back("not_upgraded")
+            return back("not_upgraded", **version_diag(v, target, __version__, info))
         if svc_on:
             record("pending")
             out["step"] = "service"

@@ -1,14 +1,16 @@
 // P408 (PROTOCOL §38, ADR-P408-terminal): the always-loaded part of the web terminal — the Settings → 安全 → 「网页终端」 row,
 // the 「在终端里打开」 door next to P361's 「执行」, and the routing of the host's term_* messages. The terminal page itself
 // (js/terminal.js + terminal.css) is loaded on the first open only, as a module script next to this file (never in the
-// first-screen bundle). The phone can only end its own session and forget its own cached password — never switch the
-// terminal on: the row only names the command to run at the computer.
+// first-screen bundle). P417 #185 (Leo 10-21): the terminal is used from a COMPUTER browser only. There the row can switch it
+// on for this browser (`term_open` mode "enable": Face ID + the Agent J host's login password, then it opens in this window);
+// the copyable `agentj terminal enable` stays as the other way. On a phone the row only says why not — no buttons. This
+// judgement is UX routing only; the host refuses a remote that paired as a phone by itself (terminal.py).
 import { signedWrite, whyText } from './controls.js';
 import { myIdSync } from './api.js';
 import { t, onLang } from './t.js';
 import { el, toast } from './ui.js';
 
-let info = null, mod = null, waiting = null, H = { setupFaceId() {}, openSettings() {}, openRescue() {}, changed() {} };
+let info = null, mod = null, waiting = null, H = { setupFaceId() {}, openSettings() {}, openRescue() {}, changed() {}, attach() {}, insert() {}, goChat() {} };
 const MODES = ['prf', 'local', 'session'];
 /** The host block `terminal` (absent on an older host → null; no row). */
 function parse(x) {
@@ -16,11 +18,28 @@ function parse(x) {
   const minutes = Number.isInteger(x.minutes) && x.minutes >= 1 && x.minutes <= 60 ? x.minutes : 15;
   return { on: x.on, os: x.os, me: x.me === true, web_ok: x.web_ok !== false, sudo: MODES.includes(x.sudo) ? x.sudo : null,
     minutes, idle_s: Number.isInteger(x.idle_s) && x.idle_s > 0 ? x.idle_s : 300, open: x.open === true,
-    until: Number.isInteger(x.until) ? x.until : null };
+    until: Number.isInteger(x.until) ? x.until : null, pk: x.pk !== false,   // P417 #185: pk absent (older host) → no Face ID line
+    kind: ['phone', 'desktop', 'unknown'].includes(x.kind) ? x.kind : null };   // P417 #185: null = an older host (no remote enable)
 }
-/** 'none' (no row) · 'off' · 'notme' · 'noweb' · 'ok'. */
+/** P417 #185: is this a computer browser? A combined judgement — a phone / tablet user agent, an iPad asking for the desktop
+ *  site, a finger as the main pointer, a touch screen without a mouse / trackpad, or a phone-sized touch screen all say
+ *  "phone". A narrow window alone does not (a computer browser can be narrow; a test browser may report no pointer). UX routing only: the host's own check is the device kind recorded at pairing. */
+export function computerBrowser(env = globalThis) {
+  const nav = env.navigator || {}, ua = String(nav.userAgent || '');
+  const mm = (q) => { try { return !!env.matchMedia?.(q).matches; } catch { return false; } };
+  if (/Android|iPhone|iPad|iPod|Mobile|HarmonyOS|OpenHarmony/i.test(ua)) return false;
+  if (nav.platform === 'MacIntel' && nav.maxTouchPoints > 1) return false;
+  if (mm('(pointer: coarse)')) return false;                       // the main pointer is a finger
+  const touch = (nav.maxTouchPoints || 0) > 0, sc = env.screen || {};
+  if (touch && !mm('(pointer: fine)')) return false;               // a touch screen and no mouse / trackpad
+  return !(touch && Math.min(sc.width || 9999, sc.height || 9999) < 600);   // a phone-sized touch screen
+}
+/** 'none' (older host: no row) · 'os' (macOS / Windows host: not yet) · 'phone' · 'off' · 'notme' · 'noweb' · 'ok'. P417 #185:
+ *  the row stays in 安全 whenever the host knows the feature, so the owner finds it without reading the docs. */
 export function state() {
-  if (!info || !info.os) return 'none';
+  if (!info) return 'none';
+  if (!info.os) return 'os';
+  if (info.kind === 'phone' || !computerBrowser()) return 'phone';
   if (!info.on) return 'off';
   if (!info.me) return 'notme';
   return info.web_ok ? 'ok' : 'noweb';
@@ -28,10 +47,14 @@ export function state() {
 export const usable = () => state() === 'ok';
 export const minutes = () => (info ? info.minutes : 15);
 export const termInfo = () => info && { ...info };
+/** P417 #185: the row may switch the terminal on for this computer browser (the host knows it paired as a computer). */
+export const canEnable = () => !!info && info.kind === 'desktop' && ['off', 'notme', 'noweb'].includes(state());
 
 export function configure(h) {
   H = { ...H, ...h };
   el('set-term-open')?.addEventListener('click', () => open(''));
+  el('set-term-enable')?.addEventListener('click', enable);   // P417 #185
+  el('set-term-faceid')?.addEventListener('click', () => H.setupFaceId());   // P417 #185
   el('set-term-forget')?.addEventListener('click', forget);
   onLang(paint);
 }
@@ -51,13 +74,22 @@ export function paint() {
   const s = state();
   row.hidden = s === 'none';
   if (s === 'none') return;
+  const en = canEnable();
   const cmd = s === 'off' ? 'agentj terminal enable' : s === 'notme' ? `agentj terminal allow ${myIdSync() || '<device>'}`
     : s === 'noweb' ? `agentj terminal allow ${myIdSync() || '<device>'} --allow-web` : '';
-  el('set-term-state').textContent = s === 'off' ? t('p408.off') : s === 'notme' ? t('p408.notMe') : s === 'noweb' ? t('p408.notWeb')
-    : t('p408.mode.' + (info.sudo || 'none'));
+  el('set-term-state').textContent = s === 'os' ? t('p417.os') : s === 'phone' ? t('p417.phone')
+    : en ? t(s === 'off' ? 'p417.off' : 'p417.notMe')
+      : s === 'off' ? t('p408.off') : s === 'notme' ? t('p408.notMe') : s === 'noweb' ? t('p408.notWeb')
+        : t('p408.mode.' + (info.sudo || 'none'));
+  // RESUME 9 ④: a remote paired before 0.25.1a1 has no recorded kind — the command, plus how to get the button
+  if (info.kind === 'unknown' && ['off', 'notme', 'noweb'].includes(s)) el('set-term-state').textContent += ' ' + t('p417.repair');
   el('set-term-cmdline').hidden = !cmd;
-  el('set-term-cmd').textContent = cmd;
-  el('set-term-acts').hidden = s !== 'ok';
+  el('set-term-cmd').textContent = en ? 'agentj terminal enable' : cmd;   // P417: enable from here, or this line at the host
+  const nopk = s !== 'os' && s !== 'phone' && !info.pk;   // P417 #185: no passkey on this device yet → 「设置 Face ID」 first
+  el('set-term-acts').hidden = s !== 'ok' || nopk;
+  el('set-term-en').hidden = !en || nopk;
+  el('set-term-or').hidden = !en;
+  el('set-term-pk').hidden = !nopk;
   el('set-term-forget').hidden = !(info.sudo === 'prf' || info.sudo === 'local');
   el('set-term-note').textContent = t('p408.rowNote', { n: info.minutes });
   el('set-term-last').textContent = last;
@@ -89,7 +121,8 @@ function load() {
 /** terminal.js calls this once it has loaded. */
 export function register(api) {
   mod = api;
-  mod.configure({ setupFaceId: () => H.setupFaceId(), openRescue: () => H.openRescue(), closedLine, openSettings: backToRow });
+  mod.configure({ setupFaceId: () => H.setupFaceId(), openRescue: () => H.openRescue(), closedLine, openSettings: backToRow,
+    attach: (f) => H.attach(f), insert: (x) => H.insert(x), goChat: () => H.goChat() });   // P414
   waiting?.ok(mod); waiting = null;
 }
 /** After the page closes: Settings, scrolled to the row (which now says why it closed). */
@@ -98,13 +131,28 @@ function backToRow() {
   const row = el('set-term-row');
   if (row && !row.hidden) row.scrollIntoView({ block: 'center' });
 }
+/** P417 #185: 「开启并打开网页终端」 — the open flow with mode "enable" (Face ID, then the host's login password card). */
+export function enable() {
+  if (!canEnable() || !info.pk) return Promise.resolve(false);
+  return load().then((m) => m.open('', termInfo(), { enable: true }), () => { toast(t('p408.loadFail'), 4000, 'error'); return false; });
+}
 /** Open the terminal page (the normal open flow when it is not open); `prefill` goes into the input line, never sent. */
 export function open(prefill = '') {
   if (!usable()) return Promise.resolve(false);
   return load().then((m) => m.open(String(prefill || ''), termInfo()), () => { toast(t('p408.loadFail'), 4000, 'error'); return false; });
 }
-/** app.js: term_* and the `login` elev card (with its elev_done / elev_refused) — only a loaded page cares. */
-export function msg(m) { if (mod) mod.onMsg(m); }
+/** P414 (§37.12): a 「!」 line from the message box → a promise of true (sent, or the open flow started — clear the field). */
+export function bang(line, sid) {
+  if (!usable()) return Promise.resolve(false);
+  return load().then((m) => m.bang(line, sid, termInfo()), () => { toast(t('p408.loadFail'), 4000, 'error'); return false; });
+}
+/** app.js: term_* and the `login` elev card (with its elev_done / elev_refused) — only a loaded page cares. P414 (§37.13):
+ *  `term_go` (the Agent opens the terminal, maybe with a line to fill in) loads the page first; never on a remote that may
+ *  not use it. */
+export function msg(m) {
+  if (m && m.t === 'term_go') { if (usable()) load().then((x) => x.go(m, termInfo()), () => {}); return; }
+  if (mod) mod.onMsg(m);
+}
 /** app.js onHostGone: the Noise session this terminal rode is gone (the host closes it: relay_lost). */
 export function gone() { if (mod) mod.gone(); }
 export const isOpen = () => !!(mod && mod.isOpen());

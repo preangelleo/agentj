@@ -39,7 +39,7 @@ export function goalWords(m) {
 }
 export function addAsk(m) {
   if (typeof m.id !== 'string' || !/^[0-9a-f]{32}$/.test(m.id) || typeof m.tool !== 'string' || typeof m.summary !== 'string') return;
-  if (S.asks.has(m.id)) return;
+  if (S.asks.has(m.id)) return false;
   // §17.7 friend requests wait up to 7 days; tolerate an old host's 24h question deadline.
   const maxTtl = m.tool === 'friend_request' ? 604800 : m.tool === 'peer_question' ? 86400 : 600;
   const ttl = Number.isInteger(m.ttl) && m.ttl >= 0 && m.ttl <= maxTtl ? m.ttl : 120;
@@ -58,6 +58,7 @@ export function addAsk(m) {
     ...(m.tool === 'peer_question' && m.pq && typeof m.pq === 'object' ? { pq: m.pq } : {}) });
   S.order.push(m.id);
   onChange();
+  return true;                                    // P417: a NEW card (app.js brings it in front of Settings)
 }
 // P396: waiting means an owner action is still needed. A tapped card may stay visible for a receipt/retry.
 export function touch(id) {
@@ -84,7 +85,8 @@ export function answerRefused(m) {
   if (current) { current.touched = true; current.answer_failed = true; }
   onChange();
 }
-const ASK_RESULT = { allow: 'approved', deny: 'denied', timeout: 'timeout', expired: 'expired', gone: 'ended', stopped: 'stopped' };
+// P417 #186: 0.25.0a1 hosts close friend / same-owner cards with `ended` — accept it as well as `gone`.
+const ASK_RESULT = { allow: 'approved', deny: 'denied', timeout: 'timeout', expired: 'expired', gone: 'ended', ended: 'ended', stopped: 'stopped' };
 export function askDone(m) {
   const a = S.asks.get(m.id);
   if (!a || !ASK_RESULT[m.result]) return;
@@ -105,7 +107,7 @@ export function addQuestion(m) {
     qs.push({ q: x.q, h: typeof x.h === 'string' ? x.h : '', m: x.m === true, o });
   }
   const ttl = Number.isInteger(m.ttl) && m.ttl >= 0 && m.ttl <= 3600 ? m.ttl : 180;
-  S.qs.set(m.id, { id: m.id, kind: 'question', raw: qs, task: typeof m.task === 'string' ? m.task.slice(0, 80) : '',
+  S.qs.set(m.id, { id: m.id, kind: 'question', raw: qs, textMax: m.text_max === 2000 ? 2000 : 0, task: typeof m.task === 'string' ? m.task.slice(0, 80) : '',
     questions: qs.map((x) => ({ question: x.q, header: x.h, multi: x.m, options: x.o.map((y) => ({ label: y.l, description: y.d || '' })) })),
     at: nowS(), deadline: Date.now() + ttl * 1000, state: 'open', choices: null, final_at: null });
   S.order.push(m.id);
@@ -159,7 +161,15 @@ function usage() {
     ...(Array.isArray(m.quota_windows) ? {quota_windows:m.quota_windows} : {}),
     context_used:m.ctx?.used, context_limit:m.ctx?.max,
     week_pct: pct(m.week), five_hour_pct: pct(m.h5), context_pct: ctx, h5_reset: m.h5 && m.h5.reset, week_reset: m.week && m.week.reset,
-    age_s: Number.isFinite(m.source_at) && m.source_at > 0 ? Math.max(0, Date.now() / 1000 - m.source_at) : (Date.now() - S.meterAt) / 1000 };
+    // P433 (#196): when each reading was measured (the host stamps `at`; a status-line reading has source_at) and whether a
+    // confirmed limit made it stale — never the moment this phone happened to receive it
+    h5_at: measured(m.h5, m.source_at), week_at: measured(m.week, m.source_at), h5_stale: !!(m.h5 && m.h5.stale), week_stale: !!(m.week && m.week.stale),
+    age_s: oldest(m) != null ? Math.max(0, Date.now() / 1000 - oldest(m)) : (Date.now() - S.meterAt) / 1000 };
+}
+const measured = (w, src) => (w && Number.isFinite(w.at) && w.at > 0 ? w.at : w && Number.isFinite(src) && src > 0 ? src : null);
+function oldest(m) {
+  const xs = [measured(m.h5, m.source_at), measured(m.week, m.source_at)].filter((x) => x != null);
+  return xs.length ? Math.min(...xs) : Number.isFinite(m.source_at) && m.source_at > 0 ? m.source_at : null;
 }
 function swCat() {
   const m = S.models;
@@ -226,7 +236,8 @@ export function toPage(t) {
   return {
     id: t.id, ts: typeof t.ts === 'number' ? t.ts / 1000 : null,
     source: { k, dev: typeof src.dev === 'string' ? src.dev : null, name: typeof src.name === 'string' ? src.name.slice(0, 64) : '',
-      text: typeof src.text !== 'string' ? '' : k === 'telegram' ? src.text.replace(TG_SOURCE_LINE, '') : src.text, quote: q, att, local: src.local === true, ...(k === 'sys' && typeof src.notice_id === 'string' && /^[A-Za-z0-9_-]{22}$/.test(src.notice_id) ? {notice_id:src.notice_id} : {}), ...(k === 'agent' && ['loop', 'task', 'quota', 'auto', 'hook'].includes(src.via) ? {via: src.via} : {}) },
+      text: typeof src.text !== 'string' ? '' : k === 'telegram' ? src.text.replace(TG_SOURCE_LINE, '') : src.text, quote: q, att, local: src.local === true, ...(k === 'sys' && typeof src.notice_id === 'string' && /^[A-Za-z0-9_-]{22}$/.test(src.notice_id) ? {notice_id:src.notice_id} : {}), ...(k === 'agent' && ['loop', 'task', 'quota', 'auto', 'hook'].includes(src.via) ? {via: src.via} : {}),
+      ...(k === 'phone' && src.term && typeof src.term === 'object' ? { term: src.term } : {}) },   // P414 (§37.12): a 「!」 line's result (js/bang.js termOf)
     reply: typeof reply.text === 'string' ? dropReplacement(reply.text) : '',
     part: Array.isArray(reply.part) && reply.part.length === 2 ? reply.part.map(Number) : null,
     ...(typeof reply.pre === 'string' && reply.pre ? { pre: dropReplacement(reply.pre) } : {}),   // P351: a silent turn's notes

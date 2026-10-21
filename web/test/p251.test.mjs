@@ -12,14 +12,15 @@ test('P251 automatic follow requires the same newer host and server, and never r
 import vm from 'node:vm';
 import {readFileSync} from 'node:fs';
 const uiSrc=readFileSync(new URL('../public/js/ui.js',import.meta.url),'utf8');
-const flashSrc=uiSrc.match(/export const FLASH_MS[\s\S]*?\n\}\n/)[0].replace(/^import .*;\n/gm,'').replaceAll('export ','');
+const flashSrc=uiSrc.match(/export function notifyOnce[\s\S]*?\n\}\n/)[0].replace(/^import .*;\n/gm,'').replaceAll('export ','');
 const src=flashSrc+readFileSync(new URL('../public/js/version-notice.js',import.meta.url),'utf8').replace(/^import .*;$/gm,'').replace(/^import .*;\n/gm,'').replaceAll('export ','');
 function fixture(seed={}){
  let now=1000,blocked=false,saveOK=true,version='0.21.0a1',refreshes=0,saves=0;
+ const notices=[];
  const listeners={},nodes={},storage=new Map(Object.entries(seed)),timers=[];
  for(const id of ['version-notice','version-notice-text','version-refresh','version-dismiss','version-later'])nodes[id]={hidden:true,addEventListener(){}};
  const ctx={VERSION:{version:'0.20.3a1'},window:{},location:{origin:'https://m.agentj.app'},URL,Response,AbortSignal,
-  Date:{now:()=>now},setInterval(){},setTimeout:(f,ms)=>{timers.push({f,ms});return timers.length;},clearTimeout(){},t:(key,args)=>key+JSON.stringify(args||{}),onLang(){},registerLayer(){},
+  notify:spec=>notices.push(spec),Date:{now:()=>now},setInterval(){},setTimeout:(f,ms)=>{timers.push({f,ms});return timers.length;},clearTimeout(){},t:(key,args)=>key+JSON.stringify(args||{}),onLang(){},registerLayer(){},
   localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)},
   document:{hidden:false,getElementById:id=>nodes[id],addEventListener:(k,f)=>listeners[k]=f},
   fetch:async()=>new Response(JSON.stringify({v:1,version})),
@@ -27,7 +28,7 @@ function fixture(seed={}){
  vm.runInNewContext(src+'\nthis.api={initVersionNotice,setHostVersion,follow,render};',ctx);
  ctx.api.initVersionNotice(async opts=>{if(await opts.beforeReload())refreshes++;},{blocked:()=>blocked,save:async()=>{saves++;return saveOK;}});
  ctx.api.setHostVersion(version);
- return {ctx,nodes,storage,timers,advance:ms=>{now+=ms;},block:v=>{blocked=v;},save:v=>{saveOK=v;},serve:v=>{version=v;},event:k=>listeners[k]({type:k}),counts:()=>({refreshes,saves}),flush:async()=>{await new Promise(r=>setImmediate(r));}};
+ return {ctx,nodes,storage,timers,notices,advance:ms=>{now+=ms;},block:v=>{blocked=v;},save:v=>{saveOK=v;},serve:v=>{version=v;},event:k=>listeners[k]({type:k}),counts:()=>({refreshes,saves}),flush:async()=>{await new Promise(r=>setImmediate(r));}};
 }
 test('P251 idle guard: typing, IME, hidden page, protected work and failed draft storage postpone the same automatic follow',async()=>{
  const f=fixture();await f.flush();assert.equal(f.nodes['version-notice'].hidden,true);
@@ -77,18 +78,14 @@ test('P251 hiding a non-modal version notice preserves editing focus; modal rest
  }
 });
 
-test('P302 #29 「已更新到 x」 flashes 5 s once per version on this device, never on reload or reconnect',async()=>{
+test('P425 #60 updated uses shared Noir notification once per version, never the header line',async()=>{
  const f=fixture({'aj.verUpdated':'0.20.3a1'});await f.flush();
- const line=f.nodes['version-later'];
- assert.equal(line.hidden,false);assert.match(line.textContent,/ver\.updated/);
- assert.equal(f.storage.has('aj.verUpdated'),false,'the marker is consumed on first render');
- assert.ok(f.timers.some(x=>x.ms===5000),'auto-hide after 5 s');
- f.ctx.api.render();assert.equal(line.hidden,false,'a re-render (reconnect, language) does not cut the flash short');
- for(const x of f.timers)x.f();assert.equal(line.hidden,true);
- f.ctx.api.render();assert.equal(line.hidden,true,'stays gone after it hid itself');
- // A reload of the same page (marker set again by a stale path) does not replay it: seen once per version.
- const g=fixture({'aj.verUpdated':'0.20.3a1','aj.verUpdatedSeen.0.20.3a1':'1'});await g.flush();
- assert.equal(g.nodes['version-later'].hidden,true);
- // An old marker for another version never shows.
- const h=fixture({'aj.verUpdated':'0.19.0a1'});await h.flush();assert.equal(h.nodes['version-later'].hidden,true);
+ assert.equal(f.nodes['version-later'].hidden,true);
+ assert.equal(f.storage.has('aj.verUpdated'),false);
+ assert.equal(f.notices.length,1);
+ assert.equal(f.notices[0].kind,'success');assert.equal(f.notices[0].shape,'rect');assert.equal(f.notices[0].ms,3000);
+ assert.match(f.notices[0].text,/ver\.updated/);
+ f.ctx.api.render();assert.equal(f.notices.length,1);
+ const g=fixture({'aj.verUpdated':'0.20.3a1','aj.verUpdatedSeen.0.20.3a1':'1'});await g.flush();assert.equal(g.notices.length,0);
+ const h=fixture({'aj.verUpdated':'0.19.0a1'});await h.flush();assert.equal(h.notices.length,0);
 });

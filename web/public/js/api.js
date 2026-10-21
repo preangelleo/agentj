@@ -149,7 +149,7 @@ export async function answerQ(q, picks) {
   const sk = await signKey();
   if (!sk) return { ok: false, why: 'no_key' };
   try {
-    const clean = picks ? picks.map((p) => [...new Set(p)].sort((a, b) => a - b)) : null;
+    const clean = picks ? picks.map((p) => typeof p === "string" ? p : [...new Set(p)].sort((a, b) => a - b)) : null;
     const msg = await questionMessage(channel(), await myDeviceId(), q.id, clean ? 'answer' : 'cancel', q.raw, clean);
     const sig = b64u(new Uint8Array(await crypto.subtle.sign({ name: 'Ed25519' }, sk.priv, msg)));
     await sendApp(clean ? { t: 'q_answer', id: q.id, pick: clean, sig } : { t: 'q_answer', id: q.id, cancel: true, sig }, g);

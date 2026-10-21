@@ -1480,6 +1480,36 @@
     "openrouter",
     "off"
    ]
+  },
+  "skills.stale_days": {
+   "type": "integer",
+   "default": 30,
+   "tier": "user",
+   "minimum": 7,
+   "maximum": 365,
+   "description": "Days without use before the Skills page says a skill is long unused, 7–365 (never archived by itself) / 多少天没用就在技能页标「很久没用了」，7–365（不会自动归档）",
+   "aliases": [
+    "skill stale days",
+    "技能很久没用天数"
+   ],
+   "needs": [],
+   "apply": "hot",
+   "verify": "agentj skills health",
+   "since": "0.25.1"
+  },
+  "skills.suggest": {
+   "type": "boolean",
+   "default": true,
+   "tier": "user",
+   "description": "After the same task 3 times in 14 days, the Agent offers once to save it as a skill / 同类事 14 天内做满 3 次，Agent 主动问一次要不要存成技能",
+   "aliases": [
+    "skill suggestions",
+    "存成技能建议"
+   ],
+   "needs": [],
+   "apply": "hot",
+   "verify": "agentj skills suggest",
+   "since": "0.25.1"
   }
  }
 }

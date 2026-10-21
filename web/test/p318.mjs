@@ -50,7 +50,7 @@ try {
         const g = await evaluate(p, `[...document.querySelectorAll('#tools .tool')].map(b=>{const r=b.getBoundingClientRect(),s=b.querySelector('svg').getBoundingClientRect();
           const txt=[...b.querySelectorAll('span')].filter(x=>getComputedStyle(x).display!=='none'&&x.getBoundingClientRect().width>0&&x.textContent.trim()).map(x=>x.textContent);
           return {id:b.id,txt,w:r.width,h:r.height,dx:Math.abs((s.left+s.right)/2-(r.left+r.right)/2),dy:Math.abs((s.top+s.bottom)/2-(r.top+r.bottom)/2),in:s.left>=r.left&&s.right<=r.right&&s.top>=r.top&&s.bottom<=r.bottom,sw:s.width,label:b.getAttribute('aria-label')}})`);
-        if (g.length !== 4) throw new Error('four tool buttons: ' + g.length);
+        if (g.length !== 5) throw new Error('five tool buttons (P412: + full screen): ' + g.length);
         for (const b of g) {
           if (b.txt.length) throw new Error(`${b.id} shows text ${JSON.stringify(b.txt)}`);
           if (!b.in || b.sw < 20) throw new Error(`${b.id} icon clipped ${JSON.stringify(b)}`);

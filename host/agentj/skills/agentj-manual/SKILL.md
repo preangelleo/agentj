@@ -10,6 +10,7 @@ Generated from the website's user guide (https://agentj.app/docs/manual/) and th
 - Answer in the user's language from `manual.zh.md` (中文) or `manual.en.md` (English) in this folder — Agent friends:
   `friends.zh.md` / `friends.en.md` (managing friends from a sentence: the `agentj-friends` skill). Read the file; quote
   only what answers the question, in your own short words. Every label, colour and command in it matches the live phone page.
+- No reply / “Not yet received” / only a phone: read the phone-only troubleshooting section first. Guide Stop → Run doctor --reconnect in Settings → Restart service → Reopen AI session (0.25.1a1+) → Father help. Quota: Claude settings Usage / Free reset if offered; grey phone: Emergency repair ① Reset connection. Never require a visit to the computer.
 - Cards, Notebook entries, To-do, the Automation card and the colour picker: read `cards.zh.md` / `cards.en.md`.
 - When a screenshot would help, give its link (each image in the files is a line with its URL).
 - Keyboard shortcuts and gestures (every tap / double tap / hold / swipe of the web app and its key): `shortcuts.zh.md` / `shortcuts.en.md` — generated from the app's own interactions.json, so the keys there are exactly the live ones.

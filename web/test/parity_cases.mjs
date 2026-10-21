@@ -312,7 +312,7 @@ export async function runCases({ B, web, fake, only }) {
     await fake.addTurn({ k: 'agent' }, '复制我');
     await wait(`document.getElementById('words').textContent === '复制我' && document.getElementById('pgCorner').dataset.unread === '0'`);
     await click('#copyReply');
-    await waitToast(T('r.copy.reply'));
+    await waitToast(T('r.md.copied'));
     ok((await clipboard()) === '复制我', 'the stored reply is on the clipboard');
   });
   await C('action-bar', async () => {
@@ -341,7 +341,7 @@ export async function runCases({ B, web, fake, only }) {
     await sleep(2100);
     await ev(`delete navigator.share; Object.defineProperty(navigator, 'share', { value: undefined, configurable: true })`);
     await click('#fwdBtn');
-    await waitToast(T('r.share.copied'));
+    await waitToast(T('r.md.copied'));
   });
   await C('forward-telegram', async () => {   // P118 (B10): with the host's `tgfwd`, one tap → the owner's own Telegram
     fake.st.tgfwd = true; fake.st.tgFwds = [];
@@ -377,10 +377,15 @@ export async function runCases({ B, web, fake, only }) {
     ok(working !== idle && /rgb\(99, 152, 135\)|rgb\(9[0-9], 15[0-9], 13[0-9]\)/.test(idle), `the whole page is the state colour (idle ${idle}, working ${working})`);
   });
   await C('statusbar-colour', async () => {
-    const meta = await ev(`[...document.querySelectorAll('meta[name="theme-color"]')].map((m) => m.content)`);
-    const probe = await ev(`getComputedStyle(document.getElementById('chromeProbe')).backgroundColor`).then(rgb);
-    const hexOf = (c) => '#' + rgb(c).match(/\d+/g).slice(0, 3).map((x) => Number(x).toString(16).padStart(2, '0')).join('');
-    ok(meta.length === 1 && meta[0] === hexOf(probe), `theme-color ${meta} = page colour ${hexOf(probe)}`);
+    // P422: system safe areas remain Sooty while the page and logo follow the state.
+    for (const state of ['idle', 'working']) {
+      await fake.send({ t: 'status', s: state, agent: 'claude', name: 'Wren' });
+      await wait(`document.body.dataset.status === ${JSON.stringify(state)}`);
+      const meta = await ev(`[...document.querySelectorAll('meta[name="theme-color"]')].map((m) => m.content)`);
+      ok(meta.length === 1 && meta[0] === '#141414', `${state}: theme-color ${meta} remains Sooty (P422)`);
+    }
+    await fake.send({ t: 'status', s: 'idle', agent: 'claude', name: 'Wren' });
+    await wait(`document.body.dataset.status === 'idle'`);
   });
   await C('sr-status', async () => { ok((await text('#capText')) === T('r.capt.idle') && (await ev(`document.getElementById('capText').closest('[role=status]') !== null`)), 'screen-reader status words'); });
   await C('state-logo', async () => {
@@ -502,7 +507,7 @@ export async function runCases({ B, web, fake, only }) {
     await key(P, 'g', { code: 'KeyG' });   // P340 (#21): the send above stayed on the older page; the newest page holds it
     await wait(`document.getElementById('omText').textContent === '关于这一段'`);
     await key(P, 'Y', { code: 'KeyY', shift: true, text: 'Y' });
-    await waitToast(T('r.copy.source'));
+    await waitToast(T('r.md.copied'));
     ok((await clipboard()) === '关于这一段', 'Y copies the source');
   });
 
@@ -518,7 +523,14 @@ export async function runCases({ B, web, fake, only }) {
     const h0 = await ev(`document.getElementById('input').getBoundingClientRect().height`);
     await typeIn('一\n二\n三\n四\n五');
     const h1 = await ev(`document.getElementById('input').getBoundingClientRect().height`);
-    ok(h1 > h0 + 30, `the field grows (${h0} → ${h1})`);
+    // P412 (#174, Leo: 「消息输入框的高度……永远是一行」): relay's field grows; Agent J's stays one line, scrolls inside, says
+    // 「5 行」 on the full-screen button, and the full-screen editor shows every line (a superset of the grown field)
+    ok(Math.abs(h1 - h0) < 1, `the field stays one line (${h0} → ${h1})`);
+    ok(await ev(`(() => { const i = document.getElementById('input'); return i.scrollHeight > i.clientHeight + 30; })()`), 'the lines scroll inside it');
+    ok(await ev(`!document.getElementById('tFullN').hidden && /5/.test(document.getElementById('tFullN').textContent)`), '「5 行」 on the full-screen button');
+    await ev(`document.getElementById('tFull').click()`);
+    ok(await ev(`!document.getElementById('fsEd').hidden && document.getElementById('fsText').value.split('\\n').length === 5`), 'full screen shows all five lines');
+    await ev(`document.getElementById('fsExit').click()`);
   });
   await C('enter-to-send', async () => {
     await clearField();
@@ -1062,11 +1074,13 @@ export async function runCases({ B, web, fake, only }) {
   await C('aj-estop', async () => {
     fake.answer('estop', () => [{ t: 'ctl_res', ok: true }, { t: 'estop_state', on: true, by: 'Pixel' }]);
     fake.answer('resume', () => [{ t: 'ctl_res', ok: true }, { t: 'estop_state', on: false }]);
-    await click('#slashBtn');
-    await click('#menu [data-estop="stop"]');
+    ok(!(await ev(`!!document.querySelector('#menu [data-estop="stop"]')`)), 'emergency stop lives only in Settings Safety');
+    await ev(`(async()=>{(await import('/js/settings.js')).open();})()`);
+    await click('#set-estop');
     await wait(`!document.getElementById('confirm').hidden`);
     await click('#confirm-yes');
     await wait(`!document.getElementById('estop-banner').hidden`);
+    await ev(`(async()=>{(await import('/js/settings.js')).close();})()`);
     const m = fake.log.find((x) => x.t === 'estop');
     ok(m && /^[0-9a-f]{32}$/.test(m.n) && typeof m.sig === 'string', 'signed estop');
     ok((await ev(`document.getElementById('input').placeholder`)) === T('chat.placeholderStopped'), 'the field says everything is stopped');
@@ -1249,7 +1263,8 @@ export async function runCases({ B, web, fake, only }) {
     await wait(`!document.getElementById('keys').hidden`);
     // P207: the sheet is drawn from interactions.json — every entry in the function / single-key / gesture groups (entries may appear in more than one group) (relay's rows are all in it: j k g G o f y Y r a p c m i / ? s Esc …)
     const rows = await ev(`import('./js/interactions.gen.js').then(g => g.ROWS.length)`);
-    ok(rows >= 60 && (await ev(`new Set([...document.querySelectorAll('#keys dt')].map(e=>e.dataset.ix)).size`)) === rows && (await ev(`document.querySelectorAll('#keys dd').length`)) === (await ev(`document.querySelectorAll('#keys dt').length`)), 'every interactions.json entry with a key is listed (' + rows + ')');
+    // P417: P412 #176 added a 「cards」 group whose rows carry data-card (a card's live key), not data-ix — count interactions.json rows only
+    ok(rows >= 60 && (await ev(`new Set([...document.querySelectorAll('#keys dt[data-ix]')].map(e=>e.dataset.ix)).size`)) === rows && (await ev(`document.querySelectorAll('#keys dd').length`)) === (await ev(`document.querySelectorAll('#keys dt').length`)), 'every interactions.json entry with a key is listed (' + rows + ')');
     for (const k of ['j', 'k', 'g', 'G', 'o', 'f', 'y', 'Y', 'r', 'a', 'p', 'c', 'm', 'i', '/', '?', 's', 'u']) ok(await ev(`[...document.querySelectorAll('#keys dt kbd')].some(x => x.textContent === ${JSON.stringify(k)})`), 'the sheet lists ' + k);
     await click('#keysClose');
   });
@@ -1289,8 +1304,8 @@ export async function runCases({ B, web, fake, only }) {
     await key(P, 'Escape', { code: 'Escape' });
     await wait(`document.getElementById('rd').hidden`);
   });
-  await C('key-y-copy', async () => { await blur(); await key(P, 'y', { code: 'KeyY' }); await waitToast(T('r.copy.reply')); ok((await clipboard()).startsWith('回复 4 第 0 行'), 'y copies the reply'); });
-  await C('key-shift-y-copy-source', async () => { await key(P, 'Y', { code: 'KeyY', shift: true, text: 'Y' }); await waitToast(T('r.copy.source')); ok((await clipboard()) === '原话 4', 'Y copies the source'); });
+  await C('key-y-copy', async () => { await blur(); await key(P, 'y', { code: 'KeyY' }); await waitToast(T('r.md.copied')); ok((await clipboard()).startsWith('回复 4 第 0 行'), 'y copies the reply'); });
+  await C('key-shift-y-copy-source', async () => { await key(P, 'Y', { code: 'KeyY', shift: true, text: 'Y' }); await waitToast(T('r.md.copied')); ok((await clipboard()) === '原话 4', 'Y copies the source'); });
   await C('key-r-reply', async () => { await key(P, 'r', { code: 'KeyR' }); await wait(`!document.getElementById('qbar').hidden && document.activeElement === document.getElementById('input')`); await key(P, 'Escape', { code: 'Escape' }); await wait(`document.getElementById('qbar').hidden`); });
   await C('key-i-esc', async () => {
     await blur();

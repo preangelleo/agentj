@@ -1,21 +1,45 @@
 ---
 name: agentj-reconnect
-description: Phone or web page grey / disconnected / "not connected", or the first turn of a new session (also after compaction, /clear or resume) — 「手机灰了」「网页断开了」「手机连不上你」「接上手机」「重连」「手机卡住了」「紧急修复」「找回原来的对话」, "phone is grey", "reconnect my phone", "connect my phone", "bring back my earlier conversation". Points the owner to the phone's Settings → 紧急修复 ①; checks the background service, the relay and the Agent in turn with `agentj status --json`, repairs the broken link with `agentj doctor --reconnect`, and tells the owner one plain sentence; `agentj rescue undo` brings back the conversation a phone reset put aside.
+description: No reply / "Not yet received" / only a phone, or phone or web page grey / disconnected / "not connected", or the first turn of a new session (also after compaction, /clear or resume) — 「手机灰了」「网页断开了」「手机连不上你」「接上手机」「重连」「手机卡住了」「紧急修复」「找回原来的对话」, "phone is grey", "reconnect my phone", "connect my phone", "bring back my earlier conversation". For no reply, guide Stop → Settings Run doctor --reconnect → Restart service → Reopen AI session (0.25.2a1+) → Father help; grey/offline uses Emergency repair ①; checks the background service, the relay and the Agent in turn with `agentj status --json`, repairs the broken link with `agentj doctor --reconnect`, and tells the owner one plain sentence; `agentj rescue undo` brings back the conversation a phone reset put aside.
 ---
 # Bring a grey phone back (起死回生)
 
 The owner should never need to know a command. You run these yourself.
 
-**The phone's own repair (P332).** When the owner says the phone / web page is stuck, offline or not replying, first point
-them to Settings → 「紧急修复」 / "Emergency repair" → ① 「重置连接」 / "Reset connection" (also ≡ or `/reset`; the offline card's
-「紧急修复」 button opens it). It reconnects → finds the conversation → opens a new conversation if needed (the old one is
-kept) → restarts Agent J, and stops at the first step that works. ① did not help → ② 「请 Agent J Father 远程帮忙」 (a redacted
-check-up the owner starts; support may only pick repairs from a fixed list). ③ 「AI 账号登录失效」 is the AI login rescue.
-- 「找回原来的对话」 / "bring back my earlier conversation" after a reset → run `agentj rescue undo` (it pins the conversation
-  the reset put aside; run it again to flip back), then tell the owner in one sentence.
-- `agentj rescue status` — the rescue watchdog (installed by `agentj service install` and every update; it answers the phone
-  when `agentj serve` is frozen). Not installed → `agentj rescue install`.
-- Someone at the Agent J host and the phone cannot reach it at all → first use the menu’s Emergency repair. If it fails, share https://agentj.app/docs/reconnect-help/ for OS-specific terminal instructions, rescue commands, privacy explanation and recovery checks. Keep commands on that page, not in the offline dialog.
+## Agent 没回应、只有手机时怎么办 {#phone-only}
+
+消息没回应，或一直显示「尚未接收」？不用到电脑前。每做一步，回聊天发一条简短消息，收到回复就停：
+
+1. 点 **Stop**，打断当前任务。
+2. 打开 **设置 → 紧急修复 → Agent J 主机上的命令**，找到 `agentj doctor --reconnect`，点旁边的 **执行**（推荐）。这是在手机上让主机检查并修复连接，不用自己打开终端；按提示用 Face ID 确认。
+3. 仍没回应，在 **紧急修复** 点 **重启服务**（推荐），等连接恢复后再试。
+4. 仍没回应，点 **紧急修复 → 重开 AI 会话**（主机与网页均需 0.25.2a1 起的版本）。它结束卡住的 AI 会话进程，优先接回同一段对话；无法恢复时开新会话，原对话保留。旧版没有这个按钮，直接下一步。
+5. 仍没解决，点 **紧急修复 → ② 请 Agent J Father 远程帮忙**。只有你点了才会发送在主机上脱敏的诊断报告；记下工单号。不发送密码、密钥、聊天或工作文件。
+
+**先分清额度与连接。** 提示 Claude 额度用完时，先在手机的 Claude 设置看 **Usage**；若页面提供 **免费重置**，可按提示使用，否则等它显示的重置时间。免费重置不是每个账号、每次都提供。额度恢复后仍「尚未接收」，再按上面五步试；重启和重开会话不会增加额度。AI 登录过期则用 **AI 登录救援**。
+
+**手机灰了、显示断开是另一条线。** 先检查手机网络、点「立即重试」，再进 **设置 → 紧急修复 → ① 重置连接**，没恢复再点 **② 请 Agent J Father 远程帮忙**。短暂断线先等几秒。命令、重启和会话修复都需要手机能接通主机或救援守护；主机关机、休眠或断网时不能从手机强行执行。一直连不上时，在手机浏览器打开 [在线客服](https://support.agentj.app) 或写信 [feedback@agentj.app](mailto:feedback@agentj.app)，说明症状、版本和发生时间，不贴凭据。无需回电脑前。
+
+Agent J Father 是官方开发者客服平台。聊天恢复后，也可以用 `/feedback-to-agentj-father` 汇报问题；仍没回应时，直接使用上面的手机求助入口。
+
+## Agent not replying and you only have your phone? {#phone-only}
+
+No reply, or stuck on “Not yet received”? You can do this from your phone. After each step, send a short test message in chat and stop when a reply arrives:
+
+1. Tap **Stop** to interrupt the current task.
+2. Open **Settings → Emergency repair → Commands on the Agent J host**, find `agentj doctor --reconnect`, and tap **Run** beside it (recommended). Your phone asks the host to check and repair the connection; you do not need to open a terminal. Confirm with Face ID when asked.
+3. Still no reply? In **Emergency repair**, tap **Restart service** (recommended), wait for the connection to return, then try again.
+4. Still no reply? Tap **Emergency repair → Reopen AI session** (requires host and web versions from 0.25.2a1). It ends the stuck AI session process and tries to resume the same conversation; if that fails, it opens a new session and keeps the old conversation. On an older version without this button, go to the next step.
+5. Still stuck? Tap **Emergency repair → ② Ask Agent J Father for remote help**. Only your tap sends a diagnostic report redacted on the host; keep the ticket number. Passwords, keys, chats and work files are not sent.
+
+**Check quota before connection repairs.** For a Claude quota limit, first open Claude settings on your phone and check **Usage**. Use **Free reset** if offered; otherwise wait until the displayed reset time. A free reset is not available for every account or every limit. If quota has recovered but messages are still “Not yet received”, follow the five steps above. Restarting or reopening a session does not add quota. For an expired AI sign-in, use **AI login rescue**.
+
+**A grey, disconnected phone takes a different path.** Check your phone’s network, tap “Try now”, then **Settings → Emergency repair → ① Reset connection**, followed by **② Ask Agent J Father for remote help** if needed. Give a brief drop a few seconds. Commands, restarts and session repair require a connection to the host or rescue helper; a phone cannot force them to run on a powered-off, sleeping or offline host. If it stays unreachable, open [the support chat](https://support.agentj.app) in your phone browser or email [feedback@agentj.app](mailto:feedback@agentj.app) with the symptom, versions and time, never credentials. You do not need to go to the computer.
+
+
+Agent J Father is the official support platform run by the developers. Once chat works, `/feedback-to-agentj-father` can report the problem too; while there is no reply, use the phone support controls above.
+
+Owner needs their earlier conversation after a reset → run `agentj rescue undo` yourself. Never ask a remote owner to visit the computer or open its terminal. The following commands are for the Agent to run, not homework for the owner.
 
 
 1. `agentj status --json`
@@ -45,12 +69,7 @@ A grey phone is not a broken relay — the three links are separate:
 | relay | `relay_state` | the computer cannot reach the Agent J relay (network / account) |
 | Agent | `agent_status` | Agent J is not attached to a live AI session (`down`) |
 
-中文：手机/网页变灰，先 `agentj status --json`，不正常就在本会话运行 `agentj doctor --reconnect`（依次查后台服务、中继、
-Agent 三段，哪段断了修哪段，并把运行它的会话接上手机），把最后那句结论原话告诉主人；列出多个会话时用
-`--session <ID>` 指定；仍失败按 agentj-manual 求助。手机灰 ≠ 中继坏，多半是Agent J 主机上换了新会话。
-主人说手机卡住/不回消息：先让他点 设置 →「紧急修复」→ ①「重置连接」，不行再点 ②；主人要「找回原来的对话」就运行
-`agentj rescue undo`；`agentj rescue status` 查看救援守护；Agent J 主机旁边有人时先走菜单紧急恢复，仍失败再看 https://agentj.app/docs/reconnect-help/。
-Docs: https://agentj.app/docs/reconnect/zh.md · https://agentj.app/docs/reconnect/en.md
+Docs: https://agentj.app/docs/reconnect/#phone-only
 
 ## Model fallback
 

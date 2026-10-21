@@ -46,6 +46,8 @@ function when(reset) {
   } catch (_) { return ''; }
 }
 
+const hhmm = (at) => { const d = new Date(at * 1000); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
+
 /** One quota window → its row + (weekly with a known reset) the 「重置周期」 row right under it. */
 export function quotaRows(w, now = Date.now()) {
   const c = cycle(w.window, w.reset, now);
@@ -59,6 +61,9 @@ export function quotaRows(w, now = Date.now()) {
   if (pr && pr.emptyIn != null) { if (glow || w.window !== 'weekly') sub.push(t('p303.emptyIn', { when: spanText(pr.emptyIn) })); }
   else if (pr) sub.push(t('p303.atReset', { p: pr.atReset }));
   if (c && w.window === '5h') sub.push(t('p303.resetIn', { when: spanText(c.left) }));
+  // P433 (#196): when this reading was measured, and 「读数可能过期」 when a confirmed limit contradicted it
+  if (w.stale) sub.unshift(t('p433.staleWhy'));
+  else if (Number.isFinite(w.at) && w.at > 0) sub.push(t('p433.updated', { t: hhmm(w.at) }));
   const out = [row(w.label, w.pct, null, glow, sub)];
   if (c && w.window === 'weekly') {
     const at = when(w.reset);
@@ -94,7 +99,7 @@ function fitWidth() {
   else sq.style.removeProperty('--usage-w');
 }
 
-/** relay.js: {source, windows: [{window, reset, label, pct}], ctx: number|null, ctxText: string|null, age: number|null} */
+/** relay.js: {source, windows: [{window, reset, label, pct, at?, stale?}], ctx: number|null, ctxText: string|null, age: number|null} */
 export function openUsage(data, from) {
   last = data;
   opener = from || document.activeElement;

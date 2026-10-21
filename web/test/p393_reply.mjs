@@ -1,7 +1,7 @@
 // P393 #126 / #127 · real Chromium + real Noise to the local fake host.
 // #126: a one-tap answer's label sits in the vertical middle of its pill — one and two lines, Chinese and English,
-//       three font sizes, light and dark, every state. #127: an external link in the reply is the Peachy Feeling hue
-//       (pure in the dark theme and the reader, lifted toward Lotion where pure is too faint), underlined; a file card's
+//       three font sizes, light and dark, every state. #127: an external link in the reply is Peachy Feeling (pure in the
+//       dark theme and the reader; P424: Bisque #fee2c5 from the palette where pure is too faint), underlined; a file card's
 //       link, the one-tap answers and the #tags are not touched.
 import assert from 'node:assert/strict';
 import {mkdirSync,writeFileSync,cpSync,mkdtempSync,rmSync} from 'node:fs';
@@ -67,10 +67,10 @@ try{
      return {color:s.color,line:s.textDecorationLine,deco:s.textDecorationColor,bg,rbtn:rb.color};})()`);
    assert.match(c.line,/underline/);assert.equal(c.color,c.deco,'the underline is the link colour');
    assert.equal(nums(c.rbtn).map(Math.round).join(),'250,249,245','the one-tap answers keep their Lotion words');
-   const pure=nums(c.color).map(Math.round).join()==='217,119,87';
+   const got=nums(c.color).map(Math.round).join();
    const want=scheme==='dark'&&status!=='waiting';
-   assert.equal(pure,want,`#127 ${scheme}/${status}: ${c.color}`);
-   const cr=ratio(nums(c.color),nums(c.bg));assert.ok(cr>=(want?2:2.5),`#127 ${scheme}/${status} contrast ${cr.toFixed(2)}`);
+   assert.equal(got,want?'217,119,87':'254,226,197',`#127 ${scheme}/${status}: ${c.color} (P424: Peachy, else Bisque — palette only)`);
+   const cr=ratio(nums(c.color),nums(c.bg));assert.ok(cr>=(want?2:3),`#127 ${scheme}/${status} contrast ${cr.toFixed(2)}`);
    link.push({status,color:c.color,bg:c.bg,contrast:+cr.toFixed(2)});
    if(w===390&&lang==='zh'||w===1440&&lang==='en'){await ev(p,`document.getElementById('main').scrollTop=1e8`);await sleep(60);
     writeFileSync(join(out,`web-reply-${w}-${scheme}-${lang}-${status}.png`),await shoot(p));}

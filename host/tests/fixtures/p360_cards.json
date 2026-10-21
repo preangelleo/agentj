@@ -53,6 +53,74 @@
     "plus": "agentj-automation"
    },
    {
+    "id": "calendar",
+    "name": {
+     "zh": "日历",
+     "en": "Calendar"
+    },
+    "desc": {
+     "zh": "与 Agent J 共同管理日程",
+     "en": "Manage your schedule with Agent J"
+    },
+    "icon": "calendar",
+    "accent": "windstorm",
+    "template": "checklist",
+    "official": true,
+    "on": true,
+    "plus": "agentj-calendar"
+   },
+   {
+    "id": "official-palette",
+    "name": {
+     "zh": "配色板",
+     "en": "Palette"
+    },
+    "desc": {
+     "zh": "从一个颜色生成配色，存到我的配色，供各张卡片选用。",
+     "en": "Generate related colors and save palettes to use across your cards."
+    },
+    "icon": "board",
+    "accent": "magic-carpet",
+    "template": "notes",
+    "official": true,
+    "on": false,
+    "plus": "agentj-cards"
+   },
+   {
+    "id": "files",
+    "name": {
+     "zh": "文件管理",
+     "en": "Files"
+    },
+    "desc": {
+     "zh": "浏览 Agent J 主机上的文件夹，下载文档到手机，或 @ 给 Agent 在主机上读。",
+     "en": "Browse folders on your Agent J host; download a document or @ it for the Agent to read there."
+    },
+    "icon": "folder",
+    "accent": "emerald-oasis",
+    "template": "notes",
+    "official": true,
+    "on": false,
+    "plus": "agentj-cards"
+   },
+   {
+    "id": "obsidian",
+    "name": {
+     "zh": "Obsidian",
+     "en": "Obsidian"
+    },
+    "desc": {
+     "zh": "你在 Obsidian 里选定的笔记；看在手机上，改交给 Agent。",
+     "en": "The Obsidian notes you picked: read them here, let your Agent edit them."
+    },
+    "icon": "book",
+    "accent": "magic-carpet",
+    "template": "notes",
+    "official": true,
+    "on": false,
+    "plus": "agentj-obsidian"
+   },
+   {
     "id": "reading-list",
     "name": {
      "zh": "书单",
@@ -136,6 +204,7 @@
     "plus": "agentj-add-todo",
     "links": [],
     "anchors": [],
+    "revision": "9c3a500d376c2028fb583f1cde683efa9bdea87e1f0b6ae10f691cd739719e91",
     "todo": {
      "counts": {
       "all": 4,
@@ -147,6 +216,7 @@
      {
       "id": "t3",
       "text": "iPhone 和安卓宽度各截一张图",
+      "editable": true,
       "done": false,
       "status": "pending",
       "owner": "owner",
@@ -170,6 +240,7 @@
      {
       "id": "t4",
       "text": "等 Leo 拍板第二期开不开放网页卡",
+      "editable": true,
       "done": false,
       "status": "pending",
       "owner": "owner",
@@ -193,6 +264,7 @@
      {
       "id": "t1",
       "text": "写 Agent J Cards 规范",
+      "editable": true,
       "done": true,
       "status": "done",
       "owner": "owner",
@@ -216,6 +288,7 @@
      {
       "id": "t2",
       "text": "做记事本和待办两张样板卡",
+      "editable": true,
       "done": true,
       "status": "done",
       "owner": "owner",
@@ -348,6 +421,7 @@
     "plus": "agentj-add-todo",
     "links": [],
     "anchors": [],
+    "revision": "9c3a500d376c2028fb583f1cde683efa9bdea87e1f0b6ae10f691cd739719e91",
     "todo": {
      "counts": {
       "all": 4,
@@ -359,6 +433,7 @@
      {
       "id": "t3",
       "text": "iPhone 和安卓宽度各截一张图",
+      "editable": true,
       "done": false,
       "status": "pending",
       "owner": "owner",
@@ -382,6 +457,7 @@
      {
       "id": "t4",
       "text": "等 Leo 拍板第二期开不开放网页卡",
+      "editable": true,
       "done": false,
       "status": "pending",
       "owner": "owner",
@@ -405,6 +481,7 @@
      {
       "id": "t1",
       "text": "写 Agent J Cards 规范",
+      "editable": true,
       "done": true,
       "status": "done",
       "owner": "owner",
@@ -428,6 +505,7 @@
      {
       "id": "t2",
       "text": "做记事本和待办两张样板卡",
+      "editable": true,
       "done": true,
       "status": "done",
       "owner": "owner",

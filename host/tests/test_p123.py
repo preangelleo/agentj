@@ -29,7 +29,9 @@ class Provider(unittest.TestCase):
         for language in ('zh','en'):
             a=oc.OpenCodeAgent.__new__(oc.OpenCodeAgent);a.cfg={'language':language}
             selected=a.provider_note('quota_window','fixture',note)
-            self.assertEqual(selected,note.split(' / ')[0 if language=='zh' else -1])
+            self.assertTrue(selected.endswith(note.split(' / ')[0 if language=='zh' else -1]))
+            self.assertIn('fixture',selected)
+            self.assertIn('具体来源未确认' if language=='zh' else 'exact source unconfirmed',selected)
 
     def test_real_rate_limit_and_balance_are_preserved(self):
         self.assertEqual(oc.provider_error_reason('APIError', {'statusCode':429,'message':'Upstream rate limit exceeded, please retry later'}), 'rate_limit')
@@ -55,7 +57,10 @@ class Provider(unittest.TestCase):
                     else:
                         a._failed({'type':'api','status':429,'message':raw})
                     self.assertEqual(a.last_provider_fail['reason'],'quota_window')
-                    self.assertEqual(a.fail_notice.call_args.args[0],oc.PROVIDER_NOTES['quota_window'].split(' / ')[0 if language=='zh' else -1])
+                    selected=a.fail_notice.call_args.args[0]
+                    self.assertTrue(selected.endswith(oc.PROVIDER_NOTES['quota_window'].split(' / ')[0 if language=='zh' else -1]))
+                    self.assertIn('fixture/model',selected)
+                    self.assertIn('具体来源未确认' if language=='zh' else 'exact source unconfirmed',selected)
                     self.assertNotIn('CANARY-RAW',str(a.host.st.log.call_args_list))
                     self.assertNotIn('CANARY-RAW',a.fail_notice.call_args.args[0])
 

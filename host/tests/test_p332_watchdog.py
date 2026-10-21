@@ -433,7 +433,7 @@ class Units(Base):
         self.assertIs(data["KeepAlive"], True)
         self.assertIs(data["RunAtLoad"], True)
         self.assertEqual(data["ProcessType"], "Background")
-        self.assertEqual(data["ProgramArguments"][1:], ["-P", "-m", "agentj.rescue_watchdog"])
+        self.assertEqual(data["ProgramArguments"], [*service.agentj_argv(), "rescue", "watchdog"])
 
     def _fake_systemctl(self):
         calls = []

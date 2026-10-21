@@ -57,6 +57,13 @@ class RPCError(Exception):
         return self.err.get("code")
 
 
+def err_text(err) -> str:
+    """An ACP error's words (message + data), read only to classify / show one bounded line."""
+    err = err if isinstance(err, dict) else {}
+    data = err.get("data")
+    return str(err.get("message") or "") + (("\n" + clean(json.dumps(data, ensure_ascii=False), 500)) if data else "")
+
+
 def tool_of(title, kind, raw) -> tuple[str, dict]:
     """An ACP tool call → (tool, input) in the names the danger list knows (Claude Code's). Kimi already uses them (Bash,
     Write, Edit, Read …, `path` for the file); another agent's names are mapped by the ACP `kind`."""
@@ -335,7 +342,7 @@ class AcpAgent(Agent):
             return await self._open()
         except RPCError as e:
             if e.code == AUTH_REQUIRED:
-                self._login_needed(str(e.err.get("message") or ""))
+                self._login_needed(err_text(e.err))
             else:
                 self.fail_notice(f"{self.LABEL} 没能打开这段对话（{clean(str(e), 4000)}）。")
             return False
@@ -343,7 +350,30 @@ class AcpAgent(Agent):
             self.fail_notice(f"{self.LABEL} 没能打开这段对话（{type(e).__name__}）。")
             return False
 
+    def quota_hint(self) -> str:
+        """P423 #138: the line for a used-up quota / usage limit — never 「没登录」."""
+        if getattr(self.host, "lang", "zh") == "en":
+            return (f"{self.LABEL}'s quota / usage limit is used up — this is not a sign-in problem, no new login needed. Renew or "
+                    "add usage with the provider, then send again; or switch to another Agent for now (/switch-harness).")
+        return (f"{self.LABEL} 的额度 / 用量已用完——不是没登录，不用重新登录。到服务商处续费或加量后再发，"
+                "或先切到别的 Agent（菜单 /switch-harness）。")
+
+    def _limit_hit(self, detail: str) -> bool:
+        """P423 #138: a used-up quota — even one sent as auth_required (Kimi's monthly limit) — never starts the login
+        rescue: the rescue only records it (no dot), the owner gets the quota line."""
+        from . import auth_rescue
+        if not auth_rescue.quota_used(detail):
+            return False
+        fn = getattr(self.host, "auth_rescue", None)
+        if fn is not None and not self.cfg.get("_workflow_ceo"):
+            with contextlib.suppress(Exception):
+                fn.signal(self.kind, "balance")
+        self.fail_notice(self.quota_hint())
+        return True
+
     def _login_needed(self, detail: str = "") -> None:
+        if self._limit_hit(detail):
+            return
         fn = getattr(self.host, "auth_rescue", None)
         if fn is not None and not self.cfg.get("_workflow_ceo"):
             with contextlib.suppress(Exception):
@@ -662,12 +692,12 @@ class AcpAgent(Agent):
             self.flush()
             if self.halting:
                 return
+            detail = err_text(e.err)
             if e.code == AUTH_REQUIRED:
-                self._login_needed(str(e.err.get("message") or ""))
+                self._login_needed(detail)       # P423 #138: a quota sent as auth_required ends in _limit_hit there
                 return
-            msg = str(e.err.get("message") or "")
-            data = e.err.get("data")
-            detail = msg + (("\n" + clean(json.dumps(data, ensure_ascii=False), 500)) if data else "")
+            if self._limit_hit(detail):
+                return
             from . import auth_rescue
             cls = "login" if any(w in detail for w in self.LOGIN_ERRORS) else auth_rescue.classify(self.kind, detail)
             if cls == "login":

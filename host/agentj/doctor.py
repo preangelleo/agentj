@@ -131,7 +131,9 @@ def check_keep_awake() -> dict:
     return _c("keep-awake", OK if r.get("awake") is True else WARN,
               "主机自动休眠已禁用（接电源）/ Host idle sleep disabled (AC)" if r.get("awake") is True else
               "主机可能休眠或无法确认 / Host may sleep or policy is unknown",
-              "agentj keep-awake status --json · agentj keep-awake on; " + (r.get("guidance") or keep_awake.LIMITS))
+              "agentj keep-awake status --json · agentj keep-awake setup; " + (r.get("guidance") or keep_awake.LIMITS)
+              # P418 (#183): a Mac whose closed lid no longer sleeps says so on every check
+              + (" ⚠ " + keep_awake.REMIND["zh"] + " / " + keep_awake.REMIND["en"] if r.get("system") == "macos" and r.get("lid_awake") else ""))
 
 
 def check_browser(st: State) -> dict:
@@ -586,16 +588,24 @@ def check_agent_cli(st: State, svc: dict) -> dict:
         from .names import ctl_call, ServeBusy
         try: auth = ctl_call(st, {'cmd':'opencode_auth'}, timeout=5) or {}
         except (OSError, ValueError, ServeBusy): auth = {}
+        running = auth.get('running_version')
+        if isinstance(running, str):
+            s += f' · running OpenCode {running} / installed {ver}'
+            if running != ver:
+                s += ' · version differs; Agent J restarts its own connection before the next message'
         # P59: the last turn's failure class (401 / 403-region / quota / rate / model / network …), never its message
         fail = auth.get('last_failure') if isinstance(auth.get('last_failure'), dict) else {}
         from .agent_opencode import PROVIDER_NOTES
         reason = fail.get('reason') if fail.get('reason') in PROVIDER_NOTES else None
+        if isinstance(auth.get('subagents'), dict):     # P426: 「OpenCode 子 Agent：已开启（general、explore）」
+            from .opencode_subagents import state_text
+            s += ' · ' + state_text(auth['subagents'], 'zh') + ' / ' + state_text(auth['subagents'], 'en')
         if reason:
             code = fail.get('http_status') if type(fail.get('http_status')) is int else None
             s += f" · last turn failed: {reason}" + (f" (HTTP {code})" if code else "")
         if auth.get('known'):
             connected = auth.get('selected_connected')
-            return _c('agent_cli', FAIL if connected is False or reason in ('login', 'no_key', 'region', 'balance', 'model') else WARN,
+            return _c('agent_cli', FAIL if connected is False or reason in ('login', 'no_key', 'region', 'balance', 'model', 'model_missing') else WARN,
                       s + (' · selected provider disconnected' if connected is False else ' · provider connection recorded; key validity unverified'),
                       (PROVIDER_NOTES[reason].replace('{provider}', '<provider>') + ' ' if reason else '') +
                       '优先使用 Claude Code。OpenCode /provider.connected 只证明已配置连接；核实选中 provider/model。换 key 后 Agent J 在下一条消息前自动重启它启动的 OpenCode，接着原对话（也可运行 agentj agent restart）；附着的Agent J 主机 OpenCode 要你自己重启。 / Prefer Claude Code. Connected is not a live key test. After a key change Agent J restarts its own OpenCode before the next message (or `agentj agent restart`); restart an attached desktop server yourself.')

@@ -86,7 +86,7 @@ test('P168 offline card: the P150 gdlg square, registered as a layer, never take
   assert.match(CSS, /@media\(prefers-reduced-motion:reduce\)\{\.gdlg \.sq\{animation:none\}\}/, 'the shared square entry respects it too');
   // the copy button is the app's copy glyph (the reply bar's) with the check for "done"
   assert.ok(HTML.includes('<rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>'));
-  assert.match(SRC, /RelayMD\.copyText\(FEEDBACK_EMAIL\)/);
+  assert.match(SRC, /copyButton\(FEEDBACK_EMAIL,/);
 });
 
 test('P168 wiring: app.js feeds the card the painted state, session.js the real retry numbers; outage start in the host record', () => {

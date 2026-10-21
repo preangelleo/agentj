@@ -55,6 +55,19 @@ CATEGORY = {"install_failed": "uv_failed", "restart_failed": "service_restart_fa
             "artifact_too_large": "download_failed", "insecure_update_redirect": "download_failed"}
 
 
+# #166/#192: fixed needles in the installer's (lower-cased) output → a finer reason than uv_failed; first match wins, so
+# the Python-version refusal comes before the general "no solution" one.
+UV_STDERR = (
+    ("disk_full", ("no space left on device", "os error 28", "disk quota exceeded", "os error 122")),
+    ("python_incompatible", ("does not satisfy python", "requires-python", "requires python", "python version is not supported")),
+    ("python_missing", ("no interpreter found", "no python installation", "failed to find a python", "python downloads are not allowed")),
+    ("dependency_conflict", ("no solution found when resolving", "unsatisfiable", "resolutionimpossible")),
+    ("dependency_download_failed", ("failed to fetch", "error sending request", "failed to download", "dns error",
+                                    "connection refused", "connection reset", "network is unreachable", "tcp connect error",
+                                    "certificate", "request failed after", "operation timed out")),
+)
+
+
 def category(reason) -> str:
     if isinstance(reason, OSError) and reason.errno == errno.EROFS:
         return "read_only_filesystem"
@@ -72,6 +85,10 @@ def installer_reason(exc=None, stderr="") -> str:
         return "read_only_filesystem"
     if "permission denied" in text or "os error 13" in text:
         return "permission_denied"
+    # #166/#192: a uv / pipx exit with output is named by what the output says, not one catch-all
+    for reason, needles in UV_STDERR:
+        if any(n in text for n in needles):
+            return reason
     return category(exc) if exc is not None else "uv_failed"
 
 
@@ -177,7 +194,25 @@ def entry(res: dict, now: float | None = None) -> dict | None:
         checks = failed_checks(res)
         if checks:
             rec["failed_checks"] = checks
+        rec.update(rollback_fields(res))
     return rec
+
+
+ROLLBACK_TAIL_MAX = 1200
+ROLLBACK_CHECKS = ("version_unchanged",)
+
+
+def rollback_fields(res) -> dict:
+    """#166/#192: why the automatic rollback itself failed — a fixed category, the rollback installer's own redacted tail
+    (bounded, kept apart from the first failure's) and, when the installed version was found unchanged, that check's id."""
+    out = {}
+    if res.get("rollback_failure"):
+        out["rollback_failure"] = category(res["rollback_failure"])
+    if res.get("rollback_tail"):
+        out["rollback_tail"] = str(res["rollback_tail"])[-ROLLBACK_TAIL_MAX:]
+    if res.get("rollback_check") in ROLLBACK_CHECKS:
+        out["rollback_check"] = res["rollback_check"]
+    return out
 
 
 def failed_checks(res) -> list:
@@ -281,6 +316,13 @@ def body(res: dict, kind: str | None = None) -> str:
         lines.append("detail: " + str(res["detail"])[:120])
     if res.get("stderr_tail"):
         lines += ["installer stderr (last lines, redacted):", str(res["stderr_tail"])]
+    rb = rollback_fields(res)
+    if rb.get("rollback_failure"):
+        lines.append("rollback failure: " + rb["rollback_failure"]
+                     + (" · installed version unchanged: still " + str(res.get("from") or "?")
+                        if rb.get("rollback_check") == "version_unchanged" else ""))
+    if rb.get("rollback_tail"):
+        lines += ["rollback installer stderr (last lines, redacted):", rb["rollback_tail"]]
     return "\n".join(lines)
 
 
@@ -331,6 +373,12 @@ REASON_WORDS = {
     "installer_timeout": ("安装命令超时", "the installer timed out"),
     "os_error": ("安装遇到系统错误", "an operating-system error prevented installation"),
     "uv_failed": ("安装命令执行失败", "the install command failed"),
+    "disk_full": ("磁盘空间不足，安装没能写完", "the disk is full, so the installation could not finish"),
+    "python_incompatible": ("这台电脑上的 Python 版本不符合新版要求", "this computer's Python version does not meet the new version's requirement"),
+    "python_missing": ("安装工具找不到可用的 Python", "the installer could not find a usable Python"),
+    "dependency_conflict": ("新版的依赖包在这台电脑上装不到一起", "the new version's dependencies could not be resolved on this computer"),
+    "dependency_download_failed": ("下载依赖包失败，网络或软件源暂时连不上", "downloading the dependencies failed: no network or the package index is unreachable"),
+    "upgrade_cache_unreadable": ("本地升级缓存读不出来", "the local upgrade cache could not be read"),
     "service_restart_failed": ("新版装好了但后台服务没能重启", "the new version installed but the background service did not restart"),
     "not_upgraded": ("装完后版本没有变成目标版本", "after installing, the version was not the target"),
     "doctor_failed": ("升级后自检没通过", "the post-upgrade self-check failed"),

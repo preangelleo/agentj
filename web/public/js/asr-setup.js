@@ -14,8 +14,7 @@ export function createAsrSetup({t, notify, confirm, install, ready, repaint}) {
     installing = false;
     if (result.ok && result.state === 'ready') {
       ready(); repaint();
-      notify({kind:'success', title:t('p387Voice.readyTitle'), text:t('p387Voice.ready'), ms:0,
-        actions:[{label:t('p387Voice.dismiss'),fn:()=>{}}]});
+      notify({kind:'success', shape:'circle', text:t('p387Voice.readyTitle'), ms:1800});
     } else {
       repaint();
       const why = ['download_failed','extract_failed','install_failed','test_failed','prepare_failed','off','broken','busy','offline','timeout'].includes(result.why) ? result.why : 'failed';

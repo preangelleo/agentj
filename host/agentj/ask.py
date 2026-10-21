@@ -3,8 +3,8 @@
 Claude Code has AskUserQuestion and Codex has `request_user_input` (refused outside Plan mode), others have nothing the
 phone can show. This command puts the same signed card on the paired phones from a plain shell call: single choice,
 multiple choice, an "Other" choice (the owner then types in the chat), an open question (no options) and a short preview
-under an option. The signed protocol is unchanged — the phone still signs option numbers only; typed text arrives as the
-owner's next chat message.
+under an option. The phone signs option numbers or the digest of an in-card free answer; the legacy Other choice still accepts a later
+chat message.
 
 The card lives in serve, not in this process: if the shell call is cut off (a harness timeout), the card stays on the
 phone and the answer is handed to the Agent as an 〔Agent J 系统提示〕 turn, or picked up with `agentj ask --wait <id>`.
@@ -134,6 +134,9 @@ def answers(card: list, meta: list, picks) -> list:
     itself) and whether the owner will type the answer in the chat."""
     res = []
     for q, m, p in zip(card, meta, picks or []):
+        if isinstance(p, str):
+            res.append({"question": q["q"], "header": q.get("h") or "", "picked": [p], "typed_in_chat": False})
+            continue
         typed = m["open"] or (m["other"] is not None and m["other"] in p)
         labels = [q["o"][n - 1]["l"] for n in p if not (m["other"] is not None and n == m["other"]) and not m["open"]]
         res.append({"question": q["q"], "header": q.get("h") or "", "picked": labels, "typed_in_chat": typed})

@@ -45,8 +45,8 @@ try {
       const tag = `${c.name}-${w}-${theme}`;
       assert.equal(g.bg, NOIR, `${tag} background Noir`); assert.equal(g.fg, LOTION, `${tag} text Lotion`); assert.equal(g.op, '1', `${tag} opaque`);
       assert.ok(g.text.includes(c.spec.text), `${tag} text`);
-      if (c.spec.shape === 'circle') { assert.ok(Math.abs(g.w - g.h) < 1, `${tag} circle ${g.w}×${g.h}`); assert.equal(g.radius, '50%'); }
-      else assert.ok(Math.abs(g.w - g.ref) < 1.5, `${tag} rect width ${g.w} = input card ${g.ref}`);
+      if (await evaluate(p, `document.getElementById('toast').classList.contains('circle')`)) { assert.ok(Math.abs(g.w - g.h) < 1, `${tag} circle ${g.w}×${g.h}`); assert.equal(g.radius, '50%'); }
+      else assert.ok(await evaluate(p, `document.getElementById('toast').parentElement.id==='reply-notices'`), `${tag} internal card`);
       if (c.act) { assert.ok(g.btn.h >= 44, `${tag} button ≥ 44 px`); assert.ok(g.btn.right < 10, `${tag} button right-aligned`); }
       writeFileSync(out + `${tag}.png`, await shoot(p, ''));
       rows.push({tag, ...g});
@@ -56,7 +56,7 @@ try {
     await evaluate(p, `import('./js/ui.js').then(m=>m.toast('已保存', 60000))`); await sleep(400);
     assert.equal(await evaluate(p, `getComputedStyle(document.getElementById('toast')).backgroundColor`), NOIR, 'toast() is Noir');
     await evaluate(p, `import('./js/ui.js').then(m=>m.toastOff())`);
-    await evaluate(p, `(()=>{const b=document.getElementById('share-notice');document.body.append(b);b.hidden=false;document.getElementById('share-status').textContent='截图已就绪，点「粘贴截图」放进输入框';const k=document.getElementById('share-paste');k.hidden=false;k.disabled=false;})()`);
+    await evaluate(p, `(()=>{const b=document.getElementById('share-notice');document.getElementById('reply-notices').append(b);b.hidden=false;document.getElementById('share-status').textContent='截图已就绪，点「粘贴截图」放进输入框';const k=document.getElementById('share-paste');k.hidden=false;k.disabled=false;})()`);
     await sleep(200);
     const s = await evaluate(p, `(()=>{const cs=getComputedStyle(document.getElementById('share-notice'));return {bg:cs.backgroundColor,fg:cs.color}})()`);
     assert.deepEqual(s, {bg: NOIR, fg: LOTION}, 'share notice Noir');

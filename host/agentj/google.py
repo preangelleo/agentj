@@ -54,9 +54,6 @@ PREINSTALL_ENV = "AGENTJ_GOOGLE_PREINSTALL"  # "off" → serve never pre-install
 RETRY_SECS = 86_400                      # a failed background pre-install is retried at most once a day
 CLI_TTL = 7 * 86_400                     # P86: CLI / skill probe result is fresh for 7 days (and until the version changes)
 PROBE_TIMEOUT = 20
-# Environment variables that could hand gog someone else's credentials or a different config root.
-_STRIP = ("GOG_HOME", "GOG_ACCESS_TOKEN", "GOG_QUOTA_PROJECT", "GOG_ACCOUNT", "GOG_CLIENT", "GOOGLE_APPLICATION_CREDENTIALS",
-          "GOOGLE_OAUTH_ACCESS_TOKEN", "CLOUDSDK_CONFIG", "CLOUDSDK_AUTH_ACCESS_TOKEN_FILE")
 
 # Purposes (P91 ADR §Scope plan): the minimum scope each needs; never all / user / full. `api` = the API to enable.
 PURPOSES = {
@@ -70,8 +67,10 @@ PURPOSES = {
                       "scopes": ["https://www.googleapis.com/auth/calendar.readonly"], "class": "sensitive",
                       "gog": ["--services", "calendar", "--readonly"]},
     "calendar-write": {"zh": "写入日历日程", "en": "Write Calendar events", "api": "calendar-json.googleapis.com",
-                       "scopes": ["https://www.googleapis.com/auth/calendar.events"], "class": "sensitive",
-                       "gog": None},   # gog's calendar default is the full calendar scope: exact events-only in 0.18.1
+                       "scopes": ["https://www.googleapis.com/auth/calendar"], "class": "sensitive",
+                       "gog": ["--services", "calendar"],
+                       "scope_note": "gog has no events-only scope: full Calendar scope, but Agent J only lists calendars "
+                                     "and lists / creates / updates / deletes events"},   # P428 (CALENDAR-SYNC-SPEC §1)
     "drive-file": {"zh": "云盘里它建/你选的文件", "en": "Drive files it creates or you pick", "api": "drive.googleapis.com",
                    "scopes": ["https://www.googleapis.com/auth/drive.file"], "class": "non-sensitive",
                    "gog": ["--services", "drive", "--drive-scope", "file"]},
@@ -125,7 +124,7 @@ def _state_path(st) -> pathlib.Path:
 
 
 def _blank() -> dict:
-    return {"v": 1, "preinstall": "on", "install": None, "attempt": None, "check": None}
+    return {"v": 1, "preinstall": "on", "install": None, "attempt": None, "check": None, "connections": {}}
 
 
 def read(st) -> dict:
@@ -142,6 +141,8 @@ def read(st) -> dict:
         base["corrupt"] = True
     if base["preinstall"] not in ("on", "off"):
         base["preinstall"] = "on"
+    from .google_connect import clean          # P428: connections[purpose] = {step, at, reason?} only
+    base["connections"] = clean(base["connections"])
     return base
 
 
@@ -186,10 +187,25 @@ def urls(name: str) -> list[str]:
     return [u.format(v=GOG_VERSION, a=name) for u in tpl]
 
 
+# P428 F7: gog gets an allowlisted environment, never serve's whole one (key-card values arrive there from the env file).
+_ENV_KEEP = (
+    "PATH",                                   # gog finds xdg-open / open and the OS keyring helpers
+    "HOME",                                   # Go's user dirs and the OS keyring client need it
+    "USER", "LOGNAME",                        # macOS Keychain / Secret Service look the user up
+    "LANG", "LC_ALL", "LC_CTYPE",             # text encoding of gog's prompts and the consent page hand-off
+    "TMPDIR",                                 # gog's temporary files
+    "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS",   # Linux Secret Service (GNOME Keyring / KWallet) over the session bus
+    "XDG_CONFIG_HOME",                        # xdg-open reads the owner's default-browser choice there
+    "DISPLAY", "WAYLAND_DISPLAY", "BROWSER",  # opening the consent page in the owner's desktop browser
+    "HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "NO_PROXY", "no_proxy", "ALL_PROXY", "all_proxy",
+)                                             # ↑ owners whose network reaches Google only through a proxy
+KEYRING_SERVICE = "agentj-gog"   # F3: Agent J's gog never shares the owner's own gog keyring entries (default "gogcli")
+
+
 def env(st) -> dict:
-    """gog's environment: our own home only, nobody else's token or config root; PATH/HOME/keyring bus kept."""
-    e = {k: v for k, v in os.environ.items() if k not in _STRIP and not k.startswith("GOG_")}
-    e["GOG_HOME"] = str(gog_home(st))
+    """gog's environment: an allowlist (F7) + our own home and keyring namespace (F3) — no token, config root or key card."""
+    e = {k: os.environ[k] for k in _ENV_KEEP if k in os.environ}
+    e.update(GOG_HOME=str(gog_home(st)), GOG_KEYRING_SERVICE_NAME=KEYRING_SERVICE)
     return e
 
 
@@ -395,17 +411,21 @@ def check(st) -> dict:
     return status(st)
 
 
-def purposes(existing: dict | None = None) -> list[dict]:
+def purposes(existing: dict | None = None, conns: dict | None = None) -> list[dict]:
     """One row per purpose: API authorization and website sign-in are separate rows, never one green "Google ready"."""
     existing = existing if existing is not None else detect_existing()
+    from .google_connect import effective
+    conns = conns or {}
     # A gog / gws config may hold the owner's own Workspace grants (unverified, never read); gcloud alone says nothing about
     # Gmail / Calendar / YouTube, so it is listed under `existing` only.
     seen = existing["gog"]["config"] or existing["gws"]["config"]
     rows = []
     for pid, p in PURPOSES.items():
+        c = effective(conns, pid)
         rows.append({"id": pid, "title": {"zh": p["zh"], "en": p["en"]}, "api": p["api"], "scopes": list(p["scopes"]),
                      "class": p["class"], "api_state": "existing_unverified" if seen else "not_configured",
-                     "authorize_in": API_STAGE, "browser": "separate"})
+                     "authorize_in": API_STAGE, "browser": "separate", "connectable": pid.startswith("calendar-"),
+                     "step": (c or {}).get("step"), "verified_at": _iso(c["at"]) if c and c["step"] == "ready" else None})
     return rows
 
 
@@ -424,8 +444,11 @@ def status(st, existing: dict | None = None) -> dict:
                                                "accounts": chk.get("accounts") if inst else None,
                                                "last_attempt": rec.get("attempt"), "corrupt": bool(rec.get("corrupt"))},
         "existing": existing,
-        "purposes": purposes(existing),
-        "api_authorization": {"available_in": API_STAGE, "state": "not_available_yet"},
+        "purposes": purposes(existing, rec["connections"]),
+        # P428: only Calendar is connectable (`agentj google connect`); every other purpose is still not available.
+        "api_authorization": {"available_in": API_STAGE, "state": "calendar_ready" if any(
+            c["step"] == "ready" for c in rec["connections"].values()) else "calendar_connectable",
+            "others": "not_available_yet", "connections": rec["connections"]},
         "browser_signin": "separate: the browser login health check, not this command",
     }
 
@@ -433,7 +456,8 @@ def status(st, existing: dict | None = None) -> dict:
 # ------------------------------------------------------------------ P86 projection (proposed registry schema, closed fields)
 def registry_entries(st, s: dict | None = None) -> list[dict]:
     """Entries in the P86 registry shape (schemas/registry.schema.json): one `cli` row for gog and one `credential` row per
-    purpose. A purpose is never `ready` in 0.18.0: the host cannot authorize it yet (check `unsupported`)."""
+    purpose. Only a Calendar purpose can be `ready` (P428: after `agentj google connect` verified it); the others cannot be
+    authorized yet (check `unsupported`)."""
     s = s or status(st)
     t = s["tool"]
     at = t["checked_at"]
@@ -449,13 +473,13 @@ def registry_entries(st, s: dict | None = None) -> list[dict]:
                       "adapter_id": "google-purpose-v1", "last_verified_at": at if t["fresh"] else None,
                       "expires_at": exp, "source_digest": GOG_ASSETS.get(_key(), ("", 0, None))[2]}}]
     for row in s["purposes"]:
+        from .google_connect import projection
+        status_, check = projection(row)
         out.append({"id": "google-" + row["id"], "kind": "credential", "title": row["title"],
                     "source_ref": "google/connections/" + row["id"], "scope": row["scopes"],
                     "provides": ["google." + row["id"].replace("-", ".")], "depends_on": ["google-cli"],
-                    "status": "discovered" if row["api_state"] == "existing_unverified" else "unavailable",
-                    "credential_name": "GOOGLE_" + row["id"].upper().replace("-", "_"),
-                    "check": {"status": "unsupported", "adapter_id": "google-purpose-v1", "last_verified_at": None,
-                              "expires_at": None, "source_digest": None}})
+                    "status": status_, "credential_name": "GOOGLE_" + row["id"].upper().replace("-", "_"),
+                    "check": {"adapter_id": "google-purpose-v1", "source_digest": None, **check}})
     return out
 
 
@@ -503,10 +527,20 @@ def doctor_row(st) -> tuple[str, str, str]:
 
 
 # ------------------------------------------------------------------ host side of elevate.sock and the CLI
-OPS = ("status", "check", "install", "on", "off", "registry")
+OPS = ("status", "check", "install", "on", "off", "registry", "connect", "connect_status", "disconnect")
 
 
-def execute(op: str, st, purposes_: list[str] | None = None) -> dict:
+def __getattr__(name):     # P428 §1: connect / connect_status / disconnect / gog_calendar / request_shape (google_connect.py)
+    if name in ("connect", "connect_status", "disconnect", "gog_calendar", "request_shape"):
+        from . import google_connect
+        return getattr(google_connect, name)
+    raise AttributeError(name)
+
+
+def execute(op: str, st, purposes_: list[str] | None = None, req: dict | None = None) -> dict:
+    if op in ("connect", "connect_status", "disconnect"):
+        from . import google_connect
+        return google_connect.execute(op, st, req or {})
     if op == "status":
         return status(st)
     if op == "check":
@@ -544,16 +578,21 @@ def cmd(a) -> int:
     from . import elevate
     from .state import State
     st = State()
-    if a.action == "plan":
+    from .google_connect import cli_request
+    res, req = cli_request(a) if a.action in ("connect", "disconnect") else (None, {"t": "google", "op": a.action})
+    if res is None and a.action == "plan":
         try:
             res = plan(a.purpose or [])
         except GoogleError as e:
             res = {"ok": False, "why": e.reason, "detail": e.detail}
-    else:
-        res = elevate.client_request(st, {"t": "google", "op": a.action}, timeout=900)
+    elif res is None:
+        res = elevate.client_request(st, req, timeout=900)
         if res.get("result") == "unavailable":          # serve not running: the CLI owns the state itself
             try:
-                if a.action == "install":
+                if req["op"] in ("connect", "connect_status", "disconnect"):
+                    from .google_connect import cli_local
+                    res = cli_local(st, req, a.json)
+                elif a.action == "install":
                     res = install(st, out=(lambda s: None) if a.json else (lambda s: print(s, file=sys.stderr)))
                 else:
                     res = execute(a.action, st)
@@ -568,9 +607,14 @@ def cmd(a) -> int:
 
 def add_parser(sub) -> None:
     p = sub.add_parser("google", help="Google 工具：预装 gog、只读状态、用途与权限计划 / Google tools: pinned gog, read-only status, purpose plan")
-    p.add_argument("action", nargs="?", choices=["status", "check", "install", "plan", "on", "off", "registry"], default="status",
-                   help="status 只读 · check 实测 gog · install 预装 · plan 某些用途的建置计划 · on/off 用不用 / "
-                        "status read-only · check probes gog · install pre-installs · plan shows a setup plan · on/off use it or not")
-    p.add_argument("--purpose", action="append", choices=sorted(PURPOSES), help="plan：用途，可重复 / plan: purpose, repeatable")
+    p.add_argument("action", nargs="?", choices=["status", "check", "install", "plan", "on", "off", "registry", "connect",
+                                                 "disconnect"], default="status",
+                   help="status 只读 · check 实测 gog · install 预装 · plan 某些用途的建置计划 · on/off 用不用 · connect/disconnect 日历授权 / "
+                        "status read-only · check probes gog · install pre-installs · plan shows a setup plan · on/off use it or "
+                        "not · connect/disconnect Calendar authorization")
+    p.add_argument("--purpose", action="append", choices=sorted(PURPOSES), help="plan：用途，可重复；connect：一个 / plan: "
+                   "purpose, repeatable; connect: one")
+    from .google_connect import add_args
+    add_args(p)
     p.add_argument("--json", action="store_true")
     p.set_defaults(fn=lambda a: sys.exit(cmd(a)))

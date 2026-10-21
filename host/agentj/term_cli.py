@@ -1,6 +1,10 @@
 """P408 (ADR-P408-terminal H3 H6 M5, PROTOCOL §38): `agentj terminal status|enable|allow|deny|disable|forget|logs` and
-serve's control.sock `terminal_cfg`.
+serve's control.sock `terminal_cfg`. P414 (§38.13): `agentj terminal open [--cmd LINE]` / `output [--lines N]` — the Agent shows
+the terminal (a line prefilled, never sent) and reads its agent-masked transcript (`terminal_go` / `terminal_read`, on
+elevate.sock so they work inside the Agent fence; control.sock answers the same commands).
 
+P417 #185: a computer-browser remote may also switch it on for itself (terminal.py `term_open` mode "enable": signature +
+passkey + the computer login password checked by sudo); a remote that paired as a phone is never a default or a target here.
 Widening (`enable`, `allow`) needs the owner AT the computer AND a passkey remote: the CLI refuses inside an Agent harness or
 without a terminal; serve's `terminal_cfg` is ctl_auth.SENSITIVE (claim refused to any descendant of serve — the Agent,
 tasks, the shared session, the web terminal itself — and to an Agent-marked environment) and wants a terminal on the caller's
@@ -21,6 +25,7 @@ import time
 from . import term_store as store
 
 OPS = ("status", "enable", "allow", "deny", "disable", "forget", "logs")
+AGENT_OPS = ("open", "output")      # P414 (§37.13): not `terminal_cfg` — terminal_go / terminal_read
 WIDEN = ("enable", "allow")
 HOURS_DEFAULT, HOURS_MAX = 2, 24
 
@@ -36,7 +41,7 @@ def card_text(lang: str, op: str, code: str, names: list, minutes: int, hours: i
         lines = ["打开网页终端（这台电脑上运行了 agentj terminal " + op + "）",
                  ("临时允许：" if op == "allow" else "能用的遥控器：") + "、".join(names),
                  f"每次最长 {minutes} 分钟" + (f"；{hours} 小时后自动取消" if hours else ""),
-                 "打开后在手机上敲的命令会在电脑上运行，每次打开都要 Face ID。"]
+                 "打开后在电脑浏览器里敲的命令会在这台电脑上运行，每次打开都要 Face ID。"]
         if web:
             lines.append("其中「" + "、".join(web) + "」是网页版：网页被篡改时可能借用 Face ID。")
         lines.append(f"对照码：{c}（电脑终端上应显示同一串数字；不一致或不是你本人操作就点拒绝）")
@@ -44,7 +49,7 @@ def card_text(lang: str, op: str, code: str, names: list, minutes: int, hours: i
         lines = [f"Turn on the web terminal (agentj terminal {op} was run on this computer)",
                  ("Allowed for a while: " if op == "allow" else "Remotes that may use it: ") + ", ".join(names),
                  f"Up to {minutes} min per session" + (f"; ends by itself in {hours} h" if hours else ""),
-                 "Commands typed on the phone run on this computer; every open asks for Face ID."]
+                 "Commands typed in the computer browser run on this computer; every open asks for Face ID."]
         if web:
             lines.append("\"" + ", ".join(web) + "\" is the web version: a tampered page could borrow Face ID.")
         lines.append(f"Match code: {c} (the terminal shows the same digits; if not, or it isn't you, tap Deny)")
@@ -114,7 +119,8 @@ async def ctl_cfg(desk, req: dict) -> dict:
     if not isinstance(devs, list) or not all(isinstance(d, str) for d in devs):
         return {"ok": False, "error": "shape"}
     if not devs and op == "enable":
-        pks = [d for d in st.devices() if st.passkey_of_device(d)]
+        # P417 #185: a remote that paired as a phone never uses the terminal — not a default, refused when named
+        pks = [d for d in st.devices() if st.passkey_of_device(d) and store.device_kind(st, d) != "phone"]
         if len(pks) != 1:
             return {"ok": False, "error": "choose_device" if pks else "no_passkey"}
         devs = pks
@@ -123,6 +129,8 @@ async def ctl_cfg(desk, req: dict) -> dict:
             return {"ok": False, "error": "unknown_device", "device": d}
         if not st.passkey_of_device(d):
             return {"ok": False, "error": "no_passkey", "device": d}
+        if store.device_kind(st, d) == "phone":
+            return {"ok": False, "error": "phone_device", "device": d}
     if op == "allow" and not cfg["on"]:
         return {"ok": False, "error": "disabled"}
     web_flag = req.get("web") is True
@@ -204,7 +212,8 @@ def _json(line: str):
 
 # ---------------------------------------------------------------- the CLI
 ERR = {
-    "os": "这台电脑的系统暂不支持网页终端（第一版只支持 Linux 和 WSL；macOS / Windows 下一版）。/ Not on this system yet (v1: Linux and WSL).",
+    "os": "这台电脑的系统暂不支持网页终端（现在支持 Linux、macOS 和 Windows 的 WSL；Windows 本身下一版）。/ Not on this system yet "
+          "(Linux, macOS and WSL now; native Windows next).",
     "no_passkey": "没有设了通行密钥（Face ID / 指纹）的已配对遥控器：先在手机上「设置 → 安全」里开通行密钥。/ No paired remote with a passkey: "
                   "turn one on in the phone's Settings → Security first.",
     "choose_device": "有好几台带通行密钥的遥控器：用 --device 选一台（agentj terminal status 列出它们）。/ Several remotes have a passkey: "
@@ -220,20 +229,26 @@ ERR = {
     "busy": "已经有一张网页终端卡片在等手机确认。/ A web terminal card is already waiting on the phones.",
     "no_device": "现在没有在线的遥控器能确认：打开手机上的 Agent J 再试。/ No remote is online to confirm.",
     "not_listed": "这台遥控器不在名单上。/ That remote is not on the list.",
+    "phone_device": "这台遥控器是手机：因为安全性和便捷性的原因，网页终端只能在电脑浏览器里操控。选一台电脑浏览器（--device）。/ "
+                    "That remote is a phone; the web terminal can only be used from a computer browser — pick one with --device.",
 }
 
 
 def add_parser(sub) -> None:
-    p = sub.add_parser("terminal", help="网页终端：status · enable · allow · deny · disable · forget · logs / the web terminal (line mode)",
-                       description="在手机上开一个限时的终端（默认关）。只能在这台电脑上打开，并要一台有通行密钥的遥控器用 Face ID 确认。"
-                                   " / A time-limited terminal on your phone (off by default); turned on only here, confirmed with "
-                                   "Face ID on a remote that has a passkey.")
-    p.add_argument("action", choices=["status", "enable", "allow", "deny", "disable", "forget", "logs"])
+    p = sub.add_parser("terminal", help="网页终端：status · enable · allow · deny · disable · forget · logs · open · output / the web "
+                       "terminal (line mode)",
+                       description="在电脑浏览器里开一个限时的终端（默认关）。在这台电脑上运行 enable，或在电脑浏览器的「设置 → 安全」里"
+                                   "用 Face ID + 电脑登录密码开启；手机上不能用。 / A time-limited terminal in a computer browser (off by "
+                                   "default): run enable here, or switch it on in the computer browser's Settings → Security with Face "
+                                   "ID + this computer's login password; not on phones.")
+    p.add_argument("action", choices=["status", "enable", "allow", "deny", "disable", "forget", "logs", "open", "output"])
     p.add_argument("target", nargs="?", help="遥控器（id 或名字），用于 allow、deny、forget / the remote (id or name) for allow, deny, forget")
     p.add_argument("--device", action="append", help="enable：能用的遥控器（可多次；默认 = 唯一有通行密钥的那台）/ a remote (repeatable)")
     p.add_argument("--minutes", type=int, help=f"enable：每次最长几分钟（1–{store.MIN_MAX}，默认 {store.MIN_DEFAULT}）/ minutes per session")
     p.add_argument("--hours", type=int, help=f"allow：几小时后自动取消（1–{HOURS_MAX}，默认 {HOURS_DEFAULT}）/ hours until it ends")
     p.add_argument("--allow-web", action="store_true", help="允许网页版遥控器 / allow a web-version remote")
+    p.add_argument("--cmd", help="open：在手机终端的输入框里填好这一行（不会自动运行）/ prefill this line in the phone's terminal (never sent)")
+    p.add_argument("--lines", type=int, help="output：最后几行（1–2000，默认 200）/ the last N lines")
     p.add_argument("--json", action="store_true")
     p.set_defaults(fn=cmd_terminal)
 
@@ -266,12 +281,61 @@ def _password_sudo() -> str | None:
                 "(NOPASSWD); the web terminal needs a password sudo.")
     if "password is required" not in (r.stderr or ""):
         return "你的账户不能用 sudo（不是管理员）：网页终端要一个用密码的 sudo。/ Your account cannot use sudo; a password sudo is needed."
+    if sys.platform == "darwin":                     # P437: a standard (non-admin) account and Touch ID in sudo's PAM
+        from .term_mac import enable_problem
+        return enable_problem()
     return None
+
+
+AGENT_ERR = {
+    "disabled": "网页终端没打开（主人在电脑上运行 agentj terminal enable）。/ The web terminal is off (the owner runs agentj terminal enable).",
+    "nobody": "没有遥控器被允许用网页终端。/ No remote may use the web terminal.",
+    "offline": "现在没有能用网页终端的遥控器在线（或它正显示一张确认卡）。/ No allowed remote is online right now (or it shows a card).",
+    "rate": "刚打开过：隔 5 秒再试；10 分钟内最多 3 次，主人在终端里操作后重新计。/ Too soon: wait 5 s; at most 3 in 10 min until the owner acts.",
+    "untrusted_source": "这一轮不是主人发起的（群聊 / 转发 / 好友），不能打开或读取终端。/ Not during a turn that is not the owner's.",
+    "shape": "这一行不能用：太长、有控制字符、看不见的字符或一长串空格。/ The line is too long or has control / invisible characters.",
+}
+
+
+def _agent_cmd(a) -> None:
+    """P414 (§37.13): `open` / `output` — any caller, also inside the Agent fence (elevate.sock)."""
+    from . import elevate, names
+    from .state import State
+    st = State()
+    if a.action == "open":
+        req = {"t": "terminal_go", **({"line": a.cmd} if a.cmd else {})}
+    else:
+        req = {"t": "terminal_read", "lines": a.lines if a.lines is not None else 200}
+    res = elevate.client_request(st, req, timeout=30, path=names.elevate_sock(st))
+    if res.get("result") == "unavailable":
+        try:
+            res = names.ctl_call(st, {**{k: v for k, v in req.items() if k != "t"}, "cmd": req["t"]}, 30) if st.exists() else None
+        except names.ServeBusy:
+            sys.exit("✗ agentj serve 在运行但没有响应。/ agentj serve is running but not answering.")
+        if res is None:
+            sys.exit("✗ agentj serve 没在运行。/ agentj serve is not running.")
+    if not res.get("ok"):
+        sys.exit("✗ " + AGENT_ERR.get(res.get("error"), "没有完成 / not done") + f" ({res.get('error')})")
+    if a.json:
+        print(json.dumps(res, ensure_ascii=False, indent=1))
+    elif a.action == "open":
+        print(f"✓ 已在 {res.get('reached', 0)} 台遥控器上打开网页终端" + ("，命令已填在输入框里，主人确认后才会运行" if a.cmd else "") +
+              f"。/ Shown on {res.get('reached', 0)} remote(s)" + ("; the line waits in the input until the owner sends it." if a.cmd else "."))
+    else:
+        if not res.get("text"):
+            print("（没有可读的终端记录：终端没开，或关闭已超过 30 分钟）/ (no terminal transcript: not open, or closed over 30 min ago)")
+            return
+        head = ("正在使用" if res.get("open") else "已关闭") + f" · {res.get('device_name') or ''}" + (" · 只显示最后一部分" if res.get("cut") else "")
+        if res.get("hidden"):
+            head += f" · [已隐藏 {res['hidden']} 处]"
+        print(f"# {head}\n{res['text']}")
 
 
 def cmd_terminal(a) -> None:
     from . import ctl_auth, names
     from .state import State
+    if a.action in AGENT_OPS:
+        return _agent_cmd(a)
     st = State()
     if not st.exists():
         sys.exit("✗ 还没初始化：先运行 agentj init。/ Not set up yet: run agentj init.")

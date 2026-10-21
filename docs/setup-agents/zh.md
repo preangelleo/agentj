@@ -48,7 +48,7 @@ shasum -a 256 setup-agents.sh
 ```
 
 
-SHA256 sh: `216bd76866938e123b0f6143b3fef9ff9d2c397fb9f66421656e61ad9fe6e4f2`
+SHA256 sh: `cf002b69178c4e51ca24146c1144a7264b7866140320420bc33ccfe530198b44`
 
 
 ```bash
@@ -520,13 +520,13 @@ command -v opencode
 ```
 
 
-主路线（官方脚本；macOS / Linux / WSL，不需要 Node/npm）：
+主路线（OpenCode v2 官方脚本；macOS / Linux / WSL，不需要 Node/npm）：
 
 ```bash
-curl -fsSL https://opencode.ai/install | bash
+curl -fsSL https://opencode.ai/v2/install | bash
 ```
 
-装完提示 `command not found`：按自己的 shell 选择下面一组。macOS 默认 zsh；`>>` 会自动创建不存在的 `~/.zshrc`。每条分别复制。
+接着按自己的 shell 逐条复制并执行下面的命令。安装脚本会写启动文件，但改不了当前终端的 PATH。macOS 默认用 zsh；`>>` 会创建缺失的文件。PATH 那行重复执行无害，只会在 PATH 里重复加入同一个目录。
 
 zsh（macOS 默认）：
 
@@ -570,7 +570,7 @@ npm 备用路线（先安装 Node/npm，并完成上方 PATH 设置）：
 
 
 ```bash
-npm install --global --prefix "$HOME/.local/share/agentj-setup/npm" opencode-ai
+npm install --global --prefix "$HOME/.local/share/agentj-setup/npm" @opencode/cli
 ```
 
 
@@ -578,9 +578,13 @@ npm install --global --prefix "$HOME/.local/share/agentj-setup/npm" opencode-ai
 
 
 ```bash
-npm install --global --prefix "$HOME/.local/share/agentj-setup/npm" opencode-ai --registry=https://registry.npmmirror.com
+npm install --global --prefix "$HOME/.local/share/agentj-setup/npm" @opencode/cli --registry=https://registry.npmmirror.com
 ```
 
+
+命令名仍是 `opencode`（npm 也提供 `opencode2`）。npm 安装时请保留 postinstall 脚本和平台可选依赖：安装脚本负责放好本机二进制。2026-10-21 实测 npmmirror 已有 `@opencode/cli` 2.1.2；镜像不可用时，改用上面的 npm 官方源命令。macOS 还可用 `brew install anomalyco/tap/opencode-v2`。
+
+OpenCode 1.x 也能用，不必迁移；想升 2.x 用上面的新命令，1.x 不会自动升到 2.x。
 
 检查 PATH，验证安装，再自己登录；密钥只在自己的终端输入。
 
@@ -604,13 +608,17 @@ opencode auth login
 
 ### 最快上手路线（推荐给新用户）
 
-1. 用上方官方脚本安装 OpenCode；若找不到命令，先做紧跟脚本的 PATH 修复。
-2. 在自己的终端运行 `opencode`。
-3. 在 OpenCode 里输入 `/connect`，搜索并选择 DeepSeek，在密钥输入框粘贴自己的 API key。密钥只在自己的终端输入，不要发到聊天、席位卡或截图里。也可先在终端运行 `opencode auth login`，选择 DeepSeek 完成登录。
-4. 在 OpenCode 里输入 `/models`，选择可用的 DeepSeek 模型。
-5. 把席位卡上的安装提示词粘贴到 OpenCode 的对话中，让它接着安装 Agent J；按提示完成需要你亲自操作的步骤。
+1. 按上方顺序执行 v2 安装命令，以及自己 shell 对应的 PATH 和 `source` 命令。
+2. 打开 OpenCode：
 
-[DeepSeek 官方接入指南](https://opencode.ai/docs/providers/#deepseek)
+```bash
+opencode
+```
+
+3. 输入 `/models`，选 **DeepSeek V4.1 Flash Free**（`opencode/deepseek-v4.1-flash-free`，2026-10-21 实测）。这是 OpenCode 的免费模型，不需要 API key，也不用 `/connect`。免费模型可能调整；若列表里没有它，选其它标为 Free 的模型，或接入自己的付费服务商。
+4. 把席位卡上的安装提示词粘贴到 OpenCode 对话里，让它接着安装 Agent J。
+
+有自己的付费 DeepSeek 账号时，用 `/connect` → DeepSeek，或 `opencode auth login`，再用 `/models` 选对应模型。API key 只在自己的终端输入，不要发到聊天、席位卡或截图里。[DeepSeek 官方接入指南](https://opencode.ai/v2/docs/providers/#deepseek)
 
 全权限启动：
 
@@ -1360,8 +1368,6 @@ Windows（PowerShell）：`irm https://code.kimi.com/kimi-code/install.ps1 | iex
 买之前先看清条款，以阿里云订阅页为准。你自己的定时任务和后台 Agent 可以用 Token Plan 的 key。长时间连续跑的后台任务，服务商可能限流，遇到了就把这些任务改用按量付费的 key。订阅期间，你发给模型的内容和模型生成的内容会被阿里云用于服务改进和模型优化，涉及隐私的数据要谨慎。套餐只限订阅人本人，不能共享。客服 bot 是在服务别人，Agent J 不会把 Token Plan 的 key 交给 bot，要给 bot 另填一把按量付费的 key（bot 设置页里会告诉你填在哪）。
 
 在 https://bailian.console.aliyun.com/cn-beijing/subscription/overview 订阅，再到控制台新建套餐专属 API Key。然后让 Agent 帮你配：它运行 `agentj provider bailian`，把百炼写进 OpenCode 的设置，你原来的设置一项都不动。接着手机上会弹出密钥卡，key 只粘贴在那里。Agent J 会用百炼只读的模型列表接口核对这把 key，不花 Credits。最后 Agent 把 OpenCode 切到 `bailian-token-plan-personal/qwen3.8-max`。
-
-Coding Plan（key 以 `sk-sp-` 开头）也能用（`agentj provider bailian --plan coding-plan`），但它没有 Max 模型，key 也没法事先核对。你自己的定时任务可以用 Coding Plan 的 key（长时间连续跑的后台任务服务商可能限流，遇到了就改用按量付费的 key）；客服 bot 拿不到它，要另填按量付费的 key。
 
 ## 千问 Qwen Code {#qwen}
 

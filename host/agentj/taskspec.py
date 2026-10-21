@@ -10,6 +10,9 @@ scheduler and the stop-everything switch (later rounds). Shape (exact key set �
     run on; the quota steward never moves it elsewhere. Absent = any (normally the main Agent's own).
     optional (P365): "notify_webapp": true | false — decided when the task is made, default false: true = the files this run
     writes under reports/ go to the phone as file cards on its result page (notify.py; the phone's settings can override).
+    optional (P426 #181-5): "steps": 2–12 nodes [{"id", "prompt_file", optional "title" {zh,en}, "outputs" [reports/…],
+    "idempotent" (default false), "retry" 0–3 (only with idempotent or mode research)}] — each node is its own harness run,
+    checkpointed by wfrun.py; a failed run continues from the failed node (`agentj automation resume`).
 
 - `enabled` is turned on only by a human (the scheduler round); the wizard and `add-template` always write `false`.
 - `mode: "research"` = the read-only run profile (reports only). `normal` workflows may draft, but every step that spends
@@ -24,7 +27,11 @@ import json
 import re
 
 KEYS = ("v", "id", "title", "schedule", "tz", "prompt_file", "dry_run_prompt_file", "mode", "enabled", "needs", "outputs")
-OPTIONAL = ("harness", "notify_webapp")   # P365: notify_webapp, see notify.py
+OPTIONAL = ("harness", "notify_webapp", "steps")   # P365: notify_webapp, see notify.py; P426: steps, see wfrun.py
+STEP_KEYS = ("id", "prompt_file")
+STEP_OPTIONAL = ("title", "outputs", "idempotent", "retry")
+MAX_STEPS = 12
+MAX_RETRY = 3
 HARNESS_NAMES = ("claude", "codex", "opencode", "kimi", "qwen", "dsh")   # P305: + Kimi Code (ACP, tasks.py)
 MODES = ("normal", "research")
 ID_RE = re.compile(r"[a-z0-9][a-z0-9-]{0,39}")
@@ -115,7 +122,42 @@ def problems(obj: object, expect_id: str | None = None) -> list[str]:
     if "outputs" in obj and not (isinstance(outs, list) and 0 < len(outs) <= 10 and all(
             isinstance(x, str) and _OUT_RE.fullmatch(x) and ".." not in x.split("/") for x in outs)):
         out.append("outputs must be 1–10 relative paths under reports/")
+    if "steps" in obj and (p := steps_problem(obj["steps"], obj.get("mode"))):
+        out.append(p)
     return out
+
+
+def _outputs_ok(outs: object, least: int = 1) -> bool:
+    return isinstance(outs, list) and least <= len(outs) <= 10 and all(
+        isinstance(x, str) and _OUT_RE.fullmatch(x) and ".." not in x.split("/") for x in outs)
+
+
+def steps_problem(steps: object, mode: object = None) -> str | None:
+    """P426 #181-5: the optional node list of a multi-step automation (wfrun.py runs and checkpoints it)."""
+    if not (isinstance(steps, list) and 2 <= len(steps) <= MAX_STEPS):
+        return f"steps must be a list of 2–{MAX_STEPS} nodes"
+    seen = set()
+    for i, s in enumerate(steps, 1):
+        if not isinstance(s, dict) or any(k not in s for k in STEP_KEYS) or any(k not in STEP_KEYS + STEP_OPTIONAL for k in s):
+            return f"step {i} must have id and prompt_file (optional: title, outputs, idempotent, retry) and nothing else"
+        if not (isinstance(s["id"], str) and ID_RE.fullmatch(s["id"])) or s["id"] in seen:
+            return f"step {i}: id must match [a-z0-9][a-z0-9-]{{0,39}} and be unique"
+        seen.add(s["id"])
+        if not (isinstance(s["prompt_file"], str) and _FILE_RE.fullmatch(s["prompt_file"])):
+            return f"step {i}: prompt_file must be a plain .md file name in the workflow folder"
+        t = s.get("title")
+        if "title" in s and not (isinstance(t, dict) and set(t) == {"zh", "en"} and all(_short_text(t[k], 80) for k in t)):
+            return f"step {i}: title must be {{zh, en}}, each 1–80 characters"
+        if "outputs" in s and not _outputs_ok(s["outputs"], 0):
+            return f"step {i}: outputs must be ≤ 10 relative paths under reports/"
+        if "idempotent" in s and type(s["idempotent"]) is not bool:
+            return f"step {i}: idempotent must be true or false"
+        r = s.get("retry", 0)
+        if type(r) is not int or not 0 <= r <= MAX_RETRY:
+            return f"step {i}: retry must be a whole number 0–{MAX_RETRY}"
+        if r and s.get("idempotent") is not True and mode != "research":
+            return f"step {i}: retry needs \"idempotent\": true (a step with side effects is never repeated by itself)"
+    return None
 
 
 def secret_like(text: str, owner: bool = False) -> bool:
@@ -125,12 +167,39 @@ def secret_like(text: str, owner: bool = False) -> bool:
         from .privacy import _SECRETS
         for kind, pat, repl in _SECRETS:
             for match in pat.finditer(text):
-                if kind in {"credential_assignment", "authorization_header", "bearer_token"} and not _credential_value(match, repl):
+                if kind in {"credential_assignment", "authorization_header", "bearer_token"} and _not_owner_value(match, repl):
                     continue
                 return True
         return False                     # P211: no unlabelled entropy guess for owner's files
-    _, hits = redact_with_report(text)
+    _, hits = redact_with_report(text, paths=True)   # P424 #142/#147: paths / names / `$VAR` references are no value
     return any(k in SECRET_KINDS for k in hits)
+
+
+def secret_where(text: str, owner: bool = False) -> dict | None:
+    """P424 #142: where `secret_like(text, owner)` found its secret — privacy.where's {"kind","line","col","len","hint"} of
+    the earliest fragment that rule would refuse, or None. Only for telling the owner where to look."""
+    from .privacy import _SECRETS, R, secret_at, where
+    if not owner:
+        return where(text, secret_at(text, SECRET_KINDS))
+    spans = []
+    for kind, pat, repl in _SECRETS:
+        for match in pat.finditer(text):
+            if kind in {"credential_assignment", "authorization_header", "bearer_token"} and _not_owner_value(match, repl):
+                continue
+            rep = match.expand(repl)
+            i = rep.find(R)
+            pre, suf = (rep[:i], rep[i + len(R):]) if i >= 0 else ("", "")
+            spans.append((match.start() + len(pre), max(match.start() + len(pre) + 1, match.end() - len(suf)), kind))
+    if not spans:
+        return None
+    s, e, kind = min(spans)
+    return where(text, (kind, s, e))
+
+
+def _not_owner_value(match, replacement: str) -> bool:
+    """P270 + P424: an OWNER file's labelled match that is documentation / shell / code, not a credential value."""
+    from .privacy import _not_value
+    return _not_value(match, replacement, True) or not _credential_value(match, replacement)
 
 
 def _credential_value(match, replacement: str) -> bool:

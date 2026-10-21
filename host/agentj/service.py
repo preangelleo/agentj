@@ -25,6 +25,7 @@ import plistlib
 import re
 import shutil
 import shlex
+import stat
 from pathlib import Path
 import subprocess
 import sys
@@ -529,6 +530,43 @@ def key_note(n: str, key: str = JEV_KEY_ENV, environ: dict | None = None) -> str
             f"phone's secret card, then `agentj service restart`.")
 
 
+# P423 #140: `import-key NAME` with NAME absent from this shell got Jev's OpenRouter template whatever NAME was. Jev's wording
+# stays with Jev's key; a few well-known names get their vendor; any other name gets the neutral phone-card route.
+# name → (purpose shown on the phone card, read-only verify URL or None, verify header or None)
+KEY_SERVICES = {
+    "OPENAI_API_KEY": ("OpenAI API key", "https://api.openai.com/v1/models", None),
+    "CODEX_API_KEY": ("OpenAI API key（Codex）", "https://api.openai.com/v1/models", None),
+    "ANTHROPIC_API_KEY": ("Anthropic API key（Claude Code）", None, None),
+    TOKEN_ENV: ("Claude Code 登录 token（claude setup-token）/ Claude Code sign-in token", None, None),
+}
+
+
+def absent_key_note(n: str, key: str, environ: dict | None = None) -> str:
+    """P423 #140: what to tell the owner when `agentj service import-key KEY` finds no KEY in this terminal. Names and commands
+    only — never a value. Jev / OpenRouter wording only for Jev's own key (OPENROUTER_API_KEY)."""
+    if key == JEV_KEY_ENV:
+        return key_note(n, key, environ) or ""
+    target = tilde(env_file(n, environ))
+    purpose, verify, header = KEY_SERVICES.get(key, (f"{key}", None, None))
+    card = f"agentj secret request --name {key} --purpose '{purpose}' --dest env:{target}#{key}"
+    if verify:
+        card += f" --verify-url {verify}" + (f" --verify-header '{header}'" if header else "")
+    if key == TOKEN_ENV:
+        return (f"{key} 是 Claude Code 的登录 token：在任意装了 Claude Code 的电脑上运行 `claude setup-token` 生成，再在Agent J 主机上"
+                f"运行 `{card}`，在手机的密钥卡片里贴上，然后 `agentj service restart`。 / {key} is Claude Code's sign-in token: make "
+                f"one with `claude setup-token` on any computer with Claude Code, run `{card}` on the Agent J host, paste it on "
+                f"the phone's secret card, then `agentj service restart`.")
+    if key in KEY_SERVICES:
+        return (f"要把 {purpose} 存进后台服务：在Agent J 主机上运行 `{card}`，在手机的密钥卡片里贴上，再 `agentj service restart`。 / "
+                f"To store the {purpose} for the background service: run `{card}` on the Agent J host, paste it on the phone's "
+                f"secret card, then `agentj service restart`.")
+    return (f"如果 {key} 是 OpenCode 配置（opencode.json）里引用的 key，先运行 `agentj provider list`，核对 key= 后面的变量名和它一字"
+            f"不差。要从手机存进后台服务：在Agent J 主机上运行 `{card}`，在手机的密钥卡片里贴上，再 `agentj service restart`。 / If "
+            f"{key} is a key referenced in OpenCode's config (opencode.json), run `agentj provider list` first and check the name "
+            f"after key= matches it exactly. To store it for the background service from the phone: run `{card}` on the Agent J "
+            f"host, paste it on the phone's secret card, then `agentj service restart`.")
+
+
 def missing_key_message(key_name: str, environment="CLI") -> str:
     # Names are validated configuration fields; values never enter this message.
     if not isinstance(key_name, str) or not KEY_ENV_RE.fullmatch(key_name):
@@ -929,6 +967,9 @@ def install(st) -> dict:
             notes.append(f"旧服务 {old['name']} 已停止并删除 / the old service {old['name']} was stopped and removed")
         # P327: through the signed "Agent J.app" launcher when available (Login Items shows "Agent J"), else as before
         argv, extra = macapp.wrap(argv, log=getattr(st, "log", None))
+        if not extra:
+            notes.append("签名 App 暂不可用，登录项仍可能显示身份不明；联网后运行 agentj service install 重试 / Signed app unavailable; Login Items may still show an unidentified developer. Retry agentj service install when online.")
+        extra["Comment"] = "Agent J — Host"
         _write(path, plist_bytes(n, argv, env, str(st.root / "service.log"), extra), 0o644)
         # `launchctl enable` writes a permanent record into launchd's override database that only root can remove: call it
         # only when the label is disabled there (a bootstrap would fail), remember that, and put it back on uninstall
@@ -945,6 +986,9 @@ def install(st) -> dict:
                 st.log("launchd_jobs_swept", count=len(swept))
         _register_pair_protocol(notes)
         _rescue_note(st, notes)       # P332
+        migrated = migrate_calendar_jobs(st)
+        if migrated:
+            notes.append(f"已迁移 {len(migrated)} 个每周任务登录项 / Migrated {len(migrated)} weekly task login items")
         notes.append(login_reminder())
         return {"kind": "launchd", "name": n, "path": path, "argv": argv + SERVE_ARGS, "notes": notes}
     raise ServiceError("unsupported_os")
@@ -967,8 +1011,10 @@ def rescue_name(n: str | None = None) -> str:
 
 
 def rescue_argv() -> list[str]:
-    """This interpreter, straight at the watchdog module (not through the CLI: smaller, and a broken CLI import after an
-    upgrade does not take the watchdog with it). `-P`: never the working directory on sys.path."""
+    """Linux: this interpreter directly at the watchdog module. macOS: signed-app-compatible CLI fast dispatch,
+    before any heavy CLI imports. `-P` on module launches keeps the working directory off sys.path."""
+    if platform() == "macos":
+        return [*agentj_argv(), "rescue", "watchdog"]
     return [os.path.abspath(sys.executable), *RESCUE_ARGS]
 
 
@@ -996,10 +1042,10 @@ def rescue_unit_text(n: str, argv: list[str], env: dict) -> str:
     return "\n".join(lines)
 
 
-def rescue_plist_bytes(n: str, argv: list[str], env: dict, log_path: str) -> bytes:
+def rescue_plist_bytes(n: str, argv: list[str], env: dict, log_path: str, extra: dict | None = None) -> bytes:
     return plistlib.dumps({"Label": n, "ProgramArguments": argv, "EnvironmentVariables": env,
                            "RunAtLoad": True, "KeepAlive": True, "ThrottleInterval": 10, "ProcessType": "Background",
-                           "Nice": 10, "LowPriorityIO": True,
+                           "Nice": 10, "LowPriorityIO": True, **(extra or {}),
                            "StandardInPath": "/dev/null", "StandardOutPath": log_path, "StandardErrorPath": log_path})
 
 
@@ -1025,7 +1071,9 @@ def install_rescue(st) -> dict:
         path = rescue_path(r)
         new = not os.path.exists(path)
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        _write(path, rescue_plist_bytes(r, argv, env, str(st.root / "rescue-service.log")), 0o644)
+        argv, extra = macapp.wrap(argv, log=getattr(st, "log", None))
+        extra["Comment"] = "Agent J — Rescue watchdog"
+        _write(path, rescue_plist_bytes(r, argv, env, str(st.root / "rescue-service.log"), extra), 0o644)
         if launchd_disabled(r) is True:
             _launchctl("enable", f"{_gui()}/{r}")
             _remember_enabled(st, r)
@@ -1431,3 +1479,53 @@ def boot_mode() -> str | None:
     if plat == "linux":
         return {"yes": "auto", "no": "login"}.get(_linger() or "")
     return None
+
+
+def migrate_calendar_jobs(st) -> list[str]:
+    """P425: installer-only migration; preserve schedule/environment and never run a weekly notification immediately.
+    Only regular owner files in our weekly-job namespace, with an Agent J executable, are eligible.
+    """
+    if platform() != "macos":
+        return []
+    migrated = []
+    for path in Path(plist_path("x")).parent.glob("net.agentj.channel.weekly.*.plist"):
+        try:
+            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            try:
+                info = os.fstat(fd)
+                if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o022 or info.st_size > 262144:
+                    continue
+                with os.fdopen(os.dup(fd), "rb") as stream:
+                    old = stream.read(262145)
+                if len(old) > 262144:
+                    continue
+            finally:
+                os.close(fd)
+            d = plistlib.loads(old)
+            argv = d.get("ProgramArguments")
+            if not isinstance(argv, list) or not argv or not all(isinstance(x, str) for x in argv):
+                continue
+            if d.get("Label") != path.stem or not d.get("StartCalendarInterval") or d.get("RunAtLoad") is not False:
+                continue
+            if argv[0] == str(macapp.exe_path()):
+                continue
+            target = Path(argv[0])
+            if not target.is_absolute() or target.name != "agentj":
+                continue
+            argv = [str(target.resolve()), *argv[1:]]
+            wrapped, extra = macapp.wrap(argv, log=getattr(st, "log", None))
+            if not extra:
+                continue
+            d.update(extra, ProgramArguments=wrapped, Comment="Agent J — Weekly task (" + path.stem.rsplit(".", 1)[-1] + ")")
+            _write(str(path), plistlib.dumps(d), stat.S_IMODE(info.st_mode))
+            r = _bootstrap(path.stem, str(path))
+            if r.returncode:
+                _write(str(path), old, stat.S_IMODE(info.st_mode))
+                _bootstrap(path.stem, str(path))
+                st.log("macapp_migration_failed", reason="bootstrap")
+                continue
+            migrated.append(path.stem)
+        except (OSError, ValueError, plistlib.InvalidFileException, subprocess.SubprocessError):
+            with contextlib.suppress(Exception):
+                st.log("macapp_migration_failed", reason="unavailable")
+    return migrated

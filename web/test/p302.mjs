@@ -72,7 +72,7 @@ try{
   await click(p,'#orb');await waitFor(p,`!document.getElementById('five-menu').hidden`);await sleep(300);await snap('0-menu');
   check(await cev(p,`getComputedStyle(document.getElementById('five-menu')).backgroundColor==='rgb(44, 43, 38)'`),'menu canvas = Noir as it opens '+name);
   check(await cev(p,`getComputedStyle(document.querySelector('.top')).backgroundColor==='rgb(44, 43, 38)'`),'header = Noir with the menu open '+name);
-  check(await cev(p,`document.querySelector('meta[name="theme-color"]').content==='#2c2b26'`),'OS bar = Noir with the menu open '+name);
+  check(await cev(p,`document.querySelector('meta[name="theme-color"]').content==='#141414'`),'OS bar = Sooty with the menu open (P422) '+name);
   check(await cev(p,`(()=>{const c=document.querySelector('.fp-menu-card[data-page="agentj"]'),s=getComputedStyle(c);return s.backgroundColor==='rgb(44, 43, 38)'&&s.color==='rgb(250, 249, 245)';})()`),'「Agent J」 card = Noir + Lotion text (P393 #132) '+name);
   // the four Heavy cards keep P244's Lotion text (2.8–3.6:1, reported to Jarvis, not changed in a hotfix); the Lama card reads ≥ 4.5:1
   check(await cev(p,`(()=>{const c=document.querySelector('.fp-menu-card[data-page="agentj"]');return (${CONTRAST})(c.querySelector('h2'))>=4.5&&(${CONTRAST})(c.querySelector('p'))>=4.5;})()`),'「Agent J」 card text ≥ 4.5:1 '+name);
@@ -223,10 +223,10 @@ try{
    }
    // a refused save puts the switch back AND says why in a centred card (not only a line far up the page)
    fake.st.prefRefuse='busy';const q0=await ev(p,`document.getElementById('set-qswitch').getAttribute('aria-checked')`);
-   await click(p,'#set-qswitch');await waitFor(p,`!document.getElementById('confirm').hidden`);await sleep(200);await snap('9c-switch-refused');
-   check(await cev(p,`document.getElementById('confirm-no').hidden&&/没有改成|did not change/.test(document.getElementById('confirm').textContent)`),'refused switch → centred notice with one button');
+   await click(p,'#set-qswitch');await waitFor(p,`document.getElementById('toast').classList.contains('on')`);await sleep(200);await snap('9c-switch-refused');
+   check(await cev(p,`document.getElementById('confirm').hidden&&document.querySelector('#toast.circle')&&document.getElementById('toast').textContent.includes('busy')`),'refused switch → centred buttonless transient notice');
    check(await cev(p,`document.getElementById('set-qswitch').getAttribute('aria-checked')===${JSON.stringify(q0)}`),'refused switch flips back');
-   await click(p,'#confirm-yes');await sleep(200);check(await cev(p,`document.getElementById('confirm').hidden&&!document.getElementById('confirm-no').hidden`),'notice closes, the confirm card is whole again');
+   await waitFor(p,`!document.getElementById('toast').classList.contains('on')`,3000);check(await cev(p,`document.getElementById('confirm').hidden&&!document.getElementById('confirm-no').hidden`),'notice fades without touching the confirm card');
    fake.st.prefRefuse=null;
   }
   await esc();check(await cev(p,`document.getElementById('settings').hidden`),'Esc closes Settings '+name);

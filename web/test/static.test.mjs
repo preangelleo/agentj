@@ -29,7 +29,8 @@ const MODULES = ['api', 'blobs', 'boot', 'controls', 'md', 'push', 'relay', 'ses
   'version-notice', 'five-pages', 'workflow-compose',
   'toolorder', 'toolsort',   // P340: the composer buttons' order (aj.toolOrder, four ids) + its Settings row   // P240: the version check (its one metadata GET had a branch below but the file was never in this list)
   'jcards',   // P360: Agent J Cards (deck cards 6+, one card's template page, Settings → Cards)
-  'termhook', 'terminal'];   // P408: the web terminal's Settings row + its lazily loaded page (same rules: no storage, no import())
+  'termhook', 'terminal',   // P408: the web terminal's Settings row + its lazily loaded page (same rules: no storage, no import())
+  'bang', 'vault', 'vaultrow'];   // P414: 「!」 lines + their result card, the PRF vault helpers, Settings → 电脑密码
 const OURS_FILES = ['app.js', ...MODULES.map((m) => `js/${m}.js`)];
 const OURS = OURS_FILES.map((r) => read(pub(r))).join('\n');
 const HTML = read(pub('index.html'));
@@ -132,6 +133,8 @@ test('no URLs to anywhere in shipped files except links to agentj.app pages', ()
         if (['i18n.js', 'index.html', 'js/rescue.js'].includes(rel(f)) && m[0] === 'https://agentj.app/rescue') continue;
         // P400 item 3 (Leo 10-20 named the subdomain): owner-clicked 「在线客服」 links to our own support chat (301 → agentj.app/support/); never fetched
         if (rel(f) === 'index.html' && m[0] === SUPPORT_LINK) continue;
+        // P417 #207: owner-clicked official key consoles; no fetch or secret in either URL.
+        if (rel(f) === 'js/keys.js' && ['https://bailian.console.aliyun.com/cn-beijing/subscription/overview','https://bailian.console.aliyun.com/cn-beijing/model/settings/api-key'].includes(m[0])) continue;
         assert.match(m[0], SITE_LINK, `${rel(f)} contains URL ${m[0]}`);
       }
     }
@@ -224,7 +227,7 @@ test('app.js + js/*.js: only WebSocket egress, non-extractable keys, no plaintex
   // F13: + the reply text size from Settings (FONT_KEY = "aj.fontScale", a number 0.8 … 1.6).
   // 0.15.1 (P55): + the install id (IID_KEY = "aj.iid", 16 random bytes, b64url) and the paired marker (PAIRED_KEY =
   // "aj.paired", a unix time) — no key, no channel, nothing about the Agent J host.
-  assert.deepEqual(ls.sort(), ['getItem("aj.chrome")', 'getItem("aj.test.segMs")', 'getItem(A2HS_KEY)', 'getItem(RD_KEY)', 'getItem(FONT_KEY)', 'setItem("aj.chrome")', 'setItem(A2HS_KEY)', 'setItem(RD_KEY)', 'setItem(FONT_KEY)',
+  assert.deepEqual(ls.sort(), ['getItem("aj.test.segMs")', 'getItem(A2HS_KEY)', 'getItem(RD_KEY)', 'getItem(FONT_KEY)', 'setItem(A2HS_KEY)', 'setItem(RD_KEY)', 'setItem(FONT_KEY)',
     'getItem(IID_KEY)', 'setItem(IID_KEY)', 'getItem(PAIRED_KEY)', 'setItem(PAIRED_KEY)', 'removeItem(PAIRED_KEY)', "getItem('aj.homeInstalled')", "setItem('aj.homeInstalled')",
     // P154: the Send-sound volume (VOLUME_KEY = "aj.sfxVolume", 0 … 100) and the screenshot switch (SHOT_KEY = "aj.shotClip", "1"/"0")
     'getItem(VOLUME_KEY)', 'setItem(VOLUME_KEY)', 'getItem(SHOT_KEY)', 'setItem(SHOT_KEY)',
@@ -249,7 +252,7 @@ test('app.js + js/*.js: only WebSocket egress, non-extractable keys, no plaintex
   assert.match(OURS, /const VOLUME_KEY = 'aj\.sfxVolume';/); assert.match(OURS, /const SHOT_KEY = 'aj\.shotClip';/);
   assert.match(OURS, /const FZ_KEY = "aj\.pageFz";/); assert.doesNotMatch(OURS, /aj\.recDim/, 'P346: the dim mode is gone');
   assert.match(OURS, /const ORDER_KEY = 'aj\.toolOrder';/);
-  assert.equal(OURS_FILES.reduce((n, r) => n + (code(read(pub(r))).match(/localStorage/g) || []).length, 0), 39, 'localStorage appears only in these calls (P340: aj.toolOrder get + set; P346: aj.recDim gone; P247: host-scoped numeric read receipts; P302 #29: aj.verUpdated consumed + aj.verUpdatedSeen.<version>; P240: aj.verRefresh; P171: + the two aj.theme writes; P182: aj.test.segMs only shortens a recording part, tests only; P205: aj.recDim) (homeInstalled is a boolean, never pairing data)');
+  assert.equal(OURS_FILES.reduce((n, r) => n + (code(read(pub(r))).match(/localStorage/g) || []).length, 0), 37, 'P422 removes both aj.chrome calls; localStorage appears only in these calls (P340: aj.toolOrder get + set; P346: aj.recDim gone; P247: host-scoped numeric read receipts; P302 #29: aj.verUpdated consumed + aj.verUpdatedSeen.<version>; P240: aj.verRefresh; P171: + the two aj.theme writes; P182: aj.test.segMs only shortens a recording part, tests only; P205: aj.recDim) (homeInstalled is a boolean, never pairing data)');
   assert.match(OURS, /const IID_KEY = 'aj\.iid';/);
   assert.match(OURS, /const PAIRED_KEY = 'aj\.paired';/);
   assert.match(OURS, /const FONT_KEY = 'aj\.fontScale';/);
@@ -407,7 +410,7 @@ test('manifest + icons are local files from the brand (192, 512, 512 maskable), 
   assert.deepEqual(m.icons.map((i) => `${i.sizes}/${i.purpose}`), ['192x192/any', '512x512/any', '512x512/maskable']);
   const TOK = read(pub('brand/palette.css'));
   for (const c of [m.background_color, m.theme_color]) assert.ok(TOK.includes(`: ${c};`), `${c} is a brand token`);
-  assert.match(HTML, /<meta name="theme-color" content="#faf9f5" media="\(prefers-color-scheme: light\)">/);
+  assert.match(HTML, /<meta name="theme-color" content="#141414" media="\(prefers-color-scheme: light\)">/);
   assert.match(HTML, /<meta name="theme-color" content="#141414" media="\(prefers-color-scheme: dark\)">/);
   assert.match(HTML, /<link rel="apple-touch-icon" href="apple-touch-icon\.png\?v=[0-9a-f]{8}">/);
   assert.match(HTML, /<link rel="manifest" href="manifest\.webmanifest">/);
@@ -474,6 +477,7 @@ test('i18n: no internal terms or banned words in either dictionary, the page tex
 
 test('i18n: the forbidden-term check itself works (positive control)', { skip: NO_GLOSSARY }, () => {
   const planted = ['Noise 握手', '急停', 'alpha', 'harness', 'Zero Access'];
+  assert.ok(!GLOSSARY.forbidden.some(f => jsRe(f.pattern).test('紧急停止所有 Agent')), 'P435 owner-approved label is allowed');
   for (const s of planted) assert.ok(GLOSSARY.forbidden.some((f) => jsRe(f.pattern).test(s)), `no forbidden pattern catches ${s}`);
 });
 

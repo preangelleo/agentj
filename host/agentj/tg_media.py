@@ -80,7 +80,8 @@ def collect(media: "media_mod.Media", text: str, keys: list | None = None) -> tu
         except OSError:
             rec, why = None, None
         if why:
-            skip = {"name": name, "why": why, **({"bytes": rec["bytes"]} if rec and why == "too_big" else {})}
+            skip = {"name": name, "why": why, **({"bytes": rec["bytes"]} if rec and why == "too_big" else {}),
+                    **media_mod._at(media, why)}
             skips.append(skip)
             if keys is not None and why in ("key_file", "key_content") and rec and "sha256" in rec and ref.explicit:
                 keys.append((skip, rec))
@@ -117,10 +118,14 @@ def read_checked(rec: dict) -> bytes:
         os.close(fd)
 
 
+AT = {"zh": "（第 {line} 行）", "en": " (line {line})"}     # P424 #142: where the key-like text is — the line only, no characters
+
+
 def skip_lines(skips: list[dict], lang: str = "zh") -> str:
     t = SKIP.get(lang, SKIP["zh"])
     lines = []
     for s in skips:
         mb = f"{s.get('bytes', 0) / (1024 * 1024):.1f}".rstrip("0").rstrip(".")
-        lines.append(t.get(s["why"], t["gone"]).format(name=s["name"], mb=mb))
+        at = AT.get(lang, AT["zh"]).format(line=s["line"]) if isinstance(s.get("line"), int) else ""
+        lines.append(t.get(s["why"], t["gone"]).format(name=s["name"], mb=mb) + at)
     return "\n".join(lines)

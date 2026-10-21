@@ -1,9 +1,9 @@
 ---
 name: agentj-add-note
-description: Add a note to the owner's Notebook card (the official Agent J card 「记事本」) — the phone's + on that card puts `/agentj-add-note ` in the message box and the owner says what to note (「/agentj-add-note 周五前给设计师回邮件」, "add a note: …", 「记一下…」「帮我记一条」). Writes one dated note at the top of the notebook's data file, atomically, then says so in one line.
+description: Add a note to the owner's Notebook card (the official Agent J card 「记事本」) — the card's Collaborate with Agent J button puts `/agentj-add-note ` in the message box and the owner says what to note (「/agentj-add-note 周五前给设计师回邮件」, "add a note: …", 「记一下…」「帮我记一条」). Writes one dated note at the top of the notebook's data file, atomically, then says so in one line.
 ---
 
-The Notebook is the card `notes`, backed by the existing notes.md. Both + and Add a note invoke this skill.
+The Notebook is the card `notes`, backed by the existing notes.md. The + and Add a note open a direct-save dialog without AI; Collaborate with Agent J invokes this skill. Direct card edits/deletions also bypass AI.
 `/agentj-add-note add <words>` or words without an operation adds a note. With no words, ask what to note.
 `/agentj-add-note tidy` asks you to organize it: preserve original records unless the owner explicitly asks for merging
 or removal. `/agentj-add-note edit <entry-id> <words>` and `delete <entry-id>` target only that entry. Resolve entry ids
@@ -24,3 +24,5 @@ Never store a key, password or credential code. Ordinary addresses, phone number
    and must not expose credentials or alter unrelated existing entries.
 4. Only after an add succeeds, run `agentj card open notes --at latest`. If navigation fails, report that separately;
    never add the note again just to navigate. Answer in one line with `card/notes#latest`.
+
+Phone manual entry: + / Add opens a direct-save dialog without AI. Collaborate with Agent J fills this skill command and a trailing space; natural-language collaboration uses the Agent.

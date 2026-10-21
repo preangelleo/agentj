@@ -4,7 +4,6 @@ The mainland China route next to Kimi (ai_route.py): a monthly plan instead of p
 - **Token Plan, personal** (`token-plan`, recommended): Lite 39 / Essential 79 / Standard 139 / Pro 499 CNY a month, metered
   in Credits; Qwen 3.8 Max / Flash with image input (screenshots, browser work), GLM, DeepSeek. Anthropic-compatible
   endpoint for OpenCode, its own key (BAILIAN_TOKEN_PLAN_API_KEY).
-- **Coding Plan** (`coding-plan`, second choice): no Max model, no read-only key check (its model list answers any key).
 
 What `bailian.json` holds is the official OpenCode block (help.aliyun.com/zh/model-studio/opencode-token-plan) with the key
 as an `{env:NAME}` reference. Writing it never replaces anything the owner already has: an existing provider of the same id
@@ -27,8 +26,8 @@ import sys
 from . import opencode_provider as op
 
 DATA = pathlib.Path(__file__).with_name("bailian.json")
-PLANS = ("token-plan", "coding-plan")
-LABEL = {"token-plan": "Token Plan", "coding-plan": "Coding Plan"}
+PLANS = ("token-plan",)
+LABEL = {"token-plan": "Token Plan"}
 VISION = ("qwen3.8-max", "qwen3.8-flash", "qwen3.7-plus", "qwen3.6-flash", "qwen3.6-plus", "qwen3.5-plus", "kimi-k2.5")
 
 TERMS = {   # P348 (2026-10-16): the owner's own tasks may use the plan; support bots never (bots/provider.py)
@@ -42,19 +41,8 @@ TERMS = {   # P348 (2026-10-16): the owner's own tasks may use the plan; support
           "Agent J never gives it the Token Plan key — add a pay-as-you-go key for the bot.",
 }
 
-# P348 (2026-10-16): the Coding Plan key may run the owner's own scheduled tasks (fence.PLAN_KEY_ENV); bots never
-CODING_TERMS = {
-    "zh": "百炼 Coding Plan 是包月套餐（条款以百炼控制台为准）：你自己的定时任务和后台 Agent 可以用它；长时间连续跑的后台任务服务商可能限流，"
-          "可改用按量付费的 Key。客服 bot 是在服务别人，Agent J 不会把 Coding Plan 的 Key 交给 bot，要另填一把按量 Key。",
-    "en": "Bailian Coding Plan is a monthly plan (the Bailian console's terms are authoritative): your own scheduled tasks and "
-          "background Agents may use it; the provider may rate-limit long continuous background work, so you can switch those "
-          "to a pay-as-you-go key. A support bot serves other people, so Agent J never gives it the Coding Plan key — add a "
-          "pay-as-you-go key for the bot.",
-}
-
-
 def terms(plan_name: str | None, lang: str = "zh") -> str:
-    return (CODING_TERMS if plan_name == "coding-plan" else TERMS)[lang]
+    return TERMS[lang]
 
 
 def data() -> dict:
@@ -194,3 +182,17 @@ def cmd(a) -> int:
         return 2
     print(json.dumps({"ok": True, **r, "terms": TERMS}, ensure_ascii=False) if a.json else render(r, lang))
     return 0
+
+
+RETIRED_KEY = "BAILIAN_CODING_PLAN_API_KEY"
+def notify_retired(host) -> bool:
+    """One durable upgrade notice; preserve the old key byte for byte."""
+    from . import keys
+    marker = host.st.root / "bailian-coding-retired.notice"
+    if marker.exists() or not (keys.read_env().get(RETIRED_KEY) or os.environ.get(RETIRED_KEY)):
+        return False
+    host.agent_notice("Bailian Coding Plan is no longer supported. Switch to Token Plan or pay-as-you-go. Your existing key has not been deleted."
+                      if getattr(host, "lang", "zh") == "en" else
+                      "百炼 Coding Plan 已不再支持，请改用 Token Plan 或按量付费。原有 Key 没有删除。")
+    host.st.write_private(marker, b"notified\n")
+    return True

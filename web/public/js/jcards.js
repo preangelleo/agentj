@@ -1,14 +1,18 @@
+import { copyButton } from './copycode.js';
 // P360 Agent J Cards (PROTOCOL §34, spec agentjarvis/docs/specs/AGENTJ-CARDS-SPEC.md): cards 6, 7, 8 … in the logo menu.
 // The computer does the work; this page only draws one of the built-in templates from what the computer read and turns a
 // button into a chat message — shown in full on the official confirm card, sent only on the owner's tap (or put in the
 // message box as a draft). No card code runs here, no card can style the confirm card, nothing is stored on the phone.
+import {drawCalendar} from './calendar.js';
 import {ask1, peer, isReady} from './session.js';
 import {RelayMD} from './md.js';
 import {t, lang} from './t.js';
-import {confirmSheet} from './ui.js';
+import {confirmSheet, toast} from './ui.js';
 import {sysWhen, cronText} from './controls.js';
 import {cardColor, setColors, resetColors} from './jcard-color.js';
 import * as PF from './pagefind.js';
+import {mountPalette,resetPalettes} from './palette.js';
+import {save as saveMedia} from './media.js';
 
 let list = null, busy = null, epoch = 0, view = 0;
 const subs = [];
@@ -18,7 +22,7 @@ export const cards = () => list || [];
 export const deck = () => cards().filter((c) => c.on);
 export const nameOf = (c) => pick(c && c.name);
 export function onChange(fn) { subs.push(fn); }
-export function clear() { list = null; busy = null; epoch++; view++; resetColors(); for(const d of document.querySelectorAll('.jc-dialog'))d.dispatchEvent(new Event('cancel',{cancelable:true})); }
+export function clear() { resetPalettes(); list = null; busy = null; epoch++; view++; resetColors(); for(const d of document.querySelectorAll('.jc-dialog'))d.dispatchEvent(new Event('cancel',{cancelable:true})); }
 // P360 (every card has a unique internal URL): a card's address is its id — card/<id>[#<anchor>] (the name may
 // repeat). ID / ANCHOR mirror host jcards.ID_RE / ANCHOR_RE.
 export const ID = /^[a-z][a-z0-9-]{1,31}$/, ANCHOR = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
@@ -60,9 +64,10 @@ export function refresh() {
   return busy;
 }
 
-/** jcard_set: one card's switch (Settings → Cards). → true when the computer saved it. */
-export async function setOn(id, on) {
-  const m = await ask1({ t: 'jcard_set', id, on }, 'jcard_res', 15000);
+/** jcard_set: one card's switch (Settings → Cards). → true when the computer saved it. P432: a plaza card goes on only with
+ *  `seen` = the digest of the permission summary the owner just read (jcard_perm). */
+export async function setOn(id, on, seen) {
+  const m = await ask1({ t: 'jcard_set', id, on, ...(seen ? { seen } : {}) }, 'jcard_res', 15000);
   if (!m.ok) return false;
   const c = cards().find((x) => x.id === id);
   if (c) { c.on = on; changed(); }
@@ -86,6 +91,7 @@ const PATHS = {
   edit: 'm4 16-1 5 5-1L20 8l-4-4zM13 7l4 4',
   delete: 'M3 6h18M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7M14 10v7',
   out: 'M14 4h6v6M20 4l-9 9M18 14v6H4V6h6',
+  download: 'M12 4v11M7 10l5 5 5-5M5 20h14',
 };
 export function icon(key, cls = 'fp-line-icon') {
   const ns = 'http://www.w3.org/2000/svg', s = document.createElementNS(ns, 'svg');
@@ -106,6 +112,9 @@ export function deckCard(c, i, open) {
 
 // ---------------------------------------------------------------- one card's page
 const PROBLEM = { empty: 'p360.empty', refused: 'p360.refused', bad_data: 'p360.badData', unreadable: 'p360.unreadable', off: 'p360.off', not_found: 'p360.gone' };
+// P432: a card whose data comes from its own server on the computer (jcards_server.WHYS)
+for (const w of ['server_down', 'server_timeout', 'not_card', 'server_status', 'too_big', 'too_soon', 'busy', 'bad_reply', 'stopped']) PROBLEM[w] = 'p432.' + w;
+Object.assign(PROBLEM, { not_set: 'p432.o.notSet', no_vault: 'p432.o.noVault', not_a_folder: 'p432.o.noVault', no_notes: 'p432.o.noNotes' });   // P432 Obsidian
 
 /** The element of place `at` on a drawn card page (null: not there — the page stays at its top). */
 function place(box, at, m) {
@@ -150,7 +159,7 @@ async function web(href) {
 
 /** Draws card `id` into `body` (the five-pages page). hooks: { title(text), say(text), draft(text), nav(jlink), at? }. */
 export async function render(body, id, hooks) {
-  const e = ++view, c = cards().find((x) => x.id === id);
+  const e = ++view, c = cards().find((x) => x.id === id), again = () => { if (e === view && body.isConnected) render(body, id, hooks); };
   body.replaceChildren();
   hooks.title(c ? nameOf(c) : '');
   const wait = node('p', t('p244.fivepages31'), 'fp-meta'); body.append(wait);
@@ -162,14 +171,18 @@ export async function render(body, id, hooks) {
   body.append(box);
   if (!m.ok) { box.append(node('p', t(PROBLEM[m.why] || (m.t === 'offline' || m.t === 'timeout' ? 'p360.offline' : 'p360.gone')), 'jc-note')); return; }
   if (m.problem) box.append(node('p', t(PROBLEM[m.problem] || 'p360.unreadable'), 'jc-note'));
-  if (m.template === 'notes' && Array.isArray(m.entries)) {
+  if (m.template === 'calendar') {
+    drawCalendar(box,m,hooks,()=>render(body,id,hooks));
+  } else if (m.template === 'palette') {
+    box.append(mountPalette().element);
+  } else if (m.template === 'notes' && Array.isArray(m.entries)) {
     const stack = node('div', undefined, 'jc-notes jc-stack');
     for (const it of m.entries) {
       const entry = node('article', undefined, 'jc-entry'); entry.dataset.item = it.id;
       const acts = node('div', undefined, 'jc-entry-actions');
       for (const [op, key] of [['copy','copy'],['edit','edit'],['delete','delete']]) {
         const b = button('', async () => {
-          if (op === 'copy') { try { await navigator.clipboard.writeText(it.text); b.setAttribute('aria-label',t('p386.copied')); } catch { b.setAttribute('aria-label',t('p386.failed')); } return; }
+          if (op === 'copy') { await copyButton(it.text, b); return; }
           const text = op === 'edit' ? await editNote(it.text) : undefined;
           if (op === 'edit' && text === null) return;
           if (op === 'delete' && !await confirmSheet(t('p386.delete'), it.text, t('p386.delete'))) return;
@@ -177,7 +190,7 @@ export async function render(body, id, hooks) {
           b.disabled = true;
           const result = await ask1({t:'jcard_note',id,entry:it.id,revision:m.revision,op,...(op==='edit'?{text}:{})},'jcard_note',15000);
           if (e !== view || !body.isConnected) return;
-          if (result.ok) render(body,id,hooks); else if (result.why === 'conflict' || result.why === 'changed') { const expected=view+1; await render(body,id,hooks); if(view===expected&&body.isConnected)body.prepend(node('p',t('p386.changed'),'jc-note')); } else { b.disabled=false; const error=node('p',t(result.why==='changed'?'p386.changed':'p386.failed'),'jc-note'); entry.append(error); }
+          if (result.ok) render(body,id,hooks); else if (result.why === 'conflict' || result.why === 'changed') { const expected=view+1; await render(body,id,hooks); if(view===expected&&body.isConnected)body.prepend(node('p',t('p386.changed'),'jc-note')); } else { b.disabled=false; const error=node('p',t(result.why==='looks_like_a_secret'?'p415.secret':result.why==='changed'?'p386.changed':'p386.failed'),'jc-note'); entry.append(error); }
         }, 'jc-entry-icon');
         if (op === 'edit' && it.editable === false) b.disabled = true;
         b.setAttribute('aria-label', t('p386.'+op)); b.title=t('p386.'+op); b.dataset.noteOp=op; b.append(icon(key)); acts.append(b);
@@ -193,6 +206,21 @@ export async function render(body, id, hooks) {
       const at=button('@',()=>hooks.draft(String(it.prompt||'/agentj-automation @'+it.name)+' '),'jc-auto-at'); at.setAttribute('aria-label',t('p386.ask',{name:it.name})); row.append(at);
       const fields=node('dl'); for(const key of ['schedule','repeat','next','harness','model','description','source']) { let value=it[key]; if(Array.isArray(value))value=sysWhen(value); else if(key==='schedule' && value) { let when=it.when; if(!when && typeof value==='string' && value.startsWith('[')){try{when=JSON.parse(value);}catch{}} value=Array.isArray(when)?sysWhen(when):cronText(value); } if(key==='next' && typeof value==='number') { const date=new Date(value>1e14?value/1000:value>1e11?value:value*1000); value=Number.isFinite(date.getTime())?date.toLocaleString(lang()==='zh'?'zh-CN':'en-GB'):null; } fields.append(node('dt',t('p386.'+key)),node('dd',value||t('p386.unknown'))); } row.append(fields);stack.append(row);
     } box.append(stack);
+  } else if (m.template === 'obsidian') {   // P432: the Obsidian card — the picked notes; @ drafts the edit for the Agent
+    if (m.vault) box.append(node('p', m.vault, 'fp-meta jc-vault'));
+    const stack = node('div', undefined, 'jc-notes jc-stack');
+    for (const it of Array.isArray(m.entries) ? m.entries : []) {
+      const entry = node('article', undefined, 'jc-entry jc-obsidian'); entry.dataset.item = it.id;
+      entry.append(node('h2', String(it.title || '')));
+      const at = button('@', () => hooks.draft('/agentj-obsidian ' + atPath(String(it.path || ''))), 'jc-auto-at'); at.setAttribute('aria-label', t('p432.o.ask', { name: String(it.title || '') })); entry.append(at);
+      if (it.problem) entry.append(node('p', t(it.problem === 'gone' ? 'p432.o.gone' : 'p360.refused'), 'jc-note'));
+      const prose = node('div', undefined, 'fp-prose'); prose.append(RelayMD.toDOM(RelayMD.parse(String(it.text || '')), document)); entry.append(prose);
+      if (it.cut) entry.append(node('p', t('p360.cut'), 'jc-note'));
+      RAW.set(entry, String(it.text || '') + ' ' + String(it.path || '')); stack.append(entry);
+    }
+    box.append(stack);
+  } else if (m.template === 'files') {     // P432: the Files card — one folder at a time
+    await files(box, id, hooks, () => e === view && body.isConnected);
   } else if (m.template === 'notes' && m.text) {
     const prose = node('div', undefined, 'fp-prose jc-notes');
     prose.append(RelayMD.toDOM(RelayMD.parse(String(m.text)), document));
@@ -204,20 +232,42 @@ export async function render(body, id, hooks) {
     for (const it of m.items) {
       const li = node('li', undefined, 'jc-item'), acts = Array.isArray(it.acts) ? it.acts : [];
       li.dataset.item = it.id; li.dataset.done = it.done ? '1' : '0';
-      const main = button('', acts[0] ? () => run(acts[0], hooks) : null, 'jc-row');
+      const main = button('', acts[0] ? () => run(acts[0], hooks, id, it.id, again) : null, 'jc-row');
       if (todo) todoRow(li, main, it); else main.append(icon(it.done ? 'check' : 'box', 'jc-check'), node('span', String(it.text || ''), 'jc-text'));
       if (acts[0]) main.setAttribute('aria-label', `${acts[0].label}：${it.text}`); else main.disabled = true;
       li.append(main);
-      for (const a of acts.slice(1)) li.append(button(a.label, () => run(a, hooks), 'jc-chip'));
+      if (id === 'todo' && c?.official) {
+        for (const op of ['edit', 'delete']) {
+          const b = button(t('p386.' + op), async () => {
+            if (op === 'delete' && !await confirmSheet(t('p386.delete'), it.text, t('p386.delete'))) return;
+            const save = async text => {
+              if (e !== view || !body.isConnected) return false;
+              const r = await ask1({t:'jcard_note',id,op,entry:it.id,revision:m.revision,text}, 'jcard_note',15000);
+              if (e !== view || !body.isConnected) return false;
+              if (!r.ok) { toast(t(r.why === 'looks_like_a_secret' ? 'p415.secret' : r.why === 'conflict' ? 'p386.changed' : 'p386.failed')); return false; }
+              render(body,id,hooks); return true;
+            };
+            if (op === 'edit') editNote(it.text, save); else await save();
+          }, 'jc-chip');
+          if (op === 'edit' && it.editable === false) b.disabled = true;
+          b.dataset.todoOp = op; li.append(b);
+        }
+      }
+      for (const a of acts.slice(1)) li.append(button(a.label, () => run(a, hooks, id, it.id, again), 'jc-chip'));
       ul.append(li);
     }
     box.append(ul);
     if (todo) applyFilter(id, ul);
   }
   if (m.cut) box.append(node('p', t('p360.cut'), 'jc-note'));
-  if (Array.isArray(m.actions) && m.actions.length) {
+  if (c?.official && ['notes','todo'].includes(id)) {
     const row = node('div', undefined, 'jc-actions');
-    for (const a of m.actions) { const b = button(a.label, () => run(a, hooks), 'fp-action jc-action'); b.dataset.act = a.id; if (a.draft) b.dataset.draft = '1'; row.append(b); }
+    const add = button(t(id === 'notes' ? 'p415.addNote' : 'p415.addTodo'), () => directAdd(id, hooks), 'fp-action jc-action'); add.dataset.act = 'add';
+    const coop = button(t('p415.collaborate'), () => { hooks.draft('/agentj-add-' + (id === 'notes' ? 'note' : 'todo') + ' '); const i=document.getElementById('input'); i.value='/agentj-add-' + (id === 'notes' ? 'note' : 'todo') + ' '; i.dispatchEvent(new Event('input')); i.focus({preventScroll:true}); i.setSelectionRange(i.value.length,i.value.length); }, 'fp-action jc-action'); coop.dataset.act = 'collaborate';
+    row.append(add, coop); box.append(row);
+  } else if (Array.isArray(m.actions) && m.actions.length) {
+    const row = node('div', undefined, 'jc-actions');
+    for (const a of m.actions) { const b = button(a.label, () => run(a, hooks, id, null, again), 'fp-action jc-action'); b.dataset.act = a.id; if (a.draft) b.dataset.draft = '1'; if (a.call) b.dataset.call = '1'; row.append(b); }
     box.append(row);
   }
   // links (a hyperlink opens a new browser tab; an internal link navigates in place): href → the web page, jlink → inside Agent J
@@ -310,8 +360,19 @@ function todoRow(li, main, it) {
   main.append(icon(it.status === 'done' ? 'check' : it.status === 'cancelled' ? 'cancel' : 'box', 'jc-check'), body);
 }
 
-/** A button: a draft goes into the message box; anything else is shown whole on the official confirm card first. */
-async function run(a, hooks) {
+/** A button: a draft goes into the message box; anything else is shown whole on the official confirm card first. P432: a
+ *  button of the card's own server shows where it goes (POST to the loopback port and route) and runs only on 「运行」. */
+async function run(a, hooks, id, item, again) {
+  if (a.call) {
+    const ask = confirmSheet(t('p432.callTitle'), a.label, t('p432.run'));
+    const shown = document.getElementById('confirm-text');
+    if (shown) shown.textContent = `${a.label}\n${String(a.where || '')}`;
+    if (!await ask) return;
+    const r = await ask1({ t: 'jcard_call', id, act: a.id, ...(item ? { item } : {}), lang: lang() }, 'jcard_call', 15000);
+    toast(r.ok ? (r.message || t('p432.done')) : t(PROBLEM[r.why] || 'p432.failed'), 2600);
+    if (r.ok && again) again();
+    return;
+  }
   const text = String(a.prompt || '');
   if (!text) return;
   if (a.draft) { hooks.draft(draftText(text)); return; }
@@ -319,6 +380,65 @@ async function run(a, hooks) {
   const shown = document.getElementById('confirm-text');
   if (shown) shown.textContent = text;   // exactly what will be sent (the sheet's fillText would turn `…` into code)
   if (await ask) hooks.say(text);
+}
+
+// ---------------------------------------------------------------- the Files card (P432, official `files`)
+// Folders of the Agent J host, one listing at a time (jcard_files: the host walks without following links and leaves out
+// hidden and credential names); a document downloads through the §13 media channel (jcard_file → media_get), its @ puts
+// `@<path>` in the message box (nothing is sent) so the Agent reads it on the host. The folder shown lives in this page's memory.
+const FWHY = { stopped: 'p432.stopped', no_root: 'p432.f.noRoot', refused: 'p360.refused', gone: 'p432.f.gone', not_found: 'p432.f.gone', secret: 'p432.f.secret', too_big: 'p432.f.tooBig', type: 'p432.f.type', off: 'p360.off', private: 'p360.refused', outside: 'p360.refused' };
+const folderOf = new Map();
+const kb = (n) => (n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(n < 10240 ? 1 : 0) + ' KB' : (n / 1048576).toFixed(1) + ' MB');
+export const atPath = (p) => '@' + (/\s/.test(p) ? `"${p}"` : p) + ' ';
+async function files(box, id, hooks, live) {
+  const wrap = node('div', undefined, 'jc-files'); box.append(wrap);
+  const go = async (root, path) => {
+    const r = await ask1({ t: 'jcard_files', id, ...(root ? { root } : {}), path: path || '' }, 'jcard_files', 15000);
+    if (!live()) return;
+    wrap.replaceChildren();
+    const roots = Array.isArray(r.roots) ? r.roots : [];
+    if (roots.length > 1) {
+      const row = node('div', undefined, 'jc-filter'); row.setAttribute('role', 'group'); row.setAttribute('aria-label', t('p432.f.roots'));
+      for (const x of roots) { const b = button(x.label, () => go(x.id, ''), 'jc-chip jc-filter-chip'); b.dataset.root = x.id; b.setAttribute('aria-pressed', String(x.id === r.root)); row.append(b); }
+      wrap.append(row);
+    }
+    if (!r.ok || !Array.isArray(r.entries)) { wrap.append(node('p', t(FWHY[r.why] || (r.t === 'offline' || r.t === 'timeout' ? 'p360.offline' : 'p432.f.gone')), 'jc-note')); return; }
+    folderOf.set(id, { root: r.root, path: r.path });
+    const segs = r.path ? r.path.split('/') : [], crumbs = node('nav', undefined, 'jc-crumbs'), top = roots.find((x) => x.id === r.root);
+    crumbs.setAttribute('aria-label', t('p432.f.where'));
+    crumbs.append(button(top ? top.label : '~', () => go(r.root, ''), 'jc-chip jc-crumb'));
+    segs.forEach((x, i) => crumbs.append(button(x, () => go(r.root, segs.slice(0, i + 1).join('/')), 'jc-chip jc-crumb')));
+    wrap.append(crumbs);
+    const ul = node('ul', undefined, 'jc-list jc-files-list');
+    if (!r.entries.length) wrap.append(node('p', t('p432.f.empty'), 'jc-note'));
+    for (const f of r.entries) {
+      const rel = (r.path ? r.path + '/' : '') + f.name, li = node('li', undefined, 'jc-item jc-file');
+      li.dataset.item = f.name; li.dataset.kind = f.kind;
+      const main = button('', f.kind === 'dir' ? () => go(r.root, rel) : null, 'jc-row');
+      main.append(icon(f.kind === 'dir' ? 'folder' : 'note', 'jc-check'), node('span', f.name, 'jc-text'));
+      if (f.kind !== 'dir') { main.disabled = true; main.append(node('small', kb(Number(f.bytes) || 0), 'jc-when')); }
+      li.append(main);
+      if (f.kind !== 'dir') {
+        const at = button('@', () => hooks.draft(atPath(r.label + '/' + f.name)), 'jc-chip jc-file-at'); at.setAttribute('aria-label', t('p432.f.at', { name: f.name })); li.append(at);
+        if (f.dl) {
+          const dl = button('', async () => {
+            dl.disabled = true;
+            const x = await ask1({ t: 'jcard_file', id, root: r.root, path: rel }, 'jcard_file', 15000);
+            dl.disabled = false;
+            if (!x.ok || !x.item) { toast(t(FWHY[x.why] || 'p432.f.gone'), 2600); return; }
+            saveMedia(x.item);
+          }, 'jc-chip jc-file-dl');
+          dl.append(icon('download', 'jc-link-icon')); dl.setAttribute('aria-label', t('p432.f.dl', { name: f.name })); li.append(dl);
+        }
+      }
+      ul.append(li);
+    }
+    wrap.append(ul);
+    if (r.more) wrap.append(node('p', t('p432.f.more', { n: r.more }), 'jc-note'));
+    if (hooks.drawn) hooks.drawn();
+  };
+  const w = folderOf.get(id) || {};
+  await go(w.root, w.path || '');
 }
 
 // ---------------------------------------------------------------- Settings → Cards
@@ -335,11 +455,25 @@ export function renderSettings(hooks) {
       const row = node('div', undefined, 'setrow jc-setrow'); row.dataset.card = c.id;
       const ic = node('span', undefined, 'jc-dot jc-accent-' + c.accent); ic.append(icon(c.icon, 'jc-dot-icon'));
       const lab = node('span', undefined, 'setlab jc-setlab'); lab.append(node('b', nameOf(c)), node('small', pick(c.desc)));
+      if (c.src === 'plaza') lab.append(node('small', t('p432.p.from'), 'jc-src'));
       const sw = button('', null, 'tgl'); sw.setAttribute('role', 'switch'); sw.setAttribute('aria-checked', String(!!c.on)); sw.setAttribute('aria-label', nameOf(c)); sw.append(node('i'));
       sw.onclick = async () => {
         const on = sw.getAttribute('aria-checked') !== 'true';
+        let seen = null;
+        if (on && c.src === 'plaza') {   // P432: a card from the plaza — its permission summary first, word for word
+          const pr = await ask1({ t: 'jcard_perm', id: c.id, lang: lang() }, 'jcard_perm', 15000);
+          if (!pr.ok) { hooks.note(t('p360.setFailed')); return; }
+          const ask = confirmSheet(t('p432.p.title', { name: nameOf(c) }), pr.text, t('p432.p.enable'));
+          const shown = document.getElementById('confirm-text'), box = document.getElementById('confirm');
+          if (shown) shown.textContent = String(pr.text || '');
+          if (box) box.dataset.kind = 'jcard';
+          const yes = await ask;
+          if (box && box.dataset.kind === 'jcard') delete box.dataset.kind;
+          if (!yes) return;
+          seen = pr.digest;
+        }
         sw.setAttribute('aria-checked', String(on)); sw.disabled = true;
-        const ok = await setOn(c.id, on);
+        const ok = await setOn(c.id, on, seen);
         sw.disabled = false;
         if (!ok) { sw.setAttribute('aria-checked', String(!on)); hooks.note(t('p360.setFailed')); }
       };
@@ -348,12 +482,27 @@ export function renderSettings(hooks) {
   }
 }
 
-// An entry editor stays on the card; Escape or Cancel discards the draft.
-function editNote(value) {
+// P415: owner edits remain local until an explicit save on the paired card channel.
+export function directAdd(id, hooks) {
+  const generation = epoch;
+  return editNote('', async text => {
+    if (generation !== epoch) return false;
+    const r = await ask1({t:'jcard_note', id, op:'add', text}, 'jcard_note', 15000);
+    if (generation !== epoch) return false;
+    if (!r.ok) { toast(t(r.why === 'looks_like_a_secret' ? 'p415.secret' : 'p386.failed')); return false; }
+    toast(t('p415.saved')); hooks.nav('card/' + id + (id === 'notes' ? '#latest' : '#' + r.item.id)); return true;
+  }, t(id === 'notes' ? 'p415.addNote' : 'p415.addTodo'));
+}
+function editNote(value, save, label = t('p386.edit')) {
   return new Promise(resolve=>{
-    const dialog=node('dialog',undefined,'jc-dialog'), title=node('h2',t('p386.edit')), input=node('textarea'); input.value=value; input.setAttribute('aria-label',t('p386.edit')); input.maxLength=16000;
-    const done=v=>{dialog.close();dialog.remove();resolve(v);};
-    dialog.append(title,input,button(t('p386.cancel'),()=>done(null)),button(t('p386.save'),()=>done(input.value)));
-    dialog.addEventListener('cancel',e=>{e.preventDefault();done(null);});document.body.append(dialog);dialog.showModal();
+    const opener=document.activeElement, dialog=node('dialog',undefined,'jc-dialog'), title=node('h2',label), input=node('textarea'); input.value=value; input.setAttribute('aria-label',label); input.maxLength=16000;
+    let busy=false, closed=false;
+    const done=v=>{if(closed)return;closed=true;dialog.close();dialog.remove();if(opener?.isConnected)opener.focus({preventScroll:true});resolve(v);};
+    const submit=async()=>{if(busy||!input.value.trim())return;busy=true;ok.disabled=true;try{if(!save||await save(input.value))done(input.value);}finally{busy=false;ok.disabled=false;}};
+    const ok=button(t('p386.save'),submit), clip=button(t('p415.paste'),async()=>{try{const text=await navigator.clipboard.readText();if(dialog.isConnected&&text)input.setRangeText(text,input.selectionStart,input.selectionEnd,'end');input.focus();}catch{toast(t('p415.pasteHelp'));}});
+    dialog.append(title,input,clip,button(t('p386.cancel'),()=>{done(null);}),ok);
+    dialog.addEventListener('cancel',e=>{e.preventDefault();done(null);});
+    dialog.addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)&&!e.isComposing){e.preventDefault();e.stopPropagation();submit();}});
+    document.body.append(dialog);dialog.showModal();input.focus();
   });
 }

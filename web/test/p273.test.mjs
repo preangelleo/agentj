@@ -55,7 +55,7 @@ test('reader: fixed header + scrolling words + fixed footer, on --dlg-bg', () =>
   assert.match(s, /\.rdsc\{flex:1;min-height:0;overflow-x:hidden;overflow-y:auto;/);
 });
 
-test('reader footer = the reply card icons, card order, 回复 last; copy / reply leave, the rest stay', () => {
+test('reader footer = the reply card icons, card order, 回复 last; copy shows feedback in the reader, reply leaves', () => {
   const js = readFileSync(join(PUB, 'js/relay.js'), 'utf8');
   const html = readFileSync(join(PUB, 'index.html'), 'utf8');
   const bar = html.slice(html.indexOf('id="rmbar"'), html.indexOf('id="rmMore"'));
@@ -66,7 +66,8 @@ test('reader footer = the reply card icons, card order, 回复 last; copy / repl
   assert.deepEqual(acts.map((a) => a[0]), card, 'same order as the card');
   assert.equal(acts.at(-1)[1], 'rdReplyBtn');
   const body = (name) => js.slice(js.indexOf('function ' + name + '('), js.indexOf('\n}', js.indexOf('function ' + name + '(')));
-  assert.match(body('rdCopy'), /copyOut[\s\S]*closeReader\(\)/, 'copy then leave');
+  assert.match(body('rdCopy'), /copyOut.*rdCopyBtn/, 'copy feedback belongs to the visible reader button');
+  assert.doesNotMatch(body('rdCopy'), /closeReader/, 'copy keeps its feedback visible');
   assert.match(body('rdReply'), /closeReader\(\);\s*startReply\(p\)/, 'leave then quote + focus');
   for (const [id, fn] of [['rdSpeakBtn', 'speakTap'], ['rdFwdBtn', 'forwardTap'], ['rdMailBtn', 'mailTap']])
     assert.match(js, new RegExp(`el\\("${id}"\\)\\.addEventListener\\("click", ${fn}\\)`), id + ' stays in the reader');

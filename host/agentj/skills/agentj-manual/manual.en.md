@@ -6,6 +6,22 @@ paired yet, start with [Install](https://agentj.app/docs/install/) and [Using yo
 
 You can also just ask Agent J — "what does this colour mean?", "how do I send a file?". It reads this same guide.
 
+## Agent not replying and you only have your phone? {#phone-only}
+
+No reply, or stuck on “Not yet received”? You can do this from your phone. After each step, send a short test message in chat and stop when a reply arrives:
+
+1. Tap **Stop** to interrupt the current task.
+2. Open **Settings → Emergency repair → Commands on the Agent J host**, find `agentj doctor --reconnect`, and tap **Run** beside it (recommended). Your phone asks the host to check and repair the connection; you do not need to open a terminal. Confirm with Face ID when asked.
+3. Still no reply? In **Emergency repair**, tap **Restart service** (recommended), wait for the connection to return, then try again.
+4. Still no reply? Tap **Emergency repair → Reopen AI session** (requires host and web versions from 0.25.2a1). It ends the stuck AI session process and tries to resume the same conversation; if that fails, it opens a new session and keeps the old conversation. On an older version without this button, go to the next step.
+5. Still stuck? Tap **Emergency repair → ② Ask Agent J Father for remote help**. Only your tap sends a diagnostic report redacted on the host; keep the ticket number. Passwords, keys, chats and work files are not sent.
+
+**Check quota before connection repairs.** For a Claude quota limit, first open Claude settings on your phone and check **Usage**. Use **Free reset** if offered; otherwise wait until the displayed reset time. A free reset is not available for every account or every limit. If quota has recovered but messages are still “Not yet received”, follow the five steps above. Restarting or reopening a session does not add quota. For an expired AI sign-in, use **AI login rescue**.
+
+**A grey, disconnected phone takes a different path.** Check your phone’s network, tap “Try now”, then **Settings → Emergency repair → ① Reset connection**, followed by **② Ask Agent J Father for remote help** if needed. Give a brief drop a few seconds. Commands, restarts and session repair require a connection to the host or rescue helper; a phone cannot force them to run on a powered-off, sleeping or offline host. If it stays unreachable, open [the support chat](https://support.agentj.app) in your phone browser or email [feedback@agentj.app](mailto:feedback@agentj.app) with the symptom, versions and time, never credentials. You do not need to go to the computer.
+
+Agent J Father is the official support platform run by the developers. Once chat works, `/feedback-to-agentj-father` can report the problem too; while there is no reply, use the phone support controls above.
+
 ## First use: two remotes and the first message
 
 After the install, the agent that set things up takes you through adding the Agent J host to your seat and then pairing two
@@ -159,6 +175,8 @@ Replies are laid out for you:
   Excel (xlsx), CSV tables, Markdown, code and text show right there; kinds it can't show yet, such as PowerPoint, offer the
   download. On a computer, select a card and press Space to preview; Space or Esc closes it. While a preview is open, the left and right arrow keys (a sideways swipe on the phone) move to the previous or next file of the same reply, and the top bar shows which one of how many; on a zoomed picture one finger moves the picture instead. Download saves the file under its own name (Chinese, spaces and emoji included) and a short note confirms it went to the browser's downloads; in the iPhone Home Screen app it opens the share sheet — choose Save to Files.
 - Files that are too large or outside the working folder are not sent to the phone — the reply gets one line saying why.
+  The working folder you set always counts, even after the Agent `cd`s into a sub-folder; the folder it is in right now counts too.
+  Scripts and source files (`.sh`, `.py`, `.ps1` …) come as text cards: preview and download, never run. When a file is held back because it looks like a key, the note names the line it is on (showing only its first two characters).
   Audio, video and pictures always go, whatever their names (Chinese, underscores, long names are fine). Credential files
   (such as `.env`, `.pem`, private keys) and text files holding a real key are not sent as ordinary files: a secret pickup
   card opens on the phone instead (Face ID to open); when no card opens, the line says why and how to get the file. Image
@@ -198,7 +216,19 @@ On the Agent J host: `agentj history search <words>`.
   saying so — send it again yourself if you still need it.
 
 （Screenshot：Two messages sent offline wait above the message box — https://agentj.app/docs/manual/offline-queue.en.webp）
-- Type `/` at the start of the box to see the commands you can use. A picked command (or a card or workflow picked with @) gets one space after it with the cursor behind it; the box keeps the focus until a message has really been sent.
+- Type `/` at the start of the box to see the commands you can use; a few more letters filter the list. It also lists the current coding tool's own commands (Claude Code, Codex or OpenCode); a name Agent J also has shows once (Agent J's). All of them can be picked and typed: the ones marked “runs directly” go to that tool as typed (/init, /review); the ones marked “the Agent does it” change a setting or need the terminal screen (/config, /mcp), so Agent J hands your wish to the Agent, which carries it out through the usual confirmations and tells you how it went; the few grey ones (/exit, /login) can't be done from the web, and tapping one says why. Switch tools and the list follows. A picked command (or a card or workflow picked with @) gets one space after it with the cursor behind it; the box keeps the focus until a message has really been sent.
+
+### The message box: always one line, full screen for long text
+
+- The message box is one line tall and never grows; with several lines you can scroll inside it, and the fifth button above it (full screen) shows how many lines there are (for example 5 lines). Shift+Enter adds a line, Enter sends.
+
+- In a wide window on a computer, the cards and the message box widen with the window instead of stopping at a fixed width.
+
+- For long text open the **full-screen editor**: tap the fifth button, press Ctrl+G, or on a phone swipe up on the message box. Dark background, light text, the whole screen to write in; when the phone's keyboard opens, the text and the buttons below it move up above the keyboard.
+
+- In full screen: the top-left icon leaves (so do Esc, Ctrl+G again, a double tap on blank space — on words a double tap still selects — and pulling the bar at the top centre down; not far enough and it springs back), and the words go back to the message box as they are; the top-right icon clears everything, with 5 seconds to undo; the slash icon at the bottom left opens the command list and puts the one you pick at the cursor; Send is at the bottom right, or press ⌘/Ctrl+Enter. In full screen Enter only adds a line.
+
+- Terminal habits work in both the box and full screen: Ctrl+A / E line start and end, Ctrl+U / K delete to the start or end, Ctrl+W delete the previous word, Ctrl+Y paste back what was deleted, Ctrl+D delete the next character, Ctrl+J new line (a \ at the end of the line, then Enter, does the same). In the box, Ctrl+S puts the draft aside (press again to bring it back) and Ctrl+R finds a message you sent that contains these words. All shortcuts: [Keyboard shortcuts](https://agentj.app/docs/shortcuts/).
 
 ### Sharing a Codex App session
 
@@ -265,7 +295,7 @@ Want commands of your own? Tap `/customize` in the list, or press and hold ≡: 
 
 Before switching, the tool you use now writes the conversation's key points into a handoff file; the new tool reads it first, then carries on. If none was written the switch still happens, and the phone says "No handoff this time".
 
-The menu also has "Stop everything" and the Agent's own skills. Other commands, such as changing settings, are for the
+The menu also has the Agent's own skills. Other commands, such as changing settings, are for the
 computer. See [Agent friends](https://agentj.app/docs/friends/).
 
 The model and effort at the top: tap to switch to the next one, hold to go back to the default. Taps only change the label: a half is switched once you leave it alone for 5 seconds (meanwhile it fades, with a thin line running out underneath); tapping back to the one in use sends nothing. Holding for the default and typing `/model name` take effect at once.
@@ -304,7 +334,7 @@ The Agent wants you to choose: tap an answer and confirm. If none fits, cancel t
 
 ### One-tap answers: the quickest way to reply
 
-A reply sometimes ends with a few rounded buttons, such as "Dispatch" and "Not yet". One tap is the same as typing those words and tapping Send: the message goes out at once as yours, and the Agent carries on. The group then greys out and says "Replied: Dispatch"; each group can be tapped only once. It also greys out when you have already typed an answer, or tapped on another remote. Talking about something else in between does not close it: page back and tap, and it goes as a reply that quotes that message, so the Agent knows which question you answered.
+A reply sometimes ends with a few rounded buttons, such as "Dispatch" and "Not yet". One tap is the same as typing those words and tapping Send: the message goes out at once as yours, and the Agent carries on. The group then greys out and says "Replied: Dispatch"; each group can be tapped only once. It also greys out when you have already typed an answer, or tapped on another remote. Talking about something else in between does not close it: page back and tap, and it goes as a reply that quotes that message, so the Agent knows which question you answered. When one reply has several groups of buttons (each line or list item is a group), you answer each group on its own; tapping one does not affect the others.
 
 Buttons or a card:
 
@@ -323,6 +353,8 @@ what it's for, then the command and its effect. Type the Agent J host's admin pa
 one command; **the Agent never sees your password**.
 
 （Screenshot：Admin-password card — https://agentj.app/docs/manual/sudo.en.webp）
+The Agent J host can also remember it: tick **Remember it with Face ID (next time, just scan your face)** on the card once, and next time tap **Fill in the computer password with Face ID**. It is stored only in encrypted form on the Agent J host, and each device unlocks it with its own Face ID; on another device, tap **Use it on this device too** under Settings → Safety → **Computer password**. What this protects against, and what it does not: [Computer password](https://agentj.app/docs/web-terminal/#computer-password).
+
 ### Key card
 
 When the Agent needs an API key, this card says which key, what for, and where it will be stored. Paste the key; it is
@@ -368,7 +400,7 @@ can never post this way. See
 
 ## Stop everything
 
-In ≡, tap "Stop everything" and confirm: the current work stops at once, every pending approval is denied, batch
+In Settings → Safety, tap "Emergency stop all Agents" and confirm: the current work stops at once, every pending approval is denied, batch
 approvals are withdrawn and scheduled tasks pause. The screen turns grey with a banner on top until you resume.
 
 （Screenshot：Everything stopped — https://agentj.app/docs/manual/stopped.en.webp）
@@ -389,19 +421,21 @@ Every menu — Settings and the pages it opens, ≡ All commands, keyboard short
 
 ### Emergency repair
 
-Settings → Emergency repair is the second item. Use it when the chat is stuck, offline or not replying, and go in order:
+Settings → Emergency repair is the second item. For no replies, follow the five-step phone-only section above. For a grey or offline phone, use the steps below:
 
 - **① Reset connection**: tap this first. It reconnects, finds your conversation again, starts a new conversation if it has to, and as a last step restarts Agent J on the Agent J host; it stops at the first step that works and shows each one. A green card saying "Fixed. You can go back to the chat." means done. If it started a new conversation, the earlier one is kept: ask the Agent in the chat to bring it back. `/reset` in ≡ does the same.
 - **② Ask Agent J Father for remote help**: when ① didn't help. the Agent J host checks itself, removes private details on the Agent J host and sends the report to Agent J Father; you get a ticket number. Support can only suggest a few fixed repairs, and the card shows each one the Agent J host runs. Nothing goes out until you tap.
 - **③ AI account signed out**: for a Claude / Codex login that expired; it opens AI login rescue (next section).
 
-When Agent J on the Agent J host stops answering, a small rescue helper there answers instead: a banner says "Agent J on the Agent J host isn't responding · rescue helper online", and ① and ② still work. The offline card has an **Emergency repair** button too, plus a line for someone at the Agent J host: `curl -fsSL https://agentj.app/rescue | sh`. See [Phone grey or disconnected?](https://agentj.app/docs/reconnect/).
+When Agent J on the Agent J host stops answering, a small rescue helper there answers instead: a banner says "Agent J on the Agent J host isn't responding · rescue helper online", and ① and ② still work. The offline card has an **Emergency repair** button too. If the host stays unreachable, open [the support chat](https://support.agentj.app) on your phone. See [Phone grey or disconnected?](https://agentj.app/docs/reconnect/).
 
 Under Emergency repair there is also Commands on the Agent J host: terminal commands that run on the Agent J host, such as `agentj doctor`, `agentj doctor --reconnect` and `agentj status`, each with Run. Tap it, confirm with Face ID, and the Agent J host runs it; the result shows below, with anything that looks like a password or key hidden on the Agent J host first. Every run is recorded. Tap × at the right of the result heading to close the result. Only commands that look or repair the connection are here; a phone without Face ID set up cannot run them.
 
 ### Web terminal
 
-Settings → Safety → Web terminal gives you the computer's command line on the phone: you type a whole line, the computer runs it and the output shows on the phone. It is off by default and only you can switch it on, by running `agentj terminal enable` in the computer's terminal, checking the 6-digit match code and confirming with Face ID on a phone that has it. After that, every tap on Open web terminal needs Face ID; the first time you also type your computer login password once in the terminal page, encrypted before it leaves. A session lasts at most 15 minutes (up to 60) and closes after 5 minutes without input, after 60 seconds with the phone in the background or when the connection drops; it is recorded in full, and the recording stays on the computer for 30 days. Never type passwords into the terminal: `sudo` asks for Face ID on the phone instead. Risky lines need Run plus Face ID once more — that only catches slips. It does not work while the connection is down; use Emergency repair above then. Friends, web-version remotes, the three ways the password is kept and what each protects against: [Web terminal](https://agentj.app/docs/web-terminal/).
+Settings → Safety → Web terminal gives you the Agent J host's command line in a computer browser: you type a whole line, the host runs it and the output shows in the browser. It works only in a computer browser; a phone says only **For safety and convenience, the web terminal can only be used from a computer browser.** It is off by default. In a computer browser, tap **Switch on and open**, confirm with Face ID and type the Agent J host's login password once: it is switched on for this browser and opens full screen right away. Or run `agentj terminal enable` in the host's terminal, check the 6-digit match code and confirm with Face ID on a remote that has it. The Agent and scripts cannot switch it on. A device without Face ID gets **Set up Face ID** first. After that, every tap on **Open web terminal** needs Face ID; while no computer login password is remembered, you type it once in the terminal page, encrypted before it leaves. A session lasts at most 15 minutes (up to 60) and closes after 5 minutes without input, after 60 seconds with the browser on another tab or minimised, or when the connection drops; it is recorded in full, and the recording stays on the host for 30 days. Never type passwords into the terminal: `sudo` asks for Face ID instead. Risky lines need Run plus Face ID once more — that only catches slips. It does not work while the connection is down; use Emergency repair above then. It works on Linux, macOS (zsh by default) and WSL hosts. In an emergency, scan-pair a friend's computer browser and unbind it in Remotes afterwards; its terminal closes the moment you do. Friends, web-version remotes, the three ways the password is kept and what each protects against: [Web terminal](https://agentj.app/docs/web-terminal/).
+
+A message that starts with `!` (for example `!df -h`) runs as a line in the web terminal instead of going to the Agent as chat: a result card shows the output, then the command and its output go to the Agent. The terminal opens full screen; click the ✕ at the top right, press Esc or drag the handle at the top down to collapse it, and it keeps running behind **Terminal · N min left** above the message box. The Agent can open the terminal with a command filled in (you check it and press Enter yourself) and can read its output. That output, like the output of `!` commands, goes to your AI model provider with passwords and keys hidden, so do not print secrets there. Details: [`!` commands](https://agentj.app/docs/web-terminal/#bang).
 
 ### Models & API keys
 
@@ -463,7 +497,7 @@ On a computer browser or a tablet with a keyboard, press `?` for the full list (
 | `p` | Pick pictures from the photo library |
 | `c` | Take a photo |
 | hold `m` | Hold to talk, release to send (slide out to cancel); keyboard m still releases to text |
-| `Esc` `Esc` | Esc twice outside the message box clears text and attachments (✕ clears the text only, with undo). Esc never interrupts the Agent; to stop the current task, use the stop button or send /stop |
+| `Esc` `Esc` | Esc twice outside the message box clears text and attachments (✕ clears the text only, with undo). Esc never interrupts the Agent; to stop the current task, use the Stop button or send /stop |
 | `⌘+Enter` / `Ctrl+Enter` | Approve, the same as holding the approve button (identity checks as usual); the card wins over the message box |
 
 ## Pairing and Face ID
@@ -516,7 +550,7 @@ Silent turns do not take up chat pages. Open ≡ → View silent history to read
 
 ## Add a remote for another computer
 
-Once the target Agent J host is installed, account-bound and online, find its seat card on your account page and choose Add a remote. Confirm it's you, then scan with the phone; the target Agent J host's terminal isn't needed. Confirm either way: with your passkey (none on this device? choose Use a phone or tablet in the prompt and confirm on your phone), or with that computer's remote pairing password. After a passkey confirmation, the same session doesn't ask again for ten minutes; the QR expires after five minutes and adds one device. Pending devices can also be reviewed and approved on the seat card. Under More on the seat card, See what the Agent J host is waiting on you for is only for two cases: resuming after Stop everything, or enabling a scheduled task the Agent created. It has nothing to do with seats or billing; an unpaid bill never stops the tasks on the Agent J host.
+Once the target Agent J host is installed, account-bound and online, find its seat card on your account page and choose Add a remote. Confirm it's you, then scan with the phone. The account page automatically shows the waiting remote, six-digit code and Approve; compare and approve. Password fallback confirms again with a fresh sealed proof for that exact device and handshake; the target Agent J host's terminal isn't needed. Confirm either way: with your passkey (none on this device? choose Use a phone or tablet in the prompt and confirm on your phone), or with that computer's remote pairing password. After a passkey confirmation, the same session doesn't ask again for ten minutes; the QR expires after five minutes and adds one device. Pending devices can also be reviewed and approved on the seat card. Under More on the seat card, See what the Agent J host is waiting on you for is only for two cases: resuming after Stop everything, or enabling a scheduled task the Agent created. It has nothing to do with seats or billing; an unpaid bill never stops the tasks on the Agent J host.
 
 Account-page pairing is on by default. The target Agent J host’s owner can disable it with `agentj remote-pair off`. Offline hosts are never queued; turn them on and try again. Older hosts must run `agentj update apply` or update from a paired phone. Devices record “Added from account page” and other remotes receive a notice.
 
@@ -668,7 +702,7 @@ After saving a key to the managed service environment file through the secret ca
 4. Read the Claude or Codex sign-in row's **actually in use** source. A key listed elsewhere is not necessarily the login the running AI uses. **after Agent J restarts** means the running AI has not picked up that change yet; follow the row's restart or sign-in guidance and check again.
 ## Refresh, reply options and a TV remote {#remote-controls}
 
-Hold the top search button for about half a second (550 ms) to force a refresh. Your text draft is kept. Finish any recording, attachment work or unsubmitted card first. Pull to refresh is deferred because it would conflict with scrolling through messages.
+Hold the top search button for about half a second (550 ms) to force a refresh. Your text draft is kept. Finish any recording, attachment work or unsubmitted card first. At the top of a message, pull down until “Release to refresh” appears, then release.
 
 Reply options use borderless pills with a Noir background, Lotion text and space around the text. Their background becomes Sooty while pressed.
 
@@ -691,3 +725,32 @@ While voice components are installed for the first time, the page shows the curr
 A prominent "Voice input is ready" notice tells you to press and hold the microphone to speak; dismiss it with "Got it". If setup fails, the notice shows the reason and a "Try again" button. Check the network or disk space as advised, then retry. Notices do not expire automatically. You can dismiss them with ESC; a later notice can also replace them.
 
 After reconnecting, readiness is checked again. Installation progress from the disconnected period is not replayed step by step.
+
+At the top of a message, pull down until “Release to refresh” appears, then release to update and refresh. Text drafts are kept; recording, attachments and unfinished cards block refresh. The header robot follows the state colour unless you use a custom logo; the status bar and bottom safe area stay Sooty #141414.
+
+After an automatic web update, a Noir notification appears for about 3 seconds, once per version on each device.
+
+Shortcut search also matches synonyms, including screenshot, snapshot, 截图 and 截屏.
+
+For each question, choose an option or write your own answer in the card (up to 2,000 characters). Writing replaces that question’s selected options. Confirm sends the signed answers to the computer; no extra chat message is needed. On older hosts, choose Other and answer in chat. Use the dedicated secret card for passwords and API keys, not ordinary question cards.
+
+## Empty recordings and recovery
+
+Recordings shorter than half a second or with too little audio data are discarded without a recovery prompt. Empty saved recordings showing 0:00 are cleaned up automatically. In the recovery dialog, Discard is on the left and Put them back is on the right. Empty audio attachments are blocked with “Recording too short. Not sent.” iPhone MP4/AAC recordings and WebM recordings keep their actual format.
+
+
+## Continue from your phone
+
+In Settings → Safety, tap **Emergency stop all Agents** and confirm to interrupt the main Agent’s current turn, stop Agent J background tasks, pause Agent J scheduled tasks and reject pending approvals. Esc cancels. Resume remains at the top; when this device has a passkey, resuming requires Face ID or a passkey. Emergency stop is no longer in the slash menu; `/stop-all`, `/stop_all` and `/estop` direct you to Settings.
+
+After Reset connection in Settings → Emergency repair, tap **Reopen AI session** and confirm once. The host ends the current AI session process and resumes the same conversation; if that fails, a new session is connected to your phone and the old conversation is kept. Claude Code, Codex and OpenCode reconnect from your phone: no need to go to the computer. Native permissions stay in place. If the host cannot verify the selected process identity, it refuses to end it and offers remote help. Automatic retry after quota recovery is separate.
+
+## Approval and execution cards {#approval-inset}
+
+Permission requests and sudo execution status sit inside the current reply, aligned with its text. Scroll within a long card. Approval still requires the existing hold, signature or passkey check. A new request leaves reading mode or Settings and returns to chat; reading mode keeps both safe areas Sooty #141414.
+
+Copy controls in Notebook, messages and code blocks briefly show ✓ “Copied” for about 1.5 seconds, with a centred notice; failures also show a notice. Informational notices such as voice input becoming ready disappear automatically, with no OK button. Copying in reading mode keeps the reader open.
+
+### Icon holds and button states
+
+Holding an icon or toolbar button runs its shortcut without selecting nearby controls or opening the system text menu. Reply text, messages and code remain selectable and copyable. Button labels stay readable on hover, while pressed, with keyboard focus and when unavailable. Unavailable buttons do not run actions.

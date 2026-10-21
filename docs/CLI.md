@@ -134,7 +134,7 @@ agentj --help
 
 ```text
 usage: agentj [-h] [-V] [--migrate-legacy] [--instance N] [--fresh]
-              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,keep-awake,browser,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,terminal,provider,sudo-helper,docs-rule,handover,telegram-cursor,plaza,support,data,capability,goal,heartbeat,quota,imessage,busy,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
+              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,terminal,provider,sudo-helper,docs-rule,handover,telegram-cursor,plaza,support,data,skills,capability,goal,heartbeat,quota,imessage,busy,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -424,6 +424,65 @@ usage: agentj asr test [-h] [wav]
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `wav` | `null` | false | — | `` |
+
+### agentj automation
+
+```text
+分步自动化：status · resume（从失败的步骤继续）/ multi-step automations: continue a failed run
+```
+
+```bash
+agentj automation --help
+```
+
+```text
+usage: agentj automation [-h] {resume,status} ...
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj automation resume
+
+```text
+continue from the failed step
+```
+
+```bash
+agentj automation resume --help
+```
+
+```text
+usage: agentj automation resume [-h] [--yes] [--json] run
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `run` | `null` | true | — | `run id (or prefix) or automation id` |
+| `--yes` | `false` | false | — | `确认重跑不可重复的步骤（仅主人终端）/ confirm re-running steps not safe to repeat` |
+| `--json` | `false` | false | — | `` |
+
+### agentj automation status
+
+```text
+each step of a run
+```
+
+```bash
+agentj automation status --help
+```
+
+```text
+usage: agentj automation status [-h] [--json] run
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `run` | `null` | true | — | `` |
+| `--json` | `false` | false | — | `` |
 
 ### agentj bots
 
@@ -1394,7 +1453,7 @@ agentj card --help
 
 ```text
 usage: agentj card [-h]
-                   {list,validate,apply,on,off,remove,export,open,note,todo,automation,schema} ...
+                   {list,validate,apply,on,off,remove,export,open,note,todo,cal,automation,files,obsidian,pack,rollback,schema} ...
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -1441,6 +1500,57 @@ usage: agentj card automation [-h] [--json] {list}
 | `op` | `null` | true | `list` | `` |
 | `--json` | `false` | false | — | `` |
 
+### agentj card cal
+
+```text
+Local calendar / 本地日历
+```
+
+```bash
+agentj card cal --help
+```
+
+```text
+usage: agentj card cal [-h] [--entry ENTRY] [--revision REVISION]
+                       [--title TITLE] [--start START] [--end END]
+                       [--note NOTE] [--source SOURCE] [--name NAME]
+                       [--key KEY] [--to NAME] [--all-day] [--timed]
+                       [--reminder REMINDER] [--clear-reminder]
+                       [--keep {local,remote}] [--kind {google,caldav}]
+                       [--calendar CALENDAR] [--server SERVER]
+                       [--user-key NAME] [--pass-key NAME] [--push-new]
+                       [--auto] [--json]
+                       {add,edit,delete,list,due,subscribe,unsubscribe,sync,undo,resolve,queue,connect,disconnect}
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `op` | `null` | true | `add`, `edit`, `delete`, `list`, `due`, `subscribe`, `unsubscribe`, `sync`, `undo`, `resolve`, `queue`, `connect`, `disconnect` | `` |
+| `--entry` | `null` | false | — | `` |
+| `--revision` | `null` | false | — | `` |
+| `--title` | `null` | false | — | `` |
+| `--start` | `null` | false | — | `` |
+| `--end` | `null` | false | — | `` |
+| `--note` | `null` | false | — | `` |
+| `--source` | `null` | false | — | `` |
+| `--name` | `null` | false | — | `` |
+| `--key` | `null` | false | — | `` |
+| `--to` | `null` | false | — | `add: also put it on this two-way calendar` |
+| `--all-day` | `null` | false | — | `` |
+| `--timed` | `null` | false | — | `` |
+| `--reminder` | `null` | false | — | `` |
+| `--clear-reminder` | `false` | false | — | `` |
+| `--keep` | `null` | false | `local`, `remote` | `resolve: local keeps mine, remote keeps theirs` |
+| `--kind` | `null` | false | `google`, `caldav` | `connect: the two-way calendar kind` |
+| `--calendar` | `null` | false | — | `connect: which calendar (Google id, default primary; CalDAV display name)` |
+| `--server` | `null` | false | — | `connect --kind caldav: the https server URL` |
+| `--user-key` | `null` | false | — | `connect --kind caldav: key card name holding the user` |
+| `--pass-key` | `null` | false | — | `connect --kind caldav: key card name holding the app-specific password` |
+| `--push-new` | `false` | false | — | `connect: new events go there too` |
+| `--auto` | `false` | false | — | `connect: sync every 15 minutes` |
+| `--json` | `false` | false | — | `` |
+
 ### agentj card export
 
 ```text
@@ -1458,8 +1568,29 @@ usage: agentj card export [-h] [--json] which dest
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `which` | `null` | true | — | `an official card: notes · todo · automation` |
+| `which` | `null` | true | — | `an official card: notes · todo · automation · calendar · official-palette · files · obsidian` |
 | `dest` | `null` | true | — | `a new, empty folder` |
+| `--json` | `false` | false | — | `machine-readable output` |
+
+### agentj card files
+
+```text
+文件管理卡能浏览的文件夹（工作目录 + 主人加的）/ the folders the Files card may browse
+```
+
+```bash
+agentj card files --help
+```
+
+```text
+usage: agentj card files [-h] [--json] {list,add,remove} [folder]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `op` | `null` | true | `list`, `add`, `remove` | `list · add · remove` |
+| `folder` | `null` | false | — | `a folder (add / remove)` |
 | `--json` | `false` | false | — | `machine-readable output` |
 
 ### agentj card list
@@ -1506,6 +1637,28 @@ usage: agentj card note [-h] [--id ID] [--entry ENTRY] [--revision REVISION]
 | `--revision` | `null` | false | — | `` |
 | `--text` | `null` | false | — | `` |
 | `--json` | `false` | false | — | `` |
+
+### agentj card obsidian
+
+```text
+the Obsidian card: find / set the vault, pick notes
+```
+
+```bash
+agentj card obsidian --help
+```
+
+```text
+usage: agentj card obsidian [-h] [--json]
+                            {find,list,vault,pick,unpick} [args ...]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `op` | `null` | true | `find`, `list`, `vault`, `pick`, `unpick` | `find 列出 Obsidian 知道的 vault · list 当前设置 · vault 设 vault · pick 加笔记 · unpick 去掉` |
+| `args` | `null` | false | — | `unpick：vault 里的 .md 路径 / a folder, or note paths` |
+| `--json` | `false` | false | — | `machine-readable output` |
 
 ### agentj card off
 
@@ -1568,6 +1721,27 @@ usage: agentj card open [-h] [--at ANCHOR] [--json] id
 | `--at` | `null` | false | — | `actions / links）/ a place in the card` |
 | `--json` | `false` | false | — | `machine-readable output` |
 
+### agentj card pack
+
+```text
+把自己的卡打成广场包文件夹（只带样例，先过上线检查）/ make a plaza package folder from your card (sample only, checked)
+```
+
+```bash
+agentj card pack --help
+```
+
+```text
+usage: agentj card pack [-h] [--json] id dest
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `id` | `null` | true | — | `a card id` |
+| `dest` | `null` | true | — | `a new, empty folder` |
+| `--json` | `false` | false | — | `machine-readable output` |
+
 ### agentj card remove
 
 ```text
@@ -1586,6 +1760,26 @@ usage: agentj card remove [-h] [--json] id
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `id` | `null` | true | — | `卡片 id（agentj card list）/ a card id (agentj card list)` |
+| `--json` | `false` | false | — | `machine-readable output` |
+
+### agentj card rollback
+
+```text
+换回这张卡休眠中的上一版（关着，看过摘要再开）/ bring the previous version back (switched off)
+```
+
+```bash
+agentj card rollback --help
+```
+
+```text
+usage: agentj card rollback [-h] [--json] id
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `id` | `null` | true | — | `a card id` |
 | `--json` | `false` | false | — | `machine-readable output` |
 
 ### agentj card schema
@@ -2179,7 +2373,7 @@ agentj friends --help
 
 ```text
 usage: agentj friends [-h] [--json]
-                      {relay-policy,cancel,id,card,add,list,status,history,tell,group,groups,block,unblock,remove,discoverable,profile,context,usage,on,off} ...
+                      {relay-policy,cancel,asks,id,card,add,list,status,pick,pick-rules,history,tell,say,devices,group,groups,block,unblock,remove,discoverable,profile,context,usage,on,off} ...
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -2207,6 +2401,27 @@ usage: agentj friends add [-h] [--json] [--note NOTE] id
 | `--json` | `false` | false | — | `machine-readable output` |
 | `id` | `null` | true | — | `` |
 | `--note` | `""` | false | — | `` |
+
+### agentj friends asks
+
+```text
+list or dismiss friend cards
+```
+
+```bash
+agentj friends asks --help
+```
+
+```text
+usage: agentj friends asks [-h] [--json] [--dismiss ID|all | --all]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `machine-readable output` |
+| `--dismiss` | `null` | false | — | `` |
+| `--all` | `false` | false | — | `dismiss every pending card` |
 
 ### agentj friends block
 
@@ -2298,6 +2513,26 @@ usage: agentj friends context [-h] [--json] [--set SET | --append APPEND |
 | `--file` | `null` | false | — | `` |
 | `--show` | `false` | false | — | `` |
 | `--clear` | `false` | false | — | `` |
+
+### agentj friends devices
+
+```text
+My devices group: members and messages
+```
+
+```bash
+agentj friends devices --help
+```
+
+```text
+usage: agentj friends devices [-h] [--json] [--before BEFORE]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `machine-readable output` |
+| `--before` | `null` | false | — | `只看这个时间（毫秒）之前的` |
 
 ### agentj friends discoverable
 
@@ -2456,6 +2691,52 @@ usage: agentj friends on [-h] [--json]
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--json` | `false` | false | — | `machine-readable output` |
 
+### agentj friends pick
+
+```text
+recommend one of your own devices for the next job (does not send it)
+```
+
+```bash
+agentj friends pick --help
+```
+
+```text
+usage: agentj friends pick [-h] [--json] [--task-size {small,medium,large}]
+                           [--explain] [--rules]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `machine-readable output` |
+| `--task-size` | `null` | false | `small`, `medium`, `large` | `task size` |
+| `--explain` | `false` | false | — | `one line per device` |
+| `--rules` | `false` | false | — | `show the rules only` |
+
+### agentj friends pick-rules
+
+```text
+edit the pick rules
+```
+
+```bash
+agentj friends pick-rules --help
+```
+
+```text
+usage: agentj friends pick-rules [-h] [--json]
+                                 [{show,order,set,unset,pace,reset}]
+                                 [args ...]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `machine-readable output` |
+| `action` | `"show"` | false | `show`, `order`, `set`, `unset`, `pace`, `reset` | `` |
+| `args` | `null` | false | — | `ID / self，以及 key=value / device names, IDs or self, then key=value` |
+
 ### agentj friends profile
 
 ```text
@@ -2521,6 +2802,26 @@ usage: agentj friends remove [-h] [--json] friend
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--json` | `false` | false | — | `machine-readable output` |
 | `friend` | `null` | true | — | `` |
+
+### agentj friends say
+
+```text
+post in My devices; @name or @all hands it to that device's main Agent
+```
+
+```bash
+agentj friends say --help
+```
+
+```text
+usage: agentj friends say [-h] [--json] text [text ...]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `machine-readable output` |
+| `text` | `null` | true | — | `` |
 
 ### agentj friends status
 
@@ -2768,15 +3069,19 @@ agentj google --help
 ```text
 usage: agentj google [-h]
                      [--purpose {calendar-read,calendar-write,drive-file,gmail-read,gmail-send,search-console-read,youtube-publish}]
+                     [--status] [--client-file PATH] [--account EMAIL]
                      [--json]
-                     [{status,check,install,plan,on,off,registry}]
+                     [{status,check,install,plan,on,off,registry,connect,disconnect}]
 ```
 
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `action` | `"status"` | false | `status`, `check`, `install`, `plan`, `on`, `off`, `registry` | `status read-only · check probes gog · install pre-installs · plan shows a setup plan · on/off use it or not` |
-| `--purpose` | `null` | false | `calendar-read`, `calendar-write`, `drive-file`, `gmail-read`, `gmail-send`, `search-console-read`, `youtube-publish` | `plan: purpose, repeatable` |
+| `action` | `"status"` | false | `status`, `check`, `install`, `plan`, `on`, `off`, `registry`, `connect`, `disconnect` | `status read-only · check probes gog · install pre-installs · plan shows a setup plan · on/off use it or not · connect/disconnect Calendar authorization` |
+| `--purpose` | `null` | false | `calendar-read`, `calendar-write`, `drive-file`, `gmail-read`, `gmail-send`, `search-console-read`, `youtube-publish` | `plan: purpose, repeatable; connect: one` |
+| `--status` | `false` | false | — | `connect: show the authorization progress only` |
+| `--client-file` | `null` | false | — | `connect：主人下载的桌面 OAuth 客户端 JSON 路径（交给 gog 保存，不打印）/ connect: path of the downloaded Desktop OAuth client JSON (handed to gog, never printed)` |
+| `--account` | `null` | false | — | `connect：要授权的 Google 账号（只交给 gog，不保存）/ connect: the Google account to authorize (passed to gog only, never stored)` |
 | `--json` | `false` | false | — | `` |
 
 ### agentj handover
@@ -3689,7 +3994,7 @@ usage: agentj instances [-h] [--json] [{list,remove}] [number]
 ### agentj keep-awake
 
 ```text
-on / off（恢复原值）/ reversible host idle-sleep policy
+on / off（恢复原值）/ setup（安装收尾那一问）/ reversible host idle-sleep policy
 ```
 
 ```bash
@@ -3697,15 +4002,23 @@ agentj keep-awake --help
 ```
 
 ```text
-usage: agentj keep-awake [-h] [--power {ac,battery,all}] [--dry-run] [--json]
-                         [{status,on,off}]
+usage: agentj keep-awake [-h] [--power {ac,battery,all}] [--lid] [--no-lid]
+                         [--yes] [--phone] [--once] [--lang {zh,en}]
+                         [--dry-run] [--json]
+                         [{status,on,off,setup}]
 ```
 
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `action` | `"status"` | false | `status`, `on`, `off` | `` |
+| `action` | `"status"` | false | `status`, `on`, `off`, `setup` | `` |
 | `--power` | `"ac"` | false | `ac`, `battery`, `all` | `macOS: default AC only; battery/all increases drain` |
+| `--lid` | `null` | false | — | `keep a closed lid awake on AC (Linux logind drop-in; macOS disablesleep)` |
+| `--no-lid` | `null` | false | — | `setup: the lid still sleeps` |
+| `--yes` | `false` | false | — | `setup: the owner already said yes` |
+| `--phone` | `false` | false | — | `setup: 在手机上弹卡片问（第一项 = 是）/ setup: ask with a phone card (first option = yes)` |
+| `--once` | `false` | false | — | `setup: 已经问过就不再问（安装脚本用）/ setup: skip when already answered (installers)` |
+| `--lang` | `null` | false | `zh`, `en` | `` |
 | `--dry-run` | `false` | false | — | `Read and preview only; no state files or phone cards` |
 | `--json` | `false` | false | — | `` |
 
@@ -4060,7 +4373,7 @@ usage: agentj pair [-h] [--no-qr] [--link] [--check] [--json]
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--no-qr` | `false` | false | — | `不画二维码，改为打印配对链接` |
-| `--link` | `false` | false | — | `二维码之外也打印配对链接（它就是配对密钥）` |
+| `--link` | `false` | false | — | `Compatibility: QR and link are already shown by default` |
 | `--check` | `false` | false | — | `只做配对前检查：该走账户页通行密钥还是本机遥控器配对密码（不开始配对）/ pre-check only: account page or local remote pairing password route` |
 | `--json` | `false` | false | — | `与 --check 一起：输出 JSON` |
 
@@ -4346,7 +4659,7 @@ agentj plaza search --help
 
 ```text
 usage: agentj plaza search [-h] [--limit LIMIT] [--json]
-                           [--type {all,qa,skill,workflow}]
+                           [--type {all,qa,skill,workflow,card}]
                            [--sort {new,installs,likes,week}] [--tag TAG]
                            [--official | --community]
                            [words ...]
@@ -4358,7 +4671,7 @@ usage: agentj plaza search [-h] [--limit LIMIT] [--json]
 | `words` | `null` | false | — | `关键词（空 = 最新）/ keywords (none = latest)` |
 | `--limit` | `10` | false | — | `` |
 | `--json` | `false` | false | — | `` |
-| `--type` | `"all"` | false | `all`, `qa`, `skill`, `workflow` | `default all: packages first, then Q&A` |
+| `--type` | `"all"` | false | `all`, `qa`, `skill`, `workflow`, `card` | `default all: packages first, then Q&A` |
 | `--sort` | `null` | false | `new`, `installs`, `likes`, `week` | `包的排序（默认：认证优先再按本周安装）/ package order` |
 | `--tag` | `null` | false | — | `package tag` |
 | `--official` | `false` | false | — | `official packages only` |
@@ -5086,15 +5399,16 @@ agentj secret --help
 usage: agentj secret [-h] [--name NAME] [--purpose PURPOSE] [--dest DEST]
                      [--verify-url VERIFY_URL] [--verify-header VERIFY_HEADER]
                      [--verify-cmd VERIFY_CMD] [--file FILE]
-                     [--value-from VALUE_FROM] [--ttl TTL] [--wait] [--json]
-                     {request,send,result,log} [id]
+                     [--value-from VALUE_FROM] [--ttl TTL] [--wait]
+                     [--replace] [--json]
+                     {request,send,result,status,log} [id]
 ```
 
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `action` | `null` | true | `request`, `send`, `result`, `log` | `` |
-| `id` | `null` | false | — | `result：卡片 id（request/send 打印的）；不写 = 最近十张` |
+| `action` | `null` | true | `request`, `send`, `result`, `status`, `log` | `` |
+| `id` | `null` | false | — | `result：卡片 id（request/send 打印的）；不写 = 最近十张 · status：变量名` |
 | `--name` | `null` | false | — | `request：变量名，如 ELEVENLABS_API_KEY · send：手机上显示的名字，如 'Shadowrocket SS 链接'` |
 | `--purpose` | `null` | false | — | `用途（手机上原样显示）` |
 | `--dest` | `null` | false | — | `存到哪：env:<文件>[#KEY]（.env 一行）或 file:<路径>（整个文件）` |
@@ -5105,6 +5419,7 @@ usage: agentj secret [-h] [--name NAME] [--purpose PURPOSE] [--dest DEST]
 | `--value-from` | `null` | false | — | `send：一段文本，从 env:<变量名> 或 file:<路径> 读（不要写在命令行上）` |
 | `--ttl` | `null` | false | — | `send：多少秒内可领（30–600，默认 600）` |
 | `--wait` | `false` | false | — | `send：等到有结果（领取、过期或拒绝）` |
+| `--replace` | `false` | false | — | `request：目标里已经有这个值时仍然发卡换新值（默认不再打扰主人）` |
 | `--json` | `false` | false | — | `` |
 
 ### agentj send
@@ -5248,6 +5563,105 @@ usage: agentj skill [-h] [--owner-id OWNER_ID] [--key-env KEY_ENV] [--tts TTS]
 | `--run` | `null` | false | — | `` |
 | `--json` | `false` | false | — | `` |
 | `--owner-confirmed` | `false` | false | — | `` |
+
+### agentj skills
+
+```text
+skill health (last use, long unused, archive / restore) and save-as-skill suggestions
+```
+
+```bash
+agentj skills --help
+```
+
+```text
+usage: agentj skills [-h] {health,archive,restore,suggest} ...
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj skills archive
+
+```text
+把一个很久没用的技能移到归档文件夹（不删除，可恢复）/ move a skill to the archive folder (never deleted)
+```
+
+```bash
+agentj skills archive --help
+```
+
+```text
+usage: agentj skills archive [-h] [--json] name
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `name` | `null` | true | — | `skill name` |
+| `--json` | `false` | false | — | `` |
+
+### agentj skills health
+
+```text
+each skill's last use, count, long unused
+```
+
+```bash
+agentj skills health --help
+```
+
+```text
+usage: agentj skills health [-h] [--json]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `` |
+
+### agentj skills restore
+
+```text
+put an archived skill back
+```
+
+```bash
+agentj skills restore --help
+```
+
+```text
+usage: agentj skills restore [-h] [--json] name
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `name` | `null` | true | — | `skill name` |
+| `--json` | `false` | false | — | `` |
+
+### agentj skills suggest
+
+```text
+no 记下主人的回答 / save-as-skill suggestions; yes / no records the owner's answer
+```
+
+```bash
+agentj skills suggest --help
+```
+
+```text
+usage: agentj skills suggest [-h] [--all] [--json] [{list,yes,no}] [id]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `action` | `"list"` | false | `list`, `yes`, `no` | `` |
+| `id` | `null` | false | — | `the suggestion id` |
+| `--all` | `false` | false | — | `also answered and still counting` |
+| `--json` | `false` | false | — | `` |
 
 ### agentj status
 
@@ -5602,19 +6016,23 @@ agentj terminal --help
 
 ```text
 usage: agentj terminal [-h] [--device DEVICE] [--minutes MINUTES]
-                       [--hours HOURS] [--allow-web] [--json]
-                       {status,enable,allow,deny,disable,forget,logs} [target]
+                       [--hours HOURS] [--allow-web] [--cmd CMD]
+                       [--lines LINES] [--json]
+                       {status,enable,allow,deny,disable,forget,logs,open,output}
+                       [target]
 ```
 
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `action` | `null` | true | `status`, `enable`, `allow`, `deny`, `disable`, `forget`, `logs` | `` |
+| `action` | `null` | true | `status`, `enable`, `allow`, `deny`, `disable`, `forget`, `logs`, `open`, `output` | `` |
 | `target` | `null` | false | — | `the remote (id or name) for allow, deny, forget` |
 | `--device` | `null` | false | — | `enable：能用的遥控器（可多次；默认 = 唯一有通行密钥的那台）/ a remote (repeatable)` |
 | `--minutes` | `null` | false | — | `enable：每次最长几分钟（1–60，默认 15）/ minutes per session` |
 | `--hours` | `null` | false | — | `allow：几小时后自动取消（1–24，默认 2）/ hours until it ends` |
 | `--allow-web` | `false` | false | — | `allow a web-version remote` |
+| `--cmd` | `null` | false | — | `open：在手机终端的输入框里填好这一行（不会自动运行）/ prefill this line in the phone's terminal (never sent)` |
+| `--lines` | `null` | false | — | `output：最后几行（1–2000，默认 200）/ the last N lines` |
 | `--json` | `false` | false | — | `` |
 
 ### agentj theme
@@ -6281,7 +6699,7 @@ agentj --help
 
 ```text
 usage: agentj [-h] [-V] [--migrate-legacy] [--instance N] [--fresh]
-              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,keep-awake,browser,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,terminal,provider,sudo-helper,docs-rule,handover,telegram-cursor,plaza,support,data,capability,goal,heartbeat,quota,imessage,busy,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
+              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,terminal,provider,sudo-helper,docs-rule,handover,telegram-cursor,plaza,support,data,skills,capability,goal,heartbeat,quota,imessage,busy,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -6571,6 +6989,65 @@ usage: agentj asr test [-h] [wav]
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `wav` | `null` | false | — | `` |
+
+### agentj automation
+
+```text
+分步自动化：status · resume（从失败的步骤继续）/ multi-step automations: continue a failed run
+```
+
+```bash
+agentj automation --help
+```
+
+```text
+usage: agentj automation [-h] {resume,status} ...
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj automation resume
+
+```text
+从失败的步骤继续，已完成的步骤不重跑
+```
+
+```bash
+agentj automation resume --help
+```
+
+```text
+usage: agentj automation resume [-h] [--yes] [--json] run
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `run` | `null` | true | — | `运行 id（或前缀）或自动化 id` |
+| `--yes` | `false` | false | — | `确认重跑不可重复的步骤（仅主人终端）/ confirm re-running steps not safe to repeat` |
+| `--json` | `false` | false | — | `` |
+
+### agentj automation status
+
+```text
+这次运行每一步的状态
+```
+
+```bash
+agentj automation status --help
+```
+
+```text
+usage: agentj automation status [-h] [--json] run
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `run` | `null` | true | — | `` |
+| `--json` | `false` | false | — | `` |
 
 ### agentj bots
 
@@ -7541,7 +8018,7 @@ agentj card --help
 
 ```text
 usage: agentj card [-h]
-                   {list,validate,apply,on,off,remove,export,open,note,todo,automation,schema} ...
+                   {list,validate,apply,on,off,remove,export,open,note,todo,cal,automation,files,obsidian,pack,rollback,schema} ...
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -7588,6 +8065,57 @@ usage: agentj card automation [-h] [--json] {list}
 | `op` | `null` | true | `list` | `` |
 | `--json` | `false` | false | — | `` |
 
+### agentj card cal
+
+```text
+Local calendar / 本地日历
+```
+
+```bash
+agentj card cal --help
+```
+
+```text
+usage: agentj card cal [-h] [--entry ENTRY] [--revision REVISION]
+                       [--title TITLE] [--start START] [--end END]
+                       [--note NOTE] [--source SOURCE] [--name NAME]
+                       [--key KEY] [--to NAME] [--all-day] [--timed]
+                       [--reminder REMINDER] [--clear-reminder]
+                       [--keep {local,remote}] [--kind {google,caldav}]
+                       [--calendar CALENDAR] [--server SERVER]
+                       [--user-key NAME] [--pass-key NAME] [--push-new]
+                       [--auto] [--json]
+                       {add,edit,delete,list,due,subscribe,unsubscribe,sync,undo,resolve,queue,connect,disconnect}
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `op` | `null` | true | `add`, `edit`, `delete`, `list`, `due`, `subscribe`, `unsubscribe`, `sync`, `undo`, `resolve`, `queue`, `connect`, `disconnect` | `` |
+| `--entry` | `null` | false | — | `` |
+| `--revision` | `null` | false | — | `` |
+| `--title` | `null` | false | — | `` |
+| `--start` | `null` | false | — | `` |
+| `--end` | `null` | false | — | `` |
+| `--note` | `null` | false | — | `` |
+| `--source` | `null` | false | — | `` |
+| `--name` | `null` | false | — | `` |
+| `--key` | `null` | false | — | `` |
+| `--to` | `null` | false | — | `add：同时写到这个双向日历` |
+| `--all-day` | `null` | false | — | `` |
+| `--timed` | `null` | false | — | `` |
+| `--reminder` | `null` | false | — | `` |
+| `--clear-reminder` | `false` | false | — | `` |
+| `--keep` | `null` | false | `local`, `remote` | `resolve：local 留我的版本，remote 留 Google/iCloud 那边的` |
+| `--kind` | `null` | false | `google`, `caldav` | `connect：双向日历的种类` |
+| `--calendar` | `null` | false | — | `connect：哪个日历，Google 默认 primary，CalDAV 填日历名` |
+| `--server` | `null` | false | — | `connect --kind caldav：https 服务器地址` |
+| `--user-key` | `null` | false | — | `connect --kind caldav：存账号的密钥卡名` |
+| `--pass-key` | `null` | false | — | `connect --kind caldav：存 App 专用密码的密钥卡名` |
+| `--push-new` | `false` | false | — | `connect：新加的事件也写过去` |
+| `--auto` | `false` | false | — | `connect：每 15 分钟自动同步` |
+| `--json` | `false` | false | — | `` |
+
 ### agentj card export
 
 ```text
@@ -7607,6 +8135,27 @@ usage: agentj card export [-h] [--json] which dest
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `which` | `null` | true | — | `官方卡` |
 | `dest` | `null` | true | — | `新的空文件夹` |
+| `--json` | `false` | false | — | `机器可读输出` |
+
+### agentj card files
+
+```text
+文件管理卡能浏览的文件夹（工作目录 + 主人加的）/ the folders the Files card may browse
+```
+
+```bash
+agentj card files --help
+```
+
+```text
+usage: agentj card files [-h] [--json] {list,add,remove} [folder]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `op` | `null` | true | `list`, `add`, `remove` | `list 列出 · add 加一个 · remove 去掉` |
+| `folder` | `null` | false | — | `文件夹` |
 | `--json` | `false` | false | — | `机器可读输出` |
 
 ### agentj card list
@@ -7653,6 +8202,28 @@ usage: agentj card note [-h] [--id ID] [--entry ENTRY] [--revision REVISION]
 | `--revision` | `null` | false | — | `` |
 | `--text` | `null` | false | — | `` |
 | `--json` | `false` | false | — | `` |
+
+### agentj card obsidian
+
+```text
+Obsidian 卡：找 vault、设 vault、选要显示的笔记
+```
+
+```bash
+agentj card obsidian --help
+```
+
+```text
+usage: agentj card obsidian [-h] [--json]
+                            {find,list,vault,pick,unpick} [args ...]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `op` | `null` | true | `find`, `list`, `vault`, `pick`, `unpick` | `find 列出 Obsidian 知道的 vault · list 当前设置 · vault 设 vault · pick 加笔记 · unpick 去掉` |
+| `args` | `null` | false | — | `vault：一个文件夹；pick` |
+| `--json` | `false` | false | — | `机器可读输出` |
 
 ### agentj card off
 
@@ -7715,6 +8286,27 @@ usage: agentj card open [-h] [--at ANCHOR] [--json] id
 | `--at` | `null` | false | — | `卡里的位置（anchors、待办条目 id、top` |
 | `--json` | `false` | false | — | `机器可读输出` |
 
+### agentj card pack
+
+```text
+把自己的卡打成广场包文件夹（只带样例，先过上线检查）/ make a plaza package folder from your card (sample only, checked)
+```
+
+```bash
+agentj card pack --help
+```
+
+```text
+usage: agentj card pack [-h] [--json] id dest
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `id` | `null` | true | — | `卡片 id` |
+| `dest` | `null` | true | — | `新的空文件夹` |
+| `--json` | `false` | false | — | `机器可读输出` |
+
 ### agentj card remove
 
 ```text
@@ -7733,6 +8325,26 @@ usage: agentj card remove [-h] [--json] id
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `id` | `null` | true | — | `卡片 id（agentj card list）/ a card id (agentj card list)` |
+| `--json` | `false` | false | — | `机器可读输出` |
+
+### agentj card rollback
+
+```text
+换回这张卡休眠中的上一版（关着，看过摘要再开）/ bring the previous version back (switched off)
+```
+
+```bash
+agentj card rollback --help
+```
+
+```text
+usage: agentj card rollback [-h] [--json] id
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `id` | `null` | true | — | `卡片 id` |
 | `--json` | `false` | false | — | `机器可读输出` |
 
 ### agentj card schema
@@ -8317,7 +8929,7 @@ usage: agentj feedback send [-h] [--owner-confirmed]
 ### agentj friends
 
 ```text
-Agent 好友：id · card · add · list · history · tell · group · groups · block · unblock · remove · discoverable · profile · context · usage · on\|off
+Agent 好友：id · card · add · list · history · tell · say · devices · pick · group · groups · block · unblock · remove · discoverable · profile · context · usage · on\|off
 ```
 
 ```bash
@@ -8326,7 +8938,7 @@ agentj friends --help
 
 ```text
 usage: agentj friends [-h] [--json]
-                      {relay-policy,cancel,id,card,add,list,status,history,tell,group,groups,block,unblock,remove,discoverable,profile,context,usage,on,off} ...
+                      {relay-policy,cancel,asks,id,card,add,list,status,pick,pick-rules,history,tell,say,devices,group,groups,block,unblock,remove,discoverable,profile,context,usage,on,off} ...
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -8354,6 +8966,27 @@ usage: agentj friends add [-h] [--json] [--note NOTE] id
 | `--json` | `false` | false | — | `机器可读输出` |
 | `id` | `null` | true | — | `` |
 | `--note` | `""` | false | — | `` |
+
+### agentj friends asks
+
+```text
+查看或拒绝待处理好友卡
+```
+
+```bash
+agentj friends asks --help
+```
+
+```text
+usage: agentj friends asks [-h] [--json] [--dismiss ID|all | --all]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `机器可读输出` |
+| `--dismiss` | `null` | false | — | `` |
+| `--all` | `false` | false | — | `拒绝全部待处理好友卡` |
 
 ### agentj friends block
 
@@ -8445,6 +9078,26 @@ usage: agentj friends context [-h] [--json] [--set SET | --append APPEND |
 | `--file` | `null` | false | — | `` |
 | `--show` | `false` | false | — | `` |
 | `--clear` | `false` | false | — | `` |
+
+### agentj friends devices
+
+```text
+「我的设备」群：成员和最近的消息（不可信数据，JSON）
+```
+
+```bash
+agentj friends devices --help
+```
+
+```text
+usage: agentj friends devices [-h] [--json] [--before BEFORE]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `机器可读输出` |
+| `--before` | `null` | false | — | `只看这个时间（毫秒）之前的` |
 
 ### agentj friends discoverable
 
@@ -8603,6 +9256,52 @@ usage: agentj friends on [-h] [--json]
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--json` | `false` | false | — | `机器可读输出` |
 
+### agentj friends pick
+
+```text
+派活前：在同一个主人的设备里按规则推荐一台（只推荐，不派活）
+```
+
+```bash
+agentj friends pick --help
+```
+
+```text
+usage: agentj friends pick [-h] [--json] [--task-size {small,medium,large}]
+                           [--explain] [--rules]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `机器可读输出` |
+| `--task-size` | `null` | false | `small`, `medium`, `large` | `活的大小` |
+| `--explain` | `false` | false | — | `逐台写出理由` |
+| `--rules` | `false` | false | — | `只看当前规则` |
+
+### agentj friends pick-rules
+
+```text
+改 pick 的规则：show · order <设备…> · set <设备> week=1 load=0.7 mem=4 in_use=deny sizes=small,medium · unset <设备> · pace <每天%%> · reset
+```
+
+```bash
+agentj friends pick-rules --help
+```
+
+```text
+usage: agentj friends pick-rules [-h] [--json]
+                                 [{show,order,set,unset,pace,reset}]
+                                 [args ...]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `机器可读输出` |
+| `action` | `"show"` | false | `show`, `order`, `set`, `unset`, `pace`, `reset` | `` |
+| `args` | `null` | false | — | `设备名` |
+
 ### agentj friends profile
 
 ```text
@@ -8668,6 +9367,26 @@ usage: agentj friends remove [-h] [--json] friend
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--json` | `false` | false | — | `机器可读输出` |
 | `friend` | `null` | true | — | `` |
+
+### agentj friends say
+
+```text
+在「我的设备」群里说一句；@设备名 / @all 把它交给那台的主 Agent
+```
+
+```bash
+agentj friends say --help
+```
+
+```text
+usage: agentj friends say [-h] [--json] text [text ...]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `机器可读输出` |
+| `text` | `null` | true | — | `` |
 
 ### agentj friends status
 
@@ -8915,15 +9634,19 @@ agentj google --help
 ```text
 usage: agentj google [-h]
                      [--purpose {calendar-read,calendar-write,drive-file,gmail-read,gmail-send,search-console-read,youtube-publish}]
+                     [--status] [--client-file PATH] [--account EMAIL]
                      [--json]
-                     [{status,check,install,plan,on,off,registry}]
+                     [{status,check,install,plan,on,off,registry,connect,disconnect}]
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `action` | `"status"` | false | `status`, `check`, `install`, `plan`, `on`, `off`, `registry` | `status 只读 · check 实测 gog · install 预装 · plan 某些用途的建置计划 · on/off 用不用` |
-| `--purpose` | `null` | false | `calendar-read`, `calendar-write`, `drive-file`, `gmail-read`, `gmail-send`, `search-console-read`, `youtube-publish` | `plan：用途，可重复` |
+| `action` | `"status"` | false | `status`, `check`, `install`, `plan`, `on`, `off`, `registry`, `connect`, `disconnect` | `status 只读 · check 实测 gog · install 预装 · plan 某些用途的建置计划 · on/off 用不用 · connect/disconnect 日历授权` |
+| `--purpose` | `null` | false | `calendar-read`, `calendar-write`, `drive-file`, `gmail-read`, `gmail-send`, `search-console-read`, `youtube-publish` | `plan：用途，可重复；connect：一个` |
+| `--status` | `false` | false | — | `connect：只看授权进度` |
+| `--client-file` | `null` | false | — | `connect：主人下载的桌面 OAuth 客户端 JSON 路径（交给 gog 保存，不打印）/ connect: path of the downloaded Desktop OAuth client JSON (handed to gog, never printed)` |
+| `--account` | `null` | false | — | `connect：要授权的 Google 账号（只交给 gog，不保存）/ connect: the Google account to authorize (passed to gog only, never stored)` |
 | `--json` | `false` | false | — | `` |
 
 ### agentj handover
@@ -9844,15 +10567,23 @@ agentj keep-awake --help
 ```
 
 ```text
-usage: agentj keep-awake [-h] [--power {ac,battery,all}] [--dry-run] [--json]
-                         [{status,on,off}]
+usage: agentj keep-awake [-h] [--power {ac,battery,all}] [--lid] [--no-lid]
+                         [--yes] [--phone] [--once] [--lang {zh,en}]
+                         [--dry-run] [--json]
+                         [{status,on,off,setup}]
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `action` | `"status"` | false | `status`, `on`, `off` | `` |
+| `action` | `"status"` | false | `status`, `on`, `off`, `setup` | `` |
 | `--power` | `"ac"` | false | `ac`, `battery`, `all` | `macOS: default AC only; battery/all increases drain` |
+| `--lid` | `null` | false | — | `插电合盖也不睡` |
+| `--no-lid` | `null` | false | — | `setup: 合盖照常睡` |
+| `--yes` | `false` | false | — | `setup: 主人已在聊天里同意` |
+| `--phone` | `false` | false | — | `setup: 在手机上弹卡片问（第一项 = 是）/ setup: ask with a phone card (first option = yes)` |
+| `--once` | `false` | false | — | `setup: 已经问过就不再问（安装脚本用）/ setup: skip when already answered (installers)` |
+| `--lang` | `null` | false | `zh`, `en` | `` |
 | `--dry-run` | `false` | false | — | `Read and preview only; no state files or phone cards` |
 | `--json` | `false` | false | — | `` |
 
@@ -10207,7 +10938,7 @@ usage: agentj pair [-h] [--no-qr] [--link] [--check] [--json]
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--no-qr` | `false` | false | — | `不画二维码，改为打印配对链接` |
-| `--link` | `false` | false | — | `二维码之外也打印配对链接（它就是配对密钥）` |
+| `--link` | `false` | false | — | `兼容选项：默认已同时打印二维码与配对链接` |
 | `--check` | `false` | false | — | `只做配对前检查：该走账户页通行密钥还是本机遥控器配对密码（不开始配对）/ pre-check only: account page or local remote pairing password route` |
 | `--json` | `false` | false | — | `与 --check 一起：输出 JSON` |
 
@@ -10493,7 +11224,7 @@ agentj plaza search --help
 
 ```text
 usage: agentj plaza search [-h] [--limit LIMIT] [--json]
-                           [--type {all,qa,skill,workflow}]
+                           [--type {all,qa,skill,workflow,card}]
                            [--sort {new,installs,likes,week}] [--tag TAG]
                            [--official | --community]
                            [words ...]
@@ -10505,7 +11236,7 @@ usage: agentj plaza search [-h] [--limit LIMIT] [--json]
 | `words` | `null` | false | — | `关键词（空 = 最新）/ keywords (none = latest)` |
 | `--limit` | `10` | false | — | `` |
 | `--json` | `false` | false | — | `` |
-| `--type` | `"all"` | false | `all`, `qa`, `skill`, `workflow` | `默认 all：先技能 / 工作流，再问答` |
+| `--type` | `"all"` | false | `all`, `qa`, `skill`, `workflow`, `card` | `默认 all：先技能 / 工作流，再问答` |
 | `--sort` | `null` | false | `new`, `installs`, `likes`, `week` | `包的排序（默认：认证优先再按本周安装）/ package order` |
 | `--tag` | `null` | false | — | `包的标签` |
 | `--official` | `false` | false | — | `只看官方包` |
@@ -11233,15 +11964,16 @@ agentj secret --help
 usage: agentj secret [-h] [--name NAME] [--purpose PURPOSE] [--dest DEST]
                      [--verify-url VERIFY_URL] [--verify-header VERIFY_HEADER]
                      [--verify-cmd VERIFY_CMD] [--file FILE]
-                     [--value-from VALUE_FROM] [--ttl TTL] [--wait] [--json]
-                     {request,send,result,log} [id]
+                     [--value-from VALUE_FROM] [--ttl TTL] [--wait]
+                     [--replace] [--json]
+                     {request,send,result,status,log} [id]
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `action` | `null` | true | `request`, `send`, `result`, `log` | `` |
-| `id` | `null` | false | — | `result：卡片 id（request/send 打印的）；不写 = 最近十张` |
+| `action` | `null` | true | `request`, `send`, `result`, `status`, `log` | `` |
+| `id` | `null` | false | — | `result：卡片 id（request/send 打印的）；不写 = 最近十张 · status：变量名` |
 | `--name` | `null` | false | — | `request：变量名，如 ELEVENLABS_API_KEY · send：手机上显示的名字，如 'Shadowrocket SS 链接'` |
 | `--purpose` | `null` | false | — | `用途（手机上原样显示）` |
 | `--dest` | `null` | false | — | `存到哪：env:<文件>[#KEY]（.env 一行）或 file:<路径>（整个文件）` |
@@ -11252,6 +11984,7 @@ usage: agentj secret [-h] [--name NAME] [--purpose PURPOSE] [--dest DEST]
 | `--value-from` | `null` | false | — | `send：一段文本，从 env:<变量名> 或 file:<路径> 读（不要写在命令行上）` |
 | `--ttl` | `null` | false | — | `send：多少秒内可领（30–600，默认 600）` |
 | `--wait` | `false` | false | — | `result` |
+| `--replace` | `false` | false | — | `request：目标里已经有这个值时仍然发卡换新值（默认不再打扰主人）` |
 | `--json` | `false` | false | — | `` |
 
 ### agentj send
@@ -11395,6 +12128,105 @@ usage: agentj skill [-h] [--owner-id OWNER_ID] [--key-env KEY_ENV] [--tts TTS]
 | `--run` | `null` | false | — | `` |
 | `--json` | `false` | false | — | `` |
 | `--owner-confirmed` | `false` | false | — | `` |
+
+### agentj skills
+
+```text
+技能健康度（最近使用、很久没用、归档 / 恢复）和「存成技能」建议
+```
+
+```bash
+agentj skills --help
+```
+
+```text
+usage: agentj skills [-h] {health,archive,restore,suggest} ...
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj skills archive
+
+```text
+把一个很久没用的技能移到归档文件夹（不删除，可恢复）/ move a skill to the archive folder (never deleted)
+```
+
+```bash
+agentj skills archive --help
+```
+
+```text
+usage: agentj skills archive [-h] [--json] name
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `name` | `null` | true | — | `技能名` |
+| `--json` | `false` | false | — | `` |
+
+### agentj skills health
+
+```text
+每个技能最近一次使用、次数、是否很久没用
+```
+
+```bash
+agentj skills health --help
+```
+
+```text
+usage: agentj skills health [-h] [--json]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `` |
+
+### agentj skills restore
+
+```text
+把归档的技能放回原处
+```
+
+```bash
+agentj skills restore --help
+```
+
+```text
+usage: agentj skills restore [-h] [--json] name
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `name` | `null` | true | — | `技能名` |
+| `--json` | `false` | false | — | `` |
+
+### agentj skills suggest
+
+```text
+同类事做满 3 次后的「存成技能」建议；yes
+```
+
+```bash
+agentj skills suggest --help
+```
+
+```text
+usage: agentj skills suggest [-h] [--all] [--json] [{list,yes,no}] [id]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `action` | `"list"` | false | `list`, `yes`, `no` | `` |
+| `id` | `null` | false | — | `建议的 id` |
+| `--all` | `false` | false | — | `也列出已回答和还在计数的` |
+| `--json` | `false` | false | — | `` |
 
 ### agentj status
 
@@ -11740,7 +12572,7 @@ usage: agentj telegram-cursor status [-h]
 ### agentj terminal
 
 ```text
-网页终端：status · enable · allow · deny · disable · forget · logs
+网页终端：status · enable · allow · deny · disable · forget · logs · open · output
 ```
 
 ```bash
@@ -11749,19 +12581,23 @@ agentj terminal --help
 
 ```text
 usage: agentj terminal [-h] [--device DEVICE] [--minutes MINUTES]
-                       [--hours HOURS] [--allow-web] [--json]
-                       {status,enable,allow,deny,disable,forget,logs} [target]
+                       [--hours HOURS] [--allow-web] [--cmd CMD]
+                       [--lines LINES] [--json]
+                       {status,enable,allow,deny,disable,forget,logs,open,output}
+                       [target]
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `action` | `null` | true | `status`, `enable`, `allow`, `deny`, `disable`, `forget`, `logs` | `` |
+| `action` | `null` | true | `status`, `enable`, `allow`, `deny`, `disable`, `forget`, `logs`, `open`, `output` | `` |
 | `target` | `null` | false | — | `遥控器（id 或名字），用于 allow、deny、forget` |
 | `--device` | `null` | false | — | `enable：能用的遥控器（可多次；默认 = 唯一有通行密钥的那台）/ a remote (repeatable)` |
 | `--minutes` | `null` | false | — | `enable：每次最长几分钟（1–60，默认 15）/ minutes per session` |
 | `--hours` | `null` | false | — | `allow：几小时后自动取消（1–24，默认 2）/ hours until it ends` |
 | `--allow-web` | `false` | false | — | `允许网页版遥控器` |
+| `--cmd` | `null` | false | — | `open：在手机终端的输入框里填好这一行（不会自动运行）/ prefill this line in the phone's terminal (never sent)` |
+| `--lines` | `null` | false | — | `output：最后几行（1–2000，默认 200）/ the last N lines` |
 | `--json` | `false` | false | — | `` |
 
 ### agentj theme

@@ -11,7 +11,7 @@ test('grant messages are dispatched and the revoke goes to the host',()=>{
   assert.match(app,/case 'elev_auto': elevate\.auto\(m\)/);
   assert.match(el,/sendApp\(\{ t: 'elev_revoke' \}/);
   assert.match(el,/const grant = ok && !nopw && c\.grant && \$\('elev-grant-on'\)\.checked \? c\.grant\.h : null;/,'only when switched on');
-  assert.match(el,/elevateMessage\(ch, dev, c\.id, c\.kind, ok \? 'allow' : 'deny', c\.n, ts, digest, ctSha, grant\)/,'signed');
+  assert.match(el,/elevateMessage\(ch, dev, c\.id, c\.kind, ok \? 'allow' : 'deny', c\.n, ts, digest, ctSha, grant(?:, saveSha)?\)/,'signed');   // P414: + the save: tail (M2)
   assert.match(el,/\$\('elev-grant-on'\)\.checked = false;/,'off by default on every card shown');
   assert.match(el,/c\.grant = !c\.interpreter && g &&/,'a shell / interpreter card never offers the window');
   assert.match(el,/export function clear\(\) \{\n  clearTimeout\(recoveryTimer\); recoveryTimer = 0;\n  grants\(\[\]\);/,'unpair forgets the bar');

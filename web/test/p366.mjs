@@ -150,6 +150,7 @@ try {
     await evaluate(p, `navigator.clipboard.writeText('p366-before')`);
     await click(p, row(HID.stripe) + ' .whcopy');
     await waitFor(p, `navigator.clipboard.readText().then(t=>t===${JSON.stringify('https://hook.agentj.app/hb/' + HID.stripe)})`, 5000);
+    ok(await evaluate(p, `${$(row(HID.stripe) + ' .whcopy')}.dataset.done==='1'`), '复制地址: visible shared completed state');
     ok(true, '复制地址: the URL is in the clipboard');
     await evaluate(p, `navigator.clipboard.writeText('p366-before')`);
     await click(p, row(HID.form) + ' .whcopy');

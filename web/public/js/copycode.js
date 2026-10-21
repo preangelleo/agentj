@@ -25,8 +25,12 @@ import { t, plain, onLang } from './t.js';
 
 export const ATTR = 'data-cc';
 const SVG = 'http://www.w3.org/2000/svg';
-const DONE_MS = 1400, BARE_MS = 900;
+export const DONE_MS = 1500;
+const BARE_MS = 900;
+const states = new WeakMap();
 let installed = false, live = null;
+let notifyCopy = () => {};
+export function configureCopyNotice(fn) { notifyCopy = fn; }
 
 const label = (k) => plain(t(k));
 function glyph(doc) {
@@ -105,12 +109,39 @@ function flash(node, ms) {
   node.classList.remove('copied'); void node.offsetWidth; node.classList.add('copied');
   clearTimeout(node._ccT); node._ccT = setTimeout(() => node.classList.remove('copied'), ms);
 }
-function feedback(btn, ok) {
+/** Shared visible feedback. Holds only the original button UI, never the copied value. */
+export function copyFeedback(btn, ok) {
   const msg = label(ok ? 'r.md.copied' : 'r.copy.fail');
-  btn.dataset.done = ok ? '1' : 'fail';
-  btn.dataset.tip = msg; btn.setAttribute('aria-label', msg); btn.title = msg;
-  clearTimeout(btn._ccT);
-  btn._ccT = setTimeout(() => { delete btn.dataset.done; delete btn.dataset.tip; relabel(btn); }, ok ? DONE_MS : 2200);
+  if (btn) {
+    let state = states.get(btn);
+    if (!state) {
+      state = { kids: [...btn.childNodes], title: btn.getAttribute('title'), aria: btn.getAttribute('aria-label') };
+      states.set(btn, state);
+    }
+    clearTimeout(state.timer);
+    btn.classList.add('cc-feedback');
+    btn.dataset.done = ok ? '1' : 'fail'; btn.dataset.tip = msg;
+    btn.setAttribute('aria-label', msg); btn.title = msg;
+    const caption = btn.ownerDocument.createElement('span'); caption.className = 'cc-result'; caption.textContent = msg; caption.setAttribute('aria-hidden', 'true');
+    btn.replaceChildren(glyph(btn.ownerDocument), caption);
+    state.timer = setTimeout(() => {
+      btn.replaceChildren(...state.kids);
+      btn.classList.remove('cc-feedback'); delete btn.dataset.done; delete btn.dataset.tip;
+      for (const [key, value] of [['title', state.title], ['aria-label', state.aria]]) {
+        if (value === null) btn.removeAttribute(key); else btn.setAttribute(key, value);
+      }
+      states.delete(btn);
+      if (btn.classList.contains('cc-btn')) relabel(btn);
+    }, DONE_MS);
+  }
+  notifyCopy({kind: ok ? 'success' : 'error', shape: 'circle', text: msg, ms: 1800});
+  return ok;
+}
+/** Starts the clipboard write in the tap; optional writer preserves approval / image-copy contracts. */
+export async function copyButton(text, btn, writer = copyNow) {
+  let ok = false;
+  try { ok = !!(await writer(text)); } catch {}
+  return copyFeedback(btn, ok);
 }
 
 /** Copy `node`'s text and show it; `btn` = its icon (absent for bare). */
@@ -121,11 +152,12 @@ export async function copyFrom(node, btn) {
     if (b && !b.hidden && !b.disabled) { b.click(); return true; }
   }
   const ok = await copyNow(textOf(node));
-  if (variant === 'bare') { if (ok) flash(node, BARE_MS); }
+  if (variant === 'bare') { if (ok) flash(node, BARE_MS); copyFeedback(null, ok); }
   else {
     if (ok) flash(node, DONE_MS);
     const b = btn || (node._ccWrap && node._ccWrap.querySelector('.cc-btn'));
-    if (b) feedback(b, ok);
+    if (b) copyFeedback(b, ok);
+    else copyFeedback(null, ok);
     say(node.ownerDocument, label(ok ? 'r.md.copied' : 'r.copy.fail'));
   }
   node.dispatchEvent(new CustomEvent('cc:copied', { bubbles: true, detail: { ok, variant } }));

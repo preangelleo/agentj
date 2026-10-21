@@ -47,6 +47,9 @@ ACTIONS += ("cmd_run",)             # P361 (§34): Settings 「执行」 — one
 ACTIONS += ("term_open", "term_line", "term_sudo", "term_forget")   # P408 (§38): the web terminal (terminal.py)
 ACTIONS += ("elev_stop",)           # P406 (§11.2): 「停止」 on a running sudo command's strip (elevate.py)
 ACTIONS += ("elev_watch",)          # P406 F1 (§11.2): show / stop showing that command's masked output on this phone
+ACTIONS += ("vault_share",)         # P414 (§37.11): let this remote use the stored computer password (term_vshare.py)
+ACTIONS += ("fr_gsay",)             # P426 #170 (§17.7): a message in 「我的设备」, the owner's own Same owner devices
+ACTIONS += ("skill_archive", "skill_restore")   # P426 #181-3 (§39): 「归档」/「恢复」 on the 技能 page (skill_usage.py)
 TS_SKEW_MS = 120_000
 NONCE_KEEP_S = 600
 _NONCE = re.compile(r"[0-9a-f]{32}")
@@ -79,6 +82,9 @@ def object_text(action: str, obj: dict) -> str:
     term_open : the mode ("line")          term_line : terminal id \n the line          (P408, §38)
     term_sudo : terminal id \n sudo request id          term_forget : "forget"
     elev_stop : the running sudo card's id   (P406, §11.2)      elev_watch : card id \n on | off
+    vault_share : "share" (P414, §37.11; object {})
+    fr_gsay  : "devices" \n the message text   (P426, §17.7: the 「我的设备」 group)
+    skill_archive / skill_restore : op (archive | restore) \\n skill name   (P426 #181-3, §39)
     (a missing / null text field is "", as wire.js `?? ''`)
     """
     if action == "bots_write":
@@ -117,6 +123,12 @@ def object_text(action: str, obj: dict) -> str:
         return str(obj["id"])
     if action == "elev_watch":       # P406 F1 (§11.2): the card's id \n on | off
         return f"{obj['id']}\n{'on' if obj['on'] is True else 'off'}"
+    if action == "vault_share":      # P414 (§37.11): object {} — let this remote use the stored computer password
+        return "share"
+    if action == "term_go":          # P414 (§37.13): never signed — controls.log keeps only the SHA-256 of the Agent's line
+        return str(obj.get("cmd") or "")
+    if action in ("skill_archive", "skill_restore"):   # P426 #181-3 (§39): op \n the skill's name
+        return f"{obj['op']}\n{obj['name']}"
     if action == "approval_set":     # P336: key \n value (a boolean as true / false)
         v = obj["value"]
         return f"{obj['key']}\n{('true' if v else 'false') if isinstance(v, bool) else v}"
@@ -146,6 +158,8 @@ def object_text(action: str, obj: dict) -> str:
         return f"{_s(obj.get('owner'))}\n{_s(obj.get('intro'))}"
     if action == "fr_ctx":
         return f"{obj['friend']}\n{_s(obj.get('text'))}"
+    if action == "fr_gsay":          # P426 #170: the group is fixed ("devices"); the text exactly as sent
+        return f"devices\n{obj['text']}"
     raise ValueError("bad action")
 
 
@@ -216,9 +230,12 @@ def check(st, nonces: Nonces, channel: str, device: str, obj: dict, action: str,
 
 
 def log(st, *, action: str, device: str | None, result: str, obj: dict | None = None, sig: str | None = None,
-        n: str | None = None, ts: int | None = None) -> None:
-    """One line in controls.log (0600): what was asked, by whom, the outcome — the object only as its SHA-256."""
+        n: str | None = None, ts: int | None = None, extra: dict | None = None) -> None:
+    """One line in controls.log (0600): what was asked, by whom, the outcome — the object only as its SHA-256. `extra`
+    (P414): ids / counts only (e.g. the approving remote of a `vshare`), never text."""
     rec = {"ts": int(time.time()), "action": action, "device": device, "result": result}
+    if extra:
+        rec.update({k: v for k, v in extra.items() if k not in rec and isinstance(v, (str, int, bool)) and len(str(v)) <= 80})
     if obj is not None:
         try:
             rec["object_sha256"] = object_digest(action, obj)

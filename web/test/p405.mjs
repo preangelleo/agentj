@@ -26,6 +26,8 @@ try {
     check(await evaluate(p,`document.querySelector('.fr-askbtns').firstElementChild.id`)==='frQMain',`${lang}: main first`);
     await evaluate(p,`document.getElementById('frQMain').click()`);
     for(let j=0;j<60 && fake.st.answers.length===before;j++)await sleep(50);
+    // the fake host pushes the answer before its async signature check: wait for that verdict too (P417: under load it raced)
+    for(let j=0;j<60 && fake.st.sigOk.length<fake.st.answers.length;j++)await sleep(50);
     check(fake.st.answers.at(-1)?.group==='main',`${lang}: signed handover scope`);
     check(fake.st.sigOk.at(-1)===true,`${lang}: real signature verified`);
    }

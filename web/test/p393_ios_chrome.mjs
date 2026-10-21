@@ -50,7 +50,7 @@ try{
      for(const k of ['top','root'])assert.deepEqual(rgb(r[k]),sooty,`${name}/${scheme}/${state} ${k}`);
      assert.equal(r.apple,'black-translucent');assert.ok(r.h>=Math.max(1,top),`${name} top strip ${r.h}`);
      assert.deepEqual(px(f,5,0),sooty,`${name}/${scheme}/${state} top pixel`);assert.deepEqual(px(f,5,843),sooty,`${name}/${scheme}/${state} bottom pixel`);
-    }else assert.deepEqual(rgb(r.top),rgb(r.body),`${name}/${scheme}/${state} android keeps the page colour`);
+    }else {assert.deepEqual(r.meta,['#141414']);assert.deepEqual(rgb(r.top),sooty);assert.deepEqual(px(f,5,843),sooty);}
     results.push({name,scheme,state,...r});
    }
   }

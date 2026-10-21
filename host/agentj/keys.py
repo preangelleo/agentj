@@ -55,7 +55,7 @@ CATALOG = (
     ("ark", {"zh": "火山方舟", "en": "Volcano Ark"}, (("sub", "ARK_AGENT_PLAN_API_KEY"), ("sub", "ARK_CODING_PLAN_API_KEY"),
                                                     ("key", "ARK_API_KEY"))),
     ("bailian", {"zh": "阿里云百炼 · 千问", "en": "Alibaba Bailian · Qwen"},
-     (("sub", "BAILIAN_TOKEN_PLAN_API_KEY"), ("sub", "BAILIAN_CODING_PLAN_API_KEY"), ("key", "DASHSCOPE_API_KEY"))),
+     (("sub", "BAILIAN_TOKEN_PLAN_API_KEY"), ("key", "DASHSCOPE_API_KEY"))),
     ("kimi", {"zh": "Kimi (Moonshot)", "en": "Kimi (Moonshot)"}, (("sub", "KIMI_API_KEY"), ("key", "MOONSHOT_API_KEY"))),
     ("deepseek", {"zh": "DeepSeek", "en": "DeepSeek"}, (("key", "DEEPSEEK_API_KEY"),)),
     ("zhipu", {"zh": "智谱 GLM", "en": "Zhipu GLM"}, (("key", "ZHIPU_API_KEY"),)),
@@ -88,6 +88,8 @@ def import_extra(src: str, keep: bool, fp: str) -> str:
 
 def importable(name: str) -> bool:
     """The names the page itself offers: a catalog key or a secret-looking third-party name (never AGENTJ_* / LD_PRELOAD …)."""
+    if name == "BAILIAN_CODING_PLAN_API_KEY":
+        return False
     return name in CATALOG_NAMES or (bool(THIRD_RE.fullmatch(name)) and not name.upper().startswith(THIRD_SKIP))
 
 
@@ -272,7 +274,7 @@ def scan(host, path: str | None = None, tid: str | None = None) -> dict:
     third = []
     names = set(n for n in env if env[n]) | {n for s in srcs for n in s["values"]}
     for name in sorted(names):
-        if name in CATALOG_NAMES or name.upper().startswith(THIRD_SKIP) or not THIRD_RE.fullmatch(name):
+        if name == "BAILIAN_CODING_PLAN_API_KEY" or name in CATALOG_NAMES or name.upper().startswith(THIRD_SKIP) or not THIRD_RE.fullmatch(name):
             continue
         r = _row("key", name, env, used, srcs, live, tid)
         r.pop("type")

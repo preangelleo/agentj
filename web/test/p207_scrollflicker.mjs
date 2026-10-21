@@ -238,11 +238,12 @@ try {
       const C = R.scenarios[name] = {};
       const all = [];
       cdp.removeAllListeners('Page.screencastFrame');
-      cdp.on('Page.screencastFrame', (f) => { all.push({ t: Date.now(), data: f.data }); cdp.send('Page.screencastFrameAck', { sessionId: f.sessionId }).catch(() => {}); });
-      await cdp.send('Page.startScreencast', { format: 'png', everyNthFrame: 1 });   // CSS-px frames (Chromium ignores a larger maxWidth)
-      // the start position is set while the capture already runs; frames count from 300 ms after that jump (a 1-in-10 run
-      // once showed the screencast's first frames still with the previous position's fade — not a frame a person sees)
+      cdp.on('Page.screencastFrame', (f) => { all.push({ t: typeof f.metadata?.timestamp === 'number' ? f.metadata.timestamp * 1000 : Date.now(), data: f.data }); cdp.send('Page.screencastFrameAck', { sessionId: f.sessionId }).catch(() => {}); });
+      // Establish and paint the static baseline before the compositor stream starts.
+      // Starting the stream at the old scroll position could deliver its first old frame late.
       await setScroll(p, START[name]);
+      await p.screenshot();
+      await cdp.send('Page.startScreencast', { format: 'png', everyNthFrame: 1 });
       await sleep(300);
       const tCast = Date.now();
       await p.evaluate(SAMPLER);

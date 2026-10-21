@@ -37,7 +37,7 @@ SCHEMA = 2
 OWNERS = ("agent", "owner")
 STATUSES = ("pending", "active", "done", "cancelled")
 CLOSED = ("done", "cancelled")
-OPS = ("add", "edit", "done", "cancel", "reopen", "start", "toggle", "list", "due")
+OPS = ("add", "edit", "done", "cancel", "reopen", "start", "toggle", "delete", "list", "due")
 COND_MAX, NOTE_MAX, SOURCE_MAX = 200, 500, 200
 SOON = 24 * 3600                        # s: an end time this close is 「快到期」 / due soon
 ID_RE = re.compile(r"[A-Za-z0-9_-]{1,32}")
@@ -249,7 +249,7 @@ def phone_items(raw: bytes | None, lang: str, now: dt.datetime | None = None) ->
     for x, a in ordered(items, now):
         clean = lambda v, most: cards._clean(privacy.redact(v), most) if v else None
         out.append({"id": x["id"], "text": cards._clean(privacy.redact(x["text"]), cards.ITEM_TEXT_MAX),
-                    "done": x["status"] in CLOSED, "status": x["status"], "owner": x["owner"], "by": x["by"],
+                    "editable": privacy.redact(x["text"]) == x["text"], "done": x["status"] in CLOSED, "status": x["status"], "owner": x["owner"], "by": x["by"],
                     "start": _show_cond(x["start"], by_id, False, lang), "end": _show_cond(x["end"], by_id, True, lang),
                     "note": clean(x["note"], NOTE_MAX), "source": clean(x["source"], SOURCE_MAX),
                     "created": x["created"], "finished": x["finished"], "state": a["state"], "flags": a["flags"]})
@@ -272,6 +272,12 @@ def _next_id(items: list) -> str:
 def _apply(items: list, op: str, entry, f: dict, now: dt.datetime) -> tuple[str | None, str | None]:
     """Changes `items` in place → (the item id, why-not)."""
     stamp = _iso(now)
+    if op == "delete":
+        x = next((y for y in items if y["id"] == entry), None)
+        if not x:
+            return None, "not_found"
+        items.remove(x)
+        return entry, None
     if op == "add":
         x = {"id": _next_id(items), "text": f["text"], "owner": f.get("owner") or "owner", "status": f.get("status") or "pending",
              "done": False, "start": f.get("start"), "end": f.get("end"), "by": f.get("by") or "agent",
@@ -316,7 +322,7 @@ def fields(text=None, owner=None, start=None, end=None, source=None, note=None, 
     return f
 
 
-def change(root, op: str, entry=None, now: dt.datetime | None = None, **kw) -> dict:
+def change(root, op: str, entry=None, now: dt.datetime | None = None, revision=None, **kw) -> dict:
     """One atomic change of the To-do file. The card may be off: the item is still kept (the owner sees it when the card is
     switched on) and the answer says `on: false`."""
     now = now or now_utc()
@@ -344,6 +350,9 @@ def change(root, op: str, entry=None, now: dt.datetime | None = None, **kw) -> d
                 raw, problem, cut = cards._read(root, c)
                 if problem not in (None, "empty") or cut:
                     return _fail("refused")
+                from .jcards_data import _revision
+                if revision is not None and revision != _revision(raw or b''):
+                    return _fail("conflict")
                 doc, rows, bad = _parse(raw)
                 if bad:
                     return _fail(bad)          # never overwrite a file we cannot read: the owner's hand edit stays
@@ -351,14 +360,20 @@ def change(root, op: str, entry=None, now: dt.datetime | None = None, **kw) -> d
                     return _fail("full")       # rows past 200 are never dropped by a rewrite
                 at = [(i, n) for i, n in ((i, normalize(r, i)) for i, r in enumerate(rows)) if n]
                 items = [n for _, n in at]
+                if revision is not None and op == 'edit' and any(x['id'] == entry and privacy.redact(x['text']) != x['text'] for x in items):
+                    return _fail('redacted')
+                removed = next((x.copy() for x in items if x["id"] == entry), None)
                 iid, why = _apply(items, op, entry, f, now)
                 if why:
                     return _fail(why)
                 # every stored row stays where it was: an item gets its new fields (unknown keys kept), anything else as is
                 out = list(rows)
-                for (i, _), n in zip(at, items):
-                    out[i] = {**(rows[i] if isinstance(rows[i], dict) else {}), **n}
-                out += items[len(at):]
+                if op == "delete":
+                    out = [r for i, r in enumerate(rows) if not any(j == i and n['id'] == iid for j, n in at)]
+                else:
+                    for (i, _), n in zip(at, items):
+                        out[i] = {**(rows[i] if isinstance(rows[i], dict) else {}), **n}
+                    out += items[len(at):]
                 body = (json.dumps({**doc, "schema": SCHEMA, "items": out}, ensure_ascii=False, indent=1) + "\n").encode("utf-8")
                 if len(body) > c["doc"]["data"].get("maxBytes", cards.DATA_DEFAULT):
                     return _fail("too_large")
@@ -377,8 +392,8 @@ def change(root, op: str, entry=None, now: dt.datetime | None = None, **kw) -> d
                 os.close(lockfd)
     except OSError:
         return _fail("refused")
-    item = next(x for x in items if x["id"] == iid)
-    return {"ok": True, "id": CID, "item": _brief(item), "on": c["on"], "address": cards.address(CID, iid)}
+    item = removed if op == "delete" else next(x for x in items if x["id"] == iid)
+    return {"ok": True, "revision": _revision(body), "id": CID, "item": _brief(item), "on": c["on"], "address": cards.address(CID, iid)}
 
 
 def read(root) -> tuple[list, str | None, bool]:

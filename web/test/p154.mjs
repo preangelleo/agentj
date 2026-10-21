@@ -54,7 +54,7 @@ const LONG_CMD = 'cd /srv/me/work/app/.worktrees/p154-ux-batch && git fetch orig
   'node web/build.mjs && node --test web/test/*.test.mjs && rsync -a --delete agentjarvis/site/public/ /srv/www/agentj/ && ' +
   'systemctl --user restart agentj-serve.service && journalctl --user -u agentj-serve -n 80 --no-pager';
 const S = {
-  zh: { more: '展开全部', less: '收起', off: '静音', added: /刚截的图已放进附件/, tooMany: /最多 10 个附件/, copied: '已拷贝', tap: '点击复制',
+  zh: { more: '展开全部', less: '收起', off: '静音', added: /刚截的图已放进附件/, tooMany: /最多 10 个附件/, copied: '已复制', tap: '点击复制',
     reply: '在终端里跑 `git status -sb` 看一下，然后：\n\n```sh\nnpm test\n```',
     titles: ['把 0.18.5 的发布说明整理成中英两版，再对一遍安装校验值', '巡检代理节点并把延迟最高的三个换掉', '转录昨天的会议录音'] },
   en: { more: 'Show all', less: 'Show less', off: 'Muted', added: /Screenshot added/, tooMany: /At most 10 attachments/, copied: 'Copied', tap: 'Click to copy',

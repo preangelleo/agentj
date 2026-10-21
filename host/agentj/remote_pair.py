@@ -116,20 +116,21 @@ def encrypt_reply(q,data):
 def pass_aad(nonce,host):
     return (PASS_CONTEXT+'\n'+nonce+'\n'+host).encode()
 
-def open_pass(sk,q):
+def open_pass(sk,q,full=False):
     """The password the browser sealed to this host's pass_hello key → str, or None (tampered / not ours)."""
     t=q['target']; aad=pass_aad(t['nonce'],q['host'])
     try:
         shared=sk.exchange(X25519PublicKey.from_public_bytes(wire.unb64u(t['epk'])))
         plain=AESGCM(hashlib.sha256(aad+shared).digest()).decrypt(wire.unb64u(t['iv']),wire.unb64u(t['data']),aad)
-        pw=json.loads(plain).get('pass')
+        payload=json.loads(plain); pw=payload.get('pass')
     except Exception: return None
-    return pw if isinstance(pw,str) and 0<len(pw)<=gate.MAX_LEN else None
+    return (payload if full else pw) if isinstance(pw,str) and 0<len(pw)<=gate.MAX_LEN else None
 
 class RemotePair:
     def __init__(self,host):
         self.host=host; self.results={}; self.seq=0; self.started_at=int(time.time()*1000)
         self.offset=0   # P221: account-service clock minus this computer's (ms), learned from every poll; ±MAX_SKEW at most
+        self.waiting=None   # P444b: current account QR pending (q, pairing, session), memory only
         self.pass_keys={}   # P221: nonce → (X25519 private key, expires ms); memory only, one use
 
     def now_ms(self):
@@ -167,7 +168,15 @@ class RemotePair:
             self.reply(q,self.pass_hello()); return
         if q['op']=='pass_start':
             refusal=await self.pass_check(q)
-            if refusal: self.reply(q,refusal); return
+            if refusal:
+                if 'confirm' not in refusal: self.reply(q,refusal); return
+                # Password proof is sealed to a one-use host key, including this exact device/handshake.
+                d=refusal['confirm']; p=h.pairing
+                s=h.sessions.get(p.cid) if p and p.cid is not None else None
+                if (not isinstance(d,dict) or set(d)!={'device','handshake'} or not s or s.state!='pending'
+                        or s.device!=d['device'] or handshake(s)!=d['handshake'] or time.monotonic()>=s.deadline):
+                    self.reply(q,{'status':'gone'}); return
+                await self.grant(q,p,s); return
         if q['op']=='owner_status':
             wd=h.agent_cfg['dir'] if h.agent_cfg else None
             rows=tasks.rows(h.st,wd)[:50]
@@ -196,7 +205,7 @@ class RemotePair:
             self.reply(q,{'status':'approved' if result=='ok' else 'gone'})
             return
         if q['op']=='inspect':
-            items=[{'device':s.device,'name':s.name,'handshake':handshake(s)} for s in h.sessions.values() if s.state=='pending' and time.monotonic()<s.deadline]
+            items=[self.pending_device(s) for s in h.sessions.values() if s.state=='pending' and time.monotonic()<s.deadline]
             self.reply(q,{'status':'pending','devices':items}); return
         if q['op']=='approve':
             p=h.pairing; s=h.sessions.get(p.cid) if p and p.cid is not None else None
@@ -239,11 +248,12 @@ class RemotePair:
         return {'status':'pass_hello','set':True,'hpk':wire.b64u(hpk),'nonce':nonce,'locked':gate.lock_left(st),'left':gate.tries_left(st)}
 
     async def pass_check(self,q):
-        """P221: None = the owner's remote pairing password checked here (scrypt, failure ledger, lock); else the reply."""
+        """P221: verify the password; return None for start, a confirmed binding, or a refusal status."""
         st=self.host.st
         k=self.pass_keys.pop(q['target']['nonce'],None)
         if not k or k[1]<=self.now_ms(): return {'status':'pass_expired'}
-        pw=open_pass(k[0],q)
+        payload=open_pass(k[0],q,full=True)
+        pw=payload.get('pass') if payload else None
         if pw is None:
             st.log('remote_pair_pass',request=q['id'],result='unreadable'); return {'status':'pass_expired'}
         try: await asyncio.to_thread(gate.verify,st,pw)
@@ -255,21 +265,30 @@ class RemotePair:
             return {'status':'pass_not_set'}
         finally: pw=None
         st.log('remote_pair_pass',request=q['id'],result='ok')
-        return None
+        return {'confirm':payload['confirm']} if 'confirm' in payload else None
 
     @staticmethod
     def busy(p):
         # P177: who holds the slot and until when, so the account page can say it; `cancel` = this host accepts op cancel.
         return {'status':'busy','by':'remote' if p.remote else 'local','phone':p.cid is not None,'until':int(p.expires),'cancel':p.cid is None}
 
+    @staticmethod
+    def pending_device(s):
+        return {'device':s.device,'name':s.name,'handshake':handshake(s),'code':wire.safety_code(s.h)}
+
     async def pending(self,p,s):
         if not p.remote: return
         if not self.allowed(p.remote) or time.monotonic()>=p.deadline:
             await self.host.close_cid(s.cid,'remote_pair_expired'); return
-        await self.grant(p.remote,p,s)
+        # Update the original encrypted reply: the account page already polls it every second.
+        # Scanning alone never grants; the owner compares the SAS then explicitly approves.
+        self.waiting=(p.remote,p,s)
+        self.reply(p.remote,{'status':'pending','devices':[self.pending_device(s)]})
 
     async def grant(self,q,p,s):
-        if not self.allowed(q) or s.state!='pending' or time.monotonic()>=s.deadline: return
+        if (not self.allowed(q) or s.state!='pending' or time.monotonic()>=s.deadline
+                or time.monotonic()>=p.deadline or (p.remote and not self.allowed(p.remote))):
+            self.reply(q,{'status':'gone'}); return
         result=await self.host._grant_pair(s,source='account')
         self.host._pair_finish(p,result)
         self.reply(q,{'status':result.get('ev','denied'),'device':s.device,'name':s.name})
@@ -282,6 +301,14 @@ class RemotePair:
         await self.host.broadcast(pick(getattr(self.host,'lang','zh'),f"经账户页添加遥控器（{q['account']}）：{s.name} · {when} · {s.device}",f"Remote added from account page ({q['account']}): {s.name} · {when} · {s.device}"),frm='notice')
         self.host.push_notify('security')
 
+    def refresh_waiting(self):
+        if not self.waiting: return
+        q,p,s=self.waiting
+        if (self.host.pairing is not p or s.state!='pending' or time.monotonic()>=s.deadline
+                or time.monotonic()>=p.deadline or not self.allowed(q)):
+            self.reply(q,{'status':'approved' if s.state=='ready' else 'gone'})
+            self.waiting=None
+
     def poll(self,link,results):
         self.seq=max(self.seq+1,int(time.time()*1000))
         body={'v':1,'t':'remote_pair','channel':self.host.channel,'ts':int(time.time()),'seq':self.seq,
@@ -292,6 +319,7 @@ class RemotePair:
         from .reporter import in_daemon_thread
         while True:
             try:
+                self.refresh_waiting()
                 now=self.now_ms()
                 self.results={k:v for k,v in self.results.items() if v[0]['expires_at']>now}
                 p=self.host.pairing

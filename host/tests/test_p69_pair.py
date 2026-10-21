@@ -48,7 +48,9 @@ class PairProtocol(unittest.TestCase):
         for language in ['en','zh']:
             p=main_identity.prompt({'kind':'codex','language':language})
             self.assertIn('agentj devices --json',p)
-            self.assertIn('agentj://pair',p)
+            self.assertIn('agentj pair --check --json',p)
+            self.assertIn('account_url',p)
+            self.assertIn('m.agentj.app',p)
             self.assertIn(main_identity.PAIRING_LINE[language],p)
 
 class SeatUnbound(unittest.TestCase):

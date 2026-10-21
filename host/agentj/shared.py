@@ -20,6 +20,7 @@ import secrets
 import socket
 import signal
 import sys
+import time
 import uuid
 
 from .text import drop_replacement, pick, strip_reasoning
@@ -162,6 +163,43 @@ def claude_sessions(directory: str, sid: str = "", owner_only: bool = False) -> 
     return sorted(out, key=lambda d: int(d.get("updatedAt") or 0), reverse=True)
 
 
+CLAUDE_SID = re.compile(r"[0-9a-fA-F-]{8,64}")
+# P418 (#183 ①): pins whose reboot resume this serve process already tried (once each; a failure is not retried)
+REBOOT_TRIED: set[str] = set()
+
+
+def claude_transcript(directory: str, sid: str) -> Path:
+    """Claude Code's transcript of `sid` for the folder (CLAUDE_CONFIG_DIR honoured; the same slug Claude Code writes)."""
+    root = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
+    return root / "projects" / re.sub(r"[^A-Za-z0-9]", "-", directory) / (sid + ".jsonl")
+
+
+def parse_boottime(out: str) -> float | None:
+    """macOS `sysctl -n kern.boottime` → `{ sec = 1760000000, usec = 123 } Tue Oct …` → seconds."""
+    m = re.search(r"\bsec\s*=\s*(\d+)", out or "")
+    return float(m.group(1)) if m else None
+
+
+def boot_time() -> float | None:
+    """P418 (#183 ①): wall clock (s) this system booted — Linux /proc/stat `btime`, macOS kern.boottime. None = unknown
+    (then nothing is started on the strength of "it was a reboot"). Blocking (procfs / sysctl): call it off the loop."""
+    try:
+        for line in Path("/proc/stat").read_text().splitlines():
+            if line.startswith("btime "):
+                return float(line.split()[1])
+    except (OSError, ValueError, IndexError):
+        pass
+    if sys.platform == "darwin":
+        import subprocess
+        exe = "/usr/sbin/sysctl" if os.path.exists("/usr/sbin/sysctl") else "sysctl"   # the service PATH may be bare
+        try:
+            out = subprocess.run([exe, "-n", "kern.boottime"], capture_output=True, text=True, timeout=5).stdout
+        except (OSError, subprocess.SubprocessError):
+            return None
+        return parse_boottime(out)
+    return None
+
+
 def claude_send(session: dict, text: str, source: dict | None = None) -> None:
     """Relay protocol; transport errors contain no peer key or message content. B1 (P117): the envelope is built from the
     host-generated `source` (provenance), never from the text; no source = the paired phone."""
@@ -215,6 +253,7 @@ class SharedClaudeAgent(Agent):
         self.main_seen_at = __import__("time").monotonic()   # P243: main thread's last hook event / transcript line (start = now)
         self.pending_text = ""
         self.pending_source = None
+        self.held = []                  # P424 #75: [(page id, pending text)] phone messages not taken in time (≤ 5)
         self.untrusted_state = None    # B1: None | "pending" (group envelope sent) | "running" (native turn seen)
         self.untrusted_at = 0.0
         self.failed_start = False
@@ -280,6 +319,8 @@ class SharedClaudeAgent(Agent):
         self.phone_anchored = False     # the phone input itself is in the transcript: what follows answers it
         self.streamed = []              # public texts of this phone turn already on the phone
         self.end_claimed = None         # (public reply, monotonic) a turn end without Stop already delivered
+        self.stop_gens = []             # P424 (#87): the turn_gens committed Stops answered (newest 8) — their recorded ends add nothing
+        self.stop_claimed = None        # P424 (#87): (public reply, monotonic) the reply a committed Stop delivered
         # P151 (追加 1/2): compaction / clear handoff — the host's own recovery message when no new turn comes
         self.turn_began_at = None       # wall clock of the current turn's start (UserPromptSubmit / harness turn)
         self.recover_at = 0.0           # wall clock of the last scheduled recovery (PostCompact + SessionStart = one)
@@ -326,6 +367,7 @@ class SharedClaudeAgent(Agent):
             claimed, self.end_claimed = self.end_claimed, None
             if claimed and claimed[0] == public_text(reply) and time.monotonic() - claimed[1] < 60:
                 return                  # P151: a Stop later than its turn end; that reply was already delivered
+            self.stop_claimed = (public_text(reply), time.monotonic())
         if self.transcript and self.transcript.is_file():
             self.read_transcript()
         if self.untrusted_state == "running":
@@ -594,6 +636,45 @@ class SharedClaudeAgent(Agent):
         elif name == "SubagentStop" and isinstance(aid, str):
             self.sub_agents.pop(aid, None)
 
+    def _note_skill(self, name, event):
+        """P426 #181 (§39): exact skill runs (the Skill tool; a `/<skill>` typed on the desktop) and the main thread's shell
+        commands worth a skill (skill_ops) — names and normalised signatures only. Never costs the hook."""
+        try:
+            from . import skill_ops, skill_usage
+            st = self.host.st
+            if name == "PostToolUse" and event.get("tool_name") == "Skill":
+                ti = event.get("tool_input") if isinstance(event.get("tool_input"), dict) else {}
+                sk = ti.get("skill") or ti.get("command")
+                if isinstance(sk, str):
+                    skill_usage.note(st, skill_usage.canonical(sk.strip().lstrip("/")), "claude")
+            elif name == "PostToolUse" and event.get("tool_name") == "Bash" and not event.get("agent_id") \
+                    and skill_ops.owner_turn(self):     # N5: a group / guest / delegated turn's commands never count
+                ti = event.get("tool_input") if isinstance(event.get("tool_input"), dict) else {}
+                skill_ops.record(st, "cmd", ti.get("command"), skill_usage.installed(self.kind, self.cfg.get("dir")))
+            elif name == "UserPromptSubmit" and not event.get("agent_id") and not self.phone_turn:
+                m = re.match(r"^/([A-Za-z0-9][\w:.-]{0,63})(?:\s|$)", str(event.get("prompt") or "").strip())
+                if m and m.group(1) in skill_usage.installed(self.kind, self.cfg.get("dir")):
+                    skill_usage.note(st, skill_usage.canonical(m.group(1)), "claude")
+        except Exception:  # noqa: BLE001
+            with contextlib.suppress(Exception):
+                self.host.st.log("skill_note", status="error")
+
+    def _skill_offer(self, event) -> str:
+        """P426 #181-4: a prompt typed on the desktop of the served session — counted like a phone instruction; returns the
+        one-time 「存成技能？」 note when one is due ("" otherwise, and always "" for a phone turn: it rode on the message)."""
+        if self.phone_turn:
+            return ""
+        try:
+            from . import skill_ops, skill_usage
+            prompt = str(event.get("prompt") or "")
+            if not skill_ops.owner_turn(self) or provenance.names_untrusted(prompt):
+                return ""                         # N5: a group envelope / delegated task in the session is not the owner
+            if not prompt.lstrip().startswith("/"):
+                skill_ops.record(self.host.st, "ask", prompt, skill_usage.installed(self.kind, self.cfg.get("dir")))
+            return skill_ops.take_note(self.host.st, getattr(self.host, "lang", "zh"), getattr(self.host, "preferences", None))
+        except Exception:  # noqa: BLE001
+            return ""
+
     def card_origin(self, agent_id):
         """P172: the card's last line when a sub-agent asks (the phone owner sees who is waiting), else None."""
         if not isinstance(agent_id, str) or not agent_id:
@@ -659,6 +740,8 @@ class SharedClaudeAgent(Agent):
                 # report 10-12 11:02): that one commits nothing, so the transcript's end must still close the turn.
                 committed = bool(str(event.get("last_assistant_message") or "").strip())
                 self.stop_since_end = committed
+                if committed:               # P424 (#87): this turn is answered, whatever starts next
+                    self.stop_gens = [*self.stop_gens[-7:], self.turn_gen]
                 if not committed:
                     self._schedule_empty_stop()
             elif name == "UserPromptSubmit":
@@ -691,9 +774,11 @@ class SharedClaudeAgent(Agent):
                 with contextlib.suppress(Exception):
                     hb.forget("compact")
         self._note_background(name, event)
+        self._note_skill(name, event)
         self.state.handle(event)
         if name == "Stop" and not event.get("agent_id") and getattr(self.state, "_deferred_stop", None) is event:
             self.stop_since_end = False         # P151b: held as a fake Stop (foreground sub-agent) — not this turn's end
+            self.stop_gens = [g for g in self.stop_gens if g != self.turn_gen]
         busy = getattr(self.host, "busy", None)
         if busy is not None:                        # P150: the phone's 「在办事项」 dots (busy.py)
             with contextlib.suppress(Exception):
@@ -738,6 +823,8 @@ class SharedClaudeAgent(Agent):
                 emit("shared_prompt", agent="claude", phone=self.phone_turn,
                     matching=self.phone_turn and self.pending_text in str(event.get("prompt", "")))
             reminder = self.turn_reminder() if not event.get("agent_id") else ""
+            if not (self.phone_turn and self.pending_text in str(event.get("prompt", ""))):
+                self._held_seen(str(event.get("prompt", "")))
             if self.phone_turn and self.pending_text in str(event.get("prompt", "")):
                 self.phone_seen = True
                 self.input_seen.set()
@@ -745,8 +832,11 @@ class SharedClaudeAgent(Agent):
                 tail = "\n\n" + reminder if reminder else ""
                 ctx = prov + self.identity_context(sid, "phone", reserve=len(prov) + len(tail)) + tail
                 return {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": ctx}}
-            if reminder:                            # P159: a desktop turn of the served session gets the same hidden line
-                return {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": reminder}}
+            # P426 #181-4: a desktop instruction counts too; the one-time offer rides here
+            offer = self._skill_offer(event) if not event.get("agent_id") else ""
+            if reminder or offer:                   # P159: a desktop turn of the served session gets the same hidden line
+                return {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit",
+                                               "additionalContext": reminder + offer if reminder else offer.lstrip("\n")}}
         # A category grant does not survive revocation, stop or a changed signing
         # identity. The original signed approval remains its audit parent.
         for cat, grant in list(self.risk_grants.items()):
@@ -932,12 +1022,26 @@ class SharedClaudeAgent(Agent):
         self.hook_watch = asyncio.ensure_future(self.watch_hooks())
         self.report_missed()
 
-    async def ordinary_start(self):
+    async def ordinary_start(self, resume=None, extra_flags=None):
+        """Start native Claude; preserve exact resume ID validation and restart restrictions."""
         import pty
+        if resume is not None and not (isinstance(resume, str) and CLAUDE_SID.fullmatch(resume)):
+            raise ValueError("invalid Claude session id")
         await self.prepare_channel()
         exe = _bin("AGENTJ_CLAUDE_BIN", "claude")
         if not exe:
             raise ValueError("Claude binary unavailable")
+        # P418 (#183 ④): the one-time folder-trust question is answered again right before we start Claude Code ourselves —
+        # serve did it at start, but the owner may have changed the folder or reset .claude.json since (a hidden trust
+        # dialog in our PTY = a session that never registers). Same switch / exemption as serve's own call.
+        from . import harness_setup
+        if harness_setup.enabled() and not self.cfg.get("_workflow_ceo"):
+            try:
+                r = await asyncio.to_thread(harness_setup.prepare, "claude", self.cfg["dir"])
+                self.host.st.log("harness_prepared", agent=self.kind, result=",".join(r["done"]) or None,
+                                 reason=",".join(r["skipped"]) or None, why="ordinary_start")
+            except Exception as e:  # noqa: BLE001 — never blocks the start; prepare itself never raises
+                self.host.st.log("harness_prepare_failed", agent=self.kind, error=type(e).__name__)
         master, slave = pty.openpty()
         import fcntl, termios, struct
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 120, 0, 0))
@@ -949,9 +1053,11 @@ class SharedClaudeAgent(Agent):
         env = environment(env, self.host.preferences)
         env["TERM"] = "xterm-256color"
         try:
-            argv = [exe]
+            argv = [exe, *(getattr(self, "_phone_restart_flags", ()) if extra_flags is None else extra_flags)]
             if self.cfg.get("model"):
                 argv += ["--model", self.cfg["model"]]
+            if resume:
+                argv += ["--resume", resume]
             self.native = await asyncio.create_subprocess_exec(*argv, cwd=self.cfg["dir"], env=env,
                 stdin=slave, stdout=slave, stderr=slave, start_new_session=True)
         finally:
@@ -1371,6 +1477,78 @@ class SharedClaudeAgent(Agent):
             return {"ok": False, "why": "ambiguous" if len(self.heal_choices) > 1 else "none",
                     "choices": [c[:8] for c in self.heal_choices]}
 
+    # ------------------------------------------------------------ P418 (#183 ①): the pinned session after a reboot
+    def _reboot_plan(self, pinned, last_served):
+        """Blocking (stat + boot time): "resume" = the pinned transcript was last written before this boot (the computer
+        restarted under it); "new_after_reboot" = no transcript left of the session Agent J served last (deleted); None =
+        not ours to start — boot time unknown, or the owner closed it during this boot (they may reopen it in a terminal:
+        two copies of one conversation must never race)."""
+        if not CLAUDE_SID.fullmatch(pinned or ""):
+            return None
+        boot = boot_time()
+        if boot is None:
+            return None
+        try:
+            mtime = claude_transcript(self.cfg["dir"], pinned).stat().st_mtime
+        except FileNotFoundError:
+            return "new_after_reboot" if last_served == pinned else None
+        except OSError:
+            return None
+        return "resume" if mtime < boot else None
+
+    async def _reboot_resume(self, pinned) -> list:
+        """Start the pinned conversation again in a background native Claude Code (`claude --resume`), or a new one when its
+        transcript is gone; follow the pin if Claude Code answers with another id. At most once per pin per serve process."""
+        last = self.host.st.agent_session(self.kind)
+        plan = await asyncio.to_thread(self._reboot_plan, pinned, last if isinstance(last, str) else None)
+        if plan is None:
+            return []
+        REBOOT_TRIED.add(pinned)
+
+        def log(result, **kw):
+            self.host.st.log("shared_reboot_resume", agent=self.kind, how=plan, result=result, session=pinned[:8], **kw)
+        try:
+            await self.ordinary_start(resume=pinned if plan == "resume" else None)
+        except (OSError, ValueError) as e:
+            log("failed", error=type(e).__name__)
+            await self._drop_native()
+            return []
+        rows = [d for d in claude_sessions(self.cfg["dir"]) if d["pid"] == self.native.pid]
+        if not rows or not isinstance(rows[0].get("sessionId"), str):
+            log("failed", error="unregistered")
+            await self._drop_native()
+            return []
+        new = rows[0]
+        if plan == "resume" and new["sessionId"] == pinned:
+            log("same")
+            lang = getattr(self.host, "lang", "zh")
+            self.host.agent_notice(pick(lang, f"电脑重启过，Agent J 已在后台重新打开你之前的 Claude Code 会话（{pinned[:8]}）并接上了。",
+                                        f"The computer restarted; Agent J reopened your previous Claude Code session ({pinned[:8]}) "
+                                        "in the background and is attached to it."))
+        else:
+            self._repin(pinned, new, "resumed" if plan == "resume" else "new_after_reboot")
+            log("repinned", new=new["sessionId"][:8])
+        return [new]
+
+    async def _drop_native(self):
+        """A reboot start that did not come up: end the process we launched (never an owner's) and forget it."""
+        if self.native is not None and self.native.returncode is None:
+            with contextlib.suppress(ProcessLookupError):
+                self.native.terminate()
+            with contextlib.suppress(asyncio.TimeoutError):
+                await asyncio.wait_for(self.native.wait(), 5)
+            if self.native.returncode is None:
+                with contextlib.suppress(ProcessLookupError):
+                    self.native.kill()
+                await self.native.wait()
+        if self.master is not None:
+            if self.loop:
+                self.loop.remove_reader(self.master)
+            with contextlib.suppress(OSError):
+                os.close(self.master)
+            self.master = None
+        self.native = None
+
     async def _attach_selected(self, allow_start=True):
         ok = await self._attach_once(allow_start)
         if not ok and self.status == "idle":
@@ -1388,6 +1566,9 @@ class SharedClaudeAgent(Agent):
         sessions = claude_sessions(self.cfg["dir"], pinned, not pinned)
         if not sessions and pinned and not (self.native and self.native.returncode is None):
             sessions = self._heal(pinned)       # P147: the pinned session is gone → follow the owner to the new one
+        if (not sessions and pinned and not self.heal_choices and self.native is None and allow_start
+                and pinned not in REBOOT_TRIED):
+            sessions = await self._reboot_resume(pinned)    # P418 (#183 ①): gone because the computer restarted
         if not sessions and not self.cfg.get("shared_session_id") and self.native is None and allow_start:
             await self.ordinary_start()
             sessions = claude_sessions(self.cfg["dir"])
@@ -1579,7 +1760,9 @@ class SharedClaudeAgent(Agent):
                     self._turn_recorded_end()
                     continue
                 if role == "attachment":
-                    self._phone_anchor((item.get("attachment") or {}).get("prompt") if isinstance(item.get("attachment"), dict) else None)
+                    prompt = (item.get("attachment") or {}).get("prompt") if isinstance(item.get("attachment"), dict) else None
+                    self._held_seen(prompt)
+                    self._phone_anchor(prompt)
                     continue
                 blocks = msg.get("content", "")
                 text = blocks if isinstance(blocks, str) else "\n".join(
@@ -1597,6 +1780,7 @@ class SharedClaudeAgent(Agent):
                 if role == "user":
                     from .transcript_input import human_input, proactive_origin
                     if item.get("isMeta") and self._from_phone(item, text):
+                        self._held_seen(text)
                         self._phone_anchor(text)  # P151b: 2.1.296 writes the peer (phone) message as an isMeta record
                     via = proactive_origin(item, text)
                     if via == "task":
@@ -1624,6 +1808,8 @@ class SharedClaudeAgent(Agent):
                             self.phone_seen = True
                             self.input_seen.set()
                             self._phone_anchor(text)
+                        else:
+                            self._held_seen(text)
                         continue
                     if self._control_echo(text):
                         continue
@@ -1643,6 +1829,18 @@ class SharedClaudeAgent(Agent):
     def _from_phone(item, text) -> bool:
         return any('from-name="' + name + '"' in text for name in provenance.FROM_NAMES) or (
             isinstance(item.get("origin"), dict) and item["origin"].get("name") in provenance.FROM_NAMES)
+
+    def _held_seen(self, text):
+        """P424 #75: a phone message that was not taken in time shows up after all (a prompt hook, a transcript record) →
+        its page says 「已送达」 instead of the 「尚未接收」 notice. Never the page of the phone turn running now."""
+        if not self.held or not isinstance(text, str) or not text:
+            return
+        for i, (tid, body) in enumerate(self.held):
+            if body and body in text and not (self.phone_turn and body == self.pending_text):
+                del self.held[i]
+                from . import held
+                held.delivered(self.host, tid)
+                return
 
     def _phone_anchor(self, text):
         """P151: the phone input shows up in the transcript (a user record, or a queued_command attachment when it was
@@ -1822,12 +2020,20 @@ class SharedClaudeAgent(Agent):
                 loop = asyncio.get_running_loop()
         if loop is None:
             return
-        loop.call_later(TURN_END_GRACE, self._end_without_stop, reply)
+        loop.call_later(TURN_END_GRACE, self._end_without_stop, reply, self.turn_gen)
 
-    def _end_without_stop(self, reply):
+    def _end_without_stop(self, reply, gen=None):
         import time
         if self.stop_since_end:         # the native Stop came after all (later than the transcript's end record)
             self.stop_since_end = False
+            return
+        # P424 (#87, owner 10-17 「经常连续收到两条一模一样的消息」): turn_duration read → the native Stop delivers the reply →
+        # a background-task notification starts the next turn (stop_since_end is reset) → this grace timer fired anyway
+        # and put the same reply on a second 「后台任务完成」 page. A turn a committed Stop answered never ends twice.
+        claimed = self.stop_claimed
+        if (gen is not None and gen in self.stop_gens) or (
+                reply and claimed and claimed[0] == public_text(reply) and time.monotonic() - claimed[1] < 60):
+            self.host.st.log("shared_turn_end_dup_dropped")
             return
         phone = self.phone_turn and (self.phone_seen or self.phone_claim)
         self.host.st.log("shared_turn_end_no_stop", phone=phone, reply=bool(reply))
@@ -1999,8 +2205,17 @@ class SharedClaudeAgent(Agent):
                 # local / user setting, owner off, a session started before the change, or simply busy.
                 from . import claude_inbound
                 if not await self._wait_busy_input(claude_inbound):
-                    notice = claude_inbound.turn_notice(self.cfg.get("dir"), self.cfg.get("language", "zh")) + " " + claude_inbound.diagnostic(self.host.st, self.cfg.get("language", "zh"), self.cfg)
-                    self.fail_notice(notice)
+                    lang = self.cfg.get("language", "zh")
+                    notice = claude_inbound.turn_notice(self.cfg.get("dir"), lang)
+                    detail = claude_inbound.diagnostic(self.host.st, lang, self.cfg)
+                    # P424 #75 (held.py): on the owner's own page (its words right above), the settings line folded into
+                    # 「详情」; remembered so the page turns 「已送达」 when Claude Code takes the message after all
+                    from . import held
+                    tid = held.note(self.host, notice, detail) if hasattr(self.host, "hist") and hasattr(self.host, "hist_update") else None
+                    if tid is None:
+                        self.fail_notice(notice + " " + detail)
+                    else:
+                        self.held = (self.held + [(tid, self.pending_text)])[-5:]
                     return
             # A committed native Stop belonging to this phone input ends the turn; so does the turn end the transcript
             # records when no Stop comes (P151, _turn_recorded_end). Registry idle and flush timing alone never do.
@@ -2176,14 +2391,22 @@ class SharedClaudeAgent(Agent):
             return False
         if not busy or not self.session:
             return busy
+        if getattr(self, "_stop_esc_pending", False) or time.monotonic() - getattr(self, "_stop_esc_at", float("-inf")) < 2.0:
+            return busy
         if self.native and self.native.pid == self.session["pid"] and self.master is not None:
             os.write(self.master, b"\x1b")
+            self._stop_esc_at = time.monotonic()
             self.done.set()
             return True
         # Relay's validated Herdr route, bound to an exact session id.
         from .shared_interrupt import interrupt
-        result = await asyncio.to_thread(interrupt, self.session)
+        self._stop_esc_pending = True
+        try:
+            result = await asyncio.to_thread(interrupt, self.session)
+        finally:
+            self._stop_esc_pending = False
         if result == "sent":
+            self._stop_esc_at = time.monotonic()
             self.done.set()
         elif result != "idle":      # P328: the phone's × / /stop reached a turn the phone cannot stop — say what to do instead
             self.cannot_halt(pick(getattr(self.host, "lang", "zh"),
@@ -2266,10 +2489,49 @@ OWNER_ATTACH_FAIL = {
     "en": "The settings name your own OpenCode server (port {port}), but Agent J cannot reach it or the pinned session is not "
           "there; this message was not handed over. Check that OpenCode is running and the port / session ID are right; to let "
           "Agent J start and manage OpenCode itself, run on the Agent J host: `" + _UNSET + "`."}
+# P418 (#183 ②): the owner's own server is not running at all (nothing listens on the port — after a reboot it does not come
+# back by itself). Told apart from "reachable, but the password / session is wrong" (OWNER_ATTACH_FAIL / password note).
+OWNER_DOWN = {
+    "zh": "你自己开的 OpenCode server（端口 {port}）没在运行——电脑重启后它不会自己起来。",
+    "en": "Your own OpenCode server (port {port}) is not running — it does not come back by itself after the computer restarts."}
+OWNER_DOWN_HOW = {
+    "zh": "在电脑上把它重新打开（端口 {port}），下一条消息就能接上；想让 Agent J 自己启动、管理 OpenCode，在电脑上运行：`" + _UNSET + "`。",
+    "en": "Open it again on the computer (port {port}) and the next message gets through; to let Agent J start and manage OpenCode "
+          "itself, run on the computer: `" + _UNSET + "`."}
+OWNER_DOWN_ASK = {"zh": "要我现在帮你在这个端口启动它吗？", "en": "Shall I start it on that port for you now?"}
+OWNER_DOWN_OPTS = {
+    "zh": [{"label": "帮我启动它（推荐）", "description": "在端口 {port} 启动 OpenCode，再接回你的会话"},
+           {"label": "我自己在电脑上处理", "description": "Agent J 不动它，告诉你怎么做"}],
+    "en": [{"label": "Start it (recommended)", "description": "Start OpenCode on port {port}, then reattach your session"},
+           {"label": "I'll handle it myself", "description": "Agent J leaves it alone and tells you how"}]}
+OWNER_DOWN_STARTED = {"zh": "已在端口 {port} 重新启动你的 OpenCode，并接回了会话。",
+                      "en": "Restarted your OpenCode on port {port} and reattached the session."}
+OWNER_DOWN_START_FAIL = {"zh": "没能在端口 {port} 启动你的 OpenCode。", "en": "Could not start your OpenCode on port {port}."}
+# P418 RESUME (Jarvis 10-21): the owner's server had a password and serve's environment has none → never start it without
+# one (it would come back open); the card says the password is needed instead. No password before → we may start it.
+OWNER_DOWN_PW = {
+    "zh": "你自己开的 OpenCode server（端口 {port}）没在运行，而且它原来设过密码。Agent J 这里没有这把密码，不会不设密码就替你启动它——"
+          "需要你的 OpenCode 密码：请在电脑上自己启动它，或用密钥卡把密码交给 Agent J。",
+    "en": "Your own OpenCode server (port {port}) is not running, and it had a password. Agent J does not have that password and "
+          "will not start it without one — it needs your OpenCode password: start it on the computer yourself, or give the "
+          "password to Agent J with the secret card."}
+OWNER_DOWN_PW_OPTS = {
+    "zh": [{"label": "用密钥卡提供密码", "description": "告诉你在电脑上请求密钥卡的命令，贴好密码后 Agent J 就能用它启动"},
+           {"label": "我在电脑上自己启动", "description": "Agent J 不动它，下一条消息自动接上"}],
+    "en": [{"label": "Give the password on the secret card", "description": "Shows the command that asks for the secret card; "
+                                                                             "with the password Agent J can start it"},
+           {"label": "I'll start it on the computer", "description": "Agent J leaves it alone; the next message reattaches"}]}
+OWNER_PW_MARK = "owner-opencode.json"   # <state>/…: {"<port>": {"password": true}} — a fact about the server, never the value
+OWNER_PW_HINTS = (".bashrc", ".bash_profile", ".profile", ".zshrc", ".zprofile", ".zshenv", ".config/fish/config.fish",
+                  ".config/opencode/opencode.json", ".config/opencode/opencode.jsonc", ".config/opencode/.env")
+OWNER_DOWN_ASKED: set[int] = set()      # ports this serve process already asked about (one card each, never a loop)
+OWNER_STARTED: dict = {}                # port → the `opencode serve` we started for the owner (kept: it is theirs, never killed)
+OWNER_START_WAIT = 30.0                 # s for a started server to listen
 
 
 class SharedOpenCodeAgent(OpenCodeAgent):
     """Existing loopback server + exact session; native rules are never PATCHed."""
+    SUBAGENTS = False   # P426: OpenCode's own rules (+ the v1 guard plugin, which sees every session's tools)
     def __init__(self, host, cfg):
         super().__init__(host,cfg)
         self.risk=RiskGuard(self)
@@ -2401,20 +2663,26 @@ class SharedOpenCodeAgent(OpenCodeAgent):
         self.client = Client(port, os.environ.get("OPENCODE_SERVER_PASSWORD", ""),
                              os.environ.get("OPENCODE_SERVER_USERNAME", "opencode"))
         self.proc = _ExternalServer()
-        self.owner_unauthorized = False
+        self.owner_unauthorized = self.owner_down = False
         if await self._owner_v2():
             # P64: the owner's v2 server is attached (text, cards, desktop mirroring) by shared_opencode2's owner class
             from .shared_opencode2 import OwnerOpenCodeV2Agent
+            if os.environ.get("OPENCODE_SERVER_PASSWORD"):
+                self._remember_owner_password(port)   # P418: it took our password — a later restart must keep one
             self.proc = None
             self.__class__ = OwnerOpenCodeV2Agent
             self.host.st.log("agent_protocol", agent=self.kind, version="v2", owner=True)
             return await self._spawn()
         if self.owner_unauthorized:                   # P64: the owner's server wants a password Agent J does not have
+            self._remember_owner_password(port)
             self.proc = None
             self.failed_start = True
             self.local_fail(owner_password_note())
             return False
-        await self.prepare_risk(owner=True)           # the v1 pre-execution plugin on an owner's v1 server: opt-in
+        if self.owner_down:                           # P418 (#183 ②): nobody listens on the port (typically after a reboot)
+            self.proc = None
+            return await self._owner_server_down(port)
+        await self.prepare_risk(owner=True)          # the v1 pre-execution plugin on an owner's v1 server: opt-in
         try:
             await self._attach()
             if self.risk_channel:
@@ -2438,7 +2706,158 @@ class SharedOpenCodeAgent(OpenCodeAgent):
             self.failed_start = True
             self.local_fail(pick(getattr(self.host, "lang", "zh"), OWNER_ATTACH_FAIL["zh"], OWNER_ATTACH_FAIL["en"]).format(port=port))
             return False
+        if os.environ.get("OPENCODE_SERVER_PASSWORD"):
+            self._remember_owner_password(port)       # attached with a password: a later restart must keep one
         return True
+
+    # ------------------------------------------------------------ P418 (#183 ②): the owner's server is not running
+    def _pw_mark_path(self):
+        root = getattr(self.host.st, "root", None)
+        return Path(root) / OWNER_PW_MARK if isinstance(root, (str, os.PathLike)) else None
+
+    def _remember_owner_password(self, port):
+        """The owner's server on `port` wants a password (it answered 401, or we attached with one). Only this fact is kept."""
+        path = self._pw_mark_path()
+        if path is None:
+            return
+        try:
+            data = json.loads(path.read_text()) if path.exists() else {}
+            if not isinstance(data, dict):
+                data = {}
+            if (data.get(str(port)) or {}).get("password") is True:
+                return
+            data[str(port)] = {"password": True}
+            tmp = path.with_name(path.name + ".tmp")
+            tmp.write_text(json.dumps(data))
+            os.replace(tmp, path)
+        except (OSError, ValueError):
+            pass
+
+    def _owner_had_password(self, port) -> bool:
+        """Signs the owner's server ran with a password: we saw it want one before (the mark), or the owner's shell / OpenCode
+        configuration names OPENCODE_SERVER_PASSWORD on a non-comment line (the name only — the value is never read out)."""
+        path = self._pw_mark_path()
+        with contextlib.suppress(OSError, ValueError, AttributeError):
+            if path is not None and path.exists() and (json.loads(path.read_text()).get(str(port)) or {}).get("password") is True:
+                return True
+        home = Path(os.environ.get("HOME") or Path.home())
+        for rel in OWNER_PW_HINTS:
+            with contextlib.suppress(OSError, UnicodeError):
+                for line in (home / rel).read_text(errors="replace").splitlines():
+                    line = line.strip()
+                    if "OPENCODE_SERVER_PASSWORD" in line and not line.startswith(("#", "//")):
+                        return True
+        return False
+
+    async def _owner_needs_password(self, port, lang, down) -> bool:
+        """Password wanted, none here: one card (secret card / start it myself), never a password-less start."""
+        self.host.st.log("owner_opencode_password_needed", agent=self.kind, port=port)
+        text = pick(lang, OWNER_DOWN_PW["zh"], OWNER_DOWN_PW["en"]).format(port=port)
+        question = getattr(self.host, "question", None)
+        choice = None
+        if port not in OWNER_DOWN_ASKED and callable(question):
+            OWNER_DOWN_ASKED.add(port)
+            from . import ask
+            try:
+                card, _ = ask.build([{"question": text, "header": "OpenCode", "other": False,
+                                      "options": OWNER_DOWN_PW_OPTS["en"] if lang == "en" else OWNER_DOWN_PW_OPTS["zh"]}], lang)
+                decision, picks = await question(card, None, task=getattr(self.host, "task_label", None))
+                choice = picks[0][0] if decision == "answer" and isinstance(picks, list) and picks and picks[0] else None
+            except Exception as e:  # noqa: BLE001 — the text below still says it
+                self.host.st.log("owner_opencode_card_failed", agent=self.kind, error=type(e).__name__)
+            self.host.st.log("owner_opencode_choice", agent=self.kind, port=port, decision="password", choice=choice)
+        self.failed_start = True
+        how = pick(lang, OWNER_DOWN_HOW["zh"], OWNER_DOWN_HOW["en"]).format(port=port)
+        self.local_fail(owner_password_note() if choice == 1 else text + how)
+        return False
+
+    async def _owner_server_down(self, port) -> bool:
+        """Say plainly that the owner's server is off (a reboot does not bring it back) and offer one card: start it on that
+        port for them, or leave it to them. One card per port per serve process; no device / no answer → the text only."""
+        lang = getattr(self.host, "lang", "zh")
+        down = pick(lang, OWNER_DOWN["zh"], OWNER_DOWN["en"]).format(port=port)
+        how = pick(lang, OWNER_DOWN_HOW["zh"], OWNER_DOWN_HOW["en"]).format(port=port)
+        self.host.st.log("owner_opencode_down", agent=self.kind, port=port)
+        if not os.environ.get("OPENCODE_SERVER_PASSWORD") and self._owner_had_password(port):
+            return await self._owner_needs_password(port, lang, down)
+        question = getattr(self.host, "question", None)
+        if port in OWNER_DOWN_ASKED or not callable(question):
+            self.failed_start = True
+            self.local_fail(down + how)
+            return False
+        OWNER_DOWN_ASKED.add(port)
+        from . import ask
+        decision, picks = "gone", None
+        try:
+            opts = [{**o, "description": o["description"].format(port=port)}
+                    for o in (OWNER_DOWN_OPTS["en"] if lang == "en" else OWNER_DOWN_OPTS["zh"])]
+            card, _ = ask.build([{"question": down + pick(lang, OWNER_DOWN_ASK["zh"], OWNER_DOWN_ASK["en"]),
+                                  "header": "OpenCode", "options": opts, "other": False}], lang)
+            decision, picks = await question(card, None, task=getattr(self.host, "task_label", None))
+        except Exception as e:  # noqa: BLE001 — a card that cannot be shown falls back to the text, never an error page
+            self.host.st.log("owner_opencode_card_failed", agent=self.kind, error=type(e).__name__)
+        choice = picks[0][0] if decision == "answer" and isinstance(picks, list) and picks and picks[0] else None
+        self.host.st.log("owner_opencode_choice", agent=self.kind, port=port, decision=decision, choice=choice)
+        if choice == 1:
+            reason = await self._start_owner_server(port)
+            if reason is None:
+                ok = await self._spawn()             # once: the port is in OWNER_DOWN_ASKED, a second "down" is text only
+                if ok:
+                    self.failed_start = False
+                    self.host.agent_notice(pick(lang, OWNER_DOWN_STARTED["zh"], OWNER_DOWN_STARTED["en"]).format(port=port))
+                return ok
+            self.failed_start = True
+            self.local_fail(pick(lang, OWNER_DOWN_START_FAIL["zh"], OWNER_DOWN_START_FAIL["en"]).format(port=port) + how)
+            return False
+        self.failed_start = True
+        if choice == 2:
+            self.local_fail(pick(lang, "好的，Agent J 不动它。", "OK, Agent J leaves it alone. ") + how)
+        else:
+            self.local_fail(down + how)
+        return False
+
+    async def _start_owner_server(self, port):
+        """`opencode serve --hostname 127.0.0.1 --port <port>` in the Agent's folder, on the owner's behalf: serve's own
+        environment (OPENCODE_SERVER_PASSWORD included, so the attach that follows uses the same password), its own session
+        group, never fenced (it stands for the owner's server: it outlives this serve and is never killed by detach).
+        → None once it listens, else a short reason (logged only)."""
+        exe = _bin("AGENTJ_OPENCODE_BIN", "opencode")
+        if not os.environ.get("OPENCODE_SERVER_PASSWORD") and self._owner_had_password(port):
+            reason = "password_missing"           # never a password-less start of a server that had one
+        elif not exe:
+            reason = "binary_missing"
+        else:
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    exe, "serve", "--hostname", "127.0.0.1", "--port", str(port), cwd=self.cfg["dir"], env=dict(os.environ),
+                    stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
+                    start_new_session=True)
+            except OSError as e:
+                reason, proc = type(e).__name__, None
+            if proc is not None:
+                OWNER_STARTED[port] = proc
+                reason = await self._owner_listening(port, proc)
+        self.host.st.log("owner_opencode_started", agent=self.kind, port=port, result=reason or "listening")
+        return reason
+
+    async def _owner_listening(self, port, proc):
+        probe = Client(port, os.environ.get("OPENCODE_SERVER_PASSWORD", ""), os.environ.get("OPENCODE_SERVER_USERNAME", "opencode"))
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + OWNER_START_WAIT
+        while loop.time() < deadline:
+            if proc.returncode is not None:
+                return "exited"
+            for path in ("/api/info", "/path"):       # v2 / v1: any HTTP answer means it listens
+                try:
+                    await asyncio.wait_for(probe.request("GET", path), 3)
+                    return None
+                except (OSError, ValueError, HTTPError, asyncio.TimeoutError):
+                    continue
+            await asyncio.sleep(.5)
+        with contextlib.suppress(ProcessLookupError):  # never came up: not a server anyone can use — do not leave it behind
+            proc.terminate()
+        OWNER_STARTED.pop(port, None)
+        return "not_listening"
 
     async def _installed_v2(self):
         from .harness import version_of, opencode_v2
@@ -2447,9 +2866,12 @@ class SharedOpenCodeAgent(OpenCodeAgent):
 
     async def _owner_v2(self):
         """The owner's server speaks v2 (its legacy routes answer HTML; the API is /api/*): OwnerOpenCodeV2Agent attaches it."""
+        self.owner_down = False
         try:
             status, info = await self.client.request("GET", "/api/info")
-        except (OSError, ValueError, HTTPError, asyncio.TimeoutError):
+        except (OSError, ValueError, HTTPError, asyncio.TimeoutError) as e:
+            # P418 (#183 ②): refused / unreachable = no server at all; a timeout = something listens but hangs (not "down")
+            self.owner_down = isinstance(e, OSError) and not isinstance(e, TimeoutError)
             return False
         self.owner_unauthorized = status == 401
         return status == 200 and isinstance(info, dict) and isinstance(info.get("version"), str) \

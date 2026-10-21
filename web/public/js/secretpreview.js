@@ -1,3 +1,4 @@
+import { copyButton } from './copycode.js';
 // P270: the pickup card's one live preview. DOM only; no secret in navigation state.
 import { RelayMD } from './md.js';
 import { mk } from './ui.js';
@@ -60,7 +61,7 @@ export function createSecretPreview(root, container, copy) {
   }
   content.addEventListener('click', async e => {
     const button = e.target.closest('button.copy');
-    if (button) await RelayMD.copyText(button.closest('.codeblock').querySelector('code').textContent);
+    if (button) await copyButton(button.closest('.codeblock').querySelector('code').textContent, button);
   });
   return {
     close: () => leave(),

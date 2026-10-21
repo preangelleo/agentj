@@ -188,12 +188,13 @@ def tg_quote_block(q: dict, lang: str, limit: int = QUOTE_CHARS, wrap=None) -> s
         lines.append("> " + t["excerpt"])
     return "\n".join(lines)
 
-def render(text: str, files: list[dict], lang: str = "zh", quote: str | None = None) -> str:
+def render(text: str, files: list[dict], lang: str = "zh", quote: str | None = None, native=None) -> str:
     """files: [{"path", "mime", "bytes", "origin", "asr"?: {"ok", "text"?, "why"?, "secs"?}}]
 
     F27 (0.16): `text` may be empty (or spaces) when files came with the message — the prompt is then the attachment block and
     the transcripts alone, never an empty text part; voice notes alone that all failed to transcribe end with a line telling
-    the Agent to ask again instead of guessing."""
+    the Agent to ask again instead of guessing. `native(text)` → the Agent's words for a typed harness command it does on the
+    owner's behalf (P412 #175), or None."""
     t = T[lang]
     parts = []
     if quote:
@@ -201,7 +202,8 @@ def render(text: str, files: list[dict], lang: str = "zh", quote: str | None = N
     if not files and not quote:      # P155: the phone menu's /switch-harness goes to the main Agent, rewritten (never "/…")
         from .switch_harness import agent_text
         from .feedback_father import agent_text as feedback_text
-        text = feedback_text(text, lang) or agent_text(text, lang) or text
+        # P412 #175: a typed command of the harness that the Agent does for the owner (`native` = Host.native_text)
+        text = feedback_text(text, lang) or agent_text(text, lang) or (native(text) if native else None) or text
     if text and text.strip():
         parts.append(text)
     if files:

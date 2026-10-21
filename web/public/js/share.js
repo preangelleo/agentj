@@ -1,13 +1,12 @@
 // Browser-local share handoff. No HTTP, persistent content, or automatic send.
-import {el} from './ui.js';
+import {el, replyNotice} from './ui.js';
 import {t, onLang} from './t.js';
 import {importShare, pasteClipImages} from './relay.js';
 // P166: `?from=share&via=file` = the iPhone shortcut saved the file into the Files app; the button opens the file picker.
 let pending = null, paired = false, ready = false, enabled = false, key = null, via = '';
 function render(){
   const box = el('share-notice'); box.hidden = !key;
-  if (document.body.dataset.view === 'chat') document.querySelector('.composer').prepend(box);
-  else document.body.append(box);
+  if (document.body.dataset.view === 'pair' && !ready) el('pair-view').prepend(box); else replyNotice(box);
   el('share-status').textContent = key ? t(key) : '';
   const button = el('share-paste'); button.hidden = !enabled || !paired;
   button.disabled = !ready; button.textContent = t(via === 'file' ? 'share.pick' : 'share.paste');

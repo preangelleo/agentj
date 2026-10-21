@@ -1,3 +1,4 @@
+import { copyButton } from './copycode.js';
 // F13 · P171 · Settings (the top-right gear, `s`, ⌘, / Ctrl+,): ONE full-screen page for everything — the ≡ menu is gone and
 // its rows live here, grouped in section cards (wide screens: side navigation + cards in columns; narrow: one column).
 // Sub-pages: the iPhone Add-to-Home-Screen guide and 遥控器管理 (js/remotes.js). Works on every view but the camera.
@@ -29,6 +30,7 @@ import * as jcards from './jcards.js';   // P360: Settings → Cards (official c
 import * as rescue from './rescue.js';     // P393: fold ended 紧急修复 results when Settings opens again
 import * as cmdrun from './cmdrun.js';     // P361: 紧急修复 → Agent J 主机上的命令 (「执行」)
 import * as termhook from './termhook.js'; // P408: 安全 → 网页终端 (row only; the page loads on first open)
+import * as vaultrow from './vaultrow.js'; // P414 (§37.9): 安全 → 电脑密码
 import * as pagefind from './pagefind.js';   // P363 (#70): in-place find on a Settings sub-page
 import * as ntf from './notify.js';      // P365: Settings → 自动化消息 (`agentj notify`)
 import * as news from './news.js';         // P374: 账号和帮助 → 「Daily AI News」 (news_get / news_set → news_res)
@@ -285,7 +287,7 @@ function renderLevel() {
 }
 /** P336 addendum: a widening switch on a phone with a passkey → 「用 Face ID 确认」; the button tap starts Face ID
  *  synchronously inside the tap (iOS gesture rule), so it listens on the confirm button itself, before the sheet resolves. */
-async function faceIdStep(res) {
+export async function faceIdStep(res) {
   if (typeof res.fa !== 'string' || typeof res.fa_ch !== 'string' || !canAssert()) return Promise.reject(new Error('passkey_failed'));
   const yes = el('confirm-yes');
   let p = null;
@@ -413,6 +415,7 @@ export function render() {
   el('set-cards-nav').hidden = !jcards.available();            // P360: a computer that answers jcard_*
   toolsort.render();                                            // P340
   termhook.render(hostInfo);                                    // P408: before cmdrun — its 「在终端里打开」 reads the state
+  vaultrow.render(hostInfo);                                    // P414: after termhook — it hides P408's forget button
   cmdrun.render(hostInfo);                                      // P361: rows only for the host's whitelist
   news.render();                                                // P374
   if (sub === 'imessage') { if (imsg.available()) imsg.render(); else showSub('main'); }
@@ -706,11 +709,7 @@ export function configure(hooks) {
     close();
   });
   for (const b of document.querySelectorAll('[data-copy]')) b.addEventListener('click', async () => {
-    const ok = await RelayMD.copyText(el(b.dataset.copy).textContent);
-    say(ok ? t('set.copied') : t('r.copy.fail'), false, ok ? '' : 'r.copy.fail');
-    if (!ok) return;
-    b.dataset.done = '1'; clearTimeout(b._done);
-    b._done = setTimeout(() => { delete b.dataset.done; }, 1600);
+    await copyButton(el(b.dataset.copy).textContent, b);
   });
   onLang(() => { if (isOpen()) { render(); el('set-title').textContent = t(SUB_TITLE[sub]); } });
 }

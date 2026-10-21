@@ -86,9 +86,8 @@ class Preset(ConfigHome):
             self.install()
         self.assertIn("// a comment", self.file.read_text())
         self.file.unlink()
-        r = self.install("coding-plan")
-        self.assertEqual(r["model"], "bailian-coding-plan/qwen3.7-plus")
-        self.assertNotIn("--verify-url", r["next"][0])                 # its model list answers any key: no fake check
+        with self.assertRaises(op.ProviderError):
+            self.install("coding-plan")  # retired: no new provider preset
         with self.assertRaises(op.ProviderError):
             self.install("coding-plan", model="qwen3.8-max")             # Coding Plan has no 3.8 Max
 
@@ -107,7 +106,7 @@ class Preset(ConfigHome):
         self.assertEqual(bailian.verify_for("bailian-token-plan-personal"),
                          ("https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/models",
                           "Authorization: Bearer {value}"))
-        self.assertEqual(bailian.verify_for("bailian-coding-plan"), ("", ""))
+        self.assertIsNone(bailian.verify_for("bailian-coding-plan"))
         self.assertIsNone(bailian.verify_for("myrelay"))
         self.assertIsNone(bailian.model_note("zhipuai/glm-5.3"))
         self.assertNotIn("不能看图", bailian.model_note("bailian-token-plan-personal/qwen3.8-flash"))
@@ -171,8 +170,7 @@ class KeyCard(unittest.TestCase):
         self.addCleanup(root.cleanup)
         host = SimpleNamespace(elevate=SimpleNamespace(request=request), st=SimpleNamespace(root=Path(root.name)),
                                lang="zh", agent_notice=lambda t: None)
-        conf = {"bailian-token-plan-personal": json.loads(json.dumps(bailian.plan("token-plan")["block"])),
-                "bailian-coding-plan": json.loads(json.dumps(bailian.plan("coding-plan")["block"]))}
+        conf = {"bailian-token-plan-personal": json.loads(json.dumps(bailian.plan("token-plan")["block"]))}
         with mock.patch.object(provider_runtime, "configured", lambda: conf), \
                 mock.patch.object(provider_runtime, "env_path", lambda: svc.name + "/agentj.env"):
             asyncio.run(provider_runtime.request_key(host, "bailian-token-plan-personal"))
@@ -180,7 +178,7 @@ class KeyCard(unittest.TestCase):
         self.assertEqual(cards[0]["verify_url"], "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/models")
         self.assertEqual(cards[0]["verify_header"], "Authorization: Bearer {value}")
         self.assertTrue(cards[0]["verify_before_write"])
-        self.assertEqual((cards[1]["verify_url"], cards[1]["verify_before_write"]), ("", False))
+        self.assertEqual(len(cards), 1)  # no key card for the retired preset
 
 
 class Boundaries(unittest.TestCase):

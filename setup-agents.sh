@@ -455,7 +455,7 @@ EXTRACT_CODE
     curl --proto '=https' --proto-redir '=https' --connect-timeout 10 --max-time 90 -fsSL https://agentj.app/install-assistant.sh -o "$AJTMP/install-assistant.sh"
     python3 - "$AJTMP/install-assistant.sh" <<'VERIFY_INSTALLER'
 import hashlib,pathlib,sys
-if hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest() != '7ae0c920fe06e86755adeb07bd5ca3dcaa4298b731ec865f2467fd9542b021d9':
+if hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest() != '0cf145bff5e5e85181fd2d2897e15edd70642ec6901ffd6db65915ad712970bd':
     sys.exit('Installer integrity check failed')
 VERIFY_INSTALLER
     sh "$AJTMP/install-assistant.sh" "$INSTALL_CODE" </dev/tty

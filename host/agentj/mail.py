@@ -682,12 +682,29 @@ def _imap(cfg: dict):
     return c
 
 
-def _imap_id(c) -> None:
-    """NetEase (163 / 126 / yeah) refuses SELECT ("Unsafe Login") until the client names itself with the ID command."""
+# P423 #149: NetEase (Coremail) mailboxes — 163 / 126 / yeah / 188 / vip / 企业邮 — answer SELECT with "Unsafe Login" unless the
+# client names itself (RFC 2971 ID) after LOGIN. Matched on the IMAP host or the address domain, at a dot boundary.
+NETEASE_DOMAINS = ("163.com", "126.com", "yeah.net", "188.com", "netease.com")
+
+
+def _netease(cfg: dict) -> bool:
+    names = (str((cfg.get("imap") or {}).get("host", "")), str(cfg.get("address", "")).rpartition("@")[2])
+    return any(n.lower().rstrip(".") == d or n.lower().rstrip(".").endswith("." + d) for n in names for d in NETEASE_DOMAINS)
+
+
+def _id_args() -> str:
+    from . import __version__
+    v = re.sub(r"[^A-Za-z0-9.+-]", "", __version__)[:32] or "0"
+    return f'("name" "AgentJ" "version" "{v}" "vendor" "AgentJ")'
+
+
+def _imap_id(c, cfg: dict | None = None, after_login: bool = False) -> None:
+    """Send the IMAP ID command (never fatal). Servers that advertise ID get it as before; NetEase gets it after LOGIN even when
+    its pre-login CAPABILITY does not list ID — otherwise SELECT / EXAMINE fails with "Unsafe Login"."""
     imaplib.Commands.setdefault("ID", ("NONAUTH", "AUTH", "SELECTED"))
-    if "ID" in getattr(c, "capabilities", ()):
+    if "ID" in getattr(c, "capabilities", ()) or (after_login and cfg is not None and _netease(cfg)):
         with contextlib.suppress(Exception):
-            c._simple_command("ID", '("name" "AgentJ" "version" "1.0" "vendor" "AgentJ")')
+            c._simple_command("ID", _id_args())
 
 
 def _fail(e: Exception, side: str) -> MailError:
@@ -712,7 +729,7 @@ def imap_login(cfg: dict, password: str):
         typ, _ = c.login(cfg["username"] or cfg["address"], password)
         if typ != "OK":
             raise MailError("imap_login")
-        _imap_id(c)
+        _imap_id(c, cfg, after_login=True)
         return c
     except Exception as e:   # noqa: BLE001 — a fixed word only (never the server text: it may echo the user name)
         if c is not None:

@@ -49,5 +49,9 @@ export function initHeaderLogo() {
   // The five-page menu is created on ready. Stop watching content once it exists:
   // media cards and streamed replies must never cause header style writes/layout work.
   if(!menuReady()){const born=new MutationObserver(()=>{if(menuReady())born.disconnect();});born.observe(document.body,{subtree:true,childList:true});}
-  onTheme(()=>paintHeader());paintHeader();
+  onTheme(()=>paintHeader());
+  const scheme=matchMedia('(prefers-color-scheme: dark)');
+  scheme.addEventListener('change',()=>paintHeader());
+  obs.observe(document.documentElement,{attributes:true,attributeFilter:['data-theme','style']});
+  paintHeader();
 }

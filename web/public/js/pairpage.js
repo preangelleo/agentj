@@ -1,3 +1,4 @@
+import { copyButton } from './copycode.js';
 // P210 「连上你的Agent J 主机」: the unpaired page is a set of numbered, mutually exclusive method cards (任选一种).
 // The visible cards are numbered here (no reverse-pairing code in this browser → the rest become 方法一 / 方法二), the copy
 // icons copy the command next to them, and 「以前配过？」 shows only together with its Face ID button.
@@ -15,8 +16,7 @@ const past = () => { el('pm-past').hidden = el('pk-restore').hidden; };
 export function init(scan) {
   for (const b of document.querySelectorAll('[data-pair-scan]')) b.addEventListener('click', () => scan());   // @ix app.pair_scan
   for (const b of document.querySelectorAll('[data-pm-copy]')) b.addEventListener('click', async () => {   // @ix app.pair_copy
-    const ok = await RelayMD.copyText(el(b.dataset.pmCopy).textContent);
-    toast(t(ok ? 'pair.copied' : 'r.copy.fail'), 2400);
+    await copyButton(el(b.dataset.pmCopy).textContent, b);
   });
   const watch = new MutationObserver(() => { renumber(); past(); });
   for (const e of [...document.querySelectorAll('#pair-view .pm'), el('pk-restore')]) watch.observe(e, { attributes: true, attributeFilter: ['hidden'] });

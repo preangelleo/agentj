@@ -6,6 +6,10 @@
 import { sealBytes, unsealBytes } from './store.js';
 
 const NAME = 'agentj-rec';
+// A conservative container floor, not voice activity detection: silence with real frames is valid.
+export const MIN_REC_BYTES = 256, MIN_REC_SECS = 0.5;
+export const usable = (blob, secs) => !!blob && blob.size >= MIN_REC_BYTES && Number.isFinite(secs) && secs >= MIN_REC_SECS;
+const firstChunks = new Map(); // before the first usable slice, nothing is persisted
 let dbp = null;
 function db() {
   if (!dbp) dbp = new Promise((res, rej) => {
@@ -46,8 +50,21 @@ export async function startTake(mime) {
 /** One recorder chunk (Blob) of segment `seg`, `ms` long; sealed before it is stored. */
 export function addChunk(take, seg, i, blob, ms) {
   return later(async () => {
-    const rec = await sealBytes(new Uint8Array(await blob.arrayBuffer()));
-    await tx(['chunks'], 'readwrite', (t) => t.objectStore('chunks').put({ take, seg, i, ms, rec }));
+    const key = take + ':' + seg;
+    let batch = firstChunks.get(key) || [];
+    if (i === 0 || batch.length) {
+      batch.push({i, blob, ms}); firstChunks.set(key, batch);
+      if (!usable(new Blob(batch.map(x => x.blob)), batch.reduce((n, x) => n + x.ms, 0) / 1000)) return;
+      firstChunks.delete(key);
+    } else batch = [{i, blob, ms}];
+    for (const x of batch) {
+      const rec = await sealBytes(new Uint8Array(await x.blob.arrayBuffer()));
+      await tx(['takes', 'chunks'], 'readwrite', async (t) => {
+        t.objectStore('chunks').put({ take, seg, i: x.i, ms: x.ms, rec });
+        const takes = t.objectStore('takes'), v = await req(takes.get(take));
+        if (v && !v.mime && x.blob.type){ v.mime = x.blob.type; takes.put(v); }
+      });
+    }
   });
 }
 function patchSeg(take, seg, patch) {
@@ -71,7 +88,7 @@ export async function segBlob(take, seg, mime) {
   return parts.length ? new Blob(parts, { type: mime || 'audio/webm' }) : null;
 }
 export function dropSeg(take, seg) {
-  return later(() => tx(['takes', 'chunks'], 'readwrite', async (t) => {
+  return later(() => { firstChunks.delete(take + ':' + seg); return tx(['takes', 'chunks'], 'readwrite', async (t) => {
     t.objectStore('chunks').delete(range(take, seg));
     const s = t.objectStore('takes');
     const v = await req(s.get(take));
@@ -79,10 +96,13 @@ export function dropSeg(take, seg) {
     delete v.segs[seg];
     const left = await req(t.objectStore('chunks').count(range(take)));
     if (!Object.keys(v.segs).length && !left) s.delete(take); else s.put(v);
-  }));
+  }); });
 }
 export function dropTake(take) {
-  return later(() => tx(['takes', 'chunks'], 'readwrite', (t) => { t.objectStore('chunks').delete(range(take)); t.objectStore('takes').delete(take); }));
+  return later(() => {
+    for (const key of firstChunks.keys()) if (key.startsWith(take + ':')) firstChunks.delete(key);
+    return tx(['takes', 'chunks'], 'readwrite', (t) => { t.objectStore('chunks').delete(range(take)); t.objectStore('takes').delete(take); });
+  });
 }
 /** Takes still on this phone (not yet accepted by the computer): [{id, t0, mime, segs:[{n, ms, bid}]}], oldest first.
  *  A segment whose recorder never closed (reload / crash mid-take) is counted from its chunks. `except`: take ids in use. */
@@ -99,14 +119,22 @@ export async function pending(except = []) {
     const per = {};
     for (const [tk, sg, ms] of keys) if (tk === v.id) per[sg] = (per[sg] || 0) + (ms || 0);
     const segs = Object.keys(per).map(Number).sort((a, b) => a - b)
-      .map((n) => ({ n, ms: (v.segs[n] && v.segs[n].done && v.segs[n].ms) || per[n], bid: v.segs[n] && v.segs[n].bid }));
-    if (segs.length) out.push({ id: v.id, t0: v.t0, mime: v.mime, segs });
+      .map((n) => ({ n, ms: (v.segs[n]?.done ? v.segs[n].ms : per[n]), bid: v.segs[n] && v.segs[n].bid }));
+    const valid = [];
+    for (const s of segs) {
+      // Historical 0:00 entries are purged before offering a dialog; done:0 must not fall back to chunk wall time.
+      const blob = await segBlob(v.id, s.n, v.mime);
+      if (usable(blob, s.ms / 1000)) valid.push(s);
+      else await dropSeg(v.id, s.n);
+    }
+    if (valid.length) out.push({ id: v.id, t0: v.t0, mime: v.mime, segs: valid });
     else await dropTake(v.id);
   }
   return out;
 }
 /** Unpair / revoke / remove: every stored recording goes (and its key went with store.wipeLocal). */
 export async function wipe() {
+  firstChunks.clear();
   try { if (dbp) (await dbp).close(); } catch { /* not open */ }
   dbp = null;
   await new Promise((res) => { try { const r = indexedDB.deleteDatabase(NAME); r.onsuccess = r.onerror = r.onblocked = () => res(); } catch { res(); } });

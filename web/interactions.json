@@ -38,6 +38,10 @@
     "capturePending": {
       "zh": "截图功能将在本次集成后可用。",
       "en": "Page capture will be available after this integration."
+    },
+    "cards": {
+      "zh": "卡片（Alt+Shift，按你现有的卡片自动分配）",
+      "en": "Cards (Alt+Shift, given to the cards you have)"
     }
   },
   "groups": [
@@ -70,6 +74,11 @@
       "id": "compose",
       "zh": "输入框与附件",
       "en": "Message box and attachments"
+    },
+    {
+      "id": "edit",
+      "zh": "全屏编辑",
+      "en": "Full-screen editor"
     },
     {
       "id": "read",
@@ -561,7 +570,11 @@
       "gesture_zh": "点弯箭头图标",
       "gesture_en": "Tap the curved-arrow icon",
       "common": true,
-      "allowReserved": "Leo 10-15 chose Alt+Shift+A (Answer) as the global reply key; ChromeOS may take it — r and the reply icon still work"
+      "allowReserved": "Leo 10-15 chose Alt+Shift+A (Answer) as the global reply key; ChromeOS may take it — r and the reply icon still work",
+      "keywords": {
+        "zh": "回答 引用 回复",
+        "en": "answer quote reply"
+      }
     },
     {
       "id": "card.quote_selection",
@@ -1150,7 +1163,11 @@
       "en": "Search the page you are on: the chat history in the chat, the cards on Workflows / Skills / Memory / Agent J, the text of Settings, a menu page or an open document (inside the message box Ctrl+K still deletes to the end); press again to clear and close",
       "gesture_zh": "点放大镜",
       "gesture_en": "Tap the magnifier",
-      "common": true
+      "common": true,
+      "keywords": {
+        "zh": "查找 搜索 聊天记录",
+        "en": "find lookup chat history"
+      }
     },
     {
       "id": "app.keys",
@@ -1559,8 +1576,8 @@
           "combo": "Enter"
         }
       ],
-      "zh": "发送（Shift+Enter 换行）",
-      "en": "Send (Shift+Enter for a new line)",
+      "zh": "发送（Shift+Enter 换行；内容长时用全屏编辑）",
+      "en": "Send (Shift+Enter for a new line; long text: the full-screen editor)",
       "gesture_zh": "点发送",
       "gesture_en": "Tap Send"
     },
@@ -1693,13 +1710,16 @@
         },
         {
           "combo": "Ctrl+Y"
+        },
+        {
+          "combo": "Ctrl+D"
         }
       ],
-      "zh": "和终端一样：到行首 / 行尾，删到行首 / 行尾，删前一个词，贴回刚删掉的（Ctrl+W 在普通浏览器标签页里可能直接关标签，装到桌面的网页版里可用）",
-      "en": "As in a terminal: line start / end, delete to start / end, delete the previous word, paste back what was deleted (Ctrl+W may close a normal browser tab; it works in the installed web app)",
+      "zh": "和终端一样：到行首 / 行尾，删到行首 / 行尾，删前一个词，贴回刚删掉的，删光标后一个字（Ctrl+W 在普通浏览器标签页里可能直接关标签，装到桌面的网页版里可用）",
+      "en": "As in a terminal: line start / end, delete to start / end, delete the previous word, paste back what was deleted, delete the next character (Ctrl+W may close a normal browser tab; it works in the installed web app)",
       "gesture_zh": "",
       "gesture_en": "",
-      "allowReserved": "terminal habits inside the message box only; documented caveat for Ctrl+W"
+      "allowReserved": "terminal habits inside the message box only; documented caveat for Ctrl+W; Ctrl+D (bookmark) only while typing"
     },
     {
       "id": "compose.cancel_reply",
@@ -1749,8 +1769,8 @@
           "how": "double"
         }
       ],
-      "zh": "在输入框外按两下 Esc 清空文字和附件（✕ 只清文字，可以撤销）。Esc 从不打断 Agent；要停下当前任务，点停止按钮或发 /stop",
-      "en": "Esc twice outside the message box clears text and attachments (✕ clears the text only, with undo). Esc never interrupts the Agent; to stop the current task, use the stop button or send /stop",
+      "zh": "在输入框外按两下 Esc 清空文字和附件（✕ 只清文字，可以撤销）。Esc 从不打断 Agent；要停下当前任务，点 Stop 按钮或发 /stop",
+      "en": "Esc twice outside the message box clears text and attachments (✕ clears the text only, with undo). Esc never interrupts the Agent; to stop the current task, use the Stop button or send /stop",
       "gesture_zh": "点输入框里的 ✕",
       "gesture_en": "Tap ✕ in the message box",
       "common": true
@@ -1848,6 +1868,273 @@
       "nokey": "锁定录音时任意键是结束（见 compose.talk_lock）；直接发送只在录音卡上点"
     },
     {
+      "id": "compose.fullscreen",
+      "since": "0.24.1",
+      "impl": "code",
+      "scope": "chat",
+      "target": {
+        "selector": "#tFull",
+        "zh": "输入框上方第 5 个按钮（全屏）",
+        "en": "The fifth button above the message box (full screen)"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        },
+        {
+          "type": "swipe-up",
+          "pointer": "touch"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "Ctrl+G"
+        }
+      ],
+      "zh": "打开全屏编辑器（输入框里也能按；字原样带进去，内容超过一行时按钮角上显示有几行）",
+      "en": "Open the full-screen editor (also from inside the message box; the words come along, and past one line the button shows how many lines)",
+      "gesture_zh": "点全屏按钮，或手指按住输入框往上滑",
+      "gesture_en": "Tap the full-screen button, or swipe up on the message box"
+    },
+    {
+      "id": "compose.newline",
+      "since": "0.24.1",
+      "impl": "code",
+      "scope": "input",
+      "target": {
+        "selector": "#input",
+        "zh": "输入框",
+        "en": "Message box"
+      },
+      "gestures": [],
+      "keys": [
+        {
+          "combo": "Ctrl+J"
+        }
+      ],
+      "zh": "换行（和 Shift+Enter 一样；行末打一个 \\ 再按 Enter 也是换行，和终端一样）",
+      "en": "New line (like Shift+Enter; a \\ at the end of the line, then Enter, does the same — as in a terminal)",
+      "gesture_zh": "",
+      "gesture_en": "",
+      "allowReserved": "Ctrl+J (downloads page) only while typing in the message box, as in a terminal"
+    },
+    {
+      "id": "compose.stash",
+      "since": "0.24.1",
+      "impl": "code",
+      "scope": "input",
+      "target": {
+        "selector": "#input",
+        "zh": "输入框",
+        "en": "Message box"
+      },
+      "gestures": [],
+      "keys": [
+        {
+          "combo": "Ctrl+S"
+        }
+      ],
+      "zh": "暂存草稿：输入框里的字先放一边，再按一次取回（只在这个页面里）",
+      "en": "Put the draft aside; press again to bring it back (this page only)",
+      "gesture_zh": "",
+      "gesture_en": "",
+      "allowReserved": "Ctrl+S (save page) only while typing in the message box, as Claude Code's stash"
+    },
+    {
+      "id": "compose.history_search",
+      "since": "0.24.1",
+      "impl": "code",
+      "scope": "input",
+      "target": {
+        "selector": "#input",
+        "zh": "输入框",
+        "en": "Message box"
+      },
+      "gestures": [],
+      "keys": [
+        {
+          "combo": "Ctrl+R"
+        }
+      ],
+      "zh": "在之前发过的话里找含有输入框这几个字的那条；再按继续往前找",
+      "en": "Find an earlier message that contains what the box says; again = further back",
+      "gesture_zh": "",
+      "gesture_en": "",
+      "allowReserved": "Ctrl+R (reload) only while typing in the message box, as a terminal's history search"
+    },
+    {
+      "id": "edit.exit",
+      "since": "0.24.1",
+      "impl": "code",
+      "scope": "editor",
+      "target": {
+        "selector": "#fsExit",
+        "zh": "全屏编辑左上角图标",
+        "en": "Top-left icon of the full-screen editor"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        },
+        {
+          "type": "double-tap",
+          "pointer": "any"
+        },
+        {
+          "type": "swipe-down",
+          "pointer": "any",
+          "on": "#fsGrab"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "Escape"
+        },
+        {
+          "combo": "Ctrl+G"
+        }
+      ],
+      "zh": "退出全屏，文字原样回到输入框",
+      "en": "Leave full screen; the words go back to the message box as they are",
+      "gesture_zh": "点左上角图标，在空白处双击（在文字上双击仍是选字），或按住顶部中间的横杠往下拉（拉得不够会弹回去）",
+      "gesture_en": "Tap the top-left icon, double-tap blank space (on words a double tap still selects), or pull the bar at the top centre down (not far enough and it springs back)"
+    },
+    {
+      "id": "edit.send",
+      "since": "0.24.1",
+      "impl": "code",
+      "scope": "editor",
+      "target": {
+        "selector": "#fsSend",
+        "zh": "全屏编辑右下角发送",
+        "en": "Send at the bottom right of the full-screen editor"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "Mod+Enter"
+        }
+      ],
+      "zh": "发送（全屏里 Enter 只换行）",
+      "en": "Send (in full screen Enter is a new line)",
+      "gesture_zh": "点右下角发送",
+      "gesture_en": "Tap Send at the bottom right"
+    },
+    {
+      "id": "edit.clear",
+      "since": "0.24.1",
+      "impl": "code",
+      "scope": "editor",
+      "target": {
+        "selector": "#fsClear",
+        "zh": "全屏编辑右上角清空图标",
+        "en": "Top-right clear icon of the full-screen editor"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "清空全部文字（5 秒内可以撤销）",
+      "en": "Clear all the words (undo within 5 seconds)",
+      "gesture_zh": "点右上角清空图标",
+      "gesture_en": "Tap the top-right clear icon",
+      "nokey": "a one-off tap with its own undo; Ctrl+U / Ctrl+K clear by line"
+    },
+    {
+      "id": "edit.command",
+      "since": "0.24.1",
+      "impl": "code",
+      "scope": "editor",
+      "target": {
+        "selector": "#fsSlash",
+        "zh": "全屏编辑左下角的斜杠图标",
+        "en": "The slash icon at the bottom left of the full-screen editor"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "命令列表：选一条插到光标处（可搜索，↑↓ 选，Enter 插入）",
+      "en": "Command list: the one you pick goes in at the caret (search, ↑↓ to choose, Enter to insert)",
+      "gesture_zh": "点左下角的斜杠图标",
+      "gesture_en": "Tap the slash icon at the bottom left",
+      "nokey": "a list to pick from; typing / in the message box opens the same list"
+    },
+    {
+      "id": "edit.readline",
+      "since": "0.24.1",
+      "impl": "code",
+      "scope": "editor",
+      "target": {
+        "selector": "#fsText",
+        "zh": "全屏编辑的文字区",
+        "en": "The full-screen editor's text"
+      },
+      "gestures": [],
+      "keys": [
+        {
+          "combo": "Ctrl+A"
+        },
+        {
+          "combo": "Ctrl+E"
+        },
+        {
+          "combo": "Ctrl+U"
+        },
+        {
+          "combo": "Ctrl+K"
+        },
+        {
+          "combo": "Ctrl+W"
+        },
+        {
+          "combo": "Ctrl+Y"
+        },
+        {
+          "combo": "Ctrl+D"
+        }
+      ],
+      "zh": "和输入框一样的终端编辑键：到行首 / 行尾，删到行首 / 行尾，删前一个词，贴回刚删的，删光标后一个字",
+      "en": "The same terminal keys as the message box: line start / end, delete to start / end, delete the previous word, paste back, delete the next character",
+      "gesture_zh": "",
+      "gesture_en": "",
+      "allowReserved": "terminal habits inside the editor only; Ctrl+W may close a normal browser tab"
+    },
+    {
+      "id": "compose.mention",
+      "since": "0.20.2",
+      "impl": "table",
+      "scope": "chat",
+      "target": {
+        "selector": "#input",
+        "zh": "输入框",
+        "en": "Message box"
+      },
+      "gestures": [],
+      "keys": [
+        {
+          "combo": "@"
+        }
+      ],
+      "zh": "焦点在输入框外时，进入输入框并打开 @ 列表",
+      "en": "Outside the message box, focus it and open the @ list",
+      "gesture_zh": "",
+      "gesture_en": ""
+    },
+    {
       "id": "read.close",
       "since": "0.15.0",
       "impl": "code",
@@ -1879,8 +2166,8 @@
       ],
       "zh": "退出全屏阅读",
       "en": "Leave the full-screen reader",
-      "gesture_zh": "双击文字；点右下角的书本（复制、回复也会退出）",
-      "gesture_en": "Double-tap the text; tap the book (bottom right; copy and reply leave too)"
+      "gesture_zh": "双击文字；点右下角的书本（回复也会退出）",
+      "gesture_en": "Double-tap the text; tap the book (bottom right; reply leaves too)"
     },
     {
       "id": "read.font",
@@ -2363,7 +2650,11 @@
       "zh": "截取当前页面，放入附件并复制到剪贴板",
       "en": "Capture this page as an attachment and copy it to the clipboard",
       "gesture_zh": "长按齿轮；说明见右键或快捷键页",
-      "gesture_en": "Hold the gear; help via right-click or Keyboard shortcuts"
+      "gesture_en": "Hold the gear; help via right-click or Keyboard shortcuts",
+      "keywords": {
+        "zh": "截图 截屏 屏幕截图 拍屏",
+        "en": "screenshot screen capture snapshot print screen"
+      }
     },
     {
       "id": "app.friends",
@@ -2455,11 +2746,34 @@
         }
       ],
       "keys": [],
-      "zh": "打开卡片调色板",
-      "en": "Open the card color palette",
+      "zh": "打开卡片底色取色器（任意颜色；浅色底上的字自动变深色）",
+      "en": "Open the card colour picker (any colour; on a light fill the words turn dark)",
       "gesture_zh": "长按右上角的隐形圆形区域",
       "gesture_en": "Hold the invisible circular area in the top-right corner",
       "nokey": "Pointer Easter egg"
+    },
+    {
+      "id": "app.open_card",
+      "since": "0.24.1",
+      "impl": "code",
+      "scope": "any",
+      "target": {
+        "selector": "#five-menu .fp-menu-card",
+        "zh": "Logo 菜单里的卡片",
+        "en": "A card on the logo menu"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "直接打开一张卡片：Alt+Shift+卡片英文名里的一个字母（先取首字母，已被别的键占用就取下一个，字母都占了用数字 1–9、0），输入框里也能按；再按一次或 Esc 回到对话。每张卡片现在的键位列在本页最上面的卡片一节，卡片标题上带下划线的字母就是它的键，新加的卡片自动分到一个",
+      "en": "Open a card directly: Alt+Shift + a letter of the card's English name (the first letter; if another key has it, the next one; when all are taken, a digit 1–9, 0), also while typing; again, or Esc, goes back to the chat. Each card's key right now is listed in the cards section at the top of this page, the underlined letter in a card's title is its key, and a new card gets one by itself",
+      "gesture_zh": "点 Logo 菜单里的卡片",
+      "gesture_en": "Tap the card on the logo menu",
+      "nokey": "each card's key is given at run time from its English name (web/public/js/cardkeys.js), never a fixed letter; the shortcut sheet lists them"
     },
     {
       "id": "keys.search",
@@ -2673,8 +2987,8 @@
           "combo": "y"
         }
       ],
-      "zh": "复制整条回复并退出全屏",
-      "en": "Copy the whole reply and leave the reader",
+      "zh": "复制整条回复并继续阅读",
+      "en": "Copy the whole reply and keep reading",
       "gesture_zh": "点两张纸图标",
       "gesture_en": "Tap the copy icon"
     },
@@ -2826,6 +3140,101 @@
       "gesture_zh": "长按搜索（录音、附件或未提交卡片时不刷新）",
       "gesture_en": "Hold Search (blocked by recording, attachments or an unsubmitted card)",
       "nokey": "Uses the existing Alt+Shift+R refresh shortcut"
+    },
+    {
+      "id": "app.refresh_pull",
+      "since": "0.25.0",
+      "impl": "code",
+      "scope": "chat",
+      "target": {
+        "selector": "#main",
+        "zh": "消息正文",
+        "en": "Message text"
+      },
+      "gestures": [
+        {
+          "type": "swipe-down",
+          "pointer": "touch"
+        }
+      ],
+      "keys": [],
+      "zh": "保存草稿并更新刷新网页",
+      "en": "Save draft and update the page",
+      "gesture_zh": "消息滚到顶部后继续下拉，看到「松开刷新」后松手；录音、附件或未提交卡片时不刷新",
+      "gesture_en": "At the message top, pull down and release; blocked by recording, attachments or unfinished cards",
+      "nokey": "Uses Alt+Shift+R"
+    },
+    {
+      "id": "app.palette_copy",
+      "since": "0.25.1",
+      "impl": "code",
+      "scope": "any",
+      "target": {
+        "selector": ".jp-swatch",
+        "zh": "配色色块",
+        "en": "Palette swatch"
+      },
+      "gestures": [
+        {
+          "type": "long-press",
+          "pointer": "any"
+        }
+      ],
+      "keys": [
+        {
+          "combo": "Mod+C"
+        }
+      ],
+      "zh": "复制色块 HEX",
+      "en": "Copy swatch HEX",
+      "gesture_zh": "长按色块复制 HEX；移动手指取消",
+      "gesture_en": "Hold a swatch to copy HEX; move to cancel"
+    },
+    {
+      "id": "app.stop_all",
+      "since": "0.25.1",
+      "impl": "code",
+      "scope": "any",
+      "target": {
+        "selector": "#set-estop",
+        "zh": "设置 → 安全",
+        "en": "Settings → Safety"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "停止所有 Agent（先确认）",
+      "en": "Stop all Agents (confirm first)",
+      "gesture_zh": "点按钮后确认",
+      "gesture_en": "Tap the button, then confirm",
+      "nokey": "settings-only"
+    },
+    {
+      "id": "app.restart_session",
+      "since": "0.25.1",
+      "impl": "code",
+      "scope": "any",
+      "target": {
+        "selector": "#rs-session-go",
+        "zh": "设置 → 紧急修复",
+        "en": "Settings → Emergency repair"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "重开 AI 会话（先确认）",
+      "en": "Reopen AI session (confirm first)",
+      "gesture_zh": "点按钮后确认",
+      "gesture_en": "Tap the button, then confirm",
+      "nokey": "settings-only"
     }
   ]
 }

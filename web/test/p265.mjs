@@ -114,7 +114,7 @@ try{
    for(let i=0;i<5;i++)await key(p,'Escape');
    await evaluate(p,`document.getElementById('input').blur()`);await key(p,'?');
    assert.equal(await evaluate(p,`document.getElementById('keys').hidden`),false,'legacy ? opens local offline table');
-   const groups=await evaluate(p,`Array.from(document.querySelectorAll('#keys section')).map(e=>e.dataset.group)`);assert.deepEqual(groups,['functional','single','gestures']);
+   const groups=await evaluate(p,`Array.from(document.querySelectorAll('#keys section')).map(e=>e.dataset.group)`);assert.deepEqual(groups.filter(g=>g!=='cards'),['functional','single','gestures']);assert.ok(groups.indexOf('cards')<=1,'P417: P412 #176 cards group sits right after functional: '+groups);
    assert.equal(await evaluate(p,`document.querySelector('#keys a').href`),'https://agentj.app/hotkeys');
    writeFileSync(out+'/'+lang+'-keys.png',await shoot(p,''));
    await key(p,'Escape');await key(p,'s');assert.equal(await evaluate(p,`document.getElementById('settings').hidden`),false);

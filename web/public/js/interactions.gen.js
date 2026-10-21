@@ -2,7 +2,7 @@
 
 // P207: relay.js dispatches the chat screen's keys (focus outside any field) through KEYMAP → its ACT table; the
 // Settings 「键盘快捷键」 page is drawn from GROUPS + ROWS (texts: i18n ix.<id>, ixges.<id>, ixgrp.<group>, ixw.*).
-export const GROUPS = ["page","card","file","app","keys","compose","read","viewer","search","appr"];
+export const GROUPS = ["page","card","file","app","keys","compose","edit","read","viewer","search","appr"];
 /** [id, [[combo, how], …], has a gesture] — every entry with a key, in page order. */
 export const ROWS = [
   ["page.prev",[["Alt+Shift+J","press"],["j","press"],["ArrowLeft","press"]],1],
@@ -57,7 +57,12 @@ export const ROWS = [
   ["app.bots",[["Alt+Shift+E","press"]],1],
   ["app.setup",[["Alt+Shift+V","press"]],0],
   ["app.card_color",[],1],
+  ["app.open_card",[],1],
   ["app.refresh_hold",[],1],
+  ["app.refresh_pull",[],1],
+  ["app.palette_copy",[["Mod+C","press"]],1],
+  ["app.stop_all",[],1],
+  ["app.restart_session",[],1],
   ["keys.search",[["/","press"],["Mod+K","press"]],1],
   ["keys.search_close",[["Escape","press"]],1],
   ["compose.focus",[["i","press"],["Escape","press"]],1],
@@ -75,13 +80,23 @@ export const ROWS = [
   ["compose.paste",[["Mod+V","press"]],1],
   ["compose.history",[["ArrowUp","press"],["ArrowDown","press"]],0],
   ["compose.edge_arrows",[["ArrowLeft","press"],["ArrowRight","press"]],0],
-  ["compose.readline",[["Ctrl+A","press"],["Ctrl+E","press"],["Ctrl+U","press"],["Ctrl+K","press"],["Ctrl+W","press"],["Ctrl+Y","press"]],0],
+  ["compose.readline",[["Ctrl+A","press"],["Ctrl+E","press"],["Ctrl+U","press"],["Ctrl+K","press"],["Ctrl+W","press"],["Ctrl+Y","press"],["Ctrl+D","press"]],0],
   ["compose.cancel_reply",[["Escape","press"]],1],
   ["compose.clear",[["Escape","double"]],1],
   ["compose.rec_end",[],1],
   ["compose.rec_cancel",[],1],
   ["compose.quote_chip",[],1],
   ["compose.rec_send",[],1],
+  ["compose.fullscreen",[["Ctrl+G","press"]],1],
+  ["compose.newline",[["Ctrl+J","press"]],0],
+  ["compose.stash",[["Ctrl+S","press"]],0],
+  ["compose.history_search",[["Ctrl+R","press"]],0],
+  ["compose.mention",[["@","press"]],0],
+  ["edit.exit",[["Escape","press"],["Ctrl+G","press"]],1],
+  ["edit.send",[["Mod+Enter","press"]],1],
+  ["edit.clear",[],1],
+  ["edit.command",[],1],
+  ["edit.readline",[["Ctrl+A","press"],["Ctrl+E","press"],["Ctrl+U","press"],["Ctrl+K","press"],["Ctrl+W","press"],["Ctrl+Y","press"],["Ctrl+D","press"]],0],
   ["read.close",[["f","press"],["Escape","press"]],1],
   ["read.font",[["+","press"],["-","press"]],1],
   ["read.scroll",[["ArrowUp","press"],["ArrowDown","press"],["Space","press"]],1],
@@ -175,8 +190,9 @@ export const KEYMAP = {
   "P": ["compose.paste_image",0],
   "c": ["compose.camera",0],
   "V": ["compose.volume",0],
+  "@": ["compose.mention",0],
 };
-export const TABLE = ["page.prev","page.next","page.newest","page.earliest","page.first_unread","page.quoted","page.expand","page.scroll","card.reader","card.speak","card.forward","card.mail","card.copy","card.copy_source","card.reply","card.web_report","file.preview","file.download","file.share","file.mail","file.forward","app.font_step","app.rename_agent","app.rename_remote","app.busy_list","app.robots_theme","app.load","app.quota","app.model_step","app.effort_step","app.model_default","app.scan","app.settings","app.search","app.keys","app.pending","app.pages_menu","app.upgrade_host","app.refresh_web","app.reload_host","app.pair_add","app.screenshot","app.friends","app.bots","app.setup","compose.focus","compose.slash","compose.customize","compose.file","compose.paste_text","compose.photo","compose.paste_image","compose.camera","compose.volume"];
+export const TABLE = ["page.prev","page.next","page.newest","page.earliest","page.first_unread","page.quoted","page.expand","page.scroll","card.reader","card.speak","card.forward","card.mail","card.copy","card.copy_source","card.reply","card.web_report","file.preview","file.download","file.share","file.mail","file.forward","app.font_step","app.rename_agent","app.rename_remote","app.busy_list","app.robots_theme","app.load","app.quota","app.model_step","app.effort_step","app.model_default","app.scan","app.settings","app.search","app.keys","app.pending","app.pages_menu","app.upgrade_host","app.refresh_web","app.reload_host","app.pair_add","app.screenshot","app.friends","app.bots","app.setup","compose.focus","compose.slash","compose.customize","compose.file","compose.paste_text","compose.photo","compose.paste_image","compose.camera","compose.volume","compose.mention"];
 export const GLOBAL = ["page.prev","page.newest","page.quoted","card.copy","card.reply","file.download","file.share","app.font_step","app.load","app.model_default","app.settings","app.search","app.keys","app.upgrade_host","app.refresh_web","app.reload_host","app.pair_add","app.screenshot","app.friends","app.bots","app.setup"];
 export function matchKey(e) {
   if (e.ctrlKey || e.metaKey) return null;

@@ -1,0 +1,50 @@
+{
+  "name": "Agent J",
+  "short_name": "Agent J",
+  "description": "在手机上，跟你电脑上的 Agent 说话。 Talk to the Agent on your computer, from your phone.",
+  "lang": "zh-CN",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#141414",
+  "theme_color": "#141414",
+  "icons": [
+    {
+      "src": "startup/icon-dark-192.png?v=bac158e0",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "startup/icon-dark-512.png?v=a717a11d",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "startup/maskable-dark.png?v=eddfbf4a",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "share_target": {
+    "action": "./share-target",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url",
+      "files": [
+        {
+          "name": "images",
+          "accept": [
+            "*/*"
+          ]
+        }
+      ]
+    }
+  }
+}

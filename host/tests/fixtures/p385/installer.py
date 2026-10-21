@@ -496,9 +496,13 @@ def link_seat(agentj, code, *, show=None):
             return False
 
 
-ACCOUNT_PAIR = ('在这台电脑的浏览器打开账户页 https://agentj.app/account/ ，在这台电脑的席位卡点「添加遥控器」，用通行密钥确认后用手机扫码。'
-                ' / In this computer\'s browser open https://agentj.app/account/, choose Add a remote on this computer\'s seat card, '
-                'confirm with your passkey and scan with your phone.')
+ACCOUNT_PAIR = ("首台遥控器：有账号→打开 https://agentj.app/account/，席位卡点「添加遥控器」，核对六位码并批准。"
+                "只有席位→请你本人在终端敲 agentj pair，亲自设置并输入遥控器配对密码（至少 8 位）；AI 不得代设、读取或代输。"
+                "账号是别人开的→请公司的账号负责人在账号页批准。\n"
+                "First remote: own account → open https://agentj.app/account/, Add a remote, compare six digits and approve. "
+                "Seat only → type agentj pair yourself in the terminal; set and enter your own remote pairing password "
+                "(at least 8 characters); AI must never set, read or type it. Someone else opened the account → ask the account manager to approve. "
+                "QR and link are both shown by default. / 默认同时显示二维码和链接。")
 
 
 def pair_phone(agentj, *, show=None, run=None):
@@ -506,6 +510,7 @@ def pair_phone(agentj, *, show=None, run=None):
     P221: offer the optional remote pairing password first (Enter skips); a terminal pairing needs it, so without one the
     first remote is added from the account page (passkey) instead."""
     show = show or (lambda args: subprocess.run(args, check=True))
+    print(ACCOUNT_PAIR)
     try:
         show([str(agentj), 'passphrase', 'offer'])
     except (subprocess.CalledProcessError, OSError, KeyboardInterrupt):
@@ -517,7 +522,6 @@ def pair_phone(agentj, *, show=None, run=None):
         except (InstallError, ValueError, TypeError, subprocess.CalledProcessError, OSError):
             chk = {}
     if not (isinstance(chk, dict) and chk.get('passphrase_set')):
-        print(ACCOUNT_PAIR)
         return False
     print('用手机扫下面的二维码（Agent J 网页里点「扫二维码」，或手机相机）。截图发给别人前先遮住二维码。'
           ' / Scan the QR code with your phone; cover it before sharing a screenshot.')

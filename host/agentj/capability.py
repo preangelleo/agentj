@@ -1446,11 +1446,21 @@ class Capabilities:
             return await self.result_of(req.get("card"), bool(req.get("wait")))
         if t == "dispatch":
             return await self.dispatch(req.get("workflow"))
-        raise CapError("shape", "t: list | sync | check | show | prepare | result | dispatch")
+        if t in ("automation_resume", "automation_status"):   # P426 #181-5: from an Agent → a card for non-idempotent steps
+            from . import wfrun
+            if t == "automation_status":
+                return wfrun.status(self.st, req.get("run"), getattr(self.host, "lang", "zh"))
+            return await wfrun.resume(self.host, req.get("run"), False, False)
+        raise CapError("shape", "t: list | sync | check | show | prepare | result | dispatch | automation_resume | automation_status")
 
 
 def readback_prompt(wf: str, res: dict, lang: str = "zh") -> str:
     v, line, rc = res.get("verdict"), str(res.get("line") or "")[:300], res.get("report_check") or "—"
+    r = res.get("resume") if isinstance(res.get("resume"), dict) else None   # P426 #181-5: a failed multi-step run
+    if r and r.get("run_id"):
+        line += (f" (steps before the failed one are kept: offer the owner to continue from there — "
+                 f"`agentj automation resume {r['run_id'][:12]}`, not a whole new dispatch)" if lang == "en" else
+                 f"（失败之前的步骤已保留：问主人要不要从失败处继续——`agentj automation resume {r['run_id'][:12]}`，不要整条重新派单）")
     if lang == "en":
         return (f"[Agent J system note, not from the owner; do not repeat it] The run you dispatched to workflow {wf} ended: "
                 f"VERDICT {v} — {line}; host report check: {rc}. Read {wf}/reports/report.json and the artifacts it lists, "

@@ -19,7 +19,8 @@ What a prompt does (its last text block):
     DENV             P329: the process's cwd, DSH_PERMISSION_MODE, DSH_TELEMETRY_MODE, which keys are set (never a value)
     anything else    "ECHO: <text>" in two chunks + a usage_update
 Env: FAKE_ACP_LOG = JSONL of every client message (and answers); FAKE_ACP_AUTH=1 → session/new | load | resume refused with
--32000; FAKE_ACP_MODE = the mode a new session starts in (default "default"); FAKE_ACP_SESSIONS = ids that exist (resume).
+-32000 (P423: FAKE_ACP_AUTH_DATA = its `data`); FAKE_ACP_PROMPT_ERR = every session/prompt answered with this error message
+(code FAKE_ACP_PROMPT_CODE, default -32000); FAKE_ACP_MODE = the mode a new session starts in (default "default"); FAKE_ACP_SESSIONS = ids that exist (resume).
 P329: FAKE_ACP_DSH=1 → dsh 0.2.0-rc.2's shapes: no authMethods / loadSession, embeddedContext false, sessions without modes
 (session/set_mode is "method not found"), the model option's values JSON pairs '["provider","model"]'.
 """
@@ -189,7 +190,9 @@ def handle(m):
             "authMethods": [{"id": "login", "type": "terminal", "name": "Login"}]}})
     elif method in ("session/new", "session/resume", "session/load"):
         if auth:
-            out({"jsonrpc": "2.0", "id": rid, "error": {"code": -32000, "message": "Authentication required"}})
+            out({"jsonrpc": "2.0", "id": rid, "error": {"code": -32000, "message": "Authentication required",
+                                                         **({"data": os.environ["FAKE_ACP_AUTH_DATA"]}
+                                                            if os.environ.get("FAKE_ACP_AUTH_DATA") else {})}})
         elif method == "session/new":
             out({"jsonrpc": "2.0", "id": rid, "result": session(rid, "sess-" + uuid.uuid4().hex[:8])})
         elif p.get("sessionId") in (os.environ.get("FAKE_ACP_SESSIONS") or "").split(","):
@@ -206,6 +209,9 @@ def handle(m):
             if o["id"] == p.get("configId"):
                 o["currentValue"] = p.get("value")
         out({"jsonrpc": "2.0", "id": rid, "result": {"configOptions": DSH_CONFIG if dsh() else CONFIG}})
+    elif method == "session/prompt" and os.environ.get("FAKE_ACP_PROMPT_ERR"):
+        out({"jsonrpc": "2.0", "id": rid, "error": {"code": int(os.environ.get("FAKE_ACP_PROMPT_CODE") or -32000),
+                                                     "message": os.environ["FAKE_ACP_PROMPT_ERR"]}})
     elif method == "session/prompt":
         threading.Thread(target=prompt, args=(rid, p), daemon=True).start()
     elif method == "session/cancel":

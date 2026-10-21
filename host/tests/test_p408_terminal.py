@@ -312,10 +312,14 @@ class Store(unittest.TestCase):
     def test_cache_is_ciphertext_only_and_prf_needs_the_prf(self):
         prf, salt = os.urandom(32), os.urandom(32)
         term_store.save(self.st, "CH", "dev1", "cred", "prf", salt, bytearray(GOOD.encode()), prf)
-        raw = (term_store.root(self.st) / "login-dev1.bin").read_bytes()
+        # P414: the cache is now the vault (term_vault.py: wrap-<device>.json + vault-<kid>.json), no login-<device>.bin
+        files = [p for p in term_store.root(self.st).iterdir() if p.name.startswith(("wrap-", "vault-"))]
+        self.assertEqual(sorted(p.name.split("-")[0] for p in files), ["vault", "wrap"])
+        raw = b"".join(p.read_bytes() for p in files)
         self.assertNotIn(GOOD.encode(), raw)
         self.assertNotIn(wire.b64u(GOOD.encode()).encode()[:12], raw)
-        self.assertEqual(oct((term_store.root(self.st) / "login-dev1.bin").stat().st_mode & 0o777), "0o600")
+        for p in files:
+            self.assertEqual(oct(p.stat().st_mode & 0o777), "0o600")
         self.assertIsNone(term_store.load(self.st, "CH", "dev1", "cred", None))
         self.assertIsNone(term_store.load(self.st, "CH", "dev1", "cred", os.urandom(32)))
         self.assertIsNone(term_store.load(self.st, "CH", "dev1", "other-cred", prf))
@@ -564,11 +568,19 @@ class Gate(Rig):
         self.passkey()
         info = self.host.preferences_msg(self.s)["host"]["terminal"]
         self.assertEqual(info, {"on": False, "os": True, "me": False, "sudo": None, "web_ok": False, "minutes": 15,
-                                "idle_s": 300, "open": False})
+                                "idle_s": 300, "open": False, "pk": True, "kind": "unknown"})
         self.enable(until=int(time.time()) + 3600)
         info = self.host.preferences_msg(self.s)["host"]["terminal"]
         self.assertTrue(info["on"] and info["me"] and info["web_ok"])
         self.assertIn("until", info)
+
+    def test_host_info_pk_flag(self):
+        """P417 #185: the row says 「先设置 Face ID」 when this device has no passkey on the computer."""
+        info = self.host.preferences_msg(self.s)["host"]["terminal"]
+        self.assertIs(info["pk"], False)
+        self.passkey()
+        self.assertIs(self.host.preferences_msg(self.s)["host"]["terminal"]["pk"], True)
+        self.assertIs(self.host.term_desk.info(None)["pk"], False)
 
 
 class Open(Rig):

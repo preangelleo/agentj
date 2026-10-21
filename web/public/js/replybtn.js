@@ -35,9 +35,9 @@ function answerOf(p, pages, says) {
   return null;
 }
 /** This page's group state: {on, said} — on = the buttons can be tapped; said = the words chosen (shown 「已回复：…」). */
-export function stateOf(p, pages, says) {
+export function stateOf(p, pages, says, group = 0) {
   if (!p || !Number.isInteger(p.id)) return { on: false, said: null };
-  const mine = picked.get(p.id);
+  const mine = picked.get(p.id + ':' + group);
   const ans = answerOf(p, pages || [], mine && !says.includes(mine) ? [...says, mine] : says);
   if (ans !== null) return { on: false, said: ans };
   if (mine) return { on: false, said: mine };
@@ -55,9 +55,14 @@ function skipped(n, root) {
 }
 function upgrade(root) {
   const spans = [...root.querySelectorAll('span.rlink[data-say]')].filter((s) => !skipped(s, root));
-  const out = [];
+  const out = [], groups = new Map();
   for (const s of spans.slice(0, GROUP_MAX)) {
     const say = s.dataset.say, b = document.createElement('button');
+    const item = s.closest('li'), block = item || s.closest('p') || root;
+    const line = item ? 0 : [...block.querySelectorAll('br')].filter(br => br.compareDocumentPosition(s) & Node.DOCUMENT_POSITION_FOLLOWING).length;
+    let lines = groups.get(block); if (!lines) { lines = new Map(); groups.set(block, lines); }
+    if (!lines.has(line)) lines.set(line, [...groups.values()].reduce((n, x) => n + x.size, 0));
+    b.dataset.group = String(lines.get(line));
     b.type = 'button'; b.className = 'rbtn'; b.dataset.say = say;
     b.textContent = s.textContent;                   // the label as plain words (no link / chip nested in a button)
     const shown = b.textContent.replace(/\s+/g, ' ').trim();
@@ -70,30 +75,34 @@ function upgrade(root) {
 async function tap(root, b) {
   const c = ctxOf.get(root);
   if (!c || b.disabled || b.getAttribute('aria-disabled') === 'true') return;
-  const st = stateOf(c.page, c.pages(), says(root));
+  const st = stateOf(c.page, c.pages(), says(root, b.dataset.group), b.dataset.group);
   if (!st.on) return;
   const p = c.page, say = b.dataset.say;
-  picked.set(p.id, say); paintGroup(root, c);
+  const key = p.id + ':' + b.dataset.group;
+  picked.set(key, say); paintGroup(root, c);
   let ok = false;
   try { ok = await c.say(say, older(p, c.pages()) ? p : null); } catch (_) { ok = false; }
-  if (!ok && picked.get(p.id) === say) { picked.delete(p.id); paintGroup(root, c); }
+  if (!ok && picked.get(key) === say) { picked.delete(key); paintGroup(root, c); }
 }
-const says = (root) => [...root.querySelectorAll('button.rbtn')].map((b) => b.dataset.say);
+const says = (root, group) => [...root.querySelectorAll('button.rbtn')].filter(b => b.dataset.group === group).map(b => b.dataset.say);
 function paintGroup(root, c) {
   const bs = [...root.querySelectorAll('button.rbtn')];
   if (!bs.length) return;
-  const st = stateOf(c.page, c.pages(), bs.map((b) => b.dataset.say));
-  for (const b of bs) {
+  for (const group of new Set(bs.map(b => b.dataset.group))) {
+  const buttons = bs.filter(b => b.dataset.group === group);
+  const st = stateOf(c.page, c.pages(), buttons.map((b) => b.dataset.say), group);
+  for (const b of buttons) {
     b.setAttribute('aria-disabled', st.on ? 'false' : 'true');
     b.classList.toggle('rb-off', !st.on);
     b.classList.toggle('rb-picked', !!st.said && b.dataset.say === st.said);
     b.title = st.on ? t('p368.tapSends', { say: b.dataset.say }) : st.said ? t('p368.said', { say: st.said }) : t(c.page.end === 'open' ? 'p398.writing' : 'p368.closed');
   }
-  let note = root.querySelector('.rb-note');
+  let note = [...root.querySelectorAll('.rb-note')].find(n => n.dataset.group === group);
   if (st.said) {
-    if (!note) { note = document.createElement('span'); note.className = 'rb-note'; note.setAttribute('role', 'status'); bs.at(-1).after(note); }
+    if (!note) { note = document.createElement('span'); note.className = 'rb-note'; note.setAttribute('role', 'status'); note.dataset.group = group; buttons.at(-1).after(note); }
     note.textContent = t('p368.said', { say: st.said });
   } else if (note) note.remove();
+  }
 }
 
 // ---- #tags
@@ -111,6 +120,8 @@ function tags(root, find) {
       const start = m.index + m[1].length;
       f.append(s.slice(at, start));
       const b = document.createElement('button');
+      // P417: P415 pasted the reply-group lines here (s is a string, `groups` is upgrade()-local) → TypeError on every #tag.
+      // Tag buttons only run find(); they carry no reply-group state, so no data-group.
       b.type = 'button'; b.className = 'rtag'; b.textContent = '#' + tag + m[3]; b.dataset.tag = tag;
       b.title = t('p368.tagFind', { tag: '#' + tag });
       b.addEventListener('click', (e) => { e.stopPropagation(); find('#' + tag); });

@@ -39,13 +39,15 @@ test('#154: a page still being written is off; not an integer id → off', () =>
   assert.deepEqual(stateOf({ id: null }, [], SAYS), { on: false, said: null });
 });
 
-test('P403: on a narrow phone the stop pill falls back to the short word so the message box keeps a 44 px tap target', () => {
+test('#182: Stop is universal; full aria labels remain, without a width fallback', () => {
   const r = src('js/relay.js');
-  assert.match(r, /b\.dataset\.mode === "turn" && w\.getAttribute\("data-i18n"\) === PILL_WORD\.turn && input\.getBoundingClientRect\(\)\.width < 44\)\{/);
-  assert.match(r, /w\.setAttribute\("data-i18n", "p403\.stopShort"\); w\.textContent = t\("p403\.stopShort"\); padForCancel\(\);/);
+  assert.ok(!r.includes('p403.stopShort'));
+  const pad = r.match(/function padForCancel\(\)\{[\s\S]*?\n\}/)[0];
+  assert.ok(!pad.includes('width < 44'));
   const en = JSON.parse(src('../i18n/web.en.json')), zh = JSON.parse(src('../i18n/web.zh.json'));
-  assert.equal(en['p403.stopShort'], 'Stop'); assert.equal(zh['p403.stopShort'], '停止');
-  assert.equal(en['p328.stopAria'], "Stop the Agent's current turn", 'the aria-label keeps the full meaning');
+  for (const d of [en, zh]) assert.equal(d['p398.stopTurn'], 'Stop');
+  assert.equal(zh['p328.stopAria'], '停止这一轮');
+  assert.equal(en['p328.stopAria'], 'Stop this turn');
 });
 
 test('#155: the pill — 已送达 grace, the stop worded as a stop, a message tap never becomes a stop', () => {

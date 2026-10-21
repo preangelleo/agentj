@@ -10,7 +10,19 @@ import {RelayMD} from './md.js';
 import {t, lang, onLang} from './t.js';
 import * as jc from './jcards.js';   // P360: Agent J Cards — deck cards 6+ and their pages
 import * as PF from './pagefind.js';
-export const mentionText = w => `@${w.folder}\uFF08CEO ${w.ceo || w.folder}\uFF09`;
+import * as CK from './cardkeys.js';   // P412 #176: Alt+Shift + a letter of the card's English title opens it
+import * as SH from './skillhealth.js';   // P426 #181-3: skill health on the 技能 page
+import {signedWrite} from './controls.js';   // P426 S6: 「归档」/「恢复」 are signed phone controls
+// P424 #148 (owner: 「每次 at 的时候，整个输入框从左到右都给他占住……后边那些括号备注有点多余」): the CEO field from the computer can
+// be 「阿影 · 短视频工作室 CEO (Claude Code)」. The box shows only the short name (`@阿影`, else the folder) as a capped chip; the
+// role is the grey second line of the @ list; no harness name anywhere (it goes stale on a switch). What is sent stays the
+// routing form `@<folder>（CEO <short name>）` — the folder is the address the Agent resolves.
+const HARNESS=/\s*[（(]\s*(?:Claude(?:\s*Code)?|Codex(?:\s*CLI)?|OpenCode|Gemini(?:\s*CLI)?|Kimi(?:\s*Code)?|Qwen(?:\s*Code)?|DeepSeek|Cursor|Aider|Copilot)[^）)]*[）)]/gi;
+export function ceoParts(w){const raw=String(w.ceo||'').replace(HARNESS,'').trim(),parts=raw.split(/\s*[·•｜|]\s*|\s+[—–-]\s+/).map(x=>x.trim()).filter(Boolean);return {name:parts[0]||w.folder,role:parts.slice(1).join(' · ')};}
+export const mentionName = w => ceoParts(w).name;
+export const mentionText = w => `@${w.folder}\uFF08CEO ${mentionName(w)}\uFF09`;
+export const mentionLabel = w => '@' + mentionName(w);
+export function mentionSub(w){const {name,role}=ceoParts(w),seen=new Set([name]);return [role,w.company,w.folder].filter(x=>x&&!seen.has(x)&&seen.add(x)).join(' · ');}
 export function mentionAt(text, at=text.length) {
  const s=text.slice(0,at), m=/(^|[\s\u3000，。！？；：、（(【\[\p{Script=Han}])@([^\s，。！？；：、（）()【】\[\]]*)$/u.exec(s);
  return m ? {start:s.length-m[2].length-1, query:m[2]} : null;
@@ -67,8 +79,21 @@ function buildDeck(focus){const e=$('five-menu'),was=document.activeElement?.clo
  }
  // P360: the owner's cards stack below the five (Apple Wallet: one fixed peek and card size, cards.css — the deck scrolls)
  const mine=jc.deck();mine.forEach((c,j)=>deck.append(jc.deckCard(c,5+j,()=>go('card',c.id))));deck.style.setProperty('--fp-n',String(5+mine.length));deck.dataset.n=String(5+mine.length);
- deck.onclick=ev=>{if(ev.target===deck)closeMenu();};e.append(deck);e.hidden=false;const back=key&&[...deck.children].find(b=>(b.dataset.page||'card:'+b.dataset.card)===key);if(focus||back)(back||deck.querySelector('button')).focus({preventScroll:!focus});arm();
+ keyHints(deck);deck.onclick=ev=>{if(ev.target===deck)closeMenu();};e.append(deck);e.hidden=false;const back=key&&[...deck.children].find(b=>(b.dataset.page||'card:'+b.dataset.card)===key);if(focus||back)(back||deck.querySelector('button')).focus({preventScroll:!focus});arm();
 }
+// P412 #176: the cards' keys (cardkeys.js). The title shows its letter underlined; a Chinese title, or a digit, gets a small
+// key chip instead (hidden on touch-only screens). Again on the open card, or Esc, goes back to the chat.
+const SYS_EN={workflows:'Workflows',skills:'Skills',memory:'Memory',agentj:'Agent J'};
+function keyCards(){return [...jc.deck().map(c=>({key:'card:'+c.id,en:c.name&&typeof c.name==='object'?c.name.en:String(c.name||''),id:c.id,title:jc.nameOf(c)})),...names().slice(1).map(([k,title])=>({key:k,en:SYS_EN[k],id:k,title}))];}
+/** [{key, title, letter, combo}] — the cards that have a key, as the shortcut sheet lists them. */
+export function cardKeys(){const list=keyCards(),a=CK.assign(list);return list.filter(c=>a.has(c.key)).map(c=>({key:c.key,title:c.title,letter:a.get(c.key),combo:CK.comboOf(a.get(c.key))}));}
+function keyHints(deck){const ks=new Map(cardKeys().map(c=>[c.key,c.letter])),mac=/Mac|iP(hone|ad|od)/.test(navigator.platform||navigator.userAgent||'');
+ for(const b of deck.children){const k=ks.get(b.dataset.page||'card:'+b.dataset.card),h=b.querySelector('h2');if(!k||!h)continue;b.setAttribute('aria-keyshortcuts',CK.comboOf(k));
+  const txt=h.textContent,i=/[A-Z]/.test(k)?txt.toUpperCase().indexOf(k):-1;if(i>=0)h.replaceChildren(txt.slice(0,i),node('u',txt[i],'fp-key'),txt.slice(i+1));else h.dataset.key=mac?'\u2325\u21e7'+k:CK.comboOf(k);}}   // a chip drawn by CSS (::after): the title's text stays the name
+const shown_=id=>{const n=$(id);return !!n&&!n.hidden;};
+const keyBlocked=()=>document.body.dataset.view!=='chat'||document.body.dataset.sheet==='1'||['confirm','settings','fsEd','keys','lqr','sout','elev','cam','silent','badge-panel','setup-view'].some(shown_)||!!document.querySelector('.jc-dialog[open]');
+function openKey(k){const hit=cardKeys().find(c=>c.letter===k);if(!hit)return;const card=hit.key.startsWith('card:'),id=card?hit.key.slice(5):hit.key;
+ const on=$('five-menu').hidden&&(card?current==='card'&&selected===id:current===id);if(on)go('chat');else if(card)go('card',id);else go(id);}
 // P302 (owner: 「右边看到工作流是 2……这个 2 代表什么呢？」): it was the card's position (1–5), read as a count. Now the corner
 // carries the same total the page shows (「35 家公司」, 「120 个技能」) — or nothing until the computer answered
 function menuCount(key){if(!pic)return '';if(key==='workflows')return `${pic.counts.wdb} ${t('p244.fivepages13')}`;if(key==='skills')return `${pic.skills.length} ${t('p302.skills')}`;return '';}
@@ -129,7 +154,11 @@ function renderNow(){shown=0;const body=$('five-body'),bar=$('five-bar');body.re
   // P302: the three tabs live in the sticky bar under the header, so they switch from anywhere in a long list
   const tabs=node('div',undefined,'fp-tabs');for(const [k,label] of [['all',t('p244.fivepages20')],['global',t('p244.fivepages21')],['local',t('p244.fivepages22')]]){const b=button(label,()=>{filter=k;render();$('five-page').scrollTop=0;},'fp-tab');b.dataset.k=k;const mark=globalIcon(k);mark.classList.add('fp-category-icon','fp-category-'+k);b.prepend(mark);b.setAttribute('aria-pressed',filter===k);tabs.append(b);}bar.append(tabs);bar.hidden=false;
   const ts=PF.terms(findQ),sk=pic.skills.filter(s=>filter==='all'||(filter==='global'?s.scope!=='local':s.scope==='local')).filter(s=>!ts.length||PF.matches(['/'+s.name,...(s.aliases||[]),s.desc,s.desc_zh,s.folder,skillLine(s)].filter(Boolean).join(' '),ts));shown=sk.length;
-  let group='';sk.forEach((s,i)=>{const g=s.folder||t('p244.fivepages23');if(g!==group){body.append(node('h3',g,'fp-group'));group=g;}body.append(card('/'+s.name,skillLine(s),i,()=>skill(s)));});
+  if(pic.skill_use&&!pic.skill_use.tracked)body.append(node('p',t('p426.untracked'),'fp-meta fp-skill-note'));
+  let group='';sk.forEach((s,i)=>{const g=s.folder||t('p244.fivepages23');if(g!==group){body.append(node('h3',g,'fp-group'));group=g;}const c=card('/'+s.name,skillLine(s),i,()=>skill(s));c.dataset.skill=s.name;health(c,s,true);body.append(c);});
+  // P426 #181-3 (§39): what the owner archived — 「恢复」 puts it back (nothing was ever deleted)
+  const arch=filter==='local'?[]:(pic.skills_archived||[]).filter(a=>!ts.length||PF.matches('/'+a.name,ts));shown+=arch.length;
+  if(arch.length){body.append(node('h3',t('p426.archived'),'fp-group'));arch.forEach((a,i)=>{const c=card('/'+a.name,t('p426.archivedAt',{when:ago(a.at)}),i,()=>{});c.dataset.archived=a.name;if(peer.sk1)c.append(button(t('p426.restore'),()=>skillAct('skill_restore',a.name,c),'fp-action fp-secondary fp-skill-act'));body.append(c);});}
  }else if(current==='agentj'){
   const ts=PF.terms(findQ),hit=(...xs)=>!ts.length||PF.matches(xs.filter(Boolean).join(' '),ts);shown=0;
   if(hit(t('p244.fivepages24'),t('p244.fivepages25'),'core')){shown++;body.append(card(t('p244.fivepages24'),t('p244.fivepages25'),1,()=>doc('@core','core',true)));
@@ -184,7 +213,7 @@ const SKILL_NAME=/^[a-z0-9][a-z0-9-]{1,63}$/;
 export function plusSkill(){if($('five-menu')?.hidden===false)return PLUS.cards;if(current==='card'){const c=jc.cards().find(x=>x.id===selected);return c&&SKILL_NAME.test(c.plus||'')?c.plus:PLUS.cards;}return PLUS[current]||PLUS.chat;}
 export function plusShown(){return document.body.dataset.view==='chat'&&jc.available()&&isReady();}
 function syncPlus(){const b=$('cardPlus');if(!b)return;const on=plusShown();if(b.hidden===on)b.hidden=!on;const k=plusSkill();if(b.dataset.skill!==k||b.dataset.lang!==lang()){b.dataset.skill=k;b.dataset.lang=lang();b.title=t('p360.plusTitle',{cmd:'/'+k});b.setAttribute('aria-label',`${t('p360.plus')} /${k}`);}}
-export function plusCard(){const cmd='/'+plusSkill()+' ',known=new Set([...Object.values(PLUS),...jc.cards().map(c=>c.plus)]);go('chat');const input=$('input');
+export function plusCard(){if(current==='card'&&jc.cards().some(c=>c.id===selected&&c.official)&&['notes','todo'].includes(selected))return jc.directAdd(selected,{nav:openJlink});const cmd='/'+plusSkill()+' ',known=new Set([...Object.values(PLUS),...jc.cards().map(c=>c.plus)]);go('chat');const input=$('input');
  const m=/^[/\uFF0F]([a-z0-9][a-z0-9-]{1,63})(?:\s+|$)/.exec(input.value),rest=(m&&known.has(m[1])?input.value.slice(m[0].length):input.value).replace(/^\s+/,'');
  input.value=cmd+rest;input.setSelectionRange(cmd.length,cmd.length);input.dispatchEvent(new Event('input'));try{input.focus({preventScroll:true});}catch(_){}composer?.paint(true);}
 // P360 (Leo 10-17: 「首先是定位某个卡片，其次是卡片上的某个位置」): one internal address form for everything the phone opens —
@@ -202,6 +231,12 @@ export function openJlink(s){s=String(s||'');if(!jc.JLINK.test(s))return;const i
  const i=v.lastIndexOf('/');if(/\.md$/.test(v))doc(i<0?'':v.slice(0,i),v.slice(i+1));}
 // two cards with one name, written bare (`@记事本`): which one
 function chooseCard(list){const box=sheet();box.append(node('h2',t('p360.choose'),'fp-detail-title'));for(const m of list){const b=button(m.label.slice(1),()=>openTarget(m.c.id),'fp-file jc-choose');b.dataset.card=m.c.id;b.prepend(jc.icon(m.c.icon,'fp-line-icon'));box.append(b);}}
+// P426 #181-3 (§39): use line · 「很久没用了」 · 「归档」 (skillhealth.js); a tap moves the folder (restorable) and re-reads the page
+const ago=ts=>SH.ago(ts);
+function health(c,s,list){SH.decorate(c,s,pic?.skill_use,{canAct:peer.sk1,list,act:skillAct});}
+async function skillAct(type,name,c){for(const b of c.querySelectorAll('.fp-skill-act'))b.disabled=true;const m=await signedWrite(...SH.signedArgs(type,name));
+ c.querySelector('.fp-skill-done')?.remove();c.append(node('small',SH.resultText(type,m),'fp-meta fp-skill-done'));
+ if(m.ok)refresh();else for(const b of c.querySelectorAll('.fp-skill-act'))b.disabled=false;}
 // P299: the owner's language first — a Chinese owner sees the host's desc_zh, not the English trigger list
 const shipped=(s,k)=>{if(s.scope!=='bundled')return '';const key=`p299.${k}.${s.name}`,v=t(key);return v===key?'':v;};
 const skillLine=s=>(lang()==='zh'&&s.desc_zh)||shipped(s,'sk')||s.desc;
@@ -217,6 +252,7 @@ async function skill(s){const e=epoch,box=sheet(),zh=lang()==='zh';box.append(no
  const sum=node('section',undefined,'fp-summary');sum.append(node('p',skillLine(s),'fp-lead'));
  const use=node('p',undefined,'fp-use');use.append(node('b',t('p299.use')),document.createTextNode((zh&&s.use_zh)||shipped(s,'su')||t('p299.useAny',{cmd:'/'+s.name})));sum.append(use);
  sum.append(node('p',t('p244.fivepages38')+(s.folder||(s.scope==='bundled'?t('p244.fivepages39'):t('p244.fivepages40'))),'fp-meta'),node('p',t('p244.fivepages41')+'/'+s.name+(s.aliases?.length?' · '+s.aliases.map(a=>'/'+a).join(' · '):''),'fp-meta'));
+ health(sum,s,false);
  box.append(sum,button(t('p244.fivepages37'),()=>{go('chat');H.insert('/'+s.name+' ');}));
  const raw=node('details',undefined,'fp-raw'),sm=node('summary',t('p299.raw'));const wait=node('p',t('p244.fivepages31'),'fp-meta');raw.append(sm,wait);box.append(raw);
  const m=await ask1({t:'skill_get',id:s.id},'skill_get',15000);if(e!==epoch||box.hidden)return;wait.replaceWith(prose(m));}
@@ -256,15 +292,17 @@ export function init(h){H=h;$('cardPlus')?.addEventListener('click',plusCard);
  registerLayer({element:()=>page,open:()=>!page.hidden,close:()=>go('chat'),fallback:()=>$('orb'),rank:3,trap:false});registerLayer({element:()=>menu,open:()=>!menu.hidden,close:closeMenu,fallback:()=>$('orb'),rank:35});
  addEventListener('popstate',()=>{if(!armed)return;armed=false;stepBack();});registerLayer({element:()=>sheet,open:()=>!sheet.hidden,close:closeDetail,fallback:()=>$('orb'),rank:36});
  registerLayer({element:()=>fbox,open:()=>findOpen()&&sheet.hidden&&menu.hidden,close:closeFind,fallback:()=>$('srchBtn'),rank:4,trap:false});
+ // P412 #176: ⌥⇧ + the card's key, from anywhere on the chat screen (the message box included); e.code, so a Mac's ⌥⇧ symbol is never typed
+ addEventListener('keydown',e=>{const k=CK.keyOf(e);if(!k||!cardKeys().some(c=>c.letter===k))return;e.preventDefault();e.stopImmediatePropagation();if(e.repeat||keyBlocked())return;openKey(k);},true);   // @ix app.open_card
  // P363 (#70): / on a five page opens (or focuses) its search, as on the shortcut sheet — never from a field
  addEventListener('keydown',e=>{if(e.key!=='/'||e.ctrlKey||e.metaKey||e.altKey||e.isComposing||page.hidden||current==='chat'||!sheet.hidden||!menu.hidden)return;const g=e.target;if(g&&(g.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(g.tagName)))return;e.preventDefault();e.stopImmediatePropagation();if(fbox.hidden)find();else fbox.querySelector('input').focus();},true);
  // P360: @ also names the owner's cards (chip 「@记事本」, the message carries 「@记事本（card/notes）」 for the Agent)
- const input=$('input');composer=composeMentions(input,()=>[...(pic?.items.filter(w=>w.wdb).map(w=>({text:mentionText(w),label:'@'+(w.ceo||w.folder)+' '+w.folder}))||[]),...(jc.available()?jc.mentions(sysNames()).map(m=>({text:m.text,label:m.label})):[])]);let options=[],at=null,index=0;
+ const input=$('input');composer=composeMentions(input,()=>[...(pic?.items.filter(w=>w.wdb).map(w=>({text:mentionText(w),label:mentionLabel(w)}))||[]),...(jc.available()?jc.mentions(sysNames()).map(m=>({text:m.text,label:m.label})):[])]);let options=[],at=null,index=0;
  function suggestions(){at=mentionAt(input.value,input.selectionStart);if(!at||(!pic&&!jc.available())){pop.hidden=true;return;}const q=at.query.toLowerCase();
   options=[...(pic?pic.items.filter(w=>w.wdb&&`${w.folder} ${w.ceo} ${w.company} ${w.py||''}`.toLowerCase().includes(q)):[]),
    ...(jc.available()?jc.mentions(sysNames()).filter(m=>`${jc.nameOf(m.c)} ${m.c.id}`.toLowerCase().includes(q)):[])].slice(0,20);index=0;paint();}
  function paint(){pop.replaceChildren();options.forEach((o,i)=>{let b;if(o.c){b=button(o.label.slice(1),()=>pick(i),'fp-mention fp-mention-card');b.dataset.card=o.c.id;const dot=node('span',undefined,'jc-dot jc-accent-'+o.c.accent);dot.append(jc.icon(o.c.icon,'jc-dot-icon'));b.prepend(dot);}
-  else{b=button(`${o.company||o.folder} · ${o.ceo||''}`,()=>pick(i),'fp-mention');b.prepend(robot(o.robot,o.busy));}b.setAttribute('role','option');b.setAttribute('aria-selected',i===index);pop.append(b);});pop.hidden=!options.length;settleRobots(pop);fit();}
+  else{b=button('',()=>pick(i),'fp-mention');const tx=node('span',undefined,'fp-mention-tx'),sub=mentionSub(o);tx.append(node('span',mentionName(o),'fp-mention-name'));if(sub)tx.append(node('small',sub,'fp-mention-sub'));b.append(robot(o.robot,o.busy),tx);b.dataset.folder=o.folder;}b.setAttribute('role','option');b.setAttribute('aria-selected',i===index);pop.append(b);});pop.hidden=!options.length;settleRobots(pop);fit();}
  // P302: above the composer, never under the status bar (keyboard up or not)
  // while the list is open it follows the composer (the body follows the keyboard a few frames later, or animates)
  let fitAt=null,fitF=0;function fit(){fitAt=null;if(!fitF)fitF=requestAnimationFrame(()=>fitNow());fitNow(true);}

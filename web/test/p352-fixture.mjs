@@ -16,7 +16,6 @@ export function keysMsg(fa) {
         { type: 'key', name: 'OPENAI_API_KEY', set: true, tail: '7f3b' }] },
       { id: 'bailian', name: { zh: '阿里云百炼 · 千问', en: 'Alibaba Bailian · Qwen' }, rows: [
         { type: 'sub', name: 'BAILIAN_TOKEN_PLAN_API_KEY', set: true },
-        { type: 'sub', name: 'BAILIAN_CODING_PLAN_API_KEY', set: false },
         { type: 'key', name: 'DASHSCOPE_API_KEY', set: false }] },
       { id: 'deepseek', name: { zh: 'DeepSeek', en: 'DeepSeek' }, rows: [{ type: 'key', name: 'DEEPSEEK_API_KEY', set: false }] },
     ],

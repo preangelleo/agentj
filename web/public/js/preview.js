@@ -1,3 +1,4 @@
+import { copyButton } from './copycode.js';
 // P183: the full-screen preview's document views (media.js owns the viewer itself, the image zoom and the HTML frame).
 // Every view is built from the SHA-verified Blob the card already holds — nothing is fetched from anywhere but our own
 // vendor/ files, each loaded on first need (never on first paint), pinned in vendor/VERSIONS.md:
@@ -124,7 +125,7 @@ async function viewDocx(blob, box) {
   const mammoth = await script(LIBS.docx, 'mammoth');
   const r = await mammoth.convertToHtml({ arrayBuffer: await blob.arrayBuffer() });
   // The converted document goes into the same empty-sandbox frame as an Agent HTML file; the frame's style is ours.
-  const css = '<style>html{background:#faf9f5;color:#141414}body{margin:0 auto;max-width:46em;padding:24px;' +
+  const css = '<style>html{background:#faf9f5;color:#141414}body{margin:0;padding:24px;' +
     'font:16px/1.65 system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;overflow-wrap:anywhere}' +
     'img{max-width:100%;height:auto}table{border-collapse:collapse;margin:1em 0}td,th{border:1px solid #e3dacc;padding:4px 8px;vertical-align:top}' +
     'a{color:#2d4f83}</style>';
@@ -177,11 +178,7 @@ async function viewMarkdown(blob, box) {
     const b = e.target.closest && e.target.closest('.copy');
     if (!b) return;
     const code = b.closest('.codeblock')?.querySelector('pre > code');
-    RelayMD.copyText(code ? code.textContent : '').then((ok) => {
-      if (!ok) return;
-      b.textContent = t('r.md.copied'); b.classList.add('done');
-      setTimeout(() => { b.textContent = t('r.md.copy'); b.classList.remove('done'); }, 1600);
-    });
+    copyButton(code ? code.textContent : '', b);
   });
   box.replaceChildren(w);
   if (cut) box.appendChild(noteEl('media.pv.more'));

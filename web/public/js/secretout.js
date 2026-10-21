@@ -1,3 +1,4 @@
+import { copyButton } from './copycode.js';
 import {phoneConfirmation} from './tvremote.js';
 // F32 (P73, ADR-A180, PROTOCOL §18): the secret pickup card. The owner asked their own Agent for something that holds a secret
 // (an ss:// link, a proxy YAML with a password); the Agent ran `agentj secret send`. The card arrives WITHOUT the value: name,
@@ -56,7 +57,7 @@ function build() {
   document.body.appendChild(root);
   open.addEventListener('click', () => openCard());
   setup.addEventListener('click', () => { if (hooks.setupFaceId) hooks.setupFaceId(); else toast(t('sout.noFaceId'), 4000); });
-  copy.addEventListener('click', () => copyValue());
+  copy.addEventListener('click', (e) => copyValue(e));
   dl.addEventListener('click', () => download());
   fin.addEventListener('click', () => finish());
   decline.addEventListener('click', () => declineCard());
@@ -233,10 +234,10 @@ async function declineCard() {
   busy = true; render();
   try { await sendApp({ t: 'secret_out_decline', id: c.id }, g); } catch { busy = false; render(); toast(t('elev.fail'), 3000); }
 }
-async function copyValue() {
+async function copyValue(e) {
   if (!opened) return;
   const text = opened.text !== null ? opened.text : new TextDecoder().decode(opened.bytes);
-  try { await navigator.clipboard.writeText(text); toast(t('sout.copied'), 2400); } catch { toast(t('sout.copyFail'), 3600); }
+  await copyButton(text, e?.currentTarget || $('sout-copy'), async value => { await navigator.clipboard.writeText(value); return true; });
 }
 function download() {
   if (!opened || !opened.bytes) return;

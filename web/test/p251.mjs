@@ -84,8 +84,9 @@ try{
      const chatColor=await p.evaluate(()=>document.querySelector('meta[name="theme-color"]').content);
      await p.locator('#setBtn').click();await p.waitForTimeout(150);
      const chrome=()=>p.evaluate(()=>({meta:document.querySelector('meta[name="theme-color"]').content,bg:getComputedStyle(document.getElementById('settings')).backgroundColor}));
-     const c=await chrome();assert.equal(c.meta,'#2c2b26');assert.equal(c.bg,'rgb(44, 43, 38)');
-     await p.locator('#keysBtn').click();await p.waitForTimeout(150);assert.equal((await chrome()).meta,'#2c2b26');
+     // P422: the system bars are Sooty #141414 on every page (settings included); the settings page itself stays #2c2b26
+     const c=await chrome();assert.equal(c.meta,'#141414');assert.equal(c.bg,'rgb(44, 43, 38)');
+     await p.locator('#keysBtn').click();await p.waitForTimeout(150);assert.equal((await chrome()).meta,'#141414');
      assert.ok(await p.locator('#keysCols').textContent().then(t=>t.includes('Alt')&&t.includes('升级主机')));
      await p.screenshot({path:`${OUT}/settings-${engine}-${w}-${scheme}.png`});
      await p.keyboard.press('Escape');await p.keyboard.press('Escape');await p.waitForTimeout(150);
@@ -120,7 +121,7 @@ try{
     await p.evaluate(()=>document.body.dataset.view='chat');
     await p.locator('#input').fill('保留这份草稿，再加一句');
     await p.clock.setFixedTime(new Date(Date.now()+60000));
-    await p.waitForFunction(v=>document.getElementById('version-later')?.textContent.includes(v),next,{timeout:15000});
+    await p.waitForFunction(v=>document.getElementById('toast')?.textContent.includes(v),next,{timeout:15000});
     assert.equal(reloads,1);await p.waitForFunction(()=>document.getElementById('input')?.value==='保留这份草稿，再加一句');
     assert.equal(await p.locator('#version-notice').isVisible(),false);
     await p.screenshot({path:`${OUT}/updated-${engine}.png`});

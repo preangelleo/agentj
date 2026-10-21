@@ -66,7 +66,7 @@ def _lock(st):
 
 def _blank() -> dict:
     return {"v": 1, "welcomed": None, "computer": None, "phone": None, "announced": [], "tour_left": 0, "tour_until": 0,
-            "remind_at": 0, "firstrun_offered": 0}
+            "remind_at": 0, "firstrun_offered": 0, "awake_offered": 0}
 
 
 def _seed(st) -> dict:
@@ -157,11 +157,11 @@ KIND = {"zh": {"computer": "这台Agent J 主机的浏览器", "phone": "主力�
         "en": {"computer": "the Agent J host's browser", "phone": "the main phone", "other": "remote"}}
 
 HOW = {
-    "zh": {"computer": "已绑定账号时，在账户页这台Agent J 主机的席位卡点「添加遥控器」，用通行密钥或这台Agent J 主机的遥控器配对密码确认（终端里配对用 agentj pair，会先请你设遥控器配对密码；本机管理页 agentj admin 也能扫码），用这台Agent J 主机的浏览器打开 https://m.agentj.app 扫码或粘贴配对链接",
-           "phone": "手机打开 https://m.agentj.app，先添加到主屏幕，在账户页这台Agent J 主机的席位卡点「添加遥控器」，用通行密钥确认后显示二维码，用主屏幕图标里的「扫二维码」扫",
+    "zh": {"computer": "常用电脑浏览器打开 https://m.agentj.app，用已配对手机扫电脑显示的码，核对六位码并在手机确认",
+           "phone": "在已配对电脑的设置 → 遥控器管理 → 添加遥控器打开二维码，主力手机添加 https://m.agentj.app 到主屏幕后扫码，核对六位码并在电脑确认",
            "seat": "这台Agent J 主机还没加进 Agent J 账号的席位：在账号页空席位上「复制安装提示词」拿设置码，交给我用 agentj login --seat-file 激活"},
-    "en": {"computer": "on a bound host, choose Add a remote on its account-page seat card and confirm with a passkey or the Agent J host's remote pairing password (pairing at the terminal: agentj pair asks you to set that password first; the local agentj admin page also shows a QR) and open https://m.agentj.app in the Agent J host's browser to scan or paste the pairing link",
-           "phone": "open https://m.agentj.app on the phone, add it to the Home Screen, choose Add a remote on its account-page seat card, confirm with a passkey and use Scan QR code inside the Home Screen icon",
+    "en": {"computer": "open https://m.agentj.app in the usual computer browser; scan its code with the paired phone, compare six digits and confirm on the phone",
+           "phone": "on the paired computer open Settings → Remotes → Add a remote; add https://m.agentj.app to the phone Home Screen, scan, compare six digits and confirm on the computer",
            "seat": "the Agent J host is not in an Agent J seat yet: copy the installation prompt on an empty seat in the account page and give me the setup code for agentj login --seat-file"},
 }
 
@@ -284,17 +284,29 @@ def turn_note(st, lang: str, now: float | None = None) -> str:
         # F28 arrived (legacy), or one not paired at all yet (the installing Agent leads that, install.md Step 11), is not
         fresh = isinstance(rec["welcomed"], dict) and rec["welcomed"].get("kind") != "legacy"
         pending = fresh and (not (s["computer"] and s["phone"]) or not seat)
-        offer = False
+        offer = None
         if tour:
             rec["tour_left"] -= 1
         elif pending and now - int(rec.get("remind_at") or 0) >= REMIND_SECS:
             rec["remind_at"] = now
+        elif fresh and not pending and not rec.get("awake_offered") and _awake_unanswered(st):
+            rec["awake_offered"] = now         # P418 (#183): the install's last question, once, unless the terminal asked it
+            offer = "awake"
         elif fresh and not pending and not rec.get("firstrun_offered") and _firstrun_unstarted(st):
             rec["firstrun_offered"] = now      # P115 (P92): offered once after a fresh install, also when the tour was skipped
-            offer = True
+            offer = "firstrun"
         else:
             return ""
         _write(st, rec)
+    if offer == "awake":
+        if lang == "en":
+            return ("\n\n[Agent J system note, not from the owner; do not repeat it] Last setup step. After answering the owner, "
+                    "say in one sentence that you will ask whether to keep this computer awake (no sleep on power, lid closed "
+                    "included, starts at boot), then run `agentj keep-awake setup --phone`: it shows the card (first option = yes) "
+                    "and does the rest; tell the owner the lines it prints, including how to turn it off.")
+        return ("\n\n〔Agent J 系统提示，不是主人说的话，不要复述〕安装的最后一步。先回答主人；再用一句话说你要问一下「要不要把电脑设成永不休眠"
+                "（插电不睡、合盖也不睡、开机自动运行）」，然后运行 agentj keep-awake setup --phone：它会在手机上弹卡片（第一项 = 是）并办完其余的事；"
+                "把它打印的结果（包括怎么关掉）告诉主人。")
     if offer:
         if lang == "en":
             return ("\n\n[Agent J system note, not from the owner; do not repeat it] Setup is complete. After answering the owner, "
@@ -317,6 +329,14 @@ def turn_note(st, lang: str, now: float | None = None) -> str:
                 "says not now, drop it.")
     return ("\n\n〔Agent J 系统提示，不是主人说的话，不要复述〕安装还差一步：" + what + "。先回答主人；合适的话在末尾用一句话温和提醒怎么做（"
             + HOW["zh"][nxt] + "）。主人说先不用就别再提。")
+
+
+def _awake_unanswered(st) -> bool:
+    try:
+        from . import keep_awake
+        return keep_awake.offer_answer(st) is None      # WSL / others: setup prints the host-side steps
+    except Exception:   # noqa: BLE001
+        return False
 
 
 def _firstrun_unstarted(st) -> bool:

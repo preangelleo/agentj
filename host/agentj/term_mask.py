@@ -148,3 +148,61 @@ class Masker:
         if t and len(t.group()) >= HOLD_MIN:
             return self._scan(held[:t.start()], True) + LONG_NOTE
         return self._scan(held, True)
+
+
+# ---------------------------------------------------------------- P414 (H3): the second, agent-bound pass
+AGENT_HIDDEN = "[已隐藏]"
+_SECRET_NAME = r"(?:[A-Za-z_][A-Za-z0-9_.-]*?)?(?:KEY|TOKEN|SECRET|PASS|PWD|CREDENTIAL|AUTH(?!ORS?(?![A-Za-z])))[A-Za-z0-9_.-]*"
+_DONE = ("<redacted>", AGENT_HIDDEN, "[已隐藏 / hidden]")
+# NAME=value (one token or a quoted string) — env lines, `export X=…`, `--password=…`, `"api_key": "…"`-ish JSON
+_ASSIGN = re.compile(r"(?i)(?<![A-Za-z0-9_])(" + _SECRET_NAME + r")([\"']?[ \t]*=[ \t]*)(\"[^\"\n]*\"|'[^'\n]*'|[^\s\"',;]+)")
+# NAME: value — the rest of the line (`Authorization: Bearer …`, YAML `password: …`, JSON `"token": "…"`)
+_COLON = re.compile(r"(?i)(?<![A-Za-z0-9_])(" + _SECRET_NAME + r")([\"']?[ \t]*:[ \t]*)(?!//)(\"[^\"\n]*\"|'[^'\n]*'|[^\n]+)")
+# the argument after -p / --password (a separate word); `-pVALUE` (mysql) too
+_PFLAG = re.compile(r"(?<![\w-])(-p|--password)([ \t]+|=)(\"[^\"\n]*\"|'[^'\n]*'|[^\s\"']+)|(?<![\w-])-p(?=[^\s-])([^\s\"']+)")
+# URL userinfo: scheme://user[:pass]@
+_USERINFO = re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://)([^\s/@?#]+)@")
+
+
+def agent_mask(text: str) -> tuple[str, int]:
+    """H3 (P414): hide what the owner's masker (privacy.owner_text) shows the owner but the Agent must not get — the value
+    of NAME=value / NAME: value where NAME names a key / token / secret / password / credential / auth (any length), the
+    argument after `-p` / `--password`, URL userinfo. → (masked text, how many items were hidden). Over-hiding is accepted
+    (`mkdir -p dir` shows `mkdir -p [已隐藏]` to the Agent); the owner's own page / output keep the P408 masking only."""
+    n = 0
+
+    def done(v: str) -> bool:
+        v = v.strip().strip("\"'")
+        return not v or any(v == d or v.startswith(d) for d in _DONE)
+
+    def assign(m):
+        nonlocal n
+        if done(m.group(3)):
+            return m.group(0)
+        n += 1
+        return m.group(1) + m.group(2) + AGENT_HIDDEN
+
+    def flag(m):
+        nonlocal n
+        if m.group(4) is not None:
+            if done(m.group(4)):
+                return m.group(0)
+            n += 1
+            return "-p" + AGENT_HIDDEN
+        if done(m.group(3)):
+            return m.group(0)
+        n += 1
+        return m.group(1) + m.group(2) + AGENT_HIDDEN
+
+    def userinfo(m):
+        nonlocal n
+        if done(m.group(2)):
+            return m.group(0)
+        n += 1
+        return m.group(1) + AGENT_HIDDEN + "@"
+
+    text = _USERINFO.sub(userinfo, text)
+    text = _ASSIGN.sub(assign, text)
+    text = _COLON.sub(assign, text)
+    text = _PFLAG.sub(flag, text)
+    return text, n

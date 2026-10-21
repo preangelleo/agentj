@@ -91,8 +91,10 @@ test('P341 (#50): /new is /clear — in the 「/」 list, the typed-command set,
   assert.match(src, /const CMDS = \["clear", "new", /);
   assert.match(src, /const RUN = \["compact", "clear", "new", /);
   assert.match(src, /if \(cmd === "new"\) cmd = "clear";[^\n]*\n  if \(cmd === "model"\)/);
-  assert.match(src, /\/\^\\\/\(stop\|clear\|new\)/);
-  assert.match(src, /cmd === "stop" \|\| cmd === "clear" \|\| cmd === "new"/);
+  // P424 (#145 security): /stop, /clear, /new (and every other built-in command, CMDS) never wait in the offline queue
+  assert.match(src, /const isCmdText = [^\n]*CMDS\.includes\(m\[1\]\.toLowerCase\(\)\)/);
+  assert.match(src, /outbox\.items\.length && !isCmdText\(text\)\)\) return sayLater\(text\)/);
+  assert.match(src, /function sayLater\(text\)\{\n(?:[^\n]*\n){0,3}  if \(isCmdText\(text\)\)\{ toast\(/);
   const hk = readFileSync(new URL('../public/js/hotkey.js', import.meta.url), 'utf8');
   assert.match(hk, /n === 'clear' \|\| n === 'new' \? 'clear'/);
   assert.equal(DICT.zh['r.run.new'], '同 /clear：开新对话');

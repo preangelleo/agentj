@@ -37,7 +37,7 @@ SUPPORTED = ("claude", "codex", "opencode", "kimi", "qwen", "dsh")   # P310: + Q
 OPENCODE_KEY_ENV = ("ZHIPU_API_KEY", "DEEPSEEK_API_KEY", "DASHSCOPE_API_KEY", "MOONSHOT_API_KEY", "KIMI_API_KEY", "ARK_API_KEY",
                     "MINIMAX_API_KEY", "SILICONFLOW_CN_API_KEY", "OPENROUTER_API_KEY", "OPENCODE_API_KEY", "OPENAI_API_KEY",
                     "ANTHROPIC_API_KEY", "GEMINI_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY",
-                    "BAILIAN_TOKEN_PLAN_API_KEY", "BAILIAN_CODING_PLAN_API_KEY",   # P310: bailian.py presets
+                    "BAILIAN_TOKEN_PLAN_API_KEY",   # P310: bailian.py presets
                     "ARK_CODING_PLAN_API_KEY",   # P315: ark.py preset
                     "ARK_AGENT_PLAN_API_KEY")    # P395: ark.py Agent Plan preset
 NAMES = ("claude", "codex", "opencode", "kimi", "qwen", "dsh")
@@ -383,6 +383,26 @@ def _v1_line(out: str, env: dict) -> str | None:
     return None
 
 
+def _limit_code(out: str) -> str | None:
+    """P423 #138: a failed probe's own output (read in memory, never kept) → "quota_exhausted" or None. Only the error words
+    are read (Claude's `result`, Codex / OpenCode `message` / `error`), never JSON keys (a usage block is no quota)."""
+    from . import auth_rescue
+    words = []
+
+    def pick(v, key=None):
+        if isinstance(v, str) and key in ("result", "message", "error", "detail"):
+            words.append(v)
+        elif isinstance(v, (dict, list)):
+            for k, x in (v.items() if isinstance(v, dict) else ((key, x) for x in v)):
+                pick(x, k)
+    for line in out.splitlines()[-200:]:
+        try:
+            pick(json.loads(line))
+        except ValueError:
+            words.append(line)
+    return "quota_exhausted" if auth_rescue.quota_used("\n".join(words)) else None
+
+
 def _kimi_region() -> str | None:
     try:
         from .state import State
@@ -430,7 +450,8 @@ def probe(only: tuple | list | None = None, model: str | None = None, timeout: f
                     try:
                         reply = hello(cfg.model, timeout)
                     except Exception as e:  # noqa: BLE001 — a fixed code, never the vendor's text
-                        raise BotError("not_logged_in" if getattr(e, "kind", "") == "auth" else "call_failed") from None
+                        raise BotError("quota_exhausted" if _limit_code(str(getattr(e, "detail", "") or ""))   # P423 #138
+                                       else "not_logged_in" if getattr(e, "kind", "") == "auth" else "call_failed") from None
                 elif h["name"] == "kimi":          # P305: over ACP (stdin), plan mode, every permission refused
                     from . import agent_kimi
                     try:
@@ -462,15 +483,18 @@ def probe(only: tuple | list | None = None, model: str | None = None, timeout: f
                     reply = _formal_probe(h["executable"], oc_model, env, timeout)   # P298: the free tier's own path
                 else:
                     cmd = native.command(cfg, root, env, selected=h["executable"])
-                    why = [] if h["name"] == "opencode" else None
+                    why, raw = [], None
                     try:
-                        reply, _ = native.parse(h["name"], native.run(cmd, "Hello. Reply with a short greeting only.", env,
-                                                                      root, timeout=timeout, why=why))
+                        raw = native.run(cmd, "Hello. Reply with a short greeting only.", env, root, timeout=timeout, why=why)
+                        reply, _ = native.parse(h["name"], raw)
                     except BotError as e:      # P298: refused as "not OpenCode's own client" → the formal chat path
                         if h["name"] != "opencode" or not e.args or e.args[0] != "free_tier":
-                            line = _v1_line(why[0] if why else "", env)
+                            line = _v1_line(why[0] if why else "", env) if h["name"] == "opencode" else None
                             if line:
                                 h["probe_error"] = line       # P395: OpenCode's own error, one redacted line
+                            limit = _limit_code((why[0] if why else "") + "\n" + (raw or ""))
+                            if limit:                         # P423 #138: a used-up quota is no login
+                                raise BotError(limit) from None
                             raise
                         reply = _formal_probe(h["executable"], oc_model, env, timeout)
                 if not isinstance(reply, str) or not reply.strip():
@@ -482,6 +506,8 @@ def probe(only: tuple | list | None = None, model: str | None = None, timeout: f
             h["probe_reason"] = code if re.fullmatch(r"[a-z_]{1,40}", code) else "call_failed"
         except (OSError, ValueError, TypeError):
             h["probe_reason"] = "call_failed"
+        if not h["callable"] and h.get("probe_reason") in SIGNED_OUT_CODES and _limit_code(h.get("probe_error") or ""):
+            h["probe_reason"] = "quota_exhausted"   # P423 #138: OpenCode 2.x said its quota is used up (its own line)
         if not h["callable"] and h.get("probe_reason") in SIGNED_OUT_CODES and no_login(
                 h["name"], model if only is not None and len(only) == 1 else None, h.get("version")):
             h["probe_reason"] = "not_logged_in"     # P282: say why — no login this environment can see — not "failed"
@@ -539,6 +565,9 @@ def main(as_json: bool = False, call_probe: bool = False, only=None, model: str 
                  f"{h['version']} · " + ("暂不支持 / not supported yet (" + LATER + ")" if not h["supported"] else
                                           {True: "已登录 / logged in", False: "没登录 / not logged in",
                                            None: "登录状态未知 / login unknown"}[h["logged_in"]]))
+        if h.get("probe_reason") in ("quota_exhausted", "rate_limited"):   # P423 #138: the probe's word, not the login file's
+            state += (" · 额度 / 用量已用完，不是没登录 / quota used up, not a login problem" if h["probe_reason"] == "quota_exhausted"
+                      else " · 被限流，等一会儿再试 / rate limited, try again later")
         print(f"{LABEL[h['name']]:<12} {state}")
     d_ = d["decision"]
     print("→ " + (DECISION_TEXT[d_] if d_ in DECISION_TEXT else

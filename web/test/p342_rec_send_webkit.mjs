@@ -63,6 +63,8 @@ try {
     await page.waitForFunction(() => document.getElementById('ptt').hidden, null, {timeout: 4000});
     for (let i = 0; i < 100 && sent() === before; i++) await page.waitForTimeout(100);
     assert.equal(sent(), before + 1, `${lang}-${w}: one tap sent the take`);
+    // Fake-host receipt counting precedes the encrypted acknowledgement returning to WebKit.
+    await page.waitForFunction(() => document.getElementById('input').value === '', null, {timeout: 4000});
     assert.equal(await page.inputValue('#input'), '');
     results[`webkit-send-${lang}-${w}`] = 'PASS';
     if (w === 390){

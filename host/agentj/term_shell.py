@@ -86,7 +86,8 @@ def classify(line: str):
 
 # ---------------------------------------------------------------- environment, platform, sudo
 def platform_ok() -> bool:
-    return sys.platform.startswith("linux") and os.path.isdir("/proc/self")
+    """Linux / WSL (/proc) and, since P437 (#202), macOS (term_mac: libproc + sysctl). Native Windows: not yet."""
+    return (sys.platform.startswith("linux") and os.path.isdir("/proc/self")) or sys.platform == "darwin"
 
 
 def checked_sudo() -> str | None:
@@ -145,6 +146,37 @@ class Term:
         self.confirms, self.sudo, self.seen, self.recent = {}, {}, {}, ""
         self.win, self.win_bytes, self.dropped, self.hidden, self.closing = 0.0, 0, 0, None, False
         self.tasks: list[asyncio.Task] = []
+        self.shell = "bash"                   # P437: "zsh" on macOS (its history file is metafied: term_mac.scrub_history)
         self.reader = self.writer = None      # R3 (M-1): our end of the shell's socketpair (no /proc-reopenable pipe)
         mark = secrets.token_hex(8)           # R3: the OSC 133 markers carry a per-session nonce PS1 holds (never exported)
         self.prompt, self.ready = f"\x1b]133;A;{mark}\x07", f"\x1b]133;R;{mark}\x07"
+
+
+# ---------------------------------------------------------------- history (#184)
+# bash keeps <state>/terminal/history (0600): a line with a leading space, a repeat, or a key / token / password / secret
+# shape never goes in (HISTCONTROL + HISTIGNORE); scrub_history then drops any line the masks would still change.
+HIST_IGNORE = ("*[Tt][Oo][Kk][Ee][Nn]*=*:*[Kk][Ee][Yy]=*:*[Pp][Aa][Ss][Ss]*:*[Ss][Ee][Cc][Rr][Ee][Tt]*:"
+               "*[Bb][Ee][Aa][Rr][Ee][Rr] *:*//*@*")          # `:` separates patterns: URL userinfo is `//…@`
+HIST_SETUP = f"HISTCONTROL=ignorespace:ignoredups; HISTIGNORE={shlex.quote(HIST_IGNORE)}"
+
+
+def scrub_history(path) -> int:
+    """Rewrite the history file without the lines `agent_mask` / the owner's masker would hide something in (atomic, 0600,
+    no symlink followed). → how many lines were dropped; a missing file is 0."""
+    from .term_mask import agent_mask
+    from .privacy import owner_text
+    try:
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    except FileNotFoundError:
+        return 0
+    with os.fdopen(fd, "r", encoding="utf-8", errors="replace") as f:
+        lines = f.read().splitlines()
+    keep = [ln for ln in lines if not agent_mask(ln)[1] and owner_text(ln) == ln]
+    if len(keep) == len(lines):
+        return 0
+    tmp = f"{path}.{secrets.token_hex(4)}"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write("".join(ln + "\n" for ln in keep))
+    os.replace(tmp, path)
+    return len(lines) - len(keep)

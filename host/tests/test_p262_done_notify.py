@@ -172,6 +172,7 @@ class Completion(unittest.TestCase):
     def test_all_three_harness_subagent_end_events(self):
         b = self.h.busy
         b.start("shared:s:a", None, label="Claude 报告", session="shared:s")
+        b.mark_bg("shared:s:a")    # P426: only a background sub-agent's end wakes the main Agent
         b.hook_event({"hook_event_name": "SubagentStop", "session_id": "s", "agent_id": "a"})
         b.child["codex:th:c"] = {"label": "Codex 报告"}
         b.start("codex:th:c", None, label="Codex 报告")

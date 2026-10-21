@@ -28,7 +28,7 @@ def _spans(raw):
     spans, start, pos = [], None, 0
     for line in lines:
         stripped = line.strip()
-        boundary = not stripped or re.match(rb'#{1,6}\s', line) or re.match(rb'\s*([-*_])(?:\s*\1){2,}\s*$', line)
+        boundary = (not stripped and not (start is not None and line.startswith((b'  ', b'\t')))) or re.match(rb'#{1,6}\s', line) or re.match(rb'\s*([-*_])(?:\s*\1){2,}\s*$', line)
         bullet = re.match(rb'(?:[-+*]|\d+[.)])\s+', line)
         if boundary or bullet:
             if start is not None:
@@ -118,6 +118,35 @@ def note_change(root, cid, op, entry=None, revision=None, text=None):
                 os.close(lockfd)
     except OSError:
         return fail('refused')
+
+
+def phone_change(root, cid, op, entry=None, revision=None, text=None):
+    """Paired card mutations only; never dispatch a prompt or accept a storage path."""
+    fail = lambda why: {'ok': False, 'id': cid, 'why': why}
+    if op not in ('add', 'edit', 'delete'):
+        return fail('bad_op')
+    if op != 'delete':
+        if not isinstance(text, str) or not text.strip() or '\x00' in text or len(text.encode()) > 16384:
+            return fail('bad_text')
+        if privacy.redact(text, owner=True) != text:
+            return fail('looks_like_a_secret')
+    c = cards.find(root, cid)
+    if not c or not c['on']:
+        return fail('not_found')
+    if op == 'add' and (cid not in ('notes', 'todo') or not c['official']):
+        return fail('bad_op')
+    if op != 'add' and not isinstance(revision, str):
+        return fail('conflict')
+    if c['doc']['template'] == 'notes':
+        if op == 'add':
+            import datetime
+            text = datetime.date.today().isoformat() + ' ' + text.strip()
+        return note_change(root, cid, op, entry, revision, text)
+    if cid != 'todo' or not c['official']:
+        return fail('bad_op')
+    from . import jcards_todo
+    return jcards_todo.change(root, op, entry, revision=revision,
+                             **({'text': text, 'by': 'owner'} if op != 'delete' else {}))
 
 
 def colors(root):

@@ -456,7 +456,7 @@ class Flows(unittest.TestCase):
             async def script2(host, s, ph):
                 c = await self.wait_card()
                 await host._app(s, answer(ph, c, True, "not-the-key"))
-            res, _, _ = self.run_flow(req, script2)
+            res, _, _ = self.run_flow(dict(req, replace=True), script2)   # P423 #49: the key is there → --replace
             self.assertEqual((res["result"], res["receipt"]["verify"], res["receipt"]["detail"]), ("saved", "fail", "HTTP 401"))
         finally:
             srv.shutdown()

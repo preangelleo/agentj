@@ -11,6 +11,7 @@ import * as pageWire from '../public/proto/wire.js';
 
 const read = (p) => readFileSync(new URL(p, import.meta.url), 'utf8');
 const TERM = read('../public/js/terminal.js'), HOOK = read('../public/js/termhook.js'), CMD = read('../public/js/cmdrun.js');
+const VAULT = read('../public/js/vault.js');   // P414: the PRF assertion moved here (eval.first + eval.second)
 const APP = read('../public/app.js'), SET = read('../public/js/settings.js'), HTML = read('../public/index.html'), CSS = read('../public/terminal.css');
 const controlsPy = read('../../host/agentj/controls.py'), elevatePy = read('../../host/agentj/elevate.py');
 const zh = JSON.parse(read('../i18n/web.zh.json')), en = JSON.parse(read('../i18n/web.en.json'));
@@ -44,13 +45,13 @@ test('a line with a control character (TAB, CR, LF, ESC, DEL, C1, U+2028/9) is n
   const CTRL = new RegExp(src);
   for (const bad of ['a\tb', 'a\nb', 'a\rb', '\x1b[A', 'x\x7f', '\x00', '\x85', 'a b', 'a b', '\x03', '\x04', '\x1a', '\x1c']) assert.ok(CTRL.test(bad), JSON.stringify(bad));
   for (const ok of ['ls -la | grep x ~/a/b', 'echo "你好" && cd -', '', 'sudo apt install htop', '😀']) assert.ok(!CTRL.test(ok), JSON.stringify(ok));
-  const send = TERM.slice(TERM.indexOf('function sendLine()'), TERM.indexOf('function badLine('));
+  const send = TERM.slice(TERM.indexOf('function sendLine('), TERM.indexOf('function badLine('));   // P414: sendLine(given, bang)
   assert.ok(send.indexOf('CTRL.test(line)') > 0 && send.indexOf('CTRL.test(line)') < send.indexOf("t: 'term_line'"), 'checked before it is sent');
   assert.ok(send.indexOf('LINE_MAX') > 0 && send.indexOf('LINE_MAX') < send.indexOf("t: 'term_line'"), 'byte limit before it is sent');
   assert.match(TERM, /const LINE_MAX = 4096/);
-  assert.match(send, /send\(\{ t: 'term_line', id: S\.id, seq, line \}\)/, 'term_line {id, seq, line}');
+  assert.match(send, /send\(\{ t: 'term_line', id: S\.id, seq, line, \.\.\.\(bang \? \{ bang \} : \{\}\) \}\)/, 'term_line {id, seq, line} (+ P414 bang)');
   assert.equal([...code(TERM).matchAll(/t: 'term_line'/g)].length, 2, 'two places send a line: the plain one and the confirmed one');
-  assert.match(TERM, /send\(\{ t: 'term_line', id: S\.id, seq: m\.seq, line, \.\.\.signed, fa \}\)/, 'the confirmed line = the line the host showed');
+  assert.match(TERM, /send\(\{ t: 'term_line', id: S\.id, seq: m\.seq, line, \.\.\.signed, fa, \.\.\.\(bangSid \? \{ bang: bangSid \} : \{\}\) \}\)/, 'the confirmed line = the line the host showed');
   assert.match(TERM, /i\.value = String\(v\)\.replace\(CTRL, ' '\)/, 'a prefilled command cannot carry one either');
 });
 
@@ -81,15 +82,18 @@ test('§38 signed object texts = the host (controls.py object_text), in both wir
   const msg = new TextDecoder().decode(await wire.controlMessage('C'.repeat(22), 'D'.repeat(22), 'term_open', 'a'.repeat(32), 1, { mode: 'line' }));
   assert.match(msg, /^agentjarvis-control-v1\nC{22}\nD{22}\nterm_open\na{32}\n1\n[0-9a-f]{64}$/);
   assert.match(TERM, /signCtl\('term_open', obj, c\.n\)/, 'the host nonce from step 1');
-  assert.match(TERM, /const obj = \{ mode: 'line' \};/);
+  assert.match(TERM, /const obj = \{ mode: S\.enable \? 'enable' : 'line' \};/);   // P417 #185: the signature names open or enable
   assert.match(TERM, /signCtl\('term_line', \{ id: S\.id, line \}, m\.n\)/);
   assert.match(TERM, /const obj = \{ id: S\.id, rid \};\n\s+const signed = await signCtl\('term_sudo', obj, m\.n\);/);
   assert.match(HOOK, /signedWrite\('term_forget', \{\}, \{ t: 'term_forget' \}\)/, 'forget: signed, no Face ID');
   // PRF: WebAuthn prf eval.first = the host salt; sealed with the §11 seal, kind term_prf, id = nonce = n; zeroed
-  assert.match(TERM, /publicKey\.extensions = \{ prf: \{ eval: \{ first: salt \} \} \};/);
+  // (P414 M3: the assertion lives in js/vault.js — eval.second = the host's next salt `vn` when it sent one)
+  assert.match(VAULT, /export const prfEval = \(first, second\) => \(\{ prf: \{ eval: second \? \{ first, second \} : \{ first \} \} \}\);/);
+  assert.match(VAULT, /if \(first\) publicKey\.extensions = prfEval\(first, second \|\| null\);/);
+  assert.match(TERM, /function assertFa\(chB64, credId, salt, vn = null\) \{ return assertPrf\(unb64u\(chB64\), credId, salt, salt \? vn : null\); \}/);
   assert.match(TERM, /sealValue\(unb64u\(epk\), prf, channel\(\), await myDeviceId\(\), n, 'term_prf', n, digest\)/);
   assert.match(TERM, /\} finally \{ prf\.fill\(0\); \}/);
-  assert.match(TERM, /\{ t: 'term_open', \.\.\.signed, fa, \.\.\.sealed \}/);
+  assert.match(TERM, /\{ t: 'term_open', \.\.\.\(S\.enable \? \{ mode: 'enable' \} : \{\}\), \.\.\.signed, fa, \.\.\.sealed \}/);
   // the login password: sealed + signed exactly like a sudo card (kind login), the bytes zeroed, the field cleared
   assert.match(TERM, /sealValue\(c\.epk, value, ch, dev, c\.id, 'login', c\.n, c\.digest\)/);
   assert.match(TERM, /elevateMessage\(ch, dev, c\.id, 'login', ok \? 'allow' : 'deny', c\.n, ts, c\.digest, ctSha\)/);
@@ -97,7 +101,7 @@ test('§38 signed object texts = the host (controls.py object_text), in both wir
 });
 
 test('Face ID starts inside the tap (no await before get()); no passkey → the 「设置 Face ID」 offer, no fallback', () => {
-  for (const f of ['function introYes()', "onYes: () => {\n      let p;\n      try { p = assertFa(m.fa_ch, S.fa, null)", "try { p = assertFa(m.fa_ch, S.fa, salt)"]) assert.ok(TERM.includes(f), f);
+  for (const f of ['function introYes()', "onYes: () => {\n      let p;\n      try { p = assertFa(m.fa_ch, S.fa, null)", "try { p = assertFa(m.fa_ch, S.fa, salt, vn)"]) assert.ok(TERM.includes(f), f);   // P414: + vn
   const intro = TERM.slice(TERM.indexOf('function introYes()'), TERM.indexOf('function openStep2('));
   assert.ok(intro.indexOf('assertFa(') < intro.indexOf('await'), 'assertion before the first await');
   assert.doesNotMatch(intro.slice(0, intro.indexOf('assertFa(')), /await|async/);
@@ -139,14 +143,14 @@ test('lazy: the page module and its CSS stay out of the first screen; routing; t
   assert.match(CSS, /min-height:44px/);
 });
 
-test('Settings → 安全: the row is hidden until the host block says so and can never switch the terminal on', () => {
+test('Settings → 安全: the row is hidden until the host block says so; P417 #185: switch-on only through the signed + passkey + password open (no switch, no preference)', () => {
   const safety = HTML.slice(HTML.indexOf('id="set-s-safety"'), HTML.indexOf('id="set-s-app"'));
-  const row = safety.slice(safety.indexOf('id="set-term-row"'), safety.indexOf('</div>\n', safety.indexOf('id="set-term-acts"') + 400));
+  const row = safety.slice(safety.indexOf('id="set-term-row"'), safety.indexOf('</p>', safety.indexOf('id="set-term-note"')) + 4);   // P417 #185: enable + Face ID lines sit between
   assert.match(safety, /<div class="setrow setterm" data-paired id="set-term-row" hidden>/);
   for (const id of ['set-term-state', 'set-term-cmd', 'set-term-open', 'set-term-forget', 'set-term-note', 'set-term-last']) assert.ok(row.includes(`id="${id}"`), id);
   assert.doesNotMatch(row, /role="switch"|data-pref=/, 'no switch, no preference');
   assert.match(HOOK, /s === 'off' \? 'agentj terminal enable'/);
-  assert.match(HOOK, /if \(!info \|\| !info\.os\) return 'none';/, 'no block / no platform → no row');
+  assert.match(HOOK, /if \(!info\) return 'none';\n\s+if \(!info\.os\) return 'os';/, 'no block → no row; P417 #185: no platform → 「下一版支持」');
   assert.match(SET, /termhook\.render\(hostInfo\);/);
   assert.match(CMD, /if \(term\) \{/, '「在终端里打开」 only while usable');
   assert.match(CMD, /o\.addEventListener\('click', \(\) => H\.openTerminal\(line\(name\)\)\);/, 'it opens with the command, never runs it');

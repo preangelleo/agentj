@@ -7,6 +7,7 @@
 //       #faf9f5 — never black / near-black (agentj-visual-language: 「深底必白字」「动作按钮统一 logo 绿底白字」);
 //     · a control's label (button / link / tab / chip / badge) reads ≥ 4.5:1 (≥ 3:1 large text), except Lotion on a
 //       chromatic heavy fill, which is the owner's rule (2.8–3.6:1 on the Dark Cluster, the P244 menu-card decision).
+// P448 supersedes the legacy heavy/white heuristic for button/[role=button]/a.aj-btn: always >=4.5:1, including large labels.
 //  ② ICONS — every img / svg / canvas / mask / background-image mark (logo, robots, line icons) is actually visible on its
 //     container: four 1× screenshots of its box (as shown · icon hidden · icon forced black · icon forced white). The icon's
 //     own footprint = the pixels where black ≠ white; it is visible where shown ≠ hidden. FAIL when less than MIN_SHOWN of
@@ -36,7 +37,18 @@ const MATRIX=[['zh','dark',390,844],['zh','light',390,844],['en','dark',390,844]
   .filter(([l,s,w])=>!process.env.P340_ONLY||process.env.P340_ONLY.split(',').includes(`${l}-${s}-${w}`));
 
 // ---------------------------------------------------------------- in-page audit (text rules + icon candidates)
+// P448 text contract: actual button pairs take precedence over the historical hue heuristic.
+export function p448TextFailures({p448,ctrl,colour,lotion,heavy,fgL,bgL,ratio,large}) {
+ const why=[];
+ if(p448){if(ratio<4.5)why.push('P448 control label '+ratio.toFixed(2)+':1');return why;}
+ if(colour){if(!lotion)why.push(fgL<=bgL?'dark text on a heavy ground':'a coloured heavy fill takes Lotion text');}
+ else if(heavy&&(fgL<=bgL||ratio<3))why.push('dark text on a heavy ground');
+ if(ctrl&&!(colour&&lotion)&&ratio<(large?3:4.5))why.push('control label '+ratio.toFixed(2)+':1');
+ return why;
+}
+// end P448 text contract
 const AUDIT=`((HEAVY_L)=>{
+ const classify=${p448TextFailures.toString()};
  const rgb=s=>{const m=(s.match(/[\\d.]+/g)||[0,0,0,0]).map(Number),k=s.startsWith('color(')?255:1;return {c:m.slice(0,3).map(v=>v*k),a:m.length>3?m[3]:1};};
  const lum=c=>{const [r,g,b]=c.map(v=>{v/=255;return v<=.04045?v/12.92:((v+.055)/1.055)**2.4});return .2126*r+.7152*g+.0722*b;};
  const cr=(a,b)=>{const x=lum(a),y=lum(b);return (Math.max(x,y)+.05)/(Math.min(x,y)+.05);};
@@ -60,10 +72,8 @@ const AUDIT=`((HEAVY_L)=>{
    const bg=ground(e),f=rgb(s.color),fc=f.c.map((v,i)=>Math.round(v*f.a+bg[i]*(1-f.a))),L=lum(bg),ratio=cr(fc,bg);
    const chroma=Math.max(...bg)-Math.min(...bg),heavy=L<HEAVY_L,colour=heavy&&chroma>=40,lotion=f.a>=.6&&Math.abs(f.c[0]-250)<=8&&Math.abs(f.c[1]-249)<=8&&Math.abs(f.c[2]-245)<=8;   // Lotion, or an alpha of it (palette rule)
    const ctrl=!!e.closest(CTRL),large=parseFloat(s.fontSize)>=24||(parseFloat(s.fontSize)>=18.66&&+s.fontWeight>=700);
-   const why=[];
-   if(colour){if(!lotion)why.push(lum(fc)<=L?'dark text on a heavy ground':'a coloured heavy fill takes Lotion text');}
-   else if(heavy&&(lum(fc)<=L||ratio<3))why.push('dark text on a heavy ground');
-   if(ctrl&&!(colour&&lotion)&&ratio<(large?3:4.5))why.push('control label '+ratio.toFixed(2)+':1');
+   const p448=!!e.closest('button,[role="button"],a.aj-btn');
+   const why=classify({p448,ctrl,colour,lotion,heavy,fgL:lum(fc),bgL:L,ratio,large});
    text.push({k:name(e)+'「'+own.slice(0,18)+'」',fg:'rgb('+fc+')',bg:'rgb('+bg+')',ratio:+ratio.toFixed(2),heavy,ctrl,bad:why});
   }
   // icon candidates

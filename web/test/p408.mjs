@@ -4,7 +4,7 @@
 // stand-in — with `hasPrf` (a passkey made on the page with the prf extension) for the light runs, without for the dark ones.
 // Checks:
 //   · the row: older host (no block) → none · off → the command to run at the computer + ⧉, no switch · on, not on the list →
-//     `agentj terminal allow <this device>` · os:false → none · allowed → 打开网页终端 + the password mode in plain words
+//     `agentj terminal allow <this device>` · os:false → the row stays (P417 #185: 暂不支持，下一版支持) · pk:false → 设置 Face ID first · allowed → 打开网页终端 + the password mode in plain words
 //   · open → intro (最多 N 分钟) → Face ID (assertion over the host's challenge; PRF sealed iff the authenticator gave one) →
 //     ctl_pending → the login card INSIDE the page (host-origin line, masked field, never the chat's sudo card) → sealed +
 //     signed elev_answer → term_ready; a second open → no login card
@@ -15,6 +15,9 @@
 //     「结束」 / Esc · the link dropped → 「连接断了，终端已关闭」 + 紧急修复 · no passkey → 「设置 Face ID」, nothing sent ·
 //     term_forget signed (no Face ID) · nothing written to localStorage / IndexedDB while a terminal is open · no console errors
 //   · zh / en × light / dark at 390 px + zh 1440 px; shots → reports/qa/p408/web/ (P408_OUT)
+//   · P417 #185: a computer browser (1440, fine pointer) → 开启并打开网页终端 → intro → Face ID over {"mode":"enable"} → the login
+//     card → the terminal opens in this window; no passkey → 设置 Face ID; an older / unknown host kind → only the command; a
+//     phone (iPhone user agent + touch, 390) → 「网页终端只能在电脑浏览器里操控」, no button — zh + en shots (p417-*)
 import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -31,11 +34,15 @@ const hex = (n) => randomBytes(n).toString('hex');
 const sha = async (s) => Buffer.from(await subtle.digest('SHA-256', typeof s === 'string' ? enc.encode(s) : s)).toString('hex');
 const $ = (id) => `document.getElementById('${id}')`;
 const L = {
-  zh: { off: '网页终端没有开启。要用的话，在电脑上运行下面这行：', notMe: '这台设备不在允许名单里，在电脑上运行下面这行：', open: '打开网页终端',
+  zh: { off: '网页终端没有开启。要用的话，在电脑上运行下面这行：', os: '这台电脑的系统暂不支持网页终端，下一版支持。', setup: '设置 Face ID', nopkRow: '这台设备还没设置 Face ID',
+    phone: '因为安全性和便捷性的原因，网页终端只能在电脑浏览器里操控。', enable: '开启并打开网页终端', offDesk: '网页终端还没开启。可以直接在这里开启', notMeDesk: '这个浏览器还不能用网页终端。', repair: '重新配对这台遥控器，就能直接在这里开启。',
+    orCli: '也可以在 Agent J 主机上运行下面这行：', introEnable: '再输入一次 Agent J 主机的登录密码', notMe: '这台设备不在允许名单里，在电脑上运行下面这行：', open: '打开网页终端',
     none: '第一次打开时要输入一次电脑登录密码。', prf: '电脑密码已加密保存，只有你扫脸才能解开。', intro: '最多 15 分钟', fa: '用 Face ID 确认',
     closed: (w) => `终端已关闭（${w}）`, why: { timeout: '时间到了', idle: '太久没有输入', estop: '已全部停下', relay_lost: '连接断了', owner: '你结束了它' },
     dropped: '连接断了，终端已关闭。', nopk: '打开网页终端前要先用 Face ID 确认，这台手机还没设置 Face ID。', inTerm: '在终端里打开', differs: '注意：' },
-  en: { off: 'The web terminal is off. To use it, run this line at the computer:', notMe: 'This device is not on the allowed list. Run this line at the computer:',
+  en: { off: 'The web terminal is off. To use it, run this line at the computer:', os: "This computer's system does not support the web terminal yet; the next version will.", setup: 'Set up Face ID', nopkRow: 'This device has no Face ID',
+    phone: 'For safety and convenience, the web terminal can only be used from a computer browser.', enable: 'Switch on and open', offDesk: 'The web terminal is off. You can switch it on right here', notMeDesk: 'This browser cannot use the web terminal yet.', repair: 'Pair this remote again to switch it on right here.',
+    orCli: 'Or run this line on the Agent J host:', introEnable: "type the Agent J host's login password once", notMe: 'This device is not on the allowed list. Run this line at the computer:',
     open: 'Open web terminal', none: 'The first time you open it, you type your computer login password once.',
     prf: 'Your computer password is stored encrypted; only your Face ID can unlock it.', intro: 'At most 15 minutes', fa: 'Confirm with Face ID',
     closed: (w) => `Terminal closed (${w})`, why: { timeout: 'time is up', idle: 'no input for too long', estop: 'everything was stopped', relay_lost: 'the connection dropped', owner: 'you ended it' },
@@ -79,20 +86,21 @@ export async function runP408({ B, web, fake, out = OUT }) {
   fake.st.onApp = async (c, m, send) => {
     try {
       if (m.t === 'term_open' && !m.sig) {                         // step 1: the host's nonce, challenge, salt, one-time key
-        H.calls.push({ step: 1 });
+        const mode = m.mode === 'enable' ? 'enable' : 'line';      // P417 #185: a computer browser switching it on
+        H.calls.push({ step: 1, mode });
         if (!H.passkey) return send({ t: 'ctl_res', r: m.r, action: 'term_open', ok: false, why: 'no_passkey' }), true;
-        const n = hex(16), k = await oneTimeKey(), salt = randomBytes(32), digest = await sha(controlObject('term_open', { mode: 'line' }));
+        const n = hex(16), k = await oneTimeKey(), salt = randomBytes(32), digest = await sha(controlObject('term_open', { mode }));
         const ch = b64u(Buffer.from(await subtle.digest('SHA-256', enc.encode(['p408', n, digest].join('\n')))));
-        H.ch.set(n, { k, salt, ch, used: false });
+        H.ch.set(n, { k, salt, ch, used: false, mode });
         return send({ t: 'ctl_res', r: m.r, action: 'term_open', ok: false, why: 'passkey_required', n, fa: H.fa, fa_ch: ch, salt: b64u(salt), epk: b64u(k.pub) }), true;
       }
       if (m.t === 'term_open') {                                   // step 2: signature over OUR nonce + Face ID + (PRF)
-        const x = H.ch.get(m.n);
-        const sigOk = await fake.verifyControl(c, 'term_open', m, { mode: 'line' });
+        const x = H.ch.get(m.n), mode = x ? x.mode : 'line';
+        const sigOk = await fake.verifyControl(c, 'term_open', m, { mode }) && (m.mode || 'line') === mode;
         const fa = !!x && faOk(m.fa, x.ch);
         let prf = null;
-        if (x && m.pct) prf = await unseal(x.k.priv, x.k.pub, m.pepk, m.pct, [fake.channel, dev().id, m.n, 'term_prf', m.n, await sha('line')]);
-        H.calls.push({ step: 2, sigOk, fa, prf: prf ? prf.length : 0, reuse: !!x?.used });
+        if (x && m.pct) prf = await unseal(x.k.priv, x.k.pub, m.pepk, m.pct, [fake.channel, dev().id, m.n, 'term_prf', m.n, await sha(mode)]);
+        H.calls.push({ step: 2, sigOk, fa, prf: prf ? prf.length : 0, reuse: !!x?.used, mode });
         if (!x || x.used || !sigOk || !fa) return send({ t: 'ctl_res', r: m.r, action: 'term_open', ok: false, why: !x || x.used ? 'replay' : !sigOk ? 'bad_signature' : 'passkey_failed' }), true;
         x.used = true;
         await send({ t: 'ctl_pending', r: m.r, action: 'term_open', timeout_ms: 180000 });
@@ -271,8 +279,18 @@ export async function runP408({ B, web, fake, out = OUT }) {
       await setBlock(BLOCK({ me: false }));
       check(await evaluate(p, `${$('set-term-state')}.textContent`) === s.notMe && await evaluate(p, `${$('set-term-cmd')}.textContent`) === `agentj terminal allow ${myId}`, 'not on the list → allow <this device> ' + tag);
       if (full) { await evaluate(p, `${$('set-term-row')}.scrollIntoView({block:'center'})`); await save('2-not-allowed'); }
-      await setBlock(BLOCK({ os: false }));
-      check(await evaluate(p, `${$('set-term-row')}.hidden`), 'os:false → no row ' + tag);
+      // P417 #185 (P437: Windows only — macOS is supported): an unsupported host keeps the row — 「暂不支持，下一版支持」, no command, no button
+      await setBlock(BLOCK({ os: false, on: false, me: false }));
+      const os = await evaluate(p, `({hid:${$('set-term-row')}.hidden,st:${$('set-term-state')}.textContent,cmd:${$('set-term-cmdline')}.hidden,acts:${$('set-term-acts')}.hidden,pk:${$('set-term-pk')}.hidden})`);
+      check(!os.hid && os.st.startsWith(s.os) && os.cmd && os.acts && os.pk, 'os:false → the row stays: not yet, next version ' + tag + JSON.stringify(os));
+      await evaluate(p, `${$('set-term-row')}.scrollIntoView({block:'center'})`); await save('4-os-not-yet');
+      // P417 #185: allowed, but this phone has no passkey on the computer → 「设置 Face ID」 instead of 「打开网页终端」
+      await setBlock(BLOCK({ pk: false }));
+      const np = await evaluate(p, `({acts:${$('set-term-acts')}.hidden,pk:!${$('set-term-pk')}.hidden,txt:${$('set-term-pk')}.textContent,btn:${$('set-term-faceid')}.textContent})`);
+      check(np.acts && np.pk && np.txt.includes(s.nopkRow) && np.btn === s.setup, 'pk:false → set up Face ID first, no open button ' + tag + JSON.stringify(np));
+      await evaluate(p, `${$('set-term-row')}.scrollIntoView({block:'center'})`); await save('5-no-faceid');
+      await setBlock(BLOCK({ on: false, me: false, pk: false }));
+      check(await evaluate(p, `!${$('set-term-pk')}.hidden && ${$('set-term-cmd')}.textContent === 'agentj terminal enable'`), 'off + pk:false → the command and the Face ID line ' + tag);
       await setBlock(BLOCK());
       const ok = await evaluate(p, `({st:${$('set-term-state')}.textContent,cmd:${$('set-term-cmdline')}.hidden,acts:!${$('set-term-acts')}.hidden,open:${$('set-term-open')}.textContent,forget:${$('set-term-forget')}.hidden,note:${$('set-term-note')}.textContent})`);
       check(ok.st === s.none && ok.cmd && ok.acts && ok.open === s.open && ok.forget && /15/.test(ok.note), 'allowed → entry button + mode in plain words, no forget yet ' + tag + JSON.stringify(ok));
@@ -377,13 +395,17 @@ export async function runP408({ B, web, fake, out = OUT }) {
         for (const why of ['estop', 'relay_lost']) { await openTerminal('set-term-open', { expectLogin: false }); await hostClose(why); }
       } else await hostClose('idle');
 
-      // 「结束」 and Esc → 「结束？」 → 结束
+      // 「结束」 and Esc — P414 (§37.14): Esc collapses (the session runs on behind the chip above the message box), 打开 brings
+      // the page back; 「结束」 ends it
       await openTerminal('set-term-open', { expectLogin: false });
-      await key(p, 'Escape'); await sleep(150);
-      check(await sheetKind() === 'end', 'Esc → 结束网页终端？ ' + tag);
-      if (full) await save('13-end-confirm');
-      await click('term-sh-no'); await sleep(100);
-      check(await pageOpen() && await sheetKind() === '', '继续使用 keeps it open ' + tag);
+      const nClose0 = H.closes.length;
+      await key(p, 'Escape');
+      await waitFor(p, `${$('term')}.hidden && !!${$('term-chip')} && !${$('term-chip')}.hidden`, 5000);
+      check(H.closes.length === nClose0 && await sheetKind() === '', 'P414: Esc collapses — nothing closed, the chip shows ' + tag);
+      if (full) await save('13-collapsed-chip');
+      await click('term-chip-open');
+      await waitFor(p, `!${$('term')}.hidden && ${$('term-chip')}.hidden`, 5000);
+      check(await pageOpen() && await sheetKind() === '', 'P414: 打开 on the chip → full screen again ' + tag);
       const nClose = H.closes.length;
       await click('term-end');
       await waitFor(p, `${$('term-status')}.textContent === ${JSON.stringify(s.closed(s.why.owner))}`);
@@ -422,6 +444,82 @@ export async function runP408({ B, web, fake, out = OUT }) {
       const problems = p.problems.filter((x) => !/WebSocket|ERR_CONNECTION|net::/i.test(x));
       check(!problems.length && !p.offsite.length, 'no console errors / off-site requests ' + tag + ' ' + JSON.stringify([problems.slice(0, 3), p.offsite.slice(0, 3)]));
       console.log('PASS P408 ' + tag);
+    } finally { await p.dispose(); }
+  }
+  // ---- P417 #185: a COMPUTER browser switches the terminal on from the row (Face ID + the host's login password → it opens
+  // in this window); a PHONE (iPhone user agent + touch, 390 px) only gets one sentence and no button. zh + en, shots.
+  const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
+  for (const [lang, w] of [['zh', 1440], ['en', 1440], ['zh', 390], ['en', 390]]) {
+    const s = L[lang], phone = w === 390, tag = `p417-${lang}-${phone ? 'phone' : 'desktop'}`;
+    fake.reset(); fake.setUp(true); fake.st.prefs = { appearance: { language: lang, theme: 'light' } }; fake.st.terminal = null; fake.st.runCmds = ['doctor', 'status'];
+    Object.assign(H, { passkey: true, prf: false, cached: false, calls: [], lines: [], keys: [], closes: [], sudoOk: [], sudoNo: [], forgets: [], login: null, id: null, errors: [], loginAnswer: null });
+    const p = await newPage(B, w, phone ? 844 : 900, 'light', phone ? { ua: IPHONE, touch: true, allow: [web.url, PAGE, fake.relay + '/'] } : { touch: false, allow: [web.url, PAGE, fake.relay + '/'] });
+    await p.send('WebAuthn.enable', { enableUI: false });
+    const { authenticatorId } = await p.send('WebAuthn.addVirtualAuthenticator', { options: { protocol: 'ctap2', ctap2Version: 'ctap2_1', transport: 'internal',
+      hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true } });
+    const save = async (name) => writeFileSync(resolve(out, `${tag}-${name}.png`), await shoot(p, ''));
+    const click = async (id) => {
+      await evaluate(p, `${$(id)}.scrollIntoView({block:'center'})`); await sleep(60);
+      const r = await rect(p, '#' + id);
+      await p.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: r.x, y: r.y, button: 'left', clickCount: 1 });
+      await p.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: r.x, y: r.y, button: 'left', clickCount: 1 });
+    };
+    const vis = (id) => evaluate(p, `!!${$(id)} && !${$(id)}.hidden && ${$(id)}.getClientRects().length > 0`);
+    try {
+      await navigate(p, fake.newPairing(PAGE + '?lang=' + lang)); await waitState(p, 'awaiting-approval'); await fake.approve(); await waitState(p, 'ready');
+      await evaluate(p, `if(!${$('a2hs')}.hidden)${$('a2hs-ok')}.click(); ${$('phone-env-dismiss')}?.click(); true`);
+      const credId = randomBytes(16); H.fa = b64u(credId);
+      const priv = generateKeyPairSync('ec', { namedCurve: 'P-256' }).privateKey.export({ type: 'pkcs8', format: 'der' }).toString('base64');
+      await p.send('WebAuthn.addCredential', { authenticatorId, credential: { credentialId: credId.toString('base64'), isResidentCredential: true,
+        rpId: 'localhost', privateKey: priv, userHandle: Buffer.from('p417-fixture').toString('base64'), signCount: 0 } });
+      const setBlock = async (b) => { fake.st.terminal = b; await fake.send(fake.prefsMsg()); await sleep(250); await evaluate(p, `import('./js/settings.js').then(m=>{m.render();return true})`); };
+      await evaluate(p, `import('./js/settings.js').then(m=>{m.open();return true})`);
+      await waitFor(p, `!${$('settings')}.hidden`);
+      const judged = await evaluate(p, `import('./js/termhook.js').then(m=>m.computerBrowser())`);
+      check(judged === !phone, `the page judges itself ${phone ? 'a phone' : 'a computer browser'} ` + tag);
+      if (phone) {
+        for (const b of [BLOCK({ kind: 'phone' }), BLOCK({ on: false, me: false, kind: 'desktop' })]) {   // the host's kind or the page's own judgement
+          await setBlock(b);
+          await waitFor(p, `!${$('set-term-row')}.hidden`);
+          const r = await evaluate(p, `({st:${$('set-term-state')}.textContent,btn:[...${$('set-term-row')}.querySelectorAll('button')].filter(e=>e.getClientRects().length&&!e.closest('[hidden]')).map(e=>e.id),cmd:${$('set-term-cmdline')}.hidden})`);
+          check(r.st === s.phone && !r.btn.length && r.cmd, 'phone → one sentence, no button, no command ' + tag + JSON.stringify(r));
+        }
+        await evaluate(p, `${$('set-term-row')}.scrollIntoView({block:'center'})`); await save('row');
+      } else {
+        await setBlock(BLOCK({ on: false, me: false, kind: 'desktop', pk: false }));
+        await waitFor(p, `!${$('set-term-row')}.hidden`);
+        check(!(await vis('set-term-en')) && await vis('set-term-pk'), 'no passkey on this device → 设置 Face ID first, no enable button ' + tag);
+        await setBlock(BLOCK({ me: false, kind: 'desktop' }));
+        check((await evaluate(p, `${$('set-term-state')}.textContent`)).startsWith(s.notMeDesk) && await vis('set-term-en'), 'on, this browser not listed → enable here ' + tag);
+        await setBlock(BLOCK({ on: false, me: false, kind: 'unknown' }));
+        check(!(await vis('set-term-en')) && await evaluate(p, `${$('set-term-state')}.textContent`) === s.off + ' ' + s.repair, 'host does not know it paired as a computer → the command + 「重新配对」 (RESUME 9 ④) ' + tag);
+        await setBlock(BLOCK({ on: false, me: false, kind: 'desktop' }));
+        const r = await evaluate(p, `({st:${$('set-term-state')}.textContent,en:${$('set-term-enable')}.textContent,or:${$('set-term-or')}.textContent,cmd:${$('set-term-cmd')}.textContent,acts:${$('set-term-acts')}.hidden})`);
+        check(r.st.startsWith(s.offDesk) && r.en === s.enable && r.or === s.orCli && r.cmd === 'agentj terminal enable' && r.acts && await vis('set-term-en') && await vis('set-term-cmdline'),
+          'desktop, off → 开启并打开网页终端 + the command as the other way ' + tag + JSON.stringify(r));
+        await evaluate(p, `${$('set-term-row')}.scrollIntoView({block:'center'})`); await save('1-row');
+        await click('set-term-enable');
+        await waitFor(p, `${$('term-sheetwrap')}?.dataset.kind === 'intro' && !${$('term-sheetwrap')}.hidden && !${$('term-sh-yes')}.disabled`, 10000);
+        check(H.calls.length === 1 && H.calls[0].step === 1 && H.calls[0].mode === 'enable', 'step 1 asks for an ENABLE nonce, nothing signed yet ' + tag + JSON.stringify(H.calls));
+        check((await evaluate(p, `${$('term-sh-text')}.textContent`)).includes(s.introEnable), 'intro says Face ID + the host login password ' + tag);
+        await save('2-intro');
+        await click('term-sh-yes');
+        await waitFor(p, `${$('term-sheetwrap')}?.dataset.kind === 'login' && !${$('term-sheetwrap')}.hidden`, 10000);
+        const c2 = H.calls.at(-1);
+        check(c2.step === 2 && c2.mode === 'enable' && c2.sigOk && c2.fa, 'step 2 signed over {"mode":"enable"} + Face ID over its challenge ' + tag + JSON.stringify(c2));
+        await evaluate(p, `${$('term-sh-pw')}.focus()`); await p.send('Input.insertText', { text: PASSWORD });
+        await save('3-password');
+        await click('term-sh-yes');
+        await waitFor(p, `${$('term')}.dataset.phase === 'ready'`, 10000);
+        check(H.loginAnswer && H.loginAnswer.sigOk && H.loginAnswer.fa && H.loginAnswer.pw === PASSWORD, 'the login card: sealed + signed + Face ID ' + tag);
+        await waitFor(p, `${$('term-out')}.textContent.includes(${JSON.stringify(PROMPT.trim())})`);
+        check(await evaluate(p, `!${$('term')}.hidden`), 'switched on → the terminal is open in this window ' + tag);
+        await save('4-open');
+      }
+      check(!H.errors.length, 'fake host saw no malformed message ' + tag + ' ' + H.errors.join(' | '));
+      const problems = p.problems.filter((x) => !/WebSocket|ERR_CONNECTION|net::/i.test(x));
+      check(!problems.length && !p.offsite.length, 'no console errors / off-site requests ' + tag + ' ' + JSON.stringify([problems.slice(0, 3), p.offsite.slice(0, 3)]));
+      console.log('PASS P417 #185 ' + tag);
     } finally { await p.dispose(); }
   }
   fake.st.onApp = null; fake.st.terminal = null; fake.st.runCmds = null;

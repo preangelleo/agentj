@@ -395,13 +395,13 @@ def report_device_names(st, devices: list[dict]) -> list[dict]:
 def build_report(st, online, pending, *, seq: int, ts: int) -> dict:
     """Inner report body, key order as in §7 / the vector; A3.2 appends agent_name (§1 or null) and machine (≤ 64 or null);
     A1 (0.15) appends the owner's one language value and when it was last set on this host (ms; 0 = never set here)."""
-    from . import preferences, notices
+    from . import preferences, notices, nightly_report
     lang, at = preferences.language_state(st)
     devs = report_devices(st, online)
     return {"v": 1, "t": "report", "channel": channel_of(st), "ts": int(ts), "seq": int(seq), "agent": AGENT,
             "devices": devs, "pending": norm_pending(pending), "agent_name": _clean_or_none(st.agent_name()),
             "machine": machine_name() if st.report_machine() else None, "language": lang, "language_at": int(at), "harness": (st.agent_config() or {}).get("kind", "unknown"),
-            "notices_v": 1, "notice_receipts": notices.receipts(st), **_names_field(st, devs), **_upgrade_field(st)}
+            "notices_v": 1, "notice_receipts": notices.receipts(st), **_names_field(st, devs), **_upgrade_field(st), **nightly_report.field(st)}
 
 
 def _upgrade_field(st) -> dict:
@@ -475,6 +475,7 @@ def report_post_json(url, payload):
 
 
 _NO_NAMES: dict[str, float] = {}   # P179: API base → when a server refused `device_names` (this process; re-probed after a day)
+_NO_AUTO_UPDATE: dict[str, float] = {}
 _NO_UPGRADE: dict[str, float] = {}  # P277: the same for `last_upgrade`
 
 
@@ -500,6 +501,7 @@ def send_report(st, online, pending, *, post: Callable = report_post_json, now: 
     strip_notices = _skip_notices(cloud, base, int(now()*1000))
     replay_retry = probe_retry = False
     strip_names = now() - _NO_NAMES.get(base, -1e18) < 86400
+    strip_auto = now() - _NO_AUTO_UPDATE.get(base, -1e18) < 86400
     strip_upgrade = now() - _NO_UPGRADE.get(base, -1e18) < 86400
     notice_retry = False
     seq = None
@@ -507,6 +509,9 @@ def send_report(st, online, pending, *, post: Callable = report_post_json, now: 
         t = now()
         seq = next_seq(last, t)
         inner = build_report(st, online, pending, seq=seq, ts=int(t))
+        auto_sent = "auto_update" in inner and not strip_auto
+        if strip_auto:
+            inner.pop("auto_update", None)
         names_sent = "device_names" in inner and not strip_names
         upgrade_sent = "last_upgrade" in inner and not strip_upgrade
         if strip_names:
@@ -540,11 +545,19 @@ def send_report(st, online, pending, *, post: Callable = report_post_json, now: 
             if snap is not None:
                 data = notices.ingest(st, snap, cloud["host_id"], int(t*1000))
                 notices.acknowledge(st, inner.get("notice_receipts", []))
+            if auto_sent:
+                from . import nightly_report
+                nightly_report.acknowledge(st, inner.get("auto_update"))
             return ReportResult("ok", "200", seq, None if strip else parse_account_language(obj), data)
         err = parse_error(obj)
         if status == 409 and err == "replay" and not replay_retry:
             replay_retry = True
             last = seq  # self-heal: next try uses max(last_seq + 1, now_ms)
+            continue
+        if status == 400 and err == "bad_request" and auto_sent:
+            strip_auto = True
+            _NO_AUTO_UPDATE[base] = now()
+            last = seq
             continue
         if status == 400 and err == "bad_request" and upgrade_sent:     # P277: a server older than last_upgrade
             strip_upgrade = True

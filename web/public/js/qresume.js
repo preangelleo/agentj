@@ -1,5 +1,5 @@
 // P314 (§32): a turn stopped by a used-up usage limit continues by itself after the reset. The host pushes
-// `quota_resume {items:[{id, scope, harness, at, title?, to?}]}` (on ready while any waits, and on every change); the chat
+// `quota_resume {items:[{id, scope, harness, at, title?, to?, limit?}]}` (on ready while any waits, and on every change); the chat
 // shows one thin banner 「额度用完，预计 HH:MM 自动继续」 for the earliest item, ✕ = `qr_cancel {r, id}` (only stops an
 // automatic action, so no signature, like grant_off). Everything is textContent.
 import { t, onLang } from './t.js';
@@ -23,11 +23,15 @@ export function when(at, now = Date.now()) {
   return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${hm}`;
 }
 
+// P433: a per-model cap (`limit`: opus · sonnet · fable · fast) is named — the 5H / WEEKLY allowance still has room.
+const MODEL = { opus: 'Opus', sonnet: 'Sonnet', fable: 'Fable' };
+const capped = (x) => (x.limit === 'fast' ? t('p433.fast') : MODEL[x.limit] || '');
+
 export function text(x, more = 0) {
-  const at = when(x.at + (x.to ? 0 : MARGIN)), title = (x.title || '').slice(0, 64);
+  const at = when(x.at + (x.to ? 0 : MARGIN)), title = (x.title || '').slice(0, 64), m = capped(x);
   const s = x.to ? t('p314.bannerSwitch').replace('{title}', title).replace('{to}', NAMES[x.to] || x.to).replace('{t}', at)
-    : x.scope === 'task' ? t('p314.bannerTask').replace('{title}', title).replace('{t}', at)
-      : t('p314.banner').replace('{t}', at);
+    : x.scope === 'task' ? t(m ? 'p433.bannerTask' : 'p314.bannerTask').replace('{title}', title).replace('{m}', m).replace('{t}', at)
+      : t(m ? 'p433.banner' : 'p314.banner').replace('{m}', m).replace('{t}', at);
   return more > 0 ? s + t('p314.more').replace('{n}', String(more)) : s;
 }
 

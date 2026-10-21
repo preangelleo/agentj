@@ -118,7 +118,7 @@ class Cards(unittest.TestCase):
         sender = SimpleNamespace(device='test-device')
         original = self.path.read_bytes()
         with patch('agentj.jcards_data.note_change') as mutate:
-            for op in ('add', 'unknown', None):
+            for op in ('unknown', None):
                 asyncio.run(h.on_jcard(sender, 'jcard_note', {'r':'p386bad','id':'notes','op':op,'text':'Do not add'}))
                 self.assertEqual(h.send_app.call_args.args[1]['why'], 'bad_op')
                 self.assertFalse(h.send_app.call_args.args[1]['ok'])

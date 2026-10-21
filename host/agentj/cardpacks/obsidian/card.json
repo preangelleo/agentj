@@ -1,0 +1,33 @@
+{
+  "$schema": "https://agentj.app/schema/agentj-card-1.json",
+  "schemaVersion": 1,
+  "id": "obsidian",
+  "version": "1.0.0",
+  "name": {
+    "zh": "Obsidian",
+    "en": "Obsidian"
+  },
+  "description": {
+    "zh": "你在 Obsidian 里选定的笔记；看在手机上，改交给 Agent。",
+    "en": "The Obsidian notes you picked: read them here, let your Agent edit them."
+  },
+  "author": "Agent J",
+  "icon": "book",
+  "accent": "magic-carpet",
+  "template": "notes",
+  "plus": "agentj-obsidian",
+  "data": {
+    "file": "obsidian.md"
+  },
+  "actions": [
+    {
+      "id": "pick",
+      "label": {
+        "zh": "选笔记",
+        "en": "Pick notes"
+      },
+      "prompt": "/agentj-obsidian pick",
+      "draft": true
+    }
+  ]
+}

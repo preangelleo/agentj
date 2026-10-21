@@ -25,7 +25,7 @@ import subprocess
 
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 
-from . import controls, passkey, term_store as store, wire
+from . import controls, passkey, term_mac, term_store as store, wire
 from .term_shell import _sha, local_ok
 
 TOKEN_ENV = "AGENTJ_TERM_TOKEN"
@@ -103,6 +103,8 @@ def python_ok(path: str) -> str | None:
 
 def safe_python(candidates=None) -> str | None:
     """A system python3 for the helper (R3 H-1); None when there is none."""
+    if candidates is None and term_mac.DARWIN:
+        candidates = term_mac.PYTHONS                # P437: the Command Line Tools' Python, never the /usr/bin stub
     for c in candidates or [os.path.join(d, n) for d in _PY_DIRS for n in ("python3",)]:
         real = python_ok(c)
         if real:
@@ -143,8 +145,15 @@ class Helper:
 
 
 # ---------------------------------------------------------------- /proc
+def _mac(proc: str) -> bool:
+    """P437: macOS has no /proc — the real "/proc" there means term_mac (libproc / sysctl); a test's fake dir stays a dir."""
+    return proc == "/proc" and term_mac.DARWIN
+
+
 def proc_info(pid: int, proc: str = "/proc") -> dict | None:
-    """{"ppid", "sid", "name", "euid", "argv"} of a live process, or None. Linux / WSL /proc layout."""
+    """{"ppid", "sid", "name", "euid", "argv"} of a live process, or None. Linux / WSL /proc layout; macOS: term_mac."""
+    if _mac(proc):
+        return term_mac.proc_info(pid)
     try:
         with open(f"{proc}/{pid}/stat", "rb") as f:
             stat = f.read().decode("utf-8", "replace")
@@ -188,6 +197,8 @@ def check_peer(pid, uid, token: str, want_token: str, shell_pid: int, helper: He
 
 def in_session(shell_pid: int, token: str, proc: str = "/proc") -> list[int]:
     """M2 sweep: this user's processes whose session is the shell's, or whose environment carries the token."""
+    if _mac(proc):
+        return term_mac.in_session(shell_pid, token, TOKEN_ENV + "=" + token)
     out, mine, needle = [], os.getuid(), (TOKEN_ENV + "=" + token).encode()
     for d in os.listdir(proc):
         if not d.isdigit() or int(d) == os.getpid():
@@ -216,6 +227,8 @@ class SudoDesk:
         buf = None
         try:
             pid, uid = peer_pid(wr.get_extra_info("socket"))
+            if uid is None and term_mac.DARWIN:          # P437: macOS LOCAL_PEERPID gives no uid — LOCAL_PEERCRED does
+                uid = term_mac.peer_uid(wr.get_extra_info("socket"))
             token = (await asyncio.wait_for(rd.readline(), 5)).decode("utf-8", "replace").strip()
             if x is not self.term or x.closing or x.proc is None:
                 why, spid = "closed", None
@@ -247,13 +260,17 @@ class SudoDesk:
     async def _sudo_pw(self, x, spid: int):
         n_seen = x.seen.get(spid, 0) + 1
         x.seen[spid] = n_seen
+        if n_seen == 1:
+            # P414 (R2-N3): only what arrives after THIS sudo first asked may count as its message — output alone (a
+            # command's own "Sorry, try again") never deletes the cache; the signal is sudo asking a second time.
+            x.recent = ""
         if n_seen > 1:                                       # sudo asks again: the password it got was refused …
             for _ in range(20):
                 if SUDO_WRONG.search(x.recent):
                     break
                 await asyncio.sleep(0.1)
             if SUDO_WRONG.search(x.recent):                  # … but only sudo's own message deletes the cache (N4)
-                await asyncio.to_thread(store.forget, self.st, x.device)
+                await asyncio.to_thread(store.forget_kid, self.st, x.device)   # P414 (L2): that kid and every wrap on it
                 if x.pw:
                     from .elevate import wipe
                     wipe(x.pw)
@@ -271,28 +288,35 @@ class SudoDesk:
         from .elevate import _raw_pub
         digest = _sha("\0".join(argv))
         m = store.meta(self.st, x.device)
+        pk = self.st.passkey_of_device(x.device)
+        vn = secrets.token_bytes(32) if m and m["mode"] == "prf" and pk and m["cred"] == pk["id"] else None   # P414 (M3)
         fut = asyncio.get_running_loop().create_future()
         x.sudo[rid] = {"n": n, "priv": priv, "digest": digest, "fut": fut, "argv": argv}
         msg = {"t": "term_sudo", "id": x.id, "rid": rid, "argv": argv, "line": owner_text(x.line), "differs": differs, "n": n,
                "fa_ch": wire.b64u(passkey.elevate_challenge(self.h.channel, x.device, x.id, "term_sudo", n, digest)),
-               "salt": wire.b64u(m["salt"]) if m and m["mode"] == "prf" else "", "epk": wire.b64u(_raw_pub(priv))}
+               "salt": wire.b64u(m["salt"]) if m and m["mode"] == "prf" else "", "epk": wire.b64u(_raw_pub(priv)),
+               **({"vn": wire.b64u(vn)} if vn else {})}
         self._log("term_sudo", x.device, "asked", obj={"id": x.id, "rid": rid})
-        await self.h.send_app(x.s, msg)
+        x.sudo_hold = getattr(x, "sudo_hold", 0) + 1     # P414 (H3): nothing until the answer enters the Agent's transcript
         try:
-            prf = await asyncio.wait_for(fut, SUDO_TTL)
-        except asyncio.TimeoutError:
-            prf = None
+            await self.h.send_app(x.s, msg)
+            try:
+                prf = await asyncio.wait_for(fut, SUDO_TTL)
+            except asyncio.TimeoutError:
+                prf = None
+            finally:
+                x.sudo.pop(rid, None)
         finally:
-            x.sudo.pop(rid, None)
+            x.sudo_hold -= 1
         if prf is None:
             return None
         try:
-            return await self._sudo_take(x, rid, prf)
+            return await self._sudo_take(x, rid, prf, vn)
         finally:
             from .elevate import wipe
             wipe(prf)                                        # R3: the PRF output lives in a bytearray, zeroed here
 
-    async def _sudo_take(self, x, rid, prf: bytearray):
+    async def _sudo_take(self, x, rid, prf: bytearray, vn: bytes | None = None):
         pk = self.st.passkey_of_device(x.device)
         if x.mode == "session" or not pk:
             pw = bytearray(x.pw) if x.pw else None
@@ -300,7 +324,7 @@ class SudoDesk:
             await asyncio.to_thread(store.drop_local, self.st)
             pw = None
         else:
-            pw = await asyncio.to_thread(store.load, self.st, self.h.channel, x.device, pk["id"], prf or None)
+            pw = await asyncio.to_thread(store.load, self.st, self.h.channel, x.device, pk["id"], prf or None, vn)
         if pw is None:
             await self._frame(x, "\n[sudo：这台电脑上没有可用的电脑密码，sudo 不会运行 / no computer password available]\n", False)
             return None

@@ -76,6 +76,7 @@ Function keys also work while a text field is focused. System or input-method sh
 | `?` | Tap Keyboard shortcuts in Settings | Show this list of shortcuts |
 | `Alt+P` | Tap Pending | Reopen the approval or question card you put away |
 | `Alt+W` | Tap the logo | Open the five-page menu |
+| `⌘+C` / `Ctrl+C` | Hold a swatch to copy HEX; move to cancel | Copy swatch HEX |
 | `/` · `⌘+K` / `Ctrl+K` | Tap the magnifier at the top right of the list | Search the shortcut list: type a word to filter by action, key or gesture, in Chinese or English |
 | `Esc` | Tap the magnifier again | Clear and close the search box; Esc again closes the shortcut list |
 | `i` · `Esc` | Tap the message box | Into the message box; Esc in it leaves (the draft stays) |
@@ -88,15 +89,23 @@ Function keys also work while a text field is focused. System or input-method sh
 | `c` | Tap Camera | Take a photo |
 | hold `m` | Hold the microphone | Hold to talk, release to send (slide out to cancel); keyboard m still releases to text |
 | `m` `m` | Tap or double-tap the microphone | Lock the recording; any key or another tap ends it, Esc cancels |
-| `Enter` | Tap Send | Send (Shift+Enter for a new line) |
+| `Enter` | Tap Send | Send (Shift+Enter for a new line; long text: the full-screen editor) |
 | `V` | Hold Send and slide up or down | Set the send sound's volume |
 | `⌘+V` / `Ctrl+V` | Drop files on the page | Attach files or screenshots (drop them on the page, or paste in the message box) |
 | `↑` · `↓` | — | With the message box empty: bring back what you sent before |
 | `←` · `→` | — | With the box empty or the cursor already at that end: previous / next page |
-| `Ctrl+A` · `Ctrl+E` · `Ctrl+U` · `Ctrl+K` · `Ctrl+W` · `Ctrl+Y` | — | As in a terminal: line start / end, delete to start / end, delete the previous word, paste back what was deleted (Ctrl+W may close a normal browser tab; it works in the installed web app) |
+| `Ctrl+A` · `Ctrl+E` · `Ctrl+U` · `Ctrl+K` · `Ctrl+W` · `Ctrl+Y` · `Ctrl+D` | — | As in a terminal: line start / end, delete to start / end, delete the previous word, paste back what was deleted, delete the next character (Ctrl+W may close a normal browser tab; it works in the installed web app) |
 | `Esc` | Tap ✕ on the quote | Cancel the quote (with two or more, clears them all) |
-| `Esc` `Esc` | Tap ✕ in the message box | Esc twice outside the message box clears text and attachments (✕ clears the text only, with undo). Esc never interrupts the Agent; to stop the current task, use the stop button or send /stop |
-| `f` · `Esc` | Double-tap the text; tap the book (bottom right; copy and reply leave too) | Leave the full-screen reader |
+| `Esc` `Esc` | Tap ✕ in the message box | Esc twice outside the message box clears text and attachments (✕ clears the text only, with undo). Esc never interrupts the Agent; to stop the current task, use the Stop button or send /stop |
+| `Ctrl+G` | Tap the full-screen button, or swipe up on the message box | Open the full-screen editor (also from inside the message box; the words come along, and past one line the button shows how many lines) |
+| `Ctrl+J` | — | New line (like Shift+Enter; a \ at the end of the line, then Enter, does the same — as in a terminal) |
+| `Ctrl+S` | — | Put the draft aside; press again to bring it back (this page only) |
+| `Ctrl+R` | — | Find an earlier message that contains what the box says; again = further back |
+| `@` | — | Outside the message box, focus it and open the @ list |
+| `Esc` · `Ctrl+G` | Tap the top-left icon, double-tap blank space (on words a double tap still selects), or pull the bar at the top centre down (not far enough and it springs back) | Leave full screen; the words go back to the message box as they are |
+| `⌘+Enter` / `Ctrl+Enter` | Tap Send at the bottom right | Send (in full screen Enter is a new line) |
+| `Ctrl+A` · `Ctrl+E` · `Ctrl+U` · `Ctrl+K` · `Ctrl+W` · `Ctrl+Y` · `Ctrl+D` | — | The same terminal keys as the message box: line start / end, delete to start / end, delete the previous word, paste back, delete the next character |
+| `f` · `Esc` | Double-tap the text; tap the book (bottom right; reply leaves too) | Leave the full-screen reader |
 | `+` · `-` | Pinch; tap the text-size icon (bottom left), then drag the slider or tap + / − | Larger / smaller text in the reader |
 | `↑` · `↓` · `Space` | Scroll | Scroll up / down; Space for a screen |
 | `←` | Swipe right | Previous, older reply |
@@ -104,7 +113,7 @@ Function keys also work while a text field is focused. System or input-method sh
 | `G` | Double-tap the Agent name and time (top left) | Jump to the first reply, staying in the reader |
 | `g` | Double-tap the page number (top right); a single tap while it flashes | Jump to the newest reply without leaving the reader |
 | `u` | Tap the unread badge in the middle of the header | Jump to the first unread reply |
-| `y` | Tap the copy icon | Copy the whole reply and leave the reader |
+| `y` | Tap the copy icon | Copy the whole reply and keep reading |
 | `r` | Tap the curved-arrow icon | Quote this reply, leave the reader and put the caret in the message box |
 | `l` | Tap the speaker icon | Read this reply aloud, staying in the reader |
 | `t` | Tap the paper-plane icon | Forward to myself, staying in the reader (the icon shows sending / sent) |
@@ -169,8 +178,13 @@ Function keys also work while a text field is focused. System or input-method sh
 | `Alt+Shift+C` | Hold the gear; help via right-click or Keyboard shortcuts | Capture this page as an attachment and copy it to the clipboard |
 | `Alt+Shift+F` | Settings → Friends | Open Friends |
 | `Alt+Shift+E` | Settings → Bots | Open Customer service |
-| — | Hold the invisible circular area in the top-right corner | Open the card color palette |
+| — | Hold the invisible circular area in the top-right corner | Open the card colour picker (any colour; on a light fill the words turn dark) |
+| — | Tap the card on the logo menu | Open a card directly: Alt+Shift + a letter of the card's English name (the first letter; if another key has it, the next one; when all are taken, a digit 1–9, 0), also while typing; again, or Esc, goes back to the chat. Each card's key right now is listed in the cards section at the top of this page, the underlined letter in a card's title is its key, and a new card gets one by itself |
 | — | Hold Search (blocked by recording, attachments or an unsubmitted card) | Save draft and force refresh |
+| — | At the message top, pull down and release; blocked by recording, attachments or unfinished cards | Save draft and update the page |
+| `⌘+C` / `Ctrl+C` | Hold a swatch to copy HEX; move to cancel | Copy swatch HEX |
+| — | Tap the button, then confirm | Stop all Agents (confirm first) |
+| — | Tap the button, then confirm | Reopen AI session (confirm first) |
 | `/` · `⌘+K` / `Ctrl+K` | Tap the magnifier at the top right of the list | Search the shortcut list: type a word to filter by action, key or gesture, in Chinese or English |
 | `Esc` | Tap the magnifier again | Clear and close the search box; Esc again closes the shortcut list |
 | `i` · `Esc` | Tap the message box | Into the message box; Esc in it leaves (the draft stays) |
@@ -183,16 +197,21 @@ Function keys also work while a text field is focused. System or input-method sh
 | `c` | Tap Camera | Take a photo |
 | hold `m` | Hold the microphone | Hold to talk, release to send (slide out to cancel); keyboard m still releases to text |
 | `m` `m` | Tap or double-tap the microphone | Lock the recording; any key or another tap ends it, Esc cancels |
-| `Enter` | Tap Send | Send (Shift+Enter for a new line) |
+| `Enter` | Tap Send | Send (Shift+Enter for a new line; long text: the full-screen editor) |
 | `V` | Hold Send and slide up or down | Set the send sound's volume |
 | `⌘+V` / `Ctrl+V` | Drop files on the page | Attach files or screenshots (drop them on the page, or paste in the message box) |
 | `Esc` | Tap ✕ on the quote | Cancel the quote (with two or more, clears them all) |
-| `Esc` `Esc` | Tap ✕ in the message box | Esc twice outside the message box clears text and attachments (✕ clears the text only, with undo). Esc never interrupts the Agent; to stop the current task, use the stop button or send /stop |
+| `Esc` `Esc` | Tap ✕ in the message box | Esc twice outside the message box clears text and attachments (✕ clears the text only, with undo). Esc never interrupts the Agent; to stop the current task, use the Stop button or send /stop |
 | — | Tap the end icon on the recording card | End a locked recording; the text goes into the message box |
 | — | Tap the cancel icon on the recording card | Cancel a locked recording; nothing is transcribed |
 | — | Tap the quote’s time / words / ✕ | Tap the time to go back to its reply with the words highlighted; tap the words to read them in full; its own ✕ removes just that one |
 | — | Tap the send icon on the recording card | End a locked recording and send it in one step: a short one goes as text, a long one as a voice attachment — no second tap on send |
-| `f` · `Esc` | Double-tap the text; tap the book (bottom right; copy and reply leave too) | Leave the full-screen reader |
+| `Ctrl+G` | Tap the full-screen button, or swipe up on the message box | Open the full-screen editor (also from inside the message box; the words come along, and past one line the button shows how many lines) |
+| `Esc` · `Ctrl+G` | Tap the top-left icon, double-tap blank space (on words a double tap still selects), or pull the bar at the top centre down (not far enough and it springs back) | Leave full screen; the words go back to the message box as they are |
+| `⌘+Enter` / `Ctrl+Enter` | Tap Send at the bottom right | Send (in full screen Enter is a new line) |
+| — | Tap the top-right clear icon | Clear all the words (undo within 5 seconds) |
+| — | Tap the slash icon at the bottom left | Command list: the one you pick goes in at the caret (search, ↑↓ to choose, Enter to insert) |
+| `f` · `Esc` | Double-tap the text; tap the book (bottom right; reply leaves too) | Leave the full-screen reader |
 | `+` · `-` | Pinch; tap the text-size icon (bottom left), then drag the slider or tap + / − | Larger / smaller text in the reader |
 | `↑` · `↓` · `Space` | Scroll | Scroll up / down; Space for a screen |
 | `←` | Swipe right | Previous, older reply |
@@ -200,7 +219,7 @@ Function keys also work while a text field is focused. System or input-method sh
 | `G` | Double-tap the Agent name and time (top left) | Jump to the first reply, staying in the reader |
 | `g` | Double-tap the page number (top right); a single tap while it flashes | Jump to the newest reply without leaving the reader |
 | `u` | Tap the unread badge in the middle of the header | Jump to the first unread reply |
-| `y` | Tap the copy icon | Copy the whole reply and leave the reader |
+| `y` | Tap the copy icon | Copy the whole reply and keep reading |
 | `r` | Tap the curved-arrow icon | Quote this reply, leave the reader and put the caret in the message box |
 | `l` | Tap the speaker icon | Read this reply aloud, staying in the reader |
 | `t` | Tap the paper-plane icon | Forward to myself, staying in the reader (the icon shows sending / sent) |

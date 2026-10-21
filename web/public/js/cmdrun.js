@@ -29,6 +29,7 @@ function row(name) {
   const li = mk('li', 'rscmd'); li.dataset.cmd = name;
   const main = mk('div', 'rscmdmain'), code = mk('code', '', line(name));
   main.append(copyable(code, { variant: 'inline' }), mk('small', '', t('p361.cmd.' + name)));
+  if (name === 'reconnect') main.append(mk('small', 'rsnote', t('p438.recommended')));
   const b = mk('button', 'aj-btn rscmdgo', t('p361.run')); b.type = 'button'; b.id = 'rs-cmd-' + name;
   b.setAttribute('aria-label', t('p361.runAria', { cmd: line(name) }));
   b.disabled = !!(R && R.st === 'run');

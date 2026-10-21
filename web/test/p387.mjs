@@ -14,7 +14,8 @@ const tmp=mkdtempSync(join(tmpdir(),'p387-web-'));cpSync(PUBLIC_DIR,tmp,{recursi
 const web=await startWebServer({publicDir:tmp}),fake=await startFakeHost(),B=await launch(),results=[];
 const ev=evaluate;
 const tv='Mozilla/5.0 (Web0S; Linux/SmartTV) AppleWebKit/537.36 Chrome/108.0.0.0 Safari/537.36';
-const text='A long message. '.repeat(200);
+// P434 removes the prose width cap: still overflow a 1920px reader to test remote paging.
+const text='A long message. '.repeat(1600);
 const before=process.env.AJ_P387_BEFORE==='1';
 if(before)writeFileSync(join(tmp,'app.css'),execFileSync('git',['show','HEAD:web/public/app.css']));
 async function pair(w,h,scheme,lang,ua){
@@ -42,7 +43,8 @@ try{
   // Capture true native active state (not just the selected class).
   const r=await ev(p,`(()=>{const r=window.__option.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()`);
   await p.send('Input.dispatchMouseEvent',{type:'mousePressed',button:'left',clickCount:1,x:r.x,y:r.y});
-  assert.equal(rgb(await ev(p,`getComputedStyle(window.__option).backgroundColor`)),'rgb(20,20,20)');
+  assert.equal(rgb(await ev(p,`getComputedStyle(window.__option).backgroundColor`)),'rgb(44,43,38)');
+  assert.equal(rgb(await ev(p,`getComputedStyle(window.__option).color`)),'rgb(250,249,245)');
   // Release away from the button: style verification must not send an answer.
   await p.send('Input.dispatchMouseEvent',{type:'mouseReleased',button:'left',clickCount:1,x:0,y:0});
   // Draft survives an actual guarded hold and reload (the real IndexedDB sealed store).
@@ -70,6 +72,7 @@ try{
  assert.equal(await ev(p,`document.getElementById('rdFsPop').hidden`),true);
  assert.equal(await ev(p,`document.getElementById('rd').hidden`),false);
  await key(p,'ArrowRight');await waitFor(p,`document.getElementById('rdWords').textContent.startsWith('Message 2')`);
+ assert.ok(await ev(p,`document.getElementById('rdScroll').scrollHeight>document.getElementById('rdScroll').clientHeight`),'reader fixture genuinely overflows');
  await key(p,'PageDown');assert.ok(await ev(p,`document.getElementById('rdScroll').scrollTop>0`));
  await key(p,'PageUp');assert.equal(await ev(p,`document.getElementById('rdScroll').scrollTop`),0);
  for(const scheme of ['light','dark'])for(const lang of ['zh','en']){

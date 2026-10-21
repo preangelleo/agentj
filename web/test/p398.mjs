@@ -19,7 +19,7 @@ import { startFakeHost } from './fakehost.mjs';
 import { launch, newPage, evaluate, navigate, waitFor, waitState, shoot, sleep } from './browser.mjs';
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
-const OUT = ROOT + 'reports/qa/p398/';
+const OUT = ROOT + (process.env.AJ_P398_OUT || 'reports/qa/p398/');
 mkdirSync(OUT, { recursive: true });
 const ONLY = (process.env.AJ_P398_ONLY || '').split(',').filter(Boolean);
 const rec = parityRecorder('web/test/p398.mjs');
@@ -31,7 +31,7 @@ const ev = (p, s) => evaluate(p, s);
 const results = [];
 let failed = 0;
 
-const SIZES = [{ dev: 'ios', w: 390, h: 844 }, { dev: 'android', w: 412, h: 915 }];
+const SIZES = [{ dev: 'desktop', w: 1280, h: 844 }, { dev: 'ios', w: 390, h: 844 }, { dev: 'android', w: 412, h: 915 }];
 const ME = { k: 'phone', dev: 'X', name: 'iPhone' };
 const ASK = { zh: '补货清单好了。要我现在向 B 家下单吗？\n\n派不派？[派](reply:派) [先不派](reply:先不派)',
   en: 'The restock list is ready. Shall I order from supplier B now?\n\nDispatch it? [Dispatch](reply:Dispatch) [Not yet](reply:Not yet)' };
@@ -108,7 +108,9 @@ try {
         assert.equal(fake.st.slashes.length, before, 'a tap on 已送达 stops nothing: ' + JSON.stringify(fake.st.slashes.slice(before)));
         await sleep(2300);
         const s = await pill(p);
-        assert.equal(s.mode, 'turn'); assert.equal(s.word, L(lang, '停止这一轮', 'Stop this turn'));
+        assert.equal(s.mode, 'turn'); assert.equal(s.word, 'Stop');
+        assert.equal(s.aria, L(lang, '停止这一轮', 'Stop this turn'));
+        assert.ok(await ev(p, `getComputedStyle(${$('sayCancel')}).display !== 'none' && ${$('input')}.getBoundingClientRect().width >= 44`), 'visible Stop leaves room to type');
         writeFileSync(`${OUT}${tag}-pill-stop.png`, await shoot(p, ''));
         await ev(p, `${$('sayCancel')}.click()`); await sleep(300);
         assert.ok(fake.st.slashes.slice(before).some((m) => m.cmd === 'stop'), 'the worded stop is the real /stop');
@@ -173,9 +175,12 @@ try {
       try {
         await ev(p, `import('./js/settings.js').then(m=>m.open())`); await sleep(400);
         const r = await ev(p, `(()=>{const row=${$('set-shot-row')};row.scrollIntoView({block:'center'});return {row:!row.hidden&&row.getClientRects().length>0,
-          sw:!${$('set-shot')}.hidden,na:${$('set-shot-na')}.textContent,group:row.closest('.setcard').id}})()`);
-        assert.ok(r.row, 'the row is there on a phone'); assert.equal(r.sw, false, 'no switch on a phone');
-        assert.match(r.na, L(lang, /仅电脑上的 Chrome 或 Edge 可用/, /Only in Chrome or Edge on a computer/)); assert.equal(r.group, 'set-s-app');
+          sw:!${$('set-shot')}.hidden,naShown:!${$('set-shot-na')}.hidden,na:${$('set-shot-na')}.textContent,group:row.closest('.setcard').id}})()`);
+        // P417: SIZES gained desktop 1280 (P415) — there the switch is the point and the phone-only note stays hidden
+        const phone = dev !== 'desktop';
+        assert.ok(r.row, 'the row is there on every size'); assert.equal(r.sw, !phone, phone ? 'no switch on a phone' : 'the switch on a computer');
+        assert.equal(r.naShown, phone, phone ? 'the computer-only note on a phone' : 'no computer-only note on a computer');
+        if (phone) assert.match(r.na, L(lang, /仅电脑上的 Chrome 或 Edge 可用/, /Only in Chrome or Edge on a computer/)); assert.equal(r.group, 'set-s-app');
         await sleep(200);
         writeFileSync(`${OUT}${tag}-shot-row.png`, await shoot(p, ''));
         const found = await ev(p, `import('./js/settings.js').then(m=>m.searchItems(${JSON.stringify(L(lang, '截图', 'screenshot'))}).some(n=>n.id==='set-shot-row'))`);

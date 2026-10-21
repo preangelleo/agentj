@@ -142,7 +142,10 @@ export const CONTROL_ACTIONS = ['mem_rm', 'mem_undo', 'estop', 'resume', 'task_o
   'approval_set',                                                           // P336: approval level / goal without the opening card
   'cmd_run',                                                                // P361 (§34): Settings 「执行」 — a whitelisted command name
   'term_open', 'term_line', 'term_sudo', 'term_forget',                    // P408 (§38): the web terminal
-  'elev_stop', 'elev_watch'];                                               // P406 (§11.2): Stop / show a running sudo command's output
+  'elev_stop', 'elev_watch',                                                // P406 (§11.2): Stop / show a running sudo command's output
+  'vault_share',                                                           // P414 (§38.11): let this remote use the stored password
+  'fr_gsay',                                                                // P426 #170 (§17.7): a message in 「我的设备」
+  'skill_archive', 'skill_restore'];                                        // P426 #181-3 (§39): 「归档」/「恢复」 on the 技能 page
 /** The text whose SHA-256 a control signature covers (the target, with the content hash the phone saw). */
 export function controlObject(action, o) {
   if (action === 'bots_write') return canonicalJson(o.request);
@@ -162,6 +165,8 @@ export function controlObject(action, o) {
   if (action === 'term_forget') return 'forget';                   // P408: object {} (no Face ID)
   if (action === 'elev_stop') return String(o.id);                 // P406 (§11.2): the running sudo card's id
   if (action === 'elev_watch') return `${o.id}\n${o.on === true ? 'on' : 'off'}`;   // P406 F1: card id \n on | off
+  if (action === 'vault_share') return 'share';                    // P414 (§37.11): object {}
+  if (action === 'skill_archive' || action === 'skill_restore') return `${o.op}\n${o.name}`;   // P426 #181-3 (§39): op \n name
   if (action === 'approval_set') return `${o.key}\n${typeof o.value === 'boolean' ? (o.value ? 'true' : 'false') : o.value}`;   // P336
   if (action === 'dev_unbind') return String(o.device);
   if (action === 'dev_add') return o.rv ? `rv\n${o.rv}` : 'new';   // P190 (§27): a reverse pairing names the scanned code's channel
@@ -177,6 +182,7 @@ export function controlObject(action, o) {
   if (action === 'fr_discoverable') return o.on ? 'on' : 'off';
   if (action === 'fr_card') return `${o.owner ?? ''}\n${o.intro ?? ''}`;
   if (action === 'fr_ctx') return `${o.friend}\n${o.text ?? ''}`;
+  if (action === 'fr_gsay') return `devices\n${o.text}`;          // P426 #170: the group is fixed, the text exactly as sent
   throw new Error('bad action');
 }
 /** The exact bytes a device signs for a write command: delete / undo a memory item, stop everything, resume, enable / disable a
@@ -268,6 +274,7 @@ export function checkPicks(qs, picks) {
   if (!Array.isArray(picks) || picks.length !== qs.length) return false;
   return qs.every((q, k) => {
     const p = picks[k];
+    if (typeof p === 'string') return !!p.trim() && !textProblem(p, 2000);
     if (!Array.isArray(p) || !p.length || !p.every(Number.isInteger)) return false;
     for (let i = 1; i < p.length; i++) if (p[i] <= p[i - 1]) return false;
     return p[0] >= 1 && p[p.length - 1] <= q.o.length && (q.m || p.length === 1);
@@ -277,7 +284,8 @@ export async function questionMessage(channel, device, id, action, qs, picks) {
   if (action !== 'answer' && action !== 'cancel') throw new Error('bad action');
   if ((action === 'cancel') !== (picks == null)) throw new Error('picks only with answer');
   if (action === 'answer' && !checkPicks(qs, picks)) throw new Error('bad picks');
-  return enc.encode(`${QUESTION_CONTEXT}\n${channel}\n${device}\n${id}\n${action}\n${await questionDigest(qs)}\n${picksText(picks)}`);
+  const signedPicks = picks == null ? '-' : (await Promise.all(picks.map(async p => typeof p === 'string' ? 't:' + await h256(p) : p.join(',')))).join(';');
+  return enc.encode(`${QUESTION_CONTEXT}\n${channel}\n${device}\n${id}\n${action}\n${await questionDigest(qs)}\n${signedPicks}`);
 }
 
 /** §10.2 a `say` (validated like the host does; throws on anything the host would answer shape / too_long). */
@@ -330,23 +338,27 @@ export function elevateFields(c) {
   if (c.kind === 'sudo') return [c.cmd, c.why, c.effect || ''];
   if (c.kind === 'secret') return [c.name, c.purpose, c.dest, c.verify || ''];
   if (c.kind === 'login') return [c.term];               // P408 (§38): the `r` of the pending term_open the password belongs to
+  // P414 (M4, §38.11): the requesting remote's id, its passkey credential id, its pairing date (unix s), its flags (web, account)
+  if (c.kind === 'vshare') return [c.dev, c.cred, String(c.paired), c.flags.join(',')];
   throw new Error('bad kind');
 }
 /** hex SHA-256 of `context\nkind\n` + one `sha256(field)` line per shown field. */
 export async function elevateDigest(kind, fields) {
-  if (kind !== 'sudo' && kind !== 'secret' && kind !== 'login') throw new Error('bad kind');
+  if (!['sudo', 'secret', 'login', 'vshare'].includes(kind)) throw new Error('bad kind');
   const lines = [ELEVATE_CONTEXT, kind];
   for (const f of fields) lines.push(hex(await sha256(enc.encode(f))));
   return hex(await sha256(enc.encode(lines.join('\n'))));
 }
 /** The exact bytes a device signs for a card: decision allow | deny, the card's one-time nonce, ts (ms), the shown digest and
  *  hex SHA-256 of the sealed value ('-' for deny). `grant` (§11.1): the card's 10-minute class hash, only when the owner
- *  switched that toggle on — then one more line `grant:<hash>`. */
-export function elevateMessage(channel, device, id, kind, decision, nonce, ts, digest, ctSha, grant) {
+ *  switched that toggle on — then one more line `grant:<hash>`. `save` (P414 M2, §37.10): hex SHA-256 of the `pct` a typed
+ *  sudo answer adds to remember the password — then the last line `save:<hex>` (after any grant line). */
+export function elevateMessage(channel, device, id, kind, decision, nonce, ts, digest, ctSha, grant, save) {
   if (decision !== 'allow' && decision !== 'deny') throw new Error('bad decision');
   if (!Number.isInteger(ts)) throw new Error('bad ts');
   const lines = [ELEVATE_CONTEXT, channel, device, id, kind, decision, nonce, String(ts), digest, ctSha || '-'];
   if (grant) lines.push('grant:' + grant);
+  if (save) lines.push('save:' + save);
   return enc.encode(lines.join('\n'));
 }
 /** Seal a password / secret to the card's one-time host key: ephemeral X25519, HKDF-SHA256(salt = host_epk ‖ epk,
@@ -378,20 +390,37 @@ export function canonicalJson(o) {
 /** §17.7 the bytes a device signs to answer a friend_request card: approveMessage, plus — for allow with a group — one more
  *  line hex(SHA-256("group:" + group)), so the host knows the owner picked THAT group. peer_question allow may sign group:colleague; ctx stays friend_request-only. */
 export const GROUP_ID_RE = /^[a-z0-9-]{1,32}$/;
+/** Which of group / ctx a friend answer signs (null = no line): allow only; group on friend_request / peer_question; ctx on
+ *  friend_request only. Shared by friendAnswerMessage and friendAnswer so the signed lines and the sent fields cannot part. */
+function friendLines(tool, decision, group, ctx) {
+  const on = ['friend_request', 'peer_question'].includes(tool) && decision === 'allow';
+  const g = on && group != null && group !== '' ? group : null;
+  if (g !== null && (!GROUP_ID_RE.test(g) || (tool === 'peer_question' && !['colleague', 'main'].includes(g)))) throw new Error('bad group');
+  const c = on && tool === 'friend_request' && typeof ctx === 'string' && ctx !== '' ? ctx : null;
+  if (c !== null && [...c].length > FRIEND_CTX_MAX) throw new Error('ctx too long');
+  return { group: g, ctx: c };
+}
 export async function friendAnswerMessage(channel, device, id, decision, tool, summary, group, ctx) {
-  const base = await approveMessage(channel, device, id, decision, tool, summary);
-  if (!['friend_request', 'peer_question'].includes(tool) || decision !== 'allow') return base;
-  let out = base;
-  if (group != null && group !== '') {
-    if (!GROUP_ID_RE.test(group) || (tool === 'peer_question' && !['colleague', 'main'].includes(group))) throw new Error('bad group');
-    out = concat(out, enc.encode(`\n${hex(await sha256(enc.encode('group:' + group)))}`));
-  }
+  let out = await approveMessage(channel, device, id, decision, tool, summary);
+  const l = friendLines(tool, decision, group, ctx);
+  if (l.group !== null) out = concat(out, enc.encode(`\n${hex(await sha256(enc.encode('group:' + l.group)))}`));
   // P73 (ADR-A176): 「同意」 may carry this friend's 「补充设定」 — one more line hex(SHA-256("ctx:" + ctx)), after the group line
-  if (tool === 'friend_request' && typeof ctx === 'string' && ctx !== '') {
-    if ([...ctx].length > FRIEND_CTX_MAX) throw new Error('ctx too long');
-    out = concat(out, enc.encode(`\n${hex(await sha256(enc.encode('ctx:' + ctx)))}`));
-  }
+  if (l.ctx !== null) out = concat(out, enc.encode(`\n${hex(await sha256(enc.encode('ctx:' + l.ctx)))}`));
   return out;
+}
+/** P424 (#152): the whole `answer` for a friend card (friend_request / peer_question), signed by `sign(bytes) → Uint8Array`.
+ *  It sends group / ctx exactly when their line is signed and throws on a field that would travel unsigned — 0.24.0a1 sent
+ *  peer_question `group:colleague` but signed without that line, so the host refused it on every device. `dg` = the first 16
+ *  hex of the digest this phone signed: the host only logs whether it equals its own (diagnosis; never trusted). */
+export async function friendAnswer(channel, device, card, ok, { group = null, ctx = null } = {}, sign) {
+  const decision = ok === true ? 'allow' : 'deny';
+  const l = friendLines(card.tool, decision, group, ctx);
+  if ((group != null && group !== '' && l.group === null) || (typeof ctx === 'string' && ctx !== '' && l.ctx === null)) throw new Error('unsigned field');
+  const msg = await friendAnswerMessage(channel, device, card.id, decision, card.tool, card.summary, l.group, l.ctx);
+  const ans = { t: 'answer', id: card.id, ok: ok === true, sig: b64u(await sign(msg)), dg: (await shownDigest(card.tool, card.summary)).slice(0, 16) };
+  if (l.group !== null) ans.group = l.group;
+  if (l.ctx !== null) ans.ctx = l.ctx;
+  return ans;
 }
 /** P73: the longest 「补充设定」 for one friend, in characters (Unicode code points; the host counts the same way). */
 export const FRIEND_CTX_MAX = 4000;

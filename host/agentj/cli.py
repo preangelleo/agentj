@@ -35,6 +35,11 @@ import sys
 import threading
 import time
 
+# P425: the signed macOS app dispatches rescue without importing the full CLI graph.
+if sys.argv[1:] == ["rescue", "watchdog"]:
+    from .rescue_watchdog import main as _watchdog_main
+    raise SystemExit(_watchdog_main())
+
 from . import DIST, __version__, cloud, gate, names
 from . import docsrule, feedback, handover, plaza, recall, support, wizard
 from . import elevate, elevate_helper
@@ -257,10 +262,9 @@ IPHONE_LINE_EN = "iPhone: paste the link into the page opened from the home-scre
 
 
 def link_text(link: str, mins: int) -> str:
-    """What `agentj pair --link` / `--no-qr` prints around the link: the link is the key, minutes, one use, and where an
-    iPhone must open it (pasting it into Safari pairs a Safari tab and burns the link)."""
-    return (f"\n把这个链接发到手机上打开（{mins} 分钟内有效，只能用一次；它就是配对密钥，别发给别人）：\n"
-            f"Open this link on the phone (valid {mins} min, works once; it is the pairing key, never send it to anyone else):\n"
+    """The same one-use capability as the QR, always visible in the owner's terminal."""
+    return (f"\n方法二：把链接粘到电脑浏览器地址栏直接打开（{mins} 分钟内有效，只能用一次；它就是配对密钥，别发给别人）：\n"
+            f"Way 2: paste the link into a computer browser's address bar (valid {mins} min, works once; it is the pairing key, never share it):\n"
             f"{link}\n{IPHONE_LINE_ZH}\n{IPHONE_LINE_EN}\n")
 
 
@@ -413,16 +417,10 @@ def cmd_pair(a) -> None:
         if first.get("ev") != "link":
             sys.exit(f"无法开始配对：{first.get('reason', first)}")
         if not a.no_qr:
+            print("方法一：用手机扫码 / Way 1: scan with your phone", flush=True)
             _print_qr(first["link"])
         mins = max(1, (first['expires'] - int(time.time())) // 60)
-        if a.no_qr or a.link:  # the link IS the pairing key: only print it when asked (terminal scrollback keeps it)
-            print(link_text(first["link"], mins), flush=True)
-        else:
-            print(f"\n用手机相机扫上面的二维码（{mins} 分钟内有效，只能用一次）。扫不了就加 --link 重新运行。\n", flush=True)
-            if _remote_session():
-                print("（SSH 登录的服务器：手机扫不到终端里的码时，Ctrl-C 后运行 `agentj pair --link`，把打印出的链接用你自己的方式"
-                      "发到手机上打开——同一个链接，它就是配对密钥，别发给别人。/ Over SSH: if the phone cannot scan it, run "
-                      "`agentj pair --link` and open the same link on the phone.）\n", flush=True)
+        print(link_text(first["link"], mins), flush=True)
         if st.device_full():
             print(f"注意：本机已有 {MAX_DEVICES} 台遥控器（上限）。批准新设备时会自动解绑最久没用的那台（离线的先走）。\n", flush=True)
 
@@ -1345,7 +1343,6 @@ def _read_paste(prompt: str) -> str:
     """P214 (Leo 10-13): `agentj login` at a terminal asks for the code first. Hidden input; a pasted prompt spans lines, so
     take everything that arrives within a moment (else the rest would answer the next question). Never echoed or logged."""
     import select
-    print(prompt, end="", flush=True)
     fd, old = sys.stdin.fileno(), None
     try:
         import termios
@@ -1356,6 +1353,7 @@ def _read_paste(prompt: str) -> str:
     except (ImportError, OSError, ValueError):
         old = None
     try:
+        print(prompt, end="", flush=True)
         text = sys.stdin.readline(SEAT_FILE_MAX * 16)
         while select.select([sys.stdin], [], [], 0.5)[0]:
             more = sys.stdin.readline(SEAT_FILE_MAX * 16)
@@ -2679,7 +2677,7 @@ def cmd_service(a) -> None:
             path = service.tilde(service.env_file(service.name()))
             if r == "absent":
                 sys.exit(f"✗ 这个终端里没有 {key}，没有可导入的 / {key} is not set in this terminal: nothing to import\n"
-                         + (service.key_note(service.name(), key) or ""))
+                         + service.absent_key_note(service.name(), key))   # P423 #140: per name, not always Jev's
             print(f"✓ {key} 已在服务环境文件里 / already in the service env file ({path})" if r == "present" else
                   f"✓ {key} 已导入服务环境文件（0600，值不显示）/ imported into the service env file ({path}, 0600, value not shown)")
             if r == "imported":
@@ -3308,7 +3306,7 @@ def main(argv=None) -> None:
                                     "(at least 8 characters). Then type the 6-digit code the phone shows (3 tries) and the password here, or "
                                     "approve on the account page — whichever comes first. Over SSH: `agentj pair --link` and finish in the same terminal.")
     pr.add_argument("--no-qr", action="store_true", help="不画二维码，改为打印配对链接")
-    pr.add_argument("--link", action="store_true", help="二维码之外也打印配对链接（它就是配对密钥）")
+    pr.add_argument("--link", action="store_true", help="兼容选项：默认已同时打印二维码与配对链接 / Compatibility: QR and link are already shown by default")
     pr.add_argument("--check", action="store_true", help="只做配对前检查：该走账户页通行密钥还是本机遥控器配对密码（不开始配对）/ "
                                                         "pre-check only: account page or local remote pairing password route")
     pr.add_argument("--json", action="store_true", help="与 --check 一起：输出 JSON")
@@ -3502,6 +3500,8 @@ def main(argv=None) -> None:
     tk.add_argument("--json", action="store_true")
     tk.set_defaults(fn=cmd_tasks)
     wizard.add_parser(sub)
+    from . import wfrun
+    wfrun.add_parser(sub)       # P426 #181-5: agentj automation resume|status (multi-step automations)
     from . import keep_awake
     keep_awake.add_parser(sub)
     from . import browser
@@ -3542,6 +3542,8 @@ def main(argv=None) -> None:
     support.add_parser(sub)   # F18: agentj support ask | report | thread | list
     from . import library
     library.add_parser(sub)   # P367: agentj data list | get | search | coverage [--source] (Agent J points)
+    from . import skills_cli
+    skills_cli.add_parser(sub)   # P426 #181: agentj skills health|archive|restore|suggest (skill health, save-as-skill offers)
     from . import capability
     capability.add_parser(sub)
     from . import goal as goal_cli

@@ -34,10 +34,10 @@ if (BEFORE) {
 const $ = (id) => `document.getElementById('${id}')`;
 const fake = await startFakeHost(), web = await startWebServer(publicDir ? { publicDir } : {}), B = await launch();
 const S = {
-  zh: { restored: '已恢复连接', lost: /连接已断开/, pending: '正在重新连接…', wait: '正在重新连接，连上后自动开始…', next: /自动变绿[\s\S]*agentj doctor --reconnect/,
+  zh: { restored: '已恢复连接', lost: /连接已断开/, pending: '正在重新连接…', wait: '正在重新连接，连上后自动开始…', next: /自动变绿[\s\S]*手机网络[\s\S]*support\.agentj\.app/,
     at: /检查过：仍然连不上$/, sumOk: /^上次：已完成（\d\d:\d\d）$/, details: '详情', close: '关闭执行结果' },
   en: { restored: 'Connection restored', lost: /Connection lost/, pending: 'Reconnecting…', wait: 'Reconnecting — this starts as soon as the link is back…',
-    next: /turns green by itself[\s\S]*agentj doctor --reconnect/, at: /: still no link$/, sumOk: /^Last run: done \(\d\d:\d\d\)$/, details: 'Details', close: 'Close command result' },
+    next: /turns green by itself[\s\S]*phone network[\s\S]*support\.agentj\.app/, at: /: still no link$/, sumOk: /^Last run: done \(\d\d:\d\d\)$/, details: 'Details', close: 'Close command result' },
 };
 // one recorder per page: every moment the disconnected card / Settings red / the 「连接已断开」 notice became visible
 const RECORDER = `(()=>{const R=window.__p393={pops:[],reds:[],lost:[],relink:false,t0:performance.now()};

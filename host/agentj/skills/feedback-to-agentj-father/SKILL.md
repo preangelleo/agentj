@@ -36,3 +36,8 @@ If the channel is unreachable, the fallback is feedback@agentj.app; help draft a
 “这个命令就是帮你把问题或点子告诉 Agent J 的开发者，也叫客服平台。你可以说‘请把问题汇报给 Agent J 开发者’，也可以开玩笑说‘把这事告诉你爸爸’。命令后面写上内容，我会先去掉私人信息，直接提交，再把编号告诉你。只发命令，我会先问你想说什么。如果是我自己想到要反馈，我会先把稿子给你看，你同意才发。”
 
 “This command tells Agent J’s developers, our support platform, about a problem or an idea. You can say ‘Please report this to Agent J’s developers’, or jokingly ‘Tell your dad about this’. Add your message after the command: I remove private information, send it and give you the ticket ID. With no message, I ask what you want to report. If reporting is my own idea, I show you the draft and wait for your agreement.”
+
+## Website support chat
+Verifying your email keeps the guest text-answer route available. Seat holders try Doubao and DeepSeek first, then the guest text route if both are unavailable. An upstream timeout produces a clear message or documentation links; an unsuccessful answer does not use your daily allowance.
+
+验证邮箱后仍可使用游客的文字回答线路；有席位时先用豆包和 DeepSeek，两者不可用时再尝试游客的文字线路。上游超时会给出提示或文档链接，不会一直等下去；没有成功生成回答就不扣当天次数。

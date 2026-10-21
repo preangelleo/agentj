@@ -16,16 +16,17 @@ import {lang} from './t.js';
 // offered (whitelisted) action with a plain explanation, and only the owner's tap sends their own signed `rescue_do
 // <action>` (flow = the action name). A used button is gone; a new ② run clears them. Support's advice rows carry the
 // caution line the command-line version prints (LOW-12) and stay plain text.
-import { request, done, isReady, peer } from './session.js';
+import { request, done, isReady, peer, ask1 } from './session.js';
 import { signed } from './controls.js';
 import { t, fillText, onLang } from './t.js';
-import { el, mk } from './ui.js';
+import { el, mk, confirmSheet } from './ui.js';
 import * as authrescue from './authrescue.js';
+import { registerLayer } from './layers.js';
 
 export const HELPER_CMD = 'curl -fsSL https://agentj.app/rescue | sh';
-export const STEPS = { reset: 4, help: 3, offer: 1, restart: 1 };          // §33: the reset ladder has four steps, the help flow three
+export const STEPS = { reset: 4, help: 3, offer: 1, restart: 1, restart_session: 1, clear: 1, ark: 1 };          // §33: the reset ladder has four steps, the help flow three
 export const FIRST_MS = 30000;                       // no answer at all this long → the host is stuck or too old
-export const IDLE_MS = { reset: 120000, help: 240000, offer: 240000, restart: 120000 };   // then: silence this long between two messages = no answer
+export const IDLE_MS = { reset: 120000, help: 240000, offer: 240000, restart: 120000, restart_session: 120000, clear: 120000, ark: 240000 };   // then: silence this long between two messages = no answer
 const WHY = ['shape', 'stale', 'no_key', 'bad_signature', 'replay', 'busy', 'unavailable'];
 const STATES = ['run', 'ok', 'fail', 'skip'];
 const TICKET = /^st_[A-Za-z0-9_-]{8,40}$/;
@@ -43,8 +44,8 @@ export const FOLD_MS = 30000;
 let H = { openSettings() {}, closeSettings() {}, toChat() {}, linkState: () => (isReady() ? 'up' : 'down') };
 const fresh = () => ({ st: 'idle', step: 0, text: '', steps: [], details: [], ticket: '', old: '', why: '', r: null, timer: 0, heard: false, dropped: false,
   offers: [], used: [], name: '', advice: false, fold: false, foldTimer: 0, wait: false, at: 0 });
-const S = { reset: fresh(), help: fresh(), offer: fresh(), restart: fresh(), failedOnce: false, askFirst: false, rescue: null, auth: null, authFold: '', authHide: '' };
-const FLOWS = ['reset', 'help', 'offer', 'restart'];
+const S = { reset: fresh(), help: fresh(), offer: fresh(), restart: fresh(), restart_session: fresh(), clear: fresh(), ark: fresh(), failedOnce: false, askFirst: false, rescue: null, auth: null, authFold: '', authHide: '', bannerHide: '' };
+const FLOWS = ['reset', 'help', 'offer', 'restart', 'restart_session', 'clear', 'ark'];
 
 const str = (v, n = 400) => (typeof v === 'string' ? v.replace(/[\u0000-\u0008\u000B-\u001F\u007F]/g, '').slice(0, n) : '');
 const tx = (k, vars) => t(k, vars);
@@ -55,7 +56,8 @@ async function start(flow, action = '') {
   if (F.st === 'run') return;
   if (flow === 'help' && S.offer.st === 'run') return;          // one repair at a time (the host would answer `busy`)
   clearTimeout(F.foldTimer);
-  Object.assign(F, fresh(), { st: 'run', name: action, text: tx(flow === 'help' ? 'p332.help.start' : 'p332.reset.start') });
+  const expected = flow === 'ark' ? arkOffer?.model : null;
+  Object.assign(F, fresh(), { st: 'run', name: action, expected, text: tx(flow === 'help' ? 'p332.help.start' : 'p332.reset.start') });
   if (flow === 'help') { S.askFirst = false; S.offer = fresh(); }   // a new ② run: the earlier offers and their result go
   if (!isReady() && H.linkState() === 'quiet') { F.wait = true; F.text = tx('p393.waitLink'); paint(); return; }   // starts once connected
   paint();
@@ -87,7 +89,8 @@ function onMsg(flow, m) {
     return;
   }
   if (m.t === 'reset_step') return step(flow, m);
-  if (m.t === 'reset_done') return finish(flow, m);
+  if (m.t === 'reset_done' && flow === 'ark' && m.pending) { F.text=m.text || tx('p419.arkWait'); F.dropped=true; if (F.r) done(F.r); F.r=null; arkOffer=null; arm('ark',IDLE_MS.ark); paint(); setTimeout(refreshArk,1500); return; }
+  if (m.t === 'reset_done') { if (flow === 'ark' && m.ok) arkOffer=null; finish(flow,m); if (flow === 'ark') refreshArk(); return; }
 }
 /** ② only: the owner-confirmed actions support offered (whitelist, in order, each once; unknown names ignored). */
 function takeOffers(flow, m) {
@@ -422,11 +425,30 @@ function paintAuth() {
 /** ③'s ended runs are told apart by stage + kind + reason (authrescue keeps no run id). */
 function authSig(f) { return f && (f.stage === 'done' || f.stage === 'failed') ? [f.stage, f.kind || '', f.route || '', str(f.why, 200)].join('|') : ''; }
 function hideAuth() { S.authHide = authSig(S.auth && S.auth.flow); paintAuth(); }
+// P424 (#145): the banner can be closed (× / Esc) — for this rescue spell only (keyed by its start); a new one shows it again.
+// It goes by itself as soon as Agent J is back (a normal ready — session.js resumes at the relay's `up` — or rescue off).
+const spell = () => (S.rescue && S.rescue.on ? String(S.rescue.since || 'on') : '');
+function hideBanner() { S.bannerHide = spell(); paintMode(); }
 function paintMode() {
   const on = !!(S.rescue && S.rescue.on);
-  const b = el('rescue-banner'); if (b) b.hidden = !on;
+  if (!on) S.bannerHide = '';
+  const b = el('rescue-banner'); if (b) b.hidden = !on || S.bannerHide === spell();
   const n = el('rs-mode'); if (n) n.hidden = !on;
   document.body.toggleAttribute('data-rescue', on);
+}
+function paintSession() {
+  const reset = el('rs-reset');
+  if (!reset) return;
+  let card = el('rs-session');
+  if (!card) { card = node('li', 'rscard'); card.id = 'rs-session'; reset.after(card); }
+  const F = S.restart_session;
+  // @ix app.restart_session
+  const go = btn('rs-session-go', tx('p435.session'), '', async () => {
+    if (await confirmSheet(tx('p435.session'), tx('p435.sessionConfirm'), tx('p435.session'))) start('restart_session', 'restart_session');
+  });
+  go.disabled = FLOWS.some(f => S[f].st === 'run');
+  const status = node('p', 'rsmsg', F.text || ''); status.setAttribute('role', 'status');
+  card.replaceChildren(node('h4', 'rstitle', tx('p435.session')), node('p', 'rsnote', tx('p435.sessionNote')), acts(go), status);
 }
 function paintRestart() {
   const block = el('set-s-rescue');
@@ -441,10 +463,14 @@ function paintRestart() {
   const status = node('p', 'rsmsg', F.st === 'idle' || F.fold ? '' : F.st === 'run' ? tx('p385.restart.wait') : F.st === 'ok' ? tx('p332.reset.back') : whyText(F.why) || tx('p332.noAnswer'));
   status.setAttribute('role', 'status');
   card.dataset.state = F.st;
-  card.replaceChildren(node('h4', 'rstitle', tx('p385.restart.go')), note, acts(go), status);
+  const clear = btn('rs-clear-friend-asks', tx('p419.clearFriendAsks'), '', () => start('clear', 'clear_friend_asks'));
+  clear.disabled = go.disabled;
+  const clearStatus = node('p', 'rsmsg', S.clear.st === 'idle' ? '' : S.clear.st === 'run' ? tx('p419.clearFriendAsks') : S.clear.text || whyText(S.clear.why));
+  clearStatus.setAttribute('role', 'status');
+  card.replaceChildren(node('h4', 'rstitle', tx('p385.restart.go')), node('small', 'rsnote', tx('p438.recommended')), note, acts(go, clear), status, clearStatus);
 }
 export function paint() {
-  paintReset(); paintHelp(); paintAuth(); paintMode(); paintRestart();
+  paintReset(); paintHelp(); paintAuth(); paintMode(); paintRestart(); paintSession(); paintArk();
   const block = el('set-s-rescue');
   if (block && !el('rs-detail-help')) block.append(helperLine('rs-detail-help'));
   const sup = el('rs-support-box');   // P400: 在线客服 (index.html) stays the block's last line, under the cards painted here
@@ -455,18 +481,21 @@ export function paint() {
 /** ≡ 重置连接, `/reset`, the block's button: open the block and run ①. */
 export function resetFromCommand() { H.openSettings(); start('reset'); }
 /** The offline card's 「紧急修复」 and the rescue banner: open Settings at this block. */
-export function openBlock() { H.openSettings(); }
+export function openBlock() { H.openSettings(); refreshArk(); }
 /** app.js: `{"t":"rescue","on",why,since,actions}` from the rescue watchdog (sent again for every other message). */
 export function onRescue(m) {
   const on = m && m.on === true;
-  S.rescue = on ? { on, why: str(m.why, 40), since: Number.isFinite(m.since) ? m.since : 0, actions: Array.isArray(m.actions) ? m.actions.slice(0, 12).map((x) => str(x, 24)) : [] } : null;
+  const since = Number.isFinite(m && m.since) ? m.since : 0;
+  if (on && S.rescue && S.rescue.on && !S.rescue.since && S.bannerHide === 'on') S.bannerHide = String(since || 'on');   // the ready's spell, now dated
+  S.rescue = on ? { on, why: str(m.why, 40), since, actions: Array.isArray(m.actions) ? m.actions.slice(0, 12).map((x) => str(x, 24)) : [] } : null;
   paintMode();
 }
 /** app.js: a broadcast `reset_done` (another remote's run, or an answer that outlived its request). */
 export function onDone(m) {
-  const flow = m && m.flow === 'restart' ? 'restart' : m && m.flow === 'help' ? 'help' : m && OFFERS.includes(m.flow) ? 'offer' : 'reset';
+  const flow = m && m.flow === 'restart_session' ? 'restart_session' : m && /^ark_fix_[0-9a-f]{24}$/.test(m.flow || '') ? 'ark' : m && m.flow === 'clear_friend_asks' ? 'clear' : m && m.flow === 'restart' ? 'restart' : m && m.flow === 'help' ? 'help' : m && OFFERS.includes(m.flow) ? 'offer' : 'reset';
   if (flow === 'offer' && m.flow !== S.offer.name) return;
-  if (S[flow].st === 'run' && S[flow].dropped) finish(flow, m);
+  if (flow === 'ark' && m.flow !== S.ark.name) return;
+  if (S[flow].st === 'run' && S[flow].dropped) { if (flow === 'ark') onMsg(flow,m); else finish(flow,m); }
 }
 /** app.js onReady: rescue mode follows the ready message; a reset that was running when the link dropped and came back
  *  to a normal Agent J did its job (step 4 restarts the computer's side, which ends that very connection). */
@@ -476,16 +505,17 @@ export function onReady() {
   for (const flow of FLOWS) {
     const F = S[flow];
     if (F.st === 'run' && F.wait) { F.st = 'idle'; F.wait = false; start(flow, F.name); continue; }   // P393: tapped while reconnecting
-    if (F.st === 'fail' && F.why === 'offline' && !peer.rescue) finish(flow, { ok: true, text: tx('p392.restored') });
-    if (F.st === 'run' && F.dropped && !peer.rescue) finish(flow, { ok: true, step: F.step, ticket: F.ticket, text: tx('p332.reset.back') });
+    if (flow !== 'ark' && F.st === 'fail' && F.why === 'offline' && !peer.rescue) finish(flow, { ok: true, text: tx('p392.restored') });
+    if (flow !== 'ark' && F.st === 'run' && F.dropped && !peer.rescue) finish(flow, { ok: true, step: F.step, ticket: F.ticket, text: tx('p332.reset.back') });
     if ((F.st === 'ok' || F.st === 'fail') && !F.fold && !F.foldTimer) foldLater(flow);   // the link is back: ended results fold
   }
+  refreshArk();
   paintMode();
 }
 /** P393 (app.js): the link has been unreachable for the full five seconds: a tap that was waiting for it says why now. */
 export function onLinkDown() { for (const flow of FLOWS) if (S[flow].st === 'run' && S[flow].wait) finish(flow, { ok: false, why: 'offline' }); }
 /** P393 (settings.js open): opening Settings again shows ended results as one line each; their log stays under 「详情」. */
-export function foldEnded() {
+export function foldEnded() { refreshArk();
   let any = false;
   for (const flow of FLOWS) { const F = S[flow]; if ((F.st === 'ok' || F.st === 'fail') && !F.fold) { clearTimeout(F.foldTimer); F.foldTimer = 0; F.fold = true; any = true; } }
   const sig = authSig(S.auth && S.auth.flow);
@@ -497,10 +527,57 @@ export function configure(hooks) {
   H = { ...H, ...hooks };
   authrescue.watch((v) => { const was = authSig(S.auth && S.auth.flow); S.auth = v; const now = authSig(v && v.flow); if (now !== was) S.authAt = Date.now(); if (v && v.flow && !now) S.authFold = S.authHide = ''; paintAuth(); });
   el('rescue-banner-go')?.addEventListener('click', openBlock);
+  el('rescue-banner-x')?.addEventListener('click', hideBanner);
+  registerLayer({ element: () => el('rescue-banner'), open: () => { const b = el('rescue-banner'); return !!b && !b.hidden; }, close: hideBanner,
+    rank: 1, trap: false, preserveOutsideFocus: true });
   onLang(paint);
   paint();
 }
 // tests
 export const _debug = () => ({ reset: { ...S.reset, timer: !!S.reset.timer, foldTimer: !!S.reset.foldTimer }, help: { ...S.help, timer: !!S.help.timer, foldTimer: !!S.help.foldTimer }, offer: { ...S.offer, timer: !!S.offer.timer }, failedOnce: S.failedOnce, askFirst: S.askFirst, rescue: S.rescue });
-export function _reset() { for (const f of FLOWS) { clearTimeout(S[f].timer); clearTimeout(S[f].foldTimer); if (S[f].r) done(S[f].r); S[f] = fresh(); } S.failedOnce = false; S.askFirst = false; S.authFold = S.authHide = ''; paint(); }
+export function _reset() { arkOffer=null; arkDismissed=''; for (const f of FLOWS) { clearTimeout(S[f].timer); clearTimeout(S[f].foldTimer); if (S[f].r) done(S[f].r); S[f] = fresh(); } S.failedOnce = false; S.askFirst = false; S.authFold = S.authHide = ''; paint(); }
 export function _foldNow() { for (const f of FLOWS) { const F = S[f]; if (F.foldTimer) { clearTimeout(F.foldTimer); F.foldTimer = 0; if (F.st === 'ok' || F.st === 'fail') F.fold = true; } } paint(); }
+
+
+let arkOffer = null, arkDismissed = '';
+export function onArkPlan(m) {
+  const o = m && m.offer;
+  arkOffer = o && /^ark_fix_[0-9a-f]{24}$/.test(o.action || '') && ['agent','coding'].includes(o.plan)
+    && typeof o.model === 'string' && o.model.startsWith(o.plan === 'agent' ? 'ark-agent-plan/' : 'ark-coding-plan/') && /^(ark-agent-plan|ark-coding-plan)\/[A-Za-z0-9._:/@+-]{1,128}$/.test(o.model) ? o : null;
+  const F = S.ark;
+  if (F.st === 'run' && F.dropped && typeof F.expected === 'string') {
+    if (m.current === F.expected) finish('ark',{ok:true,text:tx('p419.arkDone',{plan:F.expected.startsWith('ark-agent-plan/')?'Agent Plan':'Coding Plan'})});
+    else if (['failed','rolled_back'].includes(m.outcome)) finish('ark',{ok:false,text:tx('p419.arkFailed')});
+  }
+  paintArk();
+}
+async function refreshArk() {
+  if (!isReady() || peer.rescue) return;
+  const m = await ask1({t:'ark_plan_get'}, 'ark_plan', 5000);
+  if (m?.t === 'ark_plan') onArkPlan(m);
+  if (S.ark.st === 'run' && S.ark.dropped) setTimeout(refreshArk,1500);
+}
+function paintArk() {
+  const block = el('set-s-rescue'), anchor = el('rescue-banner');
+  if (!block) return;
+  const F = S.ark;
+  let card = el('rs-ark-plan');
+  if (!card && !arkOffer && F.st === 'idle') return;
+  if (!card) { card = node('div','rscard'); card.id = 'rs-ark-plan'; block.append(card); }
+  const label = arkOffer?.plan === 'coding' ? tx('p419.useCoding') : tx('p419.useAgent');
+  const action=arkOffer?.action;
+  const makeGo = id => { const b=btn(id,label,'',()=>start('ark',action)); b.disabled=!arkOffer || FLOWS.some(f=>S[f].st==='run'); return b; };
+  const msg = F.st === 'idle' ? tx('p419.arkMismatch') : F.st === 'run' ? (F.text || tx('p419.arkWait')) : F.text || tx('p419.arkFailed');
+  card.hidden = !arkOffer && F.st === 'idle';
+  const heading=F.st==='ok'?tx('p419.arkDone',{plan:F.expected?.startsWith('ark-agent-plan/')?'Agent Plan':'Coding Plan'}):tx('p419.arkMismatch');
+  const title=node('h4','rstitle',heading);
+  card.replaceChildren(...(['ok','fail'].includes(F.st)?[headBar('ark',title,()=>clearFlow('ark'))]:[title]),...(msg===heading?[]:[node('p','rsmsg',msg)]),...(arkOffer?[node('p','rsnote',arkOffer.model)]:[]),...(arkOffer?[acts(makeGo('rs-ark-fix-go'))]:[]));
+  let banner=el('ark-plan-banner');
+  if (!banner && anchor) { banner=node('div','setup-banner'); banner.id='ark-plan-banner'; banner.setAttribute('role','status'); anchor.before(banner); }
+  if (banner) {
+    banner.hidden=(!arkOffer && F.st==='idle') || (arkOffer?.action===arkDismissed && F.st==='idle');
+    const close=btn('ark-plan-dismiss','✕','setup-banner__x',()=>{arkDismissed=arkOffer?.action||'';if(['ok','fail'].includes(F.st))clearFlow('ark');banner.hidden=true;});
+    close.setAttribute('aria-label',tx('ar.renewLater'));
+    banner.replaceChildren(node('p','setup-banner__open',msg),...(arkOffer?[makeGo('ark-plan-fix-go')]:[]),close);
+  }
+}

@@ -201,4 +201,12 @@
     // [{"id": "<--from name | task.<task id>>", "allow": true|false}]; not listed = refused / 每个自动化的开关; default=[]
     "automations": [],
   },
+  // P426: skill health on the phone's 技能 page and "save it as a skill?" offers (agentj skills health | suggest).
+  "skills":
+  {
+    // Days without use before a skill is marked long unused, 7–365; never archived by itself / 多少天没用算「很久没用了」; default=30
+    "stale_days": 30,
+    // Offer once to save a task done 3 times in 14 days as a skill / 同类事做满 3 次主动问要不要存成技能; default=true
+    "suggest": true,
+  },
 }

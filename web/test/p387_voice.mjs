@@ -33,18 +33,19 @@ try {
    assert.ok(await evaluate(p,`(()=>{const m=document.getElementById('mic'),l=document.getElementById('micLabel');return l.getBoundingClientRect().width<=m.getBoundingClientRect().width;})()`));
    await sleep(200);writeFileSync(join(out,`progress-${w}-${scheme}-${lang}.png`),await shoot(p));
    await evaluate(p,`window.finishVoice({ok:true,state:'ready'})`);await waitFor(p,`document.getElementById('toast').dataset.kind==='success'`);
-   assert.equal(await evaluate(p,`document.querySelector('#toast .nt-title').textContent`),lang==='zh'?'语音输入已就绪':'Voice input is ready');
-   assert.equal(await evaluate(p,`document.getElementById('toast').dataset.hold`),'1');
+   assert.equal(await evaluate(p,`document.querySelector('#toast .nt-body').textContent`),lang==='zh'?'语音输入已就绪':'Voice input is ready');
+   assert.equal(await evaluate(p,`document.getElementById('toast').dataset.hold`),undefined);
+   assert.equal(await evaluate(p,`document.querySelectorAll('#toast button').length`),0);
    assert.notEqual(await evaluate(p,`document.getElementById('mic').getAttribute('aria-label')`),lang==='zh'?'准备中':'Preparing');
    await sleep(200);writeFileSync(join(out,`ready-${w}-${scheme}-${lang}.png`),await shoot(p));
-   await key(p,'Escape');assert.equal(await evaluate(p,`document.getElementById('toast').classList.contains('on')`),false);
+   await waitFor(p,`!document.getElementById('toast').classList.contains('on')`,3000);
    await evaluate(p,`void window.voiceFixture.run()`);await waitFor(p,`document.getElementById('toast').dataset.kind==='progress'`);
    await evaluate(p,`window.finishVoice({ok:false,why:'download_failed'})`);await waitFor(p,`document.getElementById('toast').dataset.kind==='error'`);
    assert.equal(await evaluate(p,`document.querySelector('#toast .nt-acts button').textContent`),lang==='zh'?'重试':'Try again');
    await sleep(200);writeFileSync(join(out,`failed-${w}-${scheme}-${lang}.png`),await shoot(p));
    await evaluate(p,`document.querySelector('#toast .nt-acts button').click()`);await waitFor(p,`document.getElementById('toast').dataset.kind==='progress'`);
    await evaluate(p,`window.finishVoice({ok:true,state:'ready'})`);
-   results.push({w,scheme,lang,preparingAria:true,progress:true,heldReady:true,escape:true,retry:true});
+   results.push({w,scheme,lang,preparingAria:true,progress:true,transientReady:true,buttonless:true,retry:true});
    console.log('PASS voice',w,scheme,lang);
   } finally {await p.dispose();}
  }

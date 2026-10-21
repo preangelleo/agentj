@@ -175,7 +175,7 @@ test('P393 strings: both languages, same placeholders, no ticket codes, no palet
     assert.equal(ph(DICT.zh[k]), ph(DICT.en[k]), k);
     for (const l of ['zh', 'en']) assert.doesNotMatch(DICT[l][k], /P\d{3}|#\d{2,}|Noir|Lotion|Sooty|Emerald|Peachy|试用|trial/i, k + ' ' + l);
   }
-  assert.match(DICT.zh['p393.offlineNext'], /`agentj doctor --reconnect`/);
-  assert.match(DICT.en['p393.offlineNext'], /`agentj doctor --reconnect`/);
+  assert.match(DICT.zh['p393.offlineNext'], /手机浏览器.*support\.agentj\.app/);
+  assert.match(DICT.en['p393.offlineNext'], /support\.agentj\.app.*phone browser/);
   assert.equal(DICT.zh['p380.closeResult'], '关闭执行结果');
 });

@@ -1,3 +1,8 @@
+import { showPairGuide } from './js/pair-guide.js';
+import { copyButton } from './js/copycode.js';
+
+import {initControlGestures} from './js/control-gestures.js';
+import {initPullRefresh} from './js/pull-refresh.js';
 import {initRemote} from './js/tvremote.js';
 import {longPress} from './js/longpress.js';
 import { capturePage } from './js/pageshot.js';
@@ -18,7 +23,7 @@ import { parsePairing as parseLink } from './proto/wire.js';
 import VERSION from './version.js';
 import {probeEnvironment, publicPhoneLink} from './js/phone-env.js';
 import { t, lang, fillText, plain, applyStatic, onLang } from './js/t.js';
-import { el, toast, notify, confirmSheet, closeConfirm } from './js/ui.js';
+import { el, toast, executionToast, notify, noticeSheet, confirmSheet, closeConfirm } from './js/ui.js';
 import { dbGet, dbPut, dbDel, deviceKey, signKey, wipeLocal, markPaired, wasPaired, askPersist } from './js/store.js';
 import { b64u, unb64u } from './proto/wire.js';
 import * as session from './js/session.js';
@@ -43,6 +48,8 @@ import * as contacts from './js/contacts.js';   // P184 (§25): contact cards + 
 import * as secretout from './js/secretout.js'; // F32: secret pickup cards (§18)
 import * as cmdrun from './js/cmdrun.js';     // P361: Settings 「执行」
 import * as termhook from './js/termhook.js'; // P408 (§38): Settings → 安全 → 网页终端 (the page itself loads on first open)
+import * as bang from './js/bang.js';         // P414 (§38.12): 「!」 commands + their result card
+import * as vaultrow from './js/vaultrow.js'; // P414 (§38.9): Settings → 安全 → 电脑密码
 import * as keys from './js/keys.js';         // P352: 「模型和 API Key」 key manager
 import * as longtask from './js/longtask.js';   // 0.18: opening card + 「我的 Agent 会什么」 (§20)
 import * as logincard from './js/logincard.js'; // P114: sign-in QR cards (ADR-A194)
@@ -76,6 +83,7 @@ import { wireTopFit } from './js/topfit.js';      // P340: header icon gaps foll
 import { applyViewport, watchViewport } from './js/viewport.js';
 
 const $ = el;
+initControlGestures();
 
 // ---------------------------------------------------------------- Agent display name (host → device {"t":"status",…,"name"})
 // The name the owner gave this Agent: in the reply card's header (where relay named its target), in the menu
@@ -339,6 +347,7 @@ session.configure({
     // lost the key (0.15.1) instead of failing the resume and calling it "removed"
     const host = { relay: ctx.relay, channel: ctx.channel, hostPub: ctx.hostPub, approved: true, dk: b64u((await deviceKey()).pub) };
     if (restoreKind === 'pk') host.pk = true;         // P198: restored with a passkey, so the taken-over page can offer it again
+    $('pair-guide').hidden = true;
     await forgetLocal();                              // a new pairing starts empty: nothing of the previous computer goes to it
     await dbPut('host', host);
     markPaired(true);
@@ -395,11 +404,11 @@ snap.configure({
   onTurn: (p) => relay.upsertTurn(p),
 });
 api.onState((m) => relay.onSayState(m));
-controls.configure({ show, estopChanged: () => { relay.onEstop(); rerender(); }, friends: () => friends.refresh(), bots: () => bots.refresh() });
+controls.configure({ faceId: settings.faceIdStep, show, estopChanged: () => { relay.onEstop(); rerender(); }, friends: () => friends.refresh(), bots: () => bots.refresh() });
 bots.configure({openPanel:controls.openPanel});
 setupcard.configure({ openPanel: controls.openPanel, view: () => view });   // P131: the checklist page + chat banner
 friends.configure({ openPanel: controls.openPanel, leave: () => leavePage(), agentName: () => agentName ?? DEFAULT_NAME });
-elevate.configure({ recover: () => cardsync.sync() }); // P392: no circular module dependency
+elevate.configure({ onSecretSaved: keys.saved, recover: () => cardsync.sync() }); // P392: no circular module dependency
 contacts.configure({ openSettingsMail: () => settings.openMail() });   // P184: no mailbox yet → Settings → 邮件通道
 upgcard.configure({ upgrade: () => api.upgradeNow() });   // P203: 「现在升级」 = this phone's signed /update
 authrescue.configure({ openAuth: () => settings.openAuth() });   // P288: the chat's 「现在续期」 banner → Settings → AI 登录救援
@@ -414,16 +423,14 @@ api.setUpgradeFlow(() => upgcard.start());                 // ≡ /update and Se
 function onApp(m) {
   if (api.route(m) || blobs.handle(m) || media.handle(m)) return;
   switch (m.t) {
+    case 'pair_guide': showPairGuide(m.kind); return;
     case 'preferences': setHostVersion(m.host?.version); relay.hostVersionIs(m.host?.version); relay.applyPreferences(m.value); settings.setPrefs(m.value, m.host); rerender(); if(m.problem)relay.configProblem(m.problem.error); return;
     case 'status': setAgentName(m.name); snap.setStatus(m); renderTg(); return;
     case 'busy': busy.setBusy(m); return;            // P150 (§22): who works in the background (display only)
     case 'res': busy.setRes(m); return;              // P181 (§22.1): the load card's five resources (only while it is open)
     case 'theme': applyTheme(m); rerender(); relay.paintChrome(); return;   // P169 (§23): repaint now (logo, status bar)
     case 'ask':
-      snap.addAsk(m);
-      // P165: a new remote asks to pair (P153 card) while this remote's own 遥控器管理 is open — step aside so the card
-      // (hold to confirm, no typing) is in front; the page's code field stays one tap away.
-      if (m && m.tool === 'pair_device' && settings.isOpen()) { settings.onPairCard(); settings.close(); }
+      if (snap.addAsk(m)) frontAsk(m);
       return;
     case 'ask_done': friends.answerDone(m); snap.askDone(m); return;
     case 'answer_refused': relay.answerRefused(m); friends.answerRefused(m); snap.answerRefused(m); toast(t('fr.ask.failed'), 5000); return;
@@ -437,6 +444,7 @@ function onApp(m) {
     case 'auth_rescue': authrescue.onPush(m); return;   // P258 (§31)
     case 'quota_resume': qresume.onPush(m); return;     // P314 (§32)
     case 'rescue': rescue.onRescue(m); return;          // P332 (§33): the rescue watchdog answers instead of Agent J
+    case 'ark_plan': rescue.onArkPlan(m); return;
     case 'reset_done': rescue.onDone(m); return;        // P332: a repair's end that reached this remote without its request
     case 'reset_step': return;                          // (steps of another remote's repair: its own card shows them)
     case 'elev_progress': elevate.progress(m); return;
@@ -444,6 +452,7 @@ function onApp(m) {
     case 'elev_done': termhook.msg(m); elevate.done(m); return;
     case 'elev_refused': termhook.msg(m); elevate.refused(m); return;   // ADR-A163: Face ID not accepted, the card stays open
     case 'term_out': case 'term_confirm': case 'term_sudo': case 'term_close': termhook.msg(m); return;   // P408 (§38)
+    case 'term_bang': case 'term_go': termhook.msg(m); return;   // P414 (§38.12 / §38.13): a 「!」 line's answer · the Agent opens the terminal
     case 'elev_grants': elevate.grants(m); return;     // #116 (§11.1): 10-minute same-class approvals + 「收回授权」
     case 'elev_auto': elevate.auto(m); return;         // #116: ran under that approval, no card
     case 'ct_card': contacts.card(m); return;         // P184 (§25): save / complete a contact (the owner's tap)
@@ -649,7 +658,9 @@ async function setupFaceId() {
 secretout.configure({ setupFaceId });
 keys.configure({ setupFaceId });   // P352: 拷贝 / 删除 on a phone without a passkey offer the same F20 setup
 cmdrun.configure({ setupFaceId, openTerminal: (cmd) => termhook.open(cmd) }); // P361: 「执行」 on a phone without a passkey — the same F20 offer · P408: 「在终端里打开」
-termhook.configure({ setupFaceId, openSettings: () => { if (!settings.isOpen()) settings.open(); }, openRescue: () => settings.openRescue(), changed: () => cmdrun.paint() });   // P408
+termhook.configure({ setupFaceId, openSettings: () => { if (!settings.isOpen()) settings.open(); }, openRescue: () => settings.openRescue(), changed: () => cmdrun.paint(),
+  attach: (f) => relay.attachShot(f, true), insert: (s) => relay.insertText(s), goChat: () => { if (settings.isOpen()) settings.close(); } });   // P408 · P414: 截屏发到聊天 / 放回输入框
+vaultrow.configure({ setupFaceId });   // P414
 let phoneEnvironment = null, phoneHintAfterPair = false, phoneHintDismissed = false;
 function renderPhoneEnvironment(force = false) {
   const e = phoneEnvironment;
@@ -1048,6 +1059,16 @@ const installAsr = () => asrSetup.run();
 const closeMenu = () => settings.close();
 let backFocus = null;
 const fromSettings = (fn) => (e) => { backToSettings = settings.isOpen(); backFocus = e?.currentTarget?.id || null; settings.close(); fn(); };
+// P165: a new remote asks to pair (P153 card) while this remote's own 遥控器管理 is open — step aside so the card
+// (hold to confirm, no typing) is in front; the page's code field stays one tap away.
+// P417 #186: every NEW 「请你点头」 card does the same — Settings never hides one. A Same-owner card (its six-digit code)
+// also leaves the friends page / any other page for the chat, where the card is.
+function frontAsk(m) {
+  relay.remoteReader(false);
+  if (m.tool === 'pair_device' && settings.isOpen()) settings.onPairCard();
+  if (settings.isOpen()) settings.close();
+  if (view !== 'chat' && PAIRED_VIEWS.includes(view)) controls.openPanel('chat');
+}
 function leavePage() {
   const again = backToSettings;
   backToSettings = false;
@@ -1072,8 +1093,7 @@ function wire() {
   $('phone-env-dismiss').addEventListener('click', () => { phoneHintDismissed = true; renderPhoneEnvironment(); });
   $('phone-env-copy').addEventListener('click', async () => {
     const link = publicPhoneLink(location.href);
-    try { await navigator.clipboard.writeText(link); toast(t('phoneEnv.copied')); }
-    catch { $('phone-env-link').value = link; $('phone-env-link').hidden = false; $('phone-env-link').select(); }
+    if (!await copyButton(link, $('phone-env-copy'))) { $('phone-env-link').value = link; $('phone-env-link').hidden = false; $('phone-env-link').select(); }
   });
   onLang(() => renderPhoneEnvironment());
   $('menu-about').addEventListener('click', () => toggleBadge(true));   // above Settings; closing it returns there
@@ -1165,7 +1185,7 @@ function wire() {
     const url = URL.createObjectURL(file), img = document.createElement('img');
     img.src = url; img.alt = ''; setTimeout(() => URL.revokeObjectURL(url), 60_000);
     const actions = plan.actions.map((a) => a === 'copy'
-      ? { label: t('p340a.copyImg'), fn: () => shotcopy.copyImage(file).then((x) => { if (x === 'ok') shotclip.remember(); toast(t(x === 'ok' ? 'p340a.copied' : 'p340a.copyFail'), 3000, x === 'ok' ? 'success' : 'warn'); }) }
+      ? { label: t('p340a.copyImg'), fn: (button) => copyButton(file, button, async value => { const x = await shotcopy.copyImage(value); if (x === 'ok') shotclip.remember(); return x === 'ok'; }) }
       : { label: t('p340a.share'), fn: () => shotcopy.shareFile(file).then((x) => { if (x === 'failed') toast(t('p340a.shareFail'), 3000, 'warn'); }) });
     notify({ kind: plan.kind, text: t(plan.key, { n: tray.n, max: tray.max }), media: img, actions, ms: actions.length ? 8000 : 3000 });
   };
@@ -1175,11 +1195,13 @@ function wire() {
   };
   for (const kind of ['friends', 'bots']) $('assist-' + kind).addEventListener('click', () => assist(kind));
   // P387 #98: same sealed-draft and busy guards as automatic refresh; a hold suppresses its tap.
-  longPress($('srchBtn'), async () => { // @ix app.refresh_hold
+  const guardedRefresh=async()=>{
     const ready=async()=>!relay.refreshBlocked()&&await relay.saveDraft()&&!relay.refreshBlocked();
-    if(!await ready()){toast(t('p387.refreshBusy'),4000);return;}
-    await settings.refreshApp({silent:true,beforeReload:ready});
-  });
+    if(!await ready()){toast(t('p387.refreshBusy'),4000);return false;}
+    return settings.refreshApp({silent:true,beforeReload:ready});
+  };
+  longPress($('srchBtn'), guardedRefresh); // @ix app.refresh_hold
+  initPullRefresh($('main'), {blocked:relay.refreshBlocked,refresh:guardedRefresh}); // @ix app.refresh_pull
   $('srchBtn').addEventListener('click', () => { if (settings.isOpen()) settings.toggleSearch(); });
   document.addEventListener('keydown', e => {
     if (e.isComposing || e.repeat || !PAIRED_VIEWS.includes(view)) return;
@@ -1195,7 +1217,7 @@ function wire() {
   }, true);
   settings.configure({                                // F13: the gear, before relay.init so its Esc runs first
     screenshot,
-    gearHelp: () => confirmSheet(t('set.btn'), t('p264.gearHelp'), t('a2hs.ok')),
+    gearHelp: () => noticeSheet(t('set.btn'), t('p264.gearHelp')),
     agentName: () => agentName ?? DEFAULT_NAME,
     paired: () => !['idle', 'pairing', 'awaiting-approval', 'revoked'].includes(state),
     connected: () => state === 'ready',
@@ -1207,7 +1229,7 @@ function wire() {
     assist: (text) => { show('chat'); relay.insertText(text); },   // P274: 「让 Agent J 帮我改」 → a draft, never sent
     upgradeHost: async () => {                        // P203: Settings → 升级电脑上的 Agent J (the same path as ≡ /update)
       if (!session.isReady()) { toast(t('set.offline'), 2400); return; }
-      if (await api.slash('update')) { settings.close(); toast(t('upg.started'), 2600); }
+      if (await api.slash('update')) { settings.close(); executionToast(t('upg.started'), 2600); }
     },
   });
   $('scan-repair').addEventListener('click', async () => {
@@ -1282,7 +1304,9 @@ async function main() {
     api,
     myDev: api.myIdSync,
     agentName: () => agentName ?? DEFAULT_NAME,
-    connected: () => state === 'ready',
+    // P424 (#145): the rescue watchdog answers no `say` — a message sent while it holds the line waits in the offline queue
+    // and goes out once Agent J itself is back (the next ready)
+    connected: () => state === 'ready' && !session.peer.rescue,
     estopOn: () => controls.estop.on,
     estop: (stop) => (stop ? controls.onEstop() : controls.onResume()),
     canSign: api.canSign,
@@ -1299,6 +1323,8 @@ async function main() {
     refreshApp: settings.refreshApp,
     models: openModels,
     asrInstall: installAsr,
+    bang: bang.take,                                // P414 (§37.12): 「!」 lines go to the web terminal
+    termCard: bang.paintCard,
   });
   fivePages.init({ chat: () => controls.openPanel('chat'), memory: () => controls.openPanel('mem'), insert: relay.insertText, send: () => $('send').click() });
   const host = await dbGet('host');

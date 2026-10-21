@@ -1,0 +1,23 @@
+{
+  "$schema": "https://agentj.app/schema/agentj-card-1.json",
+  "schemaVersion": 1,
+  "id": "files",
+  "version": "1.0.0",
+  "name": {
+    "zh": "文件管理",
+    "en": "Files"
+  },
+  "description": {
+    "zh": "浏览 Agent J 主机上的文件夹，下载文档到手机，或 @ 给 Agent 在主机上读。",
+    "en": "Browse folders on your Agent J host; download a document or @ it for the Agent to read there."
+  },
+  "author": "Agent J",
+  "icon": "folder",
+  "accent": "emerald-oasis",
+  "template": "notes",
+  "plus": "agentj-cards",
+  "data": {
+    "file": "files.md"
+  },
+  "actions": []
+}

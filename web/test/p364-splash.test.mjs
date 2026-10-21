@@ -87,11 +87,10 @@ test('iOS apple-touch-icon is untouched: opaque Lotion (iOS turns transparency b
   assert.equal(hex(...im.px(0, 0)), '#faf9f5'); assert.equal(im.px(0, 0)[3], 255);
 });
 
-test('boot.js: an installed Android app launches with theme-color = background_color (iPhone keeps its saved colour)', () => {
+test('boot.js: all installed splash status bars stay Sooty without cached state colours', () => {
   const B = readFileSync(join(PUBLIC_DIR, 'js/boot.js'), 'utf8');
-  assert.match(B, /matchMedia\("\(display-mode: standalone\)"\)\.matches/);
-  assert.ok(B.includes(`setAttribute("content", "${M.background_color}")`));
-  assert.ok(B.indexOf('display-mode: standalone') < B.indexOf('localStorage.getItem("aj.chrome")'), 'Android branch returns before the iPhone launch colour');
+  assert.ok(B.includes('setAttribute("content", "#141414")'));
+  assert.ok(!B.includes('localStorage.getItem'));
 });
 
 // P364 (Leo 10-17: 「logo 在这个圆圈中间，是不是有点向右偏移」): the robot is 9 cells wide on a 16-cell grid, so the plain

@@ -10,9 +10,13 @@
 //   cards-open        `agentj card open` (jcard_open): the phone goes to the card and the place (a checklist row flashes)
 //   cards-mention     @ in the message box offers the owner's cards (chip 「@记事本」, the text carries card/<id>); in messages
 //                     `@名`, `card/<id>#<anchor>` and a `card/<id>` code span are links; two cards with one name → a chooser
-//   cards-notes       記事本 page: the notes drawn from the host's text, buttons; 「帮我整理」 → the official confirm card shows the
-//                     whole message with its 「来自卡片」 label → 发送 → exactly that text is the say; 「记一条」 → a draft, nothing sent
-//   cards-todo        待办 page: 4 rows, done ones struck through; tap a row → confirm → 取消 sends nothing
+//   cards-notes       記事本 page: the notes drawn from the host's text, two buttons (P415: the official notes / to-do cards no
+//                     longer draw the host's 「记一条 / 帮我整理」 actions): add (data-act=add) → the direct-save dialog, nothing goes
+//                     to the Agent, Esc closes it; collaborate (data-act=collaborate) → `/agentj-add-note ` in the message box,
+//                     nothing sent
+//   cards-todo        待办 page: 4 rows, done ones struck through; tap a row → confirm shows the whole message → 取消 sends nothing;
+//                     again → 发送 → exactly that text is the say (moved here from 「帮我整理」, P415); add / collaborate as on notes
+//   (P413: the official 「日历」 card is on by default, so the deck is 5 system + 5 owner cards = 10, Settings lists 5 rows)
 //   cards-settings    Settings → Cards: official + mine with their switches; off → jcard_set {id, on:false}, the deck loses it
 //   cards-many        35 cards: the same 44 px peek, the deck scrolls to the last card
 //   cards-old-host    a computer without jcards1: five cards, no Settings row
@@ -24,7 +28,7 @@ import { fileURLToPath } from 'node:url';
 import { parityRecorder } from '../../parity/lib.mjs';
 import { startWebServer } from './serve.mjs';
 import { startFakeHost } from './fakehost.mjs';
-import { launch, newPage, navigate, waitFor, waitState, evaluate, shoot, sleep } from './browser.mjs';
+import { launch, newPage, navigate, waitFor, waitState, evaluate, shoot, sleep, key } from './browser.mjs';
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const OUT = join(ROOT, 'reports/qa/p360');
@@ -32,6 +36,7 @@ const FX = JSON.parse(readFileSync(join(ROOT, 'host/tests/fixtures/p360_cards.js
 const WF = JSON.parse(readFileSync(join(ROOT, 'host/tests/fixtures/p244_wf.json'), 'utf8'));
 export const CASES = { deck: 'cards-deck', notes: 'cards-notes', todo: 'cards-todo', settings: 'cards-settings', many: 'cards-many', old: 'cards-old-host',
   plus: 'cards-plus', links: 'cards-links', open: 'cards-open', mention: 'cards-mention' };
+const DECK = 10;   // P413: 5 system cards + notes, todo, automation, calendar (official, default on), reading-list
 const PEEK = 44, CARD_H = 220, CARD_W = 360;
 const S = { zh: { notes: '记事本', todo: '待办', tidy: '帮我整理', label: '〔来自卡片：记事本〕', send: '发送', nav: 'Cards 卡片', official: '官方', mine: '我的',
                    reply: '加好了：card/todo#t3 ，也可以看 `card/notes` 或者 @待办。', dup: '记在 @记事本 里了。' },
@@ -90,16 +95,16 @@ export async function runP360() {
       await pair(p, lang);
 
       await step('deck', async () => {
-        await openMenu(p, 9);
+        await openMenu(p, DECK);
         const g = await deckGeom(p);
         const steps = g.tops.slice(1).map((t, i) => Math.round(t - g.tops[i]));
         check(steps.every((s) => Math.abs(s - PEEK) <= 1), `deck: one fixed ${PEEK} px peek ${steps.join(',')} ${name}`);
         const box = await ev(p, `(()=>{const o=document.getElementById('orb').getBoundingClientRect(),c=[...document.querySelectorAll('#five-menu .fp-menu-card')].map(b=>b.getBoundingClientRect());return {orb:o.left,lefts:c.map(r=>Math.round(r.left)),ws:c.map(r=>Math.round(r.width)),hs:c.map(r=>Math.round(r.height)),bottom:c.at(-1).bottom,vw:innerWidth,vh:innerHeight};})()`);
         check(box.lefts.every((l) => Math.abs(l - box.orb) <= 1), `deck: left edge = the logo's left edge ${box.orb}/${box.lefts[0]} ${name}`);
         check(box.ws.every((x) => Math.abs(x - Math.min(box.vw - 2 * box.orb, CARD_W)) <= 1) && box.hs.every((x) => x === CARD_H), `deck: fixed card ${box.ws[0]}×${box.hs[0]} ${name}`);
-        check(box.bottom < box.vh - 100, `deck: nine cards do not fill the screen ${Math.round(box.bottom)}/${box.vh} ${name}`);
+        check(box.bottom < box.vh - 100, `deck: ten cards (P413 calendar) do not fill the screen ${Math.round(box.bottom)}/${box.vh} ${name}`);
         check(g.sw <= g.cw, `deck: no sideways overflow ${name}`);
-        check(await ev(p, `[...document.querySelectorAll('.jc-card')].map(b=>b.dataset.card).join()==='notes,todo,automation,reading-list'`), `deck: owner cards after the five, in order ${name}`);
+        check(await ev(p, `[...document.querySelectorAll('.jc-card')].map(b=>b.dataset.card).join()==='notes,todo,automation,calendar,reading-list'`), `deck: owner cards after the five, in order (P413 calendar) ${name}`);
         check(await ev(p, `document.querySelector('.jc-card[data-card="notes"] .jc-name').textContent===${q(T.notes)}`), `deck: card name in the title strip ${name}`);
         check(await ev(p, `(()=>{const b=document.querySelector('.jc-card[data-card="todo"]');const s=getComputedStyle(b);return s.backgroundColor==='rgb(106, 155, 204)'&&s.color==='rgb(250, 249, 245)';})()`), `deck: accent fill + Lotion ink from cards.css (P393 #132) ${name}`);
         writeFileSync(join(OUT, `deck-${name}.png`), await shoot(p, ''));
@@ -113,29 +118,23 @@ export async function runP360() {
         check(await ev(p, `document.querySelectorAll('.jc-actions .jc-action').length===2`), `notes: two buttons ${name}`);
         check(await ev(p, `(()=>{const b=document.getElementById('five-page');return b.scrollWidth<=b.clientWidth&&[...document.querySelectorAll('.jc-action')].every(x=>x.getBoundingClientRect().height>=44);})()`), `notes: no overflow, taps ≥ 44 px ${name}`);
         writeFileSync(join(OUT, `notes-${name}.png`), await shoot(p, ''));
+        // P415: the official notes card's buttons are add (direct save, no AI) + collaborate (a draft), not the host's actions
+        check(await ev(p, `[...document.querySelectorAll('.jc-actions .jc-action')].map(b=>b.dataset.act).join()==='add,collaborate'`), `notes: add + collaborate (P415) ${name}`);
         const before = fake.st.says.length;
-        await click(p, '.jc-action[data-act="tidy"]');
-        await waitFor(p, `!document.getElementById('confirm').hidden`);
-        const want = FX.get[lang].notes.actions.find((a) => a.id === 'tidy').prompt;
-        check(want==='/agentj-add-note tidy', `notes: managing skill slash command ${name}`);
-        check(await ev(p, `document.getElementById('confirm-text').textContent===${q(want)} && document.getElementById('confirm-yes').textContent===${q(T.send)}`), `notes: the whole message on the official confirm card ${name}`);
+        await click(p, '.jc-action[data-act="add"]');
+        await waitFor(p, `!!document.querySelector('.jc-dialog[open] textarea')`);
+        check(fake.st.says.length === before && await ev(p, `document.getElementById('confirm').hidden`), `notes: add opens the direct-save dialog, nothing to the Agent (P415) ${name}`);
         writeFileSync(join(OUT, `confirm-${name}.png`), await shoot(p, ''));
-        await click(p, '#confirm-yes');
-        await sleep(400);
-        const said = fake.st.says.slice(before);
-        check(said.length === 1 && said[0].text === want, `notes: exactly that text was sent ${name}`);
-        check(await ev(p, `document.getElementById('five-page').hidden`), `notes: back on the chat after sending ${name}`);
-        await openMenu(p, 9); await click(p, '.jc-card[data-card="notes"]');
-        await waitFor(p, `!!document.querySelector('.jc-action[data-act="add"]')`);
-        const n2 = fake.st.says.length;
-        await click(p, '.jc-action[data-act="add"]'); await sleep(300);
-        const draft = FX.get[lang].notes.actions.find((a) => a.id === 'add').prompt;
-        check(await ev(p, `document.getElementById('input').value.includes(${q(draft)})`) && fake.st.says.length === n2, `notes: 记一条 is a draft, nothing sent ${name}`);
+        await key(p, 'Escape', { code: 'Escape' });
+        await waitFor(p, `!document.querySelector('.jc-dialog')`);
+        check(fake.st.says.length === before && await ev(p, `!document.getElementById('five-page').hidden`), `notes: Esc closes the dialog, nothing sent, stays (P415) ${name}`);
+        await click(p, '.jc-action[data-act="collaborate"]'); await sleep(300);
+        check(await ev(p, `document.getElementById('input').value==='/agentj-add-note '`) && fake.st.says.length === before, `notes: collaborate is a /agentj-add-note draft, nothing sent (P415) ${name}`);
         await ev(p, `(()=>{const i=document.getElementById('input');i.value='';i.dispatchEvent(new Event('input'));})()`);
       });
 
       await step('todo', async () => {
-        await openMenu(p, 9); await click(p, '.jc-card[data-card="todo"]');
+        await openMenu(p, DECK); await click(p, '.jc-card[data-card="todo"]');
         await waitFor(p, `document.querySelectorAll('.jc-item').length===4`);
         check(await ev(p, `[...document.querySelectorAll('.jc-item[data-done="1"] .jc-text')].every(e=>getComputedStyle(e).textDecorationLine.includes('line-through'))&&document.querySelectorAll('.jc-item[data-done="1"]').length===2`), `todo: done rows struck through ${name}`);
         check(await ev(p, `[...document.querySelectorAll('.jc-row')].every(b=>b.getBoundingClientRect().height>=44)`), `todo: rows ≥ 44 px ${name}`);
@@ -147,6 +146,25 @@ export async function runP360() {
         check(await ev(p, `document.getElementById('confirm-text').textContent===${q(want)}`), `todo: item message shown whole ${name}`);
         await click(p, '#confirm-no'); await sleep(250);
         check(fake.st.says.length === n && await ev(p, `!document.getElementById('five-page').hidden`), `todo: 取消 sends nothing, stays ${name}`);
+        // the 「confirm → 发送 → exactly that text」 path (was 「帮我整理」 on notes before P415)
+        await click(p, '.jc-item[data-item="t3"] .jc-row');
+        await waitFor(p, `!document.getElementById('confirm').hidden`);
+        check(await ev(p, `document.getElementById('confirm-yes').textContent===${q(T.send)}`), `todo: the official confirm card says ${T.send} ${name}`);
+        await click(p, '#confirm-yes'); await sleep(400);
+        const said = fake.st.says.slice(n);
+        check(said.length === 1 && said[0].text === want, `todo: exactly that text was sent ${name}`);
+        check(await ev(p, `document.getElementById('five-page').hidden`), `todo: back on the chat after sending ${name}`);
+        // P415: the official to-do card's buttons are add (direct save) + collaborate (draft)
+        await openMenu(p, DECK); await click(p, '.jc-card[data-card="todo"]');
+        await waitFor(p, `!!document.querySelector('.jc-body[data-card="todo"] .jc-action[data-act="add"]')`);
+        const n2 = fake.st.says.length;
+        await click(p, '.jc-action[data-act="add"]'); await waitFor(p, `!!document.querySelector('.jc-dialog[open] textarea')`);
+        await key(p, 'Escape', { code: 'Escape' });
+        await waitFor(p, `!document.querySelector('.jc-dialog')`);
+        check(fake.st.says.length === n2, `todo: add opens the direct-save dialog, Esc closes, nothing sent (P415) ${name}`);
+        await click(p, '.jc-action[data-act="collaborate"]'); await sleep(300);
+        check(await ev(p, `document.getElementById('input').value==='/agentj-add-todo '`) && fake.st.says.length === n2, `todo: collaborate is a /agentj-add-todo draft, nothing sent (P415) ${name}`);
+        await ev(p, `(()=>{const i=document.getElementById('input');i.value='';i.dispatchEvent(new Event('input'));})()`);
         await ev(p, `document.querySelector('#five-page .fp-back').click()`); await sleep(200);
       });
 
@@ -170,29 +188,34 @@ export async function runP360() {
         await ev(p, `(()=>{const i=document.getElementById('input');i.value='想要一张读书卡';i.dispatchEvent(new Event('input'));})()`);
         await tapPlus('agentj-cards');
         check(await ev(p, `document.getElementById('input').value==='/agentj-cards 想要一张读书卡'`), `plus: what was typed stays after the command ${name}`);
-        await openMenu(p, 9);
+        await openMenu(p, DECK);
         check(await plusOf() === 'agentj-cards' && !!(await order(['cardPlus', 'scanBtn', 'srchBtn', 'setBtn'])), `plus: card wall shows + · 扫码 · 搜索 · 设置 ${name}`);
         if (lang === 'zh') writeFileSync(join(OUT, `plus-wall-${w}-${scheme}.png`), await shoot(p, ''));
         await tapPlus('agentj-cards');
         check(await ev(p, `document.getElementById('input').value==='/agentj-cards 想要一张读书卡'`), `plus: a second + does not repeat the command ${name}`);
         for (const [page, want] of [['workflows', 'agentj-capability'], ['skills', 'agentj-commands'], ['memory', 'agentj-add-memory'], ['agentj', 'agentj-add-doc']]) {
-          await openMenu(p, 9); await click(p, `.fp-menu-card[data-page="${page}"]`); await sleep(250);
+          await openMenu(p, DECK); await click(p, `.fp-menu-card[data-page="${page}"]`); await sleep(250);
           check(await plusOf() === want, `plus: ${page} page → ${want} ${name}`);
           await tapPlus(want);
           check(await ev(p, `document.getElementById('input').value==='/${want} 想要一张读书卡'`), `plus: ${page} swaps the page command, keeps the words ${name}`);
         }
         await clearInput();
         for (const [cid, want] of [['notes', 'agentj-add-note'], ['todo', 'agentj-add-todo'], ['reading-list', 'agentj-add-todo']]) {
-          await openMenu(p, 9); await click(p, `.jc-card[data-card="${cid}"]`); await waitFor(p, `!!document.querySelector('.jc-body[data-card="${cid}"]')`);
+          await openMenu(p, DECK); await click(p, `.jc-card[data-card="${cid}"]`); await waitFor(p, `!!document.querySelector('.jc-body[data-card="${cid}"]')`);
           check(await plusOf() === want, `plus: card ${cid} → its plus ${want} ${name}`);
           if (cid === 'todo' && lang === 'zh') writeFileSync(join(OUT, `plus-card-${w}-${scheme}.png`), await shoot(p, ''));
-          await tapPlus(want);
+          if (cid === 'reading-list') { await tapPlus(want); continue; }
+          // P415: on the official notes / to-do card the + saves directly (the same dialog as add), no draft, nothing sent
+          const n = fake.st.says.length;
+          await click(p, '#cardPlus'); await waitFor(p, `!!document.querySelector('.jc-dialog[open] textarea')`);
+          await key(p, 'Escape', { code: 'Escape' }); await waitFor(p, `!document.querySelector('.jc-dialog')`);
+          check(fake.st.says.length === n && await ev(p, `document.getElementById('input').value===''`), `plus: official ${cid} + opens the direct-save dialog, Esc closes, nothing sent (P415) ${name}`);
         }
         await clearInput();
       });
 
       await step('links', async () => {
-        await openMenu(p, 9); await click(p, '.jc-card[data-card="reading-list"]');
+        await openMenu(p, DECK); await click(p, '.jc-card[data-card="reading-list"]');
         await waitFor(p, `document.querySelectorAll('.jc-links .jc-link').length===3`);
         check(await ev(p, `[...document.querySelectorAll('.jc-link')].every(b=>b.getBoundingClientRect().height>=44)&&!!document.querySelector('.jc-link-web .jc-link-icon')`), `links: three ≥ 44 px, the web one marked ↗ ${name}`);
         if (lang === 'zh') writeFileSync(join(OUT, `links-${w}-${scheme}.png`), await shoot(p, ''));
@@ -208,7 +231,7 @@ export async function runP360() {
         check(await ev(p, `JSON.stringify(window.__opened)===${q(JSON.stringify([[url, '_blank', 'noopener,noreferrer']]))}`), `links: a new tab, no opener, no referrer ${name}`);
         await click(p, '.jc-link[data-link="skills"]'); await sleep(250);
         check(await ev(p, `document.body.dataset.fivePage==='skills'&&!document.getElementById('five-page').hidden`), `links: page/skills opens the skills page ${name}`);
-        await openMenu(p, 9); await click(p, '.jc-card[data-card="reading-list"]'); await waitFor(p, `!!document.querySelector('.jc-link[data-link="todo"]')`);
+        await openMenu(p, DECK); await click(p, '.jc-card[data-card="reading-list"]'); await waitFor(p, `!!document.querySelector('.jc-link[data-link="todo"]')`);
         await click(p, '.jc-link[data-link="todo"]');
         await waitFor(p, `!!document.querySelector('.jc-body[data-card="todo"] .jc-item[data-item="t3"].jc-flash')`);
         check(await ev(p, `(()=>{const r=document.querySelector('.jc-item[data-item="t3"]').getBoundingClientRect(),h=document.querySelector('#five-page .fp-sticky').getBoundingClientRect().bottom;return r.top>=h-1&&r.bottom<=innerHeight;})()`), `links: card/todo#t3 lands on the row, below the header ${name}`);
@@ -228,10 +251,11 @@ export async function runP360() {
         check(await ev(p, `!document.getElementById('five-menu').hidden`), `open: a bad id does nothing ${name}`);
         await fake.send({ t: 'jcard_open', id: 'cards' }); await sleep(250);
         check(await ev(p, `!document.getElementById('five-menu').hidden`), `open: cards again keeps the wall open (no toggle) ${name}`);
-        await click(p, '.jc-card[data-card="notes"]'); await waitFor(p, `!!document.querySelector('.jc-action[data-act="tidy"]')`);
-        await click(p, '.jc-action[data-act="tidy"]'); await waitFor(p, `!document.getElementById('confirm').hidden`);
-        await fake.send({ t: 'jcard_open', id: 'todo' }); await sleep(300);
-        check(await ev(p, `!document.getElementById('confirm').hidden&&document.querySelector('.jc-body')?.dataset.card==='notes'`), `open: never while a confirm card is open ${name}`);
+        // P415: notes has no 「帮我整理」 confirm any more — a to-do row's confirm card stands in
+        await click(p, '.jc-card[data-card="todo"]'); await waitFor(p, `!!document.querySelector('.jc-item[data-item="t3"] .jc-row')`);
+        await click(p, '.jc-item[data-item="t3"] .jc-row'); await waitFor(p, `!document.getElementById('confirm').hidden`);
+        await fake.send({ t: 'jcard_open', id: 'notes' }); await sleep(300);
+        check(await ev(p, `!document.getElementById('confirm').hidden&&document.querySelector('.jc-body')?.dataset.card==='todo'`), `open: never while a confirm card is open ${name}`);
         await click(p, '#confirm-no'); await sleep(150);
         await ev(p, `document.querySelector('#five-page .fp-back').click()`); await sleep(150);
       });
@@ -255,7 +279,7 @@ export async function runP360() {
         await ev(p, `document.querySelector('#five-page .fp-back').click()`); await sleep(150);
         // a second card with the same name (the owner's): the chip and the pop say which, a bare @name asks
         cards.push({ ...cards[2], id: 'my-notes', name: { zh: '记事本', en: 'Notebook' }, official: false, on: true });
-        await openMenu(p, 10); await click(p, '#orb'); await sleep(150);
+        await openMenu(p, DECK + 1); await click(p, '#orb'); await sleep(150);
         await ev(p, `(()=>{const i=document.getElementById('input');i.focus();i.value='@'+${q(T2.notes.slice(0, 2))};i.setSelectionRange(i.value.length,i.value.length);i.dispatchEvent(new Event('input'));})()`);
         await waitFor(p, `document.querySelectorAll('#five-mentions .fp-mention-card').length===2`);
         check(await ev(p, `[...document.querySelectorAll('#five-mentions .fp-mention-card')].map(b=>b.textContent).join('|')===${q(`${T2.notes} · ${T2.official}|${T2.notes} · ${T2.mine}`)}`), `mention: same name → 官方 / 我的 ${name}`);
@@ -267,23 +291,23 @@ export async function runP360() {
         await click(p, '#five-detail .jc-choose[data-card="my-notes"]'); await sleep(250);
         check(await ev(p, `document.body.dataset.fivePage==='card'&&document.querySelector('.jc-body')?.dataset.card==='my-notes'`), `mention: the chooser opens the one picked ${name}`);
         cards.pop();
-        await ev(p, `document.querySelector('#five-page .fp-back').click()`); await openMenu(p, 9); await click(p, '#orb'); await sleep(150);
+        await ev(p, `document.querySelector('#five-page .fp-back').click()`); await openMenu(p, DECK); await click(p, '#orb'); await sleep(150);
       });
 
       await step('settings', async () => {
         await ev(p, `document.getElementById('settings').hidden && document.getElementById('setBtn').click()`);
         await waitFor(p, `!document.getElementById('settings').hidden && !document.getElementById('set-cards-nav').hidden`);
         await click(p, '#set-cards-nav');
-        await waitFor(p, `document.querySelectorAll('#set-cards-list .jc-setrow').length===4`);
+        await waitFor(p, `document.querySelectorAll('#set-cards-list .jc-setrow').length===8`);   // + P432 Files, Obsidian (official, default off)
         check(await ev(p, `document.getElementById('set-title').textContent===${q(T.nav)}`), `settings: page title ${name}`);
-        check(await ev(p, `[...document.querySelectorAll('#set-cards-list .jc-setrow')].every(row=>row.querySelector('.tgl').getAttribute('aria-checked')==='true')`), `settings: switches show the computer's state (official cards default on, P393 #129) ${name}`);
+        check(await ev(p, `[...document.querySelectorAll('#set-cards-list .jc-setrow')].every(row=>row.querySelector('.tgl').getAttribute('aria-checked')===String(!['files','obsidian','official-palette'].includes(row.dataset.card)))`), `settings: switches show the computer's state (official cards default on, P393 #129; Files / Obsidian off, P432) ${name}`);
         writeFileSync(join(OUT, `settings-${name}.png`), await shoot(p, ''));
         await click(p, '#set-cards-list .jc-setrow[data-card="reading-list"] .tgl');
         await waitFor(p, `document.querySelector('#set-cards-list .jc-setrow[data-card="reading-list"] .tgl').getAttribute('aria-checked')==='false'`);
         await sleep(200);
         check(sets.length === 1 && sets[0].id === 'reading-list' && sets[0].on === false, `settings: one jcard_set off ${name}`);
         await ev(p, `document.getElementById('setBtn').click()`); await waitFor(p, `document.getElementById('settings').hidden`);
-        await openMenu(p, 8);
+        await openMenu(p, DECK - 1);
         check(!(await ev(p, `!!document.querySelector('.jc-card[data-card="reading-list"]')`)), `settings: the deck lost the card ${name}`);
         await click(p, '#orb'); await sleep(200);
       });
@@ -293,7 +317,8 @@ export async function runP360() {
 
     for (const [w, h] of [[360, 780], [390, 844], [412, 915]]) await step('many', async () => {
       host();
-      for (let i = 0; i < 26; i++) cards.push({ ...cards.find(c=>c.id==='reading-list'), id: `c${i}`, name: { zh: `卡片 ${i + 4}`, en: `Card ${i + 4}` }, accent: ['emerald-oasis', 'windstorm', 'magic-carpet', 'peachy-feeling', 'noir'][i % 5] });
+      // P413: the fixture already has 5 owner cards (calendar joined), so 25 more → 35 in all
+      for (let i = 0; i < 25; i++) cards.push({ ...cards.find(c=>c.id==='reading-list'), id: `c${i}`, name: { zh: `卡片 ${i + 4}`, en: `Card ${i + 4}` }, accent: ['emerald-oasis', 'windstorm', 'magic-carpet', 'peachy-feeling', 'noir'][i % 5] });
       const p = await newPage(B, w, h, 'dark', { allow: [web.url, fake.relay + '/'], touch: true });
       await pair(p, 'zh');
       await openMenu(p, 35);

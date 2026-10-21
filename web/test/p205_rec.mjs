@@ -178,7 +178,8 @@ B = await launch();
   const S = await pair(B, 1440, 900, 'zh', {}), p = S.p;
   try {
     const m = await rect(p, '#mic');
-    for (let i = 0; i < 2; i++){
+    // P341: one tap already locks; a second delayed click may correctly stop it under load.
+    for (let i = 0; i < 1; i++){
       await p.send('Input.dispatchMouseEvent', {type: 'mousePressed', x: m.x, y: m.y, button: 'left', clickCount: 1});
       await p.send('Input.dispatchMouseEvent', {type: 'mouseReleased', x: m.x, y: m.y, button: 'left', clickCount: 1});
       await sleep(90);

@@ -32,6 +32,11 @@ from .noise import IK, Handshake
 POLL = 15.0
 CTL_TIMEOUT = 3.0
 TAKEOVER = 3
+# P424 (#145, owner 10-19 17:46: load 36 during a browser test, serve slow but alive): on an overloaded computer a slow
+# `status` answer is not yet "no response" — each probe waits CTL_TIMEOUT_LOADED and a stall counts half, so the takeover
+# needs twice the failures (≈ 90 s instead of 45 s). "down" (no control socket at all) is unchanged.
+CTL_TIMEOUT_LOADED = 10.0
+LOADED_PER_CPU = 2.0     # 1-minute load average ≥ this × CPUs = overloaded
 HANDBACK = 2
 FLAP_S = 60.0            # a 4001 this soon after our takeover = serve is alive: back off (review P332 LOW-7)
 MAX_BACKOFF_S = 600.0    # the takeover threshold never grows past 10 min of polls
@@ -89,9 +94,21 @@ def check(st, nonces, channel: str, device: str, obj: dict, action: str, target:
 
 
 # ------------------------------------------------------------------ serve probe and the fixed actions (blocking; run in a thread)
-def probe(st, timeout: float = CTL_TIMEOUT) -> str:
-    """"ok" (serve answered `status`) · "down" (no control socket / refused) · "stall" (there, but no answer in time)."""
+def loaded(load_fn=None, cpus_fn=None) -> bool:
+    """P424 (#145): the computer is overloaded (1-minute load ≥ LOADED_PER_CPU × CPUs). No load average → False."""
+    try:
+        load = (load_fn or os.getloadavg)()[0]
+        return load >= LOADED_PER_CPU * max(1, (cpus_fn or os.cpu_count)() or 1)
+    except (OSError, AttributeError, TypeError, IndexError):
+        return False
+
+
+def probe(st, timeout: float | None = None) -> str:
+    """"ok" (serve answered `status`) · "down" (no control socket / refused) · "stall" (there, but no answer in time).
+    No timeout given: CTL_TIMEOUT, CTL_TIMEOUT_LOADED on an overloaded computer (P424)."""
     from . import names
+    if timeout is None:
+        timeout = CTL_TIMEOUT_LOADED if loaded() else CTL_TIMEOUT
     try:
         return "down" if names.ctl_call(st, {"cmd": "status"}, timeout) is None else "ok"
     except names.ServeBusy:
@@ -191,8 +208,9 @@ class Sess:
 class Watchdog:
     def __init__(self, st, *, poll: float = POLL, probe_fn=None, restart_fn=None, linger_fn=None, kit=None,
                  restart_wait: float = RESTART_WAIT, lang_fn=owner_lang, stopped_fn=serve_stopped_on_purpose,
-                 clock=time.monotonic):
+                 clock=time.monotonic, load_fn=loaded):
         self.st, self.poll = st, poll
+        self.load_fn = load_fn   # P424: an overloaded computer gets twice the grace for a slow serve
         self.probe_fn = probe_fn or (lambda: probe(st))
         self.stopped_fn, self.clock = stopped_fn, clock
         self.need = TAKEOVER     # failures in a row before a takeover (doubles after a flapping takeover)
@@ -229,9 +247,9 @@ class Watchdog:
             pass
 
     # ------------------------------------------------------------ the counter (pure: tests drive it directly)
-    def observe(self, result: str) -> str | None:
+    def observe(self, result: str, heavy: bool = False) -> str | None:
         """One `status` probe result ("ok" · "down" · "stall" · "stopped" = the unit was stopped on purpose) →
-        "takeover" | "handback" | None."""
+        "takeover" | "handback" | None. heavy (P424): the computer is overloaded — a stall counts half."""
         if result == "stopped":
             self.fails = self.goods = 0
             return "handback" if self.active else None
@@ -245,7 +263,7 @@ class Watchdog:
         self.goods = 0
         if self.fails == 0:
             self.since = int(time.time() * 1000)
-        self.fails += 1
+        self.fails += 0.5 if heavy and result == "stall" else 1
         self.why = "serve_down" if result == "down" else "serve_stall"
         if not self.active and self.fails >= self.need:
             return "takeover"
@@ -271,9 +289,10 @@ class Watchdog:
             if (res == "stopped") != self.passive:
                 self.passive = res == "stopped"
                 self.log("passive" if self.passive else "watching")
-            step = self.observe(res)
+            heavy = res == "stall" and await asyncio.to_thread(self._heavy)
+            step = self.observe(res, heavy)
             if step == "takeover":
-                self.log("takeover", why=self.why, count=self.fails)
+                self.log("takeover", why=self.why, count=int(self.fails))
                 self.active, self.taken_at = True, self.clock()
                 self.relay_task = asyncio.create_task(self.relay_loop())
             elif step == "handback" and not self.busy:   # a running action finishes (and is answered) first
@@ -282,6 +301,12 @@ class Watchdog:
             with contextlib.suppress(asyncio.TimeoutError):
                 await asyncio.wait_for(self.stopping.wait(), self.poll)
         await self.handback()
+
+    def _heavy(self) -> bool:
+        try:
+            return bool(self.load_fn and self.load_fn())
+        except Exception:  # noqa: BLE001
+            return False
 
     def _stopped(self) -> bool:
         try:

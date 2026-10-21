@@ -48,7 +48,7 @@ shasum -a 256 setup-agents.sh
 ```
 
 
-SHA256 sh: `216bd76866938e123b0f6143b3fef9ff9d2c397fb9f66421656e61ad9fe6e4f2`
+SHA256 sh: `cf002b69178c4e51ca24146c1144a7264b7866140320420bc33ccfe530198b44`
 
 
 ```bash
@@ -520,13 +520,13 @@ command -v opencode
 ```
 
 
-Primary route (official script; macOS / Linux / WSL, no Node/npm required):
+Primary route (OpenCode v2 official script; macOS / Linux / WSL, no Node/npm required):
 
 ```bash
-curl -fsSL https://opencode.ai/install | bash
+curl -fsSL https://opencode.ai/v2/install | bash
 ```
 
-If installation ends with `command not found`, use the commands for your shell. macOS defaults to zsh; `>>` creates `~/.zshrc` if it does not exist. Copy each command separately.
+Next, run the commands for your shell in order, copying each separately. The installer updates a startup file but cannot change this terminal’s PATH. macOS defaults to zsh; `>>` creates a missing file. Repeating the PATH line is harmless: it only repeats a directory in PATH.
 
 zsh (macOS default):
 
@@ -570,7 +570,7 @@ Alternative npm route (install Node/npm and complete the PATH section above firs
 
 
 ```bash
-npm install --global --prefix "$HOME/.local/share/agentj-setup/npm" opencode-ai
+npm install --global --prefix "$HOME/.local/share/agentj-setup/npm" @opencode/cli
 ```
 
 
@@ -578,9 +578,13 @@ Alternative npm download mirror for mainland China:
 
 
 ```bash
-npm install --global --prefix "$HOME/.local/share/agentj-setup/npm" opencode-ai --registry=https://registry.npmmirror.com
+npm install --global --prefix "$HOME/.local/share/agentj-setup/npm" @opencode/cli --registry=https://registry.npmmirror.com
 ```
 
+
+The command remains `opencode` (npm also provides `opencode2`). Keep npm postinstall scripts and optional platform packages enabled; the package installs its native binary through postinstall. As of 2026-10-21, npmmirror provides `@opencode/cli` 2.1.2. If the mirror fails, use the official npm command above. On macOS, Homebrew is another option: `brew install anomalyco/tap/opencode-v2`.
+
+OpenCode 1.x still works; migration is optional. To move to v2, use the new command above: 1.x does not automatically upgrade to 2.x.
 
 Check PATH, verify the installation, then sign in yourself. Enter keys only in your own terminal.
 
@@ -604,13 +608,17 @@ opencode auth login
 
 ### Fastest start (recommended for new users)
 
-1. Install OpenCode with the official script above; if the command is missing, use the PATH repair immediately below it.
-2. Run `opencode` in your own terminal.
-3. In OpenCode, enter `/connect`, search for DeepSeek and select it, then paste your own API key into the key prompt. Enter keys only in your own terminal; do not share them in chat, seat cards or screenshots. Alternatively, run `opencode auth login` in the terminal and select DeepSeek to sign in first.
-4. Enter `/models` in OpenCode and select an available DeepSeek model.
-5. Paste the installation prompt from your seat card into the OpenCode conversation and let it continue installing Agent J. Follow any steps it asks you to perform yourself.
+1. Run the v2 install, PATH export and `source` commands above for your shell.
+2. Start OpenCode:
 
-[DeepSeek connection guide](https://opencode.ai/docs/providers/#deepseek)
+```bash
+opencode
+```
+
+3. Enter `/models` and select **DeepSeek V4.1 Flash Free** (`opencode/deepseek-v4.1-flash-free`, verified 2026-10-21). This OpenCode free model needs no API key or `/connect`. Availability can change: if it is absent, choose another model marked Free, or connect your own paid provider.
+4. Paste the installation prompt from your seat card into the OpenCode conversation and let it continue installing Agent J.
+
+For your own paid DeepSeek account, use `/connect` → DeepSeek, or `opencode auth login`, then select its model with `/models`. Enter your API key only in your own terminal, never in chat, seat cards or screenshots. [DeepSeek connection guide](https://opencode.ai/v2/docs/providers/#deepseek)
 
 Full-access launch:
 
@@ -1360,8 +1368,6 @@ A monthly plan for coding tools instead of pay-as-you-go API prices. Token Plan,
 Read its terms before you buy; the Alibaba Cloud subscription page is authoritative. Your own scheduled tasks and background Agents may use the Token Plan key. The provider may rate-limit long, continuous background work; if that happens, switch those tasks to a pay-as-you-go key. While you are subscribed, what you send to the model and what it writes are used to improve Alibaba Cloud's models, so be careful with private data. The plan is for you only; do not share it. A support bot serves other people, so Agent J never gives it the Token Plan key: add a pay-as-you-go key for the bot (its settings page tells you where).
 
 Subscribe at https://bailian.console.aliyun.com/cn-beijing/subscription/overview and create the plan's own API key in the console. Then ask your Agent to set it up. It runs `agentj provider bailian`, which adds Bailian to OpenCode's settings and leaves everything you already have there untouched. A key card then opens on your phone: paste the key there and nowhere else. Agent J checks it against Bailian's read-only model list, which costs no Credits. Finally your Agent switches OpenCode to `bailian-token-plan-personal/qwen3.8-max`.
-
-The Coding Plan (keys starting with `sk-sp-`) also works (`agentj provider bailian --plan coding-plan`), but it has no Max model and its key cannot be checked in advance. Your own scheduled tasks may use the Coding Plan key (the provider may rate-limit long, continuous background work; switch those to a pay-as-you-go key if it does); a support bot never gets it and needs a pay-as-you-go key.
 
 ## Qwen Code {#qwen}
 

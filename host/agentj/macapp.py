@@ -73,7 +73,8 @@ def verified(app: Path, p: dict) -> bool:
 def _download(p: dict) -> bytes | None:
     for u in MIRRORS:
         with contextlib.suppress(Exception):
-            with urllib.request.urlopen(u.format(f=p["file"]), timeout=TIMEOUT) as r:
+            req = urllib.request.Request(u.format(f=p["file"]), headers={"User-Agent": "Mozilla/5.0 AgentJ/1.0 (macOS installer)"})
+            with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
                 data = r.read(int(p["size"]) + 1)
             if len(data) == int(p["size"]) and hashlib.sha256(data).hexdigest() == p["sha256"]:
                 return data
@@ -119,7 +120,8 @@ def wrap(argv: list[str], log=None) -> tuple[list[str], dict]:
     if exe is None:
         return argv, {}
     try:      # the launcher accepts only agentj in a venv, owner-only writable: prove it starts this one, else unsigned
-        ok = subprocess.run([str(exe), *argv, "--version"], capture_output=True, timeout=60).returncode == 0
+        prefix = argv[:1] if Path(argv[0]).name == "agentj" else argv[:4]
+        ok = subprocess.run([str(exe), *prefix, "--version"], capture_output=True, timeout=60).returncode == 0
     except (OSError, subprocess.SubprocessError):
         ok = False
     if not ok:

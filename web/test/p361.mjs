@@ -92,6 +92,11 @@ export async function runP361({ B, web, fake, out = OUT }) {
       await evaluate(p, `import('./js/settings.js').then(m=>{m.openRescue();return true})`);
       await waitFor(p, `!${$('settings')}.hidden && !${$('rs-cmds')}.hidden`);
 
+      // P438: the phone-only sequence comes before the command rows, and both useful actions are recommended.
+      const guidance = await evaluate(p, `({text:document.getElementById('rs-repair-order').textContent, top:document.getElementById('rs-repair-order').getBoundingClientRect().top, rows:document.getElementById('rs-cmd-list').getBoundingClientRect().top, reconnect:document.querySelector('[data-cmd="reconnect"]').textContent, restart:document.getElementById('rs-restart').textContent})`);
+      check(guidance.text.includes('Stop') && guidance.text.includes('agentj doctor --reconnect') && guidance.text.includes('0.25.1a1') && guidance.top < guidance.rows, 'phone-only order above commands ' + tag);
+      check(guidance.reconnect.includes(lang === 'zh' ? '推荐' : 'Recommended') && guidance.restart.includes(lang === 'zh' ? '推荐' : 'Recommended'), 'reconnect and restart recommended ' + tag);
+
       // ---- the rows: the host's whitelist only, each copyable + 「执行」
       const rows = await evaluate(p, `[...document.querySelectorAll('#rs-cmd-list .rscmd')].map(li=>({n:li.dataset.cmd,code:li.querySelector('code').textContent,cc:li.querySelector('code').hasAttribute('data-cc'),note:li.querySelector('small').textContent,b:li.querySelector('.rscmdgo').textContent,aria:li.querySelector('.rscmdgo').getAttribute('aria-label')}))`);
       check(rows.map((r) => r.n).join() === NAMES.join(), 'rows = the host whitelist, unknown name dropped ' + tag);
@@ -102,7 +107,7 @@ export async function runP361({ B, web, fake, out = OUT }) {
         const a = await evaluate(p, `(()=>{const b=document.getElementById('rs-cmds');const small=[...b.querySelectorAll('button')].filter(e=>e.getClientRects().length).map(e=>{const r=e.getBoundingClientRect();return {id:e.id||e.className,w:Math.round(r.width),h:Math.round(r.height)}}).filter(x=>x.h<44||x.w<44);return {small,over:document.getElementById('set-main').scrollWidth>document.getElementById('set-main').clientWidth+1}})()`);
         check(!a.small.length && !a.over, `${label}: taps ≥ 44 px, no overflow ${tag} ${JSON.stringify(a)}`);
       };
-      check(await evaluate(p, `${$('rs-cmds')}.querySelector('.rsnote').textContent`) === (lang === 'zh' ? '在 Agent J 主机上执行的终端指令。' : 'Terminal commands that run on the Agent J host.'), 'plain current-purpose description ' + tag);
+      check(await evaluate(p, `${$('rs-cmds')}.querySelector('[data-i18n="p361.note"]').textContent`) === (lang === 'zh' ? '在 Agent J 主机上执行的终端指令。' : 'Terminal commands that run on the Agent J host.'), 'plain current-purpose description ' + tag);
       await audit('idle');
       await view('rs-cmds'); await save('1-list');
 

@@ -1,4 +1,5 @@
-import { touch } from './snap.js';
+import { copyButton } from './copycode.js';
+import { touch, askDone } from './snap.js';
 // Agent friends (PROTOCOL §17.7, 0.16): the /friends page and the two cards the host puts in the main chat.
 // The page is READ-ONLY for conversations: there is no field that sends text to a friend (the host would refuse it anyway,
 // `fr_send_refused`); the owner speaks to a friend only through the main Agent. What the page can do is what Leo asked for:
@@ -7,14 +8,15 @@ import { touch } from './snap.js';
 // every write carries the §8 control signature of this device's approval key (controls.signedWrite).
 // Host data is untrusted display text: textContent only, lengths capped.
 import { ask1, isReady, gen, sendApp, channel } from './session.js';
-import { friendAnswerMessage, parseAgentId, friendLink, GROUP_ID_RE, b64u, FRIEND_CTX_MAX } from '../proto/wire.js';
+import { friendAnswer, parseAgentId, friendLink, GROUP_ID_RE, FRIEND_CTX_MAX } from '../proto/wire.js';
 import { signKey } from './store.js';
-import { myDeviceId, approve } from './api.js';
+import { myDeviceId } from './api.js';
 import { signedWrite, whyText } from './controls.js';
 import { qrSvg } from './qr.js';
 import { t, locale, fillText } from './t.js';
 import { el, mk, toast, confirmSheet } from './ui.js';
 import { copyable } from './copycode.js';   // P292
+import { mentionAt } from './five-pages.js';   // P426 #170: the same @ detection as the main chat's mentions
 const cmdNote = (cls, key) => { const p = mk('p', cls); fillText(p, t(key)); return p; };   // P292: `agentj friends on` as code + ⧉
 
 let H = { openPanel: () => {}, agentName: () => 'Agent J' };
@@ -27,6 +29,9 @@ let usage = null;                 // the last fr_usage_res for V.friend
 let ctxText = { friend: null, text: null };   // P73: the last fr_ctx_res (this friend's 「补充设定」, the owner's own text)
 let ctxDraft = { friend: null, text: null };  // P73: what is typed and not saved yet (survives a redraw)
 let loadSeq = 0;
+// P426 #170: 「我的设备」 — the owner's own Same owner devices as one group (fr_glog → fr_glog_res; posting = signed fr_gsay)
+let glog = { items: [], members: [], me: null, more: false, loading: false };
+let gDraft = '';
 const BUILTIN = ['default', 'friend', 'colleague'];
 const WIN = ['min', 'hour', 'day', 'month'];
 
@@ -78,11 +83,16 @@ function normList(m) {
       card: { name: str(card.name, 64), owner: str(card.owner, 32), intro: str(card.intro, 140) } },
     friends: (Array.isArray(m.friends) ? m.friends : []).filter((f) => f && typeof f.id === 'string').slice(0, 500).map((f) => ({
       id: f.id.slice(0, 64), name: str(f.name, 64) || shortId(f.id), owner: str(f.owner, 32), intro: str(f.intro, 140), group: str(f.group, 32),
-      holdForOwner: f.hold_for_owner === true, sameOwner: ['active', 'pending'].includes(f.same_owner) ? f.same_owner : 'none', state: str(f.state, 32), blocked: f.blocked === true, last: lastOf(f.last), unread: Number.isInteger(f.unread) ? f.unread : f.unread ? 1 : 0 })),
+      holdForOwner: f.hold_for_owner === true, sameOwner: ['active', 'pending'].includes(f.same_owner) ? f.same_owner : 'none',
+      // P417 #186: the code shown in place (null = a host that does not send it), whether this side already said yes, why it ended
+      soCode: typeof f.same_owner_code === 'string' ? (/^\d{6}$/.test(f.same_owner_code) ? f.same_owner_code : '') : null,
+      soWait: f.same_owner_wait === true, soEnd: ['declined', 'expired', 'ended'].includes(f.same_owner_end) ? f.same_owner_end : '', state: str(f.state, 32), blocked: f.blocked === true, last: lastOf(f.last), unread: Number.isInteger(f.unread) ? f.unread : f.unread ? 1 : 0 })),
     pending: (Array.isArray(m.pending) ? m.pending : []).filter((p) => p && typeof p.id === 'string').slice(0, 100).map((p) => ({
       id: p.id.slice(0, 64), state: str(p.state, 32), ts: Number(p.ts) || 0, dir: p.dir === 'in' ? 'in' : 'out' })),
     groups: (Array.isArray(m.groups) ? m.groups : []).map(normGroup).filter(Boolean).slice(0, 64),
     global: m.global && typeof m.global === 'object' ? { used: int(m.global.used), limit: int(m.global.limit) } : null,
+    devices: m.devices && typeof m.devices === 'object' ? { n: int(m.devices.n) ?? 0, unread: int(m.devices.unread) ?? 0,
+      last: m.devices.last && typeof m.devices.last === 'object' ? { ts: Number(m.devices.last.ts) || 0, text: str(m.devices.last.text, 120) } : null } : null,
   };
 }
 const friendOf = (id) => (data ? data.friends.find((f) => f.id === id) : null);
@@ -108,6 +118,7 @@ function go(view, arg) {
   if (view === 'chat') loadHist(true);
   if (view === 'chat' || view === 'detail') loadUsage();
   if (view === 'detail') loadCtx();
+  if (view === 'devices') loadGlog();
   el('pages').scrollTop = 0;
 }
 export function back() {
@@ -136,6 +147,7 @@ export function refresh() {
     if (V.view === 'chat') loadHist(true);
     if (V.view === 'chat' || V.view === 'detail') loadUsage();
     if (V.view === 'detail' && ctxText.friend !== V.friend) loadCtx();
+    if (V.view === 'devices') loadGlog();
   });
 }
 let changedTimer = 0;
@@ -188,6 +200,25 @@ function loadCtx() {
   });
 }
 const cps = (s) => [...s].length;                 // characters as the host counts them (code points)
+/** P426 #170: 「我的设备」 members and the newest messages. Host text is untrusted display text (textContent only). */
+function loadGlog() {
+  if (!isReady() || glog.loading) return;
+  glog.loading = true;
+  ask1({ t: 'fr_glog' }, 'fr_glog_res').then((m) => {
+    glog.loading = false;
+    if (m.t !== 'fr_glog_res') { if (V.view === 'devices') renderMain(); return; }
+    const who = (x) => (x && typeof x.id === 'string' ? { id: x.id.slice(0, 64), name: str(x.name, 64) || shortId(x.id) } : null);
+    glog = { loading: false, more: m.more === true, me: who(m.me),
+      members: (Array.isArray(m.members) ? m.members : []).map(who).filter(Boolean).slice(0, 32),
+      items: (Array.isArray(m.items) ? m.items : []).filter((x) => x && typeof x.text === 'string').slice(-50).map((x) => ({
+        gid: str(x.gid, 16), self: x.self === true, name: str(x.name, 64) || shortId(x.from), by: x.by === 'phone' ? 'phone' : 'agent',
+        text: x.text.slice(0, 20000), to: (Array.isArray(x.to) ? x.to : []).map(who).filter(Boolean).slice(0, 32),
+        kind: x.kind === 'reply' ? 'reply' : 'msg', ts: Number(x.ts) || 0 })) };
+    if (data && data.devices) data.devices.unread = 0;
+    if (V.view === 'devices') renderMain();
+    renderSide();
+  });
+}
 
 // ---------------------------------------------------------------- rendering
 function status(text) { const s = el('fr-status'); s.textContent = text; s.hidden = !text; }
@@ -209,8 +240,25 @@ function title() {
     case 'add': return t('fr.add.title');
     case 'groups': return t('fr.groups.title');
     case 'group': return V.group ? t('fr.group.title', { name: groupName(groupById(V.group)) }) : t('fr.group.newTitle');
+    case 'devices': return t('fr.dev.title');
     default: return t('fr.title');
   }
+}
+
+/** P426 #170: the 「我的设备」 group's own row at the top of 「我的设备」. */
+function devicesItem() {
+  const li = mk('li');
+  const b = mk('button', 'fr-item fr-item--group'); b.type = 'button'; b.id = 'fr-open-devices';
+  if (V.view === 'devices') b.setAttribute('aria-current', 'true');
+  const d = data.devices || { n: 0, unread: 0, last: null };
+  const top = mk('span', 'fr-item__top');
+  top.append(mk('b', 'fr-item__name', t('fr.dev.title')), mk('span', 'tag', t('fr.dev.count', { n: d.n + 1 })));
+  if (d.last) top.append(mk('span', 'fr-item__time', when(d.last.ts)));
+  if (d.unread) { const dot = mk('span', 'fr-dot'); dot.setAttribute('aria-label', t('fr.unread', { n: d.unread })); top.append(dot); }
+  b.append(top, mk('span', 'fr-item__sub small', (d.last && d.last.text) || t('fr.dev.sub')));
+  b.addEventListener('click', () => go('devices'));
+  li.append(b);
+  return li;
 }
 
 // the list (left column on a wide screen; the whole page on a phone when view = list)
@@ -226,7 +274,7 @@ function renderSide() {
   const ul = mk('ul', 'fr-list'); ul.id = 'fr-list';
   let deviceHeading = false, friendHeading = false;
   for (const f of [...data.friends].sort((a,b) => Number(b.sameOwner === 'active') - Number(a.sameOwner === 'active'))) {
-    if (f.sameOwner === 'active' && !deviceHeading) { ul.append(mk('li', 'small', t('fr.myDevices'))); deviceHeading = true; }
+    if (f.sameOwner === 'active' && !deviceHeading) { ul.append(mk('li', 'small', t('fr.myDevices'))); deviceHeading = true; ul.append(devicesItem()); }
     if (f.sameOwner !== 'active' && deviceHeading && !friendHeading) { ul.append(mk('li', 'small', t('fr.g.friend'))); friendHeading = true; }
     const li = mk('li');
     const b = mk('button', 'fr-item'); b.type = 'button'; b.dataset.id = f.id;
@@ -265,6 +313,9 @@ function renderMain(force = true) {
   const box = el('fr-main');
   const key = [V.view, V.friend, V.group, V.sent].join('|');
   if (!force && FORM_VIEWS.includes(V.view) && box.dataset.key === key && box.childElementCount) return;
+  if (V.view === 'devices' && box.dataset.key === key && document.activeElement && document.activeElement.id === 'fr-gsay') {
+    const list = el('fr-gmsgs'); if (list) { list.replaceWith(gMessages()); return; }   // keep the owner's typing and caret
+  }
   // P73: never redraw the details under the owner's fingers while they type the 「补充设定」 (the draft is kept anyway)
   if (V.view === 'detail' && box.dataset.key === key && document.activeElement && document.activeElement.id === 'fr-ctx') return;
   box.replaceChildren();
@@ -277,6 +328,7 @@ function renderMain(force = true) {
     case 'add': return viewAdd(box);
     case 'groups': return viewGroups(box);
     case 'group': return viewGroup(box);
+    case 'devices': return viewDevices(box);
     default: box.append(mk('p', 'small fr-pick', data.friends.length ? t('fr.pick') : t('fr.empty')));
   }
 }
@@ -312,6 +364,85 @@ function viewChat(box) {
     btn('aj-btn--sm', t('fr.chat.tell', { me: H.agentName() }), () => tellAgent(f.name), 'fr-tell'));
   box.append(lock);
 }
+// ---- 「我的设备」: the owner's own devices as one group chat (P426 #170)
+const listSep = () => (String(locale()).startsWith('zh') ? '、' : ', ');
+function gMessages() {
+  const ul = mk('ul', 'fr-msgs fr-gmsgs'); ul.id = 'fr-gmsgs';
+  for (const x of glog.items) {
+    const li = mk('li', 'fr-msg fr-msg--' + (x.self ? 'out' : 'in'));
+    li.dataset.gid = x.gid;
+    const from = x.self ? t('fr.dev.thisOne', { name: x.name }) : x.name;
+    const meta = [from, x.by === 'phone' ? t('fr.dev.byPhone') : t('fr.dev.byAgent'), when(x.ts)];
+    if (x.kind === 'reply') meta.push(t('fr.dev.reply'));
+    li.append(mk('p', 'fr-msg__meta small fr-gfrom', meta.filter(Boolean).join(' · ')), mk('p', 'fr-msg__text', x.text));
+    if (x.to.length && x.kind !== 'reply') li.append(mk('p', 'small fr-gto', t('fr.dev.to', { names: x.to.map((m) => m.name).join(listSep()) })));
+    ul.append(li);
+  }
+  return ul;
+}
+function viewDevices(box) {
+  const head = mk('div', 'fr-chathead');
+  const names = [glog.me ? t('fr.dev.thisOne', { name: glog.me.name }) : null, ...glog.members.map((m) => m.name)].filter(Boolean);
+  head.append(mk('p', 'fr-pair', t('fr.dev.members', { names: names.join(listSep()) || '—' })), mk('p', 'small', t('fr.dev.hint')));
+  box.append(head);
+  box.append(gMessages());
+  if (!glog.items.length) box.append(mk('p', 'small fr-empty', glog.loading ? t('fr.loading') : t('fr.dev.none')));
+  if (!(data.devices && data.devices.n) && !glog.members.length) { box.append(mk('p', 'small fr-empty', t('fr.dev.empty'))); return; }
+  const form = mk('div', 'fr-gcompose');
+  const ta = mk('textarea', 'aj-textarea fr-gsay'); ta.id = 'fr-gsay'; ta.rows = 2; ta.placeholder = t('fr.dev.ph');
+  ta.setAttribute('aria-autocomplete', 'list'); ta.setAttribute('aria-controls', 'fr-gmentions');
+  ta.value = gDraft;
+  const pop = mk('div', 'fr-gmentions'); pop.id = 'fr-gmentions'; pop.hidden = true; pop.setAttribute('role', 'listbox');
+  pop.addEventListener('mousedown', (e) => e.preventDefault());
+  const send = btn('aj-btn--primary', t('fr.dev.send'), null, 'fr-gsay-send');
+  let options = [], at = null, index = 0;
+  const all = () => [...glog.members.map((m) => ({ text: '@' + m.name, label: m.name })), { text: '@' + t('fr.dev.allWord'), label: t('fr.dev.all') }];
+  const paint = () => {
+    pop.replaceChildren();
+    options.forEach((o, i) => {
+      const b = mk('button', 'fp-mention fr-gmention', o.label); b.type = 'button'; b.addEventListener('click', () => choose(i));
+      b.setAttribute('role', 'option'); b.setAttribute('aria-selected', String(i === index));
+      pop.append(b);
+    });
+    pop.hidden = !options.length;
+  };
+  const suggest = () => {
+    at = mentionAt(ta.value, ta.selectionStart ?? ta.value.length);
+    const q0 = at ? at.query.toLowerCase() : null;
+    options = q0 === null ? [] : all().filter((o) => o.text.slice(1).toLowerCase().includes(q0) || o.label.toLowerCase().includes(q0)).slice(0, 12);
+    index = 0; paint();
+  };
+  const choose = (i) => {
+    const o = options[i]; if (!o || !at) return;
+    const caret = ta.selectionStart ?? ta.value.length;
+    ta.value = ta.value.slice(0, at.start) + o.text + ' ' + ta.value.slice(caret);
+    const pos = at.start + o.text.length + 1;
+    try { ta.setSelectionRange(pos, pos); } catch { /* not focused */ }
+    gDraft = ta.value; options = []; paint(); check(); ta.focus();
+  };
+  const check = () => { send.disabled = !ta.value.trim() || !isReady() || cps(ta.value) > 20000; };
+  ta.addEventListener('input', () => { gDraft = ta.value; check(); suggest(); });
+  ta.addEventListener('click', suggest);
+  ta.addEventListener('keydown', (e) => {
+    if (pop.hidden || !options.length) return;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); index = (index + (e.key === 'ArrowDown' ? 1 : options.length - 1)) % options.length; paint(); }
+    else if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); choose(index); }
+    else if (e.key === 'Escape') { e.preventDefault(); options = []; paint(); }
+  });
+  send.addEventListener('click', async () => {
+    const text = ta.value.replace(/\r\n?/g, '\n');
+    if (!text.trim()) return;
+    send.disabled = true;
+    const res = await write('fr_gsay', { text });
+    if (res.ok) { gDraft = ''; ta.value = ''; toast(t('fr.dev.sent'), 2500, 'success'); loadGlog(); }
+    else toast(t('fr.fail', { why: why(res.why) }), 3000);
+    check();
+  });
+  form.append(fieldLabel(t('fr.dev.label'), ta), pop, ta);
+  rowIn(form).append(send);
+  box.append(form, mk('p', 'small fr-ghint', t('fr.dev.scope')));
+  check();
+}
 /** 「我来说」 / the conversation's button: back to the main chat, the field prefilled 「告诉 <name>：」 (the owner finishes it). */
 export function tellAgent(name) {
   H.openPanel('chat');
@@ -324,6 +455,25 @@ export function tellAgent(name) {
 }
 
 // ---- details: group, usage, block / delete
+/** P417 #186 (Leo 10-21): the Same-owner state in place on the page that started it — the read-only code and
+ *  「等待另一台确认」, then 「已是同一个主人」; a declined / expired / ended round says so with the next step. Refreshes on
+ *  fr_changed like the rest of the page. */
+function sameOwnerState(box, f) {
+  const so = mk('section', 'fr-so'); so.id = 'fr-so';
+  if (f.sameOwner === 'active') {
+    so.append(mk('p', 'fr-so__state', t('p417.so.done')), mk('p', 'small', t('p417.so.undo')));
+  } else if (f.sameOwner === 'pending' && f.soCode === null) {
+    so.append(mk('p', 'small', t('fr.sameOwner.pending')));              // a host that does not send the code yet
+  } else if (f.sameOwner === 'pending') {
+    if (f.soCode) { const c = mk('p', 'fr-owner-code', f.soCode); c.id = 'fr-so-code'; c.setAttribute('aria-label', t('p417.so.codeLabel') + ' ' + f.soCode.split('').join(' ')); so.append(c); }
+    if (f.soWait) so.append(mk('p', 'fr-so__state', t('p417.so.wait')), mk('p', 'small', t(f.soCode ? 'p417.so.waitHint' : 'p417.so.reaching')));
+    else so.append(mk('p', 'fr-so__state', t('p417.so.yourTurn')), mk('p', 'small', t('p417.so.onCard')));
+  } else if (f.soEnd) {
+    so.append(mk('p', 'small', t('p417.so.end.' + f.soEnd)));
+  } else return;
+  so.setAttribute('role', 'status');
+  box.append(so);
+}
 function viewDetail(box) {
   const f = friendOf(V.friend);
   if (!f) { box.append(mk('p', 'small', t('fr.gone'))); return; }
@@ -343,12 +493,12 @@ function viewDetail(box) {
     sel.disabled = true;
     const res = await write('fr_set', { friend: f.id, op: 'group', value: sel.value });
     sel.disabled = false;
-    toast(res.ok ? t('fr.detail.groupDone', { group: sel.value === 'same-owner' ? t('fr.sameOwner') : groupName(groupById(sel.value)) }) : t('fr.fail', { why: why(res.why) }), 3000);
+    toast(res.ok ? (sel.value === 'same-owner' ? t('p417.so.started') : t('fr.detail.groupDone', { group: groupName(groupById(sel.value)) })) : t('fr.fail', { why: why(res.why) }), 3000);
     refresh();
   });
   row.append(sel);
   box.append(row);
-  if (f.sameOwner !== 'none') box.append(mk('p', 'small', t('fr.sameOwner.' + f.sameOwner)));
+  sameOwnerState(box, f);
   const hold = mk('label', 'fr-row');
   const toggle = mk('input'); toggle.type = 'checkbox'; toggle.id = 'fr-hold-for-owner'; toggle.checked = f.holdForOwner;
   toggle.addEventListener('change', async () => {
@@ -458,7 +608,7 @@ function viewCard(box) {
   card.append(idp);
   const link = parseAgentId(me.id) ? friendLink(me.id) : '';
   const acts = mk('div', 'ajrow');
-  acts.append(btn('aj-btn--sm', t('fr.card.copy'), () => copy(me.id, t('fr.card.copied')), 'fr-copy-id'),
+  acts.append(btn('aj-btn--sm', t('fr.card.copy'), e => copy(me.id, e.currentTarget), 'fr-copy-id'),
     btn('aj-btn--sm', t('fr.card.share'), () => share(link), 'fr-share'));
   card.append(acts);
   const svg = link ? qrSvg(link, t('fr.card.qrAria')) : null;
@@ -495,13 +645,11 @@ function viewCard(box) {
   }, 'fr-card-save'));
 }
 function fieldLabel(text, input) { const l = mk('label', 'label', text); l.htmlFor = input.id; return l; }
-async function copy(text, done) {
-  try { await navigator.clipboard.writeText(text); toast(done); } catch { toast(t('fr.copyFail'), 3000); }
-}
+async function copy(text, button) { return copyButton(text, button); }
 async function share(link) {
   if (!link) return;
   if (navigator.share) { try { await navigator.share({ url: link }); return; } catch (e) { if (e && e.name === 'AbortError') return; } }
-  copy(link, t('fr.card.linkCopied'));
+  copy(link, document.getElementById('fr-share'));
 }
 
 // ---- add a friend: ID (format + check character checked here) + a note ≤ 280
@@ -732,9 +880,10 @@ const WRITE_MSG = {
   fr_discoverable: (o) => ({ t: 'fr_discoverable', on: o.on }),
   fr_card: (o) => ({ t: 'fr_card', owner: o.owner, intro: o.intro }),
   fr_ctx: (o) => ({ t: 'fr_ctx', friend: o.friend, text: o.text }),
+  fr_gsay: (o) => ({ t: 'fr_gsay', text: o.text }),                  // P426 #170: 「我的设备」
 };
 const write = (action, o) => signedWrite(action, o, WRITE_MSG[action](o));
-const FR_WHY = ['not_friend', 'builtin', 'in_use', 'self', 'off', 'exists', 'too_many', 'too_long', 'bad_id'];
+const FR_WHY = ['not_friend', 'builtin', 'in_use', 'self', 'off', 'exists', 'too_many', 'too_long', 'bad_id', 'no_devices', 'gate'];
 const why = (code) => (FR_WHY.includes(code) ? t('fr.why.' + code) : whyText(code));
 
 // ---------------------------------------------------------------- the two cards in the main chat (§17.7)
@@ -749,6 +898,18 @@ export function answerRefused(m) {
   clearTimeout(receiptTimers.get(m.id)); receiptTimers.delete(m.id);
   toast(t('fr.ask.failed'), 5000);
 }
+/** P417 #186: a Same-owner confirm / reject that did not take effect says why and what to do next. A card whose code
+ *  is no longer the current one (`expired`) is closed here — tapping it again can never work. */
+const SO_WHY = { expired: 'p417.so.stale', phone_required: 'p417.so.thisPhone', peer_old: 'p417.so.peerOld', offline: 'p417.so.offline', io: 'p417.so.offline' };
+export function pairingRefused(p, code) {
+  if (!sentAsk.has(p.id)) return;
+  sentAsk.delete(p.id);
+  clearTimeout(receiptTimers.get(p.id)); receiptTimers.delete(p.id);
+  const say = () => toast(t(SO_WHY[code] || 'p417.so.failed'), 8000);
+  if (code !== 'expired') return say();
+  askDone({ id: p.id, result: 'gone' });
+  setTimeout(say, 0);                   // after the closed card's own short note, so this reason is what stays on screen
+}
 export function answerDone(m) {
   clearTimeout(receiptTimers.get(m.id)); receiptTimers.delete(m.id);
   sentAsk.delete(m.id);
@@ -757,7 +918,11 @@ function pending(p, action, ctx) {
   touch(p.id);
   sentAsk.set(p.id, action);
   clearTimeout(receiptTimers.get(p.id));
-  receiptTimers.set(p.id, setTimeout(() => { p.answer_failed = true; answerRefused(p); ctx.repaint(); }, 10000));
+  receiptTimers.set(p.id, setTimeout(() => {
+    p.answer_failed = true;
+    if (pqOf(p).pairing) pairingRefused(p, 'offline'); else answerRefused(p);   // P417 #186: say why
+    ctx.repaint();
+  }, 10000));
   ctx.repaint();
 }
 const pickedGroup = new Map();       // ask id → the group chosen on the card
@@ -822,12 +987,13 @@ export function renderAsk(p, ctx) {
       el('sheetTitle').textContent = t('fr.sameOwner');
       box.append(mk('p', 'fr-askcard__note', t('fr.sameOwner.request', { name: x.name })));
       box.append(mk('p', 'fr-owner-code', x.code));
+      box.append(mk('p', 'small fr-owner-order', t('p417.so.order')));   // #186: one tap here finishes it
       if (st === 'open' && ctx.sign) {
         const acts = mk('div', 'fr-askbtns');
         const decide = async (on) => {
           pending(p, on ? 'allow' : 'deny', ctx);
           const res = await write('fr_set', { friend: x.friend, op: on ? 'owner-confirm' : 'owner-reject', value: x.challenge });
-          if (!res.ok) { answerRefused(p); ctx.repaint(); }
+          if (!res.ok) { pairingRefused(p, res.why); ctx.repaint(); }
         };
         acts.append(btn('', t('fr.ask.deny'), () => decide(false), 'frOwnerDeny'),
           btn('aj-btn--primary', t('fr.sameOwner.confirmAction'), () => decide(true), 'frOwnerAllow'));
@@ -884,19 +1050,21 @@ async function answerFriend(p, ok, group, ctx, ctxText0) {
   pending(p, ok ? 'allow' : 'deny', ctx);
   try {
     const grp = ok && group && GROUP_ID_RE.test(group) ? group : null;
-    const msg = await friendAnswerMessage(channel(), await myDeviceId(), p.id, ok ? 'allow' : 'deny', p.tool, p.summary, grp, note || null);
-    const sig = b64u(new Uint8Array(await crypto.subtle.sign({ name: 'Ed25519' }, sk.priv, msg)));
-    const ans = grp ? { t: 'answer', id: p.id, ok: true, sig, group: grp } : { t: 'answer', id: p.id, ok, sig };
-    if (note) ans.ctx = note;
-    await sendApp(ans, g);
+    await sendApp(await signedAnswer(p, ok, sk, { group: grp, ctx: note || null }), g);
   } catch { answerRefused(p); }
   ctx.repaint();
 }
+// P424 (#152): every friend-card button goes through wire.friendAnswer — the signed bytes and the sent fields come from one place.
+const signedAnswer = async (p, ok, sk, opts) => friendAnswer(channel(), await myDeviceId(), p, ok, opts,
+  async (msg) => new Uint8Array(await crypto.subtle.sign({ name: 'Ed25519' }, sk.priv, msg)));
 async function answerQuestion(p, action, x, ctx) {
+  touch(p.id);
   p.answer_failed = false;
   pending(p, action, ctx);
-  const r = await approve(p, action === 'allow' ? 'allow' : 'deny');
-  if (!r.ok) { answerRefused(p); toast(r.why === 'offline' ? t('r.appr.net') : t('r.appr.fail'), 3000); ctx.repaint(); return; }
+  const g = gen(), sk = g && await signKey();
+  let why = !g ? 'offline' : !sk ? 'no_key' : null;
+  if (!why) { try { await sendApp(await signedAnswer(p, action === 'allow', sk, {}), g); } catch { why = 'offline'; } }
+  if (why) { answerRefused(p); toast(why === 'offline' ? t('r.appr.net') : t('r.appr.fail'), 3000); ctx.repaint(); return; }
   ctx.repaint();
   if (action === 'tell') { ctx.dismiss(); tellAgent(x.name); }
 }
@@ -904,7 +1072,7 @@ async function answerQuestion(p, action, x, ctx) {
 export function forget() {
   for (const timer of receiptTimers.values()) clearTimeout(timer);
   receiptTimers.clear(); sentAsk.clear(); pickedGroup.clear(); pickedCtx.clear();
-  data = null; usage = null; ctxText = { friend: null, text: null }; ctxDraft = { friend: null, text: null }; hist = { friend: null, items: [], more: false, loading: false };
+  data = null; usage = null; glog = { items: [], members: [], me: null, more: false, loading: false }; gDraft = ''; ctxText = { friend: null, text: null }; ctxDraft = { friend: null, text: null }; hist = { friend: null, items: [], more: false, loading: false };
   Object.assign(V, { view: 'list', friend: null, group: null, addId: '', addNote: '', sent: false });
 }
 export { V as _state };

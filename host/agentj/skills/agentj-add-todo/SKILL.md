@@ -29,3 +29,5 @@ Do what is due, mark it done yourself, and tell the owner only what they need. `
 what the owner is responsible for: remind them of overdue ones.
 
 Never edit the file by hand while `agentj card todo` works; `conflict` → run it again.
+
+Phone manual entry: + / Add opens a direct-save dialog without AI. Collaborate with Agent J fills this skill command and a trailing space; natural-language collaboration uses the Agent.

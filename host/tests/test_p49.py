@@ -153,7 +153,7 @@ class OpenCodeAuthentication(unittest.IsolatedAsyncioTestCase):
     async def test_stable_connected_probe(self):
         agent=object.__new__(OpenCodeAgent);agent.cfg={'model':'deepseek/chat'};agent.client=SimpleNamespace(request=AsyncMock(return_value=(200,{'all':[{'id':'deepseek'}],'connected':['deepseek'],'default':{}})))
         auth=await agent.authentication();self.assertTrue(auth['known']);self.assertTrue(auth['selected_connected']);agent.client.request.assert_awaited_with('GET','/provider')
-        self.assertEqual(set(auth),{'known','selected_connected','connected_count','restart_after_key_change'})
+        self.assertEqual(set(auth),{'known','selected_connected','connected_count','restart_after_key_change','subagents'})   # P426: + sub-agent state (agent names only)
         agent.client.request.return_value=(200,{'all':[],'connected':[]});self.assertFalse((await agent.authentication())['selected_connected'])
         agent.client.request.return_value=(500,{});self.assertFalse((await agent.authentication())['known'])
     def test_proxy_name_only_configuration_and_transmission(self):

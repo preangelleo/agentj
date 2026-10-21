@@ -50,7 +50,9 @@
   `.claude/settings.local.json`; anything under a `.vscode/`, `.idea/`, `.devcontainer/`, `.husky/`, `.cursor/`, `.gemini/`,
   `.opencode/` or `.codex/` directory (the installer writes `.codex/agents` itself). `.claude/agents|skills|commands/…` stay allowed.
 - **Hidden characters** (`hidden_characters_rule` + `texts`; reason `hidden_characters`, with `path` = the file or
-  `manifest.json`): refused in every file that decodes as UTF-8 and in every manifest string (object keys included): U+061C,
+  `manifest.json`): refused in every text file and in every manifest string (object keys included) — the host also checks a
+  file that is not valid UTF-8 (decoded with replacement characters) when it has a text / script extension, sits under
+  `scripts/ cli/ tools/ bin/`, starts with `#!` or has no NUL byte; only real binaries are skipped: U+061C,
   U+180E, U+200B, U+200E, U+200F, U+202A–202E, U+2060–2064, U+2066–2069, U+FFF9–FFFB, U+E0000–E007F, and U+FEFF anywhere but
   the first character of a file. U+200C / U+200D stay allowed.
 - **Depth** (`depth_rule`; reason `too_deep`, `path` = `manifest.json` / `params.schema.json`): the manifest and a workflow's
@@ -58,10 +60,13 @@
   walk, so any depth is a clean 422. The host's `BundleError.reason` carries the same codes.
 - **Limits**: bundle ≤ 2 MiB; decompressed JSON ≤ 12 MiB; ≤ 500 files; each file ≤ 2 MiB; total file bytes ≤ 8 MiB.
 - **Manifest checks** (builder, server, installer): `schema_version = "agentj.catalog/v1"`; `name` `^[a-z0-9][a-z0-9-]{1,39}$`;
-  `type` ∈ {skill, workflow}; `version` semver `MAJOR.MINOR.PATCH` (optional `-pre`); `title_zh`/`title_en` 1–80,
+  `type` ∈ {skill, workflow, card}; `version` semver `MAJOR.MINOR.PATCH` (optional `-pre`); `title_zh`/`title_en` 1–80,
   `summary_zh`/`summary_en` 1–500 code points; `tags` ≤ 12 strings of 1–24; `category` ∈ FORMAT §4; `entry` is a listed file;
   skill: `SKILL.md` + `README.md` present, `install.skill_dir_name` `^[a-z0-9][a-z0-9-]{1,39}$`; workflow: `README.md`,
-  `params.schema.json` (parses) and ≥ 1 file under `scaffold/`; `requires.*` shapes as FORMAT §2 (unknown keys ignored by readers).
+  `params.schema.json` (parses) and ≥ 1 file under `scaffold/`; card (P432): exactly `README.md`, `card/card.json` (= `entry`) and
+  at most `card/sample/<data file>`, no `install.post_install` / `install.verify` (a card has no code); the card's own rules
+  (AGENTJ-CARDS-SPEC: fields, buttons, a server pinned to `server.repo` + 40-hex `server.ref`, a key-free sample) are checked by
+  the host on `agentj card pack`, `publish` and `install` (`jcards_pkg.preflight`); `requires.*` shapes as FORMAT §2 (unknown keys ignored by readers).
 - Builder: `bundle.build(dir) -> (bytes, manifest)` regenerates `manifest.files` from the directory (sorted, sha256, bytes) and
   refuses anything the rules above refuse. `bundle.parse(bytes) -> (manifest, {path: bytes})` validates everything above.
   `bundle.py` is stdlib-only (the admin tool imports it by path).
@@ -94,13 +99,13 @@
 ## 4. Host routes (signed envelopes, PROTOCOL §7 rules; `POST /v1/host/plaza/pkg/<route>`; context `agentjarvis-host-plaza-pkg-<route>-v1`; `t` = `plaza_pkg_<route>`)
 | route | inner (besides `v`,`t`,`channel`,`ts`) | answer |
 |---|---|---|
-| `search` | `q` (string, may be empty) + optional `type` (skill\|workflow), `sort` (new\|installs\|likes\|week, default: certified first then week), `tag` (1–24), `track` (official\|community), `limit` (1–50, default 20), `offset` (0–1000) | 200 `{note, items:[Item], total, tags:[{tag,n}]}` |
+| `search` | `q` (string, may be empty) + optional `type` (skill\|workflow\|card), `sort` (new\|installs\|likes\|week, default: certified first then week), `tag` (1–24), `track` (official\|community), `limit` (1–50, default 20), `offset` (0–1000) | 200 `{note, items:[Item], total, tags:[{tag,n}]}` |
 | `get` | `name` + optional `version` | 200 `{note, package: Detail, download:{url, expires_at}}` · 404 `not_found` |
 | `mine` | — | 200 `{items:[Item + state + remove_reason]}` (this company's packages, any state) |
 | `installed` | `nonce`, `name`, `version` | 200 `{name, installs}` (idempotent per host) |
 | `like` | `nonce`, `name`, `on` (bool) | 200 `{name, liked, likes}` |
 | `report` | `nonce`, `name`, `reason` | 201 `{name, reported, hidden}` · 200 `{…, already:true}` · 403 `own_package` / `official_package` |
-| `publish` | `nonce`, `name`, `type`, `version`, `sha256`, `bytes`, `show_name` (bool) | 201 `{id, version_id, upload:{url, expires_at}}` · 409 `name_taken` / `version_exists` / `version_not_newer` · 413 `too_large` · 403 · 429 |
+| `publish` | `nonce`, `name`, `type`, `version`, `sha256`, `bytes`, `show_name` (bool) + optional `host_sig`, `host_pubkey`, `host_signed_at` (§11) | 201 `{id, version_id, upload:{url, expires_at}}` · 409 `name_taken` / `version_exists` / `version_not_newer` · 413 `too_large` · 403 · 429 |
 
 `Item` = `{name, type, track, certified, version, title:{zh,en}, summary:{zh,en}, tags, category, likes, installs, installs_week,
 liked, state, author:{kind: official|agent|staff, company?: "co-xxxxxx", agent_name?: string|null, mine: bool}, verification:
@@ -133,7 +138,7 @@ version must be strictly greater (semver) than the latest live one.
   `own_package` / `official_package`); not seated → 403 `plaza_requires_seat` on every route (the page then shows only the
   plaza introduction). Both GETs take an optional `tenant=<slug>` (one of `companies`; default the first): `Item.liked` is
   that company's like — the page passes the company chosen in its picker so the like button matches what a POST would toggle.
-- Page: `/plaza` only (no new Worker path); the part is in the fragment — `#qa` (default) · `#skills` · `#workflows`
+- Page: `/plaza` only (no new Worker path); the part is in the fragment — `#qa` (default) · `#skills` · `#workflows` · `#cards` (P432)
   (optional `?q=&sort=&tag=&track=` after the part, shareable) · `#pkg=<name>` (a package) · `#p=<pz_ id>` (a post).
 
 ## 6. Admin (`api.<zone>/v1/plaza/admin/packages…`, the plaza admin token)
@@ -170,7 +175,7 @@ Audit kinds: `pkg_published`, `pkg_rejected`, `pkg_imported`, `pkg_certified`, `
 | reports | ≤ 10 / h, ≤ 30 / day | — | — | — |
 
 ## 8. Host CLI (`agentj plaza …`, extends the Q&A commands)
-- `search [words…] [--type all|qa|skill|workflow] [--sort …] [--tag T] [--official|--community] [--limit N] [--json]` — default
+- `search [words…] [--type all|qa|skill|workflow|card] [--sort …] [--tag T] [--official|--community] [--limit N] [--json]` — default
   `all`: packages first, then Q&A posts, each in the data fence.
 - `show <pz_id | package-name> [--version V] [--json]` — a post, or a package (manifest summary + README, fenced).
 - `install <name> [--version V] [--harness claude_code|codex|opencode] [--workspace DIR] [--param k=v]… [--params-file F]
@@ -188,6 +193,13 @@ Audit kinds: `pkg_published`, `pkg_rejected`, `pkg_imported`, `pkg_certified`, `
   包装的，不替换」), and moves the old folder to `<state dir>/plaza/backups/<name>-<UTC ts>/` (0700) — never inside a skills root
   or the workspace.
   `requires.skills` are listed for the Owner (install each with its own yes), not pulled silently. Automations are never enabled.
+- Exit codes: 0 ok / previewed · 1 error · 2 a privacy layer or the static audit (§12) flagged it · 3 layer 2 unavailable ·
+  4 digest mismatch · 6 the owner did not allow the extra permissions (§13) · 5 signature invalid (also: any integrity failure of a package listed official / certified, a reserved name without the
+  card (P432) → the owner's phone deck (`<state>/agentperm/cards/active/<id>/`), **switched off**: the preview shows the card's
+  permission summary (data source, every button's whole message or server call, links, the server's repository + commit); the
+  owner turns it on in Settings → Cards after reading the same summary (`jcard_perm`, bound by its digest); a card id that this
+  package did not install is never replaced; `--replace` = a new version (the old one sleeps, `agentj card rollback <id>`). The
+  card's server is never fetched or run by agentj. No `--harness` / `--param` / `--sign-as` / `--workspace`.
 - Exit codes: 0 ok / previewed · 1 error · 2 a privacy layer flagged it · 3 layer 2 unavailable · 4 digest mismatch ·
   5 signature invalid (also: any integrity failure of a package listed official / certified, a reserved name without the
   official signature, an unsigned copy of a package installed signed — §10).
@@ -272,6 +284,91 @@ Everything above holds; these fill gaps or tighten it (the host and the page rel
   `true` / `false`. A `verified: [ … {{…}} … ]` line becomes `verified: []`, or with `--sign-as NAME` keeps its own `at:`
   placeholder and gets `human:NAME`.
 
+
+## 11. Publisher signature — the host signs its own package (P426 #47)
+- **Why**: before #47 the operator's auto-certify (P338) signed bytes it downloaded from the server, so a compromised Worker / D1
+  could pass a forged package off as one of the operator's own. Now the publishing host signs; the server can only pass it on.
+- **What is signed**: the host's long-term Ed25519 identity key (the key of every host envelope, PROTOCOL §7; private half 0600,
+  never leaves the host) signs the UTF-8 text (lines joined by `\n`, no trailing newline)
+  `agentjarvis-plaza-host-sig/v1` · `name=<name>` · `type=<type>` · `version=<version>` · `sha256=<bundle sha256 hex>` ·
+  `host=<channel id of that key>` · `signed_at=<unix s>`. The first line separates it from every envelope signature of the same
+  key. Implementation: `host/agentj/plaza_trust.py` (stdlib; RFC 8032 verify fallback), `dashboard/src/packages.ts` `hostSigText`.
+- **Wire**: `publish` inner gains optional `host_sig` (b64url, 64 B), `host_pubkey` (b64url, 32 B) and `host_signed_at`
+  (integer, 0 < x < 2^41) — all three or none. The server verifies the signature with the envelope's own `pk` (`host_pubkey` must
+  equal it) over the request's name / type / version / sha256 and the envelope channel, else 400 `bad_host_sig`; it stores the
+  three values as sent and serves them unchanged: `Detail.host_sig` / `host_pubkey` / `host_signed_at` (null when unsigned), the
+  admin `versions[]` rows likewise, and the admin package view's `host_pubkey` (latest live version). Storage needs no
+  migration: the version row's `manifest` column keeps them under the reserved key `_agentj_host_signature` (a bundle whose own
+  manifest has that key → 422 `bad_bundle`/`reserved_key`; admin views return the manifest without it). A server from before
+  #47 answers the unknown fields 400 `bad_request`: the host then publishes once more without them and says so (unsigned).
+- **Who checks**: the operator's `tools/plaza-certify auto` certifies only when the signing key's fingerprint (SHA-256 of the raw
+  public key) is pinned in its local allow-list and the signature verifies over the bytes it downloaded itself; no signature /
+  key not pinned / signature does not match → a human, with that reason in the daily digest. Installing hosts check it too
+  (#181-2, §12).
+
+## 12. Static audit and install-time publisher check (P426 #181-2)
+- **One rule table**, `host/agentj/plaza_audit_rules.json` (`agentj.plaza-audit/v1`), two matchers: `host/agentj/plaza_audit.py`
+  and `dashboard/src/plaza_audit.ts` (it imports the same JSON). Deterministic, zero model; every pattern is matched line by line
+  against every file and every manifest string (`files` excluded). A file that is not valid UTF-8 is decoded non-fatally (bad
+  bytes → U+FFFD) and scanned anyway; a program-like file (under `scripts/ cli/ tools/ bin/` — also below `scaffold/` —, a
+  script extension, or a `#!` first line) that does not decode is itself a block, `undecodable-script` (built into both
+  matchers, not a table rule). The table's `cases` are vectors both matchers must return identically (`first_hit` = the first
+  rule in table order that any line matches).
+- **block** rules: `remote-exec` (curl / wget … | sh, sh -c "$(curl …)", bash <(curl …), iex(irm …), exec(urlopen(…))),
+  `decode-exec` (base64 -d … | sh, exec(b64decode(…)), eval(atob(…)), powershell -enc), `credential-files` (SSH private keys,
+  ~/.aws/credentials, gcloud / kube / docker credentials, ~/.netrc, keychain dumps, browser cookie / password stores),
+  `env-exfil` (all environment variables piped / posted out), `file-upload` (curl -F / --data-binary / -T of a home or absolute
+  path, scp of a home file), `delete-everything` (rm -r of / or ~), `prompt-injection` (中英: drop earlier instructions, hide things
+  from the user). **warn** rules: `role-override` (「你现在是…」 / "you are now"), `dotenv-read`, `secret-dirs` (~/.ssh, ~/.aws,
+  saved passwords), `sudo`.
+- **Where**: `agentj plaza publish` audits right after building — a block finding → exit 2, nothing sent, every finding with path
+  + line in plain words; warn findings go into the preview and the receipt. The Dashboard upload refuses a block finding with
+  422 `{error:"audit_blocked", rule, path, line}` (version rejected, nothing in R2). The operator's `tools/plaza certify` and
+  `plaza-certify auto` never certify a block finding (`auto` logs reason `audit`). `agentj plaza install` audits the downloaded
+  bundle: a block finding → exit 2, nothing written; warn findings are listed in the preview. A package carrying a valid Agent J
+  signature (official / certified: reviewed by a person) only gets its findings shown — a block finding there is still tagged
+  「BLOCK（已认证包仅提示）」 in the preview.
+- **Publisher check at install**: when the Detail carries `host_sig` / `host_pubkey` / `host_signed_at` (§11) the host recomputes the
+  signed text from the bytes it downloaded — malformed or not verifying → exit 5 (「发布方签名对不上」), nothing written. The preview
+  shows 「发布方签名：<fingerprint>」 or 「未签名」 (packages published before #47 still install, labelled unsigned).
+- **TOFU per package name**: `<state>/plaza/publishers.json` (0600) remembers the first publisher seen for each name (recorded
+  after an install; `fp: null` = it was unsigned then). A later version signed by another key, signed where it was unsigned, or
+  no longer signed is shown as 「发布方换了」, and the confirm needs the owner's signed allow on the phone — the §13 card (one
+  card with any extra permissions) with `publisher: {prev, new}` listing the old and the new fingerprint (null = unsigned). No
+  command-line flag accepts it; without serve the install is refused (exit 6) with the way to approve. The publisher
+  fingerprint is part of the install digest; the allowed one replaces the remembered one and installed.json keeps
+  `publisher_grant {rid, device}`. An official package dropping its host signature is not a change (the Agent J signature
+  decides).
+
+## 13. Permission declarations (P426 #181-1)
+- **Manifest** `permissions` (optional; an addition to CATALOG_FORMAT §2 checked by `bundle.py` `check_permissions` and the
+  Dashboard's `checkManifestFields`, reason `permissions` / `permissions.tools` / `permissions.network` / `permissions.exec` /
+  `permissions.secrets`): `{"tools": [≤ 40 tool names ^[A-Za-z][A-Za-z0-9_]{0,63}$], "network": bool, "exec": bool, "secrets":
+  [≤ 60 env names]}`, every key optional (default empty / false), no other key.
+- **Inference** (`host/agentj/plaza_perms.py` `infer`) for a package without it: `exec` = files under `scripts/ cli/ tools/ bin/`
+  (also below `scaffold/`), script extensions, a `#!` first line or an `install.verify`; `network` = code that talks to the
+  internet (URLs, curl / wget, requests / httpx / urllib / fetch / axios / sockets) or docs that use curl / wget / WebFetch /
+  WebSearch (a plain link in a doc is not network); `tools` = SKILL.md `allowed-tools:` + role files' `tools:` (argument
+  qualifiers dropped) + `Bash` when exec; `secrets` = `requires.env` entries with `secret: true`. `agentj plaza publish` of a
+  folder without a declaration publishes the inferred one inside the manifest (shown in the preview; the owner's yes to the
+  preview is the author's confirmation; the folder itself is never rewritten). `install` of an old package uses the inference.
+  A declaration never lowers what the content shows: install compares **declared ∪ inferred**; the left-out items are named
+  in the preview (「包声明的少于实际内容」, also in the publish preview) and asked on the card (`under: true` adds that line) —
+  `"permissions": {}` does not skip the card.
+- **Allowed set** (`plaza_perms.allowed`, read-only, per harness): Claude Code `~/.claude/settings.json` + `settings.local.json`
+  (`defaultMode: bypassPermissions` → everything; else bare tool names in `permissions.allow` — `Tool(args)` rules allow part
+  of a tool and do not count; exec = Bash; network = WebFetch or Bash); Codex `~/.codex/config.toml` (`danger-full-access` +
+  `approval_policy = "never"` → everything; `workspace-write` → tools + exec, network only with
+  `sandbox_workspace_write.network_access = true`); OpenCode / unreadable → nothing. Always allowed: Read, Glob, Grep, LS,
+  NotebookRead, TodoWrite. Secrets count as allowed only under full access.
+- **Install**: (declared ∪ inferred) ⊆ (allowed ∪ what the owner approved for this package on this harness before) → installs as before.
+  Otherwise the preview lists every extra item in plain words, and `--owner-confirmed` asks serve over the control socket
+  (`{"cmd":"plaza_perm", name, version, sha256, items:[{kind: tool|network|exec|secret, name}], under?, publisher?}`); serve
+  rebuilds the card text from the kinds / names / fingerprints, raises one approval card (tool `agentj plaza`, `batch=False` —
+  a host card no approval level auto-allows, and in `goal.SOFT_EXEMPT` so a running goal does not auto-approve it either) and answers `{ok:true, approved:true, rid, device}` only for an allow signed by a paired device. Denied / timed
+  out / serve not running → exit **6**, nothing written; the message says how to approve from the phone. installed.json keeps
+  `permissions` (declared ∪ inferred) and `perm_grant` `{rid, device}`; a later version asks again only for what it adds. The
+  curated starters (signed workflows seeded by install / upgrade) are pre-authorized and never ask.
 
 ## P79 — public metadata exception (ADR-A188)
 

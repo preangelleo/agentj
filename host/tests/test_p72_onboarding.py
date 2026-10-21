@@ -132,8 +132,10 @@ class Notes(unittest.TestCase):
         later = t0 + 100 + onboarding.REMIND_SECS
         self.assertIn("主力手机", onboarding.turn_note(self.st, "en", now=later).replace("the main phone", "主力手机"))
         onboarding.paired(self.st, "d2", PHONE, now=later + 1)
+        # P418 (#183): the install's last question (keep awake + start at boot) comes first, once
+        self.assertIn("agentj keep-awake setup --phone", onboarding.turn_note(self.st, "zh", now=later + onboarding.REMIND_SECS))
         # P115 (P92 approved default 1): a fresh install gets ONE first-run checklist offer, then silence
-        self.assertIn("agentj setup checklist --resume", onboarding.turn_note(self.st, "zh", now=later + onboarding.REMIND_SECS))
+        self.assertIn("agentj setup checklist --resume", onboarding.turn_note(self.st, "zh", now=later + onboarding.REMIND_SECS + 1))
         for k in range(3):
             self.assertEqual(onboarding.turn_note(self.st, "zh", now=later + onboarding.REMIND_SECS * (k + 2)), "",
                              "both required remotes paired: never mentioned again")
@@ -157,7 +159,9 @@ class Notes(unittest.TestCase):
         onboarding.paired(self.st, "d1", PHONE, now=t0)
         n = onboarding.turn_note(self.st, "zh", now=t0 + onboarding.TOUR_SECS + 1)
         self.assertIn("这台Agent J 主机的浏览器", n)
-        self.assertIn("agentj admin", n)
+        self.assertIn("https://m.agentj.app", n)
+        self.assertIn("已配对手机", n)
+        self.assertNotIn("agentj admin", n)
         os.unlink(self.st.cloud_path)
         n = onboarding.turn_note(self.st, "zh", now=t0 + onboarding.TOUR_SECS + 2 + onboarding.REMIND_SECS)
         self.assertIn("agentj login --seat-file", n)

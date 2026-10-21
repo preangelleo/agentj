@@ -144,6 +144,88 @@ def _entropic(tok: str) -> bool:
     return _entropy(tok) >= 4.3
 
 
+# P424 (#142 / #147): what a file path, a file name, a snake_case identifier or an environment-variable name looks like — words
+# joined by `_` `-` `.` `/`: every part is made of word chunks (Capitalised / lower-case runs of ≥ 3 letters, upper-case runs,
+# digits, `v2`-style tags) or is a 1–2 letter part, a part has ≤ 2 digit runs, every alphabetic chunk of ≥ 3 letters carries a
+# vowel (one upper-case acronym of ≤ 4 letters excepted) and ≥ 60 % of the letters sit in chunks of ≥ 4. Measured: 0 of ~900 000
+# random high-entropy base64 / base64url tokens pass (host/tests/test_p424_c142_secret.py samples 3000 on every run). Relaxed modes only (`paths=True`,
+# owner): the strict feedback / plaza scan keeps mirroring the server (worker/src/scan.ts).
+_NAME_CHUNK = re.compile(r"[A-Z][a-z]{2,}|[a-z]{3,}|[A-Z]{2,}(?![a-z])|\d+|[a-z]\d+|[A-Z]\d+")
+_NAME_PART = re.compile(r"(?:" + _NAME_CHUNK.pattern + r")+|[A-Za-z]{1,2}")
+_VOWEL = re.compile(r"[aeiouyAEIOUY]")
+
+
+def _namelike(tok: str) -> bool:
+    parts = [p for p in re.split(r"[_\-./]", tok) if p]
+    if len(parts) < 2 or not all(_NAME_PART.fullmatch(p) and len(re.findall(r"\d+", p)) <= 2 for p in parts):
+        return False
+    words = [c for p in parts for c in _NAME_CHUNK.findall(p) if c.isalpha()] + [p for p in parts if len(p) <= 2 and p.isalpha()]
+    novowel = [w for w in words if len(w) >= 3 and not _VOWEL.search(w)]
+    if len(novowel) > 1 or any(not (w.isupper() and len(w) <= 4) for w in novowel):
+        return False
+    alpha = sum(len(w) for w in words)
+    return alpha > 0 and sum(len(w) for w in words if len(w) >= 4) >= 0.6 * alpha
+
+
+# P424: a labelled "value" that is not a value — shell / code around a NAME, not a credential. Relaxed modes only. A reference
+# is the WHOLE token (`$k`, `${K}`, `%ENV_NAME%`, `$env:K`) or opens a substitution (`$(`, `${`): `TOKEN=$ecret!x` stays a value.
+# Security review (P424 #142/#147): `%X%` counts only around an upper-case ENV_NAME (`%Hunter2%` is a value); code counts only
+# UNQUOTED and only as one whole call / subscript of a code-looking callee whose arguments are names, never a random run
+# (`os.environ["X"]`, `getenv('X')` pass; `Winter2025(prod)`, `Qw3rty[42]zz`, `x(<random>)` do not); `KEY=OTHER_ENV_NAME`
+# passes toward others only when OTHER_ENV_NAME is a known variable name (os.environ, or a key NAME of a `.env` the
+# SecretIndex read — names only, never values); the quote-then-space grep shape needs a path / `$` / pipe after the space.
+_ENV_NAME = re.compile(r"[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+")
+_REF_VALUE = re.compile(r"\$\(|\$\{|(?:\$(?:env:)?[A-Za-z_]\w*|(?-i:%[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+%))(?![^\s\"'`;|&)\]},])", re.I)
+_CODE_ARG = r"(?:\"[A-Za-z_][\w.-]*\"|'[A-Za-z_][\w.-]*'|\$\{?[A-Za-z_]\w*\}?|[a-z_][a-z0-9_]{0,23}|" + _ENV_NAME.pattern + r")"
+_CODE_VALUE = re.compile(r"([A-Za-z_][\w.]*)(?:\((?:" + _CODE_ARG + r"(?:\s*,\s*" + _CODE_ARG + r")*)?\)|\[" + _CODE_ARG
+                         + r"\])+(?=$|[\s,;)\]}])")
+_CODE_CALLEES = frozenset("getenv env environ secret secrets config settings vault keyring getpass input get".split())
+_GREP_TAIL = re.compile(r"[ \t]+(?:[~/.$]|\|)")
+_KNOWN_ENV: set[str] = set()
+KNOWN_ENV_MAX = 4096
+
+
+def remember_env_names(names) -> None:
+    """Key NAMES (never values) of the env files the SecretIndex read: `KEY=OTHER_ENV_NAME` toward others needs one of these."""
+    for n in names:
+        if len(_KNOWN_ENV) >= KNOWN_ENV_MAX:
+            return
+        if isinstance(n, str) and _ENV_NAME.fullmatch(n):
+            _KNOWN_ENV.add(n)
+
+
+def _known_env_name(n: str) -> bool:
+    return n in _KNOWN_ENV or n in os.environ
+
+
+def _code_value(v: str) -> bool:
+    m = _CODE_VALUE.match(v)
+    if not m:
+        return False
+    callee = m.group(1)
+    return "." in callee or "_" in callee or callee.split(".")[-1] in _CODE_CALLEES
+
+
+def _not_value(match: re.Match, repl: str, owner: bool = False) -> bool:
+    """`KEY=' ~/.env | cut …'` (the quote closes a grep pattern), `api_key = os.environ[…]`, `TOKEN=$k`, `%TOKEN_NAME%`,
+    `$env:TOKEN`, `KEY=OTHER_ENV_NAME`, `Authorization: Bearer $k`: the part that would be redacted is no value. `owner`:
+    the owner's own channel (an ENV_NAME-shaped value passes there; toward others only a known variable name does)."""
+    rendered = match.expand(repl)
+    pre = rendered.partition(R)[0]
+    rest = match.string[match.start() + len(pre):]
+    quoted = bool(pre) and pre[-1] in "\"'"
+    if quoted and rest[:1] in (" ", "\t"):
+        return bool(_GREP_TAIL.match(rest)) and pre[-1] in rest.partition("\n")[0]
+    v = rest.lstrip("\"'")
+    if _REF_VALUE.match(v) or (not quoted and v == rest and _code_value(v)):
+        return True
+    token = re.match(r"[^\s\"'<>]+", v)
+    if not (token and _ENV_NAME.fullmatch(token.group(0))):
+        return False
+    name = token.group(0)
+    return _known_env_name(name) or (owner and _namelike(name))
+
+
 # P127 owner channel (`paths=True`): a file path is judged segment by segment, so a session UUID next to a capitalised
 # file name never turns the whole path into one "high-entropy token". Path = slash-bearing, no base64 `+` / `=`, and either
 # absolute (first segment a plain lower-case word: /tmp, /srv …), after `~` / `.`, or ending in a file extension. A
@@ -197,6 +279,7 @@ def redact_with_report(text: str, host: str | None = None, user: str | None = No
 # mailbox) keeps links, access codes, one-time codes and private addresses as written — only real credentials go. A link is
 # kept whole except a credential embedded in it (user:password@, or a key of a known provider's shape: `?key=AIza…`,
 # api.telegram.org/bot<token>); outside links every secret rule and the high-entropy rule still apply.
+_LABELLED = frozenset(("credential_assignment", "authorization_header"))
 _LINK = _re(r"\b[a-z][a-z0-9+.-]{0,31}://[^\s<>\"'`]+", re.I)     # P326: bounded scheme (see url_credentials)
 _LINK_HARD = frozenset(("private_key", "url_credentials", "aws_access_key", "github_token", "gitlab_token", "slack_token",
                         "stripe_key", "google_api_key", "anthropic_key", "openrouter_key", "openai_key", "replicate_token",
@@ -240,7 +323,7 @@ def credentials(text: str) -> list[tuple[str, str, int, int]]:
             if link and kind not in _LINK_HARD:
                 continue
             for m in pat.finditer(seg):
-                if R in m.group(0):
+                if R in m.group(0) or (kind in _LABELLED and _not_value(m, repl, True)):
                     continue
                 add(base, m, repl, kind)
         if link:
@@ -248,7 +331,7 @@ def credentials(text: str) -> list[tuple[str, str, int, int]]:
         for m in _MNEMONIC.finditer(seg):
             spans.append((base + m.start(2), base + m.end(2), "mnemonic"))
         for m in _ENTROPIC.finditer(seg):
-            if _pathlike(m):                # P194: same as the owner mode — a local path is not a credential
+            if _pathlike(m) or _namelike(m.group(0)):   # P194 / P424: same as the owner mode — a path / name is no credential
                 continue
             if _entropic(m.group(0)):
                 spans.append((base + m.start(), base + m.end(), "high_entropy"))
@@ -269,6 +352,52 @@ def credentials(text: str) -> list[tuple[str, str, int, int]]:
     return out
 
 
+def secret_at(text: str, kinds=None) -> tuple[str, int, int] | None:
+    """P424 (#142 / #147): where the first secret-looking fragment is — (kind, start, end) of the part that would be hidden,
+    by the relaxed (`paths=True`) rules of `redact` (taskspec.secret_like, peer_guard.credential_shape), or None. For telling
+    WHERE a refusal came from (line / column, a masked two-character hint), never for deciding: callers decide as before."""
+    spans: list[tuple[int, int, str]] = []
+    for kind, pat, repl in _SECRETS:
+        if kinds is not None and kind not in kinds:
+            continue
+        for m in pat.finditer(text):
+            if R in m.group(0) or (kind in _LABELLED and _not_value(m, repl)):
+                continue
+            rep = m.expand(repl)
+            i = rep.find(R)
+            pre, suf = (rep[:i], rep[i + len(R):]) if i >= 0 else ("", "")
+            if m.end() - len(suf) > m.start() + len(pre):
+                spans.append((m.start() + len(pre), m.end() - len(suf), kind))
+    if kinds is None or "high_entropy" in kinds:
+        for m in _ENTROPIC.finditer(text):
+            tok = m.group(0)
+            if _namelike(tok):
+                continue
+            if _pathlike(m):
+                at = m.start()
+                for seg in tok.split("/"):
+                    if len(seg) >= SEGMENT_MIN and _entropic(seg) and not _namelike(seg):
+                        spans.append((at, at + len(seg), "high_entropy"))
+                    at += len(seg) + 1
+            elif _entropic(tok):
+                spans.append((m.start(), m.end(), "high_entropy"))
+    if not spans:
+        return None
+    s, e, kind = min(spans)
+    return kind, s, e
+
+
+def where(text: str, span: tuple[str, int, int] | None) -> dict | None:
+    """(kind, start, end) → {"kind", "line", "col", "len", "hint"}: 1-based line / column and the fragment masked to its first
+    two characters + "…" — enough to find it, never enough to use it."""
+    if not span:
+        return None
+    kind, s, e = span
+    line = text.count("\n", 0, s) + 1
+    col = s - (text.rfind("\n", 0, s) + 1) + 1
+    return {"kind": kind, "line": line, "col": col, "len": e - s, "hint": text[s:s + 2] + "…"}
+
+
 def _one_pass(text: str, host: str | None, user: str | None, hits: collections.Counter, paths: bool = False,
               owner: bool = False) -> str:
     def sub(kind, pat, repl, s):
@@ -277,7 +406,16 @@ def _one_pass(text: str, host: str | None, user: str | None, hits: collections.C
             hits[kind] += n
         return out
 
+    relaxed = paths or owner
     for kind, pat, repl in _SECRETS:
+        if relaxed and kind in _LABELLED:        # P424: a NAME next to shell / code is not a credential
+            def keep(m, repl=repl, kind=kind):
+                if _not_value(m, repl, owner):
+                    return m.group(0)
+                hits[kind] += 1
+                return m.expand(repl)
+            text = pat.sub(keep, text)
+            continue
         text = sub(kind, pat, repl, text)
     text = sub("mnemonic", _MNEMONIC, r"\1" + R, text)          # P194: a wallet's seed words
 
@@ -304,9 +442,12 @@ def _one_pass(text: str, host: str | None, user: str | None, hits: collections.C
     def entropic(m):
         if owner and _pathlike(m):          # P194: a local path to the owner's own channel stays whole — the media scan and
             return m.group(0)               # the owner both need it (named key shapes inside it were already taken above)
+        if paths and _namelike(m.group(0)):  # P424: a path / file name / identifier / env-var name made of words
+            return m.group(0)
         if paths and _pathlike(m):
-            segs = [R if len(x) >= SEGMENT_MIN and _entropic(x) else x for x in m.group(0).split("/")]
-            hits["high_entropy"] += segs.count(R)
+            segs = [R if len(x) >= SEGMENT_MIN and _entropic(x) and not _namelike(x) else x for x in m.group(0).split("/")]
+            if segs.count(R):                # P424: never a zero count — `k in hits` is how callers ask "any secret?"
+                hits["high_entropy"] += segs.count(R)
             return "/".join(segs)
         if not _entropic(m.group(0)):
             return m.group(0)

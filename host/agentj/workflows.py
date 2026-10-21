@@ -1,5 +1,6 @@
 """P244 (PROTOCOL §30): the five pages' read-only picture of the Agent J host — the working root's workflow folders, skills,
-memory files and the Agent J constitution layer. Nothing here writes a file except the colour table <state>/workflows.json.
+memory files and the Agent J constitution layer. Nothing here writes a file except the colour table <state>/workflows.json
+(and, P426 #181-3, the first-listed time of a new skill name in <state>/skill-usage.json — skill_usage.annotate).
 
 Safety: a name matching CRED is never listed, never counted by name and never readable (only an anonymous `hidden` count);
 wf_doc / skill_get serve only (folder, name) / id pairs present in the last scan, re-resolved and confirmed inside their
@@ -811,6 +812,11 @@ class Scanner:
             tail["partial"] = True
         if hidden_sk:
             tail["skills_hidden"] = hidden_sk
+        if self.st is not None:          # P426 #181-3 (§39): last use · count · long unused · archivable, and the archive
+            with contextlib.suppress(Exception):
+                from . import skill_usage
+                tail["skill_use"] = skill_usage.annotate(self.st, skills, kind, None, now)
+                tail["skills_archived"] = [{"name": a["name"], "at": a["at"]} for a in skill_usage.archived(self.st, kind)][:40]
         tail["etag"] = hashlib.sha256(json.dumps([items, tail], ensure_ascii=False, sort_keys=True).encode()).hexdigest()[:24]
         self.allow, self.skill_paths = allow, sk_paths
         self.last = {"root": root, "items": items, "tail": tail}

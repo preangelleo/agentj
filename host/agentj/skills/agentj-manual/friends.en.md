@@ -247,7 +247,7 @@ Tapping confirm or decline clears the waiting colour immediately, even while the
 
 ## Same owner
 
-After both paired phones confirm Same owner, messages go directly to the other main Agent J with their source attached. See [Same owner devices](https://agentj.app/docs/same-owner/?lang=en).
+To set your own devices as Same owner, start on one side from the friend's Details and see a six-digit code; on the other side, a paired phone checks that it matches and confirms once. Then messages go directly to the other main Agent J with their source attached. See [Same owner devices](https://agentj.app/docs/same-owner/?lang=en).
 
 ## Handover safeguards and approval
 
@@ -258,3 +258,5 @@ In a friend’s Details, turn on “Hold until I approve”. New requests from t
 A request is claimed when the Agent starts handling it. With no reply for 30 minutes after claiming, its state is released. Unclaimed requests expire after 24 hours. You receive a notice and can reassign or cancel. Work already started may still be running: check before reassigning. The system never automatically re-executes work or kills it because a lease expired. Handover cards use the unclaimed deadline; ordinary friend-question cards still last 120 seconds, and friend invitations 7 days.
 
 Ask your Agent to use `agentj friends relay-policy --per-minute 30 --claim-seconds 1800 --pending-seconds 86400 --json` to configure the limits, or omit those options to read them. The rate accepts 1–10000 messages; durations accept 1–2592000 seconds. `agentj friends cancel <friend> <message-id> --json` cancels a pending request’s state; it cannot undo actions or stop running work. Report results with `agentj friends tell <friend> --reply-to <message-id> <result>` so a result is not treated as a new task.
+
+List pending friend cards with `agentj friends asks --json`. Use `agentj friends asks --dismiss <ID>` for one, or `agentj friends asks --dismiss all` for all. Emergency repair on the phone also dismisses pending friend cards; it never approves them or sends a reply. Ordinary friend questions expire after two minutes.

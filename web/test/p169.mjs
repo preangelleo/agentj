@@ -181,10 +181,12 @@ export async function runP169() {
         });
 
         await step('f', async () => {
+          const officialManifest = await evaluate(p, `document.querySelector('link[rel=manifest]').getAttribute('href')`);
+          check(/^manifest-(light|dark)\.webmanifest$/.test(officialManifest), 'P422 system-theme splash manifest');
           await fake.send(M.custom); await waitFor(p, `document.documentElement.dataset.look==='night-owl'`);
           const locked = await evaluate(p, `[...document.querySelectorAll('img')].filter(i=>i.id!=='orb').map(i=>i.getAttribute('src')).filter(s=>s&&!s.startsWith('brand/'))`);
           check(locked.length === 0, 'every other logo stays official ' + locked);
-          check(await evaluate(p, `document.querySelector('link[rel=manifest]')?.getAttribute('href')||'manifest.webmanifest'`) === 'manifest.webmanifest', 'home-screen icon untouched');
+          check(await evaluate(p, `document.querySelector('link[rel=manifest]')?.getAttribute('href')||'manifest.webmanifest'`) === officialManifest, 'home-screen icon untouched');
           await fake.send(M.robots); await waitFor(p, `document.documentElement.dataset.look==='robots'`);
         });
         check(!p.problems.length && !p.offsite.length, 'no CSP/network errors ' + JSON.stringify(p.problems.slice(0, 2)));

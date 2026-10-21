@@ -170,93 +170,21 @@ function renderDevices(s) {
 
 // ------------------------------------------------------------------ pairing
 function renderPairing(s) {
-  const p = s.pairing;
-  const phase = p ? p.phase : null;
-  show('pair-idle', !phase || ['approved', 'denied', 'expired'].includes(phase));
-  show('pair-waiting', phase === 'waiting');
-  show('pair-pending', phase === 'pending');
-  show('pair-full', phase === 'full');
-  const res = $('pair-result');
-  if (phase === 'approved') {
-    rich(res, t('pair.approved', { name: (p.device && p.device.name) || t('pair.new_device') }));
-    const room = p.makes_room && p.makes_room.device;
-    if (room) {   // 0.15.1: which remote made room for it (a full list, or the same browser paired again)
-      const line = el('span', 'aj-small');
-      rich(line, t(p.makes_room.kind === 'replaced' ? 'pair.replaced_done' : 'pair.evicted_done', roomVars(room)));
-      res.append(el('br'), line);
-    }
-    res.className = 'aj-callout';
-  } else if (phase === 'denied') {
-    rich(res, t(DENY.has(p.reason) ? `deny.${p.reason}` : 'deny.denied'));
-    res.className = 'aj-callout aj-callout--danger';
-  } else if (phase === 'expired') {
-    rich(res, t('pair.expired'));
-    res.className = 'aj-callout aj-callout--danger';
-  }
-  res.hidden = !['approved', 'denied', 'expired'].includes(phase);
-  if (phase === 'waiting') {
-    const img = $('pair-qr');
-    if (typeof p.qr_svg === 'string' && p.qr_svg.startsWith('data:image/svg+xml') && img.getAttribute('src') !== p.qr_svg) img.src = p.qr_svg;
-    $('pair-link').textContent = typeof p.link === 'string' ? p.link : '';
-    const left = Math.max(0, Math.round((p.expires || 0) - Date.now() / 1000));
-    const leftText = left >= 60 ? t('pair.left_min', { n: Math.ceil(left / 60) }) : t('pair.left_sec', { n: left });
-    rich($('pair-scan'), t('pair.scan', { left: leftText }));
-  } else {
-    $('pair-qr').removeAttribute('src');
-    $('pair-link').textContent = '';
-    setLinkBox(false);
-  }
-  if (phase === 'pending') {
-    rich($('pair-device-lead'), t('pair.pending_lead', { name: (p.device && p.device.name) || t('pair.unnamed_device') }));
-    rich($('pair-code-where'), t('pair.code_where', { n: String(p.deadline_in ?? '') }));
-    const wrong = $('pair-pass-wrong');
-    wrong.hidden = typeof p.pass_wrong !== 'number';
-    if (typeof p.pass_wrong === 'number') rich(wrong, t('pair.pass_wrong', { n: p.pass_wrong }));
-    else wrong.replaceChildren();
-    // P127: a bound + online host without a passphrase is approved on the account page (passkey): no code / passphrase here
-    const viaAccount = passkeyOnly(s);
-    show('pair-pending-account', viaAccount);
-    show('pair-remote-confirm', s.devices.length > 0);   // P153: the card also pops up on every paired remote
-    show('pair-local-approve', !viaAccount);
-    show('pair-approve', !viaAccount);
-    show('pair-pass-unset', s.passphrase_set === false && !viaAccount);
-    renderRoom($('pair-room'), p.makes_room);
-  } else {
-    $('pair-code').value = '';
-    $('pair-pass').value = '';
-    $('pair-approve').disabled = true;
-  }
-  if (phase === 'full') {
-    rich($('pair-full-lead'), t('pair.full_lead', { name: (p.device && p.device.name) || t('pair.unnamed_device') }));
-    rich($('pair-full-warn'), t('pair.full_warn', { limit: s.limit || LIMIT_DEFAULT }));
-    $('pair-full-list').replaceChildren(...s.devices.map((d) => deviceRow(d, 'pair.full_unbind', unbindForPairing)));
-  }
-  return phase === 'waiting' || phase === 'pending' || phase === 'full';
+  for (const id of ['pair-waiting','pair-pending','pair-full','pair-result','pair-start']) show(id,false);
+  show('pair-idle',true);
+  return false;
 }
 
-/** P127: the shared pre-check (agentj/pairprep.py → /api/state `pair_check`) decides the route before any QR exists. */
-function passkeyOnly(s) {
-  const c = s.pair_check;
-  return !!(c && c.route === 'account' && !c.passphrase_set);
-}
-const PRE_SET = { offline: 'pair.pre_set_offline', off: 'pair.pre_set_off' };
-/** → true when pairing may start from this page. Says why not (and what to do) before the human clicks anything. */
+/** P444b: the local settings page only links to the account page; terminal pairing stays in agentj pair. */
+function passkeyOnly(s) { return true; }
 function renderPrecheck(s, running) {
-  const c = s.pair_check;
-  const box = $('pair-precheck');
-  const coding = !!(s.pairing && ['waiting', 'pending', 'full'].includes(s.pairing.phase));
-  if (!c || !running || coding) { box.hidden = true; return true; }
-  let key = null;
-  if (c.route === 'set_passphrase') key = (c.bound && PRE_SET[c.why]) || 'pair.pre_set';
-  else if (c.route === 'account') key = c.passphrase_set ? 'pair.pre_account_pass' : 'pair.pre_account';
-  if (!key) { box.hidden = true; return true; }
-  rich($('pair-precheck-text'), t(key));
-  const url = c.route === 'account' && typeof c.account_url === 'string' && /^https:\/\/[^\s"'<>]+$/.test(c.account_url) ? c.account_url : null;
-  if (url) $('pair-precheck-open').href = url;
-  show('pair-precheck-actions', !!url);
-  box.className = c.route === 'set_passphrase' ? 'aj-callout aj-callout--warm adm-stack' : 'aj-callout aj-callout--note adm-stack';
-  box.hidden = false;
-  return c.route !== 'set_passphrase';
+  const c = s.pair_check || {};
+  rich($('pair-precheck-text'), t('pair.pre_account'));
+  const url = typeof c.account_url === 'string' && /^https:\/\/[^\s"'<>]+$/.test(c.account_url) ? c.account_url : $('pair-precheck-open').href;
+  $('pair-precheck-open').href = url;
+  show('pair-precheck-actions',true);
+  show('pair-precheck',true);
+  return false;
 }
 
 function roomVars(d) {
@@ -478,7 +406,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     await refresh();
     // The protocol supplies only this non-secret local hint. Existing admission/approval stays authoritative.
     if (token && new URLSearchParams(location.search).get('pair') === '1' && (!state?.pairing || state.pairing.phase === 'idle')
-        && state?.pair_check?.route !== 'set_passphrase') {   // P127: the pre-check box already says what to do first
+        && state?.pair_check?.route !== 'set_passphrase' && !passkeyOnly(state)) {   // P127: the pre-check box already says what to do first
       const r = await api('POST', '/api/pair/start', {});
       if (r.status !== 200) say(errKey(r.data.error, 'pair.start_failed'), null, 'error');
       refresh();

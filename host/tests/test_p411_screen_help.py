@@ -1,6 +1,7 @@
 """P411 (#172 + #76): screen help — the QR crop (qrcrop.py), the screen-help cards in serve (screenhelp.HelpCards via
 elevate.sock), the narrow channel for the owner's own scripts, and the `agentj qr push` / `agentj screen ask` CLI."""
 import _hermetic  # noqa: F401
+import time
 import asyncio
 import base64
 import contextlib
@@ -439,13 +440,30 @@ class RealBrowser(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(browser.stop_proc, self.proc)
         self.hc = screenhelp.HelpCards(FakeElev(FakeHost(self.st)))
 
+    async def fixture_ready(self, cdp, session, path, selector=None):
+        # Target.createTarget announces the requested URL before the renderer leaves about:blank.
+        # Wait for our own fixture, not a fixed sleep; all capture assertions below remain unchanged.
+        expression = "location.pathname === %s && document.readyState === 'complete'" % json.dumps(path)
+        if selector:
+            expression += " && !!document.querySelector(%s)" % json.dumps(selector)
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            result = cdp.call("Runtime.evaluate", {"expression": expression, "returnByValue": True}, session=session)
+            if result.get("result", {}).get("value") is True:
+                return
+            await asyncio.sleep(0.05)
+        self.fail("local browser fixture did not navigate to " + path)
+
     async def test_capture_element_page_and_watch(self):
         from agentj import browser
         from agentj.browser_cdp import CDP
         rt = browser.runtime(self.st)
         with CDP(rt["ws"]) as cdp:
-            cdp.new_tab(self.origin + "/login", background=False)
-        await asyncio.sleep(1.5)
+            target = cdp.new_tab("about:blank", background=False)
+            session = cdp.attach(target)
+            navigation = cdp.call("Page.navigate", {"url": self.origin + "/login"}, session=session)
+            self.assertNotIn("errorText", navigation, navigation)
+            await self.fixture_ready(cdp, session, "/login", "#qr")
         self.assertEqual((await self.hc.capture({"tab": "nowhere.example"}))["result"], "no_tab")
         self.assertEqual((await self.hc.capture({"tab": "/login", "selector": "#missing"}))["result"], "no_element")
         el = await self.hc.capture({"tab": "/login", "selector": "#qr"})
@@ -464,7 +482,7 @@ class RealBrowser(unittest.IsolatedAsyncioTestCase):
         with CDP(rt["ws"]) as cdp:
             s = cdp.attach(el["target"])
             cdp.call("Page.navigate", {"url": self.origin + "/app"}, session=s)
-        await asyncio.sleep(1.0)
+            await self.fixture_ready(cdp, s, "/app")
         pg = await self.hc.page({"target": el["target"], "selector": "#qr"})
         self.assertNotEqual(pg["page"], el["page"])
         self.assertFalse(pg["present"])

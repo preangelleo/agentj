@@ -60,13 +60,36 @@ class HostFlow(Security,unittest.IsolatedAsyncioTestCase):
  async def pending(self):
   p=self.h.pairing;pub=os.urandom(32);s=serve.Session(cid=7,state='pending',pub=pub,device=wire.device_id(pub),name='P78 phone',h=os.urandom(32),deadline=time.monotonic()+60)
   p.cid=7;self.h.sessions[7]=s;return p,s
- async def test_start_scoped_auto_approval_logs_and_notification(self):
+ async def test_start_waits_for_explicit_signed_approval_logs_and_notification(self):
   await self.h.remote_pair.execute(self.signed());p,s=await self.pending()
   await self.h.remote_pair.pending(p,s)
+  self.assertEqual(s.state,'pending'); self.assertEqual(self.st.devices(),{})
+  self.q.update(id=wire.b64u(os.urandom(16)),op='approve',device=s.device,handshake=rp.handshake(s))
+  await self.h.remote_pair.execute(self.signed())
   self.assertEqual(s.state,'ready');self.assertEqual(self.st.devices()[s.device]['source'],'account')
   self.assertIn('account_passkey',self.st.approvals_path.read_text());self.h.broadcast.assert_awaited_once()
   self.assertIsNone(self.h.pairing)
   await self.h.remote_pair.execute(self.signed());self.assertIsNone(self.h.pairing,'replayed request must not create QR')
+ async def test_pending_code_is_encrypted_for_original_browser_and_never_grants(self):
+  await self.h.remote_pair.execute(self.signed());p,s=await self.pending()
+  await self.h.remote_pair.pending(p,s)
+  reply=self.h.remote_pair.results[p.remote['id']][1]
+  aad=(rp.CONTEXT+'\n'+p.remote['id']).encode()
+  shared=self.browser.exchange(X25519PublicKey.from_public_bytes(wire.unb64u(reply['epk'])))
+  data=json.loads(AESGCM(hashlib.sha256(aad+shared).digest()).decrypt(wire.unb64u(reply['iv']),wire.unb64u(reply['data']),aad))
+  self.assertEqual(data,{'status':'pending','devices':[{'device':s.device,'name':s.name,'handshake':rp.handshake(s),'code':wire.safety_code(s.h)}]})
+  self.assertEqual(s.state,'pending'); self.assertEqual(self.st.devices(),{})
+  self.h.pairing=None
+  self.h.remote_pair.refresh_waiting()
+  self.assertIsNone(self.h.remote_pair.waiting)
+  self.assertEqual(self.st.devices(),{})
+ async def test_original_qr_expiry_cannot_be_extended_by_a_fresh_approve(self):
+  await self.h.remote_pair.execute(self.signed());p,s=await self.pending()
+  await self.h.remote_pair.pending(p,s); p.deadline=time.monotonic()-1
+  self.q.update(id=wire.b64u(os.urandom(16)),op='approve',device=s.device,handshake=rp.handshake(s))
+  await self.h.remote_pair.execute(self.signed())
+  self.assertEqual(self.st.devices(),{}); self.assertEqual(s.state,'pending')
+
  async def test_off_and_offline_never_create_qr(self):
   rp.set_enabled(self.st,False);await self.h.remote_pair.execute(self.signed());self.assertIsNone(self.h.pairing)
   rp.set_enabled(self.st,True);self.h.relay_up=False;self.q['id']=wire.b64u(os.urandom(16));await self.h.remote_pair.execute(self.signed());self.assertIsNone(self.h.pairing)

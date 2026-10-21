@@ -37,7 +37,9 @@ try{
   await waitFor(p,`document.body.dataset.sheet==='1'`);await sleep(800);
   writeFileSync(out+`28-question-${name}.png`,await shoot(p,''));
   const qTop=await ev(p,TOP('#sheet'));
-  check(qTop>=card-1&&qTop<=card+1,`question card top ${qTop.toFixed(1)} = the message card top ${card.toFixed(1)} (${name})`);
+  check(await ev(p,`document.getElementById('sheet').parentElement.id==='reply-notices'`),'P440 / #215 question belongs to reply notification slot');
+  const reply=await ev(p,`(()=>{const r=document.getElementById('rm').getBoundingClientRect();return {top:r.top,bottom:r.bottom}})()`);
+  check(qTop>=reply.top-1&&qTop<reply.bottom,`question card begins inside reply card (${name})`);
   check(qTop>=line-0.5,`question card top ${qTop.toFixed(1)} ≥ WEEKLY label bottom ${line.toFixed(1)} (${name})`);
   check(await ev(p,`(()=>{const s=document.getElementById('sheet');return s.scrollHeight>s.clientHeight+20&&getComputedStyle(s).overflowY!=='visible';})()`),`a long question card scrolls inside (${name})`);
   check(await ev(p,`parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ui-sheet-ceil'))>=${line}-0.5`),`--ui-sheet-ceil ≥ the WEEKLY label (${name})`);

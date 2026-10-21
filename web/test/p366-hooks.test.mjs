@@ -14,14 +14,16 @@ if (!globalThis.crypto) globalThis.crypto = webcrypto;
 
 // ---------------------------------------------------------------- a minimal DOM (only what the page and ui.js mk() touch)
 class El {
-  constructor(tag) { this.tagName = tag.toUpperCase(); this.kids = []; this.attrs = {}; this.dataset = {}; this.className = ''; this.hidden = false; this.disabled = false; this.on = {}; this._t = null; }
+  constructor(tag) { this.tagName = tag.toUpperCase(); this.kids = []; this.attrs = {}; this.dataset = {}; this.className = ''; this.hidden = false; this.disabled = false; this.on = {}; this._t = null; this.ownerDocument = globalThis.document; this.classList = {add: (...xs) => {this.className += ' '+xs.join(' ');}, remove: (...xs) => {this.className = this.className.split(' ').filter(x=>!xs.includes(x)).join(' ');}, contains: x=>this.className.split(' ').includes(x)}; }
+  get childNodes() { return this.kids; }
+  removeAttribute(k) { delete this.attrs[k]; }
   append(...ns) { for (const n of ns) this.kids.push(typeof n === 'string' ? text(n) : n); }
   appendChild(n) { this.append(n); return n; }
   replaceChildren(...ns) { this.kids = []; this.append(...ns); }
   setAttribute(k, v) { this.attrs[k] = String(v); }
   getAttribute(k) { return k in this.attrs ? this.attrs[k] : null; }
   addEventListener(ev, fn) { (this.on[ev] ||= []).push(fn); }
-  click() { if (!this.disabled) for (const f of this.on.click || []) f({ target: this }); }
+  click() { if (!this.disabled) for (const f of this.on.click || []) f({ target: this, currentTarget: this }); }
   get textContent() { return this._t !== null ? this._t : this.kids.map((k) => k.textContent).join(''); }
   set textContent(v) { this.kids = []; this._t = String(v); }
   all() { const out = []; const st = [...this.kids].reverse(); while (st.length) { const n = st.pop(); if (n instanceof El) { out.push(n); st.push(...[...n.kids].reverse()); } } return out; }
@@ -30,7 +32,7 @@ class El {
 const text = (s) => { const n = new El('#text'); n._t = String(s); return n; };
 globalThis.window ??= globalThis;
 globalThis.addEventListener ??= () => {};
-globalThis.document = { createElement: (t) => new El(t), createTextNode: text, addEventListener() {}, getElementById: () => null, querySelectorAll: () => [],
+globalThis.document = { createElement: (t) => new El(t), createElementNS: (_,t) => new El(t), createTextNode: text, addEventListener() {}, getElementById: () => null, querySelectorAll: () => [],
   documentElement: { dataset: {}, style: { setProperty() {} } }, body: { dataset: {} }, visibilityState: 'visible' };
 
 const W = await import('../public/js/webhooks.js');
@@ -212,7 +214,8 @@ test('复制地址: a plain URL is copied; a token hook copies nothing and says 
   await W.show(h.root);
   btnOf(rowOf(h.root, id('B')), 'whcopy').click(); await tick();
   assert.deepEqual(h.copies, [`https://hook.agentj.app/hb/${id('B')}`]);
-  assert.ok(h.toasts.includes('地址已复制'));
+  assert.equal(btnOf(rowOf(h.root, id('B')), 'whcopy').dataset.done, '1');
+  assert.equal(btnOf(rowOf(h.root, id('B')), 'whcopy').getAttribute('aria-label'), '已复制');
   btnOf(rowOf(h.root, id('D')), 'whcopy').click(); await tick();
   assert.equal(h.copies.length, 1, 'the placeholder is never copied');
   assert.ok(!h.copies.some((c) => c.includes('<')));

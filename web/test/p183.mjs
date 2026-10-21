@@ -7,6 +7,8 @@
 // P184 mail door (mailfwd.js). Nothing but the session and our own files ever loads.
 //   node web/test/p183.mjs        (screenshots → reports/qa/p183/)
 import assert from 'node:assert/strict';
+import {contrast} from '../public/js/palette-color.js';
+const cssHex=s=>{let a=s.match(/[\d.]+/g).map(Number).slice(0,3);if(s.startsWith('color(srgb'))a=a.map(x=>x*255);return '#'+a.map(x=>Math.round(x).toString(16).padStart(2,'0')).join('');};
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { deflateSync, crc32 } from 'node:zlib';
@@ -138,10 +140,12 @@ try {
       const look = await ev(p, `(() => { const c = ${card(id('P'))}, cs = getComputedStyle(c), b = c.querySelector('.mact.pv'), bs = getComputedStyle(b),
         r = document.getElementById('readBtn'), rs = getComputedStyle(r), svg = b.querySelector('svg.g0'), rsvg = r.querySelector('svg');
         const tool = getComputedStyle(document.querySelector('.tools .tool'));
+        const rgba=s=>{const a=s.match(/[\\d.]+/g).map(Number);return [a[0],a[1],a[2],a[3]??1].map((v,i)=>i<3&&s.startsWith('color(srgb')?v*255:v);};
+        const ground=e=>{const stack=[];for(let n=e;n;n=n.parentElement)stack.push(n);let bg=[255,255,255];for(const n of stack.reverse()){const c=rgba(getComputedStyle(n).backgroundColor);bg=bg.map((v,i)=>c[i]*c[3]+v*(1-c[3]));}return '#'+bg.map(v=>Math.round(v).toString(16).padStart(2,'0')).join('');};
         return { bg: cs.backgroundColor, style: cs.borderTopStyle, color: cs.borderTopColor, tool: tool.borderTopColor, toolStyle: tool.borderTopStyle,
           btn: [b.getBoundingClientRect().width, b.getBoundingClientRect().height], read: [r.getBoundingClientRect().width, r.getBoundingClientRect().height],
           svg: [svg.getBoundingClientRect().width, svg.getAttribute('stroke-width')], rsvg: [rsvg.getBoundingClientRect().width, rsvg.getAttribute('stroke-width')],
-          btnBg: bs.backgroundColor, readBg: rs.backgroundColor, ink: bs.color, readInk: rs.color,
+          btnBg: bs.backgroundColor, readBg: rs.backgroundColor, fileGround: ground(b), readGround: ground(r), ink: bs.color, readInk: rs.color,
           labels: [...c.querySelectorAll('.mact')].filter((x) => !x.hidden).map((x) => x.getAttribute('aria-label') + '|' + x.title),
           text: [...c.querySelectorAll('.mact')].map((x) => x.textContent.replace('!', '').trim()).join('') }; })()`);
       assert.equal(look.bg, 'rgba(0, 0, 0, 0)', 'no fill');
@@ -151,7 +155,7 @@ try {
       // P251: reply slots are elastic (24px floor, 46px desktop pitch); file targets stay fixed.
       assert.ok(look.read[0] >= 24 && look.read[0] <= 46, 'reply target follows the P251 elastic range');
       assert.deepEqual(look.svg, look.rsvg, 'same glyph size and stroke');
-      assert.equal(look.btnBg, look.readBg); assert.equal(look.ink, look.readInk);
+      assert.ok(contrast(look.fileGround,cssHex(look.ink))>=4.5, 'P448 file-action label contrast >=4.5: '+JSON.stringify(look)); assert.ok(contrast(look.readGround,cssHex(look.readInk))>=4.5,'P448 reply-action label contrast >=4.5');
       assert.deepEqual(look.labels, ['全屏查看|全屏查看', '下载|下载'], 'icons with labels; no share sheet in headless, no mail / Telegram without P184 / tgfile');
       assert.equal(look.text, '全屏查看', 'P260 visible full-screen entry; other actions stay icons');
       // the big PDF: not fetched, its size on the button
@@ -201,7 +205,7 @@ try {
         await waitFor(p, `!!document.querySelector('.mdoc .mpvmd h1') && !!document.querySelector('.mdoc .mpvmd pre[data-rx=ok]')`, 10000);
         assert.equal(await ev(p, `document.querySelector('.mdoc .mpvmd strong').textContent`), '虚线框');
         await ev(p, `document.querySelector('.mdoc .mpvmd .codeblock .copy').click()`);
-        await waitFor(p, `document.querySelector('.mdoc .mpvmd .codeblock .copy').classList.contains('done')`, 3000);
+        await waitFor(p, `document.querySelector('.mdoc .mpvmd .codeblock .copy').dataset.done === '1'`, 3000);
         writeFileSync(join(OUT, `p183-preview-md-${tag}-${scheme}.png`), await shoot(p));
         await closeEsc(p);
 

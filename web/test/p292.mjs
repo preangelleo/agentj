@@ -102,6 +102,8 @@ async function paired(B, web, fake, lang, w, h, theme) {
 async function offline(p, fake, s, tag, touch, save) {
   fake.setUp(false);
   await waitState(p, 'waiting-host');
+  // Wait for the real quiet-window transition before advancing this fixture's clock.
+  await waitFor(p, `import('./js/offline-card.js').then(m=>m._debug().mode==='down')`);
   await evaluate(p, `import('./js/offline-card.js').then(m=>{m._skew(7000);return true})`);
   await waitFor(p, `!${$('offDlg')}.hidden`, 6000);
   await sleep(350);
@@ -139,12 +141,12 @@ async function reply(p, fake, s, tag, touch, save) {
   await wired(p, tag + ' reply');
   check(await evaluate(p, `${$('words')}.querySelector('code.icode').dataset.cc`) === 'bare', tag + ': the reply\'s inline code is the bare variant (P154: no icon)');
   await copiesExactly(p, '#words code.icode', 'git status -sb', touch, tag + ' inline code');
-  await waitFor(p, `${$('toast')}.textContent===${JSON.stringify(s.inline)}`, 2000);
+  await waitFor(p, `${$('toast')}.textContent===${JSON.stringify(s.md)}`, 2000);
   await save('reply-inline-copied');
   await sleep(1000);
   await copiesExactly(p, '#words .codeblock pre code', 'npm test\nnpm run build', touch, tag + ' code block');
-  await waitFor(p, `${$('words')}.querySelector('.codeblock .copy').classList.contains('done')`, 2000);
-  check(await evaluate(p, `${$('words')}.querySelector('.codeblock .copy').textContent`) === s.md, tag + ': the block\'s 拷贝 says 已复制');
+  await waitFor(p, `${$('words')}.querySelector('.codeblock .copy').dataset.done==='1'`, 2000);
+  check(await evaluate(p, `${$('words')}.querySelector('.codeblock .copy').getAttribute('aria-label')`) === s.md, tag + ': the block\'s 拷贝 says 已复制');
   await save('reply-block-copied');
 }
 

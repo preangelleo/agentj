@@ -174,7 +174,7 @@
 
 ## 同一个主人
 
-自己的设备可在双方已配对手机上确认「同一个主人」，消息直接进入对方主 Agent J 并标明好友来源。详见[同一个主人的多台设备](https://agentj.app/docs/same-owner/)。
+自己的设备可设为「同一个主人」：一边在好友详情里发起并看到六位数字，另一边的手机核对一致后确认一次。之后消息直接进入对方主 Agent J 并标明好友来源。详见[同一个主人的多台设备](https://agentj.app/docs/same-owner/)。
 
 ## 转交防护与等你批准
 
@@ -185,3 +185,5 @@
 请求交给 Agent 开始处理才算认领。认领后 30 分钟没回复会释放；一直无人认领则在 24 小时后过期。你会收到提示，可以重新派或取消。已开始的工作可能仍在运行，先核实再重派；系统不会自动重复执行，也不会因租约到期杀掉工作。等批卡也受未认领时限约束；普通好友提问卡仍为 120 秒，加好友仍为 7 天。
 
 让 Agent 用 `agentj friends relay-policy --per-minute 30 --claim-seconds 1800 --pending-seconds 86400 --json` 调整限流和租约；不带参数可查看当前值。限流可设为 1–10000 条，时长可设为 1–2592000 秒。`agentj friends cancel <好友> <消息ID> --json` 取消待处理请求的状态；不会撤销已执行的动作或停止正在运行的工作。完成任务仍用 `agentj friends tell <好友> --reply-to <消息ID> <结果>` 回报，避免把回报当成新任务。
+
+待处理好友卡可用 `agentj friends asks --json` 查看；`agentj friends asks --dismiss <ID>` 拒绝一张，`agentj friends asks --dismiss all` 拒绝全部。手机「紧急修复」也可拒绝并清除待处理好友卡，不会批准或发送回复。普通好友问题两分钟后过期。

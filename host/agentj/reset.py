@@ -33,7 +33,7 @@ from . import controls, wire
 from .text import pick
 
 OK_AGENT = ("idle", "working", "waiting", "compacting")
-RESCUE_ACTIONS = ("help", "report", "reconnect", "restart", "linger", "rollback", "new_session")
+RESCUE_ACTIONS = ("help", "report", "reconnect", "restart", "linger", "rollback", "new_session", "clear_friend_asks", "restart_session")
 RESET_CMDS = ("reset",)
 UNDO = "reset_undo.json"
 RELAY_WAIT = 25.0        # s: the relay link back after a re-dial
@@ -316,7 +316,7 @@ class Desk:
         if t == "reset":
             return "reset", {"what": "connection"}
         a = obj.get("action")
-        if not isinstance(a, str) or a not in RESCUE_ACTIONS:
+        if not isinstance(a, str) or (a not in RESCUE_ACTIONS and not re.fullmatch(r"ark_fix_[0-9a-f]{24}", a)):
             return None, None
         return a, {"action": a}
 
@@ -375,7 +375,16 @@ class Desk:
 
         ops = HostOps(h, device)
         try:
-            if flow in ("reset", "reconnect", "new_session", "restart"):
+            if flow == "restart_session":
+                from . import phone_restart
+                await emit(1, "run", pick(lang, "正在重开 AI 会话…", "Reopening the AI session…"))
+                res = await phone_restart.run(h)
+                text = pick(lang, "AI 会话已重开，可以继续聊天，不需要到电脑前。", "The AI session is ready. Continue chatting without going to the computer.") if res.get("ok") else pick(lang, "没能重开 AI 会话，请试「请 Agent J Father 远程帮忙」。", "Could not reopen the AI session. Try Ask Agent J Father for remote help.")
+                if res.get("new"):
+                    text = pick(lang, "原会话没能恢复，已开新会话并接好手机；之前的对话保存着，不需要到电脑前。", "The old session could not resume. A new session is connected to your phone; the old conversation is kept. No need to go to the computer.")
+                await emit(1, "ok" if res.get("ok") else "fail", text)
+                await finish({**res, "step": 1, "text": text})
+            elif flow in ("reset", "reconnect", "new_session", "restart"):
                 steps = {"reset": (1, 2, 3, 4), "reconnect": (1, 2), "new_session": (3,), "restart": (4,)}[flow]
                 await ladder(ops, emit, finish, lang, steps)
             elif flow in ("linger", "rollback"):
@@ -388,6 +397,30 @@ class Desk:
                     text += pick(lang, "正在重启Agent J 主机上的 Agent J…", " Restarting Agent J on the Agent J host…")
                 await finish({"ok": bool(res.get("ok")), "step": 1, "text": text,
                               **({"why": res["why"]} if not res.get("ok") and res.get("why") == "unavailable" else {})})
+            elif flow.startswith("ark_fix_"):
+                from . import ark_plan_fix
+                if h.agent and hasattr(h.agent, "_own_protocol") and h.agent._own_protocol() is False:
+                    await finish({"ok":False,"why":"unavailable","text":pick(lang,"请在桌面更改你自己启动的 OpenCode。","Change the independently launched OpenCode on the desktop.")})
+                else:
+                    await emit(1,"run",pick(lang,"正在验证并重试正确的方舟套餐…","Checking and retrying the matching Ark plan…"))
+                    res = await asyncio.to_thread(ark_plan_fix.apply, h.st, flow)
+                    if res.get("ok") and not res.get("pending"):
+                        if h.agent and h.agent.kind == "opencode":
+                            why = await h.agent.apply_model(res["model"], None)
+                            if why:
+                                res = {"ok":False,"why":"model_failed"}
+                        else:
+                            restart_after = True
+                    plan = "Agent Plan" if res.get("plan") == "agent" else "Coding Plan"
+                    text = (pick(lang,f"已验证，正在切换到火山 {plan}…",f"Verified; switching to Volcano {plan}…") if res.get("pending") or restart_after else
+                            pick(lang,f"已改用火山 {plan}。",f"Now using Volcano {plan}.") if res.get("ok") else
+                            pick(lang,"未能改用另一套餐；原主模型仍保留。请重新检测，或检查目标套餐已有的 key 和服务商设置。","Could not switch plans; the original main model is kept. Check again, or review the target plan's existing key and provider settings."))
+                    if res.get("line"):
+                        text += "\n" + res["line"]
+                    await finish({"ok":bool(res.get("ok")),"text":text,"pending":bool(res.get("pending")),**({"why":res["why"]} if res.get("why") else {})})
+            elif flow == "clear_friend_asks":
+                n = h.peers.dismiss_asks() if h.peers else 0
+                await finish({"ok": True, "step": 1, "text": pick(lang, f"已拒绝并清除 {n} 张好友卡。", f"Dismissed {n} friend card(s).")})
             elif flow == "report":
                 from . import rescue_kit
                 await emit(1, "run", pick(lang, "正在检查Agent J 主机并把去掉隐私的报告发给 Agent J Father…",

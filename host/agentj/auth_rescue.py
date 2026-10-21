@@ -111,6 +111,23 @@ _LOGIN = ("notloggedin", "pleaserun/login", "loginexpired", "authenticationrequi
           "revoked", "登录已失效", "还没登录", "没有claude登录", "未登录")
 
 
+# P423 #138: a plan's usage / quota used up is never a login, whatever status it comes with (Kimi Code 2.2.0 over ACP sends
+# auth_required "[provider.auth_error] 403 You've reached your monthly usage limit for this billing cycle"). One test for every
+# harness's probe and runtime; OpenCode's provider_error_reason reads USAGE_LIMIT_RE too.
+USAGE_LIMIT_RE = re.compile(r"(?:weekly|monthly|daily|usage)[ _-]+(?:usage[ _-]+)?limit", re.I)
+_QUOTA_USED = ("quota", "额度", "用量上限", "billingcycle", "hityourlimit", "limitreached", "limitwillreset")
+
+
+def quota_used(text) -> bool:
+    """A used-up plan window / quota / balance (Kimi's monthly limit, Claude's 5-hour / weekly limit, Codex's usage limit,
+    insufficient_quota, a no-credit 402) — not a login, not a momentary 429."""
+    if not isinstance(text, str) or not text:
+        return False
+    s = squash(text)
+    return bool(USAGE_LIMIT_RE.search(text) or any(w in s for w in _QUOTA_USED + _BALANCE) or re.search(r"\b402\b", text)
+                or re.search(r"\b403\b.*\blimit\b", text, re.I | re.S))
+
+
 def classify(kind: str, text) -> str | None:
     """→ "balance" | "rate_limit" | "login" | None. Balance and rate limits are checked FIRST: a 429 / no-credit reply also
     says "please upgrade" or mentions the account, and must never start a re-login (it would not help and would cost the
@@ -122,6 +139,8 @@ def classify(kind: str, text) -> str | None:
         return "balance"
     if any(w in s for w in _RATE) or re.search(r"\b429\b", text):
         return "rate_limit"
+    if quota_used(text):                 # P423 #138: any other used-up quota wording, before the login words
+        return "balance"
     if any(w in s for w in _LOGIN) or re.search(r"\b401\b", text):
         return "login"
     return None
@@ -775,8 +794,8 @@ def health_check(kind: str, timeout: float = HEALTH_TIMEOUT) -> dict:
             ok = bool(agent_kimi.probe(exe, env, timeout).strip())
         except agent_kimi.ProbeError as e:
             why = str(e.args[0]) if e.args else "failed"
-            return {"ok": False, "cls": "login" if why == "not_logged_in" else None,
-                    "why": "login" if why == "not_logged_in" else ("timeout" if why == "native_timeout" else "failed")}
+            cls = {"not_logged_in": "login", "quota_exhausted": "balance", "rate_limited": "rate_limit"}.get(why)
+            return {"ok": False, "cls": cls, "why": cls or ("timeout" if why == "native_timeout" else "failed")}
         return {"ok": ok, "cls": None, "why": "ok" if ok else "failed"}
     out = err = ""
     with tempfile.TemporaryDirectory(prefix="agentj-p288-") as d:
@@ -882,6 +901,7 @@ WHY = {
            "verify_codex": "新的 Codex 登录发测试消息没有拿到回复：已保留原来的登录，请重新开始",
            "no_code_kimi": "Kimi Code 没有给出设备码（kimi 版本太旧或连不上 kimi.com / kimi.ai）",
            "verify_kimi": "新的 Kimi Code 登录发测试消息没有拿到回复：已恢复原来的登录文件，请重新开始",
+           "quota": "登录本身没问题，是额度 / 用量已用完（例如 Kimi 本月额度）：不用再重新登录，续费或加量后再试，或先切到别的 Agent",
            "owner_session": "你在Agent J 主机上自己开的 {h} 窗口要重开一次才会用到新登录（Agent J 自己的会话已恢复）"},
     "en": {"no_binary": "this program is not installed here", "no_url": "the official login did not print an authorize link",
            "no_code": "Codex did not print a device code",
@@ -895,6 +915,7 @@ WHY = {
            "verify_codex": "a test message with the new Codex login got no reply: the previous login is kept, start again",
            "no_code_kimi": "Kimi Code did not print a device code (kimi too old, or kimi.com / kimi.ai unreachable)",
            "verify_kimi": "a test message with the new Kimi Code login got no reply: the previous login files are back, start again",
+           "quota": "the login is fine — the plan's quota / usage is used up (e.g. Kimi's monthly limit): no new sign-in needed; renew or add usage, then retry, or switch to another Agent for now",
            "unsupported": "not supported for this AI",
            "owner_session": "the {h} window you opened yourself on the Agent J host must be reopened to use the new login (Agent J's own session is back)"},
 }
@@ -1104,7 +1125,7 @@ class Rescue:
         hc = await asyncio.to_thread(health_check, "codex")
         if not hc["ok"]:
             await asyncio.to_thread(flow.restore)
-            return self._end("codex", "failed", "verify_codex")
+            return self._end("codex", "failed", "quota" if hc.get("cls") in ("balance", "rate_limit") else "verify_codex")
         self._health_mark("codex", hc)
         await self.recover("codex")
 
@@ -1125,7 +1146,7 @@ class Rescue:
         hc = await asyncio.to_thread(health_check, "kimi")
         if not hc["ok"]:
             await asyncio.to_thread(flow.restore)
-            return self._end("kimi", "failed", "verify_kimi")
+            return self._end("kimi", "failed", "quota" if hc.get("cls") in ("balance", "rate_limit") else "verify_kimi")
         self._health_mark("kimi", hc)
         await self.recover("kimi")
 

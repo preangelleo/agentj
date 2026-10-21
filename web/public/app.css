@@ -175,7 +175,7 @@ html[data-sbar=black] .satband{background:#000}
 body[data-kb="1"] .sabband{display:none}
 /* P384 #86: only iOS fixes both safe areas to Sooty, including reader / custom themes.
    Android retains its page-colour bars. Insets and keyboard spacing are unchanged. */
-html[data-ios="1"] .satband,html[data-ios="1"] .sabband{background:var(--c-sooty)!important;z-index:101}
+.satband,.sabband{background:#141414!important;z-index:101}
 /* P393 #134 (#86 regression): iOS reads the status-bar style only from the HTML it parsed (the runtime switch in boot.js was
    ignored, the bar stayed opaque and sampled an old state colour), so index.html now says black-translucent itself
    (Apple-only meta). If the bar is opaque anyway, the topmost fixed strip is still Sooty for iOS 26 edge sampling. */
@@ -498,7 +498,7 @@ main::-webkit-scrollbar{display:none}
 body[data-reader="1"] .sabband,body[data-reader="1"] .satband,html[data-sbar=black] body[data-reader="1"] .satband,
 body[data-reader="1"] .probe{background:var(--dlg-bg)}
 body[data-reader="1"] .water{display:none}
-body[data-reader="1"] .toast{position:fixed;z-index:31}   /* P273: the reader's toasts (first / last, copied, Telegram) show over it */
+body[data-reader="1"] .toast.circle{position:fixed;z-index:31}   /* P273: the reader's toasts (first / last, copied, Telegram) show over it */
 .rd{--md-mark:var(--peachy-feeling)}  /* the reader is Noir on every state (P284) */
 .rd .words code{background:rgba(250,249,245,.10)}
 .rd .codeblock{background:rgba(250,249,245,.07)}
@@ -545,7 +545,7 @@ body[data-reader="1"] .toast{position:fixed;z-index:31}   /* P273: the reader's 
   -webkit-mask-image:linear-gradient(to bottom,transparent,#000 14px,#000 calc(100% - 14px),transparent);
           mask-image:linear-gradient(to bottom,transparent,#000 14px,#000 calc(100% - 14px),transparent)}
 .rdsc::-webkit-scrollbar{display:none;width:0;height:0}
-.rdin{max-width:calc(36 * var(--rd-fs,20px));margin:0 auto}
+.rdin{margin:0}
 .rd .words.rdw{font-size:var(--rd-fs,20px);line-height:1.75}
 .rd .words.rdw .codeblock pre code{font-size:.72em}
 .rd .words.rdw .codeblock .lang,.rd .words.rdw .codeblock .copy{font-size:14px}
@@ -780,7 +780,7 @@ body[data-kb="1"] .composer{padding-bottom:12px}   /* keyboard up: no home-indic
 /* Four equal buttons (owner, 2026-09-24): file, photo, camera, voice each get a
    quarter of the row at every width — a voice button that ate the remaining
    width looked absurd on a desktop screen. */
-.tools{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;padding:0 0 2px}
+.tools{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;padding:0 0 2px}   /* P412: + full screen */
 /* Transparent, with a hairline dashed outline (owner, 2026-09-24: the lotion
    veil behind them was "over-designed" and read orange on a Huawei Pad). Every
    property a browser or OS might tint is pinned: no background in any state, no
@@ -863,7 +863,7 @@ body[data-kb="1"] .composer{padding-bottom:12px}   /* keyboard up: no home-indic
 /* P346 (#54): three icons (cancel · end · send); a narrow folded screen (280px) only tightens the gap */
 @media(max-width:330px){.pttact{gap:18px}}
 .pttbtn:focus-visible{outline:2px solid #faf9f5;outline-offset:3px}
-.pttnote{margin:0;max-width:min(320px,86vw);text-align:center;font:500 calc(12.5px*var(--fz))/1.4 var(--font-body);color:#faf9f5;
+.pttnote{margin:0;text-align:center;font:500 calc(12.5px*var(--fz))/1.4 var(--font-body);color:#faf9f5;
   padding:6px 12px;border-radius:999px;background:rgba(44,43,38,.72);text-wrap:balance}
 .pttnote[hidden]{display:none}
 /* P346 (#54, Leo: 「背景本来是蓝的就是蓝色模糊，本来是绿的就是绿色模糊」; 「push to talk 的时候和单击 lock 的时候，背景都是同样的
@@ -876,7 +876,7 @@ body[data-kb="1"] .composer{padding-bottom:12px}   /* keyboard up: no home-indic
 @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
   .ptt{background:rgba(20,20,20,.82);background:color-mix(in srgb,var(--pg) 90%,transparent)}}
 .ptt .pttcopy{color:var(--ink)}
-body.recblur .toast{z-index:61;position:fixed}
+body.recblur .toast.circle{z-index:61;position:fixed}
 @media(prefers-reduced-motion:reduce){.pttring,.pttring.r2,.pttc{animation:none!important;transition:none}}
 .row{display:flex;align-items:flex-end;gap:10px}
 /* ---- the reply strip (§2): a chat app's "Reply to …", directly above the field -------
@@ -980,8 +980,10 @@ textarea{--ta-fs:max(16px,calc(17px*var(--fz)));width:100%;max-height:30vh;min-h
    scrollbar (track included) instead of the system's fading overlay, so a field that overflows by 1–3 px — the empty
    field's placeholder or one line in a CJK fallback font whose line box is taller than line-height — showed a fixed
    vertical bar with nothing typed. autosize() sets .ovf only when the text is taller than the 30 vh cap. */
-#input{overflow-y:hidden}
-#input.ovf{overflow-y:auto}
+#input{overflow-y:hidden;max-height:none}
+/* P412: one line always (rows=1, never grown); more lines scroll inside it without a bar — 「N 行」 on the full-screen button */
+#input.ovf{overflow-y:auto;scrollbar-width:none}
+#input.ovf::-webkit-scrollbar{display:none}
 textarea::placeholder{color:var(--ink-soft);font-size:calc(13.6px*var(--fz));line-height:calc(var(--ta-fs) * 1.45)}  /* the typed line's box: centred */
 .slashmenu{position:absolute;left:12px;right:12px;bottom:calc(100% - 4px);z-index:9;
   max-height:46vh;overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;
@@ -1202,14 +1204,15 @@ body[data-conn=off] .composer{filter:grayscale(1);opacity:.7}
    accent icon · title over body · buttons on the right. circle: a centred perfect circle, big accent mark, short text.
    Always the dialog layer: Noir --dlg-bg, Lotion --dlg-fg, opaque, on every state and in light and dark. The accent
    (--nt-accent, palette only: emerald oasis / windstorm / peachy feeling / magic carpet) is a line, never a background. */
-.toast{position:absolute;left:50%;top:calc(64px + env(safe-area-inset-top));z-index:9;
-  transform:translate(-50%,-8px);opacity:0;pointer-events:none;
-  box-sizing:border-box;width:var(--nt-w,calc(100vw - 2 * var(--rg)));max-width:calc(100vw - 2 * var(--rg));
+.toast{position:relative;left:auto;top:auto;z-index:auto;
+  transform:none;opacity:0;pointer-events:none;
+  box-sizing:border-box;width:100%;max-width:100%;
   display:flex;align-items:center;gap:12px;text-align:left;line-height:1.45;
   padding:12px 16px 12px 14px;border-radius:var(--dlg-radius-rect);background:var(--dlg-bg);color:var(--dlg-fg);
   box-shadow:inset 3px 0 0 var(--nt-accent,var(--windstorm)),var(--dlg-shadow);color-scheme:dark;
   font-size:var(--dlg-fs-body);transition:opacity var(--dlg-dur),transform .25s var(--re)}
-.toast.on{opacity:1;transform:translate(-50%,0)}
+.toast.on{opacity:1;transform:none}
+.toast.rect:not(.on),.toast:empty{display:none}
 .toast .nt-ico{flex:none;width:22px;height:22px;fill:none;stroke:var(--nt-accent,var(--windstorm));stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .toast[data-kind="progress"].on .nt-ico{animation:nt-spin 1s linear infinite}
 @keyframes nt-spin{to{transform:rotate(360deg)}}
@@ -1226,7 +1229,7 @@ body[data-conn=off] .composer{filter:grayscale(1);opacity:.7}
 .toast.media.act{flex-wrap:wrap;row-gap:10px;padding:12px 12px 12px 14px}
 .toast.media .nt-acts{flex:1 0 100%;justify-content:flex-end}
 /* circle: the ✓ moment (saved, done) — centred like the hold-to-talk circle; .mail-saved (P256) is the same shape */
-.toast:is(.circle,.mail-saved){position:fixed;top:50%;z-index:90;width:calc(156px * var(--fz,1));height:calc(156px * var(--fz,1));
+.toast:is(.circle,.mail-saved){position:fixed;left:50%;top:50%;z-index:90;width:calc(156px * var(--fz,1));height:calc(156px * var(--fz,1));
   max-width:none;aspect-ratio:1;border-radius:50%;flex-direction:column;justify-content:center;gap:8px;padding:18px;text-align:center;
   box-shadow:inset 0 0 0 2px var(--nt-accent,var(--emerald-oasis)),var(--dlg-shadow);transform:translate(-50%,-50%) scale(.92);
   font-size:var(--dlg-fs-sub);line-height:1.3}
@@ -1281,7 +1284,7 @@ body[data-conn=off] .composer{filter:grayscale(1);opacity:.7}
   .water{transition:transform 1.4s cubic-bezier(.4,0,.2,1)!important}
 }
 @media (min-width:560px){
-  .sheet{max-width:520px;margin:0 auto}
+.sheet{margin:0}
 }
 
 /* =====================================================================================================================
@@ -1326,7 +1329,7 @@ body[data-view="chat"][data-conn="on"] .connline{display:none}
 .setchip{margin-left:6px;vertical-align:1px;font-weight:500}
 
 /* ---- 全部停下: a red banner over the stage (the screen itself is grey while stopped) ---- */
-.estop-banner{position:absolute;left:var(--rg);right:var(--rg);top:calc(var(--stack-top) - 4px);z-index:5;display:flex;align-items:center;gap:12px;
+.estop-banner{position:relative;z-index:auto;display:flex;align-items:center;gap:12px;
   padding:10px 10px 10px 16px;border-radius:16px;background:var(--c-danger);color:var(--lotion);box-shadow:0 8px 24px rgba(20,20,20,.25)}
 .estop-banner p{flex:1;min-width:0;margin:0;font:400 calc(14px*var(--fz))/1.45 var(--font-body)}
 .estop-banner strong{font-weight:700}
@@ -1409,7 +1412,7 @@ body[data-agent="stopped"]{--state:var(--c-offline)}
 .localnote{margin:16px 0 0;padding-top:12px}
 .localnote[hidden]{display:none}
 .saycancel[data-mode="queued"] b{background:var(--lotion);color:var(--sooty)}
-/* P398 (#155): 「已送达」 is a state, not a control (a tap only says so); 「停止这一轮」 reads as the stop it is */
+/* P398 (#155): 「已送达」 is a state, not a control (a tap only says so); 「Stop」 reads as the stop it is */
 .saycancel[data-mode="delivered"] b{background:var(--surface,var(--lotion));color:var(--text-muted);box-shadow:none;border:1px solid var(--line)}
 .saycancel[data-mode="delivered"] svg{display:none}
 .slashmenu .estopitem b{color:var(--c-danger)}
@@ -1433,7 +1436,7 @@ body[data-agent="stopped"]{--state:var(--c-offline)}
 .confirm-row .aj-btn{flex:1;min-height:52px;margin-top:0}
 
 /* ---- Agent J pages (brand theme) ---- */
-.ajpages .view{display:flex;flex-direction:column;max-width:46rem;margin:0 auto;width:100%}
+.ajpages .view{display:flex;flex-direction:column;margin:0;width:100%}
 .ajpages .view[hidden]{display:none}
 .ajpages h1{font-size:var(--fs-xl);margin:var(--sp-4) 0 var(--sp-3)}
 .ajpages h2{font-size:var(--fs-lg)}
@@ -1445,7 +1448,7 @@ body[data-agent="stopped"]{--state:var(--c-offline)}
 .label{display:block;font-weight:500;font-size:var(--fs-sm);margin-top:var(--sp-4);margin-bottom:var(--sp-2)}
 .ajpages code{font-family:var(--font-mono);font-size:.88em;background:var(--code-bg);border-radius:4px;padding:.05em .35em}
 .ajrow{display:flex;flex-wrap:wrap;gap:var(--sp-2);margin:var(--sp-3) 0}
-.hint{display:flex;gap:var(--sp-3);align-items:flex-start;margin:var(--sp-3) auto 0;max-width:46rem;padding:var(--sp-3) var(--sp-4);
+.hint{display:flex;gap:var(--sp-3);align-items:flex-start;margin:var(--sp-3) 0 0;padding:var(--sp-3) var(--sp-4);
   border-radius:var(--r-lg);background:var(--callout-info);color:var(--callout-fg);font:400 var(--fs-md)/1.5 var(--font-body)}
 .hint[hidden]{display:none}
 .hint--stage{position:absolute;left:var(--rg);right:var(--rg);top:8px;z-index:8;margin:0;box-shadow:0 8px 24px rgba(20,20,20,.25);
@@ -1478,14 +1481,13 @@ body[data-agent="stopped"]{--state:var(--c-offline)}
 .sas-view__logo{width:72px;height:72px}
 .sas{font-family:var(--font-mono);font-size:clamp(2.6rem,14vw,4.5rem);font-weight:700;letter-spacing:.14em;margin:var(--sp-3) 0 var(--sp-4);
   padding:var(--sp-3) var(--sp-5);background:var(--surface-2);border-radius:var(--r-lg);font-variant-numeric:tabular-nums;width:100%;max-width:26rem}
-.sas-view .small{margin-top:var(--sp-3);max-width:30rem}
+.sas-view .small{margin-top:var(--sp-3);}
 /* P153 (§3.3): a card on the paired remotes — the code is the one to compare (smaller), nothing to type */
 .sas-view:not([data-mode=card]) .sas-card,.sas-view[data-mode=card] .sas-type{display:none}
-.sas-view .lead{margin-top:var(--sp-2);max-width:30rem}
+.sas-view .lead{margin-top:var(--sp-2);}
 .sas-view .sas-label{margin:var(--sp-4) 0 0;color:var(--text-muted);font-size:var(--fs-sm)}
 .sas-view[data-mode=card] .sas{font-size:clamp(1.8rem,9vw,2.6rem);margin:var(--sp-2) 0 var(--sp-4);max-width:18rem}
 .state-view{align-items:center;text-align:center;padding-top:var(--sp-7)}
-.state-view .lead{max-width:30rem}
 .state-view .ajrow{width:100%;max-width:22rem}
 .sub{padding-bottom:var(--sp-6)}
 .sub-head{display:flex;align-items:center;gap:var(--sp-3);margin-top:var(--sp-3)}
@@ -1563,8 +1565,10 @@ main{padding:6px 20px 24px}
 @media (orientation: landscape){
   /* the 56 px paging columns stay; the empty band above the source card and below the reply card goes */
   :root{--stack-top:12px}
-  .deck{width:100%;max-width:960px;justify-self:center;padding-bottom:12px}
-  .composer,.tray{width:100%;max-width:calc(960px + 2 * var(--card-side));margin-left:auto;margin-right:auto}
+  /* P412 (#174, Leo: 「用户愿意把浏览器拉多宽我们就可以撑到多宽」): no 960 px cap any more — the card and the composer
+     follow the window; only the 56 px paging columns stay at the sides */
+  .deck{width:100%;max-width:none;justify-self:center;padding-bottom:12px}
+  .composer,.tray{width:100%;max-width:none;margin-left:auto;margin-right:auto}
   main{padding:6px 24px 24px}
 }
 @media (hover:hover) and (pointer:fine){
@@ -1765,7 +1769,7 @@ button.setval.setwide:hover{border-color:var(--text-muted)}
    line 「网络恢复后自动发送」. No buttons: they go out by themselves, in order, once the computer answers again. */
 .outbox{display:flex;flex-direction:column;align-items:flex-end;gap:6px;max-height:30vh;overflow-y:auto;overscroll-behavior:contain}
 .outbox[hidden]{display:none}
-.outbox .obi{max-width:86%;display:flex;flex-direction:column;gap:2px;padding:8px 12px;border-radius:14px 14px 4px 14px;
+.outbox .obi{display:flex;flex-direction:column;gap:2px;padding:8px 12px;border-radius:14px 14px 4px 14px;
   background:var(--surface);border:1px dashed var(--line);color:var(--ink-soft)}
 .outbox .obt{font:400 calc(14px*var(--fz))/1.35 var(--font-body);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .outbox .obn{font:500 calc(12px*var(--fz))/1.3 var(--font-body);color:var(--ink)}
@@ -1913,7 +1917,7 @@ audio.mplayer{width:min(560px,92vw)}
 .mpvnote{margin:12px 0;font:400 calc(14px*var(--fz))/1.5 var(--font-body);color:var(--ink-soft);text-align:center}
 .mdoc[data-pv=pdf] .mpvnote{color:var(--c-salt)}
 .mpvtext{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font:400 calc(14px*var(--fz))/1.6 var(--font-mono)}
-.mpvmd{color:var(--ink);font:400 calc(16px*var(--fz))/1.7 var(--font-body);max-width:46em;margin:0 auto}
+.mpvmd{color:var(--ink);font:400 calc(16px*var(--fz))/1.7 var(--font-body);margin:0}
 .mpvcode{background:none;border-radius:0}
 .mpvcode pre{padding:0}
 .mpvtable{max-width:none}
@@ -1950,7 +1954,6 @@ body[data-view="scan"] .top{display:none}
    0.16 · agent friends (PROTOCOL §17.7, js/friends.js). /friends = a list + a read-only conversation (two columns on a
    wide screen, one at a time on a phone); my card with a QR; groups. The two cards in the main chat live in the sheet.
    ===================================================================================================================== */
-#friends-view{max-width:46rem}
 .fr-acts{display:flex;flex-wrap:wrap;gap:var(--sp-2);margin:var(--sp-3) 0}
 .fr-list,.fr-pending,.fr-groups,.fr-msgs{list-style:none;margin:var(--sp-2) 0 0;padding:0;display:flex;flex-direction:column;gap:var(--sp-2)}
 .fr-item,.fr-gitem{display:flex;flex-direction:column;gap:2px;width:100%;min-height:56px;padding:var(--sp-2) var(--sp-3);text-align:left;cursor:pointer;
@@ -1972,7 +1975,7 @@ body[data-view="scan"] .top{display:none}
 .fr-chathead .aj-btn{margin-left:auto}
 .fr-older{align-self:center;margin-top:var(--sp-2)}
 .fr-msgs{gap:var(--sp-3);margin-top:var(--sp-3)}
-.fr-msg{max-width:min(85%,36rem);display:flex;flex-direction:column;gap:2px}
+.fr-msg{display:flex;flex-direction:column;gap:2px}
 .fr-msg p{margin:0}
 .fr-msg__text{padding:var(--sp-2) var(--sp-3);border-radius:var(--r-lg);background:var(--surface-2);white-space:pre-wrap;word-break:break-word}
 .fr-msg--out{align-self:flex-end;text-align:right}
@@ -1980,9 +1983,24 @@ body[data-view="scan"] .top{display:none}
 .fr-msg--bad .fr-msg__meta{color:var(--danger)}
 .fr-lock{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-2);margin-top:var(--sp-5);padding:var(--sp-3) var(--sp-4);border-radius:var(--r-md);background:var(--callout-note);color:var(--callout-fg)}
 .fr-lock p{margin:0;flex:1 1 14rem;color:inherit}
+/* P426 #170: 「我的设备」 group — sender line, who it went to, the composer and its @ list (same option look as the chat's @) */
+.fr-item--group{border-style:dashed}
+.fr-gto{margin:0;color:var(--text-muted)}
+.fr-msg--out .fr-gto{text-align:right}
+.fr-gcompose{display:flex;flex-direction:column;gap:var(--sp-2);margin-top:var(--sp-5)}
+.fr-gmentions{max-height:240px;overflow:auto;padding:var(--sp-1);border:1px dashed var(--border);border-radius:var(--r-lg);background:var(--bg);color:var(--text)}
+.fr-gmentions[hidden]{display:none}
+.fr-gmentions .fp-mention{display:flex;align-items:center;width:100%;min-height:44px;padding:var(--sp-2) var(--sp-3);border:0;border-radius:var(--r-md);background:transparent;color:inherit;text-align:left;font:inherit;cursor:pointer}
+.fr-gmentions .fp-mention[aria-selected=true]{background:var(--surface-2);box-shadow:inset 3px 0 0 var(--text)}
+.fr-ghint{margin-top:var(--sp-2)}
 .fr-cardbox{margin-top:var(--sp-3);padding:var(--sp-3) var(--sp-4);border:1px solid var(--border);border-radius:var(--r-lg);display:flex;flex-direction:column;gap:var(--sp-1)}
 .fr-cardbox p{margin:0}
 .fr-cardbox__name{font-weight:700;font-size:var(--fs-lg)}
+/* P417 #186: the Same-owner code, read-only and big (card + the friends page that started it); its state line */
+.fr-owner-code{margin:var(--sp-2) 0;font-family:var(--font-mono);font-size:var(--fs-2xl);font-weight:700;letter-spacing:.18em;font-variant-numeric:tabular-nums;user-select:all}
+.fr-so{margin-top:var(--sp-3);padding:var(--sp-3) var(--sp-4);border:1px solid var(--border);border-radius:var(--r-lg);display:flex;flex-direction:column;gap:var(--sp-1)}
+.fr-so p{margin:0}
+.fr-so__state{font-weight:700}
 .fr-id{font-family:var(--font-mono);word-break:break-all}
 .fr-bigid{font-family:var(--font-mono);font-weight:700;font-size:clamp(1.15rem,5.6vw,1.7rem);letter-spacing:.04em;margin:var(--sp-2) 0 0;word-break:break-all;user-select:all}
 .fr-qr{width:min(220px,70vw);margin-top:var(--sp-2);border-radius:var(--r-md);overflow:hidden;border:1px solid var(--border-soft)}
@@ -2016,11 +2034,10 @@ body[data-view="scan"] .top{display:none}
 #friends-view[data-fv="list"] .fr-main{display:none}
 /* wide screen: the list stays on the left while a conversation / details are open (like a desktop chat client) */
 @media (min-width:960px){
-  .ajpages #friends-view{max-width:72rem}
   #friends-view .fr-split{display:grid;grid-template-columns:minmax(16rem,22rem) 1fr;gap:var(--sp-5);align-items:start}
   #friends-view[data-fv] .fr-side,#friends-view[data-fv] .fr-main,#friends-view[data-fv] .fr-main:empty{display:block}
   #friends-view[data-fv="card"] .fr-split,#friends-view[data-fv="add"] .fr-split,
-  #friends-view[data-fv="groups"] .fr-split,#friends-view[data-fv="group"] .fr-split{grid-template-columns:1fr;max-width:46rem}
+  #friends-view[data-fv="groups"] .fr-split,#friends-view[data-fv="group"] .fr-split{grid-template-columns:1fr}
   #friends-view[data-fv="card"] .fr-side,#friends-view[data-fv="add"] .fr-side,
   #friends-view[data-fv="groups"] .fr-side,#friends-view[data-fv="group"] .fr-side{display:none}
 }
@@ -2096,7 +2113,7 @@ body[data-view="scan"] .top{display:none}
 
 /* P110 share arrival: a prominent action, shown only on an explicit share launch. */
 /* P318: the share hand-off notice is a Noir Notification rect (same tokens as .toast: Noir, Lotion, opaque, Windstorm rule) */
-.share-notice{position:fixed;z-index:80;left:12px;right:12px;top:calc(env(safe-area-inset-top) + 64px);padding:var(--space-control) var(--space-control) var(--space-control) 16px;border:0;border-radius:var(--dlg-radius-rect);background:var(--dlg-bg);color:var(--dlg-fg);box-shadow:inset 3px 0 0 var(--windstorm),var(--dlg-shadow);color-scheme:dark;display:flex;align-items:center;gap:var(--space-control);font-size:var(--dlg-fs-body);line-height:1.45}
+.share-notice{position:relative;z-index:auto;left:auto;right:auto;top:auto;padding:var(--space-control) var(--space-control) var(--space-control) 16px;border:0;border-radius:var(--dlg-radius-rect);background:var(--dlg-bg);color:var(--dlg-fg);box-shadow:inset 3px 0 0 var(--windstorm),var(--dlg-shadow);color-scheme:dark;display:flex;align-items:center;gap:var(--space-control);font-size:var(--dlg-fs-body);line-height:1.45}
 .share-notice[hidden],.share-notice button[hidden]{display:none}
 .share-notice>span{flex:1;min-width:0}
 .share-notice button{min-height:56px;min-width:112px;margin-left:auto;border:1.5px solid var(--emerald-oasis);border-radius:var(--r-pill);background:var(--dlg-chip);color:var(--dlg-fg);font:inherit;font-weight:700;padding:8px 16px}
@@ -2203,7 +2220,6 @@ body[data-view="chat"] .share-notice{position:static;margin:0 var(--space-contro
 .setup-x{flex:none;min-height:44px;margin-top:0;white-space:nowrap}
 .setup-sticky{position:sticky;top:0;z-index:2;margin:var(--sp-3) 0 0;padding:var(--sp-2) var(--sp-3);border-radius:12px;
   background:var(--surface);border:1px solid var(--line);font-weight:600}
-.setup-main{max-width:40rem}
 .setup-kicker{margin:var(--sp-4) 0 var(--sp-2);font-size:var(--fs-sm);letter-spacing:.04em;color:var(--text-muted)}
 .setup-main h2{margin:0}
 .setup-counts,.setup-where,.setup-src{margin:var(--sp-2) 0 0;color:var(--text-muted);font-size:var(--fs-sm)}
@@ -2445,7 +2461,7 @@ i.bd.still{animation:none}
 .ajconfirm{z-index:48}
 
 /* ---- P171 · 遥控器管理 (second-level page) ---- */
-.setsub__in{max-width:60rem;margin:0 auto;display:flex;flex-direction:column;gap:var(--space-section)}
+.setsub__in{margin:0;display:flex;flex-direction:column;gap:var(--space-section)}
 .setsub__in>.setcard{margin:0}
 .rmsum__top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:var(--space-content)}
 .rmnum{margin:var(--sp-1) 0 0;display:flex;align-items:baseline;gap:var(--sp-1);font:400 var(--fs-xl)/1 var(--font-title);color:var(--text-muted)}
@@ -2640,7 +2656,7 @@ i.bd.still{animation:none}
 .off-copy:focus-visible,.off-mail a:focus-visible{outline:2px solid var(--dfg);outline-offset:2px}
 .offdlg p.off-copied{margin:0;min-height:1.3em;font-size:calc(12px*var(--fz))}
 /* the error / removed pages: who to ask when the Agent itself cannot */
-.state-view .helpline{max-width:30rem;margin:var(--sp-4) 0 0}
+.state-view .helpline{margin:var(--sp-4) 0 0}
 .state-view .helpline+.helpline{margin-top:var(--sp-2)}
 .state-view .helpmail{margin:var(--sp-1) 0 0}
 .state-view .helpmail a{display:inline-flex;align-items:center;min-height:44px;font-weight:600}
@@ -2680,7 +2696,7 @@ i.bd.still{animation:none}
 .ajpages .pm-past p{margin:var(--sp-1) 0 0;font-size:var(--fs-sm);color:var(--text-muted)}
 .rvqr{width:min(64vw,240px);aspect-ratio:1;border-radius:14px;overflow:hidden;background:#fff}
 .rvqr svg{display:block;width:100%;height:100%}
-.rvstatus{margin:0;min-height:2.6em;max-width:22rem}
+.rvstatus{margin:0;min-height:2.6em;}
 .rvdlg .rvwarn{font-weight:600;opacity:.9}
 .rvdlg .rvpend{width:100%}
 .rvdlg .rvname{display:flex;flex-wrap:wrap;justify-content:center;align-items:baseline;gap:4px 8px;opacity:1;font-weight:600}
@@ -2936,7 +2952,7 @@ code[data-cc],pre[data-cc],.cc-in{cursor:copy}
 .sout-full .box> :not(.sout-value){display:none}
 .sout-full .sout-value{display:flex;flex-direction:column;flex:1;min-height:0}
 .sout-full .sout-content{flex:1;min-height:0;max-height:none;padding:var(--sp-3) 0}
-.sout-full .sout-content.words{width:min(100%,75ch);align-self:center;font-size:calc(19px*var(--fz))}
+.sout-full .sout-content.words{width:100%;align-self:stretch;font-size:calc(19px*var(--fz))}
 /* P260: visible, keyboard/reader accessible file full-screen entry. */
 .macts .mact.pv:has(.mfullscreen-label){width:auto;min-width:44px;display:flex;gap:4px;padding:0 6px}
 .mfullscreen-label{font:12px/1.2 var(--font-body)}
@@ -3031,6 +3047,12 @@ body:is([data-view="mem"],[data-view="act"],[data-view="tasks"],[data-view="mode
 .cmdresume .cc--block>pre{margin:0;padding:14px 52px 14px 16px;background:transparent;color:inherit;
   font:400 calc(14px*var(--fz))/1.55 var(--font-mono);white-space:pre-wrap;overflow-wrap:anywhere}
 .cmdresume pre code{padding:0;background:transparent;color:inherit;font:inherit;white-space:inherit}
+/* P424 #75: the held notice's 「详情」 (the settings diagnosis, same Lotion words, wraps) and the 「已送达」 mark under the words */
+.heldx p{margin:var(--sp-2) 0 0;overflow-wrap:anywhere;color:inherit}
+.heldok{align-self:flex-start;display:inline-flex;align-items:center;gap:var(--sp-2);min-height:var(--ui-tap,44px);
+  font:600 calc(13px*var(--fz))/1.4 var(--font-body);color:inherit}
+.heldok::before{content:"";width:12px;height:6px;border-left:2px solid currentColor;border-bottom:2px solid currentColor;
+  transform:translateY(-2px) rotate(-45deg)}
 
 /* P387: remote focus remains visible over every state colour. */
 [data-tv-focus="1"]{outline:3px solid #faf9f5!important;outline-offset:-5px;box-shadow:inset 0 0 0 7px #141414}
@@ -3059,19 +3081,38 @@ body[data-relink] .dot::after{animation:none}
 .elev .elev-grant-opt input{flex:none;width:22px;height:22px;margin:1px 0 0;accent-color:var(--accent,var(--text))}
 .elev .elev-grant-opt small{display:block;margin-top:2px;font-family:var(--font-mono);font-size:calc(12px*var(--fz));
   color:var(--text-muted);overflow-wrap:anywhere}
+/* P414 (§37.10): 「用 Face ID 填入电脑密码」 — the first way, full width above the field (which stays as the second way) */
+.elev .elev-vault{display:flex;width:100%;justify-content:center;margin:var(--sp-3) 0 var(--sp-2)}
+.elev .elev-vault[hidden]{display:none}
+/* P414 (§37.12): a 「!」 line's result above the reply — the terminal's own colours (Noir, Lotion, monospace) in both themes;
+   ~12 lines folded, 「展开」 shows all; 「已隐藏 N 处」 and how it ended under it. */
+.bangcard{margin:0 0 var(--sp-3);border-radius:14px;background:var(--noir);color:var(--lotion);overflow:hidden}
+.bangcard .cc--block{position:relative}
+.bangout{margin:0;padding:12px 52px 12px 14px;font:400 calc(13px*var(--fz,1))/1.5 var(--font-mono);white-space:pre-wrap;overflow-wrap:anywhere;
+  color:var(--lotion);background:none}
+.bangout.none{opacity:.72;font-style:italic}
+.bangcard.folded .bangout{max-height:calc(12 * 1.5em + 24px);overflow:hidden;
+  -webkit-mask-image:linear-gradient(black calc(100% - 3em),transparent);mask-image:linear-gradient(black calc(100% - 3em),transparent)}
+.bangnote{margin:0;padding:0 14px 10px;font:500 calc(12px*var(--fz,1))/1.45 var(--font-body);color:var(--banana-republic)}
+.bangmore{display:block;width:100%;min-height:44px;border:0;border-top:1px solid rgba(250,249,245,.14);background:none;color:var(--lotion);
+  font:600 calc(13px*var(--fz,1))/1 var(--font-body);cursor:pointer}
+.bangmore:focus-visible{outline:2px solid var(--c-milky-waves);outline-offset:-2px}
+.omtxt.bang{font-family:var(--font-mono)}
 /* P393 #126: the one-tap answers' label sits in the vertical middle of its pill (was align-items:baseline, which pinned the
    words to the top of the 44 px minimum) — one or two lines (a long one wraps instead of running past the card), Chinese or English, every font size and theme. */
 .words .rbtn{max-width:100%;box-sizing:border-box;white-space:normal;overflow-wrap:anywhere}   /* a long answer wraps inside the card (buttons are nowrap page-wide) */
 .words .rbtn .rbtn-say{align-self:center}
 /* P393 #127: an external link (http/https) in the Agent's reply is Peachy Feeling, underlined. Pure #d97757 on the reply card
-   measures 2.1–2.5:1 in the dark theme (kept as asked) but 1.4–1.7:1 in the light theme, and on the waiting card it is the
-   card's own hue; there the same hue is lifted 60 % toward Lotion (#edc5b6 · 2.7–4.4:1, palette rule: keep the hue, gain
-   contrast). The full-screen reader is Noir on every state → pure Peachy (4.6:1). File cards / internal links unchanged. */
-:root{--xlink-lift:60%}
-@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){ --xlink-lift:0%; } }
-:root[data-theme="dark"]{--xlink-lift:0%}
-body[data-status=waiting]:not([data-kind=question]){--xlink-lift:60%}
-#words a[href^="http"]:not(.mtap):not(.mcard a){color:color-mix(in srgb,var(--c-peachy-feeling) calc(100% - var(--xlink-lift)),var(--c-lotion));
+   measures 2.1–2.5:1 in the dark theme (kept as asked). P424 #127: where pure Peachy is too faint — the light theme
+   (1.4–1.7:1) and the waiting card (the card's own hue) — the link takes Bisque #fee2c5, a ready-made palette colour
+   (closed palette: no color-mix, no lifted hue; the old 60 % mix made an off-palette colour): 3.5–4.3:1 on the light
+   cards, 5.6:1 on the dark waiting card. The full-screen reader is Noir on every state → pure Peachy (4.6:1). File cards /
+   internal links unchanged. */
+:root{--xlink:var(--c-bisque)}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){ --xlink:var(--c-peachy-feeling); } }
+:root[data-theme="dark"]{--xlink:var(--c-peachy-feeling)}
+body[data-status=waiting]:not([data-kind=question]){--xlink:var(--c-bisque)}
+#words a[href^="http"]:not(.mtap):not(.mcard a){color:var(--xlink);
   font-weight:600;text-decoration-color:currentColor;text-decoration-thickness:1.5px}
 #rdWords a[href^="http"]:not(.mtap):not(.mcard a){color:var(--c-peachy-feeling);font-weight:600;text-decoration-color:currentColor;
   text-decoration-thickness:1.5px}
@@ -3113,3 +3154,132 @@ body[data-status=waiting]:not([data-kind=question]){--xlink-lift:60%}
 body[data-elevrun="1"] .elev-grant{bottom:calc(272px + env(safe-area-inset-bottom))}
 @keyframes elevRunPulse{50%{opacity:.35}}
 @media (prefers-reduced-motion:reduce){.elev-run[data-state="running"] .elev-run-dot{animation:none}}
+
+/* =====================================================================================================================
+   P412 (#174 定稿 10-20 18:44) · the fifth tool (full screen, 「N 行」) and the full-screen editor (js/fsedit.js):
+   Noir ground, Lotion words, icons only (exit top left, clear top right in Peachy, the Peachy 「/」 bottom left, Send bottom
+   right on Emerald), header and footer without separating lines. #175: a harness's own command, greyed (terminal only).
+   ===================================================================================================================== */
+.tools .tool.full{position:relative;overflow:visible}
+.tools .tool.full .lines{position:absolute;top:-9px;right:8px;padding:3px 8px;border-radius:var(--r-pill);background:var(--noir);
+  color:var(--lotion);font:500 calc(11px*var(--fz))/1 var(--font-body);pointer-events:none}
+.tools .tool.full .lines[hidden]{display:none}
+.fsed{position:fixed;inset:0;z-index:44;display:flex;flex-direction:column;background:var(--noir);color:var(--lotion);
+  padding:env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left)}
+.fsed[hidden]{display:none}
+.fshd,.fsft{flex:none;display:flex;align-items:center;gap:12px;padding:10px clamp(12px,2vw,24px)}
+.fsft{padding-bottom:max(10px,env(safe-area-inset-bottom))}
+/* #174 补 2 (Leo 19:18): the editor is a card that came up from below — its grabber pulls it back down (follows the finger
+   or the mouse; past the threshold it leaves, short of it it springs back) */
+.fshd{position:relative}
+.fsgrab{position:absolute;left:0;right:0;top:0;width:112px;height:24px;margin:0 auto;padding:0;border:0;background:none;
+  display:grid;place-items:center;cursor:grab;touch-action:none}
+.fsgrab span{width:40px;height:5px;border-radius:3px;background:rgba(250,249,245,.35)}
+.fsgrab:hover span,.fsgrab:focus-visible span{background:rgba(250,249,245,.6)}
+.fsgrab:focus-visible{outline:1px solid var(--lotion);outline-offset:-2px;border-radius:12px}
+.fsed.drag,.fsed.drag .fsgrab{cursor:grabbing}
+body[data-fs="1"] .fsft{padding-bottom:10px}
+.fspos{flex:1;min-width:0;text-align:center;font:400 calc(13px*var(--fz))/1.2 var(--font-body);color:rgba(250,249,245,.55);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fsic,.fsslash{flex:none;width:44px;height:44px;display:grid;place-items:center;border-radius:12px;padding:0;
+  background:none;border:1px solid rgba(250,249,245,.22);color:var(--lotion);cursor:pointer}
+.fsic svg,.fsslash svg{width:22px;height:22px}
+#fsClear{color:var(--peachy-feeling)}
+.fsslash{color:var(--peachy-feeling);border-style:dashed}
+.fsic:hover,.fsslash:hover{background:rgba(250,249,245,.08)}
+.fsic:focus-visible,.fsslash:focus-visible,.fssend:focus-visible{outline:1px solid var(--lotion);outline-offset:2px}
+#fsText{--ta-fs:max(16px,calc(17px*var(--fz)));flex:1;min-height:0;width:100%;max-height:none;margin:0;resize:none;border:0;outline:0;
+  background:none;color:var(--lotion);caret-color:var(--lotion);font:400 var(--ta-fs)/1.75 var(--font-body);
+  padding:8px clamp(16px,4vw,64px);overflow-y:auto;overscroll-behavior:contain}
+#fsText::selection{background:rgba(250,249,245,.24)}
+.fshint{flex:1;min-width:0;font:400 calc(12px*var(--fz))/1.4 var(--font-body);color:rgba(250,249,245,.55);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media (pointer:coarse),(max-width:600px){ .fshint{visibility:hidden} }
+.fsed .fssend{width:52px;height:52px;background:var(--emerald-oasis);margin-left:auto;position:relative;z-index:2}
+.fsed .fssend .rocket{background-color:var(--lotion)}
+.fscmds{position:absolute;inset:0;z-index:3;display:flex;align-items:flex-end;justify-content:flex-start;
+  padding:0 clamp(12px,2vw,24px) 76px;background:rgba(20,20,20,.32)}
+.fscmds[hidden]{display:none}
+.fscmdbox{width:min(480px,100%);max-height:min(60%,520px);display:flex;flex-direction:column;background:var(--sooty);
+  border:1px solid rgba(250,249,245,.16);border-radius:18px;overflow:hidden;box-shadow:0 12px 32px rgba(20,20,20,.4)}
+#fsCmdQ{flex:none;margin:10px;padding:10px 14px;border-radius:12px;border:1px solid rgba(250,249,245,.22);background:none;
+  color:var(--lotion);font:400 16px/1.2 var(--font-body);outline:0}
+#fsCmdQ::placeholder{color:rgba(250,249,245,.45)}
+.fscmdlist{overflow-y:auto;overscroll-behavior:contain}
+.fscmdlist button{display:block;width:100%;text-align:left;min-height:var(--rtap);padding:6px 18px;background:none;border:0;color:var(--lotion)}
+.fscmdlist button b{display:block;font:500 calc(15px*var(--fz))/1.3 var(--font-mono)}
+.fscmdlist button span{display:block;font:400 calc(12px*var(--fz))/1.4 var(--font-body);color:rgba(250,249,245,.6);overflow-wrap:anywhere}
+.fscmdlist button[aria-selected="true"],.fscmdlist button:hover{background:rgba(250,249,245,.08)}
+/* #175 定稿: the harness's own — a small tag says how it is carried out (直接执行 / 交给 Agent 代办); greyed = no web page can */
+.ntag{display:inline-block;margin-left:8px;padding:0 7px;border:1px solid currentColor;border-radius:var(--r-pill);
+  font:500 calc(11px*var(--fz))/1.6 var(--font-body);font-style:normal;vertical-align:1px;color:var(--emerald-oasis)}
+.ntag[data-via="agent"]{color:var(--peachy-feeling)}
+.slashmenu button.tui,.menulist button.tui,.fscmdlist button.tui{opacity:.5;cursor:default}
+body[data-fs="1"] .toast{position:fixed;z-index:45}
+/* P422: a line arrow on the page colour, with no panel or filled disc. */
+#pull-refresh{position:absolute;top:0;left:0;right:0;z-index:5;pointer-events:none;display:flex;align-items:center;justify-content:center;gap:8px;
+  color:var(--ink);background:none;font-size:13px;transform:translateY(calc(var(--pull,40px) - 24px))}
+#pull-refresh[hidden]{display:none}
+#pull-refresh svg{width:22px;height:22px}
+main[data-pulling]{overscroll-behavior-y:none}
+
+@media (display-mode:standalone){#main{overscroll-behavior-y:none}}
+
+html[data-standalone="1"] #main{overscroll-behavior-y:none}
+
+#main{position:relative}
+#main[data-pulling] > #read{transform:translateY(var(--pull-space,54px))}
+/* P425: in-card free answer; inherits the question sheet's palette. */
+.qfree{display:grid;gap:8px;margin:12px 0;font:inherit}
+.qfree textarea{box-sizing:border-box;width:100%;min-height:88px;resize:vertical;border:1px solid currentColor;border-radius:12px;padding:12px;font:inherit;color:inherit;background:transparent}
+
+/* P427: bounded inline components, same text/colour and draft workflow as the reply. */
+.reply-component{margin:1em 0;padding:1em;border:1px solid currentColor;border-radius:12px;overflow:auto;max-width:100%}
+.reply-component h3{margin:0 0 .7em;font-size:1em}.reply-component svg{display:block;width:100%;min-width:300px;height:auto;font-family:inherit}
+.reply-component label{display:block;margin:.7em 0}.reply-component input,.reply-component select{display:block;box-sizing:border-box;max-width:100%;width:100%;min-height:56px;font:inherit;color:inherit;background:transparent;border:1px solid currentColor;border-radius:8px;padding:.5em}
+.reply-component input[type=checkbox]{width:56px}.reply-component button{font:inherit;min-height:56px;margin:.3em;padding:.5em 1em;border:1px solid currentColor;border-radius:8px;color:inherit;background:transparent}.reply-component :disabled{opacity:.55}.reply-component .rc-note{font-size:.85em;opacity:.8}
+
+/* P440 / #209 #211: two notice placements. Internal cards share the reply text's inset.
+   The notice stack scrolls independently so expanded output cannot hide the reply actions/composer. */
+.reply-notices{flex:0 1 auto;min-height:0;max-height:48%;overflow:auto;margin:0 20px;display:flex;flex-direction:column;gap:8px}
+.reply-notices:has(> :not([hidden],.toast)),.reply-notices:has(> .toast.on){padding-block:4px 8px}
+@media (orientation:landscape){.reply-notices{margin-inline:24px}}
+.reply-notices>:is(.toast,.elev-run,.elev-grant,.setup-banner,.estop-banner,.share-notice,.shared-status,.ver-later,.grant-bar){
+  position:relative;inset:auto;transform:none;width:100%;max-width:100%;box-sizing:border-box;flex-shrink:0;margin:0;
+  border:0;border-radius:var(--dlg-radius-rect);background:var(--dlg-bg);color:var(--dlg-fg);color-scheme:dark}
+.reply-notices .toast.rect{z-index:auto;pointer-events:auto}
+.reply-notices .setup-banner__open,.reply-notices .setup-banner__x,.reply-notices .rsbanner__go{color:var(--dlg-fg)}
+.reply-notices .elev-run-out{max-height:min(22vh,200px)}
+body[data-elevrun="1"] .reply-notices .elev-grant{bottom:auto}
+body[data-view="chat"] .reply-notices .share-notice{margin:0}
+
+.page-notices{position:sticky;bottom:0;z-index:2;max-height:40vh;flex-shrink:0;margin:8px 16px;grid-column:1/-1}
+
+.reply-notices>.elev-run{flex-shrink:1;min-height:0;max-height:100%}
+.reply-notices .elev-run-panel{min-height:0;overflow:auto}
+.reply-notices .elev-run-row{flex-shrink:0}
+
+/* P417 #215: the signed permission form shares the reply's internal notice slot. */
+body[data-permission-inset="1"][data-sheet="1"] .deck{filter:none;opacity:1}
+body[data-permission-inset="1"] .scrim{display:none}
+#reply-notices>.sheet{position:relative;inset:auto;flex:0 1 auto;min-height:0;width:100%;max-width:none;margin:0;
+  max-height:100%;overflow:auto;transform:none;box-shadow:none;border:0;border-left:2px solid var(--peachy-feeling);
+  border-radius:12px;padding:12px 14px;background:var(--noir);color:var(--lotion);visibility:visible}
+body:not([data-sheet="1"]) #reply-notices>.sheet{display:none}
+#reply-notices>.sheet>.grab{display:none}
+
+/* P445: every copy control shares the same tick, label and restoration timer. */
+.cc-feedback{position:relative;overflow:visible!important}
+.cc-feedback>svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.cc-feedback .cc-g0{display:none}
+.cc-feedback .cc-ok{display:inline}
+.cc-feedback[data-done="fail"] .cc-ok{display:none}
+.cc-feedback[data-done="fail"] .cc-g0{display:inline}
+.cc-feedback>.cc-result{position:absolute;bottom:100%;left:50%;transform:translateX(-50%);z-index:5;
+  padding:5px 8px;border-radius:8px;background:#2c2b26;color:#faf9f5;font:500 12px/1.3 var(--font-body);white-space:nowrap;pointer-events:none}
+.cc-btn.cc-feedback[data-tip]::after{content:none}
+.codeblock .copy.cc-feedback>.cc-result{bottom:auto;top:50%;left:auto;right:calc(100% + 4px);transform:translateY(-50%)}
+.toast.circle.glance{width:min(290px,calc(100vw - 40px));height:min(290px,calc(100vw - 40px));aspect-ratio:1;border-radius:50%;padding:32px;overflow:hidden;pointer-events:none}
+.toast.circle.glance.on{pointer-events:auto}
+.toast.circle.glance .nt-text{flex:0 1 auto;min-height:0;overflow:auto}
+.toast.circle.glance .nt-body{white-space:normal;overflow-wrap:anywhere}
