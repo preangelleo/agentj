@@ -18,6 +18,7 @@ let add = null;           // {link, expires, timer, pending:{device,name,evict,r
 let editing = null;       // device id whose rename field is open
 
 const LIMIT_DEFAULT = 10;
+const validLimit = (n) => Number.isInteger(n) && n > 0 && n <= 64 ? n : LIMIT_DEFAULT;
 const QR_PREFIX = 'data:image/png;base64,';
 const WHY = { disabled: 'rm.disabled', busy: 'rm.busy', offline: 'rm.offline', gone: 'rm.gone', code_mismatch: 'rm.mismatch',
   bad_name: 'rm.badName', timeout: 'rm.ended' };
@@ -26,7 +27,7 @@ const whyText = (w) => (WHY[w] ? t(WHY[w]) : t('rm.fail', { why: String(w ?? '?'
 const clean = (s, n = 64) => String(s ?? '').replace(/[\u0000-\u001f\u007f]/g, '').slice(0, n);
 function take(m) {
   const items = Array.isArray(m.items) ? m.items.slice(0, 64).filter((d) => d && typeof d.id === 'string') : [];
-  const limit = Number.isInteger(m.limit) && m.limit > 0 && m.limit <= 64 ? m.limit : LIMIT_DEFAULT;
+  const limit = validLimit(m.limit);
   return { limit, items, can_add: m.can_add !== false, busy: m.busy === true };
 }
 /** From the `preferences` host block (older hosts, or before the first dev_list answer). */
@@ -34,7 +35,7 @@ function fromPrefs() {
   const h = H.hostDevices();
   if (!h || !Array.isArray(h.devices)) return null;
   const me = H.myId();
-  return { limit: Number.isInteger(h.limit) ? h.limit : 5, items: h.devices.slice(0, 64).map((d) => ({ ...d, me: d.id === me })),
+  return { limit: validLimit(h.limit), items: h.devices.slice(0, 64).map((d) => ({ ...d, me: d.id === me })),
     can_add: false, busy: false };
 }
 /** Settings' row: 「已用 N / 10」 (null when nothing is known yet). */

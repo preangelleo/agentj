@@ -112,6 +112,8 @@ function flash(node, ms) {
 /** Shared visible feedback. Holds only the original button UI, never the copied value. */
 export function copyFeedback(btn, ok) {
   const msg = label(ok ? 'r.md.copied' : 'r.copy.fail');
+  // P458: reply-copy success is a tick only, without a caption strip or toast.
+  const replyTick = ok && ['copyReply', 'rdCopyBtn'].includes(btn?.id);
   if (btn) {
     let state = states.get(btn);
     if (!state) {
@@ -123,7 +125,7 @@ export function copyFeedback(btn, ok) {
     btn.dataset.done = ok ? '1' : 'fail'; btn.dataset.tip = msg;
     btn.setAttribute('aria-label', msg); btn.title = msg;
     const caption = btn.ownerDocument.createElement('span'); caption.className = 'cc-result'; caption.textContent = msg; caption.setAttribute('aria-hidden', 'true');
-    btn.replaceChildren(glyph(btn.ownerDocument), caption);
+    btn.replaceChildren(glyph(btn.ownerDocument), ...(replyTick ? [] : [caption]));
     state.timer = setTimeout(() => {
       btn.replaceChildren(...state.kids);
       btn.classList.remove('cc-feedback'); delete btn.dataset.done; delete btn.dataset.tip;
@@ -134,7 +136,7 @@ export function copyFeedback(btn, ok) {
       if (btn.classList.contains('cc-btn')) relabel(btn);
     }, DONE_MS);
   }
-  notifyCopy({kind: ok ? 'success' : 'error', shape: 'circle', text: msg, ms: 1800});
+  if (!replyTick) notifyCopy({kind: ok ? 'success' : 'error', shape: 'circle', text: ok ? msg : label('r.copy.toastFailed'), ms: 1800});
   return ok;
 }
 /** Starts the clipboard write in the tap; optional writer preserves approval / image-copy contracts. */

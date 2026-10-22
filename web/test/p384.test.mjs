@@ -11,7 +11,7 @@ function launch(userAgent,platform,touch,standalone=false,displayMode=false){
  vm.runInNewContext(boot,ctx);return {colors:metas.map(m=>m.content),apple:apple.content,ios:root.dataset.ios,bg:root.style.backgroundColor};
 }
 for(const [name,ua,platform,touch] of [['iPhone','iPhone','iPhone',5],['iPad','iPad','iPad',5],['iPod','iPod','iPod',5],['iPad desktop','Macintosh','MacIntel',5]])for(const standalone of [false,true])test(`${name} ${standalone?'PWA':'Safari'} first paint ignores stale state color`,()=>{
- const r=launch(ua,platform,touch,standalone);assert.deepEqual(r,{colors:['#141414','#141414'],apple:'black-translucent',ios:'1',bg:'#141414'});
+ const r=launch(ua,platform,touch,standalone);assert.deepEqual(r,{colors:['#2c2b26','#2c2b26'],apple:'black-translucent',ios:'1',bg:'#2c2b26'});
 });
 for(const [name,ua,platform,touch] of [['Android','Android','Linux armv8l',5],['Mac','Macintosh','MacIntel',0],['one-pointer Mac','Macintosh','MacIntel',1]])test(`${name} keeps fixed Sooty browser chrome`,()=>{
  const r=launch(ua,platform,touch);assert.equal(r.ios,undefined);assert.deepEqual(r.colors,['#141414','#141414']);assert.equal(r.apple,'black-translucent');

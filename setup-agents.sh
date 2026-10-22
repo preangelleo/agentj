@@ -186,7 +186,7 @@ for cli in "${CLIS[@]}"; do
 import base64, hashlib, json, os, pathlib, platform, re, shutil, subprocess, sys, tempfile, urllib.request
 cli,prefix,registry,osname,arch=sys.argv[1:]; prefix=pathlib.Path(prefix)
 OFFICIAL='https://registry.npmjs.org'; MIRROR='https://registry.npmmirror.com'
-pkg={'codex':'@openai/codex','claude':'@anthropic-ai/claude-code','opencode':'opencode-ai','gemini':'@google/gemini-cli'}[cli]
+pkg={'codex':'@openai/codex','claude':'@anthropic-ai/claude-code','opencode':'@opencode/cli','gemini':'@google/gemini-cli'}[cli]
 cpu='x64' if arch=='x86_64' else 'arm64'; system='darwin' if osname=='Darwin' else 'linux'
 libc='musl' if system=='linux' and ('musl' in subprocess.run(['ldd','--version'],capture_output=True,text=True).stderr or list(pathlib.Path('/lib').glob('ld-musl-*'))) else 'glibc'
 def run(args,timeout=40):
@@ -222,7 +222,9 @@ def verify(command):
     for parent in path.parents:
         if parent.name=='node_modules': roots.append(parent); break
     for root in dict.fromkeys(roots):
-        parent=root/pkg
+        # Keep an existing npm v1 install usable; verify the package that owns its wrapper.
+        owner_pkg='opencode-ai' if cli=='opencode' and (root/'opencode-ai') in path.parents else pkg
+        parent=root/owner_pkg
         if not (parent/'package.json').exists(): continue
         doc=json.loads((parent/'package.json').read_text())
         deps=native_deps(doc)
@@ -279,7 +281,7 @@ try:
         # The canonical endpoint is separate from a user-supplied download registry.
         # If official metadata cannot be obtained, fail closed: never assert equality without evidence.
         doc=meta(OFFICIAL,pkg,'latest'); version=doc['version']
-        args=['npm','install','--cpu='+cpu,'--os='+system,'--global','--prefix',str(prefix),'--include=optional','--fetch-retries=0','--fetch-timeout=20000','--no-audit','--no-fund',pkg+'@'+version]
+        args=['npm','install','--cpu='+cpu,'--os='+system,'--global','--prefix',str(prefix),'--include=optional','--ignore-scripts=false','--fetch-retries=0','--fetch-timeout=20000','--no-audit','--no-fund',pkg+'@'+version]
         def install(source):
             if source.rstrip('/')==MIRROR:
                 integrity_pair(pkg,version)

@@ -70,7 +70,7 @@ is ONE component: `notify(spec)` in `public/js/ui.js`, drawn by the「toast = P3
 `toast(text, ms, kind?)` and `toastAction(text, label, fn, ms?)` are thin wrappers over it, so every old call site is already
 Noir. The element is still `#toast` (classes `on` / `act` / `cmd`, action buttons `.undo`).
 
-`spec = { kind, title?, text, ms?, actions?: [{ label, fn }], shape?: 'rect' | 'circle' }` → format:
+`spec = { kind, title?, text, ms?, actions?: [{ label, fn }], shape?: 'rect' | 'circle' | 'square' }` → format:
 
 | kind | accent (palette only) | icon | default ms | shape |
 |---|---|---|---|---|
@@ -82,13 +82,13 @@ Noir. The element is still `#toast` (classes `on` / `act` / `cmd`, action button
 | `confirm` | Windstorm `--windstorm` #6a9bcc | ? in a ring | 0 = held (toastAction: 5000) | rect |
 
 - **Two placements only (#209 / #211).** Short transient status (copied, saved, recording) uses the centred circle. Execution,
-  automatic / advance approvals, results, actionable or long notices use an internal reply card in `#reply-notices`, immediately
+  automatic / advance approvals, results, actionable notices use an internal reply card in `#reply-notices`, immediately
   above the icon row. Its 20px portrait / 24px landscape inset matches reply text and the icon row's left inset. The output
   panel scrolls within the bounded stack; the footer and composer stay visible. System banners use this same stack. No top popup.
   Settings / terminal / reader notices use a local internal result card when that page is visible. No new wire association is
   invented: events without a turn reference belong to the current visible reply/page.
 - **Shapes.** `rect`: rounded rectangle (`--dlg-radius-rect`), width of the internal content area, icon · title · buttons.
-  `circle`: centred 156px × `--fz`, ≤48 text units, no actions / title / media. Rich content falls back to the internal card.
+  `circle`: centred 156px × `--fz`, one status word only (Chinese ≤4 Han characters; English one word), no actions / title / media. Longer A text automatically becomes a centred `square`: rounded corners, up to 340px wide, content height, same Noir/Lotion tokens and original lifetime. The full text is preserved, including noticeSheet explanations; no glance bypass. Actions / title / media retain the internal B card.
 - **Tokens.** Background `--dlg-bg` (Noir), text `--dlg-fg` (Lotion, 12.9:1), buttons `--dlg-chip`, shadow `--dlg-shadow`,
   motion `--dlg-dur` — the same layer as the centred dialogs (`.gdlg`), opaque, in light and dark and on every state.
 - **The accent is a line, never a fill:** the icon stroke, the 3 px left rule (rect) / ring (circle), the button outline.
@@ -126,3 +126,12 @@ against its composited ground, every img / svg / mask / sprite icon by a four-sh
 forced black · forced white — and the long-press page screenshot keeping the header robot). Output `reports/qa/p340/c/`.
 
 `test/p440.test.mjs` rejects top-anchored notification CSS in all shipped stylesheets, with positive controls.
+
+## Reply body text (P477, 2026-10-22)
+
+Only `.rm #words` uses Lotion #faf9f5 for all prose, headings, emphasis, list markers,
+links (underlined), code/highlight tokens, table text and component labels/SVG text.
+Existing Lotion opacity is permitted for secondary text. Component shapes, controls,
+borders and backgrounds retain their colours. Mermaid SVG images receive a text-only
+local override only for this container; reader and other-page diagrams keep their theme.
+Evidence: `test/p477.mjs`, `reports/qa/p477/index.html`; exact 13:02:24 JST synthetic 11-format demonstration.

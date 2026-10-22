@@ -148,7 +148,7 @@
     // Command or skill the hot key runs / 回复卡左下角快捷技能键; default="web-page-report"
     "card_hot_action": "web-page-report",
     // P340: the four buttons above the message box, left to right (each once) / 输入框上方四个按钮的顺序; default=["file","image","camera","mic"]
-    "composer_buttons": ["file", "image", "camera", "mic"],
+    "composer_buttons": ["file", "image", "camera", "mic", "full"],
   },
   // P274: macOS only. Read-only iMessage / SMS assistant (Full Disk Access); off by default; never writes chat.db.
   "imessage":

@@ -38,8 +38,21 @@ try {
    await p.send('Emulation.setEmulatedMedia',{features:[{name:'prefers-color-scheme',value:scheme}]});
    for (const state of ['idle','working','waiting','question','offline']) {
     await evaluate(p,`Object.assign(document.body.dataset,{status:${JSON.stringify(state==='question'?'waiting':state==='offline'?'unknown':state)},kind:${JSON.stringify(state==='question'?'question':'')},conn:${JSON.stringify(state==='offline'?'off':'on')}})`);
-    await sleep(150);
-    const r = await evaluate(p,`(() => {const b=document.getElementById('sabband'),s=getComputedStyle(b),r=b.getBoundingClientRect(),c=document.querySelector('.composer'),inp=document.getElementById('input'); return {band:s.backgroundColor,body:getComputedStyle(document.body).backgroundColor,theme:document.querySelector('meta[name=theme-color]').content,top:r.top,bottom:r.bottom,height:r.height,padding:parseFloat(getComputedStyle(c).paddingBottom),inputBottom:inp.getBoundingClientRect().bottom,hit:s.pointerEvents,topBand:getComputedStyle(document.getElementById('satband')).backgroundColor};})()`);
+    await sleep(350);
+    await evaluate(p,`import('./js/relay.js').then(m=>m.paintChrome(true))`);await sleep(50);
+    const r = await evaluate(p,`(() => {const b=document.getElementById('sabband'),s=getComputedStyle(b),r=b.getBoundingClientRect(),c=document.querySelector('.composer'),inp=document.getElementById('input'); return {band:s.backgroundColor,body:getComputedStyle(document.body).backgroundColor,theme:document.querySelector('meta[name=theme-color]').content,top:r.top,bottom:r.bottom,height:r.height,padding:parseFloat(getComputedStyle(c).paddingBottom),inputBottom:inp.getBoundingClientRect().bottom,hit:s.pointerEvents,topBand:getComputedStyle(document.getElementById('satband')).backgroundColor,display:s.display,root:getComputedStyle(document.documentElement).backgroundColor,statusPaint:getComputedStyle(document.documentElement,'::before').backgroundColor};})()`);
+    if(name==='ios390') {
+     // P459m FINAL/P472: the root owns Noir status paint; bottom paint stays below content.
+     assert.equal(r.display,'block','iOS keeps its noninteractive bottom paint');
+     assert.equal(r.hit,'none');
+     assert.deepEqual(rgb(r.band),rgb(r.body),'bottom follows visible Safari page');
+     assert.deepEqual(rgb(r.statusPaint),[44,43,38],'root status paint is Noir');
+     assert.equal(r.theme,'#2c2b26','iOS metadata stays Noir');
+     assert.equal(r.height,inset);assert.equal(r.bottom,h);assert.equal(r.padding,12);assert.ok(r.inputBottom<=h);
+     const file=`${out}${name}-${scheme}-${state}.png`;writeFileSync(file,await shoot(p));
+     assert.deepEqual(rgb(pixel(file,5,h-2)),rgb(r.root),'actual Safari bottom pixel follows the visible root layer');
+     results.push({name,scheme,state,...r});continue;
+    }
     assert.deepEqual(rgb(r.band),[20,20,20],`${name}/${scheme}/${state}: safe-area band remains Sooty (P422)`);
     assert.deepEqual(rgb(r.topBand),[20,20,20],'top status area remains correct');
     assert.equal(r.theme,'#'+([20,20,20]).map(v=>v.toString(16).padStart(2,'0')).join(''));
@@ -51,7 +64,15 @@ try {
     results.push({name,scheme,state,...r});
    }
   }
-  if(inset) {
+  if(name==='ios390') {
+   await evaluate(p,`document.body.dataset.reader='1';import('./js/relay.js').then(m=>m.paintChrome(true))`);await sleep(100);
+   assert.deepEqual(rgb(await evaluate(p,`getComputedStyle(document.getElementById('sabband')).backgroundColor`)),[44,43,38],'reader bottom uses Noir');
+   await evaluate(p,`document.body.dataset.reader='0';document.body.dataset.kb='1'`);
+   assert.equal(await evaluate(p,`getComputedStyle(document.getElementById('sabband')).zIndex`),'0','keyboard paint remains below content');
+   assert.equal(await evaluate(p,`getComputedStyle(document.getElementById('sabband')).pointerEvents`),'none');
+   await evaluate(p,`document.body.dataset.kb='0'`);
+  }
+  if(inset && name!=='ios390') {
    await evaluate(p,`document.body.dataset.reader='1'`);await sleep(100);
    // P422 / P417 #205: system safe areas remain Sooty during reading on every device.
    assert.deepEqual(rgb(await evaluate(p,`getComputedStyle(document.getElementById('sabband')).backgroundColor`)),[20,20,20],'reader safe-area band remains Sooty');

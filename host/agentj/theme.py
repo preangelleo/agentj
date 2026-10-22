@@ -372,6 +372,29 @@ def _check_colours(doc, out) -> None:
                           "heavy and light are too alike — the blink would not show"))
 
 
+def _official_logo(logo: dict, files: dict) -> bool:
+    """Compare validated bytes, never a user-controlled filename or decoded resemblance."""
+    try:
+        official = {s: (PKG / DEFAULT / f"logo-{s}.png").read_bytes()
+                    for s in ("idle", "working", "waiting", "question", "offline")}
+    except OSError:
+        return False
+    if logo.get("states"):
+        return all(files.get(name) == official[state] for state, name in logo["states"].items())
+    return files.get(logo["image"]) in official.values()
+
+
+def _omit_logo(doc: dict, files: dict) -> None:
+    logo = doc.pop("logo")
+    refs = set((logo.get("states") or {"image": logo["image"]}).values())
+    # A legal theme can reuse a PNG in another section; retain those references.
+    keep = {doc.get("send_icon", {}).get("image")}
+    rb = doc.get("busy", {}).get("robots", {})
+    keep.update(rb.get(k) for k in ("sheet_12", "sheet_18"))
+    for name in refs - keep:
+        files.pop(name, None)
+
+
 def validate(folder, factory_ok: bool = False) -> dict:
     """→ {"ok", "errors": [...], "warnings": [...], "theme": doc|None, "files": {name: bytes}} — never raises."""
     folder = pathlib.Path(folder)
@@ -404,10 +427,15 @@ def validate(folder, factory_ok: bool = False) -> dict:
     if doc.get("logo"):
         logo = doc["logo"]
         refs = logo.get("states") or {"image": logo["image"]}
+        images = {state: _png_rule(folder, name, "logo.image" if state == "image" else f"logo.states.{state}",
+                                   "logo", errors, files) for state, name in refs.items()}
+        official = not factory_ok and all(images.values()) and _official_logo(logo, files)
+        if official:
+            _omit_logo(doc, files)
         sizes = set()
-        for state, filename in refs.items():
+        for state, filename in (() if official else refs.items()):
             where = "logo.image" if state == "image" else f"logo.states.{state}"
-            img = _png_rule(folder, filename, where, "logo", errors, files)
+            img = images[state]
             if not img or not _square(img, filename, where, errors):
                 continue
             sizes.add(img[:2])
@@ -658,9 +686,11 @@ def export(root, which: str, dest) -> dict:
         src = preset(current(root)["id"])
     else:
         return {"ok": False, "error": "unknown_preset"}
-    r = validate(src, factory_ok=True)
+    r = validate(src, factory_ok=src.parent == PKG)
     dest.mkdir(parents=True, exist_ok=True)
     doc = r["theme"]
+    if doc.get("logo") and _official_logo(doc["logo"], r["files"]):
+        _omit_logo(doc, r["files"])
     if src.parent == PKG:   # an edited copy must not keep the factory id
         doc = {**doc, "id": f"my-{doc['id']}", "author": "",
                "name": {"zh": ("我的" + doc["name"]["zh"])[:12], "en": ("My " + doc["name"]["en"])[:24]}}

@@ -109,9 +109,10 @@ class RecoveryWorker(Base):
         installs, run = [], Runner(current='9.9.9')
         with patch.object(update, 'new_argv', return_value=['agentj']):
             rc = service_recovery.run(self.st, __version__, timeout=0.3, install=lambda st: installs.append(1),
-                                      status=lambda: {'active': 'failed'}, ready=lambda st: 'idle', runner=run)
+                                      status=lambda: {'active': 'active' if len(installs) == 2 else 'failed'}, ready=lambda st: 'idle', runner=run)
         self.assertEqual(rc, 1)
         self.assertEqual(service_recovery.read(self.st)['reason'], 'rolled_back')
+        self.assertEqual(service_recovery.read(self.st)['status'], 'rolled_back')
         self.assertEqual(len(installs), 2, 'new service, then the old one again')
         self.assertTrue(any(str(old) in c for c in run.calls), 'the cached old wheel was installed')
         self.assertFalse((self.st.root / update.UPGRADED).exists(), 'nothing announces the failed version')

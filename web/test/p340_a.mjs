@@ -77,7 +77,7 @@ try {
     await sleep(120);
     writeFileSync(`${out}settings-saved-${name}.png`, await shoot(p));
     const s1 = await toastState(p); row.saved = s1;
-    ok(s1.on && s1.circle && s1.kind === 'success' && s1.text === (lang === 'zh' ? '已保存到Agent J 主机' : 'Saved on the Agent J host'), `${name}: the ✓ circle`);
+    ok(s1.on && s1.circle && s1.kind === 'success' && s1.text === (lang === 'zh' ? '已保存' : 'Saved'), `${name}: the ✓ circle`);
     ok(!s1.bar && !(await ev(p, `!!document.getElementById('set-status-bar')`)), `${name}: no old bar`);
     await sleep(1900);
 

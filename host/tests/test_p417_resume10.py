@@ -29,7 +29,8 @@ class Resume10(unittest.TestCase):
                 text = a.provider_note(why, 'ark-coding-plan', '中文说明 / English note')
                 self.assertIn('ark-coding-plan', text)
                 self.assertIn('doubao-seed-2.1-pro', text)
-                self.assertIn('中文说明' if language == 'zh' else 'English note', text)
+                self.assertIn('来源未确认' if language == 'zh' else 'source unconfirmed', text)
+                self.assertIn('周期未说明' if language == 'zh' else 'window unspecified', text)
 
     def test_retired_plan_is_not_a_preset_or_key_entry(self):
         self.assertEqual(bailian.PLANS, ('token-plan',))

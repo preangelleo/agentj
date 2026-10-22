@@ -163,25 +163,32 @@
     "plus": "agentj-add-note",
     "links": [],
     "anchors": [],
-    "text": "# 本周\n\n- 周三下午和设计师过一遍 Cards 的样式\n- 给安卓真机截图\n\n## 想法\n\n卡片背后的活都交给电脑上的 Agent。\n",
-    "revision": "982784a0f2166375c7b6a8f8d74fce33adaefbeb94d4557c92111b4e91b2cc93",
+    "noteFields": true,
+    "revision": "52c256ff3749385c1f5f051292b230df9cb1f09e3111c78b1143bde0614c76a6",
     "entries": [
      {
-      "id": "n-a0e357d6345d7f551a00-1",
+      "id": "n-3c746671a9433e2b32ba-1",
+      "title": "",
+      "date": "",
       "text": "周三下午和设计师过一遍 Cards 的样式",
       "editable": true
      },
      {
-      "id": "n-3612216d229ea951d4af-1",
+      "id": "n-b22a646c7c9308a7717c-1",
+      "title": "",
+      "date": "",
       "text": "给安卓真机截图",
       "editable": true
      },
      {
-      "id": "n-6d04aad40408845fb96d-1",
+      "id": "n-de870c00bf29c64b398c-1",
+      "title": "",
+      "date": "",
       "text": "卡片背后的活都交给电脑上的 Agent。",
       "editable": true
      }
-    ]
+    ],
+    "text": "周三下午和设计师过一遍 Cards 的样式\n\n给安卓真机截图\n\n卡片背后的活都交给电脑上的 Agent。"
    },
    "todo": {
     "ok": true,
@@ -380,25 +387,32 @@
     "plus": "agentj-add-note",
     "links": [],
     "anchors": [],
-    "text": "# 本周\n\n- 周三下午和设计师过一遍 Cards 的样式\n- 给安卓真机截图\n\n## 想法\n\n卡片背后的活都交给电脑上的 Agent。\n",
-    "revision": "982784a0f2166375c7b6a8f8d74fce33adaefbeb94d4557c92111b4e91b2cc93",
+    "noteFields": true,
+    "revision": "52c256ff3749385c1f5f051292b230df9cb1f09e3111c78b1143bde0614c76a6",
     "entries": [
      {
-      "id": "n-a0e357d6345d7f551a00-1",
+      "id": "n-3c746671a9433e2b32ba-1",
+      "title": "",
+      "date": "",
       "text": "周三下午和设计师过一遍 Cards 的样式",
       "editable": true
      },
      {
-      "id": "n-3612216d229ea951d4af-1",
+      "id": "n-b22a646c7c9308a7717c-1",
+      "title": "",
+      "date": "",
       "text": "给安卓真机截图",
       "editable": true
      },
      {
-      "id": "n-6d04aad40408845fb96d-1",
+      "id": "n-de870c00bf29c64b398c-1",
+      "title": "",
+      "date": "",
       "text": "卡片背后的活都交给电脑上的 Agent。",
       "editable": true
      }
-    ]
+    ],
+    "text": "周三下午和设计师过一遍 Cards 的样式\n\n给安卓真机截图\n\n卡片背后的活都交给电脑上的 Agent。"
    },
    "todo": {
     "ok": true,

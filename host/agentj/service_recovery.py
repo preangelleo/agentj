@@ -207,7 +207,13 @@ def run(st, target, *, timeout=45, install=None, status=None, ready=None, runner
                 st.log('upgrade_rollback', status='ok' if ok else 'failed', reason='recovery_inactive')
                 if ok:
                     (install or service.install)(st)
-                    raise service.ServiceError('rolled_back')
+                    end = time.monotonic() + timeout
+                    while (status or service.status)().get('active') != 'active':
+                        if time.monotonic() >= end:
+                            raise service.ServiceError('recovery_inactive')
+                        time.sleep(.25)
+                    record(st, 'rolled_back', target, 'rolled_back')
+                    return 1
             raise
         (st.root / update.PENDING).unlink(missing_ok=True)
         record(st, 'ok', target)
@@ -264,7 +270,7 @@ def _sibling_active(n, env):
 
 def failure(st):
     rec = read(st)
-    if rec and (rec.get('status') == 'failed' or
+    if rec and (rec.get('status') in ('failed', 'rolled_back') or
                 rec.get('status') in ('pending', 'running') and time.time() - rec.get('at', 0) > 90):
         return rec
     return None
@@ -279,3 +285,16 @@ def failure_text(rec):
                 'before. Run `agentj doctor` for details.')
     return ('升级后的服务启动未完成。运行 `agentj service start`，再运行 `agentj doctor`。 / '
             'The upgraded service did not finish starting. Run `agentj service start`, then `agentj doctor`.')
+
+
+def health(st, svc):
+    """Read-only doctor view; legacy failed/rolled_back receipts remain recognizable."""
+    rec = failure(st)
+    if not rec:
+        return None
+    recovered = (rec.get('status') == 'rolled_back' or rec.get('reason') == 'rolled_back')
+    if recovered and svc.get('active') == 'active':
+        return ('warn', '已自动退回旧版、服务正常。 / Agent J automatically rolled back to the previous version; '
+                'the service is running normally.')
+    return ('fail', failure_text(rec) if not recovered else
+            '已退回旧版，但服务尚未恢复正常。 / Rolled back, but the service is not running normally.')

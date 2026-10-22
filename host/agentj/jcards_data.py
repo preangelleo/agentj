@@ -58,11 +58,14 @@ def note_snapshot(raw):
     return {'revision': _revision(raw), 'entries': entries}
 
 
-def note_change(root, cid, op, entry=None, revision=None, text=None):
+def note_change(root, cid, op, entry=None, revision=None, text=None, title=None, date=None):
     c = cards.find(root, cid)
     fail = lambda why: {'ok': False, 'id': cid, 'why': why}
     if not c or not c['on'] or c['doc']['template'] != 'notes' or cid == 'automation':
         return fail('not_found')
+    if c and cid == 'notes' and c['official'] and c['on']:
+        from . import jcards_notes
+        return jcards_notes.change(root, c, op, entry, revision, text, title, date)
     if op not in ('add', 'edit', 'delete'):
         return fail('bad_op')
     if op != 'delete' and (not isinstance(text, str) or not text.strip() or len(text.encode('utf-8')) > 16384 or '\x00' in text):
@@ -120,7 +123,7 @@ def note_change(root, cid, op, entry=None, revision=None, text=None):
         return fail('refused')
 
 
-def phone_change(root, cid, op, entry=None, revision=None, text=None):
+def phone_change(root, cid, op, entry=None, revision=None, text=None, title=None, date=None):
     """Paired card mutations only; never dispatch a prompt or accept a storage path."""
     fail = lambda why: {'ok': False, 'id': cid, 'why': why}
     if op not in ('add', 'edit', 'delete'):
@@ -128,7 +131,7 @@ def phone_change(root, cid, op, entry=None, revision=None, text=None):
     if op != 'delete':
         if not isinstance(text, str) or not text.strip() or '\x00' in text or len(text.encode()) > 16384:
             return fail('bad_text')
-        if privacy.redact(text, owner=True) != text:
+        if privacy.redact(text, owner=True) != text or (cid == 'notes' and isinstance(title, str) and privacy.redact(title, owner=True) != title):
             return fail('looks_like_a_secret')
     c = cards.find(root, cid)
     if not c or not c['on']:
@@ -138,10 +141,7 @@ def phone_change(root, cid, op, entry=None, revision=None, text=None):
     if op != 'add' and not isinstance(revision, str):
         return fail('conflict')
     if c['doc']['template'] == 'notes':
-        if op == 'add':
-            import datetime
-            text = datetime.date.today().isoformat() + ' ' + text.strip()
-        return note_change(root, cid, op, entry, revision, text)
+        return note_change(root, cid, op, entry, revision, text, title, date)
     if cid != 'todo' or not c['official']:
         return fail('bad_op')
     from . import jcards_todo

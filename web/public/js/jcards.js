@@ -183,19 +183,26 @@ export async function render(body, id, hooks) {
       for (const [op, key] of [['copy','copy'],['edit','edit'],['delete','delete']]) {
         const b = button('', async () => {
           if (op === 'copy') { await copyButton(it.text, b); return; }
-          const text = op === 'edit' ? await editNote(it.text) : undefined;
+          const fields = id === 'notes' && c?.official && m.noteFields === true;
+          const text = op === 'edit' ? await editNote(it.text, undefined, t('p386.edit'), fields ? it : null) : undefined;
           if (op === 'edit' && text === null) return;
           if (op === 'delete' && !await confirmSheet(t('p386.delete'), it.text, t('p386.delete'))) return;
           if (e !== view || !body.isConnected) return;
           b.disabled = true;
-          const result = await ask1({t:'jcard_note',id,entry:it.id,revision:m.revision,op,...(op==='edit'?{text}:{})},'jcard_note',15000);
+          const result = await ask1({t:'jcard_note',id,entry:it.id,revision:m.revision,op,...(op==='edit'?(fields?text:{text}):{})},'jcard_note',15000);
           if (e !== view || !body.isConnected) return;
           if (result.ok) render(body,id,hooks); else if (result.why === 'conflict' || result.why === 'changed') { const expected=view+1; await render(body,id,hooks); if(view===expected&&body.isConnected)body.prepend(node('p',t('p386.changed'),'jc-note')); } else { b.disabled=false; const error=node('p',t(result.why==='looks_like_a_secret'?'p415.secret':result.why==='changed'?'p386.changed':'p386.failed'),'jc-note'); entry.append(error); }
         }, 'jc-entry-icon');
         if (op === 'edit' && it.editable === false) b.disabled = true;
         b.setAttribute('aria-label', t('p386.'+op)); b.title=t('p386.'+op); b.dataset.noteOp=op; b.append(icon(key)); acts.append(b);
       }
-      const prose=node('div',undefined,'fp-prose'); prose.append(RelayMD.toDOM(RelayMD.parse(String(it.text)),document)); entry.append(acts,prose); RAW.set(entry,String(it.text)); stack.append(entry);
+      const prose=node('div',undefined,'fp-prose'); prose.append(RelayMD.toDOM(RelayMD.parse(String(it.text)),document)); if(id === 'notes' && c?.official) {
+        if(it.title) entry.append(node('strong',String(it.title),'jc-note-title'));
+        entry.append(prose);
+        if(it.date) { const date=node('time',String(it.date),'jc-note-date'); date.dateTime=String(it.date); entry.append(date); }
+        entry.append(acts);
+      } else entry.append(acts,prose);
+      RAW.set(entry,String(it.text)); stack.append(entry);
     }
     box.append(stack);
   } else if (m.template === 'automation' && Array.isArray(m.items)) {
@@ -237,8 +244,14 @@ export async function render(body, id, hooks) {
       if (acts[0]) main.setAttribute('aria-label', `${acts[0].label}：${it.text}`); else main.disabled = true;
       li.append(main);
       if (id === 'todo' && c?.official) {
+        li.classList.add('jc-todo-item');
+        const footer = node('div', undefined, 'jc-todo-footer');
+        const meta = main.querySelector('.jc-todo-meta');
+        if (meta) meta.parentElement.append(meta); // keep labels in the toggle, after the full-width note
+        const actions = node('div', undefined, 'jc-todo-actions');
+        footer.append(actions); li.append(footer);
         for (const op of ['edit', 'delete']) {
-          const b = button(t('p386.' + op), async () => {
+          const b = button('', async () => {
             if (op === 'delete' && !await confirmSheet(t('p386.delete'), it.text, t('p386.delete'))) return;
             const save = async text => {
               if (e !== view || !body.isConnected) return false;
@@ -248,9 +261,10 @@ export async function render(body, id, hooks) {
               render(body,id,hooks); return true;
             };
             if (op === 'edit') editNote(it.text, save); else await save();
-          }, 'jc-chip');
+          }, 'jc-entry-icon');
           if (op === 'edit' && it.editable === false) b.disabled = true;
-          b.dataset.todoOp = op; li.append(b);
+          b.setAttribute('aria-label', t('p386.' + op)); b.title = t('p386.' + op);
+          b.dataset.todoOp = op; b.append(icon(op)); actions.append(b);
         }
       }
       for (const a of acts.slice(1)) li.append(button(a.label, () => run(a, hooks, id, it.id, again), 'jc-chip'));
@@ -483,24 +497,36 @@ export function renderSettings(hooks) {
 }
 
 // P415: owner edits remain local until an explicit save on the paired card channel.
-export function directAdd(id, hooks) {
+export async function directAdd(id, hooks) {
   const generation = epoch;
+  const snapshot = id === 'notes' ? await ask1({t:'jcard_get',id,lang:lang()},'jcard_get',15000) : null;
+  if(generation !== epoch) return null;
+  if(id === 'notes' && !snapshot?.ok) { toast(t('p386.failed')); return null; }
+  const fields = id === 'notes' && snapshot.noteFields === true;
   return editNote('', async text => {
     if (generation !== epoch) return false;
-    const r = await ask1({t:'jcard_note', id, op:'add', text}, 'jcard_note', 15000);
+    const r = await ask1({t:'jcard_note', id, op:'add', ...(fields?text:{text})}, 'jcard_note', 15000);
     if (generation !== epoch) return false;
     if (!r.ok) { toast(t(r.why === 'looks_like_a_secret' ? 'p415.secret' : 'p386.failed')); return false; }
     toast(t('p415.saved')); hooks.nav('card/' + id + (id === 'notes' ? '#latest' : '#' + r.item.id)); return true;
-  }, t(id === 'notes' ? 'p415.addNote' : 'p415.addTodo'));
+  }, t(id === 'notes' ? 'p415.addNote' : 'p415.addTodo'), fields ? {title:''} : null);
 }
-function editNote(value, save, label = t('p386.edit')) {
+function editNote(value, save, label = t('p386.edit'), fields = null) {
   return new Promise(resolve=>{
     const opener=document.activeElement, dialog=node('dialog',undefined,'jc-dialog'), title=node('h2',label), input=node('textarea'); input.value=value; input.setAttribute('aria-label',label); input.maxLength=16000;
+    let titleInput=null;
+    if(fields) {
+      dialog.dataset.noteFields='1';
+      titleInput=node('input'); titleInput.type='text'; titleInput.value=fields.title||''; titleInput.maxLength=1024;
+      titleInput.setAttribute('aria-label',t('p474.title')); titleInput.placeholder=t('p474.title');
+      input.setAttribute('aria-label',t('p474.content')); input.placeholder=t('p474.content');
+    }
+    const result=()=>fields?{text:input.value,title:titleInput.value,...(fields.date?{date:fields.date}:{})}:input.value;
     let busy=false, closed=false;
     const done=v=>{if(closed)return;closed=true;dialog.close();dialog.remove();if(opener?.isConnected)opener.focus({preventScroll:true});resolve(v);};
-    const submit=async()=>{if(busy||!input.value.trim())return;busy=true;ok.disabled=true;try{if(!save||await save(input.value))done(input.value);}finally{busy=false;ok.disabled=false;}};
+    const submit=async()=>{if(busy||!input.value.trim())return;busy=true;ok.disabled=true;try{if(!save||await save(result()))done(result());}finally{busy=false;ok.disabled=false;}};
     const ok=button(t('p386.save'),submit), clip=button(t('p415.paste'),async()=>{try{const text=await navigator.clipboard.readText();if(dialog.isConnected&&text)input.setRangeText(text,input.selectionStart,input.selectionEnd,'end');input.focus();}catch{toast(t('p415.pasteHelp'));}});
-    dialog.append(title,input,clip,button(t('p386.cancel'),()=>{done(null);}),ok);
+    dialog.append(title,...(titleInput?[titleInput]:[]),input,clip,button(t('p386.cancel'),()=>{done(null);}),ok);
     dialog.addEventListener('cancel',e=>{e.preventDefault();done(null);});
     dialog.addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.metaKey||e.ctrlKey)&&!e.isComposing){e.preventDefault();e.stopPropagation();submit();}});
     document.body.append(dialog);dialog.showModal();input.focus();

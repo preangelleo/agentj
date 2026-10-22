@@ -13,11 +13,10 @@ test('P448 gesture guard is delegated, scoped, cancellable and leaves taps/scrol
  }
  assert.equal(controlTarget(null),null);
 });
-test('P448 state pairs use only approved palette entries and pass strict 4.5:1',()=>{
- // Leo palette v2: Sage Sensation, Sooty, Noir, Lotion (2026-10-12).
- const approved=new Set(['#b7e396','#141414','#2c2b26','#faf9f5']);
- for(const [bg,fg] of [['#b7e396','#141414'],['#2c2b26','#faf9f5']]){assert.ok(approved.has(bg)&&approved.has(fg));assert.ok(contrast(bg,fg)>=4.5)}
+test('P458 only approval interaction colours survive the P448 rollback',()=>{
  const css=readFileSync(new URL('../public/controls.css',import.meta.url),'utf8');
- for(const hex of css.match(/#[0-9a-f]{6}/gi)||[])assert.ok(approved.has(hex.toLowerCase()),hex);
+ assert.ok(contrast('#2c2b26','#faf9f5')>=4.5);
+ assert.match(css,/:is\(#elev-allow,\.apprallow\):is\(:hover,:active,:focus\)/);
  assert.match(css,/user-select:none/);assert.match(css,/-webkit-touch-callout:none/);
+ assert.doesNotMatch(css,/control-primary|control-hover|:disabled|transition-property/);
 });

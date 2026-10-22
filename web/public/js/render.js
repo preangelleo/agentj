@@ -140,7 +140,7 @@ export const dark = () => {
   const th = document.documentElement.getAttribute('data-theme');
   return th === 'dark' || (th !== 'light' && !!window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches);
 };
-async function drawMermaid(m, src, theme) {
+async function drawMermaid(m, src, theme, replyBody = false) {
   if (mTheme !== theme) {
     m.initialize({ startOnLoad: false, securityLevel: 'strict', htmlLabels: false, flowchart: { htmlLabels: false },
       theme, darkMode: theme === 'dark', fontFamily: MMD_FONT, themeVariables: { fontFamily: MMD_FONT, darkMode: theme === 'dark' },
@@ -154,7 +154,10 @@ async function drawMermaid(m, src, theme) {
     const w = vb ? Math.ceil(+vb[3]) : 0, h = vb ? Math.ceil(+vb[4]) : 0;
     if (!(w > 0 && h > 0)) return null;
     // the root's width="100%" gives an image no size of its own: pin the viewBox size instead
-    const s = svg.replace(/^<svg\b([^>]*?)\swidth="[^"]*"/, `<svg$1 width="${w}" height="${h}"`);
+    let s = svg.replace(/^<svg\b([^>]*?)\swidth="[^"]*"/, `<svg$1 width="${w}" height="${h}"`);
+    // P477: Mermaid is an image; page CSS cannot reach its text. Scope the override
+    // inside this SVG only when its source belongs to the reply body. Shapes stay intact.
+    if (replyBody) s = s.replace('</svg>', `<style>#${id} text,#${id} tspan{fill:#faf9f5!important;color:#faf9f5!important}</style></svg>`);
     return { url: URL.createObjectURL(new Blob([s], { type: 'image/svg+xml' })), w, h };
   } catch { return null; } finally {
     for (const x of [document.getElementById('d' + id), document.getElementById(id)]) if (x) x.remove();
@@ -163,11 +166,12 @@ async function drawMermaid(m, src, theme) {
 async function diagram(wrap) {
   const c = wrap.querySelector('pre > code'), src = c ? c.textContent : '';
   if (!c || !src.trim() || src.length > LIMIT.mermaid) return done(wrap, 'x');
-  const theme = dark() ? 'dark' : 'neutral', key = theme + '\u0000' + src;
+  const replyBody = !!wrap.closest('.rm #words');
+  const theme = dark() ? 'dark' : 'neutral', key = theme + (replyBody ? ':reply' : '') + '\u0000' + src;
   let r = cget(caches.mmd, key);
   if (r === undefined) {
     const m = await load('mermaid');
-    r = await (mq = mq.then(() => drawMermaid(m, src, theme), () => drawMermaid(m, src, theme)));
+    r = await (mq = mq.then(() => drawMermaid(m, src, theme, replyBody), () => drawMermaid(m, src, theme, replyBody)));
     cput(caches.mmd, key, r);
   }
   if (!wrap.isConnected || c.textContent !== src) return;

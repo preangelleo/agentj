@@ -1733,6 +1733,13 @@ class Elevator:
                 await w.drain()
                 w.close()
                 return
+            if isinstance(req, dict) and req.get("t") == "host_diagnostics":
+                from . import host_diagnostics
+                res = await asyncio.to_thread(host_diagnostics.execute, self.st, req)
+                w.write((json.dumps(res, ensure_ascii=False) + "\n").encode())
+                await w.drain()
+                w.close()
+                return
             if isinstance(req, dict) and req.get("t") == "upgrade":
                 # P205: `agentj update apply` inside the Agent fence cannot see the state directory: the host caches the old
                 # wheel, writes the pending record / marker, rolls back and runs the post-upgrade doctor (update.host_op).

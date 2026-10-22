@@ -3310,7 +3310,7 @@ stopped, has no Agent / seat, or the sid is already taken. A `term_line` refused
 
 No new messages. Collapse (grabber drag, exit icon, Esc) keeps the session; `term_close` only from 「结束」. A collapsed page
 still sends `term_close {why:"background"}` after the document is hidden 60 s, as before.
-P415: jcard_note add prefixes notebook text with the host local date. To-do responses include item.id; jcard_get supplies its full-file revision. Secret-shaped text is refused with looks_like_a_secret; no mutation dispatches to the Agent.
+P474 supersedes P415 for the official Notebook: jcard_note add stores the host local date separately from text. To-do responses include item.id; jcard_get supplies its full-file revision. Secret-shaped text is refused with looks_like_a_secret; no mutation dispatches to the Agent.
 
 
 ### §34.4 P420 global palette library
@@ -3410,3 +3410,6 @@ discovered calendar href and partition host stay in calendar.json; no `jcard_cal
 ### P447 first-remote success hint
 
 After first approval and ready, host sends encrypted `{t:"pair_guide",kind:"phone"|"computer"|"other"}` once per host using the existing onboarding welcome marker. It is display-only. Phone suggests reverse-pairing the usual computer at m.agentj.app; computer suggests Settings → Remotes → Add a remote for the phone. Unknown kind is ignored. No control signature, password, key or authorization is conveyed. Reconnect and subsequent remotes do not trigger it.
+
+
+P474 — Official `notes` responses advertise `noteFields:true` with entries `{id,title,text,date,editable}`; title may be empty, migrated undated entries have an empty date. Paired `jcard_note` add/edit accepts optional `title` and ISO `date`; `text` is content only. Add defaults to the host local date, edit preserves omitted fields; explicit empty title clears it. CLI `--date` defaults to today on add/edit. Old devices omitting title/date remain compatible. New web clients enable title editing only when the host advertises noteFields. A first read migrates legacy leading dates after an exclusive byte-exact 0600 backup; cut/malformed input is refused. Other notebook templates retain byte-span edits and legacy fields.

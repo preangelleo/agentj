@@ -1,15 +1,15 @@
 ---
 document: agentj-install
-version: 0.27.2
-released: 2026-10-21
+version: 0.27.3
+released: 2026-10-22
 status: beta (anyone can sign up; not advertised yet, pages are not indexed)
 host_package: agentj (the `agentj` command)
-host_version: 0.25.2a1
-source_tag: v0.25.2a1
-host_wheel: agentj-0.25.2a1-py3-none-any.whl
-host_wheel_sha256: 01f344b1a20656df09c0bff68da88e65c2705781dff1dd40103869a80b952db3
-host_sdist: agentj-0.25.2a1.tar.gz
-host_sdist_sha256: 40825f761972a3ed3bbcc2b02cba6b7c77d827b1bc1a3d3656e2d787c64f9289
+host_version: 0.25.3a1
+source_tag: v0.25.3a1
+host_wheel: agentj-0.25.3a1-py3-none-any.whl
+host_wheel_sha256: 415837d9e87b47000a223606f7e1e0833a53fbde43e51fe5d6f4698d1caf9817
+host_sdist: agentj-0.25.3a1.tar.gz
+host_sdist_sha256: dac0ba973e03c22d58b7e6c630cbc3e92450a36f376fc6dc1226e7be7587584f
 canonical_url: https://agentj.app/install.md
 sha256_url: https://agentj.app/install.md.sha256
 alias: https://agentjarvis.net/install.md (the older address: the same file, kept for one more version)
@@ -726,7 +726,7 @@ DeepSeek says a preview may break; Agent J was measured on 0.2.0-rc.2.
 carry over). So start every command line from here on with `export PATH="$HOME/.local/bin:$PATH";` — or call
 `~/.local/bin/agentj` by its full path. This document writes `agentj` for short.
 
-The program is pinned to one release: the tag `v0.25.2a1` (front matter `source_tag`). The tag never moves, and its
+The program is pinned to one release: the tag `v0.25.3a1` (front matter `source_tag`). The tag never moves, and its
 `host/` folder is byte for byte the same code as the two files on our site whose SHA-256 is in this document's front matter.
 ```bash
 cd ~/.agentj-install
@@ -737,7 +737,7 @@ uv tool install "./$W"
 
 Intel Mac: this release keeps `cryptography<49` because newer releases lack an Intel macOS wheel. If an older installer tries to compile OpenSSL (`openssl-sys` / OpenSSL not found), rerun `uv tool install --with "cryptography<49" "./$W"`. The same platform constraint applies to `agentj update apply`.
 
-export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.25.2a1
+export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.25.3a1
 export PATH="$HOME/.local/bin:$PATH"; agentj doctor
 ```
 **Your human's own terminal must find `agentj` too** — they may use `agentj passphrase set` and `agentj pair` as a local alternative
@@ -765,16 +765,16 @@ echo "$WS  $W" | sha256sum -c - && echo "$SS  $S" | sha256sum -c -    # macOS: s
 uv tool install "./$W"          # the wheel; its dependencies come from PyPI or the mirror in UV_DEFAULT_INDEX
 ```
 `uv tool install "./$S"` installs from the checked source archive instead (it builds the same program).
-`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.25.2a1`); it is
-numbered separately from this document (`0.27.2`).
+`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.25.3a1`); it is
+numbered separately from this document (`0.27.3`).
 
-Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.25.2a1#subdirectory=host"`.
+Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.25.3a1#subdirectory=host"`.
 
-Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.25.2a1#subdirectory=host"` (needs Python 3.11+).
+Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.25.3a1#subdirectory=host"` (needs Python 3.11+).
 
 **What each route checks.** The wheel and the source archive above are checked against the SHA-256 in this document. Each
 also has a minisign signature beside it (`<file>.minisig`, key `B79F925B0585F9D4` — front matter `signature`), which
-`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.25.2a1`
+`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.25.3a1`
 routes check **neither**: Git trusts GitHub's HTTPS and the tag name, and nothing compares that code with this document.
 Use them only when the checked files cannot be downloaded, and say so in the final feedback.
 `agentj doctor` lists what is ready and what is not (prerequisites, the fence, connectivity, which agents are usable).
@@ -1750,7 +1750,7 @@ Nightly automatic installation is enabled by default and verifies the official w
 In a shared session (the default of 0.13–0.19), reinstall directly using Step 4's checked wheel (SHA-256 must match this document and
 its public GitHub copy), preserving the host's identity, paired phones, account and preferences:
 ```bash
-uv tool install --force "./agentj-0.25.2a1-py3-none-any.whl"
+uv tool install --force "./agentj-0.25.3a1-py3-none-any.whl"
 agentj --version
 agentj service install
 agentj service restart
@@ -1759,7 +1759,7 @@ agentj doctor
 The matching published tag is another source, after verifying the tag object against the upgrade email (no signature or
 hash check on this route — Step 4):
 ```bash
-uv tool install --force "git+https://github.com/preangelleo/agentj@v0.25.2a1#subdirectory=host"
+uv tool install --force "git+https://github.com/preangelleo/agentj@v0.25.3a1#subdirectory=host"
 ```
 **0.14 independent session** (`agent.session_mode=independent`): 0.14's fence keeps Agent J's own program read-only and
 hides the service manager, so the Agent on the phone cannot reinstall or restart from inside it (measured: the install
@@ -1785,11 +1785,11 @@ prints something and `uv tool list` (or `pipx list`) shows `agentjarvis-host`, t
 the new name, then:
 ```bash
 jarvis service uninstall      # stop the old service first (Step 10 used tmux / nohup instead? stop that process)
-uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.25.2a1#subdirectory=host"
+uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.25.3a1#subdirectory=host"
 agentj doctor
 agentj service install        # start it again under the new name (or the tmux / nohup fallback, Step 10)
 ```
-With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.25.2a1#subdirectory=host"`.
+With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.25.3a1#subdirectory=host"`.
 - After the move, `agentj` puts back a `jarvis` command (a link to `agentj`, only if no other `jarvis` exists) for one more
   version; it prints a notice that points here. New installs never get `jarvis`.
 - The state moves from `~/.local/state/agentjarvis-alpha` to `~/.local/state/agentj` on the first run of `agentj` **after your
@@ -3173,9 +3173,9 @@ Offer local fallback only on Apple Silicon with at least 16GB RAM and 20GB free 
 
 Settings → Safety → Web terminal: the Agent J host's command line in a computer browser (line mode, one whole line at a time). It works only in a computer browser; a phone only says why (for safety and convenience), and the host refuses a remote that paired as a phone by the device type recorded at pairing. Off by default; the owner can tap Switch on and open in a computer browser, confirm with Face ID and type the host's login password once (checked by sudo) to switch it on for that browser and open it right away — or run `agentj terminal enable` in the host's own terminal, check a 6-digit match code and confirm with Face ID on a remote that has it. An Agent or a script cannot. Every open needs Face ID; while no computer login password is remembered, the terminal page asks for it once (end-to-end encrypted). A session lasts at most 15 minutes (`--minutes` up to 60) and closes after 5 idle minutes, 60 s with the browser in the background, a dropped connection or Stop everything; it is recorded in full and the recording stays on the host for 30 days. Version 1: Linux / WSL only, with a sudo that asks for a password. A friend uses a remote in their own computer browser, allowed for a while with `agentj terminal allow <device> --hours 2`. It is not a fallback when the connection is down. Never run `enable` or `allow` for the owner; point them to https://agentj.app/docs/web-terminal/ when they ask.
 
-聊天里以 `!` 开头的消息在网页终端里运行，结果卡片显示输出后交给 Agent。电脑密码只以加密形式存在电脑上，各遥控器用自己的 Face ID 解开（第一次输一次；「设置」→「安全」→「电脑密码」→「让这台也能用」由另一台已能用的遥控器扫脸同意），sudo 卡和终端都能用；防备份、离线拷贝和 Agent 直接读文件，不防能改 Agent J 代码或用户服务的程序。Agent 只能用 `agentj terminal open --cmd` 打开终端并填好命令（从不替主人发送），用 `agentj terminal output` 读输出；`!`输出和终端输出会额外遮挡密码、密钥后发给 AI 模型服务商，提醒主人不要在终端里打印密钥。
+聊天里以 `!` 开头的消息在网页终端里运行，结果卡片显示输出后交给 Agent。电脑密码只以加密形式存在电脑上，各遥控器用自己的 Face ID 解开（第一次输一次；「设置」→「安全」→「电脑密码」→「让这台也能用」由另一台已能用的遥控器扫脸同意），sudo 卡和终端都能用；防备份、离线拷贝和 Agent 直接读文件，不防能改 Agent J 代码或用户服务的程序。Agent 只能用 `agentj terminal open --cmd` 打开终端并填好命令（从不替主人发送），用 `agentj terminal output` 读输出；`!`输出和终端输出会尽量遮挡常见的密码和密钥，再发给 AI 模型服务商，提醒主人不要在终端里打印密钥。
 
-A chat message that starts with `!` runs in the web terminal; a result card shows the output, which then goes to the Agent. The computer password is stored only encrypted on the computer and each remote unlocks it with its own Face ID (typed once; Settings → Safety → Computer password → Use it on this device too, agreed with Face ID on a remote that can already use it); it works on sudo cards and in the terminal. It protects against backups, offline copies and the Agent reading files, not against a program that can change Agent J's code or user services. The Agent can only open the terminal with `agentj terminal open --cmd` (a line filled in, never sent for the owner) and read it with `agentj terminal output`; that output and `!` output reach the AI model provider after an extra mask of passwords and keys, so tell the owner not to print secrets there.
+A chat message that starts with `!` runs in the web terminal; a result card shows the output, which then goes to the Agent. The computer password is stored only encrypted on the computer and each remote unlocks it with its own Face ID (typed once; Settings → Safety → Computer password → Use it on this device too, agreed with Face ID on a remote that can already use it); it works on sudo cards and in the terminal. It protects against backups, offline copies and the Agent reading files, not against a program that can change Agent J's code or user services. The Agent can only open the terminal with `agentj terminal open --cmd` (a line filled in, never sent for the owner) and read it with `agentj terminal output`; that output and `!` output reach the AI model provider after an attempt to hide common passwords and keys, so tell the owner not to print secrets there.
 
 网页终端的命令历史只存在 Agent J 自己的状态目录里，不读也不写 `~/.bash_history`；以空格开头的行、和上一行重复的行、像在设置密钥或密码的行都不记。
 
@@ -3291,3 +3291,44 @@ Copy controls in Notebook, messages and code blocks briefly show ✓ “Copied�
 长按图标或工具栏按钮会执行对应动作，不会选中周边图标，也不会弹出系统文字菜单。回复正文、消息和代码仍可长按选择、复制。按钮悬停、按下、键盘聚焦或暂不可用时，文字仍保持清晰；暂不可用的按钮不会执行操作。
 
 Holding an icon or toolbar button runs its shortcut without selecting nearby controls or opening the system text menu. Reply text, messages and code remain selectable and copyable. Button labels stay readable on hover, while pressed, with keyboard focus and when unavailable. Unavailable buttons do not run actions.
+
+屏幕中央的圆形提示只显示一个简短状态词，中文最多四个字，例如「已发送」「已复制」「已保存」；英文只用一个单词。需要说明原因或下一步的长提示会在原位置显示成圆角方形，保留全文和原来的自动消失时间，深浅模式都用 Noir 底、Lotion 字。
+
+Centred circular notices show one short status word: Sent, Copied or Saved (up to four Chinese characters). Longer explanations use a rounded rectangle in the same centre position, keeping the full text and the original automatic dismissal time. Both shapes use Noir with Lotion text in light and dark mode.
+### Provider setup (0.25.3 source candidate) / 服务商配置
+
+Models & API keys shows OpenCode auxiliary model routes and offers passkey-confirmed alignment with the main model. Limit notices keep unknown sources/windows/reset times explicit. Ark and Bailian rows can check the exact local key against fixed same-vendor endpoints, then offer a confirmed move without overwriting a different target key. Bailian's old Coding Plan row is repair-only. Ark's confirmed Agent Plan/Coding Plan repair reuses the local key and verifies the same model before switching. Keys never go into chat.
+
+「模型和 API Key」显示 OpenCode 辅助模型归属，可用审批通行密钥确认统一到主模型。限额来源、窗口或恢复时间未知时如实标明。方舟、百炼可核对本地 Key 的套餐归属，再一键挪到正确一行，不覆盖目标行已有的不同 Key；百炼旧 Coding Plan 行仅供修正。方舟 Agent Plan/Coding Plan 不匹配时，紧急修复复用本地 Key，验证同名模型后切换。Key 不进聊天。
+
+### Native menus and background status
+
+Shared Claude native Rewind is dismissed with one Esc and a phone notice. Recognized menus offer the existing paired-device signed question card; limit menus show only the terminal-reported reset time and explicit owner choices (credits/upgrades may cost money). Never infer a reset time or auto-select a paid option. A changed/closed menu withdraws the card; unknown menus use Settings → Safety → Emergency repair → Reopen AI session. Background `busy --pid` items live as long as the process (no 12-hour expiry); PID-less items retain the 12-hour TTL. Agent J-owned OpenCode servers follow installed-version changes before the next message and preserve the conversation; doctor compares running/installed versions. Owner-started attached servers remain owner-managed.
+### Upgrade rolled back but the service is healthy
+
+When `upgrade-restart` says Agent J automatically rolled back and the service is running normally, it is a warning: the upgrade failed, but the previous version is usable. Run `agentj service start` to acknowledge this completed recovery, then `agentj doctor`; the next successful upgrade also clears it. If the service is inactive, treat it as a failure. For a `doctor_failed` upgrade, the manager worker records only failing check IDs in `service-recovery.log` on macOS (and the worker journal on Linux), plus `upgrade_health_failed` in local `host.log`; do not send raw logs without redacting them.
+### 输入框按钮顺序 / Message box button order
+
+设置 → 语言和外观里的五个按钮（文件、图片、拍照、麦克风、展开全屏）都可拖动排序；旧版保存的四项顺序会保留，并把展开全屏补在末尾。
+
+All five message box buttons (File, Photos, Camera, Mic and Expand full screen) can be reordered in Settings → Language and appearance. Existing four-button orders keep their order, with Expand full screen appended.
+
+<!-- P467: host diagnostics -->
+While OpenCode, Kimi Code, Qwen Code or DeepSeek is busy, the bare `/model` list and `/status`, `/context` and `/cost` queries do not wait for the turn to finish. A query taking over 5 seconds shows a notice. Changes such as switching models or clearing a conversation are cancelled after 10 seconds in the queue: press Stop and retry. Cancelled commands never run later. `agentj devices --json` lists public device details and whether a passkey is present; it excludes pairing secrets, reconnect tokens and passkey material.
+<!-- P468: connection checks and support -->
+
+切换 AI 后，连接自检和客服反馈由电脑后台完成，Agent 只读取结果，不需要读取本机钥匙文件。若聊天已正常、自检暂时没返回，可以继续聊天；这不表示切换失败。反馈收到编号才算已提交，没收到时稍后重试。
+
+After switching the AI, connection checks and support feedback run in the computer’s background service. The Agent reads the results without opening local key files. If chat works and the check has not returned, keep chatting; this does not mean the switch failed. Feedback is confirmed only when a ticket ID is returned; otherwise try later.
+
+### OpenCode context water level / 上下文水位
+
+For OpenCode, the water level uses the model’s reported context limit first, then a built-in model table. If neither is available, it uses 200,000 tokens, based on the free DeepSeek Flash window. This display default is not a provider capacity guarantee. Used tokens still come from OpenCode; no reading is invented before usage arrives.
+
+OpenCode 的水位优先采用模型提供的上下文上限；没有上限时使用内置模型表，再查不到就按 200,000 token 显示（参考免费 DeepSeek Flash 的窗口）。这是显示用的默认值，不代表服务商承诺的容量。已用 token 仍来自 OpenCode；尚未返回用量时不编造读数。
+
+### Notebook fields / 记事本字段
+
+Notebook entries keep an optional title, content and date separately. Copy copies only the content; the three line icons sit at the bottom right. Add and Edit have a title (optional) and a content box. `agentj card note add|edit --text '<content>' --title '<optional title>' --date YYYY-MM-DD` keeps these fields separate; --date defaults to today for add and edit. The host backs up the original notes.md byte-for-byte before one-time migration of leading dates.
+
+记事本的标题（可空）、内容、日期分开保存。复制只拷内容，三个线条图标在每条右下角；新增和编辑分标题（可空）与内容两个框。`agentj card note add|edit --text '<内容>' --title '<可空标题>' --date YYYY-MM-DD` 分别传入字段，新增和编辑的日期缺省今天。旧 notes.md 首次提取行首日期前逐字节备份。

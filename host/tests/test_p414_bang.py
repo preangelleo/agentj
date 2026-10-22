@@ -83,7 +83,7 @@ class AgentMask(unittest.TestCase):
 class BangBoundary(unittest.TestCase):
     """Mask the complete collected output before choosing its head and tail."""
 
-    def finish(self, text, cuts=(), line="echo harmless", state="done"):
+    def finish(self, text, cuts=(), line="echo harmless", state="done", carriage=False):
         desk = term_bang.BangDesk()
         desk.clock = lambda: 0
         got = []
@@ -91,8 +91,9 @@ class BangBoundary(unittest.TestCase):
             got.append(args)
         desk._bang_turn = capture
         desk.h = types.SimpleNamespace(_bg=lambda coro, _: asyncio.run(coro))
-        x = types.SimpleNamespace(sudo_hold=0)
+        x = types.SimpleNamespace(sudo_hold=0, masker=types.SimpleNamespace(carriage_count=0))
         desk.bang_start(x, SID, line)
+        x.masker.carriage_count = int(carriage)
         start = 0
         for end in (*cuts, len(text)):
             desk.bang_out(x, text[start:end], False)
@@ -231,6 +232,86 @@ class BangBoundary(unittest.TestCase):
         self.assertFalse(cut)
 
 
+class P455Multiline(unittest.TestCase):
+    """R2/R3 boundaries are inherited; R4 and ten adversarial spellings use synthetic values only."""
+    finish = BangBoundary.finish
+
+    CASES = (
+        'password: |\n  synthetic alpha!\n',
+        'DB_PASS: >-\n  synthetic alpha!\n',
+        'DB_PASS=\n  synthetic alpha!\n',
+        '{"credentials": {\n "nested": ["synthetic alpha!"]\n}}\n',
+        'api_keys = [\n "synthetic alpha!",\n]\n',
+        '[database.credentials]\nvalue = "synthetic alpha!"\n',
+        'password=first\\\nsynthetic alpha!\n',
+        'password:\rsynthetic alpha!\n',
+        'password=placeholder\rsynthetic alpha!\n',
+        'password=x\rsynthetic alpha!\n',
+        'DB_PASS: x\rsynthetic alpha!\n',
+        '--password x\rsynthetic alpha!\n',
+        'ｐａｓｓｗｏｒｄ： |\n  synthetic alpha!\n',
+        'pаsswоrd: |\n  synthetic alpha!\n',
+        'toκen = [\n "synthetic alpha!"\n]\n',
+        'pass\u200bword: synthetic alpha!\n',
+        '𝓹𝓪𝓼𝓼𝔀𝓸𝓻𝓭: synthetic alpha!\n',
+        '"\\u0070assword": {\n "v": "synthetic alpha!"\n}\n',
+        'credentials:\n- value: synthetic alpha!\n',
+        'DB_PASS: "placeholder"\n  synthetic alpha!\n',
+        'password: |2+ # block\n  synthetic alpha!\n',
+        'AUTH = { nested = [\n "synthetic alpha!"\n]}\n',
+        '\x1b[31mPASSWORD\x1b[0m: >\n  synthetic alpha!\n',
+    )
+
+    def test_r4_and_ten_attack_spellings(self):
+        from agentj.term_mask import Masker
+        for case in self.CASES:
+            for state in ('done', 'running', 'closed'):
+                for width in (1, 7, 4096):
+                    with self.subTest(case=case, state=state, width=width):
+                        masker, parts = Masker(), []
+                        for i in range(0, len(case), width):
+                            parts.append(masker.feed(case[i:i + width]))
+                        parts.append(masker.close())
+                        # Real upstream Masker, then the same capture/end path as production.
+                        text = 'ordinary prefix\n' + ''.join(parts)
+                        args = self.finish(text, tuple(range(3, len(text), 11)), state=state,
+                                           carriage=bool(masker.carriage_count))
+                        self.assertNotIn('synthetic', args[2] + args[3])
+                        self.assertEqual(args[5], 1)
+                        self.assertIn('ordinary prefix', args[3])
+
+    def test_post_fix_attacker_ten_variants(self):
+        cases = (
+            'password: &anchor |+\n  synthetic audit!\n',
+            '[[service.credentials]]\nv = "synthetic audit!"\n',
+            '{"creden\\u0074ials": [\n "synthetic audit!"\n]}\n',
+            'pa\u0301ssword: >2-\n  synthetic audit!\n',
+            'API＿KEY＝{\n v="synthetic audit!"\n}\n',
+            'ρаѕѕwоrd: synthetic audit!\n',
+            '"db_pass": {"x": [\n "synthetic audit!"\n]}\n',
+            'SECRET = "first" \\\nsynthetic audit!\n',
+            'DB_PASS: initial\n\n# comment\n  synthetic audit!\n',
+            'password:\r\n  synthetic audit!\n',
+        )
+        for case in cases:
+            for state in ('done', 'running', 'closed'):
+                with self.subTest(case=case, state=state):
+                    args = self.finish(case, tuple(range(1, len(case))), state=state)
+                    self.assertNotIn('synthetic', args[3])
+                    self.assertEqual(args[5], 1)
+
+    def test_direct_guard_and_structural_overflow(self):
+        for case in self.CASES[:-1]:
+            with self.subTest(case=case):
+                out, hidden = term_bang.bang_mask(case)
+                self.assertNotIn('synthetic', out)
+                self.assertEqual(hidden, 1)
+                args = self.finish(case + 'ordinary remainder!\n' * 30000)
+                self.assertNotIn('synthetic', args[3])
+                self.assertEqual(args[5], 1)
+                self.assertTrue(args[4])
+
+
 class BangRig(Rig):
     def setUp(self):
         super().setUp()
@@ -287,6 +368,27 @@ class Bang(BangRig):
         self.assertNotIn("boundary-value", page["out"])
         self.assertNotIn("boundary-value", self.host.agent.got[-1].text)
         self.assertIn("[已隐藏 1 处]", self.host.agent.got[-1].text)
+
+    def test_p455_structured_output_real_serve_seam(self):
+        from agentj.term_mask import Masker
+        async def go():
+            await self.open()
+            for index, case in enumerate(P455Multiline.CASES):
+                x = self.desk.term
+                self.desk.bang_start(x, f"{index:022d}", "echo harmless")
+                masker = x.masker
+                for char in case:
+                    self.desk.bang_out(x, masker.feed(char), False)
+                self.desk.bang_out(x, masker.close(), True)
+                n = len(self.host.agent.got)
+                await self.until(lambda: len(self.host.agent.got) > n)
+                send = self.host.agent.got[-1]
+                self.assertNotIn('synthetic', send.text)
+                page = self.host.hist.get(send.turn)["src"]["term"]
+                self.assertNotIn('synthetic', page['out'])
+                self.assertEqual(page['hidden'], 1)
+                send.state = 'done'  # fake Agent consumed this turn; do not fill its 16-turn queue
+        self.run_async(go)
 
     def test_one_running_bang_and_the_close(self):
         async def go():

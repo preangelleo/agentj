@@ -88,3 +88,31 @@ def codex_context_limit(model, native_limit, metadata):
     row = MODEL_LIMITS.get(model)
     kind = metadata.get('provider_kind')
     return row.get(kind + '_input') if row and kind in ('agentsrelay', 'openai') else None
+
+
+# P471, Leo / Agent Air 2026-10-22: OpenCode free Flash has a 200K window.
+# This is a conservative display fallback, not a provider capacity guarantee.
+OPENCODE_DEFAULT_CONTEXT = 200_000
+# Exact IDs only; OpenCode's models.dev catalog checked 2026-10-22:
+# https://github.com/anomalyco/models.dev/tree/dev/providers/opencode/models
+# https://github.com/anomalyco/models.dev/tree/dev/providers/deepseek/models
+# https://github.com/anomalyco/models.dev/blob/dev/providers/zai/models/glm-4.7-flash.toml
+OPENCODE_CONTEXT_LIMITS = {
+    "deepseek-v4-flash-free": OPENCODE_DEFAULT_CONTEXT,
+    "deepseek-v4.1-flash-free": OPENCODE_DEFAULT_CONTEXT,
+    "deepseek-v4-flash": 1_048_576,
+    "deepseek-v4.1-flash": 1_048_576,
+    "deepseek-v4-pro": 1_048_576,
+    "kimi-k2.5": 262_144,
+    "glm-4.7-flash": 200_000,
+    "minimax-m2.5": 204_800,
+}
+
+
+def opencode_context_limit(provider_id, model_id, configured=None, native=None):
+    """OpenCode metadata > existing checked policy > exact catalog > 200K.
+
+    Kept separate so Claude/Codex unknown-model handling is unchanged.
+    """
+    return (context_limit(provider_id, model_id, configured, native)
+            or OPENCODE_CONTEXT_LIMITS.get(model_id) or OPENCODE_DEFAULT_CONTEXT)

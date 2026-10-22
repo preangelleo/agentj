@@ -102,6 +102,12 @@ def _resolve(name, e):
     override = e.get(ENV[name]) or e.get(ENV[name].replace("AGENTJ_", "AGENTJARVIS_"))
     home = Path(e.get("HOME", str(Path.home())))
     original = (str(home / override[2:]) if override.startswith("~/") else override) if override else shutil.which(name, path=e.get("PATH", ""))
+    # P454: the official v1/v2 installer writes ~/.opencode/bin. Its child shell
+    # cannot refresh the caller/service PATH; still honour explicit and PATH selections.
+    if not original and not override and name == "opencode":
+        native = home / ".opencode/bin/opencode"
+        if native.is_file() and os.access(native, os.X_OK):
+            original = str(native)
     result = {"requested": original, "path": None, "wrapper": False, "reason": "missing"}
     if not original or not Path(original).is_file() or not os.access(original, os.X_OK):
         return result

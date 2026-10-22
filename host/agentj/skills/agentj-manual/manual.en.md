@@ -109,6 +109,8 @@ conversation has begun, the button turns into a short "The new conversation has 
 your progress, use `/compact`, not `/clear`. Status lines such as the new-conversation greeting address you as "Chairman" by
 default; change it with `agentj config set owner.address Alex`.
 
+For OpenCode, the water level uses the model’s reported context limit first, then a built-in model table. If neither is available, it uses 200,000 tokens, based on the free DeepSeek Flash window. This display default is not a provider capacity guarantee. Used tokens still come from OpenCode; no reading is invented before usage arrives.
+
 ## Heartbeat: the Agent checks in by itself
 
 After a quiet spell (default 60 minutes) Agent J wakes the Agent on the Agent J host to look at background work and your
@@ -415,7 +417,7 @@ lock-screen alerts; Channels (re-pair Telegram, Email, Contacts — your friends
 versions, update and reload, Add to Home Screen, keyboard shortcuts); account (with the Daily AI News email switch), help, and the security, privacy and terms
 pages. The phone must be connected to the Agent J host to change settings.
 
-Message box buttons (under language and appearance): the four buttons above the message box (File, Photos, Camera and the mic) can go in any order — put the mic on the far left, say, to talk with the phone in your left hand. On a phone, hold a button for a moment, then drag it; or tap one, then tap where it should go. On a computer, drag it with the mouse, or focus it and press ← →. The new order shows at once and follows you to every remote; when the Agent J on the Agent J host is too old for that, it is saved on this device only. Restore default puts back the usual order. The Agent can change it for you too: `agentj config set ui.composer_buttons '["mic","file","image","camera"]'`.
+Message box buttons (under language and appearance): the five buttons above the message box (File, Photos, Camera, the mic and Expand full screen) can go in any order — put the mic on the far left, say, to talk with the phone in your left hand. On a phone, hold a button for a moment, then drag it; or tap one, then tap where it should go. On a computer, drag it with the mouse, or focus it and press ← →. The new order shows at once and follows you to every remote; when the Agent J on the Agent J host is too old for that, it is saved on this device only. Restore default puts back the usual order. The Agent can change it for you too: `agentj config set ui.composer_buttons '["mic","file","image","camera","full"]'`.
 
 Every menu — Settings and the pages it opens, ≡ All commands, keyboard shortcuts, silent history, "How safe is this web app?" — is a full-screen dark page with the same header, icons and buttons. The back arrow at the top left does what Esc does: one level up, so a page opened from Settings returns to Settings. Confirmations and risky actions still ask in a centred card.
 
@@ -435,7 +437,7 @@ Under Emergency repair there is also Commands on the Agent J host: terminal comm
 
 Settings → Safety → Web terminal gives you the Agent J host's command line in a computer browser: you type a whole line, the host runs it and the output shows in the browser. It works only in a computer browser; a phone says only **For safety and convenience, the web terminal can only be used from a computer browser.** It is off by default. In a computer browser, tap **Switch on and open**, confirm with Face ID and type the Agent J host's login password once: it is switched on for this browser and opens full screen right away. Or run `agentj terminal enable` in the host's terminal, check the 6-digit match code and confirm with Face ID on a remote that has it. The Agent and scripts cannot switch it on. A device without Face ID gets **Set up Face ID** first. After that, every tap on **Open web terminal** needs Face ID; while no computer login password is remembered, you type it once in the terminal page, encrypted before it leaves. A session lasts at most 15 minutes (up to 60) and closes after 5 minutes without input, after 60 seconds with the browser on another tab or minimised, or when the connection drops; it is recorded in full, and the recording stays on the host for 30 days. Never type passwords into the terminal: `sudo` asks for Face ID instead. Risky lines need Run plus Face ID once more — that only catches slips. It does not work while the connection is down; use Emergency repair above then. It works on Linux, macOS (zsh by default) and WSL hosts. In an emergency, scan-pair a friend's computer browser and unbind it in Remotes afterwards; its terminal closes the moment you do. Friends, web-version remotes, the three ways the password is kept and what each protects against: [Web terminal](https://agentj.app/docs/web-terminal/).
 
-A message that starts with `!` (for example `!df -h`) runs as a line in the web terminal instead of going to the Agent as chat: a result card shows the output, then the command and its output go to the Agent. The terminal opens full screen; click the ✕ at the top right, press Esc or drag the handle at the top down to collapse it, and it keeps running behind **Terminal · N min left** above the message box. The Agent can open the terminal with a command filled in (you check it and press Enter yourself) and can read its output. That output, like the output of `!` commands, goes to your AI model provider with passwords and keys hidden, so do not print secrets there. Details: [`!` commands](https://agentj.app/docs/web-terminal/#bang).
+A message that starts with `!` (for example `!df -h`) runs as a line in the web terminal instead of going to the Agent as chat: a result card shows the output, then the command and its output go to the Agent. The terminal opens full screen; click the ✕ at the top right, press Esc or drag the handle at the top down to collapse it, and it keeps running behind **Terminal · N min left** above the message box. The Agent can open the terminal with a command filled in (you check it and press Enter yourself) and can read its output. That output, like the output of `!` commands, goes to your AI model provider after an attempt to hide common passwords and keys, so do not print secrets there. Details: [`!` commands](https://agentj.app/docs/web-terminal/#bang).
 
 ### Models & API keys
 
@@ -722,7 +724,7 @@ If the browser cannot record audio, use the text field with your system keyboard
 
 While voice components are installed for the first time, the page shows the current download, unpacking, installation and self-test stages, without an estimated percentage. The microphone shows "Preparing" until it is ready.
 
-A prominent "Voice input is ready" notice tells you to press and hold the microphone to speak; dismiss it with "Got it". If setup fails, the notice shows the reason and a "Try again" button. Check the network or disk space as advised, then retry. Notices do not expire automatically. You can dismiss them with ESC; a later notice can also replace them.
+A prominent "Ready" notice tells you to press and hold the microphone to speak; dismiss it with "Got it". If setup fails, the notice shows the reason and a "Try again" button. Check the network or disk space as advised, then retry. Notices do not expire automatically. You can dismiss them with ESC; a later notice can also replace them.
 
 After reconnecting, readiness is checked again. Installation progress from the disconnected period is not replayed step by step.
 
@@ -754,3 +756,5 @@ Copy controls in Notebook, messages and code blocks briefly show ✓ “Copied�
 ### Icon holds and button states
 
 Holding an icon or toolbar button runs its shortcut without selecting nearby controls or opening the system text menu. Reply text, messages and code remain selectable and copyable. Button labels stay readable on hover, while pressed, with keyboard focus and when unavailable. Unavailable buttons do not run actions.
+
+Centred circular notices show one short status word: Sent, Copied or Saved (up to four Chinese characters). Longer explanations use a rounded rectangle in the same centre position, keeping the full text and the original automatic dismissal time. Both shapes use Noir with Lotion text in light and dark mode.

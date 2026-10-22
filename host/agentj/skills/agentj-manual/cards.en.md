@@ -12,15 +12,15 @@ Open Settings → Agent features → Cards to switch cards on or off. Notebook, 
 
 Keep useful addresses, phone numbers, meeting places and memos here. Each entry has its own small card with copy, edit and delete icons at the top right.
 
-- Copy puts that entry on the clipboard.
-- Edit opens the text for changes. Save when finished; cancel or press Escape to leave.
+- Copy puts only the content on the clipboard.
+- Edit opens the title and content for changes. Save when finished; cancel or press Escape to leave.
 - Delete asks before removing that entry.
 - The page's + and Add a note open a multiline dialog. Type or tap Paste; ⌘/Ctrl+Enter saves and Esc closes. Your dated note goes directly to the computer, without AI or tokens. “Saved (without AI)” confirms it and the card opens at the newest entry. Key-shaped content is refused.
 - Collaborate with Agent J puts `/agentj-add-note ` in the message box with the caret at the end. Describe what to add, edit, delete or organize, then send. This collaboration uses AI.
 
 To find an entry, tap the magnifier at the top right and type a word. Only the entries containing it stay, with the word highlighted; press Esc to see them all again. To-do and Automation cards work the same way.
 
-Existing notebooks still use the same notes.md on the Agent J host. Opening the card does not rewrite existing text or introductory material. Keep passwords and API keys out of notes; use the phone's secret-entry card instead.
+Each entry stores an optional title, content and date separately in the same readable notes.md on the Agent J host. The title appears in bold when present; the date has its own smaller line. The copy, edit and delete icons sit at the bottom right. Copy copies only the content, without the title or date. Add and Edit have separate title (optional) and content fields. Before the first conversion, the host saves a byte-for-byte backup of the old file; a leading YYYY-MM-DD or YYYY-MM-DD · becomes the date and the title stays empty. Undated old entries keep an empty date. Keep passwords and API keys out of notes; use the phone's secret-entry card instead.
 
 If another remote has changed an entry, refresh before editing again so you do not overwrite its changes. If the host is offline or a save fails, read the notice and retry after reconnecting.
 

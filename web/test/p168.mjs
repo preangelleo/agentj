@@ -29,12 +29,12 @@ const NAME = 'AgentJ-Father';
 const MIN31 = 31 * 60 * 1000;
 const S = {
   zh: { computer: 'Agent J 主机可能关机或睡着了', reconnecting: '正在重新连接…', lt1: '已断开不到 1 分钟', min31: /^已断开 31 分钟$/, wait: '转发服务器能连上，Agent J 主机一上线就会自动接上。',
-    attempt: /^(自动重连：第 \d+ 次，\d+ 秒后再试|正在自动重连（第 \d+ 次）…)$/, long: '长时间连不上？写信到 feedback@agentj.app', subject: 'Agent J 连不上', copied: '邮箱地址已复制',
+    attempt: /^(自动重连：第 \d+ 次，\d+ 秒后再试|正在自动重连（第 \d+ 次）…)$/, long: '长时间连不上？写信到 feedback@agentj.app', subject: 'Agent J 连不上', copied: '已复制',
     tip1: '确认 Agent J 主机开着、连着网', help: /内置客服/, mailLine: /完全连不上时，写信到 feedback@agentj\.app/ },
   en: { computer: 'the Agent J host may be off or asleep', reconnecting: 'Reconnecting…', lt1: 'Disconnected for less than a minute', min31: /^Disconnected for 31 min$/,
     wait: 'The relay server is reachable. We reconnect by ourselves as soon as the Agent J host is back online.',
     attempt: /^(Automatic reconnect: attempt \d+, next try in \d+ s|Reconnecting automatically \(attempt \d+\)…)$/, long: "Still can't connect? Email feedback@agentj.app",
-    subject: "Agent J can't connect", copied: 'Email address copied', tip1: 'Check that the Agent J host is on and online', help: /built-in support/, mailLine: /email feedback@agentj\.app/ },
+    subject: "Agent J can't connect", copied: 'Copied', tip1: 'Check that the Agent J host is on and online', help: /built-in support/, mailLine: /email feedback@agentj\.app/ },
 };
 export const CASES = { a: 'offline-card-blur', b: 'offline-card-retry', c: 'offline-card-long-mail', d: 'offline-card-dismiss', e: 'offline-card-reconnect-close',
   f: 'offline-card-reload-persist', g: 'offline-card-reconnecting-reduced-motion', h: 'feedback-help-lines', i: 'offline-card-desktop' };

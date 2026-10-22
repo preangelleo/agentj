@@ -140,7 +140,7 @@ for(const [lang,theme,width] of combos){
   assert.match(await txt('elev-run-text'),/1:0\d/);
   await fake.send({t:'elev_out',id:D,text:'so far\n',full:true});
   await fake.send({t:'elev_done',id:D,result:'done',code:0,tail:'so far\nok\n'});
-  await waitFor(p,`${strip('done')} && document.getElementById('elev-run-text').textContent===${JSON.stringify(zh?'sudo 已完成':'sudo finished')}`);
+  await waitFor(p,`${strip('done')} && document.getElementById('elev-run-text').textContent===${JSON.stringify(zh?'sudo 已完成（退出码 0）':'sudo finished (exit code 0)')}`);
   assert.equal(answers().filter(m=>m.ok===false).length,0,'nothing in this walk ever declined');
   assert.ok(!JSON.stringify(got).includes('right-pw')&&!JSON.stringify(got).includes('wrong-pw'),'the password only travels sealed');
   count++;

@@ -263,6 +263,8 @@ class SharedClaudeAgent(Agent):
         self.channel = None
         self.native = None
         self.master = None
+        from .shared_menu import Desk
+        self.menu_desk = Desk(self)
         self.state = AgentState(on_turn=self._committed_stop,
                                 warn=lambda msg: self.host.st.log("shared_state_warning", detail=msg))
         self.loop = None
@@ -569,6 +571,8 @@ class SharedClaudeAgent(Agent):
         compaction on the main thread), "bg" / "quiet" (still settling) when not. Our hooks own the main thread's state;
         Claude Code's registry stays "shell"/"busy" for background work after the turn ended (probed on 2.1.296)."""
         import time
+        if getattr(getattr(self, "menu_desk", None), "current", None):
+            return False, "menu"
         if self.state.status != "idle" or self.native_turn or self.phone_turn:
             return False, "fg"
         if reg in ("idle", "done"):
@@ -583,6 +587,9 @@ class SharedClaudeAgent(Agent):
     def _wait_detail(self, name, why) -> str | None:
         """P243: the waiting card's line — None = the plain 「等Agent J 主机空下来再执行」."""
         lang = getattr(self.host, "lang", "zh")
+        if why == "menu":
+            from .shared_menu import questions
+            return questions(self.menu_desk.current, lang)[0]["q"]
         n = len(self.bg_live)
         act = pick(lang, {"compact": "压缩", "clear": "清空"}.get(name, "执行"), name)
         if why == "bg":
@@ -1063,6 +1070,8 @@ class SharedClaudeAgent(Agent):
         finally:
             os.close(slave)
         self.master = master
+        from .shared_menu import Screen
+        self.menu_desk.surface = Screen()
         os.set_blocking(master, False)
         self.loop.add_reader(master, self._drain_terminal)
         for _ in range(120):
@@ -1075,9 +1084,9 @@ class SharedClaudeAgent(Agent):
         raise ValueError("ordinary Claude startup unconfirmed")
 
     def _drain_terminal(self):
-        # Drain display bytes only; transcript/hooks own all messages and state.
+        # Keep only the bounded visible surface for native-modal detection; hooks own turns.
         try:
-            os.read(self.master, 65536)
+            self.menu_desk.surface.feed(os.read(self.master, 65536))
         except (OSError, BlockingIOError):
             if self.loop and self.master is not None:
                 self.loop.remove_reader(self.master)
@@ -1139,6 +1148,7 @@ class SharedClaudeAgent(Agent):
             if not live or live[0]['pid'] != self.session['pid']:
                 return Result(pick(getattr(self.host, "lang", "zh"), "没清成：所选桌面会话已离线", "No change: selected desktop session offline"), "error")
             reg = live[0].get('status')
+            await self.menu_desk.poll()
             self.validate_session(reg)
             go, why = self._control_gate(reg)      # P243: background work alone no longer holds the control
             if go:
@@ -1634,6 +1644,7 @@ class SharedClaudeAgent(Agent):
                     live = claude_sessions(self.cfg["dir"], self.session["sessionId"])
                     exact = live and live[0].get("pid") == self.session.get("pid")
                     self.validate_session(live[0].get("status") if exact else None)
+                await self.menu_desk.poll(force=False)
                 self.read_statusline()
                 self.sync_compacting()
                 if self.model_pending and self.state.status == "idle" and not self.phone_turn and not self.native_lock.locked() \
@@ -2179,6 +2190,8 @@ class SharedClaudeAgent(Agent):
     async def turn(self, text):
         if self.session is None and not await self.attach():
             return
+        if not await self.menu_desk.wait_clear():
+            return
         # Cross-session messages need not emit UserPromptSubmit in every native
         # version; the phone turn boundary must also revoke prior risk grants.
         self.risk_epoch += 1
@@ -2389,6 +2402,9 @@ class SharedClaudeAgent(Agent):
         if self.state.status == "waiting":
             self.cannot_halt(pick(getattr(self.host, "lang", "zh"), "请先处理审批卡片。", "Resolve the approval card first."))
             return False
+        if getattr(getattr(self, "menu_desk", None), "current", None):
+            self.cannot_halt(pick(getattr(self.host, "lang", "zh"), "Claude Code 正停在菜单，请在菜单卡片里选择退出。", "Claude Code is in a menu; choose Exit on its card."))
+            return False
         if not busy or not self.session:
             return busy
         if getattr(self, "_stop_esc_pending", False) or time.monotonic() - getattr(self, "_stop_esc_at", float("-inf")) < 2.0:
@@ -2416,6 +2432,7 @@ class SharedClaudeAgent(Agent):
         return result == "sent"
 
     async def stop(self):
+        await self.menu_desk.stop()
         self.meter(model=None, model_name=None, effort=None, ctx=None, h5=None, week=None, source_at=None)
         # Dispose only the actor we launched. Never call Agent.halt on an owner TUI.
         if self.task:
