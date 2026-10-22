@@ -21,7 +21,7 @@ const web=await startWebServer({publicDir:tmp}),fake=await startFakeHost(),B=awa
 const REPLY={zh:'资料在这里：[打开 Apple 开发者账号页](https://developer.apple.com/account)，看完告诉我。',
  en:'Here it is: [Open the Apple developer account page](https://developer.apple.com/account) — tell me when you have read it.'};
 // The closed palette (brand/palette.css = the Leo palette): the link's colour must be one of these, exactly.
-const PEACHY='217,119,87',BISQUE='254,226,197';
+const PEACHY='217,119,87',LOTION='250,249,245';
 const lum=([r,g,b])=>{const f=v=>(v/=255)<=.04045?v/12.92:((v+.055)/1.055)**2.4;return .2126*f(r)+.7152*f(g)+.0722*f(b);};
 const ratio=(a,b)=>{const[x,y]=[lum(a),lum(b)].sort((p,q)=>q-p);return (x+.05)/(y+.05);};
 const nums=s=>{const m=s.match(/[\d.]+/g).map(Number);if(/^color\(srgb/.test(s))return m.slice(0,3).map(v=>v*255);return m.slice(0,3);};
@@ -42,10 +42,10 @@ try{
    const got=nums(c.color).map(Math.round).join(),cr=+ratio(nums(c.color),nums(c.bg)).toFixed(2);
    link.push({status,color:got,bg:nums(c.bg).map(Math.round).join(),contrast:cr});
    if(!BEFORE){
-    const want=scheme==='dark'&&status!=='waiting'?PEACHY:BISQUE;
-    assert.equal(got,want,`${w}/${scheme}/${status}: ${c.color} — palette only (Peachy where it reads, else Bisque)`);
+    const want=LOTION; // P477: all reply-body text, including external links, is Lotion.
+    assert.equal(got,want,`${w}/${scheme}/${status}: ${c.color} — P477 reply-body Lotion`);
     assert.match(c.line,/underline/);assert.equal(c.color,c.deco,'the underline is the link colour');
-    assert.ok(cr>=(want===PEACHY?2:3),`${w}/${scheme}/${status} contrast ${cr}`);
+    assert.ok(cr>=3,`${w}/${scheme}/${status} contrast ${cr}`);
    }
    writeFileSync(join(out,`reply-${w}-${scheme}-${status}.png`),await shoot(p));
   }

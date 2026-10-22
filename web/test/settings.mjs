@@ -127,17 +127,17 @@ try {
       await click(p, '#setBtn');
       assert.equal(await ev(p, `document.getElementById('set-speak').getAttribute('aria-checked')`), 'false');
       await click(p, '#set-speak');
-      await waitFor(p, `(document.getElementById('toast').classList.contains('on') ? document.getElementById('toast').textContent : '') === '已保存到Agent J 主机'`);
+      await waitFor(p, `(document.getElementById('toast').classList.contains('on') ? document.getElementById('toast').textContent : '') === '已保存'`);
       assert.deepEqual(fake.st.prefSets.map((m) => [m.t, m.key, m.value]), [['pref_set', 'voice.speak_replies', true]]);
       assert.ok(typeof fake.st.prefSets[0].r === 'string' && fake.st.prefSets[0].r.length > 0, 'request id r');
       await waitFor(p, `document.getElementById('set-speak').getAttribute('aria-checked') === 'true'`);
       await click(p, '#set-wake');
-      await waitFor(p, `document.getElementById('set-wake').getAttribute('aria-checked') === 'true' && (document.getElementById('toast').classList.contains('on') ? document.getElementById('toast').textContent : '') === '已保存到Agent J 主机'`);
+      await waitFor(p, `document.getElementById('set-wake').getAttribute('aria-checked') === 'true' && (document.getElementById('toast').classList.contains('on') ? document.getElementById('toast').textContent : '') === '已保存'`);
       assert.equal(fake.st.prefs.voice.wake_enabled, true);
       // theme: the page follows at once and the host stores it
       await click(p, '[data-set-theme="dark"]');
       await waitFor(p, `document.documentElement.getAttribute('data-theme') === 'dark' && document.querySelector('[data-set-theme="dark"]').getAttribute('aria-pressed') === 'true'`);
-      await waitFor(p, `(document.getElementById('toast').classList.contains('on') ? document.getElementById('toast').textContent : '') === '已保存到Agent J 主机'`);
+      await waitFor(p, `(document.getElementById('toast').classList.contains('on') ? document.getElementById('toast').textContent : '') === '已保存'`);
       assert.equal(fake.st.prefs.appearance.theme, 'dark');
       assert.equal(await ev(p, `localStorage.getItem('aj.theme')`), 'dark', 'persisted through the page\'s own theme switch');
       await click(p, '[data-set-theme="system"]');
@@ -145,7 +145,7 @@ try {
       // language: ONE value (Amendment A1) — the page switches and the host's appearance.language follows
       await click(p, '[data-set-lang="en"]');
       await waitFor(p, `document.documentElement.lang === 'en' && document.getElementById('set-title').textContent === 'Settings'`);
-      await waitFor(p, `(document.getElementById('toast').classList.contains('on') ? document.getElementById('toast').textContent : '') === 'Saved on the Agent J host'`);
+      await waitFor(p, `(document.getElementById('toast').classList.contains('on') ? document.getElementById('toast').textContent : '') === 'Saved'`);
       assert.equal(fake.st.prefs.appearance.language, 'en');
       assert.match(await ev(p, `document.querySelector('#set-lang-row .setnote').textContent`), /emails we send you/);
       // a value the host refuses → its problem is shown, nothing changes
@@ -154,7 +154,7 @@ try {
       assert.equal(fake.st.prefSets.some((m) => m.key === 'appearance.font_scale'), false);
       await click(p, '[data-set-lang="zh"]');
       await waitFor(p, `document.documentElement.lang === 'zh-CN'`);
-      await waitFor(p, `(document.getElementById('toast').classList.contains('on') ? document.getElementById('toast').textContent : '') === '已保存到Agent J 主机'`);
+      await waitFor(p, `(document.getElementById('toast').classList.contains('on') ? document.getElementById('toast').textContent : '') === '已保存'`);
       // the host's own broadcast (e.g. `agentj config set …` on the Agent J host) re-renders the open panel
       await fake.send(fake.prefsMsg({ ...fake.st.prefs, voice: { speak_replies: false, wake_enabled: false } }));
       await waitFor(p, `document.getElementById('set-speak').getAttribute('aria-checked') === 'false' && document.getElementById('set-wake').getAttribute('aria-checked') === 'false'`);

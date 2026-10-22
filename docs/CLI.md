@@ -1624,7 +1624,7 @@ agentj card note --help
 
 ```text
 usage: agentj card note [-h] [--id ID] [--entry ENTRY] [--revision REVISION]
-                        [--text TEXT] [--json]
+                        [--text TEXT] [--title TITLE] [--date DATE] [--json]
                         {list,add,edit,delete}
 ```
 
@@ -1635,7 +1635,9 @@ usage: agentj card note [-h] [--id ID] [--entry ENTRY] [--revision REVISION]
 | `--id` | `"notes"` | false | — | `` |
 | `--entry` | `null` | false | — | `` |
 | `--revision` | `null` | false | — | `` |
-| `--text` | `null` | false | — | `` |
+| `--text` | `null` | false | — | `content only` |
+| `--title` | `null` | false | — | `optional title` |
+| `--date` | `null` | false | — | `defaults to today` |
 | `--json` | `false` | false | — | `` |
 
 ### agentj card obsidian
@@ -8189,7 +8191,7 @@ agentj card note --help
 
 ```text
 usage: agentj card note [-h] [--id ID] [--entry ENTRY] [--revision REVISION]
-                        [--text TEXT] [--json]
+                        [--text TEXT] [--title TITLE] [--date DATE] [--json]
                         {list,add,edit,delete}
 ```
 
@@ -8200,7 +8202,9 @@ usage: agentj card note [-h] [--id ID] [--entry ENTRY] [--revision REVISION]
 | `--id` | `"notes"` | false | — | `` |
 | `--entry` | `null` | false | — | `` |
 | `--revision` | `null` | false | — | `` |
-| `--text` | `null` | false | — | `` |
+| `--text` | `null` | false | — | `内容，不含标题或日期` |
+| `--title` | `null` | false | — | `可空标题` |
+| `--date` | `null` | false | — | `YYYY-MM-DD，缺省今天` |
 | `--json` | `false` | false | — | `` |
 
 ### agentj card obsidian

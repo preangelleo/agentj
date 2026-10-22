@@ -17,7 +17,8 @@ class Direct(unittest.TestCase):
         r = jcards_data.phone_change(self.root, 'notes', 'add', text='Tokyo\n\nAddress')
         self.assertTrue(r['ok'], r)
         s = jcards.phone_get(self.root, 'notes')
-        self.assertRegex(s['entries'][0]['text'], r'^\d{4}-\d{2}-\d{2} Tokyo')
+        self.assertEqual(s['entries'][0]['text'], 'Tokyo\n\nAddress')
+        self.assertRegex(s['entries'][0]['date'], r'^\d{4}-\d{2}-\d{2}$')
         self.assertIn('Address', s['entries'][0]['text'])
         it = s['entries'][0]
         self.assertTrue(jcards_data.phone_change(self.root, 'notes', 'edit', it['id'], s['revision'], 'New address')['ok'])

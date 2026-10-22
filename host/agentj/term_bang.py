@@ -46,23 +46,42 @@ _SPACES = re.compile(r" {9,}")
 
 # Final agent-bound guard: malformed quoting must never defeat credential masking.
 _CREDENTIAL_LINE = re.compile(
-    r"(?i)(?:password|passwd|pwd|token|secret|api[_-]?key|authorization|bearer|cookie|private[ \t]+key"
+    r"(?i)(?:(?:password|passwd|pass|pwd|token|secret|key|credential|auth|bearer|cookie)[\w.-]*|private[ \t]+key"
     r"|(?<![\w-])-p(?=[^\s-]|[ \t]+\S)|key[ \t]*=)"
 )
 
 
-def bang_mask(text: str) -> tuple[str, int]:
-    """Fine masking first; fail closed from any credential keyword to line end."""
-    lines, hidden, continuation = [], 0, False
+# Match a security skeleton, but never emit normalized text or use its offsets on
+# the original: NFKC/casefold/marks can change length. Unknown non-ASCII labels
+# and escaped JSON labels fail closed too, rather than trusting a finite table.
+_CONFUSABLES = str.maketrans("аɑαеεорρсϲѕіιјκкτтυуχхω", "aaaeeoppccsiijkkttuyxxw")
+_LABEL = re.compile(r"(?:^|[\s{,\[])[\"']?([^\s:=\"']+)[\"']?\s*[:=]")
+
+
+def _credential_skeleton(line: str) -> str:
+    line = unicodedata.normalize("NFKC", line).casefold().translate(_CONFUSABLES)
+    return ''.join(c for c in unicodedata.normalize("NFKD", line)
+                   if unicodedata.category(c) not in ("Cf", "Mn", "Me"))
+
+
+def bang_mask(text: str, *, carriage: bool = False) -> tuple[str, int]:
+    """Agent-bound fail-closed pass. A structural region counts once, even if
+    its rest is hidden; do not try to recover from ambiguous/malformed syntax."""
+    lines, hidden, continuation, previous = [], 0, False, False
     for line in text.splitlines(keepends=True):
+        # A blank/comment gap can precede an indented scalar continuation.
+        if previous and (line[:1] in (' ', '\t') or not line.strip() or line.lstrip().startswith('#')):
+            continuation = True
         if continuation:
             lines.append('[已隐藏]' + ('\n' if line.endswith('\n') else ''))
             continue
-        raw_match = _CREDENTIAL_LINE.search(line)
-        if raw_match:
-            tail = line[raw_match.end():]
-            # Unclosed quotes, escaped newlines and PEM material can continue on
-            # later lines. Conservatively withhold the remainder of this capture.
+        skeleton = _credential_skeleton(line)
+        raw_match = _CREDENTIAL_LINE.search(skeleton)
+        uncertain = any(any(ord(c) > 127 for c in m[1]) or "\\" in m[1]
+                        for m in _LABEL.finditer(skeleton))
+        previous = bool(raw_match or uncertain)
+        if previous:
+            tail = skeleton[raw_match.end():] if raw_match else skeleton
             quote, escaped = None, False
             for char in tail:
                 if escaped:
@@ -74,15 +93,22 @@ def bang_mask(text: str) -> tuple[str, int]:
                         quote = None
                 elif char in ("'", '"'):
                     quote = char
-            continuation = (quote is not None
+            # Blocks, objects/arrays, TOML sections, empty values and CR cursor
+            # overwrites may continue without indentation (JSON/YAML sequences).
+            value = tail.strip().strip("\"' :=\t\r\n")
+            continuation = (carriage or uncertain or quote is not None or not value
                             or tail.rstrip('\r\n').endswith('\\')
-                            or not tail.strip()
-                            or re.search(r'private[ \t]+key', raw_match.group(), re.I) is not None)
+                            or any(c in tail for c in '{[|>')
+                            or skeleton.lstrip().startswith('[')
+                            or ('\r' in line.replace('\r\n', ''))
+                            or 'private' in skeleton)
         masked, count = agent_mask(line)
-        match = _CREDENTIAL_LINE.search(masked)
-        if match:
-            end = '\n' if masked.endswith('\n') else ''
-            masked = masked[:match.end()] + ' [已隐藏]' + end
+        if previous:
+            match = _CREDENTIAL_LINE.search(masked)
+            # Preserve ordinary ASCII command context. A normalized label can
+            # have a different width: hide that whole line, never slice by it.
+            prefix = masked[:match.end()] if match and skeleton == line.casefold() else ''
+            masked = prefix + ' [已隐藏]' + ('\n' if line.endswith('\n') else '')
             count = max(1, count)
         lines.append(masked)
         hidden += count
@@ -168,12 +194,14 @@ class BangDesk:
             await self.h.send_app(x.s, {"t": "term_bang", "id": x.id, "sid": sid, "ok": False, "why": why})
 
     def bang_start(self, x, sid: str, line: str) -> None:
-        x.bang = {"sid": sid, "line": line, "at": self.clock(), "head": "", "full": False, "hidden": 0}
+        x.bang = {"sid": sid, "line": line, "at": self.clock(), "head": "", "full": False, "hidden": 0,
+                  "cr_at": getattr(getattr(x, "masker", None), "carriage_count", 0), "cr": False}
 
     def bang_out(self, x, data: str, prompt: bool) -> None:
         b = getattr(x, "bang", None)
         if b is None:
             return
+        b["cr"] |= getattr(getattr(x, "masker", None), "carriage_count", 0) != b["cr_at"]
         if data and getattr(x, "sudo_hold", 0):
             data = ""                                  # P414 (R3 info): nothing between a term_sudo and its answer, as tr_add
         if data and not b["full"]:
@@ -189,7 +217,7 @@ class BangDesk:
         # capacity hit and timeout. Never send a dangling credential context.
         end = b["head"].rfind("\n") + 1
         # With no newline, discard the whole residual (also covers values >512).
-        safe, b["hidden"] = bang_mask(b["head"][:end])
+        safe, b["hidden"] = bang_mask(b["head"][:end], carriage=b["cr"])
         safe += "\n[输出被截断]"
         b["head"] = safe if len(safe) <= BANG_MAX else safe[:BANG_MAX // 2] + "\n…\n" + safe[-(BANG_MAX // 2):]
         b["full"] = True
@@ -207,7 +235,7 @@ class BangDesk:
             self._bang_cut(b)
         from .privacy import owner_text
         line, n1 = bang_mask(owner_text(b["line"]))
-        out, n2 = (b["head"], b["hidden"]) if b["full"] else bang_mask(b["head"])
+        out, n2 = (b["head"], b["hidden"]) if b["full"] else bang_mask(b["head"], carriage=b["cr"])
         cut = b["full"] or len(out) > BANG_MAX
         if len(out) > BANG_MAX:
             out = out[:BANG_MAX // 2] + "\n…\n" + out[-(BANG_MAX // 2):]

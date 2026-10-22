@@ -579,7 +579,7 @@ class OpenCodeAgent(Agent):
         self._set_models({})
         self.meter(model=self.cur_model(), model_name=self.model_name(self.cur_model()))
 
-    def provider_note(self, reason, pid, fallback):
+    def provider_note(self, reason, pid, fallback, data=None, model=None):
         from .provider_runtime import key_name, request_key
         zh = self.cfg.get("language", "en").startswith("zh")
         if reason in ("login", "no_key") and pid and key_name(pid):
@@ -602,9 +602,8 @@ class OpenCodeAgent(Agent):
         parts = fallback.split(" / ", 1)
         text = parts[0] if zh else parts[-1]
         if reason in ("balance", "quota_window", "rate_limit"):
-            model = clean_line(self.cfg.get("model") or "?", 100)
-            provider = clean_line(pid or "?", 40)
-            text = f"当前主模型：{provider} · {model}。本轮返回限额错误（具体来源未确认）：{text}" if zh else f"Current main model: {provider} · {model}. This turn returned a limit error (exact source unconfirmed): {text}"
+            from .provider_setup import limit_note
+            return limit_note(model, clean_line(self.cfg.get("model") or "?", 160), data or {}, self.cfg.get("language", "en"))
         return text
 
     def _usable_models(self) -> list:
@@ -679,6 +678,8 @@ class OpenCodeAgent(Agent):
             if self.sub_inject:
                 from .opencode_subagents import content_with
                 env["OPENCODE_CONFIG_CONTENT"] = content_with(env["OPENCODE_CONFIG_CONTENT"], self.sub_inject)
+        from .provider_setup import overlay
+        env["OPENCODE_CONFIG_CONTENT"] = overlay(self.host, env["OPENCODE_CONFIG_CONTENT"])
         if self.cfg.get("_workflow_ceo"):
             env = fence.auxiliary_environment(env, self.kind, extra_keep=("AGENTJ_PERM_SOCK", "AGENTJ_PERM_CLAIM", "AGENTJ_PERM_WAIT", "OPENCODE_SERVER_PASSWORD", "OPENCODE_SERVER_USERNAME", "OPENCODE_CONFIG_CONTENT"), plan_keys=True)   # P348
         if self.cfg.get("fence", True):
@@ -781,6 +782,8 @@ class OpenCodeAgent(Agent):
             raise HTTPError(f"path {st}")
         self.root = path.get("worktree") if isinstance(path.get("worktree"), str) else self.cfg["dir"]
         st, conf = await self.client.request("GET", "/config")
+        from .provider_setup import remember
+        remember(self, conf if st == 200 else None)
         default = conf.get("default_agent") if st == 200 and isinstance(conf, dict) else None
         prov = conf.get("provider") if st == 200 and isinstance(conf, dict) else None   # P423 #146: names only (set_up)
         self.config_providers = [k for k in prov if isinstance(k, str)] if isinstance(prov, dict) else []
@@ -1142,6 +1145,14 @@ class OpenCodeAgent(Agent):
                 self._child_done(p["sessionID"])
             elif st_ == "busy":
                 self.children[p["sessionID"]].pop("done", None)
+        if t == "session.error" and p.get("sessionID") in self.children:
+            from .provider_setup import error_model, limit_note
+            err = p.get("error") if isinstance(p.get("error"), dict) else {}
+            data = err.get("data") if isinstance(err.get("data"), dict) else {}
+            reason = provider_error_reason(str(err.get("name") or ""), data)
+            if reason in ("balance", "quota_window", "rate_limit"):
+                self.host.agent_notice(limit_note(error_model(data), self.cfg.get("model") or "?", data, self.cfg.get("language", "en")))
+            return
         if t == "permission.asked":
             self._on_perm(p)
         elif t == "permission.replied":
@@ -1161,10 +1172,15 @@ class OpenCodeAgent(Agent):
                 data = err.get("data") if isinstance(err.get("data"), dict) else {}
                 code = data.get("statusCode")
                 code = code if type(code) is int and 100 <= code <= 599 else None
-                sel = split_model(self.cfg.get("model"))
+                from .provider_setup import error_model
+                failed_model = error_model(data)
+                sel = split_model(failed_model or self.cfg.get("model"))
                 pid = sel["providerID"] if sel else None
                 set_up = set_up_providers(getattr(self, "config_providers", []) + list(self.connected_at_start or []))
                 reason = provider_error_reason(name, data, self.connected_at_start, pid, set_up)
+                if failed_model and failed_model != self.cfg.get("model") and reason in ("balance", "quota_window", "rate_limit"):
+                    self.host.agent_notice(self.provider_note(reason, pid, PROVIDER_NOTES[reason], data, failed_model))
+                    return
                 self.host.st.log("agent_provider_fail", agent=self.kind, reason=reason, http_status=code)
                 self.last_provider_fail = {"reason": reason, "http_status": code, "at": int(time.time())}
                 if code == 401 and not self.cfg.get("_workflow_ceo"):
@@ -1188,7 +1204,7 @@ class OpenCodeAgent(Agent):
                     if code == 401 and pid in ('ark-agent-plan', 'ark-coding-plan') and not self.cfg.get('_workflow_ceo'):
                         self.fail_notice(ark_plan_fix.checking_note(self.cfg.get('model'), self.cfg.get('language','en'), data))
                     else:
-                        self.fail_notice(self.provider_note(reason, pid, notes[reason]))
+                        self.fail_notice(self.provider_note(reason, pid, notes[reason], data, failed_model))
                     if reason == "model_missing":
                         self._offer_models()
         elif t == "session.status" and p.get("sessionID") == self.sid:
@@ -1441,7 +1457,11 @@ class OpenCodeAgent(Agent):
         return self._switch(version)
 
     async def command(self, name: str, arg: str) -> Result:
-        await self._protocol()                    # the slash command runs on the class for the installed version
+        from .command_queries import readonly
+        # A live read-only query uses the running protocol; probing an upgraded binary
+        # here could terminate the process that still owns the current turn.
+        if not (self.proc is not None and readonly(name, arg)):
+            await self._protocol()
         return await super().command(name, arg)
 
     async def turn(self, text: str) -> None:
@@ -1517,16 +1537,21 @@ class OpenCodeAgent(Agent):
         used = self._ctx(info)
         m = self._model_of(info)
         from .provider_runtime import configured, probe
-        from .model_limits import context_limit, positive
+        from .model_limits import opencode_context_limit, positive
         local = configured()
         config_provider = local.get(m["providerID"], {}) if m else {}
         models = config_provider.get('models')
         config_model = models.get(m['modelID'], {}) if m and isinstance(models, dict) else {}
         limits = config_model.get('limit') if isinstance(config_model, dict) else None
         explicit = positive(limits.get('context')) if isinstance(limits, dict) else None
-        prov = {} if explicit is not None else await self._providers()
+        prov = {}
+        if explicit is None:
+            try:
+                prov = await asyncio.wait_for(self._providers(), 4)
+            except (OSError, HTTPError, ValueError, AttributeError, asyncio.TimeoutError):
+                pass  # Metadata failure must not discard measured tokens or the fallback.
         native = next((p for p in prov.get("providers") or [] if isinstance(p, dict) and m and p.get("id") == m["providerID"]), {})
-        limit = context_limit(m["providerID"], m["modelID"], local.get(m["providerID"]), native) if m else None
+        limit = opencode_context_limit(m["providerID"], m["modelID"], local.get(m["providerID"]), native) if m else opencode_context_limit(None, None)
         if not self.models_cache:
             self._set_models(prov)
         mid = f"{m['providerID']}/{m['modelID']}" if m else selected

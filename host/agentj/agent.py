@@ -68,6 +68,7 @@ class Cmd:
     turn: int | None = None          # its history page (PROTOCOL §10.5 `cmd` turn), filled in when it ran
     data: dict | None = None         # model_set (§10.11): {"r", "model", "effort", "default", "device"}
     cancelled: bool = False
+    started: bool = False           # acquired the turn lock; queue deadline can no longer cancel it
     native_started: bool = False
     workflow_wait: bool = False     # eligible for withdrawal while waiting for the scheduler lock
 
@@ -647,6 +648,7 @@ class Agent:
                         if self.q.empty() and self.status == "working":
                             self.set_status("down" if self.is_down() else "idle")
                         continue
+                    text.started = True
                     self.halting = False
                     if text.name == "model_set":            # the phone's pill (§10.11): no card, a model_res + meter
                         try:
@@ -661,7 +663,8 @@ class Agent:
                         continue
                     self.cur_cmd = text              # F24: compactprep shows its progress on this command's page
                     try:
-                        res = await self.command(text.name, text.arg)
+                        from . import command_queries
+                        res = await command_queries.execute(self, text.name, text.arg) if command_queries.applies(self) else await self.command(text.name, text.arg)
                     except asyncio.CancelledError:
                         raise
                     except Exception as e:  # noqa: BLE001 — a command bug costs one card, never serve

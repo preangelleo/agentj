@@ -25,7 +25,7 @@
 #busyDlg .busy-big{background:transparent;border:1px dashed var(--c-black-mana);border-radius:16px;padding:12px;min-height:48px}
 .busy-tabs{display:flex;gap:8px;align-self:stretch;margin:12px 0}
 .busy-tabs button{flex:1;min-height:48px;border:1px solid var(--c-last-straw);border-radius:24px;background:transparent;color:inherit;font:600 15px var(--font-body);cursor:pointer}
-.busy-tabs button[aria-selected=true]{background:var(--control-primary-bg);color:var(--control-primary-fg)}
+.busy-tabs button[aria-selected=true]{background:var(--c-shield);color:var(--c-lotion)}
 #busyList[hidden],#busyWorkflow[hidden]{display:none}
 #busyList li{grid-template-columns:24px minmax(64px,.7fr) minmax(0,1.4fr) minmax(0,1fr);min-height:64px;gap:12px;border-bottom:1px dashed var(--c-black-mana);border-radius:0}
 #busyList span{white-space:nowrap;opacity:1}

@@ -1,20 +1,24 @@
-// P340 (#45, Leo 10-16: 「麦克风放最左边，左手用的时候方便」): the order, left to right, of the four buttons above the message
+// P340 (#45, Leo 10-16: 「麦克风放最左边，左手用的时候方便」): the order, left to right, of the five buttons above the message
 // box. The default is today's order. The owner changes it in Settings → 语言和外观 (js/toolsort.js). A host that knows
 // `ui.composer_buttons` stores it and sends it to every paired remote in each `preferences` broadcast. With an older host,
-// the order stays on this device only (ORDER_KEY = "aj.toolOrder", the four ids as JSON, nothing else).
-// Pure bookkeeping + one DOM move (the same four nodes re-appended, so their listeners and states stay as they are).
+// the order stays on this device only (ORDER_KEY = "aj.toolOrder", the five ids as JSON, nothing else).
+// Pure bookkeeping + one DOM move (the same five nodes re-appended, so their listeners and states stay as they are).
 export const TOOL_KEY = 'ui.composer_buttons';
-export const TOOL_IDS = Object.freeze(['file', 'image', 'camera', 'mic']);
-export const TOOL_DOM = Object.freeze({ file: 'tDoc', image: 'tPhoto', camera: 'tCamera', mic: 'mic' });
+export const TOOL_IDS = Object.freeze(['file', 'image', 'camera', 'mic', 'full']);
+export const TOOL_DOM = Object.freeze({ file: 'tDoc', image: 'tPhoto', camera: 'tCamera', mic: 'mic', full: 'tFull' });
 const ORDER_KEY = 'aj.toolOrder';
 
-/** true when `v` is the four ids, each exactly once (the host's `preferences.composer_order_ok`). */
+/** true when `v` is the five ids, each exactly once (the host's `preferences.composer_order_ok`). */
 export function isOrder(v) {
   return Array.isArray(v) && v.length === TOOL_IDS.length && v.every((x) => typeof x === 'string' && TOOL_IDS.includes(x))
     && new Set(v).size === TOOL_IDS.length;
 }
 /** a valid order as a fresh array; anything else (missing, a duplicate, an unknown id, not a list) → the default. */
-export const normalize = (v) => (isOrder(v) ? [...v] : [...TOOL_IDS]);
+export const normalize = (v) => {
+  // P462: only a complete legacy permutation may migrate; malformed archives still use the default.
+  const legacy = Array.isArray(v) && v.length === 4 && new Set(v).size === 4 && v.every((id) => TOOL_IDS.slice(0, 4).includes(id));
+  return isOrder(v) ? [...v] : legacy ? [...v, 'full'] : [...TOOL_IDS];
+};
 export const isDefault = (v) => normalize(v).every((x, i) => x === TOOL_IDS[i]);
 export const same = (a, b) => isOrder(a) && isOrder(b) && a.every((x, i) => x === b[i]);
 /** the order with the button at index `from` taken out and put back at index `to` (both clamped). */
@@ -38,7 +42,7 @@ const subs = [];
 export const order = () => [...cur];
 export function onChange(fn) { subs.push(fn); }
 
-/** Re-append the four buttons in `cur` order inside their row (nothing else in the row moves). */
+/** Re-append the five buttons in `cur` order inside their row (nothing else in the row moves). */
 export function paint(doc = globalThis.document) {
   if (!doc) return;
   const nodes = cur.map((id) => doc.getElementById(TOOL_DOM[id]));
@@ -49,8 +53,6 @@ export function paint(doc = globalThis.document) {
   if (now.every((n, i) => n === nodes[i])) return;
   const had = doc.activeElement;
   for (const n of nodes) row.append(n);
-  const full = doc.getElementById('tFull');   // P412: the full-screen button is not reordered — it stays the last one
-  if (full && full.parentElement === row) row.append(full);
   if (had && nodes.includes(had) && doc.activeElement !== had) had.focus({ preventScroll: true });
   row.dataset.order = cur.join(' ');
 }

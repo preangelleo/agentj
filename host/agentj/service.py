@@ -1298,10 +1298,10 @@ def start(st) -> dict:
 
 
 def _acknowledge_recovery(st):
-    """Manual start clears an earlier failed handoff only after new code is active."""
+    """Manual start acknowledges a completed failure, including rollback to an older version."""
     from . import __version__, service_recovery
     rec = service_recovery.failure(st)
-    if rec and rec.get("target") == __version__ and status().get("active") == "active":
+    if rec and status().get("active") == "active":
         service_recovery.record(st, "ok", __version__)
         (st.root / service_recovery.NOTICE).unlink(missing_ok=True)
 

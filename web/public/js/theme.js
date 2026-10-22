@@ -26,8 +26,11 @@ const subs = new Set();
 export const busyLook = () => look;
 let logoUrl = null;
 let logoStates = null;
+let singleLogo = false;
 /** The chat page's top-left logo of a custom theme (one image for every state), or null = the official state logos. */
 export const themeLogo = (state = "idle") => logoStates?.[state] || logoUrl;
+// Only a single-image theme is eligible for the official idle-pixel tint.
+export const singleThemeLogo = () => singleLogo ? logoUrl : null;
 /** The blob: URLs this theme holds (the previous theme's are revoked). */
 export const liveUrls = () => urls.slice();
 export function onTheme(fn) { subs.add(fn); return () => subs.delete(fn); }
@@ -92,6 +95,7 @@ export function applyTheme(m) {
   for (const [k, v] of Object.entries(s.colors)) prop(k, v);
   const orb = document.getElementById('orb');
   logoUrl = s.logo ? image(s.logo.png, (w, h) => w === h && SQUARE.includes(w)) : null;
+  singleLogo = !!s.logo && !s.logo.states;
   logoStates = null;
   if (s.logo?.states && Object.keys(STATE_VARS).every(k => s.logo.states[k])) {
     const start = urls.length;

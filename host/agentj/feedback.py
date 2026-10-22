@@ -245,12 +245,21 @@ UNAVAILABLE_NEXT = (
 
 
 def run_send(checked: pathlib.Path, *, owner_confirmed: bool = False, session_file: str = SESSION_FILE,
-             transport=None, env=None, identity=None, http_fn=None, out=None) -> int:
+             transport=None, env=None, identity=None, http_fn=None, out=None, raw_text=None) -> int:
     """Review SS-05: send always judges with the default threshold (privacy.THRESHOLD) — there is no knob here, so a draft
     layer 2 blocks goes out only with --owner-confirmed (the human read it and said yes), never by loosening the gate."""
     threshold = privacy.THRESHOLD
     http_fn, out = http_fn or http, out or sys.stdout
-    raw, obj = _read_json_object(checked)
+    if raw_text is None:
+        raw, obj = _read_json_object(checked)
+    else:
+        raw = raw_text.encode()
+        try:
+            obj = json.loads(raw)
+        except ValueError:
+            raise FeedbackError("feedback must be valid JSON")
+        if not isinstance(obj, dict):
+            raise FeedbackError("feedback must be a JSON object")
     host, user = identity if identity is not None else privacy.local_identity()
     if privacy.redact_draft(obj, host, user) != obj:
         print("refused: layer 1 would still change this file (edited after check?). Run `agentj feedback check` on the draft "
@@ -375,10 +384,28 @@ def cmd_check(a) -> None:
 
 
 def cmd_send(a) -> None:
+    from . import host_diagnostics
+    if a.session_file != SESSION_FILE:
+        from . import elevate, fence
+        if os.environ.get(elevate.ENV) or fence.inside():
+            raise SystemExit("隔离会话只使用后台默认反馈身份 / Isolated feedback uses the host's default identity")
+    elif host_diagnostics.agent_side():
+        try:
+            raw = pathlib.Path(a.checked).read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            print("无法读取反馈草稿 / Cannot read feedback draft", file=sys.stderr)
+            raise SystemExit(EXIT_ERROR)
+        rc = host_diagnostics.request("feedback_send", raw=raw, owner_confirmed=a.owner_confirmed)
+        if rc is not None:
+            sys.exit(rc)
     _run(run_send, pathlib.Path(a.checked), owner_confirmed=a.owner_confirmed, session_file=a.session_file)
 
 
 def cmd_replies(a) -> None:
+    from . import host_diagnostics
+    rc = host_diagnostics.request("feedback_replies", as_json=a.json)
+    if rc is not None:
+        sys.exit(rc)
     _run(run_replies, as_json=a.json)
 
 

@@ -6,6 +6,7 @@ description: Change how the owner's phone page looks — 「换个主题」「�
 A theme is one folder: `theme.json` + PNG files next to it. Schema: `agentj theme schema` (JSON Schema 2020-12, also
 https://agentj.app/schema/agentj-theme-2.json); full rules and examples: https://agentj.app/docs/theme/. Every section is
 optional: what the theme leaves out keeps the factory look.
+导出不复制官方 logo；旧主题里与出厂 logo 字节相同的图片也视为官方，随状态着色，主人自定义 logo 会保留，原文件不改。 Export omits official logos; byte-identical factory logos in old themes also use official state colouring. Owner-created logos are kept, and source files are unchanged.
 
 ## The loop (always this order)
 0. When the owner has not said what to change yet (the phone's 「换个样子」 button or a long press on the robots sends

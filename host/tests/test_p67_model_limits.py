@@ -42,7 +42,7 @@ class ModelLimits(unittest.TestCase):
 
 class MeterLimits(unittest.IsolatedAsyncioTestCase):
     async def test_tokens_pool_direct_unknown(self):
-        for base,expected,mid in [('https://agentsrelay.net/v1',272000,'gpt-6'),('https://api.openai.com/v1',922000,'gpt-6'),('https://agentsrelay.net/v1',None,'unknown')]:
+        for base,expected,mid in [('https://agentsrelay.net/v1',272000,'gpt-6'),('https://api.openai.com/v1',922000,'gpt-6'),('https://agentsrelay.net/v1',200000,'unknown')]:
             a=object.__new__(oc.OpenCodeAgent);a.cfg={'model':'alias/'+mid};a.models_cache=[{'id':'alias/'+mid,'name':mid}]
             a._last_assistant=mock.AsyncMock(return_value={'providerID':'alias','modelID':mid,'tokens':{'input':10,'output':2,'cache':{'read':3}}})
             a._providers=mock.AsyncMock(return_value={});a.meter=mock.Mock()

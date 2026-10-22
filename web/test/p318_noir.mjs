@@ -16,7 +16,7 @@ const SPECS = [
   {name: 'confirm', spec: {kind: 'confirm', text: '已删除 3 条引用'}, act: '撤销'},
   {name: 'error', spec: {kind: 'error', text: '没切换：Agent J 主机不在线'}},
   {name: 'progress', spec: {kind: 'progress', text: '正在上传 2 / 5…'}},
-  {name: 'circle', spec: {kind: 'success', shape: 'circle', text: '已保存到Agent J 主机'}},
+  {name: 'circle', spec: {kind: 'success', shape: 'circle', text: '已保存'}},
 ];
 const web = await startWebServer(), fake = await startFakeHost(), B = await launch();
 const rows = [];
@@ -46,6 +46,7 @@ try {
       assert.equal(g.bg, NOIR, `${tag} background Noir`); assert.equal(g.fg, LOTION, `${tag} text Lotion`); assert.equal(g.op, '1', `${tag} opaque`);
       assert.ok(g.text.includes(c.spec.text), `${tag} text`);
       if (await evaluate(p, `document.getElementById('toast').classList.contains('circle')`)) { assert.ok(Math.abs(g.w - g.h) < 1, `${tag} circle ${g.w}×${g.h}`); assert.equal(g.radius, '50%'); }
+      else if (await evaluate(p, `document.getElementById('toast').classList.contains('square')`)) { assert.ok(g.w>g.h, `${tag} centred rounded square`); }
       else assert.ok(await evaluate(p, `document.getElementById('toast').parentElement.id==='reply-notices'`), `${tag} internal card`);
       if (c.act) { assert.ok(g.btn.h >= 44, `${tag} button ≥ 44 px`); assert.ok(g.btn.right < 10, `${tag} button right-aligned`); }
       writeFileSync(out + `${tag}.png`, await shoot(p, ''));

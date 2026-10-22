@@ -56,7 +56,7 @@ export async function runP374({ B, web, fake, out = OUT }) {
     const checked = () => evaluate(p, `${$('set-news')}.getAttribute('aria-checked')`);
     const waitNotice = async (text, ms = 4000) => {
       await waitFor(p, `document.getElementById('toast').classList.contains('on') && document.getElementById('toast').textContent===${JSON.stringify(text)}`, ms);
-      check(await evaluate(p, `document.getElementById('confirm').hidden && !!document.querySelector('#toast.circle.glance') && !document.querySelector('#toast button')`), 'P445: buttonless notice without a confirm card ' + tag);
+      check(await evaluate(p, `document.getElementById('confirm').hidden && !!document.querySelector('#toast.square.glance') && !document.querySelector('#toast button')`), 'P445: buttonless notice without a confirm card ' + tag);
     };
     const noticeGone = () => waitFor(p, `!document.getElementById('toast').classList.contains('on')`, 4000);
     try {

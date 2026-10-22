@@ -43,8 +43,22 @@ test('no notice / toast / snack / flash rule paints a light or see-through backg
     // the popup itself is opaque; a chip / button inside it may be a tint of it
     const container = r.sel.split(',').some((s) => NOTICE.test(s.trim().split(/\s+/).at(-1)));
     if (container) assert.doesNotMatch(r.body, TRANSLUCENT, `${r.f}: ${r.sel} — notifications are opaque`);
-    assert.doesNotMatch(r.body, /color\s*:\s*var\(--(btn-strong-ink|ink|sooty|c-sooty)\)/, `${r.f}: ${r.sel} — dark ink on a notice`);
+    // P459m: only the strong rescue action has dark button ink; notice prose stays Lotion.
+    const prose = r.sel.split(',').map(s => s.trim()).filter(s => s !== '.reply-notices .rsbanner__go');
+    if (prose.length) assert.doesNotMatch(r.body, /color\s*:\s*var\(--(btn-strong-ink|ink|sooty|c-sooty)\)/, `${r.f}: ${prose.join(',')} — dark ink on a notice`);
   }
+});
+
+test('reply rescue action keeps strong background and matching strong ink', () => {
+  const action = all.find(r => r.f === 'app.css' && r.sel === '.rsbanner__go');
+  const replyAction = all.find(r => r.f === 'app.css' && r.sel === '.reply-notices .rsbanner__go');
+  assert.ok(action && replyAction, 'base and reply-card rescue action rules exist');
+  assert.match(action.body, /background:var\(--btn-strong-bg\)/);
+  assert.match(action.body, /(?:^|;)color:var\(--btn-strong-ink\)/);
+  assert.match(replyAction.body, /(?:^|;)color:var\(--btn-strong-ink\)/);
+  const noticeControls = all.find(r => r.f === 'app.css' && r.sel === '.reply-notices .setup-banner__open,.reply-notices .setup-banner__x');
+  assert.ok(noticeControls);
+  assert.match(noticeControls.body, /color:var\(--dlg-fg\)/);
 });
 
 test('ui.js: notify with six kinds; FORMATS accents are the four palette colours only', async () => {
@@ -81,8 +95,8 @@ test('notifyFormat: kind → accent / icon / ms / shape', async () => {
   assert.equal(notifyFormat({ kind: 'progress' }).ms, 0, 'progress holds');
   assert.equal(notifyFormat({ kind: 'confirm' }).ms, 0, 'confirm holds');
   assert.equal(notifyFormat({ kind: 'info', ms: 6000 }).ms, 6000);
-  assert.equal(notifyFormat({ kind: 'success', shape: 'circle', text: '已保存到Agent J 主机' }).shape, 'circle');
-  assert.equal(notifyFormat({ kind: 'success', shape: 'circle', text: '已保存到Agent J 主机'.repeat(5) }).shape, 'rect', 'long text → rect');
+  assert.equal(notifyFormat({ kind: 'success', shape: 'circle', text: '已保存' }).shape, 'circle');
+  assert.equal(notifyFormat({ kind: 'success', shape: 'circle', text: '已保存到Agent J 主机'.repeat(5) }).shape, 'square', 'long A text → centred square');
   assert.equal(notifyFormat({ kind: 'confirm', shape: 'circle', text: 'x', actions: [{ label: 'a', fn() {} }] }).shape, 'rect', 'buttons → rect');
   assert.equal(notifyFormat({ kind: 'error' }).accent, '--peachy-feeling');
   assert.equal(notifyFormat({ kind: 'progress' }).accent, '--magic-carpet');
@@ -121,7 +135,7 @@ test('notify(): title + text in #toast, kind / shape classes, action button .und
     assert.equal(box.dataset.kind, 'success');
     assert.equal(box.style.props['--nt-accent'], 'var(--emerald-oasis)');
     assert.ok(!box.dataset.hold, 'success is timed');
-    notify({ kind: 'success', shape: 'circle', text: '已保存到Agent J 主机' });
+    notify({ kind: 'success', shape: 'circle', text: '已保存' });
     assert.ok(box.classList.contains('circle') && !box.classList.contains('rect'));
     let hit = 0; toastAction('Deleted', 'Undo', () => { hit++; });
     assert.ok(box.classList.contains('act'));

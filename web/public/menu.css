@@ -665,10 +665,10 @@ body:not([data-view="chat"]) #set-actions .bulb{display:flex}
 #keysFindInput:focus-visible{outline:var(--ui-focus-w) solid var(--menu-accent);outline-offset:var(--ui-focus-gap)}
 .keys-none{margin:0 0 var(--menu-gap);padding:var(--sp-3) 0;color:var(--menu-muted);font-size:var(--ui-fs-small)}
 .keys-none[hidden]{display:none}
-/* ---- P340 (#45) 输入框按钮顺序: the four composer buttons as a row the owner rearranges (js/toolsort.js) ---------------- */
+/* ---- P340 (#45) 输入框按钮顺序: the five composer buttons as a row the owner rearranges (js/toolsort.js) ---------------- */
 #settings .setrow>.toolsort{grid-column:1 / -1}
 #settings .setrow>#set-tools-reset{grid-column:2;grid-row:1;justify-self:end}
-.toolsort{list-style:none;margin:var(--ui-space-control) 0 var(--ui-space-control);padding:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:var(--sp-2)}
+.toolsort{list-style:none;margin:var(--ui-space-control) 0 var(--ui-space-control);padding:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:var(--sp-2)}
 .toolsort li{min-width:0;display:flex}
 .toolsort .tschip{position:relative;flex:1;min-width:0;min-height:72px;padding:var(--sp-2) 4px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;
   border:1px solid var(--menu-line);border-radius:var(--ui-radius-control);background:var(--menu-chip);color:var(--menu-text);cursor:grab;
@@ -789,7 +789,7 @@ body:not([data-view="chat"]) #set-actions .bulb{display:flex}
 .setconnection[data-online="true"]::before{background:var(--c-shield)}   /* P393: the dot keeps the green; 12 px words on Noir need 4.5:1 (Shield is 4.3) */
 @media(max-width:520px){.setconnection{max-width:9px;font-size:0;gap:0}.sethead .setesc{display:none}}
 
-body:has(#settings:not([hidden])) .toast.circle{position:fixed;z-index:90}
+body:has(#settings:not([hidden])) .toast:is(.circle,.square){position:fixed;z-index:90}
 
 /* P393: a drop inside the five-second window is only a dot — amber 「正在重新连接…」, never the red line; ended repair results
    carry the P380 × on their first line and fold to one summary line (their log under 「详情」). */

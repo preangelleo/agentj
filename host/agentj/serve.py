@@ -1770,7 +1770,8 @@ class Host:
         if a is None or not hasattr(a, "_observe_errors"):
             return None
         return {"errors": a._observe_errors, "down": bool(getattr(a, "_observe_down", False)),
-                "error": getattr(a, "_observe_error", None)}
+                "error": getattr(a, "_observe_error", None),
+                "menu": (getattr(getattr(a, "menu_desk", None), "current", None) or {}).get("kind")}
 
     def _bg(self, coro, what: str = "bg") -> asyncio.Task:
         """P142 (B13): a fire-and-forget task held by reference (the loop keeps only a weak one — an unreferenced task can be
@@ -5251,7 +5252,8 @@ class Host:
             elif t == "jcard_note":
                 from . import jcards_data
                 res = {"t": t, **await asyncio.to_thread(jcards_data.phone_change, self.st.root, cid,
-                       obj.get("op"), obj.get("entry"), obj.get("revision"), obj.get("text"))}
+                       obj.get("op"), obj.get("entry"), obj.get("revision"), obj.get("text"),
+                       obj.get("title"), obj.get("date"))}
                 self.st.log("jcard_note", device=s.device, status="ok" if res.get("ok") else "refused")
             elif t == "jpalette":
                 from . import jpalettes
@@ -5505,6 +5507,7 @@ class Host:
             self.hist_update(item.turn, end="stopped")
             self._post(self._send_device, item.device, {"t": "say_state", "sid": item.sid, "s": "cancelled", "why": "stopped"})
         elif isinstance(item, agents.Cmd):
+            item.cancelled = True
             if item.name == "model_set":
                 self.model_set_done(item, "stopped")
             else:
@@ -5518,7 +5521,7 @@ class Host:
 
     async def on_slash(self, s: Session, name: str, arg: str, confirm: bool, typed: bool, authorization=None) -> int:
         """A command from a ready session of a paired device (the only place one can come from). /stop and /help at once;
-        the rest after the turn in front of it (the Agent's queue). Logged: command name + result class, never text.
+        OpenCode/ACP read-only queries bypass the turn queue with a deadline; changes stay serialized. Logged: command name + result class, never text.
         Returns the id of the command's history page (§10.5)."""
         if name in ("stop-all", "stop_all", "estop"):
             turn = self.cmd_turn(s, name)
@@ -5601,10 +5604,18 @@ class Host:
             return done(slash.Result("已急停：恢复之后再用这个命令。", "refused"))
         if name == "clear" and not confirm:
             return done(slash.Result(humane.of(self, "clear.phone_only"), "info"))
+        from . import command_queries
+        if command_queries.applies(self.agent) and command_queries.readonly(name, arg):
+            async def answer_query(agent):
+                done(await command_queries.query(agent, name, arg))
+            self._bg(answer_query(self.agent), "slash_query")
+            return turn
         if self.agent.status in ("working", "compacting") or not self.agent.q.empty():
             self.cmd_card(name, slash.Result(humane.of(self, "cmd.after_turn"), "info"), by, turn, interim=True)
         cmd = agents.Cmd(name, arg, by, turn)
         self.agent.submit(cmd)
+        if command_queries.applies(self.agent):
+            command_queries.expire_queued(self.agent, cmd)
         if not self.workflow_cmd_waiting(cmd) and isinstance(self.agent, SharedClaudeAgent) and name in ("clear", "compact"):
             self.cmd_waiting(cmd)
         return turn

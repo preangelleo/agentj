@@ -224,7 +224,7 @@ try{
    // a refused save puts the switch back AND says why in a centred card (not only a line far up the page)
    fake.st.prefRefuse='busy';const q0=await ev(p,`document.getElementById('set-qswitch').getAttribute('aria-checked')`);
    await click(p,'#set-qswitch');await waitFor(p,`document.getElementById('toast').classList.contains('on')`);await sleep(200);await snap('9c-switch-refused');
-   check(await cev(p,`document.getElementById('confirm').hidden&&document.querySelector('#toast.circle')&&document.getElementById('toast').textContent.includes('busy')`),'refused switch → centred buttonless transient notice');
+   check(await cev(p,`document.getElementById('confirm').hidden&&document.querySelector('#toast.square')&&document.getElementById('toast').textContent.includes('busy')`),'refused switch → centred buttonless transient notice');
    check(await cev(p,`document.getElementById('set-qswitch').getAttribute('aria-checked')===${JSON.stringify(q0)}`),'refused switch flips back');
    await waitFor(p,`!document.getElementById('toast').classList.contains('on')`,3000);check(await cev(p,`document.getElementById('confirm').hidden&&!document.getElementById('confirm-no').hidden`),'notice fades without touching the confirm card');
    fake.st.prefRefuse=null;

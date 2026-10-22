@@ -33,7 +33,7 @@ try {
    assert.ok(await evaluate(p,`(()=>{const m=document.getElementById('mic'),l=document.getElementById('micLabel');return l.getBoundingClientRect().width<=m.getBoundingClientRect().width;})()`));
    await sleep(200);writeFileSync(join(out,`progress-${w}-${scheme}-${lang}.png`),await shoot(p));
    await evaluate(p,`window.finishVoice({ok:true,state:'ready'})`);await waitFor(p,`document.getElementById('toast').dataset.kind==='success'`);
-   assert.equal(await evaluate(p,`document.querySelector('#toast .nt-body').textContent`),lang==='zh'?'语音输入已就绪':'Voice input is ready');
+   assert.equal(await evaluate(p,`document.querySelector('#toast .nt-body').textContent`),lang==='zh'?'已就绪':'Ready');
    assert.equal(await evaluate(p,`document.getElementById('toast').dataset.hold`),undefined);
    assert.equal(await evaluate(p,`document.querySelectorAll('#toast button').length`),0);
    assert.notEqual(await evaluate(p,`document.getElementById('mic').getAttribute('aria-label')`),lang==='zh'?'准备中':'Preparing');
