@@ -1,5 +1,5 @@
 // P340 E (#45): Settings → 「输入框按钮顺序」 — real page + local fake host (real Noise), own headless Chromium (never :9222).
-//   tools-default      out of the box the five buttons are 文件 · 相册 · 拍照 · 麦克风 (message box and Settings row alike);
+//   tools-default      out of the box the four buttons are 文件 · 相册 · 拍照 · 麦克风 (message box and Settings row alike);
 //                      「恢复默认」 is disabled; every chip ≥ 44 px; no sideways overflow
 //   tools-drag         desktop: a mouse drags 麦克风 to the far left; phone: a finger holds it, then drags → the message box
 //                      shows the new order at once, ONE pref_set ui.composer_buttons with that order
@@ -24,13 +24,13 @@ import { launch, newPage, navigate, waitFor, waitState, evaluate, shoot, sleep, 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const OUT = join(ROOT, 'reports/qa/p340/e');
 const KEY = 'ui.composer_buttons';
-const DEF = ['file', 'image', 'camera', 'mic', 'full'];
-const MIC_LEFT = ['mic', 'file', 'image', 'camera', 'full'];
-const S = { zh: { label: '输入框按钮顺序', mic: '麦克风', chip0: '文件，第 1 个，共 5 个' }, en: { label: 'Message box buttons', mic: 'Mic', chip0: 'File, position 1 of 5' } };
+const DEF = ['file', 'image', 'camera', 'mic'];
+const MIC_LEFT = ['mic', 'file', 'image', 'camera'];
+const S = { zh: { label: '输入框按钮顺序', mic: '麦克风', chip0: '文件，第 1 个，共 4 个' }, en: { label: 'Message box buttons', mic: 'Mic', chip0: 'File, position 1 of 4' } };
 export const CASES = { a: 'tools-default', b: 'tools-drag', c: 'tools-keyboard', d: 'tools-tap', e: 'tools-reset', f: 'tools-sync', g: 'tools-old-host' };
 const $ = (id) => `document.getElementById('${id}')`;
 const box = (p, sel) => evaluate(p, `(()=>{const r=document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect();return {l:r.left,r:r.right,t:r.top,b:r.bottom,w:r.width,h:r.height,x:r.left+r.width/2,y:r.top+r.height/2}})()`);
-const composer = (p) => evaluate(p, `[...${$('tools')}.children].map(n=>({tDoc:'file',tPhoto:'image',tCamera:'camera',mic:'mic',tFull:'full'})[n.id]).filter(Boolean)`);
+const composer = (p) => evaluate(p, `[...${$('tools')}.children].map(n=>({tDoc:'file',tPhoto:'image',tCamera:'camera',mic:'mic'})[n.id]).filter(Boolean)`);
 const chipsOf = (p) => evaluate(p, `[...document.querySelectorAll('#set-tools button[data-tool]')].map(b=>b.dataset.tool)`);
 const sets = (fake) => fake.st.prefSets.filter((m) => m.key === KEY).map((m) => m.value);
 const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -52,7 +52,7 @@ export async function runP340E() {
   };
   const openSet = async (p) => {
     await evaluate(p, `${$('settings')}.hidden && ${$('setBtn')}.click()`);
-    await waitFor(p, `!${$('settings')}.hidden && document.querySelectorAll('#set-tools button[data-tool]').length===5`);
+    await waitFor(p, `!${$('settings')}.hidden && document.querySelectorAll('#set-tools button[data-tool]').length===4`);
     await evaluate(p, `${$('set-tools-row')}.scrollIntoView({block:'center'})`);
     await sleep(250);
   };
@@ -102,7 +102,7 @@ export async function runP340E() {
         await pair(p, lang);
         await fake.send({ t: 'status', s: 'idle', agent: 'claude', name: 'AgentJ' });
         await fake.addTurn({ k: 'phone', dev: 'other', name: 'iPhone', text: lang === 'zh' ? '把麦克风放到最左边' : 'Put the mic on the far left' },
-          lang === 'zh' ? '好的，设置里可以拖动这四个按钮。' : 'Sure: drag the five buttons in Settings.');
+          lang === 'zh' ? '好的，设置里可以拖动这四个按钮。' : 'Sure: drag the four buttons in Settings.');
         await waitFor(p, `${$('words')}.textContent.length>0`);
         await save('chat-before');
 
@@ -119,7 +119,7 @@ export async function runP340E() {
           const rr = await box(p, '#set-tools-reset');
           check(rr.w >= 44 && rr.h >= 44, 'reset ≥ 44 px');
           check(await evaluate(p, `document.documentElement.scrollWidth<=innerWidth && ${$('set-tools')}.scrollWidth<=${$('set-tools')}.clientWidth+1`), 'no sideways overflow');
-          check(await evaluate(p, `(()=>{const l=document.querySelector('#set-tools li:last-child').getBoundingClientRect(),c=${$('set-tools-row')}.getBoundingClientRect();return l.right<=c.right+1})()`), 'five chips fit the row at ' + w);
+          check(await evaluate(p, `(()=>{const l=document.querySelector('#set-tools li:last-child').getBoundingClientRect(),c=${$('set-tools-row')}.getBoundingClientRect();return l.right<=c.right+1})()`), 'four chips fit the row at ' + w);
           await save('settings-before');
         });
 
@@ -151,20 +151,20 @@ export async function runP340E() {
             const n0 = sets(fake).length;
             await evaluate(p, `document.querySelector(${JSON.stringify(chipSel('mic'))}).focus()`);
             await key(p, 'ArrowRight'); await key(p, 'ArrowRight');
-            check(eq(await chipsOf(p), ['file', 'image', 'mic', 'camera', 'full']), '→ → moves it two places');
+            check(eq(await chipsOf(p), ['file', 'image', 'mic', 'camera']), '→ → moves it two places');
             check(await evaluate(p, `document.activeElement.dataset.tool`) === 'mic', 'focus stays on the moved chip');
             await key(p, 'End');
-            check(eq(await chipsOf(p), ['file', 'image', 'camera', 'full', 'mic']), 'End = the far right');
+            check(eq(await chipsOf(p), DEF), 'End = the far right');
             await key(p, 'Home');
             check(eq(await chipsOf(p), MIC_LEFT), 'Home = the far left');
             await key(p, 'ArrowLeft');
             check(eq(await chipsOf(p), MIC_LEFT), '← at the left edge does nothing');
             check(await waitFor(p, `${$('set-tools-live')}.textContent.includes(${JSON.stringify(s.mic)})`, 2000).catch(() => false), 'the move is announced');
             await key(p, 'ArrowDown');
-            check(eq(await chipsOf(p), ['file', 'mic', 'image', 'camera', 'full']), '↓ = one to the right');
+            check(eq(await chipsOf(p), ['file', 'mic', 'image', 'camera']), '↓ = one to the right');
             await settle();
-            check(eq(sets(fake).slice(n0), [['file', 'mic', 'image', 'camera', 'full']]), 'one save for the burst: ' + JSON.stringify(sets(fake).slice(n0)));
-            check(eq(await composer(p), ['file', 'mic', 'image', 'camera', 'full']), 'composer follows');
+            check(eq(sets(fake).slice(n0), [['file', 'mic', 'image', 'camera']]), 'one save for the burst: ' + JSON.stringify(sets(fake).slice(n0)));
+            check(eq(await composer(p), ['file', 'mic', 'image', 'camera']), 'composer follows');
             check(await evaluate(p, `!${$('settings')}.hidden`), 'arrow keys never leave Settings');
           });
 
@@ -174,7 +174,7 @@ export async function runP340E() {
             check(await evaluate(p, `document.querySelector(${JSON.stringify(chipSel('camera'))}).getAttribute('aria-pressed')`) === 'true', 'tap = picked up');
             if (w < 500) await save('settings-picked');
             await tapOn(chipSel('file'));
-            check(eq(await chipsOf(p), ['camera', 'file', 'mic', 'image', 'full']), 'second tap puts it there: ' + await chipsOf(p));
+            check(eq(await chipsOf(p), ['camera', 'file', 'mic', 'image']), 'second tap puts it there: ' + await chipsOf(p));
             check(await evaluate(p, `!document.querySelector('#set-tools [aria-pressed="true"]')`), 'nothing picked any more');
             await tapOn(chipSel('image'));
             await evaluate(p, `document.querySelector(${JSON.stringify(chipSel('image'))}).focus()`);
@@ -182,7 +182,7 @@ export async function runP340E() {
             check(await evaluate(p, `!document.querySelector('#set-tools [aria-pressed="true"]')`), 'Esc puts it down');
             check(await evaluate(p, `!${$('settings')}.hidden`), 'that Esc did not close Settings');
             await settle();
-            check(eq(sets(fake).slice(n0), [['camera', 'file', 'mic', 'image', 'full']]), 'saved: ' + JSON.stringify(sets(fake).slice(n0)));
+            check(eq(sets(fake).slice(n0), [['camera', 'file', 'mic', 'image']]), 'saved: ' + JSON.stringify(sets(fake).slice(n0)));
           });
         }
 
@@ -226,7 +226,7 @@ export async function runP340E() {
             await openSet(p);
             const n0 = fake.st.prefSets.length;
             check(!(await evaluate(p, `${$('set-tools-local')}.hidden`)), 'the device-only note shows');
-            const was = await chipsOf(p), LOCAL = [was[1], was[0], was[2], was[3], was[4]];
+            const was = await chipsOf(p), LOCAL = [was[1], was[0], was[2], was[3]];
             await evaluate(p, `document.querySelector(${JSON.stringify(chipSel(was[0]))}).focus()`);
             await key(p, 'ArrowRight');
             await settle();
@@ -237,8 +237,8 @@ export async function runP340E() {
             await closeSet(p);
             fake.st.prefSet = false; fake.st.prefs = { appearance: fake.st.prefs.appearance };   // the older computer after the reload too
             await navigate(p, web.url + '?lang=' + lang);
-            const ids = LOCAL.map((x) => ({ file: 'tDoc', image: 'tPhoto', camera: 'tCamera', mic: 'mic', full: 'tFull' })[x]).join();
-            await waitFor(p, `!!${$('mic')} && [...${$('tools')}.children].map(n=>n.id).filter(x=>['tDoc','tPhoto','tCamera','mic','tFull'].includes(x)).join()===${JSON.stringify(ids)}`, 10000);
+            const ids = LOCAL.map((x) => ({ file: 'tDoc', image: 'tPhoto', camera: 'tCamera', mic: 'mic' })[x]).join();
+            await waitFor(p, `!!${$('mic')} && [...${$('tools')}.children].map(n=>n.id).filter(x=>['tDoc','tPhoto','tCamera','mic'].includes(x)).join()===${JSON.stringify(ids)}`, 10000);
             check(eq(await composer(p), LOCAL), 'this device keeps it across a reload');
           });
         }

@@ -1,4 +1,4 @@
-// P340 (#45): Settings → 语言和外观 → 「输入框按钮顺序」. The five buttons above the message box (文件 / 图片 / 拍照 / 麦克风 / 展开全屏),
+// P340 (#45): Settings → 语言和外观 → 「输入框按钮顺序」. The four buttons above the message box (文件 / 图片 / 拍照 / 麦克风),
 // left to right, in a row the owner can rearrange:
 //   mouse / pen  drag a button sideways (it follows the pointer, the others make room);
 //   touch        hold one for a moment, then drag it (a plain swipe still scrolls the page);
@@ -6,7 +6,7 @@
 //   keyboard     focus a button, ← / → (or ↑ / ↓) move it one place, Home / End to either end.
 // Every change shows in the message box at once (js/toolorder.js) and is saved: through `pref_set ui.composer_buttons` when
 // the computer knows the key (every paired remote then follows the `preferences` broadcast), otherwise on this device only.
-// 「恢复默认」 puts back 文件 · 图片 · 拍照 · 麦克风 · 展开全屏.
+// 「恢复默认」 puts back 文件 · 图片 · 拍照 · 麦克风.
 import { t, onLang } from './t.js';
 import { el } from './ui.js';
 import * as order from './toolorder.js';

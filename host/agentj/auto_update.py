@@ -566,7 +566,7 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
                 rec = service_recovery.read(st) or {}
                 if rec.get('target') == version and rec.get('status') == 'ok':
                     break
-                if rec.get('status') in ('failed', 'rolled_back') or time.monotonic() >= end:
+                if rec.get('status') == 'failed' or time.monotonic() >= end:
                     raise ValueError('restart_failed')
                 time.sleep(.25)
         for attempt in range(SELF_CHECK_TRIES):
@@ -581,11 +581,6 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
                 break
             time.sleep(SELF_CHECK_WAIT)
         if blockers:
-            ids = update.check_ids(blockers)
-            st.log('upgrade_health_failed', reason='doctor_failed', status='upgrade' if diagnose else 'rollback',
-                   why=','.join(ids))
-            # launchd redirects this manager worker's stdout to service-recovery.log. Fixed IDs only.
-            print('upgrade_health_failed ' + ('upgrade' if diagnose else 'rollback') + ': ' + ','.join(ids), flush=True)
             if diagnose:
                 diag['failed_checks'] = update.check_ids(blockers)
                 if update.DOCTOR_UNPARSABLE in blockers:
@@ -672,8 +667,6 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
                 rb_step = 'verify'
                 verify(job['from'], diagnose=False)
                 result['result'] = 'rolled_back'
-                if service_recovery.service.status().get('active') == 'active':
-                    service_recovery.record(st, 'rolled_back', job['to'], 'rolled_back')
             except Exception as r_e:
                 # #166/#192: say why the rollback failed (fixed category + its own redacted, bounded tail), then look at
                 # what is really installed: an installer that could not even start (no uv on the service PATH) changed

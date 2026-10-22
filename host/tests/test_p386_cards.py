@@ -24,8 +24,7 @@ class Cards(unittest.TestCase):
         self.assertIn('415 555 1234', snap['entries'][1]['text'])
         r = jcards_data.note_change(self.root, 'notes', 'edit', snap['entries'][1]['id'], snap['revision'], 'New address')
         self.assertTrue(r['ok'])
-        self.assertEqual(next(self.path.parent.glob('*.bak')).read_bytes(), raw.encode())
-        self.assertEqual(jcards.phone_get(self.root, 'notes')['entries'][0]['text'], 'Founder code: KEEP')
+        self.assertTrue(self.path.read_bytes().startswith(b'# Notebook\r\n\r\n- Founder code: KEEP\r\n\r\n'))
         unchanged = self.path.read_bytes()
         self.assertEqual(jcards_data.note_change(self.root, 'notes', 'delete', snap['entries'][0]['id'], snap['revision'])['why'], 'conflict')
         self.assertEqual(self.path.read_bytes(), unchanged)
@@ -60,7 +59,7 @@ class Cards(unittest.TestCase):
         r = jcards.phone_get(self.root, 'notes')
         self.assertEqual(len(r['entries']), 3)
         self.assertNotEqual(r['entries'][0]['id'], r['entries'][1]['id'])
-        self.assertEqual(before, next(self.path.parent.glob('*.bak')).read_bytes())
+        self.assertEqual(before, self.path.read_bytes())
 
     def test_colors_persist_reset_and_no_switch_clobber(self):
         self.assertTrue(jcards_data.set_color(self.root, 'chat', '#AaBbCc')['ok'])
@@ -159,17 +158,17 @@ class Cards(unittest.TestCase):
         self.path.write_bytes(full)
         with patch('agentj.jcards.find', return_value=c):
             snap = jcards.phone_get(self.root, 'notes')
-            self.assertFalse(snap['ok'])  # Official migration refuses a cut file entirely.
+            self.assertTrue(snap['cut'])
             self.assertNotIn(prefix.decode(), json.dumps(snap))
+            self.assertFalse(any(x['editable'] for x in snap['entries']))
             before = self.path.read_bytes()
             for op in ('edit', 'delete'):
-                self.assertFalse(jcards_data.note_change(self.root, 'notes', op, 'any', 'cut-revision', 'replacement')['ok'])
+                self.assertFalse(jcards_data.note_change(self.root, 'notes', op, 'any', snap['revision'], 'replacement')['ok'])
             self.assertEqual(before, self.path.read_bytes())
-            self.assertEqual(list(self.path.parent.glob('*.bak')), [])
-        # No whitespace at all is refused too, never returned as a cut secret token.
+        # No whitespace at all must drop the entire cut token too.
         self.path.write_bytes(prefix + b'Q' * 60)
         with patch('agentj.jcards.find', return_value=c):
-            self.assertFalse(jcards.phone_get(self.root, 'notes')['ok'])
+            self.assertEqual(jcards.phone_get(self.root, 'notes')['entries'], [])
 
     def test_automation_secret_identifiers_are_opaque_stable_handles(self):
         secret = 'AKIA' + 'Q3EGRKX7' + 'PLM2VN4B'

@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import argparse
 import contextlib
-import datetime
 import errno
 import json
 import os
@@ -791,10 +790,6 @@ def phone_get(root, cid, lang: str = "zh", agent_cfg=None) -> dict:
                      for a in d.get("links", [])],
            "anchors": [{"id": a["id"], "label": _pick(a["label"], lang), **({"block": a["block"]} if "block" in a else {"heading": a["heading"]})}
                        for a in d.get("anchors", [])]}
-    if cid == "notes" and c["official"]:
-        from . import jcards_notes
-        result = jcards_notes.change(root, c)
-        return {**res, **result}
     if "get" in d["data"]:              # P432: the card's own server answers instead of a data file
         from . import jcards_server
         raw, problem, cut = jcards_server.get_data(c)
@@ -915,9 +910,7 @@ def parser() -> argparse.ArgumentParser:
     x.add_argument("--id", default="notes")
     x.add_argument("--entry")
     x.add_argument("--revision")
-    x.add_argument("--text", help="内容，不含标题或日期 / content only")
-    x.add_argument("--title", help="可空标题 / optional title")
-    x.add_argument("--date", help="YYYY-MM-DD，缺省今天 / defaults to today")
+    x.add_argument("--text")
     x.add_argument("--json", action="store_true")
     # P394 (#130): the To-do card kept by the Agent and the owner together (jcards_todo; flags spelled out here for the docs checker)
     x = ps.add_parser("todo", help="待办卡：加、改、标完成 / 取消，列出现在该处理的 / the To-do card: add, change, close, list what is due")
@@ -1001,7 +994,7 @@ def command(args: list) -> int:
         return jcards_todo.command(a, root)
     if a.cmd == "note":
         from . import jcards_data
-        r = phone_get(root, a.id) if a.op == "list" else jcards_data.note_change(root, a.id, a.op, a.entry, a.revision, a.text, a.title, datetime.date.today().isoformat() if a.date is None else a.date)
+        r = phone_get(root, a.id) if a.op == "list" else jcards_data.note_change(root, a.id, a.op, a.entry, a.revision, a.text)
         print(json.dumps(r, ensure_ascii=False))
         return 0 if r.get("ok") else 1
     if a.cmd == "schema":

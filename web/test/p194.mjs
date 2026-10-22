@@ -18,8 +18,8 @@ const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const OUT = join(ROOT, 'reports/qa/p194/screens');
 const $ = (id) => `document.getElementById('${id}')`;
 const SLOT0 = 'c000000000000';
-const S = { zh: { title: '你的联系方式', skip: '跳过', main: '主邮箱', need: '请至少填一个主邮箱', saved: '已保存', row: '我的联系方式' },
-  en: { title: 'Your contact details', skip: 'Skip', main: 'Main e-mail', need: 'Please enter your main e-mail', saved: 'Saved', row: 'My contact details' } };
+const S = { zh: { title: '你的联系方式', skip: '跳过', main: '主邮箱', need: '请至少填一个主邮箱', saved: '联系人已保存', row: '我的联系方式' },
+  en: { title: 'Your contact details', skip: 'Skip', main: 'Main e-mail', need: 'Please enter your main e-mail', saved: 'Contact saved', row: 'My contact details' } };
 export const CASES = { a: 'owner-card', b: 'owner-settings' };
 const esc = (p) => p.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
 const box = (p, sel) => evaluate(p, `(()=>{const r=document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect();return {l:r.left,r:r.right,t:r.top,b:r.bottom,w:r.width,h:r.height}})()`);

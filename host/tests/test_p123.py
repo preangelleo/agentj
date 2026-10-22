@@ -27,10 +27,9 @@ class Provider(unittest.TestCase):
         note = oc.PROVIDER_NOTES['quota_window']
         self.assertIn('重置',note); self.assertIn('reset',note); self.assertIn('升级',note)
         for language in ('zh','en'):
-            a=oc.OpenCodeAgent.__new__(oc.OpenCodeAgent);a.cfg={'language':language,'model':'fixture/model'}
+            a=oc.OpenCodeAgent.__new__(oc.OpenCodeAgent);a.cfg={'language':language}
             selected=a.provider_note('quota_window','fixture',note)
-            self.assertIn('周期未说明' if language=='zh' else 'window unspecified', selected)
-            self.assertIn('来源未确认' if language=='zh' else 'source unconfirmed', selected)
+            self.assertTrue(selected.endswith(note.split(' / ')[0 if language=='zh' else -1]))
             self.assertIn('fixture',selected)
             self.assertIn('具体来源未确认' if language=='zh' else 'exact source unconfirmed',selected)
 
@@ -59,8 +58,7 @@ class Provider(unittest.TestCase):
                         a._failed({'type':'api','status':429,'message':raw})
                     self.assertEqual(a.last_provider_fail['reason'],'quota_window')
                     selected=a.fail_notice.call_args.args[0]
-                    self.assertIn('本周' if language=='zh' else 'weekly', selected)
-                    self.assertIn('来源未确认' if language=='zh' else 'source unconfirmed', selected)
+                    self.assertTrue(selected.endswith(oc.PROVIDER_NOTES['quota_window'].split(' / ')[0 if language=='zh' else -1]))
                     self.assertIn('fixture/model',selected)
                     self.assertIn('具体来源未确认' if language=='zh' else 'exact source unconfirmed',selected)
                     self.assertNotIn('CANARY-RAW',str(a.host.st.log.call_args_list))

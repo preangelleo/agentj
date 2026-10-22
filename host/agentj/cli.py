@@ -1061,13 +1061,11 @@ def cmd_devices(a) -> None:
         st.migrate_device_names()
     except (OSError, ValueError):
         pass
-    from .devnames import public_device
     devs = st.devices()
     status = _ctl_quiet(st, {"cmd": "status"}) or {}
     online = {s["device"] for s in status.get("sessions", []) if s.get("state") == "ready"}
-    devs = {d: public_device(d, v, d in online) for d, v in devs.items()}
     if a.json:
-        print(json.dumps(devs,
+        print(json.dumps({d: {**v, "online": d in online, "named_by": device_names(v)["named_by"]} for d, v in devs.items()},
                          ensure_ascii=False, indent=1))
         return
     print(f"Agent：{_name_or_unset(st)}")
@@ -1077,7 +1075,7 @@ def cmd_devices(a) -> None:
         print("还没有已批准的设备。用 `agentj pair` 配对。")
     for did, v in devs.items():
         when = time.strftime("%Y-%m-%d %H:%M", time.localtime(v.get("paired_at", 0)))
-        fid = "  Face ID ✓" if v.get("has_passkey") else ""   # F20: this phone can reconnect with its passkey
+        fid = "  Face ID ✓" if isinstance(v.get("pk"), dict) else ""   # F20: this phone can reconnect with its passkey
         print(f"{did}  {'在线' if did in online else '离线'}  {v.get('name', '')}{_name_note(v)}  配对于 {when}{fid}{' · 经账户页添加 / Added from account page' if v.get('source') == 'account' else ''}")
 
 
@@ -1225,10 +1223,6 @@ def cmd_notify(a) -> None:
 
 
 def cmd_status(a) -> None:
-    from . import host_diagnostics
-    rc = host_diagnostics.request("status")
-    if rc is not None:
-        sys.exit(rc)
     st = State()
     _need_init(st)
     try:
@@ -2643,10 +2637,6 @@ def cmd_doctor(a) -> None:
     from . import doctor
     if getattr(a, "reconnect", False):         # P147: repair whichever of serve / relay / agent is broken
         from . import reconnect
-        from . import host_diagnostics
-        rc = host_diagnostics.request("reconnect", session=a.session, caller_session=os.environ.get("CLAUDE_CODE_SESSION_ID"), as_json=a.json)
-        if rc is not None:
-            sys.exit(rc)
         st = State()
         _need_init(st)
         sys.exit(reconnect.run(st, _lang(st), session=a.session, as_json=a.json))
@@ -3603,10 +3593,7 @@ def main(argv=None) -> None:
     ob.add_argument("--json", action="store_true")
     ob.set_defaults(fn=cmd_onboarding)
     a = p.parse_args(argv)
-    from . import host_diagnostics
-    host_owned = a.cmd in ("status", "support", "feedback") or (a.cmd == "doctor" and a.reconnect)
-    host_owned = host_owned and host_diagnostics.agent_side()
-    if not host_owned and a.cmd not in NO_MIGRATE and not (a.cmd == "report" and getattr(a, "action", None)) and a.cmd not in ("keep-awake", "browser") and not (a.cmd == "doctor" and a.isolation_only):
+    if a.cmd not in NO_MIGRATE and not (a.cmd == "report" and getattr(a, "action", None)) and a.cmd not in ("keep-awake", "browser") and not (a.cmd == "doctor" and a.isolation_only):
         from . import migrate
         try:
             # P127: `serve` without a terminal is the owner's own service restarting (auto-update / reboot): a 0.9 install

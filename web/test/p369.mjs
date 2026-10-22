@@ -62,7 +62,7 @@ try {
       // #81 — 「输入框按钮顺序」: one top, one bottom
       await ev(p, `${$('set-tools')}.scrollIntoView({block:'center',behavior:'instant'})`); await sleep(150);
       const ts = await ev(p, `[...document.querySelectorAll('#set-tools > li')].map(li=>{const r=li.getBoundingClientRect(),b=li.querySelector('.tschip').getBoundingClientRect();return [r.top,r.bottom,b.top,b.bottom]})`);
-      assert.equal(ts.length, 5, `${tag}: five buttons including full screen`);
+      assert.equal(ts.length, 4, `${tag}: four buttons`);
       for (const k of [0, 1, 2, 3]) {
         const v = ts.map((x) => x[k]);
         assert.equal(Math.max(...v) - Math.min(...v), 0, `${tag}: button order row ${['li top', 'li bottom', 'chip top', 'chip bottom'][k]} Δ ${JSON.stringify(v)}`);

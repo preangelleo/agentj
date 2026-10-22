@@ -27,14 +27,9 @@ export function notifyOnce(spec, onceKey) {
   notify(spec);
   return true;
 }
-// Two placements: centred circle/square for transient status/information; rect inside the reply for execution/actions.
+// Two placements: a centred circle for short transient status; a rect inside the reply for execution / actions.
 // Colours and actions retain P318's Noir tokens. Held notices keep ms:0 and can be dismissed with Escape.
-export const CIRCLE_MAX = 4;
-// A single Han status (at most four code points), or one alphabetic word. No punctuation, counters or sentences.
-export function circleStatus(text) {
-  const value = String(text ?? '').trim();
-  return /^\p{Script=Han}{1,4}$/u.test(value) || /^\p{Script=Latin}+$/u.test(value);
-}
+export const CIRCLE_MAX = 48;
 export const NOTIFY_ACCENTS = ['--emerald-oasis', '--windstorm', '--peachy-feeling', '--magic-carpet'];
 export const FORMATS = Object.freeze({
   success:  { accent: '--emerald-oasis',  icon: 'check',    ms: 1800, shape: 'circle' },
@@ -56,10 +51,9 @@ const ICONS = {
 /** The resolved format of a spec (pure; unit-tested): kind falls back to info, ms 0 = held. */
 export function notifyFormat(spec = {}) {
   const kind = Object.prototype.hasOwnProperty.call(FORMATS, spec.kind) ? spec.kind : 'info', f = FORMATS[kind];
-  let shape = ['circle', 'square', 'rect'].includes(spec.shape) ? spec.shape : f.shape;
-  // Structured/actionable notices retain their reply/page owner. A long A notice stays centred, without truncation.
-  if (shape !== 'rect' && ((spec.actions || []).length || spec.title || spec.media)) shape = 'rect';
-  else if (shape === 'circle' && !circleStatus(spec.text)) shape = 'square';
+  let shape = spec.shape === 'circle' || spec.shape === 'rect' ? spec.shape : f.shape;
+  // the circle holds a few words and no buttons; anything longer is the rect (a CJK character counts two)
+  if (shape === 'circle' && !spec.glance && (String(spec.text ?? '').replace(/[^\x00-\xff]/g, '..').length > CIRCLE_MAX || (spec.actions || []).length || spec.title || spec.media)) shape = 'rect';
   const ms = spec.ms === undefined || spec.ms === null ? f.ms : Math.max(0, +spec.ms || 0);
   return { kind, accent: f.accent, icon: f.icon, shape, ms };
 }
@@ -71,8 +65,6 @@ function icon(name) {
 }
 // P440: execution / actionable notices belong to the current reply, never above the input card.
 export function replyNotice(node) {
-  // Interactive sheets own the stage overlay; execution notices alone use this slot.
-  if (node?.classList.contains('sheet')) return node;
   const host = el('reply-notices');
   if (host && node) host.appendChild(node);
   return node;
@@ -87,7 +79,7 @@ export function notify(spec) {
   const f = notifyFormat(spec), box = el('toast');
   if (!box) return null;
   delete box.dataset.sharedFollow;
-  box.classList.remove('act', 'mail-saved', 'circle', 'square', 'rect', 'glance');
+  box.classList.remove('act', 'mail-saved', 'circle', 'rect', 'glance');
   box.classList.toggle('glance', !!spec.glance);
   box.dataset.kind = f.kind; box.style.setProperty('--nt-accent', 'var(' + f.accent + ')');
   box.setAttribute('role', f.kind === 'error' || f.kind === 'warn' ? 'alert' : 'status');
@@ -161,7 +153,7 @@ export function confirmSheet(title, text, yes, danger = false, no) {
     el('confirm-no').onclick = () => done(false);
   });
 }
-/** Pure information never requires acknowledgement. Long explanations wrap in the centred rounded square. */
+/** Pure information never requires acknowledgement. Long explanations wrap in the centred glance. */
 export function noticeSheet(title, text) {
   notify({ kind: 'info', shape: 'circle', glance: true, text: String(text || title).replace(/`/g, ''), ms: 2000 });
   return Promise.resolve();

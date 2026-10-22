@@ -43,7 +43,7 @@ try{
   // Capture true native active state (not just the selected class).
   const r=await ev(p,`(()=>{const r=window.__option.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()`);
   await p.send('Input.dispatchMouseEvent',{type:'mousePressed',button:'left',clickCount:1,x:r.x,y:r.y});
-  assert.equal(rgb(await ev(p,`getComputedStyle(window.__option).backgroundColor`)),'rgb(20,20,20)');
+  assert.equal(rgb(await ev(p,`getComputedStyle(window.__option).backgroundColor`)),'rgb(44,43,38)');
   assert.equal(rgb(await ev(p,`getComputedStyle(window.__option).color`)),'rgb(250,249,245)');
   // Release away from the button: style verification must not send an answer.
   await p.send('Input.dispatchMouseEvent',{type:'mouseReleased',button:'left',clickCount:1,x:0,y:0});

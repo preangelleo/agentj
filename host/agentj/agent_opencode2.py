@@ -90,7 +90,6 @@ def v2_error(err) -> tuple[str, dict]:
     err = err if isinstance(err, dict) else {}
     resp = err.get("response") if isinstance(err.get("response"), dict) else {}
     data = {"statusCode": err.get("status"), "message": err.get("message") or "", "responseBody": resp.get("body") or ""}
-    data.update({k: err[k] for k in ("providerID", "modelID", "resetAt", "reset_at") if k in err})
     name = str(err.get("type") or "")
     if name == "provider.no-route":            # "Model unavailable: <provider>/<model>" — the provider has no key / no model
         data["message"] = "model not found: " + str(data["message"])
@@ -181,8 +180,6 @@ class OpenCodeV2Agent(OpenCodeAgent):
                 with contextlib.suppress(OSError, HTTPError, asyncio.TimeoutError):
                     st, c = await self.client.request("GET", "/api/config")
                     c = _data(c) if isinstance(_data(c), dict) else c
-                    from .provider_setup import remember
-                    remember(self, c if st == 200 else None)
                     if st == 200 and isinstance(c, dict) and isinstance(c.get("provider"), dict):
                         out += [k for k in c["provider"] if isinstance(k, str) and k not in out]
                 return out
@@ -233,13 +230,6 @@ class OpenCodeV2Agent(OpenCodeAgent):
             self.turn_progress = time.monotonic()
         if t == "session.created":
             self._child_seen(p.get("sessionID"), p.get("parentID"), p.get("agent"), p.get("title"), True, p.get("permissions"))
-        elif kid and t in ("session.step.failed", "session.execution.failed"):
-            from .provider_setup import error_model, limit_note
-            name, data = v2_error(p.get("error"))
-            if provider_error_reason(name, data) in ("balance", "quota_window", "rate_limit"):
-                self.host.agent_notice(limit_note(error_model(data), self.cfg.get("model") or "?", data, self.cfg.get("language", "en")))
-            if t in END:
-                self._child_done(p["sessionID"])
         elif kid and t in END:
             self._child_done(p["sessionID"])
         elif kid and t == "session.execution.started":
@@ -310,19 +300,11 @@ class OpenCodeV2Agent(OpenCodeAgent):
             return
         code = data.get("statusCode")
         code = code if type(code) is int and 100 <= code <= 599 else None
-        from .provider_setup import error_model
-        failed_model = error_model(data)
-        sel = split_model(failed_model or self.cfg.get("model"))
+        sel = split_model(self.cfg.get("model"))
         pid = sel["providerID"] if sel else None
         reason = provider_error_reason(name, data, self.connected_at_start, pid)
-        if failed_model and failed_model != self.cfg.get("model") and reason in ("balance", "quota_window", "rate_limit"):
-            self.host.agent_notice(self.provider_note(reason, pid, PROVIDER_NOTES[reason], data, failed_model))
-            return
         if self.provider_fail_noted:
             return
-        if code == 401 and pid in ('ark-agent-plan', 'ark-coding-plan') and not self.cfg.get('_workflow_ceo'):
-            from . import ark_plan_fix
-            self._bg(ark_plan_fix.notify(self.host, failed_model or self.cfg.get('model')))
         self.host.st.log("agent_provider_fail", agent=self.kind, reason=reason, http_status=code)
         self.last_provider_fail = {"reason": reason, "http_status": code, "at": int(time.time())}
         if reason in RESTART_AFTER and self.owns_harness():
@@ -331,10 +313,7 @@ class OpenCodeV2Agent(OpenCodeAgent):
         notes = {**notes, "no_key": notes["no_key"].replace("{provider}", clean_line(pid or "该服务商", 40)),
                  "login": notes["login"] + V2_SWITCH.replace("{provider}", clean_line(pid or "<服务商>", 40))}
         self.provider_fail_noted = True
-        if code == 401 and pid in ('ark-agent-plan', 'ark-coding-plan') and not self.cfg.get('_workflow_ceo'):
-            self.fail_notice(ark_plan_fix.checking_note(failed_model or self.cfg.get('model'), self.cfg.get('language','en'), data))
-        else:
-            self.fail_notice(self.provider_note(reason, pid, notes[reason], data, failed_model))
+        self.fail_notice(self.provider_note(reason, pid, notes[reason]))
 
     async def _form(self, form: dict) -> None:
         """form.created → one question card (choices only); anything else, a cancel / timeout → the form is cancelled and the

@@ -74,8 +74,8 @@ try {
     const askId='c'.repeat(32);
     await fake.ask({t:'ask',id:askId,tool:'Bash',summary:'echo safe-fixture',ttl:120,cat:['read']});
     await waitFor(p, `document.body.dataset.sheet==='1'&&document.getElementById('settings').hidden&&document.body.dataset.reader!=='1'`);
-    assert.equal(await evaluate(p, `document.getElementById('sheet').parentElement.id`),'stage');
-    assert.equal(await evaluate(p, `getComputedStyle(document.getElementById('deck')).filter`),'blur(1.5px)');
+    await check('sheet','permission-inset');
+    assert.equal(await evaluate(p, `getComputedStyle(document.getElementById('deck')).filter`),'none');
     await screenshot('permission-inset');
     await evaluate(p, `(()=>{const s=document.getElementById('sheet'),b=document.getElementById('apprAllow').getBoundingClientRect(),r=s.getBoundingClientRect();s.scrollTop+=Math.max(0,b.bottom-r.bottom+8)})()`);
     assert.ok(await evaluate(p, `(()=>{const b=document.getElementById('apprAllow').getBoundingClientRect(),s=document.getElementById('sheet').getBoundingClientRect();return b.height>0&&b.top>=s.top&&b.bottom<=s.bottom+1})()`),`${tag} approval action reachable in card`);

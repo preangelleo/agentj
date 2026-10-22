@@ -17,7 +17,7 @@ test('P417 refreshed key state keeps validation and asks for a fresh metadata sn
  const src=read('../public/js/keys.js');
  const part=src.slice(src.indexOf('export function saved('),src.indexOf('const chs ='));
  const checks=new Map();let loads=0;
- const ctx=vm.createContext({okName:n=>/^[A-Z_]+$/.test(n),verification:checks,checks:new Map(),CHECKABLE:new Set(),checkRow(){},root:{isConnected:true},load(){loads++;return Promise.resolve();}});
+ const ctx=vm.createContext({okName:n=>/^[A-Z_]+$/.test(n),verification:checks,root:{isConnected:true},load(){loads++;}});
  vm.runInContext(part.replace('export function','function'),ctx);
  vm.runInContext("saved('DASHSCOPE_API_KEY','ok');saved('invalid name','ok')",ctx);
  assert.equal(loads,1);assert.equal(checks.get('DASHSCOPE_API_KEY'),'ok');

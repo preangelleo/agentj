@@ -82,14 +82,11 @@ try {
   check(r.badge === '5 行', `「5 行」 on the full-screen button (${r.badge})`);
   check(r.last === 'tFull' && r.cols === 5, 'the fifth tool is full screen');
   await snap(p, 'desktop-1600-oneline-badge');
-  // P462: a legacy reorder migrates with full screen last; a five-item order moves it freely.
+  // the owner's reorder keeps full screen last
   await ev(p, `import('./js/toolorder.js').then(m => m.set(['mic', 'file', 'image', 'camera']))`);
   r = await ev(p, `[...document.getElementById('tools').children].map(n => n.id).join(' ')`);
   check(r === 'mic tDoc tPhoto tCamera tFull', `reorder keeps full screen last (${r})`);
   await ev(p, `import('./js/toolorder.js').then(m => m.set(['file', 'image', 'camera', 'mic']))`);
-  await ev(p, `import('./js/toolorder.js').then(m => m.set(['full', 'mic', 'file', 'image', 'camera']))`);
-  check(await ev(p, `document.getElementById('tools').firstElementChild.id === 'tFull'`), 'full screen can be first');
-  await ev(p, `import('./js/toolorder.js').then(m => m.set(['file', 'image', 'camera', 'mic', 'full']))`);
   // Ctrl+G from the box: full screen with the same words and caret
   await ev(p, `${IN}.focus(); ${IN}.setSelectionRange(5, 5)`);
   await key(p, 'g', { ctrl: true });

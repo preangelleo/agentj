@@ -10,6 +10,7 @@
 //                         text starting with the command}
 // Shots: 5 states × phone 390×844 / desktop 1440×900 × light / dark (zh) + en → reports/qa/p216/screens/.
 import assert from 'node:assert/strict';
+import {contrast} from '../public/js/palette-color.js';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -84,7 +85,7 @@ export async function runP216() {
             await evaluate(p, `(()=>{const b=document.body;b.dataset.status=${JSON.stringify(ds.status)};${ds.kind ? `b.dataset.kind=${JSON.stringify(ds.kind)}` : 'delete b.dataset.kind'};})()`);
             await sleep(60);
             const c = await evaluate(p, `(()=>{const b=${$('webReportBtn')},line=getComputedStyle(b.querySelector('g')).stroke,card=getComputedStyle(${$('rmbar')}).backgroundColor,disc=getComputedStyle(b.querySelector('.disc')).fill,ink=getComputedStyle(${$('readBtn')}).color;return {line,card,disc,ink}})()`);
-            check(c.line === c.card && c.disc === 'rgb(250, 249, 245)' && c.line !== c.disc, `${name}: P458 report glyph follows its card on Lotion, never white on white (${JSON.stringify(c)})`);
+            check(c.line === 'rgb(44, 43, 38)' && c.disc === 'rgb(250, 249, 245)' && contrast('#2c2b26','#faf9f5') >= 4.5, `${name}: P448 report glyph must be Noir on Lotion, never white on white (${JSON.stringify(c)})`);
             check(/250, 249, 245|0\\.98/.test(c.disc), `${name}: Lotion disc (${c.disc})`);
             await save('state-' + name);
           }

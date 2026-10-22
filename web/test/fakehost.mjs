@@ -755,7 +755,7 @@ PREF_ENUM['approval.goal_auto'] = [true, false];   // P302: the real host whitel
 PREF_ENUM['heartbeat.interval_minutes'] = (v) => Number.isInteger(v) && v >= 5 && v <= 1440;
 PREF_ENUM['heartbeat.daily_at'] = (v) => v === '' || (typeof v === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(v));
 PREF_ENUM['ui.card_hot_action'] = (v) => typeof v === 'string' && /^\/?[A-Za-z0-9][A-Za-z0-9_:.\-]{0,62}$/.test(v);   // P285: the schema's pattern
-PREF_ENUM['ui.composer_buttons'] = (v) => Array.isArray(v) && [4, 5].includes(v.length) && v.every((x) => typeof x === 'string') && [...v].sort().join() === (v.length === 4 ? 'camera,file,image,mic' : 'camera,file,full,image,mic');   // P340: a permutation of the four ids (preferences.composer_order_ok)
+PREF_ENUM['ui.composer_buttons'] = (v) => Array.isArray(v) && v.length === 4 && v.every((x) => typeof x === 'string') && [...v].sort().join() === 'camera,file,image,mic';   // P340: a permutation of the four ids (preferences.composer_order_ok)
 PREF_ENUM['notify.enabled'] = [true, false];   // P365: listed in settable only when st.notify (an older host has no `agentj notify`)
 // P274: the iMessage card's parameters (the real host's schema; refused with not_macos unless st.platform === 'macos')
 const HM = '([01]\\d|2[0-3]):[0-5]\\d';

@@ -27,31 +27,7 @@ function paintPos() {
   const v = ta.value, at = ta.selectionStart || 0;
   pos.textContent = cfg.t('p412.pos', { line: v.slice(0, at).split('\n').length, lines: v.split('\n').length, chars: [...v].length });
 }
-// iOS keyboard animation can publish its final dimensions after the last event.
-// Read the latest viewport on each frame for a bounded settling interval, never a saved event value.
-let fitFrame = 0, settleUntil = 0;
-const ios = () => document.documentElement.dataset.ios === '1';
-function fitIOS() {
-  fitFrame = 0;
-  if (!isOpen()) return;
-  const vv = window.visualViewport;
-  // Follow even the first keyboard-animation pixels; 1px only tolerates fractional viewport rounding.
-  const keyboard = vv && window.innerHeight - vv.height > 1;
-  if (keyboard) {
-    root.style.top = vv.offsetTop + 'px'; root.style.left = vv.offsetLeft + 'px';
-    root.style.width = vv.width + 'px'; root.style.height = vv.height + 'px';
-    root.style.setProperty('--fs-safe-bottom', '0px');
-  } else {
-    for (const p of ['top', 'left', 'width', 'height', '--fs-safe-bottom']) root.style.removeProperty(p);
-  }
-  if (performance.now() < settleUntil) fitFrame = requestAnimationFrame(fitIOS);
-}
 function fit() {
-  if (ios()) {
-    settleUntil = performance.now() + 400;
-    if (!fitFrame && isOpen()) fitIOS();
-    return;
-  }
   const vv = window.visualViewport;
   if (!isOpen()) return;
   if (!vv) { root.style.cssText = ''; return; }
@@ -79,7 +55,6 @@ export function close() {
   push();
   const a = ta.selectionStart, b = ta.selectionEnd;
   root.hidden = true;
-  cancelAnimationFrame(fitFrame); fitFrame = 0;
   root.style.cssText = '';
   delete document.body.dataset.fs;
   try { cfg.input.setSelectionRange(a, b); } catch { /* hidden box */ }
@@ -265,6 +240,4 @@ export function init(c) {
   cmds.addEventListener('click', (e) => { if (e.target === cmds) closeCmds(true); });
   for (const ev of ['resize', 'scroll']) window.visualViewport?.addEventListener(ev, fit);
   addEventListener('resize', fit);
-  addEventListener('pageshow', () => { if (ios()) fit(); });
-  document.addEventListener('visibilitychange', () => { if (ios() && !document.hidden) fit(); });
 }

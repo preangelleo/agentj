@@ -404,16 +404,6 @@ def _run(fn, *args, **kw) -> None:
 
 def cmd(a) -> None:
     c = a.support_cmd
-    from . import host_diagnostics
-    if host_diagnostics.agent_side():
-        def host_call():
-            if c in ("ask", "report", "feedback"):
-                return host_diagnostics.request("support", kind="question" if c == "ask" else a.kind, text=_text(a),
-                                                thread=a.thread, attach_doctor=a.attach_doctor, wait=a.wait, lang=a.lang)
-            if c == "thread":
-                return host_diagnostics.request("thread", thread=a.id, wait=a.wait)
-            return host_diagnostics.request("list")
-        _run(host_call)
     if c == "ask":
         _run(lambda: run_send("question", _text(a), thread=a.thread, attach_doctor=a.attach_doctor, wait=a.wait, lang=a.lang))
     elif c in ("report", "feedback"):

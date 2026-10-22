@@ -113,7 +113,7 @@ class Recovery(unittest.TestCase):
         service_recovery.record(self.st,'failed','9.9.9','launch_failed')
         with patch.object(service,'status',return_value={'installed':True,'active':'active'}):
             service.start(self.st)
-        self.assertIsNone(service_recovery.failure(self.st))
+        self.assertIsNotNone(service_recovery.failure(self.st))
 
     def test_plain_install_from_old_apply_hands_off_before_bootout(self):
         import argparse

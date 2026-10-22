@@ -1,4 +1,3 @@
-import { paintIOSChrome } from './ios-chrome.js';
 import { copyButton } from './copycode.js';
 import {phoneConfirmation} from './tvremote.js';
 import {focusDraft, releaseDraft, touchComposer} from './composer-focus.js';
@@ -29,7 +28,7 @@ import { copyable } from './copycode.js';   // P292: every code / pre can be cop
 import { upgrade as upgradeWords, forget as forgetRendered } from './render.js';   // P57: lazy code / math / diagrams
 import { cmdGist } from './cmdgist.js';   // P341: the approval card's plain line when the Agent gave none
 import { t, lang, onLang, fillText, both } from './t.js';
-import { el, toast, executionToast, toastOff, toastAction, human, stamp, mmss, confirmSheet } from './ui.js';
+import { el, toast, executionToast, toastOff, toastAction, human, stamp, mmss, confirmSheet, replyNotice } from './ui.js';
 import * as sfx from './sfx.js';
 import * as sendvol from './sendvol.js';   // P154 追加 12: hold the grey Send → the send-sound slider
 import * as shotclip from './shotclip.js';
@@ -706,12 +705,6 @@ function setThemeColor(hex){
   document.head.prepend(m);
 }
 export function paintChrome(force){
-  if (document.documentElement.dataset.ios === "1") {
-    const color = paintIOSChrome();
-    // All iPhone browsers and Home Screen keep the same fixed Noir metadata.
-    if (color) setThemeColor(color);
-    return;
-  }
   const hex = chromeTarget();
   if (!hex) return;
   document.documentElement.style.backgroundColor = hex;
@@ -810,7 +803,7 @@ export function render(s){
   el("capText").textContent = document.body.dataset.conn !== "on" ? el("capText").textContent
     : st === "waiting" ? t('r.capt.' + (s.kind || 'permission')) : t('r.capt.' + (["working", "idle"].includes(st) ? st : "unknown"));
   renderSub();
-  paintHeader();
+  paintLogo(st, s.kind);
   noteHistory(s);
   renderCard(s);
   paintUsage(s.usage);
@@ -1016,6 +1009,7 @@ function setFz(i, say){
 }
 
 // ---- the logo wears the state colour ----------------------------------------------
+function paintLogo(st, kind){ paintHeader(st, kind); }
 
 // ---- pages: every reply with the input it answered (relay ADR-033 / 036) -----------------
 // `hist` = the loaded turns of the host's history (§10.5); pageAt = index; `follow` = on the newest page. P132 (Leo,
@@ -4334,7 +4328,7 @@ function relang(){
 const CAM_HOLD_MS = 500;
 export function init(ctx){
   C = ctx;
-  el("sheet").hidden = true;
+  replyNotice(el("sheet")); el("sheet").hidden = true; document.body.dataset.permissionInset = "1";
   input = el("input"); mainEl = el("main"); deck = el("deck"); tray = el("tray"); menu = el("menu"); menuList = el("menuList"); sug = el("sug"); mic = el("mic");
   for(const [id,close,fallback,rank,trap] of [
     ['rd',closeReader,'readBtn',45,true],['cam',closeCam,'tCamera',50,true],
@@ -4422,14 +4416,8 @@ export function init(ctx){
 
   // chrome
   new MutationObserver(() => paintChrome()).observe(document.body,
-    {attributes: true, subtree: true, attributeFilter: ["hidden", "data-status", "data-conn", "data-kind", "data-sheet", "data-kb", "data-reader", "data-view", "data-agent", "data-fs"]});
-  // Water level can change without a page-state repaint. Observe only its own style,
-  // not every descendant style; chrome writes only html tokens, so this cannot loop.
-  new MutationObserver(() => paintChrome()).observe(el("water"),
-    {attributes: true, attributeFilter: ["data-known", "style"]});
-  new MutationObserver(rs => {
-    if (document.documentElement.dataset.ios === "1" || rs.some(r => r.attributeName !== "style")) paintChrome(true);
-  }).observe(document.documentElement, {attributes: true, attributeFilter: ["data-theme", "style"]});
+    {attributes: true, subtree: true, attributeFilter: ["hidden", "data-status", "data-conn", "data-kind", "data-sheet", "data-kb", "data-reader", "data-view"]});
+  new MutationObserver(() => paintChrome(true)).observe(document.documentElement, {attributes: true, attributeFilter: ["data-theme"]});
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { paintChrome(true); refreshNewest(); } });
   window.addEventListener("pageshow", () => paintChrome(true));
   window.addEventListener("focus", () => paintChrome(true));

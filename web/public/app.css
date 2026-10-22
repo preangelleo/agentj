@@ -123,7 +123,6 @@ body{
    surface is now a lotion veil whose contrast is the same on all four hues. */
 body{
   --deepen:0%;
-  --water-color:color-mix(in srgb,var(--sooty) 13%,var(--pg));
   --pg:color-mix(in srgb,var(--state) calc(100% - var(--deepen)),var(--sooty) var(--deepen));
   /* The reply card's opaque fill = the page colour under a 22 % Sooty veil (ADR-035). */
   --rm-bg:color-mix(in srgb,var(--sooty) 22%,var(--pg));
@@ -177,8 +176,10 @@ body[data-kb="1"] .sabband{display:none}
 /* P384 #86: only iOS fixes both safe areas to Sooty, including reader / custom themes.
    Android retains its page-colour bars. Insets and keyboard spacing are unchanged. */
 .satband,.sabband{background:#141414!important;z-index:101}
-/* P459 supersedes P393 edge sampling: static black-translucent stays; no forced dark 1px row. */
-html[data-ios="1"] .satband{min-height:0}
+/* P393 #134 (#86 regression): iOS reads the status-bar style only from the HTML it parsed (the runtime switch in boot.js was
+   ignored, the bar stayed opaque and sampled an old state colour), so index.html now says black-translucent itself
+   (Apple-only meta). If the bar is opaque anyway, the topmost fixed strip is still Sooty for iOS 26 edge sampling. */
+html[data-ios="1"] .satband{min-height:1px}
 
 
 button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
@@ -497,7 +498,7 @@ main::-webkit-scrollbar{display:none}
 body[data-reader="1"] .sabband,body[data-reader="1"] .satband,html[data-sbar=black] body[data-reader="1"] .satband,
 body[data-reader="1"] .probe{background:var(--dlg-bg)}
 body[data-reader="1"] .water{display:none}
-body[data-reader="1"] .toast:is(.circle,.square){position:fixed;z-index:31}   /* P273: the reader's toasts (first / last, copied, Telegram) show over it */
+body[data-reader="1"] .toast.circle{position:fixed;z-index:31}   /* P273: the reader's toasts (first / last, copied, Telegram) show over it */
 .rd{--md-mark:var(--peachy-feeling)}  /* the reader is Noir on every state (P284) */
 .rd .words code{background:rgba(250,249,245,.10)}
 .rd .codeblock{background:rgba(250,249,245,.07)}
@@ -875,7 +876,7 @@ body[data-kb="1"] .composer{padding-bottom:12px}   /* keyboard up: no home-indic
 @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
   .ptt{background:rgba(20,20,20,.82);background:color-mix(in srgb,var(--pg) 90%,transparent)}}
 .ptt .pttcopy{color:var(--ink)}
-body.recblur .toast:is(.circle,.square){z-index:61;position:fixed}
+body.recblur .toast.circle{z-index:61;position:fixed}
 @media(prefers-reduced-motion:reduce){.pttring,.pttring.r2,.pttc{animation:none!important;transition:none}}
 .row{display:flex;align-items:flex-end;gap:10px}
 /* ---- the reply strip (§2): a chat app's "Reply to …", directly above the field -------
@@ -1228,14 +1229,14 @@ body[data-conn=off] .composer{filter:grayscale(1);opacity:.7}
 .toast.media.act{flex-wrap:wrap;row-gap:10px;padding:12px 12px 12px 14px}
 .toast.media .nt-acts{flex:1 0 100%;justify-content:flex-end}
 /* circle: the ✓ moment (saved, done) — centred like the hold-to-talk circle; .mail-saved (P256) is the same shape */
-.toast:is(.circle,.square,.mail-saved){position:fixed;left:50%;top:50%;z-index:90;width:calc(156px * var(--fz,1));height:calc(156px * var(--fz,1));
+.toast:is(.circle,.mail-saved){position:fixed;left:50%;top:50%;z-index:90;width:calc(156px * var(--fz,1));height:calc(156px * var(--fz,1));
   max-width:none;aspect-ratio:1;border-radius:50%;flex-direction:column;justify-content:center;gap:8px;padding:18px;text-align:center;
   box-shadow:inset 0 0 0 2px var(--nt-accent,var(--emerald-oasis)),var(--dlg-shadow);transform:translate(-50%,-50%) scale(.92);
   font-size:var(--dlg-fs-sub);line-height:1.3}
-.toast:is(.circle,.square,.mail-saved).on{transform:translate(-50%,-50%)}
-.toast:is(.circle,.square,.mail-saved) .nt-ico{width:44px;height:44px;stroke-width:2.2}
-.toast:is(.circle,.square,.mail-saved) .nt-text{flex:none;align-items:center}
-@media(prefers-reduced-motion:reduce){.toast,.toast:is(.circle,.square,.mail-saved){transition:opacity var(--dlg-dur)}.toast[data-kind="progress"].on .nt-ico{animation:none}}
+.toast:is(.circle,.mail-saved).on{transform:translate(-50%,-50%)}
+.toast:is(.circle,.mail-saved) .nt-ico{width:44px;height:44px;stroke-width:2.2}
+.toast:is(.circle,.mail-saved) .nt-text{flex:none;align-items:center}
+@media(prefers-reduced-motion:reduce){.toast,.toast:is(.circle,.mail-saved){transition:opacity var(--dlg-dur)}.toast[data-kind="progress"].on .nt-ico{animation:none}}
 
 /* ---- desktop camera (stage 9): the browser asks, then a live preview -------- */
 .cam{position:fixed;inset:0;z-index:22;display:grid;place-items:center;padding:16px;
@@ -2489,9 +2490,6 @@ i.bd.still{animation:none}
   background:var(--bg);color:var(--text);font:600 1.6rem/1 var(--font-mono);letter-spacing:.35em;text-align:center}
 .rmcode:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 .rmlist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
-/* P465: the entire allowlist has its own bounded native scroller, independent of the Settings page. */
-#rm-list{max-height:60dvh;overflow-y:auto;touch-action:pan-y}
-#rm-list:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 .rmempty{padding:var(--space-content) 0;color:var(--text-muted)}
 .rmitem{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:var(--space-control) var(--space-content);
   padding:var(--space-content) 0;border-bottom:1px dashed var(--border-soft)}
@@ -2962,7 +2960,7 @@ code[data-cc],pre[data-cc],.cc-in{cursor:copy}
 .mbody:has(.mvideo-surface){position:relative}
 .mvideo-surface{position:absolute;inset:4px 6px 48px 0;touch-action:manipulation;cursor:pointer}
 /* P256 / P252: mail receipt at the centre, above the settings and key card. */
-/* P256 / P252 mail receipt at the centre: since P318 the Noir Notification circle (.toast:is(.circle,.square,.mail-saved), toast section). */
+/* P256 / P252 mail receipt at the centre: since P318 the Noir Notification circle (.toast:is(.circle,.mail-saved), toast section). */
 .elev.secret #elev-rows dd{white-space:pre-line;overflow-wrap:anywhere}
 /* P247: the circle owns the mic/rings' centre; the copy stays outside the circle. */
 .pttc .pttring{top:50%}
@@ -3138,8 +3136,6 @@ body[data-status=waiting]:not([data-kind=question]){--xlink:var(--c-bisque)}
 .elev-run .elev-run-main{flex:1;min-width:0;min-height:40px;display:flex;align-items:center;gap:8px;padding:0 8px 0 10px;border:0;
   background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer;border-radius:calc(var(--dlg-radius-rect) - 2px)}
 .elev-run .elev-run-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums}
-/* P479: result + exit code remain readable beside Dismiss, including narrow phones. */
-.elev-run[data-state="done"] .elev-run-text{white-space:normal;overflow-wrap:anywhere}
 .elev-run .elev-run-dot{flex:none;width:8px;height:8px;border-radius:50%;background:var(--windstorm)}
 .elev-run[data-state="running"] .elev-run-dot{animation:elevRunPulse 1.4s ease-in-out infinite}
 .elev-run[data-state="ask"] .elev-run-dot{background:var(--c-peachy-feeling)}
@@ -3252,23 +3248,25 @@ html[data-standalone="1"] #main{overscroll-behavior-y:none}
   position:relative;inset:auto;transform:none;width:100%;max-width:100%;box-sizing:border-box;flex-shrink:0;margin:0;
   border:0;border-radius:var(--dlg-radius-rect);background:var(--dlg-bg);color:var(--dlg-fg);color-scheme:dark}
 .reply-notices .toast.rect{z-index:auto;pointer-events:auto}
-.reply-notices .setup-banner__open,.reply-notices .setup-banner__x{color:var(--dlg-fg)}
-.reply-notices .rsbanner__go{color:var(--btn-strong-ink)}
+.reply-notices .setup-banner__open,.reply-notices .setup-banner__x,.reply-notices .rsbanner__go{color:var(--dlg-fg)}
 .reply-notices .elev-run-out{max-height:min(22vh,200px)}
 body[data-elevrun="1"] .reply-notices .elev-grant{bottom:auto}
 body[data-view="chat"] .reply-notices .share-notice{margin:0}
 
 .page-notices{position:sticky;bottom:0;z-index:2;max-height:40vh;flex-shrink:0;margin:8px 16px;grid-column:1/-1}
 
-/* P479: reserve the sudo strip's natural height before the reply body takes the rest.
-   The existing bounded notice stack owns overflow; never crush a pre into a partial line. */
-.reply-notices:has(>.elev-run:not([hidden])){flex-shrink:0}
 .reply-notices>.elev-run{flex-shrink:1;min-height:0;max-height:100%}
-.reply-notices .elev-run-panel{display:flex;flex-direction:column;min-height:0;overflow:auto}
-.reply-notices .elev-run-panel>.cc--block{display:flex;flex-direction:column;flex:0 1 auto;min-height:48px}
-.reply-notices .elev-run-out{flex:0 1 auto;min-height:48px}
-.reply-notices .elev-run-note{flex-shrink:0}
+.reply-notices .elev-run-panel{min-height:0;overflow:auto}
 .reply-notices .elev-run-row{flex-shrink:0}
+
+/* P417 #215: the signed permission form shares the reply's internal notice slot. */
+body[data-permission-inset="1"][data-sheet="1"] .deck{filter:none;opacity:1}
+body[data-permission-inset="1"] .scrim{display:none}
+#reply-notices>.sheet{position:relative;inset:auto;flex:0 1 auto;min-height:0;width:100%;max-width:none;margin:0;
+  max-height:100%;overflow:auto;transform:none;box-shadow:none;border:0;border-left:2px solid var(--peachy-feeling);
+  border-radius:12px;padding:12px 14px;background:var(--noir);color:var(--lotion);visibility:visible}
+body:not([data-sheet="1"]) #reply-notices>.sheet{display:none}
+#reply-notices>.sheet>.grab{display:none}
 
 /* P445: every copy control shares the same tick, label and restoration timer. */
 .cc-feedback{position:relative;overflow:visible!important}
@@ -3281,65 +3279,7 @@ body[data-view="chat"] .reply-notices .share-notice{margin:0}
   padding:5px 8px;border-radius:8px;background:#2c2b26;color:#faf9f5;font:500 12px/1.3 var(--font-body);white-space:nowrap;pointer-events:none}
 .cc-btn.cc-feedback[data-tip]::after{content:none}
 .codeblock .copy.cc-feedback>.cc-result{bottom:auto;top:50%;left:auto;right:calc(100% + 4px);transform:translateY(-50%)}
-/* P461: long A notices retain the centre, Noir/Lotion, accent and original lifetime. */
-.toast.square{width:min(340px,calc(100vw - 40px));height:auto;min-height:156px;max-height:calc(100dvh - 80px);
-  aspect-ratio:auto;border-radius:24px;padding:24px;overflow:auto;pointer-events:none}
-.toast.square.glance.on,.toast.square.cmd.on{pointer-events:auto}
-.toast.square .nt-text{flex:0 1 auto;width:100%;min-height:0}
-.toast.square .nt-body{white-space:pre-wrap;overflow-wrap:anywhere}
-.toast.circle .nt-body{white-space:nowrap}
-
-/* P458 owner-requested local chrome repairs; no other control states change. */
-.rd #rdUnread,.rd #rdUnread .unb{border:0;outline:0!important;box-shadow:none!important}
-#fsExit,#fsClear,#fsSlash{border:0;outline:0!important;box-shadow:none!important}
-
-/* P458: reply-bottom transient notices keep their accent stripe, without a cast shadow. */
-#toast.rect{box-shadow:none;filter:none;background-image:linear-gradient(90deg,var(--nt-accent,var(--windstorm)) 3px,transparent 3px)}
-
-/* P459m final: every iPhone browser owns fixed Noir status chrome and water-coloured bottom.
-   Safe-area paint is noninteractive; the bottom stays below every content layer. */
-html[data-ios="1"]{--ios-chrome:var(--c-noir);--ios-bottom:var(--c-noir);--ios-safe-top:env(safe-area-inset-top,0px);--ios-safe-bottom:env(safe-area-inset-bottom,0px);background:var(--ios-chrome)!important}
-html[data-ios="1"] body{background:var(--pg)}
-/* P472: the root owns status paint, outside the state-coloured body compositor.
-   No state/theme token or JS colour writer participates in this layer. */
-html[data-ios="1"]::before{content:"";position:fixed;left:0;right:0;top:var(--vvtop,0px);
-  height:var(--ios-safe-top);background:#2c2b26;z-index:101;pointer-events:none;transition:none!important}
-html[data-ios="1"] .satband{display:none}
-html[data-ios="1"] .sabband{display:block;height:var(--ios-safe-bottom);background:var(--ios-bottom,var(--c-noir))!important;border:0;box-shadow:none;z-index:0}
-html[data-ios="1"] .water{background:var(--water-color)}
-/* Browser Safari and CriOS share browser-owned insets and viewport geometry. */
-html[data-ios="1"]:not([data-standalone="1"]) body{padding:var(--ios-safe-top) 0 0}
-html[data-ios="1"]:not([data-standalone="1"]){--page-end:calc(var(--space-section) + var(--corner-arc))}
-html[data-ios="1"]:not([data-standalone="1"]) .composer{padding-bottom:12px}
-html[data-ios="1"] .fsed{inset:auto;left:0;top:0;width:100%;height:100dvh;
-  background:var(--c-noir);padding-top:calc(var(--ios-safe-top) + 4px);
-  padding-bottom:var(--fs-safe-bottom,var(--ios-safe-bottom))}
-html[data-ios="1"] .fsed .fshd,html[data-ios="1"] .fsed .fsft,html[data-ios="1"] #fsText{background:var(--noir)}
-html[data-ios="1"] body[data-fs="1"] .fsft{padding-bottom:10px}
-/* An overlay extends its own bottom paint; no band is laid over buttons or glyphs. */
-html[data-ios="1"] :is(.ptt,.setpage .setbox){background-image:linear-gradient(to top,var(--ios-bottom,var(--c-noir)) 0,var(--ios-bottom,var(--c-noir)) var(--ios-safe-bottom),transparent var(--ios-safe-bottom))}
-html[data-ios="1"] .rd{background:var(--c-noir)}
-/* Recording is fixed to the live visual viewport too, so its water edge follows the keyboard. */
-html[data-ios="1"] .ptt{bottom:auto;top:var(--vvtop,0px);height:var(--vvh,100dvh)}
-/* P458 addendum: icons stay unboxed through hover, keyboard focus and press. */
-#fsExit,#fsClear,#fsSlash{background:none!important;border:0!important;outline:0!important;box-shadow:none!important}
-#iosdiag{position:fixed;right:4px;top:calc(env(safe-area-inset-top,0px) + 5px);z-index:10000;
-  max-width:90vw;white-space:pre-wrap;pointer-events:none;font:10px/1.25 monospace;
-  background:#141414;color:#faf9f5;padding:4px;border:0;margin:0}
-
-/* P470: Safari samples the root canvas outside the page, independently of safe-area bands.
-   Keep page paint on its own layer so the root water colour does not tint the conversation. */
-html[data-ios-safari="1"],html[data-ios-safari="1"] body{background:var(--ios-bottom,var(--c-noir))!important}
-html[data-ios-safari="1"] body::before{content:"";position:absolute;inset:0;background:var(--pg);z-index:0;pointer-events:none}
-/* Fixed coordinates are layout-viewport coordinates; Safari can pan its visual viewport on focus. */
-/* The root-owned P472 status layer follows --vvtop in each iPhone mode. */
-
-/* P477: only the dark reply card's body text. Do not retint containers: chart shapes,
-   borders, controls and icons consume their inherited currentColor independently. */
-.rm #words :is(h1,h2,h3,h4,h5,h6,strong,b,em,del,p,li,code,th,td,label,.lhost,.lang,.rxnote,.rc-note),
-.rm #words code.hljs span{color:var(--lotion)}
-.rm #words li::marker{color:var(--lotion)}
-.rm #words a:not(.mtap):not(.mcard a){color:var(--lotion);text-decoration-line:underline}
-.rm #words .reply-component svg text[text-anchor]{fill:var(--lotion);color:var(--lotion)}
-/* Navigation text-buttons can have currentColor borders inside components: paint only their glyphs. */
-.rm #words .fp-link{-webkit-text-fill-color:var(--lotion)}
+.toast.circle.glance{width:min(290px,calc(100vw - 40px));height:min(290px,calc(100vw - 40px));aspect-ratio:1;border-radius:50%;padding:32px;overflow:hidden;pointer-events:none}
+.toast.circle.glance.on{pointer-events:auto}
+.toast.circle.glance .nt-text{flex:0 1 auto;min-height:0;overflow:auto}
+.toast.circle.glance .nt-body{white-space:normal;overflow-wrap:anywhere}

@@ -25,16 +25,13 @@ try {for(const width of [390,1440])for(const theme of ['light','dark'])for(const
   await waitFor(p,`document.querySelector('#words .copy')`);
   const shot=async name=>{await sleep(100);writeFileSync(`${out}/${tag}-${name}.png`,await shoot(p));};
   const copied=async(sel,want,name)=>{
-   const tickOnly=['#copyReply','#rdCopyBtn'].includes(sel);
-   await evaluate(p,`document.getElementById('toast').classList.remove('on')`);
    await evaluate(p,`document.querySelector(${JSON.stringify(sel)}).click()`);
    await waitFor(p,`document.querySelector(${JSON.stringify(sel)}).dataset.done==='1'`);
    check(await evaluate(p,`window.clip.at(-1)===${JSON.stringify(want)}`),tag+' '+name+' clipboard');
    check(await evaluate(p,`document.querySelector(${JSON.stringify(sel)}).getAttribute('aria-label')===${JSON.stringify(done)}`),tag+' '+name+' label');
-   if(!tickOnly)check(await evaluate(p,`(()=>{const b=document.querySelector(${JSON.stringify(sel)}),tick=b.querySelector('.cc-ok');return getComputedStyle(tick).display!=='none'&&b.querySelector('.cc-result').textContent===${JSON.stringify(done)}&&getComputedStyle(b.querySelector('.cc-result')).display!=='none';})()`),tag+' '+name+' visible tick and label');
+   check(await evaluate(p,`(()=>{const b=document.querySelector(${JSON.stringify(sel)}),tick=b.querySelector('.cc-ok');return getComputedStyle(tick).display!=='none'&&b.querySelector('.cc-result').textContent===${JSON.stringify(done)}&&getComputedStyle(b.querySelector('.cc-result')).display!=='none';})()`),tag+' '+name+' visible tick and label');
    const g=await evaluate(p,`(()=>{const n=document.getElementById('toast'),r=n.getBoundingClientRect();return {on:n.classList.contains('on'),circle:n.classList.contains('circle'),buttons:n.querySelectorAll('button').length,cx:r.x+r.width/2,cy:r.y+r.height/2,w:innerWidth,h:innerHeight,text:n.textContent}})()`);
-   if(tickOnly)check(await evaluate(p,`!!document.querySelector('${sel} .cc-ok')&&!document.querySelector('${sel} .cc-result')&&!document.getElementById('toast').classList.contains('on')`),tag+' '+name+' tick only');
-   else check(g.on&&g.circle&&g.buttons===0&&g.text===done&&Math.abs(g.cx-g.w/2)<2&&Math.abs(g.cy-g.h/2)<2,tag+' '+name+' centred glance '+JSON.stringify(g));
+   check(g.on&&g.circle&&g.buttons===0&&g.text===done&&Math.abs(g.cx-g.w/2)<2&&Math.abs(g.cy-g.h/2)<2,tag+' '+name+' centred glance '+JSON.stringify(g));
    await shot(name);
   };
   await copied('#omCopy','Owner message','source');
@@ -43,7 +40,7 @@ try {for(const width of [390,1440])for(const theme of ['light','dark'])for(const
   await waitFor(p,`!document.querySelector('#words .copy').dataset.done`,2500);
   check(await evaluate(p,`document.querySelector('#words .copy').textContent!==${JSON.stringify(done)}`),tag+' code restored');
   await evaluate(p,`document.getElementById('setBtn').dispatchEvent(new PointerEvent('contextmenu',{bubbles:true,cancelable:true,button:2,pointerType:'mouse'}))`);
-  check(await evaluate(p,`document.getElementById('confirm').hidden&&document.getElementById('toast').classList.contains('square')&&!document.querySelector('#toast button')`),tag+' gear help is a buttonless glance');
+  check(await evaluate(p,`document.getElementById('confirm').hidden&&document.getElementById('toast').classList.contains('circle')&&!document.querySelector('#toast button')`),tag+' gear help is a buttonless glance');
   await shot('gear-help');await waitFor(p,`!document.getElementById('toast').classList.contains('on')`,3000);
   await evaluate(p,`import('./js/relay.js').then(m=>m.remoteReader(true))`);
   await waitFor(p,`document.body.dataset.reader==='1'`);await sleep(400);
@@ -67,11 +64,11 @@ try {for(const width of [390,1440])for(const theme of ['light','dark'])for(const
   // Exercise real noticeSheet used by settings/news/bang, not a separate timer fixture.
   await evaluate(p,`Promise.all([import('./js/ui.js'),import('./js/t.js')]).then(([u,T])=>u.noticeSheet(T.t('p302.prefTitle'),T.t('p302.prefOffline')))`);
   await waitFor(p,`document.getElementById('toast').classList.contains('on')`);
-  check(await evaluate(p,`document.getElementById('confirm').hidden&&document.querySelector('#toast.square.glance')&&document.querySelectorAll('#toast button').length===0`),tag+' pure notice buttonless');
+  check(await evaluate(p,`document.getElementById('confirm').hidden&&document.querySelector('#toast.circle.glance')&&document.querySelectorAll('#toast button').length===0`),tag+' pure notice buttonless');
   await shot('notice');await waitFor(p,`!document.getElementById('toast').classList.contains('on')`,3000);
   await evaluate(p,"import('./js/ui.js').then(u=>u.noticeSheet('Notice','Try `agentj doctor --reconnect`'))");
-  check(await evaluate(p,`document.querySelectorAll('#toast button').length===0&&document.getElementById('toast').classList.contains('square')`),tag+' command notice has no hidden copy action');
-  check(await evaluate(p,`(()=>{const r=document.getElementById('toast').getBoundingClientRect();return r.width>r.height&&Math.abs(r.x+r.width/2-innerWidth/2)<2&&Math.abs(r.y+r.height/2-innerHeight/2)<2;})()`),tag+' long notice rounded and centred');
+  check(await evaluate(p,`document.querySelectorAll('#toast button').length===0&&document.getElementById('toast').classList.contains('circle')`),tag+' command notice has no hidden copy action');
+  check(await evaluate(p,`(()=>{const r=document.getElementById('toast').getBoundingClientRect();return Math.abs(r.width-r.height)<1&&Math.abs(r.x+r.width/2-innerWidth/2)<2&&Math.abs(r.y+r.height/2-innerHeight/2)<2;})()`),tag+' long notice round and centred');
   await shot('notice-command');await waitFor(p,`!document.getElementById('toast').classList.contains('on')`,3000);
   // Completion of the actual installer state machine uses the same notification renderer.
   await evaluate(p,`Promise.all([import('./js/asr-setup.js'),import('./js/ui.js'),import('./js/t.js')]).then(([a,u,T])=>a.createAsrSetup({t:T.t,notify:u.notify,confirm:async()=>true,install:async()=>({ok:true,state:'ready'}),ready(){},repaint(){}}).run())`);

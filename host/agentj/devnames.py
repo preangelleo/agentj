@@ -40,14 +40,3 @@ def device_label(v, limit: int = 64) -> str:
     plat = platform_of(n["self_name"])
     out = n["owner_name"] + (" · " + plat if plat else "")
     return out if len(out) <= limit else n["owner_name"][:limit]
-
-
-def public_device(did: str, record, online: bool = False) -> dict:
-    """CLI diagnostics are a typed allowlist, never a copy of the credential-bearing record."""
-    v = record if isinstance(record, dict) else {}
-    labels = {k: v[k] for k in ("name", "self_name", "owner_name") if isinstance(v.get(k), str)}
-    labels["owner_named_at"] = _num(v.get("owner_named_at"))
-    return {"id": did, **device_names(labels), "paired_at": _num(v.get("paired_at")),
-            "seen": _num(v.get("seen")), "online": bool(online),
-            "source": v.get("source") if v.get("source") in ("account", "local", "pair", "terminal") else None,
-            "has_passkey": isinstance(v.get("pk"), dict)}

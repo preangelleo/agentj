@@ -127,11 +127,3 @@ Ark401: Agent Plan and Coding Plan keys are not interchangeable. A confirmed mis
 方舟套餐误配时，把主人引导到失败提示或「紧急修复」的「改用 Agent Plan / Coding Plan 并重试」按钮；不用再贴 key，验证成功才切。
 
 Docs: https://agentj.app/docs/switch-harness/zh.md · https://agentj.app/docs/switch-harness/en.md
-
-## Background connection checks and support (0.25.3)
-
-After switching the AI, connection checks and support feedback run in the computer’s background service. The Agent reads the results without opening local key files. If chat works and the check has not returned, keep chatting; this does not mean the switch failed. Feedback is confirmed only when a ticket ID is returned; otherwise try later.
-
-切换 AI 后，连接自检和客服反馈由电脑后台完成，Agent 只读取结果，不需要读取本机钥匙文件。若聊天已正常、自检暂时没返回，可以继续聊天；这不表示切换失败。反馈收到编号才算已提交，没收到时稍后重试。
-
-When a switched session is already replying and the background check is unavailable, say: “切换已成功，聊天正常；自检这一步在 Codex 的安全隔离里不能读本机钥匙文件，可以忽略，稍后由后台再检查。” / “The switch succeeded and chat works. Codex isolation hides the local key files; this check can be skipped and retried by the background service later.” For Claude or OpenCode, name the actual harness. Never claim a check completed or feedback was sent without its result. Do not ask the owner to disable isolation, reveal keys or grant broad filesystem access.

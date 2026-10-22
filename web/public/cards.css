@@ -137,17 +137,3 @@
 .jc-crumbs{display:flex;flex-wrap:wrap;gap:var(--ui-space-btn);margin:0 0 var(--ui-space-control)}.jc-crumb{max-width:100%;overflow-wrap:anywhere}.jc-file{gap:var(--ui-space-btn)}.jc-file .jc-when{flex:none;opacity:.75}.jc-file-dl svg{width:20px;height:20px}.jc-vault{overflow-wrap:anywhere}
 .jc-src{display:block;opacity:.75}
 #confirm[data-kind="jcard"] #confirm-text{white-space:pre-line;text-align:left}   /* P432: a plaza card's permission summary, one line each */
-
-/* P463: todo reuses notes .jc-entry-icon + icon('edit'/'delete') (44px target, 21px SVG).
-   Only placement differs: reserve the metadata's right edge, never the full-width text/note. */
-.jc-todo-item{display:block;position:relative}
-.jc-todo-item>.jc-row{width:100%;box-sizing:border-box;padding:0}
-.jc-todo-item .jc-todo-meta{box-sizing:border-box;min-height:44px;padding-right:92px}
-.jc-todo-footer{position:absolute;right:0;bottom:0}
-.jc-todo-actions{display:flex;gap:4px}
-
-/* P474: only the official Notebook changes its entry layout. */
-.jc-body[data-card="notes"] .jc-entry-actions{margin:12px -6px -6px 0}
-.jc-body[data-card="notes"] .jc-note-title{display:block;font-size:1rem;font-weight:700;margin:0 0 10px;white-space:pre-wrap}
-.jc-body[data-card="notes"] .jc-note-date{display:block;font-size:.8rem;color:var(--c-lotion);opacity:.72;margin-top:12px}
-.jc-dialog[data-note-fields="1"]>input{box-sizing:border-box;width:100%;min-height:44px;margin-bottom:16px;border-radius:12px;padding:12px 14px;font:inherit;color:var(--c-lotion);background:var(--c-sooty);border:1px solid var(--c-black-mana)}

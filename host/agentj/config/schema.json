@@ -1196,11 +1196,10 @@
     "file",
     "image",
     "camera",
-    "mic",
-    "full"
+    "mic"
    ],
    "tier": "user",
-   "description": "The order (left to right) of the five buttons above the phone's message box: file, image, camera, mic, full — each exactly once / 手机输入框上方五个按钮从左到右的顺序（file 文件、image 图片、camera 拍照、mic 麦克风、full 展开全屏，各一次）",
+   "description": "The order (left to right) of the four buttons above the phone's message box: file, image, camera, mic — each exactly once / 手机输入框上方四个按钮从左到右的顺序（file 文件、image 图片、camera 拍照、mic 麦克风，各一次）",
    "aliases": [
     "composer buttons",
     "button order",

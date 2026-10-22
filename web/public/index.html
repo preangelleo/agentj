@@ -8,8 +8,8 @@
 <meta name="color-scheme" content="light dark">
 <title>Agent J · 手机遥控器</title>
 <script src="brand/lang.js"></script>
-<meta name="theme-color" content="#2c2b26" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#2c2b26" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#141414" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#141414" media="(prefers-color-scheme: dark)">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Agent J">
@@ -946,7 +946,7 @@
               <span class="setlab" id="set-tools-lab" data-i18n="p340e.label">输入框按钮顺序</span>
               <button type="button" id="set-tools-reset" class="setlink" data-i18n="p340e.reset">恢复默认</button>
               <ol class="toolsort" id="set-tools" aria-labelledby="set-tools-lab" aria-describedby="set-tools-help"></ol>
-              <p class="setnote" id="set-tools-help" data-i18n="p340e.note">输入框上方五个按钮的顺序，从左到右。拖动调整：手机上先按住一下再拖；也可以先点一个按钮，再点它要去的位置；用键盘时选中按钮，按 ← → 移动。</p>
+              <p class="setnote" id="set-tools-help" data-i18n="p340e.note">输入框上方四个按钮的顺序，从左到右。拖动调整：手机上先按住一下再拖；也可以先点一个按钮，再点它要去的位置；用键盘时选中按钮，按 ← → 移动。</p>
               <p class="setnote" id="set-tools-local" hidden data-i18n="p340e.local">Agent J 主机上的 Agent J 版本较旧，这个顺序只保存在这台设备上。</p>
               <p class="vh" id="set-tools-live" role="status" aria-live="polite"></p>
             </div>
@@ -1414,7 +1414,7 @@
           </section>
           <section class="setcard" aria-labelledby="rm-list-h">
             <h3 class="setg" id="rm-list-h" data-i18n="rm.list">已绑定的遥控器</h3>
-            <ul id="rm-list" class="rmlist" tabindex="0" aria-labelledby="rm-list-h"></ul>
+            <ul id="rm-list" class="rmlist"></ul>
             <p id="rm-legacy" class="setnote" hidden data-i18n="rm.legacy">电脑上的程序还不支持在手机上管理遥控器，这里只能查看。要添加、改名或解绑，在电脑上运行 `agentj pair`、`agentj devices` 或 `agentj revoke <设备>`。</p>
           </section>
         </div>

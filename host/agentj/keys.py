@@ -36,7 +36,7 @@ from . import elevate, passkey, wire
 
 CTX = "agentjarvis-keys-v1"
 PHONE_TYPES = ("keys_get", "keys_op", "keys_set")
-OPS = ("copy", "delete", "import", "move", "unify")
+OPS = ("copy", "delete", "import")
 NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,63}")
 THIRD_RE = re.compile(r".*(KEY|TOKEN|SECRET|PASSWORD|PASS)$", re.I)
 THIRD_SKIP = ("AGENTJ_", "AGENTJARVIS_")
@@ -279,14 +279,10 @@ def scan(host, path: str | None = None, tid: str | None = None) -> dict:
         r = _row("key", name, env, used, srcs, live, tid)
         r.pop("type")
         third.append(r)
-    # The deprecated row is visible only to repair an existing mistaken value; it cannot be filled/imported again.
-    if env.get("BAILIAN_CODING_PLAN_API_KEY"):
-        next(v for v in base if v["id"] == "bailian")["rows"].append(_row("sub", "BAILIAN_CODING_PLAN_API_KEY", env, used))
     from . import jev
     route = jev.resolve(st=host.st, prefs=getattr(host, "preferences", None), env={**live, **env})
     base[0]["name"] = {"zh": "Jev · 安全审核 · " + (route.mode or "待选择"), "en": "Jev · Safety review · " + (route.mode or "Choose a route")}
-    from . import provider_setup
-    return {"base": base, "third": third[:THIRD_MAX], "src": kf.public(srcs), "routing": provider_setup.routing(host)}
+    return {"base": base, "third": third[:THIRD_MAX], "src": kf.public(srcs)}
 
 
 # ---------------------------------------------------------------- page tokens + one-time nonces (per device)
@@ -370,20 +366,6 @@ async def on_phone(host, s, t: str, obj: dict) -> None:
     if t == "keys_get":
         body = await asyncio.to_thread(listing, host, s)
         return await host.send_app(s, {"t": "keys", "r": r, **body})
-    if t == "keys_op" and obj.get("op") == "check":
-        from . import provider_setup
-        if not host.st.sign_key(s.device):
-            return await host.send_app(s, {"t": "keys_res", "r": r, "ok": False, "why": "no_key"})
-        # No write, no secret returned. Only the selected vendor's fixed endpoints are contacted.
-        if getattr(host, "_provider_row_check", False):
-            return await host.send_app(s, {"t": "keys_res", "r": r, "ok": False, "why": "busy"})
-        host._provider_row_check = True
-        try:
-            res = await asyncio.to_thread(provider_setup.check_key, host, obj.get("name"))
-            await host.send_app(s, {"t": "keys_res", "r": r, **res})
-        finally:
-            host._provider_row_check = False
-        return
     if t == "keys_op":
         return await _op(host, s, r, obj)
     if t == "keys_set":
@@ -421,17 +403,6 @@ async def _op(host, s, r, obj: dict) -> None:
         host.st.log("keys_refused", device=s.device, reason=why)
         audit(host, opv, shown, "refused", s.device, reason=why)
         return await reply(False, why)
-    if opv in ("move", "unify"):
-        from . import provider_setup
-        try:
-            if opv == "unify":
-                res = await asyncio.to_thread(provider_setup.unify, host, shown.removeprefix("UNIFY_"))
-            else:
-                res = await asyncio.to_thread(provider_setup.move_key, host, shown)
-        except (OSError, ValueError):
-            res = {"ok": False, "why": "write"}
-        audit(host, opv, shown, "ok" if res.get("ok") else "refused", s.device, passkey="uv")
-        return await reply(bool(res.get("ok")), res.get("why"))
     if opv == "import":
         res, why, extra = await asyncio.to_thread(do_import, host, shown, obj["src"], obj["keep"], obj["id"], obj["fp"])
         audit(host, opv, shown, res, s.device, passkey="uv", **extra)

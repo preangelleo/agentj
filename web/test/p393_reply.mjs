@@ -69,7 +69,7 @@ try{
    assert.equal(nums(c.rbtn).map(Math.round).join(),'250,249,245','the one-tap answers keep their Lotion words');
    const got=nums(c.color).map(Math.round).join();
    const want=scheme==='dark'&&status!=='waiting';
-   assert.equal(got,'250,249,245',`#127 ${scheme}/${status}: reply-body links follow P477 Lotion`);
+   assert.equal(got,want?'217,119,87':'254,226,197',`#127 ${scheme}/${status}: ${c.color} (P424: Peachy, else Bisque — palette only)`);
    const cr=ratio(nums(c.color),nums(c.bg));assert.ok(cr>=(want?2:3),`#127 ${scheme}/${status} contrast ${cr.toFixed(2)}`);
    link.push({status,color:c.color,bg:c.bg,contrast:+cr.toFixed(2)});
    if(w===390&&lang==='zh'||w===1440&&lang==='en'){await ev(p,`document.getElementById('main').scrollTop=1e8`);await sleep(60);

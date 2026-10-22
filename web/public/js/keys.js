@@ -105,18 +105,7 @@ export function parse(m) {
   const third = (Array.isArray(m.third) ? m.third.slice(0, 200) : []).map((r) => row({ ...r, type: 'key', set: r?.set !== false })).filter(Boolean);
   const fa = typeof m.fa === 'string' && m.fa.length > 0 && m.fa.length <= 1400 ? m.fa : null;
   const src = (Array.isArray(m.src) ? m.src.slice(0, 80) : []).map(source).filter(Boolean);
-  return { id: m.id, n: m.n, fa, base, third, src, routing: parseRouting(m.routing) };
-}
-
-export function parseRouting(v) {
-  if (!v || !str(v.main, 160) || !Array.isArray(v.rows)) return null;
-  return { main: v.main, rows: v.rows.slice(0, 80).filter(r => r && str(r.role, 70) && typeof r.model === 'string' && r.model.length <= 160 && typeof r.provider === 'string' && r.provider.length <= 40),
-    effective: v.effective === true, different: v.different === true, writable: v.writable === true, stamp: /^[0-9a-f]{56}$/.test(v.stamp || '') ? v.stamp : null };
-}
-const CHECKABLE = new Set(['ARK_AGENT_PLAN_API_KEY','ARK_CODING_PLAN_API_KEY','ARK_API_KEY','BAILIAN_TOKEN_PLAN_API_KEY','DASHSCOPE_API_KEY','BAILIAN_CODING_PLAN_API_KEY']);
-const checks = new Map();
-export function parseCorrection(v) {
-  return v && /^FIX_[0-9a-f]{24}$/.test(v.offer || '') && CHECKABLE.has(v.source) && CHECKABLE.has(v.target) && v.source !== v.target ? { offer: v.offer, source: v.source, target: v.target } : null;
+  return { id: m.id, n: m.n, fa, base, third, src };
 }
 
 let S = null;                       // the page model (names / states only) + the armed challenges
@@ -125,8 +114,7 @@ const verification = new Map();
 export function saved(name, verify) {
   if (!okName(name)) return;
   if (verify === 'ok' || verify === 'fail') verification.set(name, verify);
-  checks.delete(name);
-  if (root?.isConnected) load().then(() => { if (CHECKABLE.has(name)) checkRow(name); });
+  if (root?.isConnected) load();
 }
 const chs = new Map();              // `${op}\n${name}` → Face ID challenge for the current nonce
 
@@ -155,12 +143,6 @@ async function arm(n) {
       const c = await elevateChallenge(ch, dev, id, 'key_' + op, n, await keysDigest(op, r.name));
       if (S && S.n === n && S.id === id) chs.set(op + '\n' + r.name, c);
     }
-  }
-  const writes = [...checks.values()].filter(v => v?.offer).map(v => ['move', v.offer]);
-  if (S.routing?.writable && S.routing.stamp) writes.push(['unify', 'UNIFY_' + S.routing.stamp]);
-  for (const [op, name] of writes) {
-    const c = await elevateChallenge(ch, dev, id, 'key_' + op, n, await keysDigest(op, name));
-    if (S && S.n === n && S.id === id) chs.set(op + '\n' + name, c);
   }
 }
 /** What an import's Face ID also signs (agentj/keys.py import_extra). */
@@ -213,8 +195,6 @@ function nameNode(name) {
 const PLAN_COPY = {
   BAILIAN_TOKEN_PLAN_API_KEY: ['tokenTitle','tokenHint','https://bailian.console.aliyun.com/cn-beijing/subscription/overview'],
   DASHSCOPE_API_KEY: ['payTitle','payHint','https://bailian.console.aliyun.com/cn-beijing/model/settings/api-key'],
-  BAILIAN_CODING_PLAN_API_KEY: ['legacyTitle','legacyHint','https://bailian.console.aliyun.com/cn-beijing/model/settings/api-key'],
-  ARK_API_KEY: ['arkPayTitle','arkPayHint','https://agentj.app/docs/ark/'],
   ARK_AGENT_PLAN_API_KEY: ['arkAgentTitle','arkAgentHint','https://agentj.app/docs/ark/'],
   ARK_CODING_PLAN_API_KEY: ['arkCodingTitle','arkCodingHint','https://agentj.app/docs/ark/'],
 };
@@ -244,23 +224,10 @@ function rowNode(r, vendor) {
   main.append(st);
   if (r.type === 'oauth' && r.use) main.append(useLine(r));
   for (const f of r.found || []) main.append(foundLine(r, f, vendor));
-  if (r.set && CHECKABLE.has(r.name)) {
-    const box = mk('div','keys-correction');
-    const check = mk('button','aj-btn',t('p450.check')); check.type='button'; check.disabled=busy;
-    check.addEventListener('click', () => checkRow(r.name)); box.append(check);
-    const result = checks.get(r.name);
-    if (result?.offer) {
-      const title = PLAN_COPY[result.target];
-      box.append(mk('p','keys-desc',t('p450.mismatch',{plan:title ? t('p417.key.'+title[0]) : result.target})));
-      const move=mk('button','aj-btn',t('p450.move')); move.type='button'; move.disabled=busy;
-      move.addEventListener('click',()=>writeSetup('move',result.offer)); box.append(move);
-    } else if (result) box.append(mk('p','keys-desc',t(result.valid?'p450.valid':'p450.unknown')));
-    main.append(box);
-  }
   li.append(main);
   if (r.type !== 'oauth') {
     const acts = mk('div', 'kacts');
-    if (r.set) { acts.append(iconBtn('copy', r, vendor)); if (r.name !== 'BAILIAN_CODING_PLAN_API_KEY') acts.append(iconBtn('edit', r, vendor)); acts.append(iconBtn('delete', r, vendor)); }
+    if (r.set) acts.append(iconBtn('copy', r, vendor), iconBtn('edit', r, vendor), iconBtn('delete', r, vendor));
     else acts.append(iconBtn('set', r, vendor));
     li.append(acts);
   }
@@ -315,7 +282,6 @@ function sourcesNode() {
 function draw() {
   if (!root || !S) return;
   const kids = [];
-  if (S.routing) kids.push(routingNode(S.routing));
   kids.push(mk('h2', 'keys-h', t('p352.base')));
   for (const v of S.base) {
     const card = mk('section', 'kvendor'); card.dataset.vendor = v.id;
@@ -338,44 +304,6 @@ function draw() {
   card.append(ul); kids.push(card);
   kids.push(sourcesNode());
   root.replaceChildren(...kids);
-}
-
-export function routingRole(role, translate = t) {
-  if (role === 'small_model') return translate('p450.roleHelper');
-  if (typeof role === 'string' && role.startsWith('agent:') && role.length > 6)
-    return translate('p450.roleAgent', { name: role.slice(6) });
-  return translate('p450.roleOther');
-}
-function routingNode(v) {
-  const box=mk('section','kvendor'); box.dataset.providerRouting='1';
-  box.append(mk('h3','kvendor-h',t('p450.routes')),mk('p','keys-desc',t('p450.main',{model:v.main})));
-  for (const r of v.rows) box.append(mk('p','keys-desc',routingRole(r.role)+' · '+(r.model || t('p450.auto'))));
-  box.append(mk('p','keys-desc',t(v.effective ? 'p450.effectiveScope' : 'p450.scope')));
-  if (v.different) {
-    box.append(mk('p','keys-desc',t('p450.different')));
-    if (v.writable && v.stamp) {
-      const b=mk('button','aj-btn',t('p450.unify')); b.type='button'; b.disabled=busy;
-      b.addEventListener('click',()=>writeSetup('unify','UNIFY_'+v.stamp)); box.append(b);
-    } else box.append(mk('p','keys-desc',t('p450.external')));
-  }
-  return box;
-}
-async function checkRow(name) {
-  if (busy || !S) return;
-  busy=true; draw(); status(t('p450.checking'));
-  try {
-    const res=await api.keysOp('check',name);
-    checks.set(name,parseCorrection(res) || {valid:res.valid===true});
-  } finally { busy=false; status(''); if(S) { await arm(S.n); draw(); } }
-}
-async function writeSetup(op,name) {
-  if (busy || !S) return;
-  if (!S.fa || !canAssert()) { toast(t('p450.passkey'),4500); return; }
-  const ch=chs.get(op+'\n'+name);
-  if (!ch) { toast(t('p450.again'),4000); return; }
-  const res=await run(op,name,approve(ch,S.fa));
-  if (res.ok) { checks.clear(); toast(t(op==='unify'?'p450.unified':'p450.moved'),4500); await load(); }
-  else if(res.why!=='cancel') toast(t('p450.failed'),4500);
 }
 
 // ---------------------------------------------------------------- 「添加」: a NAME, then the normal key card

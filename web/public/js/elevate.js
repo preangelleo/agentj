@@ -562,7 +562,7 @@ function runBar() {
 }
 const clock = (ms) => { const s = Math.max(0, Math.floor(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
 function resultText(f) {
-  if (f.result === 'done') return Number.isInteger(f.code) && f.code !== 0 ? t('p406.sudo.doneFail', { code: f.code }) : t('p479.sudo.done', { code: f.code ?? '—' });
+  if (f.result === 'done') return Number.isInteger(f.code) && f.code !== 0 ? t('p406.sudo.doneFail', { code: f.code }) : t('p406.sudo.done');
   return t({ stopped: 'p406.sudo.stopped', timeout: 'p406.sudo.timeout' }[f.result] || 'p406.sudo.failed');
 }
 function paintOut(text) {

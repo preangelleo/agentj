@@ -1,6 +1,6 @@
 {
-  "version": "0.25.3a1",
+  "version": "0.25.2a1",
   "major": false,
-  "zh": "记事本标题、正文与日期分开；附件栏可排序；修复服务商归属、终端菜单、升级回滚与隔离自检，支持 OpenCode 2。同步 iPhone 页面和席位修复。",
-  "en": "Separate note titles and dates, reorder composer tools, and fixes for providers, terminal menus, recovery and fenced self-checks. OpenCode 2 support."
+  "zh": "日历与文件卡、电脑密码 Face ID 填入、全屏终端与编辑、记事待办直存；配对确认更清楚，复制与提示更顺手；技能和设备协作、恢复与安全修复。",
+  "en": "Calendar and file cards, Face ID password fill, full-screen terminal and editor, direct note saves, clearer pairing, copy feedback, teamwork and recovery fixes."
 }

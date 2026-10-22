@@ -40,7 +40,6 @@ def _owner(text: str) -> str:
 class Masker:
     def __init__(self, mask=None):
         self.mask = mask or _owner
-        self.carriage_count = 0  # P455: metadata only; CR semantics survive owner-output normalization
         self.esc = ""        # an escape sequence cut at the end of the last chunk
         self.held = ""       # stripped text not released yet (a token run / a partial PEM header)
         self.ctx = ""        # released raw text (left context, ≤ CARRY)
@@ -63,7 +62,6 @@ class Masker:
         return out
 
     def _strip(self, text: str) -> str:
-        self.carriage_count += text.count("\r")
         text = self.esc + text
         self.esc = ""
         i = text.rfind("\x1b")

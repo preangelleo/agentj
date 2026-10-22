@@ -582,8 +582,6 @@ def check_agent_cli(st: State, svc: dict) -> dict:
         for f in ark.facts():
             s += (f" · 火山方舟 {f['provider']}: key {f['key_env'] or '—'} " +
                   ("已存 / set" if f["key_set"] else "未存 / not set (agentj provider ark → key card)"))
-    if k == "opencode" and not harness.opencode_v2(ver):
-        s += " · 1.x 也能用；想升 2.x：npm i -g @opencode/cli（不会自动升） / 1.x still works; optional v2: npm i -g @opencode/cli (no automatic major upgrade)"
     if k == 'opencode' and harness.opencode_v2(ver):
         s += ' · v2 (/api)'                         # P60: supported (agent_opencode2); the live check below asks the server
     if k == "opencode" and c:
@@ -882,9 +880,6 @@ def check_serve(st: State) -> dict:
         return _c("serve", WARN, "在运行 / running · 共享会话读取连续出错，已标记断开 / shared session reads kept failing, "
                   f"marked down ({_short(str(obs.get('error') or '?'), 40)} ×{obs.get('errors', '?')})",
                   "agentj doctor --reconnect")
-    if obs.get("menu") in ("rewind", "quota", "menu"):
-        return _c("serve", WARN, "在运行 / running · Claude Code 菜单 / menu: " + obs["menu"],
-                  "在手机菜单卡片选择操作 / Choose an action on the phone menu card")
     note = (f" · 共享会话读取重试中 / shared session read retrying ×{obs['errors']}"
             if isinstance(obs.get("errors"), int) and obs["errors"] > 0 else "")
     if not up and res.get("relay_state", res.get("relay")) == "connecting":   # P129: just started, first link not up yet — not a fault
@@ -1181,9 +1176,10 @@ def run(st: State | None = None, offline: bool = False) -> list[dict]:
     lg = check_linger(svc)
     if lg:
         out.append(lg)
-    recovery = check_upgrade_restart(st, svc)
-    if recovery:
-        out.append(recovery)
+    from . import service_recovery
+    rec = service_recovery.failure(st)
+    if rec:
+        out.append(_c("upgrade-restart", FAIL, service_recovery.failure_text(rec), "agentj service start; agentj doctor"))
     from . import auto_update
     ar = auto_update.read(st).get("result")
     out.append(_c("auto-update", OK, ("on" if auto_update.enabled(st) else "off") + " · 03:00–05:00 local" +
@@ -1252,15 +1248,9 @@ def check_asr(st: State) -> list[dict]:
     return out
 
 
-def check_upgrade_restart(st, svc):
-    from . import service_recovery
-    result = service_recovery.health(st, svc)
-    return _c('upgrade-restart', *result, 'agentj service start; agentj doctor') if result else None
-
-
 def run_upgrade(st=None):
     """Package/service integrity only: no workflow, ASR, billing or network probes."""
-    from . import main_identity
+    from . import main_identity, service_recovery
     st = st or State()
     svc = service.status()
     rows = [check_version(), check_python(), check_websockets(), check_platform(), check_state(st),
@@ -1276,9 +1266,8 @@ def run_upgrade(st=None):
                            reason, 'Send a phone message; if shared Claude needs a new session, tell the owner; never force /clear'))
     except (main_identity.IdentityError, OSError, ValueError):
         rows.append(_c('main-core', FAIL, 'Packaged identity integrity failed', 'Reinstall the verified wheel'))
-    recovery = check_upgrade_restart(st, svc)
-    if recovery:
-        rows.append(recovery)
+    if service_recovery.failure(st):
+        rows.append(_c('upgrade-restart', FAIL, 'Upgrade restart failed', 'agentj service start'))
     return rows
 
 

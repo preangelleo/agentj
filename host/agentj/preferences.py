@@ -145,12 +145,10 @@ def ignored(raw):
     except ValueError: return []
     return _undot(doc)[1] if isinstance(doc,dict) else []
 
-COMPOSER_BUTTONS = ('file', 'image', 'camera', 'mic', 'full')   # P340: the default left-to-right order above the phone's message box
+COMPOSER_BUTTONS = ('file', 'image', 'camera', 'mic')   # P340: the default left-to-right order above the phone's message box
 
 def composer_order_ok(v):
-    # P462: old remotes / archives may still send the original complete four-item permutation.
-    return isinstance(v, list) and all(isinstance(x, str) for x in v) and any(
-        len(v) == len(ids) and sorted(v) == sorted(ids) for ids in (COMPOSER_BUTTONS, COMPOSER_BUTTONS[:-1]))
+    return isinstance(v, list) and len(v) == len(COMPOSER_BUTTONS) and all(isinstance(x, str) for x in v) and sorted(v) == sorted(COMPOSER_BUTTONS)
 
 def validate(doc,raw=''):
     if not isinstance(doc,dict): raise ConfigError('/', 'expected an object')
@@ -179,8 +177,8 @@ def validate(doc,raw=''):
     if why: raise ConfigError('notify.automations', why, _line(raw, 'notify.automations'))
     cats = get(doc, 'updates.skill_categories', [])
     if len(cats)>4 or any(c not in ('content','app','commerce','general') for c in cats): raise ConfigError('updates.skill_categories','allowed: content, app, commerce, general')
-    order = get(doc, 'ui.composer_buttons')   # P340: a permutation of the five ids (or the complete legacy four); anything else is refused (the phone keeps the default)
-    if order is not None and not composer_order_ok(order): raise ConfigError('ui.composer_buttons','expected each of '+', '.join(COMPOSER_BUTTONS)+' exactly once, e.g. ["mic","file","image","camera","full"]',_line(raw,'ui.composer_buttons'))
+    order = get(doc, 'ui.composer_buttons')   # P340: a permutation of the four ids; anything else is refused (the phone keeps the default)
+    if order is not None and not composer_order_ok(order): raise ConfigError('ui.composer_buttons','expected each of '+', '.join(COMPOSER_BUTTONS)+' exactly once, e.g. ["mic","file","image","camera"]',_line(raw,'ui.composer_buttons'))
     xf = get(doc, 'api_keys.extra_env_files', [])   # P362: paths only; keys_found reads each one safely, names + tails only
     if len(xf)>8 or any(not isinstance(x,str) or not (x.startswith('/') or x.startswith('~/')) or len(x)>1024 or any(ord(c)<32 for c in x) for x in xf):
         raise ConfigError('api_keys.extra_env_files','up to 8 local file paths, each absolute or ~/path, e.g. ["~/projects/.env"]',_line(raw,'api_keys.extra_env_files'))
@@ -191,7 +189,6 @@ def validate(doc,raw=''):
     if root and not (os.path.isabs(root) or root == '~' or root.startswith('~/')):
         raise ConfigError('agent.working_root', 'use an absolute path or ~/path')
     out=merge(defaults(),{k:v for k,v in doc.items() if k!='version'})
-    if order is not None and len(order) == 4: put(out, 'ui.composer_buttons', [*order, 'full'])
     # Defaults belong to the selected provider; explicit model/key choices always win.
     provider=get(out,'voice.tts.provider')
     for key in ('voice.tts.model','voice.tts.key_env'):

@@ -817,11 +817,7 @@ class AcpAgent(Agent):
         return Result("\n".join(lines))
 
     async def cmd_model(self, arg: str) -> Result:
-        # Listing an open session's model options is local and never reopens it mid-turn.
-        if not arg and not self.sid and self.status in ("working", "compacting"):
-            from .command_queries import unavailable
-            return unavailable(self)
-        if (arg or not self.sid) and not await self._ready():
+        if not await self._ready():
             return Result(f"{self.LABEL} 没起来，没法换模型。", "error")
         cur = self.cur_model() or ""
         models = [{"id": clean_line(v["value"], 100), "name": clean_line(str(v.get("name") or v["value"]), 60),

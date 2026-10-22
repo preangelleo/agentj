@@ -28,8 +28,8 @@ const BOOK = [
 ];
 const ORDER = { recent: ['c000000000001', 'c000000000003', 'c000000000002'], frequent: ['c000000000002', 'c000000000001', 'c000000000003'],
   name: ['c000000000003', 'c000000000002', 'c000000000001'] };
-const S = { zh: { dup: '刚刚已经发过了', again: '再发一次', fail: '发送失败', retry: '重试', title: '转发到邮箱', me: '发给我自己', other: '发给别人', sent: '已发到', noMail: '还没设置发信邮箱', card: '存成新联系人', need: '至少填一个邮箱或电话', saved: '已保存', upd: '补全联系人' },
-  en: { dup: 'Already sent just now', again: 'Send again', fail: 'Sending failed', retry: 'Retry', title: 'Forward by e-mail', me: 'To me', other: 'To someone else', sent: 'Sent to', noMail: 'No mailbox to send from yet', card: 'Save as a new contact', need: 'at least one e-mail or phone', saved: 'Saved', upd: 'Complete contact' } };
+const S = { zh: { dup: '刚刚已经发过了', again: '再发一次', fail: '发送失败', retry: '重试', title: '转发到邮箱', me: '发给我自己', other: '发给别人', sent: '已发到', noMail: '还没设置发信邮箱', card: '存成新联系人', need: '至少填一个邮箱或电话', saved: '联系人已保存', upd: '补全联系人' },
+  en: { dup: 'Already sent just now', again: 'Send again', fail: 'Sending failed', retry: 'Retry', title: 'Forward by e-mail', me: 'To me', other: 'To someone else', sent: 'Sent to', noMail: 'No mailbox to send from yet', card: 'Save as a new contact', need: 'at least one e-mail or phone', saved: 'Contact saved', upd: 'Complete contact' } };
 export const CASES = { a: 'forward-me', b: 'forward-other', c: 'forward-no-mail', d: 'contact-card', e: 'forward-dup-and-retry' };
 const esc = (p) => p.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
 const box = (p, sel) => evaluate(p, `(()=>{const r=document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect();return {l:r.left,r:r.right,t:r.top,b:r.bottom,w:r.width,h:r.height}})()`);

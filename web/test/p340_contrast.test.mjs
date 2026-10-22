@@ -82,3 +82,20 @@ test('the robot mark never stands bare on the logo green', () => {
   }
   assert.deepEqual(bad, [], 'classes that put the green robot on a green fill without its Lotion disc');
 });
+
+// P448 controls have their final computed pairs in controls.css; the legacy CSS-source audit above stays intact.
+function p448Contract() {
+ const source=readFileSync(new URL('./p340_contrast.mjs',import.meta.url),'utf8');
+ const start=source.indexOf('export function p448TextFailures'),end=source.indexOf('// end P448 text contract',start);
+ assert.ok(start>=0&&end>start);
+ return new Function('return '+source.slice(start,end).replace('export ',''))();
+}
+test('P448 menu buttons accept readable dark ink at 4.93:1 on a coloured fill',()=>{
+ assert.deepEqual(p448Contract()({p448:true,ctrl:true,colour:true,lotion:false,heavy:true,fgL:0.01,bgL:0.2,ratio:4.93,large:true}),[]);
+});
+test('P448 rejects 4.49:1 even for large labels or Lotion text',()=>{
+ for(const large of [true,false])for(const lotion of [true,false])assert.equal(p448Contract()({p448:true,ctrl:true,colour:true,lotion,heavy:true,fgL:0.01,bgL:0.2,ratio:4.49,large}).length,1);
+});
+test('non-P448 content keeps the original heavy-ground rule',()=>{
+ assert.ok(p448Contract()({p448:false,ctrl:false,colour:true,lotion:false,heavy:true,fgL:0.01,bgL:0.2,ratio:4.93,large:false}).includes('dark text on a heavy ground'));
+});

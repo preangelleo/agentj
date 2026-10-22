@@ -126,7 +126,7 @@ class Switch(Home):
     def test_no_opencode(self):
         r, calls = self.run_switch(found={"opencode": None, "arkcli": None})
         self.assertEqual((r["reason"], calls), ("not_installed", []))
-        self.assertIn("npm i -g @opencode/cli", ark.say_switch(r, "zh"))
+        self.assertIn("npm i -g opencode-ai", ark.say_switch(r, "zh"))
         self.assertIn("arkcli not installed", ark.say_switch(r, "en"))
 
     def test_failed_probe_removes_the_added_block(self):

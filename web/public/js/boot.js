@@ -4,8 +4,8 @@
   var ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
   if (ios) document.documentElement.dataset.ios = "1";
   if (navigator.standalone === true || matchMedia('(display-mode: standalone)').matches) document.documentElement.dataset.standalone = '1';
-  window.__ajLaunchChrome = ios ? "#2c2b26" : "#141414";
-  document.documentElement.style.backgroundColor = window.__ajLaunchChrome;
+  window.__ajLaunchChrome = "#141414";
+  document.documentElement.style.backgroundColor = "#141414";
   // Use system theme even when a user's in-page theme differs; Android snapshots this manifest at installation.
   var scheme = matchMedia('(prefers-color-scheme: dark)');
   function manifest() {
@@ -15,5 +15,5 @@
   manifest();
   scheme.addEventListener('change', manifest);
   var bars = document.querySelectorAll('meta[name="theme-color"]');
-  for (var i = 0; i < bars.length; i++) bars[i].setAttribute("content", window.__ajLaunchChrome);
+  for (var i = 0; i < bars.length; i++) bars[i].setAttribute("content", "#141414");
 })();

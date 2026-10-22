@@ -12,7 +12,7 @@ try {
  const ev=s=>evaluate(p,s),click=id=>ev(`document.getElementById('${id}').click()`);
  await click('setBtn');
  await ev(`document.getElementById('setBtn').dispatchEvent(new PointerEvent('contextmenu',{bubbles:true,cancelable:true,button:2,pointerType:'mouse'}))`);
- assert.ok(await ev(`document.getElementById('confirm').hidden && document.getElementById('toast').classList.contains('square') && document.getElementById('toast').textContent.includes('长按') && !document.querySelector('#toast button')`));checks++;await waitFor(p,`!document.getElementById('toast').classList.contains('on')`,3000);
+ assert.ok(await ev(`document.getElementById('confirm').hidden && document.getElementById('toast').classList.contains('circle') && document.getElementById('toast').textContent.includes('长按') && !document.querySelector('#toast button')`));checks++;await waitFor(p,`!document.getElementById('toast').classList.contains('on')`,3000);
  await ev(`document.getElementById('setBtn').dispatchEvent(new PointerEvent('contextmenu',{bubbles:true,cancelable:true,pointerType:'touch'}))`);assert.ok(await ev(`document.getElementById('confirm').hidden`));checks++;
  const found=await ev(`(async()=>{const s=await import('./js/settings.js');return {title:s.searchItems('好友').map(n=>n.id),description:s.searchItems('对外接待客人').map(n=>n.id),keyword:s.searchItems('customer service').map(n=>n.id),private:s.searchItems('MY PRIVATE PASSWORD').length};})()`);
  assert.ok(found.title.includes('open-friends'));assert.ok(found.description.includes('open-bots'));assert.ok(found.keyword.includes('open-bots'));assert.equal(found.private,0);checks+=4;

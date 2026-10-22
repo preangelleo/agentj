@@ -311,10 +311,8 @@ export async function runCases({ B, web, fake, only }) {
     // however far the reply before it was read; only paging history keeps the page (follow-newest / p132.mjs).
     await fake.addTurn({ k: 'agent' }, '复制我');
     await wait(`document.getElementById('words').textContent === '复制我' && document.getElementById('pgCorner').dataset.unread === '0'`);
-    await ev(`import('./js/ui.js').then(u=>u.toastOff())`);
     await click('#copyReply');
-    await wait(`document.getElementById('copyReply').dataset.done === '1'`);
-    ok(await ev(`!document.getElementById('toast').classList.contains('on') && !document.querySelector('#copyReply .cc-result')`), 'P458: reply copy is a tick only, without a central notice or caption');
+    await waitToast(T('r.md.copied'));
     ok((await clipboard()) === '复制我', 'the stored reply is on the clipboard');
   });
   await C('action-bar', async () => {
@@ -1306,7 +1304,7 @@ export async function runCases({ B, web, fake, only }) {
     await key(P, 'Escape', { code: 'Escape' });
     await wait(`document.getElementById('rd').hidden`);
   });
-  await C('key-y-copy', async () => { await blur(); await ev(`import('./js/ui.js').then(u=>u.toastOff())`); await key(P, 'y', { code: 'KeyY' }); await wait(`document.getElementById('copyReply').dataset.done === '1'`); ok(await ev(`!document.getElementById('toast').classList.contains('on') && !document.querySelector('#copyReply .cc-result')`), 'P458: keyboard reply copy is also tick-only'); ok((await clipboard()).startsWith('回复 4 第 0 行'), 'y copies the reply'); });
+  await C('key-y-copy', async () => { await blur(); await key(P, 'y', { code: 'KeyY' }); await waitToast(T('r.md.copied')); ok((await clipboard()).startsWith('回复 4 第 0 行'), 'y copies the reply'); });
   await C('key-shift-y-copy-source', async () => { await key(P, 'Y', { code: 'KeyY', shift: true, text: 'Y' }); await waitToast(T('r.md.copied')); ok((await clipboard()) === '原话 4', 'Y copies the source'); });
   await C('key-r-reply', async () => { await key(P, 'r', { code: 'KeyR' }); await wait(`!document.getElementById('qbar').hidden && document.activeElement === document.getElementById('input')`); await key(P, 'Escape', { code: 'Escape' }); await wait(`document.getElementById('qbar').hidden`); });
   await C('key-i-esc', async () => {

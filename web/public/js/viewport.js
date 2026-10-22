@@ -18,11 +18,7 @@ export function applyViewport() {
   if (resuming && !typing) staleH = short ? vv.height : null;
   else if (staleH !== null && (typing || !vv || vv.height !== staleH)) staleH = null;
   const kb = short && staleH === null;
-  // Safari's toolbar can shrink the visual viewport by less than the keyboard threshold.
-  // Always follow its live bounds at normal zoom; standalone retains P142's stale-resume guard.
-  const html = document.documentElement;
-  const safari = html.dataset.ios === '1' && html.dataset.standalone !== '1' && vv && (!vv.scale || vv.scale === 1);
-  if (kb || safari) { st.setProperty('--vvh', vv.height + 'px'); st.setProperty('--vvtop', vv.offsetTop + 'px'); }
+  if (kb) { st.setProperty('--vvh', vv.height + 'px'); st.setProperty('--vvtop', vv.offsetTop + 'px'); }
   else { st.removeProperty('--vvh'); st.removeProperty('--vvtop'); }
   if (document.body) document.body.dataset.kb = kb ? '1' : '0';
   return kb;

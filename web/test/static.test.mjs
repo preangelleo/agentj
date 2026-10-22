@@ -410,8 +410,8 @@ test('manifest + icons are local files from the brand (192, 512, 512 maskable), 
   assert.deepEqual(m.icons.map((i) => `${i.sizes}/${i.purpose}`), ['192x192/any', '512x512/any', '512x512/maskable']);
   const TOK = read(pub('brand/palette.css'));
   for (const c of [m.background_color, m.theme_color]) assert.ok(TOK.includes(`: ${c};`), `${c} is a brand token`);
-  assert.match(HTML, /<meta name="theme-color" content="#2c2b26" media="\(prefers-color-scheme: light\)">/);
-  assert.match(HTML, /<meta name="theme-color" content="#2c2b26" media="\(prefers-color-scheme: dark\)">/);
+  assert.match(HTML, /<meta name="theme-color" content="#141414" media="\(prefers-color-scheme: light\)">/);
+  assert.match(HTML, /<meta name="theme-color" content="#141414" media="\(prefers-color-scheme: dark\)">/);
   assert.match(HTML, /<link rel="apple-touch-icon" href="apple-touch-icon\.png\?v=[0-9a-f]{8}">/);
   assert.match(HTML, /<link rel="manifest" href="manifest\.webmanifest">/);
 });

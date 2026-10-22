@@ -87,10 +87,9 @@ test('iOS apple-touch-icon is untouched: opaque Lotion (iOS turns transparency b
   assert.equal(hex(...im.px(0, 0)), '#faf9f5'); assert.equal(im.px(0, 0)[3], 255);
 });
 
-test('boot.js: installed status chrome is fixed Noir on iOS and Sooty elsewhere without cached colours', () => {
+test('boot.js: all installed splash status bars stay Sooty without cached state colours', () => {
   const B = readFileSync(join(PUBLIC_DIR, 'js/boot.js'), 'utf8');
-  assert.ok(B.includes('ios ? "#2c2b26" : "#141414"'));
-  assert.ok(B.includes('setAttribute("content", window.__ajLaunchChrome)'));
+  assert.ok(B.includes('setAttribute("content", "#141414")'));
   assert.ok(!B.includes('localStorage.getItem'));
 });
 

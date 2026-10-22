@@ -163,7 +163,7 @@ class AsyncRuntime(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(a.meter.call_args.kwargs['ctx'], {'used':15,'max':100})
             a._providers.return_value = {}
             await a.context_meter()
-        self.assertEqual(a.meter.call_args.kwargs['ctx'], {'used':15,'max':200000})
+        self.assertEqual(a.meter.call_args.kwargs['ctx'], {'used':15,'max':None})
 
     async def test_unapproved_or_revoked_devices_cannot_run_new_actions(self):
         from agentj.serve import Host
