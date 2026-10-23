@@ -643,6 +643,45 @@ class OpenCodeAgent(Agent):
         """P426: sub-agents get our rules per agent — high-risk mode of Agent J's own serve, not a read-only scheduled run."""
         return bool(self.SUBAGENTS and self.cfg.get("high_risk_warnings", False) and not getattr(self, "research", False))
 
+    def _transport_ready(self) -> bool:
+        p = self.proc
+        return p is not None and p.returncode is None and self.client is not None
+
+    def readiness(self) -> dict:
+        ready = self._transport_ready() and bool(self.sid) and self.connected.is_set() and not self.failed_start
+        return {"ready": ready, "code": "adapter_ready" if ready else "native_not_ready"}
+
+    def _retire(self, proc) -> bool:
+        """Release only this generation; the durable native conversation pin stays intact."""
+        if self.proc is not proc:
+            return False
+        self.proc = self.client = self.sid = None
+        self.connected.clear()
+        return True
+
+    async def _ensure_started(self) -> bool:
+        if self._transport_ready():
+            return True
+        p = self.proc
+        if p is not None and self.owns_harness():
+            await self._kill(p)
+        return await self._spawn()
+
+    def _startup_failure(self, phase, reason):
+        self.host.st.log("agent_not_ready", agent=self.kind, phase=phase, code=reason,
+                         proc_ready=self.proc is not None and self.proc.returncode is None,
+                         client_ready=self.client is not None)
+        text = ("OpenCode is not ready to open this conversation. Your message was not delivered. Try Reopen AI session, then send again."
+                if getattr(self.host, "lang", "zh").startswith("en") else
+                "OpenCode 还没准备好，无法打开这段对话；这条消息没有交给它。请点「重开 AI 会话」，完成后再发消息。")
+        self.fail_notice(text, recovery=True)
+
+    def _delivery_uncertain(self):
+        self.host.st.log("agent_delivery_uncertain", agent=self.kind, phase="prompt", code="transport_error")
+        self.fail_notice("Could not confirm whether OpenCode received this message. It will not be sent again automatically. Check the reply before trying again."
+                         if getattr(self.host, "lang", "zh").startswith("en") else
+                         "暂时无法确认 OpenCode 是否收到了这条消息，系统不会自动重发。请先查看回复，再决定是否重试。")
+
     async def _spawn(self) -> bool:
         if not _bin("AGENTJ_OPENCODE_BIN", "opencode"):
             self.failed_start = True
@@ -684,96 +723,109 @@ class OpenCodeAgent(Agent):
             env = fence.auxiliary_environment(env, self.kind, extra_keep=("AGENTJ_PERM_SOCK", "AGENTJ_PERM_CLAIM", "AGENTJ_PERM_WAIT", "OPENCODE_SERVER_PASSWORD", "OPENCODE_SERVER_USERNAME", "OPENCODE_CONFIG_CONTENT"), plan_keys=True)   # P348
         if self.cfg.get("fence", True):
             env = fence.launch_environment(env, self.cfg.get("docker", False), self.kind)
-        proc = await asyncio.create_subprocess_exec(*argv, cwd=self.cfg["dir"], env=env,
-                                                    stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE,
-                                                    stderr=asyncio.subprocess.PIPE, limit=LINE_LIMIT, start_new_session=True)
-        self.proc, self.err_tail, self.quiet_exit, self.failed_start = proc, "", False, False
-        self.connected = asyncio.Event()
-        self._bg(self._drain_err(proc))
-        self.host.st.log("agent_start", agent=self.kind, fence=self.cfg.get("fence", True), session_mode=self.cfg.get("session_mode", "independent"), isolation_effective=getattr(self, "isolation_effective", False))
-        listening = None
-        slow_noticed = False
-        self.start_progress = started = time.monotonic()
-        line_task = asyncio.create_task(proc.stdout.readline())
         try:
-            while time.monotonic() - started < START_MAX:
-                if not slow_noticed and time.monotonic() - started >= 30:
-                    self.host.agent_notice(startup_help(self.err_tail, slow=True, lang=getattr(self.host, "lang", "zh")))
-                    slow_noticed = True
-                left = min(START_WAIT - (time.monotonic() - self.start_progress),
-                           START_MAX - (time.monotonic() - started))
-                if left <= 0:
-                    break
-                done, _ = await asyncio.wait({line_task}, timeout=min(left, 1))
-                if not done:
-                    if proc.returncode is not None:
-                        break
-                    continue
-                line = line_task.result()
-                if not line:
-                    break
-                self.start_progress = time.monotonic()
-                m = re.search(rb"listening on http://127\.0\.0\.1:(\d+)", line)
-                if m:
-                    listening = int(m.group(1))
-                    break
-                line_task = asyncio.create_task(proc.stdout.readline())
-        finally:
-            if not line_task.done():
-                line_task.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await line_task
-        if listening != port:
-            await asyncio.sleep(0.2)
-            reason = "process exited" if proc.returncode is not None else "startup limit reached" if time.monotonic() - started >= START_MAX else "no startup progress"
-            await self._kill(proc)
-            self.host.st.log("agent_startup_timeout", agent=self.kind, reason=reason)
+            proc = await asyncio.create_subprocess_exec(*argv, cwd=self.cfg["dir"], env=env,
+                                                        stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE,
+                                                        stderr=asyncio.subprocess.PIPE, limit=LINE_LIMIT, start_new_session=True)
+        except OSError as e:
             self.failed_start = True
-            self.fail_notice(startup_help(self.err_tail, lang=getattr(self.host, "lang", "zh")))
+            self._startup_failure("launch", type(e).__name__)
             return False
-        self._bg(self._drain(proc.stdout))
-        self._bg(self._watch(proc))
-        self.client = Client(port, password)
+        self.proc, self.client, self.sid = proc, None, None
+        ready = False
         try:
-            await self._prepare()
-            await self.refresh_models()
-            self.meter(model=self.cur_model(), model_name=self.model_name(self.cur_model()))
-        except (OSError, HTTPError, ValueError, KeyError, TypeError, asyncio.TimeoutError) as e:
-            if getattr(proc, "_agentj_requested_stop", False) or any(proc is ended for ended in self.ended) or self.halting:
-                return False  # a requested stop during startup is not a provider/startup failure
-            self.host.st.log("agent_prepare_fail", agent=self.kind, reason=type(e).__name__)
-            self.quiet_exit = True
-            await self._kill(proc)
-            self.failed_start = True
-            self.fail_notice(f"OpenCode 起来了，但没能接上它（{type(e).__name__}）：为了安全，这条消息没有交给它。")
-            return False
-        self._bg(self._events(proc))
-        try:
-            await asyncio.wait_for(self.connected.wait(), CONNECT_WAIT)
-        except asyncio.TimeoutError:
-            self.quiet_exit = True
-            await self._kill(proc)
-            self.failed_start = True
-            self.fail_notice("OpenCode 的事件流没有接上：为了安全，这条消息没有交给它（审批会收不到）。")
-            return False
-        if self.proc is proc and self.__dict__.pop("_sub_respawn", False) and not self.__dict__.pop("_sub_again", False):
-            # P426: the agents' rules ask for another injection than this serve started with (first start, a new agent,
-            # the owner's rules changed): start once more with it — `task <n> allow` only after it is seen in place
-            self.host.st.log("agent_restart", agent=self.kind, reason="subagent_rules")
-            self._sub_again = True
-            await self._kill(proc)
-            self.proc, self.client = None, None
+            self.err_tail, self.quiet_exit, self.failed_start = "", False, False
+            self.connected = asyncio.Event()
+            self._bg(self._drain_err(proc))
+            self.host.st.log("agent_start", agent=self.kind, fence=self.cfg.get("fence", True), session_mode=self.cfg.get("session_mode", "independent"), isolation_effective=getattr(self, "isolation_effective", False))
+            listening = None
+            slow_noticed = False
+            self.start_progress = started = time.monotonic()
+            line_task = asyncio.create_task(proc.stdout.readline())
             try:
-                return await self._spawn()
+                while time.monotonic() - started < START_MAX:
+                    if not slow_noticed and time.monotonic() - started >= 30:
+                        self.host.agent_notice(startup_help(self.err_tail, slow=True, lang=getattr(self.host, "lang", "zh")))
+                        slow_noticed = True
+                    left = min(START_WAIT - (time.monotonic() - self.start_progress),
+                               START_MAX - (time.monotonic() - started))
+                    if left <= 0:
+                        break
+                    done, _ = await asyncio.wait({line_task}, timeout=min(left, 1))
+                    if not done:
+                        if proc.returncode is not None:
+                            break
+                        continue
+                    line = line_task.result()
+                    if not line:
+                        break
+                    self.start_progress = time.monotonic()
+                    m = re.search(rb"listening on http://127\.0\.0\.1:(\d+)", line)
+                    if m:
+                        listening = int(m.group(1))
+                        break
+                    line_task = asyncio.create_task(proc.stdout.readline())
             finally:
-                self.__dict__.pop("_sub_again", None)
-        if self.proc is proc:
-            self._running_version = version
-            if getattr(self, "_upgrade_notice", None):
-                v = clean_line(version, 40)
-                self.host.agent_notice(f"已切到 OpenCode {v}" if getattr(self.host, "lang", "zh") == "zh" else f"Now using OpenCode {v}")
-                self._upgrade_notice = None
-        return self.proc is proc
+                if not line_task.done():
+                    line_task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await line_task
+            if listening != port:
+                await asyncio.sleep(0.2)
+                reason = "process exited" if proc.returncode is not None else "startup limit reached" if time.monotonic() - started >= START_MAX else "no startup progress"
+                await self._kill(proc)
+                self.host.st.log("agent_startup_timeout", agent=self.kind, reason=reason)
+                self.failed_start = True
+                self._startup_failure("listen", "startup_failed")
+                return False
+            self._bg(self._drain(proc.stdout))
+            self._bg(self._watch(proc))
+            if self.proc is not proc:
+                return False
+            self.client = Client(port, password)
+            try:
+                await self._prepare()
+                await self.refresh_models()
+                self.meter(model=self.cur_model(), model_name=self.model_name(self.cur_model()))
+            except (OSError, HTTPError, ValueError, KeyError, TypeError, AttributeError, asyncio.TimeoutError) as e:
+                if getattr(proc, "_agentj_requested_stop", False) or any(proc is ended for ended in self.ended) or self.halting:
+                    return False  # a requested stop during startup is not a provider/startup failure
+                self.host.st.log("agent_prepare_fail", agent=self.kind, reason=type(e).__name__)
+                self.quiet_exit = True
+                await self._kill(proc)
+                self.failed_start = True
+                self._startup_failure("prepare", type(e).__name__)
+                return False
+            self._bg(self._events(proc))
+            try:
+                await asyncio.wait_for(self.connected.wait(), CONNECT_WAIT)
+            except asyncio.TimeoutError:
+                self.quiet_exit = True
+                await self._kill(proc)
+                self.failed_start = True
+                self._startup_failure("events", "event_timeout")
+                return False
+            if self.proc is proc and self.__dict__.pop("_sub_respawn", False) and not self.__dict__.pop("_sub_again", False):
+                # P426: the agents' rules ask for another injection than this serve started with (first start, a new agent,
+                # the owner's rules changed): start once more with it — `task <n> allow` only after it is seen in place
+                self.host.st.log("agent_restart", agent=self.kind, reason="subagent_rules")
+                self._sub_again = True
+                await self._kill(proc)
+                try:
+                    return await self._spawn()
+                finally:
+                    self.__dict__.pop("_sub_again", None)
+            if self.proc is proc:
+                self._running_version = version
+                if getattr(self, "_upgrade_notice", None):
+                    v = clean_line(version, 40)
+                    self.host.agent_notice(f"已切到 OpenCode {v}" if getattr(self.host, "lang", "zh") == "zh" else f"Now using OpenCode {v}")
+                    self._upgrade_notice = None
+            ready = self.proc is proc and self._transport_ready()
+            return ready
+        finally:
+            if not ready:
+                await self._kill(proc)
 
     async def _prepare(self) -> None:
         """Where the project root is, the human's own agent ruleset (for their denies), then the session with our rules."""
@@ -992,6 +1044,8 @@ class OpenCodeAgent(Agent):
     async def _drain_err(self, proc) -> None:
         with contextlib.suppress(Exception):
             while line := await proc.stderr.readline():
+                if self.proc is not proc:
+                    return
                 self.start_progress = time.monotonic()
                 self.err_tail = (self.err_tail + line.decode("utf-8", "replace"))[-2000:]
 
@@ -1000,11 +1054,11 @@ class OpenCodeAgent(Agent):
         if self.proc is proc or self.proc is None:        # P160: its sub-agents ended with it (not a newer serve's)
             self._busy(None)
         self.host.st.log("agent_exit", agent=self.kind, status=code)
-        if self.proc is proc:
-            self.proc = None
-            self.client = None
+        self._retire(proc)
         quiet = proc in self.ended
         self.ended.discard(proc)
+        if self.proc is not None and self.proc is not proc:
+            return  # an obsolete watcher cannot finish a newer turn
         tp = self.turn_proc
         if tp is not None and tp is not proc and tp.returncode is None:
             return                                        # an older process: the running turn is not its business
@@ -1023,6 +1077,7 @@ class OpenCodeAgent(Agent):
         if self.proc is p:
             self.quiet_exit = True
         self.ended.add(p)
+        self._retire(p)
         if p.returncode is None:
             _signal_tree(p, signal.SIGTERM)
             with contextlib.suppress(Exception):
@@ -1048,6 +1103,13 @@ class OpenCodeAgent(Agent):
                 on = td is not None and not td.is_set()
                 (b.opencode_event if self.EVENT_PATH == "/event" else b.opencode2_event)(ev, self.sid, self.busy_scope(), turn_on=on)
 
+    def _sync_owner(self) -> tuple:
+        return self.proc, self.client, self.sid, self.turn_done
+
+    def _sync_current(self, owner: tuple) -> bool:
+        p, c, sid, turn = owner
+        return self.proc is p and self.client is c and self.sid == sid and self.turn_done is turn
+
     async def _events(self, proc) -> None:
         delay = 0.5
         first = True
@@ -1055,12 +1117,19 @@ class OpenCodeAgent(Agent):
             client = self.client
             try:
                 async for ev in client.events(path=self.EVENT_PATH):
+                    if self.proc is not proc or self.client is not client:
+                        return
                     if not self.connected.is_set():
                         self.connected.set()
                     if not first:
                         first = True
                         self.host.st.log("agent_events", agent=self.kind, status="reconnected")
+                        owner = self._sync_owner()
                         await self._resync()
+                        if self.proc is not proc or self.client is not client:
+                            return
+                        if not self._sync_current(owner):
+                            continue  # discard this old event, keep the live stream for the new turn
                     delay = 0.5
                     self._busy(ev)
                     self.on_event(ev)
@@ -1068,7 +1137,10 @@ class OpenCodeAgent(Agent):
                 self.host.st.log("agent_events", agent=self.kind, status="refused", reason=str(e)[:40])
             except (OSError, asyncio.TimeoutError, asyncio.IncompleteReadError, ValueError):
                 pass
-            if self.proc is not proc or proc.returncode is not None:
+            finally:
+                if self.proc is proc and self.client is client:
+                    self.connected.clear()
+            if self.proc is not proc or self.client is not client or proc.returncode is not None:
                 return
             first = False
             self.host.st.log("agent_events", agent=self.kind, status="lost")
@@ -1077,11 +1149,14 @@ class OpenCodeAgent(Agent):
 
     async def _resync(self) -> None:
         """After the stream came back: requests and text that went by while it was down."""
+        owner = self._sync_owner()
         c = self.client
         if not c:
             return
         with contextlib.suppress(OSError, HTTPError, asyncio.TimeoutError):
             st, reqs = await c.request("GET", "/permission")
+            if not self._sync_current(owner):
+                return
             live = {r.get("id") for r in reqs} if st == 200 and isinstance(reqs, list) else None
             if live is not None:
                 for rid, f in list(self.pending.items()):
@@ -1091,7 +1166,11 @@ class OpenCodeAgent(Agent):
                     if isinstance(r, dict):
                         self._on_perm(r)
             await self._catch_up()
+            if not self._sync_current(owner):
+                return
             st, busy = await c.request("GET", "/session/status")
+            if not self._sync_current(owner):
+                return
             if st == 200 and isinstance(busy, dict) and self.turn_done and not self.turn_done.is_set():
                 s = busy.get(self.sid) if self.sid else None
                 if not isinstance(s, dict) or s.get("type") == "idle":
@@ -1100,7 +1179,10 @@ class OpenCodeAgent(Agent):
     async def _catch_up(self) -> None:
         if not (self.client and self.sid and self.turn_done):
             return
+        owner = self._sync_owner()
         st, msgs = await self.client.request("GET", f"/session/{self.sid}/message")
+        if not self._sync_current(owner):
+            return
         if st != 200 or not isinstance(msgs, list):
             return
         for m in msgs:
@@ -1384,13 +1466,16 @@ class OpenCodeAgent(Agent):
     # ------------------------------------------------ turns
     async def _session_ok(self) -> bool:
         """The conversation agent.json names is the one loaded (after /clear or 「撤销清空」 it is not)."""
+        if not self._transport_ready():
+            self._startup_failure("session", "native_not_ready")
+            return False
         if self.sid is not None and (not self.persist or self.sid == self.host.st.agent_session(self.kind)):
             return True
         try:
             await self._attach()
             return True
         except (OSError, HTTPError, ValueError, KeyError, TypeError, AttributeError, asyncio.TimeoutError) as e:
-            self.fail_notice(f"OpenCode 没能打开这段对话（{type(e).__name__}）：这条没有交给它。")
+            self._startup_failure("session", type(e).__name__)
             return False
 
     def owns_harness(self) -> bool:
@@ -1470,7 +1555,7 @@ class OpenCodeAgent(Agent):
             return await self.turn(text)          # now the other class's turn
         await self._creds_check()
         for attempt in range(2):
-            if self.proc is None and not await self._spawn():
+            if not await self._ensure_started():
                 return
             if self.v2:                           # switched while starting (upgraded in place)
                 return await self.turn(text)
@@ -1502,7 +1587,8 @@ class OpenCodeAgent(Agent):
             except (OSError, HTTPError, AttributeError, asyncio.TimeoutError):
                 if self.proc:
                     await self._kill(self.proc)
-                continue
+                self._delivery_uncertain()
+                return  # the native request may already have executed; never replay it
             if st == 404 and not attempt:                 # the conversation is gone: a fresh one
                 if self.persist:
                     self.host.st.set_agent_session(self.kind, None)
@@ -1720,7 +1806,7 @@ class OpenCodeAgent(Agent):
         return res
 
     async def _ready(self) -> bool:
-        if self.proc is None and not await self._spawn():
+        if not await self._ensure_started():
             return False
         ok = await self._session_ok()
         if ok:
@@ -1895,7 +1981,7 @@ class OpenCodeAgent(Agent):
     async def cmd_status(self, arg: str) -> Result:
         from .opencode_subagents import state_text
         ver = ""
-        if self.proc is not None or await self._spawn():
+        if await self._ensure_started():
             with contextlib.suppress(OSError, HTTPError, AttributeError, asyncio.TimeoutError):
                 st, h = await self.client.request("GET", "/global/health")
                 if st == 200 and isinstance(h, dict) and isinstance(h.get("version"), str):
@@ -1908,7 +1994,7 @@ class OpenCodeAgent(Agent):
         return Result("\n".join(lines))
 
     async def cmd_model(self, arg: str) -> Result:
-        if self.proc is None and not await self._spawn():
+        if not await self._ensure_started():
             return Result("OpenCode 没起来，没法换模型。", "error")
         prov = await self._providers()
         models = []

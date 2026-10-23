@@ -7,7 +7,7 @@ const fn=source.slice(source.indexOf('function paintCmdx(p)'),source.indexOf('co
 function render(p){
  const box={children:[],replaceChildren(){this.children=[];},appendChild(b){this.children.push(b);}};
  const sent=[];
- const ctx=vm.createContext({el:()=>box,C:{myDev:()=> 'owner'},t:k=>k,
+ const ctx=vm.createContext({queuedTurn:()=>false,el:()=>box,C:{myDev:()=> 'owner'},t:k=>k,
    document:{createElement:()=>({dataset:{},addEventListener(k,f){this.click=f;}})},
    sendApp:m=>{sent.push(m);return Promise.resolve();},p});
  vm.runInContext(fn+'; paintCmdx(p);',ctx);return {box,sent};

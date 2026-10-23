@@ -258,7 +258,7 @@ class OwnerOpenCodeV2Agent(SharedOpenCodeV2Agent):
     async def turn(self, text: str) -> None:
         if not await self._initial():
             return
-        if self.proc is None and not await self._spawn():
+        if not await self._ensure_started():
             return
         self.phone_texts.append(text)
         self.desktop_end_if_open()

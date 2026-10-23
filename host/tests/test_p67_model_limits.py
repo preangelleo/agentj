@@ -17,7 +17,7 @@ class ModelLimits(unittest.TestCase):
             self.assertEqual(ml.context_limit('custom',mid,provider('https://api.openai.com/v1')),922000)
         self.assertIsNone(ml.context_limit('openai','gpt-6-unknown'))
     def test_endpoint_identity_beats_alias(self):
-        self.assertEqual(ml.context_limit('p66dqa','gpt-6',provider('https://agentsrelay.net/v1')),272000)
+        self.assertEqual(ml.context_limit('fixture-provider','gpt-6',provider('https://agentsrelay.net/v1')),272000)
         self.assertEqual(ml.context_limit('openai','gpt-6'),922000)
         for url in ('https://agentsrelay.net.evil.invalid/v1','https://evil.invalid/agentsrelay.net','http://agentsrelay.net/v1','https://api.openai.com@evil.invalid/v1','https://evil.invalid/v1'):
             self.assertIsNone(ml.context_limit('openai','gpt-6',provider(url)),url)
@@ -33,11 +33,11 @@ class ModelLimits(unittest.TestCase):
 
     def test_config_then_native_then_static(self):
         native=provider('https://agentsrelay.net/v1',500000)
-        self.assertEqual(ml.context_limit('p66dqa','gpt-6',provider(limit=600000),native),600000)
-        self.assertEqual(ml.context_limit('p66dqa','gpt-6',provider('https://agentsrelay.net/v1'),native),500000)
+        self.assertEqual(ml.context_limit('fixture-provider','gpt-6',provider(limit=600000),native),600000)
+        self.assertEqual(ml.context_limit('fixture-provider','gpt-6',provider('https://agentsrelay.net/v1'),native),500000)
         for bad in (True,0,-1,'800000'):
-            self.assertEqual(ml.context_limit('p66dqa','gpt-6',provider('https://agentsrelay.net/v1',bad)),272000)
-        self.assertEqual(ml.context_limit('p66dqa','gpt-6',provider(),provider('https://agentsrelay.net/v1')),272000)
+            self.assertEqual(ml.context_limit('fixture-provider','gpt-6',provider('https://agentsrelay.net/v1',bad)),272000)
+        self.assertEqual(ml.context_limit('fixture-provider','gpt-6',provider(),provider('https://agentsrelay.net/v1')),272000)
         self.assertEqual(ml.context_limit('other','unknown',{'models':{'unknown':{'limit':{'context':500}}}}),500)
 
 class MeterLimits(unittest.IsolatedAsyncioTestCase):

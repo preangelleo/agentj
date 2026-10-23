@@ -420,7 +420,7 @@ def check_sleep(r: Report):
 _UNIT_PROPS = ("LoadState", "ActiveState", "SubState", "UnitFileState", "NRestarts", "Result", "ExecMainStatus",
                "ActiveEnterTimestamp")
 _SAFE = re.compile(r"[A-Za-z0-9_.:-]{1,40}")
-HOSTLOG_KEYS = ("ts", "ev", "code", "phase", "why", "status", "count", "ms", "result")
+HOSTLOG_KEYS = ("ts", "ev", "code", "phase", "why", "status", "count", "ms", "result", "proc_ready", "client_ready")
 _JOURNAL = re.compile(r"^(\S+)\s+\S+\s+(\S+?)(?:\[\d+\])?:\s+(.*)$")
 _MANAGER_MSG = re.compile(r"(?i)\b(?:start|stop|fail|exit|restart|deactivat|result|status=|code=|kill|consumed|dump)")
 
@@ -477,7 +477,9 @@ def hostlog_line(e) -> str | None:
     out = {}
     for k in HOSTLOG_KEYS:
         v = e.get(k)
-        if isinstance(v, (int, float)) and not isinstance(v, bool):
+        if isinstance(v, bool) and k in ("proc_ready", "client_ready"):
+            out[k] = v
+        elif isinstance(v, (int, float)) and not isinstance(v, bool):
             out[k] = v
         elif isinstance(v, str) and _SAFE.fullmatch(v):
             out[k] = v
@@ -689,6 +691,28 @@ def check_hostlog(r: Report, now: float | None = None):
     r.detail("host.log notable lines (last 30)", "\n".join(tail[-30:]))
 
 
+def check_harness(r: Report):
+    """Read the live adapter's readiness; relay connectivity alone is never AI evidence."""
+    b = agentj_bin()
+    ready = False
+    code = "unverified"
+    if b:
+        rc, out = run([b, "status", "--json"], 15)
+        try:
+            data = json.loads(out) if rc == 0 else {}
+            native = data.get("harness_readiness") if isinstance(data, dict) else None
+            if isinstance(native, dict):
+                ready = data.get("ok") is True and native.get("ready") is True
+                code = "adapter_ready" if ready else "native_not_ready"
+        except (ValueError, TypeError):
+            pass
+    r.facts["harness_readiness"] = {"ready": ready, "code": code}
+    r.add("harness", OK if ready else FAIL,
+          "AI 会话已就绪（适配器状态检查；未测试模型回复）" if ready else "AI 会话尚未确认就绪；请在手机点「重开 AI 会话」，再发一条短消息验证",
+          "AI session ready (adapter state checked; model reply not tested)" if ready else
+          "AI session readiness is unconfirmed. Use Reopen AI session on the phone, then send a short message to verify.")
+
+
 def check_doctor(r: Report):
     b = agentj_bin()
     if not b or r.get("agentj") != OK:
@@ -703,11 +727,11 @@ def check_doctor(r: Report):
 def diagnose(with_doctor=True) -> Report:
     r = Report()
     say("\n" + T("【1/3】检查这台Agent J 主机（只读，不改任何东西）", "[1/3] Checking the Agent J host (read-only)"))
-    for fn in (check_system, check_agentj, check_service, check_network, check_hostlog, check_sleep):
+    for fn in (check_system, check_agentj, check_service, check_network, check_hostlog, check_sleep, check_harness):
         try:
             fn(r)
         except Exception as e:   # noqa: BLE001 — one broken check never stops the rescue
-            r.add(fn.__name__, INFO, f"这一项检查没跑完（{type(e).__name__}）", f"check incomplete ({type(e).__name__})")
+            r.add("harness" if fn is check_harness else fn.__name__, FAIL if fn is check_harness else INFO, f"这一项检查没跑完（{type(e).__name__}）", f"check incomplete ({type(e).__name__})")
     if with_doctor:
         check_doctor(r)
     return r
@@ -793,7 +817,7 @@ def repair(r: Report, dry: bool = False) -> list:
 # ------------------------------------------------------------------ the report
 def verdict(r: Report) -> bool:
     core = ("agentj", "service", "user_manager", "https", "clock", "relay_state")
-    return not any(r.get(c) == FAIL for c in core) and r.get("tls_relay") in (OK, None) and r.get("dns_relay") in (OK, None, WARN)
+    return r.get("harness") == OK and not any(r.get(c) == FAIL for c in core) and r.get("tls_relay") in (OK, None) and r.get("dns_relay") in (OK, None, WARN)
 
 
 def compose(before: Report, fixes: list, after: Report | None, tag: str = "") -> tuple:

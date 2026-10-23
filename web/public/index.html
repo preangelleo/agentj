@@ -200,7 +200,7 @@
       <h2 id="quoteDlgTitle" data-i18n="r.quote.full">引用全文</h2>
       <p class="gdlg-sub" id="quoteDlgSrc"></p>
       <div class="qdlg-text" id="quoteDlgText"></div>
-      <div class="gdlg-row"><button id="quoteDlgDel" type="button" data-i18n="r.quote.remove">删掉这段引用</button><button id="quoteDlgJump" class="go" type="button" data-i18n="r.quote.jumpSrc">跳到原文</button></div>
+      <div class="gdlg-row"><button id="quoteDlgDel" type="button" data-i18n-attr="aria-label=r.quote.remove,title=r.quote.remove" aria-label="删掉这段引用" title="删掉这段引用"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7M14 10v7"/></svg></button><button id="quoteDlgJump" class="go" type="button" data-i18n-attr="aria-label=r.quote.jumpSrc,title=r.quote.jumpSrc" aria-label="跳到原文" title="跳到原文"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v6H4V6h6"/></svg></button></div>
     </div>
   </div>
   <!-- P207 §1: tap Weekly / 5H → the usage numbers in the same global centred dialog (js/usagedlg.js); Esc / outside / 知道了 close it.
@@ -223,7 +223,7 @@
       <label class="ctm-f"><span data-i18n="ct.f.emails">邮箱</span><input id="ctm-e-email" class="ren-input" type="email" inputmode="email" autocapitalize="off" spellcheck="false" maxlength="254"></label>
       <label class="ctm-f"><span data-i18n="ct.f.phones">手机号（可不填）</span><input id="ctm-e-phone" class="ren-input" type="tel" inputmode="tel" maxlength="40"></label>
       <p class="gdlg-sub ctm-err" id="ctm-e-err" aria-live="polite"></p>
-      <div class="gdlg-row"><button type="button" id="ctm-e-del" class="ctm-del" data-i18n="p207set.ct.delete">删除</button><button type="button" id="ctm-e-cancel" data-i18n="ct.cancel">取消</button><button type="submit" id="ctm-e-save" class="go" data-i18n="ct.cardSave">保存</button></div>
+      <div class="gdlg-row"><button type="button" id="ctm-e-del" class="ctm-del" data-i18n-attr="aria-label=p207set.ct.delete,title=p207set.ct.delete" aria-label="删除" title="删除"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7M14 10v7"/></svg></button><button type="button" id="ctm-e-cancel" data-i18n="ct.cancel">取消</button><button type="submit" id="ctm-e-save" class="go" data-i18n-attr="aria-label=ct.cardSave,title=ct.cardSave" aria-label="保存" title="保存"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4 4L19 7"/></svg></button></div>
     </form>
   </div>
   <!-- P168: disconnected — the grey page blurred behind the same centred square; never takes focus, 稍后 / ESC / outside = later. -->
@@ -593,7 +593,7 @@
     <aside id="phone-env" class="note" role="status" hidden>
       <p id="phone-env-text"></p>
       <div class="aj-actions">
-        <button id="phone-env-copy" type="button" class="aj-btn" data-i18n="phoneEnv.copy">复制网页链接</button>
+        <button id="phone-env-copy" type="button" class="aj-btn" data-i18n-attr="aria-label=phoneEnv.copy,title=phoneEnv.copy" aria-label="复制网页链接" title="复制网页链接"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 8h11v13H9zM5 16H3V3h11v2"/></svg></button>
         <button id="phone-env-dismiss" type="button" class="aj-btn" data-i18n="a2hs.ok">知道了</button>
       </div>
       <input id="phone-env-link" class="aj-textarea" readonly aria-label="URL" hidden>
@@ -622,7 +622,7 @@
         <div class="pm__qr">
           <div id="rv-qr" class="rvqr"></div>
           <p id="rv-status" class="small rvstatus" role="status" aria-live="polite"></p>
-          <button type="button" id="rv-refresh" class="aj-btn aj-btn--sm" data-i18n="rv.refresh">换一个码</button>
+          <button type="button" id="rv-refresh" class="aj-btn aj-btn--sm" data-i18n-attr="aria-label=rv.refresh,title=rv.refresh" aria-label="换一个码" title="换一个码"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.4-5.7M20 4v5h-5"/></svg></button>
         </div>
       </section>
       <section id="pm-term" class="pm" aria-labelledby="pm-term-h">
@@ -1122,7 +1122,7 @@
             </div>
             <div class="setrow">
               <p class="setver"><span id="set-webver"></span><br><span id="set-hostver"></span></p>
-              <button type="button" id="set-refresh" class="aj-btn aj-btn--sm" data-i18n="set.refresh">更新并刷新</button>
+              <button type="button" id="set-refresh" class="aj-btn aj-btn--sm" data-i18n-attr="aria-label=set.refresh,title=set.refresh" aria-label="更新并刷新" title="更新并刷新"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.4-5.7M20 4v5h-5"/></svg></button>
               <p class="setnote" data-i18n="set.refreshNote">网页版升级以后，点这里拉取新版本、清掉旧缓存，再重新打开。</p>
             </div>
             <div class="setrow" id="set-a2hs-row">
@@ -1217,7 +1217,7 @@
             <p class="setnote" id="mail-allow-empty" data-i18n="mail.allowEmpty">白名单是空的：现在任何邮件都不会交给 Agent。先把你自己常用的邮箱加进来。</p>
             <div class="mailadd"><input id="mail-add-addr" class="aj-input" type="email" inputmode="email" autocomplete="off" autocapitalize="off" spellcheck="false" data-i18n-attr="placeholder=mail.addPh" placeholder="你常用的邮箱">
               <select id="mail-add-role" class="aj-select"><option value="owner" data-i18n="mail.roleOwner">我本人</option><option value="guest" data-i18n="mail.roleGuest">访客</option></select>
-              <button type="button" id="mail-add" class="aj-btn aj-btn--sm" data-i18n="mail.add">加入</button></div>
+              <button type="button" id="mail-add" class="aj-btn aj-btn--sm" data-i18n-attr="aria-label=mail.add,title=mail.add" aria-label="加入" title="加入"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div>
             <p class="setnote" data-i18n="mail.roleNote">「我本人」的邮件按你的指令处理；「访客」的邮件不当作你的指令，不能批准任何操作，回信会去掉私人信息。白名单里的人，Agent 给他们发信不用你再确认；加进来之前想清楚：Agent 可以不经你确认给他发信。</p>
 
             <h3 class="setg" data-i18n="mail.gAuth">发件人校验</h3>
@@ -1377,7 +1377,7 @@
               </div>
               <div class="rmsum__acts">
                 <!-- P207 §3: ONE 「添加遥控器」 button, the scan icon right of it (it was a second text button) -->
-                <button type="button" id="rm-add" class="aj-btn aj-btn--primary" data-i18n="rm.add">添加遥控器</button>
+                <button type="button" id="rm-add" class="aj-btn aj-btn--primary" data-i18n-attr="aria-label=rm.add,title=rm.add" aria-label="添加遥控器" title="添加遥控器"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
                 <button type="button" id="rm-scan-icon" class="menuicon rmscan" data-i18n-attr="aria-label=rv.scanAdd,title=rv.scanAdd" aria-label="扫码添加遥控器" title="扫码添加遥控器"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2M7 12h10"/></svg></button>
               </div>
             </div>
@@ -1405,7 +1405,7 @@
                   </div>
                 </div>
                 <div class="setacts" id="rm-addacts">
-                  <button type="button" id="rm-copy" class="aj-btn aj-btn--sm" data-i18n="rm.copy">复制配对链接</button>
+                  <button type="button" id="rm-copy" class="aj-btn aj-btn--sm" data-i18n-attr="aria-label=rm.copy,title=rm.copy" aria-label="复制配对链接" title="复制配对链接"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 8h11v13H9zM5 16H3V3h11v2"/></svg></button>
                   <button type="button" id="rm-again" class="aj-btn aj-btn--sm" data-i18n="rm.again" hidden>重新生成</button>
                   <button type="button" id="rm-cancel" class="aj-btn aj-btn--sm aj-btn--quiet" data-i18n="rm.cancel">取消</button>
                 </div>

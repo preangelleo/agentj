@@ -130,7 +130,7 @@ class Native(unittest.IsolatedAsyncioTestCase):
         for persist in (True,False):
             host=SimpleNamespace(st=Mock())
             a=OpenCodeAgent(host,{"kind":"opencode","dir":"/tmp"},persist=persist)
-            a.proc=object();a.sid="session";a.client=SimpleNamespace(request=AsyncMock(return_value=(204,None)))
+            a.proc=SimpleNamespace(returncode=None);a.sid="session";a.client=SimpleNamespace(request=AsyncMock(return_value=(204,None)))
             a._session_ok=AsyncMock(return_value=True);a._wait_turn=AsyncMock();a._catch_up=AsyncMock();a.context_meter=AsyncMock()
             async def deliver(fn): return await fn()
             a.deliver=deliver

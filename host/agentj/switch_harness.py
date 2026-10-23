@@ -51,7 +51,7 @@ _OC_MODEL = re.compile(r"[A-Za-z0-9._-]+/[^\s/][^\s]*")
 _MODEL_MISSING = re.compile(r"model ?not ?found|modelnotfound", re.I)
 
 REASON = {
-    "zh": {"not_installed": "{x} 没有安装", "not_supported": "{x} 暂不支持",
+    "zh": {"ambiguous_install": "{x} 有多个安装；设置 AGENTJ_CLAUDE_BIN 或用 mise / asdf 选定版本", "not_installed": "{x} 没有安装", "not_supported": "{x} 暂不支持",
            "native_timeout": "{x} 60 秒内没有回答（多半是没登录、token 失效，或网络 / 代理不通）",
            "native_failed": "{x} 没能完成一次调用（多半是没登录或 token 失效）", "call_failed": "{x} 没能完成一次调用（多半是没登录或 token 失效）",
            "empty_probe_reply": "{x} 回了空话", "provider_unavailable": "{x} 配置的模型服务不可用",
@@ -72,7 +72,7 @@ REASON = {
            "owner_password": "设置里指定的 {x} server 要密码，Agent J 还没有（agentj secret request --name OPENCODE_SERVER_PASSWORD）",
            "owner_session": "设置里指定的 {x} server 里没有指定的会话（agent.shared_session_id）",
            "busy": "上一个切换 / 扫描任务还没结束，等它结束再试", "too_soon": "刚扫描过，{x} 秒后再试"},
-    "en": {"not_installed": "{x} is not installed", "not_supported": "{x} is not supported yet",
+    "en": {"ambiguous_install": "{x} has multiple installs; set AGENTJ_CLAUDE_BIN or select a version with mise / asdf", "not_installed": "{x} is not installed", "not_supported": "{x} is not supported yet",
            "native_timeout": "{x} did not answer within 60 s (usually not signed in, an expired token, or no network / proxy)",
            "native_failed": "{x} could not complete a call (usually not signed in or an expired token)",
            "call_failed": "{x} could not complete a call (usually not signed in or an expired token)",
@@ -532,7 +532,7 @@ def gate(target: str, model: str | None = None, probe=None) -> dict:
     d = (probe or harness.probe)(only=(target,), model=model)
     h = next((x for x in d.get("harnesses", []) if x.get("name") == target), None)
     if not h or not h.get("installed"):
-        return {"ok": False, "reason": "not_installed", "version": None}
+        return {"ok": False, "reason": "ambiguous_install" if h and h.get("resolution", {}).get("reason") == "ambiguous_install" else "not_installed", "version": None}
     if h.get("callable"):
         return {"ok": True, "version": h.get("version")}
     code = h.get("probe_reason") or "call_failed"
@@ -821,6 +821,9 @@ def _where(h: dict) -> dict:
     if isinstance(h.get("executable"), str):
         out["executable"] = tilde(h["executable"])
     res = h.get("resolution") or {}
+    if res.get("reason") == "ambiguous_install":
+        out["selection"] = "ambiguous_install"
+        out["selection_hint"] = res.get("hint", "Set AGENTJ_CLAUDE_BIN or select with mise / asdf")
     if isinstance(res.get("pinned"), str) and res.get("reason") in ("pin_stale", "pin_missing"):
         out["pinned"] = {"path": tilde(res["pinned"]), "why": res["reason"]}
     others = [{"path": tilde(i["path"]), "version": i.get("version")} for i in h.get("installations") or []
@@ -840,7 +843,7 @@ def _say_scan(r: dict, lang: str) -> str:
         name = LABEL.get(h["name"], h["name"])
         mark = " ←" if h["name"] == r.get("current") else ""
         if not h["installed"]:
-            lines.append(f"{name}: " + ("not installed" if en else "没装"))
+            lines.append(f"{name}: " + (reason_text("ambiguous_install", h["name"], lang) if h.get("reason") == "ambiguous_install" else ("not installed" if en else "没装")))
         elif h["callable"]:
             lines.append(f"{name} {h.get('version') or ''}: " + ("works now" if en else "现在能用") + mark)
         else:
@@ -1233,6 +1236,8 @@ def service_environment() -> None:
 # ------------------------------------------------------------------ the CLI
 def _where_lines(h: dict, lang: str) -> list[str]:
     en, out = lang == "en", []
+    if h.get("selection") == "ambiguous_install":
+        out.append("ambiguous_install: " + reason_text("ambiguous_install", h.get("name", "claude"), lang))
     pin = h.get("pinned")
     if isinstance(pin, dict) and h.get("executable"):
         out.append((f"(the service had saved {pin['path']}, which is gone or an older version; it now uses {h['executable']} "

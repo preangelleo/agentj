@@ -2651,8 +2651,8 @@ def cmd_doctor(a) -> None:
         _need_init(st)
         sys.exit(reconnect.run(st, _lang(st), session=a.session, as_json=a.json))
     if getattr(a, "upgrade_only", False):
-        sys.exit(doctor.main(as_json=a.json, upgrade_only=True))
-    sys.exit(doctor.main(as_json=a.json, offline=a.offline, isolation_only=a.isolation_only))
+        sys.exit(doctor.main(as_json=a.json, upgrade_only=True, post_upgrade=getattr(a, "post_upgrade", False)))
+    sys.exit(doctor.main(as_json=a.json, offline=a.offline, isolation_only=a.isolation_only, post_upgrade=getattr(a, "post_upgrade", False)))
 
 
 SERVE_RUNNING = ("后台服务在运行（serve 在应答）；在 Agent 的隔离环境里看不到 launchd / systemd，以 serve 的应答为准 / the background "
@@ -3076,7 +3076,7 @@ def main_jarvis(argv=None) -> None:
 
 # `migrate status` reports, `migrate rollback` undoes, `docs-rule` prints (or, with --write and the human's y, appends to the
 # AI's own memory file), `handover` only reads: none may move the state directory first
-NO_MIGRATE = ("migrate", "docs-rule", "handover", "recall", "friends", "codex-sandbox", "capability", "google", "setup", "busy", "mail", "contacts", "imessage", "ask", "order", "core")   # recall / friends / codex-sandbox / capability: usually inside the fence
+NO_MIGRATE = ("diag", "preflight", "migrate", "docs-rule", "handover", "recall", "friends", "codex-sandbox", "capability", "google", "setup", "busy", "mail", "contacts", "imessage", "ask", "order", "core")   # recall / friends / codex-sandbox / capability: usually inside the fence
 
 
 APPROVALS_HELP = {
@@ -3247,6 +3247,7 @@ def main(argv=None) -> None:
     dc.add_argument("--json", action="store_true", help="机器可读 / machine-readable (paths shown with ~)")
     dc.add_argument("--offline", action="store_true", help="跳过网络检查 / skip the network checks")
     dc.add_argument("--isolation-only", action="store_true", help="仅隔离预检：不读用户状态、不联网 / isolation preflight only, no user state or network")
+    dc.add_argument("--post-upgrade", action="store_true", help="修复升级后的工作根与连接 / repair post-upgrade root and connection")
     dc.add_argument("--upgrade-only", action="store_true", help="仅升级后的包与服务完整性 / package and service integrity only")
     dc.add_argument("--reconnect", action="store_true", help="手机灰了/断开：自检 服务·中继·Agent 三段，哪段断了修哪段 / phone grey or "
                     "disconnected: check service, relay and Agent, repair the broken one")
@@ -3552,6 +3553,8 @@ def main(argv=None) -> None:
     support.add_parser(sub)   # F18: agentj support ask | report | thread | list
     from . import library
     library.add_parser(sub)   # P367: agentj data list | get | search | coverage [--source] (Agent J points)
+    from . import field_tools
+    field_tools.add_parser(sub)
     from . import skills_cli
     skills_cli.add_parser(sub)   # P426 #181: agentj skills health|archive|restore|suggest (skill health, save-as-skill offers)
     from . import capability

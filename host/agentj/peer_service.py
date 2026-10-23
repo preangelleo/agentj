@@ -1460,9 +1460,13 @@ class PeerService:
         reply = None
         if reply_to is not None:
             thread = (self.same_owner.row(fid).get('responses') or {}).get(reply_to) if isinstance(reply_to, str) else None
+            row = self.guards.row(fid, reply_to) if isinstance(reply_to, str) else None
+            # P482: old got tasks may predate the forwarding response map. Use only
+            # a live authenticated inbound request from this verified relationship.
+            if not thread and self.same_owner.active(fid) and row and row.get("state") in ("pending", "claimed"):
+                thread = row.get("thread")
             if not thread:
                 return {"ok": False, "why": "bad_reply"}
-            row = self.guards.row(fid, reply_to)
             reply = {"mid": reply_to, "thread": thread, "relay": row.get("relay") if row else None}
         extra = self.devices.reply_extra(fid, reply_to) if reply is not None else None
         mid = self._send_pmsg(fid, text, reply, auto=False, end=reply is not None, extra=extra)

@@ -8,7 +8,7 @@ import time
 
 from . import skill_ops, skill_usage
 
-OPS = ("health", "archive", "restore", "suggest", "suggest_yes", "suggest_no")
+OPS = ("onboarding", "health", "archive", "restore", "suggest", "suggest_yes", "suggest_no")
 WHY = {
     "official": ("Agent J 自带 / 官方技能不建议归档，也不能在这里归档", "Agent J's own / official skills are not archived"),
     "not_found": ("没找到这个技能（或它不在 harness 的用户技能文件夹里）", "no such skill (or it is not in the harness's user skills folder)"),
@@ -29,6 +29,9 @@ def execute(st, req: dict, cfg: dict | None = None, lang: str = "zh", prefs=None
     if op not in OPS:
         return {"ok": False, "why": "shape"}
     try:
+        if op == "onboarding":
+            from . import skill_onboarding
+            return skill_onboarding.guide(st)
         if op == "health":
             from . import main_identity
             root = main_identity.working_root(cfg) if cfg else None
@@ -101,7 +104,9 @@ def _suggest_text(res: dict) -> str:
 
 def cmd_skills(a) -> int:
     op = a.op
-    if op == "health":
+    if op == "onboarding":
+        req = {"op": "onboarding"}
+    elif op == "health":
         req = {"op": "health"}
     elif op in ("archive", "restore"):
         req = {"op": op, "name": a.name, "by": "cli"}
@@ -118,6 +123,9 @@ def cmd_skills(a) -> int:
         print(json.dumps(res, ensure_ascii=False))
     elif not res.get("ok"):
         print(_say(res))
+    elif op == "onboarding":
+        from . import skill_onboarding
+        print(skill_onboarding.text(res))
     elif op == "health":
         print(_health_text(res))
     elif op == "archive":
@@ -138,6 +146,8 @@ def add_parser(sub) -> None:
     p = sub.add_parser("skills", help="技能健康度（最近使用、很久没用、归档 / 恢复）和「存成技能」建议 / skill health "
                                       "(last use, long unused, archive / restore) and save-as-skill suggestions")
     ps = p.add_subparsers(dest="op", required=True)
+    intro = ps.add_parser("onboarding", help="已装技能包难度、依赖与首个任务 / installed package difficulty, dependencies and first task")
+    intro.add_argument("--json", action="store_true")
     h = ps.add_parser("health", help="每个技能最近一次使用、次数、是否很久没用 / each skill's last use, count, long unused")
     h.add_argument("--json", action="store_true")
     for name, text in (("archive", "把一个很久没用的技能移到归档文件夹（不删除，可恢复）/ move a skill to the archive folder (never deleted)"),

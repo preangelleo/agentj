@@ -628,10 +628,67 @@ def web_refresh_text(lang="zh", web: str | None = "older") -> str:
     return '手机/网页的新版会单独上线：上线后页面会弹「服务器已升级」，点「刷新」就行（也可以点右上角设置图标 →「更新并刷新」）；在那之前页眉下有一行小字「Agent J 主机已升级，新版网页稍后上线」。'
 
 
-def health_text(counts, lang="zh", rows=None) -> str:
+def repair_upgrade(st, rows):
+    """P481: same local root refresh as init, and existing reconnect repair.
+    No new keys, no raw output, no action inferred from arbitrary doctor hints.
+    Always recheck afterwards; an attempted repair is not evidence of success.
+    """
+    import contextlib
+    import io
+    from . import working_root, wizard, preferences, reconnect
+    ids = []
+    findings = {r.get("id"): r for r in rows if isinstance(r, dict) and r.get("status") in ("warn", "fail")}
+    if any(k in findings for k in ("work-root", "root-structure")):
+        ids.append("root-structure")
+        try:
+            root = working_root.select(st)
+            # Only refresh an existing root; never create/move a customer's folder.
+            if root.is_dir():
+                working_root.record(st, root)
+                lang = preferences.get(preferences.effective(st), "appearance.language", "zh")
+                wizard.bootstrap_root(root, lang=lang)
+                cfg = st.agent_config() or {}
+                kind = cfg.get("kind")
+                hs = list(dict.fromkeys(["claude", "codex"] + ([kind] if kind in wizard.HARNESSES else [])))
+                wizard.install(root, hs, lang)
+                wizard.refresh_root(root, hs, lang, st=st)
+        except (OSError, ValueError, wizard.WizardError):
+            pass  # the second doctor preserves the unresolved finding
+    if any(k in findings for k in ("serve", "service")):
+        ids.append("serve")
+        try:
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                reconnect.run(st, out=io.StringIO())
+        except (OSError, ValueError):
+            pass
+    return ids
+
+
+def upgrade_due(st):
+    """Old updaters invoke plain doctor: recognise only a recent record for this version."""
+    for name in (UPGRADED, PENDING):
+        try:
+            r = json.loads((st.root / name).read_text())
+            if isinstance(r, dict) and r.get("to") == __version__ and 0 <= time.time() - r["at"] < 3600:
+                return True
+        except (OSError, ValueError, TypeError, KeyError):
+            pass
+    # serve consumes upgraded.json for its phone receipt; the manager's journal survives it.
+    from . import service_recovery
+    r = service_recovery.read(st) or {}
+    return (r.get("target") == __version__ and r.get("status") in ("pending", "running", "waiting", "ok")
+            and isinstance(r.get("at"), (int, float)) and 0 <= time.time() - r["at"] < 3600)
+
+
+def health_text(counts, lang="zh", rows=None, *, verified_upgrade=False) -> str:
     if not counts:
         return ("Self-check could not finish; run `agentj doctor` on the Agent J host." if lang == "en" else
                 "自检未能完成，请在Agent J 主机运行 `agentj doctor`。")
+    if verified_upgrade and rows and not upgrade_blockers(rows)[0]:
+        todo = sum(r.get("status") != "ok" for r in rows if isinstance(r, dict))
+        if todo:
+            return (f"Upgrade succeeded; {todo} item(s) remain. Run `agentj doctor` for the next steps." if lang == "en" else
+                    f"升级成功，还剩 {todo} 项待办；运行 `agentj doctor` 查看下一步。")
     if counts[2]:
         # Only known row IDs get user-facing labels; arbitrary detail can contain private data.
         labels = {"version": ("程序版本", "program version"), "python": ("运行环境", "runtime"),
@@ -675,7 +732,7 @@ def completion_text(rec, counts, lang="zh", rows=None, web: str | None = "older"
     else:
         where = f"Agent J 主机「{machine}」上的 Agent J 程序" if machine else "Agent J 主机上的 Agent J 程序"
         head = f"{where}已升级到 {rec['to']}（原 {rec.get('from', '—')}）。"
-    return head + " " + health_text(counts, lang, rows) + "\n\n" + web_refresh_text(lang, web)
+    return head + " " + health_text(counts, lang, rows, verified_upgrade=True) + "\n\n" + web_refresh_text(lang, web)
 
 
 def upgraded_text(rec: dict, counts: tuple[int, int, int] | None, lang: str = "zh", rows=None, web: str | None = "older",
@@ -1120,6 +1177,8 @@ def _apply(st, target=None, *, prefix=None, check_fn=None, run=None, say=None, s
             except (ValueError, TypeError, KeyError, AttributeError):
                 blockers, existing = ([DOCTOR_UNPARSABLE] if health.returncode else []), []
         out["existing_issues"] = existing
+        out["pending_count"] = sum(r.get("status") != "ok" for r in rows or [] if isinstance(r, dict))
+        out["pending_checks"] = check_ids([r.get("id") for r in rows or [] if isinstance(r, dict) and r.get("status") != "ok"])
         if blockers:
             return {**out, "result": "failed", "reason": "doctor_failed", "failed_checks": check_ids(blockers), "exit": 1}
     except OSError:
@@ -1210,8 +1269,11 @@ def result_block(res: dict) -> str:
         lines.append("handoff: " + res["handoff"] + " — 升级记录没能交给主机（隔离环境里看不到主机数据），重启后手机上的「已升级」通知可能不准、"
                      "没有自动回滚 / the upgrade record could not reach the host (its data is hidden inside the fence): the phone's "
                      "\"upgraded\" notice may be off and there is no automatic rollback")
+    if res.get("result") == "ok" and res.get("pending_checks"):
+        n = res.get("pending_count", len(res["pending_checks"]))
+        lines.append(f"pending_checks: {', '.join(res['pending_checks'])} — 升级成功，还剩 {n} 项待办 / Upgrade succeeded; {n} item(s) remain")
     if res.get("existing_issues"):
-        lines.append("existing_issues: " + ", ".join(res["existing_issues"]) + " — 升级已完成，这些其他问题请另行检查 / upgrade completed; review these other issues separately")
+        lines.append("existing_issues: " + ", ".join(res["existing_issues"]) + (" — 升级已完成，这些其他问题请另行检查 / upgrade completed; review these other issues separately" if res.get("result") == "ok" else " — 另有这些问题待检查 / other issues to review"))
     if res.get("result") != "ok" and res.get("step"):        # P277: where it failed, the installer's own words (redacted)
         lines.append(f"step: {res['step']}")
     if res.get("failed_checks") and res.get("result") != "ok":   # P393: which self-check blocked (fixed ids)

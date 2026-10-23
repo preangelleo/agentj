@@ -579,7 +579,7 @@ def read_installed(st) -> list[dict]:
     for r in items if isinstance(items, list) else []:
         if isinstance(r, dict) and isinstance(r.get("name"), str) and _NAME.fullmatch(r["name"]):
             out.append({k: r.get(k) for k in ("name", "type", "version", "sha256", "harness", "target", "certified", "installed_at", "category")}
-                       | {k: r[k] for k in ("permissions", "perm_grant", "publisher_grant", "audit_grant") if isinstance(r.get(k), dict)})  # P426 #181-1
+                       | {k: r[k] for k in ("permissions", "perm_grant", "publisher_grant", "audit_grant", "requires") if isinstance(r.get(k), dict)})  # P426 #181-1
     return out
 
 
@@ -1628,6 +1628,7 @@ def run_install(name: str, *, version=None, harness=None, workspace=None, params
                   f"{old} ({e.strerror})", file=out)
             bak = old
     rec = {"name": m["name"], "type": m["type"], "version": m["version"], "sha256": sha, "harness": h, "target": str(target),
+           "requires": {k: v for k, v in summarize(m).items() if k in ("harness", "os", "cli", "env", "accounts", "python_requirements", "skills")},
            "category": m.get("category"), "certified": certified, "installed_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
            "permissions": perm, **({"perm_grant": grant} if grant else {}), **({"publisher_grant": pub_grant} if pub_grant else {}),
            **({"audit_grant": audit_grant} if audit_grant else {})}

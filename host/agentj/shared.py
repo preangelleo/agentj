@@ -2609,6 +2609,9 @@ class SharedOpenCodeAgent(OpenCodeAgent):
         """Owned serve: the session agent.json names (after /clear or 「撤销清空」 it changed), else a new ordinary one."""
         if not self.owned_server:
             return await super()._session_ok()
+        if not self._transport_ready():
+            self._startup_failure("session", "native_not_ready")
+            return False
         if self.sid is not None and self.sid == self.host.st.agent_session(self.kind):
             return True
         self.cfg["shared_session_id"] = self.host.st.agent_session(self.kind) or ""
@@ -2616,7 +2619,7 @@ class SharedOpenCodeAgent(OpenCodeAgent):
             await self._prepare()
             return True
         except (OSError, HTTPError, ValueError, KeyError, TypeError, AttributeError, asyncio.TimeoutError) as e:
-            self.fail_notice(f"OpenCode 没能打开这段对话（{type(e).__name__}）：这条没有交给它。")
+            self._startup_failure("session", type(e).__name__)
             return False
 
     def launch_argv(self, argv):
@@ -2999,7 +3002,7 @@ class SharedOpenCodeAgent(OpenCodeAgent):
         if self.v2:                 # P63: switched to shared_opencode2 while starting
             return await self.turn(text)
         await self._creds_check()   # P59: only our own server (owned_server); never the owner's attached one
-        if self.proc is None and not await self._spawn():
+        if not await self._ensure_started():
             return
         if self.v2:
             return await self.turn(text)
@@ -3049,13 +3052,17 @@ class SharedOpenCodeAgent(OpenCodeAgent):
         if self.restart_after_turn and self.owned_server and self.proc and not isinstance(self.proc, _ExternalServer):
             self.restart_after_turn = False       # P60/P63: a key / provider failure — the next message gets a fresh serve
             self.host.st.log("agent_restart", agent=self.kind, reason="provider_failure")
-            await self._kill(self.proc)
-            self.proc = self.client = None
+            proc = self.proc
+            await self._kill(proc)
+            self._retire(proc)
 
     async def _catch_up(self):
         if not self.client or not self.sid:
             return
+        owner = self._sync_owner()
         status, messages = await self.client.request("GET", f"/session/{self.sid}/message")
+        if not self._sync_current(owner):
+            return
         if status != 200 or not isinstance(messages, list):
             return
         for message in messages:

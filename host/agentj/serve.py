@@ -2121,6 +2121,7 @@ class Host:
                                              "relay_last": None if self.relay_up else self.relay_last,   # P317: the host leg's stuck point
                                              "identity_ok": self.identity_ok,
                                              "agent": self.agent.kind if self.agent else None, "agent_status": self.eff_status(),
+                                             "harness_readiness": getattr(self.agent, "readiness", lambda: {"ready": False, "code": "unverified"})(),
                                              "agent_said_at": getattr(self, "agent_said_at", 0),
                                              **dict(zip(("agent_turn_start_at", "agent_turn_end_at", "agent_turn_failed"),
                                                         getattr(self, "turn_at", (0.0, 0.0, False)))),
@@ -3779,7 +3780,10 @@ class Host:
             self.media_later(tid)
         self.desktop_turn = None
 
-    def agent_notice(self, text: str) -> None:
+    def agent_recovery_notice(self, text: str) -> None:
+        self.agent_notice(text, recovery=True)
+
+    def agent_notice(self, text: str, *, recovery=False) -> None:
         from .system_text import remote
         text = remote(one(self.lang, text))       # P128: a legacy "中文 / English" notice reaches the phone in one language
         local, self.notice_local = getattr(self, "notice_local", False), False
@@ -3787,7 +3791,8 @@ class Host:
         self.emit("agent_notice", text=text)
         e = self._remember("notice", text)
         self._post(self._send_legacy, lambda s, e=e: self._render(e, s))
-        self.hist_add({"k": "sys", "text": "", **({"local": True} if local else {})}, text, "done")
+        self.hist_add({"k": "sys", "text": "", **({"local": True} if local else {})}, text, "done",
+                      card={"recovery": "restart_session"} if recovery else None)
 
     def local_notice(self, text: str) -> None:
         """§10.8: something only the human at the Agent J host can answer: a `sys` page with `local: true` (relay's

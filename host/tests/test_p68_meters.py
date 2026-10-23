@@ -33,8 +33,8 @@ class Quota(unittest.IsolatedAsyncioTestCase):
     def agent(self):
         a=object.__new__(OpenCodeAgent)
         a.cfg={};a.sid='old';a.tasks=set();a.host=SimpleNamespace(st=Mock());a.meter=Mock()
-        a._last_assistant=AsyncMock(return_value={'providerID':'p66dqa','modelID':'gpt-6','tokens':{}})
-        a.context_meter=AsyncMock();a.client=SimpleNamespace(request=AsyncMock(return_value=(200,{'model':'p66dqa/gpt-6.1-sol'})))
+        a._last_assistant=AsyncMock(return_value={'providerID':'fixture-provider','modelID':'gpt-6','tokens':{}})
+        a.context_meter=AsyncMock();a.client=SimpleNamespace(request=AsyncMock(return_value=(200,{'model':'fixture-provider/gpt-6.1-sol'})))
         return a
     async def drain(self,a):
         await asyncio.gather(*list(a.tasks))
@@ -45,19 +45,19 @@ class Quota(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(res.undo)
             a._last_assistant.return_value={}
             await self.drain(a)
-            probe.assert_called_with('p66dqa')
-            a._last_assistant.return_value={'providerID':'p66dqa','modelID':'gpt-6.1-sol'}
+            probe.assert_called_with('fixture-provider')
+            a._last_assistant.return_value={'providerID':'fixture-provider','modelID':'gpt-6.1-sol'}
             a.refresh_usage();await self.drain(a)
-            self.assertEqual(await a.quota_model(),'p66dqa/gpt-6.1-sol')
+            self.assertEqual(await a.quota_model(),'fixture-provider/gpt-6.1-sol')
             self.assertEqual(probe.call_count,2)
             a.meter.assert_any_call(quota_windows=[{'window':'weekly','pct':1}])
     async def test_config_default_without_previous_message(self):
         a=self.agent();a._last_assistant.return_value={}
-        self.assertEqual(await a.quota_model(),'p66dqa/gpt-6.1-sol')
+        self.assertEqual(await a.quota_model(),'fixture-provider/gpt-6.1-sol')
     async def test_model_change_discards_inflight_quota(self):
         a=self.agent()
         async def last():
-            a.cfg['model']='other/m';return {'providerID':'p66dqa','modelID':'gpt-6'}
+            a.cfg['model']='other/m';return {'providerID':'fixture-provider','modelID':'gpt-6'}
         a._last_assistant.side_effect=last
         with patch('agentj.provider_runtime.probe',return_value=[{'window':'weekly'}]):
             a.refresh_usage();await self.drain(a)

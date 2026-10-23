@@ -90,7 +90,7 @@ class StartupProgress(unittest.IsolatedAsyncioTestCase):
         from types import SimpleNamespace
         async def scenario(progress):
             proc=SimpleNamespace(stdout=asyncio.StreamReader(),stderr=asyncio.StreamReader(),returncode=None)
-            host=Mock();host.st=Mock()
+            host=Mock();host.lang="en";host.st=Mock()
             a=oc.OpenCodeAgent(host,{"dir":"/var/tmp","_workflow_ceo":True})
             a.launch_argv=Mock(return_value=['fake']);a._kill=AsyncMock()
             a._prepare=AsyncMock(side_effect=ValueError('stop after proven startup'))
@@ -116,7 +116,10 @@ class StartupProgress(unittest.IsolatedAsyncioTestCase):
                 self.assertGreater(clock[0], .08) if progress else self.assertEqual(clock[0], .08)
                 self.assertLess(clock[0], .6)
                 if not progress:
-                    self.assertTrue(any('agentj doctor' in str(c) for c in host.agent_notice.call_args_list))
+                    host.agent_recovery_notice.assert_called_once()
+                    note = host.agent_recovery_notice.call_args.args[0]
+                    self.assertIn('not delivered', note)
+                    self.assertNotIn('AttributeError', note)
             finally:
                 for bg in list(a.tasks):bg.cancel()
                 await asyncio.gather(*a.tasks,return_exceptions=True)

@@ -48,3 +48,9 @@ Nightly 03–05 local checks report auto-update on/off and the last automatic re
 
 P453: A completed rollback with an active service is a warning (upgrade-restart), not a broken installation. `agentj service start` acknowledges a completed failure even when its target differs from the current version; the next successful upgrade clears it too. Inactive services still fail. On doctor_failed, inspect fixed check IDs in service-recovery.log (macOS) / worker journal (Linux) and host.log upgrade_health_failed; never copy private log details into a support report.
 中文：已自动退回旧版、服务正常时，upgrade-restart 是警告；升级没成功，但旧版可以用。运行 `agentj service start` 再 doctor 可确认并清除这次记录，下次成功升级也会清掉。服务未恢复时仍显示失败。自检失败项 ID 记录在 Mac 的 service-recovery.log / Linux 任务日志，以及 host.log 的 upgrade_health_failed；对外反馈前先脱敏。
+
+P481: post-upgrade doctor repairs the existing working-root core references and uses the existing reconnect path, then checks again. `UPGRADE_RESULT ok` with `pending_checks` means “Upgrade succeeded; N items remain / 升级成功，还剩 N 项待办”. Tell the owner those next steps; never reinstall just because main-inject awaits the first phone message. A real integrity/service failure remains failed. For an old updater, the new doctor recognises a recent upgrade marker or service-recovery record.
+
+
+For an ordinary host on an older version (including 0.15.5a1), first run `agentj update apply`, then verify `agentj --version` and `agentj doctor`. Only if the command is missing or the old updater fails, copy the current install command from the account seat card and rerun it as the same OS user and instance. Configuration and bindings are kept; do not unlink, delete state or create another seat. Olares Market applications still update through Market.
+普通主机老版本（包括 0.15.5a1）需要升级时，先运行 `agentj update apply`，再核对 `agentj --version` 和 `agentj doctor`。只有命令不存在或旧更新器升级失败时，才到账户页席位卡复制当前安装命令，在同一系统用户、同一实例上重跑；保留配置与绑定，不要 unlink、删除状态目录或另建席位。Olares Market 应用仍通过 Market 更新。

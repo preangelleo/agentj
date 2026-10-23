@@ -758,3 +758,7 @@ Copy controls in Notebook, messages and code blocks briefly show ✓ “Copied�
 Holding an icon or toolbar button runs its shortcut without selecting nearby controls or opening the system text menu. Reply text, messages and code remain selectable and copyable. Button labels stay readable on hover, while pressed, with keyboard focus and when unavailable. Unavailable buttons do not run actions.
 
 Centred circular notices show one short status word: Sent, Copied or Saved (up to four Chinese characters). Longer explanations use a rounded rectangle in the same centre position, keeping the full text and the original automatic dismissal time. Both shapes use Noir with Lotion text in light and dark mode.
+
+## Queued messages and quiet periods
+
+Use Stop previous task on a queued message when you want to interrupt the earlier task. After three minutes both queued and without new earlier-task output, the page reports that quiet period; this does not prove the task is stuck. New output resets the timer, and a reload or reconnection starts a new observation. Tasks are never stopped automatically; Stop retains its existing handling of unsent messages.

@@ -1,6 +1,6 @@
-# Agent J 0.25.3a1 release notes
+# Agent J 0.25.4a1 release notes
 
-Host 0.25.3a1 / install 0.27.3; phone-web scope.
+Host 0.25.4a1 / install 0.27.4; phone-web scope.
 Phone parity must pass --strict. Full Android/Telegram parity is incomplete.
 Full Android/Telegram parity is incomplete.
 No APK is included in this release. Android source is for review, not a released app.
@@ -8,35 +8,33 @@ No APK is included in this release. Android source is for review, not a released
 Publication status: local preparation only. Live site verification is DEFERRED until
 the public commit and tag are pushed, the site is deployed, and cold installation passes.
 
-On failure restore v0.25.2a1 host/site/phone and the captured Dashboard Worker version. Release order: C (Dashboard Worker only, no D1 migration), then A signed host/site/downloads then B phone web immediately after. No relay change. P472/P466/P473 web and account changes are already live. Keep the byte-exact Notebook migration backup when downgrading; do not overwrite newly edited notes. Local preparation only; publication needs separate authorization. Physical iPhone/Android acceptance is not claimed.
+On failure restore v0.25.3a1 host/site/phone and the captured Dashboard Worker version. Release order: C (Dashboard support, knowledge and installation guidance; no D1 migration), then A signed host/site/downloads then B phone web immediately after. No relay change. The eleven phone action icons are already live. Preserve local Notebook migration backups and newly edited notes on downgrade. Local preparation only; publication needs separate authorization. Physical iPhone/Android and native WSL acceptance are not claimed.
 ## Changes
 
-- Notebook titles, content and dates are separate, with editable titles. Existing notes are backed up before migration.
-- Reorder all five composer tools, including Expand full screen. Valid existing orders are preserved.
-- Check the provider used by OpenCode main, small and sub-agent models, then confirm aligning them. Ark and Bailian keys placed in the wrong row can be checked and moved with confirmation, without overwriting a different key.
-- Exit recognized Claude Code menus and see the terminal-reported quota reset time. Choices that may incur charges still require your explicit selection.
-- Install and discover OpenCode 2 while retaining OpenCode 1. Context meters use a consistent 200K fallback when a free model does not report its capacity.
-- Fenced agents can ask the host service to run connection checks and support submissions without reading host credentials or disabling isolation.
-- Theme exports omit unchanged official logos. Existing official images keep following status colours; custom artwork is preserved.
-- A healthy service after a rollback now shows a clear rollback warning instead of a lingering recovery failure.
-- More conservative masking for multiline, structured and mixed-script terminal credentials. Device diagnostics omit pairing keys, and busy-turn queries have bounded waits.
-- Includes recent web fixes: fixed Noir iPhone status paint, keyboard-safe full-screen editing, restored interactive sheets, To-do icons, status-coloured robots and the full remote list.
-- Short status notices use a circle; longer explanations remain fully readable in the same position. Reply copying briefly shows a tick, and reader copying keeps the reader open.
-- Account dialogs fit the viewport. Paid-seat reconciliation and duplicate installation reservations are handled more reliably.
-- Reply text and diagram labels use Lotion. Controls, chart shapes, borders and the reader keep their colours.
-- 记事本把标题、正文和日期分开，标题可以单独编辑；旧笔记迁移前先保留原文件备份。
-- 附件栏的文件、图片、相机、麦克风和「展开全屏」五项都能排序，合法的旧排序会保留。
-- 设置页可核对 OpenCode 主模型、小模型和子 Agent 的服务商，并确认统一到主模型服务商。方舟、百炼 Key 填错行时，可核对套餐后确认挪行，不覆盖另一把不同的 Key。
-- Claude Code 的回退和其它已识别菜单可退出，额度菜单显示原生恢复时间。额外用量、升级等可能收费的选项仍由你自己确认。
-- 支持安装和发现 OpenCode 2，同时保留 OpenCode 1；免费模型缺少容量资料时，上下文水位使用统一的 200K 回退上限。
-- 隔离中的 Agent 可让主机后台完成连接自检和客服反馈，无需读取主机凭据或关闭隔离。
-- 导出主题不再复制官方 logo；旧主题中原样的官方图片继续随状态着色，自定义图片保留。
-- 升级已回滚且服务恢复正常时，清楚显示回滚警告，不再继续误报恢复失败。
-- 网页终端更保守地遮挡多行、混合字符和结构化凭据；设备诊断不再输出配对密钥，忙碌状态查询有等待上限。
-- 同步近期网页修复：iPhone 顶部固定 Noir，键盘和全屏编辑不挡按钮；交互选择恢复原有面板；待办图标、机器人状态色和完整遥控器列表修复。
-- 简短状态用圆形提示，长说明在同处完整显示；回复拷贝只短暂显示勾号，阅读页拷贝后继续阅读。
-- 账号弹窗随视口调整，席位数量核对和安装预留去重更可靠。
-- 正文和图表标签统一为 Lotion 文字色，按钮、图形、边框与阅读页保留原色。
+- Export a local diagnostic summary of fixed statuses and log event counts, for the owner to review before sharing.
+- Check WSL browser libraries and download reachability, and choose a first local draft task using setup estimates from installed skill receipts.
+- Stop the previous task manually from a queued message. A quiet notice appears after three minutes both queued and without earlier-task output; reloading starts a new observation.
+- After upgrades, repair missing core references in the existing work root, try the existing reconnection path and check again. Remaining tasks are distinguished from actual upgrade failures.
+- Support and bundled instructions now prefer agentj update apply, using the current same-seat install command only when the old updater is unavailable or fails.
+- Includes the eleven already-live outline action icons, preserving handlers and accessible labels.
+- Same-owner friend tasks no longer submit trusted host forwarding instructions as untrusted review input. Successful handovers notify the owner, and active older requests can recover their reply mapping.
+- Owner-facing replies retain public-chain-shaped addresses and transaction identifiers. Explicit credential labels and known key formats remain masked; an encoding alone does not prove a value is public.
+- Ambiguous Claude mise/asdf installs default to the highest executable stable numeric version while preserving the ambiguity notice and explicit selections.
+- Release tooling handles timezone-aware deadlines across midnight, checks its install interpreter early and keeps runtime evidence outside the repository.
+- Retain the already-live iPhone water-transition and bottom-safe-area colour fix during the combined release.
+- Recover cleanly from a failed first OpenCode start. The next message can retry, stale connection cleanup cannot overwrite a replacement session, and rescue reports recovery only when the AI adapter is ready.
+- 新增本机诊断导出，只包含固定状态和日志事件计数，主人审阅后自行决定是否分享。
+- 新增 WSL 浏览器依赖与下载入口预检，以及按已装技能依赖估计的入门顺序和首个本机草稿任务。
+- 排队消息可手动停下上一件；排队且前一件连续三分钟没有新输出时，显示静默提示，刷新后重新观察。
+- 升级后补齐已有工作根的身份引用、尝试恢复连接，再复检；区分真正升级失败与升级成功后的待办。
+- 客服、安装说明和内置升级技能统一先用 agentj update apply；旧更新器失败才重跑同一席位的当前安装命令。
+- 保留已上线的十一处线条图标，原有按钮行为和可访问标签不变。
+- 修复同主人好友任务投递时误审主机转交提示、缺少主人通知，以及部分有效旧请求无法回报的问题。
+- 主人通道保留公开链上编码形状的地址和交易标识，显式凭据、私钥标签及已知密钥格式仍遮挡；单凭形状无法证明一个值公开。
+- Claude mise/asdf 多版本缺省选择最高可执行的稳定数字版本，并保留歧义提示；明确选择仍优先。
+- 发布工具支持带时区的跨午夜截止时间，提前检查安装解释器，并将运行期证据保存在仓外。
+- 保留已上线的 iPhone 水位过渡与底部安全区连续色修复，避免整版升级回退网页。
+- 修复 OpenCode 首次启动失败后残留死进程的问题；下一条消息可重试，旧连接清理不会覆盖新会话，救援状态只在 AI 适配器真正就绪后恢复。
 
 ## Material acceptance limits
 

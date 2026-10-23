@@ -1,15 +1,15 @@
 ---
 document: agentj-install
-version: 0.27.3
-released: 2026-10-22
+version: 0.27.4
+released: 2026-10-23
 status: beta (anyone can sign up; not advertised yet, pages are not indexed)
 host_package: agentj (the `agentj` command)
-host_version: 0.25.3a1
-source_tag: v0.25.3a1
-host_wheel: agentj-0.25.3a1-py3-none-any.whl
-host_wheel_sha256: 415837d9e87b47000a223606f7e1e0833a53fbde43e51fe5d6f4698d1caf9817
-host_sdist: agentj-0.25.3a1.tar.gz
-host_sdist_sha256: dac0ba973e03c22d58b7e6c630cbc3e92450a36f376fc6dc1226e7be7587584f
+host_version: 0.25.4a1
+source_tag: v0.25.4a1
+host_wheel: agentj-0.25.4a1-py3-none-any.whl
+host_wheel_sha256: 2311ed574700fc960b04320f58d91304ece407327ba2327d333d58554c02fcc1
+host_sdist: agentj-0.25.4a1.tar.gz
+host_sdist_sha256: e0351e76e42687ed3fbdd91f85677d67d06bdb279dd030fdd340d28b777e00a9
 canonical_url: https://agentj.app/install.md
 sha256_url: https://agentj.app/install.md.sha256
 alias: https://agentjarvis.net/install.md (the older address: the same file, kept for one more version)
@@ -726,7 +726,7 @@ DeepSeek says a preview may break; Agent J was measured on 0.2.0-rc.2.
 carry over). So start every command line from here on with `export PATH="$HOME/.local/bin:$PATH";` — or call
 `~/.local/bin/agentj` by its full path. This document writes `agentj` for short.
 
-The program is pinned to one release: the tag `v0.25.3a1` (front matter `source_tag`). The tag never moves, and its
+The program is pinned to one release: the tag `v0.25.4a1` (front matter `source_tag`). The tag never moves, and its
 `host/` folder is byte for byte the same code as the two files on our site whose SHA-256 is in this document's front matter.
 ```bash
 cd ~/.agentj-install
@@ -737,7 +737,7 @@ uv tool install "./$W"
 
 Intel Mac: this release keeps `cryptography<49` because newer releases lack an Intel macOS wheel. If an older installer tries to compile OpenSSL (`openssl-sys` / OpenSSL not found), rerun `uv tool install --with "cryptography<49" "./$W"`. The same platform constraint applies to `agentj update apply`.
 
-export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.25.3a1
+export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.25.4a1
 export PATH="$HOME/.local/bin:$PATH"; agentj doctor
 ```
 **Your human's own terminal must find `agentj` too** — they may use `agentj passphrase set` and `agentj pair` as a local alternative
@@ -765,16 +765,16 @@ echo "$WS  $W" | sha256sum -c - && echo "$SS  $S" | sha256sum -c -    # macOS: s
 uv tool install "./$W"          # the wheel; its dependencies come from PyPI or the mirror in UV_DEFAULT_INDEX
 ```
 `uv tool install "./$S"` installs from the checked source archive instead (it builds the same program).
-`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.25.3a1`); it is
-numbered separately from this document (`0.27.3`).
+`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.25.4a1`); it is
+numbered separately from this document (`0.27.4`).
 
-Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.25.3a1#subdirectory=host"`.
+Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.25.4a1#subdirectory=host"`.
 
-Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.25.3a1#subdirectory=host"` (needs Python 3.11+).
+Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.25.4a1#subdirectory=host"` (needs Python 3.11+).
 
 **What each route checks.** The wheel and the source archive above are checked against the SHA-256 in this document. Each
 also has a minisign signature beside it (`<file>.minisig`, key `B79F925B0585F9D4` — front matter `signature`), which
-`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.25.3a1`
+`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.25.4a1`
 routes check **neither**: Git trusts GitHub's HTTPS and the tag name, and nothing compares that code with this document.
 Use them only when the checked files cannot be downloaded, and say so in the final feedback.
 `agentj doctor` lists what is ready and what is not (prerequisites, the fence, connectivity, which agents are usable).
@@ -1678,6 +1678,13 @@ until then); an explicit `independent` stays independent. Nothing is switched wi
 
 ## U. Upgrade — stage `6-host`
 
+### 老版本升级：0.15.5a1 / Older version upgrade
+
+For an ordinary host on an older version (including 0.15.5a1), first run `agentj update apply`, then verify `agentj --version` and `agentj doctor`. Only if the command is missing or the old updater fails, copy the current install command from the account seat card and rerun it as the same OS user and instance. Configuration and bindings are kept; do not unlink, delete state or create another seat. Olares Market applications still update through Market.
+
+普通主机老版本（包括 0.15.5a1）需要升级时，先运行 `agentj update apply`，再核对 `agentj --version` 和 `agentj doctor`。只有命令不存在或旧更新器升级失败时，才到账户页席位卡复制当前安装命令，在同一系统用户、同一实例上重跑；保留配置与绑定，不要 unlink、删除状态目录或另建席位。Olares Market 应用仍通过 Market 更新。
+
+
 > Stuck here, or the text below seems wrong? Ask the support desk yourself (Step 2b; after Step 4: `agentj support ask`).
 
 The Agent completes the upgrade itself. Do not ask the owner to open a terminal or approve installation again.
@@ -1750,7 +1757,7 @@ Nightly automatic installation is enabled by default and verifies the official w
 In a shared session (the default of 0.13–0.19), reinstall directly using Step 4's checked wheel (SHA-256 must match this document and
 its public GitHub copy), preserving the host's identity, paired phones, account and preferences:
 ```bash
-uv tool install --force "./agentj-0.25.3a1-py3-none-any.whl"
+uv tool install --force "./agentj-0.25.4a1-py3-none-any.whl"
 agentj --version
 agentj service install
 agentj service restart
@@ -1759,7 +1766,7 @@ agentj doctor
 The matching published tag is another source, after verifying the tag object against the upgrade email (no signature or
 hash check on this route — Step 4):
 ```bash
-uv tool install --force "git+https://github.com/preangelleo/agentj@v0.25.3a1#subdirectory=host"
+uv tool install --force "git+https://github.com/preangelleo/agentj@v0.25.4a1#subdirectory=host"
 ```
 **0.14 independent session** (`agent.session_mode=independent`): 0.14's fence keeps Agent J's own program read-only and
 hides the service manager, so the Agent on the phone cannot reinstall or restart from inside it (measured: the install
@@ -1785,11 +1792,11 @@ prints something and `uv tool list` (or `pipx list`) shows `agentjarvis-host`, t
 the new name, then:
 ```bash
 jarvis service uninstall      # stop the old service first (Step 10 used tmux / nohup instead? stop that process)
-uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.25.3a1#subdirectory=host"
+uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.25.4a1#subdirectory=host"
 agentj doctor
 agentj service install        # start it again under the new name (or the tmux / nohup fallback, Step 10)
 ```
-With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.25.3a1#subdirectory=host"`.
+With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.25.4a1#subdirectory=host"`.
 - After the move, `agentj` puts back a `jarvis` command (a link to `agentj`, only if no other `jarvis` exists) for one more
   version; it prints a notice that points here. New installs never get `jarvis`.
 - The state moves from `~/.local/state/agentjarvis-alpha` to `~/.local/state/agentj` on the first run of `agentj` **after your
@@ -3332,3 +3339,37 @@ OpenCode 的水位优先采用模型提供的上下文上限；没有上限时�
 Notebook entries keep an optional title, content and date separately. Copy copies only the content; the three line icons sit at the bottom right. Add and Edit have a title (optional) and a content box. `agentj card note add|edit --text '<content>' --title '<optional title>' --date YYYY-MM-DD` keeps these fields separate; --date defaults to today for add and edit. The host backs up the original notes.md byte-for-byte before one-time migration of leading dates.
 
 记事本的标题（可空）、内容、日期分开保存。复制只拷内容，三个线条图标在每条右下角；新增和编辑分标题（可空）与内容两个框。`agentj card note add|edit --text '<内容>' --title '<可空标题>' --date YYYY-MM-DD` 分别传入字段，新增和编辑的日期缺省今天。旧 notes.md 首次提取行首日期前逐字节备份。
+
+
+### Post-upgrade reminders and Claude version managers
+
+After an upgrade, doctor repairs an existing working root’s missing core references and uses the existing reconnect repair, then checks again. `UPGRADE_RESULT ok` with `pending_checks` means **Upgrade succeeded; N items remain / 升级成功，还剩 N 项待办**. Follow the remaining doctor hints; a main-inject reminder to send the first phone message is expected after restart. A genuine package or service integrity failure still reports failed.
+
+Claude Code installed with mise/asdf may have several versions. Agent J reports `ambiguous_install` and defaults to the highest executable numeric version unless a version was explicitly selected. Set `AGENTJ_CLAUDE_BIN` to an executable or select an installed version with mise/asdf. This is not `not_installed`.
+
+On a queued phone message, **Stop previous task / 停下上一件** uses the existing Stop command. After three minutes queued with no new earlier-turn output for three minutes, the queue page says so. New output resets that quiet window; reconnecting or reloading starts a new observation window. Stop keeps its existing interruption and queued-message handling.
+
+### 好友任务与公开链上数据 / Friend tasks and public on-chain data
+
+同一个主人设备的新任务通过检查后，会进入主对话并提醒主人；`got` 只表示消息已收到，不表示任务已开始。回报时使用原任务消息 ID；旧任务缺少转交映射时，仍可回复尚未结束的有效请求。
+
+A new Same owner task that passes the checks enters the main conversation and notifies the owner. A `got` receipt means received, not started. Reply using the original task message ID; an older task missing its forwarding map can still be answered while its authenticated request remains active.
+
+手机和回复卡保留公开链上数据，便于复制：Solana base58 地址（32–44 位）、交易签名（87–88 位），以及 EVM 地址（0x 加 40 位十六进制）和交易哈希（0x 加 64 位十六进制）。标为私钥、密码或 token 的值，以及已知密钥前缀、私钥块和助记词，仍会隐藏。此规则只用于发给主人自己的内容，对外披露检查不变。
+
+Public on-chain data stays copyable on your phone and reply cards: Solana base58 addresses (32–44 characters), transaction signatures (87–88), EVM addresses (0x plus 40 hex digits) and transaction hashes (0x plus 64 hex digits). Values labelled as private keys, passwords or tokens, known credential prefixes, private-key blocks and seed phrases are still hidden. This applies only to content sent to you yourself; disclosure checks for other recipients stay unchanged.
+
+## 上门服务工具 / Field service tools (P484)
+
+先运行 `agentj preflight` 检查 WSL 浏览器系统库和浏览器/Ollama 下载入口（`--offline` 跳过联网）；按结果给出的命令补齐依赖后重新检查，再 `agentj browser setup`。修复命令需要主人批准，预检不会执行它。HEAD 连通不证明大文件完整下载。
+Run `agentj preflight` before WSL browser setup to check system libraries and browser/Ollama download reachability (`--offline` skips network). After owner-approved repairs, rerun it and `agentj browser setup`. The check never runs repairs; HEAD success does not prove a full download.
+
+`agentj skills onboarding`（可加 `--json`）按已装技能包记录估计入门/中级/进阶，显示依赖并推荐首个本机虚构示例草稿任务。旧包缺依赖记录时标为待核实，先阅读包说明，不假定工具、账号或额度已就绪。
+`agentj skills onboarding` (or `--json`) estimates beginner/intermediate/advanced setup from installed package receipts, lists dependencies and recommends a local draft using fictional data. Older receipts without dependencies are marked for review; read the package instructions first, without assuming tools, accounts or quota are ready.
+
+`agentj diag export` 一键写入当前目录 `agentj-diagnostic.json`，或 `--output <新文件>`；不会覆盖文件。包内只有版本、固定 doctor 状态、服务/连接布尔状态和最后 64 KiB 主机日志的事件计数，不含原始日志、检查详情、姓名、路径、设备/账号标识、配置或聊天。包只留本机；主人审阅后自行决定分享。后台不可达的隔离 Agent 导出失败，请恢复服务后重试。
+`agentj diag export` writes `agentj-diagnostic.json` in the current directory, or `--output <new-file>`; existing files are refused. It includes version, fixed doctor statuses, service/connection booleans and event counts from the final 64 KiB of the host log, without raw logs, free-text checks, names, paths, account/device identifiers, configuration or chat. It stays local for the owner to review before sharing. An isolated Agent needs the background service for collection; restore it and retry if unavailable.
+
+**连接恢复不等于 AI 已就绪。** OpenCode 没能启动或打开对话时，这条消息不会交给它，也不会自动重发。点报错下方的「重开 AI 会话」，确认后等它完成，再发一条短消息；也可以从「设置 → 紧急修复」打开同一入口。它会优先接回原对话，不改模型密钥或审批设置。救援检查会读取当前 AI 适配器的就绪状态；无法确认时会列为问题。检查通过只表示会话已就绪，不代表已经验证模型能回复。
+
+**Connection restored does not mean the AI is ready.** If OpenCode cannot start or open the conversation, that message is not delivered or automatically resent. Tap **Reopen AI session** below the error, confirm, wait for completion, then send a short message. The same action is in Settings → Emergency repair. It tries to resume the conversation and keeps model keys and approval settings. Rescue checks the live AI adapter readiness and reports a problem when it cannot confirm it. A ready adapter does not prove the model can reply.

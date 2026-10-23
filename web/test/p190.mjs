@@ -21,7 +21,7 @@ import * as L from './p73_scan_lib.mjs';
 const OUT = new URL('../../../reports/qa/p190/screens/', import.meta.url).pathname;
 mkdirSync(OUT, { recursive: true });
 const PY = new URL('../../host/.venv/bin/python', import.meta.url).pathname;
-const SHARED_PY = '/home/' + process.env.USER + '/coding/vibe-remote/host/.venv/bin/python';
+const SHARED_PY = process.env.AJ_TEST_PYTHON;
 const TEXT = 'https://example.com/menu?table=12 · 扫到的文字';
 const rec = parityRecorder('web/test/p190.mjs');
 const tmp = mkdtempSync(join(tmpdir(), 'aj-p190-'));
@@ -35,7 +35,7 @@ async function C(name, fn) {
 
 // the camera: a 1080p photo of a QR code holding TEXT (segno, the host's own QR library)
 let rows;
-for (const exe of [PY, SHARED_PY]) {
+for (const exe of [SHARED_PY, PY].filter(Boolean)) {
   try { rows = JSON.parse(execFileSync(exe, ['-c', 'import json,sys,segno; q=segno.make(sys.stdin.read(), error="m", micro=False); '
     + 'print(json.dumps(["".join("1" if m else "0" for m in r) for r in q.matrix_iter(scale=1,border=0)]))'], { input: TEXT, encoding: 'utf8' })); break; } catch { /* next */ }
 }

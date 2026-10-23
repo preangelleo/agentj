@@ -1282,9 +1282,18 @@ def run_upgrade(st=None):
     return rows
 
 
-def main(as_json: bool = False, offline: bool = False, isolation_only: bool = False, upgrade_only: bool = False) -> int:
+def main(as_json: bool = False, offline: bool = False, isolation_only: bool = False, upgrade_only: bool = False, post_upgrade: bool = False) -> int:
     checks = [isolation_preflight()] if isolation_only else run_upgrade() if upgrade_only else run(offline=offline)
-    failed = any(c["status"] == FAIL for c in checks)
+    # Also handles old apply versions that only know plain `doctor --json`.
+    st = State()
+    upgrade_context = not offline and not isolation_only and (post_upgrade or update.upgrade_due(st))
+    if upgrade_context:
+        findings = checks + (check_main_identity(st) if upgrade_only else [])
+        if update.repair_upgrade(st, findings):
+            checks = run_upgrade(st) if upgrade_only else run(offline=False)
+        if upgrade_only:
+            checks += [r for r in check_main_identity(st) if r["id"].startswith(("root-", "work-root"))]
+    failed = bool(update.upgrade_blockers(checks)[0]) if upgrade_context else any(c["status"] == FAIL for c in checks)
     if as_json:
         print(json.dumps({"tool": DIST, "version": __version__, "ok": not failed, "checks": checks}, ensure_ascii=False, indent=1))
     else:

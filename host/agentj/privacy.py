@@ -57,8 +57,8 @@ def _re(pattern: str, flags: int = 0) -> re.Pattern:
 # Names whose value is a secret (case-insensitive): the server scan's list, plus (review SS-04) pass / pw / auth / credentials
 # and any NAME ending in KEY / SECRET / TOKEN — `DB_PASS`, `MAILGUN_API_KEY`, `stripeSecret`, `x-auth-token` (a lower-case
 # suffix needs a `_` / `-` before it, so `monkey` is not a name; upper or Capitalised suffixes may follow letters directly).
-_CRED_NAMES = (r"(?:api[_-]?key|apikey|secret|token|password|passwd|pass|pwd|pw|auth|credentials?|access[_-]?key|client[_-]?secret"
-               r"|private[_-]?key|[A-Za-z0-9_-]*[_-](?:key|secret|token|pass|passwd|pwd|pw)|[A-Za-z0-9]*(?-i:KEY|SECRET|TOKEN|Key|Secret|Token))")
+_CRED_NAMES = (r"(?:api[ _-]?key|apikey|x[_-]api|secret|token|password|passwd|pass|pwd|pw|auth|credentials?|access[ _-]?key|client[ _-]?secret"
+               r"|private[ _-]?key|secret[ _-]?key|私钥|密钥|密码|口令|令牌|秘密|访问令牌|助记词|恢复短语|mnemonic|(?:seed|recovery|secret recovery)[ _-]?phrase|[A-Za-z0-9_-]*[_-](?:key|secret|token|pass|passwd|pwd|pw)|[A-Za-z0-9]*(?-i:KEY|SECRET|TOKEN|Key|Secret|Token))")
 _SECRETS: list[tuple[str, re.Pattern, str]] = [
     ("private_key", _re(r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----(?:[\s\S]*?-----END [A-Z0-9 ]*PRIVATE KEY-----|[\s\S]*)"), R),
     # P326: a scheme is at most 32 characters — unbounded, a long "a.b.c…" run was scanned once per position (quadratic)
@@ -83,10 +83,12 @@ _SECRETS: list[tuple[str, re.Pattern, str]] = [
     ("authorization_header", _re(r"\b(Authorization\s*:\s*(?:Bearer|Basic|token)\s+)(?!<redacted>|\$\(|\$\{|\$[A-Z_])[^\s\"'<>]+", re.I),
      r"\1" + R),
     ("credential_assignment", _re(
-        r"(?<![A-Za-z0-9])(" + _CRED_NAMES + r"[\"']?\s*[:=]\s*)([\"'])(?!<redacted>\2|\$\(|\$\{|\$[A-Z_])(?:(?!\2)[^\n]){6,}\2", re.I),
+        r"(?<![A-Za-z0-9])(" + _CRED_NAMES + r"[\"']?\s*[:：=]\s*)([\"'])(?!<redacted>\2|\$\(|\$\{|\$[A-Z_])(?:(?!\2)[^\n]){6,}\2", re.I),
      r"\1\2" + R + r"\2"),                                                     # a quoted value, spaces allowed
     ("credential_assignment", _re(
-        r"(?<![A-Za-z0-9])(" + _CRED_NAMES + r"[\"']?\s*[:=]\s*[\"']?)(?!<redacted>|\$\(|\$\{|\$[A-Z_])[^\s\"'<>]{8,}", re.I), r"\1" + R),
+        r"(?<![A-Za-z0-9])(" + _CRED_NAMES + r"[\"']?\s*[:：=]\s*[\"']?)(?!<redacted>|\$\(|\$\{|\$[A-Z_])[^\s\"'<>]{8,}", re.I), r"\1" + R),
+    # Public wallet shapes must not bypass an explicit private/secret-key label.
+    ("credential_assignment", _re(r"((?:private[ _-]?key|secret[ _-]?key|私钥|密钥)\s*[:：=]\s*[\"']?)[^\s\"'<>]{8,}", re.I), r"\1" + R),
     ("labelled_hex", _re(
         r"(?<![A-Za-z0-9])((?:" + _CRED_NAMES + r"|key)[\"']?(?:\s*[:=]\s*|\s+(?:is\s+)?)[\"']?)[0-9a-fA-F]{32,}(?![0-9A-Za-z])", re.I), r"\1" + R),
 ]
@@ -131,6 +133,16 @@ def _sluglike(tok: str) -> bool:
     return (len(parts) >= 6 and all(p and (p.isalpha() or p.isdigit() or len(p) <= 4) for p in parts)
             and sum(bool(re.fullmatch(r"(?:[a-z]{3,}|[A-Z][a-z]{2,}|[A-Z]{3,})", p)) for p in parts) >= 4)
 
+
+
+# P482: only the owner's paired channel relaxes entropy for public on-chain shapes.
+# Explicit credential labels/vendor/private-key rules run first. Strict disclosure
+# gates still mirror the server and never use this exception.
+_PUBLIC_CHAIN = re.compile(r"(?:[1-9A-HJ-NP-Za-km-z]{32,44}|[1-9A-HJ-NP-Za-km-z]{87,88}|0x(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64}))")
+
+
+def _public_chain(tok: str) -> bool:
+    return _PUBLIC_CHAIN.fullmatch(tok) is not None
 
 
 def _entropic(tok: str) -> bool:
@@ -331,7 +343,7 @@ def credentials(text: str) -> list[tuple[str, str, int, int]]:
         for m in _MNEMONIC.finditer(seg):
             spans.append((base + m.start(2), base + m.end(2), "mnemonic"))
         for m in _ENTROPIC.finditer(seg):
-            if _pathlike(m) or _namelike(m.group(0)):   # P194 / P424: same as the owner mode — a path / name is no credential
+            if _public_chain(m.group(0)) or _pathlike(m) or _namelike(m.group(0)):   # P194 / P424: same as the owner mode — a path / name is no credential
                 continue
             if _entropic(m.group(0)):
                 spans.append((base + m.start(), base + m.end(), "high_entropy"))
@@ -406,6 +418,8 @@ def _one_pass(text: str, host: str | None, user: str | None, hits: collections.C
             hits[kind] += n
         return out
 
+    # Seed phrases must be consumed whole before a generic labelled-token rule.
+    text = sub("mnemonic", _MNEMONIC, r"\1" + R, text)
     relaxed = paths or owner
     for kind, pat, repl in _SECRETS:
         if relaxed and kind in _LABELLED:        # P424: a NAME next to shell / code is not a credential
@@ -440,6 +454,8 @@ def _one_pass(text: str, host: str | None, user: str | None, hits: collections.C
         text = sub("private_ip", _PRIVATE_IP, "<private-ip>", text)
 
     def entropic(m):
+        if owner and _public_chain(m.group(0)):
+            return m.group(0)
         if owner and _pathlike(m):          # P194: a local path to the owner's own channel stays whole — the media scan and
             return m.group(0)               # the owner both need it (named key shapes inside it were already taken above)
         if paths and _namelike(m.group(0)):  # P424: a path / file name / identifier / env-var name made of words

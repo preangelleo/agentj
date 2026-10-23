@@ -13,7 +13,7 @@ const root=fileURLToPath(new URL('../../../',import.meta.url)),out=join(root,'re
 const tmp=mkdtempSync(join(tmpdir(),'p244-real-')),work=join(tmp,'work'),ch=join(tmp,'codex');mkdirSync(work);mkdirSync(ch);mkdirSync(join(tmp,'state'));
 symlinkSync(join(homedir(),'.codex/auth.json'),join(ch,'auth.json'));
 writeFileSync(join(ch,'config.toml'),'sandbox_mode = "workspace-write"\napproval_policy = "never"\n');
-const py=join(homedir(),'coding/vibe-remote/host/.venv/bin/python');
+const py=process.env.AJ_TEST_PYTHON || fileURLToPath(new URL('../../host/.venv/bin/python',import.meta.url));
 const wrapper=join(tmp,'agentj');writeFileSync(wrapper,`#!/bin/sh\nexec '${py}' '${root}host/tests/wiredump.py' "$@"\n`);chmodSync(wrapper,0o700);
 process.env.AJ_TEST_HOST_BIN=wrapper;
 const {HostProc}=await import('../../tests/lib/host.mjs');

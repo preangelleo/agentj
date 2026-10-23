@@ -395,11 +395,14 @@ class OpenCodeV2Agent(OpenCodeAgent):
         return [k for k in _data(r) if isinstance(k, dict)] if st == 200 and isinstance(_data(r), list) else []
 
     async def _resync(self) -> None:
+        owner = self._sync_owner()
         c = self.client
         if not c or not self.sid:
             return
         with contextlib.suppress(OSError, HTTPError, asyncio.TimeoutError):
             st, reqs = await c.request("GET", f"/api/session/{quote(self.sid)}/permission")
+            if not self._sync_current(owner):
+                return
             reqs = _data(reqs)
             if st == 200 and isinstance(reqs, list):
                 live = {r.get("id") for r in reqs if isinstance(r, dict)}
@@ -411,12 +414,20 @@ class OpenCodeV2Agent(OpenCodeAgent):
                         self._on_perm(to_v1_request(r))
             for cid in list(self.children)[-8:]:            # P426: a sub-agent's request that went by while it was down
                 st, reqs = await c.request("GET", f"/api/session/{quote(cid)}/permission")
+                if not self._sync_current(owner):
+                    return
                 for r in _data(reqs) if st == 200 and isinstance(_data(reqs), list) else []:
                     if isinstance(r, dict):
                         self._on_perm(to_v1_request(r))
             await self._catch_up()
-            if self.turn_done and not self.turn_done.is_set() and await self._idle_since_turn():
-                self._turn_end()
+            if not self._sync_current(owner):
+                return
+            if self.turn_done and not self.turn_done.is_set():
+                idle = await self._idle_since_turn()
+                if not self._sync_current(owner):
+                    return
+                if idle:
+                    self._turn_end()
 
     async def _messages(self) -> list:
         st, r = await self.client.request("GET", f"/api/session/{quote(self.sid)}/message")
@@ -425,7 +436,11 @@ class OpenCodeV2Agent(OpenCodeAgent):
     async def _catch_up(self) -> None:
         if not (self.client and self.sid and self.turn_done):
             return
-        for m in reversed(await self._messages()):            # the list is newest first
+        owner = self._sync_owner()
+        messages = await self._messages()
+        if not self._sync_current(owner):
+            return
+        for m in reversed(messages):                         # the list is newest first
             if not isinstance(m, dict) or m.get("type") != "assistant":
                 continue
             if ((m.get("time") or {}).get("created") or 0) < self.turn_t0 - 5000:
@@ -491,7 +506,7 @@ class OpenCodeV2Agent(OpenCodeAgent):
             return await self.turn(text)
         await self._creds_check()
         for attempt in range(2):
-            if self.proc is None and not await self._spawn():
+            if not await self._ensure_started():
                 return
             if not self.v2:
                 return await self.turn(text)
@@ -522,7 +537,8 @@ class OpenCodeV2Agent(OpenCodeAgent):
             except (OSError, HTTPError, AttributeError, asyncio.TimeoutError):
                 if self.proc:
                     await self._kill(self.proc)
-                continue
+                self._delivery_uncertain()
+                return  # the native request may already have executed; never replay it
             if st == 404 and not attempt:                 # the conversation is gone: a fresh one
                 if self.persist:
                     self.host.st.set_agent_session(self.kind, None)
@@ -672,7 +688,7 @@ class OpenCodeV2Agent(OpenCodeAgent):
     async def cmd_status(self, arg: str) -> Result:
         from .opencode_subagents import state_text
         ver = ""
-        if self.proc is not None or await self._spawn():
+        if await self._ensure_started():
             with contextlib.suppress(OSError, HTTPError, AttributeError, asyncio.TimeoutError):
                 st, h = await self.client.request("GET", "/api/info")
                 if st == 200 and isinstance(h, dict) and isinstance(h.get("version"), str):

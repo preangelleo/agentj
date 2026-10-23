@@ -514,7 +514,7 @@ class Agent:
         if fn and not self.cfg.get("_workflow_ceo"):
             fn(self.kind, text)
 
-    def fail_notice(self, text: str) -> None:
+    def fail_notice(self, text: str, *, recovery=False) -> None:
         """A notice that means this turn did not finish normally (its page ends `failed`)."""
         fn = getattr(self.host, "turn_failed", None)
         if fn:
@@ -522,7 +522,8 @@ class Agent:
         capture = getattr(self.host, "fallback_failure", None)
         if capture:
             capture(text)
-        self.host.agent_notice(text)
+        notice = getattr(self.host, "agent_recovery_notice", None) if recovery else None
+        (notice or self.host.agent_notice)(text)
 
     def local_fail(self, text: str) -> None:
         """A turn that cannot run until the human changes something on the Agent J host (fence / hooks): failed + 「在Agent J 主机上处理」."""

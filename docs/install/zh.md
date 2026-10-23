@@ -324,7 +324,7 @@ Ubuntu 24.04 还会检查 AppArmor 对用户命名空间的限制，并实际试
 AI 安装Agent J 主机端程序 `agentj`，装的是固定的一个版本：
 
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.25.3a1#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.25.4a1#subdirectory=host"
 agentj doctor
 ```
 
@@ -521,3 +521,7 @@ macOS「登录项与扩展」中的 Agent J 使用带名字、图标和开发者
 `agentj pair` 默认同时显示二维码与链接；`--link` 保留兼容。方法一：手机扫码。方法二：把同一个链接粘到电脑浏览器地址栏直接打开。链接 5 分钟、一次有效，是配对密钥，不要发给别人或 AI；iPhone 请粘到主屏幕图标内的配对链接框。
 
 **首台配好后**：手机先配 → 建议在常用电脑浏览器打开 https://m.agentj.app，用已配对手机扫电脑显示的码，核对后在手机确认；电脑先配 → 建议在电脑「设置 → 遥控器管理 → 添加遥控器（配对新遥控器）」打开二维码，用主力手机扫码，核对后在电脑确认。两台都配好并验收首条消息再结束安装。
+
+## 从旧版本升级
+
+普通主机先运行 `agentj update apply`，再核对 `agentj --version` 和 `agentj doctor`。只有命令不存在或旧更新器失败时，才到账户席位卡复制当前安装命令，在同一系统用户、同一实例上重跑。配置与绑定保留，不要 unlink、删除状态或另建席位。Olares Market 应用仍从 Market 升级。

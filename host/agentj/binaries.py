@@ -1,8 +1,8 @@
 """Resolve harness executables without ever executing a mise/asdf shim.
 
 Only known version-manager wrappers are bypassed. Explicit executable overrides
-remain authoritative. Ambiguous manager installs fail closed instead of picking
-an unrelated version. No subprocess is used during resolution.
+remain authoritative. Claude manager installs default to the highest executable version;
+explicit manager selections remain authoritative. No subprocess is used during resolution.
 """
 from pathlib import Path
 import os
@@ -92,7 +92,8 @@ def resolve(name, environ=None):
         if r["reason"] in ("explicit", "missing"):
             fresh = _resolve(name, {k: v for k, v in e.items() if k not in (ENV[name], ENV[name].replace("AGENTJ_", "AGENTJARVIS_"))})
             pin = r["path"] or (str(Path(r["requested"]).absolute()) if r["requested"] else None)
-            if fresh["path"] and pin and pin != fresh["path"] and version_sibling(pin, fresh["path"]):
+            manager_pin = name == "claude" and fresh["wrapper"] and r["path"] is not None
+            if not manager_pin and fresh["reason"] != "ambiguous_install" and fresh["path"] and pin and pin != fresh["path"] and version_sibling(pin, fresh["path"]):
                 return {**fresh, "reason": "pin_missing" if r["path"] is None else "pin_stale", "pinned": r["requested"], "via": fresh["reason"]}
         return r
     return _resolve(name, e)
@@ -125,4 +126,18 @@ def _resolve(name, e):
         result.update(path=chosen[0], reason="wrapper_bypassed")
     else:
         result["reason"] = "wrapper_ambiguous" if options else "wrapper_no_install"
+        if name == "claude" and options:
+            result.update(reason="ambiguous_install", hint="Set AGENTJ_CLAUDE_BIN to an executable, or select a version with mise / asdf / 用 AGENTJ_CLAUDE_BIN 或 mise / asdf 选定版本")
+            # Numeric install-folder versions, never lexical (2.1.308 > 2.1.97).
+            # Do not override a manager selection that names a missing version.
+            ranked = []
+            for path in chosen if not selected else []:
+                parts = Path(path).parts
+                version = next((parts[i + 2] for i in range(len(parts) - 2)
+                                if parts[i:i + 2] == ("installs", name)), "")
+                m = re.fullmatch(r"v?(\d+)\.(\d+)\.(\d+)", version)
+                if m:
+                    ranked.append((tuple(map(int, m.groups())), path))
+            if ranked:
+                result["path"] = max(ranked)[1]
     return result

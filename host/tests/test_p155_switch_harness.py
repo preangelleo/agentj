@@ -289,16 +289,16 @@ class Job(unittest.TestCase):
         self.assertIn('"ev": "harness_switch"', st.log_path.read_text())
 
     def test_switching_back_restores_that_harness_model_and_effort(self):
-        st = mk_state(self.tmp.name, "opencode", model="p66dqa/gpt-6", effort="high")
+        st = mk_state(self.tmp.name, "opencode", model="fixture-provider/gpt-6", effort="high")
         fake = FakeServe(st, "opencode")
         seen = []
         self.assertEqual(self.run_job(st, fake, "codex"), 0)
         self.assertEqual((st.agent_config()["kind"], st.agent_config()["model"]), ("codex", None))
         self.assertEqual(self.run_job(st, fake, "opencode", probe=fake_probe(seen=seen)), 0)
         cfg = st.agent_config()
-        self.assertEqual((cfg["kind"], cfg["model"], cfg["effort"]), ("opencode", "p66dqa/gpt-6", "high"))
+        self.assertEqual((cfg["kind"], cfg["model"], cfg["effort"]), ("opencode", "fixture-provider/gpt-6", "high"))
         # the gate probed the model it will run with; P282: then the way back (codex, as configured)
-        self.assertEqual(seen, [(("opencode",), "p66dqa/gpt-6"), (("codex",), None)])
+        self.assertEqual(seen, [(("opencode",), "fixture-provider/gpt-6"), (("codex",), None)])
         self.assertEqual(self.run_job(st, fake, "codex", "gpt-6"), 0)    # a model named now wins
         self.assertEqual(st.agent_config()["model"], "gpt-6")
 
@@ -455,7 +455,7 @@ class Request(unittest.TestCase):
         def probe(only=None, model=None, timeout=60):
             asked.append((only, model))
             return {"harnesses": [rows[only[0]]]}
-        (self.st.root / sw.SAVED).write_text(json.dumps({"opencode": {"model": "p66dqa/gpt-6", "effort": None}}))
+        (self.st.root / sw.SAVED).write_text(json.dumps({"opencode": {"model": "fixture-provider/gpt-6", "effort": None}}))
 
         def launch(st, argv):
             self.launched.append(argv)
@@ -466,7 +466,7 @@ class Request(unittest.TestCase):
         self.assertEqual([(h["name"], h["callable"]) for h in r["harnesses"]], [("claude", False), ("codex", True), ("opencode", False),
                                                                                     ("kimi", False), ("qwen", False), ("dsh", False)])
         self.assertEqual(r["current"], "claude")
-        self.assertEqual(asked, [(("claude",), "claude-opus-5-5"), (("codex",), None), (("opencode",), "p66dqa/gpt-6"),
+        self.assertEqual(asked, [(("claude",), "claude-opus-5-5"), (("codex",), None), (("opencode",), "fixture-provider/gpt-6"),
                                 (("kimi",), None), (("qwen",), None), (("dsh",), None)])  # its own model; P219: Claude's default
         zh = sw._say_scan(r, "zh")
         self.assertIn("现在能切到：Codex", zh)

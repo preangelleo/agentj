@@ -570,7 +570,7 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
                     raise ValueError('restart_failed')
                 time.sleep(.25)
         for attempt in range(SELF_CHECK_TRIES):
-            h = runner(argv + ['doctor', '--upgrade-only', '--json'])
+            h = runner(argv + ['doctor', '--upgrade-only', '--post-upgrade', '--json'])
             try:
                 rows = json.loads(h.stdout)['checks']
             except (ValueError, TypeError, KeyError, AttributeError):

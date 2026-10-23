@@ -68,7 +68,8 @@ class OpenCodeGuardChannel(_Tmp):
         async def go():
             a = self.agent()
             a.attach_task = None
-            a.proc = object()
+            a.proc = Mock(returncode=None)
+            a.client = Mock()
             a.risk_channel = Mock(path=self.st.perm_dir / "shared-opencode.sock")
             a._creds_check = AsyncMock()
             a.deliver = AsyncMock()

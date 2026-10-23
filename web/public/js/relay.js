@@ -1,3 +1,5 @@
+import {reopenSession} from './rescue.js';
+import { QueueWatch } from './queue-watch.js';
 import { paintIOSChrome } from './ios-chrome.js';
 import { copyButton } from './copycode.js';
 import {phoneConfirmation} from './tvremote.js';
@@ -1315,6 +1317,8 @@ function showPage(){
   el("pgPrev").disabled = pageAt === 0 && !(hist.turns.length && hist.turns[0].id > hist.firstId);
   el("pgNext").disabled = pageAt >= ps.length - 1;
   el("localNote").hidden = !(src && src.local);
+  const queueList = queuedWatchList();
+  queueStuck = queueWatch.check(queueList, hist.turns);
   paintCmdx(p);
   C.termCard?.(p);                                       // P414 (§37.12): a 「!」 page's terminal result card (js/bang.js)
   if (key !== shownKey){
@@ -1337,7 +1341,7 @@ function showPage(){
   const progress = open && typeof c.progress === "string" ? c.progress.trim().slice(0, 300) : "";
   const hostWait = open && (c.wait === true || c.queued === true) || (typeof c.switch === "string" && p === ps[ps.length - 1]);
   renderWords((isSilent(p.reply) ? "" : p.reply?.trim()) || (p.end === "open" || p.id === null ? "" : t('r.noReply')), open,
-    qd ? t('r.queue.card') + (ahead ? " · " + t('r.queue.ahead', {n: ahead}) : "") : progress, hostWait, sysPage(p));
+    qd ? t(queueStuck ? 'p481.queueStuck' : 'r.queue.card') + (ahead ? " · " + t('r.queue.ahead', {n: ahead}) : "") : progress, hostWait, sysPage(p));
   paintThinking(visibleReply(p) && !hostWait ? progress : "");
   el("words").classList.toggle("empty", !visibleReply(p));
   renderMedia(el("words"), p);
@@ -1353,11 +1357,26 @@ function showPage(){
 function paintCmdx(p){
   const box = el("cmdx"), c = p.card;
   box.replaceChildren();
+  if (p.source?.k === 'sys' && c?.recovery === 'restart_session') {
+    box.hidden = false;
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'cmdundo';
+    b.dataset.recovery = 'restart_session'; b.textContent = t('p435.session');
+    b.addEventListener('click', reopenSession); box.append(b); return;
+  }
   const isCmd = !!c && p.source && p.source.k === "cmd";
   const resume = isCmd && c.cmd === "clear" && c.resume && typeof c.resume.title === "string" && typeof c.resume.command === "string" ? c.resume : null;
   const cancelWait = isCmd && c.cancel_wait === true && p.end === "open" && p.source.dev === C.myDev();
   const openBtn = isCmd && typeof c.open === "string" && /^fr_(card|add)(:[A-Z0-9-]{1,40})?$/.test(c.open);   // P73
   // P151b: a phone turn the shared Claude has not ended after 5 min — 「继续等」 (another round) or 「中断」 (/stop)
+  if (p.end === "open" && queuedTurn(p.id) && document.body.dataset.conn === "on" && !C.estopOn()){
+    box.hidden = false;
+    const stop = document.createElement("button"); stop.type = "button"; stop.className = "cmdundo";
+    stop.dataset.queueStop = String(p.id); stop.textContent = t('p481.stopPrevious');
+    stop.addEventListener("click", () => {
+      if (queuedTurn(p.id) && document.body.dataset.conn === "on" && !C.estopOn()) stopTurn();
+    });
+    box.append(stop); return;
+  }
   const stall = !isCmd && !!c && c.wait === true && c.stall === true && p.end === "open" && p.id !== null;
   if (stall){
     box.hidden = false;
@@ -2698,8 +2717,20 @@ let activeTurn = null;    // P282: the page of this device's say the Agent took 
 // never flickers.
 const QUEUE_QUIET_MS = 700;
 let queueTimer = 0;
+const queueWatch = new QueueWatch();
+let queueStuck = false;
+const observedQueue = new Map();
+function queuedWatchList(){
+  const rows = hist.turns.filter(p => p.end === "open" && p.card?.queued === true);
+  const ids = new Set(rows.map(p => p.id));
+  for (const id of observedQueue.keys()) if (!ids.has(id)) observedQueue.delete(id);
+  for (const p of rows) if (!observedQueue.has(p.id)) observedQueue.set(p.id, Date.now());
+  const list = new Map(rows.map(p => [p.id, {turn: p.id, at: observedQueue.get(p.id)}]));
+  for (const q of queuedShown()) list.set(q.turn, q);
+  return [...list.values()].sort((a,b) => a.turn - b.turn);
+}
 const queuedShown = () => { const now = Date.now(); return queued.filter(q => now - (q.at || 0) >= QUEUE_QUIET_MS); };
-function queuedTurn(id){ return Number.isInteger(id) && queuedShown().some(q => q.turn === id); }
+function queuedTurn(id){ return Number.isInteger(id) && queuedWatchList().some(q => q.turn === id); }
 function queuedAhead(id){ const i = queued.findIndex(q => q.turn === id); return i > 0 ? i : 0; }
 // P328 (Leo, 0.22.0a1): the × is one control with three jobs — take back this phone's send in flight (send), take back a
 // message still queued behind a busy session (queued), and, while the Agent works (blue) with nothing of ours to take back,
@@ -4299,7 +4330,7 @@ export function forgetLocal(){
   forgetKill(); stash = null; hfind = null; fsed.forget();   // P412: the kill ring, Ctrl+S and the full-screen copy too
   clearTimeout(draftTimer); lastSent = null;
   if (inflight){ inflight.cancelled = true; inflight.forgotten = true; if (inflight.wake) inflight.wake(); }
-  queued.length = 0;
+  queued.length = 0; queueWatch.reset(); observedQueue.clear(); queueStuck = false;
   outbox.wipe();
   for (const l of held.values()) for (const a of l) if (a.url){ URL.revokeObjectURL(a.url); a.url = null; }
   held.clear();
@@ -4440,6 +4471,10 @@ export function init(ctx){
   for (const id of ["mWeek", "m5h"]) el(id).addEventListener("click", meterToast);
   initUsage();   // P207 §1
   setInterval(renderSub, 30000);
+  setInterval(() => {
+    if (document.body.dataset.conn === "on" && queuedWatchList().length) showPage();
+    else { queueWatch.reset(); queueStuck = false; }
+  }, 5000);
   pressable(el("meta"), e => pillStep(pillHalf(e)), pillDefault);   // @ix app.model_step app.effort_step app.model_default
   // P239: a pick still waiting its 5 s is sent when the page is left (background, app switch, close), not lost.
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") pillFlush(); });

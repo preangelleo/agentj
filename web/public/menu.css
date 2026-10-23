@@ -797,3 +797,12 @@ body:has(#settings:not([hidden])) .toast:is(.circle,.square){position:fixed;z-in
 #settings .rshead2>p{margin:0}
 #settings .rssum{font-weight:600}
 #settings .rsnext code{overflow-wrap:anywhere}
+
+/* P485: only the ten named controls and the official Notebook add action. */
+html:root :is(#quoteDlgDel,#quoteDlgJump,#ctm-e-del,#ctm-e-save,#phone-env-copy,#rv-refresh,#set-refresh,#mail-add,#rm-add,#rm-copy),
+#five-page .jc-body[data-card="notes"] .jc-actions > [data-act="add"] {
+  display:inline-flex;align-items:center;justify-content:center;flex:0 0 44px;
+  width:44px;min-width:44px;height:44px;min-height:44px;padding:0;border:0;background:transparent;color:inherit;
+}
+html:root :is(#quoteDlgDel,#quoteDlgJump,#ctm-e-del,#ctm-e-save,#phone-env-copy,#rv-refresh,#set-refresh,#mail-add,#rm-add,#rm-copy) > svg,
+#five-page .jc-body[data-card="notes"] .jc-actions > [data-act="add"] > svg {width:21px;height:21px;flex:none}

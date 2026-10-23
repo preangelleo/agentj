@@ -3817,7 +3817,9 @@ export default {
   "p450.roleHelper": "辅助小模型",
   "p450.roleAgent": "子 Agent「{name}」",
   "p450.roleOther": "其它用途",
-  "p479.sudo.done": "sudo 已完成（退出码 {code}）"
+  "p479.sudo.done": "sudo 已完成（退出码 {code}）",
+  "p481.queueStuck": "上一件事已超过 3 分钟没有新输出，可以停下它再继续。",
+  "p481.stopPrevious": "停下上一件"
  },
  "en": {
   "fr.ask.failed": "Your confirmation did not take effect. Please try again.",
@@ -7636,6 +7638,8 @@ export default {
   "p450.roleHelper": "Helper model",
   "p450.roleAgent": "Sub-agent “{name}”",
   "p450.roleOther": "Other use",
-  "p479.sudo.done": "sudo finished (exit code {code})"
+  "p479.sudo.done": "sudo finished (exit code {code})",
+  "p481.queueStuck": "The previous task has had no output for over 3 minutes. You can stop it to continue.",
+  "p481.stopPrevious": "Stop previous task"
  }
 };

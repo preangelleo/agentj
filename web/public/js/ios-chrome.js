@@ -1,6 +1,6 @@
 // P459: black-translucent standalone paints the document, not a theme-color refresh.
 // The probe resolves current page / reader / custom-theme colours without feeding back the chrome token.
-let diagnostic = null, wired = false, waterWatch = null;
+let diagnostic = null, wired = false, waterWatch = null, waterSize = null;
 function diagnose() {
   if (!diagnostic) return;
   const html = document.documentElement, cs = getComputedStyle(html);
@@ -40,6 +40,16 @@ export function paintIOSChrome() {
     waterWatch = new MutationObserver(() => paintIOSChrome());
     waterWatch.observe(water, {attributes:true, attributeFilter:['style','class','data-known']});
     waterWatch.observe(document.body, {attributes:true, attributeFilter:['style','class']});
+    // A style mutation precedes the first frame of the 1.4s water-height transition.
+    // Re-sample actual geometry as it changes; a mutation alone can leave the page
+    // colour cached at the home indicator even after the water has risen.
+    if (typeof ResizeObserver !== 'undefined') {
+      waterSize = new ResizeObserver(() => paintIOSChrome());
+      waterSize.observe(water);
+    }
+    // Compaction can move the tank with a transform without changing its size.
+    for (const event of ['transitionend', 'transitioncancel', 'animationend'])
+      water.addEventListener?.(event, () => paintIOSChrome());
   }
   if (!wired && new URLSearchParams(location.search).get('iosdiag') === '1') {
     wired = true; diagnostic = document.createElement('div'); diagnostic.id = 'iosdiag';

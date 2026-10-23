@@ -335,7 +335,7 @@ It may need you here:
 The AI installs `agentj`, the program on the Agent J host, at one fixed version:
 
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.25.3a1#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.25.4a1#subdirectory=host"
 agentj doctor
 ```
 
@@ -535,3 +535,7 @@ First remote: use Add a remote on the account-page seat card, or run `agentj pai
 `agentj pair` shows both QR and link by default; `--link` remains compatible. Way 1: scan with your phone. Way 2: paste the same link into a computer browser's address bar. The link is a pairing key, valid for 5 minutes and one use; never share it with anyone or an AI. On iPhone paste into the pairing-link box inside the Home Screen icon.
 
 **After the first remote**: phone first → open https://m.agentj.app in your usual computer browser, scan its code with the paired phone, compare and confirm on the phone; computer first → on the computer open Settings → Remotes → Add a remote, scan with your main phone, compare and confirm on the computer. Finish installation after both remotes and the first message are verified.
+
+## Upgrade an older installation
+
+On an ordinary host, first run `agentj update apply`, then check `agentj --version` and `agentj doctor`. Only when that command is unavailable or the old updater fails, copy the current install command from the account seat card and rerun it as the same OS user and instance. Keep configuration and bindings; do not unlink, delete state or create another seat. Olares Market applications still update through Market.

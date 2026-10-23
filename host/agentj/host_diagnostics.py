@@ -37,7 +37,7 @@ def execute(st, req):
     from . import cloud, feedback, reconnect, support
     op = req.get("op")
     allowed = {
-        "status": set(), "reconnect": {"session", "caller_session", "as_json"},
+        "diag": set(), "status": set(), "reconnect": {"session", "caller_session", "as_json"},
         "support": {"kind", "text", "thread", "attach_doctor", "wait", "lang"},
         "thread": {"thread", "wait"}, "list": set(),
         "feedback_send": {"raw", "owner_confirmed"}, "feedback_replies": {"as_json"},
@@ -59,11 +59,16 @@ def execute(st, req):
         return {"exit": 1, "output": "Request refused: support fields\n"}
     out = io.StringIO()
     try:
-        if op == "status":
+        if op == "diag":
+            from . import field_tools
+            import json
+            print(json.dumps(field_tools.collect(st, local=True)), file=out)
+            rc = 0
+        elif op == "status":
             from . import names
             import json
             res = names.ctl_call(st, {"cmd": "status"}, 10) or {}
-            safe = {k: res.get(k) for k in ("ok", "agent", "agent_status", "relay_up", "relay_state", "identity_ok")}
+            safe = {k: res.get(k) for k in ("ok", "agent", "agent_status", "relay_up", "relay_state", "identity_ok", "harness_readiness")}
             print(json.dumps(safe), file=out)
             rc = 0 if res.get("ok") else 1
         elif op == "reconnect":

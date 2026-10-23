@@ -277,6 +277,7 @@ export async function render(body, id, hooks) {
   if (c?.official && ['notes','todo'].includes(id)) {
     const row = node('div', undefined, 'jc-actions');
     const add = button(t(id === 'notes' ? 'p415.addNote' : 'p415.addTodo'), () => directAdd(id, hooks), 'fp-action jc-action'); add.dataset.act = 'add';
+    if (id === 'notes') { add.replaceChildren(document.querySelector('#rm-add > svg').cloneNode(true)); add.setAttribute('aria-label', t('p415.addNote')); add.title = t('p415.addNote'); }
     const coop = button(t('p415.collaborate'), () => { hooks.draft('/agentj-add-' + (id === 'notes' ? 'note' : 'todo') + ' '); const i=document.getElementById('input'); i.value='/agentj-add-' + (id === 'notes' ? 'note' : 'todo') + ' '; i.dispatchEvent(new Event('input')); i.focus({preventScroll:true}); i.setSelectionRange(i.value.length,i.value.length); }, 'fp-action jc-action'); coop.dataset.act = 'collaborate';
     row.append(add, coop); box.append(row);
   } else if (Array.isArray(m.actions) && m.actions.length) {

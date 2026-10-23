@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import { QueueWatch } from '../public/js/queue-watch.js';
+const w = new QueueWatch();
+const q = [{turn: 2, at: 1000}];
+const rows = [{id: 1, reply: {text: ''}, end: 'open'}];
+assert.equal(w.check(q, rows, 1000), false);
+assert.equal(w.check(q, rows, 181001), true);
+rows[0].reply.text = 'new output';
+assert.equal(w.check(q, rows, 181002), false);
+assert.equal(w.check(q, rows, 361003), true);
+assert.equal(w.check([], rows, 361004), false);
+assert.equal(w.check([{turn:3, at:361005}], rows, 361005), false);
+console.log('P481 queue watchdog: threshold, silence, output reset, drain and new queue PASS');

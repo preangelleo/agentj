@@ -435,7 +435,7 @@ def probe(only: tuple | list | None = None, model: str | None = None, timeout: f
             h["probe_reason"] = "not_probed"
             continue
         if not h["installed"] or not h["supported"]:
-            h["probe_reason"] = "not_installed" if not h["installed"] else "not_supported"
+            h["probe_reason"] = ("ambiguous_install" if h.get("resolution", {}).get("reason") == "ambiguous_install" else "not_installed") if not h["installed"] else "not_supported"
             continue
         env = {k: v for k, v in os.environ.items()
                if not k.startswith(("AGENTJ_", "AGENTJARVIS_", "HERDR_", "VIBE_REMOTE_", "TMUX", "SSH_"))}

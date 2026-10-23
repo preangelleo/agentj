@@ -134,7 +134,7 @@ agentj --help
 
 ```text
 usage: agentj [-h] [-V] [--migrate-legacy] [--instance N] [--fresh]
-              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,terminal,provider,sudo-helper,docs-rule,handover,telegram-cursor,plaza,support,data,skills,capability,goal,heartbeat,quota,imessage,busy,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
+              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,terminal,provider,sudo-helper,docs-rule,handover,telegram-cursor,plaza,support,data,diag,preflight,skills,capability,goal,heartbeat,quota,imessage,busy,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -2236,6 +2236,43 @@ usage: agentj devices [-h] [--json]
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--json` | `false` | false | — | `` |
 
+### agentj diag
+
+```text
+export private diagnostic summary
+```
+
+```bash
+agentj diag --help
+```
+
+```text
+usage: agentj diag [-h] {export} ...
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj diag export
+
+```text
+local JSON, no raw logs
+```
+
+```bash
+agentj diag export --help
+```
+
+```text
+usage: agentj diag export [-h] [--output OUTPUT]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--output` | `"agentj-diagnostic.json"` | false | — | `new file, never overwritten` |
+
 ### agentj docs-rule
 
 ```text
@@ -2270,7 +2307,8 @@ agentj doctor --help
 
 ```text
 usage: agentj doctor [-h] [--json] [--offline] [--isolation-only]
-                     [--upgrade-only] [--reconnect] [--session SESSION]
+                     [--post-upgrade] [--upgrade-only] [--reconnect]
+                     [--session SESSION]
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -2279,6 +2317,7 @@ usage: agentj doctor [-h] [--json] [--offline] [--isolation-only]
 | `--json` | `false` | false | — | `machine-readable (paths shown with ~)` |
 | `--offline` | `false` | false | — | `skip the network checks` |
 | `--isolation-only` | `false` | false | — | `isolation preflight only, no user state or network` |
+| `--post-upgrade` | `false` | false | — | `repair post-upgrade root and connection` |
 | `--upgrade-only` | `false` | false | — | `package and service integrity only` |
 | `--reconnect` | `false` | false | — | `phone grey or disconnected: check service, relay and Agent, repair the broken one` |
 | `--session` | `null` | false | — | `with --reconnect: attach this session ID` |
@@ -4700,6 +4739,25 @@ usage: agentj plaza show [-h] [--json] [--version VERSION] id
 | `--json` | `false` | false | — | `` |
 | `--version` | `null` | false | — | `包的版本（只对包）/ package version` |
 
+### agentj preflight
+
+```text
+WSL browser libraries and download preflight
+```
+
+```bash
+agentj preflight --help
+```
+
+```text
+usage: agentj preflight [-h] [--offline]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--offline` | `false` | false | — | `skip download reachability` |
+
 ### agentj protocol
 
 ```text
@@ -5577,7 +5635,7 @@ agentj skills --help
 ```
 
 ```text
-usage: agentj skills [-h] {health,archive,restore,suggest} ...
+usage: agentj skills [-h] {onboarding,health,archive,restore,suggest} ...
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -5616,6 +5674,25 @@ agentj skills health --help
 
 ```text
 usage: agentj skills health [-h] [--json]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `` |
+
+### agentj skills onboarding
+
+```text
+installed package difficulty, dependencies and first task
+```
+
+```bash
+agentj skills onboarding --help
+```
+
+```text
+usage: agentj skills onboarding [-h] [--json]
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -6701,7 +6778,7 @@ agentj --help
 
 ```text
 usage: agentj [-h] [-V] [--migrate-legacy] [--instance N] [--fresh]
-              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,terminal,provider,sudo-helper,docs-rule,handover,telegram-cursor,plaza,support,data,skills,capability,goal,heartbeat,quota,imessage,busy,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
+              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,terminal,provider,sudo-helper,docs-rule,handover,telegram-cursor,plaza,support,data,diag,preflight,skills,capability,goal,heartbeat,quota,imessage,busy,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -8803,6 +8880,43 @@ usage: agentj devices [-h] [--json]
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--json` | `false` | false | — | `` |
 
+### agentj diag
+
+```text
+导出脱敏诊断包
+```
+
+```bash
+agentj diag --help
+```
+
+```text
+usage: agentj diag [-h] {export} ...
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj diag export
+
+```text
+本机 JSON，无原始日志
+```
+
+```bash
+agentj diag export --help
+```
+
+```text
+usage: agentj diag export [-h] [--output OUTPUT]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--output` | `"agentj-diagnostic.json"` | false | — | `新文件，禁止覆盖` |
+
 ### agentj docs-rule
 
 ```text
@@ -8837,7 +8951,8 @@ agentj doctor --help
 
 ```text
 usage: agentj doctor [-h] [--json] [--offline] [--isolation-only]
-                     [--upgrade-only] [--reconnect] [--session SESSION]
+                     [--post-upgrade] [--upgrade-only] [--reconnect]
+                     [--session SESSION]
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -8846,6 +8961,7 @@ usage: agentj doctor [-h] [--json] [--offline] [--isolation-only]
 | `--json` | `false` | false | — | `机器可读` |
 | `--offline` | `false` | false | — | `跳过网络检查` |
 | `--isolation-only` | `false` | false | — | `仅隔离预检：不读用户状态、不联网` |
+| `--post-upgrade` | `false` | false | — | `修复升级后的工作根与连接` |
 | `--upgrade-only` | `false` | false | — | `仅升级后的包与服务完整性` |
 | `--reconnect` | `false` | false | — | `手机灰了/断开：自检 服务·中继·Agent 三段，哪段断了修哪段` |
 | `--session` | `null` | false | — | `和 --reconnect 一起：接上这个会话 ID` |
@@ -11267,6 +11383,25 @@ usage: agentj plaza show [-h] [--json] [--version VERSION] id
 | `--json` | `false` | false | — | `` |
 | `--version` | `null` | false | — | `包的版本（只对包）/ package version` |
 
+### agentj preflight
+
+```text
+WSL 浏览器系统库与下载预检
+```
+
+```bash
+agentj preflight --help
+```
+
+```text
+usage: agentj preflight [-h] [--offline]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--offline` | `false` | false | — | `跳过下载连通性` |
+
 ### agentj protocol
 
 ```text
@@ -12144,7 +12279,7 @@ agentj skills --help
 ```
 
 ```text
-usage: agentj skills [-h] {health,archive,restore,suggest} ...
+usage: agentj skills [-h] {onboarding,health,archive,restore,suggest} ...
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -12183,6 +12318,25 @@ agentj skills health --help
 
 ```text
 usage: agentj skills health [-h] [--json]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `` |
+
+### agentj skills onboarding
+
+```text
+已装技能包难度、依赖与首个任务
+```
+
+```bash
+agentj skills onboarding --help
+```
+
+```text
+usage: agentj skills onboarding [-h] [--json]
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |

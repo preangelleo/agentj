@@ -36,7 +36,7 @@ test('§3: copy icons, two-way switches, one-row segments, scan icon, scan page 
   assert.doesNotMatch(html, /class="setval setwide"/, 'no ⇄ cycling pill left');
   assert.match(html, /<div class="segrow" role="group" data-i18n-attr="aria-label=set\.theme"/);
   assert.doesNotMatch(html, /id="rm-scan"/);
-  assert.match(html, /id="rm-add"[^>]*>[^<]*<\/button>\s*<button type="button" id="rm-scan-icon"/);
+  assert.match(html, /id="rm-add"[^>]*><svg[^>]*>[\s\S]*?<\/svg><\/button>\s*<button type="button" id="rm-scan-icon"/);
   for (const id of ['scan-back', 'scan-trigger', 'scan-stop']) assert.match(html, new RegExp(`id="${id}" class="scan-ico[^"]*"[^>]*aria-label=`));
   assert.match(html, /class="scan-finder"[^>]*><i class="sf-c sf-tl"><\/i><i class="sf-c sf-tr"><\/i><i class="sf-c sf-bl"><\/i><i class="sf-c sf-br"><\/i><b class="sf-sweep"><\/b>/);
   assert.match(read('../public/app.js'), /scanActive = true; paintScanTrigger\(\);/);

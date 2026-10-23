@@ -279,7 +279,7 @@ class HostOps:
             await self._until(self._device_back, DEVICE_WAIT)
         status = h.eff_status()
         if status in OK_AGENT:
-            return {"ok": True}
+            return {"ok": self._ai_ready()}
         if status == "stopped":
             return {"stop": "estop", "detail": "agent stopped"}
         if status == "none":
@@ -293,8 +293,14 @@ class HostOps:
     async def new_session(self) -> dict:
         return await new_session(self.h)
 
+    def _ai_ready(self) -> bool:
+        a = self.h.agent
+        if getattr(a, "kind", None) == "opencode":
+            return getattr(a, "readiness", lambda: {"ready": False})().get("ready") is True
+        return self.h.eff_status() in OK_AGENT
+
     async def healthy(self) -> bool:
-        return await self._until(lambda: self.h.eff_status() in OK_AGENT, HEALTH_WAIT)
+        return await self._until(self._ai_ready, HEALTH_WAIT)
 
     async def restart(self) -> dict:
         await self.sleep(1.0)                 # let reset_done leave first
@@ -488,7 +494,7 @@ class Desk:
                 res = on_loop(ops.reconnect(), RELAY_WAIT + DEVICE_WAIT + 15)
                 if not res.get("ok") and not res.get("stop"):
                     res = on_loop(ops.repin(), 30)
-                res = {"ok": bool(res.get("ok"))}
+                res = {"ok": bool(res.get("ok")) and on_loop(ops.healthy(), HEALTH_WAIT + 5)}
             return bool(res.get("ok")), action_text(name, res, lang)
 
         res = await asyncio.to_thread(functools.partial(rescue_kit.help_flow, lang, emit_t, act, estop=self.h.stopped()))

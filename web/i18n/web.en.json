@@ -4285,5 +4285,9 @@
   "p450.roleHelper": "Helper model",
   "p450.roleAgent": "Sub-agent “{name}”",
   "p450.roleOther": "Other use",
-  "p479.sudo.done": "sudo finished (exit code {code})"
+  "p479.sudo.done": "sudo finished (exit code {code})",
+  "p481": {
+    "queueStuck": "The previous task has had no output for over 3 minutes. You can stop it to continue.",
+    "stopPrevious": "Stop previous task"
+  }
 }

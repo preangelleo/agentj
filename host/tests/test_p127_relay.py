@@ -96,7 +96,9 @@ class FirstConnect(unittest.TestCase):
         self.assertEqual(len(_events(st, "relay_up")), 1)
 
     def test_auth_deadline_close_logs_the_code_and_retries_fast(self):
-        st, accepts, host, state = self.run_relay(["late_close", "late_close", "ok"])
+        # Fix retry jitter at its midpoint; keep the real 3-second deadline assertion.
+        with mock.patch.object(serve.secrets, "randbelow", return_value=250):
+            st, accepts, host, state = self.run_relay(["late_close", "late_close", "ok"])
         down = _events(st, "relay_down")
         self.assertGreaterEqual(len(down), 2)
         self.assertEqual(down[0]["code"], 4001)

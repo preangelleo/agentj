@@ -77,6 +77,72 @@ class SameOwnerTests(Base):
         self.assertEqual(self.svc.list_view()['friends'][0]['same_owner'], 'pending')
         self.assertEqual((await self.svc.cli({'t':'status','friend':self.b}))['code'], 403)
 
+    async def test_p482_long_task_reviews_payload_not_host_envelope(self):
+        await self.confirm()
+        original = self.svc._outbound
+        async def review(text):
+            if 'Reply command:' in text:
+                return peer_guard.Verdict(False, 'jev_refused')
+            return await original(text)
+        m = pmsg('请审阅以下稿件。' + '检查论证与表达。' * 460)
+        with patch.object(self.svc, '_outbound', review):
+            self.svc._on_pmsg(self.b, m)
+            await settle()
+        self.assertEqual(len(self.sends), 1)
+        ready = asyncio.create_task(self.sends[0].wait_ready())
+        with patch.object(self.svc, '_outbound', review):
+            await settle()
+            await self.pump()
+            self.assertTrue(await ready)
+        self.assertIn(m['text'], self.sends[0].text)
+        self.assertEqual(self.sends[0].source['kind'], 'same_owner')
+        self.assertTrue(self.host.notices)
+        self.assertIn('reply', self.host.pushes)
+        self.assertTrue((await self.svc.tell(self.b, '审阅完成', m['mid']))['ok'])
+        self.svc._on_pmsg(self.b, m)
+        await settle()
+        self.assertEqual(len(self.sends), 1)
+
+    async def test_p482_reply_to_received_legacy_task_without_forward_mapping(self):
+        await self.confirm()
+        m = pmsg('请审稿')
+        self.assertTrue(self.svc.guards.accept(self.b, m))
+        self.store.hist_add(self.b, {'mid':m['mid'], 'dir':'in', 'text':m['text'], 'ts':1, 's':'got'})
+        self.assertTrue((await self.svc.tell(self.b, '审阅完成', m['mid']))['ok'])
+        reply = self.net.of('pmsg')[-1][1]
+        self.assertEqual(reply['thread'], m['thread'])
+        self.assertEqual(reply['irt'], m['mid'])
+        self.assertTrue(reply['end'])
+        self.assertFalse((await self.svc.tell(self.b, '审阅完成', 'f'*16))['ok'])
+
+    async def test_p482_reply_fallback_rejects_revoked_and_terminal_requests(self):
+        await self.confirm()
+        m = pmsg('检查服务')
+        self.svc.guards.accept(self.b, m)
+        self.svc.guards.state(self.b, m['mid'], 'cancelled')
+        self.assertEqual((await self.svc.tell(self.b, '完成', m['mid']))['why'], 'bad_reply')
+        m = pmsg('检查服务')
+        self.svc.guards.accept(self.b, m)
+        self.svc.same_owner.consent(self.b, False)
+        self.assertEqual((await self.svc.tell(self.b, '完成', m['mid']))['why'], 'bad_reply')
+
+    async def test_p482_untrusted_payload_and_name_still_reviewed(self):
+        await self.confirm()
+        async def refuse(text):
+            return peer_guard.Verdict(False, 'jev_refused')
+        with patch.object(self.svc, '_outbound', refuse):
+            self.assertFalse(await self.svc.same_owner.forward(self.b, pmsg('普通任务')))
+        self.assertFalse(self.sends)
+        self.assertFalse(self.svc.same_owner.row(self.b).get('forwarded'))
+        seen = []
+        async def audit(text):
+            seen.append(text)
+            return peer_guard.Verdict(True)
+        with patch.object(self.svc, '_outbound', audit):
+            self.assertTrue(await self.svc.same_owner.forward(self.b, pmsg('普通任务')))
+        self.assertIn('from_friend', seen[0])
+        self.assertNotIn('Reply command:', seen[0])
+
     async def test_bilateral_revoke_and_replayed_consent(self):
         await self.confirm()
         old = next(o for _,o in reversed(self.remote.net.sent) if o['t']=='same_owner')

@@ -46,7 +46,7 @@ Owner needs their earlier conversation after a reset → run `agentj rescue undo
    - Not running (`running: false`) → step 2.
    - `relay_state` is `reconnecting` → step 2; quote `relay_stuck` (where the relay link sticks: phase / reason / close code).
    - `agent_status` is `down` (or anything other than `idle` / `working` / `waiting` / `compacting`) → step 2.
-   - Everything up → tell the owner the computer side is fine; a grey page usually comes back with pull-to-refresh.
+   - Check `harness_readiness.ready`: false/missing means AI unverified even with relay connected. OpenCode startup failure → phone Reopen AI session, then send once. Never auto-resend. Adapter-ready is not a model reply test.
 2. `agentj doctor --reconnect` — run it **in this session**: it attaches the session that runs it.
    It checks, in order, and repairs only the broken one:
    - **service** (`agentj serve`): not answering → started / restarted;

@@ -436,6 +436,9 @@ function paintMode() {
   const n = el('rs-mode'); if (n) n.hidden = !on;
   document.body.toggleAttribute('data-rescue', on);
 }
+export async function reopenSession() {
+  if (await confirmSheet(tx('p435.session'), tx('p435.sessionConfirm'), tx('p435.session'))) start('restart_session', 'restart_session');
+}
 function paintSession() {
   const reset = el('rs-reset');
   if (!reset) return;
@@ -443,9 +446,7 @@ function paintSession() {
   if (!card) { card = node('li', 'rscard'); card.id = 'rs-session'; reset.after(card); }
   const F = S.restart_session;
   // @ix app.restart_session
-  const go = btn('rs-session-go', tx('p435.session'), '', async () => {
-    if (await confirmSheet(tx('p435.session'), tx('p435.sessionConfirm'), tx('p435.session'))) start('restart_session', 'restart_session');
-  });
+  const go = btn('rs-session-go', tx('p435.session'), '', reopenSession);
   go.disabled = FLOWS.some(f => S[f].st === 'run');
   const status = node('p', 'rsmsg', F.text || ''); status.setAttribute('role', 'status');
   card.replaceChildren(node('h4', 'rstitle', tx('p435.session')), node('p', 'rsnote', tx('p435.sessionNote')), acts(go), status);

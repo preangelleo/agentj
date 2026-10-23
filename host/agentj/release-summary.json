@@ -1,6 +1,6 @@
 {
-  "version": "0.25.3a1",
+  "version": "0.25.4a1",
   "major": false,
-  "zh": "记事本标题、正文与日期分开；附件栏可排序；修复服务商归属、终端菜单、升级回滚与隔离自检，支持 OpenCode 2。同步 iPhone 页面和席位修复。",
-  "en": "Separate note titles and dates, reorder composer tools, and fixes for providers, terminal menus, recovery and fenced self-checks. OpenCode 2 support."
+  "zh": "本机诊断导出、WSL 预检与技能入门；改进排队、升级自检和同主人好友投递，保留已上线图标。",
+  "en": "Local diagnostics, WSL preflight and skill onboarding; queue, upgrade-check and same-owner delivery fixes, plus the already-live action icons."
 }
