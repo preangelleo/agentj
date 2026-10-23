@@ -1,3 +1,4 @@
+import { authOf, paintAuth } from './authcard.js';
 import {phoneConfirmation} from './tvremote.js';
 // F17 (PROTOCOL §11): the sudo card and the secret card. The Agent asked for an admin password (to run one exact command)
 // or for an API key (to be saved on the computer); the human types it here into a masked field. It is sealed to the card's
@@ -84,7 +85,7 @@ function build() {
   // P406 #173: 「收起」 (down arrow) at every stage — the card leaves the screen, nothing is declined, the strip brings it back
   const hide = node('button', 'elev-hide', 'elev-hide'); hide.type = 'button';
   hide.append(chevron());
-  form.append(hide, node('p', 'elev-kicker', 'elev-kicker'), node('h2', 'elev-title'), node('dl', 'elev-rows', 'elev-rows'), bad, stale, vault, label, input,
+  form.append(hide, node('p', 'elev-kicker', 'elev-kicker'), node('h2', 'elev-title'), node('dl', 'elev-rows', 'elev-rows'), node('section', 'elev-auth', 'elev-auth'), bad, stale, vault, label, input,
     empty, opt, saveOpt, node('p', 'elev-note', 'elev-note'), node('p', 'elev-left', 'elev-left'), acts, deny);
   root.appendChild(form);
   document.body.appendChild(root);
@@ -136,6 +137,7 @@ export function add(m) {
   } else {
     c.name = str(m.name, 128); c.purpose = str(m.purpose, m.name === 'AGENTJ_MAIL_PASSWORD' ? 2000 : 300); c.dest = str(m.dest, 1100); c.verify = str(m.verify ?? '', 800);
     if (!c.name || c.purpose === null || c.dest === null || c.verify === null) return;
+    if (m.auth) { c.auth = authOf(m.auth); if (!c.auth) return; }
   }
   // ADR-A163: this device saved a passkey (F20) → 「同意」 needs Face ID. The host names our own credential id; the challenge
   // (card id + this arming's nonce + what is shown) is made now, so the tap can go straight to the system sheet.
@@ -160,6 +162,11 @@ export function add(m) {
   if (c.started && old?.watching && runShown === c.id && panelOpen) watch(c, true);   // a reconnect: ask again (a new session)
   if (old && shownId === m.id) { shownId = null; busy = false; }
   render();
+}
+/** Reopen a collapsed rescue card from the Settings page that still owns the flow. */
+export function reopenAuth() {
+  const c = [...cards.values()].find(c => c.auth);
+  if (c) { c.collapsed = false; render(); }
 }
 /** P414 (§37.10): `v` of a sudo / vshare card → {has, vs, vn} (vs / vn = 32-byte salts) or null. Pure. */
 export function vaultOf(v) {
@@ -256,7 +263,7 @@ function render() {
   const c = [...cards.values()].find((x) => !x.started && !x.collapsed);   // P406: running / collapsed ones live in the strip
   clearTimeout(timer);
   paintRun();
-  if (!c) { root.hidden = true; $('elev-input').value = ''; document.body.dataset.elev = '0'; shownId = null; return; }
+  if (!c) { root.hidden = true; $('elev-auth').replaceChildren(); $('elev-input').value = ''; document.body.dataset.elev = '0'; shownId = null; return; }
   document.body.dataset.elev = '1';
   if (shownId !== c.id) {
     shownId = c.id; busy = false;
@@ -269,6 +276,7 @@ function render() {
     root.classList.toggle('secret', c.kind === 'secret');
     $('elev-kicker').textContent = t(sudo ? 'elev.sudo.kicker' : vs ? 'p414.e.vsKicker' : 'elev.secret.kicker');
     $('elev-title').textContent = sudo ? t('elev.sudo.title') : vs ? t('p414.e.vsTitle', { name: c.name || c.dev }) : t('elev.secret.title', { name: c.name });
+    paintAuth($('elev-auth'), c.auth);
     const dl = $('elev-rows'); dl.replaceChildren();
     if (vs) {   // P414 (§37.11, M4): the requesting remote, as the digest covers it
       row(dl, t('p414.e.vsDev'), c.dev, 'mono');
@@ -347,8 +355,13 @@ function paintButtons() {
 }
 function paintLeft(c) {
   if (c.running) { recoverRunning(); $('elev-left').textContent = t('p392.executing'); return; }
-  const left = Math.max(0, Math.ceil((c.deadline - Date.now()) / 1000));
+  const deadline = c.auth ? Math.min(c.deadline, c.auth.expires_at * 1000) : c.deadline;
+  const left = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
   $('elev-left').textContent = left > 0 ? t('elev.left', { n: left }) : t('elev.timeUp');
+  if (c.auth) {
+    $('elev-left').textContent += ' · ' + t('ar.round', { n: c.auth.round, max: c.auth.rounds });
+    for (const n of $('elev-auth').querySelectorAll('a,button')) { if (!left) { n.removeAttribute('href'); n.setAttribute('aria-disabled','true'); if (n.tagName === 'BUTTON') n.disabled = true; } }
+  }
   if (left > 0) timer = setTimeout(() => { if (cards.get(c.id) === c) paintLeft(c); }, 1000);
 }
 

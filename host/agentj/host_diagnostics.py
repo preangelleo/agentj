@@ -37,7 +37,7 @@ def execute(st, req):
     from . import cloud, feedback, reconnect, support
     op = req.get("op")
     allowed = {
-        "diag": set(), "status": set(), "reconnect": {"session", "caller_session", "as_json"},
+        "diag": set(), "layout_last": set(), "status": set(), "reconnect": {"session", "caller_session", "as_json"},
         "support": {"kind", "text", "thread", "attach_doctor", "wait", "lang"},
         "thread": {"thread", "wait"}, "list": set(),
         "feedback_send": {"raw", "owner_confirmed"}, "feedback_replies": {"as_json"},
@@ -64,6 +64,9 @@ def execute(st, req):
             import json
             print(json.dumps(field_tools.collect(st, local=True)), file=out)
             rc = 0
+        elif op == "layout_last":
+            from . import layout_diag
+            rc = layout_diag.last(st, out)
         elif op == "status":
             from . import names
             import json

@@ -200,13 +200,21 @@ class State:
         key = (stt.st_ino, stt.st_size, stt.st_mtime_ns, stt.st_ctime_ns, _WRITES[0])
         hit = getattr(self, "_devices_cache", None)
         if hit is not None and hit[0] == key and time.monotonic() - hit[2] < self.DEVICES_TTL:
-            return copy.deepcopy(hit[1])
+            return self._live_devices(copy.deepcopy(hit[1]))
         try:
             d = json.loads(self.devices_path.read_text())
         except FileNotFoundError:
             return {}
         self._devices_cache = (key, d, time.monotonic())
-        return copy.deepcopy(d)
+        return self._live_devices(copy.deepcopy(d))
+
+    def _live_devices(self, devices):
+        from . import credential_revoke
+        try:
+            journal = credential_revoke.read(self)
+            return {k:v for k,v in devices.items() if not credential_revoke.blocked(self,k,v,journal)}
+        except (OSError, ValueError, TypeError):
+            return {}  # damaged tombstone journal fails closed
 
     @contextlib.contextmanager
     def devices_lock(self):
@@ -290,6 +298,11 @@ class State:
         replaced = evicted = None
         with self.devices_lock():
             d = self.devices()
+            from .security_rotation import read as rotation_state
+            rotation = rotation_state(self)
+            if rotation and not rotation.get('done') and did not in d:
+                if len(d) >= MAX_DEVICES or (iid and any(v.get('iid')==iid for v in d.values() if isinstance(v,dict))):
+                    raise DeviceLimit(len(d))  # P490: rescue remotes cannot be automatically replaced/evicted
             earlier = d.get(did)        # P179: the same device / browser pairing again keeps the name its owner gave it
             if did not in d and iid:
                 twin = next((k for k, v in d.items() if isinstance(v, dict) and v.get("iid") == iid), None)
@@ -439,11 +452,19 @@ class State:
     def set_passkey(self, pub: bytes, pk: dict) -> bool:
         """Store (or replace: one passkey per device) the passkey of the device with this static key, if still listed."""
         did = wire.device_id(pub)
+        from . import credential_revoke
+        if credential_revoke.blocked(self,did,{"pk":pk}):
+            return False
         with self.devices_lock():
             d = self.devices()
             rec = d.get(did)
             if not isinstance(rec, dict) or rec.get("pub") != wire.b64u(pub):
                 return False
+            if isinstance(rec.get("pk"),dict) and rec["pk"].get("id")!=pk.get("id"):
+                lineage=credential_revoke.ancestors(rec)|{credential_revoke.target(rec['pk'])}
+                if len(lineage)>credential_revoke.MAX_TARGETS: return False  # never forget an old grant to make room
+                credential_revoke.note_replaced(self,rec["pk"])
+                rec['pk_ancestors']=sorted(lineage)
             rec["pk"] = dict(pk)
             _write_private(self.devices_path, json.dumps(d, indent=1, ensure_ascii=False).encode())
         return True
@@ -461,7 +482,7 @@ class State:
             pk = rec.get("pk") if isinstance(rec, dict) else None
             if not isinstance(pk, dict) or pk.get("id") != cred_id or (new != old and new in d):
                 return None
-            rec = dict(rec, pub=wire.b64u(pub), sk=wire.b64u(sign_pub), seen=int(time.time()), pk=dict(pk))
+            rec = dict(rec, pair_origin=rec.get("pair_origin", old), pub=wire.b64u(pub), sk=wire.b64u(sign_pub), seen=int(time.time()), pk=dict(pk))
             rec.pop("rt", None)           # P122: the old context's renewal ticket dies with it; serve issues a new one
             if count:
                 rec["pk"]["sc"] = count
@@ -510,7 +531,7 @@ class State:
             rt = rec.get("rt") if isinstance(rec, dict) else None
             if not isinstance(rt, dict) or rt.get("i") != tid or (new != old and new in d):
                 return None
-            rec = dict(rec, pub=wire.b64u(pub), sk=wire.b64u(sign_pub), seen=int(time.time()), rt=dict(new_rt))
+            rec = dict(rec, pair_origin=rec.get("pair_origin", old), pub=wire.b64u(pub), sk=wire.b64u(sign_pub), seen=int(time.time()), rt=dict(new_rt))
             if iid:
                 rec["iid"] = iid
             else:

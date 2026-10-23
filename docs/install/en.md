@@ -335,7 +335,7 @@ It may need you here:
 The AI installs `agentj`, the program on the Agent J host, at one fixed version:
 
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.25.4a1#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.25.5a1#subdirectory=host"
 agentj doctor
 ```
 
@@ -539,3 +539,15 @@ First remote: use Add a remote on the account-page seat card, or run `agentj pai
 ## Upgrade an older installation
 
 On an ordinary host, first run `agentj update apply`, then check `agentj --version` and `agentj doctor`. Only when that command is unavailable or the old updater fails, copy the current install command from the account seat card and rerun it as the same OS user and instance. Keep configuration and bindings; do not unlink, delete state or create another seat. Olares Market applications still update through Market.
+
+## When an automatic upgrade fails {#upgrade-failed}
+
+If downloading, verification or installation preparation fails, Agent J reports that the previous version remains installed. Ask your Agent to run `agentj doctor` and check the cause. Keep your configuration, account binding and existing seat.
+
+After a rollback, a working old program counts as a successful rollback; any remaining service or health-check problem is reported separately and still needs attention. Older updaters gain these improvements only after installing the new version successfully. If an old updater cannot finish, rerun the current installation command from the original seat card as the same system user and instance, preserving configuration and bindings. Update Olares apps through Market.
+
+## If the AI cannot start for the first time {#first-ai-start}
+
+Keep the `AJ_START_*` diagnostic code for your Agent and ask it to run `agentj doctor --offline`. For a background-service environment problem, check the model proxy in phone Settings. After installing an AI command-line tool, run `agentj service install` to refresh the service configuration and check again.
+
+You can keep an existing Volcano Ark, Alibaba Bailian or Kimi account. Provider setup opens the phone key card directly and reuses saved keys rather than asking again. Wait for the card to confirm completion before switching models. Never send keys in chat.

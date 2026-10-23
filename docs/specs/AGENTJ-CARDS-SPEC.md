@@ -170,3 +170,32 @@ After first approval and ready, host sends encrypted `{t:"pair_guide",kind:"phon
 
 
 P474 — Official `notes` responses advertise `noteFields:true` with entries `{id,title,text,date,editable}`; title may be empty, migrated undated entries have an empty date. Paired `jcard_note` add/edit accepts optional `title` and ISO `date`; `text` is content only. Add defaults to the host local date, edit preserves omitted fields; explicit empty title clears it. CLI `--date` defaults to today on add/edit. Old devices omitting title/date remain compatible. New web clients enable title editing only when the host advertises noteFields. A first read migrates legacy leading dates after an exclusive byte-exact 0600 backup; cut/malformed input is refused. Other notebook templates retain byte-span edits and legacy fields.
+
+## P490 — credential incident control (candidate 0.25.5)
+
+Account owner endpoints: POST `/api/security/credentials/preview` and `/revoke` accept ≤32 public
+`{id|fingerprint,rp}` targets; revoke also requires `keep_id`, a current-RP credential freshly proven by the
+calling session. Account deletion is one transaction, retains that key, ends other sessions and clears add codes,
+WebAuthn challenges and pending P78 requests. Registration and new P78 requests recheck live sessions at write time.
+POST/GET `/api/hosts/:host/credential-revoke` requests/reads durable host revocation. POST
+`/api/hosts/:host/credential-preview`, GET `.../credential-preview/:id` maps locally; replies carry only
+fingerprints, fixed statuses and device short IDs. Unknown vs overwritten history cannot be inferred from a missing record.
+
+Host POST `/v1/host/credential-revoke`, context `agentj-credential-revoke-poll-v1`, signed existing host envelope:
+`{v:1,t:"credential_revoke",channel,ts,seq,epoch,results}`. Snapshot context `agentj-credential-revoke-v1`:
+`{v:1,host,seat,account,channel,seq,nonce,created_at,expires_at,epoch,fingerprints,queries}`; each target is
+`rp:sha256(raw credential ID)`. At most 256 persistent targets; ≤1 preview query per poll, ≤32 targets.
+The next host poll acknowledges the journal epoch only after removal/session cleanup. Expired envelopes are never applied;
+a new signed snapshot safely re-delivers the permanent targets. Same-epoch changes and epoch regression fail closed.
+P78 gains `epoch` when supported; a host with a nonzero epoch rejects earlier grants without that epoch.
+
+Phone controls `security_begin`, `security_verify`, `security_retire` sign `{epoch,keep}` as
+`epoch + "\n" + sorted(keep).join("\n")`. Each requires that remote's Ed25519 key and a fresh WebAuthn assertion
+using the existing elevate challenge with the action, nonce and object digest. `security_status` is a paired read.
+Verification requires a new device not in the start-time old set, a distinct passkey and an ordinary resumed connection.
+Retirement requires the calling verified device in the nonempty keep set; it removes only start-time old devices.
+## P489 — owner-local layout diagnostic
+
+A ready, allowlisted p33 device sends `{t:"layout_diag",r,sample}` through the existing Noise channel; host answers `{t:"layout_diag_res",r,ok,why?}` only after writing `<state>/layout-diagnostic-last.json` (0600, atomically replace last, 12288-byte cap). Fixed v1 fields/enum/numeric/CSS-colour schema in host `layout_diag.py`; no identifiers, raw UA, URL, storage, tickets or content. Host log: `layout_diag {status:"saved",bytes}` only. Five-second per-session limit, no Agent turn, no approval authority. `agentj diag layout --last` validates and reads; fenced callers use the existing host_diagnostics socket fixed `layout_last` operation.
+
+Old host compatibility: after 8 seconds without the new reply, the same ready session uploads the captured sample as `layout-diagnostic.json` using ordinary `blob_*` att frames. Existing inbox staging/30-minute expiry applies; no say/claim, no automatic Agent turn, no new host log or permanent file. UI labels temporary staging separately from dedicated persistence. No fallback across a changed Noise generation or host. Host-specific persistence/log/CLI ships with a later host release; B-only deploy includes only web assets.

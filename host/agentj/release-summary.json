@@ -1,6 +1,6 @@
 {
-  "version": "0.25.4a1",
+  "version": "0.25.5a1",
   "major": false,
-  "zh": "本机诊断导出、WSL 预检与技能入门；改进排队、升级自检和同主人好友投递，保留已上线图标。",
-  "en": "Local diagnostics, WSL preflight and skill onboarding; queue, upgrade-check and same-owner delivery fixes, plus the already-live action icons."
+  "zh": "通行密钥与遥控器安全重配、卡内 AI 登录救援、画面诊断持久保存；升级失败分类和 macOS 会话定位改进。",
+  "en": "Secure passkey/remote revocation, in-place AI sign-in rescue, persistent layout diagnostics and clearer upgrade failures; macOS pane recovery."
 }

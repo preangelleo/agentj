@@ -3,6 +3,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 
 
 HERDR_ENV = "AGENTJ_HERDR"
@@ -40,15 +41,20 @@ def _run(binary: str, *args: str) -> dict | None:
 
 
 def _pane_from_env(pid) -> str | None:
-    try:
-        with open(f"/proc/{int(pid)}/environ", "rb") as f:
-            env = f.read().split(b"\0")
-    except (OSError, TypeError, ValueError):
+    if type(pid) is not int or pid <= 0:
         return None
-    for kv in env:
-        if kv.startswith(b"HERDR_PANE_ID="):
-            return kv.split(b"=", 1)[1].decode(errors="replace") or None
-    return None
+    if sys.platform == "darwin":
+        from .term_mac import LIB
+        got = LIB.args(pid)  # kernel separates argv and env; never parse ps's combined display
+        env = got[1] if got else []
+    else:
+        try:
+            with open(f"/proc/{pid}/environ", "rb") as f:
+                env = f.read().decode(errors="replace").split("\0")
+        except OSError:
+            return None
+    panes = [kv.partition("=")[2] for kv in env if kv.startswith("HERDR_PANE_ID=")]
+    return panes[0] if len(panes) == 1 and panes[0] else None
 
 
 def _agents(binary) -> list[dict]:
@@ -61,17 +67,19 @@ def _agents(binary) -> list[dict]:
 def locate(session: dict, binary: str) -> tuple[str | None, str | None]:
     """(pane_id, herdr agent_status) for `session`, or (None, None)."""
     sid = session.get("sessionId")
-    agents = _agents(binary)
-    for a in agents:
-        s = a.get("agent_session") or {}
-        if sid and s.get("value") == sid and a.get("pane_id"):
-            return a["pane_id"], a.get("agent_status")
+    agents = [a for a in _agents(binary) if isinstance(a, dict) and a.get("pane_id")]
+    matches = [a for a in agents if sid and isinstance(a.get("agent_session"), dict)
+               and a["agent_session"].get("value") == sid]
+    if len(matches) > 1:
+        return None, None
     pane = _pane_from_env(session.get("pid"))
     if pane:
-        for a in agents:
-            if a.get("pane_id") == pane:
-                return pane, a.get("agent_status")
-        return pane, None
+        rows = [a for a in agents if a["pane_id"] == pane]
+        if len(rows) != 1 or (matches and matches[0]["pane_id"] != pane):
+            return None, None
+        return pane, rows[0].get("agent_status")
+    if matches:
+        return matches[0]["pane_id"], matches[0].get("agent_status")
     return None, None
 
 
@@ -90,6 +98,8 @@ def interrupt(session: dict) -> str:
         return BLOCKED
     if status in _QUIET:
         return IDLE
+    if status not in {"working", "busy", "running"}:
+        return UNAVAILABLE
     ok = _run(binary, "agent", "send-keys", pane, "esc") is not None
     return SENT if ok else UNAVAILABLE
 

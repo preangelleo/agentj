@@ -1,6 +1,6 @@
-# Agent J 0.25.4a1 release notes
+# Agent J 0.25.5a1 release notes
 
-Host 0.25.4a1 / install 0.27.4; phone-web scope.
+Host 0.25.5a1 / install 0.27.5; phone-web scope.
 Phone parity must pass --strict. Full Android/Telegram parity is incomplete.
 Full Android/Telegram parity is incomplete.
 No APK is included in this release. Android source is for review, not a released app.
@@ -8,33 +8,27 @@ No APK is included in this release. Android source is for review, not a released
 Publication status: local preparation only. Live site verification is DEFERRED until
 the public commit and tag are pushed, the site is deployed, and cold installation passes.
 
-On failure restore v0.25.3a1 host/site/phone and the captured Dashboard Worker version. Release order: C (Dashboard support, knowledge and installation guidance; no D1 migration), then A signed host/site/downloads then B phone web immediately after. No relay change. The eleven phone action icons are already live. Preserve local Notebook migration backups and newly edited notes on downgrade. Local preparation only; publication needs separate authorization. Physical iPhone/Android and native WSL acceptance are not claimed.
+Release order: C (additive app D1 migration 0036, then the Dashboard Worker; feedback database unchanged), then A signed host/site/downloads then B phone web immediately after. No relay change. Keep credential_revocations, host_credential_revocations, host_credential_epochs, epoch/ACK/seq and local credential_revocations.json/security_rotation.json permanently. Do not restore an older database snapshot or downgrade to a host/control plane that ignores revocations; repair forward. The 0.25.4 baseline is not a compatible host/control rollback. B-only phone rollback keeps the compatible host/control plane. Normal publication windows and recorded owner overrides still apply. Local preparation only; publication needs separate authorization. Physical iPhone/Android and native Mac Air/launchd acceptance are not claimed.
 ## Changes
 
-- Export a local diagnostic summary of fixed statuses and log event counts, for the owner to review before sharing.
-- Check WSL browser libraries and download reachability, and choose a first local draft task using setup estimates from installed skill receipts.
-- Stop the previous task manually from a queued message. A quiet notice appears after three minutes both queued and without earlier-task output; reloading starts a new observation.
-- After upgrades, repair missing core references in the existing work root, try the existing reconnection path and check again. Remaining tasks are distinguished from actual upgrade failures.
-- Support and bundled instructions now prefer agentj update apply, using the current same-seat install command only when the old updater is unavailable or fails.
-- Includes the eleven already-live outline action icons, preserving handlers and accessible labels.
-- Same-owner friend tasks no longer submit trusted host forwarding instructions as untrusted review input. Successful handovers notify the owner, and active older requests can recover their reply mapping.
-- Owner-facing replies retain public-chain-shaped addresses and transaction identifiers. Explicit credential labels and known key formats remain masked; an encoding alone does not prove a value is public.
-- Ambiguous Claude mise/asdf installs default to the highest executable stable numeric version while preserving the ambiguity notice and explicit selections.
-- Release tooling handles timezone-aware deadlines across midnight, checks its install interpreter early and keeps runtime evidence outside the repository.
-- Retain the already-live iPhone water-transition and bottom-safe-area colour fix during the combined release.
-- Recover cleanly from a failed first OpenCode start. The next message can retry, stale connection cleanup cannot overwrite a replacement session, and rescue reports recovery only when the AI adapter is ready.
-- 新增本机诊断导出，只包含固定状态和日志事件计数，主人审阅后自行决定是否分享。
-- 新增 WSL 浏览器依赖与下载入口预检，以及按已装技能依赖估计的入门顺序和首个本机草稿任务。
-- 排队消息可手动停下上一件；排队且前一件连续三分钟没有新输出时，显示静默提示，刷新后重新观察。
-- 升级后补齐已有工作根的身份引用、尝试恢复连接，再复检；区分真正升级失败与升级成功后的待办。
-- 客服、安装说明和内置升级技能统一先用 agentj update apply；旧更新器失败才重跑同一席位的当前安装命令。
-- 保留已上线的十一处线条图标，原有按钮行为和可访问标签不变。
-- 修复同主人好友任务投递时误审主机转交提示、缺少主人通知，以及部分有效旧请求无法回报的问题。
-- 主人通道保留公开链上编码形状的地址和交易标识，显式凭据、私钥标签及已知密钥格式仍遮挡；单凭形状无法证明一个值公开。
-- Claude mise/asdf 多版本缺省选择最高可执行的稳定数字版本，并保留歧义提示；明确选择仍优先。
-- 发布工具支持带时区的跨午夜截止时间，提前检查安装解释器，并将运行期证据保存在仓外。
-- 保留已上线的 iPhone 水位过渡与底部安全区连续色修复，避免整版升级回退网页。
-- 修复 OpenCode 首次启动失败后残留死进程的问题；下一条消息可重试，旧连接清理不会覆盖新会话，救援状态只在 AI 适配器真正就绪后恢复。
+- Create and verify new access before revoking exposed passkeys or old remotes. An offline computer remains pending until it reconnects and acknowledges.
+- Keep the latest phone layout diagnostic on the host and inspect it with agentj diag layout --last. It excludes chat text, URLs and tickets.
+- AI sign-in rescue cards show the official authorization link or device code, keep Settings open and recheck the current sign-in state.
+- Pre-install upgrade failures clearly retain the original version. Rollback results check whether the old program runs while preserving separate service and health diagnostics.
+- Locate a shared macOS Herdr conversation after compaction through its live pane identity. Unknown, conflicting or blocked targets remain protected.
+- Hosts remain available with clocks 30 seconds fast or slow. Revocation sync binds each signed request to a monotonic deadline and rejects timeouts and replayed responses.
+- Supported provider setup reuses the existing secret-card path. Startup failures provide fixed diagnostics and Ark, Bailian and Kimi options.
+- Security records suppress old-package force-install recovery commands. A refused security downgrade cannot be reported as a successful rollback.
+- Retain the already-live iPhone visible-water colour fix and diagnostic action. The original Mac Air pale band still needs a sample captured during the fault.
+- 先创建并验证新入口，再吊销泄露的通行密钥或旧遥控器；离线电脑回连确认前显示待处理。
+- 手机画面诊断在主机保留最近一份，可用 agentj diag layout --last 只读查看；不含聊天正文、网址或票据。
+- AI 登录救援卡显示官方授权链接或设备码，留在设置页完成操作，并重新检测当前登录状态。
+- 升级在安装前失败时明确仍是原版本；回滚结果以旧程序能否运行为据，同时保留独立的服务和健康诊断。
+- macOS 共享 Herdr 会话在压缩后按仍存活的面板身份定位；未知、冲突或阻塞目标保持拒绝操作。
+- 电脑时间快或慢30秒也能安全上线；吊销同步使用本次签名请求和单调时钟截止，超时及旧响应仍拒绝。
+- 服务商初始配置复用已有密钥卡入口；首次启动失败提供固定诊断及方舟、百炼、Kimi 选项。
+- 安全记录存在时不再生成旧包强制恢复命令，也不会把禁止降级误报成回滚成功。
+- 保留已上线的 iPhone 可见水体取色与画面诊断入口；原 Mac Air 浅色带原因仍待故障当刻诊断。
 
 ## Material acceptance limits
 

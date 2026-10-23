@@ -36,6 +36,7 @@ import re
 import shutil
 import subprocess
 import sys
+import shlex
 
 from . import opencode_provider as op
 
@@ -181,7 +182,7 @@ def card(plan: str = "coding") -> str:
     env_file = service.env_file(service.name())
     what = {"payg": "火山方舟 按量付费的 API Key（OpenCode 用）", "agent": "火山方舟 Agent Plan 专属 API Key（OpenCode 用；" + KEY_HINT["zh"] + "）"}.get(
         plan, "火山方舟 Coding Plan 的 API Key（OpenCode 用）")
-    c = f"agentj secret request --name {d['key_env']} --purpose '{what}' --dest env:{env_file}#{d['key_env']}"
+    c = f"agentj secret request --name {d['key_env']} --purpose '{what}' --dest {op.secret_dest(env_file, d['key_env'])}"
     if d.get("verify_url"):
         c += f" --verify-url {d['verify_url']} --verify-header '{op.HEADER['openai']}'"
     return c
@@ -277,14 +278,14 @@ def render(r: dict, lang: str = "zh") -> str:
                 ("已写入" if r["written"] else "（预演，未写入）") + f" {r['file']}：服务商 {r['provider']}（{len(r['models'])} 个模型），"
                 f"key 从环境变量 {r['key_env']} 读（这里不存 key）。")
         return "\n".join([head, f"能看图的模型：{eyes}；glm-5.3、deepseek-v4-pro 等是纯文本。{PRO_NOTE['zh']}", "接下来：",
-                          f"  1. {r['next'][0]}\n     （手机上弹出密钥卡，主人只把方舟控制台 {d['console_url']} 的 API Key 贴进卡片；Agent 看不到值）",
+                          f"  1. {r.get('key_card_message', r['next'][0])}\n     （手机上弹出密钥卡，主人只把方舟控制台 {d['console_url']} 的 API Key 贴进卡片；Agent 看不到值）",
                           f"  2. {r['next'][1]}", f"  3. {r['next'][2]}" + ("（这个模型能看图）" if r["vision"] else ""),
                           f"想用 Claude Code：`agentj provider ark --harness claude`。", "⚠ " + TERMS["zh"]])
     head = (f"{r['provider']} already exists in {r['file']}: your own configuration is kept unchanged." if r["kept"] else
             ("Written" if r["written"] else "(dry run, nothing written)") + f" {r['file']}: provider {r['provider']} "
             f"({len(r['models'])} models), key read from {r['key_env']} (no key stored here).")
     return "\n".join([head, f"Models that read images: {eyes}; glm-5.3, deepseek-v4-pro and others are text only.{PRO_NOTE['en']}",
-                      "Next:", f"  1. {r['next'][0]}\n     (a key card opens on the phone; the owner pastes the Ark API key there only)",
+                      "Next:", f"  1. {r.get('key_card_message', r['next'][0])}\n     (a key card opens on the phone; the owner pastes the Ark API key there only)",
                       f"  2. {r['next'][1]}", f"  3. {r['next'][2]}" + (" (this model reads images)" if r["vision"] else ""),
                       "For Claude Code: `agentj provider ark --harness claude`.", "⚠ " + TERMS["en"]])
 
@@ -298,7 +299,7 @@ def render_agent(r: dict, eyes: str, lang: str) -> str:
                 ("已写入" if r["written"] else "（预演，未写入）") + f" {r['file']}：服务商 {r['provider']}（方舟 Agent Plan …/api/plan/v3，"
                 f"{len(r['models'])} 个模型），key 从环境变量 {r['key_env']} 读（这里不存 key）。")
         return "\n".join([head, f"能看图的模型：{eyes}；glm-5.3、deepseek-v4-pro 等是纯文本。{MEDIUM_NOTE['zh']} 套餐（月）：{tiers}。", "接下来：",
-                          f"  1. {r['next'][0]}\n     （手机上弹出密钥卡，主人只把 {KEY_HINT['zh']} 贴进卡片；Agent 看不到值）",
+                          f"  1. {r.get('key_card_message', r['next'][0])}\n     （手机上弹出密钥卡，主人只把 {KEY_HINT['zh']} 贴进卡片；Agent 看不到值）",
                           f"  2. {r['next'][1]}", f"  3. {r['next'][2]}" + ("（这个模型能看图）" if r["vision"] else ""),
                           "还在用旧的 Coding Plan：`agentj provider ark --plan coding`。想用 Claude Code：`agentj provider ark --harness claude`。",
                           "⚠ " + TERMS_AGENT["zh"]])
@@ -307,7 +308,7 @@ def render_agent(r: dict, eyes: str, lang: str) -> str:
             f"(Ark Agent Plan …/api/plan/v3, {len(r['models'])} models), key read from {r['key_env']} (no key stored here).")
     return "\n".join([head, f"Models that read images: {eyes}; glm-5.3, deepseek-v4-pro and others are text only.{MEDIUM_NOTE['en']} "
                       f"Plans (monthly, CNY): {tiers}.", "Next:",
-                      f"  1. {r['next'][0]}\n     (a key card opens on the phone; the owner pastes {KEY_HINT['en']} there only)",
+                      f"  1. {r.get('key_card_message', r['next'][0])}\n     (a key card opens on the phone; the owner pastes {KEY_HINT['en']} there only)",
                       f"  2. {r['next'][1]}", f"  3. {r['next'][2]}" + (" (this model reads images)" if r["vision"] else ""),
                       "Still on the older Coding Plan: `agentj provider ark --plan coding`. For Claude Code: `agentj provider ark --harness claude`.",
                       "⚠ " + TERMS_AGENT["en"]])
@@ -319,13 +320,13 @@ def render_payg(r: dict, eyes: str, lang: str) -> str:
                 if r["kept"] else ("已写入" if r["written"] else "（预演，未写入）") +
                 f" {r['file']}：服务商 {r['provider']}（方舟按量付费 …/api/v3，{len(r['models'])} 个模型），key 从环境变量 {r['key_env']} 读（这里不存 key）。")
         return "\n".join([head, f"能看图的模型：{eyes}；deepseek、glm 是纯文本。其他已开通的模型：--model <模型 id>。", "接下来：",
-                          f"  1. {r['next'][0]}\n     （手机上弹出密钥卡，主人只把方舟控制台的 API Key 贴进卡片；卡片会用方舟的模型列表核对一次，Agent 看不到值）",
+                          f"  1. {r.get('key_card_message', r['next'][0])}\n     （手机上弹出密钥卡，主人只把方舟控制台的 API Key 贴进卡片；卡片会用方舟的模型列表核对一次，Agent 看不到值）",
                           f"  2. {r['next'][1]}", f"  3. {r['next'][2]}（先真实调用一次，通不了自动切回）", "ℹ " + PAYG_TERMS["zh"]])
     head = (f"{r['provider']} already exists in {r['file']}: kept" + (", only this model was added." if r["added_model"] else " unchanged.")
             if r["kept"] else ("Written" if r["written"] else "(dry run, nothing written)") +
             f" {r['file']}: provider {r['provider']} (Ark pay-as-you-go …/api/v3, {len(r['models'])} models), key read from {r['key_env']}.")
     return "\n".join([head, f"Models that read images: {eyes}; deepseek and glm are text only. Others you opened: --model <model id>.",
-                      "Next:", f"  1. {r['next'][0]}\n     (a key card opens on the phone, checked once against Ark's model list)",
+                      "Next:", f"  1. {r.get('key_card_message', r['next'][0])}\n     (a key card opens on the phone, checked once against Ark's model list)",
                       f"  2. {r['next'][1]}", f"  3. {r['next'][2]} (one real call first; on failure it switches back)", "ℹ " + PAYG_TERMS["en"]])
 
 
@@ -380,7 +381,9 @@ def switch(st, plan: str = DEFAULT_PLAN, model: str | None = None, dry_run: bool
         return {**base, "ok": False, "reason": "bad_model", "error": str(e)}
     has = (key or key_known)(d["key_env"], environ)
     if has is False:
-        return {**base, "ok": False, "reason": "need_key", "key_env": d["key_env"], "next": steps(model, plan)}
+        out = {**base, "ok": False, "reason": "need_key", "key_env": d["key_env"], "next": steps(model, plan)}
+        op.open_key_card(out, dry_run)
+        return out
     try:
         inst = install(model, environ=environ, plan=plan)
     except op.ProviderError as e:
@@ -430,6 +433,8 @@ def say_switch(r: dict, lang: str = "zh") -> str:
                      "\nThe Ark provider just added to OpenCode's config was removed again: the config is as before.")
         if r.get("next"):
             body += ("\n如果是 key 还没填：\n  " if zh else "\nIf the key is missing:\n  ") + "\n  ".join(r["next"])
+    if r.get("key_card_message"):
+        body = r["key_card_message"] + "\n" + body
     terms = (PAYG_TERMS if r.get("plan") == "payg" else PLAN_ONLY)["zh" if zh else "en"]
     if r.get("plan") == "agent":          # P395: the Agent Plan's own address
         terms = terms.replace("…/api/coding", "…/api/plan")
@@ -452,6 +457,11 @@ def cmd(a) -> int:
             if plan == "payg":
                 raise op.ProviderError("Claude Code 只接方舟的套餐地址（Anthropic 兼容）；按量付费请用 OpenCode")
             r = {"harness": "claude", "plan": plan, "model": _model(model, plan), "next": claude_steps(model, plan)}
+            if not a.dry_run:
+                from . import provider_profiles
+                pid = PROFILE_AGENT if plan == "agent" else PROFILE
+                declared = provider_profiles.define(pid, "claude", plan_data(plan)["anthropic_base"], r["model"])
+                r["next"] = [step.replace("<上一步打印的 key_destination>", shlex.quote(declared["key_destination"])) for step in r["next"]]
         else:
             r = install(model, a.dry_run, plan=plan)
     except op.ProviderError as e:
@@ -459,5 +469,6 @@ def cmd(a) -> int:
               file=sys.stdout if a.json else sys.stderr)
         return 2
     terms = {"payg": PAYG_TERMS, "agent": TERMS_AGENT}.get(plan, TERMS)
+    op.open_key_card(r, a.dry_run)
     print(json.dumps({"ok": True, **r, "terms": terms}, ensure_ascii=False) if a.json else render(r, lang))
     return 0

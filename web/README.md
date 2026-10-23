@@ -192,3 +192,9 @@ asked then). Tests: `test/p332.test.mjs` (web-unit), `test/p332.mjs` (gate `p332
 `ui.noticeSheet` is a buttonless centred glance (2 s); ASR readiness uses 1.8 s. Confirmations and retry actions retain their existing signed/action paths. `copycode.copyButton` and `copyFeedback` own all explicit copy controls: glyph, visible localized label, 1.5 s restoration and 1.8 s centred success/failure notice. Protected key and image writers keep their activation/approval contract. Clipboard values never enter feedback state. Reader copy stays in the reader. Audit and evidence: `test/p445.test.mjs`, `test/p445.mjs`, `reports/qa/p445`; related P292 and ASR regressions remain.
 
 P448: `public/controls.css` owns control-only selection/callout suppression and paired hover/active/focus/disabled colours. `js/control-gestures.js` delegates selectstart/contextmenu only for controls; content and editable fields retain selection. `test/p448.mjs` checks strict contrast and trusted touch gestures (390/1440 × zh/en × light/dark). No green/disabled contrast exception.
+
+## Layout diagnostic (P489 web hotfix on 0.25.4)
+
+Settings → Emergency repair → **Send layout diagnostic** (设置 → 紧急修复 → **发送画面诊断**). This sends a fixed, content-free viewport/colour sample over the paired encrypted channel. On0.25.4 hosts, wait for the explicit temporary-storage confirmation, then ask your Agent to read `.agentj/inbox/YYYY-MM-DD/*layout-diagnostic.json` in its working directory within30minutes. It does not start an Agent turn. Dedicated state persistence, metadata logging and `agentj diag layout --last` belong to the separate0.25.5 host candidate. No URL, storage, tickets, conversation text or session IDs are collected.
+
+设置 → 紧急修复 → **发送画面诊断**。看到“已暂存”后，请立即让 Agent 读取工作目录下 `.agentj/inbox/YYYY-MM-DD/*layout-diagnostic.json`；旧主机30分钟后自动清理。按钮不会自动发送聊天。主机永久保存、专用日志与只读查看命令留待0.25.5。

@@ -131,7 +131,7 @@ export async function mailAllowMessage(channel, device, id, tool, summary, picks
 }
 // ---------------------------------------------------------------- phone controls (PROTOCOL §8). Mirrors host/agentj/controls.py.
 export const CONTROL_CONTEXT = 'agentjarvis-control-v1';
-export const CONTROL_ACTIONS = ['mem_rm', 'mem_undo', 'estop', 'resume', 'task_on', 'task_off',
+export const CONTROL_ACTIONS = ['security_begin','security_verify','security_retire', 'mem_rm', 'mem_undo', 'estop', 'resume', 'task_on', 'task_off',
   'fr_set', 'pg_set', 'pg_del', 'fr_add', 'fr_discoverable', 'fr_card',          // §17.7 agent friends (0.16)
   'fr_ctx', 'update', 'bots_write', 'setup_mark', 'pair_new',               // P153: pair_new = a paired remote opens a pairing (§3.3)
   'dev_name', 'dev_unbind', 'dev_add', 'dev_confirm',                     // P171 (§24): the phone's 遥控器管理 page                                                         // P115: first-run checklist card                                                                       // P73: a friend's 「补充设定」
@@ -153,6 +153,7 @@ export function controlObject(action, o) {
   if (action === 'cards_get') return 'cards';
   if (action === 'pair_new') return 'start';
   if (action === 'setup_mark') return `${o.item}\n${o.choice}\n${o.rev}`;
+  if (['security_begin','security_verify','security_retire'].includes(action)) return `${o.epoch}\n${[...o.keep].sort().join('\n')}`;
   if (action === 'dev_name') return `${o.device}\n${o.name}`;
   if (action === 'agent_name') return String(o.name);
   if (action === 'mail_allow') return `${o.addr}\n${o.role}`;   // P207: address as sent \n owner | guest
@@ -336,7 +337,7 @@ export const SEAL_CONTEXT = 'agentjarvis-seal-v1';
 /** The texts the card shows, in the order the host hashes them. sudo: cmd, why, effect · secret: name, purpose, dest, verify. */
 export function elevateFields(c) {
   if (c.kind === 'sudo') return [c.cmd, c.why, c.effect || ''];
-  if (c.kind === 'secret') return [c.name, c.purpose, c.dest, c.verify || ''];
+  if (c.kind === 'secret') return [c.name, c.purpose, c.dest, c.verify || '', ...(c.auth ? ['kind','url','code','expires_at','round','rounds'].map(k => String(c.auth[k] ?? '')) : [])];
   if (c.kind === 'login') return [c.term];               // P408 (§38): the `r` of the pending term_open the password belongs to
   // P414 (M4, §38.11): the requesting remote's id, its passkey credential id, its pairing date (unix s), its flags (web, account)
   if (c.kind === 'vshare') return [c.dev, c.cred, String(c.paired), c.flags.join(',')];

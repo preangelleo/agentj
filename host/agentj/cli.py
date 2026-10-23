@@ -3607,7 +3607,7 @@ def main(argv=None) -> None:
     ob.set_defaults(fn=cmd_onboarding)
     a = p.parse_args(argv)
     from . import host_diagnostics
-    host_owned = a.cmd in ("status", "support", "feedback") or (a.cmd == "doctor" and a.reconnect)
+    host_owned = a.cmd in ("diag", "status", "support", "feedback") or (a.cmd == "doctor" and a.reconnect)
     host_owned = host_owned and host_diagnostics.agent_side()
     if not host_owned and a.cmd not in NO_MIGRATE and not (a.cmd == "report" and getattr(a, "action", None)) and a.cmd not in ("keep-awake", "browser") and not (a.cmd == "doctor" and a.isolation_only):
         from . import migrate

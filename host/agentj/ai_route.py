@@ -235,7 +235,7 @@ def ark_steps(lang: str) -> list[str]:
                 "Kimi K3 从 Medium 起才有，不够再升级。",
                 f"主人在方舟控制台 {a['console_url']} 用手机号注册火山引擎、完成实名，订阅 Agent Plan；key 在 {a['key_hint']['zh']}"
                 "（不要发到聊天里）。",
-                "你运行 `agentj provider ark`：把 Agent Plan 的模型写进 OpenCode 配置（已有的配置不动），并打印密钥卡命令；"
+                "你运行 `agentj provider ark`：把 Agent Plan 的模型写进 OpenCode 配置（已有的配置不动），并直接打开手机密钥卡；"
                 f"主人只把 key 粘贴进手机密钥卡（{a['key_env']}）。",
                 f"`agentj service restart`，然后 `agentj agent switch opencode --model {a['model']}`（能看图；方舟没有只读核对，"
                 "第一条回复就是核对）。想用 Claude Code：`agentj provider ark --harness claude`。还在用旧的 Coding Plan：加 `--plan coding`。",
@@ -245,7 +245,7 @@ def ark_steps(lang: str) -> list[str]:
             f"The owner signs up to Volcano Engine in the Ark console {a['console_url']} with a phone number, verifies their identity "
             f"and subscribes to the Agent Plan; the key is under {a['key_hint']['en']} (never paste it into chat).",
             "You run `agentj provider ark`: it adds the Agent Plan's models to OpenCode's config (existing settings untouched) and "
-            f"prints the key-card command; the owner pastes the key only into the phone's key card ({a['key_env']}).",
+            f"opens the phone key card; the owner pastes the key only into the phone's key card ({a['key_env']}).",
             f"`agentj service restart`, then `agentj agent switch opencode --model {a['model']}` (reads images; Ark has no "
             "read-only check, so the first reply is the check). For Claude Code: `agentj provider ark --harness claude`. "
             "Still on the older Coding Plan: add `--plan coding`.",
@@ -286,7 +286,7 @@ def bailian_steps(lang: str) -> list[str]:
     if lang == "zh":
         return [f"价格（个人版，按 Credits 计量）：{bailian.tiers_text('token-plan', 'zh')}。Standard 起可同时跑 3–4 个 Agent。",
                 f"主人在 {b['buy_url']} 订阅 Token Plan 个人版，在控制台「套餐专属 API Key」新建 key（不要发到聊天里）。",
-                "你运行 `agentj provider bailian`：把百炼写进 OpenCode 配置（已有的配置不动），并打印密钥卡命令；"
+                "你运行 `agentj provider bailian`：把百炼写进 OpenCode 配置（已有的配置不动），并直接打开手机密钥卡；"
                 f"主人只把 key 粘贴进手机密钥卡（{b['key_env']}）。",
                 f"`agentj service restart`，然后 `agentj agent switch opencode --model {b['model']}`"
                 f"（能看图，截图、浏览器自动化都用得上；省额度用 {b['model_light']}）。"
@@ -295,8 +295,8 @@ def bailian_steps(lang: str) -> list[str]:
     return [f"Prices (personal, metered in Credits): {bailian.tiers_text('token-plan', 'en')}. Standard and up run 3–4 Agents at once.",
             f"The owner subscribes to Token Plan (personal) at {b['buy_url']} and creates the plan's own API key in the console "
             "(never paste it into chat).",
-            "You run `agentj provider bailian`: it adds Bailian to OpenCode's config (existing settings untouched) and prints the "
-            f"key-card command; the owner pastes the key only into the phone's key card ({b['key_env']}).",
+            "You run `agentj provider bailian`: it adds Bailian to OpenCode's config (existing settings untouched) and opens the phone "
+            f"key card; the owner pastes the key only into the phone's key card ({b['key_env']}).",
             f"`agentj service restart`, then `agentj agent switch opencode --model {b['model']}` (reads images — screenshots and "
             f"browser work; lighter: {b['model_light']}). Alibaba's own Qwen Code works too: `agentj agent switch qwen` (same key).",
             "⚠ " + bailian.TERMS["en"]]

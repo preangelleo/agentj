@@ -30,9 +30,9 @@ export function paintIOSChrome() {
     const visible = ws && ws.display !== 'none' && ws.visibility !== 'hidden' && Number(ws.opacity) > 0
       && rect.height > 0 && rect.top < edge && rect.bottom >= edge - 1;
     const page = document.getElementById('chromeProbe');
-    const followsLayer = html.dataset.iosSafari === '1' || html.dataset.standalone === '1';
-    const candidate = (!followsLayer || visible) && water ? getComputedStyle(water).backgroundColor
-      : followsLayer && page && getComputedStyle(page).backgroundColor;
+    // CriOS shares the same page-owned band: hidden/zero water cannot supply its colour.
+    const candidate = visible && water ? ws.backgroundColor
+      : page && getComputedStyle(page).backgroundColor;
     if (/^(?:rgb\([^)]+\)|color\([^)]+\))$/.test(candidate)) bottom = candidate;
   }
   if (html.style.getPropertyValue('--ios-bottom') !== bottom) html.style.setProperty('--ios-bottom', bottom);

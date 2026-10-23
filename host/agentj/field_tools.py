@@ -154,6 +154,8 @@ def add_parser(sub):
     ex = sp.add_parser("export", help="本机 JSON，无原始日志 / local JSON, no raw logs")
     ex.add_argument("--output", default="agentj-diagnostic.json", help="新文件，禁止覆盖 / new file, never overwritten")
     diag.set_defaults(fn=command)
+    from . import layout_diag
+    layout_diag.add_parser(sub, diagnostics=sp)
     flight = sub.add_parser("preflight", help="WSL 浏览器系统库与下载预检 / WSL browser libraries and download preflight")
     flight.add_argument("--offline", action="store_true", help="跳过下载连通性 / skip download reachability")
     flight.set_defaults(fn=command)

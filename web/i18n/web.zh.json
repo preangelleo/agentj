@@ -2431,7 +2431,8 @@
       "refresh_pull": "保存草稿并更新刷新网页",
       "palette_copy": "复制色块 HEX",
       "stop_all": "停止所有 Agent（先确认）",
-      "restart_session": "重开 AI 会话（先确认）"
+      "restart_session": "重开 AI 会话（先确认）",
+      "layout_diagnostic": "发送画面诊断"
     },
     "keys": {
       "search": "在快捷键表里搜索：输入关键词，按说明、按键或手势筛选，中英文都行",
@@ -2566,7 +2567,8 @@
       "refresh_pull": "消息滚到顶部后继续下拉，看到「松开刷新」后松手；录音、附件或未提交卡片时不刷新",
       "palette_copy": "长按色块复制 HEX；移动手指取消",
       "stop_all": "点按钮后确认",
-      "restart_session": "点按钮后确认"
+      "restart_session": "点按钮后确认",
+      "layout_diagnostic": "点一下"
     },
     "keys": {
       "search": "点快捷键表右上角的放大镜",
@@ -2756,6 +2758,9 @@
   "p244.busy52": "第 4 层 · 汇报给 ",
   "ver.updated": "已更新到 {v}",
   "ar": {
+    "confirmTitle": "重新登录 AI",
+    "confirmStart": "开始重新登录",
+    "confirmTag": "需要本人确认",
     "nav": "AI 登录救援",
     "navNote": "Agent J 主机上的 AI 登录过期了？在手机上重新登录，不用回Agent J 主机。",
     "intro": "Agent J 主机上的 Claude Code / Codex 订阅登录过期时，Agent 就回不了话。在这里点「重新登录」：Agent J 主机运行官方登录命令，把授权链接或设备码发到手机；你在任何一台登录了该账号的设备上完成授权，新凭据只存在Agent J 主机上。之后Agent J 主机自动重启 AI、检查没有卡在任何确认界面、发一条测试消息拿到回复，才显示「已恢复」。",
@@ -2849,7 +2854,13 @@
     "kimiA": "重新登录（设备码）",
     "kimiNote": "Agent J 主机运行官方的 `kimi login`，给出一个链接和一次性设备码；在任何登录了你 Kimi 账号的设备上打开链接确认就完成了，不用回贴任何东西。按 `agentj agent kimi --region` 选的站登录（kimi.com 默认，kimi.ai 用 global）。",
     "kimiKey": "用 Kimi Code 控制台的 API key？让 Agent 发手机密钥卡（KIMI_API_KEY），不要把 key 发在对话里。",
-    "expAutoKimi": "Kimi 登录会自己续期，没有固定到期日：每天自动体检一次，失效马上提醒你。"
+    "expAutoKimi": "Kimi 登录会自己续期，没有固定到期日：每天自动体检一次，失效马上提醒你。",
+    "checkNow": "现在检查",
+    "checking": "正在检查当前登录…",
+    "cardStep": "在新打开的页面完成授权，再回到这里，把页面给出的授权码粘贴到这张卡里。",
+    "openCard": "打开授权码卡",
+    "unknown": "暂未确认登录状态",
+    "savedChecking": "已保存，正在实测 AI 能否回复…"
   },
   "p299.use": "怎么用：",
   "p299.useAny": "在聊天里输入 {cmd}，或者直接说你想做什么，Agent J 会自己用上它。",
@@ -4288,5 +4299,30 @@
   "p481": {
     "queueStuck": "上一件事已超过 3 分钟没有新输出，可以停下它再继续。",
     "stopPrevious": "停下上一件"
+  },
+  "p489": {
+    "send": "发送画面诊断",
+    "note": "画面有色带或错位时点一下。只把尺寸、颜色和用量发到你的 Agent J 主机，不含聊天内容。",
+    "sending": "正在发送…",
+    "saved": "画面诊断已保存到你的 Agent J 主机。",
+    "offline": "现在连不上你的 Agent J 主机。连接恢复后再试。",
+    "unsupported": "未收到保存确认。你的 Agent J 主机可能需要升级后才能接收画面诊断。",
+    "failed": "画面诊断没有保存成功，请稍后重试。",
+    "staged": "画面诊断已暂存到你的 Agent J 主机，30 分钟后会自动清理。请现在让 Agent 查看刚发的画面诊断。"
+  },
+  "p490": {
+    "title": "安全重配",
+    "guide": "先建立新遥控器，再验证，最后撤旧。请在未受影响的系统密码管理器或硬件钥匙中保存新通行密钥，不要恢复旧遥控器。",
+    "unsupported": "这台电脑需要升级后才能安全重配。",
+    "stage_new": "尚未开始",
+    "stage_verify": "等待新遥控器验证",
+    "stage_done": "旧遥控器已撤销",
+    "begin": "开始安全重配",
+    "verify": "验证这台新遥控器",
+    "retire": "撤销全部旧遥控器",
+    "preserve": "请在另一台设备新配对并创建新的通行密钥，重新连接后回到这里验证。满额时先保留本机终端救援入口，再手动腾出一个已核实的旧位置。",
+    "confirm": "撤销开始重配时已有的旧遥控器？所有已验证的新遥控器将保留。",
+    "count": "已验证 {n} 台新遥控器；剩余 {old} 台旧遥控器。",
+    "failed": "尚未完成。请确认这是新配对的遥控器，已建立新通行密钥并重新连接，再试一次。"
   }
 }

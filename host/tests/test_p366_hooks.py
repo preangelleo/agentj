@@ -704,19 +704,24 @@ class Pipeline(unittest.TestCase):
 
 class Cli(unittest.TestCase):
     def test_secret_out_file_and_env(self):
-        d = Path(tempfile.mkdtemp(dir=TEST_TMP))
-        p = hook_service._write_secret(f"file:{d}/a/x.secret", "S3", "hid")
-        self.assertEqual(Path(p).read_text(), "S3\n")
-        self.assertEqual(stat.S_IMODE(os.stat(p).st_mode), 0o600)
-        e = d / "app.env"
-        e.write_text("OTHER=1\nHOOK=old\n")
-        hook_service._write_secret(f"env:{e}#HOOK", "new", "hid")
-        self.assertEqual(e.read_text(), "OTHER=1\nHOOK=new\n")
-        self.assertEqual(hook_service._read_secret(str(e)), "new")
-        with self.assertRaises(SystemExit):
-            hook_service._write_secret(f"file:{os.environ['AGENTJ_STATE_DIR']}/x", "S", "hid")
-        with self.assertRaises(SystemExit):
-            hook_service._write_secret("s3://x", "S", "hid")
+        # This models a user home, even when the runner's outer /tmp happens to be a git worktree.
+        with tempfile.TemporaryDirectory(dir=TEST_TMP) as tmp, patch.dict(os.environ, {"HOME": tmp}):
+            d = Path(tmp)
+            p = hook_service._write_secret(f"file:{d}/a/x.secret", "S3", "hid")
+            self.assertEqual(Path(p).read_text(), "S3\n")
+            self.assertEqual(stat.S_IMODE(os.stat(p).st_mode), 0o600)
+            e = d / "app.env"
+            e.write_text("OTHER=1\nHOOK=old\n")
+            hook_service._write_secret(f"env:{e}#HOOK", "new", "hid")
+            self.assertEqual(e.read_text(), "OTHER=1\nHOOK=new\n")
+            self.assertEqual(hook_service._read_secret(str(e)), "new")
+            with self.assertRaises(SystemExit):
+                hook_service._write_secret(f"file:{os.environ['AGENTJ_STATE_DIR']}/x", "S", "hid")
+            with self.assertRaises(SystemExit):
+                hook_service._write_secret("s3://x", "S", "hid")
+            (d / "repo/.git").mkdir(parents=True)
+            with self.assertRaises(SystemExit):
+                hook_service._write_secret(f"file:{d}/repo/x.secret", "S", "hid")
 
     def test_parser_has_every_subcommand_and_the_two_routes(self):
         ap = argparse.ArgumentParser()

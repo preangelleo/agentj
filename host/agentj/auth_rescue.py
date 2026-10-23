@@ -44,6 +44,7 @@ import json
 import os
 import re
 import select
+import hashlib
 import signal
 import subprocess
 import sys
@@ -232,8 +233,41 @@ def service_env_path() -> str | None:
         return None
 
 
+def effective_auth_env() -> dict:
+    """Read only exact Claude auth names. Loaded environment.d and set-environment are reflected by the user manager;
+    the service EnvironmentFile overrides manager values. Values stay in memory, never in views/logs or metadata."""
+    from . import service
+    keys = (*OUTRANK, "CLAUDE_CODE_OAUTH_TOKEN")
+    result = {k: os.environ[k] for k in keys if k in os.environ}
+    from . import keys_found
+    # Reuse the existing no-follow/owner/size-checked source reader; no new credential parser or storage.
+    try:
+        folder = Path(keys_found.envd_dir())
+        fd = keys_found.open_dir(str(folder))
+        try:
+            names = sorted(n for n in os.listdir(fd) if n.endswith(".conf") and not n.startswith("."))[:64]
+        finally:
+            os.close(fd)
+        for n in names:
+            try:
+                values = keys_found.parse(keys_found.read_file(str(folder / n)))
+                result.update({k: values[k] for k in keys if k in values})
+            except (keys_found.Unsafe, OSError):
+                pass
+    except (keys_found.Unsafe, OSError):
+        pass
+    manager = keys_found.manager_env()
+    result.update({k: manager[k] for k in keys if k in manager})
+    path = service_env_path()
+    if path:
+        result.update(service.private_env(path, keys, "bad_claude_env"))
+    return result
+
+
 def harness_env(kind: str, extra: dict | None = None) -> dict:
     env = {k: v for k, v in os.environ.items() if not (kind == "claude" and k in CLAUDE_STRIP)}
+    if kind == "claude":
+        env.update(effective_auth_env())
     env["TERM"] = "xterm-256color"
     env.update(extra or {})
     return env
@@ -241,7 +275,7 @@ def harness_env(kind: str, extra: dict | None = None) -> dict:
 
 def conflicts(environ=None) -> list[str]:
     """Names (never values) of credentials that outrank CLAUDE_CODE_OAUTH_TOKEN for Claude Code."""
-    e = os.environ if environ is None else environ
+    e = effective_auth_env() if environ is None else environ
     names = [k for k in OUTRANK if e.get(k)]
     p = service_env_path()
     if p:
@@ -751,7 +785,7 @@ def next_mark(days_left: int, sent) -> int | None:
 
 def has_oauth_token() -> bool:
     """A CLAUDE_CODE_OAUTH_TOKEN is in effect (this process or the service env file) — names only, never the value."""
-    if os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
+    if effective_auth_env().get("CLAUDE_CODE_OAUTH_TOKEN"):
         return True
     p = service_env_path()
     if not p:
@@ -788,6 +822,8 @@ def health_check(kind: str, timeout: float = HEALTH_TIMEOUT) -> dict:
         return {"ok": False, "cls": None, "why": "no_binary"}
     env = {k: v for k, v in os.environ.items()
            if not k.startswith(_HEALTH_ENV_DROP) and not (kind == "claude" and k in CLAUDE_STRIP)}
+    if kind == "claude":
+        env.update(effective_auth_env())
     if kind == "kimi":                    # P305: no one-shot print mode — one ACP session in plan mode (agent_kimi.probe)
         from . import agent_kimi
         try:
@@ -931,6 +967,11 @@ class Rescue:
         self.flow: dict | None = None          # {"kind", "route", "stage", "url"?, "code"?, "expires_at"?, "obj"}
         self.last: dict[str, dict] = {}        # kind → {"result", "why"?, "at", "screen"?}
         self.cancel = threading.Event()
+        self.health_task = None
+        self.checking = False
+        self.credential_stamp = None
+        self.health_generation = 0
+        self.invalid_health = False
 
     # ---- helpers
     def lang(self) -> str:
@@ -993,12 +1034,14 @@ class Rescue:
             exe = binary(k)
             st = self.state.get(k, {})
             r = {"kind": k, "label": LABEL[k], "installed": bool(exe), "current": self.current() == k,
-                 "state": st.get("cls") or "ok", "routes": {"claude": ["setup_token", "paste", "login"],
+                 "state": "checking" if self.checking else "unknown" if self.invalid_health else st.get("cls") or "ok", "routes": {"claude": ["setup_token", "paste", "login"],
                                                              "codex": ["device"], "opencode": ["provider_key"],
                                                              "kimi": ["device"]}[k]}
             r["expiry"] = expiry_kind(k, meta)                   # P288: known / unknown / auto / none
             hc = health.get(k)
-            if isinstance(hc, dict):
+            if not self.checking and isinstance(hc, dict) and not hc.get("ok") and not st.get("cls"):
+                r["state"] = "unknown"
+            if isinstance(hc, dict) and not (self.checking or self.invalid_health):
                 r["health"] = {x: hc[x] for x in ("at", "ok", "cls") if x in hc}
             if k == "claude":
                 due = token_due(meta)
@@ -1010,14 +1053,14 @@ class Rescue:
                 except Exception:  # noqa: BLE001
                     pass
                 r["conflicts"] = conflicts()
-            if k in self.last:
+            if k in self.last and not (self.checking or self.invalid_health):
                 r["last"] = self.last[k]
             rows.append(r)
         f = self.flow
         flow = None
         if f:
             flow = {k: f[k] for k in ("kind", "route", "stage", "url", "code", "expires_at", "why", "round", "rounds",
-                                                 "reopened", "region")
+                                                 "reopened", "region", "saved")
                     if f.get(k) is not None}
         dot = any(r["state"] == "login" or r.get("warn") for r in rows)
         out = {"harnesses": rows, "flow": flow, "dot": dot}
@@ -1099,6 +1142,7 @@ class Rescue:
                 "新凭据只存在这台Agent J 主机上（0600）。需主人通行密钥批准。")
 
     def _end(self, kind, result, why=None, **extra):
+        self.credential_stamp = None  # recheck after any active flow that a foreground poll had to skip
         self.flow = {"kind": kind, "route": (self.flow or {}).get("route"), "stage": "done" if result == "recovered" else "failed",
                      **({"why": self.why(why, **extra.pop("fmt", {}))} if why else {})}
         self.last[kind] = {"result": result, "at": int(time.time()), **({"why": why} if why else {}), **extra}
@@ -1114,13 +1158,13 @@ class Rescue:
             url, code, ttl = await asyncio.to_thread(flow.start)
         except RescueError as e:
             return self._end("codex", "failed", e.args[0])
-        self.flow.update(stage="device", url=url, code=code, expires_at=int(time.time()) + ttl)
+        self.flow.update(stage="device", url=url, code=code, expires_at=int(time.time()) + ttl, round=1, rounds=1)
         self.broadcast()
         res = await asyncio.to_thread(flow.wait, self.cancel)
         if res != "ok":
             return self._end("codex", "failed", res)
         # P288: the CLI already wrote the new auth.json; a few-second live call decides. Failure → the previous bytes back.
-        self.flow.update(stage="verifying")
+        self.flow.update(stage="verifying", saved=True)
         self.broadcast()
         hc = await asyncio.to_thread(health_check, "codex")
         if not hc["ok"]:
@@ -1141,7 +1185,7 @@ class Rescue:
         res = await asyncio.to_thread(flow.wait, self.cancel)
         if res != "ok":
             return self._end("kimi", "failed", res if res != "device_disabled" else "failed")
-        self.flow.update(stage="verifying")
+        self.flow.update(stage="verifying", saved=True)
         self.broadcast()
         hc = await asyncio.to_thread(health_check, "kimi")
         if not hc["ok"]:
@@ -1169,6 +1213,7 @@ class Rescue:
             outcome: dict = {}
             res = await self._claude_round(flow, route, outcome)
             if res.get("result") == "saved":
+                self.flow["saved"] = True
                 return await self.recover("claude", route=route)
             if self.cancel.is_set():
                 return None                       # cancel_flow already ended it
@@ -1206,6 +1251,7 @@ class Rescue:
                           if self.lang() == "zh" else
                           "The authorization code from Claude's official page — paste it only into this card, never into chat",
                           sink)
+        card["auth"] = {k: self.flow.get(k, "") for k in ("kind", "url", "code", "expires_at", "round", "rounds")}
         try:
             return await self.host.elevate.request(card)
         finally:
@@ -1228,6 +1274,7 @@ class Rescue:
         res = await self.host.elevate.request(card)
         if res.get("result") != "saved":
             return self._end("claude", "failed", outcome.get("why") or "cancelled")
+        self.flow["saved"] = True
         await self.recover("claude", route="paste")
 
     def _card(self, name, purpose, sink) -> dict:
@@ -1329,6 +1376,9 @@ class Rescue:
             self._end(kind, "partial", "probe", screen={"answered": screen.get("answered", [])})
             self.host.agent_notice(self.t("partial", h=LABEL[kind], why=self.why("probe")))
             return {"ok": False, "why": "probe"}
+        self.health_generation += 1  # invalidate any daily/foreground call that began before this real reply
+        self._health_mark(kind, {"ok": True})
+        self.invalid_health = False
         self.clear(kind)
         extra = {"answered": screen.get("answered", [])}
         if note:
@@ -1414,6 +1464,72 @@ class Rescue:
         meta["health"] = h
         write_meta(self.host.st, meta)
 
+    def _credential_stamp(self):
+        # Only a memory-local digest. Login files contribute inode/timestamp metadata, never their contents.
+        h = hashlib.sha256(json.dumps(effective_auth_env(), sort_keys=True).encode())
+        paths = [Path(os.environ.get("CODEX_HOME") or os.path.expanduser("~/.codex")) / "auth.json",
+                 Path(os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude")) / ".credentials.json"]
+        paths.append(Path(os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude")) / "settings.json")
+        if sys.platform == "darwin":
+            keychains = Path.home() / "Library/Keychains"
+            paths.append(keychains)
+            # Native Claude /login uses Keychain; watch bounded metadata only, never read a Keychain value.
+            try:
+                paths.extend(sorted(keychains.glob("*.keychain*"))[:64])
+            except OSError:
+                pass
+        for p in paths:
+            try:
+                st = p.stat(follow_symlinks=False)
+                h.update(str((st.st_dev, st.st_ino, st.st_mtime_ns, st.st_ctime_ns, st.st_size, st.st_mode)).encode())
+            except OSError:
+                h.update(b"missing")
+        return h.digest()
+
+    async def refresh_health(self, force=True):
+        """Opening/manual check tests live; foreground polling detects replacements. One shared flight."""
+        current = await asyncio.to_thread(self._credential_stamp)
+        if self.health_task and not self.health_task.done():
+            return
+        if not force and current == self.credential_stamp:
+            return
+        self.checking = True
+        self.health_generation += 1
+        self.broadcast()
+        async def run():
+            nonlocal current
+            self.invalid_health = True
+            try:
+                for _ in range(3):
+                    generation = self.health_generation
+                    targets = await asyncio.to_thread(health_targets)
+                    for k in ("claude", "codex"):
+                        if k not in targets and await asyncio.to_thread(binary, k):
+                            targets.append(k)  # a stale detector saying signed out cannot suppress the check
+                    results = {}
+                    for k in targets:
+                        if self.flow and self.flow.get("kind") == k and self.flow.get("stage") not in ("done", "failed"):
+                            continue
+                        results[k] = await asyncio.to_thread(health_check, k)
+                    latest = await asyncio.to_thread(self._credential_stamp)
+                    if latest != current or generation != self.health_generation:
+                        current = latest
+                        continue  # stay checking; never paint the old conclusion between retries
+                    for k, res in results.items():
+                        self._health_mark(k, res)
+                        self.state.pop(k, None)
+                        if res.get("cls"):
+                            self.state[k] = {"cls": res["cls"], "at": int(time.time())}
+                    self.credential_stamp = current
+                    self.invalid_health = False
+                    return
+                self.credential_stamp = None  # rapid replacements: unknown until the next foreground poll
+            finally:
+                self.checking = False
+                self.broadcast()
+        bg = getattr(self.host, "_bg", None)
+        self.health_task = bg(run(), "auth_health") if bg else asyncio.create_task(run())
+
     async def health_daily(self, today: date | None = None, force: bool = False) -> dict:
         """Once a day: one tool-free call per signed-in harness. login → the rescue alert at once (dot + push);
         balance → the top-up hint; rate limit / a network failure → recorded only. A pass clears a stale login dot.
@@ -1430,7 +1546,11 @@ class Rescue:
         for kind in await asyncio.to_thread(health_targets):
             if self.flow and self.flow.get("kind") == kind and self.flow.get("stage") not in ("done", "failed"):
                 continue
+            revision = await asyncio.to_thread(self._credential_stamp)
+            generation = self.health_generation
             res = await asyncio.to_thread(health_check, kind)
+            if generation != self.health_generation or revision != await asyncio.to_thread(self._credential_stamp):
+                continue  # a late daily call cannot overwrite a newer login/manual check
             out[kind] = res
             self._health_mark(kind, res)
             try:

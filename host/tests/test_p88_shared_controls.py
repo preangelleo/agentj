@@ -118,7 +118,7 @@ class Controls(unittest.IsolatedAsyncioTestCase):
         self.a.native=None
         with patch.object(shared_controls,'send',return_value='no_exact_pane'):
             res=await self.a.command('clear','')
-        self.assertIn('no_exact_pane',res.text);self.assertEqual(res.kind,'error')
+        self.assertNotIn('no_exact_pane',res.text);self.assertIn('Claude Code',res.text);self.assertEqual(res.kind,'error')
         self.host.shared_clear.assert_not_called()
     async def test_explicit_new_selector_replaces_an_older_clear_redirect(self):
         self.a.clear_pin=OLD;self.host.st.agent_session.return_value='previous-selection'

@@ -51,7 +51,7 @@ class Autonomy(unittest.TestCase):
     def test_defaults_and_identity(self):
         self.assertFalse(preferences.get(preferences.defaults(),'agent.high_risk_warnings'))
         self.assertEqual(preferences.get(preferences.defaults(),'agent.session_mode'),'independent')  # P174
-        self.assertEqual(main_identity.verify_core()['version'],19)   # P156: v11; P244: v12
+        self.assertEqual(main_identity.verify_core()['version'],20)   # P156: v11; P244: v12
         self.assertIn('without extra approvals',main_identity.prompt({'language':'en'}))
     def test_high_risk_shared_call_adds_no_decision(self):
         # P198: F14's "native only" is now the owner's explicit agent.approvals = native (the default asks: test_p198)

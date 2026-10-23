@@ -30,7 +30,7 @@ test('P459m safe-area paint cannot cover editor controls and observes actual wat
  const band=css.match(/html\[data-ios="1"\] \.sabband\{([^}]+)\}/)?.[1];
  assert.ok(band);assert.match(band,/z-index:0/);assert.match(band,/height:var\(--ios-safe-bottom\)/);
  assert.ok(css.includes('html[data-ios="1"] .water{background:var(--water-color)}'));
- assert.match(js,/getComputedStyle\(water\).backgroundColor/);
+ assert.match(js,/ws.backgroundColor/); // P489 reuses the computed style used for visibility.
  assert.match(js,/waterWatch.observe\(water/);
  assert.doesNotMatch(css,/\.satband::after/,'no extra seam extends into content');
  assert.ok(css.includes('html[data-ios="1"] .ptt{bottom:auto;top:var(--vvtop,0px);height:var(--vvh,100dvh)}'),'recording bottom follows the visual viewport above the keyboard');

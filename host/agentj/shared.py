@@ -1193,7 +1193,8 @@ class SharedClaudeAgent(Agent):
                 from .shared_controls import send
                 why = await asyncio.to_thread(send, self.session, text)
                 if why != 'sent':
-                    return Result(pick(getattr(self.host, "lang", "zh"), "没清成：桌面终端未提供安全输入通道（" + why + "）；请在所选终端运行 /" + name + "。", "No change: the desktop terminal has no safe input channel (" + why + "); run /" + name + " in the selected terminal."), "error")
+                    self.host.st.log("shared_control_failed", command=name, reason=why)
+                    return Result(pick(getattr(self.host, "lang", "zh"), "没清成：无法安全控制这段桌面对话。请在电脑上当前的 Claude Code 终端运行 /" + name + "；以后可在手机设置中把「会话模式」改为「独立会话」，由 Agent J 管理新会话。", "No change: this desktop conversation cannot be controlled safely. Run /" + name + " in its Claude Code terminal on the computer; for future phone controls, choose Use a separate session in Settings so Agent J manages the new session."), "error")
             try:
                 await asyncio.wait_for(self.control_ack.wait(), CONTROL_WAIT)
             except asyncio.TimeoutError:

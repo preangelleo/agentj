@@ -152,8 +152,10 @@ class Owner(_Base):
         en = sh.reason_text(g["reason"], "opencode", "en", line=g["line"])
         self.assertIn("OpenCode 原话：provider.auth 401 User not found.", zh)
         self.assertIn("OpenCode said: provider.auth 401 User not found.", en)
-        self.assertEqual(sh.reason_text("native_failed", "opencode", "zh"),
-                         sh.REASON["zh"]["native_failed"].format(x="OpenCode"))     # no line → as before
+        text = sh.reason_text("native_failed", "opencode", "zh")
+        self.assertTrue(text.startswith(sh.REASON["zh"]["native_failed"].format(x="OpenCode")))
+        self.assertIn("AJ_START_OPENCODE_NATIVE_FAILED", text)
+        self.assertIn("agentj provider bailian", text)
 
     def test_receipt_and_scan_texts_carry_the_line(self):
         import time as _t

@@ -37,6 +37,7 @@ ACTIONS = ("mem_rm", "mem_undo", "estop", "resume", "task_on", "task_off",
 FRIEND_ACTIONS = ACTIONS[6:]
 ACTIONS += ("update", "bots_write", "setup_mark")   # P115: the first-run checklist card (first_run.py)
 ACTIONS += ("pair_new",)                             # P153: a paired remote opens a pairing for another one (§3.3)
+ACTIONS += ("security_begin", "security_verify", "security_retire")
 ACTIONS += ("dev_name", "dev_unbind", "dev_add", "dev_confirm")   # P171 (§24): the phone's 遥控器管理 page (remotes.py)
 ACTIONS += ("agent_name",)          # P181 (§22.2): long-press the Agent's name in the reply card header → rename (names.py)
 ACTIONS += ("cards_get",)           # P203 (§29.1): the signed read of every open card (a snapshot, changes nothing)
@@ -97,6 +98,8 @@ def object_text(action: str, obj: dict) -> str:
         return "cards"
     if action == "pair_new":
         return "start"
+    if action in ("security_begin", "security_verify", "security_retire"):
+        return str(obj["epoch"])+"\n"+"\n".join(sorted(obj["keep"]))
     if action == "dev_name":         # P171: device id \n new name
         return f"{obj['device']}\n{obj['name']}"
     if action == "dev_unbind":

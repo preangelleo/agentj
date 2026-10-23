@@ -1721,6 +1721,14 @@ button.setval.setwide::after{content:"⇄";color:var(--text-muted)}
 button.setval.setwide:hover{border-color:var(--text-muted)}
 #set-hb-every:disabled { opacity:.45; }                     /* P156 heartbeat interval when off */
 
+/* P492: the existing rescue approval stays above the original Settings position. */
+.auth-approval.scrim{position:fixed;inset:0;z-index:50}
+.auth-approval.sheet{position:fixed;left:0;right:0;bottom:0;z-index:51;max-height:85dvh;width:min(100%,720px);margin:auto}
+.elev-auth{margin-block:var(--sp-3);overflow-wrap:anywhere}
+.elev-auth p{margin-block:var(--sp-2)}
+.elev-auth .mailbtns{display:flex;flex-wrap:wrap;gap:var(--sp-2)}
+.elev-auth .aj-btn{min-height:48px}
+
 /* F17 (§11): the sudo / secret card — a modal above everything; the exact command / destination in mono, a masked field */
 .ajmodal.elev{z-index:60}
 .elev .elev-kicker{margin:0 0 var(--sp-1);font:500 calc(12px*var(--fz))/1.2 var(--font-title);letter-spacing:.06em;color:var(--accent,var(--text-muted))}

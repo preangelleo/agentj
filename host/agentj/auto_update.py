@@ -426,7 +426,7 @@ def _finish(st, result):
 
 
 def notice(r, lang='zh', prefs=None):
-    from . import humane
+    from . import humane, upgrade_diag
     if r.get('result') == 'ok' and r.get('when') == 'idle':
         return (f"Updated automatically while idle to {r['to']} ({r.get('summary_en') or 'latest published fixes'})." if lang == 'en' else
                 f"Agent J 主机空闲时已自动升级到 {r['to']}（{r.get('summary') or '安装最新正式发布的改进'}）。")
@@ -437,7 +437,11 @@ def notice(r, lang='zh', prefs=None):
         return humane.say('update.auto_rollback', lang, prefs, **{'from': r['from'], 'reason': r['reason']})
     text = (f"Automatic update did not complete ({r['reason']}); run agentj doctor." if lang == 'en' else
             f"自动升级未完成，原因：{r['reason']}；请运行 agentj doctor。")
-    if r.get('recover'):
+    if upgrade_diag.install_unchanged(r):
+        frm = r.get('from') or __version__
+        return (f"Automatic update did not complete ({r['reason']}); still on {frm}, working as before." if lang == 'en' else
+                f"自动升级未完成，原因：{r['reason']}；Agent J 主机仍是 {frm}，照常可用。")
+    if r.get('reason') == 'rollback_failed' and r.get('recover'):
         text += (" Rollback also failed; restore the previous version: " if lang == 'en' else
                  " 回滚也没成功；请运行这一条装回原版本：") + r['recover']
     return text
@@ -473,7 +477,7 @@ def fixed_reasons():
     from . import upgrade_diag
     return {'install_failed', 'version_mismatch', 'restart_failed', 'upgrade_self_check_failed', 'worker_interrupted',
             'artifact_hash_mismatch', 'artifact_signature_mismatch', 'artifact_identity_mismatch', 'unsupported_install',
-            'upgrade_cache_unreadable', *upgrade_diag.CATEGORY.values(), 'read_only_filesystem'}
+            'upgrade_cache_unreadable', 'revocation_downgrade_blocked', *upgrade_diag.CATEGORY.values(), *upgrade_diag.REASON_WORDS}
 
 
 def failure_reason(e, d):
@@ -512,6 +516,8 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
     def install(wheel, *, diagnose=True):
         # A rollback (diagnose=False) records into its own `rb` dict: the first failure's evidence in `diag` stays intact.
         d = diag if diagnose else rb
+        from .credential_revoke import require_compatible_version
+        require_compatible_version(st, job['to'] if diagnose else job['from'])
         p = Path(wheel)
         try:
             rec = json.loads(p.with_suffix('.verified.json').read_text())
@@ -525,6 +531,8 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
         if str(p) == job.get('new') and minisign.verify(data, rec.get('signature', ''), minisign.keyring('release')) != f"agentj-host/v1 version={job['to']} sha256={digest}":
             raise ValueError('artifact_signature_mismatch')
         cmds = (recovery_commands(job['install'], wheel) if not diagnose else install_commands(job['install'], wheel))
+        if diagnose:
+            save('installing')  # Validation/refusal above has not changed installed files.
         for argv in cmds:
             from .upgrade_diag import tail
             if diagnose:
@@ -603,9 +611,9 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
                 return None
             info = update.install_kind()
             # No checkout git pulls or other owner code changes during unattended updates.
-            install_commands(info, '/unused.whl')
             job = {'attempt': secrets.token_hex(16), 'from': __version__, 'to': latest['latest'], 'install': info,
                    'argv': update.new_argv(info), 'when': 'idle' if read(st).get('decision') == 'idle' else 'night'}
+            install_commands(info, '/unused.whl')
             # Rollback old releases predate artifact signatures; retain hash-verified wheel.
             old = cache(st, job['from'], require_signature=False)
             job['old'] = str(old)
@@ -634,7 +642,6 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
                 if not ready or not ready.get('ready'):
                     save('done')
                     return None
-            save('installing')
             install(job['new'])
             save('installed')
         elif job['phase'] == 'installing':
@@ -646,30 +653,32 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
             save('done')
             return result
         if job['phase'] == 'rollback':
-            raise ValueError(job.get('failure', 'worker_interrupted'))
+            raise ValueError(upgrade_diag.category(job.get('failure', 'worker_interrupted')))
     except Exception as e:
         # Exception details may contain URLs or owner content: fixed codes only.
-        reason = str(e) if isinstance(e, ValueError) and str(e) in fixed_reasons() else type(e).__name__
-        result = {'attempt': job.get('attempt'), 'from': job.get('from', __version__), 'to': job.get('to'), 'result': 'failed', 'reason': reason}
+        reason = str(e) if isinstance(e, ValueError) and str(e) in fixed_reasons() else upgrade_diag.category(e)
+        result = {'attempt': job.get('attempt'), 'from': job.get('from', __version__), 'to': job.get('to'), 'result': 'failed', 'reason': reason,
+                  'phase': job.get('phase')}
         if reason == 'install_failed':
             reason = diag.get('failure') or 'uv_failed'
         elif not isinstance(e, ValueError):
             reason = upgrade_diag.category(e)
+        if reason in ('unknown', 'ValueError'):
+            reason = 'uv_failed' if job.get('phase') in ('installing', 'rollback') else (
+                'self_check_failed' if job.get('phase') == 'installed' else upgrade_diag.plan_reason(e))
         result['reason'] = reason
         diag['failure'] = reason
         diag.setdefault('step', 'service' if reason in ('restart_failed', 'service_restart_failed') else {
             None: 'download', 'prepared': 'download', 'installing': 'install', 'installed': 'verify'}.get(job.get('phase'), 'install'))
-        # The old wheel's owner-local command is available even if rollback/verification fails.
-        if job.get('old'):
-            result['recover'] = ' && '.join(command_line(c) for c in recovery_commands(job['install'], job['old']))
         if job.get('phase') in ('installing','installed','rollback'):
+            # Owner-local fallback only after installation was attempted; never imply a rollback before it.
+            if job.get('old') and not any((st.root/n).exists() for n in ('credential_revocations.json','security_rotation.json')):
+                result['recover'] = ' && '.join(command_line(c) for c in recovery_commands(job['install'], job['old']))
             job['failure'] = reason
             job['diagnostic'] = dict(diag)
             save('rollback')
-            rb_step = 'install'
             try:
                 install(job['old'], diagnose=False)
-                rb_step = 'verify'
                 verify(job['from'], diagnose=False)
                 result['result'] = 'rolled_back'
                 if service_recovery.service.status().get('active') == 'active':
@@ -681,7 +690,7 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
                 diag['rollback_failure'] = failure_reason(r_e, rb)
                 if rb.get('stderr_tail'):
                     diag['rollback_tail'] = rb['stderr_tail']
-                if rb_step == 'install' and installed_is(job.get('argv'), job.get('from'), runner):
+                if str(r_e) != 'revocation_downgrade_blocked' and installed_is(job.get('argv'), job.get('from'), runner):
                     result['result'] = 'rolled_back'
                     diag['rollback_check'] = 'version_unchanged'
                 else:

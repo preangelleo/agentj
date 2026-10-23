@@ -674,7 +674,8 @@ class OpenCodeAgent(Agent):
         text = ("OpenCode is not ready to open this conversation. Your message was not delivered. Try Reopen AI session, then send again."
                 if getattr(self.host, "lang", "zh").startswith("en") else
                 "OpenCode 还没准备好，无法打开这段对话；这条消息没有交给它。请点「重开 AI 会话」，完成后再发消息。")
-        self.fail_notice(text, recovery=True)
+        from .startup_help import guidance
+        self.fail_notice(text + "\n" + guidance("opencode", phase, getattr(self.host, "lang", "zh")), recovery=True)
 
     def _delivery_uncertain(self):
         self.host.st.log("agent_delivery_uncertain", agent=self.kind, phase="prompt", code="transport_error")
@@ -685,7 +686,9 @@ class OpenCodeAgent(Agent):
     async def _spawn(self) -> bool:
         if not _bin("AGENTJ_OPENCODE_BIN", "opencode"):
             self.failed_start = True
-            self.fail_notice("这台Agent J 主机上没找到 OpenCode（opencode 命令）。装好并配好模型后再试。")
+            from .startup_help import guidance
+            self.fail_notice("后台环境里没找到 OpenCode（opencode 命令）/ OpenCode executable missing in the background environment.\n" +
+                             guidance("opencode", "launch", getattr(self.host, "lang", "zh")))
             return False
         from .harness import version_of, opencode_v2
         version = await asyncio.to_thread(version_of, _bin('AGENTJ_OPENCODE_BIN', 'opencode'))

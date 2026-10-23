@@ -2247,7 +2247,7 @@ agentj diag --help
 ```
 
 ```text
-usage: agentj diag [-h] {export} ...
+usage: agentj diag [-h] {export,layout} ...
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -2272,6 +2272,25 @@ usage: agentj diag export [-h] [--output OUTPUT]
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--output` | `"agentj-diagnostic.json"` | false | — | `new file, never overwritten` |
+
+### agentj diag layout
+
+```text
+layout geometry and colours
+```
+
+```bash
+agentj diag layout --help
+```
+
+```text
+usage: agentj diag layout [-h] --last
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--last` | `false` | true | — | `read the latest sample` |
 
 ### agentj docs-rule
 
@@ -8891,7 +8910,7 @@ agentj diag --help
 ```
 
 ```text
-usage: agentj diag [-h] {export} ...
+usage: agentj diag [-h] {export,layout} ...
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -8916,6 +8935,25 @@ usage: agentj diag export [-h] [--output OUTPUT]
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--output` | `"agentj-diagnostic.json"` | false | — | `新文件，禁止覆盖` |
+
+### agentj diag layout
+
+```text
+画面几何与颜色
+```
+
+```bash
+agentj diag layout --help
+```
+
+```text
+usage: agentj diag layout [-h] --last
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--last` | `false` | true | — | `只读查看最近一次` |
 
 ### agentj docs-rule
 

@@ -108,7 +108,7 @@ def steps(name: str, model: str | None = None) -> list[str]:
     p = plan(name)
     env_file = service.env_file(service.name())
     card = (f"agentj secret request --name {p['key_env']} --purpose '阿里百炼 {LABEL[name]} 的专属 key（OpenCode 用）' "
-            f"--dest env:{env_file}#{p['key_env']}")
+            f"--dest {op.secret_dest(env_file, p['key_env'])}")
     if p.get("verify_url"):
         card += f" --verify-url {p['verify_url']}"
     return [card, f"agentj agent switch opencode --model {p['provider']}/{model or p['model']}"]
@@ -157,14 +157,14 @@ def render(r: dict, lang: str = "zh") -> str:
                 ("已写入" if r["written"] else "（预演，未写入）") + f" {r['file']}：服务商 {r['provider']}（{len(r['models'])} 个模型），"
                 f"key 从环境变量 {r['key_env']} 读（这里不存 key）。")
         lines = [head, f"价格：{tiers_text(r['plan'], 'zh')}", "接下来：",
-                 f"  1. {r['next'][0]}\n     （手机上弹出密钥卡，主人只把百炼控制台「套餐专属 API Key」贴进卡片；Agent 看不到值）",
+                 f"  1. {r.get('key_card_message', r['next'][0])}\n     （手机上弹出密钥卡，主人只把百炼控制台「套餐专属 API Key」贴进卡片；Agent 看不到值）",
                  f"  2. {r['next'][1]}" + ("（这个模型能看图：截图、浏览器自动化都能用）" if r["vision"] else ""), "⚠ " + terms(r.get("plan"), "zh")]
     else:
         head = (f"{r['provider']} already exists in {r['file']}: your own configuration is kept unchanged." if r["kept"] else
                 ("Written" if r["written"] else "(dry run, nothing written)") + f" {r['file']}: provider {r['provider']} "
                 f"({len(r['models'])} models), key read from {r['key_env']} (no key stored here).")
         lines = [head, f"Prices: {tiers_text(r['plan'], 'en')}", "Next:",
-                 f"  1. {r['next'][0]}\n     (a key card opens on the phone; the owner pastes the plan's own API key there only)",
+                 f"  1. {r.get('key_card_message', r['next'][0])}\n     (a key card opens on the phone; the owner pastes the plan's own API key there only)",
                  f"  2. {r['next'][1]}" + (" (this model reads images: screenshots, browser work)" if r["vision"] else ""), "⚠ " + terms(r.get("plan"), "en")]
     if r.get("plan") == "token-plan":   # P311: the media kit runs on the same Token Plan key
         lines.append("装好后可以说「装千问自媒体工具」：出图、出片、配音。" if lang == "zh" else
@@ -180,6 +180,7 @@ def cmd(a) -> int:
         print(json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False) if a.json else f"没有改：{e}",
               file=sys.stdout if a.json else sys.stderr)
         return 2
+    op.open_key_card(r, a.dry_run)
     print(json.dumps({"ok": True, **r, "terms": TERMS}, ensure_ascii=False) if a.json else render(r, lang))
     return 0
 

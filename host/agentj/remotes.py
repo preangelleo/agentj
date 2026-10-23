@@ -76,7 +76,8 @@ class Remotes:
         from . import remote_pair
         p = h.pairing
         mine = bool(p and getattr(p, "phone", None) == s.device)
-        return {"limit": MAX_DEVICES, "items": rows(h.st, h._online(), s.device),
+        from .security_rotation import view
+        return {"security_rotation": True, "security_stage": view(h.st)["stage"], "limit": MAX_DEVICES, "items": rows(h.st, h._online(), s.device),
                 "can_add": remote_pair.enabled(h.st), "busy": bool(p) and not mine}
 
     async def push_list(self) -> None:

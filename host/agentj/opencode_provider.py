@@ -19,6 +19,7 @@ import json
 import os
 import re
 import sys
+import shlex
 from urllib.parse import urlparse
 
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,39}$")
@@ -155,6 +156,11 @@ def add(pid: str, base_url: str, models: list[str], api: str = "openai", name: s
             "written": not dry_run, "vision": [f"{pid}/{m}" for m in models if b["models"][m].get("attachment") is True], "next": next_steps(pid, var, b["options"]["baseURL"], api, models[0])}
 
 
+def secret_dest(path: str, var: str) -> str:
+    dest = f"env:{path}#{var}"
+    return dest if re.fullmatch(r"[A-Za-z0-9_./:#-]+", dest) else shlex.quote(dest)
+
+
 def next_steps(pid: str, var: str, base_url: str, api: str, model: str) -> list[str]:
     from . import service
     env_file = service.env_file(service.name())
@@ -196,6 +202,40 @@ def listing(environ=None) -> list[dict]:
     return out
 
 
+def open_key_card(result: dict, dry_run: bool = False) -> None:
+    """Execute the generated secret request through the existing local card channel, never a shell."""
+    if dry_run:
+        return
+    import shlex
+    from . import elevate
+    from .state import State
+    command = next((c for c in result.get("next", []) if c.startswith("agentj secret request ")), None)
+    if not command:
+        return
+    parser = argparse.ArgumentParser()
+    elevate.add_parser(parser.add_subparsers(dest="command"))
+    args = parser.parse_args(shlex.split(command)[1:])
+    if result.get("kept") and result.get("provider"):
+        from .provider_runtime import key_name
+        if key_name(result["provider"]) != args.name:
+            result["key_card"] = {"result": "custom_config"}
+            result["key_card_message"] = ("保留了你的自定义配置；请先核对其中的密钥变量，再用 agentj secret request 发卡。"
+                                          " / Your custom configuration was kept; check its key variable before requesting a key card.")
+            return
+    response = elevate.client_request(State(), {"t": "secret", "name": args.name, "purpose": args.purpose,
+        "dest": args.dest, "verify_url": args.verify_url or "", "verify_header": args.verify_header or "",
+        "verify_cmd": args.verify_cmd or "", "cwd": os.getcwd(), "wait": 1, "replace": False}, timeout=8)
+    result["key_card"] = {k: response[k] for k in ("result", "id") if k in response}
+    if response.get("result") == "pending":
+        message = "密钥卡已发到手机，请只在卡片里填写；填好后再切换模型。/ Key card sent to the phone; fill it there, then switch models."
+    elif response.get("result") in ("saved", "already_saved"):
+        message = "密钥已保存，无需重复填写。/ Key already saved; no need to fill it again."
+    else:
+        message = (f"密钥卡状态未确认。先运行 agentj secret status {args.name}；确认没有待填卡片后，检查服务和已配对手机，再重试。"
+                   f" / Key card status unconfirmed. Run agentj secret status {args.name}; if none is pending, check the service and paired phone, then retry.")
+    result["key_card_message"] = message
+
+
 def cmd(a) -> int:
     if a.action == "ark":                     # P315: the Volcano Ark Coding Plan preset (ark.py)
         from . import ark
@@ -220,6 +260,8 @@ def cmd(a) -> int:
     except ProviderError as e:
         print(json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False) if a.json else f"没有改：{e}", file=sys.stderr if not a.json else sys.stdout)
         return 2
+    if a.action == "add":
+        open_key_card(r, a.dry_run)
     if a.json:
         print(json.dumps({"ok": True, **r}, ensure_ascii=False))
         return 0
@@ -227,7 +269,7 @@ def cmd(a) -> int:
         print(("已写入" if r["written"] else "（预演，未写入）") + f" {r['file']}：服务商 {r['provider']}，模型 {', '.join(r['models'])}；"
               f"key 从环境变量 {r['key_env']} 读（这里不存 key）。" +
               (f"能看图：{', '.join(r['vision'])}。" if r["vision"] else ""))
-        print("接下来：\n  1. " + r["next"][0] + "\n     （手机上弹出密钥卡，主人贴 key；Agent 看不到值）\n  2. " + r["next"][1] +
+        print("接下来：\n  1. " + r.get("key_card_message", r["next"][0]) + "\n     （手机上弹出密钥卡，主人贴 key；Agent 看不到值）\n  2. " + r["next"][1] +
               "\n  3. " + r["next"][2])
     elif a.action == "remove":
         print(("已删除" if r["removed"] else "没有这个服务商：") + f" {r['provider']}（{r['file']}）")

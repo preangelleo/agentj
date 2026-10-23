@@ -478,6 +478,10 @@ class Host:
         from .bots.owner import Manager as BotManager
         self.bots = BotManager(self)
         self.pairing: Pairing | None = None
+        from .credential_revoke import Revocations
+        self.credential_revocations = Revocations(self)
+        from .security_rotation import Rotation
+        self.security_rotation = Rotation(self)
         self.pk_guard = passkey.Guard()   # F20: pk_restore rate limit + nonce replay memory (in memory only)
         self.send_lock = asyncio.Lock()
         self.stopping = asyncio.Event()
@@ -732,6 +736,7 @@ class Host:
                 async with connect(url, max_size=2**17, ping_interval=20, ping_timeout=20, open_timeout=RELAY_OPEN_TIMEOUT) as ws:
                     phase = "auth"
                     await self._auth(ws, cert)
+                    await self.credential_revocations.sync()  # P490: apply before accepting any restored remote
                     phase = "up"
                     self.ws, self.relay_up, self.relay_ever_up, backoff, fails = ws, True, True, 1, 0
                     self.relay_seat_refused = False
@@ -1148,9 +1153,24 @@ class Host:
         elif t in jcards.PHONE_TYPES:   # P360 (§34): Agent J Cards — the list, one card's data + buttons, a card's switch
             if s.p33:
                 await self.on_jcard(s, t, obj)
+        elif t in ("security_status","security_begin","security_verify","security_retire"):
+            await self.security_rotation.on_phone(s,obj)
         elif t in REMOTES_TYPES:        # P171 (§24): list / rename / unbind / add remotes from a paired remote
             if s.p33:
                 await self.remotes.on_phone(s, t, obj)
+        elif t == "layout_diag":        # P489: measurements only, paired + allowlisted above; no Agent turn
+            if s.p33 and wire.is_rid(obj.get("r")):
+                from . import layout_diag
+                now = time.monotonic()
+                last = getattr(s, "layout_diag_at", None)
+                if last is not None and now - last < 5:
+                    ok, why = False, "rate"
+                else:
+                    s.layout_diag_at = now
+                    ok = await asyncio.to_thread(layout_diag.save, self.st, obj.get("sample"))
+                    why = "save_failed" if not ok else None
+                if self.sessions.get(s.cid) is s and s.state == "ready" and self.st.is_allowed(s.pub):
+                    await self.send_app(s, {"t":"layout_diag_res", "r":obj["r"], "ok":ok, **({"why":why} if why else {})})
         elif t == "agent_name":         # P181 (§22.2): long-press the Agent's name → rename, signed like every phone write
             if s.p33:
                 await self.on_agent_name(s, obj)
@@ -5847,6 +5867,7 @@ class Host:
                                         "view": await asyncio.to_thread(ar.view)})
         kind, route, bid = obj.get("kind"), obj.get("route"), obj.get("id")
         if t == "auth_get":
+            await ar.refresh_health(force=obj.get("check") is not False)
             return await answer({"ok": True})
         if t == "auth_cancel":
             return await answer(await ar.cancel_flow())
@@ -7193,7 +7214,7 @@ class Host:
         self.post_q = asyncio.Queue()
         self.configure_claude_inbound(await asyncio.to_thread(self._claude_inbound_files))   # P142: owner files, off the loop
         jobs = [asyncio.create_task(self.relay_loop()), asyncio.create_task(self.loop_watch()), asyncio.create_task(self.reporter.run()),
-                 asyncio.create_task(self.sync_loop()), asyncio.create_task(self.remote_pair.run()), asyncio.create_task(self.post_loop()),
+                 asyncio.create_task(self.sync_loop()), asyncio.create_task(self.credential_revocations.run()), asyncio.create_task(self.remote_pair.run()), asyncio.create_task(self.post_loop()),
                  asyncio.create_task(self.update_loop()), asyncio.create_task(self.preferences_loop()),
                  asyncio.create_task(self.busy_loop()), asyncio.create_task(self.seat_loop())]
         perm_server = None

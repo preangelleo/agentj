@@ -1073,6 +1073,50 @@ def check_login_session(svc):
               service.login_reminder())
 
 
+def check_launchd_environment(svc: dict, environ=None) -> dict | None:
+    """Compare configured service context with this terminal; names/booleans only, never values."""
+    if svc.get("kind") != "launchd":
+        return None
+    import plistlib
+    shell = os.environ if environ is None else environ
+    hint = ("在手机设置中配置模型代理；安装 CLI 后运行 agentj service install，再运行 agentj doctor --offline。"
+            "launchd 不读取终端的 shell 启动文件。/ Configure the model proxy in phone Settings; after installing a CLI, "
+            "run agentj service install, then agentj doctor --offline. launchd does not read shell startup files.")
+    try:
+        plist = plistlib.loads(pathlib.Path(svc["path"]).read_bytes())
+        values = plist.get("EnvironmentVariables", {}) if isinstance(plist, dict) else None
+        if not isinstance(values, dict):
+            raise ValueError()
+    except (OSError, ValueError, KeyError):
+        return _c("launchd-environment", WARN, "无法读取后台环境 / background environment unavailable", hint)
+    names = ("PATH", "HOME", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "all_proxy", "no_proxy")
+    # launchd defaults HOME to the account home; its manager may supply additional values we cannot infer here.
+    configured = {**values}
+    import pwd
+    configured.setdefault("HOME", pwd.getpwuid(os.getuid()).pw_dir)
+    different = [k for k in names if (shell.get(k) or "") != (configured.get(k) or "")]
+    return _c("launchd-environment", WARN if different else OK,
+              "终端与服务配置不同的变量名 / terminal vs configured service differences: " + (", ".join(different) or "none") +
+              "；不含变量值，运行时继承环境未核实 / values hidden; inherited runtime environment unverified", hint)
+
+
+def check_shared_controls(st: State) -> dict | None:
+    c = st.agent_config() if st.exists() else None
+    if not c or c.get("kind") != "claude" or c.get("session_mode", "independent") != "shared":
+        return None
+    from . import shared, shared_interrupt
+    rows = shared.claude_sessions(c["dir"])
+    pin = c.get("shared_session_id")
+    rows = [r for r in rows if r.get("sessionId") == pin] if pin else rows
+    binary = shared_interrupt.herdr_bin()
+    pane = shared_interrupt.locate(rows[0], binary)[0] if binary and len(rows) == 1 else None
+    return _c("shared-controls", OK if pane else WARN,
+              "桌面对话可精确定位 / exact desktop conversation found" if pane else
+              "未找到外部桌面终端的 Herdr 通道；Agent J 自启会话另有内置通道 / no external Herdr route; Agent J-owned sessions use their built-in route",
+              "在当前 Claude Code 终端运行 /compact 或按 Esc；手机设置 → 会话模式 → 独立会话，由 Agent J 管理新会话。"
+              "/ Run /compact or press Esc in that Claude Code terminal; Settings → Session mode → Use a separate session for an Agent J-managed session.")
+
+
 def check_estop(st: State) -> dict:
     """The stop switch (ADR-A51): on = the Agent and the scheduled tasks do nothing until a human resumes."""
     from . import controls
@@ -1175,6 +1219,7 @@ def run(st: State | None = None, offline: bool = False) -> list[dict]:
     out += check_main_identity(st)
     out.append(check_skills())
     out += [check_google(st), check_first_run(st)]
+    out += list(filter(None, [check_launchd_environment(svc), check_shared_controls(st)]))
     login = check_login_session(svc)
     if login:
         out.append(login)

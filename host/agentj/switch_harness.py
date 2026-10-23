@@ -230,6 +230,9 @@ def reason_text(code: str, target: str, lang: str = "zh", detail: str | None = N
         out += DETAIL[l][detail].format(cmd=(_TTY if detail == "prompt" else _TRY).get(target, target))
     if err in ERR[l]:
         out += (" (error: " + ERR[l][err] + ")" if l == "en" else "（报错：" + ERR[l][err] + "）")
+    if target in ("codex", "opencode") and code in ("start_failed", "start_timeout", "no_reply", "timeout", "call_failed", "native_failed"):
+        from .startup_help import guidance
+        out += "\n" + guidance(target, code, l)
     return out
 
 

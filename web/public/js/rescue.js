@@ -1,4 +1,5 @@
 import {lang} from './t.js';
+import * as layoutDiag from './layout-diag.js';
 // P332 (PROTOCOL §33) · Settings → 紧急修复: the second Settings item, three numbered cards in this order —
 //   ① 重置连接   signed `reset` (control-v1 action `reset`, object {"what":"connection"}): the host's reset ladder
 //   ② 请 Agent J Father 远程帮忙  signed `rescue_do` (action `rescue_do`, object {"action":"help"}): diagnose → support → ticket
@@ -525,6 +526,7 @@ export function foldEnded() { refreshArk();
 }
 export const inRescue = () => !!(S.rescue && S.rescue.on);
 export function configure(hooks) {
+  layoutDiag.configure();
   H = { ...H, ...hooks };
   authrescue.watch((v) => { const was = authSig(S.auth && S.auth.flow); S.auth = v; const now = authSig(v && v.flow); if (now !== was) S.authAt = Date.now(); if (v && v.flow && !now) S.authFold = S.authHide = ''; paintAuth(); });
   el('rescue-banner-go')?.addEventListener('click', openBlock);

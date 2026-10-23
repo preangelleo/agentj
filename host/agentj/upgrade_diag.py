@@ -50,7 +50,7 @@ CATEGORY = {"install_failed": "uv_failed", "restart_failed": "service_restart_fa
             "upgrade_self_check_failed": "doctor_failed", "service_failed": "service_restart_failed",
             "URLError": "download_failed", "HTTPError": "download_failed", "TimeoutError": "download_failed",
             "ConnectionError": "download_failed", "ConnectionResetError": "download_failed", "OSError": "os_error",
-            "CalledProcessError": "uv_failed", "FileNotFoundError": "installer_missing",
+            "CalledProcessError": "uv_failed", "SubprocessError": "uv_failed", "FileNotFoundError": "installer_missing",
             "PermissionError": "permission_denied", "TimeoutExpired": "installer_timeout",
             "artifact_too_large": "download_failed", "insecure_update_redirect": "download_failed"}
 
@@ -89,7 +89,8 @@ def installer_reason(exc=None, stderr="") -> str:
     for reason, needles in UV_STDERR:
         if any(n in text for n in needles):
             return reason
-    return category(exc) if exc is not None else "uv_failed"
+    reason = category(exc) if exc is not None else "uv_failed"
+    return "uv_failed" if reason == "unknown" else reason
 
 
 def installer_fields(res):
@@ -387,17 +388,27 @@ REASON_WORDS = {
 }
 
 
+def install_unchanged(res: dict) -> bool:
+    """Journal phase wins; recognise pre-P487 download records without trusting their spurious recover line."""
+    if "phase" in res:
+        return res["phase"] in (None, "prepared")
+    return category(res.get("reason")) in ("download_failed", "signature_or_hash_mismatch", "unsupported_install")
+
+
 def owner_sentence(res: dict, rep: dict, lang: str = "zh") -> str:
     """One plain sentence for the owner: what failed, where the Agent J host is now, whether support already has it."""
     en = lang == "en"
     why = REASON_WORDS.get(res.get("reason"), (f"原因 {res.get('reason')}", f"reason {res.get('reason')}"))[1 if en else 0]
     to, frm = res.get("to") or "?", res.get("from") or __version__
-    if res.get("rollback") == "ok" or res.get("reason") in ("download_failed", "signature_or_hash_mismatch", "unsupported_install"):
+    if res.get("rollback") == "ok" or install_unchanged(res):
         where = f"still on {frm}, working as before" if en else f"Agent J 主机仍是 {frm}，照常可用"
     elif res.get("service") == "no_systemd":     # P278
         where = (f"{to} is installed, but the Agent J host has no systemd to restart the background service: turn it on as the "
                  "result's fix line says, or restart `agentj serve` where it runs" if en else
                  f"{to} 已经装好，但这台Agent J 主机没有可用的 systemd 来重启后台服务：按结果里的 fix 行开启，或在运行 agentj serve 的地方重新运行一次")
+    elif res.get("recovery_blocked") == "revocation_downgrade_blocked":
+        from .update import RECOVERY_BLOCKED_WHY
+        where = RECOVERY_BLOCKED_WHY[en]
     elif res.get("recover"):
         where = ("the rollback failed too; I will run the recover command in the result to put the previous version back" if en else
                  "回滚也没成功，我会运行结果里的 recover 命令装回原版本")

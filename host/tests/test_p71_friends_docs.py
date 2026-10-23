@@ -78,8 +78,8 @@ class FriendsSkill(unittest.TestCase):
 
 class CoreV6(unittest.TestCase):
     def test_version_and_pins(self):
-        self.assertEqual(main_identity.VERSION, 19)   # P156: v11; P244: v12
-        self.assertEqual(main_identity.verify_core()["version"], 19)   # P156: v11; P244: v12
+        self.assertEqual(main_identity.VERSION, 20)   # P156: v11; P244: v12
+        self.assertEqual(main_identity.verify_core()["version"], 20)   # P156: v11; P244: v12
 
     def test_friend_messages_are_data(self):
         zh = main_identity.prompt({"language": "zh"})

@@ -63,6 +63,7 @@ export const ROWS = [
   ["app.palette_copy",[["Mod+C","press"]],1],
   ["app.stop_all",[],1],
   ["app.restart_session",[],1],
+  ["app.layout_diagnostic",[],1],
   ["keys.search",[["/","press"],["Mod+K","press"]],1],
   ["keys.search_close",[["Escape","press"]],1],
   ["compose.focus",[["i","press"],["Escape","press"]],1],

@@ -533,6 +533,8 @@ def roll_back(st, info: dict, wheel, frm: str, run) -> bool:
     and the pending record go: nothing may announce the failed version."""
     run = _pinned(run)          # P423 (#193): the old wheel goes back into the same uv tool directory
     try:
+        from .credential_revoke import require_compatible_version
+        require_compatible_version(st, frm)
         (st.root / UPGRADED).unlink(missing_ok=True)
         (st.root / PENDING).unlink(missing_ok=True)
         if not wheel:
@@ -554,12 +556,28 @@ def roll_back(st, info: dict, wheel, frm: str, run) -> bool:
         return False
 
 
-def recover_of(info: dict, wheel, rb: str) -> dict:
+RECOVERY_BLOCKED_WHY = (
+    "已启用密钥吊销保护，已禁用手动旧包恢复命令；请保留安全记录并向前修复，不要强制安装旧包",
+    "Key revocation protection is active; manual cached-package recovery commands are disabled. "
+    "Keep the security journals and repair forward; do not force-install the old package",
+)
+
+
+def recover_of(info: dict, wheel, rb: str, *, st=None) -> dict:
     """P277 (container check of the WSL case): a failed `uv tool install --force` can delete the tool's own environment, so
     `agentj` itself is gone and the automatic rollback fails with it. Then the block names the one command that puts the
     cached previous version back (a local path on the Agent J host; never sent anywhere)."""
     if rb != "failed" or not wheel or wheel == HOST_WHEEL:
         return {}
+    from .credential_revoke import require_compatible_version
+    if st is None:
+        from .state import State
+        st = State()
+    try:
+        # A manual command bypasses the runtime guard; with journals, never suggest one.
+        require_compatible_version(st, None)
+    except ValueError:
+        return {"recovery_blocked": "revocation_downgrade_blocked"}
     try:
         from . import auto_update
         cmds = auto_update.install_commands(info, wheel)
@@ -959,7 +977,7 @@ def _authorized_apply(st, code: str | None, target: str | None, *, mail: dict | 
         ok = roll_back(st, info, old, __version__, run)
         rb = "ok" if ok else "failed" if old else "unavailable"
         st.log("upgrade_rollback", status=rb, reason=reason)
-        return done(reason, rollback=rb, **recover_of(info, old, rb), **kw)
+        return done(reason, rollback=rb, **recover_of(info, old, rb, st=st), **kw)
     out["step"] = "install"
     from .auto_update import command_line
     for c in plan:
@@ -1115,7 +1133,7 @@ def _apply(st, target=None, *, prefix=None, check_fn=None, run=None, say=None, s
         rb = "ok" if ok else "failed" if old else "unavailable"
         if st.exists():
             st.log("upgrade_rollback", status=rb, reason=reason)
-        return done(reason, rollback=rb, **recover_of(info, old, rb), **kw)
+        return done(reason, rollback=rb, **recover_of(info, old, rb, st=st), **kw)
     out["step"] = "install"
     from .auto_update import command_line
     for cmd in plan:
@@ -1295,7 +1313,9 @@ def result_block(res: dict) -> str:
         lines.append(f"why: {zh} / {en}")
     if res.get("fix"):
         lines.append(f"fix: {res['fix']}")
-    if res.get("recover"):
+    if res.get("recovery_blocked") == "revocation_downgrade_blocked":
+        lines.append("recovery_blocked: revocation_downgrade_blocked — " + " / ".join(RECOVERY_BLOCKED_WHY))
+    elif res.get("recover"):
         lines.append(f"recover: {res['recover']} — 回滚没成功、agentj 命令可能已经不在了：运行这一条装回原版本 / the rollback failed and "
                      "`agentj` may be gone: run this to put the previous version back")
     if res.get("support"):

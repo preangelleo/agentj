@@ -2431,7 +2431,8 @@
       "refresh_pull": "Save draft and update the page",
       "palette_copy": "Copy swatch HEX",
       "stop_all": "Stop all Agents (confirm first)",
-      "restart_session": "Reopen AI session (confirm first)"
+      "restart_session": "Reopen AI session (confirm first)",
+      "layout_diagnostic": "Send layout diagnostic"
     },
     "keys": {
       "search": "Search the shortcut list: type a word to filter by action, key or gesture, in Chinese or English",
@@ -2566,7 +2567,8 @@
       "refresh_pull": "At the message top, pull down and release; blocked by recording, attachments or unfinished cards",
       "palette_copy": "Hold a swatch to copy HEX; move to cancel",
       "stop_all": "Tap the button, then confirm",
-      "restart_session": "Tap the button, then confirm"
+      "restart_session": "Tap the button, then confirm",
+      "layout_diagnostic": "Tap"
     },
     "keys": {
       "search": "Tap the magnifier at the top right of the list",
@@ -2756,6 +2758,9 @@
   "p244.busy52": "Level 4 · reports to ",
   "ver.updated": "Updated to {v}",
   "ar": {
+    "confirmTitle": "Sign in to AI again",
+    "confirmStart": "Start sign-in",
+    "confirmTag": "Your confirmation is required",
     "nav": "AI login rescue",
     "navNote": "the Agent J host's AI got signed out? Sign it in again from the phone.",
     "intro": "When the Claude Code / Codex subscription login on the Agent J host expires, the Agent cannot reply. Tap Sign in again here: the Agent J host runs the official login command and sends its authorize link or device code to the phone; you approve on any device signed in to that account, and the new credential stays on the Agent J host. the Agent J host then restarts the AI, checks it is not stuck on any confirmation screen and sends a test message — only a reply shows Recovered.",
@@ -2849,7 +2854,13 @@
     "kimiA": "Sign in again (device code)",
     "kimiNote": "the Agent J host runs the official `kimi login` and shows a link and a one-time code; open the link on any device signed in to your Kimi account and confirm — nothing to paste back. It signs in on the site chosen with `agentj agent kimi --region` (kimi.com by default, kimi.ai with global).",
     "kimiKey": "Using a Kimi Code console API key instead? Have the Agent send a key card (KIMI_API_KEY); never paste the key into the chat.",
-    "expAutoKimi": "The Kimi login renews itself and has no fixed expiry: it is checked once a day and you are told the moment it stops working."
+    "expAutoKimi": "The Kimi login renews itself and has no fixed expiry: it is checked once a day and you are told the moment it stops working.",
+    "checkNow": "Check now",
+    "checking": "Checking the current login…",
+    "cardStep": "Authorize in the opened tab, then return here and paste the Authentication Code into this card.",
+    "openCard": "Open the code card",
+    "unknown": "Login status not confirmed",
+    "savedChecking": "Saved. Testing whether the AI can reply…"
   },
   "p299.use": "How to use: ",
   "p299.useAny": "Type {cmd} in the chat, or just say what you want — Agent J uses it by itself.",
@@ -4289,5 +4300,30 @@
   "p481": {
     "queueStuck": "The previous task has had no output for over 3 minutes. You can stop it to continue.",
     "stopPrevious": "Stop previous task"
+  },
+  "p489": {
+    "send": "Send layout diagnostic",
+    "note": "Tap when the screen has a colour band or misplaced elements. Sends only dimensions, colours and usage to your Agent J host, without chat content.",
+    "sending": "Sending…",
+    "saved": "Layout diagnostic saved on your Agent J host.",
+    "offline": "Your Agent J host is offline. Try again when connected.",
+    "unsupported": "No save confirmation received. Your Agent J host may need an update to receive layout diagnostics.",
+    "failed": "The layout diagnostic was not saved. Please try again.",
+    "staged": "Layout diagnostic staged on your Agent J host for 30 minutes. Ask your Agent to read the diagnostic now."
+  },
+  "p490": {
+    "title": "Secure setup",
+    "guide": "Add a new remote, verify it, then retire the old ones. Store the new passkey in an unaffected system password manager or hardware key. Do not restore an old remote.",
+    "unsupported": "Update this computer before using secure setup.",
+    "stage_new": "Not started",
+    "stage_verify": "Verify a new remote",
+    "stage_done": "Old remotes revoked",
+    "begin": "Start secure setup",
+    "verify": "Verify this new remote",
+    "retire": "Revoke all old remotes",
+    "preserve": "Pair another device, create a new passkey, reconnect, then return here to verify it. If the list is full, retain terminal rescue access and manually free one confirmed old slot.",
+    "confirm": "Revoke the remotes present when setup began? All verified new remotes will remain.",
+    "count": "{n} new remotes verified; {old} old remotes remain.",
+    "failed": "Not completed. Use a newly paired remote with a new passkey, reconnect, and try again."
   }
 }

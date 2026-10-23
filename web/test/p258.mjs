@@ -63,7 +63,7 @@ export async function runP258({B, web, fake, out = process.env.P258_OUT || 'repo
       });
       await step('before', async () => {
         assert.equal(seen.filter(m => m.t === 'auth_start').length, 0, 'reminder appears before any start');
-        const before = await evaluate(p, `(()=>{const row=document.querySelector('#ar-list [data-kind=codex]');const note=row.querySelector('.arbefore'),a=note.querySelector('a'),b=row.querySelector('button');return {text:note.textContent,href:a.href,target:a.target,rel:a.rel,before:!!(note.compareDocumentPosition(b)&Node.DOCUMENT_POSITION_FOLLOWING),visible:note.getBoundingClientRect().height>0}})()`);
+        const before = await evaluate(p, `(()=>{const row=document.querySelector('#ar-list [data-kind=codex]');const note=row.querySelector('.arbefore'),a=note.querySelector('a'),b=row.querySelector('.mailbtns button');return {text:note.textContent,href:a.href,target:a.target,rel:a.rel,before:!!(note.compareDocumentPosition(b)&Node.DOCUMENT_POSITION_FOLLOWING),visible:note.getBoundingClientRect().height>0}})()`);
         assert.ok(before.before && before.visible, 'visible before the login button');
         assert.match(before.text, lang === 'zh' ? /第一次用？先在任何浏览器登录 ChatGPT.*已开过可跳过/ : /First time.*any browser.*skip if already enabled/);
         assert.equal(before.href, 'https://chatgpt.com/#settings/Security');

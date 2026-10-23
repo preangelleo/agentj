@@ -425,7 +425,9 @@ class CodexAgent(Agent):
     async def _spawn(self) -> bool:
         if not _agentmod._bin("AGENTJ_CODEX_BIN", "codex"):
             self.failed_start = True
-            self.fail_notice("这台Agent J 主机上没找到 Codex（codex 命令）。装好并登录后再试。")
+            from .startup_help import guidance
+            self.fail_notice("后台环境里没找到 Codex（codex 命令）/ Codex executable missing in the background environment.\n" +
+                             guidance("codex", "launch", getattr(self.host, "lang", "zh")))
             return False
         argv = await self.authorized_launch_argv(self.argv())
         if argv is None:
@@ -438,10 +440,17 @@ class CodexAgent(Agent):
             env = fence.auxiliary_environment(env, self.kind, extra_keep=("AGENTJ_PERM_SOCK", "AGENTJ_PERM_CLAIM", "AGENTJ_PERM_WAIT", "OPENCODE_SERVER_PASSWORD", "OPENCODE_SERVER_USERNAME", "OPENCODE_CONFIG_CONTENT"))
         if self.cfg.get("fence", True):
             env = fence.launch_environment(env, self.cfg.get("docker", False), self.kind)
-        self.proc = p = await asyncio.create_subprocess_exec(*argv, cwd=self.cfg["dir"], env=env,
-                                                             stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
-                                                             stderr=asyncio.subprocess.PIPE, limit=LINE_LIMIT,
-                                                             start_new_session=True)
+        try:
+            self.proc = p = await asyncio.create_subprocess_exec(*argv, cwd=self.cfg["dir"], env=env,
+                                                               stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
+                                                               stderr=asyncio.subprocess.PIPE, limit=LINE_LIMIT,
+                                                               start_new_session=True)
+        except OSError as e:
+            self.failed_start = True
+            self.host.st.log("agent_prepare_fail", agent=self.kind, phase="launch", reason=type(e).__name__)
+            from .startup_help import guidance
+            self.fail_notice(guidance("codex", "launch", getattr(self.host, "lang", "zh")))
+            return False
         self.failed_start, self.err_tail, self.tid, self.thread = False, "", None, {}
         self.waits, self.pending = {}, {}                      # this process's calls / open cards (its reader fails them)
         from . import codex_procs                              # ADR-A178: a leftover is recognised (and ended) later
@@ -467,7 +476,9 @@ class CodexAgent(Agent):
             await self._kill(p)
             self.failed_start = True
             last = self._last_err()
-            self.fail_notice("Codex（app-server）没有启动" + (f"：{last}" if last else f"（{type(e).__name__}）。"))
+            from .startup_help import guidance
+            self.fail_notice("Codex（app-server）没有启动" + (f"：{last}" if last else "。") + "\n" +
+                             guidance("codex", "start_timeout" if isinstance(e, asyncio.TimeoutError) else "prepare", getattr(self.host, "lang", "zh")))
             return False
         return self.proc is p
 

@@ -1,3 +1,4 @@
+import { rotationWizard } from './security-rotation.js';
 import { copyButton } from './copycode.js';
 // P171 · 遥控器管理 (Settings → its own second-level page, PROTOCOL §24): the remotes paired with this computer — list, add
 // (the computer makes a one-time pairing link + QR for THIS remote only; the new device shows a 6-digit safety code; the human
@@ -28,7 +29,7 @@ const clean = (s, n = 64) => String(s ?? '').replace(/[\u0000-\u001f\u007f]/g, '
 function take(m) {
   const items = Array.isArray(m.items) ? m.items.slice(0, 64).filter((d) => d && typeof d.id === 'string') : [];
   const limit = validLimit(m.limit);
-  return { limit, items, can_add: m.can_add !== false, busy: m.busy === true };
+  return { limit, items, security_stage:m.security_stage, can_add: m.can_add !== false, busy: m.busy === true };
 }
 /** From the `preferences` host block (older hosts, or before the first dev_list answer). */
 function fromPrefs() {
@@ -91,7 +92,7 @@ function render() {
   el('rm-limit').textContent = String(s.limit);
   el('rm-bar').style.width = Math.min(100, Math.round((n / s.limit) * 100)) + '%';
   el('rm-bar').parentElement.dataset.full = String(n >= s.limit);
-  el('rm-full-note').textContent = t('rm.fullNote', { max: s.limit });
+  el('rm-full-note').textContent = s.security_stage==='verify'?t('p490.preserve'):t('rm.fullNote', { max: s.limit });
   el('rm-add').hidden = legacy;
   el('rm-add').disabled = !!add || !isReady();
   el('rm-legacy').hidden = !legacy;
@@ -103,6 +104,13 @@ function render() {
   const rows = s.items.slice().sort((a, b) => (b.me === true) - (a.me === true) || (b.online === true) - (a.online === true)
     || (b.paired_at || 0) - (a.paired_at || 0));
   list.replaceChildren(...rows.map(row));
+  let safety=el('rm-security');
+  if(!safety) {
+    safety=mk('button','aj-btn');safety.id='rm-security';safety.type='button';
+    safety.addEventListener('click',()=>rotationWizard());
+    el('rm-list').before(safety);
+  }
+  safety.textContent=t('p490.title');
   renderAdd();
 }
 function row(d) {

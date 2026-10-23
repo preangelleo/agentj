@@ -1,3 +1,4 @@
+import { floatAuthAsk } from './js/auth-overlay.js';
 import { showPairGuide } from './js/pair-guide.js';
 import { copyButton } from './js/copycode.js';
 
@@ -1064,6 +1065,7 @@ const fromSettings = (fn) => (e) => { backToSettings = settings.isOpen(); backFo
 // P417 #186: every NEW 「请你点头」 card does the same — Settings never hides one. A Same-owner card (its six-digit code)
 // also leaves the friends page / any other page for the chat, where the card is.
 function frontAsk(m) {
+  if (m.tool === 'AuthRescue' && settings.isOpen() && !$('set-auth').hidden) { floatAuthAsk(); return; }
   relay.remoteReader(false);
   if (m.tool === 'pair_device' && settings.isOpen()) settings.onPairCard();
   if (settings.isOpen()) settings.close();

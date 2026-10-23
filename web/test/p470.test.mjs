@@ -21,6 +21,7 @@ test('P470 bottom follows only visible water at the bottom, otherwise page, with
   for(const key of ['fs','reader']){body.dataset[key]='1';expect('#2c2b26');delete body.dataset[key]}
   waterStyle.backgroundColor='transparent';expect('#2c2b26');waterStyle.display='none';pageStyle.backgroundColor='transparent';expect('#2c2b26');
   pageStyle.backgroundColor='rgb(4, 5, 6)';html.dataset.standalone='1';expect('rgb(4, 5, 6)');assert.equal(html.dataset.iosSafari,'0');
-  html.dataset.standalone='0';navigator.userAgent='iPhone CriOS/131.0 Mobile Safari/605.1';waterStyle.backgroundColor='rgb(1, 2, 3)';expect('rgb(1, 2, 3)');assert.equal(html.dataset.iosSafari,'0');
+  html.dataset.standalone='0';navigator.userAgent='iPhone CriOS/131.0 Mobile Safari/605.1';waterStyle.backgroundColor='rgb(1, 2, 3)';expect('rgb(4, 5, 6)');assert.equal(html.dataset.iosSafari,'0'); // P489: hidden water also falls back in CriOS.
+  waterStyle.display='block';expect('rgb(1, 2, 3)');
  }finally{for(const [key,descriptor] of Object.entries(saved)){if(descriptor)Object.defineProperty(globalThis,key,descriptor);else delete globalThis[key]}}
 });

@@ -127,7 +127,11 @@ def shown_fields(card: dict) -> list[str]:
         return [card["term"]]
     if card["kind"] == "vshare":           # P414 (M4): the requesting remote's id, credential id, pairing date, flags
         return [card["dev"], card["cred"], str(card["paired"]), ",".join(card["flags"])]
-    return [card["name"], card["purpose"], card["dest"], card.get("verify") or ""]
+    fields = [card["name"], card["purpose"], card["dest"], card.get("verify") or ""]
+    if card.get("auth"):
+        a = card["auth"]
+        fields += [str(a.get(k, "")) for k in ("kind", "url", "code", "expires_at", "round", "rounds")]
+    return fields
 
 
 def shown_digest(kind: str, fields: list[str]) -> str:
@@ -914,6 +918,8 @@ class Elevator:
                 m["v"] = v
         else:
             m.update(name=c["name"], purpose=c["purpose"], dest=c["dest"], verify=c.get("verify") or "")
+        if c.get("auth"):
+            m["auth"] = dict(c["auth"])   # host-only rescue metadata, sealed/signature digest above; never persisted
         pk = self.st.passkey_of_device(s.device) if s is not None and s.device else None
         if pk:
             m["fa"] = pk["id"]   # ADR-A163: this device saved a passkey → 「同意」 needs it (its own credential id only)
@@ -1292,6 +1298,9 @@ class Elevator:
                 await progress
 
     async def _execute_approved(self, c, s, obj, signed, nonce, priv) -> None:
+        if c.get('revoked') or not self.st.is_allowed(s.pub):
+            c['busy']=False
+            return self._finish(c, {'result':'denied'})
         if "ct" not in obj:                        # approve-only: the admin helper checks the same signature as root
             from . import elevate_helper
             req = {"channel": self.host.channel, "device": s.device, "id": c["id"], "n": nonce, "ts": obj["ts"], "sig": obj["sig"],
@@ -1336,6 +1345,11 @@ class Elevator:
                 self._arm(c)
                 return self._finish(c, {"result": "retry"})
             kid, value = got
+        if c.get('revoked') or not self.st.is_allowed(s.pub):
+            wipe(value)
+            if save_prf is not None: wipe(save_prf)
+            c['busy']=False
+            return self._finish(c, {'result':'denied'})
         keep = bytearray(value) if c.get("want_grant") and c["kind"] == "sudo" else None   # #116: zeroed unless granted
         res = None
         try:

@@ -445,6 +445,8 @@ A message that starts with `!` (for example `!df -h`) runs as a line in the web 
 
 ### AI login rescue and renewing before expiry
 
+Rescue stays in Settings and brings a new authorization card into view. The Claude code card includes Open the authorize link, Copy, time left and the round number; after folding it, use Open the code card on the rescue page. The Codex device card shows both its link and code. Authorization opens in a new tab; return here afterward to follow waiting, saved and testing, then passed or failed. Opening the page tests the current login again and shows the check time, with Check now available. While open, the page detects credentials replaced elsewhere and checks again; old conclusions are hidden during checking.
+
 When the Agent J host's Claude Code / Codex login expires, the Agent cannot reply. Open Settings → Emergency repair → ③ AI account signed out → AI login rescue and sign in
 again from the phone, without going back to the Agent J host: Codex shows a link and a device code; Claude Code shows an
 authorize link, and its code goes only into the secret card.

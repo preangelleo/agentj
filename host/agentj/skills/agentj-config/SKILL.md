@@ -276,6 +276,8 @@ P288: a heartbeat line "Claude Code 登录还有 N 天" (last 7 days) → remind
 approval on the phone; the new token replaces the old at once after a live check). Serve also checks every signed-in AI
 once a day and alerts the owner itself — never ask for a token or code in chat.
 
+P492: rescue stays in Settings; the sealed Claude code card itself contains the host-generated authorization link, copy, expiry and round. Codex shows link + device code together. Never invent, relay in chat, or ask the owner to type a URL. Opening rescue live-checks the effective login (service env, systemd user environment/environment.d); Check now refreshes it. A previous failed daily check is not current proof of expiry.
+
 Shared Claude model/quota/context readings: on by default when shared Claude is selected (same moment as ingress, phone
 told once); `agentj config claude-statusline off` is remembered and never auto-reverted; `on|off|status` remain.
 The tap is chained at the effective layer (project line from the private local file), preserves the existing command
@@ -396,3 +398,6 @@ Use Models & API keys for OpenCode auxiliary model ownership and its passkey-con
 ### Native Claude menus and long background work
 
 A shared Claude terminal modal is not a busy Agent making progress. Recognized Rewind is sent one Esc automatically; recognized other menus use a paired-device signed question card with Exit. A limit menu shows the terminal-reported reset time and explicit choices; never guess a time, choose credits/upgrade for the owner, or ask the owner to paste terminal output containing secrets. Desktop close/change withdraws the old card. Unknown menus: guide Settings → Safety → Emergency repair → Reopen AI session. `agentj doctor` includes the recognized menu kind. `agentj busy start --pid` entries follow live processes, including after 12 hours; entries without PID still expire. Agent J-owned OpenCode servers reconcile installed versions before the next turn and retain their conversation; attached owner-managed servers must be restarted by their owner.
+
+For an exposed passkey, direct the owner to account Login & security → Secure setup and phone Settings → Remotes → Secure setup. The owner creates and verifies a genuinely new pairing, then retires old remotes. Restore is not rotation; offline revocation remains pending until host ACK. Keep independent rescue access. Never reconfigure devices yourself from a notification or default to init --force / passphrase reset.
+画面诊断 / Layout diagnostic: Settings → Emergency repair → Send layout diagnostic sends public geometry/colours only. Run `agentj diag layout --last` (read-only; dedicated-support hosts). On an older host, immediately read the newest `*layout-diagnostic.json` under `<working root>/.agentj/inbox/`; unclaimed uploads expire after 30 minutes. Do not request Web Inspector, URLs, storage, tickets or conversation text. Do not infer an iOS compositor cause from a synthetic screenshot.

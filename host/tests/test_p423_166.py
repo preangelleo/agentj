@@ -104,8 +104,8 @@ class Rollback(_Env):
         self.assertNotIn(FAKE_GH, json.dumps(rec) + body)
         self.assertNotIn(str(self.old), json.dumps(rec) + body)
 
-    def test_rollback_that_fails_after_reinstalling_is_not_relabelled(self):
-        """The old version is back but its self-check failed: that stays rollback_failed (a broken service is not hidden)."""
+    def test_rollback_verify_failure_preserves_runnable_old_version(self):
+        """P487: a runnable old version is rolled_back; its self-check failure stays visible in diagnostic fields."""
         self.prepare()
         def run(argv):
             if str(self.new) in argv:
@@ -116,9 +116,9 @@ class Rollback(_Env):
                 return subprocess.CompletedProcess(argv, 3, 'not json', '')
             return subprocess.CompletedProcess(argv, 0, '', '')
         r = au.run(self.st, runner=run, restart=lambda v: None)
-        self.assertEqual(r['reason'], 'rollback_failed')
+        self.assertEqual((r['result'], r['reason']), ('rolled_back', 'uv_failed'))
         rec = ud.read(self.st)
-        self.assertEqual((rec['rollback_failure'], rec.get('rollback_check')), ('doctor_failed', None))
+        self.assertEqual((rec['rollback_failure'], rec.get('rollback_check')), ('doctor_failed', 'version_unchanged'))
 
     def test_unreadable_upgrade_cache_has_a_fixed_reason(self):
         self.prepare(receipt=False)
@@ -126,8 +126,10 @@ class Rollback(_Env):
                    restart=lambda v: None)
         rec = ud.read(self.st)
         self.assertEqual(rec['reason'], 'upgrade_cache_unreadable')
-        self.assertEqual(rec['rollback_failure'], 'upgrade_cache_unreadable')
-        self.assertEqual(r['result'], 'rolled_back')   # nothing was installed; the previous version still answers
+        self.assertNotIn('rollback_failure', rec)
+        self.assertNotIn('recover', r)
+        self.assertEqual(r['result'], 'failed')   # P487: refused before any install, no rollback was attempted
+        self.assertIn('仍是 '+__version__, au.notice(r))
 
 
 if __name__ == '__main__':

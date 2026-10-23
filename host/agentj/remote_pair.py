@@ -51,7 +51,9 @@ def check_request(env, st, now=None, keys=None):
     now=int(time.time()*1000) if now is None else now
     q=notices.opened(env,CONTEXT,keys)
     link=cloud.read_cloud(st)
-    if not link or not isinstance(q,dict) or set(q)!=FIELDS or q.get('v')!=1: return None,None
+    if not link or not isinstance(q,dict) or set(q) not in (FIELDS,FIELDS|{'epoch'}) or q.get('v')!=1: return None,None
+    from .credential_revoke import read as revocations
+    if q.get('epoch',0)!=revocations(st)['epoch'] or q.get('created_at',0)<revocations(st).get('cutoff',0): return None,None
     if q['host']!=link['host_id'] or q['seat']!=link['host_id'] or q['account']!=link['tenant']['slug'] or q['channel']!=st.config()['channel']: return None,None
     if any(type(q[k]) is not int for k in ('created_at','expires_at')): return None,None
     if not isinstance(q['id'],str) or not cloud._UNBIND_ID.fullmatch(q['id']): return None,None
@@ -147,7 +149,8 @@ class RemotePair:
 
     def allowed(self,q):
         link=cloud.read_cloud(self.host.st)
-        return enabled(self.host.st) and link and link['host_id']==q['host'] and link['tenant']['slug']==q['account'] and self.now_ms()<q['expires_at']
+        from .credential_revoke import read as revocations
+        return q.get('created_at',0)>=revocations(self.host.st).get('cutoff',0) and q.get('epoch',0)==revocations(self.host.st)['epoch'] and enabled(self.host.st) and link and link['host_id']==q['host'] and link['tenant']['slug']==q['account'] and self.now_ms()<q['expires_at']
 
     async def execute(self,env):
         h=self.host; now=self.now_ms(); q,why=check_request(env,h.st,now)
@@ -290,6 +293,9 @@ class RemotePair:
                 or time.monotonic()>=p.deadline or (p.remote and not self.allowed(p.remote))):
             self.reply(q,{'status':'gone'}); return
         result=await self.host._grant_pair(s,source='account')
+        if result.get('ev')=='approved' and not self.allowed(q):
+            await self.host.revoke(s.device)
+            result={'ev':'denied','reason':'credential_revoked'}
         self.host._pair_finish(p,result)
         self.reply(q,{'status':result.get('ev','denied'),'device':s.device,'name':s.name})
         if result.get('ev')!='approved': return

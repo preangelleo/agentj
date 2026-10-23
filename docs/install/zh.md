@@ -324,7 +324,7 @@ Ubuntu 24.04 还会检查 AppArmor 对用户命名空间的限制，并实际试
 AI 安装Agent J 主机端程序 `agentj`，装的是固定的一个版本：
 
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.25.4a1#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.25.5a1#subdirectory=host"
 agentj doctor
 ```
 
@@ -525,3 +525,15 @@ macOS「登录项与扩展」中的 Agent J 使用带名字、图标和开发者
 ## 从旧版本升级
 
 普通主机先运行 `agentj update apply`，再核对 `agentj --version` 和 `agentj doctor`。只有命令不存在或旧更新器失败时，才到账户席位卡复制当前安装命令，在同一系统用户、同一实例上重跑。配置与绑定保留，不要 unlink、删除状态或另建席位。Olares Market 应用仍从 Market 升级。
+
+## 自动升级没成功怎么办 {#upgrade-failed}
+
+下载、校验或安装准备失败时，Agent J 会提示仍是原版本。先让你的 Agent 运行 `agentj doctor` 看原因，不要删除配置、解绑账号或重新建席位。
+
+如果升级后已经回滚，旧版程序能运行就会记为回滚成功；后台服务或自检仍有问题时会单独列出，继续处理这些问题即可。旧更新器只有成功安装新版后才能得到这些改进。旧版仍无法升级时，在同一系统用户、同一实例下重跑原席位卡上的当前安装命令，保留配置和绑定；Olares 应用通过 Market 升级。
+
+## 首次启动 AI 失败 {#first-ai-start}
+
+把报错里的 `AJ_START_*` 原因码留给你的 Agent，让它运行 `agentj doctor --offline`。如果是后台环境问题，先在手机设置里检查模型代理；安装 AI 命令行工具后，运行 `agentj service install` 更新服务配置，再检查一次。
+
+已有火山方舟、阿里百炼或 Kimi 账号，可以继续用原来的服务商。服务商设置会直接打开手机密钥卡；已有密钥会复用，不需要重复提交。等卡片确认完成后再切换模型，密钥不要发进聊天。

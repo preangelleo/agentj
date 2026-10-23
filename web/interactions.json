@@ -3235,6 +3235,29 @@
       "gesture_zh": "点按钮后确认",
       "gesture_en": "Tap the button, then confirm",
       "nokey": "settings-only"
+    },
+    {
+      "id": "app.layout_diagnostic",
+      "since": "0.25.5",
+      "impl": "code",
+      "scope": "any",
+      "target": {
+        "selector": "#layout-diag-send",
+        "zh": "设置 → 紧急修复",
+        "en": "Settings → Emergency repair"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "发送画面诊断",
+      "en": "Send layout diagnostic",
+      "gesture_zh": "点一下",
+      "gesture_en": "Tap",
+      "nokey": "settings-only"
     }
   ]
 }
