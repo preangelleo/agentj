@@ -304,7 +304,7 @@ class ServeWithoutTerminal(unittest.TestCase):
 
 class Doctor(unittest.TestCase):
     IDS = ["version", "python", "websockets", "platform", "state", "keep-awake", "browser", "relay", "dashboard", "agent", "agent_cli", "harness", "fence", "danger", "passphrase",
-           "bound", "seat", "onboard", "serve", "friends", "service", "alias", "estop", "tasks", "activity"]
+           "bound", "seat", "onboard", "serve", "friends", "service", "resources", "alias", "estop", "tasks", "activity"]
 
     def setUp(self):
         self.dir = tempfile.mkdtemp(prefix="aj-doc-", dir="/tmp")

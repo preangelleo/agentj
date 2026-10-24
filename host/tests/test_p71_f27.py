@@ -211,6 +211,8 @@ class TelegramNoCaption(_Bot, unittest.IsolatedAsyncioTestCase):
                                     _transcribe_file=AsyncMock(return_value={"ok": True, "text": "帮我看下日志", "secs": 3}))
         self.host.preferences["channels"]["items"] = [{"id": "tg", "type": "telegram"}]
         self.t = tg.Telegram(self.host)
+        from _avatar_fixture import legacy_transport_avatar
+        legacy_transport_avatar(self, self.host, lambda: self.t)
         self.t.bot_id, self.t.username = 99, "test_bot"
 
         def fake_download(cfg, media, path):

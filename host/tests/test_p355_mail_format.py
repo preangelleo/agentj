@@ -59,7 +59,7 @@ class Template(unittest.TestCase):
         self.assertIn('<table', page)
         self.assertIn('href="https://example.com/d"', page)
         self.assertIn("Powered by Agent J", page)
-        self.assertIn("这封邮件由 小J 发出。", page)
+        self.assertIn("这封邮件由 Agent J - 小J 发出。", page)
         for chip in ("你问", "答</span>"):
             self.assertNotIn(chip, page, "the send mail has no question / answer pair")
         self.assertTrue(text.startswith("## 今日") and "Powered by Agent J" in text, text)
@@ -155,7 +155,7 @@ class Send(_Svc):
     async def test_cc_is_a_header_bcc_only_the_envelope(self):
         self.allow(FRIEND, OTHER)
         res = await self.svc.agent_send({"to_owner": True, "cc": [FRIEND], "bcc": [OTHER], "subject": "s", "body": "b"})
-        self.assertTrue(res["ok"] and res["no_card"], res)
+        self.assertTrue(res["ok"] and not res["no_card"], res)
         self.assertEqual((res["cc"], res["bcc"]), ([FRIEND], [OTHER]))
         raw = self.smtp.sent[-1][2]
         m = parse(raw)
@@ -164,7 +164,8 @@ class Send(_Svc):
         self.assertIsNone(m["Bcc"])
         self.assertNotIn(OTHER.encode(), raw, "Bcc never in the message")
         self.assertEqual(sorted(self.smtp.sent[-1][1]), sorted([ALLOW_ME, FRIEND, OTHER]))
-        self.ask.assert_not_called()
+        self.ask.assert_awaited_once()
+        self.assertTrue(self.ask.await_args.kwargs["require_passkey"])
 
     async def test_an_outsider_on_cc_or_bcc_brings_the_card(self):
         for key in ("cc", "bcc"):
@@ -172,7 +173,7 @@ class Send(_Svc):
             res = await self.svc.agent_send({"to_owner": True, key: [OTHER], "subject": "s", "body": "电话 13812345678"})
             self.assertTrue(res["ok"] and not res["no_card"] and not res["owner_direct"], res)
             self.ask.assert_awaited_once()
-            self.assertEqual(self.ask.await_args.kwargs.get("allow_offer"), [OTHER])
+            self.assertTrue(self.ask.await_args.kwargs["require_passkey"])
             summary = self.ask.await_args.args[1]["summary"]
             line = next(x for x in summary.splitlines() if x.startswith("抄送：" if key == "cc" else "密送："))
             self.assertIn(OTHER, line)   # the second round shows the name it was remembered under

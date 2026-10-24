@@ -7,7 +7,7 @@ authenticator stand-in (real P-256 / Ed25519 keys, the byte layouts a browser pr
 - a valid assertion over (card, nonce, shown digest) approves; signCount is stored;
 - missing / invalid (UV off, other rp, other origin, other credential, bad signature) / other card / replayed after a
   re-arm / a cloned counter → refused, the card stays open, the phone is told `elev_refused`, nothing runs;
-- 拒绝 needs no assertion; a device without a passkey behaves exactly as before;
+- 拒绝 needs no assertion; a device without a passkey cannot approve;
 - a secret card with Face ID saves the value, which never shows up in a log / message / result;
 - after a F20 restore (new device id + approval key, same credential) the same passkey still approves.
 """
@@ -71,6 +71,7 @@ VEC = "d09334b6a4712179d9f5d26193e55039f115fbe3714d497906fc4a3c0165b44b"
 
 class FaceId(unittest.TestCase):
     """The test_f17 flow harness, with a passkey on the device record."""
+    USE_PASSKEY = False  # this suite explicitly controls enrollment
     REQ = f17.Flows.REQ
     tearDown, cards, done, run_flow, wait_card, assert_no_leak = (f17.Flows.tearDown, f17.Flows.cards, f17.Flows.done,
                                                                   f17.Flows.run_flow, f17.Flows.wait_card, f17.Flows.assert_no_leak)
@@ -122,9 +123,12 @@ class FaceId(unittest.TestCase):
         async def script(host, s, ph):
             c = await self.wait_card()
             self.assertNotIn("fa", c)
-            await host._app(s, answer(ph, c, True, PW))             # no assertion: approved as before
+            await host._app(s, answer(ph, c, True, PW))
+            self.assertTrue(self.refused())
+            self.assertFalse(self.done())
+            await host._app(s, answer(ph,c,False))
         res, _, _ = self.run_flow({**self.REQ}, script)
-        self.assertEqual(res["result"], "done")
+        self.assertEqual(res["result"], "denied")
         self.assertNotIn("passkey", elevate.read_log(self.st)[-1])
 
         # two phones, only one with a passkey: each card message is per device
@@ -142,6 +146,9 @@ class FaceId(unittest.TestCase):
             self.assertNotIn("fa", by[s.cid])
             self.assertEqual(by[12]["fa"], wire.b64u(self.a.id))
             await host._app(s, answer(ph, by[s.cid], True, PW))
+            self.assertTrue(self.refused())
+            self.assertFalse(self.done())
+            await host._app(s2, with_fa(answer(other, by[12], True, PW),fa(self.a,other,by[12])))
         res, _, _ = self.run_flow({**self.REQ}, script2)
         self.assertEqual(res["result"], "done")
 

@@ -3346,6 +3346,19 @@ html[data-ios-safari="1"] body::before{content:"";position:absolute;inset:0;back
 /* Fixed coordinates are layout-viewport coordinates; Safari can pan its visual viewport on focus. */
 /* The root-owned P472 status layer follows --vvtop in each iPhone mode. */
 
+/* P478 local import scopes: long folder paths wrap on a phone. */
+#set-local-files input,#set-local-files select{display:block;box-sizing:border-box;width:100%;min-height:44px;margin-block:8px 16px}
+.local-files-row{display:flex;align-items:center;gap:12px;margin-block:12px}
+.local-files-path{overflow-wrap:anywhere;min-width:0;flex:1}
+#set-local-files p{overflow-wrap:anywhere}
+/* P501: ephemeral paired WeChat setup panel. */
+
+#wechat-panel .box { max-height:85dvh; overflow:auto; }
+#wc-qr { max-width:280px; margin:16px auto; background:white; color:black; }
+#wc-qr img { width:100%; height:auto; display:block; }
+#wechat-panel button { min-height:56px; margin:4px; }
+#wc-code { max-width:16em; }
+
 /* P477: only the dark reply card's body text. Do not retint containers: chart shapes,
    borders, controls and icons consume their inherited currentColor independently. */
 .rm #words :is(h1,h2,h3,h4,h5,h6,strong,b,em,del,p,li,code,th,td,label,.lhost,.lang,.rxnote,.rc-note),

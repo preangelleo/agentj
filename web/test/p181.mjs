@@ -144,7 +144,7 @@ await C('long-press-name-renames', async () => {
     assert.equal(await shown(p, 'nameDlg'), true, 'a refusal keeps the dialog with the reason + suggestions');
     await ev(p, `${$('nameSave')}.click()`);
     await waitFor(p, `${$('nameDlg')}.hidden`);
-    await waitFor(p, `${$('agent')}.textContent === '小助手'`);
+    await waitFor(p, `${$('agent')}.textContent === 'Agent J - 小助手'`);
     assert.deepEqual(fake.st.renames.map((x) => [x.name, x.sigOk]), [['小助手', true], ['小助手', true]], 'signed with this remote\'s key');
     await hold(p, '#agent', 750, w < 500);
     await waitFor(p, `!${$('nameDlg')}.hidden`);

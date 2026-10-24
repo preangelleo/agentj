@@ -13,6 +13,8 @@ three minutes later. So, like P312's Codex probe, the job starts what serve will
 """
 from __future__ import annotations
 
+from . import resource_policy
+
 import asyncio
 import contextlib
 import os
@@ -91,7 +93,7 @@ def start_probe(st, cfg: dict, limit: float = 150, *, clock=time.monotonic) -> d
                 return None
             argv = fence.wrap(st, argv, d, allow_docker=cfg.get("docker", False))
             env = fence.launch_environment(env, cfg.get("docker", False), "opencode")
-        p = subprocess.Popen(argv, cwd=d, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+        p = subprocess.Popen(resource_policy.work_argv(argv), cwd=d, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                              stderr=subprocess.DEVNULL, start_new_session=True)
     except (OSError, ValueError):
         return {"secs": 0, "reason": "start_failed"}

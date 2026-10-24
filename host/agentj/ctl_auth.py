@@ -23,7 +23,7 @@ import os
 import subprocess
 import sys
 
-SENSITIVE = frozenset({"resume", "config_apply", "send", "revoke", "mail_cfg",   # P170: mail_cfg widening → the owner's card
+SENSITIVE = frozenset({"files_prepare", "wechat_terminal", "resume", "config_apply", "send", "revoke", "mail_cfg",   # P170: mail_cfg widening → the owner's card
                        "notify",     # P365: the owner's own automations only — never an Agent (notify.py)
                        "passphrase_consent", "passphrase_replace",    # #118: owner's terminal + a paired remote (pass_reset)
                        "terminal_cfg"})   # P408: widening the web terminal (enable / allow) — narrowing passes without a claim

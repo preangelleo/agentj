@@ -54,17 +54,28 @@ RFC8291_APPENDIX_A = (
 
 class Phone:
     """A paired device as the host sees it: X25519 static (only its public half matters here) + Ed25519 approval key."""
-    def __init__(self, st: State, name="手机", with_key=True):
+    def __init__(self, st: State, name="手机", with_key=True, with_passkey=False):
         self.pub = os.urandom(32)
         self.sk = Ed25519PrivateKey.generate()
         self.did = st.add_device(self.pub, name, _raw(self.sk.public_key()) if with_key else None)
         self.channel = st.config()["channel"]
+        self.policy_controls = with_passkey
+        if with_passkey:
+            from test_p57_passkey import Authenticator, pk_record
+            self.auth = Authenticator()
+            assert st.set_passkey(self.pub, pk_record(self.auth))
 
     def answer(self, ask: dict, ok: bool, *, tool=None, summary=None, rid=None) -> dict:
         d = approvals.shown_digest(tool or ask["tool"], summary if summary is not None else ask["summary"])
         rid = rid or ask["id"]
         sig = self.sk.sign(approvals.signed_message(self.channel, self.did, rid, "allow" if ok else "deny", d))
-        return {"t": "answer", "id": rid, "ok": ok, "sig": wire.b64u(sig)}
+        obj = {"t": "answer", "id": rid, "ok": ok, "sig": wire.b64u(sig)}
+        if ok and ask.get("passkey_required") and hasattr(self, "auth"):
+            from agentj import passkey
+            a = self.policy_host.asks[ask["id"]]
+            challenge = passkey.elevate_challenge(self.channel, self.did, a.rid, a.pk_kind, a.rid, a.digest)
+            obj["fa"] = self.auth.assert_(challenge, b"0", nonce=b"0")
+        return obj
 
 
 def _host(st, sent):
@@ -92,6 +103,7 @@ def _host(st, sent):
 
 def _ready(host, phone: Phone, cid=11):
     s = serve.Session(cid=cid, state="ready", device=phone.did, name="手机", pub=phone.pub)
+    phone.policy_host = host
     host.sessions[cid] = s
     return s
 

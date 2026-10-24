@@ -52,6 +52,11 @@ class Guard(unittest.TestCase):
 
 
 class Intake(_Base):
+    def setUp(self):
+        super().setUp()
+        from _avatar_fixture import legacy_transport_avatar
+        legacy_transport_avatar(self, self.host, lambda:self.t)
+
     async def test_fault_pauses_all_execution_and_private_still_works(self):
         with patch('agentj.tg_guard.evaluate',return_value=tg_guard.Verdict('jev-error','warn',error='timeout')):
             self.assertFalse(await self.t.incoming(msg('安排一下',uid=456,cid=-100),self.cfg))
@@ -76,7 +81,7 @@ class Intake(_Base):
         self.assertIn('转发数据',self.host._accept.call_args.args[1])
         self.host._accept.reset_mock()
         self.assertTrue(await self.t.incoming(msg('/stop'),self.cfg))
-        self.host.stop_turn.assert_awaited_once();self.host._accept.assert_not_awaited()
+        self.host.external_channels.sessions.stop_all.assert_awaited_once();self.host.stop_turn.assert_not_awaited();self.host._accept.assert_not_awaited()
 
     async def test_forwarded_compact_and_approve_cannot_execute(self):
         with patch.object(self.t,'compact',new=AsyncMock()) as compact:

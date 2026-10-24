@@ -41,7 +41,7 @@ export function addAsk(m) {
   if (typeof m.id !== 'string' || !/^[0-9a-f]{32}$/.test(m.id) || typeof m.tool !== 'string' || typeof m.summary !== 'string') return;
   if (S.asks.has(m.id)) return false;
   // §17.7 friend requests wait up to 7 days; tolerate an old host's 24h question deadline.
-  const maxTtl = m.tool === 'friend_request' ? 604800 : m.tool === 'peer_question' ? 86400 : 600;
+  const maxTtl = m.tool === 'friend_request' ? 604800 : ['peer_question','wechat_confirm'].includes(m.tool) ? 86400 : 600;
   const ttl = Number.isInteger(m.ttl) && m.ttl >= 0 && m.ttl <= maxTtl ? m.ttl : 120;
   const cats = Array.isArray(m.cat) ? m.cat.filter((c) => CATS.includes(c)) : [];
   const scope = !cats.length && typeof m.batch === 'string' && m.batch.length > 0 && m.batch.length <= 400 ? m.batch : null;

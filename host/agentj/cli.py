@@ -1251,6 +1251,8 @@ def cmd_status(a) -> None:
     res["dashboard"] = link["tenant"]["slug"] if link else "没加到 Agent J 账号"
     res["linked_via"] = link["via"] if link else None   # "seat" (seat setup code) | "code" (8-character agentj login)
     res["agent_name"] = st.agent_name()
+    from .text import agent_label
+    res["agent_display_name"] = agent_label(res["agent_name"])
     res["passphrase"] = gate.is_set(st)
     if res.get("agent_status") == "down" or res.get("relay_state") == "reconnecting":
         res["hint"] = RECONNECT_HINT          # P147: grey phone → one command
@@ -3076,7 +3078,7 @@ def main_jarvis(argv=None) -> None:
 
 # `migrate status` reports, `migrate rollback` undoes, `docs-rule` prints (or, with --write and the human's y, appends to the
 # AI's own memory file), `handover` only reads: none may move the state directory first
-NO_MIGRATE = ("diag", "preflight", "migrate", "docs-rule", "handover", "recall", "friends", "codex-sandbox", "capability", "google", "setup", "busy", "mail", "contacts", "imessage", "ask", "order", "core")   # recall / friends / codex-sandbox / capability: usually inside the fence
+NO_MIGRATE = ("files", "diag", "preflight", "migrate", "docs-rule", "handover", "recall", "friends", "codex-sandbox", "capability", "google", "setup", "busy", "mail", "contacts", "imessage", "ask", "order", "core")   # recall / friends / codex-sandbox / capability: usually inside the fence
 
 
 APPROVALS_HELP = {
@@ -3518,6 +3520,8 @@ def main(argv=None) -> None:
     from . import browser
     browser.add_parser(sub)   # P114: agentj browser setup|status|check|login|sites|open|endpoint|enable|disable
     from . import first_run, google
+    from . import local_files
+    local_files.add_parser(sub)
     first_run.add_parser(sub)   # P115 / P92: agentj setup checklist
     google.add_parser(sub)      # P115 / P91: agentj google status|check|install|plan|on|off
     from . import mail
@@ -3548,6 +3552,8 @@ def main(argv=None) -> None:
     docsrule.add_parser(sub)
     handover.add_parser(sub)
     from . import tg_cursor
+    from . import wechat
+    wechat.add_parser(sub)
     tg_cursor.add_parser(sub)   # B3 (P117): agentj telegram-cursor status · fence · import · export (ids only)
     plaza.add_parser(sub)
     support.add_parser(sub)   # F18: agentj support ask | report | thread | list

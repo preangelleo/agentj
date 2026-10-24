@@ -23,6 +23,8 @@ the scheduler paused until resume.
 """
 from __future__ import annotations
 
+from . import resource_policy
+
 import asyncio
 import contextlib
 import datetime as dt
@@ -1006,7 +1008,7 @@ class Scheduler:
             if src:
                 env["PYTHONPATH"] = src + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
             env["MCP_TOOL_TIMEOUT"] = str(int((host.ask_ttl + 60) * 1000))
-            why = agents.hooks_blocked(wd)
+            why = await asyncio.to_thread(agents.hooks_blocked, wd)
             if why:
                 raise TaskError("unsupported", why)
         elif kind in ("codex", "opencode", "kimi", "qwen", "dsh"):
@@ -1014,7 +1016,7 @@ class Scheduler:
             # research: Codex gets sandbox read-only and every request that is not read-only declined, OpenCode rules that
             # deny instead of ask
             if cfg.get("fence", True):
-                why = fence.problem(host.st, wd)
+                why = await asyncio.to_thread(fence.problem, host.st, wd)
                 if why:
                     raise TaskError("unsupported", fence.REASONS.get(why, why))
             if kind == "codex":
@@ -1037,12 +1039,12 @@ class Scheduler:
         else:
             raise TaskError("unsupported", "这个 Agent 还不能跑定时任务")
         if cfg.get("fence", True):
-            why = fence.problem(host.st, wd)
+            why = await asyncio.to_thread(fence.problem, host.st, wd)
             if why:
                 raise TaskError("unsupported", fence.REASONS.get(why, why))
-            argv = fence.wrap(host.st, argv, wd, allow_docker=cfg.get("docker", False))
+            argv = await asyncio.to_thread(fence.wrap, host.st, argv, wd, allow_docker=cfg.get("docker", False))
         env = fence.launch_environment(env, cfg.get("docker", False), "claude")
-        self.proc = p = await asyncio.create_subprocess_exec(*argv, cwd=wd, env=env, stdin=asyncio.subprocess.PIPE,
+        self.proc = p = await asyncio.create_subprocess_exec(*resource_policy.work_argv(argv), cwd=wd, env=env, stdin=asyncio.subprocess.PIPE,
                                                              stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
                                                              limit=agents.LINE_LIMIT, start_new_session=True)
         texts: list[str] = []

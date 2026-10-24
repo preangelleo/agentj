@@ -65,6 +65,8 @@ class _Base(unittest.IsolatedAsyncioTestCase):
                   patch('agentj.telegram.configuration', return_value=self.cfg)):
             p.start(); self.addCleanup(p.stop)
         self.t = tg.Telegram(self.host); self.t.bot_id = BOT; self.t.username = 'test_bot'
+        from _avatar_fixture import legacy_transport_avatar
+        legacy_transport_avatar(self, self.host, lambda: self.t)
 
     def call(self):
         return self.host._accept.call_args
@@ -151,8 +153,9 @@ class OwnerPrivate(_Base):
         self.assertIn('已配对的手机', self.bot.sent('sendMessage')[-1]['fields']['text'])
         self.t.compact = AsyncMock(return_value=True)
         self.assertTrue(await self.t.incoming(msg('/compact', reply_to_message=bot_msg('随便'), mid=2), self.cfg))
-        self.t.compact.assert_called_once()
-        self.host._accept.assert_not_called()
+        self.t.compact.assert_not_called()
+        self.host.external_channels.receive_owner.assert_awaited_once()
+        self.assertIn("/compact", self.host.external_channels.receive_owner.call_args.args[2])
 
     async def test_no_reply_is_unchanged(self):
         self.assertTrue(await self.t.incoming(msg('hello'), self.cfg))

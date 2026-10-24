@@ -30,7 +30,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 from agentj import elevate, passkey, secret_out, wire  # noqa: E402
 
-from test_f17 import answer  # noqa: E402
+from test_f17 import answer, enroll  # noqa: E402
 from test_l1 import Phone, _host, _ready, _state  # noqa: E402
 from test_p57_passkey import Authenticator, pk_record  # noqa: E402
 
@@ -81,7 +81,7 @@ class OutlivesCli(Base):
         """serve in-process; a REAL `agentj secret request` subprocess; kill it with `sig` once the card id is printed;
         then the phone answers. → (stderr of the killed CLI, the card, host)."""
         host = _host(self.st, self.sent)
-        ph = Phone(self.st)
+        ph = enroll(self.st, Phone(self.st))
         s = _ready(host, ph)
         work = self.d / "proj"
         work.mkdir(exist_ok=True)
@@ -155,7 +155,7 @@ class OutlivesCli(Base):
 
     def test_expiry_restart_pending_and_wait(self):
         host = _host(self.st, self.sent)
-        ph = Phone(self.st)
+        ph = enroll(self.st, Phone(self.st))
         s = _ready(host, ph)
         req = {"t": "secret", "name": "K", "purpose": "p", "dest": str(self.d / "k.txt")}
 

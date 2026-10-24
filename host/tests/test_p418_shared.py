@@ -26,7 +26,7 @@ import time
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from agentj import shared, harness_setup  # noqa: E402
+from agentj import shared, harness_setup, resource_policy  # noqa: E402
 
 PIN = "aaaaaaaa-1111-1111-1111-111111111111"
 NEWID = "bbbbbbbb-2222-2222-2222-222222222222"
@@ -93,7 +93,9 @@ class ClaudeFixture(unittest.IsolatedAsyncioTestCase):
     async def fake_exec(self, *argv, **kw):
         """Stands in for the real `claude`: records argv + kwargs; registers a live session (a sleeping child) under
         `answer_with`, or exits at once when that is None."""
-        self.calls.append((list(argv), kw))
+        prefix = resource_policy.work_argv([])
+        self.assertEqual(list(argv[:len(prefix)]), prefix)
+        self.calls.append((list(argv[len(prefix):]), kw))
         quiet = dict(stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         if self.answer_with is None:
             return await self._real_exec("true", **quiet)
@@ -325,7 +327,9 @@ class OwnerDown(unittest.IsolatedAsyncioTestCase):
         self.servers.append(await asyncio.start_server(handle, "127.0.0.1", self.port))
 
     async def fake_exec(self, *argv, **kw):
-        self.execs.append((list(argv), kw))
+        prefix = resource_policy.work_argv([])
+        self.assertEqual(list(argv[:len(prefix)]), prefix)
+        self.execs.append((list(argv[len(prefix):]), kw))
         await self.serve(404)                    # the "opencode serve" we started now listens (v1-like: no /api/info)
 
         class Proc:

@@ -39,17 +39,17 @@ try{
   ok(await evaluate(p,`window.__ajState==='ready'`),'a pong later than the deadline with other frames arriving keeps the session');
   ok(!fake.log.slice(n0).some(m=>m.t==='hello'),'…and no resume happened');
 
-  // 3. a silent host: one miss is retried; only the second miss in a row reconnects — and quietly
+  // 3. a silent host: one miss is retried; only the third miss in a row reconnects — and quietly
   fake.st.onApp=async(_c,m)=>m.t==='ping';
   await evaluate(p,sampler);
   await evaluate(p,`import('./js/session.js').then(m=>m.checkConnection())`);
   await sleep(11000);
   ok(await evaluate(p,`window.__ajState==='ready'`),'one missed pong alone does not drop the session');
   n0=fake.log.length;
-  await waitFor(p,`window.p129.some(x=>!x.endsWith('|ready'))`,16000);
+  await waitFor(p,`window.p129.some(x=>!x.endsWith('|ready'))`,100000);
   await waitState(p,'ready');
   const h2=fake.log.slice(n0).find(m=>m.t==='hello');
-  ok(h2&&h2.rc&&h2.rc.why==='hb','two misses in a row reconnect; the hello says rc why=hb');
+  ok(h2&&h2.rc&&h2.rc.why==='hb','three misses in a row reconnect; the hello says rc why=hb');
   s=await evaluate(p,`window.p129`);
   ok(s.every(x=>x.startsWith('on|')),'the heartbeat reconnect was quiet too');
   fake.st.onApp=null;

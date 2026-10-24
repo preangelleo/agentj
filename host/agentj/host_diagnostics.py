@@ -72,6 +72,9 @@ def execute(st, req):
             import json
             res = names.ctl_call(st, {"cmd": "status"}, 10) or {}
             safe = {k: res.get(k) for k in ("ok", "agent", "agent_status", "relay_up", "relay_state", "identity_ok", "harness_readiness")}
+            safe["agent_name"] = st.agent_name()  # P502: current owner-defined display data, including inside the fence
+            from .text import agent_label
+            safe["agent_display_name"] = agent_label(safe["agent_name"])
             print(json.dumps(safe), file=out)
             rc = 0 if res.get("ok") else 1
         elif op == "reconnect":

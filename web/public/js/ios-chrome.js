@@ -1,4 +1,4 @@
-// P459: black-translucent standalone paints the document, not a theme-color refresh.
+// P500: retain page-owned chrome for both legacy fullscreen and default installed shells.
 // The probe resolves current page / reader / custom-theme colours without feeding back the chrome token.
 let diagnostic = null, wired = false, waterWatch = null, waterSize = null;
 function diagnose() {

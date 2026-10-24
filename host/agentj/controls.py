@@ -27,7 +27,7 @@ import time
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
-from . import wire
+from . import wire, passkey
 
 CONTEXT = "agentjarvis-control-v1"
 ACTIONS = ("mem_rm", "mem_undo", "estop", "resume", "task_on", "task_off",
@@ -52,6 +52,9 @@ ACTIONS += ("vault_share",)         # P414 (§37.11): let this remote use the st
 ACTIONS += ("fr_gsay",)             # P426 #170 (§17.7): a message in 「我的设备」, the owner's own Same owner devices
 ACTIONS += ("skill_archive", "skill_restore")   # P426 #181-3 (§39): 「归档」/「恢复」 on the 技能 page (skill_usage.py)
 ACTIONS += ("fr_report_reply", "fr_report_remark")  # P498 trusted owner controls
+ACTIONS += ("files_write",)   # P478: paired phone local-file scopes
+ACTIONS += ("wechat",)  # P501: fixed channel setup/unbind/verification controls
+ACTIONS += ("host_write",)  # P503d: mail settings/test only
 TS_SKEW_MS = 120_000
 NONCE_KEEP_S = 600
 _NONCE = re.compile(r"[0-9a-f]{32}")
@@ -93,6 +96,8 @@ def object_text(action: str, obj: dict) -> str:
         return ("resend\n" if obj.get("resend") is True else "") + f"{obj['id']}\n{obj['text']}"
     if action == "fr_report_remark":
         return f"{obj['friend']}\n{obj['name']}"
+    if action == "host_write":
+        return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     if action == "bots_write":
         return json.dumps(obj["request"], sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     if action == "setup_mark":       # item id \n choice (selected | unused | later | start_exit) \n checklist revision
@@ -144,6 +149,8 @@ def object_text(action: str, obj: dict) -> str:
         return f"rv\n{obj['rv']}" if obj.get("rv") else "new"
     if action == "dev_confirm":      # the new device's id \n the 6-digit code its screen shows
         return f"{obj['device']}\n{obj['code']}"
+    if action == "files_write":
+        return f"{obj['op']}\n{obj['path']}\n{obj['expires']}"
     if action == "mem_rm":
         return f"{obj['src']}\n{obj['file']}\n{obj['fsha']}\n{obj['iid']}"
     if action == "mem_undo":
@@ -168,6 +175,8 @@ def object_text(action: str, obj: dict) -> str:
         return f"{obj['friend']}\n{_s(obj.get('text'))}"
     if action == "fr_gsay":          # P426 #170: the group is fixed ("devices"); the text exactly as sent
         return f"devices\n{obj['text']}"
+    if action == "wechat":
+        return f"{obj['op']}\n{obj['id']}\n{obj['code']}"
     raise ValueError("bad action")
 
 
@@ -200,6 +209,17 @@ class Nonces:
 
     def __init__(self):
         self.seen: dict[str, float] = {}
+        self.mail_offers: dict[str, tuple] = {}
+
+    def issue_mail(self, device, digest):
+        import secrets
+        now=time.monotonic()
+        self.mail_offers={n:v for n,v in self.mail_offers.items() if now-v[2]<120}
+        if len(self.mail_offers)>=1000:
+            raise ValueError("too_many")
+        n=secrets.token_hex(16)
+        self.mail_offers[n]=(device,digest,now)
+        return n
 
     def take(self, n: str, now: float | None = None) -> bool:
         now = time.monotonic() if now is None else now
@@ -232,8 +252,29 @@ def check(st, nonces: Nonces, channel: str, device: str, obj: dict, action: str,
         return "shape"
     if not verify(sk, sigb, channel, device, action, n, ts, digest):
         return "bad_signature"
+    count = None
+    if action == "host_write":
+        if target.get("kind") not in ("mail_set", "mail_test"):
+            return "shape"
+        offer=nonces.mail_offers.get(n)
+        if not offer or offer[:2]!=(device,digest) or not 0<=time.monotonic()-offer[2]<120:
+            return "stale"
+        pk = st.passkey_of_device(device)
+        if not pk:
+            return "no_passkey"
+        try:
+            f = passkey.approval_fields(obj.get("fa"))
+            if f["id"] != pk["id"]:
+                return "passkey_required"
+            ch = passkey.elevate_challenge(channel,device,n,action,n,digest)
+            count = passkey.verify_assertion(pk,f,ch)
+        except (passkey.PasskeyError,ValueError):
+            return "passkey_required"
     if not nonces.take(n):
         return "replay"
+    if count is not None:
+        nonces.mail_offers.pop(n,None)
+        st.passkey_count(device, pk["id"], count)
     return None
 
 

@@ -10,7 +10,7 @@ import {mkdirSync,writeFileSync} from 'node:fs';
 import {startWebServer} from './serve.mjs';
 import {startFakeHost} from './fakehost.mjs';
 const {chromium}=await import(process.env.AJ_PLAYWRIGHT_MODULE || '/tmp/aj-webmcp-playwright/node_modules/playwright/index.mjs');
-const OUT='reports/qa/p286';mkdirSync(OUT,{recursive:true});
+const OUT=process.env.P286_OUT||'reports/qa/p286';mkdirSync(OUT,{recursive:true});
 const web=await startWebServer({port:0,relayCsp:'ws://127.0.0.1:*'}), fake=await startFakeHost();
 const browser=await chromium.launch({executablePath:'/usr/bin/chromium',headless:true});
 let checks=0;const check=(a,b)=>{assert.ok(a,b);checks++;};
@@ -53,7 +53,7 @@ try {
   const w2=await page.$$eval('#qbar .qc',cs=>cs.map(c=>c.getBoundingClientRect().width));
   check(w2.length===2&&Math.abs(w2[0]-w2[1])<=1,'two quotes: halves '+w2.join(','));
   check(!(await page.locator('#qbJump').isVisible()),'the single row gives way to chips');
-  check(await page.$$eval('#qbar .qs',ts=>ts.every(t=>/^\d\d:\d\d · Jarvis$/.test(t.textContent))),'two chips: time · Agent');
+  check(await page.$$eval('#qbar .qs',ts=>ts.every(t=>/^\d\d:\d\d · Agent J - Jarvis$/.test(t.textContent))),'two chips: time · Agent');
   // the same selection again: no duplicate
   await unselect(page);await select(page,8,14);await page.waitForTimeout(700);check(await nq(page)===2,'same selection twice = one quote');
   // 3 → another card, reached by paging

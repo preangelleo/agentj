@@ -1,3 +1,4 @@
+import * as wechat from './js/wechat.js';
 import { floatAuthAsk } from './js/auth-overlay.js';
 import { showPairGuide } from './js/pair-guide.js';
 import { copyButton } from './js/copycode.js';
@@ -100,10 +101,15 @@ function cleanName(v) {
   const cps = Array.from(s);
   return (cps.length > NAME_MAX ? cps.slice(0, NAME_MAX).join('').trimEnd() : s) || null;
 }
+export function displayAgentName(name = agentName) {
+  const raw = typeof name === 'string' ? name.trim() : '';
+  if (!raw || raw.replace(/\s/gu, '').toLowerCase() === 'agentj') return DEFAULT_NAME;
+  return raw.toLowerCase().startsWith('agent j - ') ? raw : `Agent J - ${raw}`;
+}
 function renderName() {
-  $('brand-name').textContent = agentName ?? DEFAULT_NAME;
-  $('agent').textContent = agentName ?? DEFAULT_NAME;
-  document.title = agentName ?? t('meta.title');
+  $('brand-name').textContent = displayAgentName();
+  $('agent').textContent = displayAgentName();
+  document.title = agentName ? displayAgentName() : t('meta.title');
 }
 function setAgentName(v, save = true) {
   const n = cleanName(v);
@@ -326,7 +332,8 @@ function onHostGone() {
   contacts.clear({ keepForward: true });              // P184: open contact cards come again after ready
   secretout.clear({ keepOpened: true });              // F32: and open pickup cards (a value on screen stays)
   longtask.clear();                                   // 0.18: the host re-sends open opening cards after ready
-  logincard.clear();                                  // P114: the host re-sends open sign-in cards after ready
+  logincard.clear();
+  wechat.reset();                                  // P114: the host re-sends open sign-in cards after ready
   helpcard.clear();                                   // P411: … and open screen-help cards
   termhook.gone();                                    // P408: the terminal rode that session — the host has closed it
 }
@@ -408,7 +415,7 @@ api.onState((m) => relay.onSayState(m));
 controls.configure({ faceId: settings.faceIdStep, show, estopChanged: () => { relay.onEstop(); rerender(); }, friends: () => friends.refresh(), bots: () => bots.refresh() });
 bots.configure({openPanel:controls.openPanel});
 setupcard.configure({ openPanel: controls.openPanel, view: () => view });   // P131: the checklist page + chat banner
-friends.configure({ openPanel: controls.openPanel, leave: () => leavePage(), agentName: () => agentName ?? DEFAULT_NAME });
+friends.configure({ openPanel: controls.openPanel, leave: () => leavePage(), agentName: () => displayAgentName() });
 elevate.configure({ onSecretSaved: keys.saved, recover: () => cardsync.sync() }); // P392: no circular module dependency
 contacts.configure({ openSettingsMail: () => settings.openMail() });   // P184: no mailbox yet → Settings → 邮件通道
 upgcard.configure({ upgrade: () => api.upgradeNow() });   // P203: 「现在升级」 = this phone's signed /update
@@ -466,6 +473,7 @@ function onApp(m) {
     case 'secret_out_val': secretout.value(m); return; // the value, after Face ID, to this session only
     case 'secret_out_done': secretout.done(m); return;
     case 'secret_out_err': secretout.failed(m); return;
+    case 'wechat_state': wechat.route(m); return;
     case 'login_qr': logincard.add(m); return;          // P114: a sign-in QR card (only the QR, never chat history)
     case 'login_qr_done': logincard.done(m); return;
     case 'login_qr_state': logincard.state(m); return;
@@ -585,6 +593,7 @@ async function forgetLocal() {
   secretout.clear();
   longtask.clear();
   logincard.clear();
+  wechat.reset();
   helpcard.clear();
   setupcard.clear();
   await wipeLocal();
@@ -700,7 +709,7 @@ async function offerPasskey(m) {
   if (!yes) return;
   let reg;
   // cancelled / refused by the system (iPhone: no iCloud Keychain → no passkey can be saved): nothing changes; say why once
-  try { reg = await passkey.register(nonce, { relayIndex: ri, channel: h.channel, hostPub: h.hostPub, name, displaySuffix: t('pk.computer') }); } catch { toast(t('pk.notSaved'), 8000); return; }
+  try { reg = await passkey.register(nonce, { relayIndex: ri, channel: h.channel, hostPub: h.hostPub, name, displaySuffix: t('pk.computer'), replace: m.replace || null }); } catch { toast(t('pk.notSaved'), 8000); return; }
   session.sendApp(reg, g).catch(() => toast(t('pk.saveFail')));
 }
 async function pkSaved(m) {
@@ -1145,7 +1154,7 @@ function wire() {
   };
   $('unpair').addEventListener('click', unpairAsk);
   initVersionNotice(settings.refreshApp, {blocked: relay.refreshBlocked, save: relay.saveDraft});
-  busy.init({ name: () => agentName ?? DEFAULT_NAME, prompt: (k) => relay.sayPreset(k), detail: api.busyDetail });   // P160: a row → its read-only card
+  busy.init({ name: () => displayAgentName(), prompt: (k) => relay.sayPreset(k), detail: api.busyDetail });   // P160: a row → its read-only card
   agentname.init({ name: () => agentName ?? DEFAULT_NAME, canRename: () => session.isReady() });
   shotclip.init({ attach: (f) => relay.attachShot(f, false, true), say: () => toast(t('set.shotDenied'), 4000) });   // P398: auto
   offline.configure({
@@ -1220,7 +1229,7 @@ function wire() {
   settings.configure({                                // F13: the gear, before relay.init so its Esc runs first
     screenshot,
     gearHelp: () => noticeSheet(t('set.btn'), t('p264.gearHelp')),
-    agentName: () => agentName ?? DEFAULT_NAME,
+    agentName: () => displayAgentName(),
     paired: () => !['idle', 'pairing', 'awaiting-approval', 'revoked'].includes(state),
     connected: () => state === 'ready',
     myId: api.myIdSync,
@@ -1305,7 +1314,7 @@ async function main() {
     scan: () => { scanBack = null; startScan('any'); },
     api,
     myDev: api.myIdSync,
-    agentName: () => agentName ?? DEFAULT_NAME,
+    agentName: () => displayAgentName(),
     // P424 (#145): the rescue watchdog answers no `say` — a message sent while it holds the line waits in the offline queue
     // and goes out once Agent J itself is back (the next ready)
     connected: () => state === 'ready' && !session.peer.rescue,

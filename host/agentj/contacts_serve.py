@@ -44,6 +44,7 @@ import collections
 import contextlib
 import email.policy
 import email.utils
+import hashlib
 import re
 import secrets
 import time
@@ -97,8 +98,8 @@ class ContactService:
 
     def agent_name(self) -> str:
         with contextlib.suppress(Exception):
-            return self.st.agent_name() or "Agent J"
-        return "Agent J"
+            return self.st.agent_name() or ""
+        return ""
 
     # ------------------------------------------------------------------ mail plumbing (P170's account)
     def mail_state(self) -> tuple[dict | None, str | None, str | None]:
@@ -152,8 +153,9 @@ class ContactService:
     def build(self, cfg: dict, to: list[str], subject: str, body: str, files=(), kind: str = "forward",
               html: str | None = None, cc=()) -> EmailMessage:
         from . import mail as M
+        from .mail_template import agent_label
         m = EmailMessage(policy=email.policy.SMTP)
-        m["From"] = email.utils.formataddr((self.agent_name(), cfg["address"]))
+        m["From"] = email.utils.formataddr((agent_label(self.agent_name()), cfg["address"]))
         m["To"] = ", ".join(to)
         if cc:                         # P355: Cc is a header; Bcc never is (only the SMTP envelope carries it)
             m["Cc"] = ", ".join(cc)
@@ -326,8 +328,14 @@ class ContactService:
             return {"ok": False, "why": "secret"}
         subject, body, files, html, skips = content
         msg = self.build(cfg, [r["addr"] for r in recips], subject, body, files, html=html)
-        q.append(now)
         from . import mail as M
+        ans = await self.host.ask("agentj mail send", M.send_target(cfg,msg,[r["addr"] for r in recips]),
+                                  batch=False, require_passkey=True)
+        if ans.get("behavior") != "allow":
+            return {"ok":False,"why":"denied"}
+        if M.read_config(self.st) != cfg or self.host.stopped():
+            return {"ok":False,"why":"stale"}
+        q.append(now)
         log = {"domains": sorted({r["addr"].rpartition("@")[2] for r in recips})[:MAX_TO],   # never a whole address
                "msgid": str(msg["Message-ID"]).strip("<>")[:120]}
         try:
@@ -545,27 +553,6 @@ class ContactService:
                      ((f"；其中 {keys} 个密钥不随邮件发出，改成手机上的密钥领取卡" if zh else
                        f"; {keys} key(s) stay out of the mail and come as secret pickup cards") if keys else "")
                      if mine else ("发给外人：邮箱、电话、密钥等会打码" if zh else "To others: e-mail, phone numbers and keys are masked"))
-        listed = not delegated and (mine or await asyncio.to_thread(self.allowlisted, [r["addr"] for r in recips]))
-        if listed:      # P296: only the owner's own / allowlisted addresses — no card; logged, not asked
-            if self.host.stopped():
-                return {"ok": False, "why": "stopped", "detail": "已急停，邮件没有发出 / Agent J is stopped; the mail was not sent"}
-            from . import approvals
-            tool, summary, by = "agentj mail send", "\n".join(lines), "owner_direct" if mine else "allowlist"
-            rid = secrets.token_hex(16)
-            approvals.record(self.st, rid=rid, agent=getattr(getattr(self.host, "agent", None), "kind", "?"), tool=tool,
-                             input_sha256=approvals.input_digest({"summary": summary}),
-                             shown_sha256=approvals.shown_digest(tool, summary), decision="allow", reason=by, cats=[])
-            with contextlib.suppress(Exception):
-                self.host.activity("auto", id=rid, tool=tool, summary=summary, by=by)
-            ans = {"behavior": "allow"}
-        else:           # P296: the card offers each recipient not yet on the allowlist as an unticked box
-            mine_set = set(C.owner_emails(self.st))
-            offer = [r["addr"] for r in recips if r["addr"] not in mine_set and not self.allowlisted([r["addr"]])]
-            ans = await self.host.ask("agentj mail send", {"summary": "\n".join(lines)}, batch=False, allow_offer=offer)
-        if ans.get("behavior") != "allow":
-            self.st.log("mail_send", result="denied", to=len(recips))
-            return {"ok": False, "why": "denied", "detail": DENIED[self.lang()]}
-        added = await asyncio.to_thread(self.allow_add, ans.get("allow_add") or [])
         from .privacy import redact
         rep = {}
         if mine:        # P194: owner-directed — as written, credentials diverted to secret pickup cards
@@ -581,6 +568,16 @@ class ContactService:
         addr_of = {k: [r["addr"] for r in recips if r["as"] == k] for k in ("to", "cc", "bcc")}
         msg = self.build(cfg, addr_of["to"], subj, text, files, kind="agent", html=page, cc=addr_of["cc"])
         from . import mail as M
+        from . import mail as M
+        target = M.send_target(cfg,msg,[r["addr"] for r in recips])
+        target["summary"] = "\n".join(lines)
+        ans = await self.host.ask("agentj mail send", target, batch=False, require_passkey=True)
+        if ans.get("behavior") != "allow":
+            self.st.log("mail_send",result="denied",to=len(recips))
+            return {"ok":False,"why":"denied","detail":DENIED[self.lang()]}
+        if M.read_config(self.st) != cfg or self.host.stopped():
+            return {"ok":False,"why":"stale"}
+        added = await asyncio.to_thread(self.allow_add, ans.get("allow_add") or [])
         try:
             await asyncio.to_thread(self.smtp_send, cfg, pw, msg, [r["addr"] for r in recips])
         except M.MailError as e:
@@ -593,7 +590,7 @@ class ContactService:
                 **({"cc": addr_of["cc"]} if addr_of["cc"] else {}), **({"bcc": addr_of["bcc"]} if addr_of["bcc"] else {}),
                 **({"local_images": info["local_images"]} if info.get("local_images") else {}),
                 **({"removed": info["removed"]} if info.get("removed") else {}), "new_contacts": [x["addr"] for x in rec if x["added"]],
-                "owner_direct": mine, "no_card": bool(listed), **({"allowlisted": added} if added else {}), **({"secret_cards": rep["cards"], "withheld": rep["withheld"]} if rep.get("cards") or
+                "owner_direct": mine, "no_card": False, **({"allowlisted": added} if added else {}), **({"secret_cards": rep["cards"], "withheld": rep["withheld"]} if rep.get("cards") or
                                           rep.get("withheld") else {})}
 
     # ------------------------------------------------------------------ the contact card

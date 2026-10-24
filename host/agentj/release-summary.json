@@ -1,6 +1,6 @@
 {
-  "version": "0.25.6a1",
+  "version": "0.25.7a1",
   "major": false,
-  "zh": "好友直报与明确回复、签名工作流续跑、新鲜额度派活；离线审批和原生命令改进。",
-  "en": "Peer reports and explicit replies, signed workflow resume, fresh quota dispatch; offline approvals and native command improvements."
+  "zh": "统一 Agent 命名、账号和邮件逐次通行密钥确认、微信分身与识图；Mac 文件访问、负载和好友回复卡改进。",
+  "en": "Consistent Agent names, account/mail passkey checks, WeChat avatars and images; better Mac files, load handling and friend reply cards."
 }

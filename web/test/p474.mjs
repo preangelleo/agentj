@@ -12,8 +12,13 @@ const out=resolve(process.env.P474_OUT||'reports/qa/p474');mkdirSync(out,{recurs
 const baseline=mkdtempSync(join(tmpdir(),'p474-baseline-'));
 execFileSync('tar',['-x','-C',baseline],{input:execFileSync('git',['archive',process.env.P474_BASE||'d6545fb98','web/public'],{maxBuffer:64*1024*1024})});
 const before=await startWebServer({publicDir:join(baseline,'web/public')}),after=await startWebServer(process.env.P474_PUBLIC_DIR?{publicDir:resolve(process.env.P474_PUBLIC_DIR)}:{}),fake=await startFakeHost(),B=await launch();
-const screenshots=new Map(),comparisons=[],mutations=[];let checks=0;
+const screenshots=new Map(),comparisons=[],mutations=[],nameChanges=[];let checks=0;
 const check=(value,label)=>{assert.ok(value,label);checks++;};
+async function stableShot(p) {
+ let prior=null;
+ for(let attempt=0;attempt<6;attempt++){const bytes=await shoot(p);if(prior?.equals(bytes))return bytes;prior=bytes;}
+ assert.fail('two consecutive identical screenshot frames required');
+}
 const content='  香港 / Hong Kong\n\nRoom 201 · **literal markdown**  \n';
 try {
  for(const width of [390,1280])for(const language of ['zh','en'])for(const scheme of ['light','dark'])for(const [stage,web] of [['before',before],['after',after]]) {
@@ -46,10 +51,16 @@ try {
     if(['notes','todo','automation'].includes(id))await waitFor(p,`document.querySelector('.jc-body[data-card="${id}"]')`);
     await sleep(150);await ev(p,'document.fonts.ready');
     await ev(p,'document.getAnimations().forEach(a=>a.cancel())');
-    const bytes=await shoot(p),name=`${stage}-${id}-${tag}.png`;writeFileSync(join(out,name),bytes);
+    const bytes=await stableShot(p),name=`${stage}-${id}-${tag}.png`;writeFileSync(join(out,name),bytes);
     if(id!=='notes'){
      const k=`${id}-${tag}`;
-     if(stage==='before')screenshots.set(k,bytes);else {const same=bytes.equals(screenshots.get(k));comparisons.push({id,tag,equal:same});}
+     if(stage==='before')screenshots.set(k,bytes);else {
+      let comparison=bytes;
+      if(id==='chat'){
+       assert.equal(await ev(p,"document.getElementById('agent').textContent"),'Agent J');checks++;
+      }
+      const same=comparison.equals(screenshots.get(k));comparisons.push({id,tag,equal:same,rawEqual:bytes.equals(screenshots.get(k)),ticket:null});
+     }
     }
    }
    if(stage==='after') {
@@ -77,7 +88,7 @@ try {
    check(p.problems.length===0,p.problems.join('\n'));
   } finally {await p.dispose();}
  }
- writeFileSync(join(out,'browser.json'),JSON.stringify({checks,comparisons,physical:false},null,2));
+ writeFileSync(join(out,'browser.json'),JSON.stringify({checks,comparisons,nameChanges,physical:false},null,2));
  check(comparisons.every(x=>x.equal),'all non-Notebook screenshots byte-identical');
  if(!process.env.P474_PUBLIC_DIR){const rec=parityRecorder('web/test/p474.mjs');rec.record('P474 content-only clipboard and scoped layout',true);rec.write();}
  console.log(`P474 PASS: ${checks} assertions, ${comparisons.length} unchanged-page screenshots`);

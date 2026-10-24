@@ -49,19 +49,19 @@ let reconnectTimer = null;
 // P129: the first retry after a drop is almost immediate (a relay or network blink is over in well under a second), then
 // the ladder doubles to 30 s. A missed pong is not proof of a dead socket: the host may be busy streaming to this page, or
 // this page busy decrypting — any frame heard during the wait counts as alive, and only HEARTBEAT_MISSES misses in a row
-// with nothing heard close the session (the probe after the page comes back to the foreground still fails fast).
+// with nothing heard close the session, including a foreground probe (P452: CPU starvation is not a lost socket).
 const BACKOFF_FIRST = 250;
 // P133: the ladder stops at 5 s (a grey page waiting 30 s for its next try reads as broken); coming back to the foreground
 // or the network coming back retries at once. A resume that opened but did not get to ready within RESUME_STALL_MS is
 // abandoned and retried (the relay or the computer dropped it silently) — never a pairing or a computer that is down.
-const BACKOFF_MAX = 5000, RESUME_STALL_MS = 15000;
+const BACKOFF_MAX = 5000, RESUME_STALL_MS = 30000;
 let backoff = BACKOFF_FIRST;
 // P168: what the offline card may say about the automatic reconnect — real numbers only (no invented progress):
 // attempts = scheduled retries since the last ready session, nextAt = when the pending one fires (null = none pending).
 let retries = 0, nextAt = null;
 export const retryInfo = () => ({ attempts: retries, nextAt });
 let heartbeatTimer = null, heartbeatRun = 0, heartbeatMisses = 0;
-const HEARTBEAT_MS = 20000, HEARTBEAT_TIMEOUT_MS = 10000, HEARTBEAT_RETRY_MS = 3000, HEARTBEAT_MISSES = 2;
+const HEARTBEAT_MS = 20000, HEARTBEAT_TIMEOUT_MS = 30000, HEARTBEAT_RETRY_MS = 3000, HEARTBEAT_MISSES = 3;
 // P129: why the previous session ended — sent (diagnostics only) in the next resume's hello as rc, logged by the host.
 let lastDrop = { why: 'load', code: null, at: 0 };
 function dropped(why, code = null) { if (!lastDrop) lastDrop = { why, code: Number.isInteger(code) ? code : null, at: Date.now() }; }
@@ -184,6 +184,7 @@ function rcField() { const rc = reconnectReason(); return rc ? { rc } : {}; }
 function readCaps(m) {
   peer.wfresume1 = Array.isArray(m.caps) && m.caps.includes('wfresume1');
   peer.friendreport1 = Array.isArray(m.caps) && m.caps.includes('friendreport1');
+  peer.mailuv1 = Array.isArray(m.caps) && m.caps.includes('mailuv1');
   peer.wf1 = Array.isArray(m.caps) && m.caps.includes('wf1');
   peer.jpalette1 = Array.isArray(m.caps) && m.caps.includes('jpalette1'); // P420 global palette library
   peer.sk1 = peer.wf1 && m.caps.includes('sk1');   // P426 (§39): skill health + skill_archive / skill_restore
@@ -375,8 +376,7 @@ function armHeartbeat(ms = HEARTBEAT_MS) {
   heartbeatTimer = peer.heartbeat && isReady() ? setTimeout(checkConnection, ms) : null;
 }
 /** Detect an open socket whose peer stopped answering; no message is declared received by this probe.
- *  fast = the probe right after the page comes back to the foreground (a socket that slept is often half-open): one miss
- *  with nothing heard ends it. Otherwise a miss is retried after HEARTBEAT_RETRY_MS, and anything heard resets the count. */
+ *  Foreground probes share the load grace. A miss is retried after HEARTBEAT_RETRY_MS; any frame resets the count. */
 export async function checkConnection(fast = false, why = 'hb') {
   const s = sess, g = gen(), run = ++heartbeatRun;
   if (!s || !g || !peer.heartbeat || document.visibilityState !== 'visible') return;
@@ -386,7 +386,7 @@ export async function checkConnection(fast = false, why = 'hb') {
   if (answer.t === 'pong') { heartbeatMisses = 0; armHeartbeat(); return; }
   const heard = answer.t === 'timeout' && s.rxAt > askedAt && s.ws.readyState === WebSocket.OPEN;
   if (heard) { heartbeatMisses = 0; armHeartbeat(HEARTBEAT_RETRY_MS); return; }   // busy, not dead
-  if (answer.t === 'timeout' && !fast && ++heartbeatMisses < HEARTBEAT_MISSES && s.ws.readyState === WebSocket.OPEN) {
+  if (answer.t === 'timeout' && ++heartbeatMisses < HEARTBEAT_MISSES && s.ws.readyState === WebSocket.OPEN) {
     armHeartbeat(HEARTBEAT_RETRY_MS);
     return;
   }

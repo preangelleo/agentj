@@ -10,6 +10,7 @@ import pathlib
 import sys
 import tempfile
 import time
+from unittest.mock import AsyncMock
 import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -97,7 +98,7 @@ class Notes(unittest.IsolatedAsyncioTestCase):
         self.tmp = tempfile.TemporaryDirectory(prefix="p182n-", dir=TEST_TMP); self.addCleanup(self.tmp.cleanup)
         self.st = State(pathlib.Path(self.tmp.name) / "s"); self.st.init()
         self.notes = []
-        self.host = SimpleNamespace(st=self.st, lang="zh", hist_add=lambda src, text, end: self.notes.append(text))
+        self.host = SimpleNamespace(st=self.st, lang="zh", ask=AsyncMock(return_value={"behavior":"allow"}), stopped=lambda:False, hist_add=lambda src, text, end: self.notes.append(text))
         self.m = M.Mail(self.host)
 
     def configure(self, secret=True):

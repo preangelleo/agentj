@@ -1,4 +1,4 @@
-// P459 supersedes #86/#134: static black-translucent, document-owned current-page chrome.
+// P500 restores the pre-P393 default install style; document-owned page chrome remains.
 // Historical P393: Leo 10-19 「为啥我看 mac m1 agentj 顶部会继续出现 141414 以外的颜色」): on iOS the top status-bar area
 // and the bottom home-bar area stay #141414 after the phone connects, through every state, a forced repaint and a changed
 // state colour; Android keeps its page-colour bars. Chromium + CDP safe-area emulation, not physical Safari system chrome:
@@ -25,9 +25,9 @@ const pagePixel=(actual,expected,label)=>assert.ok(actual.every((v,i)=>Math.abs(
 const STATES={idle:{status:'idle',kind:'',conn:'on'},working:{status:'working',kind:'',conn:'on'},waiting:{status:'waiting',kind:'',conn:'on'},
  question:{status:'waiting',kind:'question',conn:'on'},offline:{status:'unknown',kind:'',conn:'off'}};
 try{
- // What iOS reads at launch: the served HTML itself says black-translucent (the runtime switch alone was ignored on device).
+ // Static installation metadata: default geometry, not a runtime status-style mutation.
  const html=await (await fetch(new URL('index.html',web.url))).text();
- assert.match(html,/<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">/,'served HTML: static black-translucent');
+ assert.match(html,/<meta name="apple-mobile-web-app-status-bar-style" content="default">/,'P500 served HTML: legacy default install style');
  for(const [name,ua,platform,standalone,top,isIos] of [['iphone-pwa',ios,'iPhone',true,47,true],['iphone-pwa-opaque',ios,'iPhone',true,0,true],
   ['iphone-safari',ios,'iPhone',false,47,true],['android',android,'Linux armv8l',false,24,false]]){
   const p=await newPage(B,390,844,'light',{ua,touch:true,allow:[web.url,fake.relay+'/']});
@@ -52,7 +52,7 @@ try{
     if(isIos){
      assert.ok(r.meta.every(v=>v==='#2c2b26'),`${name}/${scheme}/${state} static theme metadata`);
      assert.deepEqual(rgb(r.top),[44,43,38]);for(const k of ['root'])assert.deepEqual(rgb(r[k]),standalone?[44,43,38]:rgb(r.body),`${name}/${scheme}/${state} ${k}`);
-     assert.equal(r.apple,'black-translucent');assert.ok(r.h>=top,`${name} top strip ${r.h}`);
+     assert.equal(r.apple,'default');assert.ok(r.h>=top,`${name} top strip ${r.h}`);
      if(top>0)assert.deepEqual(px(f,5,0),[44,43,38],`${name}/${scheme}/${state} top pixel`);else {
       // With no safe area the waiting aura is legitimately visible; prove that a zero-height status layer paints nothing.
       assert.equal(r.h,0);

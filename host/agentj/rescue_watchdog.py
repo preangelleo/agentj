@@ -17,6 +17,8 @@ It holds no more rights than serve: same user, same state directory, read-only o
 """
 from __future__ import annotations
 
+from . import resource_policy
+
 import asyncio
 import contextlib
 import fcntl
@@ -340,7 +342,7 @@ class Watchdog:
             code, phase = None, "connect"
             try:
                 cert = await asyncio.to_thread(seatcert.SeatCert(self.st, self.relay).cert)
-                async with connect(url, max_size=2**17, ping_interval=20, ping_timeout=20, open_timeout=OPEN_TIMEOUT) as ws:
+                async with connect(url, max_size=2**17, ping_interval=resource_policy.PING_INTERVAL, ping_timeout=resource_policy.PING_TIMEOUT, open_timeout=resource_policy.OPEN_TIMEOUT) as ws:
                     phase = "auth"
                     await self._auth(ws, cert)
                     phase, self.ws, backoff = "up", ws, 2.0

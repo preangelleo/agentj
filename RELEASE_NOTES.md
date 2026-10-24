@@ -1,6 +1,6 @@
-# Agent J 0.25.6a1 release notes
+# Agent J 0.25.7a1 release notes
 
-Host 0.25.6a1 / install 0.27.6; phone-web scope.
+Host 0.25.7a1 / install 0.27.7; phone-web scope.
 Phone parity must pass --strict. Full Android/Telegram parity is incomplete.
 Full Android/Telegram parity is incomplete.
 No APK is included in this release. Android source is for review, not a released app.
@@ -8,25 +8,23 @@ No APK is included in this release. Android source is for review, not a released
 Publication status: local preparation only. Live site verification is DEFERRED until
 the public commit and tag are pushed, the site is deployed, and cold installation passes.
 
-Release order: C (Dashboard support/knowledge and installation guidance, no D1 migration), then A signed host/site/downloads then B phone web immediately after. No relay change. The0.25.5 baseline is credential-revocation compatible. Keep0036 credential_revocations, host_credential_revocations, host_credential_epochs, epoch/ACK/seq and local credential_revocations.json/security_rotation.json permanently. Never restore an older database snapshot or downgrade to a host/control plane that ignores revocations. Only compatible rollback, otherwise repair forward. Local preparation only; publication needs separate authorization. Physical iPhone/Android and native Mac acceptance are not claimed.
+Release order: C applies app D1 0037_action_uv.sql before Dashboard; then A signed host/site/downloads, immediately followed by B phone web. No relay or feedback D1 change. Keep0036 revocation state and local security journals permanently. Never replay0037, restore an older database snapshot or use revocation-incompatible code; rollback compatible code only, otherwise repair forward. Native Mac M1 and physical iOS band/installation acceptance remain pending. Local preparation only; no push or deployment authorized.
 ## Changes
 
-- Peer sessions report into the main thread using your local name; explicit replies stay on the original peer channel.
-- Resume a failed multi-step workflow with a phone signature; non-idempotent steps still need confirmation.
-- Explain dispatch recommendations using fresh verified readings from both accounts; missing data yields no recommendation.
-- Check Kimi K3.1 Pro candidates separately for API, Coding and OpenCode Go routes and actual account availability.
-- Offline administrator approvals retain the same card and deadline; reconnect resends the request and expiry restores no authority.
-- Use official headless APIs for Codex review and OpenCode init/review; label Codex init as terminal-only.
-- The main Agent can suggest importing unmanaged keys from fixed registered sources through existing secret cards, showing names only.
-- Reuse the microphone during foreground takes; stop capture when hidden or locked. Recording again after returning may require permission.
-- 好友分身默认直报主对话，使用你的本机备注；明确回复只走原好友通道。
-- 失败的分步工作流可从手机签名续跑，非幂等步骤仍需确认。
-- 派活前根据新鲜且可核实的双账号用量给出可解释推荐；缺数据就不推荐。
-- Kimi K3.1 Pro 候选按 API、Coding 和 OpenCode Go 路线及账号可用清单核对。
-- 离线管理员审批保留原卡和截止时间，重新连上重发原请求；过期不恢复授权。
-- Codex审查及OpenCode初始化/审查接入官方无头接口；Codex初始化如实标明终端专用。
-- 主 Agent 可建议通过既有密钥卡导入固定来源的未管理密钥，只展示变量名。
-- 前台连续录音复用麦克风；锁屏或切走后停止采集，回来再次录音时可能需要授权。
+- Use isolated assistants for WeChat and external channels, with reports to the owner and native image input.
+- Confirm each sensitive account action with a passkey; review again if its quote or target changes.
+- Require this remote’s approval passkey for every outgoing email, mail-setting change, admin card and secret card.
+- Use Agent J - <name> consistently while preserving the owner’s chosen name.
+- Style friend reports with light cards and green actions; an unknown send result requires the owner to check before resending.
+- Complete iOS home-screen installation metadata. Remove and add older shortcuts again; the reported band still needs physical-device verification.
+- Improve macOS file access and high-load handling. Native Mac M1 acceptance is pending.
+- 微信及外部通道使用独立分身，给主人直报并支持原生识图。
+- 账号页敏感操作每次用通行密钥确认，报价和目标变化后重新核对。
+- 每次发邮件及修改邮件设置均需本机遥控器通行密钥确认；管理员和密钥卡同样需要确认。
+- 商用称呼统一为 Agent J - <名字>，保留主人自取名字。
+- 好友直报使用浅色卡片和绿色按钮，发送结果未知时由主人核对后确认重发。
+- 补齐 iOS 主屏幕安装元数据；旧快捷方式需删除后重新添加，浅带仍待实体复验。
+- 改善 macOS 文件访问和高负载保底；Mac M1 原生验收待实体验收。
 
 ## Material acceptance limits
 

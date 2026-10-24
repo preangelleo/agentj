@@ -3467,3 +3467,19 @@ P498 data-card boundary: peer reports append the local peer result as a complete
 Report metadata also carries `source:{kind:unknown,role:group}`, `untrusted:true`, `execute:false` and per-ID `states` (replied/reply_uncertain). The body is rendered as inert plain text, including in the full-screen reader. Signed replies recheck the authenticated device after asynchronous privacy review; no report text creates an owner reply/component.
 
 P498g reply recovery: an explicit unknown-result resend uses `fr_report_reply {id,text,resend:true,n,ts,sig}`. Its controlObject is `resend\nid\ntext`; ordinary replies keep `id\ntext`. The report ID is exactly64hex, so the `resend` first-line discriminator cannot collide with an ordinary reply, regardless of reply text. Removing or adding resend invalidates the signature. Only an unknown receipt accepts resend; an ordinary reply cannot reopen it. Startup changes persisted sending to unknown before ingress and updates the original card. Known-unsent failures return pending with fixed reason; uncertain transport is never automatically retried.
+
+## P501 — WeChat ClawBot channel
+
+Tencent iLink 2.4.10 is host-to-Tencent HTTPS, not the Agent J Noise channel. The paired Web App sends
+`wechat {op:status}` for an ephemeral state projection. Writes use existing control-v1 action `wechat`, target
+`{op,id,code}` spelled `op\nid\ncode`; only setup/unbind/verify are accepted, with nonce/time/device/signature checks.
+Verification digits and QR PNG are ephemeral; status CLI returns counters/bound/pending/error only. Host QR PNG travels only
+inside ready device Noise messages, never history. Terminal QR projection requires the existing ctl claim plus actual tty.
+
+Out-of-scope messages become encrypted host-private pending records with inbox source=wechat/untrusted=true/execute=false.
+`wechat_confirm` uses existing Ask approvals-v1 and optional passkey.elevate_challenge; summary and request ID are signed,
+no batch/full/goal bypass. No decision → no main queue entry, expires24h. Explicit owner Web App natural-language claiming
+uses the existing Agent-facing elevate socket `t:wechat,op:pending|claim,id`; claim requires current Send.source kind phone,
+role owner (None refuses), not a boolean in the untrusted payload. HandoffSend records a normal main history turn, retains
+wechat_task delegated provenance, and rechecks generation/expiry/stop in wait_ready. Existing sensitive-action approvals
+apply with no owner grants. Uncertain transfer is never replayed; unbind invalidates pending/queued work and credentials.

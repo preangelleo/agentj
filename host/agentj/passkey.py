@@ -146,7 +146,7 @@ def client_data(cd: bytes, typ: str, challenge: bytes) -> str:
     ch = c.get("challenge")
     if not isinstance(ch, str) or not hmac.compare_digest(ch.rstrip("=").encode(), wire.b64u(challenge).encode()):
         raise PasskeyError("bad", "cd_challenge")
-    if c.get("crossOrigin") is True:
+    if c.get("crossOrigin", False) is not False or "topOrigin" in c:
         raise PasskeyError("bad", "cd_cross_origin")
     origin = c.get("origin")
     if not origin_allowed(origin):
@@ -199,7 +199,57 @@ def verify_registration(obj: dict, nonce: bytes) -> dict:
     spki = b64(obj.get("spki"), MAX_SPKI, "spki")
     load_spki(spki, alg)
     origin = client_data(b64(obj.get("cd"), MAX_CD, "cd"), "webauthn.create", nonce)
-    return {"id": wire.b64u(cred), "alg": alg, "spki": wire.b64u(spki), "rp": rp_of(origin), "at": int(time.time())}
+    # attestation='none' still carries authoritative authenticator data and COSE key.
+    # Browser-supplied SPKI alone is not a registration ceremony.
+    from .webauthn_cbor import decode
+    try:
+        raw = b64(obj.get("att"), 8192, "attestation")
+        att, end = decode(raw)
+        if end != len(raw) or not isinstance(att, dict) or att.get("fmt") != "none" or att.get("attStmt") != {}:
+            raise ValueError("attestation format")
+        ad = att.get("authData")
+        if not isinstance(ad, bytes) or not 55 <= len(ad) <= 4096:
+            raise ValueError("authenticator data")
+        rp_hash, flags, count = auth_data(ad)
+        if rp_hash != hashlib.sha256(rp_of(origin).encode()).digest() or flags & 0x45 != 0x45:
+            raise ValueError("rp or UP/UV/AT")
+        if flags & 0x10 and not flags & 0x08:
+            raise ValueError("backup flags")
+        size = int.from_bytes(ad[53:55], "big")
+        if not 1 <= size <= MAX_CRED_ID or ad[55:55+size] != cred:
+            raise ValueError("credential id")
+        cose, pos = decode(ad, 55+size)
+        if not isinstance(cose, dict) or cose.get(3) != alg:
+            raise ValueError("COSE algorithm")
+        if alg == ALG_ES256 and cose.get(1) == 2 and cose.get(-1) == 1:
+            if len(cose[-2]) != 32 or len(cose[-3]) != 32:
+                raise ValueError("EC size")
+            registered = ec.EllipticCurvePublicNumbers(int.from_bytes(cose[-2], "big"),
+                                                      int.from_bytes(cose[-3], "big"), ec.SECP256R1()).public_key()
+        elif alg == ALG_EDDSA and cose.get(1) == 1 and cose.get(-1) == 6:
+            registered = ed25519.Ed25519PublicKey.from_public_bytes(cose[-2])
+        elif alg == ALG_RS256 and cose.get(1) == 3:
+            registered = rsa.RSAPublicNumbers(int.from_bytes(cose[-2], "big"), int.from_bytes(cose[-1], "big")).public_key()
+            if registered.key_size < 2048:
+                raise ValueError("RSA size")
+        else:
+            raise ValueError("COSE type")
+        if flags & 0x80:
+            ext, pos = decode(ad, pos)
+            if not isinstance(ext, dict):
+                raise ValueError("extensions")
+        if pos != len(ad) or registered.public_bytes(serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo) != spki:
+            raise ValueError("public key binding")
+    except (ValueError, KeyError, TypeError, OverflowError):
+        raise PasskeyError("bad", "registration_authdata") from None
+    return {"id": wire.b64u(cred), "alg": alg, "spki": wire.b64u(spki), "rp": rp_of(origin), "at": int(time.time()), "sc": count}
+
+
+def replacement_offer_challenge(nonce: bytes, old: dict | None) -> bytes:
+    """Old UV authorizes one host registration offer, before the authenticator can replace its key."""
+    old=old or {}
+    return hashlib.sha256("\n".join(["agentj/passkey/replace-offer/v1",wire.b64u(nonce),
+                                     old.get("id", ""),old.get("rp", "")]).encode()).digest()
 
 
 def restore_fields(obj: dict) -> dict:
@@ -218,7 +268,9 @@ def restore_fields(obj: dict) -> dict:
 def verify_assertion(pk: dict, f: dict, challenge: bytes) -> int:
     """A restore assertion `f` (restore_fields; or approval_fields for a F17 card) against the stored `pk` record → the signCount to store (0 = synced
     passkey, not tracked). The caller already matched f["id"] to pk["id"] and checked the user handle."""
-    client_data(f["cd"], "webauthn.get", challenge)
+    origin = client_data(f["cd"], "webauthn.get", challenge)
+    if rp_of(origin) != pk.get("rp"):
+        raise PasskeyError("bad", "rp_origin")
     rp_hash, flags, count = auth_data(f["ad"])
     if not isinstance(pk.get("rp"), str) or not hmac.compare_digest(rp_hash, hashlib.sha256(pk["rp"].encode()).digest()):
         raise PasskeyError("bad", "rp_hash")

@@ -92,7 +92,10 @@ class TelegramPreferencesTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory(prefix='aj-tg-',dir=TEST_TMP) as d:
             st=State(Path(d)/'state');st.init()
             host=SimpleNamespace(st=st,preferences={'channels':{'items':[{'id':'telegram','type':'telegram'}]}},agent=object(),stopped=lambda:False,_accept=AsyncMock(),stop_turn=AsyncMock())
-            tg=telegram.Telegram(host);cfg={'owner_id':123,'key_env':'AJ_TEST_TG_KEY'}
+            tg=telegram.Telegram(host)
+            from _avatar_fixture import legacy_transport_avatar
+            legacy_transport_avatar(self, host, lambda:tg)
+            cfg={'owner_id':123,'key_env':'AJ_TEST_TG_KEY'}
             enrolled=patch('agentj.telegram.configuration',return_value=cfg);enrolled.start();self.addCleanup(enrolled.stop)
             def msg(sender=123,chat=123,text='hello',typ='private'):return {'message':{'from':{'id':sender},'chat':{'id':chat,'type':typ},'text':text}}
             for update in [msg(sender=456),msg(chat=-123,typ='group')]:self.assertFalse(await tg.incoming(update,cfg))
@@ -139,6 +142,8 @@ class SpeechTransportTest(unittest.IsolatedAsyncioTestCase):
         self.host.preferences['channels']['items']=[{'id':'telegram','type':'telegram'}]
         self.host.agent=SimpleNamespace(kind='claude',status='idle',halting=False,submit=Mock())
         self.host.telegram=telegram.Telegram(self.host)
+        from _avatar_fixture import legacy_transport_avatar
+        legacy_transport_avatar(self, self.host, lambda:self.host.telegram)
         update={'message':{'from':{'id':123},'chat':{'id':123,'type':'private'},'text':'Please answer'}}
         with patch('agentj.telegram.configuration',return_value=cfg),patch.object(self.host,'push_notify'):
             self.assertTrue(await self.host.telegram.incoming(update,cfg))

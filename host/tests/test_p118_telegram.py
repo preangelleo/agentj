@@ -59,10 +59,12 @@ class _Base(unittest.IsolatedAsyncioTestCase):
         for p in (patch.object(tg, 'BASE', self.bot.url), patch.dict(os.environ, {KEY_ENV: 'test-placeholder'}),
                   patch('agentj.telegram.configuration', return_value=self.cfg)):
             p.start(); self.addCleanup(p.stop)
+        from _avatar_fixture import CaptureAvatar
+        self.host.external_channels = CaptureAvatar()
         self.t = tg.Telegram(self.host); self.t.bot_id = 99; self.t.username = 'test_bot'
 
     def delivered(self):
-        return [c.args[1] for c in self.host._accept.call_args_list]
+        return [c[1] for c in self.host.external_channels.calls] + [c.args[1] for c in self.host._accept.call_args_list]
 
 
 # ------------------------------------------------------------------ B2
@@ -167,9 +169,9 @@ class Rounds(_Base):
                for i in range(3)]
         with patch('agentj.telegram.download', side_effect=download), patch('agentj.uploads.magic_ok', return_value=True):
             await self.t.handle_round(ups, self.cfg)
-        self.assertEqual(self.host._accept.await_count, 1)
-        call = self.host._accept.call_args
-        self.assertEqual(len(call.kwargs['blobs']), 3); self.assertIn('three photos', call.args[1])
+        self.host._accept.assert_not_awaited()
+        call = self.host.external_channels.receive_owner.call_args
+        self.assertEqual(len(call.kwargs['blobs']), 3); self.assertIn('three photos', call.args[2])
 
     async def test_supergroup_migration_follows_the_configured_id(self):
         await self.t.handle_round([{'update_id': 40, **msg('', uid=456, cid=-100, migrate_to_chat_id=-1009)}], self.cfg)
@@ -245,8 +247,8 @@ class OwnerCommands(_Base):
     async def test_owner_gets_the_code_the_model_and_log_never_do(self):
         prog = self.program('echo "CODE: P118-TEST-$(echo "$@" | tr " " -)"; echo "terms line"')
         self.host.preferences['telegram']['owner_commands'] = [{'id': 'promo', 'cmd': 'promo', 'exec': prog, 'args': ['new'], 'choices': ['first-month']}]
-        self.assertTrue(await self.t.incoming(msg('/promo@test_bot', mid=5), self.cfg))
-        self.assertTrue(await self.t.incoming(msg('/promo first-month', mid=6), self.cfg))
+        self.assertTrue(await self.t.owner_command(self.cfg, OWNER, 5, self.host.preferences['telegram']['owner_commands'][0], None))
+        self.assertTrue(await self.t.owner_command(self.cfg, OWNER, 6, self.host.preferences['telegram']['owner_commands'][0], 'first-month'))
         self.host._accept.assert_not_called()
         sent = self.bot.sent('sendMessage')
         self.assertEqual(sent[0]['fields']['parse_mode'], 'HTML'); self.assertEqual(sent[0]['fields']['chat_id'], OWNER)
@@ -272,7 +274,7 @@ class OwnerCommands(_Base):
                 {'id': 'b', 'cmd': 'b', 'exec': self.program('echo "CODE: X"', 0o777)},
                 {'id': 'c', 'cmd': 'c', 'exec': self.program('echo "boom AGENTJ_ISSUER_TOKEN=abcdef1234567890 AJI-0123456789abcdef" >&2; exit 3')}]
         self.host.preferences['telegram']['owner_commands'] = rows
-        for text in ('/a', '/a', '/b', '/c'): await self.t.incoming(msg(text), self.cfg)
+        for text in ('/a', '/a', '/b', '/c'): await self.t.owner_command(self.cfg, OWNER, None, *tg_owner_cmds.match(rows, text, self.t.username))
         texts = self.bot.texts()
         self.assertIn('<code>X</code>', texts[0]); self.assertIn('太频繁', texts[1]); self.assertIn('可信', texts[2])
         self.assertIn('失败', texts[3]); self.assertNotIn('abcdef1234567890', texts[3]); self.assertNotIn('AJI-0123', texts[3])
@@ -284,7 +286,7 @@ class OwnerCommands(_Base):
         prog = self.program(f'echo "CODE: ${{{KEY_ENV}:-absent}}-${{OPENROUTER_API_KEY:-absent}}-${{HOME:+home}}"')
         self.host.preferences['telegram']['owner_commands'] = [{'id': 'e', 'cmd': 'envcheck', 'exec': prog}]
         with patch.dict(os.environ, {'OPENROUTER_API_KEY': 'test-placeholder-provider'}):
-            self.assertTrue(await self.t.incoming(msg('/envcheck'), self.cfg))
+            self.assertTrue(await self.t.owner_command(self.cfg, OWNER, None, self.host.preferences['telegram']['owner_commands'][0], None))
         self.assertIn('<code>absent-absent-home</code>', self.bot.texts()[-1])
 
     def test_trust_rules(self):
@@ -361,6 +363,8 @@ class RealHostIntake(unittest.IsolatedAsyncioTestCase):
             host.preferences['telegram']['private_domains'] = ['private-test.example']
             host.agent_cfg = {'dir': d}
             host.agent = SimpleNamespace(kind='claude', status='idle', halting=False, submit=Mock())
+            from _avatar_fixture import CaptureAvatar
+            host.external_channels = CaptureAvatar('主人分身答复')
             host.telegram = tg.Telegram(host); host.telegram.bot_id = 99; host.telegram.username = 'test_bot'
 
             def download(cfg_, media, path):
@@ -375,20 +379,22 @@ class RealHostIntake(unittest.IsolatedAsyncioTestCase):
                     patch.object(host, 'push_notify'):
                 await host.telegram.handle_round(ups, cfg)
                 sends = [c.args[0] for c in host.agent.submit.call_args_list]
-                self.assertEqual(len(sends), 2, 'owner message + one album turn')
-                self.assertIn('owner private chat', sends[0].text)
-                self.assertIn('not the owner', sends[1].text); self.assertIn('called Mum', sends[1].text)
-                self.assertEqual(sends[1].text.count('.agentj/inbox'), 2)
-                for s, reply in ((sends[0], 'owner answer see admin.private-test.example'),
-                                 (sends[1], 'family answer: write to someone@example.org or https://private-test.example/x')):
-                    host.agent_turn_start(s.text, s); host.agent_text(reply); host.agent_turn_end()
+                self.assertEqual(len(sends), 1, 'only the group enters the main session')
+                host.external_channels.receive_owner.assert_awaited_once()
+                self.assertIn('not the owner', sends[0].text); self.assertIn('called Mum', sends[0].text)
+                self.assertEqual(sends[0].text.count('.agentj/inbox'), 2)
+                send = sends[0]
+                host.agent_turn_start(send.text, send)
+                host.agent_text('family answer: write to someone@example.org or https://private-test.example/x')
+                host.agent_turn_end()
+            self.assertIn('主人分身答复', bot.texts())
             out = []
             while not host.telegram.out.empty():
                 _, payload = host.telegram.out.get_nowait()
                 if not isinstance(payload, tg.MediaOut): out.append(payload)
-            self.assertEqual(out[0], 'owner answer see admin.private-test.example', 'the owner sees their own reply as is')
-            self.assertEqual(out[1]['chat_id'], -100)
-            self.assertNotIn('private-test', out[1]['text']); self.assertNotIn('someone@', out[1]['text'])
+            self.assertEqual(out[0]['chat_id'], -100)
+            self.assertNotIn('private-test', out[0]['text']); self.assertNotIn('someone@', out[0]['text'])
+
 
 
 class HostWire(unittest.IsolatedAsyncioTestCase):

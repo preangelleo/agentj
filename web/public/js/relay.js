@@ -360,6 +360,7 @@ function paintTags(item){
   if (item && item.kind === "permission"){
     if (item.tool === "pair_device") { const s = document.createElement("span"); s.className = "atag danger"; s.textContent = t(item.passkey_required ? "pair.card.tagFace" : "pair.card.tag"); box.appendChild(s); }   // P153
     else if (item.tool === "passphrase_reset") { const s = document.createElement("span"); s.className = "atag danger"; s.textContent = t(item.passkey_required ? "ppReset.tagFace" : "ppReset.tag"); box.appendChild(s); }   // #118
+    else if (item.tool === "wechat_confirm") { const s = document.createElement("span"); s.className = "atag"; s.textContent = t("wc.confirmTag"); box.appendChild(s); }
     else if (item.tool === "AuthRescue") { const s = document.createElement("span"); s.className = "atag danger"; s.textContent = t("ar.confirmTag"); box.appendChild(s); }
     else if (item.passkey_required) { const s = document.createElement("span"); s.className = "atag danger"; s.textContent = t("ask.sandboxOnce"); box.appendChild(s); }
     else if (item.cats && item.cats.length) for (const c of item.cats){ const s = document.createElement("span"); s.className = "atag danger"; s.dataset.cat = c; s.textContent = t('ask.cat.' + catKey(c, item)); box.appendChild(s); }
@@ -383,6 +384,7 @@ function paintLeft(item){
   const left = Math.max(0, Math.ceil((item.deadline - Date.now()) / 1000));
   p.hidden = false;
   p.textContent = item.goal === "auto" ? (left > 0 ? t('ask.goalLeft', {n: left}) : t('ask.goalUp')) : left > 0 ? t('ask.left', {n: left}) : t('ask.timeUp');
+  if (item.tool === "wechat_confirm" && left > 0) p.textContent = t(left > 3600 ? "wc.leftHours" : "wc.leftMins", {n: Math.ceil(left / (left > 3600 ? 3600 : 60))});
   if (left > 0) leftTimer = setTimeout(() => paintLeft(item), 1000);
 }
 
@@ -474,11 +476,12 @@ function renderPermission(card, p){
   el("askCancel").hidden = true; el("askSend").hidden = true;
   const tool = (p && p.tool) || (card && card.tool_name) || "?";
   const rescueAsk = !!(p && p.tool === "AuthRescue");   // Login rescue has its own copy; passkey requirement is not a sandbox action.
+  const handoffAsk = !!(p && p.tool === "wechat_confirm");
   const ppAsk = !!(p && p.tool === "passphrase_reset");   // #118: reset the remote pairing password; the host wrote the text
   const pairAsk = !!(p && p.tool === "pair_device") || ppAsk;   // P153 (§3.3): a new remote waits; the host wrote the card text
   const danger = !!(p && (p.passkey_required || pairAsk || (p.cats && p.cats.length) || p.goal === "attack"));
   el("sheet").classList.toggle("danger", danger);
-  el("sheetTitle").textContent = ppAsk ? t("ppReset.title") : pairAsk ? t("pair.card.title") : rescueAsk ? t("ar.confirmTitle") : p && p.passkey_required ? t("ask.sandboxTitle") : danger ? t('r.verb.danger', {verb: verb(tool)}) : verb(tool);
+  el("sheetTitle").textContent = handoffAsk ? t("wc.confirmTitle") : ppAsk ? t("ppReset.title") : pairAsk ? t("pair.card.title") : rescueAsk ? t("ar.confirmTitle") : p && p.passkey_required ? t("ask.sandboxTitle") : danger ? t('r.verb.danger', {verb: verb(tool)}) : verb(tool);
   // P339: a goal card the host put in plain words — 「目标进行中：{who} 想{what}…」, the three lines under it, and the raw
   // command (tool tag, 展开全部, description) folded behind 「详情」 (closed for every new card).
   const human = goalHuman(p);
@@ -490,10 +493,10 @@ function renderPermission(card, p){
     el("cmdToggle").hidden = false;
     el("cmdToggle").setAttribute("aria-expanded", String(goalOpen.open));
   }
-  el("tool").textContent = pairAsk || (p && p.passkey_required) ? "Agent J" : tool;
+  el("tool").textContent = handoffAsk ? t("wc.title") : pairAsk || (p && p.passkey_required) ? "Agent J" : tool;
   const {main} = summarize(p ? p.summary : card.summary);
-  el("cmd").classList.toggle("sandbox", !!(p && (p.passkey_required || pairAsk)));
-  paintCmd(p && (p.passkey_required || pairAsk) ? p.summary : main, !(p && (p.passkey_required || pairAsk)), cardKey(card), tool);
+  el("cmd").classList.toggle("sandbox", !!(p && (p.passkey_required || pairAsk || handoffAsk)));
+  paintCmd(p && (p.passkey_required || pairAsk || handoffAsk) ? p.summary : main, !(p && (p.passkey_required || pairAsk || handoffAsk)), cardKey(card), tool);
   const why = p && p.why ? t('ask.why', {why: askWhy(p)}) : "";
   el("why").textContent = why; el("why").hidden = !why;
   const st = apprState(p), open = st === "open";
@@ -508,7 +511,7 @@ function renderPermission(card, p){
   el("apprDeny").disabled = apprBusy;
   el("apprAllow").hidden = !p || p.local_only;
   el("apprAllow").disabled = apprBusy;
-  el("apprAllowLbl").textContent = ppAsk ? t(p.passkey_required ? 'ppReset.allowFace' : 'ppReset.allow') : pairAsk ? t(p.passkey_required ? 'pair.card.allowFace' : 'pair.card.allow') : rescueAsk ? t('ar.confirmStart') : p && p.passkey_required ? t('ask.sandboxOnce') : t('r.appr.hold');   // P154 追加 9: 「长按批准」 on every card, ⚠ cards too — the room goes to the ⌘↩ hint
+  el("apprAllowLbl").textContent = handoffAsk ? t("wc.confirm") : ppAsk ? t(p.passkey_required ? 'ppReset.allowFace' : 'ppReset.allow') : pairAsk ? t(p.passkey_required ? 'pair.card.allowFace' : 'pair.card.allow') : rescueAsk ? t('ar.confirmStart') : p && p.passkey_required ? t('ask.sandboxOnce') : t('r.appr.hold');   // P154 追加 9: 「长按批准」 on every card, ⚠ cards too — the room goes to the ⌘↩ hint
   el("apprDeny").firstElementChild.textContent = ppAsk ? t('r.appr.deny') : pairAsk ? t('pair.card.deny') : t('r.appr.deny');
   const kbd = apprKbd();                                       // P154 追加 2: ⌘↩ / Ctrl↩ on a computer only
   el("apprKbd").textContent = kbd; el("apprKbd").hidden = !kbd;
@@ -523,7 +526,7 @@ function renderPermission(card, p){
   const text = p ? (open && !sign ? t('ask.noSign') : open && apprFail && apprFail.id === p.id ? apprFail.text : apprText(p)) : "";
   el("askState").hidden = !text;
   el("askState").textContent = text;
-  el("elsewhereText").textContent = ppAsk && open ? t('ppReset.where') : pairAsk && open ? t('pair.card.where') : !p ? t('r.appr.elsewhere') : p.local_only ? t('r.appr.st.localOnlyShort') : open ? t('r.appr.elsewhereLive') : t('r.appr.elsewhere');
+  el("elsewhereText").textContent = handoffAsk ? t("wc.confirmNote") : ppAsk && open ? t('ppReset.where') : pairAsk && open ? t('pair.card.where') : !p ? t('r.appr.elsewhere') : p.local_only ? t('r.appr.st.localOnlyShort') : open ? t('r.appr.elsewhereLive') : t('r.appr.elsewhere');
   paintTags(p || null);
 }
 // P339: the goal card's plain title (null = an older host's card: it renders exactly as before).

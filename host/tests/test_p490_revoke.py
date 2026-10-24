@@ -66,11 +66,15 @@ class Revoke(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(self.st.is_allowed(pub))
         self.assertEqual(cr.read(State(self.st.root))['ack_epoch'],1)
     async def test_replaced_passkey_cannot_escape_targeted_revocation_after_restore(self):
-        leaked=wire.b64u(os.urandom(32));old,pub=self.device('old',leaked)
+        from test_p57_passkey import Authenticator,pk_record
+        from agentj import passkey
+        auth=Authenticator();leaked=wire.b64u(auth.id)
+        pub=os.urandom(32);self.st.pair_device(pub,'old',os.urandom(32));self.st.set_passkey(pub,pk_record(auth));old=wire.device_id(pub)
         fresh,fp=self.device('new safe',wire.b64u(os.urandom(32)))
         restored=os.urandom(32)
         did=self.st.passkey_restore(old,leaked,restored,os.urandom(32))
-        self.assertTrue(self.st.set_passkey(restored,{'id':wire.b64u(os.urandom(32)),'rp':'m.agentj.app'}))
+        new=pk_record(Authenticator());ch=passkey.replacement_offer_challenge(b'n'*32,pk_record(auth))
+        self.assertTrue(self.st.set_passkey(restored,new,replacement=auth.assert_(ch,b'0',nonce=b'0'),challenge=ch))
         h=self.host();await h.credential_revocations.apply({**self.q,'fingerprints':['m.agentj.app:'+cr.fingerprint(leaked)]})
         self.assertFalse(self.st.is_allowed(restored))
         self.assertTrue(self.st.is_allowed(fp))

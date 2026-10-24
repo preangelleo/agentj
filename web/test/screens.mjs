@@ -252,13 +252,13 @@ try {
 
       const brand = () => evaluate(p, `document.getElementById('brand-name').textContent + '|' + document.title`);
       await fake.send({ t: 'status', s: 'idle', agent: 'claude', name: '市场部 Agent' });
-      await waitFor(p, `document.getElementById('brand-name').textContent === '市场部 Agent'`);
-      check((await brand()) === '市场部 Agent|市场部 Agent' && (await text(p, '#agent')) === '市场部 Agent', `${tag}: the host's name in the reply header, the menu and the tab title`);
+      await waitFor(p, `document.getElementById('brand-name').textContent === 'Agent J - 市场部 Agent'`);
+      check((await brand()) === 'Agent J - 市场部 Agent|Agent J - 市场部 Agent' && (await text(p, '#agent')) === 'Agent J - 市场部 Agent', `${tag}: the host's name in the reply header, the menu and the tab title`);
       const evil = '<img src=x onerror=alert(1)>‮\u0000​\n' + '长'.repeat(60);
       await fake.send({ t: 'status', s: 'working', agent: 'claude', name: evil });
       await waitFor(p, `document.body.dataset.status === 'working'`);
       const shown = await evaluate(p, `(() => { const b = document.getElementById('agent'); return { t: b.textContent, kids: b.children.length, title: document.title }; })()`);
-      check(shown.kids === 0 && shown.t === shown.title && [...shown.t].length <= 32 && !/[\u0000-\u001f​‮]/.test(shown.t) && shown.t.startsWith('<img src=x onerror=alert(1)> 长'),
+      check(shown.kids === 0 && shown.t === shown.title && [...shown.t.slice('Agent J - '.length)].length <= 32 && !/[\u0000-\u001f​‮]/.test(shown.t) && shown.t.startsWith('Agent J - <img src=x onerror=alert(1)> 长'),
         `${tag}: hostile name → plain text, control/format chars gone, ≤ 32 code points ("${shown.t}")`);
       await fake.send({ t: 'status', s: 'idle', agent: 'claude', name: null });
       await waitFor(p, `document.getElementById('brand-name').textContent === 'Agent J'`);
@@ -268,7 +268,7 @@ try {
       fake.setUp(false);
       await navigate(p, BASE);
       await waitState(p, 'waiting-host');
-      check((await brand()) === 'Wren|Wren', `${tag}: cold start shows the cached name before the connection is up`);
+      check((await brand()) === 'Agent J - Wren|Agent J - Wren', `${tag}: cold start shows the cached name before the connection is up`);
       check(await evaluate(p, `document.body.dataset.conn === 'off' && document.body.dataset.view === 'chat'`), `${tag}: cold start offline = the grey chat screen`);
       fake.setUp(true);
       await waitState(p, 'ready');
@@ -577,7 +577,7 @@ try {
       await navigate(p, LEG + '/');
       await sleep(1500);
       const c = check((await href()) === LEG + '/', 'legacy: a paired phone stays on the legacy host (no redirect)');
-      const d = check((await evaluate(p, `document.getElementById('pair-view').hidden && document.getElementById('brand-name').textContent === 'Wren' && document.title === 'Wren'`)),
+      const d = check((await evaluate(p, `document.getElementById('pair-view').hidden && document.getElementById('brand-name').textContent === 'Agent J - Wren' && document.title === 'Agent J - Wren'`)),
         'legacy: …and runs normally (resume, cached Agent name shown)');
       results['aj-legacy-redirect'] = a && b && c && d ? 'pass' : 'fail';
       await p.dispose();

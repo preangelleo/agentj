@@ -56,7 +56,7 @@ async function pairReady(p, fake, url, lang) {
   await evaluate(p, `${$('phone-env-dismiss')}?.click()`);
   await fake.send({ t: 'status', s: 'idle', agent: 'claude', name: NAME });
   await fake.addTurn({ k: 'phone', dev: 'other', text: lang === 'zh' ? '帮我对一下三家供应商的报价' : 'Compare the three suppliers' }, LONG[lang === 'zh' ? 0 : 1]);
-  await waitFor(p, `${$('agent')}.textContent===${JSON.stringify(NAME)} && ${$('words')}.textContent.length>40`);
+  await waitFor(p, `${$('agent')}.textContent===${JSON.stringify('Agent J - '+NAME)} && ${$('words')}.textContent.length>40`);
 }
 
 export async function runP168() {

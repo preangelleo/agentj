@@ -6,7 +6,7 @@ import {startDashboard} from '../../dashboard/test/server.mjs';
 import {startWebServer} from './serve.mjs';
 import {startFakeHost} from './fakehost.mjs';
 import {launch,newPage,navigate,waitFor,waitState,evaluate,shoot,key} from './browser.mjs';
-const out='reports/qa/p385/evidence';mkdirSync(out,{recursive:true});
+const out=process.env.P385_OUT||'reports/qa/p385/evidence';mkdirSync(out,{recursive:true});
 const site=await startServer(),dash=await startDashboard({billingGate:true}),web=await startWebServer({port:0,relayCsp:'ws://127.0.0.1:*'}),fake=await startFakeHost(),B=await launch();
 const siteBase=`http://127.0.0.1:${site.port}`,results=[];
 const ev=evaluate;
@@ -30,7 +30,12 @@ try{
  await waitFor(p,`!document.getElementById('company-create-box').hidden`,15000);await ev(p,`document.getElementById('tname').value='QA placeholder';document.getElementById('company-create').click();true`);
  await waitFor(p,`!!document.querySelector('#companies .company')`,15000);
  const tenant=dash.db.raw.prepare('SELECT id,slug FROM tenants').get();dash.db.raw.prepare('UPDATE tenants SET comp_seats=1 WHERE id=?').run(tenant.id);
- await ev(p,`fetch('/account/api/seat-setups',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({tenant:${JSON.stringify(tenant.slug)}})}).then(r=>{if(!r.ok)throw Error('setup '+r.status);return true})`);
+ await navigate(p,dash.appUrl);
+ await waitFor(p,`!!document.querySelector('.seat-blank .btn-row button')`);
+ // P504: the account action obtains its own fresh UV proof before issuing the setup.
+ await click(p,'.seat-blank .btn-row button');
+ await waitFor(p,`!!document.querySelector('.seat-blank[data-setup]:not([data-setup=""])')`,15000);
+ assert.equal(dash.db.raw.prepare('SELECT COUNT(*) AS n FROM seat_setups WHERE tenant_id=?').get(tenant.id).n,1);
  await navigate(p,dash.appUrl);
  for(const lang of ['zh','en'])for(const theme of ['light','dark'])for(const w of [390,1440]){
   await p.send('Emulation.setDeviceMetricsOverride',{width:w,height:w===390?844:900,deviceScaleFactor:1,mobile:w===390});

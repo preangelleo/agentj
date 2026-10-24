@@ -9,3 +9,13 @@
 .om:not([data-unread="1"]) .om-unread{visibility:hidden;pointer-events:none}
 /* P458 #223: only approval actions change both colours together. Resting appearance stays in app.css. */
 :is(#elev-allow,.apprallow):is(:hover,:active,:focus){background:var(--c-noir);color:#faf9f5}
+
+/* P505: the friend reply editor uses the existing light card and Sage action palette in every chat state. */
+.p498-reply{--surface-1:var(--c-lotion);--text:var(--c-sooty);--text-muted:var(--c-sooty);--border:var(--c-last-straw);padding:var(--sp-4);border:1px solid var(--c-last-straw);border-radius:var(--r-lg);background:var(--c-salt);color:var(--c-sooty);min-width:0}
+.p498-reply:not([hidden]){display:grid;gap:var(--sp-3)}
+.p498-reply .aj-input{box-sizing:border-box;background:var(--c-lotion);color:var(--c-sooty);max-width:100%}
+#cmdx .p505-report-action{align-self:flex-start;justify-self:start;background:var(--sage-sensation);color:var(--c-sooty);border-color:var(--sage-sensation);min-height:44px}
+#cmdx .p505-report-action:is(:hover,:active,:focus-visible){background:var(--c-noir);color:var(--c-lotion);border-color:var(--c-noir)}
+
+/* P505/P501: an unsupported, hidden English WeChat row must not add a Telegram divider or shift the next card. */
+.setcard:has(>#set-wechat-row[hidden])>.setrow:has(#set-tgpair){border-bottom:0}

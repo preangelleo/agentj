@@ -98,6 +98,20 @@ def _in_container() -> bool:
 
 
 # ------------------------------------------------------------------ individual checks
+def check_resources(svc: dict) -> dict:
+    from . import resource_policy
+    try:
+        result = resource_policy.status(svc)
+    except (OSError, ValueError, service.ServiceError, subprocess.SubprocessError):
+        result = {"effective": False, "detail": "priority could not be verified"}
+    pressure = resource_policy.memory_state()
+    detail = result["detail"] + "; memory=" + pressure + "; scheduling is conditional, no uptime guarantee"
+    return _c("resources", OK if result["effective"] and pressure == "observed_available" else WARN, detail,
+              "" if result["effective"] else
+              "agentj service install; CPU / IO / memory delegation may be unavailable. "
+              "后台任务仍用 nice 降权 / work still uses nice; no root change is made")
+
+
 def check_version() -> dict:
     return _c("version", OK, f"{DIST} {__version__}")
 
@@ -1196,6 +1210,18 @@ def check_update(offline: bool = False) -> dict:
               "不是错误：多半是没网或 GitHub 连不上，不影响使用 / not an error: offline or GitHub unreachable; agentj still works")
 
 
+def check_local_files(st):
+    from . import local_files
+    if sys.platform != "darwin":
+        return None
+    tcc = local_files.snapshot(st).get("tcc") or {}
+    rows = tcc.get("folders") or {}
+    ready = all(rows.get(k) == "readable" for k in ("Downloads", "Desktop", "Documents")) and tcc.get("automation") == "available"
+    return _c("local-files", WARN, "上次主机权限检查可读；系统设置可能已变化 / last host check readable; settings may have changed" if ready else
+              "下次在电脑前时点一下文件夹和 Finder 自动化权限；手机授权不会改变 macOS 权限 / next time at the computer, allow folders and Finder Automation",
+              "agentj files prepare --at-computer (owner terminal; optional Full Disk Access)")
+
+
 def run(st: State | None = None, offline: bool = False) -> list[dict]:
     st = st or State()
     svc = service.status()
@@ -1207,6 +1233,7 @@ def run(st: State | None = None, offline: bool = False) -> list[dict]:
     mig = check_migration(st)
     if mig:
         out.append(mig)
+    out += list(filter(None, [check_local_files(st)]))
     out += [check_agent(st)]
     setup_row = check_harness_setup(st)
     if setup_row:
@@ -1233,7 +1260,7 @@ def run(st: State | None = None, offline: bool = False) -> list[dict]:
     if reach_row:
         out.append(reach_row)
     out += [check_agent_cli(st, svc), check_harness(svc), check_fence(st), check_danger(st), check_passphrase(st), check_bound(st), check_seat(st), *filter(None, [check_jev_key(svc)]), check_onboarding(st),
-            check_serve(st), check_friends(st, _serve_status(st)), check_service(_seen(st, svc), service.legacy_status()), check_alias(),
+            check_serve(st), check_friends(st, _serve_status(st)), check_service(_seen(st, svc), service.legacy_status()), check_resources(svc), check_alias(),
             check_estop(st), check_tasks(st), check_activity(st)]
     out += check_asr(st)
     out += check_preferences(st)

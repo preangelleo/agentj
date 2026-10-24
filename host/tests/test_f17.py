@@ -28,9 +28,22 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey  # noqa: E402
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat  # noqa: E402
 
-from agentj import elevate, wire  # noqa: E402
+from agentj import elevate, wire, passkey  # noqa: E402
 
 from test_l1 import Phone, _host, _ready, _state  # noqa: E402
+
+from test_p57_passkey import Authenticator, pk_record
+
+def enroll(st, ph):
+    if hasattr(ph, "auth"):
+        return ph
+    ph.auth = Authenticator()
+    st.set_passkey(ph.pub, pk_record(ph.auth))
+    return ph
+
+def uv(ph, card, digest):
+    ch = passkey.elevate_challenge(ph.channel, ph.did, card["id"], card["kind"], card["n"], digest)
+    return ph.auth.assert_(ch, b"0", nonce=b"0")
 
 PW = "Pw-明文-F17-s3cr3t!"
 KEY = "f17-test-key-DO-NOT-LEAK-0123456789abcdef"
@@ -84,6 +97,8 @@ def answer(ph: Phone, card: dict, ok: bool, value: str | None = None, *, nonce=N
         ct_sha = hashlib.sha256(blob).hexdigest()
     msg = elevate.signed_message(ch, ph.did, rid, card["kind"], "allow" if ok else "deny", nonce, ts, digest, ct_sha)
     m["sig"] = wire.b64u((sk or ph.sk).sign(msg))
+    if ok and hasattr(ph, "auth"):
+        m["fa"] = uv(ph, card, digest)
     return m
 
 
@@ -269,6 +284,8 @@ class Flows(unittest.TestCase):
         host = _host(self.st, self.sent)
         host.elevate.sudo = str(self.sudo)
         ph = Phone(self.st, with_key=with_key) if phone else None
+        if ph and getattr(self,"USE_PASSKEY",True):
+            enroll(self.st,ph)
         s = _ready(host, ph) if ph else None
 
         async def go():
@@ -609,7 +626,7 @@ class Helper(unittest.TestCase):
 
     def test_serve_approve_only_through_helper(self):
         from agentj import elevate_helper as eh
-        ph = Phone(self.st)
+        ph = enroll(self.st, Phone(self.st))
         cmd = sandbox_helper(self.d, eh.keys_doc(self.st))
         host = _host(self.st, self.sent)
         host.elevate.sudo = str(fake_sudo_n(self.d))
@@ -650,7 +667,7 @@ def approve_only(ph: Phone, card: dict) -> dict:
     ts = int(time.time() * 1000)
     dg = elevate.shown_digest("sudo", elevate.shown_fields(card))
     sig = ph.sk.sign(elevate.signed_message(ph.channel, ph.did, card["id"], "sudo", "allow", card["n"], ts, dg, None))
-    return {"t": "elev_answer", "id": card["id"], "ok": True, "n": card["n"], "ts": ts, "sig": wire.b64u(sig)}
+    return {"t": "elev_answer", "id": card["id"], "ok": True, "n": card["n"], "ts": ts, "sig": wire.b64u(sig), **({"fa":uv(ph,card,dg)} if hasattr(ph,"auth") else {})}
 
 
 def shlex_join(argv):

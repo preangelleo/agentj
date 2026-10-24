@@ -44,6 +44,7 @@ import socket
 import ssl
 import tempfile
 import time
+import threading
 import uuid
 from email.message import EmailMessage
 from types import SimpleNamespace
@@ -232,12 +233,22 @@ def _kek(st) -> bytes:
     return HKDF(algorithm=hashes.SHA256(), length=32, salt=b"agentj-mail", info=b"agentj-mail-secret-v1").derive(raw)
 
 
+def credential_destination(cfg: dict) -> tuple:
+    return (str(cfg.get("address", "")).lower(), cfg.get("username") or cfg.get("address", ""),
+            *((cfg.get(kind) or {}).get(k) for kind in ("imap", "smtp") for k in ("host", "port", "security")))
+
+
+def secret_aad(st, address: str) -> bytes:
+    return b"agentj-mail-v2\n" + address.lower().encode() + b"\n" + json.dumps(
+        credential_destination(read_config(st)), ensure_ascii=False, separators=(",", ":")).encode()
+
+
 def store_secret(st, value: bytes | bytearray, address: str) -> None:
     """AES-256-GCM, the key derived from this host's identity key; AAD = the account address (a copied file for another
     account does not open)."""
     iv = secrets.token_bytes(12)
-    ct = AESGCM(_kek(st)).encrypt(iv, bytes(value), b"agentj-mail-v1\n" + address.lower().encode())
-    _write(st, SECRET, b"AJM1" + iv + ct)
+    ct = AESGCM(_kek(st)).encrypt(iv, bytes(value), secret_aad(st, address))
+    _write(st, SECRET, b"AJM2" + iv + ct)
 
 
 def load_secret(st, address: str) -> str | None:
@@ -245,12 +256,21 @@ def load_secret(st, address: str) -> str | None:
         blob = (st.root / DIR / SECRET).read_bytes()
     except OSError:
         return None
-    if blob[:4] != b"AJM1" or len(blob) < 32:
+    if blob[:4] != b"AJM2" or len(blob) < 32:
         return None
     try:
-        return AESGCM(_kek(st)).decrypt(blob[4:16], blob[16:], b"agentj-mail-v1\n" + address.lower().encode()).decode()
+        return AESGCM(_kek(st)).decrypt(blob[4:16], blob[16:], secret_aad(st, address)).decode()
     except Exception:   # noqa: BLE001 — another host / account / a damaged file: not configured
         return None
+
+
+def secret_upgrade_required(st) -> bool:
+    """Inspect the envelope marker only; never decrypt or migrate unbound AJM1."""
+    try:
+        with (st.root / DIR / SECRET).open('rb') as f:
+            return f.read(4) == b'AJM1'
+    except OSError:
+        return False
 
 
 def has_secret(st, address: str) -> bool:
@@ -852,8 +872,9 @@ def test_connection(cfg: dict, password: str) -> dict:
 
 
 def build_reply(cfg: dict, route: dict, text: str, agent_name: str, lang: str, files=()) -> EmailMessage:
+    from .mail_template import agent_label
     m = EmailMessage(policy=email.policy.SMTP)
-    m["From"] = email.utils.formataddr((agent_name or "Agent J", cfg["address"]))
+    m["From"] = email.utils.formataddr((agent_label(agent_name), cfg["address"]))
     m["To"] = route["to"]
     subj = route.get("subject") or ""
     m["Subject"] = subj if re.match(r"(?i)^\s*(re|回复|答复)\s*[:：]", subj) else T[lang]["subject_re"] + (subj or "Agent J")
@@ -893,8 +914,9 @@ NOTES_TO_MAX = 10
 def build_notes(cfg: dict, to: list[str], subject: str, body: str, agent_name: str) -> EmailMessage:
     """P182: meeting minutes to the owner-named addresses — not a reply (no thread), marked automatic so nobody's
     auto-responder answers and our own inbox check never takes it as a task."""
+    from .mail_template import agent_label
     m = EmailMessage(policy=email.policy.SMTP)
-    m["From"] = email.utils.formataddr((agent_name or "Agent J", cfg["address"]))
+    m["From"] = email.utils.formataddr((agent_label(agent_name), cfg["address"]))
     m["To"] = ", ".join(to)
     m["Subject"] = re.sub(r"[\r\n]+", " ", subject).strip()[:200] or "Meeting notes"
     m["Date"] = email.utils.formatdate(localtime=True)
@@ -904,6 +926,25 @@ def build_notes(cfg: dict, to: list[str], subject: str, body: str, agent_name: s
     m[MARK] = "notes"
     m.set_content(body)
     return m
+
+
+def send_target(cfg: dict, msg: EmailMessage, recipients: list[str]) -> dict:
+    """Bind final envelope, rendered body and each attachment; bytes never change after this."""
+    raw = msg.as_bytes()
+    bodies, attachments = [], []
+    for part in msg.walk():
+        if part.is_multipart():
+            continue
+        data = part.get_payload(decode=True) or b""
+        if part.get_content_disposition() == "attachment":
+            attachments.append({"name":part.get_filename(), "mime":part.get_content_type(),
+                                "bytes":len(data), "sha256":hashlib.sha256(data).hexdigest()})
+        elif part.get_content_type() == "text/plain":
+            bodies.append({"mime":"text/plain", "text":data.decode(part.get_content_charset() or "utf-8", "replace")})
+        else:
+            bodies.append({"mime":part.get_content_type(), "bytes":len(data), "sha256":hashlib.sha256(data).hexdigest()})
+    return {"recipients":recipients, "subject":str(msg["Subject"] or ""), "body":bodies,
+            "attachments":attachments, "destination":cfg, "message_sha256":hashlib.sha256(raw).hexdigest()}
 
 
 def send_many(cfg: dict, password: str, msg: EmailMessage, to: list[str]) -> None:
@@ -1125,6 +1166,7 @@ class Mail:
         self.st = host.st
         self.wake = asyncio.Event()
         self.busy = asyncio.Lock()
+        self._config_lock = threading.RLock() # serve writes vs. secret-card sink worker; no network under this lock
         self.sending: set = set()
         self.error = None
         self.recovering = True
@@ -1157,7 +1199,7 @@ class Mail:
         """The owner's page / `agentj mail status`: settings (never the password), health and counts."""
         cfg, s = read_config(self.st), read_state(self.st)
         c = s["counts"] if s["counts"].get("day") == _day() else {}
-        return {"config": cfg, "has_password": bool(cfg["address"]) and has_secret(self.st, cfg["address"]),
+        return {"config": cfg, "password_upgrade_required":secret_upgrade_required(self.st), "has_password": bool(cfg["address"]) and has_secret(self.st, cfg["address"]),
                 "last_check": s["last_check"], "last_ok": s["last_ok"], "error": s["last_error"],
                 "today": {k: v for k, v in c.items() if k != "day"}, "blocked": s["blocked"][-KEEP_BLOCKED:],
                 "auth_sample": s.get("auth_seen"), "presets": preset_list(self.lang()),
@@ -1340,9 +1382,25 @@ class Mail:
             for p in paths:
                 inbox.unlink_placed(p)
             return False
-        session = SimpleNamespace(device=device, name=who[:64], cid=0, source_kind="email", provenance=source)
-        send = await self.host._accept(session, clean(text, TEXT_MAX + 2000), None, blobs=blobs) if blobs else \
-            await self.host._accept(session, clean(text, TEXT_MAX + 2000), None)
+        avatar_reply = None
+        if v.role == "owner":
+            avatar = getattr(self.host, 'external_channels', None)
+            if avatar is None:
+                self.log('avatar', result='unavailable')
+                return False
+            def valid():
+                current = read_config(self.st)
+                return (current['enabled'] and current['generation'] == now['generation'] and
+                        any(_same(r['addr'], v.addr) and r['role'] == 'owner' for r in current['allow']))
+            avatar_reply = await avatar.receive_owner('mail', now['generation'] + ':' + msg_id(msg), text, paths, valid, admission={'addr':v.addr,'generation':now['generation']}, blobs=blobs)
+            if avatar_reply is None or not valid() or self.host.stopped():
+                return False
+            page = self.host.hist_add({'k':'sys', 'via':'mail', 'text':'来自邮件 / From email'}, avatar_reply, 'done')
+            send = SimpleNamespace(turn=page['id'])
+        else:
+            session = SimpleNamespace(device=device, name=who[:64], cid=0, source_kind="email", provenance=source)
+            send = await self.host._accept(session, clean(text, TEXT_MAX + 2000), None, blobs=blobs) if blobs else \
+                await self.host._accept(session, clean(text, TEXT_MAX + 2000), None)
         if send is None or type(getattr(send, "turn", None)) is not int:
             for p in paths:
                 inbox.unlink_placed(p)
@@ -1354,6 +1412,8 @@ class Mail:
         while len(st2["routes"]) > 50:
             st2["routes"].pop(next(iter(st2["routes"])))
         save_state(self.st, st2)
+        if avatar_reply is not None:
+            await self.reply(send.turn, avatar_reply)
         return True
 
     # ---------------- replies
@@ -1405,6 +1465,7 @@ class Mail:
             from .telegram import group_filter
             body = group_filter(redact(text), "proxy", ())
         files = []
+        avatar_images = getattr(text, 'images', ())
         if row["role"] == "owner":
             files, note = await asyncio.to_thread(self._files, text, True)
             if note.get("keys"):       # P211: credential files → pickup cards on the owner's phone, never mail attachments
@@ -1414,11 +1475,22 @@ class Mail:
             if held:                   # …and never silently: one line each at the end of the mail
                 from . import tg_media
                 body = body.rstrip() + "\n\n" + tg_media.skip_lines(held, lang)
+        if row["role"] == "owner":
+            files.extend(('image-' + str(i) + '.png', mime, data) for i, (mime, data) in enumerate(avatar_images, 1))
         agent_name = ""
         with contextlib.suppress(Exception):
             agent_name = self.st.agent_name() or ""
         msg = build_reply(cfg, route, body, agent_name, lang, files)
+        ans = await self.host.ask("agentj mail reply", send_target(cfg,msg,[str(msg["To"])]),
+                                  batch=False, require_passkey=True)
+        if ans.get("behavior") != "allow":
+            return drop("denied")
         s = read_state(self.st)
+        if read_config(self.st) != cfg or s["routes"].get(str(tid)) != route or self.host.stopped():
+            return drop("stale")
+        used = s["hour"].get("out",[0,0])
+        if used[0] == hour and used[1] >= cfg["reply_per_hour"]:
+            return drop("limited")
         if str(tid) in s["routes"]:
             s["routes"][str(tid)]["state"] = "sending"
         s["hour"]["out"] = [hour, (used[1] if used[0] == hour else 0) + 1]
@@ -1480,6 +1552,15 @@ class Mail:
         else:
             text = redact(body)
         msg = build_notes(cfg, rcpt, subject, text, agent_name)
+        ans = await self.host.ask('agentj mail notes', send_target(cfg,msg,rcpt), batch=False, require_passkey=True)
+        if ans.get('behavior') != 'allow':
+            return {'ok':False,'why':'denied'}
+        if read_config(self.st) != cfg or self.host.stopped():
+            return {'ok':False,'why':'stale'}
+        s = read_state(self.st)
+        used = s['hour'].get('out',[0,0])
+        if used[0] == hour and used[1] >= cfg['reply_per_hour']:
+            return {'ok':False,'why':'limited'}
         s["hour"]["out"] = [hour, (used[1] if used[0] == hour else 0) + 1]
         save_state(self.st, s)
         try:
@@ -1677,10 +1758,13 @@ class Mail:
 
     # ---------------- changes from the phone / CLI
     def set_config(self, new: dict) -> dict:
+        with self._config_lock:
+            return self._set_config(new)
+
+    def _set_config(self, new: dict) -> dict:
         old = read_config(self.st)
         new = dict(new)
-        if new.get("address") and not _same(new["address"], old.get("address") or "") or \
-                (new.get("imap") or {}).get("host") != old["imap"]["host"]:
+        if credential_destination(old) != credential_destination(new):
             new["generation"] = uuid.uuid4().hex
             st2 = read_state(self.st)       # another account / server: a fresh baseline, never old mail
             st2.update(uidvalidity=None, last_uid=None, last_error=None)
@@ -1689,8 +1773,11 @@ class Mail:
             new.setdefault("generation", old.get("generation") or uuid.uuid4().hex)
         cfg = save_config(self.st, new)
         self._watch_allow(cfg)
-        if old.get("address") and not _same(old["address"], cfg["address"]):
+        if credential_destination(old) != credential_destination(cfg):
             forget_secret(self.st)
+        avatar = getattr(self.host, 'external_channels', None)
+        if avatar is not None and cfg['enabled'] and (not old['enabled'] or old.get('address') != cfg.get('address')):
+            self.host._bg(avatar.offer_choice(), 'channel_plan_discovery')
         self.wake.set()
         return cfg
 
@@ -1710,14 +1797,15 @@ class Mail:
                 return {"result": "failed", "why": "value"}
             if not pw or any(ord(c) < 32 for c in pw) or len(pw) > 512:
                 return {"result": "failed", "why": "value"}
-            if read_config(self.st) != cfg:
-                return {"result": "failed", "why": "stale"}
-            # Google's grouped display spaces are presentation, not password bytes.
-            if password_provider(cfg) == "gmail":
-                pw = "".join(pw.split())
-            if not pw:
-                return {"result": "failed", "why": "value"}
-            store_secret(self.st, bytearray(pw.encode("utf-8")), cfg["address"])
+            with self._config_lock:
+                if read_config(self.st) != cfg:
+                    return {"result": "failed", "why": "stale"}
+                # Google's grouped display spaces are presentation, not password bytes.
+                if password_provider(cfg) == "gmail":
+                    pw = "".join(pw.split())
+                if not pw:
+                    return {"result": "failed", "why": "value"}
+                store_secret(self.st, bytearray(pw.encode("utf-8")), cfg["address"])
             res = test_connection(cfg, pw)  # read-only: no SMTP DATA / sendmail
             if read_config(self.st) != cfg:
                 return {"result": "failed", "why": "stale"}
@@ -1871,6 +1959,11 @@ def cmd(a) -> int:
         return out(res)
     if a.action == "test":
         cfg = read_config(st)
+        from .action_policy import confirm_cli
+        if not confirm_cli('mail.test', {'configuration':cfg}, st=st):
+            return out({'ok':False,'why':'denied'})
+        if read_config(st) != cfg:
+            return out({'ok':False,'why':'stale'})
         pw = load_secret(st, cfg["address"]) if cfg["address"] else None
         if not pw:
             return out({"ok": False, "why": "no_password", "detail": why_text("no_password", lang)})

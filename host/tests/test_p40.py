@@ -91,7 +91,7 @@ class StartupProgress(unittest.IsolatedAsyncioTestCase):
         async def scenario(progress):
             proc=SimpleNamespace(stdout=asyncio.StreamReader(),stderr=asyncio.StreamReader(),returncode=None)
             host=Mock();host.lang="en";host.st=Mock()
-            a=oc.OpenCodeAgent(host,{"dir":"/var/tmp","_workflow_ceo":True})
+            a=oc.OpenCodeAgent(host,{"dir":"/var/tmp","_workflow_ceo":True,"fence":False})
             a.launch_argv=Mock(return_value=['fake']);a._kill=AsyncMock()
             a._prepare=AsyncMock(side_effect=ValueError('stop after proven startup'))
             # Keep the same 80ms idle / 600ms total policy, but drive an adapter-local

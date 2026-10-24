@@ -99,6 +99,9 @@ ITEMS = [
      "授权凭据保存在Agent J 主机的系统钥匙串里。", "Authorization is stored in the Agent J host's system keychain."),
     ("files", "privacy", "conditional", "auto", ["harness"], "工作文件夹", "Work folder",
      "Agent 能读写的工作文件夹。", "The folder the Agent works in."),
+    ("macfiles", "privacy", "conditional", "local", ["files"], "Mac 文件夹与 Finder 权限", "Mac folders and Finder access",
+     "现在在电脑前运行 agentj files prepare --at-computer，允许下载、桌面、文稿及 Finder 自动化；手机不能代替系统授权。",
+     "At the computer, run agentj files prepare --at-computer; allow Downloads, Desktop, Documents and Finder Automation."),
     ("fda", "privacy", "optional", "local", ["files"], "Mac 完全磁盘访问", "Mac Full Disk Access",
      "只有确实需要受保护文件时才开。", "Only when a task truly needs protected files."),
     ("accessibility", "privacy", "optional", "local", ["harness"], "Mac 辅助功能（桌面控制）", "Mac Accessibility (desktop control)",
@@ -109,6 +112,9 @@ ITEMS = [
      "只有要截屏或以后远程查看时才开。", "Only for screen capture or a future remote view."),
     ("hardware", "privacy", "optional", "local", ["harness"], "Agent J 主机摄像头 / 麦克风", "Computer camera / microphone",
      "只有任务要用Agent J 主机硬件时才开。", "Only when a task uses the Agent J host's hardware."),
+    ("wx", "optional", "optional", "phone", ["phone"], "微信 ClawBot", "WeChat ClawBot",
+     "大陆网络／中文用户优先；仅服务扫码者本人，也可同时开 Telegram。",
+     "For mainland networks / Chinese speakers, offer first. Owner only; Telegram can stay on too."),
     ("tg", "optional", "optional", "phone", ["phone"], "Telegram 提醒", "Telegram notifications",
      "可选；不用就说「我不用」。", "Optional; say \"I won't use this\" if not needed."),
     ("mail", "optional", "optional", "phone", ["admin"], "邮件通道（QQ / 163 / 企业邮箱等）", "E-mail channel (any IMAP/SMTP mailbox)",
@@ -345,8 +351,18 @@ def probe(st, iid: str, ctx: dict) -> tuple[str, str | None]:
         if not d:
             return "pending", "no_agent"
         return ("verified", None) if os.path.isdir(d) and os.access(d, os.W_OK) else ("attention", "not_writable")
+    if iid == "macfiles":
+        if not mac:
+            return "not_applicable", "not_macos"
+        from . import local_files
+        tcc = local_files.tcc_status(st) or {}
+        ready = all((tcc.get("folders") or {}).get(k) == "readable" for k in ("Downloads", "Desktop", "Documents")) and tcc.get("automation") == "available"
+        return ("verified", None) if ready and time.time() - tcc.get("at", 0) < TTL["default"] else ("waiting_local", "tcc_check_pending")
     if iid in ("fda", "accessibility", "automation", "screen", "hardware"):
         return ("unsupported", "tcc_check_pending") if mac else ("not_applicable", "not_macos")
+    if iid == "wx":
+        view = (ctx.get("serve") or {}).get("wechat")
+        return ("verified", None) if isinstance(view, dict) and view.get("bound") else ("pending", "not_configured")
     if iid == "tg":
         from . import telegram
         return ("verified", None) if telegram.configured(st) else ("pending", "not_configured")   # P142 (B14): serve's env

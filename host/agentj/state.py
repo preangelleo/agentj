@@ -449,7 +449,7 @@ class State:
             _write_private(self.devices_path, json.dumps(d, indent=1, ensure_ascii=False).encode())
         return True
 
-    def set_passkey(self, pub: bytes, pk: dict) -> bool:
+    def set_passkey(self, pub: bytes, pk: dict, *, replacement: dict | None = None, challenge: bytes | None = None) -> bool:
         """Store (or replace: one passkey per device) the passkey of the device with this static key, if still listed."""
         did = wire.device_id(pub)
         from . import credential_revoke
@@ -460,6 +460,16 @@ class State:
             rec = d.get(did)
             if not isinstance(rec, dict) or rec.get("pub") != wire.b64u(pub):
                 return False
+            if isinstance(rec.get("pk"), dict):
+                # Verify against the current trust root under the same lock as the write.
+                from . import passkey
+                try:
+                    f = passkey.approval_fields(replacement)
+                    if not challenge or f["id"] != rec["pk"]["id"]:
+                        return False
+                    passkey.verify_assertion(rec["pk"], f, challenge)
+                except (passkey.PasskeyError, ValueError):
+                    return False
             if isinstance(rec.get("pk"),dict) and rec["pk"].get("id")!=pk.get("id"):
                 lineage=credential_revoke.ancestors(rec)|{credential_revoke.target(rec['pk'])}
                 if len(lineage)>credential_revoke.MAX_TARGETS: return False  # never forget an old grant to make room

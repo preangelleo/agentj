@@ -23,7 +23,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 from agentj import elevate  # noqa: E402
 
-from test_f17 import answer  # noqa: E402
+from test_f17 import answer, enroll  # noqa: E402
 from test_l1 import Phone, _host, _ready, _state  # noqa: E402
 
 KEY = "p423-test-key-DO-NOT-LEAK-0123456789abcdef"
@@ -86,7 +86,7 @@ class Flows(unittest.TestCase):
         self.sent = []
         self.host = _host(self.st, self.sent)
         self.host.agent = Mock(spec=["submit"])   # a plain Mock would read as a group member's turn
-        self.ph = Phone(self.st)
+        self.ph = enroll(self.st, Phone(self.st))
         self.s = _ready(self.host, self.ph)
         self.env = self.d / ".env"
         self.env.write_text("OTHER=1\n")

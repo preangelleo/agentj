@@ -160,10 +160,21 @@ class _Base(unittest.IsolatedAsyncioTestCase):
         self.st = State(self.root / "state"); self.st.init()
         self.work = self.root / "work"; self.work.mkdir()
         self.notes, self.turn = [], 100
-        self.host = SimpleNamespace(st=self.st, agent=object(), agent_cfg={"dir": str(self.work)}, lang="zh", stopped=lambda: False,
+        self.host = SimpleNamespace(ask=AsyncMock(return_value={"behavior":"allow"}), st=self.st, agent=object(), agent_cfg={"dir": str(self.work)}, lang="zh", stopped=lambda: False,
                                     _accept=AsyncMock(side_effect=self._accept), stopping=asyncio.Event(), media=None,
                                     hist_add=lambda src, text, end: self.notes.append(text), hist=SimpleNamespace(get=lambda i: None))
+        from _avatar_fixture import CaptureAvatar
+        self.host.external_channels = CaptureAvatar()
+        self.host._bg = lambda coro, *_: asyncio.create_task(coro)
         self.m = M.Mail(self.host)
+        self.real_reply = self.m.reply
+        self.m.reply = AsyncMock()  # this transport fixture advances replies explicitly in finish()
+        def page(src, text, end):
+            self.notes.append(text)
+            if src.get('via') == 'mail':
+                self.turn += 1
+                return {'id': self.turn}
+        self.host.hist_add = page
         cfg = M.blank_config()
         cfg.update(enabled=True, address=AGENT, username=AGENT, allow=[{"addr": BOSS, "role": "owner"}],
                    imap={"host": "127.0.0.1", "port": self.imap.port, "security": "plain"},
@@ -181,14 +192,10 @@ class _Base(unittest.IsolatedAsyncioTestCase):
         return SimpleNamespace(turn=self.turn)
 
     def delivered(self):
-        return [(c.args[0], c.args[1], c.kwargs.get("blobs") or []) for c in self.host._accept.call_args_list]
+        return self.host.external_channels.calls + [(c.args[0], c.args[1], c.kwargs.get("blobs") or []) for c in self.host._accept.call_args_list]
 
     async def finish(self, tid, reply):
-        self.m.completed({"id": tid, "src": {"k": "email"}, "reply": {"text": reply}, "end": "done"})
-        for _ in range(100):
-            if not self.m.sending:
-                break
-            await asyncio.sleep(0.05)
+        await self.real_reply(tid, reply)
 
     def sent(self):
         return [(f, t, email.message_from_bytes(raw, policy=email.policy.default)) for f, t, raw in self.smtp.sent]
@@ -412,20 +419,14 @@ class RealHost(unittest.IsolatedAsyncioTestCase):
             M.store_secret(st, bytearray(CODE.encode()), AGENT)
             await host.mail.check()
             imap.add(mail(msgid="<real@corp.example>"))
+            from _avatar_fixture import CaptureAvatar
+            host.external_channels = CaptureAvatar('已处理')
             with patch.object(host, "push_notify"):
                 await host.mail.check()
-                [send] = [c.args[0] for c in host.agent.submit.call_args_list]
-                self.assertIn(provenance.header(provenance.email_owner(BOSS)), send.text)
-                page = host.hist.get(send.turn)
-                self.assertEqual(page["src"]["k"], "email")
-                self.assertNotIn("【", page["src"]["text"])
-                host.agent_turn_start(send.text, send); host.agent_text("已处理"); host.agent_turn_end()
-                for _ in range(100):
-                    if smtp.sent:
-                        break
-                    await asyncio.sleep(0.05)
-            self.assertEqual(len(smtp.sent), 1)
-            self.assertIn(b"In-Reply-To: <real@corp.example>", smtp.sent[0][2])
+                host.agent.submit.assert_not_called()
+                host.external_channels.receive_owner.assert_awaited_once()
+            self.assertEqual(len(smtp.sent), 0, "avatar provenance cannot authorize the final SMTP effect")
+            self.assertEqual(M.read_state(st)["counts"].get("reply_denied"), 1)
 
     async def test_agent_widening_change_becomes_a_phone_card(self):
         from test_l1 import _host, _state
@@ -442,8 +443,10 @@ class RealHost(unittest.IsolatedAsyncioTestCase):
             asked = asyncio.Event()
 
             async def ask(tool, inp, batch=True, **kw):
-                self.assertEqual(tool, "agentj mail"); self.assertIn("allow+evil@else.example", inp["changes"])
-                self.assertIn("给他发信不用再确认", inp["summary"])        # P296: the card says what the allowlist means
+                self.assertEqual(tool, "agentj mail"); self.assertTrue(inp["changes"])
+                self.assertIn("before", inp); self.assertIn("after", inp)
+                self.assertTrue(kw["require_passkey"]) # P503: full before/after with mandatory UV
+                self.assertIn("allow", inp["after"])
                 asked.set(); return {"behavior": "deny"}
             host.ask = ask
             wider = {**base, "allow": base["allow"] + [{"addr": "evil@else.example", "role": "owner"}]}
@@ -453,9 +456,9 @@ class RealHost(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(M.read_config(st)["allow"]), 1, "denied: nothing changed")
             narrower = {**base, "allow": []}
             await host._ctl_mail(W(), {"cfg": narrower}, claimed=False)
-            self.assertTrue(out[-1]["ok"]); self.assertEqual(M.read_config(st)["allow"], [])
+            self.assertFalse(out[-1]["ok"]); self.assertEqual(len(M.read_config(st)["allow"]), 1)
             await host._ctl_mail(W(), {"cfg": wider}, claimed=True)
-            self.assertTrue(out[-1]["ok"], "the owner's terminal applies at once")
+            self.assertFalse(out[-1]["ok"], "terminal claim cannot replace action UV")
 
 
 if __name__ == "__main__":

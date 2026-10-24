@@ -689,8 +689,11 @@ class Telegram:
         if not forwarded and command in ('/approve','/deny','/pair','/resume','/config','/model'):
             await asyncio.to_thread(api,cfg,'sendMessage',{'chat_id':chat_id,'text':pick(getattr(self.host,'lang','zh'),'这个操作请在已配对的手机或浏览器终端上做。','Use your paired phone or local terminal for this action.')});return False
         if command == '/stop' and owner:
-            await self.host.stop_turn('telegram owner', answered=False);return True
-        if owner and len(msgs)==1 and not media_present(m):
+            avatar = getattr(self.host, 'external_channels', None)
+            if avatar is not None:
+                await avatar.sessions.stop_all()
+            return True
+        if owner and not private_owner and len(msgs)==1 and not media_present(m):
             from . import tg_owner_cmds
             hit=tg_owner_cmds.match(p.get(self.host.preferences,'telegram.owner_commands',[]),raw,self.username)
             if hit:return await self.owner_command(cfg,chat_id,m.get('message_id'),*hit)
@@ -713,7 +716,7 @@ class Telegram:
                 body={'text':friend_cmds.add_friend(word[1],lang,'telegram').text}
             await asyncio.to_thread(api,cfg,'sendMessage',{'chat_id':chat_id,**body})
             self.host.st.log('telegram_friend_cmd',cmd=fc,result='ok');return True
-        if word and word[0]=='compact' and not forwarded:
+        if word and word[0]=='compact' and not forwarded and not private_owner:
             if not owner:
                 await asyncio.to_thread(api,cfg,'sendMessage',{'chat_id':chat_id,'text':pick(getattr(self.host,'lang','zh'),'只有机主在私聊里才能压缩上下文。','Only the owner can compact the context, in a private chat.')})
                 self.host.st.log('telegram_compact',result='refused')
@@ -830,6 +833,21 @@ class Telegram:
         if not self.enabled() or configuration(self.host.st)!=cfg or (group and not self.group(chat_id,uid)):
             for path in paths:inbox.unlink_placed(path)
             return False
+        if private_owner:
+            avatar = getattr(self.host, 'external_channels', None)
+            if avatar is None:
+                self.host.st.log('external_channel_refused', reason='unavailable', via='telegram')
+                return False
+            valid = lambda: self.enabled() and configuration(self.host.st) == cfg
+            response = await avatar.receive_owner('telegram', str(cfg.get('generation')) + ':' + str(m.get('message_id')),
+                                                  text, paths, valid, quote=quote if owner else None, quote_text=quote_text if owner else None, source_info=source, admission={k:cfg.get(k) for k in ('owner_id','key_env','generation')}, blobs=blobs)
+            if response is not None and valid() and not self.host.stopped():
+                await asyncio.to_thread(api, cfg, 'sendMessage', {'chat_id':chat_id, 'text':response})
+                for mime, data in getattr(response, 'images', ()):
+                    if not valid() or self.host.stopped():
+                        break
+                    await asyncio.to_thread(upload, cfg, 'sendPhoto', {'chat_id':chat_id}, 'photo', 'image.png', mime, data)
+            return response is not None
         session=SimpleNamespace(device=device,name='Telegram owner' if owner else f'Telegram group member {member_name(group,uid) or uid}',cid=0,source_kind='telegram',provenance=source)
         # the owner's private chat: the phone's own quote path (serve._accept → compose.render puts the block first, src.quote
         # for the page); a group / forward carries it inside its untrusted envelope above
@@ -941,6 +959,9 @@ class Telegram:
             reset=why in ('other_bot','unknown_bot')
             if reset:self.cursor.update(imported=False,uncertain=[],pending_updates=[],inflight=None)
             self.enrollment=dict(cfg)
+            avatar = getattr(self.host, 'external_channels', None)
+            if avatar is not None:
+                await avatar.offer_choice()
             self.cursor.update(offset=off,bot=bot,enrollment=dict(cfg))
             tg_cursor.save(self.root,self.cursor,reset=reset)
             self.host.st.log('telegram_cursor',reason=why)

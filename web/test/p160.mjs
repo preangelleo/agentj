@@ -19,7 +19,7 @@ import { startFakeHost } from './fakehost.mjs';
 import { launch, newPage, navigate, waitFor, waitState, evaluate, shoot, sleep } from './browser.mjs';
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
-const OUT = join(ROOT, 'reports/qa/p160/screens');
+const OUT = process.env.P160_OUT || join(ROOT, 'reports/qa/p160/screens');
 const $ = (id) => `document.getElementById('${id}')`;
 const NAME = 'AgentJ-Father';
 const NOW = () => Math.floor(Date.now() / 1000);
@@ -85,7 +85,7 @@ export async function runP160() {
         await navigate(p, fake.newPairing(web.url + '?lang=' + lang)); await waitState(p, 'awaiting-approval'); await fake.approve(); await waitState(p, 'ready');
         await evaluate(p, `${$('phone-env-dismiss')}?.click()`);
         await fake.send({ t: 'status', s: 'working', agent: 'codex', name: NAME });
-        await waitFor(p, `${$('agent')}.textContent===${JSON.stringify(NAME)}`);
+        await waitFor(p, `${$('agent')}.textContent===${JSON.stringify('Agent J - '+NAME)}`);
 
         await step('a', async () => {
           await fake.send(busyMsg(lang));

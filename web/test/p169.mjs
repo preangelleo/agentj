@@ -21,7 +21,7 @@ import { launch, newPage, navigate, waitFor, waitState, evaluate, shoot, sleep }
 import { LONG } from './density_shots.mjs';
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
-const OUT = join(ROOT, 'reports/qa/p169/screens');
+const OUT = process.env.P169_OUT || join(ROOT, 'reports/qa/p169/screens');
 const HOST = join(ROOT, 'agentjarvis/host');
 const $ = (id) => `document.getElementById('${id}')`;
 const NAME = 'AgentJ-Father';
@@ -78,7 +78,7 @@ export async function runP169() {
         await evaluate(p, `window.__p169 = 'same page'`);
         await fake.send({ t: 'status', s: 'idle', agent: 'claude', name: NAME });
         await fake.addTurn({ k: 'phone', dev: 'other', text: lang === 'zh' ? '帮我把主题换成夜猫子' : 'Switch my theme to Night owl' }, LONG[lang === 'zh' ? 0 : 1]);
-        await waitFor(p, `${$('agent')}.textContent===${JSON.stringify(NAME)} && ${$('words')}.textContent.length>40`);
+        await waitFor(p, `${$('agent')}.textContent===${JSON.stringify('Agent J - '+NAME)} && ${$('words')}.textContent.length>40`);
         await fake.send(busy(3));
         await waitFor(p, `${$('busyDots')}.querySelectorAll('i.rb').length===3`);
         const factoryIdle = await evaluate(p, `getComputedStyle(document.body).backgroundColor`);
@@ -182,7 +182,8 @@ export async function runP169() {
 
         await step('f', async () => {
           const officialManifest = await evaluate(p, `document.querySelector('link[rel=manifest]').getAttribute('href')`);
-          check(/^manifest-(light|dark)\.webmanifest$/.test(officialManifest), 'P422 system-theme splash manifest');
+          const expectedManifest = await evaluate(p, `document.documentElement.dataset.ios === '1' ? 'manifest.webmanifest' : 'manifest-' + (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') + '.webmanifest'`);
+          check(officialManifest === expectedManifest, 'P500 iOS legacy / Android system-theme manifest');
           await fake.send(M.custom); await waitFor(p, `document.documentElement.dataset.look==='night-owl'`);
           const locked = await evaluate(p, `[...document.querySelectorAll('img')].filter(i=>i.id!=='orb').map(i=>i.getAttribute('src')).filter(s=>s&&!s.startsWith('brand/'))`);
           check(locked.length === 0, 'every other logo stays official ' + locked);

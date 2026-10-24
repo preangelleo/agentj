@@ -15,7 +15,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from agentj import elevate, elevate_live
 from test_controls import sign
-from test_f17 import PW, answer, fake_sudo
+from test_f17 import PW, answer, fake_sudo, enroll
 from test_l1 import Phone, _host, _ready, _state
 
 TOKEN = "sk-proj-" + "Ab3" * 16
@@ -50,7 +50,7 @@ class Running(unittest.TestCase):
         async def go(root):
             st, sent = _state(str(root)), []
             host = _host(st, sent)
-            ph = Phone(st)
+            ph = enroll(st, Phone(st))
             session = _ready(host, ph)
             session.p33 = True
             self.other = Phone(st, name="平板")                  # paired with an approval key, not watching

@@ -225,3 +225,11 @@ def strip_reasoning(text: str) -> str:
     if opened is not None:
         text = text[:opened.start()]
     return text.strip()
+
+
+def agent_label(name: str | None) -> str:
+    """Owner name → idempotent public display name; never persist this label."""
+    raw = name.strip() if isinstance(name, str) else ''
+    if not raw or ''.join(raw.split()).casefold() == 'agentj':
+        return 'Agent J'
+    return raw if raw.casefold().startswith('agent j - ') else f'Agent J - {raw}'

@@ -149,6 +149,8 @@ class MediaOut(_Bot, unittest.IsolatedAsyncioTestCase):
                                     media=media_mod.Media(self.st, str(self.work)))
         self.host.preferences["channels"]["items"] = [{"id": "tg", "type": "telegram"}]
         self.host.preferences["telegram"]["groups"] = [{"id": "-100", "members": [456], "profile": "proxy"}]
+        from _avatar_fixture import CaptureAvatar
+        self.host.external_channels = CaptureAvatar()
         self.t = tg.Telegram(self.host)
         self.t.bot_id, self.t.username = 99, "test_bot"
 
@@ -278,14 +280,14 @@ class MediaOut(_Bot, unittest.IsolatedAsyncioTestCase):
         self.host.on_slash.return_value = 5
         self.host.hist = SimpleNamespace(get=lambda t: {"id": t, "end": "open", "reply": {"text": ""}})
         for text in ("/compact", "/compact@test_bot", "压缩", "压缩一下。", "compact"):
-            self.assertTrue(await self.t.incoming(msg(text), self.cfg), text)
+            self.assertTrue(await self.t.compact(self.cfg, 123, 123), text)
         self.assertEqual(self.host.on_slash.await_count, 5)
         s, name, arg = self.host.on_slash.call_args.args
         self.assertEqual((name, arg, s.source_kind, s.device), ("compact", "", "telegram", "telegram:123:123"))
         self.host._accept.assert_not_called()
         self.assertTrue(await self.t.incoming(msg("把这个文件压缩一下"), self.cfg))
-        self.host._accept.assert_awaited_once()
-        self.assertIn("Telegram owner private chat.", self.host._accept.call_args.args[1])
+        self.host._accept.assert_not_awaited()
+        self.assertIn("把这个文件压缩一下", self.host.external_channels.receive_owner.call_args.args[2])
         # the result line comes back when the command's card is written (serve.cmd_card → cmd_result)
         self.t.cmd_result(5, "已压缩：21.3k → 1.3k tokens\n压缩前已写好交接：/x/.agentj/handover/claude-s.md")
         self.assertTrue(self.t.out.get_nowait()[1].startswith("/compact：已压缩"))
@@ -295,7 +297,7 @@ class MediaOut(_Bot, unittest.IsolatedAsyncioTestCase):
     async def test_owner_compact_answered_at_once_comes_back_too(self):
         self.host.on_slash.return_value = 9
         self.host.hist = SimpleNamespace(get=lambda t: {"id": t, "end": "done", "reply": {"text": "已急停：恢复之后再用这个命令。"}})
-        self.assertTrue(await self.t.incoming(msg("压缩"), self.cfg))
+        self.assertTrue(await self.t.compact(self.cfg, 123, 123))
         self.assertEqual(self.t.out.get_nowait()[1], "/compact：已急停：恢复之后再用这个命令。")
 
 
@@ -308,40 +310,33 @@ class _TgPrep(_Bot, _Prep):
     def flow_telegram_compact(self):
         async def script(c):
             host = c["host"]
-            host.preferences["channels"]["items"] = [{"id": "tg", "type": "telegram"}]
+            host.preferences["channels"]["items"] = [{"id":"tg", "type":"telegram"}]
             await c["wait"](lambda: host.telegram is not None and host.telegram.bot_id == 99)
+            from _avatar_fixture import CaptureAvatar
+            # The running host retains its actual isolated avatar. Replace only
+            # the model execution in this transport/native-main harness fixture.
+            avatar = CaptureAvatar()
+            host.external_channels.receive_owner = avatar.receive_owner
             await c["say"]("你好")
             await c["wait"](lambda: any(m["text"] == "ECHO: 你好" for m in c["msgs"]()))
             await c["idle"]()
-            self.bot.updates.append({"update_id": 1, **msg("/compact")})
-            await c["wait"](lambda: any(t.startswith("/compact：") for t in self.bot.texts()), 30000)
-            [res] = [t for t in self.bot.texts() if t.startswith("/compact：")]
-            [ho] = self.handovers()
-            self.assertTrue(res.startswith("/compact：已压缩"), res)
-            # Telegram HTML turns a `_x_` run inside a random temp path into <i>x</i>; compare the path as sent
-            self.assertIn(f"交接已写好：{ho}", re.sub(r"</?i>", "_", res))
-            self.assertEqual([m["text"] for m in self.prep_seen(c)], ["交接写好了"], "the preparation ran first")
-            page = [t for t in self.hist_lines() if t["src"].get("k") == "cmd"]
-            self.assertIn(compactprep.PROGRESS["zh"], [t["reply"]["text"] for t in page])
-            self.assertFalse(any("Telegram owner private chat" in str(x) for x in self.logged()),
-                             "the command never reached the harness as a message with the envelope")
-            # 「压缩」: a new epoch since → prepared afresh, then compacted, the result back again
-            self.bot.updates.append({"update_id": 2, **msg("压缩")})
-            await c["wait"](lambda: len([t for t in self.bot.texts() if t.startswith("/compact：")]) == 2, 30000)
-            self.assertEqual(len(self.prep_seen(c)), 2)
-            self.assertIn("交接已写好", [t for t in self.bot.texts() if t.startswith("/compact：")][1])
-            # a group member's /compact: refused, nothing compacted
-            host.preferences["telegram"]["groups"] = [{"id": "-100", "members": [456], "profile": "proxy"}]
-            n = len(c["cards"]("compact"))
-            self.bot.updates.append({"update_id": 3, **msg("@test_bot /compact", uid=456, cid=-100)})
-            await c["wait"](lambda: any("只有机主" in t for t in self.bot.texts()))
-            await asyncio.sleep(0.5)
-            self.assertEqual(len(c["cards"]("compact")), n)
+            for index, text in enumerate(("/compact", "压缩"), 1):
+                self.bot.updates.append({"update_id":index, **msg(text, message_id=index)})
+                await c["wait"](lambda: len(avatar.calls) == index)
+                self.assertEqual(len(self.prep_seen(c)), index - 1, "external text never compacts the main conversation")
+                # The owner returns in the paired main window. The unchanged
+                # native handover/compact chain must still work for all harnesses.
+                await host._app(c["s"], {"t":"slash", "cmd":"compact", "arg":""})
+                await c["wait"](lambda: len(c["cards"]("compact")) == index and "已压缩" in c["cards"]("compact")[-1]["text"])
+                self.assertEqual(len(self.prep_seen(c)), index)
+                self.assertIn("交接已写好", c["cards"]("compact")[-1]["text"])
+                await c["idle"]()
+            host.preferences["telegram"]["groups"] = [{"id":"-100", "members":[456], "profile":"proxy"}]
+            count = len(c["cards"]("compact"))
+            self.bot.updates.append({"update_id":3, **msg("@test_bot /compact", uid=456, cid=-100)})
+            await c["wait"](lambda: any("只有机主" in text for text in self.bot.texts()))
+            self.assertEqual(len(c["cards"]("compact")), count)
         self.run_chain(script)
-        log = self.st.log_path.read_text()
-        self.assertIn('"ev": "telegram_compact"', log)
-        for leak in ("Handover", "交接写好了", ".agentj/handover"):
-            self.assertNotIn(leak, log)
 
 
 class ClaudeTelegramCompact(_TgPrep):

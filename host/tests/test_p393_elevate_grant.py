@@ -25,7 +25,7 @@ from unittest import mock
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from agentj import elevate, elevate_grant, wire
-from test_f17 import PW, fake_sudo
+from test_f17 import PW, fake_sudo, enroll, uv
 from test_l1 import Phone, _host, _ready, _state
 
 SYS_PATH = "/usr/bin:/bin"
@@ -65,6 +65,8 @@ def answer(ph, card, ok, value=None, *, grant=None, sign_grant=True):
     msg = elevate.signed_message(ph.channel, ph.did, rid, card["kind"], "allow" if ok else "deny", nonce, ts, digest, ct_sha,
                                  grant if sign_grant else None)
     m["sig"] = wire.b64u(ph.sk.sign(msg))
+    if ok and hasattr(ph,"auth"):
+        m["fa"] = uv(ph,card,digest)
     return m
 
 
@@ -74,7 +76,7 @@ class Rig:
         self.st, self.sent = _state(str(root)), []
         self.host = _host(self.st, self.sent)
         self.host.agent = types.SimpleNamespace(kind="claude", cur_send=None)
-        self.ph = Phone(self.st)
+        self.ph = enroll(self.st, Phone(self.st))
         self.session = _ready(self.host, self.ph)
         self.host.elevate.sudo = str(fake_sudo(root, PW))
         self.host.elevate.grants.path = SYS_PATH

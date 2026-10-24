@@ -6,7 +6,7 @@ import {parityRecorder} from '../../parity/lib.mjs';
 import {startWebServer} from './serve.mjs';
 import {startFakeHost} from './fakehost.mjs';
 const pw=createRequire(import.meta.url)('/tmp/aj-webmcp-playwright/node_modules/playwright');
-const out='reports/qa/p464/matrix';mkdirSync(out,{recursive:true});
+const out=process.env.P464_OUT||'reports/qa/p464/matrix';mkdirSync(out,{recursive:true});
 const rec=parityRecorder('web/test/p464-matrix.mjs');
 const web=await startWebServer(),fake=await startFakeHost(),B=await pw.chromium.launch({executablePath:'/usr/bin/chromium',args:['--no-sandbox']});
 const rows=[],failures=[];let ok=false;

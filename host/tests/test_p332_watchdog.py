@@ -416,8 +416,9 @@ class Units(Base):
             text = service.rescue_unit_text("agentj-rescue", service.rescue_argv(), env)
         self.assertIn("Restart=always", text)
         self.assertIn("WantedBy=default.target", text)
-        self.assertRegex(text, r"MemoryMax=\d+M")
-        self.assertIn("Nice=10", text)
+        self.assertIn("MemoryLow=256M", text)
+        self.assertIn("CPUWeight=1000", text)
+        self.assertNotIn("Nice=10", text)
         for bad in ("PartOf", "BindsTo", "Requires", "Requisite", "StopWhenUnneeded"):
             self.assertNotIn(bad, text)
         self.assertIn('"-P" "-m" "agentj.rescue_watchdog"', text)
@@ -432,7 +433,7 @@ class Units(Base):
         self.assertEqual(data["Label"], "net.agentj.rescue")
         self.assertIs(data["KeepAlive"], True)
         self.assertIs(data["RunAtLoad"], True)
-        self.assertEqual(data["ProcessType"], "Background")
+        self.assertEqual(data["ProcessType"], "Interactive")
         self.assertEqual(data["ProgramArguments"], [*service.agentj_argv(), "rescue", "watchdog"])
 
     def _fake_systemctl(self):

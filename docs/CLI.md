@@ -134,7 +134,7 @@ agentj --help
 
 ```text
 usage: agentj [-h] [-V] [--migrate-legacy] [--instance N] [--fresh]
-              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,terminal,provider,sudo-helper,docs-rule,handover,telegram-cursor,plaza,support,data,diag,preflight,skills,capability,goal,heartbeat,quota,imessage,busy,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
+              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,files,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,terminal,provider,sudo-helper,docs-rule,handover,wechat,telegram-cursor,plaza,support,data,diag,preflight,skills,capability,goal,heartbeat,quota,imessage,busy,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -2420,6 +2420,80 @@ usage: agentj feedback send [-h] [--owner-confirmed]
 | `checked` | `null` | true | — | `the .checked.json written by 'agentj feedback check'` |
 | `--owner-confirmed` | `false` | false | — | `your human read this exact JSON and said yes (required when layer 2 is unavailable or blocked)` |
 | `--session-file` | `"~/.agentj-install/feedback-id"` | false | — | `install session id file (default ~/.agentj-install/feedback-id)` |
+
+### agentj files
+
+```text
+owner-approved local file access
+```
+
+```bash
+agentj files --help
+```
+
+```text
+usage: agentj files [-h] {status,prepare,fetch} ...
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj files fetch
+
+```text
+copy a file after phone approval
+```
+
+```bash
+agentj files fetch --help
+```
+
+```text
+usage: agentj files fetch [-h] path
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `path` | `null` | true | — | `` |
+
+### agentj files prepare
+
+```text
+prepare Mac permissions while at the computer
+```
+
+```bash
+agentj files prepare --help
+```
+
+```text
+usage: agentj files prepare [-h] [--at-computer]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--at-computer` | `false` | false | — | `` |
+
+### agentj files status
+
+```text
+read-only status
+```
+
+```bash
+agentj files status --help
+```
+
+```text
+usage: agentj files status [-h]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
 
 ### agentj friends
 
@@ -5616,7 +5690,7 @@ agentj setup checklist --help
 
 ```text
 usage: agentj setup checklist [-h] [--resume | --check |
-                              --item {seat,harness,desktop,phone,passkey,admin,phonepermissions,sudo,awake,service,updates,network,browser,gmail,youtube,bili,douyin,wechat,sites,google,keyring,files,fda,accessibility,automation,screen,hardware,tg,mail,botkey,exit} |
+                              --item {seat,harness,desktop,phone,passkey,admin,phonepermissions,sudo,awake,service,updates,network,browser,gmail,youtube,bili,douyin,wechat,sites,google,keyring,files,macfiles,fda,accessibility,automation,screen,hardware,wx,tg,mail,botkey,exit} |
                               --open | --close] [--json]
 ```
 
@@ -5625,7 +5699,7 @@ usage: agentj setup checklist [-h] [--resume | --check |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--resume` | `false` | false | — | `start or continue and show the card` |
 | `--check` | `false` | false | — | `live read-only re-check` |
-| `--item` | `null` | false | `seat`, `harness`, `desktop`, `phone`, `passkey`, `admin`, `phonepermissions`, `sudo`, `awake`, `service`, `updates`, `network`, `browser`, `gmail`, `youtube`, `bili`, `douyin`, `wechat`, `sites`, `google`, `keyring`, `files`, `fda`, `accessibility`, `automation`, `screen`, `hardware`, `tg`, `mail`, `botkey`, `exit` | `只复查这一项（网站项会真去查一次登录）/ re-check one item` |
+| `--item` | `null` | false | `seat`, `harness`, `desktop`, `phone`, `passkey`, `admin`, `phonepermissions`, `sudo`, `awake`, `service`, `updates`, `network`, `browser`, `gmail`, `youtube`, `bili`, `douyin`, `wechat`, `sites`, `google`, `keyring`, `files`, `macfiles`, `fda`, `accessibility`, `automation`, `screen`, `hardware`, `wx`, `tg`, `mail`, `botkey`, `exit` | `只复查这一项（网站项会真去查一次登录）/ re-check one item` |
 | `--open` | `false` | false | — | `reopen a closed checklist (only when the owner asks)` |
 | `--close / --pause` | `false` | false | — | `close it now; reopen from the menu` |
 | `--json` | `false` | false | — | `` |
@@ -6410,6 +6484,29 @@ usage: agentj voice [-h] [--owner-id OWNER_ID] [--key-env KEY_ENV] [--tts TTS]
 | `--json` | `false` | false | — | `` |
 | `--owner-confirmed` | `false` | false | — | `` |
 
+### agentj wechat
+
+```text
+WeChat: setup · status · unbind
+```
+
+```bash
+agentj wechat --help
+```
+
+```text
+usage: agentj wechat [-h] [--model MODEL] [--phone]
+                     {setup,status,unbind,pending,claim,avatar} [id]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `op` | `null` | true | `setup`, `status`, `unbind`, `pending`, `claim`, `avatar` | `` |
+| `id` | `null` | false | — | `` |
+| `--model` | `null` | false | — | `chosen model on a bound OpenRouter route` |
+| `--phone` | `false` | false | — | `show on paired Web App` |
+
 ### agentj wizard
 
 ```text
@@ -6818,7 +6915,7 @@ agentj --help
 
 ```text
 usage: agentj [-h] [-V] [--migrate-legacy] [--instance N] [--fresh]
-              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,terminal,provider,sudo-helper,docs-rule,handover,telegram-cursor,plaza,support,data,diag,preflight,skills,capability,goal,heartbeat,quota,imessage,busy,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
+              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,files,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,terminal,provider,sudo-helper,docs-rule,handover,wechat,telegram-cursor,plaza,support,data,diag,preflight,skills,capability,goal,heartbeat,quota,imessage,busy,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -9104,6 +9201,80 @@ usage: agentj feedback send [-h] [--owner-confirmed]
 | `checked` | `null` | true | — | `the .checked.json written by 'agentj feedback check'` |
 | `--owner-confirmed` | `false` | false | — | `your human read this exact JSON and said yes (required when layer 2 is unavailable or blocked)` |
 | `--session-file` | `"~/.agentj-install/feedback-id"` | false | — | `install session id file (default ~/.agentj-install/feedback-id)` |
+
+### agentj files
+
+```text
+本机文件访问
+```
+
+```bash
+agentj files --help
+```
+
+```text
+usage: agentj files [-h] {status,prepare,fetch} ...
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj files fetch
+
+```text
+经手机批准复制文件
+```
+
+```bash
+agentj files fetch --help
+```
+
+```text
+usage: agentj files fetch [-h] path
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `path` | `null` | true | — | `` |
+
+### agentj files prepare
+
+```text
+主人在Agent J 主机前时准备 Mac 权限
+```
+
+```bash
+agentj files prepare --help
+```
+
+```text
+usage: agentj files prepare [-h] [--at-computer]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--at-computer` | `false` | false | — | `` |
+
+### agentj files status
+
+```text
+只读状态
+```
+
+```bash
+agentj files status --help
+```
+
+```text
+usage: agentj files status [-h]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
 
 ### agentj friends
 
@@ -12300,7 +12471,7 @@ agentj setup checklist --help
 
 ```text
 usage: agentj setup checklist [-h] [--resume | --check |
-                              --item {seat,harness,desktop,phone,passkey,admin,phonepermissions,sudo,awake,service,updates,network,browser,gmail,youtube,bili,douyin,wechat,sites,google,keyring,files,fda,accessibility,automation,screen,hardware,tg,mail,botkey,exit} |
+                              --item {seat,harness,desktop,phone,passkey,admin,phonepermissions,sudo,awake,service,updates,network,browser,gmail,youtube,bili,douyin,wechat,sites,google,keyring,files,macfiles,fda,accessibility,automation,screen,hardware,wx,tg,mail,botkey,exit} |
                               --open | --close] [--json]
 ```
 
@@ -12309,7 +12480,7 @@ usage: agentj setup checklist [-h] [--resume | --check |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--resume` | `false` | false | — | `开始或继续，并把卡片发到手机` |
 | `--check` | `false` | false | — | `实时只读复查` |
-| `--item` | `null` | false | `seat`, `harness`, `desktop`, `phone`, `passkey`, `admin`, `phonepermissions`, `sudo`, `awake`, `service`, `updates`, `network`, `browser`, `gmail`, `youtube`, `bili`, `douyin`, `wechat`, `sites`, `google`, `keyring`, `files`, `fda`, `accessibility`, `automation`, `screen`, `hardware`, `tg`, `mail`, `botkey`, `exit` | `只复查这一项（网站项会真去查一次登录）/ re-check one item` |
+| `--item` | `null` | false | `seat`, `harness`, `desktop`, `phone`, `passkey`, `admin`, `phonepermissions`, `sudo`, `awake`, `service`, `updates`, `network`, `browser`, `gmail`, `youtube`, `bili`, `douyin`, `wechat`, `sites`, `google`, `keyring`, `files`, `macfiles`, `fda`, `accessibility`, `automation`, `screen`, `hardware`, `wx`, `tg`, `mail`, `botkey`, `exit` | `只复查这一项（网站项会真去查一次登录）/ re-check one item` |
 | `--open` | `false` | false | — | `主人说要重开时：重新显示已收起的清单` |
 | `--close / --pause` | `false` | false | — | `收起清单：手机/Agent J 主机网页立即收起，不再自动弹出；菜单里可重开` |
 | `--json` | `false` | false | — | `` |
@@ -13093,6 +13264,29 @@ usage: agentj voice [-h] [--owner-id OWNER_ID] [--key-env KEY_ENV] [--tts TTS]
 | `--run` | `null` | false | — | `` |
 | `--json` | `false` | false | — | `` |
 | `--owner-confirmed` | `false` | false | — | `` |
+
+### agentj wechat
+
+```text
+微信 ClawBot
+```
+
+```bash
+agentj wechat --help
+```
+
+```text
+usage: agentj wechat [-h] [--model MODEL] [--phone]
+                     {setup,status,unbind,pending,claim,avatar} [id]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `op` | `null` | true | `setup`, `status`, `unbind`, `pending`, `claim`, `avatar` | `` |
+| `id` | `null` | false | — | `` |
+| `--model` | `null` | false | — | `已绑定 OpenRouter 的主人所选模型` |
+| `--phone` | `false` | false | — | `在已配对网页显示绑定码` |
 
 ### agentj wizard
 

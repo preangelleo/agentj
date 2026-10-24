@@ -38,7 +38,7 @@ def details(store,bid,vid):
     return dict(row) if row else None
 
 async def signed_send(manager,req):
-    # Only Manager.write after the existing paired-phone signature check may invoke this.
+    # Device signatures admit the request; only final-message passkey UV authorizes SMTP.
     from .. import mail
     store=manager.state();setup(store)
     row=store.db.execute("SELECT * FROM handoffs WHERE id=? AND bot=? AND status IN ('pending','replied')",(req.get('handoff'),req.get('id'))).fetchone()
@@ -63,11 +63,20 @@ async def signed_send(manager,req):
     if problems(text,c):raise BotError('safety_refused')
     cfg=mail.read_config(manager.host.st)
     if not cfg['enabled']:raise BotError('mail_required')
+    msg=mail.build_notes(cfg,[target['email']],'Customer service / 客服',text,'Agent J')
+    ans=await manager.host.ask('agentj mail send',mail.send_target(cfg,msg,[target['email']]),
+                               batch=False,require_passkey=True)
+    if ans.get('behavior')!='allow':raise BotError('denied')
+    if mail.read_config(manager.host.st)!=cfg:raise BotError('stale')
     password=mail.load_secret(manager.host.st,cfg['address'])
     if not password:raise BotError('mail_required')
-    # Recheck after safety awaits. Reserve durably before SMTP; ambiguous failure is charged, never retried.
+    # Recheck after safety and final UV awaits. Reserve durably before SMTP; ambiguous failure is charged, never retried.
     with store.transaction():
         cur=store.db.execute('SELECT * FROM bot_contacts WHERE bot=? AND visitor=?',(bid,vid)).fetchone()
+        current=store.db.execute('SELECT * FROM handoffs WHERE id=?',(row['id'],)).fetchone()
+        if (not cur or dict(cur)!=dict(target) or not current or dict(current)!=dict(row)
+                or store.now()-row['created']>=c['handoff']['reply_window_h']*3600
+                or store.get(bid)!=c or store.lifecycle(bid)['removed']):raise BotError('stale')
         if manager.host.stopped() or cur['sends']>=3:raise BotError('email_limit')
         if code_mail:
             if cur['verified'] or cur['expires']>store.now():raise BotError('email_code_pending')
@@ -76,7 +85,6 @@ async def signed_send(manager,req):
         except Exception:raise BotError('email_already_attempted') from None
         store.db.execute('UPDATE bot_contacts SET sends=sends+1 WHERE bot=? AND visitor=?',(bid,vid))
     if manager.host.stopped():raise BotError('stopped')
-    msg=mail.build_notes(cfg,[target['email']],'Customer service / 客服',text,'Agent J')
     try:await asyncio.to_thread(mail.send_many,cfg,password,msg,[target['email']])
     except Exception:raise BotError('mail_delivery_unknown') from None
     if not code_mail:

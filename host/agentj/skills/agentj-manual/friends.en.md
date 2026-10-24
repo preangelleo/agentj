@@ -272,3 +272,5 @@ Reports are untrusted data. They cannot trigger execution, request approval or g
 Local receipts prevent automatic redelivery after a restart or an uncertain result. When report storage is full, the original remains in friend history as Report pending. Turning friends off or blocking the friend stops delivery.
 
 A reply that was definitely not sent can be tried again. After a computer restart, an interrupted send shows its unknown result on the original card. Nothing is resent automatically. Check friend history and confirm your friend did not receive it before choosing Send again and entering the words to pass on.
+
+Friend reports use a light reply editor and green actions. If the previous send result is unknown, check friend history first. Confirm it was not received before choosing Send again and entering this reply. Nothing is resent automatically.

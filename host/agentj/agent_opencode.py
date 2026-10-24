@@ -30,6 +30,8 @@ scheduled task (`agentj tasks`) runs in its own throw-away session; `mode: resea
 """
 from __future__ import annotations
 
+from . import resource_policy
+
 import asyncio
 import base64
 import contextlib
@@ -732,7 +734,7 @@ class OpenCodeAgent(Agent):
         if self.cfg.get("fence", True):
             env = fence.launch_environment(env, self.cfg.get("docker", False), self.kind)
         try:
-            proc = await asyncio.create_subprocess_exec(*argv, cwd=self.cfg["dir"], env=env,
+            proc = await asyncio.create_subprocess_exec(*resource_policy.work_argv(argv), cwd=self.cfg["dir"], env=env,
                                                         stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE,
                                                         stderr=asyncio.subprocess.PIPE, limit=LINE_LIMIT, start_new_session=True)
         except OSError as e:

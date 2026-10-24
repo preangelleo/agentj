@@ -1,12 +1,13 @@
 // Phone controls (PROTOCOL §8): what it remembers, the activity record, scheduled tasks, 全部停下 / 恢复, batch grants.
 // Reads are plain requests answered to this session only; every write is signed with the approval key over (action,
 // nonce, time, SHA-256 of the target as shown) — the host does nothing without a valid signature. Nothing is stored here.
-import { controlMessage, b64u, workflowResumeMessage } from '../proto/wire.js';
+import { controlMessage, b64u, unb64u, workflowResumeMessage } from '../proto/wire.js';
 import { request, done, isReady, channel, sendApp, randHex, gen, peer } from './session.js';
 import { signKey } from './store.js';
 import { myDeviceId } from './api.js';
 import { t, lang, locale, plain, fillText } from './t.js';
 import { el, mk, toast, executionToast, toastAction, confirmSheet } from './ui.js';
+import { approve as passkeyApprove } from './faceid.js';
 import { copyable } from './copycode.js';   // P292
 
 let H = null;          // {show(view), estopChanged(), friends()}
@@ -20,10 +21,28 @@ export async function signed(action, target, extra) {   // P203: cardsync signs 
   const sk = await signKey();
   const g = gen();
   if (!g || !sk) throw new Error(sk ? 'offline' : 'no_key');
-  const n = randHex(16), ts = Date.now();
+  let prepared = null, fa;
+  if (peer.mailuv1 && action === 'host_write') {
+    prepared = await new Promise(resolve => {
+      let r; const timer = setTimeout(() => { if (r) done(r); resolve(null); }, 10000);
+      r = request({t:'policy_prepare', action, target}, m => {
+        if (m.t !== 'policy_ready' && m.t !== 'offline') return;
+        clearTimeout(timer); done(r); resolve(m.t === 'policy_ready' ? m : null);
+      }, g);
+    });
+    if (!prepared) throw new Error('offline');
+    target = prepared.target || target;
+    if (prepared.level === 'uv') {
+      if (!prepared.fa || !prepared.fa_ch) { toast(t('ask.passkeyRequired'),6000); throw new Error('no_passkey'); }
+      if (!await confirmSheet(t('p336.faTitle'), prepared.summary, t('p336.faYes'))) throw new Error('cancel');
+      fa = await passkeyApprove(unb64u(prepared.fa_ch), prepared.fa);
+    }
+  }
+  if (g !== gen()) throw new Error('offline');
+  const n = prepared?.n || randHex(16), ts = Date.now();
   const msg = await controlMessage(channel(), await myDeviceId(), action, n, ts, target);
   const sig = new Uint8Array(await crypto.subtle.sign({ name: 'Ed25519' }, sk.priv, msg));
-  return { ...extra, n, ts, sig: b64u(sig), [GEN]: g };
+  return { ...extra, ...(fa ? {fa} : {}), n, ts, sig: b64u(sig), [GEN]: g };
 }
 function command(obj) {                               // pending acknowledgement extends only this request
   return new Promise((resolve) => {

@@ -39,6 +39,8 @@ ask_owner here too (not only in the prompt).
 """
 from __future__ import annotations
 
+from . import resource_policy
+
 import asyncio
 import contextlib
 import json
@@ -459,6 +461,17 @@ class PeerSessions:
         ctx = self.store.context_text(str(friend.get("id") or "")) if hasattr(self.store, "context_text") else ""
         return build_prompt(name, lang, friend, group, list(never), self.store.profile_text(), ctx)
 
+    def execution_env(self, kind, cfg):
+        return clean_env(kind, os.environ, getattr(self.host, "preferences", None),
+                         extra_keep=[(codex_user_model(os.environ).get("provider_table") or {}).get("env_key") or ""]
+                         if kind == "codex" else ())
+
+    def codex_settings(self, env):
+        return codex_user_model(env)
+
+    def opencode_settings(self, env):
+        return opencode_user_settings(env)
+
     # -------------------------------------------- argv per harness
     def _exe(self, kind: str) -> str | None:
         from .binaries import resolve
@@ -491,7 +504,7 @@ class PeerSessions:
         feats = codex_features(exe)
         if not all(f in feats for f in CODEX_REQUIRED):
             return None
-        user = codex_user_model(env)
+        user = self.codex_settings(env)
         a = [exe, "exec"] + (["resume"] if sid else [])
         a += ["--json", "--skip-git-repo-check", "--ignore-user-config", "--ignore-rules",
               "-c", 'sandbox_mode="read-only"', "-c", 'approval_policy="never"', "-c", 'web_search="disabled"',
@@ -537,7 +550,7 @@ class PeerSessions:
 
     def _opencode_config(self, prompt: str, env) -> str:
         deny = {"*": "deny"}
-        conf = {**opencode_user_settings(env), "autoupdate": False, "share": "disabled", "permission": deny,
+        conf = {**self.opencode_settings(env), "autoupdate": False, "share": "disabled", "permission": deny,
                 "tools": {"*": False}, "instructions": [], "mcp": {}, "plugin": [],
                 "agent": {PEER_AGENT: {"mode": "primary", "prompt": prompt, "tools": {"*": False}, "permission": deny}}}
         return json.dumps(conf, ensure_ascii=False, separators=(",", ":"))
@@ -690,9 +703,7 @@ class PeerSessions:
             return _fail("fence")
         prompt = self.system_prompt(friend, group)
         sid = self.store.session_id(fid, kind)
-        env = clean_env(kind, os.environ, getattr(self.host, "preferences", None),
-                        extra_keep=[(codex_user_model(os.environ).get("provider_table") or {}).get("env_key") or ""]
-                        if kind == "codex" else ())
+        env = self.execution_env(kind, cfg)
         ro_dirs = []
         if kind == "claude":
             argv = await asyncio.to_thread(self._claude_argv, exe, prompt, sid, cfg)
@@ -711,8 +722,7 @@ class PeerSessions:
         if argv is None:
             self.st.log("peer_no_tool_off", agent=kind)
             return _fail("no_tool_off")
-        argv = fenced(self.st, argv, str(sandbox), env, ro_dirs)
-        out, err, rc = await self._run(argv, str(sandbox), env, wrapped, gen)
+        out, err, rc = await self._execute(exe, argv, str(sandbox), env, wrapped, gen, cfg, ro_dirs, sid)
         if rc == "stopped":
             return _fail("stopped")
         if rc == "timeout":
@@ -736,9 +746,12 @@ class PeerSessions:
             self.st.log("peer_tool_call", agent=kind)
         return res
 
+    async def _execute(self, exe, argv, cwd, env, text, gen, cfg, ro_dirs=(), sid=None):
+        return await self._run(fenced(self.st, argv, cwd, env, ro_dirs), cwd, env, text, gen)
+
     async def _run(self, argv, cwd, env, stdin_text: str, gen):
         try:
-            proc = await asyncio.create_subprocess_exec(*argv, cwd=cwd, env=env, stdin=asyncio.subprocess.PIPE,
+            proc = await asyncio.create_subprocess_exec(*resource_policy.work_argv(argv), cwd=cwd, env=env, stdin=asyncio.subprocess.PIPE,
                                                         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
                                                         start_new_session=True)
         except OSError:

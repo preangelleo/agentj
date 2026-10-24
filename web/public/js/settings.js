@@ -16,6 +16,7 @@ import * as sfx from './sfx.js';
 import * as shotclip from './shotclip.js';
 import * as remotes from './remotes.js';
 import * as mail from './mail.js';
+import * as wechat from './wechat.js';
 import * as authrescue from './authrescue.js';   // P258
 import * as contacts from './contacts.js';
 import * as ctmanage from './ctmanage.js';   // P207 §3: Settings → 通讯录
@@ -33,6 +34,7 @@ import * as termhook from './termhook.js'; // P408: 安全 → 网页终端 (row
 import * as vaultrow from './vaultrow.js'; // P414 (§37.9): 安全 → 电脑密码
 import * as pagefind from './pagefind.js';   // P363 (#70): in-place find on a Settings sub-page
 import * as ntf from './notify.js';      // P365: Settings → 自动化消息 (`agentj notify`)
+import * as localFiles from './local-files.js';
 import * as news from './news.js';         // P374: 账号和帮助 → 「Daily AI News」 (news_get / news_set → news_res)
 
 let H = { agentName: () => 'Agent J', paired: () => false, connected: () => false, unpair: () => {}, reload: () => location.reload(),
@@ -445,7 +447,7 @@ export function setPrefs(value, host) {
 
 // ---------------------------------------------------------------- open / close / sub-view
 export const isOpen = () => !el('settings').hidden;
-const SUB_TITLE = { main: 'set.title', ios: 'set.iosTitle', remotes: 'rm.title', mail: 'mail.nav', contacts: 'p207set.ct.nav', auth: 'ar.nav', imessage: 'imsg.nav', cards: 'p360.nav', notify: 'p365.nav', hooks: 'p366.nav' };
+const SUB_TITLE = { main: 'set.title', ios: 'set.iosTitle', remotes: 'rm.title', mail: 'mail.nav', contacts: 'p207set.ct.nav', auth: 'ar.nav', imessage: 'imsg.nav', cards: 'p360.nav', notify: 'p365.nav', hooks: 'p366.nav', files: 'p478.nav' };
 function showSub(v, add = false) {
   const from = sub;
   pagefind.close();
@@ -460,6 +462,7 @@ function showSub(v, add = false) {
   el('set-cards').hidden = v !== 'cards';
   el('set-notify').hidden = v !== 'notify';
   el('set-hooks').hidden = v !== 'hooks';
+  el('set-local-files').hidden = v !== 'files';
   el('set-back').hidden = v === 'main';
   el('set-title').textContent = t(SUB_TITLE[v]);
   el('settings').dataset.sub = v;
@@ -469,7 +472,7 @@ function showSub(v, add = false) {
   if (from === 'hooks' && v !== 'hooks') webhooks.close();
   if (from === 'notify' && v !== 'notify') ntf.close();
   if (v === 'remotes') { remotes.open({add}); return; }
-  const back = { ios: 'set-a2hs', remotes: 'set-remotes-open', mail: 'set-mail-nav', contacts: 'set-contacts-nav', auth: 'set-auth-nav', imessage: 'set-imsg-nav', cards: 'set-cards-nav', notify: 'set-notify-nav', hooks: 'set-hooks-nav' }[from];
+  const back = { ios: 'set-a2hs', remotes: 'set-remotes-open', mail: 'set-mail-nav', contacts: 'set-contacts-nav', auth: 'set-auth-nav', imessage: 'set-imsg-nav', cards: 'set-cards-nav', notify: 'set-notify-nav', hooks: 'set-hooks-nav', files: 'set-local-files-nav' }[from];
   (v === 'main' ? el(back || 'set-close') : el('set-back')).focus({ preventScroll: v === 'main' && !back });
   if (v === 'main') renderRemotesRow();
   if (v === 'mail') mail.load();   // P170
@@ -478,6 +481,7 @@ function showSub(v, add = false) {
   if (v === 'imessage') imsg.load();       // P274
   if (v === 'cards') { jcards.renderSettings(cardHooks); jcards.refresh().then(() => { if (sub === 'cards') jcards.renderSettings(cardHooks); }); }   // P360
   if (v === 'notify') ntf.load();          // P365
+  if (v === 'files') localFiles.load();
   if (v === 'hooks') webhooks.show(el('hooks-box'));   // P366
 }
 const cardHooks = { note: (text) => say(text, false, 'p360.setFailed') };
@@ -492,6 +496,7 @@ export function open(page = 'main', add = false) {
   for (const id of ['scanBtn', 'srchBtn', 'setBtn']) el('set-actions').append(el(id));
   sub = 'main'; el('set-main').hidden = false; el('set-ios').hidden = true; el('set-remotes').hidden = true; el('set-mail').hidden = true; el('set-auth').hidden = true; el('set-back').hidden = true;
   el('set-contacts').hidden = true;
+  el('set-local-files').hidden = true;
   el('set-imessage').hidden = true;
   el('set-cards').hidden = true;
   el('set-notify').hidden = true;
@@ -690,6 +695,9 @@ export function configure(hooks) {
   el('set-owner-nav').addEventListener('click', () => contacts.openOwner());   // P194: 我的联系方式 (slot 0)
   el('set-contacts-nav').addEventListener('click', () => showSub('contacts'));   // P207: 通讯录
   mail.configure();
+  localFiles.configure();
+  el('set-local-files-nav').addEventListener('click', () => showSub('files'));
+  wechat.configure();
   el('set-imsg-nav').addEventListener('click', () => showSub('imessage'));   // P274
   el('set-cards-nav').addEventListener('click', () => showSub('cards'));   // P360
   el('set-cards-assist').addEventListener('click', () => { close(); if (H.assist) H.assist(t('p360.assistText')); });
@@ -785,7 +793,7 @@ export function searchItems(query) {
     [...n.querySelectorAll('.setlab, .setnote, b, small, a')].map(x => x.textContent).join(' ').concat(' ', n.dataset.keywords || '', n.closest('.setcard')?.querySelector('h3')?.textContent || '').toLocaleLowerCase().includes(q)));
 }
 // the sub-pages a main-page row opens (only those whose row is there for this computer)
-const SUBS = [['ios', 'set-a2hs'], ['mail', 'set-mail-nav'], ['contacts', 'set-contacts-nav'], ['auth', 'set-auth-nav'], ['imessage', 'set-imsg-nav'], ['cards', 'set-cards-nav'], ['notify', 'set-notify-nav'], ['hooks', 'set-hooks-nav']];
+const SUBS = [['ios', 'set-a2hs'], ['mail', 'set-mail-nav'], ['contacts', 'set-contacts-nav'], ['auth', 'set-auth-nav'], ['imessage', 'set-imsg-nav'], ['cards', 'set-cards-nav'], ['notify', 'set-notify-nav'], ['hooks', 'set-hooks-nav'], ['files', 'set-local-files-nav']];
 const SUB_UNIT = '.setrow, .setnav, h3.setg, label.mailf, .setnote, .jc-setrow';
 /** Rows of the Settings sub-pages that match (public labels / notes only, never input values) → [{sub, node, label}]. */
 export function subItems(query) {

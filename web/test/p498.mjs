@@ -90,8 +90,8 @@ await check('p498-batch-choice-keeps-original-number',async()=>{
  await ev(p,`document.querySelector('.p498-reply textarea').value='Wednesday';document.querySelector('.p498-reply').requestSubmit()`);await sleep(500);assert.ok(replied);await p.close();
 });
 await check('p498-unknown-requires-owner-resend',async()=>{
- for(const language of ['zh','en']){
- const p=await pair(390,language);let replies=0;
+ for(const width of [390,1280])for(const language of ['zh','en']){
+ const p=await pair(width,language);let replies=0;
  fake.st.onApp=async(c,m,send)=>{
   if(m.t!=='fr_report_reply')return false;
   assert.equal(m.id,rid);assert.equal(m.text,'Confirmed missing');assert.equal(m.resend,true);
@@ -104,8 +104,14 @@ await check('p498-unknown-requires-owner-resend',async()=>{
  assert.ok((await ev(p,`document.querySelector('#cmdx').textContent`)).includes(language==='zh'?'上次发送结果未知——确认好友没收到再点重新发送':'Confirm your friend did not receive it'));
  await sleep(250);assert.equal(replies,0);
  assert.equal(await ev(p,`document.querySelector('.p498-reply').hidden`),true);
- writeFileSync(`${out}/unknown-${language}-390.png`,await shoot(p));
- await ev(p,`document.querySelector('#cmdx button').click();document.querySelector('.p498-reply textarea').value='Confirmed missing';document.querySelector('.p498-reply').requestSubmit()`);
+ writeFileSync(`${out}/unknown-${language}-${width}.png`,await shoot(p));
+ await ev(p,`document.querySelector('#cmdx button').click()`);
+ await waitFor(p,`!document.querySelector('.p498-reply').hidden`);
+ const appearance=await ev(p,`({button:getComputedStyle(document.querySelector('#cmdx button')).backgroundColor,input:getComputedStyle(document.querySelector('.p498-reply textarea')).backgroundColor,ink:getComputedStyle(document.querySelector('.p498-reply textarea')).color,overflow:document.querySelector('.p498-reply').scrollWidth>document.querySelector('.p498-reply').clientWidth+1})`);
+ assert.deepEqual(appearance,{button:'rgb(183, 227, 150)',input:'rgb(250, 249, 245)',ink:'rgb(20, 20, 20)',overflow:false});
+ await ev(p,`document.activeElement?.blur()`);
+ writeFileSync(`${out}/unknown-open-${language}-${width}.png`,await shoot(p));
+ await ev(p,`document.querySelector('.p498-reply textarea').value='Confirmed missing';document.querySelector('.p498-reply').requestSubmit()`);
  await waitFor(p,`document.querySelector('#cmdx button').disabled`);assert.equal(replies,1);
  await p.close();
  }

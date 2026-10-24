@@ -567,6 +567,14 @@ class CodexChain(_Chain):
 
         async def script(c):
             host = c["host"]
+            # Warm the main session explicitly: native model refresh may create
+            # it while a slower scheduled worker starts. A task must preserve it.
+            self.assertTrue(await host.agent._ready())
+            main_sid = self.st.agent_session("codex")
+            self.assertIsNotNone(main_sid)
+            # The scheduler halts the idle main process. Real Codex persists its
+            # thread; this stand-in only remembers ids supplied at each restart.
+            os.environ["FAKE_CX_THREADS"] = json.dumps([main_sid])
             os.environ["FAKE_CX_LOG"] = str(self.work / "workflows" / "look" / ".fake.jsonl")
             res = await host.scheduler.run("look", "manual")
             self.assertEqual((res["verdict"], res["readonly"]), ("ok", True), res)
@@ -582,7 +590,7 @@ class CodexChain(_Chain):
             self.assertEqual(res["verdict"], "ok", res)
             self.assertFalse((self.work / "normal-wrote.txt").exists(), "CEO writes stay in its own folder")
             self.assertTrue((self.work / "workflows" / "work" / "normal-wrote.txt").exists())
-            self.assertIsNone(self.st.agent_session("codex"), "a scheduled run never becomes the chat's conversation")
+            self.assertEqual(self.st.agent_session("codex"), main_sid, "a scheduled run never replaces the chat conversation")
         self.run_chain(script)
         rows = [json.loads(line) for log in (self.work / "workflows").glob("*/.fake.jsonl") for line in log.read_text().splitlines()]
         starts = [x["params"] for x in rows if x.get("method") == "thread/start"]

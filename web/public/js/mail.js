@@ -4,7 +4,8 @@
 import { mailServers } from './mail-servers.js';
 import { t } from './t.js';
 import { el, toast, notify } from './ui.js';
-import { ask1, isReady } from './session.js';
+import { signed } from './controls.js';
+import { ask1, isReady, peer } from './session.js';
 
 let view = null;          // the host's last `mail_res.view`
 let busy = false;
@@ -15,6 +16,13 @@ const why = (w) => { const p = String(w || '').split(':'); const k = 'mail.why.'
 
 async function call(obj, ms = 20000) {
   if (!isReady()) { say(t('set.offline')); return null; }
+  if (peer.mailuv1 && ['mail_set','mail_test'].includes(obj.t)) {
+    try { obj = {...obj, authorization:await signed('host_write', {kind:obj.t, ...(obj.t === 'mail_set' ? {cfg:obj.cfg}: {})}, {})}; }
+    catch (e) {
+      const key = ({cancel:'mail.why.denied', no_passkey:'ask.passkeyRequired', offline:'set.offline', no_key:'set.offline'})[e.message] || 'elev.fa.cancel';
+      say(t('mail.saveFail',{why:t(key)})); return null;
+    }
+  }
   const m = await ask1(obj, 'mail_res', ms);
   if (m.t !== 'mail_res') { say(m.t === 'timeout' ? t('mail.timeout') : t('set.offline')); return null; }
   if (m.view && typeof m.view === 'object') view = m.view;
@@ -56,6 +64,7 @@ function render() {
   const parts = [];
   parts.push(!c.address ? t('mail.stNone') : c.enabled ? t('mail.stOn', { a: c.address }) : t('mail.stOff', { a: c.address }));
   parts.push(view.has_password ? t('mail.stKey') : t('mail.stNoKey'));
+  if (view.password_upgrade_required) parts.push(t('p503.mailUpgrade'));
   if (view.error) parts.push(t('mail.stErr', { why: why(view.error) }));
   else if (view.last_ok) parts.push(t('mail.stLast', { at: new Date(view.last_ok * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }));
   el('mail-status').textContent = parts.join(' · ');

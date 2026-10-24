@@ -35,6 +35,20 @@ VEC_CHANNEL, VEC_HOSTPUB = "AAECAwQFBgcICQoLDA0ODw", bytes(range(100, 132))
 VEC_HANDLE = "0102000102030405060708090a0b0c0d0e0f6465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f80818283"
 
 
+def cbor(v):
+    def head(major, n):
+        if n < 24: return bytes([(major << 5) | n])
+        for ai, size in ((24,1),(25,2),(26,4),(27,8)):
+            if n < 1 << (size*8): return bytes([(major << 5)|ai]) + n.to_bytes(size,'big')
+        raise ValueError(n)
+    if type(v) is int: return head(0,v) if v >= 0 else head(1,-1-v)
+    if isinstance(v,bytes): return head(2,len(v))+v
+    if isinstance(v,str):
+        b=v.encode(); return head(3,len(b))+b
+    if isinstance(v,dict): return head(5,len(v))+b''.join(cbor(k)+cbor(x) for k,x in v.items())
+    raise ValueError(type(v))
+
+
 class Authenticator:
     """A platform authenticator stand-in: one credential, the WebAuthn byte layouts a browser produces."""
     def __init__(self, alg=passkey.ALG_ES256, count=0):
@@ -51,9 +65,21 @@ class Authenticator:
     def cd(typ, challenge, origin=ORIGIN, **extra) -> bytes:
         return json.dumps({"type": typ, "challenge": wire.b64u(challenge), "origin": origin, "crossOrigin": False, **extra}).encode()
 
-    def register(self, nonce, origin=ORIGIN) -> dict:
-        return {"t": "pk_reg", "id": wire.b64u(self.id), "alg": self.alg, "spki": wire.b64u(self.spki()),
-                "cd": wire.b64u(self.cd("webauthn.create", nonce, origin))}
+    def register(self, nonce, origin=ORIGIN, flags=0x45) -> dict:
+        pub = self.key.public_key()
+        if self.alg == passkey.ALG_ES256:
+            n = pub.public_numbers()
+            cose = {1:2,3:self.alg,-1:1,-2:n.x.to_bytes(32,'big'),-3:n.y.to_bytes(32,'big')}
+        elif self.alg == passkey.ALG_EDDSA:
+            cose = {1:1,3:self.alg,-1:6,-2:pub.public_bytes(serialization.Encoding.Raw,serialization.PublicFormat.Raw)}
+        else:
+            n = pub.public_numbers()
+            cose = {1:3,3:self.alg,-1:n.n.to_bytes((n.n.bit_length()+7)//8,'big'),-2:n.e.to_bytes((n.e.bit_length()+7)//8,'big')}
+        ad = hashlib.sha256(passkey.rp_of(origin).encode()).digest()+bytes([flags])+self.count.to_bytes(4,'big')
+        ad += bytes(16)+len(self.id).to_bytes(2,'big')+self.id+cbor(cose)
+        return {"t":"pk_reg", "id":wire.b64u(self.id), "alg":self.alg, "spki":wire.b64u(self.spki()),
+                "cd":wire.b64u(self.cd("webauthn.create",nonce,origin)),
+                "att":wire.b64u(cbor({'fmt':'none','authData':ad,'attStmt':{}}))}
 
     def sign(self, data: bytes) -> bytes:
         if self.alg == passkey.ALG_ES256:

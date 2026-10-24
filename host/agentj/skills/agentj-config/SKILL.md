@@ -3,6 +3,9 @@ name: agentj-config
 description: REQUIRED for Agent J personalization and troubleshooting: how to address the owner / 称呼（以后叫我 X）, wake word / 唤醒词, ASR / 语音识别, TTS / 播报 / 音色, channels / 通道, menus / 命令菜单, shortcuts / 快捷键, themes / 主题, language / 语言, e-mail channel / 邮件通道 (agentj mail); whenever editing ~/.config/agentj/. Read-only reference for safety settings.
 ---
 
+Brand and name: Agent J is the product. The owner's conversational Agent is `Agent J - <seat name>`; read the current name with `agentj status --json` field `agent_name`, never assume a name. Keep the stored name unchanged. To return from another channel: 「请回 Agent J 网页跟 Agent J - <名字> 沟通」 / “Return to the Agent J web app to talk with Agent J - <name>.” Replace the placeholder with that seat's actual name; if unavailable, say Agent J and explain that the name is unavailable. An owner-chosen name is displayed verbatim, including any coincidental match with another brand. Never suggest another product's assistant name.
+
+
 Use commands before editing files. Verify every change. Never weaken the safety floor.
 
 1. Discover: `agentj config keys --search <keyword> --json` then `agentj config explain <key>`.
@@ -306,6 +309,7 @@ Nightly host upgrades default to on for new and existing installations; preserve
 P87 / 0.16.6: Claude meta/skill/tool/command/compact/hook input is never mirrored as a human desktop message. Empty final replies do not deliver cards or notifications; an explicit human request retains its delivery/no-text status. New visible replies preserve an older or unread page; use the new-reply hint to open them.
 
 Voice processing: the ten-minute phone recorder and WAV/conversion caps are aligned. Host processing allowance includes cold start and scales with audio duration; processing timeout is distinct from audio length. A failed transcription still delivers the original audio path with the failure reason. Do not tell the owner there is a 60-second audio limit. Narrow-screen text action groups use shared aj-actions rules (nowrap, full-width vertical stacking).
+
 ## Keep the host reachable (P89)
 
 To ask the owner, run `agentj keep-awake setup --phone` (a card, first option = yes), or `agentj keep-awake setup --yes` after a yes in chat: no sleep on AC, a closed lid stays awake, Linux starts at boot (linger). On a Mac add `--lid` only after a second yes to: a closed Mac neither sleeps nor shuts down, so shut it down before a flight or when Agent J has nothing to do; repeat that reminder whenever status shows `reminder`. For finer control use `agentj keep-awake status --json`, then `agentj keep-awake on --dry-run --json` and `agentj keep-awake on --json`. macOS defaults to AC; use `--power battery` or `all` only when the owner wants battery operation and accepts drain. `off` restores this command's saved originals, not factory defaults. Every root step uses the existing paired-phone password card; give the shell 10 minutes. Check `verified` and `after`; exit 0 on preview is not proof of application. WSL only gives Windows-host powercfg guidance; never claim WSL settings keep Windows awake. Read /docs/keep-awake/ for lid and GUI instructions. Never send the owner to Terminal or use `osascript ... with administrator privileges` / GUI authorization for remote administration. Known interactive PAM triggers a warning on the signed phone card and a refusal before sudo execution: the owner must resolve sudo Touch ID locally first. Do not edit PAM or disable biometrics automatically.
@@ -403,3 +407,24 @@ For an exposed passkey, direct the owner to account Login & security → Secure 
 画面诊断 / Layout diagnostic: Settings → Emergency repair → Send layout diagnostic sends public geometry/colours only. Run `agentj diag layout --last` (read-only; dedicated-support hosts). On an older host, immediately read the newest `*layout-diagnostic.json` under `<working root>/.agentj/inbox/`; unclaimed uploads expire after 30 minutes. Do not request Web Inspector, URLs, storage, tickets or conversation text. Do not infer an iOS compositor cause from a synthetic screenshot.
 
 Agent J may proactively propose importing an exact CATALOG key from supported user environments or a source the owner explicitly registered. The proposal exposes names only. It never imports automatically or searches arbitrary .env files; use the matching Settings secret-card confirmation and retain source/value-change checks. `doctor --offline` environment comparison is presence-only and cannot prove equal values or a customer's cause.
+
+## Local file access
+
+During the first Mac installation, while the owner is at the computer, proactively complete the Mac folders and Finder access checklist item. Have the owner run `agentj files prepare --at-computer` in their own terminal after the Agent J service starts. The service requests Downloads, Desktop, Documents and Finder Automation access; the owner confirms macOS prompts. Finder Automation allows Agent J to ask Finder to copy selected files and is broader than the phone's folder allowlist; approve it only for remote importing. Full Disk Access is optional: grant it to the actual program shown in System Settings → Privacy & Security only when a task needs more protected data. Never enable it by default, click system prompts or edit TCC. A terminal and background service may have different TCC attribution; use the service's observations. Settings and doctor show the last check, not a permanent OS grant.
+
+On a folder permission prompt, Permission denied or Operation not permitted, first run `agentj files fetch '<original path>'`, with at least a six-minute command timeout. Serve asks the paired phone: Allow once / Always allow folder / Deny. It tries a read-only copy, then Finder only after a macOS permission refusal and an already-authorized Automation preflight. Keep the source unchanged and use only the successful receipt's new path. Denial, timeout, offline, emergency stop, unverifiable metadata, symbolic links and sensitive paths fail closed. An interrupted command is not a success; retry fetch if no successful receipt exists, never guess a destination.
+
+Missing Finder Automation still requires the owner's first local macOS consent. Explain that the phone cannot grant macOS permissions and preparation can wait until they are next at the computer; continue independent work. Do not send an outdoor owner back to the computer now, loop cp/sudo or click system prompts through computer use. Settings → Local file access supports signed folder additions and removal; a temporary grant lasts one hour. Removal affects future imports; existing copies remain. Grants change neither fence/harness permissions nor TCC. This check does not prove external-volume or Full Disk Access permission.
+
+## 本机文件访问
+
+Mac 首次安装、主人还在电脑前时，主动完成「Mac 文件夹与 Finder 权限」清单项：主人在自己的终端运行 `agentj files prepare --at-computer`（Agent J 服务须已启动）。服务依次请求下载、桌面、文稿的目录访问，以及 Finder 自动化；请主人按系统提示确认。Finder 自动化能让 Agent J 经 Finder 复制指定文件，作用范围比手机目录白名单更广，只有确实需要远程导入时才同意。完全磁盘访问可选，仅需要更多受保护数据时到「系统设置 → 隐私与安全 → 完全磁盘访问」授予系统列出的实际程序；不默认开、不自动点击、不用 tccutil 改权限。安装终端和后台服务可能有不同的 TCC 归属，服务检查结果才是本功能的依据；设置和 doctor 显示上次观察，不声称永久授权。
+
+遇到「允许访问…文件夹」或 Permission denied / Operation not permitted：先 `agentj files fetch '<原路径>'`，给命令至少 6 分钟；服务发手机卡「本次允许 / 以后这个文件夹都允许 / 拒绝」。批准后先尝试只读复制；仅 macOS 权限拒绝时走 Finder，且自动化预检必须已授权。原文件不删不改，只使用成功回执的新路径。拒绝、超时、离线、急停、元数据不可核实、符号链接、敏感目录均不导入。命令被中断不能视为成功，核对回执；没有成功回执时重新 fetch，不猜路径。
+
+如果 Finder Automation 尚未授权，系统仍可能需要本人在本机点一次。说明「这是 macOS 首次系统授权，手机卡无法替代；下次在电脑前准备即可」，继续其它独立工作，不让户外主人立刻回电脑前，不反复 cp/sudo，不用 computer use 代点。设置 → 本机文件访问可添加（签名审批）/撤销导入文件夹，临时授权一小时后到期；直到撤销只影响以后导入，已复制文件保留。这些授权不修改 fence、harness 权限或 TCC。外置盘与完全磁盘访问状态不能由本检查证明。
+WeChat ClawBot setup/status/unbind and pending-request claims use agentj-wechat; never edit host-private channel credentials.
+Administrator and secret cards require this remote's approval passkey. Enable it in Settings first. Replacing an existing passkey requires the old passkey to authorize this one-use registration offer before creating the new key; account sign-in does not grant remote approval authority.
+
+
+Display names come from `agentj status --json` field `agent_display_name` (shared `agent_label` formatter); use it verbatim in introductions and return-to-web hints. Empty names and names equal to Agent J (ignoring case/whitespace) display as Agent J; an existing Agent J - prefix is preserved. Examples: empty → Agent J; Agent J → Agent J; Agent J - Father@TB → Agent J - Father@TB; Father@TB → Agent J - Father@TB. Stored and signed names remain raw owner data.

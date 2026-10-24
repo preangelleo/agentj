@@ -282,12 +282,14 @@ class Daily(unittest.TestCase):
 
     def test_serve_tells_the_phone_and_installs_nothing(self):
         from test_l1 import Phone, _host, _ready
+        from agentj import nightly_report
         sent = []
         host = _host(self.st, sent)
         ph = Phone(self.st)
 
         async def go():
             with mock.patch.object(serve, "UPDATE_FIRST", 0), mock.patch.object(serve, "UPDATE_WAKE", 3600), \
+                    mock.patch.object(nightly_report, "check", return_value=None), \
                     mock.patch.object(update, "daily", lambda st: update.notice_text("9.9.9")), \
                     mock.patch.object(update, "read_rec", lambda st: {"latest": "9.9.9"}):
                 run = asyncio.create_task(host.run())

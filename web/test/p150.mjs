@@ -19,15 +19,15 @@ import { launch, newPage, navigate, waitFor, waitState, evaluate, shoot, sleep }
 import { LONG } from './density_shots.mjs';
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
-const OUT = join(ROOT, 'reports/qa/p150/screens');
+const OUT = process.env.P150_OUT || join(ROOT, 'reports/qa/p150/screens');
 const $ = (id) => `document.getElementById('${id}')`;
 const NAME = 'AgentJ-Father';
 const W = { zh: [['掌枢', '发布收尾', 0], [null, '转录视频', 1], ['玄枢', '巡检代理', 2]],
   en: [['Relay', 'Wrap up', 0], [null, 'Transcribe', 1], ['Xuanshu', 'Proxy scan', 2]] };
 const busyMsg = (lang, n) => ({ t: 'busy', by: NAME, tasks: W[lang].slice(0, n).map(([who, label, c], i) =>
   ({ id: 'k' + i, who, kind: who ? 'ceo' : 'temp', label, since: 1760000000 + i, c })) });
-const S = { zh: { title3: '有 3 个 Agent 在后台干活', sub: `${NAME} 正在替你监控`, temp: '临时助理', up: '我升级了', refresh: '刷新', tip: /Agent J 的名字/ },
-  en: { title3: '3 agents at work in the background', sub: `${NAME} is watching them for you`, temp: 'Helper', up: "I've been upgraded", refresh: 'Refresh', tip: /Agent J's name/ } };
+const S = { zh: { title3: '有 3 个 Agent 在后台干活', sub: `Agent J - ${NAME} 正在替你监控`, temp: '临时助理', up: '我升级了', refresh: '刷新', tip: /Agent J 的名字/ },
+  en: { title3: '3 agents at work in the background', sub: `Agent J - ${NAME} is watching them for you`, temp: 'Helper', up: "I've been upgraded", refresh: 'Refresh', tip: /Agent J's name/ } };
 export const CASES = { a: 'busy-dots', b: 'busy-dialog', c: 'global-dialog-upgrade', d: 'name-tip-and-capsule-ring' };
 const box = (p, sel) => evaluate(p, `(()=>{const r=document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect();return {l:r.left,r:r.right,t:r.top,b:r.bottom,w:r.width,h:r.height}})()`);
 const esc = (p) => p.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
@@ -60,7 +60,7 @@ export async function runP150({ anim = false } = {}) {
         await fake.send({ t: 'status', s: 'idle', agent: 'claude', name: NAME });
         await fake.send({ t: 'meter', model: 'opus', model_name: 'Opus 5.5', effort: 'medium', ctx: { used: 30, max: 100 }, h5: { pct: 34, reset: 0 }, week: { pct: 58, reset: 0 }, at: 0 });
         await fake.addTurn({ k: 'phone', dev: 'other', text: lang === 'zh' ? '帮我对一下三家供应商的报价' : 'Compare the three suppliers' }, LONG[lang === 'zh' ? 0 : 1]);
-        await waitFor(p, `${$('agent')}.textContent===${JSON.stringify(NAME)} && ${$('words')}.textContent.length>40`);
+        await waitFor(p, `${$('agent')}.textContent===${JSON.stringify('Agent J - '+NAME)} && ${$('words')}.textContent.length>40`);
 
         await step('a', async () => {
           check(await evaluate(p, `${$('busyDots')}.hidden`), 'no worker, no dots ' + lang);

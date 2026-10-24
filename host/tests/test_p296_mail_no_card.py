@@ -48,29 +48,30 @@ class NoCard(_Svc):
 
     async def test_owner_only_sends_without_a_card(self):
         res = await self.svc.agent_send({"to_owner": True, "subject": "报告", "body": "done"})
-        self.assertTrue(res["ok"] and res["owner_direct"] and res["no_card"], res)
-        self.ask.assert_not_called()
+        self.assertTrue(res["ok"] and res["owner_direct"] and not res["no_card"], res)
+        self.ask.assert_awaited_once()
         self.assertEqual(self.smtp.sent[-1][1], [ALLOW_ME])
-        self.assertEqual(reasons(self.st), ["owner_direct"])
+        self.assertTrue(self.ask.await_args.kwargs["require_passkey"])
 
     async def test_a_second_recipient_brings_the_card_back(self):
         res = await self.svc.agent_send({"to": [OTHER], "to_owner": True, "subject": "s", "body": "b"})
         self.assertTrue(res["ok"], res)
         self.ask.assert_awaited_once()
-        self.assertEqual(self.ask.await_args.kwargs.get("allow_offer"), [OTHER], "only the outsider is offered")
+        self.assertTrue(self.ask.await_args.kwargs["require_passkey"])
         self.assertFalse(res["no_card"])
 
     async def test_allowlisted_recipient_needs_no_card_but_stays_outward(self):
         self.allow(FRIEND)
         res = await self.svc.agent_send({"to": [FRIEND], "subject": "s", "body": "电话 13812345678"})
-        self.assertTrue(res["ok"] and res["no_card"] and not res["owner_direct"], res)
-        self.ask.assert_not_called()
+        self.assertTrue(res["ok"] and not res["no_card"] and not res["owner_direct"], res)
+        self.ask.assert_awaited_once()
         self.assertNotIn("13812345678", body_of(self.smtp.sent[-1][2]), "not the owner: still masked")
-        self.assertEqual(reasons(self.st), ["allowlist"])
+        self.assertTrue(self.ask.await_args.kwargs["require_passkey"])
+        self.ask.reset_mock()
         # one recipient off the list → the card again
         await self.svc.agent_send({"to": [FRIEND, OTHER], "subject": "s", "body": "b"})
         self.ask.assert_awaited_once()
-        self.assertEqual(self.ask.await_args.kwargs.get("allow_offer"), [OTHER])
+        self.assertTrue(self.ask.await_args.kwargs["require_passkey"])
 
     async def test_credential_attachment_still_refused_without_a_card(self):
         key = self.work / ".env"                 # a credential file by name (media.check key_file), as in test_p184
@@ -96,8 +97,9 @@ class NoCard(_Svc):
         self.assertEqual(row["role"], "guest")
         self.ask.reset_mock()
         res = await self.svc.agent_send({"to": [OTHER], "subject": "s2", "body": "b"})
-        self.assertTrue(res["no_card"], res)
-        self.ask.assert_not_called()
+        self.assertFalse(res["no_card"], res)
+        self.ask.assert_awaited_once()
+        self.assertTrue(self.ask.await_args.kwargs["require_passkey"])
 
     async def test_unticked_stays_off_the_list(self):
         res = await self.svc.agent_send({"to": [OTHER], "subject": "s", "body": "b"})
@@ -192,9 +194,9 @@ class AllowFromAgent(unittest.IsolatedAsyncioTestCase):
             await self.host._ctl_mail(self.w, {"cfg": self.wider}, claimed=False)
             self.assertEqual((self.out[-1]["ok"], self.out[-1]["why"]), (False, "denied"))
             self.assertNotIn(FRIEND, self.listed())
-        summary = self.host.ask.await_args.args[1]["summary"]
-        self.assertIn("他的来信会直接处理，给他发信不用再确认", summary)
-        self.assertIn(FRIEND, summary)
+        params=self.host.ask.await_args.args[1]
+        self.assertIn(FRIEND,[r['addr'] for r in params['after']['allow']])
+        self.assertTrue(self.host.ask.await_args.kwargs['require_passkey'])
 
     async def test_signed_applies(self):
         self.host.ask = AsyncMock(return_value={"behavior": "allow"})
@@ -205,8 +207,10 @@ class AllowFromAgent(unittest.IsolatedAsyncioTestCase):
     async def test_owner_terminal_applies_without_a_card(self):
         self.host.ask = AsyncMock()
         await self.host._ctl_mail(self.w, {"cfg": self.wider}, claimed=True)
-        self.assertTrue(self.out[-1]["ok"])
-        self.host.ask.assert_not_called()
+        self.assertFalse(self.out[-1]["ok"])
+        self.assertNotIn(FRIEND,self.listed())
+        self.host.ask.assert_awaited_once()
+        self.assertTrue(self.host.ask.await_args.kwargs['require_passkey'])
 
 
 class CliExit(unittest.TestCase):

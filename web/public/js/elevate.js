@@ -114,7 +114,7 @@ export function add(m) {
   try { epk = unb64u(m.epk); } catch { return; }
   if (epk.length !== 32) return;
   const ttl = Number.isInteger(m.ttl) && m.ttl >= 0 && m.ttl <= 600 ? m.ttl : 120;
-  const c = { id: m.id, kind: m.kind, n: m.n, epk, deadline: Date.now() + ttl * 1000, bad: Number.isInteger(m.bad) ? m.bad : 0,
+  const c = { id: m.id, kind: m.kind, n: m.n, epk, passkey_required: m.passkey_required === true, deadline: Date.now() + ttl * 1000, bad: Number.isInteger(m.bad) ? m.bad : 0,
     tries: Number.isInteger(m.tries) ? m.tries : 3 };
   if (m.kind === 'sudo') {
     c.cmd = str(m.cmd, 2000); c.why = str(m.why, 300); c.effect = str(m.effect ?? '', 300);
@@ -401,6 +401,7 @@ async function decide(ok, how) {
   // typed password (「用 Face ID 记住」 ticked).
   const save = typed && c.kind === 'sudo' && offerSave(c) && $('elev-save-on').checked;
   let fa = null, prf = null;
+  if (ok && c.passkey_required && !c.fa) { toast(t('ask.passkeyRequired'), 6000); return; }
   if (ok && (c.fa || vaultUse)) {
     if (!canAssert() && phoneConfirmation()) return;
     if (!canAssert() || !c.fa) { toast(t('elev.fa.none'), 5000); return; }

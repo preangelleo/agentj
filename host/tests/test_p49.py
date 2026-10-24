@@ -26,6 +26,8 @@ class TelegramParity(unittest.IsolatedAsyncioTestCase):
         self.host.preferences['channels']['items']=[{'id':'tg','type':'telegram'}]
         self.host.preferences['telegram']['groups']=[self.group]
         self.t=tg.Telegram(self.host);self.t.bot_id=99;self.t.username='test_bot'
+        from _avatar_fixture import legacy_transport_avatar
+        legacy_transport_avatar(self, self.host, lambda: self.t)
         p=patch('agentj.telegram.configuration',return_value=self.cfg);p.start();self.addCleanup(p.stop)
         self.api=patch('agentj.telegram.api',return_value={});self.api.start();self.addCleanup(self.api.stop)
     def msg(self,text='hello',uid=123,cid=123,**extra):
@@ -36,7 +38,7 @@ class TelegramParity(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(await self.t.incoming(self.msg(text),self.cfg))
         self.assertTrue(await self.t.incoming(self.msg('ordinary owner task'),self.cfg))
         self.assertIn('owner private',self.host._accept.call_args.args[1])
-        self.assertTrue(await self.t.incoming(self.msg('/stop'),self.cfg));self.host.stop_turn.assert_awaited_once()
+        self.assertTrue(await self.t.incoming(self.msg('/stop'),self.cfg));self.host.external_channels.sessions.stop_all.assert_awaited_once();self.host.stop_turn.assert_not_awaited()
     async def test_group_allowlist_and_addressing(self):
         for m in (self.msg('@test_bot hello',cid=-200,uid=456),self.msg('@test_bot hello',cid=-100,uid=789),
                   self.msg('ambient',cid=-100,uid=456),self.msg('@test_botx hello',cid=-100,uid=456)):
@@ -138,6 +140,8 @@ class TelegramParity(unittest.IsolatedAsyncioTestCase):
         host.agent_cfg={'dir':str(self.root)}
         host.agent=SimpleNamespace(kind='claude',status='idle',halting=False,submit=Mock())
         host.telegram=tg.Telegram(host)
+        from _avatar_fixture import legacy_transport_avatar
+        legacy_transport_avatar(self, host, lambda:host.telegram)
         def download(cfg,media,path):Path(path).write_text('attachment');return path
         with patch('agentj.telegram.download',side_effect=download),patch.object(host,'push_notify'):
             self.assertTrue(await host.telegram.incoming(self.msg('read attached',document={'file_id':'fake','mime_type':'text/plain'}),self.cfg))

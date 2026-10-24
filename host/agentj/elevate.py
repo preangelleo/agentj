@@ -920,6 +920,7 @@ class Elevator:
             m.update(name=c["name"], purpose=c["purpose"], dest=c["dest"], verify=c.get("verify") or "")
         if c.get("auth"):
             m["auth"] = dict(c["auth"])   # host-only rescue metadata, sealed/signature digest above; never persisted
+        m["passkey_required"] = True
         pk = self.st.passkey_of_device(s.device) if s is not None and s.device else None
         if pk:
             m["fa"] = pk["id"]   # ADR-A163: this device saved a passkey → 「同意」 needs it (its own credential id only)
@@ -1506,7 +1507,7 @@ class Elevator:
         over elevate_challenge(this card, this nonce, what was shown). A device without one: unchanged."""
         pk = self.st.passkey_of_device(s.device)
         if not pk:
-            return None
+            return "passkey_required"
         if "fa" not in obj:
             return "passkey_missing"
         try:
@@ -1771,6 +1772,14 @@ class Elevator:
                 await w.drain()
                 w.close()
                 return
+            if isinstance(req, dict) and req.get("t") == "policy_cli":
+                from . import mail
+                action, params = req.get("action"), req.get("params")
+                if action != "mail.test" or not isinstance(params, dict) or params != {"configuration":mail.read_config(self.st)}:
+                    raise Refused("shape", "mail test")
+                ans = await self.host.ask("agentj mail", params, batch=False, require_passkey=True)
+                w.write((json.dumps({"result":"approved" if ans.get("behavior") == "allow" else "denied"})+"\n").encode())
+                await w.drain(); w.close(); return
             if isinstance(req, dict) and req.get("t") == "upgrade":
                 # P205: `agentj update apply` inside the Agent fence cannot see the state directory: the host caches the old
                 # wheel, writes the pending record / marker, rolls back and runs the post-upgrade doctor (update.host_op).
@@ -1807,6 +1816,13 @@ class Elevator:
                 await w.drain()
                 w.close()
                 return
+            if isinstance(req, dict) and req.get("t") == "wechat":
+                ch = getattr(self.host, "wechat", None)
+                res = await ch.agent_request(req) if ch is not None else {"ok": False, "why": "unavailable"}
+                w.write((json.dumps(res, ensure_ascii=False) + "\n").encode())
+                await w.drain()
+                w.close()
+                return
             if isinstance(req, dict) and req.get("t") == "calsync":
                 # P428 §4: two-way calendar sync / connect / disconnect / kick — gog and Google's state live outside the
                 # Agent fence; fixed shapes (jcards_cal_remote.request_shape), counts and fixed words come back.
@@ -1829,6 +1845,19 @@ class Elevator:
                 # the same handlers as control.sock's terminal_go / terminal_read (H2 checks the peer process).
                 desk = self.host.term_desk
                 res = await (desk.ctl_go(req, peer) if req["t"] == "terminal_go" else desk.ctl_read(req, peer))
+                w.write((json.dumps(res, ensure_ascii=False) + "\n").encode())
+                await w.drain()
+                w.close()
+                return
+            if isinstance(req, dict) and req.get("t") == "files":
+                from . import local_files
+                if req.get("op") == "fetch":
+                    res = await self.host.local_files.fetch(req)
+                elif req.get("op") == "status":
+                    res = {"ok": True, **local_files.snapshot(self.st)}
+                else:
+                    # Permission prompts are local-onboarding only, never Agent socket authority.
+                    res = {"ok": False, "why": "local_prepare_required"}
                 w.write((json.dumps(res, ensure_ascii=False) + "\n").encode())
                 await w.drain()
                 w.close()

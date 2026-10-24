@@ -16,6 +16,8 @@ model pages as quoted in the report (2026-10-14). Unknown free models get no lin
 """
 from __future__ import annotations
 
+from . import resource_policy
+
 import base64
 import json
 import os
@@ -191,7 +193,7 @@ def serve(exe: str, senv: dict, root: str, port: int, up_by: float, clock=time.m
     """`opencode serve` on 127.0.0.1:<port> in `root`, once it says it listens (by `up_by`); else ProbeError. P395: shared by
     the 2.x probe (agent_opencode2.probe) — the caller stops the process (_stop)."""
     try:
-        proc = subprocess.Popen([exe, "serve", "--hostname", "127.0.0.1", "--port", str(port)], cwd=root, env=senv,
+        proc = subprocess.Popen(resource_policy.work_argv([exe, "serve", "--hostname", "127.0.0.1", "--port", str(port)]), cwd=root, env=senv,
                                 stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                                 start_new_session=True)
     except OSError:

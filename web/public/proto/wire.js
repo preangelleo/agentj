@@ -131,7 +131,7 @@ export async function mailAllowMessage(channel, device, id, tool, summary, picks
 }
 // ---------------------------------------------------------------- phone controls (PROTOCOL §8). Mirrors host/agentj/controls.py.
 export const CONTROL_CONTEXT = 'agentjarvis-control-v1';
-export const CONTROL_ACTIONS = ['security_begin','security_verify','security_retire', 'mem_rm', 'mem_undo', 'estop', 'resume', 'task_on', 'task_off',
+export const CONTROL_ACTIONS = ['security_begin','security_verify','security_retire', 'host_write', 'mem_rm', 'mem_undo', 'estop', 'resume', 'task_on', 'task_off',
   'fr_set', 'pg_set', 'pg_del', 'fr_add', 'fr_discoverable', 'fr_card',          // §17.7 agent friends (0.16)
   'fr_ctx', 'update', 'bots_write', 'setup_mark', 'pair_new',               // P153: pair_new = a paired remote opens a pairing (§3.3)
   'dev_name', 'dev_unbind', 'dev_add', 'dev_confirm',                     // P171 (§24): the phone's 遥控器管理 page                                                         // P115: first-run checklist card                                                                       // P73: a friend's 「补充设定」
@@ -145,11 +145,12 @@ export const CONTROL_ACTIONS = ['security_begin','security_verify','security_ret
   'elev_stop', 'elev_watch',                                                // P406 (§11.2): Stop / show a running sudo command's output
   'vault_share',                                                           // P414 (§38.11): let this remote use the stored password
   'fr_gsay',                                                                // P426 #170 (§17.7): a message in 「我的设备」
-  'fr_report_reply', 'fr_report_remark', 'skill_archive', 'skill_restore'];                                        // P426 #181-3 (§39): 「归档」/「恢复」 on the 技能 page
+  'fr_report_reply', 'fr_report_remark', 'files_write', 'skill_archive', 'skill_restore', 'wechat'];                                        // P426 #181-3 (§39): 「归档」/「恢复」 on the 技能 page
 /** The text whose SHA-256 a control signature covers (the target, with the content hash the phone saw). */
 export function controlObject(action, o) {
   if (action === 'fr_report_reply') return `${o.resend === true ? 'resend\n' : ''}${o.id}\n${o.text}`;
   if (action === 'fr_report_remark') return `${o.friend}\n${o.name}`;
+  if (action === 'host_write') return canonicalJson(o);
   if (action === 'bots_write') return canonicalJson(o.request);
   if (action === 'update') return 'latest';
   if (action === 'cards_get') return 'cards';
@@ -169,6 +170,7 @@ export function controlObject(action, o) {
   if (action === 'elev_stop') return String(o.id);                 // P406 (§11.2): the running sudo card's id
   if (action === 'elev_watch') return `${o.id}\n${o.on === true ? 'on' : 'off'}`;   // P406 F1: card id \n on | off
   if (action === 'vault_share') return 'share';                    // P414 (§37.11): object {}
+  if (action === 'files_write') return `${o.op}\n${o.path}\n${o.expires}`;
   if (action === 'skill_archive' || action === 'skill_restore') return `${o.op}\n${o.name}`;   // P426 #181-3 (§39): op \n name
   if (action === 'approval_set') return `${o.key}\n${typeof o.value === 'boolean' ? (o.value ? 'true' : 'false') : o.value}`;   // P336
   if (action === 'dev_unbind') return String(o.device);
@@ -186,6 +188,7 @@ export function controlObject(action, o) {
   if (action === 'fr_card') return `${o.owner ?? ''}\n${o.intro ?? ''}`;
   if (action === 'fr_ctx') return `${o.friend}\n${o.text ?? ''}`;
   if (action === 'fr_gsay') return `devices\n${o.text}`;          // P426 #170: the group is fixed, the text exactly as sent
+  if (action === 'wechat') return `${o.op}\n${o.id}\n${o.code}`;
   throw new Error('bad action');
 }
 /** The exact bytes a device signs for a write command: delete / undo a memory item, stop everything, resume, enable / disable a

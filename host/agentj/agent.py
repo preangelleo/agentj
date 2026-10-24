@@ -22,6 +22,8 @@ Claude Code gets its first message only after our permission tool has claimed se
 """
 from __future__ import annotations
 
+from . import resource_policy
+
 import asyncio
 import contextlib
 import json
@@ -842,6 +844,11 @@ class Agent:
         return wrapped
 
     async def authorized_launch_argv(self, argv: list[str]) -> list[str] | None:
+        # P452: populate the existing process-wide probe cache off-loop. The
+        # synchronous launch policy below still owns identity checks, notices,
+        # requested isolation and the one-launch owner approval decision.
+        if self.cfg.get("fence", True):
+            await asyncio.to_thread(fence.problem, self.host.st, self.cfg["dir"])
         wrapped = self.launch_argv(argv)
         why = getattr(self, "_fence_failure", None)
         if wrapped is not None or not why or self.cfg.get("_workflow_ceo"):
@@ -1185,7 +1192,7 @@ class ClaudeAgent(Agent):
             self.failed_start = True
             self.fail_notice("这台Agent J 主机上没找到 Claude Code（claude 命令）。装好并登录后再试。")
             return False
-        why = hooks_blocked(self.cfg["dir"]) if self.cfg.get("high_risk_warnings", False) or self.cfg.get("_research") else None
+        why = await asyncio.to_thread(hooks_blocked, self.cfg["dir"]) if self.cfg.get("high_risk_warnings", False) or self.cfg.get("_research") else None
         if why:
             self.failed_start = True
             self.host.st.log("agent_hooks_off", agent=self.kind)
@@ -1209,7 +1216,7 @@ class ClaudeAgent(Agent):
         if self.cfg.get("fence", True):
             env = fence.launch_environment(env, self.cfg.get("docker", False), self.kind)
         sid = self.host.st.agent_session(self.kind)
-        self.proc = await asyncio.create_subprocess_exec(*argv, cwd=self.cfg["dir"], env=env,
+        self.proc = await asyncio.create_subprocess_exec(*resource_policy.work_argv(argv), cwd=self.cfg["dir"], env=env,
                                                          stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
                                                          stderr=asyncio.subprocess.PIPE, limit=LINE_LIMIT,
                                                          start_new_session=True)

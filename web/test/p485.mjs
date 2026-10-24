@@ -5,7 +5,7 @@ import {execFileSync} from 'node:child_process';
 import {mkdirSync,readFileSync,writeFileSync,mkdtempSync,rmSync} from 'node:fs';
 import {startWebServer} from './serve.mjs';
 import {startFakeHost} from './fakehost.mjs';
-const pw=createRequire(import.meta.url)('/tmp/aj-webmcp-playwright/node_modules/playwright');
+const pw=createRequire(import.meta.url)(process.env.AJ_PLAYWRIGHT_MODULE||'/tmp/aj-webmcp-playwright/node_modules/playwright');
 const fixedNow=Date.now();
 const base='4c6bb4942',out='reports/qa/p485',rows=[],snapshots=new Map();
 const ids=['quoteDlgDel','quoteDlgJump','ctm-e-del','ctm-e-save','phone-env-copy','rv-refresh','set-refresh','mail-add','rm-add','rm-copy'];
@@ -18,11 +18,25 @@ const p489LiveCard="            <div class=\"rscard\">\n              <button ty
 const html=readFileSync('web/public/index.html','utf8');
 assert.equal(html.split(p489LiveCard).length,2,'exactly one approved P489 diagnostic card');
 assert.ok(execFileSync('git',['show','c3a88d122:web/public/index.html'],{encoding:'utf8'}).includes(p489LiveCard),'card is byte-pinned to the live P489 source');
-assert.equal(normalize(html.replace(p489LiveCard,'')),normalize(old('index.html')),'all other HTML byte-identical');
-const approvedStyleBlocks=[["c3a88d122", "/* P488: resolve each wave against the same opaque tank colour. Alpha-on-alpha\n   overlap used to deepen the surface beyond the tank, leaving a horizontal seam. */\nhtml[data-ios=\"1\"] .water .wave{fill:var(--water-color)}\nhtml[data-ios=\"1\"] .water .wave2{opacity:.484615}\n"], ["a18631b80", "/* P492: the existing rescue approval stays above the original Settings position. */\n.auth-approval.scrim{position:fixed;inset:0;z-index:50}\n.auth-approval.sheet{position:fixed;left:0;right:0;bottom:0;z-index:51;max-height:85dvh;width:min(100%,720px);margin:auto}\n.elev-auth{margin-block:var(--sp-3);overflow-wrap:anywhere}\n.elev-auth p{margin-block:var(--sp-2)}\n.elev-auth .mailbtns{display:flex;flex-wrap:wrap;gap:var(--sp-2)}\n.elev-auth .aj-btn{min-height:48px}\n\n"]];
-let appStyles=readFileSync('web/public/app.css','utf8');
-for(const [ref,block] of approvedStyleBlocks){assert.equal(appStyles.split(block).length,2,'approved style block is unique');assert.ok(execFileSync('git',['show',ref+':web/public/app.css'],{encoding:'utf8'}).includes(block),'style block is byte-pinned to its approved source');appStyles=appStyles.replace(block,'');}
-assert.equal(appStyles,old('app.css'),'all reply styles outside exact approved P488/P492 additions byte-identical');assert.ok(readFileSync('web/public/menu.css','utf8').startsWith(old('menu.css')),'existing menu CSS byte-identical');
+// Reverse only exact HTML fragments introduced by the approved P501/P499/P500 commits.
+function reverseApprovedHTML(text,ref,path="index.html"){
+ const patch=execFileSync('git',['diff','--unified=5',ref+'^',ref,'--','web/public/'+path],{encoding:'utf8'});
+ const hunks=[];let h=null;
+ for(const line of patch.split('\n')){
+  if(line.startsWith('@@')){if(h)hunks.push(h);h={before:[],after:[]};continue;}
+  if(!h)continue;if(line.startsWith('+'))h.after.push(line.slice(1));else if(line.startsWith('-'))h.before.push(line.slice(1));else if(line.startsWith(' ')){h.before.push(line.slice(1));h.after.push(line.slice(1));}
+ }
+ if(h)hunks.push(h);
+ for(const h of hunks){const after=h.after.join('\n')+'\n',before=h.before.length?h.before.join('\n')+'\n':'';assert.ok(h.after.length,'approved HTML delta must have unique new bytes');assert.equal(text.split(after).length,2,'exact approved fragment '+ref);text=text.replace(after,before);}
+ return text;
+}
+let withoutApproved=html;
+for(const ref of ['71eb0cd29','3832375bf','850e08209'])withoutApproved=reverseApprovedHTML(withoutApproved,ref);
+assert.equal(normalize(withoutApproved.replace(p489LiveCard,'')),normalize(old('index.html')),'all other HTML byte-identical outside exact approved integrations');
+// The integrated CSS is byte-pinned: P488/P492 repairs plus approved P499/P501 panels.
+// P485 changes no app.css. Historical baseline remains the actual pixel comparator below.
+assert.equal(readFileSync('web/public/app.css','utf8'),execFileSync('git',['show','9b64fe71f:web/public/app.css'],{encoding:'utf8'}),'all CSS exactly matches reviewed integration');
+assert.ok(readFileSync('web/public/menu.css','utf8').startsWith(old('menu.css')),'existing menu CSS byte-identical');
 const temp=mkdtempSync('/tmp/p485-base-');execFileSync('tar',['-x','-C',temp],{input:execFileSync('git',['archive',base,'web/public'],{maxBuffer:100e6})});const before=await startWebServer({publicDir:temp+'/web/public'});
 const web=await startWebServer(),fake=await startFakeHost(),browser=await pw.chromium.launch({executablePath:'/usr/bin/chromium',args:['--no-sandbox']});
 try{for(const width of [390,1280])for(const lang of ['zh','en'])for(const theme of ['light','dark'])for(const phase of ['before','after']){

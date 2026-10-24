@@ -12,6 +12,8 @@ older device keeps exactly §3 / §8.
 """
 from __future__ import annotations
 
+from . import resource_policy
+
 import asyncio
 import contextlib
 import copy
@@ -36,7 +38,7 @@ from websockets.asyncio.client import connect
 from .text import one, pick
 from . import agent as agents
 from .shared import SharedClaudeAgent
-from . import harness_cmds, notices, activity, approvals, cloud, controls, danger, fence, gate, memory, slash, tasks, update, webpush, wire
+from . import action_policy, harness_cmds, notices, activity, approvals, cloud, controls, danger, fence, gate, memory, slash, tasks, update, webpush, wire
 from . import asr as asr_mod
 from . import terminal as term_mod   # P408 (§38): the web terminal (terminal.py, term_*.py)
 from . import cmdrun, compose, history, hsearch, humane, inbox, menu, uploads, preferences, proxy, provenance
@@ -466,6 +468,8 @@ class Host:
         self.sk = st.signing_key()
         self.events = events
         self.read_stdin = read_stdin
+        self.wechat = None
+        self.external_channels = None
         self.telegram = None
         self.mail = None                  # P170: the e-mail channel (mail.py), started with serve
         self._news_inflight = 0           # P374: /v1/host/news calls running (on_news)
@@ -538,6 +542,8 @@ class Host:
         self.scheduler = tasks.Scheduler(self)
         self.task_label: str | None = None
         from .ask import CliAsks
+        from .local_files import Files
+        self.local_files = Files(self)
         self.cli_asks = CliAsks(self)             # P322: `agentj ask` — the question card for any harness
         self.turn_by: str | None = None
         self.turn_t0 = 0.0
@@ -733,7 +739,7 @@ class Host:
                 # P292: read before the relay's 10 s auth deadline starts, off the loop; P317: bounded (a parked disk)
                 cert = await asyncio.wait_for(asyncio.to_thread(self.seat.cert), RELAY_OPEN_TIMEOUT)
                 phase = "connect"
-                async with connect(url, max_size=2**17, ping_interval=20, ping_timeout=20, open_timeout=RELAY_OPEN_TIMEOUT) as ws:
+                async with connect(url, max_size=2**17, ping_interval=resource_policy.PING_INTERVAL, ping_timeout=resource_policy.PING_TIMEOUT, open_timeout=resource_policy.OPEN_TIMEOUT) as ws:
                     phase = "auth"
                     await self._auth(ws, cert)
                     await self.credential_revocations.sync()  # P490: apply before accepting any restored remote
@@ -1066,6 +1072,21 @@ class Host:
         if t in ("wf_resume_get", "wf_resume_do", "fr_report_reply", "fr_report_remark"):
             from . import report_actions
             return await report_actions.on_phone(self, s, obj)
+        if t == "policy_prepare":
+            r, action, target = obj.get("r"), obj.get("action"), obj.get("target")
+            if not wire.is_rid(r) or action != "host_write" or not isinstance(target, dict):
+                return
+            try:
+                target = self._policy_target(target.get("kind"), target)
+                digest = controls.object_digest(action, target)
+                n = self.nonces.issue_mail(s.device,digest)
+                pk = self.st.passkey_of_device(s.device)
+                fields = {"n":n, "target":target, "level":"uv", "summary":action_policy.summary(action,target)}
+                if pk:
+                    fields.update(fa=pk["id"], fa_ch=wire.b64u(passkey.elevate_challenge(self.channel,s.device,n,action,n,digest)))
+                return await self.send_app(s, {"t":"policy_ready", "r":r, **fields})
+            except (KeyError, TypeError, ValueError):
+                return
         if t in ("msg", "say", "answer", "slash", "blob_open", "blob_chunk", "blob_end", "ask_answer", "estop", "resume", "task_set", "lt_answer") or t in elevate.PHONE_TYPES or t in ("fr_answer", "fr_accept"):
             self._phone_touch()                   # P292: config lock + write, off the loop
         if t == "msg":
@@ -1098,6 +1119,9 @@ class Host:
             await self.bots.phone(s, obj, background=True)
         elif isinstance(t, str) and t.startswith(("fr_", "pg_")):   # P71 (§17.7): the friends page
             await self.on_friends(s, t, obj)
+        elif t == "wechat":
+            if self.wechat is not None:
+                await self.wechat.on_phone(s, obj)
         elif t == "answer":
             await self._answer(s, obj)
         elif t in ("pk_reg", "pk_offer_req"):  # F20 (§12): register this device's passkey
@@ -1140,6 +1164,8 @@ class Host:
         elif t in ("upg_check", "upg_card_off"):   # P203 (§29.2): what an upgrade now would interrupt · close the card
             if s.p33:
                 await self.on_upg_phone(s, t, obj)
+        elif t in ("files_get", "files_write") and s.p33:
+            await self.local_files.on_phone(s, obj)
         elif t in ("setup_get", "setup_mark", "setup_close"):   # P115 / P131: the first-run checklist (first_run.py)
             await self.on_setup(s, t, obj)
         elif t in ("reset", "rescue_do"):   # P332 (§33): signed; allowed during an e-stop (repairs connectivity only)
@@ -1766,7 +1792,8 @@ class Host:
             return
         nonce = secrets.token_bytes(32)
         s.pk_offer = (nonce, time.monotonic())
-        await self.send_app(s, {"t": "pk_offer", "n": wire.b64u(nonce)})
+        await self.send_app(s, {"t": "pk_offer", "n": wire.b64u(nonce),
+                                **({"replace": pk["id"]} if (pk := self.st.passkey_of_device(s.device)) else {})})
 
     async def _pk_reg(self, s: Session, t: str, obj: dict) -> None:
         if not s.p33:
@@ -1778,7 +1805,8 @@ class Host:
             if not offer or time.monotonic() - offer[1] > passkey.OFFER_TTL:
                 raise passkey.PasskeyError("expired", "no_offer")
             rec = passkey.verify_registration(obj, offer[0])
-            if not self.st.set_passkey(s.pub, rec):
+            if not self.st.set_passkey(s.pub, rec, replacement=obj.get("replace_fa"),
+                                       challenge=passkey.replacement_offer_challenge(offer[0], self.st.passkey_of_device(s.device))):
                 raise passkey.PasskeyError("unknown", "gone")
         except passkey.PasskeyError as e:
             self.st.log("pk_reg", cid=s.cid, device=s.device, result="fail", reason=e.detail)
@@ -1878,7 +1906,7 @@ class Host:
                 self.st.log("ctl_refused", cmd=cmd, reason="no_terminal")
                 await self._ctl_send(w, {"ok": False, "error": "claim_required", "why": "terminal"})
                 return False
-        if claimed and cmd in ("passphrase_consent", "passphrase_replace", "terminal_cfg") and not ctl_auth.has_tty(pid):
+        if claimed and cmd in ("files_prepare", "passphrase_consent", "passphrase_replace", "terminal_cfg") and not ctl_auth.has_tty(pid):
             self.st.log("ctl_refused", cmd=cmd, reason="no_terminal")      # #118: the owner types at a terminal
             await self._ctl_send(w, {"ok": False, "error": "claim_required", "why": "terminal"})
             return False
@@ -2111,6 +2139,9 @@ class Host:
                     actual = info.get('providerID', '') + '/' + info.get('modelID', '') if all(isinstance(info.get(k), str) for k in ('providerID', 'modelID')) else None
                     from .agent_opencode import split_model
                     await self._ctl_send(w, {'ok': True, 'model': selected, 'assistant_model': actual if split_model(actual) else None, 'metadata_present': found, 'context_limit': limit, 'context_used': used})
+                elif cmd == "files_prepare":
+                    from . import local_files
+                    await self._ctl_send(w, await asyncio.to_thread(local_files.prepare, self.st))
                 elif cmd == "env_present":          # P142 (B14): is a key NAME set in serve's environment? yes/no only
                     name = req.get("name")
                     if isinstance(name, str) and re.fullmatch(r"[A-Z][A-Z0-9_]{0,79}", name):
@@ -2123,6 +2154,21 @@ class Host:
                             await self._ctl_send(w, {"ok": True, "present": bool(os.environ.get(name))})
                     else:
                         await self._ctl_send(w, {"ok": False, "error": "bad_name"})
+                elif cmd == "wechat_terminal":
+                    if not ctl_auth.has_tty(pid) or self.wechat is None:
+                        await self._ctl_send(w, {"ok": False, "error": "terminal_required"})
+                    elif req.get("op") == "setup":
+                        await self._ctl_send(w, await self.wechat.setup())
+                    elif req.get("op") == "view":
+                        await self._ctl_send(w, {"ok": True, **self.wechat.view(terminal=True)})
+                    elif req.get("op") == "verify":
+                        qr, code = self.wechat.qr, req.get("code")
+                        valid = qr and qr["id"] == req.get("id") and isinstance(code, str) and re.fullmatch(r"[0-9]{1,16}", code)
+                        if valid:
+                            qr["code"] = code
+                        await self._ctl_send(w, {"ok": bool(valid)})
+                    else:
+                        await self._ctl_send(w, {"ok": False, "error": "shape"})
                 elif cmd == "telegram_pair":        # P283: a one-time Telegram pairing code → the phone's card only
                     res = await self.telegram_pair(req.get("key_env"), by="terminal")
                     await self._ctl_send(w, res)
@@ -2153,6 +2199,7 @@ class Host:
                                              "asks": len(self.asks), "estop": self.estop,
                                              "task_running": self.scheduler.current_id,
                                              "friends": self.peers.status_view() if self.peers is not None else None,
+                                             "wechat": self.wechat.status() if self.wechat is not None else None,
                                              "telegram": self.telegram.status_view() if self.telegram is not None else None,
                                              "mail": self.mail.status_view() if self.mail is not None else None,
                                              "seat": self.seat.view(),
@@ -2648,6 +2695,13 @@ class Host:
                 await self.send_app(s, m)
         if s.p33 and self._upg_live():            # P203: the open upgrade confirmation card comes back on reconnect
             await self.send_app(s, self._upg_msg())
+        if getattr(self, "external_channels", None) is not None:
+            for m in self.external_channels.open_messages(s):
+                await self.send_app(s, m)
+        if getattr(self, "wechat", None) is not None:
+            await self.send_app(s, self.wechat.view())
+            for m in self.wechat.open_messages(s):
+                await self.send_app(s, m)
         await self.elevate.on_ready(s)
         await self.capabilities.on_ready(s)
         with contextlib.suppress(Exception):      # P115: a checklist resumed in the last 6 h comes back on reconnect
@@ -3130,6 +3184,23 @@ class Host:
             return
         self.st.log("language_synced", status=account["language"])
         self._bg(self.set_pref("appearance.language", account["language"], language_at=account["language_at"]), "language_sync")
+
+    def _policy_target(self, kind, obj):
+        if kind not in ("mail_set", "mail_test"):
+            raise ValueError("unknown mail target")
+        from . import mail
+        return {"kind":kind, **({"cfg":obj.get("cfg")} if kind == "mail_set" else {}),
+                "before":mail.read_config(self.st)}
+
+    def _policy_write(self, s, kind, obj):
+        try:
+            target = self._policy_target(kind, obj)
+        except (ValueError, TypeError):
+            return "shape"
+        auth=obj.get("authorization") or {}
+        why=controls.check(self.st,self.nonces,self.channel,s.device,auth,"host_write",target)
+        controls.log(self.st,action="host_write",device=s.device,result="refused:"+why if why else "applied",obj=target)
+        return why
 
     async def on_pref_set(self, s: Session, obj: dict) -> None:
         """C6 `pref_set {r, key, value}` from a ready, paired p33 session (E2E). Whitelist PREF_SET_KEYS only; the value
@@ -4072,6 +4143,10 @@ class Host:
                 out += self.peers.ask_msgs()
             if self._upg_live():
                 out.append(self._upg_msg())
+        if getattr(self, "external_channels", None) is not None:
+            out += self.external_channels.open_messages(s)
+        if getattr(self, "wechat", None) is not None:
+            out += self.wechat.open_messages(s)
         out += self.elevate.all_open_msgs(s)
         out += self.capabilities.open_msgs(s)
         return out
@@ -4442,8 +4517,14 @@ class Host:
             batch = False
         kind = self.agent.kind if self.agent else "?"
         v = self._classify(tool, tool_input)
-        summary = approval_summary(tool, tool_input, v, self.lang)
+        summary = (action_policy.summary(tool, tool_input) if tool in
+                   ("agentj mail", "agentj mail send", "agentj mail notes", "agentj mail reply")
+                   else approval_summary(tool, tool_input, v, self.lang))
+        if len(summary.encode()) > 24000:
+            return {"behavior":"deny", "message":"邮件内容过长，无法完整确认 / mail is too large to review"}
         if require_passkey:
+            batch = False
+        if require_passkey and tool == "SandboxOnce":
             from . import fence
             batch = False
             if card_lang(self.lang) == "en":
@@ -4751,6 +4832,10 @@ class Host:
         await self.send_app(s, {"t": "answer_refused", "id": a.rid, "why": reason, "ask": self._ask_msg(a, s)})
 
     async def _answer(self, s: Session, obj: dict) -> None:
+        if getattr(self, "wechat", None) is not None and await self.wechat.answer(s, obj):
+            return
+        if getattr(self, "external_channels", None) is not None and await self.external_channels.answer(s, obj):
+            return
         refused = []
         if self.peers is not None and self.peers.answer(s.device, obj, refuse=refused.append):
             for receipt in refused:
@@ -4932,6 +5017,10 @@ class Host:
         with contextlib.suppress(Exception):           # P158: the goal's one-time grant ends with everything else
             self.goals.end("estop", by="estop")
         self.bots.estop()
+        if getattr(self, "external_channels", None) is not None:
+            await self.external_channels.pause()
+        if getattr(self, "wechat", None) is not None:
+            await self.wechat.pause()
         self.elevate.cancel_all("stopped")            # F17: open sudo / secret cards end (a running command finishes)
         with contextlib.suppress(Exception):           # P408: the web terminal closes at once
             await self.term_desk.close("estop")
@@ -5793,7 +5882,7 @@ class Host:
         announced p33 itself (an older one gets exactly §3's message)."""
         if s is not None and not s.p33:
             return {}
-        caps = [wire.CAP_P33, "heartbeat", wire.CAP_LT1, pair_card.CAP]
+        caps = [wire.CAP_P33, "heartbeat", wire.CAP_LT1, pair_card.CAP, "mailuv1"]
         if getattr(self, "telegram", None) is not None and self.telegram.can_forward():   # P118 B10: share → the owner's Telegram
             caps.append("tgfwd")
         if getattr(self, "telegram", None) is not None:   # P183: this host forwards a reply's file too (tg_fwd {mid}); the phone
@@ -6031,6 +6120,8 @@ class Host:
                                         "view": await asyncio.to_thread(self.mail.view)})
         if t == "mail_get":
             return await answer(True)
+        if t in ("mail_set", "mail_test") and (why := self._policy_write(s, t, obj)):
+            return await answer(False, why)
         if t == "mail_set":
             raw = obj.get("cfg")
             if not isinstance(raw, dict) or len(json.dumps(raw)) > 8000:
@@ -6058,8 +6149,10 @@ class Host:
             self._bg(card(), "mail_key")
             return
         if t == "mail_test":
+            cfg = mail_mod.read_config(self.st)
             async def test():
-                cfg = mail_mod.read_config(self.st)
+                if mail_mod.read_config(self.st) != cfg:
+                    return await answer(False, "stale")
                 pw = mail_mod.load_secret(self.st, cfg["address"]) if cfg["address"] else None
                 if not pw:
                     return await answer(False, "no_password")
@@ -6092,20 +6185,16 @@ class Host:
             new = mail_mod.validate({**old, **{k: v for k, v in (req.get("cfg") or {}).items() if k != "generation"}})
         except mail_mod.MailError as e:
             return await self._ctl_send(w, {"ok": False, "error": e.why})
-        keys = [] if claimed else mail_mod.widening(old, new)
+        keys = mail_mod.widening(old, new)
+        if old != new and not keys:
+            keys = ["configuration"]
         if not keys:
             cfg = self.mail.set_config(new)
             self.st.log("mail_set", device="terminal" if claimed else "agent", allow=len(cfg["allow"]), enabled=cfg["enabled"])
             return await self._ctl_send(w, {"ok": True, "applied": True})
         self.st.log("mail_card", keys=",".join(keys)[:200])
         zh = card_lang(self.lang) != "en"
-        adds = [k.split("+", 1)[1] for k in keys if k.startswith(("allow+", "owner+"))]
-        lines = [("邮件设置改动（Agent 发起）：" if zh else "Mail settings change (asked by the Agent): ") + "、".join(keys)]
-        if adds:
-            lines.append(("加入邮件白名单：" if zh else "Add to the mail allowlist: ") + "、".join(adds))
-            lines.append("加入后：他的来信会直接处理，给他发信不用再确认" if zh else
-                         "Once added: their mail is handled directly, and mail to them goes out without asking you")
-        ans = await self.ask("agentj mail", {"changes": keys, "summary": "\n".join(lines)}, batch=False)
+        ans = await self.ask("agentj mail", {"changes": keys, "before": old, "after": new}, batch=False, require_passkey=True)
         if ans.get("behavior") != "allow":
             self.st.log("mail_card_done", result="deny")
             return await self._ctl_send(w, {"ok": False, "why": "denied", "keys": keys,
@@ -6148,7 +6237,7 @@ class Host:
         if t == "ark_plan_get":
             if wire.is_rid(obj.get("r")):
                 from . import ark_plan_fix
-                await self.send_app(s, {"t":"ark_plan", "r":obj["r"], **ark_plan_fix.view(self.st)})
+                await self.send_app(s, {"t":"ark_plan", "r":obj["r"], **await asyncio.to_thread(ark_plan_fix.view, self.st)})
             return
         if t == "ping":
             r = obj.get("r")
@@ -6457,6 +6546,8 @@ class Host:
             send.onboarding_note += goal_mod.start_note(gc[1], card_lang(self.lang))
             text = goal_mod.agent_words(gc[1], card_lang(self.lang))     # P198: never Claude Code's own /goal
         send.source = getattr(s, "provenance", None)      # B1: set only by host code (telegram.incoming), never from text
+        if send.source is None and isinstance(s, Session) and s.state == "ready" and self.st.is_allowed(s.pub):
+            send.source = provenance.phone()   # P501: explicit verified phone origin for held-request claims
         files = [{"path": b.path, "mime": b.mime, "bytes": b.size, "origin": b.origin, "secs": b.secs,
                   "voice": getattr(b, "voice", "")} for b in blobs]
         # P166: every audio / video attachment with its private copy (a picked m4a too); Telegram transcribes its own first
@@ -7359,6 +7450,18 @@ class Host:
         from . import telegram as telegram_mod
         from .telegram import Telegram
         telegram_mod.IN_SERVE = True              # P142 (B14): key checks in this process read serve's own environment
+        from .wechat import WeChat
+        from .external_channels import ExternalChannels
+        try:
+            self.external_channels = ExternalChannels(self)
+            jobs.append(asyncio.create_task(self.external_channels.run()))
+        except Exception:
+            self.st.log('external_channel_start_failed', reason='state_unavailable')
+        try:
+            self.wechat = WeChat(self)
+            jobs.append(asyncio.create_task(self.wechat.run()))
+        except Exception:
+            self.st.log("wechat_start_failed", reason="state_unavailable")
         self.telegram=Telegram(self)
         jobs.append(asyncio.create_task(self.telegram.run()))
         from .mail import Mail                    # P170: the e-mail channel (allowlist + sender check before any model)
@@ -7388,6 +7491,10 @@ class Host:
             await self.bots.stop()
             with contextlib.suppress(Exception):    # P408: serve stopping closes the web terminal (`host`)
                 await self.term_desk.close("host")
+            if self.external_channels is not None:
+                await self.external_channels.stop()
+            if self.wechat is not None:
+                await self.wechat.stop()
             await self.elevate.stop()
             await self.capabilities.stop()
             with contextlib.suppress(Exception):

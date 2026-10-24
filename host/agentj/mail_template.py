@@ -19,6 +19,10 @@ from urllib.parse import urlsplit
 
 SUBJECT_CHARS = 40
 BRAND = "Agent J"
+
+from .text import agent_label
+
+
 SITE = "https://agentj.app"
 
 # Leo's palette (agentjarvis/brand/palette.css) — no other colour may appear in a mail.
@@ -301,7 +305,7 @@ def render(*, lang: str, agent: str, src: dict | None, reply: str, files=(), ski
     (P295 held = kept back by the strict scan for someone else: the mail never says why).
     Texts must already be redacted by the caller."""
     L = T["en" if lang == "en" else "zh"]
-    agent = (agent or BRAND).strip() or BRAND
+    agent = agent_label(agent)
     q = src if src and (src.get("text") or "").strip() else None
     subj = subject(q["text"] if q else None, reply)
 
@@ -411,7 +415,7 @@ def render_send(*, lang: str, agent: str, subject: str, body: str, fmt: str = "m
     and a plain-text copy; text: plain text only (no HTML part). markdown / text bodies must already be redacted by the
     caller; an HTML body is redacted here, text node by text node, with `text_fn` (tags and CSS untouched)."""
     L = T["en" if lang == "en" else "zh"]
-    agent = (agent or BRAND).strip() or BRAND
+    agent = agent_label(agent)
     foot = L["sent_by"].format(agent=agent)
     tail = f"\n\n-- \n{foot}\n{L['powered']} · {SITE}\n"
     if fmt == "text":

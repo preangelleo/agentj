@@ -126,7 +126,7 @@ export async function runCases({ B, web, fake, only }) {
   await C('aj-pairing-qr', async () => { ok(await ev(`location.href`) === web.url, 'the #p= link was read and stripped'); ok(await ev('window.__ajState') === 'ready', 'paired'); });
   await C('login-admin-key', async () => { ok(await ev(`document.body.dataset.view`) === 'chat', 'pairing (the substitute for the admin key) lands in the chat'); });
   await C('aj-pairing-sas', async () => { ok(/^\d{6}$/.test(fake.sas || ''), 'the host saw a 6-digit safety code'); ok((await ev(`document.getElementById('sas').textContent`)) === fake.sas, 'the phone showed the same code'); });
-  await C('aj-agent-name', async () => { ok((await text('#agent')) === 'Wren' && (await ev('document.title')) === 'Wren', 'the Agent name in the reply header and the tab title'); });
+  await C('aj-agent-name', async () => { ok((await text('#agent')) === 'Agent J - Wren' && (await ev('document.title')) === 'Agent J - Wren', 'the Agent name in the reply header and the tab title'); });
   await C('empty-state', async () => { ok((await curWords()).includes(T('r.emptyReady').slice(0, 6)), 'an empty history says so'); ok((await pg()) === '0 / 0', 'page counter 0 / 0'); });
   await C('service-worker', async () => { ok(await ev(`navigator.serviceWorker.getRegistration().then((r) => !!r && /sw\\.js/.test((r.active || r.installing || r.waiting).scriptURL))`), 'sw.js registered'); });
 
@@ -161,7 +161,7 @@ export async function runCases({ B, web, fake, only }) {
       await wait(`document.getElementById('om').dataset.src === ${JSON.stringify(want)}`);
       kinds.push(await text('#omLabel'));
     }
-    ok(kinds[0] === T('r.src.you') && kinds[1] === 'iPad' && kinds[2] === T('r.src.host') && kinds[3] === T('r.src.agent', { name: 'Wren' }), 'labels: ' + kinds.join(','));
+    ok(kinds[0] === T('r.src.you') && kinds[1] === 'iPad' && kinds[2] === T('r.src.host') && kinds[3] === T('r.src.agent', { name: 'Agent J - Wren' }), 'labels: ' + kinds.join(','));
   });
   await C('swipe-paging', async () => {
     const before = await pg();
@@ -473,7 +473,7 @@ export async function runCases({ B, web, fake, only }) {
   await C('reply-strip', async () => {
     await click('#replyBtn');
     await wait(`!document.getElementById('qbar').hidden`);
-    ok((await text('#qbHead')).startsWith(T('r.quote.head', { who: 'Wren' })) && (await text('#qbText')) === '要回复的这一条', 'who · when and the first line');
+    ok((await text('#qbHead')).startsWith(T('r.quote.head', { who: 'Agent J - Wren' })) && (await text('#qbText')) === '要回复的这一条', 'who · when and the first line');
   });
   await C('reply-strip-jump', async () => {
     await ev(`document.activeElement && document.activeElement.blur()`);
@@ -494,7 +494,7 @@ export async function runCases({ B, web, fake, only }) {
   await C('excerpt-quote', async () => {
     await ev(`(() => { const p = document.querySelector('#words p'); const r = document.createRange(); r.setStart(p.firstChild, 0); r.setEnd(p.firstChild, 4);
       const s = getSelection(); s.removeAllRanges(); s.addRange(r); document.dispatchEvent(new Event('selectionchange')); })()`);
-    await wait(`!document.getElementById('qbar').hidden && document.getElementById('qbHead').textContent.startsWith(${JSON.stringify(T('r.quote.headEx', { who: 'Wren' }))})`, 3000);
+    await wait(`!document.getElementById('qbar').hidden && document.getElementById('qbHead').textContent.startsWith(${JSON.stringify(T('r.quote.headEx', { who: 'Agent J - Wren' }))})`, 3000);
     ok((await text('#qbText')) === T('r.quote.wrap', { text: '要回复的' }), 'the strip shows the excerpt');
     await clearField();
     await sendText('关于这一段');

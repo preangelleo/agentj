@@ -242,6 +242,8 @@ class SharedInbox(unittest.IsolatedAsyncioTestCase):
         a.start()
         self.addCleanup(a.task.cancel)
         self.t = tg.Telegram(self.h)
+        from _avatar_fixture import legacy_transport_avatar
+        legacy_transport_avatar(self, self.h, lambda: self.t)
         self.t.bot_id, self.t.username = 99, "test_bot"
         self.t.enrollment = dict(self.cfg)
         self.h.telegram = self.t
@@ -464,6 +466,8 @@ class Cursor(unittest.IsolatedAsyncioTestCase):
         """One serve process: a fresh Telegram object (what a restart builds), its poll loop running."""
         self.host.stopping = asyncio.Event()
         self.t = tg.Telegram(self.host)
+        from _avatar_fixture import legacy_transport_avatar
+        legacy_transport_avatar(self, self.host, lambda: self.t)
         self.task = asyncio.create_task(self.t.run())
         return self.t
 

@@ -205,6 +205,7 @@ function overview(box) {
   const wrap = mk('div', 'setup-all');
   for (const g of GROUPS) {
     const rows = S.items.filter((i) => i.group === g);
+    if (g === 'optional') rows.sort((a,b) => { const order = lang() === 'en' ? ['tg','wx'] : ['wx','tg']; return (order.includes(a.id) ? order.indexOf(a.id) : 2) - (order.includes(b.id) ? order.indexOf(b.id) : 2); });
     if (!rows.length) continue;
     const gt = (S.groups || []).find((x) => x.id === g);
     wrap.appendChild(mk('h3', 'setup-group', pick(gt?.title) || g));

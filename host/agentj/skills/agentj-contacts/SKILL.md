@@ -1,6 +1,6 @@
 ---
 name: agentj-contacts
-description: The owner's address book and sending e-mail to people — 「发邮件给张三」「把这个文件发给李总」「转给老王」「记一下他的邮箱」「存个联系人」「导入通讯录」「导出联系人」「张三的邮箱是多少」, "email this to Zhang", "send it to my accountant", "save this contact", "import my contacts CSV / vCard". Look the person up first (`agentj contacts find`, pinyin and homophones included); nobody found → say so and put a contact card on the phone; send only through `agentj mail send` (mail to the owner or allowlisted addresses goes at once; anyone else needs the owner's phone approval). Also 「发给我自己」「发我邮箱」 "send it to me": slot 0 = the owner.
+description: The owner's address book and sending e-mail to people — 「发邮件给张三」「把这个文件发给李总」「转给老王」「记一下他的邮箱」「存个联系人」「导入通讯录」「导出联系人」「张三的邮箱是多少」, "email this to Zhang", "send it to my accountant", "save this contact", "import my contacts CSV / vCard". Look the person up first (`agentj contacts find`, pinyin and homophones included); nobody found → say so and put a contact card on the phone; send only through `agentj mail send` (every send needs this remote's approval passkey on the phone). Also 「发给我自己」「发我邮箱」 "send it to me": slot 0 = the owner.
 ---
 # Address book and e-mail (通讯录)
 
@@ -19,19 +19,18 @@ a command.
    the owner declined (do not send another card for the same person) · `timeout` / `gone` = ask again later.
 4. Send: `agentj mail send --to '<name or address>' [--to …] --subject '…' --body-file - [--attach <file>]` (body on
    stdin; files only from your working folder). Every recipient the owner's own or on the e-mail allowlist → it goes at
-   once (`no_card: true`). Anyone else → the owner sees recipients, subject and attachments on an approval card and may tick
-   「以后发给 X 不用再确认」 (that adds X to the allowlist); nothing goes out before 「允许」. Attachments are scanned either way.
+   the approval card, confirmed with this remote's passkey. Every message, including mail to the owner or allowlist, needs fresh confirmation. Attachments are scanned before sending.
    `not_found` → step 3; `denied` (exit 1: declined or nobody confirmed in time) → tell the owner it was NOT sent;
    `mail_not_configured` / `no_password` → the mailbox is not set up: read the e-mail section of agentj-config.
    Every address that went out is remembered automatically (new ones as contacts with source `agent`).
 5. Format, Cc, reports (P355): the body is Markdown by default and goes as a formatted mail (Agent J's mail look, Powered by
    Agent J) with a plain-text copy — write headings, lists and tables, not HTML. `--cc` / `--bcc` take names or addresses
-   like `--to` (repeatable); every recipient counts for the no-card rule above, To + Cc + Bcc ≤ 10. A web report or any
+   like `--to` (repeatable); every recipient is bound into the approval above, To + Cc + Bcc ≤ 10. A web report or any
    HTML report goes as the mail itself: `agentj mail send --to … --subject '…' --body-file <report>/index.html` (an .html
    file is sent as HTML; scripts / forms are dropped, CSS is inlined for Gmail / Outlook; local images become their alt
    text — `local_images: n` in the answer, so add the published link). web-page-report: `wr render <json> -t <id> -o <dir>`
    writes `<dir>/index.html`. `--format text` only when the owner asks for plain text. Scheduled tasks use the same command:
-   to the owner / allowlisted only → sent without a card each run; anyone else → a card every time.
+   every run requires a fresh passkey-confirmed card, including owner and allowlisted recipients.
 
 ## Slot 0 = the owner (「发给我自己」)
 - Slot 0 of the book is the owner themself: name, main e-mail (the first), optional phone. `agentj contacts owner show`.
@@ -80,3 +79,5 @@ a command.
 - The phone's 「转发到邮箱」 button does the same for a reply or a file in one tap — mention it when the owner asks how to
   send something to themselves. On a reply card it sits next to the Telegram icon and mails the whole exchange (the
   owner's message on top, the reply below, its files attached; 「不带我的提问」 leaves the message out).
+
+Mail replies, phone forwarding and meeting notes also require a fresh approval passkey. Server/login/port/encryption changes invalidate the app password; old unbound app-password envelopes require re-entry. Never self-confirm, bypass the card or request the app password in chat.

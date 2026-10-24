@@ -4,7 +4,7 @@ description: No reply / "Not yet received" / only a phone, or phone or web page 
 ---
 # Bring a grey phone back (起死回生)
 
-The owner should never need to know a command. You run these yourself.
+Run doctor resources when busy. Never promise uptime.
 
 ## Agent 没回应、只有手机时怎么办 {#phone-only}
 

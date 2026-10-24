@@ -15,13 +15,13 @@ from unittest.mock import patch
 from websockets.asyncio.server import serve as ws_serve
 from agentj import controls, noise, serve, wire, provider_profiles as profiles
 from test_l1 import _state, Phone
-from test_f17 import answer
+from test_f17 import answer, enroll
 
 class CardLoop(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.env=patch.dict(os.environ,{'XDG_CONFIG_HOME':self.tmp.name+'/config'});self.env.start()
         self.st=_state(self.tmp.name);self.host=serve.Host(self.st,events='jsonl',read_stdin=False)
-        self.phone=Phone(self.st);self.other=Phone(self.st,name='other');self.frames=asyncio.Queue();self.received=asyncio.Queue();self.connected=asyncio.Event()
+        self.phone=enroll(self.st,Phone(self.st));self.other=Phone(self.st,name='other');self.frames=asyncio.Queue();self.received=asyncio.Queue();self.connected=asyncio.Event()
         self.tx={};self.rx={}
         for cid,phone in [(11,self.phone),(12,self.other)]:
             key=os.urandom(32);out=os.urandom(32)

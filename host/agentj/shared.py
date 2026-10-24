@@ -8,6 +8,8 @@ session routing. Native permission settings and other hooks remain authoritative
 """
 from __future__ import annotations
 
+from . import resource_policy
+
 import asyncio
 import contextlib
 import hashlib
@@ -1065,7 +1067,7 @@ class SharedClaudeAgent(Agent):
                 argv += ["--model", self.cfg["model"]]
             if resume:
                 argv += ["--resume", resume]
-            self.native = await asyncio.create_subprocess_exec(*argv, cwd=self.cfg["dir"], env=env,
+            self.native = await asyncio.create_subprocess_exec(*resource_policy.work_argv(argv), cwd=self.cfg["dir"], env=env,
                 stdin=slave, stdout=slave, stderr=slave, start_new_session=True)
         finally:
             os.close(slave)
@@ -2850,7 +2852,7 @@ class SharedOpenCodeAgent(OpenCodeAgent):
         else:
             try:
                 proc = await asyncio.create_subprocess_exec(
-                    exe, "serve", "--hostname", "127.0.0.1", "--port", str(port), cwd=self.cfg["dir"], env=dict(os.environ),
+                    *resource_policy.work_argv([exe, "serve", "--hostname", "127.0.0.1", "--port", str(port)]), cwd=self.cfg["dir"], env=dict(os.environ),
                     stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
                     start_new_session=True)
             except OSError as e:

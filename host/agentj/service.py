@@ -31,7 +31,7 @@ import subprocess
 import sys
 
 from .envcompat import getenv, isset
-from . import macapp
+from . import macapp, resource_policy
 
 DEFAULT_UNIT = "agentj"
 DEFAULT_LABEL = "net.agentj.host"
@@ -607,6 +607,7 @@ def unit_text(n: str, argv: list[str], env: dict, environ: dict | None = None) -
              "[Service]", "Type=simple",
              "ExecStart=" + " ".join(_sd_quote(x) for x in argv + SERVE_ARGS),
              "Restart=on-failure", "RestartSec=5", "TimeoutStopSec=20", "StandardInput=null"]
+    lines += list(resource_policy.TRANSPORT_UNIT)
     lines += [f"Environment={_sd_quote(f'{k}={v}')}" for k, v in env.items() if k not in (*CAPTURED_ENV[1:], *CLAUDE_AUTH_ENV)]
     lines += ["# optional, created by you (0600) — e.g. CLAUDE_CODE_OAUTH_TOKEN=… ; the leading '-' = may be absent",
               "EnvironmentFile=-" + env_file(n, environ).replace("%", "%%"), "", "[Install]", "WantedBy=default.target", ""]
@@ -1036,7 +1037,7 @@ def rescue_unit_text(n: str, argv: list[str], env: dict) -> str:
              "[Service]", "Type=simple",
              "ExecStart=" + " ".join(_sd_quote(x) for x in argv),
              "Restart=always", "RestartSec=10", "TimeoutStopSec=10", "StandardInput=null",
-             "Nice=10", "CPUWeight=20", "IOWeight=20", "MemoryHigh=64M", "MemoryMax=128M", "TasksMax=64"]
+             "TasksMax=64", *resource_policy.TRANSPORT_UNIT]
     lines += [f"Environment={_sd_quote(f'{k}={v}')}" for k, v in env.items()]
     lines += ["", "[Install]", "WantedBy=default.target", ""]
     return "\n".join(lines)
@@ -1044,8 +1045,7 @@ def rescue_unit_text(n: str, argv: list[str], env: dict) -> str:
 
 def rescue_plist_bytes(n: str, argv: list[str], env: dict, log_path: str, extra: dict | None = None) -> bytes:
     return plistlib.dumps({"Label": n, "ProgramArguments": argv, "EnvironmentVariables": env,
-                           "RunAtLoad": True, "KeepAlive": True, "ThrottleInterval": 10, "ProcessType": "Background",
-                           "Nice": 10, "LowPriorityIO": True, **(extra or {}),
+                           "RunAtLoad": True, "KeepAlive": True, "ThrottleInterval": 10, "ProcessType": PROCESS_TYPE, **(extra or {}),
                            "StandardInPath": "/dev/null", "StandardOutPath": log_path, "StandardErrorPath": log_path})
 
 

@@ -33,7 +33,7 @@ try{
  ok(fake.log.slice(foregroundStart).some(m=>m.t==='ping'),'foreground starts a fresh authenticated health check');
  silent=true;
  await evaluate(p,`document.getElementById('input').value='保留这条未确认消息';document.getElementById('input').dispatchEvent(new Event('input',{bubbles:true}));document.getElementById('send').click();window.p67Health=import('./js/session.js').then(m=>m.checkConnection())`);
- await waitFor(p,`window.__ajState!=='ready'`,26000);   // P129: two misses in a row (10 s + 3 s + 10 s); a quick resume stays quiet
+ await waitFor(p,`window.__ajState!=='ready'`,105000);   // P452: three misses in a row (30s ×3 + 3s ×2); a quick resume stays quiet
  ok(await evaluate(p,`document.getElementById('input').value==='保留这条未确认消息'`),'half-open connection retains unacknowledged message text');
  ok(await evaluate(p,`window.__ajState!=='ready'`),'missing pongs end the session without waiting for socket close');
  silent=false;await waitState(p,'ready');

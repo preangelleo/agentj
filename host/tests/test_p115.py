@@ -253,7 +253,8 @@ class Checklist(unittest.TestCase):
             first_run.run_checks(self.st, rec)
 
     def test_catalog_is_the_designed_thirty_items_without_cycles(self):
-        self.assertEqual(len(first_run.ITEMS), 31)   # P170 added the optional e-mail channel row
+        self.assertEqual(len(first_run.ITEMS), 33)   # P499 macfiles + P501 wx; retain both optional rows
+        self.assertTrue({"macfiles", "wx"} <= set(first_run.BY_ID))
         inv = DESIGN / "p92/inventory.json"
         if inv.exists():
             self.assertEqual({i[0] for i in first_run.ITEMS}, {i["id"] for i in json.loads(inv.read_text())["items"]})

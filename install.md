@@ -1,15 +1,15 @@
 ---
 document: agentj-install
-version: 0.27.6
+version: 0.27.7
 released: 2026-10-24
 status: beta (anyone can sign up; not advertised yet, pages are not indexed)
 host_package: agentj (the `agentj` command)
-host_version: 0.25.6a1
-source_tag: v0.25.6a1
-host_wheel: agentj-0.25.6a1-py3-none-any.whl
-host_wheel_sha256: d64d303ce2095662acf6371c5e3588fe2fb93e4ad3072ededdc7581303fab50c
-host_sdist: agentj-0.25.6a1.tar.gz
-host_sdist_sha256: c684a7b6a73e5bdee523dd5791e35c0901bc16a511075dc629154b9143d9b07e
+host_version: 0.25.7a1
+source_tag: v0.25.7a1
+host_wheel: agentj-0.25.7a1-py3-none-any.whl
+host_wheel_sha256: b0e24f57c69de1ea8cf05aa099dbbf737934729a32e0864f78b8ab7df6df5cda
+host_sdist: agentj-0.25.7a1.tar.gz
+host_sdist_sha256: 16a8343597d9314771d32488fd3965ac19a181230f1f909e11227745d06b9293
 canonical_url: https://agentj.app/install.md
 sha256_url: https://agentj.app/install.md.sha256
 alias: https://agentjarvis.net/install.md (the older address: the same file, kept for one more version)
@@ -726,7 +726,7 @@ DeepSeek says a preview may break; Agent J was measured on 0.2.0-rc.2.
 carry over). So start every command line from here on with `export PATH="$HOME/.local/bin:$PATH";` — or call
 `~/.local/bin/agentj` by its full path. This document writes `agentj` for short.
 
-The program is pinned to one release: the tag `v0.25.6a1` (front matter `source_tag`). The tag never moves, and its
+The program is pinned to one release: the tag `v0.25.7a1` (front matter `source_tag`). The tag never moves, and its
 `host/` folder is byte for byte the same code as the two files on our site whose SHA-256 is in this document's front matter.
 ```bash
 cd ~/.agentj-install
@@ -737,7 +737,7 @@ uv tool install "./$W"
 
 Intel Mac: this release keeps `cryptography<49` because newer releases lack an Intel macOS wheel. If an older installer tries to compile OpenSSL (`openssl-sys` / OpenSSL not found), rerun `uv tool install --with "cryptography<49" "./$W"`. The same platform constraint applies to `agentj update apply`.
 
-export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.25.6a1
+export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.25.7a1
 export PATH="$HOME/.local/bin:$PATH"; agentj doctor
 ```
 **Your human's own terminal must find `agentj` too** — they may use `agentj passphrase set` and `agentj pair` as a local alternative
@@ -765,16 +765,16 @@ echo "$WS  $W" | sha256sum -c - && echo "$SS  $S" | sha256sum -c -    # macOS: s
 uv tool install "./$W"          # the wheel; its dependencies come from PyPI or the mirror in UV_DEFAULT_INDEX
 ```
 `uv tool install "./$S"` installs from the checked source archive instead (it builds the same program).
-`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.25.6a1`); it is
-numbered separately from this document (`0.27.6`).
+`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.25.7a1`); it is
+numbered separately from this document (`0.27.7`).
 
-Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.25.6a1#subdirectory=host"`.
+Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.25.7a1#subdirectory=host"`.
 
-Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.25.6a1#subdirectory=host"` (needs Python 3.11+).
+Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.25.7a1#subdirectory=host"` (needs Python 3.11+).
 
 **What each route checks.** The wheel and the source archive above are checked against the SHA-256 in this document. Each
 also has a minisign signature beside it (`<file>.minisig`, key `B79F925B0585F9D4` — front matter `signature`), which
-`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.25.6a1`
+`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.25.7a1`
 routes check **neither**: Git trusts GitHub's HTTPS and the tag name, and nothing compares that code with this document.
 Use them only when the checked files cannot be downloaded, and say so in the final feedback.
 `agentj doctor` lists what is ready and what is not (prerequisites, the fence, connectivity, which agents are usable).
@@ -1761,7 +1761,7 @@ Nightly automatic installation is enabled by default and verifies the official w
 In a shared session (the default of 0.13–0.19), reinstall directly using Step 4's checked wheel (SHA-256 must match this document and
 its public GitHub copy), preserving the host's identity, paired phones, account and preferences:
 ```bash
-uv tool install --force "./agentj-0.25.6a1-py3-none-any.whl"
+uv tool install --force "./agentj-0.25.7a1-py3-none-any.whl"
 agentj --version
 agentj service install
 agentj service restart
@@ -1770,7 +1770,7 @@ agentj doctor
 The matching published tag is another source, after verifying the tag object against the upgrade email (no signature or
 hash check on this route — Step 4):
 ```bash
-uv tool install --force "git+https://github.com/preangelleo/agentj@v0.25.6a1#subdirectory=host"
+uv tool install --force "git+https://github.com/preangelleo/agentj@v0.25.7a1#subdirectory=host"
 ```
 **0.14 independent session** (`agent.session_mode=independent`): 0.14's fence keeps Agent J's own program read-only and
 hides the service manager, so the Agent on the phone cannot reinstall or restart from inside it (measured: the install
@@ -1796,11 +1796,11 @@ prints something and `uv tool list` (or `pipx list`) shows `agentjarvis-host`, t
 the new name, then:
 ```bash
 jarvis service uninstall      # stop the old service first (Step 10 used tmux / nohup instead? stop that process)
-uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.25.6a1#subdirectory=host"
+uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.25.7a1#subdirectory=host"
 agentj doctor
 agentj service install        # start it again under the new name (or the tmux / nohup fallback, Step 10)
 ```
-With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.25.6a1#subdirectory=host"`.
+With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.25.7a1#subdirectory=host"`.
 - After the move, `agentj` puts back a `jarvis` command (a link to `agentj`, only if no other `jarvis` exists) for one more
   version; it prints a notice that points here. New installs never get `jarvis`.
 - The state moves from `~/.local/state/agentjarvis-alpha` to `~/.local/state/agentj` on the first run of `agentj` **after your
@@ -2612,6 +2612,7 @@ are release-operator steps; local dummy/browser checks do not configure producti
 Host 0.16.6a1: shared native mirrors exclude harness meta, skill expansions and tool/command/compact/hook output. Blank/tool-only replies do not interrupt the phone with empty pages or notifications. Delivery waiting has text; reading an older or unread reply is preserved, with a new-reply hint.
 
 0.16.6a1：Agent J 主机镜像过滤工具和 skill 注入消息；空回复不抢走阅读焦点，待处理消息显示状态文字。语音支持十分钟录音，超时仍交付原音频。窄屏文字按钮组纵向排列。
+
 ## Keep the host reachable
 
 Read https://agentj.app/docs/keep-awake/en.md (中文：https://agentj.app/docs/keep-awake/zh.md); docs_index discovers it automatically. The owner's one question is `agentj keep-awake setup` (Step 12a): `--phone` asks with a card on the paired phone (first option = yes), `--yes` when the owner already said yes in chat, `--once` skips it when it was already asked. A yes keeps the host awake on AC, keeps a closed lid awake (Linux: Agent J's own logind drop-in; macOS: `pmset -c disablesleep 1`, only after the owner's second yes to the shut-down reminder, then `--lid`) and on Linux turns on linger. For finer control use `agentj keep-awake status --json`, `agentj keep-awake on --dry-run --json`, then `agentj keep-awake on --json` (`--lid` for the lid). Root steps use the existing paired-phone password card; read back verification and restore original values with `agentj keep-awake off`. On macOS default to AC; do not use osascript administrator privileges or change PAM; while a Mac's closed lid stays awake, `keep-awake status` and `agentj doctor` repeat the reminder to shut it down before travel — pass it on. WSL must configure Windows host power separately (sleep and LIDACTION on AC); report any local authorization requirement explicitly.
@@ -3244,6 +3245,7 @@ At the top of a message, pull down until “Release to refresh” appears, then 
 Settings → Agent tools → Cards → Palette opens a seed-based palette generator (5/8/10 colors, five harmonies, hue/saturation/lightness). The same component lives inside every card's background dialog. Hold a swatch to copy HEX. Save to My palettes keeps up to 32 sets on the host for all cards and paired remotes; select a library color then Save to apply a card background. Light fills use dark text. See https://agentj.app/docs/cards/#palette .
 
 设置 → Agent 的功能 → Cards 卡片 → 配色板，默认关闭。输入种子色，选五种配色方向之一和 5/8/10 色，用色相、饱和度、亮度滑杆调整；各卡片底色弹窗内嵌同一组件。长按色块复制 HEX；「我的配色」最多存 32 组，全局复用，选择后点弹窗底部「保存」才改底色，浅色底自动深色字。配色经已有端到端加密通道保存在主机，升级保留，不写入浏览器本地存储。
+
 ## 永不休眠与重启后自动接回 / Keep awake, and back after a restart (P418)
 
 安装最后一问：要不要把电脑设成永不休眠（回车 / 第一项 = 是）。一键安装在手机配对好后作为第 7 步问（`agentj keep-awake setup --once`）；没问过的话，新手引导结束后主 Agent 在手机上弹卡片问一次（`agentj keep-awake setup --phone`）；主人在聊天里答是就 `agentj keep-awake setup --yes`。同意后插电不睡、合盖也不睡，Linux 还会开机不用登录就运行 Agent J；每项改动走手机密码卡，做完读回并打印 ✓ / ✗ 和撤销方法（`agentj keep-awake off`；Linux 开机自启用 `loginctl disable-linger` 关）。Mac 合盖要主人第二次确认：合盖后既不睡也不关机，长时间离开网络或不需要 Agent J 干活时要主动关机；`agentj keep-awake status` 和 `agentj doctor` 会一直重复这条提醒。电脑重启后：钉住的共享 Claude 会话自动接回，主人自己的 OpenCode 没在运行时手机上问要不要启动，错过的定时任务发一条汇总通知并让主人勾选补跑，Agent J 专用浏览器下次要用时自动重新打开。开了 FileVault 的 Mac 重启后要登录一次。
@@ -3274,6 +3276,7 @@ Recordings shorter than half a second or with too little audio data are discarde
 
 
 Emergency stop is in Settings → Safety and asks for confirmation; Esc cancels. Resume remains at the top and requires a passkey when configured. Settings → Emergency repair → Reopen AI session restarts the selected Claude Code/Codex/OpenCode connection, resumes its conversation or pins a fresh session if resume fails. No need to go to the computer.
+
 ## 只有手机时的排障 / Phone-only troubleshooting (P438)
 
 消息没回应或「尚未接收」：Stop → 设置 → 紧急修复 →「Agent J 主机上的命令」里对 `agentj doctor --reconnect` 点「执行」（推荐）→「重启服务」（推荐）→ **重开 AI 会话**（0.25.2a1 起，旧版跳过）→ ②「请 Agent J Father 远程帮忙」。每步发短消息确认，恢复就停。Claude 额度类先看手机 Claude 设置 Usage / 免费重置（仅在提供时），否则等显示的重置时间；重开不会增加额度。手机灰了另走：手机网络、立即重试 → 紧急修复 ①「重置连接」→ ②。手机接不通主机或救援守护时无法执行修复；主机关机、休眠或断网时在手机浏览器打开 [在线客服](https://support.agentj.app)，不要求到电脑前。完整说明：[只有手机时的排障顺序](https://agentj.app/docs/reconnect/#phone-only)。
@@ -3443,3 +3446,93 @@ Foreground recordings reuse the microphone; hiding or locking the page stops cap
 明确没有发出的回复可以再次回复。电脑重启后，如果上次停在发送中，原卡会显示「上次发送结果未知——确认好友没收到再点重新发送」。不会自动重发；先核对好友记录，确认没收到，再点「重新发送」并填写要转告的话。
 
 A reply that was definitely not sent can be tried again. After a computer restart, an interrupted send shows its unknown result on the original card. Nothing is resent automatically. Check friend history and confirm your friend did not receive it before choosing Send again and entering the words to pass on.
+
+### Conversational Agent name
+
+Agent J is the brand. Address the installed conversational Agent as `Agent J - <seat name>`, using the name actually registered for this seat (`agentj status --json`, field `agent_display_name`, to read the formatted label). Never invent a preset name or save the brand prefix as part of the name. To return from another channel: “Return to the Agent J web app to talk with `<agent_display_name>`” / 「请回 Agent J 网页跟 `<agent_display_name>` 沟通」. Keep owner-chosen names unchanged.
+
+### 账号页敏感操作 / Sensitive account actions
+增购、订阅变更、云端安装设置、撤销遥控器/席位、增删通行密钥，每次都由主人用通行密钥确认；刚登录过也不能免确认。金额或目标变化后重新核对。新设备创建新密钥后，提交时仍需用已有通行密钥（可用原手机扫码）验证；转移码不能代替。不要让 Agent 代按或提供验证码。
+Each purchase, subscription change, cloud setup, remote/seat revocation and passkey addition/deletion needs the owner's passkey confirmation for that action. Recent sign-in never skips it; changed prices or targets need another review. On a new device, create the new passkey and confirm its addition with an existing passkey (your original phone can scan); transfer codes cannot substitute. Never ask the Agent to confirm for the owner.
+
+首次订阅会先显示本次金额、USD 币种、优惠、周期、席位数和下期续费，再请你用通行密钥确认。请在账号页填写优惠码；Stripe 付款页不能再改优惠。报价变化或付款页金额不符时，本次确认作废，请重新核对。
+Before your first subscription, review the amount due in USD, applied offer, billing period, seat count and next renewal, then confirm with your passkey. Enter promotion codes on the account page; the Stripe payment page keeps that offer fixed. If the quote changes or the payment session total differs, review a new quote and confirm again.
+
+## Local file access
+
+During the first Mac installation, while the owner is at the computer, proactively complete the Mac folders and Finder access checklist item. Have the owner run `agentj files prepare --at-computer` in their own terminal after the Agent J service starts. The service requests Downloads, Desktop, Documents and Finder Automation access; the owner confirms macOS prompts. Finder Automation allows Agent J to ask Finder to copy selected files and is broader than the phone's folder allowlist; approve it only for remote importing. Full Disk Access is optional: grant it to the actual program shown in System Settings → Privacy & Security only when a task needs more protected data. Never enable it by default, click system prompts or edit macOS permissions. A terminal and background service may have different macOS permissions attribution; use the service's observations. Settings and doctor show the last check, not a permanent OS grant.
+
+On a folder permission prompt, Permission denied or Operation not permitted, first run `agentj files fetch '<original path>'`, with at least a six-minute command timeout. Serve asks the paired phone: Allow once / Always allow folder / Deny. It tries a read-only copy, then Finder only after a macOS permission refusal and an already-authorized Automation preflight. Keep the source unchanged and use only the successful receipt's new path. Denial, timeout, offline, emergency stop, unverifiable metadata, symbolic links and sensitive paths fail closed. An interrupted command is not a success; retry fetch if no successful receipt exists, never guess a destination.
+
+Missing Finder Automation still requires the owner's first local macOS consent. Explain that the phone cannot grant macOS permissions and preparation can wait until they are next at the computer; continue independent work. Do not send an outdoor owner back to the computer now, loop cp/sudo or click system prompts through computer use. Settings → Local file access supports signed folder additions and removal; a temporary grant lasts one hour. Removal affects future imports; existing copies remain. Grants change neither AI tool or macOS permissions. This check does not prove external-volume or Full Disk Access permission.
+
+## 本机文件访问
+
+Mac 首次安装、主人还在电脑前时，主动完成「Mac 文件夹与 Finder 权限」清单项：主人在自己的终端运行 `agentj files prepare --at-computer`（Agent J 服务须已启动）。服务依次请求下载、桌面、文稿的目录访问，以及 Finder 自动化；请主人按系统提示确认。Finder 自动化能让 Agent J 经 Finder 复制指定文件，作用范围比手机目录白名单更广，只有确实需要远程导入时才同意。完全磁盘访问可选，仅需要更多受保护数据时到系统设置 → 隐私与安全 → 完全磁盘访问授予系统列出的实际程序；不默认开、不自动点击、不用 tccutil 改权限。安装终端和后台服务可能有不同的 macOS permissions 归属，服务检查结果才是本功能的依据；设置和 doctor 显示上次观察，不声称永久授权。
+
+遇到允许访问…文件夹或 Permission denied / Operation not permitted：先 `agentj files fetch '<原路径>'`，给命令至少 6 分钟；服务发手机卡本次允许 / 以后这个文件夹都允许 / 拒绝。批准后先尝试只读复制；仅 macOS 权限拒绝时走 Finder，且自动化预检必须已授权。原文件不删不改，只使用成功回执的新路径。拒绝、超时、离线、主人暂停所有工作、元数据不可核实、符号链接、敏感目录均不导入。命令被中断不能视为成功，核对回执；没有成功回执时重新 fetch，不猜路径。
+
+如果 Finder Automation 尚未授权，系统仍可能需要本人在本机点一次。说明这是 macOS 首次系统授权，手机卡无法替代；下次在电脑前准备即可，继续其它独立工作，不让户外主人立刻回电脑前，不反复 cp/sudo，不用 computer use 代点。设置 → 本机文件访问可添加（签名审批）/撤销导入文件夹，临时授权一小时后到期；直到撤销只影响以后导入，已复制文件保留。这些授权不修改 AI 工具或 macOS 的权限。外置盘与完全磁盘访问状态不能由本检查证明。
+
+
+On busy computers the host, relay connection and rescue watchdog receive higher scheduling weight, while AI work runs at lower priority. Upgrades refresh the service settings automatically; `agentj doctor` reports unavailable CPU/IO/memory delegation instead of changing administrator settings. This improves responsiveness but cannot guarantee service during OOM, sleep or a stopped network.
+中文：电脑忙时优先保障主机、连接和救援守护，AI 任务降权运行；升级自动更新服务配置，保底资源未生效时 `agentj doctor` 会说明，不会自行改管理员设置。内存耗尽、休眠或断网时仍可能离线。
+
+**WeChat ClawBot (0.25.7 candidate).** For mainland networks / Chinese-speaking owners, recommend WeChat before Telegram;
+for overseas / English-speaking owners, Telegram first; both can run. Read `/docs/wechat/` and the bundled agentj-wechat
+skill. `agentj wechat setup --phone` opens a signed card and then the paired Web App's QR; interactive `setup` also renders
+it in the terminal. `status` never shows credentials, `unbind` requires owner confirmation. Only the scanning owner is
+served. The independent owner avatar shares the main harness/plan by default and uses available native capabilities, including images.
+Messages and attachments enter the local inbox and show From WeChat. Higher-access work stays held until a signed Web App
+confirmation or an explicit owner-phone claim, and keeps normal approvals. Pending items expire after24 hours, no execution.
+Active push has a window: reminders/long-task results keep using Agent J's existing channels. Outgoing voice is a file.
+微信只服务扫码者本人；大陆／中文用户优先推荐，海外／英文用户优先 Telegram，两者都可开启。越权请求回网页由主人确认；
+24小时未确认不执行。内容经腾讯与所选模型服务商处理，不继承网页端到端加密承诺。详见 `/docs/wechat/`。
+
+**Owner external channels.** WeChat, owner-allowlisted email and private owner Telegram enter an independent avatar first;
+Web App/phone stays the direct main window. Multiple available plans (including saved profiles of one tool) produce one choice notice at WeChat, email or Telegram setup,
+recommending Codex. Say which avatar plan you want in Web App; `agentj wechat avatar codex|claude|opencode|profile:<id>|shared|free`
+uses a signed confirmation. Free model discovery remains visible, but the avatar option is temporarily unavailable and cannot be selected. Previously saved free avatars also pause replies; choose another existing plan in Web App. There is no automatic paid fallback. Kimi, Qwen and DeepSeek services use saved Claude Code/OpenCode provider profiles; independent domestic CLIs are shown as not supported yet and cannot be selected for the avatar. OpenRouter is selectable only with an existing
+native binding and the owner's explicit `--model openrouter/<provider>/<model>`; no automatic paid fallback.
+The executor's program policy holds every action needing Web App long-press/UV and every unknown action. Normal
+capabilities should match the main session; the current source candidate has Linux Codex native images/search, while
+other isolated executors remain tool-less pending the P503 action-table integration. Unavailable models report failure.
+Context requests use program sensitivity checks plus an independent main-configured history reviewer; suspicious answers
+stay only on Web App. This is not a resident context broker; it does not inject into the live main session. Avatar replies never contain internal paths,
+directories or tool names. The handoff reads: 已转给 <agent_display_name>，请回 Agent J 网页跟它确认.
+微信、主人白名单邮件和 Telegram 私聊统一先过分身；需要网页确认的动作先挂起，不能在通道里口头批准。
+
+P501d：外部通道免费模型会显示发现结果，但当前暂不可用、不能选择；旧免费分身也暂停回复。主人可回网页选择其他已有套餐，不会自动转付费。
+
+P501f: Images received through owner email, Telegram or WeChat are passed to the selected Claude Code, Codex or OpenCode plan for image understanding. If that plan does not support images, the avatar says so and asks you to choose an existing image-capable plan in Agent J Web App. Text and PDF attachments can be summarized within size limits; unsupported files stay in the inbox for Web App review. Image generation and editing still require a capable selected tool.
+
+邮件、Telegram 和微信收到的图片，会按所选套餐交给 Claude Code、Codex 或 OpenCode 识别；不会只传文字而丢掉图片。当前套餐不支持看图时会明确提示，请回 Agent J 网页换一个支持图片的已有套餐。文本和 PDF 附件可在大小限制内提取内容并总结；暂不支持的文件留在本机收件箱，回网页查看。生成或编辑图片仍需所选工具具备相应能力。
+
+## 邮件与敏感卡片的确认
+
+每次发邮件（包括发给自己、白名单联系人、会议纪要、邮件回复和手机转发），都要在手机上用这台遥控器的审批通行密钥确认。卡片绑定收件人、内容、附件摘要和邮件服务器；白名单只决定来信是否处理。修改邮件设置和测试连接也需要通行密钥。邮箱账号、登录名或 IMAP/SMTP 的服务器、端口、加密方式改变后，旧授权码立即作废；升级前的旧授权码也需重新填写。授权码只在密钥卡输入。
+
+管理员和密钥卡需要本机遥控器的审批通行密钥；未开通时先到设置里开通。更换已有通行密钥时，先用旧密钥验证本次注册邀请，再创建新密钥；取消或验证失败会保留旧密钥。账号登录的通行密钥与遥控器审批密钥分别设置。
+
+## Confirming email and sensitive cards
+
+Every outgoing email requires this remote's approval passkey on the phone, including mail to yourself, allowlisted contacts, meeting notes, email replies and phone forwarding. The card binds recipients, content, attachment hashes and mail servers. The allowlist only controls incoming mail. Mail settings changes and connection tests also require the passkey. Changing the account address, login name, IMAP/SMTP server, port or encryption invalidates the old app password. Re-enter app passwords saved before this upgrade using the secret card.
+
+Administrator and secret cards require this remote's approval passkey; enable it in Settings first. Replacing an existing passkey asks the old key to verify this one-use registration offer, then creates the new key. Cancellation or verification failure keeps the old key. Account sign-in and remote approval passkeys are set up separately.
+
+## Version 0.25.7 / 0.25.7 说明
+
+Agent 名称统一显示为 `Agent J - <名字>`，保留主人自取名字。账号页的敏感操作每次都要主人用通行密钥确认；金额、报价或目标变化后重新核对。微信及邮件、Telegram 外部通道使用独立分身；连接与原生识图说明见 agentj-wechat 和微信指南。
+
+好友直报的回复编辑区使用浅色卡片和绿色按钮。若显示上次发送结果未知，请先核对好友记录；确认没收到后再点「重新发送」，填写本次要转告的话。不会自动重发。
+
+For conversation names, use `Agent J - <name>` and preserve the owner's chosen name. Sensitive account actions need passkey confirmation each time; changed quotes or targets need another review. WeChat, mail and Telegram use isolated external-channel assistants; follow the WeChat guide and agentj-wechat skill for setup and native image support.
+
+Friend replies use a light editor card and green actions. If the previous send result is unknown, check friend history first. Only after confirming it was not received, choose Send again and enter this reply. Nothing is resent automatically.
+
+发行顺序：C 先应用 app D1 `0037_action_uv.sql`，再更新 Dashboard；A 更新签名主机包和站点；随后 B 更新手机网页。0036 吊销数据与本机安全日志永久保留；迁移不可重复应用，故障只回滚兼容代码并前向修复，不恢复旧数据库快照。Mac M1 原生权限／负载待实体验收。iOS 安装元数据更新后旧图标需删除并重新添加，原浅带仍待实体复验。
+
+Release order: C applies app D1 `0037_action_uv.sql` before Dashboard; A updates signed host packages and the site, followed by B phone web. Retain0036 revocation data and local security journals permanently. Never replay the migration or restore an older database snapshot; use compatible code rollback and repair forward. Native Mac M1 acceptance is pending. Remove and add older iOS home-screen shortcuts again; the reported band still needs physical verification.
+
+
+Display names come from `agentj status --json` field `agent_display_name` (shared `agent_label` formatter); use it verbatim in introductions and return-to-web hints. Empty names and names equal to Agent J (ignoring case/whitespace) display as Agent J; an existing Agent J - prefix is preserved. Examples: empty → Agent J; Agent J → Agent J; Agent J - Father@TB → Agent J - Father@TB; Father@TB → Agent J - Father@TB. Stored and signed names remain raw owner data.

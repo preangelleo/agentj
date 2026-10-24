@@ -22,9 +22,9 @@ async function touch(p,id,count=1){
 }
 const L={
  zh:{ask:i=>`帮我看一下第 ${i} 件事。`,ans:i=>`第 ${i} 件事已经处理好了。`,loop:'定时检查：服务都正常，没有新的告警。',task:'后台任务跑完了：日志已整理到报告里。',
-     report:'早上好，昨晚的三件事都做完了。',late:'又一条：备份也完成了。',labels:['定时检查','后台任务完成','Wren 主动汇报'],none:'这一页没有你的输入',flash:/有新消息/},
+     report:'早上好，昨晚的三件事都做完了。',late:'又一条：备份也完成了。',labels:['定时检查','后台任务完成','Agent J - Wren 主动汇报'],none:'这一页没有你的输入',flash:/有新消息/},
  en:{ask:i=>`Please check item ${i}.`,ans:i=>`Item ${i} is done.`,loop:'Scheduled check: all services are fine, no new alerts.',task:'The background task finished: logs are in the report.',
-     report:'Good morning — all three things from last night are done.',late:'One more: the backup finished too.',labels:['Scheduled check','Background task finished','Wren reporting in'],none:'No message from you on this page',flash:/New message/},
+     report:'Good morning — all three things from last night are done.',late:'One more: the backup finished too.',labels:['Scheduled check','Background task finished','Agent J - Wren reporting in'],none:'No message from you on this page',flash:/New message/},
 };
 export const CASES={a:'a) every page has a header card with page number and corner gestures',b:'b) on the newest page a new page takes the owner there',
  c:'c) paging history only flashes the capsule',d:'d) page numbers continuous across pages with and without input'};

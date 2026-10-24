@@ -17,7 +17,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from agentj import elevate
 from test_controls import sign
-from test_f17 import PW, answer, fake_sudo
+from test_f17 import PW, answer, fake_sudo, enroll
 from test_l1 import Phone, _host, _ready, _state
 
 
@@ -26,7 +26,7 @@ class Channel(unittest.TestCase):
         async def go(root):
             st, sent = _state(str(root)), []
             host = _host(st, sent)
-            ph = Phone(st)
+            ph = enroll(st, Phone(st))
             session = _ready(host, ph)
             session.p33 = True
             host.elevate.sudo = str(fake_sudo(root, PW))
@@ -132,7 +132,7 @@ class Bounds(unittest.TestCase):
         async def go(root):
             st, sent = _state(str(root)), []
             host = _host(st, sent)
-            ph = Phone(st)
+            ph = enroll(st, Phone(st))
             session = _ready(host, ph)
             req = elevate.norm_sudo({'argv': ['true'], 'why': 'Verify execution error handling'})
             request = asyncio.create_task(host.elevate.request(req))
@@ -162,7 +162,7 @@ class Bounds(unittest.TestCase):
         async def go(root):
             st, sent = _state(str(root)), []
             host = _host(st, sent)
-            ph = Phone(st)
+            ph = enroll(st, Phone(st))
             session = _ready(host, ph)
             host.elevate.sudo = str(fake_sudo(root, PW))
             req = elevate.norm_sudo({'argv': [sys.executable, '-c', 'import time; time.sleep(90)'],

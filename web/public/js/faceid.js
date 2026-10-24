@@ -80,7 +80,10 @@ export async function prepareRestore(x25519Pub, ed25519Pub, now = Date.now()) {
 const buf = (x) => new Uint8Array(x);
 
 /** Create the passkey for this phone ↔ computer (call straight from a tap). → the pk_reg message. Throws on refusal. */
-export async function register(offerNonce, { relayIndex: ri, channel, hostPub, name = 'Agent J', rpName = 'Agent J', displaySuffix = ' · Agent J 主机' }) {
+export async function register(offerNonce, { relayIndex: ri, channel, hostPub, name = 'Agent J', rpName = 'Agent J', displaySuffix = ' · Agent J 主机', replace = null }) {
+  // A resident credential for the same user handle can be replaced by create(). Verify the old one first.
+  const replace_fa = replace ? await approve(await sha256(new TextEncoder().encode(
+    ['agentj/passkey/replace-offer/v1', b64u(offerNonce), replace, location.hostname].join('\n'))), replace) : null;
   const cred = await navigator.credentials.create({ publicKey: {
     rp: { id: location.hostname, name: rpName },
     user: { id: encodeHandle({ relayIndex: ri, channel, hostPub }), name, displayName: name + displaySuffix },
@@ -93,7 +96,9 @@ export async function register(offerNonce, { relayIndex: ri, channel, hostPub, n
   const spki = typeof r.getPublicKey === 'function' ? r.getPublicKey() : null;
   const alg = typeof r.getPublicKeyAlgorithm === 'function' ? r.getPublicKeyAlgorithm() : null;
   if (!spki || ![-7, -8, -257].includes(alg)) throw new Error('no public key');
-  return { t: 'pk_reg', id: b64u(buf(cred.rawId)), alg, spki: b64u(buf(spki)), cd: b64u(buf(r.clientDataJSON)) };
+  const result = { t: 'pk_reg', id: b64u(buf(cred.rawId)), alg, spki: b64u(buf(spki)), cd: b64u(buf(r.clientDataJSON)), att: b64u(buf(r.attestationObject)) };
+  if (replace_fa) result.replace_fa = replace_fa;
+  return result;
 }
 
 /** Ask for any passkey of this site (discoverable; call straight from a tap). → {id, cd, ad, sig, uh (bytes)}. */

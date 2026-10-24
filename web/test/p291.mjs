@@ -16,7 +16,7 @@ import { launch, newPage, navigate, waitFor, waitState, evaluate, shoot } from '
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const HOST = join(ROOT, 'agentjarvis/host');
-const OUT = join(ROOT, 'reports/qa/p291/screens');
+const OUT = process.env.P291_OUT || join(ROOT, 'reports/qa/p291/screens');
 const $ = (id) => `document.getElementById('${id}')`;
 const NAME = 'Jarvis Mac';
 
@@ -67,7 +67,7 @@ export async function runP291() {
         await navigate(p, fake.newPairing(web.url + '?lang=' + lang)); await waitState(p, 'awaiting-approval'); await fake.approve(); await waitState(p, 'ready');
         await evaluate(p, `${$('phone-env-dismiss')}?.click()`);
         await fake.send({ t: 'status', s: 'idle', agent: 'claude', name: NAME });     // the main Agent is NOT replying
-        await waitFor(p, `${$('agent')}.textContent===${JSON.stringify(NAME)}`);
+        await waitFor(p, `${$('agent')}.textContent===${JSON.stringify('Agent J - '+NAME)}`);
 
         const before = board('refused', lang);                                       // a) the Mac, 0.21.0a1
         check(before.tasks.length === 0, 'refused hooks → empty list');

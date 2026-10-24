@@ -560,7 +560,7 @@ class SendApp(unittest.TestCase):
             self.assertEqual(got[-1], big)
             self.assertEqual([(o, c) for o, c, _ in frames if o == wire.OP_BULK], [(wire.OP_BULK, 5)],
                              "BULK only for the ready p33 session")
-            self.assertEqual(host._caps()["caps"], ["p33", "heartbeat", "lt1", "pair1", "busyget", "contacts", "hfind", "cards1", "upg1", "systasks", "wfresume1", "friendreport1", "wf1", "jpalette1", "sk1", "jcards1", "mq5", "hooks1", "ss1"])   # P426 §39 sk1; P398 ss1 say_sync; P360 §34 jcards1; P286 mq5; P244 §30 wf1; 0.18: long-task cards (§20); P153: pair cards (§4 step 10); P160 busy_get (§22); P184 §25; P188 §28; P203 §29; P207 §2 systask_list
+            self.assertEqual(host._caps()["caps"], ["p33", "heartbeat", "lt1", "pair1", "mailuv1", "busyget", "contacts", "hfind", "cards1", "upg1", "systasks", "wfresume1", "friendreport1", "wf1", "jpalette1", "sk1", "jcards1", "mq5", "hooks1", "ss1"])   # P426 §39 sk1; P398 ss1 say_sync; P360 §34 jcards1; P286 mq5; P244 §30 wf1; 0.18: long-task cards (§20); P153: pair cards (§4 step 10); P160 busy_get (§22); P184 §25; P188 §28; P203 §29; P207 §2 systask_list
             self.assertIn(host._caps()["asr"], ("ready", "not_installed", "off", "broken"))
 
 

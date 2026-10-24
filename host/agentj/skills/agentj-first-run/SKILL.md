@@ -79,3 +79,27 @@ from a timeout. Keep the `AJ_START_*` code; in mainland China offer Volcano Ark 
 For shared Claude, `shared-controls` checks the exact Herdr route after installation/autostart. No safe route → the owner can
 run `/compact` or press Esc in that Claude terminal, or choose Settings → Session mode → Use a separate session for a new managed session.
 Do not edit global autostart scripts or send keys to a guessed pane. Agent J remains the owner's single main assistant.
+
+## Local file access
+
+During the first Mac installation, while the owner is at the computer, proactively complete the Mac folders and Finder access checklist item. Have the owner run `agentj files prepare --at-computer` in their own terminal after the Agent J service starts. The service requests Downloads, Desktop, Documents and Finder Automation access; the owner confirms macOS prompts. Finder Automation allows Agent J to ask Finder to copy selected files and is broader than the phone's folder allowlist; approve it only for remote importing. Full Disk Access is optional: grant it to the actual program shown in System Settings → Privacy & Security only when a task needs more protected data. Never enable it by default, click system prompts or edit TCC. A terminal and background service may have different TCC attribution; use the service's observations. Settings and doctor show the last check, not a permanent OS grant.
+
+On a folder permission prompt, Permission denied or Operation not permitted, first run `agentj files fetch '<original path>'`, with at least a six-minute command timeout. Serve asks the paired phone: Allow once / Always allow folder / Deny. It tries a read-only copy, then Finder only after a macOS permission refusal and an already-authorized Automation preflight. Keep the source unchanged and use only the successful receipt's new path. Denial, timeout, offline, emergency stop, unverifiable metadata, symbolic links and sensitive paths fail closed. An interrupted command is not a success; retry fetch if no successful receipt exists, never guess a destination.
+
+Missing Finder Automation still requires the owner's first local macOS consent. Explain that the phone cannot grant macOS permissions and preparation can wait until they are next at the computer; continue independent work. Do not send an outdoor owner back to the computer now, loop cp/sudo or click system prompts through computer use. Settings → Local file access supports signed folder additions and removal; a temporary grant lasts one hour. Removal affects future imports; existing copies remain. Grants change neither fence/harness permissions nor TCC. This check does not prove external-volume or Full Disk Access permission.
+
+## 本机文件访问
+
+Mac 首次安装、主人还在电脑前时，主动完成「Mac 文件夹与 Finder 权限」清单项：主人在自己的终端运行 `agentj files prepare --at-computer`（Agent J 服务须已启动）。服务依次请求下载、桌面、文稿的目录访问，以及 Finder 自动化；请主人按系统提示确认。Finder 自动化能让 Agent J 经 Finder 复制指定文件，作用范围比手机目录白名单更广，只有确实需要远程导入时才同意。完全磁盘访问可选，仅需要更多受保护数据时到「系统设置 → 隐私与安全 → 完全磁盘访问」授予系统列出的实际程序；不默认开、不自动点击、不用 tccutil 改权限。安装终端和后台服务可能有不同的 TCC 归属，服务检查结果才是本功能的依据；设置和 doctor 显示上次观察，不声称永久授权。
+
+遇到「允许访问…文件夹」或 Permission denied / Operation not permitted：先 `agentj files fetch '<原路径>'`，给命令至少 6 分钟；服务发手机卡「本次允许 / 以后这个文件夹都允许 / 拒绝」。批准后先尝试只读复制；仅 macOS 权限拒绝时走 Finder，且自动化预检必须已授权。原文件不删不改，只使用成功回执的新路径。拒绝、超时、离线、急停、元数据不可核实、符号链接、敏感目录均不导入。命令被中断不能视为成功，核对回执；没有成功回执时重新 fetch，不猜路径。
+
+如果 Finder Automation 尚未授权，系统仍可能需要本人在本机点一次。说明「这是 macOS 首次系统授权，手机卡无法替代；下次在电脑前准备即可」，继续其它独立工作，不让户外主人立刻回电脑前，不反复 cp/sudo，不用 computer use 代点。设置 → 本机文件访问可添加（签名审批）/撤销导入文件夹，临时授权一小时后到期；直到撤销只影响以后导入，已复制文件保留。这些授权不修改 fence、harness 权限或 TCC。外置盘与完全磁盘访问状态不能由本检查证明。
+Optional channels: for mainland-network or Chinese-speaking owners, offer WeChat ClawBot first (agentj-wechat);
+for overseas or English-speaking owners, offer Telegram first. Ask once; both can be enabled. Never infer that a
+ClawBot can be shared with another WeChat account. The owner scans their own code in the paired Web App or terminal.
+中文：大陆网络／中文用户优先推荐微信 ClawBot，海外／英文用户优先 Telegram；两者都可开。微信仅服务扫码者本人。
+
+Owner WeChat/mail/Telegram now enter the external avatar first; the paired Web App stays the main window.
+Keep the main harness/plan by default. Multiple available plans: ask once and recommend Codex if present; see agentj-wechat
+for signed avatar-only switching and the free-model / already-bound OpenRouter rules.

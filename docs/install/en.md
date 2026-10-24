@@ -335,7 +335,7 @@ It may need you here:
 The AI installs `agentj`, the program on the Agent J host, at one fixed version:
 
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.25.6a1#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.25.7a1#subdirectory=host"
 agentj doctor
 ```
 

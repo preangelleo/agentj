@@ -13,7 +13,8 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Agent J">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<!-- P500: retain the pre-P393 install geometry; iOS snapshots this when adding the icon. -->
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="icon" href="favicon.ico?v=61e0069c" sizes="any">
 <link rel="icon" href="brand/img/favicon-32.png?v=431f7864" type="image/png" sizes="32x32">
 <link rel="apple-touch-icon" href="apple-touch-icon.png?v=43300e13">
@@ -104,6 +105,7 @@
 <link rel="stylesheet" href="cards.css">
 <link rel="stylesheet" href="controls.css">
 <script type="module" src="app.js"></script>
+
 </head>
 <body data-status="unknown" data-conn="off" data-view="pair" data-agent="none">
   <!-- P150 Global Design: one centred rounded-square dialog (gdlg). Version notice: never takes focus (P120), ESC / outside = later. -->
@@ -914,6 +916,7 @@
             <!-- P365: hosts that know `agentj notify` (settable lists notify.enabled); the sub-page is js/notify.js -->
             <button type="button" id="set-notify-nav" class="setnav" hidden data-keywords="notify automation script 脚本 通知 自动化"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2.2 2.2 0 0 0 4 0"/><path d="M3 9.5a9 9 0 0 1 2-4.5M21 9.5a9 9 0 0 0-2-4.5"/></svg><span><b data-i18n="p365.nav">自动化消息</b><small data-i18n="p365.navNote">你自己的脚本和定时任务发到这台手机的消息。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
             <!-- P366: 设置 → Webhook — external services tell the Agent (js/webhooks.js, AGENTJ-HOOKS-SPEC §8.3) -->
+            <button type="button" id="set-local-files-nav" class="setnav" data-paired><span><b data-i18n="p478.nav">本机文件访问</b><small data-i18n="p478.note">管理允许导入的文件夹和到期时间。撤销只影响以后的导入，已复制的文件会保留。</small></span></button>
             <button type="button" id="set-hooks-nav" class="setnav" data-keywords="webhook 回调 callback stripe github 告警 alert"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="6.5" r="2.5"/><circle cx="6" cy="17" r="2.5"/><circle cx="18" cy="17" r="2.5"/><path d="M10.8 8.7L7.3 14.8M13.2 8.7l3.5 6.1M8.5 17h7"/></svg><span><b data-i18n="p366.nav">Webhook</b><small data-i18n="p366.navNote">外部服务做完事或出了问题，直接通知 Agent。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
             <div class="setrow" id="set-hb-row">
               <span class="setlab" data-i18n="set.heartbeat">心跳</span>
@@ -1008,6 +1011,10 @@
             <button type="button" id="set-mail-nav" class="setnav"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3.5 6.5l8.5 6 8.5-6"/></svg><span><b data-i18n="mail.nav">邮件通道</b><small data-i18n="mail.navNote">用邮件给 Agent 派活，回复会发回同一封邮件。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
             <button type="button" id="set-contacts-nav" class="setnav" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="mi"><rect x="4" y="3" width="15" height="18" rx="2"/><circle cx="11.5" cy="10" r="2.8"/><path d="M7 17c.9-2 2.6-3 4.5-3s3.6 1 4.5 3M19 7h2M19 12h2M19 17h2"/></svg><span><b data-i18n="p207set.ct.nav">通讯录</b><small data-i18n="p207set.ct.navNote">朋友的邮箱和电话，可以一键加进邮件白名单。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
             <button type="button" id="set-owner-nav" class="setnav" hidden><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 20c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg><span><b data-i18n="set.owner">我的联系方式</b><small data-i18n="set.ownerNote">通讯录 0 号位：「发给我自己」用的主邮箱和手机号。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
+            <div class="setrow" id="set-wechat-row" hidden data-keywords="微信 WeChat ClawBot 通道">
+              <div><b data-i18n="wc.title">微信 ClawBot</b><small data-i18n="wc.brief">生活与文案助理，仅服务本人</small></div>
+              <button type="button" id="set-wechat" class="aj-btn aj-btn--sm" data-i18n="wc.manage">设置</button>
+            </div>
             <div class="setrow">   <!-- P283 / P297: re-pair the owner's Telegram bot (one-time code card in the chat) -->
               <span class="setlab" id="set-chan"></span>
               <button type="button" id="set-tgpair" class="aj-btn aj-btn--sm"></button>
@@ -1255,6 +1262,15 @@
       </div>
       <!-- P274 · Settings → iMessage 助手 (macOS hosts only): parameters via pref_set (the same validator as `agentj imessage set`),
            the rules text read-only (the Agent changes it), status / 重新检测 / 在电脑上打开授权页 (PROTOCOL §10.21) -->
+      <div id="set-local-files" class="setsub setmail" hidden>
+        <p class="small" data-i18n="p478.note">管理允许导入的文件夹和到期时间。撤销只影响以后的导入，已复制的文件会保留。</p>
+        <div id="local-files-list"></div>
+        <label for="local-files-path" data-i18n="p478.path">文件夹完整路径</label>
+        <input id="local-files-path" type="text" autocomplete="off" spellcheck="false">
+        <label for="local-files-duration" data-i18n="p478.duration">有效时间</label>
+        <select id="local-files-duration"><option value="hour" data-i18n="p478.hour">一小时</option><option value="always" data-i18n="p478.permanent">直到撤销</option></select>
+        <button id="local-files-add" class="aj-btn aj-btn--primary" type="button" data-i18n="p478.allow">批准添加</button>
+      </div>
       <div id="set-imessage" class="setsub setmail setimsg" hidden>
         <div class="setsub__in">
           <section class="setcard">

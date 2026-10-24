@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 from agentj.bots.store import Store, BotError, config, LIMITS
 from agentj.bots.policy import inbound, problems, phrase
 from agentj.bots.provider import Provider, Result, invoke, resolve_backup
@@ -191,7 +191,7 @@ class Continuation(unittest.TestCase):
         self.save(handoff={'email_enabled':True})
         contact(self.store,self.bid,self.vid,'visitor@example.com')
         hid='d'*32;self.store.db.execute('INSERT INTO handoffs VALUES(?,?,?,?,?,?)',(hid,self.bid,self.vid,'e'*32,'pending',self.store.now()))
-        manager=SimpleNamespace(state=lambda:self.store,host=SimpleNamespace(st=SimpleNamespace(),stopped=lambda:False),runtime=SimpleNamespace(engine=lambda:self.engine()))
+        manager=SimpleNamespace(state=lambda:self.store,host=SimpleNamespace(st=SimpleNamespace(),stopped=lambda:False,ask=AsyncMock(return_value={'behavior':'allow'})),runtime=SimpleNamespace(engine=lambda:self.engine()))
         req={'op':'human_email_code','id':self.bid,'handoff':hid,'to':'visitor@example.com','send_id':'1'*32}
         return manager,req
     def test_mail_verified_binding_signature_path_and_three_attempts(self):

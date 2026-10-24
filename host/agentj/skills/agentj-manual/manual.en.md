@@ -704,6 +704,7 @@ After saving a key to the managed service environment file through the secret ca
 2. Choose the source you intend to use, then press **Move into Agent J** and confirm with Face ID or the device passkey. Agent J copies it locally; you do not paste the key into chat.
 3. The old source is kept by default. Only select the option to comment out its original line if you want that change. Importing a key is not permission to delete other sources.
 4. Read the Claude or Codex sign-in row's **actually in use** source. A key listed elsewhere is not necessarily the login the running AI uses. **after Agent J restarts** means the running AI has not picked up that change yet; follow the row's restart or sign-in guidance and check again.
+
 ## Refresh, reply options and a TV remote {#remote-controls}
 
 Hold the top search button for about half a second (550 ms) to force a refresh. Your text draft is kept. Finish any recording, attachment work or unsubmitted card first. At the top of a message, pull down until “Release to refresh” appears, then release.
@@ -774,3 +775,9 @@ A non-idempotent step that may already have sent, paid, published or deleted sti
 ## Consecutive recordings and leaving the page
 
 Foreground takes reuse an authorized microphone and disable its capture track between takes. Locking the screen, switching apps or leaving the page stops the track. Returning does not open the microphone automatically. Tapping Record again may prompt for permission; Safari website settings can set Microphone to Allow. Actual system permission dialogs still require a physical iPhone check.
+
+## Confirming email and sensitive cards
+
+Every outgoing email requires this remote's approval passkey on the phone, including mail to yourself, allowlisted contacts, meeting notes, email replies and phone forwarding. The card binds recipients, content, attachment hashes and mail servers. The allowlist only controls incoming mail. Mail settings changes and connection tests also require the passkey. Changing the account address, login name, IMAP/SMTP server, port or encryption invalidates the old app password. Re-enter app passwords saved before this upgrade using the secret card.
+
+Administrator and secret cards require this remote's approval passkey; enable it in Settings first. Replacing an existing passkey asks the old key to verify this one-use registration offer, then creates the new key. Cancellation or verification failure keeps the old key. Account sign-in and remote approval passkeys are set up separately.

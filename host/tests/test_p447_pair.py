@@ -18,7 +18,10 @@ class DefaultOutput(Base):
             fs = FakeServe(self.st)
             out = io.StringIO()
             try:
-                with patch.object(cli, "State", return_value=self.st), patch("sys.stdin", io.StringIO("")), contextlib.redirect_stdout(out), patch.object(cli, "_print_qr") as qr:
+                # This in-process output test must not invoke the real CLI's
+                # os._exit(0) fallback while a synthetic stdin thread is winding down.
+                # Run the actual pairing coroutine; P153 separately owns process exit.
+                with patch.object(cli, "_run_prompting", side_effect=asyncio.run), patch.object(cli, "State", return_value=self.st), patch("sys.stdin", io.StringIO("")), contextlib.redirect_stdout(out), patch.object(cli, "_print_qr") as qr:
                     cli.cmd_pair(argparse.Namespace(no_qr=no_qr, link=link, check=False))
                 self.assertEqual(qr.call_count, 0 if no_qr else 1)
                 self.assertEqual(out.getvalue().count("https://m.agentj.app/#p=TEST"), 1)
