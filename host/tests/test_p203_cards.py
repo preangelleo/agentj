@@ -29,11 +29,12 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from agentj import auto_update, controls, pair_card, serve, update  # noqa: E402
 
-from test_l1 import Phone, _host, _ready, _state  # noqa: E402
+from test_l1 import Phone, _owner_host as _host, _ready, _state  # noqa: E402
 from test_controls import sign  # noqa: E402
 
 
 class FakeAgent:
+    native_source = {"kind":"terminal","role":"owner"}
     kind, status, halting = "claude", "idle", False
 
     def __init__(self):

@@ -80,6 +80,7 @@ class Tmp(unittest.TestCase):
         a = shared.SharedClaudeAgent(h, {"kind": "claude", "dir": str(self.work), "_workflow_ceo": True, **cfg})
         a.session = {"sessionId": "owner", "pid": os.getpid()}
         a.issue_hook_token()
+        a.native_source = {"kind": "terminal", "role": "owner"}
         return a
 
     def local(self, permission_hooks):
@@ -312,6 +313,7 @@ class HookToken(Tmp):
         other = subprocess.Popen(["sleep", "30"])
         self.children.append(other)
         a.issue_hook_token()
+        a.native_source = {"kind": "terminal", "role": "owner"}
         shared_hook.token_path(self.root, os.getpid()).unlink()
         shared_hook.write_token(self.root, other.pid, a.hook_token)
         self.assertIsNone(asyncio.run(go(other.pid)))                      # refused: no decision (native dialog)
@@ -323,6 +325,7 @@ class HookToken(Tmp):
         a = self.agent(h)
         old = a.hook_token
         a.issue_hook_token()
+        a.native_source = {"kind": "terminal", "role": "owner"}
         self.assertNotEqual(old, a.hook_token)
         self.assertTrue(a.authentic(ev("UserPromptSubmit", _agentj_token=old, _agentj_peer=os.getpid())))  # in flight
         a.hook_token_prev = (old, time.monotonic() - 1)

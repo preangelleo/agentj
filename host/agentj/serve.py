@@ -266,6 +266,7 @@ class Session:
     rt_at: float = 0.0            # P122: monotonic time of this session's last renewal ticket (≤ 1 per minute on rt_req)
     pair1: bool = False           # P153: the page announced "pair1" (adds remotes, renders pair_device cards)
     card: str = ""                # P153: while pending, the id of its pair_device card on the paired remotes
+    provenance: dict | None = None  # set by verified paired transport, never defaulted from absence
 
 
 @dataclass
@@ -587,7 +588,7 @@ class Host:
         self.hooks = None                       # P366: webhooks (hook_service.HookService, AGENTJ-HOOKS-SPEC), set in run()
         self.upg: dict | None = None            # P203: the open upgrade confirmation card (one at a time, §29)
         from . import busy as busy_mod
-        self.busy = busy_mod.Board(st.root, on_change=self.busy_changed)   # P150 (§22): who works in the background
+        self.busy = busy_mod.Board(st.root, on_change=self.busy_changed, verify_sources=True)   # P150 (§22): who works in the background
         from .background_done import Notifier
         self.background_done = Notifier(self)
         self.busy_sent: str | None = None
@@ -945,7 +946,8 @@ class Host:
             await self._resume_init(s, body)
         elif kind == wire.DATA and s.state in ("hello", "pending", "ready", "pk"):
             obj = wire.unpad_json(s.recv.decrypt(b"", body), wire.MAX_JSON_P33 if s.p33 else wire.MAX_JSON)
-            await self._app(s, obj)
+            with provenance.paired_request(lambda: self._paired_live(s)):
+                await self._app(s, obj)
         else:
             await self.close_cid(s.cid, "unexpected_kind")
 
@@ -1018,6 +1020,10 @@ class Host:
         s.pub, s.device, s.mode, s.state = hs.rs, wire.device_id(hs.rs), "resume", "hello"
         s.name = self._dev_label(s.device)
         await self._op(wire.OP_DATA, s.cid, bytes([wire.HS_RESP]) + msg2)
+
+    def _paired_live(self, s: Session) -> bool:
+        return (isinstance(s, Session) and self.sessions.get(s.cid) is s and s.state == "ready"
+                and self.st.is_allowed(s.pub) and provenance.normalize(s.provenance)["kind"] == "phone")
 
     async def _app(self, s: Session, obj: dict) -> None:
         t = obj["t"]
@@ -1337,6 +1343,7 @@ class Host:
                 self.st.log("auto_unbind", device=got[kind]["id"], reason="same_browser" if kind == "replaced" else "full")
                 await self._drop_device(got[kind]["id"], "replaced")
         s.name = self._dev_label(s.device) or s.name   # P179: a remote the owner named before keeps that name
+        s.provenance = provenance.phone()
         s.state, s.ready_at = "ready", time.monotonic()
         self.reporter.trigger("approve")
         await self.send_app(s, {"t": "approved", **self._caps(s)})
@@ -1654,6 +1661,7 @@ class Host:
 
     async def _accept_resume(self, s: Session, since) -> None:
         """A resume (or a passkey restore, §12) is accepted: `ready`, BULK, history replay."""
+        s.provenance = provenance.phone()
         s.state = "ready"
         self._set_timer(s, None)
         await self.send_app(s, {"t": "ready", **self._caps(s)})
@@ -2175,6 +2183,9 @@ class Host:
                 elif cmd == "upgrade_ready":        # P142 (A12): the recovery worker restarts only an idle serve
                     from . import auto_update
                     await self._ctl_send(w, {"ok": True, "ready": not auto_update.busy(self)})
+                elif cmd == "busy_list":
+                    await asyncio.to_thread(self.busy.refresh_sources)
+                    await self._ctl_send(w, {"ok": True, "busy": self.busy_msg()})
                 elif cmd == "upgrade_impact":       # P203: `agentj update apply` asks what a restart now would interrupt
                     await self._ctl_send(w, {"ok": True, "items": self.upg_items("agent" if req.get("caller") == "agent" else None)})
                 elif cmd == "upgrade_card":         # P203: … and, when it is not empty, puts the confirmation card on the phones
@@ -3325,7 +3336,7 @@ class Host:
     def busy_changed(self) -> None:
         """P150: the 「在办事项」 list changed (or may have: TTL) → every ready phone, once per real change."""
         msg = self.busy_msg()
-        key = json.dumps([msg["tasks"], msg["by"], msg.get("load"), msg.get("cap")], ensure_ascii=False, sort_keys=True)
+        key = json.dumps([msg["tasks"], msg["by"], msg.get("load"), msg.get("cap"), msg.get("live_process_count"), msg.get("task_count"), msg.get("unknown_count")], ensure_ascii=False, sort_keys=True)
         if key == self.busy_sent:
             return
         self.busy_sent = key
@@ -3339,6 +3350,25 @@ class Host:
         while True:
             with contextlib.suppress(Exception):
                 await asyncio.to_thread(self.busy.refresh_outside, n % 5 == 0)
+                # Bind workflow rows to their actual runner, never to the long-lived serve PID.
+                runner = getattr(self, "scheduler", None)
+                proc = getattr(runner, "proc", None) or getattr(getattr(runner, "runner", None), "proc", None)
+                for key, value in list(self.busy.mem.items()):
+                    if key.startswith("wf:") and proc is not None:
+                        value["pid"] = proc.pid
+                        adapter = getattr(runner, "runner", None)
+                        if adapter is not None:
+                            value["native"] = True
+                            selected = getattr(adapter, "busy_selected", {})
+                            for field in ("model", "effort"):
+                                if selected.get(field):
+                                    value[field] = selected[field]
+                agent = self.agent
+                if n % 5 == 0:
+                    await asyncio.to_thread(self.busy.reconcile_claude, None)
+                if n % 5 == 0 and hasattr(agent, "refresh_busy"):
+                    await agent.refresh_busy()
+                await asyncio.to_thread(self.busy.refresh_sources)
                 self.background_done.tick()
                 await asyncio.to_thread(self.busy.sample_load)   # P331: load / memory probes (vm_stat …) never on the loop
                 self.busy_changed()
@@ -4518,10 +4548,11 @@ class Host:
         kind = self.agent.kind if self.agent else "?"
         v = self._classify(tool, tool_input)
         summary = (action_policy.summary(tool, tool_input) if tool in
-                   ("agentj mail", "agentj mail send", "agentj mail notes", "agentj mail reply")
+                   ("agentj mail", "agentj mail send", "agentj mail notes", "agentj mail reply", "agentj calendar")
                    else approval_summary(tool, tool_input, v, self.lang))
         if len(summary.encode()) > 24000:
-            return {"behavior":"deny", "message":"邮件内容过长，无法完整确认 / mail is too large to review"}
+            return {"behavior":"deny", "message":("日历内容过长，无法完整确认 / calendar content is too large to review"
+                                                   if tool == "agentj calendar" else "邮件内容过长，无法完整确认 / mail is too large to review")}
         if require_passkey:
             batch = False
         if require_passkey and tool == "SandboxOnce":
@@ -4570,8 +4601,8 @@ class Host:
             self.st.log("ask_done", id=rid, tool=tool, decision="deny", reason="group_source")
             self.activity("decision", id=rid, tool=tool, result="deny", reason="group_source", cats=v.cats, summary=summary)
             self.emit("ask_done", id=rid, result="deny", reason="group_source")
-            return {"behavior": "deny", "message": "这一轮来自 Telegram 群成员，不是主人本人：不能请求主人批准，已拒绝。"
-                                                   " / A group member's turn cannot obtain the owner's approval."}
+            return {"behavior": "deny", "message": "这一轮没有核验过的主人来源，不能请求主人批准，已拒绝。"
+                                                   " / This turn has no verified owner source and cannot request approval."}
         pkey = self._park_key(tool, isha)       # P336 N5: who is asking, fixed before any await
         if not delegated and not require_passkey and ttl is None:
             ok = self._parked_take(pkey)
@@ -6156,7 +6187,7 @@ class Host:
                 pw = mail_mod.load_secret(self.st, cfg["address"]) if cfg["address"] else None
                 if not pw:
                     return await answer(False, "no_password")
-                res = await asyncio.to_thread(mail_mod.test_connection, cfg, pw)
+                res = await asyncio.to_thread(mail_mod.mail_recovery.run, self, mail_mod.test_connection, cfg, pw)
                 st2 = mail_mod.read_state(self.st)
                 st2["auth_seen"] = res.get("auth_sample")
                 mail_mod.save_state(self.st, st2)
@@ -6546,8 +6577,6 @@ class Host:
             send.onboarding_note += goal_mod.start_note(gc[1], card_lang(self.lang))
             text = goal_mod.agent_words(gc[1], card_lang(self.lang))     # P198: never Claude Code's own /goal
         send.source = getattr(s, "provenance", None)      # B1: set only by host code (telegram.incoming), never from text
-        if send.source is None and isinstance(s, Session) and s.state == "ready" and self.st.is_allowed(s.pub):
-            send.source = provenance.phone()   # P501: explicit verified phone origin for held-request claims
         files = [{"path": b.path, "mime": b.mime, "bytes": b.size, "origin": b.origin, "secs": b.secs,
                   "voice": getattr(b, "voice", "")} for b in blobs]
         # P166: every audio / video attachment with its private copy (a picked m4a too); Telegram transcribes its own first

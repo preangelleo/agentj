@@ -267,12 +267,18 @@ class Manager:
         for item in self.pending_calls.values():
             if not item['future'].done():item['future'].set_result(False)
 
+    async def _phone_write(self,session,req,gone):
+        # phone() already verified the action signature/nonce before admitting this callback.
+        from .. import provenance
+        with provenance.paired_request(lambda: self.host._paired_live(session)):
+            return await self.write(req,gone)
+
     async def _write_reply(self,session,obj,gone=None):
         r=obj['r'];req=obj['request']
         try:
             if gone is not None and (gone.done() or self.host.sessions.get(session.cid) is not session or not self.host.st.is_allowed(session.pub)):
                 raise BotError('offline')
-            res=await asyncio.wait_for(self.write(req,gone),610) if gone is not None else await self.write(req)
+            res=await asyncio.wait_for(self._phone_write(session,req,gone),610) if gone is not None else await self._phone_write(session,req,gone)
             controls.log(self.host.st,action='bots_write',device=session.device,result='ok',obj={'request':req},sig=obj.get('sig'),n=obj.get('n'),ts=obj.get('ts'))
             digest=hashlib.sha256(canonical(req).encode()).hexdigest()
             for item in self.proposals.values():

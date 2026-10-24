@@ -3907,7 +3907,16 @@ export default {
   "wc.leftMins": "还可确认 {n} 分钟；不确认就不执行",
   "p299.sk.agentj-wechat": "微信生活与文案助理",
   "p299.su.agentj-wechat": "连接本人微信、查看状态，或回网页认领挂起请求。",
-  "p503.mailUpgrade": "升级后请点「设置授权码」重新输入；旧授权码文件保留，未自动用于连接。"
+  "p503.mailUpgrade": "旧授权码文件保留，不直接用于连接。先核验已登记候选；无可用项时，再请您在密钥卡重新输入。",
+  "p506.mail.repair": "修复并重试",
+  "p506.mail.repairHint": "邮箱授权码可能已失效，或未开启邮件服务。点「修复并重试」会先检查已保存的同账号授权码；没有可用的才请您补充。",
+  "p508.unknown": "未识别",
+  "p508.detected": "探测",
+  "p508.reported": "自报",
+  "p508.conflict": "与探测不一致",
+  "p508.account": "账号 / 订阅",
+  "p508.processes": "存活进程 {n} 个",
+  "p508.state_unknown": "状态未知"
  },
  "en": {
   "fr.ask.failed": "Your confirmation did not take effect. Please try again.",
@@ -7816,6 +7825,15 @@ export default {
   "wc.leftMins": "{n} minutes to confirm; no confirmation means no execution",
   "p299.sk.agentj-wechat": "WeChat life and writing assistant",
   "p299.su.agentj-wechat": "Connect your own WeChat, check status, or claim a held request in Web App.",
-  "p503.mailUpgrade": "After upgrading, choose Set app password and enter it again. The old file is preserved and is not used for connections."
+  "p503.mailUpgrade": "The old password file is preserved and is not used directly. Saved registered candidates are verified first; use the secret card only if none works.",
+  "p506.mail.repair": "Repair and retry",
+  "p506.mail.repairHint": "The app password may have expired, or mail access may be disabled. Repair and retry first checks saved credentials for this account; it asks for a new one only if none works.",
+  "p508.unknown": "Unknown",
+  "p508.detected": "Detected",
+  "p508.reported": "Self-reported",
+  "p508.conflict": "Conflicts with detection",
+  "p508.account": "Account / plan",
+  "p508.processes": "Live processes: {n}",
+  "p508.state_unknown": "Status unknown"
  }
 };

@@ -562,7 +562,7 @@ class CodexChain(_Chain):
 
     def test_scheduled_runs(self):
         task_dir(self.work, "look", "RUN: touch research-wrote.txt\nRUN: ls\nSAY: VERDICT: ok — 看完了")
-        # P198: the low-risk touch runs without a card; the delete still asks, labelled with the task
+        # P509: workflow execution is not an owner request; it cannot borrow the main turn authority
         task_dir(self.work, "work", "RUN: touch normal-wrote.txt\nRUN: rm -f gone.txt\nSAY: VERDICT: ok — 写好了", mode="normal")
 
         async def script(c):
@@ -582,14 +582,12 @@ class CodexChain(_Chain):
             self.assertEqual(c["asks"](), [])
             os.environ["FAKE_CX_LOG"] = str(self.work / "workflows" / "work" / ".fake.jsonl")
             t = asyncio.create_task(host.scheduler.run("work", "manual"))
-            await c["wait"](lambda: c["asks"]())
-            a = c["asks"]()[-1]
-            self.assertEqual((a["summary"], a["task"]), ("rm -f gone.txt", "任务work"))
-            await host._app(c["s"], c["ph"].answer(a, True))
             res = await t
+            self.assertEqual(c["asks"](), [], "a workflow is not a fresh owner request")
+            self.assertTrue(any(r.get("reason") == "group_source" for r in approvals.read_log(self.st)))
             self.assertEqual(res["verdict"], "ok", res)
             self.assertFalse((self.work / "normal-wrote.txt").exists(), "CEO writes stay in its own folder")
-            self.assertTrue((self.work / "workflows" / "work" / "normal-wrote.txt").exists())
+            self.assertFalse((self.work / "workflows" / "work" / "normal-wrote.txt").exists(), "unknown workflow authority cannot borrow the owner turn")
             self.assertEqual(self.st.agent_session("codex"), main_sid, "a scheduled run never replaces the chat conversation")
         self.run_chain(script)
         rows = [json.loads(line) for log in (self.work / "workflows").glob("*/.fake.jsonl") for line in log.read_text().splitlines()]

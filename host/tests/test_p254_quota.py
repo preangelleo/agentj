@@ -432,6 +432,7 @@ class StateAndDedupe(unittest.TestCase):
 
 
 class FakeAgent:
+    native_source = {"kind": "terminal", "role": "owner"}
     kind = "claude"
 
     def __init__(self):

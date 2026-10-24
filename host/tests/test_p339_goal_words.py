@@ -20,7 +20,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from agentj import approval_jev, approvals, danger, goal, wire  # noqa: E402
 
-from test_l1 import Phone, _host, _ready, _state  # noqa: E402
+from test_l1 import Phone, _owner_host as _host, _ready, _state  # noqa: E402
 
 os.environ["AGENTJ_TEST_GOAL_AUTO"] = "0.3"
 

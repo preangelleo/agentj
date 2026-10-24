@@ -467,7 +467,7 @@ def check_session_mode(st: State) -> dict | None:
               "independent / to switch to an independent session: agentj config set agent.session_mode independent")
 
 
-def check_shared_inbound(st: State) -> dict | None:
+def check_shared_inbound(st: State, *, read_only: bool = False) -> dict | None:
     """P127: the crossSessionInbound value Claude Code really uses in the shared folder (managed > local > project > user)."""
     c = st.agent_config() if st.exists() else None
     if not c or c.get("kind") != "claude" or c.get("session_mode", "independent") != "shared":
@@ -475,7 +475,8 @@ def check_shared_inbound(st: State) -> dict | None:
     from . import claude_inbound
     directory = c.get("dir")
     try:
-        claude_inbound.ensure_shared_default(st, c)
+        if not read_only:
+            claude_inbound.ensure_shared_default(st, c)
     except (OSError, ValueError):
         return _c("shared_inbound", FAIL, "Claude settings could not be safely verified", "agentj config claude-inbound status")
     reason = claude_inbound.hold_reason(directory)
@@ -490,7 +491,7 @@ def check_shared_inbound(st: State) -> dict | None:
     return _c("shared_inbound", FAIL, text, "agentj config claude-inbound on")
 
 
-def check_shared_hooks(st: State) -> dict | None:
+def check_shared_hooks(st: State, *, read_only: bool = False) -> dict | None:
     """A5 (P139): Agent J's approval hooks still in the shared session's settings file (the session can edit it). Missing
     entries are put back here too (serve also checks every 20 s and tells the phone)."""
     c = st.agent_config() if st.exists() else None
@@ -503,11 +504,13 @@ def check_shared_hooks(st: State) -> dict | None:
         return None                                  # serve has not attached the shared session yet: nothing installed
     try:
         gone = shared_hook.missing(c.get("dir"), chan, family)
-        if gone:
+        if gone and not read_only:
             shared_hook.install(c.get("dir"), chan, family)
     except (OSError, ValueError):
         return _c("shared_hooks", FAIL, "手机审批钩子不在位且无法恢复 / Agent J's approval hooks are missing and could not be "
                   "restored", "agentj service restart")
+    if gone and read_only:
+        return _c("shared_hooks", WARN, "手机审批钩子缺失 / Approval hooks are missing (read-only; no repair)", "agentj doctor")
     if gone:
         st.log("shared_hook_restored", events=",".join(gone)[:200], by="doctor")
         return _c("shared_hooks", WARN, "手机审批钩子被改掉了（" + ", ".join(gone)[:60] + "），已恢复 / Agent J's approval hooks "
@@ -1375,11 +1378,28 @@ def run_upgrade(st=None):
     return rows
 
 
-def main(as_json: bool = False, offline: bool = False, isolation_only: bool = False, upgrade_only: bool = False, post_upgrade: bool = False) -> int:
-    checks = [isolation_preflight()] if isolation_only else run_upgrade() if upgrade_only else run(offline=offline)
+def run_read_only(st=None):
+    """Closed inspection-only path: no active probes, migration, repair or service RPC.
+
+    Full doctor retains its repair contract. Report findings and repair hints here;
+    never run a harness, fence probe or updater as a side effect of inspection.
+    """
+    st = st or State()
+    rows = [check_version(), check_python(), check_platform(), check_state(st)]
+    rows += list(filter(None, [check_session_mode(st), check_shared_inbound(st, read_only=True),
+                              check_shared_hooks(st, read_only=True), check_shared_statusline(st)]))
+    rows += check_main_identity(st)
+    rows.append(check_skills())
+    rows.append(_c("read-only", OK, "只读检查；未运行安装、修复、重连或主动探测 / Read-only: installation, repair, reconnect and active probes skipped",
+                   "agentj doctor"))
+    return rows
+
+
+def main(as_json: bool = False, offline: bool = False, isolation_only: bool = False, upgrade_only: bool = False, post_upgrade: bool = False, read_only: bool = False) -> int:
+    checks = run_read_only() if read_only else [isolation_preflight()] if isolation_only else run_upgrade() if upgrade_only else run(offline=offline)
     # Also handles old apply versions that only know plain `doctor --json`.
     st = State()
-    upgrade_context = not offline and not isolation_only and (post_upgrade or update.upgrade_due(st))
+    upgrade_context = not read_only and not offline and not isolation_only and (post_upgrade or update.upgrade_due(st))
     if upgrade_context:
         findings = checks + (check_main_identity(st) if upgrade_only else [])
         if update.repair_upgrade(st, findings):

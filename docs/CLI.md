@@ -1157,11 +1157,11 @@ usage: agentj busy run [-h] [--who WHO] [--label LABEL] [--kind {ceo,temp}]
 | `--label` | `""` | false | — | `在干什么（一句话标题，最多 120 字）/ what (a one-line title, ≤ 120 characters)` |
 | `--kind` | `"ceo"` | false | `ceo`, `temp` | `` |
 | `--report` | `null` | false | — | `the REPORT file whose first line the phone shows when this row is tapped` |
-| `--harness` | `null` | false | — | `P244 task display metadata: harness` |
-| `--model` | `null` | false | — | `P244 task display metadata: model` |
-| `--workflow` | `null` | false | — | `P244 task display metadata: workflow` |
-| `--role` | `null` | false | — | `P244 task display metadata: role` |
-| `--parent` | `null` | false | — | `P244 task display metadata: parent` |
+| `--harness` | `null` | false | — | `self-reported display metadata (not detection): harness` |
+| `--model` | `null` | false | — | `self-reported display metadata (not detection): model` |
+| `--workflow` | `null` | false | — | `self-reported display metadata (not detection): workflow` |
+| `--role` | `null` | false | — | `self-reported display metadata (not detection): role` |
+| `--parent` | `null` | false | — | `self-reported display metadata (not detection): parent` |
 | `command` | `null` | false | — | `` |
 
 ### agentj busy show
@@ -1209,11 +1209,11 @@ usage: agentj busy start [-h] [--who WHO] [--label LABEL] [--kind {ceo,temp}]
 | `--label` | `""` | false | — | `在干什么（一句话标题，最多 120 字）/ what (a one-line title, ≤ 120 characters)` |
 | `--kind` | `"ceo"` | false | `ceo`, `temp` | `` |
 | `--report` | `null` | false | — | `the REPORT file whose first line the phone shows when this row is tapped` |
-| `--harness` | `null` | false | — | `P244 task display metadata: harness` |
-| `--model` | `null` | false | — | `P244 task display metadata: model` |
-| `--workflow` | `null` | false | — | `P244 task display metadata: workflow` |
-| `--role` | `null` | false | — | `P244 task display metadata: role` |
-| `--parent` | `null` | false | — | `P244 task display metadata: parent` |
+| `--harness` | `null` | false | — | `self-reported display metadata (not detection): harness` |
+| `--model` | `null` | false | — | `self-reported display metadata (not detection): model` |
+| `--workflow` | `null` | false | — | `self-reported display metadata (not detection): workflow` |
+| `--role` | `null` | false | — | `self-reported display metadata (not detection): role` |
+| `--parent` | `null` | false | — | `self-reported display metadata (not detection): parent` |
 | `--key` | `""` | false | — | `the name to stop it with` |
 | `--pid` | `null` | false | — | `removed when this pid ends` |
 
@@ -1248,7 +1248,7 @@ agentj capability --help
 
 ```text
 usage: agentj capability [-h]
-                         {list,sync,check,show,prepare,result,dispatch,digest,report-check} ...
+                         {compact,list,sync,check,show,prepare,result,dispatch,digest,report-check} ...
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -1273,6 +1273,25 @@ usage: agentj capability check [-h] [--id ID] [--json]
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--id` | `null` | false | — | `能力 id（可多次）` |
+| `--json` | `false` | false | — | `` |
+
+### agentj capability compact
+
+```text
+queue compaction for this main conversation after writing its handoff
+```
+
+```bash
+agentj capability compact --help
+```
+
+```text
+usage: agentj capability compact [-h] [--json]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--json` | `false` | false | — | `` |
 
 ### agentj capability digest
@@ -2325,15 +2344,16 @@ agentj doctor --help
 ```
 
 ```text
-usage: agentj doctor [-h] [--json] [--offline] [--isolation-only]
-                     [--post-upgrade] [--upgrade-only] [--reconnect]
-                     [--session SESSION]
+usage: agentj doctor [-h] [--json] [--read-only] [--offline]
+                     [--isolation-only] [--post-upgrade] [--upgrade-only]
+                     [--reconnect] [--session SESSION]
 ```
 
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--json` | `false` | false | — | `machine-readable (paths shown with ~)` |
+| `--read-only` | `false` | false | — | `inspect only; no installation, repair or reconnect` |
 | `--offline` | `false` | false | — | `skip the network checks` |
 | `--isolation-only` | `false` | false | — | `isolation preflight only, no user state or network` |
 | `--post-upgrade` | `false` | false | — | `repair post-upgrade root and connection` |
@@ -7938,11 +7958,11 @@ usage: agentj busy run [-h] [--who WHO] [--label LABEL] [--kind {ceo,temp}]
 | `--label` | `""` | false | — | `在干什么（一句话标题，最多 120 字）/ what (a one-line title, ≤ 120 characters)` |
 | `--kind` | `"ceo"` | false | `ceo`, `temp` | `` |
 | `--report` | `null` | false | — | `报告文件路径：手机点开这一条时显示它的第一行` |
-| `--harness` | `null` | false | — | `P244 task display metadata: harness` |
-| `--model` | `null` | false | — | `P244 task display metadata: model` |
-| `--workflow` | `null` | false | — | `P244 task display metadata: workflow` |
-| `--role` | `null` | false | — | `P244 task display metadata: role` |
-| `--parent` | `null` | false | — | `P244 task display metadata: parent` |
+| `--harness` | `null` | false | — | `self-reported display metadata (not detection): harness` |
+| `--model` | `null` | false | — | `self-reported display metadata (not detection): model` |
+| `--workflow` | `null` | false | — | `self-reported display metadata (not detection): workflow` |
+| `--role` | `null` | false | — | `self-reported display metadata (not detection): role` |
+| `--parent` | `null` | false | — | `self-reported display metadata (not detection): parent` |
 | `command` | `null` | false | — | `` |
 
 ### agentj busy show
@@ -7990,11 +8010,11 @@ usage: agentj busy start [-h] [--who WHO] [--label LABEL] [--kind {ceo,temp}]
 | `--label` | `""` | false | — | `在干什么（一句话标题，最多 120 字）/ what (a one-line title, ≤ 120 characters)` |
 | `--kind` | `"ceo"` | false | `ceo`, `temp` | `` |
 | `--report` | `null` | false | — | `报告文件路径：手机点开这一条时显示它的第一行` |
-| `--harness` | `null` | false | — | `P244 task display metadata: harness` |
-| `--model` | `null` | false | — | `P244 task display metadata: model` |
-| `--workflow` | `null` | false | — | `P244 task display metadata: workflow` |
-| `--role` | `null` | false | — | `P244 task display metadata: role` |
-| `--parent` | `null` | false | — | `P244 task display metadata: parent` |
+| `--harness` | `null` | false | — | `self-reported display metadata (not detection): harness` |
+| `--model` | `null` | false | — | `self-reported display metadata (not detection): model` |
+| `--workflow` | `null` | false | — | `self-reported display metadata (not detection): workflow` |
+| `--role` | `null` | false | — | `self-reported display metadata (not detection): role` |
+| `--parent` | `null` | false | — | `self-reported display metadata (not detection): parent` |
 | `--key` | `""` | false | — | `稍后 stop 用的名字` |
 | `--pid` | `null` | false | — | `这个进程结束就自动撤下` |
 
@@ -8029,7 +8049,7 @@ agentj capability --help
 
 ```text
 usage: agentj capability [-h]
-                         {list,sync,check,show,prepare,result,dispatch,digest,report-check} ...
+                         {compact,list,sync,check,show,prepare,result,dispatch,digest,report-check} ...
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -8054,6 +8074,25 @@ usage: agentj capability check [-h] [--id ID] [--json]
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--id` | `null` | false | — | `能力 id（可多次）` |
+| `--json` | `false` | false | — | `` |
+
+### agentj capability compact
+
+```text
+写好交接后给本主会话排入压缩
+```
+
+```bash
+agentj capability compact --help
+```
+
+```text
+usage: agentj capability compact [-h] [--json]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--json` | `false` | false | — | `` |
 
 ### agentj capability digest
@@ -9106,15 +9145,16 @@ agentj doctor --help
 ```
 
 ```text
-usage: agentj doctor [-h] [--json] [--offline] [--isolation-only]
-                     [--post-upgrade] [--upgrade-only] [--reconnect]
-                     [--session SESSION]
+usage: agentj doctor [-h] [--json] [--read-only] [--offline]
+                     [--isolation-only] [--post-upgrade] [--upgrade-only]
+                     [--reconnect] [--session SESSION]
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--json` | `false` | false | — | `机器可读` |
+| `--read-only` | `false` | false | — | `仅报告，不安装、修复或重连` |
 | `--offline` | `false` | false | — | `跳过网络检查` |
 | `--isolation-only` | `false` | false | — | `仅隔离预检：不读用户状态、不联网` |
 | `--post-upgrade` | `false` | false | — | `修复升级后的工作根与连接` |

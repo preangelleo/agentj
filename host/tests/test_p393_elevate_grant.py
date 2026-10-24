@@ -75,7 +75,7 @@ class Rig:
         self.root = root
         self.st, self.sent = _state(str(root)), []
         self.host = _host(self.st, self.sent)
-        self.host.agent = types.SimpleNamespace(kind="claude", cur_send=None)
+        self.host.agent = types.SimpleNamespace(kind="claude", cur_send=None, native_source={"kind":"terminal","role":"owner"})
         self.ph = enroll(self.st, Phone(self.st))
         self.session = _ready(self.host, self.ph)
         self.host.elevate.sudo = str(fake_sudo(root, PW))
@@ -272,7 +272,7 @@ class Grant(unittest.TestCase):
             agent = r.host.agent
             nonce = agent._aj_grant_nonce
             self.assertRegex(nonce, r"^[0-9a-f]{32}$")
-            r.host.agent = types.SimpleNamespace(kind="claude", cur_send=None)   # a new Agent object (even at a reused id)
+            r.host.agent = types.SimpleNamespace(kind="claude", cur_send=None, native_source={"kind":"terminal","role":"owner"})   # a new Agent object (even at a reused id)
             card, _ = await r.deny_next(B)
             self.assertIsNotNone(card, "another Agent session")
             self.assertNotEqual(r.host.agent._aj_grant_nonce, nonce)

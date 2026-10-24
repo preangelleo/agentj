@@ -999,10 +999,12 @@ class OpenCodeAgent(Agent):
         self.host.agent_notice(f"子 Agent 完成：{who}。主 Agent 会接着处理，回复照常发到这里。"
                                f" / Sub-agent finished: {who}. The main Agent continues; its reply arrives here.")
 
-    out_src = None     # S3: what the main session runs outside our turns: the last turn we started + sub-agents that woke it
+    out_src_known = False
+    out_src = provenance.normalize(None)     # S3: what the main session runs outside our turns: the last turn we started + sub-agents that woke it
 
     def _note_turn(self) -> None:
-        """A turn of ours starts: the main session now runs this Send's source (None = the owner's own surfaces)."""
+        """A turn of ours starts: the main session now runs this Send's source (None = unknown, never the owner)."""
+        self.out_src_known = isinstance(getattr(getattr(self, "cur_send", None), "source", None), dict)
         self.out_src = provenance.normalize(getattr(getattr(self, "cur_send", None), "source", None))
 
     def _cur_src(self):
@@ -1016,9 +1018,9 @@ class OpenCodeAgent(Agent):
         None = this turn's Send decides, as before."""
         c = self.children.get(sid) if isinstance(sid, str) else None
         if c is not None and "src" in c:
-            return c["src"]
+            return provenance.normalize(c["src"])
         if c is None and sid in (self.sid, None):
-            return self.out_src if getattr(self, "cur_send", None) is None else None
+            return provenance.normalize(self.out_src) if getattr(self, "cur_send", None) is None else None
         return provenance.stricter(self._cur_src(), getattr(self, "gone_src", None))
 
     def _src_ctx(self, sid):
@@ -1102,10 +1104,17 @@ class OpenCodeAgent(Agent):
         """P160 (§22): this session's sub-agents (v1 `task` tool parts; v2 child sessions) → the phone's robots
         (busy.py), like Claude's. A scheduled run is the workflow's own item (tasks.py); None = serve ended."""
         b = getattr(self.host, "busy", None)
+        if self.cfg.get("_workflow_ceo") and isinstance(ev, dict):
+            properties = ev.get("properties") or {}
+            info = properties.get("info") if isinstance(properties, dict) else None
+            if ev.get("type") == "message.updated" and isinstance(info, dict) and info.get("role") == "assistant":
+                model, provider = info.get("modelID"), info.get("providerID")
+                if isinstance(model, str):
+                    self.busy_selected = {"model": provider + "/" + model if isinstance(provider, str) else model}
         if b is None or self.cfg.get("_workflow_ceo") or getattr(self, "research", False):
             return
         with contextlib.suppress(Exception):
-            b.set_context(self.busy_scope(), harness="opencode", cwd=self.cfg.get("dir"))
+            b.set_context(self.busy_scope(), harness="opencode", cwd=self.cfg.get("dir"), pid=getattr(getattr(self, "proc", None), "pid", None))
             if ev is None:
                 b.session_gone(self.busy_scope())
             else:      # P426: a sub-agent that ends while our turn runs is foreground — no 「后台活已结束」 wake
@@ -1739,6 +1748,53 @@ class OpenCodeAgent(Agent):
             fn = getattr(self.host, "models_changed", None)
             if fn:
                 fn()
+
+    async def refresh_busy(self):
+        """Poll child session state, not the long-lived server PID; unavailable state expires by activity TTL."""
+        b = getattr(self.host, "busy", None)
+        if b is None:
+            return
+        scope, client, proc = self.busy_scope(), self.client, self.proc
+        rows = [(k, v) for k, v in list(b.mem.items()) if v.get("session") == scope and v.get("native_child")]
+        states = None
+        if client and rows:
+            try:
+                st, data = await client.request("GET", "/api/session/active" if self.v2 else "/session/status", timeout=2)
+                if self.v2:
+                    from .agent_opencode2 import _data
+                    data = _data(data)
+                if st == 200 and isinstance(data, dict):
+                    states = data
+            except (OSError, HTTPError, asyncio.TimeoutError):
+                pass
+        for key, value in rows:
+            cid = value.get("native_id") or next((a.split(":s:", 1)[1] for a, target in b.alias.items() if target == key and a.startswith(scope+":s:")), None)
+            status = "unknown"
+            if cid and states is not None and not self.v2:
+                state = states.get(cid, {"type":"idle"})
+                kind = state.get("type") if isinstance(state, dict) else None
+                status = "running" if kind in ("busy", "retry") else "done" if kind == "idle" else "unknown"
+            elif cid and client and self.v2:
+                state = states.get(cid) if states is not None else None
+                if isinstance(state, dict) and state.get("type") in ("busy", "retry"):
+                    if client is self.client and proc is self.proc and b.mem.get(key) is value:
+                        b.native_status(key, "running")
+                    continue
+                from urllib.parse import quote
+                try:
+                    st, data = await client.request("GET", f"/api/session/{quote(cid, safe='')}", timeout=2)
+                    from .agent_opencode2 import _data
+                    data = _data(data)
+                    clock = data.get("time") if st == 200 and isinstance(data, dict) else None
+                    # A previous execution's idle marker cannot negate this execution's start.
+                    # Preserve its observation without refreshing TTL; only the active API renews it.
+                    if isinstance(clock, dict) and type(clock.get("idle")) in (int, float):
+                        started = value.get("native_started_at", value["since"]) * 1000
+                        status = "done" if clock["idle"] > started else None
+                except (OSError, HTTPError, asyncio.TimeoutError):
+                    pass
+            if status is not None and client is self.client and proc is self.proc and b.mem.get(key) is value:
+                b.native_status(key, status)
 
     async def refresh_models(self) -> None:
         self._set_models(await self._providers() if self.client else {})

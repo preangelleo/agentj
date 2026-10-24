@@ -209,7 +209,7 @@ class Flow(_Base):
         [(session, text, blobs)] = self.delivered()
         self.assertEqual(session.source_kind, "email")
         self.assertEqual(session.provenance, provenance.email_owner(BOSS))
-        self.assertTrue(provenance.is_owner(session.provenance))
+        self.assertFalse(provenance.is_owner(session.provenance))
         self.assertIn("帮我把这周的周报整理一下", text)
         self.assertIn("Subject: 请整理周报", text)
         self.assertIn("SPF/DKIM/DMARC results: dmarc", text)
@@ -403,7 +403,7 @@ class Flow(_Base):
 class RealHost(unittest.IsolatedAsyncioTestCase):
     async def test_real_host_turn_is_labelled_email_and_the_reply_goes_back(self):
         from unittest.mock import Mock
-        from test_l1 import _host, _state
+        from test_l1 import _owner_host as _host, _state
         imap, smtp = FakeIMAP(AGENT, CODE), FakeSMTP(AGENT, CODE)
         self.addCleanup(imap.close); self.addCleanup(smtp.close)
         with tempfile.TemporaryDirectory(prefix="p170r-", dir=TEST_TMP) as d:
@@ -429,7 +429,7 @@ class RealHost(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(M.read_state(st)["counts"].get("reply_denied"), 1)
 
     async def test_agent_widening_change_becomes_a_phone_card(self):
-        from test_l1 import _host, _state
+        from test_l1 import _owner_host as _host, _state
         with tempfile.TemporaryDirectory(prefix="p170c-", dir=TEST_TMP) as d:
             st = _state(d); host = _host(st, [])
             host.mail = M.Mail(host)

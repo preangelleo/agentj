@@ -67,8 +67,9 @@ class ClaudeHooks(unittest.IsolatedAsyncioTestCase):
         self.host.ask=AsyncMock(return_value={'behavior':'allow','risk_grant':{'rid':'test-request','device':'test-device','sign_pub':'TEST_SIGNING_IDENTITY'}})
         self.a=shared.SharedClaudeAgent(self.host,{'kind':'claude','dir':str(self.root),'_workflow_ceo':True,'high_risk_warnings':True})
         self.a.session={'sessionId':'owner'}
+        self.a.native_source={'kind':'terminal','role':'owner'}
     async def event(self,name,tool='Bash',inp=None,sid='owner'):
-        return await self.a.hook_event({'session_id':sid,'hook_event_name':name,'tool_name':tool,'tool_input':inp or {'command':'git push origin main'}})
+        return await self.a.hook_event({'session_id':sid,'hook_event_name':name,'prompt':'owner input' if name=='UserPromptSubmit' else '', 'tool_name':tool,'tool_input':inp or {'command':'git push origin main'}})
     async def test_pretool_can_only_ask_never_allow_and_same_category_one_card(self):
         await self.event('UserPromptSubmit')
         ask=await self.event('PreToolUse')
@@ -263,6 +264,7 @@ class ConnectedPhoneDenyUnchanged(unittest.IsolatedAsyncioTestCase):
         root=Path(tmp.name);host=Mock();host.st.root=root;host.stopped.return_value=False
         host.ask=AsyncMock(return_value={'behavior':'deny'})
         a=shared.SharedClaudeAgent(host,{'kind':'claude','dir':str(root),'_workflow_ceo':True,'high_risk_warnings':True})
+        a.native_source={'kind':'terminal','role':'owner'}
         a.session={'sessionId':'owner','pid':os.getpid()};a.issue_hook_token()   # the hook script finds it by ancestry
         chan=shared_hook.Channel(a,shared_hook.channel_path(root,'claude'));await chan.start()
         try:

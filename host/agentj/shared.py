@@ -204,7 +204,7 @@ def boot_time() -> float | None:
 
 def claude_send(session: dict, text: str, source: dict | None = None) -> None:
     """Relay protocol; transport errors contain no peer key or message content. B1 (P117): the envelope is built from the
-    host-generated `source` (provenance), never from the text; no source = the paired phone."""
+    host-generated `source` (provenance), never from the text; no source = unknown, never the owner."""
     root = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
     addr = session["messagingSocketPath"]
     token = None
@@ -254,7 +254,9 @@ class SharedClaudeAgent(Agent):
         self.bg_live = {}               # P243: background task id → type ("shell" / "subagent" / …), main thread's own
         self.main_seen_at = __import__("time").monotonic()   # P243: main thread's last hook event / transcript line (start = now)
         self.pending_text = ""
-        self.pending_source = None
+        self.pending_source = provenance.normalize(None)
+        self.native_source = provenance.normalize(None)
+        self.native_request = None     # (native session id, host Send, delivered body); survives the wait timeout
         self.held = []                  # P424 #75: [(page id, pending text)] phone messages not taken in time (≤ 5)
         self.untrusted_state = None    # B1: None | "pending" (group envelope sent) | "running" (native turn seen)
         self.untrusted_at = 0.0
@@ -344,6 +346,8 @@ class SharedClaudeAgent(Agent):
     def _mark_untrusted(self, state):
         import time
         self.untrusted_state, self.untrusted_at = state, time.monotonic()
+        if state == "pending":
+            self.native_source = provenance.normalize(getattr(self, "pending_source", None))
 
     def sync_compacting(self):
         """P127: the native compaction (PreCompact → SessionStart(compact) / PostCompact, or AgentState's stale end) is
@@ -782,6 +786,12 @@ class SharedClaudeAgent(Agent):
             if hb is not None:                      # P156: the next beat carries the full heartbeat prompt again
                 with contextlib.suppress(Exception):
                     hb.forget("compact")
+        if name == "UserPromptSubmit" and not event.get("agent_id"):
+            prompt = str(event.get("prompt") or "")
+            if not self._phone_echo(event, prompt):
+                self.native_source = provenance.terminal_input(event, prompt, prompt)
+        elif name == "SessionStart" or name == "PreCompact":
+            self.native_source = provenance.normalize(None)
         self._note_background(name, event)
         self._note_skill(name, event)
         self.state.handle(event)
@@ -791,7 +801,7 @@ class SharedClaudeAgent(Agent):
         busy = getattr(self.host, "busy", None)
         if busy is not None:                        # P150: the phone's 「在办事项」 dots (busy.py)
             with contextlib.suppress(Exception):
-                busy.set_context("shared-" + str(self.kind), harness=self.kind, cwd=self.cfg.get("dir"))
+                busy.set_context("shared-" + str(self.kind), harness=self.kind, cwd=self.cfg.get("dir"), pid=(self.session or {}).get("pid"))
                 busy.hook_event(event, scope="shared-" + str(self.kind))
                 if name in ("SubagentStart", "SubagentStop") and event.get("agent_id"):   # P291: metadata only, for diagnosis
                     mem = getattr(busy, "mem", None)
@@ -873,7 +883,7 @@ class SharedClaudeAgent(Agent):
             # B1: a group member's turn never reaches the owner's approval, nor a category grant from an owner turn
             self.host.st.log("ask_done", tool=event.get("tool_name"), decision="deny", reason="group_source")
             return {"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": {"behavior": "deny",
-                "message": "This turn came from a Telegram group member, not the owner: no owner approval."}}}
+                "message": "This turn has no verified owner source: no owner approval."}}}
         if name == "SessionStart" and not event.get("agent_id"):
             # P116 (B11): startup / resume / clear / compact of the served session reads the identity (again)
             note = self._handoff_context(event.get("source"))
@@ -1801,6 +1811,7 @@ class SharedClaudeAgent(Agent):
                         for tid in re.findall(r"<task-id>\s*([^<\s]+)\s*</task-id>", text):
                             self.bg_live.pop(tid, None)     # P243: that background task has ended
                     if via:
+                        self.native_source = provenance.system()
                         self.native_turn = True
                         self.stop_since_end = False   # P151: a harness-started turn begins (loop tick, task notification)
                         self._turn_begins()
@@ -1810,7 +1821,14 @@ class SharedClaudeAgent(Agent):
                         if mark:
                             mark(via)
                         continue
+                    if self._phone_echo(item, text):
+                        if self.phone_turn:
+                            self.phone_seen = True
+                            self.input_seen.set()
+                            self._phone_anchor(text)
+                        continue
                     if not human_input(item, blocks, text):
+                        self.native_source = provenance.normalize(None)
                         continue
                     self.stop_since_end = False   # P151: a new turn begins
                     self._turn_begins()
@@ -1818,6 +1836,7 @@ class SharedClaudeAgent(Agent):
                     if self.untrusted_state == "pending" and provenance.names_untrusted(text):
                         self._mark_untrusted("running")   # a native version that runs it without UserPromptSubmit
                     if self._from_phone(item, text):
+                        self.native_source = provenance.normalize(None)  # labels cannot authenticate a new request
                         if self.phone_turn and self.pending_text in text:
                             self.phone_seen = True
                             self.input_seen.set()
@@ -1827,6 +1846,7 @@ class SharedClaudeAgent(Agent):
                         continue
                     if self._control_echo(text):
                         continue
+                    self.native_source = provenance.terminal_input(item, blocks, text)
                     self.host.desktop_input(public_text(text))
                 # Assistant prose is emitted only by the committed Stop payload.
                 # Transcript timing is not a completion/ownership signal.
@@ -1843,6 +1863,23 @@ class SharedClaudeAgent(Agent):
     def _from_phone(item, text) -> bool:
         return any('from-name="' + name + '"' in text for name in provenance.FROM_NAMES) or (
             isinstance(item.get("origin"), dict) and item["origin"].get("name") in provenance.FROM_NAMES)
+
+    def _phone_echo(self, item, text):
+        """A transcript/hook echo can preserve this exact host request, never establish phone authority from text."""
+        bound = self.native_request
+        if not bound or not self.session or bound[0] != self.session.get("sessionId"):
+            return False
+        _, send, body = bound
+        from .transcript_input import proactive_origin
+        names = (provenance.PHONE, "Agent-J-phone")
+        origin = item.get("origin")
+        phone = any('from-name="' + name + '"' in text for name in names) or (
+            isinstance(origin, dict) and origin.get("name") in names)
+        return (phone and not provenance.names_untrusted(text) and not proactive_origin(item, text)
+                and send is not None and bool(body) and body == self.pending_text and body in text
+                and self.native_source == self.pending_source == provenance.phone()
+                and provenance.normalize(getattr(send, "source", None)) == provenance.phone()
+                and not any(item.get(k) for k in ("synthetic", "ignored", "isCompactSummary", "isSidechain")))
 
     def _held_seen(self, text):
         """P424 #75: a phone message that was not taken in time shows up after all (a prompt hook, a transcript record) →
@@ -2150,6 +2187,7 @@ class SharedClaudeAgent(Agent):
                 return
         text = handoff.recover_text(lang, kind, bool(has), where)
         try:
+            self.pending_source = self.native_source = provenance.system()
             await asyncio.to_thread(claude_send, self.session, text, provenance.system())
         except (OSError, ConnectionError, KeyError, TypeError):
             self.host.st.log("shared_handoff_recover", kind=kind, result="send_failed", handoff=bool(has))
@@ -2165,6 +2203,7 @@ class SharedClaudeAgent(Agent):
         before = handoff.mtime(handoff.COMPACT)
         self.system_done.clear()
         try:
+            self.pending_source = self.native_source = provenance.system()
             await asyncio.to_thread(claude_send, self.session, handoff.prep_text(lang), provenance.system())
         except (OSError, ConnectionError, KeyError, TypeError):
             self.host.st.log("shared_handoff_prep", result="send_failed")
@@ -2207,9 +2246,10 @@ class SharedClaudeAgent(Agent):
         self.phone_turn = True
         self.phone_seen = self.phone_reply_seen = self.phone_claim = False
         self.phone_anchored, self.streamed, self.flushed = False, [], len(self.turn_texts)
-        source = getattr(getattr(self, "cur_send", None), "source", None)
-        self.pending_source = source
+        source = provenance.normalize(getattr(getattr(self, "cur_send", None), "source", None))
+        self.pending_source = self.native_source = source
         self.pending_text = provenance.body(text, source)   # what the transcript / prompt will show
+        self.native_request = (self.session.get("sessionId"), self.cur_send, self.pending_text)
         if not provenance.is_owner(source):
             self._mark_untrusted("pending")
         try:
@@ -2384,8 +2424,10 @@ class SharedClaudeAgent(Agent):
         self.host.agent_turn_start(nxt.text, nxt)
         from . import compactprep
         text = compactprep.decorate(self, nxt)
-        source = getattr(nxt, "source", None)
+        source = provenance.normalize(getattr(nxt, "source", None))
         self.pending_source, self.pending_text = source, provenance.body(text, source)
+        self.native_source = source
+        self.native_request = (self.session.get("sessionId"), nxt, self.pending_text)
         if not provenance.is_owner(source):
             self._mark_untrusted("pending")
         self.host.turn_queued_note(True)
@@ -2950,6 +2992,8 @@ class SharedOpenCodeAgent(OpenCodeAgent):
                 return
             mid = info.get("id")
             self.message_roles[mid] = None if info.get("synthetic") or info.get("ignored") else info.get("role")
+            if info.get("role") == "user" and self.message_roles[mid] is None:
+                self.native_source = self.out_src = provenance.normalize(None)
         if ev.get("type") == "message.part.updated":
             part = p.get("part") or {}
             mid = part.get("messageID")
@@ -2962,6 +3006,8 @@ class SharedOpenCodeAgent(OpenCodeAgent):
                     if mid not in self.phone_messages:
                         self.desktop_turn = True
                         self.risk.reset(mid)
+                        self.native_source = provenance.terminal_input(part, [part], part.get("text") or "")
+                        self.out_src = self.native_source
                         self.host.desktop_input(public_text(part.get("text") or ""))
                 return
         if ev.get("type") in ("permission.asked", "question.asked") and p.get("sessionID") != self.sid:
@@ -2998,6 +3044,7 @@ class SharedOpenCodeAgent(OpenCodeAgent):
             (self.host.desktop_text if self.desktop_turn else self.host.agent_text)(text)
 
     async def turn(self, text):
+        self._note_turn()
         initial = getattr(self, "attach_task", None)
         if initial is not None and not initial.done():
             if not await initial:
@@ -3072,6 +3119,8 @@ class SharedOpenCodeAgent(OpenCodeAgent):
             info = message.get("info") or {}
             mid = info.get("id")
             self.message_roles[mid] = None if info.get("synthetic") or info.get("ignored") else info.get("role")
+            if info.get("role") == "user" and self.message_roles[mid] is None:
+                self.native_source = self.out_src = provenance.normalize(None)
             for part in message.get("parts") or []:
                 if info.get("role") == "user":
                     self.on_event({"type": "message.part.updated", "properties": {"part": part}})

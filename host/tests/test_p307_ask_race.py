@@ -67,13 +67,14 @@ class Base(unittest.TestCase):
         h.lang = "zh"
         h.ask = ask
         a = shared.SharedClaudeAgent(h, {"kind": "claude", "dir": str(self.root / "work"), "_workflow_ceo": True})
+        a.native_source = {"kind": "terminal", "role": "owner"}
         a.session = {"sessionId": "owner", "pid": os.getpid()}
         a.issue_hook_token()
         return h, a
 
     @staticmethod
     def ev(name, inp=None, **kw):
-        return {"hook_event_name": name, "session_id": "owner", "tool_name": "AskUserQuestion",
+        return {"hook_event_name": name, "session_id": "owner", "prompt": "owner input" if name == "UserPromptSubmit" else "", "tool_name": "AskUserQuestion",
                 "tool_input": json.loads(json.dumps(inp or QS)), **kw}
 
     @staticmethod

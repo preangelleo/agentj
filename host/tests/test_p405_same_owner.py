@@ -30,10 +30,10 @@ class SameOwnerTests(Base):
         self.positions = [0, 0]
         self.pages, self.sends = [], []
         self.host.hist_add = lambda *a: self.pages.append(a) or {'id': len(self.pages)}
-        self.host.agent = SimpleNamespace(submit=self.sends.append, kind='codex', status='idle')
+        self.host.agent = SimpleNamespace(submit=self.sends.append, kind='codex', status='idle', native_source={'kind':'terminal','role':'owner'})
         self.other_pages, self.other_sends = [], []
         self.other.hist_add = lambda *a: self.other_pages.append(a) or {'id':len(self.other_pages)}
-        self.other.agent = SimpleNamespace(submit=self.other_sends.append, kind='codex', status='idle')
+        self.other.agent = SimpleNamespace(submit=self.other_sends.append, kind='codex', status='idle', native_source={'kind':'terminal','role':'owner'})
 
     async def pump(self):
         for _ in range(20):

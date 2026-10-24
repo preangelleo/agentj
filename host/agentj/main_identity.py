@@ -11,7 +11,7 @@ import json
 from pathlib import Path
 
 DATA = Path(__file__).with_name("identity")
-VERSION = 21  # P410: signed per-request friend handover; product version unchanged
+VERSION = 22  # P510: verified source rules plus retained friend-report boundary
 # v15 (P290): v14 (P251/P253/P254) + P269 checked API / browser / Father paths (compressed wording, same limits)
 # v11 = P159 + P186 (0.20.0, v11 never shipped alone): P159 compressed the v10 rules ~10% (zh 4359→3927 chars);
 # P186 added the chairman philosophy (company = workflow, guide chairman thinking, intent → workflow / global / local skill,
@@ -22,7 +22,7 @@ VERSION = 21  # P410: signed per-request friend handover; product version unchan
 # v9 (P113, ADR-A193): long tasks — preflight card, brief, CEO routing, report read-back
 # v8 (P82): owner-authorized customer-service bot management
 # v5 (P64): a workflow with a CEO is always dispatched — never run or edited by the main Agent; read-only reporting stays
-HASHES = {'en': 'db73ad29e1398f55e050e0f4fc69e502ddf0282cd7e5d834a6ea615dd0dec562', 'zh': '2aeedf940a11780fd38a96d7b3319891bb2d736c32f3637fe8e1befd14991562'}
+HASHES = {'en': '35ff5a205e2c72bcdf9f5fcc6497504ee3fa32216cb101f34f2dfedcc022dc70', 'zh': '840251ec0d3153970159cde32fd6f0e9cde9b222401c6102464be1589363b5fc'}
 MECHANISMS = {"claude": "append-system-prompt", "codex": "developerInstructions", "opencode": "prompt_async.system",
               "kimi": "acp.resource", "qwen": "acp.resource", "dsh": "acp.text"}   # P329: dsh takes no embedded resources (acp._block)   # P305: ACP has no system-prompt field — an embedded resource block (acp.prompt_blocks)
 
@@ -230,9 +230,9 @@ SWITCH_HARNESS_LINE = {
 HEARTBEAT_LINE = {
     # P291: the robots = background work (not "only while I reply"); headless work is wrapped. Net no longer than
     # before (the shared-Claude hook answer had 18 characters left under HOOK_MAX): the P156 heartbeat text is tighter.
-    "zh": "跳舞机器人=后台在干活的 Agent，你不回复也显示；自己起的后台命令一律用 "
-          "`agentj busy run --who 谁 --label 干啥 -- 命令` 包装，没机器人=没登记。多起先跑 `agentj busy capacity`："
-          "空就多起、紧就排队，守 harness 上限。收到〔Agent J 心跳〕：照提示查后台、待办和挂掉的活，哈希没变不重读；"
+    "zh": "跳舞机器人=后台 Agent；后台命令用 "
+          "`agentj busy run --who 谁 --label 干啥 -- 命令`，没机器人=没登记。先跑 `agentj busy capacity`："
+          "空多起、紧排队，守 harness 上限。收到〔Agent J 心跳〕照提示查后台、待办与挂掉的活；哈希未变不重读；"
           "没要报的只回〔不回群〕。改心跳频率或内容用 agentj-heartbeat 技能（`agentj heartbeat set 30m`、"
           "`agentj heartbeat prompt edit`），改完回「记下了」。\n",
     "en": "The dancing robots at the phone's top right are Agents working in the background, shown whether or not you are replying; "
@@ -250,13 +250,17 @@ HEARTBEAT_LINE = {
 
 # P262 + P291 (P290 merge): P291's robots rule (background work, wrapped with busy run) stays; P262 adds the job-ended line.
 HEARTBEAT_LINE["zh"] = (
-    "跳舞机器人=后台在干活的 Agent，你不回复也显示；自己起的后台命令一律用 "
-    "`agentj busy run --who 谁 --label 干啥 -- 命令` 包装，没机器人=没登记。多起先跑 `agentj busy capacity`："
-    "空就多起、紧就排队，守 harness 上限。收到〔Agent J 心跳〕：照提示查后台、待办和挂掉的活，哈希没变不重读；"
-    "没要报的只回〔不回群〕。改心跳频率或内容用 agentj-heartbeat 技能，改完回「记下了」。\n"
-    "后台活已结束：读实际报告与证据，一两句报主人，不凭退出码。\n"
+    "跳舞机器人=后台 Agent；后台命令用 "
+    "`agentj busy run --who 谁 --label 干啥 -- 命令`，没机器人=没登记。先跑 `agentj busy capacity`："
+    "空多起、紧排队，守 harness 上限。收到〔Agent J 心跳〕照提示查后台、待办与挂掉的活；哈希未变不重读；"
+    "无事回〔不回群〕；改心跳用 agentj-heartbeat，改完回「记下了」。\n"
+    "后台活已结束：核实报告与证据再短报，不凭退出码。\n"
 )
 HEARTBEAT_LINE["en"] += "On a background-job-ended [Agent J system notice], read the actual report and evidence, then tell the owner the result in one or two sentences; never trust only the exit code; investigate a missing report.\n"
+
+# P508: reporting is bound to the host's machine snapshot, not conversational memory.
+HEARTBEAT_LINE["zh"] += "后台据 `agentj busy list --json` 汇报，勿凭记忆；自报另列。\n"
+HEARTBEAT_LINE["en"] += "Report background work only from `agentj busy list --json`, never memory; separate detection from self-reports.\n"
 
 # P158 (0.20.0): goal mode. Host line; core hashes unchanged.
 GOAL_LINE = {
@@ -288,9 +292,9 @@ TODO_LINE_CLAUDE = {
 # compaction (P164 B, Claude 2/2, Codex 2/2). Not on the shared-Claude hook path (harness="claude"), which keeps the core
 # path. Host line; core hashes unchanged.
 HANDOFF_LINE = {
-    "zh": "交接文件（本主对话）：压缩或清空前写到 `{path}`，不要写到 `~/.local/state/agentj/` 下（那里在隔离里是临时空目录，写了会丢）。\n",
+    "zh": "交接文件（本主对话）：压缩或清空前写到 `{path}`，不要写到 `~/.local/state/agentj/` 下（那里在隔离里是临时空目录，写了会丢）。主人要你写好交接后自行压缩：写完按 agentj-handoff 运行 agentj capability compact，排队后结束本轮，不等自己。\n",
     "en": "Handoff file (this main conversation): before a compaction or clear write it to `{path}`, never under "
-          "`~/.local/state/agentj/` (inside the fence that folder is a throw-away empty directory; the file would be lost).\n",
+          "`~/.local/state/agentj/` (inside the fence that folder is a throw-away empty directory; the file would be lost). When the owner asks you to write a handoff and compact yourself, follow agentj-handoff and run agentj capability compact after writing it, then end this turn without waiting for yourself.\n",
 }
 
 

@@ -31,6 +31,7 @@ class Files(unittest.IsolatedAsyncioTestCase):
           write_private=lambda p, b: pathlib.Path(p).write_bytes(b), log=lambda *a, **kw: self.logs.append((a, kw)))
         self.h = SimpleNamespace(st=self.st, lang="zh", stopped=lambda: False, question=AsyncMock(return_value=("answer", [[1]])),
                                  send_app=AsyncMock(), nonces=controls.Nonces(), channel="test-channel")
+        self.h.agent = SimpleNamespace(native_source={"kind":"terminal","role":"owner"})
         self.svc = F.Files(self.h)
         # Test fixture declares only its isolated host state as protected.
         self.hidden = patch.object(F.J, "hidden", return_value=[str(self.state)])

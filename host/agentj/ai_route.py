@@ -261,13 +261,13 @@ def steps(lang: str, env_file: str) -> list[str]:
                 f"主人在 Kimi Code 控制台 {d['console_url']} 新建一把 key（只显示一次；不要发到聊天里）。",
                 f"你运行：`{card}` —— 主人只把 key 粘贴进手机密钥卡。",
                 "`agentj service restart`，然后 `agentj agent switch --scan` 确认 OpenCode 能用。",
-                f"`agentj agent switch opencode --model {d['model']}`（轻任务可用 {d['model_light']}）。"]
+                f"只在账号和 OpenCode 列出的可用模型包含 K3.1 Pro 时运行 `agentj agent switch opencode --model {d['model']}`（轻任务可用 {d['model_light']}）；保持思考开启，否则保留原模型。"]
     return [f"The owner opens the link above and subscribes to **Plus or higher** (Go has no coding quota; the invite draw "
             f"needs a paid subscription within 24 hours).",
             f"The owner creates a key in the Kimi Code console {d['console_url']} (shown once; never paste it into chat).",
             f"You run: `{card}` — the owner pastes the key only into the phone's key card.",
             "`agentj service restart`, then `agentj agent switch --scan` to confirm OpenCode is usable.",
-            f"`agentj agent switch opencode --model {d['model']}` (light tasks: {d['model_light']})."]
+            f"Only when K3.1 Pro is available in both the account and OpenCode model list, run `agentj agent switch opencode --model {d['model']}` (light tasks: {d['model_light']}); keep thinking enabled, otherwise keep the existing model."]
 
 
 # P310: Alibaba Cloud Bailian Token Plan (personal) — a mainland option next to Ark (P328) and Kimi (bailian.py)

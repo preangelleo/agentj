@@ -170,3 +170,9 @@ body:is([data-five-page]:not([data-five-page="chat"]),:has(>#five-detail:not([hi
 @media (hover:none) and (pointer:coarse){.fp-menu-card u.fp-key{text-decoration:none}.fp-menu-card h2[data-key]::after{display:none}}
 /* P426 #181-3 (§39): skill health — last use · count, long unused, archive / restore */
 .fp-skill-use{display:block;margin-top:2px;font-variant-numeric:tabular-nums}.fp-stale{color:inherit}.fp-skill-done{display:block;margin-top:6px}.fp-summary .fp-skill-use{margin:6px 0 0;opacity:.85}.fp-summary .fp-skill-act{margin:10px 0 0}.fp-skill-note{margin:0 0 12px}.fp-skill-link{display:block;margin-top:6px;opacity:.85}
+
+/* P508: provenance has its own light card and wraps; the task title retains its full column. */
+#busyList .busy-identity{background:var(--c-lotion);color:var(--c-noir);border:1px solid var(--c-black-mana);border-radius:10px;padding:8px;text-align:left;min-width:0}
+#busyList .busy-identity strong,#busyList .busy-identity small{white-space:normal;overflow-wrap:anywhere;line-height:1.45}
+
+.busy-provenance{font-size:13px;line-height:1.5;overflow-wrap:anywhere}

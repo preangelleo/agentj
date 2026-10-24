@@ -110,7 +110,7 @@ class RealCli(unittest.IsolatedAsyncioTestCase):
         return code, json.loads(buf.getvalue())
 
     async def test_cli_to_owner_end_to_end(self):
-        from test_l1 import _host, _state
+        from test_l1 import _owner_host as _host, _state
         smtp = FakeSMTP(AGENT, CODE)
         self.addCleanup(smtp.close)
         with tempfile.TemporaryDirectory(prefix="p205m-", dir=TEST_TMP) as d:

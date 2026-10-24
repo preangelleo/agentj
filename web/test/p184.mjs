@@ -63,7 +63,7 @@ export async function runP184() {
       const host = { mailReady: true, me: [OWNER], book: BOOK.map((c) => ({ ...c })), fwd: [] };
       fake.st.caps = ['contacts'];
       fake.st.onApp = async (c, m, send) => {
-        if (!/^(ct_|mail_fwd)/.test(m.t)) return false;
+        if (!/^(ct_|mail_fwd|mail_key)/.test(m.t)) return false;
         got.push(m);
         if (m.t === 'ct_list') {
           let list = ORDER[m.sort || 'recent'].map((id) => host.book.find((x) => x.id === id)).filter(Boolean);
@@ -74,9 +74,12 @@ export async function runP184() {
           const n = { id: 'c00000000000' + (host.book.length + 1), name: m.contact.name, nicks: m.contact.nicks, emails: m.contact.emails.map((v) => ({ v: v.toLowerCase(), label: '' })), phones: [], send_count: 0, last_sent_at: null, letter: 'W' };
           host.book.unshift(n);
           await send({ t: 'ct_res', r: m.r, ok: true, result: 'added', contact: n });
+        } else if (m.t === 'mail_key') {
+          await send({ t: 'mail_res', r: m.r, ok: true, verify: 'ok' });
         } else if (m.t === 'mail_fwd') {
           const mode = host.fwd.shift();                       // P295: scripted answers for the dup / failure case
           if (mode === 'dup' && !m.again) await send({ t: 'mail_fwd_res', r: m.r, ok: false, why: 'dup', ago: 95 });
+          else if (mode === 'auth') await send({ t: 'mail_fwd_res', r: m.r, ok: false, why: 'send_failed', detail: 'smtp_login' });
           else if (mode === 'fail') await send({ t: 'mail_fwd_res', r: m.r, ok: false, why: 'send_failed', detail: 'smtp' });
           else await send({ t: 'mail_fwd_res', r: m.r, ok: true, sent: m.to.length, files: m.mid ? 1 : 0 });
         }
@@ -204,6 +207,18 @@ export async function runP184() {
           await p.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 195, y: 838 }] });
           await p.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
           await waitFor(p, `${$('ctFwd')}.hidden`); check(true, 'outside closes the result');
+          host.fwd = ['auth', 'ok'];
+          await tapEl(p, '#mf-test'); await waitFor(p, `!${$('ctFwd')}.hidden && !${$('ctFwd-send')}.disabled`);
+          await tapEl(p, '#ctFwd-send');
+          const repair = lang === 'zh' ? '修复并重试' : 'Repair and retry';
+          await waitFor(p, `${$('ctFwd-send')}.textContent === ${JSON.stringify(repair)}`);
+          check((await evaluate(p, `${$('ctFwd-body')}.textContent`)).includes(lang === 'zh' ? '授权码' : 'app password'), 'login failure says the cause');
+          await save('forward-auth-repair'); await sleep(650);
+          await tapEl(p, '#ctFwd-send'); await waitFor(p, `!!${$('ctFwd-to')}`);
+          check(!!last('mail_key'), 'one repair tap uses the sealed mail path');
+          check(!last('mail_fwd').again, 'repaired login retries with ordinary duplicate protection');
+          await esc(p); await waitFor(p, `${$('ctFwd')}.hidden`);
+
         });
 
         await step('d', async () => {

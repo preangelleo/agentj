@@ -22,7 +22,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from agentj import approval_jev, approvals, danger, preferences  # noqa: E402
 
-from test_l1 import Phone, _host, _ready, _state  # noqa: E402
+from test_l1 import Phone, _owner_host, _ready, _state  # noqa: E402
 
 # The four commands of 2026-10-12 that asked (or were refused) for nothing (see REPORT-157), reproduced
 TODAY = {
@@ -237,7 +237,7 @@ class HostLayerTwo(unittest.TestCase):
         work.mkdir()
         self.st.set_agent_config("claude", str(work))
         self.sent = []
-        self.host = _host(self.st, self.sent)
+        self.host = _owner_host(self.st, self.sent)
         self.host.ask_ttl = 1
         self.s = _ready(self.host, Phone(self.st))
 

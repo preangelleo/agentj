@@ -178,6 +178,8 @@ class HostGoal(unittest.TestCase):
         self.st.set_agent_config("claude", str(self.work))
         self.sent = []
         self.host = _host(self.st, self.sent)
+        from types import SimpleNamespace
+        self.host.agent = SimpleNamespace(halt=mock.AsyncMock(return_value=False), kind="claude", status="idle", cur_send=SimpleNamespace(source={"kind": "phone", "role": "owner"}))
         self.host.ask_ttl = 1
         self.phone = Phone(self.st)
         self.s = _ready(self.host, self.phone)

@@ -4385,5 +4385,18 @@
   },
   "p299.sk.agentj-wechat": "WeChat life and writing assistant",
   "p299.su.agentj-wechat": "Connect your own WeChat, check status, or claim a held request in Web App.",
-  "p503.mailUpgrade": "After upgrading, choose Set app password and enter it again. The old file is preserved and is not used for connections."
+  "p503.mailUpgrade": "The old password file is preserved and is not used directly. Saved registered candidates are verified first; use the secret card only if none works.",
+  "p506": {
+    "mail": {
+      "repair": "Repair and retry",
+      "repairHint": "The app password may have expired, or mail access may be disabled. Repair and retry first checks saved credentials for this account; it asks for a new one only if none works."
+    }
+  },
+  "p508.unknown": "Unknown",
+  "p508.detected": "Detected",
+  "p508.reported": "Self-reported",
+  "p508.conflict": "Conflicts with detection",
+  "p508.account": "Account / plan",
+  "p508.processes": "Live processes: {n}",
+  "p508.state_unknown": "Status unknown"
 }

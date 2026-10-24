@@ -104,7 +104,7 @@ class WakeupStop(unittest.IsolatedAsyncioTestCase):
     async def phone_turn(self, body, source=None):
         """Starts a phone turn the way Agent J does; returns the task. The native session is played by the test."""
         from types import SimpleNamespace
-        self.a.cur_send = SimpleNamespace(source=source, lock=asyncio.Lock(), state="pending")
+        self.a.cur_send = SimpleNamespace(source=provenance.phone() if source is None else source, lock=asyncio.Lock(), state="pending")
         with patch.object(shared, "claude_send"):
             task = asyncio.create_task(self.a.turn(body))
             await asyncio.sleep(0.02)

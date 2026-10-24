@@ -283,10 +283,13 @@ class OwnerOpenCodeV2Agent(SharedOpenCodeV2Agent):
                     self.phone_inbox.add(iid)
                 else:
                     from .transcript_input import human_input
+                    from . import provenance
                     if not human_input(item, [], text):
+                        self.out_src = provenance.normalize(None)
                         return
                     self.desktop_end_if_open()
                     self.desktop_turn = True
+                    self.out_src = provenance.terminal_input(item, [], text)
                     self.host.desktop_input(public_text(text))
             return
         if t in ("permission.replied", "form.replied", "form.cancelled"):

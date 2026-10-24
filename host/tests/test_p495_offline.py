@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 from agentj import elevate
-from test_l1 import Phone, _host, _ready, _state
+from test_l1 import Phone, _owner_host as _host, _ready, _state
 from test_f17 import answer
 
 

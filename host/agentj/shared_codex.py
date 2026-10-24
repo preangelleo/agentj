@@ -619,7 +619,12 @@ class SharedCodexAgent(CodexAgent):
                     text='\n'.join(b.get('text','') for b in p.get('content',[]) if isinstance(b,dict) and b.get('type') in ('input_text','output_text'))
                     from .transcript_input import human_input
                     if role == 'user' and not human_input(p, p.get('content'), text):
+                        from . import provenance
+                        self.native_source = provenance.normalize(None)
                         continue
+                    if text and role == 'user':
+                        from . import provenance
+                        self.native_source = provenance.terminal_input(p, p.get("content"), text)
                     if text and role in ('user','assistant'):
                         (self.host.desktop_input if role=='user' else self.host.desktop_text)(public_text(text))
                 elif item.get('type')=='event_msg' and p.get('type') in ('task_complete','turn_aborted'):

@@ -16,7 +16,7 @@ class PhoneResume(SignedResume):
         super().setUp()
         self.h.channel = self.channel
         pub = b'F'*32
-        self.s = serve.Session(cid=1, state='ready', device=self.device, pub=pub, p33=True)
+        self.s = serve.Session(cid=1, state='ready', device=self.device, pub=pub, p33=True, provenance=provenance.phone())
         self.h.sessions = {1: self.s}
         self.out = []
         async def send(s, obj):
@@ -28,7 +28,8 @@ class PhoneResume(SignedResume):
 
     def call(self, obj, session=None):
         with patch('agentj.wf_resume.time.time', return_value=NOW):
-            asyncio.run(serve.Host._app(self.h, session or self.s, obj))
+            from test_l1 import _paired_app
+            asyncio.run(_paired_app(self.h, session or self.s, obj))
         return self.out[-1] if self.out else None
 
     def test_dispatch_sign_replay_and_untrusted_payload_source_ignored(self):
@@ -397,6 +398,8 @@ class SignedPeerActions(peer_tests.Dispatch):
                 await svc.stop()
                 self.st = state.State(root)
                 self.host = serve.Host(self.st, events='quiet', read_stdin=False)
+                from test_l1 import _paired_app
+                self.host._app = lambda session, obj: _paired_app(self.host, session, obj)
                 async def send(session, obj):
                     self.sent.append(obj)
                     return True
@@ -406,7 +409,7 @@ class SignedPeerActions(peer_tests.Dispatch):
                 await self.host.peers.start()
                 svc = self.host.peers
                 self.addAsyncCleanup(svc.stop)
-                self.s = serve.Session(cid=1, state='ready', device=self.did, pub=pub, p33=True)
+                self.s = serve.Session(cid=1, state='ready', device=self.did, pub=pub, p33=True, provenance=provenance.phone())
                 self.host.sessions[1] = self.s
                 self.assertEqual(svc.guards.row(k.id, msg['mid'])['reply_state'], 'unknown')
                 rep = await report_actions.reporter(svc)

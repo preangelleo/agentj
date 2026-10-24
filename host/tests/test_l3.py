@@ -513,9 +513,9 @@ class WheelInstall(unittest.TestCase):
         # 24 KiB allocation (measured 21.1 KiB compressed), same accounting; flagged to Jarvis. The serve / provenance / identity
         # wiring (serve messages, provenance, identity line, skill section) takes a further explicit 4 KiB core increment
         # (measured +0.5 KiB over the P152 sum), flagged to Jarvis.
-        p170=[i for i in zipfile.ZipFile(self.wheel).infolist() if i.filename=='agentj/mail.py']
+        p170=[i for i in zipfile.ZipFile(self.wheel).infolist() if i.filename in ('agentj/mail.py','agentj/mail_recovery.py')]
         p170_bytes=sum(i.compress_size+76+2*len(i.filename.encode())+2*len(i.extra)+len(i.comment) for i in p170)
-        self.assertEqual(len(p170),1)
+        self.assertEqual(len(p170),2)
         # P206 A (0.20.2 `agentj mail expect`: the Agent waits for one sign-up mail): +8 KiB on mail.py (measured 28.8 KiB in
         # total); flagged to Jarvis.
         self.assertLessEqual(p170_bytes,24576+8192,'P170 e-mail channel allocation (+ P206 A mail expect) is bounded')
@@ -789,7 +789,7 @@ class WheelInstall(unittest.TestCase):
             self.assertEqual({c["id"]: c["status"] for c in d_["checks"]}["state"], "ok")
             core = next(c for c in d_["checks"] if c["id"] == "main-core")
             self.assertEqual(core["status"], "ok")
-            self.assertIn("core v21:", core["summary"])
+            self.assertIn("core v22:", core["summary"])
 
     @unittest.skipUnless((sys.platform.startswith("linux") and shutil.which("bwrap")) or
                          (sys.platform == "darwin" and os.access(fence.SANDBOX_EXEC, os.X_OK)),

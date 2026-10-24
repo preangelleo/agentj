@@ -126,7 +126,7 @@ class Suggestions(Base):
     def test_desktop_prompt_and_cli(self):
         host = types.SimpleNamespace(st=self.st, lang="zh", preferences={})
         from agentj.shared import SharedClaudeAgent
-        fake = types.SimpleNamespace(host=host, kind="claude", cfg={"dir": str(self.home)}, phone_turn=False)
+        fake = types.SimpleNamespace(host=host, kind="claude", cfg={"dir": str(self.home)}, phone_turn=False, native_source={"kind":"terminal","role":"owner"})
         outs = [SharedClaudeAgent._skill_offer(fake, {"prompt": f"把 {d} 的销售数据做成周报发我邮箱"}) for d in ("10-01", "10-08", "10-15")]
         self.assertEqual(outs[:2], ["", ""])
         self.assertIn("存成技能", outs[2])
@@ -145,7 +145,7 @@ class Suggestions(Base):
         fake = types.SimpleNamespace(st=self.st, agent_cfg={"kind": "claude", "dir": str(self.home)}, preferences={},
                                      onboarding_lang=lambda: "zh")
         group = types.SimpleNamespace(provenance={"kind": "telegram", "role": "group", "sender": 1, "chat": 2})
-        owner = types.SimpleNamespace(provenance=None)
+        owner = types.SimpleNamespace(provenance={"kind":"phone","role":"owner"})
         for _ in range(3):
             self.assertEqual(serve.Host.skill_turn_note(fake, group, "帮我把今天的发票整理成表格发给我"), "")
         self.assertEqual(skill_ops.load(self.st)["ops"], {}, "a group member's words are not the owner's")
@@ -189,7 +189,8 @@ class Suggestions(Base):
             self.assertEqual(SharedClaudeAgent._skill_offer(sh, {"prompt": grp}), "")
         self.assertEqual(skill_ops.load(self.st)["ops"], {}, "nothing counted outside the owner's turn")
         # the owner's own turn counts (independent session: an owner Send; shared: a desktop turn)
-        owner = types.SimpleNamespace(host=host, kind="claude", cfg={"dir": str(self.home)}, cur_send=None)
+        owner = types.SimpleNamespace(host=host, kind="claude", cfg={"dir": str(self.home)}, cur_send=None, native_source={"kind":"terminal","role":"owner"})
+        sh.native_source = {"kind":"terminal","role":"owner"}
         ClaudeAgent._note_tools(owner, tool, None)
         SharedClaudeAgent._note_skill(sh, "PostToolUse", ev)
         self.assertEqual([len(e["hits"]) for e in skill_ops.load(self.st)["ops"].values()], [2])

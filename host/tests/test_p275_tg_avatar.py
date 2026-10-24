@@ -236,7 +236,7 @@ class OwnerBot(unittest.IsolatedAsyncioTestCase):
     async def test_bind_schedules_auto_avatar(self):
         src = (HERE.parent / 'agentj' / 'telegram.py').read_text()
         bind = src[src.index('    async def bind(self,cfg):'):src.index('    async def auto_avatar(')]
-        self.assertIn('self.avatar_task=asyncio.create_task(self.auto_avatar(cfg,bot))', bind)
+        self.assertIn('self.check_avatar(cfg,bot)', bind)
 
 
 class CustomerServiceBot(unittest.TestCase):

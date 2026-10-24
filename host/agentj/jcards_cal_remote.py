@@ -15,7 +15,7 @@ import json
 import re
 import time
 
-from . import jcards_cal as cal, privacy
+from . import jcards_cal as cal, privacy, action_policy
 from .jcards_cal_undo import (CONFLICTS, TWO_WAY, WORDS, _fields, _find, _iso, queue, resolve, sub_rows, two_way, undo)
 
 MAX_SUBS = 8
@@ -27,7 +27,7 @@ SYNCED = ("title", "start", "end", "all_day", "note", "reminder")     # F5: the 
 # F10: every word that may leave host_sync / connect / the elevate log; anything else (an exception's text) → "failed".
 FIXED = WORDS + ("full", "too_soon", "not_found", "disabled", "bad_data", "refused", "exists", "bad_name", "bad_kind",
                  "bad_server", "server_not_allowed", "bad_key_name", "key_missing", "bad_calendar", "no_calendar",
-                 "not_supported", "google_not_connected", "sync_failed")
+                 "not_supported", "google_not_connected", "sync_failed", "approval_required")
 
 
 def fixed(word) -> str:
@@ -218,7 +218,13 @@ def _bump(root, name, word: str, ident=None) -> None:
     cal.transaction(root, update)
 
 
-def _push(root, name: str, adapter, o: dict) -> str | None:
+def destination(doc, name):
+    """Immutable value of the subscription used to construct the write adapter."""
+    sub = two_way(doc, name) or {}
+    return json.loads(json.dumps({k:v for k,v in sub.items() if k not in ("last_sync", "last_error")}))
+
+
+def _push(root, name: str, adapter, o: dict, *, authorize=None, bound_destination=None) -> str | None:
     """One outbox op outside the lock, then its bookkeeping under it. Returns a stop word or None."""
     doc, _ = cal.load(root)
     ev = _find(doc, o["id"])
@@ -229,6 +235,29 @@ def _push(root, name: str, adapter, o: dict) -> str | None:
         x = mine(d)
         if x is not None:
             d["outbox"].remove(x)
+    def approved(payload):
+        # Local undo cannot unsend a remote event. Background retries ask for each
+        # exact effect too; no CLI preflight or earlier local edit is inherited.
+        from .state import State
+        dest = bound_destination if bound_destination is not None else destination(doc, name)
+        if destination(doc, name) != dest:
+            return False
+        if not dest.get("enabled"):
+            return False
+        target = {"remote":name, "subscription":dest, "operation":o["op"], "payload":payload}
+        encoded = json.dumps(target, sort_keys=True, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
+        confirm = authorize or (lambda action, params: action_policy.confirm_cli(action, params, st=State(root)))
+        if not confirm("calendar.write", json.loads(encoded)):
+            return False
+        latest, _ = cal.load(root)
+        if destination(latest, name) != dest or mine(latest) != o:
+            return False
+        if o["op"] != "delete":
+            current = _find(latest, o["id"])
+            if current is None or outgoing(current) != payload["event"]:
+                return False
+        return True
+
     def refuse(d):                                     # N1: a row that is not a valid event: its op dropped, row flagged
         done(d)
         cur = _find(d, o["id"])
@@ -243,6 +272,8 @@ def _push(root, name: str, adapter, o: dict) -> str | None:
                     or not (o.get("etag") is None or isinstance(o["etag"], str) and ROWTAG.fullmatch(o["etag"])):
                 cal.transaction(root, done)                    # N1: a tampered delete op: nothing sent
                 return "skip"
+            if not approved({"rid":o["rid"], "etag":o.get("etag")}):
+                return "approval_required"
             try:
                 adapter.delete(o["rid"], o.get("etag"))
             except RemoteError as e:
@@ -271,6 +302,8 @@ def _push(root, name: str, adapter, o: dict) -> str | None:
                     done(d)
             cal.transaction(root, settle)
             return "skip"
+        if not approved({"event":send, "fields":fields}):
+            return "approval_required"
         if o["op"] == "create":
             got = adapter.create(send)
             def stored(d):
@@ -319,7 +352,7 @@ def _push(root, name: str, adapter, o: dict) -> str | None:
         return e.word if e.word in ("offline", "auth") else "failed"
 
 
-def sync(root, name, adapter, clock=None) -> dict:
+def sync(root, name, adapter, clock=None, *, authorize=None, bound_destination=None) -> dict:
     """§4: pull outside the lock → merge under transaction(revision) (one retry) → flush the outbox in order → counts."""
     res = {"ok": True, "name": name, "pulled": 0, "pushed": 0, "queued": 0, "conflicts": 0, "linked_duplicates": 0}
     try:
@@ -329,6 +362,9 @@ def sync(root, name, adapter, clock=None) -> dict:
     sub = two_way(doc, name)
     if sub is None or not sub.get("enabled"):
         return {**res, "ok": False, "why": "not_found" if sub is None else "disabled"}
+    bound_destination = destination(doc, name) if bound_destination is None else bound_destination
+    if destination(doc, name) != bound_destination:
+        return {**res, "ok": False, "why": "approval_required"}
     t = clock or cal.now()
     lo, hi = t - PAST, t + AHEAD
     word = None
@@ -336,6 +372,8 @@ def sync(root, name, adapter, clock=None) -> dict:
         raw = adapter.list(lo, hi)
     except RemoteError as e:
         word = e.word
+    if word is None and destination(cal.load(root)[0], name) != bound_destination:
+        return {**res, "ok": False, "why": "approval_required"}
     if word is None:
         seen, items = set(), []
         for r in raw:
@@ -362,7 +400,7 @@ def sync(root, name, adapter, clock=None) -> dict:
                 if o is None:
                     break
                 tried.add((o.get("id"), o.get("op"), o.get("at")))
-                got = _push(root, name, adapter, o)
+                got = _push(root, name, adapter, o, authorize=authorize, bound_destination=bound_destination)
                 if got is None:
                     res["pushed"] += 1
                 elif got == "failed":
@@ -587,13 +625,14 @@ def disconnect(root, name) -> dict:
     return {"ok": True, "name": name, "disconnected": True} if out.get("ok") else {"ok": False, "name": name, "why": fixed(out["why"])}
 
 
-def host_sync(st, name) -> dict:
+def host_sync(st, name, *, authorize=None) -> dict:
     try:
         doc, _ = cal.load(st.root)
         sub = two_way(doc, name)
         if sub is None:
             return {"ok": False, "name": name, "why": "not_found"}
-        return sync(st.root, name, adapter_for(st, sub))
+        bound = destination(doc, name)
+        return sync(st.root, name, adapter_for(st, bound), authorize=authorize, bound_destination=bound)
     except ValueError as e:                                    # F10: our own words only, never an exception's text
         return {"ok": False, "name": name, "why": fixed(e.args[0] if e.args else None)}
     except Exception:

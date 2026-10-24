@@ -75,3 +75,13 @@ class DisplayNameRegression(unittest.TestCase):
                 self.assertEqual(channel_avatar.handoff(host), f'已转给 {expected}，请回 Agent J 网页跟它确认')
                 message=mail.build_reply({'address':'owner@example.com'}, {'to':'recipient@example.com'}, 'ready', name, 'en')
                 self.assertEqual(email.utils.parseaddr(str(message['From']))[0], expected)
+
+    def test_bundled_name_instructions_use_formatted_status_label(self):
+        from pathlib import Path
+        root=Path(__file__).resolve().parents[1]/'agentj'/'skills'
+        for skill, prefix in (('agentj-config','Brand and name:'), ('agentj-wechat','For a held action,')):
+            lines=[line for line in (root/skill/'SKILL.md').read_text().splitlines() if line.startswith(prefix)]
+            self.assertEqual(len(lines),1)
+            self.assertIn('agent_display_name',lines[0])
+            self.assertNotIn('agent_name',lines[0])
+            self.assertNotIn('Agent J - <',lines[0])

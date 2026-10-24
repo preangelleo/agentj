@@ -1,4 +1,6 @@
-"""P428 item 2: calendar undo journal, offline outbox, conflicts, two-way sync engine, Google adapter (fake gog), serve frame."""
+"""Business sync tests use an explicit trusted approval callback; real UV is covered by P503.
+
+P428 item 2: calendar undo journal, offline outbox, conflicts, two-way sync engine, Google adapter (fake gog), serve frame."""
 import _hermetic  # noqa: F401: isolated test HOME/state before importing the host
 import contextlib
 import io
@@ -265,7 +267,7 @@ class Engine(Base):
         self.write()
 
     def sync(self):
-        return rm.sync(self.root, 'google', self.remote, NOW)
+        return rm.sync(self.root, 'google', self.remote, NOW, authorize=lambda *_: True)
 
     def ev(self, ident='e-1'):
         return next((e for e in self.doc()['events'] if e['id'] == ident), None)
@@ -375,7 +377,7 @@ class Engine(Base):
         self.remote.put('x1')
         twice = Fake()
         twice.list = lambda lo, hi: [dict(self.remote.rows['x1']), dict(self.remote.rows['x1'], title='Other')]
-        r = self.ok(rm.sync(self.root, 'google', twice, NOW))
+        r = self.ok(rm.sync(self.root, 'google', twice, NOW, authorize=lambda *_: True))
         self.assertEqual((r['pulled'], r['linked_duplicates']), (1, 0))
         self.assertEqual(sorted(e['remote'] for e in self.doc()['events']), ['google', 'work'])
 
@@ -493,7 +495,7 @@ class GoogleAdapter(Base):
                   update=[0, {'id': 'abc123', 'etag': '"4"'}], delete=[0, {}])
         self.ok(cal.change(self.root, 'add', to='google', **(T | {'title': '--rf', 'note': '-y --all-pages', 'reminder': 30})))
         adapter = rm.adapter_for(self.st, self.doc()['subscriptions']['google'])
-        r = self.ok(rm.sync(self.root, 'google', adapter, NOW))
+        r = self.ok(rm.sync(self.root, 'google', adapter, NOW, authorize=lambda *_: True))
         self.assertEqual((r['pulled'], r['pushed']), (3, 1))
         rows = {e['title']: e for e in cal.listing(self.root)['events']}
         self.assertEqual(rows['From Google']['reminder'], 15)
@@ -519,7 +521,7 @@ class GoogleAdapter(Base):
         self.ok(cal.change(self.root, 'edit', ident, title='Edited', reminder=None))
         self.ok(cal.change(self.root, 'delete', rows['Holiday']['id']))
         self.mode(events=[0, {'items': items[:2]}], update=[0, {'id': 'abc123', 'etag': '"4"'}], delete=[0, {}])
-        self.ok(rm.sync(self.root, 'google', adapter, NOW))
+        self.ok(rm.sync(self.root, 'google', adapter, NOW, authorize=lambda *_: True))
         tail = [c[6:] for c in self.calls()[2:]]
         up = next(c for c in tail if c[1] == 'update')
         self.assertEqual(up[2:4], [GOOGLE['calendar'], 'abc123'])
@@ -610,7 +612,7 @@ class GoogleAdapter(Base):
         self.assertEqual(r['events'][0]['remote'], 'google')
         self.mode(events=[0, {'events': []}], create=[0, {'id': 'n1', 'etag': '"1"'}])
         code, r = run('sync', '--name', 'google')
-        self.assertEqual((code, r['pushed']), (0, 1))
+        self.assertEqual((code, r['pushed'], r['why']), (1, 0, 'approval_required'))
         self.assertEqual(run('disconnect', '--name', 'google')[0], 0)
 
 
@@ -745,7 +747,7 @@ class SecurityRound2(Base):
                            {'op': 'update', 'id': 'e-ok', 'remote': 'google', 'at': '2026-10-20T00:00:00+00:00', 'tries': 0},
                            {'op': 'delete', 'id': 'e-x', 'remote': 'google', 'at': '2026-10-20T00:00:00+00:00', 'tries': 0,
                             'rid': '-y --all', 'etag': None}])
-        r = rm.sync(self.root, 'google', self.g, NOW)
+        r = rm.sync(self.root, 'google', self.g, NOW, authorize=lambda *_: True)
         self.assertEqual([a[:2] for a in self.argv], [['calendar', 'events']], 'only the pull: zero create / update / delete')
         self.assertEqual((r['pushed'], r['queued']), (0, 0))
         self.assertTrue(all(e['conflict'] for e in self.doc()['events']))
@@ -864,8 +866,9 @@ class Phone(Base):
         edit, synced, undone = replies[6:]
         self.assertTrue(edit['ok'] and edit['events'][0]['pending'])
         kick.assert_called_with('google')                         # a queued change wakes the runner
-        self.assertEqual((synced['sync']['ok'], synced['sync']['pushed'], synced['events'][0]['pending']), (True, 1, False))
-        self.assertEqual(fake.rows['gid1']['title'], 'Phone edit')
+        self.assertEqual((synced['sync']['ok'], synced['sync']['pushed'], synced['events'][0]['pending']), (False, 0, True))
+        self.assertEqual(synced['sync']['why'], 'approval_required')
+        self.assertEqual(fake.rows['gid1']['title'], 'Meeting', 'no action UV: remote is unchanged')
         self.assertEqual((undone['ok'], undone['events'][0]['title'], undone['events'][0]['pending']), (True, 'Meeting', True))
         self.assertNotIn('Phone edit', str(logs))
         self.assertNotIn('gid1', json.dumps(replies))

@@ -1,5 +1,7 @@
 import _hermetic  # noqa: F401: isolated test HOME/state before importing the host
-"""P428 item 3: the CalDAV adapter (Apple iCloud write-back) against an in-process fake CalDAV server — no real network."""
+"""Business sync tests use an explicit trusted approval callback; real UV is covered by P503.
+
+P428 item 3: the CalDAV adapter (Apple iCloud write-back) against an in-process fake CalDAV server — no real network."""
 import base64
 import json
 import pathlib
@@ -142,7 +144,7 @@ class Base(unittest.TestCase):
         return res
 
     def sync(self):
-        res = rm.sync(self.root, 'icloud', rm.adapter_for(self.st, self.doc()['subscriptions']['icloud']), NOW)
+        res = rm.sync(self.root, 'icloud', rm.adapter_for(self.st, self.doc()['subscriptions']['icloud']), NOW, authorize=lambda *_: True)
         self.results.append(res)
         return res
 
@@ -395,25 +397,25 @@ class Push(Base):
         e = self.ok(cal.change(self.root, 'add', **T))['events'][0]
         for fail, why in ((OSError('net down'), 'failed'), (rm.RemoteError('offline'), 'offline'), (503, 'offline'), (401, 'auth')):
             self.fake.fail = {'REPORT': fail}
-            r = rm.host_sync(self.st, 'icloud')
+            r = rm.host_sync(self.st, 'icloud', authorize=lambda *_: True)
             self.results.append(r)
             self.assertEqual((r['ok'], r['why'], r['queued']), (False, why, 1), fail)
         self.assertEqual(r.get('offline'), None)
         self.fake.fail = {'PUT': 503}
-        r = rm.host_sync(self.st, 'icloud')
+        r = rm.host_sync(self.st, 'icloud', authorize=lambda *_: True)
         self.results.append(r)
         self.assertEqual((r['why'], r['offline'], r['queued']), ('offline', True, 1))
         self.assertGreaterEqual(self.doc()['outbox'][0]['tries'], 2)
         self.fake.fail = {}
         self.keys['ICLOUD_APP_PASSWORD_SECRET'] = 'revoked'
-        r = rm.host_sync(self.st, 'icloud')
+        r = rm.host_sync(self.st, 'icloud', authorize=lambda *_: True)
         self.results.append(r)
         self.assertEqual((r['why'], r['queued']), ('auth', 1))
         self.assertEqual(cal.listing(self.root)['subscriptions'][0]['last_error'], 'auth')
         del self.keys['ICLOUD_USER_SECRET']
-        self.assertEqual(rm.host_sync(self.st, 'icloud')['why'], 'key_missing')
+        self.assertEqual(rm.host_sync(self.st, 'icloud', authorize=lambda *_: True)['why'], 'key_missing')
         self.keys.update(KEYS)
-        self.assertEqual(self.ok(rm.host_sync(self.st, 'icloud'))['pushed'], 1)
+        self.assertEqual(self.ok(rm.host_sync(self.st, 'icloud', authorize=lambda *_: True))['pushed'], 1)
         self.assertTrue(self.ev(e['id'])['rid'])
 
     def test_escaping_folding_round_trip_cjk_and_dash_title(self):
@@ -452,11 +454,11 @@ class Secrets(Base):
         self.ok(self.connect(push_new=True))
         self.ok(cal.change(self.root, 'add', **T))
         self.fake.fail = {'PUT': 500}
-        self.results.append(rm.host_sync(self.st, 'icloud'))
+        self.results.append(rm.host_sync(self.st, 'icloud', authorize=lambda *_: True))
         self.fake.fail = {'REPORT': 403}
-        self.results.append(rm.host_sync(self.st, 'icloud'))
+        self.results.append(rm.host_sync(self.st, 'icloud', authorize=lambda *_: True))
         self.fake.fail = {}
-        self.ok(rm.host_sync(self.st, 'icloud'))
+        self.ok(rm.host_sync(self.st, 'icloud', authorize=lambda *_: True))
         import asyncio
         from types import SimpleNamespace
         r = asyncio.run(rm.elevate_request(SimpleNamespace(st=self.st), self.st, {'t': 'calsync', 'op': 'sync', 'name': 'icloud'}))
@@ -541,7 +543,7 @@ class Allowlist(Base):
             d = json.loads(json.dumps(good))
             d['subscriptions']['icloud'].update(change)
             jcards._write_json(self.root, ('cards-data', 'calendar'), 'calendar.json', d)
-            self.assertEqual(rm.host_sync(self.st, 'icloud')['why'], why, change)
+            self.assertEqual(rm.host_sync(self.st, 'icloud', authorize=lambda *_: True)['why'], why, change)
         self.assertEqual((self.read, self.fake.calls), ([], []))
 
     def test_owner_listed_host_and_its_redirect_rule(self):
@@ -787,7 +789,7 @@ class SecurityRound2(Base):
         d = self.doc()
         d['subscriptions']['icloud'].update(server='https://dav.example.net/', origin='https://dav.example.net')
         jcards._write_json(self.root, ('cards-data', 'calendar'), 'calendar.json', d)
-        self.assertEqual(rm.host_sync(self.st, 'icloud')['why'], 'bad_key_name')
+        self.assertEqual(rm.host_sync(self.st, 'icloud', authorize=lambda *_: True)['why'], 'bad_key_name')
         self.assertEqual((self.read, self.fake.calls), ([], []))
 
     def test_connect_rate_gap(self):
@@ -849,7 +851,7 @@ class CLI(Base):
         self.assertEqual((row['kind'], row['push_new'], row['auto']), ('caldav', True, True))
         code, r = run('add', '--title', 'From CLI', '--start', '2026-10-20T09:00Z')
         code, r = run('sync', '--name', 'icloud')
-        self.assertEqual((code, r['pushed']), (0, 1))
+        self.assertEqual((code, r['pushed'], r['why']), (1, 0, 'approval_required'))
         code, r = run('connect', '--kind', 'google', '--name', 'g1', '--server', SERVER)
         self.assertEqual(r['why'], 'shape')
         self.assertEqual(run('disconnect', '--name', 'icloud')[0], 0)

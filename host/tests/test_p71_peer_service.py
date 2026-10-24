@@ -932,7 +932,9 @@ class Dispatch(unittest.IsolatedAsyncioTestCase):
         self.dsk = Ed25519PrivateKey.generate()
         pub = os.urandom(32)
         self.did = st.add_device(pub, "手机", self.dsk.public_key().public_bytes_raw())
-        self.s = serve.Session(cid=1, state="ready", device=self.did, pub=pub, p33=True, name="手机")
+        self.s = serve.Session(cid=1, state="ready", device=self.did, pub=pub, p33=True, name="手机", provenance={"kind":"phone","role":"owner"})
+        from test_l1 import _paired_app
+        self.host._app = lambda session, obj: _paired_app(self.host, session, obj)
         self.host.sessions[1] = self.s
 
     def signed(self, t, target, **extra):

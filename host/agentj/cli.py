@@ -2643,6 +2643,10 @@ def cmd_reload(a) -> None:
 
 def cmd_doctor(a) -> None:
     from . import doctor
+    if getattr(a, "read_only", False):
+        if any(getattr(a, k, False) for k in ("reconnect", "post_upgrade", "upgrade_only", "isolation_only")):
+            sys.exit("--read-only cannot be combined with repair or active probes")
+        sys.exit(doctor.main(as_json=a.json, read_only=True))
     if getattr(a, "reconnect", False):         # P147: repair whichever of serve / relay / agent is broken
         from . import reconnect
         from . import host_diagnostics
@@ -3247,6 +3251,7 @@ def main(argv=None) -> None:
     dc = sub.add_parser("doctor", help="自检：一项一行 ✓/!/✗ + 修法 / health check, one line per check",
                         description="自检 / health check: ✓ ok · ! warning · ✗ must fix. Exit 0 unless a ✗. Never prints secrets.")
     dc.add_argument("--json", action="store_true", help="机器可读 / machine-readable (paths shown with ~)")
+    dc.add_argument("--read-only", action="store_true", help="仅报告，不安装、修复或重连 / inspect only; no installation, repair or reconnect")
     dc.add_argument("--offline", action="store_true", help="跳过网络检查 / skip the network checks")
     dc.add_argument("--isolation-only", action="store_true", help="仅隔离预检：不读用户状态、不联网 / isolation preflight only, no user state or network")
     dc.add_argument("--post-upgrade", action="store_true", help="修复升级后的工作根与连接 / repair post-upgrade root and connection")
@@ -3615,7 +3620,7 @@ def main(argv=None) -> None:
     from . import host_diagnostics
     host_owned = a.cmd in ("diag", "status", "support", "feedback") or (a.cmd == "doctor" and a.reconnect)
     host_owned = host_owned and host_diagnostics.agent_side()
-    if not host_owned and a.cmd not in NO_MIGRATE and not (a.cmd == "report" and getattr(a, "action", None)) and a.cmd not in ("keep-awake", "browser") and not (a.cmd == "doctor" and a.isolation_only):
+    if not host_owned and a.cmd not in NO_MIGRATE and not (a.cmd == "report" and getattr(a, "action", None)) and a.cmd not in ("keep-awake", "browser") and not (a.cmd == "doctor" and (a.isolation_only or a.read_only)):
         from . import migrate
         try:
             # P127: `serve` without a terminal is the owner's own service restarting (auto-update / reboot): a 0.9 install

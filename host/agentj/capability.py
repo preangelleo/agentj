@@ -1303,13 +1303,17 @@ class Capabilities:
             raise CapError("stopped", "Stop everything is on")
         if not isinstance(wf, str) or not _ID.fullmatch(wf):
             raise CapError("shape", "workflow id")
-        from . import tasks
+        from . import tasks, provenance
+        if getattr(self.host, "task_label", None) is not None or provenance.untrusted_turn(getattr(self.host, "agent", None)):
+            raise CapError("untrusted_source", "dispatch requires an explicit current owner source")
         sch = self.host.scheduler
         if sch.current_id == wf or any(t == wf for t, _ in sch.waiting):
             audit(self.st, "dispatch", wf_sha=sha(wf)[:16], result="already_running")
             return {"result": "already_running", "workflow": wf, "running": sch.current_id == wf, "next": "end_turn",
                     "detail": END_TURN}
         plan = await asyncio.to_thread(plan_card, self.st, self.cfg(), wf, [], adapters=self.adapters)
+        if getattr(self.host, "task_label", None) is not None or provenance.untrusted_turn(getattr(self.host, "agent", None)):
+            raise CapError("untrusted_source", "the owner turn changed while planning")
         b = plan["brief"]["full"]
         if b["confirmation"]["mode"] == "signed" and plan["brief"]["confirm"]:
             raise CapError("unconfirmed", "the owner has not confirmed this brief: prepare a card")
@@ -1410,7 +1414,12 @@ class Capabilities:
             req = json.loads(await asyncio.wait_for(r.readline(), 10))
             if not isinstance(req, dict):
                 raise CapError("shape", "one JSON object")
-            res = await self.handle(req)
+            if req.get("t") == "self_compact":
+                from . import self_compact, shared_hook
+                pid, _uid = shared_hook.peer_pid(sock)
+                res = await self_compact.enqueue(self.host, req, pid)
+            else:
+                res = await self.handle(req)
         except CapError as e:
             res = e.out()
         except (ValueError, asyncio.TimeoutError, asyncio.LimitOverrunError):
@@ -1479,6 +1488,8 @@ def _readback_cls():
 
         def __init__(self, text: str):
             super().__init__("longtask", "readback", 0, text=text, by="Agent J")
+            from . import provenance
+            self.source = provenance.system()
     return _ReadBack
 
 
@@ -1576,6 +1587,10 @@ def cmd_capability(a) -> int:
             return _print({"result": "refused", "why": "invalid", "detail": probs[0] if probs else "brief.json"}, a.json)
         code, detail = report_check(wf, b, brief_raw(wf), a.verdict)
         return _print({"result": code, "detail": detail}, a.json)
+    if sub == "compact":
+        res = client({"t": "self_compact"}) or {"result": "refused", "why": "no_serve",
+            "detail": "Agent J 未连接；交接保留，先运行 agentj doctor --reconnect。 / Agent J is unreachable; keep the handoff and run agentj doctor --reconnect."}
+        return _print(res, a.json)
     if sub == "list":
         return _print(_call({"t": "list"}), a.json)
     if sub == "sync":
@@ -1625,6 +1640,8 @@ def add_parser(sub) -> None:
     p = sub.add_parser("capability", help="长程任务：能力清单 list · sync · check · show，开工卡 prepare · result，派单 dispatch，"
                                          "digest · report-check / long tasks: capability inventory, opening card, dispatch")
     ps = p.add_subparsers(dest="cap_cmd", required=True)
+    x = ps.add_parser("compact", help="写好交接后给本主会话排入压缩 / queue compaction for this main conversation after writing its handoff")
+    x.add_argument("--json", action="store_true")
     x = ps.add_parser("list", help="能力清单（不重新检查）/ the inventory")
     x.add_argument("--json", action="store_true")
     x = ps.add_parser("sync", help="发现并检查到期的能力 / discover and re-check")

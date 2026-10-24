@@ -1,7 +1,7 @@
 import {phoneConfirmation} from './tvremote.js';
 // P361 (PROTOCOL §34) · Settings → 紧急修复 → 「Agent J 主机上的命令」: terminal commands on the Agent J host,
 // each with ⧉ and 「执行」. Only the names the host lists in `host.run_cmds` (its whitelist, host/agentj/cmdrun.py) are shown;
-// the phone sends a NAME, never a command line. Every run: signed `cmd_run` → the host answers `passkey_required` + the
+// The phone sends a NAME, never a command line. Reads complete after a signed cmd_run. Repairs: the host answers passkey_required + the
 // challenge → Face ID (started inside the tap of the sheet's button, iOS gesture rule) → the same signed object with `fa` →
 // `ctl_pending` → `ctl_res {ok, cmd, code, out, cut?}`. The output is already masked on the computer; it is shown as text
 // (textContent), never stored. A phone without a passkey is told so and offered the F20 「设置 Face ID」 — no fallback.
@@ -14,6 +14,7 @@ import { t, onLang } from './t.js';
 import { el, mk, confirmSheet, toastAction } from './ui.js';
 import { usable as termUsable } from './termhook.js';   // P408: 「在终端里打开」 only while the terminal is on for this phone
 
+const READ_CMDS = new Set(['doctor']);
 export const CMDS = { doctor: 'doctor', reconnect: 'doctor --reconnect', status: 'status', service_status: 'service status',
   rescue_status: 'rescue status', update_check: 'update check' };
 const line = (name) => 'agentj ' + CMDS[name];
@@ -92,7 +93,7 @@ async function faceId(res) {
   return p;
 }
 export async function run(name) {
-  if(phoneConfirmation())return;
+  if(!READ_CMDS.has(name)&&phoneConfirmation())return;
   if (!Object.hasOwn(CMDS, name) || !names.includes(name) || (R && R.st === 'run')) return;
   R = { name, st: 'ask' };
   if (!isReady()) { R = { name, st: 'fail', why: 'offline', hm: new Date().toTimeString().slice(0, 5) }; return paint(); }

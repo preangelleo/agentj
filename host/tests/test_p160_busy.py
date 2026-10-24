@@ -404,8 +404,10 @@ class Serve(unittest.TestCase):
         self.host.sessions = {"c": s}
         self.st.is_allowed = lambda pub: True
         self.host._post = lambda *a, **k: None
+        self.host.busy.set_context("opencode", pid=os.getpid())
         self.host.busy.start("opencode:task:k", "code-reviewer", "temp", "审代码", session="opencode")
         self.host.busy.note("opencode:task:k", "read · a.py")
+        self.host.busy.refresh_sources()
         wid = self.host.busy.items()[0]["id"]
         asyncio.run(self.host.on_busy_get(s, "r1", wid))
         self.assertEqual(got[-1]["t"], "busy_info")

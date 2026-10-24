@@ -1059,7 +1059,10 @@ class Elevator:
         self.st.log("elev_card", id=c["id"], kind=c["kind"])
         if c["kind"] == "secret":
             d = c.get("dest_spec") or {}
+            from .mail_recovery import card_account
+            mail_account = card_account(c)
             remember(self.st, c["id"], {"kind": "secret", "name": c["name"], "result": "pending",
+                                        **({"mail_account": mail_account} if mail_account else {}),
                                         "until": int(time.time() + TTL["secret"]),   # P423 #49: where, for `secret status`
                                         **({"where": {k: d.get(k) for k in ("mode", "path", "key")}} if d.get("path") else {})})
         if on_card is not None:
@@ -1775,9 +1778,17 @@ class Elevator:
             if isinstance(req, dict) and req.get("t") == "policy_cli":
                 from . import mail
                 action, params = req.get("action"), req.get("params")
-                if action != "mail.test" or not isinstance(params, dict) or params != {"configuration":mail.read_config(self.st)}:
-                    raise Refused("shape", "mail test")
-                ans = await self.host.ask("agentj mail", params, batch=False, require_passkey=True)
+                if not isinstance(params, dict):
+                    raise Refused("shape", "policy parameters")
+                if action == "mail.test" and params == {"configuration":mail.read_config(self.st)}:
+                    tool = "agentj mail"
+                elif action == "calendar.write" and set(params) == {"remote", "subscription", "operation", "payload"} \
+                        and isinstance(params["remote"], str) and isinstance(params["subscription"], dict) \
+                        and params["operation"] in ("create", "update", "delete") and isinstance(params["payload"], dict):
+                    tool = "agentj calendar"
+                else:
+                    raise Refused("shape", "policy action")
+                ans = await self.host.ask(tool, params, batch=False, require_passkey=True)
                 w.write((json.dumps({"result":"approved" if ans.get("behavior") == "allow" else "denied"})+"\n").encode())
                 await w.drain(); w.close(); return
             if isinstance(req, dict) and req.get("t") == "upgrade":

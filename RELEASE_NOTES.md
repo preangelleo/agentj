@@ -1,6 +1,6 @@
-# Agent J 0.25.7a1 release notes
+# Agent J 0.25.8a1 release notes
 
-Host 0.25.7a1 / install 0.27.7; phone-web scope.
+Host 0.25.8a1 / install 0.27.8; phone-web scope.
 Phone parity must pass --strict. Full Android/Telegram parity is incomplete.
 Full Android/Telegram parity is incomplete.
 No APK is included in this release. Android source is for review, not a released app.
@@ -8,23 +8,23 @@ No APK is included in this release. Android source is for review, not a released
 Publication status: local preparation only. Live site verification is DEFERRED until
 the public commit and tag are pushed, the site is deployed, and cold installation passes.
 
-Release order: C applies app D1 0037_action_uv.sql before Dashboard; then A signed host/site/downloads, immediately followed by B phone web. No relay or feedback D1 change. Keep0036 revocation state and local security journals permanently. Never replay0037, restore an older database snapshot or use revocation-incompatible code; rollback compatible code only, otherwise repair forward. Native Mac M1 and physical iOS band/installation acceptance remain pending. Local preparation only; no push or deployment authorized.
+Release order: C Dashboard support knowledge only, no D1 migration; then A signed host/site/downloads, immediately followed by B phone web. No relay change. Preserve0036 revocation state,0037 action UV data and local security journals permanently. Never replay migrations or restore an older database snapshot. Use compatible rollback only, otherwise repair forward. Native Mac M1 and physical iOS acceptance remain separate. Local preparation only; no push or deployment authorized.
 ## Changes
 
-- Use isolated assistants for WeChat and external channels, with reports to the owner and native image input.
-- Confirm each sensitive account action with a passkey; review again if its quote or target changes.
-- Require this remote’s approval passkey for every outgoing email, mail-setting change, admin card and secret card.
-- Use Agent J - <name> consistently while preserving the owner’s chosen name.
-- Style friend reports with light cards and green actions; an unknown send result requires the owner to check before resending.
-- Complete iOS home-screen installation metadata. Remove and add older shortcuts again; the reported band still needs physical-device verification.
-- Improve macOS file access and high-load handling. Native Mac M1 acceptance is pending.
-- 微信及外部通道使用独立分身，给主人直报并支持原生识图。
-- 账号页敏感操作每次用通行密钥确认，报价和目标变化后重新核对。
-- 每次发邮件及修改邮件设置均需本机遥控器通行密钥确认；管理员和密钥卡同样需要确认。
-- 商用称呼统一为 Agent J - <名字>，保留主人自取名字。
-- 好友直报使用浅色卡片和绿色按钮，发送结果未知时由主人核对后确认重发。
-- 补齐 iOS 主屏幕安装元数据；旧快捷方式需删除后重新添加，浅带仍待实体复验。
-- 改善 macOS 文件访问和高负载保底；Mac M1 原生验收待实体验收。
+- Show program-verified AI tool, model, account and elapsed time in ongoing work, with unknown values stated explicitly.
+- Confirm each calendar write with a passkey bound to the exact calendar, destination and content.
+- Verify saved app passwords before asking again; repair and retry failed phone email sends.
+- Queue compaction in the current conversation after writing the handoff when the owner requests it.
+- Use route-specific Kimi K3.1 Pro identifiers for membership, platform and OpenCode Go.
+- Treat unverified input as non-owner and retain authenticated phone provenance throughout the turn.
+- Fix Telegram avatars and duplicate name prefixes; only zero-write doctor checks avoid extra verification.
+- 在办事项由程序显示 AI 工具、模型、账号与运行时长；无法核实时明确显示未知。
+- 日历修改逐次通行密钥确认，批准绑定具体日历、目的端与内容。
+- 邮箱登录失败时先验证已登记授权码；手机发信失败可修复并重试。
+- 主人要求写好交接后自行压缩时，可在当前对话排队压缩。
+- 区分 Kimi K3.1 Pro 的会员、开放平台与 OpenCode Go 模型标识。
+- 来源不明的输入一律不当作主人；已验证手机输入在整轮中保持来源绑定。
+- 修复 Telegram 头像与名称前缀重复；只有零写入的 doctor 检查免额外验证。
 
 ## Material acceptance limits
 

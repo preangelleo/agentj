@@ -28,7 +28,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from agentj import activity, approvals, controls, memory, serve, tasks, wire  # noqa: E402
 from agentj.state import State  # noqa: E402
 
-from test_l1 import Phone, _host, _ready, _state  # noqa: E402
+from test_l1 import Phone, _owner_host as _host, _ready, _state  # noqa: E402
 
 HERE = pathlib.Path(__file__).resolve().parent
 
@@ -573,6 +573,7 @@ class ServeControls(unittest.TestCase):
             async def stop(self):
                 pass
         host.agent = FakeAgent()
+        host.agent.native_source = {"kind": "terminal", "role": "owner"}
         host.ask_ttl = 30
 
         async def go():
@@ -646,7 +647,8 @@ class SchedulerChain(unittest.TestCase):
             self.skipTest("no fence on this machine")
         ph = Phone(self.st)
         sent = []
-        host = _host(self.st, sent)
+        from test_l1 import _host as startup_host
+        host = startup_host(self.st, sent)
         host.ask_ttl = 20
         now = dt.datetime.now()
         if now.second > 40:                            # this minute only: never a second run when the minute turns
@@ -690,13 +692,11 @@ class SchedulerChain(unittest.TestCase):
                 # 2. a normal task run by hand: the write asks the phone, with the task's name on the card
                 os.environ["FAKE_CLAUDE_LOG"] = str(self.work / "workflows" / "normal-one" / ".argv.jsonl")
                 host.scheduler.request("normal-one")
-                await wait(lambda: any(o["t"] == "ask" for _, o in sent))
-                ask = [o for _, o in sent if o["t"] == "ask"][-1]
-                self.assertEqual((ask["summary"], ask["task"]), ("touch normal-wrote.txt", "任务normal-one"))
-                await host._app(s, ph.answer(ask, True))
                 await wait(lambda: any("任务normal-one" in x for x in notices()))
+                self.assertEqual([o for _, o in sent if o["t"] == "ask"], [], "workflow is not an owner request")
+                self.assertTrue(any(r.get("reason") == "group_source" for r in approvals.read_log(self.st)))
                 self.assertFalse((self.work / "normal-wrote.txt").exists(), "CEO writes stay in its own folder")
-                self.assertTrue((self.work / "workflows" / "normal-one" / "normal-wrote.txt").exists())
+                self.assertFalse((self.work / "workflows" / "normal-one" / "normal-wrote.txt").exists())
                 self.assertIn("ok — 一切正常", [x for x in notices() if "normal-one" in x][0])
                 os.environ["FAKE_CLAUDE_LOG"] = str(self.argv_log)
                 # 3. a chat turn still works afterwards (the chat process stepped aside and comes back)
@@ -730,7 +730,7 @@ class SchedulerChain(unittest.TestCase):
         last = tasks.load(self.st)["last"]
         self.assertEqual((last["research-one"]["verdict"], last["normal-one"]["verdict"]), ("attention", "ok"))
         kinds = [r["k"] for r in activity.all_since(self.st)]
-        for k in ("task_run", "task_done", "ask", "decision", "estop", "resume", "turn_start", "turn_end"):
+        for k in ("task_run", "task_done", "decision", "estop", "resume", "turn_start", "turn_end"):
             self.assertIn(k, kinds)
         log_files = [self.argv_log] + list((self.work / "workflows").glob("*/.argv.jsonl"))
         starts = [s for log in log_files for s in (json.loads(x) for x in log.read_text().splitlines()) if "argv" in s]   # control lines: §10.10 meters

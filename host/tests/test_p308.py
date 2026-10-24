@@ -235,7 +235,7 @@ class Dispatch(unittest.TestCase):
         st = State(base / "state")
         st.root.mkdir(parents=True, exist_ok=True)
         sch = SimpleNamespace(current_id=None, waiting=[], request=lambda wf_, why: "run-1")
-        host = SimpleNamespace(stopped=lambda: False, scheduler=sch, st=st, activity=lambda *a, **k: None)
+        host = SimpleNamespace(agent=SimpleNamespace(cur_send=SimpleNamespace(source={"kind": "phone", "role": "owner"})), stopped=lambda: False, scheduler=sch, st=st, activity=lambda *a, **k: None)
         mgr = capability.Capabilities.__new__(capability.Capabilities)
         mgr.host, mgr.cards, mgr.adapters = host, {}, {}
         plan = {"brief": {"full": {"confirmation": {"mode": "requested", "request_id": "r"}, "revision": 1}, "confirm": False},

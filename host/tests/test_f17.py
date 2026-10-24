@@ -30,7 +30,7 @@ from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat 
 
 from agentj import elevate, wire, passkey  # noqa: E402
 
-from test_l1 import Phone, _host, _ready, _state  # noqa: E402
+from test_l1 import Phone, _owner_host as _host, _ready, _state  # noqa: E402
 
 from test_p57_passkey import Authenticator, pk_record
 

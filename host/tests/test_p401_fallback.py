@@ -121,7 +121,7 @@ class Hook(unittest.IsolatedAsyncioTestCase):
         h = SimpleNamespace(cur_failed=True, _fallback_error='401', _fallback_used=False,
                             stopped=lambda:False, st=SimpleNamespace(root=Path(tmp.name)), lang='zh',
                             agent_notice=Mock(), agent_text=Mock())
-        a = SimpleNamespace(cfg={}, halting=False, cur_send=None)
+        a = SimpleNamespace(cfg={}, halting=False, cur_send=None, native_source={"kind": "terminal", "role": "owner"})
         with patch.object(fallback, 'diagnose', return_value='reply') as d:
             await fallback.after_failure(h,a); await fallback.after_failure(h,a)
         d.assert_called_once(); h.agent_text.assert_called_once_with('reply')
@@ -177,7 +177,7 @@ class RealLoop(unittest.IsolatedAsyncioTestCase):
         h.agent_turn_end=Mock(side_effect=lambda: task.cancel())
         a=Runner(h,{})
         # Exercise the real phone-send branch; a non-owner must not send a free-cloud request.
-        for source, expected in [(provenance.phone(),1), (provenance.system(),1), ({'kind':'unknown','role':'guest'},0)]:
+        for source, expected in [(provenance.phone(),1), (provenance.system(),0), ({'kind':'unknown','role':'guest'},0)]:
             h.cur_failed=False;h._fallback_used=False
             send=SimpleNamespace(sid='s',text='hello',state='queued',source=source,wait_ready=None)
             async def ready(): return True
@@ -237,7 +237,7 @@ class Control(unittest.IsolatedAsyncioTestCase):
         tmp=tempfile.TemporaryDirectory();self.addCleanup(tmp.cleanup)
         h=SimpleNamespace(cur_failed=True,_fallback_used=False,_fallback_error='401',lang='zh',
                           st=SimpleNamespace(root=Path(tmp.name)),stopped=lambda:False,agent_text=Mock(),agent_notice=Mock())
-        a=SimpleNamespace(cfg={},halting=False,cur_send=None)
+        a=SimpleNamespace(cfg={},halting=False,cur_send=None,native_source={"kind": "terminal", "role": "owner"})
         def diagnose(*args):
             entered.set();release.wait(2);seen.append(args[-1]());return 'late report'
         with patch.object(fallback,'diagnose',side_effect=diagnose):

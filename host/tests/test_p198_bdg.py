@@ -66,7 +66,7 @@ class _St:
 class _Host:
     def __init__(self, cfg, goal_live=False):
         self.st = _St()
-        self.agent = None
+        self.agent = type("Owner", (), {"native_source": {"kind": "terminal", "role": "owner"}})()
         self.asked = []
         self.goals = type("G", (), {"current": lambda s: {"x": 1} if goal_live else None})()
         self.task_label = None
@@ -134,6 +134,8 @@ class LowRiskPass(unittest.TestCase):
                     sent.append((path, body))
                     return 200, {}
             a.client = C()
+            a.cur_send = type("S", (), {"source": {"kind":"phone","role":"owner"}})()
+            h.agent = a
             loop = asyncio.get_running_loop()
             await a._decide("per1", {"id": "per1", "permission": "bash", "patterns": ["ls"],
                                      "metadata": {"command": "ls -la 2>&1; echo ok"}}, loop.create_future())
@@ -269,6 +271,8 @@ class GoalScope(unittest.TestCase):
                 async def request(self, m, path, body=None):
                     return 200, {}
             a.client = C()
+            a.cur_send = type("S", (), {"source": {"kind":"phone","role":"owner"}})()
+            h.agent = a
             a._tool_dir({"type": "tool", "callID": "call1", "state": {"input": {"command": "git rm old.log",
                                                                               "workdir": "proj"}}})
             await a._decide("per1", {"id": "per1", "permission": "bash", "patterns": ["git rm old.log"],

@@ -146,7 +146,7 @@ class MailConfigRace(unittest.IsolatedAsyncioTestCase):
 
 class HostExecution(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        from test_l1 import _host, _ready, Phone
+        from test_l1 import _owner_host as _host, _ready, Phone
         self.tmp=tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
         self.st=State(pathlib.Path(self.tmp.name));self.st.init()
         self.sent=[];self.h=_host(self.st,self.sent);self.ph=Phone(self.st)
@@ -295,7 +295,7 @@ class LegacyEnvelope(unittest.TestCase):
 class RealMailEffectsUV(unittest.IsolatedAsyncioTestCase):
     async def test_notes_reply_and_phone_forward_each_verify_actual_host_uv(self):
         from test_p184_contacts import _Svc
-        from test_l1 import _host,_ready,Phone
+        from test_l1 import _owner_host as _host,_ready,Phone
         for effect in ("notes","reply","forward"):
             with self.subTest(effect=effect):
                 fixture=_Svc();await fixture.asyncSetUp()

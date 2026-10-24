@@ -239,6 +239,7 @@ class TimeoutMessage(unittest.TestCase):
         a = shared.SharedClaudeAgent(host, {"kind": "claude", "dir": tmp.name, "_workflow_ceo": True,
                                             "high_risk_warnings": True})
         a.session = {"sessionId": "owner"}
+        a.native_source = {"kind":"terminal","role":"owner"}
         return a
 
     def _deny_message(self, answer):

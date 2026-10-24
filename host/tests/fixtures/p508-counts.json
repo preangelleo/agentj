@@ -1,0 +1,86 @@
+[
+  {
+    "statuses": [],
+    "pids": [],
+    "task_count": 0,
+    "unknown_count": 0,
+    "live_process_count": 0
+  },
+  {
+    "statuses": [
+      "unknown"
+    ],
+    "pids": [
+      [
+        11
+      ]
+    ],
+    "task_count": 0,
+    "unknown_count": 1,
+    "live_process_count": 1
+  },
+  {
+    "statuses": [
+      "running"
+    ],
+    "pids": [
+      [
+        11
+      ]
+    ],
+    "task_count": 1,
+    "unknown_count": 0,
+    "live_process_count": 1
+  },
+  {
+    "statuses": [
+      "running",
+      "unknown"
+    ],
+    "pids": [
+      [
+        11
+      ],
+      [
+        11
+      ]
+    ],
+    "task_count": 1,
+    "unknown_count": 1,
+    "live_process_count": 1
+  },
+  {
+    "statuses": [
+      "running",
+      "running"
+    ],
+    "pids": [
+      [
+        11
+      ],
+      [
+        11
+      ]
+    ],
+    "task_count": 2,
+    "unknown_count": 0,
+    "live_process_count": 1
+  },
+  {
+    "statuses": [
+      "running",
+      "unknown"
+    ],
+    "pids": [
+      [
+        11
+      ],
+      [
+        12
+      ]
+    ],
+    "task_count": 1,
+    "unknown_count": 1,
+    "live_process_count": 2
+  }
+]

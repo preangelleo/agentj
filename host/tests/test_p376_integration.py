@@ -20,6 +20,7 @@ class Integration(unittest.TestCase):
             agent = shared.SharedClaudeAgent(host, cfg)
             agent.session = {"sessionId": "owner", "pid": 1}
             agent.phone_turn, agent.pending_text = True, "hi"
+            agent.pending_source = {"kind": "phone", "role": "owner"}
             answer = asyncio.run(agent.hook_event({"session_id": "owner", "hook_event_name": "UserPromptSubmit", "prompt": "hi"}))
             text = answer['hookSpecificOutput']['additionalContext']
             self.assertEqual(agent.identity_marker[3], 'hook.additionalContext')

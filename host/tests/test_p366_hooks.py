@@ -806,13 +806,17 @@ class E2E(unittest.TestCase):
         import shutil
         import subprocess
         import sys
-        priv, pub = hooks.seal_keypair()
+        from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
+        # Synthetic fixed key whose base64url public key starts with '-': argv data, never a Node option.
+        priv = bytes([101]) * 32
+        pub = X25519PrivateKey.from_private_bytes(priv).public_key().public_bytes_raw()
+        self.assertTrue(hooks.b64u(pub).startswith('-'))
         hid = hooks.new_id()
         runners = [([sys.executable, "-c", _example("python") +
                      "\nimport sys; sys.stdout.buffer.write(seal(sys.argv[1], sys.argv[2], sys.stdin.buffer.read()))"], "python")]
         if shutil.which("node"):
             runners.append((["node", "-e", _example("node") +
-                             "\nprocess.stdout.write(seal(process.argv[1], process.argv[2], require('fs').readFileSync(0)));"],
+                             "\nprocess.stdout.write(seal(process.argv[1], process.argv[2], require('fs').readFileSync(0)));", "--"],
                             "node"))
         for argv, name in runners:
             out = subprocess.run(argv + [hooks.b64u(pub), hid], input=b'{"status":"done"}', capture_output=True, timeout=60)

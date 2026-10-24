@@ -110,6 +110,8 @@ class Base(unittest.TestCase):
     def host(self):
         self.sent = []
         h = _host(self.st, self.sent)
+        from types import SimpleNamespace
+        h.agent = SimpleNamespace(kind="claude", status="idle", cur_send=SimpleNamespace(source={"kind": "phone", "role": "owner"}))
         h.capabilities.adapters = dict(OK)
         return h
 

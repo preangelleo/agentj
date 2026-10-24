@@ -174,7 +174,8 @@ class ContactService:
     def smtp_send(self, cfg: dict, pw: str, msg: EmailMessage, to: list[str]) -> tuple[int, str]:
         """→ (recipients the server refused, its queue id from the 250 after DATA — `OK 1791991713 …-gsmtp` → `…-gsmtp`)."""
         from . import mail as M
-        c = M.smtp_open(cfg, pw)
+        from . import mail_recovery
+        c = mail_recovery.run(self.host, M.smtp_open, cfg, pw)
         got = {}
         data = c.data
 

@@ -333,7 +333,8 @@ class Channel(unittest.IsolatedAsyncioTestCase):
         self.h.quota_resume=NS(owner_spoke=MagicMock());self.h._model_set_flush=AsyncMock()
         self.h._meeting_text=lambda session,text,voice:text
         self.st.is_allowed=lambda pub:pub==b'p'*32
-        session=Session(1,state='ready',pub=b'p'*32,device='paired',name='Owner')
+        session=Session(1,state='ready',pub=b'p'*32,device='paired',name='Owner',provenance=provenance.phone())
+        self.h.sessions[session.cid]=session  # registered authenticated transport, as required by P506c
         send=await Host._accept(self.h,session,'handle my WeChat request',sid=None)
         self.assertEqual(send.source,provenance.phone(),'real paired producer must not leave source=None')
         self.h.agent.cur_send=send

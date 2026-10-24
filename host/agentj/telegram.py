@@ -975,16 +975,25 @@ class Telegram:
         self.since=(cfg.get('at') if type(cfg.get('at')) is int else int(__import__('time').time())) \
             if not self.offset and not self.cursor.get('imported') else None
         self.bot_id=bot;self.username=me.get('username')
+        # P506: recovery must not prevent the bound bot's independent avatar check.
+        self.check_avatar(cfg,bot)
         self.recover(cfg)
-        # P275: a bot without a photo gets the official Agent J one, once; never blocks or fails the bind.
+
+    def check_avatar(self,cfg,bot):
+        key=(dict(cfg),bot)
+        if getattr(self,'_avatar_ok',None)==key:return
+        retry,at=getattr(self,'_avatar_retry',(None,0))
+        if retry==key and time.monotonic()<at:return
         if getattr(self,'avatar_task',None) is None or self.avatar_task.done():
-            self.avatar_task=asyncio.create_task(self.auto_avatar(cfg,bot))
+            self.avatar_task=asyncio.create_task(self.auto_avatar(dict(cfg),bot))
 
     async def auto_avatar(self,cfg,bot):
         from . import tg_avatar
         try:result=await asyncio.to_thread(tg_avatar.ensure,self.root,lambda m,v:api(cfg,m,v),lambda *a:upload(cfg,*a),bot)
         except Exception as e:
+            self._avatar_retry=((dict(cfg),bot),time.monotonic()+AVATAR_RETRY)
             self.host.st.log('telegram_avatar',result='failed',kind=failure_kind(e));return
+        self._avatar_ok=(dict(cfg),bot)
         if result!='skipped':self.host.st.log('telegram_avatar',result=result)
 
     async def drain(self,cfg):
@@ -1083,6 +1092,7 @@ class Telegram:
             try:
                 if self.enrollment!=cfg or not self.bot_id:
                     await self.bind(cfg)
+                self.check_avatar(cfg,self.bot_id)
                 self.recover(cfg)
                 await self.drain(cfg)
                 if tg_cursor.fence(self.root):
@@ -1137,6 +1147,7 @@ class Telegram:
             except Exception:pass
 
 
+AVATAR_RETRY=30  # failed checks retry independently of enrollment/recovery
 RETRY=10        # s between attempts after a failure
 DOWN_AFTER=3    # P129: failures in a row before the phone shows "Telegram unavailable" …
 DOWN_SECS=120   # … or this long failing, whichever comes first

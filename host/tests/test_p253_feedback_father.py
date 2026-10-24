@@ -93,7 +93,7 @@ class Father(unittest.TestCase):
         self.assertNotIn("private-customer", public["body"])
 
     def test_pinned_identity_consent_in_all_harnesses(self):
-        self.assertEqual(main_identity.verify_core()["version"],21)
+        self.assertEqual(main_identity.verify_core()["version"],22)
         for lang in ("zh","en"):
             for harness in KINDS:
                 text=main_identity.prompt({"language":lang},harness)

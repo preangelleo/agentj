@@ -8,15 +8,18 @@ import {join,resolve} from 'node:path';
 import {startWebServer} from './serve.mjs';
 import {startFakeHost} from './fakehost.mjs';
 import {launch,newPage,navigate,waitFor,waitState,evaluate as ev,shoot,sleep,key} from './browser.mjs';
-const out=resolve(process.env.P474_OUT||'reports/qa/p474');mkdirSync(out,{recursive:true});
+const outRoot=resolve(process.env.P474_OUT||'reports/qa/p474');mkdirSync(outRoot,{recursive:true});const out=mkdtempSync(join(outRoot,'run-'));
 const baseline=mkdtempSync(join(tmpdir(),'p474-baseline-'));
 execFileSync('tar',['-x','-C',baseline],{input:execFileSync('git',['archive',process.env.P474_BASE||'d6545fb98','web/public'],{maxBuffer:64*1024*1024})});
 const before=await startWebServer({publicDir:join(baseline,'web/public')}),after=await startWebServer(process.env.P474_PUBLIC_DIR?{publicDir:resolve(process.env.P474_PUBLIC_DIR)}:{}),fake=await startFakeHost(),B=await launch();
 const screenshots=new Map(),comparisons=[],mutations=[],nameChanges=[];let checks=0;
 const check=(value,label)=>{assert.ok(value,label);checks++;};
+const freezeMotion = `document.addEventListener('DOMContentLoaded',()=>{const style=document.createElement('style');style.textContent='*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important;caret-color:transparent!important}';document.head.append(style)},{once:true})`;
 async function stableShot(p) {
+ await ev(p,"Promise.all([document.fonts.ready,...[...document.images].map(i=>i.decode().catch(()=>{}))])");
+ await ev(p,"document.getAnimations().forEach(a=>a.cancel());new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))");
  let prior=null;
- for(let attempt=0;attempt<6;attempt++){const bytes=await shoot(p);if(prior?.equals(bytes))return bytes;prior=bytes;}
+ for(let attempt=0;attempt<6;attempt++){const bytes=await shoot(p);if(prior?.equals(bytes))return bytes;prior=bytes;await sleep(50);}
  assert.fail('two consecutive identical screenshot frames required');
 }
 const content='  香港 / Hong Kong\n\nRoom 201 · **literal markdown**  \n';
@@ -38,6 +41,7 @@ try {
    return false;
   };
   const p=await newPage(B,width,900,scheme,{allow:[web.url,fake.relay+'/'],touch:width<600,permissions:['clipboardReadWrite','clipboardSanitizedWrite']});
+  await p.send('Page.addScriptToEvaluateOnNewDocument',{source:freezeMotion});
   const tag=`${width}-${language}-${scheme}`;
   try {
    await navigate(p,fake.newPairing(web.url+(language==='en'?'?lang=en':'')));await waitState(p,'awaiting-approval');await fake.approve();await waitState(p,'ready');
@@ -91,5 +95,5 @@ try {
  writeFileSync(join(out,'browser.json'),JSON.stringify({checks,comparisons,nameChanges,physical:false},null,2));
  check(comparisons.every(x=>x.equal),'all non-Notebook screenshots byte-identical');
  if(!process.env.P474_PUBLIC_DIR){const rec=parityRecorder('web/test/p474.mjs');rec.record('P474 content-only clipboard and scoped layout',true);rec.write();}
- console.log(`P474 PASS: ${checks} assertions, ${comparisons.length} unchanged-page screenshots`);
+ console.log(`P474 PASS: ${checks} assertions, ${comparisons.length} unchanged-page screenshots; raw frames: ${out}`);
 } finally {await B.close();await fake.stop();await before.stop();await after.stop();rmSync(baseline,{recursive:true,force:true});}

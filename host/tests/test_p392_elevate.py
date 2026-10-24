@@ -18,7 +18,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from agentj import elevate
 from test_controls import sign
 from test_f17 import PW, answer, fake_sudo, enroll
-from test_l1 import Phone, _host, _ready, _state
+from test_l1 import Phone, _owner_host as _host, _ready, _state
 
 
 class Channel(unittest.TestCase):

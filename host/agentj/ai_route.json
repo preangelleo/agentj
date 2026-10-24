@@ -16,9 +16,9 @@
     ],
     "key_env": "KIMI_API_KEY",
     "verify_url": "https://api.kimi.com/coding/v1/models",
-    "model": "kimi-code-plan-cn/k3",
+    "model": "kimi-code-plan-cn/k3.1-pro",
     "model_light": "kimi-code-plan-cn/kimi-for-coding",
-    "model_global": "kimi-code-plan-global/k3",
+    "model_global": "kimi-code-plan-global/k3.1-pro",
     "verify_url_global": "https://api.kimi.ai/coding/v1/models"
   }
 }

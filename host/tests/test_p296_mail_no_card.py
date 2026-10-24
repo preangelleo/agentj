@@ -118,7 +118,7 @@ class SignedPicks(unittest.TestCase):
         self.sent = []
 
     def run_card(self, answer):
-        from test_l1 import Phone, _host, _ready
+        from test_l1 import Phone, _owner_host as _host, _ready
         ph = Phone(self.st)
         host = _host(self.st, self.sent)
         s = _ready(host, ph)
@@ -167,7 +167,7 @@ class AllowFromAgent(unittest.IsolatedAsyncioTestCase):
     """8': `agentj mail allow <address>` from inside an Agent only takes effect after the owner's signed card."""
 
     async def asyncSetUp(self):
-        from test_l1 import _host, _state
+        from test_l1 import _owner_host as _host, _state
         self.tmp = tempfile.TemporaryDirectory(prefix="p296a-", dir=TEST_TMP)
         self.addCleanup(self.tmp.cleanup)
         self.st = _state(self.tmp.name)

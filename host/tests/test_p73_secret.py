@@ -31,7 +31,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from agentj import elevate, passkey, secret_out, wire  # noqa: E402
 
 from test_f17 import answer, enroll  # noqa: E402
-from test_l1 import Phone, _host, _ready, _state  # noqa: E402
+from test_l1 import Phone, _owner_host as _host, _ready, _state  # noqa: E402
 from test_p57_passkey import Authenticator, pk_record  # noqa: E402
 
 KEY = "p73-test-key-DO-NOT-LEAK-0123456789abcdef"

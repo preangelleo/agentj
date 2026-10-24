@@ -696,8 +696,33 @@ class CodexAgent(Agent):
         if b is None or self.cfg.get("_workflow_ceo") or self.research:
             return
         with contextlib.suppress(Exception):
-            b.set_context(self.busy_scope(), harness="codex", cwd=self.cfg.get("dir"))
+            b.set_context(self.busy_scope(), harness="codex", cwd=self.cfg.get("dir"), pid=getattr(getattr(self, "proc", None), "pid", None))
             b.session_gone(self.busy_scope()) if method is None else b.codex_event(method, p, self.busy_scope())
+
+    async def refresh_busy(self):
+        """Reconcile native child IDs even if a terminal notification was lost; never read conversation turns."""
+        b = getattr(self.host, "busy", None)
+        if b is None:
+            return
+        scope, proc = self.busy_scope(), getattr(self, "proc", None)
+        for key, value in list(b.mem.items()):
+            if value.get("session") != scope or ":th:" not in key:
+                continue
+            try:
+                result = await self.call("thread/read", {"threadId": key.split(":th:", 1)[1], "includeTurns": False}, timeout=2)
+            except (RPCError, ConnectionError, OSError, asyncio.TimeoutError):
+                # Unverifiable is not proof of completion, but cannot remain on the verified list.
+                value.pop("pid", None)
+                continue
+            if proc is not self.proc or b.mem.get(key) is not value:
+                continue
+            thread = (result or {}).get("thread") or {}
+            status = thread.get("status") or {}
+            if status.get("type") in ("idle", "notLoaded", "systemError"):
+                b.stop(key)
+            elif status.get("type") == "active" and proc is not None:
+                value["pid"] = proc.pid
+                b.annotate(key, model=thread.get("model"), effort=thread.get("reasoningEffort"))
 
     def _emit(self, text: str) -> None:
         if self.collect is not None:
@@ -975,6 +1000,9 @@ class CodexAgent(Agent):
         try:
             r = await self.deliver(lambda: self.call(method, params))    # §10.2: turn/start sent = delivered
             self.revert = None
+            self.busy_selected = {} if review else {
+                "model": params.get("model") or self.thread.get("model"),
+                "effort": params.get("effort") or self.thread.get("reasoningEffort")}
         except (RPCError, ConnectionError, OSError, asyncio.TimeoutError) as e:
             self.rate_retry = False
             if not self.halting:

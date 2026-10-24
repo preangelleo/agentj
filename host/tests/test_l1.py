@@ -98,11 +98,37 @@ def _host(st, sent):
         sent.append((s.cid, obj))
         return True
     host.send_app = send_app
+    host._app = lambda session, obj: _paired_app(host, session, obj)
+    return host
+
+
+async def _paired_app(host, session, obj):
+    """Mirror Host._frame admission; never infer provenance from request contents."""
+    from agentj import provenance
+    with provenance.paired_request(lambda: serve.Host._paired_live(host, session)):
+        return await serve.Host._app(host, session, obj)
+
+
+def _owner_agent(host):
+    """Explicit actor for tests of an owner-terminal request; does not replace Host transport methods."""
+    from agentj.agent import Agent
+    from agentj import provenance
+    cfg = host.agent_cfg or {"dir": str(host.st.root), "kind": "claude"}
+    actor = Agent(host, dict(cfg))
+    actor.kind = cfg.get("kind", "claude")
+    actor.native_source = provenance.terminal()
+    return actor
+
+
+def _owner_host(st, sent):
+    """Explicit owner-terminal fixture. _host itself continues to have no source by default."""
+    host = _host(st, sent)
+    host.agent = _owner_agent(host)
     return host
 
 
 def _ready(host, phone: Phone, cid=11):
-    s = serve.Session(cid=cid, state="ready", device=phone.did, name="手机", pub=phone.pub)
+    s = serve.Session(cid=cid, provenance={"kind": "phone", "role": "owner"}, state="ready", device=phone.did, name="手机", pub=phone.pub)
     phone.policy_host = host
     host.sessions[cid] = s
     return s
@@ -251,6 +277,8 @@ class Flows(unittest.TestCase):
         return [o for _, o in self.sent if o["t"] == "ask"]
 
     def run_ask(self, host, script, tool_input=None, ttl=5):
+        from types import SimpleNamespace
+        host.agent = SimpleNamespace(kind="claude", status="idle", cur_send=SimpleNamespace(source={"kind": "phone", "role": "owner"}))
         host.ask_ttl = ttl
         tool_input = tool_input or {"command": f"echo {MARK}"}
 

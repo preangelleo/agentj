@@ -250,7 +250,7 @@ class _Svc(unittest.IsolatedAsyncioTestCase):
         async def send_ready(fn):
             self.bcast.append(fn(None))
         self.ask = AsyncMock(return_value={"behavior": "allow"})
-        self.host = SimpleNamespace(st=self.st, lang="zh", agent=SimpleNamespace(kind="claude"), agent_cfg={"dir": str(self.work)},
+        self.host = SimpleNamespace(st=self.st, lang="zh", agent=SimpleNamespace(kind="claude",native_source={"kind":"terminal","role":"owner"}), agent_cfg={"dir": str(self.work)},
                                     media=self.media, hist=SimpleNamespace(get=lambda i: self.pages.get(i)), stopped=lambda: False,
                                     send_app=send_app, _send_ready=send_ready, ask=self.ask)
         self.svc = ContactService(SimpleNamespace(host=self.host, st=self.st))
@@ -469,7 +469,7 @@ class Item6(unittest.TestCase):
 
 class RealHost(unittest.IsolatedAsyncioTestCase):
     async def test_agent_socket_phone_routing_and_cap(self):
-        from test_l1 import _host, _state
+        from test_l1 import _owner_host as _host, _state
         from agentj import elevate
         with tempfile.TemporaryDirectory(prefix="p184r-", dir=TEST_TMP) as d:
             st = _state(d); host = _host(st, [])

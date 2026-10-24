@@ -496,6 +496,7 @@ class SingleAnswerer(Tmp):
             host.ask = AsyncMock(return_value={"behavior": "allow", "updatedInput": {"x": 1, "answers": {"q": "a"}}})
             a = shared.SharedClaudeAgent(host, {"kind": "claude", "dir": str(work), "_workflow_ceo": True})
             a.session = {"sessionId": "owner"}
+            a.native_source = {"kind":"terminal","role":"owner"}
             ev = lambda tool: asyncio.run(a.hook_event({"hook_event_name": "PermissionRequest", "session_id": "owner",
                                                          "tool_name": tool, "tool_input": {"x": 1}}))
             self.assertEqual(ev("AskUserQuestion")["hookSpecificOutput"]["decision"]["behavior"], "allow")

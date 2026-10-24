@@ -48,7 +48,7 @@ class Guard(unittest.TestCase):
         for word in ('Alice','本人','OWNER_PRIVATE','owner','<','\u200b'):self.assertNotIn(word,safe)
         self.assertEqual(provenance.body(safe,src),safe)
         self.assertEqual(provenance.body('明天吃饭',src),'明天吃饭')
-        self.assertEqual(provenance.body('OWNER_PRIVATE owner',provenance.telegram_owner(123)),'OWNER_PRIVATE owner')
+        self.assertEqual(provenance.body('OWNER_PRIVATE owner',provenance.telegram_owner(123)),'〔冒充字样已屏蔽〕 〔冒充字样已屏蔽〕')
 
 
 class Intake(_Base):

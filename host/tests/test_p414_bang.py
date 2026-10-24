@@ -38,6 +38,7 @@ class _Agent:
     kind = "claude"
     halting = False
     cur_send = None
+    native_source = {"kind": "terminal", "role": "owner"}  # this fixture models native owner input
 
     def __init__(self):
         self.got = []

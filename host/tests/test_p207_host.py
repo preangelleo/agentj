@@ -22,7 +22,7 @@ sys.path.insert(0, str(HERE))
 from agentj import contacts as C, controls, heartbeat as hb, mail as M, preferences, serve  # noqa: E402
 import test_p156_heartbeat as hbt  # noqa: E402
 from test_controls import sign  # noqa: E402
-from test_l1 import Phone, _host, _ready, _state  # noqa: E402
+from test_l1 import Phone, _owner_host as _host, _ready, _state  # noqa: E402
 from test_p184_contacts import _Svc  # noqa: E402
 
 DAY = time.mktime((2026, 10, 13, 12, 0, 0, 0, 0, -1))      # a fixed local noon

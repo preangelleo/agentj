@@ -3,9 +3,9 @@
 The first step towards a web terminal (the second one is only a spec: docs/specs/WEB-TERMINAL-SPEC.md). The phone never sends
 a command line: it sends one NAME from `RUN_CMDS`; the argv is fixed here. Every run:
   - is a signed control (control-v1 action `cmd_run`, object {"cmd": name}) from an approved device, AND
-  - carries a passkey assertion (Face ID / fingerprint, UP + UV) over `passkey.elevate_challenge(channel, device, n,
+  - for repair commands, carries a passkey assertion (Face ID / fingerprint, UP + UV) over `passkey.elevate_challenge(channel, device, n,
     "cmd_run", n, object_digest)` — two steps like `approval_set`: without `fa` the host answers `passkey_required` + the
-    challenge (nonce untouched). A device without a passkey is refused (`no_passkey`): there is no fallback.
+    challenge (nonce untouched). Repair without a passkey is refused (`no_passkey`). The closed READ_CMDS set needs only the device signature; output is still masked.
   - runs one at a time, as this same user (never more rights than serve), stdin closed, a hard timeout, output capped,
     ANSI / control characters dropped and credential-shaped text masked by `privacy.owner_text` before it leaves the host.
   - leaves one line in controls.log (who, which name, result — never the output) and one in host.log (exit code, ms).
@@ -24,7 +24,7 @@ from . import controls, passkey, privacy, wire
 # The whole whitelist. name → (argv after `agentj`, why it is safe). Nothing that stops, deletes, revokes, pairs, sets a
 # preference, installs or touches a key is here; changes go through their own switches / signed cards.
 RUN_CMDS = {
-    "doctor": (("doctor",), "read-only self check; doctor's contract is one line per check and never a secret"),
+    "doctor": (("doctor", "--read-only"), "read-only self check; doctor's contract is one line per check and never a secret"),
     "reconnect": (("doctor", "--reconnect"), "repairs only Agent J's own link (service · relay · Agent) — the same steps as "
                   "紧急修复 ①; deletes nothing, changes no setting"),
     "status": (("status",), "read-only: serve's own status answer"),
@@ -32,6 +32,8 @@ RUN_CMDS = {
     "rescue_status": (("rescue", "status"), "read-only: the rescue watchdog's state and whitelisted log metadata"),
     "update_check": (("update", "check"), "read-only: compares versions, installs nothing"),
 }
+# Only this argv has a whole-CLI zero-write contract (including startup migration).
+READ_CMDS = frozenset(('doctor',))
 TIMEOUT = 120          # s per run (doctor --reconnect may wait for the relay)
 PENDING_MS = 150000    # what the phone waits after `ctl_pending`
 OUT_MAX = 12000        # characters sent back (the tail is cut, `cut: true`)
@@ -88,15 +90,17 @@ class Desk:
             controls.log(h.st, action="cmd_run", device=s.device, result="refused:shape")
             return await res(False, why="shape")
         target = {"cmd": name}
-        pk = h.st.passkey_of_device(s.device)
-        if not pk:
-            controls.log(h.st, action="cmd_run", device=s.device, result="refused:no_passkey", obj=target)
-            return await res(False, why="no_passkey", cmd=name)
-        ch = passkey.elevate_challenge(h.channel, s.device, n, "cmd_run", n, controls.object_digest("cmd_run", target))
-        if obj.get("fa") is None:
-            return await res(False, why="passkey_required", cmd=name, fa=pk["id"], fa_ch=wire.b64u(ch))
+        require_uv = name not in READ_CMDS
+        if require_uv:
+            pk = h.st.passkey_of_device(s.device)
+            if not pk:
+                controls.log(h.st, action="cmd_run", device=s.device, result="refused:no_passkey", obj=target)
+                return await res(False, why="no_passkey", cmd=name)
+            ch = passkey.elevate_challenge(h.channel, s.device, n, "cmd_run", n, controls.object_digest("cmd_run", target))
+            if obj.get("fa") is None:
+                return await res(False, why="passkey_required", cmd=name, fa=pk["id"], fa_ch=wire.b64u(ch))
         why = controls.check(h.st, h.nonces, h.channel, s.device, obj, "cmd_run", target)
-        if not why:
+        if not why and require_uv:
             try:
                 f = passkey.approval_fields(obj.get("fa"))
                 if f["id"] != pk["id"]:

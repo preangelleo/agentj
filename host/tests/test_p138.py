@@ -147,6 +147,7 @@ class PhoneSandbox(unittest.IsolatedAsyncioTestCase):
         self.sent=[];self.host=_host(self.st,self.sent)
         self.a=agent.ClaudeAgent(self.host,{**self.st.agent_config(),'session_mode':'independent'})
         self.host.agent=self.a
+        self.a.native_source={"kind":"terminal","role":"owner"}
         self.phone=Phone(self.st);self.session=_ready(self.host,self.phone)
         self.auth=Authenticator();self.st.set_passkey(self.phone.pub,pk_record(self.auth))
         self.host.ask_ttl=1

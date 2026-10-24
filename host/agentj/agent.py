@@ -667,7 +667,10 @@ class Agent:
                     self.cur_cmd = text              # F24: compactprep shows its progress on this command's page
                     try:
                         from . import command_queries
-                        res = await command_queries.execute(self, text.name, text.arg) if command_queries.applies(self) else await self.command(text.name, text.arg)
+                        from . import self_compact
+                        res = self_compact.guard(self, text)
+                        if res is None:
+                            res = await command_queries.execute(self, text.name, text.arg) if command_queries.applies(self) else await self.command(text.name, text.arg)
                     except asyncio.CancelledError:
                         raise
                     except Exception as e:  # noqa: BLE001 — a command bug costs one card, never serve
@@ -1340,6 +1343,11 @@ class ClaudeAgent(Agent):
                                  f"Claude Code 退出了（{code}）" + (f"：{last}" if last else ""))
             self.turn_done.set()
 
+    async def refresh_busy(self):
+        b = getattr(self.host, "busy", None)
+        if b is not None:
+            await asyncio.to_thread(b.reconcile_claude, "own", self.transcript_path())
+
     def _busy(self, ev) -> None:
         """P150: the chat session's sub-agents → the phone's 「在办事项」 dots (busy.py). A workflow CEO run is one item
         of its own (tasks.py); None = the process ended, so nothing of it is running any more."""
@@ -1347,7 +1355,7 @@ class ClaudeAgent(Agent):
         if b is None or self.cfg.get("_workflow_ceo"):
             return
         with contextlib.suppress(Exception):
-            b.set_context("own", harness="claude", cwd=self.cfg.get("dir"))
+            b.set_context("own", harness="claude", cwd=self.cfg.get("dir"), pid=getattr(getattr(self, "proc", None), "pid", None))
             b.session_gone("own") if ev is None else b.stream_event(ev, "own")
 
     def on_event(self, ev: dict) -> None:

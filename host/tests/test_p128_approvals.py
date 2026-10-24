@@ -167,6 +167,7 @@ class SharedE2E(unittest.IsolatedAsyncioTestCase):
     def agent(self, mode):
         a = shared.SharedClaudeAgent(self.host, {"kind": "claude", "dir": self.tmp.name, "_workflow_ceo": True,
                                                  "high_risk_warnings": True, "approvals": mode})
+        a.native_source = {"kind": "terminal", "role": "owner"}
         a.session = {"sessionId": "owner"}
         return a
 
@@ -186,7 +187,7 @@ class SharedE2E(unittest.IsolatedAsyncioTestCase):
 
     async def test_approving_a_show_does_not_preapprove_a_change(self):
         a = self.agent("standard")
-        await a.hook_event({"session_id": "owner", "hook_event_name": "UserPromptSubmit"})
+        await a.hook_event({"session_id": "owner", "hook_event_name": "UserPromptSubmit", "prompt": "read my config"})
         await self.pre(a, "cat .env")
         await a.hook_event({"session_id": "owner", "hook_event_name": "PermissionRequest", "tool_name": "Bash",
                             "tool_input": {"command": "cat .env"}})

@@ -842,11 +842,13 @@ class Scheduler:
                     if host.agent:
                         await host.agent.halt(clear_queue=False)   # resumes on the next message; queued controls stay
                     self.cur_resume, self.limit = resume, None
-                    if e["task"].get("steps"):         # P426 #181-5: node by node, each checkpointed (wfrun.py)
-                        from . import wfrun
-                        out, code = await wfrun.run_steps(self, kind, e, research, rid, trigger)
-                    else:
-                        out, code = await asyncio.wait_for(self._exec(kind, e, research), RUN_TIMEOUT)
+                    from . import provenance
+                    with provenance.request_source(provenance.system()):
+                        if e["task"].get("steps"):         # P426 #181-5: node by node, each checkpointed (wfrun.py)
+                            from . import wfrun
+                            out, code = await wfrun.run_steps(self, kind, e, research, rid, trigger)
+                        else:
+                            out, code = await asyncio.wait_for(self._exec(kind, e, research), RUN_TIMEOUT)
                 finally:
                     if busy is not None:
                         with contextlib.suppress(Exception):

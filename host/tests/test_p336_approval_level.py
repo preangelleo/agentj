@@ -29,7 +29,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from agentj import approval_jev, approval_level, approvals, controls, ctl_auth, danger, goal, passkey, preferences, wire  # noqa: E402
 from agentj import serve  # noqa: E402
 
-from test_l1 import Phone, _host, _ready, _state  # noqa: E402
+from test_l1 import Phone, _owner_host as _host, _ready, _state  # noqa: E402
 
 HERE = pathlib.Path(__file__).resolve().parent
 PROP = {"goal": "把候选做完", "acceptance": ["测试通过"], "deadline": "2h",
@@ -508,7 +508,7 @@ class Offline(Base):
             self.remind_mock.assert_awaited()
             parked = [a for a in self.host.asks.values() if a.parked]
             self.assertEqual(len(parked), 1)
-            self.assertEqual(self.host.eff_status(), "none")              # not "waiting" for a parked card
+            self.assertEqual(self.host.eff_status(), "idle")              # not "waiting" for a parked card
             # a retry while still offline: told again at once, no second card
             n = len(self.host.asks)
             res = await self.host.ask("Bash", {"command": "git push origin main"})

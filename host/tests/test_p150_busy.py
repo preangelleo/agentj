@@ -216,7 +216,10 @@ class Serve(unittest.TestCase):
     def test_change_goes_out_once(self):
         sent = []
         self.host._post = lambda fn, obj_fn: sent.append(obj_fn(None))
+        self.host.busy.set_context("own", pid=os.getpid())
         self.host.busy.start("own:tu:1", None, "temp", "转录视频")
+        sent.clear()  # registration waits for the kernel sample
+        self.host.busy.refresh_sources()
         self.host.busy_changed()                     # the same list again: nothing more
         self.assertEqual(len(sent), 1)
         self.assertEqual(sent[0]["t"], "busy")
@@ -248,6 +251,7 @@ class Serve(unittest.TestCase):
         sent = []
         self.host._post = lambda fn, obj_fn: sent.append(obj_fn(None))
         self.host.busy.refresh_outside(units=False)
+        self.host.busy.refresh_sources()
         self.host.busy_changed()
         self.assertEqual([t["who"] for t in sent[-1]["tasks"]], ["守望"])
 

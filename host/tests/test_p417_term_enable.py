@@ -23,7 +23,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from agentj import controls, passkey, term_cli, term_store, terminal  # noqa: E402
 
-from test_l1 import Phone, _ready  # noqa: E402
+from test_l1 import Phone, _owner_agent, _ready  # noqa: E402
 from test_p408_terminal import BAD, FA, GOOD, R, Rig, signed  # noqa: E402
 
 DESK, IPHONE, ANDROID = "网页 · Linux Chrome", "网页 · iOS Safari", "网页 · Android Chrome"
@@ -227,6 +227,7 @@ class PhoneRefused(Kind):
         self.run_async(go)
 
     def test_terminal_go_skips_phones(self):
+        self.host.agent = _owner_agent(self.host)
         self.label(IPHONE)
         self.passkey()
         self.enable()

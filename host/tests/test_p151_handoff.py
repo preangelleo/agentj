@@ -214,7 +214,7 @@ class Paths(unittest.TestCase):
         self.assertIn('from-name="' + provenance.SYSTEM + '"', env)
         self.assertIn("不是主人原话", env)
         self.assertIn(provenance.SYSTEM, provenance.FROM_NAMES)
-        self.assertTrue(provenance.is_owner(provenance.system()))
+        self.assertFalse(provenance.is_owner(provenance.system()))
 
     def test_owned_handover_is_compact_md_without_a_session_id(self):
         a = Mock(cfg={"dir": "/w"}, kind="claude")

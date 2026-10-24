@@ -304,7 +304,7 @@ class ArchiveRedTeam(Base):
 class PhoneSigned(unittest.TestCase):
     """S6: 「归档」/「恢复」 from the phone are signed controls (object = op \\n name); N1: elevate.sock forces by=agent."""
     def setUp(self):
-        from test_l1 import Phone, _host, _ready, _state
+        from test_l1 import Phone, _owner_host as _host, _ready, _state
         self.tmp = tempfile.TemporaryDirectory(prefix="aj-p426s-")
         self.addCleanup(self.tmp.cleanup)
         self.home = pathlib.Path(self.tmp.name)
@@ -423,7 +423,7 @@ class Events(Base):
         from agentj import serve
         fake = types.SimpleNamespace(st=self.st, agent_cfg={"kind": "claude", "dir": str(self.home)}, preferences={},
                                      onboarding_lang=lambda: "zh")
-        owner = types.SimpleNamespace(provenance=None)
+        owner = types.SimpleNamespace(provenance={"kind":"phone","role":"owner"})
         group = types.SimpleNamespace(provenance={"kind": "telegram", "role": "group", "sender": 1, "chat": 2})
         self.assertEqual(serve.Host.skill_turn_note(fake, owner, "/weekly 本周"), "")
         with patch("time.time", return_value=NOW):

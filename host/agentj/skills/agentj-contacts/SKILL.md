@@ -80,4 +80,5 @@ a command.
   send something to themselves. On a reply card it sits next to the Telegram icon and mails the whole exchange (the
   owner's message on top, the reply below, its files attached; 「不带我的提问」 leaves the message out).
 
-Mail replies, phone forwarding and meeting notes also require a fresh approval passkey. Server/login/port/encryption changes invalidate the app password; old unbound app-password envelopes require re-entry. Never self-confirm, bypass the card or request the app password in chat.
+Mail replies, phone forwarding and meeting notes also require a fresh approval passkey. Server/login/port/encryption changes invalidate the app password; old unbound app-password envelopes are never used directly; verify saved registered candidates first and ask for entry only if none works. Never self-confirm, bypass the card or request the app password in chat.
+Mailbox sign-in failure / 邮箱登录失败：the host first checks registered sources for app-password candidates, including historical cards without account metadata, using this mailbox account and verifies IMAP + SMTP without sending. A successful check updates the existing encrypted mail secret. Do not ask the owner for the same password again first, print a candidate, or use a separate SMTP script. 历史密钥卡即使没有邮箱账号元数据，也先实测已登记来源里的应用专用密码候选；变量名或账号提示不代表验证通过，必须 IMAP 与 SMTP 双通过才接管。手机发信失败会显示原因，授权问题点「修复并重试」。

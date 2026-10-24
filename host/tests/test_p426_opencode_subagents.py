@@ -29,7 +29,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from agentj import agent_opencode as oc  # noqa: E402
 from agentj import agent_opencode2 as oc2  # noqa: E402
 from agentj import fence, opencode_subagents as osa, provenance  # noqa: E402
-from test_l1 import Phone, _host, _ready, _state  # noqa: E402
+from test_l1 import Phone, _owner_host as _host, _ready, _state  # noqa: E402
 import fakeopencode  # noqa: E402
 
 HERE = pathlib.Path(__file__).resolve().parent
@@ -183,6 +183,9 @@ def agent(cls, cfg=None, answers=None):
     a.pending, a.questions, a.q_sent, a.ours, a.tasks = {}, {}, {}, set(), set()
     a.turn_done, a.rules, a.proc = None, oc2.rules_to_v2(oc.session_rules([], subagents=["general"])) if cls.v2 else [], None
     a.cfg.setdefault("model", None)
+    a.cur_send = SimpleNamespace(source=provenance.phone())
+    a._note_turn()
+    a.cur_send = None
     return a, asks, notices
 
 
@@ -325,7 +328,7 @@ class Source(unittest.TestCase):
                 self.created(a, "ses_f")
                 self.created(a, "ses_ff", parent="ses_f")              # nested: its parent's source
                 self.end(a)                                            # the friend's turn is over: cur_send None
-                self.turn(a, None)                                     # the owner's next turn does not launder it
+                self.turn(a, provenance.phone())                                     # the owner's next turn does not launder it
                 self.perm(a, "per_1", "ses_f", "rm -rf x")
                 self.perm(a, "per_2", "ses_ff", "ls")                  # low risk: still a card (no P198 pass)
                 await asyncio.sleep(0.05)
@@ -356,13 +359,13 @@ class Source(unittest.TestCase):
             # a child started in the owner's turn stays the owner's (P198 / goal unchanged)
             a2, _, seen2 = self.spy(cls)
             with mock.patch.object(a2, "_sub_mode", return_value=False):
-                self.turn(a2, None)
+                self.turn(a2, provenance.phone())
                 self.created(a2, "ses_o")
                 self.end(a2)
                 with mock.patch("agentj.approval_jev.low_risk_pass", return_value=False):
                     self.perm(a2, "per_9", "ses_o", "rm -rf x")
                     await asyncio.sleep(0.05)
-            self.assertEqual(seen2, [("Bash", "rm -rf x", False, False)])
+            self.assertEqual(seen2, [("Bash", "rm -rf x", False, False)], "explicit owner child keeps its source")
         asyncio.run(go())
 
     def test_v1_friend_child_keeps_its_source_after_the_turn(self):
@@ -373,15 +376,15 @@ class Source(unittest.TestCase):
 
     def test_p198_low_risk_pass_refused_for_a_non_owner_request(self):
         from agentj.approval_jev import low_risk_pass
-        host = SimpleNamespace(agent=None, goals=None, st=SimpleNamespace(log=mock.Mock()),
+        host = SimpleNamespace(agent=SimpleNamespace(cur_send=SimpleNamespace(source=provenance.phone())), goals=None, st=SimpleNamespace(log=mock.Mock()),
                                _classify=lambda t, i: SimpleNamespace(danger=False, cats=[]))
         cfg = {"high_risk_warnings": True}
         self.assertTrue(low_risk_pass(host, cfg, "Bash", {"command": "ls"}))
         for src in (FRIEND, GROUP, {"kind": "same_owner", "role": "task"}):
             with provenance.request_source(src):
                 self.assertFalse(low_risk_pass(host, cfg, "Bash", {"command": "ls"}), src)
-        with provenance.request_source(None):                 # the owner's own source: unchanged
-            self.assertTrue(low_risk_pass(host, cfg, "Bash", {"command": "ls"}))
+        with provenance.request_source(None):                 # missing source is never owner
+            self.assertFalse(low_risk_pass(host, cfg, "Bash", {"command": "ls"}))
 
     def check_wake_not_goal_approved(self, cls):
         """The main session OpenCode wakes after a friend's background sub-agent finished: a real Host.ask under a live
@@ -426,7 +429,9 @@ class Source(unittest.TestCase):
             rec = run(GROUP)
             self.assertEqual(rec.get("reason"), "group_source", rec)
             rec = run(None)
-            self.assertEqual((rec.get("decision"), rec.get("reason")), ("allow", "goal"), "the owner's own wake: as before")
+            self.assertEqual(rec.get("reason"), "group_source")
+            rec = run(provenance.phone())
+            self.assertEqual((rec.get("decision"), rec.get("reason")), ("allow", "goal"), "explicit owner wake still passes")
 
     def test_v1_wake_turn_not_goal_approved(self):
         self.check_wake_not_goal_approved(oc.OpenCodeAgent)
@@ -474,7 +479,8 @@ class ChainBase:
     def run_chain(self, script, ttl=6):
         ph = Phone(self.st)
         sent = []
-        host = _host(self.st, sent)
+        from test_l1 import _host as startup_host
+        host = startup_host(self.st, sent)
         host.ask_ttl = ttl
         oc.WATCH = 1.0
 

@@ -230,3 +230,19 @@ uses the existing Agent-facing elevate socket `t:wechat,op:pending|claim,id`; cl
 role owner (None refuses), not a boolean in the untrusted payload. HandoffSend records a normal main history turn, retains
 wechat_task delegated provenance, and rechecks generation/expiry/stop in wait_ready. Existing sensitive-action approvals
 apply with no owner grants. Uncertain transfer is never replayed; unbind invalidates pending/queued work and credentials.
+
+### P508 — verified busy provenance (addendum to §22)
+
+The paired `busy` message adds `task_count` (active tasks, native children remain separate) and `live_process_count`
+(unique detected harness PIDs, or the verified source PID when no harness is identified). Each runtime row has `source`
+`{kind:pid|native_thread,pid,start,thread_id?}`, `live_pids`, `detected` `{harness,model,effort,account,subscription,model_source}`,
+`reported` `{harness?,model?}` and boolean `conflict`. Unknown detected fields are null; only detected values populate
+legacy harness/model fields. Native child models are never copied from the parent. PID/start validation and native terminal
+notifications remove lost sources; Codex also reconciles child IDs via thread/read without turns. No argv/env/auth body
+crosses the wire; accounts are hashed short IDs and plan values are allowlisted. Existing read-only busy_get/detail is retained.
+`busy list --json` returns this object through the local control socket (`busy_list`); `complete:false` marks the local-file
+fallback when the running host cannot be reached, and must not be reported as a complete native-task count.
+
+P508c: native Claude/OpenCode child rows optionally carry `status:running|unknown`. Unknown rows remain briefly inspectable but are excluded from `task_count`; they expire after TEMP_TTL from last child activity or confirmed running observation. `live_process_count` still counts verified host processes. Claude bounded native transcript/task results and OpenCode v1 status/v2 idle records reconcile lost end events. Empty workflow selections never overwrite argv/config detection; unknown child models never inherit host models.
+
+P508e: `busy.counts(tasks)` is the sole active/unknown/process counter over published rows: `task_count` excludes unknown, `unknown_count` counts those rows, and `live_process_count` deduplicates their verified live PIDs including unknown children. Board/serve, CLI JSON/text (with or without `--no-units`) and capacity use it. Unit exclusion changes the selected snapshot, not the rule. Phone titles consume host counters; only pre-P508 hosts without counters retain the legacy all-running row total. Agent reports must cite these fields.

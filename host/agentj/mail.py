@@ -49,6 +49,8 @@ import uuid
 from email.message import EmailMessage
 from types import SimpleNamespace
 
+from . import mail_recovery
+
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
@@ -755,9 +757,11 @@ def imap_login(cfg: dict, password: str):
         if c is not None:
             with contextlib.suppress(Exception):
                 c.logout()
-        if isinstance(e, imaplib.IMAP4.error):
-            raise MailError("imap_login") from None
-        raise _fail(e, "imap") from None
+        error = MailError("imap_login") if isinstance(e, imaplib.IMAP4.error) else _fail(e, "imap")
+        fresh = mail_recovery.reconnect(error.why, cfg, password)
+        if fresh is not None:
+            return fresh
+        raise error from None
 
 
 def fetch_new(cfg: dict, password: str, uidvalidity, last_uid, limit: int = FETCH_MAX) -> dict:
@@ -841,9 +845,11 @@ def smtp_open(cfg: dict, password: str):
         if c is not None:
             with contextlib.suppress(Exception):
                 c.quit()
-        if isinstance(e, smtplib.SMTPAuthenticationError):
-            raise MailError("smtp_login") from None
-        raise _fail(e, "smtp") from None
+        error = MailError("smtp_login") if isinstance(e, smtplib.SMTPAuthenticationError) else _fail(e, "smtp")
+        fresh = mail_recovery.reconnect(error.why, cfg, password)
+        if fresh is not None:
+            return fresh
+        raise error from None
 
 
 def test_connection(cfg: dict, password: str) -> dict:
@@ -1255,7 +1261,7 @@ class Mail:
                 return {"ok": False, "why": "no_password"}
             await self.recover(cfg, s)
             try:
-                got = await asyncio.to_thread(fetch_new, cfg, pw, s["uidvalidity"], s["last_uid"])
+                got = await asyncio.to_thread(mail_recovery.run, self.host, fetch_new, cfg, pw, s["uidvalidity"], s["last_uid"])
             except MailError as e:
                 s = read_state(self.st)
                 s["last_check"], s["last_error"] = int(time.time()), e.why
@@ -1496,9 +1502,9 @@ class Mail:
         s["hour"]["out"] = [hour, (used[1] if used[0] == hour else 0) + 1]
         save_state(self.st, s)
         try:
-            await asyncio.to_thread(send, cfg, pw, msg)
+            await asyncio.to_thread(mail_recovery.run, self.host, send, cfg, pw, msg)
         except MailError as e:
-            self.note(T[lang]["send_failed"].format(why=e.why))
+            self.note(T[lang]["send_failed"].format(why=why_text(e.why, lang)))
             return drop("failed")
         st2 = read_state(self.st)
         st2["sent"] = (st2["sent"] + [str(msg["Message-ID"])])[-KEEP_IDS:]
@@ -1564,7 +1570,7 @@ class Mail:
         s["hour"]["out"] = [hour, (used[1] if used[0] == hour else 0) + 1]
         save_state(self.st, s)
         try:
-            await asyncio.to_thread(send_many, cfg, pw, msg, rcpt)
+            await asyncio.to_thread(mail_recovery.run, self.host, send_many, cfg, pw, msg, rcpt)
         except MailError as e:
             self.log("notes", result=e.why)
             return {"ok": False, "why": e.why}
@@ -1702,7 +1708,7 @@ class Mail:
                     e.status = "stopped"
                     break
                 try:
-                    heads = await asyncio.to_thread(expect_look, cfg, pw or "", examined, e.since)
+                    heads = await asyncio.to_thread(mail_recovery.run, self.host, expect_look, cfg, pw or "", examined, e.since)
                     errors = 0
                 except MailError as x:
                     errors += 1
@@ -1725,7 +1731,7 @@ class Mail:
                         self.log("expect", result="rejected", id=e.id, reason=how)
                         continue
                     try:
-                        raw = await asyncio.to_thread(fetch_one, cfg, pw or "", uid)
+                        raw = await asyncio.to_thread(mail_recovery.run, self.host, fetch_one, cfg, pw or "", uid)
                     except MailError:
                         examined.discard(uid)          # looked at again next time
                         continue
@@ -1787,6 +1793,10 @@ class Mail:
         cfg = read_config(self.st)
         if not cfg["address"] or not cfg["imap"]["host"] or not cfg["smtp"]["host"]:
             return {"result": "refused", "why": "incomplete"}
+        reused = await asyncio.to_thread(mail_recovery.recover, self.host, cfg, self.password(cfg))
+        if reused is not None:
+            self.wake.set()
+            return {"result": "saved", "receipt": {"name": "AGENTJ_MAIL_PASSWORD", "dest": "mail", "verify": "ok", "detail": "IMAP+SMTP"}}
         zh = self.lang() == "zh"
         path = str(root(self.st) / SECRET)
 

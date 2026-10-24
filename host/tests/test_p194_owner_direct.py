@@ -93,7 +93,7 @@ class _Svc(unittest.IsolatedAsyncioTestCase):
             self.bcast.append(fn(None))
         self.ask = AsyncMock(return_value={"behavior": "allow"})
         self.out = SimpleNamespace(send=AsyncMock(return_value={"result": "sent"}))
-        self.host = SimpleNamespace(st=self.st, lang="zh", agent=SimpleNamespace(kind="claude"), agent_cfg={"dir": str(self.work)},
+        self.host = SimpleNamespace(st=self.st, lang="zh", agent=SimpleNamespace(kind="claude", native_source={"kind": "terminal", "role": "owner"}), agent_cfg={"dir": str(self.work)},
                                     media=None, hist=SimpleNamespace(get=lambda i: None), stopped=lambda: False,
                                     send_app=send_app, _send_ready=send_ready, ask=self.ask, _approvers=lambda: ["dev1"],
                                     elevate=SimpleNamespace(out=self.out),

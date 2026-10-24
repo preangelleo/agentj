@@ -431,7 +431,7 @@ Settings → Emergency repair is the second item. For no replies, follow the fiv
 
 When Agent J on the Agent J host stops answering, a small rescue helper there answers instead: a banner says "Agent J on the Agent J host isn't responding · rescue helper online", and ① and ② still work. The offline card has an **Emergency repair** button too. If the host stays unreachable, open [the support chat](https://support.agentj.app) on your phone. See [Phone grey or disconnected?](https://agentj.app/docs/reconnect/).
 
-Under Emergency repair there is also Commands on the Agent J host: terminal commands that run on the Agent J host, such as `agentj doctor`, `agentj doctor --reconnect` and `agentj status`, each with Run. Tap it, confirm with Face ID, and the Agent J host runs it; the result shows below, with anything that looks like a password or key hidden on the Agent J host first. Every run is recorded. Tap × at the right of the result heading to close the result. Only commands that look or repair the connection are here; a phone without Face ID set up cannot run them.
+Under Emergency repair, Commands on the Agent J host offers fixed terminal checks with Run. The read-only health check (`doctor --read-only`) uses the paired device signature and needs no Face ID, including on a large screen. Status, service status, rescue status, update check and reconnect still require passkey verification; a large screen without it asks you to confirm on your phone. Older hosts may still require Face ID for checks. Output is masked on the host, shown below as text and recorded in the operation log. Tap × to close the result.
 
 ### Web terminal
 
@@ -778,6 +778,17 @@ Foreground takes reuse an authorized microphone and disable its capture track be
 
 ## Confirming email and sensitive cards
 
-Every outgoing email requires this remote's approval passkey on the phone, including mail to yourself, allowlisted contacts, meeting notes, email replies and phone forwarding. The card binds recipients, content, attachment hashes and mail servers. The allowlist only controls incoming mail. Mail settings changes and connection tests also require the passkey. Changing the account address, login name, IMAP/SMTP server, port or encryption invalidates the old app password. Re-enter app passwords saved before this upgrade using the secret card.
+Every outgoing email requires this remote's approval passkey on the phone, including mail to yourself, allowlisted contacts, meeting notes, email replies and phone forwarding. The card binds recipients, content, attachment hashes and mail servers. The allowlist only controls incoming mail. Mail settings changes and connection tests also require the passkey. Changing the account address, login name, IMAP/SMTP server, port or encryption invalidates the old app password. Old unbound passwords are not used directly. First verify registered saved candidates; use the secret card only when none works.
 
 Administrator and secret cards require this remote's approval passkey; enable it in Settings first. Replacing an existing passkey asks the old key to verify this one-use registration offer, then creates the new key. Cancellation or verification failure keeps the old key. Account sign-in and remote approval passkeys are set up separately.
+
+## Background task information
+
+Each background row shows the detected tool, model and reasoning effort, a recognizable short account ID or plan, and elapsed time. Unverifiable fields say “Unknown”. CLI-supplied tool/model labels are separately marked “Self-reported”; detection wins a conflict. The total counts active tasks, including separate native children sharing a process; live processes have a separate count. A lost process source or ended native thread removes its row automatically. The Agent must actually run `agentj busy list --json` to report background work, rather than rely on memory. Accounts use short IDs, never full email addresses.
+
+Children whose state cannot be confirmed are marked “Status unknown” and excluded from the running total; their rows expire after the last-activity retention period. A live host process does not prove that its child task is still running.
+
+
+## Version 0.25.8
+
+Background work shows program-verified tool, model, short account ID and elapsed time; unverified child status remains unknown. Calendar writes require a passkey bound to their exact destination and content. Only verified phone or owner-terminal input is an owner request; missing sources and external/system content cannot borrow it. Saved mail passwords are verified before asking again. For a requested self-compaction, write the handoff, queue compaction and end the turn.

@@ -1314,7 +1314,7 @@ Anthropic 和 OpenAI 不服务香港、澳门、中国大陆等地区。在这�
 agentj agent route
 ```
 
-它向 Claude、OpenAI 和 Kimi 的服务器各问一次，不带任何 key。时区只在拿不准时参考，不会发到任何地方。Claude Code 和 Codex 用不了时，它会按上面的规则列出每家的开通步骤。Kimi 那一项会给出 Agent J 官方的邀请链接，链接后面紧跟这句话：「这是 Agent J 官方的邀请链接，您和我们各得一次抽奖」。24 小时内付费订阅才算数。订阅后在 Kimi Code 控制台新建一把 key，只粘贴进手机上的密钥卡；Agent 会把 OpenCode 切到 `kimi-code-plan-cn/k3`。你自己的定时任务也可以用这把会员 key（长时间连续跑的后台任务服务商可能限流，遇到了就改用 Kimi 开放平台按量付费的 key）；客服 bot 拿不到它。它也会列出备选：千问（阿里云百炼中国大陆站）、智谱 GLM / DeepSeek、OpenRouter、Kimi 开放平台按量付费。已经有其中某个服务账号的，继续用就行。kimi.com 买的会员 key 在 api.kimi.com 和 api.kimi.ai 两个地址都能用；在海外站 kimi.ai 买的会员，Agent 会改用 `kimi-code-plan-global/k3`。
+它向 Claude、OpenAI 和 Kimi 的服务器各问一次，不带任何 key。时区只在拿不准时参考，不会发到任何地方。Claude Code 和 Codex 用不了时，它会按上面的规则列出每家的开通步骤。Kimi 那一项会给出 Agent J 官方的邀请链接，链接后面紧跟这句话：「这是 Agent J 官方的邀请链接，您和我们各得一次抽奖」。24 小时内付费订阅才算数。订阅后在 Kimi Code 控制台新建一把 key，只粘贴进手机上的密钥卡；Agent 会把 OpenCode 切到 `kimi-code-plan-cn/k3.1-pro`。你自己的定时任务也可以用这把会员 key（长时间连续跑的后台任务服务商可能限流，遇到了就改用 Kimi 开放平台按量付费的 key）；客服 bot 拿不到它。它也会列出备选：千问（阿里云百炼中国大陆站）、智谱 GLM / DeepSeek、OpenRouter、Kimi 开放平台按量付费。已经有其中某个服务账号的，继续用就行。kimi.com 买的会员 key 在 api.kimi.com 和 api.kimi.ai 两个地址都能用；在海外站 kimi.ai 买的会员，Agent 会改用 `kimi-code-plan-global/k3.1-pro`。
 
 ## 运行要求 {#requirements}
 

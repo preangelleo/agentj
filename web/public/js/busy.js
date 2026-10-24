@@ -52,6 +52,9 @@ const sheet = (h) => (busyLook().sheets || SHEETS)[h];
 const dotsMode = () => busyLook().style === 'dots';
 const settle = (el) => settleRobots(el, !!busyLook().sheets);   // P302: a theme's own robots keep their colours
 let tasks = [];
+let liveProcesses = null;
+let taskCount = null;
+let unknownCount = null;
 const assigned = new Map();   // task key → robot index, for as long as the task is on screen (CEOs: by name, kept longer)
 let agentName = () => 'Agent J';
 let prompt = async () => false;      // P181: relay.sayPreset — the 「定制主题」 message to the main Agent
@@ -72,6 +75,10 @@ export function sanitize(m) {
     out.push({
       id: str(x.id, 64), who: str(x.who, 24) || null, kind: x.kind === 'ceo' ? 'ceo' : 'temp', label: str(x.label, LABEL_MAX),
       robot: Number.isInteger(x.robot)&&x.robot>=0&&x.robot<16?x.robot:null,
+      detected: x.detected && typeof x.detected === 'object' ? Object.fromEntries(['harness','model','effort','account','subscription'].map(k=>[k,str(x.detected[k],100)])) : null,
+      reported: x.reported && typeof x.reported === 'object' ? {harness:str(x.reported.harness,32),model:str(x.reported.model,100)} : null,
+      conflict: x.conflict === true,
+      status: x.status === 'unknown' ? 'unknown' : 'running',
       harness: str(x.harness, 32), model: str(x.model, 100), workflow: str(x.workflow, 80),
       company: str(x.company, 80), role: str(x.role, 80), parent: str(x.parent, 80),
       lk: x.lk === 'schedule' || x.lk === 'dispatch' ? x.lk : null,
@@ -213,6 +220,9 @@ function leave(i, box) {
   }, ROBOT_BYE_MS);
 }
 
+// Current hosts own all counts. Pre-P508 hosts supplied only running rows.
+const runningCount = () => taskCount ?? tasks.length;
+export const currentCounts = () => ({task_count: runningCount(), unknown_count: unknownCount, live_process_count: liveProcesses});
 const wide = () => typeof matchMedia === 'function' && !matchMedia('(max-width: 600px)').matches;
 export const limit = () => rowLimit(cap, wide());
 function paintDots() {
@@ -225,17 +235,17 @@ function paintDots() {
   else { for (const d of b.querySelectorAll('i.bd')) d.remove(); fillRow(b, shown, 18); settle(b); }
   b.hidden = !tasks.length && !b.querySelector('i.rb');
   if (shown.length < tasks.length) { const more = document.createElement('b'); more.textContent = '+' + (tasks.length - shown.length); b.append(more); }
-  const label = t('busy.aria', { n: tasks.length });
+  const label = t('busy.aria', { n: runningCount() });
   b.setAttribute('aria-label', label); b.title = label;
-  b.dataset.n = String(tasks.length);
+  b.dataset.n = String(runningCount());
 }
 
 function paintDialog() {
   const d = $('busyDlg');
   if (!d || d.hidden) return;
   if (!tasks.length && !one) { close(); return; }
-  $('busyTitle').textContent = tasks.length === 1 ? t('busy.title1') : t('busy.title', { n: tasks.length });
-  $('busySub').textContent = t('busy.sub', { a: agentName() });
+  $('busyTitle').textContent = runningCount() === 1 ? t('busy.title1') : t('busy.title', { n: runningCount() });
+  $('busySub').textContent = t('busy.sub', { a: agentName() }) + (liveProcesses === null ? '' : ' · '+t('p508.processes',{n:liveProcesses}));
   const big = keyed(tasks).slice(0, MAX_WIDE);
   const fig = (x, k, cls) => (dotsMode() ? dot(x, k, cls) : robot(x, k, 24));
   $('busyBig').replaceChildren(...big.map((x, k) => fig(x, k)));
@@ -244,13 +254,18 @@ function paintDialog() {
     const b = document.createElement('b'); b.textContent = who(x);
     const s = document.createElement('span'); s.textContent = what(x); s.title = what(x);
     const identity = document.createElement('div'); identity.className = 'busy-identity';
-    const brand = document.createElement('strong'); brand.className = 'busy-wordmark'; brand.textContent = harnessName(x.harness);
-    const model = document.createElement('small'); model.textContent = x.model || '';
-    // P302 (owner: 「工具未报告/模型未报告……没有就不写」): an unknown tool / model leaves no line at all
-    if (x.harness) identity.append(vendorMark(x.harness), brand);
-    if (x.model) identity.append(vendorMark(x.model, true), model);
-    li.append(fig(x, k, 'row'), b, s);
-    if (identity.childNodes.length) li.append(identity);   // 追加 11: every task, its own robot at 24 px (P169 dots: its dot)
+    const brand = document.createElement('strong'); brand.className = 'busy-wordmark';
+    brand.textContent = identityText(x);
+    identity.append(brand);
+    const elapsed = document.createElement('small');
+    elapsed.textContent = x.since ? t('busy.detail.since', {d: dur(nowS()-x.since)}) : '';
+    identity.append(elapsed);
+    if (x.reported && (x.reported.harness || x.reported.model)) {
+      const claim = document.createElement('small');
+      claim.textContent = t('p508.reported') + ': ' + [x.reported.harness,x.reported.model].filter(Boolean).join(' · ') + (x.conflict ? ' · '+t('p508.conflict') : '');
+      identity.append(claim);
+    }
+    li.append(fig(x, k, 'row'), b, s, identity);
     li.setAttribute('role', 'button'); li.tabIndex = 0;     // P160: a tap → this task's card
     li.setAttribute('aria-label', t('busy.detail.open', { who: who(x), what: what(x) }));
     const go = (e) => { e.stopPropagation(); openOne(x.key); };
@@ -301,6 +316,13 @@ function vendorMark(value, isModel=false) {
     wrap.append(img,fallback);paletteVendor(img.src).then(svg=>{wrap.append(svg);wrap.dataset.palette='ready';}).catch(e=>{wrap.dataset.palette='error';wrap.dataset.paletteError=e.name+': '+e.message;});}
   else if(isModel){wrap.textContent=v.includes('claude')?'Anthropic':v.includes('gemini')?'Google':/gpt|o[134]-/.test(v)?'OpenAI':'';}
   return wrap;
+}
+export function identityText(x) {
+  if (x.status === 'unknown') return t('p508.state_unknown')+' · '+identityText({...x,status:'running'});
+  if (!x.detected) return [harnessName(x.harness), x.model].filter(Boolean).join(' · ');
+  const d=x.detected, unknown=t('p508.unknown');
+  return t('p508.detected')+': '+[harnessName(d.harness)||unknown, [d.model||unknown,d.effort].filter(Boolean).join(' / '),
+    t('p508.account')+': '+([d.account,d.subscription].filter(Boolean).join(' / ')||unknown)].join(' · ');
 }
 export function harnessName(h) {
   return ({claude:'Claude Code · Anthropic', codex:'Codex · OpenAI', opencode:'OpenCode', gemini:'Gemini · Google',
@@ -377,6 +399,7 @@ function paintOne() {
     $('busyBig').replaceChildren(robot(x, k, 24));     // its robot above the name, like the list's big row (P154 24 px)
     $('busyTitle').textContent = who(x);
     const w = document.createElement('div'); w.className = 'bo-what'; w.textContent = what(x); kids.push(w);
+    const provenance = document.createElement('div'); provenance.className='busy-provenance'; provenance.textContent=identityText(x); if(provenance.textContent) kids.push(provenance);
     const since = (info && info.since) || x.since;
     const meta = [info && info.src ? t('busy.src.' + info.src) : '', Number.isInteger(since) ? t('busy.detail.since', { d: dur(nowS() - since) }) : '']
       .filter(Boolean).join(' · ');
@@ -551,7 +574,7 @@ export function sanitizeCap(m) {
 }
 
 /** `{"t":"busy","tasks":[…],"by":…,"load"?:0..1,"cap"?:n}` from the computer. */
-export function setBusy(m) { tasks = sanitize(m); load = sanitizeLoad(m); cap = sanitizeCap(m); paintDots(); heard = true; paintDialog(); paintLoad(); if ($('loadDlg') && !$('loadDlg').hidden) paintLoadNow(); }
+export function setBusy(m) { taskCount = Number.isInteger(m?.task_count)&&m.task_count>=0?m.task_count:null; unknownCount = Number.isInteger(m?.unknown_count)&&m.unknown_count>=0?m.unknown_count:null; liveProcesses = Number.isInteger(m?.live_process_count)&&m.live_process_count>=0?m.live_process_count:null; tasks = sanitize(m); load = sanitizeLoad(m); cap = sanitizeCap(m); paintDots(); heard = true; paintDialog(); paintLoad(); if ($('loadDlg') && !$('loadDlg').hidden) paintLoadNow(); }
 export const current = () => tasks.slice();
 
 export function init(fns = {}) {

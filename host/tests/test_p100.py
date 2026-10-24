@@ -14,19 +14,19 @@ import urllib.error
 from unittest.mock import patch
 from websockets.asyncio.server import serve as ws_serve
 from agentj import controls, noise, serve, wire, provider_profiles as profiles
-from test_l1 import _state, Phone
+from test_l1 import _state, Phone, _owner_agent
 from test_f17 import answer, enroll
 
 class CardLoop(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.env=patch.dict(os.environ,{'XDG_CONFIG_HOME':self.tmp.name+'/config'});self.env.start()
-        self.st=_state(self.tmp.name);self.host=serve.Host(self.st,events='jsonl',read_stdin=False)
+        self.st=_state(self.tmp.name);self.host=serve.Host(self.st,events='jsonl',read_stdin=False);self.host.agent=_owner_agent(self.host)
         self.phone=enroll(self.st,Phone(self.st));self.other=Phone(self.st,name='other');self.frames=asyncio.Queue();self.received=asyncio.Queue();self.connected=asyncio.Event()
         self.tx={};self.rx={}
         for cid,phone in [(11,self.phone),(12,self.other)]:
             key=os.urandom(32);out=os.urandom(32)
             self.tx[cid]=noise.CipherState(key);self.rx[cid]=noise.CipherState(out)
-            self.host.sessions[cid]=serve.Session(cid=cid,state='ready',pub=phone.pub,device=phone.did,p33=True,recv=noise.CipherState(key),send=noise.CipherState(out))
+            self.host.sessions[cid]=serve.Session(cid=cid,state='ready',provenance={'kind':'phone','role':'owner'},pub=phone.pub,device=phone.did,p33=True,recv=noise.CipherState(key),send=noise.CipherState(out))
         async def relay(ws):
             await ws.send(json.dumps({'t':'challenge','n':wire.b64u(os.urandom(32))}));await ws.recv();await ws.send('{"t":"ok"}');self.connected.set()
             async def output():

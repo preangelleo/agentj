@@ -1,6 +1,6 @@
 {
-  "version": "0.25.7a1",
+  "version": "0.25.8a1",
   "major": false,
-  "zh": "统一 Agent 命名、账号和邮件逐次通行密钥确认、微信分身与识图；Mac 文件访问、负载和好友回复卡改进。",
-  "en": "Consistent Agent names, account/mail passkey checks, WeChat avatars and images; better Mac files, load handling and friend reply cards."
+  "zh": "在办事项显示实测工具、模型、账号和时长；日历逐次确认、未知来源拒绝；授权码复用、自压缩、Telegram 头像和 Kimi Pro 修复。",
+  "en": "Verified task tools, models, accounts and timing; calendar passkeys and trusted origins; mail recovery, self-compaction, Telegram avatars and Kimi Pro."
 }

@@ -116,7 +116,10 @@ def item(key: str, who, kind: str, label="", lk=None, since=None, pid=None, sess
     if lk in ("schedule", "dispatch"):
         d["lk"] = lk
     if isinstance(pid, int) and pid > 0:
+        from .busy_probe import start_id
         d["pid"] = pid
+        if start_id(pid):
+            d["proc_start"] = start_id(pid)
         if isinstance(ns, str) and ns:
             d["ns"] = ns[:64]
     if session:
@@ -125,7 +128,7 @@ def item(key: str, who, kind: str, label="", lk=None, since=None, pid=None, sess
     return d
 
 
-META_LIMITS = {"harness": 32, "model": 100, "cwd": 400, "workflow": 80, "role": 80, "parent": 80}
+META_LIMITS = {"harness": 32, "model": 100, "effort": 24, "cwd": 400, "workflow": 80, "role": 80, "parent": 80}
 
 
 def task_meta(meta):
@@ -201,6 +204,7 @@ def read_items(root, now: float | None = None) -> list[dict]:
     d = items_dir(root)
     me = pidns()
     out = []
+    process_table = None
     try:
         names = sorted(n for n in os.listdir(d) if n.endswith(".json") and not n.startswith("."))
     except OSError:
@@ -213,10 +217,20 @@ def read_items(root, now: float | None = None) -> list[dict]:
             it = json.loads(p.read_text(encoding="utf-8"))
             if not isinstance(it, dict) or not isinstance(it.get("key"), str):
                 raise ValueError("bad item")
+            raw = it
             it = item(it["key"], it.get("who"), it.get("kind"), it.get("label", ""), it.get("lk"), it.get("since"),
                       it.get("pid"), it.get("session"), it.get("ns"), it.get("report"), **task_meta(it))
+            it["self_reported"] = True
+            if isinstance(raw.get("proc_start"), str):
+                it["proc_start"] = raw["proc_start"][:80]
             if "pid" in it and it.get("ns", me) != me:      # another PID namespace (inside the fence): its heartbeat
-                gone = now - p.stat().st_mtime > STALE
+                from .busy_probe import Processes
+                if process_table is None:
+                    process_table = Processes()
+                translated = process_table.namespace_pid(it["pid"], it.get("ns"))
+                gone = (bool(it.get("proc_start") and it["proc_start"] != process_table.identity(translated))
+                        if translated is not None else now - p.stat().st_mtime > STALE)
+                it["source_ns"] = it.get("ns")
                 it["ns_other"] = True                       # P423 #160: its pid means nothing here (survives_restart)
             else:
                 gone = "pid" in it and not _alive(it["pid"])
@@ -493,7 +507,7 @@ def scan_launchd(run=subprocess.run) -> list[dict]:
         if not m:
             continue
         what = re.sub(r"[-_.]+", " ", m.group(2)).strip() or parts[2].strip()
-        out.append(item("unit:" + parts[2].strip(), "P" + m.group(1), "ceo", what))
+        out.append(item("unit:" + parts[2].strip(), "P" + m.group(1), "ceo", what, pid=int(parts[0])))
         if len(out) >= 32:
             break
     return out
@@ -743,7 +757,10 @@ def unit_end(unit, run=subprocess.run):
 class Board:
     """serve's view: in-memory items (owned / shared sessions, workflow runs) + item files + systemd units."""
 
-    def __init__(self, root, on_change=None):
+    def __init__(self, root, on_change=None, verify_sources=False):
+        self.verify_sources = verify_sources
+        self.evidence = {}
+        self.claude_transcripts = {}
         self.root = Path(root) if root else None
         self.context: dict[str, dict] = {}
         self.mem: dict[str, dict] = {}
@@ -767,9 +784,10 @@ class Board:
                 self.colors = {str(k)[:64]: int(v) % COLORS for k, v in c.items()} if isinstance(c, dict) else {}
 
     # -- in-process sources
-    def set_context(self, scope, harness=None, cwd=None):
+    def set_context(self, scope, harness=None, cwd=None, pid=None):
         # Default working directory / tool only; a child's model is always its own event.
-        self.context[scope] = task_meta({"harness": harness, "cwd": cwd})
+        from .busy_probe import start_id
+        self.context[scope] = {**task_meta({"harness": harness, "cwd": cwd}), **({"pid": pid, "proc_start": start_id(pid)} if isinstance(pid, int) else {})}
 
     def start(self, key, who, kind="temp", label="", lk=None, session=None, **meta) -> None:
         old = self.mem.get(key)
@@ -788,6 +806,25 @@ class Board:
         if harness:
             it["harness"] = harness
         it.update(task_meta(meta))
+        if isinstance(meta.get("pid"), int):
+            it["pid"] = meta["pid"]
+        if old:
+            for field in ("pid", "proc_start", "native_id"):
+                if old.get(field):
+                    it.setdefault(field, old[field])
+        # Native registration is machine evidence; external CLI text is handled separately.
+        if session and not str(key).startswith("wf:"):
+            it["native"] = True
+            it["native_child"] = True
+            it["activity_at"] = time.time()
+            # Registration itself is native activity; no first tool call is required.
+            for field in ("native_status", "checked_at", "native_started_at"):
+                if old and field in old:
+                    it[field] = old[field]
+            if not old:
+                it.update(native_status="running", checked_at=it["activity_at"])
+            if ":th:" in str(key) or ":s:" in str(key):
+                it["native_id"] = str(key).split(":")[-1]
         if old != it:
             self.mem[key] = it
             self.on_change()
@@ -828,6 +865,8 @@ class Board:
         it = self.mem.pop(old, None)
         if it is not None:
             it["key"] = new
+            if it.get("native") and (":th:" in new or ":s:" in new):
+                it["native_id"] = new.split(":")[-1]
             self.mem[new] = it
             self._alias(old, new)
             if old in self.last:
@@ -844,12 +883,18 @@ class Board:
         key = self.alias.get(key, key)
         if key in self.mem and isinstance(text, str) and text.strip():
             self.last[key] = {"text": text[:LAST_MAX], "at": int(time.time())}
+            self.mem[key]["activity_at"] = time.time()
+            self.native_status(key, "running")
 
     # -- shared Claude sessions' hook events (shared.py)
     def hook_event(self, ev: dict, scope: str = "shared") -> None:
         if not isinstance(ev, dict):
             return
         name, sid = ev.get("hook_event_name"), clean(ev.get("session_id"), 80)
+        if isinstance(ev.get("transcript_path"), str):
+            self.claude_transcripts[f"{scope}:{sid}"] = ev["transcript_path"]
+            while len(self.claude_transcripts) > 32:
+                self.claude_transcripts.pop(next(iter(self.claude_transcripts)))
         now = time.time()
         self.pending = [p for p in self.pending if now - p["at"] < PENDING_TTL]
         if ev.get("agent_id"):
@@ -859,7 +904,7 @@ class Board:
         if name == "PreToolUse" and ev.get("tool_name") in AGENT_TOOLS and not ev.get("agent_id"):
             ti = ev.get("tool_input") if isinstance(ev.get("tool_input"), dict) else {}
             self.pending = (self.pending + [{"session": sid, "type": clean(ti.get("subagent_type"), WHO_MAX),
-                                             "desc": clean(ti.get("description"), 200), "model": ti.get("model"), "at": now,
+                                             "desc": clean(ti.get("description"), 200), "tool_id": clean(ev.get("tool_use_id"), 80), "model": ti.get("model"), "at": now,
                                              "bg": ti.get("run_in_background") is True}])[-16:]
         elif name == "SubagentStart":
             aid, typ = clean(ev.get("agent_id"), 80), clean(ev.get("agent_type"), WHO_MAX)
@@ -869,9 +914,13 @@ class Board:
                 return                         # no Agent call of ours (e.g. the compaction summariser): not shown
             if match is not None:
                 self.pending.remove(match)
-            self.start(f"{scope}:{sid}:{aid or uuid.uuid4().hex}", who_of(typ), "temp",
+            key = f"{scope}:{sid}:{aid or uuid.uuid4().hex}"
+            self.start(key, who_of(typ), "temp",
                        (match or {}).get("desc") or typ, session=f"{scope}:{sid}",
                        harness="claude", model=ev.get("model"), cwd=ev.get("cwd"), role=typ)
+            self.native_status(key, "running")
+            if (match or {}).get("tool_id"):
+                self._alias(f"{scope}:{sid}:tu:{match['tool_id']}", f"{scope}:{sid}:{aid}")
             if (match or {}).get("bg"):
                 self.mark_bg(f"{scope}:{sid}:{aid}")
         elif name == "SubagentStop":
@@ -913,6 +962,7 @@ class Board:
         key = f"{scope}:{sid}:{clean(str(t.get('id')), 80)}"
         if key in self.mem:
             self.mark_bg(key)
+            self.native_status(key, "running")
             return key
         typ = clean(t.get("type"), 24) or "task"
         if typ == "subagent":
@@ -926,6 +976,7 @@ class Board:
                 label = redact(clean(t["command"], 4 * LABEL_MAX), paths=True)
             self.start(key, None, "temp", label or typ, session=f"{scope}:{sid}", harness="claude", role=typ)
         self.mark_bg(key)
+        self.native_status(key, "running")
         return key
 
     # -- the owned Claude session's stream-json (agent.py)
@@ -976,6 +1027,7 @@ class Board:
         """The owned Claude process ended (halt, /clear, crash): nothing of it runs any more. Codex / OpenCode (P160): the
         app-server / serve child ended — its sub-agents are gone with it."""
         self.stop_where(lambda k, v: v.get("session") == scope)
+        self.claude_transcripts.pop(scope, None)
         for k in [k for k in self.child if k.startswith(scope + ":")]:
             del self.child[k]
 
@@ -1014,7 +1066,7 @@ class Board:
                 who = who_of(spawn.get("agent_role")) or who_of(spawn.get("agent_nickname"))
                 c = self.child.setdefault(k, {})
                 c["who"] = who
-                c.update(task_meta({"model": t.get("model"), "cwd": t.get("cwd"), "role": spawn.get("agent_role")}))
+                c.update(task_meta({"model": t.get("model"), "cwd": t.get("cwd"), "effort": t.get("reasoningEffort"), "role": spawn.get("agent_role")}))
                 self.annotate(k, **task_meta(c))
                 if k in self.mem and who and self.mem[k]["who"] != who:
                     self.mem[k] = {**self.mem[k], "who": who}
@@ -1053,7 +1105,7 @@ class Board:
                         self.mem[k] = {**self.mem[k], "who": c.get("who")}
                         self.on_change()
                     else:
-                        self.start(k, c.get("who"), "temp", c.get("label") or label, session=scope)
+                        self.start(k, c.get("who"), "temp", c.get("label") or label, session=scope, **task_meta(c))
                 self.stop(pk)
             elif method == "item/started":
                 self.start(pk, None, "temp", label, session=scope)
@@ -1094,6 +1146,7 @@ class Board:
                 if st.get("status") in ("pending", "running"):
                     self.start(k, who_of(inp.get("subagent_type")), "temp",
                                inp.get("description") or inp.get("subagent_type") or "", session=scope)
+                    self.native_status(k, "running")
                     meta = st.get("metadata") if isinstance(st.get("metadata"), dict) else {}
                     if isinstance(meta.get("sessionId"), str):
                         self._alias(f"{scope}:s:{clean(meta['sessionId'], 80)}", k)
@@ -1143,6 +1196,9 @@ class Board:
             self.stop(k, fg=turn_on)
         elif t == "session.execution.started":
             self.start(k, self.child[k].get("who"), "temp", self.child[k].get("label") or "", session=scope)
+            # Replace even an identical row: an in-flight poll belongs to the previous execution.
+            self.mem[k] = {**self.mem[k], "native_started_at": time.time()}
+            self.native_status(k, "running")
         elif t.startswith("session.tool"):
             self.note(k, tool_desc(p.get("tool") or p.get("name"), p.get("input")))
 
@@ -1187,14 +1243,101 @@ class Board:
         self.outside = got
         return changed
 
+    def native_status(self, key, status, now=None):
+        """A child-state observation, separate from evidence that its host process exists."""
+        v = self.mem.get(key)
+        if v is None:
+            return
+        if status == "done":
+            self.stop(key)
+        else:
+            v["native_status"] = status
+            if status == "running":
+                v["checked_at"] = time.time() if now is None else now
+                v["activity_at"] = v["checked_at"]
+
+    def reconcile_claude(self, scope, transcript=None):
+        """Read bounded native task results; missing/truncated state remains unknown (never infer idle).
+        Only terminal records for existing IDs are consumed; no prompt, body or path reaches the wire.
+        """
+        paths = {scope: transcript} if transcript else dict(self.claude_transcripts)
+        for owner, path in paths.items():
+            if not path or not any(v.get("session") == owner for v in list(self.mem.values())):
+                continue
+            try:
+                with open(path, 'rb') as f:
+                    f.seek(0, 2)
+                    size = f.tell()
+                    f.seek(max(0, size - 262144))
+                    if size > 262144:
+                        f.readline()
+                    lines = f.read(262144).splitlines()
+            except OSError:
+                continue
+            for line in lines:
+                try:
+                    ev = json.loads(line)
+                except (ValueError, UnicodeError):
+                    continue
+                if not isinstance(ev, dict):
+                    continue
+                # Use the same parser for a missed foreground result / terminal task notification.
+                if ev.get("type") == "user":
+                    message = ev.get("message")
+                    content = message.get("content") if isinstance(message, dict) else None
+                    origin = ev.get("origin") if isinstance(ev.get("origin"), dict) else {}
+                    native = origin.get("kind") == "task-notification" or ev.get("turnOrigin") == "task_notification"
+                    text = content if native and isinstance(content, str) else ""
+                    # Native origin is required: an ordinary user quoting XML is not a task result.
+                    for notification in re.findall(r"<task-notification>(.*?)</task-notification>", text, re.S):
+                        tid = re.search(r"<task-id>([A-Za-z0-9_-]{1,80})</task-id>", notification)
+                        status = re.search(r"<status>(completed|failed|stopped|killed|error)</status>", notification)
+                        if tid and status:
+                            self.stop(f"{owner}:task:{tid.group(1)}")
+                            self.stop(f"{owner}:{tid.group(1)}")
+                    for part in content if isinstance(content, list) else []:
+                        if isinstance(part, dict) and part.get("type") == "tool_result":
+                            key = f"{owner}:tu:{clean(part.get('tool_use_id'), 80)}"
+                            target = self.alias.get(key, key)
+                            if target in self.mem:
+                                text = json.dumps(part.get("content"), ensure_ascii=False)[:4000]
+                                if target != key:
+                                    if not re.search(r"async_launched|[Aa]sync agent launched|running in the background", text):
+                                        self.stop(target, fg=True)
+                                else:
+                                    self.stream_event({"type":"user", "message":{"content":[part]}}, owner)
+                elif ev.get("type") == "system" and ev.get("subtype") in ("task_notification", "task_updated"):
+                    self.stream_event(ev, owner)
+
+    def refresh_sources(self, processes=None):
+        from .busy_probe import Processes, fields
+        processes = processes or Processes()
+        evidence = {}
+        for v in list(self.mem.values()) + self.outside:
+            if v.get("cg") and not v.get("pid"):
+                pids = cg_pids(v["cg"])
+                if pids:
+                    v["pid"] = pids[0]
+            f = fields(v, processes)
+            if f:
+                if not v.get("proc_start"):
+                    v["proc_start"] = f["source"]["start"]
+                evidence[v["key"]] = f
+        self.evidence = evidence
+
     # -- the wire list
     def items(self, now: float | None = None) -> list[dict]:
         now = time.time() if now is None else now
-        for k in [k for k, v in self.mem.items() if v["kind"] == "temp" and now - v["since"] > TEMP_TTL]:
+        def uncertain(v):
+            return v.get("native_child") and v.get("harness") in ("claude", "opencode")
+        for v in self.mem.values():
+            if uncertain(v):
+                v["status"] = "running" if (v.get("native_status") == "running" and now - v.get("checked_at", 0) <= TEMP_TTL) else "unknown"
+        for k in [k for k, v in self.mem.items() if v["kind"] == "temp" and now - max(v["since"], v.get("activity_at", 0), v.get("checked_at", 0)) > TEMP_TTL and (k not in self.evidence or uncertain(v))]:
             del self.mem[k]
         for k in [k for k in self.last if k not in self.mem]:
             del self.last[k]
-        all_ = sorted(list(self.mem.values()) + self.outside, key=lambda v: (v["since"], v["key"]))[:MAX_ITEMS]
+        all_ = sorted([v for v in list(self.mem.values()) + self.outside if not self.verify_sources or v["key"] in self.evidence], key=lambda v: (v["since"], v["key"]))[:MAX_ITEMS]
         used: set[int] = set()
         reserved = {c for w, c in self.colors.items()}
         out = []
@@ -1210,7 +1353,7 @@ class Board:
                     self.colors_dirty = True
             used.add(c)
             out.append({"id": v["key"][-40:], "who": v["who"], "kind": v["kind"], "label": v["label"],
-                        **({"lk": v["lk"]} if v.get("lk") else {}), "since": v["since"], "c": c, **task_meta(v)})
+                        **({"lk": v["lk"]} if v.get("lk") else {}), "since": v["since"], "c": c, **task_meta(v), **(self.evidence.get(v["key"], {})), **({"status": v["status"]} if "status" in v else {})})
         return out
 
     def restart_split(self, survives=survives_restart) -> tuple[int, int]:
@@ -1230,8 +1373,9 @@ class Board:
         if not isinstance(wid, str) or not wid:
             return None
         v = next((x for x in list(self.mem.values()) + list(self.outside) if x["key"][-40:] == wid), None)
-        if v is None:
+        if v is None or (self.verify_sources and v["key"] not in self.evidence):
             return None
+        v = {**v, **self.evidence.get(v["key"], {})}
         last = self.last.get(v["key"])
         return dict(v), (dict(last) if last else None)
 
@@ -1274,13 +1418,14 @@ class Board:
         if fn is None:
             return None
         try:
-            running = len(self.items())
+            running = counts(self.items())["task_count"]
             return max(1, min(64, running + int(fn(running)["can_start"])))
         except Exception:  # noqa: BLE001 — display only
             return None
 
     def msg(self, by=None) -> dict:
-        m = {"t": "busy", "tasks": self.items(), "by": by}
+        tasks = self.items()
+        m = {"t": "busy", "tasks": tasks, "by": by, **counts(tasks)}
         if self.load is not None:
             m["load"] = self.load
         if self.cap is not None:
@@ -1299,6 +1444,7 @@ def detail_of(v: dict, last: dict | None, run=subprocess.run) -> dict:
     wid = v["key"][-40:]
     d = {"id": wid, "who": v["who"], "kind": v["kind"], "label": v["label"], "since": v["since"],
          **({"lk": v["lk"]} if v.get("lk") else {})}
+    d.update({k: v[k] for k in ("detected", "reported", "conflict", "source", "live_pids") if k in v})
     src = v["key"].split(":", 1)[0]
     d["src"] = ("unit" if src == "unit" else "file" if src in ("cli", "run") else "workflow" if src == "wf"
                 else "codex" if src.endswith("codex") else "opencode" if src.endswith("opencode") else "claude")
@@ -1389,26 +1535,52 @@ def _root(a):
     return state_dir()
 
 
+def counts(tasks: list[dict]) -> dict:
+    """Count the published snapshot, independent of transport or presentation flags.
+
+    Unknown children remain visible but are not active tasks. Their verified host
+    processes are still alive; deduplicate PIDs across every published row.
+    """
+    unknown = sum(t.get("status") == "unknown" for t in tasks)
+    return {"task_count": len(tasks) - unknown, "unknown_count": unknown,
+            "live_process_count": len({p for t in tasks for p in t.get("live_pids", [])})}
+
+
 def cmd_busy(a) -> int:
     root = _root(a)
     if a.busy_cmd == "list":
-        b = Board(root)
-        b.refresh_outside(units=not a.no_units)
-        tasks = b.items()
-        if a.json:
-            print(json.dumps(tasks, ensure_ascii=False))
+        from .cli import _ctl_quiet
+        from .state import State
+        native = _ctl_quiet(State(), {"cmd": "busy_list"})
+        if native and native.get("ok"):
+            snapshot = native["busy"]
         else:
+            b = Board(root, verify_sources=True)
+            b.refresh_outside(units=True)
+            b.refresh_sources()
+            snapshot = b.msg()
+        snapshot["complete"] = bool(native and native.get("ok"))
+        totals = counts(snapshot["tasks"])
+        tasks = snapshot["tasks"]
+        if a.no_units:
+            tasks = [t for t in tasks if t.get("source", {}).get("kind") != "unit" and not t["id"].startswith("unit:")]
+        snapshot = {**snapshot, "tasks": tasks, **totals}
+        if a.json:
+            print(json.dumps(snapshot, ensure_ascii=False))
+        else:
+            print(" ".join(f"{k}={snapshot[k]}" for k in totals))
             for t in tasks:
                 print(f"{t['who'] or '临时助理'} · {t['label']}")
             if not tasks:
                 print("没有在后台干活的 Agent / nothing running")
         return 0
     if a.busy_cmd == "capacity":
-        b = Board(root)
+        b = Board(root, verify_sources=True)
         with contextlib.suppress(Exception):
             b.refresh_outside(units=True)
         try:
-            running = len(b.items())
+            b.refresh_sources()
+            running = counts(b.items())["task_count"]
         except Exception:  # noqa: BLE001
             running = 0
         c = capacity(running)
@@ -1422,8 +1594,9 @@ def cmd_busy(a) -> int:
                   f"running {c['running']} → {c['advice_en']}（harness 自己的并发上限照守 / a harness's own limit still applies）")
         return 0
     if a.busy_cmd == "show":
-        b = Board(root)
+        b = Board(root, verify_sources=True)
         b.refresh_outside(units=not a.no_units)
+        b.refresh_sources()
         d = b.detail(a.id)
         if a.json:
             print(json.dumps(d, ensure_ascii=False))
@@ -1440,7 +1613,15 @@ def cmd_busy(a) -> int:
                                                                  "（还没有 / not yet）"))
         return 0 if d is not None else 1
     if a.busy_cmd == "start":
-        it = item("cli:" + (a.key or uuid.uuid4().hex[:12]), a.who, a.kind, a.label, pid=a.pid, report=a.report, **task_meta(vars(a)))
+        it = item("cli:" + (a.key or uuid.uuid4().hex[:12]), a.who, a.kind, a.label, pid=a.pid, ns=pidns(), report=a.report, **task_meta(vars(a)))
+        if not isinstance(a.pid, int) or a.pid <= 0:
+            print("需要存活来源 --pid / a live --pid is required", file=sys.stderr)
+            return 2
+        from .busy_probe import Processes
+        it["proc_start"] = Processes().identity(a.pid)
+        if not it["proc_start"]:
+            return 2
+        it["self_reported"] = True
         write_item(root, it)
         print(it["key"])
         return 0
@@ -1496,7 +1677,7 @@ def add_parser(sub) -> None:
         x.add_argument("--report", default=None, help="报告文件路径：手机点开这一条时显示它的第一行 / the REPORT file whose first "
                                                      "line the phone shows when this row is tapped")
         for field in ("harness", "model", "workflow", "role", "parent"):
-            x.add_argument("--" + field, default=None, help="P244 task display metadata: " + field)
+            x.add_argument("--" + field, default=None, help="self-reported display metadata (not detection): " + field)
         if n == "start":
             x.add_argument("--key", default="", help="稍后 stop 用的名字 / the name to stop it with")
             x.add_argument("--pid", type=int, default=None, help="这个进程结束就自动撤下 / removed when this pid ends")

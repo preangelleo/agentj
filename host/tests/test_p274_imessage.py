@@ -157,6 +157,8 @@ class _Host(unittest.IsolatedAsyncioTestCase):
         self.st.init(relay="ws://127.0.0.1:1")
         preferences.ensure()
         self.host = serve.Host(self.st, read_stdin=False)
+        from types import SimpleNamespace
+        self.host.agent = SimpleNamespace(kind="claude", status="idle", native_source={"kind": "terminal", "role": "owner"})
         self.host._post = lambda *a, **k: None
         self.host.push_notify = mock.Mock()
         self.host.local_notice = mock.Mock()

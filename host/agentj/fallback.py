@@ -143,7 +143,7 @@ async def after_failure(host, agent):
     if agent.cfg.get('_workflow_ceo'): return
     from . import provenance
     send = getattr(agent, 'cur_send', None)
-    if send is not None and not provenance.is_owner(getattr(send, 'source', None)): return
+    if provenance.untrusted_turn(agent): return
     cancelled = threading.Event()
     stopped = lambda: cancelled.is_set() or agent.halting or bool(getattr(host, 'stopped', lambda: False)())
     if stopped(): return

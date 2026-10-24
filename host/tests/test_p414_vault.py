@@ -27,7 +27,7 @@ from agentj import controls, elevate, passkey, term_askpass, term_store, term_va
 from agentj.term_shell import Term  # noqa: E402
 
 from test_f17 import PW, fake_sudo  # noqa: E402
-from test_l1 import Phone, _host, _ready, _state  # noqa: E402
+from test_l1 import Phone, _owner_host as _host, _ready, _state  # noqa: E402
 
 FA = {"id": wire.b64u(b"\x07" * 16), "cd": "e30", "ad": "AA", "sig": "AA"}
 FA2 = {"id": wire.b64u(b"\x09" * 16), "cd": "e30", "ad": "AA", "sig": "AA"}
@@ -245,7 +245,7 @@ class CardRig(unittest.TestCase):
         root = pathlib.Path(self.tmp.name)
         self.st, self.sent = _state(str(root)), []
         self.host = _host(self.st, self.sent)
-        self.host.agent = types.SimpleNamespace(kind="claude", cur_send=None)
+        self.host.agent = types.SimpleNamespace(kind="claude", cur_send=None, native_source={"kind":"terminal","role":"owner"})
         self.ph = Phone(self.st)
         set_pk(self.st, self.ph)
         self.s = _ready(self.host, self.ph)

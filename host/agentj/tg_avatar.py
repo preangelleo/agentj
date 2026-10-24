@@ -8,7 +8,7 @@ Bot API (core.telegram.org/bots/api, checked 2026-10-14):
 
 Automatic only once per Telegram bot and only when it has no photo: an owner's own photo is never replaced. The result is
 remembered in <state>/telegram-avatar.json (bot user id → set / kept); a failed check is not remembered and retries at the
-next bind. The bot key never enters this module: callers pass `call(method, values)` and
+next polling retry (owner bot) or bind (customer-service bot). The bot key never enters this module: callers pass `call(method, values)` and
 `upload(method, fields, field, filename, mime, data)` that already carry it, and no Bot API body or URL is logged.
 """
 import json

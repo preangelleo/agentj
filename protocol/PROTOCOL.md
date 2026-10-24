@@ -3012,16 +3012,22 @@ be run from the phone — the first step towards a web terminal (the second step
 Host side `host/agentj/cmdrun.py`; page `web/public/js/cmdrun.js` (Settings → 紧急修复 → 「电脑上的命令」).
 
 **Whitelist.** `host.run_cmds` (the `preferences` host block) lists the names the host accepts — `cmdrun.RUN_CMDS`, one constant,
-each with why it is safe: `doctor` (`agentj doctor`) · `reconnect` (`agentj doctor --reconnect`) · `status` · `service_status`
+each with why it is safe: `doctor` (`agentj doctor --read-only`) · `reconnect` (`agentj doctor --reconnect`) · `status` · `service_status`
 (`agentj service status`) · `rescue_status` · `update_check`. Nothing that stops, deletes, revokes, pairs, sets, installs or
 touches a key. The page shows only names it knows AND the host lists; an older host without `run_cmds` → no block.
 
-**Request** (p33 session of a paired device with an approval key AND a passkey; §8 control-v1 + §12 assertion):
+**Request** (p33 session of a paired device with an approval key; every command except `doctor` also requires a passkey; §8 control-v1 + §12 assertion):
 `{"t":"cmd_run","r","cmd":<name>,"n","ts","sig"}` — action `cmd_run`, object `{"cmd":<name>}` → object text = the name.
-Two steps, like `approval_set`: without `fa` the host answers `{"t":"ctl_res","r","action":"cmd_run","ok":false,
+P507d: the closed `cmdrun.READ_CMDS` set contains only `doctor`, with fixed argv `agentj doctor --read-only`.
+It validates the ordinary device signature/target/time/nonce and runs without UV; the whole CLI path, including startup,
+must not write or migrate state or change services. Unknown names remain refused. All other whitelisted names
+(`status`, `service_status`, `rescue_status`, `update_check`, `reconnect`) require an action-bound passkey assertion:
+the status/check commands can run startup migrations, so their names alone do not qualify them for the zero-write exemption.
+They use two steps, like `approval_set`: without `fa` the host answers `{"t":"ctl_res","r","action":"cmd_run","ok":false,
 "why":"passkey_required","cmd","fa":<credential id>,"fa_ch":<b64url passkey.elevate_challenge(channel, device, n, "cmd_run", n,
 sha256(object text))>}` (nonce untouched); the phone asks Face ID and sends the same signed object with `"fa":{id,cd,ad,sig}`
-(UP + UV). Every run needs its own assertion. A device without a passkey → `why:"no_passkey"` — there is no fallback.
+(UP + UV). Every run outside `READ_CMDS` needs its own assertion. A device without a passkey → `why:"no_passkey"` for
+all five protected names — there is no fallback.
 Refusals: `shape` (unknown name / bad nonce) · `no_passkey` · `stale` · `no_key` · `bad_signature` · `replay` · `passkey_failed` · `busy`.
 
 **Run.** Accepted → `{"t":"ctl_pending","r","action":"cmd_run","timeout_ms":150000}`, then the host runs the fixed argv
@@ -3483,3 +3489,19 @@ uses the existing Agent-facing elevate socket `t:wechat,op:pending|claim,id`; cl
 role owner (None refuses), not a boolean in the untrusted payload. HandoffSend records a normal main history turn, retains
 wechat_task delegated provenance, and rechecks generation/expiry/stop in wait_ready. Existing sensitive-action approvals
 apply with no owner grants. Uncertain transfer is never replayed; unbind invalidates pending/queued work and credentials.
+
+### P508 — verified busy provenance (addendum to §22)
+
+The paired `busy` message adds `task_count` (active tasks, native children remain separate) and `live_process_count`
+(unique detected harness PIDs, or the verified source PID when no harness is identified). Each runtime row has `source`
+`{kind:pid|native_thread,pid,start,thread_id?}`, `live_pids`, `detected` `{harness,model,effort,account,subscription,model_source}`,
+`reported` `{harness?,model?}` and boolean `conflict`. Unknown detected fields are null; only detected values populate
+legacy harness/model fields. Native child models are never copied from the parent. PID/start validation and native terminal
+notifications remove lost sources; Codex also reconciles child IDs via thread/read without turns. No argv/env/auth body
+crosses the wire; accounts are hashed short IDs and plan values are allowlisted. Existing read-only busy_get/detail is retained.
+`busy list --json` returns this object through the local control socket (`busy_list`); `complete:false` marks the local-file
+fallback when the running host cannot be reached, and must not be reported as a complete native-task count.
+
+P508c: native Claude/OpenCode child rows optionally carry `status:running|unknown`. Unknown rows remain briefly inspectable but are excluded from `task_count`; they expire after TEMP_TTL from last child activity or confirmed running observation. `live_process_count` still counts verified host processes. Claude bounded native transcript/task results and OpenCode v1 status/v2 idle records reconcile lost end events. Empty workflow selections never overwrite argv/config detection; unknown child models never inherit host models.
+
+P508e: `busy.counts(tasks)` is the sole active/unknown/process counter over published rows: `task_count` excludes unknown, `unknown_count` counts those rows, and `live_process_count` deduplicates their verified live PIDs including unknown children. Board/serve, CLI JSON/text (with or without `--no-units`) and capacity use it. Unit exclusion changes the selected snapshot, not the rule. Phone titles consume host counters; only pre-P508 hosts without counters retain the legacy all-running row total. Agent reports must cite these fields.

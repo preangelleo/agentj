@@ -141,29 +141,29 @@ class Serve(Base):
         self.assertEqual(self.host.host_info()["run_cmds"], list(cmdrun.RUN_CMDS))
 
     def test_no_passkey_is_refused_without_fallback(self):
-        res = self.send(sign(self.phone, "doctor"))
+        res = self.send(sign(self.phone, "reconnect"))
         self.assertEqual((res[-1]["ok"], res[-1]["why"]), (False, "no_passkey"))
         self.assertEqual(self.calls, [])
         self.assertEqual(self.clog()[-1]["result"], "refused:no_passkey")
 
     def test_face_id_every_time_then_it_runs(self):
         self.passkey()
-        obj = sign(self.phone, "doctor")
+        obj = sign(self.phone, "reconnect")
         res = self.send(obj)
         self.assertEqual((res[-1]["ok"], res[-1]["why"], res[-1]["fa"]), (False, "passkey_required", FA["id"]))
         want = passkey.elevate_challenge(self.host.channel, self.phone.did, obj["n"], "cmd_run", obj["n"],
-                                         controls.object_digest("cmd_run", {"cmd": "doctor"}))
+                                         controls.object_digest("cmd_run", {"cmd": "reconnect"}))
         self.assertEqual(res[-1]["fa_ch"], wire.b64u(want))
         self.assertEqual(self.calls, [])
         res = self.send({**obj, "fa": FA}, out="✓ serve\n" + CRED + "\n", code=0)
         self.assertEqual(res[-2]["t"], "ctl_pending")
         self.assertEqual(res[-2]["timeout_ms"], cmdrun.PENDING_MS)
         last = res[-1]
-        self.assertEqual((last["ok"], last["cmd"], last["code"]), (True, "doctor", 0))
+        self.assertEqual((last["ok"], last["cmd"], last["code"]), (True, "reconnect", 0))
         self.assertIn("✓ serve", last["out"])
         self.assertNotIn(CRED.split("=", 1)[1], last["out"])
         argv, kw = self.calls[-1]
-        self.assertEqual(argv[-1], "doctor")
+        self.assertEqual(argv[-2:], ["doctor", "--reconnect"])
         self.assertEqual(kw["stdin"], subprocess.DEVNULL)
         self.assertEqual(kw["timeout"], cmdrun.TIMEOUT)
         # the same signed object again: a replay, nothing runs
@@ -194,7 +194,7 @@ class Serve(Base):
                          ({**sign(self.phone, "doctor"), "n": "zz", "fa": FA}, "shape")):
             res = self.send(obj)
             self.assertEqual((res[-1]["ok"], res[-1]["why"]), (False, why), obj)
-        res = self.send({**sign(self.phone, "doctor"), "fa": FA}, verified=False)   # a bad assertion
+        res = self.send({**sign(self.phone, "reconnect"), "fa": FA}, verified=False)   # a bad assertion
         self.assertEqual(res[-1]["why"], "passkey_failed")
         self.assertEqual(self.calls, [])
 

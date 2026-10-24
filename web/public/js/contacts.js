@@ -71,6 +71,7 @@ function buildForward() {
     if (settling()) return;
     const r = F.result;
     if (r && r.ok) fwdClose();
+    else if (authFailure(r)) repairForward();
     else if (r) { F.result = null; send(!!r.dup); }   // 再发一次 / 重试 (after a timeout the host answers dup if it went)
     else if (F.mail && F.mail.ready === false) goSettings();
     else send();
@@ -254,7 +255,7 @@ async function send(again = false) {
   if (!F.root || F.root.d.hidden) return;
   const why = m.t === 'mail_fwd_res' ? (m.ok ? null : m.why) : m.t;
   if (why === 'mail_not_configured' || why === 'no_password') { F.mail = { ready: false, why }; renderForward(); return; }
-  F.result = !why ? { ok: true, to: to.map((x) => x.addr), me: F.mode === 'me', m } : why === 'dup' ? { dup: true, ago: m.ago | 0 } : { why };
+  F.result = !why ? { ok: true, to: to.map((x) => x.addr), me: F.mode === 'me', m } : why === 'dup' ? { dup: true, ago: m.ago | 0 } : { why, detail: m.detail };
   F.result.at = performance.now();
   renderForward();
   document.getElementById('ctFwd-send')?.focus({ preventScroll: true });
@@ -263,6 +264,24 @@ async function send(again = false) {
 // P295 (Leo 10-15): the result in the same centred dialog — 已发到 + each address, every file left out with its real reason
 // (size against the limit, a key-like file held back from others, moved / changed); failure = the reason + 重试; a second
 // send of the same page to the same people within 10 min = 「刚刚已经发过了」 + 再发一次. ESC / outside close it (shell).
+const authFailure = (r) => r?.why === 'send_failed' && ['imap_login', 'smtp_login'].includes(r.detail);
+async function repairForward() {
+  const result = F.result, seq = F.seq;
+  if (F.busy) return;
+  F.busy = true;
+  F.root.sq.querySelector('#ctFwd-send').disabled = true;
+  const m = await ask1({ t: 'mail_key' }, 'mail_res', 660000);
+  if (F.result !== result || F.seq !== seq || F.root.d.hidden) return;
+  F.busy = false;
+  if (m.t === 'mail_res' && m.ok && m.verify !== 'fail') {
+    F.result = null;
+    await send(); // Authentication failed before DATA; ordinary duplicate protection remains.
+  } else {
+    renderForward();
+    toast(t('mail.keyFail', { why: t('mail.why.' + (m.why || 'timeout')) }), 4000);
+  }
+}
+
 function renderResult() {
   const { sq } = F.root, r = F.result;
   const no = sq.querySelector('#ctFwd-cancel'), go = sq.querySelector('#ctFwd-send'), body = sq.querySelector('#ctFwd-body');
@@ -303,7 +322,10 @@ function renderResult() {
   const k = 'ct.why.' + r.why, s = t(k);
   sub.textContent = ''; sub.hidden = true;
   body.append(mk('p', 'gdlg-sub ct-res-note', s === k ? t('ct.why.send_failed') : s));
-  go.textContent = t('p295.ct.retry');
+  if (authFailure(r)) {
+    body.replaceChildren(mk('p', 'gdlg-sub ct-res-note', t('mail.why.' + r.detail)), mk('p', 'ct-res-note', t('p506.mail.repairHint')));
+    go.textContent = t('p506.mail.repair');
+  } else go.textContent = t('p295.ct.retry');
 }
 
 // data-mailfwd on any button (P183's file cards and reply card): the dialog opens for that page / file

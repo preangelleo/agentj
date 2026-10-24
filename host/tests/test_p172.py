@@ -142,6 +142,7 @@ class SubAgentCard(unittest.TestCase):
                                          "high_risk_warnings": True})
         a.session = {"sessionId": "owner", "pid": os.getpid()}
         a.issue_hook_token()
+        a.native_source = {"kind": "terminal", "role": "owner"}
         return a
 
     def run_card(self, follow, agent_id="sub1", pr_has_agent=False):
