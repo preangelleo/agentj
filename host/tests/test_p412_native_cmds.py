@@ -130,11 +130,14 @@ class Tables(unittest.TestCase):
         for n in ("exit", "login", "logout", "vim", "ide", "terminal-setup", "ultrareview", "bug"):
             self.assertEqual(R("claude", n, INIT), "none", n)
             self.assertTrue(harness_cmds.none_note("claude", n, "zh") and harness_cmds.none_note("claude", n, "en"))
-        # Codex / OpenCode: every TUI command goes to the Agent, except the ones no web page can do
-        for n in ("init", "review", "approvals", "mcp", "diff"):
-            self.assertEqual(R("codex", n), "agent", n)
-        for n in ("init", "review", "sessions", "undo", "share"):
-            self.assertEqual(R("opencode", n), "agent", n)
+        # P495: dedicated headless APIs run; terminal-only commands are explicitly unavailable.
+        self.assertEqual(R("codex", "review"), "run")
+        for n in ("init", "approvals", "mcp", "diff"):
+            self.assertEqual(R("codex", n), "none", n)
+        for n in ("init", "review"):
+            self.assertEqual(R("opencode", n), "run", n)
+        for n in ("sessions", "undo", "share"):
+            self.assertEqual(R("opencode", n), "none", n)
         for kind, n in (("codex", "quit"), ("codex", "mention"), ("codex", "feedback"), ("opencode", "editor"),
                         ("opencode", "themes"), ("opencode", "connect")):
             self.assertEqual(R(kind, n), "none", (kind, n))
@@ -151,7 +154,7 @@ class Tables(unittest.TestCase):
             self.assertFalse(t.startswith("/"), "never a bare command the harness would take for its own")
             self.assertIn("add github", t)
             self.assertIn("agentj-config", t)
-        self.assertIn("Codex", harness_cmds.agent_text("/approvals", "codex"))
+        self.assertIsNone(harness_cmds.agent_text("/approvals", "codex"))
         for text in ("/init", "/exit", "/clear", "你好 /mcp", "/nonsense"):
             self.assertIsNone(harness_cmds.agent_text(text, "claude", INIT), text)
 

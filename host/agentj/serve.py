@@ -1063,6 +1063,9 @@ class Host:
             return await self._pk_restore(s, obj)
         if not self.st.is_allowed(s.pub):  # belt and braces: a ready session whose device left the allowlist
             return await self.close_cid(s.cid, "revoked")
+        if t in ("wf_resume_get", "wf_resume_do", "fr_report_reply", "fr_report_remark"):
+            from . import report_actions
+            return await report_actions.on_phone(self, s, obj)
         if t in ("msg", "say", "answer", "slash", "blob_open", "blob_chunk", "blob_end", "ask_answer", "estop", "resume", "task_set", "lt_answer") or t in elevate.PHONE_TYPES or t in ("fr_answer", "fr_accept"):
             self._phone_touch()                   # P292: config lock + write, off the loop
         if t == "msg":
@@ -2137,7 +2140,8 @@ class Host:
                         not self.stopped() and not auto_update.busy(self) and
                         time.time() - rec.get("phone_at", time.time()) >= auto_update.IDLE})
                 elif cmd == "status":
-                    await self._ctl_send(w, {"ok": True, "relay_up": self.relay_up, "relay_state": self.relay_state(), "channel": self.channel,
+                    from . import service_runtime
+                    await self._ctl_send(w, {"environment": service_runtime.snapshot(), "ok": True, "relay_up": self.relay_up, "relay_state": self.relay_state(), "channel": self.channel,
                                              "relay_last": None if self.relay_up else self.relay_last,   # P317: the host leg's stuck point
                                              "identity_ok": self.identity_ok,
                                              "agent": self.agent.kind if self.agent else None, "agent_status": self.eff_status(),
@@ -3650,6 +3654,26 @@ class Host:
     def agent_status(self, s: str) -> None:
         self.status_changed()
 
+    async def key_import_note(self) -> str:
+        """P495: local discovery never holds the receiving lane for a slow service manager.
+
+        The result stays for the next owner turn if the first 50 ms budget runs out.
+        Only owner-origin callers consume this task; discovery never submits a new turn.
+        """
+        from . import keys
+        task = self.__dict__.get("_key_import_task")
+        if task is None:
+            task = asyncio.create_task(asyncio.to_thread(keys.import_note, self))
+            self._key_import_task = task
+        done, _ = await asyncio.wait({task}, timeout=.05)
+        if not done:
+            return ""
+        self._key_import_task = None
+        try:
+            return task.result()
+        except (OSError, ValueError):
+            return ""
+
     def native_route(self, name):
         """P412 #175 定稿: "run" | "agent" | "none" for a typed `/name` of the current harness (harness_cmds.route), else None.
         A shared session already passes every other `/name` to the owner's own session (relay parity), so never there."""
@@ -4219,6 +4243,7 @@ class Host:
             return
         self._offline_reminded = now
         n = sum(1 for a in self.asks.values() if not a.fut.done())
+        n += sum(1 for c in self.elevate.cards.values() if not c["fut"].done() and not c.get("busy"))
 
         async def go():
             sent = await approval_level.remind_offline(self, max(1, n))
@@ -4982,6 +5007,10 @@ class Host:
             page += "\n\n" + "\n".join(f"[{os.path.basename(p)}]({p})" for p in res["deliver"][:5])
         t = self.hist_add({"k": "task", "name": clean(str(title), 64), "text": ""}, clean(page, wire.MAX_TEXT_P33),
                           "stopped" if res.get("stopped") or res.get("status") == "interrupted" else "done")
+        if isinstance(t, dict) and isinstance(res.get("resume"), dict):
+            run_id = res["resume"].get("run_id")
+            if isinstance(run_id, str) and re.fullmatch(r"[0-9a-f]{32}", run_id):
+                self.hist_update(t["id"], card={"wf_resume":{"run_id":run_id}})
         if res.get("deliver") and isinstance(t, dict):
             self.media_later(t.get("id"))
         self.push_notify("reply")
@@ -5017,6 +5046,16 @@ class Host:
             rows = await asyncio.to_thread(tasks.rows, self.st, wd)
             for x in rows:
                 x["running"] = self.scheduler.current_id == x["id"]
+                last = x.get("last") or {}
+                rid = last.get("run_id")
+                if isinstance(rid, str) and not x["running"]:
+                    from . import wfrun
+                    try:
+                        rec = wfrun.load(self.st, rid)
+                        if rec.get("id") == x["id"] and rec.get("status") in ("failed", "interrupted"):
+                            x["resume"] = {"run_id":rid}
+                    except wfrun.RunError:
+                        pass
             return await self._send_chunks(s, {"t": "tasks", "r": r}, "items", rows,
                                            {"paused": self.stopped(), "agent": self.agent_cfg["kind"] if self.agent_cfg else None})
         if t == "systask_list":         # P207 §2: read-only list of the Agent J host's own timers / cron / LaunchAgents / schtasks
@@ -5764,6 +5803,8 @@ class Host:
         caps.append(hsearch.CAP)                               # P188 (§28): the Agent J host answers hist_find
         caps += ["cards1", "upg1"]       # P203 (§29): signed open-cards snapshot · upgrade impact + confirmation card
         caps.append("systasks")                                # P207 §2: answers systask_list (the Agent J host's own scheduled tasks)
+        caps.append("wfresume1")                              # P498 signed exact-run resume
+        caps.append("friendreport1")                          # P498 owner-signed report reply
         caps.append("wf1")                                     # P244 §30: answers wf_list / wf_doc / skill_get (the five pages)
         caps.append("jpalette1")  # P420 bounded host palette library
         caps.append("sk1")                                     # P426 §39: skill health on the 技能 page + skill_archive / skill_restore
@@ -6406,6 +6447,8 @@ class Host:
             return None
         send = compose.Send(s.device, sid or secrets.token_urlsafe(16), turn["id"], blobs=blobs, by=s.name or s.device)
         send.onboarding_note = (self.speaker_note(s) if getattr(s, "source_kind", None) != "telegram" else "") + self.onboarding_note()
+        if not slash.parse(text) and provenance.is_owner(getattr(s, "provenance", None)):
+            send.onboarding_note += await self.key_import_note()
         send.onboarding_note += self.skill_turn_note(s, text)   # P426 #181: skill use + "save it as a skill?" (once)
         gc = slash.parse(text) if not blobs and agent_text is None else None
         if gc and gc[0] == "goal" and gc[1] and not goal_mod.host_cmd(gc[1]):   # P158: `/goal <what>` → the Agent proposes
@@ -6422,6 +6465,8 @@ class Host:
             text = self._meeting_text(s, text, bool(voice))
         if agent_text is not None:
             send.text = agent_text
+        elif not files and (native := slash.parse(text)) and self.native_route(native[0]) == "run" and not self.agent.passthrough(native[0]):
+            send.text = text  # exact native command/arguments; onboarding or quote prose is not an API argument
         elif voice:
             send.ready = asyncio.get_running_loop().create_future()
             send.prep = asyncio.create_task(self._prep_say(send, text, files, voice, quote_text))

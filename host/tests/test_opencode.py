@@ -339,7 +339,13 @@ class Chain(unittest.TestCase):
         env = json.loads(self.envlog.read_text())
         self.assertEqual(env["OPENCODE_SERVER_PASSWORD"], "set")
         self.assertEqual((env["OPENCODE_DISABLE_MODELS_FETCH"], env["OPENCODE_DISABLE_AUTOUPDATE"]), ("1", "1"))
-        self.assertEqual(json.loads(env["OPENCODE_CONFIG_CONTENT"]), {"autoupdate": False, "share": "disabled"})
+        content = json.loads(env["OPENCODE_CONFIG_CONTENT"])
+        native = content.pop("agent")["agentj-native-main"]
+        self.assertEqual(native["mode"], "primary")
+        self.assertTrue(native["hidden"])
+        self.assertNotIn("permission", native)
+        self.assertNotIn("tools", native)
+        self.assertEqual(content, {"autoupdate": False, "share": "disabled"})
         log = self.st.log_path.read_text()
         self.assertNotIn("victim", log)
         self.assertEqual([(x["decision"], x["reason"]) for x in approvals.read_log(self.st)],

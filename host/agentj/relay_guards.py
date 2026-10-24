@@ -150,6 +150,53 @@ class RelayGuards:
         self.receipt(fid, m['mid'], 'claimed')
         return True
 
+    async def begin_reply(self, fid, mid, *, report=False, retry_unknown=False):
+        """Durable CAS shared by old question approval and explicit report reply.
+
+        The transport lifecycle may already be claimed. reply_state is a separate
+        one-shot latch; a report may follow an automatic reply, but cannot repeat an owner reply.
+        A crash or ambiguous send never automatically retries; startup marks it unknown.
+        """
+        from . import diskq
+        with self.store._edit('relay-requests.json', {}) as d:
+            row = d.get(self.key(fid, mid))
+            if (not row or row.get('state') in (FINAL - ({'done'} if report else set()))
+                    or row.get('reply_state', 'pending') not in ({'pending', 'unknown'} if report and retry_unknown else {'pending'})):
+                self.svc.notice('这条消息已处理，请勿重复回复。' if self.svc.lang == 'zh'
+                                else 'This message has already been handled. Do not reply again.')
+                return False
+            row['reply_state'] = 'sending'
+        if await diskq.aflush():
+            return True
+        await self.release_reply(fid, mid, 'durability')
+        return False
+
+    async def release_reply(self, fid, mid, reason):
+        """Only a caller that knows transport was not accepted may release its latch."""
+        from . import diskq
+        with self.store._edit('relay-requests.json', {}) as d:
+            row = d.get(self.key(fid, mid))
+            if row and row.get('reply_state') == 'sending':
+                row.update(reply_state='pending', reply_reason=reason)
+        self.svc.log('peer_reply', result='pending', reason=reason)
+        return await diskq.aflush()
+
+    def recover_replies(self):
+        """Called once at service startup, before accepting any owner actions."""
+        with self.store._edit('relay-requests.json', {}) as d:
+            for row in d.values():
+                if row.get('reply_state') == 'sending':
+                    row.update(reply_state='unknown', reply_reason='restart')
+                    self.svc.log('peer_reply', result='unknown', reason='restart')
+
+    async def finish_reply(self, fid, mid):
+        from . import diskq
+        with self.store._edit('relay-requests.json', {}) as d:
+            row = d.get(self.key(fid, mid))
+            if row and row.get('reply_state') == 'sending':
+                row['reply_state'] = 'done'
+        return await diskq.aflush()
+
     def complete(self, fid, mid):
         if self.state(fid, mid, 'done'):
             self.receipt(fid, mid, 'done')
@@ -166,7 +213,7 @@ class RelayGuards:
         cfg, now = self.store.settings(), self.svc.clock()
         for r in self.rows().values():
             state = r['state']
-            if state not in ('pending', 'claimed'):
+            if state not in ('pending', 'claimed') or r.get('reply_state') in ('sending', 'unknown'):
                 continue
             duration = cfg['relay_claim_seconds'] if state == 'claimed' else cfg['relay_pending_seconds']
             if now < r.get('claimed', r['created']) + duration:

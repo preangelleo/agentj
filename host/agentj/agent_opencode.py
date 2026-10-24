@@ -399,7 +399,7 @@ class Client:
         self.port = port
         self.auth = "Basic " + base64.b64encode(f"{user}:{password}".encode()).decode()
 
-    async def _open(self, method: str, path: str, body=None, accept: str = "application/json"):
+    async def _open(self, method: str, path: str, body=None, accept: str = "application/json", written=None):
         data = b"" if body is None else json.dumps(body, ensure_ascii=False).encode()
         r, w = await asyncio.open_connection("127.0.0.1", self.port, limit=LINE_LIMIT)
         head = (f"{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{self.port}\r\nAuthorization: {self.auth}\r\n"
@@ -408,6 +408,8 @@ class Client:
             head += f"Content-Type: application/json\r\nContent-Length: {len(data)}\r\n"
         w.write(head.encode() + b"\r\n" + data)
         await w.drain()
+        if written is not None:
+            written.set()
         line = await r.readline()
         m = re.match(rb"HTTP/1\.[01] (\d{3})", line)
         if not m:
@@ -436,9 +438,9 @@ class Client:
             while chunk := await r.read(65536):
                 yield chunk
 
-    async def request(self, method: str, path: str, body=None, timeout: float = REQ_TIMEOUT):
+    async def request(self, method: str, path: str, body=None, timeout: float = REQ_TIMEOUT, written=None):
         async def go():
-            status, headers, r, w = await self._open(method, path, body)
+            status, headers, r, w = await self._open(method, path, body, **({"written": written} if written is not None else {}))
             try:
                 buf = b""
                 async for c in self._chunks(headers, r):
@@ -722,6 +724,9 @@ class OpenCodeAgent(Agent):
                 env["OPENCODE_CONFIG_CONTENT"] = content_with(env["OPENCODE_CONFIG_CONTENT"], self.sub_inject)
         from .provider_setup import overlay
         env["OPENCODE_CONFIG_CONTENT"] = overlay(self.host, env["OPENCODE_CONFIG_CONTENT"])
+        if getattr(self, "persist", False) and not self.v2 and not self.cfg.get("_workflow_ceo"):
+            from .native_commands import main_config
+            env["OPENCODE_CONFIG_CONTENT"] = main_config(env["OPENCODE_CONFIG_CONTENT"], self.cfg)
         if self.cfg.get("_workflow_ceo"):
             env = fence.auxiliary_environment(env, self.kind, extra_keep=("AGENTJ_PERM_SOCK", "AGENTJ_PERM_CLAIM", "AGENTJ_PERM_WAIT", "OPENCODE_SERVER_PASSWORD", "OPENCODE_SERVER_USERNAME", "OPENCODE_CONFIG_CONTENT"), plan_keys=True)   # P348
         if self.cfg.get("fence", True):
@@ -1544,6 +1549,14 @@ class OpenCodeAgent(Agent):
             return True
         return self._switch(version)
 
+    async def reload_identity(self) -> None:
+        # P495: v1 native commands use a child-only primary-agent prompt, fixed at spawn.
+        # Refresh between turns; attached owner servers are never restarted by this path.
+        if not self.v2 and self.persist and self._own_protocol() and self.proc is not None:
+            await self._kill(self.proc)
+            self.proc = self.client = None
+            self.sid = None
+
     async def command(self, name: str, arg: str) -> Result:
         from .command_queries import readonly
         # A live read-only query uses the running protocol; probing an upgraded binary
@@ -1577,22 +1590,39 @@ class OpenCodeAgent(Agent):
                 body["model"] = m
             box = {}
             client, sid = self.client, self.sid
+            from .native_commands import opencode_request
+            try:
+                if self.persist and not self.cfg.get("_workflow_ceo") and (parsed := slash.parse(text)) and parsed[0] in ("init", "review"):
+                    from .native_commands import NATIVE_AGENT
+                    native = (f"/session/{sid}/command", {"command": parsed[0], "arguments": parsed[1], "agent": NATIVE_AGENT})
+                    if self.cfg.get("model"):
+                        native[1]["model"] = self.cfg["model"]
+                else:
+                    native = opencode_request(text, sid, self.cfg.get("model"), False)
+            except ValueError as e:
+                self.fail_notice(str(e))
+                return
+            path, request_body = native or (f"/session/{sid}/prompt_async", body)
 
             async def post():
-                box["st"], _ = await client.request("POST", f"/session/{sid}/prompt_async", body)
+                box["st"], _ = await client.request("POST", path, request_body, **({"timeout": 600} if native else {}))
                 if box["st"] in (200, 204):             # §10.2: prompt_async accepted = delivered
                     return True
                 # 4xx: OpenCode refused it (never delivered); anything else may have been taken (P33-X08)
                 return False if isinstance(box["st"], int) and 400 <= box["st"] < 500 else UNCERTAIN
             try:
-                await self.deliver(post)
-                st = box["st"]
+                if native:
+                    from .native_commands import request_v1
+                    st, _ = await request_v1(self, client, path, request_body)
+                else:
+                    await self.deliver(post)
+                    st = box["st"]
             except (OSError, HTTPError, AttributeError, asyncio.TimeoutError):
                 if self.proc:
                     await self._kill(self.proc)
                 self._delivery_uncertain()
                 return  # the native request may already have executed; never replay it
-            if st == 404 and not attempt:                 # the conversation is gone: a fresh one
+            if st == 404 and not attempt and not native:                 # the conversation is gone: a fresh one
                 if self.persist:
                     self.host.st.set_agent_session(self.kind, None)
                 await self._kill(self.proc)
@@ -1600,7 +1630,7 @@ class OpenCodeAgent(Agent):
             if st not in (200, 204):
                 self.fail_notice(f"OpenCode 没有接这条消息（HTTP {st}）。")
                 return
-            if self.persist and not self.cfg.get("_workflow_ceo"):
+            if self.persist and not self.cfg.get("_workflow_ceo") and not native:
                 main_identity.audit(self.cfg, self.kind, self.host.st, self.sid)
             await self._wait_turn()
             if not self.provider_fail_noted:

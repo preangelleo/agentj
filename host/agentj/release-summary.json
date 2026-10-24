@@ -1,6 +1,6 @@
 {
-  "version": "0.25.5a1",
+  "version": "0.25.6a1",
   "major": false,
-  "zh": "通行密钥与遥控器安全重配、卡内 AI 登录救援、画面诊断持久保存；升级失败分类和 macOS 会话定位改进。",
-  "en": "Secure passkey/remote revocation, in-place AI sign-in rescue, persistent layout diagnostics and clearer upgrade failures; macOS pane recovery."
+  "zh": "好友直报与明确回复、签名工作流续跑、新鲜额度派活；离线审批和原生命令改进。",
+  "en": "Peer reports and explicit replies, signed workflow resume, fresh quota dispatch; offline approvals and native command improvements."
 }

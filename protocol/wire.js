@@ -145,9 +145,11 @@ export const CONTROL_ACTIONS = ['security_begin','security_verify','security_ret
   'elev_stop', 'elev_watch',                                                // P406 (§11.2): Stop / show a running sudo command's output
   'vault_share',                                                           // P414 (§38.11): let this remote use the stored password
   'fr_gsay',                                                                // P426 #170 (§17.7): a message in 「我的设备」
-  'skill_archive', 'skill_restore'];                                        // P426 #181-3 (§39): 「归档」/「恢复」 on the 技能 page
+  'fr_report_reply', 'fr_report_remark', 'skill_archive', 'skill_restore'];                                        // P426 #181-3 (§39): 「归档」/「恢复」 on the 技能 page
 /** The text whose SHA-256 a control signature covers (the target, with the content hash the phone saw). */
 export function controlObject(action, o) {
+  if (action === 'fr_report_reply') return `${o.resend === true ? 'resend\n' : ''}${o.id}\n${o.text}`;
+  if (action === 'fr_report_remark') return `${o.friend}\n${o.name}`;
   if (action === 'bots_write') return canonicalJson(o.request);
   if (action === 'update') return 'latest';
   if (action === 'cards_get') return 'cards';
@@ -584,3 +586,12 @@ export async function rvOpenAnswer(frameBytes, key, channel) {
 }
 /** Relay host auth (§2) for the rendezvous channel: the bytes the page's throw-away Ed25519 key signs. */
 export const relayAuthMessage = (channel, n) => enc.encode(`agentjarvis-relay-auth-v1\n${channel}\n${n}`);
+
+/** P498: exact host challenge, signed in an independent domain; never rebuild from a task's display name. */
+export function workflowResumeMessage(o) {
+  const keys = ['action','channel','device','expires','id','issued','nonce','run_id','run_sha','tsha'];
+  if (!o || typeof o !== 'object' || Object.keys(o).sort().join(',') !== keys.join(',') || o.action !== 'wf_resume'
+      || !Number.isSafeInteger(o.issued) || !Number.isSafeInteger(o.expires) || o.expires - o.issued !== 120
+      || !['channel','device','id','nonce','run_id','run_sha','tsha'].every(k => typeof o[k] === 'string' && o[k].length > 0 && o[k].length <= 256)) throw new Error('shape');
+  return enc.encode('agentjarvis-wf-resume-v1\n' + canonicalJson(o));
+}

@@ -933,6 +933,20 @@ class Elevator:
             if s.state == "ready" and s.device in targets and self.st.is_allowed(s.pub):
                 await self.host.send_app(s, obj_fn(s))
 
+    async def _deliver_card(self, obj_fn, only=None, rid=None) -> None:
+        """P495: transport loss never ends an approval; on_ready replays the live card/result."""
+        try:
+            await self._to_phones(obj_fn, only)
+        except (OSError, ConnectionError):
+            self.st.log("elev_delivery", id=rid, result="transport_failed")
+            self.host._remind_offline()
+
+    def _remind_card(self, c: dict) -> None:
+        if not c.get("busy") and not c.get("offline_reminded") and not self.host._online_approvers():
+            c["offline_reminded"] = True
+            self.st.log("elev_delivery", id=c["id"], kind=c["kind"], result="offline")
+            self.host._remind_offline()
+
     def _sees(self, c: dict, s) -> bool:
         only = c.get("only")
         if not only:
@@ -1028,6 +1042,7 @@ class Elevator:
             audit(self.st, None, kind="sudo", result="locked", reason="locked")
             return {"result": "locked", "secs": left}
         if not self.host._approvers():
+            audit(self.st, None, kind=card.get("kind"), result="no_device", reason="no_device")
             return {"result": "no_device"}
         same_owner_task = provenance.same_owner_source(getattr(self.host, "agent", None))
         if card["kind"] == "sudo" and not same_owner_task and (auto := await self.grants.auto(card, gone)) is not None:
@@ -1056,9 +1071,11 @@ class Elevator:
             self.host.push_notify("ask")
         only = c.get("only")
         cancelled=False
+        self._remind_card(c)
         try:
-            await self._to_phones(lambda s: self.card_msg(c, s), only)
+            await self._deliver_card(lambda s: self.card_msg(c, s), only, c["id"])
             while True:
+                self._remind_card(c)
                 waits = [c["fut"]] + ([gone] if gone is not None else [])
                 left = c["deadline"] - time.monotonic()
                 await asyncio.wait(waits, timeout=min(1.0, max(0.0, left)), return_when=asyncio.FIRST_COMPLETED)
@@ -1066,7 +1083,7 @@ class Elevator:
                     res = c["fut"].result()
                     if res.get("result") == "retry":       # wrong password: re-armed, shown again
                         c["fut"] = asyncio.get_running_loop().create_future()
-                        await self._to_phones(lambda s: self.card_msg(c, s), only)
+                        await self._deliver_card(lambda s: self.card_msg(c, s), only, c["id"])
                         continue
                     break
                 if gone is not None and gone.done() and not c.get("busy"):
@@ -1079,7 +1096,7 @@ class Elevator:
                     res = await c["fut"]
                     if res.get("result") == "retry":
                         c["fut"] = asyncio.get_running_loop().create_future()
-                        await self._to_phones(lambda s: self.card_msg(c, s), only)
+                        await self._deliver_card(lambda s: self.card_msg(c, s), only, c["id"])
                         continue
                     break
         except asyncio.CancelledError:
@@ -1118,7 +1135,7 @@ class Elevator:
             zh, en = labels.get(res["result"], ("执行失败", "failed"))
             code = f" ({res['code']})" if res.get("code") is not None else ""
             self.host.agent_notice(f"管理员命令{zh}{code} · {c['id'][:8]} / Admin command {en}{code} · {c['id'][:8]}")
-        await self._to_phones(lambda s: dict(done_msg, tail=tail) if s.cid in watching else dict(done_msg), only)
+        await self._deliver_card(lambda s: dict(done_msg, tail=tail) if s.cid in watching else dict(done_msg), only, c["id"])
         self.st.log("elev_done", id=c["id"], kind=c["kind"], result=res["result"])
         if c["kind"] == "secret":
             remember(self.st, c["id"], {"result": res["result"], "until": None,

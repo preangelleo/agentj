@@ -1383,7 +1383,8 @@
       "queued_for_owner": "已转给你决定",
       "limited": "超出限额，没回",
       "withheld": "检查后没发出",
-      "silent": "没回"
+      "silent": "没回",
+      "report_pending": "等待直报"
     },
     "detail": {
       "title": "{name} · 详情",
@@ -4324,5 +4325,23 @@
     "confirm": "撤销开始重配时已有的旧遥控器？所有已验证的新遥控器将保留。",
     "count": "已验证 {n} 台新遥控器；剩余 {old} 台旧遥控器。",
     "failed": "尚未完成。请确认这是新配对的遥控器，已建立新通行密钥并重新连接，再试一次。"
+  },
+  "p498": {
+    "resume": "从失败处继续",
+    "queued": "已排队，从失败处继续。",
+    "refused": "没有继续，请刷新记录后重试。",
+    "reply": "回复这位好友",
+    "replyText": "只填写要转告好友的话",
+    "chooseReport": "选择要回复的报告",
+    "send": "转告好友",
+    "sent": "已交给好友发送通道。",
+    "replyUnconfirmed": "发送未确认，请核对好友记录，避免重复发送。",
+    "friend": "好友直报 · {name}",
+    "remark": "你的备注名",
+    "saveRemark": "保存备注",
+    "remarkSaved": "备注已保存。",
+    "replyUnknown": "上次发送结果未知——确认好友没收到再点重新发送",
+    "resend": "重新发送",
+    "retryReply": "没有发送，请重试。"
   }
 }

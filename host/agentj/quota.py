@@ -143,7 +143,15 @@ def _codex_limits(f: Path) -> dict | None:
             o = stack.pop()
             if isinstance(o, dict):
                 if isinstance(o.get("rate_limits"), dict):
-                    return o["rate_limits"]
+                    limits = dict(o["rate_limits"])
+                    # P497: later writes to this log are not fresh quota measurements.
+                    stamp = obj.get("timestamp")
+                    try:
+                        limits["_observed_at"] = datetime.fromisoformat(stamp.replace("Z", "+00:00")).timestamp() \
+                            if isinstance(stamp, str) and datetime.fromisoformat(stamp.replace("Z", "+00:00")).tzinfo else None
+                    except (ValueError, TypeError, OverflowError):
+                        limits["_observed_at"] = None
+                    return limits
                 stack += list(o.values())
             elif isinstance(o, list):
                 stack += o
@@ -159,14 +167,14 @@ def codex_source(env=None, now: float | None = None) -> dict:
         rl = _codex_limits(f)
         if not rl:
             continue
-        at = f.stat().st_mtime
+        at = rl.get("_observed_at")
         h5 = next((x for x in (_window(rl.get(k), "used_percent", "resets_at", at) for k in ("primary", "secondary")
                                if isinstance(rl.get(k), dict) and rl[k].get("window_minutes") == 300) if x), None)
         for key in ("primary", "secondary"):
             w = rl.get(key)
             if isinstance(w, dict) and w.get("window_minutes") == 10080 and _num(w.get("used_percent")) and _num(w.get("resets_at")):
                 out = {"harness": "codex", "status": "ok", "source": "session_log", "used_pct": float(w["used_percent"]),
-                       "reset_at": float(w["resets_at"]), "source_at": f.stat().st_mtime}
+                       "reset_at": float(w["resets_at"]), "source_at": at}
                 c = rl.get("credits")
                 if isinstance(c, dict) and isinstance(c.get("has_credits"), bool):
                     bal = c.get("balance")
@@ -277,6 +285,9 @@ def analyse(src: dict, resets: list[dict], now: float) -> dict:
     out["at"] = now
     out["resets"] = [{"expires": r["expires"], **({"note": r["note"]} if r.get("note") else {})} for r in resets]
     h5 = src.get("h5")
+    # Keep validity separate from display clamping: --pick must not use a repaired reading.
+    out["reading_valid"] = all(_num(w.get("used_pct")) and 0 <= w["used_pct"] <= 100
+                               for w in (src, h5) if isinstance(w, dict))
     out.pop("h5", None)
     if isinstance(h5, dict) and h5["reset_at"] > now and h5["reset_at"] - now <= H5_S + 600:   # a stale window is no reading
         out["h5"] = {"used_pct": round(min(100.0, max(0.0, h5["used_pct"])), 1), "reset_at": h5["reset_at"],
@@ -727,7 +738,9 @@ def add_parser(sub) -> None:
     p = sub.add_parser("quota", help="额度管家：各 harness 周额度进度、均分线、reset 机会 · --json · --remind · on · off · "
                                      "reset add|used / weekly quota pace and reset opportunities per harness")
     p.add_argument("--json", action="store_true")
-    p.add_argument("--remind", action="store_true",
+    choice = p.add_mutually_exclusive_group()
+    choice.add_argument("--pick", action="store_true", help="按新鲜的两账号读数选派活账号 / pick from fresh measured quota")
+    choice.add_argument("--remind", action="store_true",
                    help="只输出今天还没提醒过的提醒，并记为已提醒（晨报 / 例行用）/ only today's not-yet-given reminders, marked given")
     qs = p.add_subparsers(dest="q_cmd")
     qs.add_parser("on", help="打开额度提醒（默认开）/ reminders on (default)")
@@ -749,6 +762,8 @@ def add_parser(sub) -> None:
 def cmd_quota(a) -> None:
     lang = _lang()
     c = getattr(a, "q_cmd", None)
+    if getattr(a, "pick", False) and c:
+        sys.exit("--pick cannot be combined with quota subcommands")
     if c in ("on", "off"):
         res = call({"op": "quota_" + c})
         if not res.get("ok"):
@@ -779,6 +794,12 @@ def cmd_quota(a) -> None:
         print(("已取消 / cancelled\n" if a.cancel else "") + ("\n".join(rows) or
               ("没有等着自动继续的 / nothing waiting" if not a.cancel else "")))
         return
+    if getattr(a, "pick", False):
+        res = pick(call({"op": "quota"}))
+        print(json.dumps(res, ensure_ascii=False) if a.json else render_pick(res, lang))
+        if not res["harness"]:
+            raise SystemExit(2)
+        return
     if a.remind:
         res = call({"op": "quota_remind", "lang": lang})
         if a.json:
@@ -795,3 +816,69 @@ def cmd_quota(a) -> None:
         print(json.dumps(res, ensure_ascii=False))
         return
     print(render(res, lang))
+
+
+# P497: a recommendation only. Never switches a session or makes a paid probe.
+PICK_MAX_AGE = 300
+
+
+def pick(rep: dict, now: float | None = None) -> dict:
+    """Compare measured weekly pace only when BOTH accounts have fresh weekly and 5h readings.
+
+    source_at is an official event timestamp (Codex) or the host tap write time (Claude).
+    Missing / invalid / stale data means no recommendation, never zero usage.
+    Rates are normalized to the time elapsed in each account's own weekly window.
+    """
+    now = time.time() if now is None else now
+    rows = []
+    raw = rep.get("harnesses", []) if isinstance(rep, dict) else []
+    for kind in ("claude", "codex"):
+        found = [r for r in raw if isinstance(r, dict) and r.get("harness") == kind] if isinstance(raw, list) else []
+        row = {"harness": kind, "eligible": False, "why": "missing_reading"}
+        rows.append(row)
+        if len(found) != 1:
+            continue
+        r = found[0]
+        h = r.get("h5")
+        if r.get("reading_valid") is False or r.get("status") != "ok" or r.get("source") != {"claude": "statusline", "codex": "session_log"}[kind]:
+            row["why"] = "unverified_reading"
+            continue
+        if not isinstance(h, dict):
+            row["why"] = "missing_5h"
+            continue
+        if any(not _num(w.get("source_at")) or not 0 <= now - w["source_at"] <= PICK_MAX_AGE for w in (r, h)):
+            row["why"] = "stale_reading"
+            continue
+        if any(not _num(w.get("used_pct")) or not 0 <= w["used_pct"] <= 100 for w in (r, h)):
+            row["why"] = "invalid_usage"
+            continue
+        if any(not _num(w.get("reset_at")) or not 0 < w["reset_at"] - now <= length
+               for w, length in ((r, WEEK_S), (h, H5_S))):
+            row["why"] = "invalid_window"
+            continue
+        left = (r["reset_at"] - now) / DAY_S
+        elapsed = 7 - left
+        if elapsed <= 0:
+            row["why"] = "window_just_started"
+            continue
+        speed = r["used_pct"] / (elapsed * DAY_SHARE)
+        row.update(speed=speed, per_day=(100-r["used_pct"]) / left,
+                   used_pct=r["used_pct"], h5_used_pct=h["used_pct"], source_at=r["source_at"],
+                   eligible=h["used_pct"] < H5_WARN_PCT and r["used_pct"] < 100,
+                   why="available" if h["used_pct"] < H5_WARN_PCT and r["used_pct"] < 100 else "quota_high")
+    if any(r["why"] not in ("available", "quota_high") for r in rows):
+        return {"harness": None, "why": "incomplete_fresh_pair", "max_age_s": PICK_MAX_AGE, "accounts": rows}
+    candidates = sorted((r for r in rows if r["eligible"]), key=lambda r: (round(r["speed"], 2), -r["per_day"], r["harness"]))
+    return {"harness": candidates[0]["harness"] if candidates else None,
+            "why": "slower_weekly_pace_then_daily_headroom" if len(candidates) == 2 else
+                   "only_eligible_account" if candidates else "both_quota_high", "max_age_s": PICK_MAX_AGE, "accounts": rows}
+
+
+def render_pick(result: dict, lang="zh") -> str:
+    lines = []
+    for r in result["accounts"]:
+        lines.append(f"{NAMES[r['harness']]}: {r['why']}" +
+                     (f" · weekly pace {r['speed']:.2f}x · daily headroom {r['per_day']:.1f}% · 5h {r['h5_used_pct']:.1f}%"
+                      if "speed" in r else ""))
+    lines.append(("推荐 / Pick: " + result["harness"]) if result["harness"] else "读数不足或额度高，暂不推荐 / No recommendation")
+    return "\n".join(lines)

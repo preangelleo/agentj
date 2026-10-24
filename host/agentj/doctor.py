@@ -1073,6 +1073,27 @@ def check_login_session(svc):
               service.login_reminder())
 
 
+def check_service_environment(svc: dict, environ=None, runtime=None) -> dict | None:
+    """P495: the running service's own fixed presence projection; no kernel env reads."""
+    if svc.get("kind") not in ("systemd", "launchd"):
+        return None
+    from . import service_runtime
+    shell = os.environ if environ is None else environ
+    live = runtime.get("environment") if isinstance(runtime, dict) else None
+    hint = ("服务不读取终端启动文件；在设置配置模型代理，安装 CLI 后重新安装服务。"
+            "大陆网络可用 agentj provider ark 或 agentj provider bailian，再在手机确认密钥。 / "
+            "Services do not read shell startup files. Configure the model proxy in Settings; reinstall the service "
+            "after installing a CLI. For mainland networks use agentj provider ark or agentj provider bailian, "
+            "then confirm the key on the phone.")
+    if not service_runtime.valid(live):
+        return _c("service-environment", WARN, "AJ_ENV_UNAVAILABLE: 服务未报告运行时环境存在性 / service runtime presence unavailable", hint)
+    rows = [{"name": k, "terminal": bool(shell.get(k)), "service": live[k]} for k in service_runtime.NAMES]
+    different = any(r["terminal"] != r["service"] for r in rows)
+    return _c("service-environment", WARN if different or not live["PATH"] or not live["HOME"] else OK,
+              "AJ_ENV_PRESENCE_" + ("DIFFERENT" if different else "MATCH") + ": " + json.dumps(rows, ensure_ascii=True) +
+              "；仅存在性，相同不证明路径或代理设置相同 / presence only; paths and proxy settings may still differ", hint)
+
+
 def check_launchd_environment(svc: dict, environ=None) -> dict | None:
     """Compare configured service context with this terminal; names/booleans only, never values."""
     if svc.get("kind") != "launchd":
@@ -1219,7 +1240,7 @@ def run(st: State | None = None, offline: bool = False) -> list[dict]:
     out += check_main_identity(st)
     out.append(check_skills())
     out += [check_google(st), check_first_run(st)]
-    out += list(filter(None, [check_launchd_environment(svc), check_shared_controls(st)]))
+    out += list(filter(None, [check_launchd_environment(svc), check_service_environment(svc, runtime=_serve_status(st)), check_shared_controls(st)]))
     login = check_login_session(svc)
     if login:
         out.append(login)

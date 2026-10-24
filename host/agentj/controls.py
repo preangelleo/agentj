@@ -51,6 +51,7 @@ ACTIONS += ("elev_watch",)          # P406 F1 (§11.2): show / stop showing that
 ACTIONS += ("vault_share",)         # P414 (§37.11): let this remote use the stored computer password (term_vshare.py)
 ACTIONS += ("fr_gsay",)             # P426 #170 (§17.7): a message in 「我的设备」, the owner's own Same owner devices
 ACTIONS += ("skill_archive", "skill_restore")   # P426 #181-3 (§39): 「归档」/「恢复」 on the 技能 page (skill_usage.py)
+ACTIONS += ("fr_report_reply", "fr_report_remark")  # P498 trusted owner controls
 TS_SKEW_MS = 120_000
 NONCE_KEEP_S = 600
 _NONCE = re.compile(r"[0-9a-f]{32}")
@@ -88,6 +89,10 @@ def object_text(action: str, obj: dict) -> str:
     skill_archive / skill_restore : op (archive | restore) \\n skill name   (P426 #181-3, §39)
     (a missing / null text field is "", as wire.js `?? ''`)
     """
+    if action == "fr_report_reply":
+        return ("resend\n" if obj.get("resend") is True else "") + f"{obj['id']}\n{obj['text']}"
+    if action == "fr_report_remark":
+        return f"{obj['friend']}\n{obj['name']}"
     if action == "bots_write":
         return json.dumps(obj["request"], sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     if action == "setup_mark":       # item id \n choice (selected | unused | later | start_exit) \n checklist revision

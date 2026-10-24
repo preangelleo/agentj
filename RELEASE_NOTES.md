@@ -1,6 +1,6 @@
-# Agent J 0.25.5a1 release notes
+# Agent J 0.25.6a1 release notes
 
-Host 0.25.5a1 / install 0.27.5; phone-web scope.
+Host 0.25.6a1 / install 0.27.6; phone-web scope.
 Phone parity must pass --strict. Full Android/Telegram parity is incomplete.
 Full Android/Telegram parity is incomplete.
 No APK is included in this release. Android source is for review, not a released app.
@@ -8,27 +8,25 @@ No APK is included in this release. Android source is for review, not a released
 Publication status: local preparation only. Live site verification is DEFERRED until
 the public commit and tag are pushed, the site is deployed, and cold installation passes.
 
-Release order: C (additive app D1 migration 0036, then the Dashboard Worker; feedback database unchanged), then A signed host/site/downloads then B phone web immediately after. No relay change. Keep credential_revocations, host_credential_revocations, host_credential_epochs, epoch/ACK/seq and local credential_revocations.json/security_rotation.json permanently. Do not restore an older database snapshot or downgrade to a host/control plane that ignores revocations; repair forward. The 0.25.4 baseline is not a compatible host/control rollback. B-only phone rollback keeps the compatible host/control plane. Normal publication windows and recorded owner overrides still apply. Local preparation only; publication needs separate authorization. Physical iPhone/Android and native Mac Air/launchd acceptance are not claimed.
+Release order: C (Dashboard support/knowledge and installation guidance, no D1 migration), then A signed host/site/downloads then B phone web immediately after. No relay change. The0.25.5 baseline is credential-revocation compatible. Keep0036 credential_revocations, host_credential_revocations, host_credential_epochs, epoch/ACK/seq and local credential_revocations.json/security_rotation.json permanently. Never restore an older database snapshot or downgrade to a host/control plane that ignores revocations. Only compatible rollback, otherwise repair forward. Local preparation only; publication needs separate authorization. Physical iPhone/Android and native Mac acceptance are not claimed.
 ## Changes
 
-- Create and verify new access before revoking exposed passkeys or old remotes. An offline computer remains pending until it reconnects and acknowledges.
-- Keep the latest phone layout diagnostic on the host and inspect it with agentj diag layout --last. It excludes chat text, URLs and tickets.
-- AI sign-in rescue cards show the official authorization link or device code, keep Settings open and recheck the current sign-in state.
-- Pre-install upgrade failures clearly retain the original version. Rollback results check whether the old program runs while preserving separate service and health diagnostics.
-- Locate a shared macOS Herdr conversation after compaction through its live pane identity. Unknown, conflicting or blocked targets remain protected.
-- Hosts remain available with clocks 30 seconds fast or slow. Revocation sync binds each signed request to a monotonic deadline and rejects timeouts and replayed responses.
-- Supported provider setup reuses the existing secret-card path. Startup failures provide fixed diagnostics and Ark, Bailian and Kimi options.
-- Security records suppress old-package force-install recovery commands. A refused security downgrade cannot be reported as a successful rollback.
-- Retain the already-live iPhone visible-water colour fix and diagnostic action. The original Mac Air pale band still needs a sample captured during the fault.
-- 先创建并验证新入口，再吊销泄露的通行密钥或旧遥控器；离线电脑回连确认前显示待处理。
-- 手机画面诊断在主机保留最近一份，可用 agentj diag layout --last 只读查看；不含聊天正文、网址或票据。
-- AI 登录救援卡显示官方授权链接或设备码，留在设置页完成操作，并重新检测当前登录状态。
-- 升级在安装前失败时明确仍是原版本；回滚结果以旧程序能否运行为据，同时保留独立的服务和健康诊断。
-- macOS 共享 Herdr 会话在压缩后按仍存活的面板身份定位；未知、冲突或阻塞目标保持拒绝操作。
-- 电脑时间快或慢30秒也能安全上线；吊销同步使用本次签名请求和单调时钟截止，超时及旧响应仍拒绝。
-- 服务商初始配置复用已有密钥卡入口；首次启动失败提供固定诊断及方舟、百炼、Kimi 选项。
-- 安全记录存在时不再生成旧包强制恢复命令，也不会把禁止降级误报成回滚成功。
-- 保留已上线的 iPhone 可见水体取色与画面诊断入口；原 Mac Air 浅色带原因仍待故障当刻诊断。
+- Peer sessions report into the main thread using your local name; explicit replies stay on the original peer channel.
+- Resume a failed multi-step workflow with a phone signature; non-idempotent steps still need confirmation.
+- Explain dispatch recommendations using fresh verified readings from both accounts; missing data yields no recommendation.
+- Check Kimi K3.1 Pro candidates separately for API, Coding and OpenCode Go routes and actual account availability.
+- Offline administrator approvals retain the same card and deadline; reconnect resends the request and expiry restores no authority.
+- Use official headless APIs for Codex review and OpenCode init/review; label Codex init as terminal-only.
+- The main Agent can suggest importing unmanaged keys from fixed registered sources through existing secret cards, showing names only.
+- Reuse the microphone during foreground takes; stop capture when hidden or locked. Recording again after returning may require permission.
+- 好友分身默认直报主对话，使用你的本机备注；明确回复只走原好友通道。
+- 失败的分步工作流可从手机签名续跑，非幂等步骤仍需确认。
+- 派活前根据新鲜且可核实的双账号用量给出可解释推荐；缺数据就不推荐。
+- Kimi K3.1 Pro 候选按 API、Coding 和 OpenCode Go 路线及账号可用清单核对。
+- 离线管理员审批保留原卡和截止时间，重新连上重发原请求；过期不恢复授权。
+- Codex审查及OpenCode初始化/审查接入官方无头接口；Codex初始化如实标明终端专用。
+- 主 Agent 可建议通过既有密钥卡导入固定来源的未管理密钥，只展示变量名。
+- 前台连续录音复用麦克风；锁屏或切走后停止采集，回来再次录音时可能需要授权。
 
 ## Material acceptance limits
 

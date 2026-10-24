@@ -1,6 +1,8 @@
+import { paintReportActions } from './report-actions.js';
 import {reopenSession} from './rescue.js';
 import { QueueWatch } from './queue-watch.js';
 import { paintIOSChrome } from './ios-chrome.js';
+import { createMicrophone } from './microphone.js';
 import { copyButton } from './copycode.js';
 import {phoneConfirmation} from './tvremote.js';
 import {focusDraft, releaseDraft, touchComposer} from './composer-focus.js';
@@ -105,7 +107,7 @@ let wordsAt = 0, wordsTimer = null;
 // P281: wait words that are not a wait — 「已停下」 is over, 「Agent J 主机没有回音」 needs the owner — get no robot
 const NOT_WAITING = ["r.replyStopped", "r.replyNoEcho"];
 let themeGen = 0;          // P281: a new theme redraws the wait robot (its sheet) on the page shown
-function renderWords(text, pending = false, label = "", waitLine = false, sys = false){
+function renderWords(text, pending = false, label = "", waitLine = false, sys = false, dataOnly = false){
   const tx = (text || "").trim();
   // P127: a compaction in flight (any mode: PreCompact on a shared Claude, system/status on our own) says so at once;
   // a page-specific label (queued behind a busy session) wins over the session-wide wait words
@@ -113,7 +115,7 @@ function renderWords(text, pending = false, label = "", waitLine = false, sys = 
   const wait = waitKey(cur, historySync, quiet ? Date.now() - quiet.at : 0);
   // P281: the page's words are a wait line (the host's own wait / queue / switch lines included) → the robot leads them
   const robot = pending && !tx ? !!label || !NOT_WAITING.includes(wait) : !!waitLine && !!tx;
-  const key = (sys ? "\u0000sys:" : "") + (pending && !tx ? "\u0000pending:" + (label || wait) + (!label && wait === "r.replyWorking" && ownerAddr ? "|" + ownerAddr : "") : tx)
+  const key = (dataOnly ? "\u0000data:" : "") + (sys ? "\u0000sys:" : "") + (pending && !tx ? "\u0000pending:" + (label || wait) + (!label && wait === "r.replyWorking" && ownerAddr ? "|" + ownerAddr : "") : tx)
     + (robot ? "\u0000robot:" + themeGen : "");
   if (key === wordsSrc) return;
   // P193 (B10): a streaming reply grows chunk by chunk and every redraw re-parses the whole Markdown (O(n²) over a long
@@ -128,9 +130,9 @@ function renderWords(text, pending = false, label = "", waitLine = false, sys = 
   wordsSrc = key;
   const w = el("words");
   w.className = "words" + (!tx ? " empty" : tx.length > 600 ? " l" : tx.length > 240 ? " m" : "");
-  fill(w, pending && !tx ? (label || waitText(wait)) : tx, pending && !tx, sys);
+  fill(w, pending && !tx ? (label || waitText(wait)) : tx, dataOnly || pending && !tx, sys);
   afterWords(robot);
-  rdFollow(tx, sys);
+  rdFollow(tx, sys, dataOnly);
 }
 // P341 (#19): a host-written system page (k "sys": goal results, notices) quotes commands — "$(…)" / "$HOME" — so it
 // renders Markdown without TeX; the Agent's own replies keep math.
@@ -1222,6 +1224,7 @@ function sourceOf(src){
     : {kind: "dev", label: (src.dev && deviceInfo(src.dev)?.label) || src.name || t('r.src.otherDevice')};
   if (src.k === "telegram") return {kind:"tg",label:"Telegram"};
   if (src.k === "email") return {kind:"tg",label:t('r.src.email', {name: src.name || ''})};   // P170: same quiet colour as Telegram
+  if (src.k === "friend_report") return {kind:"sys", label:t('p498.friend', {name:src.name || ''})};
   if (src.k === "host") return {kind: "host", label: t('r.src.host')};
   // P132: a page the Agent started itself says why — a /loop or wake-up check, a background task, or just reporting in
   // P156: the host's own heartbeat check (its prompt is not shown — a folded label; a quiet beat has no page at all)
@@ -1343,7 +1346,7 @@ function showPage(){
   const progress = open && typeof c.progress === "string" ? c.progress.trim().slice(0, 300) : "";
   const hostWait = open && (c.wait === true || c.queued === true) || (typeof c.switch === "string" && p === ps[ps.length - 1]);
   renderWords((isSilent(p.reply) ? "" : p.reply?.trim()) || (p.end === "open" || p.id === null ? "" : t('r.noReply')), open,
-    qd ? t(queueStuck ? 'p481.queueStuck' : 'r.queue.card') + (ahead ? " · " + t('r.queue.ahead', {n: ahead}) : "") : progress, hostWait, sysPage(p));
+    qd ? t(queueStuck ? 'p481.queueStuck' : 'r.queue.card') + (ahead ? " · " + t('r.queue.ahead', {n: ahead}) : "") : progress, hostWait, sysPage(p), p.source?.k === "friend_report");
   paintThinking(visibleReply(p) && !hostWait ? progress : "");
   el("words").classList.toggle("empty", !visibleReply(p));
   renderMedia(el("words"), p);
@@ -1358,6 +1361,7 @@ function showPage(){
 // A command result page (§8 cmd card → turn.card): the model buttons and 「撤销清空」 sit under the words.
 function paintCmdx(p){
   const box = el("cmdx"), c = p.card;
+  if (paintReportActions(box, p)) return;
   box.replaceChildren();
   if (p.source?.k === 'sys' && c?.recovery === 'restart_session') {
     box.hidden = false;
@@ -2004,7 +2008,7 @@ function openReader(){
   try{ const s = getSelection(); if (s && !s.isCollapsed) s.removeAllRanges(); }catch(_){}
   const max = mainEl.scrollHeight - mainEl.clientHeight;
   rdAt = {key: shownKey, scroll: mainEl.scrollTop, text: tx};
-  fill(el("rdWords"), tx, false, sysPage(p));
+  fill(el("rdWords"), tx, p.source?.k === "friend_report", sysPage(p));
   renderReaderMedia(el("rdWords"), p);                 // P59 (ADR-A164): local pictures / files in place, not their Markdown
   rdHead();
   if (document.activeElement === input) input.blur();
@@ -2079,7 +2083,7 @@ function rdSync(){
   if (!rdHasText(p)) return;                    // an empty page on the way: the jump that brought us here moves on
   const tx = p.reply.trim();
   rdAt = {key: shownKey, scroll: 0, text: tx};
-  fill(el("rdWords"), tx, false, sysPage(p)); renderReaderMedia(el("rdWords"), p);
+  fill(el("rdWords"), tx, p.source?.k === "friend_report", sysPage(p)); renderReaderMedia(el("rdWords"), p);
   el("rdScroll").scrollTop = 0;
 }
 // The footer: the reply card's six icons, cloned once (same glyphs, same order — 阅读 · 朗读 · 转发 · 邮件 · 复制 · 回复,
@@ -2141,10 +2145,10 @@ function closeReader(fromPop){
   if (!fromPop && rdPushed && history.state && history.state.ajReader){ rdSkipPop = true; history.back(); }
   rdPushed = false;
 }
-function rdFollow(tx, sys = false){
+function rdFollow(tx, sys = false, dataOnly = false){
   if (!rdAt || rdAt.key !== shownKey || !tx || tx === rdAt.text) return;
   const sc = el("rdScroll"), top = sc.scrollTop;
-  rdAt.text = tx; fill(el("rdWords"), tx, false, sys); sc.scrollTop = top;
+  rdAt.text = tx; fill(el("rdWords"), tx, dataOnly, sys); sc.scrollTop = top;
 }
 function dblTap(node, ok, fn){
   let down = null, last = null;
@@ -3563,6 +3567,10 @@ function wakeOff(p){ if (p.wl){ p.wl.release().catch(() => {}); p.wl = null; } }
 // nothing plays while recording (the speaker stops), so there is no echo to cancel. With it off, a stretch of true digital
 // silence means the system fed the page zeros — recorded as a gap (with track mute → unmute) and told to the owner.
 const MIC_AUDIO = {echoCancellation: false, noiseSuppression: false, autoGainControl: true};
+const microphone = createMicrophone({
+  getUserMedia: () => navigator.mediaDevices.getUserMedia({audio: MIC_AUDIO}),
+  visible: () => document.visibilityState === "visible"
+});
 const SILENT_PEAK = 4 / 32768;
 // The level meter: an analyser on the take's stream (→ a muted gain → the destination, so every engine pulls it). Fails
 // soft — no meter, the ring breathes instead — and is closed with the take.
@@ -3634,7 +3642,7 @@ function gapNote(p, list){
 const takeGaps = (p, decoded) => gapMerge([...gapsIn(p, p.recT0, p.recT1 || performance.now()), ...(p.nsOff && decoded ? decoded : [])]);
 const MIC_OPEN_MAX_MS = 15000;
 function pttStart(id, y){
-  if (ptt) return;
+  if (ptt || document.visibilityState !== "visible") return;
   if (C.asr() !== "ready"){ C.asrInstall?.(); return; }
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder){
     toast(t('r.ptt.noRec'), 3000); return;
@@ -3657,17 +3665,21 @@ function pttStart(id, y){
     toast(t('r.ptt.noMic'), 3000);
   }, MIC_OPEN_MAX_MS);
   p.ac = meterCtx();                                               // P205: made inside the gesture, so iOS lets it run
-  navigator.mediaDevices.getUserMedia({audio: MIC_AUDIO}).then(stream => {
+  microphone.acquire().then(lease => {
+    const stream = lease.stream;
     clearTimeout(p.openTimer);
     if (p.over){
-      stream.getTracks().forEach(tr => tr.stop());
+      lease.release();
       return;
     }
+    p.micLease = lease;
+    p.trackOff = [];
     p.stream = stream;
     for (const tr of stream.getAudioTracks()){
-      tr.addEventListener("ended", () => pttInterrupted(p));
-      tr.addEventListener("mute", () => { p.mutedAt = Date.now(); p.muteT0 = performance.now(); });
-      tr.addEventListener("unmute", () => { p.mutedAt = 0; gapAdd(p, p.muteT0, performance.now()); p.muteT0 = 0; });
+      const listen = (event, fn) => { tr.addEventListener(event, fn); p.trackOff.push(() => tr.removeEventListener(event, fn)); };
+      listen("ended", () => pttInterrupted(p));
+      listen("mute", () => { p.mutedAt = Date.now(); p.muteT0 = performance.now(); });
+      listen("unmute", () => { p.mutedAt = 0; gapAdd(p, p.muteT0, performance.now()); p.muteT0 = 0; });
       try{ p.nsOff = tr.getSettings().noiseSuppression === false; }catch(_){ p.nsOff = false; }
     }
     meterOn(p, stream);
@@ -3683,6 +3695,16 @@ function pttStart(id, y){
     pttEnd(p, "cancel", true);
     toast(t('r.ptt.noMic'), 3000);
   });
+}
+function microphoneAway(){
+  if (ptt){
+    if (ptt.locked || ptt.seg){
+      ptt.hidAt = performance.now();
+      ptt.autoSend = false;
+      pttInterrupted(ptt);
+    } else pttEnd(ptt, "cancel", true);
+  }
+  microphone.close();
 }
 function recOptions(){
   const o = {audioBitsPerSecond: REC_BPS};
@@ -3777,6 +3799,9 @@ function pttEnd(p, reason, quiet){
   p.over = true;
   clearInterval(p.timer); clearTimeout(p.pend); clearTimeout(p.cap); clearTimeout(p.openTimer);
   wakeOff(p);
+  for (const off of p.trackOff || []) off();
+  p.trackOff = [];
+  if (!p.stream) microphone.close(); // cancel/timeout invalidates an unresolved permission request
   const tEnd = p.tUp || p.cutAt || performance.now();
   if (p.muteT0){ gapAdd(p, p.muteT0, tEnd); p.muteT0 = 0; }
   if (p.silT0){ gapAdd(p, p.silT0, tEnd, true); p.silT0 = 0; }
@@ -3793,7 +3818,8 @@ function pttEnd(p, reason, quiet){
   if (p.rec){ p.rec.final = true; p.rec.closing = false; }
   if (p.rec && p.rec.state !== "inactive"){ try{ p.rec.stop(); }catch(_){ pttFinish(p, p.seg, null, 0); } }
   else if (p.rec) pttFinish(p, p.seg, p.chunks.length ? new Blob(p.chunks, {type: (p.rec.mimeType || p.chunks.find(b => b.type)?.type || "audio/webm").split(";")[0]}) : null, recTotalMs(p) / 1000);
-  else if (p.stream) p.stream.getTracks().forEach(tr => tr.stop());
+  p.micLease?.release();
+  if (p.interrupted) microphone.close(); // revoked/muted sources must not poison the next gesture
   pttUI(ptt);
 }
 // A take longer than T seconds goes as an audio attachment (transcribed at send time); T = what the field can show,
@@ -3820,7 +3846,8 @@ function segAttach(p, n, blob, secs, quiet){
   return a;
 }
 function pttFinish(p, n, blob, secs){
-  if (p.stream) p.stream.getTracks().forEach(tr => tr.stop());
+  // The lease was disabled synchronously in pttEnd; this delayed recorder callback
+  // must never stop the source of the next take.
   const dropTake = () => p.takeP?.then(id => id && LR.dropSeg(id, n));
   if (!LR.usable(blob, secs)){ if (p.interrupted) intNote(p, n > 0 ? "tray" : "none"); dropTake(); return; }
   if (!p.send || !blob){ intNote(p, n > 0 ? "tray" : "none"); dropTake(); return; }   // P198: earlier parts are in the tray
@@ -4341,6 +4368,7 @@ export function forgetLocal(){
   forgetRendered();                                  // P57: rendered copies of the Agent's words (code / math / diagrams)
   for (const a of atts.slice()) removeAtt(a, false);
   if (ptt) pttEnd(ptt, "cancel", true);
+  microphone.close();
   LR.wipe();                                         // P182: stored recordings go with the pairing
   cancelReply(); closeQuote();
   if (input){ input.value = ""; autosize(); }
@@ -4915,31 +4943,13 @@ export function init(ctx){
     if ((e.key === " " || e.key === "Enter") && ptt && ptt.id === "key"){ e.preventDefault(); pttEnd(ptt, "release"); }
   });
   mic.addEventListener("blur", () => { if (ptt && ptt.id === "key") pttEnd(ptt, "cancel"); });
-  // P182: a locked take keeps going when the page is hidden (another tab / app; a desktop screen lock) — where the system
-  // takes the microphone away (iOS, a locked phone) the watch ends it as an interruption on return, what was recorded kept.
-  // Going hidden flushes the newest chunk to the phone's store; going away for good (pagehide) ends it the same way.
+  // P496: privacy boundary — a hidden page never retains an enabled audio source.
+  // Preserve a locked/segmented take as an interruption; foreground return is passive.
   document.addEventListener("visibilitychange", () => {
-    if (!ptt) return;
-    if (document.visibilityState !== "visible"){
-      if (!ptt.locked && !ptt.seg) pttEnd(ptt, "cancel");
-      else{
-        if (!ptt.hidAt) ptt.hidAt = performance.now();                 // P198: see pttInterrupted
-        try{ if (ptt.rec && ptt.rec.state === "recording") ptt.rec.requestData(); }catch(_){}
-      }
-      return;
-    }
-    ptt.visAt = performance.now();
-    if (ptt.locked) wakeOn(ptt);
-    pttWatch(ptt);
-    // P205: back from a dark screen with the take still going — say at once which stretch came in silent
-    if (ptt && !ptt.over){
-      meterSample(ptt);
-      const g = gapsIn(ptt, ptt.recT0, performance.now());
-      if (g.length > ptt.gapSeen){ toast(t('r.ptt.gapLive', {r: gapText(g.slice(ptt.gapSeen))}), 7000); ptt.gapSeen = g.length; }
-    }
+    if (document.visibilityState !== "visible") microphoneAway();
   });
   window.addEventListener("blur", () => { if (ptt && !ptt.locked && !ptt.pend && !ptt.seg) pttEnd(ptt, "cancel"); });   // P181: not between the two taps; P182: not mid-take
-  window.addEventListener("pagehide", () => { if (ptt) pttEnd(ptt, ptt.locked || ptt.seg ? "release" : "cancel", true); });
+  window.addEventListener("pagehide", microphoneAway);
 
   // native shell hooks (relay's window.relayNative, same four methods)
   window.relayNative = Object.freeze({

@@ -290,6 +290,42 @@ def scan(host, path: str | None = None, tid: str | None = None) -> dict:
 
 
 # ---------------------------------------------------------------- page tokens + one-time nonces (per device)
+def import_note(host) -> str:
+    """P495 #206: a bounded, names-only suggestion to the main Agent. No writer/approval bypass.
+
+    Use P362's sources exactly (never discover arbitrary dotenv files); only known catalog
+    names, not untrusted file labels or tails, enter model context. The phone re-lists and
+    signs the current source/value fingerprint through the existing keys_op import flow.
+    """
+    now = time.monotonic()
+    if now - getattr(host, "_key_import_checked", -1e9) < 60:
+        return ""
+    host._key_import_checked = now
+    from . import keys_found as kf
+    try:
+        managed = env_path()
+        current = read_env(managed)
+        srcs = kf.sources(host, managed)
+        names = {n for n in CATALOG_NAMES if not current.get(n) and
+                 any(src["values"].get(n) for src in srcs if not src.get("why"))}
+    except (OSError, ValueError, kf.Unsafe):
+        return ""
+    offered = getattr(host, "_key_import_offered", set())
+    new = sorted(names - offered)
+    if not new:
+        return ""
+    host._key_import_offered = offered | names
+    found = ", ".join(new)
+    if getattr(host, "lang", "zh") == "en":
+        return ("\n[Agent J local key discovery] Existing registered sources contain: " + found +
+                ". Proactively offer to import these keys. Ask the owner to open Settings → Models and API Key "
+                "on the phone and confirm Import there. Only that existing signed entry may copy a value; "
+                "never read or paste values into chat, and never add/search other .env files.\n")
+    return ("\n〔Agent J 本机密钥发现〕已登记的本机来源已有同名 key：" + found +
+            "。请主动向主人提议导入，指引主人在手机「设置 → 模型和 API Key」对应行确认「收进 Agent J 管理」。"
+            "只走已有签名入口；不要读取或把秘密值写进聊天，不要自行导入，也不要添加或遍找其他 .env 文件。\n")
+
+
 def _tokens(host) -> dict:
     if not hasattr(host, "_keys_tokens"):
         host._keys_tokens = {}

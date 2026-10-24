@@ -1,7 +1,7 @@
 // Phone controls (PROTOCOL §8): what it remembers, the activity record, scheduled tasks, 全部停下 / 恢复, batch grants.
 // Reads are plain requests answered to this session only; every write is signed with the approval key over (action,
 // nonce, time, SHA-256 of the target as shown) — the host does nothing without a valid signature. Nothing is stored here.
-import { controlMessage, b64u } from '../proto/wire.js';
+import { controlMessage, b64u, workflowResumeMessage } from '../proto/wire.js';
 import { request, done, isReady, channel, sendApp, randHex, gen, peer } from './session.js';
 import { signKey } from './store.js';
 import { myDeviceId } from './api.js';
@@ -32,6 +32,7 @@ function command(obj) {                               // pending acknowledgement
     const arm = (ms) => { clearTimeout(timer); timer = setTimeout(() => finish({ ok: false, why: 'timeout' }), ms); };
     const r = request(obj, (m) => {
       if (m.t === 'ctl_res' || m.t === 'offline') finish(m.t === 'offline' ? { ok: false, why: 'offline' } : m);
+      else if (!extended && m.t === 'ctl_pending' && obj.t === 'wf_resume_do' && m.action === 'wf_resume_do' && m.timeout_ms === 620000) { extended = true; arm(620000); }
       else if (!extended && m.t === 'ctl_pending' && obj.t === 'bots_write' && m.action === 'bots_write' && m.timeout_ms === 620000) { extended = true; arm(620000); }
       else if (!extended && m.t === 'ctl_pending' && obj.t === 'cmd_run' && m.action === 'cmd_run' && m.timeout_ms === 150000) { extended = true; arm(150000); }   // P361
     }, obj[GEN] ?? gen());
@@ -363,6 +364,7 @@ function taskCard(tk, paused) {
   li.append(mk('p', 'small', t('tasks.when', { when: cronText(tk.schedule), tz: tzText(tk) }) + (Number.isInteger(tk.next) ? t('tasks.next', { at: new Date(tk.next * 1000).toLocaleString(locale(), { hour12: false, month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) }) : '')));
   if (tk.problems?.length) li.append(mk('p', 'error small', t('tasks.bad', { p: tk.problems[0] })));
   if (tk.last && typeof tk.last === 'object') li.append(mk('p', 'small', t('tasks.last', { verdict: tk.last.verdict ?? '', line: tk.last.line ?? '' })));
+  if (peer.wfresume1 && /^[0-9a-f]{32}$/.test(tk.resume?.run_id || '')) li.append(resumeButton(tk.resume.run_id));
   if (!tk.problems?.length || tk.enabled) {
     const on = !tk.enabled;
     const b = mk('button', on ? 'aj-btn aj-btn--primary aj-btn--sm' : 'aj-btn aj-btn--sm', t(on ? 'tasks.enable' : 'tasks.disable')); b.type = 'button';
@@ -395,4 +397,32 @@ async function setTask(tk, on, title) {
   try { res = await command(await signed(on ? 'task_on' : 'task_off', target, { t: 'task_set', on, ...target })); } catch (e) { res = { ok: false, why: e.message }; }
   toast(res.ok ? t(on ? 'tasks.enabled' : 'tasks.disabled') : t('tasks.fail', { why: why(res.why) }), 3200);
   loadTasks();
+}
+
+// P498: fetch one exact checkpoint challenge, then sign and send on the SAME Noise generation.
+export async function workflowResume(runId) {
+  const g = gen(), ch = channel();
+  if (!g || !peer.wfresume1 || !/^[0-9a-f]{32}$/.test(runId)) return {ok:false, why:'unsupported'};
+  try {
+    const res = await command({t:'wf_resume_get', run_id:runId, [GEN]:g});
+    if (!res.ok) return res;
+    const obj = res.challenge, device = await myDeviceId(), sk = await signKey();
+    if (gen() !== g || channel() !== ch || !sk || obj.channel !== ch || obj.device !== device || obj.run_id !== runId) return {ok:false, why:'changed'};
+    const signature = new Uint8Array(await crypto.subtle.sign('Ed25519', sk.priv, workflowResumeMessage(obj)));
+    if (gen() !== g || channel() !== ch) return {ok:false, why:'changed'};
+    return await command({t:'wf_resume_do', challenge:obj, sig:b64u(signature), [GEN]:g});
+  } catch { return {ok:false, why:'refused'}; }
+}
+
+export function resumeButton(runId) {
+  const button = mk('button', 'cmdundo', t('p498.resume'));
+  button.type = 'button'; button.dataset.wfResume = runId; button.disabled = !isReady();
+  button.addEventListener('click', async () => {
+    if (button.disabled) return;
+    button.disabled = true;
+    const res = await workflowResume(runId);
+    toast(t(res.ok ? 'p498.queued' : 'p498.refused'), 4000);
+    button.disabled = !!res.ok || !isReady();
+  });
+  return button;
 }

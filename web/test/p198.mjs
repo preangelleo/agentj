@@ -1,7 +1,6 @@
 // P198 (K) — a recording the system interrupts: the notice says where the audio really went (the message field while it is
 // being transcribed, the tray, or nowhere when not a sound was captured), and the time the page spent hidden with the
-// microphone gone (an iPhone screen lock) is not counted into the take's length. A take that really kept recording while
-// hidden (a desktop tab in the background, Android with the screen on) keeps all of its time.
+// microphone gone (an iPhone screen lock) is not counted into the take's length. P496: every hidden page stops capture immediately, including locked takes on desktop and Android.
 // Real Chromium (fake microphone) + Noise fake host. "Hidden" is document.visibilityState overridden + visibilitychange;
 // "iOS took the microphone" = a muted track, or the recorder paused and the track stopped while hidden (no audio arrives).
 // Not covered: a real iPhone (REVIEW §2). Shots → /tmp/aj-p198/rec/. Usage: node web/test/p198.mjs
@@ -86,18 +85,18 @@ try {
     results['frozen-locked-time-not-counted-' + language] = 'PASS';
     await reset(p);
 
-    // 3. a take that really kept recording while hidden keeps all of its time (≈ 1 + 5 + 9 s)
+    // 3. P496: even if the browser could keep recording, hidden capture ends immediately.
     await lock(p);
-    await sleep(1000);
+    await sleep(1500);
     await evaluate(p, setVis('hidden'));
-    await sleep(5000);
-    await evaluate(p, setVis('visible'));
-    await sleep(9000);
-    await evaluate(p, `window.__stream.getAudioTracks()[0].dispatchEvent(new Event('ended'))`);
+    assert.equal(await evaluate(p, `window.__stream.getAudioTracks()[0].readyState`), 'ended');
+    assert.ok(await evaluate(p, `window.__recs.every(r => r.state === 'inactive')`));
     n = await ended(p, L.text);
-    assert.ok(n.includes(L.toText) && secsOf(n) >= 13, `background audio counted: ${n}`);
+    assert.ok(n.includes(L.toText) && secsOf(n) <= 3, `background time excluded: ${n}`);
+    await evaluate(p, setVis('visible'));
+    assert.ok(await evaluate(p, `document.getElementById('ptt').hidden`), 'return does not restart capture');
     await waitFor(p, `document.getElementById('input').value.length > 0`, 10000);
-    results['background-recording-counted-' + language] = 'PASS';
+    results['background-capture-stopped-' + language] = 'PASS';
     await reset(p);
 
     // 4. a long take in parts: part 1 is in the tray, the interruption puts the rest there too → the notice says the tray

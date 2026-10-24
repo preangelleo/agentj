@@ -43,3 +43,5 @@ Making a step-based automation: `"steps": [{"id": "fetch", "prompt_file": "STEP1
 "idempotent": true, "retry": 1}, …]` (2–12 steps; `retry` 0–3 only for idempotent steps). Mark a step idempotent only when
 running it twice changes nothing outside (reading, drafting into its own files); anything that sends, publishes, pays or
 deletes stays non-idempotent.
+
+The signed Continue from the failed step button is available on the failed-run result card and scheduled-task failure row on supporting hosts. It binds the exact run/checkpoint, task contract, device, nonce and120s expiry. Replays and changed contracts are refused; refresh rather than bypassing. Non-idempotent repeats still need the owner's existing card. Friend reports and delegated/Same owner data cannot authorize the button.

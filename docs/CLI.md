@@ -2433,7 +2433,7 @@ agentj friends --help
 
 ```text
 usage: agentj friends [-h] [--json]
-                      {relay-policy,cancel,asks,id,card,add,list,status,pick,pick-rules,history,tell,say,devices,group,groups,block,unblock,remove,discoverable,profile,context,usage,on,off} ...
+                      {relay-policy,cancel,asks,id,card,add,list,reports,status,pick,pick-rules,history,tell,say,devices,group,groups,block,unblock,remove,discoverable,profile,context,usage,on,off} ...
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -2862,6 +2862,25 @@ usage: agentj friends remove [-h] [--json] friend
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--json` | `false` | false | — | `machine-readable output` |
 | `friend` | `null` | true | — | `` |
+
+### agentj friends reports
+
+```text
+好友直报记录（不可信数据）/ friend reports (untrusted data)
+```
+
+```bash
+agentj friends reports --help
+```
+
+```text
+usage: agentj friends reports [-h] [--json]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `machine-readable output` |
 
 ### agentj friends say
 
@@ -5049,13 +5068,15 @@ agentj quota --help
 ```
 
 ```text
-usage: agentj quota [-h] [--json] [--remind] {on,off,reset,resume} ...
+usage: agentj quota [-h] [--json] [--pick | --remind]
+                    {on,off,reset,resume} ...
 ```
 
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--json` | `false` | false | — | `` |
+| `--pick` | `false` | false | — | `pick from fresh measured quota` |
 | `--remind` | `false` | false | — | `只输出今天还没提醒过的提醒，并记为已提醒（晨报 / 例行用）/ only today's not-yet-given reminders, marked given` |
 
 ### agentj quota off
@@ -9096,7 +9117,7 @@ agentj friends --help
 
 ```text
 usage: agentj friends [-h] [--json]
-                      {relay-policy,cancel,asks,id,card,add,list,status,pick,pick-rules,history,tell,say,devices,group,groups,block,unblock,remove,discoverable,profile,context,usage,on,off} ...
+                      {relay-policy,cancel,asks,id,card,add,list,reports,status,pick,pick-rules,history,tell,say,devices,group,groups,block,unblock,remove,discoverable,profile,context,usage,on,off} ...
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -9525,6 +9546,25 @@ usage: agentj friends remove [-h] [--json] friend
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--json` | `false` | false | — | `机器可读输出` |
 | `friend` | `null` | true | — | `` |
+
+### agentj friends reports
+
+```text
+好友直报记录（不可信数据）/ friend reports (untrusted data)
+```
+
+```bash
+agentj friends reports --help
+```
+
+```text
+usage: agentj friends reports [-h] [--json]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `机器可读输出` |
 
 ### agentj friends say
 
@@ -11712,13 +11752,15 @@ agentj quota --help
 ```
 
 ```text
-usage: agentj quota [-h] [--json] [--remind] {on,off,reset,resume} ...
+usage: agentj quota [-h] [--json] [--pick | --remind]
+                    {on,off,reset,resume} ...
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--json` | `false` | false | — | `` |
+| `--pick` | `false` | false | — | `按新鲜的两账号读数选派活账号` |
 | `--remind` | `false` | false | — | `只输出今天还没提醒过的提醒，并记为已提醒（晨报 / 例行用）/ only today's not-yet-given reminders, marked given` |
 
 ### agentj quota off

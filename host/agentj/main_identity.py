@@ -11,7 +11,7 @@ import json
 from pathlib import Path
 
 DATA = Path(__file__).with_name("identity")
-VERSION = 20  # P410: signed per-request friend handover; product version unchanged
+VERSION = 21  # P410: signed per-request friend handover; product version unchanged
 # v15 (P290): v14 (P251/P253/P254) + P269 checked API / browser / Father paths (compressed wording, same limits)
 # v11 = P159 + P186 (0.20.0, v11 never shipped alone): P159 compressed the v10 rules ~10% (zh 4359→3927 chars);
 # P186 added the chairman philosophy (company = workflow, guide chairman thinking, intent → workflow / global / local skill,
@@ -22,7 +22,7 @@ VERSION = 20  # P410: signed per-request friend handover; product version unchan
 # v9 (P113, ADR-A193): long tasks — preflight card, brief, CEO routing, report read-back
 # v8 (P82): owner-authorized customer-service bot management
 # v5 (P64): a workflow with a CEO is always dispatched — never run or edited by the main Agent; read-only reporting stays
-HASHES = {'en': '13403ab293625cbfd7aa283e34f161527f9058eaf4c23f413bac1406d509c138', 'zh': '6da333f6d2b3d8cfd68a2013485227b9a68651dbddc43c5d2aba8938591300e2'}
+HASHES = {'en': 'db73ad29e1398f55e050e0f4fc69e502ddf0282cd7e5d834a6ea615dd0dec562', 'zh': '2aeedf940a11780fd38a96d7b3319891bb2d736c32f3637fe8e1befd14991562'}
 MECHANISMS = {"claude": "append-system-prompt", "codex": "developerInstructions", "opencode": "prompt_async.system",
               "kimi": "acp.resource", "qwen": "acp.resource", "dsh": "acp.text"}   # P329: dsh takes no embedded resources (acp._block)   # P305: ACP has no system-prompt field — an embedded resource block (acp.prompt_blocks)
 

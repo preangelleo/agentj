@@ -14,7 +14,7 @@ import { t } from './t.js';
 
 export const GROUP_MAX = 8;                         // more than this in one reply: the rest stay words
 const OWNER = ['phone', 'telegram', 'email'];       // a page the owner wrote (the answer to the reply before it)
-const NOT_AGENT = ['sys', 'task', 'cmd'];           // host-written pages: not the Agent's own words
+const NOT_AGENT = ['sys', 'task', 'cmd', 'friend_report'];           // host-written pages: not the Agent's own words
 const SKIP = 'blockquote,pre,code,a,button,.mslot,.math,.mermaid-src,details';
 const picked = new Map();                           // page id → the words this phone sent (until the next page shows it)
 const ctxOf = new WeakMap();                        // root → the latest ctx (a click reads it)

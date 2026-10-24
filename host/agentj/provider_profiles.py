@@ -41,6 +41,43 @@ TIERS = {'haiku': 'ANTHROPIC_DEFAULT_HAIKU_MODEL', 'sonnet': 'ANTHROPIC_DEFAULT_
 MAX_OUTPUT_ENV = 'CLAUDE_CODE_MAX_OUTPUT_TOKENS'
 
 
+# P497, official catalogs checked 2026-10-24. Route-scoped suggestions only:
+# never overwrite an owner's saved model, cross regions, or promote a paid tier.
+# A-owned setup/fallback adapters consume model_candidates with that account's
+# actual available IDs. Kimi is chat-completions/Anthropic, NOT Codex Responses;
+# this table does not change probe() or claim a Responses-compatible preset.
+VERIFIED_MODEL_ROUTES = {
+    "kimi-api-cn": {"base_url": "https://api.moonshot.cn/v1", "api": "chat-completions",
+                    "models": ("kimi-k3.1-pro", "kimi-k3"), "region": "mainland-cn",
+                    "source": "https://platform.kimi.com/docs/guide/kimi-k3-1-pro-quickstart"},
+    "kimi-api-global": {"base_url": "https://api.moonshot.ai/v1", "api": "chat-completions",
+                        "models": ("kimi-k3.1-pro", "kimi-k3"), "region": "global",
+                        "source": "https://platform.kimi.ai/docs/guide/kimi-k3-1-pro-quickstart"},
+    "kimi-code-cn": {"base_url": "https://api.kimi.com/coding/v1", "api": "chat-completions",
+                     "models": ("k3.1-pro", "k3", "kimi-for-coding"), "region": "mainland-cn",
+                     "source": "https://www.kimi.com/code/docs/en/kimi-code/models.html"},
+    "kimi-code-global": {"base_url": "https://api.kimi.ai/coding/v1", "api": "chat-completions",
+                         "models": ("k3.1-pro", "k3", "kimi-for-coding"), "region": "global",
+                         "source": "https://www.kimi.com/code/docs/en/kimi-code/models.html"},
+    "opencode-go": {"base_url": "https://opencode.ai/zen/go/v1", "api": "chat-completions",
+                    "models": ("kimi-k3.1-pro", "kimi-k3", "kimi-k2.7-code"), "region": "workspace-policy",
+                    "source": "https://opencode.ai/zen/go/v1/models"},
+}
+
+
+def model_candidates(route, available):
+    """Verified default first, then fallbacks on the SAME route, intersected with account availability.
+
+    `available` is the adapter's model-list/entitlement result. No data → no default.
+    This read-only selector never performs a billable inference probe or writes profiles.
+    IDs are provider-native; OpenCode adds its own provider prefix at the adapter seam.
+    """
+    if route not in VERIFIED_MODEL_ROUTES or not isinstance(available, (list, tuple, set, frozenset)):
+        return []
+    ids = {x for x in available if isinstance(x, str)}
+    return [mid for mid in VERIFIED_MODEL_ROUTES[route]["models"] if mid in ids]
+
+
 def default_api(harness, api=None):
     return api or ('anthropic' if harness == 'claude' else 'openai')
 

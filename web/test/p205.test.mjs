@@ -45,7 +45,7 @@ test('P205 cleanAddress: text only, control characters out, ≤ 16 characters, j
   assert.equal(clean('😀'.repeat(20)),'😀'.repeat(16),'cut by characters, never half a surrogate pair');
   for(const v of [undefined,null,3,{},['a'],'', '   ']) assert.equal(clean(v),'');
   assert.match(src,/ownerAddr=cleanAddress\(userPreferences\.owner\?\.address\)/,'applyPreferences takes it from the host preferences');
-  assert.match(src,/fill\(w, pending && !tx \? \(label \|\| waitText\(wait\)\) : tx, pending && !tx, sys\)/,'wait lines are drawn as plain text');
+  assert.match(src,/fill\(w, pending && !tx \? \(label \|\| waitText\(wait\)\) : tx, dataOnly \|\| pending && !tx, sys\)/,'wait lines are drawn as plain text');
 });
 
 test('P205 a wait line breaks at its commas on a narrow phone', ()=>{

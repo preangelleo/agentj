@@ -9,7 +9,7 @@ const fn=source.slice(source.indexOf('function paintCmdx(p)'),source.indexOf('fu
 function render(p,turns){
  const box={children:[],replaceChildren(){this.children=[];},appendChild(b){this.children.push(b);}};
  const slashes=[];
- const ctx=vm.createContext({el:()=>box,C:{myDev:()=>'owner',api:{slash:(...a)=>slashes.push(a)}},t:k=>k,hist:{turns},
+ const ctx=vm.createContext({paintReportActions:()=>false,el:()=>box,C:{myDev:()=>'owner',api:{slash:(...a)=>slashes.push(a)}},t:k=>k,hist:{turns},
    document:{createElement:tag=>({tag,dataset:{},addEventListener(k,f){this.click=f;}})},sendApp:()=>Promise.resolve(),p});
  vm.runInContext(fn+'; paintCmdx(p);',ctx);return {box,slashes};
 }

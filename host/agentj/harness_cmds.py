@@ -7,11 +7,10 @@ The `menu` answer carries `native` = this harness's commands that Agent J's own 
     {"kind": "claude", "native": [{"cmd": "/init", "desc": "…", "state": "run"}, {"cmd": "/mcp", "state": "agent"}, …]}
 
 - `run`   — changes no setting and the harness's headless interface runs it itself: the typed text goes to the harness as is.
-            A fixed list only (Claude Code's prompt commands /init /review /security-review …) — never "whatever init reports":
+            A fixed list only (Claude prompt commands; Codex review/start; OpenCode init/command) — never "whatever init reports":
             a security review (P412) found reported built-ins such as /auto-mode-setup (permission rules), /design-consent
             (grants access) and /heapdump (writes the heap, tokens included) that a default-allow would have run.
-- `agent` — changes a setting or needs the terminal screen (/config /mcp /effort /permissions …, and every Codex / OpenCode
-            TUI command): the host catches it and the main Agent gets 「〔菜单命令 /x〕主人想执行 /x <参数>」 (`agent_text`); the
+- `agent` — Claude settings or terminal screens (/config /mcp /effort /permissions …): the host catches it and the main Agent gets 「〔菜单命令 /x〕主人想执行 /x <参数>」 (`agent_text`); the
             Agent does it through its own normal path (Agent J's settings writer, the phone's signature, an approval card)
             and says what it did. Any other name Claude Code reports (the owner's custom commands, a built-in this table does
             not know yet) goes this way too. ADR-A71 is unchanged — bridge ≤ session: nothing reaches the harness that the session's
@@ -118,6 +117,14 @@ NONE = {
         "connect": ("连接服务商要在电脑上做（密钥不经过手机），或用 Agent J 的服务商设置", "Connect a provider at the computer (keys never pass through the phone), or in Agent J's provider settings"),
     },
 }
+# P495: dedicated native endpoints only. Codex /init is a TUI prompt expansion,
+# not an app-server operation; never claim a natural-language substitute is native execution.
+RUN |= {"codex": frozenset({"review"}), "opencode": frozenset({"init", "review"})}
+for _h in ("codex", "opencode"):
+    for _n, _, _ in TUI[_h]:
+        if _n not in RUN[_h] and _n not in NONE[_h]:
+            NONE[_h][_n] = ("此命令只支持终端界面，当前无头接口不可用；请在电脑终端操作。",
+                            "This command requires the terminal UI and is unavailable in the headless interface; use the computer terminal.")
 HARNESS = {"claude": "Claude Code", "codex": "Codex", "opencode": "OpenCode"}
 
 
@@ -138,6 +145,8 @@ def route(kind, name, init=None):
     kind = _kind(kind)
     if kind not in TUI or not isinstance(name, str) or name in OWN:
         return None
+    if name in RUN.get(kind, ()):
+        return "run"
     if name in NONE[kind]:
         return "none"
     if kind == "claude":

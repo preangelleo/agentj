@@ -375,6 +375,8 @@ class PeerService:
 
     # ------------------------------------------------------------ lifecycle
     async def start(self) -> None:
+        from . import report_actions
+        await report_actions.recover_replies(self)
         await self._start_sock()
         await self.apply()
         self.restore_asks()
@@ -810,11 +812,13 @@ class PeerService:
                     self._global_limit()
             if self.store.get(fid) is None or self.store.is_blocked(fid):
                 return                              # removed / blocked while the turn ran
+            blocked = None
             if res.decision == "silent" and not res.error:
                 self._finish(fid, mid, "got", hist_s="silent")
             elif res.decision == "reply" and not res.error and res.text.strip():
                 v = await self._outbound(res.text)
                 if not v.ok:
+                    blocked = v.rule
                     self.log("peer_msg", result="outbound_gate", reason=v.rule)
                     self._question(fid, m, "", self.tx("r_gate", rule=v.rule))
                     self._finish(fid, mid, "queued_for_owner")
@@ -838,9 +842,12 @@ class PeerService:
                 if draft:
                     v = await self._outbound(draft)
                     if not v.ok:
+                        blocked = v.rule
                         draft, reason = "", self.tx("r_gate", rule=v.rule)
                 self._question(fid, m, draft, reason)
                 self._finish(fid, mid, "queued_for_owner")
+            from . import report_actions
+            await report_actions.report_decision(self, fid, m, res, blocked=blocked)
             self.log("peer_turn", result=res.decision, reason=res.error)
         except asyncio.CancelledError:
             raise
@@ -1188,9 +1195,30 @@ class PeerService:
         if not v.ok:
             self.log("peer_msg", result="outbound_gate", reason=v.rule)
             return self.notice(self.tx("draft_blocked", rule=v.rule))
+        if not await self.guards.begin_reply(fid, a.data.get("mid")):
+            return
+        try:
+            if self.host.stopped() or self.store.get(fid) is None or self.store.is_blocked(fid):
+                await self.guards.release_reply(fid, a.data.get("mid"), 'authority_changed')
+                return
+        except Exception:
+            await self.guards.release_reply(fid, a.data.get("mid"), 'before_send')
+            return
         m_in = {"mid": a.data.get("mid"), "thread": a.data.get("thread"), "ctx": a.data.get("ctx")}
-        self._send_pmsg(fid, draft, m_in, auto=False)
+        if self._send_pmsg(fid, draft, m_in, auto=False) is not None:
+            self.resolve_question(fid, a.data.get("mid"))
+            await self.guards.finish_reply(fid, a.data.get("mid"))
+        else:
+            await self.guards.release_reply(fid, a.data.get("mid"), 'send_refused')
         self.changed(fid)
+
+    def resolve_question(self, fid: str, mid: str) -> None:
+        """A sent owner reply consumes every approval for this original message."""
+        for ask in list(self.asks.values()):
+            if (ask.tool == "peer_question" and ask.data.get("friend") == fid
+                    and ask.data.get("mid") == mid and not ask.extra.get("pairing")):
+                self._decided(ask, "deny", "replied")
+        self._finish(fid, mid, "replied")
 
     def dismiss_asks(self, rid=None) -> int:
         rows = [a for a in self.asks.values() if rid is None or a.rid == rid]
@@ -1207,6 +1235,8 @@ class PeerService:
         while True:
             await asyncio.sleep(self.HOUSEKEEP)
             try:
+                from . import report_actions
+                await report_actions.flush(self)
                 self.guards.sweep()
                 self.expire_asks()
                 self._count(None)
@@ -1246,7 +1276,10 @@ class PeerService:
 
     def list_view(self) -> dict:
         v = self.store.list_view()
+        from . import report_actions
+        local_names = report_actions.remarks(self)
         for f in v["friends"]:
+            f["remark"] = local_names.get(f["id"], "")
             f.update(self.same_owner.info(f["id"]))
             items, _ = self.store.hist_page(f["id"], None, 1)
             f["last"] = {"ts": _ms(items[0].get("ts")) if items else _ms(f.get("last")),
@@ -1536,6 +1569,9 @@ class PeerService:
 
     async def cli(self, req: dict) -> dict:
         t = req.get("t")
+        if t == "reports":
+            from . import report_actions
+            return report_actions.listing(self)
         if t == "asks":
             self.expire_asks()
             rid = req.get("dismiss")
@@ -1749,6 +1785,7 @@ def add_parser(sub) -> None:
     a.add_argument("id")
     a.add_argument("--note", default="")
     s.add_parser("list", help="好友、请求、组")
+    s.add_parser("reports", help="好友直报记录（不可信数据）/ friend reports (untrusted data)")
     s.add_parser("status", help="同一个主人好友的聚合状态 / same-owner aggregate status").add_argument("friend")
     pk = s.add_parser("pick", help="派活前：在同一个主人的设备里按规则推荐一台（只推荐，不派活） / recommend one of your own "
                                    "devices for the next job (does not send it)")
@@ -1903,7 +1940,7 @@ def cmd_friends(a) -> None:
             sys.exit("agentj serve 没在运行：先启动它（agentj service status / agentj serve）。")
     if getattr(a, "json_sub", False):
         a.json = True
-    if a.json or req["t"] in ("history", "devices"):
+    if a.json or req["t"] in ("history", "devices", "reports"):
         print(json.dumps(res, ensure_ascii=False, indent=1))
         sys.exit(0 if res.get("ok") else 1)
     if req["t"] == "pick" and res.get("ok") and "machines" in res:

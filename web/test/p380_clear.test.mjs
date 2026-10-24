@@ -8,7 +8,7 @@ const fn=source.slice(source.indexOf('function paintCmdx(p)'),source.indexOf('fu
 function node(tag){return {tag,children:[],open:false,dataset:{},append(...xs){this.children.push(...xs);},appendChild(x){this.children.push(x);},replaceChildren(){this.children=[];},addEventListener(k,f){this[k]=f;}};}
 function render(p){
  const box=node('div'),wired=[],slashes=[];
- const ctx=vm.createContext({el:()=>box,C:{myDev:()=>'owner',api:{slash:(...a)=>slashes.push(a)}},t:k=>k,hist:{turns:[p]},
+ const ctx=vm.createContext({paintReportActions:()=>false,el:()=>box,C:{myDev:()=>'owner',api:{slash:(...a)=>slashes.push(a)}},t:k=>k,hist:{turns:[p]},
    document:{createElement:node},sendApp:()=>Promise.resolve(),copyable:pre=>{wired.push(pre);const block=node("div");block.appendChild(pre);return block;},p});
  vm.runInContext(fn+'; paintCmdx(p);',ctx);return {box,wired,slashes};
 }

@@ -182,6 +182,8 @@ async function onFrame(s, data) {
 function rcField() { const rc = reconnectReason(); return rc ? { rc } : {}; }
 
 function readCaps(m) {
+  peer.wfresume1 = Array.isArray(m.caps) && m.caps.includes('wfresume1');
+  peer.friendreport1 = Array.isArray(m.caps) && m.caps.includes('friendreport1');
   peer.wf1 = Array.isArray(m.caps) && m.caps.includes('wf1');
   peer.jpalette1 = Array.isArray(m.caps) && m.caps.includes('jpalette1'); // P420 global palette library
   peer.sk1 = peer.wf1 && m.caps.includes('sk1');   // P426 (§39): skill health + skill_archive / skill_restore

@@ -9,10 +9,10 @@ anything that needs your call, such as a price or a date, comes to you first.
 
 - **The other owner has to say yes.** A friend request goes to the other owner's phone, and nothing happens until they
   tap "Accept".
-- **Friend messages normally stay outside your main chat with the Agent.** Your Agent answers each friend in a separate **peer
+- **Friends use isolated peer sessions, which report to your main chat.** Your Agent answers each friend in a separate **peer
   session**: same name, same personality, but it cannot see your files, your passwords, your conversation with the Agent
   or other friends' chats. It cannot run commands, browse the web or change anything.
-- **You can read everything, but you cannot cut in.** The friends page on your phone shows every conversation. To say
+- **You can read everything and reply to reports.** The friends page on your phone shows every conversation. To say
   something to a friend, tell your own Agent and it passes it on.
 
 ## Your ID and QR code
@@ -260,3 +260,15 @@ A request is claimed when the Agent starts handling it. With no reply for 30 min
 Ask your Agent to use `agentj friends relay-policy --per-minute 30 --claim-seconds 1800 --pending-seconds 86400 --json` to configure the limits, or omit those options to read them. The rate accepts 1–10000 messages; durations accept 1–2592000 seconds. `agentj friends cancel <friend> <message-id> --json` cancels a pending request’s state; it cannot undo actions or stop running work. Report results with `agentj friends tell <friend> --reply-to <message-id> <result>` so a result is not treated as a new task.
 
 List pending friend cards with `agentj friends asks --json`. Use `agentj friends asks --dismiss <ID>` for one, or `agentj friends asks --dismiss all` for all. Emergency repair on the phone also dismisses pending friend cards; it never approves them or sends a reply. Ordinary friend questions expire after two minutes.
+
+## Peer reports in your main conversation
+
+Friends still use isolated peer sessions. Their completed report cards appear in your one main conversation by default and notify you. A card displays the peer session’s result without starting a main-Agent tool turn. Decisions, commitments, blocks and failures are reported promptly; ordinary updates batch for one minute. Each batch holds up to eight items, with at most three batches per friend and twenty across all friends per minute. Rate-limited reports remain pending.
+
+Save Your local name in friend Details. Reports use this name, or the friend ID when unset, rather than a remote card name. The name stays on your computer.
+
+Reports are untrusted data. They cannot trigger execution, request approval or gain Same owner authority. Tap Reply to this friend under a report and enter only the words to pass on; choose the matching item in a batch. The reply uses that friend's peer channel and never includes your main conversation. If sending is unconfirmed, check friend history before sending again. `agentj friends reports --json` reads reports; it cannot authorize replies.
+
+Local receipts prevent automatic redelivery after a restart or an uncertain result. When report storage is full, the original remains in friend history as Report pending. Turning friends off or blocking the friend stops delivery.
+
+A reply that was definitely not sent can be tried again. After a computer restart, an interrupted send shows its unknown result on the original card. Nothing is resent automatically. Check friend history and confirm your friend did not receive it before choosing Send again and entering the words to pass on.

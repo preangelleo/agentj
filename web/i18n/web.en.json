@@ -1383,7 +1383,8 @@
       "queued_for_owner": "passed to you to decide",
       "limited": "over the limit, no reply",
       "withheld": "held back by the check",
-      "silent": "no reply"
+      "silent": "no reply",
+      "report_pending": "Report pending"
     },
     "detail": {
       "title": "{name} · details",
@@ -4325,5 +4326,23 @@
     "confirm": "Revoke the remotes present when setup began? All verified new remotes will remain.",
     "count": "{n} new remotes verified; {old} old remotes remain.",
     "failed": "Not completed. Use a newly paired remote with a new passkey, reconnect, and try again."
+  },
+  "p498": {
+    "resume": "Continue from the failed step",
+    "queued": "Queued to continue from the failed step.",
+    "refused": "Not continued. Refresh the record and try again.",
+    "reply": "Reply to this friend",
+    "replyText": "Only the words to send to this friend",
+    "chooseReport": "Choose the report to reply to",
+    "send": "Send to friend",
+    "sent": "Accepted by the friend sending channel.",
+    "replyUnconfirmed": "Sending is unconfirmed. Check friend history before sending again.",
+    "friend": "Friend report · {name}",
+    "remark": "Your local name",
+    "saveRemark": "Save name",
+    "remarkSaved": "Name saved.",
+    "replyUnknown": "The last send result is unknown. Confirm your friend did not receive it before choosing Send again.",
+    "resend": "Send again",
+    "retryReply": "Not sent. Please try again."
   }
 }

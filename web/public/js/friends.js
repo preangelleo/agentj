@@ -7,7 +7,7 @@ import { touch, askDone } from './snap.js';
 // show / edit my card, edit policy groups. Reads are plain requests on the paired session (fr_list, fr_hist, fr_usage);
 // every write carries the §8 control signature of this device's approval key (controls.signedWrite).
 // Host data is untrusted display text: textContent only, lengths capped.
-import { ask1, isReady, gen, sendApp, channel } from './session.js';
+import { ask1, isReady, gen, sendApp, channel, peer } from './session.js';
 import { friendAnswer, parseAgentId, friendLink, GROUP_ID_RE, FRIEND_CTX_MAX } from '../proto/wire.js';
 import { signKey } from './store.js';
 import { myDeviceId } from './api.js';
@@ -82,7 +82,7 @@ function normList(m) {
     me: { id: parseAgentId(str(me.id, 64)) || str(me.id, 64), discoverable: me.discoverable !== false, on: me.on !== false,
       card: { name: str(card.name, 64), owner: str(card.owner, 32), intro: str(card.intro, 140) } },
     friends: (Array.isArray(m.friends) ? m.friends : []).filter((f) => f && typeof f.id === 'string').slice(0, 500).map((f) => ({
-      id: f.id.slice(0, 64), name: str(f.name, 64) || shortId(f.id), owner: str(f.owner, 32), intro: str(f.intro, 140), group: str(f.group, 32),
+      id: f.id.slice(0, 64), remark: str(f.remark, 80), name: str(f.name, 64) || shortId(f.id), owner: str(f.owner, 32), intro: str(f.intro, 140), group: str(f.group, 32),
       holdForOwner: f.hold_for_owner === true, sameOwner: ['active', 'pending'].includes(f.same_owner) ? f.same_owner : 'none',
       // P417 #186: the code shown in place (null = a host that does not send it), whether this side already said yes, why it ended
       soCode: typeof f.same_owner_code === 'string' ? (/^\d{6}$/.test(f.same_owner_code) ? f.same_owner_code : '') : null,
@@ -334,7 +334,7 @@ function renderMain(force = true) {
 }
 
 // ---- a conversation (read only)
-const S_KNOWN = ['pending', 'sent', 'got', 'replied', 'undelivered', 'queued_for_owner', 'limited', 'withheld', 'silent', 'blocked'];
+const S_KNOWN = ['pending', 'sent', 'got', 'replied', 'undelivered', 'queued_for_owner', 'limited', 'withheld', 'silent', 'blocked', 'report_pending'];
 function viewChat(box) {
   const f = friendOf(V.friend);
   if (!f) { box.append(mk('p', 'small', t('fr.gone'))); return; }
@@ -482,6 +482,17 @@ function viewDetail(box) {
     mk('p', 'fr-id small', f.id));
   if (f.intro) card.append(mk('p', 'small', f.intro));
   box.append(card);
+  if (peer.friendreport1) {
+    const row = mk('label', 'fr-row'); row.append(mk('span', 'fr-row__label', t('p498.remark')));
+    const input = mk('input', 'aj-input'); input.maxLength = 80; input.value = f.remark;
+    input.setAttribute('aria-label', t('p498.remark')); row.append(input);
+    const save = btn('aj-btn--sm', t('p498.saveRemark'), async () => {
+      const target = {friend:f.id, name:input.value};
+      const res = await signedWrite('fr_report_remark', target, {t:'fr_report_remark', ...target});
+      toast(t(res.ok ? 'p498.remarkSaved' : 'p498.refused'), 3200);
+    });
+    row.append(save); box.append(row);
+  }
   // group
   const row = mk('label', 'fr-row');
   row.append(mk('span', 'fr-row__label', t('fr.detail.group')));

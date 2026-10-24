@@ -55,7 +55,7 @@ test('P435 already inactive recorder also keeps the MP4 chunk MIME', () => {
   let got;
   const p = {over:false,t0:0,seg:0,rec:{state:'inactive',mimeType:''},
     chunks:[new Blob([new Uint8Array(400)],{type:'audio/mp4'})]};
-  const ctx = vm.createContext({p,ptt:p,Blob,clearInterval(){},clearTimeout(){},wakeOff(){},meterOff(){},
+  const ctx = vm.createContext({microphone:{close(){}},p,ptt:p,Blob,clearInterval(){},clearTimeout(){},wakeOff(){},meterOff(){},
     performance:{now:()=>1000},PTT_MIN_MS:500,recTotalMs:()=>1000,pttUI(){},pttFinish(p,n,b){got=b.type;}});
   vm.runInContext(src.slice(src.indexOf('function pttEnd('),src.indexOf('// A take longer than T')),ctx);
   vm.runInContext('pttEnd(p,"release",true)',ctx);

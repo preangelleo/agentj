@@ -955,17 +955,23 @@ class CodexAgent(Agent):
         self.turn_id, self.turn_status, self.rate_retry = None, {}, None
         self.tail_reset()
         params = {"threadId": self.tid, "input": [{"type": "text", "text": text, "text_elements": []}]}
+        native = slash.parse(text)
+        review = native is not None and native[0] == "review"
+        if review:
+            params = {"threadId": self.tid, "delivery": "inline", "target":
+                      {"type": "custom", "instructions": native[1]} if native[1] else {"type": "uncommittedChanges"}}
+        method = "review/start" if review else "turn/start"
         rev = getattr(self, "revert", None)
-        if self.cfg.get("model"):
+        if not review and self.cfg.get("model"):
             params["model"] = self.cfg["model"]
-        elif rev and isinstance(rev.get("model"), str):
+        elif not review and rev and isinstance(rev.get("model"), str):
             params["model"] = rev["model"]
-        if self.cfg.get("effort"):                 # §10.11: "for this turn and subsequent turns" (app-server 0.160)
+        if not review and self.cfg.get("effort"):                 # §10.11: "for this turn and subsequent turns" (app-server 0.160)
             params["effort"] = self.cfg["effort"]
-        elif rev and isinstance(rev.get("effort"), str):
+        elif not review and rev and isinstance(rev.get("effort"), str):
             params["effort"] = rev["effort"]
         try:
-            r = await self.deliver(lambda: self.call("turn/start", params))    # §10.2: turn/start sent = delivered
+            r = await self.deliver(lambda: self.call(method, params))    # §10.2: turn/start sent = delivered
             self.revert = None
         except (RPCError, ConnectionError, OSError, asyncio.TimeoutError) as e:
             self.rate_retry = False
@@ -977,7 +983,7 @@ class CodexAgent(Agent):
             self.turn_id = t["id"]
         await self.await_turn()
         why, self.rate_retry = self.rate_retry, False
-        if isinstance(why, str):
+        if isinstance(why, str) and not review:
             await self._retry_rate(why)
 
     RATE_RETRY_WAIT = 8.0

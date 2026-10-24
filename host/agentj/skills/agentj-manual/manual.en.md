@@ -764,3 +764,13 @@ Centred circular notices show one short status word: Sent, Copied or Saved (up t
 ## Queued messages and quiet periods
 
 Use Stop previous task on a queued message when you want to interrupt the earlier task. After three minutes both queued and without new earlier-task output, the page reports that quiet period; this does not prove the task is stuck. New output resets the timer, and a reload or reconnection starts a new observation. Tasks are never stopped automatically; Stop retains its existing handling of unsent messages.
+
+## Continue from the failed step
+
+A failed multi-step workflow offers Continue from the failed step on its result card and failed scheduled-task row. The tap signs that exact run and checkpoint. Completed steps with valid outputs are reused. A changed task, step description or checkpoint invalidates the old action; refresh and review the current record.
+
+A non-idempotent step that may already have sent, paid, published or deleted still needs the owner's confirmation card. Declining runs nothing. Friend reports, delegated friend tasks and Same owner messages cannot authorize this action. Older hosts do not show it, and repeated taps cannot replay a consumed signature. You can also ask the main Agent to inspect and resume using agentj-automation.
+
+## Consecutive recordings and leaving the page
+
+Foreground takes reuse an authorized microphone and disable its capture track between takes. Locking the screen, switching apps or leaving the page stops the track. Returning does not open the microphone automatically. Tapping Record again may prompt for permission; Safari website settings can set Microphone to Allow. Actual system permission dialogs still require a physical iPhone check.

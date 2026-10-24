@@ -58,12 +58,12 @@ test('gap ranges merge and read as m:ss', () => {
   lang.v = 'en'; assert.equal(ctx.gapText([{a: 0, b: 3000}, {a: 5000, b: 8000}]), '0:00–0:03, 0:05–0:08');
 });
 
-test('gaps come from mute → unmute, live digital silence, and the decoded take; told once, also on return to the page', () => {
-  assert.match(src, /addEventListener\("unmute", \(\) => \{ p\.mutedAt = 0; gapAdd\(p, p\.muteT0, performance\.now\(\)\)/);
+test('gaps come from mute → unmute, live digital silence and decoded take; hidden pages end capture', () => {
+  assert.match(src, /listen\("unmute", \(\) => \{ p\.mutedAt = 0; gapAdd\(p, p\.muteT0, performance\.now\(\)\)/);
   assert.match(src, /if \(p\.muteT0\)\{ gapAdd\(p, p\.muteT0, tEnd\)/, 'still muted when the take ends');
   assert.match(src, /gapNote\(p, takeGaps\(p, r\.gaps\)\)/, 'words path');
   assert.match(src, /a\.label \+= t\('r\.tray\.gap'/, 'a segment chip says so');
-  assert.match(src, /toast\(t\('r\.ptt\.gapLive'/, 'back from a dark screen');
+  assert.match(src, /document\.visibilityState !== "visible"\) microphoneAway\(\)/, 'hidden pages end capture immediately');
   assert.match(read('../public/js/wav.js'), /gaps: silentRuns\(pcm\)/);
 });
 

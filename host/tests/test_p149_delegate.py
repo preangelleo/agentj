@@ -23,7 +23,7 @@ class CoreV10(unittest.TestCase):
         self.assertTrue(self.en.splitlines()[0].endswith("v" + str(main_identity.VERSION)))
 
     def test_triage_sits_right_after_dispatch(self):
-        for text, dispatch, triage in ((self.zh, "你绝不是某个工作流的 CEO", "每条请求先判三类"),
+        for text, dispatch, triage in ((self.zh, "你绝不是某个工作流的 CEO", "请求分三类"),
                                        (self.en, "You are never the CEO", "Sort each request")):
             lines = text.splitlines()
             self.assertTrue(lines[3].startswith(dispatch))   # P186: line 2 is the chairman philosophy
@@ -38,7 +38,7 @@ class CoreV10(unittest.TestCase):
             self.assertIn(needle, self.en)
 
     def test_handed_off_then_standby_and_progress_card(self):
-        for needle in ("已交代给 X，有结论再报", "回到待命", "不凭退出码", "同回合叠同卡", "随时接主人插话", "避免消息排队", "派活、监督、汇报"):
+        for needle in ("已交代给 X，有结论再报", "并待命", "退出码不够", "同回合叠同卡", "随时接主人插话", "避免消息排队", "派活、监督、汇报"):
             self.assertIn(needle, self.zh)
         for needle in ("Handed to X; I will report when there is a result", "return to standby", "not exit code", "same card",
                        "stay interruptible", "keep messages from queueing", "Dispatch, supervise and report"):

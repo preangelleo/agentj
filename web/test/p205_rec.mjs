@@ -1,8 +1,8 @@
 // P205 item 5 — the recording card and the silent-gap notice, in real Chromium (fake microphone) + the Noise fake host.
 //   A. 390×844 touch (zh, en): hold to talk → the centred dark circle (square box, round, centred, ring live from the meter),
 //      no icons; double tap → locked: cancel / end / send icons + the "don't press the power button" note, the page blurred
-//      behind (P346 replaced the dim mode); the end icon ends (words in the field); the cancel icon cancels; mute while hidden → unmute →
-//      back on the page: "0:0x–0:0y came in silent", and again when the take ends.
+//      behind (P346 replaced the dim mode); the end icon ends (words in the field); the cancel icon cancels. P496: hiding
+//      the page stops capture immediately, preserves the take, never sends it or reopens the microphone on return.
 //   B. a fake microphone file with 5 s of digital zeros in the middle: the opened track has noiseSuppression false, and the
 //      finished take is told 「录音里 0:0x–0:0y 没有声音」 (live meter + decoded take).
 //   C. 1440×900 mouse: the same circle in the middle of a desktop; Esc cancels a locked take.
@@ -26,7 +26,7 @@ const T = {
   en: {hint: 'Release to send', awake: "Please don't press the power button", live: 'came in silent and may be missing', gap: 'of the recording came in silent', words: '这是转写出来的文字', cancelled: 'Cancelled'},
 };
 const HOOKS = `(() => {
-  const g = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices); navigator.mediaDevices.getUserMedia = async (c) => { window.__gum = c; return (window.__stream = await g(c)); };
+  window.__gumCalls = 0; const g = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices); navigator.mediaDevices.getUserMedia = async (c) => { window.__gumCalls++; window.__gum = c; return (window.__stream = await g(c)); };
   window.__wl = 0; Object.defineProperty(navigator, 'wakeLock', {configurable: true, value: {request: async () => { window.__wl++; const w = new EventTarget(); w.released = false; w.release = async () => { w.released = true; }; return w; }}});
   window.__vis = 'visible';
   Object.defineProperty(document, 'visibilityState', {configurable: true, get: () => window.__vis});
@@ -126,24 +126,19 @@ try {
       results['lock-cancel-icon-' + language] = 'PASS';
       await reset(p);
 
-      // the system mutes the microphone while the screen is dark, gives it back before the owner returns
+      // P498 fixture alignment with P496: hidden capture stops, the take is retained, return is passive.
+      // Retain the historical parity case ID; digital silence remains exercised by section B below.
       await lock(p); await sleep(2000);
+      const sentBeforeHidden = S.fake.st.says.length;
+      const acquiredBeforeHidden = await evaluate(p, `window.__gumCalls`);
       await evaluate(p, setVis('hidden'));
-      await evaluate(p, `window.__stream.getAudioTracks()[0].dispatchEvent(new Event('mute'))`);
-      await sleep(4000);
-      await evaluate(p, `window.__stream.getAudioTracks()[0].dispatchEvent(new Event('unmute'))`);
-      await sleep(300);
+      await waitFor(p, `window.__stream.getAudioTracks().every(t => t.readyState === 'ended') && document.getElementById('ptt').hidden`, 3000);
       await evaluate(p, setVis('visible'));
-      await waitFor(p, `document.getElementById('toast').textContent.includes(${JSON.stringify(L.live)})`, 3000);
-      const liveTxt = await evaluate(p, `document.getElementById('toast').textContent`);
-      assert.match(liveTxt, /0:0[12]–0:0[56]/, liveTxt);
-      writeFileSync(out + `rec-gaplive-${language}-390.png`, await shoot(p, ''));
-      await sleep(1200);
-      await clickEl(p, '#pttEnd');
-      await waitFor(p, `document.getElementById('toast').textContent.includes(${JSON.stringify(L.gap)})`, 12000);
-      const endTxt = await evaluate(p, `document.getElementById('toast').textContent`);
-      assert.match(endTxt, /0:0[12]–0:0[56]/, endTxt);
-      writeFileSync(out + `rec-gapend-${language}-390.png`, await shoot(p, ''));
+      await waitFor(p, `document.getElementById('input').value.includes(${JSON.stringify(L.words)})`, 10000);
+      assert.equal(await evaluate(p, `window.__gumCalls`), acquiredBeforeHidden, 'foreground return does not request microphone access');
+      assert.equal(S.fake.st.says.length, sentBeforeHidden, 'an interrupted take is never sent automatically');
+      assert.ok(await evaluate(p, `document.getElementById('ptt').hidden`), 'return does not restart recording');
+      writeFileSync(out + `rec-hidden-preserved-${language}-390.png`, await shoot(p, ''));
       results['mute-gap-told-' + language] = 'PASS';
       await reset(p);
       assert.deepEqual(p.problems, []); assert.deepEqual(p.offsite, []);

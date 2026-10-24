@@ -526,8 +526,12 @@ class OpenCodeV2Agent(OpenCodeAgent):
             except (OSError, HTTPError, AttributeError, asyncio.TimeoutError):
                 pass
 
+            from .native_commands import opencode_request
+            native = opencode_request(text, sid, self.cfg.get("model"), True)
+            path, body = native or (f"/api/session/{quote(sid)}/prompt", {"text": text})
+
             async def post():
-                box["st"], _ = await client.request("POST", f"/api/session/{quote(sid)}/prompt", {"text": text})
+                box["st"], _ = await client.request("POST", path, body)
                 if box["st"] == 200:
                     return True
                 return False if isinstance(box["st"], int) and 400 <= box["st"] < 500 else UNCERTAIN
@@ -539,7 +543,7 @@ class OpenCodeV2Agent(OpenCodeAgent):
                     await self._kill(self.proc)
                 self._delivery_uncertain()
                 return  # the native request may already have executed; never replay it
-            if st == 404 and not attempt:                 # the conversation is gone: a fresh one
+            if st == 404 and not attempt and not native:                 # the conversation is gone: a fresh one
                 if self.persist:
                     self.host.st.set_agent_session(self.kind, None)
                 await self._kill(self.proc)
