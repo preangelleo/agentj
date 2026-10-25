@@ -402,11 +402,12 @@ def card_lang(lang) -> str:
     return "en" if str(lang or "").lower().startswith("en") else "zh"
 
 
-def approval_summary(tool, tool_input, verdict, lang="zh"):
+def approval_summary(tool, tool_input, verdict, lang="zh", *, workdir=None):
+    text = action_policy.summary(tool, tool_input, credentials="credentials" in verdict.cats, lang=lang, workdir=workdir)
     if 'credentials' in verdict.cats:
         kind = "read" if getattr(verdict, "cred", "") == "read" else "change"
-        return CARD_TEXT[card_lang(lang)][kind].format(tool=tool)
-    return agents.summarize(tool, tool_input)
+        text = CARD_TEXT[card_lang(lang)][kind].format(tool=tool) + "\n" + text
+    return text
 
 
 
@@ -4547,12 +4548,10 @@ class Host:
             batch = False
         kind = self.agent.kind if self.agent else "?"
         v = self._classify(tool, tool_input)
-        summary = (action_policy.summary(tool, tool_input) if tool in
-                   ("agentj mail", "agentj mail send", "agentj mail notes", "agentj mail reply", "agentj calendar")
-                   else approval_summary(tool, tool_input, v, self.lang))
-        if len(summary.encode()) > 24000:
-            return {"behavior":"deny", "message":("日历内容过长，无法完整确认 / calendar content is too large to review"
-                                                   if tool == "agentj calendar" else "邮件内容过长，无法完整确认 / mail is too large to review")}
+        try:
+            summary = approval_summary(tool, tool_input, v, self.lang, workdir=(self.agent_cfg or {}).get("dir"))
+        except (ValueError, TypeError, RecursionError):
+            return {"behavior": "deny", "message": "动作参数无效 / invalid action parameters"}
         if require_passkey:
             batch = False
         if require_passkey and tool == "SandboxOnce":
@@ -4572,14 +4571,14 @@ class Host:
                 why = fence.REASONS.get(tool_input.get("reason"), "隔离检查失败")
                 summary = ("沙箱不可用，Agent J 尚未启动：" + why + "。\n修复隔离工具后重试；"
                            "需要安装或管理员权限时，可在手机上批准。\n本次不隔离运行：批准后会在沙箱外运行，可能访问本机文件和凭据。仅本次启动有效，需主人通行密钥批准。")
+            summary += "\n" + approval_summary(tool, tool_input, v, self.lang, workdir=(self.agent_cfg or {}).get("dir"))
         if risk_scope:
             summary += CARD_TEXT[card_lang(self.lang)]["risk_scope"]
-        if tool == "AuthRescue" and isinstance(tool_input.get("summary"), str):
-            summary = tool_input["summary"][:600]   # P258: the rescue card shows (and the phone signs) exactly this text
-        if tool in (goal_mod.TOOL, goal_mod.TOOL_GRANT, "AgentJHook") and isinstance(tool_input.get("card"), str):
-            summary = tool_input["card"]            # P158 / P339: the goal card shows (and the phone signs) exactly this text
         if origin:
             summary += "\n" + str(origin)[:120]     # last line: the first stays the command (notices, push)
+        if len(summary.encode()) > 24000:
+            return {"behavior": "deny", "message": ("日历内容过长，无法完整确认 / calendar content is too large to review"
+                                                    if tool == "agentj calendar" else "动作内容过长，无法完整确认 / action is too large to review")}
         digest, isha = approvals.shown_digest(tool, summary), approvals.input_digest(tool_input)
         rid = secrets.token_hex(16)
         workdir = (self.agent_cfg or {}).get("dir")
@@ -4836,7 +4835,7 @@ class Host:
         sandbox, ADR-A73): refused without a card — approvals.log (reason `policy`), host.log, activity, one notice."""
         rid = secrets.token_hex(16)
         v = self._classify(tool, tool_input)
-        summary = approval_summary(tool, tool_input, v, self.lang)
+        summary = approval_summary(tool, tool_input, v, self.lang, workdir=(self.agent_cfg or {}).get("dir"))
         approvals.record(self.st, rid=rid, agent=self.agent.kind if self.agent else "?", tool=tool,
                          input_sha256=approvals.input_digest(tool_input), shown_sha256=approvals.shown_digest(tool, summary),
                          cats=v.cats, decision="deny", reason="policy")

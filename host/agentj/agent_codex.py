@@ -36,7 +36,7 @@ from . import bg, codex_perm, compactprep, danger, humane, slash
 from . import agent as _agentmod
 from .agent import LINE_LIMIT, Agent, _signal_tree
 from .slash import Result
-from .text import clean, clean_line
+from .text import clean, clean_line, pick
 
 START_WAIT = 60          # s for initialize / config / thread answers
 CALL_WAIT = 60
@@ -487,24 +487,16 @@ class CodexAgent(Agent):
     def policy(self) -> dict:
         """What serve asks of a thread (start and resume alike, so a changed setting applies to the same conversation after
         a restart — Codex 0.159.2 keeps an old thread's sandbox on a resume that names none, ADR-A175).
-        F14: inherit the owner's native approval policy/reviewer; do not impose untrusted.
+        P513d supersedes the independent F14 approval-policy exemption: request user review on start/resume.
         F30: the sandbox is the owner's explicit `sandbox_mode`, else `danger-full-access` (the main Agent runs directly on
         the system, like the owner's terminal; the danger list and phone cards still apply); research tasks read-only."""
         from . import codex_perm
         p = {}
         sandbox, self.perm_source = codex_perm.main_sandbox(self.human.get("sandbox_mode"), self.research)
-        if self.cfg.get("high_risk_warnings", False):
-            p["approvalsReviewer"] = "user"
-            if not isinstance(self.human.get("approval_policy"), dict):
-                # P198 (P164 D): under `untrusted` an ACCEPTED command runs outside Codex's sandbox (re-measured on 0.162.1,
-                # reports/qa/p198/), so with the owner's own read-only / workspace-write sandbox every non-read-only command
-                # was declined by beyond_sandbox (`policy`) and the Agent could do nothing. There the sandbox is the guard:
-                # the owner's own policy (else on-request) — commands run inside it, escalations are still declined.
-                # A research task keeps `untrusted` (its read-only sandbox; anything not read-only is declined anyway).
-                p["approvalPolicy"] = "untrusted" if sandbox == codex_perm.FULL or self.research else (
-                    self.human["approval_policy"] if isinstance(self.human.get("approval_policy"), str) else "on-request")
-        elif isinstance(self.human.get("approval_policy"), (str, dict)):
-            p["approvalPolicy"] = self.human["approval_policy"]   # named on resume too: a changed setting applies at once
+        # P513d: native preferences cannot suppress host review. Accepted calls
+        # still pass beyond_sandbox; asking more never expands inherited access.
+        p["approvalsReviewer"] = "user"
+        p["approvalPolicy"] = "untrusted"
         p["sandbox"] = sandbox
         if self.cfg.get("model"):
             p["model"] = self.cfg["model"]
@@ -1183,7 +1175,11 @@ class CodexAgent(Agent):
         if not sb and src in ("agentj", "config", "research"):
             sbt = codex_perm.main_sandbox(self.human.get("sandbox_mode"), self.research)[0]
         info = codex_perm.config_info()
-        if isinstance(self.human.get("approval_policy"), dict):
+        if self.policy().get("approvalPolicy") == "untrusted":
+            pol = pick(getattr(self.host, "lang", "zh"),
+                       "untrusted（Agent J 请求用户审查；保留原生沙箱边界）",
+                       "untrusted (Agent J requests user review; native sandbox boundaries remain in force)")
+        elif isinstance(self.human.get("approval_policy"), dict):
             pol = "你自己的 granular 策略（agentj 没改）"
         elif self.cfg.get("high_risk_warnings", False) and src != "desktop":
             pol = ("危险清单上的命令和文件改动问手机，低风险的直接执行（高危提醒开着：agentj 要求 untrusted）"     # P198

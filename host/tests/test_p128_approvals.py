@@ -125,9 +125,12 @@ class Card(unittest.TestCase):
         for cmd in ("cat .env", "sed -i s/a/b/ .env"):
             v = shared_v(cmd)
             zh, en = approval_summary("Bash", {"command": cmd}, v, "zh"), approval_summary("Bash", {"command": cmd}, v, "en")
-            self.assertIsNone(re.search(r"[A-Za-z]{4,}", zh.replace("Bash", "").replace("Agent J", "")), zh)
+            self.assertIsNone(re.search(r"[A-Za-z]{4,}", zh.split("\n", 2)[0].replace("Bash", "").replace("Agent J", "")), zh)
             self.assertIsNone(CJK.search(en), en)
-            self.assertNotIn(".env", zh + en)                       # the command (it may carry a value) never reaches the card
+            # P513e: paths and command structure are required review context.
+            # Secret values are covered by the real Host.ask credential matrix.
+            self.assertIn(cmd, zh)
+            self.assertIn(cmd, en)
         self.assertIn("查看密码或密钥", approval_summary("Bash", {}, shared_v("cat .env"), "zh"))
         self.assertIn("改密码或密钥", approval_summary("Bash", {}, shared_v("cp x ~/.aws/credentials"), "zh"))
 

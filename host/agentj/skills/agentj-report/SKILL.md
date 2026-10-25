@@ -6,6 +6,10 @@ description: Recurring reports and mails from a fixed template — 「每天给�
 The model fills data, the template owns the look: the same automation looks the same every day, and data that fails the
 template's schema is never rendered or sent. Engine and templates come from the plaza package web-page-report.
 
+Every installed report-engine invocation runs only after an action-bound approval passkey check. The host freezes the
+engine, template and data bytes before the card; changing the originals while approval waits cannot change that run.
+Missing confirmation means no script starts. Sending the rendered mail has its own final recipients/body/attachments UV.
+
 ## Steps
 1. **Template.** The owner's pick from the gallery (https://agentj.app/web-report/) wins; remember it in the automation's
    brief. No pick → R15 Agent J Noir (the default, no `-t` needed); tech news → `-t R02`; research → `-t R14`.
@@ -15,7 +19,7 @@ template's schema is never rendered or sent. Engine and templates come from the 
    Unknown fields are errors. Links only `https://` or `mailto:`. Body text may use `- ` lists, `**bold**`, `[text](https://…)`.
 4. **Validate** until OK: `agentj report validate report.json [-t <id>] --json`. Exit 2 lists every error by field path
    (`$.sections[0].items[2].url`) — fix those fields and run it again. Never write or patch HTML yourself.
-5. **Send.** To the owner: `agentj report send report.json [-t <id>] --to-owner` (no approval needed; subject defaults to the
+5. **Send.** To the owner: `agentj report send report.json [-t <id>] --to-owner` (final-message passkey approval required; subject defaults to the
    data's `title`, or `--subject`). To others: `--to <address or contact name>` (`--cc`, `--bcc`, `--attach`) — mail's
    allowlist and phone approval apply, exactly as in `agentj mail send`. Preview without sending: `--dry-run -o mail.html`.
    Web page instead of mail: `agentj report render report.json -o <dir>`; to share it, `agentj report publish …`.
@@ -29,3 +33,6 @@ template's schema is never rendered or sent. Engine and templates come from the 
 - The owner wants their own look: `agentj report new-template ~/agent-workspace/report-templates/<id>` creates a folder
   (template.json, schema.json, example.json, page.html, optional email.html); then use `-t <id>`. Templates run no
   scripts and load nothing from outside.
+
+每次调用报告引擎都会先冻结脚本、模板与数据，再请求通行密钥确认。工作区模板名在弹卡前解析；数据文件不存在，或自定义模板在审批期间有变化，就拒绝执行。报告邮件另有最终邮件确认，发给主人也需要。
+Each engine invocation freezes scripts, templates and data before its passkey card. Workspace template names resolve before approval; missing data or a custom template changed during approval refuses execution. Sending the report requires a separate final-message approval, including mail to the owner.

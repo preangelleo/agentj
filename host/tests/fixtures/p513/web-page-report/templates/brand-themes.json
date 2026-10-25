@@ -1,0 +1,92 @@
+{
+  "schema": "web-page-report.brand-themes/v1",
+  "rule": "品牌主题可以使用下面列出的品牌固定色（来自对应品牌站点），其余颜色仍只取 palette.json。新增品牌色必须在这里登记来源。",
+  "themes": {
+    "brutal": {
+      "label_zh": "方格纸 · 新粗野主义",
+      "origin_zh": "参考 buseybench.com 的新粗野主义网页风格（方格纸底、3px 粗黑描边、无模糊硬阴影、荧光绿强调、全大写标题）。Agent J 自家作品展示站沿用这套风格。",
+      "default_for": "R05-gallery",
+      "brand_colors": {
+        "paper": "#f7f7f2",
+        "card": "#ffffff",
+        "ink": "#11110f",
+        "muted": "#6f6b62",
+        "acid": "#d9ff36",
+        "hover": "#f2e94e",
+        "red": "#df2f1f"
+      }
+    },
+    "desk": {
+      "label_zh": "研报台 · 暖色编辑风",
+      "origin_zh": "Agent J 官方宏观研报站点的风格：暖白底、陶土色强调、全大写无衬线标题、6px 左侧强调条、无阴影卡片、深色页脚。全部颜色来自调色板，无品牌外色。",
+      "default_for": "R14-research",
+      "brand_colors": {}
+    },
+    "agentj": {
+      "label_zh": "Agent J 标准",
+      "origin_zh": "Agent J 官网 agentj.app 与 Powered by Agent J 站点的标准风格：暖白底、近黑主按钮、盾牌绿点缀、16px 圆角软阴影卡片、虚线分区。官网的辅助灰 #6b6b6b 作为品牌色登记；官网链接色海军蓝已于 2026-10-12 从调色板退役，本主题改用近黑文字 + 盾牌绿下划线。",
+      "default_for": "R13-launch",
+      "brand_colors": {
+        "muted": "#6b6b6b"
+      }
+    },
+    "fixturetheme": {
+      "label_zh": "fixturetheme · 黑客风",
+      "origin_zh": "参考 fixturetheme.org 官网与 fixturetheme 默认主题 tokyo-night（配色出自 Tokyo Night 调色板，MIT）：全等宽字体、0 圆角、无阴影、1px 细环、像素方块底纹、闪烁块状光标。未复制其 logo、字体文件与文案。",
+      "default_for": "R02-tech",
+      "brand_colors": {
+        "bg": "#1a1b26",
+        "surface": "#1f2230",
+        "surface2": "#24283b",
+        "line": "#414868",
+        "text": "#c0caf5",
+        "muted": "#8b93b8",
+        "green": "#9ece6a",
+        "blue": "#7aa2f7",
+        "yellow": "#e0af68",
+        "red": "#f7768e",
+        "magenta": "#ad8ee6",
+        "cyan": "#449dab",
+        "field": "#39482e",
+        "crest": "#daecc6",
+        "on_brand": "#0c0e10"
+      }
+    },
+    "herdr": {
+      "label_zh": "herdr · Developer",
+      "origin_zh": "参考 herdr.dev 的开发者风：深墨底、72px 方格线、0 圆角 1px 描边、超粗紧排展示标题、大写字距标签加强调短线、$ 提示符安装框；强调色为 Catppuccin Mauve（MIT 调色板）。未复制其吉祥物、字标与终端示意图素材；字体只写开源字体栈（Archivo / Inter / JetBrains Mono，OFL），不打包字体文件。",
+      "default_for": "R09-howto",
+      "brand_colors": {
+        "bg": "#17171a",
+        "panel": "#1e1e22",
+        "mass": "#26262b",
+        "grid": "#202024",
+        "line": "#35353d",
+        "ink": "#eae8ee",
+        "faint": "#b0afb6",
+        "mauve": "#cba6f7",
+        "ribbon": "#a6e3a1",
+        "run": "#5fae74",
+        "wait": "#d3a027",
+        "done": "#6f6a86"
+      }
+    },
+    "grit": {
+      "label_zh": "Grit · Ghostty 终端",
+      "origin_zh": "参考 terminalcolors.com/ghostty 的粗粝终端陈列风：Tailwind zinc 近黑底、1px 锌灰描边、6px 圆角、无阴影无渐变、卡片与代码块带终端窗口标题栏（红黄绿三点）、单一琥珀色强调、>_ 前缀；系统字体栈。未复制其 Apple ASCII 图、预览 SVG 与字标。",
+      "default_for": "R11-timeline",
+      "brand_colors": {
+        "bg": "#09090b",
+        "panel": "#18181b",
+        "line": "#27272a",
+        "line_hover": "#3f3f46",
+        "text": "#ffffff",
+        "muted": "#a1a1aa",
+        "amber": "#fbbf24",
+        "dot_red": "#ef4444",
+        "dot_yellow": "#eab308",
+        "dot_green": "#22c55e"
+      }
+    }
+  }
+}

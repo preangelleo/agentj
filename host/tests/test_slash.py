@@ -341,7 +341,9 @@ class CodexChain(_Chain):
             await c["say"]("RUN: rm victim.txt")
             await c["wait"](lambda: len(c["asks"]()) == 1)
             a = c["asks"]()[-1]
-            self.assertEqual((a["tool"], a["summary"], a["cat"]), ("Bash", "rm victim.txt", ["delete"]))
+            self.assertEqual((a["tool"], a["cat"]), ("Bash", ["delete"]))
+            self.assertEqual(json.loads(a["summary"].split("\n", 1)[1].split("\nRequest SHA-256:", 1)[0]), {"command": "rm victim.txt"})
+            self.assertRegex(a["summary"], r"Request SHA-256: [a-f0-9]{64}$")
             self.assertNotIn("batch", a)
             await c["wait"](lambda: c["statuses"]()[-1:] == ["waiting"])
             await host._app(s, ph.answer(a, False))
@@ -505,14 +507,14 @@ class CodexChain(_Chain):
                                     for n in notices()[n0:]), (text, notices()[n0:]))
             self.assertTrue((self.work / "victim.txt").exists())
             self.assertFalse((self.work / "made.txt").exists() or (self.work / "new.txt").exists())
-            # P198: with the owner's own restricted sandbox Agent J no longer asks for `untrusted` (on-request): a command that
-            # only reads runs inside the sandbox — no card; what the sandbox refuses asks to escalate and is declined as above
+            # P513d: review remains untrusted; read-only commands still fast-pass,
+            # while outside-sandbox effects above are refused before any card.
             await c["say"]("RUN: stat victim.txt")
             await c["wait"](lambda: any(m["text"] == "ran: stat victim.txt" for m in c["msgs"]()))
             self.assertEqual(c["asks"](), [])
         self.run_chain(script)
         start = [x["params"] for x in self.logged() if x.get("method") == "thread/start"][0]
-        self.assertEqual((start["sandbox"], start["approvalPolicy"]), ("read-only", "on-request"))
+        self.assertEqual((start["sandbox"], start["approvalPolicy"]), ("read-only", "untrusted"))
         log = approvals.read_log(self.st)
         self.assertEqual([(x["decision"], x["reason"]) for x in log], [("deny", "policy")] * 5)
         self.assertTrue(all(x["sig"] is None for x in log[:5]), "refused by policy: nobody was asked")
@@ -520,22 +522,20 @@ class CodexChain(_Chain):
         self.assertEqual(sum(1 for r in acts if r.get("k") == "decision" and r.get("result") == "policy"), 5)
         self.assertNotIn("victim", self.st.log_path.read_text())
         answers = [x["answer"] for x in self.logged() if "answer" in x]
-        self.assertEqual([a.get("decision") for a in answers if "decision" in a], ["decline"] * 4)
+        self.assertEqual([a.get("decision") for a in answers if "decision" in a], ["decline"] * 4 + ["accept"])   # stat still passes read-only review
         self.assertIn({"permissions": {}, "scope": "turn"}, answers)
 
     def test_workspace_write_sandbox_cards_only_what_stays_inside(self):
-        """P198 (P164 D): under `untrusted` an accepted command runs outside Codex's sandbox (ADR-A73, re-measured on 0.162.1),
-        so with the owner's own workspace-write sandbox every command that writes was declined and the Agent could do nothing.
-        Agent J now keeps the owner's sandbox as the guard (on-request): work inside it runs without a card; what goes beyond
-        it (outside the writable roots, .git, the network) asks to escalate and is declined without a card."""
+        """P513d: untrusted asks before writes; command approvals outside the sandbox
+        are refused, while a file patch inside an existing writable root can pass."""
         os.environ["FAKE_CX_SANDBOX"] = "workspace-write"
 
         async def script(c):
             await c["say"]("PATCH: add new.txt")
             await c["wait"](lambda: (self.work / "new.txt").exists())
             await c["say"]("RUN: touch inside.txt")
-            await c["wait"](lambda: any(m["text"] == "ran: touch inside.txt" for m in c["msgs"]()))
-            self.assertTrue((self.work / "inside.txt").exists())
+            await c["wait"](lambda: any(m["text"] == "declined: touch inside.txt" for m in c["msgs"]()))
+            self.assertFalse((self.work / "inside.txt").exists())
             for text in ("PATCH: add /srv/aj-outside-never-written.txt", "PATCH: add .git/config"):
                 await c["say"](text)
                 await c["wait"](lambda: any(m["text"].startswith("patch declined") and text.split()[-1] in m["text"] for m in c["msgs"]()))
@@ -546,10 +546,10 @@ class CodexChain(_Chain):
             self.assertFalse(os.path.exists("/srv/aj-outside-never-written.txt"))
         self.run_chain(script)
         start = [x["params"] for x in self.logged() if x.get("method") == "thread/start"][0]
-        self.assertEqual((start["sandbox"], start["approvalPolicy"]), ("workspace-write", "on-request"))
-        self.assertEqual([(x["decision"], x["reason"]) for x in approvals.read_log(self.st)], [("deny", "policy")] * 3)
+        self.assertEqual((start["sandbox"], start["approvalPolicy"]), ("workspace-write", "untrusted"))
+        self.assertEqual([(x["decision"], x["reason"]) for x in approvals.read_log(self.st)], [("deny", "policy")] * 4)
 
-    def test_granular_policy_stays_theirs(self):
+    def test_granular_policy_cannot_remove_independent_review(self):
         os.environ["FAKE_CX_POLICY"] = json.dumps({"granular": {"rules": False, "sandbox_approval": False, "mcp_elicitations": False}})
 
         async def script(c):
@@ -557,7 +557,7 @@ class CodexChain(_Chain):
             await c["wait"](lambda: any(m["text"] == "ECHO: 你好" for m in c["msgs"]()))
         self.run_chain(script)
         start = [x["params"] for x in self.logged() if x.get("method") == "thread/start"][0]
-        self.assertNotIn("approvalPolicy", start)
+        self.assertEqual(start["approvalPolicy"], "untrusted")
         self.assertEqual(start["approvalsReviewer"], "user")
 
     def test_scheduled_runs(self):

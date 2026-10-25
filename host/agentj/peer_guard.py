@@ -169,7 +169,11 @@ def _tokenish(v: str) -> bool:
 class SecretIndex:
     """Hashes of windows of this host's secret values. `hits(text)` → does any window of a secret appear in text?"""
 
-    def __init__(self, values=()):
+    def __init__(self, values=(), *, fragment_size=WINDOW):
+        if not 8 <= fragment_size <= WINDOW:
+            raise ValueError("secret fragment size")
+        self._window = fragment_size
+        self._minimum = min(MIN_SECRET, fragment_size)
         self._salt = secrets.token_bytes(16)
         self._set: set[bytes] = set()
         self._lens: set[int] = set()
@@ -184,16 +188,16 @@ class SecretIndex:
         if not isinstance(value, str) or self.count >= MAX_VALUES:
             return
         v = "".join(value.split())
-        if len(v) < MIN_SECRET:
+        if len(v) < self._minimum:
             return
         self.count += 1
-        if len(v) < WINDOW:
+        if len(v) < self._window:
             self._lens.add(len(v))
             self._set.add(self._h(v))
             return
-        self._lens.add(WINDOW)
-        for i in range(len(v) - WINDOW + 1):
-            self._set.add(self._h(v[i:i + WINDOW]))
+        self._lens.add(self._window)
+        for i in range(len(v) - self._window + 1):
+            self._set.add(self._h(v[i:i + self._window]))
 
     def find(self, text: str) -> tuple[int, int] | None:
         """P424 #147: (start, end) in `text` as written of the first window of a known secret value, or None (found only in a
@@ -221,12 +225,12 @@ class SecretIndex:
 
     @classmethod
     def build(cls, environ=None, files=(), workdir: str | None = None, home: str | None = None,
-              service_env: bool = True) -> "SecretIndex":
+              service_env: bool = True, *, fragment_size=WINDOW) -> "SecretIndex":
         """Default sources: this process's environment (names like KEY / TOKEN / SECRET / PASS / CREDENTIAL …), `~/.env`,
         the Agent working folder's `.env*`, the agentj service environment file, and `files` (the owner's extra list).
         From files: every value whose name looks secret, plus long token-like values under any name."""
         env = os.environ if environ is None else environ
-        idx = cls()
+        idx = cls(fragment_size=fragment_size)
         for k, v in env.items():
             if SECRET_NAME.search(k):
                 idx.add(v)

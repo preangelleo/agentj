@@ -254,11 +254,11 @@ class Units(unittest.TestCase):
             self.assertNotIn(bad, c)
         # app-server (ADR-A70): the only thread settings serve adds make Codex ask more, never less (Invariant 11)
         # F30 (ADR-A175): plus the sandbox — the owner's explicit sandbox_mode, else danger-full-access (directly on the system)
-        self.assertEqual(cx.policy(), {"sandbox": "danger-full-access"})
+        self.assertEqual(cx.policy(), {"approvalsReviewer": "user", "approvalPolicy": "untrusted", "sandbox": "danger-full-access"})
         cx.cfg["high_risk_warnings"] = True
         self.assertEqual(cx.policy(), {"approvalsReviewer": "user", "approvalPolicy": "untrusted", "sandbox": "danger-full-access"})
         cx.human = {"approval_policy": {"granular": {"rules": False, "sandbox_approval": False, "mcp_elicitations": False}}}
-        self.assertEqual(cx.policy(), {"approvalsReviewer": "user", "sandbox": "danger-full-access"})   # a granular policy of theirs stays theirs
+        self.assertEqual(cx.policy(), {"approvalsReviewer": "user", "approvalPolicy": "untrusted", "sandbox": "danger-full-access"})   # native granular settings cannot remove review
         self.assertEqual(CodexAgent(None, {"kind": "codex", "dir": "/tmp", "model": None}, research=True).policy()["sandbox"],
                          "read-only")
 
@@ -493,7 +493,9 @@ class Chain(unittest.TestCase):
             await wait(lambda: any(o["t"] == "ask" for _, o in sent))
             self.assertEqual(statuses()[-1], "waiting")
             ask = [o for _, o in sent if o["t"] == "ask"][-1]
-            self.assertEqual((ask["tool"], ask["summary"]), ("Bash", "rm victim.txt"))
+            self.assertEqual(ask["tool"], "Bash")
+            self.assertIn("rm victim.txt", ask["summary"])
+            self.assertIn("Request SHA-256:", ask["summary"])
             await host._app(s, ph.answer(ask, False))
             await wait(lambda: any(m["text"].startswith("被拒绝") for m in msgs()))
             self.assertTrue((self.work / "victim.txt").exists(), "denied rm did not run")

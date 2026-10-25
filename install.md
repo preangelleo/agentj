@@ -1,15 +1,15 @@
 ---
 document: agentj-install
-version: 0.27.8
+version: 0.27.9
 released: 2026-10-25
 status: beta (anyone can sign up; not advertised yet, pages are not indexed)
 host_package: agentj (the `agentj` command)
-host_version: 0.25.8a1
-source_tag: v0.25.8a1
-host_wheel: agentj-0.25.8a1-py3-none-any.whl
-host_wheel_sha256: 7dffe862a9e96efbb2644398e00a2eada1de71a98c9c8a33ca17fe5a8968aacc
-host_sdist: agentj-0.25.8a1.tar.gz
-host_sdist_sha256: a59f8a97b706dcfc26f9b680f853aebe229ea9aa5825995bc36d8b5e44fe361b
+host_version: 0.25.9a1
+source_tag: v0.25.9a1
+host_wheel: agentj-0.25.9a1-py3-none-any.whl
+host_wheel_sha256: 746a3f782e04bc91955d2570b82b531b2226dfe8952e644c9542416b43377d53
+host_sdist: agentj-0.25.9a1.tar.gz
+host_sdist_sha256: 2a48d2fb8b096fdb9309a8f3589feee1a2c75ca5781bad1b9eaae3cc8aaa1192
 canonical_url: https://agentj.app/install.md
 sha256_url: https://agentj.app/install.md.sha256
 alias: https://agentjarvis.net/install.md (the older address: the same file, kept for one more version)
@@ -116,7 +116,7 @@ Jev 会给客服、好友消息增加模型审核，也会复查脱敏内容、�
      Enter skips; later `agentj passphrase set`); required for pairing at the terminal — Step 8;
    - choosing the AI coding tool when more than one is usable and choosing the work folder — Step 9;
    - pairing: opening the phone page, running `agentj pair`, scanning the QR code or moving the pairing link to the phone,
-     on a bound online host: Add a remote on its account seat card, confirm with a passkey or the remote pairing password and scan; the local terminal route needs the 6-digit code and the remote pairing password (`agentj pair` asks to set it first) — Step 11;
+     on a bound online host: Add a remote on its account seat card, confirm each start and approval with a fresh account passkey (plus the host pairing password when required) and scan; the local terminal route needs the 6-digit code and the remote pairing password (`agentj pair` asks to set it first) — Step 11;
    - trying it on the phone (sending a message, holding **长按批准**) — Step 12;
    - saying yes or no to the completion feedback (Step 12) and to the docs-first rule (Step 13; with a yes you run
      `agentj docs-rule --write` yourself);
@@ -726,7 +726,7 @@ DeepSeek says a preview may break; Agent J was measured on 0.2.0-rc.2.
 carry over). So start every command line from here on with `export PATH="$HOME/.local/bin:$PATH";` — or call
 `~/.local/bin/agentj` by its full path. This document writes `agentj` for short.
 
-The program is pinned to one release: the tag `v0.25.8a1` (front matter `source_tag`). The tag never moves, and its
+The program is pinned to one release: the tag `v0.25.9a1` (front matter `source_tag`). The tag never moves, and its
 `host/` folder is byte for byte the same code as the two files on our site whose SHA-256 is in this document's front matter.
 ```bash
 cd ~/.agentj-install
@@ -737,7 +737,7 @@ uv tool install "./$W"
 
 Intel Mac: this release keeps `cryptography<49` because newer releases lack an Intel macOS wheel. If an older installer tries to compile OpenSSL (`openssl-sys` / OpenSSL not found), rerun `uv tool install --with "cryptography<49" "./$W"`. The same platform constraint applies to `agentj update apply`.
 
-export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.25.8a1
+export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.25.9a1
 export PATH="$HOME/.local/bin:$PATH"; agentj doctor
 ```
 **Your human's own terminal must find `agentj` too** — they may use `agentj passphrase set` and `agentj pair` as a local alternative
@@ -765,16 +765,16 @@ echo "$WS  $W" | sha256sum -c - && echo "$SS  $S" | sha256sum -c -    # macOS: s
 uv tool install "./$W"          # the wheel; its dependencies come from PyPI or the mirror in UV_DEFAULT_INDEX
 ```
 `uv tool install "./$S"` installs from the checked source archive instead (it builds the same program).
-`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.25.8a1`); it is
+`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.25.9a1`); it is
 numbered separately from this document (`0.27.7`).
 
-Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.25.8a1#subdirectory=host"`.
+Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.25.9a1#subdirectory=host"`.
 
-Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.25.8a1#subdirectory=host"` (needs Python 3.11+).
+Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.25.9a1#subdirectory=host"` (needs Python 3.11+).
 
 **What each route checks.** The wheel and the source archive above are checked against the SHA-256 in this document. Each
 also has a minisign signature beside it (`<file>.minisig`, key `B79F925B0585F9D4` — front matter `signature`), which
-`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.25.8a1`
+`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.25.9a1`
 routes check **neither**: Git trusts GitHub's HTTPS and the tag name, and nothing compares that code with this document.
 Use them only when the checked files cannot be downloaded, and say so in the final feedback.
 `agentj doctor` lists what is ready and what is not (prerequisites, the fence, connectivity, which agents are usable).
@@ -942,21 +942,13 @@ phone ✓/·, welcome sent ✓/· — and the next step in one line.
 
 **First run the pairing pre-check:** `agentj pair --check` (add `--json` for `route`; it starts nothing and shows no link or
 code). The terminal and account page use this check; `agentj admin` only links to the account page, so nobody learns at the last step that something is missing:
-`account` = bound, online and account-page pairing on → account-page route (passkey or the remote pairing password);
+`account` = bound, online and account-page pairing on → account-page route (fresh account passkey per action, plus host password when required);
 `passphrase` = already set; `set_passphrase` = it says why (offline, or `remote-pair off`) → the terminal route, and
 `agentj pair` asks the owner to set the remote pairing password first. `seat` = the Agent J host
 has no usable Agent J seat (not bound yet, suspended, or unconfirmed for more than 72 hours) → no pairing route works: go back
 to Step 7 (bind) or ✋ have the owner renew on the account page; the check names the page.
 
-**After account binding, pair on the account page (0.20.3).** Tell the owner: “On the Agent J host’s account-page seat
-card, select Add a remote, confirm it’s you and scan.” Confirming is either a passkey or the Agent J host’s **remote pairing
-password** (遥控器配对密码): an email-code sign-in alone never approves a remote, so in a browser on another computer
-without a passkey the owner types the password in the card; the browser seals it to a one-time key of the Agent J host and
-only the Agent J host checks it (5 wrong in a row lock it here). the Agent J host has no password yet → the card says so. No
-passkey, no password and no paired phone → the card says the one way left: back at the Agent J host, `agentj pair` in a
-terminal. The same account page works for another installed, bound, online computer. After a passkey confirmation the
-session needs none for ten minutes; pairing requests expire after five minutes and add only one remote. Pending remotes,
-resume after Stop everything and scheduled-task enable also have account-page approval (passkey).
+**After account binding, pair on the account page (0.25.9).** Tell the owner: “On the Agent J host’s account-page seat card, select Add a remote, confirm it’s you and scan.” Each pairing start and each approval requires a fresh account passkey confirmation bound to that action and target. If the passkey is on another device, choose “Use a phone or tablet” in the browser prompt. An email-code sign-in alone does not approve a remote. When the host additionally requires its remote pairing password, the browser seals a fresh proof to that exact device and handshake; the password does not replace account passkey confirmation. If the owner cannot use an account passkey or an already paired remote, pair from the host’s own terminal with its remote pairing password. The QR expires after five minutes and adds one remote. Pending-remote approval, resuming after Stop everything and scheduled-task enable each have their own account-page passkey confirmation.
 
 **Pairing at the terminal needs the remote pairing password (0.20.3 — replaces 0.20.0's “a bound computer's keyboard
 is enough”).** `agentj pair` / `agentj pair --link` without one first asks the owner to set it (at least 8 characters,
@@ -1761,7 +1753,7 @@ Nightly automatic installation is enabled by default and verifies the official w
 In a shared session (the default of 0.13–0.19), reinstall directly using Step 4's checked wheel (SHA-256 must match this document and
 its public GitHub copy), preserving the host's identity, paired phones, account and preferences:
 ```bash
-uv tool install --force "./agentj-0.25.8a1-py3-none-any.whl"
+uv tool install --force "./agentj-0.25.9a1-py3-none-any.whl"
 agentj --version
 agentj service install
 agentj service restart
@@ -1770,7 +1762,7 @@ agentj doctor
 The matching published tag is another source, after verifying the tag object against the upgrade email (no signature or
 hash check on this route — Step 4):
 ```bash
-uv tool install --force "git+https://github.com/preangelleo/agentj@v0.25.8a1#subdirectory=host"
+uv tool install --force "git+https://github.com/preangelleo/agentj@v0.25.9a1#subdirectory=host"
 ```
 **0.14 independent session** (`agent.session_mode=independent`): 0.14's fence keeps Agent J's own program read-only and
 hides the service manager, so the Agent on the phone cannot reinstall or restart from inside it (measured: the install
@@ -1796,11 +1788,11 @@ prints something and `uv tool list` (or `pipx list`) shows `agentjarvis-host`, t
 the new name, then:
 ```bash
 jarvis service uninstall      # stop the old service first (Step 10 used tmux / nohup instead? stop that process)
-uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.25.8a1#subdirectory=host"
+uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.25.9a1#subdirectory=host"
 agentj doctor
 agentj service install        # start it again under the new name (or the tmux / nohup fallback, Step 10)
 ```
-With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.25.8a1#subdirectory=host"`.
+With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.25.9a1#subdirectory=host"`.
 - After the move, `agentj` puts back a `jarvis` command (a link to `agentj`, only if no other `jarvis` exists) for one more
   version; it prints a notice that points here. New installs never get `jarvis`.
 - The state moves from `~/.local/state/agentjarvis-alpha` to `~/.local/state/agentj` on the first run of `agentj` **after your
@@ -2975,7 +2967,7 @@ installs that ran shared keep it: the upgrade writes `"shared"` into the setting
 ## 终端里发起、终端里完成配对 / Pair from the terminal, finish in the terminal (0.20.0)
 
 已绑定账号的Agent J 主机：`agentj pair`（远程 SSH 用 `agentj pair --link`）→ 手机打开链接 → 终端提示「输入手机上显示的 6 位安全码」，
-输入后回车，再输遥控器配对密码即批准；同时也可以到账户页席位卡批准（通行密钥或遥控器配对密码），哪个先完成都行。安全码输错可再试（共 3 次）；
+输入后回车，再输遥控器配对密码即批准；同时也可以到账户页席位卡批准（每次都用新的账号通行密钥确认，主机要求时还需配对密码），哪个先完成都行。安全码输错可再试（共 3 次）；
 120 秒内没批准就重新运行 `agentj pair --link`、在手机上打开新链接。0.20.3 起在终端配对必须有遥控器配对密码：还没设，
 `agentj pair` 会先请主人自己设一个（至少 8 位）。Agent 的终端或管道设不了也批准不了（会提示改到账户页）。
 
@@ -3522,6 +3514,10 @@ Administrator and secret cards require this remote's approval passkey; enable it
 
 ## Version 0.25.7 / 0.25.7 说明
 
+验证有效期为两分钟，且只能用于这一次操作。期间席位涉及的主机、安装码或遥控器配对记录改变，验证就作废；请核对后重新确认。没有可用通行密钥时，邮箱验证码不能代替。
+
+Each confirmation expires after two minutes and works once. If the affected computers, setup code or remote pairing changes while you confirm, review the action and confirm again. Without a usable passkey, an email code cannot authorize the action.
+
 Agent 名称统一显示为 `Agent J - <名字>`，保留主人自取名字。账号页的敏感操作每次都要主人用通行密钥确认；金额、报价或目标变化后重新核对。微信及邮件、Telegram 外部通道使用独立分身；连接与原生识图说明见 agentj-wechat 和微信指南。
 
 好友直报的回复编辑区使用浅色卡片和绿色按钮。若显示上次发送结果未知，请先核对好友记录；确认没收到后再点「重新发送」，填写本次要转告的话。不会自动重发。
@@ -3592,3 +3588,58 @@ Children whose state cannot be confirmed are marked “Status unknown” and exc
 
 This version adds no database migration; never replay the previous release’s migrations. Keep revocation records and action-verification state permanently. Native Mac M1 and physical iOS acceptance remain separate.
 本版不新增数据库迁移，不重放旧版迁移；吊销记录和动作验证数据永久保留。Mac M1 与实体 iOS 验收继续单独记录。
+
+
+### Paid queries and report execution / 付费查询与报告执行
+
+
+Each paid content-library query requires a fresh approval passkey over the final query, account destination and program price before charging. Each installed report-engine invocation freezes the script, template and data bytes before its passkey card, then executes only that snapshot. A report email has a separate final-message card, including mail to the owner. No confirmation means no execution. Oversized or unreviewable input refuses without running. Same-uid application checks do not establish OS isolation.
+
+Approval cards retain complete redacted parameters and label Agent notes separately. If the host refuses an oversized or invalid action, split it into smaller actions; never shorten the displayed parameters or treat a description as approval.
+
+## When to hold or verify with a passkey
+
+Ordinary actions follow the current session permissions. When an approval card asks you to hold, read its complete redacted parameters before holding the button. When it says “Confirm with Face ID”, use your passkey to verify on your device; it may use a fingerprint or device unlock code. An earlier verification does not approve this action.
+
+Each account payment, subscription change, seat change and revocation confirmation binds the exact action and target. Changed targets or prices need a new confirmation. Paid queries and report execution each need their own confirmation. A report approval binds frozen templates, data and parameters; sending the resulting email needs a separate confirmation. Agent notes appear separately. Requests whose parameters cannot be displayed completely are refused; ask the Agent to split them into smaller actions.
+
+Independent Claude sessions retain safety checks. Starting or resuming a Codex session retains user review. Turning reminders off or selecting native permissions does not replace confirmation required for sensitive actions.
+
+## 哪些操作需要长按或刷脸
+
+普通操作按当前会话的权限执行。审批卡若要求长按，请看清完整脱敏参数后按住确认；若显示「用 Face ID 确认」，请用通行密钥完成设备验证，设备也可能使用指纹或解锁密码。此前的验证不能代替这次确认。
+
+账户页的扣款、订阅变更、席位变更和吊销操作，每次确认都绑定这次动作和目标；目标或费用变了，需要重新确认。付费查询和报告执行也各自确认，报告批准的是已固定的模板、数据与参数；随后发邮件仍要单独确认。审批卡的 Agent 附注会单独显示；参数太长或无法完整显示时会拒绝操作，请让 Agent 拆小后再试。
+
+独立 Claude 会话始终保留安全检查，Codex 新建或恢复会话保留用户审查。关闭提醒或选择原生权限模式，不能代替敏感操作所需的确认。
+
+### Paid queries and report execution / 付费查询与报告执行
+
+Each paid content-library query requires a fresh approval passkey over the final query, account destination and program price before charging. Each installed report-engine invocation freezes the script, template and data bytes before its passkey card, then executes only that snapshot. Workspace template names resolve before the card; a changed custom template or a missing data file refuses execution. A report email has a separate final-message card, including mail to the owner. No confirmation means no execution. Oversized or unreviewable input refuses without running. Same-uid application checks do not establish OS isolation.
+
+每次付费内容库查询都要在扣费前，用通行密钥确认最终查询、账号目的端及程序给出的价格。每次调用已安装的报告引擎，都在弹卡前冻结脚本、模板与数据字节，执行时只读取该快照。工作区模板名称会在弹卡前解析；审批期间自定义模板有变化，或弹卡前数据文件不存在，均拒绝执行。报告邮件还需要单独确认最终邮件，发给主人本人也一样。未确认就不执行；输入过大或无法完整审阅时拒绝运行。同一系统用户下的应用检查不构成操作系统隔离。
+
+<!-- generated: Relay/Codex/P513c, 2026-10-25; human verification unchanged -->
+
+### Paid queries and report execution / 付费查询与报告执行
+
+Each paid content-library query requires a fresh approval passkey over the final query, account destination and program price before charging. Each installed report-engine invocation freezes the script, template and data bytes before its passkey card, then executes only that snapshot. Workspace template names resolve before the card; a changed custom template or a missing data file refuses execution. A report email has a separate final-message card, including mail to the owner. No confirmation means no execution. Oversized or unreviewable input refuses without running. Same-uid application checks do not establish OS isolation.
+
+每次付费内容库查询都要在扣费前，用通行密钥确认最终查询、账号目的端及程序给出的价格。每次调用已安装的报告引擎，都在弹卡前冻结脚本、模板与数据字节，执行时只读取该快照。工作区模板名称会在弹卡前解析；审批期间自定义模板有变化，或弹卡前数据文件不存在，均拒绝执行。报告邮件还需要单独确认最终邮件，发给主人本人也一样。未确认就不执行；输入过大或无法完整审阅时拒绝运行。同一系统用户下的应用检查不构成操作系统隔离。
+
+<!-- generated: Relay/Codex/P513c, 2026-10-25; human verification unchanged -->
+
+
+### Independent Claude/Codex launch review / 独立 Claude/Codex 启动审查
+
+Turning off high-risk warnings or choosing native/Full does not remove independent launch review. Claude always loads its packaged danger hook; blocked hooks refuse startup without rewriting your settings. Codex requests user review for new and resumed threads and preserves the effective sandbox. A command requiring execution outside an explicitly restricted sandbox may be refused; do not weaken the sandbox to bypass this. These launch checks do not prove complete enforcement for unknown scripts or shared sessions.
+
+关闭高风险提醒或选择 native、Full，都不能省略独立会话的启动审查。Claude 始终加载随包的危险动作 hook；设置禁止 hook 时拒绝启动，不自动改写设置。Codex 在新建、恢复会话时均请求用户审查，并保留有效沙箱。需要在受限沙箱外执行的命令可能被拒绝，不要放宽沙箱来绕过。启动检查不代表未知脚本或共享会话的权限审计已全部完成。
+
+<!-- generated: Relay/Codex/P513d, 2026-10-25; human verification unchanged -->
+
+### Paid queries and report execution
+
+Each paid content-library query requires a fresh approval passkey over the final query, account destination and program price before charging. Each installed report-engine invocation freezes the script, template and data bytes before its passkey card, then executes only that snapshot. A report email has a separate final-message card, including mail to the owner. No confirmation means no execution. Oversized or unreviewable input refuses without running. Same-uid application checks do not establish OS isolation.
+
+Approval cards retain complete redacted parameters and label Agent notes separately. If the host refuses an oversized or invalid action, split it into smaller actions; never shorten the displayed parameters or treat a description as approval.

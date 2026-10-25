@@ -1786,6 +1786,22 @@ class Elevator:
                         and isinstance(params["remote"], str) and isinstance(params["subscription"], dict) \
                         and params["operation"] in ("create", "update", "delete") and isinstance(params["payload"], dict):
                     tool = "agentj calendar"
+                elif action == "payment" and set(params) == {"request", "destination", "credits_max", "currency"} \
+                        and isinstance(params["request"], dict) and isinstance(params["destination"], dict):
+                    from . import library, cloud
+                    cfg = cloud.read_cloud(self.st)
+                    expected = ({"url": cloud.api_url(self.st, cfg) + "/v1/host/data", "channel": cloud.channel_of(self.st),
+                                 "host_id": cfg.get("host_id"), "tenant": cfg.get("tenant")} if cfg else None)
+                    if params["destination"] != expected or params["request"].get("op") not in library.PRICES \
+                            or type(params["credits_max"]) is not int or params["credits_max"] != library.PRICES[params["request"]["op"]] \
+                            or params["currency"] != "Agent J credits":
+                        raise Refused("shape", "paid query")
+                    tool = "agentj data"
+                elif action == "broker.execute" and set(params) == {"argv", "cwd", "inputs", "environment_sha256"} \
+                        and isinstance(params["argv"], list) and all(isinstance(v, str) for v in params["argv"]) \
+                        and isinstance(params["cwd"], str) and isinstance(params["inputs"], list) \
+                        and isinstance(params["environment_sha256"], str):
+                    tool = "agentj report script"
                 else:
                     raise Refused("shape", "policy action")
                 ans = await self.host.ask(tool, params, batch=False, require_passkey=True)

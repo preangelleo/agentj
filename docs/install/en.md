@@ -335,7 +335,7 @@ It may need you here:
 The AI installs `agentj`, the program on the Agent J host, at one fixed version:
 
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.25.8a1#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.25.9a1#subdirectory=host"
 agentj doctor
 ```
 
@@ -373,7 +373,7 @@ If setup instructions fail, copy the installation prompt from the same empty sea
 
 ### Step 8: ✋ Human: approve with an account passkey
 
-After the Agent J host is bound, open its seat card on the account page and select Add a remote. Confirm with your passkey (or the Agent J host's remote pairing password) and scan. The same account page can add a phone to another bound, online computer.
+After the Agent J host is bound, open its seat card on the account page and select Add a remote. Confirm each start and approval with a fresh account passkey and scan. A host pairing password, when required, is an additional check. The same account page can add a phone to another bound, online computer.
 
 At the end of the installation you're asked whether to set a remote pairing password (optional, recommended): press Enter to skip, and set it any time later with `agentj passphrase set`. The Agent must never choose or enter it. Pairing at the terminal (`agentj pair`, `agentj pair --link`) requires it; without one, `agentj pair` asks you to set it first. `agentj pair --check` says which route works before any QR code.
 
@@ -415,7 +415,7 @@ As a service it starts by itself whenever the Agent J host starts and you log in
 Agent J has to be running on the Agent J host first (Step 10).
 
 1. On the phone, open https://m.agentj.app, add it to your Home Screen and open it from that icon. The top of the page says "Not paired yet".
-2. In the account dashboard, find the Agent J host’s seat card and choose Add a remote. Confirm with your passkey once; confirmation is reused for ten minutes on this session. The account page can be open on another computer.
+2. In the account dashboard, find the Agent J host’s seat card and choose Add a remote. Use a fresh passkey confirmation for each pairing start and approval. The account page can be open on another computer.
 3. On the phone, tap Scan QR code and scan the code shown on the account page. If needed, use Copy pairing link and paste it into the Home Screen app under Or paste the pairing link. Do not paste it into an AI chat.
 4. The account page automatically shows the waiting remote and six-digit confirmation code. Compare it with the phone, then choose **Approve**. The phone connects after approval.
 
@@ -456,7 +456,7 @@ Every paid, unbound seat has its own one-line installation code. Two empty paid 
 
 ## Add a remote for another computer
 
-Once the host is installed, bound and online, choose Add a remote on its account-page seat card. Confirm with a passkey or the host’s remote pairing password, then scan. The page automatically shows the waiting remote, six-digit code and Approve; compare and approve. Password approval asks for the password again, encrypted to a fresh host key and bound to that exact device/handshake. The account page can be on another computer. Under More, See what the Agent J host is waiting on you for handles resuming after Stop everything and enabling a scheduled task; it is unrelated to billing.
+Once the target Agent J host is installed, account-bound and online, find its seat card on your account page and choose Add a remote. Confirm it's you, then scan with the phone. The account page automatically shows the waiting remote, six-digit code and Approve; compare and approve. When also required by the host, the pairing password is a fresh sealed proof for that exact device and handshake; the target Agent J host's terminal isn't needed. Each start and approval requires its own passkey confirmation (choose Use a phone or tablet if needed). A pairing password is an additional host check and cannot replace account passkey confirmation; the QR expires after five minutes and adds one device. Pending devices can also be reviewed and approved on the seat card. Under More on the seat card, See what the Agent J host is waiting on you for is only for two cases: resuming after Stop everything, or enabling a scheduled task the Agent created. It has nothing to do with seats or billing; an unpaid bill never stops the tasks on the Agent J host.
 
 Account-page pairing is on by default. The target Agent J host’s owner can disable it with `agentj remote-pair off`. Offline hosts are never queued; turn them on and try again. Older hosts must run `agentj update apply` or update from a paired phone. Devices record “Added from account page” and other remotes receive a notice.
 
@@ -468,7 +468,7 @@ This route trusts the signing control plane. Pairing material is encrypted to an
 First run `opencode --version` (or your selected agent’s `--version`). If it works, continue installing; there is no macOS version-number gate. The one-line installer also probes its downloaded, pinned OpenCode binary. Only an actual failure such as `dyld: Symbol not found: _ubrk_clone` in `/usr/lib/libicucore.A.dylib` indicates incompatible system libraries. PATH changes or npm reinstalls cannot fix that; upgrade macOS, use another computer, or choose another working agent with the manual installation guide. The one-line installer downloads pinned uv from our site first, uses a managed-Python mirror, and retries package dependencies via a mirror; the obsolete preview path is no longer supported.
 
 
-An installed computer can also use an AJI installation code. Rerun the account-page installation command to preserve its configuration, upgrade and link its seat. Alternatively, keep the code in a mode-0600 file and run `agentj login --install-code-file <file> --name <name>`. AJI codes are single-use; ajt_ setup codes only link an installed computer. After linking, add a remote from the account page, confirm with your passkey or the remote pairing password, and scan.
+An installed computer can also use an AJI installation code. Rerun the account-page installation command to preserve its configuration, upgrade and link its seat. Alternatively, keep the code in a mode-0600 file and run `agentj login --install-code-file <file> --name <name>`. AJI codes are single-use; ajt_ setup codes only link an installed computer. After linking, add a remote from the account page, confirm each start and approval with a fresh account passkey, and scan. Any required host pairing password is an additional check.
 
 If a manual installation asks for `Installation code (AJI-…)`, choose "Copy installation code" on the account page and paste only that AJI- code.
 

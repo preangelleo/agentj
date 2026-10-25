@@ -72,7 +72,7 @@ try {for(const lang of ['zh','en'])for(const theme of ['light','dark'])for(const
  assert.equal(await evaluate(p,`document.getElementById('settings').hidden`),false);
  assert.ok(await evaluate(p,`document.documentElement.scrollWidth<=innerWidth`),'no horizontal overflow');
  // Existing sandbox approval keeps its own wording.
- await fake.send({t:'ask',id:'e'.repeat(32),tool:'SandboxOverride',summary:'fixture sandbox launch',ttl:600,passkey_required:true});
+ await fake.send({t:'ask',id:'e'.repeat(32),tool:'SandboxOnce',summary:'fixture sandbox launch',ttl:600,passkey_required:true});
  await sleep(700);
  assert.equal(await evaluate(p,`document.getElementById('sheetTitle').textContent`),lang==='zh'?'沙箱不可用':'Sandbox unavailable');
  assert.equal(await evaluate(p,`document.getElementById('apprAllowLbl').textContent`),lang==='zh'?'本次不隔离运行':'Run this launch without isolation');

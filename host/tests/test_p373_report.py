@@ -52,6 +52,9 @@ class _Engine:
         (self.dir / "scripts" / "web_report.py").write_text(STUB)
         if new:
             (self.dir / "scripts" / "wr_email.py").write_text("")
+        (self.dir / "templates").mkdir()
+        (self.dir / "templates" / "registry.json").write_text(json.dumps({"templates": [
+            {"id": tid, "ref": tid, "slug": tid.lower()} for tid in ("R02", "R15")]}))
         self.log = root / "argv.log"
 
     def calls(self):
@@ -67,6 +70,8 @@ def _parse(argv):
 
 class ReportCLI(unittest.TestCase):
     def setUp(self):
+        authorization = mock.patch('agentj.action_policy.confirm_cli', return_value=True)
+        authorization.start(); self.addCleanup(authorization.stop)
         self.tmp = pathlib.Path(tempfile.mkdtemp(dir=TEST_TMP))
         self.eng = _Engine(self.tmp)
         self.env = mock.patch.dict(os.environ, {"AGENTJ_REPORT_ENGINE": str(self.eng.dir), "P373_LOG": str(self.eng.log)})
@@ -93,6 +98,10 @@ class ReportCLI(unittest.TestCase):
         self.assertEqual(self.run_cli("schema", "R15")[0], 0)
         self.assertEqual(self.run_cli("new-template", str(self.tmp / "mine"), "--id", "my-daily")[0], 0)
         c = self.eng.calls()
+        for row in c:
+            for i, value in enumerate(row):
+                if isinstance(value, str) and '/agentj-report-exec-' in value and '/input-' in value:
+                    row[i] = str(self.tmp / pathlib.Path(value).name)
         self.assertEqual(c[0], ["validate", str(self.good)])                       # no --template → the engine's default
         self.assertEqual(c[1], ["validate", str(self.good), "--template", "R02", "--json"])
         self.assertEqual(c[2], ["render", str(self.good), "--out", str(self.tmp / "m.html"), "--email"])
@@ -127,7 +136,8 @@ class ReportCLI(unittest.TestCase):
         self.assertEqual(seen["subject"], "每日简报")
         self.assertIn("<table>", seen["body"])
         render = self.eng.calls()[0]
-        self.assertEqual(render[:3], ["render", str(self.good), "--email"])
+        self.assertEqual((render[0], pathlib.Path(render[1]).name, render[2]), ("render", self.good.name, "--email"))
+        self.assertNotEqual(render[1], str(self.good), "the engine reads a frozen input copy")
         self.assertEqual(render[-2:], ["--template", "R15"])
         self.assertFalse(pathlib.Path(seen["body_file"]).exists())                # the temp mail is cleaned up
 
@@ -155,6 +165,8 @@ class ReportCLI(unittest.TestCase):
 
 class EngineDiscovery(unittest.TestCase):
     def setUp(self):
+        authorization = mock.patch('agentj.action_policy.confirm_cli', return_value=True)
+        authorization.start(); self.addCleanup(authorization.stop)
         self.tmp = pathlib.Path(tempfile.mkdtemp(dir=TEST_TMP))
 
     def test_missing_package(self):

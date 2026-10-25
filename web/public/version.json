@@ -1,8 +1,8 @@
 {
   "v": 1,
-  "version": "0.25.8a1",
+  "version": "0.25.9a1",
   "algo": "sha256",
-  "combined": "9c23d88e8a8849978e904e325d133a5dea34d43c7dca50da3bb489cc0d76b940",
+  "combined": "53bf04cf87824b9b01702786217ab874250e87c1847dd80d0651e4fc769913ab",
   "files": {
     "app.css": "8e58b85472682ca0da3a1962ef531d62e6d9284fd37a2316b3450bbc389f143f",
     "app.js": "9959e782c34bdecb3421462ac1ace485ba15501a4e6de2a1eb647c0a805a093c",
@@ -147,7 +147,7 @@
     "js/quotapace.js": "b630cd57c6235f1fdb366f85cde12ee5e24e9bccb39e709d5126f58a0ccb064b",
     "js/reader-swipe.js": "1e6be9315f11e57e891b8a9774f7f0c3b29edd4dedcaee0bb20a89cbc1ec80eb",
     "js/reconnect.js": "c3d65248eb3fd5e8252d9c3bf669cae414db8493d5da3d0ab82f87609deeb9c5",
-    "js/relay.js": "96494fa8ce97206aea571059bcbd3239ed981f7aec74da63d7f9fad96b42670f",
+    "js/relay.js": "d36d8e45a45c5fa33086389896c5c3e4a6d718062a33c3eab9956e2b94952a88",
     "js/remotes.js": "f9309115ae6db4dba1f07dd357fd3a4982c70ae5dae20f3ad5202f94796a6303",
     "js/render.js": "7ad1676b626ce53c0cef3d4b3f4a33317d8dd5857f59aceea3bb2ffccec921fe",
     "js/renew.js": "bc06966d5ccd47b718b294098f8e0a1ba77e5e557f65f900ccc10d5b4d3eace7",

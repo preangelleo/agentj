@@ -1173,7 +1173,7 @@ class ClaudeAgent(Agent):
         a = [_bin("AGENTJ_CLAUDE_BIN", "claude") or "claude", "-p", "--input-format", "stream-json",
              "--output-format", "stream-json", "--verbose", "--permission-prompt-tool", PERM_TOOL,
              "--disallowedTools", PERM_TOOL, "--mcp-config", json.dumps(mcp),
-             "--settings", json.dumps(with_reminder(hook_settings(self.cfg.get("danger_extra"), research) if research or self.cfg.get("high_risk_warnings", False) else {}, self.cfg), separators=(",", ":"))]
+             "--settings", json.dumps(with_reminder(hook_settings(self.cfg.get("danger_extra"), research), self.cfg), separators=(",", ":"))]
         if not self.cfg.get("_workflow_ceo"):
             a += ["--append-system-prompt", main_identity.prompt(self.cfg)]
         if self.cfg.get("model"):
@@ -1195,7 +1195,7 @@ class ClaudeAgent(Agent):
             self.failed_start = True
             self.fail_notice("这台Agent J 主机上没找到 Claude Code（claude 命令）。装好并登录后再试。")
             return False
-        why = await asyncio.to_thread(hooks_blocked, self.cfg["dir"]) if self.cfg.get("high_risk_warnings", False) or self.cfg.get("_research") else None
+        why = await asyncio.to_thread(hooks_blocked, self.cfg["dir"])
         if why:
             self.failed_start = True
             self.host.st.log("agent_hooks_off", agent=self.kind)

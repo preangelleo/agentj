@@ -1,0 +1,456 @@
+{
+  "schema": "web-page-report.registry/v1",
+  "count": 15,
+  "default": "R15",
+  "templates": [
+    {
+      "id": "R15",
+      "slug": "noir",
+      "name_zh": "Agent J Noir（默认）",
+      "name_en": "Agent J Noir (default)",
+      "default_theme": "noir",
+      "scenario_zh": "官方默认模板：Noir 深色底、Lotion 字，Peachy 等调色板彩色点在引号、列表符号、序号和链接上；每日简报、市场调研邮件、任何自动化的定期报告都合适，网页和邮件两种输出。",
+      "scenario_en": "The official default: a Noir canvas, Lotion text, palette colour on quotes, bullets, numbers and links; daily briefs, market-research mails, any automation's recurring report, as a web page or an e-mail.",
+      "keywords": [
+        "默认",
+        "简报",
+        "每日",
+        "日报",
+        "邮件",
+        "市场",
+        "自动化",
+        "定期",
+        "digest",
+        "daily",
+        "brief",
+        "newsletter",
+        "email",
+        "noir",
+        "agent j"
+      ],
+      "ref": "R15-noir",
+      "default": true,
+      "outputs": [
+        "web",
+        "email"
+      ],
+      "schema": "templates/R15-noir/schema.json",
+      "example": "templates/R15-noir/example.json"
+    },
+    {
+      "id": "R01",
+      "slug": "briefing",
+      "name_zh": "会议纪要 / 日报",
+      "name_en": "Briefing & Minutes",
+      "default_theme": "paper",
+      "scenario_zh": "开会、站会、日报周报：把聊天里的决议、行动项、负责人和截止日期整理成一页。",
+      "scenario_en": "Meetings, stand-ups, daily/weekly notes: decisions, action items, owners, due dates.",
+      "keywords": [
+        "会议",
+        "纪要",
+        "日报",
+        "周报",
+        "站会",
+        "决议",
+        "行动项",
+        "todo",
+        "meeting",
+        "minutes",
+        "standup",
+        "sync",
+        "例会"
+      ],
+      "ref": "R01-briefing",
+      "default": false,
+      "outputs": [
+        "web"
+      ],
+      "schema": "templates/R01-briefing/schema.json",
+      "example": "templates/R01-briefing/example.json"
+    },
+    {
+      "id": "R02",
+      "slug": "tech",
+      "name_zh": "技术分享（黑客风）",
+      "name_en": "Tech Talk (Hacker)",
+      "default_theme": "fixturetheme",
+      "scenario_zh": "技术方案、排障记录、代码讲解、命令速查；深色终端风，等宽字体。",
+      "scenario_en": "Engineering write-ups, debugging notes, code walkthroughs, command cheat sheets in a terminal look.",
+      "keywords": [
+        "技术",
+        "代码",
+        "架构",
+        "排障",
+        "bug",
+        "部署",
+        "命令",
+        "api",
+        "脚本",
+        "开发",
+        "工程",
+        "code",
+        "debug",
+        "devops",
+        "linux",
+        "黑客"
+      ],
+      "ref": "R02-tech",
+      "default": false,
+      "outputs": [
+        "web",
+        "email"
+      ],
+      "schema": "templates/R02-tech/schema.json",
+      "example": "templates/R02-tech/example.json"
+    },
+    {
+      "id": "R03",
+      "slug": "pitch",
+      "name_zh": "商业计划 BP",
+      "name_en": "Pitch Deck",
+      "default_theme": "ink",
+      "scenario_zh": "融资路演、商业计划、项目立项：问题、方案、市场、数据、团队、融资需求，一屏一页。",
+      "scenario_en": "Fundraising and business plans: problem, solution, market, traction, team, ask — one slide per screen.",
+      "keywords": [
+        "bp",
+        "融资",
+        "路演",
+        "商业计划",
+        "投资",
+        "市场",
+        "pitch",
+        "startup",
+        "创业",
+        "估值",
+        "立项"
+      ],
+      "ref": "R03-pitch",
+      "default": false,
+      "outputs": [
+        "web"
+      ],
+      "schema": "templates/R03-pitch/schema.json",
+      "example": "templates/R03-pitch/example.json"
+    },
+    {
+      "id": "R04",
+      "slug": "story",
+      "name_zh": "故事长文",
+      "name_en": "Long-form Story",
+      "default_theme": "warm",
+      "scenario_zh": "讲故事、人物/品牌故事、回忆与随笔；章节、配图、引言，适合慢慢读。",
+      "scenario_en": "Narratives, brand or founder stories, essays with chapters, images and pull quotes.",
+      "keywords": [
+        "故事",
+        "长文",
+        "随笔",
+        "品牌故事",
+        "人物",
+        "回忆",
+        "叙事",
+        "story",
+        "essay",
+        "博客",
+        "文章"
+      ],
+      "ref": "R04-story",
+      "default": false,
+      "outputs": [
+        "web"
+      ],
+      "schema": "templates/R04-story/schema.json",
+      "example": "templates/R04-story/example.json"
+    },
+    {
+      "id": "R05",
+      "slug": "gallery",
+      "name_zh": "图文并茂 / 作品集",
+      "name_en": "Gallery & Portfolio",
+      "default_theme": "brutal",
+      "scenario_zh": "图片为主：作品集、设计稿、商品图、活动照片、生成图合集，每张配说明。",
+      "scenario_en": "Image-first: portfolios, design drafts, product shots, event photos, generated-image sets.",
+      "keywords": [
+        "图片",
+        "作品集",
+        "设计稿",
+        "照片",
+        "相册",
+        "商品图",
+        "海报",
+        "出图",
+        "gallery",
+        "portfolio",
+        "图文"
+      ],
+      "ref": "R05-gallery",
+      "default": false,
+      "outputs": [
+        "web"
+      ],
+      "schema": "templates/R05-gallery/schema.json",
+      "example": "templates/R05-gallery/example.json"
+    },
+    {
+      "id": "R06",
+      "slug": "audio",
+      "name_zh": "播客 / 音频",
+      "name_en": "Podcast & Audio",
+      "default_theme": "studio",
+      "scenario_zh": "音频为主：播客、配音试听、访谈、录音纪要；播放器 + 章节 + 文字稿。",
+      "scenario_en": "Audio-first: podcasts, voice-over drafts, interviews; player, chapters and transcript.",
+      "keywords": [
+        "音频",
+        "播客",
+        "配音",
+        "录音",
+        "访谈",
+        "tts",
+        "声音",
+        "podcast",
+        "audio",
+        "电台",
+        "试听"
+      ],
+      "ref": "R06-audio",
+      "default": false,
+      "outputs": [
+        "web"
+      ],
+      "schema": "templates/R06-audio/schema.json",
+      "example": "templates/R06-audio/example.json"
+    },
+    {
+      "id": "R07",
+      "slug": "video",
+      "name_zh": "视频为主",
+      "name_en": "Video Showcase",
+      "default_theme": "ink",
+      "scenario_zh": "视频为主：成片预览、课程视频、发布会录像、YouTube/B 站嵌入；要点 + 章节。",
+      "scenario_en": "Video-first: cut previews, course videos, recordings, YouTube/Bilibili embeds with key points.",
+      "keywords": [
+        "视频",
+        "成片",
+        "剪辑",
+        "录像",
+        "youtube",
+        "b站",
+        "bilibili",
+        "课程",
+        "video",
+        "短视频",
+        "预览"
+      ],
+      "ref": "R07-video",
+      "default": false,
+      "outputs": [
+        "web"
+      ],
+      "schema": "templates/R07-video/schema.json",
+      "example": "templates/R07-video/example.json"
+    },
+    {
+      "id": "R08",
+      "slug": "data",
+      "name_zh": "数据报表",
+      "name_en": "Data Report",
+      "default_theme": "paper",
+      "scenario_zh": "指标卡、柱状/折线图、表格与洞察：运营周报、销售数据、广告投放、实验结果。",
+      "scenario_en": "KPI cards, bar/line charts, tables and insights for ops, sales, ads or experiments.",
+      "keywords": [
+        "数据",
+        "报表",
+        "指标",
+        "kpi",
+        "图表",
+        "销售",
+        "运营",
+        "增长",
+        "统计",
+        "dashboard",
+        "转化",
+        "gmv",
+        "广告"
+      ],
+      "ref": "R08-data",
+      "default": false,
+      "outputs": [
+        "web"
+      ],
+      "schema": "templates/R08-data/schema.json",
+      "example": "templates/R08-data/example.json"
+    },
+    {
+      "id": "R09",
+      "slug": "howto",
+      "name_zh": "教程步骤",
+      "name_en": "How-to Guide",
+      "default_theme": "herdr",
+      "scenario_zh": "一步一步的操作指南：安装配置、SOP、新人上手；准备清单、步骤、常见问题。",
+      "scenario_en": "Step-by-step guides: setup, SOPs, onboarding with prerequisites, steps and troubleshooting.",
+      "keywords": [
+        "教程",
+        "步骤",
+        "怎么",
+        "如何",
+        "安装",
+        "配置",
+        "sop",
+        "指南",
+        "上手",
+        "howto",
+        "guide",
+        "操作"
+      ],
+      "ref": "R09-howto",
+      "default": false,
+      "outputs": [
+        "web"
+      ],
+      "schema": "templates/R09-howto/schema.json",
+      "example": "templates/R09-howto/example.json"
+    },
+    {
+      "id": "R10",
+      "slug": "decision",
+      "name_zh": "方案对比与决策",
+      "name_en": "Decision Memo",
+      "default_theme": "paper",
+      "scenario_zh": "多个方案二选一/多选一：评分矩阵、优缺点、成本、推荐与风险。",
+      "scenario_en": "Compare options: weighted scoring matrix, pros/cons, cost, recommendation and risks.",
+      "keywords": [
+        "对比",
+        "决策",
+        "选型",
+        "方案",
+        "比较",
+        "权衡",
+        "选哪个",
+        "评估",
+        "decision",
+        "compare",
+        "vs"
+      ],
+      "ref": "R10-decision",
+      "default": false,
+      "outputs": [
+        "web"
+      ],
+      "schema": "templates/R10-decision/schema.json",
+      "example": "templates/R10-decision/example.json"
+    },
+    {
+      "id": "R11",
+      "slug": "timeline",
+      "name_zh": "时间线 / 复盘",
+      "name_en": "Timeline & Retro",
+      "default_theme": "grit",
+      "scenario_zh": "项目进展、事故复盘、里程碑回顾；时间线 + 做得好/待改进/改进行动。",
+      "scenario_en": "Project history, incident post-mortems, milestone reviews with a retro section.",
+      "keywords": [
+        "时间线",
+        "复盘",
+        "事故",
+        "回顾",
+        "里程碑",
+        "进展",
+        "历程",
+        "postmortem",
+        "retro",
+        "timeline",
+        "大事记"
+      ],
+      "ref": "R11-timeline",
+      "default": false,
+      "outputs": [
+        "web"
+      ],
+      "schema": "templates/R11-timeline/schema.json",
+      "example": "templates/R11-timeline/example.json"
+    },
+    {
+      "id": "R12",
+      "slug": "faq",
+      "name_zh": "问答 / 知识卡",
+      "name_en": "FAQ & Knowledge Cards",
+      "default_theme": "paper",
+      "scenario_zh": "把聊天里的问答沉淀成可折叠的 FAQ：客服话术、产品答疑、内部知识库。",
+      "scenario_en": "Collapsible Q&A for support scripts, product FAQs or internal knowledge.",
+      "keywords": [
+        "问答",
+        "faq",
+        "答疑",
+        "客服",
+        "知识",
+        "常见问题",
+        "q&a",
+        "话术",
+        "知识库"
+      ],
+      "ref": "R12-faq",
+      "default": false,
+      "outputs": [
+        "web"
+      ],
+      "schema": "templates/R12-faq/schema.json",
+      "example": "templates/R12-faq/example.json"
+    },
+    {
+      "id": "R13",
+      "slug": "launch",
+      "name_zh": "产品发布 / 更新日志",
+      "name_en": "Product Launch & Changelog",
+      "default_theme": "agentj",
+      "scenario_zh": "新产品/新功能发布、版本更新说明：亮点卡片、更新日志、行动按钮。",
+      "scenario_en": "Launch pages and release notes: feature cards, changelog, call-to-action.",
+      "keywords": [
+        "发布",
+        "上线",
+        "新功能",
+        "更新",
+        "版本",
+        "changelog",
+        "launch",
+        "release",
+        "产品",
+        "新品"
+      ],
+      "ref": "R13-launch",
+      "default": false,
+      "outputs": [
+        "web"
+      ],
+      "schema": "templates/R13-launch/schema.json",
+      "example": "templates/R13-launch/example.json"
+    },
+    {
+      "id": "R14",
+      "slug": "research",
+      "name_zh": "调研报告",
+      "name_en": "Research Brief",
+      "default_theme": "desk",
+      "scenario_zh": "资料调研、竞品分析、市场研究：发现 + 置信度 + 编号引用来源 + 局限。",
+      "scenario_en": "Research and competitive analysis: findings with confidence, numbered sources and limitations.",
+      "keywords": [
+        "调研",
+        "研究",
+        "竞品",
+        "分析",
+        "报告",
+        "来源",
+        "引用",
+        "research",
+        "市场研究",
+        "行业",
+        "资料"
+      ],
+      "ref": "R14-research",
+      "default": false,
+      "outputs": [
+        "web",
+        "email"
+      ],
+      "schema": "templates/R14-research/schema.json",
+      "example": "templates/R14-research/example.json"
+    }
+  ]
+}

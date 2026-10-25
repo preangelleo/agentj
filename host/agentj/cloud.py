@@ -1333,10 +1333,24 @@ def data_call(st, fields: dict, *, post: Callable = post_json, now: Callable = t
     """One signed `POST /v1/host/data` (`fields` = op [+ source] + its fields; a fresh nonce is added here). The Dashboard
     holds the owner's credits, forwards with its own key for that library and answers what it charged. Same rules as
     plaza_call; the answer is whitelisted by library.py and never executed."""
+    # Freeze the exact paid request before asking. Client --yes and a CLI card
+    # never authorize this final charging boundary.
+    from . import action_policy, library
+    fields = json.loads(json.dumps(fields, allow_nan=False))
+    if fields.get("op") not in library.PRICES or set(fields) & {"v", "t", "channel", "ts", "nonce"}:
+        raise CloudError("bad_request")
     cloud = read_cloud(st)
     if not cloud:
         raise CloudError("unlinked")
     url = api_url(st, cloud) + "/v1/host/data"
+    binding = {"url": url, "channel": channel_of(st), "host_id": cloud.get("host_id"), "tenant": cloud.get("tenant")}
+    proposal = {"request": fields, "destination": binding, "credits_max": library.PRICES[fields["op"]], "currency": "Agent J credits"}
+    if not action_policy.confirm_cli("payment", json.loads(json.dumps(proposal)), st=st):
+        raise CloudError("confirmation_required")
+    current = read_cloud(st)
+    if not current or {"url": api_url(st, current) + "/v1/host/data", "channel": channel_of(st),
+                       "host_id": current.get("host_id"), "tenant": current.get("tenant")} != binding:
+        raise CloudError("changed")
     inner = {"v": 1, "t": "data", "channel": channel_of(st), "ts": int(now()), "nonce": secrets.token_urlsafe(16), **fields}
     env = envelope(CTX_DATA, inner, st.signing_key())
     if len(json.dumps(env, separators=(",", ":"))) > MAX_ENVELOPE:

@@ -1,0 +1,295 @@
+{
+  "schema": "web-page-report.palette/v1",
+  "rule": "封闭调色板：模板、主题、图表只能用这里的 hex（允许透明度变体），不得新造颜色。",
+  "groups": [
+    {
+      "id": "foundation",
+      "colors": [
+        {
+          "slug": "lotion",
+          "name": "Lotion",
+          "hex": "#faf9f5",
+          "role": "Unified page background color",
+          "text_color": "#141414"
+        },
+        {
+          "slug": "salt",
+          "name": "Salt",
+          "hex": "#f0eee6",
+          "role": "Soft secondary background",
+          "text_color": "#141414"
+        },
+        {
+          "slug": "last-straw",
+          "name": "Last Straw",
+          "hex": "#e3dacc",
+          "role": "Light lines color",
+          "text_color": "#141414"
+        },
+        {
+          "slug": "black-mana",
+          "name": "Black Mana",
+          "hex": "#858585",
+          "role": "Dark lines color",
+          "text_color": "#141414"
+        },
+        {
+          "slug": "noir",
+          "name": "Noir",
+          "hex": "#2c2b26",
+          "role": "Second darkest color",
+          "text_color": "#faf9f5"
+        },
+        {
+          "slug": "sooty",
+          "name": "Sooty",
+          "hex": "#141414",
+          "role": "Darkest color allowed, near black",
+          "text_color": "#faf9f5"
+        }
+      ]
+    },
+    {
+      "id": "dark-cluster",
+      "colors": [
+        {
+          "slug": "peachy-feeling",
+          "name": "Peachy Feeling",
+          "hex": "#d97757",
+          "role": "Warm dark accent",
+          "text_color": "#141414"
+        },
+        {
+          "slug": "windstorm",
+          "name": "Windstorm",
+          "hex": "#6a9bcc",
+          "role": "Blue dark accent",
+          "text_color": "#141414"
+        },
+        {
+          "slug": "magic-carpet",
+          "name": "Magic Carpet",
+          "hex": "#827dbd",
+          "role": "Purple dark accent",
+          "text_color": "#141414"
+        },
+        {
+          "slug": "emerald-oasis",
+          "name": "Emerald Oasis",
+          "hex": "#629887",
+          "role": "Green dark accent",
+          "text_color": "#141414"
+        }
+      ]
+    },
+    {
+      "id": "light-cluster",
+      "colors": [
+        {
+          "slug": "mellow-marrow",
+          "name": "Mellow Marrow",
+          "hex": "#ebc9b7",
+          "role": "Warm light accent",
+          "text_color": "#141414"
+        },
+        {
+          "slug": "peek-a-blue",
+          "name": "Peek-a-Blue",
+          "hex": "#c7dedc",
+          "role": "Blue-green light accent",
+          "text_color": "#141414"
+        },
+        {
+          "slug": "dust-of-the-moon",
+          "name": "Dust of the Moon",
+          "hex": "#cacadb",
+          "role": "Purple-gray light accent",
+          "text_color": "#141414"
+        },
+        {
+          "slug": "banana-republic",
+          "name": "Banana Republic",
+          "hex": "#ffe292",
+          "role": "Yellow light accent",
+          "text_color": "#141414"
+        }
+      ]
+    },
+    {
+      "id": "heavy-variations",
+      "colors": [
+        {
+          "slug": "strawberry-field",
+          "name": "Strawberry Field",
+          "hex": "#f7827e",
+          "role": "Heavy red",
+          "text_color": "#141414"
+        },
+        {
+          "slug": "buttery",
+          "name": "Buttery",
+          "hex": "#fcbe7c",
+          "role": "Heavy orange",
+          "text_color": "#141414"
+        },
+        {
+          "slug": "pasta-luego",
+          "name": "Pasta Luego",
+          "hex": "#f7e17c",
+          "role": "Heavy yellow",
+          "text_color": "#141414"
+        },
+        {
+          "slug": "sage-sensation",
+          "name": "Sage Sensation",
+          "hex": "#b7e396",
+          "role": "Heavy green",
+          "text_color": "#141414"
+        },
+        {
+          "slug": "cold-blue",
+          "name": "Cold Blue",
+          "hex": "#78dedc",
+          "role": "Heavy teal",
+          "text_color": "#141414"
+        },
+        {
+          "slug": "milky-waves",
+          "name": "Milky Waves",
+          "hex": "#71bbde",
+          "role": "Heavy blue",
+          "text_color": "#141414"
+        },
+        {
+          "slug": "somewhere-in-a-fairytale",
+          "name": "Somewhere in a Fairytale",
+          "hex": "#d1a7e8",
+          "role": "Heavy purple",
+          "text_color": "#141414"
+        },
+        {
+          "slug": "elastic-pink",
+          "name": "Elastic Pink",
+          "hex": "#f0aad4",
+          "role": "Heavy pink",
+          "text_color": "#141414"
+        },
+        {
+          "slug": "lama",
+          "name": "Lama",
+          "hex": "#dbb293",
+          "role": "Heavy brown",
+          "text_color": "#141414"
+        }
+      ]
+    },
+    {
+      "id": "light-variations",
+      "colors": [
+        {
+          "slug": "channel",
+          "name": "Channel",
+          "hex": "#fbc8c6",
+          "role": "Light red",
+          "text_color": "#141414"
+        },
+        {
+          "slug": "bisque",
+          "name": "Bisque",
+          "hex": "#fee2c5",
+          "role": "Light orange",
+          "text_color": "#141414"
+        },
+        {
+          "slug": "bullet-hell",
+          "name": "Bullet Hell",
+          "hex": "#fbf2c5",
+          "role": "Light yellow",
+          "text_color": "#141414"
+        },
+        {
+          "slug": "snowy-mint",
+          "name": "Snowy Mint",
+          "hex": "#dff3d1",
+          "role": "Light green",
+          "text_color": "#141414"
+        },
+        {
+          "slug": "gentle-cold",
+          "name": "Gentle Cold",
+          "hex": "#c4f0f0",
+          "role": "Light teal",
+          "text_color": "#141414"
+        },
+        {
+          "slug": "cotton-clouds",
+          "name": "Cotton Clouds",
+          "hex": "#c1e1f0",
+          "role": "Light blue",
+          "text_color": "#141414"
+        },
+        {
+          "slug": "scented-spring",
+          "name": "Scented Spring",
+          "hex": "#ebd8f5",
+          "role": "Light purple",
+          "text_color": "#141414"
+        },
+        {
+          "slug": "grape-taffy",
+          "name": "Grape Taffy",
+          "hex": "#f8daec",
+          "role": "Light pink",
+          "text_color": "#141414"
+        },
+        {
+          "slug": "white-truffle",
+          "name": "White Truffle",
+          "hex": "#efddcf",
+          "role": "Light brown",
+          "text_color": "#141414"
+        }
+      ]
+    },
+    {
+      "id": "grey-ramp",
+      "colors": [
+        {
+          "slug": "anti-flash-white",
+          "name": "Anti-Flash White",
+          "hex": "#f2f2f2",
+          "role": "Grey shade 1",
+          "text_color": "#141414"
+        },
+        {
+          "slug": "super-silver",
+          "name": "Super Silver",
+          "hex": "#ededed",
+          "role": "Grey shade 2",
+          "text_color": "#141414"
+        },
+        {
+          "slug": "placebo",
+          "name": "Placebo",
+          "hex": "#e5e5e5",
+          "role": "Grey shade 3",
+          "text_color": "#141414"
+        },
+        {
+          "slug": "elephant-in-the-room",
+          "name": "Elephant in the Room",
+          "hex": "#acacac",
+          "role": "Grey shade 4",
+          "text_color": "#141414"
+        },
+        {
+          "slug": "argent",
+          "name": "Argent",
+          "hex": "#888888",
+          "role": "Grey shade 5",
+          "text_color": "#141414"
+        }
+      ]
+    }
+  ]
+}

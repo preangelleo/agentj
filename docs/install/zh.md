@@ -324,7 +324,7 @@ Ubuntu 24.04 还会检查 AppArmor 对用户命名空间的限制，并实际试
 AI 安装Agent J 主机端程序 `agentj`，装的是固定的一个版本：
 
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.25.8a1#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.25.9a1#subdirectory=host"
 agentj doctor
 ```
 
@@ -454,7 +454,7 @@ uv tool uninstall agentj
 先试运行 `opencode --version`（或所选 Agent 的 `--version`）；能正常运行就能继续安装，不按 macOS 版本号拦截。一键安装也会实际试运行它下载的固定版 OpenCode。如果看到 `dyld: Symbol not found: _ubrk_clone` 和 `/usr/lib/libicucore.A.dylib` 后退出，才说明该二进制与系统库不兼容；PATH 或 npm 重装不能修复，请升级系统、换Agent J 主机，或用能正常运行的其他 Agent 按手动路线安装。一键安装优先从本站下载固定版本 uv，托管 Python 使用镜像，包依赖失败时重试镜像；旧预览下载路径已停用。
 
 
-已安装 Agent J 的Agent J 主机也能使用 AJI 安装码：重新运行账户页的一键安装命令，会保留配置，只升级并绑定席位。也可把码放在权限为 0600 的文件中，运行 `agentj login --install-code-file <文件> --name <名字>`。AJI 码只能用一次；ajt_ 设置码只用于绑定已安装的Agent J 主机。绑定后到账户页添加遥控器，用通行密钥或遥控器配对密码确认后扫码。
+已安装 Agent J 的Agent J 主机也能使用 AJI 安装码：重新运行账户页的一键安装命令，会保留配置，只升级并绑定席位。也可把码放在权限为 0600 的文件中，运行 `agentj login --install-code-file <文件> --name <名字>`。AJI 码只能用一次；ajt_ 设置码只用于绑定已安装的Agent J 主机。绑定后到账户页添加遥控器，每次发起和批准都用新的账号通行密钥确认后扫码；主机要求的配对密码是额外验证。
 
 手动安装时，如果提示要填 `Installation code (AJI-…)`，去账号后台点「复制安装码」，只粘贴这串 AJI- 开头的码。
 

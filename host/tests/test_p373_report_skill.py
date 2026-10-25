@@ -44,6 +44,13 @@ class Skill(unittest.TestCase):
         for flag in set(re.findall(r"(?<![\w-])(--[a-z][a-z-]+|-[a-z])\b", t)) - {"--harness"}:
             self.assertIn(flag, known, flag)
 
+    def test_final_approvals_and_freeze_are_explicit(self):
+        text = SKILL.read_text(encoding="utf-8")
+        self.assertNotIn("no approval needed", text)
+        for phrase in ("final-message passkey approval required", "Workspace template names resolve before approval",
+                       "自定义模板在审批期间有变化", "发给主人也需要"):
+            self.assertIn(phrase, text)
+
     def test_capability_points_recurring_reports_here(self):
         cap = (SKILLS / "agentj-capability" / "SKILL.md").read_text(encoding="utf-8")
         line = next(x for x in cap.splitlines() if "agentj-report" in x)

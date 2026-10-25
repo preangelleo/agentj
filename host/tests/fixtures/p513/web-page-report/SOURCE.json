@@ -1,0 +1,38 @@
+{
+  "source": "Installed web-page-report v1.3 protocol fixture. Real CLI resolver, wr_custom loading/schema/rendering and supporting scripts; offline custom-template tests only.",
+  "sha256": {
+    "scripts/wr_cloud.py": "9f963c5ea47539857cc46ab767e3e8467f5a8daca9adde5dea42bab964bc26da",
+    "scripts/wr_custom.py": "2114d7813bdce59057bae9057b8f5f6677b004243bbdadb727947244b76396c5",
+    "scripts/wr_email.py": "5d69f2e20f1b2733f7ad1d31f699ad927bf59df9549a6d8d218215c7cc46665f",
+    "scripts/wr_render.py": "ae9f09cb204502e312d2d482f1f7698fabb09f97a825603883607c3cf27bbd07",
+    "scripts/wr_schemas.py": "cae1bba6ab1d92975a4519d79d7073d5995b0d556399e9c71f0ea911dd13baea",
+    "scripts/wr_templates.py": "b1d9d06259aa5aaa36a746631b912fc8a538a8d80de3322a9c574bb09b8d2af6",
+    "scripts/wr_validate.py": "fb5353777028bd7bde82de2168ba676e10d09057c833f984a6aef7b98dd30ec3",
+    "scripts/web_report.py": "862016bcc69a6aaf9fe55f3819b929824606067bf42825f79eb06b2b51e0610c",
+    "templates/registry.json": "9bb11c35cc5af4ee6ce31c0878f1114a9419c59598754de46fca594afef19fe2",
+    "templates/palette.json": "30487fd0f407b437508c7d9cbde2631cd1a5576b20c09c2f747431361fc9a3f2",
+    "templates/brand-themes.json": "c00bca729f1f38b0803dccadc692e03416183958a1c62b45b2fc7b1e43fe43fe"
+  },
+  "upstream_sha256": {
+    "scripts/wr_cloud.py": "9f963c5ea47539857cc46ab767e3e8467f5a8daca9adde5dea42bab964bc26da",
+    "scripts/wr_custom.py": "2114d7813bdce59057bae9057b8f5f6677b004243bbdadb727947244b76396c5",
+    "scripts/wr_email.py": "5d69f2e20f1b2733f7ad1d31f699ad927bf59df9549a6d8d218215c7cc46665f",
+    "scripts/wr_render.py": "cb79a8822fb95894beb4112876d898b8b5c27d7d207c7c7e9af1ed1447cbf086",
+    "scripts/wr_schemas.py": "0dacddc75b95ca4aa0d4de7d6d0f6aef97552fc3de0779ea4d86d1cb73dd73f5",
+    "scripts/wr_templates.py": "b1d9d06259aa5aaa36a746631b912fc8a538a8d80de3322a9c574bb09b8d2af6",
+    "scripts/wr_validate.py": "fb5353777028bd7bde82de2168ba676e10d09057c833f984a6aef7b98dd30ec3",
+    "scripts/web_report.py": "862016bcc69a6aaf9fe55f3819b929824606067bf42825f79eb06b2b51e0610c",
+    "templates/registry.json": "3798b2aeeac0ffc72cbbda69822c6420478552e021c97d68149091aac238cbf7",
+    "templates/palette.json": "30487fd0f407b437508c7d9cbde2631cd1a5576b20c09c2f747431361fc9a3f2",
+    "templates/brand-themes.json": "721ed8189492e0a03e4ed2effd825d4a1ddc7a9db731d114be89e1ffe88633b8"
+  },
+  "public_fixture_transform": {
+    "rule": "Case-insensitive unused built-in theme identifier replaced by fixturetheme; no resolver/custom-template logic changed",
+    "files": [
+      "scripts/wr_render.py",
+      "scripts/wr_schemas.py",
+      "templates/registry.json",
+      "templates/brand-themes.json"
+    ]
+  }
+}

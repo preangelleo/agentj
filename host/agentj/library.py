@@ -44,6 +44,8 @@ _IDEM = re.compile(r"[A-Za-z0-9_-]{8,64}")
 _CURSOR = re.compile(r"[\x21-\x7e]{1,512}")
 
 ERRORS = {
+    "confirmation_required": ("未获本次扣点确认，没有查询 / this charge was not confirmed; no query sent", EXIT_ERROR),
+    "changed": ("查询目标已改变，没有扣点 / query destination changed; no credits taken", EXIT_ERROR),
     "not_bound": ("这台电脑不在任何 Agent J 账号里（先 agentj login）/ this computer is not in an Agent J account (agentj login)", EXIT_SEAT),
     "unlinked": ("这台电脑还没加到 Agent J 账号：先 agentj login / not in an Agent J account yet: agentj login", EXIT_SEAT),
     "payment_required": ("这台电脑的 Agent J 席位不可用（续费或绑定席位后再用）/ this computer's Agent J seat is not usable (renew or bind a seat)", EXIT_SEAT),

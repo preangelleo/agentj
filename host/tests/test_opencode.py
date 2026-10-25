@@ -294,7 +294,9 @@ class Chain(unittest.TestCase):
             await c["say"]("RUN: rm victim.txt")
             await c["wait"](lambda: len(c["asks"]()) == 1)
             ask = c["asks"]()[-1]
-            self.assertEqual((ask["tool"], ask["summary"], ask["cat"]), ("Bash", "rm victim.txt", ["delete"]))
+            self.assertEqual((ask["tool"], ask["cat"]), ("Bash", ["delete"]))
+            self.assertEqual(json.loads(ask["summary"].split("\n", 1)[1].split("\nRequest SHA-256:", 1)[0]), {"command": "rm victim.txt"})
+            self.assertRegex(ask["summary"], r"Request SHA-256: [a-f0-9]{64}$")
             self.assertNotIn("batch", ask, "a dangerous card offers no batch approval")
             self.assertEqual(c["statuses"]()[-1], "waiting")
             await c["host"]._app(c["s"], c["ph"].answer(ask, False))

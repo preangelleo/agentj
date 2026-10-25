@@ -1,6 +1,5 @@
 {
-  "version": "0.25.8a1",
-  "major": false,
-  "zh": "在办事项显示实测工具、模型、账号和时长；日历逐次确认、未知来源拒绝；授权码复用、自压缩、Telegram 头像和 Kimi Pro 修复。",
-  "en": "Verified task tools, models, accounts and timing; calendar passkeys and trusted origins; mail recovery, self-compaction, Telegram avatars and Kimi Pro."
+  "version": "0.25.9a1",
+  "zh": "扣款、订阅、席位和吊销逐次确认；付费查询与报告锁定内容后审批；完整脱敏卡片与独立会话安全检查。",
+  "en": "Per-action account confirmation, frozen paid queries and reports, complete redacted approval cards, and independent-session safety checks."
 }

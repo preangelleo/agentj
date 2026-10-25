@@ -36,10 +36,12 @@ class Autonomy(unittest.TestCase):
         with patch.object(update,'writable',return_value=True),patch.object(update,'install_kind',return_value={'kind':'uv','where':'/fake','legacy':False}),patch.object(update,'new_argv',return_value=['agentj']):
             res=update.apply(Mock(),'9.9.9',plan_fn=lambda st, info, target:update.commands(info,target), check_fn=lambda:{'status':'newer','latest':'9.9.9'},run=run,svc_on=True)
         self.assertEqual(res['reason'],'not_upgraded');self.assertEqual(run.call_count,2)
-    def test_native_policies_no_extra_risk_approval(self):
+    def test_independent_native_settings_keep_launch_review(self):
         a=ClaudeAgent(None,{'kind':'claude','dir':'/tmp','_workflow_ceo':True})
-        argv=a.argv(None);self.assertEqual(json.loads(argv[argv.index('--settings')+1]),{})
-        self.assertEqual(CodexAgent(None,{'kind':'codex','dir':'/tmp'}).policy(),{'sandbox':'danger-full-access'})   # F30: no explicit sandbox_mode → directly on the system
+        argv=a.argv(None);settings=json.loads(argv[argv.index('--settings')+1])
+        self.assertIn('PreToolUse',settings['hooks'])
+        self.assertNotIn('UserPromptSubmit',settings['hooks'])
+        self.assertEqual(CodexAgent(None,{'kind':'codex','dir':'/tmp'}).policy(),{'sandbox':'danger-full-access','approvalPolicy':'untrusted','approvalsReviewer':'user'})   # F30: no explicit sandbox_mode → directly on the system
     def test_self_code_writable_state_still_protected(self):
         with tempfile.TemporaryDirectory() as tmp:
             st=State(Path(tmp)/'state');st.init()

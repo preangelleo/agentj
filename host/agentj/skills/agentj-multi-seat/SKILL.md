@@ -40,10 +40,10 @@ session — the command refuses), and its own background service `agentj-2` (mac
 
 ## Pair the person's phone (two ways — the instance must be bound and online first)
 
-**Way 1 · account page (no terminal, no passphrase).** Whoever owns the account:
+**Way 1 · account page (owner passkey; no terminal).** Whoever owns the account:
 1. opens the account page → finds **this instance's** seat card (its Agent name; each instance has its own card) →
    「添加遥控器（手机或浏览器）」 / "Add a remote (phone or browser)";
-2. confirms with the account passkey (reused for ten minutes on that page);
+2. confirms each pairing start and approval with a fresh account passkey; if that card also requires the host pairing password, enter it there;
 3. scans the QR with the person's phone camera (valid 5 minutes, one remote) — or copies the link on the card and opens it on
    that phone. The phone connects to instance N only; pending remotes can be approved or refused on the same card.
 

@@ -1,6 +1,6 @@
-# Agent J 0.25.8a1 release notes
+# Agent J 0.25.9a1 release notes
 
-Host 0.25.8a1 / install 0.27.8; phone-web scope.
+Host 0.25.9a1 / install 0.27.9; phone-web scope.
 Phone parity must pass --strict. Full Android/Telegram parity is incomplete.
 Full Android/Telegram parity is incomplete.
 No APK is included in this release. Android source is for review, not a released app.
@@ -8,23 +8,17 @@ No APK is included in this release. Android source is for review, not a released
 Publication status: local preparation only. Live site verification is DEFERRED until
 the public commit and tag are pushed, the site is deployed, and cold installation passes.
 
-Release order: C Dashboard support knowledge only, no D1 migration; then A signed host/site/downloads, immediately followed by B phone web. No relay change. Preserve0036 revocation state,0037 action UV data and local security journals permanently. Never replay migrations or restore an older database snapshot. Use compatible rollback only, otherwise repair forward. Native Mac M1 and physical iOS acceptance remain separate. Local preparation only; no push or deployment authorized.
+Release order: C applies0038_checkout_operations.sql before compatible Dashboard Worker and support knowledge; then A signed host/site/downloads, immediately followed by B phone web. No relay change. Preserve0036 revocation state,0037 action UV data and local security journals permanently. Preserve checkout operation pending records. Never replay migrations or restore an older database snapshot. Use compatible rollback only, otherwise repair forward. Native Mac M1 and physical iOS acceptance remain separate. Local preparation only; no push or deployment authorized.
 ## Changes
 
-- Show program-verified AI tool, model, account and elapsed time in ongoing work, with unknown values stated explicitly.
-- Confirm each calendar write with a passkey bound to the exact calendar, destination and content.
-- Verify saved app passwords before asking again; repair and retry failed phone email sends.
-- Queue compaction in the current conversation after writing the handoff when the owner requests it.
-- Use route-specific Kimi K3.1 Pro identifiers for membership, platform and OpenCode Go.
-- Treat unverified input as non-owner and retain authenticated phone provenance throughout the turn.
-- Fix Telegram avatars and duplicate name prefixes; only zero-write doctor checks avoid extra verification.
-- 在办事项由程序显示 AI 工具、模型、账号与运行时长；无法核实时明确显示未知。
-- 日历修改逐次通行密钥确认，批准绑定具体日历、目的端与内容。
-- 邮箱登录失败时先验证已登记授权码；手机发信失败可修复并重试。
-- 主人要求写好交接后自行压缩时，可在当前对话排队压缩。
-- 区分 Kimi K3.1 Pro 的会员、开放平台与 OpenCode Go 模型标识。
-- 来源不明的输入一律不当作主人；已验证手机输入在整轮中保持来源绑定。
-- 修复 Telegram 头像与名称前缀重复；只有零写入的 doctor 检查免额外验证。
+- Confirm each payment, subscription, seat and revocation action with a passkey bound to that action.
+- Confirm paid queries and report execution against frozen templates, data and prices.
+- Show complete redacted approval parameters and separate notes; refuse requests that cannot be displayed completely.
+- Keep safety hooks in independent Claude sessions and fixed review on Codex session start and resume.
+- 账户页扣款、订阅、席位与吊销操作，每次都用通行密钥确认具体动作。
+- 付费查询与报告执行前再次确认；批准时锁定模板、数据和费用。
+- 审批卡展示完整脱敏参数，附注单独显示；无法完整显示时拒绝执行。
+- 独立 Claude 会话始终保留安全检查；Codex 新建和恢复会话保留固定审查。
 
 ## Material acceptance limits
 

@@ -130,14 +130,14 @@ class Policy(unittest.TestCase):
     def test_unset_runs_directly_on_the_system(self):
         a = self.agent()
         p = a.policy()
-        self.assertEqual(p, {"sandbox": "danger-full-access"}, "nothing else imposed (F14): approvals stay Codex's own")
+        self.assertEqual(p, {"sandbox": "danger-full-access", "approvalPolicy":"untrusted", "approvalsReviewer":"user"}, "sandbox default retained; review cannot be suppressed")
         self.assertEqual(a.perm_source, "agentj")
 
     def test_explicit_setting_is_kept(self):
         for mode in ("workspace-write", "read-only", "danger-full-access"):
             a = self.agent({"sandbox_mode": mode, "approval_policy": "never"})
             p = a.policy()
-            self.assertEqual((p["sandbox"], p["approvalPolicy"], a.perm_source), (mode, "never", "config"))
+            self.assertEqual((p["sandbox"], p["approvalPolicy"], a.perm_source), (mode, "untrusted", "config"))
 
     def test_research_stays_read_only(self):
         a = self.agent({"sandbox_mode": "danger-full-access"}, research=True)
@@ -248,7 +248,8 @@ class Chain(_Chain):
             else:
                 await c["wait"](lambda: len(c["asks"]()) == 1)
                 a = c["asks"]()[-1]
-                self.assertEqual(a["summary"], "curl -s -d x=1 https://awscli.amazonaws.com")
+                self.assertEqual(json.loads(a["summary"].split("\n", 1)[1].split("\nRequest SHA-256:", 1)[0]), {"command": "curl -s -d x=1 https://awscli.amazonaws.com"})
+                self.assertRegex(a["summary"], r"Request SHA-256: [a-f0-9]{64}$")
                 await c["host"]._app(c["s"], c["ph"].answer(a, False))     # the phone decides; no real network in tests
                 await c["wait"](lambda: any(m["text"].startswith("declined: curl") for m in c["msgs"]()))
                 self.assertFalse(any("沙箱" in n for n in notices()))

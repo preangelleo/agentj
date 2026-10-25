@@ -6,7 +6,7 @@ publishing protocol for the owner's automations: the model only fills a JSON fil
 The engine and the 15 templates live in the plaza package web-page-report (≥ 1.3; its references/protocol.md is the
 protocol text); this module only finds the installed package and runs its CLI, so the host carries no templates.
 `send` renders the mail version and hands it to `agentj mail send --format html` in-process: recipients, the allowlist and
-phone approval are exactly mail's (`--to-owner` needs none). Invalid data → the engine's exit 2 and nothing is sent.
+final passkey approval are exactly mail's, including `--to-owner`. Invalid data → the engine's exit 2 and nothing is sent.
 No --template = the package's default (R15 Agent J Noir). A custom template is a folder (template + schema + example)
 by path, or by id under $AGENT_WORKSPACE/report-templates/; the engine refuses scripts and external loads in it.
 
@@ -16,6 +16,7 @@ install it) · 4 network / cloud error (publish).
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import pathlib
 import shutil
@@ -64,9 +65,93 @@ def find_engine() -> pathlib.Path | None:
     return None
 
 
+def _template_path(engine: pathlib.Path, name: str) -> pathlib.Path | None:
+    """Resolve the package's v1.3 template contract without running unsigned code.
+
+    Built-ins are already inside the frozen package. Custom IDs must become
+    explicit private paths, never be resolved again against the live workspace.
+    """
+    raw = name.strip()
+    registry = json.loads((engine / "templates" / "registry.json").read_text(encoding="utf-8"))
+    for row in registry["templates"]:
+        if raw.lower() in (row["id"].lower(), row["ref"].lower(), row["slug"]):
+            return None
+    path = pathlib.Path(raw).expanduser()
+    if "/" not in raw and not raw.startswith((".", "~")) and not path.is_dir():
+        workspace = pathlib.Path(os.environ.get("AGENT_WORKSPACE") or "~/agent-workspace").expanduser()
+        path = workspace / "report-templates" / raw
+    if not raw or not path.is_dir():
+        raise ValueError("report template does not exist")
+    return path
+
+
 def _run(engine: pathlib.Path, args: list[str], capture=False) -> subprocess.CompletedProcess:
-    return subprocess.run([sys.executable, "-I", str(engine / ENGINE), *args], cwd=os.getcwd(), text=True,
-                          capture_output=capture)
+    # A preflight over path names cannot authorize a later, mutable script/data
+    # read. Execute only our private byte snapshot after the final action card.
+    from . import action_policy
+    with tempfile.TemporaryDirectory(prefix="agentj-report-exec-") as tmp:
+        root = pathlib.Path(tmp)
+        manifest = []
+        total = 0
+        def freeze(src, dest, content=False):
+            nonlocal total
+            src = pathlib.Path(src).expanduser()
+            if src.is_symlink():
+                raise ValueError("report input symlink refused")
+            if src.is_dir():
+                dest.mkdir(parents=True, exist_ok=True)
+                for child in sorted(src.iterdir()):
+                    if child.name == "__pycache__": continue
+                    freeze(child, dest / child.name, content)
+                return
+            if not src.is_file():
+                raise ValueError("report input is not a regular file")
+            data = src.read_bytes()
+            total += len(data)
+            if total > 8 * 1024 * 1024 or len(manifest) >= 1000:
+                raise ValueError("report input too large")
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(data)
+            dest.chmod(0o700 if src.stat().st_mode & 0o111 else 0o600)
+            row = {"path": str(src.resolve()), "sha256": hashlib.sha256(data).hexdigest(), "bytes": len(data)}
+            if content:
+                row["content"] = data.decode("utf-8")
+            manifest.append(row)
+        frozen = root / "engine"
+        freeze(engine, frozen)
+        final = list(args)
+        if args and args[0] in ("validate", "render", "publish"):
+            # Missing inputs are errors now, not paths a later engine may read.
+            if not args[1] or not pathlib.Path(args[1]).expanduser().is_file():
+                raise ValueError("report data file does not exist or is not a regular file")
+            target = root / "input-data" / pathlib.Path(args[1]).name
+            freeze(args[1], target, content=True)
+            final[1] = str(target)
+        template_index = (args.index("--template") + 1) if "--template" in args else (
+            1 if args and args[0] in ("schema", "example") else None)
+        template_rows = []
+        if template_index is not None:
+            path = _template_path(frozen, args[template_index])
+            if path is not None:
+                first = len(manifest)
+                target = root / "input-template" / path.name
+                freeze(path, target, content=True)
+                template_rows = manifest[first:]
+                final[template_index] = str(target)
+        env = dict(os.environ)
+        request = {"argv": [sys.executable, "-I", str(engine / ENGINE), *args], "cwd": os.getcwd(),
+                   "inputs": manifest, "environment_sha256": hashlib.sha256(json.dumps(env, sort_keys=True).encode()).hexdigest()}
+        if not action_policy.confirm_cli("broker.execute", request):
+            return subprocess.CompletedProcess(args, 1, "", "report execution was not confirmed")
+        # A changed custom template invalidates this approval. Execution still
+        # reads only the snapshot, including if the original changes after here.
+        for row in template_rows:
+            path = pathlib.Path(row["path"])
+            if path.is_symlink() or not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != row["sha256"]:
+                return subprocess.CompletedProcess(args, 2, "", "report template changed after approval")
+        return subprocess.run([sys.executable, "-I", str(frozen / ENGINE), *final], cwd=os.getcwd(), env=env, text=True,
+                              capture_output=capture)
+
 
 
 def _data_arg(a) -> str | None:
@@ -154,9 +239,16 @@ def cmd(a) -> int:
     if not (engine / "scripts" / "wr_email.py").is_file():
         print("✗ " + OLD_HINT[lang], file=sys.stderr)
         return 3
-    if a.action == "send":
-        return send(a, engine, lang)
-    return _run(engine, _engine_args(a, a.action)).returncode
+    try:
+        if a.action == "send":
+            return send(a, engine, lang)
+        result = _run(engine, _engine_args(a, a.action))
+        if result.returncode and result.stderr:
+            print(result.stderr, file=sys.stderr)
+        return result.returncode
+    except (OSError, ValueError) as exc:
+        print("✗ 报告输入不可用 / report input refused: " + str(exc), file=sys.stderr)
+        return 2
 
 
 def add_parser(sub, status_fn=None) -> None:   # the choices below are spelled out (= PASS + send) for the docs checker

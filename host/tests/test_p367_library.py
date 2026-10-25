@@ -44,6 +44,8 @@ class FakeDashboard:
 
 class LibraryCLI(unittest.TestCase):
     def setUp(self):
+        authorization = mock.patch('agentj.action_policy.confirm_cli', return_value=True)
+        authorization.start(); self.addCleanup(authorization.stop)
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.st = State(pathlib.Path(self.tmp.name) / "s")

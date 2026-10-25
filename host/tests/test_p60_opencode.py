@@ -291,7 +291,9 @@ class V2Chain(unittest.TestCase):
             # 2. a shell request → a card on the phone → approve → it runs; reject → the model is told
             await c.say("RUN: echo hi-v2")
             await c.wait(lambda: len(c.asks()) == 1)
-            self.assertEqual((c.asks()[-1]["tool"], c.asks()[-1]["summary"]), ("Bash", "echo hi-v2"))
+            self.assertEqual(c.asks()[-1]["tool"], "Bash")
+            self.assertEqual(json.loads(c.asks()[-1]["summary"].split("\n", 1)[1].split("\nRequest SHA-256:", 1)[0]), {"command": "echo hi-v2"})
+            self.assertRegex(c.asks()[-1]["summary"], r"Request SHA-256: [a-f0-9]{64}$")
             await c.host._app(c.s, c.ph.answer(c.asks()[-1], True))
             await c.wait(lambda: "OUT: hi-v2" in c.msgs())
             await c.idle()

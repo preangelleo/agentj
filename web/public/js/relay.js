@@ -362,7 +362,7 @@ function paintTags(item){
     else if (item.tool === "passphrase_reset") { const s = document.createElement("span"); s.className = "atag danger"; s.textContent = t(item.passkey_required ? "ppReset.tagFace" : "ppReset.tag"); box.appendChild(s); }   // #118
     else if (item.tool === "wechat_confirm") { const s = document.createElement("span"); s.className = "atag"; s.textContent = t("wc.confirmTag"); box.appendChild(s); }
     else if (item.tool === "AuthRescue") { const s = document.createElement("span"); s.className = "atag danger"; s.textContent = t("ar.confirmTag"); box.appendChild(s); }
-    else if (item.passkey_required) { const s = document.createElement("span"); s.className = "atag danger"; s.textContent = t("ask.sandboxOnce"); box.appendChild(s); }
+    else if (item.passkey_required) { const s = document.createElement("span"); s.className = "atag danger"; s.textContent = t(item.tool === "SandboxOnce" ? "ask.sandboxOnce" : "p336.faTitle"); box.appendChild(s); }
     else if (item.cats && item.cats.length) for (const c of item.cats){ const s = document.createElement("span"); s.className = "atag danger"; s.dataset.cat = c; s.textContent = t('ask.cat.' + catKey(c, item)); box.appendChild(s); }
     else if (item.goal !== "grant" && item.goal !== "attack") { const s = document.createElement("span"); s.className = "atag low"; s.textContent = t('ask.low'); box.appendChild(s); }   // P339: an attack card is never tagged low
   }
@@ -481,7 +481,7 @@ function renderPermission(card, p){
   const pairAsk = !!(p && p.tool === "pair_device") || ppAsk;   // P153 (§3.3): a new remote waits; the host wrote the card text
   const danger = !!(p && (p.passkey_required || pairAsk || (p.cats && p.cats.length) || p.goal === "attack"));
   el("sheet").classList.toggle("danger", danger);
-  el("sheetTitle").textContent = handoffAsk ? t("wc.confirmTitle") : ppAsk ? t("ppReset.title") : pairAsk ? t("pair.card.title") : rescueAsk ? t("ar.confirmTitle") : p && p.passkey_required ? t("ask.sandboxTitle") : danger ? t('r.verb.danger', {verb: verb(tool)}) : verb(tool);
+  el("sheetTitle").textContent = handoffAsk ? t("wc.confirmTitle") : ppAsk ? t("ppReset.title") : pairAsk ? t("pair.card.title") : rescueAsk ? t("ar.confirmTitle") : p && p.passkey_required ? t(p.tool === "SandboxOnce" ? "ask.sandboxTitle" : "p336.faTitle") : danger ? t('r.verb.danger', {verb: verb(tool)}) : verb(tool);
   // P339: a goal card the host put in plain words — 「目标进行中：{who} 想{what}…」, the three lines under it, and the raw
   // command (tool tag, 展开全部, description) folded behind 「详情」 (closed for every new card).
   const human = goalHuman(p);
@@ -511,7 +511,7 @@ function renderPermission(card, p){
   el("apprDeny").disabled = apprBusy;
   el("apprAllow").hidden = !p || p.local_only;
   el("apprAllow").disabled = apprBusy;
-  el("apprAllowLbl").textContent = handoffAsk ? t("wc.confirm") : ppAsk ? t(p.passkey_required ? 'ppReset.allowFace' : 'ppReset.allow') : pairAsk ? t(p.passkey_required ? 'pair.card.allowFace' : 'pair.card.allow') : rescueAsk ? t('ar.confirmStart') : p && p.passkey_required ? t('ask.sandboxOnce') : t('r.appr.hold');   // P154 追加 9: 「长按批准」 on every card, ⚠ cards too — the room goes to the ⌘↩ hint
+  el("apprAllowLbl").textContent = handoffAsk ? t("wc.confirm") : ppAsk ? t(p.passkey_required ? 'ppReset.allowFace' : 'ppReset.allow') : pairAsk ? t(p.passkey_required ? 'pair.card.allowFace' : 'pair.card.allow') : rescueAsk ? t('ar.confirmStart') : p && p.passkey_required ? t(p.tool === 'SandboxOnce' ? 'ask.sandboxOnce' : 'p336.faYes') : t('r.appr.hold');   // P154 追加 9: 「长按批准」 on every card, ⚠ cards too — the room goes to the ⌘↩ hint
   el("apprDeny").firstElementChild.textContent = ppAsk ? t('r.appr.deny') : pairAsk ? t('pair.card.deny') : t('r.appr.deny');
   const kbd = apprKbd();                                       // P154 追加 2: ⌘↩ / Ctrl↩ on a computer only
   el("apprKbd").textContent = kbd; el("apprKbd").hidden = !kbd;

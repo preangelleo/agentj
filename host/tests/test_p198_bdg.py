@@ -165,12 +165,12 @@ class LowRiskPass(unittest.TestCase):
         self.assertEqual(answers[0], (1, {"decision": "accept"}))
         self.assertEqual([x[1]["command"] for x in h.asked], ["git push origin main", "cat README.md"])
 
-    def test_codex_restricted_sandbox_is_not_made_untrusted(self):
+    def test_codex_restricted_sandbox_keeps_access_but_cannot_disable_review(self):
         from agentj.agent_codex import CodexAgent
         cx = CodexAgent(None, {"kind": "codex", "dir": "/tmp", "model": None, "high_risk_warnings": True})
         self.assertEqual(cx.policy()["approvalPolicy"], "untrusted")                 # full access: Agent J asks (layer 1 first)
         cx.human = {"sandbox_mode": "workspace-write"}
-        self.assertEqual(cx.policy(), {"approvalsReviewer": "user", "approvalPolicy": "on-request", "sandbox": "workspace-write"})
+        self.assertEqual(cx.policy(), {"approvalsReviewer": "user", "approvalPolicy": "untrusted", "sandbox": "workspace-write"})
         cx.human = {"sandbox_mode": "read-only", "approval_policy": "untrusted"}
         self.assertEqual(cx.policy()["approvalPolicy"], "untrusted")                 # the owner's own explicit choice stays
         r = CodexAgent(None, {"kind": "codex", "dir": "/tmp", "model": None, "high_risk_warnings": True}, research=True)
