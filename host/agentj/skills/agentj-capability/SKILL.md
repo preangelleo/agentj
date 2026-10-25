@@ -118,3 +118,5 @@ Background status: actually run `agentj busy list --json` and cite its `tasks`, 
 If `complete` is false, the host snapshot was unavailable: only external processes were checked. Say the native task count is unavailable; never call that result a complete empty board.
 
 Unknown native-child status is not running: cite `unknown_count` separately from `task_count` (including with `--no-units`); use these snapshot counters without recounting rows; a live host PID alone is not child activity. Rows expire by last activity when native state is unavailable.
+
+The phone presents verified background metadata as small secondary text below each task title. Account fingerprints are equality keys only: show ordinal tool account names only when multiple accounts of the same tool are active, never raw IDs or plans. Conflicting reported tool/model details are a separate warning. Do not infer the cause of a missing row from a screenshot alone; compare the same-time host snapshot and client build.

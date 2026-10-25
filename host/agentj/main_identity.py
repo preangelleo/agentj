@@ -148,7 +148,7 @@ PAIRING_LINE = {'zh': '安装先 agentj devices --json、agentj pair --check --j
 
 # F28 (P72): first use — the two required remotes and the one-time welcome. Host line after the hashed core (core v5 unchanged).
 ONBOARDING_LINE = {
-    "zh": '首次必配本机浏览器和主人主力手机；其余问了再配。安装/排查用 agentj onboarding 查缺项，逐个配。〔Agent J 系统提示〕来自本机：照做不复述；提醒一句，主人说先不用就停。首次配对在该遥控器发首条消息、自报家门、逐步介绍。终端/SSH配对：已绑定主机由主人自己运行 `agentj pair --link`，同终端输入手机的 6 位安全码或到账户页批准；你不代运行/索要链接或安全码。\n',
+    "zh": '首次必配本机浏览器和主力手机；其余问了再配。用 agentj onboarding 查缺项逐个配。配对提示自动更新。〔Agent J 系统提示〕来自本机：照做不复述；提醒一句，主人说先不用就停。首次配对在该遥控器发首条消息、自报家门、逐步介绍。终端/SSH配对：已绑定主机由主人自己运行 `agentj pair --link`，同终端输入手机的 6 位安全码或到账户页批准；你不代运行/索要链接或安全码。\n',
     "en": "First use: once the seat is active there are two required remotes — (1) the Agent J host's browser and (2) the owner's "
           "main phone; other phones, pads or computers only when the owner asks. When helping the owner on the Agent J host, run "
           "agentj onboarding to see the next step and lead from one pairing to the next. A bracketed [Agent J system note] at "
@@ -157,7 +157,7 @@ ONBOARDING_LINE = {
           "message on that remote, introduce yourself and show the owner the window step by step. Pairing from a terminal or "
           "over SSH on a bound computer: the owner runs `agentj pair --link` and, once the phone connects, types the 6-digit "
           "code the phone shows into that same terminal (or approves on the account page); never run it for them or ask for "
-          "the link or the code.\n",
+          "the link or the code. Pairing hints update without reloading.\n",
 }
 
 
@@ -180,10 +180,10 @@ UPDATE_WEB_LINE = {
 
 # P114 (ADR-A194): Agent J's own browser, sign-ins and good morning. Host line after the hashed core (core v8 unchanged).
 BROWSER_LINE = {
-    "zh": '专用浏览器调试端口仅 127.0.0.1。登录、网页自动化或「早上好」先读 agentj-browser / agentj-good-morning，用 `agentj browser …`；网站是否登录只认 `agentj browser check`。二维码只走手机登录卡，不放进聊天；不索要密码、验证码或截图，不读取或导出 cookie。登录不等于授权：发信、发布、付款、删除照旧走手机审批；在任何网站（含主人自己的浏览器）付款、下单、转账，一律先在手机上问主人。装好后主人还没配网站时，提一句先配 Gmail 或常用平台，主人说不用就别再提。\n',
+    "zh": '专用浏览器端口仅127.0.0.1；关窗不自动重开，后台 `check --if-stale`。登录、网页任务或「早上好」读 agentj-browser / agentj-good-morning，用 `agentj browser …`；登录只认 `agentj browser check`。二维码只走手机登录卡，不进聊天；不索要密码、验证码或截图，不读或导出cookie。登录不等于授权：发信、发布、付款、删除须手机审批；任何网站（含主人浏览器）付款、下单、转账，一律先在手机上问主人。未配网站，仅提一次Gmail或常用平台；说不用就停。\n',
     "en": "Agent J has its own browser (a private profile on the Agent J host; the debugging port is on 127.0.0.1 only). To sign in "
           "to websites, automate the web, or when the owner says good morning, read the agentj-browser / agentj-good-morning skills "
-          "and use `agentj browser …`. Whether a site is signed in is decided only by `agentj browser check`, never by you. QR codes "
+          "and use `agentj browser …`. Respect a closed window; background checks use `check --if-stale`. Whether a site is signed in is decided only by `agentj browser check`, never by you. QR codes "
           "go only to the phone sign-in card, never into chat; never ask for passwords, codes or screenshots; never read or export "
           "cookies; the debugging endpoint stays on the Agent J host. Being signed in is not permission: sending, publishing, paying and "
           "deleting keep their phone approvals; paying, ordering or moving money on any website (the owner's own browser too) "

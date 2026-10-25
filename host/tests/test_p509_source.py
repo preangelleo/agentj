@@ -88,7 +88,7 @@ class Consumers(unittest.IsolatedAsyncioTestCase):
                 a.cfg, a.halting = {}, False
                 h = NS(agent=a, st=Mock(), lang='en', stopped=lambda: False,
                        _approvers=lambda: [], _classify=lambda *_: NS(danger=False, cats=[]), goals=None)
-                self.assertEqual(approval_jev.low_risk_pass(h, {'high_risk_warnings': True}, 'Bash', {'command': 'pwd'}), owner)
+                self.assertEqual(approval_jev.low_risk_pass(h, {'high_risk_warnings': True}, 'Read', {'file_path': 'fixture.txt'}), owner)
                 desk = term_bang.BangDesk.__new__(term_bang.BangDesk)
                 desk.h = h
                 self.assertEqual(desk.untrusted(123), not owner)

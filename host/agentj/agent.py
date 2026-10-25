@@ -1073,12 +1073,14 @@ def source_root() -> str | None:
     return None if root in installed else root
 
 
-def hook_settings(extra: list | None = None, research: bool = False) -> dict:
+def hook_settings(extra: list | None = None, research: bool = False, warnings: bool = True) -> dict:
     """The only settings serve adds to Claude Code (`--settings`, flag level — above user / project / local, below managed
     policy): one PreToolUse hook for every tool, and hooks kept on. No permission rule, no mode (Invariant 11).
-    research (a scheduled `mode: research` task, ADR-A53): the same hook also denies every call that is not read-only."""
+    research (a scheduled `mode: research` task, ADR-A53): the same hook also denies every call that is not read-only.
+    warnings controls additional danger hints only; the common policy check is always installed."""
     cmd = (f"{shlex.quote(sys.executable)} -P -m agentj.danger hook {danger.encode_extra(extra or [])}"
            + (" research" if research else "")
+           + ("" if warnings else " policy-only")
            + " || exit 2")          # the hook cannot start → a blocking error: the call does not run (fail closed)
     return {"hooks": {"PreToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": cmd, "timeout": 30}]}]},
             "disableAllHooks": False}
@@ -1173,7 +1175,7 @@ class ClaudeAgent(Agent):
         a = [_bin("AGENTJ_CLAUDE_BIN", "claude") or "claude", "-p", "--input-format", "stream-json",
              "--output-format", "stream-json", "--verbose", "--permission-prompt-tool", PERM_TOOL,
              "--disallowedTools", PERM_TOOL, "--mcp-config", json.dumps(mcp),
-             "--settings", json.dumps(with_reminder(hook_settings(self.cfg.get("danger_extra"), research), self.cfg), separators=(",", ":"))]
+             "--settings", json.dumps(with_reminder(hook_settings(self.cfg.get("danger_extra"), research, warnings=self.cfg.get("high_risk_warnings", False)), self.cfg), separators=(",", ":"))]
         if not self.cfg.get("_workflow_ceo"):
             a += ["--append-system-prompt", main_identity.prompt(self.cfg)]
         if self.cfg.get("model"):
@@ -1218,6 +1220,8 @@ class ClaudeAgent(Agent):
             env = fence.auxiliary_environment(env, self.kind, extra_keep=("AGENTJ_PERM_SOCK", "AGENTJ_PERM_CLAIM", "AGENTJ_PERM_WAIT", "OPENCODE_SERVER_PASSWORD", "OPENCODE_SERVER_USERNAME", "OPENCODE_CONFIG_CONTENT"), plan_keys=True)   # P348
         if self.cfg.get("fence", True):
             env = fence.launch_environment(env, self.cfg.get("docker", False), self.kind)
+        from .static_shell import interpreter_env
+        self.approval_env = interpreter_env(env)
         sid = self.host.st.agent_session(self.kind)
         self.proc = await asyncio.create_subprocess_exec(*resource_policy.work_argv(argv), cwd=self.cfg["dir"], env=env,
                                                          stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,

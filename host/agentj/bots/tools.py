@@ -11,7 +11,7 @@ import re
 import secrets
 from urllib.parse import quote,urlsplit
 from ..provider_profiles import atomic,secure_read
-from .. import privacy
+from .. import privacy, policy_registry
 from .store import BotError,canonical
 from .network import request_json
 
@@ -114,6 +114,7 @@ class ToolRegistry:
     def prepare(self,vid,name,args):
         d=self.load(name)
         if not d['enabled']:raise BotError('tool_disabled')
+        if policy_registry.decision('support',policy_registry.company_action(d))=='deny':raise BotError('unknown_tool')
         if not isinstance(args,dict):raise BotError('invalid_args')
         args=dict(args);identity=self.store.identity(self.bid,vid)
         for parameter,source in d['visitor_bindings'].items():
@@ -125,7 +126,7 @@ class ToolRegistry:
         return d,args,digest
     def approval(self,vid,rid,name,args):
         d,args,digest=self.prepare(vid,name,args)
-        if d['level']!='write':raise BotError('approval_not_needed')
+        if policy_registry.decision('support',policy_registry.company_action(d)) not in ('hold','uv'):raise BotError('approval_not_needed')
         aid=secrets.token_hex(16)
         self.store.db.execute('INSERT INTO approvals VALUES(?,?,?,?,?,?,?)',(aid,self.bid,vid,rid,digest,self.store.now()+120,'pending'))
         return {'id':aid,'tool':name,'digest':digest,'expires':self.store.now()+120,'visitor':vid,'request':rid}
@@ -137,7 +138,9 @@ class ToolRegistry:
     def _request(self,vid,rid,name,args,approval_id=None):
         d,args,digest=self.prepare(vid,name,args);day=self.store.day()
         with self.store.transaction():
-            if d['level']=='write':
+            step=policy_registry.decision('support',policy_registry.company_action(d))
+            if step=='deny':raise BotError('unknown_tool')
+            if step in ('hold','uv'):
                 changed=self.store.db.execute("UPDATE approvals SET status='consumed' WHERE id=? AND bot=? AND visitor=? AND request=? AND digest=? AND status='approved' AND expires>?",(approval_id,self.bid,vid,rid,digest,self.store.now())).rowcount
                 if not changed:raise BotError('owner_approval_required')
             count=self.store.db.execute('SELECT coalesce(sum(calls),0) FROM tool_calls WHERE bot=? AND tool=? AND day=?',(self.bid,name,day)).fetchone()[0]

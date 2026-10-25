@@ -192,15 +192,15 @@ class DefaultGuard(unittest.TestCase):
                                         "tool_input": dict(PUSH)}))
         self.assertEqual(out["hookSpecificOutput"]["permissionDecision"], "deny")
 
-    def test_native_does_not_ask(self):
+    def test_native_cannot_bypass_registry_floor(self):
         g, h = self.guard(approvals="native")
-        self.assertTrue(asyncio.run(g.check("Bash", PUSH)))
-        h.ask.assert_not_awaited()
+        self.assertFalse(asyncio.run(g.check("Bash", PUSH)))
+        h.ask.assert_awaited_once()
 
-    def test_shared_claude_asks_for_push_by_default_not_under_native(self):
+    def test_shared_claude_registry_floor_also_applies_under_native(self):
         h = Mock()
         h.stopped.return_value = False
-        for cfg, want in (({}, "ask"), ({"approvals": "native"}, None)):
+        for cfg, want in (({}, "ask"), ({"approvals": "native"}, "ask")):
             a = shared.SharedClaudeAgent(h, {"kind": "claude", "dir": "/tmp", "_workflow_ceo": True, **cfg})
             a.session = {"sessionId": "owner"}
             out = asyncio.run(a.hook_event({"session_id": "owner", "hook_event_name": "PreToolUse", "tool_name": "Bash",

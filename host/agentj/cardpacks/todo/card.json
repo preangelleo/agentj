@@ -57,5 +57,11 @@
         "en": "/agentj-add-todo toggle {{item.id}}"
       }
     }
+  ],
+  "aliases": [
+    "待办卡",
+    "待办事项",
+    "To-do card",
+    "Todo"
   ]
 }

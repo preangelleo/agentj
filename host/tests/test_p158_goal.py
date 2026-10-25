@@ -171,6 +171,13 @@ class HostGoal(unittest.TestCase):
     """serve.Host.ask under a live goal: the four tiers, stop / expiry / estop / unpaired, and the signed opening card."""
 
     def setUp(self):
+        # Isolate this pre-registry mechanism on an automatic action row;
+        # test_p512_policy proves the real composition has no floor bypass.
+        from agentj import policy_registry
+        original_requirement = policy_registry.main_requirement
+        # Legacy goal/grant mechanics only; real composed floors are tested in P512.
+        floor = mock.patch.object(policy_registry, 'main_requirement', side_effect=lambda tool, inp=None: 'allow' if tool == 'Bash' else original_requirement(tool, inp))
+        floor.start(); self.addCleanup(floor.stop)
         self.tmp = tempfile.TemporaryDirectory()
         self.st = _state(self.tmp.name)
         self.work = pathlib.Path(self.tmp.name) / "work"
@@ -312,8 +319,16 @@ class HostGoal(unittest.TestCase):
                     "agentj config set approval.goal_auto false"):
             res = self.run_ask(cmd)
             self.assertEqual(res["behavior"], "deny", cmd)
-            self.assertEqual(self.asks("Bash")[-1]["goal"], "attack", cmd)
-        self.assertEqual(len(goal.load(self.st)["blocked"]), 3)
+            card = self.asks("Bash")[-1]
+            if cmd.startswith(("curl", "echo")):
+                # Opaque effects are now intercepted before all goal shortcuts.
+                self.assertTrue(card["passkey_required"], cmd)
+                self.assertNotIn("batch", card)
+                self.assertNotIn("goal", card)
+            else:
+                self.assertEqual(card["goal"], "attack", cmd)
+        self.assertEqual(len(goal.load(self.st)["blocked"]), 1)
+        self.assertEqual(goal.load(self.st)["counts"].get("auto", 0), 0)
 
     def test_countdown_off_for_enterprise(self):
         self.start_goal()

@@ -261,6 +261,9 @@ class SetCard(Base):
 
         async def request(card, gone=None, on_card=None):
             cards.append(card)
+            c = dict(card, id='a'*32, fails=0)
+            self.host.elevate._arm(c)
+            if on_card: await on_card(c)
             return {"result": "saved"}
         self.host.elevate.request = request
 
@@ -274,7 +277,7 @@ class SetCard(Base):
                 await asyncio.sleep(0.01)
         asyncio.run(go())
         res = self.of("keys_res")
-        self.assertEqual([(r["ok"], r["op"], r["name"], r.get("why")) for r in res],
+        self.assertEqual([(r["ok"], r["op"], r["name"], r.get("why")) for r in sorted(res, key=lambda x:x["r"])],
                          [(True, "set", "ARK_API_KEY", None), (False, "set", "", "shape"), (True, "set", "MY_TOOL_TOKEN", None)])
         self.assertEqual(len(cards), 2)
         c = cards[0]

@@ -85,7 +85,32 @@ class Remotes:
         h = self.host
         for s in list(h.sessions.values()):
             if s.state == "ready" and s.p33 and h.st.is_allowed(s.pub):
-                await h.send_app(s, {"t": "devs", **self.snapshot(s)})
+                await self.send_state(s)
+
+    async def send_state(self, s) -> None:
+        """Same current state on change and resume; suggest the required remote kind still missing."""
+        from . import onboarding
+        h = self.host
+        snap = self.snapshot(s)
+        kinds = {onboarding.kind_of(row['name']) for row in snap['items']}
+        kind = 'computer' if 'computer' in kinds and 'phone' not in kinds else (
+            'phone' if 'phone' in kinds and 'computer' not in kinds else None)
+        await h.send_app(s, {"t": "devs", **snap})
+        await h.send_app(s, {"t": "pair_guide", "kind": kind if kind in ('phone', 'computer') else None})
+
+    async def changed(self) -> None:
+        """All successful allowlist mutations converge here, regardless of their approval route."""
+        from . import first_run
+        h = self.host
+        await self.push_list()
+        await h._send_ready(lambda x: h.preferences_msg(x))
+        try:
+            snap = await asyncio.to_thread(first_run.check, h.st, ['desktop', 'phone', 'passkey', 'admin', 'exit'], h.setup_serve())
+        except (first_run.SetupError, OSError):
+            h.st.log('setup_refresh', status='error')  # a damaged checklist cannot cost a successful pairing
+            return
+        if snap.get('revision'):
+            h.push_setup(snap)
 
     # ------------------------------------------------------------ entry
     async def on_phone(self, s, t: str, obj: dict) -> None:
@@ -127,9 +152,8 @@ class Remotes:
                      ts=obj.get("ts"))
         if self.host.sessions.get(s.cid) is s:     # an unbind of this very remote detached it: nothing more to say
             await h._ctl_res(s, r, t, result == "ok", **({} if result == "ok" else {"why": result}), **extra)
-        if result == "ok" and t != "dev_add":
-            await self.push_list()
-            await h._send_ready(lambda x: h.preferences_msg(x))
+        if result == "ok" and t == "dev_name":
+            await self.changed()
 
     @staticmethod
     def _target(t: str, obj: dict) -> dict | None:
@@ -253,8 +277,6 @@ class Remotes:
                                f"Remote added {how + ' ' if how else ''}from “{by}”: {pend.name} · {when} · {pend.device}"),
                           frm="notice")
         h.push_notify("security")
-        await self.push_list()
-        await h._send_ready(lambda x: h.preferences_msg(x))
         extra = {"device": pend.device, "name": pend.name}
         for k in ("evicted", "replaced"):
             if res.get(k):

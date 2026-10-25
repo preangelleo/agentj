@@ -300,7 +300,7 @@ class Flows(unittest.TestCase):
         self.assertEqual(approvals.read_log(self.st)[-1]["reason"], "no_device")
 
     def test_signed_allow_returns_the_input_unchanged_and_is_logged(self):
-        ph = Phone(self.st)
+        ph = Phone(self.st, with_passkey=True)  # Bash UV uses a real fixture assertion
         host = _host(self.st, self.sent)
         s = _ready(host, ph)
         inp = {"command": f"echo {MARK}", "description": "d"}
@@ -400,7 +400,7 @@ class Flows(unittest.TestCase):
         self.assertFalse(self.st.set_sign_key_if_absent(os.urandom(32), k1), "unknown device")
 
     def test_approvals_verify_detects_a_forged_line(self):
-        ph = Phone(self.st)
+        ph = Phone(self.st, with_passkey=True)  # Bash UV uses a real fixture assertion
         host = _host(self.st, self.sent)
         s = _ready(host, ph)
 
@@ -459,7 +459,7 @@ class Chain(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_message_reply_approve_deny_timeout_crash_resume(self):
-        ph = Phone(self.st)
+        ph = Phone(self.st, with_passkey=True)  # Bash UV uses a real fixture assertion
         sent = []
         host = _host(self.st, sent)
         host.ask_ttl = 3

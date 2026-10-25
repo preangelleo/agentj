@@ -29,5 +29,9 @@
       "prompt": "/agentj-obsidian pick",
       "draft": true
     }
+  ],
+  "aliases": [
+    "Obsidian card",
+    "Obsidian卡"
   ]
 }

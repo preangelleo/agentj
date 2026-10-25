@@ -5,7 +5,7 @@
 //      scrolling the sheet
 //   b) Settings 提示音音量: default 15 %, persists, 0 = 静音 (no whoosh), the level reaches a Web Audio gain (iPhone
 //      ignores <audio>.volume), the mute button restores the previous level
-//   c) the 「在办」 dialog shows each whole title on one line, ellipsised, every row the same width and the titles in one
+//   c) the 「在办」 dialog shows each whole title with wrapping, without truncation, every row the same width and the titles in one
 //      column (item 3's flowing dots were replaced by the robots of k)
 //   d) 截图自动进附件 (computer Chromium): off by default; on → a new clipboard image after a short away/back goes into the
 //      tray once (not again for the same image, not after a long absence); 10 attachments → the 10-limit message
@@ -245,8 +245,8 @@ export async function runP154() {
             check(rows.map((r) => r.text).join('|') === s.titles.join('|'), 'whole titles in the dialog');
             check(rows.every((r) => Math.abs(r.w - rows[0].w) < 0.5), 'every row the same width');
             check(rows.every((r) => Math.abs(r.sl - rows[0].sl) < 0.5), 'titles in one column');
-            check(rows.every((r) => r.sh <= r.lh + 1 && r.ell === 'ellipsis'), 'one line each, ellipsis');
-            check(rows[0].over, 'the long title is cut at the edge');
+            check(rows.every((r) => !r.over && r.ell === 'clip'), 'whole titles wrap without horizontal clipping');
+            check(rows[0].sh > rows[0].lh + 1, 'the long title wraps onto additional lines');
             await evaluate(p, `document.getAnimations().forEach(a=>{a.pause();a.currentTime=1800})`);
             writeFileSync(join(OUT, `${lang}-${theme}-dialog-titles.png`), await shoot(p, ''));
             await evaluate(p, `document.getAnimations().forEach(a=>a.play())`);

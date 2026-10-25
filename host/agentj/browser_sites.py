@@ -279,7 +279,7 @@ def open_url(st: State, url) -> dict:
     """Open a page in a visible tab of Agent J's browser (the owner signs in there on the Agent J host)."""
     if not isinstance(url, str) or not re.fullmatch(r"https?://[^\s]{1,2000}", url):
         return {"ok": False, "reason": "shape", "detail": "an http(s) URL"}
-    rt = browser.runtime(st)
+    rt = browser.visible_runtime(st)
     if not rt:
         return {"ok": False, "reason": "not_running", "hint": browser.HINTS["not_running"]}
     with CDP(rt["ws"]) as cdp:
@@ -333,7 +333,7 @@ def open_login(st: State, item: str, _cdp=None) -> dict:
     ids = ensure_item_sites(st, item)
     if not ids:
         return {"ok": False, "reason": "shape"}
-    rt = browser.runtime(st) if _cdp is None else {"ws": "fake", "pid": None, "headless": False}
+    rt = browser.visible_runtime(st) if _cdp is None else {"ws": "fake", "pid": None, "headless": False}
     if not rt:
         return {"ok": False, "reason": "not_running"}
     if rt.get("headless"):

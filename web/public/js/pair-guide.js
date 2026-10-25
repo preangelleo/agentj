@@ -1,8 +1,13 @@
-// Host emits this display-only hint once, for the first approved remote (never on resume).
+// Display-only host state: null clears a hint after pairing; reconnect sends the current value.
 import { t, onLang } from './t.js';
 import { el } from './ui.js';
 let kind = null;
 export function showPairGuide(value) {
+  if (value === null) {
+    kind = null;
+    el('pair-guide').hidden = true;
+    return;
+  }
   if (!['phone', 'computer'].includes(value)) return;
   kind = value;
   const node = el('pair-guide');

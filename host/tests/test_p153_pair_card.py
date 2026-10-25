@@ -121,6 +121,9 @@ class Flow(unittest.TestCase):
             self.assertEqual(self.to(20, "pair_wait")[0]["t"], "pair_wait", "the new device is told to wait, no code to type")
             self.assertEqual(self.to(10, "pair_ev")[0], {"t": "pair_ev", "ev": "pending", "name": NEW})
             await self.host._app(self.host.sessions[11], self._answer(self.B, card))
+            # P525 state fanout checks the existing journal in a thread: await completion, not 20 scheduler spins.
+            waiting = [t for t in self.host._bg_tasks if t.get_coro().__name__ == '_pair_card_wait']
+            await asyncio.wait_for(asyncio.gather(*waiting), 3)
             await self._settle()
             return s
         s = asyncio.run(go())

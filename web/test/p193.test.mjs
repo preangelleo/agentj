@@ -57,13 +57,13 @@ function clock(){
   return c;
 }
 function wordsCtx(){
-  const c=clock(),painted=[],w={dataset:{}};
-  const ctx=vm.createContext({setTimeout:c.setTimeout,clearTimeout:c.clearTimeout,Date:c.Date,historySync:false,shownKey:'7|x',wordsSrc:null,
+  const c=clock(),painted=[],refreshes=[],w={dataset:{}};
+  const ctx=vm.createContext({setTimeout:c.setTimeout,clearTimeout:c.clearTimeout,Date:c.Date,historySync:false,shownKey:'7|x',wordsSrc:null,cardReplyKey:null,refreshCards:()=>refreshes.push(1),
     cur:{status:'working',hostStatus:'working'},t:x=>x,el:()=>w,fill:(_,x)=>painted.push(x),afterWords(){},rdFollow(){}});
   vm.runInContext(words,ctx);
   ctx.showPage=()=>vm.runInContext('renderWords(globalThis.latest,globalThis.open)',ctx);
   const say=(text,open=true)=>{ctx.latest=text;ctx.open=open;vm.runInContext('renderWords(globalThis.latest,globalThis.open)',ctx);};
-  return {c,painted,say};
+  return {c,painted,say,refreshes,run:js=>vm.runInContext(js,ctx)};
 }
 
 test('P193 streaming reply: at most one Markdown redraw per 150 ms, the latest text always lands', ()=>{
@@ -82,4 +82,15 @@ test('P193 not throttled: a finished reply, a different page, or the first chunk
   say('first and more, done',false);assert.equal(painted.at(-1),'first and more, done','done draws at once');
   say('another page entirely');assert.equal(painted.at(-1),'another page entirely','a non-continuation draws at once');
   c.advance(500);assert.equal(painted.filter(x=>x==='another page entirely').length,1,'no stale trailing redraw');
+});
+
+
+test('P519 registry refresh waits for a settled Agent reply and runs once per page/text', ()=>{
+  const w=wordsCtx();
+  w.say('new card',true);assert.equal(w.refreshes.length,0,'streaming does not poll');
+  w.say('new card',false);assert.equal(w.refreshes.length,1,'completion refreshes even if the final text did not change');
+  w.say('new card',false);assert.equal(w.refreshes.length,1,'catalogue redraw cannot start a refresh loop');
+  w.say('another reply',false);assert.equal(w.refreshes.length,2);
+  w.run("renderWords('system notice',false,'',false,true,false)");assert.equal(w.refreshes.length,2);
+  w.run("renderWords('data only',false,'',false,false,true)");assert.equal(w.refreshes.length,2);
 });

@@ -54,7 +54,7 @@ try {
     };
   });
   await p.goto(fake.newPairing(PAGE + '?lang=zh'));
-  await p.waitForFunction(() => window.__ajState === 'awaiting-approval', null, { timeout: 20000 });
+  try { await p.waitForFunction(() => window.__ajState === 'awaiting-approval', null, { timeout: 20000 }); } catch(e) { console.log('pairing diagnostics', problems, await p.evaluate(() => ({state:window.__ajState, error:document.getElementById('error-text')?.textContent}))); throw e; }
   await fake.approve();
   await p.waitForFunction(() => window.__ajState === 'ready', null, { timeout: 20000 });
   await p.evaluate(() => document.getElementById('setBtn').click());
@@ -114,12 +114,15 @@ try {
   await C('webkit: 修改 / 添加 → keys_set; Esc closes the add form, then leaves the page', async () => {
     await p.waitForFunction(() => document.querySelectorAll('#keys-box .krow').length > 0);
     await press('.krow[data-name="OPENAI_API_KEY"] .kbtn--edit');
-    await p.waitForFunction(() => document.getElementById('toast').textContent.includes('密钥卡'));
+    await p.waitForFunction(() => document.getElementById('elev')?.hidden===false);
+    await press('#elev-hide');
     assert.ok(calls.some((x) => x.op === 'set' && x.name === 'OPENAI_API_KEY'));
     await press('#keys-add');
     await p.evaluate(() => { const i = document.getElementById('keys-add-name'); i.value = 'MY_SERVICE_TOKEN'; i.dispatchEvent(new Event('input')); });
     await press('.kadd-go');
     await p.waitForTimeout(300);
+    await p.waitForFunction(() => document.getElementById('elev')?.hidden===false && document.getElementById('elev-title').textContent.includes('MY_SERVICE_TOKEN'));
+    await press('#elev-hide');
     assert.ok(calls.some((x) => x.op === 'set' && x.name === 'MY_SERVICE_TOKEN'));
     await press('#keys-add');
     await p.keyboard.press('Escape'); await p.waitForTimeout(200);

@@ -34,7 +34,7 @@ export async function signed(action, target, extra) {   // P203: cardsync signs 
     target = prepared.target || target;
     if (prepared.level === 'uv') {
       if (!prepared.fa || !prepared.fa_ch) { toast(t('ask.passkeyRequired'),6000); throw new Error('no_passkey'); }
-      if (!await confirmSheet(t('p336.faTitle'), prepared.summary, t('p336.faYes'))) throw new Error('cancel');
+      if (!await confirmSheet(t('p336.faTitle'), prepared.summary, t('p336.faYes'), false, undefined, prepared.details || '')) throw new Error('cancel');
       fa = await passkeyApprove(unb64u(prepared.fa_ch), prepared.fa);
     }
   }

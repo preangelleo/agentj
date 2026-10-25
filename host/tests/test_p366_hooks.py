@@ -407,7 +407,9 @@ class Review(unittest.TestCase):
 
     def test_l1_jev_never_judges_a_host_card(self):
         src = (Path(hooks.__file__).with_name("serve.py")).read_text()
-        self.assertIn("not approval_level.host_card(tool) and approval_jev.gray(v)", src)
+        self.assertIn("host_card = approval_level.host_card(tool, tool_input, requirement=requirement)", src)
+        self.assertNotIn("approval_level.host_card(tool)", src)
+        self.assertNotIn("approval_jev.judge(", src)  # no model authorizes any approval card
 
 
 class Pipeline(unittest.TestCase):

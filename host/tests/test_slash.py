@@ -21,6 +21,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -333,6 +334,12 @@ class CodexChain(_Chain):
     KIND = "codex"
 
     def test_approvals_on_the_phone(self):
+        # Native matcher/lexer mechanics with an explicit automatic floor.
+        # Real independent Bash UV composition is covered by test_p512_policy.
+        from agentj import policy_registry
+        floor = mock.patch.object(policy_registry, 'NATIVE_TOOLS', {**policy_registry.NATIVE_TOOLS, 'Bash': 'file.read',
+                                                                      'Write': 'file.read', 'CodexPermissions': 'settings.write'})
+        floor.start(); self.addCleanup(floor.stop)
         async def script(c):
             host, ph, s = c["host"], c["ph"], c["s"]
             await c["say"]("你好")

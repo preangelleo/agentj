@@ -47,8 +47,9 @@ LEVELS = ("safe", "standard", "full")
 DEFAULT = "standard"
 REDLINE_CATS = ("credentials", "spend", "price")
 # host cards that are a decision of their own, never auto-allowed by a level (pairing, sandbox, login rescue, goal, quota)
-HOST_CARDS = ("pair_device", "SandboxOnce", "AuthRescue", "DoomLoop", "task", "AskUserQuestion", "AgentJHook")   # P366: resident hook
-HOST_CARDS += ("AgentJTerminal",)   # P408: `agentj terminal enable|allow` — the owner at the computer + Face ID, never auto-allowed
+from . import policy_registry
+HOST_CARDS = tuple(tool for tool in policy_registry.HOST_TOOLS if not tool.startswith("agentj "))
+
 
 PARK_GRACE = 20          # seconds a card waits for a remote to come online before the Agent is told nobody is there
 PARK_SECS = 1800         # a parked card stays on the phone this long
@@ -87,8 +88,8 @@ def shared_mode(prefs) -> str:
     return {"strict": "strict", "native": "native"}.get(preferences.get(prefs or {}, "agent.approvals", "standard"), "standard")
 
 
-def host_card(tool: str) -> bool:
-    return not isinstance(tool, str) or tool.startswith("agentj ") or tool in HOST_CARDS
+def host_card(tool: str, tool_input=None, *, requirement=None) -> bool:
+    return policy_registry.main_host_card(tool, tool_input, requirement=requirement)
 
 
 _FETCH = r"(?:curl|wget|aria2c|fetch|http|https|iwr|Invoke-WebRequest)"

@@ -20,5 +20,9 @@
     "file": "calendar.json",
     "maxBytes": 262144
   },
-  "actions": []
+  "actions": [],
+  "aliases": [
+    "日历卡",
+    "Calendar card"
+  ]
 }

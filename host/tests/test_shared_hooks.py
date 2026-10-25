@@ -76,7 +76,7 @@ class ClaudeHooks(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ask['hookSpecificOutput']['permissionDecision'],'ask')
         allow=await self.event('PermissionRequest')
         self.assertEqual(allow['hookSpecificOutput']['decision']['behavior'],'allow')
-        self.assertEqual(await self.event('PreToolUse',inp={'command':'git push other branch'}),{})
+        self.assertEqual((await self.event('PreToolUse',inp={'command':'git push other branch'}))['hookSpecificOutput']['permissionDecision'],'ask')
         self.host.ask.assert_awaited_once()
         await self.event('UserPromptSubmit')
         self.assertEqual((await self.event('PreToolUse'))['hookSpecificOutput']['permissionDecision'],'ask')
@@ -118,6 +118,7 @@ class ClaudeHooks(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.host.ask.await_count,2)
 
     async def test_native_routine_permission_preserved(self):
+        self.assertEqual(await self.event('PreToolUse',tool='Read',inp={'file_path':'notes.md'}),{})
         self.assertEqual(await self.event('PreToolUse',inp={'command':'git commit -m test'}),{})
         await self.event('PermissionRequest',inp={'command':'git commit -m test'})
         self.host.ask.assert_awaited_once()
@@ -181,8 +182,8 @@ class NativeRiskHooks(unittest.IsolatedAsyncioTestCase):
                 def ev(command):return {'hook_event_name':'PreToolUse','session_id':'owner','tool_name':'exec_command' if family=='codex' else 'Bash','tool_input':{'cmd':command} if family=='codex' else {'command':command}}
                 self.assertEqual(await guard.hook_event(ev('git commit -m local')),{});a.host.ask.assert_not_awaited()
                 self.assertEqual(await guard.hook_event(ev('cat demo.pem')),{})
-                self.assertEqual(await guard.hook_event(ev('cat second.pem')),{});a.host.ask.assert_awaited_once()
-                guard.reset('next');await guard.hook_event(ev('cat third.pem'));self.assertEqual(a.host.ask.await_count,2)
+                self.assertEqual(await guard.hook_event(ev('cat second.pem')),{});self.assertEqual(a.host.ask.await_count,2)
+                guard.reset('next');await guard.hook_event(ev('cat third.pem'));self.assertEqual(a.host.ask.await_count,3)
                 a.host.ask.return_value={'behavior':'deny'};guard.reset('deny')
                 result=await guard.hook_event(ev('cat denied.pem'))
                 self.assertEqual(result['hookSpecificOutput']['permissionDecision'],'deny')

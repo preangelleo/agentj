@@ -371,7 +371,7 @@ class HookFiles(Tmp):
         tool, inp = self.WRITES[0]
         self.assertEqual(asyncio.run(a.hook_event(ev("PreToolUse", tool=tool, inp=inp)))["hookSpecificOutput"]
                          ["permissionDecision"], "ask")
-        self.assertEqual(asyncio.run(a.hook_event(ev("PreToolUse", inp={"command": "git push origin main"}))), {})
+        self.assertEqual(asyncio.run(a.hook_event(ev("PreToolUse", inp={"command": "git push origin main"})))["hookSpecificOutput"]["permissionDecision"], "ask")
         allow = asyncio.run(a.hook_event(ev("PermissionRequest", tool=tool, inp=inp)))
         self.assertEqual(allow["hookSpecificOutput"]["decision"]["behavior"], "allow")
         self.assertNotIn("credentials:hooks", a.permissions)
@@ -384,10 +384,10 @@ class HookFiles(Tmp):
         ad = Mock(cfg={"high_risk_warnings": False, "approvals": "native", "dir": str(self.work)}, host=h, kind="codex")
         g = RiskGuard(ad)
         self.assertTrue(asyncio.run(g.check("Bash", {"command": "git push origin main"})))
-        h.ask.assert_not_awaited()
+        h.ask.assert_awaited_once()
         self.assertTrue(asyncio.run(g.check("Bash", {"command": "echo {} > .codex/hooks.json"})))
         self.assertTrue(asyncio.run(g.check("Bash", {"command": "echo {} > .codex/hooks.json"})))
-        self.assertEqual(h.ask.await_count, 2)
+        self.assertEqual(h.ask.await_count, 3)
         self.assertEqual(g.grants, {})
 
     def test_serve_puts_removed_hooks_back_and_tells_the_phone(self):

@@ -6,6 +6,9 @@
    change at run time are CSSOM custom properties set from the modules.
    Colours: brand/palette.css tokens; the relay hues that the palette file does not carry yet are named here once. */
 
+/* P518: editable text shares the reply card's brand selection in both themes. */
+input::selection,textarea::selection{background:var(--c-peek-a-blue);color:var(--c-sooty)}
+
 :root{
   /* relay's palette names → brand tokens */
   --lotion:var(--c-lotion); --salt:var(--c-salt); --sooty:var(--c-sooty); --noir:var(--c-noir);
@@ -1433,6 +1436,9 @@ body[data-agent="stopped"]{--state:var(--c-offline)}
 .ajconfirm p{white-space:pre-wrap;margin-top:var(--sp-2);color:var(--text-muted)}
 .confirm-row{display:flex;gap:var(--sp-2);margin-top:var(--sp-3)}
 .confirm-row .aj-btn{flex:1;min-height:52px;margin-top:0}
+#confirm-details{margin-top:var(--sp-3);text-align:left}
+#confirm-details summary{cursor:pointer;min-height:44px;line-height:44px;list-style-position:inside;text-align:center}
+#confirm-raw{white-space:pre-wrap;overflow-wrap:anywhere;font-size:var(--fs-sm);text-align:left}
 
 /* ---- Agent J pages (brand theme) ---- */
 .ajpages .view{display:flex;flex-direction:column;margin:0;width:100%}
@@ -3203,7 +3209,6 @@ body[data-fs="1"] .fsft{padding-bottom:10px}
 #fsText{--ta-fs:max(16px,calc(17px*var(--fz)));flex:1;min-height:0;width:100%;max-height:none;margin:0;resize:none;border:0;outline:0;
   background:none;color:var(--lotion);caret-color:var(--lotion);font:400 var(--ta-fs)/1.75 var(--font-body);
   padding:8px clamp(16px,4vw,64px);overflow-y:auto;overscroll-behavior:contain}
-#fsText::selection{background:rgba(250,249,245,.24)}
 .fshint{flex:1;min-width:0;font:400 calc(12px*var(--fz))/1.4 var(--font-body);color:rgba(250,249,245,.55);
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 @media (pointer:coarse),(max-width:600px){ .fshint{visibility:hidden} }
@@ -3368,3 +3373,12 @@ html[data-ios-safari="1"] body::before{content:"";position:absolute;inset:0;back
 .rm #words .reply-component svg text[text-anchor]{fill:var(--lotion);color:var(--lotion)}
 /* Navigation text-buttons can have currentColor borders inside components: paint only their glyphs. */
 .rm #words .fp-link{-webkit-text-fill-color:var(--lotion)}
+
+/* P517 preview: the same Lotion circle / logo-green digit in both entry points. */
+.remote-count-badge{display:inline-flex;align-items:center;justify-content:center;flex:none;
+  width:20px;height:20px;border-radius:50%;background:var(--c-lotion);color:var(--c-shield);
+  font:700 12px/1 var(--font-body);font-variant-numeric:tabular-nums;pointer-events:none}
+.remote-count-badge[hidden]{display:none}
+.remote-count-label{display:flex;align-items:center;gap:8px}
+#setBtn,#set-actions #setBtn{position:relative;overflow:visible}
+#setBtn>.remote-count-badge{position:absolute;top:0;right:0}

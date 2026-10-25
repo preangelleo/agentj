@@ -60,17 +60,32 @@ class OwnerTest(unittest.IsolatedAsyncioTestCase):
         await self.manager.write({'op':'tool_save','id':bid,'tool':definition})
         with self.assertRaisesRegex(Exception,'write_test_requires_real_call_approval'):await self.manager.write({'op':'tool_test','id':bid,'name':'submit','args':{}})
 
-    async def test_write_approval_requires_exact_signed_digest_and_is_one_use(self):
-        self.host._send_p33=lambda fn:None;posted=[];self.host._post=lambda fn,obj:posted.append(obj(None))
+    async def test_legacy_signed_tool_reply_cannot_bypass_uv_card(self):
+        # Real UV and final one-use digest checks are in the P512 suite.
+        future=asyncio.get_running_loop().create_future();posted=[]
+        async def uv_card(tool,inp,**kwargs):
+            posted.append((tool,inp,kwargs));return await future
+        self.host.ask=uv_card
         request={'id':'a'*32,'digest':'d'*64,'expires':time.time()+30,'tool':'submit'}
-        task=asyncio.create_task(self.manager.approve('b'*32,request,'{"order_id":"self"}'))
-        await asyncio.sleep(0)
-        req={'op':'tool_approve','approval':request['id'],'digest':request['digest'],'allow':True}
-        await self.manager.phone(self.session,self.message({**req,'digest':'e'*64}))
-        self.assertFalse(self.sent[-1]['ok']);self.assertFalse(task.done())
-        await self.manager.phone(self.session,self.message(req));self.assertTrue(await task)
-        await self.manager.phone(self.session,self.message(req));self.assertEqual(self.sent[-1]['why'],'approval_expired')
-        self.assertNotIn('order_id',''.join(self.logs));self.assertEqual(posted[0]['t'],'bots_tool_request')
+        task=asyncio.create_task(self.manager.approve('b'*32,request,{'order_id':'self'}))
+        try:
+            await asyncio.sleep(0)
+            req={'op':'tool_approve','approval':request['id'],'digest':request['digest'],'allow':True}
+            for digest in ('e'*64,request['digest']):
+                await self.manager.phone(self.session,self.message({**req,'digest':digest}))
+                self.assertEqual(self.sent[-1]['why'],'approval_expired')
+                self.assertFalse(task.done())
+            self.assertEqual(posted[0][0],'company.write')
+            self.assertEqual(posted[0][1]['digest'],request['digest'])
+            self.assertTrue(posted[0][2]['require_passkey'])
+            future.set_result({'behavior':'allow'})
+            self.assertTrue(await task)
+            await self.manager.phone(self.session,self.message(req))
+            self.assertEqual(self.sent[-1]['why'],'approval_expired')
+            self.assertNotIn('order_id',''.join(self.logs))
+        finally:
+            if not task.done():task.cancel()
+            await asyncio.gather(task,return_exceptions=True)
     async def test_signed_human_reply_reaches_only_recorded_bot_and_visitor(self):
         bot=await self.manager.write({'op':'create','config':{'slug':'sample-shop'}});bid=bot['bot']['id']
         store=self.manager.state();vid,_=store.visitor(bid);other,_=store.visitor(bid);rid='c'*32;hid='d'*32

@@ -19,5 +19,9 @@
   "data": {
     "file": "automation.md"
   },
-  "actions": []
+  "actions": [],
+  "aliases": [
+    "自动化卡",
+    "Automation card"
+  ]
 }

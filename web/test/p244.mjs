@@ -26,16 +26,16 @@ try{
    writeFileSync(out+`${page}-${w}-${scheme}.png`,await shoot(p,''));
   }
   await fake.send({t:'busy',by:'Agent J',tasks:[
-   {id:'writer',who:'编剧',kind:'temp',label:'写下一集',harness:'codex',model:'gpt-6.1-sol',workflow:'video-studio',company:'影片公司',role:'编剧',parent:'导演阿影',c:1,since:Math.floor(Date.now()/1000)},
-   {id:'helper',who:null,kind:'temp',label:'校对',harness:'opencode',model:'deepseek/deepseek-chat',c:2,since:Math.floor(Date.now()/1000)}]});
+   {id:'writer',who:'编剧',kind:'temp',label:'写下一集',harness:'codex',model:'gpt-6.1-sol',detected:{harness:'codex',model:'gpt-6.1-sol'},workflow:'video-studio',company:'影片公司',role:'编剧',parent:'导演阿影',c:1,since:Math.floor(Date.now()/1000)},
+   {id:'helper',who:null,kind:'temp',label:'校对',harness:'opencode',model:'deepseek/deepseek-chat',detected:{harness:'opencode',model:'deepseek/deepseek-chat'},c:2,since:Math.floor(Date.now()/1000)}]});
   await waitFor(p,`!document.getElementById('busyDots').hidden`);await click(p,'#busyDots');
   check(await ev(p,`document.getElementById('busyTasksTab').getAttribute('aria-selected')==='true'`),'working default tab '+scheme+w);
-  check(await ev(p,`document.getElementById('busyList').textContent.includes('gpt-6.1-sol') && document.getElementById('busyList').textContent.includes('OpenAI')`),'harness and model '+scheme+w);
-  // P508 deliberately uses light provenance cards; verify readable tool/model identity, not obsolete dark logos.
+  check(await ev(p,`document.getElementById('busyList').textContent.includes('gpt-6.1-sol') && document.getElementById('busyList').textContent.includes('Codex')`),'harness and model '+scheme+w);
+  // P515 uses verified secondary metadata below each title; no provenance card background.
   await waitFor(p,`document.querySelectorAll('#busyList .busy-identity').length===2`);
   check(await ev(p,`[...document.querySelectorAll('#busyList .busy-identity')].some(e=>e.textContent.includes('OpenCode')&&e.textContent.includes('deepseek/deepseek-chat'))`),'OpenCode and model remain identified '+scheme+w);
-  check(await ev(p,`[...document.querySelectorAll('#busyList .busy-identity')].every(e=>getComputedStyle(e).backgroundColor==='rgb(250, 249, 245)')`),'P508 light provenance card palette '+scheme+w);
-  check(await ev(p,`[...document.querySelectorAll('#busyList .busy-identity')].every(e=>getComputedStyle(e).color==='rgb(44, 43, 38)')`),'P508 readable Noir identity ink '+scheme+w);
+  check(await ev(p,`[...document.querySelectorAll('#busyList .busy-identity')].every(e=>getComputedStyle(e).backgroundColor==='rgba(0, 0, 0, 0)')`),'P515 transparent secondary metadata '+scheme+w);
+  check(await ev(p,`[...document.querySelectorAll('#busyList .busy-identity')].every(e=>getComputedStyle(e).color!==getComputedStyle(e.closest('li').querySelector(':scope>span')).color && e.getBoundingClientRect().top>=e.closest('li').querySelector(':scope>span').getBoundingClientRect().bottom)`),'P515 secondary tone and below-title layout '+scheme+w);
   writeFileSync(out+`robots-working-${w}-${scheme}.png`,await shoot(p,''));
   await click(p,'#busyWorkflowTab');
   check(await ev(p,`!document.getElementById('busyWorkflow').hidden && document.getElementById('busyWorkflow').textContent.includes('第 4 层') && document.getElementById('busyWorkflow').textContent.includes('不属于任何工作流')`),'workflow hierarchy and temporary helper '+scheme+w);

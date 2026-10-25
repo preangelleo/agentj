@@ -1,3 +1,4 @@
+import { keysSet } from './api.js';
 import { copyButton } from './copycode.js';
 // F13 · P171 · Settings (the top-right gear, `s`, ⌘, / Ctrl+,): ONE full-screen page for everything — the ≡ menu is gone and
 // its rows live here, grouped in section cards (wide screens: side navigation + cards in columns; narrow: one column).
@@ -74,6 +75,10 @@ function renderJev() {
   el('set-jev-source').value = ['typesafe', 'openrouter'].includes(mode) ? mode : 'typesafe';
   el('set-jev-source').disabled = mode === 'off';
   el('set-jev-current').textContent = t('p409.current', { mode: mode === 'off' ? t('p409.off') : mode === 'typesafe' ? 'TypeSafe' : mode === 'openrouter' ? 'OpenRouter' : t('p409.choose') });
+  const needs = mode !== 'off' && hostInfo?.jev?.ready !== true;
+  const keyButton = el('set-jev-key');
+  keyButton.hidden = !needs;
+  keyButton.textContent = t('p527.fill', { provider: el('set-jev-source').value === 'openrouter' ? 'OpenRouter' : 'TypeSafe' });
   const n = jevAt();
   el('set-jev-val').textContent = jevStr(n);
   el('set-jev-minus').disabled = n <= JEV_MIN;
@@ -317,13 +322,19 @@ async function approvalSet(key, value) {
   if (m.why === 'cancel') { say(''); render(); return; }
   if (m.ok) {
     if (prefs) { const [a, b] = key.split('.'); prefs[a] = { ...(prefs[a] || {}), [b]: value }; }
-    if (jev && hostInfo) hostInfo.jev = { ...(hostInfo.jev || {}), mode: value };
+    if (jev && hostInfo) hostInfo.jev = { ...(hostInfo.jev || {}), mode: value, ready: hostInfo.jev?.mode === value && hostInfo.jev?.ready === true };
     if (!jev && eff()) hostInfo.approval = { ...hostInfo.approval, [key === 'approval.level' ? 'level' : 'goal_nocard']: value };
     notify({ kind: 'success', shape: 'circle', text: t('set.saved') });
   } else {
     say(''); toast(m.why === 'passkey_failed' ? whyText(m.why) : t('p336.fail', { why: whyText(m.why) }), 4000);
   }
   render();
+  if (jev && m.ok && value !== 'off' && hostInfo?.jev?.ready !== true) await openJevKey();
+}
+async function openJevKey() {
+  const name = el('set-jev-source').value === 'openrouter' ? 'OPENROUTER_API_KEY' : 'TYPESAFE_API_KEY';
+  const res = await keysSet(name);
+  if (!res.ok) toast(t('models.failed'), 4200);
 }
 /** P294: say where isolation and Docker apply. Shared mode keeps isolation live (scheduled tasks, the OpenCode serve
  *  Agent J starts), so it only gets a note; Docker means nothing without isolation, so it greys out until isolation is on. */
@@ -428,6 +439,12 @@ export function render() {
 function renderRemotesRow() {
   const c = remotes.count();
   el('set-remotes-count').textContent = c ? t('set.remotesNote', { n: c.n, max: c.max }) : '';
+  for (const badge of document.querySelectorAll('[data-remote-count]')) {
+    badge.hidden = !H.paired() || !c || c.n < 1;
+    badge.textContent = c ? String(c.n) : '';
+  }
+  // The digit is decorative; the button's accessible description carries its meaning.
+  el('setBtn').setAttribute('aria-describedby', 'set-remotes-count');
 }
 /** P179: one paired remote as the host last described it ({id, name, label, named_by, self_name, …}), or null. */
 export function deviceInfo(id) {
@@ -441,6 +458,7 @@ export function deviceInfo(id) {
 export function setPrefs(value, host) {
   prefs = value && typeof value === 'object' ? value : null;
   hostInfo = host && typeof host === 'object' ? host : null;
+  renderRemotesRow();
   toolorder.fromHost(prefs);              // P340: every remote repaints the composer buttons from the broadcast
   if (isOpen()) render();
 }
@@ -666,6 +684,7 @@ export function configure(hooks) {
   el('set-hostupg').addEventListener('click', () => { if (H.upgradeHost) H.upgradeHost(); });   // P203: impact → card → /update @ix app.upgrade_host
   for (const b of document.querySelectorAll('[data-set-level]')) b.addEventListener('click', () => { if (b.dataset.setLevel !== curLevel()) approvalSet('approval.level', b.dataset.setLevel); });
   el('set-gnc').addEventListener('click', () => approvalSet('approval.goal_nocard', !curGnc()));
+  el('set-jev-key').addEventListener('click', openJevKey);
   el('set-jev-enabled').addEventListener('click', () => approvalSet('jev.mode', hostInfo?.jev?.mode === 'off' ? el('set-jev-source').value : 'off'));
   el('set-jev-source').addEventListener('change', () => approvalSet('jev.mode', el('set-jev-source').value));
   el('set-jev-minus').addEventListener('click', () => setJev(jevAt() - 1));
@@ -855,10 +874,16 @@ el('set-find-input').addEventListener('keydown', (e) => {   // Enter = the first
 });
 
 // P392: this lives in the fixed Settings header, including every full-screen sub-page.
+let countReady = false;
 let connectionState = null, connectionRecovered = false, connectionPending = false;
 /** P392 live dot; P393 `pending` = a drop still inside the five-second window (reconnect.js): an amber 「正在重新连接…」,
  *  no notice and no red — the red line and 「连接已断开」 only come once the window is over. */
 export function connectionChanged(on, pending = false) {
+  if (!H.paired()) { hostInfo = null; remotes.reset(); }
+  const refreshCount = on && !countReady;
+  countReady = on;
+  renderRemotesRow();
+  if (refreshCount) remotes.refresh().then(renderRemotesRow);
   connectionPending = !on && pending;
   if (connectionPending) {
     const n = el('set-connection');

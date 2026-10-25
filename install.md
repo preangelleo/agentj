@@ -1,15 +1,15 @@
 ---
 document: agentj-install
-version: 0.27.9
+version: 0.27.10
 released: 2026-10-25
 status: beta (anyone can sign up; not advertised yet, pages are not indexed)
 host_package: agentj (the `agentj` command)
-host_version: 0.25.9a1
-source_tag: v0.25.9a1
-host_wheel: agentj-0.25.9a1-py3-none-any.whl
-host_wheel_sha256: 746a3f782e04bc91955d2570b82b531b2226dfe8952e644c9542416b43377d53
-host_sdist: agentj-0.25.9a1.tar.gz
-host_sdist_sha256: 2a48d2fb8b096fdb9309a8f3589feee1a2c75ca5781bad1b9eaae3cc8aaa1192
+host_version: 0.25.10a1
+source_tag: v0.25.10a1
+host_wheel: agentj-0.25.10a1-py3-none-any.whl
+host_wheel_sha256: 4384e5fd86a9d250be9ca9ccd1a7913b09e61d07fc54a4183a849dfa658e4457
+host_sdist: agentj-0.25.10a1.tar.gz
+host_sdist_sha256: 1d6ff06c8807b340d0ae1e0ee85e46fb372110315c8ed39f8760a121f0b0731c
 canonical_url: https://agentj.app/install.md
 sha256_url: https://agentj.app/install.md.sha256
 alias: https://agentjarvis.net/install.md (the older address: the same file, kept for one more version)
@@ -62,17 +62,17 @@ https://agentj.app/docs/support/
 
 ## Three choices for safety review (Jev)
 
-Choose a review route during setup. If you have neither a key nor a choice, `agentj onboarding` prompts you to finish this step. Recommended: register with [TypeSafe](https://typesafe.ai), create a key and add a small balance, then enter `TYPESAFE_API_KEY` using the secret card in the Jev section near the top of Models & API keys. An existing [OpenRouter](https://openrouter.ai) account also works: enter `OPENROUTER_API_KEY`. Existing keys are selected automatically (OpenRouter when both exist); change the route in Settings → Safety.
+Choose a review route during setup. If you have neither a key nor a choice, `agentj onboarding` prompts you to finish this step. Recommended: register with [TypeSafe](https://typesafe.ai), create a key and add a small balance, then enter `TYPESAFE_API_KEY` using the secret card in the Jev section near the top of Models & API keys. An existing [OpenRouter](https://openrouter.ai) account also works: enter `OPENROUTER_API_KEY`. Existing keys are selected automatically (OpenRouter when both exist); change the route in Settings → Safety. In Settings → Models & API keys, Fill or Edit opens the key input on the remote you are using. Stay on that page. When safety review needs a key, select Enter TypeSafe API key or Enter OpenRouter API key; choosing a review provider without a key also opens the input. Enter keys only in the secret card, never in chat.
 
-Jev adds model review to bot and friend messages, rechecks redacted content and helps approvals assess unclear commands. Necessary redacted text goes directly to the selected provider, charged to your account under its data policy. TypeSafe uses its official API; OpenRouter routes to Jev. Review can misjudge and adds delay. An unavailable selected provider retains the channel's existing failure handling; it never silently turns review off.
+Jev adds model review to bot and friend messages, rechecks redacted content while opaque commands require a fresh passkey confirmation for each request. Full access, goals and the Jev threshold cannot waive this confirmation. Necessary redacted text goes directly to the selected provider, charged to your account under its data policy. TypeSafe uses its official API; OpenRouter routes to Jev. Review can misjudge and adds delay. An unavailable selected provider retains the channel's existing failure handling; it never silently turns review off.
 
 You can turn the master switch off in Settings → Safety and explicitly confirm “Skip — I understand safety is weaker”. The host records `jev.mode=off`, the signing device and confirmation time. All Jev model review is then bypassed and bot/friend flows continue; local patterns, credential filters, permission approvals and tool authorization remain. Off avoids model delay and false positives while removing this protection, even when a key is present. The Agent cannot sign for you or disable review by editing configuration. Only your paired phone's signed choice counts; unpairing that signing device invalidates the off authorization.
 
 ## 安全审核（Jev）的三种选择
 
-初始化时请先选一种审核方式；没填 key 也没选择时，`agentj onboarding` 会提示继续设置。推荐到 [TypeSafe](https://typesafe.ai) 注册账号、创建 key、充值少量金额，在「模型和 API Key」靠上的 Jev 区域用密钥卡填写 `TYPESAFE_API_KEY`。已有 [OpenRouter](https://openrouter.ai) 账号，也可填写 `OPENROUTER_API_KEY`。已有 key 会自动沿用（同时存在时沿用 OpenRouter），也能在 设置 → 安全 选择来源。
+初始化时请先选一种审核方式；没填 key 也没选择时，`agentj onboarding` 会提示继续设置。推荐到 [TypeSafe](https://typesafe.ai) 注册账号、创建 key、充值少量金额，在「模型和 API Key」靠上的 Jev 区域用密钥卡填写 `TYPESAFE_API_KEY`。已有 [OpenRouter](https://openrouter.ai) 账号，也可填写 `OPENROUTER_API_KEY`。已有 key 会自动沿用（同时存在时沿用 OpenRouter），也能在 设置 → 安全 选择来源。在「设置 → 模型和 API Key」点填写或修改，密钥输入窗会在当前遥控器上打开，不用返回聊天。安全审核缺少 Key 时，可直接点「填写 TypeSafe API Key」或「填写 OpenRouter API Key」；切换到缺少 Key 的审核服务商也会打开输入窗。只在密钥窗内填写，不要把 Key 发到聊天。
 
-Jev 会给客服、好友消息增加模型审核，也会复查脱敏内容、辅助审批判断；必要的脱敏文本直达所选服务商，费用由你的账号承担。TypeSafe 走官方接口，OpenRouter 走其中的 Jev 模型，两者受各自的数据政策约束。模型可能误判，也会增加延迟。选择的服务不可用时保留该通道的失败处理，不会自动变成关闭。
+Jev 会给客服、好友消息增加模型审核，也会复查脱敏内容。程序看不清的命令，每次都需通行密钥确认；全放行、目标授权和 Jev 阈值都不能跳过这次确认。必要的脱敏文本直达所选服务商，费用由你的账号承担。TypeSafe 走官方接口，OpenRouter 走其中的 Jev 模型，两者受各自的数据政策约束。模型可能误判，也会增加延迟。选择的服务不可用时保留该通道的失败处理，不会自动变成关闭。
 
 你也可在 设置 → 安全 关闭总开关，明确确认「跳过，我知道安全性会弱一点」。主机会记录 `jev.mode=off`、签名设备与确认时间。关闭后所有 Jev 模型审核都跳过，客服和好友流程可继续；本地正则、凭据过滤、权限审批和工具授权仍保留。关闭可减少延迟与误拦，同时失去这层防护。即使有 key 也能关闭。Agent 不能代签或通过改配置自行关闭；只有主人在已配对手机上的签名选择才生效，签名设备被解绑后这份关闭授权失效。
 
@@ -726,7 +726,7 @@ DeepSeek says a preview may break; Agent J was measured on 0.2.0-rc.2.
 carry over). So start every command line from here on with `export PATH="$HOME/.local/bin:$PATH";` — or call
 `~/.local/bin/agentj` by its full path. This document writes `agentj` for short.
 
-The program is pinned to one release: the tag `v0.25.9a1` (front matter `source_tag`). The tag never moves, and its
+The program is pinned to one release: the tag `v0.25.10a1` (front matter `source_tag`). The tag never moves, and its
 `host/` folder is byte for byte the same code as the two files on our site whose SHA-256 is in this document's front matter.
 ```bash
 cd ~/.agentj-install
@@ -737,7 +737,7 @@ uv tool install "./$W"
 
 Intel Mac: this release keeps `cryptography<49` because newer releases lack an Intel macOS wheel. If an older installer tries to compile OpenSSL (`openssl-sys` / OpenSSL not found), rerun `uv tool install --with "cryptography<49" "./$W"`. The same platform constraint applies to `agentj update apply`.
 
-export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.25.9a1
+export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.25.10a1
 export PATH="$HOME/.local/bin:$PATH"; agentj doctor
 ```
 **Your human's own terminal must find `agentj` too** — they may use `agentj passphrase set` and `agentj pair` as a local alternative
@@ -765,16 +765,16 @@ echo "$WS  $W" | sha256sum -c - && echo "$SS  $S" | sha256sum -c -    # macOS: s
 uv tool install "./$W"          # the wheel; its dependencies come from PyPI or the mirror in UV_DEFAULT_INDEX
 ```
 `uv tool install "./$S"` installs from the checked source archive instead (it builds the same program).
-`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.25.9a1`); it is
+`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.25.10a1`); it is
 numbered separately from this document (`0.27.7`).
 
-Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.25.9a1#subdirectory=host"`.
+Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.25.10a1#subdirectory=host"`.
 
-Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.25.9a1#subdirectory=host"` (needs Python 3.11+).
+Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.25.10a1#subdirectory=host"` (needs Python 3.11+).
 
 **What each route checks.** The wheel and the source archive above are checked against the SHA-256 in this document. Each
 also has a minisign signature beside it (`<file>.minisig`, key `B79F925B0585F9D4` — front matter `signature`), which
-`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.25.9a1`
+`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.25.10a1`
 routes check **neither**: Git trusts GitHub's HTTPS and the tag name, and nothing compares that code with this document.
 Use them only when the checked files cannot be downloaded, and say so in the final feedback.
 `agentj doctor` lists what is ready and what is not (prerequisites, the fence, connectivity, which agents are usable).
@@ -1273,6 +1273,10 @@ phone keyboard's own dictation. **Offer it; never install it on your own.**
 
 ### 10b. Agent J's own browser (host 0.18+, on by default) — stage `6-host`
 
+Agent J reuses its open browser when started again or when its service restarts. Closing the window leaves it closed, including during background checks. Run `agentj browser open <url>` or `agentj browser setup` when you need it again. Your sign-ins are kept.
+
+专用浏览器只开一个实例；重复启动和服务重启会复用已打开的浏览器。关窗后不会自动弹回，后台体检也不会重新打开；需要使用时再运行 `agentj browser open <网址>` 或 `agentj browser setup`。登录资料会保留。
+
 Agent J ships its own browser for sign-ins and web work: a private profile, its debugging port on 127.0.0.1 only, never
 your human's everyday browser. It is part of the install, **but it never blocks it**: if it fails, finish every other
 step and report it as an open item. The download comes from Playwright's CDN (`cdn.playwright.dev`, which republishes
@@ -1354,6 +1358,10 @@ stops at once with `✗ Agent J 现在没在这台Agent J 主机上运行，所�
 4. and **only once** — too slow or something went wrong → run `agentj pair --link` again for a new one.
 
 ### First remote / 首台遥控器（安装收尾）
+
+配对或解绑后，已打开页面的遥控器数量、配对建议和清单里的配对状态会自动更新，无需刷新；断线重连后也会补齐。清单已收起时不会因此重新弹出。
+
+After pairing or unbinding, open pages update the remote count, pairing suggestion and pairing rows in the checklist automatically. Reconnecting catches up without a page reload. A closed checklist stays closed.
 
 **首台遥控器，按你的情况选：**
 - **有账号**：打开 `agentj pair --check --json` 返回的 `account_url`，在这台主机的席位卡点「添加遥控器」，扫码后核对六位码并批准。
@@ -1753,7 +1761,7 @@ Nightly automatic installation is enabled by default and verifies the official w
 In a shared session (the default of 0.13–0.19), reinstall directly using Step 4's checked wheel (SHA-256 must match this document and
 its public GitHub copy), preserving the host's identity, paired phones, account and preferences:
 ```bash
-uv tool install --force "./agentj-0.25.9a1-py3-none-any.whl"
+uv tool install --force "./agentj-0.25.10a1-py3-none-any.whl"
 agentj --version
 agentj service install
 agentj service restart
@@ -1762,7 +1770,7 @@ agentj doctor
 The matching published tag is another source, after verifying the tag object against the upgrade email (no signature or
 hash check on this route — Step 4):
 ```bash
-uv tool install --force "git+https://github.com/preangelleo/agentj@v0.25.9a1#subdirectory=host"
+uv tool install --force "git+https://github.com/preangelleo/agentj@v0.25.10a1#subdirectory=host"
 ```
 **0.14 independent session** (`agent.session_mode=independent`): 0.14's fence keeps Agent J's own program read-only and
 hides the service manager, so the Agent on the phone cannot reinstall or restart from inside it (measured: the install
@@ -1788,11 +1796,11 @@ prints something and `uv tool list` (or `pipx list`) shows `agentjarvis-host`, t
 the new name, then:
 ```bash
 jarvis service uninstall      # stop the old service first (Step 10 used tmux / nohup instead? stop that process)
-uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.25.9a1#subdirectory=host"
+uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.25.10a1#subdirectory=host"
 agentj doctor
 agentj service install        # start it again under the new name (or the tmux / nohup fallback, Step 10)
 ```
-With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.25.9a1#subdirectory=host"`.
+With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.25.10a1#subdirectory=host"`.
 - After the move, `agentj` puts back a `jarvis` command (a link to `agentj`, only if no other `jarvis` exists) for one more
   version; it prints a notice that points here. New installs never get `jarvis`.
 - The state moves from `~/.local/state/agentjarvis-alpha` to `~/.local/state/agentj` on the first run of `agentj` **after your
@@ -2783,7 +2791,7 @@ thread; an address book feeds 「转发到邮箱」. Any file up to 200 MB can b
 parts. Phone themes (colours, logo, Send icon, robots or dots). Settings and the ≡ menu are one full-screen page; 遥控器管理
 lists, renames, unbinds and adds remotes (up to 10). New installs default to an independent session; an account-bound
 computer can finish `agentj pair` in its own terminal; a host without a bound seat cannot pair. Fewer false approval
-cards (heredoc bodies are data; Jev may clear what Agent J cannot read).
+cards (heredoc bodies are data; opaque commands require fresh passkey confirmation).
 中文：`/goal` 目标模式（一次授权，睡觉时也能做完）；心跳；邮件通道 + 通讯录 +「转发到邮箱」；任意文件 200 MB、长录音分段；主题换肤；设置与 ≡ 菜单合成一个全屏页，手机上就能管理遥控器（最多 10 台）；新安装默认独立会话；终端里就能完成配对；没绑定席位的Agent J 主机不能配对；危险命令误报更少。
 
 ### 0.18.4a1 reconnect, chief of staff, work in progress
@@ -3381,7 +3389,13 @@ Run `agentj preflight` before WSL browser setup to check system libraries and br
 
 下载、签名校验或安装方式检查在安装前失败时，Agent J 仍是原版本，不需要重装，也不会给 recover。安装后回滚，只要旧版能运行就报告 rolled_back；服务或自检异常仍在 rollback_failure 和脱敏日志里，运行 agentj doctor 继续检查。只有旧版也无法验证可运行时才提示 rollback_failed，并给本机恢复命令。安装失败原因和脱敏尾部沿用自动客服报告，不发送本机恢复命令。
 
-If download, signature/hash validation or installation-method checks fail before installation, Agent J stays on the previous version with no recover command. After rollback, a runnable old version is reported as rolled_back; service/health verification errors remain in rollback_failure and redacted diagnostics for agentj doctor. Only an old version that cannot be verified as runnable is reported as rollback_failed with a local recovery command. Automatic support reports carry fixed failure categories and redacted tails, never local recovery commands. Old 0.22.x workers keep their old logic until a new package is installed; use the existing seat's current installation command if that updater cannot complete, preserving configuration and binding.
+If download, signature/hash validation or installation-method checks fail before installation, Agent J stays on the previous version with no recover command. After rollback, a runnable old version is reported as rolled_back; service/health verification errors remain in rollback_failure and redacted diagnostics for agentj doctor. Only an old version that cannot be verified as runnable is reported as rollback_failed with a local recovery command. Automatic support reports carry fixed failure categories and redacted tails, never local recovery commands. Old workers keep their old logic until a new package is installed. For an existing ordinary uv install whose updater cannot start uv, run the current bootstrap outside Agent J isolation as the same OS user:
+
+```bash
+curl --proto '=https' --tlsv1.2 -fsSL https://agentj.app/install-assistant.sh | sh -s -- --upgrade-only
+```
+
+It verifies hashes and the release signature, pins the existing uv tool and executable directories, preserves the seat and pairing, and refreshes the service PATH using a retained uv binary before restart and doctor. It needs no new code. It refuses non-uv installs, unknown versions and downgrades; Olares Market apps update through Market. A missing executable in the old worker cannot be repaired just by changing the new wheel.
 
 ### Exposed passkeys and secure setup
 
@@ -3559,11 +3573,11 @@ Only host-verified paired-phone or owner-terminal input counts as an owner reque
 
 ### 后台状态 / Background status
 
-后台列表逐项显示程序探测的工具、模型与思考强度、可识别的账号短号或订阅和已运行时长；无法核实就写「未识别」。命令传入的工具和模型另标「自报」，冲突时以探测为准。总数按活跃任务计数，同一进程里的原生子 Agent 各占一行；另列存活进程数。来源退出或原生线程结束就自动收卡。让 Agent 汇报后台时，它应实际运行 `agentj busy list --json`，引用结果，不凭记忆。账号只显示短号，不显示完整邮箱。
+后台列表在每项任务的标题下方，用小号灰字显示已核实的工具、模型、思考档位与已运行时长，长了就换行。只有同一种工具同时使用多个账号时才显示「Codex 账号 1」这样的短名，不显示账号原始编号或订阅。无法核实的内容不猜；自报与实际不一致时，另用警示色说明自报内容，以实际信息为准。总数按活跃任务计数，同一进程里的原生子 Agent 各占一行；另列存活进程数。来源退出或原生线程结束就自动收卡。让 Agent 汇报后台时，它应实际运行 `agentj busy list --json`，引用结果，不凭记忆。不显示完整邮箱。
 
 子任务状态无法确认时会标「状态未知」，不计入运行总数；超过最后活动时间的保留期限后自动收卡。宿主程序仍在运行，不代表子任务仍在运行。
 
-Each background row shows the detected tool, model and reasoning effort, a recognizable short account ID or plan, and elapsed time. Unverifiable fields say “Unknown”. CLI-supplied tool/model labels are separately marked “Self-reported”; detection wins a conflict. The total counts active tasks, including separate native children sharing a process; live processes have a separate count. A lost process source or ended native thread removes its row automatically. The Agent must actually run `agentj busy list --json` to report background work, rather than rely on memory. Accounts use short IDs, never full email addresses.
+Each task shows verified tool, model, reasoning level and running time in small grey text below its title, wrapping as needed. Account names such as “Codex account 1” appear only when the same tool uses multiple accounts; raw account IDs and plans are hidden. Unverified details are not guessed. If reported details differ, a warning shows the reported tool and model; verified information takes priority. The total counts active tasks, including separate native children sharing a process; live processes have a separate count. A lost process source or ended native thread removes its row automatically. The Agent must actually run `agentj busy list --json` to report background work, rather than rely on memory. Full email addresses are never shown.
 
 Children whose state cannot be confirmed are marked “Status unknown” and excluded from the running total; their rows expire after the last-activity retention period. A live host process does not prove that its child task is still running.
 
@@ -3643,3 +3657,41 @@ Turning off high-risk warnings or choosing native/Full does not remove independe
 Each paid content-library query requires a fresh approval passkey over the final query, account destination and program price before charging. Each installed report-engine invocation freezes the script, template and data bytes before its passkey card, then executes only that snapshot. A report email has a separate final-message card, including mail to the owner. No confirmation means no execution. Oversized or unreviewable input refuses without running. Same-uid application checks do not establish OS isolation.
 
 Approval cards retain complete redacted parameters and label Agent notes separately. If the host refuses an oversized or invalid action, split it into smaller actions; never shorten the displayed parameters or treat a description as approval.
+
+<!-- generated: Relay/Codex/P517, 2026-10-25 -->
+## 遥控器数量 / Remote count
+
+设置图标右上角和「遥控器管理」标题旁的浅色圆圈用绿色数字显示这台主机已绑定的遥控器数，与管理页的 N/10 一致。增删后自动更新，最多 10 台；数量未知、为 0 或尚未配对时隐藏。发现数量不符，打开「设置」→「遥控器管理」核对并移除不认识的设备。
+
+The light circle with a green number on the Settings icon and beside Remotes shows the host’s paired remote count, matching N/10 on the management page. It updates when remotes are added or removed, up to 10. It is hidden when unknown, zero or unpaired. If the number looks wrong, open Settings → Remotes and remove any device you do not recognize.
+
+Card names in Agent reply prose automatically link to enabled cards (Chinese and English; first mention per card). Code, existing links, URLs and owner plain text are excluded. Names and optional aliases belong in the card registry, not model instructions. / Agent 回复正文中的中英文卡名会自动链接到已开启的卡片，每张卡只链首次提及。代码、已有链接、网址和主人普通消息保持原样；名称和别名由卡片注册表管理，无须模型记住标签。
+### Shared action policy / 共同动作分级
+
+The host uses one program-owned action registry for main-window native tools and host cards, owner external-channel avatars,
+friends and customer service. Actions requiring Web App long-press or passkey confirmation never execute
+inside WeChat, Telegram or email avatars; they are held for the main conversation. Unknown actions deny.
+Friends remain tool-less. Customer service can use registered company APIs only; write calls require
+an owner passkey card bound to the exact request, with a redacted preview. Capability availability still
+comes from the selected executor. Native tools and known MCP operation names map to that registry; unknown tools deny. In the owner main window, ordinary file reads/edits/writes and commands run without an extra card; native harness permissions still apply. Shell commands use the existing danger classifier: credentials, elevation, payments, deletion/revocation and external delivery/publication require passkey confirmation; reversible sensitive actions require long-press. Company reads remain forbidden in owner channels. Existing executor checks can impose further restrictions.
+
+主窗口的原生工具与主机审批、微信/Telegram/邮件主人分身、好友与客服共用程序动作表。需网页长按或通行密钥确认的动作，
+外部通道只转交，不能用通道里的“同意”批准；未知动作默认拒绝。好友仍无工具；客服仅用主人登记的公司 API，
+写调用需主人通行密钥卡，卡片显示脱敏摘要并绑定精确请求。原生工具和已知 MCP 操作名映射到同一表，未知工具拒绝；主人主窗口普通读写、编辑及命令不额外弹卡，原生 harness 权限照旧；shell 按现有危险分类器检查内容，凭据、提权、付款、删除或吊销、对外发布或发送需通行密钥，可逆敏感动作需长按。主人通道仍不能调用公司只读 API；执行器原有检查继续生效。
+
+<!-- generated: Relay/Codex/P512e, 2026-10-25; human verification unchanged -->
+
+### Dedicated browser on several seats (0.25.10)
+
+Seats under the same system user keep separate browser profiles. Only instance 1 shows a window by default; instances 2+ run headless until host sign-in or an explicit `agentj --instance N browser open <url>`. Checks and phone QR cards do not show extra windows. Closing a visible window leaves it closed.
+中文：同一系统用户的席位各自保留浏览器登录资料；只有 1 号默认显示窗口，其它席位在后台运行，需要在电脑上登录或明确打开网页时才显示。体检和手机扫码不额外弹窗，关窗后不会自动重开。
+
+In Settings → Models & API keys, Fill or Edit opens the key input on the remote you are using. Stay on that page. Enter keys only in the secret card, never in chat.
+
+在「设置 → 模型和 API Key」点填写或修改，密钥输入窗会在当前遥控器上打开，不用返回聊天。只在密钥窗内填写，不要把 Key 发到聊天。
+
+### 邮件授权码输入 / Mail app-password entry
+
+设置 → 邮件通道 →「设置邮箱授权码」会先确认改动的设置，再直接弹出密钥输入卡；设置没变则直接输入。Gmail 填 16 位应用专用密码，保留复制的空格。保存后自动测试连接并显示结果，不发测试邮件。授权码只保存在主机，不进聊天；不要引导用户编辑配置文件或把授权码发给 Agent。
+
+Settings → Email → Set email authorization code confirms any changed settings in plain language, then opens the sealed input directly. Unchanged settings skip the settings confirmation. For Gmail, paste the 16-character App Password with its spaces. Saving tests both logins without sending mail and shows the result. Never ask for this code in chat or direct the owner to edit a configuration file.

@@ -76,7 +76,7 @@ ITEMS_MAX, ITEM_TEXT_MAX, ITEM_VAR_MAX = 200, 300, 200
 USER_MAX = 100                            # the deck has no count limit; this only bounds one list message
 DORMANT_KEEP = 20
 TOP_KEYS = {"$schema", "schemaVersion", "id", "version", "name", "description", "author", "icon", "accent", "template",
-            "data", "actions", "itemActions", "plus", "links", "anchors", "server"}
+            "data", "actions", "itemActions", "plus", "links", "anchors", "server", "aliases"}
 REQUIRED = ("schemaVersion", "id", "version", "name", "description", "icon", "accent", "template", "data")
 LABEL = {"zh": "〔来自卡片：{name}〕", "en": "[From card: {name}] "}
 DONE_WORD = {"zh": ("未完成", "已完成"), "en": ("open", "done")}
@@ -282,6 +282,13 @@ def check(doc, official: bool = False) -> list:
         errs.append(_m("version", "version", "version 写成 1、1.2 或 1.2.3", "version: 1, 1.2 or 1.2.3"))
     if "name" in doc:
         _text2(doc, "name", NAME_MAX, errs, "name")
+    if "aliases" in doc:
+        a = doc["aliases"]
+        if (not isinstance(a, list) or len(a) > 12
+                or any(not isinstance(x, str) or not x.strip() or len(x) > 40
+                       or any(_bad_char(c) for c in x) for x in a)
+                or len(set(x for x in a if isinstance(x, str))) != len(a)):
+            errs.append(_m("aliases", "aliases", "别名最多 12 个，每个 1–40 字，不重复，不含隐形字符", "At most 12 unique aliases, 1–40 characters each, no invisible characters"))
     if "description" in doc:
         _text2(doc, "description", DESC_MAX, errs, "description")
     if "author" in doc and (not isinstance(doc["author"], str) or not 0 < len(doc["author"]) <= 40):
@@ -744,11 +751,11 @@ def phone_list(root, lang: str = "zh") -> dict:
     rows, plaza = [], jcards_pkg.sources(root)
     for c in cards(root):
         d = c["doc"]
-        rows.append({"id": c["id"], "name": d["name"], "desc": d["description"], "icon": d["icon"], "accent": d["accent"],
+        rows.append({"id": c["id"], "name": d["name"], "aliases": d.get("aliases", []), "desc": d["description"], "icon": d["icon"], "accent": d["accent"],
                      "template": d["template"], "official": c["official"], "on": c["on"], "plus": d.get("plus") or PLUS_DEFAULT,
                      **({"src": "plaza"} if not c["official"] and c["id"] in plaza else {})})
     from . import jcards_data
-    return {"cards": rows, "colors": jcards_data.colors(root)}
+    return {"cards": rows, "system": json.loads((PKG / "system-cards.json").read_text(encoding="utf-8")), "colors": jcards_data.colors(root)}
 
 
 def _act(c: dict, a: dict, lang: str, root, item: dict | None = None) -> dict:

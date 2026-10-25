@@ -57,11 +57,12 @@ class QuotedHeredocIsData(unittest.TestCase):
                 for v in both(heredoc(delim)):
                     self.assertEqual(v.cats, [], v.rules)
 
-    def test_hook_prints_nothing_for_the_report(self):
+    def test_hook_keeps_ordinary_quoted_report_silent(self):
         env = dict(os.environ, PYTHONPATH=str(HERE.parent))
         r = subprocess.run([sys.executable, "-P", "-m", "agentj.danger", "hook"], capture_output=True, text=True, env=env,
                            input=json.dumps({"tool_name": "Bash", "tool_input": {"command": heredoc()}}), timeout=30)
-        self.assertEqual((r.returncode, r.stdout), (0, ""), r.stderr)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout, "", "quoted report data is an ordinary write")
 
     def test_git_commit_message_heredoc(self):
         cmd = 'git commit -m "$(cat <<\'EOF\'\nfix: `ossutil` | table | [x](https://a.b)\nEOF\n)"'
@@ -97,7 +98,7 @@ class RealDangerUnchanged(unittest.TestCase):
         "echo cm0gLXJmIH4vCg== | base64 -d | sh": "opaque",
         "base64 -d <<< cm0gLXJmIH4vCg== | bash": "opaque",
         'eval "$(echo cm0gLXJmIH4vCg== | base64 -d)"': "opaque",
-        'X=rm; $X -rf ~/y': "opaque",
+        'X=rm; $X -rf ~/y': "delete",
         "cat > ~/.ssh/authorized_keys <<'EOF'\nssh-ed25519 AAAA x\nEOF": "credentials",
         "cat > ~/.claude/settings.json <<'EOF'\n{}\nEOF": "credentials",
     }

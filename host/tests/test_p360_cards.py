@@ -24,7 +24,7 @@ FAKE_KEY = "AKIA" + "Q3EGRKX7" + "PLM2VN4B"   # an access-key shape privacy.reda
 
 def mine(**over):
     doc = copy.deepcopy(json.loads((jcards.official_dir("todo") / "card.json").read_text(encoding="utf-8")))
-    doc.update({"id": "reading-list", "name": {"zh": "书单", "en": "Reading list"}})
+    doc.update({"id": "reading-list", "name": {"zh": "书单", "en": "Reading list"}, "aliases": []})
     doc.update(over)
     return doc
 
@@ -302,7 +302,7 @@ class Phone(Base):
         jcards.apply(self.root, self.folder(mine()))
         rows = jcards.phone_list(self.root)["cards"]
         self.assertEqual([r["id"] for r in rows], [*jcards.OFFICIAL, "reading-list"])
-        self.assertEqual({k for r in rows for k in r}, {"id", "name", "desc", "icon", "accent", "template", "official", "on", "plus"})
+        self.assertEqual({k for r in rows for k in r}, {"id", "name", "desc", "icon", "accent", "template", "official", "on", "plus", "aliases"})
         plus = {r["id"]: r["plus"] for r in rows}
         self.assertEqual({k: plus[k] for k in ("notes", "todo", "automation", "reading-list")}, {"notes": "agentj-add-note", "todo": "agentj-add-todo", "automation": "agentj-automation", "reading-list": "agentj-add-todo"})
         bare = mine(id="no-plus")

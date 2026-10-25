@@ -31,6 +31,16 @@ import test_p60_opencode as p60  # noqa: E402
 HERE = pathlib.Path(__file__).resolve().parent
 
 
+async def approve_uv(c):
+    """Real owner signature + synthetic WebAuthn UV, no permission bypass."""
+    from test_p57_passkey import Authenticator, pk_record
+    from agentj import passkey
+    auth=Authenticator();c.host.st.set_passkey(c.ph.pub,pk_record(auth))
+    card=c.asks()[-1];a=c.host.asks[card['id']]
+    challenge=passkey.elevate_challenge(c.host.channel,c.ph.did,a.rid,a.pk_kind,a.rid,a.digest)
+    await c.host._app(c.s,{**c.ph.answer(card,True),'fa':auth.assert_(challenge,b'0',nonce=b'0')})
+
+
 def _default_mode_host(extra=None):
     """test_l1._host forces the independent mode; put back the owner's shared choice (P174: shared is opt-in, written to the
     settings file the way `agentj config set agent.session_mode shared` does), plus `extra`."""
@@ -92,7 +102,7 @@ class SharedV2Chain(_DefaultMode, p60.V2Chain):
             # OpenCode's own question → a card on the phone; approve runs it, deny tells the model
             await c.say("RUN: echo hi-shared")
             await c.wait(lambda: len(c.asks()) == 1)
-            await c.host._app(c.s, c.ph.answer(c.asks()[-1], True))
+            await approve_uv(c)
             await c.wait(lambda: "OUT: hi-shared" in c.msgs())
             await c.idle()
             await c.say("RUN: echo no")
@@ -224,7 +234,7 @@ class OwnerV2(_DefaultMode, p60.V2Chain):
             # a card on the phone; approve runs it
             await c.say("RUN: echo hi-owner")
             await c.wait(lambda: len(c.asks()) == 1)
-            await c.host._app(c.s, c.ph.answer(c.asks()[-1], True))
+            await approve_uv(c)
             await c.wait(lambda: "OUT: hi-owner" in c.msgs())
             await c.idle()
             # the owner types on the desktop: mirrored as desktop input + reply, not as a phone turn

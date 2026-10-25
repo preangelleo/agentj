@@ -14,15 +14,16 @@ import * as PF from './pagefind.js';
 import {mountPalette,resetPalettes} from './palette.js';
 import {save as saveMedia} from './media.js';
 
-let list = null, busy = null, epoch = 0, view = 0;
+let system = [], list = null, busy = null, epoch = 0, view = 0;
 const subs = [];
 export const available = () => !!peer.jcards1;
 export const cards = () => list || [];
+export const namedCards = () => [...system, ...deck()];
 /** The cards the deck shows after the five system cards (switched on, in the computer's order). */
 export const deck = () => cards().filter((c) => c.on);
 export const nameOf = (c) => pick(c && c.name);
 export function onChange(fn) { subs.push(fn); }
-export function clear() { resetPalettes(); list = null; busy = null; epoch++; view++; resetColors(); for(const d of document.querySelectorAll('.jc-dialog'))d.dispatchEvent(new Event('cancel',{cancelable:true})); }
+export function clear() { resetPalettes(); system = []; list = null; busy = null; epoch++; view++; resetColors(); for(const d of document.querySelectorAll('.jc-dialog'))d.dispatchEvent(new Event('cancel',{cancelable:true})); }
 // P360 (every card has a unique internal URL): a card's address is its id — card/<id>[#<anchor>] (the name may
 // repeat). ID / ANCHOR mirror host jcards.ID_RE / ANCHOR_RE.
 export const ID = /^[a-z][a-z0-9-]{1,31}$/, ANCHOR = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
@@ -55,10 +56,11 @@ export function refresh() {
   busy = ask1({ t: 'jcard_list', lang: lang() }, 'jcard_items', 15000).then((m) => {
     busy = null;
     if (e !== epoch || !Array.isArray(m.cards)) return cards();
-    const before = JSON.stringify(list);
+    const before = JSON.stringify([system, list]);
     setColors(m.colors || {});
+    system = Array.isArray(m.system) ? m.system : [];
     list = m.cards.filter((c) => c && typeof c.id === 'string');
-    if (JSON.stringify(list) !== before) changed();
+    if (JSON.stringify([system, list]) !== before) changed();
     return list;
   });
   return busy;

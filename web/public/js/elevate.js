@@ -163,6 +163,23 @@ export function add(m) {
   if (old && shownId === m.id) { shownId = null; busy = false; }
   render();
 }
+/** P527: a settings tap owns the visible input, even if an older card was collapsed or waiting. */
+export function openSecret(m) {
+  add(m);
+  const c = cards.get(m.id);
+  if (!c || c.kind !== 'secret' || c.name !== m.name) return false;
+  for (const other of cards.values()) other.collapsed = other !== c;
+  render();
+  return shownId === c.id && !root.hidden;
+}
+/** Repeating a settings tap reopens its existing live card instead of stranding it behind the page. */
+export function reopenSecret(name) {
+  const c = [...cards.values()].find(c => c.kind === 'secret' && c.name === name && c.deadline > Date.now());
+  if (!c) return false;
+  for (const other of cards.values()) other.collapsed = other !== c;
+  render();
+  return shownId === c.id && !root.hidden;
+}
 /** Reopen a collapsed rescue card from the Settings page that still owns the flow. */
 export function reopenAuth() {
   const c = [...cards.values()].find(c => c.auth);

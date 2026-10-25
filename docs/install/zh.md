@@ -324,7 +324,7 @@ Ubuntu 24.04 还会检查 AppArmor 对用户命名空间的限制，并实际试
 AI 安装Agent J 主机端程序 `agentj`，装的是固定的一个版本：
 
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.25.9a1#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.25.10a1#subdirectory=host"
 agentj doctor
 ```
 
@@ -530,7 +530,7 @@ macOS「登录项与扩展」中的 Agent J 使用带名字、图标和开发者
 
 下载、校验或安装准备失败时，Agent J 会提示仍是原版本。先让你的 Agent 运行 `agentj doctor` 看原因，不要删除配置、解绑账号或重新建席位。
 
-如果升级后已经回滚，旧版程序能运行就会记为回滚成功；后台服务或自检仍有问题时会单独列出，继续处理这些问题即可。旧更新器只有成功安装新版后才能得到这些改进。旧版仍无法升级时，在同一系统用户、同一实例下重跑原席位卡上的当前安装命令，保留配置和绑定；Olares 应用通过 Market 升级。
+如果升级后已经回滚，旧版程序能运行就会记为回滚成功；后台服务或自检仍有问题时会单独列出，继续处理这些问题即可。旧更新器只有成功安装新版后才能得到这些改进。旧版 uv 安装仍无法升级时，在电脑终端按 [旧更新器自救步骤](/docs/faq/) 运行当前安装器的修复升级命令；不需要新安装码，保留配置和绑定。Olares Market 应用通过 Market 升级。
 
 ## 首次启动 AI 失败 {#first-ai-start}
 

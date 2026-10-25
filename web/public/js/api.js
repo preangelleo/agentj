@@ -17,6 +17,9 @@ import * as snap from './snap.js';
 import { approve as passkeyApprove, canAssert } from './faceid.js';
 import { unb64u } from '../proto/wire.js';
 
+// app.js owns the UI adapters; keep this transport module free of DOM imports and cycles.
+let keyCards = { open: () => false, reopen: () => false };
+export function configureKeyCards(handlers) { keyCards = handlers; }
 let myId = null;
 export async function myDeviceId() { return myId ?? (myId = await deviceId((await deviceKey()).pub)); }
 export const myIdSync = () => myId;
@@ -242,8 +245,12 @@ export async function providers() {
 }
 export async function providerKey(provider) {
   if (!isReady()) return {ok:false,why:'offline'};
+  const g = gen();
   const m = await ask1({t:'provider_key',provider}, 'provider_res', 15000);
-  return m.t === 'provider_res' ? m : {ok:false,why:m.t};
+  if (m.t !== 'provider_res') return {ok:false,why:m.t};
+  if (gen() !== g) return {ok:false,why:'offline'};
+  if (m.ok && (!m.card || !keyCards.open(m.card))) return {ok:false,why:'failed'};
+  return m;
 }
 // P352 「模型和 API Key」 (js/keys.js): the host key file's names and states — never a value, except the one copy reply
 export async function keysGet() {
@@ -260,9 +267,20 @@ export async function keysOp(op, name, id, n, fa, more) {   // P362: more = {src
 /** Edit / Add: the host opens the existing encrypted key card for `name` (its 同意 asks for Face ID itself). */
 export async function keysSet(name) {
   if (!isReady()) return {ok:false,why:'offline'};
+  const g = gen();
+  if (gen() !== g || !isReady()) return {ok:false,why:'offline'};
+  if (keyCards.reopen(name)) return {ok:true};
   const m = await ask1({t:'keys_set',name}, 'keys_res', 15000);
-  return m.t === 'keys_res' ? m : {ok:false,why:m.t};
+  if (gen() !== g) return {ok:false,why:'offline'};
+  if (m.t !== 'keys_res') return {ok:false,why:m.t};
+  if (m.ok) {
+    // Acknowledgement alone is insufficient (older hosts could fail after it).
+    if (!m.card || m.card.kind !== 'secret' || m.card.name !== name) return {ok:false,why:'failed'};
+    if (!keyCards.open(m.card)) return {ok:false,why:'failed'};
+  }
+  return m;
 }
+
 export async function asrInstall(onProgress) {
   if (!isReady()) return {ok:false,why:'offline'};
   const m = await ask1({t:'asr_install',enable:true}, 'asr_install_res', 600000, m => { if (m.t === 'asr_install_progress') onProgress?.(m.stage); });

@@ -20,11 +20,16 @@
   `setup_mark adopt_browser`). Adopted, it is Agent J's browser for status / check / sign-in, but Agent J never installs a
   second one, never starts / kills / restarts it, never touches its profile or reads its cookies: it only opens and closes its
   own tabs. Not answering = "the browser you registered is not running". `setup` that finds such a browser asks first.
-- P418 (#183 ⑤): closed by the owner, or not back after a restart — an action that needs the browser (`open`, `check`,
+- P521: a per-profile start.lock serializes launch and runtime publication; live pid/starttime/CDP is reused without a new
+  Chrome invocation. Window exit never restarts the service; observer restarts preserve the browser. Upgrade refreshes old
+  service policy without waking a closed browser; only exact former labels for the same state are removed.
+- P521 multi-seat: instances 2+ default to headless, even after a display arrives. Explicit open/host sign-in may
+  show that seat with its own profile; checks and QR cards stay headless.
+- P418 (#183 ⑤), amended by P521: an explicit action that needs the browser (`open`, `check` without `--if-stale`,
   `endpoint`) first starts Agent J's own service once (`systemctl --user reset-failed` + `start`, launchd `kickstart`; never
   enable / install / restart), waits for a verified runtime (WAKE_WAIT), carries on and says so (`restarted: true`). It never
   starts an adopted browser: the answer tells the owner to open it, or how to switch to Agent J's own. A failed start keeps
-  the action's own error and adds one `next` step. Start-at-login stays the service manager's job (unchanged).
+  the action's own error and adds one `next` step. Status, doctor and background/stale checks never wake a closed window.
 - P131 recognisable: Agent J's own window carries the title "Agent J 专用浏览器", its own start page and a brand-colour
   theme, and the checklist's "open and sign in" brings it to the front (Hyprland / X11 / macOS; elsewhere it says so).
 """
@@ -32,6 +37,7 @@ from __future__ import annotations
 
 import contextlib
 import errno
+import fcntl
 import hashlib
 import json
 import os
@@ -50,6 +56,7 @@ import urllib.request
 import zipfile
 
 from .state import State
+from .instance import current as current_instance
 
 MANIFEST_PATH = pathlib.Path(__file__).with_name("browser_manifest.json")
 DOWNLOAD_BUDGET = 300          # seconds for the whole first download (design: 5 minutes, 2 retries)
@@ -409,7 +416,8 @@ def proc_start_time(pid: int) -> str | None:
     if sys.platform.startswith("linux"):
         try:
             raw = pathlib.Path(f"/proc/{pid}/stat").read_text()
-            return raw.rsplit(")", 1)[1].split()[19]
+            fields = raw.rsplit(")", 1)[1].split()
+            return None if fields[0] == "Z" else fields[19]
         except (OSError, IndexError):
             return None
     try:
@@ -471,8 +479,19 @@ def runtime(st: State) -> dict | None:
     rec = _read_json(runtime_path(st))
     if not isinstance(rec, dict) or type(rec.get("pid")) is not int or type(rec.get("port")) is not int:
         return None
-    if proc_start_time(rec["pid"]) != rec.get("starttime"):
+    if not 0 < rec["port"] < 65536 or rec.get("profile") != str(profile_dir(st)):
         return None
+    if rec["pid"] <= 0 or not rec.get("starttime") or proc_start_time(rec["pid"]) != rec["starttime"]:
+        return None
+    if sys.platform.startswith("linux"):
+        try:
+            # Chrome rewrites argv into one process-title string; scripts keep NUL-separated argv.
+            args = b" " + pathlib.Path(f"/proc/{rec['pid']}/cmdline").read_bytes().replace(b"\0", b" ") + b" "
+            if (b" " + os.fsencode(f"--user-data-dir={profile_dir(st)}") + b" " not in args
+                    or (rec.get("process_exe") and os.readlink(f"/proc/{rec['pid']}/exe") != rec["process_exe"])):
+                return None
+        except OSError:
+            return None
     try:
         with _LOCAL.open(f"http://{LOOPBACK}:{rec['port']}/json/version", timeout=3) as r:
             info = json.loads(r.read(65536))
@@ -480,6 +499,8 @@ def runtime(st: State) -> dict | None:
         return None
     ws = info.get("webSocketDebuggerUrl") or ""
     if not ws.startswith(f"ws://{LOOPBACK}:{rec['port']}/devtools/browser/"):
+        return None
+    if not loopback_only(listen_addresses(rec["port"], rec["pid"])):
         return None
     return {**rec, "ws": ws, "product": info.get("Browser", "")}
 
@@ -550,7 +571,68 @@ def _wait_port(profile: pathlib.Path, proc: subprocess.Popen, wait: float) -> tu
     raise BrowserError("start_failed", "no DevToolsActivePort")
 
 
-def start_browser(st: State, headless: bool | None = None) -> tuple[subprocess.Popen, dict]:
+@contextlib.contextmanager
+def start_lock(st: State):
+    """One launch transaction per state/profile; never unlink the lock inode. macOS/Linux/WSL2."""
+    ensure_dir(st)
+    fd = os.open(bdir(st) / "start.lock", os.O_CREAT | os.O_RDWR | os.O_CLOEXEC, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(fd)
+
+
+def start_browser(st: State, headless: bool | None = None) -> tuple[subprocess.Popen | None, dict]:
+    """Reuse without sending Chrome another launch request (which would open another window)."""
+    with start_lock(st):
+        rt = runtime(st)
+        if rt:
+            return None, rt
+        rec = _read_json(runtime_path(st))
+        if (isinstance(rec, dict) and type(rec.get("pid")) is int and rec["pid"] > 0
+                and rec.get("starttime") and proc_start_time(rec["pid"]) == rec["starttime"]):
+            raise BrowserError("start_failed", "existing browser is alive but CDP is unavailable; no second launch")
+        # Older supervisors can leave Chrome's profile singleton alive without a runtime record.
+        # Do not forward a welcome-page launch to it. Never touch another host's singleton.
+        singleton = profile_dir(st) / "SingletonLock"
+        if singleton.is_symlink():
+            target = os.readlink(singleton)
+            host, _, pid = target.rpartition("-")
+            if host == socket.gethostname() and pid.isdigit() and proc_start_time(int(pid)):
+                raise BrowserError("start_failed", "profile is already in use; no second launch")
+        return _start_browser(st, headless)
+
+
+def visible_runtime(st: State) -> dict | None:
+    """Explicit host sign-in/open only: switch our headless browser using its own profile.
+
+    Background checks/endpoints never call this. Keep an active QR session intact.
+    """
+    from .browser_cdp import CDP, CDPError
+    rt = runtime(st)
+    if not rt or not rt.get("headless") or adopted(st):
+        return rt
+    if not display_env() and not _manager_has_display():
+        return rt
+    with start_lock(st):
+        rt = runtime(st)
+        if not rt or not rt.get("headless") or login_in_progress(st):
+            return rt
+        # Close gracefully so Chrome flushes sign-ins before reusing the same profile.
+        with contextlib.suppress(CDPError):
+            with CDP(rt["ws"]) as cdp:
+                cdp.call("Browser.close")
+        end = time.monotonic() + 10
+        while proc_start_time(rt["pid"]) == rt["starttime"]:
+            if time.monotonic() >= end:
+                raise BrowserError("start_failed", "headless browser did not close; no second launch")
+            time.sleep(0.1)
+        _start_browser(st, headless=False)
+        return runtime(st)
+
+
+def _start_browser(st: State, headless: bool | None = None) -> tuple[subprocess.Popen, dict]:
     have = installed(st)
     if not have:
         raise BrowserError("not_installed", "run `agentj browser setup`")
@@ -560,7 +642,7 @@ def start_browser(st: State, headless: bool | None = None) -> tuple[subprocess.P
     with contextlib.suppress(FileNotFoundError):
         (prof / "DevToolsActivePort").unlink()
     if headless is None:
-        headless = not display_env()
+        headless = current_instance() != 1 or not display_env()
     exe, source = choose_executable(st, have)
     brand_profile(prof)
     log = open(bdir(st) / "browser.log", "ab", buffering=0)
@@ -584,6 +666,9 @@ def start_browser(st: State, headless: bool | None = None) -> tuple[subprocess.P
     rec = {"pid": proc.pid, "starttime": proc_start_time(proc.pid), "port": port, "exe": exe, "source": source,
            "profile": str(prof), "headless": headless, "version": have.get("version") if source == "bundled" else "system",
            "started_at": int(time.time()), "supervisor": os.getpid()}
+    if sys.platform.startswith("linux"):
+        with contextlib.suppress(OSError):
+            rec["process_exe"] = os.readlink(f"/proc/{proc.pid}/exe")  # distro launchers may exec a different binary
     _write_json(st, runtime_path(st), rec)
     st.log("browser_started", headless=headless, source=source, version=rec["version"])
     return proc, rec
@@ -620,8 +705,7 @@ def _manager_has_display() -> bool:
 
 
 def run(st: State | None = None) -> int:
-    """The service's main process: keep one browser alive on the private profile. Exit 0 when disabled (the service
-    manager then leaves it stopped); a crash exits non-zero so systemd / launchd restart it with their back-off."""
+    """Observe one browser. Window exit is final; service restarts preserve the existing browser."""
     st = st or State()
     if not settings(st).get("enabled") or adopted(st):
         return 0
@@ -634,6 +718,8 @@ def run(st: State | None = None) -> int:
     signal.signal(signal.SIGINT, _term)
     try:
         proc, rec = start_browser(st)
+        if proc is None:
+            return 0
     except BrowserError as e:
         st.log("browser_start_failed", reason=e.reason)
         _write_json(st, bdir(st) / "last-error.json", {"reason": e.reason, "detail": e.detail[:200], "at": int(time.time())})
@@ -645,18 +731,22 @@ def run(st: State | None = None) -> int:
         while not stopping["now"]:
             if proc.poll() is not None:
                 st.log("browser_exited", code=proc.returncode)
-                return 4
-            if rec["headless"] and time.monotonic() - last_look > 30:
+                return 0
+            if current_instance() == 1 and rec["headless"] and time.monotonic() - last_look > 30:
                 last_look = time.monotonic()
                 if _manager_has_display() and not login_in_progress(st):
                     st.log("browser_display_arrived")
                     stop_proc(proc)
-                    proc, rec = start_browser(st, headless=False)
+                    replacement, rec = start_browser(st, headless=False)
+                    if replacement is None:
+                        return 0
+                    proc = replacement
             time.sleep(1)
     finally:
-        stop_proc(proc)
+        # SIGTERM from upgrade/reinstall stops only the observer. disable/uninstall
+        # explicitly terminate the verified browser via service_stop.
         cur = _read_json(runtime_path(st))
-        if isinstance(cur, dict) and cur.get("pid") == proc.pid:
+        if not stopping["now"] and isinstance(cur, dict) and cur.get("pid") == proc.pid and cur.get("starttime") == rec.get("starttime"):
             with contextlib.suppress(FileNotFoundError):
                 runtime_path(st).unlink()
     return 0
@@ -688,7 +778,7 @@ def unit_text(argv: list[str], environ: dict | None = None) -> str:
              "[Unit]", "Description=Agent J browser (agentj browser run): private profile, CDP on 127.0.0.1 only",
              "After=graphical-session.target", "StartLimitIntervalSec=600", "StartLimitBurst=10", "",
              "[Service]", "Type=simple", "ExecStart=" + " ".join(q(x) for x in argv + ["browser", "run"]),
-             "Restart=on-failure", "RestartSec=10", "TimeoutStopSec=20", "StandardInput=null"]
+             "Restart=no", "KillMode=process", "TimeoutStopSec=20", "StandardInput=null"]
     lines += [f"Environment={q(f'{k}={v}')}" for k, v in env.items()]
     lines += ["", "[Install]", "WantedBy=default.target", ""]
     return "\n".join(lines)
@@ -698,16 +788,75 @@ def plist_bytes(label: str, argv: list[str], log_path: str, environ: dict | None
     e = os.environ if environ is None else environ
     env = {k: e[k] for k in ("AGENTJ_STATE_DIR", "AGENTJ_INSTANCE") if e.get(k)}
     return plistlib.dumps({"Label": label, "ProgramArguments": argv + ["browser", "run"], "EnvironmentVariables": env,
-                           "RunAtLoad": True, "KeepAlive": {"SuccessfulExit": False}, "ThrottleInterval": 10,
+                           "RunAtLoad": True, "KeepAlive": False, "AbandonProcessGroup": True, "ThrottleInterval": 10,
                            "LimitLoadToSessionType": "Aqua", "ProcessType": "Interactive",
                            "StandardInPath": "/dev/null", "StandardOutPath": log_path, "StandardErrorPath": log_path, **(extra or {})})
 
 
-def service_install(st: State) -> dict:
+def cleanup_legacy_services(st: State) -> list[str]:
+    """Only known former default labels, only files written for this state. No wildcard process/service killing."""
+    from . import service
+    old, plat = service.legacy_name(), service.platform()
+    if not old:
+        return []
+    n = old + ("-browser" if plat == "linux" else ".browser")
+    path = (pathlib.Path(service.unit_dir()) / f"{n}.service" if plat == "linux" else
+            pathlib.Path.home() / "Library" / "LaunchAgents" / f"{n}.plist")
+    if not path.is_file():
+        return []
+    if plat == "linux":
+        text = path.read_text()
+        # Exact generated marker plus browser command; an explicit state must match.
+        if not text.startswith("# Agent J browser — written by `agentj browser setup`.") or '"browser" "run"' not in text:
+            return []
+        instance = os.environ.get("AGENTJ_INSTANCE", "1")
+        if "AGENTJ_INSTANCE=" in text:
+            if service._sd_quote(f"AGENTJ_INSTANCE={instance}") not in text:
+                return []
+        elif instance != "1":
+            return []
+        if "AGENTJ_STATE_DIR=" in text and service._sd_quote(f"AGENTJ_STATE_DIR={st.root}") not in text:
+            return []
+        if "AGENTJ_STATE_DIR=" not in text and os.environ.get("AGENTJ_STATE_DIR"):
+            return []
+        service._systemctl("disable", "--now", f"{n}.service", check=True)
+        path.unlink()
+        service._systemctl("daemon-reload", check=True)
+        service._systemctl("reset-failed", f"{n}.service")
+    elif plat == "macos":
+        rec = plistlib.loads(path.read_bytes())
+        env = rec.get("EnvironmentVariables", {})
+        if rec.get("Label") != n or rec.get("ProgramArguments", [])[-2:] != ["browser", "run"]:
+            return []
+        if str(env.get("AGENTJ_INSTANCE", "1")) != os.environ.get("AGENTJ_INSTANCE", "1"):
+            return []
+        if env.get("AGENTJ_STATE_DIR") != str(st.root) and (env.get("AGENTJ_STATE_DIR") or os.environ.get("AGENTJ_STATE_DIR")):
+            return []
+        if not service._bootout_wait(n):
+            raise BrowserError("no_service_manager", "old browser service did not stop")
+        path.unlink()
+    else:
+        return []
+    return [n]
+
+
+def refresh_service(st: State) -> None:
+    """Upgrade/reinstall: migrate an existing browser service's policy without starting a closed browser."""
+    from . import service
+    plat, n = service.platform(), svc_name()
+    path = (pathlib.Path(service.unit_dir()) / f"{n}.service" if plat == "linux" else
+            pathlib.Path.home() / "Library" / "LaunchAgents" / f"{n}.plist")
+    legacy = cleanup_legacy_services(st)
+    if path.is_file() or legacy:
+        service_install(st, start=False)
+
+
+def service_install(st: State, start: bool = True) -> dict:
     from . import service
     plat = service.platform()
     n = svc_name()
     argv = service.agentj_argv()
+    cleanup_legacy_services(st)
     if plat == "linux":
         if not shutil.which("systemctl"):
             raise BrowserError("no_service_manager", "no systemd: run `agentj browser run` under your own supervisor")
@@ -719,14 +868,21 @@ def service_install(st: State) -> dict:
         service._systemctl("daemon-reload", check=True)
         service._systemctl("enable", f"{n}.service", check=True)
         service._systemctl("reset-failed", f"{n}.service")   # an earlier failed start must not hold the start limit
-        service._systemctl("restart", f"{n}.service", check=True)
+        if start:
+            service._systemctl("restart", f"{n}.service", check=True)
         return {"kind": "systemd", "name": n, "path": path}
     if plat == "macos":
         path = os.path.join(os.path.expanduser("~"), "Library", "LaunchAgents", f"{n}.plist")
         os.makedirs(os.path.dirname(path), exist_ok=True)
         argv, extra = service.macapp.wrap(argv)      # P327: Login Items shows "Agent J" (signed launcher), else as before
-        service._write(path, plist_bytes(n, argv, str(bdir(st) / "service.log"), extra=extra), 0o644)
-        r = service._bootstrap(n, path)
+        normal = plist_bytes(n, argv, str(bdir(st) / "service.log"), extra=extra)
+        quiet = plist_bytes(n, argv, str(bdir(st) / "service.log"), extra={**extra, "RunAtLoad": False})
+        service._write(path, normal if start else quiet, 0o644)
+        try:
+            r = service._bootstrap(n, path)
+        finally:
+            if not start:
+                service._write(path, normal, 0o644)  # launchd loaded quiet policy; next login retains normal start
         if r.returncode != 0:
             raise BrowserError("no_service_manager", (r.stderr or r.stdout or "")[:200])
         return {"kind": "launchd", "name": n, "path": path}
@@ -752,7 +908,7 @@ def service_stop(st: State, remove: bool = False) -> dict:
                 with contextlib.suppress(FileNotFoundError):
                     os.unlink(os.path.join(os.path.expanduser("~"), "Library", "LaunchAgents", f"{n}.plist"))
     rec = _read_json(runtime_path(st))     # a browser the Agent J host's `run` started (verified pid) also goes
-    if isinstance(rec, dict) and type(rec.get("pid")) is int and proc_start_time(rec["pid"]) == rec.get("starttime"):
+    if isinstance(rec, dict) and type(rec.get("pid")) is int and rec["pid"] > 0 and rec.get("starttime") and proc_start_time(rec["pid"]) == rec["starttime"]:
         with contextlib.suppress(ProcessLookupError, PermissionError):
             os.killpg(rec["pid"], signal.SIGTERM)
     with contextlib.suppress(FileNotFoundError):
@@ -1209,7 +1365,9 @@ def service_start() -> bool:
                 return False
             if service._launchctl("kickstart", f"{service._gui()}/{n}", timeout=15).returncode == 0:
                 return True
-            return service._bootstrap(n, path).returncode == 0    # unloaded since: load it again (RunAtLoad starts it)
+            if service._bootstrap(n, path).returncode != 0:
+                return False
+            return service._launchctl("kickstart", f"{service._gui()}/{n}", timeout=15).returncode == 0
     except Exception:  # noqa: BLE001 — the service manager's own failure kinds: the action reports its own error
         return False
     return False
@@ -1248,7 +1406,7 @@ def execute(req: dict, st: State | None = None) -> dict:
     """The host side of `agentj browser …` (serve's elevate.sock, or directly when serve is not running)."""
     st = st or State()
     a = req.get("action")
-    w = wake(st) if a in CDP_ACTIONS else None        # P418 (#183 ⑤)
+    w = wake(st) if a in CDP_ACTIONS and not (a == "check" and req.get("if_stale")) else None        # P418 (#183 ⑤)
     return _woke(_execute(a, req, st), w)
 
 

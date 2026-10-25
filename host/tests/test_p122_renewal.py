@@ -81,9 +81,10 @@ class HostLevel(P57HostLevel):
             return await self.host.decide(self.host.pairing, wire.safety_code(s.h), "test-passphrase-P57")
         self.run_(go())
         msgs = self.to(7)
-        self.assertEqual([o["t"] for o in msgs], ["approved", "pk_offer", "rt"])
+        self.assertEqual([o["t"] for o in msgs], ["approved", "pk_offer", "rt", "devs", "pair_guide", "preferences"])
+        ticket = next(o for o in msgs if o["t"] == "rt")
         rt = self.st.devices()[s.device]["rt"]
-        self.assertEqual((msgs[-1]["i"], msgs[-1]["k"]), (rt["i"], rt["k"]))
+        self.assertEqual((ticket["i"], ticket["k"]), (rt["i"], rt["k"]))
         self.assertNotIn(rt["k"], self.st.log_path.read_text(), "host.log never holds the secret")
         self.assertNotIn(rt["i"], self.st.log_path.read_text(), "…nor the ticket id")
         reported = json.dumps(cloud.report_devices(self.st, set()))

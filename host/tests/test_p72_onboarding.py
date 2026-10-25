@@ -269,9 +269,9 @@ class Serve(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    async def _pair(self, cid, name):
+    async def _pair(self, cid, name, p33=False):
         pub = os.urandom(32)
-        s = serve.Session(cid=cid, state="pending", device=wire.device_id(pub), name=name, pub=pub, h=os.urandom(32))
+        s = serve.Session(cid=cid, state="pending", device=wire.device_id(pub), name=name, pub=pub, h=os.urandom(32), p33=p33)
         s.deadline = time.monotonic() + 60
         self.host.sessions[cid] = s
         p = serve.Pairing(os.urandom(16), os.urandom(32), time.time() + 60, time.monotonic() + 60, ctl=None, cid=cid)

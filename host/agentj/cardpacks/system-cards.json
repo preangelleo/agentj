@@ -1,0 +1,60 @@
+[
+  {
+    "id": "chat",
+    "name": {
+      "zh": "聊天",
+      "en": "Chat"
+    },
+    "aliases": [
+      "对话卡",
+      "聊天卡",
+      "Chat card",
+      "对话"
+    ]
+  },
+  {
+    "id": "workflows",
+    "name": {
+      "zh": "工作流",
+      "en": "Workflows"
+    },
+    "aliases": [
+      "工作流卡",
+      "Workflow card"
+    ]
+  },
+  {
+    "id": "skills",
+    "name": {
+      "zh": "技能",
+      "en": "Skills"
+    },
+    "aliases": [
+      "技能卡",
+      "Skills card",
+      "Skill card"
+    ]
+  },
+  {
+    "id": "memory",
+    "name": {
+      "zh": "记忆",
+      "en": "Memory"
+    },
+    "aliases": [
+      "记忆卡",
+      "Memory card"
+    ]
+  },
+  {
+    "id": "agentj",
+    "name": {
+      "zh": "Agent J",
+      "en": "Agent J"
+    },
+    "aliases": [
+      "Agent J卡",
+      "Agent J card"
+    ]
+  }
+]

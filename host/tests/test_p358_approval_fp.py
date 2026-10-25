@@ -209,7 +209,7 @@ class Dumps(unittest.TestCase):
 
     def test_callers_pass_the_working_folder(self):
         src = pathlib.Path(danger.__file__).parent
-        self.assertIn('cfg.get("approvals", "standard"), cfg.get("dir"))', (src / "serve.py").read_text())
+        self.assertIn('cfg.get("approvals", "standard"), cfg.get("dir"), env=env)', (src / "serve.py").read_text())
         self.assertIn('event.get("cwd") or self.cfg.get("dir")', (src / "shared.py").read_text())
         self.assertIn("a.cfg.get('dir')", (src / "shared_risk.py").read_text())
         self.assertIn("cwd=event.get('cwd')", (src / "shared_hook.py").read_text())
@@ -262,7 +262,15 @@ class TimeoutMessage(unittest.TestCase):
 
 class GoalHost(unittest.TestCase):
     """The real host: a goal, a credentials step whose card nobody answers, then `agentj goal status`."""
-    setUp = p339.HostGoal.setUp
+    def setUp(self):
+        p339.HostGoal.setUp(self)
+        # Exercise the danger lexer below the registry floor; P512 covers the
+        # real shell UV floor with an active goal / Full-level consumer.
+        from agentj import policy_registry
+        original_requirement = policy_registry.main_requirement
+        # Legacy goal/grant mechanics only; real composed floors are tested in P512.
+        floor = mock.patch.object(policy_registry, 'main_requirement', side_effect=lambda tool, inp=None: 'allow' if tool == 'Bash' else original_requirement(tool, inp))
+        floor.start();self.addCleanup(floor.stop)
     tearDown = p339.HostGoal.tearDown
     asks = p339.HostGoal.asks
     signed = p339.HostGoal.signed

@@ -76,3 +76,11 @@ Image generation/editing remains subject to the existing native capability and a
 
 
 Display names come from `agentj status --json` field `agent_display_name` (shared `agent_label` formatter); use it verbatim in introductions and return-to-web hints. Empty names and names equal to Agent J (ignoring case/whitespace) display as Agent J; an existing Agent J - prefix is preserved. Examples: empty → Agent J; Agent J → Agent J; Agent J - Father@TB → Agent J - Father@TB; Father@TB → Agent J - Father@TB. Stored and signed names remain raw owner data.
+
+
+All four layers consult the host's `policy_registry`: main-window native tools and host cards, owner avatars,
+friends and customer service. Do not invent an avatar AUTO list. The host's decision is authoritative;
+unknown actions deny, and Web App hold/UV actions go to the main conversation. A channel “yes” cannot
+approve them. New registry permission does not imply that the selected executor has that capability.
+
+Native tool names and known MCP operations map to canonical actions; unknown operations deny. Shell/code/delegation require a passkey card. Friends check answer on every turn and remain tool-less. Company reads stay forbidden in owner channels.

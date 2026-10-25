@@ -14,7 +14,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from agentj import danger, shared  # noqa: E402
@@ -157,6 +157,13 @@ class Card(unittest.TestCase):
 class SharedE2E(unittest.IsolatedAsyncioTestCase):
     """The shared Claude hook path end to end (PreToolUse → card → PermissionRequest), standard and strict."""
     async def asyncSetUp(self):
+        # Isolate the pre-registry lexer/level contract. P512's real-entry
+        # matrix separately proves registry floors override these auto paths.
+        from agentj import policy_registry
+        original_requirement = policy_registry.main_requirement
+        # Legacy goal/grant mechanics only; real composed floors are tested in P512.
+        floor = patch.object(policy_registry, 'main_requirement', side_effect=lambda tool, inp=None: 'allow' if tool == 'Bash' else original_requirement(tool, inp))
+        floor.start();self.addCleanup(floor.stop)
         self.tmp = tempfile.TemporaryDirectory(prefix="p128-", dir=TEST_TMP)
         self.addCleanup(self.tmp.cleanup)
         self.host = Mock()

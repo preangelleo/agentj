@@ -9,6 +9,7 @@ import contextlib
 import hashlib
 import json
 import os
+import re
 import secrets
 import socket
 import struct
@@ -21,6 +22,17 @@ from .tools import ToolRegistry
 from .provider import resolve_bot as resolve,vendor_key,vendor_card,vendors_public
 
 from ..compose import Send
+
+def _tool_preview(value):
+    """Mask credential-labelled fields even when their values are short PINs."""
+    if isinstance(value, dict):
+        return {k: ('<redacted>' if re.search(
+            r'pass|pwd|secret|token|auth|credential|private|key|pin|otp|验证码|口令|密码|密钥', k, re.I)
+            else _tool_preview(v)) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_tool_preview(v) for v in value]
+    return value
+
 
 class HandoffSend(Send):
     """A metadata-only host event, using the existing main-Agent queue and permissions."""
@@ -343,12 +355,18 @@ class Manager:
         self.socket.unlink(missing_ok=True)
         if self.store:self.store.close();self.store=None
     async def approve(self,bid,request,args):
-        future=asyncio.get_running_loop().create_future()
-        self.pending_calls[request['id']]={'request':request,'future':future}
-        self.host._post(self.host._send_p33,lambda s:{'t':'bots_tool_request','bot':bid,**request,'args':args})
-        try:return await asyncio.wait_for(future,max(0,request['expires']-time.time()))
-        except asyncio.TimeoutError:return False
-        finally:self.pending_calls.pop(request['id'],None)
+        # The digest binds the exact validated tool definition and arguments.
+        # Only a bounded, redacted preview reaches the ordinary owner UV card.
+        from .. import privacy, policy_registry
+        preview=privacy.redact(canonical(_tool_preview(args)))
+        if len(preview.encode())>12000:return False
+        remaining=request['expires']-time.time()
+        if remaining<=0:return False
+        answer=await self.host.ask('company.write',{'bot':bid,'tool':request['tool'],
+            'digest':request['digest'],'summary':preview},batch=False,require_passkey=True,
+            ttl=min(120,remaining),origin=('Customer service' if str(getattr(self.host,'lang','zh')).lower().startswith('en') else '客服'),
+            _company_proposal=policy_registry.COMPANY_PROPOSAL)
+        return answer.get('behavior')=='allow'
     async def handoff(self,bid,vid,rid):
         store=self.state()
         store.db.execute("UPDATE handoffs SET status='expired' WHERE bot=? AND visitor=? AND status='pending' AND created<=?",(bid,vid,store.now()-store.get(bid)['handoff']['reply_window_h']*3600))

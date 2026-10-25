@@ -6,10 +6,15 @@ description: Agent J's own browser on this computer — web automation on signed
 Agent J ships its own browser: a dedicated profile on this computer, its debugging port on 127.0.0.1 only. Sign-ins stay in
 that profile; cookies and passwords never leave this computer and never enter chat. Everything goes through `agentj browser`.
 
+Closing the window leaves it closed; do not keep reopening it during background checks. `check --if-stale` never wakes it.
+For requested browser work, `open`, `endpoint`, an explicit `check` or `setup` can open it again. Repeated starts reuse one
+instance. Seats 2+ default to headless with separate sign-ins; host sign-in or explicit `open` shows that seat.
+后台多席位只有 1 号默认显示窗口，其它席位按需显示。 / 关窗后不自动弹回；后台体检不重开，主人要用时再打开；重复启动复用同一实例。
+
 ## Is it ready?
 `agentj browser status --json` → `state`: `ready` · `attention` (read `attention` + `hints`) · `disabled` (the owner turned it
-off — do not turn it back on unless the owner asks). `runtime.host_login=false` means no screen here (a server): QR sign-ins
-work from the phone, sites without QR need a computer with a screen.
+off — do not turn it back on unless the owner asks). `runtime.host_login=false` means headless (a server or a background seat). QR sign-ins work from the phone;
+on a desktop, host sign-in or explicit `open` can show a background seat. An active QR card is kept intact; finish or cancel it before switching to host sign-in.
 - Not installed / not running: `agentj browser setup --json` (idempotent; downloads ~200 MB once, verified against the signed
   manifest; a failure never breaks Agent J — only browser work waits). Missing Linux libraries: install the listed packages
   with `agentj sudo --why '安装浏览器依赖 / browser libraries' -- <package manager command>`, then setup again.

@@ -51,3 +51,14 @@ P444b installation contract (中文 / English): 先运行 `agentj pair --check -
 Account safety (P504): each cloud setup, remote/seat revocation, purchase/subscription change and passkey addition/deletion requires the owner's action-specific passkey UV. Recent login and the cloud signature are not confirmation. On a new device use an existing passkey, including browser cross-device verification, before adding a new one; no transfer-code bypass. Changed prices/targets require review again. Never perform this confirmation yourself. First-ever account key uses recent email plus UV registration; legacy-only keys require trusted recovery.
 
 Dashboard confirmations expire after 120 seconds and are single-use. Changes to affected hosts, setup generations or remote pairing records require a new review and passkey confirmation. Missing passkeys never downgrade to email approval.
+
+<!-- generated: Relay/Codex/P517, 2026-10-25 -->
+## Remote count / 遥控器数量
+
+The light circle with a green number on the Settings icon and beside Remotes shows the host’s paired remote count, matching N/10 on the management page. It updates when remotes are added or removed, up to 10. It is hidden when unknown, zero or unpaired. If the number looks wrong, open Settings → Remotes and remove any device you do not recognize.
+
+设置图标右上角和「遥控器管理」标题旁的浅色圆圈用绿色数字显示这台主机已绑定的遥控器数，与管理页的 N/10 一致。增删后自动更新，最多 10 台；数量未知、为 0 或尚未配对时隐藏。发现数量不符，打开「设置」→「遥控器管理」核对并移除不认识的设备。
+
+After pairing or unbinding, open pages update the remote count, pairing suggestion and pairing rows in the checklist automatically. Reconnecting catches up without a page reload. A closed checklist stays closed.
+
+配对或解绑后，已打开页面的遥控器数量、配对建议和清单里的配对状态会自动更新，无需刷新；断线重连后也会补齐。清单已收起时不会因此重新弹出。

@@ -915,6 +915,14 @@ def _bootstrap(n: str, path: str) -> subprocess.CompletedProcess:
 
 
 # ------------------------------------------------------------------ the service verbs
+def _browser_note(st, notes):
+    from . import browser
+    try:
+        browser.refresh_service(st)
+    except Exception:  # browser failure must not break the host upgrade
+        notes.append("浏览器服务需要检查：agentj browser setup / Check the browser service: agentj browser setup")
+
+
 def _register_pair_protocol(notes):
     try:
         from . import protocol_handler
@@ -953,6 +961,7 @@ def install(st) -> dict:
         _systemctl("restart", f"{n}.service", check=True)   # starts it, or picks up a rewritten unit (reinstall / upgrade)
         remember_binary_selection(st, n)
         _register_pair_protocol(notes)
+        _browser_note(st, notes)      # P521: migrate browser policy without opening a window
         _rescue_note(st, notes)       # P332: the rescue watchdog's unit (install and every upgrade pass here)
         if _linger() == "no":
             notes.append("常驻（包括多用户桌面）：`loginctl enable-linger $USER`；需要管理员时用 agentj sudo 手机密码卡 / "
@@ -986,6 +995,7 @@ def install(st) -> dict:
             with contextlib.suppress(Exception):
                 st.log("launchd_jobs_swept", count=len(swept))
         _register_pair_protocol(notes)
+        _browser_note(st, notes)      # P521: migrate browser policy without opening a window
         _rescue_note(st, notes)       # P332
         migrated = migrate_calendar_jobs(st)
         if migrated:

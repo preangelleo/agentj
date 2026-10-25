@@ -12,6 +12,7 @@
     "id": {"type": "string", "pattern": "^[a-z][a-z0-9-]{1,31}$", "description": "permanent; agentj-*, official-*, the official and system card ids are reserved"},
     "version": {"type": "string", "pattern": "^\\d{1,4}(\\.\\d{1,4}){0,2}$"},
     "name": {"$ref": "#/$defs/text", "description": "zh ≤ 12, en ≤ 24 characters"},
+    "aliases": {"type": "array", "maxItems": 12, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 40}, "description": "Optional plain names for automatic internal links in Agent replies; names in both languages are always included"},
     "description": {"$ref": "#/$defs/text", "description": "zh ≤ 60, en ≤ 120 characters"},
     "author": {"type": "string", "minLength": 1, "maxLength": 40},
     "icon": {"enum": ["note", "checklist", "calendar", "folder", "board", "book", "star", "bolt"], "description": "a built-in line icon (phase 1 takes no image files)"},

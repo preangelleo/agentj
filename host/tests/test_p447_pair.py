@@ -1,4 +1,4 @@
-"""P447 default output, installation branches, first-only success hint; P221 guards stay intact."""
+"""P447 default output, installation branches, live success hint; P221 guards stay intact."""
 import _hermetic  # noqa: F401
 import argparse
 import asyncio
@@ -34,20 +34,21 @@ class DefaultOutput(Base):
                 fs.close()
 
 class FirstOnly(Serve):
-    def test_first_success_hint_matches_device_and_never_repeats(self):
+    def test_success_hint_matches_device_then_clears_when_second_pairs(self):
+        self.host.agent = None
         async def go():
-            await self._pair(7, PHONE)
+            await self._pair(7, PHONE, p33=True)
             hints = lambda: [m for _, m in self.sent if m.get("t") == "pair_guide"]
-            self.assertEqual(hints(), [{"t": "pair_guide", "kind": "phone"}])
-            await self._pair(8, PC)
-            self.assertEqual(len(hints()), 1)
+            self.assertEqual(hints()[-1], {"t": "pair_guide", "kind": "phone"})
+            await self._pair(8, PC, p33=True)
+            self.assertIsNone(hints()[-1]["kind"])
             self.assertEqual(onboarding.read(self.st)["welcomed"]["kind"], "phone")
         asyncio.run(go())
 
     def test_computer_first_success_without_agent(self):
         self.host.agent = None
         async def go():
-            await self._pair(7, PC)
+            await self._pair(7, PC, p33=True)
             self.assertIn({"t": "pair_guide", "kind": "computer"}, [m for _, m in self.sent])
         asyncio.run(go())
 

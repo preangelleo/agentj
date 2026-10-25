@@ -682,8 +682,7 @@ class BriefScope(Base):
         self.assertFalse(sw(None, "Write", {"file_path": str(self.work / ".agentj/wizard-staging/x")}), "a CEO run: never")
         h = self.host()
         r = asyncio.run(h.ask("Bash", {"command": "agentj capability list --json"}))
-        self.assertEqual(r["behavior"], "allow")
-        self.assertIn('"reason": "host"', self.st.approvals_path.read_text())
+        self.assertEqual(r["behavior"], "allow", "ordinary owner action adds no registry card")
 
     def test_serve_ask_allows_inside_the_brief_and_cards_the_rest(self):
         d = workflow(self.work)
@@ -692,9 +691,8 @@ class BriefScope(Base):
         capability.add_receipt(self.st, d.name, {"mode": "signed", "scope_digest": capability.scope_digest(b)})
         h.brief_scope = capability.brief_scope_for(self.st, tasks.find(str(self.work), d.name))
         r = asyncio.run(h.ask("Write", {"file_path": str(d / "reports" / "weekly.md"), "content": "# 简报"}))
-        self.assertEqual(r["behavior"], "allow")
-        self.assertIn('"reason": "brief"', self.st.approvals_path.read_text())
-        self.assertEqual([o for _, o in self.sent if o.get("t") == "ask"], [], "no card")
+        self.assertEqual(r["behavior"], "allow", "ordinary owner action adds no registry card")
+        self.assertEqual([o for _, o in self.sent if o.get("t") == "ask"], [], "no paired owner means no approval card and no execution")
         r = asyncio.run(h.ask("Bash", {"command": "curl -X POST https://example.com/send -d @reports/weekly.md"}))
         self.assertEqual(r["behavior"], "deny", "outside the brief: the usual path (no paired phone here → denied)")
         h.brief_scope = None

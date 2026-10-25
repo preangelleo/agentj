@@ -2907,6 +2907,13 @@ Messages (p33 sessions of a paired, ready device; answered to the asking session
 | host → device | `{"t":"jcard_color","r","ok","id"?,"color"?,"why"?}` | saved under `agentperm/cards/colors.json`, separately from card packs |
 | host → device | `{"t":"jcard_open","id","at"?}` | pushed to every ready p33 device: open that card (or the page `chat` · `workflows` · `skills` · `memory` · `agentj` · `cards`) and scroll to `at`; navigation only. Sent when `agentj card open <id> [--at <anchor>]` asks serve on the Agent-facing `agentperm/elevate.sock` (reachable inside the fence; `{"t":"jcard_open","id","at"?}` → `{"ok","delivered"}` / `{"ok":false,"why"}`); serve checks again (a switched-on card or a page; `at` `^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`), pushes at most once per 2 s (`too_soon`) and logs `jcard_open` (the id only). The page ignores it while a confirm card or Settings is open; `cards` opens the wall (never toggles it) |
 
+P519 adds optional `cards[].aliases:[string…]` (≤12 unique single-line names, each ≤40 characters) and
+`system:[{id,name:{zh,en},aliases:[string…]}]` to `jcard_items`. Both `name` languages always participate in Agent-prose
+card-name links; the page filters switched-off ordinary cards, uses longest-first matching and links each card once.
+Code, existing links, URLs and owner plain text are excluded. These fields are registry metadata over the existing
+paired session; older pages ignore them, and newer pages retain ordinary `name` matching without aliases on old hosts.
+No new capability, request, permission or persisted phone state is introduced.
+
 P386 notes updates use the same no-follow directory boundary and bounded regular-file reads as card data. An exclusive
 write lock, revision check and second read precede atomic replacement; headings and all unrelated original bytes stay.
 External editors do not share the lock, so the second read detects changes before replacement but is not a universal
@@ -3423,9 +3430,17 @@ CalDAV (`kind:"caldav"`, P428 item 3): connect adds `server` (https URL, no user
 `shape` refusal. Connect answers `why` ∈ bad_server | bad_key_name | key_missing | no_calendar | auth | offline | failed. The
 discovered calendar href and partition host stay in calendar.json; no `jcard_cal` / `jcard_get` answer ever carries them.
 
-### P447 first-remote success hint
+### P447 / P525 live second-remote suggestion
 
-After first approval and ready, host sends encrypted `{t:"pair_guide",kind:"phone"|"computer"|"other"}` once per host using the existing onboarding welcome marker. It is display-only. Phone suggests reverse-pairing the usual computer at m.agentj.app; computer suggests Settings → Remotes → Add a remote for the phone. Unknown kind is ignored. No control signature, password, key or authorization is conveyed. Reconnect and subsequent remotes do not trigger it.
+Host sends encrypted `{t:"pair_guide",kind:"phone"|"computer"|null}` to ready p33 allowlisted sessions on device
+changes and reconnect. The existing device-name classifier derives the currently paired kinds: computer without phone suggests a phone;
+phone without computer suggests a computer; both kinds present or neither recognized sends null to hide it. Unknown kinds remain ignored by the web client. The hint carries no authority.
+`Remotes.changed` sends `devs`, preferences and device-dependent setup rows after successful pairing (every route),
+unbinding and renaming; passkey registration also refreshes the setup rows. Eviction/replacement sends the final list.
+No checklist is started or reopened automatically; closed flags and signed owner choices are preserved. Reconnect
+resends the list, suggestion and refreshed existing checklist, including its closed state. P72's persisted welcome
+and historical onboarding milestones remain one-time facts; they do not own this live hint.
+
 
 
 P474 — Official `notes` responses advertise `noteFields:true` with entries `{id,title,text,date,editable}`; title may be empty, migrated undated entries have an empty date. Paired `jcard_note` add/edit accepts optional `title` and ISO `date`; `text` is content only. Add defaults to the host local date, edit preserves omitted fields; explicit empty title clears it. CLI `--date` defaults to today on add/edit. Old devices omitting title/date remain compatible. New web clients enable title editing only when the host advertises noteFields. A first read migrates legacy leading dates after an exclusive byte-exact 0600 backup; cut/malformed input is refused. Other notebook templates retain byte-span edits and legacy fields.

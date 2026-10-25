@@ -18,6 +18,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 from agentj import approval_jev, compactprep, danger, goal, main_identity  # noqa: E402
@@ -103,23 +104,26 @@ class LowRiskPass(unittest.TestCase):
                                                                     "new_string": "b"}))
         self.assertFalse(approval_jev.low_risk_pass(h, HRW, "Write", {"file_path": os.path.expanduser("~/.aws/credentials"),
                                                                       "content": "x"}))
-        self.assertEqual([e for e, _ in h.st.logs].count("perm_low"), len(LOW) + 1)
+        self.assertTrue(approval_jev.low_risk_pass(h, HRW, "Read", {"file_path": "/tmp/x/a.py"}))
+        with patch.object(h, "_classify", return_value=danger.classify("Bash", {"command": "git push"})):
+            self.assertFalse(approval_jev.low_risk_pass(h, HRW, "Read", {"file_path": "/tmp/x/a.py"}))
+        self.assertEqual([e for e, _ in h.st.logs].count("perm_low"), len(LOW) + 2)
 
     def test_only_where_the_noise_came_from(self):
         h = _Host(HRW)
-        cmd = {"command": "ls -la"}
-        self.assertFalse(approval_jev.low_risk_pass(h, {**HRW, "high_risk_warnings": False}, "Bash", cmd))
-        self.assertFalse(approval_jev.low_risk_pass(h, {**HRW, "session_mode": "shared"}, "Bash", cmd))
-        self.assertFalse(approval_jev.low_risk_pass(h, HRW, "Bash", cmd, batch=False))           # stdin / network request
+        cmd = {"file_path": "/tmp/x/a.py"}
+        self.assertFalse(approval_jev.low_risk_pass(h, {**HRW, "high_risk_warnings": False}, "Read", cmd))
+        self.assertFalse(approval_jev.low_risk_pass(h, {**HRW, "session_mode": "shared"}, "Read", cmd))
+        self.assertFalse(approval_jev.low_risk_pass(h, HRW, "Read", cmd, batch=False))           # stdin / network request
         for tool in ("ExternalDirectory", "CodexPermissions", "DoomLoop", "task"):
             self.assertFalse(approval_jev.low_risk_pass(h, HRW, tool, {"path": "/etc"}), tool)
-        self.assertFalse(approval_jev.low_risk_pass(_Host(HRW, goal_live=True), HRW, "Bash", cmd))  # the goal path counts it
+        self.assertFalse(approval_jev.low_risk_pass(_Host(HRW, goal_live=True), HRW, "Read", cmd))  # the goal path counts it
         stopped = _Host(HRW)
         stopped.stopped = lambda: True
-        self.assertFalse(approval_jev.low_risk_pass(stopped, HRW, "Bash", cmd))
+        self.assertFalse(approval_jev.low_risk_pass(stopped, HRW, "Read", cmd))
         group = _Host(HRW)
         group.agent = type("A", (), {"cur_send": type("S", (), {"source": {"kind": "telegram_group"}})()})()
-        self.assertFalse(approval_jev.low_risk_pass(group, HRW, "Bash", cmd))
+        self.assertFalse(approval_jev.low_risk_pass(group, HRW, "Read", cmd))
 
     def test_opencode_adapter_no_card_for_low_risk(self):
         from agentj.agent_opencode import OpenCodeAgent
@@ -143,8 +147,8 @@ class LowRiskPass(unittest.TestCase):
                                      "metadata": {"command": "rm -rf build"}}, loop.create_future())
             return h, sent
         h, sent = asyncio.run(run())
-        self.assertEqual(sent[0], ("/permission/per1/reply", {"reply": "once"}))
-        self.assertEqual([x[1]["command"] for x in h.asked], ["rm -rf build"])         # only the danger reached the card
+        self.assertEqual(sent[0][1]["reply"], "once")
+        self.assertEqual([x[1]["command"] for x in h.asked], ["rm -rf build"])  # only dangerous content reaches the card
         self.assertEqual(sent[1][1]["reply"], "reject")
 
     def test_codex_adapter_no_card_for_low_risk(self):

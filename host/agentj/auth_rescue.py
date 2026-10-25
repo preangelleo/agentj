@@ -1097,7 +1097,7 @@ class Rescue:
         (bg(go(), "auth_view") if bg else asyncio.ensure_future(go()))
 
     # ---- start (passkey) and the flows
-    async def start(self, kind: str, route: str) -> dict:
+    async def start(self, kind: str, route: str, *, remote=None) -> dict:
         if kind not in KINDS:
             return {"ok": False, "why": "unsupported"}
         allowed = {"claude": ("setup_token", "paste", "login"), "codex": ("device",), "opencode": ("provider_key",),
@@ -1107,12 +1107,12 @@ class Rescue:
         if self.flow and self.flow.get("stage") not in ("done", "failed"):
             return {"ok": False, "why": "busy"}
         if kind == "opencode":
-            return await self._opencode()
+            return await self._opencode(remote=remote)
         ok = await self._confirm(kind)
         if not ok:
             return {"ok": False, "why": "passkey"}
         self.cancel.clear()
-        self.flow = {"kind": kind, "route": route, "stage": "starting"}
+        self.flow = {"kind": kind, "route": route, "stage": "starting", "_remote": remote}
         self.broadcast()
         try:
             self.host.st.log("auth_rescue_start", agent=kind, status=route)
@@ -1253,9 +1253,19 @@ class Rescue:
                           sink)
         card["auth"] = {k: self.flow.get(k, "") for k in ("kind", "url", "code", "expires_at", "round", "rounds")}
         try:
-            return await self.host.elevate.request(card)
+            return await self._request_secret(card)
         finally:
             await asyncio.to_thread(flow.close)
+
+    async def _request_secret(self, card):
+        # A confirmed settings flow is still tied to the live remote that started it.
+        remote = (self.flow or {}).get('_remote')
+        if remote is None:
+            return await self.host.elevate.request(card)
+        from . import provenance
+        card['only'] = remote.device
+        with provenance.paired_request(lambda: self.host._paired_live(remote)):
+            return await self.host.elevate.request(card)
 
     async def _claude_paste(self):
         self.flow.update(stage="paste")
@@ -1271,7 +1281,7 @@ class Rescue:
                           if self.lang() == "zh" else
                           "The long-lived token from `claude setup-token` on any computer with Claude Code (sk-ant-oat01-…); "
                           "live-checked, then stored in the Agent J host's service env file (0600)", sink)
-        res = await self.host.elevate.request(card)
+        res = await self._request_secret(card)
         if res.get("result") != "saved":
             return self._end("claude", "failed", outcome.get("why") or "cancelled")
         self.flow["saved"] = True
@@ -1322,7 +1332,7 @@ class Rescue:
             for i in range(len(tok)):
                 tok[i] = 0
 
-    async def _opencode(self) -> dict:
+    async def _opencode(self, *, remote=None) -> dict:
         """OpenCode logs in per provider: the existing provider key card (P33 provider_key) is the rescue."""
         from . import provider_runtime
         ps = [k for k in provider_runtime.configured() if provider_runtime.key_name(k)]
@@ -1332,7 +1342,7 @@ class Rescue:
         if not ok:
             return {"ok": False, "why": "passkey"}
         bg = getattr(self.host, "_bg", None)
-        coro = provider_runtime.request_key(self.host, ps[0])
+        coro = provider_runtime.request_key(self.host, ps[0], session=remote)
         (bg(coro, "auth_rescue") if bg else asyncio.ensure_future(coro))
         return {"ok": True, "provider": ps[0]}
 

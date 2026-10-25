@@ -126,7 +126,7 @@ def probe(provider):
     return coding_usage.parse(plan[0], data) if plan else windows(data)
 
 
-async def request_key(host, provider):
+async def request_key(host, provider, *, session=None, on_card=None):
     from . import elevate
     name = key_name(provider)
     if not name:
@@ -156,7 +156,12 @@ async def request_key(host, provider):
             'dest': 'env:'+env_path()+'#'+name, 'verify_url': url or '', 'verify_header': (fixed[1] if fixed else HEADER[api]) if url else ''},
             host.st.root)
         card["verify_before_write"] = bool(url)
-        return await host.elevate.request(card)
+        if session is not None:
+            from . import provenance
+            card['only'] = session.device
+            with provenance.paired_request(lambda: host._paired_live(session)):
+                return await host.elevate.request(card, **({"on_card": on_card} if on_card else {}))
+        return await host.elevate.request(card, **({"on_card": on_card} if on_card else {}))
     finally:
         host._provider_cards.discard(provider)
 

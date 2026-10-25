@@ -3259,7 +3259,7 @@ export default {
   "p409.source": "Jev 密钥来源",
   "p409.current": "当前使用：{mode}",
   "p409.choose": "待选择",
-  "p409.note": "Jev 会审核客服和好友消息、复查脱敏内容，也会帮审批识别拿不准的命令。打开可增加一道防护，但会有误判和延迟。关掉后消息不经过 Jev，效率更高、误拦更少，安全性会弱一点。本地凭据过滤、危险操作审批仍然保留。已有 OpenRouter key 就能用，也可单独填写 TypeSafe 官方 key；密钥请在「模型和 API Key」的密钥卡填写。",
+  "p409.note": "Jev 会审核客服和好友消息、复查脱敏内容，可能误判或增加延迟。关闭后消息不经过 Jev，本地凭据过滤和危险操作审批仍然保留。程序看不清的命令每次都需通行密钥确认，全放行或目标授权也不能跳过。已有 OpenRouter key 就能用，也可填写 TypeSafe 官方 key；密钥请在「模型和 API Key」的密钥卡填写。",
   "p409.offTitle": "关闭 Jev 安全审核？",
   "p409.onTitle": "启用 Jev 安全审核",
   "p409.offYes": "跳过，我知道安全性会弱一点",
@@ -3916,7 +3916,19 @@ export default {
   "p508.conflict": "与探测不一致",
   "p508.account": "账号 / 订阅",
   "p508.processes": "存活进程 {n} 个",
-  "p508.state_unknown": "状态未知"
+  "p508.state_unknown": "状态未知",
+  "p515.running": "已运行 {d}",
+  "p515.conflict": "自报与实际不一致：自报 {x}",
+  "p515.account": "{h} 账号 {n}",
+  "p515.effort.minimal": "极低档",
+  "p515.effort.low": "低档",
+  "p515.effort.medium": "中档",
+  "p515.effort.high": "高档",
+  "p515.effort.xhigh": "超高档",
+  "p515.effort.max": "最高档",
+  "p527.fill": "填写 {provider} API Key",
+  "p527.jev.typesafe": "Jev 安全审核 · TypeSafe 官方 API Key",
+  "p527.jev.openrouter": "Jev 安全审核 · OpenRouter API Key"
  },
  "en": {
   "fr.ask.failed": "Your confirmation did not take effect. Please try again.",
@@ -7177,7 +7189,7 @@ export default {
   "p409.source": "Jev key source",
   "p409.current": "Currently using: {mode}",
   "p409.choose": "Choose a route",
-  "p409.note": "Jev reviews bot and friend messages, rechecks redacted content and helps approvals assess unclear commands. It adds protection but can misjudge and add delay. Turning it off removes Jev review, improving speed and avoiding its false positives with weaker safety. Local credential filters and dangerous-action approvals remain. Use an existing OpenRouter key or a separate official TypeSafe key. Enter keys through the secret card in Models & API keys.",
+  "p409.note": "Jev reviews bot and friend messages and rechecks redacted content. It can misjudge and add delay. Turning it off removes model review; local credential filters and dangerous-action approvals remain. Opaque commands require a fresh passkey confirmation each time, including under Full access or goal grants. Use an existing OpenRouter key or an official TypeSafe key; enter it through the secret card in Models & API keys.",
   "p409.offTitle": "Turn off Jev safety review?",
   "p409.onTitle": "Enable Jev safety review",
   "p409.offYes": "Skip — I understand safety is weaker",
@@ -7834,6 +7846,18 @@ export default {
   "p508.conflict": "Conflicts with detection",
   "p508.account": "Account / plan",
   "p508.processes": "Live processes: {n}",
-  "p508.state_unknown": "Status unknown"
+  "p508.state_unknown": "Status unknown",
+  "p515.running": "Running for {d}",
+  "p515.conflict": "Reported details differ: reported {x}",
+  "p515.account": "{h} account {n}",
+  "p515.effort.minimal": "Minimal",
+  "p515.effort.low": "Low",
+  "p515.effort.medium": "Medium",
+  "p515.effort.high": "High",
+  "p515.effort.xhigh": "Extra high",
+  "p515.effort.max": "Maximum",
+  "p527.fill": "Enter {provider} API key",
+  "p527.jev.typesafe": "Jev safety review · Official TypeSafe API key",
+  "p527.jev.openrouter": "Jev safety review · OpenRouter API key"
  }
 };

@@ -1,0 +1,38 @@
+{
+  "zh-light": {
+    "sha256": "4a8fcec410c54ecd84c0588deaa8852ddd3bb410f3bc7431c050c61ca71223da",
+    "approval": "approved",
+    "approved_at": "2026-10-25",
+    "approved_by": "Leo",
+    "approval_via": "贾维斯 10-25 16:3x RESUME",
+    "approval_quote": "卡名自动链接批准",
+    "approved_outbox_sha256": "13cf27255797d6976def912047c2cd8ef10775bba3139218e54345c6f6c48fe0"
+  },
+  "zh-dark": {
+    "sha256": "9a857223e7299d59ab7342def486dbfafb2a4422bd4d7ec1274344b3ef8c4ed8",
+    "approval": "approved",
+    "approved_at": "2026-10-25",
+    "approved_by": "Leo",
+    "approval_via": "贾维斯 10-25 16:3x RESUME",
+    "approval_quote": "卡名自动链接批准",
+    "approved_outbox_sha256": "aedfa9221efd70934e1b445b0d38e37b1203c2aa1b2545626e554b51ae737033"
+  },
+  "en-light": {
+    "sha256": "f4441cf3aa5e300216bcbbd86350d4bae1dadfb0c033032a1d7fa520d2682b3a",
+    "approval": "approved",
+    "approved_at": "2026-10-25",
+    "approved_by": "Leo",
+    "approval_via": "贾维斯 10-25 16:3x RESUME",
+    "approval_quote": "卡名自动链接批准",
+    "approved_outbox_sha256": "644b750ac8afae7e34333a153d2440136634f86b84bcd7f41c118c1e1d404081"
+  },
+  "code-excluded": {
+    "sha256": "1ac4399c3e26502996883b8ba1bbe946c61da21ab7811b6f024439f770436012",
+    "approval": "approved",
+    "approved_at": "2026-10-25",
+    "approved_by": "Leo",
+    "approval_via": "贾维斯 10-25 16:3x RESUME",
+    "approval_quote": "卡名自动链接批准",
+    "approved_outbox_sha256": "e89eb5e28a5c76c4d61a840cac99b2075252526b19758c27c4bc7feeda6a8857"
+  }
+}

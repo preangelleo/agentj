@@ -3705,7 +3705,7 @@
   "p409.source": "Jev key source",
   "p409.current": "Currently using: {mode}",
   "p409.choose": "Choose a route",
-  "p409.note": "Jev reviews bot and friend messages, rechecks redacted content and helps approvals assess unclear commands. It adds protection but can misjudge and add delay. Turning it off removes Jev review, improving speed and avoiding its false positives with weaker safety. Local credential filters and dangerous-action approvals remain. Use an existing OpenRouter key or a separate official TypeSafe key. Enter keys through the secret card in Models & API keys.",
+  "p409.note": "Jev reviews bot and friend messages and rechecks redacted content. It can misjudge and add delay. Turning it off removes model review; local credential filters and dangerous-action approvals remain. Opaque commands require a fresh passkey confirmation each time, including under Full access or goal grants. Use an existing OpenRouter key or an official TypeSafe key; enter it through the secret card in Models & API keys.",
   "p409.offTitle": "Turn off Jev safety review?",
   "p409.onTitle": "Enable Jev safety review",
   "p409.offYes": "Skip — I understand safety is weaker",
@@ -4398,5 +4398,17 @@
   "p508.conflict": "Conflicts with detection",
   "p508.account": "Account / plan",
   "p508.processes": "Live processes: {n}",
-  "p508.state_unknown": "Status unknown"
+  "p508.state_unknown": "Status unknown",
+  "p515.running": "Running for {d}",
+  "p515.conflict": "Reported details differ: reported {x}",
+  "p515.account": "{h} account {n}",
+  "p515.effort.minimal": "Minimal",
+  "p515.effort.low": "Low",
+  "p515.effort.medium": "Medium",
+  "p515.effort.high": "High",
+  "p515.effort.xhigh": "Extra high",
+  "p515.effort.max": "Maximum",
+  "p527.fill": "Enter {provider} API key",
+  "p527.jev.typesafe": "Jev safety review · Official TypeSafe API key",
+  "p527.jev.openrouter": "Jev safety review · OpenRouter API key"
 }

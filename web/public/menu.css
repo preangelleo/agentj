@@ -806,3 +806,6 @@ html:root :is(#quoteDlgDel,#quoteDlgJump,#ctm-e-del,#ctm-e-save,#phone-env-copy,
 }
 html:root :is(#quoteDlgDel,#quoteDlgJump,#ctm-e-del,#ctm-e-save,#phone-env-copy,#rv-refresh,#set-refresh,#mail-add,#rm-add,#rm-copy) > svg,
 #five-page .jc-body[data-card="notes"] .jc-actions > [data-act="add"] > svg {width:21px;height:21px;flex:none}
+
+/* P527: standalone rescue cards need the same breathing room as list cards. */
+#settings #layout-diag-card{margin-top:var(--ui-space-content)}

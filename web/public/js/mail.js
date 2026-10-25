@@ -26,7 +26,7 @@ async function call(obj, ms = 20000) {
   const m = await ask1(obj, 'mail_res', ms);
   if (m.t !== 'mail_res') { say(m.t === 'timeout' ? t('mail.timeout') : t('set.offline')); return null; }
   if (m.view && typeof m.view === 'object') view = m.view;
-  render();
+  render(!!m.ok);
   return m;
 }
 
@@ -41,9 +41,10 @@ function renderPresetNote() {
   el('mail-custom').open = !!(p && p.id === 'custom') || el('mail-custom').open;
 }
 
-function render() {
+function render(form = true) {
   if (!view) return;
   const c = cfg();
+  if (form) {
   const sel = el('mail-preset');
   if (!sel.options.length) {
     for (const p of view.presets || []) { const o = document.createElement('option'); o.value = p.id; o.textContent = p.name; sel.append(o); }
@@ -59,6 +60,7 @@ function render() {
   el('mail-auth').value = c.auth || 'standard';
   el('mail-auth-off').hidden = c.auth !== 'off';
   renderPresetNote();
+  }
   el('mail-key').textContent = t(view.has_password ? 'mail.passwordSet' : 'mail.key');
   // status
   const parts = [];
@@ -112,11 +114,11 @@ function render() {
 }
 
 async function save(patch, note) {
-  busy = true; render(); say(t('set.saving'));
+  busy = true; render(false); say(t('set.saving'));
   const m = await call({ t: 'mail_set', cfg: patch });
   busy = false;
   if (m) say(m.ok ? (note || t('set.saved')) : t('mail.saveFail', { why: why(m.why) }));
-  render();
+  render(!!(m && m.ok));
   return !!(m && m.ok);
 }
 
@@ -170,11 +172,14 @@ export function configure() {
       if (!servers) return;
       Object.assign(f, servers);
     }
-    if (!await save(f)) return;
-    busy = true; render(); say(t('mail.keyOpen'));
+    const c = cfg();
+    const changed = Object.entries(f).some(([k, v]) => JSON.stringify(v) !== JSON.stringify(c[k]))
+      || (f.username || f.address) !== (c.username || c.address);
+    if (changed && !await save(f)) return;
+    busy = true; render(false); say(t('mail.keyOpen'));
     const m = await call({ t: 'mail_key' }, 660000);
     busy = false; render();
-    if (m?.ok) notify({ kind: 'success', shape: 'circle', text: t('mail.passwordSaved'), ms: 2400 });   // P318: the centred ✓ (was .mail-saved)
+    if (m?.ok && m.verify === 'ok') notify({ kind: 'success', shape: 'circle', text: t('mail.passwordSaved'), ms: 2400 });
     if (m) say(m.ok ? t(m.verify === 'fail' ? 'mail.testFail' : 'mail.testOk', {why: why(m.detail)}) : t('mail.keyFail', {why: why(m.why)}));
   });
   el('mail-test').addEventListener('click', async () => {

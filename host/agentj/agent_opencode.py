@@ -733,6 +733,8 @@ class OpenCodeAgent(Agent):
             env = fence.auxiliary_environment(env, self.kind, extra_keep=("AGENTJ_PERM_SOCK", "AGENTJ_PERM_CLAIM", "AGENTJ_PERM_WAIT", "OPENCODE_SERVER_PASSWORD", "OPENCODE_SERVER_USERNAME", "OPENCODE_CONFIG_CONTENT"), plan_keys=True)   # P348
         if self.cfg.get("fence", True):
             env = fence.launch_environment(env, self.cfg.get("docker", False), self.kind)
+        from .static_shell import interpreter_env
+        self.approval_env = interpreter_env(env)
         try:
             proc = await asyncio.create_subprocess_exec(*resource_policy.work_argv(argv), cwd=self.cfg["dir"], env=env,
                                                         stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.PIPE,

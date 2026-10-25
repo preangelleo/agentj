@@ -562,19 +562,41 @@ async def _set(host, s, r, obj: dict) -> None:
         host._keys_cards = set()
     if name in host._keys_cards:                       # one open card per name
         return await host.send_app(s, {"t": "keys_res", "r": r, "ok": False, "op": "set", "name": name, "why": "busy"})
+    host._keys_cards.add(name)
     try:
         card = await asyncio.to_thread(build_card, host, name)
-    except elevate.Refused as e:
-        host.st.log("keys_refused", device=s.device, reason=e.why)
-        audit(host, "set", name, "refused", s.device, reason=e.why)
+    except asyncio.CancelledError:
+        host._keys_cards.discard(name)
+        raise
+    except (elevate.Refused, OSError) as e:
+        host._keys_cards.discard(name)
+        reason = getattr(e, "why", "io")
+        host.st.log("keys_refused", device=s.device, reason=reason)
+        audit(host, "set", name, "refused", s.device, reason=reason)
         return await host.send_app(s, {"t": "keys_res", "r": r, "ok": False, "op": "set", "name": name, "why": "shape"})
-    host._keys_cards.add(name)
-    audit(host, "set", name, "card", s.device)
-    await host.send_app(s, {"t": "keys_res", "r": r, "ok": True, "op": "set", "name": name})
-
+    # The receive-task owner context intentionally does not propagate to background tasks.
+    # Re-establish it only for this admitted, still-live paired remote; never for Agent requests.
     async def run():
+        from . import provenance
+        replied = False
+        async def opened(c):
+            nonlocal replied
+            if not host._paired_live(s):
+                return
+            audit(host, "set", name, "card", s.device)
+            msg = host.elevate.card_msg(c, s)
+            replied = await host.send_app(s, {"t": "keys_res", "r": r, "ok": True,
+                                             "op": "set", "name": name, "card": msg})
         try:
-            await host.elevate.request(card)
+            with provenance.paired_request(lambda: host._paired_live(s)):
+                card["only"] = s.device
+                result = await host.elevate.request(card, on_card=opened)
+            if not replied:
+                await host.send_app(s, {"t": "keys_res", "r": r, "ok": False, "op": "set",
+                                        "name": name, "why": result.get("result", "failed")})
+        except (OSError, ValueError):
+            if not replied:
+                await host.send_app(s, {"t": "keys_res", "r": r, "ok": False, "op": "set", "name": name, "why": "failed"})
         finally:
             host._keys_cards.discard(name)
     host._bg(run(), "keys_set")

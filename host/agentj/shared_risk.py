@@ -7,7 +7,7 @@ request and rechecked against device revocation and the emergency stop.
 import asyncio
 import hashlib
 import json
-from . import danger
+from . import danger, policy_registry
 
 class RiskGuard:
     def __init__(self, adapter):
@@ -27,6 +27,25 @@ class RiskGuard:
 
     async def check(self, tool, inp):
         a=self.adapter
+        requirement=policy_registry.main_requirement(tool, inp)
+        if requirement == 'deny':
+            return False
+        if requirement in ('hold','uv'):
+            # Denials may suppress repeat requests; approvals never become a
+            # broad category grant for a registry-mandated card.
+            verdict=danger.classify_shared(tool,inp,a.cfg.get('danger_extra'),a.cfg.get('approvals','standard'),a.cfg.get('dir'))
+            keys=danger.shared_keys(verdict,a.cfg)
+            async with self.lock:
+                if set(keys) & self.denied:
+                    return False
+                epoch=self.epoch
+                answer=await a.host.ask(tool,inp,batch=False,require_passkey=requirement == 'uv')
+                if answer.get('behavior') != 'allow':
+                    if epoch == self.epoch:
+                        self.denied.update(keys)
+                    return False
+                grant=answer.get('risk_grant')
+                return not a.host.stopped() and not (grant and a.host.st.sign_key(grant['device']) != grant['sign_pub'])
         verdict=danger.classify_shared(tool,inp,a.cfg.get('danger_extra'),a.cfg.get('approvals','standard'),a.cfg.get('dir'))
         if not verdict.danger:
             return True

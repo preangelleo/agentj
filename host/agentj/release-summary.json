@@ -1,5 +1,5 @@
 {
-  "version": "0.25.9a1",
-  "zh": "扣款、订阅、席位和吊销逐次确认；付费查询与报告锁定内容后审批；完整脱敏卡片与独立会话安全检查。",
-  "en": "Per-action account confirmation, frozen paid queries and reports, complete redacted approval cards, and independent-session safety checks."
+  "version": "0.25.10a1",
+  "zh": "卡名自动链接、遥控器数量和在办事项新样式；专用浏览器单实例、多席位后台；共同动作策略与不透明命令逐次验证；旧升级器支持 --upgrade-only 修复。",
+  "en": "Card links, remote counts and clearer tasks; one browser per seat; shared action policy with fresh opaque-command approval; --upgrade-only repair."
 }

@@ -12,6 +12,7 @@ import * as fsed from './fsedit.js';   // P412 (#174): the full-screen editor
 import { bindReaderSwipe } from './reader-swipe.js';
 import { DOUBLE_MS as RD_DTAP_MS, TAP_MS as RD_TAP_MS, TAP_PX as RD_TAP_PX, PAIR_PX as RD_PAIR_PX } from './file-gestures.js';
 import { linkify, cardKeys } from './five-pages.js';
+import {onChange as onCardsChange, refresh as refreshCards} from './jcards.js';
 import { capAbove, sheetCeil, wireCeil } from './fit.js';
 import { registerLayer, activeLayer } from './layers.js';
 import { applyViewport, watchViewport } from './viewport.js';
@@ -69,7 +70,7 @@ let lastSync = null;     // phone-local time of the last frame we actually recei
 let input = null, mainEl = null, deck = null, tray = null, menu = null, menuList = null, sug = null, mic = null;
 
 // ---- the Agent's words (Markdown, DOM nodes only) -------------------------------------
-let wordsSrc = null;
+let wordsSrc = null, cardReplyKey = null;
 let historySync = true;   // a refreshed page must fetch the current head before claiming delivery is still pending
 let historyGeneration = 0;
 // P135: an open page the computer stays quiet about (idle / stopped / down for NO_ECHO_MS) says so and offers a refresh;
@@ -117,6 +118,9 @@ function renderWords(text, pending = false, label = "", waitLine = false, sys = 
   const robot = pending && !tx ? !!label || !NOT_WAITING.includes(wait) : !!waitLine && !!tx;
   const key = (dataOnly ? "\u0000data:" : "") + (sys ? "\u0000sys:" : "") + (pending && !tx ? "\u0000pending:" + (label || wait) + (!label && wait === "r.replyWorking" && ownerAddr ? "|" + ownerAddr : "") : tx)
     + (robot ? "\u0000robot:" + themeGen : "");
+  // P519: refresh once for each settled Agent reply, so host-side card installs/switches need no menu visit.
+  const cardKey = shownKey + "\u0000" + tx;
+  if (tx && !pending && !sys && !dataOnly && cardReplyKey !== cardKey){ cardReplyKey = cardKey; refreshCards(); }
   if (key === wordsSrc) return;
   // P193 (B10): a streaming reply grows chunk by chunk and every redraw re-parses the whole Markdown (O(n²) over a long
   // answer). While the open page only grows, redraw at most every STREAM_MS; the trailing timer draws the latest text.
@@ -143,7 +147,7 @@ function fill(w, tx, plain = false, sys = false){
     try{
       const detail = tx.match(/^([\s\S]*)\n\n(\u8be6\u60c5|Details):\n```text\n([\s\S]*)\n```$/);
       tx = detail ? detail[1] : tx;
-      w.replaceChildren(RelayMD.toDOM(RelayMD.parse(tx, {math: !sys}), document)); upgradeWords(w); linkify(w);
+      w.replaceChildren(RelayMD.toDOM(RelayMD.parse(tx, {math: !sys}), document)); upgradeWords(w); linkify(w, false, !sys);
       if (detail){
         const d = document.createElement("details"), label = document.createElement("summary"), raw = document.createElement("pre");
         label.textContent = detail[2]; raw.textContent = detail[3]; d.append(label, copyable(raw, {click: false})); w.appendChild(d);
@@ -175,6 +179,7 @@ function paintThinking(progress){
   box.replaceChildren(waitRobot());
   if (progress){ const s = document.createElement("span"); s.textContent = progress; box.appendChild(s); }
 }
+onCardsChange(() => { wordsSrc = null; showPage(); if(rdAt){const p=currentPage();if(p){fill(el("rdWords"),rdAt.text,p.source?.k === "friend_report",sysPage(p));renderReaderMedia(el("rdWords"),p);}} });
 onTheme(() => { themeGen++; wordsSrc = null; thinkingSrc = null; showPage(); });
 
 // ---- the reading area scrolls; the page does not ---------------------------------

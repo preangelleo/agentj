@@ -1,18 +1,9 @@
-"""P157 layer 2 of the approval card: Jev may only make FEWER cards, never vouch for a clear danger.
+"""Jev advisory command assessment and redacted request construction.
 
-Layer 1 is danger.py — code, deterministic. A clear hit of the five categories (spend / delete / send / credentials / price:
-git push, a deploy, a payment API, an S3 delete, a write to a credential path …) is a card, always; Jev is never asked
-(a command's text can be shaped by injected content, so a model is never the last gate). What layer 1 can only call
-"can't tell" — `opaque.dynamic_name` (`$PY -m tests`), `opaque.too_deep`, `too_long` — and nothing else, is "gray": with the
-owner's Jev available, Jev is asked one calibrated question — given the owner's latest words, what the Agent said it is
-doing this turn, and this command: is the command consistent with that task and outside the five categories? p ≥
-`approval.jev_threshold` (default 0.70, 0.50–0.95 in steps of 0.05) → allowed without a card, logged as `jev` with p and a
-one-line reason; anything else → the card, as before. Encoded / piped-into-a-shell / ANSI forms (`curl … | sh`,
-`base64 -d | bash`, `$'\\x72m'`) are not gray: they stay cards.
-
-Fail closed: no OPENROUTER_API_KEY, a timeout (TIMEOUT_S), an HTTP error or an odd answer → "unavailable" → the card.
-What goes to Jev passes privacy.redact first (keys, tokens, home paths, host / user names); the key itself is only an
-Authorization header to ENDPOINT, never logged. Stdlib only.
+An allow result is a model opinion, never an authorization. Host.ask requires
+per-request WebAuthn UV for opaque effects before Full/goal/batch shortcuts;
+it does not call this model to lower that floor. Other Jev safety/privacy
+review uses remain independent. No credentials or raw owner text are logged.
 """
 from __future__ import annotations
 
@@ -54,9 +45,9 @@ class Result:
 
 
 def gray(v) -> bool:
-    """A verdict layer 2 may look at: its only rules are "can't tell" ones, nothing decoded behind them."""
+    """Any opaque effect sets the UV floor, including mixed/partly decoded commands."""
     rules = set(getattr(v, "rules", []) or [])
-    return bool(rules) and rules <= SOFT_RULES and not getattr(v, "seen", "")
+    return any(r.startswith("opaque.") or r == "too_long" for r in rules)
 
 
 def threshold(prefs) -> float:
@@ -200,7 +191,7 @@ ALWAYS_ASK = frozenset({"ExternalDirectory", "DoomLoop", "task", "CodexPermissio
 
 def low_risk_pass(host, cfg, tool, tool_input, batch: bool = True) -> bool:
     """True = run it without a card (logged `perm_low`). Only for an independent session with high_risk_warnings on, a
-    batchable request of an ordinary tool, nothing stopped, the owner's own turn, no live goal (the goal path already lets
+    batchable request of an ordinary tool whose shared registry row allows automation, nothing stopped, the owner's own turn, no live goal (the goal path already lets
     low risk through and counts it), and layer 1 finds none of the five categories and nothing it cannot read.
     cfg = the asking adapter's own config (a scheduled task's adapter is not host.agent)."""
     try:
@@ -208,6 +199,11 @@ def low_risk_pass(host, cfg, tool, tool_input, batch: bool = True) -> bool:
         if (not batch or not cfg.get("high_risk_warnings") or cfg.get("session_mode") == "shared"
                 or not isinstance(tool, str) or tool in ALWAYS_ASK or not isinstance(tool_input, dict)):
             return False
+        from .policy_registry import main_requirement
+        policy_env = getattr(getattr(host, "agent", None), "approval_env", None)
+        required = (main_requirement(tool, tool_input, env=policy_env) if policy_env else main_requirement(tool, tool_input))
+        if required != "allow":
+            return False  # A low-risk classifier may tighten, never bypass the shared floor.
         stopped = getattr(host, "stopped", None)
         if callable(stopped) and stopped():
             return False

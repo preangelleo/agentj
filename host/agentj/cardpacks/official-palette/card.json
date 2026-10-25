@@ -19,5 +19,10 @@
   "data": {
     "file": "palette.md"
   },
-  "actions": []
+  "actions": [],
+  "aliases": [
+    "调色板卡",
+    "Palette card",
+    "配色板卡"
+  ]
 }

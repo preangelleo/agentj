@@ -141,6 +141,7 @@ class LoginCards:
 
     async def _host_login(self, site: str, t: dict, rec: dict, rt: dict) -> dict:
         url = t.get("login_url") or rec.get("check_url")
+        rt = await asyncio.to_thread(browser.visible_runtime, self.st) or rt
         if rt.get("headless"):
             return {"result": "host_login_unavailable", "site": site,
                     "hint": "这台Agent J 主机没有屏幕：请在有屏幕的Agent J 主机上登录这个网站，或选支持扫码的网站 / no screen here"}

@@ -19,5 +19,10 @@
   "data": {
     "file": "files.md"
   },
-  "actions": []
+  "actions": [],
+  "aliases": [
+    "文件卡",
+    "Files card",
+    "文件管理卡"
+  ]
 }

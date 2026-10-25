@@ -45,7 +45,7 @@ from . import cmdrun, compose, history, hsearch, humane, inbox, menu, uploads, p
 from . import receipts as receipts_mod  # P313: say receipts on disk — a restart never runs a phone message twice
 from . import meeting  # P182: /会议总结 → minutes, recipients only from the owner's words
 from . import diskq  # P142: fsync'ed state writes off the loop (one ordered writer)
-from . import approval_jev  # P157: layer 2 of the approval card (Jev may only make fewer cards)
+from . import approval_jev  # opaque verdict metadata; model opinions never authorize effects
 from . import goal as goal_mod  # P158: /goal — one signed grant, reversible steps pass after a 10 s card
 from . import approval_level  # P336: safe / standard / full, goal without the opening card, cards while no remote is online
 from . import bg  # P192 (B18): swallowed errors on connection / approval paths leave a (rate-limited) line
@@ -1088,7 +1088,8 @@ class Host:
                 digest = controls.object_digest(action, target)
                 n = self.nonces.issue_mail(s.device,digest)
                 pk = self.st.passkey_of_device(s.device)
-                fields = {"n":n, "target":target, "level":"uv", "summary":action_policy.summary(action,target)}
+                fields = {"n":n, "target":target, "level":"uv",
+                          **action_policy.summary(action, target, lang=self.lang, presentation=True)}
                 if pk:
                     fields.update(fa=pk["id"], fa_ch=wire.b64u(passkey.elevate_challenge(self.channel,s.device,n,action,n,digest)))
                 return await self.send_app(s, {"t":"policy_ready", "r":r, **fields})
@@ -1351,6 +1352,7 @@ class Host:
         await self._bulk(s)
         await self._pk_offer(s)                 # F20: once, right after a pairing (never on a resume)
         await self._rt_issue(s, force=True)     # P122: the renewal ticket for this pairing (§12.1)
+        await self.remotes.changed()           # P525: every open remote recomputes pairing hints/checklist
         self.st.log("pair_approved", cid=s.cid, device=s.device, name=s.name, code_ok=source == "local", source=source)
         self.emit("approved", device=s.device, name=s.name)
         self._bg(self._ready_then_onboard(s), "onboard")   # F28: the first remote ever → the main Agent's welcome there
@@ -1633,7 +1635,6 @@ class Host:
             lang, kind = self.onboarding_lang(), onboarding.kind_of(s.name)
             now = await asyncio.to_thread(onboarding.status, self.st)
             if what == "welcome":           # P194: the owner card (slot 0 of the address book) follows the first welcome
-                await self.send_app(s, {"t": "pair_guide", "kind": kind})  # P447: first success only, no authority
                 self._bg(self._owner_card_after_welcome(), "owner-card")
             if what == "welcome" and self.agent and not self.stopped():
                 self.agent.submit(onboarding.WelcomeSend(onboarding.welcome_prompt(kind, s.name, now, lang)))
@@ -1822,6 +1823,7 @@ class Host:
             return await self.send_app(s, {"t": "pk_reg_res", "ok": False, "why": e.why})
         self.st.log("pk_reg", cid=s.cid, device=s.device, result="ok")
         await self.send_app(s, {"t": "pk_reg_res", "ok": True})
+        await self.remotes.changed()              # P525: passkey row is state, too
         await self.elevate.out.on_ready(s)        # F32: open pickup cards now carry this device's Face ID (`fa`)
 
     def _observe_view(self) -> dict | None:
@@ -2381,6 +2383,8 @@ class Host:
         its frames is acted on and nothing more is sent to it, however slow the relay is to carry the close notices."""
         removed = self.st.remove_device(did)
         n = await self._drop_device(did, "revoked", removed)
+        if removed:
+            await self.remotes.changed()
         return removed, n
 
     async def _drop_device(self, did: str, why: str, removed: bool = True) -> int:
@@ -2645,6 +2649,7 @@ class Host:
             since = 0
         await self.send_app(s, self._status_msg())
         if s.p33: await self.send_app(s, self.preferences_msg(s))
+        if s.p33: await self.remotes.send_state(s)    # P525: repair changes missed while disconnected
         await self.send_app(s, self._estop_msg())
         if s.p33 and self.auth_rescue.needs_dot():       # P258: the red dot reaches a phone that was away
             await self.send_app(s, {"t": "auth_rescue", "view": await asyncio.to_thread(self.auth_rescue.view)})
@@ -2719,8 +2724,9 @@ class Host:
         with contextlib.suppress(Exception):      # P115: a checklist resumed in the last 6 h comes back on reconnect
             from . import first_run
             rec = await asyncio.to_thread(first_run.read, self.st)
-            if first_run.active(rec):
-                await self.send_app(s, {"t": "setup_card", "show": True, **first_run.snapshot(rec)})
+            if rec is not None:
+                fresh = await asyncio.to_thread(first_run.check, self.st, ['desktop', 'phone', 'passkey', 'admin', 'exit'], self.setup_serve())
+                await self.send_app(s, {"t": "setup_card", "show": first_run.active(rec), **fresh})
         # P287: no "log in after a restart" message from here: a host that can send it is already logged in. The phone
         # keeps its own offline line (web/js/offhint.js) from the `plat` / `boot` this ready carried.
 
@@ -3201,8 +3207,14 @@ class Host:
         if kind not in ("mail_set", "mail_test"):
             raise ValueError("unknown mail target")
         from . import mail
+        before = mail.read_config(self.st)
+        if kind == 'mail_set':
+            raw = obj.get('cfg')
+            if not isinstance(raw, dict) or len(json.dumps(raw)) > 8000:
+                raise ValueError('invalid mail settings')
+            action_policy.mail_config(before, raw)  # reject invalid previews before offering UV
         return {"kind":kind, **({"cfg":obj.get("cfg")} if kind == "mail_set" else {}),
-                "before":mail.read_config(self.st)}
+                "before":before}
 
     def _policy_write(self, s, kind, obj):
         try:
@@ -4534,7 +4546,7 @@ class Host:
 
     async def ask(self, tool: str, tool_input: dict, gone: asyncio.Future | None = None, batch: bool = True, risk_scope: bool = False, require_passkey: bool = False, context: dict | None = None,
                   ttl: float | None = None, grant_info: bool = False, origin: str | None = None,
-                  allow_offer: list | None = None) -> dict:
+                  allow_offer: list | None = None, _company_proposal=None) -> dict:
         """batch=False: never offered for (or approved by) a batch grant (a Codex sandbox / network escalation).
         context (P157): {"owner", "plan"} for layer 2 (approval_jev); None = what this host saw of the current turn.
         ttl (P158): this card's own wait (the goal card); grant_info: an allow carries {rid, device, sign_pub}.
@@ -4543,15 +4555,39 @@ class Host:
         from a device then carries `allow_add` = the ticked ones (signed, ⊆ the offer)."""
         if tool == "AskUserQuestion" and self.agent and self.agent.kind == "claude" and isinstance(tool_input, dict):
             return await self._ask_user_question(tool_input, gone)       # §10.7: a question card, not an approval card
+        from . import policy_registry
+        policy_env = getattr(self.agent, "approval_env", None)
+        requirement = (policy_registry.main_requirement(tool, tool_input, env=policy_env) if policy_env
+                       else policy_registry.main_requirement(tool, tool_input))
+        if requirement == "deny":
+            self.st.log("policy_denied", layer="main", reason="unknown_action")
+            return {"behavior": "deny", "message": "未知动作，默认拒绝 / Unknown action denied"}
+        host_card = approval_level.host_card(tool, tool_input, requirement=requirement)
+        if requirement in ("hold", "uv"):
+            batch = False
+        if requirement == "uv":
+            require_passkey = True
         delegated = provenance.delegated_turn(self.agent)
+        if tool == "company.write" and _company_proposal is policy_registry.COMPANY_PROPOSAL:
+            # A registered customer API may propose its own UV card independently
+            # of whatever the main Agent is handling. It never gains owner rank.
+            delegated = True
         if delegated:
             batch = False
         kind = self.agent.kind if self.agent else "?"
         v = self._classify(tool, tool_input)
+        # Opaque effects always require fresh owner verification.
+        opaque = approval_jev.gray(v)
+        require_passkey = require_passkey or opaque
         try:
-            summary = approval_summary(tool, tool_input, v, self.lang, workdir=(self.agent_cfg or {}).get("dir"))
+            summary = (action_policy.summary(tool, tool_input, lang=self.lang, workdir=(self.agent_cfg or {}).get("dir")) if opaque or tool in
+                       ("agentj mail", "agentj mail send", "agentj mail notes", "agentj mail reply", "agentj calendar", "company.write", "agentj data", "agentj report script")
+                       else approval_summary(tool, tool_input, v, self.lang, workdir=(self.agent_cfg or {}).get("dir")))
         except (ValueError, TypeError, RecursionError):
             return {"behavior": "deny", "message": "动作参数无效 / invalid action parameters"}
+        if len(summary.encode()) > 24000:
+            return {"behavior":"deny", "message":("日历内容过长，无法完整确认 / calendar content is too large to review"
+                                                   if tool == "agentj calendar" else "邮件内容过长，无法完整确认 / mail is too large to review")}
         if require_passkey:
             batch = False
         if require_passkey and tool == "SandboxOnce":
@@ -4628,7 +4664,7 @@ class Host:
                 self.st.log("ask_done", id=rid, tool=tool, decision="allow", reason="brief")
                 self.activity("auto", id=rid, tool=tool, summary=summary, by="brief", task=self.task_label)
                 return {"behavior": "allow", "updatedInput": tool_input}
-        g = None if delegated or v.danger or require_passkey else self._grant_for(tool, sc[:2] if sc else None)
+        g = None if delegated or not batch or v.danger or require_passkey else self._grant_for(tool, sc[:2] if sc else None)
         if g is not None:                 # inside a live batch approval: allowed at once, logged, one quiet line on the phone
             g.left -= 1
             approvals.record(self.st, **base, decision="allow", reason="batch", device=g.device, grant=g.rid)
@@ -4643,7 +4679,7 @@ class Host:
                 self._post(self._send_ready, lambda s: self._grant_msg(g))
             return {"behavior": "allow", "updatedInput": tool_input}
         gt, gwhy, gd = None, None, None
-        if not delegated and not require_passkey and self.task_label is None and tool not in goal_mod.SOFT_EXEMPT:
+        if not delegated and requirement not in ("hold", "uv") and not require_passkey and self.task_label is None and tool not in goal_mod.SOFT_EXEMPT:
             gd = self.goals.current()
             if gd is not None:                  # P158: the host sorts the request; the Agent's own words decide nothing
                 # P339: off the event loop — the reversible check may ask git or (read-only) ssh, each bounded to 5 s
@@ -4666,7 +4702,7 @@ class Host:
         if gt == "reversible" and (lv == "safe" or not preferences.get(self.preferences, "approval.goal_auto", True)):
             gt, gwhy = "hold", gwhy             # the owner (enterprise / the safe level) switched the countdown off: a card
         free = None                             # P336: full level / a goal without cards — everything but the red lines
-        if not delegated and not require_passkey and ttl is None and gt != "attack" and not approval_level.host_card(tool) and self._approvers():
+        if not delegated and not require_passkey and ttl is None and gt != "attack" and not host_card and self._approvers():
             if lv == "full":
                 free = "level_full"
             elif gd is not None and approval_level.goal_preauth(self.st, self.preferences):
@@ -4686,37 +4722,13 @@ class Host:
             by = "full" if free == "level_full" else "goal"
             self._post(self._send_ready, lambda s: {"t": "auto", "id": rid, "tool": tool, "summary": line, "by": by})
             return {"behavior": "allow", "updatedInput": tool_input}
-        if gt == "attack":
-            pass                                # P158: a suspected attack never goes to Jev — the red card
-        elif lv == "safe":
-            pass                                # P336: no Jev layer 2 under the safe level — the card
-        elif not delegated and not require_passkey and not approval_level.host_card(tool) and approval_jev.gray(v) and approval_jev.available(st=self.st, prefs=self.preferences):
-            # P157 layer 2: only a "can't tell" verdict, never a clear danger; any failure falls through to the card
-            ctx = context if context is not None else {"owner": getattr(self, "jev_owner", ""), "plan": getattr(self, "jev_plan", "")}
-            thr = approval_jev.threshold(self.preferences)
-            try:
-                res = await asyncio.wait_for(asyncio.to_thread(approval_jev.judge, tool, tool_input, ctx, threshold=thr, st=self.st, prefs=self.preferences),
-                                             approval_jev.TIMEOUT_S + 0.5)
-            except (asyncio.TimeoutError, Exception):  # noqa: BLE001 — fail closed: the card
-                res = approval_jev.Result("unavailable", reason="timeout")
-            self.st.log("jev_layer2", id=rid, tool=tool, status=res.status, p=None if res.p is None else round(res.p, 2),
-                        threshold=thr)
-            if res.status == "allow" and not self.stopped():
-                approvals.record(self.st, **base, decision="allow", reason="jev")
-                self.st.log("ask_done", id=rid, tool=tool, decision="allow", reason="jev")
-                self.activity("jev", id=rid, tool=tool, summary=summary, why=res.reason, cats=v.cats, task=self.task_label)
-                self.emit("auto", id=rid, tool=tool, grant=None)
-                line = summary.split("\n", 1)[0][:200]
-                self._post(self._send_ready, lambda s: {"t": "auto", "id": rid, "tool": tool, "summary": line, "by": "jev",
-                                                        "why": res.reason})
-                return {"behavior": "allow", "updatedInput": tool_input}
         if not self._approvers():
             approvals.record(self.st, **base, decision="deny", reason="no_device")
             self.st.log("ask_done", id=rid, tool=tool, decision="deny", reason="no_device")
             self.activity("decision", id=rid, tool=tool, result="deny", reason="no_device", cats=v.cats, summary=summary)
             self.emit("ask_done", id=rid, result="deny", reason="no_device")
             return {"behavior": "deny", "message": "没有能批准的已配对手机：默认拒绝。先用 agentj pair 配对一台手机。"}
-        parkable = not delegated and not require_passkey and ttl is None and gt != "reversible" and not approval_level.host_card(tool)
+        parkable = not delegated and not require_passkey and ttl is None and gt != "reversible" and not host_card
         prev = self._parked_find(pkey) if parkable else None
         if prev is not None:                    # P336 (#36): the same step's card is already waiting on the phone
             return await self._parked_rewait(prev, base, gone, pkey)
@@ -4826,9 +4838,10 @@ class Host:
 
     def _classify(self, tool, tool_input):
         cfg = self.agent_cfg or {}
+        env = getattr(self.agent, "approval_env", None)
         if cfg.get("session_mode") == "shared":
-            return danger.classify_shared(tool, tool_input, self.danger_extra, cfg.get("approvals", "standard"), cfg.get("dir"))
-        return danger.classify(tool, tool_input, self.danger_extra)
+            return danger.classify_shared(tool, tool_input, self.danger_extra, cfg.get("approvals", "standard"), cfg.get("dir"), env=env)
+        return danger.classify(tool, tool_input, self.danger_extra, env=env)
 
     def policy_refused(self, tool: str, tool_input: dict, why: str, notice: str) -> None:
         """A request the harness asked that would give it more than the human's own configuration allows (Codex beyond its own
@@ -5018,7 +5031,7 @@ class Host:
             if x.device == did and label:
                 x.name = label
         self.reporter.trigger("online")
-        self._post(self._send_ready, lambda x: self.preferences_msg(x))
+        self._post(self.remotes.changed)
 
     def _estop_msg(self) -> dict:
         by = self.estop.get("by", "")
@@ -6036,7 +6049,8 @@ class Host:
         self.st.log("auth_rescue_req", device=s.device, agent=kind, status=t)
         if t == "auth_start":
             async def go():
-                await answer(await ar.start(kind, route if isinstance(route, str) else ""))
+                with provenance.paired_request(lambda: self._paired_live(s)):
+                    await answer(await ar.start(kind, route if isinstance(route, str) else "", remote=s))
             self._bg(go(), "auth_start")     # the passkey card waits for the owner; never hold the relay reader
             return
         if t == "auth_press":
@@ -6158,13 +6172,7 @@ class Host:
                 return await answer(False, "shape")
             try:
                 old = mail_mod.read_config(self.st)
-                new = {**old, **{k: v for k, v in raw.items() if k != "generation"}}
-                if raw.get("preset") and raw.get("address"):
-                    if "username" not in raw:
-                        new["username"] = ""          # the preset's sign-in name = the (new) address
-                    new = mail_mod.apply_preset(new, raw["preset"], raw["address"])
-                    if raw.get("preset") == "custom":
-                        new.update({k: raw[k] for k in ("imap", "smtp") if k in raw})
+                new = action_policy.mail_config(old, raw)
                 cfg = self.mail.set_config(new)
             except mail_mod.MailError as e:
                 return await answer(False, e.why)
@@ -6172,7 +6180,7 @@ class Host:
             return await answer(True)
         if t == "mail_key":                 # one answer, when the card ends (the page waits up to the card's 10 minutes)
             async def card():
-                res = await self.mail.secret_card()
+                res = await self.mail.secret_card(recover=False)
                 receipt = res.get("receipt") or {}
                 await answer(res.get("result") == "saved", None if res.get("result") == "saved" else
                              (res.get("detail") or res.get("why") or res.get("result")), card=res.get("result"), verify=receipt.get("verify"), detail=receipt.get("detail"))
@@ -6450,9 +6458,19 @@ class Host:
             if t == "provider_key":
                 pid = obj.get("provider")
                 ok = isinstance(pid, str) and bool(provider_runtime.key_name(pid))
-                await self.send_app(s, {"t": "provider_res", "r": r, "ok": ok, **({} if ok else {"why": "unsupported"})})
-                if ok:
-                    self._bg(provider_runtime.request_key(self, pid), "request_key")
+                if not ok:
+                    return await self.send_app(s, {"t": "provider_res", "r": r, "ok": False, "why": "unsupported"})
+                async def provider_card():
+                    replied = False
+                    async def opened(c):
+                        nonlocal replied
+                        if self._paired_live(s):
+                            replied = await self.send_app(s, {"t": "provider_res", "r": r, "ok": True,
+                                                              "card": self.elevate.card_msg(c, s)})
+                    res = await provider_runtime.request_key(self, pid, session=s, on_card=opened)
+                    if not replied:
+                        await self.send_app(s, {"t": "provider_res", "r": r, "ok": False, "why": res.get("result", "failed")})
+                self._bg(provider_card(), "request_key")
                 return
             delivery = getattr(self, "_asr_install_delivery", None)
             if getattr(self, "_asr_installing", False) or (delivery is not None and not delivery.done()):

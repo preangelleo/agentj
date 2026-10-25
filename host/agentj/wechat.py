@@ -19,6 +19,7 @@ from .wechat_protocol import API, BASE, KINDS, MAX_MEDIA, Media, Failure, safe_u
 from .wechat_store import Store
 from .channel_avatar import KINDS as AVATAR_KINDS, handoff, public_reply, choice, choose
 from .channel_policy import channel_forbidden
+from . import policy_registry
 from . import channel_images
 
 from .text import agent_label
@@ -58,6 +59,7 @@ class HandoffSend(Send):
 
 
 class Sessions(peer_session.PeerSessions):
+    policy_layer = "channel"
     def cfg(self):
         main = super().cfg()
         controller = getattr(self.host, 'external_channels', None)
@@ -136,7 +138,7 @@ class Sessions(peer_session.PeerSessions):
             result = await super().turn(friend, group, wrapped)
         # Current executor is tool-less: no model-provided safe/approved boolean
         # can turn an unknown tool event into an allowed action.
-        if any(channel_forbidden(str(t)) for t in result.tools):
+        if channel_forbidden("answer") or any(policy_registry.channel_tool_decision(t) != "allow" for t in result.tools):
             result.decision, result.error = 'ask_owner', 'channel_forbidden'
         return result
 

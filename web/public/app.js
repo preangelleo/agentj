@@ -416,6 +416,7 @@ controls.configure({ faceId: settings.faceIdStep, show, estopChanged: () => { re
 bots.configure({openPanel:controls.openPanel});
 setupcard.configure({ openPanel: controls.openPanel, view: () => view });   // P131: the checklist page + chat banner
 friends.configure({ openPanel: controls.openPanel, leave: () => leavePage(), agentName: () => displayAgentName() });
+api.configureKeyCards({ open: elevate.openSecret, reopen: elevate.reopenSecret });
 elevate.configure({ onSecretSaved: keys.saved, recover: () => cardsync.sync() }); // P392: no circular module dependency
 contacts.configure({ openSettingsMail: () => settings.openMail() });   // P184: no mailbox yet → Settings → 邮件通道
 upgcard.configure({ upgrade: () => api.upgradeNow() });   // P203: 「现在升级」 = this phone's signed /update
@@ -583,6 +584,7 @@ function takeoverNote(key) {
 /** Unpair / re-pair / revoke / a new pairing (§10.14, P33-X02 / X13). In-memory first, in the same tick (no await before it):
  *  uploads, queued and in-flight sends, the tray, the quote, the field and ↑↓ history; then the sealed records and their key. */
 async function forgetLocal() {
+  showPairGuide(null);
   forgetShare();
   relay.forgetLocal();
   friends.forget();

@@ -261,23 +261,36 @@ function putToken(input,text,start){const end=input.selectionStart,sp=/^[ \u00a0
 function insertCard(m,replace){go('chat');const input=$('input');if(replace)putToken(input,m.text,replace.start);else H.insert(m.text+' ');composer?.paint(true);}
 function insertMention(w,replace){go('chat');const input=$('input');if(replace)putToken(input,mentionText(w),replace.start);else H.insert(mentionText(w)+' ');composer?.paint(true);}
 // cardsOnly (the owner's own input card, P360): only @cards and card addresses become links there
-export function linkify(box,cardsOnly=false){const cards=jc.available()?jc.mentions(sysNames()):[];if((!pic||cardsOnly)&&!jc.available())return;const ws=pic&&!cardsOnly?pic.items.filter(w=>w.wdb):[],sk=pic&&!cardsOnly?pic.skills:[];const entries=[];
+export function linkify(box,cardsOnly=false,cardNames=false){const cards=jc.available()?jc.mentions(sysNames()):[];if((!pic||cardsOnly)&&!jc.available())return;const ws=pic&&!cardsOnly?pic.items.filter(w=>w.wdb):[],sk=pic&&!cardsOnly?pic.skills:[];const entries=[];
  for(const s of sk)for(const name of [s.name,...(s.aliases||[])])entries.push({text:'/'+name,type:'skill',fn:()=>skill(s)});
  for(const w of ws){for(const text of [mentionText(w),w.folder,w.company].filter(x=>x&&x.length>=3))entries.push({text,type:'workflow',fn:()=>go('workflows',w.folder)});if(w.ceo)entries.push({text:w.ceo,type:'person',fn:()=>go('workflows',w.folder)});for(const d of w.docs)entries.push({text:d.name,type:'doc',fn:()=>doc(w.folder,d.name)});}
  if(!cardsOnly)entries.push({text:'\u5DE5\u4F5C\u6D41',type:'workflow',fn:()=>go('workflows')},{text:'workflow',type:'workflow',fn:()=>go('workflows')},{text:'workflows',type:'workflow',fn:()=>go('workflows')},{text:t('p244.fivepages4'),type:'memory',fn:()=>go('memory')});
  // P360 @cards: `@名（card/id）` (what a mention writes) shows as `@名`; a bare `@名` opens the one card with that name (two: a chooser)
  const by=new Map();for(const m of cards){entries.push({text:m.text,label:m.label,type:'card',card:m.c.id,fn:()=>openTarget(m.c.id)});const n='@'+jc.nameOf(m.c);if(!by.has(n))by.set(n,[]);by.get(n).push(m);}
  for(const [n,list] of by)entries.push({text:n,type:'card',card:list.length>1?'':list[0].c.id,fn:list.length>1?()=>chooseCard(list):()=>openTarget(list[0].c.id)});
+ // P519: names/aliases are registry data, independent of the phone language. Ambiguity uses the existing chooser.
+ const used=new Set(), named=new Map();
+ if(cardNames&&!cardsOnly)for(const c of jc.namedCards())for(const text of new Set([...Object.values(c.name||{}),...(c.aliases||[])])){
+   if(typeof text!=='string'||!text.trim())continue;const k=text.toLowerCase();
+   if(!named.has(k))named.set(k,{text,ids:[],list:[]});const e=named.get(k);
+   if(!e.ids.includes(c.id)){e.ids.push(c.id);e.list.push(cards.find(m=>m.c.id===c.id)||{c,label:'@'+jc.nameOf(c)+' · '+c.id});}
+ }
+ for(const e of named.values())entries.unshift({...e,auto:true,type:'card',card:e.ids.length===1?e.ids[0]:'',fn:e.ids.length===1?()=>openTarget(e.ids[0]):()=>chooseCard(e.list)});
  entries.sort((a,b)=>b.text.length-a.text.length);
  // a card address card/<id>[#<anchor>] (an Agent's reply): linked when the id is a page or a card this computer has; a `code`
  // span that is exactly one address becomes the link too
  const known=id=>id==='cards'||SYS.includes(id)||jc.cards().some(c=>c.id===id&&c.on),addr=(s,at)=>{if(!jc.available()||!s.startsWith('card/',at)||/[A-Za-z0-9_/.-]/.test(s[at-1]||''))return null;const m=jc.ADDR.exec(s.slice(at));return m&&known(m[1])&&!/[A-Za-z0-9_/-]/.test(s[at+m[0].length]||'')?m:null;};
  const cardLink=m=>{const b=button(m[0],e=>{e.stopPropagation();openTarget(m[1],m[2]);},'fp-link fp-link-card');b.dataset.card=m[1];if(m[2])b.dataset.at=m[2];return b;};
  for(const c of box.querySelectorAll('code')){if(c.closest('pre,a,button'))continue;const s=c.textContent,m=addr(s,0);if(m&&m[0]===s)c.replaceWith(cardLink(m));}
- const walker=document.createTreeWalker(box,NodeFilter.SHOW_TEXT),nodes=[];while(walker.nextNode())if(!walker.currentNode.parentElement.closest('a,button,code,pre,.fp-link'))nodes.push(walker.currentNode);
- for(const n of nodes){const s=n.textContent;let out=document.createDocumentFragment(),at=0,changed=false,inBook=false;while(at<s.length){if(s[at]==='《')inBook=true;let match=!inBook&&entries.find(e=>s.startsWith(e.text,at)&&(!/[A-Za-z0-9_]/.test(e.text[0])||!/[A-Za-z0-9_/.-]/.test(s[at-1]||''))&&(!e.text.startsWith('/')||!at||/[\s，。！？；：、（(【\[]/u.test(s[at-1]))&&(!/[A-Za-z0-9_/-]/.test(e.text.at(-1))||!/[A-Za-z0-9_/-]/.test(s[at+e.text.length]||'')));
- const ad=!match&&addr(s,at);if(ad){out.append(cardLink(ad));at+=ad[0].length;changed=true;continue;}
- if(match){const b=button(match.label||match.text,match.fn,'fp-link fp-link-'+match.type);if(match.card!==undefined){b.dataset.card=match.card;b.addEventListener('click',e=>e.stopPropagation());}out.append(b);at+=match.text.length;changed=true;}else{out.append(document.createTextNode(s[at]));if(s[at]==='》')inBook=false;at++;}}if(changed)n.replaceWith(out);}
+ // Markdown may autolink only the ASCII prefix of a URL. Inspect the complete paragraph (including anchors)
+ // so a Chinese path/query left as a sibling text node is protected as well.
+ const urlCache=new WeakMap(),urlRanges=n=>{const block=n.parentElement.closest('p,li,td,th,h1,h2,h3,h4,h5,h6,blockquote')||n.parentElement;
+  if(!urlCache.has(block))urlCache.set(block,[...block.textContent.matchAll(/(?:(?:[a-z][a-z0-9+.-]*:\/\/|mailto:|www\.)[^\s<>]+|\b[a-z0-9][a-z0-9.-]*\.[a-z]{2,63}(?:[/?#][^\s<>]*)?)/gi)].map(m=>[m.index,m.index+m[0].length]));
+  const range=document.createRange();range.setStart(block,0);range.setEnd(n,0);const offset=range.toString().length;return urlCache.get(block).map(([a,b])=>[a-offset,b-offset]);};
+ const walker=document.createTreeWalker(box,NodeFilter.SHOW_TEXT),nodes=[];while(walker.nextNode())if(!walker.currentNode.parentElement.closest('a,button,code,pre,.fp-link'))nodes.push({n:walker.currentNode,urls:urlRanges(walker.currentNode)});
+ for(const {n,urls} of nodes){const s=n.textContent;let out=document.createDocumentFragment(),at=0,changed=false,inBook=false;while(at<s.length){if(s[at]==='《')inBook=true;let match=!urls.some(([a,b])=>at>=a&&at<b)&&entries.find(e=>(!inBook||e.auto)&&(e.auto?s.slice(at,at+e.text.length).toLowerCase()===e.text.toLowerCase():s.startsWith(e.text,at))&&(!/[A-Za-z0-9_]/.test(e.text[0])||!/[A-Za-z0-9_/.-]/.test(s[at-1]||''))&&(!e.text.startsWith('/')||!at||/[\s，。！？；：、（(【\[]/u.test(s[at-1]))&&(!/[A-Za-z0-9_/-]/.test(e.text.at(-1))||!/[A-Za-z0-9_/-]/.test(s[at+e.text.length]||'')));
+ const ad=!match&&addr(s,at);if(ad){used.add(ad[1]);out.append(cardLink(ad));at+=ad[0].length;changed=true;continue;}
+ if(match){const text=s.slice(at,at+match.text.length);if(match.auto&&match.ids.some(id=>used.has(id))){out.append(document.createTextNode(text));at+=match.text.length;continue;}if(match.auto)for(const id of match.ids)used.add(id);else if(match.card)used.add(match.card);const b=button(match.label||text,match.fn,'fp-link fp-link-'+match.type);if(match.card!==undefined){b.dataset.card=match.card;b.addEventListener('click',e=>e.stopPropagation());}out.append(b);at+=match.text.length;changed=true;}else{out.append(document.createTextNode(s[at]));if(s[at]==='》')inBook=false;at++;}}if(changed)n.replaceWith(out);}
 }
 export function init(h){H=h;$('cardPlus')?.addEventListener('click',plusCard);
  // the + follows the view (body data-view / data-five-page), the three five surfaces and the computer's capability

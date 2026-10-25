@@ -15,6 +15,7 @@
     "session_mode": "independent",
     "shared_session_id": "",
     "shared_opencode_port": 0,
+    // Optional extra warnings only; the common action-policy hook is always active.
     "high_risk_warnings": false,
     // P128 shared-mode approvals: standard = ask when a credential is changed or shown; strict = also when only read / mentioned
     "approvals": "standard",

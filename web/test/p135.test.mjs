@@ -36,7 +36,7 @@ test('P135 waitKey: stopped at once, idle/down only after 30 s, working / compac
 
 test('P135 open page: a timer redraws to 「没有回音」 after 30 s idle, back to normal on working, cleared on leaving', async()=>{
   const c=clock(),painted=[],w={dataset:{}};
-  const ctx=vm.createContext({setTimeout:c.setTimeout,clearTimeout:c.clearTimeout,Date:c.Date,historySync:false,shownKey:'7|x',wordsSrc:null,
+  const ctx=vm.createContext({setTimeout:c.setTimeout,clearTimeout:c.clearTimeout,Date:c.Date,historySync:false,shownKey:'7|x',wordsSrc:null,cardReplyKey:null,refreshCards(){},
     cur:{status:'idle',hostStatus:'idle'},t:x=>x,el:()=>w,fill:(_,x)=>painted.push(x),afterWords(){},rdFollow(){}});
   vm.runInContext(words,ctx);
   ctx.showPage=()=>vm.runInContext(`renderWords('',true)`,ctx);

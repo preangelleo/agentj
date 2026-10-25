@@ -148,7 +148,7 @@ def password_purpose(cfg: dict, lang: str) -> str:
     i = 0 if lang == "zh" else 1
     note = NOTES.get(provider, NOTES["custom"])[i]
     spaces = ("空格不用删，原样粘贴" if lang == "zh" else "Keep the spaces; paste as copied") if provider == "gmail" else ""
-    servers = "\n".join(f"{k.upper()}: {cfg[k]['host']}:{cfg[k]['port']} ({cfg[k]['security']})" for k in ("imap", "smtp"))
+    servers = "\n".join(f"{k.upper()}: {cfg[k]['host']}:{cfg[k]['port']} ({cfg[k]['security']})" for k in ("imap", "smtp")) if cfg.get("preset") == "custom" else ""
     return "\n".join(x for x in (label[i], cfg["address"], note, spaces, label[2], servers) if x)
 
 T = {
@@ -1787,13 +1787,12 @@ class Mail:
         self.wake.set()
         return cfg
 
-    async def secret_card(self) -> dict:
-        """The phone's 「设置邮箱授权码」 / `agentj mail password`: a sealed secret card; the host logs in to both servers with it
-        and stores it encrypted. → the card's result (never the value)."""
+    async def secret_card(self, *, recover: bool = True) -> dict:
+        """Sealed app-password entry: encrypt on host, test both logins; return only the receipt."""
         cfg = read_config(self.st)
         if not cfg["address"] or not cfg["imap"]["host"] or not cfg["smtp"]["host"]:
             return {"result": "refused", "why": "incomplete"}
-        reused = await asyncio.to_thread(mail_recovery.recover, self.host, cfg, self.password(cfg))
+        reused = await asyncio.to_thread(mail_recovery.recover, self.host, cfg, self.password(cfg)) if recover else None
         if reused is not None:
             self.wake.set()
             return {"result": "saved", "receipt": {"name": "AGENTJ_MAIL_PASSWORD", "dest": "mail", "verify": "ok", "detail": "IMAP+SMTP"}}
@@ -1810,7 +1809,7 @@ class Mail:
             with self._config_lock:
                 if read_config(self.st) != cfg:
                     return {"result": "failed", "why": "stale"}
-                # Google's grouped display spaces are presentation, not password bytes.
+                # Gmail display spaces are not password bytes.
                 if password_provider(cfg) == "gmail":
                     pw = "".join(pw.split())
                 if not pw:

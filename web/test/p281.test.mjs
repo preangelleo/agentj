@@ -38,7 +38,7 @@ function ctx(cur={status:'working',hostStatus:'working'}){
   const DICT={zh:{'r.replyWorking':zh.replyWorking,'r.ownerAddress':zh.ownerAddress,'r.replyPending':zh.replyPending,
     'r.replyStopped':zh.replyStopped}};
   const t=(k,v)=>String(DICT.zh[k]??k).replace(/\{(\w+)\}/g,(m,n)=>v&&n in v?String(v[n]):m);
-  const painted=[], robots=[], c=vm.createContext({setTimeout:()=>0,clearTimeout(){},Date,historySync:false,shownKey:'1|x',wordsSrc:null,
+  const painted=[], robots=[], c=vm.createContext({setTimeout:()=>0,clearTimeout(){},Date,historySync:false,shownKey:'1|x',wordsSrc:null,cardReplyKey:null,refreshCards(){},
     cur,t,el:()=>({dataset:{}}),fill:(_,x,plain)=>painted.push([x,plain]),afterWords:(r)=>robots.push(!!r),rdFollow(){}});
   vm.runInContext(words,c);
   return {c,painted,robots,run:(js)=>vm.runInContext(js,c)};

@@ -677,6 +677,14 @@ class PeerSessions:
                     res = await self._turn(fid, friend, group, wrapped, gen)
                 finally:
                     self.active -= 1
+        from . import policy_registry
+        layer = getattr(self, "policy_layer", "friend")
+        actions = ["answer"] + [policy_registry.tool_action(t, canonical=layer == "channel") for t in res.tools]
+        steps = [policy_registry.decision(layer, action) for action in actions]
+        # Friends remain tool-less even if a future row permits that operation.
+        if any(step != "allow" for step in steps) or layer == "friend" and res.tools:
+            res.decision, res.error = "ask_owner", "tool_call" if res.tools else "policy_denied"
+            self.st.log("peer_policy_held", layer=layer)
         if (group.get("auto") or {}).get("mode") == "off" and res.decision == "reply":
             res.decision = "ask_owner"
         return res
@@ -741,9 +749,6 @@ class PeerSessions:
         decision, text, topic, ok = parse_decision(parsed["text"])
         res = TurnResult(decision, text, topic, parsed["tokens"], None, session_id=parsed["sid"], tools=parsed["tools"],
                          parsed=ok)
-        if res.tools:
-            res.decision, res.error = "ask_owner", "tool_call"
-            self.st.log("peer_tool_call", agent=kind)
         return res
 
     async def _execute(self, exe, argv, cwd, env, text, gen, cfg, ro_dirs=(), sid=None):

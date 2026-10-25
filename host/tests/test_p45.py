@@ -38,9 +38,12 @@ class Autonomy(unittest.TestCase):
         self.assertEqual(res['reason'],'not_upgraded');self.assertEqual(run.call_count,2)
     def test_independent_native_settings_keep_launch_review(self):
         a=ClaudeAgent(None,{'kind':'claude','dir':'/tmp','_workflow_ceo':True})
-        argv=a.argv(None);settings=json.loads(argv[argv.index('--settings')+1])
-        self.assertIn('PreToolUse',settings['hooks'])
-        self.assertNotIn('UserPromptSubmit',settings['hooks'])
+        argv=a.argv(None)
+        settings=json.loads(argv[argv.index('--settings')+1])
+        self.assertEqual(set(settings), {"hooks", "disableAllHooks"})
+        self.assertIs(settings["disableAllHooks"], False)
+        self.assertEqual(set(settings["hooks"]), {"PreToolUse"})
+        self.assertIn("policy-only", settings["hooks"]["PreToolUse"][0]["hooks"][0]["command"])
         self.assertEqual(CodexAgent(None,{'kind':'codex','dir':'/tmp'}).policy(),{'sandbox':'danger-full-access','approvalPolicy':'untrusted','approvalsReviewer':'user'})   # F30: no explicit sandbox_mode → directly on the system
     def test_self_code_writable_state_still_protected(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -61,4 +64,4 @@ class Autonomy(unittest.TestCase):
         a=shared.SharedClaudeAgent(host,{'kind':'claude','dir':'/tmp','_workflow_ceo':True,'approvals':'native'})
         a.session={'sessionId':'owner'}
         out=asyncio.run(a.hook_event({'session_id':'owner','hook_event_name':'PreToolUse','tool_name':'Bash','tool_input':{'command':'git push origin main'}}))
-        self.assertEqual(out,{});host.ask.assert_not_called()
+        self.assertEqual(out["hookSpecificOutput"]["permissionDecision"],"ask");host.ask.assert_not_called()

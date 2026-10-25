@@ -4,7 +4,7 @@ import hashlib
 
 
 def summary(tool: str, inp: dict, *, credentials: bool = False, lang: str = "en",
-            workdir: str | None = None) -> str:
+            workdir: str | None = None, presentation: bool = False) -> str | dict:
     """Redact original values before serialization; bind the unchanged raw request.
 
     SecretIndex is the existing local .env/process fragment detector. It retains
@@ -124,7 +124,65 @@ def summary(tool: str, inp: dict, *, credentials: bool = False, lang: str = "en"
     if prose:
         label = "Agent note:" if str(lang).lower().startswith("en") else "Agent 附注："
         text += "\n" + label + "\n" + json.dumps(prose, ensure_ascii=False, sort_keys=True, indent=2, allow_nan=False)
-    return text + "\nRequest SHA-256: " + hashlib.sha256(raw.encode()).hexdigest()
+    text += "\nRequest SHA-256: " + hashlib.sha256(raw.encode()).hexdigest()
+    if presentation:
+        human = visible(_mail_summary(inp, lang)) if tool == 'host_write' else text
+        if len((human + text).encode('utf-8')) > 24000:
+            raise ValueError('approval presentation too large')
+        return {"summary": human, "details": text}
+    return text
+
+
+def mail_config(old: dict, raw: dict) -> dict:
+    """One effective settings merge for both the approval preview and execution."""
+    from . import mail
+    new = {**old, **{k: v for k, v in raw.items() if k != 'generation'}}
+    if raw.get('preset') and raw.get('address'):
+        if 'username' not in raw:
+            new['username'] = ''
+        new = mail.apply_preset(new, raw['preset'], raw['address'])
+        if raw['preset'] == 'custom':
+            new.update({k: raw[k] for k in ('imap', 'smtp') if k in raw})
+    return mail.validate(new)
+
+
+def _mail_summary(target: dict, lang: str) -> str:
+    """Presentation only; the complete prose then passes the P513 redactor."""
+    from . import mail
+    zh = str(lang).lower().startswith('zh')
+    def tr(a, b): return a if zh else b
+    before = target['before']
+    if target['kind'] == 'mail_test':
+        return '\n'.join([tr('测试邮件连接', 'Test mail connection'), before['address'],
+                          *[f"{k.upper()}: {before[k]['host']}:{before[k]['port']} ({before[k]['security']})" for k in ('imap', 'smtp')],
+                          tr('仅登录检查，不发邮件。', 'Login checks only; no mail is sent.')])
+    patch = target['cfg']
+    after = mail_config(before, patch)
+    labels = [('address', tr('邮箱', 'Mailbox')), ('preset', tr('服务商', 'Provider')),
+              ('username', tr('登录账号', 'Login name')), ('imap', 'IMAP'), ('smtp', 'SMTP'),
+              ('poll_minutes', tr('检查频率', 'Check interval')), ('enabled', tr('邮件通道', 'Mail channel')),
+              ('auth', tr('发件人校验', 'Sender verification')), ('auth_servid', tr('可信邮件服务器', 'Trusted mail server')),
+              ('allow', tr('允许的发件人', 'Allowed senders')), ('reply_per_hour', tr('每小时回复上限', 'Replies per hour'))]
+    def value(key, val):
+        if key == 'preset':
+            if val == 'gmail': return 'Gmail'
+            return mail.PRESETS[val][0 if zh else 1] if val in mail.PRESETS else tr('未设置', 'Not set')
+        if key in ('imap', 'smtp'): return f"{val['host'] or '—'}:{val['port']} ({val['security']})"
+        if key == 'poll_minutes': return f'每 {val} 分钟' if zh else f'Every {val} minutes'
+        if key == 'enabled': return tr('启用', 'On') if val else tr('关闭', 'Off')
+        if key == 'auth': return {'strict':tr('严格', 'Strict'), 'standard':tr('标准', 'Standard'), 'off':tr('关闭', 'Off')}[val]
+        if key == 'allow':
+            return '、'.join(r['addr'] + ' (' + (tr('本人', 'Owner') if r['role'] == 'owner' else tr('访客', 'Guest')) + ')' + (' · ' + r['name'] if r.get('name') else '') for r in val) or tr('无', 'None')
+        return str(val) if val != '' else tr('未设置', 'Not set')
+    # A preset names its fixed servers; duplicate login names and its derived
+    # server changes remain in Details. Custom/independent server edits stay explicit.
+    implicit = {'imap', 'smtp'} if patch.get('preset') and patch.get('address') and after['preset'] != 'custom' else set()
+    if before['username'] == before['address'] and after['username'] == after['address']:
+        implicit.add('username')
+    changes = [f'{label}: {value(key, before[key])} → {value(key, after[key])}'
+               for key, label in labels if key not in implicit and before[key] != after[key]]
+    return '\n'.join([tr('保存邮件通道设置', 'Save mail channel settings'),
+                      *(changes or [tr('设置未改变', 'Settings unchanged')])])
 
 
 def confirm_cli(action: str, params: dict, *, st=None) -> bool:

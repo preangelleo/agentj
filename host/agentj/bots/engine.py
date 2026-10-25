@@ -6,7 +6,7 @@ or ambiguous safety decision cannot release candidate text, including human repl
 import asyncio
 import json
 import time
-from .. import privacy
+from .. import privacy, policy_registry
 from .store import BotError
 from .provider import resolve,invoke,invoke_jev
 from .tools import ToolRegistry
@@ -57,6 +57,8 @@ class Engine:
         try:return json.loads(verdict.text)=={'allow':True} and not verdict.tools
         except (ValueError,TypeError):return False
     async def reply(self,bid,vid,cap,rid,text):
+        if policy_registry.decision("support", "answer") != "allow":
+            return {"status":"refused", "text":UNAVAILABLE}
         self.store.authenticate(bid,vid,cap)
         if isinstance(text,str):text=inbound(text)
         deadline=time.monotonic()+self.queue_timeout
@@ -102,7 +104,8 @@ class Engine:
                         if tool_count>3:raise BotError('tool_round_limit')
                         if prior and prior.get('after_hours')=='ai_only':raise BotError('safety_refused')
                         d,args,digest=registry.prepare(vid,tool['name'],tool['args']);aid=None
-                        if d['level']=='write':
+                        from .. import policy_registry
+                        if policy_registry.decision('support',policy_registry.company_action(d)) in ('hold','uv'):
                             request=registry.approval(vid,rid,tool['name'],args)
                             if self.approve is None:raise BotError('owner_approval_required')
                             # Callback presents metadata and redacted args to the paired owner, never auto-accepts.

@@ -176,11 +176,13 @@ try {
 
     // ---- 修改 / 填写 / 添加 → keys_set
     await click(p, '.krow[data-name="OPENAI_API_KEY"] .kbtn--edit');
-    await waitFor(p, `document.getElementById('toast').textContent.includes('密钥卡')`);
+    await waitFor(p, `document.getElementById('elev')?.hidden===false`);
+    await click(p, '#elev-hide');
     ok(calls.some((c) => c.op === 'set' && c.name === 'OPENAI_API_KEY'), 'edit: keys_set opens the existing key card');
     await click(p, '.krow[data-name="DEEPSEEK_API_KEY"] .kbtn--set');
     await sleep(300);
     ok(calls.some((c) => c.op === 'set' && c.name === 'DEEPSEEK_API_KEY'), 'add on an empty row: keys_set');
+    await click(p, '#elev-hide');
     await click(p, '#keys-add');
     await waitFor(p, `!document.querySelector('.kadd').hidden && document.activeElement.id==='keys-add-name'`);
     await evaluate(p, `(()=>{const i=document.getElementById('keys-add-name');i.value='1BAD';i.dispatchEvent(new Event('input'));i.form.requestSubmit()})()`);

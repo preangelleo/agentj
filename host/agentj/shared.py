@@ -863,6 +863,20 @@ class SharedClaudeAgent(Agent):
                 self.permissions.discard(cat)
                 self.risk_grants.pop(cat, None)
         if name == "PreToolUse":
+            from . import policy_registry
+            requirement = policy_registry.main_requirement(event.get("tool_name"), event.get("tool_input"))
+            if requirement != "allow":
+                if requirement != "deny":
+                    # Preserve denial suppression and late-answer revocation checks,
+                    # without making a category approval satisfy the registry floor.
+                    verdict = danger.classify_shared(event.get("tool_name"), event.get("tool_input"), self.cfg.get("danger_extra"),
+                                                     self.cfg.get("approvals", "standard"), event.get("cwd") or self.cfg.get("dir"))
+                    digest = card_digest(event.get("tool_name", "?"), event.get("tool_input") or {})
+                    self.risk_requests[(event.get("tool_use_id"), digest)] = danger.shared_keys(verdict, self.cfg)
+                return {"hookSpecificOutput": {"hookEventName": "PreToolUse",
+                    "permissionDecision": "deny" if requirement == "deny" else "ask",
+                    "permissionDecisionReason": ("Agent J: owner confirmation required"
+                        if str(getattr(self.host, "lang", "zh")).lower().startswith("en") else "Agent J：需要主人确认")}}
             verdict = danger.classify_shared(event.get("tool_name"), event.get("tool_input"), self.cfg.get("danger_extra"),
                                              self.cfg.get("approvals", "standard"), event.get("cwd") or self.cfg.get("dir"))
             # P198: the five clear dangers ask on the phone (P128's documented `standard`); from 0.15 (F14) to 0.20.0 the
@@ -898,6 +912,7 @@ class SharedClaudeAgent(Agent):
                 self.host.st.log("shared_approval_race", tool=str(event.get("tool_name") or "?")[:64], layers=",".join(other))
 
         if name == "PermissionRequest":
+            from . import policy_registry
             tool, inp = event.get("tool_name", "?"), event.get("tool_input") or {}
             digest = card_digest(tool, inp)
             # Claude PermissionRequest may omit tool_use_id. Digest matches only a
@@ -912,7 +927,7 @@ class SharedClaudeAgent(Agent):
                         self.risk_grants.pop(cat, None)
                 if set(cats) & self.risk_denied:
                     answer = {'behavior': 'deny'}
-                elif cats and set(cats) <= self.permissions:
+                elif cats and set(cats) <= self.permissions and policy_registry.main_requirement(tool, inp) == "allow":
                     answer = {"behavior": "allow"}
                 else:
                     withdraw = asyncio.get_running_loop().create_future()

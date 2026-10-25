@@ -7,6 +7,10 @@
      "zh": "记事本",
      "en": "Notebook"
     },
+    "aliases": [
+     "记事本卡",
+     "Notebook card"
+    ],
     "desc": {
      "zh": "你和 Agent 一起管的记事本：在手机上看，让 Agent 记、改、整理。",
      "en": "A notebook you keep with your Agent: read it here, the Agent writes, edits and tidies it."
@@ -24,6 +28,12 @@
      "zh": "待办",
      "en": "To-do"
     },
+    "aliases": [
+     "待办卡",
+     "待办事项",
+     "To-do card",
+     "Todo"
+    ],
     "desc": {
      "zh": "你和 Agent J 一起维护的待办：写明谁负责、何时开始、何时截止，做完划掉。",
      "en": "To-dos you and Agent J keep together: who does it, when it starts, when it is due; done ones are struck through."
@@ -41,6 +51,10 @@
      "zh": "自动化",
      "en": "Automation"
     },
+    "aliases": [
+     "自动化卡",
+     "Automation card"
+    ],
     "desc": {
      "zh": "主机后台的自动化，只读查看，@ 名称询问 Agent。",
      "en": "Read-only host schedules. Ask your Agent about an automation by its unique name."
@@ -58,6 +72,10 @@
      "zh": "日历",
      "en": "Calendar"
     },
+    "aliases": [
+     "日历卡",
+     "Calendar card"
+    ],
     "desc": {
      "zh": "与 Agent J 共同管理日程",
      "en": "Manage your schedule with Agent J"
@@ -75,6 +93,11 @@
      "zh": "配色板",
      "en": "Palette"
     },
+    "aliases": [
+     "调色板卡",
+     "Palette card",
+     "配色板卡"
+    ],
     "desc": {
      "zh": "从一个颜色生成配色，存到我的配色，供各张卡片选用。",
      "en": "Generate related colors and save palettes to use across your cards."
@@ -92,6 +115,11 @@
      "zh": "文件管理",
      "en": "Files"
     },
+    "aliases": [
+     "文件卡",
+     "Files card",
+     "文件管理卡"
+    ],
     "desc": {
      "zh": "浏览 Agent J 主机上的文件夹，下载文档到手机，或 @ 给 Agent 在主机上读。",
      "en": "Browse folders on your Agent J host; download a document or @ it for the Agent to read there."
@@ -109,6 +137,10 @@
      "zh": "Obsidian",
      "en": "Obsidian"
     },
+    "aliases": [
+     "Obsidian card",
+     "Obsidian卡"
+    ],
     "desc": {
      "zh": "你在 Obsidian 里选定的笔记；看在手机上，改交给 Agent。",
      "en": "The Obsidian notes you picked: read them here, let your Agent edit them."
@@ -126,6 +158,7 @@
      "zh": "书单",
      "en": "Reading list"
     },
+    "aliases": [],
     "desc": {
      "zh": "你和 Agent J 一起维护的待办：写明谁负责、何时开始、何时截止，做完划掉。",
      "en": "To-dos you and Agent J keep together: who does it, when it starts, when it is due; done ones are struck through."
@@ -136,6 +169,66 @@
     "official": false,
     "on": true,
     "plus": "agentj-add-todo"
+   }
+  ],
+  "system": [
+   {
+    "id": "chat",
+    "name": {
+     "zh": "聊天",
+     "en": "Chat"
+    },
+    "aliases": [
+     "对话卡",
+     "聊天卡",
+     "Chat card",
+     "对话"
+    ]
+   },
+   {
+    "id": "workflows",
+    "name": {
+     "zh": "工作流",
+     "en": "Workflows"
+    },
+    "aliases": [
+     "工作流卡",
+     "Workflow card"
+    ]
+   },
+   {
+    "id": "skills",
+    "name": {
+     "zh": "技能",
+     "en": "Skills"
+    },
+    "aliases": [
+     "技能卡",
+     "Skills card",
+     "Skill card"
+    ]
+   },
+   {
+    "id": "memory",
+    "name": {
+     "zh": "记忆",
+     "en": "Memory"
+    },
+    "aliases": [
+     "记忆卡",
+     "Memory card"
+    ]
+   },
+   {
+    "id": "agentj",
+    "name": {
+     "zh": "Agent J",
+     "en": "Agent J"
+    },
+    "aliases": [
+     "Agent J卡",
+     "Agent J card"
+    ]
    }
   ],
   "colors": {}

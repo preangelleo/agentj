@@ -277,6 +277,11 @@ class Chain(unittest.TestCase):
         asyncio.run(go())
 
     def test_message_danger_card_reject_approve_batch_and_rules(self):
+        # Native matcher/lexer mechanics with an explicit automatic floor.
+        # Real independent Bash UV composition is covered by test_p512_policy.
+        from agentj import policy_registry
+        floor = mock.patch.object(policy_registry, 'NATIVE_TOOLS', {**policy_registry.NATIVE_TOOLS, 'Bash': 'file.read'})
+        floor.start(); self.addCleanup(floor.stop)
         (self.work / "victim.txt").write_text("keep me")
         (self.work / "secret.txt").write_text("s")
         (self.work / ".env").write_text("K=v\n")

@@ -241,14 +241,14 @@ class Runtime(Base):
         self.assertEqual(sent[0]["t"], "sudo"); self.assertIn("apparmor_parser -r", sent[0]["argv"][2])
         self.assertIn("userns,", sent[0]["argv"][4]); self.assertNotIn("no-sandbox", json.dumps(sent))
 
-    def test_units_are_loopback_supervisors_with_backoff(self):
+    def test_units_are_loopback_observers_without_respawn(self):
         u = browser.unit_text(["/venv/bin/agentj"], {"PATH": "/usr/bin", "AGENTJ_STATE_DIR": "/s"})
         self.assertIn('ExecStart="/venv/bin/agentj" "browser" "run"', u)
-        self.assertIn("Restart=on-failure", u)
+        self.assertIn("Restart=no", u)
         self.assertIn("After=graphical-session.target", u)
         p = __import__("plistlib").loads(browser.plist_bytes("net.agentj.host.browser", ["/a"], "/l"))
         self.assertEqual(p["ProgramArguments"], ["/a", "browser", "run"])
-        self.assertEqual(p["KeepAlive"], {"SuccessfulExit": False})
+        self.assertFalse(p["KeepAlive"])
         self.assertEqual(p["LimitLoadToSessionType"], "Aqua")
 
 

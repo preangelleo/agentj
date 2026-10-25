@@ -25,7 +25,8 @@ async function stableShot(p) {
 const content='  香港 / Hong Kong\n\nRoom 201 · **literal markdown**  \n';
 try {
  for(const width of [390,1280])for(const language of ['zh','en'])for(const scheme of ['light','dark'])for(const [stage,web] of [['before',before],['after',after]]) {
-  fake.reset();fake.st.caps=['jcards1'];fake.st.prefs={appearance:{language,theme:scheme},voice:{speak_replies:false,wake_enabled:false},agent:{session_mode:'shared'}};
+  // Keep this historical Notebook-only comparison independent of the approved P517 badge.
+  fake.reset();fake.remotes({limit:10,items:[]});fake.st.caps=['jcards1'];fake.st.prefs={appearance:{language,theme:scheme},voice:{speak_replies:false,wake_enabled:false},agent:{session_mode:'shared'}};
   let notes=stage==='before'?[{id:'n1',text:'2026-10-22 '+content,editable:true},{id:'n2',text:'2026-10-21 No title',editable:true}]:[{id:'n1',title:'香港地址 / Hong Kong address',text:content,date:'2026-10-22',editable:true},{id:'n2',title:'',text:'No title',date:'2026-10-21',editable:true}];
   fake.st.onApp=async(c,m,send)=>{
    const reply=async(t,v)=>{await send({t,r:m.r,...v});return true;};

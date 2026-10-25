@@ -135,8 +135,9 @@ class OwnedClaude(unittest.TestCase):
     def test_hook_prints_the_reminder_and_adds_nothing_else(self):
         for lang in ("zh", "en"):
             st = self.settings(language=lang)
-            self.assertEqual(set(st), {"hooks", "disableAllHooks"}, "mandatory hook, no permission or mode")
+            self.assertEqual(set(st), {"hooks", "disableAllHooks"}, "mandatory policy hook only; no permission or mode")
             self.assertIs(st["disableAllHooks"], False)
+            self.assertEqual(set(st["hooks"]), {"PreToolUse", "UserPromptSubmit"})
             [entry] = st["hooks"]["UserPromptSubmit"]
             cmd = entry["hooks"][0]["command"]
             out = subprocess.run(["sh", "-c", cmd], capture_output=True, text=True, check=True).stdout
@@ -149,8 +150,9 @@ class OwnedClaude(unittest.TestCase):
         self.assertIn("PreToolUse", st["hooks"]); self.assertIn("UserPromptSubmit", st["hooks"])
         self.assertIs(st["disableAllHooks"], False)
         ceo = self.settings(_workflow_ceo=True)
-        self.assertIn("PreToolUse", ceo["hooks"])
-        self.assertNotIn("UserPromptSubmit", ceo["hooks"])
+        self.assertEqual(set(ceo), {"hooks", "disableAllHooks"})
+        self.assertEqual(set(ceo["hooks"]), {"PreToolUse"})
+        self.assertIs(ceo["disableAllHooks"], False)
         self.assertEqual(with_reminder({"x": 1}, {"_workflow_ceo": True}), {"x": 1})
 
 

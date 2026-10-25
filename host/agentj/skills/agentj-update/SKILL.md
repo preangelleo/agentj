@@ -58,3 +58,10 @@ For an ordinary host on an older version (including 0.15.5a1), first run `agentj
 
 P487: download/signature/hash/unsupported-install failures before installation leave the previous version in place: say “still on the previous version”, not “rollback failed”, and do not reinstall. After a rollback verification error, a successful old-version `--version` means `rolled_back`; the error remains in `rollback_failure` and separate redacted tails in the automatic support report. This proves the old CLI runs, not that every service check passed: use doctor to check any remaining faults. `rollback_failed` is reserved for an old version that cannot be verified as runnable. A new package cannot fix the 0.22.x worker snapshot before it installs or reconstruct missing historical logs; follow the existing old-updater guidance above.
 中文：安装前下载、签名或哈希校验、安装方式检查失败时，照实说「仍是原版本」，不说回滚失败，不重装。回滚验证有错但旧版 --version 可运行时记 rolled_back；错误仍随 rollback_failure 和脱敏尾部自动上报。它证明旧版命令能运行，服务仍需 doctor 检查。旧版也无法验证可运行才是 rollback_failed。新版尚未装上时不能修复 0.22.x 的旧工作快照，也不能补回历史缺失日志，按上文旧更新器指引处理。
+
+P516: if an older ordinary uv updater cannot start uv, the owner can run the current verified bootstrap from the computer terminal or original AI coding tool, outside Agent J isolation, as the same OS user:
+```bash
+curl --proto '=https' --tlsv1.2 -fsSL https://agentj.app/install-assistant.sh | sh -s -- --upgrade-only
+```
+This explicit repair-forward path preserves the existing uv location, seat and pairing without a new code, retains uv for the service PATH, then restarts and checks. Do not execute it inside the fenced Agent. Non-uv and Olares Market installs use their existing installer/Market. A missing uv in an old worker cannot be fixed by new wheel contents alone; do not claim the unattended path is repaired.
+中文：旧版后台找不到 uv 时，主人可在电脑终端或原来的 AI 编程工具用上述一条命令修复升级；不需要新码，保留绑定。不在隔离 Agent 内执行，不删除状态或解绑；Olares Market 应用走 Market。只能在实际版本和自检通过后回报成功。

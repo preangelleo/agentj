@@ -254,15 +254,12 @@ function paintDialog() {
     const b = document.createElement('b'); b.textContent = who(x);
     const s = document.createElement('span'); s.textContent = what(x); s.title = what(x);
     const identity = document.createElement('div'); identity.className = 'busy-identity';
-    const brand = document.createElement('strong'); brand.className = 'busy-wordmark';
-    brand.textContent = identityText(x);
-    identity.append(brand);
-    const elapsed = document.createElement('small');
-    elapsed.textContent = x.since ? t('busy.detail.since', {d: dur(nowS()-x.since)}) : '';
-    identity.append(elapsed);
-    if (x.reported && (x.reported.harness || x.reported.model)) {
-      const claim = document.createElement('small');
-      claim.textContent = t('p508.reported') + ': ' + [x.reported.harness,x.reported.model].filter(Boolean).join(' · ') + (x.conflict ? ' · '+t('p508.conflict') : '');
+    const summary = document.createElement('small');
+    summary.textContent = [identityText(x), x.since ? t('p515.running', {d: dur(nowS()-x.since)}) : ''].filter(Boolean).join(' · ');
+    identity.append(summary);
+    if (x.conflict && x.reported && (x.reported.harness || x.reported.model)) {
+      const claim = document.createElement('small'); claim.className = 'error';
+      claim.textContent = t('p515.conflict', {x: [shortHarness(x.reported.harness), x.reported.model].filter(Boolean).join(' · ')});
       identity.append(claim);
     }
     li.append(fig(x, k, 'row'), b, s, identity);
@@ -317,12 +314,16 @@ function vendorMark(value, isModel=false) {
   else if(isModel){wrap.textContent=v.includes('claude')?'Anthropic':v.includes('gemini')?'Google':/gpt|o[134]-/.test(v)?'OpenAI':'';}
   return wrap;
 }
+const shortHarness = (h) => harnessName(h).split(' · ')[0];
 export function identityText(x) {
-  if (x.status === 'unknown') return t('p508.state_unknown')+' · '+identityText({...x,status:'running'});
-  if (!x.detected) return [harnessName(x.harness), x.model].filter(Boolean).join(' · ');
-  const d=x.detected, unknown=t('p508.unknown');
-  return t('p508.detected')+': '+[harnessName(d.harness)||unknown, [d.model||unknown,d.effort].filter(Boolean).join(' / '),
-    t('p508.account')+': '+([d.account,d.subscription].filter(Boolean).join(' / ')||unknown)].join(' · ');
+  const d = x.detected || {harness:x.harness,model:x.model};
+  const parts = [shortHarness(d.harness), d.model];
+  if (d.effort) parts.push(['minimal','low','medium','high','xhigh','max'].includes(d.effort) ? t('p515.effort.'+d.effort) : d.effort);
+  // Account fingerprints stay on the wire for equality only, never in owner-facing copy.
+  const accounts = [...new Set(tasks.filter(v=>v.detected?.harness===d.harness).map(v=>v.detected?.account).filter(Boolean))].sort();
+  if (d.account && accounts.length > 1) parts.push(t('p515.account',{h:shortHarness(d.harness),n:accounts.indexOf(d.account)+1}));
+  if (x.status === 'unknown') parts.unshift(t('p508.state_unknown'));
+  return parts.filter(Boolean).join(' · ');
 }
 export function harnessName(h) {
   return ({claude:'Claude Code · Anthropic', codex:'Codex · OpenAI', opencode:'OpenCode', gemini:'Gemini · Google',

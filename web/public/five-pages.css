@@ -27,9 +27,9 @@
 .busy-tabs button{flex:1;min-height:48px;border:1px solid var(--c-last-straw);border-radius:24px;background:transparent;color:inherit;font:600 15px var(--font-body);cursor:pointer}
 .busy-tabs button[aria-selected=true]{background:var(--c-shield);color:var(--c-lotion)}
 #busyList[hidden],#busyWorkflow[hidden]{display:none}
-#busyList li{grid-template-columns:24px minmax(64px,.7fr) minmax(0,1.4fr) minmax(0,1fr);min-height:64px;gap:12px;border-bottom:1px dashed var(--c-black-mana);border-radius:0}
+#busyList li{grid-template-columns:24px minmax(64px,.7fr) minmax(0,2.4fr);min-height:64px;gap:12px;border-bottom:1px dashed var(--c-black-mana);border-radius:0}
 #busyList span{white-space:nowrap;opacity:1}
-.busy-identity{display:flex;flex-direction:column;gap:5px;overflow-wrap:anywhere;font-size:12px}.busy-wordmark{font:600 12px var(--font-body)}.busy-identity small{font-size:12px;opacity:.75}
+.busy-identity{display:flex;flex-direction:column;gap:4px;overflow-wrap:anywhere;font-size:calc(12px*var(--fz))}.busy-identity small{font:inherit}
 #busyWorkflow{align-self:stretch;text-align:left}.busy-org{padding:16px;margin:12px 0;background:transparent;border:1px dashed var(--c-black-mana);border-radius:16px}.busy-org h3{margin:0 0 12px;font-size:17px}.busy-org-root{font-size:13px}
 .busy-org-person{display:grid;grid-template-columns:24px 1fr;gap:8px 12px;width:100%;padding:12px;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer}.busy-org-person small{grid-column:2;font-size:12px}
 @media(max-width:600px){#busyDlg .sq{padding:20px 16px}#busyList li{grid-template-columns:24px 72px minmax(0,1fr);gap:8px}.busy-identity{grid-column:3}#busyList li>span{grid-column:3;grid-row:auto}}
@@ -171,8 +171,9 @@ body:is([data-five-page]:not([data-five-page="chat"]),:has(>#five-detail:not([hi
 /* P426 #181-3 (§39): skill health — last use · count, long unused, archive / restore */
 .fp-skill-use{display:block;margin-top:2px;font-variant-numeric:tabular-nums}.fp-stale{color:inherit}.fp-skill-done{display:block;margin-top:6px}.fp-summary .fp-skill-use{margin:6px 0 0;opacity:.85}.fp-summary .fp-skill-act{margin:10px 0 0}.fp-skill-note{margin:0 0 12px}.fp-skill-link{display:block;margin-top:6px;opacity:.85}
 
-/* P508: provenance has its own light card and wraps; the task title retains its full column. */
-#busyList .busy-identity{background:var(--c-lotion);color:var(--c-noir);border:1px solid var(--c-black-mana);border-radius:10px;padding:8px;text-align:left;min-width:0}
-#busyList .busy-identity strong,#busyList .busy-identity small{white-space:normal;overflow-wrap:anywhere;line-height:1.45}
-
+/* P515: secondary text directly below the task label at every width; normal wrapping. */
+#busyList li>i{grid-column:1;grid-row:1}#busyList li>b{grid-column:2;grid-row:1}
+#busyList li>span{grid-column:3;grid-row:1;white-space:normal;overflow-wrap:anywhere;overflow:visible;text-overflow:clip}
+#busyList .busy-identity{--danger:var(--c-strawberry-field);grid-column:3;grid-row:2;background:none;color:var(--text-subtitle);border:0;padding:0;text-align:left;min-width:0;white-space:normal;line-height:1.45}
+#busyList .busy-identity .error{margin:0}
 .busy-provenance{font-size:13px;line-height:1.5;overflow-wrap:anywhere}

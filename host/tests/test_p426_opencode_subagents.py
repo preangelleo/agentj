@@ -379,17 +379,23 @@ class Source(unittest.TestCase):
         host = SimpleNamespace(agent=SimpleNamespace(cur_send=SimpleNamespace(source=provenance.phone())), goals=None, st=SimpleNamespace(log=mock.Mock()),
                                _classify=lambda t, i: SimpleNamespace(danger=False, cats=[]))
         cfg = {"high_risk_warnings": True}
-        self.assertTrue(low_risk_pass(host, cfg, "Bash", {"command": "ls"}))
+        self.assertTrue(low_risk_pass(host, cfg, "Read", {"file_path": "fixture.txt"}))
         for src in (FRIEND, GROUP, {"kind": "same_owner", "role": "task"}):
             with provenance.request_source(src):
-                self.assertFalse(low_risk_pass(host, cfg, "Bash", {"command": "ls"}), src)
+                self.assertFalse(low_risk_pass(host, cfg, "Read", {"file_path": "fixture.txt"}), src)
         with provenance.request_source(None):                 # missing source is never owner
-            self.assertFalse(low_risk_pass(host, cfg, "Bash", {"command": "ls"}))
+            self.assertFalse(low_risk_pass(host, cfg, "Read", {"file_path": "fixture.txt"}))
 
     def check_wake_not_goal_approved(self, cls):
         """The main session OpenCode wakes after a friend's background sub-agent finished: a real Host.ask under a live
         goal whose tier says "low" — a card (delegated), never goal-approved; the owner's own wake still is."""
         from agentj import approval_jev, approvals, goal
+        # Isolate provenance/goal inheritance on an automatic table row.
+        from agentj import policy_registry
+        original_requirement = policy_registry.main_requirement
+        # Legacy goal/grant mechanics only; real composed floors are tested in P512.
+        floor = mock.patch.object(policy_registry, 'main_requirement', side_effect=lambda tool, inp=None: 'allow' if tool == 'Bash' else original_requirement(tool, inp))
+        floor.start(); self.addCleanup(floor.stop)
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         st = _state(tmp.name)
@@ -477,6 +483,12 @@ class ChainBase:
         preferences.path().write_text(preferences.edit(preferences.read()[0], "agent.high_risk_warnings", on))
 
     def run_chain(self, script, ttl=6):
+        # Child-route/native matcher mechanics; composed UV floors live in P512.
+        from agentj import policy_registry
+        original_requirement = policy_registry.main_requirement
+        # Legacy goal/grant mechanics only; real composed floors are tested in P512.
+        floor = mock.patch.object(policy_registry, 'main_requirement', side_effect=lambda tool, inp=None: 'allow' if tool == 'Bash' else original_requirement(tool, inp))
+        floor.start(); self.addCleanup(floor.stop)
         ph = Phone(self.st)
         sent = []
         from test_l1 import _host as startup_host

@@ -284,6 +284,7 @@
     <!-- F13 · P171: the top-right gear opens the full-screen Settings page (s · ⌘, / Ctrl+,) — the only menu (the ≡ is gone). -->
     <button class="bulb gear" id="setBtn" type="button" aria-haspopup="dialog" aria-controls="settings" data-i18n-attr="aria-label=set.btn,title=set.btnTitle" aria-label="设置" title="设置（s · ⌘, / Ctrl+,）">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+      <span class="remote-count-badge" data-remote-count hidden aria-hidden="true"></span>
     </button>
   </header>
 
@@ -849,7 +850,7 @@
               <img src="brand/img/logo-mark.png?v=2f7e6841" width="40" height="40" alt="">
               <div class="setid__txt"><b id="brand-name">Agent J</b><p class="setval" id="set-computer"></p></div>
             </div>
-            <button type="button" id="set-remotes-open" class="setnav"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="4" width="10" height="16" rx="2"/><rect x="15" y="8" width="6.5" height="12" rx="1.5"/><path d="M7 17h1"/></svg><span><b data-i18n="set.remotes">遥控器管理</b><small id="set-remotes-count"></small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
+            <button type="button" id="set-remotes-open" class="setnav"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="4" width="10" height="16" rx="2"/><rect x="15" y="8" width="6.5" height="12" rx="1.5"/><path d="M7 17h1"/></svg><span><b class="remote-count-label"><span data-i18n="set.remotes">遥控器管理</span><span class="remote-count-badge" data-remote-count hidden aria-hidden="true"></span></b><small id="set-remotes-count"></small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
             <button type="button" id="setup-faceid" class="setnav" hidden><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2M9 9.5v1M15 9.5v1M12 9.5V13h-1M9.5 16a3.5 3.5 0 0 0 5 0"/></svg><span><b data-i18n="phoneEnv.setup">设置 Face ID</b><small data-i18n="set.faceidNote">危险操作前用 Face ID 确认是你本人。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
             <p class="setnote" data-i18n="set.computerNote">这台手机一次只配对一台Agent J 主机。给 Agent 改名：在Agent J 主机上运行 agentj name &lt;新名字&gt;。你所有的 Agent 都能在账号后台看到。</p>
             <p class="setlinks"><a href="https://agentj.app/account/" target="_blank" rel="noopener" data-i18n="set.computerSeats">在账号后台查看所有 Agent</a></p>
@@ -891,7 +892,7 @@
               <ul class="rscmdlist" id="rs-cmd-list" aria-labelledby="rs-cmds-h"></ul>
               <div class="rscmdres" id="rs-cmd-out" role="status" aria-live="polite" hidden></div>
             </div>
-            <div class="rscard">
+            <div class="rscard" id="layout-diag-card">
               <button type="button" id="layout-diag-send" class="aj-btn" data-i18n="p489.send">发送画面诊断</button>
               <p class="setnote" data-i18n="p489.note">画面有色带或错位时点一下。只把尺寸、颜色和用量发到你的 Agent J 主机，不含聊天内容。</p>
               <p class="setnote" id="layout-diag-result" role="status" aria-live="polite"></p>
@@ -1046,10 +1047,11 @@
               <button type="button" class="setswitch" id="set-jev-enabled" role="switch" aria-checked="true" data-i18n-attr="aria-label=p409.title" aria-label="安全审核（Jev）"></button>
               <p class="setnote" id="set-jev-current"></p>
               <select id="set-jev-source" class="aj-select" data-i18n-attr="aria-label=p409.source" aria-label="Jev 密钥来源"><option value="typesafe">TypeSafe</option><option value="openrouter">OpenRouter</option></select>
-              <p class="setnote" data-i18n="p409.note">Jev 会审核客服和好友消息、复查脱敏内容，也会帮审批识别拿不准的命令。打开可增加一道防护，但会有误判和延迟。关掉后消息不经过 Jev，效率更高、误拦更少，安全性会弱一点。本地凭据过滤、危险操作审批仍然保留。已有 OpenRouter key 就能用，也可单独填写 TypeSafe 官方 key；密钥请在「模型和 API Key」的密钥卡填写。</p>
+              <button type="button" id="set-jev-key" class="aj-btn" hidden></button>
+              <p class="setnote" data-i18n="p409.note">Jev 会审核客服和好友消息、复查脱敏内容，可能误判或增加延迟。关闭后消息不经过 Jev，本地凭据过滤和危险操作审批仍然保留。程序看不清的命令每次都需通行密钥确认，全放行或目标授权也不能跳过。已有 OpenRouter key 就能用，也可填写 TypeSafe 官方 key；密钥请在「模型和 API Key」的密钥卡填写。</p>
               <p class="setlinks"><a href="https://typesafe.ai" target="_blank" rel="noopener noreferrer" data-i18n="p409.signup">推荐 TypeSafe：注册、获取 key、充值少量金额</a></p>
             </div>
-            <div class="setrow" data-paired>
+            <div class="setrow" id="set-jev-legacy" hidden>
               <span class="setlab" data-i18n="set.jev">Jev 判断阈值</span>
               <div class="fontstep">
                 <button type="button" id="set-jev-minus" data-i18n-attr="aria-label=set.jevMinus,title=set.jevMinus" aria-label="调低（弹窗更少）" title="调低（弹窗更少）"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14"/></svg></button>
@@ -1446,6 +1448,10 @@
     <div class="aj-flow box">
       <h2 id="confirm-title"></h2>
       <p id="confirm-text"></p>
+      <details id="confirm-details" hidden>
+        <summary data-i18n="p332.details">详情</summary>
+        <pre id="confirm-raw" data-cc="block"></pre>
+      </details>
       <div class="ajrow confirm-row">
         <button type="button" id="confirm-no" class="aj-btn" data-i18n="sheet.cancel">取消</button>
         <button type="button" id="confirm-yes" class="aj-btn aj-btn--primary"></button>

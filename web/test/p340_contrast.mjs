@@ -19,6 +19,7 @@
 // `node test/p340_contrast.mjs before` = shots + audit report only; no tag = shots + audit + assert (gate p340-contrast).
 // Own Chromium (never :9222), the real client against fakehost.mjs. Output: reports/qa/p340/c/<tag>/.
 import assert from 'node:assert/strict';
+import {APPROVED_CONTRAST,approvedContrast} from './p523_contrast_exceptions.mjs';
 import {mkdirSync,writeFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {inflateSync} from 'node:zlib';
@@ -29,14 +30,14 @@ import {launch,newPage,evaluate,navigate,waitFor,waitState,shoot,sleep,key} from
 import {deltaE} from '../public/js/robot-color.js';
 
 const tag=process.argv[2]||'after', CHECK=tag==='after';
-const root=fileURLToPath(new URL('../../../',import.meta.url));const out=root+`reports/qa/p340/c/${tag}/`;mkdirSync(out,{recursive:true});
+const root=fileURLToPath(new URL('../../../',import.meta.url));const out=(process.env.P340_OUT||root+`reports/qa/p340/c/${tag}`)+'/';mkdirSync(out,{recursive:true});
 export const HEAVY_L=0.36, MIN_SHOWN=0.5;
 const KEY_SHOTS=/^(01-chat|02-approval|03-menu|06-toast|07-settings|08-open-bots|08-open-friends|09-bots|09-friends)$/;   // P340_SHOTS=all keeps every surface
 const MATRIX=[['zh','dark',390,844],['zh','light',390,844],['en','dark',390,844],['en','light',390,844],['zh','dark',1440,900],['zh','light',1440,900]]
   .filter(([l,s,w])=>!process.env.P340_ONLY||process.env.P340_ONLY.split(',').includes(`${l}-${s}-${w}`));
 
 // ---------------------------------------------------------------- in-page audit (text rules + icon candidates)
-const AUDIT=`((HEAVY_L)=>{
+const AUDIT=`((HEAVY_L,exceptions)=>{
  const rgb=s=>{const m=(s.match(/[\\d.]+/g)||[0,0,0,0]).map(Number),k=s.startsWith('color(')?255:1;return {c:m.slice(0,3).map(v=>v*k),a:m.length>3?m[3]:1};};
  const lum=c=>{const [r,g,b]=c.map(v=>{v/=255;return v<=.04045?v/12.92:((v+.055)/1.055)**2.4});return .2126*r+.7152*g+.0722*b;};
  const cr=(a,b)=>{const x=lum(a),y=lum(b);return (Math.max(x,y)+.05)/(Math.min(x,y)+.05);};
@@ -64,7 +65,8 @@ const AUDIT=`((HEAVY_L)=>{
    if(colour){if(!lotion)why.push(lum(fc)<=L?'dark text on a heavy ground':'a coloured heavy fill takes Lotion text');}
    else if(heavy&&(lum(fc)<=L||ratio<3))why.push('dark text on a heavy ground');
    if(ctrl&&!(colour&&lotion)&&ratio<(large?3:4.5))why.push('control label '+ratio.toFixed(2)+':1');
-   text.push({k:name(e)+'「'+own.slice(0,18)+'」',fg:'rgb('+fc+')',bg:'rgb('+bg+')',ratio:+ratio.toFixed(2),heavy,ctrl,bad:why});
+   const approvedLocation=exceptions.find(x=>e.matches(x.selector))?.id||null;
+   text.push({approvedLocation,k:name(e)+'「'+own.slice(0,18)+'」',fg:'rgb('+fc+')',bg:'rgb('+bg+')',ratio:+ratio.toFixed(2),heavy,ctrl,bad:why});
   }
   // icon candidates
   const tagn=e.tagName.toLowerCase(),mask=(s.maskImage&&s.maskImage!=='none')||(s.webkitMaskImage&&s.webkitMaskImage!=='none'),bgi=/url\\(/.test(s.backgroundImage);
@@ -133,7 +135,7 @@ try{
    const starts=await evaluate(p,`[...document.querySelectorAll('[data-p340s]')].map(e=>[e.dataset.p340s,e.scrollTop])`);
    for(const st of steps){
     if(st)await evaluate(p,`(()=>{const e=document.querySelector('[data-p340s="${st[0]}"]');e.scrollTop=${st[1]}*e.clientHeight*0.8;})()`),await sleep(150);
-    const r=await evaluate(p,`${AUDIT}(${HEAVY_L})`);
+    const r=await evaluate(p,`${AUDIT}(${HEAVY_L},${JSON.stringify(APPROVED_CONTRAST)})`);
     for(const t of r.text){audited++;const k=t.k+' '+t.fg+' '+t.bg;if(seenT.has(k))continue;seenT.set(k,{...t,surface});}
     for(const ic of r.icons){const k=ic.k+' '+ic.ground+' '+ic.src;if(seenI.has(k))continue;iconsN++;const s=await iconScore(p,ic);seenI.set(k,{k:ic.k+(ic.src.trim()?' ('+ic.src.trim()+')':''),ground:ic.ground,surface,...s});}
    }
@@ -190,8 +192,9 @@ try{
    await esc();
   }
   const tx=[...seenT.values()],ix=[...seenI.values()];
-  const badT=tx.filter(t=>t.bad.length),badI=ix.filter(i=>i.foot>=12&&i.score<MIN_SHOWN);
-  report.views[vname]={text:tx.length,icons:ix.length,badText:badT,badIcons:badI,iconScores:ix.map(i=>[i.k,i.surface,i.score,i.foot])};
+  const exceptions=tx.filter(t=>approvedContrast(t)).map(t=>({...t,approval:approvedContrast(t)}));
+  const badT=tx.filter(t=>t.bad.length&&!approvedContrast(t)),badI=ix.filter(i=>i.foot>=12&&i.score<MIN_SHOWN);
+  report.views[vname]={text:tx.length,icons:ix.length,badText:badT,approvedExceptions:exceptions,badIcons:badI,iconScores:ix.map(i=>[i.k,i.surface,i.score,i.foot])};
   for(const t of badT)fails.push(`${vname} [${t.surface}] text ${t.k} ${t.fg} on ${t.bg} (${t.ratio}:1): ${t.bad.join('; ')}`);
   for(const i of badI)fails.push(`${vname} [${i.surface}] icon ${i.k} on ${i.ground}: ${Math.round(i.score*100)}% of it visible`);
   await p.dispose();

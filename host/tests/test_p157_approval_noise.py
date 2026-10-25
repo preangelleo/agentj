@@ -1,4 +1,4 @@
-"""P157: only clearly dangerous actions ask; Jev (layer 2) may only make fewer cards.
+"""P157 classifier regressions; P513i model scoring is advisory, never an authorization.
 
 Layer 1 (danger.py): a heredoc body is judged by what reads it — a shell (commands), an interpreter (code, like `python -c`),
 a database client (SQL) or nothing (data: only where it is written counts). The body is found by the shell lexer, so a
@@ -6,8 +6,8 @@ quoted "<<EOF" never hides the lines after it, and the command lines after a her
 assignment, not a command name; backticks in Python code are text; `--dry-run` of a CLI that documents it, `git push -n`,
 `wrangler versions list`, `nc -z`, Telegram `getMe` send nothing.
 
-Layer 2 (approval_jev): asked only for a verdict whose rules are all "can't tell" (dynamic name, too deep, too long) with
-nothing decoded behind it; p ≥ approval.jev_threshold → allowed, logged `jev`; no key / timeout / error → the card.
+P513i: approval_jev.gray is the deterministic UV floor for any opaque effect,
+including mixed and decoded commands. Model scoring below remains advisory only.
 """
 import _hermetic  # noqa: F401,I001
 import asyncio
@@ -168,10 +168,10 @@ ENV = {"OPENROUTER_API_KEY": "test-key-not-real"}
 class LayerTwo(unittest.TestCase):
     def test_gray_is_only_cant_tell(self):
         self.assertTrue(approval_jev.gray(indep("$PY -m unittest discover -s tests")))
-        for cmd, _ in STILL_ASK + STILL_ASK_INDEPENDENT:
-            self.assertFalse(approval_jev.gray(indep(cmd)), cmd)
-            self.assertFalse(approval_jev.gray(shared(cmd)), cmd)
-        self.assertFalse(approval_jev.gray(indep("X=cm0=; $(echo $X | base64 -d) -rf ~")))   # decoded: not gray
+        for cmd, cat in STILL_ASK + STILL_ASK_INDEPENDENT:
+            self.assertEqual(approval_jev.gray(indep(cmd)), cat == "opaque", cmd)
+            self.assertEqual(approval_jev.gray(shared(cmd)), cat == "opaque", cmd)
+        self.assertTrue(approval_jev.gray(indep("X=cm0=; $(echo $X | base64 -d) -rf ~")))   # partial decode keeps UV
         self.assertFalse(approval_jev.gray(indep("ls")))
 
     def test_threshold_and_failures(self):
@@ -231,6 +231,12 @@ class HostLayerTwo(unittest.TestCase):
     """serve.ask: gray + Jev p ≥ threshold → allowed, no card, logged `jev`; a clear danger never reaches Jev."""
 
     def setUp(self):
+        # This fixture owns only the legacy Jev mechanism after the registry.
+        # Changing NATIVE_TOOLS cannot isolate a parameter-aware shell floor.
+        # test_p512_policy uses the real table/Host.ask to prove no floor bypass.
+        from agentj import policy_registry
+        floor = mock.patch.object(policy_registry, 'main_requirement', return_value='allow')
+        floor.start(); self.addCleanup(floor.stop)
         self.tmp = tempfile.TemporaryDirectory()
         self.st = _state(self.tmp.name)
         work = pathlib.Path(self.tmp.name) / "work"
@@ -255,16 +261,13 @@ class HostLayerTwo(unittest.TestCase):
         return [o for _, o in self.sent if o["t"] == "ask"]
 
     def test_gray_allowed_by_jev(self):
-        judge = mock.Mock(return_value=approval_jev.Result("allow", 0.88, "Jev 判断与当前任务一致（p=0.88 ≥ 0.70）"))
+        """Retained parity id: a Jev allow now requires an independent UV card."""
+        judge = mock.Mock(return_value=approval_jev.Result("allow", 0.99, "safe"))
         with mock.patch.object(approval_jev, "available", return_value=True), mock.patch.object(approval_jev, "judge", judge):
             res = self.run_ask("$PY -m unittest discover -s tests")
-        self.assertEqual(res["behavior"], "allow")
-        self.assertEqual(self.asks(), [])
-        rec = approvals.read_log(self.st)[-1]
-        self.assertEqual((rec["decision"], rec["reason"]), ("allow", "jev"))
-        self.assertEqual(judge.call_args.kwargs["threshold"], 0.7)
-        autos = [o for _, o in self.sent if o["t"] == "auto"]
-        self.assertEqual(autos[-1]["by"], "jev")
+        self.assertEqual(res["behavior"], "deny")
+        self.assertTrue(self.asks()[-1]["passkey_required"])
+        judge.assert_not_called()
 
     def test_low_p_or_unavailable_shows_the_card(self):
         for judge in (mock.Mock(return_value=approval_jev.Result("ask", 0.4, "")),

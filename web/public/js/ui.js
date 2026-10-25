@@ -146,9 +146,11 @@ if (typeof document !== 'undefined') addEventListener('keydown', (e) => {
 
 /** Two-step confirmation for every write (and /clear): → true / false. `danger` = a destructive yes (unbind, unpair);
  *  `no` = an optional label for the other button (P182). */
-export function confirmSheet(title, text, yes, danger = false, no) {
+export function confirmSheet(title, text, yes, danger = false, no, details = '') {
   return new Promise((resolve) => {
     el('confirm-title').textContent = title; fillText(el('confirm-text'), text);   /* P292: `agentj pair` in the text → code + ⧉ */ el('confirm-yes').textContent = yes;
+    const raw = el('confirm-details'); raw.open = false; raw.hidden = !details;
+    el('confirm-raw').textContent = details;
     el('confirm-yes').classList.toggle('aj-btn--danger', !!danger);              // P171: unbind / unpair read as destructive
     el('confirm-yes').classList.toggle('aj-btn--primary', !danger);
     const noBtn = el('confirm-no'), noWas = noBtn.textContent;              // P182: an optional label for the other button
@@ -156,7 +158,7 @@ export function confirmSheet(title, text, yes, danger = false, no) {
     const box = el('confirm'), opener = document.activeElement;
     box.hidden = false; box.dataset.modalOpen = '1';
     el('confirm-yes').focus();
-    const done = (v) => { if (no) noBtn.textContent = noWas; box.hidden = true; delete box.dataset.modalOpen; el('confirm-yes').onclick = null; el('confirm-no').onclick = null; if(opener?.isConnected&&!opener.closest('[hidden]')) opener.focus({preventScroll:true}); resolve(v); };
+    const done = (v) => { if (no) noBtn.textContent = noWas; box.hidden = true; raw.open = false; el('confirm-raw').textContent = ''; delete box.dataset.modalOpen; el('confirm-yes').onclick = null; el('confirm-no').onclick = null; if(opener?.isConnected&&!opener.closest('[hidden]')) opener.focus({preventScroll:true}); resolve(v); };
     el('confirm-yes').onclick = () => done(true);
     el('confirm-no').onclick = () => done(false);
   });

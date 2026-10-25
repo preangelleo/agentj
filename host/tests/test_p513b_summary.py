@@ -64,8 +64,32 @@ class Summary(unittest.TestCase):
 
 
 class HostCards(unittest.IsolatedAsyncioTestCase):
+    async def test_opaque_preview_uses_project_secret_index(self):
+        from test_l1 import _state
+        with tempfile.TemporaryDirectory() as d:
+            project = pathlib.Path(d) / 'project'; project.mkdir()
+            value = 'fixture-project-only-value-8459'
+            env = project / '.env'; env.write_text('FIXTURE_TEST_SECRET=' + value + '\n'); env.chmod(0o600)
+            host = _owner_host(_state(d), [])
+            host.agent_cfg = {'dir': str(project)}
+            phone = Phone(host.st, with_passkey=True); _ready(host, phone)
+            task = asyncio.create_task(host.ask('Bash', {'command':'$UNKNOWN -m test', 'payload':value, 'scope':'read'}))
+            try:
+                for _ in range(200):
+                    if host.asks or task.done(): break
+                    await asyncio.sleep(.005)
+                self.assertTrue(host.asks)
+                card = next(iter(host.asks.values()))
+                self.assertNotIn(value, card.summary)
+                self.assertNotIn(value[:8], card.summary)
+                self.assertIn('scope', card.summary); self.assertIn('read', card.summary)
+                card.fut.set_result(('deny','fixture',None,None)); await task
+            finally:
+                if not task.done(): task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+
     async def test_each_tool_retains_effect_and_actual_signature_binds_tail(self):
-        for tool in ('Bash', 'exec_command', 'mcp__execute', 'AuthRescue', 'agentj goal', 'AgentJHook', 'SandboxOnce'):
+        for tool in ('Bash', 'exec_command', 'mcp__shell__execute_command', 'AuthRescue', 'agentj goal', 'AgentJHook', 'SandboxOnce'):
             with self.subTest(tool=tool), tempfile.TemporaryDirectory() as d:
                 st = State(pathlib.Path(d)); st.init()
                 sent = []; host = _owner_host(st, sent)
@@ -202,7 +226,7 @@ class HostCards(unittest.IsolatedAsyncioTestCase):
                           ('AuthRescue', {'summary': 'x' * 25000}),
                           ('agentj goal', {'card': 'x' * 25000}),
                           ('Bash', {'amount': float('nan')}),
-                          ('mcp__execute', {'parameters': {1, 2}})):
+                          ('mcp__shell__execute_command', {'parameters': {1, 2}})):
             with self.subTest(tool=tool), tempfile.TemporaryDirectory() as d:
                 st = State(pathlib.Path(d)); st.init()
                 sent = []; host = _owner_host(st, sent)

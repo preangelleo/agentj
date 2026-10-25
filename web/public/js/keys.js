@@ -226,7 +226,7 @@ function rowNode(r, vendor) {
   if (r.type === 'oauth') top.append(mk('span', 'kname kname--login', ['claude', 'codex'].includes(r.name) ? t('p352.login.' + r.name) : r.name));
   else {
     const info = PLAN_COPY[r.name];
-    top.append(mk('span','kname',info ? t('p417.key.'+info[0]) : vendor ? t(r.type==='sub'?'p417.key.subTitle':'p417.key.apiTitle',{vendor}) : r.name));
+    top.append(mk('span','kname',vendor && ['TYPESAFE_API_KEY','OPENROUTER_API_KEY'].includes(r.name) ? t('p527.jev.' + (r.name === 'TYPESAFE_API_KEY' ? 'typesafe' : 'openrouter')) : info ? t('p417.key.'+info[0]) : vendor ? t(r.type==='sub'?'p417.key.subTitle':'p417.key.apiTitle',{vendor}) : r.name));
   }
   main.append(top);
   if (r.type !== 'oauth' && vendor) {
@@ -432,7 +432,7 @@ function act(op, r, vendor, button) {
 
 async function requestCard(name) {
   const res = await api.keysSet(name);
-  toast(t(res.ok ? 'models.card' : why(res.why)), 4200);
+  if (!res.ok) toast(t(why(res.why)), 4200);
   if (res.n) rearm(res.n);
 }
 

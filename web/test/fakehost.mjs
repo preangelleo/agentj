@@ -491,7 +491,7 @@ export async function startFakeHost() {
       ...(st.runCmds ? { run_cmds: st.runCmds } : {}),   // P361: the names Settings may 「执行」
       ...(st.terminal ? { terminal: st.terminal } : {}),   // P408 (§38): the web terminal block (absent = an older host)
       ...(st.vault ? { vault: st.vault } : {}),   // P414 (§38.9): the computer-password vault block (absent = an older host)
-      ...(st.signedPrefs ? { signed_prefs: ['approval.level', 'approval.goal_nocard', 'jev.mode'], jev: {mode: value?.jev?.mode || 'openrouter', ready: true},   // P336 (+ what is in force)
+      ...(st.signedPrefs ? { signed_prefs: ['approval.level', 'approval.goal_nocard', 'jev.mode'], jev: {mode: value?.jev?.mode || 'openrouter', ready: st.jevReady !== false},   // P336 (+ what is in force)
         approval: { level: st.approvalUnsigned ? 'standard' : (value?.approval?.level ?? 'standard'),
           goal_nocard: !st.approvalUnsigned && value?.approval?.goal_nocard === true } } : {}) };
     return m;

@@ -335,7 +335,7 @@ It may need you here:
 The AI installs `agentj`, the program on the Agent J host, at one fixed version:
 
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.25.9a1#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.25.10a1#subdirectory=host"
 agentj doctor
 ```
 
@@ -544,7 +544,7 @@ On an ordinary host, first run `agentj update apply`, then check `agentj --versi
 
 If downloading, verification or installation preparation fails, Agent J reports that the previous version remains installed. Ask your Agent to run `agentj doctor` and check the cause. Keep your configuration, account binding and existing seat.
 
-After a rollback, a working old program counts as a successful rollback; any remaining service or health-check problem is reported separately and still needs attention. Older updaters gain these improvements only after installing the new version successfully. If an old updater cannot finish, rerun the current installation command from the original seat card as the same system user and instance, preserving configuration and bindings. Update Olares apps through Market.
+After a rollback, a working old program counts as a successful rollback; any remaining service or health-check problem is reported separately and still needs attention. Older updaters gain these improvements only after installing the new version successfully. If an old uv updater cannot finish, use the repair command in the [old-updater FAQ](/docs/faq/) from the computer's terminal as the same system user. It needs no new installation code and preserves configuration and bindings. Update Olares Market apps through Market.
 
 ## If the AI cannot start for the first time {#first-ai-start}
 

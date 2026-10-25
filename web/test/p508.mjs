@@ -29,10 +29,10 @@ try{
    await waitFor(p,`document.getElementById('busyDots').dataset.n==='3'`);
    await evaluate(p,`document.getElementById('busyDots').click()`);await waitFor(p,`document.querySelectorAll('#busyList li').length===3`);
    const text=await evaluate(p,`document.getElementById('busyList').textContent`);
-   for(const value of ['gpt-test','xhigh','acct:1234abcd','child-model','claimed',lang==='zh'?'未识别':'Unknown',lang==='zh'?'自报':'Self-reported',lang==='zh'?'与探测不一致':'Conflicts with detection'])check(text.includes(value),'visible '+value);
+   for(const value of ['gpt-test',lang==='zh'?'超高档':'Extra high','child-model','claimed',lang==='zh'?'自报与实际不一致':'Reported details differ'])check(text.includes(value),'visible '+value);
    check((await evaluate(p,`document.getElementById('busySub').textContent`)).includes(lang==='zh'?'存活进程 1 个':'Live processes: 1'),'independent process count');
    check(await evaluate(p,`[...document.querySelectorAll('#busyList li>span')].every(e=>e.textContent.length>10&&e.getBoundingClientRect().width>60)`),'titles retain a column');
-   check(await evaluate(p,`[...document.querySelectorAll('#busyList .busy-identity')].every(e=>e.getBoundingClientRect().right<=innerWidth&&getComputedStyle(e).backgroundColor==='rgb(250, 249, 245)')`),'light provenance cards fit viewport');
+   check(await evaluate(p,`[...document.querySelectorAll('#busyList .busy-identity')].every(e=>e.getBoundingClientRect().right<=innerWidth&&getComputedStyle(e).backgroundColor==='rgba(0, 0, 0, 0)')`),'secondary provenance text fits viewport');
    check(await evaluate(p,`document.documentElement.scrollWidth<=innerWidth`),'no horizontal overflow');
    writeFileSync(out+lang+'-'+width+'.png',await shoot(p,''));
    await fake.send({t:'busy',by:'Agent J',tasks:tasks.slice(1),task_count:2,live_process_count:1});

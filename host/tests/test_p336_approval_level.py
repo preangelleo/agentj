@@ -46,6 +46,13 @@ def sign(ph, target, *, n=None, ts=None, key=None):
 
 class Base(unittest.TestCase):
     def setUp(self):
+        # Isolate the pre-registry lexer/level contract. P512's real-entry
+        # matrix separately proves registry floors override these auto paths.
+        from agentj import policy_registry
+        original_requirement = policy_registry.main_requirement
+        # Legacy goal/grant mechanics only; real composed floors are tested in P512.
+        floor = mock.patch.object(policy_registry, 'main_requirement', side_effect=lambda tool, inp=None: 'allow' if tool == 'Bash' else original_requirement(tool, inp))
+        floor.start();self.addCleanup(floor.stop)
         self.tmp = tempfile.TemporaryDirectory()
         self.st = _state(self.tmp.name)
         self.work = pathlib.Path(self.tmp.name) / "work"
@@ -228,7 +235,7 @@ class Matrix(Base):
                 mock.patch.object(approval_jev, "judge", return_value=approval_jev.Result("allow", p=0.99, reason="ok")):
             gray = "$TOOL --run x"
             self.assertTrue(approval_jev.gray(self.host._classify("Bash", {"command": gray})))
-            self.assertEqual(self.ask(gray)["behavior"], "allow")          # standard: Jev clears it
+            self.assertEqual(self.ask(gray)["behavior"], "deny")           # opaque effects always require UV
             self.level("safe")
             n = len(self.cards())
             self.assertEqual(self.ask(gray)["behavior"], "deny")           # safe: the card

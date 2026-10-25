@@ -755,9 +755,78 @@ def install(code, uv, working_root, *, post=request, run=command, approve=consen
             if lease is not None: post('/v1/install/complete', lease=lease['api_key'])
         except InstallError: print('临时授权回收未确认，将按硬到期失效。/ Revocation unconfirmed; hard expiry remains enforced.')
 
+
+def upgrade_existing(uv, *, home=None, run=command):
+    """P516: repair-forward via today's verified bootstrap, without the old worker or a seat code.
+    Pin both uv destinations from the installed tool receipt; never create a parallel installation.
+    """
+    import tomllib
+    if os.environ.get('AGENTJ_FENCED'):
+        raise InstallError('upgrade_requires_host_terminal')
+    base = artifact_base()
+    home = Path(home or Path.home())
+    found = shutil.which('agentj') or str(home/'.local/bin/agentj')
+    executable = Path(found).resolve()
+    prefix = executable.parent.parent
+    try:
+        receipt = tomllib.loads((prefix/'uv-receipt.toml').read_text())['tool']
+        requirements = receipt['requirements']
+        entries = [Path(e['install-path']) for e in receipt['entrypoints'] if e.get('name') == 'agentj']
+        if (executable != prefix/'bin/agentj' or prefix.name != 'agentj'
+                or not requirements or requirements[0].get('name') != 'agentj'
+                or len(entries) != 1 or not entries[0].is_absolute()
+                or entries[0].resolve() != executable):
+            raise ValueError()
+    except (OSError, ValueError, KeyError, TypeError, AttributeError, IndexError):
+        raise InstallError('upgrade_requires_uv_install') from None
+    before = run([str(executable), '--version']).decode().strip()
+    version_re = r'agentj (\d+)\.(\d+)\.(\d+)(?:(a|b|rc)(\d+))?'
+    def version_key(text):
+        match = re.fullmatch(version_re, text)
+        if not match: raise InstallError('upgrade_version_invalid')
+        major, minor, patch, pre, number = match.groups()
+        return (int(major), int(minor), int(patch), {'a':0, 'b':1, 'rc':2, None:3}[pre], int(number or 0))
+    old_key = version_key(before)
+    with tempfile.TemporaryDirectory(prefix='agentj-upgrade-') as td:
+        work = Path(td); work.chmod(0o700)
+        name, sha = resolve_wheel(base)
+        target = 'agentj '+name[len('agentj-'):-len('-py3-none-any.whl')]
+        if version_key(target) < old_key: raise InstallError('upgrade_downgrade_refused')
+        wheel = work/name
+        download(base+'/dl/'+name, wheel, sha)
+        verify_wheel(wheel.read_bytes(), fetch(base+'/dl/'+name+'.minisig', MAX_SIG), name)
+        # The bootstrap uv lives in a temporary directory. Retain these already hash-verified bytes
+        # so service install captures a PATH that remains valid after the bootstrap exits.
+        directory = home/'.local/share/agentj/upgrade-bin'
+        if any(p.is_symlink() for p in (directory, *directory.parents)):
+            raise InstallError('upgrade_runtime_symlink')
+        directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+        persistent = directory/'uv'
+        if persistent.is_symlink(): raise InstallError('upgrade_runtime_symlink')
+        with tempfile.NamedTemporaryFile(prefix='.uv-', dir=directory, delete=False) as out:
+            staging = Path(out.name)
+            try:
+                out.write(Path(uv).read_bytes()); out.flush()
+                staging.chmod(0o700); os.replace(staging, persistent)
+            finally:
+                staging.unlink(missing_ok=True)
+        env = {**os.environ, 'UV_TOOL_DIR': str(prefix.parent), 'UV_TOOL_BIN_DIR': str(entries[0].parent),
+               'PATH': os.pathsep.join((str(directory), str(entries[0].parent), os.environ.get('PATH', '')))}
+        python = os.path.realpath(getattr(sys, '_base_executable', sys.executable))
+        run([str(persistent), 'tool', 'install', '--force', '--python', python, str(wheel), *host_install_args()], env=env)
+        if run([str(executable), '--version'], env=env).decode().strip() != target:
+            raise InstallError('upgrade_version_mismatch')
+        run([str(executable), 'service', 'install'], env=env)
+        run([str(executable), 'service', 'restart'], env=env)
+        run([str(executable), 'doctor', '--upgrade-only', '--json'], env=env)
+    print(before+' → '+target+'; 配置和绑定已保留。/ Configuration and pairing preserved.')
+    return True
+
+
 def main(argv=None):
     import argparse
     p=argparse.ArgumentParser(description='Local installation assistant; no remote shell')
+    p.add_argument('--upgrade-only', action='store_true', help='Repair an existing uv installation; preserve its seat and pairing')
     p.add_argument('code', nargs='?'); p.add_argument('--code-file', default=os.environ.get('AGENTJ_CODE_FILE'), help=argparse.SUPPRESS)
     p.add_argument('--one-command', action='store_true', help='Run by https://agentj.app/install.sh: no duplicate questions')
     p.add_argument('--ai-later', action='store_true', help='The owner chose to connect an AI later')
@@ -766,6 +835,9 @@ def main(argv=None):
     a=p.parse_args(argv)
     try:
         if not a.uv: raise InstallError('verified_uv_required')
+        if a.upgrade_only:
+            upgrade_existing(a.uv)
+            return 0
         if not a.code and a.code_file:
             a.code = read_code_file(a.code_file)
         if not a.code: raise InstallError('invalid_installation_code')
@@ -778,7 +850,12 @@ def main(argv=None):
             root=Path(json.loads(recovery.read_text())['working_root'])
         install(a.code, a.uv, root, resume=resume, one_command=a.one_command, ai_later=a.ai_later, free_model=a.free_model, local_model=a.local_model)
     except (InstallError, KeyboardInterrupt, subprocess.CalledProcessError, OSError, ValueError, KeyError, TypeError) as exc:
-        print(failure_message(exc, (Path.home()/'.local/share/agentj/installation-progress.json').exists()), file=sys.stderr)
+        if a.upgrade_only:
+            reason = exc.reason if isinstance(exc, InstallError) else type(exc).__name__
+            print('升级修复未完成 / Upgrade repair incomplete: '+reason, file=sys.stderr)
+            print('请核对 agentj --version 和 agentj doctor；保留配置，不要解绑。 / Check agentj --version and agentj doctor; preserve configuration and pairing.', file=sys.stderr)
+        else:
+            print(failure_message(exc, (Path.home()/'.local/share/agentj/installation-progress.json').exists()), file=sys.stderr)
         return 1
     return 0
 

@@ -14,7 +14,7 @@ phone only shows the data and turns a button into a chat message the owner confi
 1. `agentj card list` — what exists, which are on, where each data file is.
 2. Start from a copy: `agentj card export notes ~/agentj-cards/<short-name>` (or `todo` for a list). Change `id`
    (2–32 lower-case letters, digits, -; not an official id: notes, todo, official-palette, obsidian, calendar, files, automation; no agentj- / official-
-   prefix) and `name` (zh ≤ 12, en ≤ 24), `description` (zh ≤ 60, en ≤ 120).
+   prefix) and `name` (zh ≤ 12, en ≤ 24), `description` (zh ≤ 60, en ≤ 120). Replace inherited `aliases` with this card's own names (optional, ≤12 unique plain strings, each ≤40 characters).
 3. Make only the changes asked for. Prefer a stack of small cards (one record per card); this is a recommendation,
    not a requirement when another layout fits better. Every new custom card **must have its own management skill**:
    use `agentj-commands` to create/install it in the current harness, with clear add/edit/delete/sort operations as needed.
@@ -54,7 +54,8 @@ form names everything the phone opens (`jlink`): `skill/<name>` · `workflow/<fo
 `card/<id>[#<anchor>]` · `page/chat|workflows|skills|memory|agentj|cards`.
 - The owner says 「打开日历」「看看待办」"open my notes": `agentj card list` → the id → `agentj card open <id> [--at <anchor>]`
   (the phone goes there; navigation only, nothing changes, no approval; `off` → ask before `agentj card on`).
-- In a reply, write `card/<id>` or `card/<id>#<anchor>` (or `@<card name>` when the name is unique): the phone turns it
+- Plain names from the registry (both `name` languages and optional `aliases`) become internal links automatically in Agent reply prose; only the first mention per card is linked, case-insensitive in English. Off cards, code, existing links and URLs are excluded; owner plain text is unchanged. Do not add markup just to make a card name clickable.
+- For an exact card or anchor, write `card/<id>` or `card/<id>#<anchor>` (or `@<card name>` when the name is unique): the phone turns it
   into a link the owner taps. The owner's `@<name>（card/<id>）` means that card.
 
 ## Card colours

@@ -44,5 +44,9 @@
         "en": "/agentj-add-note tidy"
       }
     }
+  ],
+  "aliases": [
+    "记事本卡",
+    "Notebook card"
   ]
 }

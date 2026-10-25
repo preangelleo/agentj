@@ -29,8 +29,9 @@ anything else (`cat >> notes.md <<'EOF'`) → data: only WHERE it is written cou
 words in it never do — unless a later command of the same call runs that file. MAX_CMD measures the command lines, not the
 bodies. `systemctl --user` / `systemd-run --user`, wait loops, `--dry-run` of a CLI that documents it, `git push -n`,
 read-only subcommands, `nc -z` and Telegram `get*` methods are not danger. What stays "can't tell" (a `$VAR` program name,
-too deep, too long) may be cleared by layer 2 (approval_jev.py: Jev, the owner's own key, p ≥ approval.jev_threshold); a
-clear hit never reaches Jev, and encoded / piped-into-a-shell forms are never "can't tell"-only.
+too deep, too long) requires per-request WebAuthn UV in Host.ask. A model opinion,
+Full access or goal authorization cannot clear it. Encoded / piped-into-a-shell
+forms are never "can't tell"-only.
 
 Standard library only (the hook starts once per tool call).
 """
@@ -512,6 +513,8 @@ def unwrap(cmd: Cmd, depth: int = 0) -> list[Simple]:
             words = rest[k:]
             continue
         if name in _WRAP_ARG:
+            if name in ("sudo", "doas", "run0", "pkexec"):
+                flags.add("elevated")
             flags.add("wrapped")
             opts, rest = _WRAP_ARG[name], words[1:]
             k = 0
@@ -559,6 +562,7 @@ def unwrap(cmd: Cmd, depth: int = 0) -> list[Simple]:
             if cmd.piped or cmd.heredoc or k >= len(rest) or rest[k] in ("-", "-s"):
                 flags.add("piped_shell")           # a shell reading its program from stdin: content unknown here
         if name == "su":
+            flags.add("elevated")
             rest = words[1:]
             for k, w in enumerate(rest):
                 if w in ("-c", "--command") and k + 1 < len(rest):
@@ -1636,14 +1640,15 @@ def _mcp(tool: str, tool_input, hits: _Hits) -> None:
 _FILE_TOOLS = ("Write", "Edit", "MultiEdit", "NotebookEdit")
 
 
-def classify(tool: str, tool_input, extra: list | None = None) -> Verdict:
+def classify(tool: str, tool_input, extra: list | None = None, *, env=None) -> Verdict:
     hits = _Hits()
     inp = tool_input if isinstance(tool_input, dict) else {}
     tool = tool if isinstance(tool, str) else ""
     if tool == "Bash":
         cmd = inp.get("command")
         if isinstance(cmd, str):
-            _bash(cmd, hits)
+            from .static_shell import resolve
+            _bash(resolve(cmd, env), hits)
     elif tool == "Delete":                  # a file deleted by a patch (Codex apply_patch, ADR-A70)
         paths = [p for p in [inp.get("file_path"), *(inp.get("files") or [])] if isinstance(p, str)]
         hits.add("delete", "delete.patch", "删除文件 " + (paths[0].rsplit("/", 1)[-1] if paths else "?")[:120])
@@ -1983,7 +1988,8 @@ def _quoted_data_out(cmd: str) -> str:
 
 def hook_main(argv: list[str]) -> int:
     """Claude Code PreToolUse hook. Prints {"hookSpecificOutput": {"permissionDecision": "ask"}} for a dangerous call,
-    nothing otherwise. Any failure → exit 2 (Claude Code treats that as a blocking error: the call does not run).
+    or a registry hold/UV row; unknown actions deny. policy-only disables extra danger hints, never table checks.
+    Any failure → exit 2 (Claude Code treats that as a blocking error: the call does not run).
     `hook <extras> research` (a scheduled read-only run, ADR-A53): anything not read-only is denied outright."""
     try:
         ev = json.load(sys.stdin)
@@ -1996,12 +2002,24 @@ def hook_main(argv: list[str]) -> int:
                     "permissionDecisionReason": "agentj 只读运行（定时任务 mode: research）：" + why + "。这次运行只能读取，"
                                                 "把要做的事写进报告，由人决定。"}}, ensure_ascii=False))
                 return 0
-        v = classify(ev.get("tool_name"), ev.get("tool_input"), extra)
-        if v.danger:
+        from .policy_registry import main_requirement
+        requirement = main_requirement(ev.get("tool_name"), ev.get("tool_input"))
+        if requirement == "deny":
+            sys.stdout.write(json.dumps({"hookSpecificOutput": {
+                "hookEventName": "PreToolUse", "permissionDecision": "deny",
+                "permissionDecisionReason": "Agent J：未知动作，默认拒绝 / Unknown action denied"}}, ensure_ascii=False))
+            return 0
+        v = classify(ev.get("tool_name"), ev.get("tool_input"), extra) if "policy-only" not in argv[1:] else None
+        if v is not None and v.danger:
             reason = "agentj 危险动作清单（" + "、".join(LABEL[c].split(" · ")[0] for c in v.cats) + "）：" + v.why + \
                      "——必须在手机上逐条批准。"
             sys.stdout.write(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "ask",
                                                                 "permissionDecisionReason": reason}}, ensure_ascii=False))
+        elif requirement in ("hold", "uv"):
+            sys.stdout.write(json.dumps({"hookSpecificOutput": {
+                "hookEventName": "PreToolUse", "permissionDecision": "ask",
+                "permissionDecisionReason": "Agent J：需要主人确认 / Owner confirmation required (" + requirement + ")"}},
+                ensure_ascii=False))
         return 0
     except Exception as e:  # noqa: BLE001 — fail closed
         sys.stderr.write(f"agentj danger hook failed ({type(e).__name__}): blocked\n")
@@ -2756,7 +2774,7 @@ def _shown_creds(text: str) -> list[str]:
     return out
 
 
-def classify_shared(tool: str, tool_input, extra=None, mode: str = "standard", cwd: str | None = None) -> Verdict:
+def classify_shared(tool: str, tool_input, extra=None, mode: str = "standard", cwd: str | None = None, *, env=None) -> Verdict:
     """Only spending, public deletion, external delivery and credentials.
 
     Uses the independent classifier/lexer/path rules; local file deletion and price edits are not a new shared-mode approval
@@ -2777,7 +2795,7 @@ def classify_shared(tool: str, tool_input, extra=None, mode: str = "standard", c
         credential = next((p for p in paths if cred_path(p) or hook_path(p)), None)
         if credential:
             tool, tool_input = 'Edit', {'file_path': credential}
-    v = classify(tool, tool_input, extra)
+    v = classify(tool, tool_input, extra, env=env)
     inp = tool_input if isinstance(tool_input, dict) else {}
     command = inp.get('command') if tool == 'Bash' and isinstance(inp.get('command'), str) else None
     items = list(v.items)
@@ -2791,13 +2809,13 @@ def classify_shared(tool: str, tool_input, extra=None, mode: str = "standard", c
         items += [x for x in real if x[1] not in {r for _, r, _ in items}]
     rules = [r for _, r, _ in items]
     cred_rules = [r for r in rules if r.startswith("cred.") or r == "extra.credentials"]
-    cats = [c for c in v.cats if c in ('spend', 'send', 'opaque') or (c == 'delete' and alldel) or
+    cats = [c for c in v.cats if c in ('spend', 'send', 'opaque') or (c == 'delete' and (alldel or 'too_long' in v.rules)) or
             (c == 'delete' and any(r in _SHARED_PUBLIC_DELETE or
              r.startswith(('delete.gh_', 'delete.npm', 'delete.pypi', 'delete.cargo')) for r in rules))]
     if cred_rules:
         cats.append('credentials')
     keep = set(cats) | {"credentials"}
-    rules = [r for c, r, _ in items if c in keep and (c not in ("delete", "opaque") or c == "opaque" or alldel or
+    rules = [r for c, r, _ in items if c in keep and (c not in ("delete", "opaque") or c == "opaque" or alldel or r == "too_long" or
                                                        r in _SHARED_PUBLIC_DELETE or
                                                        r.startswith(('delete.gh_', 'delete.npm', 'delete.pypi', 'delete.cargo')))
              and (c != "credentials" or r in cred_rules)]

@@ -120,6 +120,9 @@ class SignedPicks(unittest.TestCase):
     def run_card(self, answer):
         from test_l1 import Phone, _owner_host as _host, _ready
         ph = Phone(self.st)
+        from test_p57_passkey import Authenticator, pk_record
+        from agentj import passkey
+        auth = Authenticator(); self.st.set_passkey(ph.pub, pk_record(auth))
         host = _host(self.st, self.sent)
         s = _ready(host, ph)
         host.ask_ttl = 1
@@ -131,7 +134,12 @@ class SignedPicks(unittest.TestCase):
                 await asyncio.sleep(0.01)
             ask = [o for _, o in self.sent if o.get("t") == "ask"][-1]
             self.assertEqual(ask["allow_offer"], ["a@x.example", "b@x.example"])
-            await host._app(s, answer(ph, ask))
+            obj = answer(ph, ask)
+            if obj.get('ok'):
+                card = next(a for a in host.asks.values() if a.rid == ask['id'])
+                challenge = passkey.elevate_challenge(host.channel, ph.did, card.rid, card.pk_kind, card.rid, card.digest)
+                obj['fa'] = auth.assert_(challenge, b'0', nonce=b'0')
+            await host._app(s, obj)
             return await t
         return asyncio.run(go())
 

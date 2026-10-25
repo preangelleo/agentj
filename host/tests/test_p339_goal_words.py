@@ -306,6 +306,13 @@ class ReviewFixes(unittest.TestCase):
 
 class HostGoal(unittest.TestCase):
     def setUp(self):
+        # Isolate this pre-registry mechanism on an automatic action row;
+        # test_p512_policy proves the real composition has no floor bypass.
+        from agentj import policy_registry
+        original_requirement = policy_registry.main_requirement
+        # Legacy goal/grant mechanics only; real composed floors are tested in P512.
+        floor = mock.patch.object(policy_registry, 'main_requirement', side_effect=lambda tool, inp=None: 'allow' if tool == 'Bash' else original_requirement(tool, inp))
+        floor.start(); self.addCleanup(floor.stop)
         self.tmp = tempfile.TemporaryDirectory()
         self.st = _state(self.tmp.name)
         work = pathlib.Path(self.tmp.name) / "work"

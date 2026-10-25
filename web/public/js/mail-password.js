@@ -16,17 +16,22 @@ export function paintMailPassword(c, label, input, rows) {
   const help = document.createElement('dd');
   help.textContent = lines.slice(2).filter(line => !/^https:/.test(line) && !/^(IMAP|SMTP):/.test(line)).join('\n');
   rows.append(help);
+  let official = false;
   for (const raw of c.purpose.match(/https:\/\/[^\s]+/g) || []) {
     let u; try { u = new URL(raw); } catch { continue; }
     if (!OFFICIAL.has(u.hostname) || u.username || u.password) continue;
-    const dt = document.createElement('dt'), dd = document.createElement('dd'), a = document.createElement('a');
-    dt.textContent = t('mail.official');
+    const dd = document.createElement('dd'), a = document.createElement('a');
+    if (!official) {
+      const dt = document.createElement('dt'); dt.textContent = t('mail.official'); rows.append(dt); official = true;
+    }
     a.href = u.href; a.target = '_blank'; a.rel = 'noopener noreferrer';
     a.textContent = u.hostname === 'agentj.app' ? t('mail.gmailHelp') : u.hostname === 'myaccount.google.com' ? t('mail.gmailOpen') : u.hostname;
-    dd.append(a); rows.append(dt, dd);
+    dd.append(a); rows.append(dd);
   }
+  const serverText = lines.filter(line => /^(IMAP|SMTP):/.test(line)).join('\n');
+  if (!serverText) return true;
   const details = document.createElement('details'), summary = document.createElement('summary'), servers = document.createElement('p');
-  summary.textContent = t('mail.adv'); servers.textContent = lines.filter(line => /^(IMAP|SMTP):/.test(line)).join('\n');
+  summary.textContent = t('mail.adv'); servers.textContent = serverText;
   details.append(summary, servers); const serverRow = document.createElement('dd'); serverRow.append(details); rows.append(serverRow);
   return true;
 

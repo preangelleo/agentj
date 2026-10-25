@@ -1,6 +1,6 @@
 // P352 fixture: the host's `keys` reply (names / states only) and a fake host handler for keys_get / keys_op / keys_set.
 // The copy value is a made-up string (not a key of anything); the tests check it reaches the clipboard and never the DOM.
-import { randomBytes } from 'node:crypto';
+import { generateKeyPairSync, randomBytes } from 'node:crypto';
 export const FAKE_VALUE = 'p352-fixture-not-a-key-' + 'Zq7Wm2';
 const hex = () => randomBytes(16).toString('hex');
 export function keysMsg(fa) {
@@ -37,7 +37,7 @@ export function keysHandler(st, { fa = null, calls = [], fail = null } = {}) {
       await send(m.op === 'copy' ? { t: 'keys_res', r: m.r, ok: true, op: 'copy', name: m.name, value: FAKE_VALUE, n } : { t: 'keys_res', r: m.r, ok: true, op: m.op, name: m.name, n });
       return true;
     }
-    if (m.t === 'keys_set') { calls.push({ op: 'set', name: m.name }); await send({ t: 'keys_res', r: m.r, ok: true, op: 'set', name: m.name }); return true; }
+    if (m.t === 'keys_set') { calls.push({ op: 'set', name: m.name }); await send({ t: 'keys_res', r: m.r, ok: true, op: 'set', name: m.name, card: {t:'elev',kind:'secret',name:m.name,purpose:'API Key',dest:'Host key file',verify:'',id:hex(),n:hex(),epk:generateKeyPairSync('x25519').publicKey.export({format:'jwk'}).x,ttl:120,passkey_required:true} }); return true; }
     if (m.t === 'models_get') { await send({ t: 'models', r: m.r, models: [{ id: 'p352/model-a', name: 'p352/model-a', efforts: [] }], default: { model: 'p352/model-a' } }); return true; }
     return prev ? prev(c, m, send) : false;
   };

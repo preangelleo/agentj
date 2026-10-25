@@ -13,6 +13,7 @@ import { copyable } from './copycode.js';   // P292
 
 let H = { myId: () => null, hostDevices: () => null, forget: () => {}, say: () => {} };
 let snap = null;          // {limit, items:[{id,name,paired_at,seen,online,me,source}], can_add, busy} — null = not read yet
+let generation = 0;       // discard a dev_list answer from a forgotten host
 let legacy = false;       // the host never answered dev_list
 let shown = false;
 let add = null;           // {link, expires, timer, pending:{device,name,evict,replaces}|null, ended:bool}
@@ -45,6 +46,8 @@ export function count() {
   return s ? { n: s.items.length, max: s.limit } : null;
 }
 
+export function reset() { generation++; snap = null; legacy = false; }
+
 // ---------------------------------------------------------------- open / refresh
 export async function open(opts = {}) {
   shown = true;
@@ -65,7 +68,9 @@ export function close() {
 export function onPairCard() { if (add) add.card = true; }
 export async function refresh() {
   if (!isReady()) { render(); return; }
+  const current = generation;
   const m = await ask1({ t: 'dev_list' }, 'devs', 6000);
+  if (current !== generation) return;
   if (m.t === 'devs') { legacy = false; snap = take(m); }
   else if (m.t === 'timeout') { legacy = true; snap = fromPrefs() || snap; }
   render();
