@@ -220,6 +220,24 @@ class SecretIndex:
                         return True
         return False
 
+    def redact(self, text: str) -> tuple[str, int]:
+        """Remove tokens containing indexed windows, retaining only salted hashes.
+
+        If only a whitespace/Unicode-normalised spelling matches, remove the whole
+        field rather than attempting an unsafe mapping back to the original bytes.
+        """
+        spans = []
+        for token in re.finditer(r"\S+", text):
+            if self.hits(token.group()):
+                spans.append(token.span())
+        if not spans:
+            return ("<redacted>", 1) if self.hits(text) else (text, 0)
+        for start, end in reversed(spans):
+            text = text[:start] + "<redacted>" + text[end:]
+        if self.hits(text):
+            return "<redacted>", len(spans) + 1
+        return text, len(spans)
+
     def __len__(self) -> int:
         return self.count
 

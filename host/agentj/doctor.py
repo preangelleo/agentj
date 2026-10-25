@@ -1021,6 +1021,10 @@ def check_service(svc: dict, legacy: dict | None = None) -> dict:
     if mismatch:
         return _c("service", FAIL, "unit/env file harness paths disagree: " + ", ".join(mismatch),
                   "Run `agentj service install` to remove stale unit paths; saved env overrides are preserved")
+    missing = service.path_missing_harnesses(svc)
+    if missing:
+        return _c("service", WARN, "服务 PATH 找不到已安装的 Agent / Installed harness missing from service PATH: " + ", ".join(missing),
+                  "agentj service install")
     if svc.get("active") == "active" and svc.get("seen_by") == "socket":
         return _c("service", OK, f"{n} 在运行（serve 在应答；这里看不到 launchd / systemd）/ running (serve answers; the service "
                   "manager is not visible from here)")

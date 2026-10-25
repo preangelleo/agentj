@@ -38,8 +38,38 @@ LABEL = {"clear": "清空", "compact": "压缩", "model": "换模型", "context"
 ARG_MAX = 200
 _CMD = re.compile(r"^/([A-Za-z][\w:.-]{0,63})(?:[ \t]+(.*))?$", re.S)
 MODEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/\[\]@+-]{0,99}$")
-REFUSE = ("这个命令请在Agent J 主机上执行。手机上能用的：/clear /new /compact /model /context /cost /usage /status /help /stop"
-          " /my-agent-id /add-friend /telegram-pair /update /reload /reset /switch-harness /goal")
+# P529: plain Markdown list; the phone upgrades only the host's refused card.
+PHONE_COMMANDS = (
+    ('clear', '开新对话（先确认）', 'Start a new conversation (asks first)'),
+    ('new', '开新对话，同 /clear', 'Start a new conversation, like /clear'),
+    ('compact', '压缩上下文', 'Compact the context'),
+    ('model', '选择模型', 'Choose a model'),
+    ('context', '查看上下文用量', 'Show context usage'),
+    ('cost', '查看本会话花费', 'Show conversation cost'),
+    ('usage', '查看套餐用量', 'Show plan usage'),
+    ('status', '查看当前状态', 'Show current status'),
+    ('help', '查看命令帮助', 'Show command help'),
+    ('stop', '停下这一轮', 'Stop this turn'),
+    ('my-agent-id', '查看 Agent 号码', 'Show your Agent number'),
+    ('add-friend', '添加 Agent 好友', 'Add an Agent friend'),
+    ('telegram-pair', '重新绑定 Telegram', 'Pair Telegram again'),
+    ('update', '升级 Agent J（先确认）', 'Upgrade Agent J (asks first)'),
+    ('reload', '重新加载设置', 'Reload settings'),
+    ('reset', '逐步修复连接（照常确认）', 'Repair the connection (normal confirmation)'),
+    ('switch-harness', '检查并切换 AI', 'Check and switch the AI'),
+    ('goal', '设置要完成的目标', 'Set a goal'),
+)
+
+
+def refuse(lang='zh') -> str:
+    head = ('Run this command on the Agent J host. Commands available on the phone:' if lang == 'en' else
+            '这个命令请在Agent J 主机上执行。手机上能用的：')
+    return head + '\n\n' + '\n'.join('- /' + cmd + ' — ' + (en if lang == 'en' else zh)
+                                              for cmd, zh, en in PHONE_COMMANDS)
+
+
+REFUSE = refuse()
+
 NONE = "—"
 # F24: the whole message, nothing else (「把这个文件压缩一下」 stays a message)
 SAY_COMPACT = ("压缩", "压缩一下", "压缩吧", "压缩上下文", "compact", "compact now", "compact the context")

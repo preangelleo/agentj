@@ -292,6 +292,22 @@ export function linkify(box,cardsOnly=false,cardNames=false){const cards=jc.avai
  const ad=!match&&addr(s,at);if(ad){used.add(ad[1]);out.append(cardLink(ad));at+=ad[0].length;changed=true;continue;}
  if(match){const text=s.slice(at,at+match.text.length);if(match.auto&&match.ids.some(id=>used.has(id))){out.append(document.createTextNode(text));at+=match.text.length;continue;}if(match.auto)for(const id of match.ids)used.add(id);else if(match.card)used.add(match.card);const b=button(match.label||text,match.fn,'fp-link fp-link-'+match.type);if(match.card!==undefined){b.dataset.card=match.card;b.addEventListener('click',e=>e.stopPropagation());}out.append(b);at+=match.text.length;changed=true;}else{out.append(document.createTextNode(s[at]));if(s[at]==='》')inBook=false;at++;}}if(changed)n.replaceWith(out);}
 }
+// P529: host-refused command list only, using the existing internal-link component.
+// A tap goes through the same signed/confirmed path as typing the command.
+export const PHONE_COMMANDS = new Set(['clear','new','compact','model','context','cost','usage','status','help','stop','my-agent-id','add-friend','telegram-pair','update','reload','reset','switch-harness','goal']);
+export function commandLinks(box, run) {
+ for(const li of box.querySelectorAll('li')) {
+  const first=li.firstChild, n=first?.nodeType===Node.ELEMENT_NODE && first.tagName==='SPAN' ? first.firstChild : first;
+  const linked=n?.nodeType===Node.ELEMENT_NODE && n.matches('button.fp-link') && !n.dataset.phoneCommand;
+  if(!n || (!linked && n.nodeType!==Node.TEXT_NODE))continue;
+  const raw=linked ? n.textContent+(n.nextSibling?.textContent||'') : n.textContent;
+  const m=/^\/([a-z-]+)(?= — )/.exec(raw);
+  if(!m || !PHONE_COMMANDS.has(m[1]))continue;
+  const b=button(m[0],e=>{e.stopPropagation();run(m[1]);},'fp-link fp-link-skill');
+  b.dataset.phoneCommand=m[1];
+  if(!linked)n.splitText(m[0].length);n.replaceWith(b);
+ }
+}
 export function init(h){H=h;$('cardPlus')?.addEventListener('click',plusCard);
  // the + follows the view (body data-view / data-five-page), the three five surfaces and the computer's capability
  const mo=window.MutationObserver&&new MutationObserver(syncPlus);mo?.observe(document.body,{attributes:true,attributeFilter:['data-view','data-five-page','data-conn']});

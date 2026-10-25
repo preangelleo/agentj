@@ -1168,7 +1168,7 @@
       "label": "the Agent J host's login (admin) password",
       "note": "The password is encrypted for the Agent J host only, used once and never stored. The Agent never sees it — it only gets the command's output.",
       "allow": "Approve and run",
-      "bad": "Wrong password. {n} tries left.",
+      "bad": "Password authentication failed. {n} tries left. Browser autofill may have supplied an old password; type it manually.",
       "allowHelper": "Approve and run (no password)",
       "noteHelper": "the Agent J host has the admin helper: your approval on this paired phone lets it run exactly the command above as admin, nothing else. The Agent only gets the command's output.",
       "empty": "Type the admin password first, then approve."
@@ -1212,7 +1212,7 @@
       "gone": "Agent J withdrew this card.",
       "stopped": "Everything is stopped; this card is void.",
       "locked": "Too many wrong passwords — locked for a while. Try again later.",
-      "badPassword": "Wrong password three times; this card is void.",
+      "badPassword": "Password authentication failed; this card is void. Browser autofill may have supplied an old password; type it manually.",
       "failed": "Not done — something went wrong on the Agent J host.",
       "verifyOk": "Check passed.",
       "verifyFail": "But the check failed — the key may be wrong.",

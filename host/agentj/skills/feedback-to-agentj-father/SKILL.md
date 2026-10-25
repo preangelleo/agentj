@@ -49,3 +49,8 @@ After switching the AI, connection checks and support feedback run in the comput
 切换 AI 后，连接自检和客服反馈由电脑后台完成，Agent 只读取结果，不需要读取本机钥匙文件。若聊天已正常、自检暂时没返回，可以继续聊天；这不表示切换失败。反馈收到编号才算已提交，没收到时稍后重试。
 
 When a switched session is already replying and the background check is unavailable, say: “切换已成功，聊天正常；自检这一步在 Codex 的安全隔离里不能读本机钥匙文件，可以忽略，稍后由后台再检查。” / “The switch succeeded and chat works. Codex isolation hides the local key files; this check can be skipped and retried by the background service later.” For Claude or OpenCode, name the actual harness. Never claim a check completed or feedback was sent without its result. Do not ask the owner to disable isolation, reveal keys or grant broad filesystem access.
+
+
+After consent, the CLI automatically redacts contacts, labelled postal addresses and known secret fragments; report its replacement count and ticket ID. Residual credentials always block submission, including with `--owner-confirmed`; explain only the category.
+
+主人同意后，CLI 自动脱敏联系方式、标明的地址和已知密钥片段；转告脱敏数量与工单号。脱敏后仍含凭据则必须拒绝，`--owner-confirmed` 也不能绕过，只说明类别。

@@ -9,7 +9,7 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 from agentj import doctor, main_identity, peer_service, wire
 from agentj.state import State
-from test_p71_peer_service import Base, freq, peer_keys, pmsg, sign_answer, settle, CANARY_TEXT
+from test_p71_peer_service import Base, freq, peer_keys, pmsg, sign_answer, settle, settle_pending, CANARY_TEXT
 
 class PeerOwnerReplies(Base):
     async def test_new_friend_defaults_to_friends(self):
@@ -24,26 +24,26 @@ class PeerOwnerReplies(Base):
         k = self.friend(group='friend')
         self.sess.push('ask_owner', '')
         self.svc.on_app(k.id, pmsg('怎么实现技术方案？'))
-        await settle()
+        await settle_pending(self.svc)
         a = self.host.of('ask')[-1]
         self.sess.next.clear(); self.sess.push('reply', '用有界队列处理')
         o = sign_answer(self.host.st, self.did, self.dsk, a, True)
-        self.assertTrue(self.svc.answer(self.did, o)); await settle()
+        self.assertTrue(self.svc.answer(self.did, o)); await settle_pending(self.svc)
         self.assertEqual(self.net.of('pmsg')[-1][1]['text'], '用有界队列处理')
         calls = len(self.sess.calls)
-        self.svc.answer(self.did, o); await settle()
+        self.svc.answer(self.did, o); await settle_pending(self.svc)
         self.assertEqual(len(self.sess.calls), calls)
 
     async def test_one_signed_action_promotes_and_replies_tamper_refused(self):
         k = self.friend(group='friend'); self.sess.push('ask_owner', '需要再讨论')
-        self.svc.on_app(k.id, pmsg('继续讨论技术细节')); await settle()
+        self.svc.on_app(k.id, pmsg('继续讨论技术细节')); await settle_pending(self.svc)
         a = self.host.of('ask')[-1]
         bad = sign_answer(self.host.st, self.did, self.dsk, a, True); bad['group'] = 'colleague'
         self.svc.answer(self.did, bad)
         self.assertEqual(self.store.get(k.id)['group'], 'friend')
         self.assertEqual(self.net.of('pmsg'), [])
         good = sign_answer(self.host.st, self.did, self.dsk, a, True, 'colleague')
-        self.svc.answer(self.did, good); await settle()
+        self.svc.answer(self.did, good); await settle_pending(self.svc)
         self.assertEqual(self.store.get(k.id)['group'], 'colleague')
         self.assertEqual(len(self.net.of('pmsg')), 1)
         self.assertIn('约时间', self.store.group_of(k.id)['auto']['ask'])

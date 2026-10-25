@@ -324,7 +324,7 @@ Ubuntu 24.04 还会检查 AppArmor 对用户命名空间的限制，并实际试
 AI 安装Agent J 主机端程序 `agentj`，装的是固定的一个版本：
 
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.25.10a1#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.25.11a1#subdirectory=host"
 agentj doctor
 ```
 
@@ -537,3 +537,8 @@ macOS「登录项与扩展」中的 Agent J 使用带名字、图标和开发者
 把报错里的 `AJ_START_*` 原因码留给你的 Agent，让它运行 `agentj doctor --offline`。如果是后台环境问题，先在手机设置里检查模型代理；安装 AI 命令行工具后，运行 `agentj service install` 更新服务配置，再检查一次。
 
 已有火山方舟、阿里百炼或 Kimi 账号，可以继续用原来的服务商。服务商设置会直接打开手机密钥卡；已有密钥会复用，不需要重复提交。等卡片确认完成后再切换模型，密钥不要发进聊天。
+
+
+## 从桌面 App 安装后找不到 Agent
+
+从 ChatGPT 等桌面 App 里安装也可以。后台服务会使用登录终端里的稳定程序路径，并补上常见的用户安装目录，不会记住 App 里的临时路径。如果终端能运行 Claude Code，Agent J 却说没装，先运行 `agentj doctor`；它提示服务路径缺少程序时，运行一次 `agentj service install` 修复，再检查一次。这个操作会重启 Agent J，手机会短暂断开后自动重连；不需要重新安装 Claude Code，也不要把登录文件或密钥发到聊天里。

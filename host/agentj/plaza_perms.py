@@ -275,8 +275,8 @@ def ask_owner(st, name: str, version: str, sha: str, items: list[dict], *, call=
         req["audit"] = [{"rule": a["rule"], "path": a["path"], "line": a["line"]} for a in audit]
     try:
         return (call or names.ctl_call)(st, req, ASK_TIMEOUT)
-    except names.ServeBusy:
-        return {"ok": False, "why": "busy"}
+    except names.ServeBusy as e:
+        return {**e.response(), "why": e.response()["error"]}
 
 
 def _fp_text(fp, en: bool) -> str:

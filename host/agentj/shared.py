@@ -2277,6 +2277,7 @@ class SharedClaudeAgent(Agent):
                 from . import claude_inbound
                 if not await self._wait_busy_input(claude_inbound):
                     lang = self.cfg.get("language", "zh")
+                    self.host.st.log("shared_input_unaccepted", agent="claude", waited=CLAUDE_INPUT_WAIT)
                     notice = claude_inbound.turn_notice(self.cfg.get("dir"), lang)
                     detail = claude_inbound.diagnostic(self.host.st, lang, self.cfg)
                     # P424 #75 (held.py): on the owner's own page (its words right above), the settings line folded into

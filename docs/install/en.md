@@ -335,7 +335,7 @@ It may need you here:
 The AI installs `agentj`, the program on the Agent J host, at one fixed version:
 
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.25.10a1#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.25.11a1#subdirectory=host"
 agentj doctor
 ```
 
@@ -551,3 +551,8 @@ After a rollback, a working old program counts as a successful rollback; any rem
 Keep the `AJ_START_*` diagnostic code for your Agent and ask it to run `agentj doctor --offline`. For a background-service environment problem, check the model proxy in phone Settings. After installing an AI command-line tool, run `agentj service install` to refresh the service configuration and check again.
 
 You can keep an existing Volcano Ark, Alibaba Bailian or Kimi account. Provider setup opens the phone key card directly and reuses saved keys rather than asking again. Wait for the card to confirm completion before switching models. Never send keys in chat.
+
+
+## An Agent is missing after installing from a desktop app
+
+Installing from a desktop app such as ChatGPT works too. The background service builds a stable PATH from your login shell and common user installation folders; it does not save the app’s temporary paths. If Claude Code works in your terminal but Agent J says it is missing, run `agentj doctor`. When it reports a missing program in the service PATH, run `agentj service install` once, then check again. This restarts Agent J and your phone reconnects after a brief interruption. You do not need to reinstall Claude Code or share login files or keys in chat.

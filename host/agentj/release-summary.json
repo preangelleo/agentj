@@ -1,5 +1,5 @@
 {
-  "version": "0.25.10a1",
-  "zh": "卡名自动链接、遥控器数量和在办事项新样式；专用浏览器单实例、多席位后台；共同动作策略与不透明命令逐次验证；旧升级器支持 --upgrade-only 修复。",
-  "en": "Card links, remote counts and clearer tasks; one browser per seat; shared action policy with fresh opaque-command approval; --upgrade-only repair."
+  "version": "0.25.11a1",
+  "zh": "反馈自动脱敏；同主人请求显示任务卡；提权错误分类；拒绝清单可点击；服务 PATH 稳定；切换结果可信；邮箱授权码保留来源并如实报告连接失败。",
+  "en": "Redacted feedback, same-owner task cards, clear sudo failures, clickable commands, stable service PATH, verified switching and reliable email password cards."
 }

@@ -19,7 +19,7 @@ def request(op, **fields):
         return None
     try:
         res = elevate.client_request(st, {"t": "host_diagnostics", "op": op, **fields},
-                                     timeout=300, path=os.environ.get(elevate.ENV) or names.elevate_sock(st))
+                                     timeout=(90 + min(max(fields.get("wait", 0), 0), 180) if op in ("support", "feedback_send") else 300), path=os.environ.get(elevate.ENV) or names.elevate_sock(st))
     except (OSError, ValueError):
         res = None
     if isinstance(res, dict) and type(res.get("exit")) is int and isinstance(res.get("output"), str):
@@ -30,6 +30,13 @@ def request(op, **fields):
               "Isolation hides the local key files; the background service has not returned a result. "
               "Feedback without a ticket ID is not confirmed sent; check support threads before retrying.")
     return 1
+
+
+def feedback_snapshot():
+    """No harness/fence probes during feedback. Existing support.prepare redacts this."""
+    from . import doctor, __version__
+    rows = doctor.run_read_only()
+    return "Agent J " + __version__ + "\n" + "\n".join(str(r.get("summary", "")) for r in rows)
 
 
 def execute(st, req):
@@ -86,9 +93,9 @@ def execute(st, req):
         elif op == "support":
             rc = support.run_send(req.get("kind"), req.get("text"), thread=req.get("thread"),
                                   attach_doctor=req.get("attach_doctor", False), wait=wait, lang=req.get("lang"),
-                                  ch=support.channel_for(st), out=out)
+                                  ch=support.channel_for(st), doctor_fn=feedback_snapshot, out=out)
         elif op == "thread":
-            rc = support.run_thread(req.get("thread"), wait=wait, ch=support.channel_for(st), out=out)
+            rc = support.run_thread(req.get("thread"), wait=wait, ch=support.channel_for(st), doctor_fn=feedback_snapshot, out=out)
         elif op == "list":
             rc = support.run_list(st=st, out=out)
         elif op == "feedback_send":

@@ -281,8 +281,8 @@ class Admin:
     def serve_status(self) -> dict | None:
         try:
             res = names.ctl_call(self.st, {"cmd": "status"}, timeout=2)
-        except names.ServeBusy:
-            return {"ok": True, "relay_up": False, "sessions": [], "busy": True}   # there, but not answering
+        except names.ServeBusy as e:
+            return {**e.response(), "relay_up": False, "sessions": []}   # there, but not answering
         return res if isinstance(res, dict) and res.get("ok") else None
 
     def state(self) -> dict:
@@ -379,8 +379,8 @@ class Admin:
     def revoke(self, did: str) -> tuple[int, dict]:
         try:
             res = names.ctl_call(self.st, {"cmd": "revoke", "device": did})
-        except names.ServeBusy:   # serve is there but silent: never edit behind its back (review A32-02)
-            return 503, {"ok": False, "error": "serve_busy"}
+        except names.ServeBusy as e:   # never edit behind an unreachable host
+            return 503, e.response()
         if res is None:   # serve certainly not running: edit the allowlist directly (under its lock), like `agentj revoke`
             ok = self.st.remove_device(did)
             if ok:

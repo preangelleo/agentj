@@ -138,7 +138,7 @@ class Job(unittest.TestCase):
         cmds = [r["cmd"] + ":" + r.get("step", r.get("phase", "")) for r in fake.calls if r["cmd"] != "status"
                 and not (r["cmd"] == "harness_progress" and r.get("phase") not in OWN_PHASES)]   # P281's phases: its own test
         self.assertEqual(cmds, ["harness_progress:probe_back", "harness_progress:handoff", "harness_handoff:write", "harness_progress:handoff_ok",
-                                "harness_hello:", "harness_handoff:resume"])
+                                "harness_hello:", "send:", "harness_handoff:resume"])
         log = st.log_path.read_text()
         self.assertIn('"ev": "harness_handoff"', log)
         self.assertNotIn("做 P289", log)
@@ -234,7 +234,7 @@ class Job(unittest.TestCase):
         fake = FakeServe(st, "claude")               # no harness_handoff, no harness_progress
         self.assertEqual(self.run_job(st, fake, "codex"), 0)
         self.assertEqual(st.agent_config()["kind"], "codex")
-        self.assertEqual(len(fake.sent), 1)
+        self.assertEqual(len(fake.sent), 2)  # P529: handoff failure + final switch receipt
         self.assertTrue(fake.sent[0].startswith("这次没写成交接"), fake.sent)
         self.assertIn('"result": "refused"', st.log_path.read_text())
 
@@ -242,7 +242,8 @@ class Job(unittest.TestCase):
         st = mk_state(self.tmp.name, "claude")
         fake = HandoffServe(st, "claude", writes=False)
         self.run_job(st, fake, "codex")
-        self.assertEqual(fake.sent, [], "P281's page said it; no duplicate phone message")
+        self.assertEqual(len(fake.sent), 1, "P529: one final receipt, no duplicate handoff message")
+        self.assertIn("✓", fake.sent[0])
 
     def test_dry_run_failed_gate_and_no_way_back_ask_for_nothing(self):
         st = mk_state(self.tmp.name, "claude")

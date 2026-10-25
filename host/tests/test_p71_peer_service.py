@@ -180,6 +180,13 @@ async def settle(n=20):
         await asyncio.sleep(0)
 
 
+async def settle_pending(svc):
+    """Wait for this fixture's admitted jobs, including durable reply writes, before assertions."""
+    await settle()
+    while svc.jobs:
+        await asyncio.wait_for(asyncio.gather(*list(svc.jobs)), timeout=5)
+
+
 class Base(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -472,7 +479,7 @@ class Pipeline(Base):
         self.sess.push("ask_owner", "主人说 3.5 美元可以")
         m = pmsg("报价多少？", ctx="c1")
         self.svc.on_app(k.id, m)
-        await settle()
+        await settle_pending(self.svc)
         self.assertEqual(self.net.of("pack")[-1][1]["s"], "queued_for_owner")
         q = self.host.of("ask")[-1]
         self.assertEqual(q["pq"], {"friend": k.id, "name": "小鹿", "text": "报价多少？", "draft": "主人说 3.5 美元可以",
@@ -480,7 +487,7 @@ class Pipeline(Base):
         self.assertIn("报价多少？", q["summary"])
         self.store.auto_round(k.id)
         self.assertTrue(self.svc.answer(self.did, sign_answer(self.host.st, self.did, self.dsk, q, True)))
-        await settle()
+        await settle_pending(self.svc)
         out = self.net.of("pmsg")
         self.assertEqual(len(out), 1)
         self.assertEqual((out[0][1]["text"], out[0][1]["irt"], out[0][1]["ctx"]), ("主人说 3.5 美元可以", m["mid"], "c1"))
@@ -674,7 +681,7 @@ class Pipeline(Base):
         k = self.friend()
         self.sess.push("reply", "秘密回复内容XYZ")
         self.svc.on_app(k.id, pmsg("秘密来信内容ABC"))
-        await settle()
+        await settle_pending(self.svc)
         self.svc.on_status("connected")
         self.assertTrue(self.svc.mbox_up)
         await diskq.aflush()                     # P143: under disk pressure P142 hands host.log lines to the writer thread

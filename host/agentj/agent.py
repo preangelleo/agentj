@@ -630,6 +630,13 @@ class Agent:
                         if not asyncio.current_task().cancelling():
                             from .fallback import after_failure
                             await after_failure(self.host, self)
+                        completed = getattr(send, 'completed', None)
+                        if completed and not asyncio.current_task().cancelling():
+                            try:
+                                await completed()
+                            except Exception as exc:
+                                self.host.st.log('task_receipt_failed', error=type(exc).__name__)
+                                self.host.agent_notice('任务回执未发出 / Task receipt was not sent')
                         self.cur_send = None
                     self.host.agent_turn_end()
                     try:                                    # P59: context nearly full → the handover before the harness
@@ -884,7 +891,7 @@ class Agent:
     async def command(self, name: str, arg: str) -> Result:
         fn = getattr(self, "cmd_" + name, None) if name in slash.WHITELIST + slash.INTERNAL else None
         if fn is None:
-            return Result(slash.REFUSE, "refused")
+            return Result(slash.refuse(self.cfg.get("language", "zh")), "refused")
         if name == "compact" and compactprep.applies(self):    # F24: the handover first, then the compaction as before
             return await compactprep.compact(self, fn, arg)
         if name == "clear" and compactprep.applies(self):

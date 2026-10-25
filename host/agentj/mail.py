@@ -1,8 +1,6 @@
 """P170: e-mail as a default channel — the owner's own mailbox (or one registered for the Agent) over plain IMAP / SMTP.
 
-Leo (10-12): mainland users cannot use Gmail, so this is generic IMAP + SMTP with an app password (授权码) and presets for the
-common mailboxes. The Agent checks the inbox every few minutes; a code-enforced allowlist decides, BEFORE any model sees a byte,
-which mail becomes a task. Everything else is counted, never read by a model.
+Gate.judge filters inbox mail before any model sees it.
 
 The gate (`Gate.judge`, pure, in this order — the first failing step decides and nothing after it runs):
 1. loop / automatic mail: our own replies (X-AgentJ), Auto-Submitted ≠ no, Precedence bulk/junk/list, List-*, bounces
@@ -1787,7 +1785,7 @@ class Mail:
         self.wake.set()
         return cfg
 
-    async def secret_card(self, *, recover: bool = True) -> dict:
+    async def secret_card(self, *, recover: bool = True, only: str | None = None) -> dict:
         """Sealed app-password entry: encrypt on host, test both logins; return only the receipt."""
         cfg = read_config(self.st)
         if not cfg["address"] or not cfg["imap"]["host"] or not cfg["smtp"]["host"]:
@@ -1832,6 +1830,8 @@ class Mail:
         el = getattr(self.host, "elevate", None)
         if el is None:
             return {"result": "refused", "why": "no_elevate"}
+        if only is not None:
+            card["only"] = only
         res = await el.request(card)
         self.log("password", result=res.get("result"))
         return {k: v for k, v in res.items() if k in ("result", "why", "detail", "id", "receipt")}
@@ -1928,10 +1928,18 @@ def cmd(a) -> int:
         print(line, file=sys.stderr)
 
     def call(req: dict, timeout: float = 30, max_bytes: int = 64 * 1024):
+        from . import fence
+        if fence.inside() and req.get("cmd") in ("mail_key", "mail_status"):
+            from .elevate import client_request
+            from .names import elevate_sock, transport_failure
+            res = client_request(st, {"t": req["cmd"]}, timeout=timeout, path=elevate_sock(st))
+            if res.get("result") == "unavailable":
+                return transport_failure(res.get("error", "host_unreachable"))
+            return res
         try:
             return ctl_call(st, req, timeout, max_bytes)
-        except ServeBusy:
-            return {"ok": False, "error": "busy"}
+        except ServeBusy as e:
+            return e.response()
     if a.action == "presets":
         return out({"ok": True, "presets": preset_list(lang)})
     if a.action == "send":                     # P184: the Agent mails someone — the owner approves on the phone first

@@ -239,18 +239,13 @@ def redact_paths(text: str) -> str:
 
 def prepare(body: str, attach: str | None, *, identity=None) -> tuple[dict, dict]:
     """Layer 1 on the exact text that would leave + the server's cleaning; → (draft, hits)."""
-    body = redact_paths(body)
-    attach = redact_paths(attach) if attach else attach
-    host, user = identity if identity is not None else privacy.local_identity()
-    hits: dict = {}
-    b, h1 = privacy.redact_with_report(plaza_clean(body), host, user)
-    hits.update(h1)
-    draft = {"body": b[:MAX_TEXT]}
+    from . import report_privacy
+    raw = {"body": plaza_clean(redact_paths(body))[:MAX_TEXT]}
     if attach:
-        a, h2 = privacy.redact_with_report(plaza_clean(attach), host, user)
-        for k, n in h2.items():
-            hits[k] = hits.get(k, 0) + n
-        draft["attach"] = a[:MAX_ATTACH]
+        raw["attach"] = plaza_clean(redact_paths(attach))[:MAX_ATTACH]
+    draft, hits, reason = report_privacy.prepare(raw, identity=identity)
+    if reason:
+        raise SupportError("未提交：脱敏后仍含凭据 / Not sent: residual credential (" + reason + ")")
     return draft, hits
 
 
@@ -314,7 +309,7 @@ def run_send(kind: str, text: str, *, thread: str | None = None, attach_doctor=F
     if not draft["body"].strip():
         raise SupportError("脱敏后正文是空的 / nothing left after redaction")
     v = privacy.layer2(draft, env=env, transport=transport, gate="feedback")
-    if v.status == "blocked":
+    if v.status == "blocked" and v.kind in ("credential", None):
         print(f"NOT SENT — layer 2 (Jev) flagged it: {v.reason}; most likely {v.kind or '?'} ({privacy.kind_text(v.kind)}). "
               "Remove that and run again. / 没发出：第 2 层判定仍含隐私，请删掉后重发。", file=out)
         return EXIT_BLOCKED
@@ -335,7 +330,7 @@ def run_send(kind: str, text: str, *, thread: str | None = None, attach_doctor=F
     if not tid:
         raise SupportError("服务器的回答看不懂 / unexpected answer")
     remember(ch.st if ch.signed else None, tid, kind, seq)
-    print(f"已发给客服 / sent to support: thread {tid} · layer 1: "
+    print(f"已脱敏 {sum(hits.values())} 处后提交，工单号 {tid} / Submitted after redacting {sum(hits.values())} occurrence(s); ticket {tid} · layer 1: "
           + (", ".join(f"{k}×{n}" for k, n in sorted(hits.items())) if hits else "nothing replaced")
           + f" · layer 2: {v.status}" + (" · +doctor" if attach else ""), file=out)
     if wait <= 0:

@@ -170,7 +170,13 @@ class LaunchJob(unittest.TestCase):
         bindir = pathlib.Path(self.tmp.name) / "bin"
         bindir.mkdir()
         env = {**os.environ, "PATH": str(bindir), "WSL_DISTRO_NAME": "Ubuntu-P278"}
-        r = subprocess.run([sys.executable, "-m", "agentj.cli", "service", "install", "--deferred", __version__],
+        # P529 repairs an empty caller PATH from stable system directories. Simulate a
+        # genuinely unavailable service-manager installation at the discovery seam;
+        # otherwise this fixture starts a real job on the developer's systemd host.
+        code = ("import sys; from unittest.mock import patch; from agentj import service_path,cli; "
+                "p=patch.object(service_path,'build',return_value=sys.argv[1]); p.start(); "
+                "cli.main(['service','install','--deferred',sys.argv[2]])")
+        r = subprocess.run([sys.executable, "-c", code, str(bindir), __version__],
                            capture_output=True, text=True, env=env, timeout=60,
                            cwd=str(pathlib.Path(service.__file__).parent.parent))
         self.assertNotIn("Traceback", r.stderr)

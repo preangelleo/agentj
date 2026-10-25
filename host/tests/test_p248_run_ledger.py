@@ -246,6 +246,7 @@ class Ledger(unittest.TestCase):
             with mock.patch.object(st, 'write_private', side_effect=OSError('disk full')):
                 res = await request()
             self.assertFalse(res['ok'])
+            self.assertEqual(res['error'], 'journal_unavailable')
             self.assertEqual(h.scheduler.waiting, [])
             with mock.patch.object(diskq, 'aflush', new=mock.AsyncMock(return_value=False)):
                 res = await request()

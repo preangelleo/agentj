@@ -68,7 +68,7 @@ def pair_telegram(key_env):
     from .names import ctl_call, ServeBusy, control_unavailable
     st=State()
     try:res=ctl_call(st,{'cmd':'telegram_pair','key_env':key_env},30) if st.exists() else None
-    except ServeBusy:res={'ok':False,'error':'busy'}
+    except ServeBusy as e:res=e.response()
     if res is None:
         print(json.dumps(control_unavailable(), ensure_ascii=False));return 2
     if not res.get('ok'):

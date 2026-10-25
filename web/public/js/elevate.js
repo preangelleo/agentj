@@ -209,7 +209,7 @@ export function done(m) {
   const key = RESULT[m.result];
   if (key && c) {
     let text = t(key, { code: m.code ?? '' });
-    if (m.result === 'done' && Number.isInteger(m.code) && m.code !== 0) text = t('elev.r.doneFail', { code: m.code });
+    if (m.result === 'done' && Number.isInteger(m.code) && m.code !== 0) text = t('elev.r.doneFail', { code: m.code }) + (typeof m.summary === 'string' && m.summary ? ' ' + m.summary.slice(0,600) : '');
     if (c.name === 'AGENTJ_MAIL_PASSWORD' && m.result === 'saved') text = t('mail.passwordSaved');
     if (c.kind === 'secret' && m.result === 'done') text = t('elev.r.saved');
     if (c.kind === 'vshare' && (m.result === 'saved' || m.result === 'done')) text = t('p414.e.vsDone');   // P414: the host ends it `saved`

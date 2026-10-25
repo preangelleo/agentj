@@ -81,16 +81,22 @@ switching back resumes that one. To switch, the owner just replies 「切换到 
    nothing changed — tell the owner the reason and go back to step 3; exit 4 = still checking, look with `--result` in a
    minute). On ✓ the job waits for this turn to end, switches, restarts, checks that the new harness is up, answers its
    self-introduction and is idle again — and on any failure restores the previous harness exactly and makes it explain.
-   Finish your turn right after it prints ✓; do not run anything else. If the ✓ printout has a 「提示：…免费模型…」 / "Note: …
+   A passed preflight / `waiting`, `switching`, `switched` progress is **not success**. The CLI returns 4 while pending.
+   From an outside terminal, poll `agentj agent switch --result --wait 900` until final (0 = `ok` or dry-run `probe_ok`,
+   3 = `rolled_back` / `failed`, 4 = still pending). Report the receipt's outcome and reason verbatim in plain language.
+   From the very Agent J turn being switched, end this turn with “已安排，尚未完成 / scheduled, not complete” so the job
+   can run; do not block that turn waiting for itself. The host posts the final receipt to the phone. On the next turn,
+   read `--result` before claiming success. Success requires the new harness to receive the host's phone greeting and reply;
+   a process running or `idle` alone never counts. If the ✓ printout has a 「提示：…免费模型…」 / "Note: …
    free model" line (its provider logs or trains on the conversation), pass that sentence on to the owner word for word.
    **Handoff (P289):** right before the switch Agent J sends you an 〔Agent J 系统提示〕 asking for the handoff — write
    `switch.md` at exactly the path it names (agentj-handoff format, the essentials only, ≤ 150 lines, no credentials), reply
    one line and stop. The new harness reads it before greeting the owner, then carries on from its next step. Not written
-   within 3 minutes → the switch goes ahead and the owner is told there was no handoff.
+   within 3 minutes (or a finished turn leaves no file) → the switch goes ahead with a local redacted excerpt of recent owner conversation. It may be incomplete; never invent progress.
    The gate also tries the way back — the harness running now. If that fails (`no_way_back`), nothing changed: tell the
    owner the reason and the fix (step 3) first; only if the owner still wants the one-way switch, run it again with
    `--force`.
-5. **Afterwards** (either side): `agentj agent switch --result` shows the last outcome (✓ / rolled back + reason and the next
+5. **Required final verification** (either side): `agentj agent switch --result` shows the last outcome (✓ / rolled back + reason and the next
    step — relay that step in plain words).
 6. **Going back** — 「切回 X」 where X is the harness used before the last switch: try `agentj agent switch X` first; if its
    check fails, the printout offers `agentj agent switch --undo` — that restores the previous harness exactly, with no
@@ -134,6 +140,11 @@ After switching the AI, connection checks and support feedback run in the comput
 
 切换 AI 后，连接自检和客服反馈由电脑后台完成，Agent 只读取结果，不需要读取本机钥匙文件。若聊天已正常、自检暂时没返回，可以继续聊天；这不表示切换失败。反馈收到编号才算已提交，没收到时稍后重试。
 
-When a switched session is already replying and the background check is unavailable, say: “切换已成功，聊天正常；自检这一步在 Codex 的安全隔离里不能读本机钥匙文件，可以忽略，稍后由后台再检查。” / “The switch succeeded and chat works. Codex isolation hides the local key files; this check can be skipped and retried by the background service later.” For Claude or OpenCode, name the actual harness. Never claim a check completed or feedback was sent without its result. Do not ask the owner to disable isolation, reveal keys or grant broad filesystem access.
+Only after `agentj agent switch --result` is final `ok`, when the switched session is replying and a separate background check is unavailable, say: “切换已成功，聊天正常；自检这一步在 Codex 的安全隔离里不能读本机钥匙文件，可以忽略，稍后由后台再检查。” / “The switch succeeded and chat works. Codex isolation hides the local key files; this check can be skipped and retried by the background service later.” For Claude or OpenCode, name the actual harness. Never claim a check completed or feedback was sent without its result. Do not ask the owner to disable isolation, reveal keys or grant broad filesystem access.
 
 P481: Claude via mise/asdf with multiple installed executables reports `ambiguous_install`, not `not_installed`. Without an explicit selection, the highest executable numeric version is used (2.1.308 > 2.1.97). Keep an explicit `AGENTJ_CLAUDE_BIN` or mise/asdf selection; if it cannot be found, ask the owner to select an installed version. / Claude 多版本会标明 ambiguous_install，默认用最高可执行版本；可用 AGENTJ_CLAUDE_BIN 或 mise/asdf 选定。
+
+P529 / 切换结果：只能根据 `agentj agent switch --result` 的最终收据报告。必须轮询到 `ok`、`rolled_back` 或 `failed`；
+`probe_ok` 只是演练。`waiting`、`switching`、已启动、idle、退出码 4 都不能说切换成功。发起切换的 Agent J 回合
+要先以「已安排，尚未完成」结束以让后台继续，下一回合必查收据；外部终端用 `--result --wait 900` 等待。
+回退如实说「已回退到 Codex（或实际原 harness），原因：…」。交接失败会提供本地脱敏摘录，不增加工具权限。

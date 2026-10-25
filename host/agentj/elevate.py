@@ -510,6 +510,35 @@ def collect_command(p, timeout: float, cancel=None, input_data=None, gate: bytes
     return bytes(buffers[0]), bytes(buffers[1]), timed_out, truncated
 
 
+class _PasswordWatch:
+    """Mask the exact submitted password before any chunk reaches the live display.
+
+    Hold a possible prefix across reads. A final partial prefix is hidden too.
+    The password exists only for this invocation and is never logged.
+    """
+    def __init__(self, watch, password):
+        self.watch, self.password = watch, bytes(password)
+        self.pending = [b"", b""]
+
+    def tick(self, pid):
+        self.watch.tick(pid)
+
+    def data(self, index, chunk):
+        value = (self.pending[index] + chunk).replace(self.password, b"<redacted>")
+        hold = next((n for n in range(min(len(self.password) - 1, len(value)), 0, -1)
+                     if value.endswith(self.password[:n])), 0)
+        self.pending[index] = value[-hold:] if hold else b""
+        if len(value) > hold:
+            self.watch.data(index, value[:-hold] if hold else value)
+
+    def finish(self):
+        for index, value in enumerate(self.pending):
+            if value:
+                self.watch.data(index, b"<redacted>")
+        self.pending = [b"", b""]
+        self.password = b""
+
+
 def run_sudo(argv: list[str], password: bytearray, cwd: str, timeout: int, sudo: str | None = None, cancel=None,
              watch=None) -> dict:
     """`sudo -S -k -p <random marker> -- argv`; the password + newline goes to stdin once, only after sudo printed the marker
@@ -538,15 +567,23 @@ def run_sudo(argv: list[str], password: bytearray, cwd: str, timeout: int, sudo:
         wipe(buf)
         return {"result": "no_sudo", "code": None, "stdout": "", "stderr": "", "truncated": False}
     try:
-        out, err, timed_out, overflow = collect_command(p, timeout, cancel, buf, marker.encode(), watch)
+        safe_watch = _PasswordWatch(watch, password) if watch is not None and password else watch
+        try:
+            out, err, timed_out, overflow = collect_command(p, timeout, cancel, buf, marker.encode(), safe_watch)
+        finally:
+            if isinstance(safe_watch, _PasswordWatch):
+                safe_watch.finish()
+        prompts = err.count(marker.encode())
+        err = err.replace(marker.encode(), b"")
+        if password:
+            out = out.replace(bytes(password), b"<redacted>")
+            err = err.replace(bytes(password), b"<redacted>")
         if timed_out:
             o, t1 = _cap(out)
             e, t2 = _cap(err.replace(marker.encode(), b""))
             return {"result": "timeout", "code": None, "stdout": o, "stderr": e, "truncated": overflow or t1 or t2}
     finally:
         wipe(buf)
-    prompts = err.count(marker.encode())
-    err = err.replace(marker.encode(), b"")
     # P414 (R2-N3): exactly one prompt = sudo accepted the password and the command ran — its own stderr ("Sorry, try
     # again" echoed by the elevated command) is never read as a wrong password (no lock try, no deleted kid).
     bad = p.returncode != 0 and (prompts >= 2 or (prompts != 1 and not out and re.search(
@@ -1115,6 +1152,9 @@ class Elevator:
         done_msg = {"t": "elev_done", "id": c["id"], "result": res["result"]}
         if c["kind"] == "sudo" and res.get("code") is not None:
             done_msg["code"] = res["code"]
+            if res["result"] == "done" and res["code"] != 0:
+                from .report_privacy import stderr_summary
+                done_msg["summary"] = await asyncio.to_thread(stderr_summary, res.get("stderr", ""))
         if c["kind"] == "secret" and res.get("receipt"):
             done_msg["verify"] = res["receipt"]["verify"]
         if c["kind"] == "sudo" and res.get("saved"):
@@ -1138,7 +1178,9 @@ class Elevator:
                       "gone": ("已取消", "cancelled"), "stopped": ("已停止", "stopped")}
             zh, en = labels.get(res["result"], ("执行失败", "failed"))
             code = f" ({res['code']})" if res.get("code") is not None else ""
-            self.host.agent_notice(f"管理员命令{zh}{code} · {c['id'][:8]} / Admin command {en}{code} · {c['id'][:8]}")
+            from .report_privacy import sudo_notice
+            notice = sudo_notice(done_msg, getattr(self.host, 'lang', 'zh'))
+            self.host.agent_notice((notice + f" · {c['id'][:8]}") if notice else f"管理员命令{zh}{code} · {c['id'][:8]} / Admin command {en}{code} · {c['id'][:8]}")
         await self._deliver_card(lambda s: dict(done_msg, tail=tail) if s.cid in watching else dict(done_msg), only, c["id"])
         self.st.log("elev_done", id=c["id"], kind=c["kind"], result=res["result"])
         if c["kind"] == "secret":
@@ -1906,6 +1948,19 @@ class Elevator:
                 self.st.log('provider_profile',result='ok' if result.get('ok') else 'failed')
                 w.write((json.dumps(result)+'\n').encode());await w.drain();w.close()
                 return
+            if isinstance(req, dict) and req.get("t") in ("mail_key", "mail_status"):
+                # Agent-facing fixed operations. No paired authority is manufactured here.
+                mail = self.host.mail
+                if mail is None:
+                    res = {"ok": False, "why": "not_running"}
+                elif req["t"] == "mail_status":
+                    res = {"ok": True, **await asyncio.to_thread(mail.view)}
+                else:
+                    res = await mail.secret_card()
+                w.write((json.dumps(res, ensure_ascii=False) + "\n").encode())
+                await w.drain()
+                w.close()
+                return
             if isinstance(req, dict) and req.get("t") in ("contacts", "mail_send"):
                 # P184: the address book lives outside the Agent fence; fixed operations. A contact card waits for the owner
                 # (early: the CLI prints CONTACT_CARD: <id> first); `mail_send` waits for the owner's approval card.
@@ -2021,6 +2076,15 @@ class Elevator:
 def client_request(st, req: dict, timeout: float = CMD_TIMEOUT_MAX + 400, on_card=None, path=None) -> dict:
     """One request on elevate.sock → the final JSON line. With `on_card` the request asks for the card id first (`early`):
     `on_card({"t":"card","id",…})` is called as soon as the host shows the card. `path`: a socket chosen by the caller."""
+    def unavailable(error=None):
+        res = {"result": "unavailable"}
+        if error is not None:
+            from .names import ServeBusy
+            failure = ServeBusy(type(error).__name__).response()
+            failure.pop("ok")  # no answer is not a host refusal; legacy routing checks whether ok exists
+            res.update(failure)
+        return res
+
     path = pathlib.Path(path or os.environ.get(ENV) or st.perm_dir / SOCK_NAME)
     if on_card is not None:
         req = {**req, "early": True}
@@ -2028,16 +2092,19 @@ def client_request(st, req: dict, timeout: float = CMD_TIMEOUT_MAX + 400, on_car
         s.settimeout(timeout)
         try:
             s.connect(str(path))
-        except OSError:
-            return {"result": "unavailable"}
-        s.sendall((json.dumps(req, ensure_ascii=False) + "\n").encode())
+        except OSError as e:
+            return unavailable(e)
+        try:
+            s.sendall((json.dumps(req, ensure_ascii=False) + "\n").encode())
+        except OSError as e:
+            return unavailable(e)
         buf = b""
         while True:
             while b"\n" not in buf:
                 try:
                     chunk = s.recv(65536)
-                except (socket.timeout, OSError):
-                    return {"result": "unavailable"}
+                except OSError as e:
+                    return unavailable(e)
                 if not chunk:
                     return {"result": "unavailable"}
                 buf += chunk
@@ -2059,7 +2126,7 @@ MSG = {
             "early, so the card was withdrawn (a sudo card needs its command to wait for the phone). Run it again with a 10-minute shell timeout.",
     "stopped": "已急停，没有发卡片。/ Agent J is stopped; no card was sent.",
     "locked": "管理员密码连续输错，已暂时锁定 {secs} 秒。/ Too many wrong passwords; locked for {secs} s.",
-    "bad_password": "管理员密码错了 3 次，这张卡已结束。/ Wrong password three times; this card ended.",
+    "bad_password": "管理员密码未通过，可能是浏览器自动填入的旧密码，请手动输入。/ Password authentication failed. Browser autofill may have supplied an old password; type it manually.",
     "no_device": "没有能批准的已配对手机。/ No paired phone that can approve.",
     "busy": "已经有太多张卡在等手机处理。/ Too many cards are already waiting on the phone.",
     "group_source": "这一轮来自 Telegram 群成员，不是主人本人，不能向主人要批准，没有发卡片。/ This turn came from a Telegram group member, not the owner; no card was sent.",

@@ -1502,11 +1502,25 @@ class PeerService:
                 return {"ok": False, "why": "bad_reply"}
             reply = {"mid": reply_to, "thread": thread, "relay": row.get("relay") if row else None}
         extra = self.devices.reply_extra(fid, reply_to) if reply is not None else None
+        # P528: automatic and explicit same-owner replies share the existing durable latch.
+        latched = reply is not None and self.same_owner.active(fid)
+        token = self.same_owner.row(fid).get('token') if latched else None
+        if latched:
+            if not await self.guards.begin_reply(fid, reply_to):
+                return {"ok": False, "why": "bad_reply"}
+            if (not self.same_owner.active(fid) or self.same_owner.row(fid).get('token') != token
+                    or self.host.stopped()):
+                await self.guards.release_reply(fid, reply_to, 'authority_changed')
+                return {"ok": False, "why": "bad_reply"}
         mid = self._send_pmsg(fid, text, reply, auto=False, end=reply is not None, extra=extra)
         if mid is None:
+            if latched:
+                await self.guards.release_reply(fid, reply_to, 'send_refused')
             from .relay_guards import message
             why = self.last_relay_refusal or "bad_text"
             return {"ok": False, "why": why, **({"message": message(why, self.lang)} if why == "hops" else {})}
+        if latched:
+            await self.guards.finish_reply(fid, reply_to)
         if reply_to:
             self.guards.complete(fid, reply_to)
         if extra:

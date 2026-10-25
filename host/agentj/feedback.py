@@ -15,6 +15,7 @@ The install session id (~/.agentj-install/feedback-id) and the receipts are neve
 from __future__ import annotations
 
 import collections
+import hashlib
 import json
 import os
 import pathlib
@@ -206,8 +207,11 @@ def run_check(draft: pathlib.Path, threshold: float = privacy.THRESHOLD, *, tran
     out = out or sys.stdout
     _, obj = _read_json_object(draft)
     host, user = identity if identity is not None else privacy.local_identity()
-    hits: collections.Counter = collections.Counter()
-    redacted = privacy.redact_draft(obj, host, user, hits)
+    from . import report_privacy
+    redacted, hits, reason = report_privacy.prepare(obj, identity=(host, user))
+    if reason:
+        print("未检查：脱敏后仍含凭据 / Not checked: residual credential (" + reason + ")", file=out)
+        return EXIT_BLOCKED
     dest = checked_path(draft)
     text = json.dumps(redacted, ensure_ascii=False, indent=2) + "\n"
     probs = shape_problems(redacted)
@@ -218,17 +222,16 @@ def run_check(draft: pathlib.Path, threshold: float = privacy.THRESHOLD, *, tran
         return EXIT_ERROR
     v = privacy.layer2(redacted, threshold=threshold, env=env, transport=transport)
     _write_private(dest, text.encode())
+    _write_private(dest.with_name(dest.name + ".redactions.json"), json.dumps({"sha256": hashlib.sha256(text.encode()).hexdigest(), "count": sum(hits.values())}).encode())
     print(_layer1_summary(hits), file=out)
     print(text, end="", file=out)
     print(_verdict_line(v, threshold), file=out)
     print(f"written: {dest} (0600)", file=out)
     if v.status == "ok":
-        print(f"next: show your human the JSON above; after their yes: agentj feedback send {dest}", file=out)
+        print(f"next: show your human the JSON above; after their yes: agentj feedback send {dest} --owner-confirmed", file=out)
         return EXIT_OK
     if v.status == "blocked":
-        print("next: show your human the JSON above and the reason. Remove what it points at from the draft and run check "
-              f"again — or, if your human reads it and says it is fine to send: agentj feedback send {dest} --owner-confirmed",
-              file=out)
+        print("next: residual credential flagged; remove it and run check again. Owner confirmation cannot bypass credentials." if v.kind in ("credential", None) else f"next: after owner consent: agentj feedback send {dest} --owner-confirmed (automatic redaction; credentials cannot be bypassed)", file=out)
         return EXIT_BLOCKED
     print(UNAVAILABLE_NEXT.format(dest=dest), file=out)
     return EXIT_UNAVAILABLE
@@ -261,10 +264,24 @@ def run_send(checked: pathlib.Path, *, owner_confirmed: bool = False, session_fi
         if not isinstance(obj, dict):
             raise FeedbackError("feedback must be a JSON object")
     host, user = identity if identity is not None else privacy.local_identity()
-    if privacy.redact_draft(obj, host, user) != obj:
-        print("refused: layer 1 would still change this file (edited after check?). Run `agentj feedback check` on the draft "
-              "again and send the new .checked.json.", file=out)
+    from . import report_privacy
+    prior_count = 0
+    if checked is not None:
+        try:
+            meta = json.loads(checked.with_name(checked.name + ".redactions.json").read_text())
+            if meta.get('sha256') == hashlib.sha256(raw).hexdigest() and type(meta.get('count')) is int and meta['count'] >= 0:
+                prior_count = meta['count']
+        except (OSError, ValueError, AttributeError):
+            pass
+    obj, hits, reason = report_privacy.prepare(obj, identity=(host, user))
+    if reason:
+        print("未提交：脱敏后仍含凭据 / Not sent: residual credential (" + reason + ")", file=out)
+        return EXIT_BLOCKED
+    if hits and not owner_confirmed:
+        print("refused: layer 1 would still change this draft; run check and obtain consent, or use --owner-confirmed after consent.", file=out)
         return EXIT_ERROR
+    if hits:
+        raw = (json.dumps(obj, ensure_ascii=False) + "\n").encode()
     probs = shape_problems(obj)
     if len(raw) > MAX_BODY:
         probs.append(f"the whole report is {len(raw)} bytes; at most {MAX_BODY}: shorten problem / resolution")
@@ -273,9 +290,13 @@ def run_send(checked: pathlib.Path, *, owner_confirmed: bool = False, session_fi
         return EXIT_ERROR
     v = privacy.layer2(obj, threshold=threshold, env=env, transport=transport)
     print(_verdict_line(v, threshold), file=out)
-    if v.status == "blocked" and not owner_confirmed:
-        print("refused: blocked by layer 2. Show your human the text and the reason; send with --owner-confirmed only "
-              "after they read it and said yes.", file=out)
+    if v.status == "blocked" and (v.kind in ("credential", None) or not owner_confirmed):
+        if v.kind in ("credential", None):
+            print("未提交：脱敏后仍有凭据风险（credential / unknown）；主人确认也不能绕过，请删掉后重新检查。/ "
+                  "Not sent: residual credential risk (credential / unknown); owner confirmation cannot bypass this. Remove it and check again.", file=out)
+        else:
+            print("refused: blocked by layer 2. Show your human the text and the reason; send with --owner-confirmed only "
+                  "after they read it and said yes.", file=out)
         return EXIT_BLOCKED
     if v.status == "unavailable" and not owner_confirmed:
         print("refused: layer 2 unavailable. Show your human the exact JSON; send with --owner-confirmed only after "
@@ -305,6 +326,7 @@ def run_send(checked: pathlib.Path, *, owner_confirmed: bool = False, session_fi
         return EXIT_ERROR
     receipt = j.get("receipt") if isinstance(j.get("receipt"), str) and _RECEIPT.fullmatch(j["receipt"]) else None
     p = store_receipt({"id": j["id"], "receipt": receipt, "created_at": j.get("created_at")})
+    print(f"已脱敏 {prior_count + sum(hits.values())} 处后提交，工单号 {j['id']} / Submitted after redacting {prior_count + sum(hits.values())} occurrence(s); ticket {j['id']}", file=out)
     print(j["id"], file=out)
     if receipt is None:
         print(f"(the server sent no receipt; read replies with the session id instead) — {p}", file=sys.stderr)

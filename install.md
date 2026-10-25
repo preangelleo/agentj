@@ -1,15 +1,15 @@
 ---
 document: agentj-install
-version: 0.27.10
-released: 2026-10-25
+version: 0.27.11
+released: 2026-10-26
 status: beta (anyone can sign up; not advertised yet, pages are not indexed)
 host_package: agentj (the `agentj` command)
-host_version: 0.25.10a1
-source_tag: v0.25.10a1
-host_wheel: agentj-0.25.10a1-py3-none-any.whl
-host_wheel_sha256: 4384e5fd86a9d250be9ca9ccd1a7913b09e61d07fc54a4183a849dfa658e4457
-host_sdist: agentj-0.25.10a1.tar.gz
-host_sdist_sha256: 1d6ff06c8807b340d0ae1e0ee85e46fb372110315c8ed39f8760a121f0b0731c
+host_version: 0.25.11a1
+source_tag: v0.25.11a1
+host_wheel: agentj-0.25.11a1-py3-none-any.whl
+host_wheel_sha256: 9108d119c6b04ce3b30552654b3348dd3ca2eba0227afcb25e4e78ae0dcc50e2
+host_sdist: agentj-0.25.11a1.tar.gz
+host_sdist_sha256: 2eb470f79d3d36eb136f40ec31d1944f0436d923e8d4a9998fc749c7d847e44a
 canonical_url: https://agentj.app/install.md
 sha256_url: https://agentj.app/install.md.sha256
 alias: https://agentjarvis.net/install.md (the older address: the same file, kept for one more version)
@@ -726,7 +726,7 @@ DeepSeek says a preview may break; Agent J was measured on 0.2.0-rc.2.
 carry over). So start every command line from here on with `export PATH="$HOME/.local/bin:$PATH";` — or call
 `~/.local/bin/agentj` by its full path. This document writes `agentj` for short.
 
-The program is pinned to one release: the tag `v0.25.10a1` (front matter `source_tag`). The tag never moves, and its
+The program is pinned to one release: the tag `v0.25.11a1` (front matter `source_tag`). The tag never moves, and its
 `host/` folder is byte for byte the same code as the two files on our site whose SHA-256 is in this document's front matter.
 ```bash
 cd ~/.agentj-install
@@ -737,7 +737,7 @@ uv tool install "./$W"
 
 Intel Mac: this release keeps `cryptography<49` because newer releases lack an Intel macOS wheel. If an older installer tries to compile OpenSSL (`openssl-sys` / OpenSSL not found), rerun `uv tool install --with "cryptography<49" "./$W"`. The same platform constraint applies to `agentj update apply`.
 
-export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.25.10a1
+export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.25.11a1
 export PATH="$HOME/.local/bin:$PATH"; agentj doctor
 ```
 **Your human's own terminal must find `agentj` too** — they may use `agentj passphrase set` and `agentj pair` as a local alternative
@@ -765,16 +765,16 @@ echo "$WS  $W" | sha256sum -c - && echo "$SS  $S" | sha256sum -c -    # macOS: s
 uv tool install "./$W"          # the wheel; its dependencies come from PyPI or the mirror in UV_DEFAULT_INDEX
 ```
 `uv tool install "./$S"` installs from the checked source archive instead (it builds the same program).
-`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.25.10a1`); it is
+`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.25.11a1`); it is
 numbered separately from this document (`0.27.7`).
 
-Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.25.10a1#subdirectory=host"`.
+Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.25.11a1#subdirectory=host"`.
 
-Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.25.10a1#subdirectory=host"` (needs Python 3.11+).
+Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.25.11a1#subdirectory=host"` (needs Python 3.11+).
 
 **What each route checks.** The wheel and the source archive above are checked against the SHA-256 in this document. Each
 also has a minisign signature beside it (`<file>.minisig`, key `B79F925B0585F9D4` — front matter `signature`), which
-`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.25.10a1`
+`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.25.11a1`
 routes check **neither**: Git trusts GitHub's HTTPS and the tag name, and nothing compares that code with this document.
 Use them only when the checked files cannot be downloaded, and say so in the final feedback.
 `agentj doctor` lists what is ready and what is not (prerequisites, the fence, connectivity, which agents are usable).
@@ -1202,6 +1202,8 @@ agentj service install       # systemd user service (Linux) / launchd agent (mac
 agentj service status        # → running, connected to the relay
 agentj doctor                # always run it now: the service runs in the background, not in your terminal
 ```
+Installing from a desktop app such as ChatGPT works too. The background service builds a stable PATH from your login shell and common user installation folders; it does not save the app’s temporary paths. If Claude Code works in your terminal but Agent J says it is missing, run `agentj doctor`. When it reports a missing program in the service PATH, run `agentj service install` once, then check again. This restarts Agent J and your phone reconnects after a brief interruption. You do not need to reinstall Claude Code or share login files or keys in chat.
+
 **Read every line of `agentj doctor` that starts with `!` (or `✗`)** and tell your human, in plain words, what each one says and
 what it means for them (also when `service status` looks fine — a running service can still have a problem, e.g. with the
 Agent's login). Fix only what this guide covers; report anything you cannot explain (Step 2). A common one on macOS: an
@@ -1761,7 +1763,7 @@ Nightly automatic installation is enabled by default and verifies the official w
 In a shared session (the default of 0.13–0.19), reinstall directly using Step 4's checked wheel (SHA-256 must match this document and
 its public GitHub copy), preserving the host's identity, paired phones, account and preferences:
 ```bash
-uv tool install --force "./agentj-0.25.10a1-py3-none-any.whl"
+uv tool install --force "./agentj-0.25.11a1-py3-none-any.whl"
 agentj --version
 agentj service install
 agentj service restart
@@ -1770,7 +1772,7 @@ agentj doctor
 The matching published tag is another source, after verifying the tag object against the upgrade email (no signature or
 hash check on this route — Step 4):
 ```bash
-uv tool install --force "git+https://github.com/preangelleo/agentj@v0.25.10a1#subdirectory=host"
+uv tool install --force "git+https://github.com/preangelleo/agentj@v0.25.11a1#subdirectory=host"
 ```
 **0.14 independent session** (`agent.session_mode=independent`): 0.14's fence keeps Agent J's own program read-only and
 hides the service manager, so the Agent on the phone cannot reinstall or restart from inside it (measured: the install
@@ -1796,11 +1798,11 @@ prints something and `uv tool list` (or `pipx list`) shows `agentjarvis-host`, t
 the new name, then:
 ```bash
 jarvis service uninstall      # stop the old service first (Step 10 used tmux / nohup instead? stop that process)
-uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.25.10a1#subdirectory=host"
+uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.25.11a1#subdirectory=host"
 agentj doctor
 agentj service install        # start it again under the new name (or the tmux / nohup fallback, Step 10)
 ```
-With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.25.10a1#subdirectory=host"`.
+With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.25.11a1#subdirectory=host"`.
 - After the move, `agentj` puts back a `jarvis` command (a link to `agentj`, only if no other `jarvis` exists) for one more
   version; it prints a notice that points here. New installs never get `jarvis`.
 - The state moves from `~/.local/state/agentjarvis-alpha` to `~/.local/state/agentj` on the first run of `agentj` **after your
@@ -3695,3 +3697,22 @@ In Settings → Models & API keys, Fill or Edit opens the key input on the remot
 设置 → 邮件通道 →「设置邮箱授权码」会先确认改动的设置，再直接弹出密钥输入卡；设置没变则直接输入。Gmail 填 16 位应用专用密码，保留复制的空格。保存后自动测试连接并显示结果，不发测试邮件。授权码只保存在主机，不进聊天；不要引导用户编辑配置文件或把授权码发给 Agent。
 
 Settings → Email → Set email authorization code confirms any changed settings in plain language, then opens the sealed input directly. Unchanged settings skip the settings confirmation. For Gmail, paste the 16-character App Password with its spaces. Saving tests both logins without sending mail and shows the result. Never ask for this code in chat or direct the owner to edit a configuration file.
+
+### Feedback privacy and admin failures / 反馈脱敏与提权失败
+
+Before submission, this computer replaces email addresses, phone numbers, labelled postal addresses and known secret fragments. The receipt states how many replacements were made and gives the ticket number. Once you consent to reporting, an ordinary privacy warning does not discard the whole report. Credentials that remain after redaction still block submission; the refusal names the category without revealing the value.
+
+反馈发送前会在这台电脑上自动替换邮箱、电话、标明的地址和已知密钥片段，并说明脱敏数量和工单号。已同意上报时，普通隐私提醒不会让整条反馈丢失；脱敏后仍检出凭据则拒绝，提示内容类别，不显示原值。
+
+If password authentication fails, type the password manually: your browser may have filled an old saved password. If authentication succeeds but the command fails, the result includes its exit code and a short redacted error summary. Passwords never appear in logs, echoed output or chat.
+
+管理员密码未通过时，先手动输入：浏览器可能自动填入了以前保存的旧密码。命令已经运行但失败时，会显示退出码和一小段脱敏后的错误摘要。密码不会写进日志、回显或聊天。
+
+同主人任务在接收设备的主对话显示带有发起设备名和派来任务提示的卡片；排队、办理、失败或停止沿卡片显示。办理结束由主机自动向发起方回执；已显式回过不重复。敏感操作仍须在接收设备的已配对手机上批准；普通好友权限不变。
+
+Same-owner tasks appear in the receiving device’s main conversation with the sending device’s name and a sent-task label. The existing card shows queued, working, failed or stopped status. The host automatically returns a result when processing ends; an explicit reply is never duplicated. Sensitive steps still require approval on a paired phone for the receiving device. Ordinary friend permissions are unchanged.
+
+
+Harness switching: “scheduled” is pending, not success. After scheduling, the initiating terminal must poll `agentj agent switch --result --wait 900` until final (exit 0: success or dry-run probe_ok; 3: failed/rolled_back; 4: pending). From the Agent J turn being switched, end with “scheduled, not complete” to release the job, then read the receipt next turn. Success requires the new harness to reply to the phone greeting; the phone receives the final receipt and any rollback reason. Handoff failure supplies a local redacted excerpt of recent owner conversation, without granting permissions. Owner-authorized feedback should run directly without harness scan loops, with a 90-second command deadline; without a ticket ID report submission as unconfirmed and inspect existing support threads before retrying.
+
+邮箱授权码输入卡只在点击的已配对遥控器上打开。隔离内的 `agentj mail password/status` 使用 Agent 通道；`sandbox_blocked` 表示权限拒连，可在遥控器「设置 → 沟通渠道 → 邮件通道」输入授权码；`host_unreachable` 请在电脑终端运行 `agentj service status`。不要把连接失败称作忙碌，也不要在聊天里发送授权码。 / The mail app-password card opens on the clicking paired remote. Isolated `agentj mail password/status` uses the Agent channel. For `sandbox_blocked`, enter the code in Settings → Channels → E-mail; for `host_unreachable`, run `agentj service status` in the computer terminal. Never send app passwords in chat.

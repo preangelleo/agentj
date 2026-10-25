@@ -497,7 +497,7 @@ def transact(st,newraw):
         if result.get('reload'):
             # P320: a reload-tier key (an Agent's `agentj config set`, the owner's terminal) — reload at once, never ask
             try:result['reloaded']=ctl_call(st,{'cmd':'reload'},30)
-            except ServeBusy:result['reloaded']={'ok':False,'error':'serve busy; run agentj reload'}
+            except ServeBusy as e:result['reloaded']=e.response()
             if (result['reloaded'] or {}).get('ok'):result['needs']=[n for n in result.get('needs',[]) if n!='reload']
         return result
     # The running host owns provider/channel dependencies in its service environment.

@@ -318,8 +318,8 @@ def hello_prompt(kind: str, req: dict, lang: str = "zh", where: str | None = Non
                     + " to you (" + T + "). In one or two sentences introduce yourself to the owner: which harness you are and "
                     "which model you run (say if you are not sure), that the switch is done and the conversation can go on; the "
                     "earlier conversation stays with " + F + " — saying \"switch back to " + F + "\" returns to it."
-                    + (" " + F + " could not write a handoff this time: say so in one sentence (what was said before is not "
-                       "known to you; the owner may need to repeat the key points)." if ho == "none" else "")
+                    + (" " + F + " could not write a handoff this time: say so in one sentence (use the local context excerpt below when present; "
+                       "ask about any missing key points)." if ho == "none" else "")
                     + " Do not use tools and do not mention this note.")
         return ("[Agent J system note — not from the owner] The owner asked to switch to " + T + ", but the check after the "
                 "switch failed (" + reason_text(code, to, "en", detail, err) + "), so Agent J switched back to you (" + F + ") by itself. In "
@@ -335,7 +335,7 @@ def hello_prompt(kind: str, req: dict, lang: str = "zh", where: str | None = Non
         return ("〔Agent J 系统提示，不是主人发的〕主人刚把底层 harness 从 " + F + " 切换到了你（" + T + "）。用一两句话向主人自报家门："
                 "你是哪个 harness、用的什么模型（不确定就说不确定），说明切换已完成、可以接着说话；之前的对话留在 " + F
                 + " 那边，主人说「切回 " + F + "」就能回去。"
-                + ("这次 " + F + " 没写成交接：用一句话告诉主人（之前说过的你不知道，要点可能得再说一遍）。" if ho == "none" else "")
+                + ("这次 " + F + " 没写成交接：用一句话告诉主人（可参考下方本地对话摘录，缺失要点再问主人）。" if ho == "none" else "")
                 + "不要调用工具，不要提这条提示。")
     return ("〔Agent J 系统提示，不是主人发的〕主人刚才要求切换到 " + T + "，但切换后的自检没有通过（" + reason_text(code, to, "zh", detail, err)
             + "），Agent J 已经自动切回你（" + F + "）。用一两句话告诉主人：切换没成功、已经回到原来的 harness、失败原因的大白话，"
@@ -352,7 +352,7 @@ PROGRESS = {
            "probing": "正在测试 {t}：先发一条测试消息，能正常回答才切换（最多 1 分钟）…",
            "waiting": "{t} 测试通过，等这一轮说完就开始切换…",
            "switching": "正在切换到 {t}：Agent J 重启中，新的 Agent 接上后会先跟您打招呼…",
-           "switched": "已切换到 {t}，它正在跟您打招呼…",
+           "switched": "{t} 已启动，正在验证手机消息能否正常回复…",
            "back": "切换到 {t} 没成功，正在切回 {f}…",
            "back_ok": "已切回 {f}，它马上跟您说明原因。"},
     "en": {"scanning": "Probing the harnesses on the Agent J host: Claude Code, Codex, OpenCode, Kimi Code and Qwen Code, one try each, up to 1 minute each…",
@@ -360,7 +360,7 @@ PROGRESS = {
            "probing": "Trying {t}: one test message first; it switches only if that is answered (up to 1 minute)…",
            "waiting": "{t} passed the test; the switch starts when this turn is done…",
            "switching": "Switching to {t}: Agent J is restarting; the new Agent will say hello once it is up…",
-           "switched": "Switched to {t}; it is saying hello…",
+           "switched": "{t} started; verifying that it can reply to a phone message…",
            "back": "Switching to {t} did not work; switching back to {f}…",
            "back_ok": "Back on {f}; it will tell you why in a moment."},
 }
@@ -428,11 +428,11 @@ def handoff_prompt(kind: str, req: dict, cfg: dict, lang: str = "zh") -> str | N
 PROGRESS_P289 = {
     "zh": {"handoff": "先请 {f} 写好交接（最多 3 分钟），再切换到 {t}…",
            "handoff_ok": "{f} 的交接写好了，正在切换到 {t}；{t} 接上后会先读交接再接着干…",
-           "handoff_failed": "这次没写成交接（{f} 没能在 3 分钟内写好交接文件），照样切换到 {t}；{t} 不知道之前说过什么，要点可能得再说一遍。"},
+           "handoff_failed": "这次没写成交接（{f} 没有写好交接文件），照样切换到 {t}；将提供最近对话的本地脱敏摘录，未必包含全部要点。"},
     "en": {"handoff": "Asking {f} to write the handoff first (up to 3 minutes), then switching to {t}…",
            "handoff_ok": "{f} wrote the handoff; switching to {t}, which reads it first and then carries on…",
-           "handoff_failed": "No handoff this time ({f} could not write the handoff file within 3 minutes); switching to {t} anyway. "
-                             "{t} does not know what was said before — the key points may need repeating."},
+           "handoff_failed": "No handoff this time ({f} did not write the handoff file); switching to {t} anyway. "
+                             "A local redacted excerpt of recent conversation will be provided; some key points may be missing."},
 }
 
 
@@ -622,7 +622,7 @@ def request(st, target: str | None, model: str | None = None, dry_run: bool = Fa
             **{k: rec[k] for k in ("err", "start_secs", "line", "ark_plan_fix") if k in rec}}
     if rec["status"] == "probe_ok":
         return {"ok": True, "dry_run": True, **base}
-    if rec["status"] == "failed":
+    if rec["status"] in ("failed", "rolled_back"):
         return {"ok": False, "reason": rec.get("reason") or "call_failed", **base}
     return {"ok": True, "scheduled": True, **base}
 
@@ -1047,7 +1047,12 @@ def worker(st, target: str | None, model: str | None = None, *, job: str | None 
             rec["version"] = version
         if isinstance(model, str) and model and not undo:
             rec["model"] = model
-        write_receipt(st, rec)
+        final = write_receipt(st, rec)
+        if status in ("ok", "rolled_back", "failed"):
+            try:
+                ctl({"cmd": "send", "text": _say_receipt(final, _lang_of(st))})
+            except Exception:
+                st.log("harness_result_notice", result="unavailable")
         st.log("harness_switch", status=status, frm=rec["from"], to=target, reason=reason,
                **{k: extra[k] for k in ("detail", "err", "start_secs", "waited") if k in extra})
         return 0 if status in ("ok", "probe_ok") else 2 if status == "rolled_back" else 1
@@ -1158,11 +1163,12 @@ def worker(st, target: str | None, model: str | None = None, *, job: str | None 
     if reason is None:
         if not undo and not _reads_back(st, target, model):
             st.log("harness_switch", status="config_drift", to=target)   # changed after the switch (e.g. by the new Agent)
+        done("ok")
         if ho == "ok":                 # P289: introduced and verified — now carry on from the handoff (like P151's recovery)
             r = ctl({"cmd": "harness_handoff", "step": "resume", "from": prev["kind"], "to": target})
             st.log("harness_handoff", step="resume", result="sent" if r and r.get("ok") is True else "refused",
                    frm=prev["kind"], to=target)
-        return done("ok")
+        return 0
     # 3. roll back: the previous harness, exactly as it was, then let it explain
     _progress(ctl, "back", target, prev["kind"])
     _restore(st, raw)
@@ -1173,6 +1179,7 @@ def worker(st, target: str | None, model: str | None = None, *, job: str | None 
         back = "restart_failed"
     if back is None:
         _progress(ctl, "back_ok", target, prev["kind"])
+    result = done("rolled_back", reason)
     why = {k: extra[k] for k in ("detail", "err") if k in extra}
     told = back is None and _hello(ctl, {"outcome": "rolled_back", "from": prev["kind"], "to": target, "reason": reason, **why},
                                    sleep, clock) is None
@@ -1182,7 +1189,7 @@ def worker(st, target: str | None, model: str | None = None, *, job: str | None 
                                      "切换到 {t} 没成功（{r}），已切回 {f}。").format(
             t=LABEL[target], f=LABEL[prev["kind"]], r=reason_text(reason, target, "en" if lang == "en" else "zh",
                                                                   why.get("detail"), why.get("err")))})
-    return done("rolled_back", reason)
+    return result
 
 
 def stale_job(st, job: str | None, environ=None) -> bool:
@@ -1271,10 +1278,11 @@ def _say(r: dict, lang: str) -> str:
     if r.get("ok"):
         back = (f" If it does not come up, Agent J switches back to {F} by itself and says why." if F and lang == "en" else
                 f"如果新的那边没起来，会自动切回 {F} 并说明原因。" if F else "")
-        return (f"✓ {T} passed the check. Switch scheduled: when this turn ends Agent J restarts with {T}; the phone disconnects "
+        return (f"… {T} passed the check; the switch is not complete. Switch scheduled: when this turn ends Agent J restarts with {T}; the phone disconnects "
                 f"for a few seconds and reconnects by itself, then {T} introduces itself.{back}" if lang == "en" else
-                f"✓ {T} 检查通过。已安排切换：这一轮结束后 Agent J 重启并换成 {T}，手机会断开几秒再自动连上，然后 {T} 会先自报家门。{back}"
-               ) + r.get("note", "")
+                f"… {T} 检查通过，尚未完成切换。已安排切换：这一轮结束后 Agent J 重启并换成 {T}，手机会断开几秒再自动连上，然后 {T} 会先自报家门。{back}"
+               ) + r.get("note", "") + (" Read the final outcome: agentj agent switch --result --wait 900." if lang == "en" else
+                                           "最终结果请查：agentj agent switch --result --wait 900。")
     if r.get("pending"):
         return ("… The check of {t} is still running; see the outcome with `agentj agent switch --result` in a minute.".format(t=T)
                 if lang == "en" else f"… {T} 还在检查中，一分钟后用 `agentj agent switch --result` 看结果。")
@@ -1324,34 +1332,52 @@ def _say_receipt(rec: dict | None, lang: str) -> str:
     return f"{when} … {F} → {T}: {st}"
 
 
+def wait_result(st, seconds=0, *, sleep=time.sleep, clock=time.monotonic):
+    end = clock() + min(max(seconds, 0), 900)
+    rec = read_receipt(st)
+    job = (rec or {}).get("job")
+    while rec and result_code(rec) == 4 and clock() < end:
+        sleep(min(1, max(0, end - clock())))
+        latest = read_receipt(st)
+        if not latest or (job and latest.get("job") != job):
+            return rec  # another job cannot satisfy this caller's wait
+        rec = latest
+    return rec
+
+
+def result_code(rec: dict | None) -> int:
+    status = (rec or {}).get("status")
+    return 0 if status in ("ok", "probe_ok") else 3 if status in ("failed", "rolled_back") else 4
+
+
 def cli(a, st, lang: str) -> int:
     if getattr(a, "result", False):
-        rec = read_receipt(st)
+        rec = wait_result(st, getattr(a, "wait", 0))
         print(json.dumps(rec or {}, ensure_ascii=False) if a.json else _say_receipt(rec, lang))
-        return 0
+        return result_code(rec)
     if getattr(a, "worker", False):
         return _job(a, st)
     if getattr(a, "scan", False):
         r = scan(st)
         print(json.dumps(r, ensure_ascii=False) if a.json else _say_scan(r, lang))
-        return 0 if r.get("ok") else 4 if r.get("pending") else 3
+        return 4 if r.get("scheduled") or r.get("pending") else 0 if r.get("ok") else 3
     target = getattr(a, "target", None)
     if getattr(a, "undo", False):
         r = request(st, None, undo=True)
         print(json.dumps(r, ensure_ascii=False) if a.json else _say(r, lang))
-        return 0 if r.get("ok") else 4 if r.get("pending") else 3
+        return 4 if r.get("scheduled") or r.get("pending") else 0 if r.get("ok") else 3
     if getattr(a, "preset", None) == "ark" and target == "opencode":    # P371: 「OpenCode · 火山方舟」
         from . import ark
         r = ark.switch(st, getattr(a, "plan", None) or ark.DEFAULT_PLAN, a.model, dry_run=getattr(a, "dry_run", False))
         print(json.dumps(r, ensure_ascii=False) if a.json else ark.say_switch(r, lang))
-        return 0 if r.get("ok") else 4 if r.get("pending") else 3
+        return 4 if r.get("scheduled") or r.get("pending") else 0 if r.get("ok") else 3
     if target not in KINDS:
         print("agentj agent switch <claude|codex|opencode> [--model M] [--dry-run] [--force] [--json] · agentj agent switch opencode --preset ark [--plan coding|payg] · --scan · --undo · --result",
               file=sys.stderr)
         return 2
     r = request(st, target, a.model, dry_run=getattr(a, "dry_run", False), force=getattr(a, "force", False))
     print(json.dumps(r, ensure_ascii=False) if a.json else _say(r, lang))
-    return 0 if r.get("ok") else 4 if r.get("pending") else 3
+    return 4 if r.get("scheduled") or r.get("pending") else 0 if r.get("ok") else 3
 
 
 def _job(a, st) -> int:

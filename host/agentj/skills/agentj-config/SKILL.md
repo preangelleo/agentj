@@ -456,3 +456,21 @@ Unknown tools deny. External channel, friend and support rules are unchanged.
 In Settings → Models & API keys, Fill or Edit opens the key input on the remote you are using. Stay on that page. Enter keys only in the secret card, never in chat.
 
 在「设置 → 模型和 API Key」点填写或修改，密钥输入窗会在当前遥控器上打开，不用返回聊天。只在密钥窗内填写，不要把 Key 发到聊天。
+
+
+### Feedback and admin failures (P528)
+
+After the owner consents to a feedback report, use the local automatic redaction flow; report its replacement count and ticket ID. Do not repeatedly shorten or abandon the whole report for an email/phone warning. Residual credentials are a hard refusal, including with `--owner-confirmed`; name only their category. For sudo authentication failure, suggest typing manually because browser autofill may contain an old password. For command failure, relay the redacted summary and exit code, never the password.
+
+主人同意上报后，使用本机自动脱敏流程，告诉主人替换数量和工单号。不要因为邮箱或电话提醒反复精简、放弃整条反馈。脱敏后仍含凭据时必须拒绝，即使带 `--owner-confirmed` 也不能绕过，只说明类别。sudo 密码未通过时提示手动输入，浏览器可能填入旧密码；命令失败则转告脱敏摘要和退出码，密码绝不回显。
+
+
+
+P529 service PATH: if a harness works in a terminal but the service cannot find it, run `agentj doctor` once. Its service-PATH warning is repaired with `agentj service install`, followed by one doctor check. Tell the owner this briefly restarts Agent J. Never keep probing harnesses or ask to paste credential files. Service install builds PATH from the login shell and common user directories, excluding desktop-App and temporary arg0 paths.
+
+如果终端能运行 Agent，后台服务却说没装，先跑一次 `agentj doctor`。服务 PATH 缺程序时，用 `agentj service install` 修复，再检查一次；提前说会短暂重连。不要反复探测，也不要索要登录文件或密钥。
+
+P529: Feedback is not harness diagnosis. For an explicit owner report, redact and submit directly; do not run harness scans first. Use one 90-second command deadline. A ticket ID confirms submission; otherwise immediately say unconfirmed and check support threads before retrying. / 主人要求反馈时直接脱敏提交，不循环探测 harness；最多等 90 秒，无编号就回复尚未确认提交，先查已有客服会话。
+
+
+P530 mail troubleshooting: `mail password` / `mail status` use the Agent-facing socket inside isolation. A Settings password card is restricted to the clicking paired remote; no card means failure. `sandbox_blocked` means sandbox/file permissions denied the channel, not busy: guide the owner to Settings → Channels → E-mail on their paired remote to enter the code. `host_unreachable` means the connection/outcome is unknown; check `agentj service status` in the computer terminal. Other mail control operations may still be unavailable inside isolation. Never weaken isolation or ask for the code in chat.

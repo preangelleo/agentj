@@ -6,7 +6,7 @@ Linux = a systemd *user* unit (`~/.config/systemd/user/agentj.service`); macOS =
 (journal / `service.log` in the state dir) gets metadata lines only — never a message, a reply or a command.
 
 Harness binary paths live only in the owner environment file; units/plists never bake in binary overrides.
-Never a secret in the unit / plist: only PATH (captured at install so `claude` / `codex` / `bwrap` resolve) and, when set,
+Never a secret in the unit / plist: only PATH (built from stable login-shell and user directories so `claude` / `codex` / `bwrap` resolve) and, when set,
 AGENTJ_STATE_DIR / AGENTJ_CLAUDE_BIN / AGENTJ_CODEX_BIN (paths). The Agent uses its own login (~/.claude,
 ~/.codex). If the only Claude Code login is the CLAUDE_CODE_OAUTH_TOKEN variable, the human puts it into an environment
 file they create themselves (0600, next to the unit, read-only for the fenced Agent) — we print how, we never copy it.
@@ -30,7 +30,7 @@ from pathlib import Path
 import subprocess
 import sys
 
-from .envcompat import getenv, isset
+from .envcompat import getenv, isset, legacy_name as legacy_env_name
 from . import macapp, resource_policy
 
 DEFAULT_UNIT = "agentj"
@@ -148,9 +148,10 @@ def ensure_agentj_on_path(environ: dict | None = None, exe: str | None = None) -
 
 def service_env(environ: dict | None = None) -> tuple[dict, list[str]]:
     """(variables written into the unit, notes for the human). Values are paths only; proxies only without credentials."""
-    e = os.environ if environ is None else environ
-    path = os.pathsep.join(p for p in (e.get("PATH") or "").split(os.pathsep) if p.startswith("/"))
-    out = {"PATH": path or "/usr/local/bin:/usr/bin:/bin"}
+    from . import service_path
+    e = dict(os.environ if environ is None else environ)
+    e["PATH"] = service_path.build(e)
+    out = {"PATH": e["PATH"]}
     if isset("AGENTJ_STATE_DIR", e):
         sd = getenv("AGENTJ_STATE_DIR", "", e)
         if sd:
@@ -293,9 +294,10 @@ def prepare_binary_env(n: str, environ=None, previous=None) -> tuple[dict, list[
     return env, notes
 
 
-def installed_binary_env(n: str) -> dict:
-    """Only harness paths from the existing unit/plist; never show other variables."""
+def installed_environment(n: str) -> dict:
+    """Read only PATH and executable paths; never return credential variables."""
     path = Path(unit_dir()) / (n + ".service") if platform() == "linux" else Path(plist_path(n))
+    allowed = ("PATH", *CAPTURED_ENV[1:])
     try:
         if platform() == "macos":
             values = plistlib.loads(path.read_bytes()).get("EnvironmentVariables", {})
@@ -305,11 +307,26 @@ def installed_binary_env(n: str) -> dict:
                 if line.startswith("Environment="):
                     for item in shlex.split(line.partition("=")[2]):
                         key, sep, value = item.partition("=")
-                        if sep and key in CAPTURED_ENV[1:]:
+                        if sep and key in allowed:
                             values[key] = value.replace("%%", "%")
-        return {k: v for k, v in values.items() if k in CAPTURED_ENV[1:]}
+        return {k: v for k, v in values.items() if k in allowed and isinstance(v, str)}
     except (OSError, ValueError):
         return {}
+
+
+def installed_binary_env(n: str) -> dict:
+    return {k: v for k, v in installed_environment(n).items() if k in CAPTURED_ENV[1:]}
+
+
+def path_missing_harnesses(svc: dict) -> list[str]:
+    """Compare the daemon's actual lookup path against a repaired stable PATH."""
+    if not svc.get("installed") or not svc.get("name"):
+        return []
+    from . import service_path
+    from .binaries import ENV, resolve
+    current = effective_binary_environment(svc)
+    repaired = dict(current, PATH=service_path.build(dict(os.environ)))
+    return [kind for kind in ENV if not resolve(kind, current)["path"] and resolve(kind, repaired)["path"]]
 
 
 def previous_binary_selection(st, n: str) -> dict:
@@ -333,6 +350,10 @@ def effective_binary_environment(svc: dict) -> dict:
     """Doctor resolves the installed service's saved paths, rather than its shell's PATH."""
     env = dict(os.environ)
     if svc.get('installed') and svc.get('name'):
+        for key in CAPTURED_ENV[1:]:
+            env.pop(key, None)
+            env.pop(legacy_env_name(key), None)
+        env.update(installed_environment(svc['name']))
         env.update(binary_env(env_file(svc['name'])))
     return env
 

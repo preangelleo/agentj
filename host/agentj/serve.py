@@ -2323,7 +2323,7 @@ class Host:
                         except tasks.TaskError as err:
                             await self._ctl_send(w, {"ok": False, "error": err.reason, "detail": err.detail})
                         except OSError:
-                            await self._ctl_send(w, {"ok": False, "error": "busy", "detail": "无法保存运行记录 / Could not save run journal"})
+                            await self._ctl_send(w, {"ok": False, "error": "journal_unavailable", "detail": "无法保存运行记录，请检查磁盘空间和文件权限 / Could not save run journal; check disk space and file permissions"})
                         else:
                             await self._ctl_send(w, {"ok": True, "queued": tid, "run_id": rid})
                 elif cmd == "automation_resume":    # P426 #181-5: `agentj automation resume` (wfrun.py)
@@ -2743,6 +2743,8 @@ class Host:
         text = switch_harness.hello_prompt(self.agent.kind, req, self.lang, where)
         if text is None:
             return {"ok": False, "error": "bad_request"}
+        if req.get("outcome") == "ok" and req.get("handoff") == "none":
+            text += handoff.switch_fallback(self.hist.turns)
         at = time.time()
         self.agent.submit(switch_harness.HelloSend(text))
         self.st.log("harness_hello", agent=self.agent.kind, outcome=req.get("outcome"), handoff=req.get("handoff"))
@@ -5789,9 +5791,9 @@ class Host:
             if self.native_route(name) == "none":   # P412 #175: the harness's own, but no web page can do it — say why
                 return done(slash.Result(harness_cmds.none_note(self.agent.kind, name, self.lang), "refused"))
             if self.agent.kind == "claude" and not getattr(self.agent, "init", None):
-                return done(slash.Result("还不知道 Claude Code 有哪些技能：先发一条普通消息，再试一次。\n" + slash.REFUSE,
+                return done(slash.Result("还不知道 Claude Code 有哪些技能：先发一条普通消息，再试一次。\n" + slash.refuse(self.lang),
                                          "refused"))
-            return done(slash.Result(slash.REFUSE, "refused"))
+            return done(slash.Result(slash.refuse(self.lang), "refused"))
         if name == "help":
             return done(await self.agent.command("help", arg))
         if name == "stop":
@@ -6180,7 +6182,8 @@ class Host:
             return await answer(True)
         if t == "mail_key":                 # one answer, when the card ends (the page waits up to the card's 10 minutes)
             async def card():
-                res = await self.mail.secret_card(recover=False)
+                with provenance.paired_request(lambda: self._paired_live(s)):
+                    res = await self.mail.secret_card(recover=False, only=s.device)
                 receipt = res.get("receipt") or {}
                 await answer(res.get("result") == "saved", None if res.get("result") == "saved" else
                              (res.get("detail") or res.get("why") or res.get("result")), card=res.get("result"), verify=receipt.get("verify"), detail=receipt.get("detail"))

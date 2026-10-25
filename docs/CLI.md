@@ -202,8 +202,8 @@ agentj agent --help
 ```
 
 ```text
-usage: agentj agent [-h] [--probe] [--dry-run] [--result] [--scan] [--undo]
-                    [--force] [--json] [--dir DIR]
+usage: agentj agent [-h] [--probe] [--dry-run] [--wait WAIT] [--result]
+                    [--scan] [--undo] [--force] [--json] [--dir DIR]
                     [--region {mainland-cn,global}] [--base-url BASE_URL]
                     [--model MODEL] [--preset {ark}]
                     [--plan {agent,coding,payg}] [--unfenced] [--allow-docker]
@@ -219,6 +219,7 @@ usage: agentj agent [-h] [--probe] [--dry-run] [--result] [--scan] [--undo]
 | `target` | `null` | false | `claude`, `codex`, `opencode`, `kimi`, `qwen`, `dsh` | `the harness to switch to; with detect --probe: probe only this one` |
 | `--probe` | `false` | false | — | `detect: verify one tool-free model call using existing login (≤ 60 s each); no native output is returned` |
 | `--dry-run` | `false` | false | — | `only check whether it can switch` |
+| `--wait` | `0` | false | — | `wait for the final result (0–900 seconds)` |
 | `--result` | `false` | false | — | `the last switch's outcome` |
 | `--scan` | `false` | false | — | `probe all three in the service's environment` |
 | `--undo` | `false` | false | — | `go back to the harness used before the last switch, with no pre-check (if it does not come up, back here)` |
@@ -7003,8 +7004,8 @@ agentj agent --help
 ```
 
 ```text
-usage: agentj agent [-h] [--probe] [--dry-run] [--result] [--scan] [--undo]
-                    [--force] [--json] [--dir DIR]
+usage: agentj agent [-h] [--probe] [--dry-run] [--wait WAIT] [--result]
+                    [--scan] [--undo] [--force] [--json] [--dir DIR]
                     [--region {mainland-cn,global}] [--base-url BASE_URL]
                     [--model MODEL] [--preset {ark}]
                     [--plan {agent,coding,payg}] [--unfenced] [--allow-docker]
@@ -7020,6 +7021,7 @@ usage: agentj agent [-h] [--probe] [--dry-run] [--result] [--scan] [--undo]
 | `target` | `null` | false | `claude`, `codex`, `opencode`, `kimi`, `qwen`, `dsh` | `switch：要切到的 harness；detect --probe：只探测这一个（可加 --model）` |
 | `--probe` | `false` | false | — | `detect: verify one tool-free model call using existing login (≤ 60 s each); no native output is returned` |
 | `--dry-run` | `false` | false | — | `switch：只检查能不能切，不切` |
+| `--wait` | `0` | false | — | `switch --result：等待最终结果的秒数（0–900）` |
 | `--result` | `false` | false | — | `switch：上一次切换的结果` |
 | `--scan` | `false` | false | — | `switch：用服务的环境逐个无头探测三个，列出现在能切到哪些` |
 | `--undo` | `false` | false | — | `switch：撤回上一次切换，不经检查直接切回原来那个（起不来会自动回到现在这个）` |

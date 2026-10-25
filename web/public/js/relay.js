@@ -11,8 +11,8 @@ import { termKey, backslashEnter, killed, forget as forgetKill } from './termkey
 import * as fsed from './fsedit.js';   // P412 (#174): the full-screen editor
 import { bindReaderSwipe } from './reader-swipe.js';
 import { DOUBLE_MS as RD_DTAP_MS, TAP_MS as RD_TAP_MS, TAP_PX as RD_TAP_PX, PAIR_PX as RD_PAIR_PX } from './file-gestures.js';
-import { linkify, cardKeys } from './five-pages.js';
 import {onChange as onCardsChange, refresh as refreshCards} from './jcards.js';
+import { linkify, cardKeys, commandLinks } from './five-pages.js';
 import { capAbove, sheetCeil, wireCeil } from './fit.js';
 import { registerLayer, activeLayer } from './layers.js';
 import { applyViewport, watchViewport } from './viewport.js';
@@ -1239,6 +1239,7 @@ function sourceOf(src){
   if (src.k === "agent") return {kind: "agent", label: src.via === "heartbeat" ? t('r.src.heartbeat') : src.via === "quota" ? t('p314.src') : src.via === "hook" ? t('p366.src') : src.via === "loop" ? t('r.src.loop') : src.via === "task" ? t('r.src.bgTask')
     : src.via === "auto" ? t('p365.src.about', {name: src.name || ''})   // P365: the main Agent's own follow-up about an automation's message
     : t(src.text?.trim() ? 'r.src.agent' : 'r.src.agentReport', {name: C.agentName()})};
+  if (src.k === "task" && src.via === "same-owner" && src.name) return {kind: "task", label: src.name};
   if (src.k === "task") return {kind: "task", label: src.name ? t('r.src.taskNamed', {name: src.name}) : t('r.src.task')};
   if (src.k === "cmd") return {kind: "cmd", label: t('r.src.cmd')};
   // P365: the owner's own script / timer (`agentj notify --from <name>`): the quiet system colour, its registered name
@@ -1333,6 +1334,15 @@ function showPage(){
   const queueList = queuedWatchList();
   queueStuck = queueWatch.check(queueList, hist.turns);
   paintCmdx(p);
+  if (p.source?.k === 'cmd' && p.card?.kind === 'refused') {
+    commandLinks(el('words'), async cmd => {
+      if (cmd === 'reset') { C.resetConn?.(); return; }
+      if (cmd === 'add-friend') { await addFriendCmd(''); return; }
+      if (document.body.dataset.conn !== 'on') return;
+      if (CMDS.includes(cmd) || ['reload','my-agent-id','telegram-pair'].includes(cmd)) await runCmd(cmd);
+      else await sayWords('/' + cmd, t('r.run.sent', {cmd: '/' + cmd}));
+    });
+  }
   C.termCard?.(p);                                       // P414 (§37.12): a 「!」 page's terminal result card (js/bang.js)
   if (key !== shownKey){
     const moved = shownKey !== null && shownKey.split("|")[0] !== key.split("|")[0];

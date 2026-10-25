@@ -293,7 +293,7 @@ class Doctor(unittest.TestCase):
 
     def test_serve_busy_is_restarted(self):
         svc = FakeService(active="active")
-        code, _, _ = self.run_it([names.ServeBusy("x"), self.UP], service=svc)
+        code, _, _ = self.run_it([names.ServeBusy("TimeoutError"), self.UP], service=svc)
         self.assertEqual((code, svc.calls), (0, ["restart"]))
 
 

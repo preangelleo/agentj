@@ -6,6 +6,7 @@ Linked → the Dashboard decides first (unique per company) and the local copy i
 """
 from __future__ import annotations
 
+import errno
 import json
 import socket
 
@@ -16,8 +17,24 @@ CTL_TIMEOUT = 5
 
 
 class ServeBusy(Exception):
-    """serve's control socket exists and accepted, but did not answer (timeout, dropped connection, garbage). That is NOT
-    "serve not running": callers must refuse, never fall back to editing state directly (review A32-02)."""
+    """Control transport failed or returned no usable response; the host state is unknown.
+    Callers must refuse, never edit state directly. response() distinguishes permission/connect failures from timeout."""
+
+
+    def response(self) -> dict:
+        cause = str(self)
+        code = 'sandbox_blocked' if cause == 'PermissionError' else ('serve_busy' if cause in ('TimeoutError', 'ValueError', '') else 'host_unreachable')
+        return transport_failure(code)
+
+
+def transport_failure(code: str) -> dict:
+    """Fixed diagnostics only: never echo exception paths, requests or credentials."""
+    detail = ("隔离层或文件权限阻止连接主机；请在已配对遥控器「设置 → 沟通渠道 → 邮件通道」设置授权码，"
+              "其它操作请在电脑终端重试（agentj service status）。 / The sandbox or file permissions blocked the host connection. "
+              "Set the app password on the paired remote in Settings → Channels → E-mail; retry other operations in the computer terminal (agentj service status).") if code == 'sandbox_blocked' else (
+              "主机通道没有响应，无法确认操作结果；请在电脑终端运行 agentj service status，再按提示处理。 / "
+              "The host channel did not answer; the operation outcome is unknown. Run agentj service status in the computer terminal and follow its instructions.")
+    return {'ok': False, 'error': code, 'detail': detail}
 
 
 def ctl_call(st, req: dict, timeout: float | None = None, max_bytes: int = 64 * 1024) -> dict | None:
@@ -47,7 +64,7 @@ def ctl_call(st, req: dict, timeout: float | None = None, max_bytes: int = 64 * 
         except (FileNotFoundError, ConnectionRefusedError):
             return None
         except OSError as e:
-            raise ServeBusy(type(e).__name__) from None
+            raise ServeBusy('PermissionError' if e.errno in (errno.EPERM, errno.EACCES) else type(e).__name__) from None
         try:
             if req.get("cmd") in SENSITIVE and "claim" not in req:
                 s.sendall(b'{"cmd": "claim"}\n')
@@ -57,7 +74,7 @@ def ctl_call(st, req: dict, timeout: float | None = None, max_bytes: int = 64 * 
             s.sendall((json.dumps(req) + "\n").encode())
             obj = line()
         except (OSError, ValueError) as e:
-            raise ServeBusy(type(e).__name__) from None
+            raise ServeBusy('PermissionError' if isinstance(e, OSError) and e.errno in (errno.EPERM, errno.EACCES) else type(e).__name__) from None
         return obj
     finally:
         s.close()

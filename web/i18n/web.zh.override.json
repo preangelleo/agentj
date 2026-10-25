@@ -2492,5 +2492,7 @@
   "p515.effort.max": "最高档",
   "p527.fill": "填写 {provider} API Key",
   "p527.jev.typesafe": "Jev 安全审核 · TypeSafe 官方 API Key",
-  "p527.jev.openrouter": "Jev 安全审核 · OpenRouter API Key"
+  "p527.jev.openrouter": "Jev 安全审核 · OpenRouter API Key",
+  "elev.sudo.bad": "密码未通过，还能再试 {n} 次。可能是浏览器自动填入的旧密码，请手动输入。",
+  "elev.r.badPassword": "密码未通过，这张卡片作废。可能是浏览器自动填入的旧密码，请手动输入。"
 }

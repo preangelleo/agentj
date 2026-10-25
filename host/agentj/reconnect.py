@@ -1,11 +1,5 @@
-"""P147 `agentj doctor --reconnect`: one command that brings a grey phone back.
-
-Three links, checked in order, each repaired only when it is the broken one:
-  serve  — the background service (`agentj service`); not answering → start / restart it
-  relay  — serve ↔ the Agent J relay (the phone's line); not up → wait, then one service restart
-  agent  — serve ↔ the AI session it serves; `down` → re-attach (shared Claude: follow the owner to the live session;
-           run inside a Claude Code session, that session is the one attached)
-Prints one plain sentence (and the steps taken). Never prints a secret; never starts a Claude Code process itself.
+"""P147 reconnect: check serve, relay, then agent; repair only the failed link.
+Report each step. Never print secrets or start Claude Code itself.
 """
 from __future__ import annotations
 
@@ -27,8 +21,8 @@ def _say(lang, zh, en):
 def _status(st, ctl):
     try:
         return ctl(st, {"cmd": "status"}, 5)
-    except names.ServeBusy:
-        return "busy"
+    except names.ServeBusy as e:
+        return "busy" if e.response()["error"] == "serve_busy" else e.response()["error"]
 
 
 def _wait(st, ctl, sleep, seconds, good):
@@ -63,6 +57,9 @@ def run(st, lang="zh", session=None, ask=None, out=None, ctl=None, service=None,
 
     # ---- 1. serve
     res = _status(st, ctl)
+    if isinstance(res, str) and res in ("sandbox_blocked", "host_unreachable"):
+        failure = names.transport_failure(res)
+        return finish(False, failure["detail"], failure["detail"], error=res)
     if not up(res):
         try:
             svc = service.status()

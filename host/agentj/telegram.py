@@ -84,7 +84,7 @@ def enroll(owner,key_env,confirm=None):
     from .names import ServeBusy
     from .service import ServiceError
     try:present,environment=key_status(st,key_env)   # P142 (B14): the running serve's environment, not this terminal's
-    except ServeBusy:return {'ok':False,'error':'Agent J is busy; try again in a moment'}
+    except ServeBusy as e:return e.response()
     except ServiceError as e:return {'ok':False,'error':e.detail or e.reason}
     if not present:
         from .service import missing_key_message

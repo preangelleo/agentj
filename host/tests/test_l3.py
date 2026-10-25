@@ -88,7 +88,11 @@ class ServiceText(unittest.TestCase):
 
     def test_systemd_unit(self):
         env, notes = service.service_env(self.env)
-        self.assertEqual(env["PATH"], "/opt/x/bin:/usr/bin", "relative PATH entries are dropped")
+        paths = env["PATH"].split(":")
+        self.assertNotIn("relative/bin", paths, "relative PATH entries are dropped")
+        self.assertNotIn("/opt/x/bin", paths, "P529 ignores the invoking App PATH")
+        self.assertIn(self.tmp.name + "/.local/bin", paths)
+        self.assertIn("/usr/bin", paths)
         self.assertNotIn("HTTPS_PROXY", env, "a proxy with credentials is not copied")
         self.assertEqual(env["NO_PROXY"], "localhost")
         self.assertTrue(any("HTTPS_PROXY" in n for n in notes))
@@ -98,7 +102,7 @@ class ServiceText(unittest.TestCase):
         self.assertNotIn("OAUTH_TOKEN=", text.replace("e.g. CLAUDE_CODE_OAUTH_TOKEN=…", ""))
         self.assertIn('ExecStart="/opt/aj venv/bin/agentj" "serve" "--events" "quiet" "--no-stdin"', text)
         for line in ("Restart=on-failure", "RestartSec=5", "WantedBy=default.target", "StandardInput=null",
-                     'Environment="PATH=/opt/x/bin:/usr/bin"', f'Environment="AGENTJ_STATE_DIR={self.tmp.name}/st"',
+                     f'Environment="PATH={env["PATH"]}"', f'Environment="AGENTJ_STATE_DIR={self.tmp.name}/st"',
                      f"EnvironmentFile=-{self.tmp.name}/cfg/systemd/user/agentj.env"):
             self.assertIn(line, text.splitlines())
         for ln in text.splitlines():

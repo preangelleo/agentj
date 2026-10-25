@@ -25,6 +25,31 @@ class ForwardSend(Send):
         self.payload = payload if payload is not None else self.data.get("text") or ""
         self.auto_notify = True
 
+    async def completed(self):
+        """The host, not the model, owes exactly one result per authenticated task."""
+        if getattr(self, '_completed', False) or self.data.get('irt') or self.data.get('end'):
+            return
+        self._completed = True
+        svc = self.owner.svc
+        if (self.approved or not self.owner.active(self.fid)
+                or self.owner.row(self.fid).get('token') != self.token or svc.host.stopped()):
+            return
+        row = svc.guards.row(self.fid, self.data.get('mid')) or {}
+        if row.get('reply_state') in ('sending', 'done', 'unknown') or row.get('state') == 'done':
+            return       # the Agent already sent its explicit --reply-to result
+        host = svc.host
+        page = host.hist.get(self.turn) or {}
+        failed = host.cur_failed or getattr(host.agent, 'halting', False) or self.state in ('failed', 'uncertain', 'cancelled')
+        text = (page.get('reply') or {}).get('text', '').strip()
+        if failed:
+            text = '任务未完成，请在接收设备查看状态。' if svc.lang == 'zh' else 'The task did not complete. Check its status on the receiving device.'
+        elif not text:
+            text = '处理已结束，没有返回结果，请在接收设备核实。' if svc.lang == 'zh' else 'Processing ended without a result. Check the receiving device.'
+        # Existing tell owns outbound filters, durable once-only reply latch and end=true.
+        result = await svc.tell(self.fid, text[:6000], reply_to=self.data['mid'])
+        if not result.get('ok'):
+            svc.notice('任务回执未发出，请在主对话查看并处理。' if svc.lang == 'zh' else 'The task receipt was not sent. Review it in the main conversation.')
+
     def cancel(self):
         drop = getattr(self.owner.svc.host, 'queue_dropped', None)
         if callable(drop):
@@ -59,6 +84,9 @@ class ForwardSend(Send):
         if not self.allowed() or svc.host.stopped() or not svc.guards.claim(self.fid, self.data):
             self.cancel()
             return False
+        update = getattr(svc.host, 'hist_update', None)
+        if callable(update) and not (self.data.get('irt') or self.data.get('end')):
+            update(self.turn, text=('正在办理，敏感步骤会请你批准。' if svc.lang == 'zh' else 'Working on it. Sensitive steps require your approval.'))
         return True
 
     def allowed(self):
@@ -425,8 +453,16 @@ class SameOwner:
         label = (('来自好友 ' if zh else 'From friend ') if approved else ('来自同一个主人设备 ' if zh else 'From same-owner device ')) + name + f' ({fid})'
         if isinstance(data.get('grp'), dict) and not approved:   # P426 #170: a 「我的设备」 group message
             label = svc.devices.label(name) + f' ({fid})'
-        page = svc.host.hist_add({'k': 'agent', 'via': 'same-owner', 'text': label + '\n' + text}, '', 'open')
+        src = {'k': 'agent', 'via': 'same-owner', 'text': label + '\n' + text}
+        if not approved and not is_reply:
+            src.update(k='task', name=name + (' 派来任务' if zh else ' sent a task'))
+        page = svc.host.hist_add(src, ('已排队，等待主 Agent 办理。' if zh else 'Queued, waiting for the main Agent.') if not approved and not is_reply else '', 'open')
         send = ForwardSend(self, fid, r.get('token'), page['id'], body, data, approved, payload)
+        if not getattr(svc.host, 'agent', None):
+            svc.host.hist_update(page['id'], text=('暂时无法办理：主 Agent 未连接。' if zh else 'Cannot start: the main Agent is disconnected.'), end='failed')
+            svc.guards.state(fid, key, 'blocked')
+            svc.guards.receipt(fid, key, 'blocked')
+            return False
         svc.host.agent.submit(send)
         if not is_reply:
             svc.notice(('好友任务已进入主对话：' if zh else 'Friend task queued in the main conversation: ') + name)

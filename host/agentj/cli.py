@@ -3428,6 +3428,7 @@ def main(argv=None) -> None:
                     help="switch：要切到的 harness；detect --probe：只探测这一个（可加 --model） / the harness to switch to; with detect --probe: probe only this one")
     ag.add_argument("--probe", action="store_true", help="detect: verify one tool-free model call using existing login (≤ 60 s each); no native output is returned")
     ag.add_argument("--dry-run", action="store_true", help="switch：只检查能不能切，不切 / only check whether it can switch")
+    ag.add_argument("--wait", type=int, default=0, help="switch --result：等待最终结果的秒数（0–900） / wait for the final result (0–900 seconds)")
     ag.add_argument("--result", action="store_true", help="switch：上一次切换的结果 / the last switch's outcome")
     ag.add_argument("--scan", action="store_true", help="switch：用服务的环境逐个无头探测三个，列出现在能切到哪些 / probe all three in the service's environment")
     ag.add_argument("--undo", action="store_true", help="switch：撤回上一次切换，不经检查直接切回原来那个（起不来会自动回到现在这个） / "
