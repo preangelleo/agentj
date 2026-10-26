@@ -356,7 +356,7 @@ def listing(host, s, path: str | None = None) -> dict:
     m = {"id": tid, "n": n}
     pk = host.st.passkey_of_device(s.device) if getattr(s, "device", None) else None
     if pk:
-        m["fa"] = pk["id"]
+        m["fa"], m["fa_s"] = pk["id"], passkey.pk_state(pk)
     m.update(body)
     return m
 

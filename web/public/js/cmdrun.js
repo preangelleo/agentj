@@ -11,7 +11,8 @@ import { unb64u } from '../proto/wire.js';
 import { isReady } from './session.js';
 import { copyable } from './copycode.js';
 import { t, onLang } from './t.js';
-import { el, mk, confirmSheet, toastAction } from './ui.js';
+import { el, mk, toastAction } from './ui.js';
+import { pkSheet, paintPk } from './pkassist.js';   // P539: no own passkey here (the sheet) · why the tap failed (the result)
 import { usable as termUsable } from './termhook.js';   // P408: 「在终端里打开」 only while the terminal is on for this phone
 
 const READ_CMDS = new Set(['doctor']);
@@ -57,8 +58,14 @@ function result() {
   if (R.why === 'restored') bar.append(mk('p', 'rsok', t('p392.restored')));   // P393: the 「连不上」 of a tap made offline turns green
   else if (R.fold) bar.append(mk('p', R.code === 0 ? 'rsok' : 'rsmsg rsfail', t(R.code === 0 ? 'p393.sumOk' : 'p393.sumFail', { time: R.hm || '' })));
   else if (Number.isInteger(R.code) && R.code >= 0) bar.append(mk('p', R.code === 0 ? 'rsok' : 'rsmsg rsfail', t(R.code === 0 ? 'p361.ok' : 'p361.fail', { code: R.code })));
-  else bar.append(mk('p', 'rsmsg rsfail', ['busy', 'timeout', 'no_passkey', 'dropped'].includes(R.why) ? t('p361.why.' + R.why) : whyText(R.why) || t('p361.failed')));
+  else if (!R.err) bar.append(mk('p', 'rsmsg rsfail', ['busy', 'timeout', 'no_passkey', 'dropped'].includes(R.why) ? t('p361.why.' + R.why) : whyText(R.why) || t('p361.failed')));
   bar.append(close); out.push(bar);
+  if (R.err) {                         // P539: the passkey tap failed — why, 再试一次 (the same sheet again), 在本机设置通行密钥
+    const pk = mk('div', 'pkassist rscmdpk'); pk.id = 'rs-cmd-pk'; pk.setAttribute('role', 'status');
+    const name = R.name;
+    paintPk(pk, { fa: R.fa_s, err: R.err, retry: () => run(name) });
+    bar.prepend(pk);
+  }
   if (R.fold) {                        // P393: Settings opened again — one line; the output stays under 「详情」
     if (!R.out) return out;
     const d = mk('details', 'rsmore'); d.id = 'rs-cmd-log'; d.append(mk('summary', '', t('p332.details')));
@@ -86,7 +93,7 @@ async function faceId(res) {
   let p = null;
   const grab = () => { p = faApprove(unb64u(res.fa_ch), res.fa); p.catch(() => {}); };
   yes.addEventListener('click', grab);
-  const ok = await confirmSheet(t('p361.faTitle'), t('p361.faText', { cmd: line(R.name) }), t('p361.faYes'));
+  const ok = await pkSheet(res.fa_s, t('p361.faTitle'), t('p361.faText', { cmd: line(R.name) }), t('p361.faYes'));   // P539
   yes.removeEventListener('click', grab);
   if (!ok || !p) return null;
   R.st = 'run'; paint();
@@ -104,9 +111,9 @@ export async function run(name) {
   // the link dropped while the computer ran it (doctor --reconnect may restart Agent J there): say so, not a bare failure
   if (m.why === 'offline' && R && R.st === 'run') m.why = 'dropped';
   R = { name, st: m.ok ? 'done' : 'fail', code: Number.isInteger(m.code) ? m.code : -1, out: str(m.out), cut: m.cut === true,
-    why: m.ok ? '' : String(m.why || ''), hm: new Date().toTimeString().slice(0, 5) };
+    why: m.ok ? '' : String(m.why || ''), hm: new Date().toTimeString().slice(0, 5), err: m.ok ? null : m.err || null, fa_s: m.fa_s || null };
   if (m.why === 'no_passkey' && phoneConfirmation(true)) { paint(); return; }
-  if (m.why === 'no_passkey') toastAction(t('p361.why.no_passkey'), t('sout.setup'), () => H.setupFaceId(), 8000);
+  if (m.why === 'no_passkey') toastAction(t('p361.why.no_passkey'), t('pkp.setupHere'), () => H.setupFaceId(), 8000);
   paint();
   el('rs-cmd-out')?.scrollIntoView({ block: 'nearest' });
 }

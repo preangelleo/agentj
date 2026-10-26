@@ -67,6 +67,7 @@ function render(form = true) {
   parts.push(!c.address ? t('mail.stNone') : c.enabled ? t('mail.stOn', { a: c.address }) : t('mail.stOff', { a: c.address }));
   parts.push(view.has_password ? t('mail.stKey') : t('mail.stNoKey'));
   if (view.password_upgrade_required) parts.push(t('p503.mailUpgrade'));
+  else if (view.password_state === 'unreadable') parts.push(t('p549.mailUnreadable'));   // P549: a lost key says why
   if (view.error) parts.push(t('mail.stErr', { why: why(view.error) }));
   else if (view.last_ok) parts.push(t('mail.stLast', { at: new Date(view.last_ok * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }));
   el('mail-status').textContent = parts.join(' · ');

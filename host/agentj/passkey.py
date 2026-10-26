@@ -45,6 +45,30 @@ WEB_ORIGINS = ("https://m.agentj.app", "https://alpha-web.agentjarvis.net")
 TEST_ENV = "AGENTJ_TEST_PASSKEY_ORIGIN"
 
 
+# P539 (#300): where a device's passkey lives — advisory UI state only, never part of any signature or check.
+# "platform" = made / used by this device's own authenticator (Touch ID, Windows Hello, Android biometrics);
+# "cross-platform" = another device's passkey borrowed over hybrid / a security key (a Mac page restored with the iPhone).
+ATTACHMENTS = ("platform", "cross-platform")
+PLATFORMS = ("ios", "android", "mac", "windows", "linux", "other")
+
+
+def attachment(v) -> str | None:
+    """A device-reported authenticatorAttachment, or None (missing / anything else: ignored)."""
+    return v if isinstance(v, str) and v in ATTACHMENTS else None
+
+
+def platform(v) -> str | None:
+    return v if isinstance(v, str) and v in PLATFORMS else None
+
+
+def pk_state(pk) -> str:
+    """none (no passkey) | local (lives on this device) | borrowed (another device's) | unknown (legacy record)."""
+    if not isinstance(pk, dict) or not isinstance(pk.get("id"), str):
+        return "none"
+    loc = pk.get("local")
+    return "local" if loc is True else "borrowed" if loc is False else "unknown"
+
+
 class PasskeyError(ValueError):
     """why = what the phone is told (PROTOCOL §12: unknown | bad | expired | revoked); detail = host.log only."""
     def __init__(self, why: str, detail: str = ""):

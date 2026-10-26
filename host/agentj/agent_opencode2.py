@@ -770,17 +770,16 @@ def probe(exe: str, model: str | None, env: dict, timeout: float, *, waits=(), s
     import base64
     import json
     import secrets
-    import shutil
-    import tempfile
     import threading
     import urllib.error
     import urllib.request
+    from . import scratch
     from .agent_opencode import _rule, opencode_env
     from .opencode_free import PROMPT, START_WAIT, ProbeError, _env, _port, _stop, serve
     deadline = clock() + timeout + sum(waits)
     password = secrets.token_urlsafe(32)
-    root = tempfile.mkdtemp(prefix="agentj-oc2-probe-")
     port = _port()
+    root = scratch.make("agentj-oc2-probe-")      # P542: private cache, removed in the finally below
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))      # 127.0.0.1 never through a proxy
     auth = "Basic " + base64.b64encode(f"opencode:{password}".encode()).decode()
     events: list = []
@@ -887,4 +886,4 @@ def probe(exe: str, model: str | None, env: dict, timeout: float, *, waits=(), s
                 pass
     finally:
         _stop(proc)
-        shutil.rmtree(root, ignore_errors=True)
+        scratch.remove(root)

@@ -1,0 +1,182 @@
+{
+ "model": {
+  "zh": [
+   {
+    "q": "Claude Code 停在选模型菜单（/model）",
+    "h": "点哪个就把本会话换成哪个（只改本会话，和手机模型标签一样）",
+    "m": false,
+    "o": [
+     {
+      "l": "❯ Default (Opus 5.5)",
+      "d": "Best for everyday, complex tasks"
+     },
+     {
+      "l": "Opus 5.5",
+      "d": "Best for everyday, complex tasks"
+     },
+     {
+      "l": "Fable 5.1",
+      "d": "Most capable for your hardest and longest-running tasks"
+     },
+     {
+      "l": "Sonnet 5.5",
+      "d": "Efficient for routine tasks"
+     },
+     {
+      "l": "Haiku 5.5",
+      "d": "Fastest for quick answers"
+     },
+     {
+      "l": "Opus 4.8（当前）",
+      "d": "Newer version available · select Opus for Opus 5.5"
+     },
+     {
+      "l": "退出菜单（Esc）",
+      "d": ""
+     }
+    ]
+   }
+  ],
+  "en": [
+   {
+    "q": "Claude Code is in the model menu (/model)",
+    "h": "Tap one to switch this session to it (this session only, like the phone’s model label)",
+    "m": false,
+    "o": [
+     {
+      "l": "❯ Default (Opus 5.5)",
+      "d": "Best for everyday, complex tasks"
+     },
+     {
+      "l": "Opus 5.5",
+      "d": "Best for everyday, complex tasks"
+     },
+     {
+      "l": "Fable 5.1",
+      "d": "Most capable for your hardest and longest-running tasks"
+     },
+     {
+      "l": "Sonnet 5.5",
+      "d": "Efficient for routine tasks"
+     },
+     {
+      "l": "Haiku 5.5",
+      "d": "Fastest for quick answers"
+     },
+     {
+      "l": "Opus 4.8 (current)",
+      "d": "Newer version available · select Opus for Opus 5.5"
+     },
+     {
+      "l": "Exit menu (Esc)",
+      "d": ""
+     }
+    ]
+   }
+  ]
+ },
+ "flag": {
+  "zh": [
+   {
+    "q": "Claude Code 停在菜单：Opus 5.5 paused on this message",
+    "h": "Our safety systems flagged this request. You can continue on Opus 4.8. · 点哪项就选哪项（终端里的 ↑↓ + Enter）",
+    "m": false,
+    "o": [
+     {
+      "l": "❯ Switch to Opus 4.8 for this message",
+      "d": ""
+     },
+     {
+      "l": "Switch to Opus 4.8 and keep using it",
+      "d": ""
+     },
+     {
+      "l": "Stay on Opus 5.5 and edit the message",
+      "d": ""
+     },
+     {
+      "l": "退出菜单（Esc）",
+      "d": ""
+     }
+    ]
+   }
+  ],
+  "en": [
+   {
+    "q": "Claude Code is in a menu: Opus 5.5 paused on this message",
+    "h": "Our safety systems flagged this request. You can continue on Opus 4.8. · Tap a row to choose it (↑↓ + Enter in the terminal)",
+    "m": false,
+    "o": [
+     {
+      "l": "❯ Switch to Opus 4.8 for this message",
+      "d": ""
+     },
+     {
+      "l": "Switch to Opus 4.8 and keep using it",
+      "d": ""
+     },
+     {
+      "l": "Stay on Opus 5.5 and edit the message",
+      "d": ""
+     },
+     {
+      "l": "Exit menu (Esc)",
+      "d": ""
+     }
+    ]
+   }
+  ]
+ },
+ "screen": {
+  "zh": [
+   {
+    "q": "Claude Code 停在终端画面，按键操作：",
+    "h": "Some future picker\n[x] alpha   [ ] beta   token <redacted>\nSpace to toggle · Esc to cancel\n",
+    "m": false,
+    "o": [
+     {
+      "l": "↑ 上移",
+      "d": ""
+     },
+     {
+      "l": "↓ 下移",
+      "d": ""
+     },
+     {
+      "l": "Enter 确认",
+      "d": "选中 ❯ 指着的那一项"
+     },
+     {
+      "l": "退出菜单（Esc）",
+      "d": ""
+     }
+    ]
+   }
+  ],
+  "en": [
+   {
+    "q": "Claude Code is on a terminal screen; use the keys:",
+    "h": "Some future picker\n[x] alpha   [ ] beta   token <redacted>\nSpace to toggle · Esc to cancel\n",
+    "m": false,
+    "o": [
+     {
+      "l": "↑ Up",
+      "d": ""
+     },
+     {
+      "l": "↓ Down",
+      "d": ""
+     },
+     {
+      "l": "Enter",
+      "d": "Chooses the ❯ row"
+     },
+     {
+      "l": "Exit menu (Esc)",
+      "d": ""
+     }
+    ]
+   }
+  ]
+ }
+}

@@ -185,13 +185,21 @@ SERVE_EXIT_GRACE = 15.0   # P292: s from SIGTERM/SIGINT to a forced exit — und
 _exit_timer = None
 
 
+def _forced_exit() -> None:
+    from . import scratch
+    try:
+        scratch.cleanup_live()     # P542: os._exit skips atexit; no throwaway HOME outlives a forced exit
+    finally:
+        os._exit(0)
+
+
 def _serve_exit_guard() -> None:
     """P292: on a saturated disk serve's stop (queued fsyncs, a worker thread parked in a read, the default executor join at
     the end of asyncio.run) can outlast the service manager's stop timeout, which then SIGKILLs it (launchd: exit -9). Leave
     by ourselves first; everything renamed is already on disk, a line still queued would be lost to SIGKILL just the same."""
     global _exit_timer
     if _exit_timer is None:
-        _exit_timer = threading.Timer(SERVE_EXIT_GRACE, os._exit, (0,))
+        _exit_timer = threading.Timer(SERVE_EXIT_GRACE, _forced_exit)
         _exit_timer.daemon = True
         _exit_timer.start()
 
@@ -378,6 +386,22 @@ PAIR_NEED_PASS = ("✗ 这台Agent J 主机还没设遥控器配对密码，所�
                   "first), or choose Add a remote on the Agent J host's seat card at {url}.")
 
 
+def _seat_url(st) -> str:
+    """P545 (§40): this seat's own phone address (m.agentj.app/<seat id>); the configured web root for any other web."""
+    from . import seaturl
+    try:
+        cfg = st.config()
+        return seaturl.seat_url(cfg["channel"], cfg.get("web") or DEFAULT_WEB)
+    except (OSError, KeyError, ValueError, TypeError):
+        return DEFAULT_WEB
+
+
+def _seat_line(st) -> str:
+    url = _seat_url(st)
+    return (f"本席位专属网址：{url} —— 在手机上用它添加到主屏幕，每个席位一个图标，互不覆盖。/ "
+            f"This seat's own address: {url} — add it to the phone's Home Screen; one icon per seat, none replaces another.")
+
+
 def cmd_pair(a) -> None:
     from . import pairprep
     st = State()
@@ -537,6 +561,7 @@ def cmd_pair(a) -> None:
                 if isinstance(ev.get("evicted"), dict):
                     print(f"已自动解绑最早的遥控器：{_dev_line(ev['evicted'])}", flush=True)
                 print(f"✓ 已批准：{ev['name']}（设备 {ev['device']}）。在 serve 终端里打字就能发给它。")
+                print(_seat_line(st), flush=True)
                 return
             reasons = {"code_mismatch": "安全码不一致，已拒绝。" + PAIR_AGAIN, "denied": "已拒绝",
                        "timeout": "120 秒内没有批准，已拒绝。" + PAIR_AGAIN,
@@ -1332,7 +1357,7 @@ def _read_seat_code(a) -> str:
 
 
 # P214: what reaches `--seat` / `--install-code-file` is often the whole prompt or install command, with a CRLF or a
-# full-width hyphen. Keep only the first AJI installation code (else the first ajt_ setup code) of it; never print it.
+# full-width hyphen. Keep only the first AJI installation code (else the first ajt_ / P547 ajh_ setup code) of it; never print it.
 _DASHES = {ord(c): "-" for c in "\u2010\u2011\u2012\u2013\u2014\u2015\u2212\ufe58\ufe63\uff0d\u30fc"}
 
 
@@ -1343,7 +1368,7 @@ def _pasted_code(text: str) -> str:
         m = re.search(r"AJI-([0-9a-f]{32})(?![0-9a-f])", t, re.I)
         if m:
             return "AJI-" + m.group(1).lower()
-    m = re.search(r"(?<![A-Za-z0-9_-])ajt_[A-Za-z0-9_-]{43}(?![A-Za-z0-9_-])", s)
+    m = re.search(r"(?<![A-Za-z0-9_-])aj[th]_[A-Za-z0-9_-]{43}(?![A-Za-z0-9_-])", s)
     return m.group(0) if m else s.strip()
 
 
@@ -1375,8 +1400,9 @@ def _read_paste(prompt: str) -> str:
     return text
 
 
-PASTE_PROMPT = ("有账户页给的设置码（ajt_…）或安装码（AJI-…）就粘贴在这里回车（不显示；整段提示词也行，会自动取出码）；\n"
-                "没有就直接回车，改用Agent J 主机绑定码。 / Paste a setup code (ajt_…) or installation code (AJI-…) and press Enter "
+PASTE_PROMPT = ("有设置码（ajt_… 或旧主机给的 ajh_…）或安装码（AJI-…）就粘贴在这里回车（不显示；整段提示词也行，会自动取出码）；\n"
+                "没有就直接回车，改用Agent J 主机绑定码。 / Paste a setup code (ajt_…, or ajh_… from your old host) or installation "
+                "code (AJI-…) and press Enter "
                 "(hidden; a whole prompt is fine). No code? Just press Enter to use a host binding code instead.\n> ")
 
 
@@ -1386,7 +1412,7 @@ def _paste_login(st: State, a, forced: bool) -> bool:
     if not text.strip() and not forced:
         return False
     code = _pasted_code(text)
-    if not re.fullmatch(r"AJI-[a-f0-9]{32}|ajt_[A-Za-z0-9_-]{43}", code):
+    if not re.fullmatch(r"AJI-[a-f0-9]{32}|aj[th]_[A-Za-z0-9_-]{43}", code):
         _refuse("没找到设置码或安装码：请在账户页点「复制设置码」或「复制安装码」，再粘贴 / No setup code or installation code "
                 "found: on the account page choose Copy setup code or Copy installation code, then paste it")
     if a.name is None and code.startswith("AJI-"):
@@ -1433,6 +1459,12 @@ def _seat_login(st: State, a) -> None:
         t, name = res["tenant"], res["agent_name"]
         st.set_agent_name(name)
         st.log("agent_name_set", kind="seat")
+        if res.get("handover") is not None:   # P547: a host-issued (ajh_) transfer code — its remotes follow only if the HMAC
+            # under the code holds; apply_handover ignores any handover beside an account-page ajt_ code (review B1)
+            from . import seat_transfer
+            n = seat_transfer.apply_handover(st, code, res["handover"])
+            print(f"✓ 从旧主机转来 {n} 个遥控器 / {n} remote(s) moved over from the old host" if n else
+                  "! 旧主机的遥控器没能转过来，请重新扫码配对 / the old host's remotes could not move over: pair them again")
         _ctl_quiet(st, {"cmd": "agent_name_changed"})
         print(f"✓ 已加到 Agent J 账号 {t['slug']}（{t['name']}）的一个席位，Agent 名「{name}」")
         print(f"✓ Added to a seat of the Agent J account {t['slug']} ({t['name']}); Agent name \"{name}\". "
@@ -1444,7 +1476,8 @@ def _seat_login(st: State, a) -> None:
             _after_bind(st)
         return
     msgs = {
-        "bad_code": "设置码格式不对（应是 ajt_ 加 43 个字符）：从那句话里原样复制 / not a setup code (ajt_ + 43 characters): copy it exactly",
+        "bad_code": "设置码格式不对（应是 ajt_ 或 ajh_ 加 43 个字符）：从那句话里原样复制 / not a setup code (ajt_ or ajh_ + 43 "
+                    "characters): copy it exactly",
         "bad_name": "Agent 名不合规（不能有控制字符、不可见字符或换行）/ bad Agent name (no control or invisible characters, no line breaks)",
         "name_required": "Agent 名不能为空 / the Agent name is required",
         "name_taken": "这个账号里已经有叫这个名字的 Agent 了，换一个 / this account already has an Agent with that name",
@@ -2081,7 +2114,8 @@ def cmd_approvals(a) -> None:
                                                                        "too_many": "请求过多",
                                                                        "elsewhere": "新遥控器已在别处确认，这张配对卡收起（未签名）",
                                                                        "gone": "卡片作废（配对已结束）",
-                                                                       "policy": "超出 Agent 自己的沙箱，自动拒绝"}.get(r.get("reason"), r.get("reason"))
+                                                                       "policy": "超出 Agent 自己的沙箱，自动拒绝",
+                                                                       "own_handoff": "读 Agent J 自己的交接文件，不用确认"}.get(r.get("reason"), r.get("reason"))
             if r.get("reason") == "batch":
                 who = f"按手机 {r.get('device')} 的批量授权自动批准（{str(r.get('grant'))[:8]}…）"
             elif r.get("reason") in ("goal", "goal_auto"):    # P158
@@ -2428,6 +2462,9 @@ def cmd_history(a) -> None:
 
 def cmd_inbox(a) -> None:
     """`agentj inbox [list|clear|path]` (PROTOCOL §10.4): what the phone uploaded into the Agent's folder."""
+    if a.mode == "avatar-log":
+        from .avatar_log import cli
+        return cli(a)
     from . import inbox
     st = State()
     _need_init(st)
@@ -3067,7 +3104,8 @@ def cmd_hint() -> None:
     nxt = next((c for (c, _, _), ok in zip(NEXT_STEPS, done) if not ok), None)
     if nxt == "agentj pair" and cloud.read_cloud(st):
         nxt = "账户页席位卡 → 添加遥控器 / account seat card → Add a remote"
-    print("\n" + (f"下一步 / next:  {nxt}" if nxt else "都设好了 / all set — 手机上打开 m.agentj.app 开始对话 / open m.agentj.app on your phone"))
+    home = _seat_url(st).removeprefix("https://")
+    print("\n" + (f"下一步 / next:  {nxt}" if nxt else f"都设好了 / all set — 手机上打开 {home} 开始对话 / open {home} on your phone"))
     print("自检 / health check:  agentj doctor     ·     全部命令 / all commands:  agentj --help")
 
 
@@ -3505,8 +3543,9 @@ def main(argv=None) -> None:
     hi.add_argument("--all", action="store_true", help="clear：连同全部归档立即删除（不能撤销）/ with clear: delete current + every archive")
     hi.set_defaults(fn=cmd_history)
     ib = sub.add_parser("inbox", help="手机传来的文件（在 Agent 目录的 .agentj/inbox 里）：list · clear · path / uploads from the phone")
-    ib.add_argument("mode", nargs="?", choices=["list", "clear", "path"], default="list")
+    ib.add_argument("mode", nargs="?", choices=["list", "clear", "path", "avatar-log"], default="list")
     ib.add_argument("--json", action="store_true")
+    ib.add_argument("--since", help="avatar-log: 2h / 3d / ISO time")
     ib.set_defaults(fn=cmd_inbox)
     sr = sub.add_parser("asr", help="本机语音转写：install · status · test <wav> · engine <sherpa|voxtype|off> · remove / "
                                     "local speech-to-text", add_help=False)
@@ -3557,6 +3596,8 @@ def main(argv=None) -> None:
     elevate_helper.add_parser(sub)   # F17: agentj sudo-helper install · sync · uninstall · status
     docsrule.add_parser(sub)
     handover.add_parser(sub)
+    from . import seat_transfer
+    seat_transfer.add_parser(sub)   # P547: agentj seat transfer [--show] [--out FILE] [--cancel] [--status] · seat setup-code
     from . import tg_cursor
     from . import wechat
     wechat.add_parser(sub)

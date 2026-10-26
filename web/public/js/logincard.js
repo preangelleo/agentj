@@ -6,7 +6,7 @@
 import { sendApp, gen } from './session.js';
 import { t, onLang } from './t.js';
 import { mk, toast } from './ui.js';
-import { registerLayer } from './layers.js';
+import { registerLayer, TOP_RANK } from './layers.js';
 
 const cards = new Map();            // id → card (arrival order)
 const ended = new Map();            // site → {title, result} of the last card that expired (offer 「刷新」)
@@ -17,7 +17,7 @@ function build() {
   root = mk('div', 'ajmodal dlgcard lqr');
   root.id = 'lqr'; root.hidden = true;
   // P142 (A16): a layer — ESC = the card's own quiet way out (「稍后」 while it waits, 「关闭」 once ended); shortcuts stay off
-  registerLayer({ element: () => root, open: () => !!root && !root.hidden, rank: 55, fallback: () => document.getElementById('input') || document.getElementById('setBtn'),
+  registerLayer({ element: () => root, open: () => !!root && !root.hidden, rank: TOP_RANK, fallback: () => document.getElementById('input') || document.getElementById('setBtn'),
     close: () => { const b = $('lqr-later'); (b && !b.hidden ? b : $('lqr-close'))?.click(); } });
   root.setAttribute('role', 'dialog'); root.setAttribute('aria-modal', 'true'); root.setAttribute('aria-labelledby', 'lqr-title');
   const box = mk('div', 'box');

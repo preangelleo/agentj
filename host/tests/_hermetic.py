@@ -70,3 +70,8 @@ _diskq.BUFFER_FOR = 0.0
 # (a loaded machine running modules in parallel), so a line logged on the loop is on disk when the call returns, as before.
 DISKQ_LOOP_WAIT = _diskq.LOOP_WAIT
 _diskq.LOOP_WAIT = 10.0
+# P542: throwaway OpenCode HOMEs (agentj/scratch.py) never in the developer's real ~/.cache from a test.
+if not _ours("AGENTJ_SCRATCH_DIR"):
+    _s = tempfile.mkdtemp(prefix="aj-tests-scratch-")
+    os.environ["AGENTJ_SCRATCH_DIR"] = os.path.join(_s, "scratch")
+    atexit.register(shutil.rmtree, _s, True)

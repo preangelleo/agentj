@@ -307,7 +307,7 @@ class ServeWithoutTerminal(unittest.TestCase):
 
 
 class Doctor(unittest.TestCase):
-    IDS = ["version", "python", "websockets", "platform", "state", "keep-awake", "browser", "relay", "dashboard", "agent", "agent_cli", "harness", "fence", "danger", "passphrase",
+    IDS = ["version", "python", "websockets", "platform", "state", "keep-awake", "browser", "relay", "dashboard", "agent", "heartbeat-template", "agent_cli", "harness", "fence", "danger", "passphrase",
            "bound", "seat", "onboard", "serve", "friends", "service", "resources", "alias", "estop", "tasks", "activity"]
 
     def setUp(self):
@@ -521,8 +521,9 @@ class WheelInstall(unittest.TestCase):
         p170_bytes=sum(i.compress_size+76+2*len(i.filename.encode())+2*len(i.extra)+len(i.comment) for i in p170)
         self.assertEqual(len(p170),2)
         # P206 A (0.20.2 `agentj mail expect`: the Agent waits for one sign-up mail): +8 KiB on mail.py (measured 28.8 KiB in
-        # total); flagged to Jarvis.
-        self.assertLessEqual(p170_bytes,24576+8192,'P170 e-mail channel allocation (+ P206 A mail expect) is bounded')
+        # total); flagged to Jarvis. P549 (#313, 0.25.12): +1 KiB for the AJM1 → AJM2 upgrade migration and the loss event /
+        # owner line (measured +1.0 KiB after trimming); flagged to Jarvis — the inherited 9.9 % overrun stays a soft row.
+        self.assertLessEqual(p170_bytes,24576+8192+1024,'P170 e-mail channel allocation (+ P206 A mail expect) is bounded')
         # P184 (0.20.0 address book: contacts.py store / pinyin search / vCard·CSV import-export / CLI, contacts_serve.py the
         # phone + Agent side, skill agentj-contacts): its own explicit 28 KiB allocation (measured ≈ 25 KiB), same accounting;
         # flagged to Jarvis. The wiring (elevate routing, serve cap, mail send CLI, media / inbox types, identity sentence) takes a

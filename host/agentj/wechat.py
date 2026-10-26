@@ -14,16 +14,33 @@ import re
 import secrets
 import time
 from .compose import Send
-from . import approvals, controls, peer_guard, peer_session, privacy, provenance, wire
+from . import approvals, confirm_tier, controls, peer_guard, peer_session, privacy, provenance, wire
 from .wechat_protocol import API, BASE, KINDS, MAX_MEDIA, Media, Failure, safe_url
 from .wechat_store import Store
 from .channel_avatar import KINDS as AVATAR_KINDS, handoff, public_reply, choice, choose
 from .channel_policy import channel_forbidden
 from . import policy_registry
-from . import channel_images
+from . import channel_images, owner_avatar
 
 from .text import agent_label
+# P540: why the avatar could not answer, as fixed words only (never native output, paths or message text)
+WAITING_ERRORS = ('harness','no_harness','login','timeout','no_tool_off','fence','stopped','native_image_unavailable','native_profile_unavailable',
+                  'free_temporarily_unavailable','harness_unavailable','channel_profile_unavailable','vision_unsupported','internal')
+KIND_LABELS = {'claude': 'Claude Code', 'codex': 'Codex', 'opencode': 'OpenCode'}
+_WORD = re.compile(r'[A-Za-z0-9_]{1,40}')
+
+
+def _word(value):
+    return value if isinstance(value, str) and _WORD.fullmatch(value) else None
+
+
 HANDOFF = f'已转给 {agent_label(None)}，请回 Agent J 网页跟它确认'
+
+
+def confirm_text(host):
+    """P543 (#307): an avatar's action waits for a card in the Web App; a channel reply never approves it."""
+    return ('已转到 Agent J 网页，请在那里确认。' if getattr(host, 'lang', 'zh') != 'en'
+            else 'Sent to Agent J Web App. Please confirm there.')
 SYSTEM = '''You are the owner's independent Agent J external-channel avatar. Your
 capabilities should match the main session; never describe yourself as only a text
 assistant. Use available native capabilities honestly, including image generation
@@ -60,6 +77,15 @@ class HandoffSend(Send):
 
 class Sessions(peer_session.PeerSessions):
     policy_layer = "channel"
+    on_card = None          # P543: the channel's "confirm in Agent J Web App" line (set per message by WeChat.assistant)
+    source = None
+
+    def shared(self):
+        """No avatar plan of its own: the avatar is the main conversation's plan (P543 full tools)."""
+        controller = getattr(self.host, 'external_channels', None)
+        store = controller.store if controller is not None else self.store
+        return not (store.data.get('avatar', {}).get('config'))
+
     def cfg(self):
         main = super().cfg()
         controller = getattr(self.host, 'external_channels', None)
@@ -127,6 +153,20 @@ class Sessions(peer_session.PeerSessions):
             if not hasattr(self, '_free'):
                 self._free = NativeFree(self)
             result = await self._free.turn(friend, group, wrapped)
+        elif owner_avatar.eligible(self):
+            # P543 (#307): the owner's own channel = the main conversation's tools, approvals only in the Web App
+            if not hasattr(self, '_owner'):
+                self._owner = owner_avatar.OwnerAvatar(self)
+            try:
+                images = channel_images.blocks(getattr(self, 'input_images', ()))
+            except channel_images.Unsupported:
+                return peer_session._fail('vision_unsupported')
+            result = await self._owner.turn(str(friend.get('id') or 'owner'), wrapped,
+                                            [d for _m, d in images] if cfg.get('kind') != 'claude' else images,
+                                            source=self.source, on_card=self.on_card)
+            if channel_forbidden("answer"):
+                result.decision, result.error = 'ask_owner', 'channel_forbidden'
+            return result
         elif self.cfg().get('kind') == 'codex' and not self.cfg().get('channel_profile'):
             from .channel_native import NativeCodex
             if not hasattr(self, '_native'):
@@ -145,6 +185,11 @@ class Sessions(peer_session.PeerSessions):
     def system_prompt(self, friend, group):
         return SYSTEM
 
+    async def stop_all(self):
+        await super().stop_all()
+        if hasattr(self, '_owner'):
+            await self._owner.stop_all()
+
 
 class WeChat:
     def __init__(self, host, *, api_factory=API, model=None, clock=time.time, namespace="wechat"):
@@ -162,12 +207,36 @@ class WeChat:
         self.handoff_lock = asyncio.Lock()
         self.setup_lock = asyncio.Lock()
         self.closed = False
+        self.fwd_inflight, self.fwd_sent, self.fwd_rate = set(), {}, {}
+
+    def can_forward(self):
+        d = self.store.data
+        return bool(not self.closed and not self.h.stopped() and d["account"] and d["context"]
+                    and 0 <= self.clock() - d.get("context_at", 0) < 300 and self.error is None)
+
+    async def forward(self, turn_id, device, *, valid=lambda: True):
+        from .wechat_forward import forward
+        return await forward(self, turn_id, device, valid=valid)
 
     def status(self):
         d = self.store.data
-        return {'bound': bool(d['account']), 'counts': dict(d['counts']),
+        return {'bound': bool(d['account']), 'can_forward': self.can_forward(),
+                'forward_for': max(0, min(300, 300 - (self.clock() - d.get('context_at', 0)))) if self.can_forward() else 0,
+                'greeting': d.get('greeting'), 'counts': dict(d['counts']),
                 'pending': sum(r['state'] == 'pending' and r['until'] > self.clock() for r in d['records'].values()),
-                'login': self.qr['status'] if self.qr else None, 'error': self.error}
+                'login': self.qr['status'] if self.qr else None, 'error': self.error,
+                'assistant': dict(getattr(self, 'last_assistant', None) or {}) or None}
+
+    def _avatar_kind(self):
+        try:
+            return _word(self.sessions.cfg().get('kind'))
+        except Exception:  # noqa: BLE001 — a label for status only
+            return None
+
+    def _record_assistant(self, error, detail=None):
+        """P540: the last avatar outcome for `agentj wechat status` and the phone card — fixed words and a time only."""
+        self.last_assistant = {'ok': error is None, 'error': _word(error), 'detail': _word(detail),
+                               'kind': self._avatar_kind(), 'at': int(self.clock() if callable(getattr(self, 'clock', None)) else time.time())}
 
     def publish(self):
         self.h._post(self.h._send_ready, lambda s: self.view())
@@ -238,7 +307,7 @@ class WeChat:
                     if not all(isinstance(r.get(k), str) and 0 < len(r[k]) <= 4096 for k in fields):
                         raise Failure('confirmed_missing_credentials')
                     safe_url(r['baseurl'], api=True)
-                    self.store.data.update(account={k: r[k] for k in fields}, cursor='', context='', done=[], sessions={})
+                    self.store.data.update(account={k: r[k] for k in fields}, cursor='', context='', context_at=0, done=[], sessions={}, greeting='needs_message')
                     self.store.save()
                     self.error = None
                     self.h.st.log('wechat_bound')
@@ -293,8 +362,17 @@ class WeChat:
         target = {'op': op, 'id': obj.get('id', ''), 'code': obj.get('code', '')}
         if op not in ('setup', 'unbind', 'verify') or not all(isinstance(v, str) and len(v) <= 32 for v in target.values()):
             return
+        offer = None
+        if op == 'unbind' and confirm_tier.owner_action('wechat_unbind') == confirm_tier.UV:
+            # P551 (#318) ③: unbinding WeChat needs this remote's Face ID (P550, review S4: the tier read from confirm_tier)
+            offer = await self.h.owner_uv_offer(s, obj.get('r'), 'wechat', target, obj)
+            if offer is None:
+                return
         why = controls.check(self.h.st, self.h.nonces, self.h.channel, s.device, obj, 'wechat', target)
-        controls.log(self.h.st, action='wechat', device=s.device, result='refused:' + why if why else 'ok', obj=target)
+        if not why and offer is not None:
+            why = self.h.owner_uv_check(s, offer, obj)
+        controls.log(self.h.st, action='wechat', device=s.device, result='refused:' + why if why else 'ok', obj=target,
+                     extra={'passkey': 'uv'} if offer is not None else None)   # P550 (S5): Face ID was part of this control
         if why:
             return await self.h._ctl_res(s, obj.get('r'), 'wechat', False, why=why)
         if op == 'setup':
@@ -309,7 +387,7 @@ class WeChat:
             res = {'ok': bool(valid)}
         await self.h._ctl_res(s, obj.get('r'), 'wechat', res.get('ok') is True, why=res.get('why'))
 
-    async def assistant(self, text, input_images=()):
+    async def assistant(self, text, input_images=(), interim=None, source='wechat'):
         self.reply_images = []
         self.assistant_error = None
         self.assistant_waiting = False
@@ -317,17 +395,30 @@ class WeChat:
             self.index = await asyncio.to_thread(peer_guard.SecretIndex.build, None, (), None)
         if not peer_guard.inbound(text).ok:
             return None
+        self.assistant_detail = None
         self.sessions.input_images = tuple(input_images)
+        self.sessions.on_card, self.sessions.source = interim, source
         try:
             res = await self.model({'id': self.store.path.stem + '-owner'}, {'auto': {'mode': 'on'}},
                                    peer_guard.wrap('wechat', 'WeChat', text))
+        except Exception as e:  # noqa: BLE001 — P540: an executor crash waits with a reason instead of a silent generic reply
+            name = _word(type(e).__name__) or 'other'
+            self.assistant_error, self.assistant_detail, self.assistant_waiting = 'internal', name, True
+            with contextlib.suppress(Exception):
+                self.h.st.log('wechat_assistant_fail', reason='internal', exception_type=name)
+            self._record_assistant('internal', name)
+            return None
         finally:
             self.sessions.input_images = ()
+            self.sessions.on_card = None
         if res.error or not res.parsed or res.tools:
-            self.assistant_error = res.error or 'assistant_unavailable'
-            self.assistant_waiting = res.error in ('harness','no_harness','login','timeout','no_tool_off','fence','stopped','native_image_unavailable','native_profile_unavailable','free_temporarily_unavailable','harness_unavailable','channel_profile_unavailable','vision_unsupported')
+            self.assistant_error = res.error or ('tool_call' if res.tools else 'unparsed')
+            self.assistant_detail = getattr(res, 'detail', None)
+            self.assistant_waiting = res.error in WAITING_ERRORS
+            self._record_assistant(self.assistant_error, self.assistant_detail)
             return None
         self.assistant_error = None
+        self._record_assistant(None)
         if res.decision == 'ask_owner' and res.topic == 'context':
             from .channel_context import request
             return await request(self, text)
@@ -341,19 +432,45 @@ class WeChat:
         return reply
 
     def waiting_reply(self):
-        if getattr(self, 'assistant_error', None) == 'vision_unsupported':
-            return ('当前套餐不支持看图，请回 Agent J 网页选择支持图片的套餐。'
-                    if getattr(self.h, 'lang', 'zh') == 'zh' else
+        """P540: say why the avatar could not answer and what to do next — never a bare "temporarily unavailable"."""
+        error, detail = getattr(self, 'assistant_error', None), getattr(self, 'assistant_detail', None)
+        zh = getattr(self.h, 'lang', 'zh') == 'zh'
+        kind = KIND_LABELS.get(self._avatar_kind() if hasattr(self, 'sessions') else None, '分身执行器' if zh else 'the avatar executor')
+        swap = '或回 Agent J 网页换一个套餐。' if zh else 'or choose another plan in Agent J Web App.'
+        if error == 'vision_unsupported':
+            return ('当前套餐不支持看图，请回 Agent J 网页选择支持图片的套餐。' if zh else
                     'The current plan does not support images. Choose an image-capable plan in Agent J Web App.')
-        if getattr(self, 'assistant_error', None) == 'harness_unavailable':
-            return ('当前分身工具暂不支持，请回 Agent J 网页选择已有的 Claude Code、Codex 或 OpenCode 服务配置。'
-                    if getattr(self.h, 'lang', 'zh') == 'zh' else
+        if error == 'harness_unavailable':
+            return ('当前分身工具暂不支持，请回 Agent J 网页选择已有的 Claude Code、Codex 或 OpenCode 服务配置。' if zh else
                     'This avatar tool is not supported yet. Choose an existing Claude Code, Codex or OpenCode provider profile in Agent J Web App.')
-        if getattr(self, 'assistant_error', None) == 'free_temporarily_unavailable':
-            return ('免费分身暂不可用，请回 Agent J 网页选择其他已有套餐。未启用其他付费服务。'
-                    if getattr(self.h, 'lang', 'zh') == 'zh' else
+        if error == 'free_temporarily_unavailable':
+            return ('免费分身暂不可用，请回 Agent J 网页选择其他已有套餐。未启用其他付费服务。' if zh else
                     'The free avatar is temporarily unavailable. Choose another existing plan in Agent J Web App. No paid fallback was used.')
-        return '当前分身暂时不可用，请稍后再试。未启用其他付费服务。'
+        if error == 'channel_profile_unavailable':
+            return ('分身选用的服务商配置已失效或被删除，请回 Agent J 网页重新选择套餐。' if zh else
+                    "The avatar's saved provider profile is missing or changed. Choose a plan again in Agent J Web App.")
+        if error == 'login' or detail == 'login':
+            return (f'分身用的 {kind} 没有登录或登录已过期。请在电脑上重新登录 {kind}，{swap}' if zh else
+                    f'{kind} used by the avatar is not signed in or its login expired. Sign in to {kind} on the computer again, {swap}')
+        if detail == 'quota':
+            return (f'分身用的 {kind} 额度已用完或被限流，请稍后再发，{swap}' if zh else
+                    f'{kind} used by the avatar is out of quota or rate-limited. Try again later, {swap}')
+        if detail == 'model':
+            return (f'分身选用的模型在 {kind} 上不可用，请回 Agent J 网页换一个模型或套餐。' if zh else
+                    f'The chosen model is not available on {kind}. Choose another model or plan in Agent J Web App.')
+        if error == 'no_harness':
+            return (f'电脑上找不到分身选用的 {kind}。请先安装，{swap}' if zh else
+                    f'{kind} chosen for the avatar is not installed on the computer. Install it, {swap}')
+        if error == 'no_tool_off':
+            return (f'当前 {kind} 版本无法以无工具的安全方式运行分身。请升级 {kind}，{swap}' if zh else
+                    f'This {kind} version cannot run the avatar without tools. Update {kind}, {swap}')
+        if error == 'timeout':
+            return ('分身这次回答超时了，请稍后再发一次。' if zh else 'The avatar timed out. Please send the message again later.')
+        if error == 'stopped':
+            return ('Agent J 已全部停止，恢复后再发一次。' if zh else 'Agent J is stopped. Send the message again after resuming it.')
+        reason = ' · '.join(w for w in (error, detail) if _word(w)) or 'unknown'
+        return (f'分身没能用 {kind} 回答（原因：{reason}）。在电脑上运行 agentj wechat status 可看详情，{swap}未启用其他付费服务。' if zh else
+                f'The avatar could not answer with {kind} (reason: {reason}). Run agentj wechat status on the computer for details, {swap} No paid fallback was used.')
 
     async def receive(self, api, msg, generation):
         d = self.store.data
@@ -424,9 +541,11 @@ class WeChat:
             d['context'] = msg['context_token']
             d['context_at'] = self.clock()
         self.store.count('received')
-        self.h.agent_notice(('来自微信 · ' if self.h.lang == 'zh' else 'From WeChat · ') + path)
+        from .channel_card import notice as channel_notice; channel_notice(self.h, 'wechat', body, paths[1:], path)  # P543 (#308): the words, not the path
         try:
-            reply = await self.assistant('\n'.join([body, *model_parts])[:32000], input_images)
+            async def interim():   # P543: an approval card is waiting — the channel only learns where to confirm
+                await self.send(api, confirm_text(self.h), generation)
+            reply = await self.assistant('\n'.join([body, *model_parts])[:32000], input_images, interim)
         except Exception:
             reply = None
             self.assistant_waiting = True
@@ -437,18 +556,36 @@ class WeChat:
         self.store.save()
         if reply is None and not waiting:
             self.open_card(r)
+        from .privacy import redact
+        r['reply_summary'] = redact(str(reply or ''))[:2000]
+        r['outcome'] = 'reply_prepared' if reply is not None else 'waiting_model' if waiting else 'owner_review'
+        r['delivery'] = 'unknown'
+        self.store.save()
         try:
             outgoing = reply if reply is not None else handoff(self.h)
             if waiting:
                 outgoing = self.waiting_reply()
-            await self.send(api, outgoing, generation)
+            greeting = d.get('greeting') == 'needs_message'
+            if greeting:
+                d['greeting'] = 'attempted'  # uncertain delivery must not replay a greeting
+                self.store.save()
+                outgoing = ('你好，微信已连接。我是你的 Agent J。\n\n' if self.h.lang == 'zh' else 'Hello! WeChat is connected. I am your Agent J.\n\n') + outgoing
+            from .wechat_forward import plain_text
+            await self.send(api, plain_text(outgoing), generation)
+            if greeting:
+                d['greeting'] = 'sent'
+                self.store.save()
             for _mime, data in getattr(self, 'reply_images', []):
                 if generation != self.store.data['generation'] or self.h.stopped() or self.closed:
                     break
                 item = await asyncio.to_thread(Media(api).upload, self.store.data['account']['ilink_user_id'], {'type':2}, data)
                 await self.send(api, '', generation, item=item)
         except Exception:
+            r['delivery'] = 'unknown'
             self.store.count('send_failed')
+        else:
+            r['delivery'] = 'sent'
+        self.store.save()
         self.publish()
 
     async def send(self, api, text, generation, *, item=None):
@@ -636,12 +773,16 @@ class WeChat:
                 self.open_card(pending)       # re-arm held requests after Stop everything is lifted
             generation = self.store.data['generation']
             api = self.api_factory(self.store.data['account'])
+            before = (self.can_forward(), self.error)
             try:
                 await self.poll_once(api, generation)
                 failures, self.error = 0, None
+                if before != (self.can_forward(), self.error):
+                    self.publish()
                 await asyncio.sleep(.2)
             except Exception as e:
                 self.error = e.code if isinstance(e, Failure) else 'poll_failed'
+                self.publish()
                 self.h.st.log('wechat_error', reason=self.error)
                 failures += 1
                 delay = 3600 if isinstance(e, Failure) and e.ret == -14 else min(60, 2 ** min(failures, 6))

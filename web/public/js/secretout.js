@@ -1,4 +1,5 @@
 import { copyButton } from './copycode.js';
+import { paintPk, faState, errName } from './pkassist.js';   // P539: no own passkey here · why a passkey tap failed
 import {phoneConfirmation} from './tvremote.js';
 // F32 (P73, ADR-A180, PROTOCOL §18): the secret pickup card. The owner asked their own Agent for something that holds a secret
 // (an ss:// link, a proxy YAML with a password); the Agent ran `agentj secret send`. The card arrives WITHOUT the value: name,
@@ -12,7 +13,7 @@ import { myDeviceId } from './api.js';
 import { t, onLang } from './t.js';
 import { mk, toast, human } from './ui.js';
 import { copyable } from './copycode.js';   // P292
-import { registerLayer } from './layers.js';
+import { registerLayer, TOP_RANK } from './layers.js';
 import { createSecretPreview } from './secretpreview.js';
 import { elevateChallenge, canAssert, approve, SECRET_OUT_CTX, SECRET_OUT_KIND, secretOutFields, secretOutDigest } from './faceid.js';
 
@@ -33,7 +34,7 @@ function build() {
   root = mk('div', 'ajmodal dlgcard sout');
   root.id = 'sout'; root.hidden = true;
   // P142 (A16): a layer — ESC = 「完成」 once opened (the value is wiped), else the card's 「不需要了」; shortcuts stay off
-  registerLayer({ element: () => root, open: () => !!root && !root.hidden, rank: 55, fallback: () => document.getElementById('input') || document.getElementById('setBtn'),
+  registerLayer({ element: () => root, open: () => !!root && !root.hidden, rank: TOP_RANK, fallback: () => document.getElementById('input') || document.getElementById('setBtn'),
     close: () => { if (previewUI?.close()) return; const d = $('sout-done'); (d && !d.hidden ? d : $('sout-decline'))?.click(); } });
   root.setAttribute('role', 'dialog'); root.setAttribute('aria-modal', 'true'); root.setAttribute('aria-labelledby', 'sout-title');
   const box = mk('div', 'box');
@@ -52,7 +53,7 @@ function build() {
   // 「不要了」 is a quiet text button on its own line, away from the main action
   const decline = node('button', 'sout-decline', 'aj-btn aj-btn--quiet sout-decline'); decline.type = 'button';
   box.append(node('p', 'sout-kicker', 'elev-kicker'), node('h2', 'sout-title'), node('dl', 'sout-rows', 'elev-rows'), mask, val,
-    node('p', 'sout-note', 'elev-note'), node('p', 'sout-left', 'elev-left'), main, decline);
+    node('p', 'sout-note', 'elev-note'), node('p', 'sout-left', 'elev-left'), main, node('div', 'sout-pk', 'pkassist'), decline);
   root.appendChild(box);
   document.body.appendChild(root);
   open.addEventListener('click', () => openCard());
@@ -79,6 +80,7 @@ export function add(m) {
   if (!c.name || c.purpose === null || c.filename === null || c.size === null) return;
   if (typeof m.fa === 'string' && m.fa.length > 0 && m.fa.length <= 1400) {
     c.fa = m.fa;
+    c.fa_s = faState(m.fa_s);   // P539
     (async () => { c.faCh = await elevateChallenge(channel(), await myDeviceId(), c.id, KIND, c.n, await shownDigest(shownFields(c))); })()
       .catch(() => { c.faCh = null; });
   }
@@ -130,7 +132,7 @@ export function done(m) {
 export function failed(m) {
   const c = cards.get(m.id);
   if (shownId === m.id) busy = false;
-  const key = { passkey: 'elev.fa.refused', no_passkey: 'sout.noPasskey', send: 'sout.sendFail', gone: 'sout.r.gone' }[m.why] || 'elev.fail';
+  const key = { passkey: 'elev.fa.refused', no_passkey: 'pkp.soutNoPasskey', send: 'sout.sendFail', gone: 'sout.r.gone' }[m.why] || 'elev.fail';
   toast(t(key), 4200);
   if (m.why === 'gone' && c) { cards.delete(m.id); if (shownId === m.id) shownId = null; }
   render();
@@ -182,9 +184,9 @@ function render() {
     $('sout-mask').textContent = isOpen ? '' : '••••••••••••';
     $('sout-mask').hidden = isOpen;
     $('sout-value').hidden = !isOpen;
-    $('sout-note').textContent = t(isOpen ? 'sout.noteOpen' : c.fa ? 'sout.note' : 'sout.noPasskey');
+    $('sout-note').textContent = t(isOpen ? 'sout.noteOpen' : c.fa ? 'sout.note' : 'pkp.soutNoPasskey');   // P547: names the new button
     $('sout-open').textContent = t('sout.open');
-    $('sout-setup').textContent = t('sout.setup');
+    $('sout-setup').textContent = t('pkp.setupHere');   // P547: another remote approves the new key
     $('sout-copy').textContent = t(c.kind === 'file' ? 'sout.copyFile' : 'sout.copy');
     $('sout-download').textContent = t('sout.download');
     $('sout-done').textContent = t('sout.done');
@@ -199,6 +201,7 @@ function render() {
   }
   $('sout-open').disabled = busy;
   $('sout-decline').disabled = busy;
+  paintPk($('sout-pk'), c.fa && !isOpen && !busy ? { fa: c.fa_s, err: c.faErr || null, retry: () => openCard() } : {});   // P539
   paintLeft(c, isOpen);
 }
 function paintLeft(c, isOpen) {
@@ -220,7 +223,9 @@ async function openCard() {
   if (!g) { toast(t('elev.net'), 3000); return; }
   busy = true; render();
   let fa = null;
-  try { fa = await approve(c.faCh, c.fa); } catch { fa = null; }
+  let faErr = null;
+  try { fa = await approve(c.faCh, c.fa); } catch (e) { fa = null; faErr = errName(e); }
+  if (!fa) c.faErr = faErr || 'Error'; else c.faErr = null;   // P539: the card says why and offers 再试一次
   if (!fa || cards.get(c.id) !== c) { busy = false; render(); if (!fa) toast(t('elev.fa.cancel'), 3000); return; }
   try {
     await sendApp({ t: 'secret_out_open', id: c.id, n: c.n, fa }, g);

@@ -63,7 +63,8 @@ Agent J / memory pages, the background panel and the @ / / lists at 390 px and 1
 
 8 px is the floor (the tokens give 12); the audit output is written to `reports/qa/p302/after/spacing-audit.json`.
 
-## Noir Notification (P440, 2026-10-21)
+<!-- generated: Relay/Codex/P535, 2026-10-26 -->
+## Noir Notification (P535, 2026-10-26)
 
 Leo: 「浅色背景黑字从上面滑下来」 is gone. Every popup that tells the owner something — a 1–3 s glance or a held notice —
 is ONE component: `notify(spec)` in `public/js/ui.js`, drawn by the「toast = P318 Noir Notification」block in `app.css`.
@@ -75,11 +76,11 @@ Noir. The element is still `#toast` (classes `on` / `act` / `cmd`, action button
 | kind | accent (palette only) | icon | default ms | shape |
 |---|---|---|---|---|
 | `success` | Emerald Oasis `--emerald-oasis` #629887 | check | 1800 | circle |
-| `info` | Windstorm `--windstorm` #6a9bcc | info | 1800 | circle |
+| `info` | Current state `--state` (theme colours included) | info | 1800 | circle |
 | `warn` | Peachy Feeling `--peachy-feeling` #d97757 | triangle | 3000 | rect |
 | `error` | Peachy Feeling `--peachy-feeling` #d97757 | ✕ in a ring | 3000 | rect |
-| `progress` | Magic Carpet `--magic-carpet` #827dbd | turning arc | 0 = held | rect |
-| `confirm` | Windstorm `--windstorm` #6a9bcc | ? in a ring | 0 = held (toastAction: 5000) | rect |
+| `progress` | Current state `--state` | turning arc | 0 = held | rect |
+| `confirm` | Current state `--state` | ? in a ring | 0 = held (toastAction: 5000) | rect |
 
 - **Two placements only (#209 / #211).** Short transient status (copied, saved, recording) uses the centred circle. Execution,
   automatic / advance approvals, results, actionable notices use an internal reply card in `#reply-notices`, immediately
@@ -91,14 +92,14 @@ Noir. The element is still `#toast` (classes `on` / `act` / `cmd`, action button
   `circle`: centred 156px × `--fz`, one status word only (Chinese ≤4 Han characters; English one word), no actions / title / media. Longer A text automatically becomes a centred `square`: rounded corners, up to 340px wide, content height, same Noir/Lotion tokens and original lifetime. The full text is preserved, including noticeSheet explanations; no glance bypass. Actions / title / media retain the internal B card.
 - **Tokens.** Background `--dlg-bg` (Noir), text `--dlg-fg` (Lotion, 12.9:1), buttons `--dlg-chip`, shadow `--dlg-shadow`,
   motion `--dlg-dur` — the same layer as the centred dialogs (`.gdlg`), opaque, in light and dark and on every state.
-- **The accent is a line, never a fill:** the icon stroke, the 3 px left rule (rect) / ring (circle), the button outline.
+- **The accent is a line, never a fill:** the icon stroke, the 3 px left rule (rect), the button outline. Centred circle / square / mail-saved notices have no border, outline or shadow: only an opaque Noir ground and the accent icon (neutral = current state; success / warning / error retain semantic colours).
 - **Held** kinds (ms 0) stay until replaced, dismissed by their button, `toastOff()`, or Esc.
 - The share hand-off notice (`.share-notice`) uses the same rect look.
 
 The rule: **no light toast, no ad-hoc popup.** A new notice calls `notify()` (execution calls `executionToast()`); it never adds a class with its own
 background. `test/p318_noir.test.mjs` (web-unit) fails when any CSS rule whose selector names toast / notice / snack /
 flash / notif paints a light (`--btn-strong-bg`, Lotion, `--pg`, `--bg`, `--surface`, `#fff`) or see-through background,
-when `.toast` / `.share-notice` leave `--dlg-bg` / `--dlg-fg`, or when FORMATS uses anything but the four accents.
+when `.toast` / `.share-notice` leave `--dlg-bg` / `--dlg-fg`, or when FORMATS uses anything but the state token and four semantic palette accents.
 
 ## Colour on heavy fills (P340, 2026-10-16)
 

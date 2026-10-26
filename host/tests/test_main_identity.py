@@ -131,6 +131,8 @@ class Native(unittest.IsolatedAsyncioTestCase):
             host=SimpleNamespace(st=Mock())
             a=OpenCodeAgent(host,{"kind":"opencode","dir":"/tmp"},persist=persist)
             a.proc=SimpleNamespace(returncode=None);a.sid="session";a.client=SimpleNamespace(request=AsyncMock(return_value=(204,None)))
+            # P537: this identity test owns a v1 fake server, never native discovery/startup.
+            a._protocol=AsyncMock(return_value=False);a._creds_check=AsyncMock();a._ensure_started=AsyncMock(return_value=True)
             a._session_ok=AsyncMock(return_value=True);a._wait_turn=AsyncMock();a._catch_up=AsyncMock();a.context_meter=AsyncMock()
             async def deliver(fn): return await fn()
             a.deliver=deliver

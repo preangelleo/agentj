@@ -1,3 +1,5 @@
+import {watchSettings} from './text-editor.js';
+import * as heartbeatPrompt from './heartbeat-prompt.js';
 import { keysSet } from './api.js';
 import { copyButton } from './copycode.js';
 // F13 · P171 · Settings (the top-right gear, `s`, ⌘, / Ctrl+,): ONE full-screen page for everything — the ≡ menu is gone and
@@ -10,7 +12,7 @@ import { longPress } from './longpress.js';
 import VERSION from '../version.js';
 import { RelayMD } from './md.js';
 import { t, fillText, onLang } from './t.js';
-import { el, noticeSheet, notify, confirmSheet, toast } from './ui.js';
+import { el, noticeSheet, notify, confirmSheet, toast, toastAction } from './ui.js';
 import { ask1, isReady, peer, sendApp } from './session.js';
 import * as push from './push.js';
 import * as sfx from './sfx.js';
@@ -37,6 +39,8 @@ import * as pagefind from './pagefind.js';   // P363 (#70): in-place find on a S
 import * as ntf from './notify.js';      // P365: Settings → 自动化消息 (`agentj notify`)
 import * as localFiles from './local-files.js';
 import * as news from './news.js';         // P374: 账号和帮助 → 「Daily AI News」 (news_get / news_set → news_res)
+import { preauthItems, paintPreauth, pkSheet, failNotice } from './pkassist.js';   // P539: 安全 → 「免问的动作」
+import * as seatxfer from './seatxfer.js';   // P547: Agent 与遥控器 → 转移席位到另一台 Agent J 主机
 
 let H = { agentName: () => 'Agent J', paired: () => false, connected: () => false, unpair: () => {}, reload: () => location.reload(),
   view: () => document.body.dataset.view, forget: () => {} };
@@ -277,7 +281,9 @@ function twoWay(id, right) {
 }
 // ---------------------------------------------------------------- P336 approval level + goal without cards
 // Both keys change ONLY by the signed `approval_set` control (never pref_set); a host without `signed_prefs` hides the rows.
-const LEVELS = ['safe', 'standard', 'full'];
+// P551 (#320): 「跟随 AI 编程工具（Harness）」 — Agent J adds no cards of its own; the host always asks Face ID to switch to it (no passkey on
+// this device → `no_passkey`, said in plain words).
+const LEVELS = ['safe', 'standard', 'full', 'harness'];
 const signedKey = (key) => !!hostInfo && Array.isArray(hostInfo.signed_prefs) && hostInfo.signed_prefs.includes(key);
 // what is IN FORCE (host.approval: full only with a live signature) wins over the raw configuration value
 const eff = () => (hostInfo && hostInfo.approval && typeof hostInfo.approval === 'object' ? hostInfo.approval : null);
@@ -293,15 +299,16 @@ function renderLevel() {
   tgl('set-gnc', curGnc());
 }
 /** P336 addendum: a widening switch on a phone with a passkey → 「用 Face ID 确认」; the button tap starts Face ID
- *  synchronously inside the tap (iOS gesture rule), so it listens on the confirm button itself, before the sheet resolves. */
-export async function faceIdStep(res) {
+ *  synchronously inside the tap (iOS gesture rule), so it listens on the confirm button itself, before the sheet resolves.
+ *  P551: `txt` = {title, text, yes} i18n keys for the same step elsewhere (unbinding another remote / WeChat). */
+export async function faceIdStep(res, txt = {}) {
   if (typeof res.fa !== 'string' || typeof res.fa_ch !== 'string' || !canAssert()) return Promise.reject(new Error('passkey_failed'));
   const yes = el('confirm-yes');
   let p = null;
   const grab = () => { p = faApprove(unb64u(res.fa_ch), res.fa); p.catch(() => {}); };
   yes.addEventListener('click', grab);
   say('');
-  const ok = await confirmSheet(t('p336.faTitle'), t('p336.faText'), t('p336.faYes'));
+  const ok = await pkSheet(res.fa_s, t(txt.title || 'p336.faTitle'), t(txt.text || 'p336.faText'), t(txt.yes || 'p336.faYes'));   // P539: + the line when the passkey is elsewhere
   yes.removeEventListener('click', grab);
   if (!ok || !p) return null;
   say(t('set.saving'), true);
@@ -310,11 +317,12 @@ export async function faceIdStep(res) {
 /** confirm → signed approval_set → ctl_res; ok = follow at once (the `preferences` broadcast confirms), else say why. */
 async function approvalSet(key, value) {
   const jev = key === 'jev.mode';
-  const full = (key === 'approval.level' && value === 'full') || (jev && value === 'off'), goal = key === 'approval.goal_nocard';
-  const name = goal ? t('p336.goal') : t('p336.' + value);
+  const harness = key === 'approval.level' && value === 'harness';
+  const full = (key === 'approval.level' && value === 'full') || (jev && value === 'off') || harness, goal = key === 'approval.goal_nocard';
+  const name = goal ? t('p336.goal') : harness ? t('p551.harnessName') : t('p336.' + value);
   const title = jev ? t(value === 'off' ? 'p409.offTitle' : 'p409.onTitle') : goal ? t(value ? 'p336.goalOnTitle' : 'p336.goalOffTitle') : t('p336.confirmTitle', { name });
-  const text = jev ? t('p409.note') : full ? t('p336.fullText') : goal ? t(value ? 'p336.goalOnText' : 'p336.goalOffText') : t('p336.note.' + value) + ' ' + t('p336.signNote');
-  const yes = jev ? t(value === 'off' ? 'p409.offYes' : 'p409.onYes') : goal ? t(value ? 'p336.turnOn' : 'p336.turnOff') : full ? t('p336.fullYes') : t('p336.switch');
+  const text = jev ? t('p409.note') : harness ? t('p336.note.harness') + ' ' + t('p551.harnessSign') : full ? t('p336.fullText') : goal ? t(value ? 'p336.goalOnText' : 'p336.goalOffText') : t('p336.note.' + value) + ' ' + t('p336.signNote');
+  const yes = jev ? t(value === 'off' ? 'p409.offYes' : 'p409.onYes') : goal ? t(value ? 'p336.turnOn' : 'p336.turnOff') : harness ? t('p551.harnessYes') : full ? t('p336.fullYes') : t('p336.switch');
   if (!await confirmSheet(title, text, yes, full)) { if (jev) render(); return; }
   if (!isReady()) { say(t('set.offline')); return; }
   say(t('set.saving'), true);
@@ -326,7 +334,11 @@ async function approvalSet(key, value) {
     if (!jev && eff()) hostInfo.approval = { ...hostInfo.approval, [key === 'approval.level' ? 'level' : 'goal_nocard']: value };
     notify({ kind: 'success', shape: 'circle', text: t('set.saved') });
   } else {
-    say(''); toast(m.why === 'passkey_failed' ? whyText(m.why) : t('p336.fail', { why: whyText(m.why) }), 4000);
+    say('');
+    // P550 (P551 待拍板 3, #318 ③): every widening needs this remote's own Face ID — the one way on is setting it up here
+    if (m.why === 'no_passkey') toastAction(t('p551.noPasskey'), t('pkp.setupHere'), () => { close(); H.setupFaceId?.(); }, 10000);
+    else if (m.err) failNotice(m.err, m.fa_s, () => approvalSet(key, value));   // P539: why the passkey tap failed + one way on
+    else toast(m.why === 'passkey_failed' ? whyText(m.why) : t('p336.fail', { why: whyText(m.why) }), 4000);
   }
   render();
   if (jev && m.ok && value !== 'off' && hostInfo?.jev?.ready !== true) await openJevKey();
@@ -387,14 +399,12 @@ export function render() {
   el('set-hostver').textContent = hv ? t('set.hostVer', { v: hv }) : t('set.hostVerNone');
   const paired = H.paired();
   for (const n of el('settings').querySelectorAll('[data-paired]')) n.hidden = !paired;
+  paintPre();   // P539
   el('keysBtn').hidden = !paired || H.view() !== 'chat';
   renderRemotesRow();
   const name = H.agentName();
   el('set-computer').textContent = !H.paired() ? t('set.computerNone') : t(H.connected() ? 'set.computerOn' : 'set.computerOff', { name });
-  // P283: the owner's Telegram is re-paired with a one-time code; the channel's name is data, not dictionary copy
-  el('set-chan').textContent = CHAN;
-  el('set-tgpair').textContent = t('set.chanPair', { name: CHAN });
-  fillText(el('set-chan-note'), t('set.chanNote', { name: CHAN }) + ' ' + t('set.chanGuests', { name: CHAN }));   // P297: the same bot as customer service
+  wechat.renderChannels();
   const risk = pget('agent.high_risk_warnings', false) !== false;
   tgl('set-risk', risk);
   const goalAuto = pget('approval.goal_auto', true) !== false;          // P158: goal-mode 10-second countdown
@@ -528,10 +538,25 @@ export function open(page = 'main', add = false) {
   el('settings').querySelector('.setbox').focus();
   if (page === 'remotes' && H.paired()) showSub('remotes', add);
   else if (H.paired() && isReady()) remotes.refresh().then(renderRemotesRow);   // 已用 N / 10 from the computer itself
+  if (H.paired() && isReady()) seatxfer.refresh();   // P547: the row shows once the host answers (an older host: hidden)
   if (H.paired()) news.load();   // P374: one news_get per opening (the account may have changed it in between)
+  if (H.paired() && isReady()) sendApp({ t: 'preauth_list' }).catch(() => {});   // P539: the host answers `preauth`
   rescue.foldEnded();            // P393: earlier repair results open as one line each (their log under 「详情」)
   cmdrun.foldEnded();
 }
+// ---------------------------------------------------------------- P539 「免问的动作」 (pre-authorization by action / remote)
+let preItems = [];
+function paintPre() { paintPreauth(el('set-preauth-row'), el('set-preauth-list'), H.paired() ? preItems : [], revokePre); }   // own visibility (not data-paired)
+/** Host `{t:'preauth', items:[{action, device, name, at}]}`: the whole list; empty hides the block. */
+export function preauth(m) { preItems = preauthItems(m); paintPre(); }
+async function revokePre(item) {
+  try {
+    await sendApp({ t: 'preauth_revoke', action: item.action, ...(item.device ? { device: item.device } : {}) });
+    preItems = preItems.filter((x) => !(x.action === item.action && x.device === item.device)); paintPre();
+    toast(t('p539.pre.revoked'), 2600);
+  } catch { toast(t('elev.fail'), 3000); }
+}
+onLang(paintPre);
 export function back() { if (sub !== 'main') showSub('main'); else close(); }
 /** P184: 「转发到邮箱」 with no mailbox yet → Settings → 邮件通道. */
 export function openMail() { open(); if (isOpen()) showSub('mail'); }
@@ -619,6 +644,8 @@ function pickLang(l) {
 
 /** hooks: { agentName(), paired(), connected(), myId(), unpair(), reload(), view(), forget(), hostDevices() } — app.js wires them. */
 export function configure(hooks) {
+  watchSettings(el('settings'));
+  heartbeatPrompt.configure();
   H = { ...H, ...hooks };
   remotes.configure({ myId: () => (H.myId ? H.myId() : null), hostDevices: () => hostInfo, forget: () => { close(); H.forget(); },
     changed: renderRemotesRow });
@@ -716,7 +743,7 @@ export function configure(hooks) {
   mail.configure();
   localFiles.configure();
   el('set-local-files-nav').addEventListener('click', () => showSub('files'));
-  wechat.configure();
+  wechat.configure({connect: channel => { close(); H.assist?.(t('p536.' + channel + 'Prompt', {channel: CHAN})); }});
   el('set-imsg-nav').addEventListener('click', () => showSub('imessage'));   // P274
   el('set-cards-nav').addEventListener('click', () => showSub('cards'));   // P360
   el('set-cards-assist').addEventListener('click', () => { close(); if (H.assist) H.assist(t('p360.assistText')); });
@@ -726,15 +753,8 @@ export function configure(hooks) {
   el('set-notify-nav').addEventListener('click', () => showSub('notify'));   // P365
   ntf.configure({ el, ready: isReady, ask: ask1, pget, setPref, settable: prefSettable, confirm: confirmSheet, explain: explainPrefFail });
   news.configure();   // P374
+  seatxfer.configure({ setupFaceId: () => { close(); H.setupFaceId?.(); }, say: (text) => say(text) });   // P547
   toolsort.configure({ setPref, settable: () => prefSettable(toolorder.TOOL_KEY), explain: explainPrefFail });   // P340
-  // P207 §3: copy = an icon button; ✓ for 1.6 s on success (plus the fading notice for screen readers)
-  // P283: 「重新绑定 Telegram」 — the host answers /telegram-pair with a one-time code card in the chat (no Agent, no model)
-  el('set-tgpair').addEventListener('click', async () => {
-    if (!isReady()) { say(t('set.chanOffline'), false, 'set.chanOffline'); return; }
-    try { await sendApp({ t: 'slash', cmd: 'telegram-pair', arg: '' }); } catch { say(t('set.chanOffline'), false, 'set.chanOffline'); return; }
-    say(t('set.chanSent'));
-    close();
-  });
   for (const b of document.querySelectorAll('[data-copy]')) b.addEventListener('click', async () => {
     await copyButton(el(b.dataset.copy).textContent, b);
   });

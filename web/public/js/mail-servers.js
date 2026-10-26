@@ -1,7 +1,7 @@
 // Unknown mailbox: collect non-secret server details before opening the sealed card.
 import { mk } from './ui.js';
 import { t } from './t.js';
-import { registerLayer } from './layers.js';
+import { registerLayer, TOP_RANK } from './layers.js';
 let active = null;
 export function mailServers(cfg) {
   if (active) return Promise.resolve(null);
@@ -32,5 +32,5 @@ export function mailServers(cfg) {
     controls.imap_host.focus();
   });
 }
-registerLayer({element: () => active, open: () => !!active, rank: 54,
+registerLayer({element: () => active, open: () => !!active, rank: TOP_RANK,
   close: () => active?.querySelector('button[type=button]').click(), fallback: () => document.getElementById('mail-key')});

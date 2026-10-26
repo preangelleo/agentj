@@ -83,7 +83,7 @@ def run(st, apply_fn=None, restart_fn=None):
         if rec.get("reason") in ("upgraded", "doctor_failed"):
             rows = doctor.run(st)
             rec["counts"] = update.doctor_counts(rows)
-            rec["checks"] = [{"id": r.get("id"), "status": r.get("status")} for r in rows]
+            rec["checks"] = [{"id": r.get("id"), "status": r.get("status"), **({"summary": "no verified main Agent launch"} if update.benign_waiting(r) else {})} for r in rows]
         if rec.get("result") != "ok" and rec.get("step"):
             # P277: a failed phone upgrade reports itself (metadata + redacted installer tail) unless switched off
             from . import upgrade_diag

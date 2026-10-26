@@ -69,7 +69,7 @@ class VshareDesk:
             from .elevate import _raw_pub
             self.shares[n] = {"device": s.device, "r": r, "at": now, "salt": salt, "priv": priv}
             ch = passkey.elevate_challenge(self.h.channel, s.device, n, "vault_share", n, digest)
-            return await self._res(s, r, "vault_share", False, why="passkey_required", n=n, fa=pk["id"], fa_ch=wire.b64u(ch),
+            return await self._res(s, r, "vault_share", False, why="passkey_required", n=n, fa=pk["id"], fa_s=passkey.pk_state(pk), fa_ch=wire.b64u(ch),
                                    salt=wire.b64u(salt), epk=wire.b64u(_raw_pub(priv)))
         n = obj.get("n")
         pend = self.shares.pop(n, None) if isinstance(n, str) else None

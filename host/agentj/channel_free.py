@@ -10,13 +10,12 @@ import json
 from pathlib import Path
 import secrets
 import subprocess
-import tempfile
 import contextlib
 import shutil
 import sys
 import time
 import re
-from . import opencode_free, peer_session
+from . import opencode_free, peer_session, scratch
 from .channel_policy import channel_forbidden
 
 _CATALOGUE = {}
@@ -33,7 +32,7 @@ def catalogue(exe):
         return hit[1], hit[2]
     if not exe:
         return [], None
-    with tempfile.TemporaryDirectory(prefix='agentj-channel-models-') as directory:
+    with scratch.home('agentj-channel-models-') as directory:
         env = {k:v for k,v in __import__('os').environ.items()
                if k in ('PATH','LANG') or k.lower() in ('http_proxy','https_proxy','all_proxy','no_proxy')}
         env.update(HOME=directory, XDG_CONFIG_HOME=directory+'/config', XDG_DATA_HOME=directory+'/data',

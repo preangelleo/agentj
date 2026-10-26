@@ -43,6 +43,7 @@ ACTIONS += ("agent_name",)          # P181 (§22.2): long-press the Agent's name
 ACTIONS += ("cards_get",)           # P203 (§29.1): the signed read of every open card (a snapshot, changes nothing)
 ACTIONS += ("mail_allow",)          # P207 (§25): the address book adds an address to the e-mail channel's allowlist (P170)
 ACTIONS += ("reset", "rescue_do")    # P332 (§33): 紧急修复 — ① reset the connection · a whitelisted repair action (reset.py)
+ACTIONS += ("heartbeat_write",)  # P537: paired owner prompt edits
 ACTIONS += ("approval_set",)        # P336 (§8): the approval level / goal-without-card switch (approval_level.py)
 ACTIONS += ("cmd_run",)             # P361 (§34): Settings 「执行」 — one whitelisted command name (cmdrun.RUN_CMDS)
 ACTIONS += ("term_open", "term_line", "term_sudo", "term_forget")   # P408 (§38): the web terminal (terminal.py)
@@ -55,6 +56,7 @@ ACTIONS += ("fr_report_reply", "fr_report_remark")  # P498 trusted owner control
 ACTIONS += ("files_write",)   # P478: paired phone local-file scopes
 ACTIONS += ("wechat",)  # P501: fixed channel setup/unbind/verification controls
 ACTIONS += ("host_write",)  # P503d: mail settings/test only
+ACTIONS += ("seat_transfer", "seat_transfer_cancel")   # P547: move the seat to another host (+ Face ID) · revoke that code
 TS_SKEW_MS = 120_000
 NONCE_KEEP_S = 600
 _NONCE = re.compile(r"[0-9a-f]{32}")
@@ -83,20 +85,21 @@ def object_text(action: str, obj: dict) -> str:
     mail_allow : address as sent \n role (owner | guest)  (P207, §25)
     reset    : the `what` ("connection")                  (P332, §33)
     rescue_do : the action name (help | report | reconnect | restart | linger | rollback | new_session)
-    approval_set : key (approval.level | approval.goal_nocard) \n value (safe | standard | full | true | false)  (P336)
+    approval_set : key (approval.level | approval.goal_nocard) \n value (safe | standard | full | harness | true | false)  (P336, P551)
     term_open : the mode ("line")          term_line : terminal id \n the line          (P408, §38)
     term_sudo : terminal id \n sudo request id          term_forget : "forget"
     elev_stop : the running sudo card's id   (P406, §11.2)      elev_watch : card id \n on | off
     vault_share : "share" (P414, §37.11; object {})
     fr_gsay  : "devices" \n the message text   (P426, §17.7: the 「我的设备」 group)
     skill_archive / skill_restore : op (archive | restore) \\n skill name   (P426 #181-3, §39)
+    seat_transfer : "transfer"          seat_transfer_cancel : "cancel"          (P547; object {})
     (a missing / null text field is "", as wire.js `?? ''`)
     """
     if action == "fr_report_reply":
         return ("resend\n" if obj.get("resend") is True else "") + f"{obj['id']}\n{obj['text']}"
     if action == "fr_report_remark":
         return f"{obj['friend']}\n{obj['name']}"
-    if action == "host_write":
+    if action in ("host_write", "heartbeat_write"):
         return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     if action == "bots_write":
         return json.dumps(obj["request"], sort_keys=True, separators=(",", ":"), ensure_ascii=False)
@@ -104,6 +107,10 @@ def object_text(action: str, obj: dict) -> str:
         return f"{obj['item']}\n{obj['choice']}\n{int(obj['rev'])}"
     if action == "update":
         return "latest"
+    if action == "seat_transfer":    # P547: object {} — issue a seat transfer code (+ this remote's Face ID)
+        return "transfer"
+    if action == "seat_transfer_cancel":
+        return "cancel"
     if action == "cards_get":        # P203: a read; the signature proves the approved device, the object is constant
         return "cards"
     if action == "pair_new":

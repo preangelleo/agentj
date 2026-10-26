@@ -1,6 +1,9 @@
 import {focusDraft} from './composer-focus.js';
 // P119: one keyboard owner for transient UI. Owners supply their existing close/back action;
 // hiding a DOM node here would skip camera cleanup, confirmation resolution or reader history.
+// P551: every confirmation card (approval sheet, confirm sheet, elevate / sign-in / secret cards) is drawn on the top tier
+// (ontop.js) — so it is also the first layer Esc / Back reaches; among cards the latest one wins (open order).
+export const TOP_RANK=1000;
 const layers=[];
 let serial=0,lastTarget=null,clickFocus;
 const visible=e=>!!e&&e.isConnected&&e.getClientRects().length&&!e.closest('[hidden]');

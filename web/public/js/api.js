@@ -1,3 +1,4 @@
+import { errName } from './pkrules.js';   // P539
 import { touch } from './snap.js';
 // The adapter: relay's HTTP calls → Agent J's end-to-end app messages (agentjarvis/parity/DESIGN.md §a table). Every call
 // resolves with the shape the ported page expects and never rejects; "offline" when there is no ready session.
@@ -126,7 +127,7 @@ export async function approve(p, action, allowAdd) {
   let fa = null;
   if (action !== 'deny' && p.passkey_required) {
     if (action === 'batch' || !p.fa || !p.fa_ch || !canAssert()) return { ok: false, why: 'passkey_required' };
-    try { fa = await passkeyApprove(unb64u(p.fa_ch), p.fa); } catch { return { ok: false, why: 'passkey_required' }; }
+    try { fa = await passkeyApprove(unb64u(p.fa_ch), p.fa); } catch (e) { return { ok: false, why: 'passkey_required', err: errName(e) }; }   // P539: the card says why
     if (!fa) return { ok: false, why: 'passkey_required' };
   }
   const sk = await signKey();
@@ -176,6 +177,11 @@ export async function model(want) {
 }
 
 /** P118 (B10): this reply → the owner's own Telegram private chat (host cap `tgfwd`). → {ok, why?} */
+export async function wxForward(id) {
+  if (!isReady() || !peer.p33 || !peer.wxfwd) return {ok:false, why:'not_configured'};
+  const m = await ask1({t:'wx_fwd', id}, 'wx_fwd_res', 30000);
+  return m.t === 'wx_fwd_res' && m.ok === true ? {ok:true} : {ok:false, why:m.why || 'send_failed'};
+}
 export async function tgForward(id) {
   if (!isReady() || !peer.p33 || !peer.tgfwd) return { ok: false, why: 'not_configured' };
   const m = await ask1({ t: 'tg_fwd', id }, 'tg_fwd_res', 30000);

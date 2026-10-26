@@ -52,7 +52,7 @@ class CalendarFinalExecution(HostExecution):
             await asyncio.to_thread(remote._push, self.st.root, 'google', adapter, queued)
             self.assertFalse(adapter.calls, op)
 
-    async def test_each_final_calendar_effect_needs_its_own_uv(self):
+    async def test_each_final_calendar_effect_needs_its_own_approval(self):
         from agentj import jcards_cal_remote as remote
         await self.h.elevate.start()
         try:
@@ -69,7 +69,17 @@ class CalendarFinalExecution(HostExecution):
                     a = active[-1]
                     card = self.h._ask_msg(a,self.session)
                     self.assertIn(op,card['summary'])
-                    obj = self.ph.answer(card,True)
+                    obj = self.ph.answer(card,True); obj.pop('fa', None)
+                    if op != 'delete':
+                        # P551 (#318): a calendar create / update is ② reversible — the signed long-press allow is enough
+                        self.assertNotIn('passkey_required', card)
+                        await self.h._answer(self.session,obj)
+                        await asyncio.wait_for(task,3)
+                        self.assertEqual(adapter.calls,[op])
+                        await self.h._answer(self.session,obj)
+                        self.assertEqual(adapter.calls,[op])
+                        continue
+                    self.assertTrue(card['passkey_required'])     # ③ a remote event deleted: Face ID
                     await self.h._answer(self.session,obj)
                     self.assertFalse(adapter.calls)
                     ch = passkey.elevate_challenge(self.h.channel,self.ph.did,a.rid,a.pk_kind,a.rid,a.digest)
@@ -108,7 +118,7 @@ class CalendarFinalExecution(HostExecution):
 
 
 
-    async def test_no_passkey_cannot_execute_any_remote_effect(self):
+    async def test_no_passkey_allows_reversible_but_never_a_remote_delete(self):
         from test_l1 import _owner_host as _host, _ready, Phone
         from agentj import jcards_cal_remote as remote
         with tempfile.TemporaryDirectory() as d:
@@ -126,6 +136,12 @@ class CalendarFinalExecution(HostExecution):
                             await asyncio.sleep(.005)
                         self.assertTrue(active, op)
                         a = active[-1]; card = h._ask_msg(a, session)
+                        if op != 'delete':        # P551 (#318): ② long-press — a remote without a passkey can allow it
+                            self.assertNotIn('passkey_required', card)
+                            await h._answer(session, ph.answer(card, True))
+                            await asyncio.wait_for(task, 3)
+                            self.assertEqual(adapter.calls, [op])
+                            continue
                         self.assertTrue(card['passkey_required'])
                         self.assertNotIn('fa', card)
                         await h._answer(session, ph.answer(card, True))

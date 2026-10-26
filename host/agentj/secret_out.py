@@ -162,7 +162,7 @@ class Outbox:
              "ttl": max(0, int(c["deadline"] - time.monotonic()))}
         pk = self.st.passkey_of_device(s.device) if s is not None and getattr(s, "device", None) else None
         if pk:
-            m["fa"] = pk["id"]        # this device's own credential id only
+            m["fa"], m["fa_s"] = pk["id"], passkey.pk_state(pk)        # this device's own credential id only
         return m
 
     def open_msgs(self, s) -> list[dict]:

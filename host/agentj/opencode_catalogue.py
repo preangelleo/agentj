@@ -9,9 +9,10 @@ import base64
 import json
 import os
 import secrets
-import tempfile
 import time
 import urllib.request
+
+from . import scratch
 
 
 def retired_models_cli(result) -> bool:
@@ -51,7 +52,7 @@ def native_models(exe: str, timeout: float = 20) -> list[str] | None:
     env = {k:v for k,v in os.environ.items() if k in ('PATH', 'LANG', 'SSL_CERT_FILE', 'SSL_CERT_DIR')
            or k.lower() in ('http_proxy', 'https_proxy', 'all_proxy', 'no_proxy')}
     proc = None
-    with tempfile.TemporaryDirectory(prefix='agentj-oc2-catalogue-') as home:
+    with scratch.home('agentj-oc2-catalogue-') as home:
         env.update(HOME=home, XDG_CONFIG_HOME=home+'/config', XDG_DATA_HOME=home+'/data',
                    XDG_CACHE_HOME=home+'/cache', XDG_STATE_HOME=home+'/state',
                    OPENCODE_DISABLE_DEFAULT_PLUGINS='1', OPENCODE_DISABLE_CLAUDE_CODE='1')

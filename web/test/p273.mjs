@@ -121,6 +121,8 @@ try {
   await page.keyboard.press('-');await page.waitForTimeout(100);
   check(Number(await page.locator('#rdFsN').textContent())===fs0,'- key still works');
   // stay-open actions: Telegram, speak, e-mail
+  // P536: the reader follows the explicit 「转发去向」 (default system share) — the owner picked Telegram
+  check(await page.evaluate(()=>import('./js/forward-choice.js').then(m=>(m.select('tg'),m.destination())))==='tg','Telegram picked as the forward destination');
   const n0=(fake.st.tgFwds||[]).length;
   await tap('#rdFwdBtn');
   await page.waitForFunction(()=>document.querySelector('#rdFwdBtn').dataset.state==='sent');

@@ -11,10 +11,12 @@ Application policy does not isolate code already running under the same OS accou
 | Action | Effect | Confirmation | Main | Channel | Friend | Support |
 |---|---|---|---|---|---|---|
 | admin | irreversible | uv | uv | handoff | handoff | deny |
+| agent.dispatch | none | none | allow | deny | handoff | deny |
 | answer | none | none | allow | allow | allow | allow |
-| calendar.write | irreversible | uv | uv | handoff | handoff | deny |
+| calendar.write | reversible | hold | hold | handoff | handoff | deny |
 | company.read | none | none | allow | deny | handoff | allow |
 | company.write | irreversible | uv | uv | handoff | handoff | uv |
+| computer.control | irreversible | uv | uv | handoff | handoff | deny |
 | device.pair | irreversible | uv | uv | handoff | handoff | deny |
 | device.revoke | irreversible | uv | uv | handoff | handoff | deny |
 | file.delete | irreversible | uv | uv | handoff | handoff | deny |
@@ -23,10 +25,10 @@ Application policy does not isolate code already running under the same OS accou
 | file.write | reversible | hold | allow | handoff | handoff | deny |
 | image.edit | none | none | allow | allow | handoff | deny |
 | image.generate | none | none | allow | allow | handoff | deny |
-| mail.send | irreversible | uv | uv | handoff | handoff | deny |
+| mail.send | reversible | hold | hold | handoff | handoff | deny |
 | memory.restore | reversible | hold | hold | handoff | handoff | deny |
 | payment | irreversible | uv | uv | handoff | handoff | deny |
-| publish | irreversible | uv | uv | handoff | handoff | deny |
+| publish | reversible | hold | hold | handoff | handoff | deny |
 | rewrite | none | none | allow | allow | allow | allow |
 | secrets.read | irreversible | uv | uv | handoff | handoff | deny |
 | secrets.write | irreversible | uv | uv | handoff | handoff | deny |

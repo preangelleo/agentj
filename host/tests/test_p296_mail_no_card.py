@@ -51,13 +51,13 @@ class NoCard(_Svc):
         self.assertTrue(res["ok"] and res["owner_direct"] and not res["no_card"], res)
         self.ask.assert_awaited_once()
         self.assertEqual(self.smtp.sent[-1][1], [ALLOW_ME])
-        self.assertTrue(self.ask.await_args.kwargs["require_passkey"])
+        self.assertFalse(self.ask.await_args.kwargs.get("require_passkey", False))   # P551: ② long-press, no Face ID
 
     async def test_a_second_recipient_brings_the_card_back(self):
         res = await self.svc.agent_send({"to": [OTHER], "to_owner": True, "subject": "s", "body": "b"})
         self.assertTrue(res["ok"], res)
         self.ask.assert_awaited_once()
-        self.assertTrue(self.ask.await_args.kwargs["require_passkey"])
+        self.assertFalse(self.ask.await_args.kwargs.get("require_passkey", False))
         self.assertFalse(res["no_card"])
 
     async def test_allowlisted_recipient_needs_no_card_but_stays_outward(self):
@@ -66,12 +66,12 @@ class NoCard(_Svc):
         self.assertTrue(res["ok"] and not res["no_card"] and not res["owner_direct"], res)
         self.ask.assert_awaited_once()
         self.assertNotIn("13812345678", body_of(self.smtp.sent[-1][2]), "not the owner: still masked")
-        self.assertTrue(self.ask.await_args.kwargs["require_passkey"])
+        self.assertFalse(self.ask.await_args.kwargs.get("require_passkey", False))
         self.ask.reset_mock()
         # one recipient off the list → the card again
         await self.svc.agent_send({"to": [FRIEND, OTHER], "subject": "s", "body": "b"})
         self.ask.assert_awaited_once()
-        self.assertTrue(self.ask.await_args.kwargs["require_passkey"])
+        self.assertFalse(self.ask.await_args.kwargs.get("require_passkey", False))
 
     async def test_credential_attachment_still_refused_without_a_card(self):
         key = self.work / ".env"                 # a credential file by name (media.check key_file), as in test_p184
@@ -99,7 +99,7 @@ class NoCard(_Svc):
         res = await self.svc.agent_send({"to": [OTHER], "subject": "s2", "body": "b"})
         self.assertFalse(res["no_card"], res)
         self.ask.assert_awaited_once()
-        self.assertTrue(self.ask.await_args.kwargs["require_passkey"])
+        self.assertFalse(self.ask.await_args.kwargs.get("require_passkey", False))
 
     async def test_unticked_stays_off_the_list(self):
         res = await self.svc.agent_send({"to": [OTHER], "subject": "s", "body": "b"})

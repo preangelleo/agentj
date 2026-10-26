@@ -37,16 +37,15 @@ for(const lang of ['zh','en'])for(const theme of ['light','dark'])for(const widt
   await evaluate(p,`import('./js/settings.js').then(m=>m.open())`);
   await waitFor(p,`!document.getElementById('settings').hidden`);
   assert.equal(await evaluate(p,`document.getElementById('set-wechat-row').hidden`),true);
-  assert.equal(await evaluate(p,`getComputedStyle(document.getElementById('set-tgpair').closest('.setrow')).borderBottomWidth`),'0px','hidden WeChat row preserves the baseline last-visible Telegram divider');
+
   await fake.send({t:'wechat_state',bound:false,pending:0});
   await evaluate(p,`import('./js/settings.js').then(m=>m.open())`);await waitFor(p,`!document.getElementById('settings').hidden`);
   await shot(p,key+'-after-settings');
   assert.equal(await evaluate(p,`document.getElementById('set-wechat-row').hidden`),false);
   assert.equal(await evaluate(p,`(()=>{const w=document.getElementById('set-wechat-row'),t=document.getElementById('set-tgpair').closest('.setrow');return !!(w.compareDocumentPosition(t)&Node.DOCUMENT_POSITION_FOLLOWING)})()`),lang==='zh','language recommendation order');
-  await evaluate(p,`document.getElementById('set-wechat').click()`);await waitFor(p,`document.getElementById('wechat-panel')?.hidden===false`);
-  await evaluate(p,`document.getElementById('wc-setup').click()`);
-  for(let i=0;i<50&&!writes.some(m=>m.op==='setup');i++)await sleep(20);
-  assert.ok(writes.some(m=>m.op==='setup'),'signed setup sent');
+  await evaluate(p,`document.getElementById('set-wechat').click()`);
+  await waitFor(p,`document.getElementById('input').value.includes('agentj-wechat')`);
+  assert.ok(!writes.some(m=>m.op==='setup'),'setup is an editable main-Agent request');
   await fake.send({t:'wechat_state',bound:false,pending:1,qr:{id:'a'.repeat(32),status:'wait',img:qr}});
   await waitFor(p,`document.querySelector('#wc-qr img')?.complete===true`);await shot(p,key+'-qr');
   assert.equal(await evaluate(p,`document.getElementById('wc-qr').hasAttribute('data-screenshot-private')`),true);

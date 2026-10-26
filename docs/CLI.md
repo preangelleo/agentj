@@ -134,7 +134,7 @@ agentj --help
 
 ```text
 usage: agentj [-h] [-V] [--migrate-legacy] [--instance N] [--fresh]
-              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,files,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,terminal,provider,sudo-helper,docs-rule,handover,wechat,telegram-cursor,plaza,support,data,diag,preflight,skills,capability,goal,heartbeat,quota,imessage,busy,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
+              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,files,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,terminal,provider,sudo-helper,docs-rule,handover,seat,wechat,telegram-cursor,plaza,support,data,diag,preflight,skills,capability,goal,heartbeat,quota,imessage,busy,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -4090,14 +4090,16 @@ agentj inbox --help
 ```
 
 ```text
-usage: agentj inbox [-h] [--json] [{list,clear,path}]
+usage: agentj inbox [-h] [--json] [--since SINCE]
+                    [{list,clear,path,avatar-log}]
 ```
 
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `mode` | `"list"` | false | `list`, `clear`, `path` | `` |
+| `mode` | `"list"` | false | `list`, `clear`, `path`, `avatar-log` | `` |
 | `--json` | `false` | false | — | `` |
+| `--since` | `null` | false | — | `ISO time` |
 
 ### agentj init
 
@@ -5580,6 +5582,65 @@ usage: agentj screen wait [-h] [--wait-s WAIT_S] [--compact] id
 | `--wait-s` | `110` | false | — | `` |
 | `--compact` | `false` | false | — | `` |
 
+### agentj seat
+
+```text
+seat: transfer it to another Agent J host (administrator password) · setup-code prints the code only
+```
+
+```bash
+agentj seat --help
+```
+
+```text
+usage: agentj seat [-h] {transfer,setup-code} ...
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj seat setup-code
+
+```text
+只打印转移码（有待用的就用它，否则新签发）/ print only the transfer code
+```
+
+```bash
+agentj seat setup-code --help
+```
+
+```text
+usage: agentj seat setup-code [-h] [--show]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--show` | `false` | false | — | `显示完整的码（默认遮挡）/ show the whole code (masked by default)` |
+
+### agentj seat transfer
+
+```text
+issue a 24-hour transfer code and print the prompt
+```
+
+```bash
+agentj seat transfer --help
+```
+
+```text
+usage: agentj seat transfer [-h] [--show] [--out FILE] [--cancel] [--status]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--show` | `false` | false | — | `显示完整的码（默认遮挡）/ show the whole code (masked by default)` |
+| `--out` | `null` | false | — | `把整段提示词（含完整的码）写进这个文件（0600）/ write the whole prompt to FILE (0600)` |
+| `--cancel` | `false` | false | — | `revoke the waiting code` |
+| `--status` | `false` | false | — | `show the transfer state` |
+
 ### agentj secret
 
 ```text
@@ -6785,7 +6846,7 @@ usage: agentj workflows [-h] [--json] [--staff-hint FOLDER]
 
 Agent J Father is the official feedback platform. Say “Please report this to Agent J’s developers (support platform)”, or “Tell your dad about this”. Use `/feedback-to-agentj-father <text>` on the phone: owner requests send after redaction without asking twice; Agent-initiated reports need agreement first.
 
-The approval level (`approval.level`) and "Goal mode: no cards" (`approval.goal_nocard`) change only by a signed switch in Settings → Safety on a paired phone. When an Agent runs `agentj config set approval.level full`, nothing changes by itself: the owner gets a confirmation card on the phone. `agentj approvals --verify` checks every line: automatic approvals under Full access (level_full), Goal mode: no cards (goal_preauth, goal_nocard) and a retry after a card kept while the owner was offline (parked) must trace back to a signed confirmation on the phone; the denials sent to the Agent while nobody was online are logged as offline or parked_wait.
+The approval level (`approval.level`) and "Goal mode: no cards" (`approval.goal_nocard`) change only by a signed switch in Settings → Safety on a paired phone. When an Agent runs `agentj config set approval.level full`, nothing changes by itself: the owner gets a confirmation card on the phone. `agentj approvals --verify` checks every line: automatic approvals under Full access (level_full), Follow AI tool (`level_harness`), Goal mode: no cards (goal_preauth, goal_nocard) and a retry after a card kept while the owner was offline (parked) must trace back to a signed confirmation on the phone; the denials sent to the Agent while nobody was online are logged as offline or parked_wait.
 
 For AI tool full-access flags, configuration, short aliases and rollback, see [Full-access launch (three ways)](/docs/setup-agents/#full-access).
 
@@ -6936,7 +6997,7 @@ agentj --help
 
 ```text
 usage: agentj [-h] [-V] [--migrate-legacy] [--instance N] [--fresh]
-              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,files,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,terminal,provider,sudo-helper,docs-rule,handover,wechat,telegram-cursor,plaza,support,data,diag,preflight,skills,capability,goal,heartbeat,quota,imessage,busy,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
+              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,files,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,terminal,provider,sudo-helper,docs-rule,handover,seat,wechat,telegram-cursor,plaza,support,data,diag,preflight,skills,capability,goal,heartbeat,quota,imessage,busy,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -10892,14 +10953,16 @@ agentj inbox --help
 ```
 
 ```text
-usage: agentj inbox [-h] [--json] [{list,clear,path}]
+usage: agentj inbox [-h] [--json] [--since SINCE]
+                    [{list,clear,path,avatar-log}]
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `mode` | `"list"` | false | `list`, `clear`, `path` | `` |
+| `mode` | `"list"` | false | `list`, `clear`, `path`, `avatar-log` | `` |
 | `--json` | `false` | false | — | `` |
+| `--since` | `null` | false | — | `avatar-log: 2h / 3d` |
 
 ### agentj init
 
@@ -12382,6 +12445,65 @@ usage: agentj screen wait [-h] [--wait-s WAIT_S] [--compact] id
 | `--wait-s` | `110` | false | — | `` |
 | `--compact` | `false` | false | — | `` |
 
+### agentj seat
+
+```text
+席位：transfer 把席位转到另一台 Agent J 主机（本机管理员密码）· setup-code 只打印码
+```
+
+```bash
+agentj seat --help
+```
+
+```text
+usage: agentj seat [-h] {transfer,setup-code} ...
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj seat setup-code
+
+```text
+只打印转移码（有待用的就用它，否则新签发）/ print only the transfer code
+```
+
+```bash
+agentj seat setup-code --help
+```
+
+```text
+usage: agentj seat setup-code [-h] [--show]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--show` | `false` | false | — | `显示完整的码（默认遮挡）/ show the whole code (masked by default)` |
+
+### agentj seat transfer
+
+```text
+签发 24 小时有效的转移码并打印整段安装提示词
+```
+
+```bash
+agentj seat transfer --help
+```
+
+```text
+usage: agentj seat transfer [-h] [--show] [--out FILE] [--cancel] [--status]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--show` | `false` | false | — | `显示完整的码（默认遮挡）/ show the whole code (masked by default)` |
+| `--out` | `null` | false | — | `把整段提示词（含完整的码）写进这个文件（0600）/ write the whole prompt to FILE (0600)` |
+| `--cancel` | `false` | false | — | `作废待用的转移码` |
+| `--status` | `false` | false | — | `查看转移状态` |
+
 ### agentj secret
 
 ```text
@@ -13587,7 +13709,7 @@ usage: agentj workflows [-h] [--json] [--staff-hint FOLDER]
 
 Agent J Father 是官方反馈平台。标准说法：请把问题汇报给 Agent J 开发者（客服平台）；轻松说法：把这事告诉你爸爸。手机用 `/feedback-to-agentj-father <内容>`，主人下令脱敏直发，Agent 自发先请示。
 
-审批档位（`approval.level`）和「设了目标就不弹窗」（`approval.goal_nocard`）只能在已配对手机的「设置 → 安全」里签名切换。Agent 里运行 `agentj config set approval.level full` 不会直接生效，只会在主人手机上弹一张确认卡。`agentj approvals --verify` 会逐条核对：按全放行（level_full）、设了目标就不弹窗（goal_preauth、goal_nocard）、离线留卡后重试（parked）自动批准的记录，都要追到手机上那次签名确认；没人在线时回给 Agent 的拒绝记为 offline 或 parked_wait。
+审批档位（`approval.level`）和「设了目标就不弹窗」（`approval.goal_nocard`）只能在已配对手机的「设置 → 安全」里签名切换。Agent 里运行 `agentj config set approval.level full` 不会直接生效，只会在主人手机上弹一张确认卡。`agentj approvals --verify` 会逐条核对：按全放行（level_full）、跟随 AI 编程工具（`level_harness`）、设了目标就不弹窗（goal_preauth、goal_nocard）、离线留卡后重试（parked）自动批准的记录，都要追到手机上那次签名确认；没人在线时回给 Agent 的拒绝记为 offline 或 parked_wait。
 
 AI 工具的全权限启动参数、配置、短别名与回退方法：[全权限启动（三种方式）](/docs/setup-agents/#full-access)。
 

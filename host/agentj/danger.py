@@ -646,8 +646,11 @@ def cred_path(p: str) -> str | None:
 # P329: DeepSeek Harness' own patch layers, route, key store and profiles decide its approvals and plugins (serve also checks
 # them outside the fence before every start: agent_dsh.prepare).
 _DSH = r"\.dsh/(?:cordis\.patch\.yml|agentj-route\.yml|agentj-deepseek\.yml|\.credentials\.yaml|\.env|profiles/[^/\s'\"]+/[^/\s'\"]+)"
-_HOOK_FILES = re.compile(r"(?:^|/)(?:\.claude/settings(?:\.local)?\.json|\.codex/hooks\.json|" + _DSH + r")$")
-_HOOK_TEXT = re.compile(r"\.claude/settings(?:\.local)?\.json|\.codex/hooks\.json|" + _DSH)
+# P551: Codex's config.toml and OpenCode's opencode.json(c) hold the harness's own approval / sandbox settings, which the
+# `harness` approval level follows — rewriting them is the same self-approval
+_HARNESS_CFG = r"\.codex/config\.toml|(?:^|/)opencode\.jsonc?"
+_HOOK_FILES = re.compile(r"(?:^|/)(?:\.claude/settings(?:\.local)?\.json|\.codex/hooks\.json|" + _DSH + r")$|(?:" + _HARNESS_CFG + r")$")
+_HOOK_TEXT = re.compile(r"\.claude/settings(?:\.local)?\.json|\.codex/hooks\.json|\.codex/config\.toml|opencode\.jsonc?\b|" + _DSH)
 _HOOK_CODE = re.compile(r"(?:^|[\s;&|(])(?:python[0-9.]*|node|nodejs|perl|ruby|deno|bun|php)(?:\s|$)")
 _HOOK_WRITE = re.compile(r"open\(|write|dump|unlink|remove|rename|replace|truncate|>")
 ALWAYS_CARD = frozenset({"credentials:hooks"})
@@ -661,7 +664,7 @@ def hook_path(p: str) -> str | None:
     if q.startswith("~"):
         q = "/~" + q[1:]
     q = posixpath.normpath(q)
-    return f"Agent 的钩子 / 审批设置 {q.rsplit('/', 2)[-2]}/{q.rsplit('/', 1)[-1]}" if _HOOK_FILES.search(q) else None
+    return f"Agent 的钩子 / 审批设置 {'/'.join(q.rsplit('/', 2)[-2:])}" if _HOOK_FILES.search(q) else None
 
 
 def _write_hit(hits, p: str, verb: str = "写入") -> bool:
@@ -2008,6 +2011,16 @@ def hook_main(argv: list[str]) -> int:
             sys.stdout.write(json.dumps({"hookSpecificOutput": {
                 "hookEventName": "PreToolUse", "permissionDecision": "deny",
                 "permissionDecisionReason": "Agent J：未知动作，默认拒绝 / Unknown action denied"}}, ensure_ascii=False))
+            return 0
+        if "harness" in argv[1:]:
+            # P551 (#320) + P550: following the harness — only the four ③ kinds that stay (money, the owner's data deleted, a
+            # seat, a key going out) are forced to the phone; everything else is the harness's own call
+            from .confirm_tier import harness_keeps
+            if harness_keeps(ev.get("tool_name"), ev.get("tool_input"), workdir=ev.get("cwd")):
+                sys.stdout.write(json.dumps({"hookSpecificOutput": {
+                    "hookEventName": "PreToolUse", "permissionDecision": "ask",
+                    "permissionDecisionReason": "Agent J：不可逆动作，需要主人 Face ID / Irreversible: owner Face ID required"}},
+                    ensure_ascii=False))
             return 0
         v = classify(ev.get("tool_name"), ev.get("tool_input"), extra) if "policy-only" not in argv[1:] else None
         if v is not None and v.danger:

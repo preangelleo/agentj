@@ -1,6 +1,6 @@
 // P318 (2026-10-15: 「浅色背景黑字从上面滑下来」 — never again). Static half of the Noir Notification: every notice /
 // toast / snack / flash popup in the page's CSS is the dialog layer (Noir --dlg-bg, Lotion --dlg-fg, opaque) and the format
-// table in js/ui.js uses only the four palette accents. The runtime half: notify() builds the right DOM (tested here with a
+// table in js/ui.js uses the state token and existing semantic palette accents. The runtime half: notify() builds the right DOM (tested here with a
 // tiny DOM stand-in, no browser).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -61,13 +61,13 @@ test('reply rescue action keeps strong background and matching strong ink', () =
   assert.match(noticeControls.body, /color:var\(--dlg-fg\)/);
 });
 
-test('ui.js: notify with six kinds; FORMATS accents are the four palette colours only', async () => {
+test('ui.js: notify with six kinds; FORMATS accents use current state or semantic palette tokens', async () => {
   const src = read('js/ui.js');
   assert.match(src, /export function notify\(spec\)/);
   globalThis.window = globalThis.window || {};
   const ui = await import('../public/js/ui.js');
   assert.deepEqual(Object.keys(ui.FORMATS).sort(), ['confirm', 'error', 'info', 'progress', 'success', 'warn']);
-  assert.deepEqual([...ui.NOTIFY_ACCENTS].sort(), ['--emerald-oasis', '--magic-carpet', '--peachy-feeling', '--windstorm']);
+  assert.deepEqual([...ui.NOTIFY_ACCENTS].sort(), ['--emerald-oasis', '--magic-carpet', '--peachy-feeling', '--state', '--windstorm']);
   for (const [k, f] of Object.entries(ui.FORMATS)) {
     assert.ok(ui.NOTIFY_ACCENTS.includes(f.accent), k + ' accent from the palette');
     assert.ok(['rect', 'circle'].includes(f.shape), k + ' shape');
@@ -99,7 +99,7 @@ test('notifyFormat: kind → accent / icon / ms / shape', async () => {
   assert.equal(notifyFormat({ kind: 'success', shape: 'circle', text: '已保存到Agent J 主机'.repeat(5) }).shape, 'square', 'long A text → centred square');
   assert.equal(notifyFormat({ kind: 'confirm', shape: 'circle', text: 'x', actions: [{ label: 'a', fn() {} }] }).shape, 'rect', 'buttons → rect');
   assert.equal(notifyFormat({ kind: 'error' }).accent, '--peachy-feeling');
-  assert.equal(notifyFormat({ kind: 'progress' }).accent, '--magic-carpet');
+  assert.equal(notifyFormat({ kind: 'progress' }).accent, '--state');
 });
 
 // a minimal DOM: enough for notify() (classList, dataset, style, replaceChildren, textContent)
@@ -151,4 +151,12 @@ test('notify(): title + text in #toast, kind / shape classes, action button .und
     assert.equal(box.dataset.kind, 'info'); assert.equal(box.textContent, 'plain');
     toastOff(); assert.ok(!box.classList.contains('on'));
   } finally { clearTimeout(box._t); delete globalThis.document; }
+});
+
+// P535 owner continuation: centred notices use the microphone-style plain Noir ground.
+test('centred circle/square/saved notices have no border, outline or shadow', () => {
+  const r = all.find(x => x.sel === '.toast:is(.circle,.square,.mail-saved)');
+  assert.ok(r);
+  for (const property of ['border', 'outline']) assert.ok(r.body.includes(property + ':0;'), property);
+  assert.ok(r.body.includes('box-shadow:none;'));
 });

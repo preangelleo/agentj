@@ -74,8 +74,9 @@ const RT_CHALLENGE = /^[A-Za-z0-9_-]{43}$/;                 // 32 bytes, b64url
 const RT_PROOF_LABEL = "agentjarvis/rt/proof/v1\n";
 
 export const rtCookieName = (secure: boolean) => (secure ? "__Secure-aj_rt" : "aj_rt");
-export function rtSetCookie(value: string, secure: boolean): string {
-  return `${rtCookieName(secure)}=${value}; Path=${RT_PATH}; Max-Age=${value ? RT_MAX_AGE : 0}; ${secure ? "Secure; " : ""}HttpOnly; SameSite=Strict`;
+/** path = where the cookie lives: /.aj/rt for the root page, /<seat id>/.aj/rt for a seat's page (P545: one ticket per seat). */
+export function rtSetCookie(value: string, secure: boolean, path = RT_PATH): string {
+  return `${rtCookieName(secure)}=${value}; Path=${path}; Max-Age=${value ? RT_MAX_AGE : 0}; ${secure ? "Secure; " : ""}HttpOnly; SameSite=Strict`;
 }
 function rtRead(req: Request, secure: boolean): string | null {
   const name = rtCookieName(secure) + "=";
@@ -102,7 +103,7 @@ function rtResponse(status: number, body: unknown = null, cookie?: string): Resp
   return new Response(body === null ? null : JSON.stringify(body), { status, headers: h });
 }
 /** POST /.aj/rt {op:"set",v} | {op:"prove",c} | {op:"has"} | {op:"clear"}. secure=false only for the loopback test server (http). */
-export async function rtEndpoint(req: Request, secure = true): Promise<Response> {
+export async function rtEndpoint(req: Request, secure = true, path = RT_PATH): Promise<Response> {
   if (req.method !== "POST") return notFound();
   const origin = new URL(req.url).origin;
   const site = req.headers.get("sec-fetch-site");
@@ -113,8 +114,8 @@ export async function rtEndpoint(req: Request, secure = true): Promise<Response>
   let m: { op?: unknown; v?: unknown; c?: unknown };
   try { m = JSON.parse(text); } catch { return notFound(); }
   if (!m || typeof m !== "object") return notFound();
-  if (m.op === "set" && typeof m.v === "string" && RT_VALUE.test(m.v)) return rtResponse(204, null, rtSetCookie(m.v, secure));
-  if (m.op === "clear") return rtResponse(204, null, rtSetCookie("", secure));
+  if (m.op === "set" && typeof m.v === "string" && RT_VALUE.test(m.v)) return rtResponse(204, null, rtSetCookie(m.v, secure, path));
+  if (m.op === "clear") return rtResponse(204, null, rtSetCookie("", secure, path));
   if (m.op === "has") return rtResponse(200, { has: rtRead(req, secure) !== null });   // a ready phone: is its cookie still there?
   if (m.op === "prove" && typeof m.c === "string" && RT_CHALLENGE.test(m.c)) {
     const v = rtRead(req, secure);
@@ -125,17 +126,70 @@ export async function rtEndpoint(req: Request, secure = true): Promise<Response>
   return notFound();
 }
 
-/** The page's own two same-origin fetch targets, exact URLs (connect-src never says 'self'): version.json and /.aj/rt. */
-export const connectSelf = (url: string) => `${new URL("/version.json", url).href} ${new URL(RT_PATH, url).href}`;
+/** The page's own two same-origin fetch targets, exact URLs (connect-src never says 'self'): version.json and /.aj/rt
+ *  (a seat's page: its own /<seat id>/.aj/rt; version.json is one file for every page). */
+export const connectSelf = (url: string) => {
+  const s = seatRoute(new URL(url).pathname);
+  return `${new URL("/version.json", url).href} ${new URL(s ? `/${s.seat}${RT_PATH}` : RT_PATH, url).href}`;
+};
+
+// ---------------------------------------------------------------- P545 (FEEDBACK #309, PROTOCOL §40): one address per seat
+// m.agentj.app/<seat id>/ is the same page as m.agentj.app/, served under the seat's own path so that everything the browser
+// keys by path follows the seat: the Home Screen app (manifest id / start_url / scope = /<seat id>/ — Android installs one app
+// per seat and never offers to open another seat's), the service worker and its push subscription, and the renewal cookie
+// (Path=/<seat id>/.aj/rt). Storage keyed by origin (localStorage, IndexedDB) is split by the page itself (js/seatscope.js).
+// The seat id is 8 lower-case base32 letters (a one-way hash of the channel; host/agentj/seaturl.py); no top-level file or
+// page route of public/ has that shape (static.test.mjs). /<seat id> without the slash → 308 to /<seat id>/ (a #p= pairing
+// fragment survives a redirect).
+export const SEAT_PATH = /^\/([a-z2-7]{8})(\/.*)?$/;
+export function seatRoute(pathname: string): { seat: string; rest: string | null } | null {
+  const m = SEAT_PATH.exec(pathname);
+  return m ? { seat: m[1], rest: m[2] ?? null } : null;
+}
+const MANIFESTS = ["/manifest.webmanifest", "/manifest-dark.webmanifest", "/manifest-light.webmanifest"];
+const CRED_RE = /^[A-Za-z0-9_-]{16,512}$/;
+/** The seat's display name from the page (?n=): no control / format / private-use characters, one space, ≤ 32 code points. */
+export function cleanSeatName(v: string | null): string {
+  const s = String(v ?? "").slice(0, 256).replace(/[\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Cn}]/gu, "").replace(/\s+/gu, " ").trim();
+  return Array.from(s).slice(0, 32).join("").trim();
+}
+/** The installed-app identity of one seat: own id / start_url / scope, the seat's name on the icon ("Agent J · Father@TB"),
+ *  and — when the page knows it — its own passkey's credential id in start_url's fragment (#c=: never sent on a launch), so
+ *  the installed app asks for that passkey only (a credential id is a public identifier, not a secret). Icons and
+ *  share_target stay relative (./…). */
+export function seatManifest(base: Record<string, unknown>, seat: string, q: URLSearchParams): Record<string, unknown> {
+  const n = cleanSeatName(q.get("n"));
+  const c = q.get("c");
+  const out: Record<string, unknown> = { ...base, id: `/${seat}/`, start_url: CRED_RE.test(c || "") ? `./#c=${c}` : "./", scope: "./" };
+  if (n) { out.name = `Agent J · ${n}`; out.short_name = n; }
+  return out;
+}
+
+async function seatAsset(req: Request, env: WebEnv, seat: string, rest: string): Promise<Response> {
+  const url = new URL(req.url);
+  url.pathname = rest;
+  const inner = assetRequest(new Request(url.toString(), { method: req.method, headers: req.headers }));
+  const res = await env.ASSETS.fetch(inner);
+  if (!MANIFESTS.includes(rest) || !res.ok || req.method !== "GET") return res;
+  let base: Record<string, unknown>;
+  try { base = await res.json(); } catch { return notFound(); }
+  return new Response(JSON.stringify(seatManifest(base, seat, url.searchParams)), { status: 200, headers: { "content-type": "application/manifest+json" } });
+}
 
 export async function handle(req: Request, env: WebEnv): Promise<Response> {
   const host = new URL(req.url).hostname;
   if (!env.WEB_HOST || (host !== env.WEB_HOST && !(env.LEGACY_WEB_HOST && host === env.LEGACY_WEB_HOST))) return notFound();
-  if (new URL(req.url).pathname === RT_PATH) return rtEndpoint(req, true);
+  const path = new URL(req.url).pathname;
+  if (path === RT_PATH) return rtEndpoint(req, true);
+  const seat = seatRoute(path);
+  if (seat && seat.rest === RT_PATH) return rtEndpoint(req, true, `/${seat.seat}${RT_PATH}`);
   if (req.method !== "GET" && req.method !== "HEAD") return notFound();
   const relays = relaySources(env);
   if (!relays) return notFound();
-  const res = await env.ASSETS.fetch(assetRequest(req));
+  if (seat && seat.rest === null) {
+    return new Response(null, { status: 308, headers: { location: `/${seat.seat}/${new URL(req.url).search}`, "cache-control": "no-store", "x-robots-tag": "noindex, nofollow" } });
+  }
+  const res = seat ? await seatAsset(req, env, seat.seat, seat.rest as string) : await env.ASSETS.fetch(assetRequest(req));
   const out = new Response(res.body, res);
   for (const [k, v] of Object.entries(webHeaders(relays, connectSelf(req.url)))) out.headers.set(k, v);
   return out;

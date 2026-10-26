@@ -17,7 +17,10 @@ assert.equal(reverseApprovedHTML(readFileSync('web/public/js/jcards.js','utf8'),
 // P489 LIVE added this exact diagnostic card after P485; all other non-icon HTML must still match.
 const p489LiveCard="            <div class=\"rscard\">\n              <button type=\"button\" id=\"layout-diag-send\" class=\"aj-btn\" data-i18n=\"p489.send\">发送画面诊断</button>\n              <p class=\"setnote\" data-i18n=\"p489.note\">画面有色带或错位时点一下。只把尺寸、颜色和用量发到你的 Agent J 主机，不含聊天内容。</p>\n              <p class=\"setnote\" id=\"layout-diag-result\" role=\"status\" aria-live=\"polite\"></p>\n            </div>\n";
 // P526/P527 exact approved additions; retain every historical comparator below.
-let html=readFileSync('web/public/index.html','utf8');
+// P550 (0.25.13): reverse this release's approved integrations, newest first, back to the 0.25.12a1 bytes.
+const R0_25_13={'index.html':['b8b1bc225','ab1682bd5','494290281','e90f9d6b3','0e23aca0f','d8d22150f'],'app.css':['320f6a8fb','b8b1bc225','ab1682bd5','3c6c2f2d3','494290281','498dfe49f','e90f9d6b3','ad52fcb4d','0e23aca0f','d8d22150f','90213571d'],'menu.css':['b8b1bc225','0e23aca0f']};
+const back=(f)=>R0_25_13[f].reduce((t,r)=>reverseApprovedHTML(t,r,f),readFileSync('web/public/'+f,'utf8'));
+let html=back('index.html');
 const diagnostic='            <div class="rscard" id="layout-diag-card">';
 assert.equal(html.split(diagnostic).length,2);html=html.replace(diagnostic,'            <div class="rscard">');
 const jevButton='              <button type="button" id="set-jev-key" class="aj-btn" hidden></button>\n';
@@ -42,8 +45,8 @@ for(const ref of ['afdf19607','2a303bac2','71eb0cd29','3832375bf','850e08209'])w
 assert.equal(normalize(withoutApproved.replace(p489LiveCard,'')),normalize(old('index.html')),'all other HTML byte-identical outside exact approved integrations');
 // The integrated CSS is byte-pinned: P488/P492 repairs plus approved P499/P501 panels.
 // P485 changes no app.css. Historical baseline remains the actual pixel comparator below.
-assert.equal(reverseApprovedHTML(reverseApprovedHTML(reverseApprovedHTML(readFileSync('web/public/app.css','utf8'),'2231d6c4a','app.css'),'bb8a40b8b','app.css'),'2a303bac2','app.css'),execFileSync('git',['show','9b64fe71f:web/public/app.css'],{encoding:'utf8'}),'all CSS exactly matches reviewed integration');
-assert.ok(readFileSync('web/public/menu.css','utf8').startsWith(old('menu.css')),'existing menu CSS byte-identical');
+assert.equal(reverseApprovedHTML(reverseApprovedHTML(reverseApprovedHTML(back('app.css'),'2231d6c4a','app.css'),'bb8a40b8b','app.css'),'2a303bac2','app.css'),execFileSync('git',['show','9b64fe71f:web/public/app.css'],{encoding:'utf8'}),'all CSS exactly matches reviewed integration');
+assert.ok(back('menu.css').startsWith(old('menu.css')),'existing menu CSS byte-identical');
 const temp=mkdtempSync('/tmp/p485-base-');execFileSync('tar',['-x','-C',temp],{input:execFileSync('git',['archive',base,'web/public'],{maxBuffer:100e6})});const before=await startWebServer({publicDir:temp+'/web/public'});
 const web=await startWebServer(),fake=await startFakeHost(),browser=await pw.chromium.launch({executablePath:'/usr/bin/chromium',args:['--no-sandbox']});
 try{for(const width of [390,1280])for(const lang of ['zh','en'])for(const theme of ['light','dark'])for(const phase of ['before','after']){
@@ -57,7 +60,7 @@ try{for(const width of [390,1280])for(const lang of ['zh','en'])for(const theme 
  fake.st.onApp=async(c,m,send)=>{if(m.t==='jcard_list'){await send({t:'jcard_items',r:m.r,cards:['notes','todo'].map(id=>({id,name:{zh:id==='notes'?'记事本':'待办',en:id==='notes'?'Notes':'To-do'},official:true,on:true}))});return true}if(m.t==='jcard_get'){await send({t:'jcard_get',r:m.r,ok:true,id:m.id,revision:'fixture485',template:m.id==='notes'?'notes':'checklist',entries:[{id:'n1',title:'P485',text:'Notebook fixture'}],items:[]});return true}return false};
  await p.goto(fake.newPairing((phase==='before'?before:web).url+'?lang='+lang));await p.waitForFunction(()=>window.__ajState==='awaiting-approval').catch(async e=>{console.log('FAKE ERRORS',fake.st.errors,'date',await p.evaluate(()=>Date.now()),Date.now());console.log('STATE',await p.evaluate(()=>({state:window.__ajState,text:document.body.innerText.slice(0,100)})));throw e});await fake.approve();await p.waitForFunction(()=>window.__ajState==='ready');
  await p.evaluate(async theme=>{for(const id of ['phone-env-dismiss','a2hs-ok'])document.getElementById(id)?.click();document.documentElement.dataset.theme=theme;const s=document.createElement('style');// Isolate the approved P517 badge before any backdrop blur; P517 has independent approved-image checks.
- s.textContent='.remote-count-badge{visibility:hidden!important}*,*::before,*::after{animation:none!important;transition:none!important;caret-color:transparent!important}';document.head.append(s);await document.fonts.ready;},theme);
+ s.textContent='.remote-count-badge,#fwdBtn,#rdFwdBtn{visibility:hidden!important}*,*::before,*::after{animation:none!important;transition:none!important;caret-color:transparent!important}';document.head.append(s);await document.fonts.ready;},theme);
  const shot=async(name,loc,equal=false)=>{await p.mouse.move(1,1);await p.evaluate(()=>{delete document.documentElement.dataset.kbd;document.activeElement?.blur()});const key=`${width}-${lang}-${theme}-${name}`,path=`${phase}/${key}.png`,bytes=await loc.screenshot({path:out+'/'+path});if(phase==='before')snapshots.set(key,{bytes,path});else{const b=snapshots.get(key);const same=bytes.equals(b.bytes);if(equal)assert.ok(same,'excluded pixels '+key);else assert.ok(!same,'target changed '+key);rows.push({width,lang,theme,name,before:b.path,after:path,equal:same,excluded:equal})}};
  for(const id of ids){
   await p.evaluate(id=>{window.__reveal=[];let e=document.getElementById(id);for(;e&&e!==document.body;e=e.parentElement){window.__reveal.push([e,e.getAttribute('hidden'),e.getAttribute('style')]);e.hidden=false;if(getComputedStyle(e).display==='none')e.style.display='block';}document.getElementById(id).disabled=false;},id);

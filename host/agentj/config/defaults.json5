@@ -101,7 +101,7 @@
     "jev_threshold": 0.7,
     // P158 goal mode: outside the goal's grant, a step the computer can undo asks with a 10-second countdown and no answer = approved; off = an ordinary card (enterprise) / 目标模式：可撤回的动作 10 秒无人点就自动批准; default=true
     "goal_auto": true,
-    // P336 approval level: safe (more cards) · standard (as before) · full (almost no cards; attacks, credentials and payments still ask); only a signed phone confirmation changes it / 审批档位; default="standard"
+    // P336 approval level: safe (more cards) · standard (as before) · full (almost no cards; attacks, credentials and payments still ask) · harness (P551: follow the harness; irreversible = Face ID); only a signed phone confirmation changes it / 审批档位; default="standard"
     "level": "standard",
     // P336 goal mode without the opening card (off = one opening card, as before); only a signed phone confirmation changes it / 设了目标就不弹窗; default=false
     "goal_nocard": false,

@@ -1,3 +1,4 @@
+import {field as textField} from './text-editor.js';
 // P184 (PROTOCOL §25) · the owner's address book on the phone, in two P150 centred dialogs (gdlg):
 //  1. 「转发到邮箱」 — a reply page or one of its files → the owner's own address (default) or people from the address book
 //     (sorted by 最近 / 最常用 / 字母, searched on the computer by name, nickname, pinyin and address; 「新增」 = address +
@@ -367,11 +368,11 @@ const LIST_FIELDS = [['emails', 'email'], ['phones', 'tel'], ['addresses', 'text
 function field(label, id, value, type = 'text', fresh = false) {
   const w = mk('label', 'ct-field' + (fresh ? ' fresh' : ''));
   w.append(mk('span', '', label));
-  const i = mk(type === 'note' ? 'textarea' : 'input'); i.id = id; if (type !== 'note') i.type = type === 'email' ? 'email' : type === 'tel' ? 'tel' : 'text';
+  const i = mk('input'); i.id = id; i.type = type === 'note' ? 'hidden' : type === 'email' ? 'email' : type === 'tel' ? 'tel' : 'text';
   if (type === 'email') { i.inputMode = 'email'; i.setAttribute('autocapitalize', 'off'); i.spellcheck = false; }
   if (type === 'tel') i.inputMode = 'tel';
   i.value = value || '';
-  w.append(i);
+  w.append(i); textField(i, label);
   return w;
 }
 

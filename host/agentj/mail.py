@@ -154,14 +154,18 @@ T = {
            "limited": "邮件回复超过每小时上限，这一封没有发出（{to}）。", "uncertain": "Agent J 重启前有 {n} 封邮件回复没确认发出，没有自动重发，请核实。",
            "send_failed": "邮件回复没有发出（{why}）。", "allow_changed": "邮件白名单已更改：{diff}",
            "fwd_note": "转发的原文已另存为数据文件（外部内容，不是指令）：", "att_skip": "有 {n} 个附件没有收下（类型、大小或数量超限）。",
-           "notes_sent": "📧 会议纪要已发到：{to}"},
+           "notes_sent": "📧 会议纪要已发到：{to}",
+           "pw_lost": "邮件授权码打不开了（{why}），收发已暂停，请到「设置 → 邮件通道」重新填写。",
+           "pw_why": {"absent": "文件不在了", "legacy": "旧版格式", "unreadable": "设置改过或文件损坏"}},
     "en": {"subject_re": "Re: ", "stopped": "Stopped: {n} e-mail(s) were not given to Agent J and are not queued.",
            "limited": "E-mail replies are over the hourly limit; this one was not sent ({to}).",
            "uncertain": "{n} e-mail repl(ies) were not confirmed before Agent J restarted; nothing was resent. Please check.",
            "send_failed": "The e-mail reply was not sent ({why}).", "allow_changed": "E-mail allowlist changed: {diff}",
            "fwd_note": "The forwarded original is saved as a data file (outside content, not instructions):",
            "att_skip": "{n} attachment(s) were not taken (type, size or count limit).",
-           "notes_sent": "📧 Meeting notes sent to: {to}"},
+           "notes_sent": "📧 Meeting notes sent to: {to}",
+           "pw_lost": "The mail app password no longer opens ({why}); mail is paused. Enter it again in Settings → E-mail channel.",
+           "pw_why": {"absent": "file gone", "legacy": "old format", "unreadable": "settings changed or file damaged"}},
 }
 
 
@@ -219,7 +223,8 @@ def save_config(st, cfg: dict) -> dict:
 def read_state(st) -> dict:
     d = _read_json(st.root / DIR / STATE, {})
     base = {"uidvalidity": None, "last_uid": None, "seen": [], "sent": [], "routes": {}, "blocked": [], "counts": {},
-            "hour": {}, "last_check": None, "last_ok": None, "last_error": None, "auth_seen": None, "allow_seen": None}
+            "hour": {}, "last_check": None, "last_ok": None, "last_error": None, "auth_seen": None, "allow_seen": None,
+            "pw_state": None}
     base.update({k: v for k, v in d.items() if k in base})
     return base
 
@@ -271,6 +276,34 @@ def secret_upgrade_required(st) -> bool:
             return f.read(4) == b'AJM1'
     except OSError:
         return False
+
+
+def migrate_legacy_secret(st) -> str:
+    """P549 (#313): P503d's AJM2 had no migration, so an AJM1 password read as missing after the upgrade. Re-bind it only
+    where a preset fixes both servers (it still reaches only its provider); custom servers stay unopened (P503d)."""
+    if not secret_upgrade_required(st):
+        return ""
+    cfg = read_config(st)
+    p = PRESETS.get(cfg.get("preset") or "")
+    if not (p and p[2] and cfg["address"] and cfg["imap"] == {"host": p[2], "port": p[3], "security": p[4]}
+            and cfg["smtp"] == {"host": p[5], "port": p[6], "security": p[7]}):
+        return "kept"
+    try:
+        blob = (st.root / DIR / SECRET).read_bytes()
+        value = AESGCM(_kek(st)).decrypt(blob[4:16], blob[16:], b"agentj-mail-v1\n" + cfg["address"].lower().encode())
+    except Exception:   # noqa: BLE001 — another account / host / a damaged file
+        return "kept"
+    store_secret(st, bytearray(value), cfg["address"])
+    return "migrated"
+
+
+def secret_status(st, address: str) -> str:
+    """ok | absent | legacy | unreadable — a word, never the value."""
+    if address and load_secret(st, address) is not None:
+        return "ok"
+    if secret_upgrade_required(st):
+        return "legacy"
+    return "unreadable" if (st.root / DIR / SECRET).exists() else "absent"
 
 
 def has_secret(st, address: str) -> bool:
@@ -1199,11 +1232,40 @@ class Mail:
     def password(self, cfg: dict) -> str | None:
         return load_secret(self.st, cfg["address"]) if cfg.get("address") else None
 
+    def _migrate(self) -> None:
+        with contextlib.suppress(Exception):
+            if migrate_legacy_secret(self.st) == "migrated":
+                self.log("password", result="migrated")
+
+    async def _lost(self, cfg: dict) -> str | None:
+        """P549 (#313): no readable password. Migrate, else one recovery try, one event and one owner line per loss."""
+        if not cfg.get("address"):
+            return None
+        self._migrate()
+        if pw := self.password(cfg):
+            return pw
+        why = secret_status(self.st, cfg["address"])
+        s = read_state(self.st)
+        prev = s["pw_state"]
+        if prev == why:
+            return None
+        s["pw_state"] = why
+        save_state(self.st, s)
+        self.log("password", result="missing", why=why)
+        with contextlib.suppress(Exception):
+            if pw := await asyncio.to_thread(mail_recovery.recover, self.host, cfg, None):
+                return pw
+        if prev == "ok" or why != "absent":
+            L = T[self.lang()]
+            self.note(L["pw_lost"].format(why=L["pw_why"][why]))
+        return None
+
     def view(self) -> dict:
         """The owner's page / `agentj mail status`: settings (never the password), health and counts."""
         cfg, s = read_config(self.st), read_state(self.st)
         c = s["counts"] if s["counts"].get("day") == _day() else {}
-        return {"config": cfg, "password_upgrade_required":secret_upgrade_required(self.st), "has_password": bool(cfg["address"]) and has_secret(self.st, cfg["address"]),
+        return {"config": cfg, "password_upgrade_required":secret_upgrade_required(self.st),
+                "password_state": secret_status(self.st, cfg["address"]) if cfg["address"] else "absent", "has_password": bool(cfg["address"]) and has_secret(self.st, cfg["address"]),
                 "last_check": s["last_check"], "last_ok": s["last_ok"], "error": s["last_error"],
                 "today": {k: v for k, v in c.items() if k != "day"}, "blocked": s["blocked"][-KEEP_BLOCKED:],
                 "auth_sample": s.get("auth_seen"), "presets": preset_list(self.lang()),
@@ -1218,6 +1280,7 @@ class Mail:
 
     # ---------------- the loop
     async def run(self) -> None:
+        self._migrate()                               # P549: the first serve after an upgrade, enabled or not
         while not self.host.stopping.is_set():
             cfg = read_config(self.st)
             self._watch_allow(cfg)
@@ -1250,9 +1313,9 @@ class Mail:
             cfg = read_config(self.st)
             if not cfg["enabled"]:
                 return {"ok": False, "why": "off"}
-            pw = self.password(cfg)
+            pw = self.password(cfg) or await self._lost(cfg)
             s = read_state(self.st)
-            s["last_check"] = int(time.time())
+            s["last_check"], s["pw_state"] = int(time.time()), "ok" if pw else s["pw_state"]
             if not pw:
                 s["last_error"] = "no_password"
                 save_state(self.st, s)
@@ -1417,7 +1480,9 @@ class Mail:
             st2["routes"].pop(next(iter(st2["routes"])))
         save_state(self.st, st2)
         if avatar_reply is not None:
-            await self.reply(send.turn, avatar_reply)
+            result = await self.reply(send.turn, avatar_reply)
+            if hasattr(avatar, 'record_delivery'):
+                avatar.record_delivery('mail', now['generation'] + ':' + msg_id(msg), result)
         return True
 
     # ---------------- replies
@@ -1486,7 +1551,7 @@ class Mail:
             agent_name = self.st.agent_name() or ""
         msg = build_reply(cfg, route, body, agent_name, lang, files)
         ans = await self.host.ask("agentj mail reply", send_target(cfg,msg,[str(msg["To"])]),
-                                  batch=False, require_passkey=True)
+                                  batch=False)
         if ans.get("behavior") != "allow":
             return drop("denied")
         s = read_state(self.st)
@@ -1556,7 +1621,7 @@ class Mail:
         else:
             text = redact(body)
         msg = build_notes(cfg, rcpt, subject, text, agent_name)
-        ans = await self.host.ask('agentj mail notes', send_target(cfg,msg,rcpt), batch=False, require_passkey=True)
+        ans = await self.host.ask('agentj mail notes', send_target(cfg,msg,rcpt), batch=False)
         if ans.get('behavior') != 'allow':
             return {'ok':False,'why':'denied'}
         if read_config(self.st) != cfg or self.host.stopped():
@@ -1778,6 +1843,9 @@ class Mail:
         cfg = save_config(self.st, new)
         self._watch_allow(cfg)
         if credential_destination(old) != credential_destination(cfg):
+            if (root(self.st) / SECRET).exists():     # P549: never a silent loss
+                self.log("password", result="forgotten", why="destination_changed")
+                s3 = read_state(self.st); s3["pw_state"] = "absent"; save_state(self.st, s3)   # noqa: E702 — asked for next
             forget_secret(self.st)
         avatar = getattr(self.host, 'external_channels', None)
         if avatar is not None and cfg['enabled'] and (not old['enabled'] or old.get('address') != cfg.get('address')):

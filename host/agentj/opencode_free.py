@@ -17,14 +17,13 @@ model pages as quoted in the report (2026-10-14). Unknown free models get no lin
 """
 from __future__ import annotations
 
-from . import resource_policy
+from . import resource_policy, scratch
 
 import base64
 import json
 import os
 import re
 import secrets
-import shutil
 import signal
 import subprocess
 import tempfile
@@ -228,9 +227,9 @@ def probe(exe: str, model: str | None, env: dict, timeout: float, *, sleep=time.
     waits = WARM_WAITS if waits is None else waits
     deadline = clock() + timeout + sum(waits)
     password = secrets.token_urlsafe(32)
-    root = tempfile.mkdtemp(prefix="agentj-oc-probe-")
-    proc = None
     port = _port()
+    root = scratch.make("agentj-oc-probe-")      # P542: private cache, removed in the finally below
+    proc = None
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))      # 127.0.0.1 never through a proxy
     auth = "Basic " + base64.b64encode(f"opencode:{password}".encode()).decode()
 
@@ -291,4 +290,4 @@ def probe(exe: str, model: str | None, env: dict, timeout: float, *, sleep=time.
                 pass
     finally:
         _stop(proc)
-        shutil.rmtree(root, ignore_errors=True)
+        scratch.remove(root)

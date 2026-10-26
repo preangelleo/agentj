@@ -81,7 +81,7 @@ class HostLevel(P57HostLevel):
             return await self.host.decide(self.host.pairing, wire.safety_code(s.h), "test-passphrase-P57")
         self.run_(go())
         msgs = self.to(7)
-        self.assertEqual([o["t"] for o in msgs], ["approved", "pk_offer", "rt", "devs", "pair_guide", "preferences"])
+        self.assertEqual([o["t"] for o in msgs], ["approved", "pk_offer", "rt", "devs", "pair_guide", "pk_state", "preferences"])   # P539: + this remote's passkey state
         ticket = next(o for o in msgs if o["t"] == "rt")
         rt = self.st.devices()[s.device]["rt"]
         self.assertEqual((ticket["i"], ticket["k"]), (rt["i"], rt["k"]))

@@ -261,3 +261,199 @@ fallback when the running host cannot be reached, and must not be reported as a 
 P508c: native Claude/OpenCode child rows optionally carry `status:running|unknown`. Unknown rows remain briefly inspectable but are excluded from `task_count`; they expire after TEMP_TTL from last child activity or confirmed running observation. `live_process_count` still counts verified host processes. Claude bounded native transcript/task results and OpenCode v1 status/v2 idle records reconcile lost end events. Empty workflow selections never overwrite argv/config detection; unknown child models never inherit host models.
 
 P508e: `busy.counts(tasks)` is the sole active/unknown/process counter over published rows: `task_count` excludes unknown, `unknown_count` counts those rows, and `live_process_count` deduplicates their verified live PIDs including unknown children. Board/serve, CLI JSON/text (with or without `--no-units`) and capacity use it. Unit exclusion changes the selected snapshot, not the rule. Phone titles consume host counters; only pre-P508 hosts without counters retain the legacy all-running row total. Agent reports must cite these fields.
+
+### P536 — reply destinations and WeChat forwarding
+
+This supersedes §10.14's implicit Telegram selection and fallback for the reply-card / reader button. Settings on each
+remote saves `share` (default), `wx` or `tg` per host. Bound channels alone are selectable; unbinding the selected channel
+resets to system share with one notice. A temporary send failure/expired context preserves the destination. No long-press
+picker, success-based destination memory, cross-channel fallback or automatic replay. File-card Telegram actions remain.
+
+`wxbound` / `tgbound` caps announce binding; `wxfwd` announces WeChat's current send eligibility. `wechat_state` includes
+`bound`, `can_forward`, `forward_for` (remaining seconds, at most 300) and greeting metadata (`needs_message`, `attempted`,
+`sent`); never credentials/context values. `status.channels={tg_bound,tg_forward}` updates Telegram binding/eligibility.
+
+A paired allowed p33 ready session sends `{t:"wx_fwd",r:<rid>,id:<finished turn id>}`; no reply words travel upstream.
+Host answers that same live session `{t:"wx_fwd_res",r,ok,why?}`. Reasons: `not_configured`, `not_found`, `in_flight`,
+`recently_sent`, `rate_limited`, `send_failed`. Validate current session/device/stop, current account generation, context
+and completed non-silent reply; owner-redact secrets. Six attempts/device/minute, one concurrent request per turn,
+30-second success dedupe. Over 4000 UTF-8 bytes uses a complete text attachment; revalidate after upload, then exactly one
+platform send call. Platform errors/unknown transport outcomes are failures; no automatic retry. Explicit retry may duplicate
+an unknown delivery. Logs record only device, turn ID and result. Login without context requires an owner WeChat message;
+first eligible reply includes one greeting and marks the attempt before sending so uncertain greeting is not replayed.
+
+### P537: heartbeat prompt editor
+On an already ready, allowed p33 session, cap `heartbeat_prompt` advertises `heartbeat_get {r}` → `heartbeat_state {r,ok,text,default,sha,update_available,path}`. Text is redacted; `sha` is full SHA-256 of the local raw prompt, not the heartbeat's short digest. Reads do not create or reset files. `heartbeat_write {r,op,text,sha,n,ts,sig}` → `ctl_res {r,ok,why}` signs action `heartbeat_write`, canonical JSON `{op,text,sha}`; op=save/merge/reset. Nonce, timestamp, device signature and prior revision all must match. Merge appends only the missing factory block, reset replaces only on an explicit saved action, save enforces16KiB/secret/control rules. It does not use or alter the current Agent's source/privilege. No prompt text is logged. Older hosts lack the cap; the phone explains that editing requires an upgrade. Scheduling is unchanged.
+
+## P539 — own passkey per remote, Computer Use, one pre-authorization (#300)
+
+**Passkey state** of a device = `none` (no `pk`) | `local` (`pk.local` true) | `borrowed` (`pk.local` false) | `unknown` (a
+record from before P539). Host → a ready p33 session `{"t":"pk_state","s":<state of its own record>}` after every `devs`
+list it gets (resume / restore via the P525 resend, pairing, pk_reg ok, any allowlist change). Each `devs` row adds
+`"pk":<state>` (never an id). `fa_s` on cards: §16.1.
+
+**ask_done** (§8 / §10) adds optional `"why"`: `timeout` · `denied` · `passkey` (the card timed out after a refused passkey
+answer) · `nobody` (parked while no remote was online) · `estop` · `serve_stop`. `result` is unchanged. The Agent's timeout line
+names the likely cause and the next step (ask again, or 「设置 → Agent 与遥控器 → 本机 Face ID / 指纹」).
+
+**computer.control** (policy registry, irreversible, `uv`): every operation of the MCP servers `computer-use`, `computer_use`,
+`unified-computer-use`, and the exact operation names left/right/middle/double/triple_click, left_click_drag, mouse_move,
+left_mouse_down/up, type_text, press_key, hold_key, perform_secondary_action, get_app_state on any server. Main window: a
+passkey card any paired remote with its own passkey can approve. Other layers: channel / friend handoff, support deny. Every
+other unknown tool still denies without a card. Codex: an `mcpServer/elicitation/request` whose `_meta.codex_approval_kind`
+is `mcp_tool_call`, form mode, with an empty requested schema, AND that matches an open `mcpToolCall` item Codex announced
+on the main thread (`item/started`, inProgress; same serverName, the tool `'to run tool "<tool>"?'` names, same turn; each
+item at most once) is that tool's approval: `mcp__<item.server>__<item.tool>` with `item.arguments` (never `_meta` or the
+message, which a server's own elicitation can forge) goes through the normal card; arguments over 8 000 chars are declined
+without a card; allow → `{"action":"accept","content":{}}` (never a `persist` choice), otherwise `decline`. A 「免问」 grant
+covers only the known Computer Use operations on the three servers above. An elicitation with any field to fill, or with
+no matching item, is still declined (local page).
+Codex plugin binding: when the matched item's `pluginId` (Codex's own field, `"<plugin>@<marketplace>"`; null for a
+config server) is exactly `unified-computer-use@openai-bundled` or `computer-use@openai-bundled` AND `item.server` is
+`cua_repl`, the tools `js` / `js_reset` are `computer.control` (passkey card; summary 「Computer Use：在这台电脑上点击、输入并
+运行操控脚本」 + the script whole + one line saying a 免问 tick frees the plugin's scripts) and `turn_ended` (the plugin's own
+Stop / Interrupt hook) is accepted without a card (host.log `mcp_lifecycle_allow`). Any other marketplace, server or a
+null `pluginId`: the name decides (`mcp__cua_repl__*` is unknown → denied without a card).
+
+**Pre-authorization 「免问」**. Grantable actions: `computer.control` only (a host constant; red lines never). A card for it adds
+`"allow_offer":["preauth:computer.control"]`; an allow whose §8 signature covers `allow_add:["preauth:computer.control"]`
+(P296 line) AND passed the card's passkey stores `{action, device, sk, at, rid, bind}` in `<state>/preauth.json` (0600, ≤ 16;
+`bind` = `{"kind":"mcp_ops"}` for an MCP-name card, `{"kind":"codex_plugin","id":<pluginId>,"server":"cua_repl"}` for a Codex
+plugin card; a grant covers only requests with the same binding — one kind never covers the other; an unknown binding in
+the file is dropped),
+approvals.log `reason:"preauth_add"` (the signed line's digest), host.log `preauth_add`. The pick is not returned to the
+calling tool. Later requests of a covered tool (the allowlisted servers only) are allowed without a card while that remote is
+listed with the same approval key, no emergency stop, approval level ≠ safe, owner turn (not delegated / group): approvals.log
+`reason:"preauth"`, `auto:"preauth"`, `grant`=the granting card; host.log `preauth_use`; phones `{"t":"auto",…,"by":"preauth",
+"action","device","name"}`. Device → host `{"t":"preauth_list"}` → `{"t":"preauth","items":[{"action","device","name","at","via"}]}`
+(`via` = the binding kind, `mcp_ops` | `codex_plugin`; a remote may hold one of each, both revoked by the same `preauth_revoke`)
+(also pushed to every ready p33 remote after a change); `{"t":"preauth_revoke"[,"action"][,"device"]}` from any ready paired
+remote revokes (narrowing: no signature or passkey). Automatic revocation: unpair / eviction / replacement (`_drop_device`),
+a new approval key or device id (checked at use), and the emergency stop (all grants). Logs carry ids, actions and counts only.
+
+## 40. One address per seat — m.agentj.app/<seat id> (P545, FEEDBACK #309; the number is provisional until the merge)
+
+**Seat id.** `seat_id(channel) = base32_lower(SHA-256("agentj/seat-url/v1\n" ‖ channel)[0:5])` — 8 letters of
+`abcdefghijklmnopqrstuvwxyz234567`; `channel` is the 22-character b64url channel id. One-way (the channel is 128 random bits),
+so the id is public: printed by `agentj pair` on approval and by `agentj` when set up, shown on the account page's seat card
+(`seat_url` in the hosts list) and on the phone. Implementations: `host/agentj/seaturl.py`, `dashboard/src/seaturl.ts`,
+`web/public/js/seats.js`; vectors `vectors/p545-seat-url.json`. Nothing on the wire changes: pairing, resume, passkey
+(§12, the user handle stays relay ‖ channel ‖ host key — already per seat) and renewal (§12.1) messages are as before.
+
+**Routes (web Worker).** `/<seat id>` → 308 `/<seat id>/` (query kept; a `#p=` fragment survives). `/<seat id>/<path>` serves
+the same files as `/<path>` (page routes `/friends`, `/bots` included). `/<seat id>/manifest*.webmanifest` = the shipped
+manifest with `id` = `/<seat id>/`, `start_url` = `./` (or `./?c=<credential id>` when the page passed a valid `c`), `scope`
+= `./`, and — with `?n=<name>` (control / format characters dropped, ≤ 32 code points) — `name` "Agent J · <name>",
+`short_name` <name>. `/<seat id>/.aj/rt` is the §12.1 endpoint with the cookie `Path=/<seat id>/.aj/rt`. CSP `connect-src`
+on a seat page lists `/version.json` and that seat's `/.aj/rt`. No top-level name of `public/` may have the seat-id shape.
+
+**Links.** A host whose web root is `https://m.agentj.app` prints pairing links (and draws QR codes) as
+`https://m.agentj.app/<seat id>/#p=…` (`wire.pair_base`; the QR stays version 8-M); any other web root keeps its root. The
+Worker must be deployed before hosts that print seat links.
+
+**Page.** On `/<seat id>/` the page keeps everything per seat: localStorage keys get the suffix `@<seat id>` (`js/seatscope.js`,
+first script in `<head>`; the first visit copies the root page's display preferences only), IndexedDB is `agentjarvis@<seat
+id>` (and `agentj-rec@<seat id>`), the service worker and its push subscription are scoped to `/<seat id>/` (each worker takes
+only its own scope's `share-target`). The root page `/` keeps its old names and pairs any link it is given, as before. A seat
+page pairs and restores only its own seat: a pairing link of another channel opens that seat's page; a link with the same
+seat id but another channel than its own pairing is refused; a passkey or renewal ticket whose user handle names another
+channel is refused (`seat.pkOther`, the other seat's address offered). With a known own credential id (`aj.seatPk`, or the
+installed app's start fragment `#c=`, taken off the address bar at once) the restore asks `get()` with `allowCredentials` =
+that id only. The origin's seat list (`aj.seats`, root localStorage: `{s, n, t}` — seat id, display name, last ready): a root
+page with no record of its own and exactly one known seat opens that seat's page; with ≥ 2 the pairing screen lists them
+(「选择要连接的席位」) instead of a discoverable passkey prompt. Move (Settings 「改用本席位专属网址」, root page only): the seat
+page copies the root database's records once (structured clones; no key is exported) when the root pairing's channel is that
+seat's, the seat has none and the root record is not marked yet; the root record stays, marked `movedTo: <seat id>`, and the
+root page opens the seat page from then on (one page per device key on the relay). Unpairing / removal on that seat page
+deletes the root's moved copy (record, sealed records and their key; the device keys stay).
+The seat id is an address, not a security boundary (40 bits can be searched for); every check above that matters compares
+the full channel or the user handle.
+
+### P547 — host-issued seat transfer (Dashboard side)
+
+Three signed host routes (contexts `agentj-host-seat-transfer-v1`, `-cancel-v1`, `-status-v1`; details DASHBOARD_API §3):
+`seat-transfer {token_hash, handover:{b,mac}|null}` → 201 `{setup_id, expires_at, tenant}`; `seat-transfer/cancel` →
+`{status:cancelled|none|bound}`; `seat-transfer/status` → `{status:issued|bound|revoked|expired|none, expires_at, arrival?, agent_name?}`.
+The code `ajh_…` (host-issued; the account page only ever mints `ajt_`) is made on the old host; the Dashboard keeps only
+`sha256(code)` and the two opaque blobs. `b` = b64url(nonce(12) ‖ AES-256-GCM ciphertext+tag), key = HKDF-SHA256(ikm = code,
+salt none, info `agentj-seat-handover-key-v1`, 32 B), AAD = `agentj-seat-handover-v1\n`, plaintext = the canonical JSON
+remote list; `handover.mac = HMAC-SHA256(code, "agentj-seat-handover-v1\n" + b)`; seat-bind's optional
+`arrival = {x25519, relay, mac = HMAC-SHA256(code, "agentj-seat-arrival-v1\n" + channel + "\n" + x25519 + "\n" + relay)}`.
+Each side verifies with the code it holds; the Dashboard only stores and forwards, so it cannot forge either.
+Security review B1 / M3 (Dashboard): seat-bind takes `^ajh_[A-Za-z0-9_-]{43}$` besides `ajt_` / `AJI-`; an `ajh_` code redeems only
+a `host_issued = 1` setup and an `ajt_` code never one (mismatch = `404 invalid_setup`, a failed guess); `/api/seat-setups/claim`
+never matches a host-issued setup. The moved seat stays with its person: new host `bound_by` = the old host's, and the setup
+inherits the old setup's holder, so that holder's `seat_holder` membership survives the move.
+Security review M2 (page): `host_moved` never switches silently. Each remote shows 「席位已转到新主机「<name>」（<HH:MM of `at`>）。
+让这台遥控器切过去吗？」 / "The seat moved to the new host "<name>" (<HH:MM>). Switch this remote over?" with 「切过去」 / 「留在这里」
+("Switch over" / "Stay here"); only 「切过去」 rewrites the stored pairing and reconnects. 「留在这里」 changes nothing (the old host
+serves until its seat certificate ends) and the same move is not asked again until the page reloads. A
+`{"t":"pk_reg_res","ok":false,"why":"peer_required"}` starts the page's `pk_peer_req` flow by itself (no failure toast).
+
+
+### P547 — host and phone: Face ID approved by another remote · seat transfer from a remote
+
+**A. `pk_peer` (app messages, p33 sessions only; host `pkpeer.py`).** The host decides. D → `{"t":"pk_peer_req","r"}`.
+If no OTHER listed device holds a `pk` record (a record holding D's own credential does not count) and D has none:
+`{"t":"pk_peer_res","r","ok":true,"mode":"direct"}` then a plain `pk_offer`. If D has one but nobody else does:
+`{"t":"pk_peer_res","r","ok":false,"why":"no_approver"}`. Otherwise a request (or D's still-open one, idempotent):
+`{"t":"pk_peer_res","r","ok":true,"mode":"peer","id":b64u16,"code":"NNNNNN","exp":unix_s,"online":n}`; refusals `why:"rate"`
+(5 new requests per device per 10 min) · `"busy"` (3 open per host). `code` = `%06d` of
+`int.from_bytes(SHA-256("agentj/pk-peer/code/v1\n"+id+"\n"+D+"\n"+b64u(D's X25519 pub))[:4],"big") % 10^6`.
+Every ready approver (another device, own `pk`, not D's credential) — also one that connects within the TTL (300 s) — gets
+`{"t":"pk_peer_ask","id","device":D,"name","at","exp","code","fa":<its own credential id>,"fa_ch":b64u(passkey.elevate_challenge(channel, approver, id, "pk_peer", id, digest))}`,
+digest = hex SHA-256(`"agentj-pk-peer-v1\n"+D+"\n"+name+"\n"+code`). Approver → `{"t":"pk_peer_answer","id","ok":true,"fa":{id,cd,ad,sig}}`
+or `{"t":"pk_peer_answer","id","ok":false}`; it gets `{"t":"pk_peer_answer_res","id","ok":true}` or `ok:false,why:
+passkey_failed | not_approver | gone | expired` (a failed assertion leaves the card open). Approved: D gets
+`{"t":"pk_peer_done","id","ok":true,"by":<approver name>}` and `{"t":"pk_offer","n","peer":id}` (no `replace`); the approval
+lasts another 300 s and is offered again when D reconnects or asks again; the first successful `pk_reg` (no `replace_fa`)
+under that offer replaces D's record (old key → lineage) and ends the request. Denied / expired / D's
+`{"t":"pk_peer_cancel","id"}`: D gets `{"t":"pk_peer_done","id","ok":false,"why":"denied|expired|cancelled"}`; the other
+approvers `{"t":"pk_peer_close","id"}`. Each decision: approvals.log `tool:"pk_peer"`, `reason:"pk_peer"`, `fa` = SHA-256 of
+the four assertion fields (`agentj approvals --verify` reads it as unsigned, never bad), notice to every remote, `security` push.
+One offer rule (security review M1, model §2) for `pk_offer_req`, the post-pairing offer and the offer after a ticket /
+passkey restore: a direct `pk_offer` only while no OTHER listed device holds a key (D's own credential on another record does
+not count); otherwise none — `pk_offer_req` is answered `{"t":"pk_reg_res","ok":false,"why":"peer_required"}` (the page
+starts `pk_peer_req`), the automatic offers are silently not made. A plain offer still cannot replace a key without
+`replace_fa`. Approvers are only devices whose `pk` record they registered themselves (record field `dev` = the registering
+device id; a record moved by a passkey restore keeps the old id and does not approve; a legacy record without `dev` does).
+If every other key is held by such a moved record, `pk_peer_req` answers `why:"no_approver"`.
+
+**B. Seat transfer (host `seat_transfer.py`; Dashboard routes above).** Phone controls (controls-v1 signatures, object
+`"transfer"` / `"cancel"`, target `{}`): `{"t":"seat_transfer","r","n","ts","sig"[,"fa"]}` — needs this remote's own
+passkey: none → `ctl_res {ok:false, why:"passkey_needed"}`; without `fa` → `why:"passkey_required", fa, fa_ch` =
+b64u(elevate_challenge(channel, device, n, "seat_transfer", n, sha256hex("transfer"))); then the same request with `fa`.
+Success → `ctl_res {r, action:"seat_transfer", ok:true, prompt_zh, prompt_en, token, expires_at}` to the asking session only;
+failures `why`: shape | stale | replay | no_key | bad_signature | passkey_failed | busy | unbound | not_found | billing_busy |
+rate_limited | offline | error. `{"t":"seat_transfer_cancel","r","n","ts","sig"}` (no Face ID) → `ctl_res {ok:true,
+status:"cancelled"|"none"|"bound"}`. Unsigned read `{"t":"seat_xfer_state","r"}` → `{"t":"seat_xfer_state","r","state":
+"none"|"issued"|"expired"|"bound"|"moved"|"cancelled"|"revoked","expires_at":unix_s|null}`; the same message without `r`
+goes to every remote on each change, with a notice (issued / cancelled / revoked / moved / bound) and a `security` push.
+The host polls status every 30 s while issued; on `bound` with an arrival whose HMAC verifies it sends every ready remote
+(and later each one on resume) `{"t":"host_moved","relay","channel","hostPub","name","at":unix_s}`; a bound without a
+verifiable arrival sends no `host_moved` and names nobody: the notice is only 「席位转移码已被使用。如果不是你本人，请到账户页确认。」 /
+"The seat transfer code was used. If that was not you, check your account page." The relay accepted from an arrival is
+`wss://<host>`, or `ws://` only to exactly `127.0.0.1` / `localhost`; never userinfo (same rule as dashboard
+`seat_transfer.ts`). Arrival wire form: `arrival.relay` = `<relay URL>#c=<new host channel>`
+(the Dashboard's arrival keeps exactly `x25519, relay, mac`); the mac covers channel, x25519 and the relay URL WITHOUT the
+`#c=` part. The new host applies `handover` only when the code it bound with starts with `ajh_` (a handover beside an `ajt_`
+code is ignored, host.log `seat_handover result=ignored` — the Dashboard minted that code and could forge a valid mac) and
+only after its HMAC verifies and `b` decrypts (source `transfer`, ≤ 10 remotes, public keys, names and public passkey parts
+only); seat-bind carries `arrival` only for an `ajh_` code. Terminal: `agentj seat transfer [--show] [--out FILE] [--cancel] [--status]`,
+`agentj seat setup-code [--show]` (issuing needs the administrator password typed into `sudo -k` at a real terminal; the
+code is masked as `ajh_••••…` + last 4 unless `--show`; `--out` creates a NEW 0600 file — an existing file or a symlink is
+refused before anything is issued; an issued code past `expires_at` is settled `expired` and dropped when the CLI reads it;
+a running serve is told through `seat_transfer_notice`). `agentj login` (`--seat`, `--seat-file`, a pasted prompt) and the
+Olares setup page take `ajt_` and `ajh_` codes alike.
+
+### P550 — 0.25.13 integration: widening needs this remote's Face ID · why a new key was not taken (#318 ③, #323 补)
+
+- `approval_set` widening (`approval.level` = `full` · `harness`, `approval.goal_nocard` = `true`, `jev.mode` = `off`) is ③
+  (`confirm_tier.owner_action("approval_widen")`, read at run time): a remote without its own passkey gets `ctl_res {ok:false,
+  why:"no_passkey"}` (the page shows the reason + 「在本机设置 Face ID（需另一台批准）」 → `pk_peer_req`); with one, the two
+  Face ID steps as for `harness`. Narrowing never asks. `dev_unbind` (another remote) and WeChat `unbind` read the same table.
+  controls.log lines of a control that carried Face ID say `"passkey":"uv"`.
+- `pk_reg_res {ok:false, why}`: `proof` = the record already holds a key and this registration was neither proven with it nor
+  approved by another remote (→ the page offers the peer flow), `expired` = no live offer, `unknown` = the record changed
+  (unpaired / revoked), `bad` = the registration did not verify. The page never says the bare 「没记住」 any more. The same
+  device registers for the same user handle with `excludeCredentials: []`, so its password manager replaces a key left behind.

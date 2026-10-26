@@ -7,10 +7,14 @@ Recommend WeChat first for mainland-network or Chinese-speaking owners, Telegram
 owners. Both can run. Only the scanning owner can use ClawBot; it is not a public or shareable bot.
 
 On an owner request, run `agentj wechat setup --phone`: a signed owner card opens before setup, then a QR appears in the
-paired Web App. At the owner's interactive terminal, `agentj wechat setup` displays the same binding QR locally.
+paired Web App, including when Settings → Connect WeChat sent the skill request.
+After binding, ask the owner to send ClawBot a message in WeChat to finish checking the connection: login does not supply
+a send context. The first eligible reply includes a greeting; never promise an unsolicited push without a context.
+Under **Settings → Channels → Forward replies to**, choose **System share** (default), **WeChat ClawBot** or **Telegram**. Unbound channels are disabled. Your choice saves immediately on this remote for this host, and both the reply card and reader use that destination and icon. Binding a channel does not select it automatically. Unbinding the selected channel resets to system share with one notice. A temporary send restriction keeps the chosen destination; a failed send never falls back or retries automatically.
+At the owner's interactive terminal, `agentj wechat setup` displays the same binding QR locally.
 Expired QR codes refresh automatically for up to ten minutes. A WeChat numeric verification code belongs in that panel
 or the terminal's hidden prompt, never chat. No key or QR URL in replies, logs or documents.
-`agentj wechat status` returns metadata only. `agentj wechat unbind` needs the signed owner card and clears local credentials;
+`agentj wechat status` returns metadata only; its `assistant` field is the last avatar outcome in fixed words (`error`, `detail`, `kind`) — quote those when the owner asks why WeChat could not answer. `agentj wechat unbind` needs the signed owner card and clears local credentials;
 the owner may also disconnect ClawBot in WeChat. Do not read or edit host-private state.
 
 Owner WeChat, allowlisted owner e-mail and private owner Telegram use one external-channel avatar service.
@@ -28,13 +32,14 @@ from discovery alone. `openrouter --model openrouter/<provider>/<model>` require
 model choice. Never create a paid fallback, pick an OpenRouter model for the owner or change the main harness silently.
 When the selected harness/model is unavailable, report the failure honestly and wait; no different paid route is used.
 
-Do not call the avatar a text-only assistant or limit capabilities in its wording. It can draw/edit through the harness's
-available native image capability; the host sends verified output as native images. This candidate's isolated native image
-executor is Linux Codex with its existing subscription login; other executors must report unavailable capabilities honestly.
-The current Claude/OpenCode engines remain tool-less pending policy integration. Ordinary text assistance still works.
-The executor calls `channel_forbidden(action)`; unknown actions and all actions needing Web App long-press/UV stay held.
-No model-provided approved/safe boolean grants authority. Integrate this seam with P503's single action table before
-claiming full capability parity. Do not enable an unmediated shell or pass owner credentials to model tools.
+Do not call the avatar a text-only assistant or limit capabilities in its wording. With the shared main plan (no
+separate avatar plan), owner WeChat / private Telegram / allowlisted owner mail run the main harness itself: same tools
+(commands, files, web search and pages, MCP), same folder, fence, settings and approval level. Every step needing a card
+goes through the host's ordinary approval path marked 「来自微信分身」 etc.; the card appears only in Web App / remotes,
+the channel gets 「已转到 Agent J 网页，请在那里确认」 (WeChat / Telegram), and a channel "yes" never approves. Batch,
+goal and full-level passes never cover an avatar step. A separate avatar plan (provider profile, OpenRouter, free)
+keeps its older limited executor; say so honestly. Friends of another owner and customer service stay tool-less;
+same-owner device tasks run in the main conversation.
 
 A request needing main context is sent to a separate main-configured reviewer with bounded main-window history.
 Program sensitivity/time checks and the reviewer independently control disclosure. Suspicious answers stay in Web App;

@@ -11,9 +11,11 @@ import { signedWrite, whyText } from './controls.js';
 import { canAssert } from './faceid.js';
 import { assertPrf, sealPrf, salt32 } from './vault.js';
 import { t, onLang } from './t.js';
-import { el, toast, toastAction, confirmSheet } from './ui.js';
+import { el, toast, toastAction } from './ui.js';
+import { paintPk, pkSheet, faState, webauthnErr } from './pkassist.js';   // P539: no own passkey here · why the tap failed
 
 let info = null, busy = false, last = '', H = { setupFaceId() {} };
+let pkErr = null;   // P539: {err, fa_s} after a failed 「用 Face ID 继续」 — the row says why + 再试一次
 const HEX32 = /^[0-9a-f]{32}$/;
 /** The host block `vault` (§37.9) → {has, any, peers, mode} | null. Pure. */
 export function parse(x) {
@@ -53,6 +55,7 @@ export function paint() {
   el('set-vault-share').disabled = busy;
   el('set-vault-share').textContent = t(busy ? 'p414.v.waitBtn' : 'p414.v.share');
   el('set-vault-last').textContent = last; el('set-vault-last').hidden = !last;
+  paintPk(el('set-vault-pk'), pkErr && s === 'share' && !busy ? { fa: pkErr.fa_s, err: pkErr.err, retry: share } : {});   // P539
 }
 function say(text) { last = text || ''; paint(); }
 
@@ -69,7 +72,7 @@ const WHY = ['no_vault', 'has', 'no_peer', 'no_passkey', 'temporary', 'web_not_a
   'passkey_failed', 'offline', 'bad_signature', 'replay', 'stale', 'shape'];
 function fail(why) {
   busy = false;
-  if (why === 'no_passkey') { say(''); toastAction(t('p414.v.why.no_passkey'), t('sout.setup'), () => H.setupFaceId(), 8000); return; }
+  if (why === 'no_passkey') { say(''); toastAction(t('p414.v.why.no_passkey'), t('pkp.setupHere'), () => H.setupFaceId(), 8000); return; }
   say(t('p414.v.failed', { why: t('p414.v.why.' + (WHY.includes(why) ? why : 'failed')) }));
 }
 /** 「让这台也能用」: step 1 (host nonce, challenge, fresh salt, one-time key) → 「用 Face ID 继续」 → step 2 → wait for a yes. */
@@ -78,7 +81,7 @@ async function share() {
   if (!canAssert()) { fail('no_passkey'); return; }
   const G = gen();
   if (!G) { fail('offline'); return; }
-  busy = true; say('');
+  busy = true; pkErr = null; say('');
   const c = await new Promise((resolve) => {
     const r = request({ t: 'vault_share' }, (m) => {
       if (m.t !== 'ctl_res' && m.t !== 'offline') return;
@@ -95,11 +98,16 @@ async function share() {
   let p = null;
   const grab = () => { try { p = assertPrf(unb64u(c.fa_ch), c.fa, salt32(c.salt), null); } catch { p = Promise.reject(new Error('webauthn')); } p.catch(() => {}); };
   yes.addEventListener('click', grab);
-  const ok = await confirmSheet(t('p414.v.shareTitle'), t('p414.v.shareText'), t('p414.v.shareYes'));
+  const ok = await pkSheet(faState(c.fa_s), t('p414.v.shareTitle'), t('p414.v.shareText'), t('p414.v.shareYes'));   // P539
   yes.removeEventListener('click', grab);
   if (!ok || !p) { p?.then((r) => r.prf?.fill(0), () => {}); busy = false; say(''); return; }
   let got;
-  try { got = await p; } catch { busy = false; say(''); toast(t('p408.faCancel'), 3600); return; }
+  try { got = await p; } catch (e) {
+    busy = false;
+    const err = webauthnErr(e);
+    if (err) { pkErr = { err, fa_s: faState(c.fa_s) }; say(''); return; }   // P539: the row says why, 再试一次 runs share() again
+    say(''); toast(t('p408.faCancel'), 3600); return;
+  }
   if (!got.prf) { busy = false; say(t('p414.v.noPrf')); return; }
   let msg;
   try {

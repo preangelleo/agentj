@@ -111,7 +111,7 @@ body:is([data-view="mem"],[data-view="act"],[data-view="tasks"],[data-view="mode
 .menupage[hidden]{display:none}
 @keyframes menu-in{from{opacity:0}to{opacity:1}}
 @media (prefers-reduced-motion:reduce){.menupage{animation:none}}
-#badge-panel.menupage{z-index:47}          /* opened from Settings (45): above it; the confirm card (48) above all */
+#badge-panel.menupage{z-index:47}          /* opened from Settings (45): above it; confirmation cards (P551 --z-confirm) above all */
 .composer:has(.cmdmenu:not([hidden])){z-index:44}   /* the command list; shortcuts / silent history (46) open above it */
 
 /* ---- P238 · the command list is a card, not a page (owner, 2026-10-13: 「卡片从下往上弹起来……从 5 小时额度条这儿弹出来
@@ -443,6 +443,13 @@ body:is([data-view="mem"],[data-view="act"],[data-view="tasks"],[data-view="mode
 #settings .setrow:has(>.segrow){grid-template-columns:minmax(0,1fr) auto}
 #settings .setrow>.segrow{grid-column:2;justify-self:end}
 @media (max-width:420px){ #settings .setrow:has(>.segrow){grid-template-columns:minmax(0,1fr)} #settings .setrow>.segrow{grid-column:1 / -1;justify-self:start} }
+/* P551: the approval level has four options (安全 · 中等 · 全放行 · 跟随 Harness) — on a phone they sit 2 × 2, equal cells, in one
+   rounded frame, so no language overflows 360 px; a wider screen keeps the one row. */
+@media (max-width:420px){
+  #settings #set-level-row>.segrow{display:grid;grid-template-columns:1fr 1fr;justify-self:stretch;row-gap:0}
+  #set-level-row>.segrow::before{inset:2px 0;border-radius:24px}
+  #set-level-row>.segrow button{padding:0 8px}
+}
 
 /* P340 #22: Settings' notices are the Noir Notification now (settings.js say → ui.js notify); no bar under the header */
 /* (f) heartbeat: interval dropdown + custom minutes + the daily time */
@@ -809,3 +816,8 @@ html:root :is(#quoteDlgDel,#quoteDlgJump,#ctm-e-del,#ctm-e-save,#phone-env-copy,
 
 /* P527: standalone rescue cards need the same breathing room as list cards. */
 #settings #layout-diag-card{margin-top:var(--ui-space-content)}
+
+/* P537: full-width prompt actions under the idle schedule. */
+#settings .sethb-prompt{grid-column:1 / -1;display:flex;flex-direction:column;align-items:flex-start;gap:8px;min-width:0}
+#settings .sethb-prompt .setlink{justify-content:flex-start;text-align:start;max-width:100%}
+#settings #set-hb-update[hidden]{display:none}

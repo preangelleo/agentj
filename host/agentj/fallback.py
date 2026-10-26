@@ -13,12 +13,11 @@ import os
 import re
 import shutil
 import subprocess
-import tempfile
 import threading
 import urllib.request
 from pathlib import Path
 
-from . import local_model, opencode_free, privacy
+from . import local_model, opencode_free, privacy, scratch
 
 TERMS_URL = 'https://opencode.ai/v2/docs/console/models/'
 # Explicitly reviewed families only. Space Bunny / MiniMax are excluded even during their three-day promotion.
@@ -40,7 +39,7 @@ def free_models(exe):
     if not exe or os.environ.get('AGENTJ_OC_FREE_LIST') == 'off': return None
     try:
         env = {k: os.environ[k] for k in ('PATH', 'LANG', 'SSL_CERT_FILE', 'SSL_CERT_DIR', 'HTTPS_PROXY', 'HTTP_PROXY', 'NO_PROXY') if k in os.environ}
-        with tempfile.TemporaryDirectory(prefix='agentj-free-list-') as home:
+        with scratch.home('agentj-free-list-') as home:
             env.update(HOME=home, XDG_CONFIG_HOME=home+'/config', XDG_DATA_HOME=home+'/data', XDG_CACHE_HOME=home+'/cache',
                        OPENCODE_DISABLE_AUTOUPDATE='1', OPENCODE_DISABLE_SHARE='1')
             r = subprocess.run([exe, 'models', 'opencode', '--verbose'], capture_output=True, text=True, timeout=20,
@@ -79,7 +78,7 @@ def zero_retention_today():
 
 def cloud_reply(exe, model, prompt):
     # An empty HOME also removes user plugins, MCP configuration, auth files and instruction files.
-    with tempfile.TemporaryDirectory(prefix='agentj-fallback-home-') as home:
+    with scratch.home('agentj-fallback-home-') as home:
         env = {k: os.environ[k] for k in ('PATH', 'LANG', 'SSL_CERT_FILE', 'SSL_CERT_DIR', 'HTTPS_PROXY', 'HTTP_PROXY', 'NO_PROXY') if k in os.environ}
         env.update(HOME=home, XDG_CONFIG_HOME=home+'/config', XDG_DATA_HOME=home+'/data', XDG_CACHE_HOME=home+'/cache')
         version = subprocess.run([exe, '--version'], capture_output=True, text=True, timeout=5, cwd=home, env=env)

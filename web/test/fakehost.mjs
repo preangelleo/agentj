@@ -15,6 +15,7 @@ const EMPTY = new Uint8Array(0);
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 const P33_JSON = 61440;
+const FA_OFFER = { fa: 'Y3JlZC0x', fa_ch: 'Y2hhbGxlbmdlLWNoYWxsZW5nZS0zMmJ5dGVz' };   // P336/P551: a passkey_required offer (any `fa` accepted)
 
 function pad(obj, max) {
   const j = enc.encode(JSON.stringify(obj));
@@ -175,6 +176,7 @@ export async function startFakeHost() {
     if (st.onApp && await st.onApp(c, m, (o) => sendApp(c, o))) return;   // a test's own handler (P57 media: media_get)
     if (st.friends && /^(fr_|pg_)/.test(m.t)) return onFriends(c, m);     // §17.7 (0.16): the friends page
     if (st.remotes && /^dev_/.test(m.t)) return onRemotes(c, m);            // P171 §24: 遥控器管理
+    if (st.wechat && m.t === 'wechat') return onWechat(c, m);               // P501 + P551: WeChat channel (unbind = Face ID)
     if (m.t === 'res_watch') { st.resWatch.push(m.on); if (m.on && st.res) await sendApp(c, { t: 'res', ...st.res }); return; }   // P181 §22.1
     if (m.t === 'agent_name') {                                              // P181 §22.2: signed like the real host
       const ok = await verifyControl(c, 'agent_name', m, { name: m.name });
@@ -316,10 +318,13 @@ export async function startFakeHost() {
       if (!ok) return no('bad_signature');
       // P336 addendum: a widening switch from a phone with a passkey (st.approvalPasskey) needs Face ID — any `fa` is accepted
       const widen = (m.key === 'approval.level' && m.value === 'full') || (m.key === 'approval.goal_nocard' && m.value === true) || (m.key === 'jev.mode' && m.value === 'off');
-      if (widen && st.approvalPasskey && !m.fa) return no('passkey_required', { fa: 'Y3JlZC0x', fa_ch: 'Y2hhbGxlbmdlLWNoYWxsZW5nZS0zMmJ5dGVz' });
+      // P551 (#320): 「跟随 Harness」 ALWAYS needs Face ID — a remote with no passkey at all gets no_passkey
+      if (m.key === 'approval.level' && m.value === 'harness' && !st.approvalPasskey) return no('no_passkey');
+      if (m.key === 'approval.level' && m.value === 'harness' && !m.fa) return no('passkey_required', { ...FA_OFFER });
+      if (widen && st.approvalPasskey && !m.fa) return no('passkey_required', { ...FA_OFFER });
       if (widen && st.approvalPasskey && st.approvalFaFail) { st.approvalFaFail = false; return no('passkey_failed'); }
       if (st.approvalWhy) { const why = st.approvalWhy; st.approvalWhy = null; return no(why); }
-      const good = m.key === 'jev.mode' ? ['typesafe', 'openrouter', 'off'].includes(m.value) : m.key === 'approval.level' ? ['safe', 'standard', 'full'].includes(m.value) : m.key === 'approval.goal_nocard' && typeof m.value === 'boolean';
+      const good = m.key === 'jev.mode' ? ['typesafe', 'openrouter', 'off'].includes(m.value) : m.key === 'approval.level' ? ['safe', 'standard', 'full', 'harness'].includes(m.value) : m.key === 'approval.goal_nocard' && typeof m.value === 'boolean';
       if (!good) return no('shape');
       st.prefs = st.prefs || { appearance: { language: 'zh', theme: 'system' } };
       const section = m.key.split('.')[0];
@@ -465,6 +470,12 @@ export async function startFakeHost() {
     if (!ok) return reply({ t: 'ctl_res', action: m.t, ok: false, why: 'bad_signature' });
     if (R.why) { const why = R.why; R.why = null; return reply({ t: 'ctl_res', action: m.t, ok: false, why }); }
     const d = R.items.find((x) => x.id === m.device);
+    // P551 (#318) ③: unbinding ANOTHER remote needs this remote's Face ID — R.passkey true → passkey_required {fa, fa_ch}
+    // until the same signed object comes back with `fa`; false → no_passkey; unset = an older host (no Face ID step)
+    if (m.t === 'dev_unbind' && m.device !== c.devId && !(d && d.me === true && !R.items.some((x) => x.id === c.devId))) {
+      if (R.passkey === false) return reply({ t: 'ctl_res', action: m.t, ok: false, why: 'no_passkey' });
+      if (R.passkey === true && !m.fa) return reply({ t: 'ctl_res', action: m.t, ok: false, why: 'passkey_required', ...FA_OFFER });
+    }
     if (m.t === 'dev_name') { if (!d) return reply({ t: 'ctl_res', action: m.t, ok: false, why: 'gone' }); d.name = m.name.trim(); }
     if (m.t === 'dev_unbind') { if (!d) return reply({ t: 'ctl_res', action: m.t, ok: false, why: 'gone' }); R.items = R.items.filter((x) => x !== d); }
     if (m.t === 'dev_add') { R.adding = true; return reply({ t: 'ctl_res', action: m.t, ok: true, link: R.link, qr: R.qr, expires: Math.floor(Date.now() / 1000) + 300, ttl: 300 }); }
@@ -479,6 +490,24 @@ export async function startFakeHost() {
     }
     await reply({ t: 'ctl_res', action: m.t, ok: true });
     for (const x of ready()) await sendApp(x, remotesSnap(x));
+  }
+
+  // ---- P501/P551 WeChat: st.wechat = {bound, passkey}; status → wechat_state; setup/verify/unbind verified like the real host
+  // (§8 control signature over {op, id, code}); unbind with passkey true → passkey_required until `fa`, false → no_passkey.
+  async function onWechat(c, m) {
+    const W = st.wechat;
+    const state = () => sendApp(c, { t: 'wechat_state', bound: !!W.bound, pending: 0 });
+    if (m.op === 'status') return state();
+    const target = { op: m.op, id: m.id || '', code: m.code || '' };
+    const ok = await verifyControl(c, 'wechat', m, target);
+    (W.writes ||= []).push({ ...m, sigOk: ok });
+    const no = (why, more) => sendApp(c, { t: 'ctl_res', r: m.r, action: 'wechat', ok: false, why, ...more });
+    if (!ok) return no('bad_signature');
+    if (m.op === 'unbind' && W.passkey === false) return no('no_passkey');
+    if (m.op === 'unbind' && W.passkey === true && !m.fa) return no('passkey_required', FA_OFFER);
+    if (m.op === 'unbind') W.bound = false;
+    await sendApp(c, { t: 'ctl_res', r: m.r, action: 'wechat', ok: true });
+    return state();
   }
 
   // the `preferences` message; a 0.15 host adds its `host` block (version, phone-settable keys, paired phones — metadata)
@@ -732,7 +761,7 @@ export async function startFakeHost() {
         autoReply: true, replyFor: null, epoch: st.epoch + 1, turns: [], blobs: new Map(), staged: new Set(), queued: new Map(), opens: [], cancels: [],
         answers: [], qAnswers: [], chunks: 0, wavs: [], menu: null, models: null, meter: null, sigOk: [], says: [], modelSets: [], slashes: [],
         stallAfter: 0, blobErr: null, sayWhy: null, estop: false, rate: true, firsts: [], errors: [], lastError: undefined,
-        prefs: null, prefSet: true, prefSets: [], approvalSets: [], signedPrefs: true, approvalWhy: null, approvalPasskey: false, approvalFaFail: false, approvalUnsigned: false, version: null, friends: null, remotes: null, tgfwd: false, tgfwdWhy: null, tgFwds: [], holdAnswers: false,
+        prefs: null, prefSet: true, prefSets: [], approvalSets: [], signedPrefs: true, approvalWhy: null, approvalPasskey: false, approvalFaFail: false, approvalUnsigned: false, version: null, friends: null, remotes: null, wechat: null, tgfwd: false, tgfwdWhy: null, tgFwds: [], holdAnswers: false,
         resWatch: [], res: null, renames: [], renameWhy: null, busyget: false,
         hfind: true, finds: [], findMute: false, findDelay: 0, olderDelay: 0,
         cards: false, cardsMute: false, cardGets: [], upgItems: [], upgOpen: null, upgOffs: [],   // P203
@@ -741,6 +770,10 @@ export async function startFakeHost() {
       log.length = 0;
     },
     get conns() { return conns.size; },
+    /** P547: this host's X25519 public key (b64u) and its allowlist — a seat move hands the remotes to another fake host */
+    hostPub: b64u(hostKp.pub),
+    allowList: () => [...allow.entries()].map(([k, v]) => [k, { ...v }]),
+    trust(entries) { for (const [k, v] of entries) allow.set(k, { ...v }); },
     sendRaw(u8) { for (const c of conns) c.sendBin(u8); },
     stop: () => new Promise((r) => { for (const c of conns) c.destroy(); server.closeAllConnections?.(); server.close(() => r()); }),
   };

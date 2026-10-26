@@ -118,7 +118,8 @@ class UpgradeQualification(unittest.TestCase):
         self.assertEqual(update.upgrade_health([]), (True,[]))
         self.assertEqual(update.upgrade_health([{'id':'upgrade-restart','status':'fail'}]), (True,[]))
         rec = {'result':'ok','reason':'upgraded','from':'1','to':'2','service':'restart_scheduled','existing_issues':['root-structure']}
-        self.assertIn('升级已完成', update.result_block(rec))
+        self.assertIn('升级成功，一切正常', update.result_block(rec))
+        self.assertNotIn('root-structure', update.result_block(rec))
         self.assertIn('Agent J 主机上的 Agent J 程序已升级到', phone_update.text(rec))
         self.assertIn('更新并刷新', phone_update.text(rec))
 

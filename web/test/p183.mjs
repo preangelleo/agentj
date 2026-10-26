@@ -298,7 +298,9 @@ try {
       await ev(p, `${card(id('B'))}.querySelector('.mact.tg').click()`);
       await waitFor(p, `${card(id('B'))}.querySelector('.mact.tg').dataset.state === 'failed'`);
       assert.equal(await ev(p, `${card(id('B'))}.querySelector('.mtg-status').textContent`), '文件超过 Telegram 的 50 MB 上限，没有发');
-      // the reply card's forward button: the Telegram mark instead of the arrow
+      // the reply card's forward button: the Telegram mark instead of the arrow — once the owner picked Telegram as the
+      // forward destination (P536: explicit 「转发去向」, default system share)
+      assert.equal(await ev(p, `import('./js/forward-choice.js').then((m) => (m.select('tg'), m.destination()))`), 'tg');
       const bar = await ev(p, `(() => { const b = document.getElementById('fwdBtn'); return [b.dataset.tg, getComputedStyle(b.querySelector('.gtg')).display, getComputedStyle(b.querySelector('.g0')).display]; })()`);
       assert.deepEqual(bar, ['1', 'block', 'none']);
       // P201: both places draw the same paper plane, same box and the same colour as the glyphs next to them
@@ -315,6 +317,7 @@ try {
     p = await paired(1440, 900, 'dark', { caps: ['tgfile'], tgfwd: true });   // P201: the paper plane on a computer, dark
     try {
       await page(p);
+      await ev(p, `import('./js/forward-choice.js').then((m) => m.select('tg'))`);   // P536: the owner's explicit choice
       await ev(p, `document.getElementById('rmbar').scrollIntoView({ block: 'end' })`);
       writeFileSync(join(OUT, 'p183-telegram-desktop-dark.png'), await shoot(p));
       assert.deepEqual(p.problems, []);

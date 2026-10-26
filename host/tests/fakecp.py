@@ -17,20 +17,27 @@ CONTEXTS = {"/v1/host/login": "agentjarvis-host-login-v1", "/v1/host/poll": "age
             "/v1/host/report": "agentjarvis-host-report-v1", "/v1/host/sync": "agentjarvis-host-sync-v1",
             "/v1/host/rename": "agentjarvis-host-rename-v1", "/v1/host/seat-bind": "agentjarvis-host-seat-bind-v1",
             "/v1/host/seat-leave": "agentjarvis-host-seat-leave-v1",
-            "/v1/host/upgrade-auth": "agentjarvis-host-upgrade-auth-v1"}
+            "/v1/host/upgrade-auth": "agentjarvis-host-upgrade-auth-v1",
+            "/v1/host/seat-transfer": "agentj-host-seat-transfer-v1",                   # P547
+            "/v1/host/seat-transfer/cancel": "agentj-host-seat-transfer-cancel-v1",
+            "/v1/host/seat-transfer/status": "agentj-host-seat-transfer-status-v1"}
 KEYS = {"login": {"v", "t", "channel", "ts"}, "poll": {"v", "t", "channel", "ts", "login_id"},
         "report": {"v", "t", "channel", "ts", "seq", "agent", "devices", "pending"},
         "sync": {"v", "t", "channel", "ts", "results"}, "rename": {"v", "t", "channel", "ts", "name"},
         "seat_bind": {"v", "t", "channel", "ts", "token", "name"}, "seat_leave": {"v", "t", "channel", "ts"},
-        "upgrade_auth": {"v", "t", "channel", "ts", "code", "version"}}
-OPTIONAL = {"report": {"agent_name", "machine", "language", "language_at", "harness", "notices_v", "notice_receipts"}}   # A3.2 / A1 (0.15): optional report keys
+        "upgrade_auth": {"v", "t", "channel", "ts", "code", "version"},
+        "seat_transfer": {"v", "t", "channel", "ts", "token_hash", "handover"},   # P547 (dashboard seat_transfer.ts KEYS)
+        "seat_transfer_cancel": {"v", "t", "channel", "ts"}, "seat_transfer_status": {"v", "t", "channel", "ts"}}
+OPTIONAL = {"report": {"agent_name", "machine", "language", "language_at", "harness", "notices_v", "notice_receipts"},   # A3.2 / A1 (0.15): optional report keys
+            "seat_bind": {"arrival"}}   # P547: the new host's HMAC'd arrival (dashboard hostapi.ts OPTIONAL seat_bind)
 # the live 0.14 dashboard (agentjarvis/dashboard/src/hostapi.ts at the 0.14 release): same KEYS, report OPTIONAL only
 # ["agent_name", "machine"] (anything else → 400 bad_request in openEnvelope, before the seq gate), and no upgrade-auth route
 # (→ the front Worker's bare `404 Not Found`, text/plain)
 OPTIONAL_014 = {"report": {"agent_name", "machine"}}
 PATH_OF = {"seat_bind": "/v1/host/seat-bind", "seat_leave": "/v1/host/seat-leave",
-           "upgrade_auth": "/v1/host/upgrade-auth"}   # inner `t` → path where they differ
-SEAT_TOKEN = re.compile(r"ajt_[A-Za-z0-9_-]{43}")
+           "upgrade_auth": "/v1/host/upgrade-auth", "seat_transfer": "/v1/host/seat-transfer",
+           "seat_transfer_cancel": "/v1/host/seat-transfer/cancel", "seat_transfer_status": "/v1/host/seat-transfer/status"}
+SEAT_TOKEN = re.compile(r"aj[th]_[A-Za-z0-9_-]{43}")   # P547: ajh_ = a host-issued transfer code
 
 
 def unb64u(s: str) -> bytes:
@@ -71,6 +78,11 @@ class FakeCP:
         #                                        | "bad_name" | "garbled" (200 without a usable body) | int (5xx)
         self.seat_channel_bound: set[str] = set()
         self.seat_bound_token: dict[str, tuple] = {}   # channel → (code, name) that bound it (review SS-02: idempotent replay)
+        # P547: /v1/host/seat-transfer[/cancel|/status] — channels in xfer_hosts count as bound
+        self.xfer_hosts: set[str] = set()
+        self.xfers: list[dict] = []            # accepted seat-transfer bodies
+        self.xfer_live: dict[str, dict] = {}   # channel → {"status", "token_hash", "handover"}
+        self.xfer_answer: dict | None = None   # a scripted status answer
         # review SS-02: /v1/host/seat-leave
         self.seat_leaves: list[dict] = []      # accepted (signature-valid) seat-leave bodies
         self.leave_script: list = []           # scripted answers: "not_found" | "rate" | int (5xx)
@@ -217,6 +229,23 @@ class FakeCP:
                 self.taken.add(inner["name"].lower())
                 return 200, {"status": "bound", "host_id": "h_seat", "tenant": {"slug": "acme-co", "name": "Acme\x1b[2J Co"},
                              "agent_name": inner["name"], **self.bound_extra}
+            if path == "/v1/host/seat-transfer":
+                self.xfers.append(inner)
+                if inner["channel"] not in self.xfer_hosts:
+                    return 404, {"error": "not_bound"}
+                self.xfer_live[inner["channel"]] = {"status": "issued", "token_hash": inner["token_hash"], "handover": inner["handover"]}
+                return 201, {"setup_id": "s_xfer1", "expires_at": int(time.time()) + 86400, "tenant": {"slug": "acme-co", "name": "Acme"}}
+            if path == "/v1/host/seat-transfer/cancel":
+                x = self.xfer_live.get(inner["channel"])
+                if x and x["status"] == "issued":
+                    x["status"] = "revoked"
+                    return 200, {"status": "cancelled"}
+                return 200, {"status": "bound" if x and x["status"] == "bound" else "none"}
+            if path == "/v1/host/seat-transfer/status":
+                if self.xfer_answer is not None:
+                    return 200, self.xfer_answer
+                x = self.xfer_live.get(inner["channel"])
+                return 200, {"status": x["status"] if x else "none", "expires_at": int(time.time()) + 86400 if x else None}
             if path == "/v1/host/seat-leave":
                 self.seat_leaves.append(inner)
                 step = self.leave_script.pop(0) if self.leave_script else None

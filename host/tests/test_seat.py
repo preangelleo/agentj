@@ -63,6 +63,7 @@ class SeatBindUnit(unittest.TestCase):
             self.assertEqual(res["tenant"], {"slug": "acme-co", "name": "Acme [2J Co"})
             self.assertEqual(res["agent_name"], "市场部 Agent")
             body = cp.seat_binds[0]
+            # P547: an account-page ajt_ code carries no arrival — only a host-issued ajh_ one does (test_p547_seat)
             self.assertEqual(set(body), {"v", "t", "channel", "ts", "token", "name"})
             self.assertEqual((body["t"], body["name"], body["channel"]), ("seat_bind", "市场部 Agent", cloud.channel_of(self.st)))
             self.assertEqual(cp.rejected, [])

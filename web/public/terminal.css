@@ -103,3 +103,6 @@
   color:#faf9f5;font:600 .875rem/1 var(--font-body);cursor:pointer}
 .termchip-open{background:#faf9f5;color:#141414;border-color:#faf9f5}
 .termchip-btn:focus-visible{outline:2px solid #71bbde;outline-offset:2px}
+/* P539: the terminal sheet's own passkey line (pkassist.js) — the sheet is always dark */
+.term-sheet .pkassist{margin:0;color:rgba(250,249,245,.78)}
+.term-sheet .pkassist[data-state="fail"] .pkassist__text{color:#ffe292}

@@ -22,10 +22,11 @@ import {computerBrowser} from './termhook.js';
 import { channel } from './session.js';
 import * as api from './api.js';
 import { t, lang, onLang } from './t.js';
-import { mk, toast, toastAction, notify, confirmSheet, toastOff } from './ui.js';
+import { mk, toast, toastAction, notify, toastOff } from './ui.js';
 import { SVG } from './icons.js';
 import { registerLayer } from './layers.js';
 import { elevateChallenge, approve, canAssert, keysDigest } from './faceid.js';
+import { paintPk, pkSheet, failNotice, faState, webauthnErr } from './pkassist.js';   // P539: no own passkey here · why a tap failed
 
 export const NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 export const NAME_MAX = 64;
@@ -105,7 +106,7 @@ export function parse(m) {
   const third = (Array.isArray(m.third) ? m.third.slice(0, 200) : []).map((r) => row({ ...r, type: 'key', set: r?.set !== false })).filter(Boolean);
   const fa = typeof m.fa === 'string' && m.fa.length > 0 && m.fa.length <= 1400 ? m.fa : null;
   const src = (Array.isArray(m.src) ? m.src.slice(0, 80) : []).map(source).filter(Boolean);
-  return { id: m.id, n: m.n, fa, base, third, src, routing: parseRouting(m.routing) };
+  return { id: m.id, n: m.n, fa, fa_s: fa ? faState(m.fa_s) : null, base, third, src, routing: parseRouting(m.routing) };
 }
 
 export function parseRouting(v) {
@@ -121,6 +122,7 @@ export function parseCorrection(v) {
 
 let S = null;                       // the page model (names / states only) + the armed challenges
 let root = null, hooks = {}, busy = false, seq = 0, held = null, addForm = null;
+let pkErr = null;                   // P539: {name, err, retry} — the row whose passkey tap just failed says why, under itself
 const verification = new Map();
 export function saved(name, verify) {
   if (!okName(name)) return;
@@ -183,7 +185,7 @@ export async function load(box) {
   status(t('p352.loading'));
   const m = await api.keysGet();
   if (my !== seq) return;
-  S = parse(m);
+  S = parse(m); pkErr = null;
   chs.clear();
   if (!S) { root.replaceChildren(); status(t('p352.unavailable')); return; }
   status('');
@@ -256,6 +258,11 @@ function rowNode(r, vendor) {
       move.addEventListener('click',()=>writeSetup('move',result.offer)); box.append(move);
     } else if (result) box.append(mk('p','keys-desc',t(result.valid?'p450.valid':'p450.unknown')));
     main.append(box);
+  }
+  if (pkErr && pkErr.name === r.name) {   // P539: why the passkey tap failed + 再试一次 (from the tap) + 在本机设置通行密钥
+    const pk = mk('div', 'pkassist keys-pk'); pk.id = 'keys-pk'; pk.setAttribute('role', 'status');
+    paintPk(pk, { fa: S && S.fa_s, err: pkErr.err, retry: pkErr.retry });
+    main.append(pk);
   }
   li.append(main);
   if (r.type !== 'oauth') {
@@ -375,6 +382,7 @@ async function writeSetup(op,name) {
   if (!ch) { toast(t('p450.again'),4000); return; }
   const res=await run(op,name,approve(ch,S.fa));
   if (res.ok) { checks.clear(); toast(t(op==='unify'?'p450.unified':'p450.moved'),4500); await load(); }
+  else if (res.err) failNotice(res.err, S && S.fa_s, () => writeSetup(op, name));   // P539
   else if(res.why!=='cancel') toast(t('p450.failed'),4500);
 }
 
@@ -416,7 +424,7 @@ registerLayer({ element: () => root?.querySelector('.kadd'), open: addOpen, clos
 const deviceNoun = () => t(computerBrowser()?'p417.key.computer':'p417.key.phone');
 function noPasskey() {
   if(phoneConfirmation(!S?.fa))return;
-  toastAction(t('p352.needFaceId',{device:deviceNoun()}), t('p417.key.setupApproval'), () => { if (hooks.setupFaceId) hooks.setupFaceId(); else toast(t('sout.noFaceId'), 4000); }, 8000);
+  toastAction(t('p352.needFaceId',{device:deviceNoun()}), t('pkp.setupHere'), () => { if (hooks.setupFaceId) hooks.setupFaceId(); else toast(t('sout.noFaceId'), 4000); }, 8000);
 }
 const why = (w) => ({ busy: 'p352.cardBusy', no_passkey: 'p352.needFaceId', passkey: 'p352.faRefused', gone: 'p352.gone', missing: 'p352.gone', offline: 'p352.offline', timeout: 'p352.offline' }[w] || 'models.failed');
 
@@ -426,7 +434,7 @@ function act(op, r, vendor, button) {
   if (!S || !S.fa || !canAssert()) return noPasskey();
   const ch = chs.get(op + '\n' + r.name);
   if (!ch) return toast(t('p352.busy'));
-  if (op === 'copy') return copy(r, ch, button);
+  if (op === 'copy') return copy(r, ch, button, vendor);
   return remove(r, vendor, ch);
 }
 
@@ -442,7 +450,8 @@ async function run(op, name, faP, more) {
   busy = true;
   try {
     let fa;
-    try { fa = await faP; } catch (e) { return { ok: false, why: e && e.name === 'NotAllowedError' ? 'cancel' : 'fa_error' }; }   // the owner closed the sheet = quiet
+    try { fa = await faP; } catch (e) { return { ok: false, why: e && e.name === 'NotAllowedError' ? 'cancel' : 'fa_error', err: webauthnErr(e) }; }   // the owner closed the sheet = quiet (P539: the row still says why)
+    if (pkErr) { pkErr = null; draw(); }
     chs.clear();                                       // this nonce is spent the moment it is sent
     const res = await api.keysOp(op, name, id, n, fa, more);
     if (res.n) rearm(res.n);
@@ -450,8 +459,16 @@ async function run(op, name, faP, more) {
   } finally { busy = false; }
 }
 
+/** P539: a passkey tap that failed (res.err) → the row says why with 再试一次; true = said (no toast on top). */
+function pkFailed(res, name, retry) {
+  if (!res.err) return false;
+  pkErr = { name, err: res.err, retry };
+  draw();
+  root?.querySelector('#keys-pk')?.scrollIntoView?.({ block: 'nearest' });
+  return true;
+}
 /** 拷贝: approve() and clipboard.write() both start in this tap. */
-function copy(r, ch, button) {
+function copy(r, ch, button, vendor) {
   let give, drop;
   const value = new Promise((ok, no) => { give = ok; drop = no; });
   const blob = value.then((v) => new Blob([v], { type: 'text/plain' }));
@@ -465,6 +482,7 @@ function copy(r, ch, button) {
   run('copy', r.name, faP).then(async (res) => {
     if (!res.ok || typeof res.value !== 'string') {
       drop(new Error('no value'));
+      if (pkFailed(res, r.name, () => act('copy', r, vendor, button))) return;
       if (res.why !== 'cancel') toast(t(why(res.why),{device:deviceNoun()}), 4200);
       if (res.why === 'gone' || res.why === 'missing') load();
       return;
@@ -517,7 +535,7 @@ async function importKey(r, f) {
     if (ch) { faP = approve(ch, S.fa); faP.catch(() => {}); }
   };
   yes.addEventListener('click', pre);
-  const shown = confirmSheet(t('p362.importTitle', { name: r.name }), t('p362.importText', { name: r.name, src: label }), t('p362.importGo'));
+  const shown = pkSheet(S.fa_s, t('p362.importTitle', { name: r.name }), t('p362.importText', { name: r.name, src: label }), t('p362.importGo'));   // P539
   if (opt) body.after(opt);
   let ok;
   try { ok = await shown; } finally { yes.removeEventListener('click', pre); if (opt) opt.remove(); }
@@ -528,6 +546,7 @@ async function importKey(r, f) {
     toast(t(res.old === 'commented' ? 'p362.importedCommented' : res.old === 'comment_failed' ? 'p362.commentFailed' : 'p362.imported', { name: r.name }), 4200, 'success');
     return load();
   }
+  if (pkFailed(res, r.name, () => importKey(r, f))) return;
   if (res.why !== 'cancel') toast(t(res.why === 'exists' ? 'p362.exists' : res.why === 'changed' ? 'p362.changed' : why(res.why)), 4200);
   if (['gone', 'missing', 'exists', 'changed'].includes(res.why)) load();
 }
@@ -541,11 +560,12 @@ async function remove(r, vendor, ch) {
   const sep = lang() === 'en' ? ' ' : '';             // the in-use warning leads: it is the one thing that breaks at once
   const text = (r.in_use ? t('p352.delInUse') + sep : '') + t(vendor ? 'p352.delText' : 'p352.delTextThird', { name: r.name, vendor: vendor || '' });
   let ok;
-  try { ok = await confirmSheet(t('p352.delTitle', { name: r.name }), text, t('p352.delete'), true); }
+  try { ok = await pkSheet(S.fa_s, t('p352.delTitle', { name: r.name }), text, t('p352.delete'), true); }   // P539
   finally { yes.removeEventListener('click', pre); }
   if (!ok || !faP) return;
   const res = await run('delete', r.name, faP);
   if (res.ok) { toast(t('p352.deleted', { name: r.name }), 3000, 'success'); return load(); }
+  if (pkFailed(res, r.name, () => act('delete', r, vendor))) return;
   if (res.why !== 'cancel') toast(t(why(res.why),{device:deviceNoun()}), 4200);
   if (res.why === 'gone' || res.why === 'missing') load();
 }

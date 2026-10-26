@@ -8,9 +8,13 @@
 import { generateKeypair, sha256, concat } from '../proto/noise.js';
 import { generateSigningKeypair, b64u } from '../proto/wire.js';
 
-function idb() {
+// P545: a seat's page (m.agentj.app/<seat id>/) keeps its own database "agentjarvis@<seat id>" (js/seatscope.js); the root
+// page keeps "agentjarvis".
+export const ROOT_DB = 'agentjarvis';
+export const DB_NAME = globalThis.AJSeat ? globalThis.AJSeat.db(ROOT_DB) : ROOT_DB;
+function idb(name = DB_NAME) {
   return new Promise((res, rej) => {
-    const r = indexedDB.open('agentjarvis', 1);
+    const r = indexedDB.open(name, 1);
     r.onupgradeneeded = () => r.result.createObjectStore('kv');
     r.onsuccess = () => res(r.result);
     r.onerror = () => rej(r.error);
@@ -28,6 +32,105 @@ async function kv(mode, fn) {
 export const dbGet = (k) => kv('readonly', (s) => s.get(k));
 export const dbPut = (k, v) => kv('readwrite', (s) => s.put(v, k));
 export const dbDel = (k) => kv('readwrite', (s) => s.delete(k));
+
+/** P545: the root page's database, only when it exists — a seat's page never creates an empty one (no upgrade = no create). */
+function rootIdb() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open(ROOT_DB);
+    r.onupgradeneeded = () => r.transaction.abort();
+    r.onsuccess = () => { if (r.result.objectStoreNames.contains('kv')) res(r.result); else { r.result.close(); res(null); } };
+    r.onerror = (e) => { e.preventDefault(); r.error && r.error.name === 'AbortError' ? res(null) : rej(r.error); };
+  });
+}
+/** P545: every record of the root page's database → this seat's own one, as structured clones (the non-extractable keys stay
+ *  CryptoKeys; nothing is exported). A copy: the root page keeps its records. Only when this seat has no pairing yet. */
+export async function adoptRootStore() {
+  if (DB_NAME === ROOT_DB) return false;
+  const from = await rootIdb();
+  if (!from) return false;
+  const recs = await new Promise((res, rej) => {
+    const tx = from.transaction('kv', 'readonly'), st = tx.objectStore('kv'), out = [];
+    const q = st.openCursor();
+    q.onsuccess = () => { const c = q.result; if (c) { out.push([c.key, c.value]); c.continue(); } };
+    tx.oncomplete = () => { from.close(); res(out); };
+    tx.onerror = tx.onabort = () => { from.close(); rej(tx.error); };
+  });
+  if (!recs.some(([k, v]) => k === 'host' && v && v.approved)) return false;
+  const to = await idb();
+  return new Promise((res, rej) => {
+    const tx = to.transaction('kv', 'readwrite'), st = tx.objectStore('kv');
+    const has = st.get('host');
+    has.onsuccess = () => {
+      if (has.result && has.result.approved) { res(false); return; }   // this seat is paired already: nothing changes
+      for (const [k, v] of recs) st.put(k === 'host' ? { ...v, movedTo: undefined } : v, k);
+    };
+    tx.oncomplete = () => { to.close(); devKey = null; signKp = undefined; localKey = null; res(true); };
+    tx.onerror = tx.onabort = () => { to.close(); rej(tx.error); };
+  });
+}
+/** P550 (P545 × P547): the seat moved to a new host whose channel names another seat id. This seat page's records go to that
+ *  seat's own database (a copy, like adoptRootStore: structured clones, the non-extractable keys stay CryptoKeys) with `host`
+ *  = the moved record — the same records P547 rewrites in place on the root page. → true copied, false when that seat's page
+ *  is paired already (nothing changes there). Only from a seat's page. */
+export async function copyToSeat(seat, host) {
+  const name = ROOT_DB + '@' + seat;
+  if (DB_NAME === ROOT_DB || name === DB_NAME || !/^[a-z2-7]{8}$/.test(seat)) throw new Error('seat');
+  const from = await idb();
+  const recs = await new Promise((res, rej) => {
+    const tx = from.transaction('kv', 'readonly'), st = tx.objectStore('kv'), out = [];
+    const q = st.openCursor();
+    q.onsuccess = () => { const c = q.result; if (c) { if (c.key !== 'host') out.push([c.key, c.value]); c.continue(); } };
+    tx.oncomplete = () => { from.close(); res(out); };
+    tx.onerror = tx.onabort = () => { from.close(); rej(tx.error); };
+  });
+  const to = await idb(name);
+  return new Promise((res, rej) => {
+    let done = false;
+    const tx = to.transaction('kv', 'readwrite'), st = tx.objectStore('kv');
+    const has = st.get('host');
+    has.onsuccess = () => {
+      if (has.result && has.result.approved) return;
+      for (const [k, v] of recs) st.put(v, k);
+      st.put(host, 'host'); done = true;
+    };
+    tx.oncomplete = () => { to.close(); res(done); };
+    tx.onerror = tx.onabort = () => { to.close(); rej(tx.error); };
+  });
+}
+/** P545: the root page's record says this pairing now lives on its seat's page (the root page opens that page instead —
+ *  one device key, one page talking to the computer). Every other root record stays as it was. */
+export async function markRootMoved(seat) {
+  const db = await rootIdb();
+  if (!db) return;
+  return new Promise((res, rej) => {
+    const tx = db.transaction('kv', 'readwrite'), st = tx.objectStore('kv'), q = st.get('host');
+    q.onsuccess = () => { if (q.result && q.result.approved) st.put({ ...q.result, movedTo: seat }, 'host'); };
+    tx.oncomplete = () => { db.close(); res(); };
+    tx.onerror = tx.onabort = () => { db.close(); rej(tx.error); };
+  });
+}
+/** P545: the seat page that took the root page's pairing over unpaired / was removed: the root's moved copy (record, drafts,
+ *  history, queue, search pages and their key) goes too — it can never be used again. The device keys stay. */
+export async function dropRootPairing(seat) {
+  const db = await rootIdb();
+  if (!db) return;
+  return new Promise((res, rej) => {
+    const tx = db.transaction('kv', 'readwrite'), st = tx.objectStore('kv'), q = st.get('host');
+    q.onsuccess = () => { if (q.result && q.result.movedTo === seat) for (const k of ['host', 'draft', 'ihist', 'outbox', 'srch', 'local']) st.delete(k); };
+    tx.oncomplete = () => { db.close(); res(); };
+    tx.onerror = tx.onabort = () => { db.close(); rej(tx.error); };
+  });
+}
+/** The root page's pairing record, without creating the root database (the root page's own seat routing; a seat's page once). */
+export async function rootHost() {
+  const db = await rootIdb();
+  if (!db) return undefined;
+  return new Promise((res, rej) => {
+    const tx = db.transaction('kv', 'readonly'), q = tx.objectStore('kv').get('host');
+    tx.oncomplete = () => { db.close(); res(q.result); };
+    tx.onerror = tx.onabort = () => { db.close(); rej(tx.error); };
+  });
+}
 
 // P122 (root cause of "every open asks for the QR again" on iPhone): WebKit — Safari and every iOS browser — cannot read a
 // stored X25519 CryptoKey back from IndexedDB (WebKit bug 312279: get() returns null or never completes; Ed25519, P-256 and

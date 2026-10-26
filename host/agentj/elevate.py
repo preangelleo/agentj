@@ -58,7 +58,7 @@ from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey, X
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
-from . import diskq, passkey, wire
+from . import diskq, passkey, provenance, wire
 
 SIG_CONTEXT = "agentjarvis-elevate-v1"
 SEAL_CONTEXT = "agentjarvis-seal-v1"
@@ -960,7 +960,7 @@ class Elevator:
         m["passkey_required"] = True
         pk = self.st.passkey_of_device(s.device) if s is not None and s.device else None
         if pk:
-            m["fa"] = pk["id"]   # ADR-A163: this device saved a passkey → 「同意」 needs it (its own credential id only)
+            m["fa"], m["fa_s"] = pk["id"], passkey.pk_state(pk)   # ADR-A163: this device saved a passkey → 「同意」 needs it (its own credential id only)
         return m
 
     async def _to_phones(self, obj_fn, only=None) -> None:
@@ -1048,6 +1048,16 @@ class Elevator:
         await self.login.on_ready(s)
         await self.help.on_ready(s)
         await self.contacts.on_ready(s)
+
+    def _saved_elsewhere(self, c: dict, res: dict) -> None:
+        """P549 (#314): two cards asked for the same credential (an Agent's request on the computer, a Settings tap on the
+        phone); one saved it — every other open card for that destination ends `saved` too, so each remote folds it."""
+        def target(x):
+            d = x.get("dest_spec") or {}
+            return x.get("name"), d.get("mode"), d.get("path"), d.get("key")
+        for o in list(self.cards.values()):
+            if o is not c and o["kind"] == "secret" and not o.get("busy") and target(o) == target(c):
+                self._finish(o, {"result": "saved", "elsewhere": True, **({"receipt": res["receipt"]} if res.get("receipt") else {})})
 
     def _finish(self, c: dict, result: dict) -> None:
         if not c["fut"].done():
@@ -1146,6 +1156,9 @@ class Elevator:
         finally:
             self.cards.pop(c["id"], None)
             c.pop("priv", None)
+        if c["kind"] == "secret" and res.get("result") == "saved" and not res.get("elsewhere") and \
+                (res.get("receipt") or {}).get("verify") != "fail":
+            self._saved_elsewhere(c, res)
         if not res.get("_logged"):
             audit(self.st, c, result=res["result"], reason=res["result"], channel=self.host.channel)
         res.pop("_logged", None)
@@ -1157,6 +1170,8 @@ class Elevator:
                 done_msg["summary"] = await asyncio.to_thread(stderr_summary, res.get("stderr", ""))
         if c["kind"] == "secret" and res.get("receipt"):
             done_msg["verify"] = res["receipt"]["verify"]
+        if res.get("elsewhere"):
+            done_msg["elsewhere"] = 1              # P549 (#314): the same credential was saved through another card
         if c["kind"] == "sudo" and res.get("saved"):
             done_msg["saved"] = 1                  # P414 (§37.10): the typed password is now remembered for that remote
         if c["kind"] == "secret" and (res.get("key_hint") or (res.get("receipt") or {}).get("key_hint")):
@@ -1205,7 +1220,13 @@ class Elevator:
         if obj.get("t") in ("help_done", "help_text", "help_cancel"):        # P411: screen-help cards
             return await self.help.on_phone(s, obj)
         if obj.get("t") in self.contacts_types:                              # P184: SMTP / file reads take seconds
-            task = asyncio.create_task(self.contacts.on_phone(s, obj))
+            async def signed_tap():      # P549 (#319): the new task keeps this remote's own authority, never the Agent's turn
+                live = getattr(self.host, "_paired_live", None)
+                if not callable(live):
+                    return await self.contacts.on_phone(s, obj)
+                with provenance.paired_request(lambda: live(s)):
+                    return await self.contacts.on_phone(s, obj)
+            task = asyncio.create_task(signed_tap())
             self.contacts.bg.add(task)
             task.add_done_callback(self.contacts.bg.discard)
             return
@@ -1846,7 +1867,8 @@ class Elevator:
                     tool = "agentj report script"
                 else:
                     raise Refused("shape", "policy action")
-                ans = await self.host.ask(tool, params, batch=False, require_passkey=True)
+                # P551 (#318): the host policy decides — calendar create/update ② long-press, delete / payment / script ③ Face ID
+                ans = await self.host.ask(tool, params, batch=False)
                 w.write((json.dumps({"result":"approved" if ans.get("behavior") == "allow" else "denied"})+"\n").encode())
                 await w.drain(); w.close(); return
             if isinstance(req, dict) and req.get("t") == "upgrade":

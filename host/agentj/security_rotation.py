@@ -57,7 +57,7 @@ class Rotation:
         n=obj.get('n')
         if not isinstance(n,str) or not re.fullmatch(r'[0-9a-f]{32}',n): return await res(False,why='shape')
         ch=passkey.elevate_challenge(h.channel,s.device,n,action,n,controls.object_digest(action,target))
-        if obj.get('fa') is None: return await res(False,why='passkey_required',fa=pk['id'],fa_ch=wire.b64u(ch))
+        if obj.get('fa') is None: return await res(False,why='passkey_required',fa=pk['id'],fa_s=passkey.pk_state(pk),fa_ch=wire.b64u(ch))
         why=controls.check(h.st,h.nonces,h.channel,s.device,obj,action,target)
         if not why:
             try:

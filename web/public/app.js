@@ -25,8 +25,9 @@ import { parsePairing as parseLink } from './proto/wire.js';
 import VERSION from './version.js';
 import {probeEnvironment, publicPhoneLink} from './js/phone-env.js';
 import { t, lang, fillText, plain, applyStatic, onLang } from './js/t.js';
-import { el, toast, executionToast, notify, noticeSheet, confirmSheet, closeConfirm } from './js/ui.js';
-import { dbGet, dbPut, dbDel, deviceKey, signKey, wipeLocal, markPaired, wasPaired, askPersist } from './js/store.js';
+import { el, toast, toastAction, executionToast, notify, noticeSheet, confirmSheet, closeConfirm } from './js/ui.js';
+import { dbGet, dbPut, dbDel, deviceKey, signKey, wipeLocal, markPaired, wasPaired, askPersist, adoptRootStore, rootHost, markRootMoved, dropRootPairing, copyToSeat } from './js/store.js';
+import * as seats from './js/seats.js';         // P545 (§40): m.agentj.app/<seat id> — this seat's own page
 import { b64u, unb64u } from './proto/wire.js';
 import * as session from './js/session.js';
 import * as snap from './js/snap.js';
@@ -51,6 +52,7 @@ import * as secretout from './js/secretout.js'; // F32: secret pickup cards (§1
 import * as cmdrun from './js/cmdrun.js';     // P361: Settings 「执行」
 import * as termhook from './js/termhook.js'; // P408 (§38): Settings → 安全 → 网页终端 (the page itself loads on first open)
 import * as bang from './js/bang.js';         // P414 (§38.12): 「!」 commands + their result card
+import * as pkassist from './js/pkassist.js';   // P539 (#300 / #299): own passkey state, card hints, pre-authorization, draft_restore
 import * as vaultrow from './js/vaultrow.js'; // P414 (§38.9): Settings → 安全 → 电脑密码
 import * as keys from './js/keys.js';         // P352: 「模型和 API Key」 key manager
 import * as longtask from './js/longtask.js';   // 0.18: opening card + 「我的 Agent 会什么」 (§20)
@@ -58,6 +60,9 @@ import * as logincard from './js/logincard.js'; // P114: sign-in QR cards (ADR-A
 import * as helpcard from './js/helpcard.js'; // P411: screen-help cards (`agentj qr push` / `agentj screen ask`)
 import * as passkey from './js/faceid.js';     // F20: the same phone without a second pairing (§12)
 import * as renew from './js/renew.js';        // P122: …and after the browser deleted this page's storage (§12.1)
+import * as seatxfer from './js/seatxfer.js';   // P547: Settings → 转移席位 (row state pushed by the host)
+import * as pkpeer from './js/pkpeer.js';       // P547: this remote's own key, approved by another remote (#315 / #317)
+import { parseHostMoved, movedRecord, movedAt } from './js/hostmove.js';   // P547: the seat moved to a new host → follow it
 import * as bots from './js/bots.js';
 import * as friends from './js/friends.js';    // §17.7: /friends + the friend cards
 import * as setupcard from './js/setup.js';   // P115: the first-run checklist card
@@ -79,7 +84,8 @@ import * as upgcard from './js/upgcard.js';     // P203 (§29.2): the upgrade co
 import * as copycode from './js/copycode.js';   // P292: one copy behaviour for every code / pre
 import * as pairpage from './js/pairpage.js'; // P210: the numbered method cards of 「连上你的电脑」
 
-import { registerLayer, initLayers } from './js/layers.js';
+import { registerLayer, initLayers, TOP_RANK } from './js/layers.js';
+import { initOntop } from './js/ontop.js';   // P551: confirmation cards on the top tier, with focus
 import { initEdgeBack } from './js/edgeback.js';   // P302: left-edge swipe = back on every sub-page
 import { wireTopFit } from './js/topfit.js';      // P340: header icon gaps follow the gear's margin on narrow screens
 import { applyViewport, watchViewport } from './js/viewport.js';
@@ -116,6 +122,7 @@ function setAgentName(v, save = true) {
   const changed = n !== agentName;
   agentName = n;
   renderName();
+  if (save && seats.SEAT) { seats.setInstallHints({ name: n || '' }); if (state === 'ready') seats.remember(seats.SEAT, n || ''); }
   if (save && changed && session.channel()) saveName(session.channel(), n).catch(() => { /* only a cache */ });
 }
 async function saveName(channel, name) {
@@ -133,7 +140,7 @@ if (location.hash.startsWith('#p=')) {
 // §17.1 / §17.7: m.agentj.app/friends opens the friends page on this phone's paired session; `#add=AJ-…` (a friend's share
 // link or QR) prefills 「加好友」 and is stripped from the address bar at once. Nothing of it is sent anywhere until the owner taps.
 const FRIENDS_PATH = '/friends';
-let wantFriends = location.pathname === FRIENDS_PATH;
+let wantFriends = seats.routeOf() === FRIENDS_PATH;
 let pendingAdd = null;
 let pendingCard = false;           // P73: `/friends#card` (the /my-agent-id answer's link) opens 「我的名片」
 function takeAddHash() {
@@ -274,10 +281,11 @@ function show(v) {
   $('scan-repair').hidden = $('unpair').hidden;
   for (const id of ['open-mem', 'open-act', 'open-tasks', 'open-models', 'open-friends', 'open-bots', 'open-setup']) $(id).hidden = !PAIRED_VIEWS.includes(v);
   // the address follows the friends page (m.agentj.app/friends can be bookmarked); leaving it for another paired view goes back to /
-  if (v === 'bots') history.replaceState(history.state, '', '/bots'+location.search);
-  else if (v !== 'bots' && PAIRED_VIEWS.includes(v) && location.pathname === '/bots') history.replaceState(history.state, '', '/'+location.search);
-  if (v === 'friends' && location.pathname !== FRIENDS_PATH) history.replaceState(history.state, '', FRIENDS_PATH + location.search);
-  else if (v !== 'friends' && PAIRED_VIEWS.includes(v) && location.pathname === FRIENDS_PATH) history.replaceState(history.state, '', '/' + location.search);
+  // P545: on a seat's page the same routes live under /<seat id>/ (seats.routePath / routeOf)
+  if (v === 'bots') history.replaceState(history.state, '', seats.routePath('/bots')+location.search);
+  else if (v !== 'bots' && PAIRED_VIEWS.includes(v) && seats.routeOf() === '/bots') history.replaceState(history.state, '', seats.BASE+location.search);
+  if (v === 'friends' && seats.routeOf() !== FRIENDS_PATH) history.replaceState(history.state, '', seats.routePath(FRIENDS_PATH) + location.search);
+  else if (v !== 'friends' && PAIRED_VIEWS.includes(v) && seats.routeOf() === FRIENDS_PATH) history.replaceState(history.state, '', seats.BASE + location.search);
   push.renderA2hs(v);
   renderPhoneEnvironment();
   renderLogo();
@@ -336,6 +344,7 @@ function onHostGone() {
   wechat.reset();                                  // P114: the host re-sends open sign-in cards after ready
   helpcard.clear();                                   // P411: … and open screen-help cards
   termhook.gone();                                    // P408: the terminal rode that session — the host has closed it
+  pkpeer.gone();                                      // P547: open approval cards come again after ready
 }
 session.configure({
   setStatus,
@@ -355,6 +364,7 @@ session.configure({
     // lost the key (0.15.1) instead of failing the resume and calling it "removed"
     const host = { relay: ctx.relay, channel: ctx.channel, hostPub: ctx.hostPub, approved: true, dk: b64u((await deviceKey()).pub) };
     if (restoreKind === 'pk') host.pk = true;         // P198: restored with a passkey, so the taken-over page can offer it again
+    if (restoreKind === 'pk' && pkCred) seats.setInstallHints({ pk: pkCred });   // P545: the installed seat app asks for this one
     $('pair-guide').hidden = true;
     await forgetLocal();                              // a new pairing starts empty: nothing of the previous computer goes to it
     await dbPut('host', host);
@@ -374,18 +384,21 @@ session.configure({
     backfillPairing().catch(() => { /* only a hint for later */ });
     learnHost().catch(() => { /* only a hint for later */ });
     restoreKind = null; rtRetries = 0; pkTakeover = false;
+    if (movePending) { movePending = false; clearTimeout(moveTimer); }   // P547: followed the seat to the new host
     if (!ticketComing) ticketCheck().catch(() => {});
     ticketComing = false;
     onHostGone();
     controls.openPanel(controls.panel);
     setStatus('ready', 'st.ready');
-    if(location.pathname==='/bots') bots.open();
+    if(seats.routeOf()==='/bots') bots.open();
+    seatReady().catch(() => { /* the seat address is a convenience */ });
     openFriendsWanted();
     reversePairing = false;
     if (pendingRv) { const c = pendingRv; pendingRv = null; rvpair.approve(c).catch(() => {}); }
     api.myDeviceId().then(() => rerender());
     relay.onReady();
     cmdrun.onReady();                                 // P393: 「连不上」 on the command card turns into 「已恢复连接」
+    paintPkRow();                                     // P539: the stored 本机通行密钥 state of THIS computer
     rescue.onReady();                                 // P332: rescue mode on / off; a repair that dropped the link and came back
     if (!session.peer.rescue) {                       // P332: the rescue watchdog answers nothing else — ask it nothing else
       fivePages.refresh();
@@ -434,7 +447,7 @@ function onApp(m) {
   switch (m.t) {
     case 'pair_guide': showPairGuide(m.kind); return;
     case 'preferences': setHostVersion(m.host?.version); relay.hostVersionIs(m.host?.version); relay.applyPreferences(m.value); settings.setPrefs(m.value, m.host); rerender(); if(m.problem)relay.configProblem(m.problem.error); return;
-    case 'status': setAgentName(m.name); snap.setStatus(m); renderTg(); return;
+    case 'status': setAgentName(m.name); wechat.channelStatus(m); snap.setStatus(m); renderTg(); return;
     case 'busy': busy.setBusy(m); return;            // P150 (§22): who works in the background (display only)
     case 'res': busy.setRes(m); return;              // P181 (§22.1): the load card's five resources (only while it is open)
     case 'theme': applyTheme(m); rerender(); relay.paintChrome(); return;   // P169 (§23): repaint now (logo, status bar)
@@ -468,13 +481,16 @@ function onApp(m) {
     case 'ct_card_done': contacts.cardDone(m); return;
     case 'ct_card_err': contacts.cardErr(m); return;
     case 'pk_offer': offerPasskey(m).catch(() => {}); return;    // F20 (§12)
+    case 'pk_peer_done': case 'pk_peer_ask': case 'pk_peer_close': case 'pk_peer_answer_res': pkpeer.handle(m); return;   // P547: another remote approves
+    case 'seat_xfer_state': seatxfer.onState(m); return;   // P547: the transfer code was issued / revoked / used
+    case 'host_moved': hostMoved(m).catch(() => {}); return;    // P547: the seat moved to a new Agent J host
     case 'setup_card': setupcard.card(m); return;     // P115: the first-run checklist (host snapshot)
     case 'devs': case 'dev_pending': case 'dev_pair_end': if (!rvpair.onRemotes(m)) settings.onRemotes(m); return;   // P171 (§24) · P190 (§27)
     case 'secret_out': secretout.add(m); return;       // F32 (§18): a pickup card (no value)
     case 'secret_out_val': secretout.value(m); return; // the value, after Face ID, to this session only
     case 'secret_out_done': secretout.done(m); return;
     case 'secret_out_err': secretout.failed(m); return;
-    case 'wechat_state': wechat.route(m); return;
+    case 'wechat_state': wechat.route(m); relay.onForwardChanged(); return;
     case 'login_qr': logincard.add(m); return;          // P114: a sign-in QR card (only the QR, never chat history)
     case 'login_qr_done': logincard.done(m); return;
     case 'login_qr_state': logincard.state(m); return;
@@ -483,6 +499,9 @@ function onApp(m) {
     case 'help_end': helpcard.end(m); return;
     case 'help_err': helpcard.failed(m); return;
     case 'pk_reg_res': pkSaved(m).catch(() => {}); return;
+    case 'pk_state': pkStateGot(m).catch(() => {}); return;   // P539: this remote's own passkey — none / local / borrowed / unknown
+    case 'preauth': settings.preauth(m); return;              // P539: Settings → 安全 → 「免问的动作」
+    case 'draft_restore': draftBack(m); return;               // P539 (#299): 「改一改再发」 — the words go back into the box (never logged)
     case 'lt_card': longtask.add(m); return;          // 0.18 (§20): the one opening card
     case 'lt_done': longtask.done(m); return;
     case 'lt_res': longtask.res(m); return;
@@ -547,6 +566,7 @@ async function revoked(why = 'revoked') {
   takeoverWith = null;
   markPaired(false);
   ticketQueue(renew.clear);                           // P122: a removed / replaced phone's ticket is dead on the host anyway
+  if (seats.SEAT && why !== 'replaced') { seats.forgetSeat(seats.SEAT); dropRootPairing(seats.SEAT).catch(() => {}); }   // P545
   const replaced = why === 'replaced';
   $('repair').hidden = replaced; // F36: continue in the other app; do not offer a takeover loop.
   setStatus('revoked', replaced ? 'st.replaced' : 'st.revoked');
@@ -628,7 +648,15 @@ function startPairing(input) {
   $('pair-error').hidden = true;
   rvpair.stopCode();
   show('pair');
-  session.openSession('pair', p);
+  if (!seats.SEAT) { session.openSession('pair', p); return; }
+  // P545: a seat's page pairs only its own seat; another computer's link opens that seat's page (the link goes along)
+  const raw = String(input).trim(), at = raw.indexOf('#p=');
+  Promise.all([seats.seatId(p.channel), dbGet('host').catch(() => null)]).then(([id, own]) => {
+    // the same 8 letters but another channel (40 bits can be searched for): never replaces this seat's pairing
+    if (id === seats.SEAT && own && own.approved && own.channel !== p.channel) { pairFailed(); return; }
+    if (id === seats.SEAT) session.openSession('pair', p);
+    else location.assign(seats.seatHref(id) + (at >= 0 ? raw.slice(at) : '#p=' + raw));
+  }, () => pairFailed());
 }
 // P190 (§27): this page was scanned by a paired remote, which handed it the pairing link: same pairing, other words on the
 // code screen (compare the 6 digits with the remote's card instead of typing them on the computer).
@@ -654,6 +682,7 @@ function showIdle() {
   $('pair-rv').hidden = !pendingRv;
   $('pair-friends').hidden = !wantFriends;
   renderPk().catch(() => { $('pk-restore').hidden = true; });
+  renderSeatPick();
 }
 
 // ---------------------------------------------------------------- F20 passkey (PROTOCOL §12): no second pairing
@@ -664,15 +693,65 @@ function showIdle() {
 let pkForce = false;
 async function setupFaceId() {
   if (!(await passkey.supported())) { await checkPhoneEnvironment(); renderPhoneEnvironment(true); toast(t('sout.noFaceId'), 5000); return; }
+  pkForce = true;                                     // P547: a "direct" answer (the owner's first device) is followed by pk_offer
+  const how = await pkpeer.startPeerSetup();
+  if (how !== 'direct' && how !== 'legacy') pkForce = false;   // peer offers carry `peer` and never need the force
+}
+/** A host from before P547 answers no pk_peer_req: the direct offer as before. */
+function legacyOffer() {
   pkForce = true;
   session.sendApp({ t: 'pk_offer_req' }).catch(() => { pkForce = false; toast(t('elev.fail'), 3000); });
 }
+/** What register() needs, read before the 「保存」 tap (P547 peer offers: create() must follow the tap with nothing slow). */
+async function regOpts() {
+  const h = await dbGet('host');
+  if (!h || !h.approved || h.channel !== session.channel()) return null;
+  const ri = passkey.relayIndex(h.relay);
+  if (ri < 0 || !(await passkey.supported())) return null;
+  return { relayIndex: ri, channel: h.channel, hostPub: h.hostPub, name: agentName ?? DEFAULT_NAME, displaySuffix: t('pk.computer') };
+}
+pkpeer.configure({
+  ask: (o, want, ms) => session.ask1(o, want, ms), send: (o) => session.sendApp(o), approve: passkey.approve,
+  // P550 (P545 × P547): a key made after another remote's approval is this seat's Home Screen passkey hint too (pkSaved);
+  // register() still reaches navigator.credentials.create in the tap's tick (no await before it)
+  register: (n, o) => passkey.register(n, o).then((reg) => { pkRegId = reg.id; return reg; }),
+  notSaved: () => pkassist.osKey('pk.notSaved'),   // P550: P539's per-system steps on the peer path too
+  supported: passkey.supported, canAssert: passkey.canAssert, regOpts, legacy: legacyOffer,
+  unsupported: () => toast(t('sout.noFaceId'), 5000),
+  restart: () => setupFaceId(),                       // P547: pk_reg_res peer_required → the same entry as 「设置 Face ID」
+});
 secretout.configure({ setupFaceId });
 keys.configure({ setupFaceId });   // P352: 拷贝 / 删除 on a phone without a passkey offer the same F20 setup
 cmdrun.configure({ setupFaceId, openTerminal: (cmd) => termhook.open(cmd) }); // P361: 「执行」 on a phone without a passkey — the same F20 offer · P408: 「在终端里打开」
 termhook.configure({ setupFaceId, openSettings: () => { if (!settings.isOpen()) settings.open(); }, openRescue: () => settings.openRescue(), changed: () => cmdrun.paint(),
   attach: (f) => relay.attachShot(f, true), insert: (s) => relay.insertText(s), goChat: () => { if (settings.isOpen()) settings.close(); } });   // P408 · P414: 截屏发到聊天 / 放回输入框
 vaultrow.configure({ setupFaceId });   // P414
+pkassist.configure({ setupFaceId });   // P539: 「在本机设置」 under a confirm button / in Settings — the same F20 offer
+// P539: the computer's word on this remote's passkey; kept with the host record (like h.pk) so Settings shows it at once
+let pkNow = null;   // {ch, s}: only shown for the computer that said it
+function paintPkRow() {
+  pkassist.paintPkRow(pkNow && pkNow.ch === session.channel() ? pkNow.s : null, { row: $('set-pk-row'), label: $('set-pk-state'), note: $('set-pk-note'), setupBtn: $('set-pk-setup'), oldBtn: $('setup-faceid') });
+  renderPhoneEnvironment();
+}
+// P550 (p198): the host record's passkey fields are read-modify-written one at a time — pk_state arrives right after pk_reg_res
+// and an older snapshot must not put pk:true back to false
+let hostQ = Promise.resolve();
+function updHost(fn) {
+  const r = hostQ.then(async () => { const h = await dbGet('host'); const n = fn(h); if (n) await dbPut('host', n); return n || h; });
+  hostQ = r.catch(() => {});
+  return r;
+}
+async function pkStateGot(m) {
+  const s = pkassist.pkState(m.s);
+  if (!s) return;
+  pkNow = { ch: session.channel(), s }; paintPkRow();
+  await updHost((h) => h && h.approved && h.channel === session.channel() && h.pkState !== s && { ...h, pkState: s });
+}
+function draftBack(m) {
+  const r = pkassist.draftRestore(m);
+  if (r.text !== null) { if (settings.isOpen()) settings.close(); show('chat'); relay.putBackDraft(r.text); }
+  toast(t(r.key), 3600);
+}
 let phoneEnvironment = null, phoneHintAfterPair = false, phoneHintDismissed = false;
 function renderPhoneEnvironment(force = false) {
   const e = phoneEnvironment;
@@ -680,7 +759,7 @@ function renderPhoneEnvironment(force = false) {
   hint.hidden = !(e?.warn && (view === 'pair' || view === 'error' || force || (phoneHintAfterPair && !phoneHintDismissed && state === 'ready')));
   if (e) $('phone-env-text').textContent = t('phoneEnv.' + e.platform) + (e.platform === 'ios' && !e.platformAuth ? '\n\n' + t('phoneEnv.iosAuth') : '');
   $('phone-env-dismiss').hidden = view === 'pair' || view === 'error';
-  $('setup-faceid').hidden = !PAIRED_VIEWS.includes(view);
+  $('setup-faceid').hidden = !PAIRED_VIEWS.includes(view) || $('setup-faceid').dataset.pkRow === '1';   // P539: the 本机通行密钥 row has its own button
 }
 async function checkPhoneEnvironment(afterPair = false) {
   phoneEnvironment = await probeEnvironment({ua: navigator.userAgent, touch: navigator.maxTouchPoints,
@@ -693,15 +772,15 @@ async function checkPhoneEnvironment(afterPair = false) {
   renderPhoneEnvironment();
 }
 async function offerPasskey(m) {
-  let h = await dbGet('host');
+  if (m.peer) { pkForce = false; await pkpeer.onOffer(m); return; }   // P547: approved by another remote — no re-ask, no replace
   const forced = pkForce; pkForce = false;
   // P198: the computer offers this only to a device without a passkey (after a pairing, a ticket restore): remember that
-  if (h && h.approved && !forced && h.pk !== false && h.channel === session.channel()) await dbPut('host', (h = { ...h, pk: false }));
+  const h = await updHost((h) => h && h.approved && !forced && h.pk !== false && h.channel === session.channel() && { ...h, pk: false });
   if (!h || !h.approved || (h.pkAsked && !forced) || h.channel !== session.channel()) return;
   const ri = passkey.relayIndex(h.relay);
   const nonce = unb64u(m.n);
   if (ri < 0 || nonce.length !== 32 || !(await passkey.supported())) return;
-  await dbPut('host', { ...h, pkAsked: true });
+  await updHost((c) => c && { ...c, pkAsked: true });
   const g = session.gen();
   const name = agentName ?? DEFAULT_NAME;
   const no = $('confirm-no');
@@ -711,24 +790,96 @@ async function offerPasskey(m) {
   if (!yes) return;
   let reg;
   // cancelled / refused by the system (iPhone: no iCloud Keychain → no passkey can be saved): nothing changes; say why once
-  try { reg = await passkey.register(nonce, { relayIndex: ri, channel: h.channel, hostPub: h.hostPub, name, displaySuffix: t('pk.computer'), replace: m.replace || null }); } catch { toast(t('pk.notSaved'), 8000); return; }
+  try { reg = await passkey.register(nonce, { relayIndex: ri, channel: h.channel, hostPub: h.hostPub, name, displaySuffix: t('pk.computer'), replace: m.replace || null }); } catch { toast(t(pkassist.osKey('pk.notSaved')), 8000); return; }   // P539: Android / Mac / Windows get their own steps
+  pkRegId = reg.id;
   session.sendApp(reg, g).catch(() => toast(t('pk.saveFail')));
 }
 async function pkSaved(m) {
-  toast(t(m.ok ? 'pk.saved' : 'pk.saveFail'));
-  const h = await dbGet('host');
-  if (m.ok && h && h.approved && h.channel === session.channel()) await dbPut('host', { ...h, pk: true });
+  if (pkpeer.onRegRes(m)) return;                     // P547: peer_required → the 「另一台批准」 flow starts by itself
+  const first = pkpeer.saved(m.ok === true);          // P547 (§5): the account's first key → 「再在另一台设备加一把」
+  if (m.ok !== true) {
+    // P550 (#323 补): the system made the key but the computer did not take it — say why and the one way on (another remote
+    // approves, then this device makes it again; the same user handle replaces the key left behind in the password manager)
+    pkRegId = null;
+    return toastAction(t(pkassist.regWhy(m.why)), t('pkp.setupHere'), () => { setupFaceId().catch(() => {}); }, 12000);
+  }
+  toast(t('pk.saved') + (first ? ' ' + t('pkp.addAnother') : ''), first ? 9000 : undefined);
+  if (m.ok && pkRegId) seats.setInstallHints({ pk: pkRegId });   // P545: this seat's passkey, for its Home Screen app (P547 peer keys too)
+  pkRegId = null;
+  await updHost((h) => h && h.approved && h.channel === session.channel() && { ...h, pk: true });
+}
+// P547 (PASSKEY-SEAT-MODEL §3 ④): the old host checked the new host's arrival with the transfer code and says where this
+// remote goes now. Same device keys (the new host took them over with the handover list); a new computer, no passkey there
+// yet. Not connected within MOVE_MS → one notice with 「扫码配对新主机」 (the pairing screen).
+// P547 review M2: never silent — each remote asks first 「席位已转到新主机「名」（HH:MM）。让这台遥控器切过去吗？」. Only
+// 「切过去」 rewrites the stored pairing and reconnects; 「留在这里」 changes nothing (the old host keeps serving until its seat
+// certificate ends) and the same move is not asked again on this page.
+const MOVE_MS = 25000;
+let movePending = false, moveTimer = 0, moveAsking = '';
+const moveStayed = new Set();
+async function hostMoved(m) {
+  const mv = parseHostMoved(m, allowRelay);
+  const h0 = await dbGet('host');
+  if (!mv || !h0 || !h0.approved || h0.channel !== session.channel() || mv.channel === h0.channel) return;
+  const key = h0.channel + '>' + mv.channel;
+  if (moveAsking === key || moveStayed.has(key)) return;   // the host may say it again (reconnect): one sheet, one answer
+  moveAsking = key;
+  let go = false;
+  try {
+    go = await confirmSheet(t('hmv.askTitle'), t('hmv.ask', { name: displayAgentName(mv.name || null), time: movedAt(mv.at ? mv.at * 1000 : Date.now()) }), t('hmv.go'), false, t('hmv.stay'));
+  } finally { moveAsking = ''; }
+  if (!go) { moveStayed.add(key); return; }
+  const h = await dbGet('host');                      // re-read: the pairing may have changed while the sheet was open
+  if (!h || !h.approved || h.channel !== h0.channel || h.channel !== session.channel()) return;
+  // P550 (P545 × P547): a seat's page is named by its channel; the new host's channel names another seat → its records go to
+  // that seat's page (this one remembers where, like the root page's movedTo) and that page connects, with the same wait
+  if (seats.SEAT) {
+    const nid = await seats.seatId(mv.channel);
+    let copied = false;
+    try { if (nid !== seats.SEAT) { await copyToSeat(nid, { ...movedRecord(h, mv), moving: Date.now() }); copied = true; } } catch { copied = false; }   // storage refused: in place, as on the root page
+    if (copied) {
+      await dbPut('host', { ...h, movedTo: nid });
+      await ticketQueue(renew.clear);                 // this seat's renewal ticket was the old computer's
+      seats.forgetSeat(seats.SEAT); seats.remember(nid, mv.name || '');
+      location.replace(seats.seatHref(nid));
+      return;
+    }
+  }
+  await dbPut('host', movedRecord(h, mv));
+  ticketQueue(renew.clear);                           // the old computer's renewal ticket is void; the new one issues its own
+  knownHost = { plat: null, boot: null };
+  toast(t('hmv.moved', { name: displayAgentName(mv.name || null) }), 5000);
+  setAgentName(mv.name || null, false);
+  snap.synthReset(); snap.S.hist = { epoch: 0, first: 0, last: 0, count: 0 }; relay.historyReset(0);
+  fivePages.clear();
+  lastSeq = 0;
+  onHostGone();
+  movePending = true;
+  clearTimeout(moveTimer);
+  moveTimer = setTimeout(moveFailed, MOVE_MS);
+  await resume();
+}
+function moveFailed() {
+  if (!movePending) return;
+  movePending = false;
+  if (state === 'ready' || state === 'revoked') return;
+  offline.later();                                    // the reconnecting card steps aside for the one way forward
+  confirmSheet(t('hmv.failTitle'), t('hmv.failed'), t('hmv.rescan')).then((yes) => { if (yes) forgetHost().catch(() => {}); });
 }
 // Restore: on the empty pairing screen, one button when this browser has Face ID / a platform authenticator. The new
 // device key + approval key exist already (main() made them); the challenge binds the passkey's answer to them.
 let pkPrep = null;
 let pkCred = null;
+let pkRegId = null;                                   // P545: the passkey just registered (pk_reg_res says whether it was saved)
+let pkAny = false;                                    // P545: this seat's own passkey was not on this device: the next tap asks for any
 async function renderPk() {
   const b = $('pk-restore');
   const sk = await signKey();
   if (view !== 'pair' || state !== 'idle' || !sk || !(await passkey.supported())) { b.hidden = true; return; }
   pkPrep = await passkey.prepareRestore((await deviceKey()).pub, sk.pub);
-  b.hidden = view !== 'pair' || state !== 'idle';
+  // P545: the root page of a browser that has opened two or more seats lists them (「选择要连接的席位」) instead of asking
+  // the system for any passkey — each seat's page then asks for its own one
+  b.hidden = view !== 'pair' || state !== 'idle' || (!seats.SEAT && seats.knownSeats().length >= 2);
 }
 async function pkRestore(auto = false, takeover = false) {
   pkTakeover = takeover;
@@ -736,15 +887,17 @@ async function pkRestore(auto = false, takeover = false) {
   if (!prep || Date.now() - prep.ts > 4 * 60 * 1000) prep = await passkey.prepareRestore((await deviceKey()).pub, (await signKey()).pub);
   pkPrep = null;
   let a;
-  try { a = await passkey.assert(prep.challenge); } catch (e) {                  // cancelled / no passkey here / not focused
+  const allow = pkAny ? [] : seats.passkeyHint();   // P545: a seat's page asks only for its own passkey when it knows it
+  try { a = await passkey.assert(prep.challenge, allow); } catch (e) {          // cancelled / no passkey here / not focused
     document.body.dataset.pkErr = (e && e.name) || 'error';                       // diagnostics only (tests read it)
+    if (allow.length && !auto) pkAny = true;
     if (takeover) {                                   // P198: stay on the taken-over page; the button stays for another tap
       if (e && e.name === 'NotAllowedError') takeoverNote('revoked.takeoverNone');
       return renderTakeover(takeoverWith);
     }
     // P122: a tap that found nothing says why (no passkey saved — on iPhone usually iCloud Keychain off — or cancelled);
     // an automatic try (iOS may refuse it without a tap) stays silent: the button is still there
-    if (!auto && e && e.name === 'NotAllowedError') pairNote('pk.none');
+    if (!auto && e && e.name === 'NotAllowedError') pairNote(pkassist.osKey('pk.none'));   // P539: never iCloud words on Android
     return renderPk();
   }
   let to;
@@ -752,6 +905,11 @@ async function pkRestore(auto = false, takeover = false) {
     to = passkey.decodeHandle(a.uh, { testRelay: new URLSearchParams(location.search).get('relay') });
     if (!allowRelay(to.relay)) throw new Error('relay');
   } catch { return pkFailed('bad'); }
+  // P545: a seat's page signs in only as its own seat — another seat's passkey is refused here, with that seat's address
+  if (seats.SEAT) {
+    const other = await seats.seatId(to.channel);
+    if (other !== seats.SEAT) { pkRestoreOther(other); return renderPk(); }
+  }
   pkCred = a.id;
   restoreKind = 'pk';
   $('pk-restore').hidden = true;
@@ -759,7 +917,7 @@ async function pkRestore(auto = false, takeover = false) {
   $('takeover-note').hidden = true;
   $('pair-error').hidden = true;
   session.openSession('restore', { relay: to.relay, channel: to.channel, hostPub: to.hostPub,
-    pk: { id: a.id, cd: a.cd, ad: a.ad, sig: a.sig, uh: b64u(a.uh), ts: prep.ts, nonce: b64u(prep.nonce) } });
+    pk: { id: a.id, cd: a.cd, ad: a.ad, sig: a.sig, uh: b64u(a.uh), ts: prep.ts, nonce: b64u(prep.nonce), ...(a.att ? { att: a.att } : {}) } });   // P539: att = where the passkey answered from
 }
 /** One plain line under the pairing field (pair-error), by dictionary key. */
 function pairNote(key) {
@@ -767,6 +925,124 @@ function pairNote(key) {
   err.dataset.k = key;
   err.textContent = t(key);
   err.hidden = false;
+}
+
+// ---------------------------------------------------------------- P545 (FEEDBACK #309, PROTOCOL §40): one address per seat
+// m.agentj.app/<seat id>/ is one seat's page: its own storage (js/seatscope.js), its own Home Screen app (worker.ts manifest),
+// its own renewal cookie and passkey. The root page m.agentj.app/ works as before for a phone paired there; a new pairing
+// opened from a link in a browser tab goes to its seat's page, and a phone paired on the root page can move there (Settings
+// 「改用本席位专属网址」) without pairing again: the seat's page copies the root page's records (the root keeps them, marked
+// movedTo, and opens the seat's page from then on — one page per device key talking to the computer).
+async function seatRoute() {
+  let link = null;
+  if (pendingLink) { try { link = parseLink(pendingLink, 0, allowRelay); } catch { link = null; } }
+  const root = seats.SEAT ? null : await rootHost().catch(() => null);
+  if (link && seats.SEAT) {                           // the root page pairs any link it is given, exactly as before
+    const id = await seats.seatId(link.channel);
+    if (id !== seats.SEAT) { location.replace(seats.seatHref(id) + location.search + pendingLink); return true; }
+    const own = await dbGet('host').catch(() => null);  // same 8 letters, another channel: refused (see startPairing)
+    if (own && own.approved && own.channel !== link.channel) { pendingLink = null; toast(t('pair.badLink'), 6000); }
+    return false;
+  }
+  if (!seats.SEAT) {
+    // the root page opens a seat's page when its pairing moved there, or — with no record of its own and no link — when this
+    // browser knows exactly one seat (a phone paired from a new host's link, reopened at m.agentj.app); two or more: the list
+    const known = seats.knownSeats();
+    const to = root && root.approved && seats.SEAT_RE.test(root.movedTo || '') ? root.movedTo
+      : !root && !pendingLink && known.length === 1 ? known[0].s : null;
+    if (to) { location.replace(seats.seatHref(to) + location.pathname.replace(/^\/+/, '') + location.search + location.hash); return true; }
+    return false;
+  }
+  // a seat's page with no pairing of its own: the root page's pairing, when it is this seat's, moves here (a copy)
+  const own = await dbGet('host').catch(() => null);
+  if (own && own.approved) {
+    // P550 (P545 × P547): this seat moved to a new host = another seat's page (hostMoved copied the records there)
+    if (seats.SEAT_RE.test(own.movedTo || '') && own.movedTo !== seats.SEAT) { location.replace(seats.seatHref(own.movedTo) + location.search); return true; }
+    const age = Date.now() - (Number(own.moving) || 0);   // just arrived from the old seat's page: the same 「扫码配对新主机」 wait
+    if (own.moving && age >= 0 && age < MOVE_MS) { movePending = true; clearTimeout(moveTimer); moveTimer = setTimeout(moveFailed, MOVE_MS - age); }
+    return false;
+  }
+  const r = await rootHost().catch(() => null);
+  // once: a root record already marked movedTo was moved before — a seat page that unpaired since must stay unpaired
+  if (!r || !r.approved || r.movedTo || (await seats.seatId(r.channel)) !== seats.SEAT) return false;
+  if (await adoptRootStore().catch(() => false)) {
+    seats.adoptRootMarkers();
+    await markRootMoved(seats.SEAT).catch(() => {});
+  }
+  return false;
+}
+/** Ready: this seat on the browser's seat list and its address in Settings (no sheet: the address also stands in the Home
+ *  Screen hint of a seat's page — paintSeatHint). */
+async function seatReady() {
+  const id = await seats.seatId(session.channel());
+  if (seats.SEAT === id) seats.remember(id, agentName || '');
+  paintSeatRow(id);
+}
+/** A seat's page: its own address in the 「添加到主屏幕」 hint (pairing screen and after pairing alike). */
+function paintSeatHint() {
+  const p = $('a2hs-seat');
+  p.hidden = !seats.SEAT;
+  p.textContent = seats.SEAT ? t('seat.hint', { url: seats.seatShown(seats.SEAT) }) : '';
+}
+function paintSeatRow(id) {
+  const row = $('set-seat-row');
+  if (!row) return;
+  row.hidden = !id;
+  $('set-seat-url').textContent = id ? seats.seatShown(id) : '';
+  $('set-seat-move').hidden = !!seats.SEAT || !id;
+  $('set-seat-move').dataset.seat = id || '';
+  const note = $('set-seat-note');
+  note.dataset.i18n = seats.SEAT ? 'seat.setNote' : 'seat.setNoteRoot';
+  fillText(note, t(note.dataset.i18n));
+}
+function copySeatUrl(id, btn = null) {
+  if (btn) { copyButton(seats.seatHref(id), btn); return; }
+  copycode.copyNow(seats.seatHref(id)).then((ok) => toast(ok ? t('seat.copied') : seats.seatHref(id), ok ? 2000 : 6000));
+}
+/** Root page → this seat's page (the seat's page takes the pairing over; seatRoute above). */
+function moveToSeat(id) {
+  if (!seats.SEAT_RE.test(id || '')) return;
+  session.closeSession();
+  location.assign(seats.seatHref(id));
+}
+/** The root page's 「选择要连接的席位」: the seats this browser has opened, newest first; a tap opens that seat's page. */
+function renderSeatPick(extra = null) {
+  const box = $('seat-pick'), list = $('seat-list');
+  const known = seats.knownSeats();
+  if (extra && !known.some((e) => e.s === extra)) known.unshift({ s: extra, n: '', t: 0 });
+  const show = view === 'pair' && state === 'idle' && known.length > 0 && (!seats.SEAT || !!extra);
+  box.hidden = !show;
+  if (!extra) $('seat-pick-note').hidden = true;
+  list.replaceChildren();
+  if (!show) return;
+  for (const e of known) {
+    if (e.s === seats.SEAT) continue;
+    const a = document.createElement('a');
+    a.className = 'seatpick__item';
+    a.href = seats.seatHref(e.s);
+    const b = document.createElement('b');
+    b.textContent = e.n ? displayAgentName(e.n) : t('seat.noName');
+    const small = document.createElement('small');
+    small.textContent = seats.seatShown(e.s);
+    a.append(b, small);
+    const li = document.createElement('li');
+    li.append(a);
+    list.append(li);
+  }
+}
+/** A seat's page got another seat's passkey: refused, with the right page to open. */
+function pkRestoreOther(id) {
+  restoreKind = null;
+  $('pair-error').hidden = true;
+  renderSeatPick(id);
+  $('seat-pick-note').hidden = false;
+  $('seat-pick').scrollIntoView({ block: 'start' });
+}
+function initSeatUi() {
+  $('set-seat-move').addEventListener('click', () => moveToSeat($('set-seat-move').dataset.seat));
+  $('set-seat-copy').addEventListener('click', () => { const id = $('set-seat-move').dataset.seat; if (id) copySeatUrl(id, $('set-seat-copy')); });
+  paintSeatHint();
+  onLang(() => { renderSeatPick(); paintSeatHint(); const id = $('set-seat-move').dataset.seat; if (id) paintSeatRow(id); });
 }
 
 // ---------------------------------------------------------------- P122 renewal ticket (PROTOCOL §12.1): stay signed in
@@ -807,6 +1083,7 @@ async function tryTicket() {
   try {
     to = passkey.decodeHandle(pr.uh, { testRelay: new URLSearchParams(location.search).get('relay') });
     if (!allowRelay(to.relay)) throw new Error('relay');
+    if (seats.SEAT && (await seats.seatId(to.channel)) !== seats.SEAT) throw new Error('seat');   // P545: never another seat's
   } catch { ticketQueue(renew.clear); return false; }
   restoreKind = 'rt';
   $('pair-wiped').hidden = true;
@@ -866,6 +1143,7 @@ async function forgetHost() {
   await wiped;
   markPaired(false);
   ticketQueue(renew.clear);                           // P122: unpaired here = no automatic sign-in either
+  if (seats.SEAT) { seats.forgetSeat(seats.SEAT); dropRootPairing(seats.SEAT).catch(() => {}); }   // P545: off the list; the root's moved copy goes
   $('pair-wiped').hidden = true;
   snap.synthReset(); snap.S.hist = { epoch: 0, first: 0, last: 0, count: 0 }; relay.historyReset(0);
   $('input').value = '';
@@ -1077,6 +1355,7 @@ const fromSettings = (fn) => (e) => { backToSettings = settings.isOpen(); backFo
 // also leaves the friends page / any other page for the chat, where the card is.
 function frontAsk(m) {
   if (m.tool === 'AuthRescue' && settings.isOpen() && !$('set-auth').hidden) { floatAuthAsk(); return; }
+  if (document.querySelector('.gdlg:not([hidden])')) { floatAuthAsk(); return; }   // P549 (#316): above an open dialog, focused
   relay.remoteReader(false);
   if (m.tool === 'pair_device' && settings.isOpen()) settings.onPairCard();
   if (settings.isOpen()) settings.close();
@@ -1103,19 +1382,22 @@ function wire() {
   $('badge-close').addEventListener('click', () => toggleBadge(false));
   $('badge-panel').addEventListener('click', (e) => { if (e.target === $('badge-panel')) toggleBadge(false); });
   $('setup-faceid').addEventListener('click', () => { closeMenu(); setupFaceId().catch(() => {}); });
+  $('set-pk-setup').addEventListener('click', () => { setupFaceId().catch(() => {}); });   // P539
+  dbGet('host').then((h) => { if (h && h.approved && pkassist.pkState(h.pkState)) { pkNow = { ch: h.channel, s: h.pkState }; paintPkRow(); } }).catch(() => {});
   $('phone-env-dismiss').addEventListener('click', () => { phoneHintDismissed = true; renderPhoneEnvironment(); });
   $('phone-env-copy').addEventListener('click', async () => {
     const link = publicPhoneLink(location.href);
     if (!await copyButton(link, $('phone-env-copy'))) { $('phone-env-link').value = link; $('phone-env-link').hidden = false; $('phone-env-link').select(); }
   });
-  onLang(() => renderPhoneEnvironment());
+  onLang(() => { renderPhoneEnvironment(); paintPkRow(); });
   $('menu-about').addEventListener('click', () => toggleBadge(true));   // above Settings; closing it returns there
   initRemote({card:fivePages.remoteStep,message:relay.remoteMessage,reader:relay.remoteReader,reading:relay.remoteReading,scroll:relay.remoteScroll});
   initLayers({onEscape:relay.resetEscape});
+  initOntop();
   initEdgeBack();
   wireTopFit();
   const layer = (id, close, fallback, rank = 20, trap = true) => registerLayer({element: () => $(id), open: () => !$(id).hidden, close, fallback: () => $(fallback), rank, trap});
-  layer('confirm', closeConfirm, 'setBtn', 60);
+  layer('confirm', closeConfirm, 'setBtn', TOP_RANK);
   layer('badge-panel', () => toggleBadge(false), 'menu-about', 40);
   layer('settings', settings.back, 'setBtn', 40);
   // P363 (#70): one magnifier, the page on screen as its scope — a five page / document (five-pages.js), a menu page (记忆 /
@@ -1239,6 +1521,7 @@ function wire() {
     reload: () => location.reload(),
     view: () => view,
     forget: forgetHost,                               // P171: this remote unbound itself from 遥控器管理
+    setupFaceId: () => { setupFaceId().catch(() => {}); },   // P547: 转移席位 on a remote without Face ID
     assist: (text) => { show('chat'); relay.insertText(text); },   // P274: 「让 Agent J 帮我改」 → a draft, never sent
     upgradeHost: async () => {                        // P203: Settings → 升级电脑上的 Agent J (the same path as ≡ /update)
       if (!session.isReady()) { toast(t('set.offline'), 2400); return; }
@@ -1291,10 +1574,12 @@ function wire() {
 
 async function main() {
   if (await leaveLegacyHost()) return;
+  if (await seatRoute()) return;                      // P545: this pairing / this record belongs on a seat's own page
   copycode.init();   // P292: every code / pre on the page can be copied (the static ones in index.html, then all later)
   applyStatic();
   renderName();
   wire();
+  initSeatUi();
   checkPhoneEnvironment().catch(() => {});
   if (!globalThis.crypto?.subtle || !globalThis.indexedDB || !globalThis.WebSocket) return fatal('error.missing');
   if ('serviceWorker' in navigator && window.isSecureContext) push.registration().catch(() => {});

@@ -31,6 +31,7 @@ import { mk, executionToast as toast, toastAction } from './ui.js';
 import { copyable, copyNow } from './copycode.js';   // P292: the shown line / argv can be copied (icon only) · P414: 「复制输出」
 import { assertPrf, salt32 } from './vault.js';   // P414 (M3): PRF eval.first + eval.second, prf1 ‖ prf2
 import { SVG } from './icons.js';
+import { paintPk, setupStepsAside, faState, webauthnErr } from './pkassist.js';   // P539: no own passkey here · why a tap failed
 import { UNSAFE } from './bang.js';               // P414 (H1c): Unicode format characters / > 8 spaces never go out
 
 const LINE_MAX = 4096, KEEP_CHARS = 200000, HIDDEN_MS = 60000, NONCE_MS = 110000, CLOSE_SHOW_MS = 1600;
@@ -119,11 +120,12 @@ function build() {
   const sbad = node('p', 'term-sh-bad', 'term-hint'); sbad.setAttribute('role', 'alert');
   sheet.append(node('p', 'term-sh-origin', 'term-origin'), node('h2', 'term-sh-title'), node('p', 'term-sh-text'), copyable(pre, { variant: 'block', click: false }),
     node('p', 'term-sh-pre2l'), copyable(pre2, { variant: 'block', click: false }), node('p', 'term-sh-warn', 'term-warn'), shPwLab, shPw, sbad,
-    node('p', 'term-sh-note'), acts);
+    node('p', 'term-sh-note'), acts, node('div', 'term-sh-pk', 'pkassist'));   // P539: under the buttons
   wrap.append(sheet);
   root.append(top, outBox, bottom, wrap);
   document.body.appendChild(root);
 
+  setupStepsAside($('term-sh-pk'), () => sheetNo());   // P539: 在本机设置 on the intro sheet = 取消 first
   $('term-end').addEventListener('click', () => endNow());
   $('term-exit').addEventListener('click', () => collapse());
   dragInit(grab);
@@ -340,6 +342,7 @@ function openSheet(o) {
   $('term-sh-yes').textContent = o.yes; $('term-sh-no').textContent = o.no;
   $('term-sh-yes').disabled = !!o.wait; $('term-sh-no').disabled = false;
   w.dataset.kind = o.kind; w.hidden = false;
+  paintSheetPk(o);
   setTimeout(() => { try { (pw ? $('term-sh-pw') : $('term-sh-yes')).focus({ preventScroll: true }); } catch { /* old browsers */ } }, 40);
   if (o.ttl) o.timer = setTimeout(() => { if (sheet === o) { closeSheet(); o.onExpire?.(); } }, o.ttl);
 }
@@ -353,6 +356,20 @@ function closeSheet() {
   if (next) openSheet(next);
   else if (S.phase === 'ready' && S.reCollapse) collapse();   // P414: a card brought the collapsed page up; answered → down again
   else if (S.phase === 'ready') try { $('term-input').focus({ preventScroll: true }); } catch { /* old browsers */ }
+}
+/** P539: under the sheet's buttons — the quiet line when this remote has no passkey of its own (o.pk.fa = fa_s), or why the
+ *  last tap failed + 再试一次 (sheetYes: the assertion starts again inside that tap). 在本机设置 only on the intro sheet. */
+function paintSheetPk(o) {
+  if (!root) return;
+  paintPk($('term-sh-pk'), o && o.pk ? { fa: o.pk.fa, err: o.pk.err || null, retry: o.pk.err ? sheetYes : null, setup: o.kind === 'intro' } : {});
+}
+/** P539: a WebAuthn rejection on sheet `o` → said on the sheet (true); anything else → false (the caller toasts). */
+function sheetPkFail(o, e) {
+  const err = webauthnErr(e);
+  if (!err || !o || sheet !== o) return false;
+  o.pk = { ...(o.pk || {}), err };
+  paintSheetPk(o);
+  return true;
 }
 function sheetBusy(on) { if (!root) return; $('term-sh-yes').disabled = on; $('term-sh-no').disabled = on; }
 /** The sheet's main button: runs synchronously inside the tap, so Face ID can start before any await. */
@@ -421,8 +438,8 @@ function fetchChallenge() {
     if (S.phase !== 'intro') return;
     if (m.t === 'offline') return refuse('offline');
     if (m.ok === false && m.why === 'passkey_required' && HEX32.test(m.n || '') && typeof m.fa === 'string' && typeof m.fa_ch === 'string' && epkOk(m.epk)) {
-      S.ch = { n: m.n, fa: m.fa, fa_ch: m.fa_ch, salt: saltOf(m.salt), vn: saltOf(m.vn), epk: m.epk, at: Date.now() };
-      if (sheet?.kind === 'intro') { $('term-sh-yes').textContent = t('p408.faYes'); $('term-sh-yes').disabled = false; }
+      S.ch = { n: m.n, fa: m.fa, fa_s: faState(m.fa_s), fa_ch: m.fa_ch, salt: saltOf(m.salt), vn: saltOf(m.vn), epk: m.epk, at: Date.now() };
+      if (sheet?.kind === 'intro') { $('term-sh-yes').textContent = t('p408.faYes'); $('term-sh-yes').disabled = false; sheet.pk = { ...(sheet.pk || {}), fa: S.ch.fa_s }; paintSheetPk(sheet); }
       return;
     }
     refuse(m.ok === false ? String(m.why || '') : 'shape', m);
@@ -442,7 +459,7 @@ function introYes() {
   p.then(async ({ fa, prf }) => {
     try {   // P414 (R3-4): the PRF is zeroed even when signing throws before the seal
       if (S.phase !== 'intro') return;
-      S.fa = c.fa;
+      S.fa = c.fa; S.faS = c.fa_s;   // P539: the later sheets (confirm / sudo) say the same about this passkey
       const obj = { mode: S.enable ? 'enable' : 'line' };   // P417 #185: the signature names what it is for
       const signed = await signCtl('term_open', obj, c.n);
       const sealed = prf ? await sealPrf(c.epk, prf, c.n, 'term_open', obj) : {};
@@ -450,10 +467,10 @@ function introYes() {
       S.phase = 'opening'; paintChrome(); status(t('p408.opening'));
       openStep2({ t: 'term_open', ...(S.enable ? { mode: 'enable' } : {}), ...signed, fa, ...sealed });
     } finally { prf?.fill(0); }
-  }, () => {
+  }, (e) => {
     if (S.phase !== 'intro') return;
     sheetBusy(false);
-    toast(t('p408.faCancel'), 3600);
+    if (!sheetPkFail(sheet?.kind === 'intro' ? sheet : null, e)) toast(t('p408.faCancel'), 3600);
   }).catch(() => { if (S.phase === 'intro' || S.phase === 'opening') refuse('passkey_failed'); });
 }
 function openStep2(obj) {
@@ -505,7 +522,8 @@ async function loginCard(m) {
   if (S.phase !== 'opening' || !S.r2 || m.term !== S.r2 || m.state === 'running') return;   // never a card for anything else
   if (typeof m.id !== 'string' || !HEX32.test(m.id) || !HEX32.test(m.n || '') || !epkOk(m.epk)) return;
   const c = { id: m.id, n: m.n, epk: unb64u(m.epk), tries: Number.isInteger(m.tries) ? m.tries : 3, bad: Number.isInteger(m.bad) ? m.bad : 0,
-    ttl: Number.isInteger(m.ttl) && m.ttl > 0 && m.ttl <= 600 ? m.ttl : 120, fa: typeof m.fa === 'string' && m.fa.length <= 1400 ? m.fa : null, faCh: null };
+    ttl: Number.isInteger(m.ttl) && m.ttl > 0 && m.ttl <= 600 ? m.ttl : 120, fa: typeof m.fa === 'string' && m.fa.length <= 1400 ? m.fa : null, faCh: null,
+    fa_s: faState(m.fa_s) };   // P539
   c.digest = await elevateDigest('login', elevateFields({ kind: 'login', term: m.term }));
   if (c.fa) c.faCh = await elevateChallenge(channel(), await myDeviceId(), c.id, 'login', c.n, c.digest).catch(() => null);
   if (S.phase !== 'opening') return;
@@ -513,7 +531,7 @@ async function loginCard(m) {
   S.login = c;
   openSheet({ kind: 'login', origin: t('p408.loginFrom'), title: t('p408.loginTitle'), password: t('p408.loginLabel'),
     bad: c.bad ? t('p408.pwBad', { n: c.tries }) : '', note: t('p408.pwNote'), yes: t(c.fa ? 'p408.pwSend' : 'p408.pwSendPlain'), no: t('sheet.cancel'),
-    ttl: c.ttl * 1000, onYes: () => loginAnswer(c, true), onNo: () => loginAnswer(c, false) });
+    ttl: c.ttl * 1000, pk: c.fa ? { fa: c.fa_s } : null, onYes: () => loginAnswer(c, true), onNo: () => loginAnswer(c, false) });
 }
 /** Answered exactly like a §11 sudo card: Face ID first (inside the tap), then sealed + signed `elev_answer`. */
 function loginAnswer(c, ok) {
@@ -543,10 +561,10 @@ function loginAnswer(c, ok) {
       if (sheet?.kind === 'login') closeSheet();
       if (ok) status(t('p408.checking'));
     } finally { value?.fill(0); }
-  }).catch(() => {
+  }).catch((e) => {
     if (S.login !== c) return;
     sheetBusy(false);
-    toast(t('p408.faCancel'), 3600);
+    if (!sheetPkFail(sheet?.kind === 'login' ? sheet : null, e)) toast(t('p408.faCancel'), 3600);
   });
 }
 
@@ -757,7 +775,7 @@ function confirmLine(m) {
   const bangSid = S.bang && S.bang.seq === m.seq ? S.bang.sid : null;   // §37.12: the signed resend keeps `bang`
   openSheet({ kind: agent ? 'agent' : 'confirm', title: t(agent ? 'p414.agentTitle' : 'p408.confirmTitle'), pre: line,
     text: agent ? t('p414.agentText') : why ? t('p408.confirmWhy', { why }) : '', yes: t('p408.run'), no: t('sheet.cancel'),
-    ttl: 120000, onExpire: () => { out(t('p408.expired') + '\n'); notRun(m.seq); if (bangSid) bangEnd(bangSid); },
+    ttl: 120000, pk: { fa: S.faS || null }, onExpire: () => { out(t('p408.expired') + '\n'); notRun(m.seq); if (bangSid) bangEnd(bangSid); },
     onNo: () => { out(t('p408.notRun') + '\n'); notRun(m.seq); if (bangSid) { bangEnd(bangSid); restore(line); } },
     onYes: () => {
       let p;
@@ -769,7 +787,7 @@ function confirmLine(m) {
         // §37.12: the host's 120 s for a 「!」 line start when it runs (now), not when it was first sent
         if (bangSid && S.bang && S.bang.sid === bangSid) { clearTimeout(S.bang.timer); S.bang.timer = setTimeout(() => bangEnd(bangSid), BANG_MS); }
         closeSheet();
-      }).catch(() => { sheetBusy(false); toast(t('p408.faCancel'), 3600); });
+      }).catch((e) => { sheetBusy(false); if (e?.name === 'Error' || !sheetPkFail(sheet?.kind === 'confirm' || sheet?.kind === 'agent' ? sheet : null, e)) toast(t('p408.faCancel'), 3600); });   // P539
     } });
 }
 function sudoAsk(m) {
@@ -777,7 +795,7 @@ function sudoAsk(m) {
   const argv = m.argv.slice(0, 256).join(' ').slice(0, 4000), line = typeof m.line === 'string' ? m.line.slice(0, LINE_MAX) : '';
   const salt = saltOf(m.salt), vn = saltOf(m.vn), epk = epkOk(m.epk) ? m.epk : null, rid = m.rid.slice(0, 64);
   openSheet({ kind: 'sudo', title: t('p408.sudoTitle'), text: t('p408.sudoCmd'), pre: argv, pre2l: t('p408.sudoLine'), pre2: line,
-    warn: m.differs === true ? t('p408.differs') : '', yes: t('p408.sudoYes'), no: t('p408.sudoNo'), ttl: 60000,
+    warn: m.differs === true ? t('p408.differs') : '', yes: t('p408.sudoYes'), no: t('p408.sudoNo'), ttl: 60000, pk: { fa: S.faS || null },
     onNo: () => send({ t: 'term_sudo_no', id: S.id, rid }),
     onYes: () => {
       let p;
@@ -791,7 +809,7 @@ function sudoAsk(m) {
           send({ t: 'term_sudo_ok', id: S.id, rid, ...signed, fa, ...sealed });
           closeSheet();
         } finally { prf?.fill(0); }
-      }).catch(() => { sheetBusy(false); toast(t('p408.faCancel'), 3600); });
+      }).catch((e) => { sheetBusy(false); if (e?.name === 'Error' || !sheetPkFail(sheet?.kind === 'sudo' ? sheet : null, e)) toast(t('p408.faCancel'), 3600); });   // P539
     } });
 }
 

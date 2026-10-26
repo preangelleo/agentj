@@ -105,7 +105,7 @@ class Flow(unittest.TestCase):
             link = await self._open()
             self.assertTrue(link["ok"])
             self.assertTrue(link["qr"].startswith("data:image/png;base64,"))
-            self.assertTrue(link["link"].startswith("https://m.agentj.app/#p="))
+            self.assertRegex(link["link"], r"^https://m\.agentj\.app/[a-z2-7]{8}/#p=")   # P545: the seat's own page
             self.assertEqual(self.host.pairing.phone, self.A)
             s = await self._arrive()
             code = wire.safety_code(s.h)

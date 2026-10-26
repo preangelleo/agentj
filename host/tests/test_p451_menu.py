@@ -21,7 +21,8 @@ class Parse(unittest.TestCase):
         self.assertIsNone(menu.detect('Earlier the tool printed:\n'+QUOTA+'\n❯ hello'))
         self.assertIsNone(menu.detect('Do you want to allow Bash?\n❯ 1. Yes\n2. No\nEsc to cancel'))
         self.assertIsNone(menu.detect('normal assistant response about Rewind'))
-        self.assertEqual(menu.detect('Select model\nOpus\nEsc to cancel')['kind'],'menu')
+        # P538 (#303): a known title without readable rows is no longer Esc-only — it is the screen + keypad card
+        self.assertEqual(menu.detect('Select model\nOpus\nEsc to cancel')['kind'],'screen')
         self.assertIsNone(menu.detect(QUOTA.replace('resets 6:50pm','resets synthetic-secret')))
     def test_incremental_screen_repaint_removes_old_modal(self):
         s=menu.Screen()

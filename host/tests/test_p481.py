@@ -59,8 +59,8 @@ class Upgrade(_Env):
         rows = [{'id':'version','status':'ok'}, {'id':'main-inject','status':'fail','summary':'no verified main Agent launch yet'},
                 {'id':'root-structure','status':'fail'}, {'id':'serve','status':'warn'}]
         text = update.completion_text({'to':'9.0','from':'8.0'}, update.doctor_counts(rows), 'zh', rows)
-        self.assertIn('升级成功，还剩 3 项待办', text)
-        self.assertIn('3 item', update.completion_text({'to':'9.0'}, update.doctor_counts(rows), 'en', rows))
+        self.assertIn('升级成功，一切正常', text)
+        self.assertIn('Upgrade succeeded; everything is working', update.completion_text({'to':'9.0'}, update.doctor_counts(rows), 'en', rows))
         self.assertNotIn('升级成功', update.completion_text({'to':'9.0'}, (0,0,1), 'zh', [{'id':'state','status':'fail'}]))
 
     def test_repair_only_named_findings_and_keep_json_clean(self):
@@ -134,7 +134,8 @@ class Upgrade(_Env):
     def test_success_pending_count_is_not_truncated_to_id_display_limit(self):
         res = {'result':'ok','reason':'upgraded','from':'1.0','to':'2.0','service':'ok',
                'pending_checks':['root-structure'], 'pending_count':15}
-        self.assertIn('还剩 15 项待办', update.result_block(res))
+        self.assertNotIn('待办', update.result_block(res))
+        self.assertNotIn('agentj doctor', update.result_block(res))
 
     def test_old_updater_exit_code_grades_upgrade_but_offline_doctor_keeps_findings(self):
         import contextlib, io

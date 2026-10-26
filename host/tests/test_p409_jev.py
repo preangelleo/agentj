@@ -11,15 +11,16 @@ from agentj import jev, approval_jev, approval_level, ctl_auth, preferences, pee
 from agentj.bots.engine import Engine
 from agentj.bots.provider import Provider, Result
 from agentj.bots.store import Store
-from test_p336_approval_level import Base, sign
+from test_p336_approval_level import FA, Base, face_id, sign
 
 class Modes(Base):
     def route(self, env=None):
         return jev.resolve(st=self.st,prefs=self.host.preferences,env=env or {})
     def choose(self, value):
         obj=sign(self.phone,{'key':jev.KEY,'value':value})
-        asyncio.run(self.host.on_approval_set(self.s,obj))
-        return obj
+        with face_id(self.host,self.phone.did):   # P550: Jev off is a widening — this remote's Face ID
+            asyncio.run(self.host.on_approval_set(self.s,{**obj,'fa':FA}))
+        return {**obj,'fa':FA}
     def test_signed_off_survives_restart_and_records_confirmation(self):
         self.choose('off')
         r=self.route();self.assertEqual(r.mode,'off');self.assertGreater(r.confirmed_at,0)

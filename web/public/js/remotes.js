@@ -7,9 +7,10 @@ import { copyButton } from './copycode.js';
 import { t, fillText, onLang, locale } from './t.js';
 import { el, mk, toast, confirmSheet } from './ui.js';
 import { ask1, isReady } from './session.js';
-import { signedWrite } from './controls.js';
+import { signedWrite, signedWriteFa, whyText as ctlWhy } from './controls.js';
 import { RelayMD } from './md.js';
 import { copyable } from './copycode.js';   // P292
+import { pkState } from './pkrules.js';   // P539
 
 let H = { myId: () => null, hostDevices: () => null, forget: () => {}, say: () => {} };
 let snap = null;          // {limit, items:[{id,name,paired_at,seen,online,me,source}], can_add, busy} — null = not read yet
@@ -25,6 +26,17 @@ const QR_PREFIX = 'data:image/png;base64,';
 const WHY = { disabled: 'rm.disabled', busy: 'rm.busy', offline: 'rm.offline', gone: 'rm.gone', code_mismatch: 'rm.mismatch',
   bad_name: 'rm.badName', timeout: 'rm.ended' };
 const whyText = (w) => (WHY[w] ? t(WHY[w]) : t('rm.fail', { why: String(w ?? '?').slice(0, 40) }));
+// P551 (#318) ③: unbinding ANOTHER remote (and WeChat, wechat.js) asks this remote's Face ID — the host answers the first
+// signed request `passkey_required` {fa, fa_ch}; the same signed object goes again with `fa` (controls.signedWriteFa).
+export const FA_UNBIND = { title: 'p551.faUnbindTitle', text: 'p551.faUnbindText', yes: 'p551.unbindFa' };
+export const faceIdUnbind = (res) => import('./settings.js').then((m) => m.faceIdStep(res, FA_UNBIND));
+/** the toast for a refused Face ID unbind; null = the owner cancelled (say nothing) */
+export function unbindFaWhy(w) {
+  if (w === 'cancel') return null;
+  if (w === 'no_passkey') return t('p551.unbindNoPasskey');
+  if (w === 'passkey_failed') return ctlWhy(w);
+  return undefined;
+}
 
 const clean = (s, n = 64) => String(s ?? '').replace(/[\u0000-\u001f\u007f]/g, '').slice(0, n);
 function take(m) {
@@ -139,7 +151,8 @@ function row(d) {
   const meta = mk('p', 'rmmeta');
   const src = { account: 'rm.srcAccount', phone: 'rm.srcPhone' }[d.source] || 'rm.srcLocal';
   const bits = [t(d.online ? 'rm.online' : 'rm.offlineDot'), fmt(d.paired_at) && t('rm.pairedAt', { d: fmt(d.paired_at) }),
-    d.seen && !d.online && fmt(d.seen) && t('rm.seenAt', { d: fmt(d.seen) }), d.source && t(src)].filter(Boolean);
+    d.seen && !d.online && fmt(d.seen) && t('rm.seenAt', { d: fmt(d.seen) }), d.source && t(src),
+    pkState(d.pk) && t('p539.rm.pk.' + d.pk)].filter(Boolean);   // P539: this remote's own passkey, as the computer sees it
   meta.textContent = bits.join(' · ');
   const id = mk('p', 'rmid');
   id.append(mk('span', '', t('rm.idLabel') + ' '), copyable(mk('code', '', clean(d.id, 32))));   // P292: the ID can be copied
@@ -196,10 +209,15 @@ async function unbind(d) {
   const self = d.me === true;
   const nm = clean(d.name) || d.id;
   const ok = await confirmSheet(t(self ? 'rm.unbindSelfTitle' : 'rm.unbindTitle', { name: nm }),
-    t(self ? 'rm.unbindSelfText' : 'rm.unbindText'), t('rm.unbind'), true);
+    t(self ? 'rm.unbindSelfText' : 'rm.unbindText'), t(self ? 'rm.unbind' : 'p551.unbindFa'), true);
   if (!ok) return;
-  const res = await signedWrite('dev_unbind', { device: d.id }, { t: 'dev_unbind', device: d.id });
-  if (!res.ok) return toast(whyText(res.why), 4000);
+  const res = self ? await signedWrite('dev_unbind', { device: d.id }, { t: 'dev_unbind', device: d.id })
+    : await signedWriteFa('dev_unbind', { device: d.id }, { t: 'dev_unbind', device: d.id }, faceIdUnbind);
+  if (!res.ok) {
+    const fa = unbindFaWhy(res.why);
+    if (fa === null) return;
+    return toast(fa ?? whyText(res.why), fa ? 8000 : 4000);
+  }
   if (self) { H.forget(); return; }
   if (snap) snap.items = snap.items.filter((x) => x.id !== d.id);
   toast(t('rm.unbound', { name: nm }), 3000);

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// P296: an `agentj mail send` card offers each new recipient as an UNTICKED box 「以后发给 X 不用再确认（加入白名单）」; a plain
+// P296: an `agentj mail send` card offers each new recipient as an UNTICKED box 「以后 X 的来信直接处理（加入白名单）」 (P550 wording); a plain
 // hold sends a plain allow (no allow_add); ticking one sends allow_add = [that address], signed with the allow (fakehost checks
 // the signature with wire.mailAllowMessage, the same bytes as host approvals.allow_add_line). A Bash card shows no boxes.
 // The real web client against the fake host, independent headless Chromium (never :9222), 390×844, zh and en.
@@ -56,7 +56,7 @@ try {
     check(seen.length === 2, `${lang}: two boxes (${JSON.stringify(seen)})`);
     check(seen.every(([, on]) => on === false), `${lang}: unticked by default`);
     check(seen[0] && seen[0][0].includes(A) && seen[1][0].includes(B2), `${lang}: one per address, in order`);
-    check(lang === 'zh' ? seen[0][0].includes('不用再确认') : seen[0][0].includes("Don't ask again"), `${lang}: label text`);
+    check(lang === 'zh' ? seen[0][0].includes('的来信直接处理') : seen[0][0].includes('Handle mail from'), `${lang}: label text`);
     const { data } = await p.send('Page.captureScreenshot', { format: 'png' });
     writeFileSync(join(OUT, `card-${lang}.png`), Buffer.from(data, 'base64'));
     let ans = await hold();

@@ -1,15 +1,15 @@
 ---
 document: agentj-install
-version: 0.27.12
+version: 0.27.13
 released: 2026-10-26
 status: beta (anyone can sign up; not advertised yet, pages are not indexed)
 host_package: agentj (the `agentj` command)
-host_version: 0.25.12a1
-source_tag: v0.25.12a1
-host_wheel: agentj-0.25.12a1-py3-none-any.whl
-host_wheel_sha256: 92686bfaab52349e1e2426f062ec2d73ea34b1fe483d1406ecae6f16be7ea6a8
-host_sdist: agentj-0.25.12a1.tar.gz
-host_sdist_sha256: a71a9870ed875793f82ea1f707b6ced4872c461a45375f97b47999a94af2fd26
+host_version: 0.25.13a1
+source_tag: v0.25.13a1
+host_wheel: agentj-0.25.13a1-py3-none-any.whl
+host_wheel_sha256: 771bbbd8e15ac93ac78edc14652ee19e79a16272afcb6e82a417f8bc33982d65
+host_sdist: agentj-0.25.13a1.tar.gz
+host_sdist_sha256: 26c83c4e4dd43af75b4152b9273eb0f8150ed39313e3747561dc0b02d92c6c80
 canonical_url: https://agentj.app/install.md
 sha256_url: https://agentj.app/install.md.sha256
 alias: https://agentjarvis.net/install.md (the older address: the same file, kept for one more version)
@@ -45,7 +45,7 @@ document first (from the local file, as above). Speak to your human in **their**
 the same text. Steps are numbered; each names the feedback `stage` you use if it goes wrong (Step 2).
 
 **Two ways in.** (a) Your human gave you a sentence that contains a **seat setup code** (`ajt_` followed by 43
-characters): someone already paid for this seat (the sentence names their Agent J account), so Step 6 is skipped — your
+characters; a code moved from a remote starts with `ajh_` — same 43 characters, same single-use rule, valid 24 h): someone already paid for this seat (the sentence names their Agent J account), so Step 6 is skipped — your
 human does **not** open an account and does **not** pay. (b) No such code: your human opens their own Agent J account,
 buys a seat and then makes the same kind of sentence for the Agent J host in the account dashboard (Step 6). Either way you
 add the Agent J host with Step 7 (a).
@@ -95,7 +95,7 @@ Jev 会给客服、好友消息增加模型审核，也会复查脱敏内容。�
    `~/.local/share/opencode/auth.json`, keychains, `.env` files, SSH keys or browser profiles. Never ask your human to paste
    a password, login code, email code, card number, promo code, passphrase or **model API key** into this conversation —
    and if they paste a key anyway, do not repeat it, store it or use it; tell them to revoke it and create a new one.
-   **One exception: the seat setup code** (`ajt_…`) in the sentence your human gave you is meant for you — it is
+   **One exception: the seat setup code** (`ajt_…`, or `ajh_…` from a remote) in the sentence your human gave you is meant for you — it is
    single-use and can only bind the Agent J host to that one seat. Use it only in Step 7 (`agentj login --seat-file`); still
    never print it back, never echo it in a command line you show, never put it in feedback or anywhere else.
 4. **Human-only actions are marked ✋: stop, message your human, wait.** At each one you **stop**, send your human one
@@ -210,7 +210,7 @@ together. Fields:
 | `owner_informed` | `true` — only after your human has seen the text (Agent-initiated reports); use `agentj support feedback` for an explicit owner request |
 
 **Redact before sending:** remove keys, tokens, passwords, cookies, email / login / pairing codes, the passphrase,
-promo codes, seat setup codes (`ajt_…`), private keys, anything from a `.env` or credential file, email addresses and personal names. Replace the
+promo codes, seat setup codes (`ajt_…` / `ajh_…`), private keys, anything from a `.env` or credential file, email addresses and personal names. Replace the
 username in paths with `~` or `<user>` (a path inside the home folder becomes `~/x`), and the machine name with `<host>`. For an Agent-initiated report show your human the exact redacted JSON and send after their "yes". An explicit owner instruction to report authorizes direct redacted submission.
 
 ```bash
@@ -275,7 +275,7 @@ support agent: it reads Agent J's source code and documentation (read-only) and 
 out. No "yes" from your human is needed to ask (it carries only the redacted problem); tell them in one line that you did.
 
 **What you send:** the step number, the command, the **exact** error text, what you tried, OS and your agent kind.
-**Never send:** keys, tokens, passwords, cookies, the passphrase, login / pairing / promo / seat setup codes (`ajt_…`), the
+**Never send:** keys, tokens, passwords, cookies, the passphrase, login / pairing / promo / seat setup codes (`ajt_…` / `ajh_…`), the
 `aji_` ID itself, anything from a `.env` or credential file, email addresses, personal names, IP addresses, or private
 paths (write `~/x` for a path in the home folder, `<host>` for the machine name, `<user>` for the user name). Our server
 refuses text that still looks like a secret (`422`, nothing stored); our desk refuses anything that is not about Agent J.
@@ -726,7 +726,7 @@ DeepSeek says a preview may break; Agent J was measured on 0.2.0-rc.2.
 carry over). So start every command line from here on with `export PATH="$HOME/.local/bin:$PATH";` — or call
 `~/.local/bin/agentj` by its full path. This document writes `agentj` for short.
 
-The program is pinned to one release: the tag `v0.25.12a1` (front matter `source_tag`). The tag never moves, and its
+The program is pinned to one release: the tag `v0.25.13a1` (front matter `source_tag`). The tag never moves, and its
 `host/` folder is byte for byte the same code as the two files on our site whose SHA-256 is in this document's front matter.
 ```bash
 cd ~/.agentj-install
@@ -737,7 +737,7 @@ uv tool install "./$W"
 
 Intel Mac: this release keeps `cryptography<49` because newer releases lack an Intel macOS wheel. If an older installer tries to compile OpenSSL (`openssl-sys` / OpenSSL not found), rerun `uv tool install --with "cryptography<49" "./$W"`. The same platform constraint applies to `agentj update apply`.
 
-export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.25.12a1
+export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.25.13a1
 export PATH="$HOME/.local/bin:$PATH"; agentj doctor
 ```
 **Your human's own terminal must find `agentj` too** — they may use `agentj passphrase set` and `agentj pair` as a local alternative
@@ -765,16 +765,16 @@ echo "$WS  $W" | sha256sum -c - && echo "$SS  $S" | sha256sum -c -    # macOS: s
 uv tool install "./$W"          # the wheel; its dependencies come from PyPI or the mirror in UV_DEFAULT_INDEX
 ```
 `uv tool install "./$S"` installs from the checked source archive instead (it builds the same program).
-`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.25.12a1`); it is
+`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.25.13a1`); it is
 numbered separately from this document (`0.27.7`).
 
-Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.25.12a1#subdirectory=host"`.
+Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.25.13a1#subdirectory=host"`.
 
-Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.25.12a1#subdirectory=host"` (needs Python 3.11+).
+Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.25.13a1#subdirectory=host"` (needs Python 3.11+).
 
 **What each route checks.** The wheel and the source archive above are checked against the SHA-256 in this document. Each
 also has a minisign signature beside it (`<file>.minisig`, key `B79F925B0585F9D4` — front matter `signature`), which
-`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.25.12a1`
+`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.25.13a1`
 routes check **neither**: Git trusts GitHub's HTTPS and the tag name, and nothing compares that code with this document.
 Use them only when the checked files cannot be downloaded, and say so in the final feedback.
 `agentj doctor` lists what is ready and what is not (prerequisites, the fence, connectivity, which agents are usable).
@@ -838,7 +838,7 @@ human, ask whether it is theirs and still wanted, then run `agentj --migrate-leg
 
 ## 6. ✋ Human: open an Agent J account and buy a seat — stage `4-human`
 
-**(a) You were given a seat setup code** (`ajt_…` in the sentence) → **skip this step.** Tell your human, in their
+**(a) You were given a seat setup code** (`ajt_…` or `ajh_…` in the sentence) → **skip this step.** Tell your human, in their
 language: "someone has already paid for a seat for the Agent J host — you don't need to open an account or pay anything."
 Go to Step 7 (a).
 
@@ -856,9 +856,11 @@ human the money facts below in their language. Then tell them:
    Bluetooth must be on on both), or use a USB security key — or simply do this whole step on the phone's browser.
 3. Open the account: the team name 「团队名称（选填）」 ("Team name (optional)") may stay empty → 「开通账号」 ("Open my
    account"). We make the account ID; the page shows it as 「账号 ID：…」 ("Account ID: …").
-4. Buy **1 seat** (one seat = one Agent = the Agent J host) under 「账单」 ("Billing"): pick 「月付」 ("Monthly") or 「年付」
-   ("Yearly", picked by default) — their choice, do not push either; 「买几个席位」 ("Seats to buy") 1; a promo or invite
-   code goes into 「优惠码或邀请码（可不填）」 ("Promo or invite code (optional)") — or on Stripe's page; then 「购买席位」 ("Buy
+4. Buy **1 seat** (one seat = one Agent = the Agent J host) under 「账单」 ("Billing"): pick a one-time prepayment —
+   「预付 1 个月」 ("Prepay 1 month"), 「预付 3 个月」 ("Prepay 3 months") or 「预付 12 个月」 ("Prepay 12 months"); Alipay,
+   WeChat Pay or a card, never renews by itself — or a card subscription, 「月付」 ("Monthly") or 「年付」 ("Yearly"); the
+   page picks one by default — their choice, do not push any; 「买几个席位」 ("Seats to buy") 1; a promo or invite
+   code goes into 「优惠码或邀请码（可不填）」 ("Promo or invite code (optional)"), not on Stripe's page; then 「购买席位」 ("Buy
    seats") and pay on Stripe's page. Stripe's page shows the price in **US dollars** and the merchant name
    **AgentJ.app**.
    **Back from Stripe and the page asks them to sign in?** The payment went through — they sign in again (passkey or
@@ -873,11 +875,14 @@ Wait until they say it is done. You never see the email code, the card or the pr
 **Money facts** (the pricing page https://agentj.app/pricing/ is the source; say them as they are, do not round):
 - **$20 per seat per month, or $200 per seat per year, in US dollars.** Billed monthly or yearly, cancel any time; the first
   payment is refundable for 7 days (below).
+- **Or prepay once:** per seat 20, 60 or 200 US dollars for 1, 3 or 12 months. It never renews by itself; reminders come 7
+  days and 1 day before it ends. If it ends unrenewed, Agents beyond the paid seats lose the remote and hosted services at
+  once (no grace period); the AI and automations on the Agent J host keep running.
 - **On Stripe's page:** amounts are in **US dollars** (a card in another currency is converted by the card's bank). Nothing
   is free up front — never promise a free period; the 7-day refund below is the way to try it without risk.
-- **Paying:** a credit or debit card on Stripe's page. Visa, Mastercard and American Express work; a card from a mainland
-  Chinese bank usually works if it can pay foreign websites in US dollars; a UnionPay-only card may be declined; Alipay
-  and WeChat Pay are not available yet.
+- **Paying:** on Stripe's page. A prepayment takes Alipay, WeChat Pay or a card (whatever the page offers); a subscription
+  takes a credit or debit card only. Visa, Mastercard and American Express work; a card from a mainland Chinese bank
+  usually works if it can pay foreign websites in US dollars; a UnionPay-only card may be declined.
 - **Tax and invoices:** the payment page adds no tax and has no field for a tax ID. Every monthly invoice can be viewed
   and downloaded under 「管理账单」 ("Manage billing") in the account dashboard. Payment in Chinese yuan and Chinese tax
   invoices (fapiao) are not available yet.
@@ -914,7 +919,7 @@ Wait until they say it is done. You never see the email code, the card or the pr
    | `4` | the code is invalid, already used, expired or revoked | `rm` the file; your human presses 「复制安装提示词」 ("Copy installation prompt") on that seat card for a new sentence — or asks the person who gave them the seat |
    | `5` | this seat is no longer paid for | `rm` the file; tell your human (their billing, or the person who gave them the seat) |
    | `6` | a billing change of the account (e.g. seats just added) is being processed; the code is still unused | keep the file, wait a few minutes, run the same command again; still `6` after about an hour and a half → tell your human |
-   | `2` | refused before sending (the code is not `ajt_` + 43 characters, or the name is not allowed or too long — the message says how long it counts against 13) | re-copy the code exactly / pick another name |
+   | `2` | refused before sending (the code is not `ajt_` / `ajh_` + 43 characters, or the name is not allowed or too long — the message says how long it counts against 13) | re-copy the code exactly / pick another name |
    | `1` | anything else (network, rate limit, already bound) | report it with the printed text (never the code) |
    The code binds this one computer to that one seat, once. Pairing the phone and approving it still happen only here
    (Steps 8 and 11).
@@ -1763,7 +1768,7 @@ Nightly automatic installation is enabled by default and verifies the official w
 In a shared session (the default of 0.13–0.19), reinstall directly using Step 4's checked wheel (SHA-256 must match this document and
 its public GitHub copy), preserving the host's identity, paired phones, account and preferences:
 ```bash
-uv tool install --force "./agentj-0.25.12a1-py3-none-any.whl"
+uv tool install --force "./agentj-0.25.13a1-py3-none-any.whl"
 agentj --version
 agentj service install
 agentj service restart
@@ -1772,7 +1777,7 @@ agentj doctor
 The matching published tag is another source, after verifying the tag object against the upgrade email (no signature or
 hash check on this route — Step 4):
 ```bash
-uv tool install --force "git+https://github.com/preangelleo/agentj@v0.25.12a1#subdirectory=host"
+uv tool install --force "git+https://github.com/preangelleo/agentj@v0.25.13a1#subdirectory=host"
 ```
 **0.14 independent session** (`agent.session_mode=independent`): 0.14's fence keeps Agent J's own program read-only and
 hides the service manager, so the Agent on the phone cannot reinstall or restart from inside it (measured: the install
@@ -1798,11 +1803,11 @@ prints something and `uv tool list` (or `pipx list`) shows `agentjarvis-host`, t
 the new name, then:
 ```bash
 jarvis service uninstall      # stop the old service first (Step 10 used tmux / nohup instead? stop that process)
-uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.25.12a1#subdirectory=host"
+uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.25.13a1#subdirectory=host"
 agentj doctor
 agentj service install        # start it again under the new name (or the tmux / nohup fallback, Step 10)
 ```
-With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.25.12a1#subdirectory=host"`.
+With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.25.13a1#subdirectory=host"`.
 - After the move, `agentj` puts back a `jarvis` command (a link to `agentj`, only if no other `jarvis` exists) for one more
   version; it prints a notice that points here. New installs never get `jarvis`.
 - The state moves from `~/.local/state/agentjarvis-alpha` to `~/.local/state/agentj` on the first run of `agentj` **after your
@@ -3356,7 +3361,9 @@ Notebook entries keep an optional title, content and date separately. Copy copie
 
 ### Post-upgrade reminders and Claude version managers
 
-After an upgrade, doctor repairs an existing working root’s missing core references and uses the existing reconnect repair, then checks again. `UPGRADE_RESULT ok` with `pending_checks` means **Upgrade succeeded; N items remain / 升级成功，还剩 N 项待办**. Follow the remaining doctor hints; a main-inject reminder to send the first phone message is expected after restart. A genuine package or service integrity failure still reports failed.
+After upgrading, the host checks itself automatically. With no blocking problems it says “Upgrade succeeded; everything is working.” A blocking problem is named in the receipt with a Repair button on the phone, using the existing paired-device confirmation flow. Continue the first-run checklist in Settings; its counts and doctor use the same host record and do not appear in upgrade receipts. Waiting for the first phone message after restart is not an upgrade failure.
+
+升级后主机会自动自检；没有阻塞问题时只提示「升级成功，一切正常」。有阻塞时会说明故障，并在手机回执上提供「一键修复」，沿用已配对手机的确认流程。首次准备清单在「设置」里继续，待办数字与清单、doctor 使用同一份主机记录，不计入升级回执。重启后等待首条手机消息不算升级故障。
 
 Claude Code installed with mise/asdf may have several versions. Agent J reports `ambiguous_install` and defaults to the highest executable numeric version unless a version was explicitly selected. Set `AGENTJ_CLAUDE_BIN` to an executable or select an installed version with mise/asdf. This is not `not_installed`.
 
@@ -3724,3 +3731,37 @@ OpenCode 1.19.4 and 2.1.4 use separate native HTTP/event adapters, selected auto
 OpenCode 1.19.4 和 2.1.4 会自动选用对应的 HTTP/事件适配器，已有 1.x 可继续用，Homebrew 2.x 不必降级。两个实测版本均接受受管的本地端口启动参数。无工具私聊执行器需要 `--dir`，2.1.4 不提供该参数，会在启动前拒绝；这个执行器请使用 Claude Code 或 Codex。只读诊断依次尝试当前免费 DeepSeek Flash、当天官方承诺不留存不训练的 GLM-5.3-Flash Free、明确安装的本地模型；不使用 LongCat/Space Bunny，不自动选付费模型或重发原任务。
 
 OpenCode 2.1 model discovery uses its authenticated native price catalogue because `models --verbose` was removed. The installer consumes the host's verified `free_models` list; older hosts keep their existing CLI path. / OpenCode 2.1 的免费模型由原生价格目录识别；安装器使用Agent J 主机核实的列表，旧主机保留原来的命令行路径。
+
+### 微信开通与转发 / WeChat setup and forwarding
+
+打开**设置 → 沟通渠道**。微信 ClawBot 和 Telegram 使用同样的布局与「开通或管理」按钮。点按钮后，主对话输入框会填入对应技能请求，你可以补充要求后再发送。主 Agent 会判断当前状态：未开通就引导扫码，已开通就帮助查看状态、解绑或更换分身套餐。
+
+在**设置 → 沟通渠道 → 转发去向**选择「系统分享（默认）」、「微信 ClawBot」或「Telegram」。未绑定的通道置灰；选中即在此遥控器为当前主机保存，回复卡和阅读器使用相同去向与图标。绑定通道不会自动选中。所选通道解绑后回到系统分享，并提示一次；暂时无法发送仍保留所选去向。发送失败不改走另一通道，也不自动重发。
+
+Open **Settings → Channels**. WeChat ClawBot and Telegram have the same layout and a **Connect or manage** button. Either button puts a skill request into the main chat composer; add any details before sending. Your Agent checks the current connection, starts QR setup if needed, or helps manage status, disconnecting and avatar plans.
+
+Under **Settings → Channels → Forward replies to**, choose **System share** (default), **WeChat ClawBot** or **Telegram**. Unbound channels are disabled. Your choice saves immediately on this remote for this host, and both the reply card and reader use that destination and icon. Binding a channel does not select it automatically. Unbinding the selected channel resets to system share with one notice. A temporary send restriction keeps the chosen destination; a failed send never falls back or retries automatically.
+
+扫码后请在微信里给 ClawBot 发一句话完成验收，首条可发送回复带问候。微信转发需要最近五分钟内收到的会话凭据；明确重试可能重复送达。大陆网络／中文推荐微信，海外／英文推荐 Telegram。 / After scanning, send ClawBot a message in WeChat to finish checking the connection. Its first eligible reply includes a greeting. Forwarding needs a received context from the last five minutes; an explicit retry may duplicate delivery. Recommend WeChat for mainland networks / Chinese speakers, Telegram overseas / for English speakers.
+
+<!-- P537: heartbeat watchlist and text editor -->
+
+## 编辑巡检清单
+
+打开**设置 → 心跳 → 查看或编辑心跳提示**，在全屏编辑器里查看和修改。四角分别是取消、恢复默认、预览和保存；恢复默认先改草稿，保存后生效。取消保留原文，保存失败会保留草稿。设置里的文字字段和通讯录备注也用同一编辑器。
+
+出厂清单检查本机所有定时任务（Linux systemd timer/cron、macOS launchd/cron、Windows 计划任务）自上次心跳以来的日志和报告、Agent J 好友的异常或卡住的请求，以及邮件/微信/Telegram 分身有没有漏交、处理不理想或无人认领的事；主 Agent 需要时补回复或接手，仍遵守原有审批。忙时也按同一份清单顺手巡检，**忙时不会触发心跳**。
+
+升级保留你原有的 heartbeat.md。doctor 和设置提示「出厂清单有更新，可一键合并」时，点**合并出厂清单**会保留你的文字再追加缺少的清单。
+
+主 Agent 可运行 `agentj inbox avatar-log --since 2h`（也可写日期或时间，加 `--json`）列出本机保留的分身往来摘要、回复、处置结论和送达状态。复核时应覆盖上次心跳以来的时间；旧记录缺回复或送达证据时显示未知。记录有保留期限和大小上限，截短或通道不可用会明确提示，不能把没有记录当作一切正常。
+
+## Edit the watchlist
+
+Open **Settings → Heartbeat → View or edit heartbeat prompt**. The shared full-screen editor offers Cancel, Restore defaults, Preview and Save. Restore changes the draft first; Save applies it. Cancel preserves the original, and a failed save keeps your draft. Settings text fields and contact notes use the same editor.
+
+The factory watchlist checks all local scheduled-job logs and reports since the last heartbeat (Linux systemd timers/cron, macOS launchd/cron, Windows Task Scheduler), unusual or stuck Agent J friend requests, and mail/WeChat/Telegram avatar work that should have been handed over, was handled poorly or remains unclaimed. The main Agent follows up or takes over under existing approvals. It follows this same file while working too; **heartbeats do not fire while busy**.
+
+Upgrades preserve your heartbeat.md. When doctor or Settings reports a factory checklist update, **Merge factory checklist** appends the missing checklist while keeping your text.
+
+The main Agent can run `agentj inbox avatar-log --since 2h` (or an ISO date/time; add `--json`) for retained local exchanges, replies, handling outcomes and delivery status. Cover the period since the last heartbeat. Missing historical replies or delivery evidence are unknown. Retention and size limits apply; truncation and unavailable channels are explicit. Absence of a record never proves everything was handled.

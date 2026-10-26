@@ -61,40 +61,61 @@ TAG = {"zh": "〔Agent J 心跳〕", "en": "[Agent J heartbeat]"}
 SILENT = "〔不回群〕"
 
 TEMPLATE = {
-    "zh": """# 心跳提示（Heartbeat Prompt）
+    "zh": """# 心跳提示
 
-<!-- Agent J 每隔一段时间（默认 60 分钟，`agentj heartbeat set 30m` 修改）在你空闲时把这份提示送给主 Agent。
-     主人或主 Agent 都可以改它：`agentj heartbeat prompt edit`。改了以后下一次心跳会附上全文。
-     不要在这里写密码、API key 或任何凭据。 -->
+闲置满设定的时间才会收到心跳，忙时不会打断。忙时巡检也是本职，顺手照做。
+你或主人可以在设置 → 心跳编辑这份提示，也可以用 `agentj heartbeat prompt edit`。
+不要在这里写密码或其他凭据。
 
-醒来以后按顺序做，做完就回到待命：
-
-1. 看一眼后台：正在跑的子 Agent、headless 任务和定时任务（`agentj busy list`、`agentj capability list`），有没有卡住、失败或该交报告还没交的。
-2. 读回最近完成的运行报告和 VERDICT，不凭退出码判断成功。
-3. 看看待办卡（`agentj card todo due` + `agentj card cal due`）和你答应过、还没做完的事（工作根目录的 documentation/NEXT_SESSION.md、交接文件、MEMORY.md）。
-4. 中途挂掉的活：能接着干的接着干，需要派给 CEO 的照常派。
-
-只报需要董事长知道或拍板的事，一两句话。一切正常、没有要报的，最终回复只写：〔不回群〕
+醒来以后按顺序做：先用 `agentj card todo due` + `agentj card cal due` 看待办和日程，再看答应主人的事，读回实际报告，接上中途停下的工作。然后按下面清单巡检。
+只报需要主人知道或拍板的事，一两句话；一切正常，最终只回：〔不回群〕
 """,
     "en": """# Heartbeat Prompt
 
-<!-- Agent J hands this note to the main Agent when it has been idle for a while (default 60 minutes; change it with
-     `agentj heartbeat set 30m`). The owner or the main Agent may edit it: `agentj heartbeat prompt edit`. After a change
-     the next heartbeat carries the full text. Never put passwords, API keys or any credential here. -->
+A heartbeat arrives after the configured idle interval; it never interrupts busy work. Check as you work too.
+You or the owner may edit this note in Settings → Heartbeat or with `agentj heartbeat prompt edit`.
+Never put passwords or other credentials here.
 
-When you wake up, go through this in order, then go back to standby:
-
-1. Check the background: running sub-agents, headless jobs and scheduled tasks (`agentj busy list`, `agentj capability list`) —
-   anything stuck, failed, or overdue with its report?
-2. Read the newest finished run reports and verdicts; an exit code is not success.
-3. Look at the To-do card (`agentj card todo due` + `agentj card cal due`) and anything you promised and have not finished (documentation/NEXT_SESSION.md in the working
-   root, handoff files, MEMORY.md).
-4. Work that died half-way: pick it up if you can, or dispatch it to its CEO as usual.
-
-Report only what the owner needs to know or decide, in a sentence or two. When everything is fine and there is nothing to
-report, make your final reply exactly: 〔不回群〕
+First run `agentj card todo due` + `agentj card cal due` for to-dos and the calendar; review promises, read the actual reports and resume unfinished work. Then follow the checklist below.
+Report only what the owner needs to know or decide, in a sentence or two. When all is well, reply only: 〔不回群〕
 """,
 }
+
+# P537: one canonical checklist; a custom prompt is never overwritten on upgrade.
+CHECKLIST = {
+    "zh": """<!-- agentj:watchlist v1 -->
+## 常驻巡检清单
+忙时也顺手巡检，不必等心跳；从上次心跳以来的记录开始，未处理的旧事也要跟进。
+A. 检查这台电脑所有定时任务（Linux 的 systemd timer / cron、macOS 的 launchd / cron、Windows 计划任务）的日志与报告，有无报错、漏跑或报告未交；读实际结果，不只看退出码。
+B. 看看 Agent J 好友的往来，有无卡住的请求、异常或需要你介入的事。
+C. 用 `agentj inbox avatar-log --since 2h` 按时间复核邮件、微信、Telegram 分身与主人的往来和处置结论（可调整起始时间）；有没有该上交却自行处理、处理不理想、挂起无人认领的事。需要就由你补回复或接手，仍遵守原有审批；历史缺失的回复或结论按未知处理，不猜成功。
+<!-- /agentj:watchlist -->
+""",
+    "en": """<!-- agentj:watchlist v1 -->
+## Standing watchlist
+Check as you work too; do not wait for a heartbeat. Start with records since the last heartbeat and follow up older unresolved work.
+A. Check logs and reports for all scheduled jobs on this computer (Linux systemd timers / cron, macOS launchd / cron, Windows Task Scheduler): errors, missed runs or missing reports. Read actual results, not just exit codes.
+B. Review Agent J friend conversations for stuck requests, unusual events or anything needing your help.
+C. Run `agentj inbox avatar-log --since 2h` to review, in time order, the owner's mail, WeChat and Telegram avatar exchanges and outcomes (adjust the start time as needed). Look for actions that should have been handed over, poor handling and unclaimed requests. Follow up or take over while keeping existing approvals; missing historical replies or outcomes are unknown, never proof of success.
+<!-- /agentj:watchlist -->
+""",
+}
+for _lang in TEMPLATE:
+    TEMPLATE[_lang] += "\n" + CHECKLIST[_lang]
+
+
+def merge_checklist(text: str, lang: str) -> str:
+    """Idempotent append, retaining every byte of the owner's existing instructions."""
+    return text if CHECKLIST[lang] in text else text + "\n\n" + CHECKLIST[lang]
+
+
+def prompt_view(lang: str) -> dict:
+    from .privacy import redact
+    got = read_prompt()
+    text = got[0] if got else ""
+    return {"ok": True, "text": redact(text), "sha": prompt_revision(got),
+            "default": TEMPLATE[lang], "update_available": CHECKLIST[lang] not in text,
+            "path": shown(prompt_path())}
 
 
 # ------------------------------------------------------------------ pure helpers (CLI and serve)
@@ -182,7 +203,7 @@ def _read_regular(p: Path, limit: int = PROMPT_MAX) -> str | None:
         if not stat.S_ISREG(st.st_mode) or st.st_uid != os.getuid():
             return None
         raw = f.read(limit + 1)
-    return raw[:limit].decode("utf-8", "replace")
+    return None if len(raw) > limit else raw.decode("utf-8", "replace")
 
 
 def read_prompt(p: Path | None = None) -> tuple[str, str] | None:
@@ -206,7 +227,7 @@ def problem(text) -> str | None:
     return None
 
 
-def write_prompt(text: str, p: Path | None = None) -> str:
+def _write_prompt(text: str, p: Path | None = None) -> str:
     """Atomic 0600 write of heartbeat.md (directory 0700, never through a link). Returns sha8."""
     p = p or prompt_path()
     why = problem(text)
@@ -232,14 +253,55 @@ def write_prompt(text: str, p: Path | None = None) -> str:
     return sha8(text)
 
 
+@contextlib.contextmanager
+def prompt_lock(p=None):
+    import fcntl
+    p = p or prompt_path()
+    p.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    fd = os.open(p.with_name('.heartbeat.lock'), os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(fd)
+
+
+def write_prompt(text: str, p: Path | None = None) -> str:
+    with prompt_lock(p):
+        return _write_prompt(text, p)
+
+
+def prompt_revision(got):
+    return hashlib.sha256(got[0].encode()).hexdigest() if got else None
+
+
+def update_prompt(target, lang):
+    with prompt_lock():
+        got = read_prompt()
+        if got is None and (prompt_path().exists() or prompt_path().is_symlink()):
+            raise ValueError("invalid")
+        if target["sha"] != prompt_revision(got):
+            raise ValueError("changed")
+        if target["op"] == "merge":
+            text = merge_checklist(got[0] if got else "", lang)
+        elif target["op"] == "reset":
+            text = TEMPLATE[lang]
+        elif target["op"] == "save":
+            text = target["text"]
+        else:
+            raise ValueError("shape")
+        return _write_prompt(text)
+
+
 def ensure_prompt(lang: str = "zh", p: Path | None = None) -> bool:
     """The default template when heartbeat.md does not exist yet (first start / the wizard). True when written."""
     p = p or prompt_path()
-    if p.exists() or p.is_symlink():
-        return False
     try:
-        write_prompt(TEMPLATE["en" if lang == "en" else "zh"], p)
-        return True
+        with prompt_lock(p):
+            if p.exists() or p.is_symlink():
+                return False
+            _write_prompt(TEMPLATE["en" if lang == "en" else "zh"], p)
+            return True
     except (OSError, ValueError):
         return False
 
@@ -521,6 +583,24 @@ class Heartbeat:
                 "seen_full": self.seen.get(key), "daily_at": self.daily_at(),
                 "daily_last": d.get("daily") if isinstance(d.get("daily"), str) else None}
 
+    async def on_phone(self, session, obj):
+        from . import controls, wire
+        if not session.p33 or not wire.is_rid(obj.get("r")):
+            return
+        if obj.get("t") == "heartbeat_get":
+            return await self.host.send_app(session, {"t": "heartbeat_state", "r": obj["r"], **prompt_view(self.lang())})
+        target = {k: obj.get(k) for k in ("op", "text", "sha")}
+        why = controls.check(self.host.st, self.host.nonces, self.host.channel, session.device,
+                             obj, "heartbeat_write", target)
+        if not why:
+            try:
+                update_prompt(target, self.lang())
+            except (OSError, ValueError) as e:
+                why = str(e) if isinstance(e, ValueError) else "io"
+        # Audit metadata only; neither prompt text nor a reversible copy enters logs.
+        self.host.st.log("heartbeat_prompt_phone", device=session.device, result=why or "ok")
+        await self.host.send_app(session, {"t": "ctl_res", "r": obj["r"], "ok": why is None, "why": why})
+
     # ---- heartbeat.sock (the fenced Agent's way in)
     @property
     def sock(self) -> Path:
@@ -564,6 +644,9 @@ class Heartbeat:
         op = req.get("op")
         if op == "status":
             return self.status()
+        if op == "avatar_log":
+            from .avatar_log import snapshot
+            return snapshot(self.host, req.get("since"))
         if op == "prompt_show":
             got = read_prompt()
             return {"ok": True, "path": shown(prompt_path()), "text": got[0] if got else "", "sha": got[1] if got else None}

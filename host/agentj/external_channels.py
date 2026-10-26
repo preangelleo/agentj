@@ -19,7 +19,7 @@ class ExternalChannels(WeChat):
         super().__init__(host, namespace='external', **kwargs)
         self.receive_lock = asyncio.Lock()
 
-    async def receive_owner(self, source, message_id, text, paths=(), valid=lambda: True, *, admission=None, blobs=(), quote=None, quote_text=None, source_info=None):
+    async def receive_owner(self, source, message_id, text, paths=(), valid=lambda: True, *, admission=None, blobs=(), quote=None, quote_text=None, source_info=None, interim=None):
         if source not in ('mail', 'telegram'):
             raise ValueError('channel_source')
         async with self.receive_lock:
@@ -42,7 +42,7 @@ class ExternalChannels(WeChat):
             record = self.store.put(rid, [manifest, *paths], text)
             record.update(source=source, state='processing', admission=admission)
             self.store.save()
-            self.h.agent_notice('来自' + LABELS[source] + ' · ' + manifest)
+            from .channel_card import notice as channel_notice; channel_notice(self.h, source, text, list(paths), manifest)  # P543 (#308)
             reply = None
             try:
                 from .channel_inputs import inputs
@@ -51,7 +51,7 @@ class ExternalChannels(WeChat):
                     record['state'] = 'cancelled'
                     self.store.save()
                     return None
-                reply = await self.assistant('\n'.join([text, *model_parts])[:32000], images)
+                reply = await self.assistant('\n'.join([text, *model_parts])[:32000], images, interim, source)  # P543: interim = 「去网页确认」
             except Exception:
                 self.assistant_waiting = True
                 self.store.count('assistant_failed')
@@ -59,6 +59,10 @@ class ExternalChannels(WeChat):
                 record['state'] = 'cancelled'
                 self.store.save()
                 return None
+            from .privacy import redact
+            record['reply_summary'] = redact(str(reply or ''))[:2000]
+            record['outcome'] = 'reply_prepared' if reply is not None else 'waiting_model' if getattr(self, 'assistant_waiting', False) else 'owner_review'
+            record['delivery'] = 'unknown'  # the caller owns actual SMTP/Telegram delivery
             waiting = reply is None and getattr(self, 'assistant_waiting', False)
             record['state'] = 'replied' if reply is not None else 'waiting_model' if waiting else 'pending'
             self.store.save()
@@ -67,6 +71,14 @@ class ExternalChannels(WeChat):
             if waiting:
                 return self.waiting_reply()
             return Reply(reply, getattr(self, 'reply_images', ())) if reply is not None else handoff(self.h)
+
+    def record_delivery(self, source, message_id, outcome):
+        rid = hashlib.sha256((source + ':' + str(message_id)).encode()).hexdigest()
+        record = self.store.data['records'].get(rid)
+        if record is not None:
+            record['delivery'] = 'sent' if outcome == 'sent' else 'unknown' if outcome in ('unknown', 'failed') else 'not_sent'
+            record['outcome'] = outcome
+            self.store.save()
 
     async def offer_choice(self):
         from .channel_plans import inventory

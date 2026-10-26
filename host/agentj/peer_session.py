@@ -92,10 +92,32 @@ class TurnResult:
     session_id: str | None = None
     tools: list = field(default_factory=list)   # tool events seen (must stay empty)
     parsed: bool = True              # False: the model gave no valid JSON decision (its raw text is the draft)
+    detail: str | None = None        # P540: a fixed sub-code for a failure (never native output) — shown in status
 
 
-def _fail(error: str) -> TurnResult:
-    return TurnResult("ask_owner", "", "", None, error, parsed=False)
+def _fail(error: str, detail: str | None = None) -> TurnResult:
+    return TurnResult("ask_owner", "", "", None, error, parsed=False, detail=detail)
+
+
+def failure_detail(text: str, tail: int = 0) -> str:
+    """P540: a harness error message (read in memory, never kept) → one fixed word for the owner's status. tail > 0 reads
+    only the last lines (stderr: earlier lines are non-fatal log noise such as skill-folder warnings)."""
+    if tail:
+        text = "\n".join((text or "").strip().splitlines()[-tail:])
+    low = (text or "").lower()
+    if any(w in low for w in ("usage limit", "rate limit", "quota", "429", "insufficient_quota", "too many requests")):
+        return "quota"
+    if any(w in low for w in ("401", "403", "unauthorized", "forbidden", "login", "auth", "token expired", "api key")):
+        return "login"
+    if "model" in low and any(w in low for w in ("not found", "not supported", "unsupported", "does not exist", "unknown", "invalid")):
+        return "model"
+    if any(w in low for w in ("unexpected argument", "unrecognized", "unknown option", "invalid value", "usage:", "error parsing")):
+        return "cli_contract"
+    if any(w in low for w in ("stream disconnected", "connection", "network", "dns", "timed out", "unreachable", "tls")):
+        return "network"
+    if any(w in low for w in ("operation not permitted", "permission denied", "sandbox")):
+        return "sandbox"
+    return "other"
 
 
 # ------------------------------------------------------------------ places
@@ -166,7 +188,10 @@ def claude_flags(exe: str) -> set:
     key = ("claude", exe)
     if key not in _probe:
         h = _run_help([exe, "--help"])
-        _probe[key] = {f for f in CLAUDE_REQUIRED + CLAUDE_OPTIONAL if re.search(re.escape(f) + r"(?![\w-])", h)}
+        found = {f for f in CLAUDE_REQUIRED + CLAUDE_OPTIONAL if re.search(re.escape(f) + r"(?![\w-])", h)}
+        if not found:
+            return found         # P540: a failed probe (timeout / start error) is retried next turn, never cached
+        _probe[key] = found
     return _probe[key]
 
 
@@ -174,7 +199,10 @@ def codex_features(exe: str) -> set:
     key = ("codex", exe)
     if key not in _probe:
         out = _run_help([exe, "features", "list"])
-        _probe[key] = {ln.split()[0] for ln in out.splitlines() if ln.strip() and re.match(r"[a-z0-9_.]+\s", ln)}
+        found = {ln.split()[0] for ln in out.splitlines() if ln.strip() and re.match(r"[a-z0-9_.]+\s", ln)}
+        if not found:
+            return found         # P540: `features list` timed out / failed to start (macOS first run): retry, don't cache
+        _probe[key] = found
     return _probe[key]
 
 
@@ -182,7 +210,10 @@ def opencode_flags(exe: str) -> set:
     key = ("opencode", exe)
     if key not in _probe:
         h = _run_help([exe, "run", "--help"])
-        _probe[key] = {f for f in ("--agent", "--format", "--pure", "--title", "--dir", "--session") if f in h}
+        found = {f for f in ("--agent", "--format", "--pure", "--title", "--dir", "--session") if f in h}
+        if not found:
+            return found         # P540: retried next turn, never cached
+        _probe[key] = found
     return _probe[key]
 
 
@@ -595,7 +626,8 @@ class PeerSessions:
 
     @staticmethod
     def parse_codex(out: str, err: str) -> dict:
-        r = {"text": None, "sid": None, "tokens": None, "tools": [], "error": None}
+        r = {"text": None, "sid": None, "tokens": None, "tools": [], "error": None, "detail": None}
+        failed = completed = False
         for ln in out.splitlines():
             try:
                 ev = json.loads(ln)
@@ -614,13 +646,20 @@ class PeerSessions:
                 elif it and it not in CODEX_QUIET_ITEMS:      # command_execution, file_change, mcp_tool_call, web_search …
                     r["tools"].append(str(it))
             elif t == "turn.completed":
+                completed = True
                 u = ev.get("usage")
                 if isinstance(u, dict) and any(k in u for k in ("input_tokens", "output_tokens")):
                     total = _int(u.get("input_tokens")) + _int(u.get("output_tokens"))
                     r["tokens"] = total if total > 0 else None
             elif t in ("turn.failed", "error"):
+                failed = failed or t == "turn.failed"
                 msg = json.dumps(ev).lower()
                 r["error"] = "login" if any(x in msg for x in ("401", "unauthorized", "login", "auth")) else "harness"
+                r["detail"] = failure_detail(msg)
+        # P540: codex exec also reports retries / notices ("Reconnecting… 1/5") as a top-level `error`; when the turn
+        # still completed with a reply it was not a failure. turn.failed always is.
+        if r["error"] and not failed and completed and r["text"] is not None:
+            r["error"] = r["detail"] = None
         for ln in (err or "").splitlines():
             if "tools::router" in ln or "tool call" in ln.lower():
                 r["tools"].append("attempt")
@@ -696,19 +735,19 @@ class PeerSessions:
             return _fail("no_harness")
         exe = await asyncio.to_thread(self._exe, kind)
         if not exe:
-            return _fail("no_harness")
+            return _fail("no_harness", "not_installed")
         sandbox = sandbox_dir(self.st, fid)
         for p in fence.protected_paths(self.st):     # the sandbox must stay visible inside the fence
             if str(sandbox) == p or str(sandbox).startswith(p.rstrip(os.sep) + os.sep):
-                return _fail("fence")
+                return _fail("fence", "protected_path")
         try:
             await asyncio.to_thread(_empty_dir, sandbox)
         except OSError:
-            return _fail("fence")
+            return _fail("fence", "sandbox_dir")
         why = await asyncio.to_thread(fence.problem, self.st, str(sandbox))
         if why:
             self.st.log("peer_fence_fail", reason=why, agent=kind)
-            return _fail("fence")
+            return _fail("fence", why if re.fullmatch(r"[a-z0-9_]{1,40}", str(why)) else "other")
         prompt = self.system_prompt(friend, group)
         sid = self.store.session_id(fid, kind)
         env = self.execution_env(kind, cfg)
@@ -728,8 +767,9 @@ class PeerSessions:
                        OPENCODE_DISABLE_SHARE="1", OPENCODE_DISABLE_DEFAULT_PLUGINS="1")
             argv = await asyncio.to_thread(self._opencode_argv, exe, sid, cfg, str(sandbox))
         if argv is None:
-            self.st.log("peer_no_tool_off", agent=kind)
-            return _fail("no_tool_off")
+            detail = "feature_missing" if (kind, exe) in _probe else "probe_failed"   # only a successful probe is cached
+            self.st.log("peer_no_tool_off", agent=kind, reason=detail)
+            return _fail("no_tool_off", detail)
         out, err, rc = await self._execute(exe, argv, str(sandbox), env, wrapped, gen, cfg, ro_dirs, sid)
         if rc == "stopped":
             return _fail("stopped")
@@ -742,9 +782,13 @@ class PeerSessions:
         if parsed["text"] is None or parsed["error"]:     # an error text is never a draft for the owner
             if sid and rc != 0:          # a session the harness lost (deleted / other machine): start fresh next time
                 self.store.set_session_id(fid, kind, None)
-            r = _fail(parsed["error"] or "harness")
+            # P540: a fixed word for the owner's status — from the event, else the exit (stderr read in memory only)
+            detail = parsed.get("detail") or (failure_detail(err, tail=3) if rc != 0 else "no_reply")
+            if detail == "other" and isinstance(rc, int) and rc != 0:
+                detail = "exit_" + str(rc if 0 < rc < 256 else "other")
+            r = _fail(parsed["error"] or ("login" if detail == "login" else "harness"), detail)
             r.tokens, r.tools = parsed["tokens"], parsed["tools"]
-            self.st.log("peer_turn_fail", agent=kind, reason=r.error)
+            self.st.log("peer_turn_fail", agent=kind, reason=r.error, why=detail)
             return r
         decision, text, topic, ok = parse_decision(parsed["text"])
         res = TurnResult(decision, text, topic, parsed["tokens"], None, session_id=parsed["sid"], tools=parsed["tools"],

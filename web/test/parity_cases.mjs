@@ -349,6 +349,7 @@ export async function runCases({ B, web, fake, only }) {
     fake.st.tgfwd = true; fake.st.tgFwds = [];
     fake.kick(1001); await waitState(P, 'connecting', 3000).catch(() => {}); await waitState(P, 'ready', 8000);
     await sleep(300);
+    await ev(`import('./js/forward-choice.js').then(m=>m.select('tg'))`);
     await ev(`window.__shared = null; Object.defineProperty(navigator, 'share', { value: (d) => { window.__shared = d; return Promise.resolve(); }, configurable: true, writable: true })`);
     await click('#fwdBtn');
     await waitToast(T('r.tg.sent'));
@@ -359,9 +360,10 @@ export async function runCases({ B, web, fake, only }) {
     await click('#fwdBtn');
     await waitToast(T('r.tg.limited'));
     ok(await ev(`window.__shared === null`), 'a refusal never falls through to the share sheet');
-    fake.st.tgfwdWhy = 'not_configured';   // Telegram switched off since ready → the share sheet from now on
+    fake.st.tgfwdWhy = 'not_configured';   // no automatic fallback for a failed destination
     await click('#fwdBtn');
-    await wait(`window.__shared && window.__shared.text === '复制我'`);
+    await waitToast(T('r.tg.failed'));
+    ok(await ev(`window.__shared === null`), 'not_configured never falls through to share');
     ok(fake.st.tgFwds.length === 3, 'three asks reached the host');
     fake.st.tgfwd = false;
     fake.kick(1001); await waitState(P, 'connecting', 3000).catch(() => {}); await waitState(P, 'ready', 8000);

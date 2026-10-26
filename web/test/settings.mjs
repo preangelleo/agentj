@@ -481,15 +481,16 @@ try {
     } finally { await q.dispose(); }
   });
 
-  await C('settings-telegram-pair', async () => {   // P283: 「重新绑定 Telegram」 → the host-answered /telegram-pair
+  await C('settings-telegram-pair', async () => {   // P536 #296: editable main-Agent setup/manage request
     const p = await paired();
     try {
       await click(p, '#setBtn');
-      assert.equal(await ev(p, `document.getElementById('set-tgpair').textContent`), '重新绑定 Telegram');
+      assert.equal(await ev(p, `document.getElementById('set-tgpair').textContent`), '开通或管理');
       assert.doesNotMatch(await ev(p, `document.getElementById('settings').textContent`), /userinfobot/i);
       await click(p, '#set-tgpair');
-      for (let i = 0; i < 50 && !fake.log.some((m) => m.t === 'slash' && m.cmd === 'telegram-pair'); i++) await sleep(100);
-      assert.equal(fake.log.filter((m) => m.t === 'slash' && m.cmd === 'telegram-pair').length, 1);
+      await waitFor(p, `document.getElementById('input').value.includes('agentj-config')`);
+      assert.match(await ev(p, `document.getElementById('input').value`), /Telegram/);
+      assert.equal(fake.log.filter((m) => m.t === 'slash' && m.cmd === 'telegram-pair').length, 0, 'no immediate command; owner may add details before sending');
       assert.equal(await isOpen(p), false, 'settings close so the code card is in view');
       noProblems(p);
     } finally { await p.dispose(); }

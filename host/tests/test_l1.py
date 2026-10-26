@@ -512,7 +512,8 @@ class Chain(unittest.TestCase):
             await wait(lambda: sum(m["text"].startswith("被拒绝") for m in msgs()) == 2, 10000)
             self.assertGreaterEqual(time.monotonic() - t0, 2.5)
             self.assertTrue((self.work / "victim.txt").exists())
-            self.assertIn({"t": "ask_done", "id": [o for _, o in sent if o["t"] == "ask"][-1]["id"], "result": "timeout"},
+            self.assertIn({"t": "ask_done", "id": [o for _, o in sent if o["t"] == "ask"][-1]["id"], "result": "timeout",
+                           "why": "timeout"},   # P539: + the reason
                           [o for _, o in sent])
             # 5. a long reply is split, nothing lost
             await host._app(s, {"t": "msg", "id": "e" * 16, "text": "LONG", "ts": 0})

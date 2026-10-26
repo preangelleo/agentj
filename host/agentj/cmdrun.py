@@ -98,7 +98,7 @@ class Desk:
                 return await res(False, why="no_passkey", cmd=name)
             ch = passkey.elevate_challenge(h.channel, s.device, n, "cmd_run", n, controls.object_digest("cmd_run", target))
             if obj.get("fa") is None:
-                return await res(False, why="passkey_required", cmd=name, fa=pk["id"], fa_ch=wire.b64u(ch))
+                return await res(False, why="passkey_required", cmd=name, fa=pk["id"], fa_s=passkey.pk_state(pk), fa_ch=wire.b64u(ch))
         why = controls.check(h.st, h.nonces, h.channel, s.device, obj, "cmd_run", target)
         if not why and require_uv:
             try:

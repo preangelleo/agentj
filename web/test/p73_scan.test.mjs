@@ -25,7 +25,7 @@ test('compact pairing link: QR version 8 / 49 modules (was 13 / 69), decodes, an
   assert.equal(FX.v2.version, 8); assert.equal(FX.v2.modules, 49); assert.equal(FX.v2.error, 'M');
   assert.equal(FX.v1.version, 13); assert.equal(FX.v1.modules, 69);
   assert.ok(FX.v2.chars < FX.v1.chars, `${FX.v2.chars} < ${FX.v1.chars}`);
-  assert.match(FX.v2.link, /^https:\/\/m\.agentj\.app\/#p=[0-9]+$/);
+  assert.match(FX.v2.link, /^https:\/\/m\.agentj\.app\/[a-z2-7]{8}\/#p=[0-9]+$/);   // P545: the seat's own page
   for (const k of ['v1', 'v2']) assert.equal(clean(FX[k].rows), FX[k].link, `${k} QR decodes back with jsQR`);
   const a = parsePairing(FX.v1.link, 0), b = parsePairing(FX.v2.link, 0);
   assert.equal(b.relay, 'wss://relay.agentj.app');

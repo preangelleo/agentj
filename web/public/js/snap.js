@@ -5,6 +5,7 @@
 // that did not announce p33 — turns built here in memory from §8's msg stream (never stored).
 import { peer, request, done as reqDone } from './session.js';
 import { sanitize as mediaOf } from './mediawire.js';   // F21 (§13)
+import { preauthOffer, faState, whyKey } from './pkrules.js';   // P539
 
 export const S = {
   conn: false,                 // a ready session with the host up
@@ -50,7 +51,9 @@ export function addAsk(m) {
     passkey_required: m.passkey_required === true, fa: typeof m.fa === 'string' ? m.fa : '', fa_ch: typeof m.fa_ch === 'string' ? m.fa_ch : '',
     scope, batch_max: Number.isInteger(m.batch_max) ? m.batch_max : 20, batch_secs: Number.isInteger(m.batch_secs) ? m.batch_secs : 600,
     task: typeof m.task === 'string' ? m.task.slice(0, 80) : '',
-    allow_offer: m.tool === 'agentj mail send' && Array.isArray(m.allow_offer) ? m.allow_offer.filter((a) => typeof a === 'string' && a.length <= 254).slice(0, 10) : [],   // P296
+    allow_offer: m.tool === 'agentj mail send' ? (Array.isArray(m.allow_offer) ? m.allow_offer.filter((a) => typeof a === 'string' && a.length <= 254).slice(0, 10) : [])   // P296
+      : preauthOffer(m.allow_offer),   // P539: any other tool may offer ≤ 3 `preauth:<action>` lines (「以后这台遥控器批准的 … 不再问」)
+    fa_s: faState(m.fa_s),             // P539: local | borrowed | unknown — does this remote hold the passkey itself
     goal: ['auto', 'hold', 'attack', 'grant'].includes(m.goal) ? m.goal : '', goal_why: typeof m.goal_why === 'string' ? m.goal_why.slice(0, 120) : '',   // P158
     ...goalWords(m),                                                                                                       // P339
     at: nowS(), deadline: Date.now() + ttl * 1000, state: 'open', final_at: null, touched: S.touched.has(m.id),
@@ -91,6 +94,7 @@ export function askDone(m) {
   const a = S.asks.get(m.id);
   if (!a || !ASK_RESULT[m.result]) return;
   a.state = ASK_RESULT[m.result]; a.final_at = nowS();
+  a.done_why = whyKey(m.why);   // P539: why it closed (timeout / denied / passkey / nobody / estop / serve_stop), null = as before
   S.asks.delete(m.id); S.order = S.order.filter((x) => x !== m.id);
   S.lastAsk = a;
   onChange();

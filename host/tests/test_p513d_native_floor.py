@@ -11,7 +11,7 @@ from agentj.agent import ClaudeAgent
 from agentj.agent_codex import CodexAgent
 from test_slash import _Chain
 from agentj import approval_level, approvals, preferences
-from test_p336_approval_level import sign
+from test_p336_approval_level import FA, face_id, sign
 
 
 class NativeFloor(unittest.TestCase):
@@ -155,7 +155,8 @@ class _LaunchReview(_Chain):
                         self.assertEqual(host.agent.cfg["approvals"], "native")
                         if level == "full":
                             c["s"].p33 = True
-                            await host._app(c["s"], sign(c["ph"], {"key": "approval.level", "value": "full"}))
+                            with face_id(host, c["ph"].did):   # P550: widening needs this remote's own Face ID
+                                await host._app(c["s"], {**sign(c["ph"], {"key": "approval.level", "value": "full"}), "fa": FA})
                             self.assertEqual(approval_level.level(host.preferences, self.st), "full")
                             c["s"].p33 = False
                         # Positive control: normal owner input starts/resumes without a card.

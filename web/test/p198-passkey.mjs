@@ -150,11 +150,12 @@ try {
   const e1 = await phone();
   check((await pair(e1)).code === 0, 'E: paired by QR');
   await e1.waitState('ready');
-  await e1.waitFor(visible('#confirm'), 10000).catch(() => false);
-  await e1.tap('#confirm-no');                        // 「以后再说」
-  await sleep(500);
-  check((await e1.eval(hostRec))?.pk === false, 'E: the Agent J host offered to save one → the record says it has none');
-  await e1.eval(seedRec({ approved: false, removed: 'replaced' }));
+  // P547 (PASSKEY-SEAT-MODEL §2): A already holds a key, so the computer no longer offers E one directly — it needs another
+  // remote's approval. The record that says 「no passkey here」 is seeded instead of coming from 「以后再说」.
+  await sleep(1500);
+  check(/"pk_offer".*"result": "refused".*"reason": "peer_required"/.test(host.log()) && !(await e1.eval(visible('#confirm'))),
+    'E: A holds a key → no direct offer to E (peer_required), no sheet');
+  await e1.eval(seedRec({ pk: false, approved: false, removed: 'replaced' }));
   await e1.goto(WEB);
   s = await takenOver(e1);
   check(s.ok && !s.btn && s.lead === 'revoked.replacedLead', `E: taken over without a passkey → no button, lead ${s.lead}`);

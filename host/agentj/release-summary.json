@@ -1,5 +1,5 @@
 {
-  "version": "0.25.12a1",
-  "zh": "兼容 OpenCode 1.x/2.x；修复模型目录、清空后计量与压缩失败提示；更新只读免费诊断顺序，保留工具隔离。",
-  "en": "Support OpenCode 1.x/2.x; fix model discovery, cleared-session metering and compaction errors; update free diagnosis while retaining isolation."
+  "version": "0.25.13a1",
+  "zh": "每个席位一个手机网址；席位可预付或转移；Face ID 可由另一台遥控器批准；新增「跟随 Harness」审批档；终端菜单上手机；微信转发；升级不丢邮件授权码。",
+  "en": "Per-seat phone addresses; prepay or move seats; Face ID approved by another remote; follow-your-AI-tool approvals; terminal menus on phone; WeChat forwarding."
 }

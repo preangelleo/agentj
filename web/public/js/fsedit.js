@@ -9,6 +9,7 @@ import { termKey, edit } from './termkeys.js';
 import { registerLayer } from './layers.js';
 import { DOUBLE_MS, PAIR_PX } from './file-gestures.js';
 
+let composer = null, options = null, opener = null, saving = false, editorToken = 0;
 let cfg = null, root = null, ta = null, pos = null, cmds = null, cmdQ = null, cmdList = null;
 let cmdAt = 0, cmdShown = [], tap = null, mirror = null;
 const $ = (id) => document.getElementById(id);
@@ -16,6 +17,7 @@ export const isOpen = () => !!root && !root.hidden;
 const cmdsOpen = () => !!cmds && !cmds.hidden;
 
 function push() {
+  if (options) return; // settings keep a private draft until Save
   const box = cfg.input;
   if (box.value === ta.value) return;
   box.value = ta.value;
@@ -60,12 +62,18 @@ function fit() {
 }
 
 export function open() {
+  if (isOpen()) return;
+  cfg = composer; options = null;
+  restoreButtons();
+  show();
+}
+function show() {
   if (!cfg || isOpen()) return;
   const box = cfg.input, typing = document.activeElement === box;
   const a = box.selectionStart ?? box.value.length, b = box.selectionEnd ?? a;
   ta.maxLength = cfg.maxText();
   ta.value = box.value;
-  root.hidden = false; drag = null;
+  root.hidden = false; drag = null; editorToken++;
   document.body.dataset.fs = '1';
   fit();
   // a touch owner's keyboard is not raised by script unless it was already up (P375); a mouse / keyboard owner types at once
@@ -74,7 +82,7 @@ export function open() {
   paintPos();
 }
 export function close() {
-  if (!isOpen()) return;
+  if (!isOpen() || saving) return;
   closeCmds(false);
   push();
   const a = ta.selectionStart, b = ta.selectionEnd;
@@ -84,10 +92,20 @@ export function close() {
   delete document.body.dataset.fs;
   try { cfg.input.setSelectionRange(a, b); } catch { /* hidden box */ }
   cfg.input.dispatchEvent(new Event('input'));
+  const back = opener; opener = null; options = null; cfg = composer; restoreButtons();
+  if (back?.isConnected) back.focus({preventScroll:true});
 }
-export function forget() { if (ta) ta.value = ''; if (isOpen()) { root.hidden = true; delete document.body.dataset.fs; } }
+export function forget() { editorToken++; if (ta) ta.value = ''; if (isOpen()) { root.hidden = true; delete document.body.dataset.fs; } options=null;opener=null;cfg=composer;saving=false;restoreButtons(); }
 
-function send() { push(); close(); cfg.send(); }
+async function send() {
+  if (saving) return;
+  if (!options) { push(); close(); cfg.send(); return; }
+  const token=editorToken;
+  saving = true; $('fsSend').disabled = true;
+  try { if (await options.save(ta.value) !== false && token===editorToken) { saving = false; close(); } }
+  catch { if(token===editorToken)cfg.tui(cfg.t('p537.failed')); }
+  finally { if(token===editorToken){saving = false; $('fsSend').disabled = false;} }
+}
 function clearAll() {
   const v = ta.value;
   if (!v) return;
@@ -219,15 +237,15 @@ function onText(x, y) {
 
 /** cfg: {input, maxText(), send(), items(), tui(), t(key, vars), toastAction(text, label, fn, ms), touch()} */
 export function init(c) {
-  cfg = c;
+  cfg = composer = c;
   root = $('fsEd'); ta = $('fsText'); pos = $('fsPos'); cmds = $('fsCmds'); cmdQ = $('fsCmdQ'); cmdList = $('fsCmdList');
   if (!root || !ta) { cfg = null; return; }
-  registerLayer({ element: () => root, open: isOpen, close, fallback: () => cfg.input, trigger: () => cfg.input, rank: 44 });
-  registerLayer({ element: () => cmds, open: () => isOpen() && cmdsOpen(), close: () => closeCmds(true), fallback: () => ta, rank: 45, trap: false });
-  $('fsExit').addEventListener('click', close);   // @ix edit.exit
-  $('fsClear').addEventListener('click', clearAll);   // @ix edit.clear
-  $('fsSlash').addEventListener('click', openCmds);   // @ix edit.command
-  $('fsSend').addEventListener('click', send);   // @ix edit.send
+  registerLayer({ element: () => root, open: isOpen, close, fallback: () => cfg.input, trigger: () => cfg.input, rank: 90 });
+  registerLayer({ element: () => cmds, open: () => isOpen() && cmdsOpen(), close: () => closeCmds(true), fallback: () => ta, rank: 91, trap: false });
+  $('fsExit').addEventListener('click', () => corner('topLeft', close));   // @ix edit.exit
+  $('fsClear').addEventListener('click', () => corner('topRight', clearAll));   // @ix edit.clear
+  $('fsSlash').addEventListener('click', () => corner('bottomLeft', openCmds));   // @ix edit.command
+  $('fsSend').addEventListener('click', () => corner('bottomRight', send));   // @ix edit.send
   const grab = $('fsGrab');
   if (grab) {   // @ix edit.exit (the grabber)
     grab.addEventListener('pointerdown', grabDown);
@@ -267,4 +285,50 @@ export function init(c) {
   addEventListener('resize', fit);
   addEventListener('pageshow', () => { if (ios()) fit(); });
   document.addEventListener('visibilitychange', () => { if (ios() && !document.hidden) fit(); });
+}
+
+
+// P537: the same surface and keyboard/viewport engine serves every text editor.
+const buttonIds = {topLeft:'fsExit', topRight:'fsClear', bottomLeft:'fsSlash', bottomRight:'fsSend'};
+let originals = null;
+function restoreButtons() {
+  if (!root) return;
+  if (!originals) originals = Object.fromEntries(Object.values(buttonIds).map(id => [id, {nodes:[...$(id).childNodes].map(n=>n.cloneNode(true)), label:$(id).getAttribute('aria-label')} ]));
+  for (const id of Object.values(buttonIds)) { $(id).replaceChildren(...originals[id].nodes.map(n=>n.cloneNode(true)));  $(id).hidden = false; $(id).disabled = false; $(id).setAttribute('aria-label', originals[id].label); $(id).title = originals[id].label; }
+  root.querySelector('.fshint').textContent = composer.t('p412.hint');
+  root.removeAttribute('data-text-editor');
+  ta.readOnly = false; root.setAttribute('aria-label',composer.t('p412.aria'));ta.setAttribute('aria-label',composer.t('p412.aria'));
+}
+function corner(name, fallback) {
+  if (saving) return;
+  const action = options?.corners?.[name];
+  if (action) return action.action({value:ta.value, setValue(v){ta.value = v;paintPos();}, close, save:send});
+  return fallback();
+}
+/** Independent draft. save(value) returning false keeps the draft open; Esc cancels.
+ * corners: {topLeft,topRight,bottomLeft,bottomRight}: {label,icon,action({value,setValue,close,save})}.
+ * Icons are plain text or a caller-created DOM node, never customer HTML.
+ */
+export function openText(opts) {
+  if (!composer || isOpen()) return false;
+  opener = opts.trigger || document.activeElement;
+  const box = document.createElement('textarea'); box.value = opts.value || '';
+  cfg = {...composer, input:box, maxText:() => opts.maxLength || 16000, touch:composer.touch};
+  options = {save:opts.save || (() => true), ...opts};
+  restoreButtons();
+  root.dataset.textEditor = '1'; root.setAttribute('aria-label', opts.title || composer.t('p412.aria'));
+  ta.setAttribute('aria-label', opts.title || composer.t('p412.aria'));
+  const buttons = {
+    topLeft:{label:composer.t('p537.cancel'),icon:'×',action:({close})=>close()},
+    topRight:opts.reset ? {label:composer.t('p537.reset'),icon:'↺',action:({setValue})=>setValue(opts.reset())} : null,
+    bottomLeft:opts.preview ? {label:composer.t('p537.preview'),icon:'◉',action:()=>{ta.readOnly=!ta.readOnly;}} : null,
+    bottomRight:{label:composer.t('p537.save'),icon:'✓',action:({save})=>save()}, ...opts.corners,
+  };
+  options.corners = buttons;
+  for (const [name,id] of Object.entries(buttonIds)) {
+    const b = $(id), action = buttons[name]; b.hidden = !action;
+    if (action) { b.replaceChildren(typeof action.icon === 'string' ? document.createTextNode(action.icon) : action.icon.cloneNode(true)); b.setAttribute('aria-label',action.label); b.title=action.label; }
+  }
+  root.querySelector('.fshint').textContent = opts.title || composer.t('p537.hint');
+  show(); return true;
 }

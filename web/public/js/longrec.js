@@ -5,7 +5,7 @@
 // carried it was accepted, or when the human removes it. Unpair / revoke wipe the whole database (wipe()).
 import { sealBytes, unsealBytes } from './store.js';
 
-const NAME = 'agentj-rec';
+const NAME = globalThis.AJSeat ? globalThis.AJSeat.db('agentj-rec') : 'agentj-rec';   // P545: one per seat page
 // A conservative container floor, not voice activity detection: silence with real frames is valid.
 export const MIN_REC_BYTES = 256, MIN_REC_SECS = 0.5;
 export const usable = (blob, secs) => !!blob && blob.size >= MIN_REC_BYTES && Number.isFinite(secs) && secs >= MIN_REC_SECS;

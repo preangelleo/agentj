@@ -127,9 +127,37 @@ def rows(text):
     return out
 
 
+_VERSIONED = re.compile(r"^(Opus|Sonnet|Fable|Haiku)\s+(\d+(?:\.\d+)?)\b", re.I)
+
+
+def row_name(label, desc=""):
+    """P538 (#302): the row's model WITH its version, as the terminal status line names it. Claude Code 2.1.3xx labels
+    the newest of each family bare ("Opus") and says the version in the description column ("Opus 5.5 · Best for …");
+    "Default (recommended)" says which model it is the same way. A label that already has a version stays as it is."""
+    label, desc = str(label).strip(), str(desc or "").strip()
+    v = _VERSIONED.match(desc)
+    if not v:
+        return label
+    full = v.group(1).capitalize() + " " + v.group(2)
+    if label.startswith("Default"):
+        return "Default (" + full + ")"
+    fam = label.split()[0].lower() if label.split() else ""
+    if re.search(r"\d", re.sub(r"\(.*?\)", "", label)) or fam != v.group(1).lower():   # "(1M context)" is no version
+        return label
+    rest = label[len(label.split()[0]):].strip()        # "(1M context)" stays with its row
+    return full + (" " + rest if rest else "")
+
+
+def names(text):
+    """The picker's rows as versioned names (row_name), in its order."""
+    return [row_name(lab, desc) for lab, _, desc in rows(text)]
+
+
 def row_index(text, model):
-    for i, (lab, _, _) in enumerate(rows(text)):
-        if not lab.startswith("Default") and slug(lab) == model:
+    """A versioned id matches its versioned row; a bare id ("opus", from Relay's LEGACY rows or a typed family) its bare
+    row — so "opus" picks the row Claude Code calls "Opus", never "Opus 4.8"."""
+    for i, (lab, _, desc) in enumerate(rows(text)):
+        if not lab.startswith("Default") and model in (slug(row_name(lab, desc)), slug(lab)):
             return i
     return None
 
@@ -160,7 +188,7 @@ def dialog_on_screen(text):
     return bool(_DIALOG.search("\n".join(text.splitlines()[-16:])))
 
 
-def _pick(binary, pane, find, effort, sleep, seen):
+def _pick(binary, pane, find, effort, sleep, seen, picked):
     def look():
         sleep(STEP_S)
         return screen(binary, pane) or ""
@@ -179,10 +207,11 @@ def _pick(binary, pane, find, effort, sleep, seen):
             break
     else:
         return bail("no_picker")
-    seen[:] = [lab for lab, _, _ in rows(text)]
+    seen[:] = names(text)
     want, at = find(text), cursor_index(text)
     if want is None:
         return bail("row_missing")
+    picked[:] = [names(text)[want]]
     if at is None:
         return bail("no_cursor")
     if want != at:
@@ -217,7 +246,7 @@ def _pick(binary, pane, find, effort, sleep, seen):
 
 def apply(session, model, effort, sleep=time.sleep):
     """Switch `session` to (model id | "default", effort | None) for this session only.
-    → {"result": sent|busy|blocked|no_pane|unavailable|failed, "why", "rows"}; nothing half-typed stays behind."""
+    → {"result": sent|busy|blocked|no_pane|unavailable|failed, "why", "rows", "picked"}; nothing half-typed stays behind."""
     if not valid_id(model) or (effort is not None and effort not in EFFORTS):
         return {"result": FAILED, "why": "not_in_catalogue", "rows": None}
     binary = herdr_bin()
@@ -240,17 +269,19 @@ def apply(session, model, effort, sleep=time.sleep):
         return {"result": BUSY, "why": "no_prompt_line", "rows": None}
     if draft:
         return {"result": BUSY, "why": "input_not_empty", "rows": None}
-    seen = []
+    seen, picked = [], []
     if model == "default":
-        why = _pick(binary, pane, default_index, effort, sleep, seen)
+        why = _pick(binary, pane, default_index, effort, sleep, seen, picked)
     else:
-        why = _pick(binary, pane, lambda t: row_index(t, model), effort, sleep, seen)
+        why = _pick(binary, pane, lambda t: row_index(t, model), effort, sleep, seen, picked)
         if why == "row_missing" and model.endswith("1m-context"):
             # The 1M row may only be offered while the session runs its default model: Default + `s` (still
             # session-only) first; the status line receipt decides whether it landed.
-            why = _pick(binary, pane, default_index, None, sleep, seen)
+            why = _pick(binary, pane, default_index, None, sleep, seen, picked)
             if why is None:
-                why = _pick(binary, pane, lambda t: row_index(t, model), effort, sleep, seen)
+                why = _pick(binary, pane, lambda t: row_index(t, model), effort, sleep, seen, picked)
                 if why == "row_missing":
-                    why = None if effort is None else _pick(binary, pane, default_index, effort, sleep, seen)
-    return {"result": SENT if why is None else FAILED, "why": why, "rows": seen or None}
+                    why = None if effort is None else _pick(binary, pane, default_index, effort, sleep, seen, picked)
+    # P538: which versioned row was actually chosen ("Opus" → "Opus 5.5"), so the receipt is checked against it exactly.
+    return {"result": SENT if why is None else FAILED, "why": why, "rows": seen or None,
+            "picked": key_of(picked[-1]) if picked and not picked[-1].startswith("Default") else None}

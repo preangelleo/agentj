@@ -111,15 +111,24 @@ class NativeCodex:
                 return peer_session._fail('native_image_unavailable')
             before = {p.relative_to(root / 'outbox') for p in (root / 'outbox').rglob('*')}
             out, err, rc = await s._run(argv, str(root), child_env, s.system_prompt(friend, group) + '\n' + wrapped, gen)
-            if rc != 0 or gen != s._gen:
-                return peer_session._fail('stopped' if gen != s._gen else 'harness')
+            if gen != s._gen or rc == 'stopped':
+                return peer_session._fail('stopped')
+            if rc == 'timeout':
+                return peer_session._fail('timeout')
+            if rc != 0:
+                detail = peer_session.PeerSessions.parse_codex(out, '')['detail'] or peer_session.failure_detail(err, tail=3)
+                return peer_session._fail('login' if detail == 'login' else 'harness', detail)
             completed = any(json.loads(line).get('type') == 'turn.completed' for line in out.splitlines() if line.startswith('{'))
             parsed = peer_session.PeerSessions.parse_codex(out, '')
             # Native image/search/code-mode transport events are expected. All
             # actual executable tools remain disabled in argv, regardless of text.
             forbidden = [t for t in parsed['tools'] if t not in ('image_generation','image_generation_call','web_search','web_search_call','mcp_tool_call')]
-            if parsed['error'] or forbidden or not completed:
+            if forbidden:
                 return peer_session._fail('channel_forbidden')
+            if parsed['error'] or not completed:
+                # P540: a failed native turn waits with its fixed reason instead of becoming an owner handoff
+                detail = parsed['detail'] or 'no_reply'
+                return peer_session._fail('login' if detail == 'login' else 'harness', detail)
             decision, text, topic, ok = peer_session.parse_decision(parsed['text'])
             result = peer_session.TurnResult(decision, text, topic, parsed['tokens'], None, parsed['sid'], parsed=ok)
             result.images = []

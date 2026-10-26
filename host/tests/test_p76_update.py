@@ -53,13 +53,13 @@ class Upgrade(unittest.IsolatedAsyncioTestCase):
         self.st.write_private(self.st.root/phone_update.RESULT,json.dumps(rec).encode())
         with patch("agentj.doctor.run",return_value=[{"status":"ok"}]) as doctor:
             await self.h.upgraded_notice();doctor.assert_called_once_with(self.st)
-        self.assertIn("自检全部通过",self.h.cmd_card.call_args.args[1].text)
+        self.assertIn("升级成功，一切正常",self.h.cmd_card.call_args.args[1].text)
         self.h.cmd_card.reset_mock();await self.h.upgraded_notice();self.h.cmd_card.assert_not_called()
         self.st.write_private(self.st.root/phone_update.RESULT,json.dumps(rec).encode())
         with patch("agentj.doctor.run",return_value=[{"status":"fail"}]):
             await self.h.upgraded_notice()
         self.assertIn("自检有 1 项未通过",self.h.cmd_card.call_args.args[1].text)
-        self.assertIn("agentj doctor",self.h.cmd_card.call_args.args[1].text)
+        self.assertNotIn("agentj doctor",self.h.cmd_card.call_args.args[1].text)
     def test_worker_durable_before_restart_and_apply_failure_no_restart(self):
         restart=Mock(side_effect=lambda:self.assertTrue((self.st.root/phone_update.RESULT).exists()))
         with patch("agentj.doctor.run",return_value=[{"status":"ok"}]):
@@ -80,4 +80,4 @@ class InstalledDoctorFailure(unittest.TestCase):
             with patch("agentj.doctor.run",return_value=[{"status":"fail"}]):
                 phone_update.run(st,apply_fn=Mock(return_value={"from":"0.16.1a1","to":__version__,"reason":"doctor_failed","result":"failed"}),restart_fn=restart)
             restart.assert_called_once();rec=phone_update.take(st)
-            self.assertIn("自检有 1 项未通过",phone_update.text(rec));self.assertIn("agentj doctor",phone_update.text(rec,"en"))
+            self.assertIn("自检有 1 项未通过",phone_update.text(rec));self.assertNotIn("agentj doctor",phone_update.text(rec,"en"))

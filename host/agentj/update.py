@@ -699,14 +699,19 @@ def upgrade_due(st):
 
 
 def health_text(counts, lang="zh", rows=None, *, verified_upgrade=False) -> str:
+    if verified_upgrade:
+        blockers, _ = upgrade_blockers(rows)
+        if not blockers and counts:
+            return "Upgrade succeeded; everything is working." if lang == "en" else "升级成功，一切正常。"
+        if not counts or blockers == [DOCTOR_UNPARSABLE]:
+            return ("The host self-check could not finish. Tap Repair on your phone." if lang == "en" else
+                    "主机自检未能完成，点手机上的「一键修复」。")
+        # Use exactly the blocking rows, never onboarding reminders or an obsolete count.
+        rows = [r for r in rows or [] if r.get("id") in blockers]
+        counts = (0, 0, len(blockers))
     if not counts:
-        return ("Self-check could not finish; run `agentj doctor` on the Agent J host." if lang == "en" else
-                "自检未能完成，请在Agent J 主机运行 `agentj doctor`。")
-    if verified_upgrade and rows and not upgrade_blockers(rows)[0]:
-        todo = sum(r.get("status") != "ok" for r in rows if isinstance(r, dict))
-        if todo:
-            return (f"Upgrade succeeded; {todo} item(s) remain. Run `agentj doctor` for the next steps." if lang == "en" else
-                    f"升级成功，还剩 {todo} 项待办；运行 `agentj doctor` 查看下一步。")
+        return ("Self-check could not finish. Tap Repair on your phone." if lang == "en" else
+                "自检未能完成，点手机上的「一键修复」。")
     if counts[2]:
         # Only known row IDs get user-facing labels; arbitrary detail can contain private data.
         labels = {"version": ("程序版本", "program version"), "python": ("运行环境", "runtime"),
@@ -734,8 +739,8 @@ def health_text(counts, lang="zh", rows=None, *, verified_upgrade=False) -> str:
                  if isinstance(r, dict) and r.get("status") == "fail" and r.get("id") in labels]
         detail = "、".join(dict.fromkeys(names)) if lang != "en" else ", ".join(dict.fromkeys(names))
         if lang == "en":
-            return f"Self-check found {counts[2]} failed check{'s' if counts[2] != 1 else ''}{': ' + detail if detail else ''}; run `agentj doctor` on the Agent J host and follow its repair guidance."
-        return f"自检有 {counts[2]} 项未通过{'：' + detail if detail else ''}；请在Agent J 主机运行 `agentj doctor`，按提示修复。"
+            return f"Self-check found {counts[2]} failed check{'s' if counts[2] != 1 else ''}{': ' + detail if detail else ''}. Tap Repair on your phone."
+        return f"自检有 {counts[2]} 项未通过{'：' + detail if detail else ''}；点手机上的「一键修复」。"
     if lang == "en":
         return f"Self-check passed ({counts[1]} reminder{'s' if counts[1] != 1 else ''}, no failed checks)." if counts[1] else "All self-checks passed."
     return f"自检通过（有 {counts[1]} 项提醒，没有未通过项）。" if counts[1] else "自检全部通过。"
@@ -1287,11 +1292,10 @@ def result_block(res: dict) -> str:
         lines.append("handoff: " + res["handoff"] + " — 升级记录没能交给主机（隔离环境里看不到主机数据），重启后手机上的「已升级」通知可能不准、"
                      "没有自动回滚 / the upgrade record could not reach the host (its data is hidden inside the fence): the phone's "
                      "\"upgraded\" notice may be off and there is no automatic rollback")
-    if res.get("result") == "ok" and res.get("pending_checks"):
-        n = res.get("pending_count", len(res["pending_checks"]))
-        lines.append(f"pending_checks: {', '.join(res['pending_checks'])} — 升级成功，还剩 {n} 项待办 / Upgrade succeeded; {n} item(s) remain")
-    if res.get("existing_issues"):
-        lines.append("existing_issues: " + ", ".join(res["existing_issues"]) + (" — 升级已完成，这些其他问题请另行检查 / upgrade completed; review these other issues separately" if res.get("result") == "ok" else " — 另有这些问题待检查 / other issues to review"))
+    if res.get("result") == "ok" and res.get("reason") == "upgraded" and res.get("health") != "unverifiable":
+        lines.append("message: 升级成功，一切正常 / Upgrade succeeded; everything is working")
+    elif res.get("result") != "ok" and res.get("existing_issues"):
+        lines.append("existing_issues: " + ", ".join(res["existing_issues"]))
     if res.get("result") != "ok" and res.get("step"):        # P277: where it failed, the installer's own words (redacted)
         lines.append(f"step: {res['step']}")
     if res.get("failed_checks") and res.get("result") != "ok":   # P393: which self-check blocked (fixed ids)
@@ -1322,7 +1326,7 @@ def result_block(res: dict) -> str:
         lines.append(f"support: {res['support']}")
     if res.get("tell_owner"):
         lines.append(f"tell_owner: {res['tell_owner']}")
-    lines.append("next: " + (UNVERIFIABLE_NEXT if res["reason"] == "unverifiable_in_fence" else "agentj doctor" if res["result"] == "ok" else
+    lines.append("next: " + (UNVERIFIABLE_NEXT if res["reason"] == "unverifiable_in_fence" else "none" if res["result"] == "ok" else
                              "agentj doctor; tell your human this block" if res["result"] == "failed" else "tell your human this block"))
     return "\n".join(lines)
 

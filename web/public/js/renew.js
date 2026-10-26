@@ -10,7 +10,7 @@ import { b64u, unb64u } from '../proto/wire.js';
 import { encodeHandle } from './faceid.js';
 
 export const RESTORE_LABEL = 'agentjarvis/rt/restore/v1\n';
-const ENDPOINT = '/.aj/rt';
+const ENDPOINT = (globalThis.AJSeat ? globalThis.AJSeat.base : '/') + '.aj/rt';   // P545: a seat's page keeps its own ticket (/<seat id>/.aj/rt)
 
 async function call(body) {
   return fetch(new URL(ENDPOINT, location.origin), { method: 'POST', credentials: 'same-origin', cache: 'no-store', redirect: 'error',

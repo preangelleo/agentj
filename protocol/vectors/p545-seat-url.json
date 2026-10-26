@@ -1,0 +1,26 @@
+{
+  "label": "agentj/seat-url/v1\n",
+  "alphabet": "abcdefghijklmnopqrstuvwxyz234567",
+  "cases": [
+    {
+      "channel": "AAAAAAAAAAAAAAAAAAAAAA",
+      "seat": "hc547bsz",
+      "url": "https://m.agentj.app/hc547bsz"
+    },
+    {
+      "channel": "abcdefghijklmnopqrstuv",
+      "seat": "ed2lgczl",
+      "url": "https://m.agentj.app/ed2lgczl"
+    },
+    {
+      "channel": "Zm9vYmFyYmF6cXV4MTIzNA",
+      "seat": "nweelksx",
+      "url": "https://m.agentj.app/nweelksx"
+    },
+    {
+      "channel": "_-_-_-_-_-_-_-_-_-_-_-",
+      "seat": "ne6ronwj",
+      "url": "https://m.agentj.app/ne6ronwj"
+    }
+  ]
+}

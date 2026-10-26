@@ -7,6 +7,7 @@ Run ``python -m agentj.policy_registry`` to export the authoritative JSON table.
 from __future__ import annotations
 from dataclasses import asdict, dataclass
 import json
+import re
 from types import MappingProxyType
 
 LAYERS = ("main", "channel", "friend", "support")
@@ -44,11 +45,16 @@ def _table():
     for p, names in (
         (FREE, ("answer", "translate", "summarize", "rewrite")),
         (NATIVE, ("image.generate", "image.edit", "web.search")),
+        # P551 (#321): sending a sub-agent off is ① — its own tool calls come back through this same table one by one
+        (Policy("none", "none", channel=False), ("agent.dispatch",)),
         (Policy("none", "none", channel=False), ("file.read",)),
         (Policy("reversible", "hold", main_confirmation="none"), ("file.write",)),
-        (HOLD, ("file.trash", "settings.write", "memory.restore")),
-        (UV, ("file.delete", "mail.send", "calendar.write", "secrets.read", "secrets.write",
-              "payment", "admin", "device.pair", "device.revoke", "publish")),
+        # P551 (#318): mail, calendar edits and same-owner changes can be taken back or corrected — reversible. The table
+        # below is the Agent's floor; an owner's own tap on a paired remote is the instruction itself (confirm_tier.py).
+        (HOLD, ("file.trash", "settings.write", "memory.restore", "mail.send", "calendar.write", "publish")),
+        (UV, ("file.delete", "secrets.read", "secrets.write",
+              "payment", "admin", "device.pair", "device.revoke",
+              "computer.control")),   # P539: drive this computer's screen, mouse and keyboard (Computer Use)
         (COMPANY_READ, ("company.read",)),
         (COMPANY_WRITE, ("company.write",)),
     ):
@@ -86,7 +92,7 @@ def decision(layer, action):
 # execution or replaces signature, nonce, target, TTL or final-executor checks.
 HOST_TOOLS = MappingProxyType({
     "pair_device": "device.pair", "SandboxOnce": "admin", "AuthRescue": "secrets.read",
-    "DoomLoop": "settings.write", "task": "settings.write", "AskUserQuestion": "settings.write",
+    "DoomLoop": "settings.write", "task": "agent.dispatch", "AskUserQuestion": "settings.write",
     "AgentJHook": "settings.write", "AgentJTerminal": "admin",
     "agentj mail": "mail.send", "agentj mail send": "mail.send",
     "agentj mail notes": "mail.send", "agentj mail reply": "mail.send",
@@ -105,7 +111,8 @@ NATIVE_TOOLS = MappingProxyType({
     **dict.fromkeys(("Read", "Glob", "Grep", "LS", "read_file", "list_dir", "view_image"), "file.read"),
     **dict.fromkeys(("Edit", "Write", "MultiEdit", "NotebookEdit", "apply_patch"), "file.write"),
     "Delete": "file.delete", "WebFetch": "web.search", "WebSearch": "web.search",
-    **dict.fromkeys(("Bash", "exec_command", "shell_command", "Task", "Agent", "exec"), "admin"),
+    **dict.fromkeys(("Bash", "exec_command", "shell_command", "exec"), "admin"),
+    **dict.fromkeys(("Task", "Agent"), "agent.dispatch"),
     "TodoWrite": "settings.write", "update_plan": "settings.write",
     "request_user_input": "settings.write",
 })
@@ -119,6 +126,82 @@ MCP_TOOLS = MappingProxyType({
 })
 
 
+# P539 (#300): Computer Use. Server names are normally no authority (anyone can name a server anything), but for this one
+# effect class the bundled servers are known: the Codex app's computer-use plugin and its unified variant. Every operation
+# of these servers — clicks, typing, keys, and screen reads too (a screenshot can show anything on screen) — is
+# computer.control. Elsewhere only the exact pointer / keyboard operation names below get that floor; a pre-authorization
+# (preauth.py) covers only the allowlisted servers, never a look-alike operation name on another server.
+COMPUTER_USE_SERVERS = frozenset({"computer-use", "computer_use", "unified-computer-use"})
+COMPUTER_USE_OPS = frozenset({
+    "left_click", "right_click", "middle_click", "double_click", "triple_click", "left_click_drag",
+    "mouse_move", "left_mouse_down", "left_mouse_up", "type_text", "press_key", "hold_key",
+    "perform_secondary_action", "get_app_state",
+})
+
+
+# M1 (P539 review): what a 「Computer Use 免问」 grant may run without a card — a closed set of known operations, and only on
+# an allowlisted server. Any other operation those servers expose is still computer.control (a passkey card), never covered.
+COMPUTER_USE_GRANT_OPS = COMPUTER_USE_OPS | frozenset({
+    "click", "scroll", "screenshot", "get_screenshot", "zoom", "cursor_position", "key", "type", "wait",
+    # Claude Code's own computer-use server (`mcp__computer-use__*`, read from the installed claude binary, P539): its
+    # pointer / keyboard / screen / app operations. NOT here (cards every time): access changes (request_access,
+    # request_full_control, request_teach_access, teach_step, teach_batch), read_clipboard (whatever was copied, e.g. a
+    # password), and the batches (computer_batch, app_batch: many steps the quiet phone line cannot show).
+    "open_application", "switch_display", "list_granted_applications", "write_clipboard",
+    "release_full_control", "list_apps", "app_ax_find", "app_bring_to_current_space", "app_click", "app_drag", "app_key",
+    "app_list_windows", "app_menu", "app_release", "app_screenshot", "app_scroll", "app_type",
+})
+
+
+# P539: the Codex app's bundled Computer Use plugin. Its MCP server is `cua_repl` (plugin manifest .mcp.json) with tools
+# `js` / `js_reset` (an automation script: clicks, typing, anything) and `turn_ended` (called by the plugin's own Stop /
+# Interrupt hooks: lifecycle, no effect). The server name alone is no authority (any config can name a server cua_repl);
+# the authority is the `pluginId` Codex itself puts on its mcpToolCall item — "<plugin>@<marketplace>" (probed, codex
+# 0.162.1, reports/qa/p539/codex-mcp-probe/plugin-*.jsonl; a config server has pluginId null, and Codex only accepts the
+# `openai-bundled` marketplace from its own bundled-marketplaces directory). Exact ids only.
+CODEX_CU_PLUGINS = frozenset({"unified-computer-use@openai-bundled", "computer-use@openai-bundled"})
+CODEX_CU_SERVER = "cua_repl"
+CODEX_CU_SCRIPT_OPS = frozenset({"js", "js_reset"})
+CODEX_CU_LIFECYCLE_OPS = frozenset({"turn_ended"})
+
+
+def codex_plugin_bind(plugin_id, server) -> dict | None:
+    """The binding of a Codex mcpToolCall item from the bundled Computer Use plugin, or None. Only ever built from
+    Codex's own item (never from a server's elicitation message / _meta)."""
+    if isinstance(plugin_id, str) and plugin_id in CODEX_CU_PLUGINS and server == CODEX_CU_SERVER:
+        return {"kind": "codex_plugin", "id": plugin_id, "server": server}
+    return None
+
+
+def _codex_cu(tool, bind, ops) -> bool:
+    return (isinstance(bind, dict) and bind.get("kind") == "codex_plugin" and bind.get("id") in CODEX_CU_PLUGINS
+            and bind.get("server") == CODEX_CU_SERVER and isinstance(tool, str)
+            and tool in {f"mcp__{CODEX_CU_SERVER}__{op}" for op in ops})
+
+
+def bound_action(tool, bind) -> str | None:
+    """computer.control for the plugin's script tools under a trusted plugin binding; else None (the name decides)."""
+    return "computer.control" if _codex_cu(tool, bind, CODEX_CU_SCRIPT_OPS) else None
+
+
+def codex_cu_lifecycle(tool, bind) -> bool:
+    """The plugin's own `turn_ended` hook call: allowed without a card (no effect), only under its binding."""
+    return _codex_cu(tool, bind, CODEX_CU_LIFECYCLE_OPS)
+
+
+def computer_use_grant_op(tool) -> bool:
+    """mcp__<allowlisted server>__<known Computer Use operation> — what a preauth grant can cover (P539 M1)."""
+    return computer_use_server(tool) and tool.split("__")[2] in COMPUTER_USE_GRANT_OPS
+
+
+def computer_use_server(tool) -> bool:
+    """mcp__<allowlisted computer-use server>__<operation>: the known Computer Use effect class (P539)."""
+    if not isinstance(tool, str) or not tool.startswith("mcp__"):
+        return False
+    parts = tool.split("__")
+    return len(parts) == 3 and parts[1] in COMPUTER_USE_SERVERS and bool(parts[2])
+
+
 def tool_action(tool, *, canonical=True):
     if not isinstance(tool, str):
         return None
@@ -128,6 +211,10 @@ def tool_action(tool, *, canonical=True):
         return NATIVE_TOOLS[tool]
     if tool.startswith("mcp__"):
         parts = tool.split("__")
+        if computer_use_server(tool):
+            return "computer.control"
+        if len(parts) == 3 and parts[1] and parts[2] in COMPUTER_USE_OPS:
+            return "computer.control"
         return MCP_TOOLS.get(parts[2]) if len(parts) == 3 and parts[1] else None
     return tool if canonical and tool in REGISTRY else None
 
@@ -145,11 +232,29 @@ def channel_tool_decision(tool):
     return result
 
 
+def dispatch(tool):
+    """P551 (#321): Claude Code `Agent` / `Task`, OpenCode `task` — sending a sub-agent off. ① in every level: no card."""
+    return tool_action(tool) == "agent.dispatch"
+
+
 def main_host_card(tool, tool_input=None, *, requirement=None):
     """Use the request's computed floor; standalone callers supply real inputs."""
     if requirement is None:
         requirement = main_requirement(tool, tool_input)
     return requirement != "allow"
+
+
+IRREVERSIBLE = frozenset({"credentials", "spend", "price", "delete"})
+_SECRET_REF = re.compile(r"\$\{?\w*(?:KEY|TOKEN|SECRET|PASS|CRED|AUTH)\w*|\bprintenv\b", re.I)
+
+
+def _own_card(args):
+    """P551 (#321): `agentj sudo` and `agentj secret request|result|status|log` open their own owner card on the phone (the
+    admin password / the key typed there, Face ID where the remote has it) — no second Face ID card in front of them.
+    Anything else under `agentj secret` (send: a value handed out) keeps the shell-layer Face ID."""
+    if args[:1] == ["sudo"]:
+        return True
+    return args[:1] in (["secret"], ["secrets"]) and args[1:2] in (["request"], ["result"], ["status"], ["log"])
 
 
 def main_requirement(tool, tool_input=None, *, env=None):
@@ -175,13 +280,18 @@ def main_requirement(tool, tool_input=None, *, env=None):
             for simple in danger.unwrap(command):
                 if "elevated" in simple.flags or simple.name in ("sudo", "su", "doas", "run0", "pkexec"):
                     return "uv"
+                if simple.name == "agentj" and simple.args[:1] in (["revoke"], ["unlink"]):
+                    return "uv"          # P550: unbinding a remote / taking the host out of the account (its seat) is ③
                 if simple.name == "agentj" and simple.args[:1] in (["secret"], ["secrets"], ["sudo"]):
-                    return "uv"
+                    if not _own_card(simple.args):
+                        return "uv"
             if command.words and danger._base(command.words[0]) in ("sudo", "su", "doas", "run0", "pkexec"):
                 return "uv"
     elif action in ("file.write", "file.read"):
         name = tool if tool in danger._FILE_TOOLS else "Write" if action == "file.write" else "Read"
         inp = {**inp, "file_path": inp.get("file_path") or inp.get("path") or inp.get("notebook_path")}
+    if tool == "agentj calendar" and inp.get("operation") == "delete":
+        return "uv"                      # P551: a remote event deleted cannot be brought back by Agent J
     if tool == "apply_patch":
         import re
         patch = str(inp.get("command", inp.get("patch", inp.get("input", ""))))
@@ -191,11 +301,13 @@ def main_requirement(tool, tool_input=None, *, env=None):
     verdict = danger.classify(name, inp, env=env)
     shared = danger.classify_shared(name, inp, env=env)
     cats = set(verdict.cats) | set(shared.cats)
-    if cats & {"credentials", "spend", "price", "delete", "send"}:
-        return "uv"
-    if cats:
+    if cats & IRREVERSIBLE:
+        return "uv"                      # P551 (#318) ③ irreversible: Face ID, whoever started it
+    if "send" in cats and name == "Bash" and _SECRET_REF.search(str(inp.get("command", ""))):
+        return "uv"                      # P551: a secret-looking variable going out is a key revealed — ③, not ②
+    if cats and requirement != "uv":     # incl. `send` — outward messages are ② (a long-press card for the Agent)
         return "hold"  # reversible but unclear/sensitive; no blanket shell UV
-    return requirement
+    return requirement                   # P550: a ③ row (computer.control …) is never lowered by its content to ②
 
 
 def company_action(definition):

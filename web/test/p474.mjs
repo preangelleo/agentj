@@ -56,6 +56,8 @@ try {
     if(['notes','todo','automation'].includes(id))await waitFor(p,`document.querySelector('.jc-body[data-card="${id}"]')`);
     await sleep(150);await ev(p,'document.fonts.ready');
     await ev(p,'document.getAnimations().forEach(a=>a.cancel())');
+    // P550: the reply card's forward glyph follows P536's explicit destination (approved); this comparison is about Notebook.
+    if(id==='chat')await ev(p,"document.getElementById('fwdBtn').style.visibility='hidden'");
     const bytes=await stableShot(p),name=`${stage}-${id}-${tag}.png`;writeFileSync(join(out,name),bytes);
     if(id!=='notes'){
      const k=`${id}-${tag}`;

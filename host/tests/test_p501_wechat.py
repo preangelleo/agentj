@@ -237,6 +237,8 @@ class Channel(unittest.IsolatedAsyncioTestCase):
         self.c.store.set_session_id('wechat','claude','private-session')
         self.assertEqual(Store(self.st).session_id('wechat','claude'),'private-session')
     async def test_unsigned_phone_setup_cannot_change_binding(self):
+        from unittest.mock import AsyncMock, Mock
+        self.h.owner_uv_offer=AsyncMock(return_value=('pk','ch'));self.h.owner_uv_check=Mock(return_value=None)   # P551: Face ID passed; the signature still fails
         await self.c.on_phone(NS(device='x'),{'op':'unbind','r':'r'})
         self.assertTrue(self.c.status()['bound']);self.h._ctl_res.assert_awaited()
     async def test_login_refresh_redirect_verify_and_encrypted_binding(self):

@@ -12,7 +12,7 @@ class CaptureAvatar:
         self.offer_choice=AsyncMock()
         self.receive_owner=AsyncMock(side_effect=self.receive)
 
-    async def receive(self, source, mid, text, paths=(), valid=lambda:True, *, admission=None, blobs=(), quote=None, quote_text=None, source_info=None):
+    async def receive(self, source, mid, text, paths=(), valid=lambda:True, *, admission=None, blobs=(), quote=None, quote_text=None, source_info=None, interim=None):
         admission=admission or {}
         session=NS(source_kind='email' if source=='mail' else 'telegram',
                    provenance=provenance.email_owner(admission.get('addr','owner@example.test')) if source=='mail' else provenance.telegram_owner(admission.get('owner_id',1)))
@@ -38,7 +38,7 @@ def legacy_transport_avatar(case, host, get_channel):
         return original_api(cfg, method, values, *args, **kwargs)
     patcher=patch.object(tg,'api',fixture_api)
     patcher.start();case.addCleanup(patcher.stop)
-    async def receive(source, mid, text, paths=(), valid=lambda:True, *, admission=None, blobs=(), quote=None, quote_text=None, source_info=None):
+    async def receive(source, mid, text, paths=(), valid=lambda:True, *, admission=None, blobs=(), quote=None, quote_text=None, source_info=None, interim=None):
         admission=admission or {}
         uid=admission.get('owner_id',1)
         session=NS(device='telegram:'+str(uid)+':'+str(uid),name='Telegram owner',cid=0,

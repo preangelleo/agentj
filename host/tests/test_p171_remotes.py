@@ -88,7 +88,7 @@ class Serve(unittest.TestCase):
         m = self.got("devs", "l1")[0]
         self.assertEqual((m["limit"], m["can_add"], m["busy"]), (10, True, False))
         self.assertEqual({d["id"]: d["me"] for d in m["items"]}, {ph.did: True, other.did: False})
-        self.assertEqual(set(m["items"][0]), {"id", "name", "paired_at", "seen", "online", "me", "source", "named_by", "self_name"})   # P165: + P179 name provenance
+        self.assertEqual(set(m["items"][0]), {"id", "name", "paired_at", "seen", "online", "me", "source", "named_by", "self_name", "pk"})   # P165: + P179 name provenance; P539 passkey state (enum)
         self.assertNotIn("pub", json.dumps(m))
         self.assertEqual(self.got("devs", "l2"), [])
         self.assertEqual(host.host_info()["limit"], 10)
@@ -124,16 +124,27 @@ class Serve(unittest.TestCase):
         so = _ready(host, other, cid=21)
         so.p33 = True
         tgt = {"device": other.did}
+        from unittest import mock
+        from agentj import passkey
+        fa = {"id": wire.b64u(b"\x07" * 16), "cd": "e30", "ad": "AA", "sig": "AA"}
 
         async def go():
             await host._app(s, {"t": "dev_unbind", "r": "u", **tgt})
-            await host._app(s, sign(ph, "dev_unbind", tgt, {"t": "dev_unbind", "r": "ok", **tgt}))
-            gone = {"device": "B" * 16}
-            await host._app(s, sign(ph, "dev_unbind", gone, {"t": "dev_unbind", "r": "g", **gone}))
-            me = {"device": ph.did}
+            # P551 (#318) ③: another remote → this remote's Face ID; none set up → refused
+            await host._app(s, sign(ph, "dev_unbind", tgt, {"t": "dev_unbind", "r": "nopk", **tgt}))
+            self.st.set_passkey(ph.pub, {"id": fa["id"], "pub": wire.b64u(os.urandom(77)), "alg": -7, "count": 0,
+                                         "rp": "m.agentj.app", "at": int(time.time())})
+            await host._app(s, sign(ph, "dev_unbind", tgt, {"t": "dev_unbind", "r": "pk", **tgt}))
+            with mock.patch.object(passkey, "verify_assertion", return_value=1):
+                await host._app(s, sign(ph, "dev_unbind", tgt, {"t": "dev_unbind", "r": "ok", **tgt, "fa": fa}))
+                gone = {"device": "B" * 16}
+                await host._app(s, sign(ph, "dev_unbind", gone, {"t": "dev_unbind", "r": "g", **gone, "fa": fa}))
+            me = {"device": ph.did}          # itself: gives up only its own access, no Face ID
             await host._app(s, sign(ph, "dev_unbind", me, {"t": "dev_unbind", "r": "me", **me}))
         asyncio.run(go())
         self.assertEqual(self.res("u")["why"], "shape")
+        self.assertEqual(self.res("nopk")["why"], "no_passkey")
+        self.assertEqual(self.res("pk")["why"], "passkey_required")
         self.assertTrue(self.res("ok")["ok"])
         self.assertEqual(self.res("g")["why"], "gone")
         self.assertTrue(self.res("me")["ok"], "the answer reaches the remote before it is detached")

@@ -282,7 +282,9 @@ test('app.js + js/*.js: only WebSocket egress, non-extractable keys, no plaintex
   assert.doesNotMatch(APP.slice(APP.indexOf('async function revoked('), APP.indexOf('async function revoked(')+700), /saveDraft/, 'revocation never saves the draft');
   assert.match(STORE, /generateKey\(\{ name: 'AES-GCM', length: 256 \}, false, \['encrypt', 'decrypt'\]\)/, 'sealing key not extractable');
   assert.match(STORE, /for \(const k of \['draft', 'ihist', 'outbox', 'srch', 'local'\]\)/, 'unpair / re-pair wipes drafts, history, the offline queue, the search pages and the sealing key');
-  assert.match(STORE, /indexedDB\.open\('agentjarvis', 1\)/, 'the IndexedDB name stays "agentjarvis" (paired phones keep their keys)');
+  // P545: the root page's database keeps the name "agentjarvis"; a seat's page (m.agentj.app/<seat id>/) uses "agentjarvis@<seat id>"
+  assert.match(STORE, /export const ROOT_DB = 'agentjarvis';\nexport const DB_NAME = globalThis\.AJSeat \? globalThis\.AJSeat\.db\(ROOT_DB\) : ROOT_DB;\nfunction idb\(name = DB_NAME\) \{\n  return new Promise\(\(res, rej\) => \{\n    const r = indexedDB\.open\(name, 1\);/, 'the IndexedDB name stays "agentjarvis" on the root page (paired phones keep their keys)');
+  assert.match(read(pub('js/seatscope.js')), /db: function \(name\) \{ return seat \? name \+ suffix : name; \}/);
   assert.match(OURS, /generateSigningKeypair\(\)/);
   const WIRE = readFileSync(new URL('../../protocol/wire.js', import.meta.url), 'utf8');
   assert.match(WIRE, /generateKey\(\{ name: 'Ed25519' \}, false, \['sign', 'verify'\]\)/, 'approval key: private half not extractable');
@@ -454,9 +456,12 @@ const jsRe = (p) => (p.startsWith('(?i)') ? new RegExp(p.slice(4), 'i') : new Re
 test('i18n: no internal terms or banned words in either dictionary, the page text or app.js literals', { skip: NO_GLOSSARY }, () => {
   const visible = HTML.replace(/<script[\s\S]*?<\/script>|<[^>]+>/g, ' ');
   const sources = [...Object.entries(DICT.zh).map(([k, v]) => [`zh ${k}`, v]), ...Object.entries(DICT.en).map(([k, v]) => [`en ${k}`, v]), ['index.html text', visible]];
+  // 2026-10-04: glossary entries marked allow_in_parens may appear inside a parenthetical note — （技术上叫 Harness）/
+  // (technically, a harness) — never as the main wording (the same rule as site/test/static.test.mjs)
+  const noParens = (s) => s.replace(/（[^（）]*）|\([^()]*\)/g, ' ');
   for (const f of GLOSSARY.forbidden) {
     const re = jsRe(f.pattern);
-    for (const [where, text] of sources) assert.doesNotMatch(text, re, `${where}: internal term /${f.pattern}/ — say 「${f.say_zh}」 / "${f.say_en}"`);
+    for (const [where, text] of sources) assert.doesNotMatch(f.allow_in_parens ? noParens(text) : text, re, `${where}: internal term /${f.pattern}/ — say 「${f.say_zh}」 / "${f.say_en}"`);
   }
   for (const [k, v] of Object.entries(DICT.zh)) {
     for (const w of GLOSSARY.banned_words_zh) assert.ok(!v.includes(w), `zh ${k}: banned word ${w}`);
@@ -479,6 +484,12 @@ test('i18n: the forbidden-term check itself works (positive control)', { skip: N
   const planted = ['Noise 握手', '急停', 'alpha', 'harness', 'Zero Access'];
   assert.ok(!GLOSSARY.forbidden.some(f => jsRe(f.pattern).test('紧急停止所有 Agent')), 'P435 owner-approved label is allowed');
   for (const s of planted) assert.ok(GLOSSARY.forbidden.some((f) => jsRe(f.pattern).test(s)), `no forbidden pattern catches ${s}`);
+  // P551: the parenthetical allowance never lets the term through as the main wording
+  const harness = GLOSSARY.forbidden.find((f) => jsRe(f.pattern).test('harness'));
+  assert.equal(harness.allow_in_parens, true);
+  const np = (s) => s.replace(/（[^（）]*）|\([^()]*\)/g, ' ');
+  assert.ok(jsRe(harness.pattern).test(np('跟随 Harness')) && jsRe(harness.pattern).test(np('Follow harness (AI tool)')), 'main wording is still caught');
+  assert.ok(!jsRe(harness.pattern).test(np('跟随 AI 编程工具（Harness）')) && !jsRe(harness.pattern).test(np('AI coding tool (technically, a harness)')), 'a parenthetical note is allowed');
 });
 
 

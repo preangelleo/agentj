@@ -12,6 +12,14 @@ Level (`approval.level`, default "standard" = the behaviour before P336, unchang
               hook / approval files, `agentj config`, Agent J settings or state folders), credentials changed or shown,
               spending money, price changes. Host cards (`agentj …`, the pairing card, the sandbox / login-rescue cards) and
               cards with their own wait keep asking. Needs a paired remote with an approval key (none → refused as before).
+    harness   P551 (#320) 「审批跟随底层 Harness」, expert mode: Agent J adds no approval layer of its own — its own `agentj …`
+              cards (mail, calendar, same-owner changes), goal countdowns, batch / brief grants and the danger hints of the
+              Claude Code hook are off; whatever the harness itself does not ask runs; whatever it asks comes to the phone as a
+              long-press card, as it is (Codex: the owner's own approval_policy decides, Claude Code: its permission mode).
+              The one layer kept: ③ irreversible actions (policy_registry `uv` and any effect Agent J cannot read) need the
+              owner's Face ID, whoever starts them (confirm_tier.py). Switching to it is signed AND needs this remote's
+              passkey (no passkey → refused `no_passkey`); it takes effect when the harness restarts (done at once, before
+              its next turn, conversation kept).
 
 Goal without the opening card (`approval.goal_nocard`, default false = the P158 card): when on, `agentj goal propose`
 starts the goal at once — the owner's signed switch IS the signature (approvals.log `reason: goal_preauth`, `grant` = the
@@ -43,12 +51,19 @@ KEY = "approval.level"
 GOAL_KEY = "approval.goal_nocard"
 OWNER_GOAL_SECS = 1800   # an owner's /goal lets ONE proposal start without the card within this window
 KEYS = (KEY, GOAL_KEY, "jev.mode")
-LEVELS = ("safe", "standard", "full")
+LEVELS = ("safe", "standard", "full", "harness")
+SIGNED = ("full", "harness")     # levels that ask less: in force only with a live signed switch
 DEFAULT = "standard"
 REDLINE_CATS = ("credentials", "spend", "price")
 # host cards that are a decision of their own, never auto-allowed by a level (pairing, sandbox, login rescue, goal, quota)
 from . import policy_registry
 HOST_CARDS = tuple(tool for tool in policy_registry.HOST_TOOLS if not tool.startswith("agentj "))
+# P551: under `harness` these still ask — the harness's own cards (OpenCode doom-loop / task, questions) and decisions that are
+# not an approval layer (pairing, sandbox, login rescue, resident hooks, the terminal); a same-owner change is Agent J's own ②
+# (review B1) changing Agent J's own settings, quota account or a paused automation is not an approval the harness has —
+# it keeps its card
+HARNESS_KEEPS = tuple(tool for tool in HOST_CARDS if tool != "AgentJSameOwnerAction") + (
+    "agentj config", "agentj quota switch", "agentj automation resume")
 
 
 PARK_GRACE = 20          # seconds a card waits for a remote to come online before the Agent is told nobody is there
@@ -64,7 +79,7 @@ def level(prefs, st=None) -> str:
     from . import preferences
     v = preferences.get(prefs or {}, KEY, DEFAULT)
     v = v if v in LEVELS else DEFAULT
-    if v == "full" and (st is None or signed_value(st, KEY) != "full"):
+    if v in SIGNED and (st is None or signed_value(st, KEY) != v):
         return DEFAULT
     return v
 
@@ -72,7 +87,8 @@ def level(prefs, st=None) -> str:
 def unsigned_full(prefs, st) -> bool:
     """The configuration says full but no live signed switch backs it (then standard applies; the owner is told once)."""
     from . import preferences
-    return preferences.get(prefs or {}, KEY, DEFAULT) == "full" and signed_value(st, KEY) != "full"
+    v = preferences.get(prefs or {}, KEY, DEFAULT)
+    return v in SIGNED and signed_value(st, KEY) != v
 
 
 def goal_nocard(prefs) -> bool:
@@ -80,11 +96,19 @@ def goal_nocard(prefs) -> bool:
     return preferences.get(prefs or {}, GOAL_KEY, False) is True
 
 
-def shared_mode(prefs) -> str:
-    """The shared-session classifier mode: `safe` under the safe level, else agent.approvals (standard | strict | native)."""
+def follow_harness(prefs, st) -> bool:
+    """P551 (#320): the signed `harness` level is in force."""
+    return level(prefs, st) == "harness"
+
+
+def shared_mode(prefs, st=None) -> str:
+    """The shared-session classifier mode: `safe` under the safe level, `native` (the harness's own prompts only) under the
+    signed harness level, else agent.approvals (standard | strict | native)."""
     from . import preferences
     if level(prefs) == "safe":
         return "safe"
+    if st is not None and follow_harness(prefs, st):
+        return "native"
     return {"strict": "strict", "native": "native"}.get(preferences.get(prefs or {}, "agent.approvals", "standard"), "standard")
 
 
@@ -236,7 +260,7 @@ def goal_preauth(st, prefs) -> dict | None:
 def level_grant(st) -> str | None:
     """The approvals.log id of the live signed switch to `full` (the audit parent of a `level_full` line)."""
     s = _live(st, KEY)
-    return s["rid"] if s is not None and s.get("value") == "full" else None
+    return s["rid"] if s is not None and s.get("value") in SIGNED else None
 
 
 # ------------------------------------------------------------------ words
@@ -244,8 +268,8 @@ def _en(lang) -> bool:
     return str(lang or "").startswith("en")
 
 
-NAME = {"zh": {"safe": "安全", "standard": "中等", "full": "全放行"},
-        "en": {"safe": "Safe", "standard": "Standard", "full": "Full access"}}
+NAME = {"zh": {"safe": "安全", "standard": "中等", "full": "全放行", "harness": "跟随 AI 编程工具（Harness）"},
+        "en": {"safe": "Safe", "standard": "Standard", "full": "Full access", "harness": "Follow your AI coding tool (harness)"}}
 
 
 def changed_text(key: str, value, by: str, lang) -> str:
@@ -260,11 +284,12 @@ def changed_text(key: str, value, by: str, lang) -> str:
             f"🔐 「设了目标就不弹窗」已{'打开' if on else '关闭'}（由「{by}」确认）。")
 
 
-def unsigned_text(lang) -> str:
+def unsigned_text(lang, value: str = "full") -> str:
+    n = NAME["en" if _en(lang) else "zh"].get(value, NAME["en" if _en(lang) else "zh"]["full"])
     if _en(lang):
-        return ("🔐 The configuration says approval level 「Full access」, but it was not confirmed on a paired phone — "
+        return (f"🔐 The configuration says approval level 「{n}」, but it was not confirmed on a paired phone — "
                 "Standard applies. Switch it in Settings → Safety on your phone.")
-    return "🔐 配置里写着审批档位「全放行」，但没有在已配对的手机上签名确认，现在按「中等」处理。要用全放行，请在手机 设置 → 安全 里切换。"
+    return f"🔐 配置里写着审批档位「{n}」，但没有在已配对的手机上签名确认，现在按「中等」处理。要用这一档，请在手机 设置 → 安全 里切换。"
 
 
 def nobody_text(lang, again: bool = False) -> str:

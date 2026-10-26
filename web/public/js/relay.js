@@ -14,7 +14,8 @@ import { DOUBLE_MS as RD_DTAP_MS, TAP_MS as RD_TAP_MS, TAP_PX as RD_TAP_PX, PAIR
 import {onChange as onCardsChange, refresh as refreshCards} from './jcards.js';
 import { linkify, cardKeys, commandLinks } from './five-pages.js';
 import { capAbove, sheetCeil, wireCeil } from './fit.js';
-import { registerLayer, activeLayer } from './layers.js';
+import { registerLayer, activeLayer, TOP_RANK } from './layers.js';
+import { topCard } from './ontop.js';
 import { applyViewport, watchViewport } from './viewport.js';
 import { historyDoubleTap, longPress as cornerLongPress } from './history-corners.js';   // P179 (P165: renamed — P181's longpress.js owns longPress)
 import { open as openRename } from './dev-rename.js';
@@ -32,7 +33,8 @@ import { cycle, tier } from './quotapace.js';   // P303: day of the reset cycle 
 import { RelayMD } from './md.js';
 import { copyable } from './copycode.js';   // P292: every code / pre can be copied
 import { upgrade as upgradeWords, forget as forgetRendered } from './render.js';   // P57: lazy code / math / diagrams
-import { cmdGist } from './cmdgist.js';   // P341: the approval card's plain line when the Agent gave none
+import { cmdGist } from './cmdgist.js';
+import { paintPk, preauthShown, preauthLabelKey, mergeDraft, failKey } from './pkassist.js';   // P539   // P341: the approval card's plain line when the Agent gave none
 import { t, lang, onLang, fillText, both } from './t.js';
 import { el, toast, executionToast, toastOff, toastAction, human, stamp, mmss, confirmSheet } from './ui.js';
 import * as sfx from './sfx.js';
@@ -60,6 +62,8 @@ import { askKind as friendAsk, renderAsk as renderFriendAsk, addFriendCmd, openF
 import { wireComponents } from './components.js';
 import * as replyBtn from './replybtn.js';   // P368 (#78): [派](reply:派) one-tap answers + #tags in the reply
 
+import {glyph} from './icons.js';
+import * as forwarding from './forward-choice.js';
 let C = null;                        // ctx from app.js: api, myDev(), estopOn(), canSign(), panels …
 const VERBS = ['Bash', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Read', 'WebFetch', 'WebSearch', 'Delete', 'ExternalDirectory', 'CodexPermissions'];
 const verb = (tool) => (VERBS.includes(tool) ? t('r.verb.' + tool) : t('r.verb.other', { tool }));
@@ -290,7 +294,11 @@ function renderQuestion(card, a){
     qsKey = key;
     box.replaceChildren();
     qs.forEach((item, qi) => {
-      if (qs.length > 1 || item.header){
+      if (qs.length === 1 && item.header.includes("\n")){
+        // P538 (#303): a terminal screen the host could not read as a menu — shown as it stands, keys below it
+        const pre = document.createElement("pre"); pre.className = "qscreen"; pre.textContent = item.header.replace(/\n+$/, "");
+        pre.setAttribute("aria-label", t('p538.screen')); box.appendChild(copyable(pre, {click: false}));
+      } else if (qs.length > 1 || item.header){
         const h = document.createElement("h3");
         h.textContent = qs.length > 1 ? item.question : item.header;
         if (qs.length > 1 && item.header){ const s = document.createElement("span"); s.className = "qhdr"; s.textContent = item.header; h.prepend(s); }
@@ -417,6 +425,9 @@ function renderCard(s){
   if (left > 0) askResultTimer = setTimeout(() => { if (cur) renderCard(cur); }, left * 1000 + 50);
   document.body.dataset.sheet = (pending && !folded) || result || presult ? "1" : "0";
   el("sheet").hidden = document.body.dataset.sheet !== "1";
+  // P551: which card the sheet shows — a new one (or the result after it) is a new confirmation for ontop.js: on top, focused
+  const shows = document.body.dataset.sheet !== "1" ? "" : pending ? cardKey(card) : result ? "q|" + a.id : presult ? "p|" + p.id : "";
+  if (el("sheet").dataset.card !== shows) el("sheet").dataset.card = shows;
   el("pendTag").hidden = !folded || (!!apprOpt && apprOpt.key === foldedCard);   // P154: a card answered here leaves no tag
   el("apprBtns").hidden = true; el("apprBatch").hidden = true; el("apprGoalAdd").hidden = true;
   el("goalInfo").hidden = true; el("cmdToggle").hidden = true;   // P339: only a goal card in plain words shows them
@@ -461,6 +472,7 @@ function apprText(p){
   if (friendAsk(p) && p.pq && p.pq.pairing === true && FR_DONE[st] === "ended") return t('p417.so.closed');   // #186
   if (friendAsk(p) && FR_DONE[st]) return t('fr.ask.done.' + (p.tool === "friend_request" ? "fr_" : "pq_") + FR_DONE[st]);
   if (st === "open") return p.local_only ? t('r.appr.st.localOnly') : "";
+  if (p.done_why && APPR_FINAL.includes(st) && st !== "approved") return t(p.done_why);   // P539: the host said why it closed
   return ["allow_sent", "deny_sent", "batch_sent", "approved", "denied", "terminal", "timeout", "expired", "ended", "stopped"].includes(st) ? t('r.appr.st.' + st) : "";
 }
 function renderPermission(card, p){
@@ -531,6 +543,9 @@ function renderPermission(card, p){
   const text = p ? (open && !sign ? t('ask.noSign') : open && apprFail && apprFail.id === p.id ? apprFail.text : apprText(p)) : "";
   el("askState").hidden = !text;
   el("askState").textContent = text;
+  // P539: under the buttons — no own passkey on this remote (fa_s), or why the last passkey tap failed + 再试一次 (from the tap)
+  const pkFail = open && sign && apprFail && apprFail.id === p.id ? apprFail.err : null;
+  paintPk(el("apprPk"), p && open && sign && p.passkey_required && p.fa && !apprBusy ? {fa: p.fa_s, err: pkFail, retry: () => apprPost(p, "allow")} : {});
   el("elsewhereText").textContent = handoffAsk ? t("wc.confirmNote") : ppAsk && open ? t('ppReset.where') : pairAsk && open ? t('pair.card.where') : !p ? t('r.appr.elsewhere') : p.local_only ? t('r.appr.st.localOnlyShort') : open ? t('r.appr.elsewhereLive') : t('r.appr.elsewhere');
   paintTags(p || null);
 }
@@ -562,7 +577,8 @@ function toggleGoalCmd(){
 let mailPicks = {id: null, set: new Set()};
 function paintMailAllow(p, live){
   const box = el("apprMailAllow");
-  const offer = live && p && p.tool === "agentj mail send" && !p.goal_add && Array.isArray(p.allow_offer) ? p.allow_offer : [];   // P339: a goal_add card offers that one line instead
+  const mail = !!(p && p.tool === "agentj mail send");
+  const offer = live && p && !p.goal_add && Array.isArray(p.allow_offer) ? (mail ? p.allow_offer : preauthShown(p.allow_offer)) : [];   // P339: a goal_add card offers that one line instead · P539: preauth lines on any other card
   if (!offer.length){ box.hidden = true; box.replaceChildren(); return; }
   if (mailPicks.id !== p.id) mailPicks = {id: p.id, set: new Set()};
   if (box.dataset.id !== p.id || box.childElementCount !== offer.length + 1){
@@ -571,11 +587,11 @@ function paintMailAllow(p, live){
       const lab = document.createElement("label"), cb = document.createElement("input"), sp = document.createElement("span");
       cb.type = "checkbox"; cb.checked = mailPicks.set.has(a);
       cb.addEventListener("change", () => { if (cb.checked) mailPicks.set.add(a); else mailPicks.set.delete(a); });
-      sp.textContent = t('r.appr.mailAllow', {a});
+      sp.textContent = mail ? t('r.appr.mailAllow', {a}) : t(preauthLabelKey(a));
       lab.append(cb, sp);
       return lab;
     });
-    const hint = document.createElement("small"); hint.textContent = t('r.appr.mailAllowHint');
+    const hint = document.createElement("small"); hint.textContent = t(mail ? 'r.appr.mailAllowHint' : 'p539.pre.hint');
     box.replaceChildren(...rows, hint);
   }
   box.hidden = false;
@@ -632,12 +648,14 @@ async function apprPost(p, action){
   apprBusy = false;
   if (r.ok){ apprSent = {id: p.id, state: action === "batch" ? "batch_sent" : action === "allow" || action === "goaladd" ? "allow_sent" : "deny_sent"}; }
   else {
-    const why = r.why === 'passkey_required' ? t('ask.passkeyRequired') : r.why === "offline" ? t('r.appr.net') : t('r.appr.fail');
+    // P539: a passkey tap that failed in the browser (r.err) says its own reason, in the block under the buttons
+    const why = r.err ? t(failKey(r.err, p.fa_s)) : r.why === 'passkey_required' ? t('ask.passkeyRequired') : r.why === "offline" ? t('r.appr.net') : t('r.appr.fail');
     if (apprOpt && apprOpt.id === p.id){                        // it did not leave this phone: the card comes back, saying why
       if (foldedCard === apprOpt.key) foldedCard = null;
       apprOpt = null; apprDismissed = null; apprFail = {id: p.id, text: why};
     }
-    toast(why, 3000);
+    if (r.err) apprFail = {id: p.id, text: "", err: r.err};     // the card stays; 再试一次 re-runs approve straight from the tap
+    if (!r.err) toast(why, 3000);                                // (the reason is on the card itself, no popup over it)
   }
   if (cur) renderCard(cur);
 }
@@ -657,7 +675,7 @@ function apprKbd(){
 }
 function apprHotkey(e){
   if (e.key !== "Enter" || !(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey || e.isComposing || e.repeat) return;
-  if (document.body.dataset.sheet !== "1" || el("apprBtns").hidden || el("apprAllow").hidden || el("apprAllow").disabled || dialogOpen()) return;
+  if (document.body.dataset.sheet !== "1" || el("apprBtns").hidden || el("apprAllow").hidden || el("apprAllow").disabled || (dialogOpen() && topCard() !== el("sheet"))) return;   // P551: a card above the dialog is the one in front
   const p = apprLive();
   if (!p || p.local_only || friendAsk(p)) return;
   e.preventDefault(); e.stopImmediatePropagation();
@@ -1333,7 +1351,9 @@ function showPage(){
   el("localNote").hidden = !(src && src.local);
   const queueList = queuedWatchList();
   queueStuck = queueWatch.check(queueList, hist.turns);
-  paintCmdx(p);
+  const chan = chanCard(p);                              // P543 (#308): an owner-channel message shows its words
+  el("words").dataset.chan = chan ? "1" : "0";
+  if (chan) paintChan(el("cmdx"), p, chan); else paintCmdx(p);
   if (p.source?.k === 'cmd' && p.card?.kind === 'refused') {
     commandLinks(el('words'), async cmd => {
       if (cmd === 'reset') { C.resetConn?.(); return; }
@@ -1363,8 +1383,8 @@ function showPage(){
   const open = p.end === "open" && p.id !== null, c = p.card || {};
   const progress = open && typeof c.progress === "string" ? c.progress.trim().slice(0, 300) : "";
   const hostWait = open && (c.wait === true || c.queued === true) || (typeof c.switch === "string" && p === ps[ps.length - 1]);
-  renderWords((isSilent(p.reply) ? "" : p.reply?.trim()) || (p.end === "open" || p.id === null ? "" : t('r.noReply')), open,
-    qd ? t(queueStuck ? 'p481.queueStuck' : 'r.queue.card') + (ahead ? " · " + t('r.queue.ahead', {n: ahead}) : "") : progress, hostWait, sysPage(p), p.source?.k === "friend_report");
+  renderWords(chan ? chanWords(p, chan) : (isSilent(p.reply) ? "" : p.reply?.trim()) || (p.end === "open" || p.id === null ? "" : t('r.noReply')), open,
+    qd ? t(queueStuck ? 'p481.queueStuck' : 'r.queue.card') + (ahead ? " · " + t('r.queue.ahead', {n: ahead}) : "") : progress, hostWait, sysPage(p), p.source?.k === "friend_report" || !!chan);
   paintThinking(visibleReply(p) && !hostWait ? progress : "");
   el("words").classList.toggle("empty", !visibleReply(p));
   renderMedia(el("words"), p);
@@ -1375,6 +1395,39 @@ function showPage(){
   document.body.dataset.pageOpen = p.end === "open" ? "1" : "0";
   paintActs();
   if (!el("silent").hidden) renderSilent();
+}
+// P543 (#308): a message from the owner's WeChat / email / Telegram (host card.channel, channel_card.py) shows what was
+// sent — plain text (never Markdown: it is outside data) under the source line and the low-trust mark; long text folds
+// behind 「展开」; attachments are the page's own media cards; the inbox location sits behind 「…」.
+const chanOpen = new Set();
+const CHAN_FOLD = 600;
+function chanCard(p){
+  const c = p && p.source && p.source.k === "sys" && p.card ? p.card.channel : null;
+  return c && typeof c === "object" && ["wechat", "mail", "telegram"].includes(c.source) && typeof c.text === "string" ? c : null;
+}
+function chanWords(p, c){
+  const body = c.text.trim(), open = chanOpen.has(p.id);
+  const shown = body.length > CHAN_FOLD && !open ? body.slice(0, CHAN_FOLD).trimEnd() + "…" : body;
+  const head = typeof c.label === "string" && c.label.trim() ? c.label.trim().slice(0, 40) : "";
+  return (head ? head + " · " : "") + t('p543.chan.untrusted') + (shown ? "\n\n" + shown : "")
+    + (c.cut === true && open ? "\n\n" + t('p543.chan.cut') : "");
+}
+function paintChan(box, p, c){
+  box.replaceChildren();
+  if (c.text.trim().length > CHAN_FOLD){
+    const b = document.createElement("button"); b.type = "button"; b.className = "cmdundo"; b.dataset.chanFold = String(p.id);
+    b.textContent = t(chanOpen.has(p.id) ? 'p543.chan.less' : 'p543.chan.more');
+    b.addEventListener("click", () => { chanOpen.has(p.id) ? chanOpen.delete(p.id) : chanOpen.add(p.id); showPage(); });
+    box.appendChild(b);
+  }
+  const paths = Array.isArray(c.paths) ? c.paths.filter(x => typeof x === "string" && x).slice(0, 11) : [];
+  if (paths.length){
+    const d = document.createElement("details"); d.className = "cmdresume chanx";
+    const summary = document.createElement("summary"); summary.textContent = "…"; summary.title = t('p543.chan.where');
+    const body = document.createElement("p"); body.textContent = t('p543.chan.where') + "\n" + paths.join("\n");
+    d.append(summary, body); box.appendChild(d);
+  }
+  box.hidden = !box.children.length;
 }
 // A command result page (§8 cmd card → turn.card): the model buttons and 「撤销清空」 sit under the words.
 function paintCmdx(p){
@@ -1390,7 +1443,7 @@ function paintCmdx(p){
   const isCmd = !!c && p.source && p.source.k === "cmd";
   const resume = isCmd && c.cmd === "clear" && c.resume && typeof c.resume.title === "string" && typeof c.resume.command === "string" ? c.resume : null;
   const cancelWait = isCmd && c.cancel_wait === true && p.end === "open" && p.source.dev === C.myDev();
-  const openBtn = isCmd && typeof c.open === "string" && /^fr_(card|add)(:[A-Z0-9-]{1,40})?$/.test(c.open);   // P73
+  const openBtn = isCmd && typeof c.open === "string" && (c.open === "upgrade_repair" || /^fr_(card|add)(:[A-Z0-9-]{1,40})?$/.test(c.open));   // P73
   // P151b: a phone turn the shared Claude has not ended after 5 min — 「继续等」 (another round) or 「中断」 (/stop)
   if (p.end === "open" && queuedTurn(p.id) && document.body.dataset.conn === "on" && !C.estopOn()){
     box.hidden = false;
@@ -1439,8 +1492,8 @@ function paintCmdx(p){
   }
   if (openBtn){
     const o = document.createElement("button"); o.type = "button"; o.className = "cmdopen"; o.dataset.open = c.open;
-    o.textContent = t(c.open === "fr_card" ? 'cmd.openCard' : 'cmd.openAdd');
-    o.addEventListener("click", () => openFromCmd(c.open));
+    o.textContent = c.open === 'upgrade_repair' ? t('p535.repair') : t(c.open === "fr_card" ? 'cmd.openCard' : 'cmd.openAdd');
+    o.addEventListener("click", () => c.open === 'upgrade_repair' ? C.resetConn?.() : openFromCmd(c.open));
     box.appendChild(o);
   }
   if (Array.isArray(c.models)){
@@ -1954,8 +2007,11 @@ function paintFwd(){
   const b = el("fwdBtn"), p = currentPage(), id = p.id, st = id === null ? "idle" : (fwdSt.get(id) || "idle");
   b.disabled = id === null || st === "sending" || !(p.reply || "").trim();
   b.dataset.state = st;
-  const k = (peer.tgfwd ? 'r.tg.' : 'r.share.') + st;
-  b.dataset.tg = peer.tgfwd ? "1" : "";
+  const dest = forwarding.destination();
+  const k = (dest === 'wx' ? 'p536.wx.' : dest === 'tg' ? 'r.tg.' : 'r.share.') + st;
+  b.dataset.tg = dest === 'tg' ? '1' : '';
+  b.dataset.wx = dest === 'wx' ? '1' : '';
+  if (!b.querySelector('.gwx')) b.append(glyph('wechat', 'g gwx'));
   b.setAttribute("aria-label", t(k)); b.title = t(k);
 }
 async function forwardTap(){
@@ -1965,14 +2021,18 @@ async function forwardTap(){
   const text = (p.reply || "").trim();
   if (!text) return;
   setFwd(id, "sending");
-  if (peer.tgfwd){
-    const r = await C.api.tgForward(id);
-    if (r.ok){ setFwd(id, "sent", 2000); toast(t('r.tg.sent'), 2000); return; }
-    if (r.why === "rate_limited" || r.why === "recently_sent" || r.why === "in_flight"){
-      setFwd(id, "idle"); toast(t(r.why === "rate_limited" ? 'r.tg.limited' : 'r.tg.again'), 2600); return;
+  const dest = forwarding.destination();
+  if (dest === 'tg' || dest === 'wx') {
+    let r;
+    try { r = await (dest === 'wx' ? C.api.wxForward(id) : C.api.tgForward(id)); }
+    catch { r = {ok:false, why:'send_failed'}; }
+    if (r.ok) { setFwd(id, 'sent', 2000); toast(t(dest === 'wx' ? 'p536.wx.sent' : 'r.tg.sent'), 2000); return; }
+    if (['rate_limited', 'recently_sent', 'in_flight'].includes(r.why)) {
+      setFwd(id, 'idle'); toast(t(r.why === 'rate_limited' ? 'r.tg.limited' : 'r.tg.again'), 2600); return;
     }
-    if (r.why !== "not_configured"){ setFwd(id, "failed", 3000); toast(t('r.tg.failed'), 2600); return; }
-    peer.tgfwd = false;                 // Telegram was switched off since `ready`: the share sheet from now on
+    setFwd(id, 'failed', 3000);
+    toast(t(dest === 'wx' ? 'p536.wx.failed' : 'r.tg.failed'), 3000);
+    return;
   }
   if (navigator.share){
     try{ await navigator.share({text}); setFwd(id, "sent", 2000); return; }
@@ -2110,7 +2170,7 @@ function rdSync(){
 // e-mail stay; the book = leave.
 const RD_ACTS = [["readBtn", "rdReadBtn"], ["speakBtn", "rdSpeakBtn"], ["fwdBtn", "rdFwdBtn"], ["mailBtn", "rdMailBtn"],
                  ["copyReply", "rdCopyBtn"], ["replyBtn", "rdReplyBtn"]];
-const RD_MIRROR = ["disabled", "hidden", "data-state", "data-tg", "aria-label", "title"];
+const RD_MIRROR = ["disabled", "hidden", "data-state", "data-tg", "data-wx", "aria-label", "title"];
 function rdBuildActs(){
   const box = el("rdActs"), pairs = [];
   for (const [src, id] of RD_ACTS){
@@ -2121,6 +2181,7 @@ function rdBuildActs(){
   }
   const copy = (s, b) => {
     for (const a of RD_MIRROR){ const v = s.getAttribute(a); if (v === null) b.removeAttribute(a); else b.setAttribute(a, v); }
+    if (s.id === "fwdBtn" && !b.querySelector(".gwx")) b.append(glyph("wechat", "g gwx"));
     b.classList.toggle("on", s.classList.contains("on"));
   };
   const mo = new MutationObserver(rs => { for (const r of rs){ const m = pairs.find(x => x[0] === r.target); if (m) copy(m[0], m[1]); } });
@@ -4282,6 +4343,13 @@ export function insertText(text){
   input.dispatchEvent(new Event("input"));
   try { focusComposer({preventScroll: true}); } catch { /* */ }
 }
+/** P539 (#299) `draft_restore`: the flagged message back in the box — the box's own words stay, the text goes on a new
+ *  line under them; then the cursor is at the end. Never logged. */
+export function putBackDraft(text){
+  input.value = mergeDraft(input.value, text);
+  input.dispatchEvent(new Event("input"));
+  try { focusComposer({preventScroll: true}); input.setSelectionRange(input.value.length, input.value.length); } catch { /* */ }
+}
 export function importShare({images, text}){
   if (images.length) takeFiles(images, 'r.verb2.paste', 'paste');
   if (text) { input.value += (input.value ? "\n" : "") + text; input.dispatchEvent(new Event('input')); }
@@ -4438,7 +4506,7 @@ export function init(ctx){
       search.flashCards(ts, where);
     },
   });
-  registerLayer({element:()=>el('sheet'),open:()=>document.body.dataset.sheet==='1',close:()=>el('sheetClose').click(),fallback:()=>el('pendTag'),rank:20});
+  registerLayer({element:()=>el('sheet'),open:()=>document.body.dataset.sheet==='1',close:()=>el('sheetClose').click(),fallback:()=>el('pendTag'),rank:TOP_RANK});   // P551: the card is on top of everything
   RelayMD.LABELS.copy = t('r.md.copy'); RelayMD.LABELS.copyAria = t('r.md.copyAria'); RelayMD.LABELS.copied = t('r.md.copied'); RelayMD.LABELS.image = t('r.md.image'); RelayMD.LABELS.tapCopy = t('r.md.tapCopy'); RelayMD.LABELS.details = t('p339.details');
   speaker = new Speaker((id, st, why) => {
     if (st === "idle") speakSt.delete(id); else speakSt.set(id, st);
@@ -5275,7 +5343,9 @@ export function init(ctx){
   paintTray();
 }
 /** Called when the session becomes ready again (a new host turn source, menu). */
-export function onReady(){ syncQueued(); paintVoiceReadiness(); refreshNewest(); paintPlaceholder(); refreshSend(); loadMenu(); paintActs(); renderMenu(); setTimeout(() => recRecover().catch(() => {}), 800); }
+window.addEventListener('agentj-forward-change', () => { if (C) paintFwd(); });
+export function onForwardChanged(){ paintFwd(); }
+export function onReady(){ syncQueued(); window.dispatchEvent(new Event('agentj-forward-change')); paintVoiceReadiness(); refreshNewest(); paintPlaceholder(); refreshSend(); loadMenu(); paintActs(); renderMenu(); setTimeout(() => recRecover().catch(() => {}), 800); }
 export function onEstop(){ paintPlaceholder(); renderMenu(); refreshSend(); }
 export function rerender(){ paintVoiceReadiness(); if (cur) render(cur); else showPage(); }
 /** For the screens test: internal state worth asserting. */

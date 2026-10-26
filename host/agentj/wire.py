@@ -86,6 +86,14 @@ def unpad_json(pt: bytes, max_json: int = MAX_JSON) -> dict:
 
 
 PAIR_DEFAULT_RELAY = "wss://relay.agentj.app"   # = protocol/wire.js PAIR_DEFAULT_RELAY (an empty relay field means this)
+
+
+def pair_base(web_base: str, channel: str) -> str:
+    """P545 (PROTOCOL §40): a new pairing opens the seat's own page, https://m.agentj.app/<seat id>/ — its own Home Screen
+    app, storage and passkey. Any other web root (tests, a self-hosted page) keeps its root."""
+    from . import seaturl
+    base = web_base.rstrip("/")
+    return seaturl.seat_url(channel, base) if base == seaturl.WEB else base
 PAIR_V2 = 2
 
 
@@ -94,7 +102,7 @@ def pairing_link_v1(web_base: str, relay: str, channel: str, host_pub: bytes, pa
     """The ≤ 0.15 JSON link (QR version 13-M, 69 modules). Every phone web parses it; 0.16.0a1 hosts still print it by default
     (the live 0.16 phone parses both; AGENTJ_PAIR_COMPACT=0 selects legacy JSON — P75)."""
     p = {"v": 1, "r": relay, "c": channel, "k": b64u(host_pub), "i": b64u(pairing_id), "p": b64u(psk), "x": expires}
-    return web_base.rstrip("/") + "/#p=" + b64u(json.dumps(p, separators=(",", ":")).encode())
+    return pair_base(web_base, channel) + "/#p=" + b64u(json.dumps(p, separators=(",", ":")).encode())
 
 
 def pairing_link(web_base: str, relay: str, channel: str, host_pub: bytes, pairing_id: bytes, psk: bytes,
@@ -114,7 +122,7 @@ def pairing_link(web_base: str, relay: str, channel: str, host_pub: bytes, pairi
     else:
         raise ValueError("bad relay url")
     raw = bytes([PAIR_V2]) + ch + host_pub + pairing_id + psk + int(expires).to_bytes(4, "big") + r
-    return web_base.rstrip("/") + "/#p=" + str(int.from_bytes(raw, "big"))
+    return pair_base(web_base, channel) + "/#p=" + str(int.from_bytes(raw, "big"))
 
 
 def parse_pairing_link(link: str) -> dict:

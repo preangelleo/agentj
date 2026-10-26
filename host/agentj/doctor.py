@@ -1229,6 +1229,20 @@ def check_local_files(st):
               "agentj files prepare --at-computer (owner terminal; optional Full Disk Access)")
 
 
+def check_heartbeat_prompt():
+    from .heartbeat import prompt_view
+    from .preferences import get, read, ConfigError
+    try:
+        language = get(read()[1], "appearance.language", "zh")
+    except (OSError, ConfigError):
+        return _c("heartbeat-template", WARN, "无法读取心跳配置 / Heartbeat configuration unavailable")
+    view = prompt_view("en" if language == "en" else "zh")
+    return _c("heartbeat-template", WARN if view["update_available"] else OK,
+              "出厂清单有更新，可一键合并 / Factory checklist updated; merge in one tap" if view["update_available"] else
+              "心跳巡检清单已更新 / Heartbeat checklist current",
+              "设置 → 心跳 → 合并出厂清单 / Settings → Heartbeat → Merge factory checklist")
+
+
 def run(st: State | None = None, offline: bool = False) -> list[dict]:
     st = st or State()
     svc = service.status()
@@ -1241,7 +1255,7 @@ def run(st: State | None = None, offline: bool = False) -> list[dict]:
     if mig:
         out.append(mig)
     out += list(filter(None, [check_local_files(st)]))
-    out += [check_agent(st)]
+    out += [check_agent(st), check_heartbeat_prompt()]
     setup_row = check_harness_setup(st)
     if setup_row:
         out.append(setup_row)
@@ -1389,7 +1403,7 @@ def run_read_only(st=None):
     never run a harness, fence probe or updater as a side effect of inspection.
     """
     st = st or State()
-    rows = [check_version(), check_python(), check_platform(), check_state(st)]
+    rows = [check_version(), check_python(), check_platform(), check_state(st), check_heartbeat_prompt()]
     rows += list(filter(None, [check_session_mode(st), check_shared_inbound(st, read_only=True),
                               check_shared_hooks(st, read_only=True), check_shared_statusline(st)]))
     rows += check_main_identity(st)

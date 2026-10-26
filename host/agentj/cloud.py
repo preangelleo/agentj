@@ -2,7 +2,9 @@
 
 The host *pushes* metadata. Answers are parsed through explicit whitelists (login / poll status fields, an `error`
 code, `ok`, F19 pinned-signature official data in notices.json, and — A3.1 sync — a list of unbind requests {id, device}), and binding answers are written only to cloud.json — and only after the human at this terminal confirmed the tenant (`agentj login`). This module must never
-touch the allowlist (devices.json) — enforced by tests/test_cloud.py (AST check): unbind requests are only *returned* to
+touch the allowlist (devices.json) — enforced by tests/test_cloud.py (AST check): P547 (ADR-P547) a seat-bind answer's
+seat-transfer handover is only *returned* (shape-checked); seat_transfer.apply_handover adds those remotes and ONLY after the
+HMAC under the setup code (which the Dashboard never saw) verifies. Unbind requests are only *returned* to
 `serve`, which checks them against its own allowlist, switch and hourly limit before revoking anything. A3.2: the Agent
 name in poll / sync / rename answers is whitelisted through text.agent_name_problem (§1) and only *returned*; the caller
 (CLI after the human's y, serve, `agentj name`) stores it — it is a display string and never reaches devices.json. Every cloud.json mutation (login, seq update, unlink) runs under one fcntl lock file in the
@@ -42,6 +44,9 @@ CTX_RENAME = "agentjarvis-host-rename-v1"
 CTX_DECLINE = "agentjarvis-host-decline-v1"   # L2 / G-A11: the human at the host said no to the tenant it was bound to
 CTX_SEAT_BIND = "agentjarvis-host-seat-bind-v1"   # seat setup §4: bind this host to one seat with a setup code
 CTX_SEAT_LEAVE = "agentjarvis-host-seat-leave-v1"   # review SS-02: take this seat-bound host out of its company
+CTX_SEAT_TRANSFER = "agentj-host-seat-transfer-v1"                 # P547: this bound host issues a transfer code (hash only)
+CTX_SEAT_TRANSFER_CANCEL = "agentj-host-seat-transfer-cancel-v1"   # P547: void it (the binding never moved)
+CTX_SEAT_TRANSFER_STATUS = "agentj-host-seat-transfer-status-v1"   # P547: issued | bound (+ the new host's arrival) | …
 CTX_UPGRADE_AUTH = "agentjarvis-host-upgrade-auth-v1"   # F12 / contract C2: spend an upgrade authorization code (update.py)
 CTX_PEER_CERT = "agentjarvis-host-peer-cert-v1"   # P71 (PROTOCOL §17.3): the Agent friends seat certificate for one mailbox
 CTX_RELAY_CERT = "agentjarvis-host-relay-cert-v1"   # P185 (PROTOCOL §2 seat certificate): the relay seat certificate for this host's channel
@@ -73,7 +78,7 @@ _USER_CODE = re.compile(r"[BCDFGHJKLMNPQRSTVWXZ2-9]{4}-[BCDFGHJKLMNPQRSTVWXZ2-9]
 _SLUG = re.compile(r"(?!.*--)[a-z0-9][a-z0-9-]{1,28}[a-z0-9]")
 _ERROR = re.compile(r"[a-z_]{1,32}")
 _PRINTABLE_URL = re.compile(r"[\x21-\x7e]{1,512}")
-SEAT_CODE = re.compile(r"ajt_[A-Za-z0-9_-]{43}")   # 256 random bits, base64url (contract seat-setup §1)
+SEAT_CODE = re.compile(r"aj[th]_[A-Za-z0-9_-]{43}")   # 256 random bits, base64url (contract seat-setup §1); P547: ajh_ = host-issued
 
 
 class CloudError(Exception):
@@ -652,7 +657,8 @@ SEAT_RESULTS = ("bound", "name_taken", "invalid_setup", "payment_required", "alr
 
 
 def seat_code_ok(code) -> bool:
-    """The local shape check: `ajt_` + 43 base64url characters, nothing else (no whitespace, no prefix / suffix)."""
+    """The local shape check: `ajt_` (account page) or `ajh_` (P547: issued by another Agent J host) + 43 base64url
+    characters, nothing else (no whitespace, no prefix / suffix)."""
     return isinstance(code, str) and SEAT_CODE.fullmatch(code) is not None
 
 
@@ -671,8 +677,15 @@ def seat_bind(st, api: str, token: str, name: str, *, post: Callable = post_json
     name = normalise_agent_name(name)
     base = check_url(api)
     inner = {"v": 1, "t": "seat_bind", "channel": channel_of(st), "ts": int(now()), "token": token, "name": name}
+    if seat_code_ok(token) and token.startswith("ajh_"):   # P547: a host-issued transfer code — the old host verifies where we arrived
+        from . import seat_transfer
+        inner["arrival"] = seat_transfer.arrival(st, token)
     try:
         status, obj = post(base + "/v1/host/seat-bind", envelope(CTX_SEAT_BIND, inner, st.signing_key()))
+        if status == 400 and parse_error(obj) == "bad_request" and "arrival" in inner:   # a Dashboard without P547: bind
+            # without it (the remotes then pair again on the new host); a refused code / name is never retried
+            inner.pop("arrival")
+            status, obj = post(base + "/v1/host/seat-bind", envelope(CTX_SEAT_BIND, inner, st.signing_key()))
     except CloudError as e:
         st.log("seat_bind", result="error", status=e.kind)
         return {"status": "error", "http": e.kind}
@@ -685,7 +698,15 @@ def seat_bind(st, api: str, token: str, name: str, *, post: Callable = post_json
         write_cloud(st, {"api": base, "host_id": p["host_id"], "tenant": p["tenant"], "linked_at": int(now()),
                          "last_seq": 0, "via": "seat"})
         st.log("cloud_linked", tenant=p["tenant"]["slug"], kind="seat")
-        return {"status": "bound", "tenant": p["tenant"], "host_id": p["host_id"], "agent_name": p["agent_name"] or name}
+        out = {"status": "bound", "tenant": p["tenant"], "host_id": p["host_id"], "agent_name": p["agent_name"] or name}
+        ho = obj.get("handover")
+        if ho is not None and not token.startswith("ajh_"):
+            # review B1: an account-page code was minted by the Dashboard — a handover beside it is never trusted
+            st.log("seat_handover", result="ignored")
+        elif isinstance(ho, dict) and isinstance(ho.get("b"), str) and len(ho["b"]) <= 16384 \
+                and isinstance(ho.get("mac"), str) and len(ho["mac"]) <= 64:
+            out["handover"] = {"b": ho["b"], "mac": ho["mac"]}   # unverified here: seat_transfer.apply_handover checks the HMAC
+        return out
     kind = ("name_taken" if status == 409 and err == "name_taken" else
             "already_bound" if status == 409 and err == "already_bound" else
             "billing_busy" if status == 409 and err == "billing_busy" else          # P393: the account's billing change in flight
@@ -719,6 +740,73 @@ def seat_leave(st, base: str, *, post: Callable = post_json, now: Callable = tim
            else "rate_limited" if status == 429 else "fail")
     st.log("seat_leave", result=res, status=status_class(status))
     return {"status": res, "http": status_class(status)}
+
+
+# ------------------------------------------------------------------ P547 seat transfer (seat_transfer.py drives these)
+TRANSFER_STATUS = ("issued", "bound", "revoked", "expired", "none")
+_B64U32 = re.compile(r"[A-Za-z0-9_-]{43}")
+
+
+def _seat_xfer_call(st, base: str, route: str, ctx: str, inner: dict, post: Callable) -> tuple[int, dict]:
+    try:
+        return post(check_url(base) + route, envelope(ctx, inner, st.signing_key()))
+    except CloudError as e:
+        st.log("seat_transfer", result="fail", status=e.kind)
+        return 0, {"_transport": e.kind}
+
+
+def _xfer_fail(status: int, obj: dict) -> dict:
+    err = parse_error(obj)
+    kind = ("offline" if status == 0 else "not_found" if status == 404 else "billing_busy" if status == 409 and err == "billing_busy"
+            else "rate_limited" if status == 429 else "error")
+    return {"status": kind, "http": obj.get("_transport") or status_class(status)}
+
+
+def seat_transfer_issue(st, base: str, token_hash: str, handover: dict | None, *, post: Callable = post_json,
+                        now: Callable = time.time) -> dict:
+    """Signed `/v1/host/seat-transfer`: only sha256(code) travels (the code never leaves this host but to the asking remote /
+    terminal). → {"status": "issued", "setup_id", "expires_at", "tenant"} | {"status": not_found | billing_busy | rate_limited
+    | offline | error, "http"}."""
+    inner = {"v": 1, "t": "seat_transfer", "channel": channel_of(st), "ts": int(now()), "token_hash": token_hash,
+             "handover": handover}
+    status, obj = _seat_xfer_call(st, base, "/v1/host/seat-transfer", CTX_SEAT_TRANSFER, inner, post)
+    if status == 201:
+        sid, exp, ten = obj.get("setup_id"), _int(obj.get("expires_at"), 1, MAX_SEQ), obj.get("tenant")
+        slug = ten.get("slug") if isinstance(ten, dict) else None
+        if isinstance(sid, str) and _HOST_ID.fullmatch(sid) and exp and isinstance(slug, str) and _SLUG.fullmatch(slug):
+            st.log("seat_transfer", result="issued", status=status_class(status))
+            return {"status": "issued", "setup_id": sid, "expires_at": exp,
+                    "tenant": {"slug": slug, "name": clean_line(str(ten.get("name", "")), 64) or slug}}
+        status = 502
+    out = _xfer_fail(status, obj)
+    st.log("seat_transfer", result=out["status"], status=out["http"])
+    return out
+
+
+def seat_transfer_cancel(st, base: str, *, post: Callable = post_json, now: Callable = time.time) -> dict:
+    """Signed `/v1/host/seat-transfer/cancel` → {"status": "cancelled" | "none" | "bound" | <failure>}."""
+    inner = {"v": 1, "t": "seat_transfer_cancel", "channel": channel_of(st), "ts": int(now())}
+    status, obj = _seat_xfer_call(st, base, "/v1/host/seat-transfer/cancel", CTX_SEAT_TRANSFER_CANCEL, inner, post)
+    out = {"status": obj["status"]} if status == 200 and obj.get("status") in ("cancelled", "none", "bound") \
+        else _xfer_fail(status, obj)
+    st.log("seat_transfer_cancel", result=out["status"])
+    return out
+
+
+def seat_transfer_status(st, base: str, *, post: Callable = post_json, now: Callable = time.time) -> dict:
+    """Signed `/v1/host/seat-transfer/status` → {"status": one of TRANSFER_STATUS, "expires_at", "arrival"?, "agent_name"?}
+    (arrival shape-checked only; seat_transfer.verify_arrival checks its HMAC) | a failure."""
+    inner = {"v": 1, "t": "seat_transfer_status", "channel": channel_of(st), "ts": int(now())}
+    status, obj = _seat_xfer_call(st, base, "/v1/host/seat-transfer/status", CTX_SEAT_TRANSFER_STATUS, inner, post)
+    if status != 200 or obj.get("status") not in TRANSFER_STATUS:
+        return _xfer_fail(status if status != 200 else 502, obj)
+    out = {"status": obj["status"], "expires_at": _int(obj.get("expires_at"), 0, MAX_SEQ) or 0,
+           "agent_name": parse_agent_name(obj.get("agent_name"))}
+    a = obj.get("arrival")
+    if isinstance(a, dict) and all(isinstance(a.get(k), str) and _B64U32.fullmatch(a[k]) for k in ("x25519", "mac")) \
+            and isinstance(a.get("relay"), str) and len(a["relay"]) <= 200 and _PRINTABLE_URL.fullmatch(a["relay"]):
+        out["arrival"] = {k: a[k] for k in ("x25519", "relay", "mac")}   # relay = "<url>#c=<new channel>" (seat_transfer.arrival)
+    return out
 
 
 def decline(st, base: str, login_id: str, *, post: Callable = post_json, now: Callable = time.time) -> str:

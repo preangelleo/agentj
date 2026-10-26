@@ -165,7 +165,7 @@ class Send(_Svc):
         self.assertNotIn(OTHER.encode(), raw, "Bcc never in the message")
         self.assertEqual(sorted(self.smtp.sent[-1][1]), sorted([ALLOW_ME, FRIEND, OTHER]))
         self.ask.assert_awaited_once()
-        self.assertTrue(self.ask.await_args.kwargs["require_passkey"])
+        self.assertFalse(self.ask.await_args.kwargs.get("require_passkey"))   # P551 (#318): ② long-press, no Face ID
 
     async def test_an_outsider_on_cc_or_bcc_brings_the_card(self):
         for key in ("cc", "bcc"):
@@ -173,7 +173,7 @@ class Send(_Svc):
             res = await self.svc.agent_send({"to_owner": True, key: [OTHER], "subject": "s", "body": "电话 13812345678"})
             self.assertTrue(res["ok"] and not res["no_card"] and not res["owner_direct"], res)
             self.ask.assert_awaited_once()
-            self.assertTrue(self.ask.await_args.kwargs["require_passkey"])
+            self.assertFalse(self.ask.await_args.kwargs.get("require_passkey"))   # P551 (#318): ② long-press card
             summary = self.ask.await_args.args[1]["summary"]
             line = next(x for x in summary.splitlines() if x.startswith("抄送：" if key == "cc" else "密送："))
             self.assertIn(OTHER, line)   # the second round shows the name it was remembered under

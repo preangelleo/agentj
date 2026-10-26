@@ -39,21 +39,19 @@ class WebHistory(unittest.IsolatedAsyncioTestCase):
 
 class Receipts(unittest.TestCase):
     def test_bilingual_pass_warn_fail_missing_and_no_private_detail(self):
-        rec={'reason':'upgraded','from':'0.17.2a1','to':'0.17.3a1','counts':[30,4,0]}
+        rec={'reason':'upgraded','from':'0.17.2a1','to':'0.17.3a1','counts':[30,4,0],'checks':[{'id':'version','status':'ok'},{'id':'first-run','status':'warn'}]}
         for lang in ('zh','en'):
             text=phone_update.text(rec,lang)
             self.assertIn('0.17.3a1',text);self.assertIn('0.17.2a1',text)
             self.assertIn('right' if lang=='en' else '右上角',text)
-            self.assertIn('4',text);self.assertNotIn('doctor 30',text)
-            if lang == 'en':
-                self.assertIn('Update and reload', text);self.assertIn('4 reminders', text);self.assertNotIn('(s)', text)
-                self.assertIn('1 reminder,', phone_update.text({**rec,'counts':[30,1,0]},lang))
+            self.assertIn('everything is working' if lang=='en' else '一切正常',text)
+            self.assertNotIn('reminder',text)
             failed={**rec,'reason':'doctor_failed','counts':[30,0,3],'checks':[{'id':'service','status':'fail','detail':'PRIVATE_CANARY'},{'id':'platform','status':'fail'},{'id':'config','status':'fail'}]}
             text=phone_update.text(failed,lang)
-            self.assertIn('background service' if lang=='en' else '后台服务',text);self.assertIn('operating system' if lang=='en' else '操作系统',text);self.assertIn('configuration' if lang=='en' else '程序配置',text);self.assertIn('agentj doctor',text);self.assertNotIn('PRIVATE_CANARY',text)
+            self.assertIn('background service' if lang=='en' else '后台服务',text);self.assertIn('operating system' if lang=='en' else '操作系统',text);self.assertNotIn('configuration' if lang=='en' else '程序配置',text);self.assertNotIn('agentj doctor',text);self.assertNotIn('PRIVATE_CANARY',text)
             self.assertIn('could not finish' if lang=='en' else '未能完成',phone_update.text({**rec,'counts':None},lang))
         with patch.object(update,'__version__','0.17.3a1'):
-            self.assertEqual(update.upgraded_text(rec,[30,4,0]),phone_update.text(rec))
+            self.assertEqual(update.upgraded_text(rec,[30,4,0],rows=rec["checks"]),phone_update.text(rec))
         self.assertNotIn('已升级到',phone_update.text({'reason':'install_failed'}))
 
 class DictionaryPackaging(unittest.TestCase):

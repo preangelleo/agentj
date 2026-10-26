@@ -69,7 +69,7 @@ async function receiveShare(req) {
 }
 self.addEventListener('fetch', e => {
   const u = new URL(e.request.url);
-  if (u.origin === self.location.origin && u.pathname === '/share-target' && e.request.method === 'POST') {
+  if (u.origin === self.location.origin && u.pathname === new URL('./share-target', self.location.href).pathname && e.request.method === 'POST') {
     // Even a malformed intake is consumed here; it must never reach ASSETS / Worker / access logs.
     e.respondWith(receiveShare(e.request));
   }

@@ -1080,14 +1080,17 @@ def source_root() -> str | None:
     return None if root in installed else root
 
 
-def hook_settings(extra: list | None = None, research: bool = False, warnings: bool = True) -> dict:
+def hook_settings(extra: list | None = None, research: bool = False, warnings: bool = True, harness: bool = False) -> dict:
     """The only settings serve adds to Claude Code (`--settings`, flag level — above user / project / local, below managed
     policy): one PreToolUse hook for every tool, and hooks kept on. No permission rule, no mode (Invariant 11).
     research (a scheduled `mode: research` task, ADR-A53): the same hook also denies every call that is not read-only.
-    warnings controls additional danger hints only; the common policy check is always installed."""
+    warnings controls additional danger hints only; the common policy check is always installed.
+    harness (P551 #320, the signed `harness` level): the hook forces the phone only for ③ (a `uv` row or an effect it cannot
+    read); everything else is left to Claude Code's own permission mode."""
     cmd = (f"{shlex.quote(sys.executable)} -P -m agentj.danger hook {danger.encode_extra(extra or [])}"
            + (" research" if research else "")
            + ("" if warnings else " policy-only")
+           + (" harness" if harness and not research else "")
            + " || exit 2")          # the hook cannot start → a blocking error: the call does not run (fail closed)
     return {"hooks": {"PreToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": cmd, "timeout": 30}]}]},
             "disableAllHooks": False}
@@ -1182,7 +1185,7 @@ class ClaudeAgent(Agent):
         a = [_bin("AGENTJ_CLAUDE_BIN", "claude") or "claude", "-p", "--input-format", "stream-json",
              "--output-format", "stream-json", "--verbose", "--permission-prompt-tool", PERM_TOOL,
              "--disallowedTools", PERM_TOOL, "--mcp-config", json.dumps(mcp),
-             "--settings", json.dumps(with_reminder(hook_settings(self.cfg.get("danger_extra"), research, warnings=self.cfg.get("high_risk_warnings", False)), self.cfg), separators=(",", ":"))]
+             "--settings", json.dumps(with_reminder(hook_settings(self.cfg.get("danger_extra"), research, warnings=self.cfg.get("high_risk_warnings", False), harness=self.cfg.get("follow_harness", False)), self.cfg), separators=(",", ":"))]
         if not self.cfg.get("_workflow_ceo"):
             a += ["--append-system-prompt", main_identity.prompt(self.cfg)]
         if self.cfg.get("model"):
@@ -1375,6 +1378,8 @@ class ClaudeAgent(Agent):
             self.touch()                           # P219: progress (the stall watch stays quiet)
         if t == "system" and ev.get("subtype") == "api_retry":
             self._api_retry(ev)
+        elif t == "system" and ev.get("subtype") in ("model_refusal_fallback", "model_refusal_no_fallback"):
+            self._refusal_notice(ev)
         elif t == "system" and ev.get("subtype") == "init":
             first = not self.init
             self.got_init = True
@@ -1460,6 +1465,28 @@ class ClaudeAgent(Agent):
                         quota_resume.main_hit(self, "claude", r, self.turn_rate)
             if self.turn_done:
                 self.turn_done.set()
+
+    def _refusal_notice(self, ev: dict) -> None:
+        """P539 (#299): the model's safeguards flagged this turn (stream-json, Claude Code 2.1.296): `model_refusal_fallback`
+        = the turn was answered by the fallback model instead; `model_refusal_no_fallback` = the turn stopped. Either way
+        the owner learns what happened and how to go on from the phone. Model ids only; never the message."""
+        lang = self.cfg.get("language", "zh")
+        if ev.get("subtype") == "model_refusal_fallback" and ev.get("scope") == "local":
+            return                                  # a subagent / side question fell back; the session model is unchanged
+        m = clean_line(str(ev.get("original_model") or "Claude"), 60)
+        self.host.st.log("model_refusal", agent="claude", kind=str(ev.get("subtype"))[:32])
+        if ev.get("subtype") == "model_refusal_fallback":
+            f = clean_line(str(ev.get("fallback_model") or "?"), 60)
+            self.host.agent_notice(pick(lang, f"{m} 的安全检查拦下了这条消息（偶尔会误拦正常的对话），这一轮已自动改用 {f} 回答，没有丢东西。"
+                                              "想换回去，点顶部的模型名。",
+                                        f"{m}'s safety check flagged this message (it sometimes flags normal conversations); {f} "
+                                        "answered this turn instead and nothing was lost. To switch back, tap the model name at the top."))
+            return
+        self.host.agent_notice(pick(lang, f"{m} 的安全检查拦下了这条消息（偶尔会误拦正常的对话），这一轮停了，没有丢东西。你可以："
+                                          "换个说法再发；点顶部的模型名换个模型再发；或发 /clear 开新对话。",
+                                    f"{m}'s safety check flagged this message (it sometimes flags normal conversations), so this "
+                                    "turn stopped; nothing was lost. You can: rephrase and resend; tap the model name at the top to "
+                                    "pick another model and resend; or send /clear for a new conversation."))
 
     def _note_tools(self, content, parent) -> None:
         """P426 #181 (§39): an exact skill run (the Skill tool) and the main thread's shell commands worth a skill — names and

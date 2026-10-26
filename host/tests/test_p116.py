@@ -27,6 +27,13 @@ st.setdefault("argv", []).append(argv)
 # `session_null` — or that model itself; "Default" is the account default (Sonnet 5).
 # st["static"] = the other layout seen (no server list): the 1M row always there.
 def rows():
+    if st.get("v3xx"):   # P538 (#302/#303): the picker of 2026-10-26 — bare newest rows, version in the description, Opus 4.8 kept
+        return [("Default (recommended)", "Opus 5.5 · Best for everyday, complex tasks", None),
+                ("Opus", "Opus 5.5 · Best for everyday, complex tasks", "Opus 5.5"),
+                ("Fable", "Fable 5.1 · Most capable for your hardest and longest-running tasks", "Fable 5.1"),
+                ("Sonnet", "Sonnet 5.5 · Efficient for routine tasks", "Sonnet 5.5"),
+                ("Haiku", "Haiku 5.5 · Fastest for quick answers", "Haiku 5.5"),
+                ("Opus 4.8", "Newer version available · select Opus for Opus 5.5", "Opus 4.8")]
     if st.get("v289"):   # Claude Code 2.1.289 as probed by P116 (versioned labels, current row ✔)
         return [("Default (recommended)", "Opus 5.5 · Best for everyday, complex tasks", None),
                 ("Opus 5.5", "For complex work and everyday tasks", "Opus 5.5"),
@@ -429,10 +436,11 @@ class Picker(Tmp):
         a, _ = self.agent()
         asyncio.run(a.model_set({"model": "sonnet", "effort": None}))
         rows = json.loads((self.state / "claude-picker-rows.json").read_text())
-        self.assertIn("Sonnet", rows)
+        # P538 (#302): rows are stored with their versions ("Sonnet" row, "Sonnet 5 · …" description → "Sonnet 5")
+        self.assertEqual(rows["v"], 2); self.assertIn("Sonnet 5", rows["rows"]); self.assertNotIn("Sonnet", rows["rows"])
         asyncio.run(a.refresh_models())
         self.assertEqual(a.models_cache[0]["id"], "sonnet-5")     # the running model first, by its native name
-        self.assertIn("sonnet", [m["id"] for m in a.models_cache])
+        self.assertNotIn("sonnet", [m["id"] for m in a.models_cache])
 
 
 class StatusLineLayers(Tmp):

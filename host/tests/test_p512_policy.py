@@ -27,6 +27,10 @@ def legacy_canonical_floor(layer, action):
     return 'allow' if action in free | {'company.read'} else 'hold' if action == 'company.write' else 'deny'
 
 
+# P539 (#300): canonical actions added after P512, each explicitly reviewed: main = UV card, other layers no wider.
+P539_REVIEWED = frozenset({'computer.control'})
+
+
 class Matrix(unittest.TestCase):
     def test_four_layers_representative_actions(self):
         # Columns: main, owner external channel, friend, customer service.
@@ -35,7 +39,7 @@ class Matrix(unittest.TestCase):
             'web.search': ('allow','allow','handoff','deny'),
             'image.generate': ('allow','allow','handoff','deny'),
             'file.write': ('allow','handoff','handoff','deny'),
-            'mail.send': ('uv','handoff','handoff','deny'),
+            'mail.send': ('hold','handoff','handoff','deny'),   # P551 (#318): ② reversible — long-press for the Agent
             'secrets.read': ('uv','handoff','handoff','deny'),
             'admin': ('uv','handoff','handoff','deny'),
             'payment': ('uv','handoff','handoff','deny'),
@@ -89,7 +93,7 @@ class Matrix(unittest.TestCase):
 
     def test_main_existing_card_boundary_uses_same_table(self):
         for tool in approval_level.HOST_CARDS:
-            self.assertTrue(approval_level.host_card(tool),tool)
+            self.assertEqual(approval_level.host_card(tool), not p.dispatch(tool), tool)   # #321: OpenCode `task` is ①
         for tool in ('agentj mail','agentj new-unregistered-action',None,'mail.send'):
             self.assertTrue(approval_level.host_card(tool),tool)
         self.assertFalse(approval_level.host_card('Read'))
@@ -286,12 +290,15 @@ class LegacyFloors(unittest.TestCase):
         reversible = {'file.write','file.trash','settings.write','memory.restore'}
         uv = {'file.delete','mail.send','calendar.write','secrets.read','secrets.write',
               'payment','admin','device.pair','device.revoke','publish','company.write'}
-        covered = free | native | reversible | uv | {'file.read','company.read'}
+        uv |= P539_REVIEWED    # reviewed new action: unknown-deny → mandatory passkey card (never automatic)
+        p551 = {'mail.send','calendar.write','publish'}   # chairman #318: ② reversible, main layer uv → hold only
+        dispatch = {'agent.dispatch'}                      # chairman #321 (P551): sending a sub-agent off is ①
+        covered = free | native | reversible | uv | dispatch | {'file.read','company.read'}
         self.assertEqual(set(p.REGISTRY),covered)
         rank = {'allow':0,'hold':1,'uv':2,'handoff':3,'deny':3}
         for action in set(p.REGISTRY) | {'unknown','new.read'}:
             old = {
-                'main': 'allow' if action in free|native|{'file.read','company.read'} else
+                'main': 'allow' if action in free|native|dispatch|{'file.read','company.read'} else
                         'hold' if action in reversible|{'company.write'} else 'uv' if action in uv else 'deny',
                 'channel': 'allow' if action in free|native else 'deny',
                 'friend': 'allow' if action in free else 'deny',
@@ -302,6 +309,8 @@ class LegacyFloors(unittest.TestCase):
                 with self.subTest(layer=layer,action=action):
                     if layer == 'main' and action == 'file.write':
                         self.assertEqual(p.decision(layer, action), 'allow')  # chairman #274 / F14
+                    elif layer == 'main' and action in p551:
+                        self.assertEqual(p.decision(layer, action), 'hold')   # chairman #318 (P551)
                     else:
                         self.assertGreaterEqual(rank[p.decision(layer,action)],rank[old[layer]])
 
@@ -329,6 +338,12 @@ class LegacyFloors(unittest.TestCase):
                     self.assertNotEqual(actual, 'allow', (layer, tool))
                 if layer == 'main' and action == 'file.write':
                     self.assertEqual(actual, 'allow')  # #274/F14 intentional owner-only change
+                elif layer == 'main' and action in P539_REVIEWED:
+                    self.assertEqual(actual, 'uv')     # P539 #300: a reviewed new action asks with a passkey
+                elif layer == 'main' and action in ('mail.send', 'calendar.write', 'publish'):
+                    self.assertEqual(actual, 'hold')   # #318 (P551): reversible — long-press, never silent
+                elif layer == 'main' and action == 'agent.dispatch':
+                    self.assertEqual(actual, 'allow')  # #321 (P551): a sub-agent dispatch is ①; its own calls are checked
                 elif rank[actual] < rank[old]:
                     self.assertEqual(layer, 'channel')
                     self.assertIn(tool, differences)

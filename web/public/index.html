@@ -7,6 +7,7 @@
 <meta name="referrer" content="no-referrer">
 <meta name="color-scheme" content="light dark">
 <title>Agent J · 手机遥控器</title>
+<script src="js/seatscope.js"></script>
 <script src="brand/lang.js"></script>
 <meta name="theme-color" content="#2c2b26" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#2c2b26" media="(prefers-color-scheme: dark)">
@@ -383,7 +384,7 @@
               <i class="bang" aria-hidden="true">!</i>
             </button>
             <button class="act" id="fwdBtn" type="button" data-state="idle" data-i18n-attr="aria-label=r.share.idle,title=r.share.idle" aria-label="分享这一条" title="分享这一条">
-              <svg class="g g0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14 5l6 6-6 6"/><path d="M20 11h-9a7 7 0 0 0-7 7v1"/></svg>
+              <svg class="g g0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 19 19 5M6 5h13v13"/></svg>
               <!-- P201: with the host's Telegram on, the button is a solid paper plane (icons.js TG_PATH), coloured like the others -->
               <svg class="g gtg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.69 3.91Q20.79 3.14 20.1 3.49L3.69 11.93Q3 12.28 3.71 12.59L8.03 14.5L18.12 5.85L10.31 15.27L18.22 17.6Q18.89 17.8 18.98 17.1zM9.59 16.43Q9.57 16.22 9.77 16.29L12.4 17.18Q12.56 17.24 12.45 17.37L10.26 19.87Q9.89 20.3 9.85 19.74z"/></svg>
               <svg class="g gok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>
@@ -442,6 +443,7 @@
           <button class="apprallow" id="apprAllow" type="button" data-i18n-attr="aria-label=r.appr.allowAria" aria-label="长按批准这次操作"><span class="fill"></span><span class="lbl" id="apprAllowLbl">长按批准</span><small class="apprkbd" id="apprKbd" hidden aria-hidden="true"></small></button>
           <button class="apprdeny" id="apprDeny" type="button" data-i18n-attr="aria-label=r.appr.denyAria" aria-label="拒绝这次操作"><span data-i18n="r.appr.deny">拒绝</span></button>
         </div>
+        <div class="pkassist" id="apprPk" hidden role="status" aria-live="polite"></div>
         <button class="apprbatch apprgoaladd" id="apprGoalAdd" type="button" hidden><span class="fill"></span><span class="lbl"><b data-i18n="p339.addHold">长按：批准，并加进目标授权</b><small id="apprGoalAddText"></small></span></button>
         <button class="apprbatch" id="apprBatch" type="button" hidden><span class="fill"></span><span class="lbl"><b id="apprBatchLbl"></b><small id="apprBatchScope"></small></span></button>
         <p class="askleft" id="askLeft" hidden></p>
@@ -589,6 +591,7 @@
       <div class="hint__body">
         <p class="hint__title" data-i18n="a2hs.title">添加到主屏幕，用起来像 App</p>
         <p id="a2hs-text" class="small"></p>
+        <p id="a2hs-seat" class="small" hidden></p>
         <p class="hint__row"><a id="a2hs-more" class="hint__link" href="https://agentj.app/docs/phone/" target="_blank" rel="noopener" data-i18n="a2hs.more">详细步骤</a><button type="button" id="a2hs-ok" class="aj-btn aj-btn--sm" data-i18n="a2hs.ok">知道了</button></p>
       </div>
     </aside>
@@ -611,6 +614,13 @@
       <p id="pair-friends" class="note" role="status" data-i18n="fr.unpaired" hidden>好友页要在已经配对的手机或浏览器上打开。先在下面配对这台手机，配好后会自动打开好友页。</p>
       <h1 data-i18n="pair.title">连上你的Agent J 主机</h1>
       <p class="lead" data-i18n="pair.lead">Agent 在你的Agent J 主机上干活，这台设备就是它的遥控器。不用注册登录：下面的方法任选一种，配好一次，以后打开就能用。</p>
+      <!-- P545 (§40): the seats this browser has opened — each link opens that seat's own page (m.agentj.app/<seat id>) -->
+      <section id="seat-pick" class="seatpick" aria-labelledby="seat-pick-h" hidden>
+        <h2 id="seat-pick-h" data-i18n="seat.pickTitle">选择要连接的席位</h2>
+        <p id="seat-pick-note" class="error" role="alert" data-i18n="seat.pkOther" hidden>这把通行密钥属于另一个席位，这个网址只认本席位的通行密钥。要连那个席位，点下面它的网址。</p>
+        <p class="small" data-i18n="seat.pickLead">这个浏览器打开过下面这些席位。每个席位有自己的网址，登录和设置互不影响。</p>
+        <ul id="seat-list" class="seatpick__list"></ul>
+      </section>
       <!-- P210: numbered, mutually exclusive method cards (任选一种); js/pairpage.js numbers the visible ones 方法一 / 方法二 / … -->
       <!-- P190 (PROTOCOL §27): be scanned — a paired remote scans this code and adds this browser (one tap there, codes compared) -->
       <section id="rv-card" class="pm pm--rv" aria-labelledby="rv-h" hidden>
@@ -851,7 +861,16 @@
               <div class="setid__txt"><b id="brand-name">Agent J</b><p class="setval" id="set-computer"></p></div>
             </div>
             <button type="button" id="set-remotes-open" class="setnav"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="4" width="10" height="16" rx="2"/><rect x="15" y="8" width="6.5" height="12" rx="1.5"/><path d="M7 17h1"/></svg><span><b class="remote-count-label"><span data-i18n="set.remotes">遥控器管理</span><span class="remote-count-badge" data-remote-count hidden aria-hidden="true"></span></b><small id="set-remotes-count"></small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
-            <button type="button" id="setup-faceid" class="setnav" hidden><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2M9 9.5v1M15 9.5v1M12 9.5V13h-1M9.5 16a3.5 3.5 0 0 0 5 0"/></svg><span><b data-i18n="phoneEnv.setup">设置 Face ID</b><small data-i18n="set.faceidNote">危险操作前用 Face ID 确认是你本人。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
+            <!-- P539 (#300): this remote's own passkey, as the computer sees it (pk_state); hidden for an older host. js/pkassist.js -->
+            <div class="setrow pkrow" id="set-pk-row" hidden>
+              <span class="setlab" id="set-pk-state" data-i18n="p539.pk.st.unknown">本机 {bio}：未确认</span>
+              <button type="button" id="set-pk-setup" class="aj-btn aj-btn--sm" data-i18n="p539.pk.setup">在本机设置</button>
+              <p class="setnote" id="set-pk-note" hidden></p>
+            </div>
+            <button type="button" id="setup-faceid" class="setnav" hidden><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2M9 9.5v1M15 9.5v1M12 9.5V13h-1M9.5 16a3.5 3.5 0 0 0 5 0"/></svg><span><b data-i18n="phoneEnv.setup">设置 Face ID</b><small data-i18n="pkp.rowNote">危险操作前用 Face ID 确认是你本人。每台设备各有自己的 Face ID / 指纹钥匙。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
+            <!-- P547 (PASSKEY-SEAT-MODEL §3): move this seat to a new Agent J host from the remote. js/seatxfer.js (hidden until the host answers seat_xfer_state) -->
+            <button type="button" id="set-seat-xfer" class="setnav" hidden><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="4" width="9" height="6.5" rx="1.5"/><rect x="12.5" y="13.5" width="9" height="6.5" rx="1.5"/><path d="M7 13v2.5a2 2 0 0 0 2 2h1M8.5 15.5l2 2-2 2"/></svg><span><b data-i18n="sxf.row">转移席位到另一台 Agent J 主机</b><small data-i18n="sxf.rowNote">换电脑时用：新主机接手这个席位，遥控器自动跟过去。</small><small id="set-seat-xfer-state" class="sxf-state" hidden></small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
+            <div class="setacts" id="set-seat-xfer-acts" hidden><button type="button" id="set-seat-xfer-cancel" class="aj-btn aj-btn--sm" data-i18n="sxf.cancelBtn">撤销</button></div>
             <p class="setnote" data-i18n="set.computerNote">这台手机一次只配对一台Agent J 主机。给 Agent 改名：在Agent J 主机上运行 agentj name &lt;新名字&gt;。你所有的 Agent 都能在账号后台看到。</p>
             <p class="setlinks"><a href="https://agentj.app/account/" target="_blank" rel="noopener" data-i18n="set.computerSeats">在账号后台查看所有 Agent</a></p>
             <div class="setacts">
@@ -932,7 +951,10 @@
                   <input id="set-hb-time" class="aj-input" type="time" step="300" value="08:00" hidden data-i18n-attr="aria-label=p207set.hb.time" aria-label="每天几点">
                 </div>
               </div>
-              <p class="setnote" data-i18n="set.heartbeatNote">Agent 空闲一段时间后会自己醒来，看看后台任务和你的待办；没事就不打扰你。每次心跳都会用掉一次模型调用。</p>
+              <p class="setnote" data-i18n="set.heartbeatNote">闲置满上面设置的时间才会醒来；忙时不触发。按心跳提示检查定时任务、好友和分身处理记录，没事不打扰。每次心跳都会用掉一次模型调用。</p>
+              <div class="sethb-prompt"><button type="button" class="setlink" id="set-hb-prompt" data-i18n="p537.prompt">查看或编辑心跳提示</button>
+              <div id="set-hb-update" hidden><p class="setnote" data-i18n="p537.update">出厂清单有更新，可一键合并（保留你的文字）。</p><button type="button" class="setlink" id="set-hb-merge" data-i18n="p537.merge">合并出厂清单</button></div></div>
+
             </div>
           </section>
 
@@ -1012,15 +1034,25 @@
             <button type="button" id="set-mail-nav" class="setnav"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3.5 6.5l8.5 6 8.5-6"/></svg><span><b data-i18n="mail.nav">邮件通道</b><small data-i18n="mail.navNote">用邮件给 Agent 派活，回复会发回同一封邮件。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
             <button type="button" id="set-contacts-nav" class="setnav" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="mi"><rect x="4" y="3" width="15" height="18" rx="2"/><circle cx="11.5" cy="10" r="2.8"/><path d="M7 17c.9-2 2.6-3 4.5-3s3.6 1 4.5 3M19 7h2M19 12h2M19 17h2"/></svg><span><b data-i18n="p207set.ct.nav">通讯录</b><small data-i18n="p207set.ct.navNote">朋友的邮箱和电话，可以一键加进邮件白名单。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
             <button type="button" id="set-owner-nav" class="setnav" hidden><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 20c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg><span><b data-i18n="set.owner">我的联系方式</b><small data-i18n="set.ownerNote">通讯录 0 号位：「发给我自己」用的主邮箱和手机号。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
-            <div class="setrow" id="set-wechat-row" hidden data-keywords="微信 WeChat ClawBot 通道">
-              <div><b data-i18n="wc.title">微信 ClawBot</b><small data-i18n="wc.brief">生活与文案助理，仅服务本人</small></div>
-              <button type="button" id="set-wechat" class="aj-btn aj-btn--sm" data-i18n="wc.manage">设置</button>
+            <div class="setrow channel-row" id="set-wechat-row" hidden data-keywords="微信 WeChat ClawBot 通道">
+              <span class="setlab" data-i18n="wc.title">微信 ClawBot</span>
+              <button type="button" id="set-wechat" class="aj-btn aj-btn--sm" data-i18n="p536.manage">开通或管理</button>
+              <p class="setnote" id="set-wechat-note"></p>
+              <p class="setnote channel-status" id="set-wechat-status" aria-live="polite"></p>
             </div>
-            <div class="setrow">   <!-- P283 / P297: re-pair the owner's Telegram bot (one-time code card in the chat) -->
+            <div class="setrow channel-row" id="set-telegram-row">
               <span class="setlab" id="set-chan"></span>
-              <button type="button" id="set-tgpair" class="aj-btn aj-btn--sm"></button>
+              <button type="button" id="set-tgpair" class="aj-btn aj-btn--sm" data-i18n="p536.manage">开通或管理</button>
               <p class="setnote" id="set-chan-note"></p>
+              <p class="setnote channel-status" id="set-telegram-status" aria-live="polite"></p>
             </div>
+            <fieldset class="forward-options" id="set-forward">
+              <legend data-i18n="p536.destination">转发去向</legend>
+              <p class="setnote" data-i18n="p536.destinationNote">用于回复卡和阅读器。在此遥控器上自动保存。</p>
+              <label><input type="radio" name="forward-destination" value="share"><span data-i18n="p536.system">系统分享（默认）</span></label>
+              <label><input type="radio" name="forward-destination" value="wx" disabled><span data-i18n="p536.wechat">微信 ClawBot</span></label>
+              <label><input type="radio" name="forward-destination" value="tg" disabled><span data-i18n="p536.telegram">{channel}</span></label>
+            </fieldset>
           </section>
 
           <section class="setcard" id="set-s-safety" aria-labelledby="set-h-safety">
@@ -1028,8 +1060,14 @@
             <div class="setrow" data-paired><button type="button" id="set-estop" class="aj-btn" data-i18n="p435.estop">紧急停止所有 Agent</button></div>
             <div class="setrow" data-paired id="set-level-row" hidden>
               <span class="setlab" data-i18n="p336.level">审批档位</span>
-              <div class="segrow" role="group" data-i18n-attr="aria-label=p336.level" aria-label="审批档位"><button type="button" data-set-level="safe" aria-pressed="false" data-i18n="p336.safe">安全</button><button type="button" data-set-level="standard" aria-pressed="false" data-i18n="p336.standard">中等</button><button type="button" data-set-level="full" aria-pressed="false" data-i18n="p336.full">全放行</button></div>
+              <div class="segrow" role="group" data-i18n-attr="aria-label=p336.level" aria-label="审批档位"><button type="button" data-set-level="safe" aria-pressed="false" data-i18n="p336.safe">安全</button><button type="button" data-set-level="standard" aria-pressed="false" data-i18n="p336.standard">中等</button><button type="button" data-set-level="full" aria-pressed="false" data-i18n="p336.full">全放行</button><button type="button" data-set-level="harness" aria-pressed="false" data-i18n="p336.harness">跟随 AI 编程工具</button></div>
               <p class="setnote" id="set-level-note" aria-live="polite"></p>
+            </div>
+            <!-- P539: 「免问的动作」 — what the owner ticked 「以后这台遥控器批准的 … 不再问」 for (host `preauth`); empty → hidden -->
+            <div class="setrow preauth" id="set-preauth-row" hidden>
+              <span class="setlab" data-i18n="p539.pre.title">免问的动作</span>
+              <p class="setnote" data-i18n="p539.pre.note">下面这些动作从对应的遥控器来时不再问你。</p>
+              <ul class="preauth__list" id="set-preauth-list"></ul>
             </div>
             <div class="setrow" data-paired id="set-gnc-row" hidden>
               <span class="setlab" data-i18n="p336.goal">设了目标就不弹窗</span>
@@ -1116,6 +1154,7 @@
               <p class="setnote" id="set-vault-state"></p>
               <div class="setacts" id="set-vault-acts" hidden><button type="button" id="set-vault-share" class="aj-btn aj-btn--primary" data-i18n="p414.v.share">让这台也能用</button><button type="button" id="set-vault-forget" class="aj-btn" data-i18n="p414.v.forget">清除这台</button></div>
               <p class="setnote setterm-last" id="set-vault-last" role="status" hidden></p>
+              <div class="pkassist setterm-pk" id="set-vault-pk" role="status" aria-live="polite" hidden></div>
               <p class="setnote" id="set-vault-note" data-i18n="p414.v.note">电脑密码只以加密形式存在电脑上，要在已记住它的设备上扫脸才能用；它不会存在这台设备上。</p>
             </div>
             <button type="button" id="menu-about" class="setnav"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-4.5"/></svg><span><b><span data-i18n="menu.about">这个网页版有多安全</span> <span id="badge" class="badge__chip setchip" data-i18n="badge.label">网页版</span></b><small data-i18n="set.aboutNote">加密、本页的版本号，以及怎么核对。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
@@ -1143,6 +1182,13 @@
               <span class="setlab" data-i18n="set.a2hs">添加到主屏幕</span>
               <button type="button" id="set-a2hs" class="aj-btn aj-btn--sm" hidden></button>
               <p class="setnote" id="set-a2hs-text" data-i18n="set.a2hsNote">添加以后，打开它就像打开一个 App，也能收到锁屏提醒。</p>
+            </div>
+            <div class="setrow" id="set-seat-row" data-paired data-keywords="网址 席位 主屏幕 address seat url home screen" hidden>
+              <span class="setlab" data-i18n="seat.setLab">本席位专属网址</span>
+              <button type="button" id="set-seat-copy" class="aj-btn aj-btn--sm" data-i18n="seat.copyUrl">复制网址</button>
+              <p class="setnote"><code id="set-seat-url" data-cc="ext" data-cc-btn="set-seat-copy"></code></p>
+              <p class="setnote" id="set-seat-note" data-i18n="seat.setNote">用这个网址添加到主屏幕：每个席位一个图标，互不覆盖。</p>
+              <button type="button" id="set-seat-move" class="aj-btn aj-btn--sm" data-i18n="seat.use" hidden>改用本席位专属网址</button>
             </div>
             <div class="setrow" id="set-shot-row" data-keywords="截图 剪贴板 附件 screenshot clipboard attachment">
               <span class="setlab" data-i18n="set.shot">截图自动进附件</span>
@@ -1456,6 +1502,8 @@
         <button type="button" id="confirm-no" class="aj-btn" data-i18n="sheet.cancel">取消</button>
         <button type="button" id="confirm-yes" class="aj-btn aj-btn--primary"></button>
       </div>
+      <!-- P539: this remote has no passkey of its own — js/pkassist.js pkSheet(); hidden on every other sheet -->
+      <div class="pkassist" id="confirm-pk" hidden role="status" aria-live="polite"></div>
     </div>
   </div>
   <!-- P205: one recording card for every way in (hold to talk, double tap / M lock, long takes): a dark circle in the middle of the

@@ -34,7 +34,8 @@ Agent (elevate.sock, visible inside the fence, `agentj contacts` / `agentj mail 
   recipient is the owner's own address (reason `owner_direct`) or on the mail allowlist (P170 rows, any role; reason
   `allowlist`) there is no card; one other recipient → the card as before, which offers each recipient not yet on the
   allowlist as an unticked box 「以后发给 X 不用再确认」 — ticked ones are signed with the allow and join as guests. A group member's / guest's turn never sends (provenance check above the card). Sent addresses are
-  remembered with source `agent`.
+  remembered with source `agent`. P549 (#316): today every Agent send asks (P503d); only-the-owner recipients approve with a
+  tap, anyone else with the passkey. A phone `mail_fwd` is the owner's own tap: no card, no passkey, no turn provenance.
 Logs carry counts and reason words, never an address, a name or a body.
 """
 from __future__ import annotations
@@ -330,10 +331,8 @@ class ContactService:
         subject, body, files, html, skips = content
         msg = self.build(cfg, [r["addr"] for r in recips], subject, body, files, html=html)
         from . import mail as M
-        ans = await self.host.ask("agentj mail send", M.send_target(cfg,msg,[r["addr"] for r in recips]),
-                                  batch=False, require_passkey=True)
-        if ans.get("behavior") != "allow":
-            return {"ok":False,"why":"denied"}
+        # P549 (#316/#319): the owner's own tap on a paired remote is the intent — no approval card, no passkey, and never
+        # the Agent's turn provenance (a system or peer turn is not this click). Rate, dedupe and the privacy filter stay.
         if M.read_config(self.st) != cfg or self.host.stopped():
             return {"ok":False,"why":"stale"}
         q.append(now)
@@ -569,10 +568,10 @@ class ContactService:
         addr_of = {k: [r["addr"] for r in recips if r["as"] == k] for k in ("to", "cc", "bcc")}
         msg = self.build(cfg, addr_of["to"], subj, text, files, kind="agent", html=page, cc=addr_of["cc"])
         from . import mail as M
-        from . import mail as M
         target = M.send_target(cfg,msg,[r["addr"] for r in recips])
         target["summary"] = "\n".join(lines)
-        ans = await self.host.ask("agentj mail send", target, batch=False, require_passkey=True)
+        # P551 (#318): the Agent's mail is ② reversible — a long-press card (policy_registry `mail.send` = hold), no Face ID
+        ans = await self.host.ask("agentj mail send", target, batch=False)
         if ans.get("behavior") != "allow":
             self.st.log("mail_send",result="denied",to=len(recips))
             return {"ok":False,"why":"denied","detail":DENIED[self.lang()]}

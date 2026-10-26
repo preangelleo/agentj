@@ -13,6 +13,7 @@
 """
 import _hermetic  # noqa: F401,I001
 import asyncio
+import contextlib
 import json
 import os
 import pathlib
@@ -34,6 +35,26 @@ from test_l1 import Phone, _owner_host as _host, _ready, _state  # noqa: E402
 HERE = pathlib.Path(__file__).resolve().parent
 PROP = {"goal": "把候选做完", "acceptance": ["测试通过"], "deadline": "2h",
         "grants": [{"cat": "send", "what": "推到 GitHub 仓库", "match": ["git push"], "max": 5}]}
+
+
+FA_ID = wire.b64u(b"\x07" * 16)
+FA = {"id": FA_ID, "cd": "e30", "ad": "AA", "sig": "AA"}
+WIDEN = (("approval.level", "full"), ("approval.level", "harness"), ("approval.goal_nocard", True), ("jev.mode", "off"))
+
+
+def widening(target):
+    return (target.get("key"), target.get("value")) in WIDEN
+
+
+@contextlib.contextmanager
+def face_id(host, device):
+    """P550 (P551 待拍板 3): every widening needs the remote's own Face ID. The owner's remote here has a passkey and
+    Face ID passes — only for on_approval_set (the matrix's cards keep the remote without one, as before)."""
+    real = host.st.passkey_of_device
+    pk = {"id": FA_ID, "pub": wire.b64u(b"\x01" * 77), "alg": -7, "count": 0, "rp": "m.agentj.app", "at": 1}
+    with mock.patch.object(host.st, "passkey_of_device", side_effect=lambda d: pk if d == device else real(d)), \
+         mock.patch.object(passkey, "verify_assertion", return_value=1), mock.patch.object(host.st, "passkey_count"):
+        yield
 
 
 def sign(ph, target, *, n=None, ts=None, key=None):
@@ -118,7 +139,12 @@ class Base(unittest.TestCase):
         async def go():
             await self.host.on_approval_set(self.s, {**sign(self.phone, target, **kw), **(extra or {})})
             await asyncio.sleep(0.02)
-        asyncio.run(go())
+        if widening(target) and "fa" not in (extra or {}):
+            extra = {**(extra or {}), "fa": FA}
+            with face_id(self.host, self.phone.did):
+                asyncio.run(go())
+        else:
+            asyncio.run(go())
         return [o for _, o in self.sent if o["t"] == "ctl_res"][-1]
 
     def full(self):
@@ -173,7 +199,7 @@ class Matrix(Base):
             n = len(self.cards())
             self.ask(inp, tool=tool, batch=False)
             self.assertEqual(len(self.cards()), n + 1, tool)
-        for tool in ("DoomLoop", "task", "SandboxOnce", "AuthRescue"):
+        for tool in ("DoomLoop", "SandboxOnce", "AuthRescue"):   # P551 (#321): OpenCode `task` (a sub-agent) is ①
             self.assertTrue(approval_level.host_card(tool), tool)
         self.st.remove_device(self.phone.did)
         res = self.ask("rm -rf build")
@@ -292,9 +318,10 @@ class Switch(Base):
                          (sign(self.phone, {"key": "approval.timeout", "value": "10"}), "shape"),
                          (sign(self.phone, {"key": "approval.goal_nocard", "value": "true"}), "shape")):
             async def go(o=obj):
-                await self.host.on_approval_set(self.s, o)
+                await self.host.on_approval_set(self.s, {**o, "fa": FA})
                 await asyncio.sleep(0.01)
-            asyncio.run(go())
+            with face_id(self.host, self.phone.did):    # P550: the widening ones pass Face ID, the signature still decides
+                asyncio.run(go())
             res = [o for _, o in self.sent if o["t"] == "ctl_res"][-1]
             self.assertEqual((res["ok"], res["why"]), (False, why))
         self.assertEqual(approval_level.level(self.host.preferences), "standard")

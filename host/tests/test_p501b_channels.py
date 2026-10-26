@@ -276,7 +276,7 @@ class FailureSemantics(unittest.IsolatedAsyncioTestCase):
         self.channel.model=AsyncMock(return_value=TurnResult('ask_owner','','',None,'login'))
         self.channel.open_card=__import__('unittest.mock',fromlist=['MagicMock']).MagicMock()
         reply=await self.channel.receive_owner('mail','unavailable','Hello')
-        self.assertIn('暂时不可用',reply)
+        self.assertIn('没有登录或登录已过期',reply)   # P540: says why, not a bare 「暂时不可用」
         self.assertNotIn('已转给',reply)
         self.assertEqual(next(iter(self.channel.store.data['records'].values()))['state'],'waiting_model')
         self.channel.open_card.assert_not_called();self.host.agent.submit.assert_not_called()

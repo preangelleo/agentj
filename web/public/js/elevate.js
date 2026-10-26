@@ -11,10 +11,11 @@ import { signKey } from './store.js';
 import { myDeviceId, myIdSync } from './api.js';
 import { t, lang, onLang } from './t.js';
 import { mk, executionToast as toast, notify, replyNotice } from './ui.js';
-import { registerLayer } from './layers.js';
+import { registerLayer, TOP_RANK } from './layers.js';
 import { copyable } from './copycode.js';   // P292
 import { paintMailPassword } from './mail-password.js';
 import { elevateChallenge, canAssert, approve } from './faceid.js';
+import { paintPk, errName } from './pkassist.js';   // P539: no own passkey here · why a passkey tap failed
 // P414 (PROTOCOL §37.10 / §37.11, ADR-P414-bang): the computer-password vault on sudo cards — 「用 Face ID 填入电脑密码」 (the
 // PRF value sealed with kind `vault`, answer `vault:1`), a typed answer that also remembers it (`pepk`/`pct`, kind `vault_save`,
 // signed `save:` tail, M2), 「记住的电脑密码不对了」 after `stale`, and the `vshare` card (another remote asks to use it; 「同意」 =
@@ -46,7 +47,7 @@ function build() {
   root = mk('div', 'ajmodal dlgcard elev');
   root.id = 'elev';
   // P142 (A16) → P406 #173: a layer — ESC collapses the card (never a deny: it stays open and the status strip reopens it)
-  registerLayer({ element: () => root, open: () => !!root && !root.hidden, rank: 55, fallback: () => document.getElementById('input') || document.getElementById('setBtn'),
+  registerLayer({ element: () => root, open: () => !!root && !root.hidden, rank: TOP_RANK, fallback: () => document.getElementById('input') || document.getElementById('setBtn'),
     close: () => collapse() });
   root.hidden = true;
   root.setAttribute('role', 'dialog');
@@ -87,6 +88,7 @@ function build() {
   hide.append(chevron());
   form.append(hide, node('p', 'elev-kicker', 'elev-kicker'), node('h2', 'elev-title'), node('dl', 'elev-rows', 'elev-rows'), node('section', 'elev-auth', 'elev-auth'), bad, stale, vault, label, input,
     empty, opt, saveOpt, node('p', 'elev-note', 'elev-note'), node('p', 'elev-left', 'elev-left'), acts, deny);
+  acts.after(node('div', 'elev-pk', 'pkassist'));   // P539: right under 「同意」, above the quiet 「拒绝」
   root.appendChild(form);
   document.body.appendChild(root);
   root.querySelector('#elev-form').addEventListener('submit', (e) => { e.preventDefault(); decide(true); });
@@ -143,6 +145,7 @@ export function add(m) {
   // (card id + this arming's nonce + what is shown) is made now, so the tap can go straight to the system sheet.
   if (m.state !== 'running' && typeof m.fa === 'string' && m.fa.length > 0 && m.fa.length <= 1400) {
     c.fa = m.fa;
+    c.fa_s = ['local', 'borrowed', 'unknown'].includes(m.fa_s) ? m.fa_s : null;   // P539: does this remote hold that passkey itself (= pkrules faState, inline: test/p414_contract_phone.mjs runs add() from source)
     (async () => {
       const digest = await elevateDigest(c.kind, elevateFields(c));
       c.faCh = await elevateChallenge(channel(), await myDeviceId(), c.id, c.kind, c.n, digest);
@@ -213,6 +216,7 @@ export function done(m) {
     if (c.name === 'AGENTJ_MAIL_PASSWORD' && m.result === 'saved') text = t('mail.passwordSaved');
     if (c.kind === 'secret' && m.result === 'done') text = t('elev.r.saved');
     if (c.kind === 'vshare' && (m.result === 'saved' || m.result === 'done')) text = t('p414.e.vsDone');   // P414: the host ends it `saved`
+    if (m.elsewhere === 1) text = t('p549.elsewhere') + ' ' + text;          // P549 (#314): saved through another card
     if (m.saved === 1 || m.saved === true) text += ' ' + t('p414.e.saved');       // P414 (§37.10): the typed password is remembered
     if (m.verify === 'ok') text += ' ' + t('elev.r.verifyOk');
     if (m.verify === 'fail') text += ' ' + t('elev.r.verifyFail');
@@ -345,12 +349,19 @@ function render() {
     $('elev-hide').setAttribute('aria-label', t('p406.sudo.hide')); $('elev-hide').title = t('p406.sudo.hide');
     root.hidden = false;
     if (!nopw && !useV) setTimeout(() => { try { $('elev-input').focus({ preventScroll: true }); } catch { /* old browsers */ } }, 60);
+    else if (document.querySelector('.gdlg:not([hidden])')) setTimeout(() => $('elev-allow')?.focus({ preventScroll: true }), 60);   // P549 (#316)
   }
   const bad = $('elev-bad');
   bad.hidden = !c.bad;
   bad.textContent = c.bad ? t('elev.sudo.bad', { n: c.tries }) : '';
   paintButtons();
   paintLeft(c);
+  paintPkFor(c);
+}
+/** P539: under 「同意」 — the quiet line when this remote has no passkey of its own, or why the last tap failed + 再试一次. */
+function paintPkFor(c) {
+  if (!root) return;
+  paintPk($('elev-pk'), c && c.fa && !c.running ? { fa: c.fa_s, err: c.faErr || null, retry: () => decide(true, c.faHow) } : {});
 }
 /** P414: this remote holds the vault for its passkey (M5: `prf` wraps only) and the card asks for a typed password. */
 const useVault = (c) => c.kind === 'sudo' && !!c.v && c.v.has && !!c.fa && !viaHelper(c);
@@ -424,16 +435,18 @@ async function decide(ok, how) {
     if (!canAssert() || !c.fa) { toast(t('elev.fa.none'), 5000); return; }
     if (!c.faCh) { toast(t('elev.fail'), 3000); return; }
     busy = true; paintButtons();
+    let faErr = null;
     try {
       if (vaultUse || save) { const r = await assertPrf(c.faCh, c.fa, c.v.vs, vaultUse ? c.v.vn : null); fa = r.fa; prf = r.prf; }
       else fa = await approve(c.faCh, c.fa);
-    } catch { fa = null; }
+    } catch (e) { fa = null; faErr = errName(e); }
     if (!fa || cards.get(c.id) !== c) {
       prf?.fill(0);
       busy = false; paintButtons();
-      if (!fa) toast(t('elev.fa.cancel'), 3000);
+      if (!fa) { c.faErr = faErr || 'Error'; c.faHow = how; paintPkFor(c); toast(t('elev.fa.cancel'), 3000); }
       return;
     }
+    if (c.faErr) { c.faErr = null; paintPkFor(c); }
     if (vaultUse && !prf) {   // this authenticator gave no PRF: nothing sent, the typed field is the way
       busy = false; paintButtons();
       toast(t(c.kind === 'vshare' ? 'p414.e.vsNoPrf' : 'p414.e.noPrf'), 5000);

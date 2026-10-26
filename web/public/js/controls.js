@@ -9,6 +9,7 @@ import { t, lang, locale, plain, fillText } from './t.js';
 import { el, mk, toast, executionToast, toastAction, confirmSheet } from './ui.js';
 import { approve as passkeyApprove } from './faceid.js';
 import { copyable } from './copycode.js';   // P292
+import { faState, webauthnErr, failNotice } from './pkassist.js';   // P539: why a passkey tap failed, said with one way on
 
 let H = null;          // {show(view), estopChanged(), friends()}
 export function configure(h) { H = h; el('set-estop')?.addEventListener('click', onEstop); // @ix app.stop_all
@@ -71,7 +72,8 @@ export async function signedWriteFa(action, target, extra, faceId) {
   const res = await command(obj);
   if (res.ok || res.why !== 'passkey_required') return res;
   let fa;
-  try { fa = await faceId(res); } catch { return { ok: false, why: 'passkey_failed' }; }
+  // P539: a WebAuthn rejection keeps its name (never its message) and the host's `fa_s`, so the card can say why
+  try { fa = await faceId(res); } catch (e) { return { ok: false, why: 'passkey_failed', err: webauthnErr(e), fa_s: faState(res.fa_s) }; }
   return fa ? command({ ...obj, fa }) : { ok: false, why: 'cancel' };
 }
 const WHY_CODES = ['changed', 'unknown_item', 'bad_signature', 'no_key', 'stale', 'timeout', 'offline', 'not_found', 'exists', 'symlink',
@@ -109,7 +111,8 @@ export async function onEstop() {
 export async function onResume() {
   if (!await confirmSheet(t('estop.resumeTitle'), t('estop.resumeText'), t('estop.resumeYes'))) return;
   const res = await signedWriteFa('resume', {}, { t: 'resume' }, H.faceId);
-  if (!res.ok) toast(t('estop.resumeFail', { why: why(res.why) }), 4000);
+  if (!res.ok && res.err) failNotice(res.err, res.fa_s, onResume);   // P539: the reason + 再试一次 / 在本机设置通行密钥
+  else if (!res.ok) toast(t('estop.resumeFail', { why: why(res.why) }), 4000);
 }
 
 // ---- batch approval grants: the bar above the field + 「收回授权」; an automatic approval is one toast line

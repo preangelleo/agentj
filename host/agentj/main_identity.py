@@ -231,7 +231,7 @@ HEARTBEAT_LINE = {
     # P291: the robots = background work (not "only while I reply"); headless work is wrapped. Net no longer than
     # before (the shared-Claude hook answer had 18 characters left under HOOK_MAX): the P156 heartbeat text is tighter.
     "zh": "跳舞机器人=后台 Agent；后台命令用 "
-          "`agentj busy run --who 谁 --label 干啥 -- 命令`，没机器人=没登记。先跑 `agentj busy capacity`："
+          "`agentj busy run --who 谁 --label 干啥 -- 命令`，没机器人=没；`agentj busy capacity`："
           "空多起、紧排队，守 harness 上限。收到〔Agent J 心跳〕照提示查后台、待办与挂掉的活；哈希未变不重读；"
           "没要报的只回〔不回群〕。改心跳频率或内容用 agentj-heartbeat 技能（`agentj heartbeat set 30m`、"
           "`agentj heartbeat prompt edit`），改完回「记下了」。\n",
@@ -251,9 +251,9 @@ HEARTBEAT_LINE = {
 # P262 + P291 (P290 merge): P291's robots rule (background work, wrapped with busy run) stays; P262 adds the job-ended line.
 HEARTBEAT_LINE["zh"] = (
     "跳舞机器人=后台 Agent；后台命令用 "
-    "`agentj busy run --who 谁 --label 干啥 -- 命令`，没机器人=没登记。先跑 `agentj busy capacity`："
-    "空多起、紧排队，守 harness 上限。收到〔Agent J 心跳〕照提示查后台、待办与挂掉的活；哈希未变不重读；"
-    "无事回〔不回群〕；改心跳用 agentj-heartbeat，改完回「记下了」。\n"
+    "`agentj busy run --who 谁 --label 干啥 -- 命令`；`agentj busy capacity`："
+    "空多起、紧排队，守 harness 上限。心跳照提示巡检；哈希未变不重读；"
+    "无事回〔不回群〕；改心跳用 agentj-heartbeat。\n"
     "后台活已结束：核实报告与证据再短报，不凭退出码。\n"
 )
 HEARTBEAT_LINE["en"] += "On a background-job-ended [Agent J system notice], read the actual report and evidence, then tell the owner the result in one or two sentences; never trust only the exit code; investigate a missing report.\n"
@@ -261,6 +261,10 @@ HEARTBEAT_LINE["en"] += "On a background-job-ended [Agent J system notice], read
 # P508: reporting is bound to the host's machine snapshot, not conversational memory.
 HEARTBEAT_LINE["zh"] += "后台据 `agentj busy list --json` 汇报，勿凭记忆；自报另列。\n"
 HEARTBEAT_LINE["en"] += "Report background work only from `agentj busy list --json`, never memory; separate detection from self-reports.\n"
+
+# P537: outside the pinned core; one pointer, no duplicated checklist.
+HEARTBEAT_LINE["zh"] += "常驻清单见心跳文件（agentj heartbeat prompt show）；忙时也查。\n"
+HEARTBEAT_LINE["en"] += "Standing watchlist: heartbeat prompt file (agentj heartbeat prompt show); follow it while busy too.\n"
 
 # P158 (0.20.0): goal mode. Host line; core hashes unchanged.
 GOAL_LINE = {

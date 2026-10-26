@@ -11,6 +11,7 @@ shared machine-wide, so a second copy would inherit the owner's shared session a
 **Every instance needs its own seat, bought or granted to an Agent J account the normal way** (account page → an empty seat card
 → 「复制安装提示词」 / "Copy installation prompt"). One seat binds one instance. Never reuse a bound setup code, never copy another
 instance's or another person's state folder, never move a seat between people without unlinking it first.
+Moving the owner's own seat to a new computer is not an instance job: the remote's 「转移席位到另一台 Agent J 主机」 or `agentj seat transfer` on the old host (https://agentj.app/docs/account/#move-from-remote).
 
 ## Choose a plan (say this to the owner in one or two sentences)
 
@@ -54,6 +55,10 @@ session — the command refuses), and its own background service `agentj-2` (mac
 2. the phone connects and shows a 6-digit code → the person types it into the same terminal (3 tries). Instead of the code they
    may approve on the seat card with the passkey; whichever comes first counts;
 3. if this instance has an approval passphrase, the terminal asks for it too.
+
+**Phone address — one per instance (P545).** Each instance's phone page is `m.agentj.app/<seat id>` (shown after pairing,
+on its seat card, and printed by `agentj --instance N pair`): tell the person to add that address to the Home Screen — one
+icon, sign-in and settings per instance, none overwrites another.
 
 **Approval passphrase — one per instance.** It lives in each instance's own state, so instance 1's passphrase does nothing for
 instance 2. It is only needed for terminal approvals (way 2); way 1 never asks for it. Commands, always with the number:

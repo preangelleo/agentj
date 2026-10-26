@@ -101,9 +101,16 @@ class ControlLines(unittest.TestCase):
         so = _ready(host, other, cid=21)
         so.p33 = True
 
+        from unittest import mock
+        from agentj import passkey
+        fa = {"id": wire.b64u(b"\x07" * 16), "cd": "e30", "ad": "AA", "sig": "AA"}   # P551: another remote → Face ID
+        self.st.set_passkey(ph.pub, {"id": fa["id"], "pub": wire.b64u(os.urandom(77)), "alg": -7, "count": 0,
+                                     "rp": "m.agentj.app", "at": int(time.time())})
+
         async def go():
             t = {"device": other.did}
-            await host._app(s, sign(ph, "dev_unbind", t, {"t": "dev_unbind", "r": "o", **t}))
+            with mock.patch.object(passkey, "verify_assertion", return_value=1):
+                await host._app(s, sign(ph, "dev_unbind", t, {"t": "dev_unbind", "r": "o", **t, "fa": fa}))
             me = {"device": ph.did}
             await host._app(s, sign(ph, "dev_unbind", me, {"t": "dev_unbind", "r": "m", **me}))
         asyncio.run(go())

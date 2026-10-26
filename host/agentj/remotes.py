@@ -23,7 +23,7 @@ import re
 import secrets
 import time
 
-from . import activity, approvals, controls, wire
+from . import activity, approvals, confirm_tier, controls, passkey, wire
 from .devnames import device_names   # P179
 from .state import MAX_DEVICES
 from .text import clean_label, pick
@@ -60,7 +60,8 @@ def rows(st, online: set, me: str | None = None) -> list[dict]:
         out.append({"id": did, "name": clean_label(n["name"] or str(v.get("name", ""))), "paired_at": _num(v.get("paired_at")),
                     "seen": _num(v.get("seen")), "online": did in online, "me": did == me,
                     "source": "phone" if src.startswith("phone") else src if src in ("local", "account") else "local",
-                    "named_by": n["named_by"], "self_name": clean_label(n["self_name"] or "")})
+                    "named_by": n["named_by"], "self_name": clean_label(n["self_name"] or ""),
+                    "pk": passkey.pk_state(v.get("pk"))})   # P539: none | local | borrowed | unknown (never the id)
     return out
 
 
@@ -97,6 +98,7 @@ class Remotes:
             'phone' if 'phone' in kinds and 'computer' not in kinds else None)
         await h.send_app(s, {"t": "devs", **snap})
         await h.send_app(s, {"t": "pair_guide", "kind": kind if kind in ('phone', 'computer') else None})
+        await h.send_app(s, {"t": "pk_state", "s": h.st.passkey_state(s.device)})   # P539: this remote's own passkey
 
     async def changed(self) -> None:
         """All successful allowlist mutations converge here, regardless of their approval route."""
@@ -132,10 +134,20 @@ class Remotes:
         target = self._target(t, obj)
         if target is None:
             return await h._ctl_res(s, r, t, False, why="shape")
+        offer = None
+        if t == "dev_unbind" and target["device"] != s.device and confirm_tier.owner_action(t) == confirm_tier.UV:
+            # P550 (P551 review S4): the tier comes from confirm_tier's table at run time, not only from the tests. P551 (#318) ③: unbinding ANOTHER remote needs this remote's Face ID (a stolen phone cannot lock the owner out);
+            # a remote unbinding itself only gives up its own access
+            offer = await h.owner_uv_offer(s, r, t, target, obj)
+            if offer is None:
+                return
         why = controls.check(h.st, h.nonces, h.channel, s.device, obj, t, target)
+        if not why and offer is not None:
+            why = h.owner_uv_check(s, offer, obj)
         if why:
             h.st.log("control_refused", device=s.device, action=t, reason=why)
-            controls.log(h.st, action=t, device=s.device, result="refused:" + why)
+            controls.log(h.st, action=t, device=s.device, result="refused:" + why,
+                         extra={"passkey": "uv"} if offer is not None else None)   # P550 (S5): Face ID was asked
             h.activity("control_refused", action=t, by=s.name or s.device, why=why)
             return await h._ctl_res(s, r, t, False, why=why)
         if t == "dev_unbind" and target["device"] == s.device and target["device"] in h.st.devices():
@@ -149,7 +161,7 @@ class Remotes:
             result, extra = "bad_name", {}
         h.st.log("control", device=s.device, action=t, result=result)
         controls.log(h.st, action=t, device=s.device, result=result, obj=target, sig=obj.get("sig"), n=obj.get("n"),
-                     ts=obj.get("ts"))
+                     ts=obj.get("ts"), extra={"passkey": "uv"} if offer is not None else None)   # P550 (S5): passed with Face ID
         if self.host.sessions.get(s.cid) is s:     # an unbind of this very remote detached it: nothing more to say
             await h._ctl_res(s, r, t, result == "ok", **({} if result == "ok" else {"why": result}), **extra)
         if result == "ok" and t == "dev_name":

@@ -28,6 +28,7 @@ import asyncio
 import contextlib
 import json
 import os
+import re
 import shlex
 import signal
 import time
@@ -100,6 +101,67 @@ def patch_tool(changes) -> tuple[str, dict]:
     if dele:
         return "Delete", {"file_path": pick, "files": paths, "detail": body[:4000]}
     return "Edit", {"file_path": pick, "old_string": "", "new_string": body[:4000]}
+
+
+_MCP_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}")
+_MCP_RUN = re.compile(r'to run tool "([^"\n]{1,128})"\?')
+MCP_ARGS_MAX = 8000          # the card shows a tool call's arguments whole or not at all (M2: never a truncated detail)
+MCP_OPEN_MAX = 64
+
+
+def _mcp_name(x) -> bool:
+    return isinstance(x, str) and bool(_MCP_NAME.fullmatch(x)) and "__" not in x
+
+
+def mcp_tool_approval(p, calls: dict | None = None) -> tuple[str, dict, str, dict | None] | None:
+    """P539 (#300): an `mcpServer/elicitation/request` that is Codex asking to run one MCP tool → ("mcp__<server>__<tool>",
+    its arguments, the item id, the plugin binding or None); anything else → None (still declined: nobody on the phone can
+    fill a form). The binding (policy_registry.codex_plugin_bind) is built from the item's `pluginId` + server — Codex's
+    own fields, set from the plugin it loaded — only for the bundled Computer Use plugin.
+
+    M2 (P539 review, probed with codex 0.162.1, reports/qa/p539/codex-mcp-probe/): a server's OWN
+    elicitation/create reaches us in the same shape — `_meta` (codex_approval_kind, tool_params) and `message` pass through
+    verbatim, so neither is authority. What a server cannot write: the mcpToolCall item Codex announces (item/started,
+    status inProgress) BEFORE it asks — server / tool / arguments set by Codex. So the request must match one such open
+    item of this thread (server = serverName, tool = the one the message names, same turn), each item is approved at most
+    once (Codex asks first; a look-alike the server sends during its own running call finds the item used), and the
+    server, tool and arguments come from that item — never from the message or `_meta`."""
+    p = p if isinstance(p, dict) else {}
+    meta = p.get("_meta") if isinstance(p.get("_meta"), dict) else {}
+    schema = p.get("requestedSchema")
+    if meta.get("codex_approval_kind") != "mcp_tool_call" or p.get("mode", "form") != "form" or not isinstance(schema, dict):
+        return None
+    if schema.get("properties") or schema.get("required"):
+        return None                                   # a real field to fill: not a plain approval
+    server, m = p.get("serverName"), _MCP_RUN.search(p.get("message") if isinstance(p.get("message"), str) else "")
+    named = m.group(1) if m else None
+    if not (_mcp_name(server) and _mcp_name(named)):
+        return None
+    turn = p.get("turnId")
+    for iid, c in list((calls or {}).items()):
+        if c.get("used") or c.get("server") != server or c.get("tool") != named:
+            continue
+        if isinstance(turn, str) and isinstance(c.get("turn"), str) and c["turn"] != turn:
+            continue
+        c["used"] = True
+        args = c.get("arguments")
+        from .policy_registry import codex_plugin_bind
+        return (f"mcp__{c['server']}__{c['tool']}", (args if isinstance(args, dict) else {}), iid,
+                codex_plugin_bind(c.get("plugin"), c["server"]))
+    return None
+
+
+MCP_TOO_BIG_WHY = "参数太长，手机卡放不下完整内容"
+MCP_TOO_BIG_NOTICE = "Codex 要运行的 MCP 工具参数太长，手机上没法完整确认，已拒绝；需要的话在Agent J 主机上处理"
+
+
+def mcp_args_too_big(args) -> int:
+    """0 = the arguments fit the card whole; else their size (M2: refused, never shown cut)."""
+    try:
+        n = len(json.dumps(args, ensure_ascii=False))
+    except (TypeError, ValueError):
+        return 1 << 30
+    return 0 if n <= MCP_ARGS_MAX else n
 
 
 def perm_text(p) -> str:
@@ -504,6 +566,17 @@ class CodexAgent(Agent):
             p["model"] = self.cfg["model"]
         return p
 
+    def harness_would_ask(self, tool: str, inp: dict, batch: bool) -> bool:
+        """P551 (#320, the `harness` level): Agent J still runs the thread `untrusted` so ③ reaches the host; here the owner's
+        OWN approval_policy decides whether Codex itself would have asked. never → no; untrusted / granular → yes;
+        on-request / on-failure / unset (Codex's default) → only a sandbox or network escalation (batch=False)."""
+        ap = self.human.get("approval_policy")
+        if ap == "never":
+            return False
+        if ap == "untrusted" or isinstance(ap, dict):
+            return True
+        return not batch
+
     async def reload_identity(self) -> None:
         """A1: developerInstructions are sent on thread/start|resume: end the idle app-server; the next turn spawns it and
         resumes the same thread with the new identity text."""
@@ -738,6 +811,17 @@ class CodexAgent(Agent):
                     open_items.discard(it["id"])
                     if it.get("type") == "agentMessage":
                         self.said = True
+            if isinstance(it.get("id"), str) and it.get("type") == "mcpToolCall" and th == self.tid:
+                calls = self.__dict__.setdefault("mcp_open", {})      # M2: Codex's own record of the call it may ask about
+                if method == "item/started" and it.get("status", "inProgress") == "inProgress" \
+                        and _mcp_name(it.get("server")) and _mcp_name(it.get("tool")):
+                    calls[it["id"]] = {"server": it["server"], "tool": it["tool"], "arguments": it.get("arguments"),
+                                       "turn": p.get("turnId") if isinstance(p.get("turnId"), str) else None,
+                                       "plugin": it.get("pluginId") if isinstance(it.get("pluginId"), str) else None}
+                    while len(calls) > MCP_OPEN_MAX:
+                        calls.pop(next(iter(calls)))
+                else:
+                    calls.pop(it["id"], None)
             if isinstance(it.get("id"), str) and it.get("type") in ("fileChange", "commandExecution"):
                 self.items[it["id"]] = it
                 if len(self.items) > 500:
@@ -868,6 +952,20 @@ class CodexAgent(Agent):
                                   {"permissions": {}, "scope": "turn"}, False))
         elif method in ("execCommandApproval", "applyPatchApproval"):     # legacy v1 shapes: never sent to a v2 client
             self._answer(rid, {"decision": "denied"})
+        elif method == "mcpServer/elicitation/request" and p.get("threadId") == self.tid \
+                and (ap := mcp_tool_approval(p, self.__dict__.get("mcp_open"))) is not None:
+            # P539 (#300): Codex asks an MCP tool call's approval as an empty-form elicitation — a plain yes / no: the normal
+            # card (Computer Use → computer.control, passkey; unknown tools still denied). Accept never sends `persist`.
+            # M2: only for the open mcpToolCall item it names, once; arguments too long for the card → refused, not cut.
+            from .policy_registry import codex_cu_lifecycle
+            if codex_cu_lifecycle(ap[0], ap[3]):          # the Computer Use plugin's own turn_ended hook: no effect
+                self.host.st.log("mcp_lifecycle_allow", agent=self.kind, plugin=ap[3]["id"], tool=ap[0])
+                return self._answer(rid, {"action": "accept", "content": {}})
+            if (n := mcp_args_too_big(ap[1])):
+                return self._refuse(rid, ap[0], {"arguments_size": n}, {"action": "decline"}, MCP_TOO_BIG_WHY,
+                                    MCP_TOO_BIG_NOTICE)
+            self._bg(self._decide(rid, ap[0], ap[1], {"action": "accept", "content": {}}, {"action": "decline"}, False,
+                                  bind=ap[3]))
         elif method == "mcpServer/elicitation/request":                   # nobody on the phone can fill a form: decline
             self._answer(rid, {"action": "decline"})
             if not self.research:
@@ -925,13 +1023,14 @@ class CodexAgent(Agent):
             return POLICY_NOTICE + CONFIG_NOTICE.format(mode=mode or self.human.get("sandbox_mode") or "?")
         return POLICY_NOTICE
 
-    def _refuse(self, rid, tool: str, inp: dict, no: dict, why: str) -> None:
-        """Beyond the human's own sandbox: declined at once, no card; a notice and a refused-by-policy record."""
+    def _refuse(self, rid, tool: str, inp: dict, no: dict, why: str, notice: str | None = None) -> None:
+        """Beyond the human's own sandbox (or, M2, too long to show whole): declined at once, no card; a notice and a
+        refused-by-policy record."""
         self._answer(rid, no)
         if not self.research:                  # a read-only task's refusals are expected; it reports in its answer
-            self.host.policy_refused(clean_line(tool, 64) or "?", inp, why, self.policy_notice())
+            self.host.policy_refused(clean_line(tool, 64) or "?", inp, why, notice or self.policy_notice())
 
-    async def _decide(self, rid, tool: str, inp: dict, yes: dict, no: dict, batch: bool) -> None:
+    async def _decide(self, rid, tool: str, inp: dict, yes: dict, no: dict, batch: bool, bind: dict | None = None) -> None:
         gone = asyncio.get_running_loop().create_future()
         self.pending[rid] = gone
         ans = no
@@ -943,7 +1042,7 @@ class CodexAgent(Agent):
             name = clean_line(tool, 64) or "?"
             from .approval_jev import low_risk_pass       # P198: P157 layer 1 — low risk runs without a card, like Claude
             r = ({"behavior": "allow"} if not self.research and low_risk_pass(self.host, self.cfg, name, inp, batch)
-                 else await self.host.ask(name, inp, gone, batch=batch))
+                 else await self.host.ask(name, inp, gone, batch=batch, **({"bind": bind} if bind else {})))
             if r.get("behavior") == "allow":
                 ans = yes
         except Exception:  # noqa: BLE001 — fail closed

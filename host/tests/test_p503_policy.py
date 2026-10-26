@@ -156,9 +156,9 @@ class HostExecution(unittest.IsolatedAsyncioTestCase):
 
 
 class MailFinalExecution(HostExecution):
-    async def test_final_smtp_requires_this_action_uv_and_replay_sends_once(self):
+    async def test_final_smtp_requires_this_actions_long_press_and_replay_sends_once(self):
+        # P551 (#318): the Agent's mail is ② reversible — a signed long-press allow, no Face ID; one send per allow
         from mailfake import FakeSMTP
-        from agentj import approvals
         smtp=FakeSMTP('agent@example.com','fixture-password'); self.addCleanup(smtp.close)
         cfg=mail.blank_config(); cfg.update(address='agent@example.com',username='agent@example.com',
             imap={'host':'127.0.0.1','port':1,'security':'plain'},
@@ -172,18 +172,13 @@ class MailFinalExecution(HostExecution):
                 await asyncio.sleep(.005)
             self.assertTrue(self.h.asks)
             a=next(iter(self.h.asks.values()));card=self.h._ask_msg(a,self.session)
-            self.assertTrue(card['passkey_required']);self.assertIn('owner@example.com',card['summary'])
-            obj=self.ph.answer(card,True)
+            self.assertNotIn('passkey_required',card);self.assertIn('owner@example.com',card['summary'])
+            self.assertFalse(task.done());self.assertFalse(smtp.sent)
+            obj=self.ph.answer(card,True);obj.pop('fa',None)
             await self.h._answer(self.session,obj)
-            self.assertFalse(task.done());self.assertFalse(smtp.sent)
-            ch=passkey.elevate_challenge(self.h.channel,self.ph.did,a.rid,a.pk_kind,a.rid,a.digest)
-            await self.h._answer(self.session,{**obj,'fa':self.auth.assert_(ch,b'0',nonce=b'0',flags=1)})
-            self.assertFalse(task.done());self.assertFalse(smtp.sent)
-            valid={**obj,'fa':self.auth.assert_(ch,b'0',nonce=b'0')}
-            await self.h._answer(self.session,valid)
             res=await asyncio.wait_for(task,5)
             self.assertTrue(res['ok'],res);self.assertEqual(len(smtp.sent),1)
-            await self.h._answer(self.session,valid)
+            await self.h._answer(self.session,obj)
             self.assertEqual(len(smtp.sent),1)
         finally:
             if not task.done():task.cancel()
@@ -241,24 +236,25 @@ class MailPhoneUV(HostExecution):
 
 
 class FinalMailPaths(unittest.IsolatedAsyncioTestCase):
-    async def test_notes_reply_and_forward_require_uv_and_refuse_denied_or_stale(self):
-        from unittest.mock import AsyncMock,patch
+    async def test_notes_and_reply_long_press_forward_no_card_and_refuse_denied(self):
+        # P551 (#318): the Agent's notes / reply ask a long-press card (no passkey); the owner's own phone forward asks none
         from test_p184_contacts import _Svc
-        # Existing format fixtures provide isolated state/mail/media, no real SMTP service outside loopback.
         fixture=_Svc();await fixture.asyncSetUp()
         try:
             fixture.mailbox();h=fixture.host;h.mail=mail.Mail(h)
             h.ask.return_value={"behavior":"deny"}
             res=await fixture.svc.forward(fixture.s,{"to":["owner@example.com"],"turn":7})
-            self.assertEqual(res["why"],"denied");self.assertFalse(fixture.smtp.sent)
-            self.assertTrue(h.ask.await_args.kwargs["require_passkey"])
+            # P549 (#316) / P551 (#318): the remote's own forward tap is the owner's intent — no card, no passkey
+            self.assertTrue(res["ok"],res);h.ask.assert_not_awaited()
             cfg=mail.read_config(fixture.st);cfg["enabled"]=True;cfg["allow"]=[{"addr":"owner@example.com","role":"owner"}];cfg=h.mail.set_config(cfg)
             mail.store_secret(fixture.st,b"fixture-password",cfg["address"])
+            sent=len(fixture.smtp.sent)
             res=await h.mail.send_notes(["owner@example.com"],"fixture","body",quiet=True)
-            self.assertEqual(res["why"],"denied");self.assertTrue(h.ask.await_args.kwargs["require_passkey"])
+            self.assertEqual(res["why"],"denied");self.assertFalse(h.ask.await_args.kwargs.get("require_passkey",False))
             state=mail.read_state(fixture.st);state["routes"]["1"]={"to":"owner@example.com","gen":cfg["generation"],"subject":"fixture","msgid":"<fixture@example.com>","refs":""};mail.save_state(fixture.st,state)
             res=await h.mail.reply(1,"body")
-            self.assertEqual(res,"denied");self.assertTrue(h.ask.await_args.kwargs["require_passkey"]);self.assertFalse(fixture.smtp.sent)
+            self.assertEqual(res,"denied");self.assertFalse(h.ask.await_args.kwargs.get("require_passkey",False))
+            self.assertEqual(len(fixture.smtp.sent),sent)
         finally:fixture.doCleanups()
 
 
@@ -293,10 +289,12 @@ class LegacyEnvelope(unittest.TestCase):
 
 
 class RealMailEffectsUV(unittest.IsolatedAsyncioTestCase):
-    async def test_notes_reply_and_phone_forward_each_verify_actual_host_uv(self):
+    async def test_notes_reply_long_press_and_phone_forward_without_card(self):
+        # P551 (#318): Agent notes / reply → one signed long-press allow sends once (no Face ID); the owner's phone forward
+        # sends at once without any card (the signed tap is the instruction)
         from test_p184_contacts import _Svc
         from test_l1 import _owner_host as _host,_ready,Phone
-        for effect in ("notes","reply","forward"):
+        for effect in ("notes","reply"):     # P549 (#316): a phone forward asks nothing (test_p549_mail_cred_cards)
             with self.subTest(effect=effect):
                 fixture=_Svc();await fixture.asyncSetUp()
                 task=None
@@ -312,36 +310,37 @@ class RealMailEffectsUV(unittest.IsolatedAsyncioTestCase):
                     owner=cfg["allow"][0]["addr"]
                     if effect=="notes":
                         call=h.mail.send_notes([owner],"fixture","body",quiet=True)
-                    elif effect=="forward":
-                        call=fixture.svc.forward(session,{"to":[owner],"turn":7})
                     else:
                         state=mail.read_state(fixture.st);state["routes"]["1"]={"to":owner,"gen":cfg["generation"],"subject":"fixture","msgid":"<fixture@example.com>","refs":""};mail.save_state(fixture.st,state)
                         call=h.mail.reply(1,"body")
                     task=asyncio.create_task(call)
+                    if effect=="forward":
+                        result=await asyncio.wait_for(task,5)
+                        self.assertTrue(result.get("ok"),result);self.assertFalse(h.asks)
+                        self.assertEqual(len(fixture.smtp.sent),1)
+                        continue
                     for _ in range(200):
                         if h.asks:break
                         await asyncio.sleep(.005)
                     self.assertTrue(h.asks)
                     a=next(iter(h.asks.values()));card=h._ask_msg(a,session)
+                    self.assertNotIn("passkey_required",card)
+                    self.assertFalse(task.done());self.assertFalse(fixture.smtp.sent)
                     obj=ph.answer(card,True);obj.pop("fa",None)
                     await h._answer(session,obj)
-                    self.assertFalse(task.done());self.assertFalse(fixture.smtp.sent)
-                    ch=passkey.elevate_challenge(h.channel,ph.did,a.rid,a.pk_kind,a.rid,a.digest)
-                    await h._answer(session,{**obj,"fa":ph.auth.assert_(ch,b"0",nonce=b"0",flags=1)})
-                    self.assertFalse(task.done());self.assertFalse(fixture.smtp.sent)
-                    good={**obj,"fa":ph.auth.assert_(ch,b"0",nonce=b"0")}
-                    await h._answer(session,good)
                     result=await asyncio.wait_for(task,5)
                     self.assertTrue(result=="sent" if effect=="reply" else result.get("ok"),result)
                     self.assertEqual(len(fixture.smtp.sent),1)
-                    await h._answer(session,good);self.assertEqual(len(fixture.smtp.sent),1)
+                    await h._answer(session,obj);self.assertEqual(len(fixture.smtp.sent),1)
                 finally:
                     if task and not task.done():task.cancel();await asyncio.gather(task,return_exceptions=True)
                     fixture.doCleanups()
 
 
 class CustomerServiceMailUV(unittest.IsolatedAsyncioTestCase):
-    async def test_both_signed_bot_actions_require_final_mail_uv(self):
+    async def test_both_signed_bot_actions_send_without_another_card(self):
+        # P551 (#318): the owner's signed 客服 tap sends the owner's own text / the fixed code mail — ② reversible, no card,
+        # no Face ID (with or without a passkey on this remote); the signature still admits it and a replay never resends
         from unittest.mock import AsyncMock, patch
         from test_l1 import _host, _ready, Phone
         from test_controls import sign
@@ -350,7 +349,7 @@ class CustomerServiceMailUV(unittest.IsolatedAsyncioTestCase):
         from agentj.bots.contact import contact
         from mailfake import FakeSMTP
         for op in ('human_email_code', 'human_email_reply'):
-            for mode in ('no_passkey', 'no_assertion', 'uv0', 'uv'):
+            for mode in ('no_passkey', 'passkey'):
                 with self.subTest(op=op, mode=mode), tempfile.TemporaryDirectory() as d:
                     st=State(pathlib.Path(d));st.init();sent=[];h=_host(st,sent)
                     ph=Phone(st,with_passkey=mode!='no_passkey');session=_ready(h,ph);session.p33=True
@@ -369,35 +368,12 @@ class CustomerServiceMailUV(unittest.IsolatedAsyncioTestCase):
                     req={'op':op,'id':bid,'handoff':hid,'to':'visitor@example.com','send_id':'1'*32,'text':'fixture reply'}
                     obj=sign(ph,'bots_write',{'request':req},{'t':'bots_write','r':'fixture','request':req})
                     with patch.object(controls,'check',wraps=controls.check) as check:
-                        task=asyncio.create_task(manager.phone(session,obj))
-                        try:
-                            for _ in range(200):
-                                if h.asks:break
-                                await asyncio.sleep(.005)
-                            check.assert_called_once()
-                            self.assertTrue(h.asks)
-                            a=next(iter(h.asks.values()));card=h._ask_msg(a,session)
-                            self.assertTrue(card['passkey_required'])
-                            self.assertIn('visitor@example.com',card['summary'])
-                            self.assertIn('safe final reply' if op=='human_email_reply' else '验证码',card['summary'])
-                            answer=ph.answer(card,True);answer.pop('fa',None)
-                            if mode in ('uv0','uv'):
-                                ch=passkey.elevate_challenge(h.channel,ph.did,a.rid,a.pk_kind,a.rid,a.digest)
-                                answer['fa']=ph.auth.assert_(ch,b'0',nonce=b'0',flags=1 if mode=='uv0' else 5)
-                            await h._answer(session,answer)
-                            if mode=='uv':
-                                await asyncio.wait_for(task,5)
-                                self.assertTrue(sent[-1][1]['ok'],sent[-1]);self.assertEqual(len(smtp.sent),1)
-                                await manager.phone(session,obj)
-                                self.assertEqual(sent[-1][1]['why'],'replay');self.assertEqual(len(smtp.sent),1)
-                            else:
-                                self.assertFalse(task.done());self.assertFalse(smtp.sent)
-                                self.assertEqual(store.db.execute('SELECT sends FROM bot_contacts').fetchone()[0],0)
-                                await h._answer(session,ph.answer(card,False));await asyncio.wait_for(task,5)
-                                self.assertEqual(next(m for _,m in sent if m.get('t')=='ctl_res' and m.get('r')=='fixture')['why'],'denied');self.assertFalse(smtp.sent)
-                        finally:
-                            if not task.done():task.cancel()
-                            await asyncio.gather(task,return_exceptions=True)
+                        await asyncio.wait_for(manager.phone(session,obj),5)
+                        check.assert_called_once()
+                    self.assertFalse(h.asks)
+                    self.assertTrue(sent[-1][1]['ok'],sent[-1]);self.assertEqual(len(smtp.sent),1)
+                    await manager.phone(session,obj)
+                    self.assertEqual(sent[-1][1]['why'],'replay');self.assertEqual(len(smtp.sent),1)
 
 
 class IntegratedMailIdentity(unittest.TestCase):

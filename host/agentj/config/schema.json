@@ -399,9 +399,10 @@
    "enum": [
     "safe",
     "standard",
-    "full"
+    "full",
+    "harness"
    ],
-   "description": "Approval level: safe asks more (no Jev, no batch, no goal countdown); standard = as before; full = like --dangerously-skip-permissions, almost no cards, but a suspected attack, credentials and payments still ask. Changed only by a signed phone confirmation / 审批档位：安全多问、中等（默认，同以前）、全放行（几乎不弹卡，疑似攻击、凭据、花钱仍问）；只能在已配对手机上签名切换",
+   "description": "Approval level: safe asks more (no Jev, no batch, no goal countdown); standard = as before; full = like --dangerously-skip-permissions, almost no cards, but a suspected attack, credentials and payments still ask; harness = approvals follow your AI coding tool (the harness; Agent J adds no cards of its own, irreversible actions still need Face ID). Changed only by a signed phone confirmation / 审批档位：安全多问、中等（默认，同以前）、全放行（几乎不弹卡，疑似攻击、凭据、花钱仍问）、跟随 AI 编程工具（Harness；Agent J 不另加卡，不可逆动作仍要 Face ID）；只能在已配对手机上签名切换",
    "aliases": [
     "审批档位",
     "审批模式",

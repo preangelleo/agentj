@@ -219,7 +219,7 @@ class Desk(SudoDesk, BangDesk, VshareDesk):
             from .elevate import _raw_pub
             self.opens[n] = {"device": s.device, "r": r, "at": now, "salt": salt, "priv": priv, "vn": vn, "mode": mode}
             ch = passkey.elevate_challenge(self.h.channel, s.device, n, "term_open", n, controls.object_digest("term_open", target))
-            return await self._res(s, r, "term_open", False, why="passkey_required", n=n, fa=pk["id"], fa_ch=wire.b64u(ch),
+            return await self._res(s, r, "term_open", False, why="passkey_required", n=n, fa=pk["id"], fa_s=passkey.pk_state(pk), fa_ch=wire.b64u(ch),
                                    salt=wire.b64u(salt), epk=wire.b64u(_raw_pub(priv)), **({"vn": wire.b64u(vn)} if vn else {}))
         n = obj.get("n")
         pend = self.opens.pop(n, None) if isinstance(n, str) else None

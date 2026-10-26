@@ -28,7 +28,7 @@ class CompactLink(unittest.TestCase):
             ch, k, i, p, x = fields()
             new = wire.pairing_link(DEFAULT_WEB, DEFAULT_RELAY, ch, k, i, p, x)
             old = wire.pairing_link_v1(DEFAULT_WEB, DEFAULT_RELAY, ch, k, i, p, x)
-            self.assertRegex(new, r"^https://m\.agentj\.app/#p=[0-9]+$")
+            self.assertRegex(new, r"^https://m\.agentj\.app/[a-z2-7]{8}/#p=[0-9]+$")   # P545: the seat's own page
             want = {"relay": DEFAULT_RELAY, "channel": ch, "host_pub": k, "pid": i, "psk": p, "expires": x}
             self.assertEqual(wire.parse_pairing_link(new), want)
             self.assertEqual(wire.parse_pairing_link(old), want)

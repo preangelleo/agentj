@@ -9,10 +9,16 @@
   // P500: iOS keeps the original manifest identity and dark backing at installation.
   // Theme-specific splash manifests belong to Android; never snapshot Lotion into a new iOS shortcut.
   var scheme = matchMedia('(prefers-color-scheme: dark)');
+  // P545: a seat's page asks for its own manifest (id / scope = /<seat id>/, the seat's name on the icon); js/seats.js calls
+  // window.__ajManifest() again once the name is known.
+  var seat = window.AJSeat && window.AJSeat.id ? window.AJSeat : null;
   function manifest() {
     var link = document.querySelector('link[rel="manifest"]');
-    if (link) link.setAttribute('href', ios ? 'manifest.webmanifest' : 'manifest-' + (scheme.matches ? 'dark' : 'light') + '.webmanifest');
+    if (link) link.setAttribute('href', (ios ? 'manifest.webmanifest' : 'manifest-' + (scheme.matches ? 'dark' : 'light') + '.webmanifest') + (seat ? seat.query() : ''));
+    var title = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+    if (title && seat) title.setAttribute('content', seat.name() ? 'Agent J · ' + seat.name() : 'Agent J');
   }
+  window.__ajManifest = manifest;
   manifest();
   scheme.addEventListener('change', manifest);
   var bars = document.querySelectorAll('meta[name="theme-color"]');

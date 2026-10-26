@@ -304,7 +304,7 @@ class HostLevel(unittest.TestCase):
         a = Authenticator()
         self.run_(self.host._app(s, a.register(wire.unb64u(offer["n"]))))
         self.assertEqual([o for o in self.to(3) if o["t"] == "pk_reg_res"][-1], {"t": "pk_reg_res", "ok": True})
-        self.assertEqual([o["t"] for o in self.to(3)[-4:]], ["pk_reg_res", "devs", "pair_guide", "preferences"])
+        self.assertEqual([o["t"] for o in self.to(3)[-5:]], ["pk_reg_res", "devs", "pair_guide", "pk_state", "preferences"])   # P539
         pk = self.st.devices()[did]["pk"]
         self.assertEqual((pk["id"], pk["alg"], pk["rp"]), (wire.b64u(a.id), -7, RP))
         # the nonce is single use
@@ -333,7 +333,7 @@ class HostLevel(unittest.TestCase):
             self.host.pairing = p
             return await self.host.decide(p, wire.safety_code(s.h), PASS)
         self.run_(go(True))
-        self.assertEqual([o["t"] for o in self.to(7)], ["approved", "pk_offer", "rt", "devs", "pair_guide", "preferences"])   # P525: current state follows the renewal ticket
+        self.assertEqual([o["t"] for o in self.to(7)], ["approved", "pk_offer", "rt", "devs", "pair_guide", "pk_state", "preferences"])   # P525: current state follows the renewal ticket; P539 pk_state
         self.sent.clear()
         self.st.remove_device(wire.device_id(pub))
         self.host.sessions.clear()

@@ -38,7 +38,7 @@ def details(store,bid,vid):
     return dict(row) if row else None
 
 async def signed_send(manager,req):
-    # Device signatures admit the request; only final-message passkey UV authorizes SMTP.
+    # The owner's device signature admits and authorizes the request (P551: ② by the owner's own tap, no further card).
     from .. import mail
     store=manager.state();setup(store)
     row=store.db.execute("SELECT * FROM handoffs WHERE id=? AND bot=? AND status IN ('pending','replied')",(req.get('handoff'),req.get('id'))).fetchone()
@@ -64,13 +64,11 @@ async def signed_send(manager,req):
     cfg=mail.read_config(manager.host.st)
     if not cfg['enabled']:raise BotError('mail_required')
     msg=mail.build_notes(cfg,[target['email']],'Customer service / 客服',text,'Agent J')
-    ans=await manager.host.ask('agentj mail send',mail.send_target(cfg,msg,[target['email']]),
-                               batch=False,require_passkey=True)
-    if ans.get('behavior')!='allow':raise BotError('denied')
+    # P551 (#318): the owner's signed tap sends the owner's own text (or the fixed code mail) — ② reversible, no card
     if mail.read_config(manager.host.st)!=cfg:raise BotError('stale')
     password=mail.load_secret(manager.host.st,cfg['address'])
     if not password:raise BotError('mail_required')
-    # Recheck after safety and final UV awaits. Reserve durably before SMTP; ambiguous failure is charged, never retried.
+    # Recheck after the safety await. Reserve durably before SMTP; ambiguous failure is charged, never retried.
     with store.transaction():
         cur=store.db.execute('SELECT * FROM bot_contacts WHERE bot=? AND visitor=?',(bid,vid)).fetchone()
         current=store.db.execute('SELECT * FROM handoffs WHERE id=?',(row['id'],)).fetchone()

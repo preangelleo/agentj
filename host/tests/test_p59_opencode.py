@@ -72,8 +72,9 @@ class ProxyValues(unittest.TestCase):
         users = sorted(p.name for p in AGENTJ.glob("*.py")
                        if p.name != "proxy.py" and re.search(r"from \.proxy import environment", p.read_text()))
         # P71: friend turns · P175: doctor's OpenAI reach probe goes through the proxy the Codex launch would use
-        # P305: acp.py launches Kimi Code (`kimi acp`)
-        self.assertEqual(users, ["acp.py", "agent.py", "agent_codex.py", "agent_opencode.py", "doctor.py", "peer_session.py", "shared.py"])
+        # P305: acp.py launches Kimi Code (`kimi acp`) · P543: owner_avatar.py launches the owner-channel avatar's Claude Code
+        self.assertEqual(users, ["acp.py", "agent.py", "agent_codex.py", "agent_opencode.py", "doctor.py", "owner_avatar.py",
+                                 "peer_session.py", "shared.py"])
         for name in ("asr.py", "asr_worker.py", "voice.py", "update.py", "service.py"):
             self.assertNotIn("proxy.https", (AGENTJ / name).read_text(), name)
 

@@ -76,7 +76,7 @@ export function reconnectReason() {
 // a handshake past the host timeout. Only an authenticated `removed` can revoke it;
 // confirm a revoked record once with the same device key before clearing local data.
 let refusals = 0, removalProbe = false;
-export const peer = { heartbeat: false, p33: false, asr: 'off', hist: 'off', tgfwd: false, pair1: false, tgfile: false, busyget: false, contacts: false, hfind: false, systasks: false, plat: null, boot: null };
+export const peer = { heartbeat: false, p33: false, asr: 'off', hist: 'off', tgfwd: false, wxfwd: false, wxbound: false, tgbound: false, pair1: false, tgfile: false, busyget: false, contacts: false, hfind: false, systasks: false, plat: null, boot: null };
 export function configure(hooks) { H = hooks; }
 export const current = () => sess;
 export const isReady = () => !!sess && sess.phase === 'ready';
@@ -190,8 +190,12 @@ function readCaps(m) {
   peer.sk1 = peer.wf1 && m.caps.includes('sk1');   // P426 (§39): skill health + skill_archive / skill_restore
   peer.jcards1 = Array.isArray(m.caps) && m.caps.includes('jcards1');   // P360 (§34): Agent J Cards
   peer.hooks1 = Array.isArray(m.caps) && m.caps.includes('hooks1');   // P366: Settings → Webhook (hook_list / hook_set)
+  peer.heartbeat_prompt = Array.isArray(m.caps) && m.caps.includes('heartbeat_prompt');
   peer.heartbeat = Array.isArray(m.caps) && m.caps.includes('heartbeat');
   peer.p33 = Array.isArray(m.caps) && m.caps.includes('p33');
+  peer.wxbound = peer.p33 && Array.isArray(m.caps) && m.caps.includes('wxbound');
+  peer.tgbound = peer.p33 && Array.isArray(m.caps) && (m.caps.includes('tgbound') || m.caps.includes('tgfwd'));
+  peer.wxfwd = peer.p33 && Array.isArray(m.caps) && m.caps.includes('wxfwd');
   peer.tgfwd = peer.p33 && Array.isArray(m.caps) && m.caps.includes('tgfwd');   // P118 (B10): share → the owner's own Telegram
   peer.tgfile = peer.p33 && Array.isArray(m.caps) && m.caps.includes('tgfile'); // P183: a reply's file → the owner's Telegram
   peer.busyget = peer.p33 && Array.isArray(m.caps) && m.caps.includes('busyget'); // P160 (§22): one 「在办」 row's detail

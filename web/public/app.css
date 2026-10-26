@@ -179,7 +179,7 @@ html[data-sbar=black] .satband{background:#000}
 body[data-kb="1"] .sabband{display:none}
 /* P384 #86: only iOS fixes both safe areas to Sooty, including reader / custom themes.
    Android retains its page-colour bars. Insets and keyboard spacing are unchanged. */
-.satband,.sabband{background:#141414!important;z-index:101}
+.satband,.sabband{background:#141414!important;z-index:var(--z-chrome)}
 /* P459 supersedes P393 edge sampling: static black-translucent stays; no forced dark 1px row. */
 html[data-ios="1"] .satband{min-height:0}
 
@@ -1205,17 +1205,17 @@ body[data-conn=off] .composer{filter:grayscale(1);opacity:.7}
    One component, two shapes. rect: as wide as the input-message card (--nt-w, set at show time), height by content;
    accent icon · title over body · buttons on the right. circle: a centred perfect circle, big accent mark, short text.
    Always the dialog layer: Noir --dlg-bg, Lotion --dlg-fg, opaque, on every state and in light and dark. The accent
-   (--nt-accent, palette only: emerald oasis / windstorm / peachy feeling / magic carpet) is a line, never a background. */
+   (--nt-accent: current state for neutral notices, palette semantic colours for results) is a line, never a background. */
 .toast{position:relative;left:auto;top:auto;z-index:auto;
   transform:none;opacity:0;pointer-events:none;
   box-sizing:border-box;width:100%;max-width:100%;
   display:flex;align-items:center;gap:12px;text-align:left;line-height:1.45;
   padding:12px 16px 12px 14px;border-radius:var(--dlg-radius-rect);background:var(--dlg-bg);color:var(--dlg-fg);
-  box-shadow:inset 3px 0 0 var(--nt-accent,var(--windstorm)),var(--dlg-shadow);color-scheme:dark;
+  box-shadow:inset 3px 0 0 var(--nt-accent,var(--state)),var(--dlg-shadow);color-scheme:dark;
   font-size:var(--dlg-fs-body);transition:opacity var(--dlg-dur),transform .25s var(--re)}
 .toast.on{opacity:1;transform:none}
 .toast.rect:not(.on),.toast:empty{display:none}
-.toast .nt-ico{flex:none;width:22px;height:22px;fill:none;stroke:var(--nt-accent,var(--windstorm));stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.toast .nt-ico{flex:none;width:22px;height:22px;fill:none;stroke:var(--nt-accent,var(--state));stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .toast[data-kind="progress"].on .nt-ico{animation:nt-spin 1s linear infinite}
 @keyframes nt-spin{to{transform:rotate(360deg)}}
 .toast .nt-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;overflow-wrap:anywhere}
@@ -1223,7 +1223,7 @@ body[data-conn=off] .composer{filter:grayscale(1);opacity:.7}
 .toast .nt-acts{flex:none;display:flex;gap:8px;margin-left:auto}
 .toast.act{pointer-events:auto;padding:6px 6px 6px 14px;gap:12px}
 .toast .undo{min-height:44px;padding:0 16px;border-radius:var(--r-pill);font:600 var(--dlg-fs-body)/1 var(--font-body);
-  color:var(--dlg-fg);background:var(--dlg-chip);border:1.5px solid var(--nt-accent,var(--windstorm))}
+  color:var(--dlg-fg);background:var(--dlg-chip);border:1.5px solid var(--nt-accent,var(--state))}
 .toast .undo:focus-visible{outline:2px solid var(--dlg-fg);outline-offset:2px}
 /* P340 #27: the screenshot notice carries its picture (top of the page, cropped) and puts its buttons on their own row */
 .toast .nt-media{flex:none;width:44px;height:64px;object-fit:cover;object-position:top;border-radius:8px;
@@ -1233,7 +1233,7 @@ body[data-conn=off] .composer{filter:grayscale(1);opacity:.7}
 /* circle: the ✓ moment (saved, done) — centred like the hold-to-talk circle; .mail-saved (P256) is the same shape */
 .toast:is(.circle,.square,.mail-saved){position:fixed;left:50%;top:50%;z-index:90;width:calc(156px * var(--fz,1));height:calc(156px * var(--fz,1));
   max-width:none;aspect-ratio:1;border-radius:50%;flex-direction:column;justify-content:center;gap:8px;padding:18px;text-align:center;
-  box-shadow:inset 0 0 0 2px var(--nt-accent,var(--emerald-oasis)),var(--dlg-shadow);transform:translate(-50%,-50%) scale(.92);
+  border:0;outline:0;box-shadow:none;transform:translate(-50%,-50%) scale(.92);
   font-size:var(--dlg-fs-sub);line-height:1.3}
 .toast:is(.circle,.square,.mail-saved).on{transform:translate(-50%,-50%)}
 .toast:is(.circle,.square,.mail-saved) .nt-ico{width:44px;height:44px;stroke-width:2.2}
@@ -1382,6 +1382,8 @@ body[data-agent="stopped"]{--state:var(--c-offline)}
 .cmd[hidden]{display:none}
 .apprgoaladd b{font-weight:600}
 .qs .optli{padding:0;background:none}
+.qs .qscreen{margin:0 0 10px;padding:10px 12px;max-height:40vh;overflow:auto;border-radius:12px;background:var(--surface);
+  font:400 calc(12px*var(--fz))/1.45 var(--font-mono);white-space:pre;overflow-wrap:normal;-webkit-overflow-scrolling:touch}
 .qs h3 .qhdr{display:inline-block;margin-right:8px;padding:1px 8px;border-radius:var(--r-pill);background:var(--surface);font:600 calc(11px*var(--fz))/1.5 var(--font-body)}
 
 /* ---- the page: who spoke, attachments, a long reply's part, command results, "on the computer" ---- */
@@ -1728,15 +1730,15 @@ button.setval.setwide:hover{border-color:var(--text-muted)}
 #set-hb-every:disabled { opacity:.45; }                     /* P156 heartbeat interval when off */
 
 /* P492: the existing rescue approval stays above the original Settings position. */
-.auth-approval.scrim{position:fixed;inset:0;z-index:50}
-.auth-approval.sheet{position:fixed;left:0;right:0;bottom:0;z-index:51;max-height:85dvh;width:min(100%,720px);margin:auto}
+.auth-approval.scrim{position:fixed;inset:0;z-index:calc(var(--z-confirm) + var(--ontop-n,0))}
+.auth-approval.sheet{position:fixed;left:0;right:0;bottom:0;z-index:calc(var(--z-confirm) + var(--ontop-n,0) + 1);max-height:85dvh;width:min(100%,720px);margin:auto}
 .elev-auth{margin-block:var(--sp-3);overflow-wrap:anywhere}
 .elev-auth p{margin-block:var(--sp-2)}
 .elev-auth .mailbtns{display:flex;flex-wrap:wrap;gap:var(--sp-2)}
 .elev-auth .aj-btn{min-height:48px}
 
 /* F17 (§11): the sudo / secret card — a modal above everything; the exact command / destination in mono, a masked field */
-.ajmodal.elev{z-index:60}
+.ajmodal.elev{z-index:calc(var(--z-confirm) + var(--ontop-n,0))}   /* P551: the confirmation tier (end of file) */
 .elev .elev-kicker{margin:0 0 var(--sp-1);font:500 calc(12px*var(--fz))/1.2 var(--font-title);letter-spacing:.06em;color:var(--accent,var(--text-muted))}
 .elev .elev-rows{margin:var(--sp-3) 0 0;display:grid;gap:var(--sp-1)}
 .elev .elev-rows dt{font-size:calc(12px*var(--fz));color:var(--text-muted);margin-top:var(--sp-2)}
@@ -1762,7 +1764,7 @@ button.setval.setwide:hover{border-color:var(--text-muted)}
 .elev .elev-bad#elev-empty[hidden]{display:none}
 
 /* F32 (§18): the secret pickup card — masked until Face ID; the value in mono, copy / download, then 完成 clears it */
-.ajmodal.sout{z-index:44}
+.ajmodal.sout{z-index:calc(var(--z-confirm) + var(--ontop-n,0))}
 .sout .elev-kicker{margin:0 0 var(--sp-1);font:500 calc(12px*var(--fz))/1.2 var(--font-title);letter-spacing:.06em;color:var(--accent,var(--text-muted))}
 .sout .elev-rows{margin:var(--sp-3) 0 0;display:grid;gap:var(--sp-1)}
 .sout .elev-rows dt{font-size:calc(12px*var(--fz));color:var(--text-muted);margin-top:var(--sp-2)}
@@ -2126,10 +2128,10 @@ body[data-view="scan"] .top{display:none}
 
 /* P110 share arrival: a prominent action, shown only on an explicit share launch. */
 /* P318: the share hand-off notice is a Noir Notification rect (same tokens as .toast: Noir, Lotion, opaque, Windstorm rule) */
-.share-notice{position:relative;z-index:auto;left:auto;right:auto;top:auto;padding:var(--space-control) var(--space-control) var(--space-control) 16px;border:0;border-radius:var(--dlg-radius-rect);background:var(--dlg-bg);color:var(--dlg-fg);box-shadow:inset 3px 0 0 var(--windstorm),var(--dlg-shadow);color-scheme:dark;display:flex;align-items:center;gap:var(--space-control);font-size:var(--dlg-fs-body);line-height:1.45}
+.share-notice{position:relative;z-index:auto;left:auto;right:auto;top:auto;padding:var(--space-control) var(--space-control) var(--space-control) 16px;border:0;border-radius:var(--dlg-radius-rect);background:var(--dlg-bg);color:var(--dlg-fg);box-shadow:inset 3px 0 0 var(--state),var(--dlg-shadow);color-scheme:dark;display:flex;align-items:center;gap:var(--space-control);font-size:var(--dlg-fs-body);line-height:1.45}
 .share-notice[hidden],.share-notice button[hidden]{display:none}
 .share-notice>span{flex:1;min-width:0}
-.share-notice button{min-height:56px;min-width:112px;margin-left:auto;border:1.5px solid var(--emerald-oasis);border-radius:var(--r-pill);background:var(--dlg-chip);color:var(--dlg-fg);font:inherit;font-weight:700;padding:8px 16px}
+.share-notice button{min-height:56px;min-width:112px;margin-left:auto;border:1.5px solid var(--state);border-radius:var(--r-pill);background:var(--dlg-chip);color:var(--dlg-fg);font:inherit;font-weight:700;padding:8px 16px}
 .share-notice button:disabled{opacity:.5}
 body[data-view="chat"] .share-notice{position:static;margin:0 var(--space-control) var(--space-content)}
 
@@ -2180,7 +2182,7 @@ body[data-view="chat"] .share-notice{position:static;margin:0 var(--space-contro
 .lt .lt-cap{border-top:1px solid var(--border)}
 /* P114 (ADR-A194 §5): the sign-in QR card — only the QR on white, the time left, then full-width actions (P87: one per line,
    nowrap, ≥ 56 px). Never stored; the image leaves the page when the card ends. */
-.ajmodal.lqr{z-index:43}
+.ajmodal.lqr{z-index:calc(var(--z-confirm) + var(--ontop-n,0))}
 .lqr .elev-kicker{margin:0 0 var(--sp-1);font:500 calc(12px*var(--fz))/1.2 var(--font-title);letter-spacing:.06em;color:var(--accent,var(--text-muted))}
 .lqr .lqr-frame{margin:var(--sp-3) auto 0;padding:12px;width:min(260px,100%);aspect-ratio:1;border-radius:16px;background:#fff;
   border:1px solid var(--border);display:grid;place-items:center}
@@ -2195,6 +2197,7 @@ body[data-view="chat"] .share-notice{position:static;margin:0 var(--space-contro
 /* P411 (#172): the screen-help card — a QR code on white (like the sign-in card) or a whole screenshot (tap = full screen,
    pinch / scroll there), the time left, an answer field when the caller wants text, full-width actions ≥ 56 px. Never stored. */
 .ajmodal.hlp{z-index:43}
+body:has(>.gdlg:not([hidden])) .ajmodal.hlp{z-index:104}   /* P549 (#316): help is never behind a centred dialog */
 .hlp .elev-kicker{margin:0 0 var(--sp-1);font:500 calc(12px*var(--fz))/1.2 var(--font-title);letter-spacing:.06em;color:var(--accent,var(--text-muted))}
 .hlp .hlp-text{margin:var(--sp-2) 0 0;font-size:calc(15px*var(--fz));line-height:1.5;color:var(--text);overflow-wrap:anywhere}
 .hlp .hlp-frame{margin:var(--sp-3) auto 0;border-radius:16px;border:1px solid var(--border);background:#fff;display:grid;place-items:center;overflow:hidden}
@@ -2240,7 +2243,7 @@ body[data-view="chat"] .share-notice{position:static;margin:0 var(--space-contro
 .setup-hint{margin:var(--sp-3) 0 0}
 .setup-fact{margin:var(--sp-3) 0 0;font-weight:600}
 .setup-effect{margin:var(--sp-1) 0 0;color:var(--text-muted)}
-.setup-act{margin:var(--sp-3) 0 0;padding:var(--sp-2) var(--sp-3);border-left:3px solid var(--magic-carpet, currentColor)}
+.setup-act{margin:var(--sp-3) 0 0;padding:var(--sp-2) var(--sp-3);border-left:3px solid var(--state)}
 .setup-note{margin:var(--sp-3) 0 0;white-space:pre-wrap}
 .setup-actions{display:flex;flex-wrap:wrap;gap:var(--sp-2);margin-top:var(--sp-3)}
 .setup-actions .aj-btn{flex:1 1 9rem;min-height:56px;margin-top:0;white-space:normal}
@@ -2471,7 +2474,7 @@ i.bd.still{animation:none}
 }
 /* the security panel and the two-step confirm open above Settings (closing them returns there) */
 #badge-panel{z-index:47}
-.ajconfirm{z-index:48}
+.ajconfirm{z-index:calc(var(--z-confirm) + var(--ontop-n,0))}
 
 /* ---- P171 · 遥控器管理 (second-level page) ---- */
 .setsub__in{margin:0;display:flex;flex-direction:column;gap:var(--space-section)}
@@ -2757,7 +2760,7 @@ i.bd.still{animation:none}
   --surface:var(--dlg-chip);--border:var(--dlg-line);--border-soft:var(--dlg-line);--code-bg:var(--dlg-chip);--ink:var(--dlg-fg);--ink-soft:var(--dlg-muted);
   --line:var(--dlg-line);--primary-bg:var(--dlg-fg);--primary-fg:var(--dlg-bg);--quiet-bg:transparent;--quiet-fg:var(--dlg-fg);
   --quiet-border:color-mix(in srgb,var(--dlg-fg) 42%,transparent);--focus:var(--dlg-fg);--dbg:var(--dlg-bg);--dfg:var(--dlg-fg);
-  --accent:var(--milky-waves);--link:var(--milky-waves);--danger:var(--strawberry-field);--c-danger:var(--strawberry-field);--danger-bg:transparent}
+  --accent:var(--state);--link:var(--milky-waves);--danger:var(--strawberry-field);--c-danger:var(--strawberry-field);--danger-bg:transparent}
 .ajmodal.dlgcard>.box{background:var(--dlg-bg);color:var(--dlg-fg);box-shadow:var(--dlg-shadow);border-radius:var(--dlg-radius);animation:gdlg-in var(--dlg-dur) var(--re) both}
 .ajmodal.dlgcard h2{font:600 var(--dlg-fs-title)/1.3 var(--font-title)}
 @media(prefers-reduced-motion:reduce){.ajmodal.dlgcard>.box{animation:none}}
@@ -3086,7 +3089,7 @@ body[data-relink] .dot::after{animation:none}
 .elev-grant{position:fixed;left:50%;bottom:calc(216px + env(safe-area-inset-bottom));z-index:8;transform:translateX(-50%);
   box-sizing:border-box;width:min(560px,calc(100vw - 2 * var(--rg,16px)));display:flex;align-items:center;gap:10px;
   padding:6px 6px 6px 14px;border-radius:var(--dlg-radius-rect);background:var(--dlg-bg);color:var(--dlg-fg);
-  box-shadow:inset 3px 0 0 var(--windstorm),var(--dlg-shadow);color-scheme:dark;font-size:calc(13px*var(--fz,1));line-height:1.35}
+  box-shadow:inset 3px 0 0 var(--state),var(--dlg-shadow);color-scheme:dark;font-size:calc(13px*var(--fz,1));line-height:1.35}
 .elev-grant[hidden]{display:none}
 .elev-grant .elev-grant-text{flex:1;min-width:0;overflow-wrap:anywhere}
 .elev-grant .elev-grant-revoke{flex:none;min-height:36px;padding:0 12px;color:var(--dlg-fg);white-space:nowrap}
@@ -3143,7 +3146,7 @@ body[data-status=waiting]:not([data-kind=question]){--xlink:var(--c-bisque)}
 .elev-run{position:fixed;left:50%;bottom:calc(216px + env(safe-area-inset-bottom));z-index:9;transform:translateX(-50%);
   box-sizing:border-box;width:min(560px,calc(100vw - 2 * var(--rg,16px)));display:flex;flex-direction:column;gap:6px;
   padding:4px;border-radius:var(--dlg-radius-rect);background:var(--dlg-bg);color:var(--dlg-fg);
-  box-shadow:inset 3px 0 0 var(--windstorm),var(--dlg-shadow);color-scheme:dark;font-size:calc(13px*var(--fz,1));line-height:1.35}
+  box-shadow:inset 3px 0 0 var(--state),var(--dlg-shadow);color-scheme:dark;font-size:calc(13px*var(--fz,1));line-height:1.35}
 .elev-run[hidden],.elev-run [hidden]{display:none}
 .elev-run[data-state="ask"]{box-shadow:inset 3px 0 0 var(--c-peachy-feeling),var(--dlg-shadow)}
 .elev-run[data-state="done"][data-ok="1"]{box-shadow:inset 3px 0 0 var(--emerald-oasis),var(--dlg-shadow)}
@@ -3154,7 +3157,7 @@ body[data-status=waiting]:not([data-kind=question]){--xlink:var(--c-bisque)}
 .elev-run .elev-run-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums}
 /* P479: result + exit code remain readable beside Dismiss, including narrow phones. */
 .elev-run[data-state="done"] .elev-run-text{white-space:normal;overflow-wrap:anywhere}
-.elev-run .elev-run-dot{flex:none;width:8px;height:8px;border-radius:50%;background:var(--windstorm)}
+.elev-run .elev-run-dot{flex:none;width:8px;height:8px;border-radius:50%;background:var(--state)}
 .elev-run[data-state="running"] .elev-run-dot{animation:elevRunPulse 1.4s ease-in-out infinite}
 .elev-run[data-state="ask"] .elev-run-dot{background:var(--c-peachy-feeling)}
 .elev-run[data-state="done"][data-ok="1"] .elev-run-dot{background:var(--emerald-oasis)}
@@ -3307,7 +3310,7 @@ body[data-view="chat"] .reply-notices .share-notice{margin:0}
 #fsExit,#fsClear,#fsSlash{border:0;outline:0!important;box-shadow:none!important}
 
 /* P458: reply-bottom transient notices keep their accent stripe, without a cast shadow. */
-#toast.rect{box-shadow:none;filter:none;background-image:linear-gradient(90deg,var(--nt-accent,var(--windstorm)) 3px,transparent 3px)}
+#toast.rect{box-shadow:none;filter:none;background-image:linear-gradient(90deg,var(--nt-accent,var(--state)) 3px,transparent 3px)}
 
 /* P459m final: every iPhone browser owns fixed Noir status chrome and water-coloured bottom.
    Safe-area paint is noninteractive; the bottom stays below every content layer. */
@@ -3316,7 +3319,7 @@ html[data-ios="1"] body{background:var(--pg)}
 /* P472: the root owns status paint, outside the state-coloured body compositor.
    No state/theme token or JS colour writer participates in this layer. */
 html[data-ios="1"]::before{content:"";position:fixed;left:0;right:0;top:var(--vvtop,0px);
-  height:var(--ios-safe-top);background:#2c2b26;z-index:101;pointer-events:none;transition:none!important}
+  height:var(--ios-safe-top);background:#2c2b26;z-index:var(--z-chrome);pointer-events:none;transition:none!important}
 html[data-ios="1"] .satband{display:none}
 html[data-ios="1"] .sabband{display:block;height:var(--ios-safe-bottom);background:var(--ios-bottom,var(--c-noir))!important;border:0;box-shadow:none;z-index:0}
 html[data-ios="1"] .water{background:var(--water-color)}
@@ -3382,3 +3385,111 @@ html[data-ios-safari="1"] body::before{content:"";position:absolute;inset:0;back
 .remote-count-label{display:flex;align-items:center;gap:8px}
 #setBtn,#set-actions #setBtn{position:relative;overflow:visible}
 #setBtn>.remote-count-badge{position:absolute;top:0;right:0}
+
+/* P535: dynamic pages share the logo state; Settings retains its approved badge. */
+#setBtn>.remote-count-badge{color:var(--state)}
+/* P550 3c: the digit stays ≥ 4.5:1 on its Lotion circle — Noir, the nearest passing palette entry, away from the approved idle green */
+body:is([data-status=working],[data-status=waiting],[data-status=unknown],[data-conn=off],[data-agent=stopped]) #setBtn>.remote-count-badge{color:var(--c-noir)}
+
+/* P536 approved WeChat A follows the existing reply/reader glyph sizing. */
+.rmbar .gwx,.rdacts .gwx{display:none}
+.rmbar #fwdBtn[data-wx="1"] .g0,.rdacts #rdFwdBtn[data-wx="1"] .g0{display:none}
+.rmbar #fwdBtn[data-wx="1"]:not([data-state=sent]) .gwx,.rdacts #rdFwdBtn[data-wx="1"]:not([data-state=sent]) .gwx{display:block}
+.rmbar #fwdBtn[data-wx="1"][data-state=sending] .gwx,.rdacts #rdFwdBtn[data-wx="1"][data-state=sending] .gwx{animation:breathe 1.1s ease-in-out infinite}
+.forward-options{border:0;padding:16px 0 0;margin:0;min-width:0}
+.forward-options legend{font-weight:600;padding:0}
+.forward-options label{display:flex;align-items:center;gap:12px;min-height:44px}
+.forward-options input{appearance:none;-webkit-appearance:none;flex:none;width:44px;height:44px;margin:0 -10px 0 -12px;padding:0;border:0;border-radius:50%;background:none;display:grid;place-content:center;cursor:pointer;color:inherit}
+.forward-options input::before{content:"";box-sizing:border-box;width:18px;height:18px;border-radius:50%;border:2px solid currentColor}
+.forward-options input:checked::before{border-width:6px}
+.forward-options input:focus-visible{outline:2px solid currentColor;outline-offset:-8px}
+/* P550 3c: no opacity tint (4.35:1) — Settings cards are Sooty in both themes: Argent label (≈ 5.2:1), Black Mana circle */
+.forward-options input:disabled{color:var(--c-black-mana);cursor:not-allowed}
+.forward-options label:has(input:disabled){color:var(--c-argent)}
+.channel-row .channel-status{margin-top:0}
+
+/* P537: shared editor stays above settings, dialogs and their focus layers; P550: below the P551 confirmation tier
+   (--z-confirm 150), so a card that asks the owner is never hidden behind the editor. */
+.fsed{z-index:140}
+.fsed[data-text-editor] .fssend{font:600 26px var(--font-body);color:var(--lotion)}
+.text-editor-field{display:block;width:100%;text-align:start;white-space:pre-wrap;overflow-wrap:anywhere;max-height:8em;overflow:hidden;cursor:pointer}
+
+/* P539 (#300): one quiet block under a confirm button (approval sheet, sudo / secret card, pickup card) — this remote has no
+   passkey of its own, or why the last passkey tap failed + 「再试一次」. Text buttons, 44 px tall, the card's own text colours. */
+.pkassist{margin:var(--ui-space-control) 0 0;font-size:calc(13px*var(--fz));line-height:1.5;color:var(--text-muted)}
+.pkassist[hidden]{display:none}
+.pkassist__text{margin:0;overflow-wrap:anywhere}
+.pkassist__acts{display:flex;flex-wrap:wrap;gap:0 var(--ui-space-btn);margin-top:var(--sp-1)}
+.pkassist__btn{min-height:var(--ui-tap,44px);padding:0 var(--sp-1);border:0;background:none;color:inherit;font:inherit;font-weight:600;
+  text-decoration:underline;text-underline-offset:3px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.pkassist__btn:focus-visible{outline:2px solid currentColor;outline-offset:2px;border-radius:6px}
+.pkassist[data-state="fail"] .pkassist__text{color:inherit;font-weight:600}
+#sheet .pkassist{color:var(--ink-soft);margin:0 2px var(--ui-space-control)}
+#sheet .pkassist .pkassist__btn{color:var(--ink)}
+.elev .pkassist,.sout .pkassist{margin-bottom:var(--sp-1)}
+#confirm .pkassist{color:inherit}
+#confirm .pkassist__acts{justify-content:center}   /* the sheet is dark in both themes: its own text colour (.ajconfirm p dims it to .8) */
+#confirm .pkassist .pkassist__text{margin:0;white-space:normal}   /* .ajconfirm p would add a gap + pre-wrap */
+.keys-pk,.setterm-pk{margin-top:var(--sp-1)}
+#settings .rscmdstatus>.pkassist{flex:1;min-width:0;margin:0}
+/* P539: Settings → 本机通行密钥 row · 安全 → 免问的动作 */
+#settings .pkrow{display:flex;flex-wrap:wrap;align-items:center;gap:var(--ui-space-control) var(--ui-space-btn)}
+#settings .pkrow .setlab{flex:1 1 12em;min-width:0}
+#settings .pkrow .setnote{flex:1 0 100%;margin:0}
+#settings .preauth__list{list-style:none;margin:var(--ui-space-control) 0 0;padding:0;display:flex;flex-direction:column;gap:var(--ui-space-control)}
+#settings .preauth__item{display:flex;align-items:center;gap:var(--ui-space-btn);padding-block:var(--ui-space-line);border-top:1px solid var(--menu-line)}
+#settings .preauth__txt{flex:1;min-width:0;display:flex;flex-direction:column;overflow-wrap:anywhere}
+#settings .preauth__txt small{color:var(--menu-muted);font-size:var(--ui-fs-small)}
+
+/* P543 (#308): an owner-channel message keeps its own line breaks; its inbox location (「…」) wraps */
+#words[data-chan="1"] p { white-space: pre-line; }
+#cmdx .chanx p { white-space: pre-line; overflow-wrap: anywhere; }
+
+/* ---- P545 (§40) 「选择要连接的席位」 on the pairing screen + Settings 「本席位专属网址」 ---- */
+.seatpick{margin-top:var(--space-content);padding:var(--space-content);border:1px solid var(--accent);border-radius:var(--r-lg);background:var(--surface-1)}
+.seatpick[hidden]{display:none}
+.ajpages .seatpick h2{margin:0;font:600 calc(17px*var(--fz))/1.35 var(--font-title)}
+.ajpages .seatpick p.small{margin:var(--sp-1) 0 0;color:var(--text-muted)}
+.seatpick__list{list-style:none;margin:var(--sp-3) 0 0;padding:0;display:flex;flex-direction:column;gap:var(--sp-2)}
+.seatpick__item{display:flex;flex-direction:column;justify-content:center;gap:2px;min-height:52px;padding:var(--sp-2) var(--sp-3);border:1px solid var(--border);
+  border-radius:var(--r-md);background:var(--surface-2,var(--surface-1));color:inherit;text-decoration:none}
+.seatpick__item:hover,.seatpick__item:focus-visible{border-color:var(--accent)}
+.seatpick__item b{font:600 calc(15px*var(--fz))/1.3 var(--font-title);overflow-wrap:anywhere}
+.seatpick__item small{font:500 calc(13px*var(--fz))/1.3 var(--font-mono);color:var(--text-muted);overflow-wrap:anywhere}
+#set-seat-url{font-family:var(--font-mono);overflow-wrap:anywhere}
+#set-seat-move{grid-column:1 / -1;justify-self:start}
+
+/* ---- P547: another remote approves this device's Face ID (js/pkpeer.js) · the seat transfer prompt (js/seatxfer.js).
+   The same centred Noir card as the secret pickup (.dlgcard): above Settings (45), under the confirm card (48). */
+.ajmodal.pkp,.ajmodal.sxf{z-index:47}
+.pkp .elev-kicker,.sxf .elev-kicker{margin:0 0 var(--sp-1);font:500 calc(12px*var(--fz))/1.2 var(--font-title);letter-spacing:.06em;color:var(--accent,var(--text-muted))}
+.pkp .pkp-text,.sxf .sxf-lead{margin:var(--sp-2) 0 0;line-height:1.55}
+.pkp .elev-note,.sxf .elev-note{margin:var(--sp-2) 0 0;font-size:calc(13px*var(--fz));line-height:1.5;color:var(--text-muted)}
+.pkp .pkp-code{display:flex;align-items:baseline;justify-content:space-between;gap:var(--sp-3);margin:var(--sp-3) 0 0;padding:var(--sp-3) var(--sp-4);
+  border-radius:16px;background:var(--code-bg);border:1px solid var(--border)}
+.pkp .pkp-code-l{font-size:calc(13px*var(--fz));color:var(--text-muted)}
+.pkp .pkp-code-v{font:600 calc(28px*var(--fz))/1.1 var(--font-mono);letter-spacing:.16em;font-variant-numeric:tabular-nums}
+.pkp .pkp-acts,.sxf .sxf-tools,.sxf .sxf-acts{display:flex;flex-wrap:wrap;gap:var(--sp-2);margin-top:var(--sp-4)}
+.pkp .pkp-acts .aj-btn,.sxf .sxf-tools .aj-btn,.sxf .sxf-acts .aj-btn{flex:1 1 40%;min-height:48px;margin-top:0}
+.pkp [hidden],.sxf [hidden]{display:none}
+.sxf .sxf-prompt{margin:var(--sp-3) 0 0;max-height:34vh;overflow-y:auto;padding:var(--sp-3);border-radius:12px;background:var(--code-bg);
+  border:1px solid var(--border);white-space:pre-wrap;overflow-wrap:anywhere;font:400 calc(13px*var(--fz))/1.55 var(--font-mono)}
+.sxf .sxf-eye{display:inline-flex;align-items:center;justify-content:center;gap:var(--sp-2)}
+.sxf .sxf-eye .mi{width:18px;height:18px;flex:none}
+.sxf .sxf-how{margin:var(--sp-4) 0 0;font:600 var(--dlg-fs-body)/1.3 var(--font-title)}
+.sxf .sxf-steps{margin:var(--sp-2) 0 0;padding-left:1.4em;font-size:calc(14px*var(--fz));line-height:1.5}
+.sxf .sxf-steps li+li{margin-top:var(--sp-1)}
+#set-seat-xfer-acts{margin-top:var(--sp-2)}
+/* P547: the confirm card's buttons may carry a long label (「在本机设置 Face ID（需另一台批准）」): stay inside the card, wrap if must */
+.ajconfirm[data-long] .confirm-row{flex-direction:column}
+.ajconfirm[data-long] .confirm-row .aj-btn{flex:none;width:100%;max-width:100%;min-width:0;padding-inline:12px;white-space:normal;text-wrap:balance;line-height:1.3}
+
+/* P551 (#316 #318): confirmation cards — the approval / question sheet, the confirm sheet, the elevate / sign-in QR / secret
+   cards — are one tier above every page, dialog, viewer and the camera (≤ 100); the latest card on top (--ontop-n, ontop.js).
+   Notices stay readable over a card; the safe-area paint stays above all (--z-chrome). */
+:root{--z-confirm:150;--z-notice-top:250;--z-chrome:300}
+/* the sheet floated out of the chat stage (something covered it): whole-screen scrim that takes the taps, card at the bottom */
+.scrim.ontop-float{position:fixed;inset:0;z-index:calc(var(--z-confirm) + var(--ontop-n,0));pointer-events:auto}
+.sheet.ontop-float{position:fixed;left:0;right:0;bottom:0;z-index:calc(var(--z-confirm) + var(--ontop-n,0) + 1);
+  max-height:85dvh;width:min(100%,720px);margin:auto}
+body[data-ontop="1"] #toast{z-index:var(--z-notice-top)!important}

@@ -79,6 +79,18 @@ def public_text(text: str) -> str:
     return privacy.owner_text(drop_replacement(text))   # P281: a U+FFFD-only block is no text (nor a streamed reply)
 
 
+def versioned(m: dict) -> dict:
+    """P538 (#302): the status line's model name always with its version, as the terminal shows it. A bare display name
+    ("Opus") is named from the model id it reports (claude-opus-5-5 → "Opus 5.5"), so the phone never says just "Opus"."""
+    name = m.get("model_name") if isinstance(m, dict) else None
+    if isinstance(name, str) and name and not re.search(r"\d", name):
+        from .agent import pretty_model
+        full = pretty_model(m.get("model"))
+        if full:
+            m = {**m, "model_name": full[:-len(" (1M)")] + " (1M context)" if full.endswith(" (1M)") else full}
+    return m
+
+
 def tool_what(name: str, args) -> str:
     """P151b (追加 4): a short, safe description of a running tool for the phone's wait line — the tool's own description
     field or a file / program name; never a command line (it may carry a secret), always through the redactor."""
@@ -254,6 +266,7 @@ class SharedClaudeAgent(Agent):
         self.bg_live = {}               # P243: background task id → type ("shell" / "subagent" / …), main thread's own
         self.main_seen_at = __import__("time").monotonic()   # P243: main thread's last hook event / transcript line (start = now)
         self.pending_text = ""
+        self.last_phone_prompt = None    # P539: the owner's phone Send the latest main-thread prompt carried
         self.pending_source = provenance.normalize(None)
         self.native_source = provenance.normalize(None)
         self.native_request = None     # (native session id, host Send, delivered body); survives the wait timeout
@@ -844,7 +857,10 @@ class SharedClaudeAgent(Agent):
             reminder = self.turn_reminder() if not event.get("agent_id") else ""
             if not (self.phone_turn and self.pending_text in str(event.get("prompt", ""))):
                 self._held_seen(str(event.get("prompt", "")))
+                if not event.get("agent_id"):
+                    self.last_phone_prompt = None       # P539: a desktop prompt — no phone words to put back
             if self.phone_turn and self.pending_text in str(event.get("prompt", "")):
+                self.last_phone_prompt = getattr(self, "cur_send", None)   # P539: the words a flag can hand back
                 self.phone_seen = True
                 self.input_seen.set()
                 prov = provenance.hook_context(self.pending_source)
@@ -1148,8 +1164,10 @@ class SharedClaudeAgent(Agent):
                 # same `/model <id>` self-slash path and receipt as typing it
                 cur = self.cur_model()
                 rows = [{"id": m_["id"], "name": m_.get("name") or m_["id"], "cur": m_["id"] == cur} for m_ in self.models_cache]
-                rows.append({"id": "default", "name": pick(getattr(self.host, "lang", "zh"), "默认（你自己的默认模型）", "Default (your own default model)"),
-                             "cur": False})
+                d = next((r[len("Default ("):-1] for r in self._picker_rows() if r.startswith("Default (") and r.endswith(")")
+                          and re.search(r"\d", r)), None)
+                rows.append({"id": "default", "name": pick(getattr(self.host, "lang", "zh"), "默认（" + (d or "你自己的默认模型") + "）",
+                                                           "Default (" + (d or "your own default model") + ")"), "cur": False})
                 return Result("Claude · " + str(m.get('model_name') or m.get('model') or '—') + " · " + str(m.get('effort') or '—')
                               + " · " + self.state.status + "\n/model <" + names + "|default> [" + "|".join(ms.EFFORTS) + "]", "info",
                               models=rows[:40])
@@ -1255,7 +1273,7 @@ class SharedClaudeAgent(Agent):
 
     def _read_native(self):
         from . import claude_statusline
-        return claude_statusline.read(self.host.st.root, (self.session or {}).get("sessionId"), self.compacted_at)
+        return versioned(claude_statusline.read(self.host.st.root, (self.session or {}).get("sessionId"), self.compacted_at))
 
     def _native(self):
         """P292: on the event loop the last reading (refreshed off the loop by `_fresh_native` / `read_statusline`) — the
@@ -1275,8 +1293,12 @@ class SharedClaudeAgent(Agent):
         return dict(m)
 
     def cur_model(self):
+        return self._key(self._native())
+
+    @staticmethod
+    def _key(n):
         from .shared_modelswitch import key_of
-        return key_of(self._native().get("model_name"))
+        return key_of(n.get("model_name"))
 
     def cur_effort(self):
         e = self._native().get("effort")
@@ -1286,18 +1308,38 @@ class SharedClaudeAgent(Agent):
         if self.picker_rows is None:
             try:
                 rows = json.loads((Path(self.host.st.root) / "claude-picker-rows.json").read_text())
+                # P538: {"v": 2, "rows"} holds versioned names; an older bare list is kept only when no newest-of-family
+                # row is bare ("Opus" next to "Opus 4.8" cannot say which Opus it was) — else relearned from the picker.
+                rows = rows.get("rows") if isinstance(rows, dict) and rows.get("v") == 2 else rows if isinstance(rows, list) \
+                    and all(re.search(r"\d", r) or r.startswith("Default") for r in rows if isinstance(r, str)) else []
                 self.picker_rows = rows if isinstance(rows, list) and all(isinstance(r, str) for r in rows) else []
             except (OSError, ValueError, TypeError):
                 self.picker_rows = []
         return self.picker_rows
 
+    def learn_picker_rows(self, rows):
+        """P538: the native picker's rows as versioned names — from our own switch, or seen on screen when the owner opened
+        /model in the terminal (shared_menu). Stored privately; the phone's catalogue follows."""
+        # Only model-row shapes are kept: a screen can be forged, and these names reach the phones (P538 review L1).
+        rows = [r for r in rows or [] if isinstance(r, str) and len(r) <= 64
+                and re.fullmatch(r"(?:Default \()?(?:Opus|Sonnet|Fable|Haiku)\b[\w .()-]{0,48}|Default \(recommended\)", r)][:40]
+        if not rows or rows == self.picker_rows:
+            return
+        self.picker_rows = rows
+        with contextlib.suppress(OSError, AttributeError, TypeError):
+            self.host.st.write_private(Path(self.host.st.root) / "claude-picker-rows.json", json.dumps({"v": 2, "rows": rows}).encode())
+
     async def refresh_models(self):
         """Rows the native picker last showed (learned), else the rows Relay verified; the running model always listed."""
         from . import shared_modelswitch as ms
-        rows = [r for r in (self._picker_rows() or ms.LEGACY) if not r.startswith("Default")]
+        learned = [r for r in self._picker_rows() if not r.startswith("Default")]
         await self._fresh_native()
         cur, native = self.cur_model(), self._native().get("model_name")
-        cache = [{"id": ms.slug(r), "name": r, "efforts": list(ms.EFFORTS)} for r in rows]
+        lang = getattr(self.host, "lang", "zh")
+        # P538 (#302): every row says its version. Before the picker was ever seen Relay's bare rows are all we have:
+        # they mean "the newest of that family", and the label says so rather than pretending a number.
+        cache = [{"id": ms.slug(r), "name": r, "efforts": list(ms.EFFORTS)} for r in learned] or \
+            [{"id": ms.slug(r), "name": r + pick(lang, "（最新版）", " (latest)"), "efforts": list(ms.EFFORTS)} for r in ms.LEGACY]
         if cur and cur not in {m["id"] for m in cache}:
             cache.insert(0, {"id": cur, "name": native, "efforts": list(ms.EFFORTS)})
         self.models_cache = [{**m, "name": native} if m["id"] == cur and native else m for m in cache][:40]
@@ -1315,7 +1357,9 @@ class SharedClaudeAgent(Agent):
             m, e = model or self.cur_model(), effort
             if m is None or not ms.valid_id(m):
                 return "unsupported"        # current model unknown (no status line): an effort-only change has no row
-            if ms.matches(m, self.cur_model()) and (e is None or e == self.cur_effort()):
+            # P538 (#302): only an exact id is "already there". A bare "opus" is the picker's newest Opus — on Opus 4.8
+            # it used to count as done, so the phone said switched while the terminal stayed on 4.8.
+            if m == self.cur_model() and (e is None or e == self.cur_effort()):
                 self.model_pending = None
                 self.read_statusline()
                 return None
@@ -1334,9 +1378,7 @@ class SharedClaudeAgent(Agent):
             self.host.st.log("shared_model", result=res["result"], reason=res.get("why"), model=model, effort=effort,
                              identity_session=(self.session or {}).get("sessionId"))
             if res.get("rows"):
-                self.picker_rows = res["rows"]
-                with contextlib.suppress(OSError, AttributeError, TypeError):
-                    self.host.st.write_private(Path(self.host.st.root) / "claude-picker-rows.json", json.dumps(res["rows"]).encode())
+                self.learn_picker_rows(res["rows"])
             if res["result"] == ms.BUSY:
                 self.model_pending = {"model": model, "effort": effort, "at": started}
                 return "queued"
@@ -1347,7 +1389,7 @@ class SharedClaudeAgent(Agent):
                 return "unsupported"
             if res["result"] != ms.SENT:
                 return "failed"
-            ok = await self._model_confirm(model, effort, started)
+            ok = await self._model_confirm(res.get("picked") or model, effort, started)
         self.host.st.log("shared_model", result="confirmed" if ok else "unconfirmed", model=model, effort=effort)
         await self.refresh_models()
         return None if ok else "unconfirmed"
@@ -1359,7 +1401,7 @@ class SharedClaudeAgent(Agent):
         while True:
             n = await self._fresh_native()
             fresh = (n.get("source_at") or 0) >= started
-            hit = (model == "default" and fresh) or matches(model, key_of(n.get("model_name")))
+            hit = (model == "default" and fresh) or matches(model, self._key(n))
             if hit and (effort is None or n.get("effort") == effort):
                 self.meter(**n)
                 return True

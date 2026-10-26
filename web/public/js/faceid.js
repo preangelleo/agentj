@@ -10,6 +10,7 @@
 // a 127.0.0.1 / localhost page, whose URL then comes from the page's `?relay=` — tests only; never on a real origin).
 import { sha256, concat } from '../proto/noise.js';
 import { b64u, unb64u } from '../proto/wire.js';
+import { osOf } from './phone-env.js';
 
 // (built from host names: the shipped files carry no literal URLs except agentj.app page links — static.test.mjs)
 export const RELAYS = ['relay.agentj.app', 'alpha-relay.agentjarvis.net'].map((h) => 'wss:' + '//' + h);
@@ -79,10 +80,13 @@ export async function prepareRestore(x25519Pub, ed25519Pub, now = Date.now()) {
 
 const buf = (x) => new Uint8Array(x);
 
-/** Create the passkey for this phone ↔ computer (call straight from a tap). → the pk_reg message. Throws on refusal. */
-export async function register(offerNonce, { relayIndex: ri, channel, hostPub, name = 'Agent J', rpName = 'Agent J', displaySuffix = ' · Agent J 主机', replace = null }) {
-  // A resident credential for the same user handle can be replaced by create(). Verify the old one first.
-  const replace_fa = replace ? await approve(await sha256(new TextEncoder().encode(
+/** Create the passkey for this phone ↔ computer (call straight from a tap). → the pk_reg message. Throws on refusal.
+ *  P547: `peer` = another remote of the owner approved this setup (pk_offer.peer): the record's old key is NOT verified —
+ *  it may be lost (#317) or borrowed (#300) — so approve() never runs and create() starts in the same tick as the tap
+ *  (no browser cross-device QR sheet, no await before the system Face ID sheet). */
+export async function register(offerNonce, { relayIndex: ri, channel, hostPub, name = 'Agent J', rpName = 'Agent J', displaySuffix = ' · Agent J 主机', replace = null, peer = false }) {
+  // A resident credential for the same user handle can be replaced by create(). Verify the old one first (not after a peer approval).
+  const replace_fa = replace && !peer ? await approve(await sha256(new TextEncoder().encode(
     ['agentj/passkey/replace-offer/v1', b64u(offerNonce), replace, location.hostname].join('\n'))), replace) : null;
   const cred = await navigator.credentials.create({ publicKey: {
     rp: { id: location.hostname, name: rpName },
@@ -98,18 +102,36 @@ export async function register(offerNonce, { relayIndex: ri, channel, hostPub, n
   if (!spki || ![-7, -8, -257].includes(alg)) throw new Error('no public key');
   const result = { t: 'pk_reg', id: b64u(buf(cred.rawId)), alg, spki: b64u(buf(spki)), cd: b64u(buf(r.clientDataJSON)), att: b64u(buf(r.attestationObject)) };
   if (replace_fa) result.replace_fa = replace_fa;
+  // P539 (#300): where the passkey lives and which system made it, so the computer can tell this remote "own passkey" from
+  // "borrowed over a phone scan". `att` is already the attestation object in pk_reg, so the attachment travels as `aa`.
+  const a = attachmentOf(cred);
+  if (a) result.aa = a;
+  result.plat = platOf();
   return result;
 }
+/** cred.authenticatorAttachment: 'platform' | 'cross-platform', or null when the browser does not say. */
+export const attachmentOf = (cred) => (cred && ['platform', 'cross-platform'].includes(cred.authenticatorAttachment) ? cred.authenticatorAttachment : null);
+const PLATS = ['ios', 'android', 'mac', 'windows', 'linux', 'other'];
+let platFn = () => osOf(String(globalThis.navigator?.userAgent || ''), globalThis.navigator?.maxTouchPoints || 0);
+/** Tests: another system. */
+export function setPlatform(fn) { platFn = fn; }
+const platOf = () => { try { const p = platFn(); return PLATS.includes(p) ? p : 'other'; } catch { return 'other'; } };
 
-/** Ask for any passkey of this site (discoverable; call straight from a tap). → {id, cd, ad, sig, uh (bytes)}. */
-export async function assert(challenge) {
+/** Ask for a passkey of this site (call straight from a tap). → {id, cd, ad, sig, uh (bytes)}. allow = credential ids
+ *  (b64url) this page knows are its own (P545: a seat's page asks only for that seat's passkey — no list to pick from);
+ *  [] = any (discoverable). */
+export async function assert(challenge, allow = []) {
   const cred = await navigator.credentials.get({ publicKey: {
-    challenge, rpId: location.hostname, userVerification: 'required', allowCredentials: [], timeout: 60000,
+    challenge, rpId: location.hostname, userVerification: 'required', timeout: 60000,
+    allowCredentials: allow.map((id) => ({ type: 'public-key', id: unb64u(id) })),
   } });
   const r = cred.response;
   if (!r.userHandle) throw new Error('no user handle');
-  return { id: b64u(buf(cred.rawId)), cd: b64u(buf(r.clientDataJSON)), ad: b64u(buf(r.authenticatorData)),
+  const out = { id: b64u(buf(cred.rawId)), cd: b64u(buf(r.clientDataJSON)), ad: b64u(buf(r.authenticatorData)),
     sig: b64u(buf(r.signature)), uh: buf(r.userHandle) };
+  const a = attachmentOf(cred);   // P539: pk_restore `att` (a phone scan = 'cross-platform' = a borrowed passkey)
+  if (a) out.att = a;
+  return out;
 }
 
 /** The phone holds a passkey the computer no longer knows (revoked / never saved there): let the system drop it. */

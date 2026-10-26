@@ -35,14 +35,14 @@ export function circleStatus(text) {
   const value = String(text ?? '').trim();
   return /^\p{Script=Han}{1,4}$/u.test(value) || /^\p{Script=Latin}+$/u.test(value);
 }
-export const NOTIFY_ACCENTS = ['--emerald-oasis', '--windstorm', '--peachy-feeling', '--magic-carpet'];
+export const NOTIFY_ACCENTS = ['--state', '--emerald-oasis', '--windstorm', '--peachy-feeling', '--magic-carpet'];
 export const FORMATS = Object.freeze({
   success:  { accent: '--emerald-oasis',  icon: 'check',    ms: 1800, shape: 'circle' },
-  info:     { accent: '--windstorm',      icon: 'info',     ms: 1800, shape: 'circle' },
+  info:     { accent: '--state',      icon: 'info',     ms: 1800, shape: 'circle' },
   warn:     { accent: '--peachy-feeling', icon: 'warn',     ms: 3000, shape: 'rect' },
   error:    { accent: '--peachy-feeling', icon: 'error',    ms: 3000, shape: 'rect' },
-  progress: { accent: '--magic-carpet',   icon: 'progress', ms: 0,    shape: 'rect' },
-  confirm:  { accent: '--windstorm',      icon: 'confirm',  ms: 0,    shape: 'rect' },
+  progress: { accent: '--state',   icon: 'progress', ms: 0,    shape: 'rect' },
+  confirm:  { accent: '--state',      icon: 'confirm',  ms: 0,    shape: 'rect' },
 });
 // line icons, 24-box; app.css strokes them with --nt-accent
 const ICONS = {
@@ -146,10 +146,12 @@ if (typeof document !== 'undefined') addEventListener('keydown', (e) => {
 
 /** Two-step confirmation for every write (and /clear): → true / false. `danger` = a destructive yes (unbind, unpair);
  *  `no` = an optional label for the other button (P182). */
+const pkOff = () => { const b = el('confirm-pk'); if (b) { b.hidden = true; b.replaceChildren(); } };
 export function confirmSheet(title, text, yes, danger = false, no, details = '') {
   return new Promise((resolve) => {
     el('confirm-title').textContent = title; fillText(el('confirm-text'), text);   /* P292: `agentj pair` in the text → code + ⧉ */ el('confirm-yes').textContent = yes;
     const raw = el('confirm-details'); raw.open = false; raw.hidden = !details;
+    pkOff();   // P539: pkassist.pkSheet() fills #confirm-pk after this; every other sheet has none
     el('confirm-raw').textContent = details;
     el('confirm-yes').classList.toggle('aj-btn--danger', !!danger);              // P171: unbind / unpair read as destructive
     el('confirm-yes').classList.toggle('aj-btn--primary', !danger);
@@ -158,7 +160,7 @@ export function confirmSheet(title, text, yes, danger = false, no, details = '')
     const box = el('confirm'), opener = document.activeElement;
     box.hidden = false; box.dataset.modalOpen = '1';
     el('confirm-yes').focus();
-    const done = (v) => { if (no) noBtn.textContent = noWas; box.hidden = true; raw.open = false; el('confirm-raw').textContent = ''; delete box.dataset.modalOpen; el('confirm-yes').onclick = null; el('confirm-no').onclick = null; if(opener?.isConnected&&!opener.closest('[hidden]')) opener.focus({preventScroll:true}); resolve(v); };
+    const done = (v) => { if (no) noBtn.textContent = noWas; box.hidden = true; raw.open = false; el('confirm-raw').textContent = ''; pkOff(); delete box.dataset.modalOpen; el('confirm-yes').onclick = null; el('confirm-no').onclick = null; if(opener?.isConnected&&!opener.closest('[hidden]')) opener.focus({preventScroll:true}); resolve(v); };
     el('confirm-yes').onclick = () => done(true);
     el('confirm-no').onclick = () => done(false);
   });

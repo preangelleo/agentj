@@ -839,10 +839,20 @@ class Telegram:
                 self.host.st.log('external_channel_refused', reason='unavailable', via='telegram')
                 return False
             valid = lambda: self.enabled() and configuration(self.host.st) == cfg
+            async def interim():   # P543: the avatar's action waits for a Web App card; this chat never approves it
+                if valid() and not self.host.stopped():
+                    from .wechat import confirm_text
+                    await asyncio.to_thread(api, cfg, 'sendMessage', {'chat_id':chat_id, 'text':confirm_text(self.host)})
             response = await avatar.receive_owner('telegram', str(cfg.get('generation')) + ':' + str(m.get('message_id')),
-                                                  text, paths, valid, quote=quote if owner else None, quote_text=quote_text if owner else None, source_info=source, admission={k:cfg.get(k) for k in ('owner_id','key_env','generation')}, blobs=blobs)
+                                                  text, paths, valid, quote=quote if owner else None, quote_text=quote_text if owner else None, source_info=source, admission={k:cfg.get(k) for k in ('owner_id','key_env','generation')}, blobs=blobs, interim=interim)
             if response is not None and valid() and not self.host.stopped():
-                await asyncio.to_thread(api, cfg, 'sendMessage', {'chat_id':chat_id, 'text':response})
+                result = 'unknown'
+                try:
+                    await asyncio.to_thread(api, cfg, 'sendMessage', {'chat_id':chat_id, 'text':response})
+                    result = 'sent'
+                finally:
+                    if hasattr(avatar, 'record_delivery'):
+                        avatar.record_delivery('telegram', str(cfg.get('generation')) + ':' + str(m.get('message_id')), result)
                 for mime, data in getattr(response, 'images', ()):
                     if not valid() or self.host.stopped():
                         break
@@ -1079,8 +1089,13 @@ class Telegram:
             if poller is not None:os.close(poller)
 
     async def _run(self):
+        forwarding = None
         while not self.host.stopping.is_set():
             cfg=configuration(self.host.st)
+            current_forwarding = (bool(cfg), self.can_forward())
+            if forwarding != current_forwarding:
+                forwarding = current_forwarding
+                self.changed()
             if self.pairing_live() and (not self.enabled() or not cfg or self.pairing.key_env!=cfg['key_env']):
                 try:await self.pair_poll();self.recovered()
                 except Exception as e:

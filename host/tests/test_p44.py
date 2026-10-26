@@ -141,7 +141,7 @@ class AuthorizedApply(_Env):
                 self.assertNotIn(CODE.encode(), f.read_bytes(), f"the code is never stored ({f.name})")
         block = update.result_block(res)
         self.assertTrue(block.startswith("UPGRADE_RESULT ok\nreason: upgraded\n"))
-        for line in (f"from: {__version__}", "to: 9.9.9", "service: restart_scheduled", "next: agentj doctor"):
+        for line in (f"from: {__version__}", "to: 9.9.9", "service: restart_scheduled", "next: none"):
             self.assertIn(line, block)
 
     def test_refused_before_anything_is_spent(self):
@@ -293,8 +293,8 @@ class UpgradedNotice(unittest.IsolatedAsyncioTestCase):
 
     async def test_once_in_the_owners_language(self):
         rows = [{"status": "ok"}] * 3 + [{"status": "warn"}, {"status": "fail"}]
-        for lang, want in (("zh", f"Agent J 主机上的 Agent J 程序已升级到 {__version__}（原 0.14.0a1）。 自检有 1 项未通过；请在Agent J 主机运行 `agentj doctor`，按提示修复。\n\n手机/网页的新版会单独上线：上线后页面会弹「服务器已升级」，点「刷新」就行（也可以点右上角设置图标 →「更新并刷新」）；在那之前页眉下有一行小字「Agent J 主机已升级，新版网页稍后上线」。"),
-                           ("en", f'Agent J on the Agent J host has been upgraded to {__version__} (previously 0.14.0a1). Self-check found 1 failed check; run `agentj doctor` on the Agent J host and follow its repair guidance.\n\nThe phone/web page updates separately: when its new version is out, the page shows "Server upgraded" — tap Refresh (or the settings icon at the top right → "Update and reload"). Until then a small line under the header says the new page is on its way.')):
+        for lang, want in (("zh", f"Agent J 主机上的 Agent J 程序已升级到 {__version__}（原 0.14.0a1）。 自检有 1 项未通过；点手机上的「一键修复」。\n\n手机/网页的新版会单独上线：上线后页面会弹「服务器已升级」，点「刷新」就行（也可以点右上角设置图标 →「更新并刷新」）；在那之前页眉下有一行小字「Agent J 主机已升级，新版网页稍后上线」。"),
+                           ("en", f'Agent J on the Agent J host has been upgraded to {__version__} (previously 0.14.0a1). Self-check found 1 failed check. Tap Repair on your phone.\n\nThe phone/web page updates separately: when its new version is out, the page shows "Server upgraded" — tap Refresh (or the settings icon at the top right → "Update and reload"). Until then a small line under the header says the new page is on its way.')):
             update.write_marker(self.st, "0.14.0a1", __version__)
             host, sent = await self._host()
             host.preferences["appearance"]["language"] = lang
@@ -305,7 +305,7 @@ class UpgradedNotice(unittest.IsolatedAsyncioTestCase):
                     mock.patch.object(self.st, "agent_name", return_value=None):
                 await host.upgraded_notice()
                 await asyncio.sleep(0.05)
-                self.assertEqual([o["text"] for o in sent if o.get("from") == "notice"], [want])
+                self.assertEqual([o["text"] for o in sent if o.get("from") == "cmd"], [want])
                 sent.clear()
                 await host.upgraded_notice()
                 await asyncio.sleep(0.05)

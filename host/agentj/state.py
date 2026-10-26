@@ -436,6 +436,11 @@ class State:
         pk = rec.get("pk") if isinstance(rec, dict) else None
         return dict(pk) if isinstance(pk, dict) and isinstance(pk.get("id"), str) else None
 
+    def passkey_state(self, did: str | None) -> str:
+        """P539: none | local | borrowed | unknown for a listed device (passkey.pk_state of its record; advisory only)."""
+        from . import passkey
+        return passkey.pk_state(self.passkey_of_device(did) if did else None)
+
     def passkey_count(self, did: str, cred_id: str, count: int) -> bool:
         """Remember a verified non-zero signCount (a cloned authenticator then fails on the next use, ADR-A163)."""
         if not count:
@@ -449,8 +454,13 @@ class State:
             _write_private(self.devices_path, json.dumps(d, indent=1, ensure_ascii=False).encode())
         return True
 
-    def set_passkey(self, pub: bytes, pk: dict, *, replacement: dict | None = None, challenge: bytes | None = None) -> bool:
-        """Store (or replace: one passkey per device) the passkey of the device with this static key, if still listed."""
+    def set_passkey(self, pub: bytes, pk: dict, *, replacement: dict | None = None, challenge: bytes | None = None,
+                    peer_ok: bool = False) -> bool:
+        """Store (or replace: one passkey per device) the passkey of the device with this static key, if still listed.
+        A replacement needs the old key's assertion — or (P547) `peer_ok`: serve passes True ONLY for the one pk_offer it
+        itself marked approved by another remote's key for this device (pkpeer.Desk.approved); the lineage is kept alike.
+        P547 (review minor 4): the record notes `dev`, the device id that registered it — only that device may approve
+        another's Face ID set-up (a restored record under a new id holds a key that lives elsewhere)."""
         did = wire.device_id(pub)
         from . import credential_revoke
         if credential_revoke.blocked(self,did,{"pk":pk}):
@@ -460,7 +470,7 @@ class State:
             rec = d.get(did)
             if not isinstance(rec, dict) or rec.get("pub") != wire.b64u(pub):
                 return False
-            if isinstance(rec.get("pk"), dict):
+            if isinstance(rec.get("pk"), dict) and peer_ok is not True:
                 # Verify against the current trust root under the same lock as the write.
                 from . import passkey
                 try:
@@ -475,12 +485,12 @@ class State:
                 if len(lineage)>credential_revoke.MAX_TARGETS: return False  # never forget an old grant to make room
                 credential_revoke.note_replaced(self,rec["pk"])
                 rec['pk_ancestors']=sorted(lineage)
-            rec["pk"] = dict(pk)
+            rec["pk"] = dict(pk, dev=did)
             _write_private(self.devices_path, json.dumps(d, indent=1, ensure_ascii=False).encode())
         return True
 
     def passkey_restore(self, old: str, cred_id: str, pub: bytes, sign_pub: bytes, count: int = 0,
-                        iid: str | None = None) -> str | None:
+                        iid: str | None = None, local: bool | None = None) -> str | None:
         """A verified passkey restore, in ONE locked write: the record `old` (still listed, still holding this credential)
         takes the new X25519 key (→ a new device id) and the new approval key — the old ones died with the old browser
         context — keeps its name, paired_at and passkey, and is marked seen. → the new device id, or None (the record left
@@ -492,10 +502,15 @@ class State:
             pk = rec.get("pk") if isinstance(rec, dict) else None
             if not isinstance(pk, dict) or pk.get("id") != cred_id or (new != old and new in d):
                 return None
-            rec = dict(rec, pair_origin=rec.get("pair_origin", old), pub=wire.b64u(pub), sk=wire.b64u(sign_pub), seen=int(time.time()), pk=dict(pk))
+            # P547: `dev` stays the id that registered the key (a legacy record gets `old`): under the new id this record is
+            # no pk_peer approver — its key lives on another device (pkpeer.Desk._eligible)
+            rec = dict(rec, pair_origin=rec.get("pair_origin", old), pub=wire.b64u(pub), sk=wire.b64u(sign_pub), seen=int(time.time()),
+                       pk=dict(pk, dev=pk.get("dev") if isinstance(pk.get("dev"), str) else old))
             rec.pop("rt", None)           # P122: the old context's renewal ticket dies with it; serve issues a new one
             if count:
                 rec["pk"]["sc"] = count
+            if local is not None:          # P539: advisory — the passkey now lives on this device, or is borrowed
+                rec["pk"]["local"] = bool(local)
             if iid:
                 rec["iid"] = iid
             else:
@@ -660,7 +675,8 @@ class State:
                 "shared_pin_owner": owner_pin if isinstance(owner_pin, str) else "",
                 "shared_opencode_port": preferences.get(prefs, "agent.shared_opencode_port", 0),
                 "high_risk_warnings": preferences.get(prefs, "agent.high_risk_warnings", False),
-                "approvals": approval_level.shared_mode(prefs),   # P336: safe level → "safe"; else agent.approvals
+                "approvals": approval_level.shared_mode(prefs, self),   # P336: safe level → "safe"; P551 harness → native
+                "follow_harness": approval_level.follow_harness(prefs, self),   # P551 (#320): the hook asks only for ③
                 # P305: Kimi's site (kimi.com = mainland-cn, kimi.ai = global) for an API key / the login rescue; None = mainland-cn
                 "region": a.get("region") if a.get("region") in ("mainland-cn", "global") else None}
 
@@ -786,8 +802,9 @@ class State:
                   "cmd", "keys", "events", "event",   # P139: control command / config key / hook event NAMES only
                   "where", "task", "pstate", "majflt",   # P142: loop-stall diagnostics (site/task names, process state, fault counts)
                   "handoff", "sha", "full", "by",   # P198: P151 handoff present (bool), P156 heartbeat prompt sha8 / full / trigger
-                  "to", "files", "skipped", "refused", "domains", "msgid", "smtp"}   # P295 mail_fwd: counts, recipient
+                  "to", "files", "skipped", "refused", "domains", "msgid", "smtp",   # P295 mail_fwd: counts, recipient
                   # domains (never a whole address), our Message-ID and the SMTP server's queue id from its 250 after DATA
+                  "via", "plugin"}   # P539: a 免问 grant's binding kind and the harness plugin id ("<name>@<marketplace>")
 
     def log(self, ev: str, **kw) -> None:
         rec = {"ts": int(time.time()), "ev": ev, **{k: v for k, v in kw.items() if k in self.LOG_FIELDS}}
