@@ -3,7 +3,8 @@
 Measured (Mac report 2026-10-14, re-measured here on 1.18.34 in an empty HOME): with zero credentials `opencode models
 opencode` lists only the free models and they answer. Which ones changes within a day (a model appears, another is
 deprecated), so the list is never kept here: a model is free when `opencode models opencode --verbose` shows it with zero
-input and output cost and not deprecated. Offline, a `-free` suffix is the fallback hint (said so in the result).
+input and output cost and not deprecated. OpenCode 2.1's retired verbose CLI falls through to its isolated native price
+catalogue (opencode_catalogue). Offline, a `-free` suffix remains an explicit unverified hint.
 
 The free tier refuses a request that does not look like OpenCode's own client: a config-level `permission {"*": "deny"}` /
 `tools {"*": false}` agent (the bots' native probe) and a session-level `*: deny` both get `403 FreeTierError`. The probe
@@ -54,7 +55,7 @@ TERMS_TEXT = {
 }
 # zero retention per the same pages — preferred when a free model has to be picked; never big-pickle first (its free tier
 # refused `opencode run` in the report)
-PREFERRED = ("deepseek-", "longcat")
+PREFERRED = ("deepseek-v4.1-flash-free", "glm-5.3-flash-free")
 
 _cache: dict = {}
 
@@ -98,7 +99,8 @@ def listed(exe: str | None, timeout: float = LIST_TIMEOUT) -> list[str] | None:
     try:
         r = subprocess.run([exe, "models", PROVIDER, "--verbose"], capture_output=True, text=True, timeout=timeout,
                            stdin=subprocess.DEVNULL, env=_env(), cwd=tempfile.gettempdir())
-        got = parse_verbose(r.stdout) if r.returncode == 0 else None
+        from .opencode_catalogue import native_models, retired_models_cli
+        got = native_models(exe, timeout) if retired_models_cli(r) else (parse_verbose(r.stdout) if r.returncode == 0 else None)
     except (OSError, subprocess.TimeoutExpired, ValueError):
         got = None
     _cache[exe] = got
@@ -117,7 +119,7 @@ def status(model: str | None, exe: str | None) -> str | None:
 
 def pick(models: list[str] | None) -> str | None:
     """The free model to suggest: zero retention first, then the rest in OpenCode's order (big-pickle last)."""
-    models = [m for m in models or [] if _MODEL.fullmatch(m) and not m.split("/", 1)[1].startswith(("space-bunny", "minimax-m3.1-flash"))]
+    models = [m for m in models or [] if _MODEL.fullmatch(m) and not m.split("/", 1)[1].startswith(("space-bunny", "longcat", "minimax-m3.1-flash"))]
     for fam in PREFERRED:
         for m in models:
             if m.split("/", 1)[1].startswith(fam):

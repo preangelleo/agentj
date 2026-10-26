@@ -1,5 +1,5 @@
 {
-  "version": "0.25.11a1",
-  "zh": "反馈自动脱敏；同主人请求显示任务卡；提权错误分类；拒绝清单可点击；服务 PATH 稳定；切换结果可信；邮箱授权码保留来源并如实报告连接失败。",
-  "en": "Redacted feedback, same-owner task cards, clear sudo failures, clickable commands, stable service PATH, verified switching and reliable email password cards."
+  "version": "0.25.12a1",
+  "zh": "兼容 OpenCode 1.x/2.x；修复模型目录、清空后计量与压缩失败提示；更新只读免费诊断顺序，保留工具隔离。",
+  "en": "Support OpenCode 1.x/2.x; fix model discovery, cleared-session metering and compaction errors; update free diagnosis while retaining isolation."
 }

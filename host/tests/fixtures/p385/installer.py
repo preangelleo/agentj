@@ -362,9 +362,9 @@ def configured_harness(agentj, *, run=command, prompt=input):
 
 
 # P390 (Leo 10-18 21:31): one extra option, never the default — 「用 OpenCode 自带的免费模型先跑起来」. Zero-retention
-# families first (OpenCode Zen docs, 10-18: DeepSeek Flash Free, LongCat 2.5 Preview Free — "does not use your data for
-# model training"); the host's own pick (agentj agent detect → free_model) leads, at most FREE_TRIES real calls.
-FREE_FIRST = ('deepseek-', 'longcat')
+# models first (OpenCode Console docs, 10-26: DeepSeek V4.1 Flash Free, GLM-5.3-Flash Free).
+# The host's own pick leads; at most FREE_TRIES real calls, never a paid fallback.
+FREE_FIRST = ('deepseek-v4.1-flash-free', 'glm-5.3-flash-free')
 FREE_TRIES = 3
 FREE_TERMS = (   # OpenCode Zen's own docs (10-18), the same families as the host's opencode_free.DATA_TERMS
     (FREE_FIRST, '按 OpenCode 官方说明，它的供应商不留存、不拿对话训练（免费期条款随时可能变）',
@@ -393,7 +393,7 @@ def free_text(model):
 def free_candidates(first, listed):
     """Free model ids to try, best first: the host's pick, zero-retention families, the rest; big-pickle never."""
     ids = [m for m in [first, *listed] if isinstance(m, str) and re.fullmatch(r'opencode/[A-Za-z0-9._-]{1,80}', m)
-           and not m.split('/', 1)[1].startswith(('space-bunny', 'minimax-m3.1-flash', 'big-pickle')) and m in listed and m.endswith('-free')]
+           and not m.split('/', 1)[1].startswith(('space-bunny', 'longcat', 'minimax-m3.1-flash', 'big-pickle')) and m in listed and m.endswith('-free')]
     rank = lambda m: (m != first, next((i for i, f in enumerate(FREE_FIRST) if m.split('/', 1)[1].startswith(f)), len(FREE_FIRST)))
     return sorted(dict.fromkeys(ids), key=rank)[:FREE_TRIES]
 
@@ -404,6 +404,7 @@ def free_harness(agentj, oc, *, run=command):
     env = {k: v for k, v in os.environ.items() if k in ('HOME', 'PATH', 'LANG', 'LC_ALL', 'TZ', 'SHELL', 'SSL_CERT_FILE',
            'SSL_CERT_DIR', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_STATE_HOME', 'XDG_CACHE_HOME')}
     env['AGENTJ_OPENCODE_BIN'] = str(oc)
+    row = {}
     try:
         report = json.loads(run([str(agentj), 'agent', 'detect', 'opencode', '--json'], timeout=120, env=env,
                                 stdin=subprocess.DEVNULL))
@@ -411,10 +412,12 @@ def free_harness(agentj, oc, *, run=command):
         first = row.get('free_model')
     except (InstallError, ValueError, TypeError, AttributeError):
         first = None
-    try:
-        listed = run([str(oc), 'models', 'opencode'], timeout=60, env=env, stdin=subprocess.DEVNULL).decode(errors='replace').split()
-    except (InstallError, subprocess.CalledProcessError, AttributeError):
-        listed = []
+    listed = row.get('free_models') if isinstance(row, dict) else None
+    if not isinstance(listed, list) or not listed:
+        try:  # old hosts / OpenCode 1.x; 2.1 uses the host's native price catalogue above
+            listed = run([str(oc), 'models', 'opencode'], timeout=60, env=env, stdin=subprocess.DEVNULL).decode(errors='replace').split()
+        except (InstallError, subprocess.CalledProcessError, AttributeError):
+            listed = []
     for model in free_candidates(first, listed):
         print('试一下免费模型 ' + model + '（第一次可能要等一两分钟）… / Trying free model ' + model + '…')
         try:

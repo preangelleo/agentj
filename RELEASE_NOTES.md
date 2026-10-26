@@ -1,6 +1,6 @@
-# Agent J 0.25.11a1 release notes
+# Agent J 0.25.12a1 release notes
 
-Host 0.25.11a1 / install 0.27.11; phone-web scope.
+Host 0.25.12a1 / install 0.27.12; phone-web scope.
 Phone parity must pass --strict. Full Android/Telegram parity is incomplete.
 Full Android/Telegram parity is incomplete.
 No APK is included in this release. Android source is for review, not a released app.
@@ -11,18 +11,14 @@ the public commit and tag are pushed, the site is deployed, and cold installatio
 Release order: C Dashboard support knowledge only, no D1 migration; then A signed host/site/downloads, immediately followed by B phone web. No relay change. Preserve0036 revocation state,0037 action UV data and local security journals permanently. Never replay migrations or restore an older database snapshot. Use compatible rollback only, otherwise repair forward. Native Mac M1 and physical iOS acceptance remain separate. Local preparation only; no push or deployment authorized.
 ## Changes
 
-- Show same-owner requests as task cards and return their results automatically.
-- Open known commands from the refusal list and use stable tool paths in background services.
-- Redact contact details and known credential fragments locally before feedback; show replacement counts and ticket IDs, while refusing residual credentials.
-- Distinguish sudo authentication failures from command exits and show redacted error details.
-- Confirm AI-tool switches from final receipts, wait for results and supply bounded redacted context when handoff files are missing.
-- Preserve the initiating remote for email password cards and report blocked or unreachable host connections accurately.
-- 同主人设备派来的请求显示为任务卡，并自动回传办理结果。
-- 拒绝清单中的已知命令可直接点击；后台服务使用稳定的工具路径。
-- 反馈在本机自动隐藏邮箱、电话和已知凭据片段，成功后显示替换数量和工单号；残余凭据仍拒绝上报。
-- 提权失败区分密码验证和命令退出，显示脱敏错误摘要。
-- 切换 AI 工具只以最终收据确认成功，支持等待结果；缺少交接文件时提供有界脱敏上下文。
-- 邮箱授权码卡保留当前遥控器来源，沙箱拒连和主机不可达如实报告。
+- Support OpenCode 1.x and 2.x with native price catalogues and anonymous free-model discovery.
+- Fix OpenCode 2.x model menus, metering after clearing a conversation and compaction failure reporting.
+- Prefer current free DeepSeek Flash for read-only diagnosis, then GLM Flash under official data terms, then an explicitly installed local model.
+- Refuse private-message execution when OpenCode lacks its required CLI contract, preserving tool isolation.
+- 兼容 OpenCode 1.x 和 2.x，自动识别原生价格目录与匿名免费模型。
+- 修复 OpenCode 2.x 模型菜单、清空会话后的计量和压缩失败提示。
+- 只读应急诊断优先当前免费 DeepSeek Flash，再按官方条款选择 GLM Flash，最后使用明确安装的本地模型。
+- 无工具私聊执行器在 OpenCode 缺少所需参数时明确拒绝，不扩大工具权限。
 
 ## Material acceptance limits
 

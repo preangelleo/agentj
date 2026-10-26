@@ -534,7 +534,7 @@ class PeerSessions:
 
     def _opencode_argv(self, exe, sid, cfg, sandbox):
         flags = opencode_flags(exe)
-        if not {"--agent", "--format"} <= flags:
+        if not {"--agent", "--format", "--dir"} <= flags:
             return None
         a = [exe, "run", "--format", "json", "--agent", PEER_AGENT]
         if "--pure" in flags:

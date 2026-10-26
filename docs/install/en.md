@@ -335,7 +335,7 @@ It may need you here:
 The AI installs `agentj`, the program on the Agent J host, at one fixed version:
 
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.25.11a1#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.25.12a1#subdirectory=host"
 agentj doctor
 ```
 
@@ -556,3 +556,12 @@ You can keep an existing Volcano Ark, Alibaba Bailian or Kimi account. Provider 
 ## An Agent is missing after installing from a desktop app
 
 Installing from a desktop app such as ChatGPT works too. The background service builds a stable PATH from your login shell and common user installation folders; it does not save the app’s temporary paths. If Claude Code works in your terminal but Agent J says it is missing, run `agentj doctor`. When it reports a missing program in the service PATH, run `agentj service install` once, then check again. This restarts Agent J and your phone reconnects after a brief interruption. You do not need to reinstall Claude Code or share login files or keys in chat.
+## OpenCode compatibility {#opencode-compatibility}
+
+Agent J selects the native protocol for OpenCode 1.x or 2.x automatically. Isolated tests cover 1.19.4 and 2.1.4. Existing 1.x installs keep working; a Homebrew 2.x install does not need downgrading. Start a new conversation only if you want one: upgrading OpenCode does not require clearing your conversation.
+
+If starting or switching fails, run `agentj doctor` on the host. Agent J checks that its local server starts before completing a switch. The separate tool-free private-message executor requires the older CLI's `--dir` contract; OpenCode 2.1.4 does not offer it and is refused before a private-message process starts. Use a supported Claude Code or Codex executor for that channel.
+
+Read-only emergency diagnosis tries freshly listed free DeepSeek Flash first, then `opencode/glm-5.3-flash-free` only when the current official model page confirms zero retention and no training, then an explicitly installed local Ollama model. LongCat and Space Bunny are excluded. Availability is checked again; no paid model is selected automatically, and the original task is never replayed. Cloud diagnosis receives fixed error signals only.
+
+OpenCode 2.1 removed the old verbose model-list command. Agent J checks its native price catalogue automatically, so free-model discovery does not require that command. The installer uses the host’s verified model list before trying a model.

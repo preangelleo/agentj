@@ -73,7 +73,7 @@ Docs: https://agentj.app/docs/reconnect/#phone-only
 
 ## Model fallback
 
-A failed owner turn may receive a separate read-only diagnostic labelled “This is a fallback model answer” / 「这是兜底模型的回答」. Order: the owner's model → freshly listed free OpenCode DeepSeek Flash → currently documented zero-retention/no-training LongCat → explicitly installed Ollama qwen3.5:9b. Space Bunny / MiniMax M3.1 Flash are excluded. Missing DeepSeek triggers one persistent notice; unavailable terms/catalog skip the cloud layer. The host does not change the main harness or resend the task. Cloud sees only fixed error signals, not the owner prompt/files/keys. Local diagnosis sees the redacted failure notice, quotes it, and cannot act. Treat model guesses as uncertain; never claim it repaired or completed the failed task.
+After a failed owner turn, label any separate read-only diagnosis “This is a fallback model answer” / 「这是兜底模型的回答」. Order: owner model → freshly listed free DeepSeek Flash → GLM-5.3-Flash Free under current official zero-retention/no-training terms → explicitly installed Ollama qwen3.5:9b. Exclude LongCat, Space Bunny and MiniMax M3.1 Flash. Missing DeepSeek gets one persistent notice; unknown catalog/terms skip cloud. No main harness switch or task replay. Cloud: fixed error signals only, no owner prompt/files/keys. Local: quote the redacted failure notice. Neither acts or claims repairs/completion; guesses are uncertain.
 
 On Apple Silicon 16GB+ with 20GB free, offer the optional ~6.6GB download after explaining ~8GB runtime memory and imperfect accuracy: install/start Ollama, then `agentj local-model install`; `status` reports eligibility/enabled, `off` disables. The installer accepts `--local-model`. Intel/CPU Linux are not offered it by default. It loads on demand and unloads after use. Installing weights requires the owner's choice. These commands do not change pairing, accounts, approvals or the owner's main model.
 
@@ -82,3 +82,5 @@ OpenCode / ACP diagnostics: bare `/model`, `/status`, `/context` and `/cost` can
 ## Background checks (0.25.3)
 
 Status, reconnect and support use the host service, including native Codex isolation. If chat works but the host check is unavailable, say: “切换已成功，聊天正常；安全隔离不让自检读本机钥匙文件，这一步可以忽略，稍后由后台再检查。” / “The switch succeeded and chat works; isolation hides local key files. Skip this check and retry through the background service later.” Do not disable isolation. A ticket ID confirms feedback was sent; otherwise it is unconfirmed. Never invent a successful check.
+
+OpenCode 1.x/2.x: https://agentj.app/docs/install/#opencode-compatibility .

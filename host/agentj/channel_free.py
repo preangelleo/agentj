@@ -42,7 +42,14 @@ def catalogue(exe):
                    OPENCODE_DISABLE_AUTOUPDATE='1', OPENCODE_DISABLE_SHARE='1')
         try:
             result = subprocess.run([exe,'models','opencode','--refresh','--verbose'], env=env, cwd=directory,
-                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=25)
+                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=25)
+            from .opencode_catalogue import native_models, retired_models_cli
+            if retired_models_cli(result):
+                # 2.1 discovery only. No v1 cache or isolated avatar execution is qualified here.
+                free = native_models(exe, 25) or []
+                if free:
+                    _CATALOGUE[exe] = (time.monotonic(), free, None)
+                return free, None
             path = Path(directory)/'cache/opencode/models.json'
             if result.returncode or path.is_symlink() or path.stat().st_size > 16 * 1024 * 1024:
                 return [], None

@@ -172,6 +172,12 @@ def pmsg(text, mid=None, thread="ab" * 8, **kw):
             "ts": int(time.time() * 1000), **kw}
 
 
+async def completed(predicate):
+    async with asyncio.timeout(5):
+        while not predicate():
+            await asyncio.sleep(0.01)
+
+
 async def settle(n=20):
     for _ in range(n):
         await asyncio.sleep(0)
@@ -684,6 +690,7 @@ class Pipeline(Base):
         await settle_pending(self.svc)
         self.svc.on_status("connected")
         self.assertTrue(self.svc.mbox_up)
+        await completed(lambda: self.host.st.log_path.exists() and "peer_turn" in self.host.st.log_path.read_text())
         await diskq.aflush()                     # P143: under disk pressure P142 hands host.log lines to the writer thread
         log = self.host.st.log_path.read_text()
         self.assertNotIn("ABC", log)

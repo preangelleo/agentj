@@ -30,7 +30,7 @@ class Images(unittest.IsolatedAsyncioTestCase):
         p = patch.object(peer_session,'fenced',side_effect=lambda st,argv,*a:argv);p.start();self.addCleanup(p.stop)
         p = patch.object(self.s,'_exe',return_value='/fixture/executor');p.start();self.addCleanup(p.stop)
         p = patch.object(peer_session,'claude_flags',return_value=set(peer_session.CLAUDE_REQUIRED));p.start();self.addCleanup(p.stop)
-        p = patch.object(peer_session,'opencode_flags',return_value={'--agent','--format'});p.start();self.addCleanup(p.stop)
+        p = patch.object(peer_session,'opencode_flags',return_value={'--agent','--format','--dir'});p.start();self.addCleanup(p.stop)
 
     def profile(self, kind, vision=None):
         profiles.define('fixture',kind,'https://provider.example.test/v1','fixture-model',vision=vision)

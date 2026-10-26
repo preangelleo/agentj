@@ -330,7 +330,7 @@ class DomesticTurns(unittest.IsolatedAsyncioTestCase):
                  patch.object(peer_session.fence, 'problem', return_value=None), \
                  patch.object(peer_session, 'fenced', side_effect=lambda st,argv,*args:argv), \
                  patch.object(peer_session, 'claude_flags', return_value=set(peer_session.CLAUDE_REQUIRED)), \
-                 patch.object(peer_session, 'opencode_flags', return_value={'--agent','--format'}), \
+                 patch.object(peer_session, 'opencode_flags', return_value={'--agent','--format','--dir'}), \
                  patch.object(self.session, '_exe', return_value='/fixture/'+kind):
                 result=await self.session.turn({'id':'owner'}, {'auto':{'mode':'on'}}, 'Reply OK')
             self.assertIsNone(result.error)

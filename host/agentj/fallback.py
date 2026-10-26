@@ -20,9 +20,9 @@ from pathlib import Path
 
 from . import local_model, opencode_free, privacy
 
-TERMS_URL = 'https://opencode.ai/docs/zen/'
+TERMS_URL = 'https://opencode.ai/v2/docs/console/models/'
 # Explicitly reviewed families only. Space Bunny / MiniMax are excluded even during their three-day promotion.
-ZERO_MODELS = {'opencode/longcat-2.5-preview-free': 'LongCat 2.5 Preview Free'}
+ZERO_MODELS = {'opencode/glm-5.3-flash-free': 'GLM-5.3-Flash Free'}
 _terms_cache = None
 
 
@@ -45,7 +45,9 @@ def free_models(exe):
                        OPENCODE_DISABLE_AUTOUPDATE='1', OPENCODE_DISABLE_SHARE='1')
             r = subprocess.run([exe, 'models', 'opencode', '--verbose'], capture_output=True, text=True, timeout=20,
                                cwd=home, stdin=subprocess.DEVNULL, env=env)
-        if r.returncode: return None
+        if r.returncode:
+            from .opencode_catalogue import native_models, retired_models_cli
+            return native_models(exe) if retired_models_cli(r) else None
         # Empty / malformed output is unknown. A valid paid catalog establishes that no free models remain.
         if not re.search(r'^opencode/[A-Za-z0-9._-]+\s*$', r.stdout, re.M): return None
         chunks = re.split(r'^opencode/[A-Za-z0-9._-]+\s*$', r.stdout, flags=re.M)[1:]
@@ -83,7 +85,8 @@ def cloud_reply(exe, model, prompt):
         version = subprocess.run([exe, '--version'], capture_output=True, text=True, timeout=5, cwd=home, env=env)
         if version.returncode: raise opencode_free.ProbeError('native_failed')
         probe = opencode_free.probe
-        if re.match(r'^\s*2\.', version.stdout):
+        from .harness import opencode_v2
+        if opencode_v2(version.stdout):
             from .agent_opencode2 import probe
         return probe(exe, model, env, 45, waits=(), prompt=prompt, diagnostic=True)
 

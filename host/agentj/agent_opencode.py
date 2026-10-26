@@ -611,8 +611,8 @@ class OpenCodeAgent(Agent):
         return text
 
     def _usable_models(self) -> list:
-        """P423 #146: models of providers this serve has a key for (serve's `connected` at the last /provider), the current
-        (unusable) one left out — what the model_missing card offers; [] when serve's view is unknown."""
+        """Known credential-backed or anonymous free routes, excluding the current failed model.
+        This is metadata for the model_missing card, not proof that a key or model call succeeds."""
         cur = self.cfg.get("model")
         return [dict(m) for m in getattr(self, "usable_models", []) if m.get("id") != cur][:40]
 
@@ -1738,12 +1738,14 @@ class OpenCodeAgent(Agent):
             if len(out) >= 40:
                 break
         conn = prov.get("connected")
-        if isinstance(conn, list):            # P423 #146: what a model_missing card may offer (providers with a key)
+        anonymous = prov.get("anonymous_models") or []
+        if isinstance(conn, list):            # P423 #146: credential connections plus explicit anonymous routes
             self.usable_models = [{"id": clean_line(f"{p['id']}/{mid}", 100), "name": clean_line(
                 mm.get("name") if isinstance(mm, dict) and isinstance(mm.get("name"), str) else mid, 60),
                 "desc": clean_line(p.get("name") or "", 60)}
-                for p in prov.get("providers") or [] if isinstance(p, dict) and p.get("id") in conn
+                for p in prov.get("providers") or [] if isinstance(p, dict) and isinstance(p.get("id"), str)
                 and isinstance(p.get("models"), dict) for mid, mm in p["models"].items()
+                if p.get("id") in conn or f"{p['id']}/{mid}" in anonymous
                 if isinstance(mid, str) and slash.MODEL_RE.match(f"{p['id']}/{mid}")][:40]
         if out:
             self.models_cache = out[:40]
@@ -1921,7 +1923,9 @@ class OpenCodeAgent(Agent):
         selected = split_model(self.cfg.get('model'))
         pid = selected['providerID'] if selected else None
         known = isinstance(connected, list) and all(isinstance(x, str) for x in connected)
-        return {'known': known, 'selected_connected': (pid in connected if pid and known else None),
+        anonymous = prov.get('anonymous_models') or []
+        return {'known': known, 'selected_connected': ((pid in connected or self.cfg.get('model') in anonymous)
+                                                      if pid and known else None),
                 'connected_count': len(connected) if known else None,
                 'restart_after_key_change': True, 'subagents': self.subagent_state(),
                 **({'running_version': self._running_version} if getattr(self, 'proc', None) is not None
@@ -1929,6 +1933,8 @@ class OpenCodeAgent(Agent):
 
     async def _last_assistant(self) -> dict:
         """info of the newest assistant message of this conversation (tokens, modelID, providerID), or {}."""
+        if not self.sid:
+            return {}  # /clear may schedule a meter refresh before a new conversation exists.
         try:
             st, msgs = await self.client.request("GET", f"/session/{self.sid}/message")
         except (OSError, HTTPError, AttributeError, asyncio.TimeoutError):

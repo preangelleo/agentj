@@ -271,6 +271,15 @@ def _one(name: str, environ=None) -> dict:
         rec.update(logged_in=None,
                    note="OpenCode v2: keys live in its database (several per provider: `opencode auth switch <provider>` picks "
                         "the active one); the running server's connections are the proof, not the file. Prefer Claude Code.")
+        from . import opencode_free
+        free = opencode_free.listed(exe)
+        if free:
+            rec["free_models"] = free
+            model = opencode_model()
+            rec["free_model"] = model if model in free else opencode_free.pick(free)
+            note = opencode_free.privacy_note(rec["free_model"], "en")
+            if note:
+                rec["privacy"] = note
         return rec
     if name == "kimi":
         from . import agent_kimi
@@ -315,7 +324,8 @@ def _one(name: str, environ=None) -> dict:
         model = opencode_model()
         rec.update(login="free", note=where + ". Data terms differ per free model; a model of the owner's own is better "
                    "for everyday use. Prefer Claude Code.")
-        rec["free_model"] = model if model else opencode_free.pick(opencode_free.listed(exe))
+        rec["free_models"] = opencode_free.listed(exe) or []
+        rec["free_model"] = model if model else opencode_free.pick(rec["free_models"])
         if opencode_free.privacy_note(rec["free_model"], "en"):
             rec["privacy"] = opencode_free.privacy_note(rec["free_model"], "en")
     if status in ("ok", "env", "free"):

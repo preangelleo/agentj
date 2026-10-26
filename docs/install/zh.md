@@ -324,7 +324,7 @@ Ubuntu 24.04 还会检查 AppArmor 对用户命名空间的限制，并实际试
 AI 安装Agent J 主机端程序 `agentj`，装的是固定的一个版本：
 
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.25.11a1#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.25.12a1#subdirectory=host"
 agentj doctor
 ```
 
@@ -542,3 +542,12 @@ macOS「登录项与扩展」中的 Agent J 使用带名字、图标和开发者
 ## 从桌面 App 安装后找不到 Agent
 
 从 ChatGPT 等桌面 App 里安装也可以。后台服务会使用登录终端里的稳定程序路径，并补上常见的用户安装目录，不会记住 App 里的临时路径。如果终端能运行 Claude Code，Agent J 却说没装，先运行 `agentj doctor`；它提示服务路径缺少程序时，运行一次 `agentj service install` 修复，再检查一次。这个操作会重启 Agent J，手机会短暂断开后自动重连；不需要重新安装 Claude Code，也不要把登录文件或密钥发到聊天里。
+## OpenCode 版本兼容 {#opencode-compatibility}
+
+Agent J 会自动选择 OpenCode 1.x 或 2.x 对应的连接方式，已在隔离环境测试 1.19.4 和 2.1.4。已有 1.x 可以继续用，Homebrew 装的 2.x 不必降级。升级 OpenCode 不要求清空对话；只有你想另开对话时才清空。
+
+启动或切换失败时，在主机运行 `agentj doctor`。Agent J 会先检查本地服务能否启动，再完成切换。另一个只处理私聊、不开放工具的执行器需要旧版命令行的 `--dir` 参数；OpenCode 2.1.4 没有这个参数，会在启动私聊进程前拒绝。这个通道可改用受支持的 Claude Code 或 Codex 执行器。
+
+只读应急诊断先试当前免费列表里的 DeepSeek Flash，再试 `opencode/glm-5.3-flash-free`（当天官方模型页须明确承诺不留存、不训练），最后才用你明确安装的本地 Ollama 模型。LongCat 和 Space Bunny 不进入兜底顺序。每次重新核实可用性，不自动选付费模型，也不重发原任务。云端诊断只收到固定错误信号。
+
+OpenCode 2.1 已移除旧的详细模型列表命令。Agent J 会自动读取原生价格目录来识别免费模型，不要求你运行那个旧命令。安装器先使用Agent J 主机核实的模型列表，再试模型能否回复。

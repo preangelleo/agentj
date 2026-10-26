@@ -1,15 +1,15 @@
 ---
 document: agentj-install
-version: 0.27.11
+version: 0.27.12
 released: 2026-10-26
 status: beta (anyone can sign up; not advertised yet, pages are not indexed)
 host_package: agentj (the `agentj` command)
-host_version: 0.25.11a1
-source_tag: v0.25.11a1
-host_wheel: agentj-0.25.11a1-py3-none-any.whl
-host_wheel_sha256: 9108d119c6b04ce3b30552654b3348dd3ca2eba0227afcb25e4e78ae0dcc50e2
-host_sdist: agentj-0.25.11a1.tar.gz
-host_sdist_sha256: 2eb470f79d3d36eb136f40ec31d1944f0436d923e8d4a9998fc749c7d847e44a
+host_version: 0.25.12a1
+source_tag: v0.25.12a1
+host_wheel: agentj-0.25.12a1-py3-none-any.whl
+host_wheel_sha256: 92686bfaab52349e1e2426f062ec2d73ea34b1fe483d1406ecae6f16be7ea6a8
+host_sdist: agentj-0.25.12a1.tar.gz
+host_sdist_sha256: a71a9870ed875793f82ea1f707b6ced4872c461a45375f97b47999a94af2fd26
 canonical_url: https://agentj.app/install.md
 sha256_url: https://agentj.app/install.md.sha256
 alias: https://agentjarvis.net/install.md (the older address: the same file, kept for one more version)
@@ -726,7 +726,7 @@ DeepSeek says a preview may break; Agent J was measured on 0.2.0-rc.2.
 carry over). So start every command line from here on with `export PATH="$HOME/.local/bin:$PATH";` — or call
 `~/.local/bin/agentj` by its full path. This document writes `agentj` for short.
 
-The program is pinned to one release: the tag `v0.25.11a1` (front matter `source_tag`). The tag never moves, and its
+The program is pinned to one release: the tag `v0.25.12a1` (front matter `source_tag`). The tag never moves, and its
 `host/` folder is byte for byte the same code as the two files on our site whose SHA-256 is in this document's front matter.
 ```bash
 cd ~/.agentj-install
@@ -737,7 +737,7 @@ uv tool install "./$W"
 
 Intel Mac: this release keeps `cryptography<49` because newer releases lack an Intel macOS wheel. If an older installer tries to compile OpenSSL (`openssl-sys` / OpenSSL not found), rerun `uv tool install --with "cryptography<49" "./$W"`. The same platform constraint applies to `agentj update apply`.
 
-export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.25.11a1
+export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.25.12a1
 export PATH="$HOME/.local/bin:$PATH"; agentj doctor
 ```
 **Your human's own terminal must find `agentj` too** — they may use `agentj passphrase set` and `agentj pair` as a local alternative
@@ -765,16 +765,16 @@ echo "$WS  $W" | sha256sum -c - && echo "$SS  $S" | sha256sum -c -    # macOS: s
 uv tool install "./$W"          # the wheel; its dependencies come from PyPI or the mirror in UV_DEFAULT_INDEX
 ```
 `uv tool install "./$S"` installs from the checked source archive instead (it builds the same program).
-`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.25.11a1`); it is
+`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.25.12a1`); it is
 numbered separately from this document (`0.27.7`).
 
-Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.25.11a1#subdirectory=host"`.
+Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.25.12a1#subdirectory=host"`.
 
-Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.25.11a1#subdirectory=host"` (needs Python 3.11+).
+Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.25.12a1#subdirectory=host"` (needs Python 3.11+).
 
 **What each route checks.** The wheel and the source archive above are checked against the SHA-256 in this document. Each
 also has a minisign signature beside it (`<file>.minisig`, key `B79F925B0585F9D4` — front matter `signature`), which
-`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.25.11a1`
+`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.25.12a1`
 routes check **neither**: Git trusts GitHub's HTTPS and the tag name, and nothing compares that code with this document.
 Use them only when the checked files cannot be downloaded, and say so in the final feedback.
 `agentj doctor` lists what is ready and what is not (prerequisites, the fence, connectivity, which agents are usable).
@@ -1763,7 +1763,7 @@ Nightly automatic installation is enabled by default and verifies the official w
 In a shared session (the default of 0.13–0.19), reinstall directly using Step 4's checked wheel (SHA-256 must match this document and
 its public GitHub copy), preserving the host's identity, paired phones, account and preferences:
 ```bash
-uv tool install --force "./agentj-0.25.11a1-py3-none-any.whl"
+uv tool install --force "./agentj-0.25.12a1-py3-none-any.whl"
 agentj --version
 agentj service install
 agentj service restart
@@ -1772,7 +1772,7 @@ agentj doctor
 The matching published tag is another source, after verifying the tag object against the upgrade email (no signature or
 hash check on this route — Step 4):
 ```bash
-uv tool install --force "git+https://github.com/preangelleo/agentj@v0.25.11a1#subdirectory=host"
+uv tool install --force "git+https://github.com/preangelleo/agentj@v0.25.12a1#subdirectory=host"
 ```
 **0.14 independent session** (`agent.session_mode=independent`): 0.14's fence keeps Agent J's own program read-only and
 hides the service manager, so the Agent on the phone cannot reinstall or restart from inside it (measured: the install
@@ -1798,11 +1798,11 @@ prints something and `uv tool list` (or `pipx list`) shows `agentjarvis-host`, t
 the new name, then:
 ```bash
 jarvis service uninstall      # stop the old service first (Step 10 used tmux / nohup instead? stop that process)
-uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.25.11a1#subdirectory=host"
+uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.25.12a1#subdirectory=host"
 agentj doctor
 agentj service install        # start it again under the new name (or the tmux / nohup fallback, Step 10)
 ```
-With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.25.11a1#subdirectory=host"`.
+With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.25.12a1#subdirectory=host"`.
 - After the move, `agentj` puts back a `jarvis` command (a link to `agentj`, only if no other `jarvis` exists) for one more
   version; it prints a notice that points here. New installs never get `jarvis`.
 - The state moves from `~/.local/state/agentjarvis-alpha` to `~/.local/state/agentj` on the first run of `agentj` **after your
@@ -3181,7 +3181,7 @@ Olares: open [https://agentj.app/account](https://agentj.app/account), register 
 
 ### Optional read-only model fallback (P401)
 
-After the owner's model fails, Agent J diagnoses through a fresh free DeepSeek Flash listing, then LongCat only while OpenCode's current official terms explicitly promise zero retention and no training, then optional local Ollama qwen3.5:9b. Space Bunny/MiniMax M3.1 Flash are excluded. The reply is labelled as fallback; the original task is not replayed or marked successful. Cloud receives fixed error signals only, not the original task, attachments, keys or work files. A disappeared free DeepSeek is skipped with one notice. Offline or unverified terms skip the relevant cloud layers.
+After the owner's model fails, Agent J diagnoses through a fresh free DeepSeek Flash listing, then `opencode/glm-5.3-flash-free` only while OpenCode's current official model page explicitly promises zero retention and no training, then optional local Ollama qwen3.5:9b. LongCat/Space Bunny/MiniMax M3.1 Flash are excluded. The reply is labelled as fallback; the original task is not replayed or marked successful. Cloud receives fixed error signals only, not the original task, attachments, keys or work files. A disappeared free DeepSeek is skipped with one notice. Offline or unverified terms skip the relevant cloud layers.
 
 Offer local fallback only on Apple Silicon with at least 16GB RAM and 20GB free disk; explain ~6.6GB download, ~8GB runtime memory and possible inaccurate details before the owner chooses. Intel and CPU-only Linux have no default offer. Install/start Ollama first, then `agentj local-model install` (or pass `--local-model` to the one-command installer); `agentj local-model status` checks it, `off` disables it. The optional component may fail without blocking installation. Model loads only on demand and unloads afterwards; tools only read the supplied failure snapshot and return a report, never execute repairs or send data to support. Ask for the original error and check `agentj doctor` rather than trusting invented repair steps.
 
@@ -3716,3 +3716,11 @@ Same-owner tasks appear in the receiving device’s main conversation with the s
 Harness switching: “scheduled” is pending, not success. After scheduling, the initiating terminal must poll `agentj agent switch --result --wait 900` until final (exit 0: success or dry-run probe_ok; 3: failed/rolled_back; 4: pending). From the Agent J turn being switched, end with “scheduled, not complete” to release the job, then read the receipt next turn. Success requires the new harness to reply to the phone greeting; the phone receives the final receipt and any rollback reason. Handoff failure supplies a local redacted excerpt of recent owner conversation, without granting permissions. Owner-authorized feedback should run directly without harness scan loops, with a 90-second command deadline; without a ticket ID report submission as unconfirmed and inspect existing support threads before retrying.
 
 邮箱授权码输入卡只在点击的已配对遥控器上打开。隔离内的 `agentj mail password/status` 使用 Agent 通道；`sandbox_blocked` 表示权限拒连，可在遥控器「设置 → 沟通渠道 → 邮件通道」输入授权码；`host_unreachable` 请在电脑终端运行 `agentj service status`。不要把连接失败称作忙碌，也不要在聊天里发送授权码。 / The mail app-password card opens on the clicking paired remote. Isolated `agentj mail password/status` uses the Agent channel. For `sandbox_blocked`, enter the code in Settings → Channels → E-mail; for `host_unreachable`, run `agentj service status` in the computer terminal. Never send app passwords in chat.
+
+### OpenCode native compatibility
+
+OpenCode 1.19.4 and 2.1.4 use separate native HTTP/event adapters, selected automatically. Existing 1.x remains supported; Homebrew 2.x does not require downgrading. Both tested versions accept the managed loopback `serve --hostname 127.0.0.1 --port N` start. The tool-free private-message CLI executor requires `--dir`; 2.1.4 lacks that contract and is refused before launch. Use Claude Code or Codex for that executor. See https://agentj.app/docs/install/#opencode-compatibility .
+
+OpenCode 1.19.4 和 2.1.4 会自动选用对应的 HTTP/事件适配器，已有 1.x 可继续用，Homebrew 2.x 不必降级。两个实测版本均接受受管的本地端口启动参数。无工具私聊执行器需要 `--dir`，2.1.4 不提供该参数，会在启动前拒绝；这个执行器请使用 Claude Code 或 Codex。只读诊断依次尝试当前免费 DeepSeek Flash、当天官方承诺不留存不训练的 GLM-5.3-Flash Free、明确安装的本地模型；不使用 LongCat/Space Bunny，不自动选付费模型或重发原任务。
+
+OpenCode 2.1 model discovery uses its authenticated native price catalogue because `models --verbose` was removed. The installer consumes the host's verified `free_models` list; older hosts keep their existing CLI path. / OpenCode 2.1 的免费模型由原生价格目录识别；安装器使用Agent J 主机核实的列表，旧主机保留原来的命令行路径。

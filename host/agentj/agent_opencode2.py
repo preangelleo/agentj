@@ -180,11 +180,19 @@ class OpenCodeV2Agent(OpenCodeAgent):
                 out = [x["id"] for x in _data(r) if isinstance(x, dict) and isinstance(x.get("id"), str) and x.get("connections")]
                 with contextlib.suppress(OSError, HTTPError, asyncio.TimeoutError):
                     st, c = await self.client.request("GET", "/api/config")
-                    c = _data(c) if isinstance(_data(c), dict) else c
+                    c = _data(c) if isinstance(_data(c), (dict, list)) else c
                     from .provider_setup import remember
                     remember(self, c if st == 200 else None)
                     if st == 200 and isinstance(c, dict) and isinstance(c.get("provider"), dict):
                         out += [k for k in c["provider"] if isinstance(k, str) and k not in out]
+                    elif st == 200 and isinstance(c, list):
+                        # 2.1: config is a list of documents; custom providers have no integration connection.
+                        # Project names only, never retain settings (which may contain inline keys).
+                        for doc in c:
+                            info = doc.get("info") if isinstance(doc, dict) else None
+                            providers = info.get("providers") if isinstance(info, dict) else None
+                            if isinstance(providers, dict):
+                                out += [k for k in providers if isinstance(k, str) and k not in out]
                 return out
         return None
 
@@ -260,6 +268,8 @@ class OpenCodeV2Agent(OpenCodeAgent):
         elif t == "session.step.ended" and mine:
             if isinstance(p.get("tokens"), dict):
                 self.step_tokens = p["tokens"]
+        elif t == "session.compaction.failed" and mine:
+            self._compaction_failed = True
         elif t == "session.execution.started" and mine:
             self.saw_busy = True
         elif t in ("session.step.failed", "session.execution.failed") and mine and isinstance(p.get("error"), dict):
@@ -430,6 +440,8 @@ class OpenCodeV2Agent(OpenCodeAgent):
                     self._turn_end()
 
     async def _messages(self) -> list:
+        if not self.sid:
+            return []
         st, r = await self.client.request("GET", f"/api/session/{quote(self.sid)}/message")
         return _data(r) if st == 200 and isinstance(_data(r), list) else []
 
@@ -605,7 +617,7 @@ class OpenCodeV2Agent(OpenCodeAgent):
     # ------------------------------------------------ models, meters, slash commands
     async def _providers(self) -> dict:
         """v1's shape ({providers: [{id, models: {id: {name, limit}}}], default, connected}) built from /api/model — only the
-        providers that have a key (connected), so /model offers what can actually answer."""
+        connected providers plus explicit zero-price anonymous OpenCode routes."""
         try:
             st, r = await self.client.request("GET", "/api/model")
         except (OSError, HTTPError, AttributeError, asyncio.TimeoutError):
@@ -613,15 +625,21 @@ class OpenCodeV2Agent(OpenCodeAgent):
         if st != 200 or not isinstance(_data(r), list):
             return {}
         connected = await self._connected()
+        from .opencode_catalogue import free_models
         prov: dict = {}
+        anonymous = []
         for m in _data(r):
             if not isinstance(m, dict) or not isinstance(m.get("providerID"), str) or not isinstance(m.get("id"), str):
                 continue
-            if m.get("enabled") is False or (connected is not None and m["providerID"] not in connected):
+            # 2.1's anonymous OpenCode free routes have no integration connection.
+            anonymous_free = bool(free_models([m])) if m["providerID"] == "opencode" else False
+            if m.get("enabled") is False or (connected is not None and m["providerID"] not in connected and not anonymous_free):
                 continue
+            if anonymous_free:
+                anonymous.append(f"{m['providerID']}/{m['id']}")
             prov.setdefault(m["providerID"], {})[m["id"]] = {"name": m.get("name") or m["id"], "limit": m.get("limit")}
         return {"providers": [{"id": k, "name": k, "models": v} for k, v in prov.items()], "default": {},
-                "connected": connected}
+                "connected": connected, "anonymous_models": anonymous}
 
     async def _last_assistant(self) -> dict:
         """v1's info shape (role, tokens, providerID, modelID) of the newest assistant message."""
@@ -648,6 +666,7 @@ class OpenCodeV2Agent(OpenCodeAgent):
         if not await self._ready():
             return Result("OpenCode 没起来，没有压缩。", "error")
         before = self._ctx(await self._last_assistant())
+        self._compaction_failed = False
         self.quiet = True
         self.set_status("compacting")
         t0 = time.monotonic()
@@ -665,6 +684,9 @@ class OpenCodeV2Agent(OpenCodeAgent):
             self.set_status("working")
         if st != 200:
             return Result(f"没有压缩（HTTP {st}）。", "error")
+        if self._compaction_failed:
+            return Result("OpenCode 未完成压缩。" if self.cfg.get("language", "en").startswith("zh") else
+                          "OpenCode did not complete compaction.", "error")
         took = slash.secs((time.monotonic() - t0) * 1000)
         after = self._ctx(await self._last_assistant())
         if isinstance(before, int) and isinstance(after, int) and after != before:

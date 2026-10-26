@@ -46,7 +46,7 @@ log(args)
 FREE_TIER = {"type": "error", "error": {"type": "FreeTierError", "message": "free tier ''' + CANARY + r'''"}}
 if args[:2] == ["models", "opencode"]:
     for mid, cost, status in (("big-pickle", 0, "active"), ("mimo-v2.6-flash-free", 0, "active"),
-                              ("space-bunny-free", 0, "active"), ("longcat-2.5-preview-free", 0, "active"), ("exo-free", 0, "deprecated"), ("gpt-6", 3, "active")):
+                              ("space-bunny-free", 0, "active"), ("glm-5.3-flash-free", 0, "active"), ("exo-free", 0, "deprecated"), ("gpt-6", 3, "active")):
         print("opencode/" + mid)
         print(json.dumps({"id": mid, "providerID": "opencode", "status": status,
                           "cost": {"input": cost, "output": cost, "cache": {"read": 0, "write": 0}}}, indent=2))
@@ -117,8 +117,8 @@ class Lists(unittest.TestCase):
         self.assertEqual(of.parse_verbose(VERBOSE), ["opencode/space-bunny-free"])
 
     def test_pick_prefers_zero_retention_and_puts_big_pickle_last(self):
-        self.assertEqual(of.pick(["opencode/big-pickle", "opencode/mimo-v2.6-flash-free", "opencode/longcat-2.5-preview-free"]),
-                         "opencode/longcat-2.5-preview-free")
+        self.assertEqual(of.pick(["opencode/big-pickle", "opencode/mimo-v2.6-flash-free", "opencode/glm-5.3-flash-free"]),
+                         "opencode/glm-5.3-flash-free")
         self.assertEqual(of.pick(["opencode/big-pickle", "opencode/cat-jam-free"]), "opencode/cat-jam-free")
         self.assertIsNone(of.pick([]))
 
@@ -129,7 +129,7 @@ class Lists(unittest.TestCase):
             self.assertIn(m, zh)
             self.assertIn("免费模型", zh)
             self.assertIn("free model", en)
-        for m in ("opencode/space-bunny-free", "opencode/longcat-2.5-preview-free", "zhipuai/mimo-x", None):
+        for m in ("opencode/space-bunny-free", "opencode/glm-5.3-flash-free", "zhipuai/mimo-x", None):
             self.assertIsNone(of.privacy_note(m))
 
     def test_free_tier_error_is_its_own_class(self):
@@ -202,7 +202,7 @@ class Login(Fake):
     def test_no_model_set_and_free_models_offered(self):
         st, where = harness.opencode_login("1.18.34")
         self.assertEqual(st, "free")
-        self.assertIn("opencode/longcat-2.5-preview-free", where)       # Space Bunny is no longer suggested
+        self.assertIn("opencode/glm-5.3-flash-free", where)       # Space Bunny is no longer suggested
 
     def test_offline_list_falls_back_to_the_name(self):
         with mock.patch.dict(os.environ, {"AGENTJ_OC_FREE_LIST": "off"}):
@@ -223,7 +223,7 @@ class Login(Fake):
     def test_detect_reports_free_and_decides(self):
         d = harness.detect()
         h = self.oc(d)
-        self.assertEqual((h["logged_in"], h["login"], h["free_model"]), (True, "free", "opencode/longcat-2.5-preview-free"))
+        self.assertEqual((h["logged_in"], h["login"], h["free_model"]), (True, "free", "opencode/glm-5.3-flash-free"))
         self.assertEqual(d["decision"], "use:opencode")
         self.assertNotIn("privacy", h)
         self.assertNotIn(CANARY, json.dumps(d))

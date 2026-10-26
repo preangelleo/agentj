@@ -11,7 +11,7 @@ from unittest.mock import Mock, patch
 from agentj import fallback, local_model, opencode_free
 
 DS = 'opencode/deepseek-v4.1-flash-free'
-LC = 'opencode/longcat-2.5-preview-free'
+LC = 'opencode/glm-5.3-flash-free'
 
 class Chain(unittest.TestCase):
     def setUp(self):
@@ -139,8 +139,8 @@ class Safety(unittest.TestCase):
         previous = fallback._terms_cache
         self.addCleanup(setattr, fallback, '_terms_cache', previous)
         for text, expected in [
-            ('LongCat 2.5 Preview Free is free on OpenCode for a limited time. Its provider follows a zero-retention policy and does not use your data for model training.', {LC}),
-            ('LongCat 2.5 Preview Free may use your data for training.', set()),
+            ('GLM-5.3-Flash Free is free on OpenCode for a limited time. Its provider follows a zero-retention policy and does not use your data for model training.', {LC}),
+            ('GLM-5.3-Flash Free may use your data for training.', set()),
             ('Every provider has no retention.', set())]:
             fallback._terms_cache = None
             with patch.object(fallback,'fetch_terms',return_value=text):
