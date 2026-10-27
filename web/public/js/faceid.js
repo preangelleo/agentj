@@ -158,11 +158,36 @@ export const TRANSPORTS = { local: ['internal'], borrowed: ['hybrid'], unknown: 
 let own = 'unknown';
 /** app.js on pk_state: this remote's own key state (local | borrowed | unknown; anything else = unknown). */
 export function setOwnState(s) { own = Object.hasOwn(TRANSPORTS, s) ? s : 'unknown'; }
-/** The get() fields for one credential id of this remote by its state (pure when st is given). */
-export function wantOf(credId, st = own) {
+/** The get() fields for one credential id of this remote by its state (pure when st / plain are given). P559 (董事长 10-27
+ *  17:05, 华为 Pad 「已设好」 yet the fingerprint / face never passed): `plain` = the request with no transports filter and no
+ *  hints (an empty list = any way the device keeps it), the form a phone / tablet authenticator that keeps keys its own way
+ *  (HarmonyOS, a tablet in desktop mode) answers. */
+export function wantOf(credId, st = own, plain = isPlain(credId)) {
   const k = Object.hasOwn(TRANSPORTS, st) ? st : 'unknown';
+  // a borrowed key lives on the other phone: always the phone route, the plain form is only for this device's own key
+  if (plain && k !== 'borrowed') return { allowCredentials: [{ type: 'public-key', id: unb64u(credId), transports: [] }] };
   return { allowCredentials: [{ type: 'public-key', id: unb64u(credId), transports: TRANSPORTS[k] }],
     hints: k === 'borrowed' ? ['hybrid'] : ['client-device'] };
+}
+// P559: per key, which request form this device last answered. A failed tap switches the form for the next tap (the card's
+// 「再试一次」 — no second system sheet without a tap, iOS); a success keeps the form; failing in both forms in a row marks the key
+// 「没能通过」 so Settings stops saying 「已设好」 (pkassist.paintPkRow) until a tap passes again.
+const PLAIN = 'aj.pk.plain.', FAILED = 'aj.pk.failed';
+const store = () => { try { return globalThis.localStorage || null; } catch { return null; } };
+const getK = (k) => { try { return store()?.getItem(k) ?? null; } catch { return null; } };
+const setK = (k, v) => { try { const s = store(); if (s) { if (v === null) s.removeItem(k); else s.setItem(k, v); } } catch { /* private mode */ } };
+export const isPlain = (credId) => getK(PLAIN + credId) === '1';
+/** This device's own key failed in both request forms since its last pass (Settings: 「上次没能通过」). */
+export const failedHere = () => !!getK(FAILED);
+/** After a get() for this remote's own key: ok = it passed. → whether the next tap uses the plain form. */
+export function noteResult(credId, ok, plain = isPlain(credId)) {
+  const was = failedHere();
+  if (ok) setK(FAILED, null);
+  else if (plain) setK(FAILED, credId);
+  if (!ok) setK(PLAIN + credId, plain ? null : '1');
+  // P560: Settings repaints its row in this session too (app.js), not only after a reload
+  if (was !== failedHere()) try { globalThis.dispatchEvent?.(new Event('agentj-pk-failed-change')); } catch { /* node tests */ }
+  return ok ? plain : !plain;
 }
 
 /** WebAuthn get() exists at all (no platform check: the record already holds a passkey made on this phone). */
@@ -172,15 +197,17 @@ export const canAssert = () => !!(globalThis.PublicKeyCredential && navigator.cr
  *  st = where the key lives (default: this remote's pk_state; the P555 self-check passes 'local' — is it HERE?).
  *  → a promise of the `fa` object {id, cd, ad, sig}; rejects on cancel / failure. */
 export function approve(challenge, credId, where = false, st = own) {
+  const plain = isPlain(credId);
   return navigator.credentials.get({ publicKey: {
-    challenge, rpId: location.hostname, userVerification: 'required', timeout: 60000, ...wantOf(credId, st),
+    challenge, rpId: location.hostname, userVerification: 'required', timeout: 60000, ...wantOf(credId, st, plain),
   } }).then((cred) => {
+    if (st !== 'borrowed') noteResult(credId, true, plain);
     const r = cred.response;
     const out = { id: b64u(buf(cred.rawId)), cd: b64u(buf(r.clientDataJSON)), ad: b64u(buf(r.authenticatorData)), sig: b64u(buf(r.signature)) };
     const a = where ? attachmentOf(cred) : null;    // P555 self-check: + where the key lives (`aa`, advisory)
     if (a) out.aa = a;
     return out;
-  });
+  }, (e) => { if (st !== 'borrowed') noteResult(credId, false, plain); throw e; });
 }
 
 // ---------------------------------------------------------------- F32 (P73, ADR-A180, PROTOCOL §18): the secret pickup card

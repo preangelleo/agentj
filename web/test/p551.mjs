@@ -216,12 +216,13 @@ try {
       writeFileSync(OUT + `b2-harness-confirm-${name}.png`, await shoot(p, ''));
       check(await ev(p, `document.getElementById('confirm-title').textContent`) === L('改成「全放行」档？', 'Switch to Full access?'), 'confirm title ' + name);
       const txt = await ev(p, `document.getElementById('confirm-text').textContent`);
-      check(txt.includes(L('密钥外发', 'sending a key out')) && txt.includes(L('仍要 Face ID', 'still need Face ID')) && txt.includes(L('设置了 Face ID 的设备上切换', 'Face ID set up can switch')), 'confirm text = note + Face ID sign note ' + name);
+      // P559 naming: headless Chromium is Linux (touch → Android family) → Touch ID; Face ID only on iPhone / iPad
+      check(txt.includes(L('密钥外发', 'sending a key out')) && txt.includes(L('仍要 Touch ID', 'still need Touch ID')) && txt.includes(L('设置了 Touch ID 的设备上切换', 'Touch ID set up can switch')), 'confirm text = note + Touch ID sign note ' + name);
       check(await ev(p, `document.getElementById('confirm-yes').textContent`) === L('改成全放行', 'Switch to Full access'), 'yes label ' + name);
       check(await ev(p, `document.getElementById('confirm-yes').classList.contains('aj-btn--danger')`), 'the switch reads as dangerous ' + name);
       check(await ev(p, TOP('#confirm .box', '#confirm-yes')) && await ev(p, `document.activeElement.id==='confirm-yes'`), 'confirm over Settings, focused ' + name);
       await press(p, '#confirm-yes', touch);
-      await waitFor(p, `document.getElementById('toast').classList.contains('on') && document.getElementById('toast').textContent.includes(${J(L('还没有设置 Face ID', 'no Face ID'))})`);
+      await waitFor(p, `document.getElementById('toast').classList.contains('on') && document.getElementById('toast').textContent.includes(${J(L('还没有设置 Touch ID', 'no Touch ID'))})`);
       await sleep(250);
       writeFileSync(OUT + `b3-no-passkey-${name}.png`, await shoot(p, ''));
       check(await pressed(p) === 'standard', 'no_passkey → the level stays ' + name);
@@ -240,7 +241,7 @@ try {
     await press(p, '[data-set-level="harness"]', touch);
     await waitFor(p, `!document.getElementById('confirm').hidden`);
     await press(p, '#confirm-yes', touch);
-    await waitFor(p, `!document.getElementById('confirm').hidden && document.getElementById('confirm-title').textContent===${J(L('用 Face ID 确认', 'Confirm with Face ID'))}`);
+    await waitFor(p, `!document.getElementById('confirm').hidden && document.getElementById('confirm-title').textContent===${J(L('用 Touch ID 确认', 'Confirm with Touch ID'))}`);
     await sleep(200);
     writeFileSync(OUT + `b4-faceid-${name}.png`, await shoot(p, ''));
     check(await ev(p, `document.activeElement.id==='confirm-yes'`), 'Face ID sheet focused ' + name);
@@ -293,10 +294,10 @@ try {
       await openRemotes(p);
       await press(p, OTHER, touch);
       await waitFor(p, `!document.getElementById('confirm').hidden`); await sleep(150);
-      check(await ev(p, `document.getElementById('confirm-yes').textContent`) === L('用 Face ID 解绑', 'Unbind with Face ID'), 'the unbind button says Face ID ' + name);
+      check(await ev(p, `document.getElementById('confirm-yes').textContent`) === L('用 Touch ID 解绑', 'Unbind with Touch ID'), 'the unbind button says Face ID ' + name);
       writeFileSync(OUT + `c1-unbind-confirm-${name}.png`, await shoot(p, ''));
       await press(p, '#confirm-yes', touch);
-      await waitFor(p, `!document.getElementById('confirm').hidden && document.getElementById('confirm-title').textContent===${J(L('用 Face ID 确认解绑', 'Confirm unbinding with Face ID'))}`);
+      await waitFor(p, `!document.getElementById('confirm').hidden && document.getElementById('confirm-title').textContent===${J(L('用 Touch ID 确认解绑', 'Confirm unbinding with Touch ID'))}`);
       await sleep(150);
       writeFileSync(OUT + `c2-unbind-faceid-${name}.png`, await shoot(p, ''));
       check(await ev(p, `document.activeElement.id==='confirm-yes'`) && await ev(p, TOP('#confirm .box', '#confirm-yes')), 'Face ID sheet on top, focused ' + name);
@@ -338,10 +339,10 @@ try {
       await fake.send({ t: 'wechat_state', bound: true, pending: 0 });
       await openWechat(p);
       await press(p, '#wc-unbind', touch);
-      await waitFor(p, `!document.getElementById('confirm').hidden && document.getElementById('confirm-title').textContent===${J(L('用 Face ID 确认解绑', 'Confirm unbinding with Face ID'))}`);
+      await waitFor(p, `!document.getElementById('confirm').hidden && document.getElementById('confirm-title').textContent===${J(L('用 Touch ID 确认解绑', 'Confirm unbinding with Touch ID'))}`);
       await sleep(150);
       writeFileSync(OUT + `c4-wechat-faceid-${name}.png`, await shoot(p, ''));
-      check(await ev(p, `document.getElementById('confirm-yes').textContent`) === L('用 Face ID 解绑', 'Unbind with Face ID'), 'WeChat Face ID button ' + name);
+      check(await ev(p, `document.getElementById('confirm-yes').textContent`) === L('用 Touch ID 解绑', 'Unbind with Touch ID'), 'WeChat Face ID button ' + name);
       check(await ev(p, TOP('#confirm .box', '#confirm-yes')), 'Face ID sheet above the WeChat panel ' + name);
       check(fake.st.wechat.bound === true, 'WeChat still bound before Face ID ' + name);
       await press(p, '#confirm-yes', touch);

@@ -1,7 +1,7 @@
 // P550 (FEEDBACK #323 + 「#323 补」, OPPO / Huawei tablet): every 「设置 Face ID / 用 Face ID 记住这台手机」 entry goes
 // through P547's 「另一台批准 → 本机新建」 (never get() on the old key first); a key the host refuses says why + the one way
 // on (never 「没记住，不影响现在的配对」); the same device makes a key for the same user handle, so a key left behind in the
-// password manager is replaced, not stacked; Android / HarmonyOS words name 指纹或人脸, never Face ID.
+// password manager is replaced, not stacked; Android / HarmonyOS words name Touch ID (P559), never Face ID.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -54,15 +54,15 @@ test('#323 补 ③: the same device replaces its own left-behind key (same user 
   assert.doesNotMatch(f.slice(f.indexOf('export async function register'), f.indexOf('export async function register') + 1500), /getRandomValues|Date\.now/);
 });
 
-test('#323 ④: on Android / HarmonyOS the words are 指纹或人脸 — never Face ID', () => {
+test('#323 ④: on Android / HarmonyOS the words are Touch ID (P559) — never Face ID', () => {
   LANG('zh');
   T.setTextOs('android');
   for (const k of ['pk.askTitle', 'pk.saved', 'pkp.setupHere', 'p550.pkReg.proof', 'p551.noPasskey', 'phoneEnv.setup', 'pk.restore']) {
     const s = T.t(k);
     assert.doesNotMatch(s, /Face ID/, k + ': ' + s);
   }
-  assert.equal(T.t('pk.askTitle'), '用指纹或人脸记住这台手机？');
-  assert.match(T.t('pkp.setupHere'), /^在本机设置指纹或人脸（需另一台批准）$/);
+  assert.equal(T.t('pk.askTitle'), '用 Touch ID 记住这台手机？');
+  assert.match(T.t('pkp.setupHere'), /^在本机设置 Touch ID（需另一台批准）$/);
   LANG('en');
   assert.doesNotMatch(T.t('p550.pkReg.proof'), /Face ID/);
   T.setTextOs(undefined); LANG('zh');

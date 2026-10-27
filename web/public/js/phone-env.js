@@ -1,8 +1,8 @@
 // Capability hints only: never infer private browsing from a denied persist grant.
 import DICT from '../i18n.js';
 export const OSES = ['ios', 'android', 'mac', 'windows', 'linux', 'other'];
-/** P539 (#300): which system this browser runs on, for the passkey words (Face ID / Touch ID / fingerprint or face /
- *  Windows Hello / screen lock). An iPad that says "Macintosh" but has a touch screen stays ios. browserEnvironment keeps
+/** P539 (#300): which system this browser runs on, for the passkey words (P559: Face ID on iPhone / iPad, Windows Hello,
+ *  Touch ID everywhere else). An iPad that says "Macintosh" but has a touch screen stays ios. browserEnvironment keeps
  *  its exact {platform, inApp} shape (existing callers and tests); probeEnvironment adds `os`. */
 export function osOf(ua = '', touch = 0) {
  if (/iPhone|iPad|iPod/i.test(ua) || (/Macintosh/i.test(ua) && touch > 1)) return 'ios';
@@ -10,7 +10,9 @@ export function osOf(ua = '', touch = 0) {
  if (/Macintosh|Mac OS X/i.test(ua)) return 'mac';
  if (/Windows/i.test(ua)) return 'windows';
  if (/CrOS/i.test(ua)) return 'other';
- if (/Linux|X11/i.test(ua)) return 'linux';
+ // P559: a touch tablet in desktop mode (Huawei MatePad / HarmonyOS, Android 「桌面版网站」) says plain Linux — Android
+ // family (Touch ID, never Face ID)
+ if (/Linux|X11/i.test(ua)) return touch > 1 ? 'android' : 'linux';
  return 'other';
 }
 /** The name of this system's own unlock, from the dictionary (zh / en). */

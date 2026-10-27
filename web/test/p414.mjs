@@ -49,16 +49,17 @@ const PROMPT = 'owner@box:~/work$ ';
 const LONG = Array.from({ length: 30 }, (_, i) => `line ${String(i + 1).padStart(2, '0')}  ${MARK}`).join('\n') + '\n';
 const BLOCK = (x = {}) => ({ on: true, os: true, me: true, web_ok: true, sudo: 'prf', minutes: 15, idle_s: 300, open: false, ...x });
 const PASSWORD = 'tr0ub4dor & 3';
+// P559 naming: headless Chromium is Linux → Touch ID; Face ID only on iPhone / iPad
 const L = {
   zh: { exTitle: '「!」开头 = 在电脑上运行命令', off: 'agentj terminal enable', old: '版本较旧', bangIntro: '要运行「!ls -la」', hidden: '已隐藏 2 处',
     more: '展开全部（30 行）', chipLeft: /^终端 · 剩 1[45] 分钟$/, chipRun: '终端 · 正在运行 !sleep 5', copied: '已复制', shot: '截图已放进附件',
-    agentTitle: '这条命令由 Agent 填写', goNote: 'Agent J 填好了一条命令', use: '用 Face ID 填入电脑密码', stale: '记住的电脑密码不对了', saved: '已记住',
+    agentTitle: '这条命令由 Agent 填写', goNote: 'Agent J 填好了一条命令', use: '用 Touch ID 填入电脑密码', stale: '记住的电脑密码不对了', saved: '已记住',
     vsTitle: '「iPad」想用记住的电脑密码', vHas: '已记住 · 这台扫脸即可用', vShare: '已记住 · 这台还不能用', vOff: '没有记住（第一次用 sudo 时输一次）',
     vShared: '这台现在也能用记住的电脑密码了。', vDenied: '另一台设备拒绝了', noPrf: '没能解开记住的密码', vNoPrf: '不支持记住电脑密码', busy: '还没结束', useNote: '只执行这一条命令', saveNote: '电脑把它加密保存', bangFailed: '没能把结果放进聊天', bangProgram: '终端里有程序在等输入', vsDone: '已允许那台设备使用记住的电脑密码' },
   en: { exTitle: '“!” at the start = run a command on the computer', off: 'agentj terminal enable', old: 'too old', bangIntro: 'To run “!ls -la”', hidden: '2 items that look like passwords',
     more: 'Show all (30 lines)', chipLeft: /^Terminal · 1[45] min left$/, chipRun: 'Terminal · running !sleep 5', copied: 'Copied', shot: 'The screenshot is in your attachments',
-    agentTitle: 'This command was filled in by the Agent', goNote: 'Agent J filled in a command', use: 'Fill in the computer password with Face ID', stale: 'no longer works', saved: 'Remembered.',
-    vsTitle: '“iPad” wants to use the remembered computer password', vHas: 'Remembered · Face ID on this device fills it in', vShare: 'Remembered · not usable on this device yet',
+    agentTitle: 'This command was filled in by the Agent', goNote: 'Agent J filled in a command', use: 'Fill in the computer password with Touch ID', stale: 'no longer works', saved: 'Remembered.',
+    vsTitle: '“iPad” wants to use the remembered computer password', vHas: 'Remembered · Touch ID on this device fills it in', vShare: 'Remembered · not usable on this device yet',
     vOff: 'Not remembered (type it once the first time sudo asks)', vShared: 'This device can now use the remembered computer password.', vDenied: 'the other device said no',
     noPrf: 'could not unlock the remembered password', vNoPrf: 'cannot remember the computer password', busy: 'has not finished', useNote: 'for this one command only', saveNote: 'the computer keeps it encrypted', bangFailed: 'could not be added to the chat', bangProgram: 'A program in the terminal is waiting for input', vsDone: 'That device may now use the remembered computer password.' },
 };

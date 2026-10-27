@@ -204,8 +204,9 @@ try {
     await waitFor(p, `document.querySelectorAll('#keys-box .krow').length>0`); await sleep(200);
     const before = calls.length;
     await click(p, '.krow[data-name="OPENAI_API_KEY"] .kbtn--copy');
-    await waitFor(p, `document.getElementById('toast').textContent.includes('Face ID')`);
-    ok(await evaluate(p, `[...document.querySelectorAll('#toast button')].some(b=>b.textContent==='在本机设置 Face ID（需另一台批准）')`) && calls.length === before, 'no passkey: approval-passkey setup offered, nothing sent');
+    // P559 naming: headless Chromium is Linux → Touch ID; Face ID only on iPhone / iPad
+    await waitFor(p, `document.getElementById('toast').textContent.includes('Touch ID')`);
+    ok(await evaluate(p, `[...document.querySelectorAll('#toast button')].some(b=>b.textContent==='在本机设置 Touch ID（需另一台批准）')`) && calls.length === before, 'no passkey: approval-passkey setup offered, nothing sent');
     await save(p, 'light-390x844-nopasskey');
 
     // ---- en

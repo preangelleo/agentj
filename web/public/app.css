@@ -3449,9 +3449,14 @@ body:is([data-status=working],[data-status=waiting],[data-status=unknown],[data-
 .keys-pk,.setterm-pk{margin-top:var(--sp-1)}
 #settings .rscmdstatus>.pkassist{flex:1;min-width:0;margin:0}
 /* P539: Settings → 本机通行密钥 row · 安全 → 免问的动作 */
-#settings .pkrow{display:flex;flex-wrap:wrap;align-items:center;gap:var(--ui-space-control) var(--ui-space-btn)}
-#settings .pkrow .setlab{flex:1 1 12em;min-width:0}
-#settings .pkrow .setnote{flex:1 0 100%;margin:0}
+#settings .pkrow{display:flex;align-items:center;gap:var(--ui-space-control)}
+#settings .pkrow>.mi{color:var(--menu-text);opacity:.9}
+#settings .pkrow>.mi[hidden]{display:none}
+#settings .pkrow__txt{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+#settings .pkrow .setlab{font:600 var(--ui-fs-body)/1.3 var(--font-body)}
+#settings .pkrow__txt small{color:var(--menu-muted);font-size:var(--ui-fs-small);white-space:normal}
+#settings .pkrow__txt small[hidden]{display:none}
+#settings .pkrow>.aj-btn{flex:none}
 #settings .preauth__list{list-style:none;margin:var(--ui-space-control) 0 0;padding:0;display:flex;flex-direction:column;gap:var(--ui-space-control)}
 #settings .preauth__item{display:flex;align-items:center;gap:var(--ui-space-btn);padding-block:var(--ui-space-line);border-top:1px solid var(--menu-line)}
 #settings .preauth__txt{flex:1;min-width:0;display:flex;flex-direction:column;overflow-wrap:anywhere}

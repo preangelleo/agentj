@@ -161,7 +161,8 @@ try {
     await sleep(2500);
     // widening to the merged switch (P552): red confirm → host says passkey_required → the Face ID sheet
     await click(p, '[data-set-level="harness"]'); await waitFor(p, `!document.getElementById('confirm').hidden`); await yes();
-    await waitFor(p, `!document.getElementById('confirm').hidden && document.getElementById('confirm-title').textContent===${JSON.stringify(L('用 Face ID 确认', 'Confirm with Face ID'))}`);
+    // P559 naming: headless Chromium is Linux → Touch ID; Face ID only on iPhone / iPad
+    await waitFor(p, `!document.getElementById('confirm').hidden && document.getElementById('confirm-title').textContent===${JSON.stringify(L('用 Touch ID 确认', 'Confirm with Touch ID'))}`);
     await sleep(250);
     writeFileSync(OUT + `7-faceid-sheet-${name}.png`, await shoot(p, ''));
     check(fake.st.approvalSets.length === 2 && !fake.st.approvalSets[1].fa, 'first widening send has no fa ' + name);
@@ -173,24 +174,24 @@ try {
     await sleep(2500);
     // goal on → Face ID sheet → 取消: nothing changes, no resend
     await click(p, '#set-gnc'); await waitFor(p, `!document.getElementById('confirm').hidden`); await yes();
-    await waitFor(p, `document.getElementById('confirm-title').textContent===${JSON.stringify(L('用 Face ID 确认', 'Confirm with Face ID'))}`);
+    await waitFor(p, `document.getElementById('confirm-title').textContent===${JSON.stringify(L('用 Touch ID 确认', 'Confirm with Touch ID'))}`);
     await click(p, '#confirm-no'); await sleep(400);
     check(fake.st.approvalSets.length === 4 && (await ev(p, `window.__fa.length`)) === 1 && await ev(p, `document.getElementById('set-gnc').getAttribute('aria-checked')==='false'`), 'cancel on the Face ID sheet: nothing changes ' + name);
     // goal on → Face ID → the host says passkey_failed → the toast, switch stays off
     fake.st.approvalFaFail = true;
     await click(p, '#set-gnc'); await waitFor(p, `!document.getElementById('confirm').hidden`); await yes();
-    await waitFor(p, `document.getElementById('confirm-title').textContent===${JSON.stringify(L('用 Face ID 确认', 'Confirm with Face ID'))}`);
+    await waitFor(p, `document.getElementById('confirm-title').textContent===${JSON.stringify(L('用 Touch ID 确认', 'Confirm with Touch ID'))}`);
     await yes();
-    await waitFor(p, `document.getElementById('toast').textContent.includes(${JSON.stringify(L('Face ID 没通过，请再试一次', "Face ID didn't go through — try again"))})`);
+    await waitFor(p, `document.getElementById('toast').textContent.includes(${JSON.stringify(L('Touch ID 没通过，请再试一次', "Touch ID didn't go through — try again"))})`);
     check(await ev(p, `document.getElementById('set-gnc').getAttribute('aria-checked')==='false'`), 'passkey_failed → toast, switch stays off ' + name);
     // Face ID itself refused on the phone → the same toast, no resend
     await sleep(4300);
     await ev(p, `window.__faReject = true`);
     const before = fake.st.approvalSets.length;
     await click(p, '#set-gnc'); await waitFor(p, `!document.getElementById('confirm').hidden`); await yes();
-    await waitFor(p, `document.getElementById('confirm-title').textContent===${JSON.stringify(L('用 Face ID 确认', 'Confirm with Face ID'))}`);
+    await waitFor(p, `document.getElementById('confirm-title').textContent===${JSON.stringify(L('用 Touch ID 确认', 'Confirm with Touch ID'))}`);
     await yes();
-    await waitFor(p, `document.getElementById('toast').classList.contains('on') && document.getElementById('toast').textContent.includes(${JSON.stringify(L('Face ID 没通过', "Face ID didn't"))})`);
+    await waitFor(p, `document.getElementById('toast').classList.contains('on') && document.getElementById('toast').textContent.includes(${JSON.stringify(L('Touch ID 没通过', "Touch ID didn't"))})`);
     check(fake.st.approvalSets.length === before + 1, 'Face ID refused on the phone: no resend ' + name);
     check(!p.problems.length, 'no console errors (Face ID) ' + name + ' ' + p.problems.join(' | '));
     await p.dispose();

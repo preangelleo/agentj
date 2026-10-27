@@ -18,12 +18,13 @@ import { launch, newPage, navigate, waitFor, waitState, evaluate, shoot, sleep, 
 
 const OUT = process.env.P361_OUT || 'reports/qa/p361/web';
 const NAMES = ['doctor', 'reconnect', 'status', 'service_status', 'rescue_status', 'update_check'];
+// P559 naming: headless Chromium is Linux → Touch ID; Face ID only on iPhone / iPad
 const L = {
-  zh: { title: 'Agent J 主机上的命令', run: '执行', fa: '用 Face ID 确认', ok: '执行完成（退出码 0）', fail: '执行完成，有需要处理的项（退出码 1）', masked: '结果里像密码、密钥的内容已经在 Agent J 主机上遮住了。',
-    busy: '上一条命令还在执行，请等它结束。', nopk: '执行命令前要先用 Face ID 确认，这台手机还没设置 Face ID。', cut: '结果太长，只显示前面一部分。' },
-  en: { title: 'Commands on the Agent J host', run: 'Run', fa: 'Confirm with Face ID', ok: 'Done (exit code 0)', fail: 'Done, with items that need attention (exit code 1)',
+  zh: { title: 'Agent J 主机上的命令', run: '执行', fa: '用 Touch ID 确认', ok: '执行完成（退出码 0）', fail: '执行完成，有需要处理的项（退出码 1）', masked: '结果里像密码、密钥的内容已经在 Agent J 主机上遮住了。',
+    busy: '上一条命令还在执行，请等它结束。', nopk: '执行命令前要先用 Touch ID 确认，这台手机还没设置 Touch ID。', cut: '结果太长，只显示前面一部分。' },
+  en: { title: 'Commands on the Agent J host', run: 'Run', fa: 'Confirm with Touch ID', ok: 'Done (exit code 0)', fail: 'Done, with items that need attention (exit code 1)',
     masked: 'Anything that looks like a password or key was hidden on the Agent J host.', busy: 'The previous command is still running; wait for it to finish.',
-    nopk: 'Running a command needs Face ID first, and this phone has not set it up yet.', cut: 'The result is long; only the first part is shown.' },
+    nopk: 'Running a command needs Touch ID first, and this phone has not set it up yet.', cut: 'The result is long; only the first part is shown.' },
 };
 const DOCTOR = '✓ version    agentj 0.23.0a1\n✓ relay      wss://relay.agentj.app (TLS + WebSocket)\n! asr        speech-to-text not installed\n✓ serve      running · relay connected\nOPENROUTER_API_KEY=[REDACTED]\n<b id="inj">x</b>\n';
 const $ = (id) => `document.getElementById('${id}')`;

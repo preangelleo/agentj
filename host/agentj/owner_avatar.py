@@ -13,7 +13,8 @@ skills:
 
 Approvals: every request is `serve.ask(..., avatar=label)` — the main floor (policy_registry.main_requirement), the danger
 list, passkey for red lines, cards only on paired devices. Unlike a main-conversation turn it never takes a batch grant, a
-goal pass, the full level's no-card pass or a parked approval: those were given for the main conversation. A card that
+goal pass or a parked approval: those were given for the main conversation. P559: under 「全放行」 its steps are decided like the
+main conversation's (chairman 10-27): ① ② / hold pass without a card; the four ③ kinds and attacks on Agent J keep Face ID. A card that
 stays open more than CARD_NOTICE_AFTER seconds calls `on_card` once per turn, so the channel can say "confirm in Agent J
 Web App"; nothing typed in the channel ever answers a card (the card's only answer is a signed device decision).
 
@@ -52,7 +53,8 @@ the channel account was taken over belong in the Web App: return ask_owner. When
 conversation's context, return ask_owner with topic="context".
 Images your own image tool creates are attached by Agent J: never write where they are saved. To send the owner a file,
 put its path in the reply: Agent J attaches it and removes the path. Asked to create an image without an image tool:
-return ask_owner with topic="image" (Agent J draws it with the owner's Codex, no paid service).
+return ask_owner with topic="image" at once, before any other tool (Agent J draws it with the owner's Codex and sends the
+picture in this channel, no paid service).
 Reply once, without progress chatter. End with exactly one JSON object
 {"decision":"reply"|"ask_owner"|"silent","text":"...","topic":"..."}.
 '''

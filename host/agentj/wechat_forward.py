@@ -112,7 +112,11 @@ async def forward(wc, turn_id, device, *, valid=lambda: True):
         return {'ok': True}
     except Exception as e:
         if getattr(e, 'code', None) in ('context_rejected', 'no_context'):   # WeChat refused: message ClawBot first
-            wc.h.st.log('wechat_forward', device=device, id=turn_id, result='needs_message')
+            # P559: which one, the platform's ret (an integer; 10-27 TB: -2 at 29 h after a 23 h send passed) and the age of the
+            # owner's last message, so host.log tells a platform refusal from a missing context
+            at = wc.store.data.get('context_at') or 0
+            wc.h.st.log('wechat_forward', device=device, id=turn_id, result='needs_message', why=e.code, ret=int(getattr(e, 'ret', 0) or 0),
+                        age_h=int((getattr(wc, 'clock', time.time)() - at) // 3600) if at else -1)
             return {'ok': False, 'why': 'needs_message'}
         wc.h.st.log('wechat_forward', device=device, id=turn_id, result='send_failed')
         return {'ok': False, 'why': 'send_failed'}

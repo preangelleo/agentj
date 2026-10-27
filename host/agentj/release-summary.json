@@ -1,5 +1,5 @@
 {
-  "version": "0.25.14a1",
-  "zh": "审批第三档改名「全放行」，老设置自动沿用、失效可见；后台活不弹卡；ToolSearch 等不再被拒；已有 Face ID 自动认出；微信转发不限时；分身与主对话同权。",
-  "en": "Third approval level is Full access; old settings carry over, lapses shown; no cards for background work; loaders allowed; WeChat forwarding unlimited."
+  "version": "0.25.15a1",
+  "zh": "Telegram / 微信里让分身画图，图直接回通道，满载自动换模型；全放行下本人通道分身免卡；转交卡不要 Face ID；华为平板可用本机钥匙，统一叫 Touch ID；Codex 搜索、生图等不再被拒。",
+  "en": "Stand-in images return in the chat; no cards for your own chats' stand-in under Full access; handoff skips Face ID; Huawei tablets: Touch ID; Codex tools OK."
 }

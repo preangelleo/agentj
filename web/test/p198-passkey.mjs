@@ -113,7 +113,8 @@ try {
   let s = await takenOver(a2);
   check(s.ok && s.title === '另一边接管了' && s.btn && !s.repair && s.lead === 'revoked.takeoverLead',
     `A reopened → 「${s.title}」, button ${s.btn}, 重新配对 ${s.repair}, lead ${s.lead}`);
-  check(await a2.eval(text('takeover-pk')) === '用 Face ID 在这里继续', 'A: the button says 「用 Face ID 在这里继续」');
+  // P559 naming (chairman 10-27): Face ID only on iPhone / iPad — this headless Chromium says Linux → Touch ID
+  check(await a2.eval(text('takeover-pk')) === '用 Touch ID 在这里继续', 'A: the button says 「用 Touch ID 在这里继续」');
   check(await a2.eval(`document.getElementById('confirm').hidden`), 'A: no prompt or sheet, only the button');
   await a2.shot(join(SHOTS, 'A-taken-over-zh.png'));
   await a2.tap('#takeover-pk');
@@ -140,7 +141,7 @@ try {
   await b2.goto(FRESH + '&lang=en');
   s = await takenOver(b2);
   const enBtn = await b2.eval(text('takeover-pk')), enLead = await b2.eval(text('revoked-lead'));
-  check(s.ok && s.btn && enBtn === 'Continue here with Face ID' && /Face ID/.test(enLead) && s.title === 'The other app took over',
+  check(s.ok && s.btn && enBtn === 'Continue here with Touch ID' && /Touch ID/.test(enLead) && s.title === 'The other app took over',
     `B (en) → 「${s.title}」 / 「${enBtn}」`);
   await b2.shot(join(SHOTS, 'B-taken-over-en.png'));
   await b2.eval(`localStorage.setItem('aj.lang', 'zh')`);
@@ -166,7 +167,7 @@ try {
   check(s.ok && s.btn, 'E: an older record (unknown) → the button shows');
   await e1.tap('#takeover-pk');                       // this authenticator holds no passkey → the system refuses
   const note = await e1.waitFor(`(() => { const e = document.getElementById('takeover-note'); return !e.hidden && e.textContent; })()`, 70000).catch(() => '');
-  check(note.startsWith('没能用 Face ID 验证') && await e1.state() === 'revoked' && await e1.eval(visible('#takeover-pk')),
+  check(note.startsWith('没能用 Touch ID 验证') && await e1.state() === 'revoked' && await e1.eval(visible('#takeover-pk')),
     `E: no passkey on this phone → 「${note}」, still here, the button stays (pkErr ${await e1.eval('document.body.dataset.pkErr')})`);
   await e1.shot(join(SHOTS, 'E-none-zh.png'));
   check(Object.keys(readDevs()).length === 2, 'E: nothing changed on the Agent J host (A + E)');

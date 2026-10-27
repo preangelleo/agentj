@@ -71,7 +71,8 @@ try {
       check(await pressed(p) === 'harness', 'in force → 全放行 pressed ' + name);
       check((await text(p, 'set-level-note')).startsWith(L('全放行：Agent J 不再弹审批卡', 'Full access: Agent J shows no approval cards')), 'merged note ' + name);
       check((await text(p, 'set-level-note')).includes(L('AI 编程工具可以直接改文件、跑命令、联网', 'the AI coding tool can change files, run commands and go online')), 'note says the AI coding tool acts on its own (P556) ' + name);
-      check((await text(p, 'set-level-note')).includes(L('仍要 Face ID', 'still need Face ID')), 'note keeps the Face ID kinds (P556) ' + name);
+      // P559 naming: headless Chromium is Linux (touch → Android family) → Touch ID; Face ID only on iPhone / iPad
+      check((await text(p, 'set-level-note')).includes(L('仍要 Touch ID', 'still need Touch ID')), 'note keeps the Face ID kinds (P556) ' + name);
       check(!(await shown(p, 'set-level-unsigned')) && !(await shown(p, 'set-gnc-unsigned')), 'nothing lapsed → no line ' + name);
       writeFileSync(OUT + `1-menu-${name}.png`, await shoot(p, ''));
       await p.dispose();
@@ -94,7 +95,7 @@ try {
       check((await text(p, 'confirm-title')).includes(L('全放行', 'Full access')), 'confirm names the merged switch ' + name);
       if (w === 390 && scheme === 'light') writeFileSync(OUT + `3-resign-confirm-${name}.png`, await shoot(p, ''));
       await click(p, '#confirm-yes');
-      await waitFor(p, `document.getElementById('toast').classList.contains('on') && document.getElementById('toast').textContent.includes(${JSON.stringify(L('还没有设置 Face ID', 'no Face ID'))})`);
+      await waitFor(p, `document.getElementById('toast').classList.contains('on') && document.getElementById('toast').textContent.includes(${JSON.stringify(L('还没有设置 Touch ID', 'no Touch ID'))})`);
       check(fake.st.approvalSets.length === 1 && fake.st.approvalSets[0].value === 'harness' && fake.st.approvalSets[0].sigOk, 'resign signs the merged value ' + name);
       check(await ev(p, `[...document.querySelectorAll('#toast button')].some(b=>b.textContent.length>0)`), 'no key → one button to set it up here (P547) ' + name);
       if (w === 390 && scheme === 'light') writeFileSync(OUT + `4-no-passkey-${name}.png`, await shoot(p, ''));
@@ -115,7 +116,7 @@ try {
     await waitFor(p, `!document.getElementById('confirm').hidden`);
     const yes = async () => { const r = await rect(p, '#confirm-yes'); await tap(p, r.x, r.y); };
     await yes();
-    await waitFor(p, `!document.getElementById('confirm').hidden && document.getElementById('confirm-title').textContent===${JSON.stringify(L('用 Face ID 确认', 'Confirm with Face ID'))}`);
+    await waitFor(p, `!document.getElementById('confirm').hidden && document.getElementById('confirm-title').textContent===${JSON.stringify(L('用 Touch ID 确认', 'Confirm with Touch ID'))}`);
     await yes();
     await waitFor(p, `document.querySelector('[data-set-level="harness"]').getAttribute('aria-pressed')==='true'`);
     const [s1, s2] = fake.st.approvalSets;

@@ -7,10 +7,10 @@ import { copyable } from './copycode.js';   // P292: every `command` in our text
 import { osOf, bioLabel } from './phone-env.js';
 
 const fmtVars = (str, vars) => (vars ? String(str).replace(/\{(\w+)\}/g, (m, k) => (Object.prototype.hasOwnProperty.call(vars, k) ? String(vars[k]) : m)) : str);
-// P539 (#300): the dictionary says 「Face ID」 (written for iPhone). On Android / a Mac / Windows the same words name that
-// system's own unlock (指纹或人脸 · Touch ID · Windows Hello). Linux and unknown browsers keep the dictionary text (their
-// passkey sheet differs per browser; the per-platform keys such as pk.notSaved.<os> carry their own words).
-const SUB_OS = ['android', 'mac', 'windows'];
+// P539 (#300): the dictionary says 「Face ID」 (written for iPhone). Elsewhere the same words name that system's unlock.
+// P559 (chairman 10-27): only two names — iPhone / iPad = Face ID; Mac, Android / HarmonyOS (a Huawei Pad included), Linux
+// and unknown = Touch ID (Windows keeps Windows Hello). 「屏幕锁」 is never a title; it lives only in the explanation line.
+const SUB_OS = ['android', 'mac', 'windows', 'linux', 'other'];
 let osOverride;                     // tests: setTextOs('android') · setTextOs(undefined) = detect again
 let osSeen;
 export function setTextOs(os) { osOverride = os; osSeen = undefined; }
@@ -38,6 +38,8 @@ export function bioWords(str, os, lng) {
   return s;
 }
 const raw = (key, vars) => (window.AJLang ? window.AJLang.t(DICT, key, vars) : fmtVars(DICT.zh[key] ?? key, vars));
+/** P559: a text that names every system's unlock side by side (「Face ID、Touch ID 或屏幕锁」) — never swapped. */
+export const tRaw = (key, vars) => raw(key, vars);
 export function t(key, vars) {
   const os = textOs();
   if (!SUB_OS.includes(os)) return raw(key, vars);

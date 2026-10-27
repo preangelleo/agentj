@@ -832,7 +832,8 @@ class State:
                   "handoff", "sha", "full", "by",   # P198: P151 handoff present (bool), P156 heartbeat prompt sha8 / full / trigger
                   "to", "files", "skipped", "refused", "domains", "msgid", "smtp",   # P295 mail_fwd: counts, recipient
                   # domains (never a whole address), our Message-ID and the SMTP server's queue id from its 250 after DATA
-                  "via", "plugin"}   # P539: a 免问 grant's binding kind and the harness plugin id ("<name>@<marketplace>")
+                  "via", "plugin",   # P539: a 免问 grant's binding kind and the harness plugin id ("<name>@<marketplace>")
+                  "tier", "ret", "age_h"}   # P559: P551's ask `tier` (uv | hold | card) was dropped before this; wechat_forward ret / age_h
 
     def log(self, ev: str, **kw) -> None:
         rec = {"ts": int(time.time()), "ev": ev, **{k: v for k, v in kw.items() if k in self.LOG_FIELDS}}

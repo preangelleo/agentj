@@ -3,7 +3,7 @@
 // message comes back as. Pure helpers first (node tests drive them), then the small painters every card shares:
 // elevate.js (sudo / secret), relay.js (approval sheet) and secretout.js (pickup card) call paintPk() under their confirm
 // button, so the words and the two buttons are the same everywhere. Host text is textContent only.
-import { t, lang, textOs } from './t.js';
+import { t, tRaw, lang, textOs } from './t.js';
 import { bioLabel } from './phone-env.js';
 import { mk, confirmSheet, closeConfirm, toastAction } from './ui.js';
 import { faState, pkState, hintKey, failKey, NAME, actionOf } from './pkrules.js';
@@ -83,18 +83,25 @@ export function failNotice(err, fa, retry) {
 
 /** Settings → 「本机通行密钥」 row. state null (an older host never said) → the row hides and the old 「设置 Face ID」
  *  entry stays as it was. */
-export function paintPkRow(state, { row, label, note, setupBtn, oldBtn } = {}) {
+export function paintPkRow(state, { row, label, note, setupBtn, oldBtn, failed = false } = {}) {
   const s = pkState(state);
   if (!row) return;
   row.hidden = !s;
   if (!s) { if (oldBtn) oldBtn.dataset.pkRow = '0'; return; }
-  label.textContent = withBio('p539.pk.st.' + s);   // P550: 「本机 Face ID / 指纹」 as this system calls it (PASSKEY-SEAT-MODEL §1, §2)
-  row.dataset.pk = s;
-  setupBtn.hidden = s === 'local';
+  // P559: 「已设好」 only while this device's own key passes here — failed in both request forms since its last pass → say so
+  const bad = s === 'local' && failed;
+  label.textContent = withBio(bad ? 'p559.pk.st.failed' : 'p539.pk.st.' + s);   // P550: 「本机 Face ID / 指纹」 as this system calls it (PASSKEY-SEAT-MODEL §1, §2)
+  row.dataset.pk = bad ? 'failed' : s;
+  setupBtn.hidden = s === 'local' && !bad;
   // P555: a key the Agent J host has on record but cannot place → 「用 Face ID 确认」 (one tap, no other remote)
-  setupBtn.textContent = s === 'unknown' ? withBio('p555.pk.check') : t('p539.pk.setup');
-  const n = s === 'borrowed' ? withBio('p539.pk.borrowedNote') : s === 'unknown' ? withBio('p555.pk.unknownNote') : s === 'none' ? withBio('p539.pk.noneNote') : '';
+  setupBtn.textContent = s === 'unknown' ? withBio('p555.pk.check') : t(bad ? 'p539.fail.setup' : 'p539.pk.setup');
+  const n = bad ? withBio('p559.pk.failedNote') : s === 'borrowed' ? withBio('p539.pk.borrowedNote') : s === 'unknown' ? withBio('p555.pk.unknownNote') : '';   // P559: 「未设」 needs no note — the explanation line under the title says it
   note.textContent = n; note.hidden = !n;
+  // P559 (chairman 10-27): the row looks like 遥控器管理 / 转移席位 — face icon on iPhone / iPad, fingerprint elsewhere, and
+  // the small line saying what it is for (that line names Face ID, Touch ID and the screen lock side by side: tRaw)
+  for (const ic of row.querySelectorAll?.('svg.mi') || []) ic.toggleAttribute('hidden', ic.dataset.icon !== (textOs() === 'ios' ? 'face' : 'finger'));   // SVG has no .hidden
+  const sub = row.querySelector?.('#set-pk-sub');
+  if (sub) sub.textContent = tRaw('p559.pk.sub');
   if (oldBtn) oldBtn.dataset.pkRow = '1';
 }
 

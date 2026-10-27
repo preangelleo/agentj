@@ -737,6 +737,7 @@ class WheelInstall(unittest.TestCase):
         core_0200+=4096           # P307 AskUserQuestion phone/terminal race (shared.py): measured +1922 bytes; flagged to Jarvis
         # P376: Jarvis approved the temporary 0.23.1 ceiling; slim the core in 0.24.
         core_0200 = 3460000
+        core_0200+=28672          # P558 (0.25.14 hotfixes P552–P557): measured +27.2 KiB core (+10.2 % over 3460000); Jarvis approved 10-27
         self.assertLess(pathlib.Path(self.wheel).stat().st_size-allocs,core_0200,'P118 approved bounded core ceiling + 0.18.x increments + P165 (0.20.0) + P198 (0.20.1) + 0.20.2 increments (P201 P203 P205 P207 P211 P214 P215 P217 + P218 integration) + 0.20.3 increments (P219 P221 + P240 integration) + P254')
         self.assertLess(pathlib.Path(self.wheel).stat().st_size,core_0200+65536+49152+49152+32768+4096+12288+8192+16384+20480+49152+24576+8192+12288+28672+4096+20480+8192+12288+12288+8192+28672+20480,   # + P244 bounded catalogue + P275 avatar
                         'combined bounded allocations')

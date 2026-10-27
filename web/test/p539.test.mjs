@@ -34,35 +34,35 @@ test('os detection matrix; browserEnvironment keeps its exact shape; probeEnviro
 });
 
 test('bioLabel zh / en', () => {
-  const want = { ios: ['Face ID', 'Face ID'], android: ['指纹或人脸', 'fingerprint or face unlock'], mac: ['Touch ID', 'Touch ID'],
-    windows: ['Windows Hello', 'Windows Hello'], linux: ['屏幕锁', 'screen lock'], other: ['屏幕锁', 'screen lock'] };
+  const want = { ios: ['Face ID', 'Face ID'], android: ['Touch ID', 'Touch ID'], mac: ['Touch ID', 'Touch ID'],
+    windows: ['Windows Hello', 'Windows Hello'], linux: ['Touch ID', 'Touch ID'], other: ['Touch ID', 'Touch ID'] };   // P559: two names only
   for (const [os, [zh, en]] of Object.entries(want)) { assert.equal(ENV.bioLabel(os, 'zh'), zh); assert.equal(ENV.bioLabel(os, 'en'), en); }
-  assert.equal(ENV.bioLabel('nope', 'en'), 'screen lock');
+  assert.equal(ENV.bioLabel('nope', 'en'), 'Touch ID');
 });
 
-test('t(): Face ID becomes the platform label on Android / Mac / Windows; iOS, Linux and Node are unchanged', () => {
+test('t(): Face ID becomes the platform label on Android / Mac / Windows / Linux (P559); iOS and Node are unchanged', () => {
   LANG('zh');
   T.setTextOs(undefined);
   assert.equal(T.textOs(), 'ios', 'node (no browser UA) never substitutes');
   assert.equal(T.t('phoneEnv.setup'), '设置 Face ID');
   T.setTextOs('android');
-  assert.equal(T.t('phoneEnv.setup'), '设置指纹或人脸');
-  assert.equal(T.t('pk.askTitle'), '用指纹或人脸记住这台手机？');
-  assert.ok(!T.t('p352.needFaceId', { device: 'X' }).includes('Touch ID'), 'the "Face ID / Touch ID" pair collapses to one label');
+  assert.equal(T.t('phoneEnv.setup'), '设置 Touch ID');
+  assert.equal(T.t('pk.askTitle'), '用 Touch ID 记住这台手机？');
+  assert.equal(T.t('p352.needFaceId', { device: 'X' }).split('Touch ID').length, 2, 'the "Face ID / Touch ID" pair collapses to one label');
   T.setTextOs('mac');
   assert.equal(T.t('p352.needFaceId', { device: 'X' }).split('Touch ID').length, 2);
   assert.ok(!T.t('elev.fa.cancel').includes('Face ID'));
   T.setTextOs('linux');
-  assert.equal(T.t('phoneEnv.setup'), '设置 Face ID');
+  assert.equal(T.t('phoneEnv.setup'), '设置 Touch ID');
   LANG('en');
   T.setTextOs('android');
-  assert.equal(T.t('elev.fa.cancel'), "Fingerprint or face unlock didn't go through. Nothing was sent.");
-  assert.equal(T.t('phoneEnv.setup'), 'Set up fingerprint or face unlock');
+  assert.equal(T.t('elev.fa.cancel'), "Touch ID didn't go through. Nothing was sent.");
+  assert.equal(T.t('phoneEnv.setup'), 'Set up Touch ID');
   T.setTextOs('windows');
   assert.equal(T.t('pk.restore'), 'Reconnect with Windows Hello');
   T.setTextOs('ios');
   assert.equal(T.t('pk.restore'), 'Reconnect with Face ID');
-  assert.equal(T.bioWords('{device} uses Face ID', 'android', 'en'), '{device} uses fingerprint or face unlock', 'vars are filled after the swap');
+  assert.equal(T.bioWords('{device} uses Face ID', 'android', 'en'), '{device} uses Touch ID', 'vars are filled after the swap');
   T.setTextOs(undefined); LANG('zh');
 });
 

@@ -87,7 +87,7 @@ const unknown = (id) => ({ t: 'pk_state', s: 'unknown', fa: id, fa_ch: b64u(rand
 const row = (p) => evaluate(p, `({ label: ${txt('#set-pk-state')}, btn: ${visible('#set-pk-setup')}, btnText: ${txt('#set-pk-setup')}, note: ${txt('#set-pk-note')} })`);
 
 async function walk({ p, id }, H, tag, os) {
-  const cue = os === 'ios' ? 'Face ID' : '指纹';
+  const cue = os === 'ios' ? 'Face ID' : 'Touch ID';   // P559: two names only
   // 1. a key saved before the upgrade: recognised, zero taps
   await fake.send({ t: 'pk_state', s: 'local' });
   await evaluate(p, `import('./js/settings.js').then((m) => m.open())`);

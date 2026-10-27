@@ -6,7 +6,7 @@
   avatar text that says "search first, cite sources, a channel never approves"; a one-time side claim, dropped after.
 - ① a live-news question: the WebSearch tool use is not a channel violation; the answer (with its source link) is replied.
 - ② a step that needs approval: the card goes up with the avatar's origin line, the channel gets 「已转到 Agent J 网页」 once,
-  the allow is a signed phone decision; the full level / batch grants never pass an avatar's step; AskUserQuestion denied.
+  the allow is a signed phone decision; batch grants never pass an avatar's step (P559: the full level covers it like the main conversation); AskUserQuestion denied.
 - the side claim never cuts the main Agent's permission connection and is spent by its first use.
 - ③ friends of another owner keep `--tools ""`; ④ same-owner tasks run in the main conversation (main tools, its cards).
 - #308: the 「来自微信」 page carries the words and attachments, the manifest path only in the card's paths.
@@ -239,14 +239,18 @@ class CodexFull(unittest.TestCase):
 class Approvals(Base):
     """serve.ask(avatar=…): the main floor and cards; never a main-conversation pass."""
 
-    def test_full_level_never_passes_an_avatar_step_and_card_names_it(self):
+    def test_full_level_covers_the_avatar_like_the_main_conversation_and_card_names_it(self):
+        # P559 (chairman 10-27): 「全放行」 is the owner's own level — an avatar's step passes like the main one; the four ③
+        # kinds keep their Face ID card, named for the avatar
         self.full()
         self.ask("git push origin main")                            # P556: not one of the four kinds (rm -rf build is)
-        self.assertEqual(self.cards("Bash"), [])                    # the main conversation under `full`: no card
-        res = self.ask("rm -rf build", avatar="来自微信分身", answer=True)
-        self.assertEqual(res["behavior"], "allow")
+        self.ask("ls -la", avatar="来自微信分身")                     # an avatar's low step
+        self.assertEqual(self.cards("Bash"), [])                    # main conversation and the avatar's low step: no card
+        res = self.ask("rm -rf build", avatar="来自微信分身", answer=False)
+        self.assertEqual(res["behavior"], "deny")
         card = self.cards("Bash")[-1]
         self.assertIn("来自微信分身", card["summary"])
+        self.assertTrue(card.get("passkey_required"))
 
     def test_denied_card_is_a_deny_and_question_cards_are_refused(self):
         res = self.ask("rm -rf build", avatar="来自微信分身", answer=False)

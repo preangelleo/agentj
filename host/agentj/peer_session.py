@@ -107,6 +107,8 @@ def failure_detail(text: str, tail: int = 0) -> str:
     low = (text or "").lower()
     if any(w in low for w in ("usage limit", "rate limit", "quota", "429", "insufficient_quota", "too many requests")):
         return "quota"
+    if any(w in low for w in ("at capacity", "server_overloaded", "overloaded", "try a different model", "service unavailable")):
+        return "busy"      # P559: the model is full right now (Codex: "Selected model is at capacity") — another model may draw
     if any(w in low for w in ("401", "403", "unauthorized", "forbidden", "login", "auth", "token expired", "api key")):
         return "login"
     if "model" in low and any(w in low for w in ("not found", "not supported", "unsupported", "does not exist", "unknown", "invalid")):

@@ -17,18 +17,13 @@ import sys
 
 SOFT = 0.10
 MIN_CEILING = 4096          # smaller numbers in that test are counts, not byte budgets
-# One named row may get a wider band, only while the release profile blocks the release on a decision about it
-# (P558: the 0.25.14 hotfixes put P118 core at +10.2 %; a +12 % band as in P550, NOT yet approved — the release
-# profile's RELEASE_BLOCKERS names it). Remove the row once the ceiling is decided.
-WIDER = {'P118 approved bounded core ceiling': 0.12}
 
 
 def judge(measured: int, ceiling: int, strict: bool, label: str = '') -> str:
     """'pass' | 'soft' | 'fail' for measured against ceiling (strict: measured must be < ceiling, else ≤)."""
     if measured < ceiling or (not strict and measured == ceiling):
         return 'pass'
-    band = next((v for k, v in WIDER.items() if label.startswith(k)), SOFT)
-    return 'soft' if measured <= ceiling * (1 + band) else 'fail'
+    return 'soft' if measured <= ceiling * (1 + SOFT) else 'fail'
 
 
 def _record(row: dict) -> None:

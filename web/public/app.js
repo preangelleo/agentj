@@ -750,7 +750,7 @@ pkassist.configure({ setupFaceId });   // P539: 「在本机设置」 under a co
 // P539: the computer's word on this remote's passkey; kept with the host record (like h.pk) so Settings shows it at once
 let pkNow = null;   // {ch, s}: only shown for the computer that said it
 function paintPkRow() {
-  pkassist.paintPkRow(pkNow && pkNow.ch === session.channel() ? pkNow.s : null, { row: $('set-pk-row'), label: $('set-pk-state'), note: $('set-pk-note'), setupBtn: $('set-pk-setup'), oldBtn: $('setup-faceid') });
+  pkassist.paintPkRow(pkNow && pkNow.ch === session.channel() ? pkNow.s : null, { row: $('set-pk-row'), label: $('set-pk-state'), note: $('set-pk-note'), setupBtn: $('set-pk-setup'), oldBtn: $('setup-faceid'), failed: passkey.failedHere() });
   renderPhoneEnvironment();
 }
 // P550 (p198): the host record's passkey fields are read-modify-written one at a time — pk_state arrives right after pk_reg_res
@@ -1412,6 +1412,7 @@ function wire() {
     if (!await copyButton(link, $('phone-env-copy'))) { $('phone-env-link').value = link; $('phone-env-link').hidden = false; $('phone-env-link').select(); }
   });
   onLang(() => { renderPhoneEnvironment(); paintPkRow(); });
+  window.addEventListener('agentj-pk-failed-change', paintPkRow);   // P560: a pass / a second failure repaints 已设好 ⇔ 上次没有通过
   $('menu-about').addEventListener('click', () => toggleBadge(true));   // above Settings; closing it returns there
   initRemote({card:fivePages.remoteStep,message:relay.remoteMessage,reader:relay.remoteReader,reading:relay.remoteReading,scroll:relay.remoteScroll});
   initLayers({onEscape:relay.resetEscape});

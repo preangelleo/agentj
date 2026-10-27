@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // P539 (#300 / #299): the real web client against fakehost.mjs, own headless Chromium (never :9222).
-//   a. Android (OPPO) UA: Settings 「本机指纹或人脸：未设」 row + the pk.notSaved toast (no Apple / iCloud words)
+//   a. Android (OPPO) UA: Settings 「本机 Touch ID：未设」 row + the pk.notSaved toast (no Apple / iCloud words)
 //   b. Mac Chrome UA: an approval card with fa_s=borrowed → the quiet line + 「在本机设置」; a refused passkey → reason +
 //      「再试一次」 + 「在本机设置 Face ID（需另一台批准）」 (re-tap re-runs approve from the tap)
 //   c. the same card closed with why=timeout
@@ -70,8 +70,8 @@ try {
       await openSettings(p, 'set-h-agent');
       await waitFor(p, `!document.getElementById('set-pk-row').hidden`);
       const row = await ev(p, `document.getElementById('set-pk-row').innerText`);
-      check(row.includes(L('本机指纹或人脸：未设', "This device's fingerprint or face unlock: not set")), 'a: state label ' + lang);
-      check(row.includes(L('指纹或人脸', 'fingerprint or face unlock')) && !/Face ID|iCloud|Apple/.test(row), 'a: Android words only ' + lang);
+      check(row.includes(L('本机 Touch ID：未设', "This device's Touch ID: not set")), 'a: state label ' + lang);   // P559: Touch ID
+      check(!/iCloud|Apple|屏幕锁：|screen lock:/.test(row) && !/Face ID：|Face ID:/.test(row), 'a: Android words only ' + lang);
       check(await ev(p, `!document.getElementById('set-pk-setup').hidden && document.getElementById('setup-faceid').hidden`), 'a: one setup button, the old entry folded in ' + lang);
       check(await tall(p, '#set-pk-setup'), 'a: 44 px ' + lang);
       await shot(p, `a-android-pkrow-390-light-${lang}`);
@@ -81,7 +81,7 @@ try {
       await fake.send({ t: 'pk_offer', n: b64(Buffer.alloc(32, 1)) });
       await waitFor(p, `!document.getElementById('confirm').hidden`);
       const sheet = await ev(p, `document.getElementById('confirm').innerText`);
-      check(!sheet.includes('Face ID') && sheet.includes(L('指纹或人脸', 'fingerprint or face unlock')), 'a: the save sheet names the Android unlock ' + lang);
+      check(!sheet.includes('Face ID') && sheet.includes('Touch ID'), 'a: the save sheet names the Android unlock ' + lang);
       await ev(p, `document.getElementById('confirm-yes').click()`);
       await waitFor(p, `document.getElementById('toast').classList.contains('on') && document.getElementById('toast').textContent.includes('Google')`);
       const toast = await ev(p, `document.getElementById('toast').textContent`);
@@ -135,7 +135,7 @@ try {
       // Settings row for a borrowed record (Mac → Touch ID)
       if (w === 390) {
         await openSettings(p, 'set-h-agent');
-        const row = await ev(p, `document.getElementById('set-pk-row').innerText`);
+        const row = await ev(p, `(() => { const r = document.getElementById('set-pk-row').cloneNode(true); r.querySelector('#set-pk-sub')?.remove(); return r.innerText || r.textContent; })()`);   // P559: the explanation line names all three
         check(row.includes(L('本机 Touch ID：用的是别的设备上的钥匙', "This device's Touch ID: using another device's key")) && row.includes('Touch ID') && !row.includes('Face ID'), 'Mac borrowed row ' + name + ' ' + JSON.stringify(row));
         await shot(p, `b-mac-pkrow-borrowed-${name}`);
         await closeSettings(p);

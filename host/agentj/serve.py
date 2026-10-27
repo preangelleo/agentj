@@ -5049,7 +5049,10 @@ class Host:
         if pa_action and (pg := await asyncio.to_thread(preauth.live, self.st, pa_action, pa_bind)) is not None:
             return self._preauth_use(pg, base, tool, tool_input, summary, v)   # P539: 「<remote> 批准过：Computer Use 免问」
         harness_card = False
-        if lv == "harness" and not delegated and ttl is None and not own_pk and tool not in approval_level.HARNESS_KEEPS:
+        # P559 (chairman 10-27, written: 「全放行下分身和主线程一样，中等风险也免卡」): under 全放行 an owner-channel avatar's step
+        # is decided exactly like the main conversation's — ① ② (and hold) pass; the four ③ kinds and an attack on Agent J
+        # itself keep Face ID below. Security review B1 (a channel account is weaker than a paired remote) noted in REPORT-559.
+        if lv == "harness" and (not delegated or avatar is not None) and ttl is None and not own_pk and tool not in approval_level.HARNESS_KEEPS:
             # P551 (#320) 「审批跟随底层 Harness」: no approval layer of Agent J's own. P550 (chairman 10-26): Face ID only for
             # the four ③ kinds (confirm_tier.harness_keeps); Agent J's own `agentj …` cards and anything the harness itself
             # would not have asked run at once (logged); what the harness asked comes to the phone as it is.
@@ -5066,7 +5069,8 @@ class Host:
                 grant = approval_level.level_grant(self.st)
                 approvals.record(self.st, **base, decision="allow", reason="level_harness",
                                  **({"grant": grant, "auto": "level"} if grant else {}))
-                self.st.log("ask_done", id=rid, tool=tool, decision="allow", reason="level_harness")
+                self.st.log("ask_done", id=rid, tool=tool, decision="allow", reason="level_harness",
+                            **({"via": "avatar"} if avatar is not None else {}))
                 self.activity("auto", id=rid, tool=tool, summary=summary, by="level_harness", cats=v.cats, task=self.task_label)
                 self.emit("auto", id=rid, tool=tool, grant=None)
                 line = summary.split("\n", 1)[0][:200]

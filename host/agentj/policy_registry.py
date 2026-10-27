@@ -186,6 +186,25 @@ CODEX_CU_SCRIPT_OPS = frozenset({"js", "js_reset"})
 CODEX_CU_LIFECYCLE_OPS = frozenset({"turn_ended"})
 
 
+# P559 (support st_DlnB…): Codex 0.162.1's PreToolUse hook names a namespaced tool namespace + tool with no separator
+# (`collaboration` + `spawn_agent` → collaborationspawn_agent; code-mode `tools.clock__curr_time` → clockcurr_time), and adds
+# Codex-only bare names. Probed with a stand-in model, reports/qa/p559/codex-hook-names/. Exact names only, and only for an
+# event from the Codex adapter's own hook channel (shared_risk) — another harness can name a custom tool anything.
+CODEX_HOOK_TOOLS = MappingProxyType({
+    "webrun": "web.search", "image_genimagegen": "image.generate",
+    **dict.fromkeys(("collaborationspawn_agent", "collaborationsend_message", "collaborationfollowup_task"),
+                    "agent.dispatch"),
+    "collaborationlist_agents": "file.read",
+    **dict.fromkeys(("collaborationwait_agent", "collaborationinterrupt_agent", "clockcurr_time", "get_goal", "create_goal",
+                     "update_goal", "get_context_remaining"), "agent.session"),
+})
+
+
+def codex_hook_tool(tool):
+    """The action a Codex hook's tool name stands for (CODEX_HOOK_TOOLS), else the name unchanged."""
+    return CODEX_HOOK_TOOLS.get(tool, tool) if isinstance(tool, str) else tool
+
+
 def codex_plugin_bind(plugin_id, server) -> dict | None:
     """The binding of a Codex mcpToolCall item from the bundled Computer Use plugin, or None. Only ever built from
     Codex's own item (never from a server's elicitation message / _meta)."""

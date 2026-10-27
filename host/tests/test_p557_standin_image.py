@@ -98,11 +98,13 @@ class TelegramAvatar(_Channel):
         self.assertEqual(str(reply), '画好了一只橘猫。'); self.assertEqual(reply.images, (('image/png', PNG),))
         self.channel.open_card.assert_not_called()
 
-    async def test_drawer_unavailable_goes_to_web_app_never_a_paid_route(self):
+    async def test_drawer_unavailable_says_why_in_the_chat_never_a_paid_route(self):
+        # P559: a failed drawing is said in the channel itself — never handed to the main conversation / Web App
         self.answer('ask_owner', 'a cat', topic='image')
         with patch('agentj.channel_native.NativeCodex.turn', AsyncMock(return_value=TurnResult('ask_owner', '', '', None, 'native_image_unavailable'))):
             reply = await self.channel.receive_owner('telegram', 'g:5', '画一只橘猫')
-        self.assertIn('已转给', reply)
+        self.assertNotIn('已转给', reply)
+        self.assertIn('没有能画图的 Codex', reply); self.assertIn('没有使用按次付费的服务', reply)
 
     def test_main_conversation_hint_prefers_codex_over_paid_services(self):
         from agentj.wechat import DRAW_HINT

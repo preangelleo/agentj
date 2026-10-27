@@ -162,8 +162,9 @@ class NativeCodex:
         self.sessions = sessions
         self.lock = asyncio.Lock()
 
-    async def turn(self, friend, group, wrapped, cfg=None):
-        """`cfg`: P557's drawer passes a plain Codex config (the avatar's own plan may be Claude / OpenCode)."""
+    async def turn(self, friend, group, wrapped, cfg=None, *, fresh=False, system=None):
+        """`cfg`: P557's drawer passes a plain Codex config (the avatar's own plan may be Claude / OpenCode). P559: `fresh` =
+        a new Codex thread (the drawer: a model switch never resumes a failed thread); `system` = the drawer's own text."""
         s = self.sessions
         gen = s._gen
         async with self.lock:
@@ -176,7 +177,7 @@ class NativeCodex:
                     return peer_session._fail('fence')
                 directory.chmod(0o700)
             fid = str(friend['id'])
-            sid = s.store.session_id(fid, 'native-codex')
+            sid = None if fresh else s.store.session_id(fid, 'native-codex')
             try:
                 exe = await asyncio.to_thread(s._exe, 'codex')
                 image_names = []
@@ -192,7 +193,7 @@ class NativeCodex:
                 return peer_session._fail('native_image_unavailable')
             images_dir = out_dir(root)
             before = {p.relative_to(images_dir) for p in images_dir.rglob('*')}
-            out, err, rc = await s._run(argv, str(root), child_env, s.system_prompt(friend, group) + '\n' + wrapped, gen)
+            out, err, rc = await s._run(argv, str(root), child_env, (system or s.system_prompt(friend, group)) + '\n' + wrapped, gen)
             if gen != s._gen or rc == 'stopped':
                 return peer_session._fail('stopped')
             if rc == 'timeout':
@@ -225,6 +226,26 @@ class NativeCodex:
                         result.images.append((image_type(data), data))
                         if len(result.images) >= 4:
                             break
-            if parsed['sid'] and __import__('re').fullmatch(r'[A-Za-z0-9_-]{1,128}', parsed['sid']):
+            if not fresh and parsed['sid'] and __import__('re').fullmatch(r'[A-Za-z0-9_-]{1,128}', parsed['sid']):
                 s.store.set_session_id(fid, 'native-codex', parsed['sid'])
             return result
+
+
+def draw_models(env, limit=2) -> list:
+    """P559: the drawer's model order — None (the owner's own Codex model) first, then up to `limit` other models the owner's
+    Codex lists (its own models_cache.json, by its priority) for when that one is full ("at capacity")."""
+    out = [None]
+    mine = peer_session.codex_user_model(env).get('model')
+    try:
+        with open(os.path.join(peer_session._codex_home(env), 'models_cache.json'), encoding='utf-8') as fh:
+            data = json.load(fh)
+        rows = data.get('models') if isinstance(data, dict) else data
+        rows = sorted((m for m in rows if isinstance(m, dict) and m.get('visibility') == 'list'
+                       and isinstance(m.get('slug'), str) and __import__('re').fullmatch(r'[A-Za-z0-9._-]{1,64}', m['slug'])),
+                      key=lambda m: m.get('priority') if isinstance(m.get('priority'), int) else 999)
+    except (OSError, ValueError, TypeError, AttributeError):
+        rows = []
+    for m in rows:
+        if m['slug'] != mine and m['slug'] not in out and len(out) <= limit:
+            out.append(m['slug'])
+    return out

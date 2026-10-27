@@ -145,6 +145,8 @@ class RiskGuard:
         if event.get('hook_event_name') != 'PreToolUse':
             return {}
         tool=event.get('tool_name','?');inp=event.get('tool_input') or {}
+        if getattr(a,'kind',None) == 'codex':
+            tool=policy_registry.codex_hook_tool(tool)   # P559: namespace+tool names from Codex's own hook
         if await self.check(tool,inp):
             return {}  # no allow: preserve every native hook/permission decision
         return {'hookSpecificOutput':{'hookEventName':'PreToolUse','permissionDecision':'deny',

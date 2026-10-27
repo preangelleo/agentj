@@ -36,8 +36,8 @@ Do not call the avatar a text-only assistant or limit capabilities in its wordin
 separate avatar plan), owner WeChat / private Telegram / allowlisted owner mail run the main harness itself: same tools
 (commands, files, web search and pages, MCP), same folder, fence, settings and approval level. Every step needing a card
 goes through the host's ordinary approval path marked 「来自微信分身」 etc.; the card appears only in Web App / remotes,
-the channel gets 「已转到 Agent J 网页，请在那里确认」 (WeChat / Telegram), and a channel "yes" never approves. Batch,
-goal and full-level passes never cover an avatar step. A separate avatar plan (provider profile, OpenRouter, free)
+the channel gets 「已转到 Agent J 网页，请在那里确认」 (WeChat / Telegram), and a channel "yes" never approves. Batch
+and goal passes never cover an avatar step. A separate avatar plan (provider profile, OpenRouter, free)
 keeps its older limited executor; say so honestly. Friends of another owner and customer service stay tool-less;
 same-owner device tasks run in the main conversation.
 
@@ -81,12 +81,15 @@ Image generation/editing remains subject to the existing native capability and a
 Generated images go back as native pictures (Telegram photo, WeChat image). A reply naming local paths or internal tools is
 sent with those words removed, never handed to Web App for its wording; only held actions and credentials stay there. An
 executor without an image tool returns ask_owner topic "image" and the host draws with the owner's Codex in its own sandbox
-(subscription, no per-use charge). A transferred image request in the main conversation: draw with headless `codex exec`;
+(a fresh headless `codex exec`, subscription, no per-use charge; a full model → the next model Codex lists) and the picture goes
+back in that channel and to the Web App; a drawing that still fails is explained in the channel, never handed to the main
+conversation. A transferred image request in the main conversation: draw with headless `codex exec`;
 a pay-per-image service is spending and needs the owner's yes first, never the first offer.
 Owner channels (WeChat, owner mail, the owner's private Telegram) have main-conversation rights on any native plan
 (shared or a saved Claude Code / Codex / OpenCode plan); only missing main context goes to the main thread. Files the
 avatar names go back as that channel's attachments (credential files → pickup card) and its answer also appears in the
-Web App's main conversation; Face ID steps are cards in Web App whichever channel asked.
+Web App's main conversation; Face ID steps are cards in Web App whichever channel asked. Under 全放行 the avatar's steps
+pass like the main conversation's (no card); only the four ③ kinds ask Face ID. A hand-over card is a signed tap, never Face ID.
 
 
 Display names come from `agentj status --json` field `agent_display_name` (shared `agent_label` formatter); use it verbatim in introductions and return-to-web hints. Empty names and names equal to Agent J (ignoring case/whitespace) display as Agent J; an existing Agent J - prefix is preserved. Examples: empty → Agent J; Agent J → Agent J; Agent J - Father@TB → Agent J - Father@TB; Father@TB → Agent J - Father@TB. Stored and signed names remain raw owner data.

@@ -189,7 +189,8 @@ try {
       await waitFor(p, `!!document.getElementById('elev') && !document.getElementById('elev').hidden`);
       await type(p, PW);
       await ev(p, `document.getElementById('elev-allow').click()`);
-      await waitFor(p, `document.getElementById('toast').textContent.includes('用不了 Face ID')`);
+      // P559 naming: headless Chromium is Linux (touch → Android family) → Touch ID; Face ID only on iPhone / iPad
+      await waitFor(p, `document.getElementById('toast').textContent.includes('用不了 Touch ID')`);
       await new Promise((r) => setTimeout(r, 300));
       assert.equal(answers().length, 0, 'nothing sent');
       assert.equal(await ev(p, `document.getElementById('elev').hidden`), false, 'the card stays');
@@ -214,7 +215,7 @@ try {
       for (let i = 0; i < 100 && !answers().length; i++) await new Promise((r) => setTimeout(r, 50));
       assert.equal(await ev(p, `document.getElementById('elev-input').disabled`), true, 'sending');
       await fake.send({ t: 'elev_refused', id: card.m.id, why: 'passkey' });
-      await waitFor(p, `document.getElementById('toast').textContent.includes("didn't accept this Face ID")`);
+      await waitFor(p, `document.getElementById('toast').textContent.includes("didn't accept this Touch ID")`);
       assert.equal(await ev(p, `document.getElementById('elev-input').disabled`), false, 'usable again');
       assert.equal(await ev(p, `document.getElementById('elev').hidden`), false, 'the card stays');
       await fake.send({ t: 'elev_done', id: card.m.id, result: 'denied' });

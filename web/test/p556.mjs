@@ -56,8 +56,9 @@ const shown = (p, sel) => ev(p, `(()=>{const e=document.querySelector(${JSON.str
 // what the owner reads under the three buttons: every visible note paragraph of the level row (the lapsed line excluded)
 const notes = (p) => ev(p, `[...document.querySelectorAll('#set-level-row p.setnote')].filter(e=>!e.hidden&&e.offsetParent&&!e.closest('.setunsigned')).map(e=>e.textContent)`);
 const NOTE = {
-  zh: { harness: '全放行：Agent J 不再弹审批卡，AI 编程工具可以直接改文件、跑命令、联网。只有花钱、删除你的数据、解绑或转移席位、密钥外发，以及有人想改动 Agent J 本身时，仍要 Face ID。风险由你自己承担，换来最快的速度。' },
-  en: { harness: 'Full access: Agent J shows no approval cards, and the AI coding tool can change files, run commands and go online on its own. Only spending money, deleting your data, unbinding or moving a seat, sending a key out, and anyone trying to change Agent J itself still need Face ID. You take the risk in exchange for the fastest speed.' },
+// P559 naming: headless Chromium is Linux (touch → Android family) → Touch ID; Face ID only on iPhone / iPad — the rest word for word
+  zh: { harness: '全放行：Agent J 不再弹审批卡，AI 编程工具可以直接改文件、跑命令、联网。只有花钱、删除你的数据、解绑或转移席位、密钥外发，以及有人想改动 Agent J 本身时，仍要 Touch ID。风险由你自己承担，换来最快的速度。' },
+  en: { harness: 'Full access: Agent J shows no approval cards, and the AI coding tool can change files, run commands and go online on its own. Only spending money, deleting your data, unbinding or moving a seat, sending a key out, and anyone trying to change Agent J itself still need Touch ID. You take the risk in exchange for the fastest speed.' },
 };
 /** host.approval.max changes → the next `preferences` broadcast carries it (as the real host does on every change). */
 async function setMax(p, max) {
