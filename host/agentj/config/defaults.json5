@@ -150,6 +150,8 @@
     "card_hot_action": "web-page-report",
     // P340: the four buttons above the message box, left to right (each once) / 输入框上方四个按钮的顺序; default=["file","image","camera","mic"]
     "composer_buttons": ["file", "image", "camera", "mic", "full"],
+    // P554: the forward button's destination for every remote, a phone sets it only by its signed control (share | wx | tg; "" = not chosen) / 转发去向（所有遥控器共用）; default=""
+    "forward_destination": "",
   },
   // P274: macOS only. Read-only iMessage / SMS assistant (Full Disk Access); off by default; never writes chat.db.
   "imessage":

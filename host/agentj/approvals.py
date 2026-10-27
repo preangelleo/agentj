@@ -80,7 +80,7 @@ def record(st, *, rid: str, agent: str, tool: str, input_sha256: str, shown_sha2
            scope: str | None = None, grant: str | None = None, auto: str = "batch", control: dict | None = None,
            scope_sha256: str | None = None, fa: dict | None = None) -> dict:
     """Append one decision to approvals.log (0600). reason: device | batch | goal | goal_auto (P158) | goal_grant_add (P339) | level_full / goal_nocard / goal_preauth / parked / offline (P336) | brief (0.18: inside a confirmed brief) | host (0.18: `agentj capability`, host-gated) | owner_direct / allowlist (P296: `agentj mail send` to the owner's own addresses / only allowlisted ones) | timeout | no_device | serve_stop | agent_gone |
-    too_many | estop | own_handoff (P539: a pure read of Agent J's own handoff file, no card) | policy (beyond the harness's own sandbox, never asked: ADR-A73). cats = danger categories ([] = low risk); scope = the signed batch scope (allow_batch); grant = for an
+    too_many | estop | own_handoff (P539: a pure read of Agent J's own handoff file, no card) | policy (beyond the harness's own sandbox, never asked: ADR-A73) | unknown_action (P553: no policy row, denied, no card). cats = danger categories ([] = low risk); scope = the signed batch scope (allow_batch); grant = for an
     automatic approval, the id of the signed allow_batch it relied on. control (P242) = a signed phone control (controls.py,
     e.g. dev_confirm / dev_unbind): {"n", "sig_ts", "object_sha256"} — the line is then kind "control" and `sig` is the
     control signature, re-checked with controls.verify. fa (P547, reason "pk_peer"): the approving remote's passkey
@@ -340,8 +340,10 @@ def check_record(st, r: dict, index: dict | None = None) -> str:
     if r.get("reason") in ("level_full", "level_harness") and r.get("grant"):
         # P336: allowed under the full level — the signed switch to `full` it names must verify (P551: or to `harness`)
         c = (index or {}).get(str(r.get("grant")))
-        want = hashlib.sha256(b"approval.level\n" + r["reason"][6:].encode()).hexdigest()
-        if not c or c.get("kind") != "control" or c.get("tool") != "approval_set" or c.get("object_sha256") != want:
+        # P552: a released signed `full` is in force as `harness` — its switch is the parent of a level_harness line too
+        want = {hashlib.sha256(b"approval.level\n" + w.encode()).hexdigest()
+                for w in ((r["reason"][6:],) if r["reason"] == "level_full" else ("harness", "full"))}
+        if not c or c.get("kind") != "control" or c.get("tool") != "approval_set" or c.get("object_sha256") not in want:
             return "bad"
         return "auto" if check_record(st, c) in ("ok", "ok_removed") else "bad"
     if r.get("reason") == "parked":

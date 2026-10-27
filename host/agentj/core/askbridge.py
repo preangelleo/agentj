@@ -126,7 +126,9 @@ class Server:
         try:
             tool, inp = m.get("tool"), m.get("input")
             if isinstance(tool, str) and isinstance(inp, dict):
-                ans = await self.ask(tool[:64], inp, gone.get(m["id"]), origin=origin(meta, m.get("who")), batch=False)
+                # P552 (#325 ②): an order is background work — no card but the four ③ kinds (Host.ask `background`)
+                ans = await self.ask(tool[:64], inp, gone.get(m["id"]), origin=origin(meta, m.get("who")), batch=False,
+                                     background="order")
         except Exception:  # noqa: BLE001 — fail closed
             ans = {"behavior": "deny", "message": "批准通道出错：默认拒绝。"}
         finally:

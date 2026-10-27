@@ -2115,7 +2115,8 @@ def cmd_approvals(a) -> None:
                                                                        "elsewhere": "新遥控器已在别处确认，这张配对卡收起（未签名）",
                                                                        "gone": "卡片作废（配对已结束）",
                                                                        "policy": "超出 Agent 自己的沙箱，自动拒绝",
-                                                                       "own_handoff": "读 Agent J 自己的交接文件，不用确认"}.get(r.get("reason"), r.get("reason"))
+                                                                       "own_handoff": "读 Agent J 自己的交接文件，不用确认",
+                                                                       "unknown_action": "未知动作，自动拒绝（Agent J 缺陷，请反馈）"}.get(r.get("reason"), r.get("reason"))
             if r.get("reason") == "batch":
                 who = f"按手机 {r.get('device')} 的批量授权自动批准（{str(r.get('grant'))[:8]}…）"
             elif r.get("reason") in ("goal", "goal_auto"):    # P158
@@ -2209,6 +2210,46 @@ def cmd_resume(a) -> None:
         st.log("estop", status="off")
         activity.record(st, "resume", by="终端")
     print("✓ 已恢复：Agent 接收新消息，定时任务按各自的启用状态继续。")
+
+
+def cmd_faceid(a) -> None:
+    """P555: approve a remote's Face ID set-up here when no other remote can (its only key is lost, or none has one). The
+    对照码 shown on that remote picks the request; like `resume`, only the owner at this terminal (never an Agent)."""
+    st = State()
+    _need_init(st)
+    code = (a.code or "").strip()
+    if not code and sys.stdin.isatty():
+        code = input("输入那台遥控器上显示的 6 位对照码 / the 6-digit code shown on that remote: ").strip()
+    if not (len(code) == 6 and code.isdigit()):
+        sys.exit("✗ 要 6 位对照码：在那台遥控器上点「在本机设置」后显示 / needs the 6-digit code shown on that remote")
+    req = {"cmd": "pk_peer_host", "code": code}
+    if not gate.is_set(st):              # P555 review B1: the remote pairing password is the proof, as for `agentj pair`
+        sys.exit("✗ 要先设遥控器配对密码：`agentj passphrase set`，再运行这条命令 / set a remote pairing password first")
+    try:
+        pw = _secret("输入遥控器配对密码批准 / remote pairing password: ")
+        gate.verify(st, pw)
+    except gate.GateError as e:
+        sys.exit("✗ " + _gate_msg(e))
+    req["pass"] = pw
+    try:
+        res = names.ctl_call(st, req, 15)
+    except names.ServeBusy:
+        sys.exit("agentj serve 在运行但没有响应 / serve is not answering")
+    if res is None:
+        sys.exit("✗ agentj serve 没在运行：先 `agentj service start`，再在遥控器上点「在本机设置」 / serve is not running")
+    if res.get("error") == "approver_exists":
+        sys.exit("✗ 你还有别的设了 Face ID 的遥控器：请在那台上批准 / another remote with Face ID can approve it")
+    if res.get("error") == "rate":
+        sys.exit("✗ 对照码输错太多次，10 分钟后再试 / too many wrong codes, try again in 10 minutes")
+    if res.get("error") == "no_passphrase":
+        sys.exit("✗ 要先设遥控器配对密码：`agentj passphrase set` / set a remote pairing password first")
+    if res.get("error") == "no_request":
+        sys.exit("✗ 没有这个对照码的设置请求（可能已过期，5 分钟有效）：在遥控器上再点一次「在本机设置」 / no open request with this code")
+    if res.get("error") == "passphrase":
+        sys.exit("✗ 遥控器配对密码不对（或已锁定），没有批准 / wrong or locked remote pairing password")
+    if not res.get("ok"):
+        sys.exit("✗ " + _ctl_refused_msg(res))
+    print(f"✓ 已批准「{res.get('name', '')}」在本机设置 Face ID / 指纹：回到那台遥控器点「保存」。 / approved — tap Save on that remote.")
 
 
 def _mem_target(st: State, a) -> tuple[str | None, str | None]:
@@ -3518,6 +3559,10 @@ def main(argv=None) -> None:
     sub.add_parser("stop", help="⛔ 全部停下：中断 Agent、拒绝待批准、收回批量授权、暂停定时任务（重启后仍停）/ stop everything"
                    ).set_defaults(fn=cmd_stop)
     sub.add_parser("resume", help="从急停恢复（已配对手机点「恢复」即可；终端要遥控器配对密码或主人的键盘）/ resume after a stop (paired phone, or the owner at the terminal)").set_defaults(fn=cmd_resume)
+    fi = sub.add_parser("faceid", help="在 Agent J 主机上批准一台遥控器设置 Face ID（没有别的遥控器能批准时）/ approve a remote's Face ID set-up here")
+    fi.add_argument("action", choices=["approve"])
+    fi.add_argument("code", nargs="?", help="那台遥控器上显示的 6 位对照码 / the 6-digit code shown on that remote")
+    fi.set_defaults(fn=cmd_faceid)
     me = sub.add_parser("memory", help="Agent 记住了什么：list · show <来源> · rm <来源> <条目> · restore [id] / what the Agent remembers")
     me.add_argument("mode", choices=["list", "show", "rm", "restore"])
     me.add_argument("args", nargs="*")

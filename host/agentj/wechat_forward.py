@@ -69,9 +69,17 @@ def plain_text(text):
     return re.sub(r'\n{3,}', '\n\n', '\n'.join(lines)).strip('\n')
 
 
+def _why(wc):
+    """P554: bound but no context yet → `needs_message`; a refused (stale) context is still tried — the platform decides."""
+    d = wc.store.data
+    if wc.closed or wc.h.stopped() or not d['account'] or wc.error is not None:
+        return 'not_configured'
+    return None if d['context'] else 'needs_message'
+
+
 async def forward(wc, turn_id, device, *, valid=lambda: True):
-    if not valid() or not wc.can_forward():
-        return {'ok': False, 'why': 'not_configured'}
+    if not valid() or _why(wc):
+        return {'ok': False, 'why': _why(wc) if valid() else 'not_configured'}
     turn = wc.h.hist.get(turn_id) if type(turn_id) is int else None
     text = (turn or {}).get('reply', {}).get('text', '') if turn and turn.get('end') in ('done', 'stopped', 'failed') else ''
     if not text.strip() or is_silent(text):
@@ -95,14 +103,17 @@ async def forward(wc, turn_id, device, *, valid=lambda: True):
         if len(body.encode('utf-8')) > 4000:
             item = await asyncio.to_thread(Media(api).upload, account['ilink_user_id'],
                                          {'type': 4, 'file_item': {'file_name': 'Agent-J-reply.txt'}}, body.encode('utf-8'))
-        if not valid() or not wc.can_forward() or generation != wc.store.data['generation'] or wc.store.data['account'] != account:
-            return {'ok': False, 'why': 'not_configured'}
+        if not valid() or _why(wc) or generation != wc.store.data['generation'] or wc.store.data['account'] != account:
+            return {'ok': False, 'why': (_why(wc) or 'not_configured') if valid() else 'not_configured'}
         await wc.send(api, body if item is None else '', generation, item=item)
         wc.fwd_sent = {k: v for k, v in wc.fwd_sent.items() if now - v < 30}
         wc.fwd_sent[turn_id] = time.monotonic()
         wc.h.st.log('wechat_forward', device=device, id=turn_id, result='ok')
         return {'ok': True}
-    except Exception:
+    except Exception as e:
+        if getattr(e, 'code', None) in ('context_rejected', 'no_context'):   # WeChat refused: message ClawBot first
+            wc.h.st.log('wechat_forward', device=device, id=turn_id, result='needs_message')
+            return {'ok': False, 'why': 'needs_message'}
         wc.h.st.log('wechat_forward', device=device, id=turn_id, result='send_failed')
         return {'ok': False, 'why': 'send_failed'}
     finally:

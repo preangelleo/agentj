@@ -76,10 +76,30 @@ function paintRow() {
 }
 
 // ---------------------------------------------------------------- the flow
+/** P555: the sheet left-aligned — 「1. …」 lines an ordered list, 「· …」 lines a bulleted one, a wrapped
+ *  line under the words of its own item (not under the number or dot); a line ending in 「：」 is a heading. */
+export function listify(node, text) {
+  const kids = [];
+  let list = null;
+  for (const line of String(text).split('\n')) {
+    const n = /^\s*\d+\.\s*(.*)$/.exec(line), b = /^\s*·\s*(.*)$/.exec(line), m = n || b;
+    const tag = n ? 'ol' : 'ul';
+    if (m) { if (!list || list.tagName !== tag.toUpperCase()) { list = mk(tag, 'sxf-list'); kids.push(list); } list.append(mk('li', '', m[1])); }
+    else if (line.trim()) { list = null; kids.push(mk('p', /[：:]\s*$/.test(line) ? 'sxf-lead sxf-head' : 'sxf-lead', line)); }
+  }
+  node.replaceChildren(...kids);
+}
+async function explain() {
+  const box = el('confirm');
+  box.dataset.kind = 'sxf';
+  const shown = confirmSheet(t('sxf.explainTitle'), t('sxf.explainText'), t('sxf.explainYes'));
+  listify(el('confirm-text'), t('sxf.explainText'));
+  try { return await shown; } finally { if (box.dataset.kind === 'sxf') delete box.dataset.kind; }
+}
 let busy = false;
 export async function start() {
   if (busy) return;
-  if (!await confirmSheet(t('sxf.explainTitle'), t('sxf.explainText'), t('sxf.explainYes'))) return;
+  if (!await explain()) return;
   if (!isReady()) { toast(t('set.offline'), 3000); return; }
   busy = true;
   let res;

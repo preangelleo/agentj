@@ -47,6 +47,9 @@ def _table():
         (NATIVE, ("image.generate", "image.edit", "web.search")),
         # P551 (#321): sending a sub-agent off is ① — its own tool calls come back through this same table one by one
         (Policy("none", "none", channel=False), ("agent.dispatch",)),
+        # P553 (#326): the Agent's own session housekeeping (stop its background job, plan mode, its task list, wake itself
+        # later, a notice to the owner) — ①, nothing outside the session changes; what it runs later is checked call by call
+        (Policy("none", "none", channel=False), ("agent.session",)),
         (Policy("none", "none", channel=False), ("file.read",)),
         (Policy("reversible", "hold", main_confirmation="none"), ("file.write",)),
         # P551 (#318): mail, calendar edits and same-owner changes can be taken back or corrected — reversible. The table
@@ -113,8 +116,26 @@ NATIVE_TOOLS = MappingProxyType({
     "Delete": "file.delete", "WebFetch": "web.search", "WebSearch": "web.search",
     **dict.fromkeys(("Bash", "exec_command", "shell_command", "exec"), "admin"),
     **dict.fromkeys(("Task", "Agent"), "agent.dispatch"),
-    "TodoWrite": "settings.write", "update_plan": "settings.write",
-    "request_user_input": "settings.write",
+    # P553: session to-dos / plan / question tool ① like TaskCreate
+    **dict.fromkeys(("TodoWrite", "update_plan", "request_user_input", "todowrite", "question"), "agent.session"),
+    # P553 (#326) inventory: Claude Code 2.1.296 / Codex 0.162.1 / OpenCode 1.18.34 names that were unknown → deny. A loader
+    # (ToolSearch, tool_search) only fetches a tool's schema: ①; the loaded tool's own call is judged by its own row.
+    **dict.fromkeys(("ToolSearch", "ListMcpResourcesTool", "ReadMcpResourceTool", "NotebookRead", "BashOutput", "TaskOutput",
+                     "TaskGet", "TaskList", "ListAgents", "CronList", "LSP", "Skill",
+                     "tool_search", "list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource", "list_agents",
+                     "glob", "grep", "list", "lsp", "skill", "codesearch", "ExternalDirectory"), "file.read"),
+    **dict.fromkeys(("TaskStop", "KillShell", "KillBash", "ScheduleWakeup", "EnterPlanMode", "ExitPlanMode", "TaskCreate",
+                     "TaskUpdate", "CronCreate", "CronDelete", "PushNotification", "SendUserMessage", "StructuredOutput",
+                     "ReportFindings", "Sleep", "TeamCreate", "TeamDelete", "wait_agent", "close_agent",
+                     "plan_enter", "plan_exit"), "agent.session"),
+    **dict.fromkeys(("SendMessage", "Workflow", "spawn_agent", "send_input", "resume_agent", "followup_task"),
+                    "agent.dispatch"),
+    **dict.fromkeys(("EnterWorktree", "ExitWorktree"), "file.write"),     # ExitWorktree discarding changes: ③ below
+    "Config": "settings.write",
+    "DesignSync": "publish",                                              # read methods: ① below
+    # Monitor runs a shell command (judged by its content like Bash) or reads a WebSocket; write_stdin / js_repl / PowerShell
+    # run code the lexer cannot read (③); RemoteTrigger starts cloud runs outside Agent J's hook (③, reads ①)
+    **dict.fromkeys(("Monitor", "write_stdin", "js_repl", "PowerShell", "RemoteTrigger"), "admin"),
 })
 # MCP server names are not authority. Recognized operation names get a floor;
 # unrecognized operations fail closed, including plausible but unregistered reads.
@@ -245,6 +266,8 @@ def main_host_card(tool, tool_input=None, *, requirement=None):
 
 
 IRREVERSIBLE = frozenset({"credentials", "spend", "price", "delete"})
+_READ_METHODS = {"RemoteTrigger": ("action", frozenset({"list", "get", "list_runs", "get_run_log"})),
+                 "DesignSync": ("method", frozenset({"list_projects", "get_project", "list_files", "get_file"}))}
 _SECRET_REF = re.compile(r"\$\{?\w*(?:KEY|TOKEN|SECRET|PASS|CRED|AUTH)\w*|\bprintenv\b", re.I)
 
 
@@ -271,7 +294,14 @@ def main_requirement(tool, tool_input=None, *, env=None):
     inp = tool_input if isinstance(tool_input, dict) else {}
     name = tool
     operation = tool.split("__")[-1] if tool.startswith("mcp__") else tool
-    if operation in ("Bash", "exec_command", "shell_command", "execute_command", "bash"):
+    if tool == "Monitor" and "command" not in inp:
+        ws = inp.get("ws") if isinstance(inp.get("ws"), dict) else {}
+        name, inp, requirement = "WebFetch", {"url": str(ws.get("url", ""))}, "allow"   # P553: a WebSocket read
+    elif tool in _READ_METHODS and inp.get(_READ_METHODS[tool][0]) in _READ_METHODS[tool][1]:
+        return "allow"                   # P553: RemoteTrigger / DesignSync read methods
+    elif tool == "ExitWorktree" and inp.get("action") == "remove" and inp.get("discard_changes"):
+        return "uv"                      # P553: uncommitted work and the branch are deleted
+    elif operation in ("Bash", "exec_command", "shell_command", "execute_command", "bash", "Monitor"):
         name, inp = "Bash", {"command": inp.get("command", inp.get("cmd", ""))}
         requirement = "allow"
         # The existing lexer handles wrappers and substitutions. Elevation and
@@ -308,6 +338,40 @@ def main_requirement(tool, tool_input=None, *, env=None):
     if cats and requirement != "uv":     # incl. `send` — outward messages are ② (a long-press card for the Agent)
         return "hold"  # reversible but unclear/sensitive; no blanket shell UV
     return requirement                   # P550: a ③ row (computer.control …) is never lowered by its content to ②
+
+
+def unknown_text(tool, lang=None):
+    """P553 (#326): the reason given for an unknown action — a plain denial naming the tool, never 「需要主人确认」 (no card is
+    shown for it). lang None → both languages (a hook process does not know the owner's language)."""
+    from .text import clean_line
+    name = clean_line(tool if isinstance(tool, str) else "?", 64) or "?"
+    zh = f"Agent J：未知动作，已拒绝：{name}（这是 Agent J 的缺陷，请反馈）"
+    en = f"Agent J: unknown action, denied: {name} (this is an Agent J defect, please report it)"
+    if lang is None:
+        return zh + " / " + en
+    return en if str(lang).lower().startswith("en") else zh
+
+
+def log_unknown(st, tool, tool_input=None, *, agent="?"):
+    """P553: an unknown-action denial leaves one approvals.log line (reason unknown_action, input hash only) and one host.log
+    line naming the tool, so support can find it. Best effort: logging never turns the denial into anything else."""
+    from .text import clean_line
+    if st is None:
+        return
+    name = clean_line(tool if isinstance(tool, str) else "?", 64) or "?"
+    try:
+        import secrets
+        from . import approvals
+        approvals.record(st, rid=secrets.token_hex(16), agent=agent if isinstance(agent, str) else "?", tool=name,
+                         input_sha256=approvals.input_digest(tool_input if isinstance(tool_input, dict) else {}),
+                         shown_sha256=approvals.shown_digest(name, unknown_text(name, "en")),
+                         decision="deny", reason="unknown_action", cats=[])
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        st.log("policy_denied", tool=name, reason="unknown_action", agent=agent if isinstance(agent, str) else "?")
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def company_action(definition):

@@ -24,7 +24,10 @@ class OpaqueFloor(unittest.IsolatedAsyncioTestCase):
                     signed = sign(ph, target)
                     approval_level.note_signer(st, approval_level.KEY, 'full', ph.did,
                                               st.sign_key(ph.did), 'f'*32, signed)
-                    self.assertEqual(approval_level.level(h.preferences, st), 'full')
+                    # P552 (chairman 10-26): a signed released full is in force as 减少弹窗 (`harness`), where opaque commands
+                    # follow the harness (P550/P551, test_p513i); the fresh-UV floor below is the other levels' invariant
+                    self.assertEqual(approval_level.level(h.preferences, st), 'harness')
+                    continue
                 if mode == 'goal':
                     d = goal.validate(PROP)
                     d.update(v=1, state='active', used={}, counts={}, id=goal.new_id(),

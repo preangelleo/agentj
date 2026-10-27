@@ -1,6 +1,6 @@
 // P551 static half (web-unit). Browser behaviour: test/p551.mjs (gate p551-phone).
 //  #316 #318 confirmation cards are ONE tier above every other layer and the first layer Esc reaches;
-//  #320 the 4th approval level 「跟随 AI 编程工具（Harness）」 in the same picker, always behind Face ID on the host;
+//  #320 the 4th approval level (P556: 「全放行」) in the same picker, always behind Face ID on the host;
 //  #318 ③ unbinding ANOTHER remote / WeChat asks Face ID (passkey_required → the same signed object + fa; no_passkey said plainly).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -51,16 +51,16 @@ test('ontop.js: started right after layers.js, moves the card above a modal dial
   assert.match(js('relay.js'), /\(dialogOpen\(\) && topCard\(\) !== el\("sheet"\)\)/);   // ⌘↩ works for the card in front
 });
 
-test('「跟随 AI 编程工具」: the 4th button of the same picker, a red confirm, no_passkey in plain words', () => {
+test('「全放行」: the 3rd button of the same picker (P552: merged; P556: renamed 全放行), a red confirm, no_passkey in plain words', () => {
   const s = js('settings.js');
-  assert.match(s, /const LEVELS = \['safe', 'standard', 'full', 'harness'\];/);
-  assert.equal((html.match(/data-set-level="/g) || []).length, 4);
-  assert.match(html, /<button type="button" data-set-level="harness" aria-pressed="false" data-i18n="p336\.harness">跟随 AI 编程工具<\/button><\/div>/);
-  assert.match(s, /\|\| harness, goal = key === 'approval\.goal_nocard';/);    // red, like 全放行
+  assert.match(s, /const LEVELS = \['safe', 'standard', 'harness'\];/);
+  assert.equal((html.match(/data-set-level="/g) || []).length, 3);
+  assert.match(html, /<button type="button" data-set-level="harness" aria-pressed="false" data-i18n="p336\.harness">全放行<\/button><\/div>/);
+  assert.match(s, /const full = \(jev && value === 'off'\) \|\| harness, goal = key === 'approval\.goal_nocard';/);    // red
   assert.match(s, /harness \? t\('p336\.note\.harness'\) \+ ' ' \+ t\('p551\.harnessSign'\)/);
   // P550: no passkey → the plain words + 「在本机设置 Face ID（需另一台批准）」 (P551 待拍板 3: every widening is ③)
   assert.match(s, /if \(m\.why === 'no_passkey'\) toastAction\(t\('p551\.noPasskey'\), t\('pkp\.setupHere'\), \(\) => \{ close\(\); H\.setupFaceId\?\.\(\); \}, 10000\);/);
-  assert.match(read('../public/menu.css'), /#settings #set-level-row>\.segrow\{display:grid;grid-template-columns:1fr 1fr;/);
+  assert.match(read('../public/menu.css'), /#settings #set-level-row>\.segrow\{display:grid;grid-template-columns:repeat\(3,minmax\(0,1fr\)\);/);
 });
 
 test('texts: both languages, the owner\'s words; full access now says Face ID', () => {
@@ -69,14 +69,20 @@ test('texts: both languages, the owner\'s words; full access now says Face ID', 
     assert.ok(zh[k] && en[k], k);
     assert.ok(!/[一-鿿]/.test(en[k]), 'en has no Chinese: ' + k);
   }
-  assert.equal(zh['p336.harness'], '跟随 AI 编程工具');
-  assert.equal(en['p336.harness'], 'Follow AI tool');
-  assert.equal(zh['p551.harnessName'], '跟随 AI 编程工具（Harness）');           // = the host's approval_level.NAME
-  assert.equal(en['p551.harnessName'], 'Follow your AI coding tool (harness)');
-  assert.equal(zh['p336.confirmTitle'].replace('{name}', zh['p551.harnessName']), '改成「跟随 AI 编程工具（Harness）」档？');
-  assert.equal(zh['p551.harnessYes'], '改成跟随 AI 编程工具');
-  assert.ok(zh['p336.note.harness'].startsWith('审批跟随底层 AI 编程工具（技术上叫 Harness）：Agent J 不再额外加审批卡（危险提示、档位、类别授权都不加）；') && zh['p336.note.harness'].endsWith('高手模式：你自己承担风险，换效率。'));
-  assert.ok(en['p336.note.harness'].includes('(technically, a harness)'));
+  // P552 (#325 ③): one switch, one name — P556: 「全放行」 / Full access (also the AI coding tool at its widest permissions)
+  assert.equal(zh['p336.harness'], '全放行');
+  assert.equal(en['p336.harness'], 'Full access');
+  assert.equal(zh['p551.harnessName'], '全放行');           // = the host's approval_level.NAME
+  assert.equal(en['p551.harnessName'], 'Full access');
+  assert.equal(zh['p336.confirmTitle'].replace('{name}', zh['p551.harnessName']), '改成「全放行」档？');
+  assert.equal(zh['p551.harnessYes'], '改成全放行');
+  // P556 (10-27 copy): word for word, one paragraph, nothing technical (the details are on the docs page)
+  assert.equal(zh['p336.note.harness'], '全放行：Agent J 不再弹审批卡，AI 编程工具可以直接改文件、跑命令、联网。只有花钱、删除你的数据、解绑或转移席位、密钥外发，以及有人想改动 Agent J 本身时，仍要 Face ID。风险由你自己承担，换来最快的速度。');
+  assert.ok(en['p336.note.harness'].startsWith('Full access: Agent J shows no approval cards, and the AI coding tool can change files'));
+  for (const d of [zh, en]) for (const k of ['p336.note.safe', 'p336.note.standard', 'p336.note.harness']) assert.doesNotMatch(d[k], /钩子|参数|重启|全局配置|Claude Code|Codex|hook|parameter|restart|config/i, k);
+  for (const k of ['p552.bgNote', 'p556.max.answer', 'p556.max.no_sandbox']) assert.ok(!(k in zh) && !(k in en), 'gone from the page: ' + k);
+  assert.equal(zh['p556.more'], '了解更多');
+  assert.equal(en['p556.more'], 'Learn more');
   assert.equal(zh['p551.unbindFa'], '用 Face ID 解绑');
   assert.ok(zh['p551.unbindNoPasskey'].startsWith('这台设备还没有设置 Face ID / 指纹钥匙。解绑属于不可逆操作，需要本人验证：'));
   assert.ok(zh['p551.noPasskey'].startsWith('这台设备还没有设置 Face ID / 指纹钥匙，不能打开这个模式。'));

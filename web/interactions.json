@@ -2510,7 +2510,7 @@
       "scope": "any",
       "target": {
         "selector": "#set-hostupg",
-        "zh": "设置：升级主机",
+        "zh": "设置：升级 Agent J 主机",
         "en": "Settings: Upgrade computer"
       },
       "gestures": [
@@ -2524,9 +2524,9 @@
           "combo": "Alt+Shift+U"
         }
       ],
-      "zh": "升级主机（手机确认）",
+      "zh": "升级 Agent J 主机（手机确认）",
       "en": "Upgrade computer (confirm on phone)",
-      "gesture_zh": "点击设置里的升级主机",
+      "gesture_zh": "点击设置里的升级 Agent J 主机",
       "gesture_en": "Tap Upgrade computer in Settings"
     },
     {
@@ -2577,7 +2577,7 @@
         }
       ],
       "allowReserved": "P320 (Leo 10-15): Reload needs a key and every free Alt+Shift letter is a ChromeOS shell key; L = reLoad. The ≡ row and /reload work everywhere",
-      "zh": "重新加载主机配置（不重启后台服务）",
+      "zh": "重新加载 Agent J 主机配置（不重启后台服务）",
       "en": "Reload the computer's configuration (no service restart)",
       "gesture_zh": "在 ≡ 全部命令里点「重新加载配置」",
       "gesture_en": "Tap Reload configuration in ≡ All commands"

@@ -225,10 +225,9 @@ class Channel(unittest.IsolatedAsyncioTestCase):
         (self.work/'.agentj').symlink_to(self.root,target_is_directory=True)
         with self.assertRaises(Exception):await self.receive()
         self.c.model.assert_not_awaited();self.assertFalse(self.tr.calls)
-    async def test_missing_context_and_window_never_blindly_push(self):
-        for context,at in [('',time_now:=self.c.clock()),('ctx',time_now-301)]:
-            self.c.store.data.update(context=context,context_at=at)
-            with self.assertRaises(p.Failure):await self.c.send(self.api,'text',self.gen)
+    async def test_missing_context_never_blindly_push(self):
+        self.c.store.data.update(context='',context_at=self.c.clock())   # P554: no time window; only a missing context refuses
+        with self.assertRaises(p.Failure):await self.c.send(self.api,'text',self.gen)
         self.assertFalse(self.tr.calls)
     async def test_session_identity_no_owner_context(self):
         s=Sessions(self.h,self.c.store,max_active=1)

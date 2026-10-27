@@ -26,7 +26,8 @@ import sys
 SENSITIVE = frozenset({"files_prepare", "wechat_terminal", "resume", "config_apply", "send", "revoke", "mail_cfg",   # P170: mail_cfg widening → the owner's card
                        "notify",     # P365: the owner's own automations only — never an Agent (notify.py)
                        "passphrase_consent", "passphrase_replace",    # #118: owner's terminal + a paired remote (pass_reset)
-                       "terminal_cfg"})   # P408: widening the web terminal (enable / allow) — narrowing passes without a claim
+                       "terminal_cfg",    # P408: widening the web terminal (enable / allow) — narrowing passes without a claim
+                       "pk_peer_host"})   # P555: a remote's Face ID set-up approved at the Agent J host's terminal (+ password)
 CLAIM_TTL = 30
 AGENT_ENV = ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CODEX_SANDBOX", "CODEX_SANDBOX_NETWORK_DISABLED",
              "OPENCODE", "AGENTJ_PERM_TOKEN", "AGENTJ_PERM_SOCK", "AGENTJ_FENCED")

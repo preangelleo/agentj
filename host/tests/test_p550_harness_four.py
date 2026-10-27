@@ -188,17 +188,16 @@ class HookFollowsTheFour(unittest.TestCase):
 class AskFollowsTheFour(Base):
     def test_level_on_only_the_four_carry_face_id(self):
         self.harness()
-        with mock.patch.object(self.host, "_harness_would_ask", return_value=False):   # bypass permissions underneath
-            for at, tool, inp, kind in CARDS:
-                n = len(self.cards())
-                self.ask(_inp(tool, inp), tool=tool)
-                if kind:
-                    self.assertTrue(self.cards()[-1]["passkey_required"], at)
-                else:
-                    self.assertEqual(len(self.cards()), n, at)                       # no card at all
-            for tool, inp, _kind in STAYS:
-                self.ask(_inp(tool, inp), tool=tool, batch=False)
-                self.assertTrue(self.cards()[-1]["passkey_required"], (tool, inp))
+        for at, tool, inp, kind in CARDS:
+            n = len(self.cards())
+            self.ask(_inp(tool, inp), tool=tool)
+            if kind:
+                self.assertTrue(self.cards()[-1]["passkey_required"], at)
+            else:
+                self.assertEqual(len(self.cards()), n, at)                       # no card at all
+        for tool, inp, _kind in STAYS:
+            self.ask(_inp(tool, inp), tool=tool, batch=False)
+            self.assertTrue(self.cards()[-1]["passkey_required"], (tool, inp))
 
     def test_relative_paths_need_the_harness_cwd(self):
         # review: the hook judges by the harness's cwd; Host.ask never falls back to the configured folder (the Agent may
@@ -207,10 +206,11 @@ class AskFollowsTheFour(Base):
         self.ask("rm -rf build")
         self.assertTrue(self.cards()[-1]["passkey_required"])
 
-    def test_harness_prompt_for_a_narrowed_step_is_a_long_press_card(self):
+    def test_harness_prompt_for_a_narrowed_step_runs(self):
+        # P556 「全放行」: what the harness itself would still ask (here sudo) is answered by Agent J — no card
         self.harness()
-        self.assertEqual(self.ask("sudo systemctl restart nginx")["behavior"], "deny")   # the harness asked; nobody answered
-        self.assertNotIn("passkey_required", self.cards()[-1])
+        self.assertEqual(self.ask("sudo systemctl restart nginx")["behavior"], "allow")
+        self.assertEqual(self.cards(), [])
 
     def test_default_level_unchanged(self):
         self.ask("printf 'Host x\\n' >> ~/.ssh/config")

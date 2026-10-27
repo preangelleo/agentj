@@ -347,10 +347,11 @@ class Record(unittest.TestCase):
         c = {"id": "c1", "kind": "login", "term": "t1", "nonce": "n", "epk": b"\0" * 32,
              "deadline": time.monotonic() + 60, "fails": 0}
         m = self.host.elevate.card_msg(c, s)
-        self.assertEqual((m["fa"], m["fa_s"]), (wire.b64u(a.id), "unknown"))
+        # P555: a key with no `local` registered under this very id is this device's own
+        self.assertEqual((m["fa"], m["fa_s"]), (wire.b64u(a.id), "local"))
         ask = serve.Ask("r" * 32, CU, "点击", "d" * 64, {}, "i", time.monotonic() + 9, None, require_passkey=True)
         m = self.host._ask_msg(ask, s)
-        self.assertEqual((m["fa"], m["fa_s"]), (wire.b64u(a.id), "unknown"))
+        self.assertEqual((m["fa"], m["fa_s"]), (wire.b64u(a.id), "local"))
         with self.st.devices_lock():
             d = self.st.devices(); d[did]["pk"]["local"] = False
             self.st.write_private(self.st.devices_path, json.dumps(d).encode())

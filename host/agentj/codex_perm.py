@@ -161,6 +161,9 @@ def label(source: str, mode: str | None, zh: bool = True) -> str:
     if source == "agentj":
         return ("底层直跑（Agent J 默认：danger-full-access，等同在终端里直接跑）" if zh else
                 "running directly on the system (Agent J default: danger-full-access, like your own terminal)")
+    if source == "level":
+        return ("全放行：不用沙箱（danger-full-access，只对 Agent J 启动的会话；config.toml 没改）" if zh else
+                "Full access: no sandbox (danger-full-access, only for the sessions Agent J starts; config.toml unchanged)")
     if source == "config":
         return (f"你的沙箱设置：{m}（config.toml）" if zh else f"your sandbox setting: {m} (config.toml)")
     if source == "research":

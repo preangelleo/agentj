@@ -5,7 +5,7 @@
 //    over both, the tier in CSS above every other layer. Topmost = document.elementFromPoint at the card's centre (and at its
 //    main button) lands inside it; focus inside it; Esc folds / cancels it and the focus goes back into the dialog, whose
 //    typed words are still there; a tap on 拒绝 / 确定 reaches the card.
-//  B (#320) the 4th approval level 「跟随 AI 编程工具（Harness）」 in Settings → 安全: one picker, 4 buttons that fit at 390 px; the red confirm;
+//  B (#320) the 4th approval level (P556: 「全放行」) in Settings → 安全: one picker, 4 buttons that fit at 390 px; the red confirm;
 //    no passkey on this remote → the host's `no_passkey` in plain words; with one → passkey_required → Face ID → the SAME
 //    signed approval_set again with `fa`.
 //  C (#318 ③) unbinding ANOTHER remote (Settings → 遥控器管理) and unbinding WeChat ask this remote's Face ID: the first signed
@@ -188,7 +188,7 @@ try {
     await p.dispose();
   }
 
-  // ======================================================================== B: 「跟随 AI 编程工具（Harness）」
+  // ======================================================================== B: the harness level (P556: 「全放行」)
   const L4 = `(()=>{const bad=[];const row=document.getElementById('set-level-row');const R=row.getBoundingClientRect();const g=row.querySelector('.segrow').getBoundingClientRect();
     for(const b of row.querySelectorAll('[data-set-level]')){const r=b.getBoundingClientRect();if(r.left<R.left-1||r.right>R.right+1||r.left<g.left-1||r.right>g.right+1)bad.push('overflow '+b.dataset.setLevel);if(r.height<44||r.width<44)bad.push('tap '+b.dataset.setLevel);
       if(b.scrollWidth>b.clientWidth+1)bad.push('clipped '+b.dataset.setLevel);}
@@ -207,17 +207,17 @@ try {
     await openSafety(p);
     writeFileSync(OUT + `b1-levels-${name}.png`, await shoot(p, ''));
     if (CHECK) {
-      check(await ev(p, `document.querySelectorAll('#set-level-row [data-set-level]').length`) === 4, '4 buttons in ONE picker ' + name);
-      check(await ev(p, `document.querySelector('[data-set-level="harness"]').textContent`) === L('跟随 AI 编程工具', 'Follow AI tool'), 'harness label ' + name);
+      check(await ev(p, `document.querySelectorAll('#set-level-row [data-set-level]').length`) === 3, '3 buttons in ONE picker (P552: 全放行 merged) ' + name);
+      check(await ev(p, `document.querySelector('[data-set-level="harness"]').textContent`) === L('全放行', 'Full access'), 'harness label (P556: 全放行) ' + name);
       const bad = await ev(p, L4);
       check(!bad.length, 'the 4 buttons fit ' + name + ' :: ' + bad.join(' · '));
       await press(p, '[data-set-level="harness"]', touch);
       await waitFor(p, `!document.getElementById('confirm').hidden`); await sleep(200);
       writeFileSync(OUT + `b2-harness-confirm-${name}.png`, await shoot(p, ''));
-      check(await ev(p, `document.getElementById('confirm-title').textContent`) === L('改成「跟随 AI 编程工具（Harness）」档？', 'Switch to Follow your AI coding tool (harness)?'), 'confirm title ' + name);
+      check(await ev(p, `document.getElementById('confirm-title').textContent`) === L('改成「全放行」档？', 'Switch to Full access?'), 'confirm title ' + name);
       const txt = await ev(p, `document.getElementById('confirm-text').textContent`);
-      check(txt.includes(L('这四类仍要 Face ID', 'Only four kinds still need Face ID')) && txt.includes(L('设置了 Face ID 的设备上切换', 'Face ID set up can switch')), 'confirm text = note + Face ID sign note ' + name);
-      check(await ev(p, `document.getElementById('confirm-yes').textContent`) === L('改成跟随 AI 编程工具', 'Switch to Follow AI tool'), 'yes label ' + name);
+      check(txt.includes(L('密钥外发', 'sending a key out')) && txt.includes(L('仍要 Face ID', 'still need Face ID')) && txt.includes(L('设置了 Face ID 的设备上切换', 'Face ID set up can switch')), 'confirm text = note + Face ID sign note ' + name);
+      check(await ev(p, `document.getElementById('confirm-yes').textContent`) === L('改成全放行', 'Switch to Full access'), 'yes label ' + name);
       check(await ev(p, `document.getElementById('confirm-yes').classList.contains('aj-btn--danger')`), 'the switch reads as dangerous ' + name);
       check(await ev(p, TOP('#confirm .box', '#confirm-yes')) && await ev(p, `document.activeElement.id==='confirm-yes'`), 'confirm over Settings, focused ' + name);
       await press(p, '#confirm-yes', touch);
@@ -249,7 +249,7 @@ try {
     const [s1, s2] = fake.st.approvalSets;
     check(s1 && !s1.fa && s2 && s2.n === s1.n && s2.fa && s2.sigOk && s2.value === 'harness', 'same signed object resent with fa ' + name);
     check(await ev(p, `window.__fa`) === 1, 'Face ID asked once ' + name);
-    check((await ev(p, `document.getElementById('set-level-note').textContent`)).startsWith(L('审批跟随底层 AI 编程工具（技术上叫 Harness）', 'Approvals follow your underlying AI coding tool (technically, a harness)')), 'harness note ' + name);
+    check((await ev(p, `document.getElementById('set-level-note').textContent`)).startsWith(L('全放行：Agent J 不再弹审批卡', 'Full access: Agent J shows no approval cards')), 'harness note ' + name);
     await sleep(2500);
     writeFileSync(OUT + `b5-harness-on-${name}.png`, await shoot(p, ''));
     // back to standard: narrowing, no Face ID

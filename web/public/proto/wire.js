@@ -146,7 +146,8 @@ export const CONTROL_ACTIONS = ['heartbeat_write', 'security_begin','security_ve
   'vault_share',                                                           // P414 (§38.11): let this remote use the stored password
   'fr_gsay',                                                                // P426 #170 (§17.7): a message in 「我的设备」
   'fr_report_reply', 'fr_report_remark', 'files_write', 'skill_archive', 'skill_restore', 'wechat',   // P426 #181-3 (§39): 「归档」/「恢复」 on the 技能 page
-  'seat_transfer', 'seat_transfer_cancel'];                                 // P547: Settings → 转移席位 (object {} → "transfer" / "cancel")
+  'seat_transfer', 'seat_transfer_cancel',                                  // P547: Settings → 转移席位 (object {} → "transfer" / "cancel")
+  'forward_set'];                                                           // P554: 转发去向, one host setting for every remote
 /** The text whose SHA-256 a control signature covers (the target, with the content hash the phone saw). */
 export function controlObject(action, o) {
   if (action === 'fr_report_reply') return `${o.resend === true ? 'resend\n' : ''}${o.id}\n${o.text}`;
@@ -173,6 +174,7 @@ export function controlObject(action, o) {
   if (action === 'vault_share') return 'share';                    // P414 (§37.11): object {}
   if (action === 'seat_transfer') return 'transfer';               // P547: object {} (Face ID: the host asks for it)
   if (action === 'seat_transfer_cancel') return 'cancel';          // P547: object {} (only narrows: no Face ID)
+  if (action === 'forward_set') return `${o.dest}${o.migrate === true ? '\nmigrate' : ''}`;   // P554: share | wx | tg [\n migrate]
   if (action === 'files_write') return `${o.op}\n${o.path}\n${o.expires}`;
   if (action === 'skill_archive' || action === 'skill_restore') return `${o.op}\n${o.name}`;   // P426 #181-3 (§39): op \n name
   if (action === 'approval_set') return `${o.key}\n${typeof o.value === 'boolean' ? (o.value ? 'true' : 'false') : o.value}`;   // P336

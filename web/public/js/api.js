@@ -178,7 +178,7 @@ export async function model(want) {
 
 /** P118 (B10): this reply → the owner's own Telegram private chat (host cap `tgfwd`). → {ok, why?} */
 export async function wxForward(id) {
-  if (!isReady() || !peer.p33 || !peer.wxfwd) return {ok:false, why:'not_configured'};
+  if (!isReady() || !peer.p33 || !peer.wxbound) return {ok:false, why:'not_configured'};   // P554: the computer checks the reply window
   const m = await ask1({t:'wx_fwd', id}, 'wx_fwd_res', 30000);
   return m.t === 'wx_fwd_res' && m.ok === true ? {ok:true} : {ok:false, why:m.why || 'send_failed'};
 }

@@ -29,6 +29,16 @@ def legacy_canonical_floor(layer, action):
 
 # P539 (#300): canonical actions added after P512, each explicitly reviewed: main = UV card, other layers no wider.
 P539_REVIEWED = frozenset({'computer.control'})
+# P553 (#326): native names that were unknown (deny) until reviewed into the P551 tiers; never lower than ① on main
+P553_UNKNOWN_BEFORE = frozenset({
+    'ToolSearch', 'ListMcpResourcesTool', 'ReadMcpResourceTool', 'NotebookRead', 'BashOutput', 'TaskOutput', 'TaskGet',
+    'TaskList', 'ListAgents', 'CronList', 'LSP', 'Skill', 'tool_search', 'list_mcp_resources', 'list_mcp_resource_templates',
+    'read_mcp_resource', 'list_agents', 'glob', 'grep', 'list', 'lsp', 'skill', 'codesearch', 'ExternalDirectory',
+    'TaskStop', 'KillShell', 'KillBash', 'ScheduleWakeup', 'EnterPlanMode', 'ExitPlanMode', 'TaskCreate', 'TaskUpdate',
+    'CronCreate', 'CronDelete', 'PushNotification', 'SendUserMessage', 'StructuredOutput', 'ReportFindings', 'Sleep',
+    'TeamCreate', 'TeamDelete', 'wait_agent', 'close_agent', 'plan_enter', 'plan_exit', 'SendMessage', 'Workflow',
+    'spawn_agent', 'send_input', 'resume_agent', 'followup_task', 'EnterWorktree', 'ExitWorktree', 'todowrite', 'question',
+    'Config', 'DesignSync', 'Monitor', 'write_stdin', 'js_repl', 'PowerShell', 'RemoteTrigger'})
 
 
 class Matrix(unittest.TestCase):
@@ -292,7 +302,7 @@ class LegacyFloors(unittest.TestCase):
               'payment','admin','device.pair','device.revoke','publish','company.write'}
         uv |= P539_REVIEWED    # reviewed new action: unknown-deny → mandatory passkey card (never automatic)
         p551 = {'mail.send','calendar.write','publish'}   # chairman #318: ② reversible, main layer uv → hold only
-        dispatch = {'agent.dispatch'}                      # chairman #321 (P551): sending a sub-agent off is ①
+        dispatch = {'agent.dispatch', 'agent.session'}     # chairman #321 (P551): sending a sub-agent off is ①; P553: its own housekeeping
         covered = free | native | reversible | uv | dispatch | {'file.read','company.read'}
         self.assertEqual(set(p.REGISTRY),covered)
         rank = {'allow':0,'hold':1,'uv':2,'handoff':3,'deny':3}
@@ -342,8 +352,10 @@ class LegacyFloors(unittest.TestCase):
                     self.assertEqual(actual, 'uv')     # P539 #300: a reviewed new action asks with a passkey
                 elif layer == 'main' and action in ('mail.send', 'calendar.write', 'publish'):
                     self.assertEqual(actual, 'hold')   # #318 (P551): reversible — long-press, never silent
-                elif layer == 'main' and action == 'agent.dispatch':
+                elif layer == 'main' and action in ('agent.dispatch', 'agent.session'):
                     self.assertEqual(actual, 'allow')  # #321 (P551): a sub-agent dispatch is ①; its own calls are checked
+                elif layer == 'main' and tool in P553_UNKNOWN_BEFORE:
+                    self.assertIn(actual, ('allow', 'hold', 'uv'))   # P553 (#326): reviewed, was unknown-deny
                 elif rank[actual] < rank[old]:
                     self.assertEqual(layer, 'channel')
                     self.assertIn(tool, differences)
@@ -353,7 +365,7 @@ class LegacyFloors(unittest.TestCase):
 
     def test_exact_native_mapping_and_no_tool_masquerading(self):
         for tool,action in {**p.NATIVE_TOOLS,**p.HOST_TOOLS}.items():
-            self.assertEqual(p.main_requirement(tool), 'allow' if tool in ('Bash','exec_command','shell_command') else p.decision('main',action),tool)
+            self.assertEqual(p.main_requirement(tool), 'allow' if tool in ('Bash','exec_command','shell_command','Monitor') else p.decision('main',action),tool)
         for tool,action in p.MCP_TOOLS.items():
             self.assertEqual(p.main_requirement('mcp__fixture__'+tool), 'allow' if tool in ('execute_command','bash') else p.decision('main',action))
         for tool in ('mcp__fixture__unregistered_read','mcp__fixture__read_file__delete',

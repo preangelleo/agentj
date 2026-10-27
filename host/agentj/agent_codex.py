@@ -557,6 +557,10 @@ class CodexAgent(Agent):
         from . import codex_perm
         p = {}
         sandbox, self.perm_source = codex_perm.main_sandbox(self.human.get("sandbox_mode"), self.research)
+        if self.cfg.get("follow_harness") and not self.research:
+            # P556 「全放行」: no sandbox for Agent J's own thread (the owner's config.toml is not touched); approvals stay
+            # routed to the host so the four ③ kinds are still seen — Agent J answers the rest (= approval_policy never)
+            sandbox, self.perm_source = codex_perm.FULL, "level"
         # P513d: native preferences cannot suppress host review. Accepted calls
         # still pass beyond_sandbox; asking more never expands inherited access.
         p["approvalsReviewer"] = "user"
@@ -565,17 +569,6 @@ class CodexAgent(Agent):
         if self.cfg.get("model"):
             p["model"] = self.cfg["model"]
         return p
-
-    def harness_would_ask(self, tool: str, inp: dict, batch: bool) -> bool:
-        """P551 (#320, the `harness` level): Agent J still runs the thread `untrusted` so ③ reaches the host; here the owner's
-        OWN approval_policy decides whether Codex itself would have asked. never → no; untrusted / granular → yes;
-        on-request / on-failure / unset (Codex's default) → only a sandbox or network escalation (batch=False)."""
-        ap = self.human.get("approval_policy")
-        if ap == "never":
-            return False
-        if ap == "untrusted" or isinstance(ap, dict):
-            return True
-        return not batch
 
     async def reload_identity(self) -> None:
         """A1: developerInstructions are sent on thread/start|resume: end the idle app-server; the next turn spawns it and
@@ -1042,7 +1035,8 @@ class CodexAgent(Agent):
             name = clean_line(tool, 64) or "?"
             from .approval_jev import low_risk_pass       # P198: P157 layer 1 — low risk runs without a card, like Claude
             r = ({"behavior": "allow"} if not self.research and low_risk_pass(self.host, self.cfg, name, inp, batch)
-                 else await self.host.ask(name, inp, gone, batch=batch, **({"bind": bind} if bind else {})))
+                 else await self.host.ask(name, inp, gone, batch=batch, **({"bind": bind} if bind else {}),
+                                         **({"background": "task"} if self.cfg.get("_workflow_ceo") else {})))   # P552
             if r.get("behavior") == "allow":
                 ans = yes
         except Exception:  # noqa: BLE001 — fail closed
@@ -1273,8 +1267,10 @@ class CodexAgent(Agent):
         sb = self.thread.get("sandbox")
         sbt = codex_perm.mode_of(sb) or self.human.get("sandbox_mode")
         src = getattr(self, "perm_source", None) or codex_perm.main_sandbox(self.human.get("sandbox_mode"), self.research)[1]
-        if not sb and src in ("agentj", "config", "research"):
+        if not sb and src in ("agentj", "config", "research", "level"):
             sbt = codex_perm.main_sandbox(self.human.get("sandbox_mode"), self.research)[0]
+        if src == "level":
+            sbt = codex_perm.FULL
         info = codex_perm.config_info()
         if self.policy().get("approvalPolicy") == "untrusted":
             pol = pick(getattr(self.host, "lang", "zh"),

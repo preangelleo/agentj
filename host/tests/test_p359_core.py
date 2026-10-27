@@ -424,7 +424,7 @@ class CeoRun(Tmp):
         (self.proj / "build").mkdir()
         asked = []
 
-        async def host_ask(tool, inp, gone=None, *, origin=None, batch=True):
+        async def host_ask(tool, inp, gone=None, *, origin=None, batch=True, background=None):
             asked.append((tool, inp, origin, batch))
             return {"behavior": "deny", "message": "主人拒绝"}
 
@@ -491,7 +491,7 @@ class Bridge(Tmp):
     def test_token_finished_order_and_host_built_origin(self):
         asked = []
 
-        async def host_ask(tool, inp, gone=None, *, origin=None, batch=True):
+        async def host_ask(tool, inp, gone=None, *, origin=None, batch=True, background=None):
             asked.append(origin)
             return {"behavior": "allow"}
 

@@ -147,7 +147,7 @@ test('the page: seatscope.js first in <head>; per-seat DB names; seat routes for
   assert.match(app, /if \(seats\.SEAT && \(await seats\.seatId\(to\.channel\)\) !== seats\.SEAT\) throw new Error\('seat'\);/, '…nor its renewal ticket');
   const fid = readFileSync(pub('js/faceid.js'), 'utf8');
   assert.match(fid, /export async function assert\(challenge, allow = \[\]\)/);
-  assert.match(fid, /allowCredentials: allow\.map\(\(id\) => \(\{ type: 'public-key', id: unb64u\(id\) \}\)\)/);
+  assert.match(fid, /allowCredentials: allow\.map\(\(id\) => \(\{ type: 'public-key', id: unb64u\(id\), transports: TRANSPORTS\.unknown \}\)\)/);   // P555 d: + transports
   assert.match(readFileSync(pub('sw.js'), 'utf8'), /u\.pathname === new URL\('\.\/share-target', self\.location\.href\)\.pathname/, 'each worker takes only its own scope\'s shares (root ≠ seat)');
   const store = readFileSync(pub('js/store.js'), 'utf8');
   assert.match(store, /r\.onupgradeneeded = \(\) => r\.transaction\.abort\(\);/, 'reading the root database never creates it');

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// P336 Settings → 安全: 「审批档位」 (安全 / 中等 / 全放行) and 「设了目标就不弹窗」 — both change ONLY by the signed
+// P336 Settings → 安全: 「审批档位」 (安全 / 中等 / 全放行 — P552 merged the two, P556 named it 全放行) and 「设了目标就不弹窗」 — both change ONLY by the signed
 // `approval_set` control (never pref_set), shown only when the host lists them in `host.signed_prefs`. Plus the
 // `auto` toast for by:"full" and the activity lines for auto by level_full / goal_nocard and a parked (owner offline) card.
 // The real web client against fakehost.mjs, own headless Chromium (never :9222); 390 × 844 and 1440 × 900, zh / en,
@@ -85,30 +85,17 @@ try {
     const bad = await ev(p, LAYOUT);
     check(!bad.length, 'layout ' + name + ' ' + bad.join(' · '));
 
-    // 全放行: the red-line confirm, then ONE signed approval_set (no pref_set)
-    await click(p, '[data-set-level="full"]');
-    await waitFor(p, `!document.getElementById('confirm').hidden`);
-    await sleep(200);
-    writeFileSync(OUT + `2-full-confirm-${name}.png`, await shoot(p, ''));
-    const txt = await ev(p, `document.getElementById('confirm-text').textContent`);
-    check(txt.includes(L('疑似被攻击', 'suspected attacks')) && txt.includes(L('花钱', 'spending money')) && txt.includes(L('改价', 'price changes')), 'full confirm names the red lines ' + name);
-    check(txt.includes(L('定时任务', 'scheduled tasks')) && txt.includes(L('直到你切回来', 'until you switch back')), 'full confirm: everything until switched back ' + name);
-    check(await ev(p, `document.getElementById('confirm-yes').classList.contains('aj-btn--danger')`), 'full confirm button reads as dangerous ' + name);
-    check(fake.st.approvalSets.length === 0, 'nothing sent before the confirm ' + name);
-    await click(p, '#confirm-yes');
-    await waitFor(p, `document.querySelector('[data-set-level="full"]').getAttribute('aria-pressed')==='true'`);
-    check(fake.st.approvalSets.length === 1 && fake.st.approvalSets[0].key === 'approval.level' && fake.st.approvalSets[0].value === 'full' && fake.st.approvalSets[0].sigOk, 'signed approval_set level=full ' + name);
-    check(!fake.st.prefSets.some((m) => String(m.key).startsWith('approval.')), 'never pref_set for approval.* ' + name);
-    { const nt = await ev(p, `document.getElementById('set-level-note').textContent`); check(nt.includes('--dangerously-skip-permissions'), 'full note shown ' + name + ' :: ' + nt); }
-    await sleep(300);
-    writeFileSync(OUT + `3-safety-full-${name}.png`, await shoot(p, ''));
-
+    // P552 (#325 ③) / P556: one 「全放行」 option — three options, one name, the background line
+    check(await ev(p, `document.querySelectorAll('#set-level-row [data-set-level]').length`) === 3 && !(await ev(p, `!!document.querySelector('[data-set-level="full"]')`)), 'three options, no 全放行 ' + name);
+    check(await ev(p, `document.querySelector('[data-set-level="harness"]').textContent`) === L('全放行', 'Full access'), 'merged option label ' + name);
+    // P556 (10-27 copy): the background paragraph moved to the docs page; 中等's one-paragraph note says it
+    check(!(await ev(p, `!!document.getElementById('set-level-bg')`)) && (await ev(p, `document.getElementById('set-level-more').href`)).endsWith('/docs/phone/#approval-level'), 'background line → docs ' + name);
     // 安全: a short confirm; Esc cancels, nothing sent
     await click(p, '[data-set-level="safe"]');
     await waitFor(p, `!document.getElementById('confirm').hidden`);
     check(!(await ev(p, `document.getElementById('confirm-yes').classList.contains('aj-btn--danger')`)), 'safe confirm is not red ' + name);
     await key(p, 'Escape'); await sleep(250);
-    check(!(await confirmOpen(p)) && fake.st.approvalSets.length === 1 && await pressed(p) === 'full', 'Esc cancels the switch ' + name);
+    check(!(await confirmOpen(p)) && fake.st.approvalSets.length === 0 && await pressed(p) === 'standard', 'Esc cancels the switch ' + name);
     check(!(await ev(p, `document.getElementById('settings').hidden`)), 'Esc on the confirm leaves Settings open ' + name);
 
     // 设了目标就不弹窗: confirm → a boolean approval_set (the shot waits for the 「已保存」 ✓ to fade first)
@@ -119,16 +106,16 @@ try {
     if (w === 390) writeFileSync(OUT + `4-goal-confirm-${name}.png`, await shoot(p, ''));
     await click(p, '#confirm-yes');
     await waitFor(p, `document.getElementById('set-gnc').getAttribute('aria-checked')==='true'`);
-    const g = fake.st.approvalSets[1];
+    const g = fake.st.approvalSets[0];
     check(g && g.key === 'approval.goal_nocard' && g.value === true && g.sigOk, 'signed approval_set goal_nocard=true (boolean) ' + name);
 
-    // a refused write: a toast with the reason, the UI follows the host (still full)
+    // a refused write: a toast with the reason, the UI follows the host (still standard)
     fake.st.approvalWhy = 'rejected';
-    await click(p, '[data-set-level="standard"]');
+    await click(p, '[data-set-level="safe"]');
     await waitFor(p, `!document.getElementById('confirm').hidden`);
     await click(p, '#confirm-yes');
     await waitFor(p, `document.getElementById('toast').classList.contains('on')&&document.getElementById('toast').textContent.includes(${JSON.stringify(L('Agent J 主机没有接受这个值', "didn't accept"))})`);
-    check(await pressed(p) === 'full', 'refused → level unchanged ' + name);
+    check(await pressed(p) === 'standard', 'refused → level unchanged ' + name);
     await key(p, 'Escape'); await sleep(300);   // close Settings
 
     // the by:"full" auto toast
@@ -172,17 +159,17 @@ try {
     await waitFor(p, `document.querySelector('[data-set-level="standard"]').getAttribute('aria-pressed')==='true'`);
     check(fake.st.approvalSets.length === 1 && !fake.st.approvalSets[0].fa && !(await ev(p, `window.__fa`)), 'narrowing never asks for Face ID ' + name);
     await sleep(2500);
-    // widening to full: red confirm → host says passkey_required → the Face ID sheet
-    await click(p, '[data-set-level="full"]'); await waitFor(p, `!document.getElementById('confirm').hidden`); await yes();
+    // widening to the merged switch (P552): red confirm → host says passkey_required → the Face ID sheet
+    await click(p, '[data-set-level="harness"]'); await waitFor(p, `!document.getElementById('confirm').hidden`); await yes();
     await waitFor(p, `!document.getElementById('confirm').hidden && document.getElementById('confirm-title').textContent===${JSON.stringify(L('用 Face ID 确认', 'Confirm with Face ID'))}`);
     await sleep(250);
     writeFileSync(OUT + `7-faceid-sheet-${name}.png`, await shoot(p, ''));
     check(fake.st.approvalSets.length === 2 && !fake.st.approvalSets[1].fa, 'first widening send has no fa ' + name);
     await yes();
-    await waitFor(p, `document.querySelector('[data-set-level="full"]').getAttribute('aria-pressed')==='true'`);
+    await waitFor(p, `document.querySelector('[data-set-level="harness"]').getAttribute('aria-pressed')==='true'`);
     const fa = await ev(p, `window.__fa`), [s1, s2] = fake.st.approvalSets.slice(1);
     check(fa && fa.length === 1 && fa[0].inTap && fa[0].ch > 0, 'Face ID started synchronously inside the tap ' + name);
-    check(s2 && s2.n === s1.n && s2.sigOk && s2.fa && s2.fa.id && s2.fa.sig && s2.value === 'full', 'resent the SAME signed object (same n) + fa ' + name);
+    check(s2 && s2.n === s1.n && s2.sigOk && s2.fa && s2.fa.id && s2.fa.sig && s2.value === 'harness', 'resent the SAME signed object (same n) + fa ' + name);
     await sleep(2500);
     // goal on → Face ID sheet → 取消: nothing changes, no resend
     await click(p, '#set-gnc'); await waitFor(p, `!document.getElementById('confirm').hidden`); await yes();

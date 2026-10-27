@@ -434,25 +434,53 @@ class State:
         """The pk record of a listed device, or None (no passkey: its F17 cards need no Face ID — ADR-A163)."""
         rec = self.devices().get(did)
         pk = rec.get("pk") if isinstance(rec, dict) else None
-        return dict(pk) if isinstance(pk, dict) and isinstance(pk.get("id"), str) else None
+        if not isinstance(pk, dict) or not isinstance(pk.get("id"), str):
+            return None
+        out = dict(pk)
+        # P555: a key saved before P539 has no `local`. pk_reg always asks for this device's own (platform) authenticator
+        # (serve._pk_where counts a missing attachment as local), so a key registered under this id is this device's own;
+        # only a record a restore moved here (`dev` names another id) stays unknown (→ the one-tap self-check, pkpeer.py).
+        if "local" not in out and out.get("dev", did) == did:
+            out["local"] = True
+        return out
 
     def passkey_state(self, did: str | None) -> str:
         """P539: none | local | borrowed | unknown for a listed device (passkey.pk_state of its record; advisory only)."""
         from . import passkey
         return passkey.pk_state(self.passkey_of_device(did) if did else None)
 
+    def passkey_local(self, did: str, cred_id: str, local: bool) -> bool:
+        """P555: after a verified self-check assertion, note where this device's key lives (advisory, like P539's `local`)."""
+        with self.devices_lock():
+            d = self.devices()
+            pk = (d.get(did) or {}).get("pk")
+            if not isinstance(pk, dict) or pk.get("id") != cred_id:
+                return False
+            pk["local"] = bool(local)
+            _write_private(self.devices_path, json.dumps(d, indent=1, ensure_ascii=False).encode())
+        return True
+
     def passkey_count(self, did: str, cred_id: str, count: int) -> bool:
-        """Remember a verified non-zero signCount (a cloned authenticator then fails on the next use, ADR-A163)."""
-        if not count:
+        """Remember a verified non-zero signCount (a cloned authenticator then fails on the next use, ADR-A163).
+        Every verified assertion of this device's own key lands here: P555 — a key whose place was never noted (「未确认」)
+        just worked from this device, so it is noted as this device's (the display follows what works; advisory only)."""
+        noted = False
+        if not count and self.passkey_state(did) != "unknown":
             return False
         with self.devices_lock():
             d = self.devices()
             pk = (d.get(did) or {}).get("pk")
             if not isinstance(pk, dict) or pk.get("id") != cred_id:
                 return False
-            pk["sc"] = count
+            if "local" not in pk and pk.get("dev", did) != did:
+                pk["local"] = noted = True
+            if count:
+                pk["sc"] = count
             _write_private(self.devices_path, json.dumps(d, indent=1, ensure_ascii=False).encode())
-        return True
+        if noted and callable(cb := getattr(self, "on_passkey_noted", None)):
+            with contextlib.suppress(RuntimeError):     # no running loop (a CLI / thread caller): the next resume repaints
+                cb(did)
+        return bool(count)
 
     def set_passkey(self, pub: bytes, pk: dict, *, replacement: dict | None = None, challenge: bytes | None = None,
                     peer_ok: bool = False) -> bool:

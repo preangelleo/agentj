@@ -61,7 +61,7 @@ def rows(st, online: set, me: str | None = None) -> list[dict]:
                     "seen": _num(v.get("seen")), "online": did in online, "me": did == me,
                     "source": "phone" if src.startswith("phone") else src if src in ("local", "account") else "local",
                     "named_by": n["named_by"], "self_name": clean_label(n["self_name"] or ""),
-                    "pk": passkey.pk_state(v.get("pk"))})   # P539: none | local | borrowed | unknown (never the id)
+                    "pk": st.passkey_state(did)})   # P539: none | local | borrowed | unknown (never the id); P555: legacy own key = local
     return out
 
 
@@ -98,7 +98,7 @@ class Remotes:
             'phone' if 'phone' in kinds and 'computer' not in kinds else None)
         await h.send_app(s, {"t": "devs", **snap})
         await h.send_app(s, {"t": "pair_guide", "kind": kind if kind in ('phone', 'computer') else None})
-        await h.send_app(s, {"t": "pk_state", "s": h.st.passkey_state(s.device)})   # P539: this remote's own passkey
+        await h.send_app(s, {"t": "pk_state", "s": h.st.passkey_state(s.device), **(h.pkpeer.check_fields(s) if getattr(h, "pkpeer", None) else {})})   # P539 · P555: + self-check
 
     async def changed(self) -> None:
         """All successful allowlist mutations converge here, regardless of their approval route."""

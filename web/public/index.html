@@ -384,7 +384,8 @@
               <i class="bang" aria-hidden="true">!</i>
             </button>
             <button class="act" id="fwdBtn" type="button" data-state="idle" data-i18n-attr="aria-label=r.share.idle,title=r.share.idle" aria-label="分享这一条" title="分享这一条">
-              <svg class="g g0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 19 19 5M6 5h13v13"/></svg>
+              <!-- P554: 转发 = 回复 mirrored left↔right (the pre-P536 glyph); test/p554-icon.test.mjs keeps it so -->
+              <svg class="g g0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14 5l6 6-6 6"/><path d="M20 11h-9a7 7 0 0 0-7 7v1"/></svg>
               <!-- P201: with the host's Telegram on, the button is a solid paper plane (icons.js TG_PATH), coloured like the others -->
               <svg class="g gtg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.69 3.91Q20.79 3.14 20.1 3.49L3.69 11.93Q3 12.28 3.71 12.59L8.03 14.5L18.12 5.85L10.31 15.27L18.22 17.6Q18.89 17.8 18.98 17.1zM9.59 16.43Q9.57 16.22 9.77 16.29L12.4 17.18Q12.56 17.24 12.45 17.37L10.26 19.87Q9.89 20.3 9.85 19.74z"/></svg>
               <svg class="g gok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>
@@ -869,7 +870,7 @@
             </div>
             <button type="button" id="setup-faceid" class="setnav" hidden><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2M9 9.5v1M15 9.5v1M12 9.5V13h-1M9.5 16a3.5 3.5 0 0 0 5 0"/></svg><span><b data-i18n="phoneEnv.setup">设置 Face ID</b><small data-i18n="pkp.rowNote">危险操作前用 Face ID 确认是你本人。每台设备各有自己的 Face ID / 指纹钥匙。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
             <!-- P547 (PASSKEY-SEAT-MODEL §3): move this seat to a new Agent J host from the remote. js/seatxfer.js (hidden until the host answers seat_xfer_state) -->
-            <button type="button" id="set-seat-xfer" class="setnav" hidden><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="4" width="9" height="6.5" rx="1.5"/><rect x="12.5" y="13.5" width="9" height="6.5" rx="1.5"/><path d="M7 13v2.5a2 2 0 0 0 2 2h1M8.5 15.5l2 2-2 2"/></svg><span><b data-i18n="sxf.row">转移席位到另一台 Agent J 主机</b><small data-i18n="sxf.rowNote">换电脑时用：新主机接手这个席位，遥控器自动跟过去。</small><small id="set-seat-xfer-state" class="sxf-state" hidden></small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
+            <button type="button" id="set-seat-xfer" class="setnav" hidden><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="4" width="9" height="6.5" rx="1.5"/><rect x="12.5" y="13.5" width="9" height="6.5" rx="1.5"/><path d="M7 13v2.5a2 2 0 0 0 2 2h1M8.5 15.5l2 2-2 2"/></svg><span><b data-i18n="sxf.row">转移席位到另一台 Agent J 主机</b><small data-i18n="sxf.rowNote">换新的 Agent J 主机时用：席位和遥控器都跟过去。</small><small id="set-seat-xfer-state" class="sxf-state" hidden></small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
             <div class="setacts" id="set-seat-xfer-acts" hidden><button type="button" id="set-seat-xfer-cancel" class="aj-btn aj-btn--sm" data-i18n="sxf.cancelBtn">撤销</button></div>
             <p class="setnote" data-i18n="set.computerNote">这台手机一次只配对一台Agent J 主机。给 Agent 改名：在Agent J 主机上运行 agentj name &lt;新名字&gt;。你所有的 Agent 都能在账号后台看到。</p>
             <p class="setlinks"><a href="https://agentj.app/account/" target="_blank" rel="noopener" data-i18n="set.computerSeats">在账号后台查看所有 Agent</a></p>
@@ -1048,9 +1049,10 @@
             </div>
             <fieldset class="forward-options" id="set-forward">
               <legend data-i18n="p536.destination">转发去向</legend>
-              <p class="setnote" data-i18n="p536.destinationNote">用于回复卡和阅读器。在此遥控器上自动保存。</p>
+              <p class="setnote" id="set-fwd-note" data-i18n="p536.destinationNote">用于回复卡和阅读器。在此遥控器上自动保存。</p>
               <label><input type="radio" name="forward-destination" value="share"><span data-i18n="p536.system">系统分享（默认）</span></label>
               <label><input type="radio" name="forward-destination" value="wx" disabled><span data-i18n="p536.wechat">微信 ClawBot</span></label>
+              <div class="forward-why" id="set-fwd-wx-why" hidden><p class="setnote" id="set-fwd-wx-note"></p><button type="button" id="set-fwd-wx-bind" class="aj-btn aj-btn--sm" data-i18n="p554.bind">去绑定</button></div>
               <label><input type="radio" name="forward-destination" value="tg" disabled><span data-i18n="p536.telegram">{channel}</span></label>
             </fieldset>
           </section>
@@ -1060,8 +1062,12 @@
             <div class="setrow" data-paired><button type="button" id="set-estop" class="aj-btn" data-i18n="p435.estop">紧急停止所有 Agent</button></div>
             <div class="setrow" data-paired id="set-level-row" hidden>
               <span class="setlab" data-i18n="p336.level">审批档位</span>
-              <div class="segrow" role="group" data-i18n-attr="aria-label=p336.level" aria-label="审批档位"><button type="button" data-set-level="safe" aria-pressed="false" data-i18n="p336.safe">安全</button><button type="button" data-set-level="standard" aria-pressed="false" data-i18n="p336.standard">中等</button><button type="button" data-set-level="full" aria-pressed="false" data-i18n="p336.full">全放行</button><button type="button" data-set-level="harness" aria-pressed="false" data-i18n="p336.harness">跟随 AI 编程工具</button></div>
+              <div class="segrow" role="group" data-i18n-attr="aria-label=p336.level" aria-label="审批档位"><button type="button" data-set-level="safe" aria-pressed="false" data-i18n="p336.safe">安全</button><button type="button" data-set-level="standard" aria-pressed="false" data-i18n="p336.standard">中等</button><button type="button" data-set-level="harness" aria-pressed="false" data-i18n="p336.harness">全放行</button></div>
               <p class="setnote" id="set-level-note" aria-live="polite"></p>
+              <!-- P556 (10-27 copy): one plain paragraph per level; the technical detail (per-tool parameters, background work) is on the docs page -->
+              <p class="setlinks"><a id="set-level-more" href="https://agentj.app/docs/phone/#approval-level" target="_blank" rel="noopener" data-i18n="p556.more">了解更多</a></p>
+              <!-- P552 (#325 ①): configured but not in force (the remote that signed it is gone / re-keyed) → say so + one way on -->
+              <div class="setunsigned" id="set-level-unsigned" hidden><p class="setnote setunsigned__why" id="set-level-unsigned-why" role="status"></p><button type="button" class="aj-btn" id="set-level-resign" data-i18n="p552.resign">用本机重新确认</button></div>
             </div>
             <!-- P539: 「免问的动作」 — what the owner ticked 「以后这台遥控器批准的 … 不再问」 for (host `preauth`); empty → hidden -->
             <div class="setrow preauth" id="set-preauth-row" hidden>
@@ -1072,6 +1078,7 @@
             <div class="setrow" data-paired id="set-gnc-row" hidden>
               <span class="setlab" data-i18n="p336.goal">设了目标就不弹窗</span>
               <button type="button" role="switch" aria-checked="false" class="setswitch" id="set-gnc" data-i18n-attr="aria-label=p336.goal" aria-label="设了目标就不弹窗"></button>
+              <div class="setunsigned" id="set-gnc-unsigned" hidden><p class="setnote setunsigned__why" id="set-gnc-unsigned-why" role="status"></p><button type="button" class="aj-btn" id="set-gnc-resign" data-i18n="p552.resign">用本机重新确认</button></div>
               <p class="setnote" data-i18n="p336.goalNote">关（默认）：/goal 开工前先弹一张总卡，你签一次，目标里就按授权去做。开：设了目标就直接开工、过程中不弹卡（仍全部记录，最后照样出结果卡）；疑似被攻击、动密码或密钥、花钱仍然问你。只认打开它的这台手机。</p>
             </div>
             <div class="setrow" data-paired>
@@ -1270,7 +1277,7 @@
               <button type="button" id="mail-key" class="aj-btn aj-btn--sm" data-i18n="mail.key">设置邮箱授权码</button>
               <button type="button" id="mail-test" class="aj-btn aj-btn--sm" data-i18n="mail.test">测试连接</button>
               <button type="button" id="mail-check" class="aj-btn aj-btn--sm" data-i18n="mail.check">立即检查</button></p>
-            <p class="setnote" data-i18n="mail.keyNote">点「设置邮箱授权码」，按服务商提示获取并粘贴。密码加密保存到 Agent J 工作主机后自动测试连接，不发信。</p>
+            <p class="setnote" data-i18n="mail.keyNote">点「设置邮箱授权码」，按服务商提示获取并粘贴。密码加密保存到 Agent J 主机后自动测试连接，不发信。</p>
 
             <h3 class="setg" data-i18n="mail.gAllow">白名单（谁的来信直接处理，给谁发信不用确认）</h3>
             <ul class="setphones mailallow" id="mail-allow"></ul>

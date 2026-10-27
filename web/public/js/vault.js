@@ -5,6 +5,7 @@
 // The value is sealed to the card's (or the terminal's) one-time host key with the §11 seal and every buffer is zeroed.
 // Nothing here is stored, logged or put into the page.
 import { sealValue, b64u, unb64u } from '../proto/wire.js';
+import { wantOf } from './faceid.js';   // P555 d: transports + hints for this remote's own key
 
 /** A host salt (b64url, exactly 32 bytes) → bytes, else null. */
 export function salt32(v) {
@@ -28,8 +29,7 @@ const buf = (x) => new Uint8Array(x);
  *  given. NOT async on purpose: get() starts synchronously inside the caller's tap (iOS gesture rule).
  *  → a promise of {fa: {id, cd, ad, sig}, prf: Uint8Array(32 | 64) | null}; rejects on cancel / failure. */
 export function assertPrf(challenge, credId, first, second) {
-  const publicKey = { challenge, rpId: location.hostname, userVerification: 'required', timeout: 60000,
-    allowCredentials: [{ type: 'public-key', id: unb64u(credId) }] };
+  const publicKey = { challenge, rpId: location.hostname, userVerification: 'required', timeout: 60000, ...wantOf(credId) };
   if (first) publicKey.extensions = prfEval(first, second || null);
   return navigator.credentials.get({ publicKey }).then((cred) => {
     const r = cred.response;

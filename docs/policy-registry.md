@@ -12,6 +12,7 @@ Application policy does not isolate code already running under the same OS accou
 |---|---|---|---|---|---|---|
 | admin | irreversible | uv | uv | handoff | handoff | deny |
 | agent.dispatch | none | none | allow | deny | handoff | deny |
+| agent.session | none | none | allow | deny | handoff | deny |
 | answer | none | none | allow | allow | allow | allow |
 | calendar.write | reversible | hold | hold | handoff | handoff | deny |
 | company.read | none | none | allow | deny | handoff | allow |

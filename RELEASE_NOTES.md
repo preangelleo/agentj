@@ -1,6 +1,6 @@
-# Agent J 0.25.13a1 release notes
+# Agent J 0.25.14a1 release notes
 
-Host 0.25.13a1 / install 0.27.13; phone-web scope.
+Host 0.25.14a1 / install 0.27.14; phone-web scope.
 Phone parity must pass --strict. Full Android/Telegram parity is incomplete.
 Full Android/Telegram parity is incomplete.
 No APK is included in this release. Android source is for review, not a released app.
@@ -8,45 +8,33 @@ No APK is included in this release. Android source is for review, not a released
 Publication status: local preparation only. Live site verification is DEFERRED until
 the public commit and tag are pushed, the site is deployed, and cold installation passes.
 
-Release order: C applies app D1 0039_seat_grants.sql, 0040_prepaid_seats.sql and 0041_seat_transfer_host.sql in this order before the compatible Dashboard Worker; then B phone web (per-seat phone addresses) before A signed host/site/downloads, in the same window. No relay change, no feedback D1 change. Preserve0036 revocation state,0037 action UV data,0038 checkout pending records and local security journals permanently. Never replay migrations or restore an older database snapshot. Use compatible rollback only, otherwise repair forward. Native Mac M1 and physical iOS acceptance remain separate. Local preparation only; no push or deployment authorized.
+Release order: C Dashboard support knowledge only, no D1 migration (app 0039-0041 are live since 0.25.13 and are never replayed); then A signed host/site/downloads, immediately followed by B phone web, in the same window. No relay change, no feedback D1 change. Preserve0036 revocation state,0037 action UV data,0038 checkout pending records,0041 seat transfer records and local security journals permanently. Never replay migrations or restore an older database snapshot. Use compatible rollback only, otherwise repair forward. Qualified by the affected suites of the six hotfix tickets under the owner's 10-27 rule (no fresh full parity, full host or real-install acceptance run for this release). Local preparation only; no push or deployment authorized.
 ## Changes
 
-- Each seat has its own phone address, m.agentj.app/<seat id>, so remotes of several Agent J hosts no longer mix; the old address still works.
-- Seats can be paid once for 1, 3 or 12 months ($200 per seat for 12 months) with Alipay, WeChat Pay or a card; a reminder comes before the end.
-- A remote can set up its Face ID after another remote that already has one approves it, even if its old key was lost; no more browser QR sheet.
-- A seat can be moved to another Agent J host from the remote's Settings; the remotes follow once you confirm.
-- New approval level "Follow your AI coding tool": only spending money, deleting your data, unbinding or moving a seat and sending a key off this computer still need Face ID; everything else follows the tool's own rules.
-- When the terminal stops at a menu, the phone lists the same options and one tap picks one; model names always carry their version.
-- Reply cards and the reader can forward straight to WeChat, which receives clean plain text.
-- The heartbeat prompt adds checks of scheduled-task logs, friends and stand-in replies, and can be edited full screen or reset in Settings.
-- Confirmations follow the action and who started it: a reversible action you tap on your remote runs directly, the Agent's gets a long-press card, anything irreversible needs Face ID; dispatching a sub-agent no longer asks.
-- When Claude Code's safety check stops a message, the phone offers four choices (continue on another model, retry, edit and resend, new conversation) instead of sending you back to the computer.
-- Every remote creates its own passkey on the device and Settings shows its state; switching AI coding tools hands the context straight to the new tool.
-- Your WeChat, private Telegram and allowlisted mail handled by your stand-in can use the main conversation's tools and approvals; channel pages show the sender's words.
-- Status hints, run cards and the remote badge follow the current state and your custom theme; after an upgrade the host checks itself and stays quiet when all is well.
-- Mail app passwords are no longer lost after an upgrade; a key card filled on one device closes on every other device.
-- Forwarding mail yourself from your remote no longer asks for a passkey.
-- A WeChat stand-in on Codex no longer keeps sending the fallback reply; failures say why and what to do next.
-- OpenCode scratch folders are cleaned up and leave nothing in your home folder.
-- Face ID setup refused on Android or Huawei devices now says why and what to do; setting it again on the same device replaces the old key.
-- 每个席位有自己的手机网址 m.agentj.app/<席位号>，多台 Agent J 主机的遥控器互不串门；原来的网址照常能用。
-- 席位可以预付：一次付清 1、3 或 12 个月（12 个月每席位 $200），支持支付宝、微信支付和银行卡；到期前会提醒续费。
-- 遥控器的 Face ID 可以由另一台已设好的遥控器批准后在本机设好，旧钥匙丢了也能重新设，不再出现浏览器扫码框。
-- 可以在遥控器的设置里把席位转移到另一台 Agent J 主机，遥控器确认后自动跟过去。
-- 新增「跟随 AI 编程工具（Harness）」审批档：只有花钱、删除你的数据、解绑或转移席位、密钥发到本机以外这四类还要 Face ID，其余按 AI 编程工具自己的规则。
-- 终端停在菜单时，手机上会照原样列出选项，点一下就能选；模型名统一带版本号。
-- 回复卡和阅读器可以直接转发到微信，微信收到的是排好版的纯文字。
-- 心跳提示新增定时任务日志、好友和分身复核三项检查，可在设置里全屏编辑或恢复默认。
-- 确认按「动作 × 谁发起」分级：你在遥控器上亲手点的可撤回操作直接执行，Agent 发起的出长按卡，不可撤回的一律 Face ID；派子 Agent 不再弹卡。
-- Claude Code 的安全检查拦下消息时，手机上给出四个选择（换模型继续、原话重试、改一改再发、开新对话），不用回电脑。
-- 每台遥控器在本机建自己的通行密钥，设置页能看到本机状态；切换 AI 编程工具时，交接内容直接带给新工具。
-- 你的微信、私聊 Telegram 和白名单邮件交给分身处理时，能用主对话的工具和审批；渠道消息页显示对方原话。
-- 状态提示、运行卡和遥控器角标跟随当前状态和自定义主题变色；升级完成后由主机自检，没问题就不打扰。
-- 升级后邮件授权码不再丢失；同一个密钥卡在一台设备上填好后，其他设备上的同一张卡一起收起。
-- 你在遥控器上亲手转发邮件不再要求通行密钥。
-- 微信分身选 Codex 时不再一直回兜底消息，失败时会说明原因和下一步。
-- OpenCode 临时目录用完即清，不再在主目录留下残留。
-- 安卓和华为设备设置 Face ID 被拒时，会说明原因和下一步；同一台设备再设一次会替换旧钥匙。
+- The third approval level is now called "Full access": Agent J shows no approval cards and the AI coding tool the Agent J host starts runs with its widest permissions (your config files are not changed); only spending money, deleting your data, unbinding or moving a seat, sending a key away, and attempts to change Agent J itself still need Face ID.
+- The forward destination is saved on the Agent J host and shared by every remote: change it on one and the others follow at once.
+- When Chrome on a Mac already has Touch ID set up, an approval opens Touch ID directly instead of the phone QR sheet.
+- A Full access level you confirmed earlier keeps working after the upgrade, no reconfirmation; if its signature lapses (the remote was unpaired or got a new key), Settings shows "Not in force" with the reason and tells you once how to restore it.
+- Work sent to the background (background sub-tasks, scheduled tasks, orders) no longer shows cards; the main Agent reviews the result. The four dangerous kinds still need Face ID.
+- A remote's Face ID set up before the upgrade is recognised automatically and shows "Set up"; when no other remote can approve, you can approve on the Agent J host with the pairing password instead of getting stuck.
+- Your stand-in on WeChat, private Telegram and allowlisted mail has the main conversation's rights: it makes images and edits files itself, sends files back as attachments, and its replies also show in the Web App; only real secrets are held back.
+- Final wording for the seat-transfer dialog; icon buttons without borders.
+- ToolSearch, Skill and other loader tools are no longer refused as unknown actions; a truly unknown action names the tool and asks you to report it.
+- WeChat forwarding has no time limit, so a two-day-old conversation still goes through; only a refusal by WeChat asks you to send one message in ClawBot first.
+- The forward button is back to the mirrored reply arrow.
+- Bash in the main session is no longer refused without a card: a Full access level with a valid signature runs it, a lapsed one shows the card as usual and says why.
+- 审批档位第三档改名「全放行」：Agent J 不再弹审批卡，Agent J 主机自己启动的 AI 编程工具以最大权限运行（不写你的配置文件）；只有花钱、删除你的数据、解绑或转移席位、密钥外发，以及有人想改动 Agent J 本身时仍要 Face ID。
+- 转发去向保存在 Agent J 主机上，所有遥控器共用：一台改了，其他遥控器立刻跟着变。
+- Mac 上的 Chrome 已设好 Touch ID 时，审批直接调起 Touch ID，不再弹手机扫码框。
+- 以前签名确认过的「全放行」升级后直接沿用，不用重新确认；签名失效（遥控器解绑或换了钥匙）时，设置页显示「未生效」和原因，并一次性告诉你怎么恢复。
+- 派到后台的活（后台子任务、定时任务、派单）不再弹卡，结果由主 Agent 审核；四类危险操作仍要 Face ID。
+- 升级前已经设好的遥控器 Face ID 会被自动认出，显示「已设好」；没有其他遥控器能批准时，可以在 Agent J 主机上用配对密码批准，不会卡死。
+- 微信、Telegram 私聊和白名单邮件里的分身与主对话同权：能自己出图、改文件，文件作为附件原样发回，回复同步显示在网页里；对外只拦真正的机密。
+- 席位转移弹窗文案定稿；图标按钮去掉边框。
+- ToolSearch、Skill 等加载类工具不再被当成未知动作拒绝；真遇到未知动作时会写出工具名并提示反馈。
+- 微信转发不再有时间限制，两天前的对话也能发；只有微信平台拒收时才提示先在 ClawBot 里发一句。
+- 转发按钮恢复成「回复」的镜像弯箭头。
+- 主会话的 Bash 不再出现「没卡就被拒」：签名有效的全放行直接执行，失效时照常弹卡并说明原因。
 
 ## Material acceptance limits
 

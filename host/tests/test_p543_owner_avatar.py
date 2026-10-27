@@ -1,6 +1,7 @@
 """P543 (#307 / #308): owner-channel avatars get the main conversation's tools and approvals; friends stay tool-less.
 
-- eligibility: a shared plan on a host that can approve → full; a saved avatar plan / a stand-in host → the old executor.
+- eligibility: a shared or saved native plan on a host that can approve → full (P557); a provider profile / a stand-in host
+  → the old executor.
 - Claude Code: the main argv (no `--tools ""`, the permission tool, the danger hook, the owner's settings and MCP) plus the
   avatar text that says "search first, cite sources, a channel never approves"; a one-time side claim, dropped after.
 - ① a live-news question: the WebSearch tool use is not a channel violation; the answer (with its source link) is replied.
@@ -85,7 +86,10 @@ class Eligibility(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             host = FakeHost(pathlib.Path(d))
             self.assertTrue(owner_avatar.eligible(sessions(host)))
-            self.assertFalse(owner_avatar.eligible(sessions(host, {"config": {"kind": "codex", "model": "m"}})))
+            # P557: a saved native plan keeps main rights; only an API-key provider profile stays tool-less
+            self.assertTrue(owner_avatar.eligible(sessions(host, {"config": {"kind": "codex", "model": "m"}})))
+            self.assertFalse(owner_avatar.eligible(sessions(host, {"config": {"kind": "codex", "model": "m",
+                                                                              "channel_profile": "p"}})))
             no_side = NS(st=host.st, agent_cfg=host.agent_cfg, ask=host.ask)
             self.assertFalse(owner_avatar.eligible(sessions(no_side)))       # Claude needs the side permission channel
             stand_in = NS(st=host.st, agent_cfg=host.agent_cfg)
@@ -237,7 +241,7 @@ class Approvals(Base):
 
     def test_full_level_never_passes_an_avatar_step_and_card_names_it(self):
         self.full()
-        self.ask("rm -rf build")
+        self.ask("git push origin main")                            # P556: not one of the four kinds (rm -rf build is)
         self.assertEqual(self.cards("Bash"), [])                    # the main conversation under `full`: no card
         res = self.ask("rm -rf build", avatar="来自微信分身", answer=True)
         self.assertEqual(res["behavior"], "allow")

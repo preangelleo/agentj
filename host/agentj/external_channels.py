@@ -5,6 +5,7 @@ Send. Held requests reuse WeChat's signed, expiring proposal/claim machinery.
 """
 from __future__ import annotations
 import asyncio
+import contextlib
 import hashlib
 import json
 from .wechat import WeChat
@@ -70,7 +71,15 @@ class ExternalChannels(WeChat):
                 self.open_card(record)
             if waiting:
                 return self.waiting_reply()
-            return Reply(reply, getattr(self, 'reply_images', ())) if reply is not None else handoff(self.h)
+            if reply is None:
+                return handoff(self.h)
+            out = Reply(reply, getattr(self, 'reply_images', ()), getattr(self, 'reply_files', ()))
+            if source == 'telegram':
+                await self.mirror(source, reply)   # P557: the answer on the Web App too
+            else:                                  # mail writes its own page (it carries the reply route): its files, here
+                with contextlib.suppress(Exception):
+                    out.page_files = await self.mirror_paths(source)
+            return out
 
     def record_delivery(self, source, message_id, outcome):
         rid = hashlib.sha256((source + ':' + str(message_id)).encode()).hexdigest()

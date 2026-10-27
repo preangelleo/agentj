@@ -1,5 +1,5 @@
 // P501: pairing material stays in this ephemeral panel, inside the paired Noise session.
-import { peer } from './session.js';
+import { peer, isReady } from './session.js';
 import { sendApp, gen } from './session.js';
 import { signedWrite, signedWriteFa } from './controls.js';
 import { faceIdUnbind, unbindFaWhy } from './remotes.js';   // P551: unbind = Face ID, like unbinding another remote
@@ -7,7 +7,7 @@ import { t, onLang, lang, fillText } from './t.js';
 import { mk, toast } from './ui.js';
 import { registerLayer } from './layers.js';
 import * as forwarding from './forward-choice.js';
-let hooks = {}, eligibilityTimer;
+let hooks = {};
 let root, state = {}, open = false, timer, autoOpen = true;
 const $ = id => document.getElementById(id);
 // P540: the host's last avatar outcome — fixed words only (error · detail), never native output.
@@ -105,14 +105,10 @@ export function channelStatus(m) {
 export function route(m) {
   if (m.t !== 'wechat_state') return;
   state = m;
-  clearTimeout(eligibilityTimer);
   peer.wxbound = m.bound === true;
-  peer.wxfwd = peer.p33 && m.can_forward === true;
+  peer.wxfwd = peer.p33 && m.can_forward === true;   // P554: no countdown — the computer says when WeChat refused
   window.dispatchEvent(new Event('agentj-forward-change'));
   renderChannels();
-  if (peer.wxfwd) eligibilityTimer = setTimeout(() => {
-    peer.wxfwd = false; window.dispatchEvent(new Event('agentj-forward-change'));
-  }, Math.max(0, Math.min(300, Number(m.forward_for) || 0)) * 1000);
   if (m.bound && m.greeting === 'needs_message' && open) render();
   if ($('set-wechat-row')) $('set-wechat-row').hidden = false;
   // A fresh ephemeral QR opens automatically after setup requested by the main Agent / terminal.
@@ -121,11 +117,14 @@ export function route(m) {
   clearTimeout(timer);
   if (m.qr) timer = setTimeout(() => { state = {...state, qr: undefined}; render(); }, 120000);
 }
-export function reset() { clearTimeout(eligibilityTimer); peer.wxfwd = false; state = {}; if (root) close(); autoOpen = true; if ($('set-wechat-row')) $('set-wechat-row').hidden = true; }
+// P554: Settings asks the computer once on open, so a missed push never leaves a bound WeChat greyed out.
+export function refresh() { if (isReady() && peer.p33) sendApp({t:'wechat', op:'status'}, gen()).catch(() => {}); }
+export function reset() { peer.wxfwd = false; state = {}; if (root) close(); autoOpen = true; if ($('set-wechat-row')) $('set-wechat-row').hidden = true; }
 export function configure(options = {}) {
   hooks = options;
   $('set-wechat')?.addEventListener('click', () => hooks.connect?.('wx'));
   $('set-tgpair')?.addEventListener('click', () => hooks.connect?.('tg'));
+  $('set-fwd-wx-bind')?.addEventListener('click', () => hooks.connect?.('wx'));   // P554: the 去绑定 under the greyed option
   forwarding.configure();
   window.addEventListener('agentj-forward-change', renderChannels);
   orderChannels(); onLang(() => {orderChannels(); renderChannels();});

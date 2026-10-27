@@ -156,8 +156,8 @@ class _LaunchReview(_Chain):
                         if level == "full":
                             c["s"].p33 = True
                             with face_id(host, c["ph"].did):   # P550: widening needs this remote's own Face ID
-                                await host._app(c["s"], {**sign(c["ph"], {"key": "approval.level", "value": "full"}), "fa": FA})
-                            self.assertEqual(approval_level.level(host.preferences, self.st), "full")
+                                await host._app(c["s"], {**sign(c["ph"], {"key": "approval.level", "value": "harness"}), "fa": FA})   # P552
+                            self.assertEqual(approval_level.level(host.preferences, self.st), "harness")   # P552: one switch
                             c["s"].p33 = False
                         # Positive control: normal owner input starts/resumes without a card.
                         await c["say"]("hello")

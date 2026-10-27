@@ -499,6 +499,8 @@ function onApp(m) {
     case 'help_end': helpcard.end(m); return;
     case 'help_err': helpcard.failed(m); return;
     case 'pk_reg_res': pkSaved(m).catch(() => {}); return;
+    // P552 (#325 ①): this remote just got its key while 「全放行」 is set but not in force → one tap confirms it again
+    case 'approval_resign': if (typeof m.text === 'string') toastAction(m.text.slice(0, 300), t('p552.resign'), () => settings.resign(), 12000); return;
     case 'pk_state': pkStateGot(m).catch(() => {}); return;   // P539: this remote's own passkey — none / local / borrowed / unknown
     case 'preauth': settings.preauth(m); return;              // P539: Settings → 安全 → 「免问的动作」
     case 'draft_restore': draftBack(m); return;               // P539 (#299): 「改一改再发」 — the words go back into the box (never logged)
@@ -691,7 +693,25 @@ function showIdle() {
 // nothing slow runs between 「保存」 and navigator.credentials.create.
 // F32: 「设置 Face ID」 on a pickup card asks for an offer even after 「以后再说」 (pkForce, one offer).
 let pkForce = false;
+/** P555: this remote's key is on the Agent J host's record but not placed (pk_state unknown + a self-check challenge):
+ *  one Face ID tap proves it here — no other remote. NOT async before get() (iOS gesture rule). → null when there is
+ *  nothing to check, else a promise: true = 已设好, false = go on to a new key. */
+function selfCheck() {
+  const c = pkNow && pkNow.ch === session.channel() && pkNow.s === 'unknown' ? pkNow.chk : null;
+  if (!c || !passkey.canAssert()) return null;
+  pkNow.chk = null;                                   // one challenge, one try (the host sends a fresh one with pk_state)
+  let p;
+  try { p = passkey.approve(unb64u(c.fa_ch), c.fa, true, 'local'); } catch (e) { p = Promise.reject(e); }   // 'local': is it HERE (no QR)
+  return p.then(async (fa) => {
+    const { aa, ...proof } = fa;
+    const m = await session.ask1({ t: 'pk_check', n: c.n, fa: proof, ...(aa ? { aa } : {}) }, 'pk_check_res', 10000);
+    if (m.ok === true && m.s === 'local') { toast(pkassist.withBio('p555.pk.checked'), 4000); return true; }
+    return false;
+  }, () => false);
+}
 async function setupFaceId() {
+  const checked = selfCheck();
+  if (checked && (await checked)) return;
   if (!(await passkey.supported())) { await checkPhoneEnvironment(); renderPhoneEnvironment(true); toast(t('sout.noFaceId'), 5000); return; }
   pkForce = true;                                     // P547: a "direct" answer (the owner's first device) is followed by pk_offer
   const how = await pkpeer.startPeerSetup();
@@ -744,7 +764,9 @@ function updHost(fn) {
 async function pkStateGot(m) {
   const s = pkassist.pkState(m.s);
   if (!s) return;
-  pkNow = { ch: session.channel(), s }; paintPkRow();
+  passkey.setOwnState(s);   // P555 d: every own-key get() says where to look (Touch ID here, not a phone QR)
+  const chk = s === 'unknown' && typeof m.fa === 'string' && typeof m.fa_ch === 'string' && typeof m.n === 'string' ? { fa: m.fa, fa_ch: m.fa_ch, n: m.n } : null;
+  pkNow = { ch: session.channel(), s, chk }; paintPkRow();   // P555: chk = the one-tap self-check (memory only)
   await updHost((h) => h && h.approved && h.channel === session.channel() && h.pkState !== s && { ...h, pkState: s });
 }
 function draftBack(m) {

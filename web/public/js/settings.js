@@ -30,6 +30,7 @@ import { approve as faApprove, canAssert } from './faceid.js';
 import { unb64u } from '../proto/wire.js';   // P336: approval level / goal without cards = signed approval_set
 import * as toolsort from './toolsort.js';   // P340: Settings → 输入框按钮顺序 (drag / hold-drag / tap / ← →)
 import * as toolorder from './toolorder.js';
+import * as forwarding from './forward-choice.js';   // P554
 import * as jcards from './jcards.js';   // P360: Settings → Cards (official cards default off + the owner's own)
 import * as rescue from './rescue.js';     // P393: fold ended 紧急修复 results when Settings opens again
 import * as cmdrun from './cmdrun.js';     // P361: 紧急修复 → Agent J 主机上的命令 (「执行」)
@@ -281,13 +282,30 @@ function twoWay(id, right) {
 }
 // ---------------------------------------------------------------- P336 approval level + goal without cards
 // Both keys change ONLY by the signed `approval_set` control (never pref_set); a host without `signed_prefs` hides the rows.
-// P551 (#320): 「跟随 AI 编程工具（Harness）」 — Agent J adds no cards of its own; the host always asks Face ID to switch to it (no passkey on
+// P551 (#320): the `harness` level (P556: 「全放行」) — Agent J adds no cards of its own; the host always asks Face ID to switch to it (no passkey on
 // this device → `no_passkey`, said in plain words).
-const LEVELS = ['safe', 'standard', 'full', 'harness'];
+// P552 (#325 ③): 「全放行」 and 「跟随 AI 编程工具」 are one switch (stored `harness`); a released signed `full` is the same switch.
+// P556: its name is 「全放行」 / Full access again, and the host also starts the AI coding tool at its widest permissions.
+// The page says it in one plain paragraph + 「了解更多」 (docs #approval-level); host.approval.max is not shown here.
+const LEVELS = ['safe', 'standard', 'harness'];
+const MERGED = { full: 'harness' };
 const signedKey = (key) => !!hostInfo && Array.isArray(hostInfo.signed_prefs) && hostInfo.signed_prefs.includes(key);
 // what is IN FORCE (host.approval: full only with a live signature) wins over the raw configuration value
 const eff = () => (hostInfo && hostInfo.approval && typeof hostInfo.approval === 'object' ? hostInfo.approval : null);
-const curLevel = () => { const v = eff()?.level ?? pget('approval.level', 'standard'); return LEVELS.includes(v) ? v : 'standard'; };
+const curLevel = () => { const raw = eff()?.level ?? pget('approval.level', 'standard'), v = MERGED[raw] || raw; return LEVELS.includes(v) ? v : 'standard'; };
+/** P552 (#325 ①): host.approval.unsigned — what the configuration turns on that no live signature backs, and why. */
+const unsignedOf = (key) => (Array.isArray(eff()?.unsigned) ? eff().unsigned : []).find((u) => u && u.key === key) || null;
+const unsignedText = (u) => t('p552.off', { why: t('p552.why.' + (['missing', 'changed', 'unpaired', 'rekeyed'].includes(u.why) ? u.why : 'bad_sig'), { dev: u.by || '?' }) });
+function paintUnsigned(id, key) {
+  const u = unsignedOf(key);
+  el(id).hidden = !u;
+  if (u) el(id + '-why').textContent = unsignedText(u);
+}
+/** 「用本机重新确认」: the same signed approval_set (+ this remote's Face ID); no key here → the host says no_passkey → P547. */
+export function resign(key) {
+  const u = key ? unsignedOf(key) : unsignedOf('approval.level') || unsignedOf('approval.goal_nocard');
+  if (u) approvalSet(u.key, u.value);
+}
 const curGnc = () => (typeof eff()?.goal_nocard === 'boolean' ? eff().goal_nocard : pget('approval.goal_nocard', false) === true);
 function renderLevel() {
   const paired = H.paired(), lv = curLevel();
@@ -297,6 +315,8 @@ function renderLevel() {
   for (const b of document.querySelectorAll('[data-set-level]')) b.setAttribute('aria-pressed', String(b.dataset.setLevel === lv));
   el('set-level-note').textContent = t('p336.note.' + lv);
   tgl('set-gnc', curGnc());
+  paintUnsigned('set-level-unsigned', 'approval.level');
+  paintUnsigned('set-gnc-unsigned', 'approval.goal_nocard');
 }
 /** P336 addendum: a widening switch on a phone with a passkey → 「用 Face ID 确认」; the button tap starts Face ID
  *  synchronously inside the tap (iOS gesture rule), so it listens on the confirm button itself, before the sheet resolves.
@@ -317,8 +337,9 @@ export async function faceIdStep(res, txt = {}) {
 /** confirm → signed approval_set → ctl_res; ok = follow at once (the `preferences` broadcast confirms), else say why. */
 async function approvalSet(key, value) {
   const jev = key === 'jev.mode';
-  const harness = key === 'approval.level' && value === 'harness';
-  const full = (key === 'approval.level' && value === 'full') || (jev && value === 'off') || harness, goal = key === 'approval.goal_nocard';
+  const harness = key === 'approval.level' && (value === 'harness' || value === 'full');
+  if (harness) value = 'harness';                  // P552: one switch — a re-confirmation of a released `full` signs `harness`
+  const full = (jev && value === 'off') || harness, goal = key === 'approval.goal_nocard';
   const name = goal ? t('p336.goal') : harness ? t('p551.harnessName') : t('p336.' + value);
   const title = jev ? t(value === 'off' ? 'p409.offTitle' : 'p409.onTitle') : goal ? t(value ? 'p336.goalOnTitle' : 'p336.goalOffTitle') : t('p336.confirmTitle', { name });
   const text = jev ? t('p409.note') : harness ? t('p336.note.harness') + ' ' + t('p551.harnessSign') : full ? t('p336.fullText') : goal ? t(value ? 'p336.goalOnText' : 'p336.goalOffText') : t('p336.note.' + value) + ' ' + t('p336.signNote');
@@ -470,6 +491,7 @@ export function setPrefs(value, host) {
   hostInfo = host && typeof host === 'object' ? host : null;
   renderRemotesRow();
   toolorder.fromHost(prefs);              // P340: every remote repaints the composer buttons from the broadcast
+  forwarding.fromHost(prefs, hostInfo);   // P554: 转发去向 is the host's, the same on every remote
   if (isOpen()) render();
 }
 
@@ -519,6 +541,7 @@ export function open(page = 'main', add = false) {
   say('');
   if (!noPrefSet) hideCmd();
   render();
+  wechat.refresh();   // P554
   const box = el('settings');
   box.hidden = false; box.dataset.modalOpen = '1';
   for (const id of ['scanBtn', 'srchBtn', 'setBtn']) el('set-actions').append(el(id));
@@ -711,6 +734,8 @@ export function configure(hooks) {
   el('set-hostupg').addEventListener('click', () => { if (H.upgradeHost) H.upgradeHost(); });   // P203: impact → card → /update @ix app.upgrade_host
   for (const b of document.querySelectorAll('[data-set-level]')) b.addEventListener('click', () => { if (b.dataset.setLevel !== curLevel()) approvalSet('approval.level', b.dataset.setLevel); });
   el('set-gnc').addEventListener('click', () => approvalSet('approval.goal_nocard', !curGnc()));
+  el('set-level-resign').addEventListener('click', () => resign('approval.level'));       // P552 (#325 ①)
+  el('set-gnc-resign').addEventListener('click', () => resign('approval.goal_nocard'));
   el('set-jev-key').addEventListener('click', openJevKey);
   el('set-jev-enabled').addEventListener('click', () => approvalSet('jev.mode', hostInfo?.jev?.mode === 'off' ? el('set-jev-source').value : 'off'));
   el('set-jev-source').addEventListener('change', () => approvalSet('jev.mode', el('set-jev-source').value));

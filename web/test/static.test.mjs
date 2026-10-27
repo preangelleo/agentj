@@ -64,7 +64,7 @@ test('version.json / version.js match the shipped files', () => {
 // legacy host sends an unpaired visitor to. The relay URLs live only in the Worker CSP config (app.js pins relay HOSTS).
 // (F1: the menu's 「邀请与积分」 opens the account page at its invite block — the one link with a fragment)
 const SUPPORT_LINK = 'https://support.agentj.app/';   // P400: exact, no path / query / fragment
-const SITE_LINK = /^https:\/\/agentj\.app\/(?:hotkeys?|(?:[a-z-]+\/)*[a-z-]*(?:#invite|#credits|#brand-kit)?)$/;
+const SITE_LINK = /^https:\/\/agentj\.app\/(?:hotkeys?|(?:[a-z-]+\/)*[a-z-]*(?:#invite|#credits|#brand-kit|#approval-level)?)$/;
 const MAIL_LINK = /^mailto:feedback@agentj\.app$/;   // F13 / P168: Settings → 帮助和反馈, the error / removed pages, the disconnected card (the human fallback mailbox)
 const NEW_WEB_ORIGIN = 'https://m.agentj.app';
 const LICENCE_TEXT = new Set(['brand/fonts/UFL-1.0-ubuntu.txt', 'brand/fonts/OFL-1.1-lexend.txt', 'brand/fonts/README.md',
@@ -480,6 +480,20 @@ test('i18n: no internal terms or banned words in either dictionary, the page tex
   for (const [where, text] of sources) assert.doesNotMatch(text, /\bLeo\b|Telegram|贾维斯|\bJarvis\b|J\.A\.R\.V\.I\.S/i, `${where}: relay's private wording`);
 });
 
+// P555 (董事长 10-27): a glossary term with `zh_prefix_required` never appears bare in the phone's Chinese —
+// 「主机」 is always 「Agent J 主机」 (the page text and every zh dictionary value)
+test('i18n: 「主机」 is always 「Agent J 主机」 in the phone dictionary', { skip: NO_GLOSSARY }, () => {
+  const terms = GLOSSARY.fixed_terms.filter((x) => x.zh_prefix_required);
+  assert.ok(terms.some((x) => x.zh === '主机' && x.zh_current === 'Agent J 主机'), 'glossary names 「Agent J 主机」');
+  const visible = HTML.replace(/<script[\s\S]*?<\/script>|<[^>]+>/g, ' ');
+  const bare = (x) => new RegExp('(?<!' + x.zh_prefix_required.replace(/ /g, ' ?') + ' ?)' + x.zh);
+  for (const x of terms) {
+    const re = bare(x);
+    assert.ok(re.test('先升级' + x.zh) && !re.test('先升级 ' + x.zh_current) && !re.test('一台' + x.zh_current), 'positive control');
+    for (const [k, v] of [...Object.entries(DICT.zh), ['index.html text', visible]]) assert.doesNotMatch(v, re, `zh ${k}: say 「${x.zh_current}」`);
+  }
+});
+
 test('i18n: the forbidden-term check itself works (positive control)', { skip: NO_GLOSSARY }, () => {
   const planted = ['Noise 握手', '急停', 'alpha', 'harness', 'Zero Access'];
   assert.ok(!GLOSSARY.forbidden.some(f => jsRe(f.pattern).test('紧急停止所有 Agent')), 'P435 owner-approved label is allowed');
@@ -607,4 +621,40 @@ test('P250 vendor module retains licensed sources and manifest provenance', asyn
     assert.equal(svg, read(pub(`assets/vendors/${name}`)));
   assert.equal(read(pub('js/vendor-marks.js')), sourceFiles().get('js/vendor-marks.js').toString());
   assert.ok(manifest(sourceFiles()).files['js/vendor-marks.js']);
+});
+
+// P555 (owner, 2026-10-27): an icon button has no border unless one was specifically asked for. Icon-only buttons on the
+// page (an svg or one glyph, no words) and every `.ajicon`: no CSS rule may give them a frame (`border` / `border-width`
+// that is not 0 / none; the last rule for the same selector wins). A one-side separator is not a frame. The exceptions
+// are the owner's own asks, each with its reason.
+const ICON_BORDER_OK = new Map([
+  ['tool', 'the composer tool row: a hairline dashed outline (owner 2026-09-24, P183 2026-10-12)'],
+]);
+test('icon buttons: no border by default (P555)', () => {
+  const html = read(pub('index.html'));
+  const ids = new Set(), icon = new Set(['ajicon']), text = new Set();
+  for (const m of html.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)) {
+    const words = m[2].replace(/<svg[\s\S]*?<\/svg>/g, '\u0001').replace(/<[^>]*>/g, '').replace(/\s+/g, '');
+    const isIcon = (words.includes('\u0001') && !words.replace(/\u0001/g, '')) || /^[^\p{L}\p{N}\u0001]{1,2}$/u.test(words);
+    const cls = (/\bclass="([^"]*)"/.exec(m[1])?.[1] || '').split(/\s+/).filter(Boolean), id = /\bid="([^"]*)"/.exec(m[1])?.[1];
+    if (isIcon) { if (id) ids.add(id); cls.forEach((c) => icon.add(c)); } else cls.forEach((c) => text.add(c));
+  }
+  assert.ok(ids.size > 20 && icon.has('fsic') && icon.has('pttbtn'), 'the scan sees the page\'s icon buttons');
+  const last = new Map();
+  for (const f of files.filter((x) => x.endsWith('.css'))) {
+    for (const r of read(f).replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      const b = [...r[2].matchAll(/(?:^|;)\s*border(?:-width)?\s*:\s*([^;]+)/g)].pop();
+      if (!b) continue;
+      for (const sel of r[1].split(',')) last.set(sel.trim().replace(/\s+/g, ' '), { file: rel(f), v: b[1].trim() });
+    }
+  }
+  const bad = [];
+  for (const [sel, { file, v }] of last) {
+    if (/^(0(px)?|none)(\s*!important)?$/.test(v)) continue;
+    const tail = sel.split(/[\s>+~]+/).pop().replace(/::?[a-z-]+(\([^)]*\))?/g, '');
+    const hit = [...tail.matchAll(/([.#])([\w-]+)/g)].find(([, k, n]) => (k === '#' ? ids.has(n) : icon.has(n) && !text.has(n)) && !ICON_BORDER_OK.has(n));
+    if (hit) bad.push(`${file}: ${sel} → border ${v}`);
+  }
+  assert.deepEqual(bad, [], 'icon buttons with a border (remove it, or name the owner\'s ask in ICON_BORDER_OK)');
+  assert.match(read(pub('app.css')), /\.ajicon\{[^}]*border:0;[^}]*background:none/);
 });

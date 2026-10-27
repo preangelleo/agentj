@@ -1829,7 +1829,8 @@ def same_scope(grant: tuple[str, tuple], req: tuple[str, tuple]) -> bool:
 
 # ---------------------------------------------------------------- read-only run profile (scheduled `mode: research`, ADR-A53)
 READ_TOOLS = frozenset({"Read", "Glob", "Grep", "LS", "NotebookRead", "WebFetch", "WebSearch", "TodoWrite", "BashOutput",
-                        "ToolSearch", "ListMcpResourcesTool", "ReadMcpResourceTool"})
+                        "ToolSearch", "ListMcpResourcesTool", "ReadMcpResourceTool",
+                        "Skill", "LSP", "TaskOutput", "TaskGet", "TaskList", "ListAgents"})   # P553: loading a skill's text
 READ_CMDS = frozenset({
     "ls", "cat", "head", "tail", "wc", "grep", "egrep", "fgrep", "rg", "ag", "fd", "stat", "file", "du", "df", "pwd", "echo",
     "printf", "date", "cal", "jq", "sort", "uniq", "cut", "tr", "nl", "column", "diff", "cmp", "comm", "basename", "dirname",
@@ -2005,12 +2006,12 @@ def hook_main(argv: list[str]) -> int:
                     "permissionDecisionReason": "agentj 只读运行（定时任务 mode: research）：" + why + "。这次运行只能读取，"
                                                 "把要做的事写进报告，由人决定。"}}, ensure_ascii=False))
                 return 0
-        from .policy_registry import main_requirement
+        from .policy_registry import main_requirement, unknown_text
         requirement = main_requirement(ev.get("tool_name"), ev.get("tool_input"))
         if requirement == "deny":
             sys.stdout.write(json.dumps({"hookSpecificOutput": {
                 "hookEventName": "PreToolUse", "permissionDecision": "deny",
-                "permissionDecisionReason": "Agent J：未知动作，默认拒绝 / Unknown action denied"}}, ensure_ascii=False))
+                "permissionDecisionReason": unknown_text(ev.get("tool_name"))}}, ensure_ascii=False))
             return 0
         if "harness" in argv[1:]:
             # P551 (#320) + P550: following the harness — only the four ③ kinds that stay (money, the owner's data deleted, a

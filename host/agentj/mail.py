@@ -1463,6 +1463,9 @@ class Mail:
             if avatar_reply is None or not valid() or self.host.stopped():
                 return False
             page = self.host.hist_add({'k':'sys', 'via':'mail', 'text':'来自邮件 / From email'}, avatar_reply, 'done')
+            with contextlib.suppress(Exception):   # P557: its files on the page
+                from .channel_card import attach
+                attach(self.host, page, getattr(avatar_reply, 'page_files', ()))
             send = SimpleNamespace(turn=page['id'])
         else:
             session = SimpleNamespace(device=device, name=who[:64], cid=0, source_kind="email", provenance=source)
@@ -1546,6 +1549,7 @@ class Mail:
                 body = body.rstrip() + "\n\n" + tg_media.skip_lines(held, lang)
         if row["role"] == "owner":
             files.extend(('image-' + str(i) + '.png', mime, data) for i, (mime, data) in enumerate(avatar_images, 1))
+            files.extend(getattr(text, 'files', ()))     # P557
         agent_name = ""
         with contextlib.suppress(Exception):
             agent_name = self.st.agent_name() or ""

@@ -536,6 +536,7 @@ App messages (all inside §3 transport messages):
 | host → device | `{"t":"msg",…,"from":"cmd","cmd":"<name>"\|"refused","ok":bool,"kind":"ok"\|"info"\|"error"\|"refused"[,"models":[{"id","name","desc","cur"}]][,"undo":true][,"sep":true][,"by":"<≤ 64>"]}` | its result card (a chat entry: backlog, replay, every phone); `models` = buttons that send `/model <id>`; `undo` = 「撤销清空」; `sep` = a divider |
 | device → host | P207: `{"t":"mail_allow","r","addr","role":"owner"\|"guest",SIG}` → `ctl_res` (object `addr\nrole`; §25) | add an address to the e-mail allowlist |
 | device → host | P336: `{"t":"approval_set","r","key":"approval.level"\|"approval.goal_nocard","value",SIG}` → `ctl_res` (object `key\nvalue`, a boolean as `true` / `false`; below) | the owner's approval level / 「设了目标就不弹窗」 switch — never via `pref_set` |
+| device → host | P554: `{"t":"forward_set","r","dest":"share"\|"wx"\|"tg","migrate":bool,SIG}` → `ctl_res {ok,dest?,migrated?,why?}` (object `dest`, plus `\nmigrate` when `migrate`; no Face ID) | 转发去向 = host preference `ui.forward_destination`, one value for every remote — a phone never sets it via `pref_set` (P536 section) |
 | device → host | P426: `{"t":"skill_archive"\|"skill_restore","r","name",SIG}` → `ctl_res` (object `archive\|restore` `\n` name; §39.1) | 「归档」/「恢复」 one skill on the 技能 page |
 | device → host | `{"t":"mem_rm","r","src","file","fsha","iid",SIG}` · `{"t":"mem_undo","r","id",SIG}` · `{"t":"estop","r",SIG}` · `{"t":"resume","r",SIG}` · `{"t":"task_set","r","id","on":bool,"tsha",SIG}` with SIG = `"n":"<32 hex>","ts":<ms>,"sig":"<b64url 64 B>"` → `{"t":"ctl_res","r","action","ok":bool[,"why"][,"undo","label"]}` | signed writes (below) |
 
@@ -3538,7 +3539,7 @@ resets to system share with one notice. A temporary send failure/expired context
 picker, success-based destination memory, cross-channel fallback or automatic replay. File-card Telegram actions remain.
 
 `wxbound` / `tgbound` caps announce binding; `wxfwd` announces WeChat's current send eligibility. `wechat_state` includes
-`bound`, `can_forward`, `forward_for` (remaining seconds, at most 300) and greeting metadata (`needs_message`, `attempted`,
+`bound`, `can_forward` and greeting metadata (`needs_message`, `attempted`,
 `sent`); never credentials/context values. `status.channels={tg_bound,tg_forward}` updates Telegram binding/eligibility.
 
 A paired allowed p33 ready session sends `{t:"wx_fwd",r:<rid>,id:<finished turn id>}`; no reply words travel upstream.
@@ -3549,6 +3550,27 @@ and completed non-silent reply; owner-redact secrets. Six attempts/device/minute
 platform send call. Platform errors/unknown transport outcomes are failures; no automatic retry. Explicit retry may duplicate
 an unknown delivery. Logs record only device, turn ID and result. Login without context requires an owner WeChat message;
 first eligible reply includes one greeting and marks the attempt before sending so uncertain greeting is not replayed.
+
+P554 (#327): `wx_fwd` is sent whenever `wxbound`. The host sets no time window (`forward_for` is gone): any stored context
+is used — a two-day-old one was delivered. Bound but no context → `why:"needs_message"` with no platform call; a
+`sendmessage` refusal (`ret` ≠ 0 except -14 session expiry) → `needs_message` and `context_stale` is stored
+(`can_forward`/`wxfwd` false, still tried on the next explicit forward) until a send succeeds or the owner's next message
+brings a fresh context. Timeouts/-14 stay `send_failed`; unbound, stopped or poll error stay `not_configured`. The phone answers
+`needs_message` with "message ClawBot first" and a one-tap system share of that reply; the saved destination is unchanged.
+Opening Settings sends `{t:"wechat",op:"status"}` once so a missed `wechat_state` push cannot leave a bound WeChat greyed.
+
+P554 追加 c (chairman 10-27): the destination is one **host** setting, preference `ui.forward_destination` (`""` = not
+chosen yet, `share`, `wx`, `tg`; schema default `""`, so a config.json5 written before it validates unchanged). A host that
+keeps it lists `host.forward_set: true` in the `preferences` message; a remote then shows `value.ui.forward_destination`
+and writes only the signed `forward_set {r, dest, migrate, n, ts, sig}` (§8 controls check; wrong dest / non-boolean
+migrate → `shape`; no Face ID — the send itself stays the owner's tap). The host writes it like `agentj config set`, logs
+controls.log, and broadcasts `preferences` to every ready remote, so all remotes agree at once and after a reload.
+Migration: while the host value is `""`, a remote that has a pre-P554 local `aj.forward.destination.<host>` (as stored before
+this page load) sends it once with `migrate:true`; the host takes it only while still `""` (first one wins) — otherwise
+`ok:true, dest:<host value>, migrated:false`, nothing written. Once the host has a value the remote deletes its local key.
+While the chosen channel is unbound a remote forwards by system share (one notice) and never rewrites the host value, so a
+remote that missed a push cannot reset everyone; rebinding brings the choice back. Older hosts (no `forward_set`) keep the
+remote-local P536 behaviour above.
 
 ### P537: heartbeat prompt editor
 On an already ready, allowed p33 session, cap `heartbeat_prompt` advertises `heartbeat_get {r}` → `heartbeat_state {r,ok,text,default,sha,update_available,path}`. Text is redacted; `sha` is full SHA-256 of the local raw prompt, not the heartbeat's short digest. Reads do not create or reset files. `heartbeat_write {r,op,text,sha,n,ts,sig}` → `ctl_res {r,ok,why}` signs action `heartbeat_write`, canonical JSON `{op,text,sha}`; op=save/merge/reset. Nonce, timestamp, device signature and prior revision all must match. Merge appends only the missing factory block, reset replaces only on an explicit saved action, save enforces16KiB/secret/control rules. It does not use or alter the current Agent's source/privilege. No prompt text is logged. Older hosts lack the cap; the phone explains that editing requires an upgrade. Scheduling is unchanged.
@@ -3663,9 +3685,10 @@ serves until its seat certificate ends) and the same move is not asked again unt
 
 **A. `pk_peer` (app messages, p33 sessions only; host `pkpeer.py`).** The host decides. D → `{"t":"pk_peer_req","r"}`.
 If no OTHER listed device holds a `pk` record (a record holding D's own credential does not count) and D has none:
-`{"t":"pk_peer_res","r","ok":true,"mode":"direct"}` then a plain `pk_offer`. If D has one but nobody else does:
-`{"t":"pk_peer_res","r","ok":false,"why":"no_approver"}`. Otherwise a request (or D's still-open one, idempotent):
-`{"t":"pk_peer_res","r","ok":true,"mode":"peer","id":b64u16,"code":"NNNNNN","exp":unix_s,"online":n}`; refusals `why:"rate"`
+`{"t":"pk_peer_res","r","ok":true,"mode":"direct"}` then a plain `pk_offer`. Otherwise a request (or D's still-open one, idempotent):
+`{"t":"pk_peer_res","r","ok":true,"mode":"peer","id":b64u16,"code":"NNNNNN","exp":unix_s,"online":n[,"host":1]}` — P555: also
+when D holds the only key or nobody can approve (then `host:1`) (`online` 0; before P555 that was `ok:false, why:"no_approver"`, which pages
+still read); refusals `why:"rate"`
 (5 new requests per device per 10 min) · `"busy"` (3 open per host). `code` = `%06d` of
 `int.from_bytes(SHA-256("agentj/pk-peer/code/v1\n"+id+"\n"+D+"\n"+b64u(D's X25519 pub))[:4],"big") % 10^6`.
 Every ready approver (another device, own `pk`, not D's credential) — also one that connects within the TTL (300 s) — gets
@@ -3685,7 +3708,26 @@ not count); otherwise none — `pk_offer_req` is answered `{"t":"pk_reg_res","ok
 starts `pk_peer_req`), the automatic offers are silently not made. A plain offer still cannot replace a key without
 `replace_fa`. Approvers are only devices whose `pk` record they registered themselves (record field `dev` = the registering
 device id; a record moved by a passkey restore keeps the old id and does not approve; a legacy record without `dev` does).
-If every other key is held by such a moved record, `pk_peer_req` answers `why:"no_approver"`.
+If every other key is held by such a moved record, the request still opens (P555) for the terminal approval below.
+
+**P555 — a key the host already has is recognised; the Agent J host's terminal approves when no remote can.**
+- `pk_state` (§P539) of a record without `local`: a key registered under this device id (`dev` absent or = the id) is
+  `local` (pk_reg always asks for a platform authenticator; the stored record is not rewritten). Only a record a restore moved
+  here (`dev` ≠ the id) stays `unknown`; its `pk_state` then also carries `"fa":<its credential id>,"fa_ch":b64u(elevate_challenge(
+  channel, device, n, "pk_check", n, hex SHA-256("agentj-pk-check-v1"))),"n":b64u16` (one per session, fresh with every
+  `pk_state`, 600 s). The page answers from the tap: `{"t":"pk_check","r","n","fa":{id,cd,ad,sig}[,"aa":"platform"|"cross-platform"]}`
+  → `{"t":"pk_check_res","r","ok":true,"s":"local"|"borrowed"}` (record `local` noted, remotes list re-sent) or `{"ok":false}`.
+  A check never opens a `pk_peer` request; the page goes on to `pk_peer_req` only when it fails.
+- Any other verified assertion of this device's own key (a pickup card, an approval, a signed write…) does the same for an
+  `unknown` record: `local` is noted and every remote gets the list and `pk_state` again — a remote that opens a card with
+  Face ID never shows 「未确认」. Records with `local` already set (`borrowed` included) are left as they are.
+- Control socket `{"cmd":"pk_peer_host","code":"NNNNNN","pass"}` (ctl_auth SENSITIVE: a claim — never an Agent — plus ALWAYS
+  the remote pairing password, the bar of `agentj pair`; none set → `error:"no_passphrase"`; CLI `agentj faceid approve <code>`):
+  approves the one open request with that code, only while no other listed remote could approve it (`pk_peer_res.host` is
+  sent only then) → `{"ok":true,"name"}` | `{"ok":false,"error":"no_request"|"approver_exists"|"rate"}` (5 wrong codes in
+  10 min pause it and tell every remote). D gets `pk_peer_done` with
+  `"by":"host"` and the peer `pk_offer`; open approver cards close; approvals.log `reason:"pk_peer"`, `device:"host-terminal"`,
+  `agent:"terminal"` (no `fa`); notice to every remote and a `security` push.
 
 **B. Seat transfer (host `seat_transfer.py`; Dashboard routes above).** Phone controls (controls-v1 signatures, object
 `"transfer"` / `"cancel"`, target `{}`): `{"t":"seat_transfer","r","n","ts","sig"[,"fa"]}` — needs this remote's own

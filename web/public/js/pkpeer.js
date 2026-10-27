@@ -11,7 +11,7 @@
 //   Face ID」 + time + 对照码 + 「批准（Face ID）」「拒绝」 → approve(fa_ch, fa) synchronously in the tap → pk_peer_answer
 //   {id, ok:true, fa} · {id, ok:false}; pk_peer_close {id} puts the card away.
 // Logic and view are apart: configure({view}) lets node tests drive the state machine without a DOM (p547_pkpeer.test.mjs).
-import { t, locale, onLang } from './t.js';
+import { t, locale, onLang, fillText } from './t.js';
 import { mk, toast, notify } from './ui.js';
 import { registerLayer } from './layers.js';
 import { unb64u } from '../proto/wire.js';
@@ -55,10 +55,10 @@ export async function startPeerSetup() {
   if (m.mode === 'direct') { S.direct = true; return 'direct'; }   // the host's pk_offer follows (app.js offerPasskey, pkForce)
   if (m.mode !== 'peer' || !ID.test(m.id || '') || !CODE.test(String(m.code ?? ''))) { result('fail'); return 'fail'; }
   S.direct = false;
-  S.req = { id: m.id, code: String(m.code), exp: Number(m.exp) || 0, online: Number.isInteger(m.online) ? m.online : 0, done: false };
+  S.req = { id: m.id, code: String(m.code), exp: Number(m.exp) || 0, online: Number.isInteger(m.online) ? m.online : 0, host: m.host === 1, done: false };
   S.offer = null; S.by = '';
   arm();
-  show({ mode: 'wait', code: S.req.code, online: S.req.online, where: keyPlatform(H.ua(), H.touch()) });
+  show({ mode: 'wait', code: S.req.code, online: S.req.online, host: S.req.host, where: keyPlatform(H.ua(), H.touch()) });
   return 'peer';
 }
 function arm() {
@@ -84,7 +84,7 @@ export function onDone(m) {
   if (m.ok === true) {
     if (S.req) S.req.done = true;
     clearTimeout(S.timer);
-    S.by = cleanName(m.by);
+    S.by = m.by === 'host' ? t('pkp.byHost') : cleanName(m.by);   // P555: approved at the Agent J host's terminal
     return maybeApproved();
   }
   if (!S.req) return;
@@ -241,9 +241,15 @@ function paint() {
   const codeRow = (code) => { const d = mk('div', 'pkp-code'); d.id = 'pkp-code'; d.append(mk('span', 'pkp-code-l', t('pkp.codeLabel')), mk('b', 'pkp-code-v', code)); return d; };
   const row = mk('div', 'ajrow pkp-acts');
   if (s.mode === 'wait') {
-    title.textContent = t('pkp.waitTitle');
-    kids.push(mk('p', 'pkp-text', t('pkp.waitText')), codeRow(s.code));
-    kids.push(mk('p', 'elev-note', s.online > 0 ? t('pkp.online', { n: s.online }) : t('pkp.noneOnline')));
+    const hostOnly = s.host && !(s.online > 0);       // P555: nobody online to approve → the Agent J host's terminal first
+    title.textContent = t(hostOnly ? 'pkp.waitHostTitle' : 'pkp.waitTitle');
+    kids.push(mk('p', 'pkp-text', t(hostOnly ? 'pkp.waitHostText' : 'pkp.waitText')), codeRow(s.code));
+    if (!hostOnly) kids.push(mk('p', 'elev-note', s.online > 0 ? t('pkp.online', { n: s.online }) : t('pkp.noneOnline')));
+    if (s.host) {
+      const cmd = mk('p', 'elev-note pkp-host'); cmd.id = 'pkp-host';
+      fillText(cmd, t('pkp.hostWay', { code: s.code }));
+      kids.push(cmd);
+    }
     kids.push(mk('p', 'elev-note', t('pkp.eachOwn') + ' ' + t('pkp.where.' + s.where)));
     row.append(btn('pkp-cancel', 'aj-btn--quiet', 'sheet.cancel', () => cancelWait()));
   } else if (s.mode === 'approved') {

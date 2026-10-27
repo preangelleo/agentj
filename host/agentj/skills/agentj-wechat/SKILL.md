@@ -10,7 +10,7 @@ On an owner request, run `agentj wechat setup --phone`: a signed owner card open
 paired Web App, including when Settings → Connect WeChat sent the skill request.
 After binding, ask the owner to send ClawBot a message in WeChat to finish checking the connection: login does not supply
 a send context. The first eligible reply includes a greeting; never promise an unsolicited push without a context.
-Under **Settings → Channels → Forward replies to**, choose **System share** (default), **WeChat ClawBot** or **Telegram**. Unbound channels are disabled. Your choice saves immediately on this remote for this host, and both the reply card and reader use that destination and icon. Binding a channel does not select it automatically. Unbinding the selected channel resets to system share with one notice. A temporary send restriction keeps the chosen destination; a failed send never falls back or retries automatically.
+Under **Settings → Channels → Forward replies to**, choose **System share** (default), **WeChat ClawBot** or **Telegram**. Unbound channels are disabled, with the reason and a **Connect** button below; a bound WeChat can always be chosen. Your choice is saved on the Agent J host and shared by every remote: change it on one and the others follow at once and after a refresh; a choice a remote kept on its own moves to the host from the first remote that connects while the host has none. The reply card and reader use that destination and icon. Binding a channel does not select it automatically. While the selected channel is unbound, forwarding uses system share with one notice; rebinding brings the choice back. A temporary send restriction keeps the chosen destination; a failed send never falls back or retries automatically.
 At the owner's interactive terminal, `agentj wechat setup` displays the same binding QR locally.
 Expired QR codes refresh automatically for up to ten minutes. A WeChat numeric verification code belongs in that panel
 or the terminal's hidden prompt, never chat. No key or QR URL in replies, logs or documents.
@@ -68,8 +68,8 @@ Inbox retention remains 30 days / 2 GiB. Unbind stops new receipt and cancels qu
 uses the ordinary Stop everything control. Tencent and the owner's model provider process channel content; the Agent J
 operator does not receive that content. Do not describe WeChat as the Agent J Web App's end-to-end encrypted channel.
 
-Active push has a provider-controlled window and no guaranteed duration. Agent J conservatively replies only within
-five minutes of a received context token, never schedules WeChat delivery. Reminders and long-task results keep using
+Active push has a provider-controlled window and no guaranteed duration. Agent J sets no time limit of its own: it uses the
+latest received context token until WeChat refuses it, never schedules WeChat delivery. Reminders and long-task results keep using
 Agent J's existing channels. Outgoing audio uses file attachments, not native voice bubbles. Local media cap:25 MiB.
 
 Owner mail, Telegram and WeChat images enter the selected executor as image inputs: Claude Code uses stream-json image
@@ -78,6 +78,15 @@ tool is enabled. When the selected model does not support images, say 当前套�
 support images; ask the owner to choose an existing image-capable plan in Web App. Never silently omit images, switch
 plans or claim to have seen them. Text/PDF extraction remains bounded; unsupported files stay in the inbox for Web App.
 Image generation/editing remains subject to the existing native capability and approval policy.
+Generated images go back as native pictures (Telegram photo, WeChat image). A reply naming local paths or internal tools is
+sent with those words removed, never handed to Web App for its wording; only held actions and credentials stay there. An
+executor without an image tool returns ask_owner topic "image" and the host draws with the owner's Codex in its own sandbox
+(subscription, no per-use charge). A transferred image request in the main conversation: draw with headless `codex exec`;
+a pay-per-image service is spending and needs the owner's yes first, never the first offer.
+Owner channels (WeChat, owner mail, the owner's private Telegram) have main-conversation rights on any native plan
+(shared or a saved Claude Code / Codex / OpenCode plan); only missing main context goes to the main thread. Files the
+avatar names go back as that channel's attachments (credential files → pickup card) and its answer also appears in the
+Web App's main conversation; Face ID steps are cards in Web App whichever channel asked.
 
 
 Display names come from `agentj status --json` field `agent_display_name` (shared `agent_label` formatter); use it verbatim in introductions and return-to-web hints. Empty names and names equal to Agent J (ignoring case/whitespace) display as Agent J; an existing Agent J - prefix is preserved. Examples: empty → Agent J; Agent J → Agent J; Agent J - Father@TB → Agent J - Father@TB; Father@TB → Agent J - Father@TB. Stored and signed names remain raw owner data.

@@ -123,7 +123,7 @@ const platOf = () => { try { const p = platFn(); return PLATS.includes(p) ? p : 
 export async function assert(challenge, allow = []) {
   const cred = await navigator.credentials.get({ publicKey: {
     challenge, rpId: location.hostname, userVerification: 'required', timeout: 60000,
-    allowCredentials: allow.map((id) => ({ type: 'public-key', id: unb64u(id) })),
+    allowCredentials: allow.map((id) => ({ type: 'public-key', id: unb64u(id), transports: TRANSPORTS.unknown })),
   } });
   const r = cred.response;
   if (!r.userHandle) throw new Error('no user handle');
@@ -149,18 +149,37 @@ export async function elevateChallenge(channel, device, id, kind, nonce, digest)
   return sha256(new TextEncoder().encode(parts.join('\n')));
 }
 
+// P555 追加 d (董事长 10-27 13:16, Mac M1 Chrome): a key the Agent J host knows lives on THIS remote was asked for with a bare
+// allowCredentials entry, so Chrome on macOS, not matching it among the authenticators it looked at, went straight to its
+// cross-device sheet (scan with a phone / insert a security key) — never Touch ID. Every get() for this remote's own key
+// now says where to look: its own key → transports ['internal'] + hints ['client-device'] (the platform authenticator,
+// never the QR); a borrowed one (#300, made over a phone scan) → ['hybrid']; not placed → both. pk_state sets it.
+export const TRANSPORTS = { local: ['internal'], borrowed: ['hybrid'], unknown: ['internal', 'hybrid'] };
+let own = 'unknown';
+/** app.js on pk_state: this remote's own key state (local | borrowed | unknown; anything else = unknown). */
+export function setOwnState(s) { own = Object.hasOwn(TRANSPORTS, s) ? s : 'unknown'; }
+/** The get() fields for one credential id of this remote by its state (pure when st is given). */
+export function wantOf(credId, st = own) {
+  const k = Object.hasOwn(TRANSPORTS, st) ? st : 'unknown';
+  return { allowCredentials: [{ type: 'public-key', id: unb64u(credId), transports: TRANSPORTS[k] }],
+    hints: k === 'borrowed' ? ['hybrid'] : ['client-device'] };
+}
+
 /** WebAuthn get() exists at all (no platform check: the record already holds a passkey made on this phone). */
 export const canAssert = () => !!(globalThis.PublicKeyCredential && navigator.credentials?.get);
 
 /** Face ID for one card. NOT async on purpose: get() starts synchronously inside the tap (iOS user-gesture rule).
+ *  st = where the key lives (default: this remote's pk_state; the P555 self-check passes 'local' — is it HERE?).
  *  → a promise of the `fa` object {id, cd, ad, sig}; rejects on cancel / failure. */
-export function approve(challenge, credId) {
+export function approve(challenge, credId, where = false, st = own) {
   return navigator.credentials.get({ publicKey: {
-    challenge, rpId: location.hostname, userVerification: 'required', timeout: 60000,
-    allowCredentials: [{ type: 'public-key', id: unb64u(credId) }],
+    challenge, rpId: location.hostname, userVerification: 'required', timeout: 60000, ...wantOf(credId, st),
   } }).then((cred) => {
     const r = cred.response;
-    return { id: b64u(buf(cred.rawId)), cd: b64u(buf(r.clientDataJSON)), ad: b64u(buf(r.authenticatorData)), sig: b64u(buf(r.signature)) };
+    const out = { id: b64u(buf(cred.rawId)), cd: b64u(buf(r.clientDataJSON)), ad: b64u(buf(r.authenticatorData)), sig: b64u(buf(r.signature)) };
+    const a = where ? attachmentOf(cred) : null;    // P555 self-check: + where the key lives (`aa`, advisory)
+    if (a) out.aa = a;
+    return out;
   });
 }
 

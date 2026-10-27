@@ -2030,10 +2030,18 @@ async function forwardTap(){
     if (['rate_limited', 'recently_sent', 'in_flight'].includes(r.why)) {
       setFwd(id, 'idle'); toast(t(r.why === 'rate_limited' ? 'r.tg.limited' : 'r.tg.again'), 2600); return;
     }
+    if (dest === 'wx' && r.why === 'needs_message') {   // P554: outside WeChat's reply window — say how, offer system share once
+      setFwd(id, 'idle');
+      toastAction(t('p554.needMsg'), t('p554.useShare'), () => { setFwd(id, 'sending'); systemShare(id, text); }, 10000);
+      return;
+    }
     setFwd(id, 'failed', 3000);
     toast(t(dest === 'wx' ? 'p536.wx.failed' : 'r.tg.failed'), 3000);
     return;
   }
+  return systemShare(id, text);
+}
+async function systemShare(id, text){
   if (navigator.share){
     try{ await navigator.share({text}); setFwd(id, "sent", 2000); return; }
     catch(e){ if (e && e.name === "AbortError"){ setFwd(id, "idle"); return; } }

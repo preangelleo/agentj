@@ -857,10 +857,10 @@ body[data-kb="1"] .composer{padding-bottom:12px}   /* keyboard up: no home-indic
 .ptt.cancel .pttring.r2{animation:none;opacity:0}
 .pttact{display:flex;gap:22px;pointer-events:auto}
 .pttact[hidden]{display:none}
-.pttbtn{width:52px;height:52px;border-radius:50%;display:grid;place-items:center;border:1.5px solid rgba(250,249,245,.55);cursor:pointer;
+.pttbtn{width:52px;height:52px;border-radius:50%;display:grid;place-items:center;border:0;cursor:pointer;
   background:rgba(44,43,38,.82);color:#faf9f5;padding:0;-webkit-tap-highlight-color:transparent}
 .pttbtn svg{width:24px;height:24px}
-.pttbtn.go{background:var(--peachy-feeling);border-color:var(--peachy-feeling);color:var(--lotion)}
+.pttbtn.go{background:var(--peachy-feeling);color:var(--lotion)}
 .pttbtn.go svg{transform:translate(-1px,1px)}
 /* P346 (#54): three icons (cancel · end · send); a narrow folded screen (280px) only tightens the gap */
 @media(max-width:330px){.pttact{gap:18px}}
@@ -1643,11 +1643,15 @@ main{padding:6px 20px 24px}
 .setval.setwide{grid-column:1 / -1;text-align:left}
 p.setval{grid-column:1 / -1;text-align:left;margin:0}
 .setnote{margin:0;color:var(--text-muted);font-size:var(--fs-sm)}
+/* P552 (#325 ①): a switch that is set but not in force — the reason in the danger colour, one button to confirm again */
+.setrow>.setunsigned{grid-column:1 / -1;display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-control)}
+.setunsigned[hidden]{display:none}
+.setunsigned__why{color:var(--danger);flex:1 1 14em}
 .setnote code,.setcmd code{font:500 .9em/1.5 var(--font-mono);background:var(--code-bg);border-radius:4px;padding:.05em .35em;word-break:normal;overflow-wrap:anywhere}
 .setcmd{display:flex;flex-wrap:wrap;align-items:center;gap:var(--sp-1) var(--sp-2);margin:var(--sp-1) 0 0}
 .setcmd[hidden]{display:none}
 .setcmd>.setnote{flex-basis:100%}
-.setcopy{min-height:44px;padding:0 var(--sp-3);border-radius:var(--r-pill);background:var(--surface-2);color:var(--text);border:1px solid var(--border-soft);
+.setcopy{min-height:44px;padding:0 var(--sp-3);border-radius:var(--r-pill);background:var(--surface-2);color:var(--text);border:0;
   font:500 var(--fs-sm)/1 var(--font-body)}
 .setver{margin:0;color:var(--text);font-family:var(--font-mono);font-size:var(--fs-xs);line-height:1.7}
 .setrow>.setver{grid-column:1}
@@ -2668,7 +2672,7 @@ i.bd.still{animation:none}
 .off-mail{display:flex;align-items:center;gap:8px;margin-top:4px}
 .off-mail a{flex:1;min-width:0;min-height:44px;display:flex;align-items:center;color:inherit;font:600 calc(15px*var(--fz))/1.2 var(--font-body);
   text-decoration:underline;text-underline-offset:3px;overflow-wrap:anywhere}
-.off-copy{flex:none;width:44px;height:44px;border-radius:50%;border:1.5px solid currentColor;background:none;color:inherit;display:grid;place-items:center;cursor:pointer;padding:0}
+.off-copy{flex:none;width:44px;height:44px;border-radius:50%;border:0;background:none;color:inherit;display:grid;place-items:center;cursor:pointer;padding:0}
 .off-copy svg{grid-area:1/1;width:20px;height:20px}
 .off-copy .gok,.off-copy.done .g0{display:none}
 .off-copy.done .gok{display:block}
@@ -2812,10 +2816,10 @@ i.bd.still{animation:none}
 body[data-scan-paused="1"] .scan-finder .sf-sweep{animation-play-state:paused;opacity:.35}
 @media(prefers-reduced-motion:reduce){.scan-finder .sf-sweep{animation-duration:4.4s}}
 .camera-actions{align-items:center;gap:28px}
-.camera-actions .scan-ico{width:56px;height:56px;padding:0;border-radius:50%;border:1.5px solid rgb(250 249 245 / .5);display:grid;place-items:center;
+.camera-actions .scan-ico{width:56px;height:56px;padding:0;border-radius:50%;border:0;display:grid;place-items:center;
   background:rgb(20 20 20 / .55);color:var(--c-lotion);cursor:pointer;-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
 .camera-actions .scan-ico svg{width:24px;height:24px}
-.camera-actions .scan-main{width:68px;height:68px;background:var(--c-lotion);color:var(--c-sooty);border-color:var(--c-lotion)}
+.camera-actions .scan-main{width:68px;height:68px;background:var(--c-lotion);color:var(--c-sooty)}
 .camera-actions .scan-main svg{width:28px;height:28px}
 .camera-actions .scan-main .ic-play{display:none;fill:currentColor}
 .camera-actions .scan-main[aria-pressed="true"] .ic-play{display:inline}
@@ -2961,6 +2965,14 @@ code[data-cc],pre[data-cc],.cc-in{cursor:copy}
 /* P270: one preview moves to the viewport; the same DOM is wiped on finish/timeout/hide. */
 .sout-preview-bar{display:flex;justify-content:flex-end;gap:var(--sp-2);position:sticky;top:0;background:var(--dlg-bg,var(--surface));z-index:1}
 .sout-preview-bar .aj-btn{min-width:56px;min-height:56px;margin:0}
+.sout:not(.sout-full) .sout-value{position:relative}
+/* P555: outside full screen the bar holds only the ⛶ icon, sitting inside the content box's top-right corner */
+.sout:not(.sout-full) .sout-preview-bar{position:absolute;top:0;right:0;background:none}
+.sout:not(.sout-full) .sout-content pre,.sout:not(.sout-full) .sout-content.words{padding-right:44px}
+.sout-expand{width:44px;height:44px;font-size:18px}
+/* P555 (董事长 10-27): an icon button has no border unless one is specifically asked for */
+.ajicon{display:inline-grid;place-items:center;margin:0;padding:0;border:0;background:none;color:inherit;cursor:pointer;border-radius:10px;line-height:1}
+.ajicon[hidden]{display:none}
 .sout-content{max-height:40dvh;overflow:auto;overscroll-behavior:contain;-webkit-user-select:text;user-select:text}
 .sout-content.words{font-size:calc(17px*var(--fz));line-height:1.65;padding:var(--sp-3) 0;color:inherit}
 .sout .sout-content pre{max-height:none;margin:0}
@@ -3203,10 +3215,10 @@ body[data-fs="1"] .fsft{padding-bottom:10px}
 .fspos{flex:1;min-width:0;text-align:center;font:400 calc(13px*var(--fz))/1.2 var(--font-body);color:rgba(250,249,245,.55);
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .fsic,.fsslash{flex:none;width:44px;height:44px;display:grid;place-items:center;border-radius:12px;padding:0;
-  background:none;border:1px solid rgba(250,249,245,.22);color:var(--lotion);cursor:pointer}
+  background:none;border:0;color:var(--lotion);cursor:pointer}
 .fsic svg,.fsslash svg{width:22px;height:22px}
 #fsClear{color:var(--peachy-feeling)}
-.fsslash{color:var(--peachy-feeling);border-style:dashed}
+.fsslash{color:var(--peachy-feeling)}
 .fsic:hover,.fsslash:hover{background:rgba(250,249,245,.08)}
 .fsic:focus-visible,.fsslash:focus-visible,.fssend:focus-visible{outline:1px solid var(--lotion);outline-offset:2px}
 #fsText{--ta-fs:max(16px,calc(17px*var(--fz)));flex:1;min-height:0;width:100%;max-height:none;margin:0;resize:none;border:0;outline:0;
@@ -3407,6 +3419,10 @@ body:is([data-status=working],[data-status=waiting],[data-status=unknown],[data-
 .forward-options input:disabled{color:var(--c-black-mana);cursor:not-allowed}
 .forward-options label:has(input:disabled){color:var(--c-argent)}
 .channel-row .channel-status{margin-top:0}
+/* P554: why WeChat ClawBot cannot be chosen (or cannot send right now), under its option */
+.forward-why{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:0 0 8px 34px}
+.forward-why[hidden]{display:none}
+.forward-why .setnote{margin:0;flex:1 1 180px}
 
 /* P537: shared editor stays above settings, dialogs and their focus layers; P550: below the P551 confirmation tier
    (--z-confirm 150), so a card that asks the owner is never hidden behind the editor. */

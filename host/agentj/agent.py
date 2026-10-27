@@ -1085,15 +1085,19 @@ def hook_settings(extra: list | None = None, research: bool = False, warnings: b
     policy): one PreToolUse hook for every tool, and hooks kept on. No permission rule, no mode (Invariant 11).
     research (a scheduled `mode: research` task, ADR-A53): the same hook also denies every call that is not read-only.
     warnings controls additional danger hints only; the common policy check is always installed.
-    harness (P551 #320, the signed `harness` level): the hook forces the phone only for ③ (a `uv` row or an effect it cannot
-    read); everything else is left to Claude Code's own permission mode."""
+    harness (P551 #320, the signed `harness` level, P556 「全放行」): the hook forces the phone only for the four ③ kinds;
+    everything else reaches the permission tool as Claude Code asks it, and Agent J answers it (Host.ask); Claude Code's own
+    bash sandbox is off for this start. Never bypassPermissions: its prompts would no longer reach Host.ask (approval_level.MAX_HOW)."""
     cmd = (f"{shlex.quote(sys.executable)} -P -m agentj.danger hook {danger.encode_extra(extra or [])}"
            + (" research" if research else "")
            + ("" if warnings else " policy-only")
            + (" harness" if harness and not research else "")
            + " || exit 2")          # the hook cannot start → a blocking error: the call does not run (fail closed)
-    return {"hooks": {"PreToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": cmd, "timeout": 30}]}]},
-            "disableAllHooks": False}
+    out = {"hooks": {"PreToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": cmd, "timeout": 30}]}]},
+           "disableAllHooks": False}
+    if harness and not research:
+        out["sandbox"] = {"enabled": False}   # P556 「全放行」: Claude Code's own bash sandbox off for this start only
+    return out
 
 
 def with_reminder(settings: dict, cfg: dict) -> dict:
@@ -1490,12 +1494,16 @@ class ClaudeAgent(Agent):
 
     def _note_tools(self, content, parent) -> None:
         """P426 #181 (§39): an exact skill run (the Skill tool) and the main thread's shell commands worth a skill — names and
-        normalised signatures only (skill_usage / skill_ops). Never costs the turn."""
+        normalised signatures only (skill_usage / skill_ops); P553: a call the hook denies as unknown is logged. Never costs
+        the turn."""
         try:
             from . import skill_ops, skill_usage
             for b in content or []:
                 if not (isinstance(b, dict) and b.get("type") == "tool_use" and isinstance(b.get("input"), dict)):
                     continue
+                from . import policy_registry   # P553 (#326): the danger hook (another process) denied it — log it here
+                if policy_registry.tool_action(b.get("name")) is None:     # no row = what main_requirement denies
+                    policy_registry.log_unknown(getattr(self.host, "st", None), b.get("name"), b["input"], agent=self.kind)
                 if b.get("name") == "Skill":
                     sk = b["input"].get("skill") or b["input"].get("command")
                     if isinstance(sk, str):

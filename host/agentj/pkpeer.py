@@ -12,7 +12,18 @@ asked for (#300 a borrowed key, #317 a key lost with a reinstall): the approval 
 registration (`pk_offer.peer` → the next `pk_reg` of D replaces the record without `replace_fa`; State.set_passkey(peer_ok)).
 Limits: PEER_TTL s per request, one per device, MAX_OPEN per host, RATE_N requests per device per RATE_WINDOW s (in memory —
 a restart ends every request, which only narrows). Every decision: approvals.log (reason "pk_peer", the assertion as hashes),
-host.log, activity, a notice to every remote and a `security` push."""
+host.log, activity, a notice to every remote and a `security` push.
+
+P555 (PASSKEY-SEAT-MODEL §2 revised): a device whose record already holds a key is never sent to another remote first.
+- A key saved before P539 under the device's own id counts as this device's own (State.passkey_of_device): zero taps.
+- A record whose key is truly `unknown` (a restore moved it here) gets a self-check with its `pk_state`: `fa` (its own
+  credential id) + `fa_ch` over elevate_challenge(channel, device, n, "pk_check", n, CHECK_DIGEST). One Face ID tap →
+  `pk_check {n, fa, aa}`; verified → `local` is noted (State.passkey_local) and no pk_peer request is made. Only a failed /
+  cancelled check (or no key) goes on to a pk_peer request.
+- Nobody can approve (the only keyed remote lost its key, or no other remote holds one): the request still opens; the owner
+  approves it at the Agent J host's terminal with the 对照码 (`agentj faceid approve <code>`, ctl `pk_peer_host`: a
+  claim like `resume` — never an Agent — plus ALWAYS the remote pairing password, the bar of `agentj pair`; a terminal alone
+  is no proof against a same-uid Agent, security review B1). Only while no eligible remote could approve instead."""
 from __future__ import annotations
 
 import asyncio
@@ -23,13 +34,18 @@ import time
 from . import approvals, passkey, wire
 from .text import clean_label, pick
 
-TYPES = ("pk_peer_req", "pk_peer_answer", "pk_peer_cancel")
+TYPES = ("pk_peer_req", "pk_peer_answer", "pk_peer_cancel", "pk_check")
 KIND = "pk_peer"
 PEER_TTL = 300
 MAX_OPEN = 3
 RATE_N, RATE_WINDOW = 5, 600
 CODE_LABEL = "agentj/pk-peer/code/v1"
 DIGEST_LABEL = "agentj-pk-peer-v1"
+CHECK_KIND = "pk_check"
+CHECK_DIGEST = hashlib.sha256(b"agentj-pk-check-v1").hexdigest()
+CHECK_TTL = 600
+HOST_BY = "host"                                   # r.by of a terminal approval (the page words it)
+HOST_MISS_N, HOST_MISS_WINDOW = 5, 600             # wrong 对照码 at the terminal before it stops listening for a while
 
 
 def code(rid: str, device: str, x25519_b64u: str) -> str:
@@ -57,6 +73,8 @@ class Desk:
         self.host, self.clock = host, clock
         self.reqs: dict[str, Req] = {}
         self.hits: dict[str, list[float]] = {}
+        self.checks: dict[str, tuple[str, str, float]] = {}     # P555: cid → (n, device, expiry) of its one open self-check
+        self.host_misses: list[float] = []
 
     # ------------------------------------------------------------ helpers
     def _live(self) -> list[Req]:
@@ -161,7 +179,88 @@ class Desk:
                 await self.host.send_app(s, {"t": "pk_peer_done", "id": r.id, "ok": True, "by": r.by})
                 await self.host._pk_offer(s, peer=r.id)
 
+    # ------------------------------------------------------------ P555 self-check of a key the host cannot place
+    def check_fields(self, s) -> dict:
+        """With `pk_state`: a fresh self-check challenge when this device's key is `unknown`, else nothing."""
+        self.checks.pop(s.cid, None)
+        pk = self.host.st.passkey_of_device(s.device)
+        if not pk or passkey.pk_state(pk) != "unknown":
+            return {}
+        n = wire.b64u(secrets.token_bytes(16))
+        self.checks[s.cid] = (n, s.device, self.clock() + CHECK_TTL)
+        ch = passkey.elevate_challenge(self.host.channel, s.device, n, CHECK_KIND, n, CHECK_DIGEST)
+        return {"fa": pk["id"], "fa_ch": wire.b64u(ch), "n": n}
+
+    async def _check(self, s, obj: dict) -> None:
+        h = self.host
+        c = self.checks.pop(s.cid, None)
+        pk = h.st.passkey_of_device(s.device)
+        res = {"t": "pk_check_res", **({"r": obj["r"]} if wire.is_rid(obj.get("r")) else {})}   # the page's ask1 waits on `r`
+        try:
+            if not c or c[1] != s.device or c[2] <= self.clock() or obj.get("n") != c[0] or not pk:
+                raise passkey.PasskeyError("expired", "no_check")
+            f = passkey.approval_fields(obj.get("fa"))
+            if f["id"] != pk["id"]:
+                raise passkey.PasskeyError("bad", "credential")
+            ch = passkey.elevate_challenge(h.channel, s.device, c[0], CHECK_KIND, c[0], CHECK_DIGEST)
+            h.st.passkey_count(s.device, pk["id"], passkey.verify_assertion(pk, f, ch))
+        except (passkey.PasskeyError, ValueError, TypeError) as e:
+            h.st.log("pk_check", device=s.device, result="fail", reason=getattr(e, "detail", type(e).__name__))
+            return await h.send_app(s, {**res, "ok": False})
+        local = passkey.attachment(obj.get("aa")) != "cross-platform"
+        h.st.passkey_local(s.device, pk["id"], local)
+        h.st.log("pk_check", device=s.device, result="ok", local=local)
+        await h.send_app(s, {**res, "ok": True, "s": h.st.passkey_state(s.device)})
+        await h.remotes.changed()                 # the remotes list and this device's own row repaint
+
+    # ------------------------------------------------------------ P555 the owner approves at the Agent J host's terminal
+    def nobody_else(self, did: str) -> bool:
+        """No other listed remote could approve `did` with its own key (the only case the terminal may)."""
+        return not any(self._eligible(d) for d in self.keyed_others(did))
+
+    async def host_approve(self, code_: str) -> dict:
+        """ctl `pk_peer_host` (serve already took the claim + the remote pairing password): the open request with this 对照码,
+        and only while no other remote could approve it (security review B1)."""
+        h = self.host
+        now = self.clock()
+        self.host_misses = [t for t in self.host_misses if now - t < HOST_MISS_WINDOW]
+        if len(self.host_misses) >= HOST_MISS_N:
+            h.st.log("pk_peer", device="host", result="refused", reason="rate")
+            return {"ok": False, "error": "rate"}
+        hit = [r for r in self._live() if r.state == "open" and r.code == code_] if isinstance(code_, str) else []
+        if len(hit) != 1:
+            self.host_misses.append(now)
+            h.st.log("pk_peer", device="host", result="refused", reason="no_request")
+            if len(self.host_misses) == HOST_MISS_N:
+                await h.broadcast(pick(h.lang, "Agent J 主机终端上连续输错了 Face ID 设置的对照码，已暂停 10 分钟。不是你本人在操作，请检查这台 Agent J 主机。",
+                                       "Wrong Face ID set-up codes were typed at the Agent J host terminal; paused for 10 minutes. If that was not you, check this computer."), frm="notice")
+                h.push_notify("security")
+            return {"ok": False, "error": "no_request"}
+        r = hit[0]
+        if not self.nobody_else(r.device):
+            h.st.log("pk_peer", device="host", result="refused", reason="approver_exists", id=r.id)
+            return {"ok": False, "error": "approver_exists"}
+        try:
+            approvals.record(h.st, rid=r.id, agent="terminal", tool=KIND, input_sha256=r.digest, shown_sha256=r.digest,
+                             decision="allow", reason=KIND, device="host-terminal")
+        except Exception:  # noqa: BLE001
+            h.st.log("approvals_log", status="failed")
+        h.st.log("pk_peer", device="host", result="allow", id=r.id, by=r.device)
+        h.activity("decision", by=pick(h.lang, "Agent J 主机终端", "Agent J host terminal"), result="allow",
+                   tool=pick(h.lang, "在 Agent J 主机上批准设置 Face ID", "Face ID set-up approved on the Agent J host"), text=r.name)
+        await self._close(r)
+        r.state, r.by, r.exp = "approved", HOST_BY, int(self.clock()) + PEER_TTL
+        self._arm(r)
+        await self._offer(r)
+        when = time.strftime("%Y-%m-%d %H:%M")
+        await h.broadcast(pick(h.lang, f"在 Agent J 主机终端批准「{r.name}」在本机设置 Face ID / 指纹 · {when}",
+                               f"“{r.name}” Face ID / fingerprint set-up approved at the Agent J host terminal · {when}"), frm="notice")
+        h.push_notify("security")
+        return {"ok": True, "name": r.name}
+
     async def on_phone(self, s, t: str, obj: dict) -> None:
+        if t == "pk_check":
+            return await self._check(s, obj)
         if t == "pk_peer_req":
             return await self._req(s, obj)
         rid = obj.get("id")
@@ -188,13 +287,11 @@ class Desk:
         res = {"t": "pk_peer_res", "r": rid}
         mine = self._pk_id(s.device)
         others = self.keyed_others(s.device)
-        if not others:
-            if mine:
-                return await h.send_app(s, {**res, "ok": False, "why": "no_approver"})
+        if not others and not mine:
             await h.send_app(s, {**res, "ok": True, "mode": "direct"})
             return await h._pk_offer(s)
-        if not any(self._eligible(d) for d in others):     # every other key was restored onto its record: nobody can approve
-            return await h.send_app(s, {**res, "ok": False, "why": "no_approver"})
+        # P555: nobody can approve (D holds the only key but it failed here, or every other key was restored onto its
+        # record) → the request still opens; the owner approves it at the Agent J host's terminal (host_approve)
         live = self._live()
         r = next((x for x in live if x.device == s.device), None)
         if r is None:
@@ -216,7 +313,8 @@ class Desk:
                 if self._approver(x, r):
                     await h.send_app(x, self.ask_msg(x, r))
         online = len({x.device for x in self._sessions() if self._approver(x, r)})
-        await h.send_app(s, {**res, "ok": True, "mode": "peer", "id": r.id, "code": r.code, "exp": r.exp, "online": online})
+        await h.send_app(s, {**res, "ok": True, "mode": "peer", "id": r.id, "code": r.code, "exp": r.exp, "online": online,
+                             **({"host": 1} if self.nobody_else(s.device) else {})})   # P555: only then the terminal way
         if r.state == "approved":
             await self._offer(r)
 

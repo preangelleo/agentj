@@ -55,6 +55,8 @@ class RiskGuard:
         if kind=='host':
             msg=(msg or '').strip() or pick(lang,'主人没有批准（拒绝了，或没在时限内回答）。','The owner did not approve it (denied, or no answer in time).')
             return pick(lang,*WHY['host']).format(msg=msg[:600])
+        if kind=='unknown' and msg:
+            return policy_registry.unknown_text(msg, lang)+' '+pick(lang,*WHY[kind])   # P553 (#326): names the tool
         return pick(lang,*WHY[kind])
 
     def _deny(self, kind, msg=''):
@@ -71,7 +73,8 @@ class RiskGuard:
             return True
         requirement=policy_registry.main_requirement(tool, inp)
         if requirement == 'deny':
-            return self._deny('unknown')
+            policy_registry.log_unknown(getattr(a.host,'st',None), tool, inp, agent=getattr(a,'kind','?'))   # P553: support can find it
+            return self._deny('unknown', tool)
         if requirement in ('hold','uv'):
             # Denials may suppress repeat requests; approvals never become a
             # broad category grant for a registry-mandated card.

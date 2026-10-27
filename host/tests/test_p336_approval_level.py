@@ -148,8 +148,9 @@ class Base(unittest.TestCase):
         return [o for _, o in self.sent if o["t"] == "ctl_res"][-1]
 
     def full(self):
-        self.assertTrue(self.control({"key": "approval.level", "value": "full"})["ok"])
-        self.assertEqual(approval_level.level(self.host.preferences, self.st), "full")
+        self.assertTrue(self.control({"key": "approval.level", "value": "harness"})["ok"])
+        # P552 (#325 ③): 「全放行」 is merged into 「减少弹窗（跟随 AI 编程工具）」 — the switch is signed as `harness`
+        self.assertEqual(approval_level.level(self.host.preferences, self.st), "harness")
 
 
 # ------------------------------------------------------------------ the matrix
@@ -176,33 +177,31 @@ class Matrix(Base):
             self.assertIn("秒内没有批准", res["message"])
 
     def test_full_allows_everything_but_the_red_lines(self):
+        # P552: a signed `full` now answers like the merged switch (harness): what the harness would not ask runs, the
+        # four ③ kinds keep Face ID (test_p551 / test_p550_harness_four / test_p552 hold the full matrix)
         self.full()
-        for cmd in SAFE_DANGER:
+        for cmd in SAFE_DANGER[1:]:             # `rm -rf build`: no work folder known here → the owner's data (Face ID)
             res = self.ask(cmd)
             self.assertEqual(res["behavior"], "allow", cmd)
-            self.assertEqual(self.last()["reason"], "level_full", cmd)
+            self.assertEqual(self.last()["reason"], "level_harness", cmd)
         self.assertEqual(self.cards(), [])
         autos = [o for _, o in self.sent if o["t"] == "auto"]
-        self.assertEqual({a["by"] for a in autos}, {"full"})
-        for cmd in REDLINE:
-            n = len(self.cards())
-            res = self.ask(cmd)
-            self.assertEqual(res["behavior"], "deny", cmd)
-            self.assertEqual(len(self.cards()), n + 1, cmd + " still asks the owner")
-        # an approve tap on a red line still works
-        self.assertEqual(self.ask("gh auth login --with-token < t.txt", answer=True)["behavior"], "allow")
+        self.assertEqual({a["by"] for a in autos}, {"harness"})
+        n = len(self.cards())
+        self.assertEqual(self.ask("stripe charges create --amount 500")["behavior"], "deny")
+        self.assertEqual(len(self.cards()), n + 1)
+        self.assertTrue(self.cards()[-1]["passkey_required"])
 
     def test_full_keeps_host_cards_and_needs_an_approver(self):
         self.full()
-        for tool, inp in (("agentj mail send", {"summary": "发给 a@b.c"}), ("pair_device", {"summary": "新遥控器"}),
-                          ("agentj config", {"changes": "approval.level → full"})):
+        for tool, inp in (("pair_device", {"summary": "新遥控器"}), ("agentj config", {"changes": "approval.level → full"})):
             n = len(self.cards())
             self.ask(inp, tool=tool, batch=False)
             self.assertEqual(len(self.cards()), n + 1, tool)
         for tool in ("DoomLoop", "SandboxOnce", "AuthRescue"):   # P551 (#321): OpenCode `task` (a sub-agent) is ①
             self.assertTrue(approval_level.host_card(tool), tool)
         self.st.remove_device(self.phone.did)
-        res = self.ask("rm -rf build")
+        res = self.ask("rm -rf ~/data")
         self.assertEqual(res["behavior"], "deny")
         self.assertEqual(self.last()["reason"], "no_device")
 
@@ -244,7 +243,7 @@ class Matrix(Base):
         self.full()
         self.ask("git push origin main")
         rec = self.last()
-        self.assertEqual((rec["reason"], rec["auto"]), ("level_full", "level"))
+        self.assertEqual((rec["reason"], rec["auto"]), ("level_harness", "level"))   # P552: the merged switch
         self.assertEqual(approvals.check_record(self.st, rec, self.index()), "auto")
 
     def test_safe_asks_more(self):
@@ -297,23 +296,23 @@ class Matrix(Base):
 # ------------------------------------------------------------------ the switch itself
 class Switch(Base):
     def test_signed_switch_changes_and_is_logged(self):
-        res = self.control({"key": "approval.level", "value": "full"})
+        res = self.control({"key": "approval.level", "value": "harness"})
         self.assertTrue(res["ok"])
-        self.assertEqual(preferences.get(self.host.preferences, "approval.level"), "full")
+        self.assertEqual(preferences.get(self.host.preferences, "approval.level"), "harness")
         rec = self.last()
         self.assertEqual((rec["kind"], rec["tool"], rec["reason"]), ("control", "approval_set", "device"))
         self.assertEqual(approvals.check_record(self.st, rec), "ok")
         s = approval_level.signers(self.st)["approval.level"]
-        self.assertEqual((s["value"], s["device"], s["rid"]), ("full", self.phone.did, rec["id"]))
+        self.assertEqual((s["value"], s["device"], s["rid"]), ("harness", self.phone.did, rec["id"]))
         self.assertEqual(oct(os.stat(approval_level._path(self.st)).st_mode & 0o777), "0o600")
         log = [json.loads(x) for x in self.st.controls_path.read_text().splitlines()]
         self.assertEqual((log[-1]["action"], log[-1]["result"]), ("approval_set", "ok"))
 
     def test_refusals(self):
         other = Phone(self.st, "别的")
-        for obj, why in ((sign(self.phone, {"key": "approval.level", "value": "full"}, key=other.sk), "bad_signature"),
-                         (sign(self.phone, {"key": "approval.level", "value": "full"}, ts=1), "stale"),
-                         ({**sign(self.phone, {"key": "approval.level", "value": "full"}), "value": "safe"}, "bad_signature"),
+        for obj, why in ((sign(self.phone, {"key": "approval.level", "value": "harness"}, key=other.sk), "bad_signature"),
+                         (sign(self.phone, {"key": "approval.level", "value": "harness"}, ts=1), "stale"),
+                         ({**sign(self.phone, {"key": "approval.level", "value": "harness"}), "value": "safe"}, "bad_signature"),
                          (sign(self.phone, {"key": "approval.level", "value": "yolo"}), "shape"),
                          (sign(self.phone, {"key": "approval.timeout", "value": "10"}), "shape"),
                          (sign(self.phone, {"key": "approval.goal_nocard", "value": "true"}), "shape")):
@@ -338,7 +337,7 @@ class Switch(Base):
     def test_widening_needs_face_id_when_the_remote_has_a_passkey(self):
         self.st.set_passkey(self.s.pub, {"id": wire.b64u(b"\x07" * 16), "pub": wire.b64u(os.urandom(77)), "alg": -7,
                                          "count": 0, "rp": "m.agentj.app", "at": int(time.time())})
-        target = {"key": "approval.level", "value": "full"}
+        target = {"key": "approval.level", "value": "harness"}   # P552: the merged switch
         obj = sign(self.phone, target)
 
         async def send(o):
@@ -357,14 +356,15 @@ class Switch(Base):
         with mock.patch.object(passkey, "verify_assertion", return_value=1):
             res = asyncio.run(send({**sign(self.phone, target), "fa": fa}))
         self.assertTrue(res["ok"])
-        self.assertEqual(approval_level.level(self.host.preferences, self.st), "full")
+        self.assertEqual(approval_level.level(self.host.preferences, self.st), "harness")   # P552: the merged switch
         # narrowing never needs Face ID
         res = asyncio.run(send(sign(self.phone, {"key": "approval.level", "value": "safe"})))
         self.assertTrue(res["ok"])
 
     def test_any_other_write_voids_the_signature(self):
-        self.assertTrue(self.control({"key": "approval.level", "value": "full"})["ok"])
-        self.assertEqual(self.host.host_info()["approval"], {"level": "full", "goal_nocard": False})
+        self.assertTrue(self.control({"key": "approval.level", "value": "harness"})["ok"])
+        self.assertEqual(self.host.host_info()["approval"], {"level": "harness", "goal_nocard": False, "unsigned": [],
+                                                                "max": {"kind": "claude", "shared": False, "how": "answer"}})   # P552 / P556
 
         async def terminal(value):              # the real config path (`agentj config set` / an edited file → apply)
             return await serve.Host.set_pref(self.host, "approval.level", value)
@@ -380,8 +380,8 @@ class Switch(Base):
         self.assertEqual(preferences.get(self.host.preferences, "approval.level"), "full")
         self.assertEqual(approval_level.level(self.host.preferences, self.st), "standard")
         self.assertEqual(self.host.host_info()["approval"]["level"], "standard")
-        self.assertTrue(self.control({"key": "approval.level", "value": "full"})["ok"])   # a new signed switch counts again
-        self.assertEqual(approval_level.level(self.host.preferences, self.st), "full")
+        self.assertTrue(self.control({"key": "approval.level", "value": "harness"})["ok"])   # a new signed switch counts again
+        self.assertEqual(approval_level.level(self.host.preferences, self.st), "harness")   # P552: in force as the merged switch
 
     def test_unsigned_pref_set_is_refused(self):
         self.assertNotIn("approval.level", serve.PREF_SET_KEYS)

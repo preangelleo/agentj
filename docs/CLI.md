@@ -134,7 +134,7 @@ agentj --help
 
 ```text
 usage: agentj [-h] [-V] [--migrate-legacy] [--instance N] [--fresh]
-              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,files,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,terminal,provider,sudo-helper,docs-rule,handover,seat,wechat,telegram-cursor,plaza,support,data,diag,preflight,skills,capability,goal,heartbeat,quota,imessage,busy,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
+              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,faceid,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,files,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,terminal,provider,sudo-helper,docs-rule,handover,seat,wechat,telegram-cursor,plaza,support,data,diag,preflight,skills,capability,goal,heartbeat,quota,imessage,busy,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -2361,6 +2361,26 @@ usage: agentj doctor [-h] [--json] [--read-only] [--offline]
 | `--upgrade-only` | `false` | false | — | `package and service integrity only` |
 | `--reconnect` | `false` | false | — | `phone grey or disconnected: check service, relay and Agent, repair the broken one` |
 | `--session` | `null` | false | — | `with --reconnect: attach this session ID` |
+
+### agentj faceid
+
+```text
+在 Agent J 主机上批准一台遥控器设置 Face ID（没有别的遥控器能批准时）/ approve a remote's Face ID set-up here
+```
+
+```bash
+agentj faceid --help
+```
+
+```text
+usage: agentj faceid [-h] {approve} [code]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `action` | `null` | true | `approve` | `` |
+| `code` | `null` | false | — | `the 6-digit code shown on that remote` |
 
 ### agentj feedback
 
@@ -6846,7 +6866,7 @@ usage: agentj workflows [-h] [--json] [--staff-hint FOLDER]
 
 Agent J Father is the official feedback platform. Say “Please report this to Agent J’s developers (support platform)”, or “Tell your dad about this”. Use `/feedback-to-agentj-father <text>` on the phone: owner requests send after redaction without asking twice; Agent-initiated reports need agreement first.
 
-The approval level (`approval.level`) and "Goal mode: no cards" (`approval.goal_nocard`) change only by a signed switch in Settings → Safety on a paired phone. When an Agent runs `agentj config set approval.level full`, nothing changes by itself: the owner gets a confirmation card on the phone. `agentj approvals --verify` checks every line: automatic approvals under Full access (level_full), Follow AI tool (`level_harness`), Goal mode: no cards (goal_preauth, goal_nocard) and a retry after a card kept while the owner was offline (parked) must trace back to a signed confirmation on the phone; the denials sent to the Agent while nobody was online are logged as offline or parked_wait.
+The approval level (`approval.level`) and "Goal mode: no cards" (`approval.goal_nocard`) change only by a signed switch in Settings → Safety on a paired phone. There are three levels: Safe, Standard and Full access (`harness`); an older `full` in the configuration is Full access too, and a signed one keeps working with no new confirmation. Under Full access the AI coding tool the Agent J host starts itself stops asking the owner: no tool is switched to its own allow-everything mode, it keeps asking and the Agent J host agrees to everything (Claude Code with its own sandbox off, Codex without a sandbox), config files untouched; only the four kinds (spending money, deleting data, unbinding or moving a seat, sending a key out) and anything that looks like an attack on Agent J itself still need Face ID; back to Safe or Standard, it restarts with its normal settings before the next turn. When an Agent runs `agentj config set approval.level …`, nothing changes by itself: the owner gets a confirmation card on the phone. `agentj approvals --verify` checks every line: automatic approvals under Full access (`level_harness`, and the older level_full), Goal mode: no cards (goal_preauth, goal_nocard) and a retry after a card kept while the owner was offline (parked) must trace back to a signed confirmation on the phone; the denials sent to the Agent while nobody was online are logged as offline or parked_wait.
 
 For AI tool full-access flags, configuration, short aliases and rollback, see [Full-access launch (three ways)](/docs/setup-agents/#full-access).
 
@@ -6997,7 +7017,7 @@ agentj --help
 
 ```text
 usage: agentj [-h] [-V] [--migrate-legacy] [--instance N] [--fresh]
-              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,files,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,terminal,provider,sudo-helper,docs-rule,handover,seat,wechat,telegram-cursor,plaza,support,data,diag,preflight,skills,capability,goal,heartbeat,quota,imessage,busy,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
+              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,faceid,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,files,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,terminal,provider,sudo-helper,docs-rule,handover,seat,wechat,telegram-cursor,plaza,support,data,diag,preflight,skills,capability,goal,heartbeat,quota,imessage,busy,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -9224,6 +9244,26 @@ usage: agentj doctor [-h] [--json] [--read-only] [--offline]
 | `--upgrade-only` | `false` | false | — | `仅升级后的包与服务完整性` |
 | `--reconnect` | `false` | false | — | `手机灰了/断开：自检 服务·中继·Agent 三段，哪段断了修哪段` |
 | `--session` | `null` | false | — | `和 --reconnect 一起：接上这个会话 ID` |
+
+### agentj faceid
+
+```text
+在 Agent J 主机上批准一台遥控器设置 Face ID（没有别的遥控器能批准时）/ approve a remote's Face ID set-up here
+```
+
+```bash
+agentj faceid --help
+```
+
+```text
+usage: agentj faceid [-h] {approve} [code]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `action` | `null` | true | `approve` | `` |
+| `code` | `null` | false | — | `那台遥控器上显示的 6 位对照码` |
 
 ### agentj feedback
 
@@ -13709,7 +13749,7 @@ usage: agentj workflows [-h] [--json] [--staff-hint FOLDER]
 
 Agent J Father 是官方反馈平台。标准说法：请把问题汇报给 Agent J 开发者（客服平台）；轻松说法：把这事告诉你爸爸。手机用 `/feedback-to-agentj-father <内容>`，主人下令脱敏直发，Agent 自发先请示。
 
-审批档位（`approval.level`）和「设了目标就不弹窗」（`approval.goal_nocard`）只能在已配对手机的「设置 → 安全」里签名切换。Agent 里运行 `agentj config set approval.level full` 不会直接生效，只会在主人手机上弹一张确认卡。`agentj approvals --verify` 会逐条核对：按全放行（level_full）、跟随 AI 编程工具（`level_harness`）、设了目标就不弹窗（goal_preauth、goal_nocard）、离线留卡后重试（parked）自动批准的记录，都要追到手机上那次签名确认；没人在线时回给 Agent 的拒绝记为 offline 或 parked_wait。
+审批档位（`approval.level`）和「设了目标就不弹窗」（`approval.goal_nocard`）只能在已配对手机的「设置 → 安全」里签名切换。审批档位只有安全、中等、全放行（`harness`）三档；配置里以前的 `full` 也是全放行，当初签名确认过的直接生效，不用重新确认。全放行时，Agent J 主机自己启动的 AI 编程工具不再问主人：不切到工具自带的全部允许模式，工具照常发问，由 Agent J 主机全部替主人同意（Claude Code 关掉自带的沙箱，Codex 不用沙箱），不改配置文件；只有四类（花钱、删除数据、解绑或转移席位、密钥外发）和疑似攻击 Agent J 本身的动作仍要 Face ID；切回安全或中等，下一轮前按原来的参数重启。Agent 里运行 `agentj config set approval.level …` 不会直接生效，只会在主人手机上弹一张确认卡。`agentj approvals --verify` 会逐条核对：按全放行（`level_harness`，以及以前的 level_full）、设了目标就不弹窗（goal_preauth、goal_nocard）、离线留卡后重试（parked）自动批准的记录，都要追到手机上那次签名确认；没人在线时回给 Agent 的拒绝记为 offline 或 parked_wait。
 
 AI 工具的全权限启动参数、配置、短别名与回退方法：[全权限启动（三种方式）](/docs/setup-agents/#full-access)。
 

@@ -402,13 +402,17 @@
     "full",
     "harness"
    ],
-   "description": "Approval level: safe asks more (no Jev, no batch, no goal countdown); standard = as before; full = like --dangerously-skip-permissions, almost no cards, but a suspected attack, credentials and payments still ask; harness = approvals follow your AI coding tool (the harness; Agent J adds no cards of its own, irreversible actions still need Face ID). Changed only by a signed phone confirmation / 审批档位：安全多问、中等（默认，同以前）、全放行（几乎不弹卡，疑似攻击、凭据、花钱仍问）、跟随 AI 编程工具（Harness；Agent J 不另加卡，不可逆动作仍要 Face ID）；只能在已配对手机上签名切换",
+   "description": "Approval level: safe asks more (no Jev, no batch, no goal countdown); standard = as before; harness = Full access: Agent J adds no cards of its own and the AI coding tool the Agent J host starts keeps asking while the Agent J host agrees to everything (no tool's own allow-everything mode; your config files are not written); only spending, deleting your data, unbinding or moving a seat, sending a key out and suspected attacks on Agent J itself still need Face ID; full = an older value of the same switch (an old signed full works as harness). Changed only by a signed phone confirmation / 审批档位：安全多问、中等（默认，同以前）、全放行（harness：Agent J 不另加卡，Agent J 主机启动的 AI 编程工具照常发问、由 Agent J 主机全部替你同意，不切到工具自带的全部允许模式，不改你的配置文件；只有花钱、删除你的数据、解绑或转移席位、密钥外发和疑似攻击 Agent J 本身的动作仍要 Face ID）；full 是同一开关的旧值（原签名照样生效）；只能在已配对手机上签名切换",
    "aliases": [
     "审批档位",
     "审批模式",
     "全放行",
     "approval level",
-    "skip permissions"
+    "skip permissions",
+    "full access",
+    "最大权限",
+    "减少弹窗",
+    "fewer cards"
    ],
    "tier": "user",
    "apply": "hot",
@@ -1214,6 +1218,30 @@
    "apply": "hot",
    "verify": "agentj config get ui.composer_buttons --json",
    "since": "0.23.0"
+  },
+  "ui.forward_destination": {
+   "type": "string",
+   "default": "",
+   "tier": "user",
+   "description": "Where the reply card's forward button sends a reply, shared by every remote: share (the phone's system share), wx (WeChat ClawBot), tg (Telegram); empty = not chosen yet (the first remote's own earlier choice moves here) / 回复卡转发按钮的去向，所有遥控器共用：share 系统分享、wx 微信 ClawBot、tg Telegram；留空 = 还没选过（第一台遥控器原先的选择会搬到这里）",
+   "aliases": [
+    "forward destination",
+    "forward to",
+    "share destination",
+    "转发去向",
+    "转发到哪",
+    "分享去向"
+   ],
+   "needs": [],
+   "apply": "hot",
+   "verify": "agentj config get ui.forward_destination --json",
+   "since": "0.25.14",
+   "enum": [
+    "",
+    "share",
+    "wx",
+    "tg"
+   ]
   },
   "imessage.enabled": {
    "type": "boolean",

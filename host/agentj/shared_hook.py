@@ -254,14 +254,41 @@ def ancestors(pid, depth=32, until=None):
     return out
 
 
-def find_token(root):
-    """The hook's own ancestry decides which served session's token it may present (A14)."""
-    for pid in ancestors(os.getppid()):
+def find_token(root, with_depth=False):
+    """The hook's own ancestry decides which served session's token it may present (A14). with_depth (P552): also how far
+    up the served Claude process is — 0 / 1 = this hook's own Claude (directly or through its shell), ≥ 2 = a process
+    started below it (a headless child)."""
+    for depth, pid in enumerate(ancestors(os.getppid())):
         try:
-            return token_path(root, pid).read_text().strip()
+            tok = token_path(root, pid).read_text().strip()
         except OSError:
             continue
+        return (tok, depth) if with_depth else tok
+    return (None, -1) if with_depth else None
+
+
+def child_fallback(event):
+    """P552 (review S2): the host did not answer a headless child of the served session — one of the four ③ kinds is denied
+    (it would otherwise run under the child's own skip-permissions mode); anything else keeps the native decision."""
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+        from agentj import confirm_tier
+        keep = confirm_tier.harness_keeps(event.get('tool_name'), event.get('tool_input'), workdir=event.get('cwd'))
+    except Exception:
+        keep = 'unknown'
+    if keep:
+        return {'permissionDecision': 'deny',
+                'permissionDecisionReason': 'Agent J offline: a background run cannot do this without the owner (' + str(keep) + ').'}
     return None
+
+
+def headless_child(session, chain, sid):
+    """P552 (#325 ②): an event of ANOTHER session whose sender descends from the served Claude process (its pid in the
+    sender's ancestry, the sender itself excluded) — a headless run the served session started from its shell."""
+    if not isinstance(session, dict) or not isinstance(chain, list):
+        return False
+    served = session.get('pid')
+    return isinstance(served, int) and served in chain[1:] and sid != session.get('sessionId')
 
 
 def peer_pid(sock):
@@ -320,6 +347,10 @@ class Channel:
                 writer.write(b'{}\n')
                 await writer.drain()
                 return
+            # P552 (#325 ②): another session whose process descends from the served Claude = a headless run the served
+            # session started (`claude -p …` from its shell). Decided by the kernel's process tree, never by the payload.
+            if headless_child(getattr(self.adapter, 'session', None), event.get('_agentj_chain'), event.get('session_id')):
+                event['_agentj_child'] = True
             for k in ('_agentj_peer', '_agentj_token', '_agentj_chain'):
                 event.pop(k, None)
             # P139: the hook process going away (Claude took another answer / the dialog) withdraws the phone card
@@ -412,6 +443,7 @@ def _exchange(channel, event, timeout):
 def main():
     event = {}
     valid_execution = False
+    depth = -1
     try:
         line = sys.stdin.buffer.read(MAX_FRAME + 1)
         if len(line) > MAX_FRAME:
@@ -425,7 +457,7 @@ def main():
             if not isinstance(event.get('tool_name'),str) or not isinstance(event.get('tool_input'),dict):
                 raise ValueError('invalid execution payload')
             valid_execution = True
-        token = find_token(Path(sys.argv[1]).parent)
+        token, depth = find_token(Path(sys.argv[1]).parent, with_depth=True)
         wire = dict(event, agentj_token=token) if token else event
         blocking = event.get('hook_event_name') in ('PermissionRequest', 'PreToolUse')
         if event.get('hook_event_name') == 'PermissionRequest' and family_of(sys.argv[1]) == 'claude':
@@ -453,7 +485,12 @@ def main():
         expected = sys.argv[2] if len(sys.argv) > 2 and sys.argv[2] in EVENTS else None
         name = expected or (event.get('hook_event_name') if isinstance(event, dict) else None) or 'PreToolUse'
         family = family_of(sys.argv[1]) if len(sys.argv) > 1 else None
-        result = fallback(name, family, event if isinstance(event, dict) else {}, valid_execution)
+        result = None
+        # the served session's own hook sits at depth 0 / 1 (Claude → maybe its shell → this hook); a child is at least
+        # child Claude + the served session's tool shell below the token's pid
+        if family == 'claude' and name == 'PreToolUse' and valid_execution and depth >= 2:
+            result = child_fallback(event)          # P552: a headless child, the host gone or late
+        result = result or fallback(name, family, event if isinstance(event, dict) else {}, valid_execution)
         if result is not None:
             print(json.dumps({'hookSpecificOutput': {'hookEventName': name, **result}}))  # ASCII-safe under any locale
         return 0

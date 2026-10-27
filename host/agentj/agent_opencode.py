@@ -366,6 +366,10 @@ def to_tool(req: dict, root: str) -> tuple[str, dict]:
     if perm == "edit":
         files = [absp(p) for p in pats] or ([md["filepath"]] if isinstance(md.get("filepath"), str) else [])
         fp = md.get("filepath") if isinstance(md.get("filepath"), str) else (files[0] if files else "?")
+        diff = str(md.get("diff") or "")
+        if re.search(r"^\+\+\+ /dev/null\s*$|^\s*\*\*\*\s*Delete File:", diff, re.M):
+            # P556 (review S1): a patch that removes a file is a deletion, not an edit — the four kinds must see it
+            return "Delete", {"file_path": fp, "files": files or [fp]}
         if len(files) > 1:              # one patch over several files: judge the riskiest path, show every file
             fp = next((f for f in files if cred_path(f)), files[0])
             return "Edit", {"file_path": fp, "old_string": "", "new_string": "files: " + ", ".join(files) + "\n" +
@@ -1465,7 +1469,8 @@ class OpenCodeAgent(Agent):
             o = origin(self.children.get(sid), getattr(self.host, "lang", "zh"))
             with self._src_ctx(sid):       # S3: a sub-agent / OpenCode's own wake turn is judged by its source
                 ans = ({"behavior": "allow"} if low_risk_pass(self.host, self.cfg, name, inp)
-                       else await self.host.ask(name, inp, gone, **({"origin": o} if o else {})))
+                       else await self.host.ask(name, inp, gone, **({"origin": o} if o else {}),
+                                         **({"background": "task"} if self.cfg.get("_workflow_ceo") else {})))   # P552
             if ans.get("behavior") == "allow":
                 reply = "once"
             else:

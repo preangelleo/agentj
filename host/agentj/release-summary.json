@@ -1,5 +1,5 @@
 {
-  "version": "0.25.13a1",
-  "zh": "每个席位一个手机网址；席位可预付或转移；Face ID 可由另一台遥控器批准；新增「跟随 Harness」审批档；终端菜单上手机；微信转发；升级不丢邮件授权码。",
-  "en": "Per-seat phone addresses; prepay or move seats; Face ID approved by another remote; follow-your-AI-tool approvals; terminal menus on phone; WeChat forwarding."
+  "version": "0.25.14a1",
+  "zh": "审批第三档改名「全放行」，老设置自动沿用、失效可见；后台活不弹卡；ToolSearch 等不再被拒；已有 Face ID 自动认出；微信转发不限时；分身与主对话同权。",
+  "en": "Third approval level is Full access; old settings carry over, lapses shown; no cards for background work; loaders allowed; WeChat forwarding unlimited."
 }

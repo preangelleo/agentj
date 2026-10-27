@@ -43,7 +43,7 @@ test('requester: pk_peer_req → waiting sheet with the 6-digit code and the onl
   assert.equal(await P.startPeerSetup(), 'peer');
   assert.deepEqual(h.asked[0].o, { t: 'pk_peer_req' });
   assert.equal(h.asked[0].want, 'pk_peer_res');
-  assert.deepEqual(last(h), { mode: 'wait', code: '042917', online: 0, where: 'ios' });
+  assert.deepEqual(last(h), { mode: 'wait', code: '042917', online: 0, host: false, where: 'ios' });
   P.cancelWait();
   assert.deepEqual(h.sent, [{ t: 'pk_peer_cancel', id: ID }]);
   assert.equal(P._state().req, null);

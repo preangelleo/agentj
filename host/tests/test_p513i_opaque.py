@@ -10,7 +10,7 @@ from test_p513h_opaque import _state
 
 
 class OpaqueMixed(unittest.IsolatedAsyncioTestCase):
-    def full(self, tmp, shared=False, env=None):
+    def full(self, tmp, shared=False, env=None, level='harness'):
         st = _state(tmp)
         h = _owner_host(st, [])
         h.ask_ttl = .15
@@ -19,11 +19,16 @@ class OpaqueMixed(unittest.IsolatedAsyncioTestCase):
             h.agent.approval_env = env
         ph = Phone(st, with_passkey=True)
         s = _ready(h, ph)
-        h.preferences['approval'] = {'level': 'full'}
-        target = {'key': approval_level.KEY, 'value': 'full'}
-        approval_level.note_signer(st, approval_level.KEY, 'full', ph.did,
+        # P552: 「全放行」 is merged into 「减少弹窗」 (`harness`) — the signed switch the owner now uses. Opaque commands under it
+        # follow the harness (P550, chairman 10-26); the fresh-UV invariant is checked under the default level
+        if level == 'standard':
+            h.preferences['approval'] = {'level': 'standard'}
+            return h, ph, s
+        h.preferences['approval'] = {'level': 'harness'}
+        target = {'key': approval_level.KEY, 'value': 'harness'}
+        approval_level.note_signer(st, approval_level.KEY, 'harness', ph.did,
                                   st.sign_key(ph.did), 'f'*32, sign(ph, target))
-        self.assertEqual(approval_level.level(h.preferences, st), 'full')
+        self.assertEqual(approval_level.level(h.preferences, st), 'harness')
         return h, ph, s
 
     async def test_mixed_and_unresolved_require_fresh_uv(self):
@@ -45,7 +50,7 @@ class OpaqueMixed(unittest.IsolatedAsyncioTestCase):
                         'PY=python3 $PY -m pytest',
                         '$PY -m pytest; PY=python3'):
                 with self.subTest(shared=shared, cmd=cmd), tempfile.TemporaryDirectory() as tmp:
-                    h, ph, s = self.full(tmp, shared)
+                    h, ph, s = self.full(tmp, shared, level='standard')
                     inp = {'command': cmd}
                     t = asyncio.create_task(h.ask('Bash', inp))
                     try:

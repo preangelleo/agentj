@@ -22,8 +22,8 @@ class Forward(unittest.IsolatedAsyncioTestCase):
 
     async def test_eligibility_and_capability_changes(self):
         self.ready(); self.assertTrue(self.c.can_forward())
-        for key,value in [('context',''),('context_at',self.c.clock()-301),('account',{})]:
-            old=self.c.store.data[key];self.c.store.data[key]=value
+        for key,value in [('context',''),('context_stale',True),('account',{})]:   # P554: age alone never blocks
+            old=self.c.store.data.get(key);self.c.store.data[key]=value
             self.assertFalse(self.c.can_forward());self.c.store.data[key]=old
         self.c.error='poll_failed';self.assertFalse(self.c.can_forward());self.c.error=None
         self.stopped=True;self.assertFalse(self.c.can_forward());self.stopped=False
@@ -61,8 +61,8 @@ class Forward(unittest.IsolatedAsyncioTestCase):
         self.ready();self.c.fwd_inflight.add(1)
         self.assertEqual((await self.c.forward(1,'phone'))['why'],'in_flight')
         self.c.fwd_inflight.clear()
-        self.c.store.data['context_at']=self.c.clock()-301
-        self.assertEqual((await self.c.forward(1,'phone'))['why'],'not_configured')
+        self.c.store.data['context']=''
+        self.assertEqual((await self.c.forward(1,'phone'))['why'],'needs_message')
         self.assertFalse(self.transport.calls)
 
     async def test_phone_receipt_and_revoked_device(self):

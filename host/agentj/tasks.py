@@ -997,7 +997,7 @@ class Scheduler:
             a = agents.ClaudeAgent(host, cfg)
             argv = a.argv(None, research=research)
             env = fence.auxiliary_environment(os.environ, "claude", extra_keep=tuple(k for k in fence._MAIN_ENV if k.startswith("FAKE_")))
-            claim_env = host.new_perm_env()
+            claim_env = host.new_perm_env(background="task")   # P552 (#325 ②): this run's requests are background work
             token = claim_env.pop("AGENTJ_PERM_TOKEN")
             # The task harness receives only a path. The permission tool consumes
             # this 0600 one-time claim before the model gets its first prompt.

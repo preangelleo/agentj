@@ -75,6 +75,15 @@ def tool_of(title, kind, raw) -> tuple[str, dict]:
         mapped = KIND_TOOL.get(kind) if isinstance(kind, str) else None
         if mapped and (mapped != "Bash" or any(isinstance(inp.get(k), str) for k in ("command", "cmd", "commandLine"))):
             name = mapped
+    if kind == "move" and name == "Edit":
+        # P556 (review S1): a move's two ends under the names the four-kinds check reads; none readable → a deletion of
+        # an unknown file (Face ID under 「全放行」, a card otherwise) rather than an edit nobody can judge
+        for want, keys in (("source", ("source", "from", "src", "old_path", "oldPath", "path", "file_path")),
+                           ("destination", ("destination", "to", "dst", "new_path", "newPath", "target"))):
+            if not isinstance(inp.get(want), str):
+                inp[want] = next((inp[k] for k in keys if isinstance(inp.get(k), str)), None)
+        if not (inp.get("source") and inp.get("destination")):
+            return "Delete", {**{k: v for k, v in inp.items() if v is not None}, "file_path": inp.get("source") or "?"}
     if name in FILE_TOOLS or name == "Delete":
         if not isinstance(inp.get("file_path"), str):
             for k in ("path", "filePath", "file", "abs_path"):
@@ -610,7 +619,8 @@ class AcpAgent(Agent):
             name = clean_line(tool, 64) or "?"
             from .approval_jev import low_risk_pass
             r = ({"behavior": "allow"} if not self.research and low_risk_pass(self.host, self.cfg, name, inp, batch)
-                 else await self.host.ask(name, inp, gone, batch=batch))
+                 else await self.host.ask(name, inp, gone, batch=batch,
+                                         **({"background": "task"} if self.cfg.get("_workflow_ceo") else {})))   # P552
             if r.get("behavior") == "allow":
                 ans = yes
         except Exception:  # noqa: BLE001 — fail closed

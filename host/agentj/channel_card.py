@@ -17,6 +17,8 @@ from . import privacy
 SOURCES = ("wechat", "mail", "telegram")
 LABEL = {"wechat": ("来自微信", "From WeChat"), "mail": ("来自邮件", "From email"),
          "telegram": ("来自 Telegram", "From Telegram")}
+REPLIED = {"wechat": ("微信分身已回复", "WeChat avatar replied"), "mail": ("邮件分身已回复", "Email avatar replied"),
+           "telegram": ("Telegram 分身已回复", "Telegram avatar replied")}
 TEXT_MAX = 4000          # the card's words (the full text stays in the inbox manifest the Agent reads)
 LEAD_MAX = 200           # what an older phone's notice quotes
 INERT = str.maketrans({"[": "［", "]": "］", "<": "‹", ">": "›", "`": "'"})
@@ -68,3 +70,21 @@ def notice(host, source: str, text: str, files, manifest: str) -> None:
         fn(fallback, card, files)
     else:
         host.agent_notice(fallback)
+
+
+def attach(host, page, files) -> None:
+    """P557: files / images an avatar answer carried → §13 media of its Web App page (serve.channel_media)."""
+    fn = getattr(host, "channel_media", None)
+    if callable(fn) and files and isinstance(page, dict) and type(page.get("id")) is int:
+        fn(page, list(files))
+
+
+def reply(host, source: str, text: str, files=()):
+    """P557: an owner-channel avatar answered in its channel → the same answer on the Web App's main conversation, as a
+    `sys` page under the 「微信分身已回复」 line, with what it attached. → the page (or None)."""
+    if source not in SOURCES:
+        raise ValueError("channel_source")
+    head = REPLIED[source][1 if getattr(host, "lang", "zh") == "en" else 0]
+    page = host.hist_add({"k": "sys", "via": source, "text": head}, privacy.owner_text(text or ""), "done")
+    attach(host, page, files)
+    return page

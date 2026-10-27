@@ -857,6 +857,12 @@ class Telegram:
                     if not valid() or self.host.stopped():
                         break
                     await asyncio.to_thread(upload, cfg, 'sendPhoto', {'chat_id':chat_id}, 'photo', 'image.png', mime, data)
+                from .tg_media import method_of
+                for name, mime, data in getattr(response, 'files', ()):   # P557: files the avatar named → sendDocument / …
+                    if not valid() or self.host.stopped():
+                        break
+                    method, field = method_of({'mime': mime, 'bytes': len(data)})
+                    await asyncio.to_thread(upload, cfg, method, {'chat_id':chat_id}, field, name, mime, data)
             return response is not None
         session=SimpleNamespace(device=device,name='Telegram owner' if owner else f'Telegram group member {member_name(group,uid) or uid}',cid=0,source_kind='telegram',provenance=source)
         # the owner's private chat: the phone's own quote path (serve._accept → compose.render puts the block first, src.quote

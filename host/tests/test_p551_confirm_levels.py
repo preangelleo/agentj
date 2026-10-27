@@ -102,17 +102,7 @@ class HookHarness(unittest.TestCase):
         self.assertNotIn(" harness", agent.hook_settings([], research=True, harness=True)["hooks"]["PreToolUse"][0]["hooks"][0]["command"])
 
 
-class CodexOwnPolicy(unittest.TestCase):
-    def test_owner_approval_policy_decides(self):
-        from agentj import agent_codex
-        cls = next(v for v in vars(agent_codex).values() if isinstance(v, type) and "harness_would_ask" in vars(v))
-        ask = lambda ap, batch: cls.harness_would_ask(SimpleNamespace(human={"approval_policy": ap}), "Bash", {}, batch)
-        self.assertFalse(ask("never", False))
-        self.assertTrue(ask("untrusted", True))
-        self.assertTrue(ask({"granular": {}}, True))
-        for ap in ("on-request", "on-failure", None):
-            self.assertFalse(ask(ap, True), ap)      # an in-sandbox command Codex would just run
-            self.assertTrue(ask(ap, False), ap)      # a sandbox / network escalation it would ask about
+# P556: CodexOwnPolicy is gone — under 「全放行」 Agent J answers every Codex request itself (test_p556_full_max_harness)
 
 
 class Base(unittest.TestCase):
@@ -192,7 +182,7 @@ class SwitchHarness(Base):
         self.host.preferences = preferences.validate({**self.host.preferences, "approval": {"level": "harness"}})
         self.assertEqual(approval_level.level(self.host.preferences, self.st), "standard")
         self.assertTrue(approval_level.unsigned_full(self.host.preferences, self.st))
-        self.assertIn("跟随 AI 编程工具（Harness）", approval_level.unsigned_text("zh", "harness"))
+        self.assertIn("「全放行」", approval_level.unsigned_text("zh", "harness"))   # P552 / P556: one name
 
 
 class HarnessAsk(Base):
@@ -218,22 +208,20 @@ class HarnessAsk(Base):
         autos = [o for _, o in self.sent if o["t"] == "auto"]
         self.assertEqual({a["by"] for a in autos}, {"harness"})
 
-    def test_harness_prompt_is_a_long_press_card(self):
+    def test_harness_prompt_is_answered_by_agent_j(self):
+        # P556 「全放行」: the harness's own prompt (OpenCode / ACP / Codex untrusted / root Claude Code) is no card any more
         self.harness()
-        self.assertEqual(self.ask("ls -la")["behavior"], "deny")       # Claude Code asked → a card; nobody answered
-        card = self.cards()[-1]
-        self.assertNotIn("passkey_required", card)
-        self.assertNotIn("batch", card)
-        self.assertEqual(self.last()["reason"], "timeout")
+        self.assertEqual(self.ask("ls -la")["behavior"], "allow")
+        self.assertEqual(self.cards(), [])
+        self.assertEqual(self.last()["reason"], "level_harness")
 
     def test_harness_that_would_not_ask_runs(self):
         self.harness()
-        with mock.patch.object(self.host, "_harness_would_ask", return_value=False):
-            self.assertEqual(self.ask("ls -la")["behavior"], "allow")
-            self.assertEqual(self.last()["reason"], "level_harness")
-            self.assertEqual(self.cards(), [])
-            # ③ still Face ID, whatever the harness would have done (P550: one of the four kinds — the owner's data deleted)
-            self.assertEqual(self.ask("rm -rf ~/build")["behavior"], "deny")
+        self.assertEqual(self.ask("ls -la")["behavior"], "allow")
+        self.assertEqual(self.last()["reason"], "level_harness")
+        self.assertEqual(self.cards(), [])
+        # ③ still Face ID, whatever the harness would have done (P550: one of the four kinds — the owner's data deleted)
+        self.assertEqual(self.ask("rm -rf ~/build")["behavior"], "deny")
         self.assertTrue(self.cards()[-1]["passkey_required"])
         self.assertEqual(self.ask({"operation": "delete", "summary": "x"}, tool="agentj calendar", batch=False)["behavior"], "deny")
         self.assertTrue(self.cards()[-1]["passkey_required"])
@@ -337,7 +325,7 @@ class ReviewFixes(Base):
         with mock.patch.object(self.host, "_reload_runtime") as reload:
             asyncio.run(self.host.revoke(self.phone.did))
         self.assertEqual(approval_level.level(self.host.preferences, self.st), "standard")
-        reload.assert_called_once()
+        self.assertTrue(reload.called)      # P556: approval_check reloads too while the mocked reload left the cfg as it was
 
 
 class OwnerForward(unittest.IsolatedAsyncioTestCase):

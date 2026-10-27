@@ -109,7 +109,9 @@ class Peer(unittest.TestCase):
     def test_lone_keyed_device_has_no_approver(self):
         _, _, s = self.device("Mac Chrome", p57.Authenticator())
         self.device("iPad", None)                        # another remote, but without a key
-        self.assertEqual(self.req(s), {"t": "pk_peer_res", "r": "r1", "ok": False, "why": "no_approver"})
+        # P555: never a dead end — the request opens with nobody online; the Agent J host's terminal can approve it
+        res = self.req(s)
+        self.assertEqual((res["ok"], res["mode"], res["online"], res["host"]), (True, "peer", 0, 1))
 
     def test_replace_lost_key_with_peer_approval(self):
         old, phone_key, other_key = p57.Authenticator(), p57.Authenticator(), p57.Authenticator()
@@ -230,8 +232,10 @@ class Peer(unittest.TestCase):
         self.assertEqual(self.st.devices()[A2]["pk"]["dev"], A)
         sA2 = self.connect(kpA2, A2)
         self.assertFalse(self.host.pkpeer.direct_ok(D), "a key is still listed: no direct offer for D")
-        self.assertEqual(self.req(sD), {"t": "pk_peer_res", "r": "r1", "ok": False, "why": "no_approver"})
+        res = self.req(sD)                                # P555: opens for the terminal; A2 is still not asked
+        self.assertEqual((res["ok"], res["mode"], res["online"]), (True, "peer", 0))
         self.assertEqual(self.to(sA2, "pk_peer_ask"), [])
+        self.run_(self.host.pkpeer.on_phone(sD, "pk_peer_cancel", {"id": res["id"]}))
         # a legacy record (no `dev`) counts as its own
         d = self.st.devices()
         d[A2]["pk"].pop("dev")
@@ -246,7 +250,8 @@ class Peer(unittest.TestCase):
         shared = p57.Authenticator()                      # #300: D borrowed this remote's key
         _, D, sD = self.device("Mac Chrome", shared)
         _, B, sB = self.device("iPhone", shared)
-        self.assertEqual(self.req(sD)["why"], "no_approver")
+        res = self.req(sD)                                # P555: opens for the terminal only
+        self.assertEqual((res["ok"], res["online"]), (True, 0))
         self.assertEqual(self.to(sB, "pk_peer_ask"), [])
 
     def test_deny_cancel_and_expiry(self):

@@ -57,5 +57,5 @@ test('addendum: widening asks Face ID on passkey_required, resends the same sign
   assert.match(controls, /'rejected', 'passkey_failed'\]/);
   assert.equal(zh['why.passkey_failed'], 'Face ID 没通过，请再试一次');
   assert.equal(en['why.passkey_failed'], "Face ID didn't go through — try again");
-  assert.match(controls, /\['level_full', 'goal_nocard', 'parked'\]\.includes\(r\.by\)/);
+  assert.match(controls, /\['level_full', 'goal_nocard', 'parked', 'background', 'dispatch_headless'\]\.includes\(r\.by\)/);
 });

@@ -252,7 +252,7 @@ function actText(r) {
       : ACT_RESULTS.includes(r.result) ? t('act.result.' + r.result) : r.result ?? '',
   };
   if (r.k === 'decision') v.t = tx ? ' ' + tx : '';
-  if (r.k === 'auto' && ['level_full', 'goal_nocard', 'parked'].includes(r.by)) return t('p336.act.' + r.by, v);   // P336
+  if (r.k === 'auto' && ['level_full', 'goal_nocard', 'parked', 'background', 'dispatch_headless'].includes(r.by)) return t('p336.act.' + r.by, v);   // P336 · P552 background
   return t('act.k.' + r.k, v);
 }
 export function loadActivity(fresh) {

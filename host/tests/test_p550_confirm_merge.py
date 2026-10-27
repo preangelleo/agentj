@@ -24,7 +24,8 @@ from agentj import approval_level, confirm_tier, passkey, policy_registry, wire 
 
 from test_p551_confirm_levels import FA, PK_ID, Base, sign  # noqa: E402
 
-WIDEN = [("approval.level", "full"), ("approval.level", "harness"), ("approval.goal_nocard", True), ("jev.mode", "off")]
+WIDEN = [("approval.level", "harness"),   # P552: `full` is merged into `harness` (refused as shape)
+          ("approval.goal_nocard", True), ("jev.mode", "off")]
 
 
 def controls_lines(st):
@@ -52,17 +53,17 @@ class Widening(Base):
 
     def test_with_a_passkey_it_is_two_steps_and_logged_uv(self):
         self.give_passkey()
-        res = self.send(sign(self.phone, {"key": "approval.level", "value": "full"}))
+        res = self.send(sign(self.phone, {"key": "approval.level", "value": "harness"}))
         self.assertEqual((res["ok"], res["why"]), (False, "passkey_required"))
         with mock.patch.object(passkey, "verify_assertion", return_value=1):
-            res = self.send({**sign(self.phone, {"key": "approval.level", "value": "full"}), "fa": FA})
+            res = self.send({**sign(self.phone, {"key": "approval.level", "value": "harness"}), "fa": FA})
         self.assertTrue(res["ok"], res)
         last = [x for x in controls_lines(self.st) if x["action"] == "approval_set"][-1]
         self.assertEqual((last["result"], last.get("passkey")), ("ok", "uv"))     # S5
 
     def test_failed_face_id_is_logged_uv(self):
         self.give_passkey()
-        res = self.send({**sign(self.phone, {"key": "approval.level", "value": "full"}), "fa": FA})
+        res = self.send({**sign(self.phone, {"key": "approval.level", "value": "harness"}), "fa": FA})
         self.assertEqual(res["why"], "passkey_failed")
         last = [x for x in controls_lines(self.st) if x["action"] == "approval_set"][-1]
         self.assertEqual((last["result"], last.get("passkey")), ("refused:passkey_failed", "uv"))
@@ -70,7 +71,7 @@ class Widening(Base):
     def test_the_table_decides_at_run_time(self):
         # S4: were 「放宽审批」 reversible in confirm_tier's table, the handler would not ask Face ID (proves it reads the table)
         with mock.patch.dict(confirm_tier.OWNER_ACTIONS, {"approval_widen": "reversible"}):
-            res = self.send(sign(self.phone, {"key": "approval.level", "value": "full"}))
+            res = self.send(sign(self.phone, {"key": "approval.level", "value": "harness"}))
         self.assertTrue(res["ok"], res)
 
 

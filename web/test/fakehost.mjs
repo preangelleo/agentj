@@ -103,7 +103,7 @@ export async function startFakeHost() {
     epoch: 1, nextId: 1, turns: [], blobs: new Map(), staged: new Set(), queued: new Map(), opens: [], cancels: [], answers: [],
     qAnswers: [], chunks: 0, wavs: [], menu: null, models: null, meter: null, sigOk: [], says: [], modelSets: [], rate: true,
     firsts: [], errors: [], cards: false, cardsMute: false, cardGets: [], upgItems: [], upgOpen: null, upgOffs: [],   // P203
-    prefs: null, prefSet: true, prefSets: [], approvalSets: [], signedPrefs: true, approvalWhy: null, approvalPasskey: false, approvalFaFail: false, approvalUnsigned: false, version: null,
+    prefs: null, prefSet: true, prefSets: [], approvalSets: [], forwardSync: false, forwardSets: [], forwardWhy: null, signedPrefs: true, approvalWhy: null, approvalPasskey: false, approvalFaFail: false, approvalUnsigned: false, approvalUnsignedList: null, approvalMax: null, version: null,
     hfind: true, finds: [], findMute: false, findDelay: 0, olderDelay: 0,   // P188: the host answers hist_find (false = an older host)
     platform: 'linux', imsg: null, imsgCheck: null, imsgCalls: [],   // P274: the Agent J host's OS + the iMessage card's status
   };
@@ -311,6 +311,21 @@ export async function startFakeHost() {
       if (st.prefs) await broadcast(prefsMsg());
       return;
     }
+    if (m.t === 'forward_set' && st.forwardSync) {   // P554: the forward destination, one host setting (signed, no Face ID)
+      const ok = await verifyControl(c, 'forward_set', m, { dest: m.dest, migrate: m.migrate === true });
+      st.forwardSets.push({ dest: m.dest, migrate: m.migrate === true, sigOk: ok, dev: c.devId });
+      const no = (why) => sendApp(c, { t: 'ctl_res', r: m.r, action: 'forward_set', ok: false, why });
+      if (!ok) return no('bad_signature');
+      if (st.forwardWhy) { const why = st.forwardWhy; st.forwardWhy = null; return no(why); }
+      if (!['share', 'wx', 'tg'].includes(m.dest)) return no('shape');
+      st.prefs = st.prefs || { appearance: { language: 'zh', theme: 'system' } };
+      const have = st.prefs.ui?.forward_destination || '';
+      if (m.migrate === true && have) return sendApp(c, { t: 'ctl_res', r: m.r, action: 'forward_set', ok: true, dest: have, migrated: false });
+      st.prefs.ui = { ...(st.prefs.ui || {}), forward_destination: m.dest };
+      await sendApp(c, { t: 'ctl_res', r: m.r, action: 'forward_set', ok: true, dest: m.dest, migrated: m.migrate === true });
+      await broadcast(prefsMsg());
+      return;
+    }
     if (m.t === 'approval_set') {                   // P336: the approval level / goal without cards — signed, never pref_set
       const ok = await verifyControl(c, 'approval_set', m, { key: m.key, value: m.value });
       st.approvalSets.push({ key: m.key, value: m.value, sigOk: ok, n: m.n, fa: m.fa });
@@ -329,6 +344,8 @@ export async function startFakeHost() {
       st.prefs = st.prefs || { appearance: { language: 'zh', theme: 'system' } };
       const section = m.key.split('.')[0];
       st.prefs[section] = { ...(st.prefs[section] || {}), [m.key.split('.')[1]]: m.value };
+      if (st.approvalUnsignedList) st.approvalUnsignedList = st.approvalUnsignedList.filter((u) => u.key !== m.key);   // P552: re-signed
+      if (st.approvalUnsignedList && !st.approvalUnsignedList.length) st.approvalUnsigned = false;
       await sendApp(c, { t: 'ctl_res', r: m.r, action: 'approval_set', ok: true, key: m.key, value: m.value });
       await broadcast(prefsMsg());
       return;
@@ -518,11 +535,15 @@ export async function startFakeHost() {
       devices: [...conns].filter((c) => c.devId).map((c) => ({ id: c.devId, name: lastLabel || '', online: !!c.isReady, paired_at: 0 })),
       platform: st.platform, ...(st.platform === 'macos' && st.imsg ? { imessage: st.imsg } : {}),   // P274
       ...(st.runCmds ? { run_cmds: st.runCmds } : {}),   // P361: the names Settings may 「执行」
+      ...(st.forwardSync ? { forward_set: true } : {}),   // P554: ui.forward_destination is a host setting
       ...(st.terminal ? { terminal: st.terminal } : {}),   // P408 (§38): the web terminal block (absent = an older host)
       ...(st.vault ? { vault: st.vault } : {}),   // P414 (§38.9): the computer-password vault block (absent = an older host)
       ...(st.signedPrefs ? { signed_prefs: ['approval.level', 'approval.goal_nocard', 'jev.mode'], jev: {mode: value?.jev?.mode || 'openrouter', ready: st.jevReady !== false},   // P336 (+ what is in force)
         approval: { level: st.approvalUnsigned ? 'standard' : (value?.approval?.level ?? 'standard'),
-          goal_nocard: !st.approvalUnsigned && value?.approval?.goal_nocard === true } } : {}) };
+          goal_nocard: !st.approvalUnsigned && value?.approval?.goal_nocard === true,
+          // P552 (#325 ①): what the configuration turns on that is not in force (absent = an older host)
+          ...(st.approvalUnsigned && st.approvalUnsignedList ? { unsigned: st.approvalUnsignedList } : {}),
+          ...(st.approvalMax ? { max: st.approvalMax } : {}) } } : {}) };   // P556: what 全放行 does to the AI coding tool (absent = older host)
     return m;
   }
   async function afterReady(c) {
@@ -761,7 +782,7 @@ export async function startFakeHost() {
         autoReply: true, replyFor: null, epoch: st.epoch + 1, turns: [], blobs: new Map(), staged: new Set(), queued: new Map(), opens: [], cancels: [],
         answers: [], qAnswers: [], chunks: 0, wavs: [], menu: null, models: null, meter: null, sigOk: [], says: [], modelSets: [], slashes: [],
         stallAfter: 0, blobErr: null, sayWhy: null, estop: false, rate: true, firsts: [], errors: [], lastError: undefined,
-        prefs: null, prefSet: true, prefSets: [], approvalSets: [], signedPrefs: true, approvalWhy: null, approvalPasskey: false, approvalFaFail: false, approvalUnsigned: false, version: null, friends: null, remotes: null, wechat: null, tgfwd: false, tgfwdWhy: null, tgFwds: [], holdAnswers: false,
+        prefs: null, prefSet: true, prefSets: [], approvalSets: [], forwardSync: false, forwardSets: [], forwardWhy: null, signedPrefs: true, approvalWhy: null, approvalPasskey: false, approvalFaFail: false, approvalUnsigned: false, approvalUnsignedList: null, approvalMax: null, version: null, friends: null, remotes: null, wechat: null, tgfwd: false, tgfwdWhy: null, tgFwds: [], holdAnswers: false,
         resWatch: [], res: null, renames: [], renameWhy: null, busyget: false,
         hfind: true, finds: [], findMute: false, findDelay: 0, olderDelay: 0,
         cards: false, cardsMute: false, cardGets: [], upgItems: [], upgOpen: null, upgOffs: [],   // P203

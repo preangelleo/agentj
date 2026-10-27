@@ -48,7 +48,8 @@ export function paintPk(box, { fa = null, err = null, retry = null, setup = true
   line.dataset.k = key;
   const acts = mk('div', 'pkassist__acts');
   if (err && retry) acts.append(button('pkassist__retry', 'p539.fail.retry', retry));
-  if (f !== 'local' && setup) acts.append(button('pkassist__setup', err ? 'p539.fail.setup' : 'p539.pk.setup', () => H.setupFaceId()));
+  if ((f !== 'local' || err) && setup) acts.append(   // P555: a failed tap on a key thought local (lost, #317) may set a new one
+button('pkassist__setup', err ? 'p539.fail.setup' : 'p539.pk.setup', () => H.setupFaceId()));
   box.replaceChildren(line, ...(acts.childElementCount ? [acts] : []));
   box.hidden = false;
 }
@@ -90,8 +91,9 @@ export function paintPkRow(state, { row, label, note, setupBtn, oldBtn } = {}) {
   label.textContent = withBio('p539.pk.st.' + s);   // P550: 「本机 Face ID / 指纹」 as this system calls it (PASSKEY-SEAT-MODEL §1, §2)
   row.dataset.pk = s;
   setupBtn.hidden = s === 'local';
-  setupBtn.textContent = t('p539.pk.setup');
-  const n = s === 'borrowed' ? withBio('p539.pk.borrowedNote') : s === 'none' || s === 'unknown' ? withBio('p539.pk.noneNote') : '';
+  // P555: a key the Agent J host has on record but cannot place → 「用 Face ID 确认」 (one tap, no other remote)
+  setupBtn.textContent = s === 'unknown' ? withBio('p555.pk.check') : t('p539.pk.setup');
+  const n = s === 'borrowed' ? withBio('p539.pk.borrowedNote') : s === 'unknown' ? withBio('p555.pk.unknownNote') : s === 'none' ? withBio('p539.pk.noneNote') : '';
   note.textContent = n; note.hidden = !n;
   if (oldBtn) oldBtn.dataset.pkRow = '1';
 }

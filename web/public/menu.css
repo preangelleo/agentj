@@ -334,6 +334,16 @@ body:is([data-view="mem"],[data-view="act"],[data-view="tasks"],[data-view="mode
 .ajconfirm h2{font:600 var(--dlg-fs-title)/1.3 var(--font-title)}
 .ajconfirm p{color:inherit;opacity:.8}
 #confirm[data-kind="upg"] #confirm-text{white-space:pre-line;text-align:left}   /* P203: the upgrade card's list */
+/* P555: the seat-transfer 「会发生什么」 list — left-aligned; a wrapped line starts under its item's words, not under the dot */
+#confirm[data-kind="sxf"] #confirm-text{white-space:normal;text-align:left}
+#confirm[data-kind="sxf"] .sxf-lead{margin:0 0 var(--sp-1)}
+#confirm[data-kind="sxf"] .sxf-list{list-style:none;margin:0;padding:0}
+#confirm[data-kind="sxf"] .sxf-list li{position:relative;padding-left:1em;margin:0 0 var(--sp-1)}
+#confirm[data-kind="sxf"] .sxf-list li::before{content:"·";position:absolute;left:.25em}
+#confirm[data-kind="sxf"] .sxf-head{font-weight:600;margin-top:var(--sp-2)}
+#confirm[data-kind="sxf"] ol.sxf-list{counter-reset:sxf}
+#confirm[data-kind="sxf"] ol.sxf-list li{counter-increment:sxf;padding-left:1.4em}
+#confirm[data-kind="sxf"] ol.sxf-list li::before{content:counter(sxf) ".";left:0}
 .ajconfirm .confirm-row .aj-btn{min-height:48px;border-radius:var(--ui-radius-pill);border:1.5px solid currentColor;background:none;color:inherit}
 .ajconfirm .confirm-row .aj-btn--primary{background:var(--dfg);color:var(--dbg);border-color:var(--dfg)}
 .ajconfirm .confirm-row .aj-btn--danger{background:var(--strawberry-field);color:var(--c-sooty);border-color:var(--strawberry-field)}
@@ -431,24 +441,24 @@ body:is([data-view="mem"],[data-view="act"],[data-view="tasks"],[data-view="mode
 #settings .setrow>.twoway{grid-column:2}
 @media (max-width:420px){ #settings .setrow:has(>.twoway){grid-template-columns:minmax(0,1fr)} #settings .setrow>.twoway{grid-column:1 / -1;justify-self:start;margin-left:-6px} }
 
-/* (c) three or more options = ONE row of small segments (外观 跟随系统 / 浅色 / 深色): the pill is 32 px tall inside 44 px taps.
+/* (c) three or more options = ONE row of small segments (外观 跟随系统 / 浅色 / 深色): the group's border is 36 px tall inside
+   44 px taps and the selected pill sits 4 px inside it on every side (P556: it used to touch the border, chairman 10-27).
    Its own class (.segrow), not .seg: the brand's P87 action-group rule stacks .seg vertically on phones (!important). */
 .segrow{position:relative;display:inline-flex;flex-direction:row;align-items:center;flex-wrap:nowrap}
-.segrow::before{content:"";position:absolute;inset:6px 0;border:1px solid var(--quiet-border);border-radius:var(--ui-radius-pill);pointer-events:none}
+.segrow::before{content:"";position:absolute;inset:4px 0;border:1px solid var(--quiet-border);border-radius:var(--ui-radius-pill);pointer-events:none}
 .segrow button{position:relative;isolation:isolate;flex:none;min-height:var(--ui-tap);min-width:var(--ui-tap);padding:0 12px;border:0;background:none;cursor:pointer;
   color:var(--menu-muted);font:500 var(--ui-fs-small)/1 var(--font-body);white-space:nowrap}
 .segrow button[aria-pressed="true"]{color:var(--menu-bg);font-weight:600}
-.segrow button[aria-pressed="true"]::after{content:"";position:absolute;inset:7px 1px;border-radius:var(--ui-radius-pill);background:var(--menu-text);z-index:-1}
+.segrow button[aria-pressed="true"]::after{content:"";position:absolute;inset:8px 4px;border-radius:var(--ui-radius-pill);background:var(--menu-text);z-index:-1}
 .segrow button:focus-visible{outline:var(--ui-focus-w) solid var(--menu-accent);outline-offset:-2px;border-radius:var(--ui-radius-pill)}
 #settings .setrow:has(>.segrow){grid-template-columns:minmax(0,1fr) auto}
 #settings .setrow>.segrow{grid-column:2;justify-self:end}
 @media (max-width:420px){ #settings .setrow:has(>.segrow){grid-template-columns:minmax(0,1fr)} #settings .setrow>.segrow{grid-column:1 / -1;justify-self:start} }
-/* P551: the approval level has four options (安全 · 中等 · 全放行 · 跟随 Harness) — on a phone they sit 2 × 2, equal cells, in one
-   rounded frame, so no language overflows 360 px; a wider screen keeps the one row. */
+/* P552 (#325 ③) / P556: the approval level has three options (安全 · 中等 · 全放行) — on a phone one row
+   of equal cells across the card, so no language overflows 360 px; a wider screen keeps the row at the end. */
 @media (max-width:420px){
-  #settings #set-level-row>.segrow{display:grid;grid-template-columns:1fr 1fr;justify-self:stretch;row-gap:0}
-  #set-level-row>.segrow::before{inset:2px 0;border-radius:24px}
-  #set-level-row>.segrow button{padding:0 8px}
+  #settings #set-level-row>.segrow{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));justify-self:stretch}
+  #set-level-row>.segrow button{padding:0 6px;overflow-wrap:anywhere;line-height:1.2}
 }
 
 /* P340 #22: Settings' notices are the Noir Notification now (settings.js say → ui.js notify); no bar under the header */

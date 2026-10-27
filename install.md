@@ -1,15 +1,15 @@
 ---
 document: agentj-install
-version: 0.27.13
-released: 2026-10-26
+version: 0.27.14
+released: 2026-10-27
 status: beta (anyone can sign up; not advertised yet, pages are not indexed)
 host_package: agentj (the `agentj` command)
-host_version: 0.25.13a1
-source_tag: v0.25.13a1
-host_wheel: agentj-0.25.13a1-py3-none-any.whl
-host_wheel_sha256: 771bbbd8e15ac93ac78edc14652ee19e79a16272afcb6e82a417f8bc33982d65
-host_sdist: agentj-0.25.13a1.tar.gz
-host_sdist_sha256: 26c83c4e4dd43af75b4152b9273eb0f8150ed39313e3747561dc0b02d92c6c80
+host_version: 0.25.14a1
+source_tag: v0.25.14a1
+host_wheel: agentj-0.25.14a1-py3-none-any.whl
+host_wheel_sha256: 7985970ec92811cbab52c672df888a6c71cd82d6d1af41cb45747c640b8ddac9
+host_sdist: agentj-0.25.14a1.tar.gz
+host_sdist_sha256: 5e888db2b6e35c0b41ca5d2c83f38a27735e0ed4ce9252591b48b867ae0a1a69
 canonical_url: https://agentj.app/install.md
 sha256_url: https://agentj.app/install.md.sha256
 alias: https://agentjarvis.net/install.md (the older address: the same file, kept for one more version)
@@ -64,7 +64,7 @@ https://agentj.app/docs/support/
 
 Choose a review route during setup. If you have neither a key nor a choice, `agentj onboarding` prompts you to finish this step. Recommended: register with [TypeSafe](https://typesafe.ai), create a key and add a small balance, then enter `TYPESAFE_API_KEY` using the secret card in the Jev section near the top of Models & API keys. An existing [OpenRouter](https://openrouter.ai) account also works: enter `OPENROUTER_API_KEY`. Existing keys are selected automatically (OpenRouter when both exist); change the route in Settings → Safety. In Settings → Models & API keys, Fill or Edit opens the key input on the remote you are using. Stay on that page. When safety review needs a key, select Enter TypeSafe API key or Enter OpenRouter API key; choosing a review provider without a key also opens the input. Enter keys only in the secret card, never in chat.
 
-Jev adds model review to bot and friend messages, rechecks redacted content while opaque commands require a fresh passkey confirmation for each request. Full access, goals and the Jev threshold cannot waive this confirmation. Necessary redacted text goes directly to the selected provider, charged to your account under its data policy. TypeSafe uses its official API; OpenRouter routes to Jev. Review can misjudge and adds delay. An unavailable selected provider retains the channel's existing failure handling; it never silently turns review off.
+Jev adds model review to bot and friend messages, rechecks redacted content while opaque commands require a fresh passkey confirmation for each request. Goals and the Jev threshold cannot waive this confirmation; only the Full access level lets such commands run without it. Necessary redacted text goes directly to the selected provider, charged to your account under its data policy. TypeSafe uses its official API; OpenRouter routes to Jev. Review can misjudge and adds delay. An unavailable selected provider retains the channel's existing failure handling; it never silently turns review off.
 
 You can turn the master switch off in Settings → Safety and explicitly confirm “Skip — I understand safety is weaker”. The host records `jev.mode=off`, the signing device and confirmation time. All Jev model review is then bypassed and bot/friend flows continue; local patterns, credential filters, permission approvals and tool authorization remain. Off avoids model delay and false positives while removing this protection, even when a key is present. The Agent cannot sign for you or disable review by editing configuration. Only your paired phone's signed choice counts; unpairing that signing device invalidates the off authorization.
 
@@ -72,7 +72,7 @@ You can turn the master switch off in Settings → Safety and explicitly confirm
 
 初始化时请先选一种审核方式；没填 key 也没选择时，`agentj onboarding` 会提示继续设置。推荐到 [TypeSafe](https://typesafe.ai) 注册账号、创建 key、充值少量金额，在「模型和 API Key」靠上的 Jev 区域用密钥卡填写 `TYPESAFE_API_KEY`。已有 [OpenRouter](https://openrouter.ai) 账号，也可填写 `OPENROUTER_API_KEY`。已有 key 会自动沿用（同时存在时沿用 OpenRouter），也能在 设置 → 安全 选择来源。在「设置 → 模型和 API Key」点填写或修改，密钥输入窗会在当前遥控器上打开，不用返回聊天。安全审核缺少 Key 时，可直接点「填写 TypeSafe API Key」或「填写 OpenRouter API Key」；切换到缺少 Key 的审核服务商也会打开输入窗。只在密钥窗内填写，不要把 Key 发到聊天。
 
-Jev 会给客服、好友消息增加模型审核，也会复查脱敏内容。程序看不清的命令，每次都需通行密钥确认；全放行、目标授权和 Jev 阈值都不能跳过这次确认。必要的脱敏文本直达所选服务商，费用由你的账号承担。TypeSafe 走官方接口，OpenRouter 走其中的 Jev 模型，两者受各自的数据政策约束。模型可能误判，也会增加延迟。选择的服务不可用时保留该通道的失败处理，不会自动变成关闭。
+Jev 会给客服、好友消息增加模型审核，也会复查脱敏内容。程序看不清的命令，每次都需通行密钥确认；目标授权和 Jev 阈值都不能跳过这次确认；只有「全放行」档下，这类命令不用这次确认。必要的脱敏文本直达所选服务商，费用由你的账号承担。TypeSafe 走官方接口，OpenRouter 走其中的 Jev 模型，两者受各自的数据政策约束。模型可能误判，也会增加延迟。选择的服务不可用时保留该通道的失败处理，不会自动变成关闭。
 
 你也可在 设置 → 安全 关闭总开关，明确确认「跳过，我知道安全性会弱一点」。主机会记录 `jev.mode=off`、签名设备与确认时间。关闭后所有 Jev 模型审核都跳过，客服和好友流程可继续；本地正则、凭据过滤、权限审批和工具授权仍保留。关闭可减少延迟与误拦，同时失去这层防护。即使有 key 也能关闭。Agent 不能代签或通过改配置自行关闭；只有主人在已配对手机上的签名选择才生效，签名设备被解绑后这份关闭授权失效。
 
@@ -726,7 +726,7 @@ DeepSeek says a preview may break; Agent J was measured on 0.2.0-rc.2.
 carry over). So start every command line from here on with `export PATH="$HOME/.local/bin:$PATH";` — or call
 `~/.local/bin/agentj` by its full path. This document writes `agentj` for short.
 
-The program is pinned to one release: the tag `v0.25.13a1` (front matter `source_tag`). The tag never moves, and its
+The program is pinned to one release: the tag `v0.25.14a1` (front matter `source_tag`). The tag never moves, and its
 `host/` folder is byte for byte the same code as the two files on our site whose SHA-256 is in this document's front matter.
 ```bash
 cd ~/.agentj-install
@@ -737,7 +737,7 @@ uv tool install "./$W"
 
 Intel Mac: this release keeps `cryptography<49` because newer releases lack an Intel macOS wheel. If an older installer tries to compile OpenSSL (`openssl-sys` / OpenSSL not found), rerun `uv tool install --with "cryptography<49" "./$W"`. The same platform constraint applies to `agentj update apply`.
 
-export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.25.13a1
+export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.25.14a1
 export PATH="$HOME/.local/bin:$PATH"; agentj doctor
 ```
 **Your human's own terminal must find `agentj` too** — they may use `agentj passphrase set` and `agentj pair` as a local alternative
@@ -765,16 +765,16 @@ echo "$WS  $W" | sha256sum -c - && echo "$SS  $S" | sha256sum -c -    # macOS: s
 uv tool install "./$W"          # the wheel; its dependencies come from PyPI or the mirror in UV_DEFAULT_INDEX
 ```
 `uv tool install "./$S"` installs from the checked source archive instead (it builds the same program).
-`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.25.13a1`); it is
+`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.25.14a1`); it is
 numbered separately from this document (`0.27.7`).
 
-Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.25.13a1#subdirectory=host"`.
+Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.25.14a1#subdirectory=host"`.
 
-Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.25.13a1#subdirectory=host"` (needs Python 3.11+).
+Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.25.14a1#subdirectory=host"` (needs Python 3.11+).
 
 **What each route checks.** The wheel and the source archive above are checked against the SHA-256 in this document. Each
 also has a minisign signature beside it (`<file>.minisig`, key `B79F925B0585F9D4` — front matter `signature`), which
-`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.25.13a1`
+`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.25.14a1`
 routes check **neither**: Git trusts GitHub's HTTPS and the tag name, and nothing compares that code with this document.
 Use them only when the checked files cannot be downloaded, and say so in the final feedback.
 `agentj doctor` lists what is ready and what is not (prerequisites, the fence, connectivity, which agents are usable).
@@ -1768,7 +1768,7 @@ Nightly automatic installation is enabled by default and verifies the official w
 In a shared session (the default of 0.13–0.19), reinstall directly using Step 4's checked wheel (SHA-256 must match this document and
 its public GitHub copy), preserving the host's identity, paired phones, account and preferences:
 ```bash
-uv tool install --force "./agentj-0.25.13a1-py3-none-any.whl"
+uv tool install --force "./agentj-0.25.14a1-py3-none-any.whl"
 agentj --version
 agentj service install
 agentj service restart
@@ -1777,7 +1777,7 @@ agentj doctor
 The matching published tag is another source, after verifying the tag object against the upgrade email (no signature or
 hash check on this route — Step 4):
 ```bash
-uv tool install --force "git+https://github.com/preangelleo/agentj@v0.25.13a1#subdirectory=host"
+uv tool install --force "git+https://github.com/preangelleo/agentj@v0.25.14a1#subdirectory=host"
 ```
 **0.14 independent session** (`agent.session_mode=independent`): 0.14's fence keeps Agent J's own program read-only and
 hides the service manager, so the Agent on the phone cannot reinstall or restart from inside it (measured: the install
@@ -1803,11 +1803,11 @@ prints something and `uv tool list` (or `pipx list`) shows `agentjarvis-host`, t
 the new name, then:
 ```bash
 jarvis service uninstall      # stop the old service first (Step 10 used tmux / nohup instead? stop that process)
-uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.25.13a1#subdirectory=host"
+uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.25.14a1#subdirectory=host"
 agentj doctor
 agentj service install        # start it again under the new name (or the tmux / nohup fallback, Step 10)
 ```
-With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.25.13a1#subdirectory=host"`.
+With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.25.14a1#subdirectory=host"`.
 - After the move, `agentj` puts back a `jarvis` command (a link to `agentj`, only if no other `jarvis` exists) for one more
   version; it prints a notice that points here. New installs never get `jarvis`.
 - The state moves from `~/.local/state/agentjarvis-alpha` to `~/.local/state/agentj` on the first run of `agentj` **after your
@@ -3736,13 +3736,13 @@ OpenCode 2.1 model discovery uses its authenticated native price catalogue becau
 
 打开**设置 → 沟通渠道**。微信 ClawBot 和 Telegram 使用同样的布局与「开通或管理」按钮。点按钮后，主对话输入框会填入对应技能请求，你可以补充要求后再发送。主 Agent 会判断当前状态：未开通就引导扫码，已开通就帮助查看状态、解绑或更换分身套餐。
 
-在**设置 → 沟通渠道 → 转发去向**选择「系统分享（默认）」、「微信 ClawBot」或「Telegram」。未绑定的通道置灰；选中即在此遥控器为当前主机保存，回复卡和阅读器使用相同去向与图标。绑定通道不会自动选中。所选通道解绑后回到系统分享，并提示一次；暂时无法发送仍保留所选去向。发送失败不改走另一通道，也不自动重发。
+在**设置 → 沟通渠道 → 转发去向**选择「系统分享（默认）」、「微信 ClawBot」或「Telegram」。未绑定的通道置灰；选择保存在 Agent J 主机上，所有遥控器共用：任一遥控器改了，其他在线遥控器立刻跟着变，刷新后也一致；各遥控器原先自己存的选择，在主机还没有设置时由第一台连上的遥控器搬过去。回复卡和阅读器使用相同去向与图标。绑定通道不会自动选中。所选通道解绑期间改用系统分享，并提示一次，重新绑定后恢复；暂时无法发送仍保留所选去向。发送失败不改走另一通道，也不自动重发。
 
 Open **Settings → Channels**. WeChat ClawBot and Telegram have the same layout and a **Connect or manage** button. Either button puts a skill request into the main chat composer; add any details before sending. Your Agent checks the current connection, starts QR setup if needed, or helps manage status, disconnecting and avatar plans.
 
-Under **Settings → Channels → Forward replies to**, choose **System share** (default), **WeChat ClawBot** or **Telegram**. Unbound channels are disabled. Your choice saves immediately on this remote for this host, and both the reply card and reader use that destination and icon. Binding a channel does not select it automatically. Unbinding the selected channel resets to system share with one notice. A temporary send restriction keeps the chosen destination; a failed send never falls back or retries automatically.
+Under **Settings → Channels → Forward replies to**, choose **System share** (default), **WeChat ClawBot** or **Telegram**. Unbound channels are disabled. Your choice is saved on the Agent J host and shared by every remote: change it on one and the others follow at once and after a refresh; a choice a remote kept on its own moves to the host from the first remote that connects while the host has none. The reply card and reader use that destination and icon. Binding a channel does not select it automatically. While the selected channel is unbound, forwarding uses system share with one notice; rebinding brings the choice back. A temporary send restriction keeps the chosen destination; a failed send never falls back or retries automatically.
 
-扫码后请在微信里给 ClawBot 发一句话完成验收，首条可发送回复带问候。微信转发需要最近五分钟内收到的会话凭据；明确重试可能重复送达。大陆网络／中文推荐微信，海外／英文推荐 Telegram。 / After scanning, send ClawBot a message in WeChat to finish checking the connection. Its first eligible reply includes a greeting. Forwarding needs a received context from the last five minutes; an explicit retry may duplicate delivery. Recommend WeChat for mainland networks / Chinese speakers, Telegram overseas / for English speakers.
+扫码后请在微信里给 ClawBot 发一句话完成验收，首条可发送回复带问候。微信转发要主人至少给 ClawBot 发过一句话，主机不设时限；只有微信拒收时才提示先在 ClawBot 里发一句，并可一键改用系统分享；明确重试可能重复送达。大陆网络／中文推荐微信，海外／英文推荐 Telegram。 / After scanning, send ClawBot a message in WeChat to finish checking the connection. Its first eligible reply includes a greeting. Forwarding needs the owner to have messaged ClawBot at least once, with no host time limit; only when WeChat refuses does it ask for a ClawBot message first and offer system share in one tap; an explicit retry may duplicate delivery. Recommend WeChat for mainland networks / Chinese speakers, Telegram overseas / for English speakers.
 
 <!-- P537: heartbeat watchlist and text editor -->
 

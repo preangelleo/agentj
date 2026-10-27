@@ -94,7 +94,7 @@ test('Settings → Agent 与遥控器: the row, its state line and 「撤销」;
   for (const k of keys) { assert.equal(typeof en[k], 'string', 'en ' + k); assert.equal(ph(zh[k]), ph(en[k]), k); }
   assert.equal(zh['sxf.row'], '转移席位到另一台 Agent J 主机');
   assert.equal(zh['sxf.pkElsewhere'], '去有钥匙的设备操作');
-  assert.equal(zh['hmv.rescan'], '扫码配对新主机');
+  assert.equal(zh['hmv.rescan'], '扫码配对新的 Agent J 主机');
   for (const k of ['sxf.step1', 'sxf.step2', 'sxf.step3']) assert.ok(zh[k] && en[k]);
   assert.match(zh['sxf.step2'], /「绑定你的席位」/);
   const app = read('../public/app.js');
@@ -104,7 +104,7 @@ test('Settings → Agent 与遥控器: the row, its state line and 「撤销」;
 
 test('review M2: host_moved never switches silently — 「切过去」 / 「留在这里」 sheet first; only 「切过去」 rewrites the pairing', () => {
   const zh = JSON.parse(read('../i18n/web.zh.json')), en = JSON.parse(read('../i18n/web.en.json'));
-  assert.equal(zh['hmv.ask'], '席位已转到新主机「{name}」（{time}）。让这台遥控器切过去吗？');
+  assert.equal(zh['hmv.ask'], '席位已转到新的 Agent J 主机「{name}」（{time}）。让这台遥控器切过去吗？');
   assert.equal(zh['hmv.go'], '切过去');
   assert.equal(zh['hmv.stay'], '留在这里');
   for (const k of ['hmv.askTitle', 'hmv.ask', 'hmv.go', 'hmv.stay']) assert.ok(en[k] && zh[k], k);

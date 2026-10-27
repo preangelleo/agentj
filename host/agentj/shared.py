@@ -243,6 +243,9 @@ def claude_send(session: dict, text: str, source: dict | None = None) -> None:
         time.sleep(0.2)
 
 
+BACKGROUND_WAIT = 150     # P552: a headless child's Face ID card waits less than the hook's own 170 s socket timeout
+
+
 class SharedClaudeAgent(Agent):
     kind = "claude"
 
@@ -449,6 +452,33 @@ class SharedClaudeAgent(Agent):
             if emit:
                 emit("shared_hook_refused", reason=why, hook=str(event.get("hook_event_name") or "?")[:32])
         return why is None
+
+    async def _background_child(self, event, gone=None) -> dict:
+        """P552: a PreToolUse of a headless child session (shared_hook marks it from the process tree). None of the four ③
+        kinds → no decision (its own permission mode runs it); one of them → the owner's Face ID card, and only an allow lets
+        it through (no answer / deny → denied, the child reports back and the main Agent decides)."""
+        from . import confirm_tier
+        tool, inp = event.get("tool_name"), event.get("tool_input")
+        try:
+            keep = confirm_tier.harness_keeps(tool, inp, workdir=event.get("cwd") or self.cfg.get("dir"))
+        except Exception:  # noqa: BLE001 — cannot tell → the strictest step
+            keep = "delete"
+        if not keep:
+            self.host.st.log("ask_done", tool=str(tool)[:64], decision="native", reason="background_child")
+            return {}
+        en = str(getattr(self.host, "lang", "zh")).lower().startswith("en")
+        ans = {"behavior": "deny"}
+        with contextlib.suppress(Exception):   # bounded as a whole (review S2): answered before the hook's 170 s socket timeout
+            ans = await asyncio.wait_for(self.host.ask(
+                str(tool)[:64], inp, gone, batch=False, require_passkey=True, ttl=BACKGROUND_WAIT,
+                origin=("From a background run (headless)" if en else "来自后台单（headless 子会话）")), BACKGROUND_WAIT + 10)
+        if ans.get("behavior") == "allow":
+            return {}
+        return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+                "permissionDecisionReason": ("Agent J: a background run cannot do this without the owner's Face ID "
+                                             "(money, deleting the owner's data, a seat, a key going out). Report it back."
+                                             if en else "Agent J：后台单不能直接做这一步（花钱 / 删除主人数据 / 解绑席位 / "
+                                             "密钥外发），主人没有用 Face ID 批准。把它写进报告交回主 Agent。")}}
 
     def issue_hook_token(self):
         """A14: a fresh token per served session generation (attach, /clear); the old one is spent."""
@@ -753,7 +783,10 @@ class SharedClaudeAgent(Agent):
                     shared_pin.write(self.host.st, self.kind, sid)
             self.cfg["shared_session_id"] = sid
         if sid != self.session["sessionId"]:
-            # Foreign sessions in the same project retain native permissions.
+            # Foreign sessions in the same project retain native permissions. P552 (#325 ②): a headless run the served session
+            # started itself gets no card either — except the four ③ kinds, which still need the owner's Face ID.
+            if event.pop("_agentj_child", False) and name == "PreToolUse":
+                return await self._background_child(event, gone)
             return {}
         name = event.get("hook_event_name")
         self._note_agent(name, event)
@@ -889,10 +922,14 @@ class SharedClaudeAgent(Agent):
                                                      self.cfg.get("approvals", "standard"), event.get("cwd") or self.cfg.get("dir"))
                     digest = card_digest(event.get("tool_name", "?"), event.get("tool_input") or {})
                     self.risk_requests[(event.get("tool_use_id"), digest)] = danger.shared_keys(verdict, self.cfg)
-                return {"hookSpecificOutput": {"hookEventName": "PreToolUse",
-                    "permissionDecision": "deny" if requirement == "deny" else "ask",
+                lang = str(getattr(self.host, "lang", "zh"))
+                if requirement == "deny":     # P553 (#326): no card is shown — say so and name the tool, and log it
+                    policy_registry.log_unknown(getattr(self.host, "st", None), event.get("tool_name"), event.get("tool_input"), agent="claude")
+                    return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+                        "permissionDecisionReason": policy_registry.unknown_text(event.get("tool_name"), lang)}}
+                return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "ask",
                     "permissionDecisionReason": ("Agent J: owner confirmation required"
-                        if str(getattr(self.host, "lang", "zh")).lower().startswith("en") else "Agent J：需要主人确认")}}
+                        if lang.lower().startswith("en") else "Agent J：需要主人确认")}}
             verdict = danger.classify_shared(event.get("tool_name"), event.get("tool_input"), self.cfg.get("danger_extra"),
                                              self.cfg.get("approvals", "standard"), event.get("cwd") or self.cfg.get("dir"))
             # P198: the five clear dangers ask on the phone (P128's documented `standard`); from 0.15 (F14) to 0.20.0 the

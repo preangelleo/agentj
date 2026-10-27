@@ -173,13 +173,16 @@ def harness_keeps(tool: str, tool_input=None, *, env=None, workdir=None):
     if action == "file.delete":                      # a Codex change with several files lists them all: each must be scratch
         paths = inp.get("files") if isinstance(inp.get("files"), list) else [inp.get("file_path") or inp.get("path")]
         return None if paths and all(_scratch(p, workdir, False) for p in paths) else "delete"
+    if tool == "ExitWorktree" and inp.get("action") == "remove" and inp.get("discard_changes"):
+        return "delete"                              # P553: uncommitted work in the worktree is thrown away
     if _moved_away(inp.get("source"), inp.get("destination"), workdir):
         return "delete"                              # an MCP move_file into scratch
     m = re.search(r"（移动到 (.+)）$", str(inp.get("new_string", ""))) if tool == "Edit" else None
     if m and _moved_away(inp.get("file_path"), m.group(1), workdir):
         return "delete"                              # a Codex file change moving a file into scratch
     operation = tool.split("__")[-1] if tool.startswith("mcp__") else tool
-    shell = operation in ("Bash", "exec_command", "shell_command", "execute_command", "bash")
+    shell = operation in ("Bash", "exec_command", "shell_command", "execute_command", "bash") or (
+        tool == "Monitor" and "command" in inp)          # P553: Monitor's command is a shell command
     raw = inp.get("command", inp.get("cmd", ""))
     text = " ".join(shlex.quote(str(w)) for w in raw) if isinstance(raw, list) else str(raw)
     patch = text if shell else str(inp.get("command", inp.get("patch", inp.get("input", "")))) if tool == "apply_patch" else ""

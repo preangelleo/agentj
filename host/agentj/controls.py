@@ -57,6 +57,7 @@ ACTIONS += ("files_write",)   # P478: paired phone local-file scopes
 ACTIONS += ("wechat",)  # P501: fixed channel setup/unbind/verification controls
 ACTIONS += ("host_write",)  # P503d: mail settings/test only
 ACTIONS += ("seat_transfer", "seat_transfer_cancel")   # P547: move the seat to another host (+ Face ID) · revoke that code
+ACTIONS += ("forward_set",)         # P554: the forward button's destination (ui.forward_destination), shared by every remote
 TS_SKEW_MS = 120_000
 NONCE_KEEP_S = 600
 _NONCE = re.compile(r"[0-9a-f]{32}")
@@ -93,6 +94,7 @@ def object_text(action: str, obj: dict) -> str:
     fr_gsay  : "devices" \n the message text   (P426, §17.7: the 「我的设备」 group)
     skill_archive / skill_restore : op (archive | restore) \\n skill name   (P426 #181-3, §39)
     seat_transfer : "transfer"          seat_transfer_cancel : "cancel"          (P547; object {})
+    forward_set : share | wx | tg, plus "\nmigrate" for a remote's own earlier local choice   (P554)
     (a missing / null text field is "", as wire.js `?? ''`)
     """
     if action == "fr_report_reply":
@@ -111,6 +113,8 @@ def object_text(action: str, obj: dict) -> str:
         return "transfer"
     if action == "seat_transfer_cancel":
         return "cancel"
+    if action == "forward_set":      # P554: the destination \n migrate (only when it moves a remote's local choice)
+        return str(obj["dest"]) + ("\nmigrate" if obj.get("migrate") is True else "")
     if action == "cards_get":        # P203: a read; the signature proves the approved device, the object is constant
         return "cards"
     if action == "pair_new":

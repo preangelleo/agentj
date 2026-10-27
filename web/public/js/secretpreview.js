@@ -14,7 +14,8 @@ addEventListener('popstate', e => handlePop?.(e), true);
 export function createSecretPreview(root, container, copy) {
   const bar = mk('div', 'sout-preview-bar');
   const back = mk('button', 'aj-btn'); back.id = 'sout-back'; back.type = 'button'; back.hidden = true;
-  const expand = mk('button', 'aj-btn sout-expand', '⛶'); expand.id = 'sout-expand'; expand.type = 'button'; expand.hidden = true;
+  // P555: ⛶ is an icon — no border, inside the content box's top-right corner
+  const expand = mk('button', 'ajicon sout-expand', '⛶'); expand.id = 'sout-expand'; expand.type = 'button'; expand.hidden = true;
   const fullCopy = mk('button', 'aj-btn'); fullCopy.id = 'sout-full-copy'; fullCopy.type = 'button'; fullCopy.hidden = true;
   const content = mk('div', 'sout-content'); content.id = 'sout-content';
   bar.append(back, fullCopy, expand); container.append(bar, content);
