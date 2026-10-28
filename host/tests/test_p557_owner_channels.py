@@ -186,7 +186,7 @@ class MailOwner(_Owner):
         m.log = m.count = m.note = lambda *a, **k: None
         cfg = mail.blank_config()
         cfg.update(enabled=True, generation='g', allow=[{'addr': 'owner@example.com', 'role': 'owner'}], reply_per_hour=10)
-        route = {'to': 'owner@example.com', 'role': 'owner', 'verified': True, 'gen': 'g', 'subject': 's', 'state': 'awaiting'}   # P562: a verified owner route
+        route = {'to': 'owner@example.com', 'gen': 'g', 'subject': 's', 'state': 'awaiting'}
         built = {}
 
         def build(cfg_, route_, body, name, lang, files):
@@ -201,44 +201,38 @@ class MailOwner(_Owner):
 
 
 class WeChatOwner(_Owner):
-    async def test_main_answer_sends_the_file_item(self):
-        """P562 (#337): the owner's WeChat message is answered by the main conversation; a file its answer names goes to WeChat
-        as a file message, the path dropped from the words."""
+    async def test_wechat_sends_the_file_item_and_mirrors_the_answer(self):
         from agentj import wechat_protocol as protocol
         from agentj.wechat import WeChat
         from test_p501_wechat import ACCOUNT, Transport
-        c = WeChat(self.host, model=AsyncMock())
+        res = self.answer(f'做好了，PDF 在 {self.work}/out/report.pdf')
+        c = WeChat(self.host, model=AsyncMock(return_value=res))
         c.index = self.channel.index; c.store.data['account'] = dict(ACCOUNT)
         c.open_card = MagicMock(); c.publish = lambda: None
-        self.host._accept = AsyncMock(return_value=NS(turn=31))
         tr = Transport([{}, {}]); api = protocol.API(ACCOUNT, tr)
-        c.api_factory = lambda *_a: api
         try:
             with patch.object(protocol.Media, 'upload', return_value={'type': 4, 'file_item': {'fixture': True}}) as upload:
                 await c.receive(api, {'from_user_id': 'owner', 'message_type': 1, 'message_id': 9, 'context_token': 'fixture',
                                       'item_list': [{'type': 1, 'text_item': {'text': '做个 PDF 发我'}}]}, c.store.data['generation'])
-                self.assertEqual(self.host._accept.call_args.args[0].source_kind, 'wechat')
-                self.assertFalse(tr.calls)
-                c.completed({'id': 31, 'src': {'k': 'wechat'}, 'reply': {'text': f'做好了，PDF 在 {self.work}/out/report.pdf'}, 'end': 'done'})
-                await asyncio.gather(*list(c.card_tasks))
             self.assertEqual(upload.call_args.args[1], {'type': 4, 'file_item': {'file_name': 'report.pdf'}})
             self.assertEqual(upload.call_args.args[2], PDF)
             self.assertEqual(json.loads(tr.calls[0][0][3])['msg']['item_list'][0]['text_item']['text'], '做好了')
-            c.open_card.assert_not_called(); c.model.assert_not_awaited()
+            c.open_card.assert_not_called()
+            src, text = self.pages[-1]
+            self.assertEqual((src['via'], src['text'], text), ('wechat', '微信分身已回复', '做好了'))
         finally:
             c.closed = True; c.store.close()
 
 
 class TelegramDelivery(unittest.IsolatedAsyncioTestCase):
-    async def test_owner_chat_is_the_main_conversation(self):
+    async def test_owner_chat_gets_text_then_the_document(self):
         import test_p118_telegram as fixture
         base = fixture._Base(); base.setUp()
         try:
             base.host.external_channels = NS(receive_owner=AsyncMock(return_value=Reply('报告在这里。', (),
                                                                                      [('report.pdf', 'application/pdf', PDF)])))
             self.assertTrue(await base.t.incoming(fixture.msg('发报告'), base.cfg))
-            base.host.external_channels.receive_owner.assert_not_awaited()
-            base.host._accept.assert_awaited_once()     # its answer (and the files it names) go back via Telegram.completed
+            self.assertEqual(len(base.bot.sent('sendDocument')), 1)
         finally:
             base.doCleanups()
 

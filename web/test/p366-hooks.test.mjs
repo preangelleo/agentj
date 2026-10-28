@@ -219,7 +219,7 @@ test('复制地址: a plain URL is copied; a token hook copies nothing and says 
   btnOf(rowOf(h.root, id('D')), 'whcopy').click(); await tick();
   assert.equal(h.copies.length, 1, 'the placeholder is never copied');
   assert.ok(!h.copies.some((c) => c.includes('<')));
-  assert.equal(h.toasts.at(-1), '完整地址在 Agent J 主机上：它里面带着令牌，手机上不显示。');
+  assert.equal(h.toasts.at(-1), '完整地址在电脑上：它里面带着令牌，手机上不显示。');
   W.close();
 });
 
@@ -234,7 +234,7 @@ test('empty list: one friendly paragraph + the two routes; offline: nothing aske
   const off = harness(); off.st.ready = false;
   await W.show(off.root);
   assert.equal(off.asks.length, 0);
-  assert.equal(off.root.find('whmsg')[0].textContent, '连上 Agent J 主机后才能看。');
+  assert.equal(off.root.find('whmsg')[0].textContent, '连上电脑后才能看。');
   W.close();
   const old = harness(() => ({ t: 'timeout' }));
   await W.show(old.root);

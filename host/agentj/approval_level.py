@@ -429,11 +429,11 @@ def harness_floor(tool: str, tool_input, verdict) -> str | None:
 
 
 WHY = {"zh": {"missing": "没有在已配对的遥控器上确认过", "changed": "确认记录和当前设置对不上",
-              "unpaired": "当初确认它的遥控器「{dev}」已经解绑", "rekeyed": "当初确认它的遥控器「{dev}」重新设置了 Face ID / 指纹",
+              "unpaired": "当初确认它的遥控器「{dev}」已经解绑", "rekeyed": "当初确认它的遥控器「{dev}」换了钥匙",
               "bad_sig": "当初的确认签名核对不上"},
        "en": {"missing": "it was never confirmed on a paired remote", "changed": "its confirmation is for another setting",
               "unpaired": "the remote that confirmed it (「{dev}」) is no longer paired",
-              "rekeyed": "the remote that confirmed it (「{dev}」) set up Face ID / fingerprint again", "bad_sig": "its confirmation no longer verifies"}}
+              "rekeyed": "the remote that confirmed it (「{dev}」) has a new key", "bad_sig": "its confirmation no longer verifies"}}
 
 
 def changed_text(key: str, value, by: str, lang) -> str:
@@ -480,8 +480,8 @@ def owner_unsigned_text(items: list, names: dict, lang) -> str:
 def resign_hint_text(lang) -> str:
     """P552: a remote just got its (new) approval key while a switch is not in force — one tap re-signs it."""
     if _en(lang):
-        return "🔐 This remote has Face ID / fingerprint set up now. 「Full access」 is not in force — tap 「Confirm again on this device」 to turn it back on."
-    return "🔐 这台遥控器的 Face ID / 指纹已经设好了。「全放行」现在没有生效——点「用本机重新确认」就能恢复。"
+        return "🔐 This remote has its key now. 「Full access」 is not in force — tap 「Confirm again on this device」 to turn it back on."
+    return "🔐 这台遥控器的钥匙已经好了。「全放行」现在没有生效——点「用本机重新确认」就能恢复。"
 
 
 def nobody_text(lang, again: bool = False) -> str:

@@ -44,15 +44,10 @@ try{
   ok(writes.every(m=>m.sig&&m.n&&m.ts),'all writes have device signatures');
   await click(p,'set-hb-merge');await waitFor(p,`document.getElementById('set-hb-update').hidden`);ok(text.startsWith('Saved / 已保存')&&text.includes('A.'),'one-tap merge retains custom text');
   ok(await ev(p,`document.querySelectorAll('#settings textarea').length===0`),'settings contains no inline multiline textarea');
-  // P561 追加 13 (#338, Leo 10-28): a single-line settings field is typed in place — no full screen.
-  await ev(p,`document.getElementById('input').value='keep composer';document.getElementById('mail-addr').click()`);await sleep(150);
-  ok(await ev(p,`document.getElementById('fsEd').hidden&&!document.getElementById('mail-addr').readOnly`),'single-line settings field stays inline');
-  // Multi-line settings text goes through the same editor, with no composer contamination.
-  await ev(p,`(()=>{const f=document.createElement('textarea');f.id='p537-ml';f.value='a';document.getElementById('settings').append(f)})()`);
-  await waitFor(p,`document.getElementById('p537-ml').type==='hidden'`);await ev(p,`document.querySelector('#p537-ml + .text-editor-field').click()`);
-  await waitFor(p,`!document.getElementById('fsEd').hidden`);await ev(p,`document.getElementById('fsText').value='owner notes\\nline 2'`);await click(p,'fsSend');
-  ok(await ev(p,`document.getElementById('p537-ml').value==='owner notes\\nline 2'&&document.getElementById('input').value==='keep composer'`),'shared editor updates settings and preserves composer');
-  await ev(p,`document.getElementById('p537-ml').nextElementSibling.remove();document.getElementById('p537-ml').remove()`);
+  // Ordinary settings text goes through the same editor, with no composer contamination.
+  await ev(p,`document.getElementById('input').value='keep composer';document.getElementById('mail-addr').click()`);
+  await waitFor(p,`!document.getElementById('fsEd').hidden`);await ev(p,`document.getElementById('fsText').value='owner@example.invalid'`);await click(p,'fsSend');
+  ok(await ev(p,`document.getElementById('mail-addr').value==='owner@example.invalid'&&document.getElementById('input').value==='keep composer'`),'shared editor updates settings and preserves composer');
   await ev(p,`import('./js/settings.js').then(m=>m.close())`);await click(p,'tFull');
   ok(await ev(p,`document.getElementById('fsText').value==='keep composer'&&!document.getElementById('fsSlash').hidden`),'composer original actions restored');
   await shot(p,lang+'-'+w+'-composer');await key(p,'Escape');

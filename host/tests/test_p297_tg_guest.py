@@ -121,11 +121,11 @@ class Guests(unittest.IsolatedAsyncioTestCase):
         self.add("老板消息", sender=OWNER)
         self.add("你们几点营业？", sender=STRANGER)
         self.add("hello there", sender=GUEST2)
-        await self.wait(lambda: len(self.host.delivered) == 1)
+        await self.wait(lambda: len(self.host.external_channels.calls) == 1)
         await self.wait(lambda: ANSWER in self.sent(STRANGER) and ANSWER in self.sent(GUEST2))
         await self.settle()
-        self.assertIn("老板消息", self.host.delivered[0][1])                       # owner → main session (P562: no avatar)
-        self.assertEqual(len(self.host.delivered), 1)                               # guests never reach it
+        self.assertIn("老板消息", self.host.external_channels.calls[0][1])                       # owner → main session
+        self.assertEqual(len(self.host.delivered), 0)                               # guests never reach it
         self.assertNotIn(ANSWER, self.sent(OWNER))                                  # and their answers never go to the owner
         self.assertFalse(any("数字 ID" in s for s in self.sent(STRANGER)))           # no ID card while the bot receives guests
         rows = self.guest_rows()

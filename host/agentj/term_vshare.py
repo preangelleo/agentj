@@ -166,8 +166,8 @@ class VshareDesk:
             wipe(prf)
         self._log("vshare", me, "ok" if not why else "refused:" + why, extra={"by": by.get("device", "")})
         if not why:
-            self._notice(f"已允许 {self.h._dname(me) or me} 使用记住的 Agent J 主机登录密码",
-                         f"{self.h._dname(me) or me} may now use the remembered Agent J host login password")
+            self._notice(f"已允许 {self.h._dname(me) or me} 使用记住的电脑密码",
+                         f"{self.h._dname(me) or me} may now use the remembered computer password")
             self._prefs()
         m = {"t": "ctl_res", "r": r, "action": "vault_share", "ok": not why, **({"why": why} if why else {})}
         if not await self.h.send_app(s, m):

@@ -169,9 +169,9 @@ class Rounds(_Base):
                for i in range(3)]
         with patch('agentj.telegram.download', side_effect=download), patch('agentj.uploads.magic_ok', return_value=True):
             await self.t.handle_round(ups, self.cfg)
-        self.host.external_channels.receive_owner.assert_not_awaited()   # P562: the main conversation, one turn
-        call = self.host._accept.call_args
-        self.assertEqual(len(call.kwargs['blobs']), 3); self.assertIn('three photos', call.args[1])
+        self.host._accept.assert_not_awaited()
+        call = self.host.external_channels.receive_owner.call_args
+        self.assertEqual(len(call.kwargs['blobs']), 3); self.assertIn('three photos', call.args[2])
 
     async def test_supergroup_migration_follows_the_configured_id(self):
         await self.t.handle_round([{'update_id': 40, **msg('', uid=456, cid=-100, migrate_to_chat_id=-1009)}], self.cfg)
@@ -379,29 +379,21 @@ class RealHostIntake(unittest.IsolatedAsyncioTestCase):
                     patch.object(host, 'push_notify'):
                 await host.telegram.handle_round(ups, cfg)
                 sends = [c.args[0] for c in host.agent.submit.call_args_list]
-                # P562 (#337): the owner's own private chat is a main-conversation message too (no separate avatar)
-                self.assertEqual(len(sends), 2, 'the group and the owner both enter the main session')
-                host.external_channels.receive_owner.assert_not_awaited()
-                from agentj import provenance
-                sends.sort(key=lambda x: x.source == provenance.telegram_owner(OWNER))   # the album may finish after the owner
+                self.assertEqual(len(sends), 1, 'only the group enters the main session')
+                host.external_channels.receive_owner.assert_awaited_once()
                 self.assertIn('not the owner', sends[0].text); self.assertIn('called Mum', sends[0].text)
                 self.assertEqual(sends[0].text.count('.agentj/inbox'), 2)
-                self.assertEqual(sends[1].source, provenance.telegram_owner(OWNER))
-                self.assertIn('owner question', sends[1].text)
                 send = sends[0]
                 host.agent_turn_start(send.text, send)
                 host.agent_text('family answer: write to someone@example.org or https://private-test.example/x')
                 host.agent_turn_end()
-                host.agent_turn_start(sends[1].text, sends[1])
-                host.agent_text('owner answer for you')
-                host.agent_turn_end()
+            self.assertIn('主人分身答复', bot.texts())
             out = []
             while not host.telegram.out.empty():
                 _, payload = host.telegram.out.get_nowait()
                 if not isinstance(payload, tg.MediaOut): out.append(payload)
             self.assertEqual(out[0]['chat_id'], -100)
             self.assertNotIn('private-test', out[0]['text']); self.assertNotIn('someone@', out[0]['text'])
-            self.assertIn('owner answer for you', [str(x) for x in out[1:]], 'the owner hears the main answer in Telegram')
 
 
 

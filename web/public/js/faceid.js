@@ -29,33 +29,6 @@ export async function supported() {
   } catch { return false; }
 }
 
-/** P561 追加 11/12 (董事长 10-28 00:57, Mac M1 Safari): may 「在本机设置」 start here? The host's other-remote approval costs
- *  the owner a tap on another device, so a browser that cannot make a key at all is told at once — but only then. Safari on a
- *  Mac / iPhone saves the key in iCloud Keychain and its isUserVerifyingPlatformAuthenticatorAvailable() answered false on a
- *  Mac with working Touch ID (host.log: it had answered true 30 s earlier — pk_peer_req is only sent after it), so on Apple
- *  systems the WebAuthn API itself is enough and create() decides; elsewhere the platform check stays.
- *  → 'yes' | 'no' (no WebAuthn create() in this browser / not a secure page) | 'noPlatform' (WebAuthn, no platform unlock). */
-export async function setupSupport(os = platOf()) {
-  try {
-    const P = globalThis.PublicKeyCredential;
-    if (!P || !navigator.credentials?.create || !navigator.credentials?.get || globalThis.isSecureContext === false) return 'no';
-  } catch { return 'no'; }
-  if (await supported()) return 'yes';
-  return os === 'mac' || os === 'ios' ? 'yes' : 'noPlatform';
-}
-// P561 追加 11: why the last create() of this browser failed (an error NAME only, never the message) — the setup sheet
-// says it, and support can ask for it (localStorage, this origin only).
-const REG_ERR = 'aj.pk.regErr';
-/** → {name, at} of the last failed registration here, or null. */
-export function lastRegError() {
-  try { const v = JSON.parse(globalThis.localStorage?.getItem(REG_ERR) || 'null'); return v && typeof v.name === 'string' ? v : null; } catch { return null; }
-}
-function noteRegError(e) {
-  const name = e && typeof e.name === 'string' && /^[A-Za-z]{1,40}$/.test(e.name) ? e.name : 'Error';
-  try { globalThis.localStorage?.setItem(REG_ERR, JSON.stringify({ name, at: Date.now() })); } catch { /* private mode */ }
-  return name;
-}
-
 /** The relay URL → its index in the handle, or -1 (a relay we cannot name: no passkey is offered then). */
 export function relayIndex(url, hostname = location.hostname) {
   const i = RELAYS.indexOf(String(url).replace(/\/+$/, ''));
@@ -111,11 +84,7 @@ const buf = (x) => new Uint8Array(x);
  *  P547: `peer` = another remote of the owner approved this setup (pk_offer.peer): the record's old key is NOT verified —
  *  it may be lost (#317) or borrowed (#300) — so approve() never runs and create() starts in the same tick as the tap
  *  (no browser cross-device QR sheet, no await before the system Face ID sheet). */
-export function register(offerNonce, opts) {
-  // P561 追加 11: the same call (create() still starts in this tick), plus the failure's name kept for the sheet / support
-  return makeKey(offerNonce, opts).catch((e) => { noteRegError(e); throw e; });
-}
-async function makeKey(offerNonce, { relayIndex: ri, channel, hostPub, name = 'Agent J', rpName = 'Agent J', displaySuffix = ' · Agent J 主机', replace = null, peer = false }) {
+export async function register(offerNonce, { relayIndex: ri, channel, hostPub, name = 'Agent J', rpName = 'Agent J', displaySuffix = ' · Agent J 主机', replace = null, peer = false }) {
   // A resident credential for the same user handle can be replaced by create(). Verify the old one first (not after a peer approval).
   const replace_fa = replace && !peer ? await approve(await sha256(new TextEncoder().encode(
     ['agentj/passkey/replace-offer/v1', b64u(offerNonce), replace, location.hostname].join('\n'))), replace) : null;
@@ -132,7 +101,6 @@ async function makeKey(offerNonce, { relayIndex: ri, channel, hostPub, name = 'A
   const alg = typeof r.getPublicKeyAlgorithm === 'function' ? r.getPublicKeyAlgorithm() : null;
   if (!spki || ![-7, -8, -257].includes(alg)) throw new Error('no public key');
   const result = { t: 'pk_reg', id: b64u(buf(cred.rawId)), alg, spki: b64u(buf(spki)), cd: b64u(buf(r.clientDataJSON)), att: b64u(buf(r.attestationObject)) };
-  keepTransports(result.id, typeof r.getTransports === 'function' ? r.getTransports() : null);   // P561: get() asks where create() said it put it
   if (replace_fa) result.replace_fa = replace_fa;
   // P539 (#300): where the passkey lives and which system made it, so the computer can tell this remote "own passkey" from
   // "borrowed over a phone scan". `att` is already the attestation object in pk_reg, so the attachment travels as `aa`.
@@ -194,71 +162,32 @@ export function setOwnState(s) { own = Object.hasOwn(TRANSPORTS, s) ? s : 'unkno
  *  17:05, 华为 Pad 「已设好」 yet the fingerprint / face never passed): `plain` = the request with no transports filter and no
  *  hints (an empty list = any way the device keeps it), the form a phone / tablet authenticator that keeps keys its own way
  *  (HarmonyOS, a tablet in desktop mode) answers. */
-export function wantOf(credId, st = own, plain = isPlain(credId), ids = [credId]) {
+export function wantOf(credId, st = own, plain = isPlain(credId)) {
   const k = Object.hasOwn(TRANSPORTS, st) ? st : 'unknown';
   // a borrowed key lives on the other phone: always the phone route, the plain form is only for this device's own key
-  if (plain && k !== 'borrowed') return { allowCredentials: ids.map((id) => ({ type: 'public-key', id: unb64u(id), transports: [] })) };
-  if (k === 'borrowed') return { allowCredentials: ids.map((id) => ({ type: 'public-key', id: unb64u(id), transports: TRANSPORTS.borrowed })), hints: ['hybrid'] };
-  // P561 (追加 3/8, 华为 Pad 10-28 00:28: the SAME key passed in the plain form and then, once the mark was cleared, the P555
-  // form — ['internal'] + hints ['client-device'] — got 「在此设备上未发现 m.agentj.app 的任何通行密钥」; Google Password Manager
-  // keeps it, on Android and on desktop Chrome): this device's own key is asked for with the transports its create() reported
-  // on this browser, as reported, and no hints; nothing kept (a key made before this version) → no filter at all
-  return { allowCredentials: ids.map((id) => ({ type: 'public-key', id: unb64u(id), transports: transportsOf(id) || [] })) };
+  if (plain && k !== 'borrowed') return { allowCredentials: [{ type: 'public-key', id: unb64u(credId), transports: [] }] };
+  return { allowCredentials: [{ type: 'public-key', id: unb64u(credId), transports: TRANSPORTS[k] }],
+    hints: k === 'borrowed' ? ['hybrid'] : ['client-device'] };
 }
 // P559: per key, which request form this device last answered. A failed tap switches the form for the next tap (the card's
-// 「再试一次」 — no second system sheet without a tap, iOS); a success keeps the form.
-// P561 (董事长 10-27 22:47, Mac M1 Chrome): 「已设好」 only said the Agent J host has a key on record — the browser said
-// 「No passkeys available」 and Settings kept saying 「已设好」. Now the first refusal of this device's own key (NotAllowedError:
-// the browser does not tell "cancelled" from "no such key here") marks it 「钥匙找不到了」 at once, until a tap passes here or
-// this device saves a new key (clearFailed). An interruption (AbortError) says nothing about the key and marks nothing.
-// P561 追加 3/4 (董事长 10-28 00:1x: reset twice, 「设置成功」 shown, the row still said 「重新设置」 after a reload; the card still
-// failed): (1) 0.25.15 never cleared the mark when a new key was saved; (2) a card that arrived before the reset carries the
-// OLD credential id (the Agent J host does not re-send it), so 「再试一次」 asked the browser for the replaced key — 「No
-// passkeys」 again — and marked the row again. Now OWN = the newest key this browser saved (pk_reg_res ok): every own-key
-// get() asks for it first, and the mark counts only for that key. The 0.25.15 mark (`aj.pk.failed`, never cleared by a reset)
-// is dropped once (migration) — the first refusal marks again at once.
-const PLAIN = 'aj.pk.plain.', FAILED = 'aj.pk.failed2', OLD_FAILED = 'aj.pk.failed', OWN = 'aj.pk.own', TR = 'aj.pk.tr.';
+// 「再试一次」 — no second system sheet without a tap, iOS); a success keeps the form; failing in both forms in a row marks the key
+// 「没能通过」 so Settings stops saying 「已设好」 (pkassist.paintPkRow) until a tap passes again.
+const PLAIN = 'aj.pk.plain.', FAILED = 'aj.pk.failed';
 const store = () => { try { return globalThis.localStorage || null; } catch { return null; } };
 const getK = (k) => { try { return store()?.getItem(k) ?? null; } catch { return null; } };
 const setK = (k, v) => { try { const s = store(); if (s) { if (v === null) s.removeItem(k); else s.setItem(k, v); } } catch { /* private mode */ } };
-setK(OLD_FAILED, null);
 export const isPlain = (credId) => getK(PLAIN + credId) === '1';
-const KNOWN_TR = ['internal', 'hybrid', 'usb', 'nfc', 'ble', 'smart-card'];
-function keepTransports(id, list) {
-  const tr = Array.isArray(list) ? [...new Set(list.filter((x) => KNOWN_TR.includes(x)))] : [];
-  if (tr.length) setK(TR + id, tr.join(','));
-}
-/** The transports create() reported for this key on this browser, or null. */
-export function transportsOf(id) {
-  const tr = String(getK(TR + id) || '').split(',').filter((x) => KNOWN_TR.includes(x));
-  return tr.length ? tr : null;
-}
-/** The credential ids to ask for: the newest key this browser saved first, then the card's (deduplicated). */
-export function ownIds(credId) {
-  const o = getK(OWN);
-  return o && o !== credId ? [o, credId] : [credId];
-}
-/** This device's own (newest) key was refused here since its last pass (Settings: 「这台遥控器的钥匙找不到了」). */
-export const failedHere = () => { const f = getK(FAILED), o = getK(OWN); return !!f && (!o || f === o); };
-const changed = (was) => {   // P560: Settings repaints its row in this session too (app.js), not only after a reload
-  if (was !== failedHere()) try { globalThis.dispatchEvent?.(new Event('agentj-pk-failed-change')); } catch { /* node tests */ }
-};
-/** After a get() for this remote's own key: ok = it passed; err = the rejection's name. → whether the next tap uses the plain form. */
-export function noteResult(credId, ok, plain = isPlain(credId), err = 'NotAllowedError') {
+/** This device's own key failed in both request forms since its last pass (Settings: 「上次没能通过」). */
+export const failedHere = () => !!getK(FAILED);
+/** After a get() for this remote's own key: ok = it passed. → whether the next tap uses the plain form. */
+export function noteResult(credId, ok, plain = isPlain(credId)) {
   const was = failedHere();
   if (ok) setK(FAILED, null);
-  else if (err !== 'AbortError') setK(FAILED, credId);
+  else if (plain) setK(FAILED, credId);
   if (!ok) setK(PLAIN + credId, plain ? null : '1');
-  changed(was);
+  // P560: Settings repaints its row in this session too (app.js), not only after a reload
+  if (was !== failedHere()) try { globalThis.dispatchEvent?.(new Event('agentj-pk-failed-change')); } catch { /* node tests */ }
   return ok ? plain : !plain;
-}
-/** P561: this device saved a new key of its own (pk_reg_res ok, id = its credential id) — it becomes the key every own-key
- *  get() asks for first, and the old 「找不到了」 mark goes with the old key. */
-export function clearFailed(id = null) {
-  const was = failedHere();
-  if (typeof id === 'string' && id) setK(OWN, id);
-  setK(FAILED, null);
-  changed(was);
 }
 
 /** WebAuthn get() exists at all (no platform check: the record already holds a passkey made on this phone). */
@@ -268,17 +197,17 @@ export const canAssert = () => !!(globalThis.PublicKeyCredential && navigator.cr
  *  st = where the key lives (default: this remote's pk_state; the P555 self-check passes 'local' — is it HERE?).
  *  → a promise of the `fa` object {id, cd, ad, sig}; rejects on cancel / failure. */
 export function approve(challenge, credId, where = false, st = own) {
-  const ids = st === 'borrowed' ? [credId] : ownIds(credId), key = ids[0], plain = isPlain(key);   // P561: the newest own key first
+  const plain = isPlain(credId);
   return navigator.credentials.get({ publicKey: {
-    challenge, rpId: location.hostname, userVerification: 'required', timeout: 60000, ...wantOf(key, st, plain, ids),
+    challenge, rpId: location.hostname, userVerification: 'required', timeout: 60000, ...wantOf(credId, st, plain),
   } }).then((cred) => {
-    if (st !== 'borrowed') noteResult(key, true, plain);
+    if (st !== 'borrowed') noteResult(credId, true, plain);
     const r = cred.response;
     const out = { id: b64u(buf(cred.rawId)), cd: b64u(buf(r.clientDataJSON)), ad: b64u(buf(r.authenticatorData)), sig: b64u(buf(r.signature)) };
     const a = where ? attachmentOf(cred) : null;    // P555 self-check: + where the key lives (`aa`, advisory)
     if (a) out.aa = a;
     return out;
-  }, (e) => { if (st !== 'borrowed') noteResult(key, false, plain, e && e.name); throw e; });
+  }, (e) => { if (st !== 'borrowed') noteResult(credId, false, plain); throw e; });
 }
 
 // ---------------------------------------------------------------- F32 (P73, ADR-A180, PROTOCOL §18): the secret pickup card

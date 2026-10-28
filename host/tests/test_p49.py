@@ -38,7 +38,7 @@ class TelegramParity(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(await self.t.incoming(self.msg(text),self.cfg))
         self.assertTrue(await self.t.incoming(self.msg('ordinary owner task'),self.cfg))
         self.assertIn('owner private',self.host._accept.call_args.args[1])
-        self.assertTrue(await self.t.incoming(self.msg('/stop'),self.cfg));self.host.stop_turn.assert_awaited_once()   # P562: the main turn
+        self.assertTrue(await self.t.incoming(self.msg('/stop'),self.cfg));self.host.external_channels.sessions.stop_all.assert_awaited_once();self.host.stop_turn.assert_not_awaited()
     async def test_group_allowlist_and_addressing(self):
         for m in (self.msg('@test_bot hello',cid=-200,uid=456),self.msg('@test_bot hello',cid=-100,uid=789),
                   self.msg('ambient',cid=-100,uid=456),self.msg('@test_botx hello',cid=-100,uid=456)):

@@ -30,7 +30,7 @@ try {
    // Offline/older hosts return an envelope, not null: never paint a false empty scope state.
    fake.st.onApp=async(c,m,send)=>{if(m.t==='files_get'){await send({t:'offline',r:m.r});return true;}return false;};
    await evaluate(p,`import('./js/local-files.js').then(m=>m.load())`);
-   await waitFor(p,`document.getElementById('local-files-list').textContent.includes(${JSON.stringify(lang==='zh'?"Agent J 主机未连接，请连接后重试。":"Agent J host offline. Connect and try again.")})`);
+   await waitFor(p,`document.getElementById('local-files-list').textContent.includes(${JSON.stringify(lang==='zh'?"电脑未连接，请连接后重试。":"Computer offline. Connect and try again.")})`);
    assert.equal(await evaluate(p,`document.querySelectorAll('#local-files-list button').length`),0);
    fake.st.onApp=handler;
    await evaluate(p,`import('./js/local-files.js').then(m=>m.load())`);

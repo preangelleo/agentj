@@ -228,7 +228,7 @@ export function asrOf(a) {
 export function toPage(t) {
   if (!t || !Number.isInteger(t.id) || t.id < 0) return null;
   const src = t.src && typeof t.src === 'object' ? t.src : {};
-  const k = ['phone', 'host', 'agent', 'sys', 'task', 'cmd', 'telegram', 'email', 'wechat', 'auto', 'friend_report'].includes(src.k) ? src.k : 'sys';   // P365: auto = the owner's own automation (`agentj notify`)
+  const k = ['phone', 'host', 'agent', 'sys', 'task', 'cmd', 'telegram', 'email', 'auto', 'friend_report'].includes(src.k) ? src.k : 'sys';   // P365: auto = the owner's own automation (`agentj notify`)
   const q1 = (x) => x && typeof x === 'object' && Number.isInteger(x.id) ? {
     id: x.id, who: typeof x.who === 'string' ? x.who.slice(0, 64) : '', ts: Number(x.ts) || null,
     text: typeof x.text === 'string' ? x.text.slice(0, 2000) : '', excerpt: x.ex === true } : null;

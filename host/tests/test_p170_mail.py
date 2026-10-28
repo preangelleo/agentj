@@ -423,26 +423,10 @@ class RealHost(unittest.IsolatedAsyncioTestCase):
             host.external_channels = CaptureAvatar('已处理')
             with patch.object(host, "push_notify"):
                 await host.mail.check()
-                # P562 (#337): the owner's authenticated mail is a main-conversation message, labelled 「邮件」
-                host.external_channels.receive_owner.assert_not_awaited()
-                host.agent.submit.assert_called_once()
-                send = host.agent.submit.call_args.args[0]
-                self.assertEqual(send.source, provenance.email_owner(BOSS))
-                page = host.hist.get(send.turn)
-                self.assertEqual(page["src"]["k"], "email")
-                host.agent.cur_send = None
-                asked = []
-
-                async def ask(tool, inp, gone=None, batch=True, **kw):
-                    asked.append((tool, kw.get("avatar")))
-                    return {"behavior": "allow"}
-                with patch.object(host, "ask", ask):
-                    await host.mail.reply(send.turn, "周报整理好了。")
-            # the answer goes back by mail as the mail channel's request (a Web App card when the level asks), never denied
-            # because the main conversation moved on to another turn
-            self.assertEqual(asked, [("agentj mail reply", "来自邮件")])
-            self.assertEqual(len(smtp.sent), 1)
-            self.assertEqual(M.read_state(st)["counts"].get("reply_sent"), 1)
+                host.agent.submit.assert_not_called()
+                host.external_channels.receive_owner.assert_awaited_once()
+            self.assertEqual(len(smtp.sent), 0, "avatar provenance cannot authorize the final SMTP effect")
+            self.assertEqual(M.read_state(st)["counts"].get("reply_denied"), 1)
 
     async def test_agent_widening_change_becomes_a_phone_card(self):
         from test_l1 import _owner_host as _host, _state

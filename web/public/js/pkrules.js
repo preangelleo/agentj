@@ -11,12 +11,10 @@ export function hintKey(fa) {
   return fa === 'borrowed' ? 'p539.hint.borrowed' : fa === 'unknown' ? 'p539.hint.unknown' : null;
 }
 /** A WebAuthn failure (DOMException or its name) → the reason line. NotAllowedError = cancelled, timed out, or no
- *  matching passkey here (the browser does not say which); on a borrowed record it is almost always the last one.
- *  P561: on this remote's own key (`local`) it says the key may be gone here (a reinstall, another browser) — with the
- *  way out 「重新设置（需另一台批准）」 beside 「再试一次」, never one button that keeps failing. */
+ *  matching passkey here (the browser does not say which); on a borrowed record it is almost always the last one. */
 export function failKey(err, fa) {
   const n = typeof err === 'string' ? err : err && err.name;
-  if (n === 'NotAllowedError') return fa === 'borrowed' ? 'p539.fail.borrowed' : fa === 'local' ? 'p561.fail.missing' : 'p539.fail.cancel';
+  if (n === 'NotAllowedError') return fa === 'borrowed' ? 'p539.fail.borrowed' : 'p539.fail.cancel';
   if (n === 'AbortError') return 'p539.fail.abort';
   return 'p539.fail.other';
 }

@@ -9,7 +9,6 @@ import { signedWrite, whyText } from './controls.js';
 import { myIdSync } from './api.js';
 import { t, onLang } from './t.js';
 import { el, toast } from './ui.js';
-import { scrollToPkRow } from './pkassist.js';   // P561 追加 14
 
 let info = null, mod = null, waiting = null, H = { setupFaceId() {}, openSettings() {}, openRescue() {}, changed() {}, attach() {}, insert() {}, goChat() {} };
 const MODES = ['prf', 'local', 'session'];
@@ -55,7 +54,7 @@ export function configure(h) {
   H = { ...H, ...h };
   el('set-term-open')?.addEventListener('click', () => open(''));
   el('set-term-enable')?.addEventListener('click', enable);   // P417 #185
-  el('set-term-faceid')?.addEventListener('click', () => scrollToPkRow());   // P417 #185 · P561 追加 14: the one entry is Settings' top row
+  el('set-term-faceid')?.addEventListener('click', () => H.setupFaceId());   // P417 #185
   el('set-term-forget')?.addEventListener('click', forget);
   onLang(paint);
 }

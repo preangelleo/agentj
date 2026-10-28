@@ -135,7 +135,7 @@ Illustration, not a real screenshot. Mac window capture was unavailable in this 
 
 ### A second password or Touch ID dialog on the Agent J host
 
-The phone may ask Face ID/passkey to approve its card, then the Agent J host login password. Those are separate expected checks **on the phone**. A further dialog **on the Mac** is different. `sudo -S -k` accepts a password on stdin, but a configured `pam_tid.so`/`pam_reattach.so`/Watch module may request local authorization before password authentication. Agent J detects known enabled modules, warns on the signed card and refuses the password sudo execution rather than hanging on a remote dialog. The preflight cannot prove arbitrary third-party PAM modules are safe.
+The phone may ask Face ID/passkey to approve its card, then a computer login password. Those are separate expected checks **on the phone**. A further dialog **on the Mac** is different. `sudo -S -k` accepts a password on stdin, but a configured `pam_tid.so`/`pam_reattach.so`/Watch module may request local authorization before password authentication. Agent J detects known enabled modules, warns on the signed card and refuses the password sudo execution rather than hanging on a remote dialog. The preflight cannot prove arbitrary third-party PAM modules are safe.
 
 Inspect without changing anything:
 

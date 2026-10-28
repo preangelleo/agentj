@@ -36,7 +36,6 @@ import { createAsrSetup } from './js/asr-setup.js';
 import * as blobs from './js/blobs.js';
 import * as media from './js/media.js';       // F21: files the Agent shows (§13)
 import * as controls from './js/controls.js';
-import * as setkeys from './js/setkeys.js';   // P561 追加 16: Settings shows a button's key from the shortcut table
 import * as push from './js/push.js';
 import * as relay from './js/relay.js';
 import * as settings from './js/settings.js';
@@ -396,7 +395,7 @@ session.configure({
     openFriendsWanted();
     reversePairing = false;
     if (pendingRv) { const c = pendingRv; pendingRv = null; rvpair.approve(c).catch(() => {}); }
-    api.myDeviceId().then((id) => { pkpeer.onReady(id); rerender(); });   // P561 追加 11: a replaced remote id drops its old request
+    api.myDeviceId().then(() => rerender());
     relay.onReady();
     cmdrun.onReady();                                 // P393: 「连不上」 on the command card turns into 「已恢复连接」
     paintPkRow();                                     // P539: the stored 本机通行密钥 state of THIS computer
@@ -427,7 +426,6 @@ snap.configure({
 });
 api.onState((m) => relay.onSayState(m));
 controls.configure({ faceId: settings.faceIdStep, show, estopChanged: () => { relay.onEstop(); rerender(); }, friends: () => friends.refresh(), bots: () => bots.refresh() });
-setkeys.configure();
 bots.configure({openPanel:controls.openPanel});
 setupcard.configure({ openPanel: controls.openPanel, view: () => view });   // P131: the checklist page + chat banner
 friends.configure({ openPanel: controls.openPanel, leave: () => leavePage(), agentName: () => displayAgentName() });
@@ -711,12 +709,10 @@ function selfCheck() {
     return false;
   }, () => false);
 }
-// P561 追加 11/12: 「这个浏览器不支持 Face ID」 only when this browser cannot make a key at all (passkey.setupSupport) — never the
-// pickup card's 「请到…手机上领取」 (sout.noFaceId), never a word that the owner said no
 async function setupFaceId() {
   const checked = selfCheck();
   if (checked && (await checked)) return;
-  if ((await passkey.setupSupport()) !== 'yes') { await checkPhoneEnvironment(); renderPhoneEnvironment(true); toast(t('p561.pk.unsupported'), 5000); return; }
+  if (!(await passkey.supported())) { await checkPhoneEnvironment(); renderPhoneEnvironment(true); toast(t('sout.noFaceId'), 5000); return; }
   pkForce = true;                                     // P547: a "direct" answer (the owner's first device) is followed by pk_offer
   const how = await pkpeer.startPeerSetup();
   if (how !== 'direct' && how !== 'legacy') pkForce = false;   // peer offers carry `peer` and never need the force
@@ -731,7 +727,7 @@ async function regOpts() {
   const h = await dbGet('host');
   if (!h || !h.approved || h.channel !== session.channel()) return null;
   const ri = passkey.relayIndex(h.relay);
-  if (ri < 0 || (await passkey.setupSupport()) !== 'yes') return null;   // P561 追加 11: the same test as 「在本机设置」
+  if (ri < 0 || !(await passkey.supported())) return null;
   return { relayIndex: ri, channel: h.channel, hostPub: h.hostPub, name: agentName ?? DEFAULT_NAME, displaySuffix: t('pk.computer') };
 }
 pkpeer.configure({
@@ -740,8 +736,8 @@ pkpeer.configure({
   // register() still reaches navigator.credentials.create in the tap's tick (no await before it)
   register: (n, o) => passkey.register(n, o).then((reg) => { pkRegId = reg.id; return reg; }),
   notSaved: () => pkassist.osKey('pk.notSaved'),   // P550: P539's per-system steps on the peer path too
-  supported: async () => (await passkey.setupSupport()) === 'yes', canAssert: passkey.canAssert, regOpts, legacy: legacyOffer,
-  unsupported: () => toast(t('p561.pk.unsupported'), 5000),   // P561 追加 11: setting up, not picking up (sout.noFaceId)
+  supported: passkey.supported, canAssert: passkey.canAssert, regOpts, legacy: legacyOffer,
+  unsupported: () => toast(t('sout.noFaceId'), 5000),
   restart: () => setupFaceId(),                       // P547: pk_reg_res peer_required → the same entry as 「设置 Face ID」
 });
 secretout.configure({ setupFaceId });
@@ -750,7 +746,7 @@ cmdrun.configure({ setupFaceId, openTerminal: (cmd) => termhook.open(cmd) }); //
 termhook.configure({ setupFaceId, openSettings: () => { if (!settings.isOpen()) settings.open(); }, openRescue: () => settings.openRescue(), changed: () => cmdrun.paint(),
   attach: (f) => relay.attachShot(f, true), insert: (s) => relay.insertText(s), goChat: () => { if (settings.isOpen()) settings.close(); } });   // P408 · P414: 截屏发到聊天 / 放回输入框
 vaultrow.configure({ setupFaceId });   // P414
-pkassist.configure({ setupFaceId, openSettings: () => { if (!settings.isOpen()) settings.open(); } });   // P539: 「在本机设置」 — the same F20 offer · P561 追加 14/17: scrollToPkRow
+pkassist.configure({ setupFaceId });   // P539: 「在本机设置」 under a confirm button / in Settings — the same F20 offer
 // P539: the computer's word on this remote's passkey; kept with the host record (like h.pk) so Settings shows it at once
 let pkNow = null;   // {ch, s}: only shown for the computer that said it
 function paintPkRow() {
@@ -805,7 +801,7 @@ async function offerPasskey(m) {
   if (!h || !h.approved || (h.pkAsked && !forced) || h.channel !== session.channel()) return;
   const ri = passkey.relayIndex(h.relay);
   const nonce = unb64u(m.n);
-  if (ri < 0 || nonce.length !== 32 || (await passkey.setupSupport()) !== 'yes') return;   // P561 追加 11
+  if (ri < 0 || nonce.length !== 32 || !(await passkey.supported())) return;
   await updHost((c) => c && { ...c, pkAsked: true });
   const g = session.gen();
   const name = agentName ?? DEFAULT_NAME;
@@ -829,7 +825,6 @@ async function pkSaved(m) {
     pkRegId = null;
     return toastAction(t(pkassist.regWhy(m.why)), t('pkp.setupHere'), () => { setupFaceId().catch(() => {}); }, 12000);
   }
-  passkey.clearFailed(pkRegId);                       // P561: a new key of this device's own — asked for first; 「钥匙找不到了」 goes with the old one
   toast(t('pk.saved') + (first ? ' ' + t('pkp.addAnother') : ''), first ? 9000 : undefined);
   if (m.ok && pkRegId) seats.setInstallHints({ pk: pkRegId });   // P545: this seat's passkey, for its Home Screen app (P547 peer keys too)
   pkRegId = null;

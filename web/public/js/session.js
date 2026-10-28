@@ -433,16 +433,6 @@ function sendOn(s, g, obj, max) {
 
 // ---------------------------------------------------------------- requests with an id (r) echoed on every answer
 const pending = new Map();
-/** P561 (追加 6, #335): the next ready generation within `ms` (the current one at once), else null. A passkey sheet can send the
- *  page to the background and the system drops its socket (华为 Pad 10-28 00:02: dev_gone twice, the approval never left). */
-export async function whenReady(ms = 25000) {
-  const until = Date.now() + ms;
-  for (let g = gen(); ; g = gen()) {
-    if (g) return g;
-    if (Date.now() >= until) return null;
-    await new Promise((r) => setTimeout(r, 250));
-  }
-}
 export function randHex(bytes) { return Array.from(crypto.getRandomValues(new Uint8Array(bytes)), (b) => b.toString(16).padStart(2, '0')).join(''); }
 /** obj + a fresh r → every answer carrying that r goes to onMsg until done(r). → r, or null when not ready. */
 export function request(obj, onMsg, g = gen()) {

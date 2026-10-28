@@ -83,7 +83,7 @@ class ProfileExecution(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):self.session.execution_env('codex',self.cfg)
 
 class Onboarding(unittest.IsolatedAsyncioTestCase):
-    async def test_telegram_bind_no_longer_asks_for_an_avatar_plan(self):
+    async def test_telegram_bind_discovers_once_per_enrollment(self):
         from types import SimpleNamespace as NS
         from unittest.mock import AsyncMock
         import test_p118_telegram as fixture
@@ -93,12 +93,12 @@ class Onboarding(unittest.IsolatedAsyncioTestCase):
         try:
             await base.t.bind(base.cfg)
             await base.t.bind(base.cfg)
-            base.host.external_channels.offer_choice.assert_not_awaited()   # P562: the main conversation answers, no plan to pick
+            base.host.external_channels.offer_choice.assert_awaited_once()
         finally:
             if getattr(base.t,'avatar_task',None):await base.t.avatar_task
             base.doCleanups()
 
-    async def test_mail_enable_no_longer_asks_for_an_avatar_plan(self):
+    async def test_mail_enable_discovers_without_blocking_config_write(self):
         from types import SimpleNamespace as NS
         from unittest.mock import AsyncMock,MagicMock
         from agentj import mail
@@ -115,7 +115,7 @@ class Onboarding(unittest.IsolatedAsyncioTestCase):
         with patch.object(mail,'read_config',return_value=old),patch.object(mail,'save_config',side_effect=lambda st,c:c):
             self.assertTrue(manager.set_config(new)['enabled'])
         await asyncio.gather(*tasks)
-        avatar.offer_choice.assert_not_awaited()     # P562
+        avatar.offer_choice.assert_awaited_once()
 
     async def test_three_channels_share_one_choice_and_recommend_codex(self):
         from types import SimpleNamespace as NS

@@ -1,5 +1,5 @@
 {
-  "version": "0.25.16a1",
-  "zh": "你本人的微信、Telegram 和主邮箱的消息直接交给主对话处理；本机 Face ID / Touch ID 找不到时可以重新设置，Mac Safari 也能设置。",
-  "en": "Your own WeChat, Telegram and main mailbox now go straight to the main conversation; a lost Face ID / Touch ID setup can be redone."
+  "version": "0.25.15a1",
+  "zh": "Telegram / 微信里让分身画图，图直接回通道，满载自动换模型；全放行下本人通道分身免卡；转交卡不要 Face ID；华为平板可用本机钥匙，统一叫 Touch ID；Codex 搜索、生图等不再被拒。",
+  "en": "Stand-in images return in the chat; no cards for your own chats' stand-in under Full access; handoff skips Face ID; Huawei tablets: Touch ID; Codex tools OK."
 }

@@ -32,9 +32,9 @@ let view = null;                                      // {show(spec), hide()} �
 export function configure(h) { H = { ...H, ...h }; if (h && h.view) view = h.view; }
 
 // ---------------------------------------------------------------- state
-const S = { req: null, offer: null, by: '', direct: false, busy: false, asks: new Map(), shown: null, timer: 0, dev: '' };
+const S = { req: null, offer: null, by: '', direct: false, busy: false, asks: new Map(), shown: null, timer: 0 };
 export const _state = () => ({ req: S.req && { ...S.req }, offer: S.offer && { ...S.offer }, direct: S.direct, asks: [...S.asks.keys()], shown: S.shown });
-export function _reset() { clearTimeout(S.timer); Object.assign(S, { req: null, offer: null, by: '', direct: false, busy: false, shown: null, timer: 0, dev: '' }); S.asks.clear(); }
+export function _reset() { clearTimeout(S.timer); Object.assign(S, { req: null, offer: null, by: '', direct: false, busy: false, shown: null, timer: 0 }); S.asks.clear(); }
 
 const cleanName = (v) => (typeof v === 'string' ? v.replace(/[\p{Cc}\p{Cf}]/gu, '').trim().slice(0, 64) : '') || t('pkp.unnamed');
 
@@ -113,26 +113,10 @@ function maybeApproved() {
 export function saveTap() {
   const o = S.offer;
   if (!o) return null;
-  const req = S.req, by = S.by;
   S.offer = null; S.req = null;
   const p = H.register(o.nonce, { ...o.opts, replace: null, peer: true });
   hide();
-  return Promise.resolve(p).then((reg) => H.send(reg).catch(() => toast(t('pk.saveFail'))), (e) => {
-    // P561 追加 11/12 (Mac Safari 10-28 00:57): the system made no key, nothing went to the host — the other remote's approval
-    // still stands until it expires (the host consumes the offer only on a key it takes), so the same sheet comes back with
-    // what happened and 「再试一次」 runs create() again from that tap. No second approval, no toast that hides behind it.
-    if (S.offer || S.req || !req) { toast(t(H.notSaved()), 8000); return; }   // another flow started meanwhile
-    S.offer = o; S.req = req; S.by = by;
-    show({ mode: 'approved', by, err: errName(e), notSaved: H.notSaved() });
-  });
-}
-const errName = (e) => (e && typeof e.name === 'string' && /^[A-Za-z]{1,40}$/.test(e.name) ? e.name : 'Error');
-/** P561 追加 11: app.js on every ready — this page's remote id. A page whose remote was replaced (a ticket restore under a new
- *  id) drops the old id's request: its approval and offer belong to a record the host has already removed. */
-export function onReady(device) {
-  if (typeof device !== 'string' || !device) return;
-  if (S.dev && S.dev !== device && (S.req || S.offer)) { clearTimeout(S.timer); S.req = null; S.offer = null; S.by = ''; if (S.shown && S.shown !== 'ask') hide(); }
-  S.dev = device;
+  return Promise.resolve(p).then((reg) => H.send(reg).catch(() => toast(t('pk.saveFail'))), () => toast(t(H.notSaved()), 8000));   // P550: P539's per-system steps
 }
 export function closeResult() { hide(); }
 /** host → this device: pk_reg_res. `{ok:false, why:"peer_required"}` = the host refused a direct offer because another
@@ -269,15 +253,10 @@ function paint() {
     kids.push(mk('p', 'elev-note', t('pkp.eachOwn') + ' ' + t('pkp.where.' + s.where)));
     row.append(btn('pkp-cancel', 'aj-btn--quiet', 'sheet.cancel', () => cancelWait()));
   } else if (s.mode === 'approved') {
-    title.textContent = t(s.err ? 'p561.save.failTitle' : 'pkp.approvedTitle');
-    if (s.err) {                                       // P561 追加 11: the system made no key — say so plainly, the approval stands
-      const f = mk('p', 'pkp-text pkp-fail', t('p561.save.fail')); f.id = 'pkp-fail'; f.dataset.err = s.err; f.setAttribute('role', 'status');
-      kids.push(f, mk('p', 'elev-note', t(s.notSaved || 'pk.notSaved')));
-    } else {
-      kids.push(mk('p', 'pkp-text', s.by ? t('pkp.approvedBy', { by: s.by }) : t('pkp.approvedText')));
-      kids.push(mk('p', 'elev-note', t('pkp.eachOwn') + ' ' + t('pkp.where.' + keyPlatform(H.ua(), H.touch()))));
-    }
-    row.append(btn('pkp-save', 'aj-btn--primary', s.err ? 'p539.fail.retry' : 'pk.save', () => saveTap()), btn('pkp-later', 'aj-btn--quiet', 'pk.later', () => { S.offer = null; S.req = null; hide(); }));
+    title.textContent = t('pkp.approvedTitle');
+    kids.push(mk('p', 'pkp-text', s.by ? t('pkp.approvedBy', { by: s.by }) : t('pkp.approvedText')));
+    kids.push(mk('p', 'elev-note', t('pkp.eachOwn') + ' ' + t('pkp.where.' + keyPlatform(H.ua(), H.touch()))));
+    row.append(btn('pkp-save', 'aj-btn--primary', 'pk.save', () => saveTap()), btn('pkp-later', 'aj-btn--quiet', 'pk.later', () => { S.offer = null; S.req = null; hide(); }));
   } else if (s.mode === 'result') {
     title.textContent = t('pkp.r.' + s.why + '.title');
     kids.push(mk('p', 'pkp-text', t('pkp.r.' + s.why)));

@@ -117,8 +117,6 @@ class Channel(unittest.IsolatedAsyncioTestCase):
         def bg(coro,*_):
             t=asyncio.create_task(coro);self.jobs.append(t);return t
         self.h.hist_add=MagicMock(return_value={'id':101})
-        # P562 (#337): the owner's WeChat message is a main-conversation message (serve._accept stand-in)
-        self.h._accept=AsyncMock(side_effect=lambda session,text,sid,blobs=None:NS(turn=200+self.h._accept.await_count))
         self.h._bg=bg;self.h._post=lambda fn,body:self.posts.append(body(None))
         self.h._ask_msg=lambda a,s:{'t':'ask','id':a.rid,'tool':a.tool,'summary':a.summary}
         self.c=WeChat(self.h,model=AsyncMock(return_value=TurnResult('reply','译文','',None,None)))
@@ -126,7 +124,6 @@ class Channel(unittest.IsolatedAsyncioTestCase):
         self.c.index=__import__('agentj.peer_guard',fromlist=['SecretIndex']).SecretIndex()
         self.c.store.data['account']=dict(ACCOUNT);self.c.store.save()
         self.tr=Transport([{}]*30);self.api=p.API(ACCOUNT,self.tr)
-        self.c.api_factory=lambda *_a:self.api      # P562: the main answer is sent later with a fresh client
         self.gen=self.c.store.data['generation']
     async def asyncTearDown(self):
         await self.c.stop()
@@ -138,17 +135,9 @@ class Channel(unittest.IsolatedAsyncioTestCase):
                      'item_list':[{'type':1,'text_item':{'text':'翻译这段话'}}]},**extra)
     async def receive(self,**extra):await self.c.receive(self.api,self.msg(**extra),self.gen)
     async def pending(self):
-        """A held request as 0.25.15a1 (P501…P559) left it in wechat.bin: P562 no longer makes new ones, but a stored one
-        still opens its signed card and can be claimed (published-format regression)."""
-        path=self.c.store.place(str(self.work),json.dumps({'source':'wechat','untrusted':True,'execute':False,'text':'翻译这段话'}).encode(),
-                                'message.json','application/json')
-        r=self.c.store.put('legacy-'+str(len(self.c.store.data['records'])),[path],'翻译这段话')
-        r['state']='pending';self.c.store.save()
-        self.c.open_card(r);await asyncio.sleep(0)
-        return r
-    async def complete(self,turn,text,end='done'):
-        self.c.completed({'id':turn,'src':{'k':'wechat'},'reply':{'text':text},'end':end})
-        await asyncio.gather(*list(self.c.card_tasks))
+        self.c.model.return_value=TurnResult('ask_owner','','',None,None)
+        await self.receive();await asyncio.sleep(0)
+        return next(iter(self.c.store.data['records'].values()))
     async def answer(self,a,ok=True,*,wrong=False,did='paired'):
         from agentj.serve import Host
         sk=Ed25519PrivateKey.generate();pk=sk.public_key().public_bytes(Encoding.Raw,PublicFormat.Raw)
@@ -160,35 +149,25 @@ class Channel(unittest.IsolatedAsyncioTestCase):
     async def test_owner_group_bot_rejected_before_model_or_context(self):
         for extra in ({'from_user_id':'other'},{'group_id':'g'},{'message_type':2},{'delete_time_ms':1}):await self.receive(**extra)
         self.assertEqual(self.c.store.data['counts']['ignored_non_owner_group_bot'],4)
-        self.h._accept.assert_not_awaited();self.assertFalse(self.tr.calls);self.assertEqual(self.c.store.data['context'],'')
+        self.c.model.assert_not_awaited();self.assertFalse(self.tr.calls);self.assertEqual(self.c.store.data['context'],'')
         self.assertFalse(list(self.work.rglob('*.json')))
-    async def test_one_merged_message_reaches_main_once_and_the_answer_goes_back(self):
+    async def test_one_merged_reply_inbox_dedup_and_no_main_submission(self):
         await self.receive(item_list=[{'type':1,'text_item':{'text':'one'}},{'type':1,'text_item':{'text':'two'}}])
         await self.receive()
-        self.c.model.assert_not_awaited();self.assertEqual(self.h._accept.await_count,1,'deduplicated, one main message')
-        session,text=self.h._accept.call_args.args[:2]
-        self.assertEqual((session.source_kind,session.provenance),('wechat',provenance.wechat_owner()))
-        self.assertEqual(provenance.owner_channel(session.provenance),'wechat');self.assertIn('one\ntwo',text)
-        self.assertTrue(text.startswith('【主人本人 · 从主人绑定的微信'))
-        self.assertFalse(self.tr.calls,'nothing is said before the main conversation answers')
+        self.assertEqual(len(self.tr.calls),1);self.c.model.assert_awaited_once();self.h.agent.submit.assert_not_called()
+        request=json.loads(self.tr.calls[0][0][3])['msg'];self.assertEqual(request['context_token'],'fixture-context')
+        self.assertEqual(len(request['item_list']),1)
         rec=next(iter(self.c.store.data['records'].values()));data=json.loads(Path(rec['paths'][0]).read_text())
         self.assertEqual(data['source'],'wechat');self.assertFalse(data['execute']);self.assertEqual(data['text'],'one\ntwo')
-        self.assertEqual((rec['state'],rec['turn']),('main',201))
-        await self.complete(201,'译文')
-        self.assertEqual(len(self.tr.calls),1)
-        request=json.loads(self.tr.calls[0][0][3])['msg'];self.assertEqual(request['context_token'],'fixture-context')
-        self.assertEqual(request['item_list'][0]['text_item']['text'],'译文')
-        self.assertEqual(rec['state'],'replied');self.assertEqual(rec['delivery'],'sent')
-        await self.complete(201,'译文');self.assertEqual(len(self.tr.calls),1,'answered once')
+        self.assertIn('来自微信',self.h.agent_notice.call_args.args[0])
     async def test_attachment_bytes_in_inbox_no_owner_files_given_to_model(self):
         key=b'k'*16;plain=b'only incoming content'
         self.tr.replies=[(200,{},p.encrypt(plain,key)),{}]
         await self.receive(item_list=[{'type':4,'file_item':{'file_name':'../../x.txt','media':{'full_url':p.CDN+'/d','aes_key':base64.b64encode(key).decode()}}}])
         r=next(iter(self.c.store.data['records'].values()))
         self.assertEqual(Path(r['paths'][1]).read_bytes(),plain)
-        blobs=self.h._accept.call_args.kwargs['blobs']      # P562: the file is the main message's attachment
-        self.assertEqual([Path(b.path).read_bytes() for b in blobs],[plain]);self.assertEqual(blobs[0].name,'../../x.txt')
-        self.assertNotIn('../',Path(blobs[0].path).name)
+        wrapped=self.c.model.call_args.args[2]
+        self.assertIn('only incoming content',wrapped);self.assertNotIn(str(self.work),wrapped)
     async def test_storage_encrypted_status_logs_omit_protocol_secrets(self):
         await self.receive()
         blob=self.c.store.path.read_bytes()
@@ -198,20 +177,12 @@ class Channel(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(Store(self.st).data['context'],'fixture-context')
         self.c.store.path.write_bytes(b'bad')
         with self.assertRaisesRegex(ValueError,'wechat_state_invalid'):Store(self.st)
-    async def test_no_main_conversation_says_so_and_never_runs_an_avatar(self):
-        self.h.agent=None
-        await self.receive()
-        self.h._accept.assert_not_awaited();self.c.model.assert_not_awaited()
-        [r]=self.c.store.data['records'].values();self.assertEqual((r['state'],r['outcome']),('replied','not_running'))
-        self.assertIn('主对话现在没有在运行',json.loads(self.tr.calls[0][0][3])['msg']['item_list'][0]['text_item']['text'])
-    async def test_failed_turn_and_credentials_never_cross_the_channel(self):
-        await self.receive();await self.complete(201,'',end='failed')
-        self.assertIn('没有完成',json.loads(self.tr.calls[-1][0][3])['msg']['item_list'][0]['text_item']['text'])
-        await self.receive(message_id=2);await self.complete(202,'key: sk-ant-api03-'+'A'*40)
-        said=json.loads(self.tr.calls[-1][0][3])['msg']['item_list'][0]['text_item']['text']
-        self.assertNotIn('sk-ant',said);self.assertIn('Agent J 网页',said)
-        await self.receive(message_id=3);await self.complete(203,'〔不回群〕')
-        self.assertEqual(len(self.tr.calls),2,'a silent answer sends nothing')
+    async def test_unsafe_or_model_tool_failure_holds_without_main_execution(self):
+        for i,res in enumerate((TurnResult('reply','draft','',None,'tool_call',tools=['exec']),TurnResult('reply','draft','',None,None,parsed=False))):
+            self.c.model.return_value=res;await self.receive(message_id=i)
+        self.h.agent.submit.assert_not_called()
+        self.assertEqual([r['state'] for r in self.c.store.data['records'].values()],['pending','pending'])
+        for c in self.tr.calls:self.assertTrue(json.loads(c[0][3])['msg']['item_list'][0]['text_item']['text'].endswith(HANDOFF))
     async def test_signed_confirmation_exact_summary_and_once(self):
         r=await self.pending();a=self.c.cards[r['id']]
         await self.answer(a,wrong=True);self.assertFalse(a.fut.done())
@@ -245,18 +216,15 @@ class Channel(unittest.IsolatedAsyncioTestCase):
         await self.c.unbind();self.assertFalse(await send.wait_ready())
         self.assertFalse(self.c.store.data['account']);self.assertFalse(self.c.store.data['context'])
         self.assertFalse((await self.c.claim(r['id'],approved=True))['ok'])
-    async def test_stop_before_delivery_drops_the_message(self):
-        original=self.c.store.place
-        def place(*args):
-            self.stopped=True
-            return original(*args)
-        with patch.object(self.c.store,'place',side_effect=place):
-            await self.receive()
-        self.assertFalse(self.tr.calls);self.h._accept.assert_not_awaited()
+    async def test_stop_while_model_awaits_drops_reply_and_execution(self):
+        entered=asyncio.Event();release=asyncio.Event()
+        async def model(*_):entered.set();await release.wait();return TurnResult('reply','reply','',None,None)
+        self.c.model=model;t=asyncio.create_task(self.receive());await entered.wait();self.stopped=True;release.set();await t
+        self.assertFalse(self.tr.calls);self.h.agent.submit.assert_not_called()
     async def test_inbox_symlink_is_refused(self):
         (self.work/'.agentj').symlink_to(self.root,target_is_directory=True)
         with self.assertRaises(Exception):await self.receive()
-        self.h._accept.assert_not_awaited();self.assertFalse(self.tr.calls)
+        self.c.model.assert_not_awaited();self.assertFalse(self.tr.calls)
     async def test_missing_context_never_blindly_push(self):
         self.c.store.data.update(context='',context_at=self.c.clock())   # P554: no time window; only a missing context refuses
         with self.assertRaises(p.Failure):await self.c.send(self.api,'text',self.gen)
@@ -286,12 +254,12 @@ class Channel(unittest.IsolatedAsyncioTestCase):
         self.assertIn('verify_code=123456',tr.calls[4][0][1]);self.assertIn('alt.weixin.qq.com',tr.calls[5][0][1]);self.assertNotIn('verify_code',tr.calls[6][0][1])
         self.assertNotIn('123456',str(self.st.log.call_args_list));self.assertNotIn(b'fixture-bot',self.c.store.path.read_bytes())
     async def test_poll_cursor_nonempty_dedup_and_error_boundary(self):
-        self.tr.replies=[{'msgs':[self.msg()], 'get_updates_buf':'cursor-one', 'longpolling_timeout_ms':35000},
-                         {'msgs':[self.msg()], 'get_updates_buf':''}, {'errcode':-14,'errmsg':'raw-secret'}]   # P562: no reply until main answers
+        self.tr.replies=[{'msgs':[self.msg()], 'get_updates_buf':'cursor-one', 'longpolling_timeout_ms':35000},{},
+                         {'msgs':[self.msg()], 'get_updates_buf':''}, {'errcode':-14,'errmsg':'raw-secret'}]
         await self.c.poll_once(self.api,self.gen)
         await self.c.poll_once(self.api,self.gen)
         self.assertEqual(self.c.store.data['cursor'],'cursor-one');self.assertEqual(self.c.poll_timeout,40)
-        self.assertEqual(self.h._accept.await_count,1)
+        self.c.model.assert_awaited_once()
         with self.assertRaises(p.Failure):await self.c.poll_once(self.api,self.gen)
         self.assertEqual(Store(self.st).data['cursor'],'cursor-one')
         self.assertNotIn(b'cursor-one',self.c.store.path.read_bytes())
@@ -301,7 +269,7 @@ class Channel(unittest.IsolatedAsyncioTestCase):
             return {'msgs':[self.msg()], 'get_updates_buf':'stale'}
         self.c.call=call
         await self.c.poll_once(self.api,self.gen)
-        self.h._accept.assert_not_awaited();self.assertEqual(self.c.store.data['cursor'],'')
+        self.c.model.assert_not_awaited();self.assertEqual(self.c.store.data['cursor'],'')
     async def test_restart_holds_but_never_executes_pending(self):
         r=await self.pending()
         await self.c.stop()
@@ -330,19 +298,21 @@ class Channel(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(Store(self.st).data['records'][r['id']]['state'],'pending')
         finally:
             await replacement.stop()
-    async def test_stop_mid_batch_keeps_cursor_for_resume(self):
+    async def test_stop_mid_batch_keeps_cursor_and_pending_for_resume(self):
         self.tr.replies=[{'msgs':[self.msg(),self.msg(message_id=2)],'get_updates_buf':'do-not-ack'}]
-        async def accept(*_a,**_k):
+        async def model(*_):
             self.stopped=True
-            return NS(turn=201)
-        self.h._accept=AsyncMock(side_effect=accept)
+            return TurnResult('reply','reply','',None,None)
+        self.c.model=model
         await self.c.poll_once(self.api,self.gen)
         self.assertEqual(self.c.store.data['cursor'],'')
         self.assertEqual(len(self.c.store.data['records']),1)
         await self.c.pause()
         row=next(iter(self.c.store.data['records'].values()))
-        self.assertEqual(row['state'],'main');self.h._accept.assert_awaited_once()
+        self.assertEqual(row['state'],'pending')
         self.assertFalse(self.tr.calls[1:]);self.h.agent.submit.assert_not_called()
+        self.stopped=False;self.c.open_card(row);await asyncio.sleep(0)
+        self.assertIn(row['id'],self.c.cards)
     async def test_finished_record_retention_does_not_lock_chat(self):
         now=self.c.clock()
         self.c.store.data['records']={str(i):{'id':str(i),'state':'replied','at':now-10,'until':now+10,'text':'old','paths':[]} for i in range(250)}
@@ -382,7 +352,7 @@ class Channel(unittest.IsolatedAsyncioTestCase):
             return original(*args)
         with patch.object(self.c.store,'place',side_effect=place):
             await self.receive()
-        self.h._accept.assert_not_awaited();self.assertFalse(self.c.store.data['context'])
+        self.c.model.assert_not_awaited();self.assertFalse(self.c.store.data['context'])
         self.assertFalse(self.c.store.data['records'])
     async def test_confirm_missing_identity_and_bad_redirect_fail(self):
         for response in ({'status':'confirmed','bot_token':'b'}, {'status':'scaned_but_redirect','redirect_host':'evil.test'}, {'status':'binded_redirect'}):

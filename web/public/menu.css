@@ -599,15 +599,6 @@ body:not([data-view="chat"]) #set-actions .bulb{display:flex}
 #settings .rsbody p{line-height:var(--ui-leading)}
 #settings .rsacts{display:flex;flex-wrap:wrap;gap:var(--ui-space-btn)}
 #settings .rsacts .aj-btn{min-height:var(--ui-btn-h);padding-inline:var(--ui-btn-px)}
-/* P561 追加 16 (董事长 10-28 「…和下面的按钮之间没有 margin」): a card's words never touch the buttons under them (重启服务, 重开 AI
-   会话, 方舟) — text ↔ the actions under it = --ui-space-content (DESIGN_TOKENS); inside .rsbody the --ui-space-control step stays */
-#settings .rscard>*+.rsacts{margin-top:var(--ui-space-content)}
-/* P561 追加 16: a Settings button's keyboard shortcut (js/setkeys.js, read from the shortcut table; none on a phone) — the
-   「键盘快捷键」 page's key caps; in a button it trails the label, in a note it sits in the line */
-#settings .setkbd,#settings #set-hostupg-how kbd{display:inline-block;min-width:1.7em;padding:0 var(--sp-1);border:1px solid var(--menu-line);
-  border-bottom-width:2px;border-radius:6px;background:var(--menu-chip);color:var(--menu-text);font:500 .86em/1.5 var(--font-mono);text-align:center}
-#settings .setkbd[hidden]{display:none}
-#settings .aj-btn>.setkbd{margin-inline-start:var(--ui-space-control);color:inherit;background:transparent;border-color:currentColor}
 #settings .rslive{display:flex;flex-direction:column;gap:var(--ui-space-control)}
 #settings .rslive>*{margin:0}
 #settings .rsbar{height:6px;border-radius:var(--ui-radius-pill);background:var(--menu-press);overflow:hidden}
@@ -835,8 +826,6 @@ html:root :is(#quoteDlgDel,#quoteDlgJump,#ctm-e-del,#ctm-e-save,#phone-env-copy,
 
 /* P527: standalone rescue cards need the same breathing room as list cards. */
 #settings #layout-diag-card{margin-top:var(--ui-space-content)}
-/* P561 追加 16: 「发送画面诊断」's note sits under the button — a note right under a button = --ui-space-control */
-#settings #layout-diag-card>.aj-btn+.setnote{margin-top:var(--ui-space-control)}
 
 /* P537: full-width prompt actions under the idle schedule. */
 #settings .sethb-prompt{grid-column:1 / -1;display:flex;flex-direction:column;align-items:flex-start;gap:8px;min-width:0}

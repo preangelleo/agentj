@@ -53,12 +53,12 @@ DRAW_SYSTEM = ('You draw one picture for the owner of Agent J with your own imag
 DRAW_FAILED = {
     'busy': ('这次没画出来：Codex 画图的模型正满载，换了模型重试也没成功。请过几分钟再发一次。',
              'The picture was not made: the Codex models were at capacity, also after switching models. Please send it again in a few minutes.'),
-    'quota': ('这次没画出来：Agent J 主机上的 Codex 额度已用完或被限流。额度恢复后再发一次。',
-              'The picture was not made: Codex on the Agent J host is out of quota or rate-limited. Send it again when the quota is back.'),
-    'login': ('这次没画出来：Agent J 主机上的 Codex 没有登录或登录已过期。在 Agent J 主机上重新登录 Codex 后再发一次。',
-              'The picture was not made: Codex on the Agent J host is not signed in. Sign in to Codex on the Agent J host, then send it again.'),
-    'native_image_unavailable': ('这次没画出来：Agent J 主机上没有能画图的 Codex（需要已登录的较新版 Codex）。',
-                                 'The picture was not made: the Agent J host has no Codex that can draw (a signed-in, recent Codex is needed).'),
+    'quota': ('这次没画出来：电脑上的 Codex 额度已用完或被限流。额度恢复后再发一次。',
+              'The picture was not made: Codex on the computer is out of quota or rate-limited. Send it again when the quota is back.'),
+    'login': ('这次没画出来：电脑上的 Codex 没有登录或登录已过期。在电脑上重新登录 Codex 后再发一次。',
+              'The picture was not made: Codex on the computer is not signed in. Sign in to Codex on the computer, then send it again.'),
+    'native_image_unavailable': ('这次没画出来：这台电脑上没有能画图的 Codex（需要已登录的较新版 Codex）。',
+                                 'The picture was not made: this computer has no Codex that can draw (a signed-in, recent Codex is needed).'),
 }
 
 
@@ -295,6 +295,9 @@ class WeChat:
                 return {'ok': False, 'why': 'already_bound'}
             if self.login_task and not self.login_task.done():
                 return {'ok': True}
+            external = getattr(self.h, 'external_channels', None)
+            if external is not None:
+                await external.offer_choice()
             self.login_task = self.h._bg(self.login(), 'wechat_login')
             return {'ok': True}
 
@@ -499,7 +502,7 @@ class WeChat:
                 self.h.st.log('channel_mirror', result='failed', via=source)
             return None
 
-    draw_failed = draw_said = None
+    draw_failed = None
 
     async def draw(self, text):
         """P557: an image request the selected executor cannot draw goes to the owner's Codex image tool in its own
@@ -509,7 +512,7 @@ class WeChat:
         channel says why (assistant) — never the main conversation."""
         from .channel_native import NativeCodex, draw_models
         sessions = self.sessions
-        self.draw_failed = self.draw_said = None
+        self.draw_failed = None
         if channel_forbidden('answer') or channel_forbidden('image.generate'):
             self.draw_failed = 'channel_forbidden'
             return None
@@ -528,8 +531,6 @@ class WeChat:
                     self.h.st.log('wechat_draw', result='ok', count=len(res.images), **({'model': model} if n else {}))
                 return res
             why = (getattr(res, 'detail', None) or getattr(res, 'error', None) or 'no_image') if res is not None else 'error'
-            if res is not None and not res.error and why == 'no_image':   # P562: the drawer's own reason (e.g. a real person's likeness)
-                self.draw_said = public_reply(str(res.text or ''), (), getattr(self.h, 'lang', None)) or None
             with contextlib.suppress(Exception):
                 self.h.st.log('wechat_draw', result=getattr(res, 'error', None) or 'no_image' if res is not None else 'error',
                               status=why, count=n + 1)
@@ -599,7 +600,7 @@ class WeChat:
         wd = (self.h.agent_cfg or {}).get('dir')
         if not wd:
             raise Failure('no_work_folder')
-        text, paths, model_parts, input_images, placed = [], [], [], [], []
+        text, paths, model_parts, input_images = [], [], [], []
         for item in items:
             if not isinstance(item, dict) or item.get('type') not in KINDS:
                 self.store.count('ignored_unknown_item')
@@ -627,7 +628,6 @@ class WeChat:
                     input_images.append(data)
                 path = await asyncio.to_thread(self.store.place, wd, data, name, mime)
                 paths.append(path)
-                placed.append((path, name, mime, len(data), typ))
                 if typ == 3 and isinstance(detail.get('text'), str):
                     text.append(detail['text'][:12000])
                 elif mime.startswith('text/') and len(data) <= 24000:
@@ -650,151 +650,60 @@ class WeChat:
             d['context_at'] = self.clock()
             d['context_stale'] = False   # P554: the owner's message reopens forwarding after a platform refusal
         self.store.count('received')
-        r['generation'] = generation
-        await self.to_main(api, r, generation, body, placed, input_images)
-        self.publish()
-
-    async def to_main(self, api, r, generation, body, placed, input_images):
-        """P562 (#337, chairman 10-28): the owner's WeChat message is an ordinary owner message in the main conversation —
-        queued behind a busy turn, its page labelled 「微信」, the answer back here (completed). Approvals: Web App cards only
-        (serve.ask as this channel's); this chat only hears where to confirm. A picture the main harness cannot draw → the
-        owner's Codex draws it here (owner_channels.draw)."""
-        from types import SimpleNamespace
-        from . import inbox, owner_channels as oc
-        from .text import clean
-        lang = oc.lang_of(self.h)
-
-        async def say(words):
-            from .wechat_forward import plain_text
-            try:
-                await self.send(api, plain_text(self.greet(words)), generation)
-                r['delivery'] = 'sent'
-            except Exception:  # noqa: BLE001 — ambiguous delivery is never replayed
-                r['delivery'] = 'unknown'
-                self.store.count('send_failed')
-        refusal = getattr(self.h, 'seat_refusal', lambda: None)()
-        if refusal or not getattr(self.h, 'agent', None) or self.h.stopped():
-            r.update(state='replied', outcome='not_running')
-            self.store.save()
-            await say(refusal or oc.not_running_text(self.h))
-            self.store.save()
-            return
-        if not placed and not input_images and oc.wants_image(body) and not oc.main_draws(self.h):
-            r.update(state='drawing', outcome='draw')
-            self.store.save()
-            words, images = await oc.draw(self, self.h, 'wechat', body)
-            if generation != self.store.data['generation'] or self.h.stopped() or self.closed:
-                return
-            r['state'] = 'replied'
-            if words is not None:
-                await self.deliver(api, generation, r, words, images, [])
-                oc.page_for(self.h, 'wechat', body, words, await self.place_images('wechat', images))
-            self.store.save()
-            return
-        blobs = [SimpleNamespace(device='wechat:owner', bid=secrets.token_hex(16), name=str(name)[:128], mime=mime, size=size,
-                                 kind=inbox.kind_of(mime), path=path, origin='file', secs=None, voice='')
-                 for path, name, mime, size, _typ in placed]
-        src = provenance.wechat_owner()
-        session = SimpleNamespace(device='wechat:owner', name=oc.name('wechat', lang), cid=0, source_kind='wechat', provenance=src)
-
-        async def on_card():   # a step waits for a Web App card: this chat only learns where to confirm
-            if generation == self.store.data['generation'] and not self.h.stopped() and not self.closed:
-                with contextlib.suppress(Exception):
-                    await self.send(self.api_factory(self.store.data['account']), confirm_text(self.h), generation)
-        text = provenance.header(src) + '\n' + provenance.body(body or ('（只有附件）' if lang != 'en' else '(attachments only)'), src)
-        send = (await self.h._accept(session, clean(text, 20000), None, blobs=blobs) if blobs else
-                await self.h._accept(session, clean(text, 20000), None))
-        if send is None or type(getattr(send, 'turn', None)) is not int:
-            r.update(state='replied', outcome='not_running')
-            self.store.save()
-            await say(oc.not_running_text(self.h))
-            self.store.save()
-            return
-        send.on_card = on_card
-        r.update(state='main', turn=send.turn, outcome='main')
-        self.store.save()
-        self.h.st.log('wechat_main', id=r['id'][:12], turn=send.turn)
-
-    def greet(self, words):
-        d = self.store.data
-        if d.get('greeting') != 'needs_message':
-            return words
-        d['greeting'] = 'sent'       # uncertain delivery must not replay a greeting
-        self.store.save()
-        return ('你好，微信已连接。我是你的 Agent J。\n\n' if self.h.lang == 'zh' else 'Hello! WeChat is connected. I am your Agent J.\n\n') + words
-
-    def completed(self, turn):
-        """P562: a main-conversation turn that answered the owner's WeChat message → that answer back to WeChat, once."""
-        if not turn or (turn.get('src') or {}).get('k') != 'wechat' or self.closed:
-            return
-        r = next((x for x in self.store.data['records'].values() if x.get('turn') == turn.get('id') and x.get('state') == 'main'), None)
-        if r is None:
-            return
-        r['state'] = 'replied'        # before any I/O: never answered twice
-        self.store.save()
-        text = (turn.get('reply') or {}).get('text', '')
-        failed = turn.get('end') in ('failed', 'stopped')
-        task = asyncio.get_running_loop().create_task(self.answer_main(r, text, failed))
-        self.card_tasks.add(task)
-        task.add_done_callback(self.card_tasks.discard)
-
-    async def answer_main(self, r, text, failed):
-        from .silent import is_silent
-        from . import owner_channels as oc
-        generation = self.store.data['generation']
-        if r.get('generation') != generation or not self.store.data['account'] or self.h.stopped():
-            return
-        lang = oc.lang_of(self.h)
-        if is_silent(text) or not str(text or '').strip():
-            if not failed:
-                r['outcome'] = 'silent'
-                self.store.save()
-                return
-            text = ('这一轮没有完成，请在 Agent J 网页查看。' if lang != 'en' else 'This turn did not complete. Check Agent J Web App.')
-        named, files, _paths, keys = await asyncio.to_thread(attachments, self.h, text)
-        reply = public_reply(text, named, lang, files)
-        if reply is None:      # credentials in the answer: they never cross the channel
-            from .channel_avatar import CONTEXT_WEB
-            reply, named, files = (CONTEXT_WEB if lang != 'en' else 'The answer is on Agent J Web App; please read it there.'), [], []
-        if keys:
-            from . import owner_route, privacy, tg_media
-            await owner_route.offer_files(self.h, keys, lang)
-            reply = privacy.owner_text(reply + '\n\n' + tg_media.skip_lines([k for k, _r in keys], lang))
-        from .privacy import redact
-        r['reply_summary'] = redact(str(reply))[:2000]
-        await self.deliver(self.api_factory(self.store.data['account']), generation, r, reply, named, files)
-        self.store.save()
-
-    async def deliver(self, api, generation, r, words, images, files):
-        """The answer and its pictures / files as WeChat messages (WeChat's 25 MiB media cap is checked by attachments())."""
-        from .wechat_forward import plain_text
-        r['delivery'] = 'unknown'
+        from .channel_card import notice as channel_notice; channel_notice(self.h, 'wechat', body, paths[1:], path)  # P543 (#308): the words, not the path
         try:
-            await self.send(api, plain_text(self.greet(words)), generation)
-            for _mime, data in images:
+            async def interim():   # P543: an approval card is waiting — the channel only learns where to confirm
+                await self.send(api, confirm_text(self.h), generation)
+            reply = await self.assistant('\n'.join([body, *model_parts])[:32000], input_images, interim)
+        except Exception:
+            reply = None
+            self.assistant_waiting = True
+        if generation != self.store.data['generation'] or self.h.stopped() or self.closed:
+            return
+        waiting = reply is None and getattr(self, 'assistant_waiting', False)
+        r['state'] = 'replied' if reply is not None else 'waiting_model' if waiting else 'pending'
+        self.store.save()
+        if reply is None and not waiting:
+            self.open_card(r)
+        from .privacy import redact
+        r['reply_summary'] = redact(str(reply or ''))[:2000]
+        r['outcome'] = 'reply_prepared' if reply is not None else 'waiting_model' if waiting else 'owner_review'
+        r['delivery'] = 'unknown'
+        self.store.save()
+        try:
+            outgoing = reply if reply is not None else handoff(self.h)
+            if waiting:
+                outgoing = self.waiting_reply()
+            greeting = d.get('greeting') == 'needs_message'
+            if greeting:
+                d['greeting'] = 'attempted'  # uncertain delivery must not replay a greeting
+                self.store.save()
+                outgoing = ('你好，微信已连接。我是你的 Agent J。\n\n' if self.h.lang == 'zh' else 'Hello! WeChat is connected. I am your Agent J.\n\n') + outgoing
+            from .wechat_forward import plain_text
+            await self.send(api, plain_text(outgoing), generation)
+            if greeting:
+                d['greeting'] = 'sent'
+                self.store.save()
+            for _mime, data in getattr(self, 'reply_images', []):
                 if generation != self.store.data['generation'] or self.h.stopped() or self.closed:
                     break
                 item = await asyncio.to_thread(Media(api).upload, self.store.data['account']['ilink_user_id'], {'type':2}, data)
                 await self.send(api, '', generation, item=item)
-            for name, _mime, data in files:
+            for name, _mime, data in getattr(self, 'reply_files', []):   # P557: a file the avatar named → WeChat file message
                 if generation != self.store.data['generation'] or self.h.stopped() or self.closed:
                     break
                 item = await asyncio.to_thread(Media(api).upload, self.store.data['account']['ilink_user_id'],
                                                {'type':4, 'file_item':{'file_name':name}}, data)
                 await self.send(api, '', generation, item=item)
-        except Exception:  # noqa: BLE001 — ambiguous delivery is never replayed
+        except Exception:
+            r['delivery'] = 'unknown'
             self.store.count('send_failed')
         else:
             r['delivery'] = 'sent'
-
-    async def place_images(self, source, images):
-        """Pictures drawn for a channel → inbox files, so the Web App page can show them."""
-        wd, out = (self.h.agent_cfg or {}).get('dir'), []
-        for i, (mime, data) in enumerate(images if wd else (), 1):
-            with contextlib.suppress(Exception):
-                out.append(await asyncio.to_thread(self.store.place, wd, data, source + '-drawn-' + str(i) + '.' +
-                                                   mime.split('/')[1].replace('jpeg', 'jpg'), mime))
-        return out
+        self.store.save()
+        if reply is not None:
+            await self.mirror('wechat', reply)
+        self.publish()
 
     async def send(self, api, text, generation, *, item=None):
         d = self.store.data
@@ -823,14 +732,10 @@ class WeChat:
             self.publish()
 
     def open_card(self, r):
-        arming = self.__dict__.setdefault('arming', set())   # P562: one confirm task per held request (run() re-arms twice)
-        if (not self.closed and not self.h.stopped() and r['id'] not in self.cards and r['id'] not in arming
-                and r['state'] == 'pending' and r['until'] > self.clock()):
-            arming.add(r['id'])
+        if not self.closed and not self.h.stopped() and r['id'] not in self.cards and r['state'] == 'pending' and r['until'] > self.clock():
             task = self.h._bg(self.confirm(r), 'wechat_confirmation')
             self.card_tasks.add(task)
             task.add_done_callback(self.card_tasks.discard)
-            task.add_done_callback(lambda _t, rid=r['id']: arming.discard(rid))
 
     def open_messages(self, s):
         return [self.h._ask_msg(a, s) for a in self.cards.values() if not a.fut.done()]
@@ -991,8 +896,6 @@ class WeChat:
         for r in self.store.data['records'].values():
             if r['state'] == 'processing':
                 r['state'] = 'pending'
-            elif r['state'] in ('main', 'drawing'):
-                r['state'] = 'orphaned'     # P562 (review S4): that turn belonged to the last run; never matched to a new one
             self.open_card(r)
         self.store.expire()
         failures = 0

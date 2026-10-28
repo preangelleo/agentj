@@ -339,4 +339,4 @@ class TelegramDoor(_TgBase):
     async def test_owner_message_passes_with_a_seat(self):
         self.host.seat_refusal = lambda: None
         self.assertTrue(await self.t.incoming(tg_msg('hello'), self.cfg))
-        self.assertEqual(self.host._accept.await_count, 1)      # P562: the owner's chat reaches the main conversation
+        self.assertEqual(self.host.external_channels.receive_owner.await_count, 1)

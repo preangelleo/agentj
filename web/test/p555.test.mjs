@@ -72,7 +72,7 @@ test('a failed Face ID on a key thought to be here (#317) still offers a new key
   const fail = mkBox();
   A.paintPk(fail, { fa: 'local', err: 'NotAllowedError', retry: () => {} });
   const keys = fail.kids[1].children.map((x) => x.dataset.k);
-  assert.deepEqual(keys, ['p539.fail.retry', 'p561.pk.reset']);   // P561: 「重新设置」
+  assert.deepEqual(keys, ['p539.fail.retry', 'p539.fail.setup']);
   const quiet = mkBox();
   A.paintPk(quiet, { fa: 'local' });
   assert.equal(quiet.hidden, true);
@@ -133,16 +133,14 @@ test('own-key get(): transports + hints by where the key lives (never a bare all
   const F = await import('../public/js/faceid.js');
   const id = Buffer.alloc(16, 3).toString('base64url');
   const w = (st) => { const o = F.wantOf(id, st); return { tr: o.allowCredentials.map((x) => x.transports), hints: o.hints, n: o.allowCredentials[0].id.length }; };
-  // P561 (追加 8): this device's own key → the transports its create() reported here, else none, and no hints (a key kept by
-  // Google Password Manager was not found under ['internal'] + 'client-device'); a borrowed key keeps the phone route
-  assert.deepEqual(w('local'), { tr: [[]], hints: undefined, n: 16 });
+  assert.deepEqual(w('local'), { tr: [['internal']], hints: ['client-device'], n: 16 });
   assert.deepEqual(w('borrowed'), { tr: [['hybrid']], hints: ['hybrid'], n: 16 });
-  assert.deepEqual(w('unknown'), { tr: [[]], hints: undefined, n: 16 });
+  assert.deepEqual(w('unknown'), { tr: [['internal', 'hybrid']], hints: ['client-device'], n: 16 });
   assert.deepEqual(w('nonsense'), w('unknown'));
-  F.setOwnState('borrowed');
-  assert.deepEqual(F.wantOf(id).allowCredentials[0].transports, ['hybrid'], 'pk_state sets the default');
+  F.setOwnState('local');
+  assert.deepEqual(F.wantOf(id).allowCredentials[0].transports, ['internal'], 'pk_state sets the default');
   F.setOwnState('bogus');
-  assert.deepEqual(F.wantOf(id).allowCredentials[0].transports, []);
+  assert.deepEqual(F.wantOf(id).allowCredentials[0].transports, ['internal', 'hybrid']);
   // every WebAuthn get() in the page names transports (static lock)
   for (const f of ['faceid.js', 'vault.js']) {
     const src = read('../public/js/' + f);

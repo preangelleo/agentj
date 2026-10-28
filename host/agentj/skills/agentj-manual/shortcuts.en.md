@@ -34,7 +34,6 @@ Function keys also work while a text field is focused. System or input-method sh
 | `Alt+Shift+F` | Settings → Friends | Open Friends |
 | `Alt+Shift+E` | Settings → Bots | Open Customer service |
 | `Alt+Shift+V` | — | Open Setup |
-| `Alt+Shift+S` | Tap the button, then confirm | Stop all Agents (confirm first) |
 
 ## Single keys and other combinations
 
@@ -184,7 +183,7 @@ Function keys also work while a text field is focused. System or input-method sh
 | — | Hold Search (blocked by recording, attachments or an unsubmitted card) | Save draft and force refresh |
 | — | At the message top, pull down and release; blocked by recording, attachments or unfinished cards | Save draft and update the page |
 | `⌘+C` / `Ctrl+C` | Hold a swatch to copy HEX; move to cancel | Copy swatch HEX |
-| `Alt+Shift+S` | Tap the button, then confirm | Stop all Agents (confirm first) |
+| — | Tap the button, then confirm | Stop all Agents (confirm first) |
 | — | Tap the button, then confirm | Reopen AI session (confirm first) |
 | — | Tap | Send layout diagnostic |
 | `/` · `⌘+K` / `Ctrl+K` | Tap the magnifier at the top right of the list | Search the shortcut list: type a word to filter by action, key or gesture, in Chinese or English |

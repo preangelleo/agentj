@@ -128,7 +128,7 @@ try {
         await fake.addTurn({ k: 'phone', text: '', att: [{ name: 'v2.webm', mime: 'audio/webm', bytes: 4000, kind: 'audio', asr: { ok: false, why: 'not_installed' } }] }, '收到语音。', 'done');
         await newest();
         await waitFor(p, `document.getElementById('omText').textContent.includes('没转出文字')`);
-        check(await ev(p, `document.getElementById('omText').textContent.includes('Agent J 主机上还没装转写')`), 'failed: the reason');
+        check(await ev(p, `document.getElementById('omText').textContent.includes('电脑上还没装转写')`), 'failed: the reason');
         // read-back: a fresh load gets the page from hist_page with its transcript
         await ev(p, `location.reload()`);
         await waitState(p, 'ready');

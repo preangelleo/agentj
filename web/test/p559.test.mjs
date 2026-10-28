@@ -40,17 +40,17 @@ test('a touch tablet in desktop mode is the Android family: Touch ID, never Face
 
 test('get() form: hinted by default, plain after a failure; a pass keeps the form, both forms failing marks the key', () => {
   mem.clear();
-  const hinted = F.wantOf(ID, 'local');                    // P561 追加 8: no hints, no hard-coded ['internal'] (nothing kept → [])
-  assert.deepEqual(hinted.allowCredentials[0].transports, []);
-  assert.equal(hinted.hints, undefined);
+  const hinted = F.wantOf(ID, 'local');
+  assert.deepEqual(hinted.allowCredentials[0].transports, ['internal']);
+  assert.deepEqual(hinted.hints, ['client-device']);
   const plain = F.wantOf(ID, 'local', true);
   assert.deepEqual(plain.allowCredentials[0].transports, []);
   assert.equal(plain.hints, undefined);
   assert.equal(F.isPlain(ID), false);
-  assert.equal(F.noteResult(ID, false), true);             // hinted failed → next tap plain; P561: marked 「找不到了」 at once
-  assert.equal(F.isPlain(ID), true); assert.equal(F.failedHere(), true);
+  assert.equal(F.noteResult(ID, false), true);             // hinted failed → next tap plain, not yet 「没通过」
+  assert.equal(F.isPlain(ID), true); assert.equal(F.failedHere(), false);
   assert.deepEqual(F.wantOf(ID, 'local').allowCredentials[0].transports, []);
-  assert.equal(F.noteResult(ID, false), false);            // plain failed too → still marked, back to hinted
+  assert.equal(F.noteResult(ID, false), false);            // plain failed too → 「上次没有通过」, back to hinted
   assert.equal(F.failedHere(), true); assert.equal(F.isPlain(ID), false);
   F.noteResult(ID, false); assert.equal(F.noteResult(ID, true), true);   // plain passed: kept, mark cleared
   assert.equal(F.failedHere(), false); assert.equal(F.isPlain(ID), true);
@@ -69,8 +69,8 @@ test('approve(): the second tap after a failure really asks in the plain form', 
   await assert.rejects(F.approve(new Uint8Array(32), ID, false, 'local'));
   fail = false;
   await F.approve(new Uint8Array(32), ID, false, 'local');
-  assert.deepEqual(seen[0].allowCredentials[0].transports, []);   // P561 追加 8
-  assert.equal(seen[0].hints, undefined);
+  assert.deepEqual(seen[0].allowCredentials[0].transports, ['internal']);
+  assert.deepEqual(seen[0].hints, ['client-device']);
   assert.deepEqual(seen[1].allowCredentials[0].transports, []);
   assert.equal(seen[1].hints, undefined);
   assert.equal(F.failedHere(), false);
@@ -84,13 +84,13 @@ test('Settings: 「已设好」 only while the key passes here', () => {
   const bad = box();
   A.paintPkRow('local', { ...bad, failed: true });
   assert.equal(bad.row.dataset.pk, 'failed');
-  assert.equal(bad.label.textContent, A.withBio('p561.pk.st.missing'));   // P561 wording
+  assert.equal(bad.label.textContent, A.withBio('p559.pk.st.failed'));
   assert.equal(bad.setupBtn.hidden, false);
-  assert.equal(bad.setupBtn.textContent, T.t('p561.pk.reset'));
-  assert.equal(bad.note.hidden, true);   // P561 (10-27 23:1x): no long note
+  assert.equal(bad.setupBtn.textContent, T.t('p539.fail.setup'));
+  assert.equal(bad.note.textContent, A.withBio('p559.pk.failedNote'));
   assert.match(read('../public/app.js'), /failed: passkey\.failedHere\(\)/);
   const D = Object.fromEntries(['web.zh.src', 'web.zh.override', 'web.zh', 'web.en'].map((n) => [n, JSON.parse(read(`../i18n/${n}.json`))]));
-  for (const k of ['p561.pk.st.missing', 'p561.pk.reset']) for (const d of Object.values(D)) assert.ok(d[k], k);
+  for (const k of ['p559.pk.st.failed', 'p559.pk.failedNote']) for (const d of Object.values(D)) assert.match(d[k], /\{bio\}/, k);
 });
 
 // P559 追加 (chairman 17:13): only two names in titles / cards / buttons — iPhone / iPad = Face ID; Mac, Android / HarmonyOS
@@ -107,7 +107,7 @@ test('the unlock is named Face ID or Touch ID — never 屏幕锁 / 指纹或人
     ['Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/141.0', 0, 'Touch ID'], ['Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X)', 5, 'Face ID'],
     ['Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Safari/605', 5, 'Face ID']]) {   // the last one: an iPad asking for the desktop site
     T.setTextOs(ENV.osOf(ua, touch));
-    for (const k of ['p539.pk.st.local', 'p539.pk.st.none']) assert.equal(A.withBio(k), '本机 ' + want + '：' + zh[k].split('：')[1], ua + ' ' + k);
+    for (const k of ['p539.pk.st.local', 'p539.pk.st.none', 'p559.pk.st.failed']) assert.equal(A.withBio(k), '本机 ' + want + '：' + zh[k].split('：')[1], ua + ' ' + k);
     assert.equal(T.t('p336.faYes'), '用 ' + want + ' 确认');
   }
   T.setTextOs(undefined);
@@ -145,8 +145,8 @@ test('P560: a pass or a second failure tells Settings to repaint its row in the 
   const had = globalThis.dispatchEvent;
   globalThis.dispatchEvent = (e) => { seen.push(e.type); return true; };
   try {
-    F.noteResult(ID, false); assert.deepEqual(seen, ['agentj-pk-failed-change']);        // P561: the first refusal → 找不到了
-    F.noteResult(ID, false); assert.deepEqual(seen, ['agentj-pk-failed-change']);        // still marked: no repaint
+    F.noteResult(ID, false); assert.deepEqual(seen, []);                                 // one failure: still 已设好
+    F.noteResult(ID, false); assert.deepEqual(seen, ['agentj-pk-failed-change']);        // both forms failed → 上次没有通过
     F.noteResult(ID, true); assert.deepEqual(seen, ['agentj-pk-failed-change', 'agentj-pk-failed-change']);   // passed → 已设好
     F.noteResult(ID, true); assert.equal(seen.length, 2);                                // no change, no repaint
   } finally { globalThis.dispatchEvent = had; }

@@ -4,7 +4,7 @@ import { QueueWatch } from './queue-watch.js';
 import { paintIOSChrome } from './ios-chrome.js';
 import { createMicrophone } from './microphone.js';
 import { copyButton } from './copycode.js';
-import {phoneConfirmation, isTV} from './tvremote.js';
+import {phoneConfirmation} from './tvremote.js';
 import {focusDraft, releaseDraft, touchComposer} from './composer-focus.js';
 import {pasteRoute, CLIP_TEXT_MAX} from './paste-route.js';
 import { termKey, backslashEnter, killed, forget as forgetKill } from './termkeys.js';   // P412 (#174)
@@ -34,7 +34,7 @@ import { RelayMD } from './md.js';
 import { copyable } from './copycode.js';   // P292: every code / pre can be copied
 import { upgrade as upgradeWords, forget as forgetRendered } from './render.js';   // P57: lazy code / math / diagrams
 import { cmdGist } from './cmdgist.js';
-import { paintPk, preauthShown, preauthLabelKey, mergeDraft, failKey, scrollToPkRow } from './pkassist.js';   // P539   // P341: the approval card's plain line when the Agent gave none
+import { paintPk, preauthShown, preauthLabelKey, mergeDraft, failKey } from './pkassist.js';   // P539   // P341: the approval card's plain line when the Agent gave none
 import { t, lang, onLang, fillText, both } from './t.js';
 import { el, toast, executionToast, toastOff, toastAction, human, stamp, mmss, confirmSheet } from './ui.js';
 import * as sfx from './sfx.js';
@@ -375,9 +375,8 @@ function paintTags(item){
     else if (item.tool === "passphrase_reset") { const s = document.createElement("span"); s.className = "atag danger"; s.textContent = t(item.passkey_required ? "ppReset.tagFace" : "ppReset.tag"); box.appendChild(s); }   // #118
     else if (item.tool === "wechat_confirm") { const s = document.createElement("span"); s.className = "atag"; s.textContent = t("wc.confirmTag"); box.appendChild(s); }
     else if (item.tool === "AuthRescue") { const s = document.createElement("span"); s.className = "atag danger"; s.textContent = t("ar.confirmTag"); box.appendChild(s); }
-    else if (item.passkey_required && (item.tool === "SandboxOnce" || !cardNoKey(item))) { const s = document.createElement("span"); s.className = "atag danger"; s.textContent = t(item.tool === "SandboxOnce" ? "ask.sandboxOnce" : "p336.faTitle"); box.appendChild(s); }   // P561 追加 17: a remote without its own key gets no 「用 Face ID 确认」 tag (its category chips below instead, never the low-risk tag)
+    else if (item.passkey_required) { const s = document.createElement("span"); s.className = "atag danger"; s.textContent = t(item.tool === "SandboxOnce" ? "ask.sandboxOnce" : "p336.faTitle"); box.appendChild(s); }
     else if (item.cats && item.cats.length) for (const c of item.cats){ const s = document.createElement("span"); s.className = "atag danger"; s.dataset.cat = c; s.textContent = t('ask.cat.' + catKey(c, item)); box.appendChild(s); }
-    else if (item.passkey_required) {}
     else if (item.goal !== "grant" && item.goal !== "attack") { const s = document.createElement("span"); s.className = "atag low"; s.textContent = t('ask.low'); box.appendChild(s); }   // P339: an attack card is never tagged low
   }
   if (item && item.task){ const s = document.createElement("span"); s.className = "atag task"; s.textContent = t('ask.task', {task: item.task}); box.appendChild(s); }
@@ -499,7 +498,7 @@ function renderPermission(card, p){
   const pairAsk = !!(p && p.tool === "pair_device") || ppAsk;   // P153 (§3.3): a new remote waits; the host wrote the card text
   const danger = !!(p && (p.passkey_required || pairAsk || (p.cats && p.cats.length) || p.goal === "attack"));
   el("sheet").classList.toggle("danger", danger);
-  el("sheetTitle").textContent = handoffAsk ? t("wc.confirmTitle") : ppAsk ? t("ppReset.title") : pairAsk ? t("pair.card.title") : rescueAsk ? t("ar.confirmTitle") : p && p.passkey_required && (p.tool === "SandboxOnce" || !cardNoKey(p)) ? t(p.tool === "SandboxOnce" ? "ask.sandboxTitle" : "p336.faTitle") : danger ? t('r.verb.danger', {verb: verb(tool)}) : verb(tool);
+  el("sheetTitle").textContent = handoffAsk ? t("wc.confirmTitle") : ppAsk ? t("ppReset.title") : pairAsk ? t("pair.card.title") : rescueAsk ? t("ar.confirmTitle") : p && p.passkey_required ? t(p.tool === "SandboxOnce" ? "ask.sandboxTitle" : "p336.faTitle") : danger ? t('r.verb.danger', {verb: verb(tool)}) : verb(tool);
   // P339: a goal card the host put in plain words — 「目标进行中：{who} 想{what}…」, the three lines under it, and the raw
   // command (tool tag, 展开全部, description) folded behind 「详情」 (closed for every new card).
   const human = goalHuman(p);
@@ -527,10 +526,7 @@ function renderPermission(card, p){
   if (goalAdd) el("apprGoalAddText").textContent = p.goal_add;
   el("apprBtns").hidden = !open || !sign;
   el("apprDeny").disabled = apprBusy;
-  // P561 追加 17: a Face ID card on a remote with no key of its own never shows 「用 Face ID 确认」 (it could only fail) — the
-  // block under the buttons says so, with 「去设置」 and 「拒绝」 (a TV keeps P387's 「在手机上确认」)
-  const noKey = cardNoKey(p);
-  el("apprAllow").hidden = !p || p.local_only || noKey;
+  el("apprAllow").hidden = !p || p.local_only;
   el("apprAllow").disabled = apprBusy;
   el("apprAllowLbl").textContent = handoffAsk ? t("wc.confirm") : ppAsk ? t(p.passkey_required ? 'ppReset.allowFace' : 'ppReset.allow') : pairAsk ? t(p.passkey_required ? 'pair.card.allowFace' : 'pair.card.allow') : rescueAsk ? t('ar.confirmStart') : p && p.passkey_required ? t(p.tool === 'SandboxOnce' ? 'ask.sandboxOnce' : 'p336.faYes') : t('r.appr.hold');   // P154 追加 9: 「长按批准」 on every card, ⚠ cards too — the room goes to the ⌘↩ hint
   el("apprDeny").firstElementChild.textContent = ppAsk ? t('r.appr.deny') : pairAsk ? t('pair.card.deny') : t('r.appr.deny');
@@ -549,14 +545,7 @@ function renderPermission(card, p){
   el("askState").textContent = text;
   // P539: under the buttons — no own passkey on this remote (fa_s), or why the last passkey tap failed + 再试一次 (from the tap)
   const pkFail = open && sign && apprFail && apprFail.id === p.id ? apprFail.err : null;
-  // P563 追加 7: no key here → the words go on top (the line + where else to approve), 「去设置」 · 「拒绝」 one button row under
-  // them (the card's own .apprbtns, 「去设置」 in 「批准」's slot); every other passkey line stays under the buttons (P539)
-  const goShown = !!(p && open && sign && noKey);
-  el("apprGo").hidden = !goShown;
-  el("apprGo").disabled = apprBusy;
-  if (goShown && !apprBusy) el("askState").before(el("apprPk")); else el("apprBtns").after(el("apprPk"));
-  paintPk(el("apprPk"), goShown && !apprBusy ? {noKey: true}
-    : p && open && sign && p.passkey_required && p.fa && !apprBusy ? {fa: p.fa_s, err: pkFail, retry: () => apprPost(p, "allow")} : {});
+  paintPk(el("apprPk"), p && open && sign && p.passkey_required && p.fa && !apprBusy ? {fa: p.fa_s, err: pkFail, retry: () => apprPost(p, "allow")} : {});
   el("elsewhereText").textContent = handoffAsk ? t("wc.confirmNote") : ppAsk && open ? t('ppReset.where') : pairAsk && open ? t('pair.card.where') : !p ? t('r.appr.elsewhere') : p.local_only ? t('r.appr.st.localOnlyShort') : open ? t('r.appr.elsewhereLive') : t('r.appr.elsewhere');
   paintTags(p || null);
 }
@@ -646,10 +635,7 @@ function toggleCmd(){
   pre.classList.remove("clip");
   measureCmd();
 }
-/** P561 追加 17: the Agent J host holds no key for this remote (a Face ID card without `fa`). */
-const cardNoKey = (p) => !!(p && p.passkey_required && !p.fa && !p.local_only && !isTV());
 async function apprPost(p, action){
-  if(action!=="deny"&&cardNoKey(p))return;   // P561 追加 17: nothing to confirm with here — the card already says where
   if(action!=="deny"&&p.passkey_required&&phoneConfirmation(!p.fa))return;
   // A passkey approval waits for the passkey sheet, so only that one stays up until it is signed.
   const now = !(p.passkey_required && action !== "deny") && cur && cur.card;
@@ -1264,7 +1250,6 @@ function sourceOf(src){
     : {kind: "dev", label: (src.dev && deviceInfo(src.dev)?.label) || src.name || t('r.src.otherDevice')};
   if (src.k === "telegram") return {kind:"tg",label:"Telegram"};
   if (src.k === "email") return {kind:"tg",label:t('r.src.email', {name: src.name || ''})};   // P170: same quiet colour as Telegram
-  if (src.k === "wechat") return {kind:"tg",label:src.name || "WeChat"};   // P562: the owner's WeChat — the host names it 「微信」 / "WeChat"
   if (src.k === "friend_report") return {kind:"sys", label:t('p498.friend', {name:src.name || ''})};
   if (src.k === "host") return {kind: "host", label: t('r.src.host')};
   // P132: a page the Agent started itself says why — a /loop or wake-up check, a background task, or just reporting in
@@ -4547,7 +4532,6 @@ export function init(ctx){
 
   // sheet
   el("apprDeny").addEventListener("click", () => { const p = apprLive(); if (p) apprPost(p, "deny"); });
-  el("apprGo").addEventListener("click", () => { if (document.body.dataset.sheet === "1") el("sheetClose").click(); scrollToPkRow(); });   // P561 追加 17 · P563 追加 7: fold the card (it stays pending), then Settings' row
   el("cmdMore").addEventListener("click", toggleCmd);
   el("cmdCopy").addEventListener("click", () => copyOut(cmdFull, t('r.appr.cmdCopied')));
   holdToApprove(el("apprAllow"), "allow");   // @ix appr.approve (+ apprHotkey: ⌘ / Ctrl+Enter)
@@ -5214,8 +5198,6 @@ export function init(ctx){
     "app.bots": () => keyNav(() => C.bots && C.bots()),
     "app.setup": () => keyNav(() => C.setup && C.setup()),
     "app.pending": () => { if (shown("pendTag")) el("pendTag").click(); },
-    // P563 追加 2: Alt+Shift+S = Settings → 紧急停止所有 Agent — the same controls.onEstop as the button, its confirm sheet first
-    "app.stop_all": () => keyNav(() => C.estop && C.estop(true)),
     "compose.focus": () => { closeMenu(); focusComposer(); input.setSelectionRange(input.value.length, input.value.length); },
     // P154 追加 8: "/" outside the field = into the field with the "/" typed at the end of the draft — the same input event
     // as typing it there, so an empty draft opens the slash-command menu. Not while a dialog / Settings is open, not from

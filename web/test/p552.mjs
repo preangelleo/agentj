@@ -85,7 +85,7 @@ try {
       check(await shown(p, 'set-level-unsigned') && await shown(p, 'set-gnc-unsigned'), 'both rows say not in force ' + name);
       const why = await text(p, 'set-level-unsigned-why');
       check(why.startsWith(L('未生效：', 'Not in force:')) && why.includes('Mac M1') && why.includes(L('已经解绑', 'no longer paired')), 'why (unpaired) ' + name + ' :: ' + why);
-      { const wr = await text(p, 'set-gnc-unsigned-why'); check(/重新设置了 (Face|Touch) ID \/ 指纹|set up (Face|Touch) ID \/ fingerprint again/.test(wr), 'why (rekeyed) ' + name + ' :: ' + wr); }
+      check((await text(p, 'set-gnc-unsigned-why')).includes(L('换了钥匙', 'has a new key')), 'why (rekeyed) ' + name);
       check(await text(p, 'set-level-resign') === L('用本机重新确认', 'Confirm again on this device'), 'resign button ' + name);
       const bad = await ev(p, LAYOUT);
       check(!bad.length, 'layout ' + name + ' ' + bad.join(' · '));
@@ -109,7 +109,7 @@ try {
     const L = (zh, en) => (lang === 'en' ? en : zh), name = `390-light-${lang}`;
     const p = await paired(390, 844, 'light', lang, (st) => { st.approvalPasskey = true; st.approvalUnsigned = true; st.approvalUnsignedList = structuredClone(LAPSED.slice(0, 1)); st.prefs.approval = { level: 'harness' }; });
     await ev(p, `navigator.credentials.get = (o) => { const b = (s) => new TextEncoder().encode(s).buffer; return Promise.resolve({ rawId: b('cred-1'), response: { clientDataJSON: b('{}'), authenticatorData: b('ad'), signature: b('sig') } }); }`);
-    await fake.send({ t: 'approval_resign', text: L('🔐 这台遥控器的 Face ID / 指纹已经设好了。「全放行」现在没有生效——点「用本机重新确认」就能恢复。', '🔐 This remote has Face ID / fingerprint set up now. 「Full access」 is not in force — tap 「Confirm again on this device」 to turn it back on.') });
+    await fake.send({ t: 'approval_resign', text: L('🔐 这台遥控器的钥匙已经好了。「全放行」现在没有生效——点「用本机重新确认」就能恢复。', '🔐 This remote has its key now. 「Full access」 is not in force — tap 「Confirm again on this device」 to turn it back on.') });
     await waitFor(p, `document.getElementById('toast').classList.contains('on') && [...document.querySelectorAll('#toast button')].some(b=>b.textContent===${JSON.stringify(L('用本机重新确认', 'Confirm again on this device'))})`);
     writeFileSync(OUT + `5-resign-toast-${name}.png`, await shoot(p, ''));
     await ev(p, `[...document.querySelectorAll('#toast button')].find(b=>b.textContent===${JSON.stringify(L('用本机重新确认', 'Confirm again on this device'))}).click()`);

@@ -96,7 +96,7 @@ test('fa_s → the quiet hint; WebAuthn errors → the reason', () => {
   assert.equal(R.hintKey(null), null, 'older host: nothing extra');
   assert.equal(R.faState('local'), 'local'); assert.equal(R.faState('LOCAL'), null); assert.equal(R.faState(undefined), null);
   assert.equal(R.failKey({ name: 'NotAllowedError' }, 'borrowed'), 'p539.fail.borrowed');
-  assert.equal(R.failKey('NotAllowedError', 'local'), 'p561.fail.missing');   // P561: this remote's own key refused here
+  assert.equal(R.failKey('NotAllowedError', 'local'), 'p539.fail.cancel');
   assert.equal(R.failKey('NotAllowedError', null), 'p539.fail.cancel');
   assert.equal(R.failKey('AbortError'), 'p539.fail.abort');
   assert.equal(R.failKey('SecurityError'), 'p539.fail.other');
@@ -104,7 +104,7 @@ test('fa_s → the quiet hint; WebAuthn errors → the reason', () => {
   assert.equal(R.errName({ name: '<x>' }), 'Error');
   assert.equal(R.errName(null), 'Error');
   LANG('zh');
-  assert.equal(T.t('p539.hint.borrowed'), '这台遥控器还没有设置自己的 {bio}，系统会请你用手机扫码确认。');
+  assert.equal(T.t('p539.hint.borrowed'), '这台遥控器还没有自己的 {bio} 钥匙，系统会请你用手机扫码确认。');
   assert.equal(T.t('p539.pk.setup'), '在本机设置');
 });
 

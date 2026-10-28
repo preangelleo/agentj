@@ -178,9 +178,9 @@ class Pairing(unittest.IsolatedAsyncioTestCase):
         await self.wait(lambda: self.owner() == OWNER)
         await self.wait(lambda: tg_pair.CONNECTED["zh"] in self.sent(OWNER))
         self.add("现在能收到吗")
-        await self.wait(lambda: len(self.host.delivered) == 1)      # P562: the owner's chat → the main conversation
+        await self.wait(lambda: len(self.host.external_channels.calls) == 1)
         await self.settle()
-        self.assertIn("现在能收到吗", self.host.delivered[0][1])
+        self.assertIn("现在能收到吗", self.host.external_channels.calls[0][1])
         self.assertNotIn(code, json.dumps(self.host.delivered, ensure_ascii=False))   # the pairing message is never delivered
         self.assertEqual(self.sent(OWNER).count(tg_pair.CONNECTED["zh"]), 1)
         self.assertEqual(self.host.preferences["channels"]["items"], [{"id": "telegram", "type": "telegram"}])

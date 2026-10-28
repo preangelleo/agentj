@@ -69,9 +69,8 @@ try {
     const p = await paired(1440, 900, { lang });
     // ---------------------------------------------------------------- #176: who gets which key
     const keys = await ev(p, `import('./js/five-pages.js').then(m => Object.fromEntries(m.cardKeys().map(c => [c.key, c.letter])))`);
-    // P563 追加 2: Alt+Shift+S is 紧急停止 now (app.stop_all), so 技能 (S K I L — all taken) gets a digit like the others
-    check(keys['card:notes'] === 'N' && keys['card:todo'] === 'T' && keys['card:automation'] === 'I', `letters from the English titles (${q(keys)})`);
-    check(keys.workflows === '1' && keys.skills === '2' && keys.memory === '3' && keys.agentj === '4' && !keys.chat, 'titles whose letters are all taken get digits; 对话 has none (Esc)');
+    check(keys['card:notes'] === 'N' && keys['card:todo'] === 'T' && keys['card:automation'] === 'I' && keys.skills === 'S', `letters from the English titles (${q(keys)})`);
+    check(keys.workflows === '1' && keys.memory === '2' && keys.agentj === '3' && !keys.chat, 'titles whose letters are all taken get digits; 对话 has none (Esc)');
     const taken = await ev(p, `import('./js/cardkeys.js').then(m => [...m.taken()].join(''))`);
     check(Object.values(keys).every((k) => !taken.includes(k)) && taken.includes('A') && taken.includes('M'), `never one of the app's own Alt+Shift keys (${taken})`);
     // the deck shows them: underlined letter in an English title, a chip otherwise
