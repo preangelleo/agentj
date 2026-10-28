@@ -459,7 +459,7 @@ class StatusLineLayers(Tmp):
         self.assertEqual(claude_statusline.effective(self.work)[0], "local")
         claude_statusline.set_enabled(True, self.st, self.work)
         doc = json.loads(local.read_text())
-        self.assertIn("claude_statusline.py", doc["statusLine"]["command"])
+        self.assertIn("-m agentj.claude_statusline tap", doc["statusLine"]["command"])
         meta = claude_statusline.load_meta()
         self.assertEqual(meta["original"], old)                         # the older tap still runs (chained)
         self.assertTrue(claude_statusline.active())
@@ -473,7 +473,7 @@ class StatusLineLayers(Tmp):
         claude_statusline.set_enabled(True, self.st, self.work)
         self.assertEqual(json.loads(proj.read_text())["statusLine"]["command"], "team-line")   # shared file untouched
         local = json.loads((self.work / ".claude/settings.local.json").read_text())
-        self.assertIn("claude_statusline.py", local["statusLine"]["command"])
+        self.assertIn("-m agentj.claude_statusline tap", local["statusLine"]["command"])
         self.assertEqual(claude_statusline.load_meta()["original"]["command"], "team-line")
         claude_statusline.set_enabled(False, self.st, self.work)
         self.assertFalse((self.work / ".claude/settings.local.json").exists())   # P127: the file we created is removed again

@@ -13,6 +13,10 @@ import shlex
 import subprocess
 import sys
 import tempfile
+import time
+
+STALE_S = 2 * 3600      # P565B: a reading this old while the session kept working is expired, not "the latest"
+STALE_GAP = 600         # ... and Claude Code wrote this long after the reading (the tap went quiet)
 
 
 def private_write(p, doc):
@@ -149,8 +153,7 @@ def set_enabled(enabled, state_root, directory=None, explicit=None):
         if old is not None and (not isinstance(old, dict) or old.get('type') != 'command' or not isinstance(old.get('command'), str)):
             raise claude_inbound.SettingsError('Unsupported owner status line; not changed')
         installed = dict(old or {})
-        installed.update(type='command', command=' '.join(shlex.quote(str(x)) for x in
-                         (sys.executable, Path(__file__).resolve(), 'tap', p)))
+        installed.update(type='command', command=entry(p))
         ctx['meta'] = {'enabled': True, 'had_original': 'statusLine' in doc, 'original': old, 'installed': installed,
                        'state_root': str(Path(state_root).resolve()), 'settings': str(target),
                        'dir': str(Path(directory).expanduser().resolve()) if directory else None,
@@ -178,14 +181,49 @@ def set_enabled(enabled, state_root, directory=None, explicit=None):
     return changed
 
 
+def interpreter():
+    """P565B: this install's interpreter under its unversioned name (a venv's bin/python3 survives a 3.11 → 3.12 rebuild)."""
+    exe = Path(sys.executable)
+    if re.search(r'\d', exe.name):
+        for name in ('python3', 'python'):
+            alt = exe.parent / name
+            try:
+                if alt.exists() and alt.resolve() == exe.resolve():
+                    return str(alt)
+            except OSError:
+                pass
+    return str(exe)
+
+
+def entry(meta_file):
+    """P565B: the stable status-line command — the interpreter runs the tap as a module (`-P`: the session folder is never
+    on sys.path); no site-packages path carrying the Python minor version, which an upgrade deletes."""
+    return ' '.join(shlex.quote(str(x)) for x in (interpreter(), '-P', '-m', 'agentj.claude_statusline', 'tap', meta_file))
+
+
+def entry_ok(meta):
+    """P565B: the installed command is this install's current entry and its interpreter exists. An older script-path
+    format, or an interpreter / script an upgrade removed, is not — ensure_default reinstalls it, doctor warns."""
+    inst = meta.get('installed')
+    cmd = inst.get('command') if isinstance(inst, dict) else None
+    try:
+        exe = shlex.split(cmd)[0]
+    except (AttributeError, ValueError, IndexError):
+        return False
+    return cmd == entry(meta_path().resolve()) and os.path.isfile(exe) and os.access(exe, os.X_OK)
+
+
 def active(meta=None, directory=None):
-    """Installed AND the layer Claude Code actually uses for the session's folder (not shadowed by a higher one)."""
+    """Installed AND the layer Claude Code actually uses for the session's folder (not shadowed by a higher one);
+    P565B: AND the installed command still runs this install (entry_ok)."""
     from . import claude_inbound
     meta = load_meta() if meta is None else meta
     if not meta.get('enabled'):
         return False
     if managed():
         return False            # organization policy owns the status line
+    if not entry_ok(meta):
+        return False            # P565B: an upgrade moved the interpreter / script — no data would arrive
     if not meta.get('settings'):
         return claude_inbound.read().get('statusLine') == meta.get('installed')
     target = Path(meta['settings'])
@@ -201,7 +239,8 @@ def active(meta=None, directory=None):
 
 def shadow(directory=None):
     """Why the installed tap does not reach the session in `directory`: 'managed' / 'local' / 'project' / 'user' (the
-    layer that wins instead), 'moved' (installed for another folder), 'off', or None when it is in effect."""
+    layer that wins instead), 'moved' (installed for another folder), 'outdated' (P565B: its command no longer runs this install),
+    'off', or None when it is in effect."""
     from . import claude_inbound
     meta = load_meta()
     if managed():
@@ -210,6 +249,8 @@ def shadow(directory=None):
         return 'off'
     if active(meta, directory):
         return None
+    if not entry_ok(meta):
+        return 'outdated'
     layer = effective(directory)[0]
     target = meta.get('settings')
     if target and target not in {str(lp) for _, lp in layers(directory or meta.get('dir'))}:
@@ -224,10 +265,18 @@ def ensure_default(st, config=None):
     from . import claude_inbound
     try:
         cfg = config if config is not None else st.agent_config()
-        if not cfg or cfg.get('kind') != 'claude' or cfg.get('session_mode', 'independent') != 'shared':
+        meta = load_meta()
+        shared = bool(cfg) and cfg.get('kind') == 'claude' and cfg.get('session_mode', 'independent') == 'shared'
+        if meta.get('enabled') and not entry_ok(meta):
+            # P565B: an upgrade (or the pre-P565B script-path format) left a command that no longer runs this install —
+            # re-chain it with the stable entry where it is installed, whatever the session mode. Only the install whose
+            # state the tap feeds does it: a second state dir on this account never takes another install's tap over.
+            if meta.get('state_root') != str(Path(st.root).resolve()) or meta.get('explicit') == 'off' or managed():
+                return False
+            return set_enabled(True, st.root, (cfg.get('dir') if shared else None) or meta.get('dir'))
+        if not shared:
             return False
         directory = cfg.get('dir') or None
-        meta = load_meta()
         if meta.get('explicit') == 'off':
             return False
         if meta.get('enabled') and active(meta, directory):
@@ -277,6 +326,8 @@ SHADOW_TEXT = {
     'user': ('Agent J 的状态栏读数没有生效（用户设置被改过）。', "Agent J's status-line tap is not in effect (user settings changed)."),
     'moved': ('读数装在另一个文件夹的设置里，不是当前共享会话的。', "The tap is installed for another folder, not the current shared session's."),
     'off': ('手机额度条/水位未开启。', 'Phone usage/context meter is off.'),
+    'outdated': ('升级后状态栏读数命令已失效（旧的 Python 路径），手机额度不再刷新。',
+                 "After an upgrade the status-line tap command no longer runs (old Python path); the phone's usage stopped refreshing."),
 }
 
 
@@ -316,7 +367,39 @@ def measured(blob):
             'h5': quota('five_hour'), 'week': quota('seven_day'), 'cost_usd': round(usd, 4) if number(usd) else None}
 
 
-def read(state_root, session_id, compacted_at=None):
+def stale(source_at, activity_at, now=None):
+    """P565B: a reading older than STALE_S while Claude Code kept writing well after it — the tap stopped reporting."""
+    now = time.time() if now is None else now
+    return number(source_at) and number(activity_at) and now - source_at > STALE_S and activity_at - source_at > STALE_GAP
+
+
+def activity(session_id=None):
+    """P565B: when Claude Code last wrote — this session's transcript, or a new session in any project folder."""
+    root = Path(os.environ.get('CLAUDE_CONFIG_DIR') or Path.home() / '.claude') / 'projects'
+    sid = session_id if isinstance(session_id, str) and re.fullmatch(r'[A-Za-z0-9_-]{1,100}', session_id) else None
+    at = None
+    try:
+        for d in root.iterdir():
+            if d.is_symlink() or not d.is_dir():
+                continue
+            at = max(at or 0, d.stat().st_mtime)
+            f = d / f'{sid}.jsonl'
+            if sid and f.is_file():
+                at = max(at, f.stat().st_mtime)
+    except OSError:
+        pass
+    return at
+
+
+def expire(reading):
+    """P565B: an expired reading's windows keep their number for older phones (「读数可能过期」) and say `expired`."""
+    for k in ('h5', 'week'):
+        if isinstance(reading.get(k), dict):
+            reading[k] = {**reading[k], 'stale': True, 'expired': True}
+    return reading
+
+
+def read(state_root, session_id, compacted_at=None, activity_at=None):
     empty = dict.fromkeys(('model','model_name','effort','ctx','h5','week','source_at'))
     if not isinstance(session_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,100}', session_id): return empty
     try:
@@ -330,7 +413,7 @@ def read(state_root, session_id, compacted_at=None):
         out = {k: data.get(k) for k in empty}
         out['source_at'] = at
         if compacted_at and at <= compacted_at: out['ctx'] = None
-        return out
+        return expire(out) if stale(at, activity_at) else out
     except (OSError, ValueError, AttributeError, TypeError): return empty
 
 

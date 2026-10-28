@@ -1,5 +1,5 @@
 {
-  "version": "0.25.17a1",
-  "zh": "齿轮上的遥控器数量恢复白色圆底，数字跟随状态色；同一 iCloud / Google 账号下的几台设备不再互相顶掉 Touch ID。",
-  "en": "The gear's remote count is back on its light circle; devices on the same iCloud or Google account no longer replace each other's Touch ID."
+  "version": "0.25.18a1",
+  "zh": "白名单通知邮件交给 Agent J 只读处理，可移进废纸篓；Touch ID 断线可补交；升级后 Claude 状态栏自动修复，旧额度标为过期；长按批准恢复原来的效果。",
+  "en": "Allowlisted notification mail reaches Agent J read-only; Touch ID setup survives a drop; the Claude status line self-repairs; long-press approve is as before."
 }

@@ -2742,5 +2742,10 @@
   "p366.safe": "密钥只留在 Agent J 主机上，这里不显示，也不会向你要。",
   "p366.urlOnComputer": "完整地址在 Agent J 主机上：它里面带着令牌，手机上不显示。",
   "p561.upgHowKey": "也可以按 {key}，或在对话里直接发 /update 给 Agent J。",
-  "p561.upgHow": "也可以在对话里直接发 /update 给 Agent J。"
+  "p561.upgHow": "也可以在对话里直接发 /update 给 Agent J。",
+  "mail.roleNote": "「我本人」的邮件按你的指令处理；「访客」的邮件不当作你的指令，不能批准任何操作，回信会去掉私人信息。白名单里的人，Agent 给他们发信不用你再确认；加进来之前想清楚：Agent 可以不经你确认给他发信。白名单里的通知邮件（如区块浏览器提醒）也会交给 Agent J 阅读；它只读，不会回信。",
+  "p565.pk.handing": "正在补交…（{bio}已在本机设好，连上 Agent J 主机就送过去）",
+  "p565.pk.handedIn": "已设好：{bio}已存到 Agent J 主机。",
+  "p565b.expired": "额度读数已过期",
+  "p565b.expiredWhy": "额度读数已过期：Claude 一直在用，状态栏读数却停了；在 Agent J 主机上运行 agentj doctor 检查"
 }

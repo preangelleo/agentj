@@ -1310,7 +1310,11 @@ class SharedClaudeAgent(Agent):
 
     def _read_native(self):
         from . import claude_statusline
-        return versioned(claude_statusline.read(self.host.st.root, (self.session or {}).get("sessionId"), self.compacted_at))
+        try:                        # P565B: the session kept writing long after the last reading → the reading is expired
+            act = self.transcript.stat().st_mtime
+        except (AttributeError, OSError):
+            act = None
+        return versioned(claude_statusline.read(self.host.st.root, (self.session or {}).get("sessionId"), self.compacted_at, act))
 
     def _native(self):
         """P292: on the event loop the last reading (refreshed off the loop by `_fresh_native` / `read_statusline`) — the

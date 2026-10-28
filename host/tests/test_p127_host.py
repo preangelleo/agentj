@@ -203,7 +203,7 @@ class StatuslineDefault(_Home):
     def test_shared_default_on_with_backup_notice_and_off_is_final(self):
         self.write(inbound.path(), {"other": 1})
         self.assertTrue(tap.ensure_default(self.st))
-        self.assertIn("claude_statusline.py", inbound.read()["statusLine"]["command"])
+        self.assertIn("-m agentj.claude_statusline tap", inbound.read()["statusLine"]["command"])
         self.assertEqual(inbound.read()["other"], 1)
         self.assertEqual(len(list(inbound.path().parent.glob("settings.json.agentj-backup-*"))), 1)
         self.assertTrue(tap.active(None, str(self.work)))

@@ -62,7 +62,8 @@ export function quotaRows(w, now = Date.now()) {
   else if (pr) sub.push(t('p303.atReset', { p: pr.atReset }));
   if (c && w.window === '5h') sub.push(t('p303.resetIn', { when: spanText(c.left) }));
   // P433 (#196): when this reading was measured, and 「读数可能过期」 when a confirmed limit contradicted it
-  if (w.stale) sub.unshift(t('p433.staleWhy'));
+  if (w.expired) sub.unshift(t('p565b.expiredWhy'));   // P565 追加 B: the status line stopped; never 「AI 已确认额度用完」
+  else if (w.stale) sub.unshift(t('p433.staleWhy'));
   else if (Number.isFinite(w.at) && w.at > 0) sub.push(t('p433.updated', { t: hhmm(w.at) }));
   const out = [row(w.label, w.pct, null, glow, sub)];
   if (c && w.window === 'weekly') {

@@ -8,7 +8,8 @@
 /* P457: retain the unread header slot without an empty hit target. */
 .om:not([data-unread="1"]) .om-unread{visibility:hidden;pointer-events:none}
 /* P458 #223: only approval actions change both colours together. Resting appearance stays in app.css. */
-:is(#elev-allow,.apprallow):is(:hover,:active,:focus){background:var(--c-noir);color:#faf9f5}
+/* P565 追加 C 补充 (董事长 10-28 15:1x): 长按批准 keeps its resting colours under the finger (the 7e45af4f1 look); Noir is the sudo card's only. */
+#elev-allow:is(:hover,:active,:focus){background:var(--c-noir);color:#faf9f5}
 
 /* P505: the friend reply editor uses the existing light card and Sage action palette in every chat state. */
 .p498-reply{--surface-1:var(--c-lotion);--text:var(--c-sooty);--text-muted:var(--c-sooty);--border:var(--c-last-straw);padding:var(--sp-4);border:1px solid var(--c-last-straw);border-radius:var(--r-lg);background:var(--c-salt);color:var(--c-sooty);min-width:0}

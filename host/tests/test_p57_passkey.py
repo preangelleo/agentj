@@ -307,8 +307,12 @@ class HostLevel(unittest.TestCase):
         self.assertEqual([o["t"] for o in self.to(3)[-5:]], ["pk_reg_res", "devs", "pair_guide", "pk_state", "preferences"])   # P539
         pk = self.st.devices()[did]["pk"]
         self.assertEqual((pk["id"], pk["alg"], pk["rp"]), (wire.b64u(a.id), -7, RP))
-        # the nonce is single use
+        # the nonce is single use: the same key handed in again (P565 追加 A: its first answer lost with the socket) is
+        # answered ok and changes nothing; another key on that nonce is refused
         self.run_(self.host._app(s, a.register(wire.unb64u(offer["n"]))))
+        self.assertEqual(self.to(3)[-1], {"t": "pk_reg_res", "ok": True})
+        self.assertEqual(self.st.devices()[did]["pk"], pk)
+        self.run_(self.host._app(s, Authenticator().register(wire.unb64u(offer["n"]))))
         self.assertEqual(self.to(3)[-1], {"t": "pk_reg_res", "ok": False, "why": "expired"})
         # a later request for an offer (the Settings row) gets a fresh one; a wrong nonce / bad SPKI is refused
         self.run_(self.host._app(s, {"t": "pk_offer_req"}))

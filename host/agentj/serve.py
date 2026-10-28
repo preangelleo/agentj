@@ -410,6 +410,34 @@ def _hb_touch(host) -> None:
         hb.touch()
 
 
+PK_OFFERS = 4   # P565 追加 A: open pk_offers kept per device (a reconnect may bring a new one before the old answer arrives)
+
+
+def _pk_pick(obj: dict, here: tuple | None, mine: list[tuple]) -> tuple | None:
+    """P565 追加 A: the pk_offer a pk_reg answers — the device's open offer whose nonce its clientDataJSON names (a result
+    handed in after a reconnect answers an offer of the earlier socket), else this socket's own one (whose check then says
+    why). Expired offers never match; nothing here verifies — passkey.verify_registration does that on the chosen nonce."""
+    try:
+        c = json.loads(passkey.b64(obj.get("cd"), passkey.MAX_CD, "cd").decode("utf-8"))
+        ch = c.get("challenge") if isinstance(c, dict) else None
+    except Exception:   # noqa: BLE001 — a bad cd is refused by verify_registration
+        ch = None
+    if isinstance(ch, str):
+        for o in ([here] if here else []) + list(reversed(mine)):
+            if hmac.compare_digest(ch.rstrip("=").encode(), wire.b64u(o[0]).encode()):
+                return o
+    return here
+
+
+def _pk_same(had: dict | None, obj: dict) -> bool:
+    """P565 追加 A: a pk_reg naming the credential the device's record already holds (a second hand-in of a taken key)."""
+    try:
+        cid = wire.b64u(passkey.b64(obj.get("id"), passkey.MAX_CRED_ID, "id"))
+    except Exception:   # noqa: BLE001
+        return False
+    return bool(had) and isinstance(had.get("id"), str) and hmac.compare_digest(had["id"], cid)
+
+
 def _pk_where(obj: dict) -> dict:
     """P539 (#300): a pk_reg's advisory {local, plat}. The authenticator attachment arrives as `aa` (`att` already carries
     the attestation object); registration always asks for a platform authenticator, so a missing one counts as local."""
@@ -566,6 +594,7 @@ class Host:
         from .security_rotation import Rotation
         self.security_rotation = Rotation(self)
         self.pk_guard = passkey.Guard()   # F20: pk_restore rate limit + nonce replay memory (in memory only)
+        self.pk_offers: dict[str, list[tuple]] = {}   # P565 追加 A: device → its open pk_offers (bound to the device, not the socket)
         from . import pkpeer, seat_transfer
         self.pkpeer = pkpeer.Desk(self)                # P547: Face ID set up with another remote's approval
         # P555: a 「未确认」 key that just worked from its remote is noted there (State.passkey_count) → every remote repaints
@@ -1911,6 +1940,10 @@ class Host:
             return
         nonce = secrets.token_bytes(32)
         s.pk_offer = (nonce, time.monotonic(), peer)
+        # P565 追加 A (华为 Pad 10-28 13:16): the system's fingerprint sheet sends the page to the background and drops its socket;
+        # the page hands in create()'s result after the reconnect. The offer lives with the device (≤ PK_OFFERS open, OFFER_TTL)
+        live = [o for o in self.pk_offers.get(s.device, []) if time.monotonic() - o[1] <= passkey.OFFER_TTL]
+        self.pk_offers[s.device] = (live + [s.pk_offer])[-PK_OFFERS:]
         pk = None if peer else self.st.passkey_of_device(s.device)
         await self.send_app(s, {"t": "pk_offer", "n": wire.b64u(nonce), **({"peer": peer} if peer else {}),
                                 **({"replace": pk["id"]} if pk else {})})
@@ -1920,9 +1953,24 @@ class Host:
             return
         if t == "pk_offer_req":
             return await self._pk_offer(s, asked=True)
-        offer, s.pk_offer = s.pk_offer, None          # single use, whatever the outcome
+        offer = _pk_pick(obj, s.pk_offer, self.pk_offers.get(s.device, []))   # P565 追加 A: this socket's or the device's
+        s.pk_offer = None                             # single use, whatever the outcome
+        if offer is not None:
+            for x in list(self.sessions.values()):   # review S3: the same offer held by the device's half-open earlier socket ends too
+                if x.device == s.device and x.pk_offer and x.pk_offer[0] == offer[0]:
+                    x.pk_offer = None
+            mine = [o for o in self.pk_offers.get(s.device, []) if o[0] != offer[0]]
+            if mine:
+                self.pk_offers[s.device] = mine
+            else:
+                self.pk_offers.pop(s.device, None)
         try:
             if not offer or time.monotonic() - offer[1] > passkey.OFFER_TTL:
+                if _pk_same(self.st.passkey_of_device(s.device), obj):
+                    # P565 追加 A: the page handed the same result in twice (the first answer was lost with the socket) — the
+                    # key is already this device's own: say so, change nothing
+                    self.st.log("pk_reg", cid=s.cid, device=s.device, result="ok", reason="again")
+                    return await self.send_app(s, {"t": "pk_reg_res", "ok": True})
                 raise passkey.PasskeyError("expired", "no_offer")
             rec = passkey.verify_registration(obj, offer[0])
             rec.update(_pk_where(obj))               # P539: advisory local / plat (never part of a check)
@@ -1930,6 +1978,8 @@ class Host:
             peer_ok = bool(peer) and self.pkpeer.approved(s.device, peer)
             if peer and not peer_ok:
                 raise passkey.PasskeyError("expired", "peer_gone")
+            if not peer and not self.pkpeer.direct_ok(s.device):   # review N3: another remote got a key since this direct offer
+                raise passkey.PasskeyError("peer_required", "peer_required")
             had = self.st.passkey_of_device(s.device)
             if not self.st.set_passkey(s.pub, rec, replacement=obj.get("replace_fa"), peer_ok=peer_ok,
                                        challenge=passkey.replacement_offer_challenge(offer[0], had)):
@@ -1942,6 +1992,7 @@ class Host:
         except passkey.PasskeyError as e:
             self.st.log("pk_reg", cid=s.cid, device=s.device, result="fail", reason=e.detail)
             return await self.send_app(s, {"t": "pk_reg_res", "ok": False, "why": e.why})
+        self.pk_offers.pop(s.device, None)            # P565 追加 A: a key was taken — the device's other offers end with it
         self.st.log("pk_reg", cid=s.cid, device=s.device, result="ok")
         await self.send_app(s, {"t": "pk_reg_res", "ok": True})
         with contextlib.suppress(Exception):     # P552 (#325 ①): a new / replaced key while a switch is not in force → one tap
@@ -2405,6 +2456,8 @@ class Host:
                                                                      bool(req.get("to_owner"))) if self.mail else {"ok": False, "why": "not_running"})
                 elif cmd == "mail_key":
                     await self._ctl_send(w, await self.mail.secret_card() if self.mail else {"result": "refused", "why": "not_running"})
+                elif cmd == "mail_trash":           # P565: a delivered mail judged phishing → the mailbox's trash (unclaimed: the Agent calls it)
+                    await self._ctl_send(w, await self.mail.trash(req.get("id")) if self.mail else {"ok": False, "why": "not_running"})
                 elif cmd == "mail_expect":          # P206 A: the calling Agent waits for one mail (outside data, only to this caller)
                     await self._ctl_send(w, await self.mail.expect(req) if self.mail else {"ok": False, "why": "not_running"})
                 elif cmd == "config_revision":

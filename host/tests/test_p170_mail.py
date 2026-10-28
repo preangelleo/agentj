@@ -89,13 +89,21 @@ class Gate(unittest.TestCase):
         self.assertEqual((v.ok, v.reason, v.addr), (False, "not_allowed", "stranger@corp.example"))
 
     def test_loops_and_automatic_mail_never_become_tasks(self):
+        # P565: automatic mail from an allowlisted sender passes as a read-only notice (test_p565_mail_notice); from anyone
+        # else it stays `auto`, and our own mail (X-AgentJ) is `auto` even from an allowlisted address
+        stranger = self.cfg(allow=[{"addr": "someone@else.example"}])
         for extra in ("Auto-Submitted: auto-replied\n", "Precedence: bulk\n", "List-Id: <x.lists.example>\n",
                       "X-AgentJ: reply\n", "X-Autoreply: yes\n"):
-            v = M.judge(parse(mail(extra=extra)), self.cfg(), [])
+            v = M.judge(parse(mail(extra=extra)), stranger, [])
             self.assertEqual((v.ok, v.reason), (False, "auto"), extra)
+            v = M.judge(parse(mail(extra=extra)), self.cfg(), [])
+            if extra.startswith("X-AgentJ"):
+                self.assertEqual((v.ok, v.reason, v.detail), (False, "auto", "own"))
+            else:
+                self.assertEqual((v.ok, bool(v.notice)), (True, True), extra)
         self.assertTrue(M.judge(parse(mail(extra="Auto-Submitted: no\n")), self.cfg(), []).ok)
         bounce = parse(mail(frm="MAILER-DAEMON@corp.example"))
-        self.assertEqual(M.judge(bounce, self.cfg(allow=[{"addr": "MAILER-DAEMON@corp.example"}]), []).reason, "auto")
+        self.assertEqual(M.judge(bounce, stranger, []).reason, "auto")
 
     def test_self_sent_mail_names_its_reason(self):
         # real Gmail (2026-10-12, QA test box): a mailbox writing to itself gets no Authentication-Results

@@ -523,7 +523,9 @@ class WheelInstall(unittest.TestCase):
         # P206 A (0.20.2 `agentj mail expect`: the Agent waits for one sign-up mail): +8 KiB on mail.py (measured 28.8 KiB in
         # total); flagged to Jarvis. P549 (#313, 0.25.12): +1 KiB for the AJM1 → AJM2 upgrade migration and the loss event /
         # owner line (measured +1.0 KiB after trimming); flagged to Jarvis — the inherited 9.9 % overrun stays a soft row.
-        self.assertLessEqual(p170_bytes,24576+8192+1024,'P170 e-mail channel allocation (+ P206 A mail expect) is bounded')
+        # P565 (#342, 0.25.18): +3 KiB for allowlisted notification mail (notice delivery, no reply route) and `agentj mail
+        # trash` (IMAP move to the mailbox's trash, owner line) — measured +2.5 KiB; flagged to Jarvis (the row was at +9.7 %).
+        self.assertLessEqual(p170_bytes,24576+8192+1024+3072,'P170 e-mail channel allocation (+ P206 A mail expect) is bounded')
         # P184 (0.20.0 address book: contacts.py store / pinyin search / vCard·CSV import-export / CLI, contacts_serve.py the
         # phone + Agent side, skill agentj-contacts): its own explicit 28 KiB allocation (measured ≈ 25 KiB), same accounting;
         # flagged to Jarvis. The wiring (elevate routing, serve cap, mail send CLI, media / inbox types, identity sentence) takes a

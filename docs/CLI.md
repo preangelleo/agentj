@@ -4343,14 +4343,14 @@ usage: agentj mail [-h] [--address ADDRESS_OPT]
                    [--from EXPECT_FROM] [--subject-has SUBJECT_HAS]
                    [--within WITHIN] [--lookback LOOKBACK] [--wait WAIT]
                    [--id ID] [--en] [--json]
-                   {status,presets,setup,allow,deny,password,test,check,on,off,send,notes,expect}
+                   {status,presets,setup,allow,deny,password,test,check,on,off,send,notes,expect,trash}
                    [address]
 ```
 
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `action` | `null` | true | `status`, `presets`, `setup`, `allow`, `deny`, `password`, `test`, `check`, `on`, `off`, `send`, `notes`, `expect` | `` |
+| `action` | `null` | true | `status`, `presets`, `setup`, `allow`, `deny`, `password`, `test`, `check`, `on`, `off`, `send`, `notes`, `expect`, `trash` | `` |
 | `address` | `null` | false | — | `deny：发件地址 / the sender address` |
 | `--address` | `null` | false | — | `the mailbox address` |
 | `--preset` | `null` | false | `126`, `163`, `aliyun`, `aliyun_biz`, `custom`, `exmail`, `gmail`, `icloud`, `netease_biz`, `outlook`, `qq`, `yahoo` | `setup：邮箱预设（默认按域名猜）/ preset (guessed from the domain)` |
@@ -4380,7 +4380,7 @@ usage: agentj mail [-h] [--address ADDRESS_OPT]
 | `--within` | `null` | false | — | `expect：窗口多长（30s–60m，默认 15m）/ window length` |
 | `--lookback` | `null` | false | — | `expect：也看开窗前多久到的信（≤ 10m，默认 2m）/ also mail that arrived this long before` |
 | `--wait` | `null` | false | — | `expect：这次调用最多等多久（≤ 9m，默认 9m；没等到就返回 waiting + id）/ how long this call blocks` |
-| `--id` | `null` | false | — | `keep waiting on an open window` |
+| `--id` | `null` | false | — | `expect：接着等之前开的窗口；trash：要丢进废纸篓的邮件 id（交给你的邮件里写着）/ keep waiting on an open window; trash: the mail id shown in a delivered mail` |
 | `--en` | `false` | false | — | `English messages` |
 | `--json` | `false` | false | — | `` |
 
@@ -11204,7 +11204,7 @@ usage: agentj login [-h] [--api API] [--account ACCOUNT_ID] [--seat CODE |
 ### agentj mail
 
 ```text
-邮件通道：setup · allow · deny · password · test · check · on · off · status · presets · send · notes · expect
+邮件通道：setup · allow · deny · password · test · check · on · off · status · presets · send · notes · expect · trash
 ```
 
 ```bash
@@ -11226,14 +11226,14 @@ usage: agentj mail [-h] [--address ADDRESS_OPT]
                    [--from EXPECT_FROM] [--subject-has SUBJECT_HAS]
                    [--within WITHIN] [--lookback LOOKBACK] [--wait WAIT]
                    [--id ID] [--en] [--json]
-                   {status,presets,setup,allow,deny,password,test,check,on,off,send,notes,expect}
+                   {status,presets,setup,allow,deny,password,test,check,on,off,send,notes,expect,trash}
                    [address]
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `action` | `null` | true | `status`, `presets`, `setup`, `allow`, `deny`, `password`, `test`, `check`, `on`, `off`, `send`, `notes`, `expect` | `` |
+| `action` | `null` | true | `status`, `presets`, `setup`, `allow`, `deny`, `password`, `test`, `check`, `on`, `off`, `send`, `notes`, `expect`, `trash` | `` |
 | `address` | `null` | false | — | `allow` |
 | `--address` | `null` | false | — | `setup：Agent 用的邮箱地址` |
 | `--preset` | `null` | false | `126`, `163`, `aliyun`, `aliyun_biz`, `custom`, `exmail`, `gmail`, `icloud`, `netease_biz`, `outlook`, `qq`, `yahoo` | `setup：邮箱预设（默认按域名猜）/ preset (guessed from the domain)` |
@@ -11263,7 +11263,7 @@ usage: agentj mail [-h] [--address ADDRESS_OPT]
 | `--within` | `null` | false | — | `expect：窗口多长（30s–60m，默认 15m）/ window length` |
 | `--lookback` | `null` | false | — | `expect：也看开窗前多久到的信（≤ 10m，默认 2m）/ also mail that arrived this long before` |
 | `--wait` | `null` | false | — | `expect：这次调用最多等多久（≤ 9m，默认 9m；没等到就返回 waiting + id）/ how long this call blocks` |
-| `--id` | `null` | false | — | `expect：接着等之前开的窗口` |
+| `--id` | `null` | false | — | `expect：接着等之前开的窗口；trash：要丢进废纸篓的邮件 id（交给你的邮件里写着）/ keep waiting on an open window; trash: the mail id shown in a delivered mail` |
 | `--en` | `false` | false | — | `English messages` |
 | `--json` | `false` | false | — | `` |
 

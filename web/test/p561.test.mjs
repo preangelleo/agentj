@@ -47,7 +47,7 @@ test('the first refusal of the own key marks it; an interruption does not; a pas
     assert.equal(seen.length, 2);
     F.clearFailed(); assert.equal(seen.length, 2);        // nothing changed, no repaint
   } finally { globalThis.dispatchEvent = had; }
-  assert.match(read('../public/app.js'), /passkey\.clearFailed\(pkRegId\);[^\n]*\n\s*toast\(t\('pk\.saved'\)/);
+  assert.match(read('../public/app.js'), /passkey\.clearFailed\(pkRegId\);[^\n]*\n\s*toast\((?:\(handed \? pkassist\.withBio\('p565\.pk\.handedIn'\) : )?t\('pk\.saved'\)/);
 });
 
 test('approve(): the rejection name reaches noteResult (AbortError leaves Settings alone)', async () => {

@@ -187,7 +187,7 @@ test('review: pk_reg_res {ok:false, why:"peer_required"} starts the peer flow by
   assert.equal(restarted, 1);
   P.configure({ restart: undefined });
   const app = read('../public/app.js');
-  assert.match(app, /async function pkSaved\(m\) \{\n  if \(pkpeer\.onRegRes\(m\)\) return;/);
+  assert.match(app, /async function pkSaved\(m\) \{\n(?:  [^\n]*P565 追加 A[^\n]*\n)*  if \(pkpeer\.onRegRes\(m\)\) return;/);   // P565: the hand-in ends first
   assert.match(app, /restart: \(\) => setupFaceId\(\)/);
   assert.match(read('../public/js/pkpeer.js'), /const ASK_MS = 10000;/, 'the 10 s legacy fallback stays');
 });

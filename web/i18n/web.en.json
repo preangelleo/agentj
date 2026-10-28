@@ -2094,7 +2094,7 @@
     "add": "Add",
     "remove": "Remove",
     "addThis": "Allow",
-    "roleNote": "Mail from “Me” is handled as your instruction; a guest's mail is not, cannot approve anything, and private details are removed from the reply. The Agent mails people on the allowlist without asking you — add someone only if that is fine.",
+    "roleNote": "Mail from “Me” is handled as your instruction; a guest's mail is not, cannot approve anything, and private details are removed from the reply. The Agent mails people on the allowlist without asking you — add someone only if that is fine. Notification mail from allowlisted senders (such as block-explorer alerts) is also handed to Agent J to read; it only reads it and never replies.",
     "gAuth": "Sender check",
     "auth": "Strength",
     "authStd": "Standard (recommended): SPF, DKIM or DMARC passes for the sender's domain",
@@ -4660,5 +4660,9 @@
   "p552.why.bad_sig": "its confirmation no longer verifies",
   "p556.more": "Learn more",
   "p561.upgHowKey": "You can also press {key}, or just send /update to Agent J in the chat.",
-  "p561.upgHow": "You can also just send /update to Agent J in the chat."
+  "p561.upgHow": "You can also just send /update to Agent J in the chat.",
+  "p565.pk.handing": "Handing it in… ({bio} is set up here; it goes to the Agent J host as soon as it is connected)",
+  "p565.pk.handedIn": "All set: {bio} is saved on the Agent J host.",
+  "p565b.expired": "Usage reading expired",
+  "p565b.expiredWhy": "Usage reading expired: Claude kept working but its status-line reading stopped; run agentj doctor on the Agent J host"
 }

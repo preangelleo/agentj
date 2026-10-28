@@ -3532,3 +3532,7 @@ html[data-ios-safari="1"] body::before{content:"";position:absolute;inset:0;back
 .sheet.ontop-float{position:fixed;left:0;right:0;bottom:0;z-index:calc(var(--z-confirm) + var(--ontop-n,0) + 1);
   max-height:85dvh;width:min(100%,720px);margin:auto}
 body[data-ontop="1"] #toast{z-index:var(--z-notice-top)!important}
+/* P565 追加 A (华为 Pad 10-28 13:17): a centred notice never covers an open centred dialog — it sits below it, above the scrim */
+body:has(.ajmodal.dlgcard:not([hidden]),#confirm:not([hidden])) .toast:is(.circle,.square){top:auto;bottom:calc(16px + env(safe-area-inset-bottom,0px));
+  max-height:40dvh;z-index:calc(var(--z-confirm) + 60)}
+body:has(.ajmodal.dlgcard:not([hidden]),#confirm:not([hidden])) .toast:is(.circle,.square).on{transform:translate(-50%,0)}

@@ -84,6 +84,9 @@ def claude_source(state_root, now: float | None = None) -> dict:
             if isinstance(w, dict) and _num(w.get("pct")) and _num(w.get("reset")):
                 out = {"harness": "claude", "status": "ok", "source": "statusline", "used_pct": float(w["pct"]),
                        "reset_at": float(w["reset"]), "source_at": at}
+                from .claude_statusline import activity, stale
+                if stale(at, activity(data.get("session_id")), now):   # P565B: Claude kept working, the tap went quiet
+                    out.update(status="stale", why="stale_reading", stale=True)
                 return {**out, "h5": h5} if h5 else out
         except (OSError, ValueError, AttributeError):
             continue
@@ -286,10 +289,10 @@ def analyse(src: dict, resets: list[dict], now: float) -> dict:
     out["resets"] = [{"expires": r["expires"], **({"note": r["note"]} if r.get("note") else {})} for r in resets]
     h5 = src.get("h5")
     # Keep validity separate from display clamping: --pick must not use a repaired reading.
-    out["reading_valid"] = all(_num(w.get("used_pct")) and 0 <= w["used_pct"] <= 100
-                               for w in (src, h5) if isinstance(w, dict))
+    out["reading_valid"] = not src.get("stale") and all(_num(w.get("used_pct")) and 0 <= w["used_pct"] <= 100
+                                                        for w in (src, h5) if isinstance(w, dict))
     out.pop("h5", None)
-    if isinstance(h5, dict) and h5["reset_at"] > now and h5["reset_at"] - now <= H5_S + 600:   # a stale window is no reading
+    if isinstance(h5, dict) and not src.get("stale") and h5["reset_at"] > now and h5["reset_at"] - now <= H5_S + 600:   # a stale window is no reading
         out["h5"] = {"used_pct": round(min(100.0, max(0.0, h5["used_pct"])), 1), "reset_at": h5["reset_at"],
                      "source_at": h5.get("source_at")}
     if src.get("status") == "partial":
@@ -694,6 +697,8 @@ WHY = {"no_statusline_tap": ("查不到：Claude 状态栏接入没开（agentj 
        "not_exposed": ("查不到：OpenCode 不在本地记录服务商额度", "unknown: OpenCode keeps no provider quota locally"),
        "window_rolled_over": ("查不到：上次读数之后已过重置时间，等下一次读数", "unknown: the window reset since the last reading"),
        "source_failed": ("查不到：数据源出错", "unknown: the source failed"),
+       "stale_reading": ("额度读数已过期：Claude 一直在用，状态栏读数却停了（agentj doctor 检查）",
+                         "usage reading expired: Claude kept working but its status-line reading stopped (check agentj doctor)"),
        "no_reset_time": ("服务商没给重置时间，算不了均分进度", "the provider gives no reset time, so no pace")}
 
 
@@ -706,7 +711,8 @@ def render(rep: dict, lang: str = "zh") -> str:
             lines.append(f"{a['name']}: " + (f"weekly {a['used_pct']:.0f}% used · {en_t}" if en else f"本周已用 {a['used_pct']:.0f}% · {zh_t}"))
         elif a.get("status") != "ok":
             zh_t, en_t = WHY.get(a.get("why"), ("查不到", "unknown"))
-            lines.append(f"{a['name']}: " + (en_t if en else zh_t))
+            old = time.strftime(" · %m-%d %H:%M", time.localtime(a["source_at"])) if a.get("stale") else ""
+            lines.append(f"{a['name']}: " + (en_t if en else zh_t) + old)
         else:
             src = time.strftime("%m-%d %H:%M", time.localtime(a["source_at"]))
             lines.append(

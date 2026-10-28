@@ -700,11 +700,30 @@ function apprLive(){
   const p = cur && cur.approval;
   return p && apprState(p) === "open" && !apprBusy ? p : null;
 }
-function apprCancelHold(){
+function apprCancelHold(done){
   if (!apprHold) return;
   clearTimeout(apprHold.timer);
+  holdFill(apprHold.btn, done ? "done" : "back");
   apprHold.btn.classList.remove("holding");
   apprHold = null;
+}
+// P565 追加 C (#348, 董事长 10-28 「按下去看不到那个状态栏从左到右」): the fill used to be only a CSS width transition on
+// `.holding`. Every snapshot re-renders the card (any host message: usage, status, activity …), and renderCard hides
+// #apprBtns for a moment while measureCmd reads the command's height (P154) — that style flush cancels the running
+// transition, so the fill jumped straight to full. 追加 C 补充 (10-28 15:1x): the look is the earliest one, exactly
+// (7e45af4f1: width 0 → 100 %, linear, var(--state) at .55, an early release snaps back to 0). Only its clock moved: a Web
+// Animation on `width` started at the press keeps running through any re-render or display flicker.
+const HOLD_DONE_MS = 450;
+function holdFill(btn, mode){
+  const f = btn && btn.querySelector(".fill");
+  if (!f || typeof f.animate !== "function") return;            // no Web Animations: the CSS transition on .holding
+  const prev = f._hold || null;
+  if (mode === "done"){                                          // stays full while the card goes away, then rests
+    if (prev) setTimeout(() => { if (f._hold === prev){ prev.cancel(); f._hold = null; } }, HOLD_DONE_MS);
+    return;
+  }
+  if (prev) prev.cancel();                                       // "back": let go early → straight back to 0 (as at first)
+  f._hold = mode === "start" ? f.animate([{width: "0%"}, {width: "100%"}], {duration: APPR_HOLD_MS, easing: "linear", fill: "forwards"}) : null;
 }
 // The hold gesture, for 批准 and for 批量批准 (both approve, so neither may fire on a tap).
 function holdToApprove(btn, action){
@@ -715,9 +734,10 @@ function holdToApprove(btn, action){
     e.preventDefault();
     if (p.passkey_required && action === "allow") { apprPost(p, action); return; }
     btn.classList.add("holding");
+    holdFill(btn, "start");
     apprHold = {id: p.id, btn, t0: Date.now(), timer: setTimeout(() => {
       const q = apprLive(), id = apprHold && apprHold.id;
-      apprCancelHold();
+      apprCancelHold(true);
       if (q && q.id === id && !q.local_only) apprPost(q, action);
     }, APPR_HOLD_MS)};
   });
@@ -780,14 +800,14 @@ function paintUsage(u){
       : windows.find(w => w.window === (id === 'm5h' ? '5h' : 'weekly'));
     bar.hidden = false; bar.dataset.known = x ? '1' : '0';
     bar.dataset.zero = x && x.pct === 0 ? '1' : '0';
-    bar.firstElementChild.style.width = x ? x.pct + '%' : '0';
+    bar.firstElementChild.style.width = x && !x.expired ? x.pct + '%' : '0';   // P565 追加 B: an expired reading is unknown, never the old number
     // P303: WEEKLY n%（第 N 天）, and a faint glow — fast (weekly only), ≥ 80 % Mellow Marrow, ≥ 90 % Peachy Feeling
     const c = x ? cycle(x.window, x.reset || quotaReset(u, x.window)) : null, day = c && x.window === 'weekly' ? t('p303.day', {n: c.step}) : '';
     bar.dataset.glow = x ? tier(x.pct, c, {pace: x.window === 'weekly'}) : '';
-    bar.querySelector('.lab').textContent = x ? `${x.window} ${Math.round(x.pct)}%${day}${readAge(x)}` : '';
+    bar.querySelector('.lab').textContent = x ? (x.expired ? `${x.window} ${t('p565b.expired')}` : `${x.window} ${Math.round(x.pct)}%${day}${readAge(x)}`) : '';
     const label = x ? t('r.meter.' + ({weekly:'week',daily:'daily',monthly:'monthly','5h':'h5'}[x.window])) : '';
     bar.dataset.stale = x && x.stale ? '1' : '0';
-    bar.setAttribute('aria-label', x ? t('r.meter.used', {label, pct:x.pct}) + (day ? ' ' + t('p303.dayAria', {n: c.step, of: c.steps}) : '')
+    bar.setAttribute('aria-label', x && x.expired ? label + ' · ' + t('p565b.expired') : x ? t('r.meter.used', {label, pct:x.pct}) + (day ? ' ' + t('p303.dayAria', {n: c.step, of: c.steps}) : '')
       + (x.stale ? ' · ' + t('p433.staleWhy') : x.at ? ' · ' + t('p433.updated', {t: hm(x.at)}) : '') : '');
     bar.title = bar.getAttribute('aria-label');
   }
@@ -835,7 +855,7 @@ function quotaReset(u, w){
 function meterToast(e){
   const u = (cur && cur.usage) || {};
   const windows = u.source ? quotaWindows(u).map(x => ({window: x.window, reset: x.reset || quotaReset(u, x.window), label: t('r.meter.' + ({weekly:'week',daily:'daily',monthly:'monthly','5h':'h5'}[x.window])), pct: x.pct,
-    ...(x.at ? {at: x.at} : {}), ...(x.stale ? {stale: true} : {})})) : [];
+    ...(x.at ? {at: x.at} : {}), ...(x.stale ? {stale: true} : {}), ...(x.expired ? {expired: true} : {})})) : [];
   const ctx = typeof u.context_pct === 'number' ? u.context_pct : null;
   const ctxText = ctx != null ? null : Number.isFinite(u.context_used) ? `${u.context_used} tokens` : postCompact ? t('p207set.usage.ctxPost') : null;
   openUsage({source: !!u.source, windows, ctx, ctxText, age: u.age_s != null ? u.age_s : null}, e && e.currentTarget);

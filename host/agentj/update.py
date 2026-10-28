@@ -656,6 +656,9 @@ def repair_upgrade(st, rows):
     from . import working_root, wizard, preferences, reconnect
     ids = []
     findings = {r.get("id"): r for r in rows if isinstance(r, dict) and r.get("status") in ("warn", "fail")}
+    from . import claude_statusline
+    if claude_statusline.ensure_default(st):    # P565B: re-chain a status-line tap the new Python left behind (never raises)
+        ids.append("shared_statusline")
     if any(k in findings for k in ("work-root", "root-structure")):
         ids.append("root-structure")
         try:

@@ -170,7 +170,7 @@ class HistoryReset(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             file=Path(root)/'claude-statusline'/f'{OLD}.json';file.parent.mkdir()
             file.write_text(__import__('json').dumps({'session_id':OLD,'h5':{'pct':1},'ctx':{'pct':50}}));os.utime(file,(1000,1000))
-            with patch.object(claude_statusline,'load_meta',return_value={'enabled':True,'installed':{'type':'command'}}),patch('agentj.claude_inbound.read',return_value={'statusLine':{'type':'command'}}):
+            with patch.object(claude_statusline,'load_meta',return_value={'enabled':True,'installed':{'type':'command'}}),patch('agentj.claude_inbound.read',return_value={'statusLine':{'type':'command'}}),patch.object(claude_statusline,'entry_ok',return_value=True):  # P565B: a runnable entry
                 self.assertEqual(claude_statusline.read(root,OLD)['h5']['pct'],1)
                 self.assertIsNone(claude_statusline.read(root,OLD,1001)['ctx'])
                 self.assertIsNone(claude_statusline.read(root,NEW)['h5'])

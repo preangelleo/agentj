@@ -1741,7 +1741,7 @@ export default {
   "mail.add": "加入",
   "mail.remove": "移除",
   "mail.addThis": "加入白名单",
-  "mail.roleNote": "「我本人」的邮件按你的指令处理；「访客」的邮件不当作你的指令，不能批准任何操作，回信会去掉私人信息。白名单里的人，Agent 给他们发信不用你再确认；加进来之前想清楚：Agent 可以不经你确认给他发信。",
+  "mail.roleNote": "「我本人」的邮件按你的指令处理；「访客」的邮件不当作你的指令，不能批准任何操作，回信会去掉私人信息。白名单里的人，Agent 给他们发信不用你再确认；加进来之前想清楚：Agent 可以不经你确认给他发信。白名单里的通知邮件（如区块浏览器提醒）也会交给 Agent J 阅读；它只读，不会回信。",
   "mail.gAuth": "发件人校验",
   "mail.auth": "校验强度",
   "mail.authStd": "标准（推荐）：SPF、DKIM 或 DMARC 任一通过且域名对得上",
@@ -4172,7 +4172,11 @@ export default {
   "p552.why.bad_sig": "当初的确认签名核对不上",
   "p556.more": "了解更多",
   "p561.upgHowKey": "也可以按 {key}，或在对话里直接发 /update 给 Agent J。",
-  "p561.upgHow": "也可以在对话里直接发 /update 给 Agent J。"
+  "p561.upgHow": "也可以在对话里直接发 /update 给 Agent J。",
+  "p565.pk.handing": "正在补交…（{bio}已在本机设好，连上 Agent J 主机就送过去）",
+  "p565.pk.handedIn": "已设好：{bio}已存到 Agent J 主机。",
+  "p565b.expired": "额度读数已过期",
+  "p565b.expiredWhy": "额度读数已过期：Claude 一直在用，状态栏读数却停了；在 Agent J 主机上运行 agentj doctor 检查"
  },
  "en": {
   "fr.ask.failed": "Your confirmation did not take effect. Please try again.",
@@ -5915,7 +5919,7 @@ export default {
   "mail.add": "Add",
   "mail.remove": "Remove",
   "mail.addThis": "Allow",
-  "mail.roleNote": "Mail from “Me” is handled as your instruction; a guest's mail is not, cannot approve anything, and private details are removed from the reply. The Agent mails people on the allowlist without asking you — add someone only if that is fine.",
+  "mail.roleNote": "Mail from “Me” is handled as your instruction; a guest's mail is not, cannot approve anything, and private details are removed from the reply. The Agent mails people on the allowlist without asking you — add someone only if that is fine. Notification mail from allowlisted senders (such as block-explorer alerts) is also handed to Agent J to read; it only reads it and never replies.",
   "mail.gAuth": "Sender check",
   "mail.auth": "Strength",
   "mail.authStd": "Standard (recommended): SPF, DKIM or DMARC passes for the sender's domain",
@@ -8346,6 +8350,10 @@ export default {
   "p552.why.bad_sig": "its confirmation no longer verifies",
   "p556.more": "Learn more",
   "p561.upgHowKey": "You can also press {key}, or just send /update to Agent J in the chat.",
-  "p561.upgHow": "You can also just send /update to Agent J in the chat."
+  "p561.upgHow": "You can also just send /update to Agent J in the chat.",
+  "p565.pk.handing": "Handing it in… ({bio} is set up here; it goes to the Agent J host as soon as it is connected)",
+  "p565.pk.handedIn": "All set: {bio} is saved on the Agent J host.",
+  "p565b.expired": "Usage reading expired",
+  "p565b.expiredWhy": "Usage reading expired: Claude kept working but its status-line reading stopped; run agentj doctor on the Agent J host"
  }
 };

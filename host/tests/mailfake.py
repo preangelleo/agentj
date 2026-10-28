@@ -2,7 +2,9 @@
 
 FakeIMAP: LOGIN, CAPABILITY, ID, SELECT/EXAMINE INBOX, UID SEARCH ALL, UID FETCH (RFC822.SIZE | BODY.PEEK[] |
 BODY.PEEK[HEADER.FIELDS (…)] | INTERNALDATE RFC822.SIZE BODY.PEEK[HEADER] (P206)), LOGOUT, NOOP. `fetched` lists the full
-bodies handed out (uids); flags are never changed (no STORE). `require_id=True` behaves like NetEase 163: SELECT says "Unsafe Login" until ID.
+bodies handed out (uids); flags are never changed by the check. `require_id=True` behaves like NetEase 163: SELECT says "Unsafe Login" until ID.
+P565 (`agentj mail trash`): LIST over `folders` [(flags, name)], UID MOVE (only with "MOVE" in `caps`) / COPY / STORE /
+EXPUNGE, and the id fetch `BODY.PEEK[HEADER.FIELDS (MESSAGE-ID)] BODY.PEEK[]<0.2048>`; `boxes` keeps what left the INBOX.
 FakeSMTP: EHLO/HELO, AUTH PLAIN / LOGIN, MAIL, RCPT, DATA, RSET, NOOP, QUIT; `sent` keeps (from, [to], bytes).
 """
 from __future__ import annotations
@@ -43,8 +45,11 @@ class _Server(socketserver.ThreadingTCPServer):
 
 
 class FakeIMAP:
-    def __init__(self, user="agent@example.cn", password="right-code", require_id=False):
+    def __init__(self, user="agent@example.cn", password="right-code", require_id=False, caps="IMAP4rev1 ID", folders=()):
         self.user, self.password, self.require_id = user, password, require_id
+        self.caps, self.folders = caps, list(folders)
+        self.boxes: dict[str, list[tuple[int, bytes]]] = {}
+        self.flags: dict[int, set] = {}
         self.uidvalidity = 7
         self.mails: list[tuple[int, bytes]] = []
         self.next_uid = 1
@@ -57,7 +62,7 @@ class FakeIMAP:
         class H(socketserver.StreamRequestHandler):
             def handle(self):
                 authed = ident = False
-                self.wfile.write(b"* OK [CAPABILITY IMAP4rev1 ID] fake ready\r\n")
+                self.wfile.write(f"* OK [CAPABILITY {fake.caps}] fake ready\r\n".encode())
                 while True:
                     line = self.rfile.readline()
                     if not line:
@@ -69,7 +74,9 @@ class FakeIMAP:
                     fake.commands.append(cmd if cmd != "LOGIN" else "LOGIN ***")
                     w = self.wfile.write
                     if cmd == "CAPABILITY":
-                        w(b"* CAPABILITY IMAP4rev1 ID\r\n" + tag.encode() + b" OK done\r\n")
+                        w(f"* CAPABILITY {fake.caps}\r\n".encode() + tag.encode() + b" OK done\r\n")
+                    elif cmd == "LIST":
+                        w(b"".join(f'* LIST ({fl}) "/" "{name}"\r\n'.encode() for fl, name in fake.folders) + tag.encode() + b" OK done\r\n")
                     elif cmd == "ID":
                         ident = True
                         w(b'* ID ("name" "fake")\r\n' + tag.encode() + b" OK ID done\r\n")
@@ -78,7 +85,7 @@ class FakeIMAP:
                         if len(t) == 2 and t[0] == fake.user and t[1] == fake.password:
                             authed = True
                             fake.logins += 1
-                            w(tag.encode() + b" OK [CAPABILITY IMAP4rev1 ID] logged in\r\n")
+                            w(tag.encode() + f" OK [CAPABILITY {fake.caps}] logged in\r\n".encode())
                         else:
                             w(tag.encode() + b" NO [AUTHENTICATIONFAILED] login failed\r\n")
                     elif cmd in ("SELECT", "EXAMINE"):
@@ -88,18 +95,44 @@ class FakeIMAP:
                             w(tag.encode() + b" NO SELECT Unsafe Login. Please contact kefu@188.com for help\r\n")
                         else:
                             w(f"* {len(fake.mails)} EXISTS\r\n* OK [UIDVALIDITY {fake.uidvalidity}] ok\r\n".encode()
-                              + tag.encode() + b" OK [READ-ONLY] done\r\n")
+                              + tag.encode() + (b" OK [READ-ONLY] done\r\n" if cmd == "EXAMINE" else b" OK [READ-WRITE] done\r\n"))
                     elif cmd == "UID":
                         sub, _, a2 = args.partition(" ")
                         sub = sub.upper()
                         if sub == "SEARCH":
                             w(("* SEARCH " + " ".join(str(u) for u, _ in fake.mails)).rstrip().encode() + b"\r\n"
                               + tag.encode() + b" OK done\r\n")
+                        elif sub in ("MOVE", "COPY") and (sub == "COPY" or "MOVE" in fake.caps.split()):
+                            u, _, box = a2.partition(" ")
+                            box = _tokens(box)[0] if box else ""
+                            hit = [(x, raw) for x, raw in fake.mails if str(x) == u]
+                            if not hit or box not in [n for _, n in fake.folders]:
+                                w(tag.encode() + b" NO no such message or mailbox\r\n")
+                            else:
+                                fake.boxes.setdefault(box, []).append(hit[0])
+                                if sub == "MOVE":
+                                    fake.mails = [m for m in fake.mails if str(m[0]) != u]
+                                w(tag.encode() + b" OK done\r\n")
+                        elif sub == "STORE":
+                            u, _, rest2 = a2.partition(" ")
+                            if "\\Deleted" in rest2:
+                                fake.flags.setdefault(int(u), set()).add("\\Deleted")
+                            w(tag.encode() + b" OK done\r\n")
+                        elif sub == "EXPUNGE":
+                            gone = {int(x) for x in a2.split(",") if x.isdigit() and "\\Deleted" in fake.flags.get(int(x), set())}
+                            fake.mails = [m for m in fake.mails if m[0] not in gone]
+                            w(tag.encode() + b" OK done\r\n")
                         elif sub == "FETCH":
                             want, _, item = a2.partition(" ")
                             rows = [(i + 1, u, raw) for i, (u, raw) in enumerate(fake.mails) if str(u) in want.split(",")]
                             for seq, u, raw in rows:
-                                if "INTERNALDATE" in item.upper():
+                                if "MESSAGE-ID" in item.upper():
+                                    head = raw.split(b"\r\n\r\n", 1)[0]
+                                    keep = b"".join(ln + b"\r\n" for ln in re.split(rb"\r?\n(?![ \t])", head)
+                                                    if ln.lower().startswith(b"message-id:")) + b"\r\n"
+                                    w(f"* {seq} FETCH (UID {u} BODY[HEADER.FIELDS (MESSAGE-ID)] {{{len(keep)}}}\r\n".encode() + keep
+                                      + f" BODY[]<0> {{{len(raw[:2048])}}}\r\n".encode() + raw[:2048] + b")\r\n")
+                                elif "INTERNALDATE" in item.upper():
                                     head = raw.split(b"\r\n\r\n", 1)[0] + b"\r\n\r\n"
                                     when = time.strftime("%d-%b-%Y %H:%M:%S +0000", time.gmtime(fake.dates.get(u, time.time())))
                                     w(f'* {seq} FETCH (UID {u} INTERNALDATE "{when}" RFC822.SIZE {len(raw)} BODY[HEADER] {{{len(head)}}}\r\n'.encode()

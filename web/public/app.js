@@ -25,7 +25,7 @@ import { parsePairing as parseLink } from './proto/wire.js';
 import VERSION from './version.js';
 import {probeEnvironment, publicPhoneLink} from './js/phone-env.js';
 import { t, lang, fillText, plain, applyStatic, onLang } from './js/t.js';
-import { el, toast, toastAction, executionToast, notify, noticeSheet, confirmSheet, closeConfirm } from './js/ui.js';
+import { el, toast, toastOff, toastAction, executionToast, notify, noticeSheet, confirmSheet, closeConfirm } from './js/ui.js';
 import { dbGet, dbPut, dbDel, deviceKey, signKey, wipeLocal, installId, markPaired, wasPaired, askPersist, adoptRootStore, rootHost, markRootMoved, dropRootPairing, copyToSeat } from './js/store.js';
 import * as seats from './js/seats.js';         // P545 (§40): m.agentj.app/<seat id> — this seat's own page
 import { b64u, unb64u } from './proto/wire.js';
@@ -62,6 +62,7 @@ import * as helpcard from './js/helpcard.js'; // P411: screen-help cards (`agent
 import * as passkey from './js/faceid.js';     // F20: the same phone without a second pairing (§12)
 import * as renew from './js/renew.js';        // P122: …and after the browser deleted this page's storage (§12.1)
 import * as seatxfer from './js/seatxfer.js';   // P547: Settings → 转移席位 (row state pushed by the host)
+import * as pkhandin from './js/pkhandin.js';
 import * as pkpeer from './js/pkpeer.js';       // P547: this remote's own key, approved by another remote (#315 / #317)
 import { parseHostMoved, movedRecord, movedAt } from './js/hostmove.js';   // P547: the seat moved to a new host → follow it
 import * as bots from './js/bots.js';
@@ -396,6 +397,7 @@ session.configure({
     openFriendsWanted();
     reversePairing = false;
     if (pendingRv) { const c = pendingRv; pendingRv = null; rvpair.approve(c).catch(() => {}); }
+    pkhandin.again();                                 // P565 追加 A: a passkey result whose answer the last drop swallowed
     api.myDeviceId().then((id) => { pkpeer.onReady(id); rerender(); });   // P561 追加 11: a replaced remote id drops its old request
     relay.onReady();
     cmdrun.onReady();                                 // P393: 「连不上」 on the command card turns into 「已恢复连接」
@@ -737,7 +739,8 @@ async function regOpts() {
   return { relayIndex: ri, channel: h.channel, hostPub: h.hostPub, tag: await pkTag(h.channel), name: agentName ?? DEFAULT_NAME, displaySuffix: t('pk.computer') };
 }
 pkpeer.configure({
-  ask: (o, want, ms) => session.ask1(o, want, ms), send: (o) => session.sendApp(o), approve: passkey.approve,
+  ask: (o, want, ms) => session.ask1(o, want, ms), send: (o) => (o && o.t === 'pk_reg' ? pkhandin.handIn(o) : session.sendApp(o)),   // P565 追加 A: a made key is handed in, never lost with the socket
+  approve: passkey.approve,
   // P550 (P545 × P547): a key made after another remote's approval is this seat's Home Screen passkey hint too (pkSaved);
   // register() still reaches navigator.credentials.create in the tap's tick (no await before it)
   register: (n, o) => passkey.register(n, o).then((reg) => { pkRegId = reg.id; return reg; }),
@@ -800,6 +803,7 @@ async function checkPhoneEnvironment(afterPair = false) {
   renderPhoneEnvironment();
 }
 async function offerPasskey(m) {
+  if (pkhandin.busy()) return;                        // P565 追加 A: a made key is being handed in — no second sheet over it
   if (m.peer) { pkForce = false; await pkpeer.onOffer(m); return; }   // P547: approved by another remote — no re-ask, no replace
   const forced = pkForce; pkForce = false;
   // P198: the computer offers this only to a device without a passkey (after a pairing, a ticket restore): remember that
@@ -809,7 +813,6 @@ async function offerPasskey(m) {
   const nonce = unb64u(m.n);
   if (ri < 0 || nonce.length !== 32 || (await passkey.setupSupport()) !== 'yes') return;   // P561 追加 11
   await updHost((c) => c && { ...c, pkAsked: true });
-  const g = session.gen();
   const name = agentName ?? DEFAULT_NAME;
   const tag = await pkTag(h.channel);
   const no = $('confirm-no');
@@ -821,9 +824,13 @@ async function offerPasskey(m) {
   // cancelled / refused by the system (iPhone: no iCloud Keychain → no passkey can be saved): nothing changes; say why once
   try { reg = await passkey.register(nonce, { relayIndex: ri, channel: h.channel, hostPub: h.hostPub, tag, name, displaySuffix: t('pk.computer'), replace: m.replace || null }); } catch { toast(t(pkassist.osKey('pk.notSaved')), 8000); return; }   // P539: Android / Mac / Windows get their own steps
   pkRegId = reg.id;
-  session.sendApp(reg, g).catch(() => toast(t('pk.saveFail')));
+  pkhandin.handIn(reg);
 }
+// P565 追加 A: create()'s result survives the socket the system drops behind the fingerprint sheet (js/pkhandin.js)
+pkhandin.configure({ gen: () => session.gen(), channel: () => session.channel(), send: (reg, g) => session.sendApp(reg, g),
+  waiting: () => notify({ kind: 'progress', text: pkassist.withBio('p565.pk.handing'), ms: 0 }), failed: () => toast(t('pk.saveFail'), 8000) });
 async function pkSaved(m) {
+  const handed = !!(pkhandin.answered() || {}).waited; if (handed) toastOff();   // P565 追加 A: it waited for a reconnect → 「已设好」
   if (pkpeer.onRegRes(m)) return;                     // P547: peer_required → the 「另一台批准」 flow starts by itself
   const first = pkpeer.saved(m.ok === true);          // P547 (§5): the account's first key → 「再在另一台设备加一把」
   if (m.ok !== true) {
@@ -833,7 +840,7 @@ async function pkSaved(m) {
     return toastAction(t(pkassist.regWhy(m.why)), t('pkp.setupHere'), () => { setupFaceId().catch(() => {}); }, 12000);
   }
   passkey.clearFailed(pkRegId);                       // P561: a new key of this device's own — asked for first; 「钥匙找不到了」 goes with the old one
-  toast(t('pk.saved') + (first ? ' ' + t('pkp.addAnother') : ''), first ? 9000 : undefined);
+  toast((handed ? pkassist.withBio('p565.pk.handedIn') : t('pk.saved')) + (first ? ' ' + t('pkp.addAnother') : ''), first || handed ? 9000 : undefined);
   if (m.ok && pkRegId) seats.setInstallHints({ pk: pkRegId });   // P545: this seat's passkey, for its Home Screen app (P547 peer keys too)
   pkRegId = null;
   await updHost((h) => h && h.approved && h.channel === session.channel() && { ...h, pk: true });

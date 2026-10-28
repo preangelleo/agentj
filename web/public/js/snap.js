@@ -168,6 +168,7 @@ function usage() {
     // P433 (#196): when each reading was measured (the host stamps `at`; a status-line reading has source_at) and whether a
     // confirmed limit made it stale — never the moment this phone happened to receive it
     h5_at: measured(m.h5, m.source_at), week_at: measured(m.week, m.source_at), h5_stale: !!(m.h5 && m.h5.stale), week_stale: !!(m.week && m.week.stale),
+    h5_expired: !!(m.h5 && m.h5.expired), week_expired: !!(m.week && m.week.expired),   // P565 追加 B: the status line stopped reporting
     age_s: oldest(m) != null ? Math.max(0, Date.now() / 1000 - oldest(m)) : (Date.now() - S.meterAt) / 1000 };
 }
 const measured = (w, src) => (w && Number.isFinite(w.at) && w.at > 0 ? w.at : w && Number.isFinite(src) && src > 0 ? src : null);
