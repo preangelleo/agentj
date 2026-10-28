@@ -10,7 +10,7 @@
 //    its frame) and comes home when the card or the dialog closes.
 import { focusDraft } from './composer-focus.js';
 
-const SURFACES = '#confirm, .ajmodal.elev, .ajmodal.lqr, .ajmodal.sout';
+const SURFACES = '#confirm, .ajmodal.elev, .ajmodal.lqr, .ajmodal.sout, .ajmodal.pkp';   // P561: + 「另一台批准」 (an open ③ card hid it, both sides)
 const FOCUSABLE = 'button:not([disabled]),a[href],summary,input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
 const state = new Map();            // node → {n, prev, card, homes: [[node, marker]]}
 let serial = 0, busy = false, probe = 0;

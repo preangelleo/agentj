@@ -10,7 +10,7 @@ import { touch } from './snap.js';
 //   POST /interrupt · /model · GET /menu → slash stop · model_set → model_res · menu_get → menu      (§8, §10.11, §10.12)
 // Every write pins the session generation it started on (session.gen()): a reconnect or a new pairing in between refuses
 // the send ("offline"), so nothing meant for one session — or one computer — is ever sent on another (P33-X01 / X02).
-import { sendApp, isReady, peer, ask1, channel, textMax, gen } from './session.js';
+import { sendApp, isReady, peer, ask1, channel, textMax, gen, whenReady } from './session.js';
 import { Upload, newId } from './blobs.js';
 import { approveMessage, mailAllowMessage, questionMessage, controlMessage, b64u, deviceId } from '../proto/wire.js';
 import { deviceKey, signKey } from './store.js';
@@ -140,7 +140,14 @@ export async function approve(p, action, allowAdd) {
     const msg = picks.length ? await mailAllowMessage(channel(), await myDeviceId(), p.id, p.tool, p.summary, picks)
       : await approveMessage(channel(), await myDeviceId(), p.id, decision, p.tool, p.summary, batch ? p.scope : undefined);
     const sig = new Uint8Array(await crypto.subtle.sign({ name: 'Ed25519' }, sk.priv, msg));
-    await sendApp(batch ? { t: 'answer', id: p.id, ok: true, batch: true, sig: b64u(sig) } : { t: 'answer', id: p.id, ok: decision === 'allow', sig: b64u(sig), ...(picks.length ? { allow_add: picks } : {}), ...(fa ? { fa } : {}) }, g);
+    const out = batch ? { t: 'answer', id: p.id, ok: true, batch: true, sig: b64u(sig) } : { t: 'answer', id: p.id, ok: decision === 'allow', sig: b64u(sig), ...(picks.length ? { allow_add: picks } : {}), ...(fa ? { fa } : {}) };
+    // P561 (追加 6, #335): the passkey sheet may have cost the socket — the signed answer (bound to the card, not the session)
+    // goes on the reconnected session instead of 「没连上Agent J 主机，没发出去」; never sent twice (a refused send left nothing)
+    if (!fa) await sendApp(out, g);
+    else {
+      try { await sendApp(out, gen() || await whenReady()); }
+      catch { const g2 = await whenReady(); if (!g2) throw new Error('offline'); await sendApp(out, g2); }
+    }
     return { ok: true };
   } catch { return { ok: false, why: 'offline' }; }
 }

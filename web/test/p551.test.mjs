@@ -44,7 +44,7 @@ test('Esc / Back reach a card first: TOP_RANK on every card layer', () => {
 test('ontop.js: started right after layers.js, moves the card above a modal dialog, restores focus', () => {
   const o = js('ontop.js');
   assert.match(app, /initLayers\(\{onEscape:relay\.resetEscape\}\);\n  initOntop\(\);/);
-  assert.match(o, /const SURFACES = '#confirm, \.ajmodal\.elev, \.ajmodal\.lqr, \.ajmodal\.sout';/);
+  assert.match(o, /const SURFACES = '#confirm, \.ajmodal\.elev, \.ajmodal\.lqr, \.ajmodal\.sout, \.ajmodal\.pkp';/);   // P561: + 「另一台批准」
   assert.match(o, /d\.matches\(':modal'\)/);
   assert.match(o, /focusDraft\(prev, \{ preventScroll: true \}\)/);           // the composer: never pops the keyboard on touch
   assert.match(js('relay.js'), /el\("sheet"\)\.dataset\.card = shows;/);
@@ -84,8 +84,8 @@ test('texts: both languages, the owner\'s words; full access now says Face ID', 
   assert.equal(zh['p556.more'], '了解更多');
   assert.equal(en['p556.more'], 'Learn more');
   assert.equal(zh['p551.unbindFa'], '用 Face ID 解绑');
-  assert.ok(zh['p551.unbindNoPasskey'].startsWith('这台设备还没有设置 Face ID / 指纹钥匙。解绑属于不可逆操作，需要本人验证：'));
-  assert.ok(zh['p551.noPasskey'].startsWith('这台设备还没有设置 Face ID / 指纹钥匙，不能打开这个模式。'));
+  assert.ok(zh['p551.unbindNoPasskey'].startsWith('这台设备还没有设置 Face ID / 指纹。解绑属于不可逆操作，需要本人验证：'));
+  assert.ok(zh['p551.noPasskey'].startsWith('这台设备还没有设置 Face ID / 指纹，不能打开这个模式。'));
   assert.ok(zh['p336.fullText'].includes('这几类仍然要你用 Face ID 一张张确认：疑似被攻击、改动或查看密码和密钥、花钱、改价、删除。'));
   assert.ok(en['p336.fullText'].includes('Face ID'));
   for (const d of [zh, en]) for (const k of ['p336.note.harness', 'p551.noPasskey']) assert.doesNotMatch(d[k], /试用|\btrial\b/i, k);

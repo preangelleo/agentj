@@ -3400,8 +3400,17 @@ html[data-ios-safari="1"] body::before{content:"";position:absolute;inset:0;back
 
 /* P535: dynamic pages share the logo state; Settings retains its approved badge. */
 #setBtn>.remote-count-badge{color:var(--state)}
-/* P550 3c: the digit stays ≥ 4.5:1 on its Lotion circle — Noir, the nearest passing palette entry, away from the approved idle green */
-body:is([data-status=working],[data-status=waiting],[data-status=unknown],[data-conn=off],[data-agent=stopped]) #setBtn>.remote-count-badge{color:var(--c-noir)}
+/* P561 追加 18 (董事长 10-28 「蓝色背景的时候……遥控器数量数字，为啥不是蓝色，而是黑色的？」): the digit wears the state colour in
+   every state — working blue, waiting orange, question purple, offline grey, theme colours included — built on the same --state
+   as the notice icon. Idle keeps its approved logo green (P517); the other four are their own hue taken 35 % toward Noir, the least
+   that keeps every default state ≥ 4.5:1 on the Lotion circle (P550 3c's contrast rule, which had made them all Noir). */
+/* P563 追加 1 (贾维斯审查): that 65 % mix was a computed colour — outside Leo's closed palette. No palette blue / orange / purple
+   / grey reaches 4.5:1 on Lotion (Windstorm 2.78, Peachy Feeling 2.96, Magic Carpet 3.55, Black Mana 3.50), so outside idle the
+   circle turns Sooty #141414 and the digit keeps the state's own palette hex (var(--state), unmixed; dark theme too — --deep only
+   darkens the page, never --state). WCAG ratios of the digit on Sooty: working Windstorm #6a9bcc 6.29 · waiting Peachy Feeling
+   #d97757 5.90 · question Magic Carpet #827dbd 4.93 · offline Black Mana #858585 4.99. A custom theme's --state is shown as is
+   (theme colours are palette picks; the light ones read even better on Sooty). Idle stays P517's Lotion circle + logo green. */
+body:is([data-status=working],[data-status=waiting],[data-status=unknown],[data-conn=off],[data-agent=stopped]) #setBtn>.remote-count-badge{background:var(--c-sooty);color:var(--state)}
 
 /* P536 approved WeChat A follows the existing reply/reader glyph sizing. */
 .rmbar .gwx,.rdacts .gwx{display:none}
@@ -3461,6 +3470,19 @@ body:is([data-status=working],[data-status=waiting],[data-status=unknown],[data-
 #settings .preauth__item{display:flex;align-items:center;gap:var(--ui-space-btn);padding-block:var(--ui-space-line);border-top:1px solid var(--menu-line)}
 #settings .preauth__txt{flex:1;min-width:0;display:flex;flex-direction:column;overflow-wrap:anywhere}
 #settings .preauth__txt small{color:var(--menu-muted);font-size:var(--ui-fs-small)}
+/* P561 (董事长 10-28 00:1x: 「不要把一个东西拆到左右，应该拆到上下」, mostly read on a phone): in Settings a row's words stay on
+   top and its button sits UNDER them, left-aligned — the passkey row (under its words, past the icon), every text + small-button
+   row (after its notes) and the 免问的动作 items. Switches stay where they are (a switch is not a button). */
+#settings .pkrow{display:grid;grid-template-columns:auto minmax(0,1fr);gap:var(--ui-space-line) var(--ui-space-control)}
+#settings .setrow>.aj-btn--sm{grid-column:1 / -1;justify-self:start;order:1}
+#settings .pkrow>.aj-btn{grid-column:2;justify-self:start}
+#settings .preauth__item{flex-direction:column;align-items:flex-start}
+#settings .preauth__txt{flex:none;width:100%}
+/* P561 追加 17: a Face ID card on a remote without a key of its own — the line, 「去设置」, then where else it can be approved */
+.pkassist[data-state="nokey"] .pkassist__text{color:inherit;font-weight:600}
+.pkassist__note{margin:var(--sp-1) 0 0;overflow-wrap:anywhere}
+/* P561 追加 14: the web terminal (and any other place) points up to Settings' one 「本机 Face ID」 row instead of its own button */
+#settings .pkgo{justify-content:flex-start;text-align:start;min-width:0}
 
 /* P543 (#308): an owner-channel message keeps its own line breaks; its inbox location (「…」) wraps */
 #words[data-chan="1"] p { white-space: pre-line; }
@@ -3483,6 +3505,9 @@ body:is([data-status=working],[data-status=waiting],[data-status=unknown],[data-
 /* ---- P547: another remote approves this device's Face ID (js/pkpeer.js) · the seat transfer prompt (js/seatxfer.js).
    The same centred Noir card as the secret pickup (.dlgcard): above Settings (45), under the confirm card (48). */
 .ajmodal.pkp,.ajmodal.sxf{z-index:47}
+/* P561: 「另一台批准」 is a confirmation card — 「重新设置」 on an open ③ card, or the ask arriving while one is open on the approving
+   remote, put it under that sheet (47 < 150); now the confirmation tier, the latest on top (ontop.js SURFACES) */
+.ajmodal.pkp{z-index:calc(var(--z-confirm) + var(--ontop-n,0))}
 .pkp .elev-kicker,.sxf .elev-kicker{margin:0 0 var(--sp-1);font:500 calc(12px*var(--fz))/1.2 var(--font-title);letter-spacing:.06em;color:var(--accent,var(--text-muted))}
 .pkp .pkp-text,.sxf .sxf-lead{margin:var(--sp-2) 0 0;line-height:1.55}
 .pkp .elev-note,.sxf .elev-note{margin:var(--sp-2) 0 0;font-size:calc(13px*var(--fz));line-height:1.5;color:var(--text-muted)}

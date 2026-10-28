@@ -154,7 +154,7 @@ try {
     ok(true, '复制地址: the URL is in the clipboard');
     await evaluate(p, `navigator.clipboard.writeText('p366-before')`);
     await click(p, row(HID.form) + ' .whcopy');
-    await waitFor(p, `document.getElementById('toast').textContent.includes('完整地址在电脑上')`);
+    await waitFor(p, `document.getElementById('toast').textContent.includes('完整地址在 Agent J 主机上')`);
     ok(await evaluate(p, `navigator.clipboard.readText().then(t=>t==='p366-before')`), 'token hook: nothing copied, 「完整地址在电脑上」');
     await save(p, 'zh-light-390x844-token');
     // ---- hook_changed

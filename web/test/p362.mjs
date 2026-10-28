@@ -125,7 +125,7 @@ try {
 
   // ---- en
   await evaluate(p, `window.AJLang.set('en')`); lang = 'en'; await sleep(300);
-  ok(await evaluate(p, `${$('.krow[data-name="GITHUB_TOKEN"] .kimp')}.textContent==='Move into Agent J' && document.querySelector('.ksrc-h').textContent==='Places checked on this computer'`), 'en strings');
+  ok(await evaluate(p, `${$('.krow[data-name="GITHUB_TOKEN"] .kimp')}.textContent==='Move into Agent J' && document.querySelector('.ksrc-h').textContent==='Places checked on this Agent J host'`), 'en strings');
   await view(p, 390, 844, 'dark'); await scrollTo(p, '#keys-box'); await save(p, 'en-dark-390x844');
   await view(p, 390, 844, 'light');
   await evaluate(p, `window.AJLang.set('zh')`); lang = 'zh'; await sleep(200);

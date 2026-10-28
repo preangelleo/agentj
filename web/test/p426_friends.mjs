@@ -39,7 +39,7 @@ try {
     await evaluate(p, `document.getElementById('fr-open-devices').click()`);
     await waitFor(p, `!!document.getElementById('fr-gsay') && document.querySelectorAll('#fr-gmsgs li').length===3`);
     const froms = await evaluate(p, `[...document.querySelectorAll('#fr-gmsgs .fr-gfrom')].map(x=>x.textContent)`);
-    check(froms[0].includes(lang === 'zh' ? '本机 Studio' : 'Studio (this computer)') && froms[0].includes(lang === 'zh' ? '手机发的' : 'from the phone'), `${tag}: own message shows this computer + phone ${froms[0]}`);
+    check(froms[0].includes(lang === 'zh' ? '本机 Studio' : 'Studio (this Agent J host)') && froms[0].includes(lang === 'zh' ? '手机发的' : 'from the phone'), `${tag}: own message shows this computer + phone ${froms[0]}`);
     check(froms[1].startsWith('Mac M1') && froms[1].includes(lang === 'zh' ? '回复' : 'reply'), `${tag}: reply shows the device ${froms[1]}`);
     check(await evaluate(p, `document.querySelector('#fr-gmsgs .fr-gto').textContent`) === (lang === 'zh' ? '交给：Mac M1' : 'Handed to: Mac M1'), `${tag}: who it was handed to`);
     check(await evaluate(p, `document.getElementById('fr-title').textContent`) === (lang === 'zh' ? '我的设备 · 群聊' : 'My devices · group'), `${tag}: title`);

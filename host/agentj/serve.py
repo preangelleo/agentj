@@ -4411,6 +4411,9 @@ class Host:
         if self.mail and self.cur_turn is not None:      # P170: the reply goes back by e-mail, same thread
             with contextlib.suppress(Exception):
                 self.mail.completed(self.hist.get(self.cur_turn))
+        if self.wechat and self.cur_turn is not None:    # P562: the owner's WeChat message → the answer back to WeChat
+            with contextlib.suppress(Exception):
+                self.wechat.completed(self.hist.get(self.cur_turn))
         send = getattr(self.agent, 'cur_send', None)
         if getattr(send, 'official_notice_id', None):
             self.official_pending.pop(send.official_notice_id, None)
@@ -4914,8 +4917,14 @@ class Host:
         bind (P539): a trusted plugin binding the ADAPTER built from the harness's own record of the call (Codex's
         mcpToolCall `pluginId`, policy_registry.codex_plugin_bind) — never from model / server text; it maps the bundled
         Computer Use plugin's script tools to computer.control and scopes a 免问 grant to that plugin."""
-        if avatar is not None and tool == "AskUserQuestion":            # P543: the avatar asks in its channel reply instead
-            return {"behavior": "deny", "message": "分身不能弹出提问卡，请直接在回复里问主人。 / Ask the owner in your reply instead."}
+        if avatar is None and (via := provenance.owner_channel_turn(self.agent)):
+            # P562 (#337): the owner's own WeChat / Telegram / mail message in the main conversation — the channel's request
+            from . import owner_channels
+            return await owner_channels.ask(self, via, lambda lbl: self.ask(
+                tool, tool_input, gone, batch, risk_scope, require_passkey, context, ttl, grant_info, origin, allow_offer,
+                _company_proposal, bind, avatar=lbl, background=background))
+        if avatar is not None and tool == "AskUserQuestion":            # P543: the channel asks in its reply instead
+            return {"behavior": "deny", "message": "这条消息来自主人的通道，不能弹出提问卡，请直接在回复里问主人。 / Ask the owner in your reply instead."}
         bound, own_pk = policy_registry_bound(tool, bind), require_passkey   # own_pk: the caller's own Face ID step
         if tool == "AskUserQuestion" and self.agent and self.agent.kind == "claude" and isinstance(tool_input, dict) and avatar is None:
             return await self._ask_user_question(tool_input, gone)       # §10.7: a question card, not an approval card
@@ -5882,7 +5891,7 @@ class Host:
     async def _setup_round_trip(self, s: Session) -> None:
         """The leave-the-computer check: a message from a phone while the check is armed is its evidence."""
         from . import first_run, onboarding
-        if getattr(s, "source_kind", None) == "telegram":
+        if getattr(s, "source_kind", None) in ("telegram", "wechat"):
             return
         try:
             snap = await asyncio.to_thread(first_run.phone_round_trip, self.st, onboarding.kind_of(s.name or ""),
@@ -7125,6 +7134,9 @@ class Host:
         elif getattr(s,"source_kind",None)=="email":     # P170: the page shows 「邮件」 and the mail's own words
             src["k"]="email"
             src["text"]=text.split("\n",2)[-1] if text.startswith("【") else text
+        elif getattr(s,"source_kind",None)=="wechat":    # P562: the page shows 「微信」 and the owner's own words
+            src["k"]="wechat"
+            src["text"]=text.split("\n",1)[-1] if text.startswith("【") else text
         if quote:
             src["quote"] = quote
         if blobs:

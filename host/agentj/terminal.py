@@ -342,11 +342,11 @@ class Desk(SudoDesk, BangDesk, VshareDesk):
         self._log("terminal_cfg", device, "enable:remote")
         web = store.is_web(self.st, device)   # security review A1: say so when it is the web version (no --web at the computer)
         # RESUME 9 ② (Leo 10-21, ADR-P417 A1 exception): every remote is told which remote switched it on and the one-line way off
-        self._notice(f"网页终端已由遥控器「{name}」开启（Face ID + 电脑登录密码）" + ("，它是网页版遥控器" if web else "")
-                     + "。不是你本人开启的话，在电脑上运行 agentj terminal disable 立即关闭。",
-                     f"Web terminal switched on from the remote \"{name}\" (Face ID + the computer login password)"
+        self._notice(f"网页终端已由遥控器「{name}」开启（Face ID + Agent J 主机登录密码）" + ("，它是网页版遥控器" if web else "")
+                     + "。不是你本人开启的话，在 Agent J 主机上运行 agentj terminal disable 立即关闭。",
+                     f"Web terminal switched on from the remote \"{name}\" (Face ID + the Agent J host login password)"
                      + (", which is the web version" if web else "")
-                     + ". If this was not you, run agentj terminal disable on the computer to switch it off at once.")
+                     + ". If this was not you, run agentj terminal disable on the Agent J host to switch it off at once.")
         self._prefs()
 
     async def _login(self, s, r, pend, prf, pk, mode, enable: bool = False) -> dict:
@@ -364,8 +364,8 @@ class Desk(SudoDesk, BangDesk, VshareDesk):
             res = run_sudo(["true"], value, "/", 30, sudo)
             if res.get("result") == "bad_password":
                 lock = store.note(st, device, False)
-                loop.call_soon_threadsafe(self._notice, "网页终端：电脑密码输错了一次" + (f"，已锁定 {lock // 60 + 1} 分钟" if lock else ""),
-                                          "Web terminal: a wrong computer password" + (f", locked for {lock // 60 + 1} min" if lock else ""))
+                loop.call_soon_threadsafe(self._notice, "网页终端：Agent J 主机登录密码输错了一次" + (f"，已锁定 {lock // 60 + 1} 分钟" if lock else ""),
+                                          "Web terminal: a wrong Agent J host login password" + (f", locked for {lock // 60 + 1} min" if lock else ""))
                 return {"result": "locked", "secs": lock} if lock else {"result": "retry"}
             if res.get("result") != "done" or res.get("prompts") != 1:
                 return {"result": "failed", "why": "verify"}     # NOPASSWD / no sudo / timeout: not a checked password

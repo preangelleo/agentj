@@ -75,12 +75,15 @@ class Forward(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.transport.calls),1)
 
     async def test_greeting_first_message_once(self):
+        # P562: the greeting rides on the first answer the main conversation sends back
         self.c.store.data['greeting']='needs_message'
         await self.c.receive(self.api,fixture.Channel.msg(self),self.gen)
+        await fixture.Channel.complete(self,201,'译文')
         self.assertEqual(self.c.store.data['greeting'],'sent')
         sent=[json.loads(args[0][3])['msg'] for args in self.tr.calls if '/sendmessage' in args[0][1]]
         self.assertTrue(sent[0]['item_list'][0]['text_item']['text'].startswith('你好'))
         await self.c.receive(self.api,fixture.Channel.msg(self,message_id=2),self.gen)
+        await fixture.Channel.complete(self,202,'译文')
         sent=[json.loads(args[0][3])['msg'] for args in self.tr.calls if '/sendmessage' in args[0][1]]
         self.assertFalse(sent[-1]['item_list'][0]['text_item']['text'].startswith('你好'))
 
@@ -202,9 +205,9 @@ class PlainSend(unittest.IsolatedAsyncioTestCase):
             self.assertTrue((await self.c.forward(1,'phone'))['ok'])
         sent=upload.call_args.args[2].decode()
         self.assertTrue(sent.startswith('长文\n块 块'));self.assertNotIn('*',sent);self.assertNotIn('#',sent)
-        self.c.model.return_value=fixture.TurnResult('reply','# 译文\n- **一**\n`代码`','',None,None)
-        await self.c.receive(self.api,fixture.Channel.msg(self),self.gen)
-        sent=[json.loads(args[0][3])['msg'] for args in self.tr.calls if '/sendmessage' in args[0][1]]
+        await self.c.receive(self.api,fixture.Channel.msg(self),self.gen)     # P562: the main answer, sent back as plain text
+        await fixture.Channel.complete(self,201,'# 译文\n- **一**\n`代码`')
+        sent=[json.loads(args[0][3])['msg'] for args in self.transport.calls if '/sendmessage' in args[0][1]]
         self.assertEqual(sent[-1]['item_list'][0]['text_item']['text'],'译文\n• 一\n代码')
 
 

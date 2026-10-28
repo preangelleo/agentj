@@ -442,6 +442,8 @@
         <div class="apprbtns" id="apprBtns" hidden>
           <!-- P154: 长按批准 first — left on a computer, on top on a phone (base.css stacks .apprbtns ≤ 600 px). -->
           <button class="apprallow" id="apprAllow" type="button" data-i18n-attr="aria-label=r.appr.allowAria" aria-label="长按批准这次操作"><span class="fill"></span><span class="lbl" id="apprAllowLbl">长按批准</span><small class="apprkbd" id="apprKbd" hidden aria-hidden="true"></small></button>
+          <!-- P563 追加 7: a remote with no Face ID of its own — 「去设置」 takes 「批准」's slot, under the words (#apprPk moves above). -->
+          <button class="apprallow apprgo" id="apprGo" type="button" hidden><span class="lbl" data-i18n="p561.pk.go">去设置</span></button>
           <button class="apprdeny" id="apprDeny" type="button" data-i18n-attr="aria-label=r.appr.denyAria" aria-label="拒绝这次操作"><span data-i18n="r.appr.deny">拒绝</span></button>
         </div>
         <div class="pkassist" id="apprPk" hidden role="status" aria-live="polite"></div>
@@ -871,7 +873,7 @@
               <span class="pkrow__txt"><b class="setlab" id="set-pk-state" data-i18n="p539.pk.st.unknown">本机 {bio}：未确认</b><small id="set-pk-sub"></small><small class="pkrow__note" id="set-pk-note" hidden></small></span>
               <button type="button" id="set-pk-setup" class="aj-btn aj-btn--sm" data-i18n="p539.pk.setup">在本机设置</button>
             </div>
-            <button type="button" id="setup-faceid" class="setnav" hidden><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2M9 9.5v1M15 9.5v1M12 9.5V13h-1M9.5 16a3.5 3.5 0 0 0 5 0"/></svg><span><b data-i18n="phoneEnv.setup">设置 Face ID</b><small data-i18n="pkp.rowNote">危险操作前用 Face ID 确认是你本人。每台设备各有自己的 Face ID / 指纹钥匙。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
+            <button type="button" id="setup-faceid" class="setnav" hidden><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2M9 9.5v1M15 9.5v1M12 9.5V13h-1M9.5 16a3.5 3.5 0 0 0 5 0"/></svg><span><b data-i18n="phoneEnv.setup">设置 Face ID</b><small data-i18n="pkp.rowNote">危险操作前用 Face ID 确认是你本人。每台设备各自设置自己的 Face ID / 指纹。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
             <!-- P547 (PASSKEY-SEAT-MODEL §3): move this seat to a new Agent J host from the remote. js/seatxfer.js (hidden until the host answers seat_xfer_state) -->
             <button type="button" id="set-seat-xfer" class="setnav" hidden><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="4" width="9" height="6.5" rx="1.5"/><rect x="12.5" y="13.5" width="9" height="6.5" rx="1.5"/><path d="M7 13v2.5a2 2 0 0 0 2 2h1M8.5 15.5l2 2-2 2"/></svg><span><b data-i18n="sxf.row">转移席位到另一台 Agent J 主机</b><small data-i18n="sxf.rowNote">换新的 Agent J 主机时用：席位和遥控器都跟过去。</small><small id="set-seat-xfer-state" class="sxf-state" hidden></small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
             <div class="setacts" id="set-seat-xfer-acts" hidden><button type="button" id="set-seat-xfer-cancel" class="aj-btn aj-btn--sm" data-i18n="sxf.cancelBtn">撤销</button></div>
@@ -940,7 +942,7 @@
             <!-- P365: hosts that know `agentj notify` (settable lists notify.enabled); the sub-page is js/notify.js -->
             <button type="button" id="set-notify-nav" class="setnav" hidden data-keywords="notify automation script 脚本 通知 自动化"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2.2 2.2 0 0 0 4 0"/><path d="M3 9.5a9 9 0 0 1 2-4.5M21 9.5a9 9 0 0 0-2-4.5"/></svg><span><b data-i18n="p365.nav">自动化消息</b><small data-i18n="p365.navNote">你自己的脚本和定时任务发到这台手机的消息。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
             <!-- P366: 设置 → Webhook — external services tell the Agent (js/webhooks.js, AGENTJ-HOOKS-SPEC §8.3) -->
-            <button type="button" id="set-local-files-nav" class="setnav" data-paired><span><b data-i18n="p478.nav">本机文件访问</b><small data-i18n="p478.note">管理允许导入的文件夹和到期时间。撤销只影响以后的导入，已复制的文件会保留。</small></span></button>
+            <button type="button" id="set-local-files-nav" class="setnav" data-paired><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7.5A2.5 2.5 0 0 1 5.5 5h3.6l2 2.5h7.4A2.5 2.5 0 0 1 21 10v7.5a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5z"/><path d="M12 10.5v6M9.5 14l2.5 2.5 2.5-2.5"/></svg><span><b data-i18n="p478.nav">本机文件访问</b><small data-i18n="p478.note">管理允许导入的文件夹和到期时间。撤销只影响以后的导入，已复制的文件会保留。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
             <button type="button" id="set-hooks-nav" class="setnav" data-keywords="webhook 回调 callback stripe github 告警 alert"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="6.5" r="2.5"/><circle cx="6" cy="17" r="2.5"/><circle cx="18" cy="17" r="2.5"/><path d="M10.8 8.7L7.3 14.8M13.2 8.7l3.5 6.1M8.5 17h7"/></svg><span><b data-i18n="p366.nav">Webhook</b><small data-i18n="p366.navNote">外部服务做完事或出了问题，直接通知 Agent。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
             <div class="setrow" id="set-hb-row">
               <span class="setlab" data-i18n="set.heartbeat">心跳</span>
@@ -1062,7 +1064,7 @@
 
           <section class="setcard" id="set-s-safety" aria-labelledby="set-h-safety">
             <h3 class="setg" id="set-h-safety" data-i18n="set.gSafety">安全</h3>
-            <div class="setrow" data-paired><button type="button" id="set-estop" class="aj-btn" data-i18n="p435.estop">紧急停止所有 Agent</button></div>
+            <div class="setrow" data-paired><button type="button" id="set-estop" class="aj-btn"><span data-i18n="p435.estop">紧急停止所有 Agent</span><kbd class="setkbd" data-ix-key="app.stop_all" hidden></kbd></button></div>
             <div class="setrow" data-paired id="set-level-row" hidden>
               <span class="setlab" data-i18n="p336.level">审批档位</span>
               <div class="segrow" role="group" data-i18n-attr="aria-label=p336.level" aria-label="审批档位"><button type="button" data-set-level="safe" aria-pressed="false" data-i18n="p336.safe">安全</button><button type="button" data-set-level="standard" aria-pressed="false" data-i18n="p336.standard">中等</button><button type="button" data-set-level="harness" aria-pressed="false" data-i18n="p336.harness">全放行</button></div>
@@ -1152,20 +1154,20 @@
               <div class="setacts" id="set-term-en" hidden><button type="button" id="set-term-enable" class="aj-btn aj-btn--primary" data-i18n="p417.enable">开启并打开网页终端</button></div>
               <p class="setnote" id="set-term-or" data-i18n="p417.orCli" hidden>也可以在 Agent J 主机上运行下面这行：</p>
               <p class="setcmd" id="set-term-cmdline" hidden><code id="set-term-cmd" data-cc="ext"></code><button type="button" class="setcopy" data-copy="set-term-cmd" data-i18n-attr="aria-label=set.copy,title=set.copy" aria-label="复制命令" title="复制命令"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect class="ic-copy" x="8.5" y="8.5" width="11.5" height="11.5" rx="2.5"/><path class="ic-copy" d="M15.5 8.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7.5a2 2 0 0 0 2 2h2.5"/><path class="ic-done" d="M5 12.5l4.5 4.5L19 7.5"/></svg></button></p>
-              <div class="setacts" id="set-term-acts" hidden><button type="button" id="set-term-open" class="aj-btn aj-btn--primary" data-i18n="p408.open">打开网页终端</button><button type="button" id="set-term-forget" class="aj-btn" data-i18n="p408.forget">清除已记住的电脑密码</button></div>
-              <div id="set-term-pk" hidden><p class="setnote" data-i18n="p417.nopk">这台设备还没设置 Face ID（通行密钥），开启或打开网页终端前要先设置。</p><div class="setacts"><button type="button" id="set-term-faceid" class="aj-btn aj-btn--primary" data-i18n="phoneEnv.setup">设置 Face ID</button></div></div>
+              <div class="setacts" id="set-term-acts" hidden><button type="button" id="set-term-open" class="aj-btn aj-btn--primary" data-i18n="p408.open">打开网页终端</button><button type="button" id="set-term-forget" class="aj-btn" data-i18n="p408.forget">清除已记住的 Agent J 主机登录密码</button></div>
+              <div id="set-term-pk" hidden><p class="setnote"><button type="button" id="set-term-faceid" class="setlink pkgo" data-i18n="p561.pk.goUp">先在上面设置 Face ID</button></p></div>
               <p class="setnote setterm-last" id="set-term-last" role="status" hidden></p>
               <p class="setnote" id="set-term-note"></p>
             </div>
             <!-- P414 (PROTOCOL §37.9 / §37.11): 电脑密码 — only when the host block `vault` exists. The password is kept on the computer
                  as ciphertext; this remote can unlock it with Face ID, or ask a remote that already can (「让这台也能用」). js/vaultrow.js -->
             <div class="setrow setterm" data-paired id="set-vault-row" hidden>
-              <span class="setlab" data-i18n="p414.v.row">电脑密码</span>
+              <span class="setlab" data-i18n="p414.v.row">Agent J 主机登录密码</span>
               <p class="setnote" id="set-vault-state"></p>
               <div class="setacts" id="set-vault-acts" hidden><button type="button" id="set-vault-share" class="aj-btn aj-btn--primary" data-i18n="p414.v.share">让这台也能用</button><button type="button" id="set-vault-forget" class="aj-btn" data-i18n="p414.v.forget">清除这台</button></div>
               <p class="setnote setterm-last" id="set-vault-last" role="status" hidden></p>
               <div class="pkassist setterm-pk" id="set-vault-pk" role="status" aria-live="polite" hidden></div>
-              <p class="setnote" id="set-vault-note" data-i18n="p414.v.note">电脑密码只以加密形式存在电脑上，要在已记住它的设备上扫脸才能用；它不会存在这台设备上。</p>
+              <p class="setnote" id="set-vault-note" data-i18n="p414.v.note">这个密码只以加密形式保存在 Agent J 主机上，要在已记住它的设备上扫脸才能用；它不会存在这台设备上。</p>
             </div>
             <button type="button" id="menu-about" class="setnav"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-4.5"/></svg><span><b><span data-i18n="menu.about">这个网页版有多安全</span> <span id="badge" class="badge__chip setchip" data-i18n="badge.label">网页版</span></b><small data-i18n="set.aboutNote">加密、本页的版本号，以及怎么核对。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
           </section>
@@ -1181,7 +1183,7 @@
             <div class="setrow" data-paired>
               <span class="setlab" data-i18n="set.hostUpg">升级Agent J 主机上的 Agent J</span>
               <button type="button" id="set-hostupg" class="aj-btn aj-btn--sm" data-i18n="set.hostUpgBtn">检查并升级</button>
-              <p class="setnote" data-i18n="set.hostUpgNote">先列出升级会打断的事，你确认了再升；没有要打断的就直接升级。</p>
+              <p class="setnote"><span data-i18n="set.hostUpgNote">先列出升级会打断的事，你确认了再升；没有要打断的就直接升级。</span><span id="set-hostupg-how" data-ix-key="app.upgrade_host"></span></p>
             </div>
             <div class="setrow">
               <p class="setver"><span id="set-webver"></span><br><span id="set-hostver"></span></p>
@@ -1376,7 +1378,7 @@
       <div id="set-cards" class="setsub setimsg" hidden>
         <div class="setsub__in jcpage">
           <section class="setcard">
-            <p class="setnote" data-i18n="p360.intro">卡片会叠在左上角菜单的 5 张卡下面。打开哪张就多显示哪张；活都在你的电脑上干，手机只负责看和发消息。</p>
+            <p class="setnote" data-i18n="p360.intro">卡片会叠在左上角菜单的 5 张卡下面。打开哪张就多显示哪张；活都在你的 Agent J 主机上干，手机只负责看和发消息。</p>
             <div id="set-cards-list" class="jc-setlist"></div>
             <p class="setnote" data-i18n="p360.safe">卡片拿不到你的密钥，也不能自己动手：它的按钮只会变成一条聊天消息，先给你看全文，你点「发送」才发。</p>
             <button type="button" id="set-cards-assist" class="aj-btn imsg-assist"><img src="brand/img/logo-mark.png?v=2f7e6841" width="28" height="28" alt=""><span data-i18n="p360.assist">让 Agent J 帮我做一张卡</span></button>
@@ -1388,7 +1390,7 @@
       <div id="set-notify" class="setsub setmail setntf" hidden>
         <div class="setsub__in">
           <section class="setcard">
-            <p class="setnote" data-i18n="p365.intro">你电脑上的脚本和定时任务可以把一条消息连同文件发到这台手机。只有在这里登记过、开关打开的才能发。</p>
+            <p class="setnote" data-i18n="p365.intro">你 Agent J 主机上的脚本和定时任务可以把一条消息连同文件发到这台手机。只有在这里登记过、开关打开的才能发。</p>
             <div class="setrow">
               <span class="setlab" data-i18n="p365.onLab">允许自动化往这里发消息</span>
               <button type="button" id="ntf-on" class="tgl" role="switch" aria-checked="true" data-i18n-attr="aria-label=p365.onLab" aria-label="允许自动化往这里发消息"><i></i></button>
@@ -1397,8 +1399,8 @@
             <p class="setnote mailmsg" id="ntf-msg" role="status" aria-live="polite"></p>
             <h3 class="setg" data-i18n="p365.gScripts">你的脚本</h3>
             <div id="ntf-autos" class="ntflist"></div>
-            <p class="setnote" id="ntf-autos-empty" data-i18n="p365.empty" hidden>还没有登记的自动化。在电脑终端运行 agentj notify --allow &lt;名字&gt; 登记；脚本用 agentj notify --from &lt;名字&gt; --text … 发消息。没登记或开关关着的会被拒绝，不会弹窗问你。</p>
-            <p class="setnote" id="ntf-how" data-i18n="p365.how" hidden>登记新的：在电脑终端运行 agentj notify --allow &lt;名字&gt;；脚本用 agentj notify --from &lt;名字&gt; --text … 发消息。没登记或开关关着的会被拒绝，不会弹窗问你。</p>
+            <p class="setnote" id="ntf-autos-empty" data-i18n="p365.empty" hidden>还没有登记的自动化。在 Agent J 主机的终端运行 agentj notify --allow &lt;名字&gt; 登记；脚本用 agentj notify --from &lt;名字&gt; --text … 发消息。没登记或开关关着的会被拒绝，不会弹窗问你。</p>
+            <p class="setnote" id="ntf-how" data-i18n="p365.how" hidden>登记新的：在 Agent J 主机的终端运行 agentj notify --allow &lt;名字&gt;；脚本用 agentj notify --from &lt;名字&gt; --text … 发消息。没登记或开关关着的会被拒绝，不会弹窗问你。</p>
             <h3 class="setg" id="ntf-tasks-h" data-i18n="p365.gTasks">定时任务</h3>
             <div id="ntf-tasks" class="ntflist"></div>
             <p class="setnote" data-i18n="p365.agentNote">每条消息主 Agent 也会看到；它没有要补充的就不说话。</p>
@@ -1494,7 +1496,7 @@
           <section class="setcard" aria-labelledby="rm-list-h">
             <h3 class="setg" id="rm-list-h" data-i18n="rm.list">已绑定的遥控器</h3>
             <ul id="rm-list" class="rmlist" tabindex="0" aria-labelledby="rm-list-h"></ul>
-            <p id="rm-legacy" class="setnote" hidden data-i18n="rm.legacy">电脑上的程序还不支持在手机上管理遥控器，这里只能查看。要添加、改名或解绑，在电脑上运行 `agentj pair`、`agentj devices` 或 `agentj revoke <设备>`。</p>
+            <p id="rm-legacy" class="setnote" hidden data-i18n="rm.legacy">Agent J 主机上的程序还不支持在手机上管理遥控器，这里只能查看。要添加、改名或解绑，在 Agent J 主机上运行 agentj pair、agentj devices 或 agentj revoke &lt;设备&gt;。</p>
           </section>
         </div>
       </div>

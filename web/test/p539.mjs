@@ -99,7 +99,7 @@ try {
         passkey_required: true, fa: 'Y3JlZC0x', fa_ch: b64(Buffer.alloc(32, 7)), fa_s: 'borrowed', allow_offer: ['preauth:computer.control', 'preauth:browser.control'] });
       await waitFor(p, `!document.getElementById('sheet').hidden && !document.getElementById('apprPk').hidden`);
       const pk = await ev(p, `document.getElementById('apprPk').innerText`);
-      check(pk.includes(L('这台遥控器还没有自己的 Touch ID 钥匙', 'This remote has no Touch ID key of its own yet')) && pk.includes(L('在本机设置', 'Set up here')), 'b: borrowed hint + 在本机设置 ' + name);
+      check(pk.includes(L('这台遥控器还没有设置自己的 Touch ID', "This remote hasn't set up its own Touch ID yet")) && pk.includes(L('在本机设置', 'Set up here')), 'b: borrowed hint + 在本机设置 ' + name);
       const boxes = await ev(p, `[...document.querySelectorAll('#apprMailAllow label')].map(l=>l.innerText)`);
       check(boxes.length === 1 && boxes[0].includes('Computer Use'), 'd: one preauth box, unknown action not rendered ' + name);
       check(await ev(p, `!document.querySelector('#apprMailAllow input').checked`), 'd: unticked by default ' + name);
@@ -136,7 +136,7 @@ try {
       if (w === 390) {
         await openSettings(p, 'set-h-agent');
         const row = await ev(p, `(() => { const r = document.getElementById('set-pk-row').cloneNode(true); r.querySelector('#set-pk-sub')?.remove(); return r.innerText || r.textContent; })()`);   // P559: the explanation line names all three
-        check(row.includes(L('本机 Touch ID：用的是别的设备上的钥匙', "This device's Touch ID: using another device's key")) && row.includes('Touch ID') && !row.includes('Face ID'), 'Mac borrowed row ' + name + ' ' + JSON.stringify(row));
+        check(row.includes(L('本机 Touch ID：还没设置，借用别的设备确认', "This device's Touch ID: not set up, confirming with another device")) && row.includes('Touch ID') && !row.includes('Face ID'), 'Mac borrowed row ' + name + ' ' + JSON.stringify(row));
         await shot(p, `b-mac-pkrow-borrowed-${name}`);
         await closeSettings(p);
       }
@@ -193,7 +193,7 @@ try {
       await ev(p, `document.getElementById('rs-cmd-doctor').click()`);
       await waitFor(p, `!document.getElementById('confirm').hidden && !document.getElementById('confirm-pk').hidden`);
       const hintTxt = await ev(p, `document.getElementById('confirm-pk').innerText`);
-      check(hintTxt.includes(L('这台遥控器还没有自己的 Touch ID 钥匙', 'This remote has no Touch ID key of its own yet')) && hintTxt.includes(L('在本机设置', 'Set up here')), 'g: the sheet says borrowed + 在本机设置 ' + name);
+      check(hintTxt.includes(L('这台遥控器还没有设置自己的 Touch ID', "This remote hasn't set up its own Touch ID yet")) && hintTxt.includes(L('在本机设置', 'Set up here')), 'g: the sheet says borrowed + 在本机设置 ' + name);
       check(await tall(p, '#confirm-pk button'), 'g: 44 px ' + name);
       check(await ev(p, `(()=>{const a=document.querySelector('#confirm .confirm-row').getBoundingClientRect(),b=document.getElementById('confirm-pk').getBoundingClientRect();return b.top>=a.bottom})()`), 'g: the line sits under the buttons ' + name);
       await shot(p, `g-cmdrun-borrowed-${name}`);

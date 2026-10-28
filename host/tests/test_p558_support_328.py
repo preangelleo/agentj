@@ -51,7 +51,7 @@ class Support328(p552.Merged):
         # the owner, once: the reason and the way back
         self.told.assert_awaited_once()
         text = self.told.await_args.args[1]
-        self.assertIn("换了钥匙", text)
+        self.assertIn("重新设置了 Face ID / 指纹", text)
         self.assertIn("用本机重新确认", text)
         self.assertIn("security", self.pushes)
         self.assertFalse(self.told_now())
@@ -62,7 +62,7 @@ class Support328(p552.Merged):
         self.assertEqual(self.last()["reason"], "timeout")
         self.assertIn("没有批准", res["message"])
         # the phone's line (reason + way back) and the Agent's line (Standard applies), each once
-        self.assertEqual(sum("换了钥匙" in n and "用本机重新确认" in n for n in self.notices), 1, self.notices)
+        self.assertEqual(sum("重新设置了 Face ID / 指纹" in n and "用本机重新确认" in n for n in self.notices), 1, self.notices)
         self.assertEqual(sum(n.startswith("🔐 配置里写着审批档位「全放行」") and "中等" in n for n in self.notices), 1, self.notices)
         self.ask("ls -la")
         self.assertEqual(len(self.notices), 2, self.notices)

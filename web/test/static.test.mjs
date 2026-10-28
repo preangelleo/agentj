@@ -494,6 +494,91 @@ test('i18n: 「主机」 is always 「Agent J 主机」 in the phone dictionary'
   }
 });
 
+// P561 追加 15 (董事长 10-28 「为啥写个"电脑"」): the Agent J host is never 「电脑」 / "computer" either — the P555 rule above
+// only caught a bare 「主机」, so 「电脑密码」 got through. 「电脑」 stays only where it names the kind of device the owner holds
+// (a remote: 「电脑浏览器」, 「用电脑作遥控器」, 「这台 Windows 电脑」 …). Those device phrases are cut out first (HOST_PC_OK),
+// then every phrase that can only mean the host (HOST_PC) fails.
+const HOST_PC_OK = /电脑浏览器|电脑上的 ?(?:Chrome|遥控器)|(?:比如|用|常用|另一台|这台 ?Windows ?)电脑|装了 Claude Code 的电脑|电脑显示的码|在电脑上确认|记下是电脑|电脑操控/g;
+const HOST_PC = /电脑(?:的)?(?:登录)?密码|电脑上的 ?Agent|在电脑(?:的)?(?:上|终端)?运行|(?:连上|没连上|连接)电脑|电脑(?:未连接|离线|不在线|可能不在线|正在|上(?:已有|另有|还|没有|找不到|读不了|关闭|的其他程序|的画面))|电脑(?:没有|没)(?:回应|接受|认出)|电脑没能(?:完成|保存)|(?:升级|问|交给|发给你的|来自你的|请)电脑|到电脑前|这台电脑的系统|你的电脑(?:上|能)/;
+const HOST_COMPUTER_EN = /\bcomputer(?:'s|’s)? (?:login )?password|\bAgent J computer\b|(?<!confirm )\bon (?:the|your) computer\b|\b(?:the|your) computer (?:did|didn|does|is|cannot|could|may|uses|keeps)/i;
+const hostAsComputer = (zh) => HOST_PC.test(zh.replace(HOST_PC_OK, ' '));
+test('i18n: the Agent J host is never 「电脑」 / "computer" (P561 追加 15)', () => {
+  // negative cases = the dictionary before this fix (p414.v.row, p408.mode.local, p408.loginLabel, p414.ex.off, p360.loading, p417.so.reaching)
+  for (const s of ['电脑密码', '电脑密码已加密保存在电脑上，扫脸后电脑才使用它。', '电脑登录密码', '输入电脑的登录密码',
+    '网页终端现在没有开启。在电脑上运行 `agentj terminal enable` 后再试。', '正在问电脑……', '电脑上的 Agent J 停了',
+    '电脑没有回应。如果电脑上的 Agent J 版本较旧，升级后才有 Webhook。', '这台电脑的系统还不支持网页终端。']) {
+    assert.ok(hostAsComputer(s), `rule misses 「${s}」`);
+  }
+  for (const s of ['Computer password', 'Type your computer login password', 'Run `agentj terminal enable` on the computer, then try again.', 'Your computer did not answer.']) {
+    assert.match(s, HOST_COMPUTER_EN, `rule misses "${s}"`);
+  }
+  // kept: 「电脑」 as the kind of device in the owner's hand (a remote), from the dictionary as it stands
+  for (const s of ['因为安全性和便捷性的原因，网页终端只能在电脑浏览器里操控。', '用电脑作遥控器时就复制链接，用浏览器打开。', '这台 Windows 电脑的通行密钥存在 Windows Hello 里。',
+    '首台遥控器配好了。建议再配常用电脑：在电脑浏览器打开 m.agentj.app，用这台手机扫电脑显示的码，核对六位码后在手机上确认。', '电脑操控（Computer Use）',
+    'Agent J 主机登录密码', '在 Agent J 主机上运行 `agentj terminal enable` 后再试。']) {
+    assert.ok(!hostAsComputer(s), `device wording flagged: 「${s}」`);
+  }
+  for (const s of ['the web terminal can only be used from a computer browser', 'compare the six digits and confirm on the computer.']) assert.doesNotMatch(s, HOST_COMPUTER_EN);
+  const visible = HTML.replace(/<script[\s\S]*?<\/script>|<[^>]+>/g, ' ');
+  // p362.found / foundAlso are quoted by 04-phone and 14-manual (14-manual generates the agentj-manual skill in the host package):
+  // they move with the next manual render, not in this page-only hotfix
+  const MANUAL_PENDING = new Set(['p362.found', 'p362.foundAlso']);
+  for (const [k, v] of [...Object.entries(DICT.zh), ['index.html text', visible]]) if (!MANUAL_PENDING.has(k)) assert.ok(!hostAsComputer(v), `zh ${k}: the host is 「Agent J 主机」, not 「电脑」: ${v}`);
+  // ix* / ixges* are generated from interactions.json (`tools/interactions render` also rewrites the site's shortcut docs and the
+  // agentj-manual skill): their English still says "computer" (5 entries) until that render ships — the Chinese ones are checked above
+  const IX_PENDING = new Set(['ix.page.earliest', 'ix.app.load', 'ix.app.upgrade_host', 'ix.app.reload_host', 'ixges.app.upgrade_host']);
+  for (const [k, v] of Object.entries(DICT.en)) if (!IX_PENDING.has(k) && !MANUAL_PENDING.has(k)) assert.doesNotMatch(v, HOST_COMPUTER_EN, `en ${k}: the host is "Agent J host", not "computer"`);
+});
+
+// P563 追加 4 (贾维斯审查): the rule above reads the page only, so the host still sent 「电脑密码」 to the remote (terminal notices,
+// sudo frames, `agentj terminal`, keep-awake cards, the agentj-manual skill). The sudo password is 「Agent J 主机登录密码」 /
+// "Agent J host login password" (TERMS.md) wherever the host says it too: every string literal of host/agentj/**/*.py
+// (docstrings and comments are not sent, regex sources are detectors of the old wording) and every skill .md. 「电脑」 as the kind of
+// device in the owner's hand (HOST_PC_OK: 「电脑浏览器」 …) is cut out first. The monorepo only: the public web export ships web/ alone.
+const HOST_SRC = fileURLToPath(new URL('../../host/agentj/', import.meta.url));
+const HOST_PW_ZH = /电脑(?:上)?的?\s*(?:登录|管理员|开机)?\s*密码|这台电脑的登录/;
+const HOST_PW_EN = /\bcomputer(?:'s|’s)?\s+(?:login\s+|administrator\s+|admin\s+)?(?:or\s+admin\s+)?password|\bpasswords?\s+(?:of|for)\s+(?:this|the|your)\s+computer\b/i;
+const hostPw = (s) => HOST_PW_ZH.test(s.replace(HOST_PC_OK, ' ')) || HOST_PW_EN.test(s);
+const PY_STRINGS = `import ast, json, sys
+out = []
+for f in sys.argv[1:]:
+    src = sys.stdin.read() if f == '-' else open(f, encoding='utf-8').read()
+    tree = ast.parse(src)
+    doc = {id(n.value) for n in ast.walk(tree) if isinstance(n, ast.Expr) and isinstance(n.value, ast.Constant)}
+    out += [[f, n.lineno, n.value] for n in ast.walk(tree) if isinstance(n, ast.Constant) and isinstance(n.value, str) and id(n) not in doc]
+print(json.dumps(out, ensure_ascii=False))`;
+const pyStrings = (files, input) => {
+  const r = spawnSync('python3', ['-c', PY_STRINGS, ...files], { input, encoding: 'utf8', maxBuffer: 256 << 20 });
+  assert.equal(r.status, 0, r.stderr);
+  return JSON.parse(r.stdout).filter(([, , s]) => !s.includes('(?:'));   // regex sources: detectors, not text
+};
+test('host → remote text: the sudo password is 「Agent J 主机登录密码」, never 「电脑密码」 (P563 追加 4)', { skip: !existsSync(HOST_SRC) }, () => {
+  // negative cases = the host before this fix (terminal.py, term_askpass.py, term_cli.py, term_vshare.py, keep_awake.py, elevate.py,
+  // seat_transfer.py, the agentj-manual skill)
+  for (const s of ['网页终端：电脑密码输错了一次', '[sudo：这台电脑上没有可用的电脑密码，sudo 不会运行 / no computer password available]',
+    '用 Face ID + 电脑登录密码开启', '在手机上输入这台电脑的登录密码批准', '这台电脑的登录 / 管理员密码不能用密钥卡要',
+    'Web terminal: a wrong computer password', "approve it with this computer's login password", "The computer's login or admin password",
+    "you type this computer's administrator password", '**Fill in the computer password with Face ID**']) {
+    assert.ok(hostPw(s), `rule misses 「${s}」`);
+  }
+  for (const s of ['网页终端：Agent J 主机登录密码输错了一次', '在电脑浏览器里用 Face ID + Agent J 主机登录密码开启', '用电脑作遥控器时就复制链接，用浏览器打开。',
+    'Web terminal: a wrong Agent J host login password', 'switch it on in the computer browser with Face ID + the Agent J host login password']) {
+    assert.ok(!hostPw(s), `allowed wording flagged: 「${s}」`);
+  }
+  // the extractor itself: literals and f-string parts in, docstrings out
+  const planted = pyStrings(['-'], '"""电脑密码 (docstring)"""\nx = f"已允许 {n} 使用记住的电脑密码"\ny = ("a computer "\n     "password")\n');
+  assert.deepEqual(planted.map(([, , s]) => s).filter(hostPw).sort(), [' 使用记住的电脑密码', 'a computer password'].sort(),
+    'f-string part + implicitly joined literal caught, docstring skipped');
+  const all = walk(HOST_SRC);
+  const py = pyStrings(all.filter((f) => f.endsWith('.py')));
+  assert.ok(py.length > 5000 && py.some(([f, , s]) => f.endsWith('terminal.py') && s.includes('Agent J 主机登录密码')), 'host strings were read');
+  const bad = py.filter(([, , s]) => hostPw(s)).map(([f, l, s]) => `${relative(HOST_SRC, f)}:${l} ${s.slice(0, 80)}`);
+  for (const f of all.filter((p) => p.includes(`${sep}skills${sep}`) && p.endsWith('.md'))) {
+    read(f).split('\n').forEach((s, i) => { if (hostPw(s)) bad.push(`${relative(HOST_SRC, f)}:${i + 1} ${s.slice(0, 80)}`); });
+  }
+  assert.deepEqual(bad, [], 'say 「Agent J 主机登录密码」 / "Agent J host login password" (agentj-manual: fix 14-manual, run tools/manual_skill.mjs)');
+});
+
 test('i18n: the forbidden-term check itself works (positive control)', { skip: NO_GLOSSARY }, () => {
   const planted = ['Noise 握手', '急停', 'alpha', 'harness', 'Zero Access'];
   assert.ok(!GLOSSARY.forbidden.some(f => jsRe(f.pattern).test('紧急停止所有 Agent')), 'P435 owner-approved label is allowed');

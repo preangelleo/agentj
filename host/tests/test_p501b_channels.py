@@ -45,44 +45,48 @@ class Policy(unittest.TestCase):
 
 
 class Routing(unittest.IsolatedAsyncioTestCase):
-    async def test_real_telegram_owner_adapter_bypasses_main_accept(self):
+    """P562 (#337, chairman 10-28): the owner's own channels are answered by the main conversation — no avatar."""
+    async def test_real_telegram_owner_reaches_the_main_conversation(self):
         import test_p118_telegram as fixture
+        from agentj import provenance
         base = fixture._Base()
         base.setUp()
         try:
             avatar = NS(receive_owner=AsyncMock(return_value='分身答复'))
             base.host.external_channels = avatar
             self.assertTrue(await base.t.incoming(fixture.msg('你好'), base.cfg))
-            avatar.receive_owner.assert_awaited_once()
-            self.assertEqual(avatar.receive_owner.call_args.args[0], 'telegram')
-            base.host._accept.assert_not_awaited()
+            avatar.receive_owner.assert_not_awaited()
+            base.host._accept.assert_awaited_once()
+            session = base.host._accept.call_args.args[0]
+            self.assertEqual(session.provenance, provenance.telegram_owner(fixture.OWNER))
+            self.assertTrue(callable(session.on_card), 'a waiting card tells this chat where to confirm')
         finally:
             base.doCleanups()
 
-    async def test_no_avatar_never_falls_back_to_main(self):
+    async def test_without_the_channel_adapter_the_owner_still_reaches_main(self):
         import test_p118_telegram as fixture
         base = fixture._Base()
         base.setUp()
         try:
             base.host.external_channels = None
-            self.assertFalse(await base.t.incoming(fixture.msg('你好'), base.cfg))
-            base.host._accept.assert_not_awaited()
+            self.assertTrue(await base.t.incoming(fixture.msg('你好'), base.cfg))
+            base.host._accept.assert_awaited_once()
         finally:
             base.doCleanups()
 
-    async def test_compact_with_quote_goes_to_avatar_not_main_command(self):
+    async def test_compact_with_quote_compacts_the_main_conversation(self):
         import test_p118_telegram as fixture
         base=fixture._Base();base.setUp()
         try:
             base.host.external_channels=NS(receive_owner=AsyncMock(return_value='收到'))
             base.t.compact=AsyncMock(return_value=True)
             await base.t.incoming(fixture.msg('/compact',reply_to_message={'from':{'id':99,'is_bot':True},'text':'quoted'}),base.cfg)
-            base.host.external_channels.receive_owner.assert_awaited_once()
-            base.host._accept.assert_not_awaited();base.t.compact.assert_not_awaited()
+            base.host.external_channels.receive_owner.assert_not_awaited()
+            base.host._accept.assert_not_awaited();base.t.compact.assert_awaited_once()
         finally:
             base.doCleanups()
 
-    async def test_owner_mail_adapter_bypasses_main_accept(self):
+    async def _mail(self, auth):
         from email import policy as ep
         from email.parser import Parser
         from agentj import mail
@@ -90,16 +94,31 @@ class Routing(unittest.IsolatedAsyncioTestCase):
         cfg = mail.blank_config()
         cfg.update(enabled=True, generation='fixture', allow=[{'addr':'owner@example.test', 'role':'owner'}])
         avatar = NS(receive_owner=AsyncMock(return_value='分身答复'))
-        host = NS(stopped=lambda:False, agent_cfg={}, external_channels=avatar, _accept=AsyncMock(), hist_add=lambda *a:{'id':1})
+        host = NS(stopped=lambda:False, agent_cfg={}, external_channels=avatar, _accept=AsyncMock(return_value=NS(turn=7)), hist_add=lambda *a:{'id':1})
         manager = object.__new__(mail.Mail)
         manager.host=host;manager.st=NS();manager.lang=lambda:'zh';manager.reply=AsyncMock()
-        verdict=NS(addr='owner@example.test', role='owner', auth='pass', name='')
+        verdict=NS(addr='owner@example.test', role='owner', auth=auth, name='')
         from unittest.mock import patch
         state={'routes':{}}
         with patch.object(mail,'read_config',return_value=cfg), patch.object(mail,'read_state',return_value=state), patch.object(mail,'save_state'):
             self.assertTrue(await manager.deliver(cfg,msg,verdict))
-        avatar.receive_owner.assert_awaited_once();host._accept.assert_not_awaited()
-        manager.reply.assert_awaited_once_with(1,'分身答复')
+        avatar.receive_owner.assert_not_awaited();manager.reply.assert_not_awaited()
+        host._accept.assert_awaited_once()
+        return host._accept.call_args.args[0], state['routes']['7']
+
+    async def test_authenticated_owner_mail_reaches_the_main_conversation(self):
+        from agentj import provenance
+        session, route = await self._mail('dkim')
+        self.assertEqual(session.provenance, provenance.email_owner('owner@example.test'))
+        self.assertEqual((route['role'], route['verified']), ('owner', True))
+
+    async def test_unverified_owner_address_keeps_the_guest_envelope(self):
+        """The owner turned the sender check off: the address alone does not prove the owner — untrusted, approvals refused."""
+        from agentj import provenance
+        session, route = await self._mail('off')
+        self.assertEqual(session.provenance, provenance.email_guest('owner@example.test'))
+        self.assertIsNone(provenance.owner_channel(session.provenance))
+        self.assertFalse(route['verified'])
 
 
 class Runtime(unittest.IsolatedAsyncioTestCase):
@@ -198,14 +217,18 @@ class Runtime(unittest.IsolatedAsyncioTestCase):
         c=WeChat(self.host,model=AsyncMock(return_value=result))
         c.index=self.channel.index;c.store.data['account']=dict(ACCOUNT)
         c.open_card=lambda _:None;c.publish=lambda:None
+        # P562: an image request while the main harness (Claude here) has no image tool → the owner's Codex draws it
+        self.host.agent.kind='claude';c.draw=AsyncMock(return_value=result)
         tr=Transport([{},{}]);api=protocol.API(ACCOUNT,tr)
         try:
             with patch.object(protocol.Media,'upload',return_value={'type':2,'image_item':{'media':{'fixture':True}}}) as upload:
                 await c.receive(api,{'from_user_id':'owner','message_type':1,'message_id':1,'context_token':'fixture',
                                      'item_list':[{'type':1,'text_item':{'text':'画猫'}}]},c.store.data['generation'])
-            upload.assert_called_once()
+            upload.assert_called_once();c.draw.assert_awaited_once()
             import json
             self.assertEqual(json.loads(tr.calls[1][0][3])['msg']['item_list'][0]['type'],2)
+            self.host.agent.submit.assert_not_called()
+            self.assertEqual(self.host.hist_add.call_args.args[0]['k'],'wechat','the exchange shows on the Web App page')
         finally:
             c.closed=True;c.store.close()
 

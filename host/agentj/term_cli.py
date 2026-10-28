@@ -237,10 +237,10 @@ ERR = {
 def add_parser(sub) -> None:
     p = sub.add_parser("terminal", help="网页终端：status · enable · allow · deny · disable · forget · logs · open · output / the web "
                        "terminal (line mode)",
-                       description="在电脑浏览器里开一个限时的终端（默认关）。在这台电脑上运行 enable，或在电脑浏览器的「设置 → 安全」里"
-                                   "用 Face ID + 电脑登录密码开启；手机上不能用。 / A time-limited terminal in a computer browser (off by "
+                       description="在电脑浏览器里开一个限时的终端（默认关）。在这台 Agent J 主机上运行 enable，或在电脑浏览器的「设置 → 安全」里"
+                                   "用 Face ID + Agent J 主机登录密码开启；手机上不能用。 / A time-limited terminal in a computer browser (off by "
                                    "default): run enable here, or switch it on in the computer browser's Settings → Security with Face "
-                                   "ID + this computer's login password; not on phones.")
+                                   "ID + the Agent J host login password; not on phones.")
     p.add_argument("action", choices=["status", "enable", "allow", "deny", "disable", "forget", "logs", "open", "output"])
     p.add_argument("target", nargs="?", help="遥控器（id 或名字），用于 allow、deny、forget / the remote (id or name) for allow, deny, forget")
     p.add_argument("--device", action="append", help="enable：能用的遥控器（可多次；默认 = 唯一有通行密钥的那台）/ a remote (repeatable)")
@@ -277,7 +277,7 @@ def _password_sudo() -> str | None:
     except (OSError, subprocess.SubprocessError):
         return "sudo 没有回应。/ sudo did not answer."
     if r.returncode == 0:
-        return ("你的 sudo 不需要密码（NOPASSWD）：网页终端要用电脑登录密码当第二道锁，这样配置不能开。/ Your sudo needs no password "
+        return ("你的 sudo 不需要密码（NOPASSWD）：网页终端要用 Agent J 主机登录密码当第二道锁，这样配置不能开。/ Your sudo needs no password "
                 "(NOPASSWD); the web terminal needs a password sudo.")
     if "password is required" not in (r.stderr or ""):
         return "你的账户不能用 sudo（不是管理员）：网页终端要一个用密码的 sudo。/ Your account cannot use sudo; a password sudo is needed."
@@ -421,7 +421,7 @@ def _print(op: str, res: dict) -> None:
             if d.get("until"):
                 extra.append("临时，到 " + time.strftime("%m-%d %H:%M", time.localtime(d["until"])))
             if d.get("cache"):
-                extra.append({"prf": "已记住电脑密码（扫脸才能解开）", "local": "已记住电脑密码（本机加密）"}.get(d["cache"], d["cache"]))
+                extra.append({"prf": "已记住 Agent J 主机登录密码（扫脸才能解开）", "local": "已记住 Agent J 主机登录密码（主机本地加密）"}.get(d["cache"], d["cache"]))
             if not d.get("passkey"):
                 extra.append("没有通行密钥 / no passkey")
             print(f"  {mark} {d.get('name')} ({d.get('id')})" + (" — " + "；".join(extra) if extra else ""))
@@ -435,6 +435,6 @@ def _print(op: str, res: dict) -> None:
         print("✓ 已确认：网页终端" + ("已打开" if op == "enable" else "已临时允许") + "。手机上「设置 → 安全 → 网页终端」进入。/ Confirmed: "
               "open it from the phone's Settings → Security → Web terminal.")
     elif op == "forget":
-        print(f"✓ 已清除记住的电脑密码（{res.get('deleted', 0)} 份）。/ Cached computer password(s) deleted.")
+        print(f"✓ 已清除记住的 Agent J 主机登录密码（{res.get('deleted', 0)} 份）。/ Cached Agent J host login password(s) deleted.")
     else:
         print("✓ 已" + {"disable": "关闭网页终端并清除记住的密码", "deny": "从名单上去掉"}.get(op, "完成") + "。/ Done.")
