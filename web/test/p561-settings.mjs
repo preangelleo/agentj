@@ -25,7 +25,7 @@ const STATES = { idle: ['idle', ''], working: ['working', ''], waiting: ['waitin
 const audit = [];
 // A computed colour (rgb() or color(srgb …), what Chromium reports for color-mix) → [r, g, b] 0–255
 const rgbOf = (c) => { const m = /color\(srgb ([\d.]+) ([\d.]+) ([\d.]+)/.exec(c); return m ? m.slice(1, 4).map((v) => +v * 255) : c.match(/[\d.]+/g).slice(0, 3).map(Number); };
-const SOOTY = [20, 20, 20];
+const LOTION = [250, 249, 245];
 /** P561 追加 18 · P563 追加 1: the digit is --state itself in every state (no color-mix — closed palette); idle on P517's Lotion
  *  circle, every other state on a Sooty circle (≥ 4.5:1) */
 const want = (name, state) => rgbOf(state);
@@ -147,7 +147,7 @@ try {
         audit.push({ badge: name, scheme, phase, ...m });
         if (phase === 'after') {
           near(rgbOf(m.badge), want(name, m.state), name);
-          if (name !== 'idle') { near(rgbOf(m.circle), SOOTY, name + ' circle'); assert.ok(ratio(rgbOf(m.badge), SOOTY) >= 4.5, name + ' digit ≥ 4.5:1 on its Sooty circle'); }
+          near(rgbOf(m.circle), LOTION, name + ' circle');   // P564: Lotion in every state
         }
       }
       if (phase === 'after') {
@@ -155,7 +155,8 @@ try {
         await evaluate(p, `(async()=>{(await import('./js/theme.js')).applyTheme({t:'theme',v:1,id:'custom',colors:{state:{idle:'#ffe292',working:'#71bbde',waiting:'#ebc9b7',question:'#cacadb',offline:'#858585'}}})})()`);
         for (const [name, [s, kind]] of Object.entries(STATES)) {
           await evaluate(p, `document.body.dataset.status='${s}';document.body.dataset.kind='${kind}'`);
-          near(rgbOf(await evaluate(p, `getComputedStyle(document.querySelector('#setBtn [data-remote-count]')).color`)), want(name, custom[name]), 'custom ' + name);
+          const c = await evaluate(p, `(()=>{const c=getComputedStyle(document.querySelector('#setBtn [data-remote-count]'));return {fg:c.color,bg:c.backgroundColor}})()`);
+          near(rgbOf(c.fg), want(name, custom[name]), 'custom ' + name); near(rgbOf(c.bg), LOTION, 'custom ' + name + ' circle');
           if (scheme === 'light') await shot(p, ['#setBtn'], `${OUT_BADGE}/custom-${name}.png`);
         }
       }

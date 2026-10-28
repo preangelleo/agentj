@@ -49,7 +49,7 @@ test('#323 补 ②: a key the host did not take → why + 「在本机设置（�
 
 test('#323 补 ③: the same device replaces its own left-behind key (same user handle, nothing excluded)', () => {
   const f = src('js/faceid.js');
-  assert.match(f, /user: \{ id: encodeHandle\(\{ relayIndex: ri, channel, hostPub \}\), name, displayName: name \+ displaySuffix \}/);
+  assert.match(f, /user: \{ id: encodeHandle\(\{ relayIndex: ri, channel, hostPub, tag \}\), name, displayName: name \+ displaySuffix \}/);   // P564: + this remote's stable tag
   assert.match(f, /excludeCredentials: \[\]/);
   assert.doesNotMatch(f.slice(f.indexOf('export async function register'), f.indexOf('export async function register') + 1500), /getRandomValues|Date\.now/);
 });

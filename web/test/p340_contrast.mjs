@@ -66,7 +66,9 @@ const AUDIT=`((HEAVY_L,exceptions)=>{
    else if(heavy&&(lum(fc)<=L||ratio<3))why.push('dark text on a heavy ground');
    if(ctrl&&!(colour&&lotion)&&ratio<(large?3:4.5))why.push('control label '+ratio.toFixed(2)+':1');
    const approvedLocation=exceptions.find(x=>e.matches(x.selector))?.id||null;
-   text.push({approvedLocation,k:name(e)+'「'+own.slice(0,18)+'」',fg:'rgb('+fc+')',bg:'rgb('+bg+')',ratio:+ratio.toFixed(2),heavy,ctrl,bad:why});
+   // P564: an exemption keyed to the state colour carries this page's resolved --state, composited like the digit
+   const stateFg=exceptions.find(x=>x.id===approvedLocation)?.fg==='state'?(()=>{const i=document.createElement('i');i.style.color='var(--state)';e.parentElement.append(i);const q=rgb(getComputedStyle(i).color);i.remove();return 'rgb('+q.c.map((v,k)=>Math.round(v*q.a+bg[k]*(1-q.a)))+')';})():undefined;
+   text.push({approvedLocation,stateFg,k:name(e)+'「'+own.slice(0,18)+'」',fg:'rgb('+fc+')',bg:'rgb('+bg+')',ratio:+ratio.toFixed(2),heavy,ctrl,bad:why});
   }
   // icon candidates
   const tagn=e.tagName.toLowerCase(),mask=(s.maskImage&&s.maskImage!=='none')||(s.webkitMaskImage&&s.webkitMaskImage!=='none'),bgi=/url\\(/.test(s.backgroundImage);

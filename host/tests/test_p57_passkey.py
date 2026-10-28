@@ -476,5 +476,20 @@ class HostLevel(unittest.TestCase):
         self.assertIsNone(self.st.passkey_of(wire.b64u(a.id)))
 
 
+class P564Handle(unittest.TestCase):
+    """P564 追加 A (董事长 10-28 10:5x): v2 handle = v1 with byte 0 = 2 + the remote's 8-byte tag (58 B) — a synced passkey
+    manager keeps one passkey per handle; the host accepts both versions for ITS channel + key only."""
+    def test_v1_and_v2_match_this_host_only(self):
+        v1 = passkey.user_handle(0, VEC_CHANNEL, VEC_HOSTPUB)
+        v2 = b"\x02" + v1[1:] + os.urandom(8)
+        self.assertTrue(passkey.handle_matches(v1, VEC_CHANNEL, VEC_HOSTPUB), "an old 50-byte passkey still restores")
+        self.assertTrue(passkey.handle_matches(v2, VEC_CHANNEL, VEC_HOSTPUB), "a P564 58-byte passkey restores")
+        self.assertFalse(passkey.handle_matches(v2, VEC_CHANNEL, os.urandom(32)), "another computer's key")
+        self.assertFalse(passkey.handle_matches(b"\x01" + v2[1:], VEC_CHANNEL, VEC_HOSTPUB), "v1 byte with a tag")
+        self.assertFalse(passkey.handle_matches(b"\x02" + v1[1:], VEC_CHANNEL, VEC_HOSTPUB), "v2 byte without a tag")
+        self.assertFalse(passkey.handle_matches(v2[:-1], VEC_CHANNEL, VEC_HOSTPUB))
+        self.assertFalse(passkey.handle_matches(v2 + b"\x00", VEC_CHANNEL, VEC_HOSTPUB))
+        self.assertLessEqual(len(v2), 64, "WebAuthn user.id ≤ 64 bytes")
+
 if __name__ == "__main__":
     unittest.main()

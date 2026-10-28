@@ -3400,17 +3400,10 @@ html[data-ios-safari="1"] body::before{content:"";position:absolute;inset:0;back
 
 /* P535: dynamic pages share the logo state; Settings retains its approved badge. */
 #setBtn>.remote-count-badge{color:var(--state)}
-/* P561 追加 18 (董事长 10-28 「蓝色背景的时候……遥控器数量数字，为啥不是蓝色，而是黑色的？」): the digit wears the state colour in
-   every state — working blue, waiting orange, question purple, offline grey, theme colours included — built on the same --state
-   as the notice icon. Idle keeps its approved logo green (P517); the other four are their own hue taken 35 % toward Noir, the least
-   that keeps every default state ≥ 4.5:1 on the Lotion circle (P550 3c's contrast rule, which had made them all Noir). */
-/* P563 追加 1 (贾维斯审查): that 65 % mix was a computed colour — outside Leo's closed palette. No palette blue / orange / purple
-   / grey reaches 4.5:1 on Lotion (Windstorm 2.78, Peachy Feeling 2.96, Magic Carpet 3.55, Black Mana 3.50), so outside idle the
-   circle turns Sooty #141414 and the digit keeps the state's own palette hex (var(--state), unmixed; dark theme too — --deep only
-   darkens the page, never --state). WCAG ratios of the digit on Sooty: working Windstorm #6a9bcc 6.29 · waiting Peachy Feeling
-   #d97757 5.90 · question Magic Carpet #827dbd 4.93 · offline Black Mana #858585 4.99. A custom theme's --state is shown as is
-   (theme colours are palette picks; the light ones read even better on Sooty). Idle stays P517's Lotion circle + logo green. */
-body:is([data-status=working],[data-status=waiting],[data-status=unknown],[data-conn=off],[data-agent=stopped]) #setBtn>.remote-count-badge{background:var(--c-sooty);color:var(--state)}
+/* P564 (董事长 10-28 10:4x 「把所有的在聊天界面右上角的这个遥控器数量里边的背景色退回到原来的Lotion，文字的颜色跟着大的背景色走就行了」):
+   every state, light / dark / custom theme — the circle stays P517's Lotion and the digit is the page's state colour itself
+   (var(--state), unmixed, never darkened). P561's 35 % Noir mix and P563's Sooty circle are withdrawn. Contrast is the
+   chairman's call (「看清看不清我说了算」): exact exemption P564 in web/test/p523_contrast_exceptions.mjs, this selector only. */
 
 /* P536 approved WeChat A follows the existing reply/reader glyph sizing. */
 .rmbar .gwx,.rdacts .gwx{display:none}

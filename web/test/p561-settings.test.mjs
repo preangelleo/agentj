@@ -3,13 +3,11 @@
 //   letter in the page; a phone shows none; an entry without a key shows none.
 // - The upgrade note names /update, and typed /update is the very path of the 「检查并升级」 button (api.slash('update')).
 // - 「本机文件访问」 has the list's line icon and chevron; the rescue cards keep words off their buttons with spacing tokens.
-// - The gear's remote-count digit wears --state in every state (no Noir override); P563 追加 1: no color-mix — outside idle a
-//   Sooty circle, every state hex from the closed palette at ≥ 4.5:1.
+// - The gear's remote-count digit wears --state in every state (no Noir override, no color-mix); P564 (董事长 10-28): the circle
+//   is P517's Lotion in every state — P563's Sooty circle withdrawn.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
-import { homedir } from 'node:os';
 
 const read = (p) => readFileSync(new URL(p, import.meta.url), 'utf8');
 const html = read('../public/index.html'), menuCss = read('../public/menu.css'), appCss = read('../public/app.css');
@@ -86,25 +84,19 @@ test('rescue cards: spacing tokens between words and buttons', () => {
 
 // the design system lives in agentjarvis/brand/; the public export ships web/ alone, with the same bytes under public/brand/
 const BRAND_CSS = existsSync(new URL('../../brand/palette.css', import.meta.url)) ? '../../brand/palette.css' : '../public/brand/palette.css';
-test('the gear digit follows --state in every state', () => {
+test('the gear digit follows --state in every state, on the Lotion circle', () => {
   const css = appCss.replace(/\/\*[\s\S]*?\*\//g, '');
   assert.match(css, /#setBtn>\.remote-count-badge\{color:var\(--state\)\}/);
-  // P563 追加 1: no computed colour — outside idle a Sooty circle carries the state's own palette hex
-  assert.match(css, /body:is\(\[data-status=working\],\[data-status=waiting\],\[data-status=unknown\],\[data-conn=off\],\[data-agent=stopped\]\) #setBtn>\.remote-count-badge\{background:var\(--c-sooty\);color:var\(--state\)\}/);
+  assert.match(css, /\.remote-count-badge\{[^}]*background:var\(--c-lotion\)/, 'P517 Lotion circle');
+  // P564 (董事长 10-28): one Lotion circle in every state — no rule repaints the badge's background, no mixed / darkened digit
+  const rules = [...css.matchAll(/([^{}]*remote-count-badge[^{}]*)\{([^}]*)\}/g)];
+  for (const [, sel, body] of rules) {
+    if (/^\s*\.remote-count-badge\s*$/.test(sel)) continue;
+    assert.doesNotMatch(body, /background/, 'no background override: ' + sel.trim());
+  }
+  assert.doesNotMatch(css, /c-sooty\);color:var\(--state\)/, 'no Sooty circle (P563 withdrawn)');
   assert.doesNotMatch(css.slice(css.indexOf('.remote-count-badge{')), /remote-count-badge[^}]*color-mix/, 'no color-mix on the badge');
   assert.doesNotMatch(css, /#setBtn>\.remote-count-badge\{color:var\(--c-noir\)\}/, 'no flat Noir digit');
-  // every default state colour (palette hex, verbatim) clears 4.5:1 on the Sooty circle
-  // Leo's closed palette: the skill's JSON where it is installed, else the repo's own copies of those hex values
-  const pj = join(homedir(), '.claude/skills/leo-design-language/references/leo-palette.json');
-  const palette = existsSync(pj) ? JSON.parse(readFileSync(pj, 'utf8')).groups.flatMap((g) => g.colors.map((c) => c.hex))
-    : [...(read(BRAND_CSS) + appCss).matchAll(/--[\w-]+:\s*(#[0-9a-f]{6})\b/g)].map((m) => m[1]);   // token declarations only
-  const lum = (c) => { const [r, g, b] = c.map((v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
-  const hex = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
-  const brand = read(BRAND_CSS);
-  assert.match(brand, /--c-sooty: #141414;/);
-  for (const [name, h, want] of [['working', '#6a9bcc', 6.29], ['waiting', '#d97757', 5.9], ['question', '#827dbd', 4.93], ['offline', '#858585', 4.99]]) {
-    assert.ok(palette.includes(h) && palette.includes('#141414'), name + ' in the closed palette');
-    const r = (lum(hex(h)) + 0.05) / (lum(hex('#141414')) + 0.05);
-    assert.ok(r >= 4.5 && Math.abs(r - want) < 0.01, `${name} ${h} on Sooty ${r.toFixed(2)}`);
-  }
+  assert.match(read(BRAND_CSS), /--c-lotion: #faf9f5;/);
 });
+

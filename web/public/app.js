@@ -26,7 +26,7 @@ import VERSION from './version.js';
 import {probeEnvironment, publicPhoneLink} from './js/phone-env.js';
 import { t, lang, fillText, plain, applyStatic, onLang } from './js/t.js';
 import { el, toast, toastAction, executionToast, notify, noticeSheet, confirmSheet, closeConfirm } from './js/ui.js';
-import { dbGet, dbPut, dbDel, deviceKey, signKey, wipeLocal, markPaired, wasPaired, askPersist, adoptRootStore, rootHost, markRootMoved, dropRootPairing, copyToSeat } from './js/store.js';
+import { dbGet, dbPut, dbDel, deviceKey, signKey, wipeLocal, installId, markPaired, wasPaired, askPersist, adoptRootStore, rootHost, markRootMoved, dropRootPairing, copyToSeat } from './js/store.js';
 import * as seats from './js/seats.js';         // P545 (§40): m.agentj.app/<seat id> — this seat's own page
 import { b64u, unb64u } from './proto/wire.js';
 import * as session from './js/session.js';
@@ -726,13 +726,15 @@ function legacyOffer() {
   pkForce = true;
   session.sendApp({ t: 'pk_offer_req' }).catch(() => { pkForce = false; toast(t('elev.fail'), 3000); });
 }
+/** P564: this remote's 8-byte passkey tag (the head of its install id for the channel) — one user handle per remote. */
+const pkTag = async (ch) => unb64u(await installId(ch)).slice(0, passkey.TAG_LEN);
 /** What register() needs, read before the 「保存」 tap (P547 peer offers: create() must follow the tap with nothing slow). */
 async function regOpts() {
   const h = await dbGet('host');
   if (!h || !h.approved || h.channel !== session.channel()) return null;
   const ri = passkey.relayIndex(h.relay);
   if (ri < 0 || (await passkey.setupSupport()) !== 'yes') return null;   // P561 追加 11: the same test as 「在本机设置」
-  return { relayIndex: ri, channel: h.channel, hostPub: h.hostPub, name: agentName ?? DEFAULT_NAME, displaySuffix: t('pk.computer') };
+  return { relayIndex: ri, channel: h.channel, hostPub: h.hostPub, tag: await pkTag(h.channel), name: agentName ?? DEFAULT_NAME, displaySuffix: t('pk.computer') };
 }
 pkpeer.configure({
   ask: (o, want, ms) => session.ask1(o, want, ms), send: (o) => session.sendApp(o), approve: passkey.approve,
@@ -809,6 +811,7 @@ async function offerPasskey(m) {
   await updHost((c) => c && { ...c, pkAsked: true });
   const g = session.gen();
   const name = agentName ?? DEFAULT_NAME;
+  const tag = await pkTag(h.channel);
   const no = $('confirm-no');
   no.dataset.i18n = 'pk.later'; no.textContent = t('pk.later');
   let yes;
@@ -816,7 +819,7 @@ async function offerPasskey(m) {
   if (!yes) return;
   let reg;
   // cancelled / refused by the system (iPhone: no iCloud Keychain → no passkey can be saved): nothing changes; say why once
-  try { reg = await passkey.register(nonce, { relayIndex: ri, channel: h.channel, hostPub: h.hostPub, name, displaySuffix: t('pk.computer'), replace: m.replace || null }); } catch { toast(t(pkassist.osKey('pk.notSaved')), 8000); return; }   // P539: Android / Mac / Windows get their own steps
+  try { reg = await passkey.register(nonce, { relayIndex: ri, channel: h.channel, hostPub: h.hostPub, tag, name, displaySuffix: t('pk.computer'), replace: m.replace || null }); } catch { toast(t(pkassist.osKey('pk.notSaved')), 8000); return; }   // P539: Android / Mac / Windows get their own steps
   pkRegId = reg.id;
   session.sendApp(reg, g).catch(() => toast(t('pk.saveFail')));
 }

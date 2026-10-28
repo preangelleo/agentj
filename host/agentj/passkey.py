@@ -26,6 +26,7 @@ ALG_ES256, ALG_EDDSA, ALG_RS256 = -7, -8, -257
 ALGS = (ALG_ES256, ALG_EDDSA, ALG_RS256)
 HANDLE_V = 1
 HANDLE_LEN = 50                 # 0x01 ‖ relay index u8 ‖ channel (16) ‖ host X25519 public key (32)
+HANDLE_V2, HANDLE_TAG = 2, 8    # P564: 0x02 ‖ the same 49 bytes ‖ the remote's tag (8) — one handle per remote (58 bytes)
 RESTORE_LABEL = b"agentjarvis/passkey/restore/v1\n"
 ELEVATE_LABEL = "agentjarvis/passkey/elevate/v1"   # F17 收尾 (P59, ADR-A163): Face ID before 「同意」 on a sudo / secret card
 OFFER_TTL = 300                 # s: a pk_offer nonce is good for one pk_reg within this
@@ -101,7 +102,7 @@ def rp_of(origin: str) -> str:
     return urlsplit(origin).hostname or ""
 
 
-# ---------------------------------------------------------------- user handle (≤ 64 bytes; ours is 50)
+# ---------------------------------------------------------------- user handle (≤ 64 bytes; v1 = 50, v2 = 58)
 def user_handle(relay_index: int, channel: str, host_pub: bytes) -> bytes:
     ch = wire.unb64u(channel)
     if len(ch) != 16 or len(host_pub) != 32 or not 0 <= relay_index <= 255:
@@ -110,10 +111,11 @@ def user_handle(relay_index: int, channel: str, host_pub: bytes) -> bytes:
 
 
 def handle_matches(uh: bytes, channel: str, host_pub: bytes) -> bool:
-    """Is `uh` a handle THIS host would build (version 1, its channel + key)? The relay index is the phone's business."""
-    if len(uh) != HANDLE_LEN or uh[0] != HANDLE_V:
+    """Is `uh` a handle for THIS host (its channel + key)? v1 (50 B) or v2 (58 B: + the remote's tag, P564 — a synced
+    passkey manager keeps one passkey per handle). The relay index and the tag are the phone's business."""
+    if not ((len(uh) == HANDLE_LEN and uh[0] == HANDLE_V) or (len(uh) == HANDLE_LEN + HANDLE_TAG and uh[0] == HANDLE_V2)):
         return False
-    return hmac.compare_digest(uh[2:], wire.unb64u(channel) + host_pub)
+    return hmac.compare_digest(uh[2:HANDLE_LEN], wire.unb64u(channel) + host_pub)
 
 
 # ---------------------------------------------------------------- restore challenge (device-made, bound to the new key)

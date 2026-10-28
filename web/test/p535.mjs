@@ -13,7 +13,7 @@ mkdirSync(out,{recursive:true});
 const web=await startWebServer({port:0}),fake=await startFakeHost(),B=await launch(),evidence=[];
 // P561 追加 18: computed colours (rgb() or Chromium's color(srgb …) for color-mix) compared channel by channel
 const rgbOf=c=>{const m=/color\(srgb ([\d.]+) ([\d.]+) ([\d.]+)/.exec(c);return m?m.slice(1,4).map(v=>+v*255):c.match(/[\d.]+/g).slice(0,3).map(Number)};
-// P563 追加 1: the digit is var(--state) itself in every state (no color-mix); outside idle it sits on a Sooty disc (p563.mjs checks the disc)
+// the digit is var(--state) itself in every state (no color-mix); P564: always on the Lotion disc (p563.mjs checks the disc)
 const badgeIs=(badge,name,state)=>{const w=rgbOf(state);return rgbOf(badge).every((v,i)=>Math.abs(v-w[i])<=1.5)};
 const states={idle:['idle',''],working:['working',''],waiting:['waiting','permission'],question:['waiting','question'],offline:['unknown','']};
 try{for(const scheme of ['light','dark']){

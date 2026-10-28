@@ -1,5 +1,5 @@
 {
-  "version": "0.25.16a1",
-  "zh": "你本人的微信、Telegram 和主邮箱的消息直接交给主对话处理；本机 Face ID / Touch ID 找不到时可以重新设置，Mac Safari 也能设置。",
-  "en": "Your own WeChat, Telegram and main mailbox now go straight to the main conversation; a lost Face ID / Touch ID setup can be redone."
+  "version": "0.25.17a1",
+  "zh": "齿轮上的遥控器数量恢复白色圆底，数字跟随状态色；同一 iCloud / Google 账号下的几台设备不再互相顶掉 Touch ID。",
+  "en": "The gear's remote count is back on its light circle; devices on the same iCloud or Google account no longer replace each other's Touch ID."
 }

@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 // P563 追加 1 / 7 (贾维斯审查):
-//  1 — the gear's remote-count digit: no interpolated colour (closed Leo palette). Working / waiting / question / offline
-//      paint a palette state colour on a palette circle at ≥ 4.5:1; idle keeps P517's Lotion circle + logo green; a custom
-//      theme still shows its own state colour (never a flat black digit).
+//  1 — the gear's remote-count digit: no interpolated colour (closed Leo palette). P564 (董事长 10-28): every state paints its
+//      own state colour on P517's Lotion circle (the Sooty circle is withdrawn); a custom theme shows its own state colour.
 //  7 — the no-key approval card (P561 追加 17): the words on top, the buttons (去设置 · 拒绝) on one row under them.
 //   node web/test/p563.mjs                                      → after (asserts) + screenshots
 //   P563_PHASE=before P563_PUBLIC=<HEAD copy>/web/public node … → before screenshots only
@@ -15,6 +14,7 @@ import { resolve } from 'node:path';
 import { startWebServer, PUBLIC_DIR } from './serve.mjs';
 import { startFakeHost } from './fakehost.mjs';
 import { launch, newPage, navigate, waitState, evaluate, waitFor, sleep } from './browser.mjs';
+import { approvedContrast } from './p523_contrast_exceptions.mjs';
 
 const phase = process.env.P563_PHASE === 'before' ? 'before' : 'after';
 const OUT = resolve(process.env.P563_OUT || 'reports/qa/p563/badge');
@@ -33,8 +33,9 @@ const rgbOf = (c) => { const m = /color\(srgb ([\d.]+) ([\d.]+) ([\d.]+)/.exec(c
 const toHex = (c) => '#' + c.map((v) => Math.round(v).toString(16).padStart(2, '0')).join('');
 const lum = (c) => { const [r, g, b] = c.map((v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
 const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((m, n) => n - m); return (x + 0.05) / (y + 0.05); };
-// P563 追加 1: what each default state paints — digit on circle, both palette hex
-const WANT = { idle: ['#629887', '#faf9f5'], working: ['#6a9bcc', '#141414'], waiting: ['#d97757', '#141414'], question: ['#827dbd', '#141414'], offline: ['#858585', '#141414'] };
+// What each default state paints — digit on circle, both palette hex. P564 (董事长 10-28) withdrew P563 追加 1's Sooty circle:
+// the circle is Lotion in every state and the digit is the state colour itself (contrast = chairman exemption P564).
+const WANT = { idle: ['#629887', '#faf9f5'], working: ['#6a9bcc', '#faf9f5'], waiting: ['#d97757', '#faf9f5'], question: ['#827dbd', '#faf9f5'], offline: ['#858585', '#faf9f5'] };
 let failed = 0;
 const audit = [];
 const ok = (name, fn) => fn().then(() => console.log('  ✓ ' + name), (e) => { failed++; console.log('  ✗ ' + name + ': ' + (e && e.stack || e)); });
@@ -82,7 +83,9 @@ try {
           assert.equal(toHex(fg), WANT[name][0], name + ' digit');
           assert.equal(toHex(bg), WANT[name][1], name + ' circle');
           assert.ok(PALETTE.includes(toHex(fg)) && PALETTE.includes(toHex(bg)), name + ': both colours in the closed palette');
-          if (name !== 'idle') assert.ok(ratio(fg, bg) >= 4.5, `${name} ${ratio(fg, bg).toFixed(2)} ≥ 4.5:1`);
+          // P564: below 4.5:1 only under the chairman's exact exemption (this selector, Lotion, digit = the page's --state)
+          const r = +ratio(fg, bg).toFixed(2), rgbS = (c) => 'rgb(' + c.join(',') + ')';
+          if (r < 4.5) assert.equal(approvedContrast({ approvedLocation: 'P564', fg: rgbS(fg), stateFg: rgbS(hex(WANT[name][0])), bg: rgbS(bg), ratio: r, bad: [`control label ${r.toFixed(2)}:1`] }), 'P564', name + ' exemption');
         }
       }
       // a custom theme: its own state colours (palette light cluster here) still read on the badge — never a flat black digit
@@ -96,7 +99,7 @@ try {
         if (scheme === 'light') await shot(p, ['#setBtn'], `${OUT}/1-badge-custom-${name}-${phase}.png`);
         if (phase === 'after') {
           assert.equal(toHex(fg), custom[name], 'custom ' + name + ' digit = the theme state colour (idle: P535, unchanged)');
-          if (name !== 'idle') { assert.equal(toHex(bg), '#141414'); assert.ok(ratio(fg, bg) >= 4.5, 'custom ' + name + ' ≥ 4.5:1'); }
+          assert.equal(toHex(bg), '#faf9f5', 'custom ' + name + ' circle stays Lotion (P564)');
         }
       }
     } finally { await p.dispose(); }

@@ -1403,7 +1403,10 @@ adds a remote, never widens a permission, and cannot bring back a removed one. C
 `state.py` (`set_passkey`, `passkey_restore`), `serve.py` (`_pk_*`), `web/public/js/faceid.js`, `app.js`, `js/session.js`.
 
 **User handle** (stored in the passkey itself, ≤ 64 bytes) = `0x01 ‖ relay index u8 ‖ channel id raw (16) ‖ host_x25519_pub (32)`
-= 50 bytes, so a browser context with no stored data learns from the passkey which computer to reach. Relay index 0 =
+= 50 bytes (v1), or since 0.25.17 (P564) `0x02 ‖ the same 49 bytes ‖ remote tag (8)` = 58 bytes (v2; tag = the first 8 bytes of
+that page's install id for the channel) — one handle per remote, because a synced passkey manager keeps one passkey per rpId +
+user handle and a v1 handle made on one remote overwrote the other remotes' passkeys. The host checks bytes 2..50 of either
+version; the P122 ticket keeps v1. Either way a browser context with no stored data learns from the passkey which computer to reach. Relay index 0 =
 `wss://relay.agentj.app`, 1 = `wss://alpha-relay.agentjarvis.net`, 2 = a loopback test relay (only on a 127.0.0.1 / localhost
 page, whose URL then comes from the page's `?relay=`; refused on any other origin). Another version or index → refused.
 

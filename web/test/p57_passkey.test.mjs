@@ -51,3 +51,20 @@ test('§12 relay index: our two relays; a loopback relay only from a loopback pa
   assert.equal(relayIndex('ws://127.0.0.1:8787', 'm.agentj.app'), -1);
   assert.equal(relayIndex('wss://relay.example', 'm.agentj.app'), -1);
 });
+
+// P564 (董事长 10-28 10:5x): v2 = one user handle per remote — a synced passkey manager keeps one passkey per handle
+test('P564 user handle v2: + the remote tag (58 B), v1 still decodes, nothing else does', () => {
+  const tag = range(200, 208);
+  const v1 = encodeHandle({ relayIndex: 0, channel: VEC_CHANNEL, hostPub: VEC_HOSTPUB });
+  const v2 = encodeHandle({ relayIndex: 0, channel: VEC_CHANNEL, hostPub: VEC_HOSTPUB, tag });
+  assert.equal(v2.length, 58);
+  assert.equal(hex(v2), '02' + hex(v1).slice(2) + hex(tag));
+  for (const h of [v1, v2]) {
+    const d = decodeHandle(h, { hostname: 'm.agentj.app' });
+    assert.equal(d.channel, VEC_CHANNEL);
+    assert.equal(hex(d.hostPub), hex(VEC_HOSTPUB));
+  }
+  assert.throws(() => decodeHandle(Uint8Array.of(1, ...v2.slice(1)), { hostname: 'm.agentj.app' }), /bad handle/);   // v1 byte, 58 B
+  assert.throws(() => decodeHandle(v2.slice(0, 57), { hostname: 'm.agentj.app' }), /bad handle/);
+  assert.throws(() => encodeHandle({ relayIndex: 0, channel: VEC_CHANNEL, hostPub: VEC_HOSTPUB, tag: range(0, 7) }), /bad handle parts/);
+});

@@ -5,7 +5,12 @@
 // 「同意」 on sudo / secret cards): register(), assert() and the codecs carry no Agent-J screen logic.
 //
 // User handle (≤ 64 bytes, stored in the passkey itself, so a context with NO stored data learns which computer to reach):
-//   0x01 ‖ relay index u8 ‖ channel id raw (16) ‖ host X25519 public key (32)   = 50 bytes
+//   0x01 ‖ relay index u8 ‖ channel id raw (16) ‖ host X25519 public key (32)   = 50 bytes   (v1, ≤ 0.25.16 passkeys + the P122 ticket)
+//   0x02 ‖ the same 49 bytes ‖ this remote's tag (8)                            = 58 bytes   (v2, P564: every new passkey)
+// P564 (董事长 10-28 10:5x): a synced passkey manager (iCloud Keychain Mac ↔ iPhone, Google Password Manager Oppo ↔ Pad)
+// keeps ONE passkey per rpId + user handle, so a v1 handle (one per host) made on one remote overwrote another remote's key.
+// The tag (first 8 bytes of this browser's install id for the channel) makes the handle one per remote; the host checks only
+// bytes 2..50 (its channel + key), so both versions restore.
 // Relay index: 0 = relay.agentj.app, 1 = alpha-relay.agentjarvis.net (both wss, no port), 2 = a loopback test relay (only on
 // a 127.0.0.1 / localhost page, whose URL then comes from the page's `?relay=` — tests only; never on a real origin).
 import { sha256, concat } from '../proto/noise.js';
@@ -16,6 +21,8 @@ import { osOf } from './phone-env.js';
 export const RELAYS = ['relay.agentj.app', 'alpha-relay.agentjarvis.net'].map((h) => 'wss:' + '//' + h);
 export const LOOPBACK = 2;
 export const HANDLE_V = 1;
+export const HANDLE_V2 = 2;
+export const TAG_LEN = 8;
 export const RESTORE_LABEL = 'agentjarvis/passkey/restore/v1\n';
 const LOOP_HOSTS = ['127.0.0.1', 'localhost'];
 const isLoop = (hostname) => LOOP_HOSTS.includes(hostname);
@@ -67,18 +74,21 @@ export function relayIndex(url, hostname = location.hostname) {
   return -1;
 }
 
-export function encodeHandle({ relayIndex: ri, channel, hostPub }) {
+/** v1 (50 B) without `tag`; v2 (58 B) with this remote's 8-byte tag (P564). */
+export function encodeHandle({ relayIndex: ri, channel, hostPub, tag = null }) {
   const ch = unb64u(channel);
   const hk = hostPub instanceof Uint8Array ? hostPub : new Uint8Array(hostPub);
   if (!(ri >= 0 && ri <= 255) || ch.length !== 16 || hk.length !== 32) throw new Error('bad handle parts');
-  return concat(Uint8Array.of(HANDLE_V, ri), ch, hk);
+  if (tag === null) return concat(Uint8Array.of(HANDLE_V, ri), ch, hk);
+  if (!(tag instanceof Uint8Array) || tag.length !== TAG_LEN) throw new Error('bad handle parts');
+  return concat(Uint8Array.of(HANDLE_V2, ri), ch, hk, tag);
 }
 
 /** The handle from a passkey → {relay, channel, hostPub}. Refuses another version, an unknown relay index, and index 2
  *  on a non-loopback page. testRelay = the loopback relay URL a test page was given (`?relay=`). */
 export function decodeHandle(bytes, { hostname = location.hostname, testRelay = null } = {}) {
   const b = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes || []);
-  if (b.length !== 50 || b[0] !== HANDLE_V) throw new Error('bad handle');
+  if (!(b.length === 50 && b[0] === HANDLE_V) && !(b.length === 50 + TAG_LEN && b[0] === HANDLE_V2)) throw new Error('bad handle');
   let relay = RELAYS[b[1]];
   if (b[1] === LOOPBACK) {
     if (!isLoop(hostname) || !testRelay) throw new Error('bad relay');
@@ -115,13 +125,15 @@ export function register(offerNonce, opts) {
   // P561 追加 11: the same call (create() still starts in this tick), plus the failure's name kept for the sheet / support
   return makeKey(offerNonce, opts).catch((e) => { noteRegError(e); throw e; });
 }
-async function makeKey(offerNonce, { relayIndex: ri, channel, hostPub, name = 'Agent J', rpName = 'Agent J', displaySuffix = ' · Agent J 主机', replace = null, peer = false }) {
+async function makeKey(offerNonce, { relayIndex: ri, channel, hostPub, tag = null, name = 'Agent J', rpName = 'Agent J', displaySuffix = ' · Agent J 主机', replace = null, peer = false }) {
+  // P564: one user handle per remote (a synced manager keeps one passkey per handle). The tag is stable for this browser, so
+  // the same remote still replaces its own left-behind key (#323 ③); every caller passes it (regOpts / offerPasskey).
   // A resident credential for the same user handle can be replaced by create(). Verify the old one first (not after a peer approval).
   const replace_fa = replace && !peer ? await approve(await sha256(new TextEncoder().encode(
     ['agentj/passkey/replace-offer/v1', b64u(offerNonce), replace, location.hostname].join('\n'))), replace) : null;
   const cred = await navigator.credentials.create({ publicKey: {
     rp: { id: location.hostname, name: rpName },
-    user: { id: encodeHandle({ relayIndex: ri, channel, hostPub }), name, displayName: name + displaySuffix },
+    user: { id: encodeHandle({ relayIndex: ri, channel, hostPub, tag }), name, displayName: name + displaySuffix },
     challenge: offerNonce,
     pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -8 }, { type: 'public-key', alg: -257 }],
     authenticatorSelection: { residentKey: 'required', requireResidentKey: true, userVerification: 'required', authenticatorAttachment: 'platform' },
