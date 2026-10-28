@@ -114,11 +114,14 @@ class TelegramAvatar(_Channel):
 
 class TelegramDelivery(unittest.IsolatedAsyncioTestCase):
     async def test_owner_chat_gets_text_then_photo(self):
+        """P562 (#336): 「画猫」 while the main harness cannot draw → the owner's Codex draws it, the photo comes back here."""
         import test_p118_telegram as fixture
         base = fixture._Base(); base.setUp()
         try:
-            base.host.external_channels = NS(receive_owner=AsyncMock(return_value=Reply('画好了。', [('image/png', PNG)])))
+            res = TurnResult('reply', '画好了。', '', None, None); res.images = [('image/png', PNG)]
+            base.host.external_channels = NS(draw=AsyncMock(return_value=res), draw_failed=None, place_images=AsyncMock(return_value=[]))
             self.assertTrue(await base.t.incoming(fixture.msg('画猫'), base.cfg))
+            base.host.external_channels.draw.assert_awaited_once(); base.host._accept.assert_not_awaited()
             self.assertEqual(len(base.bot.sent('sendPhoto')), 1)
             self.assertTrue(any('画好了' in json.dumps(m, ensure_ascii=False) for m in base.bot.sent('sendMessage')))
         finally:
@@ -131,7 +134,8 @@ class WeChatAvatar(_Channel):
         from agentj.wechat import WeChat
         from test_p501_wechat import ACCOUNT, Transport
         res = TurnResult('reply', SAVED, '', None, None); res.images = [('image/png', PNG)]
-        c = WeChat(self.host, model=AsyncMock(return_value=res))
+        c = WeChat(self.host, model=AsyncMock())
+        c.draw = AsyncMock(return_value=res)          # P562: the drawer, not an avatar, makes the picture
         c.index = self.channel.index; c.store.data['account'] = dict(ACCOUNT)
         c.open_card = MagicMock(); c.publish = lambda: None
         tr = Transport([{}, {}]); api = protocol.API(ACCOUNT, tr)
@@ -139,27 +143,29 @@ class WeChatAvatar(_Channel):
             with patch.object(protocol.Media, 'upload', return_value={'type': 2, 'image_item': {'media': {'fixture': True}}}) as upload:
                 await c.receive(api, {'from_user_id': 'owner', 'message_type': 1, 'message_id': 1, 'context_token': 'fixture',
                                       'item_list': [{'type': 1, 'text_item': {'text': '画图'}}]}, c.store.data['generation'])
-            upload.assert_called_once()
+            upload.assert_called_once(); c.model.assert_not_awaited()
             first = json.loads(tr.calls[0][0][3])['msg']['item_list'][0]
             self.assertEqual(first['text_item']['text'], '画好了！宫崎骏风格的少女在山坡遛狗，16:9。')
             self.assertEqual(json.loads(tr.calls[1][0][3])['msg']['item_list'][0]['type'], 2)
             c.open_card.assert_not_called()
+            self.assertEqual(self.host.hist_add.call_args.args[0]['k'], 'wechat')
         finally:
             c.closed = True; c.store.close()
 
-    async def test_wechat_overreach_still_handoff(self):
+    async def test_wechat_task_goes_to_the_main_conversation_not_a_handoff(self):
         from agentj import wechat_protocol as protocol
         from agentj.wechat import WeChat
         from test_p501_wechat import ACCOUNT, Transport
         c = WeChat(self.host, model=AsyncMock(return_value=TurnResult('ask_owner', '要花钱', '', None, None)))
         c.index = self.channel.index; c.store.data['account'] = dict(ACCOUNT)
         c.open_card = MagicMock(); c.publish = lambda: None
+        self.host._accept = AsyncMock(return_value=NS(turn=40))
         tr = Transport([{}]); api = protocol.API(ACCOUNT, tr)
         try:
             await c.receive(api, {'from_user_id': 'owner', 'message_type': 1, 'message_id': 2, 'context_token': 'fixture',
                                   'item_list': [{'type': 1, 'text_item': {'text': '帮我买张机票'}}]}, c.store.data['generation'])
-            self.assertIn('已转给', json.loads(tr.calls[0][0][3])['msg']['item_list'][0]['text_item']['text'])
-            c.open_card.assert_called_once()
+            self.host._accept.assert_awaited_once(); c.model.assert_not_awaited()
+            self.assertFalse(tr.calls); c.open_card.assert_not_called()
         finally:
             c.closed = True; c.store.close()
 

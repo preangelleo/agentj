@@ -344,7 +344,7 @@ def norm_secret(req: dict, state_root: pathlib.Path) -> dict:
         raise Refused("shape", "name: a variable name like ELEVENLABS_API_KEY")
     purpose = _text(req.get("purpose"), 300, required=True, field="purpose")
     if system_password_ask(name, purpose):
-        raise Refused("login_password", "这台电脑的登录 / 管理员密码不能用密钥卡要：管理员命令用 `agentj sudo`。/ The computer's "
+        raise Refused("login_password", "Agent J 主机登录密码 / 管理员密码不能用密钥卡要：管理员命令用 `agentj sudo`。/ The Agent J host "
                                         "login or admin password is never asked for with a secret card; use `agentj sudo` "
                                         "for an admin command.")
     cwd = req.get("cwd") if isinstance(req.get("cwd"), str) else None

@@ -303,8 +303,8 @@ class TelegramWhy(unittest.IsolatedAsyncioTestCase):
         with patch("agentj.telegram.download", side_effect=ok):
             self.assertTrue(await self.t.incoming(self.msg(document=doc), self.cfg))
         self.host._transcribe_file.assert_awaited_once()
-        self.assertIn("会议纪要", self.host.external_channels.receive_owner.call_args.args[2])
-        self.assertTrue(self.host.external_channels.receive_owner.call_args.kwargs["blobs"][0].path.endswith(".m4a"))
+        self.assertIn("会议纪要", self.host._accept.call_args.args[1])
+        self.assertTrue(self.host._accept.call_args.kwargs["blobs"][0].path.endswith(".m4a"))
         audio = {"file_id": "y", "mime_type": "audio/mpeg", "file_size": 30, "duration": 1200}
         with patch("agentj.telegram.download", side_effect=ok):
             await self.t.incoming(self.msg(audio=audio), self.cfg)
@@ -318,7 +318,7 @@ class TelegramWhy(unittest.IsolatedAsyncioTestCase):
             return path
         with patch("agentj.telegram.download", side_effect=ok):
             self.assertTrue(await self.t.incoming(self.msg(voice={"file_id": "v", "duration": 3, "file_size": 24}), self.cfg))
-        self.assertIn("语音没能在本地转写（处理超时）", self.host.external_channels.receive_owner.call_args.args[2])
+        self.assertIn("语音没能在本地转写（处理超时）", self.host._accept.call_args.args[1])
         self.assertTrue(any("原件已交给 Agent" in reply for reply in self.replies()))
         self.assertEqual([x.get("reason") for x in self.logged() if x.get("ev") == "telegram_media_asr"], ["timeout"])
 

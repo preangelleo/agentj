@@ -8,7 +8,7 @@
 //   pickup      an opened key pickup card: the ⛶ icon borderless, inside the content box's top-right corner
 //   icons       no icon-only button on the page has a border (the owner's composer tool row aside)
 //   mac (d)     Chrome on a Mac: 「本机 Touch ID：已设好」 ⇔ the approval card's get() goes straight to the platform
-//               authenticator — allowCredentials transports ['internal'] + hints ['client-device'], so a key the phone-QR /
+//               authenticator (P561 追加 8: transports as create() reported, else none; no hints — was ['internal'] + hints ['client-device']); the phone-QR /
 //               security-key route holds is never offered; a borrowed key asks for ['hybrid'] (董事长 10-27 13:16)
 // Shots → reports/qa/p555/shots/ (no address bar, no secrets). Usage: node web/test/p555.mjs
 import assert from 'node:assert/strict';
@@ -188,6 +188,7 @@ async function mac() {
       const c = navigator.credentials, g = c.get.bind(c); c.get = (o) => { const k = o.publicKey;
         window.__get.push({ tr: k.allowCredentials.map((x) => x.transports || null), hints: k.hints || null }); return g(o); }; return true; })()`);
     await fake.send({ t: 'pk_state', s: 'local' });
+    await evaluate(p, `localStorage.setItem('aj.pk.tr.${id}', 'internal'), true`);   // P561: what register() keeps from getTransports()
     await evaluate(p, `import('./js/settings.js').then((m) => m.open())`);
     await waitFor(p, visible('#set-pk-row'));
     const label = await evaluate(p, txt('#set-pk-state'));
@@ -201,12 +202,16 @@ async function mac() {
       .then((fa) => fa.id, (e) => 'ERR ' + e.name)`);
     ok(got === id, tag + ' the card\'s get() is answered by this Mac\'s Touch ID');
     let g = (await evaluate(p, 'window.__get')).at(-1);
-    ok(JSON.stringify(g.tr) === '[["internal"]]' && JSON.stringify(g.hints) === '["client-device"]', tag + ' own key → transports [internal] + hints [client-device]: ' + JSON.stringify(g));
+    // P561 (追加 8): own key → the transports create() reported on this browser (kept as aj.pk.tr.<id>), else none, and no
+    // hints (a Google Password Manager key was not found under a hard-coded ['internal'] + 'client-device')
+    ok(JSON.stringify(g.tr) === '[["internal"]]' && g.hints === null, tag + ' own key → the reported transports [internal], no hints: ' + JSON.stringify(g));
     // a key that only the external route holds is NOT offered for an own (local) key — no phone QR / security key detour
     const t0 = Date.now();
     const far = await evaluate(p, `import('./js/faceid.js').then((m) => Promise.race([m.approve(new Uint8Array(32), '${away}').then((fa) => 'USED ' + fa.id, (e) => 'ERR ' + e.name),
       new Promise((r) => setTimeout(() => r('WAIT'), 4000))]))`);
-    ok(far !== 'USED ' + away, tag + ' a local-key request never reaches the external authenticator (' + far + ', ' + (Date.now() - t0) + ' ms)');
+    // P561 (追加 8) supersedes P555 here: with no transports filter the browser looks everywhere this site's key may be kept
+    // (Google Password Manager included) — a key on another route may answer; the Agent J host still checks it is THIS key
+    ok(far === 'USED ' + away, tag + ' a local-key request, no filter: any route may answer (' + far + ', ' + (Date.now() - t0) + ' ms)');
     // control: the same id asked the pre-fix way (a bare allowCredentials entry) IS answered by the external route — the
     // detour the Mac took to its phone-QR / security-key sheet
     const bare = await evaluate(p, `navigator.credentials.get({ publicKey: { challenge: new Uint8Array(32), rpId: location.hostname, userVerification: 'required', timeout: 8000,

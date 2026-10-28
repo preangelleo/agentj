@@ -70,7 +70,7 @@ test('P365 dictionary: same keys and placeholders in both languages; the owner-g
   assert.equal(over['p365.src.auto'], '来自你的自动化：{name}');
   assert.equal(over['p365.src.about'], '关于自动化：{name}');
   assert.equal(over['p365.nav'], '自动化消息');
-  assert.equal(zh['p365.empty'], '还没有登记的自动化。在电脑终端运行 `agentj notify --allow <名字>` 登记；脚本用 `agentj notify --from <名字> --text …` 发消息。没登记或开关关着的会被拒绝，不会弹窗问你。');
+  assert.equal(zh['p365.empty'], '还没有登记的自动化。在 Agent J 主机的终端运行 `agentj notify --allow <名字>` 登记；脚本用 `agentj notify --from <名字> --text …` 发消息。没登记或开关关着的会被拒绝，不会弹窗问你。');
 });
 
 test('P365 Settings wiring: entry + sub-page in index.html, pref key, sub-view, hidden unless settable lists notify.enabled', () => {
@@ -174,10 +174,10 @@ test('P365 notify.js: refused / no answer keeps the last list and says why', asy
   const h = harness({ answers: [LIST, { t: 'notify_list', r: 'x', ok: false, why: 'rejected' }] });
   await ntf.load();
   assert.equal(await ntf.set('wechat-login-push', false), false);
-  assert.equal(h.el('ntf-msg').textContent, '电脑没能保存这个设置。');
+  assert.equal(h.el('ntf-msg').textContent, 'Agent J 主机没能保存这个设置。');
   assert.equal(h.el('ntf-autos').children[0].all((n) => n.className === 'tgl')[0].getAttribute('aria-checked'), 'true', 'back to the saved state');
-  assert.equal(ntf.failText({ t: 'timeout' }), '电脑没有回应，请稍后再试。');
-  assert.equal(ntf.failText({ t: 'notify_list', ok: false, why: 'shape' }), '电脑没有接受这个请求。');
+  assert.equal(ntf.failText({ t: 'timeout' }), 'Agent J 主机没有回应，请稍后再试。');
+  assert.equal(ntf.failText({ t: 'notify_list', ok: false, why: 'shape' }), 'Agent J 主机没有接受这个请求。');
 });
 
 test('P365 notify.js: the master switch is the notify.enabled preference (setPref), shown from the broadcast', async () => {

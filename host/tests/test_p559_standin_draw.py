@@ -234,7 +234,9 @@ class TelegramDraw(unittest.IsolatedAsyncioTestCase):
         import test_p118_telegram as fixture
         base = fixture._Base(); base.setUp()
         try:
-            base.host.external_channels = NS(receive_owner=AsyncMock(return_value=Reply('画好了。', [('image/png', PNG)], ())))
+            # P562: the drawer itself (no avatar) answers an image request in the owner's chat
+            res = TurnResult('reply', '画好了。', '', None, None); res.images = [('image/png', PNG)]
+            base.host.external_channels = NS(draw=AsyncMock(return_value=res), draw_failed=None, place_images=AsyncMock(return_value=[]))
             self.assertTrue(await base.t.incoming(fixture.msg(ASK), base.cfg))
             self.assertEqual(len(base.bot.sent('sendPhoto')), 1)
         finally:

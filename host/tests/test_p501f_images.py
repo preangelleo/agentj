@@ -202,9 +202,12 @@ class ChannelPath(unittest.IsolatedAsyncioTestCase):
         self.channel.send=AsyncMock()
         msg={'from_user_id':'owner','message_type':1,'message_id':'wechat-image',
              'item_list':[{'type':1,'text_item':{'text':'Look'}},{'type':2,'image_item':{}}]}
+        # P562 (#337): the owner's WeChat picture goes to the main conversation as an attachment (no avatar run)
+        self.host._accept=AsyncMock(return_value=NS(turn=9))
         with patch.object(Media,'download',return_value=PNG):
             await self.channel.receive(NS(),msg,self.channel.store.data['generation'])
-        self.assertEqual(self.channel.send.call_args.args[1],'OK')
-        self.assertEqual(self.s._run.await_count,3)
-        self.assertEqual(self.s.input_images,())
-        self.host.agent.submit.assert_not_called()
+        self.channel.send.assert_not_called()
+        self.assertEqual(self.s._run.await_count,2)
+        blobs=self.host._accept.call_args.kwargs['blobs']
+        self.assertEqual([b.kind for b in blobs],['image'])
+        self.assertEqual(Path(blobs[0].path).read_bytes(),PNG)

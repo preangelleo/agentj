@@ -11,6 +11,10 @@ import {launch,newPage,navigate,waitState,evaluate,waitFor,shoot,sleep} from './
 const phase=process.env.P535_BEFORE?'before':'after',out=pathToFileURL(resolve(process.env.P535_OUT || 'reports/qa/p535',phase)+'/');
 mkdirSync(out,{recursive:true});
 const web=await startWebServer({port:0}),fake=await startFakeHost(),B=await launch(),evidence=[];
+// P561 追加 18: computed colours (rgb() or Chromium's color(srgb …) for color-mix) compared channel by channel
+const rgbOf=c=>{const m=/color\(srgb ([\d.]+) ([\d.]+) ([\d.]+)/.exec(c);return m?m.slice(1,4).map(v=>+v*255):c.match(/[\d.]+/g).slice(0,3).map(Number)};
+// P563 追加 1: the digit is var(--state) itself in every state (no color-mix); outside idle it sits on a Sooty disc (p563.mjs checks the disc)
+const badgeIs=(badge,name,state)=>{const w=rgbOf(state);return rgbOf(badge).every((v,i)=>Math.abs(v-w[i])<=1.5)};
 const states={idle:['idle',''],working:['working',''],waiting:['waiting','permission'],question:['waiting','question'],offline:['unknown','']};
 try{for(const scheme of ['light','dark']){
  fake.reset();fake.st.prefs={appearance:{language:'zh',theme:scheme},voice:{speak_replies:false,wake_enabled:false},agent:{session_mode:'shared'}};
@@ -29,8 +33,8 @@ try{for(const scheme of ['light','dark']){
  const meta=await evaluate(p,`(()=>{const css=getComputedStyle(document.body),probe=document.createElement('i');probe.style.color='var(--state)';document.body.append(probe);const state=getComputedStyle(probe).color;probe.remove();return {state,badge:getComputedStyle(document.querySelector('#setBtn [data-remote-count]')).color,icon:getComputedStyle(document.querySelector('#toast .nt-ico')).stroke,ring:getComputedStyle(document.querySelector('#toast')).boxShadow,border:getComputedStyle(document.querySelector('#toast')).borderTopWidth,background:getComputedStyle(document.querySelector('#toast')).backgroundColor,status:document.body.dataset.status,kind:document.body.dataset.kind}})()`);
  writeFileSync(new URL(`${scheme}-${state}.png`,out),await shoot(p,'unused'));
  evidence.push({scheme,stateName:state,...meta});
- // P550 3c (Jarvis 23:4x 「按门禁改」): away from the approved idle green the digit is Noir, ≥ 4.5:1 on its Lotion circle
- if(phase==='after'){assert.equal(meta.badge,state==='idle'?meta.state:'rgb(44, 43, 38)');assert.equal(meta.icon,meta.state);assert.equal(meta.ring,'none');assert.equal(meta.border,'0px');assert.equal(meta.background,'rgb(44, 43, 38)');}
+ // P561 追加 18 (董事长 10-28): the digit follows the state colour — idle = --state, the others --state 65 % + Noir (≥ 4.5:1)
+ if(phase==='after'){assert.ok(badgeIs(meta.badge,state,meta.state),state+' badge '+meta.badge);assert.equal(meta.icon,meta.state);assert.equal(meta.ring,'none');assert.equal(meta.border,'0px');assert.equal(meta.background,'rgb(44, 43, 38)');}
  }
  if(phase==='after'){
  // All centred formats, including short circles, long squares and the saved alias, have no ring.
@@ -51,7 +55,7 @@ try{for(const scheme of ['light','dark']){
  for(const [name,[s,kind]] of Object.entries(states)){
  await evaluate(p,`document.body.dataset.status='${s}';document.body.dataset.kind='${kind}'`);
  const colors=await evaluate(p,`(()=>{const probe=document.createElement('div');probe.className='ajmodal dlgcard';const inner=document.createElement('i');inner.style.color='var(--accent)';probe.append(inner);document.body.append(probe);const accent=getComputedStyle(inner).color;probe.remove();return {accent,icon:getComputedStyle(document.querySelector('#toast .nt-ico')).stroke,badge:getComputedStyle(document.querySelector('#setBtn [data-remote-count]')).color,share:getComputedStyle(document.getElementById('share-paste')).borderTopColor}})()`);
- for(const [part,value] of Object.entries(colors))assert.equal(value,part==='badge'&&name!=='idle'?'rgb(44, 43, 38)':custom[name],name+': '+part);
+ for(const [part,value] of Object.entries(colors))if(part==='badge')assert.ok(badgeIs(value,name,custom[name]),name+': badge '+value);else assert.equal(value,custom[name],name+': '+part);
  }
  await evaluate(p,`document.body.dataset.status='idle';delete document.body.dataset.kind`);
  for(const [kind,want] of [['success','rgb(98, 152, 135)'],['error','rgb(217, 119, 87)'],['warn','rgb(217, 119, 87)']]){

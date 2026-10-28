@@ -203,7 +203,7 @@ async function seat(p, H, tag, full) {
   await click(p, '#confirm-yes');
   await waitFor(p, `!document.getElementById('confirm').hidden && document.getElementById('confirm-title').textContent === ${JSON.stringify(await tr(p, 'sxf.pkTitle'))}`);
   ok((await evaluate(p, txt('#confirm-yes'))) === await tr(p, 'pkp.setupHere') && (await evaluate(p, txt('#confirm-no'))) === await tr(p, 'sxf.pkElsewhere'),
-    tag + ' passkey_needed → 「在本机设置 Face ID（需另一台批准）」 / 「去有钥匙的设备操作」');
+    tag + ' passkey_needed → 「在本机设置 Face ID（需另一台批准）」 / 「去已设好 Face ID 的设备操作」');
   await snap(p, tag, '7-seat-passkey-needed');
   await click(p, '#confirm-yes');
   await waitFor(p, `document.getElementById('pkp')?.dataset.mode === 'wait' && ${visible('#pkp')}`);

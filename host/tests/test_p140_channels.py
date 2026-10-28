@@ -81,7 +81,8 @@ class Intake(_Base):
         self.assertIn('转发数据',self.host._accept.call_args.args[1])
         self.host._accept.reset_mock()
         self.assertTrue(await self.t.incoming(msg('/stop'),self.cfg))
-        self.host.external_channels.sessions.stop_all.assert_awaited_once();self.host.stop_turn.assert_not_awaited();self.host._accept.assert_not_awaited()
+        # P562: the owner's own /stop stops the main conversation's turn (no separate avatar to stop)
+        self.host.stop_turn.assert_awaited_once();self.host._accept.assert_not_awaited()
 
     async def test_forwarded_compact_and_approve_cannot_execute(self):
         with patch.object(self.t,'compact',new=AsyncMock()) as compact:

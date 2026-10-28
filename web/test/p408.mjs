@@ -35,17 +35,17 @@ const sha = async (s) => Buffer.from(await subtle.digest('SHA-256', typeof s ===
 const $ = (id) => `document.getElementById('${id}')`;
 // P559 naming: headless Chromium is Linux → Touch ID; Face ID only on iPhone / iPad (the P417 iPhone pass checks only s.phone)
 const L = {
-  zh: { off: '网页终端没有开启。要用的话，在电脑上运行下面这行：', os: '这台电脑的系统暂不支持网页终端，下一版支持。', setup: '设置 Touch ID', nopkRow: '这台设备还没设置 Touch ID',
+  zh: { off: '网页终端没有开启。要用的话，在 Agent J 主机上运行下面这行：', os: '这台 Agent J 主机的系统暂不支持网页终端，下一版支持。', setup: '先在上面设置 Touch ID', nopkRow: '先在上面设置 Touch ID',
     phone: '因为安全性和便捷性的原因，网页终端只能在电脑浏览器里操控。', enable: '开启并打开网页终端', offDesk: '网页终端还没开启。可以直接在这里开启', notMeDesk: '这个浏览器还不能用网页终端。', repair: '重新配对这台遥控器，就能直接在这里开启。',
-    orCli: '也可以在 Agent J 主机上运行下面这行：', introEnable: '再输入一次 Agent J 主机的登录密码', notMe: '这台设备不在允许名单里，在电脑上运行下面这行：', open: '打开网页终端',
-    none: '第一次打开时要输入一次电脑登录密码。', prf: '电脑密码已加密保存，只有你扫脸才能解开。', intro: '最多 15 分钟', fa: '用 Touch ID 确认',
+    orCli: '也可以在 Agent J 主机上运行下面这行：', introEnable: '再输入一次 Agent J 主机的登录密码', notMe: '这台设备不在允许名单里，在 Agent J 主机上运行下面这行：', open: '打开网页终端',
+    none: '第一次打开时要输入一次 Agent J 主机登录密码。', prf: 'Agent J 主机登录密码已加密保存，只有你扫脸才能解开。', intro: '最多 15 分钟', fa: '用 Touch ID 确认',
     closed: (w) => `终端已关闭（${w}）`, why: { timeout: '时间到了', idle: '太久没有输入', estop: '已全部停下', relay_lost: '连接断了', owner: '你结束了它' },
     dropped: '连接断了，终端已关闭。', nopk: '打开网页终端前要先用 Touch ID 确认，这台手机还没设置 Touch ID。', inTerm: '在终端里打开', differs: '注意：' },
-  en: { off: 'The web terminal is off. To use it, run this line at the computer:', os: "This computer's system does not support the web terminal yet; the next version will.", setup: 'Set up Touch ID', nopkRow: 'This device has no Touch ID',
+  en: { off: 'The web terminal is off. To use it, run this line on the Agent J host:', os: "This Agent J host's system does not support the web terminal yet; the next version will.", setup: 'Set up Touch ID above first', nopkRow: 'Set up Touch ID above first',
     phone: 'For safety and convenience, the web terminal can only be used from a computer browser.', enable: 'Switch on and open', offDesk: 'The web terminal is off. You can switch it on right here', notMeDesk: 'This browser cannot use the web terminal yet.', repair: 'Pair this remote again to switch it on right here.',
-    orCli: 'Or run this line on the Agent J host:', introEnable: "type the Agent J host's login password once", notMe: 'This device is not on the allowed list. Run this line at the computer:',
-    open: 'Open web terminal', none: 'The first time you open it, you type your computer login password once.',
-    prf: 'Your computer password is stored encrypted; only your Touch ID can unlock it.', intro: 'At most 15 minutes', fa: 'Confirm with Touch ID',
+    orCli: 'Or run this line on the Agent J host:', introEnable: "type the Agent J host's login password once", notMe: 'This device is not on the allowed list. Run this line on the Agent J host:',
+    open: 'Open web terminal', none: 'The first time you open it, you type your Agent J host login password once.',
+    prf: 'Your Agent J host login password is stored encrypted; only your Touch ID can unlock it.', intro: 'At most 15 minutes', fa: 'Confirm with Touch ID',
     closed: (w) => `Terminal closed (${w})`, why: { timeout: 'time is up', idle: 'no input for too long', estop: 'everything was stopped', relay_lost: 'the connection dropped', owner: 'you ended it' },
     dropped: 'The connection dropped; the terminal is closed.', nopk: 'Opening the web terminal needs Touch ID first, and this phone has not set it up yet.', inTerm: 'Open in terminal', differs: 'Careful:' },
 };
@@ -435,7 +435,7 @@ export async function runP408({ B, web, fake, out = OUT }) {
 
       // 清除已记住的电脑密码: signed term_forget, no Face ID
       await evaluate(p, `${$('set-term-row')}.scrollIntoView({block:'center'})`);
-      check(await shown('set-term-forget') && await evaluate(p, `${$('set-term-state')}.textContent`) === (withPrf ? s.prf : (lang === 'zh' ? '电脑密码已加密保存在电脑上，扫脸后电脑才使用它。' : 'Your computer password is stored encrypted on the computer; it is used only after your Touch ID.')), 'cached mode in plain words + clear button ' + tag);
+      check(await shown('set-term-forget') && await evaluate(p, `${$('set-term-state')}.textContent`) === (withPrf ? s.prf : (lang === 'zh' ? 'Agent J 主机登录密码已加密保存在 Agent J 主机本地，你扫脸后才会使用。' : 'Your Agent J host login password is stored encrypted on the Agent J host itself; it is used only after your Touch ID.')), 'cached mode in plain words + clear button ' + tag);
       if (full) await save('16-cached-mode');
       await click('set-term-forget');
       for (let i = 0; i < 100 && !H.forgets.length; i++) await sleep(50);

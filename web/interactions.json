@@ -3206,12 +3206,17 @@
           "pointer": "any"
         }
       ],
-      "keys": [],
+      "keys": [
+        {
+          "combo": "Alt+Shift+S",
+          "impl": "table"
+        }
+      ],
       "zh": "停止所有 Agent（先确认）",
       "en": "Stop all Agents (confirm first)",
       "gesture_zh": "点按钮后确认",
       "gesture_en": "Tap the button, then confirm",
-      "nokey": "settings-only"
+      "allowReserved": "P563 (董事长 10-28: the Settings button shows its key so the owner remembers it); S = Stop. The free Alt+Shift letters left (B I N S T) are all browser / OS keys: B T I = Chrome on Windows / Linux (bookmarks bar, toolbar, feedback), N S = ChromeOS shell (notifications, status tray). S is the only one that is free in Chrome / Firefox / Safari on Windows, macOS, Linux and an iPad keyboard; on a Chromebook the Settings button still works"
     },
     {
       "id": "app.restart_session",

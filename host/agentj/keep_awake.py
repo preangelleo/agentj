@@ -374,8 +374,8 @@ def setup(st, mode='terminal', lid=None, lang='zh', out=print) -> dict:
         _remember(st, 'no', False, mode)
         out(pick(lang, '好，没改。以后想设：agentj keep-awake setup。', 'OK, nothing changed. Later: agentj keep-awake setup.'))
         return {**res, 'answer': 'no'}
-    out(pick(lang, '要改系统设置：手机上会弹出密码卡，在手机上输入这台电脑的登录密码批准（每一项一张）。',
-             'This changes system settings: a password card opens on your phone; approve it with this computer\'s login password '
+    out(pick(lang, '要改系统设置：手机上会弹出密码卡，在手机上输入 Agent J 主机登录密码批准（每一项一张）。',
+             'This changes system settings: a password card opens on your phone; approve it with the Agent J host login password '
              '(one card per change).'))
     r = elevate.client_request(st, {'t': 'keep_awake', 'action': 'on', 'power': 'ac', 'dry_run': False, 'lid': bool(lid)})
     if r.get('result') == 'unavailable':

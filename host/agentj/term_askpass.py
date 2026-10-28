@@ -275,7 +275,7 @@ class SudoDesk:
                     from .elevate import wipe
                     wipe(x.pw)
                     x.pw = None
-                await self._frame(x, "\n[电脑密码可能改过了：已删除记住的密码，下次打开终端会重新要密码 / need_password]\n", False)
+                await self._frame(x, "\n[Agent J 主机登录密码可能改过了：已删除记住的密码，下次打开终端会重新要密码 / need_password]\n", False)
                 self._prefs()
             return None
         info = await asyncio.to_thread(proc_info, spid, self.proc) or {"argv": []}
@@ -326,7 +326,7 @@ class SudoDesk:
         else:
             pw = await asyncio.to_thread(store.load, self.st, self.h.channel, x.device, pk["id"], prf or None, vn)
         if pw is None:
-            await self._frame(x, "\n[sudo：这台电脑上没有可用的电脑密码，sudo 不会运行 / no computer password available]\n", False)
+            await self._frame(x, "\n[sudo：没有可用的 Agent J 主机登录密码，sudo 不会运行 / no Agent J host login password available]\n", False)
             return None
         x.recent = ""
         self._log("term_sudo", x.device, "allowed", obj={"id": x.id, "rid": rid})

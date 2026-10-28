@@ -688,12 +688,9 @@ class Telegram:
         if group and command in ('/approve','/deny','/pair','/resume','/config','/model'):return False
         if not forwarded and command in ('/approve','/deny','/pair','/resume','/config','/model'):
             await asyncio.to_thread(api,cfg,'sendMessage',{'chat_id':chat_id,'text':pick(getattr(self.host,'lang','zh'),'这个操作请在已配对的手机或浏览器终端上做。','Use your paired phone or local terminal for this action.')});return False
-        if command == '/stop' and owner:
-            avatar = getattr(self.host, 'external_channels', None)
-            if avatar is not None:
-                await avatar.sessions.stop_all()
-            return True
-        if owner and not private_owner and len(msgs)==1 and not media_present(m):
+        if command == '/stop' and owner:     # P562: the main conversation's /stop (no separate avatar any more)
+            await self.host.stop_turn('telegram owner', answered=False);return True
+        if owner and len(msgs)==1 and not media_present(m):
             from . import tg_owner_cmds
             hit=tg_owner_cmds.match(p.get(self.host.preferences,'telegram.owner_commands',[]),raw,self.username)
             if hit:return await self.owner_command(cfg,chat_id,m.get('message_id'),*hit)
@@ -716,7 +713,7 @@ class Telegram:
                 body={'text':friend_cmds.add_friend(word[1],lang,'telegram').text}
             await asyncio.to_thread(api,cfg,'sendMessage',{'chat_id':chat_id,**body})
             self.host.st.log('telegram_friend_cmd',cmd=fc,result='ok');return True
-        if word and word[0]=='compact' and not forwarded and not private_owner:
+        if word and word[0]=='compact' and not forwarded:
             if not owner:
                 await asyncio.to_thread(api,cfg,'sendMessage',{'chat_id':chat_id,'text':pick(getattr(self.host,'lang','zh'),'只有机主在私聊里才能压缩上下文。','Only the owner can compact the context, in a private chat.')})
                 self.host.st.log('telegram_compact',result='refused')
@@ -833,48 +830,28 @@ class Telegram:
         if not self.enabled() or configuration(self.host.st)!=cfg or (group and not self.group(chat_id,uid)):
             for path in paths:inbox.unlink_placed(path)
             return False
-        if private_owner:
-            avatar = getattr(self.host, 'external_channels', None)
-            if avatar is None:
-                self.host.st.log('external_channel_refused', reason='unavailable', via='telegram')
-                return False
-            valid = lambda: self.enabled() and configuration(self.host.st) == cfg
-            async def interim():   # P543: the avatar's action waits for a Web App card; this chat never approves it
-                if valid() and not self.host.stopped():
-                    from .wechat import confirm_text
-                    await asyncio.to_thread(api, cfg, 'sendMessage', {'chat_id':chat_id, 'text':confirm_text(self.host)})
-            response = await avatar.receive_owner('telegram', str(cfg.get('generation')) + ':' + str(m.get('message_id')),
-                                                  text, paths, valid, quote=quote if owner else None, quote_text=quote_text if owner else None, source_info=source, admission={k:cfg.get(k) for k in ('owner_id','key_env','generation')}, blobs=blobs, interim=interim)
-            if response is not None and valid() and not self.host.stopped():
-                result = 'unknown'
-                try:
-                    await asyncio.to_thread(api, cfg, 'sendMessage', {'chat_id':chat_id, 'text':response})
-                    result = 'sent'
-                finally:
-                    if hasattr(avatar, 'record_delivery'):
-                        avatar.record_delivery('telegram', str(cfg.get('generation')) + ':' + str(m.get('message_id')), result)
-                for mime, data in getattr(response, 'images', ()):
-                    if not valid() or self.host.stopped():
-                        break
-                    await asyncio.to_thread(upload, cfg, 'sendPhoto', {'chat_id':chat_id}, 'photo', 'image.png', mime, data)
-                from .tg_media import method_of
-                for name, mime, data in getattr(response, 'files', ()):   # P557: files the avatar named → sendDocument / …
-                    if not valid() or self.host.stopped():
-                        break
-                    method, field = method_of({'mime': mime, 'bytes': len(data)})
-                    await asyncio.to_thread(upload, cfg, method, {'chat_id':chat_id}, field, name, mime, data)
-            return response is not None
+        from .owner_channels import tg_draw   # P562 (#336 / #337): the owner's chat → the drawer or the main conversation below
+        if owner and not media_present(m) and len(msgs)==1 and await tg_draw(self,cfg,chat_id,raw):return True
         session=SimpleNamespace(device=device,name='Telegram owner' if owner else f'Telegram group member {member_name(group,uid) or uid}',cid=0,source_kind='telegram',provenance=source)
+        if owner:session.on_card=self.card_notice(cfg,chat_id)
         # the owner's private chat: the phone's own quote path (serve._accept → compose.render puts the block first, src.quote
         # for the page); a group / forward carries it inside its untrusted envelope above
         qkw={'quote':{k:quote[k] for k in ('who','ts','text','ex')},'quote_text':quote_text} if quote_text and owner else {}
         send=await self.host._accept(session,clean(text,20000),None,blobs=blobs,**qkw) if blobs else await self.host._accept(session,clean(text,20000),None,**qkw)
+        if send is not None and owner:send.on_card=session.on_card
         if send is not None and type(send.turn) is int:
             self.turn_enrollment[send.turn]=dict(cfg)
             self.turn_routes[send.turn]=(chat_id,uid,device)
             try:tg_cursor.outbox_put(self.root,send.turn,chat_id,uid,device,cfg.get('generation'))
             except OSError:self.host.st.log('telegram_outbox_fail')
         return True
+    def card_notice(self,cfg,chat_id):
+        async def notify():   # P562: a Web App card waits → this chat hears where, once
+            if self.enabled() and configuration(self.host.st)==cfg and not self.host.stopped():
+                from .owner_channels import confirm_text
+                await asyncio.to_thread(api,cfg,'sendMessage',{'chat_id':chat_id,'text':confirm_text(self.host)})
+        return notify
+
     def reply_quote(self,msgs,cfg,group,lang,owner=False):
         """P342 (#28): the message these replied to (Telegram `reply_to_message`, or `external_reply` from another chat), as
         compose.tg_quote_block's q — who said it, when, its words (Telegram's `quote.text` when they selected part of it),
@@ -975,9 +952,6 @@ class Telegram:
             reset=why in ('other_bot','unknown_bot')
             if reset:self.cursor.update(imported=False,uncertain=[],pending_updates=[],inflight=None)
             self.enrollment=dict(cfg)
-            avatar = getattr(self.host, 'external_channels', None)
-            if avatar is not None:
-                await avatar.offer_choice()
             self.cursor.update(offset=off,bot=bot,enrollment=dict(cfg))
             tg_cursor.save(self.root,self.cursor,reset=reset)
             self.host.st.log('telegram_cursor',reason=why)

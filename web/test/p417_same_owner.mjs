@@ -13,10 +13,10 @@ const web = await startWebServer({ port: 0, relayCsp: 'ws://127.0.0.1:*' }), fak
 const failures = []; let checks = 0;
 const check = (v, s) => { checks++; if (!v) failures.push(s); };
 const T = {
-  zh: { wait: '等待另一台确认', hint: '你这边已经确认', reaching: '正在联系另一台电脑', done: '已是同一个主人', turn: '另一台已经发起',
+  zh: { wait: '等待另一台确认', hint: '你这边已经确认', reaching: '正在联系另一台 Agent J 主机', done: '已是同一个主人', turn: '另一台已经发起',
     declined: '被拒绝了', expired: '已过期', ended: '对方已取消同一个主人', order: '点一次确认就完成', stale: '这张卡已经过时',
     phone: '这台手机没能确认', old: '还是旧版本', closed: '这张卡已处理', start: '这一页会显示一串六位数字' },
-  en: { wait: 'Waiting for the other computer to confirm', hint: 'You have confirmed on this side', reaching: 'Reaching the other computer',
+  en: { wait: 'Waiting for the other Agent J host to confirm', hint: 'You have confirmed on this side', reaching: 'Reaching the other Agent J host',
     done: 'Already Same owner', turn: 'The other side started this', declined: 'was declined', expired: 'so it expired',
     ended: 'The other side ended Same owner', order: 'one tap here finishes it', stale: 'This card is out of date',
     phone: 'This phone could not confirm', old: 'older Agent J', closed: 'This card is done', start: 'this page shows a six-digit code' },

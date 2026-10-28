@@ -65,7 +65,7 @@ ITEMS = [
      "用手机扫码配对，并发一条消息试试。", "Scan the pairing code with your phone and send a message."),
     ("passkey", "core", "required", "phone", ["phone"], "手机通行密钥", "Phone passkey",
      "在手机上设置 Face ID / 指纹通行密钥，用于批准与恢复。", "Set up a Face ID / fingerprint passkey on the phone for approvals and recovery."),
-    ("admin", "core", "required", "phone", ["phone"], "手机批准钥匙", "Phone approval key",
+    ("admin", "core", "required", "phone", ["phone"], "手机批准密钥", "Phone approval key",
      "手机已配对后自动具备；用于密码卡、密钥卡和审批。", "Comes with pairing; used for password, key and approval cards."),
     ("phonepermissions", "core", "optional", "phone", ["phone"], "手机麦克风与相机", "Phone microphone and camera",
      "语音和拍照要用时在手机上允许，不必回Agent J 主机。", "Allow them on the phone when you want voice or photos; no computer needed."),

@@ -93,7 +93,7 @@ test('Settings → Agent 与遥控器: the row, its state line and 「撤销」;
   const ph = (s) => [...String(s).matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort().join(',');
   for (const k of keys) { assert.equal(typeof en[k], 'string', 'en ' + k); assert.equal(ph(zh[k]), ph(en[k]), k); }
   assert.equal(zh['sxf.row'], '转移席位到另一台 Agent J 主机');
-  assert.equal(zh['sxf.pkElsewhere'], '去有钥匙的设备操作');
+  assert.equal(zh['sxf.pkElsewhere'], '去已设好 Face ID 的设备操作');
   assert.equal(zh['hmv.rescan'], '扫码配对新的 Agent J 主机');
   for (const k of ['sxf.step1', 'sxf.step2', 'sxf.step3']) assert.ok(zh[k] && en[k]);
   assert.match(zh['sxf.step2'], /「绑定你的席位」/);

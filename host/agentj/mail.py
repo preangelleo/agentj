@@ -59,6 +59,7 @@ SECRET = "secret.bin"
 STATE = "state.json"
 SECURITY = ("ssl", "starttls", "plain")          # plain: loopback only (a local bridge, tests)
 AUTH_LEVELS = ("strict", "standard", "off")
+VERIFIED = ("dmarc", "dkim", "spf")   # P562: judge() proved the owner; 「off」 (allowlist only) keeps the guest envelope
 ROLES = ("owner", "guest")
 POLL_DEFAULT, POLL_MIN, POLL_MAX = 5, 1, 60       # minutes
 ALLOW_MAX = 50
@@ -1428,7 +1429,7 @@ class Mail:
             put(f"forwarded-original-{i + 1}.txt", "text/plain", original.encode("utf-8"))
         for name, mime, data in attachments(msg):
             put(name, mime, data)
-        source = provenance.email_owner(v.addr) if v.role == "owner" else provenance.email_guest(v.addr)
+        source = provenance.email_owner(v.addr) if v.role == "owner" and v.auth in VERIFIED else provenance.email_guest(v.addr)
         lines = [f"Subject: {subject}" if subject else ""]
         lines.append((owner_text if v.role == "owner" else redact)(clean(words, TEXT_MAX)))   # P194: the owner's own words as written
         if fwds:
@@ -1449,24 +1450,12 @@ class Mail:
             for p in paths:
                 inbox.unlink_placed(p)
             return False
-        avatar_reply = None
-        if v.role == "owner":
-            avatar = getattr(self.host, 'external_channels', None)
-            if avatar is None:
-                self.log('avatar', result='unavailable')
-                return False
-            def valid():
-                current = read_config(self.st)
-                return (current['enabled'] and current['generation'] == now['generation'] and
-                        any(_same(r['addr'], v.addr) and r['role'] == 'owner' for r in current['allow']))
-            avatar_reply = await avatar.receive_owner('mail', now['generation'] + ':' + msg_id(msg), text, paths, valid, admission={'addr':v.addr,'generation':now['generation']}, blobs=blobs)
-            if avatar_reply is None or not valid() or self.host.stopped():
-                return False
-            page = self.host.hist_add({'k':'sys', 'via':'mail', 'text':'来自邮件 / From email'}, avatar_reply, 'done')
-            with contextlib.suppress(Exception):   # P557: its files on the page
-                from .channel_card import attach
-                attach(self.host, page, getattr(avatar_reply, 'page_files', ()))
-            send = SimpleNamespace(turn=page['id'])
+        from .owner_channels import mail_draw      # P562 (#336 / #337): owner mail → the drawer or the main conversation
+        drawn = await mail_draw(self.host, words, subject) if v.role == "owner" and v.auth in VERIFIED and not blobs and not fwds else None
+        if drawn is False:
+            return False
+        if drawn is not None:
+            send = drawn
         else:
             session = SimpleNamespace(device=device, name=who[:64], cid=0, source_kind="email", provenance=source)
             send = await self.host._accept(session, clean(text, TEXT_MAX + 2000), None, blobs=blobs) if blobs else \
@@ -1476,16 +1465,15 @@ class Mail:
                 inbox.unlink_placed(p)
             return False
         st2 = read_state(self.st)
-        st2["routes"][str(send.turn)] = {"to": v.addr, "role": v.role, "subject": subject, "msgid": msg_id(msg),
+        owner = v.role == "owner" and v.auth in VERIFIED     # P562 review: an unverified letter is a guest's, also for the reply
+        st2["routes"][str(send.turn)] = {"to": v.addr, "role": "owner" if owner else "guest", "verified": v.auth in VERIFIED, "subject": subject, "msgid": msg_id(msg),
                                          "refs": str(msg.get("References", "") or "")[:2000], "gen": now["generation"],
                                          "state": "awaiting", "at": int(time.time())}
         while len(st2["routes"]) > 50:
             st2["routes"].pop(next(iter(st2["routes"])))
         save_state(self.st, st2)
-        if avatar_reply is not None:
-            result = await self.reply(send.turn, avatar_reply)
-            if hasattr(avatar, 'record_delivery'):
-                avatar.record_delivery('mail', now['generation'] + ':' + msg_id(msg), result)
+        if drawn is not None:
+            await self.reply(send.turn, drawn.reply)
         return True
 
     # ---------------- replies
@@ -1522,6 +1510,8 @@ class Mail:
         row = next((r for r in cfg["allow"] if _same(r["addr"], route["to"])), None)
         if not cfg["enabled"] or row is None or route.get("gen") != cfg["generation"]:
             return drop("not_allowed")             # only allowlisted addresses, and only the account that received it
+        if not (row["role"] == "owner" and route.get("role") == "owner" and route.get("verified") is True):
+            row = {**row, "role": "guest"}         # P562 review: unverified (or a pre-0.25.16 route) → the guest's redacted reply
         pw = self.password(cfg)
         if not pw:
             return drop("no_password")
@@ -1554,8 +1544,8 @@ class Mail:
         with contextlib.suppress(Exception):
             agent_name = self.st.agent_name() or ""
         msg = build_reply(cfg, route, body, agent_name, lang, files)
-        ans = await self.host.ask("agentj mail reply", send_target(cfg,msg,[str(msg["To"])]),
-                                  batch=False)
+        ans = await self.host.ask("agentj mail reply", send_target(cfg,msg,[str(msg["To"])]),   # P562: the mail channel's card
+                                  batch=False, **({"avatar": "来自邮件" if lang == "zh" else "From email"} if row["role"] == "owner" and route.get("verified") else {}))
         if ans.get("behavior") != "allow":
             return drop("denied")
         s = read_state(self.st)
@@ -1851,9 +1841,6 @@ class Mail:
                 self.log("password", result="forgotten", why="destination_changed")
                 s3 = read_state(self.st); s3["pw_state"] = "absent"; save_state(self.st, s3)   # noqa: E702 — asked for next
             forget_secret(self.st)
-        avatar = getattr(self.host, 'external_channels', None)
-        if avatar is not None and cfg['enabled'] and (not old['enabled'] or old.get('address') != cfg.get('address')):
-            self.host._bg(avatar.offer_choice(), 'channel_plan_discovery')
         self.wake.set()
         return cfg
 
