@@ -1,5 +1,5 @@
 {
-  "version": "0.25.18a1",
-  "zh": "白名单通知邮件交给 Agent J 只读处理，可移进废纸篓；Touch ID 断线可补交；升级后 Claude 状态栏自动修复，旧额度标为过期；长按批准恢复原来的效果。",
-  "en": "Allowlisted notification mail reaches Agent J read-only; Touch ID setup survives a drop; the Claude status line self-repairs; long-press approve is as before."
+  "version": "0.25.19a1",
+  "zh": "Touch ID / Face ID 断线后结果照样送到；设置页整理（终端指令、紧急切换 AI、邮件域名白名单）；微信与后台任务更稳；遇到故障先查新版本。",
+  "en": "Touch ID results survive a dropped connection; tidier Settings (terminal commands, emergency AI switch, mail domains); steadier WeChat and background tasks."
 }

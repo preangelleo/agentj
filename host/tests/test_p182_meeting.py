@@ -132,7 +132,7 @@ class Notes(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(r, {"ok": True, "to": ["li@corp.cn", BOSS]})
         [(frm, to, msg)] = self.sent()
         self.assertEqual((frm, sorted(to)), (AGENT, sorted(["li@corp.cn", BOSS])))
-        self.assertEqual(msg["Auto-Submitted"], "auto-generated"); self.assertEqual(msg["X-AgentJ"], "notes")
+        self.assertEqual(msg["Auto-Submitted"], "auto-generated"); self.assertRegex(msg["X-AgentJ"], r"^notes; o=[0-9a-f]{12}$")  # P569
         self.assertIsNone(msg["Bcc"]); self.assertNotIn("\n", msg["Subject"])
         self.assertIn("要点", msg.get_body(("plain",)).get_content())
         self.assertTrue(any("会议纪要已发到" in n for n in self.notes))

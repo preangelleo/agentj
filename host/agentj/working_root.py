@@ -4,6 +4,24 @@ import os
 from . import preferences
 
 
+def protected_macos(root, *, platform=None, home=None):
+    """Lexical AND resolved paths: macOS privacy applies to the folder, even if writable in a terminal."""
+    import sys
+    if (platform or sys.platform) != "darwin":
+        return False
+    h = Path(home or Path.home()).expanduser()
+    paths = (h / n for n in ("Downloads", "Desktop", "Documents", "Library/Mobile Documents", "Library/CloudStorage"))
+    target = Path(root).expanduser().absolute()
+    return any(target == p or p in target.parents or target.resolve() == p.resolve() or p.resolve() in target.resolve().parents for p in paths)
+
+
+MACOS_HINT = ("macOS 会拦截后台服务访问下载、桌面、文稿和 iCloud。把工作文件夹移到 ~/coding；例如空目标目录时运行 "
+              "`mkdir -p ~/coding && mv ~/Downloads/编程 ~/coding/`，然后 `agentj agent codex --dir ~/coding`、"
+              "`agentj service restart`（其它 AI 换成对应名称）。 / macOS may block the background service in Downloads, Desktop, "
+              "Documents or iCloud. Move the work folder into ~/coding, select it with `agentj agent <harness> --dir ~/coding`, "
+              "then run `agentj service restart`. Keep existing files; do not overwrite a destination.")
+
+
 def candidates(st=None):
     found = []
     stored = preferences.get(preferences.effective(st), "agent.working_root", "")
@@ -38,6 +56,8 @@ def select(st, specified=None, interactive=False):
             raise ValueError("working root is inside a protected Agent J path")
     if root.exists() and not root.is_dir():
         raise ValueError("working root is not a directory")
+    if protected_macos(root):
+        print("! " + MACOS_HINT)
     return root
 
 

@@ -259,8 +259,9 @@ class WeChatForwardRefusalLogged(unittest.TestCase):
             error = None
             clock = staticmethod(lambda: now)
             fwd_inflight, fwd_sent, fwd_rate = set(), {}, {}
+            # P569 integration: P568 #352 (REPORT-568:17) persists the latest forward result via store.save()
             store = types.SimpleNamespace(data={'account': {'ilink_user_id': 'u@example.com'}, 'context': 'c',
-                                                'context_at': now - 29 * 3600 - 5, 'generation': 'g'})
+                                                'context_at': now - 29 * 3600 - 5, 'generation': 'g'}, save=lambda: None)
             h = types.SimpleNamespace(stopped=lambda: False, st=types.SimpleNamespace(log=lambda ev, **kw: logs.append((ev, kw))),
                                       hist={7: {'end': 'done', 'reply': {'text': '转发测试'}}})
             api_factory = staticmethod(lambda account: object())
@@ -275,6 +276,7 @@ class WeChatForwardRefusalLogged(unittest.TestCase):
         r = asyncio.run(wechat_forward.forward(WC(), 7, 'dev'))
         self.assertEqual(r, {'ok': False, 'why': 'needs_message'})
         self.assertEqual(logs, [('wechat_forward', {'device': 'dev', 'id': 7, 'result': 'needs_message', 'why': 'context_rejected', 'ret': -2, 'age_h': 29})])
+        self.assertEqual(WC.store.data['last_forward'], {'ok': False, 'why': 'needs_message', 'at': int(now)})   # no body text
         from agentj.state import State
         self.assertTrue({'ret', 'age_h', 'why', 'result'} <= State.LOG_FIELDS)
 

@@ -99,3 +99,6 @@ agentj capability compact --json
 - The socket checks the OS peer’s process ancestry, owner provenance, fresh handoff, current harness/session/folder and turn. Only an explicit host-verified paired-phone source may trigger it. A missing source (including a system readback), heartbeat, workflow, Telegram or email (even the owner’s), friends, guests and external data are refused even after the current Send is cleared. A native terminal without explicit verified provenance is also refused; never infer owner identity from its absence. It accepts no target, arbitrary command, `/clear`, permission answer or new approval. A changed conversation cancels the queued request rather than compacting another conversation.
 
 收到「写好交接然后自己压缩」时，写完交接就执行上面的命令；排队成功后结束本轮。不要只回「可以压缩了」，也不要让主人回终端操作。失败要说明真实原因，交接文件保留。只写交接的请求不擅自压缩。
+
+
+Codex main compaction: Agent J asks for the Markdown handover as a reply without tools and saves it to the fixed work-folder path itself. Do not write a second copy in the protected state directory. / Codex 主对话压缩：Agent J 请求无工具的 Markdown 交接回复，再由主机保存到固定工作目录路径；不要另写进受保护状态目录。

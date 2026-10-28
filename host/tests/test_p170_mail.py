@@ -228,7 +228,7 @@ class Flow(_Base):
         self.assertEqual(msg["References"], "<a@corp.example> <task1@corp.example>")
         self.assertEqual(msg["Subject"], "Re: 请整理周报")
         self.assertEqual(msg["Auto-Submitted"], "auto-replied")
-        self.assertEqual(msg["X-AgentJ"], "reply")
+        self.assertEqual(msg["X-AgentJ"], M.mark(M.read_config(self.st), "reply"))  # P569: + o=
         self.assertIn("周报整理好了", msg.get_body(("plain",)).get_content())
         # our own reply landing in the same mailbox (owner uses their own address) never loops back as a task
         self.imap.add(raw=self.smtp.sent[0][2])

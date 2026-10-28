@@ -872,6 +872,7 @@
               <svg class="mi" data-icon="finger" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden><path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4M14 13.12c0 2.38 0 6.38-1 8.88M17.29 21.02c.12-.6.43-2.3.5-3.02M2 12a10 10 0 0 1 18-6M2 16h.01M21.8 16c.2-2 .131-5.354 0-6M5 19.5C5.5 18 6 15 6 12a6 6 0 0 1 .34-2M8.65 22c.21-.66.45-1.32.57-2M9 6.8a6 6 0 0 1 9 5.2v2"/></svg>
               <span class="pkrow__txt"><b class="setlab" id="set-pk-state" data-i18n="p539.pk.st.unknown">本机 {bio}：未确认</b><small id="set-pk-sub"></small><small class="pkrow__note" id="set-pk-note" hidden></small></span>
               <button type="button" id="set-pk-setup" class="aj-btn aj-btn--sm" data-i18n="p539.pk.setup">在本机设置</button>
+              <span class="pkrow__acts" id="set-pk-acts" hidden><button type="button" id="set-pk-test" class="aj-btn aj-btn--sm" data-i18n="p566.pk.test">测试一下</button><button type="button" id="set-pk-reset" class="aj-btn aj-btn--sm" data-i18n="p561.pk.reset">重新设置</button></span>
             </div>
             <button type="button" id="setup-faceid" class="setnav" hidden><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2M9 9.5v1M15 9.5v1M12 9.5V13h-1M9.5 16a3.5 3.5 0 0 0 5 0"/></svg><span><b data-i18n="phoneEnv.setup">设置 Face ID</b><small data-i18n="pkp.rowNote">危险操作前用 Face ID 确认是你本人。每台设备各自设置自己的 Face ID / 指纹。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
             <!-- P547 (PASSKEY-SEAT-MODEL §3): move this seat to a new Agent J host from the remote. js/seatxfer.js (hidden until the host answers seat_xfer_state) -->
@@ -910,13 +911,13 @@
               </li>
             </ol>
             <!-- P361 (PROTOCOL §34): 电脑上的命令 — whitelisted commands with ⧉ and 「执行」 (Face ID every run). js/cmdrun.js -->
-            <div class="rscmds" id="rs-cmds" hidden>
+            <details class="rscard rscmds setfold" id="rs-cmds" hidden>
+              <summary class="rstitle" id="rs-cmds-h" data-i18n="p361.title">终端指令</summary>
               <p class="rsnote" id="rs-repair-order" data-i18n="p438.order">没回应时按这个顺序：Stop → 执行 agentj doctor --reconnect → 重启服务 → 重开 AI 会话（0.25.1a1 起）→ ② 请 Agent J Father 远程帮忙。额度问题先看 Claude 设置 Usage / 免费重置；手机灰了先用 ① 重置连接。</p>
-              <h4 class="rstitle" id="rs-cmds-h" data-i18n="p361.title">Agent J 主机上的命令</h4>
               <p class="rsnote" data-i18n="p361.note">在 Agent J 主机上执行的终端指令。</p>
               <ul class="rscmdlist" id="rs-cmd-list" aria-labelledby="rs-cmds-h"></ul>
               <div class="rscmdres" id="rs-cmd-out" role="status" aria-live="polite" hidden></div>
-            </div>
+            </details>
             <div class="rscard" id="layout-diag-card">
               <button type="button" id="layout-diag-send" class="aj-btn" data-i18n="p489.send">发送画面诊断</button>
               <p class="setnote" data-i18n="p489.note">画面有色带或错位时点一下。只把尺寸、颜色和用量发到你的 Agent J 主机，不含聊天内容。</p>
@@ -1284,13 +1285,18 @@
               <button type="button" id="mail-check" class="aj-btn aj-btn--sm" data-i18n="mail.check">立即检查</button></p>
             <p class="setnote" data-i18n="mail.keyNote">点「设置邮箱授权码」，按服务商提示获取并粘贴。密码加密保存到 Agent J 主机后自动测试连接，不发信。</p>
 
-            <h3 class="setg" data-i18n="mail.gAllow">白名单（谁的来信直接处理，给谁发信不用确认）</h3>
+            <details class="rscard setfold" id="mail-allow-card">
+            <summary class="rstitle" data-i18n="mail.gAllow">白名单（谁的来信直接处理，给谁发信不用确认）</summary>
             <ul class="setphones mailallow" id="mail-allow"></ul>
             <p class="setnote" id="mail-allow-empty" data-i18n="mail.allowEmpty">白名单是空的：现在任何邮件都不会交给 Agent。先把你自己常用的邮箱加进来。</p>
-            <div class="mailadd"><input id="mail-add-addr" class="aj-input" type="email" inputmode="email" autocomplete="off" autocapitalize="off" spellcheck="false" data-i18n-attr="placeholder=mail.addPh" placeholder="你常用的邮箱">
+            <div class="mailadd"><input id="mail-add-addr" class="aj-input" type="text" inputmode="email" autocomplete="off" autocapitalize="off" spellcheck="false" data-i18n-attr="placeholder=mail.addPh" placeholder="你常用的邮箱">
               <select id="mail-add-role" class="aj-select"><option value="owner" data-i18n="mail.roleOwner">我本人</option><option value="guest" data-i18n="mail.roleGuest">访客</option></select>
               <button type="button" id="mail-add" class="aj-btn aj-btn--sm" data-i18n-attr="aria-label=mail.add,title=mail.add" aria-label="加入" title="加入"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div>
+            <label class="mailf mailchk"><input type="checkbox" id="mail-add-subdomains"><span data-i18n="p567.subdomains">包含子域名</span></label>
+            <p class="setnote" data-i18n="p567.domainNote">可填 @anthropic.com，域名只能作为访客；通知需通过 DMARC 或对齐 DKIM 校验，不能添加公共邮箱域名。</p>
             <p class="setnote" data-i18n="mail.roleNote">「我本人」的邮件按你的指令处理；「访客」的邮件不当作你的指令，不能批准任何操作，回信会去掉私人信息。白名单里的人，Agent 给他们发信不用你再确认；加进来之前想清楚：Agent 可以不经你确认给他发信。白名单里的通知邮件（如区块浏览器提醒）也会交给 Agent J 阅读；它只读，不会回信。</p>
+
+            </details>
 
             <h3 class="setg" data-i18n="mail.gAuth">发件人校验</h3>
             <label class="mailf"><span data-i18n="mail.auth">校验强度</span><select id="mail-auth" class="aj-select">

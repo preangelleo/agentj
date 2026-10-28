@@ -221,7 +221,7 @@ kbd.setesc{background:var(--menu-chip);border-color:var(--menu-line);color:var(-
   #settings .setside button{display:flex;align-items:center;gap:var(--ui-space-control);min-height:var(--menu-row-3);color:var(--menu-text)}
   #settings .setside button .mi{color:var(--menu-muted)}
   #settings .setside button:hover{background:var(--menu-chip)}
-  #settings .setside button[aria-current="true"]{background:var(--menu-chip);box-shadow:inset 3px 0 0 var(--menu-accent)}
+  #settings .setside button[aria-current="true"]{background:var(--menu-chip);border-left-color:var(--menu-accent)}
   #settings .setside button[aria-current="true"] .mi{color:var(--menu-accent)}
 }
 @media (max-width:899px){ #settings .setside .mi{display:none} }
@@ -292,7 +292,7 @@ kbd.setesc{background:var(--menu-chip);border-color:var(--menu-line);color:var(-
 #sug.slashmenu button{min-height:var(--menu-row-3);color:var(--menu-text)}
 #sug.slashmenu button+button{border-top-color:var(--menu-line)}
 #sug.slashmenu button span{color:var(--menu-muted)}
-#sug.slashmenu button[aria-selected="true"]{background:var(--menu-chip);box-shadow:inset 3px 0 0 var(--menu-accent)}
+#sug.slashmenu button[aria-selected="true"]{background:var(--menu-chip);border-left-color:var(--menu-accent)}
 
 /* ---- level 2 · keyboard shortcuts: one panel per group, rows at the level-3 height --------------------------------- */
 .keydl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:0 var(--ui-space-content);margin:0}
@@ -665,15 +665,15 @@ body:not([data-view="chat"]) #set-actions .bulb{display:flex}
 /* P361: Agent J 主机上的命令 — one row per whitelisted command (code + note, 「执行」 on the right), one result block under the list */
 #settings .rscmds{margin-top:var(--ui-space-content);padding-top:var(--ui-space-content);border-top:1px solid var(--menu-line)}
 #settings .rscmdlist{list-style:none;margin:var(--ui-space-control) 0 0;padding:0;display:flex;flex-direction:column}
-#settings .rscmd{display:flex;align-items:center;gap:var(--ui-space-control);padding-block:var(--ui-space-line);border-bottom:1px solid var(--menu-line)}
-#settings .rscmdmain{flex:1;min-width:0;display:flex;flex-direction:column;gap:var(--sp-1)}
+#settings .rscmd{display:flex;flex-direction:column;gap:var(--sp-1);padding-block:var(--ui-space-line);border-bottom:1px solid var(--menu-line)}
+#settings .rscmdmain{width:100%;min-width:0}
 #settings .rscmdmain code{overflow-wrap:anywhere}
-#settings .rscmdmain small{color:var(--menu-muted);font-size:var(--ui-fs-small);line-height:var(--ui-leading)}
-#settings .rscmdgo{flex:none;min-height:var(--ui-btn-h);padding-inline:var(--ui-btn-px)}
-#settings .rscmdgo:disabled{opacity:.55;cursor:default}
-/* P408: 「在终端里打开」 next to 「执行」; on a phone both buttons share the line under the command */
-#settings .rscmdterm{flex:none;min-height:var(--ui-btn-h);padding-inline:var(--ui-btn-px)}
-@media (max-width:560px){ #settings .rscmd:has(.rscmdterm){flex-wrap:wrap} #settings .rscmd:has(.rscmdterm) .rscmdmain{flex-basis:100%} }
+#settings .rscmdmeta{display:flex;align-items:center;gap:var(--ui-space-control);width:100%;min-width:0}
+#settings .rscmdmeta>small{flex:1;min-width:0;color:var(--menu-muted);font-size:var(--ui-fs-small);line-height:var(--ui-leading)}
+/* Same glyph, colour, target and glyph spacing as the reply card; no separate action band. */
+#settings .rscmdacts{flex:none;height:44px;padding:0;background:none;overflow:visible}
+#settings .rscmdacts .act{margin-bottom:0}
+#settings .rscmdacts .act[aria-disabled=true]{opacity:.35;cursor:default;background:none}
 #settings .setrow>.setacts{grid-column:1 / -1}
 #settings .setterm-last{color:var(--menu-text);font-weight:600}
 #settings .rscmdres{margin-top:var(--ui-space-control);display:flex;flex-direction:column;gap:var(--ui-space-control)}
@@ -842,3 +842,8 @@ html:root :is(#quoteDlgDel,#quoteDlgJump,#ctm-e-del,#ctm-e-save,#phone-env-copy,
 #settings .sethb-prompt{grid-column:1 / -1;display:flex;flex-direction:column;align-items:flex-start;gap:8px;min-width:0}
 #settings .sethb-prompt .setlink{justify-content:flex-start;text-align:start;max-width:100%}
 #settings #set-hb-update[hidden]{display:none}
+
+/* P567: the same card and native disclosure for terminal commands and allowlists. */
+.setfold > summary { cursor:pointer; min-height:44px; align-content:center; }
+.setfold > summary:focus-visible { outline:2px solid var(--state); outline-offset:3px; }
+.setfold[open] > summary { margin-bottom:12px; }

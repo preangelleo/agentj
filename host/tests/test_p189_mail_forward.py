@@ -61,7 +61,7 @@ class Forward(_Svc):
         self.assertNotIn('href="javascript:', html, "only http(s) / mailto links")
         self.assertIn('href="https://agentj.app/docs/email/"', html)
         self.assertEqual(sorted(p.get_filename() for p in msg.iter_attachments()), ["people.vcf", "report.pdf"])
-        self.assertEqual(msg["X-AgentJ"], "forward")
+        self.assertRegex(msg["X-AgentJ"], r"^forward; o=[0-9a-f]{12}$")  # P569
 
     async def test_without_the_input(self):
         res = await self.phone({"t": "mail_fwd", "to": [{"addr": OWNER}], "turn": 7, "input": False})

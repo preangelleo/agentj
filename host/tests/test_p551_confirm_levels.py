@@ -91,7 +91,7 @@ class HookHarness(unittest.TestCase):
         self.assertIsNone(self.run_hook(h, "Edit", {"file_path": "a.txt", "old_string": "a", "new_string": "b"}))
         self.assertEqual(self.run_hook(h, "Bash", {"command": "rm -rf build"}), "ask")      # ③
         self.assertEqual(self.run_hook(h, "Bash", {"command": "sudo rm x"}), "ask")
-        self.assertEqual(self.run_hook(h, "mcp__x__unknown_op", {}), "deny")              # unknown still fails closed
+        self.assertEqual(self.run_hook(h, "mcp__unknown_op", {}), "deny")              # unknown still fails closed
         # off: the standard hook is unchanged (② asks)
         self.assertEqual(self.run_hook([extra, "policy-only"], "Bash", {"command": "git push origin main"}), "ask")
 

@@ -20,12 +20,13 @@ def request(op, **fields):
     try:
         res = elevate.client_request(st, {"t": "host_diagnostics", "op": op, **fields},
                                      timeout=(90 + min(max(fields.get("wait", 0), 0), 180) if op in ("support", "feedback_send") else 300), path=os.environ.get(elevate.ENV) or names.elevate_sock(st))
-    except (OSError, ValueError):
-        res = None
+    except (OSError, ValueError) as e:
+        res = {"error": type(e).__name__}  # class name only
     if isinstance(res, dict) and type(res.get("exit")) is int and isinstance(res.get("output"), str):
         print(res["output"], end="")
         return res["exit"]
-    print("聊天能继续时，可忽略这一步连接检查；安全隔离内不能读取本机钥匙文件，后台暂时没有返回结果。"
+    why = str(res.get("error") or "")[:40] if isinstance(res, dict) else ""
+    print(f"({why}) " * bool(why) + "聊天能继续时，可忽略这一步连接检查；安全隔离内不能读取本机钥匙文件，后台暂时没有返回结果。"
               "反馈若未收到编号，就还没有确认提交，请先查看客服会话再重试。 / If chat works, this connection check can be skipped. "
               "Isolation hides the local key files; the background service has not returned a result. "
               "Feedback without a ticket ID is not confirmed sent; check support threads before retrying.")
@@ -39,16 +40,18 @@ def feedback_snapshot():
     return "Agent J " + __version__ + "\n" + "\n".join(str(r.get("summary", "")) for r in rows)
 
 
+ALLOWED = {  # P569: each op is signature-tested
+    "diag": set(), "layout_last": set(), "status": set(), "reconnect": {"session", "caller_session", "as_json"},
+    "support": {"kind", "text", "thread", "attach_doctor", "wait", "lang"},
+    "thread": {"thread", "wait"}, "list": set(),
+    "feedback_send": {"raw", "owner_confirmed"}, "feedback_replies": {"as_json"},
+}
+
+
 def execute(st, req):
     """No paths, URLs, credentials, subprocesses or caller-selected function names accepted."""
     from . import cloud, feedback, reconnect, support
-    op = req.get("op")
-    allowed = {
-        "diag": set(), "layout_last": set(), "status": set(), "reconnect": {"session", "caller_session", "as_json"},
-        "support": {"kind", "text", "thread", "attach_doctor", "wait", "lang"},
-        "thread": {"thread", "wait"}, "list": set(),
-        "feedback_send": {"raw", "owner_confirmed"}, "feedback_replies": {"as_json"},
-    }
+    op, allowed = req.get("op"), ALLOWED
     fields = set(req) - {"t", "op"}
     if not isinstance(op, str) or op not in allowed or fields - allowed[op]:
         return {"exit": 1, "output": "Request refused: shape\n"}
@@ -95,7 +98,7 @@ def execute(st, req):
                                   attach_doctor=req.get("attach_doctor", False), wait=wait, lang=req.get("lang"),
                                   ch=support.channel_for(st), doctor_fn=feedback_snapshot, out=out)
         elif op == "thread":
-            rc = support.run_thread(req.get("thread"), wait=wait, ch=support.channel_for(st), doctor_fn=feedback_snapshot, out=out)
+            rc = support.run_thread(req.get("thread"), wait=wait, ch=support.channel_for(st), out=out)
         elif op == "list":
             rc = support.run_list(st=st, out=out)
         elif op == "feedback_send":
@@ -106,7 +109,11 @@ def execute(st, req):
         # Existing errors are safe, but arbitrary OS errors may contain private paths.
         rc = support.EXIT_SEAT if isinstance(exc, support.SupportSeatError) else 1
         print(str(exc), file=out)
-    except Exception:
-        rc = 1
-        print("后台未完成请求，请稍后重试 / Background request did not complete; try later", file=out)
+    except Exception as exc:  # P569: class name only, never the text
+        rc, name = 1, type(exc).__name__
+        try:
+            st.log("host_diagnostics_failed", action=op, exception_type=name)
+        except OSError:
+            pass
+        print(f"后台请求出错（{name}），不是还没回复 / Background request failed ({name}); not 'no reply yet'", file=out)
     return {"exit": rc, "output": out.getvalue()}

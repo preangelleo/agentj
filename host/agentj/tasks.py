@@ -843,7 +843,7 @@ class Scheduler:
                         await host.agent.halt(clear_queue=False)   # resumes on the next message; queued controls stay
                     self.cur_resume, self.limit = resume, None
                     from . import provenance
-                    with provenance.request_source(provenance.system()):
+                    with provenance.task_run():
                         if e["task"].get("steps"):         # P426 #181-5: node by node, each checkpointed (wfrun.py)
                             from . import wfrun
                             out, code = await wfrun.run_steps(self, kind, e, research, rid, trigger)

@@ -129,12 +129,16 @@ def mcp_tool_approval(p, calls: dict | None = None) -> tuple[str, dict, str, dic
     p = p if isinstance(p, dict) else {}
     meta = p.get("_meta") if isinstance(p.get("_meta"), dict) else {}
     schema = p.get("requestedSchema")
-    if meta.get("codex_approval_kind") != "mcp_tool_call" or p.get("mode", "form") != "form" or not isinstance(schema, dict):
+    if schema is None and p.get("mode") in ("openai/form", "openaiForm"):
+        schema = {"type": "object", "properties": {}}
+    if meta.get("codex_approval_kind") != "mcp_tool_call" or p.get("mode", "form") not in ("form", "openai/form", "openaiForm") or not isinstance(schema, dict):
         return None
     if schema.get("properties") or schema.get("required"):
         return None                                   # a real field to fill: not a plain approval
     server, m = p.get("serverName"), _MCP_RUN.search(p.get("message") if isinstance(p.get("message"), str) else "")
-    named = m.group(1) if m else None
+    named = m.group(1) if m else meta.get("tool_name")
+    if isinstance(named, str) and named.startswith(f"mcp__{server}__"):
+        named = named[len(f"mcp__{server}__"):]
     if not (_mcp_name(server) and _mcp_name(named)):
         return None
     turn = p.get("turnId")
@@ -945,6 +949,8 @@ class CodexAgent(Agent):
                                   {"permissions": {}, "scope": "turn"}, False))
         elif method in ("execCommandApproval", "applyPatchApproval"):     # legacy v1 shapes: never sent to a v2 client
             self._answer(rid, {"decision": "denied"})
+            if not self.research:
+                self.local_only("Codex 使用旧审批协议，请在 Agent J 主机更新 Codex 并运行 agentj service restart 后重试。 / Codex used the legacy approval protocol. Update Codex on the Agent J host, run agentj service restart and retry.")
         elif method == "mcpServer/elicitation/request" and p.get("threadId") == self.tid \
                 and (ap := mcp_tool_approval(p, self.__dict__.get("mcp_open"))) is not None:
             # P539 (#300): Codex asks an MCP tool call's approval as an empty-form elicitation — a plain yes / no: the normal
@@ -959,10 +965,28 @@ class CodexAgent(Agent):
                                     MCP_TOO_BIG_NOTICE)
             self._bg(self._decide(rid, ap[0], ap[1], {"action": "accept", "content": {}}, {"action": "decline"}, False,
                                   bind=ap[3]))
-        elif method == "mcpServer/elicitation/request":                   # nobody on the phone can fill a form: decline
-            self._answer(rid, {"action": "decline"})
-            if not self.research:
-                self.local_only("Codex 要你填一张表（MCP elicitation）：手机上填不了，已拒绝；需要的话在Agent J 主机上处理。")
+        elif method == "mcpServer/elicitation/request":
+            from . import codex_forms
+            try:
+                if p.get("threadId") != self.tid or self.research:
+                    raise codex_forms.Unsupported("scope")
+                # A used empty approval must never turn into a generic confirmation.
+                card = codex_forms.card_for(p)
+                approval = None
+                meta = p.get("_meta") if isinstance(p.get("_meta"), dict) else {}
+                if meta.get("codex_approval_kind") == "mcp_tool_call":
+                    approval = mcp_tool_approval({**p, "requestedSchema": {"type": "object", "properties": {}}},
+                                                 self.__dict__.get("mcp_open"))
+                    if approval is None or mcp_args_too_big(approval[1]):
+                        raise codex_forms.Unsupported("unbound_approval")
+            except codex_forms.Unsupported as e:
+                self.host.st.log("codex_elicitation", reason=str(e))
+                self._answer(rid, {"action": "decline"})
+                if not self.research:
+                    self.local_only(codex_forms.notice(getattr(self.host, "lang", "zh"),
+                                                      p.get("mode") if p.get("mode") == "openai/userVerification" else str(e)))
+            else:
+                self._bg(codex_forms.answer(self, rid, p, card, approval=approval))
         elif method == "item/tool/requestUserInput":                      # §10.7: a question card on the phone
             qs = p.get("questions") if isinstance(p.get("questions"), list) else []
             card = question_card(qs)
@@ -1039,6 +1063,15 @@ class CodexAgent(Agent):
                                          **({"background": "task"} if self.cfg.get("_workflow_ceo") else {})))   # P552
             if r.get("behavior") == "allow":
                 ans = yes
+            elif isinstance(r.get("message"), str):
+                # Native decline has no reason field and is otherwise presented as "rejected by user".
+                # Tell both the owner and the model the actual host decision before answering the native request.
+                from .privacy import owner_text
+                why = owner_text(r["message"])[:2000]
+                self.host.agent_notice(why)
+                with contextlib.suppress(Exception):
+                    await self.call("thread/inject_items", {"threadId": self.tid, "items": [{"type": "message",
+                        "role": "developer", "content": [{"type": "input_text", "text": "Agent J approval result: " + why}]}]}, timeout=3)
         except Exception:  # noqa: BLE001 — fail closed
             ans = no
         finally:

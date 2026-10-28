@@ -47,14 +47,15 @@ test('the fill is a width Web Animation from the press: 0 % → 100 %, linear, t
   assert.doesNotMatch(relay, /holdScale|HOLD_BACK_MS|scaleX/, 'no roll-back animation: an early release snaps back like the earliest');
 });
 
-test('press starts it; an early release cancels it (straight back to 0); a finished hold stays full until the card goes', () => {
+test('press starts it; an early release cancels it (straight back to 0); a finished hold clears immediately', () => {
   const h = fn('holdToApprove');
   assert.match(h, /btn\.classList\.add\("holding"\);\s*holdFill\(btn, "start"\);/, 'start at pointerdown');
   assert.match(h, /apprCancelHold\(true\);\s*if \(q && q\.id === id/, 'the timer ends the hold as done');
   assert.match(fn('apprCancelHold'), /holdFill\(apprHold\.btn, done \? "done" : "back"\)/);
   const f = fn('holdFill');
   assert.match(f, /if \(prev\) prev\.cancel\(\);[^\n]*\n\s*f\._hold = mode === "start" \? f\.animate\([^\n]*\) : null;\n\}/, 'back = cancel, nothing animated');
-  assert.match(f, /if \(mode === "done"\)\{[^]*?HOLD_DONE_MS\);\s*return;/, 'done: kept full, then rested (the next card starts empty)');
+  assert.match(f, /if \(mode === "done"\)\{[^]*?if \(prev\) prev\.cancel\(\);\s*f\._hold = null;\s*return;/, 'done: clears immediately');
+  assert.doesNotMatch(f, /setTimeout|HOLD_DONE_MS/);
 });
 
 test('the trigger is still there: a re-render hides #apprBtns while measureCmd reads layout — the fill must not depend on CSS continuity', () => {

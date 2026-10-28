@@ -2058,9 +2058,9 @@ def cmd_agent(a) -> None:
         print("已忘掉之前的对话：下一条手机消息开一段新对话。")
     print(_agent_line(st))
     if a.mode in ("claude", "codex", "opencode", "kimi", "qwen", "dsh", "off"):
-        print("Takes effect after restarting `agentj serve`. The Agent runs as you, with your own login and permission settings; "
+        print("Takes effect after `agentj service restart`. The Agent runs as you, with your own login and permission settings; "
               "Agent J gives it no extra permission." if _lang(st) == "en" else
-              "重启 `agentj serve` 后生效。Agent 以你自己的身份、登录和权限设置运行，本程序不会给它更多权限。")
+              "运行 `agentj service restart` 后生效。Agent 以你自己的身份、登录和权限设置运行，本程序不会给它更多权限。")
 
 
 def _first_connect(st: State, a) -> bool:
@@ -2096,8 +2096,13 @@ def _first_connect(st: State, a) -> bool:
 def cmd_approvals(a) -> None:
     from . import approvals
     st = State()
-    _need_init(st)
-    every = approvals.read_log(st)
+    try:
+        _need_init(st)
+        every = approvals.read_log(st)
+    except PermissionError:
+        raise SystemExit("无法在 AI 沙箱里读取审批记录。请在 Agent J 主机的终端运行 `agentj approvals --last 10 --json`；"
+                         "不要放宽状态目录权限。 / The AI sandbox cannot read approval records. Run "
+                         "`agentj approvals --last 10 --json` in a terminal on the Agent J host; keep state permissions intact.") from None
     recs = every[-a.last:] if a.last else every
     index = {str(r.get("id")): r for r in every if r.get("decision") == "allow_batch"
              or (r.get("tool") == "agentj goal" and r.get("decision") == "allow")}

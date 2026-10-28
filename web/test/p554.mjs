@@ -131,10 +131,14 @@ try{
    await waitFor(A,`document.querySelector('input[name="forward-destination"][value="wx"]').checked`);
    assert.match(await evaluate(A,`document.getElementById('toast').textContent`),lang==='zh'?/没能保存到 Agent J 主机/:/not saved on the Agent J host/);
    assert.equal(await dest(Bp),'wx','B unchanged');
-   // an unbound channel falls back to system share on this remote but never rewrites the host value
+   // P569 integration: P567 #365 — a real unbind (the channel's own status says so) writes share back through the signed
+   // forward_set (never a migration) so the reset is said once and survives a refresh; rebinding keeps share until the owner picks again.
    const n=fake.st.forwardSets.length;await fake.send({t:'wechat_state',bound:false,pending:0});await sleep(100);
-   assert.equal(await dest(A),'share');assert.equal(fake.st.forwardSets.length,n);assert.equal(fake.st.prefs.ui.forward_destination,'wx');
-   await fake.send({t:'wechat_state',bound:true,can_forward:true,pending:0});await sleep(100);assert.equal(await dest(A),'wx','rebound: the host value again');
+   assert.equal(await dest(A),'share');for(let i=0;i<50&&fake.st.prefs.ui.forward_destination!=='share';i++)await sleep(20);
+   const resets=fake.st.forwardSets.slice(n);assert.ok(resets.length>=1&&resets.every(x=>x.dest==='share'&&!x.migrate&&x.sigOk),JSON.stringify(resets));
+   assert.equal(fake.st.prefs.ui.forward_destination,'share');assert.equal(await dest(Bp),'share','B follows the host');
+   await fake.send({t:'wechat_state',bound:true,can_forward:true,pending:0});await sleep(100);assert.equal(await dest(A),'share','rebound: the persisted reset stays');
+   assert.equal(fake.st.forwardSets.filter(x=>x.migrate).length,1,'a reset is never a migration');
    assert.deepEqual([...A.problems,...Bp.problems].filter(x=>!/favicon|ERR_|WebSocket/.test(x)),[]);
    results.push({lang,pass:true,host_sync:true});
   }finally{await A.close();await Bp?.close();}

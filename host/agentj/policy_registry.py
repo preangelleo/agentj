@@ -308,7 +308,16 @@ def main_requirement(tool, tool_input=None, *, env=None):
     action = tool_action(tool)
     requirement = decision("main", action)
     if requirement == "deny":
-        return requirement
+        parts = tool.split("__") if isinstance(tool, str) else []
+        if len(parts) != 3 or parts[0] != "mcp" or not all(re.fullmatch(r"[A-Za-z0-9_.-]+", x) for x in parts[1:]):
+            return requirement
+        # P568: only the main window gets extensible connector classification.
+        # Other layers and preauthorization still require a registered action.
+        operation = parts[2].lower()
+        words = set(re.findall(r"[a-z0-9]+", re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", parts[2]).lower()))
+        sensitive = {"secret", "secrets", "password", "passwd", "credential", "credentials", "token", "tokens", "key", "keys", "vault", "env"}
+        executable = {"js", "eval", "execute", "run", "code", "shell", "bash", "python", "script", "exec"}
+        requirement = "uv" if words & (sensitive | executable) else "allow" if re.match(r"^(search|get|list|read|fetch|find|describe|inspect)(?:_|$)", operation) else "hold"
     from . import danger
     inp = tool_input if isinstance(tool_input, dict) else {}
     name = tool
@@ -342,7 +351,6 @@ def main_requirement(tool, tool_input=None, *, env=None):
     if tool == "agentj calendar" and inp.get("operation") == "delete":
         return "uv"                      # P551: a remote event deleted cannot be brought back by Agent J
     if tool == "apply_patch":
-        import re
         patch = str(inp.get("command", inp.get("patch", inp.get("input", ""))))
         for kind, path in re.findall(r"^\*\*\* (Add|Update|Delete) File: (.+)$", patch, re.M):
             if kind == "Delete" or danger.cred_path(path) or danger.hook_path(path):

@@ -11,6 +11,8 @@ const DESTS = ['share', 'wx', 'tg'];
 let owner = '', selected = 'share', sync = false, hostVal = '', migrating = false, told = false, stored = '';
 const key = () => 'aj.forward.destination.' + owner;
 export const available = x => x === 'share' || (x === 'wx' ? peer.wxbound : x === 'tg' && peer.tgbound);
+// P569 integration: unbound only once that channel's own status arrived on this connection (before it, show share, change nothing)
+const unbound = x => !available(x) && (x === 'wx' ? peer.wxknown : x === 'tg' ? peer.tgknown : false);
 const local = () => { try { const v = localStorage.getItem(key()); return DESTS.includes(v) ? v : ''; } catch { return ''; } };
 const changed = () => window.dispatchEvent(new Event('agentj-forward-change'));
 function follow() {
@@ -23,12 +25,20 @@ function follow() {
 export function destination() {
   follow();
   if (!sync) {
-    if (isReady() && !available(selected)) { selected = 'share'; save(); toast(t('p536.reset'), 3500); }
+    if (isReady() && unbound(selected)) { const channel = selected === 'wx' ? t('p536.wechat') : 'Telegram'; selected = stored = 'share'; save(); toast(t('p536.reset', {channel}), 3500); }
     return selected;
   }
   const want = hostVal || stored || 'share';
   if (!isReady() || available(want)) { told = false; return want; }
-  if (!told) { told = true; toast(t('p536.reset'), 3500); }
+  if (!told && unbound(want)) {
+    told = true;
+    const channel = want === 'wx' ? t('p536.wechat') : 'Telegram';
+    hostVal = selected = 'share'; stored = ''; save();
+    send('share', false).then(res => {
+      if (!res.ok) toast(t('p554.syncFail', {why: whyText(res.why)}), 5000);
+    }).catch(() => toast(t('p554.syncFail', {why: t('set.offline')}), 5000));
+    toast(t('p536.reset', {channel}), 3500);
+  }
   return 'share';
 }
 function save() { try { localStorage.setItem(key(), selected); } catch {} }

@@ -69,7 +69,10 @@ Display names come from `agentj status --json` field `agent_display_name` (share
 
 All layers consult the host's `policy_registry`: main-window native tools and host cards (owner channels included),
 friends and customer service. Do not invent an AUTO list. The host's decision is authoritative;
-unknown actions deny, and Web App hold/UV actions go to the main conversation. A channel “yes” cannot
+malformed actions deny, and Web App hold/UV actions go to the main conversation. A channel “yes” cannot
 approve them. New registry permission does not imply that the selected executor has that capability.
 
-Native tool names and known MCP operations map to canonical actions; unknown operations deny. Shell/code/delegation require a passkey card. Friends check answer on every turn and remain tool-less. Company reads stay forbidden in owner channels.
+Native tool names and known MCP operations map to canonical actions; unregistered main-window MCP tools use read/write confirmation. Other layers retain the registered allowlist. Shell/code/delegation require a passkey card. Friends check answer on every turn and remain tool-less. Company reads stay forbidden in owner channels.
+
+
+Troubleshooting / 排障：run `agentj wechat status` (error, hint, last_forward) and `agentj doctor`. On macOS move a work folder out of Downloads/Desktop/Documents/iCloud into ~/coding, select it with `agentj agent <harness> --dir ~/coding`, then `agentj service restart` (agent restart only restarts AI). Full safe migration steps: /docs/wechat/. A terminal owner_required needs Settings → Channels → WeChat ClawBot → Unbind on a paired remote. Binding invalidation stops polling; reconnect on the intended Agent J host. A needs_message forward requires a new message in WeChat; check for delivery before retrying. / macOS 工作目录移出受保护文件夹后重启后台服务；终端不能代替遥控器解绑；转发需新微信消息时先发一句，再重试。

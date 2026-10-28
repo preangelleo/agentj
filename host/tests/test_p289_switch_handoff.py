@@ -245,18 +245,21 @@ class Job(unittest.TestCase):
         self.assertEqual(len(fake.sent), 1, "P529: one final receipt, no duplicate handoff message")
         self.assertIn("✓", fake.sent[0])
 
-    def test_dry_run_failed_gate_and_no_way_back_ask_for_nothing(self):
+    def test_dry_run_and_target_failure_do_not_handoff_broken_original_can_escape(self):
         st = mk_state(self.tmp.name, "claude")
         fake = HandoffServe(st, "claude")
         self.assertEqual(self.run_job(st, fake, "codex", dry_run=True), 0)
         self.assertEqual(self.run_job(st, fake, "codex", probe=fake_probe(False)), 1)
 
+        self.assertEqual(fake.handoffs, [])
+        self.assertFalse(self.where(st).exists())
+
         def only_target(only=None, model=None, timeout=60):
             return {"harnesses": [{"name": n, "installed": True, "version": "1", "callable": n == "codex",
                                    **({} if n == "codex" else {"probe_reason": "not_logged_in"})} for n in only]}
-        self.assertEqual(self.run_job(st, fake, "codex", probe=only_target), 1)
-        self.assertEqual(fake.handoffs, [])
-        self.assertFalse(self.where(st).exists())
+        self.assertEqual(self.run_job(st, fake, "codex", probe=only_target), 0)
+        self.assertTrue(fake.handoffs)
+        self.assertTrue(self.where(st).exists())
 
     def test_a_link_is_never_a_handoff(self):
         st = mk_state(self.tmp.name, "claude")

@@ -76,7 +76,7 @@ export function reconnectReason() {
 // a handshake past the host timeout. Only an authenticated `removed` can revoke it;
 // confirm a revoked record once with the same device key before clearing local data.
 let refusals = 0, removalProbe = false;
-export const peer = { heartbeat: false, p33: false, asr: 'off', hist: 'off', tgfwd: false, wxfwd: false, wxbound: false, tgbound: false, pair1: false, tgfile: false, busyget: false, contacts: false, hfind: false, systasks: false, plat: null, boot: null };
+export const peer = { heartbeat: false, p33: false, asr: 'off', hist: 'off', tgfwd: false, wxfwd: false, wxbound: false, tgbound: false, wxknown: false, tgknown: false, pair1: false, tgfile: false, busyget: false, contacts: false, hfind: false, systasks: false, plat: null, boot: null };
 export function configure(hooks) { H = hooks; }
 export const current = () => sess;
 export const isReady = () => !!sess && sess.phase === 'ready';
@@ -195,6 +195,7 @@ function readCaps(m) {
   peer.p33 = Array.isArray(m.caps) && m.caps.includes('p33');
   peer.wxbound = peer.p33 && Array.isArray(m.caps) && m.caps.includes('wxbound');
   peer.tgbound = peer.p33 && Array.isArray(m.caps) && (m.caps.includes('tgbound') || m.caps.includes('tgfwd'));
+  peer.wxknown = peer.tgknown = false;   // P569: caps are a guess; only the channel's own status (wechat.js) says it is unbound
   peer.wxfwd = peer.p33 && Array.isArray(m.caps) && m.caps.includes('wxfwd');
   peer.tgfwd = peer.p33 && Array.isArray(m.caps) && m.caps.includes('tgfwd');   // P118 (B10): share → the owner's own Telegram
   peer.tgfile = peer.p33 && Array.isArray(m.caps) && m.caps.includes('tgfile'); // P183: a reply's file → the owner's Telegram
@@ -445,12 +446,12 @@ export async function whenReady(ms = 25000) {
 }
 export function randHex(bytes) { return Array.from(crypto.getRandomValues(new Uint8Array(bytes)), (b) => b.toString(16).padStart(2, '0')).join(''); }
 /** obj + a fresh r → every answer carrying that r goes to onMsg until done(r). → r, or null when not ready. */
-export function request(obj, onMsg, g = gen()) {
+export function request(obj, onMsg, g = gen(), onSent = null) {   // P566: onSent = the frame went out on the socket
   if (!isReady() || !g) return null;
   const r = randHex(8);
   const answer = (m) => onMsg(m); answer.generation = g;
   pending.set(r, answer);
-  sendApp({ ...obj, r }, g).catch(() => {
+  sendApp({ ...obj, r }, g).then(() => onSent?.(), () => {
     const answer = pending.get(r);
     if (answer) { pending.delete(r); answer({t: 'offline'}); }
   });

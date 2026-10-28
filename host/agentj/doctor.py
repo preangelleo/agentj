@@ -1217,6 +1217,17 @@ def check_update(offline: bool = False) -> dict:
               "不是错误：多半是没网或 GitHub 连不上，不影响使用 / not an error: offline or GitHub unreachable; agentj still works")
 
 
+def check_wechat(st):
+    res = _serve_status(st) or {}
+    wc = res.get("wechat") or {}
+    if not isinstance(wc, dict) or not wc.get("error"):
+        return None
+    from .wechat import error_hint
+    code = wc["error"]
+    return _c("wechat", WARN, "微信收消息异常 / WeChat receiving error: " + str(code),
+              error_hint(code, "zh") + " / " + error_hint(code, "en"))
+
+
 def check_local_files(st):
     from . import local_files
     if sys.platform != "darwin":
@@ -1254,7 +1265,7 @@ def run(st: State | None = None, offline: bool = False) -> list[dict]:
     mig = check_migration(st)
     if mig:
         out.append(mig)
-    out += list(filter(None, [check_local_files(st)]))
+    out += list(filter(None, [check_local_files(st), check_wechat(st)]))
     out += [check_agent(st), check_heartbeat_prompt()]
     setup_row = check_harness_setup(st)
     if setup_row:
@@ -1485,6 +1496,9 @@ def check_main_identity(st):
         pref = preferences.get(preferences.effective(st), "agent.working_root", "")
         old = st.config().get("agent", {}).get("dir") if st.exists() else None
         root = main_identity.working_root(cfg or {"working_root": pref or old or "~/coding"})
+        from .working_root import protected_macos, MACOS_HINT
+        if protected_macos(root):
+            rows.append(_c("work-root-privacy", WARN, "macOS 受保护工作文件夹 / macOS protected work folder", MACOS_HINT))
         if not root.is_dir():
             rows.append(_c("work-root", FAIL if cfg or pref else WARN, "Working root is missing", "agentj init --working-root ~/coding"))
         else:

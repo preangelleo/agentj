@@ -185,7 +185,9 @@ class _LaunchReview(_Chain):
                     self.run_chain(script)
                     launches = self.logged()[before:]
                     if self.KIND == "claude":
-                        argv = next(x["argv"] for x in launches if "argv" in x)
+                        # P569 integration: since P567 (#355, REPORT-567:13) Settings' host_info refreshes the installed-harness list
+                        # in the background (`claude --version` probe); the session launch is the first non-probe argv
+                        argv = next(x["argv"] for x in launches if "argv" in x and x["argv"] != ["--version"])
                         self.assertEqual("--resume" in argv, resumed)
                         if resumed:
                             self.assertEqual(argv[argv.index("--resume") + 1], stored)

@@ -24,6 +24,15 @@ If you notice an Agent J problem or have an idea yourself, prepare the redacted 
 “I want to report today’s X to Agent J Father. Here is the draft; confirm and I will send.”
 Send only after agreement. For troubleshooting use `agentj support ask "<redacted question>" --attach-doctor`; ask official support first rather than making the owner find a person. A refusal means do not send.
 
+## 出故障先查版本 / A malfunction: check the version first
+
+Many problems are already fixed in a newer version. Before asking support or reporting, follow these steps:
+1. Run `agentj update check`. If the host is behind, tell the owner in one sentence and ask (“新版可能已经修好了，要我先升级再试吗？” / “A newer version may already fix this. Shall I upgrade first?”); once the owner agrees, run `agentj update apply`, then repeat the steps that failed. If a restart would interrupt other work, `update apply` puts a confirmation card on the phone: follow agentj-update and do not add `--yes`.
+2. Gone after the upgrade: tell the owner it is fixed. Nothing to report.
+3. Already current, or still there after the upgrade: ask support first with `agentj support ask "<redacted question>" --attach-doctor`.
+4. Still not solved: collect redacted evidence: the Agent J version (`agentj --version`), the failing checks from `agentj doctor --json` (check names and status only), the few relevant host.log lines if you can read them, and the steps to reproduce. Remove everything listed under Redaction below.
+5. Ask on the phone with the draft: “这个问题升级后还在，我想把证据汇报给 Agent J Father，稿子如下，确认就发。” / “This still happens after the upgrade. I want to report it to Agent J Father; here is the draft, confirm and I will send.” When the owner agrees, send at once: `agentj support feedback --kind bug --file <private local draft> --attach-doctor --wait 0`, then answer “已提交 + 编号” / “Submitted + ticket ID”.
+
 ## 脱敏与边界 / Redaction and boundaries
 
 Before any send remove credentials, keys, passwords, cookies, authentication/pairing codes; emails, phones and all other personal information; customer data; names and private content in file paths. Summarize private business content in generic terms. Do not read credential files for a report. Never send credentials.

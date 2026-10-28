@@ -950,7 +950,7 @@ class SharedClaudeAgent(Agent):
             # B1: a group member's turn never reaches the owner's approval, nor a category grant from an owner turn
             self.host.st.log("ask_done", tool=event.get("tool_name"), decision="deny", reason="group_source")
             return {"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": {"behavior": "deny",
-                "message": "This turn has no verified owner source: no owner approval."}}}
+                "message": provenance.refusal_text(self)}}}
         if name == "SessionStart" and not event.get("agent_id"):
             # P116 (B11): startup / resume / clear / compact of the served session reads the identity (again)
             note = self._handoff_context(event.get("source"))

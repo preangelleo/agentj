@@ -70,7 +70,7 @@
 .jc-tag-agent{border-color:var(--jc-fill,var(--menu-accent))}
 .jc-flag{border-color:transparent;background:var(--menu-chip,rgba(127,127,127,.18));color:var(--menu-text)}
 .jc-filter~.jc-list .jc-item{padding-left:10px}
-.jc-item[data-mark]{box-shadow:inset 4px 0 0 var(--c-peachy-feeling,#d97757)}
+.jc-item[data-mark]{border-left:4px solid var(--c-peachy-feeling,#d97757);border-radius:var(--ui-radius-control) 0 0 var(--ui-radius-control)}.jc-filter~.jc-list .jc-item[data-mark]{padding-left:6px}
 .jc-item[data-mark] .jc-flag:not(.jc-flag-ready){background:var(--c-peachy-feeling,#d97757);color:var(--c-sooty,#141414);font-weight:600}
 .jc-item[data-status="cancelled"] .jc-text{opacity:.7}
 .jc-actions{display:flex;flex-wrap:wrap;gap:var(--ui-space-btn);margin:0 0 var(--ui-space-control)}

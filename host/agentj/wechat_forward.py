@@ -78,6 +78,15 @@ def _why(wc):
 
 
 async def forward(wc, turn_id, device, *, valid=lambda: True):
+    res = await _forward(wc, turn_id, device, valid=valid)
+    wc.last_forward = {**res, 'at': int(wc.clock())}
+    wc.store.data['last_forward'] = wc.last_forward
+    wc.store.save()
+    wc.publish()
+    return res
+
+
+async def _forward(wc, turn_id, device, *, valid=lambda: True):
     if not valid() or _why(wc):
         return {'ok': False, 'why': _why(wc) if valid() else 'not_configured'}
     turn = wc.h.hist.get(turn_id) if type(turn_id) is int else None

@@ -11,7 +11,7 @@ You can also just ask Agent J — "what does this colour mean?", "how do I send 
 No reply, or stuck on “Not yet received”? You can do this from your phone. After each step, send a short test message in chat and stop when a reply arrives:
 
 1. Tap **Stop** to interrupt the current task.
-2. Open **Settings → Emergency repair → Commands on the Agent J host**, find `agentj doctor --reconnect`, and tap **Run** beside it (recommended). Your phone asks the host to check and repair the connection; you do not need to open a terminal. Confirm with Face ID when asked.
+2. Open **Settings → Emergency repair → Terminal Commands**, find `agentj doctor --reconnect`, and tap **Run** beside it (recommended). Your phone asks the host to check and repair the connection; you do not need to open a terminal. Confirm with Face ID when asked.
 3. Still no reply? In **Emergency repair**, tap **Restart service** (recommended), wait for the connection to return, then try again.
 4. Still no reply? Tap **Emergency repair → Reopen AI session** (requires host and web versions from 0.25.2a1). It ends the stuck AI session process and tries to resume the same conversation; if that fails, it opens a new session and keeps the old conversation. On an older version without this button, go to the next step.
 5. Still stuck? Tap **Emergency repair → ② Ask Agent J Father for remote help**. Only your tap sends a diagnostic report redacted on the host; keep the ticket number. Passwords, keys, chats and work files are not sent.
@@ -408,6 +408,10 @@ and treats it as information from a script, not as your instruction; with nothin
 can never post this way. See
 [Long tasks](https://agentj.app/docs/long-tasks/).
 
+### Automations on a schedule
+
+For work that repeats every day or week, your Agent uses the computer's own scheduler by default (a systemd timer on Linux, launchd on macOS, Task Scheduler on Windows); at the set time it starts your AI coding tool headless. You design it together and run it once by hand; once you say the report is right, later runs don't ask again. Stop everything doesn't pause these runs: to pause one, ask your Agent to switch its timer off. `agentj tasks` keeps working. See [Using it on the Agent J host](https://agentj.app/docs/computer/#system-scheduler).
+
 ## Stop everything
 
 In Settings → Safety, tap "Emergency stop all Agents" and confirm: the current work stops at once, every pending approval is denied, batch
@@ -439,7 +443,7 @@ Settings → Emergency repair is the second item. For no replies, follow the fiv
 
 When Agent J on the Agent J host stops answering, a small rescue helper there answers instead: a banner says "Agent J on the Agent J host isn't responding · rescue helper online", and ① and ② still work. The offline card has an **Emergency repair** button too. If the host stays unreachable, open [the support chat](https://support.agentj.app) on your phone. See [Phone grey or disconnected?](https://agentj.app/docs/reconnect/).
 
-Under Emergency repair, Commands on the Agent J host offers fixed terminal checks with Run. The read-only health check (`doctor --read-only`) uses the paired device signature and needs no Face ID, including on a large screen. Status, service status, rescue status, update check and reconnect still require passkey verification; a large screen without it asks you to confirm on your phone. Older hosts may still require Face ID for checks. Output is masked on the host, shown below as text and recorded in the operation log. Tap × to close the result.
+Under Emergency repair, Terminal Commands offers fixed terminal checks with Run. The read-only health check (`doctor --read-only`) uses the paired device signature and needs no Face ID, including on a large screen. Status, service status, rescue status, update check and reconnect still require passkey verification; a large screen without it asks you to confirm on your phone. Older hosts may still require Face ID for checks. Output is masked on the host, shown below as text and recorded in the operation log. Tap × to close the result.
 
 ### Web terminal
 
@@ -528,7 +532,7 @@ A pairing link is a key: it works once and expires after five minutes. Never sen
 
 Opening the same browser or Home Screen icon normally reconnects automatically, with rotating renewal credentials where available. Recovery is not guaranteed after clearing website data or credentials, expiry, or unpairing on the host. See [Reconnecting](https://agentj.app/docs/reconnect/) and [Privacy](https://agentj.app/docs/privacy/).
 
-After pairing, you can give this remote a passkey that uses its own unlock: Face ID on iPhone, Touch ID on a Mac, fingerprint or face unlock on Android, Windows Hello on Windows. Each remote sets up its own: "Settings" → "Agent & remotes" shows this one's state, such as "This device's Face ID: set up" or "This device's Face ID: not set" (Android, Mac and Windows name their own unlock, such as "This device's Touch ID: set up"); tap "Set up here" if it is not set. If your Agent J host already has this remote's key on record (one set up before an upgrade counts too), it simply says "This device's Face ID: set up"; if it says "This device's Face ID: not confirmed", tap "Confirm with Face ID" once — no other remote needed; when no other remote can approve, approve in a terminal on the Agent J host with `agentj faceid approve <code>`. "Remotes" shows the state of every remote too. If this remote uses a passkey from another device, you are told before you confirm that the system will ask you to scan with your phone; once it has its own, it confirms directly. When a check does not finish, the card says why and offers "Try again" and "Set up here (approve elsewhere)".
+After pairing, you can give this remote a passkey that uses its own unlock: Face ID on iPhone, Touch ID on a Mac, fingerprint or face unlock on Android, Windows Hello on Windows. Each remote sets up its own: "Settings" → "Agent & remotes" shows this one's state, such as "This device's Face ID: set up" or "This device's Face ID: not set" (Android, Mac and Windows name their own unlock, such as "This device's Touch ID: set up"); tap "Set up here" if it is not set. If your Agent J host already has this remote's key on record (one set up before an upgrade counts too), it simply says "This device's Face ID: set up"; if it says "This device's Face ID: not confirmed", tap "Confirm with Face ID" once — no other remote needed; when no other remote can approve, approve in a terminal on the Agent J host with `agentj faceid approve <code>`. "Remotes" shows the state of every remote too. If this remote uses a passkey from another device, you are told before you confirm that the system will ask you to scan with your phone; once it has its own, it confirms directly. When a check does not finish, the card says why and offers "Try again" and "Set up here (approve elsewhere)". When it says "set up", it also offers "Test it" (one check, nothing changes) and "Set up again" (a new key without unpairing). If the page goes to the background and the connection drops while you verify, it shows "Handing it in…" and sends the result once the Agent J host is connected again.
 
  When the pairing page offers Face ID reconnect, verifying restores the existing device slot without a new scan or host approval. A passkey synced to another device can replace the original device's slot. Unpairing on the host invalidates this route.
 

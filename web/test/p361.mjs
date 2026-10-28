@@ -17,12 +17,12 @@ import { startFakeHost } from './fakehost.mjs';
 import { launch, newPage, navigate, waitFor, waitState, evaluate, shoot, sleep, rect } from './browser.mjs';
 
 const OUT = process.env.P361_OUT || 'reports/qa/p361/web';
-const NAMES = ['doctor', 'reconnect', 'status', 'service_status', 'rescue_status', 'update_check'];
+const NAMES = ['doctor', 'reconnect', 'status', 'service_status', 'rescue_status', 'update_check', ...['claude','codex','opencode','kimi','qwen','dsh'].map(h=>'switch_'+h)];
 // P559 naming: headless Chromium is Linux → Touch ID; Face ID only on iPhone / iPad
 const L = {
-  zh: { title: 'Agent J 主机上的命令', run: '执行', fa: '用 Touch ID 确认', ok: '执行完成（退出码 0）', fail: '执行完成，有需要处理的项（退出码 1）', masked: '结果里像密码、密钥的内容已经在 Agent J 主机上遮住了。',
+  zh: { title: '终端指令', run: '执行', fa: '用 Touch ID 确认', ok: '执行完成（退出码 0）', fail: '执行完成，有需要处理的项（退出码 1）', masked: '结果里像密码、密钥的内容已经在 Agent J 主机上遮住了。',
     busy: '上一条命令还在执行，请等它结束。', nopk: '执行命令前要先用 Touch ID 确认，这台手机还没设置 Touch ID。', cut: '结果太长，只显示前面一部分。' },
-  en: { title: 'Commands on the Agent J host', run: 'Run', fa: 'Confirm with Touch ID', ok: 'Done (exit code 0)', fail: 'Done, with items that need attention (exit code 1)',
+  en: { title: 'Terminal Commands', run: 'Run', fa: 'Confirm with Touch ID', ok: 'Done (exit code 0)', fail: 'Done, with items that need attention (exit code 1)',
     masked: 'Anything that looks like a password or key was hidden on the Agent J host.', busy: 'The previous command is still running; wait for it to finish.',
     nopk: 'Running a command needs Touch ID first, and this phone has not set it up yet.', cut: 'The result is long; only the first part is shown.' },
 };
@@ -94,6 +94,7 @@ export async function runP361({ B, web, fake, out = OUT }) {
       await waitFor(p, `!${$('settings')}.hidden && !${$('rs-cmds')}.hidden`);
 
       // P438: the phone-only sequence comes before the command rows, and both useful actions are recommended.
+      await evaluate(p, `document.getElementById('rs-cmds').open=true`);
       const guidance = await evaluate(p, `({text:document.getElementById('rs-repair-order').textContent, top:document.getElementById('rs-repair-order').getBoundingClientRect().top, rows:document.getElementById('rs-cmd-list').getBoundingClientRect().top, reconnect:document.querySelector('[data-cmd="reconnect"]').textContent, restart:document.getElementById('rs-restart').textContent})`);
       check(guidance.text.includes('Stop') && guidance.text.includes('agentj doctor --reconnect') && guidance.text.includes('0.25.1a1') && guidance.top < guidance.rows, 'phone-only order above commands ' + tag);
       check(guidance.reconnect.includes(lang === 'zh' ? '推荐' : 'Recommended') && guidance.restart.includes(lang === 'zh' ? '推荐' : 'Recommended'), 'reconnect and restart recommended ' + tag);
@@ -101,15 +102,16 @@ export async function runP361({ B, web, fake, out = OUT }) {
       // ---- the rows: the host's whitelist only, each copyable + 「执行」
       const rows = await evaluate(p, `[...document.querySelectorAll('#rs-cmd-list .rscmd')].map(li=>({n:li.dataset.cmd,code:li.querySelector('code').textContent,cc:li.querySelector('code').hasAttribute('data-cc'),note:li.querySelector('small').textContent,b:li.querySelector('.rscmdgo').textContent,aria:li.querySelector('.rscmdgo').getAttribute('aria-label')}))`);
       check(rows.map((r) => r.n).join() === NAMES.join(), 'rows = the host whitelist, unknown name dropped ' + tag);
-      check(rows[0].code === 'agentj doctor' && rows[1].code === 'agentj doctor --reconnect' && rows.every((r) => r.cc && r.note.length > 4 && r.b === s.run && r.aria.includes(r.code)), 'code copyable, note, 执行 named ' + tag);
+      check(rows[0].code === 'agentj doctor' && rows[1].code === 'agentj doctor --reconnect' && rows.every((r) => r.cc && r.note.length > 4 && r.b === '' && r.aria.includes(r.code)), 'code copyable, note, 执行 named ' + tag);
       check(await evaluate(p, `${$('rs-cmds-h')}.textContent`) === s.title, 'block title ' + tag);
       check(await evaluate(p, `!!${$('rs-cmds')}.closest('#set-s-rescue')`), 'inside 紧急修复 ' + tag);
       const audit = async (label) => {
-        const a = await evaluate(p, `(()=>{const b=document.getElementById('rs-cmds');const small=[...b.querySelectorAll('button')].filter(e=>e.getClientRects().length).map(e=>{const r=e.getBoundingClientRect();return {id:e.id||e.className,w:Math.round(r.width),h:Math.round(r.height)}}).filter(x=>x.h<44||x.w<44);return {small,over:document.getElementById('set-main').scrollWidth>document.getElementById('set-main').clientWidth+1}})()`);
+        const a = await evaluate(p, `(()=>{const b=document.getElementById('rs-cmds');const small=[...b.querySelectorAll('button')].filter(e=>e.getClientRects().length).map(e=>{const r=e.getBoundingClientRect();return {id:e.id||e.className,w:Math.round(Math.max(r.width,parseFloat(getComputedStyle(e,'::after').width)||0)),h:Math.round(r.height)}}).filter(x=>x.h<44||x.w<44);return {small,over:document.getElementById('set-main').scrollWidth>document.getElementById('set-main').clientWidth+1}})()`);
         check(!a.small.length && !a.over, `${label}: taps ≥ 44 px, no overflow ${tag} ${JSON.stringify(a)}`);
       };
       check(await evaluate(p, `${$('rs-cmds')}.querySelector('[data-i18n="p361.note"]').textContent`) === (lang === 'zh' ? '在 Agent J 主机上执行的终端指令。' : 'Terminal commands that run on the Agent J host.'), 'plain current-purpose description ' + tag);
       await audit('idle');
+      await evaluate(p, `document.getElementById('rs-cmds').open=true`);
       await view('rs-cmds'); await save('1-list');
 
       // ---- 执行 doctor → Face ID sheet → assertion → pending (held: running) → output
@@ -140,6 +142,16 @@ export async function runP361({ B, web, fake, out = OUT }) {
       check(await evaluate(p, `${$('rs-cmd-out')}.hidden && !${$('rs-cmd-out-text')} && document.activeElement.id === 'rs-cmd-doctor'`), 'close clears result DOM and restores focus ' + tag);
       check(await evaluate(p, `import('./js/cmdrun.js').then(m=>m._debug().R===null)`), 'close clears in-memory output ' + tag);
       check(H.calls.length === callsBeforeClose && H.ran.length === ranBeforeClose, 'close sends no control request ' + tag);
+
+      // P567 A: click every emergency switch through the same signed + real WebAuthn path.
+      if (full) for (const h of ['claude','codex','opencode','kimi','qwen','dsh']) {
+        const n='switch_'+h, count=H.ran.length;
+        await click('rs-cmd-'+n);await waitFor(p, `!${$('confirm')}.hidden`);
+        check(await evaluate(p, `${$('confirm')}.textContent.includes('agentj agent switch ${h} --force')`), 'forced switch sheet '+h+' '+tag);
+        await click('confirm-yes');await waitFor(p, `!!${$('rs-cmd-out-text')}`);
+        check(H.ran.length===count+1&&H.ran.at(-1)===n&&H.calls.at(-1).sigOk&&H.calls.at(-1).fa,'signed forced switch '+h+' '+tag);
+        await click('rs-cmd-close');
+      }
 
       // ---- exit ≠ 0: still shows the output, says what it means; a cut result says so
       H.next = { ok: false, code: 1, out: '✗ relay      reconnecting\n    → agentj doctor --reconnect\n', cut: true, ms: 900 };

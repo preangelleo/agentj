@@ -323,7 +323,10 @@ class _TgPrep(_Bot, _Prep):
             self.assertTrue(res.startswith("/compact：已压缩"), res)
             # Telegram HTML turns a `_x_` run inside a random temp path into <i>x</i>; compare the path as sent
             self.assertIn("交接已写好：", res); self.assertTrue(res.rstrip().endswith("handover/compact.md"), res)   # P562: a random temp path may be redacted
-            self.assertEqual([m["text"] for m in self.prep_seen(c)], ["交接写好了"], "the preparation ran first")
+            # P569 integration: P568 #347 (REPORT-568:14) the host writes Codex's handover from its collected reply, nothing
+            # reaches the phone; CodexTelegramCompact counts the preparation turns from turn/start (before thread/compact/start)
+            codex = self.KIND == "codex"
+            self.assertEqual([m["text"] for m in self.prep_seen(c)], [] if codex else ["交接写好了"], "the preparation ran first")
             page = [t for t in self.hist_lines() if t["src"].get("k") == "cmd"]
             self.assertIn(compactprep.PROGRESS["zh"], [t["reply"]["text"] for t in page])
             self.assertFalse(any("Telegram owner private chat" in str(x) for x in self.logged()),
@@ -331,7 +334,7 @@ class _TgPrep(_Bot, _Prep):
             # 「压缩」: a new epoch since → prepared afresh, then compacted, the result back again
             self.bot.updates.append({"update_id": 2, **msg("压缩")})
             await c["wait"](lambda: len([t for t in self.bot.texts() if t.startswith("/compact：")]) == 2, 30000)
-            self.assertEqual(len(self.prep_seen(c)), 2)
+            self.assertEqual(len(self.prep_seen(c)), 0 if codex else 2)
             self.assertIn("交接已写好", [t for t in self.bot.texts() if t.startswith("/compact：")][1])
             # a group member's /compact: refused, nothing compacted
             host.preferences["telegram"]["groups"] = [{"id": "-100", "members": [456], "profile": "proxy"}]

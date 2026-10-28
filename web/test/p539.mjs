@@ -120,7 +120,7 @@ try {
       // d: a passkey that works → the signed answer carries the ticked preauth line
       if (w === 390 && scheme === 'light') {
         fake.st.holdAnswers = true;   // the test closes the card itself (c)
-        await ev(p, `navigator.credentials.get=async()=>({rawId:new Uint8Array([1,2,3]).buffer,response:{clientDataJSON:new Uint8Array([1]).buffer,authenticatorData:new Uint8Array([2]).buffer,signature:new Uint8Array([3]).buffer}})`);
+        await ev(p, `navigator.credentials.get=async()=>({rawId:new TextEncoder().encode('cred-1').buffer,response:{clientDataJSON:new Uint8Array([1]).buffer,authenticatorData:new Uint8Array([2]).buffer,signature:new Uint8Array([3]).buffer}})`);
         await waitFor(p, `document.getElementById('apprPk').dataset.state==='fail'`);
         await ev(p, `document.querySelector('#apprPk .pkassist__retry').click()`);
         await waitFor(p, `document.getElementById('sheet').hidden || document.getElementById('apprBtns').hidden`, 8000);
@@ -190,6 +190,7 @@ try {
       await ev(p, `PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable=async()=>true;window.__gets=0;navigator.credentials.get=()=>{window.__gets++;return Promise.reject(new DOMException('x','NotAllowedError'))}`);
       await ev(p, `import('./js/settings.js').then(m=>{m.openRescue();return true})`);
       await waitFor(p, `!document.getElementById('settings').hidden && !!document.getElementById('rs-cmd-doctor')`);
+      await ev(p, `document.getElementById('rs-cmds').open=true`);   // P567: 终端指令 is a fold, closed by default — the owner opens it before 「执行」
       await ev(p, `document.getElementById('rs-cmd-doctor').click()`);
       await waitFor(p, `!document.getElementById('confirm').hidden && !document.getElementById('confirm-pk').hidden`);
       const hintTxt = await ev(p, `document.getElementById('confirm-pk').innerText`);

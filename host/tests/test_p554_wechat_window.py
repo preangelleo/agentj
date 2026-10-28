@@ -42,7 +42,7 @@ class Window(unittest.IsolatedAsyncioTestCase):
         self.ready(age=2 * 86400, replies=[{'ret': -2}, {}])
         self.c.publish = unittest.mock.Mock()
         self.assertEqual(await self.c.forward(1, 'phone'), {'ok': False, 'why': 'needs_message'})
-        self.h.st.log.assert_any_call('wechat_forward', device='phone', id=1, result='needs_message')
+        self.h.st.log.assert_any_call('wechat_forward', device='phone', id=1, result='needs_message', why='context_rejected', ret=-2, age_h=48)
         self.assertTrue(self.c.store.data['context_stale']); self.assertFalse(self.c.can_forward())
         self.c.publish.assert_called()   # the phone learns at once (wxfwd off, Settings explains)
         self.assertTrue(self.c.status()['bound'])

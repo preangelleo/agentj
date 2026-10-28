@@ -600,10 +600,9 @@ body[data-reader="1"] .toast:is(.circle,.square){position:fixed;z-index:31}   /*
   .rdsc{padding-left:16px;padding-right:16px}
 }
 /* ---- the source card's quote block (§3): who was answered, above the owner's words ----- */
-.omq{display:flex;gap:8px;margin:0 0 6px;padding:6px 10px 6px 11px;border-radius:8px;cursor:pointer;
+.omq{display:flex;gap:8px;margin:0 0 6px;padding:6px 10px 6px 8px;border-radius:8px;cursor:pointer;border-left:3px solid rgba(20,20,20,.55);
   background:rgba(20,20,20,.07);position:relative;max-width:calc(100% - 44px);outline:none}
 .omq[hidden]{display:none}
-.omq::before{content:"";position:absolute;left:0;top:6px;bottom:6px;width:3px;border-radius:0 2px 2px 0;background:rgba(20,20,20,.55)}
 .omq:focus-visible{box-shadow:0 0 0 2px var(--noir)}
 .omq .qb{min-width:0;display:flex;flex-direction:column;gap:1px}
 .omq .qh{font:600 calc(12px*var(--fz))/1.3 var(--font-title);letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -662,6 +661,7 @@ body[data-sheet="1"] .deck{filter:blur(1.5px);opacity:.55}
 .words li>p{margin:0 0 .4em}
 .words li::marker{color:var(--md-mark)}
 .words blockquote{margin:0 0 .7em;padding:.05em 0 .05em .85em;border-left:3px solid var(--md-mark);color:var(--ink-soft)}
+.words blockquote{border-radius:8px 0 0 8px}   /* P569 #370: every left bar curves with its corners */
 .words hr{border:0;border-top:1.5px dashed var(--line);margin:1.1em 0}
 .words a{color:inherit;text-decoration:underline;text-decoration-thickness:1px;
   text-underline-offset:.18em;word-break:break-all}
@@ -885,11 +885,9 @@ body.recblur .toast:is(.circle,.square){z-index:61;position:fixed}
    Left accent = the quoted page's SOURCE colour; the middle (two lines: who · when,
    then the reply's first line — never a page number, pages drift) jumps back to that
    turn by its id; × or Esc cancels. Survives paging; a successful send drops it. */
-.qbar{display:flex;align-items:center;gap:10px;min-height:52px;padding:4px 0 4px 12px;
-  border-radius:12px;background:var(--surface);position:relative;z-index:3;overflow:hidden}
+.qbar{display:flex;align-items:center;gap:10px;min-height:52px;padding:4px 0 4px 9px;
+  border-radius:12px;border-left:3px solid var(--qc,var(--src-leo));background:var(--surface);position:relative;z-index:3;overflow:hidden}
 .qbar[hidden]{display:none}
-.qbar::before{content:"";position:absolute;left:0;top:8px;bottom:8px;width:3px;border-radius:0 2px 2px 0;
-  background:var(--qc,var(--src-leo))}
 .qbar>svg{width:20px;height:20px;flex:none;color:var(--ink)}
 .qbar .qb{flex:1;min-width:0;min-height:44px;display:flex;flex-direction:column;justify-content:center;gap:2px;
   padding:0;text-align:left;color:var(--ink);-webkit-tap-highlight-color:transparent}
@@ -905,9 +903,9 @@ body.recblur .toast:is(.circle,.square){z-index:61;position:fixed}
 .qbar[data-n] .qlist>.qb{display:none}
 .qbar[data-n="3"]>svg,.qbar[data-n="4"]>svg,.qbar[data-n="5"]>svg{display:none}
 .qbar[data-n]{gap:6px;padding-left:6px}
-.qbar[data-n]::before{display:none}
+.qbar[data-n]{border-left-width:0}
 .qc{flex:1 1 0;min-width:0;position:relative;display:flex;flex-direction:column;justify-content:center;gap:1px;
-  min-height:44px;padding:3px 4px 3px 7px;border-radius:8px;background:rgba(20,20,20,.06);box-shadow:inset 3px 0 0 var(--qc,var(--src-leo))}
+  min-height:44px;padding:3px 4px 3px 4px;border-radius:8px;background:rgba(20,20,20,.06);border-left:3px solid var(--qc,var(--src-leo))}
 .qc .qs{padding-right:14px}
 .qbar[data-n="4"] .qs,.qbar[data-n="5"] .qs{letter-spacing:0}
 .qc>button{min-width:0;padding:0;border:0;background:none;text-align:left;color:inherit;white-space:nowrap;overflow:hidden;
@@ -1009,7 +1007,7 @@ textarea::placeholder{color:var(--ink-soft);font-size:calc(13.6px*var(--fz));lin
 .slashmenu.sug{left:0;right:0;bottom:calc(100% + 6px);max-height:min(46vh,calc(var(--vvh,100dvh) * .42))}
 .slashmenu.sug button{min-height:48px;padding:6px 16px}
 .slashmenu.sug button b,.slashmenu.sug button span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.slashmenu.sug button[aria-selected="true"]{background:var(--surface);box-shadow:inset 3px 0 0 var(--ink)}
+.slashmenu.sug button[aria-selected="true"]{background:var(--surface);border-left:3px solid var(--ink);padding-left:13px;border-radius:var(--r-md) 0 0 var(--r-md)}
 .slashmenu.sug button b mark{background:none;color:inherit;font-weight:700;text-decoration:underline;text-underline-offset:3px}
 .attach{width:var(--rtap);height:var(--rtap);border-radius:50%;flex:none;display:grid;place-items:center;
   background:var(--surface);color:var(--ink);transition:transform .15s var(--re),opacity .2s}
@@ -1210,8 +1208,8 @@ body[data-conn=off] .composer{filter:grayscale(1);opacity:.7}
   transform:none;opacity:0;pointer-events:none;
   box-sizing:border-box;width:100%;max-width:100%;
   display:flex;align-items:center;gap:12px;text-align:left;line-height:1.45;
-  padding:12px 16px 12px 14px;border-radius:var(--dlg-radius-rect);background:var(--dlg-bg);color:var(--dlg-fg);
-  box-shadow:inset 3px 0 0 var(--nt-accent,var(--state)),var(--dlg-shadow);color-scheme:dark;
+  padding:12px 16px 12px 11px;border-radius:var(--dlg-radius-rect);background:var(--dlg-bg);color:var(--dlg-fg);
+  border-left:3px solid var(--nt-accent,var(--state));box-shadow:var(--dlg-shadow);color-scheme:dark;
   font-size:var(--dlg-fs-body);transition:opacity var(--dlg-dur),transform .25s var(--re)}
 .toast.on{opacity:1;transform:none}
 .toast.rect:not(.on),.toast:empty{display:none}
@@ -1221,14 +1219,14 @@ body[data-conn=off] .composer{filter:grayscale(1);opacity:.7}
 .toast .nt-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;overflow-wrap:anywhere}
 .toast .nt-title{font:600 var(--dlg-fs-title)/1.3 var(--font-title)}
 .toast .nt-acts{flex:none;display:flex;gap:8px;margin-left:auto}
-.toast.act{pointer-events:auto;padding:6px 6px 6px 14px;gap:12px}
+.toast.act{pointer-events:auto;padding:6px 6px 6px 11px;gap:12px}
 .toast .undo{min-height:44px;padding:0 16px;border-radius:var(--r-pill);font:600 var(--dlg-fs-body)/1 var(--font-body);
   color:var(--dlg-fg);background:var(--dlg-chip);border:1.5px solid var(--nt-accent,var(--state))}
 .toast .undo:focus-visible{outline:2px solid var(--dlg-fg);outline-offset:2px}
 /* P340 #27: the screenshot notice carries its picture (top of the page, cropped) and puts its buttons on their own row */
 .toast .nt-media{flex:none;width:44px;height:64px;object-fit:cover;object-position:top;border-radius:8px;
   box-shadow:0 0 0 1px color-mix(in srgb,var(--dlg-fg) 26%,transparent)}
-.toast.media.act{flex-wrap:wrap;row-gap:10px;padding:12px 12px 12px 14px}
+.toast.media.act{flex-wrap:wrap;row-gap:10px;padding:12px 12px 12px 11px}
 .toast.media .nt-acts{flex:1 0 100%;justify-content:flex-end}
 /* circle: the ✓ moment (saved, done) — centred like the hold-to-talk circle; .mail-saved (P256) is the same shape */
 .toast:is(.circle,.square,.mail-saved){position:fixed;left:50%;top:50%;z-index:90;width:calc(156px * var(--fz,1));height:calc(156px * var(--fz,1));
@@ -1356,7 +1354,7 @@ body[data-agent="stopped"]{--state:var(--c-offline)}
 .atag.low{background:var(--surface)}
 .atag.task{background:var(--surface);font-weight:500}
 .sheet.danger h2{text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:.2em}
-.sheet.danger .cmd{box-shadow:inset 3px 0 0 var(--lotion)}
+.sheet.danger .cmd{border-left:3px solid var(--lotion);padding-left:13px}
 .askleft{margin:10px 2px 0;font:500 calc(13px*var(--fz))/1.3 var(--font-mono);color:var(--ink-soft)}
 .askleft[hidden]{display:none}
 .apprbatch{display:flex;width:100%;min-height:56px;margin-top:10px;border-radius:18px;position:relative;overflow:hidden;
@@ -1600,6 +1598,9 @@ main{padding:6px 20px 24px}
 /* P170 · Settings → 邮件通道 */
 .setmail .setcard>.setg{margin:var(--space-section) 0 var(--sp-2)}
 .setmail .mailf{display:flex;flex-direction:column;gap:var(--sp-1);margin:var(--sp-3) 0 0;font-size:var(--fs-sm);color:var(--text-muted)}
+/* P569 integration (P567 #360): 「包含子域名」 — the whole row is the tap target; the box keeps its size, its hit box is 44 px tall */
+.setmail .mailchk{flex-direction:row;align-items:center;gap:var(--sp-2);min-height:44px;cursor:pointer}
+.setmail .mailchk input{flex:none;width:18px;height:44px;margin:0;accent-color:var(--accent,var(--text));cursor:pointer}
 .setmail .mailsrv{display:grid;grid-template-columns:minmax(0,1fr) 5.5rem 7.5rem;gap:var(--sp-2)}
 .setmail .mailadv{margin:var(--sp-3) 0 0;padding:var(--sp-2) var(--sp-3);border:1px solid var(--border-soft);border-radius:var(--r-md);background:var(--surface-2)}
 .setmail .mailadv summary{min-height:44px;display:flex;align-items:center;cursor:pointer;color:var(--text);font-size:var(--fs-sm)}
@@ -2010,7 +2011,7 @@ body[data-view="scan"] .top{display:none}
 .fr-gmentions{max-height:240px;overflow:auto;padding:var(--sp-1);border:1px dashed var(--border);border-radius:var(--r-lg);background:var(--bg);color:var(--text)}
 .fr-gmentions[hidden]{display:none}
 .fr-gmentions .fp-mention{display:flex;align-items:center;width:100%;min-height:44px;padding:var(--sp-2) var(--sp-3);border:0;border-radius:var(--r-md);background:transparent;color:inherit;text-align:left;font:inherit;cursor:pointer}
-.fr-gmentions .fp-mention[aria-selected=true]{background:var(--surface-2);box-shadow:inset 3px 0 0 var(--text)}
+.fr-gmentions .fp-mention[aria-selected=true]{background:var(--surface-2);border-left:3px solid var(--text);padding-left:calc(var(--sp-3) - 3px)}
 .fr-ghint{margin-top:var(--sp-2)}
 .fr-cardbox{margin-top:var(--sp-3);padding:var(--sp-3) var(--sp-4);border:1px solid var(--border);border-radius:var(--r-lg);display:flex;flex-direction:column;gap:var(--sp-1)}
 .fr-cardbox p{margin:0}
@@ -2132,7 +2133,7 @@ body[data-view="scan"] .top{display:none}
 
 /* P110 share arrival: a prominent action, shown only on an explicit share launch. */
 /* P318: the share hand-off notice is a Noir Notification rect (same tokens as .toast: Noir, Lotion, opaque, Windstorm rule) */
-.share-notice{position:relative;z-index:auto;left:auto;right:auto;top:auto;padding:var(--space-control) var(--space-control) var(--space-control) 16px;border:0;border-radius:var(--dlg-radius-rect);background:var(--dlg-bg);color:var(--dlg-fg);box-shadow:inset 3px 0 0 var(--state),var(--dlg-shadow);color-scheme:dark;display:flex;align-items:center;gap:var(--space-control);font-size:var(--dlg-fs-body);line-height:1.45}
+.share-notice{position:relative;z-index:auto;left:auto;right:auto;top:auto;padding:var(--space-control) var(--space-control) var(--space-control) 13px;border:0;border-left:3px solid var(--state);border-radius:var(--dlg-radius-rect);background:var(--dlg-bg);color:var(--dlg-fg);box-shadow:var(--dlg-shadow);color-scheme:dark;display:flex;align-items:center;gap:var(--space-control);font-size:var(--dlg-fs-body);line-height:1.45}
 .share-notice[hidden],.share-notice button[hidden]{display:none}
 .share-notice>span{flex:1;min-width:0}
 .share-notice button{min-height:56px;min-width:112px;margin-left:auto;border:1.5px solid var(--state);border-radius:var(--r-pill);background:var(--dlg-chip);color:var(--dlg-fg);font:inherit;font-weight:700;padding:8px 16px}
@@ -2247,7 +2248,7 @@ body:has(>.gdlg:not([hidden])) .ajmodal.hlp{z-index:104}   /* P549 (#316): help 
 .setup-hint{margin:var(--sp-3) 0 0}
 .setup-fact{margin:var(--sp-3) 0 0;font-weight:600}
 .setup-effect{margin:var(--sp-1) 0 0;color:var(--text-muted)}
-.setup-act{margin:var(--sp-3) 0 0;padding:var(--sp-2) var(--sp-3);border-left:3px solid var(--state)}
+.setup-act{margin:var(--sp-3) 0 0;padding:var(--sp-2) var(--sp-3);border-left:3px solid var(--state);border-radius:8px 0 0 8px}
 .setup-note{margin:var(--sp-3) 0 0;white-space:pre-wrap}
 .setup-actions{display:flex;flex-wrap:wrap;gap:var(--sp-2);margin-top:var(--sp-3)}
 .setup-actions .aj-btn{flex:1 1 9rem;min-height:56px;margin-top:0;white-space:normal}
@@ -2460,7 +2461,7 @@ i.bd.still{animation:none}
   .setside button{min-height:44px;padding:0 var(--space-control);border:0;border-radius:var(--r-md);background:none;color:var(--text);
     text-align:left;font:500 var(--fs-sm)/1.3 var(--font-body);cursor:pointer}
   .setside button:hover{background:var(--surface-2)}
-  .setside button[aria-current="true"]{background:var(--surface-2);font-weight:700;box-shadow:inset 3px 0 0 var(--accent)}
+  .setside button[aria-current="true"]{background:var(--surface-2);font-weight:700;border-left:3px solid var(--accent);padding-left:calc(var(--space-control) - 3px)}
   .setside button[hidden]{display:none}
   .setside button:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
   .setcards{columns:2 26rem;column-gap:var(--space-section)}
@@ -2644,7 +2645,7 @@ i.bd.still{animation:none}
 .ct-form{display:flex;flex-direction:column;gap:10px;min-height:0;overflow:auto;padding:2px}
 .ct-field{display:flex;flex-direction:column;gap:4px}
 .ct-field>span{font:500 calc(12.5px*var(--fz))/1.2 var(--font-body);opacity:.66}
-.ct-field.fresh input,.ct-field.fresh textarea{border-color:var(--c-idle);box-shadow:inset 3px 0 0 var(--c-idle)}
+.ct-field.fresh input,.ct-field.fresh textarea{border-color:var(--c-idle);border-left-width:4.5px;padding-left:11px}
 .ct-multi{display:flex;flex-direction:column;gap:6px}
 .ct-more{align-self:flex-start;min-height:44px;padding:0 4px;border:0;background:none;color:inherit;opacity:.72;
   font:500 calc(13px*var(--fz))/1 var(--font-body);cursor:pointer}
@@ -2951,7 +2952,7 @@ code[data-cc],pre[data-cc],.cc-in{cursor:copy}
 .omtxt{white-space:pre-wrap;overflow-wrap:anywhere;min-height:1.5em;padding-right:var(--om-tools);
   display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3}
 .om:has(.omq:not([hidden])) .omtxt{-webkit-line-clamp:1}
-.omq{font-size:calc(13px*var(--fz));margin-bottom:.461538em;padding:.461538em .769231em .461538em .846154em;
+.omq{font-size:calc(13px*var(--fz));margin-bottom:.461538em;padding:.461538em .769231em .461538em calc(.846154em - 3px);
   max-width:calc(100% - var(--om-tools))}
 .omq .qb{gap:calc(1px*var(--fz));max-width:100%}
 .omtools{position:absolute;right:6px;top:36px;height:44px;display:flex;align-items:center}
@@ -3009,7 +3010,7 @@ code[data-cc],pre[data-cc],.cc-in{cursor:copy}
 .gdlg-row.off-rsrow+.gdlg-row{margin-top:0;padding-top:var(--space-control)}
 /* P340 (#35): two to five quotes on a sent message fold into one row, the look of one quote (.omq) — 「引用 N 段」 over the
    first quote's words, 「+N-1」 at its end; open, the row is a small 「引用 N 段 · 收起」 header over every quote. */
-.omqfold{width:100%;min-height:44px;align-items:center;border:0;color:inherit;text-align:left;font-family:inherit;font-size:calc(13px*var(--fz));-webkit-appearance:none;appearance:none;
+.omqfold{width:100%;min-height:44px;align-items:center;border-block:0;border-right:0;color:inherit;text-align:left;font-family:inherit;font-size:calc(13px*var(--fz));-webkit-appearance:none;appearance:none;
   -webkit-tap-highlight-color:transparent;touch-action:manipulation}
 .omqfold[hidden]{display:none}
 .omqfold .qb{flex:1;min-width:0}
@@ -3100,8 +3101,8 @@ body[data-relink] .dot::after{animation:none}
    「立即收回授权」 at its end. */
 .elev-grant{position:fixed;left:50%;bottom:calc(216px + env(safe-area-inset-bottom));z-index:8;transform:translateX(-50%);
   box-sizing:border-box;width:min(560px,calc(100vw - 2 * var(--rg,16px)));display:flex;align-items:center;gap:10px;
-  padding:6px 6px 6px 14px;border-radius:var(--dlg-radius-rect);background:var(--dlg-bg);color:var(--dlg-fg);
-  box-shadow:inset 3px 0 0 var(--state),var(--dlg-shadow);color-scheme:dark;font-size:calc(13px*var(--fz,1));line-height:1.35}
+  padding:6px 6px 6px 11px;border-radius:var(--dlg-radius-rect);background:var(--dlg-bg);color:var(--dlg-fg);
+  border-left:3px solid var(--state);box-shadow:var(--dlg-shadow);color-scheme:dark;font-size:calc(13px*var(--fz,1));line-height:1.35}
 .elev-grant[hidden]{display:none}
 .elev-grant .elev-grant-text{flex:1;min-width:0;overflow-wrap:anywhere}
 .elev-grant .elev-grant-revoke{flex:none;min-height:36px;padding:0 12px;color:var(--dlg-fg);white-space:nowrap}
@@ -3157,12 +3158,12 @@ body[data-status=waiting]:not([data-kind=question]){--xlink:var(--c-bisque)}
 .elev .elev-kicker{padding-right:44px}
 .elev-run{position:fixed;left:50%;bottom:calc(216px + env(safe-area-inset-bottom));z-index:9;transform:translateX(-50%);
   box-sizing:border-box;width:min(560px,calc(100vw - 2 * var(--rg,16px)));display:flex;flex-direction:column;gap:6px;
-  padding:4px;border-radius:var(--dlg-radius-rect);background:var(--dlg-bg);color:var(--dlg-fg);
-  box-shadow:inset 3px 0 0 var(--state),var(--dlg-shadow);color-scheme:dark;font-size:calc(13px*var(--fz,1));line-height:1.35}
+  padding:4px 4px 4px 1px;border-radius:var(--dlg-radius-rect);background:var(--dlg-bg);color:var(--dlg-fg);
+  border-left:3px solid var(--state);box-shadow:var(--dlg-shadow);color-scheme:dark;font-size:calc(13px*var(--fz,1));line-height:1.35}
 .elev-run[hidden],.elev-run [hidden]{display:none}
-.elev-run[data-state="ask"]{box-shadow:inset 3px 0 0 var(--c-peachy-feeling),var(--dlg-shadow)}
-.elev-run[data-state="done"][data-ok="1"]{box-shadow:inset 3px 0 0 var(--emerald-oasis),var(--dlg-shadow)}
-.elev-run[data-state="done"][data-ok="0"]{box-shadow:inset 3px 0 0 var(--c-danger,#c0392b),var(--dlg-shadow)}
+.elev-run[data-state="ask"]{border-left-color:var(--c-peachy-feeling)}
+.elev-run[data-state="done"][data-ok="1"]{border-left-color:var(--emerald-oasis)}
+.elev-run[data-state="done"][data-ok="0"]{border-left-color:var(--c-danger,#c0392b)}
 .elev-run .elev-run-row{display:flex;align-items:center;gap:4px}
 .elev-run .elev-run-main{flex:1;min-width:0;min-height:40px;display:flex;align-items:center;gap:8px;padding:0 8px 0 10px;border:0;
   background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer;border-radius:calc(var(--dlg-radius-rect) - 2px)}
@@ -3278,7 +3279,7 @@ html[data-standalone="1"] #main{overscroll-behavior-y:none}
 @media (orientation:landscape){.reply-notices{margin-inline:24px}}
 .reply-notices>:is(.toast,.elev-run,.elev-grant,.setup-banner,.estop-banner,.share-notice,.shared-status,.ver-later,.grant-bar){
   position:relative;inset:auto;transform:none;width:100%;max-width:100%;box-sizing:border-box;flex-shrink:0;margin:0;
-  border:0;border-radius:var(--dlg-radius-rect);background:var(--dlg-bg);color:var(--dlg-fg);color-scheme:dark}
+  border-block:0;border-right:0;border-radius:var(--dlg-radius-rect);background:var(--dlg-bg);color:var(--dlg-fg);color-scheme:dark}
 .reply-notices .toast.rect{z-index:auto;pointer-events:auto}
 .reply-notices .setup-banner__open,.reply-notices .setup-banner__x{color:var(--dlg-fg)}
 .reply-notices .rsbanner__go{color:var(--btn-strong-ink)}
@@ -3322,7 +3323,7 @@ body[data-view="chat"] .reply-notices .share-notice{margin:0}
 #fsExit,#fsClear,#fsSlash{border:0;outline:0!important;box-shadow:none!important}
 
 /* P458: reply-bottom transient notices keep their accent stripe, without a cast shadow. */
-#toast.rect{box-shadow:none;filter:none;background-image:linear-gradient(90deg,var(--nt-accent,var(--state)) 3px,transparent 3px)}
+#toast.rect{box-shadow:none;filter:none}   /* P569 #370: the accent is the card's own curved border-left (.toast), not a square stripe */
 
 /* P459m final: every iPhone browser owns fixed Noir status chrome and water-coloured bottom.
    Safe-area paint is noninteractive; the bottom stays below every content layer. */
@@ -3536,3 +3537,18 @@ body[data-ontop="1"] #toast{z-index:var(--z-notice-top)!important}
 body:has(.ajmodal.dlgcard:not([hidden]),#confirm:not([hidden])) .toast:is(.circle,.square){top:auto;bottom:calc(16px + env(safe-area-inset-bottom,0px));
   max-height:40dvh;z-index:calc(var(--z-confirm) + 60)}
 body:has(.ajmodal.dlgcard:not([hidden]),#confirm:not([hidden])) .toast:is(.circle,.square).on{transform:translate(-50%,0)}
+/* P566 (#354): an execution notice raised while a card is open floats above that card's scrim — at the bottom, like P565's
+   centred notices under an open dialog (P440: never a top popup); the card's own reason line stays the first place to read */
+.toast.rect.over-dlg{position:fixed;left:50%;right:auto;top:auto;bottom:calc(16px + env(safe-area-inset-bottom,0px));
+  width:min(calc(100% - 32px),560px);margin:0;z-index:calc(var(--z-confirm) + var(--ontop-n,0) + 60);transform:translate(-50%,8px)}
+.toast.rect.over-dlg.on{transform:translate(-50%,0)}
+/* P566 (#354): the key card's own reason line, right above its 保存 / 同意 */
+.elev .elev-err{margin:var(--sp-2) 0 0}
+.elev .elev-err[hidden]{display:none}
+/* P566 (#346): 「测试一下」 · 「重新设置」 under 「本机 Touch ID：已设好」, left-aligned with its words */
+#settings .pkrow>.pkrow__acts{grid-column:2;display:flex;flex-wrap:wrap;gap:var(--ui-space-btn)}
+#settings .pkrow>.pkrow__acts[hidden]{display:none}
+/* P566 (「保存」 获焦后看不见, Pad 10-28 21:0x): on a dialog card (Noir ground, Lotion button, Noir label) the light theme's brand
+   hover painted the button Noir — the label's own colour; a tap on a touch screen leaves the hover on. The dialog keeps the dark
+   theme's Salt hover in both themes (palette unchanged; only the hover / focus state of a dialog's primary button) */
+.ajmodal.dlgcard .aj-btn--primary:hover,.ajmodal.dlgcard .aj-btn--primary:focus{background:var(--c-salt);border-color:var(--c-salt);color:var(--primary-fg)}

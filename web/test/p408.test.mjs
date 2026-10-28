@@ -152,8 +152,8 @@ test('Settings → 安全: the row is hidden until the host block says so; P417 
   assert.match(HOOK, /s === 'off' \? 'agentj terminal enable'/);
   assert.match(HOOK, /if \(!info\) return 'none';\n\s+if \(!info\.os\) return 'os';/, 'no block → no row; P417 #185: no platform → 「下一版支持」');
   assert.match(SET, /termhook\.render\(hostInfo\);/);
-  assert.match(CMD, /if \(term\) \{/, '「在终端里打开」 only while usable');
-  assert.match(CMD, /o\.addEventListener\('click', \(\) => H\.openTerminal\(line\(name\)\)\);/, 'it opens with the command, never runs it');
+  assert.match(CMD, /setAttribute\('aria-disabled', String\(!term\)\)/, 'P567: terminal entry stays visible with its availability');
+  assert.match(CMD, /if \(termUsable\(\)\) H\.openTerminal\(line\(name\)\)/, 'it opens only when usable, never runs it');
   const open = TERM.slice(TERM.indexOf('function open(prefill, info)'), TERM.indexOf('function abandon('));
   assert.doesNotMatch(open, /term_line/, 'opening never sends a line');
 });

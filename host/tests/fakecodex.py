@@ -176,6 +176,8 @@ def p57_prepare(text):
     m = _re.search(r"`([^`]*(?:\.agentj/handover|agentj/handoff)/[^`]+\.md)`", text)   # P289: + switch.md (shared: ~/…)
     if os.environ.get("FAKE_PREP_SLEEP"):
         time.sleep(float(os.environ["FAKE_PREP_SLEEP"]))
+    if text.startswith("[agentj:compact-prepare]") and not m:
+        return "" if os.environ.get("FAKE_NO_HANDOVER") == "1" else "# Handover\n- goal: the user's words\n- done / in progress / next\n- decisions\n- paths\n- open questions\n"
     if m and os.environ.get("FAKE_NO_HANDOVER") != "1":
         with open(os.path.expanduser(m.group(1)), "w") as f:
             f.write("# Handover\n- goal: the user's words\n- done / in progress / next\n- decisions\n- paths\n- open questions\n")

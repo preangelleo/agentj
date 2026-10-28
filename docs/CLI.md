@@ -116,6 +116,19 @@ Resume after an emergency stop
 agentj resume
 ```
 
+## Emergency AI switch
+
+A failed original AI check does not block a normal switch. --force skips pre-switch probes, keeping startup checks and rollback. The target must be installed.
+
+```bash
+agentj agent switch claude --force
+agentj agent switch codex --force
+agentj agent switch opencode --force
+agentj agent switch kimi --force
+agentj agent switch qwen --force
+agentj agent switch dsh --force
+```
+
 ## All commands
 
 <details>
@@ -4336,8 +4349,9 @@ usage: agentj mail [-h] [--address ADDRESS_OPT]
                    [--imap-security {ssl,starttls,plain}]
                    [--smtp-host SMTP_HOST] [--smtp-port SMTP_PORT]
                    [--smtp-security {ssl,starttls,plain}] [--poll POLL]
-                   [--auth {strict,standard,off}] [--servid SERVID] [--guest]
-                   [--name NAME] [--to TO] [--to-owner] [--cc CC] [--bcc BCC]
+                   [--auth {strict,standard,off}] [--servid SERVID]
+                   [--subdomains] [--guest] [--name NAME] [--to TO]
+                   [--to-owner] [--cc CC] [--bcc BCC]
                    [--format {markdown,html,text}] [--subject SUBJECT]
                    [--body BODY] [--body-file BODY_FILE] [--attach ATTACH]
                    [--from EXPECT_FROM] [--subject-has SUBJECT_HAS]
@@ -4364,6 +4378,7 @@ usage: agentj mail [-h] [--address ADDRESS_OPT]
 | `--poll` | `null` | false | — | `setup：每几分钟检查一次（1–60，默认 5）/ minutes between checks` |
 | `--auth` | `null` | false | `strict`, `standard`, `off` | `sender check` |
 | `--servid` | `null` | false | — | `pin the authserv-id` |
+| `--subdomains` | `false` | false | — | `include subdomains of a domain allowlist entry` |
 | `--guest` | `false` | false | — | `allow：访客（不是主人本人，不能批准）/ a guest, not the owner` |
 | `--name` | `null` | false | — | `a label` |
 | `--to` | `null` | false | — | `notes：收件人——邮箱，或通讯录里的名字 / 昵称 / 拼音（可多次；notes 只能是主人写过的地址）/ recipient: address or an address-book name (repeatable; notes: only addresses the owner named)` |
@@ -6997,6 +7012,19 @@ agentj stop
 
 ```bash
 agentj resume
+```
+
+## 紧急切换 AI
+
+原来的 AI 用不了时，普通切换不因原 AI 自检失败而阻断。--force 跳过预检，保留启动检查与失败回滚；目标仍须已安装。
+
+```bash
+agentj agent switch claude --force
+agentj agent switch codex --force
+agentj agent switch opencode --force
+agentj agent switch kimi --force
+agentj agent switch qwen --force
+agentj agent switch dsh --force
 ```
 
 ## 全部命令
@@ -11219,8 +11247,9 @@ usage: agentj mail [-h] [--address ADDRESS_OPT]
                    [--imap-security {ssl,starttls,plain}]
                    [--smtp-host SMTP_HOST] [--smtp-port SMTP_PORT]
                    [--smtp-security {ssl,starttls,plain}] [--poll POLL]
-                   [--auth {strict,standard,off}] [--servid SERVID] [--guest]
-                   [--name NAME] [--to TO] [--to-owner] [--cc CC] [--bcc BCC]
+                   [--auth {strict,standard,off}] [--servid SERVID]
+                   [--subdomains] [--guest] [--name NAME] [--to TO]
+                   [--to-owner] [--cc CC] [--bcc BCC]
                    [--format {markdown,html,text}] [--subject SUBJECT]
                    [--body BODY] [--body-file BODY_FILE] [--attach ATTACH]
                    [--from EXPECT_FROM] [--subject-has SUBJECT_HAS]
@@ -11247,6 +11276,7 @@ usage: agentj mail [-h] [--address ADDRESS_OPT]
 | `--poll` | `null` | false | — | `setup：每几分钟检查一次（1–60，默认 5）/ minutes between checks` |
 | `--auth` | `null` | false | `strict`, `standard`, `off` | `setup：发件人校验 strict · standard（默认）· off` |
 | `--servid` | `null` | false | — | `setup：只认这个服务器写的 Authentication-Results` |
+| `--subdomains` | `false` | false | — | `域名白名单包含子域` |
 | `--guest` | `false` | false | — | `allow：访客（不是主人本人，不能批准）/ a guest, not the owner` |
 | `--name` | `null` | false | — | `allow：备注名` |
 | `--to` | `null` | false | — | `send` |

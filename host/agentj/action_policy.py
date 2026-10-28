@@ -120,13 +120,20 @@ def summary(tool: str, inp: dict, *, credentials: bool = False, lang: str = "en"
     fields = {k: v for k, v in safe.items() if k not in prose}
     command = safe.get('command')
     heading = command.splitlines()[0] if tool == 'Bash' and isinstance(command, str) and command else tool
+    mail_target = inp if tool == 'host_write' else ({'kind':'mail_set', 'before':inp['before'], 'cfg':inp['after']}
+                  if tool == 'agentj mail' and isinstance(inp.get('before'), dict) and isinstance(inp.get('after'), dict) else None)
+    if mail_target and mail_target.get('kind') == 'mail_set':
+        # Keep the signed original digest, but never repeat the allowlist history in Details either.
+        for side in ('before', 'cfg', 'after'):
+            if isinstance(fields.get(side), dict):
+                fields[side] = {k:v for k,v in fields[side].items() if k != 'allow'}
     text = heading + "\n" + json.dumps(fields, ensure_ascii=False, sort_keys=True, indent=2, allow_nan=False)
     if prose:
         label = "Agent note:" if str(lang).lower().startswith("en") else "Agent 附注："
         text += "\n" + label + "\n" + json.dumps(prose, ensure_ascii=False, sort_keys=True, indent=2, allow_nan=False)
     text += "\nRequest SHA-256: " + hashlib.sha256(raw.encode()).hexdigest()
     if presentation:
-        human = visible(_mail_summary(inp, lang)) if tool == 'host_write' else text
+        human = visible(_mail_summary(mail_target, lang)) if mail_target else text
         if len((human + text).encode('utf-8')) > 24000:
             raise ValueError('approval presentation too large')
         return {"summary": human, "details": text}
@@ -172,7 +179,7 @@ def _mail_summary(target: dict, lang: str) -> str:
         if key == 'enabled': return tr('启用', 'On') if val else tr('关闭', 'Off')
         if key == 'auth': return {'strict':tr('严格', 'Strict'), 'standard':tr('标准', 'Standard'), 'off':tr('关闭', 'Off')}[val]
         if key == 'allow':
-            return '、'.join(r['addr'] + ' (' + (tr('本人', 'Owner') if r['role'] == 'owner' else tr('访客', 'Guest')) + ')' + (' · ' + r['name'] if r.get('name') else '') for r in val) or tr('无', 'None')
+            return '、'.join(r['addr'] + ' (' + (tr('本人', 'Owner') if r['role'] == 'owner' else tr('访客', 'Guest')) + ')' + (' · ' + r['name'] if r.get('name') else '') + (' · ' + tr('包含子域名', 'Include subdomains') if r.get('subdomains') else '') for r in val) or tr('无', 'None')
         return str(val) if val != '' else tr('未设置', 'Not set')
     # A preset names its fixed servers; duplicate login names and its derived
     # server changes remain in Details. Custom/independent server edits stay explicit.
@@ -180,7 +187,12 @@ def _mail_summary(target: dict, lang: str) -> str:
     if before['username'] == before['address'] and after['username'] == after['address']:
         implicit.add('username')
     changes = [f'{label}: {value(key, before[key])} → {value(key, after[key])}'
-               for key, label in labels if key not in implicit and before[key] != after[key]]
+               for key, label in labels if key != 'allow' and key not in implicit and before[key] != after[key]]
+    removed = [r for r in before['allow'] if r not in after['allow']]
+    added = [r for r in after['allow'] if r not in before['allow']]
+    for label, rows in [(tr('新增', 'Added'), added), (tr('移除', 'Removed'), removed)]:
+        if rows:
+            changes.append(label + ': ' + value('allow', rows))
     return '\n'.join([tr('保存邮件通道设置', 'Save mail channel settings'),
                       *(changes or [tr('设置未改变', 'Settings unchanged')])])
 

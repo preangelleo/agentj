@@ -83,12 +83,12 @@ _SECRETS: list[tuple[str, re.Pattern, str]] = [
     ("authorization_header", _re(r"\b(Authorization\s*:\s*(?:Bearer|Basic|token)\s+)(?!<redacted>|\$\(|\$\{|\$[A-Z_])[^\s\"'<>]+", re.I),
      r"\1" + R),
     ("credential_assignment", _re(
-        r"(?<![A-Za-z0-9])(" + _CRED_NAMES + r"[\"']?\s*[:：=]\s*)([\"'])(?!<redacted>\2|\$\(|\$\{|\$[A-Z_])(?:(?!\2)[^\n]){6,}\2", re.I),
+        r"(?<![A-Za-z0-9])(" + _CRED_NAMES + r"[\"']?\s*[:：=]\s*)([\"'`])(?!<[^<>\r\n]+>\2|\$\(|\$\{|\$[A-Z_])(?:(?!\2)[^\n`\u3400-\u9fff]){6,}\2", re.I),
      r"\1\2" + R + r"\2"),                                                     # a quoted value, spaces allowed
     ("credential_assignment", _re(
-        r"(?<![A-Za-z0-9])(" + _CRED_NAMES + r"[\"']?\s*[:：=]\s*[\"']?)(?!<redacted>|\$\(|\$\{|\$[A-Z_])[^\s\"'<>]{8,}", re.I), r"\1" + R),
+        r"(?<![A-Za-z0-9])(" + _CRED_NAMES + r"[\"']?\s*[:：=]\s*[\"']?)(?!<redacted>|\$\(|\$\{|\$[A-Z_])[^\s\"'<>`\u3400-\u9fff]{8,}", re.I), r"\1" + R),
     # Public wallet shapes must not bypass an explicit private/secret-key label.
-    ("credential_assignment", _re(r"((?:private[ _-]?key|secret[ _-]?key|私钥|密钥)\s*[:：=]\s*[\"']?)[^\s\"'<>]{8,}", re.I), r"\1" + R),
+    ("credential_assignment", _re(r"((?:private[ _-]?key|secret[ _-]?key|私钥|密钥)\s*[:：=]\s*[\"']?)[^\s\"'<>`\u3400-\u9fff]{8,}", re.I), r"\1" + R),
     ("labelled_hex", _re(
         r"(?<![A-Za-z0-9])((?:" + _CRED_NAMES + r"|key)[\"']?(?:\s*[:=]\s*|\s+(?:is\s+)?)[\"']?)[0-9a-fA-F]{32,}(?![0-9A-Za-z])", re.I), r"\1" + R),
 ]

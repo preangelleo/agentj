@@ -296,7 +296,7 @@ class Phone(_Svc):
         frm, to, raw = self.smtp.sent[-1]
         msg = email.message_from_bytes(raw, policy=email.policy.default)
         self.assertEqual((frm, to), (AGENT, [OWNER]))
-        self.assertEqual(msg["X-AgentJ"], "forward", "a copy that lands in the Agent's own inbox is never a task")
+        self.assertEqual(msg["X-AgentJ"], M.mark(M.read_config(self.st), "forward"), "a copy that lands in the Agent's own inbox is never a task")
         self.assertIn("周报", str(msg["Subject"]))
         self.assertIn("本周完成三件事", msg.get_body(("plain",)).get_content())
         self.assertEqual(sorted(p.get_filename() for p in msg.iter_attachments()), ["people.vcf", "report.pdf"])
@@ -390,7 +390,7 @@ class AgentMail(_Svc):
         self.assertFalse(self.ask.call_args.kwargs["batch"])
         frm, to, raw = self.smtp.sent[-1]
         self.assertEqual(to, ["zs@qq.com", "new@x.cn"])
-        self.assertEqual(email.message_from_bytes(raw, policy=email.policy.default)["X-AgentJ"], "agent")
+        self.assertEqual(email.message_from_bytes(raw, policy=email.policy.default)["X-AgentJ"], M.mark(M.read_config(self.st), "agent"))  # P569: + o=
         b = C.read(self.st)
         self.assertEqual((C.by_email(b, "new@x.cn")["source"], C.by_email(b, "zs@qq.com")["send_count"]), ("agent", 1))
 

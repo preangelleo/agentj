@@ -49,7 +49,10 @@ test('texts exist in both languages with the same placeholders', () => {
 test('addendum: widening asks Face ID on passkey_required, resends the same signed object, narrowing never asks', () => {
   assert.match(controls, /export async function signedWriteFa\(action, target, extra, faceId\)/);
   assert.match(controls, /if \(res\.ok \|\| res\.why !== 'passkey_required'\) return res;/);
-  assert.match(controls, /return fa \? command\(\{ \.\.\.obj, fa \}\) : \{ ok: false, why: 'cancel' \};/, 'same n / ts / sig + fa');
+  // P566 (#364): the same signed object + fa, handed in on the reconnected session when the Face ID sheet cost the socket
+  assert.match(controls, /return fa \? commandFa\(\{ \.\.\.obj, fa \}, ch\) : \{ ok: false, why: 'cancel' \};/, 'same n / ts / sig + fa');
+  assert.match(controls, /const res = await command\(\{ \.\.\.obj, \[GEN\]: g \}, \(\) => \{ sent = true; \}\);/);
+  assert.match(controls, /if \(res\.why !== 'offline' \|\| sent \|\| Date\.now\(\) >= until\) return res;/, 'never a second copy once one reached the socket');
   // Face ID starts inside the tap: a click listener on the sheet's button calls approve() synchronously
   assert.match(settings, /const grab = \(\) => \{ p = faApprove\(unb64u\(res\.fa_ch\), res\.fa\);/);
   assert.match(settings, /yes\.addEventListener\('click', grab\);/);

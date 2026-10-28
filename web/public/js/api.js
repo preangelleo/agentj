@@ -10,12 +10,13 @@ import { touch } from './snap.js';
 //   POST /interrupt · /model · GET /menu → slash stop · model_set → model_res · menu_get → menu      (§8, §10.11, §10.12)
 // Every write pins the session generation it started on (session.gen()): a reconnect or a new pairing in between refuses
 // the send ("offline"), so nothing meant for one session — or one computer — is ever sent on another (P33-X01 / X02).
-import { sendApp, isReady, peer, ask1, channel, textMax, gen, whenReady } from './session.js';
+import { sendApp, isReady, peer, ask1, channel, textMax, gen } from './session.js';
 import { Upload, newId } from './blobs.js';
 import { approveMessage, mailAllowMessage, questionMessage, controlMessage, b64u, deviceId } from '../proto/wire.js';
 import { deviceKey, signKey } from './store.js';
 import * as snap from './snap.js';
 import { approve as passkeyApprove, canAssert } from './faceid.js';
+import { put as handIn } from './pkhandin.js';   // P566 (#364): a Face ID approval outlives the socket the sheet drops
 import { unb64u } from '../proto/wire.js';
 
 // app.js owns the UI adapters; keep this transport module free of DOM imports and cycles.
@@ -118,12 +119,17 @@ export function allowPicks(p, allowAdd) {
   return Array.isArray(allowAdd) ? allowOffer(p).filter((a) => allowAdd.includes(a)) : [];
 }
 
+export const APPROVE_HANDIN_MS = 120000;
+let H = {};
+/** app.js: {handing(id), handed(id)} — 「正在补交…」 while a Face ID approval waits for the Agent J host, and its end. */
+export function configureApprove(h) { H = h || {}; }
 /** action: allow | deny | batch. Signed over exactly what the sheet shows (§8). allowAdd (P296, a mail card): the ticked
  *  「以后发给 X 不用再确认」 addresses, in the card's order — signed with the allow (mailAllowMessage). */
 export async function approve(p, action, allowAdd) {
   touch(p.id);
   const g = gen();
   if (!g) return { ok: false, why: 'offline' };
+  const ch = channel();                                // P566 (#363): null in a drop-reconnect gap — signed for this computer
   let fa = null;
   if (action !== 'deny' && p.passkey_required) {
     if (action === 'batch' || !p.fa || !p.fa_ch || !canAssert()) return { ok: false, why: 'passkey_required' };
@@ -137,16 +143,20 @@ export async function approve(p, action, allowAdd) {
     if (batch && !p.scope) return { ok: false, why: 'no_batch' };
     const decision = batch ? 'allow_batch' : action === 'allow' ? 'allow' : 'deny';
     const picks = decision === 'allow' ? allowPicks(p, allowAdd) : [];
-    const msg = picks.length ? await mailAllowMessage(channel(), await myDeviceId(), p.id, p.tool, p.summary, picks)
-      : await approveMessage(channel(), await myDeviceId(), p.id, decision, p.tool, p.summary, batch ? p.scope : undefined);
+    const msg = picks.length ? await mailAllowMessage(ch, await myDeviceId(), p.id, p.tool, p.summary, picks)
+      : await approveMessage(ch, await myDeviceId(), p.id, decision, p.tool, p.summary, batch ? p.scope : undefined);
     const sig = new Uint8Array(await crypto.subtle.sign({ name: 'Ed25519' }, sk.priv, msg));
     const out = batch ? { t: 'answer', id: p.id, ok: true, batch: true, sig: b64u(sig) } : { t: 'answer', id: p.id, ok: decision === 'allow', sig: b64u(sig), ...(picks.length ? { allow_add: picks } : {}), ...(fa ? { fa } : {}) };
     // P561 (追加 6, #335): the passkey sheet may have cost the socket — the signed answer (bound to the card, not the session)
     // goes on the reconnected session instead of 「没连上Agent J 主机，没发出去」; never sent twice (a refused send left nothing)
+    // P566 (#364): …and once more after a reconnect that swallowed it, until the card ends (ask_done) or 2 minutes; a second
+    // copy of a decided card is dropped by the Agent J host (unknown / already decided)
     if (!fa) await sendApp(out, g);
     else {
-      try { await sendApp(out, gen() || await whenReady()); }
-      catch { const g2 = await whenReady(); if (!g2) throw new Error('offline'); await sendApp(out, g2); }
+      const sent = await handIn('ask:' + p.id, { send: (g2) => sendApp(out, g2), until: Date.now() + APPROVE_HANDIN_MS, ch,
+        waiting: () => H.handing?.(p.id) });
+      H.handed?.(p.id);                                // the 「正在补交…」 notice goes either way
+      if (!sent) throw new Error('offline');
     }
     return { ok: true };
   } catch { return { ok: false, why: 'offline' }; }

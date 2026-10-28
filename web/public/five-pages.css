@@ -99,7 +99,7 @@ body:is([data-five-page]:not([data-five-page="chat"]),:has(>#five-detail:not([hi
 .fp-prose .codeblock pre,.fp-prose .codeblock code{color:var(--c-lotion)}
 .fp-prose a{color:var(--menu-accent)}.fp-prose .fp-link{color:var(--menu-text)}
 .fp-prose hr{border:0;border-top:1.5px dashed var(--menu-line);margin:20px 0}
-.fp-prose blockquote{margin:0 0 12px;padding-left:12px;border-left:3px solid var(--menu-accent);color:var(--menu-muted)}
+.fp-prose blockquote{margin:0 0 12px;padding-left:12px;border-left:3px solid var(--menu-accent);border-radius:8px 0 0 8px;color:var(--menu-muted)}
 .fp-prose table{border-collapse:collapse}.fp-prose :is(th,td){border:1px solid var(--menu-line);padding:6px 10px}
 /* skill detail: what it does + how to use it first, the original SKILL.md folded */
 .fp-summary{padding:16px 18px;border:1px dashed var(--menu-line);border-radius:16px;margin:0 0 4px}
@@ -151,7 +151,7 @@ body:is([data-five-page]:not([data-five-page="chat"]),:has(>#five-detail:not([hi
 .fp-card .fp-person{gap:var(--ui-space-control);line-height:var(--ui-leading)}
 #five-mentions{background:var(--menu-panel);color:var(--menu-text);border:1px solid var(--menu-line);box-shadow:0 12px 32px rgb(20 20 20 / .36);color-scheme:dark}
 .fp-mention{color:var(--menu-text)}
-.fp-mention[aria-selected=true]{background:var(--menu-chip);box-shadow:inset 3px 0 0 var(--menu-accent)}
+.fp-mention[aria-selected=true]{background:var(--menu-chip);border-left:3px solid var(--menu-accent);padding-left:9px}
 .workflow-token{color:inherit}
 /* P424 #148: an @ mention in the box is the short name only, capped — a long one ends in … and never takes the whole line;
    the @ list shows that name with the role in grey under it (--menu-muted = Lotion 72 %, ≥ 7:1 on Sooty) */

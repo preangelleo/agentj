@@ -67,6 +67,20 @@ class Gate(unittest.TestCase):
             v = M.judge(parse(mail(extra=extra)), cfg, [])
             self.assertEqual((v.ok, bool(v.notice)), (True, True), extra)
 
+    def test_headerless_notification_sender_names(self):
+        names = ['no-reply', 'noreply', 'no.reply', 'do-not-reply', 'donotreply', 'do_not_reply',
+                 'alerts', 'notifications', 'mailer-daemon', 'no.reply.alerts', 'no-reply-random123',
+                 'ALERTS.balance', 'notifications+daily']
+        for local in names:
+            with self.subTest(local=local):
+                addr = local + '@chase.com'
+                raw = mail(frm=addr, extra='', ar='mx.example.cn; dmarc=pass header.from=chase.com')
+                v = M.judge(parse(raw), self.cfg([{'addr':addr,'role':'guest'}]), [])
+                self.assertTrue(v.ok)
+                self.assertTrue(v.notice)
+        for local in ['alice', 'alertsmanager', 'notificationsales', 'noreplying', 'ann.no.reply']:
+            self.assertIsNone(M.is_automatic(parse(mail(frm=local+'@chase.com',extra=''))),local)
+
     def test_not_allowlisted_automatic_mail_still_only_counts_as_auto(self):
         v = M.judge(parse(alert()), self.cfg([{"addr": BOSS, "role": "owner"}]), [])
         self.assertEqual((v.ok, v.reason), (False, "auto"))
@@ -126,6 +140,17 @@ class _Base(unittest.IsolatedAsyncioTestCase):
 
 
 class Flow(_Base):
+    async def test_domain_replacement_cannot_inherit_an_unverified_guest(self):
+        cfg = M.read_config(self.st)
+        cfg.update(auth="off", allow=[{"addr":ALERT,"role":"guest"}])
+        M.save_config(self.st,cfg)
+        msg=parse(alert())
+        v=M.judge(msg,cfg,[])
+        self.assertTrue(v.ok)
+        M.save_config(self.st,{**cfg,"allow":[{"addr":"@alerts.example","role":"guest"}]})
+        self.assertFalse(await self.m.deliver(cfg,msg,v))
+        self.assertEqual(self.texts(),[])
+
     async def test_allowlisted_noreply_reaches_the_agent_as_read_only_data(self):
         self.imap.add(alert())
         res = await self.m.check()
@@ -157,6 +182,33 @@ class Flow(_Base):
         await asyncio.sleep(0.05)
         self.assertEqual(self.smtp.sent, [])
         self.host.ask.assert_not_called()
+
+    async def test_chase_headerless_guest_notice_never_routes_or_sends(self):
+        addr = 'no.reply.alerts@chase.com'
+        cfg = M.read_config(self.st)
+        cfg['allow'].append({'addr':addr,'role':'guest'})
+        self.m.set_config(cfg)
+        self.imap.add(mail(frm=addr, extra='', ar='mx.example.cn; dmarc=pass header.from=chase.com'))
+        await self.m.check()
+        [(session, text)] = self.texts()
+        self.assertIn('〔通知邮件〕', text)
+        self.assertIn('nothing is mailed back',text)
+        self.assertEqual(M.read_state(self.st)['routes'],{})
+        self.m.completed({'id':self.turn,'src':{'k':'email'},'reply':{'text':'private response'}})
+        self.assertEqual(await self.m.reply(self.turn,'private response'),'none')
+        await asyncio.sleep(0.05)
+        self.assertEqual(self.smtp.sent,[])
+        self.host.ask.assert_not_called()
+
+    async def test_ordinary_guest_letter_keeps_reply_route(self):
+        cfg = M.read_config(self.st)
+        cfg['allow'] = [{'addr':BOSS,'role':'guest'}]
+        self.m.set_config(cfg)
+        self.imap.add(mail(extra=''))
+        await self.m.check()
+        [(_,text)] = self.texts()
+        self.assertNotIn('〔通知邮件〕',text)
+        self.assertIn(str(self.turn),M.read_state(self.st)['routes'])
 
     async def test_a_normal_owner_letter_still_gets_its_reply_route(self):
         self.imap.add(mail(msgid="<task@corp.example>"))
@@ -200,7 +252,7 @@ class Trash(_Base):
         self.assertIn("mail_trash", log)
         self.assertNotIn("etherscan-verify", log)
         self.assertEqual((await self.m.trash(a))["why"], "unknown_mail", "once")
-        self.assertEqual(sum("废纸篓" in n for n in self.notes), 1, "the owner sees one line (review S2)")
+        self.assertEqual(sum("废纸篓" in n for n in self.notes), 0, "P567: trash is recorded locally without interrupting the conversation")
         self.assertFalse(any(ALERT in n or "Etherscan" in n for n in self.notes))
 
     async def test_an_owner_letter_is_never_trashable(self):

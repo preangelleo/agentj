@@ -77,7 +77,7 @@ try {
         await open();
         const order = await ev(p, "[...document.querySelectorAll('.jc-item')].map(li=>li.dataset.item).join()");
         check(order === 't4,t3,t1,t5,t2', `card order: overdue, due soon, open, waiting, done (${order}) ${tag}`);
-        check(await ev(p, `(()=>{const li=document.querySelector('.jc-item[data-item=t4]');return li.dataset.mark==='overdue'&&li.textContent.includes(${q(T.overdue)})&&getComputedStyle(li).boxShadow!=='none';})()`), 'overdue row marked ' + tag);
+        check(await ev(p, `(()=>{const li=document.querySelector('.jc-item[data-item=t4]');return li.dataset.mark==='overdue'&&li.textContent.includes(${q(T.overdue)})&&parseFloat(getComputedStyle(li).borderLeftWidth)>0;})()`), 'overdue row marked ' + tag);
         check(await ev(p, `(()=>{const li=document.querySelector('.jc-item[data-item=t3]');return li.dataset.owner==='agent'&&li.dataset.mark==='due'&&li.textContent.includes(${q(T.soon)})&&li.querySelector('.jc-when');})()`), 'agent row: owner, due soon, due time ' + tag);
         check(await ev(p, `(()=>{const t=[...document.querySelectorAll('.jc-item[data-item=t1],.jc-item[data-item=t2]')];return t.every(li=>li.dataset.owner==='owner')&&t.map(li=>li.querySelector('.jc-text').textContent).join('|')===${q(T.old1 + '|' + T.old2)};})()`), 'old version-1 items: kept, owner = me ' + tag);
         check(await ev(p, `getComputedStyle(document.querySelector('.jc-item[data-item=t2] .jc-text')).textDecorationLine.includes('line-through')`), 'old done item struck through ' + tag);

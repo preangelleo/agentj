@@ -713,13 +713,13 @@ function apprCancelHold(done){
 // transition, so the fill jumped straight to full. 追加 C 补充 (10-28 15:1x): the look is the earliest one, exactly
 // (7e45af4f1: width 0 → 100 %, linear, var(--state) at .55, an early release snaps back to 0). Only its clock moved: a Web
 // Animation on `width` started at the press keeps running through any re-render or display flicker.
-const HOLD_DONE_MS = 450;
 function holdFill(btn, mode){
   const f = btn && btn.querySelector(".fill");
   if (!f || typeof f.animate !== "function") return;            // no Web Animations: the CSS transition on .holding
   const prev = f._hold || null;
-  if (mode === "done"){                                          // stays full while the card goes away, then rests
-    if (prev) setTimeout(() => { if (f._hold === prev){ prev.cancel(); f._hold = null; } }, HOLD_DONE_MS);
+  if (mode === "done"){                                          // P567: complete → empty immediately (7e45af4f1)
+    if (prev) prev.cancel();
+    f._hold = null;
     return;
   }
   if (prev) prev.cancel();                                       // "back": let go early → straight back to 0 (as at first)
@@ -2065,7 +2065,7 @@ async function forwardTap(){
     if (['rate_limited', 'recently_sent', 'in_flight'].includes(r.why)) {
       setFwd(id, 'idle'); toast(t(r.why === 'rate_limited' ? 'r.tg.limited' : 'r.tg.again'), 2600); return;
     }
-    if (dest === 'wx' && r.why === 'needs_message') {   // P554: outside WeChat's reply window — say how, offer system share once
+    if (dest === 'wx' && ['needs_message', 'context_rejected', 'no_context'].includes(r.why)) {   // P554: outside WeChat's reply window — say how, offer system share once
       setFwd(id, 'idle');
       toastAction(t('p554.needMsg'), t('p554.useShare'), () => { setFwd(id, 'sending'); systemShare(id, text); }, 10000);
       return;

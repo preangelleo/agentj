@@ -29,6 +29,9 @@ function render() {
   $('wc-title').textContent = t('wc.title');
   $('wc-note').textContent = t(lang() === 'zh' ? 'p536.recommendZh' : 'p536.recommendEn', {channel: 'Telegram'});
   $('wc-status').textContent = t(state.bound && state.greeting === 'needs_message' ? 'p536.greet' : state.bound ? 'wc.bound' : state.error ? 'wc.error' : 'wc.unbound');
+  $('wc-error').textContent = state.error ? t('p568.wc.' + (['state_unwritable', 'connection_reset', 'proxy_dropped', 'binding_expired', 'binding_taken_over'].includes(state.error) ? state.error : 'other')) : '';
+  const f = state.last_forward;
+  $('wc-forward').textContent = f ? t(f.ok ? 'p536.wx.sent' : f.why === 'needs_message' ? 'p554.needMsg' : 'p536.wx.failed') : '';
   $('wc-setup').textContent = t('wc.setup');
   $('wc-unbind').textContent = t('wc.unbind');
   $('wc-close').textContent = t('wc.close');
@@ -51,7 +54,7 @@ function build() {
   root = mk('div', 'ajmodal dlgcard'); root.id = 'wechat-panel'; root.hidden = true;
   root.setAttribute('role', 'dialog'); root.setAttribute('aria-modal', 'true'); root.setAttribute('aria-labelledby', 'wc-title');
   const box = mk('div', 'box');
-  for (const [tag, id] of [['h2','wc-title'],['p','wc-note'],['p','wc-status'],['div','wc-qr'],['p','wc-pending'],['p','wc-assist'],['p','wc-assist-hint']]) {
+  for (const [tag, id] of [['h2','wc-title'],['p','wc-note'],['p','wc-status'],['p','wc-error'],['p','wc-forward'],['div','wc-qr'],['p','wc-pending'],['p','wc-assist'],['p','wc-assist-hint']]) {
     const n = mk(tag, tag === 'p' ? 'setnote' : ''); n.id = id; box.append(n);
   }
   const row = mk('div'); row.id = 'wc-code-row'; row.hidden = true;
@@ -98,14 +101,14 @@ export function show() {
 }
 export function channelStatus(m) {
   if (!m.channels) return;
-  peer.tgbound = m.channels.tg_bound === true;
+  peer.tgbound = m.channels.tg_bound === true; peer.tgknown = true;
   peer.tgfwd = m.channels.tg_forward === true;
   window.dispatchEvent(new Event('agentj-forward-change'));
 }
 export function route(m) {
   if (m.t !== 'wechat_state') return;
   state = m;
-  peer.wxbound = m.bound === true;
+  peer.wxbound = m.bound === true; peer.wxknown = true;
   peer.wxfwd = peer.p33 && m.can_forward === true;   // P554: no countdown — the computer says when WeChat refused
   window.dispatchEvent(new Event('agentj-forward-change'));
   renderChannels();

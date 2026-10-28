@@ -3052,6 +3052,25 @@ class Host:
                 return {"t":"preferences","value":value,"problem":e.result(),"host":self.host_info(s)}
         return {"t": "preferences", "value": value, "problem": self.config_problem, "host": self.host_info(s)}
 
+    def _terminal_commands(self):
+        cached = getattr(self, "_cmdrun_available", (0, [n for n in cmdrun.RUN_CMDS if n in cmdrun.READ_CMDS or not n.startswith("switch_")]))
+        if time.monotonic() - cached[0] > 60 and not getattr(self, "_cmdrun_detecting", False):
+            try:
+                asyncio.get_running_loop()
+            except RuntimeError:
+                return cached[1]
+            self._cmdrun_detecting = True
+            self._bg(self._detect_terminal_commands(), "cmd_detect")
+        return cached[1]
+
+    async def _detect_terminal_commands(self):
+        try:
+            names = await asyncio.to_thread(cmdrun.available_commands)
+            self._cmdrun_available = (time.monotonic(), names)
+            await self._send_ready({"t":"cmds_state", "names":names})  # facts only; never race the pref_res/preferences pair
+        finally:
+            self._cmdrun_detecting = False
+
     def host_info(self, s=None) -> dict:
         """P44 (C6): read-only facts the phone's settings panel shows next to `value` — the Agent J host's program version,
         when its language was last set (A1), the phone-settable keys, and the paired phones (metadata only: id, label,
@@ -3073,7 +3092,7 @@ class Host:
         info["jev"] = jev.resolve(st=self.st, prefs=self.preferences).public()
         info["signed_prefs"] = list(approval_level.KEYS)   # P336: changed only by the signed `approval_set` control
         info["forward_set"] = True                          # P554: a phone changes ui.forward_destination only by the signed `forward_set`
-        info["run_cmds"] = list(cmdrun.RUN_CMDS)           # P361 (§34): the names Settings may 「执行」
+        info["run_cmds"] = self._terminal_commands()           # P361 (§34): the names Settings may 「执行」
         with contextlib.suppress(Exception):               # P408 (§38): this device's row (me / sudo mode / web_ok)
             info["terminal"] = self.term_desk.info(getattr(s, "device", None) or None)
         with contextlib.suppress(Exception):               # P414 (§37.9): the computer-password vault, as this device sees it
@@ -4852,6 +4871,7 @@ class Host:
         request over the connection that claims this token is that run's (Host.ask `background`)."""
         self.perm_token = secrets.token_urlsafe(32)
         self.perm_bg_next = background
+        self.perm_task_next = provenance.task_scope() if background == "task" else None
         self.perm_claimed = asyncio.Event()
         if self.perm_w:
             with contextlib.suppress(Exception):
@@ -4885,9 +4905,11 @@ class Host:
                     self.st.log("perm_refused", reason="spent" if tok is None else "bad_token")
                     return
             conn_bg = None
+            conn_task = None
             if side is None:
                 self.perm_token, self.perm_w, claimed = None, w, True
                 conn_bg, self.perm_bg_next = self.__dict__.get("perm_bg_next"), None   # P552: bound to this connection
+                conn_task, self.perm_task_next = self.__dict__.get("perm_task_next"), None
             await self._perm_send(w, {"t": "claimed"})
             (side["claimed"] if side else self.perm_claimed).set()
             self.st.log("perm_claimed", **({"side": "avatar"} if side else {}))
@@ -4899,7 +4921,7 @@ class Host:
                     gone[m["id"]].set_result(True)
                 elif m.get("t") == "ask" and m["id"] not in gone:
                     gone[m["id"]] = asyncio.get_running_loop().create_future()
-                    self._bg(self._perm_ask(w, m, gone, side, conn_bg), "perm_ask")
+                    self._bg(self._perm_ask(w, m, gone, side, conn_bg, conn_task), "perm_ask")
         except (ValueError, ConnectionError, asyncio.LimitOverrunError):
             pass
         finally:
@@ -4915,7 +4937,7 @@ class Host:
                 w.close()
 
     async def _perm_ask(self, w: asyncio.StreamWriter, m: dict, gone: dict, side: dict | None = None,
-                        background: str | None = None) -> None:
+                        background: str | None = None, task_scope=None) -> None:
         rid = m["id"]
         ans = {"behavior": "deny", "message": "请求无效，已拒绝。"}
         try:
@@ -4925,8 +4947,9 @@ class Host:
                     from .owner_avatar import ask_for
                     ans = await ask_for(self, side["label"], side["on_card"], clean_line_tool(tool), tool_input, gone.get(rid))
                 else:
-                    ans = await self.ask(clean_line_tool(tool), tool_input, gone.get(rid),
-                                         **({"background": background} if background else {}))
+                    with provenance.task_request(task_scope):
+                        ans = await self.ask(clean_line_tool(tool), tool_input, gone.get(rid),
+                                             **({"background": background} if background else {}))
         finally:
             gone.pop(rid, None)
             if side is not None or self.perm_w is w:
@@ -5075,8 +5098,7 @@ class Host:
             self.st.log("ask_done", id=rid, tool=tool, decision="deny", reason="group_source")
             self.activity("decision", id=rid, tool=tool, result="deny", reason="group_source", cats=v.cats, summary=summary)
             self.emit("ask_done", id=rid, result="deny", reason="group_source")
-            return {"behavior": "deny", "message": "这一轮没有核验过的主人来源，不能请求主人批准，已拒绝。"
-                                                   " / This turn has no verified owner source and cannot request approval."}
+            return {"behavior": "deny", "message": provenance.refusal_text(self.agent)}
         if policy_registry.dispatch(tool):
             # P551 (#321): a sub-agent sent off is ① in every level — no card; its own tool calls each come back here
             approvals.record(self.st, **base, decision="allow", reason="dispatch")

@@ -9,15 +9,18 @@ import { signedWriteFa, whyText } from './controls.js';
 import { approve as faApprove, canAssert } from './faceid.js';
 import { unb64u } from '../proto/wire.js';
 import { isReady } from './session.js';
+import { glyph } from './icons.js';
+import { longPress } from './longpress.js';
 import { copyable } from './copycode.js';
 import { t, onLang } from './t.js';
-import { el, mk, toastAction } from './ui.js';
+import { el, mk, toast, toastAction } from './ui.js';
 import { pkSheet, paintPk } from './pkassist.js';   // P539: no own passkey here (the sheet) · why the tap failed (the result)
-import { usable as termUsable } from './termhook.js';   // P408: 「在终端里打开」 only while the terminal is on for this phone
+import { usable as termUsable, state as termState } from './termhook.js';   // P408: 「在终端里打开」 only while the terminal is on for this phone
 
 const READ_CMDS = new Set(['doctor']);
 export const CMDS = { doctor: 'doctor', reconnect: 'doctor --reconnect', status: 'status', service_status: 'service status',
   rescue_status: 'rescue status', update_check: 'update check' };
+for (const h of ['claude','codex','opencode','kimi','qwen','dsh']) CMDS['switch_' + h] = 'agent switch ' + h + ' --force';
 const line = (name) => 'agentj ' + CMDS[name];
 let H = { setupFaceId() {}, openTerminal() {} }, names = [], R = null, term = false;   // R: the last run {name, st: run|done|fail, code, out, cut, why}
 
@@ -30,19 +33,26 @@ export function render(info) {
 function row(name) {
   const li = mk('li', 'rscmd'); li.dataset.cmd = name;
   const main = mk('div', 'rscmdmain'), code = mk('code', '', line(name));
-  main.append(copyable(code, { variant: 'inline' }), mk('small', '', t('p361.cmd.' + name)));
-  if (name === 'reconnect') main.append(mk('small', 'rsnote', t('p438.recommended')));
-  const b = mk('button', 'aj-btn rscmdgo', t('p361.run')); b.type = 'button'; b.id = 'rs-cmd-' + name;
-  b.setAttribute('aria-label', t('p361.runAria', { cmd: line(name) }));
+  main.append(copyable(code, { variant: 'inline' }));
+  const meta = mk('div', 'rscmdmeta'), note = mk('small', '', t('p361.cmd.' + name));
+  if (name === 'reconnect') note.append(' · ' + t('p438.recommended'));
+  const acts = mk('div', 'rmbar rscmdacts');
+  const icon = (cls, label, shape) => {
+    const b = mk('button', 'act ' + cls); b.type = 'button';
+    b.setAttribute('aria-label', label); b.title = label; b.append(glyph(shape));
+    longPress(b, () => toast(label, 4000));
+    return b;
+  };
+  const b = icon('rscmdgo', t('p361.runAria', { cmd: line(name) }), 'run'); b.id = 'rs-cmd-' + name;
   b.disabled = !!(R && R.st === 'run');
   b.addEventListener('click', () => run(name));
-  li.append(main, b);
-  if (term) {                         // P408: prefilled in the terminal's input line; it runs only when the owner presses Enter
-    const o = mk('button', 'aj-btn rscmdterm', t('p408.inTerm')); o.type = 'button'; o.id = 'rs-cmd-term-' + name;
-    o.setAttribute('aria-label', t('p408.inTermAria', { cmd: line(name) }));
-    o.addEventListener('click', () => H.openTerminal(line(name)));
-    li.append(o);
-  }
+  const reason = term ? '' : t(({os:'p417.os',phone:'p417.phone',off:'p567.termOff',notme:'p567.termNotAllowed',
+    noweb:'p567.termWebNotAllowed'})[termState()] || 'p567.termUnavailable');
+  const o = icon('rscmdterm', t('p408.inTermAria', { cmd: line(name) }) + (reason ? ' · ' + reason : ''), 'terminal');
+  o.id = 'rs-cmd-term-' + name;
+  o.setAttribute('aria-disabled', String(!term));
+  o.addEventListener('click', () => { if (termUsable()) H.openTerminal(line(name)); else toast(reason, 4000); });
+  acts.append(b, o); meta.append(note, acts); li.append(main, meta);
   return li;
 }
 function result() {

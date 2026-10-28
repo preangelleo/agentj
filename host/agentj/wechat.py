@@ -91,6 +91,34 @@ return ask_owner with topic="image" (Agent J draws it with the owner's Codex). R
 
 
 
+def poll_error(e):
+    import http.client
+    from . import inbox
+    if isinstance(e, Failure):
+        return 'binding_expired' if e.ret == -14 and e.code != 'binding_taken_over' else e.code
+    if isinstance(e, (PermissionError, inbox.Unsafe)):
+        return 'state_unwritable'
+    if isinstance(e, (http.client.RemoteDisconnected, http.client.IncompleteRead, BrokenPipeError)):
+        return 'proxy_dropped'
+    if isinstance(e, ConnectionResetError):
+        return 'connection_reset'
+    if isinstance(e, TimeoutError):
+        return 'timeout'
+    return 'poll_failed'
+
+
+def error_hint(code, lang='zh'):
+    words = {
+        'state_unwritable': ('消息没能写进工作文件夹。macOS 请移出下载、桌面、文稿或 iCloud，再运行 agentj service restart。', 'Messages could not be saved. On macOS move the work folder out of Downloads, Desktop, Documents or iCloud, then run agentj service restart.'),
+        'connection_reset': ('微信连接被重置，请检查网络和系统代理。', 'WeChat connection reset; check the network and system proxy.'),
+        'proxy_dropped': ('微信长连接被断开，请检查系统代理。', 'WeChat long polling was disconnected; check the system proxy.'),
+        'binding_taken_over': ('已被另一台 Agent J 主机接管；本机已停止轮询。请在需要使用的 Agent J 主机上重新连接微信。', 'Another Agent J host took over; polling stopped here. Reconnect WeChat on the host you want to use.'),
+        'binding_expired': ('微信绑定已失效，可能已被另一台 Agent J 主机接管；本机已停止轮询。请重新连接微信。', 'The WeChat binding is no longer valid, possibly taken over by another Agent J host; polling stopped. Reconnect WeChat.'),
+        'poll_failed': ('微信收消息失败，请运行 agentj doctor，并检查 host.log 中的异常类型。', 'WeChat polling failed. Run agentj doctor and check the exception type in host.log.'),
+    }
+    return words.get(code, ('微信连接异常，请检查网络或重新连接。', 'WeChat connection failed; check the network or reconnect.'))[lang == 'en'] if code else None
+
+
 class HandoffSend(Send):
     def __init__(self, channel, record, text):
         super().__init__('wechat', secrets.token_urlsafe(16), record['turn'], text=text, by={'mail':'Email','telegram':'Telegram'}.get(record.get('source'), 'WeChat'),
@@ -235,7 +263,8 @@ class WeChat:
         self.login_task = None
         self.cards = {}
         self.card_tasks = set()
-        self.error = None
+        self.error = self.store.data.get("binding_error")
+        self.last_forward = self.store.data.get("last_forward")
         self.poll_timeout = 40
         self.index = None
         self.handoff_lock = asyncio.Lock()
@@ -255,10 +284,11 @@ class WeChat:
 
     def status(self):
         d = self.store.data
-        return {'bound': bool(d['account']), 'can_forward': self.can_forward(),
+        return {'bound': bool(d['account']) and not d.get('binding_error'), 'can_forward': self.can_forward(),
                 'greeting': d.get('greeting'), 'counts': dict(d['counts']),
                 'pending': sum(r['state'] == 'pending' and r['until'] > self.clock() for r in d['records'].values()),
                 'login': self.qr['status'] if self.qr else None, 'error': self.error,
+                'hint': error_hint(self.error, getattr(self.h, 'lang', 'zh')), 'last_forward': self.last_forward,
                 'assistant': dict(getattr(self, 'last_assistant', None) or {}) or None}
 
     def _avatar_kind(self):
@@ -291,6 +321,8 @@ class WeChat:
         async with self.setup_lock:
             if self.h.stopped() or self.closed:
                 return {'ok': False, 'why': 'stopped'}
+            if self.store.data.get('binding_error'):
+                await self.unbind()
             if self.store.data['account']:
                 return {'ok': False, 'why': 'already_bound'}
             if self.login_task and not self.login_task.done():
@@ -338,9 +370,10 @@ class WeChat:
                     if not all(isinstance(r.get(k), str) and 0 < len(r[k]) <= 4096 for k in fields):
                         raise Failure('confirmed_missing_credentials')
                     safe_url(r['baseurl'], api=True)
-                    self.store.data.update(account={k: r[k] for k in fields}, cursor='', context='', context_at=0, done=[], sessions={}, greeting='needs_message')
+                    self.store.data.update(account={k: r[k] for k in fields}, cursor='', context='', context_at=0, done=[], sessions={}, greeting='needs_message', binding_error=None)
                     self.store.save()
                     self.error = None
+                    self.last_forward = None
                     self.h.st.log('wechat_bound')
                     return
                 if status in ('expired', 'verify_code_blocked'):
@@ -368,7 +401,8 @@ class WeChat:
     async def unbind(self):
         # Invalidate before cancelling I/O, so a delayed response cannot restore the binding.
         d = self.store.data
-        d.update(account={}, cursor='', context='', sessions={}, generation=secrets.token_hex(16))
+        d.update(account={}, cursor='', context='', sessions={}, generation=secrets.token_hex(16), binding_error=None, last_forward=None)
+        self.error, self.last_forward = None, None
         for r in d['records'].values():
             if r['state'] == 'pending':
                 r['state'] = 'unbound'
@@ -997,7 +1031,7 @@ class WeChat:
         self.store.expire()
         failures = 0
         while not self.closed:
-            if not self.store.data['account'] or self.h.stopped():
+            if not self.store.data['account'] or self.store.data.get('binding_error') or self.h.stopped():
                 await asyncio.sleep(1)
                 continue
             for pending in self.store.data['records'].values():
@@ -1012,9 +1046,12 @@ class WeChat:
                     self.publish()
                 await asyncio.sleep(.2)
             except Exception as e:
-                self.error = e.code if isinstance(e, Failure) else 'poll_failed'
+                self.error = poll_error(e)
+                if self.error in ('binding_taken_over', 'binding_expired'):
+                    self.store.data['binding_error'] = self.error
+                    self.store.save()  # metadata only; retain records, no implicit unlink
                 self.publish()
-                self.h.st.log('wechat_error', reason=self.error)
+                self.h.st.log('wechat_error', reason=self.error, error=type(e).__name__)
                 failures += 1
                 delay = 3600 if isinstance(e, Failure) and e.ret == -14 else min(60, 2 ** min(failures, 6))
                 # Short sleeps let unbind/stop/shutdown take effect promptly.
@@ -1075,4 +1112,6 @@ def command(a):
             time.sleep(1)
         raise SystemExit('微信绑定超时 / WeChat setup timed out')
     res = elevate.client_request(st, {'t': 'wechat', 'op': a.op, 'id': a.id, 'model': a.model}, timeout=310)
+    if res.get('why') == 'owner_required':
+        print('请在已配对遥控器打开 设置 → 通道 → 微信 ClawBot → 解绑，并完成身份验证。 / On a paired remote, open Settings → Channels → WeChat ClawBot → Unbind and verify your identity.')
     print(json.dumps(res, ensure_ascii=False))

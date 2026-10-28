@@ -40,14 +40,14 @@ const L = {
     orCli: '也可以在 Agent J 主机上运行下面这行：', introEnable: '再输入一次 Agent J 主机的登录密码', notMe: '这台设备不在允许名单里，在 Agent J 主机上运行下面这行：', open: '打开网页终端',
     none: '第一次打开时要输入一次 Agent J 主机登录密码。', prf: 'Agent J 主机登录密码已加密保存，只有你扫脸才能解开。', intro: '最多 15 分钟', fa: '用 Touch ID 确认',
     closed: (w) => `终端已关闭（${w}）`, why: { timeout: '时间到了', idle: '太久没有输入', estop: '已全部停下', relay_lost: '连接断了', owner: '你结束了它' },
-    dropped: '连接断了，终端已关闭。', nopk: '打开网页终端前要先用 Touch ID 确认，这台手机还没设置 Touch ID。', inTerm: '在终端里打开', differs: '注意：' },
+    dropped: '连接断了，终端已关闭。', nopk: '打开网页终端前要先用 Touch ID 确认，这台手机还没设置 Touch ID。', inTerm: '在网页终端里打开 agentj doctor，按回车才运行', differs: '注意：' },
   en: { off: 'The web terminal is off. To use it, run this line on the Agent J host:', os: "This Agent J host's system does not support the web terminal yet; the next version will.", setup: 'Set up Touch ID above first', nopkRow: 'Set up Touch ID above first',
     phone: 'For safety and convenience, the web terminal can only be used from a computer browser.', enable: 'Switch on and open', offDesk: 'The web terminal is off. You can switch it on right here', notMeDesk: 'This browser cannot use the web terminal yet.', repair: 'Pair this remote again to switch it on right here.',
     orCli: 'Or run this line on the Agent J host:', introEnable: "type the Agent J host's login password once", notMe: 'This device is not on the allowed list. Run this line on the Agent J host:',
     open: 'Open web terminal', none: 'The first time you open it, you type your Agent J host login password once.',
     prf: 'Your Agent J host login password is stored encrypted; only your Touch ID can unlock it.', intro: 'At most 15 minutes', fa: 'Confirm with Touch ID',
     closed: (w) => `Terminal closed (${w})`, why: { timeout: 'time is up', idle: 'no input for too long', estop: 'everything was stopped', relay_lost: 'the connection dropped', owner: 'you ended it' },
-    dropped: 'The connection dropped; the terminal is closed.', nopk: 'Opening the web terminal needs Touch ID first, and this phone has not set it up yet.', inTerm: 'Open in terminal', differs: 'Careful:' },
+    dropped: 'The connection dropped; the terminal is closed.', nopk: 'Opening the web terminal needs Touch ID first, and this phone has not set it up yet.', inTerm: 'Open agentj doctor in the web terminal; it runs only when you press Enter', differs: 'Careful:' },
 };
 const PASSWORD = 'correct horse 7!';
 const OUTPUT = 'a.txt  b.txt\n<b id="inj">x</b>\nprogress 10%\rprogress 100%\n';
@@ -206,8 +206,9 @@ export async function runP408({ B, web, fake, out = OUT }) {
     const shown = (id) => evaluate(p, `!!${$(id)} && !${$(id)}.hidden && ${$(id)}.getClientRects().length > 0`);
     const sheetKind = () => evaluate(p, `${$('term-sheetwrap')}?.hidden === false ? ${$('term-sheetwrap')}.dataset.kind : ''`);
     const pageOpen = () => evaluate(p, `!!${$('term')} && !${$('term')}.hidden`);
+    // P569 integration: P567 made the command-row actions reply-style icons (.rmbar .act) whose ::after is the 44 px hit box (as p361 measures).
     const audit = async (label, sel) => {
-      const a = await evaluate(p, `(()=>{const small=[...document.querySelectorAll(${JSON.stringify(sel)})].filter(e=>e.getClientRects().length&&!e.closest('[hidden]')).map(e=>{const r=e.getBoundingClientRect();return {id:e.id||e.className,w:Math.round(r.width),h:Math.round(r.height)}}).filter(x=>x.h<44||x.w<44);return {small,over:document.documentElement.scrollWidth>innerWidth+1}})()`);
+      const a = await evaluate(p, `(()=>{const small=[...document.querySelectorAll(${JSON.stringify(sel)})].filter(e=>e.getClientRects().length&&!e.closest('[hidden]')).map(e=>{const r=e.getBoundingClientRect();return {id:e.id||e.className,w:Math.round(Math.max(r.width,parseFloat(getComputedStyle(e,'::after').width)||0)),h:Math.round(r.height)}}).filter(x=>x.h<44||x.w<44);return {small,over:document.documentElement.scrollWidth>innerWidth+1}})()`);
       check(!a.small.length && !a.over, `${label}: taps ≥ 44 px, no overflow ${tag} ${JSON.stringify(a)}`);
     };
     /** open → intro → Face ID → (login card) → ready */
@@ -384,7 +385,9 @@ export async function runP408({ B, web, fake, out = OUT }) {
       await setBlock(BLOCK({ sudo: withPrf ? 'prf' : 'local' }));
       await evaluate(p, `import('./js/settings.js').then(m=>{m.openRescue();return true})`);
       await waitFor(p, `!!${$('rs-cmd-term-doctor')}`);
-      check(await evaluate(p, `${$('rs-cmd-term-doctor')}.textContent`) === s.inTerm, '「在终端里打开」 next to 「执行」 ' + tag);
+      // P569 integration: P567 folded 终端指令 into a closed .rscard and made 「在终端里打开」 an icon named by p408.inTermAria.
+      await evaluate(p, `${$('rs-cmds')}.open = true; true`);
+      check(await evaluate(p, `${$('rs-cmd-term-doctor')}.getAttribute('aria-label')`) === s.inTerm, '「在终端里打开」 next to 「执行」 ' + tag);
       await audit('cmd rows', '#rs-cmd-list button');
       if (full) { await evaluate(p, `${$('rs-cmds')}.scrollIntoView({block:'start'})`); await save('11-in-terminal-button'); }
       const nl3 = H.lines.length;

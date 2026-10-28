@@ -1014,6 +1014,8 @@ class OpenCodeAgent(Agent):
         self.out_src = provenance.normalize(getattr(getattr(self, "cur_send", None), "source", None))
 
     def _cur_src(self):
+        if provenance.task_scope() is not None and getattr(self, "cfg", {}).get("_workflow_ceo"):
+            return provenance.turn_source(self)
         send = getattr(self, "cur_send", None)
         return provenance.normalize(getattr(send, "source", None) if send is not None else self.out_src)
 
@@ -1026,6 +1028,8 @@ class OpenCodeAgent(Agent):
         if c is not None and "src" in c:
             return provenance.normalize(c["src"])
         if c is None and sid in (self.sid, None):
+            if provenance.task_scope() is not None and getattr(self, "cfg", {}).get("_workflow_ceo"):
+                return provenance.turn_source(self)
             return provenance.normalize(self.out_src) if getattr(self, "cur_send", None) is None else None
         return provenance.stricter(self._cur_src(), getattr(self, "gone_src", None))
 

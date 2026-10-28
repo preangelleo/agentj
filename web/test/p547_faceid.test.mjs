@@ -14,7 +14,9 @@ const fakeCreate = async (o) => {
 };
 const fakeGet = async (o) => {
   calls.push(['get', o.publicKey.allowCredentials?.length ?? 0]);
-  return { rawId: buf(16, 6), response: { clientDataJSON: buf(8, 7), authenticatorData: buf(8, 8), signature: buf(8, 9) } };
+  // a browser answers with a credential it was asked for (P566: another seat's key is refused by approve())
+  const want = o.publicKey.allowCredentials?.[0]?.id;
+  return { rawId: want ? new Uint8Array(want).buffer : buf(16, 6), response: { clientDataJSON: buf(8, 7), authenticatorData: buf(8, 8), signature: buf(8, 9) } };
 };
 Object.defineProperty(globalThis, 'navigator', { value: { credentials: { create: fakeCreate, get: fakeGet } }, configurable: true });
 globalThis.location = { hostname: 'm.agentj.app' };

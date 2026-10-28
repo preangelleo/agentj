@@ -89,7 +89,7 @@ function render(form = true) {
   el('mail-allow').replaceChildren(...(c.allow || []).map((r) => {
     const li = document.createElement('li');
     const a = document.createElement('span'); a.textContent = r.addr + (r.name ? ' · ' + r.name : '');
-    const role = document.createElement('small'); role.textContent = t(r.role === 'guest' ? 'mail.roleGuest' : 'mail.roleOwner');
+    const role = document.createElement('small'); role.textContent = t(r.role === 'guest' ? 'mail.roleGuest' : 'mail.roleOwner') + (r.subdomains ? ' · ' + t('p567.subdomains') : '');
     const rm = document.createElement('button'); rm.type = 'button'; rm.className = 'setlink setdanger'; rm.textContent = t('mail.remove');
     rm.addEventListener('click', () => save({ allow: (cfg().allow || []).filter((x) => x.addr !== r.addr) }));
     li.append(a, role, rm);
@@ -199,12 +199,20 @@ export function configure() {
   });
   el('mail-on').addEventListener('click', () => save({ enabled: !cfg().enabled }));
   el('mail-pin').addEventListener('click', () => { const s = view && view.auth_sample; if (s && s.servid) save({ auth_servid: s.servid }); });
+  el('mail-add-addr').addEventListener('input', () => {
+    const domain = el('mail-add-addr').value.trim().startsWith('@');
+    el('mail-add-role').disabled = domain;
+    if (domain) el('mail-add-role').value = 'guest';
+    el('mail-add-subdomains').disabled = !domain;
+  });
+  el('mail-add-subdomains').disabled = true;
   el('mail-add').addEventListener('click', () => {
     const a = el('mail-add-addr').value.trim();
-    if (!ADDR.test(a)) { say(t('mail.why.address')); el('mail-add-addr').focus(); return; }
-    const role = el('mail-add-role').value === 'guest' ? 'guest' : 'owner';
+    if (!(a.startsWith('@') ? ADDR.test('x' + a) : ADDR.test(a))) { say(t('mail.why.address')); el('mail-add-addr').focus(); return; }
+    const domain = a.startsWith('@');
+    const role = domain || el('mail-add-role').value === 'guest' ? 'guest' : 'owner';
     const rest = (cfg().allow || []).filter((x) => x.addr.toLowerCase() !== a.toLowerCase());
-    save({ allow: [...rest, { addr: a, role }] }).then((ok) => { if (ok) el('mail-add-addr').value = ''; });
+    save({ allow: [...rest, { addr: a, role, ...(domain ? {subdomains: el('mail-add-subdomains').checked} : {}) }] }).then((ok) => { if (ok) el('mail-add-addr').value = ''; });
   });
 }
 

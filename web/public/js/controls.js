@@ -2,7 +2,7 @@
 // Reads are plain requests answered to this session only; every write is signed with the approval key over (action,
 // nonce, time, SHA-256 of the target as shown) — the host does nothing without a valid signature. Nothing is stored here.
 import { controlMessage, b64u, unb64u, workflowResumeMessage } from '../proto/wire.js';
-import { request, done, isReady, channel, sendApp, randHex, gen, peer } from './session.js';
+import { request, done, isReady, channel, sendApp, randHex, gen, peer, whenReady } from './session.js';
 import { signKey } from './store.js';
 import { myDeviceId } from './api.js';
 import { t, lang, locale, plain, fillText } from './t.js';
@@ -20,7 +20,7 @@ export const estop = { on: false, by: '' };
 const GEN = Symbol('gen');                            // the session a signed write was made for (never serialized)
 export async function signed(action, target, extra) {   // P203: cardsync signs its read the same way
   const sk = await signKey();
-  const g = gen();
+  const g = gen(), ch = channel();
   if (!g || !sk) throw new Error(sk ? 'offline' : 'no_key');
   let prepared = null, fa;
   if (peer.mailuv1 && action === 'host_write') {
@@ -39,13 +39,16 @@ export async function signed(action, target, extra) {   // P203: cardsync signs 
       fa = await passkeyApprove(unb64u(prepared.fa_ch), prepared.fa);
     }
   }
-  if (g !== gen()) throw new Error('offline');
+  // P566 (#364): a Face ID sheet may have cost the socket — its answer (bound to this remote and the host's nonce, never to
+  // the socket) goes on the reconnected one; signed for the computer it was asked on (channel() is null in the gap)
+  let g2 = gen();
+  if (g2 !== g) { if (!fa) throw new Error('offline'); g2 = g2 || await whenReady(); if (!g2 || channel() !== ch) throw new Error('offline'); }
   const n = prepared?.n || randHex(16), ts = Date.now();
-  const msg = await controlMessage(channel(), await myDeviceId(), action, n, ts, target);
+  const msg = await controlMessage(ch, await myDeviceId(), action, n, ts, target);
   const sig = new Uint8Array(await crypto.subtle.sign({ name: 'Ed25519' }, sk.priv, msg));
-  return { ...extra, ...(fa ? {fa} : {}), n, ts, sig: b64u(sig), [GEN]: g };
+  return { ...extra, ...(fa ? {fa} : {}), n, ts, sig: b64u(sig), [GEN]: g2 };
 }
-function command(obj) {                               // pending acknowledgement extends only this request
+function command(obj, onSent = null) {               // pending acknowledgement extends only this request
   return new Promise((resolve) => {
     let timer, extended = false;
     const finish = (m) => { clearTimeout(timer); done(r); resolve(m); };
@@ -55,7 +58,7 @@ function command(obj) {                               // pending acknowledgement
       else if (!extended && m.t === 'ctl_pending' && obj.t === 'wf_resume_do' && m.action === 'wf_resume_do' && m.timeout_ms === 620000) { extended = true; arm(620000); }
       else if (!extended && m.t === 'ctl_pending' && obj.t === 'bots_write' && m.action === 'bots_write' && m.timeout_ms === 620000) { extended = true; arm(620000); }
       else if (!extended && m.t === 'ctl_pending' && obj.t === 'cmd_run' && m.action === 'cmd_run' && m.timeout_ms === 150000) { extended = true; arm(150000); }   // P361
-    }, obj[GEN] ?? gen());
+    }, obj[GEN] ?? gen(), onSent);
     if (!r) resolve({ ok: false, why: 'offline' });
     else arm(20000);
   });
@@ -68,13 +71,29 @@ export async function signedWrite(action, target, extra) {
  *  signed object (same n / ts / sig) with it; null from faceId = the owner cancelled → {ok:false, why:'cancel'}. */
 export async function signedWriteFa(action, target, extra, faceId) {
   let obj;
+  const ch = channel();
   try { obj = await signed(action, target, extra); } catch (e) { return { ok: false, why: e.message }; }
   const res = await command(obj);
   if (res.ok || res.why !== 'passkey_required') return res;
   let fa;
   // P539: a WebAuthn rejection keeps its name (never its message) and the host's `fa_s`, so the card can say why
   try { fa = await faceId(res); } catch (e) { return { ok: false, why: 'passkey_failed', err: webauthnErr(e), fa_s: faState(res.fa_s) }; }
-  return fa ? command({ ...obj, fa }) : { ok: false, why: 'cancel' };
+  return fa ? commandFa({ ...obj, fa }, ch) : { ok: false, why: 'cancel' };
+}
+export const FA_HANDIN_MS = 60000;
+/** P566 (#364): the request that carries the Face ID result — on the session it was signed for, else on the first one after
+ *  the drop the sheet caused (same computer); ≤ FA_HANDIN_MS. Sent again ONLY while no copy has reached the socket (security
+ *  review S1: the page-chosen nonce lives in the Agent J host's memory — a copy after a serve restart could run twice); once a
+ *  copy went out, a lost answer stays 「offline」 as before. */
+export async function commandFa(obj, ch, until = Date.now() + FA_HANDIN_MS) {
+  for (let first = true; ; first = false) {
+    if (!first) await new Promise((r) => setTimeout(r, 250));
+    const g = first && obj[GEN] && obj[GEN] === gen() ? obj[GEN] : gen() || await whenReady(Math.max(0, until - Date.now()));
+    if (!g || (ch && channel() !== ch)) return { ok: false, why: 'offline' };
+    let sent = false;
+    const res = await command({ ...obj, [GEN]: g }, () => { sent = true; });
+    if (res.why !== 'offline' || sent || Date.now() >= until) return res;
+  }
 }
 const WHY_CODES = ['changed', 'unknown_item', 'bad_signature', 'no_key', 'stale', 'timeout', 'offline', 'not_found', 'exists', 'symlink',
   'invalid', 'unknown', 'io', 'shape', 'replay', 'rejected', 'passkey_failed'];

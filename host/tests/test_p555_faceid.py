@@ -92,6 +92,12 @@ class FaceIdRecognize(unittest.TestCase):
         a = auth.assert_(challenge, b"u", ts=0, nonce=b"\0" * 16)
         return {k: a[k] for k in ("id", "cd", "ad", "sig")}
 
+    def is_local(self, m, why):
+        """P566 (#346): a `local` key's pk_state also carries the Settings 「测试一下」 check challenge (fa / fa_ch / n) — the page
+        asks nothing by itself; only the owner's tap uses it."""
+        self.assertEqual({k: m.get(k) for k in ("t", "s")}, {"t": "pk_state", "s": "local"}, why)
+        self.assertLessEqual(set(m), {"t", "s", "fa", "fa_ch", "n"}, why)
+
     def state_msg(self, s):
         self.run_(self.host.remotes.send_state(s))
         return self.to(s, "pk_state")[-1]
@@ -103,7 +109,7 @@ class FaceIdRecognize(unittest.TestCase):
         self.edit_pk(did, local=None, dev=None, plat=None)          # what 0.25.12 and older left in devices.json
         self.assertEqual(passkey.pk_state(json.loads(self.st.devices_path.read_text())[did]["pk"]), "unknown",
                          "the raw record alone is what said 「未确认」")
-        self.assertEqual(self.state_msg(s), {"t": "pk_state", "s": "local"}, "no self-check fields: nothing to tap")
+        self.is_local(self.state_msg(s), "local: nothing to tap (only the 「测试一下」 challenge)")
         row = [r for r in remotes.rows(self.st, set(), did) if r["id"] == did][0]
         self.assertEqual(row["pk"], "local", "the remotes list agrees")
         self.assertNotIn("local", json.loads(self.st.devices_path.read_text())[did]["pk"], "a view, not a rewrite")
@@ -136,7 +142,7 @@ class FaceIdRecognize(unittest.TestCase):
         self.assertEqual(self.to(s, "pk_check_res")[-1], {"t": "pk_check_res", "r": "c1", "ok": True, "s": "local"},
                          "the page's ask1 waits on r")
         self.assertIs(self.st.devices()[did]["pk"]["local"], True)
-        self.assertEqual(self.to(s, "pk_state")[-1], {"t": "pk_state", "s": "local"}, "the row repaints 已设好")
+        self.is_local(self.to(s, "pk_state")[-1], "the row repaints 已设好")
         self.assertEqual([o for _, o in self.sent if o["t"].startswith("pk_peer")], [], "never a pk_peer request / card")
         self.assertIn('"result": "ok"', self.st.log_path.read_text().split("pk_check")[-1][:200])
 
@@ -154,7 +160,7 @@ class FaceIdRecognize(unittest.TestCase):
         self.assertIsNone(self.run_(pick(s, self.fa(a, ch))), "the pickup verifies")
         self.assertEqual(self.st.passkey_state(did), "local", "→ 已设好")
         self.assertIs(self.st.devices()[did]["pk"]["local"], True)
-        self.assertEqual(self.to(s, "pk_state")[-1], {"t": "pk_state", "s": "local"}, "every remote repaints at once")
+        self.is_local(self.to(s, "pk_state")[-1], "every remote repaints at once")
         self.assertEqual([o for _, o in self.sent if o["t"].startswith("pk_peer")], [], "no peer request")
         # a refused assertion notes nothing
         b, did2, s2 = self.moved()

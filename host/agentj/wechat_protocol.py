@@ -74,7 +74,9 @@ def checked(obj):
     for field in ('ret', 'errcode'):
         value = obj.get(field, 0)
         if value not in (None, 0):
-            raise Failure('api_error', ret=value if isinstance(value, int) else -1)
+            message = str(obj.get('errmsg') or '').lower()
+            taken = any(x in message for x in ('logged in elsewhere', 'another host', '其他设备登录', '被其他主机接管'))
+            raise Failure('binding_taken_over' if taken else 'api_error', ret=value if isinstance(value, int) else -1)
     return obj
 
 

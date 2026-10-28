@@ -588,13 +588,25 @@ class CodexChain(_Chain):
             self.assertFalse((self.work / "workflows" / "look" / "research-wrote.txt").exists(), "read-only run: declined without a card")
             self.assertEqual(c["asks"](), [])
             os.environ["FAKE_CX_LOG"] = str(self.work / "workflows" / "work" / ".fake.jsonl")
+            (self.work / "workflows" / "work" / "gone.txt").write_text("keep")
             t = asyncio.create_task(host.scheduler.run("work", "manual"))
+            # P569 integration: P568 追加 A (REPORT-568:131,137) — an enabled task runs under the expiring delegated
+            # scheduled_task scope (rank 1, never the owner): low-risk steps follow the registry, a deletion still asks a
+            # paired phone with the task's name on the card (Claude twin: test_controls.SchedulerChain); no group_source.
+            await c["wait"](lambda: len(c["asks"]()) == 1)
+            ask = c["asks"]()[0]
+            self.assertEqual((ask["tool"], ask["task"]), ("Bash", "任务work"))
+            self.assertIn("delete", ask["cat"])
+            await host._app(c["s"], c["ph"].answer(ask, False))
             res = await t
-            self.assertEqual(c["asks"](), [], "a workflow is not a fresh owner request")
-            self.assertTrue(any(r.get("reason") == "group_source" for r in approvals.read_log(self.st)))
+            self.assertEqual(len(c["asks"]()), 1, "a workflow is not a fresh owner request: no other card")
+            log = approvals.read_log(self.st)
+            self.assertFalse(any(r.get("reason") == "group_source" for r in log))
+            self.assertTrue(any(r.get("decision") == "deny" and "delete" in (r.get("cats") or []) for r in log))
+            self.assertEqual((self.work / "workflows" / "work" / "gone.txt").read_text(), "keep", "the owner refused the deletion")
             self.assertEqual(res["verdict"], "ok", res)
             self.assertFalse((self.work / "normal-wrote.txt").exists(), "CEO writes stay in its own folder")
-            self.assertFalse((self.work / "workflows" / "work" / "normal-wrote.txt").exists(), "unknown workflow authority cannot borrow the owner turn")
+            self.assertTrue((self.work / "workflows" / "work" / "normal-wrote.txt").exists(), "a low-risk write in the task's own folder")
             self.assertEqual(self.st.agent_session("codex"), main_sid, "a scheduled run never replaces the chat conversation")
         self.run_chain(script)
         rows = [json.loads(line) for log in (self.work / "workflows").glob("*/.fake.jsonl") for line in log.read_text().splitlines()]

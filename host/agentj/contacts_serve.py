@@ -163,7 +163,7 @@ class ContactService:
         m["Subject"] = subject[:200] or "Agent J"
         m["Date"] = email.utils.formatdate(localtime=True)
         m["Message-ID"] = email.utils.make_msgid(domain=cfg["address"].rpartition("@")[2])
-        m[M.MARK] = kind               # if it comes back to the Agent's own inbox it is never a task (no loops)
+        m[M.MARK] = M.mark(cfg, kind)  # P569: back in our own inbox it is never a task (no loops); elsewhere a letter
         m.set_content(body or " ")
         if html:                       # P189: multipart/alternative — clients without HTML show the plain text
             m.add_alternative(html, subtype="html")

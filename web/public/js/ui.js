@@ -87,7 +87,7 @@ export function notify(spec) {
   const f = notifyFormat(spec), box = el('toast');
   if (!box) return null;
   delete box.dataset.sharedFollow;
-  box.classList.remove('act', 'mail-saved', 'circle', 'square', 'rect', 'glance');
+  box.classList.remove('act', 'mail-saved', 'circle', 'square', 'rect', 'glance', 'over-dlg');
   box.classList.toggle('glance', !!spec.glance);
   box.dataset.kind = f.kind; box.style.setProperty('--nt-accent', 'var(' + f.accent + ')');
   box.setAttribute('role', f.kind === 'error' || f.kind === 'warn' ? 'alert' : 'status');
@@ -114,7 +114,11 @@ export function notify(spec) {
   }
   box.replaceChildren(...kids);
   box.classList.add(f.shape);
-  if (f.shape === 'rect') {
+  // P566 (#354, Sammi 10-28 17:50 「点了没反应」): a card on screen (key / pickup / Face ID dialog) covers the reply's notice slot
+  // (.stage, z 1, under its scrim) — while one is open, an execution notice floats above the card instead
+  const dlg = f.shape === 'rect' && document.querySelector('.ajmodal.dlgcard:not([hidden]),#confirm:not([hidden])');
+  if (dlg) { document.body.appendChild(box); box.classList.add('over-dlg'); }
+  else if (f.shape === 'rect') {
     // A non-chat page owns its local result card; do not hide errors behind Settings / the terminal.
     const page = [el('term'), el('settings'), el('rd'), ...document.querySelectorAll('.view.sub, #five-page')].find((n) => n && !n.hidden && n.getClientRects().length);
     const local = page && (page.querySelector('.setbox') || page);

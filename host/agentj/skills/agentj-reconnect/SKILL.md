@@ -27,7 +27,7 @@ Agent J Father 是官方开发者客服平台。聊天恢复后，也可以用 `
 No reply, or stuck on “Not yet received”? You can do this from your phone. After each step, send a short test message in chat and stop when a reply arrives:
 
 1. Tap **Stop** to interrupt the current task.
-2. Open **Settings → Emergency repair → Commands on the Agent J host**, find `agentj doctor --reconnect`, and tap **Run** beside it (recommended). Your phone asks the host to check and repair the connection; you do not need to open a terminal. Confirm with Face ID when asked.
+2. Open **Settings → Emergency repair → Terminal Commands**, find `agentj doctor --reconnect`, and tap **Run** beside it (recommended). Your phone asks the host to check and repair the connection; you do not need to open a terminal. Confirm with Face ID when asked.
 3. Still no reply? In **Emergency repair**, tap **Restart service** (recommended), wait for the connection to return, then try again.
 4. Still no reply? Tap **Emergency repair → Reopen AI session** (requires host and web versions from 0.25.2a1). It ends the stuck AI session process and tries to resume the same conversation; if that fails, it opens a new session and keeps the old conversation. On an older version without this button, go to the next step.
 5. Still stuck? Tap **Emergency repair → ② Ask Agent J Father for remote help**. Only your tap sends a diagnostic report redacted on the host; keep the ticket number. Passwords, keys, chats and work files are not sent.

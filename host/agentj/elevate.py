@@ -77,6 +77,14 @@ MAX_FRAME = 2 * 1024 * 1024     # one request line from the CLI (P411: a screen-
 CMD_TIMEOUT, CMD_TIMEOUT_MAX = 600, 3600
 SOCK_NAME = "elevate.sock"
 ENV = "AGENTJ_ELEVATE_SOCK"
+def refused_word(why: str) -> str:
+    """P566 (#354): the reason _check gave → the word the page shows (passkey | late | stale | replay | bad_signature | no_key |
+    shape). Anything else = shape."""
+    if why.startswith("passkey"):
+        return "passkey"
+    return why if why in ("late", "stale", "replay", "bad_signature", "no_key") else "shape"
+
+
 PHONE_TYPES = ("elev_answer", "secret_out_open", "secret_out_decline")   # the last two: F32 (secret_out.py)
 PHONE_TYPES += ("elev_revoke",)   # #116: 「收回授权」 (elevate_grant.py)
 PHONE_TYPES += ("elev_stop", "elev_watch")   # P406 #173 (§11.2): Stop / show the output on the running-command strip (signed)
@@ -1187,6 +1195,9 @@ class Elevator:
         watching = {x.cid for x in self._watchers(c)} if tail is not None else set()
         while len(self.completed) > RESULTS_KEEP:
             self.completed.pop(next(iter(self.completed)))
+        if c["kind"] in ("secret", "vshare") and res["result"] == "timeout" and not only:
+            # P566 (#357, 董事长 10-28 18:4x): the card left every screen at 0 — the chat keeps why, and what to do next
+            self.host.agent_notice(f"这张卡已过期，请让 Agent 重发 · {c['id'][:8]} / This card has expired — ask the Agent to send it again · {c['id'][:8]}")
         if c["kind"] == "sudo":
             labels = {"done": ("已完成", "completed") if res.get("code") == 0 else ("执行失败", "failed"),
                       "timeout": ("执行超时", "timed out"), "denied": ("已拒绝", "denied"),
@@ -1238,13 +1249,20 @@ class Elevator:
             return self._watch(s, c, obj)
         if c is None or c["fut"].done() or c.get("busy") or not self._sees(c, s):
             self.st.log("elev_refused", id=rid if isinstance(rid, str) else None, device=s.device, reason="unknown")
+            # P566 (#354 / #364): the page hands an answer in again after a reconnect that swallowed the reply — a card that
+            # ended answers with its end (elev_done, as replayed after ready); a card gone without one says so. A card that
+            # runs (busy) stays quiet: its progress already goes to every remote. Nothing about the card is re-checked here.
+            if c is None and isinstance(rid, str) and _ID.fullmatch(rid) and obj.get("t") == "elev_answer":
+                end = self.completed.get(rid)
+                await self.host.send_app(s, dict(end) if end else {"t": "elev_refused", "id": rid, "why": "gone"})
             return
         why = self._check(s, c, obj)
         if why:
             self.st.log("elev_refused", id=rid, device=s.device, reason=why)
             audit(self.st, c, result="refused", reason=why, device=s.device, channel=self.host.channel)
-            if why.startswith("passkey"):          # ADR-A163: tell this phone, so its card leaves "sending" and stays open
-                await self.host.send_app(s, {"t": "elev_refused", "id": c["id"], "why": "passkey"})
+            # ADR-A163: tell this phone, so its card leaves "sending" and stays open. P566 (#354, elevate.py:1240-1248 wrote only
+            # the log): every refusal now says why on the card — one coarse word, never the card's contents
+            await self.host.send_app(s, {"t": "elev_refused", "id": c["id"], "why": refused_word(why)})
             return
         sk = self.st.sign_key(s.device)
         ok = obj["ok"]
@@ -2151,7 +2169,7 @@ MSG = {
     "bad_password": "管理员密码未通过，可能是浏览器自动填入的旧密码，请手动输入。/ Password authentication failed. Browser autofill may have supplied an old password; type it manually.",
     "no_device": "没有能批准的已配对手机。/ No paired phone that can approve.",
     "busy": "已经有太多张卡在等手机处理。/ Too many cards are already waiting on the phone.",
-    "group_source": "这一轮来自 Telegram 群成员，不是主人本人，不能向主人要批准，没有发卡片。/ This turn came from a Telegram group member, not the owner; no card was sent.",
+    "group_source": "这一轮没有核验过的主人或委托来源，不能请求批准，没有发卡片；不是主人手动拒绝。/ This turn has no verified owner or delegated source; no approval card was sent. The owner did not reject it.",
     "unavailable": "Agent J 没在运行（agentj service status）。/ Agent J is not running.",
     "local_auth_required": LOCAL_AUTH_HINT,
     "no_sudo": "这台Agent J 主机上没有 sudo。/ No sudo on the Agent J host.",

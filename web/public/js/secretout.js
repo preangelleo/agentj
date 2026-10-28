@@ -9,6 +9,7 @@ import {phoneConfirmation} from './tvremote.js';
 // hidden). It is never written to localStorage / IndexedDB / the history: the chat keeps one host line 「已领取 … HH:MM」.
 // A phone without a passkey cannot open it: the card says so and offers 「设置 Face ID」 (F20 registration), never a fallback.
 import { sendApp, gen, channel } from './session.js';
+import { put as handIn } from './pkhandin.js';   // P566 (#364): the answer outlives the dropped socket
 import { myDeviceId } from './api.js';
 import { t, onLang } from './t.js';
 import { mk, toast, human } from './ui.js';
@@ -85,8 +86,11 @@ export function add(m) {
       .catch(() => { c.faCh = null; });
   }
   const old = cards.get(m.id);
+  // P566 (#364): the Agent J host re-sends open cards after a reconnect — the same nonce is the same card, its tap still under way
+  const same = !!old && old.n === c.n;
+  if (same) { c.sending = old.sending; c.faErr = old.faErr; }
   cards.set(m.id, c);
-  if (old && shownId === m.id && !opened) { shownId = null; busy = false; }
+  if (old && shownId === m.id && !opened && !same) { shownId = null; busy = false; }
   render();
 }
 
@@ -130,7 +134,9 @@ export function done(m) {
 
 /** The computer refused (§18 `secret_out_err`): Face ID not accepted · no passkey on this phone · not delivered · gone. */
 export function failed(m) {
+  if (opened && opened.id === m.id) return;          // P566: a second hand-in of an answer whose value is already on screen
   const c = cards.get(m.id);
+  if (c) c.sending = false;
   if (shownId === m.id) busy = false;
   const key = { passkey: 'elev.fa.refused', no_passkey: 'pkp.soutNoPasskey', send: 'sout.sendFail', gone: 'sout.r.gone' }[m.why] || 'elev.fail';
   toast(t(key), 4200);
@@ -144,7 +150,10 @@ export function prune(gone) { const now = Date.now(); for (const c of [...cards.
  *  cards after ready, but a value already on screen (its card ended at the host) stays until 完成 / 2 minutes. */
 export function clear({ keepOpened = false } = {}) {
   const keep = keepOpened && opened ? cards.get(opened.id) : null;
+  // P566 (#364): a connection blip keeps the card whose Face ID / hand-in is under way (the host re-sends it after ready)
+  const going = keepOpened && !keep && shownId ? cards.get(shownId) : null;
   if (!keep) wipeOpened();
+  if (going && (busy || going.sending)) { cards.clear(); cards.set(going.id, going); return; }
   cards.clear(); busy = false;
   if (keep) { cards.set(keep.id, keep); render(); return; }
   shownId = null;
@@ -214,22 +223,34 @@ function paintLeft(c, isOpen) {
 /** 「用 Face ID 查看」: the system sheet straight from the tap (iOS gesture rule), then the request; no value is sent by us. */
 async function openCard() {
   const c = cards.get(shownId);
-  if (!c || busy || opened) return;
+  if (!c || opened) return;
+  if (busy || c.sending) { toast(t(c.sending ? 'p566.handing' : 'p566.busy'), 3000); return; }   // P566 (#354): never a silent tap
   if ((!c.fa || !canAssert()) && phoneConfirmation(!c.fa)) return;
   if (!c.fa) { toast(t('sout.noPasskey'), 4200); return; }
   if (!canAssert()) { toast(t('elev.fa.none'), 5000); return; }
   if (!c.faCh) { toast(t('elev.fail'), 3000); return; }
   const g = gen();
   if (!g) { toast(t('elev.net'), 3000); return; }
+  const id = c.id, n = c.n, ch = channel();
   busy = true; render();
   let fa = null;
   let faErr = null;
   try { fa = await approve(c.faCh, c.fa); } catch (e) { fa = null; faErr = errName(e); }
-  if (!fa) c.faErr = faErr || 'Error'; else c.faErr = null;   // P539: the card says why and offers 再试一次
-  if (!fa || cards.get(c.id) !== c) { busy = false; render(); if (!fa) toast(t('elev.fa.cancel'), 3000); return; }
-  try {
-    await sendApp({ t: 'secret_out_open', id: c.id, n: c.n, fa }, g);
-  } catch { busy = false; render(); toast(t('elev.fail'), 3000); }
+  // P566 (#364): the sheet may have cost the socket; the re-sent card (same nonce) is the same card
+  const cur = cards.get(id), same = !!cur && cur.n === n;
+  if (cur) cur.faErr = fa ? null : faErr || 'Error';   // P539: the card says why and offers 再试一次
+  if (!fa || !same) { busy = false; render(); toast(t(!fa ? 'elev.fa.cancel' : cur ? 'p566.rearmed' : 'sout.r.gone'), !fa ? 3000 : 5000); return; }
+  // on this connection, or on the first one after the drop (「正在补交…」); the host checks nonce, signature and counter as before
+  cur.sending = true;
+  const sent = await handIn('sout:' + id, { send: (g2) => sendApp({ t: 'secret_out_open', id, n, fa }, g2), until: cur.deadline, ch,
+    live: () => { const x = cards.get(id); return !!x && x.n === n && !opened; },
+    waiting: () => { const x = cards.get(id); if (x) x.sending = true; toast(t('p566.handing'), 0); } });
+  if (!sent) {
+    const x = cards.get(id);
+    if (x) x.sending = false;
+    busy = false; render();
+    if (x && !opened) toast(t(Date.now() >= x.deadline ? 'p566.r.late' : 'p566.notSent'), 5000, 'error');
+  }
 }
 async function declineCard() {
   const c = cards.get(shownId);

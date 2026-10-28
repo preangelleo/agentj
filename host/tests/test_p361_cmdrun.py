@@ -86,7 +86,7 @@ class Base(unittest.TestCase):
 
 class Whitelist(unittest.TestCase):
     def test_one_constant_each_with_a_reason_and_nothing_dangerous(self):
-        self.assertEqual(set(cmdrun.RUN_CMDS), {"doctor", "reconnect", "status", "service_status", "rescue_status", "update_check"})
+        self.assertEqual(set(cmdrun.RUN_CMDS), {"doctor", "reconnect", "status", "service_status", "rescue_status", "update_check", *["switch_"+h for h in ("claude","codex","opencode","kimi","qwen","dsh")]})
         bad = {"stop", "uninstall", "revoke", "unlink", "reset", "restart", "apply", "set", "remove", "clear", "rm",
                "install", "import-key", "passphrase", "pair", "rollback", "undo", "send", "config", "serve"}
         for name, (args, why) in cmdrun.RUN_CMDS.items():
@@ -138,6 +138,7 @@ class Whitelist(unittest.TestCase):
 
 class Serve(Base):
     def test_host_info_lists_the_names(self):
+        self.host._cmdrun_available = (time.monotonic(), list(cmdrun.RUN_CMDS))
         self.assertEqual(self.host.host_info()["run_cmds"], list(cmdrun.RUN_CMDS))
 
     def test_no_passkey_is_refused_without_fallback(self):

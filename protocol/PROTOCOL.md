@@ -2302,7 +2302,7 @@ early?}` → `{t:"card", id, kind:"contact"}` first, then `{ok, id, result: save
 group_source|not_found|busy}`; `{t:"mail_send", to:[name|address], subject, body, files:[path]}` (`agentj mail send`) →
 names resolved in the book (no single clear match with an address → `{ok:false, why:"not_found", who:[…]}`), files through
 `media.check` (inside the Agent's folder, no secret-shaped content), then `serve.ask("agentj mail send", {summary})`
-(batch=false; a group / guest turn never reaches it) → sent only on allow (`X-AgentJ: agent`), recipients remembered with
+(batch=false; a group / guest turn never reaches it) → sent only on allow (`X-AgentJ: agent; o=<12 hex>` since P569 #374 — see below), recipients remembered with
 source `agent` → `{ok, sent[], files[], new_contacts[]}` · `why`: `denied` · `file` · `too_big` · `mail_not_configured` ·
 `no_password` · `send_failed` · `group_source`. P355: `cc?:[…]`, `bcc?:[…]` (resolved like `to`; one address keeps its
 first place to > cc > bcc; every recipient counts for owner_direct / allowlist / the card's offer; ≤ 10 in all → else
@@ -3770,3 +3770,17 @@ Olares setup page take `ajt_` and `ajh_` codes alike.
   approved by another remote (→ the page offers the peer flow), `expired` = no live offer, `unknown` = the record changed
   (unpaired / revoked), `bad` = the registration did not verify. The page never says the bare 「没记住」 any more. The same
   device registers for the same user handle with `excludeCredentials: []`, so its password manager replaces a key left behind.
+
+### P567 terminal command facts
+
+The host may send `cmds_state {names: [fixed command ids]}` inside the paired encrypted session after asynchronous harness detection. This is read-only metadata, not a settings write or command invocation. New clients filter it through the same fixed command table as host.run_cmds; older clients may ignore it and receive the cached list in their next preferences message. It does not replace the pref_res → preferences acknowledgement of a settings write. Execution retains signed cmd_run and the existing UV repair path.
+
+### P568 additive channel diagnostics
+`wechat_state` may include `hint` (localized fixed recovery text) and `last_forward: {ok, why?, at}` (last explicit Web App forwarding attempt, no body). Missing fields mean no diagnostic or prior result. `bound=false` with `error=binding_taken_over|binding_expired` disables polling until explicit reconnection. Old encrypted state has neither field and remains readable; optional binding_error and last_forward are retained under the existing encrypted store. Primitive non-secret Codex elicitation forms reuse §10.7 signed questions, including existing typed-answer hashes. No new approval capability or secret-bearing answer is introduced.
+
+### P569 #374 — the X-AgentJ origin marker
+Every mail a host sends carries `X-AgentJ: <kind>; o=<12 hex>`, `o` = the first 12 hex of SHA-256(`"aj:"` + the sending mailbox
+address, lowercased) — no secret, nothing beyond From. A receiver treats a mail as its own (skipped) when `o` is its own, the
+marker is bare (pre-0.25.19 hosts: indistinguishable from its own older mail), or any X-AgentJ mail has Auto-Submitted other
+than `no` (another host's meeting notes / auto-replies stay skipped). A deliberate `agentj mail send` from another host (`o`
+foreign, no Auto-Submitted) is an ordinary letter: allowlist, sender authentication and de-duplication apply unchanged.

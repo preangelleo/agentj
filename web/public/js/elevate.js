@@ -16,6 +16,7 @@ import { copyable } from './copycode.js';   // P292
 import { paintMailPassword } from './mail-password.js';
 import { elevateChallenge, canAssert, approve } from './faceid.js';
 import { paintPk, errName } from './pkassist.js';   // P539: no own passkey here · why a passkey tap failed
+import { put as handIn } from './pkhandin.js';   // P566 (#364): the answer outlives the socket the sheet drops
 // P414 (PROTOCOL §37.10 / §37.11, ADR-P414-bang): the computer-password vault on sudo cards — 「用 Face ID 填入电脑密码」 (the
 // PRF value sealed with kind `vault`, answer `vault:1`), a typed answer that also remembers it (`pepk`/`pct`, kind `vault_save`,
 // signed `save:` tail, M2), 「记住的电脑密码不对了」 after `stale`, and the `vshare` card (another remote asks to use it; 「同意」 =
@@ -65,6 +66,8 @@ function build() {
   bad.hidden = true;
   const empty = node('p', 'elev-empty', 'elev-bad');
   empty.hidden = true;
+  // P566 (#354): why the last 保存 / 同意 did not go through, on the card itself (never only a notice behind the card's scrim)
+  const err = node('p', 'elev-err', 'elev-bad elev-err'); err.hidden = true; err.setAttribute('role', 'alert');
   // P414: 「用 Face ID 填入电脑密码」 first (the typed field below it is the second way), 「用 Face ID 记住」 under the field
   const vault = node('button', 'elev-vault', 'aj-btn aj-btn--primary elev-vault'); vault.type = 'button'; vault.hidden = true;
   const stale = node('p', 'elev-stale', 'elev-bad'); stale.hidden = true;
@@ -87,7 +90,7 @@ function build() {
   const hide = node('button', 'elev-hide', 'elev-hide'); hide.type = 'button';
   hide.append(chevron());
   form.append(hide, node('p', 'elev-kicker', 'elev-kicker'), node('h2', 'elev-title'), node('dl', 'elev-rows', 'elev-rows'), node('section', 'elev-auth', 'elev-auth'), bad, stale, vault, label, input,
-    empty, opt, saveOpt, node('p', 'elev-note', 'elev-note'), node('p', 'elev-left', 'elev-left'), acts, deny);
+    empty, opt, saveOpt, node('p', 'elev-note', 'elev-note'), node('p', 'elev-left', 'elev-left'), err, acts, deny);
   acts.after(node('div', 'elev-pk', 'pkassist'));   // P539: right under 「同意」, above the quiet 「拒绝」
   root.appendChild(form);
   document.body.appendChild(root);
@@ -97,6 +100,7 @@ function build() {
   root.querySelector('#elev-vault').addEventListener('click', () => decide(true, 'vault'));   // P414
   root.querySelector('#elev-save-on').addEventListener('change', (e) => { $('elev-note').textContent = t(e.target.checked ? 'p414.e.saveNote' : 'elev.sudo.note'); });
   root.querySelector('#elev-input').addEventListener('input', () => { $('elev-empty').hidden = true; paintButtons(); });
+  onLang(() => paintErr(cards.get(shownId)));
   root.querySelector('#elev-input').addEventListener('keydown', (e) => {
     if (e.key !== 'Enter' || e.isComposing) return;
     e.preventDefault(); e.stopPropagation();
@@ -158,12 +162,17 @@ export function add(m) {
   if (c.started) c.t0 = Date.now() - (Number.isInteger(m.elapsed) ? m.elapsed : 0) * 1000;
   const old = cards.get(m.id);
   if (old) { c.out = old.out || ''; if (old.n === c.n) c.collapsed = old.collapsed; if (old.started && c.started) c.t0 = old.t0; }
+  // P566 (#364 / #354): the Agent J host re-sends every open card after a reconnect — the one the Face ID sheet's drop cost.
+  // The same arming (same nonce) is the same card: its typed field, its 「正在补交…」 and its reason stay; only a new nonce
+  // (a wrong password, a re-armed card) is a new card.
+  const same = !!old && old.n === c.n && !c.running;
+  if (same) { c.sending = old.sending; c.err = old.err; c.faErr = old.faErr; c.faHow = old.faHow; }
   // P414 (§37.10, host build): the same card re-armed after this remote's 「用 Face ID 填入电脑密码」 with `v.has` 0 and no
   // `stale` = the remembered password did not open with this Face ID (nothing counted); say so above the field
   if (c.kind === 'sudo' && c.v && !c.v.has && !c.stale && old && (old.sentVault || old.vaultMiss)) c.vaultMiss = true;
   cards.set(m.id, c);
   if (c.started && old?.watching && runShown === c.id && panelOpen) watch(c, true);   // a reconnect: ask again (a new session)
-  if (old && shownId === m.id) { shownId = null; busy = false; }
+  if (old && shownId === m.id && !same) { shownId = null; busy = false; }
   render();
 }
 /** P527: a settings tap owns the visible input, even if an older card was collapsed or waiting. */
@@ -233,9 +242,35 @@ export function done(m) {
 export function refused(m) {
   const c = cards.get(m.id);
   if (!c) return;
-  c.running = false;
+  c.running = false; c.sending = false;
+  // P566 (#354): every refusal says why, on the card and above it (was: Face ID only — the rest were only in host.log)
+  const key = REFUSED[m.why] || 'elev.fa.refused';
+  setErr(c, key);
   if (shownId === m.id) { busy = false; paintButtons(); paintLeft(c); }
-  toast(t('elev.fa.refused'), 3600);
+  toast(t(key), 5000, 'error');
+  if (m.why === 'late' || m.why === 'gone') done({ id: c.id, result: m.why === 'late' ? 'timeout' : 'gone' });
+}
+const REFUSED = { passkey: 'elev.fa.refused', late: 'p566.r.late', stale: 'p566.r.clock', replay: 'p566.r.replay', gone: 'p566.r.gone',
+  bad_signature: 'p566.r.sig', no_key: 'p566.r.sig', shape: 'p566.r.shape' };
+/** P566: the card's own reason line (key + vars; null clears it). */
+function setErr(c, key, vars) {
+  if (!c) return;
+  c.err = key ? { key, vars: vars || null } : null;
+  if (shownId === c.id) paintErr(c);
+}
+function paintErr(c) {
+  if (!root) return;
+  const e = $('elev-err');
+  e.hidden = !(c && c.err);
+  e.textContent = c && c.err ? t(c.err.key, c.err.vars || undefined) : '';
+}
+/** P566 (#357, 董事长 10-28 18:4x 「过期了，这个卡就应该自动消失」): at 0 the card goes by itself — never left to be filled in and
+ *  refused in silence. The chat keeps the line the Agent J host writes (「这张卡已过期，请让 Agent 重发」); the notice says it now. */
+function expire(c) {
+  if (!c || !cards.has(c.id) || c.running) return;
+  if (root && shownId === c.id) $('elev-input').value = '';
+  done({ id: c.id, result: 'timeout' });
+  notify({ kind: 'warn', text: t('p566.expired'), ms: 6000, shape: 'rect' });
 }
 /** Unpair / revoke / a new pairing: forget every card at once. */
 export function clear() {
@@ -254,7 +289,7 @@ export function prune(gone) { const now = Date.now(); for (const c of [...cards.
 export function progress(m) {
   const c = cards.get(m.id);
   if (!c || m.state !== 'running') return;
-  c.running = true;
+  c.running = true; c.sending = false; c.err = null;
   if (m.phase === 'started' && !c.started) {     // P406 (§11.2): the password was accepted and the command runs — the card goes
     c.started = true;
     c.t0 = Date.now() - (Number.isInteger(m.elapsed) ? m.elapsed : 0) * 1000;
@@ -357,6 +392,7 @@ function render() {
   paintButtons();
   paintLeft(c);
   paintPkFor(c);
+  paintErr(c);
 }
 /** P539: under 「同意」 — the quiet line when this remote has no passkey of its own, or why the last tap failed + 再试一次. */
 function paintPkFor(c) {
@@ -373,7 +409,7 @@ function paintButtons() {
   if (!root) return;
   const c = cards.get(shownId);
   const v = $('elev-input').value;
-  const pending = busy || !!c?.running;
+  const pending = busy || !!c?.running || !!c?.sending;
   if (c) $('elev-allow').textContent = c.running ? t('p392.executing') : c.kind === 'vshare' ? t('p414.e.vsAllow') : t(viaHelper(c) ? 'elev.sudo.allowHelper' : c.kind === 'sudo' ? 'elev.sudo.allow' : 'elev.secret.allow');
   $('elev-allow').disabled = pending || !c || (!viaHelper(c) && v.length > MAX_FIELD);   // empty: enabled, says what is missing
   $('elev-deny').disabled = pending;
@@ -386,6 +422,7 @@ function paintLeft(c) {
   const deadline = c.auth ? Math.min(c.deadline, c.auth.expires_at * 1000) : c.deadline;
   const left = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
   $('elev-left').textContent = left > 0 ? t('elev.left', { n: left }) : t('elev.timeUp');
+  if (c.deadline <= Date.now() && !c.sending) { expire(c); return; }   // P566 (#357): a card at 0 goes — it never stays to be filled in
   if (c.auth) {
     $('elev-left').textContent += ' · ' + t('ar.round', { n: c.auth.round, max: c.auth.rounds });
     for (const n of $('elev-auth').querySelectorAll('a,button')) { if (!left) { n.removeAttribute('href'); n.setAttribute('aria-disabled','true'); if (n.tagName === 'BUTTON') n.disabled = true; } }
@@ -409,8 +446,12 @@ function askDeny() {
 
 /** `how` (P414): 'vault' = 「用 Face ID 填入电脑密码」 (no field). A `vshare` card's 「同意」 is the same Face ID + PRF. */
 async function decide(ok, how) {
-  const c = cards.get(shownId);
-  if (!c || busy || c.running) return;
+  let c = cards.get(shownId);
+  if (!c) return;
+  // P566 (#354, elevate.js:413): a tap while the last one is still under way says so (was: nothing at all)
+  if (busy || c.running || c.sending) { toast(t(c.sending ? 'p566.handing' : 'p566.busy'), 3000); return; }
+  if (Date.now() >= c.deadline) { expire(c); return; }   // P566 (#357): never sent to be refused in silence
+  setErr(c, null);
   const input = $('elev-input');
   const nopw = viaHelper(c);
   const vaultUse = ok && (c.kind === 'vshare' || (how === 'vault' && useVault(c)));   // P414: the PRF value instead of a typed one
@@ -423,29 +464,36 @@ async function decide(ok, how) {
     return;
   }
   const g = gen();
-  if (!g) { toast(t('elev.net'), 3000); return; }
+  if (!g) { setErr(c, 'elev.net'); toast(t('elev.net'), 3000); return; }
+  const ch0 = channel();   // P566 (#363): the computer this card came from — channel() is null in a drop-reconnect gap
   // ADR-A163: Face ID first, straight from the tap (before any await). Cancel / failure → nothing sent, the card stays.
   // P414: the same assertion carries the PRF — over the wrap salt (+ the next salt) to use the vault, over `vs` to remember a
   // typed password (「用 Face ID 记住」 ticked).
   const save = typed && c.kind === 'sudo' && offerSave(c) && $('elev-save-on').checked;
   let fa = null, prf = null;
-  if (ok && c.passkey_required && !c.fa) { toast(t('ask.passkeyRequired'), 6000); return; }
+  if (ok && c.passkey_required && !c.fa) { setErr(c, 'ask.passkeyRequired'); toast(t('ask.passkeyRequired'), 6000); return; }
   if (ok && (c.fa || vaultUse)) {
     if (!canAssert() && phoneConfirmation()) return;
-    if (!canAssert() || !c.fa) { toast(t('elev.fa.none'), 5000); return; }
-    if (!c.faCh) { toast(t('elev.fail'), 3000); return; }
+    if (!canAssert() || !c.fa) { setErr(c, 'elev.fa.none'); toast(t('elev.fa.none'), 5000); return; }
+    if (!c.faCh) { setErr(c, 'elev.fail'); toast(t('elev.fail'), 3000); return; }
     busy = true; paintButtons();
     let faErr = null;
     try {
       if (vaultUse || save) { const r = await assertPrf(c.faCh, c.fa, c.v.vs, vaultUse ? c.v.vn : null); fa = r.fa; prf = r.prf; }
       else fa = await approve(c.faCh, c.fa);
     } catch (e) { fa = null; faErr = errName(e); }
-    if (!fa || cards.get(c.id) !== c) {
+    // P566 (#364): the sheet may have cost the socket and the Agent J host re-sent the card meanwhile (a new object, the same
+    // arming): go on with it. Gone, or re-armed (a new nonce the assertion does not cover): say so, nothing sent.
+    const now = cards.get(c.id), same = !!now && now.n === c.n;
+    if (!fa || !same) {
       prf?.fill(0);
       busy = false; paintButtons();
-      if (!fa) { c.faErr = faErr || 'Error'; c.faHow = how; paintPkFor(c); toast(t('elev.fa.cancel'), 3000); }
+      if (!fa && now) { now.faErr = faErr || 'Error'; now.faHow = how; paintPkFor(now); toast(t('elev.fa.cancel'), 3000); }
+      else if (now) { setErr(now, 'p566.rearmed'); toast(t('p566.rearmed'), 5000, 'error'); }
+      else toast(t('p566.r.gone'), 5000, 'error');
       return;
     }
+    c = now;
     if (c.faErr) { c.faErr = null; paintPkFor(c); }
     if (vaultUse && !prf) {   // this authenticator gave no PRF: nothing sent, the typed field is the way
       busy = false; paintButtons();
@@ -454,11 +502,11 @@ async function decide(ok, how) {
     }
   }
   const sk = await signKey();
-  if (!sk) { prf?.fill(0); busy = false; paintButtons(); toast(t('elev.noSign'), 3600); return; }
+  if (!sk) { prf?.fill(0); busy = false; paintButtons(); setErr(c, 'elev.noSign'); toast(t('elev.noSign'), 3600); return; }
   busy = true; paintButtons();
   let value = null;
   try {
-    const ch = channel(), dev = await myDeviceId();
+    const ch = ch0, dev = await myDeviceId();
     const digest = await elevateDigest(c.kind, elevateFields(c));
     const ts = Date.now();
     const m = { t: 'elev_answer', id: c.id, ok, n: c.n, ts };
@@ -487,13 +535,23 @@ async function decide(ok, how) {
     m.sig = b64u(sig);
     if (fa) m.fa = fa;
     if (grant) m.grant = grant;   // #116: inside the signature too — the audit proves the owner chose it
-    await sendApp(m, g);
+    // P566 (#364): on this connection, or on the first one after the drop the Face ID sheet caused (「正在补交…」 on the card);
+    // again after a reconnect that swallowed its answer, while this arming is open. The host checks it all as before.
+    const id = c.id, n = c.n;
+    c.sending = true; paintButtons();
+    const sent = await handIn('elev:' + id, { send: (g2) => sendApp(m, g2), until: c.deadline, ch,
+      live: () => { const x = cards.get(id); return !!x && x.n === n && !completed.has(id); },
+      waiting: () => { const x = cards.get(id); if (x) { x.sending = true; setErr(x, 'p566.handing'); } } });
+    c = cards.get(id) || c;
+    if (!sent) { c.sending = false; throw new Error(Date.now() >= c.deadline ? 'late' : 'offline'); }
+    if (c.err && c.err.key === 'p566.handing') setErr(c, null);
     if (m.vault) c.sentVault = true;   // P414: a re-armed copy without `stale` then means this Face ID did not open it
     if (ok) { c.running = true; clearTimeout(timer); paintButtons(); paintLeft(c); }
     toast(t(!ok ? 'elev.sent.deny' : c.kind === 'vshare' ? 'p414.e.vsSent' : c.kind === 'sudo' ? 'elev.sent.sudo' : 'elev.sent.secret'), 2600);
-  } catch {
-    busy = false; paintButtons();
-    toast(t('elev.fail'), 3000);
+  } catch (e) {
+    busy = false; c.sending = false;
+    const key = !cards.has(c.id) ? null : e && e.message === 'late' ? 'p566.r.late' : e && e.message === 'offline' ? 'p566.notSent' : 'elev.fail';
+    if (key) { setErr(c, key); paintButtons(); toast(t(key), 5000, 'error'); if (key === 'p566.r.late') expire(c); }
   } finally {
     if (value) value.fill(0);
     prf?.fill(0);

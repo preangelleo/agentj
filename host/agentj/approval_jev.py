@@ -208,7 +208,9 @@ def low_risk_pass(host, cfg, tool, tool_input, batch: bool = True) -> bool:
         if callable(stopped) and stopped():
             return False
         from . import provenance
-        if provenance.untrusted_turn(getattr(host, "agent", None)):
+        actor = getattr(host, "agent", None)
+        if provenance.untrusted_turn(actor) and not (provenance.turn_source(actor)["kind"] == "scheduled_task"
+                                                     and provenance.delegated_turn(actor)):
             return False
         goals = getattr(host, "goals", None)
         if goals is not None and goals.current() is not None:

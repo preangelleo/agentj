@@ -47,10 +47,10 @@ test('get() form: hinted by default, plain after a failure; a pass keeps the for
   assert.deepEqual(plain.allowCredentials[0].transports, []);
   assert.equal(plain.hints, undefined);
   assert.equal(F.isPlain(ID), false);
-  assert.equal(F.noteResult(ID, false), true);             // hinted failed → next tap plain; P561: marked 「找不到了」 at once
-  assert.equal(F.isPlain(ID), true); assert.equal(F.failedHere(), true);
+  assert.equal(F.noteResult(ID, false), true);             // hinted failed → next tap plain; P566 (#350): one refusal never marks
+  assert.equal(F.isPlain(ID), true); assert.equal(F.failedHere(), false);
   assert.deepEqual(F.wantOf(ID, 'local').allowCredentials[0].transports, []);
-  assert.equal(F.noteResult(ID, false), false);            // plain failed too → still marked, back to hinted
+  assert.equal(F.noteResult(ID, false), false);            // plain failed too → P566: the second clear miss marks it, back to hinted
   assert.equal(F.failedHere(), true); assert.equal(F.isPlain(ID), false);
   F.noteResult(ID, false); assert.equal(F.noteResult(ID, true), true);   // plain passed: kept, mark cleared
   assert.equal(F.failedHere(), false); assert.equal(F.isPlain(ID), true);
@@ -64,7 +64,7 @@ test('approve(): the second tap after a failure really asks in the plain form', 
   Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { credentials: { get: async ({ publicKey }) => {
     seen.push(publicKey);
     if (fail) { const e = new Error('x'); e.name = 'NotAllowedError'; throw e; }
-    return { rawId: new Uint8Array(16).buffer, response: resp };
+    return { rawId: new Uint8Array(16).fill(9).buffer, response: resp };   // the key it was asked for (P566: another seat's is refused)
   } } } });
   await assert.rejects(F.approve(new Uint8Array(32), ID, false, 'local'));
   fail = false;
@@ -145,7 +145,8 @@ test('P560: a pass or a second failure tells Settings to repaint its row in the 
   const had = globalThis.dispatchEvent;
   globalThis.dispatchEvent = (e) => { seen.push(e.type); return true; };
   try {
-    F.noteResult(ID, false); assert.deepEqual(seen, ['agentj-pk-failed-change']);        // P561: the first refusal → 找不到了
+    F.noteResult(ID, false); assert.deepEqual(seen, []);                                 // P566 (#350): one refusal never marks
+    F.noteResult(ID, false); assert.deepEqual(seen, ['agentj-pk-failed-change']);        // the second clear miss → 找不到了
     F.noteResult(ID, false); assert.deepEqual(seen, ['agentj-pk-failed-change']);        // still marked: no repaint
     F.noteResult(ID, true); assert.deepEqual(seen, ['agentj-pk-failed-change', 'agentj-pk-failed-change']);   // passed → 已设好
     F.noteResult(ID, true); assert.equal(seen.length, 2);                                // no change, no repaint

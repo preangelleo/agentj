@@ -122,7 +122,7 @@ export function failNotice(err, fa, retry) {
 
 /** Settings → 「本机通行密钥」 row. state null (an older host never said) → the row hides and the old 「设置 Face ID」
  *  entry stays as it was. */
-export function paintPkRow(state, { row, label, note, setupBtn, oldBtn, failed = false } = {}) {
+export function paintPkRow(state, { row, label, note, setupBtn, oldBtn, failed = false, acts = null, testBtn = null, canTest = false } = {}) {
   const s = pkState(state);
   if (!row) return;
   row.hidden = !s;
@@ -132,6 +132,9 @@ export function paintPkRow(state, { row, label, note, setupBtn, oldBtn, failed =
   label.textContent = withBio(bad ? 'p561.pk.st.missing' : 'p539.pk.st.' + s);   // P550: 「本机 Face ID / 指纹」 as this system calls it (PASSKEY-SEAT-MODEL §1, §2)
   row.dataset.pk = bad ? 'failed' : s;
   setupBtn.hidden = s === 'local' && !bad;
+  // P566 (#346): 「已设好」 can be checked (one Face ID tap, when the Agent J host sent a check challenge) and redone in place
+  if (acts) acts.hidden = !(s === 'local' && !bad);
+  if (testBtn) testBtn.hidden = !canTest;
   // P555: a key the Agent J host has on record but cannot place → 「用 Face ID 确认」 (one tap, no other remote)
   setupBtn.textContent = s === 'unknown' ? withBio('p555.pk.check') : t(bad ? 'p561.pk.reset' : 'p539.pk.setup');
   const n = bad ? '' : s === 'borrowed' ? withBio('p539.pk.borrowedNote') : s === 'unknown' ? withBio('p555.pk.unknownNote') : '';   // P559: 「未设」 needs no note — the explanation line under the title says it; P561 (chairman 10-27 23:1x): nor 「找不到了」 — the title says 「可以重新设置」

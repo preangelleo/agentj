@@ -249,7 +249,7 @@ class Recall(unittest.TestCase):
 # ------------------------------------------------------------------ identity
 class Identity(unittest.TestCase):
     def test_core_v4_rules_and_hashes(self):
-        self.assertEqual(main_identity.verify_core()["version"], 22)   # P156: v11; P244: v12
+        self.assertEqual(main_identity.verify_core()["version"], 23)   # P156: v11; P244: v12
         man = json.loads((main_identity.DATA / "manifest.json").read_text())
         self.assertEqual(man, {"version": main_identity.VERSION, "hashes": main_identity.HASHES})
         zh = main_identity.prompt({"language": "zh"})
@@ -263,7 +263,7 @@ class Identity(unittest.TestCase):
             from test_l1 import _state
             rows = doctor.check_main_identity(_state(td))
         self.assertEqual((rows[0]["id"], rows[0]["status"]), ("main-core", "ok"))
-        self.assertIn("core v22:", rows[0]["summary"])
+        self.assertIn("core v23:", rows[0]["summary"])
 
     def test_bare_word_compact_is_the_command_only_when_alone(self):
         for t in ("压缩", "压缩一下", " 压缩。", "compact", "Compact"):
@@ -318,9 +318,12 @@ class _Prep(_Chain):
             self.assertEqual(oct(ho.parent.stat().st_mode & 0o777), "0o700")
             self.assertEqual((self.work / ".agentj" / ".gitignore").read_text(), "*\n")
             prep = self.prep_seen(c)
-            self.assertEqual([m["text"] for m in prep], ["交接写好了"])
+            # P568 #347: the host writes Codex's handover from its collected reply, nothing reaches the phone; CodexPrep
+            # counts the preparation turns from turn/start instead
+            self.assertEqual([m["text"] for m in prep], [] if self.KIND == "codex" else ["交接写好了"])
             seq = [o for _, o in c["sent"] if o["t"] == "msg"]
-            self.assertLess(seq.index(prep[0]), seq.index(comp), "the preparation before the compaction")
+            if prep:   # Codex: order checked against thread/compact/start in CodexPrep
+                self.assertLess(seq.index(prep[0]), seq.index(comp), "the preparation before the compaction")
             page = [t for t in self.hist_lines() if t["src"].get("k") == "cmd" and t["src"]["text"] == "/compact"]
             self.assertIn(compactprep.PROGRESS["zh"], [t["reply"]["text"] for t in page], "「先写交接，再压缩」 on the page")
             self.assertTrue(page[-1]["reply"]["text"].startswith("已压缩"))

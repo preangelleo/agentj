@@ -47,8 +47,8 @@ try{for(const scheme of ['light','dark']){
  // An already visible notice follows custom colours without being reopened.
  await evaluate(p,`(async()=>{document.body.dataset.status='idle';document.body.dataset.conn='on';(await import('./js/theme.js')).applyTheme({t:'theme',v:1,id:'custom',colors:{state:{idle:'#ffe292',working:'#71bbde',waiting:'#ebc9b7',question:'#cacadb',offline:'#858585'}}})})()`);
  for(const kind of ['info','progress','confirm']){
- const c=await evaluate(p,`(()=>{p535ui.notify({kind:'${kind}',text:'正在发送消息',shape:'rect',ms:60000});return {icon:getComputedStyle(document.querySelector('#toast .nt-ico')).stroke,stripe:getComputedStyle(document.querySelector('#toast')).backgroundImage,badge:getComputedStyle(document.querySelector('#setBtn [data-remote-count]')).color}})()`);
- assert.equal(c.icon,'rgb(255, 226, 146)');assert.equal(c.badge,c.icon);assert.ok(c.stripe.includes(c.icon));
+ const c=await evaluate(p,`(()=>{p535ui.notify({kind:'${kind}',text:'正在发送消息',shape:'rect',ms:60000});return {icon:getComputedStyle(document.querySelector('#toast .nt-ico')).stroke,stripe:getComputedStyle(document.querySelector('#toast')).borderLeftColor,badge:getComputedStyle(document.querySelector('#setBtn [data-remote-count]')).color}})()`);
+ assert.equal(c.icon,'rgb(255, 226, 146)');assert.equal(c.badge,c.icon);assert.equal(c.stripe,c.icon);   // P569: the accent is the card's curved border-left
  }
  // Every custom state updates already visible notices and other neutral overlays.
  const custom={idle:'rgb(255, 226, 146)',working:'rgb(113, 187, 222)',waiting:'rgb(235, 201, 183)',question:'rgb(202, 202, 219)',offline:'rgb(133, 133, 133)'};

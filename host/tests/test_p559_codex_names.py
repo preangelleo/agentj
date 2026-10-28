@@ -7,7 +7,9 @@ unknown action before any card. Probed: reports/qa/p559/codex-hook-names/ (real 
 - exact names only: a prefix / suffix / other spelling is still unknown → denied, the reason names the raw tool.
 - only the Codex adapter: the same names from another harness's hook (an OpenCode plugin can name a tool anything) stay unknown.
 - a sub-agent's own steps (parent session id) are still checked: `sudo` cards with Face ID.
-- the Computer Use script tool still needs Codex's plugin binding; its name alone is denied.
+- the Computer Use script tool still needs Codex's plugin binding; its name alone is denied. P569 integration: since P568
+  (#361) its name alone is an unregistered main-window MCP script tool → a Face ID card every time (never computer.control,
+  never a 免问 grant, never another layer); the owner's refusal is the denial.
 """
 import _hermetic  # noqa: F401,I001
 import json
@@ -123,8 +125,18 @@ class CodexNames(Fixture):
             g = self.guard(d)
             out = (await self.pre(g, "mcp__cua_repl__js", {"code": "click()"}))["hookSpecificOutput"]
             self.assertEqual(out["permissionDecision"], "deny")
-            self.assertEqual(self.denied(), ["mcp__cua_repl__js"])
-            self.host.ask.assert_not_awaited()
+            # P569 integration: P568 #361 (REPORT-568:18 「取密钥/脚本执行强制UV」) grades an unregistered main-window MCP
+            # script tool by effect instead of an unknown-action denial — the name alone still gets no plugin authority:
+            # not computer.control, no 免问 scope, no other layer; only a Face ID card the owner refused here.
+            self.assertEqual(self.denied(), [])
+            self.host.ask.assert_awaited_once()
+            self.assertTrue(self.host.ask.await_args.kwargs["require_passkey"])
+            self.assertFalse(self.host.ask.await_args.kwargs["batch"])
+            self.assertIsNone(p.bound_action("mcp__cua_repl__js", None))
+            self.assertIsNone(p.tool_action("mcp__cua_repl__js"))
+            self.assertFalse(p.computer_use_grant_op("mcp__cua_repl__js"))
+            self.assertEqual(p.main_requirement("mcp__cua_repl__js_reset", {}), "uv")
+            self.assertIn(p.channel_tool_decision("mcp__cua_repl__js"), ("deny", "handoff"))
 
     @unittest.skipUnless((QA / "e2e-codex.json").exists(), "QA evidence is not part of the public export")
     def test_real_codex_e2e_evidence(self):

@@ -2,6 +2,8 @@
 // caps), built with createElementNS from the constants below (never markup).
 export const SVG = 'http://www.w3.org/2000/svg';   // P318: js/ui.js's notice icons use it too
 export const GLYPH = {
+  run: [['path', { d: 'm8 5 11 7-11 7Z' }]],
+  terminal: [['rect', { x: 3, y: 4.5, width: 18, height: 15, rx: 2 }], ['path', { d: 'm6.5 9 3 3-3 3M12 15h5' }]],
   wechat: [["path", {"d": "M8 14.8c-.7 0-1.4-.1-2-.3L3.5 16l.7-3A5.1 5.1 0 0 1 2.5 9.3C2.5 6.1 5.7 3.8 9.6 3.8c3.4 0 6.2 1.8 6.8 4.3"}], ["path", {"d": "M21.5 14.5c0-2.8-2.7-5-6-5s-6 2.2-6 5 2.7 5 6 5c.8 0 1.6-.1 2.3-.4l2.7 1.1-.6-2.5a4.6 4.6 0 0 0 1.6-3.2Z"}], ["path", {"d": "M7 8.5h.01M11.5 8.5h.01M13.5 14h.01M17.5 14h.01"}]],
   preview: [['path', { d: 'M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z' }], ['circle', { cx: 12, cy: 12, r: 3 }]],
   download: [['path', { d: 'M12 4v11' }], ['path', { d: 'm7 10 5 5 5-5' }], ['path', { d: 'M5 19.5h14' }]],

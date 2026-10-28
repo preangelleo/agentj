@@ -1152,7 +1152,7 @@ def worker(st, target: str | None, model: str | None = None, *, job: str | None 
             gb = gate(prev["kind"], _probe_model(st, prev["kind"], raw), probe)
             if not gb["ok"]:
                 back_reason = gb["reason"]
-                return done("failed", "no_way_back")
+                extra["back_unavailable"] = back_reason  # P567: escaping a broken harness must remain possible
         m = start(st, target, prev)  # P312: the start the session will make (same folder / launch), before anything changes
         if m:
             extra["start_secs"] = int(m.get("secs") or 0)

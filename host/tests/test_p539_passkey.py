@@ -77,7 +77,7 @@ class Units(unittest.TestCase):
         for t in ("mcp__x__click", "mcp__x__screenshot", "mcp__computer-use__", "mcp____click", "mcp__computer-use__a__b",
                   "computer-use", "click", "mcp__x__unknown"):
             self.assertNotEqual(P.tool_action(t), "computer.control", t)
-            self.assertEqual(P.main_requirement(t, {}), "deny", t)
+            self.assertEqual(P.main_requirement(t, {}), "hold" if t in ("mcp__x__click", "mcp__x__screenshot", "mcp__x__unknown") else "deny", t)
         self.assertEqual(P.decision("channel", "computer.control"), "handoff")
         self.assertEqual(P.decision("friend", "computer.control"), "handoff")
         self.assertEqual(P.decision("support", "computer.control"), "deny")
@@ -218,7 +218,7 @@ class Units(unittest.TestCase):
         self.assertFalse(P.codex_cu_lifecycle("mcp__cua_repl__turn_ended", None))
         self.assertFalse(P.codex_cu_lifecycle(JS, BIND))
         # by name alone the plugin's tools are unknown (deny), as before
-        self.assertEqual(P.main_requirement(JS, {"code": "x"}), "deny")
+        self.assertEqual(P.main_requirement(JS, {"code": "x"}), "uv")
 
     def test_grant_kinds_never_cross(self):
         self.assertEqual(preauth.binding("computer.control", JS, BIND), BIND)
@@ -299,7 +299,11 @@ class Record(unittest.TestCase):
         pk = self.st.devices()[did]["pk"]
         self.assertEqual((pk["local"], pk["plat"]), (True, "android"))
         self.assertIn({"t": "pk_reg_res", "ok": True}, self.to(3))
-        self.assertIn({"t": "pk_state", "s": "local"}, self.to(3))
+        # P569 integration: since P566 (#346, REPORT-566:6) `pk_state` local also carries this device's own fa/fa_ch/n for
+        # Settings' 「测试一下」 — only fields were added; the state stays `local` and fa is this device's own credential id
+        st = [o for o in self.to(3) if o["t"] == "pk_state"][-1]
+        self.assertEqual((st["s"], st.get("fa")), ("local", pk["id"]))
+        self.assertLessEqual(set(st), {"t", "s", "fa", "fa_ch", "n"})
         devs = [o for o in self.to(3) if o["t"] == "devs"][-1]
         self.assertEqual(devs["items"][0]["pk"], "local")
         self.assertNotIn(pk["id"], json.dumps(devs), "the list never carries a credential id")
@@ -338,7 +342,10 @@ class Record(unittest.TestCase):
         s = serve.Session(cid=99, state="ready", device=wire.device_id(kp.pub), pub=kp.pub, p33=True)
         self.host.sessions[99] = s
         self.run_(self.host.remotes.send_state(s))
-        self.assertEqual(self.to(99)[-1], {"t": "pk_state", "s": "local"})
+        # P569 integration: P566 (#346, REPORT-566:6) adds the 「测试一下」 challenge fields to a `local` pk_state
+        last = self.to(99)[-1]
+        self.assertEqual((last["t"], last["s"], last.get("fa")), ("pk_state", "local", pk["id"]))
+        self.assertLessEqual(set(last), {"t", "s", "fa", "fa_ch", "n"})
 
     def test_fa_s_on_elev_and_ask_cards(self):
         a = P57.Authenticator()
@@ -408,11 +415,11 @@ class Flow(unittest.TestCase):
             return res
         return go()
 
-    def test_unknown_mcp_still_denied_without_card(self):
+    def test_unknown_mcp_write_uses_owner_card(self):
         host, ph, s = self.host_phone()
-        res = asyncio.run(self.run_card(host, s, "mcp__x__click", {}))
+        res = asyncio.run(self.run_card(host, s, "mcp__x__click", {}, lambda ask: self.signed(ph, host, ask, ok=False)))
         self.assertEqual(res["behavior"], "deny")
-        self.assertEqual(self.cards(), [])
+        self.assertEqual(len(self.cards()), 1)
 
     def test_offer_grant_use_and_revoke(self):
         host, ph, s = self.host_phone()
@@ -556,9 +563,9 @@ class Flow(unittest.TestCase):
 
         async def go():
             # without the binding the plugin's script is unknown: denied without a card (as before)
-            res = await host.ask(JS, code, batch=False)
+            res = await self.run_card(host, s, JS, code, lambda ask: self.signed(ph, host, ask, ok=False))
             self.assertEqual(res["behavior"], "deny")
-            self.assertEqual(self.cards(), [])
+            self.assertEqual(len(self.cards()), 1)
             # with it: a computer.control passkey card that shows the script whole and says what 免问 would free
             res = await self.run_card(host, s, JS, code, lambda ask: self.signed(ph, host, ask, ["preauth:computer.control"]),
                                       bind=BIND)

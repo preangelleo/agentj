@@ -397,6 +397,8 @@ session.configure({
     openFriendsWanted();
     reversePairing = false;
     if (pendingRv) { const c = pendingRv; pendingRv = null; rvpair.approve(c).catch(() => {}); }
+    passkey.setChannel(session.channel());            // P566 (#350): own-key get() asks only for this computer's keys
+    readyCh = session.channel();                      // P566 review N1: the computer the cards on screen came from
     pkhandin.again();                                 // P565 追加 A: a passkey result whose answer the last drop swallowed
     api.myDeviceId().then((id) => { pkpeer.onReady(id); rerender(); });   // P561 追加 11: a replaced remote id drops its old request
     relay.onReady();
@@ -450,6 +452,7 @@ function onApp(m) {
   if (api.route(m) || blobs.handle(m) || media.handle(m)) return;
   switch (m.t) {
     case 'pair_guide': showPairGuide(m.kind); return;
+    case 'cmds_state': settings.setRunCmds(m.names); return;
     case 'preferences': setHostVersion(m.host?.version); relay.hostVersionIs(m.host?.version); relay.applyPreferences(m.value); settings.setPrefs(m.value, m.host); rerender(); if(m.problem)relay.configProblem(m.problem.error); return;
     case 'status': setAgentName(m.name); wechat.channelStatus(m); snap.setStatus(m); renderTg(); return;
     case 'busy': busy.setBusy(m); return;            // P150 (§22): who works in the background (display only)
@@ -458,7 +461,7 @@ function onApp(m) {
     case 'ask':
       if (snap.addAsk(m)) frontAsk(m);
       return;
-    case 'ask_done': friends.answerDone(m); snap.askDone(m); return;
+    case 'ask_done': friends.answerDone(m); snap.askDone(m); pkhandin.answered('ask:' + m.id); return;   // P566: a handed-in approval ended
     case 'answer_refused': relay.answerRefused(m); friends.answerRefused(m); snap.answerRefused(m); toast(t('fr.ask.failed'), 5000); return;
     case 'pair_ev': settings.onPairEv(m); return;    // P153 (§3.3): how the pairing this remote opened went
     case 'bots_tool_request': bots.toolRequest(m); return;
@@ -473,10 +476,10 @@ function onApp(m) {
     case 'ark_plan': rescue.onArkPlan(m); return;
     case 'reset_done': rescue.onDone(m); return;        // P332: a repair's end that reached this remote without its request
     case 'reset_step': return;                          // (steps of another remote's repair: its own card shows them)
-    case 'elev_progress': elevate.progress(m); return;
+    case 'elev_progress': elevate.progress(m); pkhandin.answered('elev:' + m.id); return;   // P566: the host took the handed-in answer
     case 'elev_out': elevate.output(m); return;        // P406 (§11.2): a running sudo command's masked output (the strip)
-    case 'elev_done': termhook.msg(m); elevate.done(m); return;
-    case 'elev_refused': termhook.msg(m); elevate.refused(m); return;   // ADR-A163: Face ID not accepted, the card stays open
+    case 'elev_done': termhook.msg(m); elevate.done(m); pkhandin.answered('elev:' + m.id); return;
+    case 'elev_refused': termhook.msg(m); elevate.refused(m); pkhandin.answered('elev:' + m.id); return;   // ADR-A163: Face ID not accepted, the card stays open
     case 'term_out': case 'term_confirm': case 'term_sudo': case 'term_close': termhook.msg(m); return;   // P408 (§38)
     case 'term_bang': case 'term_go': termhook.msg(m); return;   // P414 (§38.12 / §38.13): a 「!」 line's answer · the Agent opens the terminal
     case 'elev_grants': elevate.grants(m); return;     // #116 (§11.1): 10-minute same-class approvals + 「收回授权」
@@ -485,15 +488,15 @@ function onApp(m) {
     case 'ct_card_done': contacts.cardDone(m); return;
     case 'ct_card_err': contacts.cardErr(m); return;
     case 'pk_offer': offerPasskey(m).catch(() => {}); return;    // F20 (§12)
-    case 'pk_peer_done': case 'pk_peer_ask': case 'pk_peer_close': case 'pk_peer_answer_res': pkpeer.handle(m); return;   // P547: another remote approves
+    case 'pk_peer_done': case 'pk_peer_ask': case 'pk_peer_close': case 'pk_peer_answer_res': pkpeer.handle(m); if (m.t === 'pk_peer_answer_res') pkhandin.answered('peer:' + m.id); return;   // P547: another remote approves · P566: its handed-in answer
     case 'seat_xfer_state': seatxfer.onState(m); return;   // P547: the transfer code was issued / revoked / used
     case 'host_moved': hostMoved(m).catch(() => {}); return;    // P547: the seat moved to a new Agent J host
     case 'setup_card': setupcard.card(m); return;     // P115: the first-run checklist (host snapshot)
     case 'devs': case 'dev_pending': case 'dev_pair_end': if (!rvpair.onRemotes(m)) settings.onRemotes(m); return;   // P171 (§24) · P190 (§27)
     case 'secret_out': secretout.add(m); return;       // F32 (§18): a pickup card (no value)
-    case 'secret_out_val': secretout.value(m); return; // the value, after Face ID, to this session only
-    case 'secret_out_done': secretout.done(m); return;
-    case 'secret_out_err': secretout.failed(m); return;
+    case 'secret_out_val': secretout.value(m); pkhandin.answered('sout:' + m.id); return; // the value, after Face ID, to this session only
+    case 'secret_out_done': secretout.done(m); pkhandin.answered('sout:' + m.id); return;
+    case 'secret_out_err': secretout.failed(m); pkhandin.answered('sout:' + m.id); return;
     case 'wechat_state': wechat.route(m); relay.onForwardChanged(); return;
     case 'login_qr': logincard.add(m); return;          // P114: a sign-in QR card (only the QR, never chat history)
     case 'login_qr_done': logincard.done(m); return;
@@ -611,6 +614,7 @@ function takeoverNote(key) {
  *  uploads, queued and in-flight sends, the tray, the quote, the field and ↑↓ history; then the sealed records and their key. */
 async function forgetLocal() {
   showPairGuide(null);
+  pkhandin.reset();                                   // P566 review N3: no hand-in of the old pairing goes out after it
   forgetShare();
   relay.forgetLocal();
   friends.forget();
@@ -697,21 +701,47 @@ function showIdle() {
 // nothing slow runs between 「保存」 and navigator.credentials.create.
 // F32: 「设置 Face ID」 on a pickup card asks for an offer even after 「以后再说」 (pkForce, one offer).
 let pkForce = false;
+let readyCh = null;                                   // P566: the channel of the last ready session (null until the first)
 /** P555: this remote's key is on the Agent J host's record but not placed (pk_state unknown + a self-check challenge):
  *  one Face ID tap proves it here — no other remote. NOT async before get() (iOS gesture rule). → null when there is
  *  nothing to check, else a promise: true = 已设好, false = go on to a new key. */
 function selfCheck() {
   const c = pkNow && pkNow.ch === session.channel() && pkNow.s === 'unknown' ? pkNow.chk : null;
   if (!c || !passkey.canAssert()) return null;
+  const ch0 = pkNow.ch;
   pkNow.chk = null;                                   // one challenge, one try (the host sends a fresh one with pk_state)
   let p;
   try { p = passkey.approve(unb64u(c.fa_ch), c.fa, true, 'local'); } catch (e) { p = Promise.reject(e); }   // 'local': is it HERE (no QR)
   return p.then(async (fa) => {
     const { aa, ...proof } = fa;
-    const m = await session.ask1({ t: 'pk_check', n: c.n, fa: proof, ...(aa ? { aa } : {}) }, 'pk_check_res', 10000);
+    let m = await session.ask1({ t: 'pk_check', n: c.n, fa: proof, ...(aa ? { aa } : {}) }, 'pk_check_res', 10000);
+    // P566 (#364): the sheet cost the socket — the Agent J host keeps the challenge per device, so it is answered on the next one
+    if (m.t === 'offline' && await session.whenReady(30000) && session.channel() === ch0) m = await session.ask1({ t: 'pk_check', n: c.n, fa: proof, ...(aa ? { aa } : {}) }, 'pk_check_res', 10000);   // review N2: the same computer
     if (m.ok === true && m.s === 'local') { toast(pkassist.withBio('p555.pk.checked'), 4000); return true; }
     return false;
   }, () => false);
+}
+// P566 (#346, 董事长 10-28 18:5x: 「已设好」 had no way to check or redo it): 「测试一下」 = one Face ID tap over the Agent J
+// host's check challenge (pk_check, the P555 self-check — kept per device, so a drop of the socket behind the sheet does not
+// lose it); a pass changes nothing. A failure says why, with 「重新设置」 (the same set-up, no unpairing). NOT async before get().
+function testFaceId() {
+  const c = pkNow && pkNow.ch === session.channel() ? pkNow.chk : null;
+  if (!c || !passkey.canAssert()) { toast(pkassist.withBio('p566.pk.testNone'), 5000); return; }
+  const ch0 = pkNow.ch;
+  pkNow.chk = null; paintPkRow();                     // one challenge, one try (the Agent J host sends a fresh one)
+  const reset = () => { setupFaceId().catch(() => {}); };
+  let p;
+  try { p = passkey.approve(unb64u(c.fa_ch), c.fa, true, 'local'); } catch (e) { p = Promise.reject(e); }
+  p.then(async (fa) => {
+    const { aa, ...proof } = fa;
+    let m = await session.ask1({ t: 'pk_check', n: c.n, fa: proof, ...(aa ? { aa } : {}) }, 'pk_check_res', 10000);
+    if (m.t === 'offline' && await session.whenReady(30000) && session.channel() === ch0) m = await session.ask1({ t: 'pk_check', n: c.n, fa: proof, ...(aa ? { aa } : {}) }, 'pk_check_res', 10000);   // review N2: the same computer
+    if (m.ok === true) toast(pkassist.withBio('p566.pk.testOk'), 5000, 'success');
+    else toastAction(pkassist.withBio(m.t === 'pk_check_res' ? 'p566.pk.testBad' : 'p566.notSent'), t('p561.pk.reset'), reset, 10000);
+  }, (e) => {
+    const n = pkassist.errName(e);
+    toastAction(pkassist.withBio(n === 'WrongSeatKey' ? 'p566.pk.wrongSeat' : n === 'AbortError' ? 'p539.fail.abort' : 'p539.fail.cancel'), t('p561.pk.reset'), reset, 10000);
+  });
 }
 // P561 追加 11/12: 「这个浏览器不支持 Face ID」 only when this browser cannot make a key at all (passkey.setupSupport) — never the
 // pickup card's 「请到…手机上领取」 (sout.noFaceId), never a word that the owner said no
@@ -739,7 +769,10 @@ async function regOpts() {
   return { relayIndex: ri, channel: h.channel, hostPub: h.hostPub, tag: await pkTag(h.channel), name: agentName ?? DEFAULT_NAME, displaySuffix: t('pk.computer') };
 }
 pkpeer.configure({
-  ask: (o, want, ms) => session.ask1(o, want, ms), send: (o) => (o && o.t === 'pk_reg' ? pkhandin.handIn(o) : session.sendApp(o)),   // P565 追加 A: a made key is handed in, never lost with the socket
+  ask: (o, want, ms) => session.ask1(o, want, ms), send: (o) => (o && o.t === 'pk_reg' ? pkhandin.handIn(o)   // P565 追加 A: a made key is handed in, never lost with the socket
+    // P566 (#364): an approval of another remote's set-up carries this remote's Face ID — handed in the same way (≤ 2 min)
+    : o && o.t === 'pk_peer_answer' && o.ok ? pkhandin.put('peer:' + o.id, { send: (g) => session.sendApp(o, g), until: Date.now() + 120000, ch: readyCh }).then((ok) => { if (!ok) throw new Error('offline'); })   // review N1: the computer the card came from
+    : session.sendApp(o)),
   approve: passkey.approve,
   // P550 (P545 × P547): a key made after another remote's approval is this seat's Home Screen passkey hint too (pkSaved);
   // register() still reaches navigator.credentials.create in the tap's tick (no await before it)
@@ -759,7 +792,9 @@ pkassist.configure({ setupFaceId, openSettings: () => { if (!settings.isOpen()) 
 // P539: the computer's word on this remote's passkey; kept with the host record (like h.pk) so Settings shows it at once
 let pkNow = null;   // {ch, s}: only shown for the computer that said it
 function paintPkRow() {
-  pkassist.paintPkRow(pkNow && pkNow.ch === session.channel() ? pkNow.s : null, { row: $('set-pk-row'), label: $('set-pk-state'), note: $('set-pk-note'), setupBtn: $('set-pk-setup'), oldBtn: $('setup-faceid'), failed: passkey.failedHere() });
+  const here = pkNow && pkNow.ch === session.channel();
+  pkassist.paintPkRow(here ? pkNow.s : null, { row: $('set-pk-row'), label: $('set-pk-state'), note: $('set-pk-note'), setupBtn: $('set-pk-setup'), oldBtn: $('setup-faceid'), failed: passkey.failedHere(),
+    acts: $('set-pk-acts'), testBtn: $('set-pk-test'), canTest: !!(here && pkNow.chk) && passkey.canAssert() });   // P566 (#346)
   renderPhoneEnvironment();
 }
 // P550 (p198): the host record's passkey fields are read-modify-written one at a time — pk_state arrives right after pk_reg_res
@@ -774,8 +809,8 @@ async function pkStateGot(m) {
   const s = pkassist.pkState(m.s);
   if (!s) return;
   passkey.setOwnState(s);   // P555 d: every own-key get() says where to look (Touch ID here, not a phone QR)
-  const chk = s === 'unknown' && typeof m.fa === 'string' && typeof m.fa_ch === 'string' && typeof m.n === 'string' ? { fa: m.fa, fa_ch: m.fa_ch, n: m.n } : null;
-  pkNow = { ch: session.channel(), s, chk }; paintPkRow();   // P555: chk = the one-tap self-check (memory only)
+  const chk = (s === 'unknown' || s === 'local') && typeof m.fa === 'string' && typeof m.fa_ch === 'string' && typeof m.n === 'string' ? { fa: m.fa, fa_ch: m.fa_ch, n: m.n } : null;
+  pkNow = { ch: session.channel(), s, chk }; paintPkRow();   // P555: chk = the one-tap self-check (memory only) · P566: 「测试一下」 too
   await updHost((h) => h && h.approved && h.channel === session.channel() && h.pkState !== s && { ...h, pkState: s });
 }
 function draftBack(m) {
@@ -824,9 +859,12 @@ async function offerPasskey(m) {
   // cancelled / refused by the system (iPhone: no iCloud Keychain → no passkey can be saved): nothing changes; say why once
   try { reg = await passkey.register(nonce, { relayIndex: ri, channel: h.channel, hostPub: h.hostPub, tag, name, displaySuffix: t('pk.computer'), replace: m.replace || null }); } catch { toast(t(pkassist.osKey('pk.notSaved')), 8000); return; }   // P539: Android / Mac / Windows get their own steps
   pkRegId = reg.id;
-  pkhandin.handIn(reg);
+  pkhandin.handIn(reg, Date.now(), h.channel);        // P566 (#363): bound to the computer it was made for, never to a gap's null
 }
 // P565 追加 A: create()'s result survives the socket the system drops behind the fingerprint sheet (js/pkhandin.js)
+let approveHanding = false;                           // P566 (#364): the held 「正在补交…」 of an approval hand-in
+api.configureApprove({ handing: () => { approveHanding = true; notify({ kind: 'progress', text: t('p566.handing'), ms: 0 }); },
+  handed: () => { if (approveHanding) { approveHanding = false; toastOff(); } } });
 pkhandin.configure({ gen: () => session.gen(), channel: () => session.channel(), send: (reg, g) => session.sendApp(reg, g),
   waiting: () => notify({ kind: 'progress', text: pkassist.withBio('p565.pk.handing'), ms: 0 }), failed: () => toast(t('pk.saveFail'), 8000) });
 async function pkSaved(m) {
@@ -1420,6 +1458,8 @@ function wire() {
   $('badge-panel').addEventListener('click', (e) => { if (e.target === $('badge-panel')) toggleBadge(false); });
   $('setup-faceid').addEventListener('click', () => { closeMenu(); setupFaceId().catch(() => {}); });
   $('set-pk-setup').addEventListener('click', () => { setupFaceId().catch(() => {}); });   // P539
+  $('set-pk-test').addEventListener('click', () => testFaceId());                          // P566 (#346): straight from the tap
+  $('set-pk-reset').addEventListener('click', () => { setupFaceId().catch(() => {}); });   // P566 (#346): no unpairing first
   dbGet('host').then((h) => { if (h && h.approved && pkassist.pkState(h.pkState)) { pkNow = { ch: h.channel, s: h.pkState }; paintPkRow(); } }).catch(() => {});
   $('phone-env-dismiss').addEventListener('click', () => { phoneHintDismissed = true; renderPhoneEnvironment(); });
   $('phone-env-copy').addEventListener('click', async () => {

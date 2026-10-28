@@ -254,7 +254,10 @@ async def _prepare(agent, key: str, path: str, L: str, text: dict | None = None)
     _log(agent, "compact_prep", result="start")
     result = None
     try:
-        await asyncio.wait_for(agent.turn(text[L].format(path=path)), PREP_TIMEOUT)
+        if agent.kind == "codex" and applies(agent):
+            await _codex_prepare(agent, L, auto=text is PREP_AUTO)
+        else:
+            await asyncio.wait_for(agent.turn(text[L].format(path=path)), PREP_TIMEOUT)
     except asyncio.TimeoutError:
         result = "timeout"
         with contextlib.suppress(Exception):
@@ -277,6 +280,37 @@ async def _prepare(agent, key: str, path: str, L: str, text: dict | None = None)
     ok = result is None and after is not None and after != before
     _log(agent, "compact_prep", result="ok" if ok else (result or ("missing" if after is None else "unchanged")))
     return ok
+
+
+async def _codex_prepare(agent, language, auto=False):
+    """Host persists a bounded reply to the fixed no-follow handover target; the Agent requests no file permission."""
+    from . import privacy
+    previous = agent.collect
+    agent.collect = []
+    try:
+        instruction = ("只在最终回复里写完整 Markdown 交接：目标原话、进展、决定、路径、问题、下一步。不要调用工具，不要写文件，不要含凭据。" if language == "zh" else
+                       "Reply only with the full Markdown handover: original goal, progress, decisions, paths, open questions and next step. Do not call tools or write files. No credentials.")
+        prefix = ("Codex 很快会自动压缩。" if language == "zh" else "Codex will compact automatically soon. ") if auto else ""
+        await asyncio.wait_for(agent.turn(MARK + "\n" + prefix + instruction), PREP_TIMEOUT)
+        body = "\n\n".join(agent.collect).strip()
+        if not body.startswith("#") or len(body.encode()) > READ_MAX or getattr(agent, "halting", False):
+            return
+        body = privacy.owner_text(body)
+        with inbox.dot_dir(agent.cfg["dir"]) as d:
+            hd = inbox._open_dir(DIR, d, True)
+            try:
+                fd = os.open(FILE + ".md", os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o600, dir_fd=hd)
+                with os.fdopen(fd, "wb") as f:
+                    st = os.fstat(f.fileno())
+                    if not stat.S_ISREG(st.st_mode) or st.st_uid != os.getuid() or st.st_nlink != 1:
+                        raise inbox.Unsafe("handover target")
+                    f.truncate(0)
+                    os.fchmod(f.fileno(), 0o600)
+                    f.write(body.encode())
+            finally:
+                os.close(hd)
+    finally:
+        agent.collect = previous
 
 
 async def compacted(agent, prev_at: float | None = None, auto: bool = False) -> None:

@@ -278,7 +278,7 @@ test('app.js + js/*.js: only WebSocket egress, non-extractable keys, no plaintex
   assert.match(STORE, /export async function putSealed\(name, obj\) \{\n  const w = wipes;\n  const rec = await seal\(obj\);\n  if \(w === wipes\) await dbPut\(name, rec\);\n\}/, 'putSealed writes only ciphertext, and never after a wipe');
   // §10.14 / P33-X13: revoke wipes like unpair — drafts, history, the sealing key, and everything in memory
   assert.match(APP, /async function revoked\(why = 'revoked'\) \{\n  session\.closeSession\(\);\n[^}]*await forgetLocal\(\);/, 'revoked() wipes local records');   // 0.15.1: + why
-  assert.match(APP, /async function forgetLocal\(\) \{\n  showPairGuide\(null\);\n  forgetShare\(\);\n  relay\.forgetLocal\(\);\n  friends\.forget\(\);\n  snap\.S\.touched\.clear\(\); snap\.S\.handledWaiting = false;\n  blobs\.forgetAll\(\);\n  elevate\.clear\(\);\n  contacts\.clear\(\);\n  secretout\.clear\(\);\n  longtask\.clear\(\);\n  logincard\.clear\(\);\n  wechat\.reset\(\);\n  helpcard\.clear\(\);\n  setupcard\.clear\(\);\n  await wipeLocal\(\);\n\}/);   // F17: open sudo / secret cards go too; 0.16: the friends page's data too; F32: pickup cards (+ a shown value); 0.18: opening cards; P184: contact cards + the forward dialog; P411: screen-help cards
+  assert.match(APP, /async function forgetLocal\(\) \{\n  showPairGuide\(null\);\n  pkhandin\.reset\(\);[^\n]*\n  forgetShare\(\);\n  relay\.forgetLocal\(\);\n  friends\.forget\(\);\n  snap\.S\.touched\.clear\(\); snap\.S\.handledWaiting = false;\n  blobs\.forgetAll\(\);\n  elevate\.clear\(\);\n  contacts\.clear\(\);\n  secretout\.clear\(\);\n  longtask\.clear\(\);\n  logincard\.clear\(\);\n  wechat\.reset\(\);\n  helpcard\.clear\(\);\n  setupcard\.clear\(\);\n  await wipeLocal\(\);\n\}/);   // F17: open sudo / secret cards go too; 0.16: the friends page's data too; F32: pickup cards (+ a shown value); 0.18: opening cards; P184: contact cards + the forward dialog; P411: screen-help cards
   assert.doesNotMatch(APP.slice(APP.indexOf('async function revoked('), APP.indexOf('async function revoked(')+700), /saveDraft/, 'revocation never saves the draft');
   assert.match(STORE, /generateKey\(\{ name: 'AES-GCM', length: 256 \}, false, \['encrypt', 'decrypt'\]\)/, 'sealing key not extractable');
   assert.match(STORE, /for \(const k of \['draft', 'ihist', 'outbox', 'srch', 'local'\]\)/, 'unpair / re-pair wipes drafts, history, the offline queue, the search pages and the sealing key');
@@ -292,7 +292,9 @@ test('app.js + js/*.js: only WebSocket egress, non-extractable keys, no plaintex
   assert.match(OURS, /from '\.\/proto\/wire\.js'/);
   // signed decisions: approvals, question answers and control writes are Ed25519-signed with the device key
   const API = read(pub('js/api.js'));
-  assert.match(API, /approveMessage\(channel\(\), await myDeviceId\(\), p\.id, decision, p\.tool, p\.summary/);
+  // P566 (#363): signed for the channel the card was shown on (captured before the Face ID sheet; null in a reconnect gap)
+  assert.match(API, /const ch = channel\(\);/);
+  assert.match(API, /approveMessage\(ch, await myDeviceId\(\), p\.id, decision, p\.tool, p\.summary/);
   assert.match(API, /questionMessage\(channel\(\), await myDeviceId\(\), q\.id, clean \? 'answer' : 'cancel', q\.raw, clean\)/);
   assert.match(API, /crypto\.subtle\.sign\(\{ name: 'Ed25519' \}, sk\.priv, msg\)/);
   // read aloud never uses a network voice; share goes to the phone's own sheet; whoosh from our own origin

@@ -229,7 +229,19 @@ export function wantOf(credId, st = own, plain = isPlain(credId), ids = [credId]
 // passkeys」 again — and marked the row again. Now OWN = the newest key this browser saved (pk_reg_res ok): every own-key
 // get() asks for it first, and the mark counts only for that key. The 0.25.15 mark (`aj.pk.failed`, never cleared by a reset)
 // is dropped once (migration) — the first refusal marks again at once.
-const PLAIN = 'aj.pk.plain.', FAILED = 'aj.pk.failed2', OLD_FAILED = 'aj.pk.failed', OWN = 'aj.pk.own', TR = 'aj.pk.tr.';
+// P566 (#350, iPhone Air 10-28 16:03 「找不到了」 with nothing re-registered; five seat apps on one rpId): (1) one refusal never marks
+// it — the browser says NotAllowedError for a cancel, a timeout and a page sent to the background too. Only a refusal that came
+// back while the page stayed in front, well inside the timeout, counts, and only the SECOND such one in a row (the first one
+// switched the request form, P559 — 「先用宽松方式再试一次」) marks 「找不到了」. (2) OWN is kept per computer (channel): every
+// own-key get() asks only for keys of THIS seat — the card's own id and the newest key this browser saved for the same
+// computer, never another seat's. A key from 0.25.18 or older (no channel) is no longer asked for (the card's id still is).
+// (3) An answer with a credential this get() did not ask for (another seat's key) is a `WrongSeatKey` error: said as such,
+// nothing sent, nothing marked.
+const PLAIN = 'aj.pk.plain.', FAILED = 'aj.pk.failed2', OLD_FAILED = 'aj.pk.failed', OWN = 'aj.pk.own', TR = 'aj.pk.tr.', SUSPECT = 'aj.pk.suspect';
+export const GET_TIMEOUT = 60000;
+let chan = null;
+/** app.js on ready: the computer (channel) this page talks to — OWN is read and written for it alone. */
+export function setChannel(c) { chan = typeof c === 'string' && c ? c : null; }
 const store = () => { try { return globalThis.localStorage || null; } catch { return null; } };
 const getK = (k) => { try { return store()?.getItem(k) ?? null; } catch { return null; } };
 const setK = (k, v) => { try { const s = store(); if (s) { if (v === null) s.removeItem(k); else s.setItem(k, v); } } catch { /* private mode */ } };
@@ -245,21 +257,30 @@ export function transportsOf(id) {
   const tr = String(getK(TR + id) || '').split(',').filter((x) => KNOWN_TR.includes(x));
   return tr.length ? tr : null;
 }
-/** The credential ids to ask for: the newest key this browser saved first, then the card's (deduplicated). */
+/** P566: the newest key this browser saved for THIS computer (OWN = "<channel> <id>"), or null. */
+export function ownKey() {
+  const v = String(getK(OWN) || ''), i = v.indexOf(' ');
+  return i > 0 && chan && v.slice(0, i) === chan ? v.slice(i + 1) || null : null;
+}
+/** The credential ids to ask for: the newest key this browser saved for this computer first, then the card's (deduplicated). */
 export function ownIds(credId) {
-  const o = getK(OWN);
+  const o = ownKey();
   return o && o !== credId ? [o, credId] : [credId];
 }
 /** This device's own (newest) key was refused here since its last pass (Settings: 「这台遥控器的钥匙找不到了」). */
-export const failedHere = () => { const f = getK(FAILED), o = getK(OWN); return !!f && (!o || f === o); };
+export const failedHere = () => { const f = getK(FAILED), o = ownKey(); return !!f && (!o || f === o); };
+/** P566 (#350): a refusal that may mean 「no such key here」 — not a cancel / timeout / page sent to the background. */
+export const plainMiss = (err, { hidden = false, ms = 0 } = {}) => err === 'NotAllowedError' && !hidden && ms < GET_TIMEOUT - 5000;
 const changed = (was) => {   // P560: Settings repaints its row in this session too (app.js), not only after a reload
   if (was !== failedHere()) try { globalThis.dispatchEvent?.(new Event('agentj-pk-failed-change')); } catch { /* node tests */ }
 };
 /** After a get() for this remote's own key: ok = it passed; err = the rejection's name. → whether the next tap uses the plain form. */
-export function noteResult(credId, ok, plain = isPlain(credId), err = 'NotAllowedError') {
+export function noteResult(credId, ok, plain = isPlain(credId), err = 'NotAllowedError', info = {}) {
   const was = failedHere();
-  if (ok) setK(FAILED, null);
-  else if (err !== 'AbortError') setK(FAILED, credId);
+  if (ok) { setK(FAILED, null); setK(SUSPECT, null); }
+  else if (plainMiss(err, info)) {                    // P566 (#350): the second clear miss in a row (both forms tried) marks it
+    if (getK(SUSPECT) === credId) setK(FAILED, credId); else setK(SUSPECT, credId);
+  }
   if (!ok) setK(PLAIN + credId, plain ? null : '1');
   changed(was);
   return ok ? plain : !plain;
@@ -268,8 +289,8 @@ export function noteResult(credId, ok, plain = isPlain(credId), err = 'NotAllowe
  *  get() asks for first, and the old 「找不到了」 mark goes with the old key. */
 export function clearFailed(id = null) {
   const was = failedHere();
-  if (typeof id === 'string' && id) setK(OWN, id);
-  setK(FAILED, null);
+  if (typeof id === 'string' && id && chan) setK(OWN, chan + ' ' + id);   // P566: for this computer only
+  setK(FAILED, null); setK(SUSPECT, null);
   changed(was);
 }
 
@@ -281,16 +302,23 @@ export const canAssert = () => !!(globalThis.PublicKeyCredential && navigator.cr
  *  → a promise of the `fa` object {id, cd, ad, sig}; rejects on cancel / failure. */
 export function approve(challenge, credId, where = false, st = own) {
   const ids = st === 'borrowed' ? [credId] : ownIds(credId), key = ids[0], plain = isPlain(key);   // P561: the newest own key first
+  const doc = globalThis.document, t0 = Date.now();
+  let hidden = !!doc?.hidden;
+  const seen = () => { if (doc?.hidden) hidden = true; };   // P566 (#350): the page went to the background meanwhile
+  doc?.addEventListener?.('visibilitychange', seen);
+  const off = () => doc?.removeEventListener?.('visibilitychange', seen);
   return navigator.credentials.get({ publicKey: {
-    challenge, rpId: location.hostname, userVerification: 'required', timeout: 60000, ...wantOf(key, st, plain, ids),
+    challenge, rpId: location.hostname, userVerification: 'required', timeout: GET_TIMEOUT, ...wantOf(key, st, plain, ids),
   } }).then((cred) => {
-    if (st !== 'borrowed') noteResult(key, true, plain);
+    off();
     const r = cred.response;
     const out = { id: b64u(buf(cred.rawId)), cd: b64u(buf(r.clientDataJSON)), ad: b64u(buf(r.authenticatorData)), sig: b64u(buf(r.signature)) };
+    if (!ids.includes(out.id)) { const e = new Error('another seat'); e.name = 'WrongSeatKey'; e.wrongSeat = true; throw e; }   // P566 (#350)
+    if (st !== 'borrowed') noteResult(key, true, plain);
     const a = where ? attachmentOf(cred) : null;    // P555 self-check: + where the key lives (`aa`, advisory)
     if (a) out.aa = a;
     return out;
-  }, (e) => { if (st !== 'borrowed') noteResult(key, false, plain, e && e.name); throw e; });
+  }, (e) => { off(); if (st !== 'borrowed') noteResult(key, false, plain, e && e.name, { hidden, ms: Date.now() - t0 }); throw e; });
 }
 
 // ---------------------------------------------------------------- F32 (P73, ADR-A180, PROTOCOL §18): the secret pickup card

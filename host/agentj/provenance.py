@@ -120,7 +120,7 @@ def normalize(src) -> dict:
     if not isinstance(src, dict):
         return {"kind": "unknown", "role": "group"}
     kind, role = src.get("kind"), src.get("role")
-    if kind in ("same_owner", "friend_task", "wechat_task") and role == "task":
+    if kind in ("same_owner", "friend_task", "wechat_task", "scheduled_task") and role == "task":
         return {"kind": kind, "role": "task"}
     if kind == "phone" and role == "owner":
         return phone()
@@ -181,7 +181,7 @@ def owner_channel_turn(agent) -> str | None:
 def rank(src) -> int:
     """0 the owner's side · 1 a delegated task (same owner / friend: a card, no owner-only path) · 2 anyone else (refused)."""
     s = normalize(src)
-    return 0 if is_owner(s) else (1 if s["kind"] in ("same_owner", "friend_task", "wechat_task") else 2)
+    return 0 if is_owner(s) else (1 if s["kind"] in ("same_owner", "friend_task", "wechat_task", "scheduled_task") else 2)
 
 
 def stricter(a, b):
@@ -194,6 +194,32 @@ def stricter(a, b):
 _UNSET = object()
 _REQUEST = contextvars.ContextVar("agentj_request_source", default=_UNSET)
 _PAIRED_REQUEST = contextvars.ContextVar("agentj_paired_request", default=_UNSET)
+_TASK = contextvars.ContextVar("agentj_task_run", default=None)
+
+
+def task_scope():
+    return _TASK.get()
+
+
+@contextlib.contextmanager
+def task_request(scope):
+    """Host-only task capability; never taken from request JSON."""
+    token = _TASK.set(scope)
+    try:
+        yield
+    finally:
+        _TASK.reset(token)
+
+
+@contextlib.contextmanager
+def task_run():
+    """Delegation expires for all children when the admitted run ends."""
+    scope = {"live": True}
+    try:
+        with task_request(scope), request_source({"kind": "scheduled_task", "role": "task"}):
+            yield scope
+    finally:
+        scope["live"] = False
 
 
 def _paired_source():
@@ -224,9 +250,7 @@ def paired_request(verify):
 
 @contextlib.contextmanager
 def request_source(src):
-    """P426 (S3): a request whose origin is not this turn's Send — an OpenCode sub-agent started in an earlier non-owner
-    turn, the main session OpenCode woke by itself after one finished. Inside, every check below takes the stricter of this
-    source and the current turn's (per asyncio task: a contextvar)."""
+    """P426 S3: a request's own origin (e.g. an earlier OpenCode child). Checks take the stricter of this and the turn."""
     tok = _REQUEST.set(normalize(src))
     try:
         yield
@@ -235,7 +259,7 @@ def request_source(src):
 
 
 def _delegated(agent) -> bool:
-    return turn_source(agent)["kind"] in ("same_owner", "friend_task", "wechat_task")
+    return rank(turn_source(agent)) == 1
 
 
 def turn_source(agent):
@@ -243,6 +267,9 @@ def turn_source(agent):
     paired = _paired_source()
     if paired is not _UNSET:
         return paired
+    scope = _TASK.get()
+    if scope is not None:
+        return {"kind": "scheduled_task", "role": "task"} if scope.get("live") else normalize(None)
     send = getattr(agent, "cur_send", None)
     if send is not None:
         return normalize(getattr(send, "source", None))
@@ -299,6 +326,17 @@ def untrusted_turn(agent) -> bool:
         return not is_owner(paired)
     o = _REQUEST.get()
     return _untrusted(agent) or (o is not _UNSET and rank(o) > 0)
+
+
+def refusal_text(agent) -> str:
+    s = turn_source(agent)
+    o = _REQUEST.get()
+    if o is not _UNSET:
+        s = stricter(s, o)
+    zh, en = {"system": ("系统提示", "System notice"), "email": ("访客邮件", "Guest email"),
+              "telegram": ("群聊或转发", "Group or forwarded message")}.get(s["kind"], ("未核验来源", "Unverified source"))
+    return (zh + "：不能请求主人批准，没有发卡片；不是主人手动拒绝。 / " +
+            en + ": cannot request owner approval; no card was sent. The owner did not reject this action.")
 
 
 def names_untrusted(text: str) -> bool:

@@ -486,6 +486,11 @@ export function deviceInfo(id) {
   return { id, name: s(d.name), label: s(d.label) || s(d.name), named_by: d.named_by === 'owner' ? 'owner' : 'device', self_name: s(d.self_name) };
 }
 /** app.js: every `preferences` message from the host (value + the host ≥ 0.15 `host` block). */
+export function setRunCmds(names) {
+  if (!Array.isArray(names)) return;
+  hostInfo = {...(hostInfo || {}), run_cmds:names};
+  cmdrun.render(hostInfo);
+}
 export function setPrefs(value, host) {
   prefs = value && typeof value === 'object' ? value : null;
   hostInfo = host && typeof host === 'object' ? host : null;

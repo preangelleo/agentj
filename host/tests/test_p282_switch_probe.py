@@ -197,24 +197,14 @@ class WayBack(unittest.TestCase):
         return sw.worker(st, target, None, probe=probe, ctl=fake, restart=fake.restart, status=UP,
                          ready=lambda st, limit: "idle", sleep=self.clock.sleep, clock=self.clock, **kw)
 
-    def test_no_way_back_refuses_and_changes_nothing(self):
-        """The Mac seat: on Claude Code, which the service cannot call; OpenCode works — switching would be one-way."""
+    def test_broken_original_harness_does_not_block_escape(self):
         st = mk_state(self.tmp.name, "claude")
-        raw = st.config()["agent"]
         fake = FakeServe(st, "claude")
         seen = []
-        self.assertEqual(self.job(st, fake, "opencode", probe_by({"opencode": True}, seen)), 1)
+        self.assertEqual(self.job(st, fake, "opencode", probe_by({"opencode": True}, seen)), 0)
         self.assertEqual(seen, ["opencode", "claude"])
-        self.assertEqual((st.config()["agent"], fake.restarts), (raw, 0))
-        rec = sw.read_receipt(st)
-        self.assertEqual((rec["status"], rec["reason"], rec["back"]), ("failed", "no_way_back", "not_logged_in"))
-        self.assertIn({"cmd": "harness_progress", "phase": "probe_back", "to": "opencode", "from": "claude"}, fake.calls)
-        r = {"ok": False, "reason": "no_way_back", "back": "not_logged_in", "target": "opencode", "from": "claude"}
-        zh = sw._say(r, "zh")
-        self.assertIn("切不回 Claude Code", zh)
-        self.assertIn("--force", zh)
-        self.assertIn("/login", zh)
-        self.assertIn("no way back to Claude Code", sw._say(r, "en"))
+        self.assertEqual(st.agent_config()["kind"], "opencode")
+        self.assertEqual(sw.read_receipt(st)["back"], "not_logged_in")
 
     def test_force_switches_and_undo_returns_without_a_gate(self):
         st = mk_state(self.tmp.name, "claude", model="claude-opus-5-5", effort="high")

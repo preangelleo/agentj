@@ -22,7 +22,7 @@ import time
 from . import controls, passkey, privacy, wire
 
 # The whole whitelist. name → (argv after `agentj`, why it is safe). Nothing that stops, deletes, revokes, pairs, sets a
-# preference, installs or touches a key is here; changes go through their own switches / signed cards.
+# preference, installs or touches a key is here, except the P567 fixed emergency AI switches (signed + UV).
 RUN_CMDS = {
     "doctor": (("doctor", "--read-only"), "read-only self check; doctor's contract is one line per check and never a secret"),
     "reconnect": (("doctor", "--reconnect"), "repairs only Agent J's own link (service · relay · Agent) — the same steps as "
@@ -32,6 +32,16 @@ RUN_CMDS = {
     "rescue_status": (("rescue", "status"), "read-only: the rescue watchdog's state and whitelisted log metadata"),
     "update_check": (("update", "check"), "read-only: compares versions, installs nothing"),
 }
+for _h in ("claude", "codex", "opencode", "kimi", "qwen", "dsh"):
+    RUN_CMDS["switch_" + _h] = (("agent", "switch", _h, "--force"), "owner-confirmed emergency AI switch")
+
+
+def available_commands():
+    from . import harness
+    installed = {r["name"] for r in harness.detect()["harnesses"] if r["installed"] and r["supported"]}
+    return [n for n in RUN_CMDS if not n.startswith("switch_") or n[7:] in installed]
+
+
 # Only this argv has a whole-CLI zero-write contract (including startup migration).
 READ_CMDS = frozenset(('doctor',))
 TIMEOUT = 120          # s per run (doctor --reconnect may wait for the relay)

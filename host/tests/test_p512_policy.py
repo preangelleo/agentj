@@ -380,7 +380,7 @@ class EntryMatrix(unittest.IsolatedAsyncioTestCase):
         try:
             for tool,want in (('Read',None),('Write',None),('Delete','ask'),
                               ('Bash',None),('mcp__fs__write_file',None),
-                              ('mcp__fs__delete_file','ask'),('mcp__fs__unknown','deny')):
+                              ('mcp__fs__delete_file','ask'),('mcp__unknown','deny')):
                 with self.subTest(tool=tool):
                     result=await f.event('PreToolUse',tool,{'file_path':'fixture.txt'})
                     self.assertEqual(result.get('hookSpecificOutput',{}).get('permissionDecision'),want)
@@ -395,11 +395,11 @@ class EntryMatrix(unittest.IsolatedAsyncioTestCase):
         for kind in ('codex','opencode'):
             host=NS(ask=AsyncMock(return_value={'behavior':'allow'}),stopped=lambda:False,emit=lambda *a,**k:None)
             guard=RiskGuard(NS(host=host,kind=kind,cfg={'shared_session_id':'fixture'}))
-            for tool in ('Read','Write','Delete','exec_command','mcp__fs__unknown'):
+            for tool in ('Read','Write','Delete','exec_command','mcp__unknown'):
                 host.ask.reset_mock()
                 result=await guard.hook_event({'hook_event_name':'PreToolUse','session_id':'fixture',
                                              'tool_name':tool,'tool_input':{'path':'fixture.txt'}})
-                if tool=='mcp__fs__unknown':
+                if tool=='mcp__unknown':
                     self.assertEqual(result['hookSpecificOutput']['permissionDecision'],'deny')
                     host.ask.assert_not_awaited()
                 elif tool in ('Read','Write','exec_command'):host.ask.assert_not_awaited()
@@ -414,7 +414,7 @@ class EntryMatrix(unittest.IsolatedAsyncioTestCase):
         from test_danger import Hook
         hook = Hook()
         for tool, want in (('Read', None), ('Write', None), ('Bash', None),
-                           ('Delete', 'ask'), ('mcp__fs__unknown', 'deny')):
+                           ('Delete', 'ask'), ('mcp__unknown', 'deny')):
             with self.subTest(tool=tool):
                 result = hook.run_hook({'tool_name': tool, 'tool_input': {'command': 'ls', 'file_path': 'fixture.txt'}})
                 self.assertEqual(result.returncode, 0)
@@ -448,7 +448,7 @@ class EntryMatrix(unittest.IsolatedAsyncioTestCase):
                      ('Bash', {'command':'stripe payment_intents create'}, 'ask'),
                      ('Bash', {'command': '$PY -m tests'}, 'ask'),
                      ('Bash', {'command': 'bash -c "$CMD"'}, 'ask'),
-                     ('settings.write', {}, 'ask'), ('mcp__fs__unknown', {}, 'deny')]
+                     ('settings.write', {}, 'ask'), ('mcp__unknown', {}, 'deny')]
             for tool, inp, want in cases:
                 if research and tool != 'Read' and not (tool == 'Bash' and inp.get('command') in ('printf hello','ls','git status')):
                     want = 'deny'
@@ -511,7 +511,7 @@ class EntryMatrix(unittest.IsolatedAsyncioTestCase):
             adapter._answer = lambda rid, res=None, error=None: replies.append(res)
             adapter.client = NS(request=AsyncMock(return_value=(200, {})))
             for tool, permission in (('Read', 'read'), ('Write', 'edit'), ('Bash', 'bash'),
-                                     ('mcp__fs__unknown', 'fs__unknown')):
+                                     ('mcp__unknown', 'unknown')):
                 host.asked.clear()
                 inp = {'command': 'ls', 'file_path': 'fixture.txt'}
                 if kind == 'codex':
@@ -544,7 +544,7 @@ class EntryMatrix(unittest.IsolatedAsyncioTestCase):
             session.execution_env=lambda *args:{}
             session._execute=AsyncMock(return_value=('', '', 0))
             friend={'id':'fixture'}
-            for tool in (None,'Read','Write','Delete','Bash','mcp__fs__unknown','answer'):
+            for tool in (None,'Read','Write','Delete','Bash','mcp__unknown','answer'):
                 parsed={'sid':None,'error':None,'text':'{"decision":"reply","text":"hello","topic":"sample"}',
                         'tokens':1,'tools':[] if tool is None else [tool]}
                 with patch('agentj.peer_session.fence.problem',return_value=None), \

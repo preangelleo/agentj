@@ -31,7 +31,9 @@ const T = await import('../public/js/t.js');
 const read = (p) => readFileSync(new URL(p, import.meta.url), 'utf8');
 const ID = Buffer.alloc(16, 7).toString('base64url');
 
-test('the first refusal of the own key marks it; an interruption does not; a pass or a new key clears it', () => {
+// P566 (#350, iPhone Air 10-28 16:03): one refusal no longer marks it (a cancel / timeout / page in the background say the same
+// NotAllowedError) — the second clear miss in a row does (the first switched the request form)
+test('the second clear refusal of the own key marks it; an interruption does not; a pass or a new key clears it', () => {
   mem.clear();
   const seen = [];
   const had = globalThis.dispatchEvent;
@@ -40,7 +42,13 @@ test('the first refusal of the own key marks it; an interruption does not; a pas
     F.noteResult(ID, false, false, 'AbortError');
     assert.equal(F.failedHere(), false);                  // switched away: says nothing about the key
     F.noteResult(ID, false, false, 'NotAllowedError');
-    assert.equal(F.failedHere(), true);                   // 「No passkeys available」 / cancelled: marked at once
+    assert.equal(F.failedHere(), false);                  // P566: one refusal — maybe a cancel — never marks
+    F.noteResult(ID, false, false, 'NotAllowedError', { hidden: true, ms: 900 });
+    assert.equal(F.failedHere(), false);                  // the page went to the background meanwhile: not a miss
+    F.noteResult(ID, false, false, 'NotAllowedError', { ms: 59000 });
+    assert.equal(F.failedHere(), false);                  // ran into the timeout: not a miss
+    F.noteResult(ID, false, true, 'NotAllowedError', { ms: 800 });
+    assert.equal(F.failedHere(), true);                   // the second clear miss in a row (the other form) → 找不到了
     assert.deepEqual(seen, ['agentj-pk-failed-change']);
     F.clearFailed();                                      // pk_reg_res ok: a new key of this device's own
     assert.equal(F.failedHere(), false);
@@ -57,6 +65,8 @@ test('approve(): the rejection name reaches noteResult (AbortError leaves Settin
   await assert.rejects(F.approve(new Uint8Array(32), ID, false, 'local'));
   assert.equal(F.failedHere(), false);
   name = 'NotAllowedError';
+  await assert.rejects(F.approve(new Uint8Array(32), ID, false, 'local'));
+  assert.equal(F.failedHere(), false);                    // P566: the first one never marks
   await assert.rejects(F.approve(new Uint8Array(32), ID, false, 'local'));
   assert.equal(F.failedHere(), true);
   mem.clear();
@@ -125,20 +135,21 @@ test('migration: the 0.25.15 mark is dropped once on load', () => {
 
 test('a saved key is asked for first, even from a card that still names the old one; a refusal marks the new key', async () => {
   mem.clear();
-  F.noteResult(ID, false, false, 'NotAllowedError');
+  F.setChannel('CH1');                                    // P566: OWN is kept per computer
+  F.noteResult(ID, false, false, 'NotAllowedError'); F.noteResult(ID, false, true, 'NotAllowedError');
   assert.equal(F.failedHere(), true);
   F.clearFailed(NEW);                                     // pk_reg_res ok after 「重新设置」
   assert.equal(F.failedHere(), false);
   assert.deepEqual(F.ownIds(ID), [NEW, ID]);
   assert.deepEqual(F.ownIds(NEW), [NEW]);
-  F.noteResult(ID, false, false, 'NotAllowedError');      // an old-key refusal (an old page) no longer marks the row
+  F.noteResult(ID, false, false, 'NotAllowedError'); F.noteResult(ID, false, true, 'NotAllowedError');   // an old-key refusal (an old page) no longer marks the row
   assert.equal(F.failedHere(), false);
   let asked = null, ok = true;
   Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { credentials: { get: async (o) => {
     asked = o.publicKey;
     if (!ok) { const e = new Error('x'); e.name = 'NotAllowedError'; throw e; }
     const b = (n) => new Uint8Array(n).buffer;
-    return { rawId: Buffer.from(NEW, 'base64url'), response: { clientDataJSON: b(4), authenticatorData: b(37), signature: b(8) } };
+    return { rawId: Buffer.from(idsOf(o.publicKey)[0], 'base64url'), response: { clientDataJSON: b(4), authenticatorData: b(37), signature: b(8) } };   // the first key it was asked for
   } } } });
   const fa = await F.approve(new Uint8Array(32), ID, false, 'local');   // the card still says ID
   assert.deepEqual(idsOf(asked), [NEW, ID]);
@@ -146,7 +157,11 @@ test('a saved key is asked for first, even from a card that still names the old 
   assert.equal(fa.id, NEW);
   ok = false;
   await assert.rejects(F.approve(new Uint8Array(32), ID, false, 'local'));
-  assert.equal(F.failedHere(), true);                    // the newest key itself was refused → 「找不到了」
+  await assert.rejects(F.approve(new Uint8Array(32), ID, false, 'local'));
+  assert.equal(F.failedHere(), true);                    // the newest key itself was refused twice → 「找不到了」
+  F.setChannel('CH2');                                    // P566 (#350): another computer — this seat's newest key is not asked for there
+  assert.deepEqual(F.ownIds(ID), [ID]);
+  F.setChannel('CH1');
   mem.clear();
   ok = true;
   await F.approve(new Uint8Array(32), ID, false, 'borrowed');
@@ -186,7 +201,8 @@ test('Settings layout: words on top, the button under them, left-aligned (static
 test('a passkey answer waits for the reconnected session instead of 「没发出去」 (static + whenReady)', async () => {
   const api = read('../public/js/api.js');
   assert.match(api, /if \(!fa\) await sendApp\(out, g\);/);                        // no passkey: as before, pinned to its session
-  assert.match(api, /try \{ await sendApp\(out, gen\(\) \|\| await whenReady\(\)\); \}\s*catch \{ const g2 = await whenReady\(\); if \(!g2\) throw new Error\('offline'\); await sendApp\(out, g2\); \}/);
+  // P566 (#364): handed in through pkhandin — the first ready connection, and again after a reconnect that swallowed it
+  assert.match(api, /const sent = await handIn\('ask:' \+ p\.id, \{ send: \(g2\) => sendApp\(out, g2\), until: Date\.now\(\) \+ APPROVE_HANDIN_MS, ch,/);
   const S = await import('../public/js/session.js');
   const t0 = Date.now();
   assert.equal(await S.whenReady(300), null);                                        // never connected → null after the wait

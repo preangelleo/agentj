@@ -122,8 +122,8 @@ def bearer_call(method: str, url: str, token: str, body: dict | None, timeout: f
             status, raw = r.status, r.read(MAX_RESPONSE + 1)
     except urllib.error.HTTPError as e:
         status, raw = e.code, e.read(1 << 16)
-    except Exception:
-        raise SupportError("连不上 Agent J 服务器 / cannot reach the Agent J server (network)")
+    except Exception as e:  # class name only
+        raise SupportError(f"连不上 Agent J 服务器 / cannot reach the Agent J server (network, {type(e).__name__})")
     try:
         obj = json.loads(raw) if raw and len(raw) <= MAX_RESPONSE else {}
     except ValueError:

@@ -44,6 +44,7 @@ DIGEST_LABEL = "agentj-pk-peer-v1"
 CHECK_KIND = "pk_check"
 CHECK_DIGEST = hashlib.sha256(b"agentj-pk-check-v1").hexdigest()
 CHECK_TTL = 600
+CHECKS = 4            # P566: open self-check challenges kept per device
 HOST_BY = "host"                                   # r.by of a terminal approval (the page words it)
 HOST_MISS_N, HOST_MISS_WINDOW = 5, 600             # wrong 对照码 at the terminal before it stops listening for a while
 
@@ -73,7 +74,9 @@ class Desk:
         self.host, self.clock = host, clock
         self.reqs: dict[str, Req] = {}
         self.hits: dict[str, list[float]] = {}
-        self.checks: dict[str, tuple[str, str, float]] = {}     # P555: cid → (n, device, expiry) of its one open self-check
+        # P555: open self-checks. P566 (#364): kept per DEVICE (≤ CHECKS each, CHECK_TTL), not per socket — the Face ID sheet's drop
+        # gave the answer to a new socket, whose own pk_state already carried a fresh challenge; each n still answers once
+        self.checks: dict[str, list[tuple[str, float]]] = {}
         self.host_misses: list[float] = []
 
     # ------------------------------------------------------------ helpers
@@ -181,34 +184,49 @@ class Desk:
 
     # ------------------------------------------------------------ P555 self-check of a key the host cannot place
     def check_fields(self, s) -> dict:
-        """With `pk_state`: a fresh self-check challenge when this device's key is `unknown`, else nothing."""
-        self.checks.pop(s.cid, None)
+        """With `pk_state`: a fresh self-check challenge when this device's key is `unknown` — P566 (#346): or `local` (Settings'
+        「测试一下」 on 「已设好」; a pass changes nothing, the answer only says the key works here) — else nothing."""
         pk = self.host.st.passkey_of_device(s.device)
-        if not pk or passkey.pk_state(pk) != "unknown":
+        if not pk or passkey.pk_state(pk) not in ("unknown", "local"):
             return {}
         n = wire.b64u(secrets.token_bytes(16))
-        self.checks[s.cid] = (n, s.device, self.clock() + CHECK_TTL)
+        now = self.clock()
+        live = [c for c in self.checks.get(s.device, []) if c[1] > now]
+        self.checks[s.device] = (live + [(n, now + CHECK_TTL)])[-CHECKS:]
         ch = passkey.elevate_challenge(self.host.channel, s.device, n, CHECK_KIND, n, CHECK_DIGEST)
         return {"fa": pk["id"], "fa_ch": wire.b64u(ch), "n": n}
 
     async def _check(self, s, obj: dict) -> None:
         h = self.host
-        c = self.checks.pop(s.cid, None)
+        mine, n = self.checks.get(s.device, []), obj.get("n")
+        c = next((x for x in mine if isinstance(n, str) and x[0] == n), None)
+        if c is not None:                         # single use, whatever the outcome
+            rest = [x for x in mine if x is not c]
+            if rest:
+                self.checks[s.device] = rest
+            else:
+                self.checks.pop(s.device, None)
         pk = h.st.passkey_of_device(s.device)
+        was = h.st.passkey_state(s.device)        # P566 review S2: before passkey_count notes a working `unknown` key
         res = {"t": "pk_check_res", **({"r": obj["r"]} if wire.is_rid(obj.get("r")) else {})}   # the page's ask1 waits on `r`
         try:
-            if not c or c[1] != s.device or c[2] <= self.clock() or obj.get("n") != c[0] or not pk:
+            if not c or c[1] <= self.clock() or not pk:
                 raise passkey.PasskeyError("expired", "no_check")
             f = passkey.approval_fields(obj.get("fa"))
             if f["id"] != pk["id"]:
                 raise passkey.PasskeyError("bad", "credential")
-            ch = passkey.elevate_challenge(h.channel, s.device, c[0], CHECK_KIND, c[0], CHECK_DIGEST)
+            ch = passkey.elevate_challenge(h.channel, s.device, n, CHECK_KIND, n, CHECK_DIGEST)
             h.st.passkey_count(s.device, pk["id"], passkey.verify_assertion(pk, f, ch))
         except (passkey.PasskeyError, ValueError, TypeError) as e:
             h.st.log("pk_check", device=s.device, result="fail", reason=getattr(e, "detail", type(e).__name__))
-            return await h.send_app(s, {**res, "ok": False})
+            await h.send_app(s, {**res, "ok": False})
+            # P566 (#346): a fresh challenge for the next 「测试一下」 / self-check (each one answers once)
+            return await h.send_app(s, {"t": "pk_state", "s": h.st.passkey_state(s.device), **self.check_fields(s)})
         local = passkey.attachment(obj.get("aa")) != "cross-platform"
-        h.st.passkey_local(s.device, pk["id"], local)
+        # P566 review S2: 「测试一下」 on a key already known as this device's own changes nothing (`aa` is the browser's unsigned
+        # word); only an `unknown` record is placed by its self-check, as in P555
+        if was == "unknown":
+            h.st.passkey_local(s.device, pk["id"], local)
         h.st.log("pk_check", device=s.device, result="ok", local=local)
         await h.send_app(s, {**res, "ok": True, "s": h.st.passkey_state(s.device)})
         await h.remotes.changed()                 # the remotes list and this device's own row repaint

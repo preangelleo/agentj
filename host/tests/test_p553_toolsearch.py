@@ -86,7 +86,7 @@ class Registry(unittest.TestCase):
     def test_registered_rows_unchanged(self):
         for tool, want in (("Read", "allow"), ("Write", "allow"), ("Delete", "uv"), ("WebSearch", "allow"),
                            ("WebFetch", "allow"), ("Agent", "allow"), ("AskUserQuestion", "hold"),
-                           ("mcp__fs__delete_file", "uv"), ("mcp__fs__unknown", "deny"), ("Invented", "deny")):
+                           ("mcp__fs__delete_file", "uv"), ("mcp__unknown", "deny"), ("Invented", "deny")):
             with self.subTest(tool=tool):
                 self.assertEqual(p.main_requirement(tool, {"file_path": "fixture.txt"}), want)
 
@@ -154,10 +154,10 @@ class HookProcess(unittest.TestCase):
         x = danger.encode_extra([])
         for argv in ([x], [x, "harness"], [x, "research"]):
             with self.subTest(argv=argv):
-                out = self.run_hook(argv, "mcp__x__unknown_op" if "research" not in argv else "Invented", {})
+                out = self.run_hook(argv, "mcp__unknown_op" if "research" not in argv else "Invented", {})
                 self.assertEqual(out["permissionDecision"], "deny")
                 if "research" not in argv:
-                    self.assertIn("未知动作，已拒绝：mcp__x__unknown_op", out["permissionDecisionReason"])
+                    self.assertIn("未知动作，已拒绝：mcp__unknown_op", out["permissionDecisionReason"])
                     self.assertIn("this is an Agent J defect", out["permissionDecisionReason"])
                     self.assertNotIn(OLD_ASK, out["permissionDecisionReason"])
 
@@ -212,8 +212,8 @@ class CodexOpenCodeShared(unittest.IsolatedAsyncioTestCase):
             st = FakeSt(d)
             host = types.SimpleNamespace(ask=mock.AsyncMock(), stopped=lambda: False, emit=lambda *a, **k: None, st=st, lang="zh")
             guard = shared_risk.RiskGuard(types.SimpleNamespace(host=host, kind="codex", cfg={"shared_session_id": "f"}))
-            self.assertFalse(await guard.check("mcp__x__unknown_op", {}))
-            self.assertTrue(guard.reason().startswith(p.unknown_text("mcp__x__unknown_op", "zh")))
+            self.assertFalse(await guard.check("mcp__unknown_op", {}))
+            self.assertTrue(guard.reason().startswith(p.unknown_text("mcp__unknown_op", "zh")))
             self.assertIn("不是主人拒绝的", guard.reason())                    # P539: why and what next stay
             self.assertTrue(await guard.check("tool_search", {"query": "x"}))
             self.assertEqual(json.loads(st.approvals_path.read_text())["reason"], "unknown_action")

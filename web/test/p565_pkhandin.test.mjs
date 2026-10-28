@@ -104,7 +104,7 @@ test('no connection within the window: 「没存上」 once', async () => {
 
 test('app.js: both paths hand in through pkhandin; no new offer sheet while one is open; 「已设好」 on the answer', () => {
   const app = read('../public/app.js');
-  assert.match(app, /pkhandin\.handIn\(reg\);/);                                    // direct offer
+  assert.match(app, /pkhandin\.handIn\(reg, Date\.now\(\), h\.channel\);/);             // direct offer (P566 #363: its computer)
   assert.match(app, /o\.t === 'pk_reg' \? pkhandin\.handIn\(o\)/);                  // peer-approved offer
   assert.doesNotMatch(app, /session\.sendApp\(reg, g\)\.catch\(\(\) => toast\(t\('pk\.saveFail'\)\)\)/);
   assert.match(app, /async function offerPasskey\(m\) \{\n  if \(pkhandin\.busy\(\)\) return;/);
