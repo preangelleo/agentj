@@ -103,7 +103,9 @@ class Consumers(unittest.IsolatedAsyncioTestCase):
                 el = elevate.Elevator.__new__(elevate.Elevator)
                 el.host, el.st, el.cards = h, h.st, {}
                 with patch('agentj.elevate.audit'):
-                    self.assertEqual((await el.request({'kind': 'secret'}))['result'], 'no_device' if owner else 'group_source')
+                    # P570: a host system turn (heartbeat) may ASK the owner (a card) — here no paired phone: no_device
+                    self.assertEqual((await el.request({'kind': 'secret'}))['result'],
+                                     'no_device' if owner or src == p.system() else 'group_source')
                 cs = contacts_serve.ContactService.__new__(contacts_serve.ContactService)
                 cs.host, cs.st = h, h.st
                 with patch('agentj.contacts_serve.C.read', return_value={}), patch('agentj.contacts_serve.C.get', return_value=None):
@@ -155,7 +157,9 @@ class Consumers(unittest.IsolatedAsyncioTestCase):
                 h._approvers = lambda: []
                 await h.ask('Bash', {'command': 'rm -rf /tmp/owned-fixture'})
                 await diskq.aflush()
-                self.assertEqual(approvals.read_log(st)[-1]['reason'], 'no_device' if owner else 'group_source')
+                # P570: a system turn asks like a delegated task (no paired phone here: no_device); unknown is refused
+                self.assertEqual(approvals.read_log(st)[-1]['reason'],
+                                 'no_device' if owner or src == p.system() else 'group_source')
                 h.seat_refusal = lambda: False
                 h.sends = NS(used=lambda *a: False, full=lambda *a: False)
                 h._accept = AsyncMock(return_value=NS(turn=3))
@@ -262,8 +266,9 @@ class Consumers(unittest.IsolatedAsyncioTestCase):
                 a.cur_send = NS(source=src)
                 result = await a.hook_event({'hook_event_name': 'PermissionRequest', 'session_id': 'owner',
                                             'tool_name': 'Bash', 'tool_input': {'command': 'git push origin'}})
-                self.assertEqual(h.ask.call_count, int(owner))
-                self.assertEqual(result['hookSpecificOutput']['decision']['behavior'], 'allow' if owner else 'deny')
+                asks = owner or src == p.system()      # P570: a host system turn reaches Host.ask (which decides)
+                self.assertEqual(h.ask.call_count, int(asks))
+                self.assertEqual(result['hookSpecificOutput']['decision']['behavior'], 'allow' if asks else 'deny')
                 # A real native prompt provides terminal evidence; synthetic input revokes it.
                 a.cur_send = None
                 await a.hook_event({'hook_event_name': 'UserPromptSubmit', 'session_id': 'owner', 'prompt': 'read the report'})
@@ -455,9 +460,10 @@ class ContinuationB(unittest.IsolatedAsyncioTestCase):
                             self.assertEqual(p.untrusted_turn(a), not p.is_owner(src))
                             decision = await a.hook_event({'hook_event_name': 'PermissionRequest', 'session_id': 'owner',
                                 'tool_name': 'Bash', 'tool_input': {'command': 'git push origin'}})
+                            asks = p.is_owner(src) or src == p.system()   # P570: a system turn asks; Host.ask decides
                             self.assertEqual(decision['hookSpecificOutput']['decision']['behavior'],
-                                             'allow' if p.is_owner(src) else 'deny')
-                            self.assertEqual(h.ask.call_count, int(p.is_owner(src)))
+                                             'allow' if asks else 'deny')
+                            self.assertEqual(h.ask.call_count, int(asks))
                             # A same-body system readback is not this phone request's echo.
                             read({'type': 'user', 'isMeta': True,
                                   'message': {'content': p.envelope('fixture', body, p.system())}})

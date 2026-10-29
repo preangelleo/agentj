@@ -701,6 +701,7 @@ class Host:
         self.upg: dict | None = None            # P203: the open upgrade confirmation card (one at a time, §29)
         from . import busy as busy_mod
         self.busy = busy_mod.Board(st.root, on_change=self.busy_changed, verify_sources=True)   # P150 (§22): who works in the background
+        self.busy.trusted = lambda: not provenance.untrusted_turn(self.agent) or bool(provenance.unattended_turn(self.agent))
         from .background_done import Notifier
         self.background_done = Notifier(self)
         self.busy_sent: str | None = None
@@ -4699,14 +4700,14 @@ class Host:
     def _parked_find(self, key: tuple):
         return next((a for a in self.asks.values() if a.parked and not a.fut.done() and a.park_key == key), None)
 
-    def _parked_take(self, key: tuple) -> dict | None:
+    def _parked_take(self, key: tuple, uv: bool = False) -> dict | None:
         ok = self.__dict__.setdefault("_parked_ok", {})
-        rec = ok.pop(key, None)
-        if rec is None or time.monotonic() > rec["until"] or self.st.sign_key(rec["device"]) != rec["sk"]:
+        rec = ok.pop(key, None)    # P570: a Face ID step only by a Face ID allow
+        if rec is None or time.monotonic() > rec["until"] or self.st.sign_key(rec["device"]) != rec["sk"] or uv and not rec.get("uv"):
             return None
         return rec
 
-    def _park(self, a: Ask, base: dict, summary: str, key: tuple) -> dict:
+    def _park(self, a: Ask, base: dict, summary: str, key: tuple, unattended: str | None = None) -> dict:
         """Nobody online after PARK_GRACE: the card stays (PARK_SECS), the Agent is told now; the answer settles later."""
         parked = [x for x in self.asks.values() if x.parked and not x.fut.done()]
         for old in parked[:max(0, len(parked) - approval_level.PARK_MAX + 1)]:
@@ -4717,7 +4718,8 @@ class Host:
         loop = asyncio.get_running_loop()
         timer = loop.call_later(approval_level.PARK_SECS, lambda: a.fut.done() or a.fut.set_result(("deny", None, None, None)))
         a.fut.add_done_callback(lambda f: (timer.cancel(), self._park_settle(a, base, summary)))
-        self.st.log("ask_parked", id=a.rid, tool=a.tool)
+        approvals.record(self.st, **base, decision="deny", reason="offline")
+        self.st.log("ask_parked", id=a.rid, tool=a.tool, reason="no_remote", **({"via": unattended} if unattended else {}))
         self.activity("decision", id=a.rid, tool=a.tool, result="parked", reason="offline", cats=a.cats, task=a.task,
                       summary=summary[:200])
         self.emit("ask_parked", id=a.rid)
@@ -4823,7 +4825,8 @@ class Host:
             self._goal_grant_tap(a, did, picks)
         if allowed and not self.stopped():
             self.__dict__.setdefault("_parked_ok", {})[a.park_key] = {
-                "rid": a.rid, "device": did, "sk": sk, "until": time.monotonic() + approval_level.PARK_OK_SECS}
+                "rid": a.rid, "device": did, "sk": sk, "until": time.monotonic() + approval_level.PARK_OK_SECS,
+                "uv": bool(a.require_passkey and a.uv_ok)}
         result = ("allow" if allowed else decision) if reason == "device" else {"timeout": "timeout", "estop": "stopped"}.get(reason, "gone")
         self.st.log("ask_done", id=a.rid, tool=a.tool, decision=decision, reason=reason, device=did, parked=True)
         self.activity("decision", id=a.rid, tool=a.tool, result=decision if reason == "device" else reason, reason=reason,
@@ -4861,7 +4864,8 @@ class Host:
             self.activity("auto", id=base["rid"], tool=a.tool, summary=a.summary, by="parked", task=self.task_label)
             return {"behavior": "allow", "updatedInput": a.tool_input}
         approvals.record(self.st, **base, decision="deny", reason="parked_wait")
-        msg = "用户在手机上拒绝了这个操作。" if a.fut.done() else f"手机上 {int(self.ask_ttl)} 秒内没有批准：默认拒绝。"
+        did = a.fut.done() and a.fut.result()[1]          # P570
+        msg = "用户在手机上拒绝了这个操作。" if did else _timeout_text(self.lang, int(self.ask_ttl))
         return {"behavior": "deny", "message": msg}
 
     def new_perm_env(self, background: str | None = None) -> dict:
@@ -5023,6 +5027,9 @@ class Host:
         if requirement == "uv":
             require_passkey = True
         delegated = provenance.delegated_turn(self.agent)
+        unattended = provenance.unattended_turn(self.agent) if avatar is None else None
+        if unattended:
+            delegated = True
         if avatar is not None:
             # P543 (#307): an owner-channel avatar's step — the main floor and cards, never a main-turn grant / level pass
             delegated, batch = True, False
@@ -5104,7 +5111,7 @@ class Host:
             approvals.record(self.st, **base, decision="allow", reason="dispatch")
             self.st.log("ask_done", id=rid, tool=tool, decision="allow", reason="dispatch")
             return {"behavior": "allow", "updatedInput": tool_input}
-        if lv != "safe" and not delegated and avatar is None and ttl is None and not own_pk:
+        if lv != "safe" and (not delegated or (unattended and lv == "harness")) and avatar is None and ttl is None and not own_pk:
             from . import background as bgmod   # P552 (#325 ②): background work, decided from the real call — never the model's words
             # the source is the request's own (a workflow run's permission claim / adapter, an order's socket), never a
             # host-wide flag a concurrent shared-session turn could ride on (review S3)
@@ -5113,17 +5120,18 @@ class Host:
             if bgk:
                 try:
                     keep = confirm_tier.harness_keeps(tool, tool_input, env=policy_env)
+                    floor = approval_level.harness_floor(tool, tool_input, v)
                 except Exception:  # noqa: BLE001 — cannot tell → the strictest step
                     keep = "delete"
                 if keep:
                     require_passkey, batch = True, False    # one of the four ③ kinds: Face ID, whoever runs it
                 elif (requirement == "uv" or opaque) and lv != "harness":
                     pass        # review B2: outside 「减少弹窗」 the level's own ③ floor (sudo, credentials, opaque) stays
-                elif tool not in approval_level.HARNESS_KEEPS and tool not in policy_registry.HOST_TOOLS and not (
-                        goal_mod.suspect(tool, tool_input, v) or approval_level.download_and_run(goal_mod.action_text(tool, tool_input))):
+                elif tool not in approval_level.HARNESS_KEEPS and tool not in policy_registry.HOST_TOOLS and not floor:
                     why = "dispatch_headless" if bgk.startswith("headless:") else "background"
                     approvals.record(self.st, **base, decision="allow", reason=why)
-                    self.st.log("ask_done", id=rid, tool=tool, decision="allow", reason=why, status=bgk)
+                    self.st.log("ask_done", id=rid, tool=tool, decision="allow", reason=why, status=bgk,
+                                **({"via": unattended} if unattended else {}))
                     self.activity("auto", id=rid, tool=tool, summary=summary, by=why, cats=v.cats, task=self.task_label)
                     return {"behavior": "allow", "updatedInput": tool_input}
         from . import preauth
@@ -5133,13 +5141,10 @@ class Host:
         if pa_action and (pg := await asyncio.to_thread(preauth.live, self.st, pa_action, pa_bind)) is not None:
             return self._preauth_use(pg, base, tool, tool_input, summary, v)   # P539: 「<remote> 批准过：Computer Use 免问」
         harness_card = False
-        # P559 (chairman 10-27, written: 「全放行下分身和主线程一样，中等风险也免卡」): under 全放行 an owner-channel avatar's step
-        # is decided exactly like the main conversation's — ① ② (and hold) pass; the four ③ kinds and an attack on Agent J
-        # itself keep Face ID below. Security review B1 (a channel account is weaker than a paired remote) noted in REPORT-559.
-        if lv == "harness" and (not delegated or avatar is not None) and ttl is None and not own_pk and tool not in approval_level.HARNESS_KEEPS:
-            # P551 (#320) 「审批跟随底层 Harness」: no approval layer of Agent J's own. P550 (chairman 10-26): Face ID only for
-            # the four ③ kinds (confirm_tier.harness_keeps); Agent J's own `agentj …` cards and anything the harness itself
-            # would not have asked run at once (logged); what the harness asked comes to the phone as it is.
+        # P559: under 全放行 an owner-channel avatar's step is decided like the main conversation's (REPORT-559)
+        if lv == "harness" and (not delegated or avatar is not None or unattended) and ttl is None and not own_pk \
+                and tool not in approval_level.HARNESS_KEEPS and not (unattended and tool == "AgentJSameOwnerAction"):
+            # P551 / P550 / P556: no approval layer of Agent J's own; Face ID only for the four ③ kinds + harness_floor
             try:   # no folder: the Agent may have cd'd, and a `cwd` field is the model's — relative paths are not scratch
                 keep = confirm_tier.harness_keeps(tool, tool_input, env=policy_env) or approval_level.harness_floor(
                     tool, tool_input, v)    # P556: + an attack on Agent J itself / fetch-and-run / an inline key going out
@@ -5148,21 +5153,19 @@ class Host:
             if keep:
                 require_passkey, batch = True, False
             else:
-                # P556 「全放行」: the harness runs at its widest permissions — what it would still have asked (OpenCode / ACP
-                # requests, Codex `untrusted`, a root Claude Code) Agent J answers itself; no harness card any more
                 grant = approval_level.level_grant(self.st)
                 approvals.record(self.st, **base, decision="allow", reason="level_harness",
                                  **({"grant": grant, "auto": "level"} if grant else {}))
                 self.st.log("ask_done", id=rid, tool=tool, decision="allow", reason="level_harness",
-                            **({"via": "avatar"} if avatar is not None else {}))
+                            **({"via": "avatar"} if avatar is not None else {"via": unattended} if unattended else {}))
                 self.activity("auto", id=rid, tool=tool, summary=summary, by="level_harness", cats=v.cats, task=self.task_label)
                 self.emit("auto", id=rid, tool=tool, grant=None)
                 line = summary.split("\n", 1)[0][:200]
                 self._post(self._send_ready, lambda s: {"t": "auto", "id": rid, "tool": tool, "summary": line, "by": "harness"})
                 return {"behavior": "allow", "updatedInput": tool_input}
         pkey = self._park_key(tool, isha)       # P336 N5: who is asking, fixed before any await
-        if not delegated and not require_passkey and ttl is None:
-            ok = self._parked_take(pkey)
+        if (not delegated or unattended) and (not require_passkey or unattended) and ttl is None:
+            ok = self._parked_take(pkey, uv=require_passkey)
             if ok is not None:                # P336 (#36): the owner allowed this exact step on its parked card
                 approvals.record(self.st, **base, decision="allow", reason="parked", device=ok["device"], grant=ok["rid"],
                                  auto="parked")
@@ -5250,7 +5253,9 @@ class Host:
             self.activity("decision", id=rid, tool=tool, result="deny", reason="no_device", cats=v.cats, summary=summary)
             self.emit("ask_done", id=rid, result="deny", reason="no_device")
             return {"behavior": "deny", "message": "没有能批准的已配对手机：默认拒绝。先用 agentj pair 配对一台手机。"}
-        parkable = not delegated and not require_passkey and ttl is None and gt != "reversible" and not host_card
+        parkable = ttl is None and gt != "reversible" and (
+            (not delegated and not require_passkey and not host_card) or
+            (bool(unattended) and (tool == "AgentJSameOwnerAction" or tool not in approval_level.HOST_CARDS + approval_level.HARNESS_KEEPS)))
         prev = self._parked_find(pkey) if parkable else None
         if prev is not None:                    # P336 (#36): the same step's card is already waiting on the phone
             return await self._parked_rewait(prev, base, gone, pkey)
@@ -5298,7 +5303,7 @@ class Host:
                                                                           approval_level.PARK_GRACE)),
                                              return_when=asyncio.FIRST_COMPLETED)
                 if not done and not self._online_approvers() and not self.stopped() and not self.stopping.is_set():
-                    return self._park(a, base, summary, pkey)   # the card waits on; the Agent does the independent work
+                    return self._park(a, base, summary, pkey, unattended)   # the card waits on; the Agent does the independent work
             done, _ = await asyncio.wait(waiters, timeout=max(0.0, a.deadline - time.monotonic()),
                                          return_when=asyncio.FIRST_COMPLETED)
             if a.fut in done:

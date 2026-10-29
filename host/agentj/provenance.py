@@ -328,19 +328,42 @@ def untrusted_turn(agent) -> bool:
     return _untrusted(agent) or (o is not _UNSET and rank(o) > 0)
 
 
+def unattended_send(send) -> bool:
+    return normalize(getattr(send, "source", None))["kind"] == "system" and not getattr(send, "hook_notice", None)
+
+
+def unattended_turn(agent) -> str | None:
+    """P570: "scheduled_task" | "system" (a host Send; no group envelope live) | None (ADR-P570)."""
+    if _paired_source() is not _UNSET:
+        return None
+    s = turn_source(agent)
+    o = _REQUEST.get()
+    if o is not _UNSET and o["kind"] != s["kind"]:
+        return None
+    if s["kind"] == "scheduled_task":
+        return "scheduled_task"
+    if s["kind"] != "system":
+        return None
+    fn = getattr(agent, "untrusted", None)
+    live = callable(fn) and fn()
+    send = getattr(agent, "cur_send", None)
+    return None if live and getattr(agent, "untrusted_foreign", True) or not (unattended_send(send) if send else live) else "system"
+
+
 def refusal_text(agent) -> str:
     s = turn_source(agent)
     o = _REQUEST.get()
     if o is not _UNSET:
         s = stricter(s, o)
     zh, en = {"system": ("系统提示", "System notice"), "email": ("访客邮件", "Guest email"),
+              "automation": ("主人的自动化发来的数据", "Data posted by the owner's automation"),
               "telegram": ("群聊或转发", "Group or forwarded message")}.get(s["kind"], ("未核验来源", "Unverified source"))
     return (zh + "：不能请求主人批准，没有发卡片；不是主人手动拒绝。 / " +
             en + ": cannot request owner approval; no card was sent. The owner did not reject this action.")
 
 
-def names_untrusted(text: str) -> bool:
-    return any('from-name="' + n + '"' in text for n in UNTRUSTED_NAMES)
+def names_untrusted(text: str, foreign: bool = False) -> bool:
+    return any('from-name="' + n + '"' in text for n in UNTRUSTED_NAMES if not (foreign and n == SYSTEM))
 
 
 def body(text: str, src=None) -> str:

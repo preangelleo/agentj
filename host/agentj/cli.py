@@ -2104,8 +2104,8 @@ def cmd_approvals(a) -> None:
                          "不要放宽状态目录权限。 / The AI sandbox cannot read approval records. Run "
                          "`agentj approvals --last 10 --json` in a terminal on the Agent J host; keep state permissions intact.") from None
     recs = every[-a.last:] if a.last else every
-    index = {str(r.get("id")): r for r in every if r.get("decision") == "allow_batch"
-             or (r.get("tool") == "agentj goal" and r.get("decision") == "allow")}
+    # P570: parents of auto lines; a park row shares its settle's id
+    index = {str(r.get("id")): r for r in every if r.get("kind") == "control" or r.get("decision") in ("allow", "allow_batch")}
     bad = 0
     for r in recs:
         v = approvals.check_record(st, r, index) if a.verify else ""

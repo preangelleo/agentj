@@ -275,6 +275,7 @@ class SharedClaudeAgent(Agent):
         self.native_request = None     # (native session id, host Send, delivered body); survives the wait timeout
         self.held = []                  # P424 #75: [(page id, pending text)] phone messages not taken in time (≤ 5)
         self.untrusted_state = None    # B1: None | "pending" (group envelope sent) | "running" (native turn seen)
+        self.untrusted_foreign = False
         self.untrusted_at = 0.0
         self.failed_start = False
         self._observe_errors = 0       # P142 (B17): consecutive failed observe passes
@@ -359,8 +360,11 @@ class SharedClaudeAgent(Agent):
             self.untrusted_state = None
         return self.untrusted_state is not None
 
-    def _mark_untrusted(self, state):
-        import time
+    def _mark_untrusted(self, state, foreign=None):
+        import time   # P570: sticky while live
+        if foreign is None:
+            foreign = not provenance.unattended_send(getattr(self, "cur_send", None))
+        self.untrusted_foreign = (self.untrusted() and getattr(self, "untrusted_foreign", True)) or foreign
         self.untrusted_state, self.untrusted_at = state, time.monotonic()
         if state == "pending":
             self.native_source = provenance.normalize(getattr(self, "pending_source", None))
@@ -879,7 +883,7 @@ class SharedClaudeAgent(Agent):
             self.host.desktop_cmd_done("compact")
         if name == "UserPromptSubmit" and not event.get("agent_id"):
             if provenance.names_untrusted(str(event.get("prompt", ""))):
-                self._mark_untrusted("running")
+                self._mark_untrusted("running", provenance.names_untrusted(str(event.get("prompt", "")), True))
             elif self.untrusted_state == "running":
                 self.untrusted_state = None
         if name == "UserPromptSubmit":
@@ -946,7 +950,8 @@ class SharedClaudeAgent(Agent):
                 self.risk_requests[(ident, digest)] = keys
                 return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "ask",
                     "permissionDecisionReason": "Agent J: " + danger.card_why(verdict, getattr(self.host, "lang", "zh"))}}
-        if name == "PermissionRequest" and provenance.untrusted_turn(self) and not provenance.delegated_turn(self):
+        if name == "PermissionRequest" and provenance.untrusted_turn(self) and not provenance.delegated_turn(self) \
+                and not provenance.unattended_turn(self):   # P570
             # B1: a group member's turn never reaches the owner's approval, nor a category grant from an owner turn
             self.host.st.log("ask_done", tool=event.get("tool_name"), decision="deny", reason="group_source")
             return {"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": {"behavior": "deny",
@@ -980,7 +985,8 @@ class SharedClaudeAgent(Agent):
                         self.risk_grants.pop(cat, None)
                 if set(cats) & self.risk_denied:
                     answer = {'behavior': 'deny'}
-                elif cats and set(cats) <= self.permissions and policy_registry.main_requirement(tool, inp) == "allow":
+                elif cats and set(cats) <= self.permissions and policy_registry.main_requirement(tool, inp) == "allow" \
+                        and not provenance.unattended_turn(self):
                     answer = {"behavior": "allow"}
                 else:
                     withdraw = asyncio.get_running_loop().create_future()
@@ -1910,6 +1916,7 @@ class SharedClaudeAgent(Agent):
                             self.bg_live.pop(tid, None)     # P243: that background task has ended
                     if via:
                         self.native_source = provenance.system()
+                        self.untrusted_foreign = True   # P570
                         self.native_turn = True
                         self.stop_since_end = False   # P151: a harness-started turn begins (loop tick, task notification)
                         self._turn_begins()
@@ -1932,7 +1939,7 @@ class SharedClaudeAgent(Agent):
                     self._turn_begins()
                     self._clear_texts()
                     if self.untrusted_state == "pending" and provenance.names_untrusted(text):
-                        self._mark_untrusted("running")   # a native version that runs it without UserPromptSubmit
+                        self._mark_untrusted("running", provenance.names_untrusted(text, True))   # a native version that runs it without UserPromptSubmit
                     if self._from_phone(item, text):
                         self.native_source = provenance.normalize(None)  # labels cannot authenticate a new request
                         if self.phone_turn and self.pending_text in text:

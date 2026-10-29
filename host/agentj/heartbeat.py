@@ -660,7 +660,7 @@ class Heartbeat:
         if provenance.delegated_turn(getattr(self.host, "agent", None)):
             ans = await self.host.ask("AgentJSameOwnerAction", {"summary": "Same owner: heartbeat " + str(op), "request": req}, batch=False)
             if ans.get("behavior") != "allow":
-                return {"ok": False, "why": "denied"}
+                return {"ok": False, "why": "denied", "hint": ans.get("message")}
         if op in quota_mod.WRITE_OPS:                  # P254: reminders on/off, recorded resets, today's reminders marked given
             return await quota_mod.handle(self.host, req)
         if op == "now":

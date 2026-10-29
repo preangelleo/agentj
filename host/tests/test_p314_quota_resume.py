@@ -285,6 +285,7 @@ class Adapters(unittest.TestCase):
     def test_claude_result_with_the_limit(self):
         a = agents.ClaudeAgent(self.host, {"kind": "claude", "dir": "/tmp", "model": None})
         a.halting, a.capture, a.turn_done = False, None, None
+        a.native_source = {"kind": "terminal", "role": "owner"}   # P570 F2b: an owner's chat turn (only owner / host turns resume)
         a.on_event({"type": "rate_limit_event", "rate_limit_info": {"status": "rejected", "resetsAt": time.time() + 2 * H}})
         a.on_event({"type": "result", "is_error": True, "result": "You've hit your limit · resets 3pm"})
         args = self.r.hit.call_args.args
@@ -298,6 +299,7 @@ class Adapters(unittest.TestCase):
         from agentj.shared import SharedClaudeAgent
         a = object.__new__(SharedClaudeAgent)
         a.host, a.cfg, a.cur_send = self.host, {"session_mode": "shared"}, None
+        a.untrusted_state, a.phone_turn, a.native_source = None, False, {"kind": "terminal", "role": "owner"}   # P570 F2b: the owner's desktop turn
         a._limit_check("Here is why a usage limit reached message happens… " * 20)
         self.assertFalse(self.r.hit.called, "the model talking about limits is not the limit")
         a._limit_check("Claude AI usage limit reached|%d" % int(time.time() + H))
@@ -310,6 +312,7 @@ def bare_codex(host, workflow=False):
     a.thread = {"modelProvider": "openai"}; a.human = {}; a.models_cache = []
     a.unavailable_models = set(); a.halting = False; a.tid = "t"; a.meter = Mock(); a.tasks = set(); a.thread_at = None
     a.rate_retry, a.rate_retried, a.cur_send = False, False, None
+    a.native_source = {"kind": "terminal", "role": "owner"}   # P570 F2b: an owner's chat turn
     a.host = host
     return a
 

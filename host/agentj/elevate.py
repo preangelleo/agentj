@@ -1089,7 +1089,9 @@ class Elevator:
         if self.host.stopped():
             return {"result": "stopped"}
         from . import provenance
-        if card["kind"] not in ("login", "vshare") and provenance.untrusted_turn(getattr(self.host, "agent", None)) and not provenance.delegated_turn(getattr(self.host, "agent", None)):
+        unattended = provenance.unattended_turn(getattr(self.host, "agent", None))   # P570
+        if card["kind"] not in ("login", "vshare") and provenance.untrusted_turn(getattr(self.host, "agent", None)) \
+                and not provenance.delegated_turn(getattr(self.host, "agent", None)) and not unattended:
             audit(self.st, None, kind=card.get("kind"), result="group_source", reason="group_source")
             return {"result": "group_source"}      # B1 (P117): a group member's turn never reaches the owner's card
         if len([c for c in self.cards.values() if not c["fut"].done()]) >= MAX_OPEN:
@@ -1100,7 +1102,7 @@ class Elevator:
         if not self.host._approvers():
             audit(self.st, None, kind=card.get("kind"), result="no_device", reason="no_device")
             return {"result": "no_device"}
-        same_owner_task = provenance.same_owner_source(getattr(self.host, "agent", None))
+        same_owner_task = provenance.same_owner_source(getattr(self.host, "agent", None)) or bool(unattended)
         if card["kind"] == "sudo" and not same_owner_task and (auto := await self.grants.auto(card, gone)) is not None:
             return auto                            # #116: same class within the owner's 10-minute approval, logged
         c = dict(card, id=secrets.token_hex(16), fails=0, fut=asyncio.get_running_loop().create_future())

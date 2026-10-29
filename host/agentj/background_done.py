@@ -72,7 +72,7 @@ class Notifier:
                 self.pending[key] = {
                     "label": privacy.redact(v.get("label") or v.get("who") or "后台活", paths=True),
                     "since": v["since"], "ended": v["ended"], "exit_code": v.get("exit_code"),
-                    "report": privacy.redact(v.get("report") or "", paths=True),
+                    "report": privacy.redact(v.get("report") or "", paths=True), "foreign": v.get("foreign"),
                 }
         if not self.enabled() and self.inflight is not None and self.inflight.state == "pending":
             dropped = getattr(self.host, "queue_dropped", None)
@@ -147,6 +147,8 @@ class Notifier:
                      "never infer success from an exit code. Say when a report is missing and investigate.")
         page = self.host.hist_add({"k": "agent", "via": "background_done", "text": ""}, "", "open")
         send = CompletionSend(page["id"], "\n".join(lines), [k for k, _ in batch])
+        if any(v.get("foreign") for _, v in batch):
+            send.source = provenance.normalize(None)    # P570: a non-owner turn's job → the batch's strictest source
         self.host.agent.submit(send)
         self.inflight = send
         self.last_sent = now

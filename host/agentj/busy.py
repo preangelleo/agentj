@@ -759,6 +759,7 @@ class Board:
 
     def __init__(self, root, on_change=None, verify_sources=False):
         self.verify_sources = verify_sources
+        self.trusted = None                    # P570: is the launching turn the owner's / the host's own?
         self.evidence = {}
         self.claude_transcripts = {}
         self.root = Path(root) if root else None
@@ -799,6 +800,8 @@ class Board:
             it.update(task_meta(old))
             if old.get("bg"):
                 it["bg"] = True        # P426: once background, its end is a 「后台活已结束」 one
+        if (old or {}).get("foreign") or not old and session and self.trusted and not self.trusted():
+            it["foreign"] = True       # P570
         source = str(session or key).lower()
         harness = next((x for x in ("codex", "opencode", "claude") if x in source), None)
         if harness is None and source in ("own", "shared"):

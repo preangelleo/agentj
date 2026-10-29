@@ -478,7 +478,9 @@ class WheelInstall(unittest.TestCase):
         cut_entries=[i for i in zipfile.ZipFile(self.wheel).infolist() if i.filename in ('agentj/provenance.py','agentj/tg_cursor.py')]
         cut_bytes=sum(i.compress_size+76+2*len(i.filename.encode())+2*len(i.extra)+len(i.comment) for i in cut_entries)
         self.assertEqual(len(cut_entries),2)
-        self.assertLessEqual(cut_bytes,12288,'P117 cut-over allocation is bounded')
+        # P570 (0.25.20a1 hotfix, #382 third customer report): unattended-turn logic in provenance.py measured 13689 B (+11.4 %);
+        # Jarvis named waiver P570 (贾维斯命名豁免 P570，抵扣 ≥400 B 由 P570b 偿还): +256 B on this row only.
+        self.assertLessEqual(cut_bytes,12288+256,'P117 cut-over allocation is bounded')
         # P147 (0.18.4): the reconnect command and its skill get their own explicit 8 KiB allocation, same accounting; flagged
         # to Jarvis. The self-heal itself (shared.py, the identity line, CLI flags) stays inside the core ceiling.
         p147=[i for i in zipfile.ZipFile(self.wheel).infolist() if i.filename=='agentj/reconnect.py' or i.filename.startswith('agentj/skills/agentj-reconnect/')]
@@ -740,6 +742,7 @@ class WheelInstall(unittest.TestCase):
         # P376: Jarvis approved the temporary 0.23.1 ceiling; slim the core in 0.24.
         core_0200 = 3460000
         core_0200+=28672          # P558 (0.25.14 hotfixes P552–P557): measured +27.2 KiB core (+10.2 % over 3460000); Jarvis approved 10-27
+        core_0200+=512            # P570 (0.25.20a1 hotfix): core +10.01 % over 3488672; Jarvis named waiver P570 (贾维斯命名豁免 P570，抵扣 ≥400 B 由 P570b 偿还)
         self.assertLess(pathlib.Path(self.wheel).stat().st_size-allocs,core_0200,'P118 approved bounded core ceiling + 0.18.x increments + P165 (0.20.0) + P198 (0.20.1) + 0.20.2 increments (P201 P203 P205 P207 P211 P214 P215 P217 + P218 integration) + 0.20.3 increments (P219 P221 + P240 integration) + P254')
         self.assertLess(pathlib.Path(self.wheel).stat().st_size,core_0200+65536+49152+49152+32768+4096+12288+8192+16384+20480+49152+24576+8192+12288+28672+4096+20480+8192+12288+12288+8192+28672+20480,   # + P244 bounded catalogue + P275 avatar
                         'combined bounded allocations')

@@ -635,6 +635,9 @@ def main_hit(agent, harness: str, text=None, rate: dict | None = None) -> None:
     if r is None:
         return
     send = getattr(agent, "cur_send", None)
+    from . import provenance    # P570: only an owner / host turn resumes
+    if not (provenance.is_owner(provenance.turn_source(agent)) or provenance.unattended_turn(agent) == "system"):
+        return host.st.log("quota_resume", result="skipped_source", agent=harness)
     r.hit("main", harness, v["at"], frm_resume=getattr(send, "quota_resume_id", None), limit=v["limit"], stale=v.get("stale"))
 
 

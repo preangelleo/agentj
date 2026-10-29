@@ -70,13 +70,27 @@ class TaskSource(Base):
             self.assertTrue(approval_jev.low_risk_pass(self.host, cfg, 'Write', {'file_path': '/tmp/task-notes.txt', 'content': 'notes'}))
             with provenance.request_source(provenance.normalize(None)):
                 self.assertFalse(approval_jev.low_risk_pass(self.host, cfg, 'Bash', {'command': 'date'}))
-        for source in (provenance.system(), provenance.email_guest('guest@example.com'), provenance.telegram_group(-1, 2, 'proxy', 1), None):
+        for source in (provenance.email_guest('guest@example.com'), provenance.telegram_group(-1, 2, 'proxy', 1), None):
             self.host.agent.native_source = source
             self.assertFalse(approval_jev.low_risk_pass(self.host, cfg, 'Bash', {'command': 'date'}))
             result = self.ask('date')
             self.assertEqual(self.last()['reason'], 'group_source')
             self.assertNotIn('Telegram', result['message'])
         self.assertEqual(self.cards(), [])
+        # P570: `system` inferred without a host Send (a native wake-up) stays refused (round-2 F2)
+        self.host.agent.native_source = provenance.system()
+        self.assertFalse(approval_jev.low_risk_pass(self.host, cfg, 'Bash', {'command': 'date'}))
+        self.ask('date')
+        self.assertEqual(self.last()['reason'], 'group_source')
+        self.assertEqual(self.cards(), [])
+        # P570: a host-written system turn (heartbeat Send) gets no low-risk pass either, but it ASKS — a card
+        from agentj.heartbeat import HeartbeatSend
+        self.host.agent.cur_send = HeartbeatSend(0, 'heartbeat', 'k', 'd')
+        self.assertFalse(approval_jev.low_risk_pass(self.host, cfg, 'Bash', {'command': 'date'}))
+        self.ask('date')
+        self.assertNotEqual(self.last()['reason'], 'group_source')
+        self.assertEqual(len(self.cards()), 1)
+        self.assertNotIn('batch', self.cards()[-1])
 
     def test_task_outward_secret_delete_need_cards_even_with_background_flag(self):
         with provenance.task_run():

@@ -159,6 +159,7 @@ class Chat(Base):
         self.host.meter_state.update(meters)
         a = agents.ClaudeAgent(self.host, {"kind": "claude", "dir": "/tmp", "model": None})
         a.halting, a.capture, a.turn_done = False, None, None
+        a.native_source = {"kind": "terminal", "role": "owner"}   # P570 F2b: an owner's chat turn
         self.host.agent.kind = "claude"
         return a
 

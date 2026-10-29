@@ -1,5 +1,5 @@
 {
-  "version": "0.25.19a1",
-  "zh": "Touch ID / Face ID 断线后结果照样送到；设置页整理（终端指令、紧急切换 AI、邮件域名白名单）；微信与后台任务更稳；遇到故障先查新版本。",
-  "en": "Touch ID results survive a dropped connection; tidier Settings (terminal commands, emergency AI switch, mail domains); steadier WeChat and background tasks."
+  "version": "0.25.20a1",
+  "zh": "主人不在时，心跳和定时任务不再被误当成主人拒绝；需要你确认的操作会等你回来再批。",
+  "en": "While you're away, heartbeats and scheduled tasks are no longer mistaken for you saying no; steps that need your OK wait for you."
 }
