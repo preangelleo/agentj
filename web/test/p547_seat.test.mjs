@@ -67,13 +67,16 @@ test('seat_transfer / seat_transfer_cancel: object {} → "transfer" / "cancel" 
   }
 });
 
-test('the transfer prompt: the code masked as ajt_••••…last 4 until the eye is tapped; 「复制」 copies the whole prompt', () => {
-  const tok = 'ajt_' + 'Q'.repeat(39) + 'wxyz';
-  const prompt = `在新电脑上运行：curl … | sh ，然后输入转移码 ${tok} 。`;
-  assert.equal(maskToken(tok), 'ajt_••••…wxyz');
-  const m = maskPrompt(prompt, tok);
-  assert.ok(!m.includes(tok) && m.includes('ajt_••••…wxyz'));
-  assert.ok(!maskPrompt(prompt, null).includes(tok), 'masked even without the token field');
+test('the transfer prompt: the code masked as ajh_••••…last 4 until the eye is tapped; 「复制」 copies the whole prompt', () => {
+  // P576: the host mints ajh_ (never ajt_); the mask keeps the code's own prefix and the fallback regex knows both
+  for (const pre of ['ajh_', 'ajt_']) {
+    const tok = pre + 'Q'.repeat(39) + 'wxyz';
+    const prompt = `在新电脑上运行：curl … | sh ，然后输入转移码 ${tok} 。`;
+    assert.equal(maskToken(tok), pre + '••••…wxyz');
+    const m = maskPrompt(prompt, tok);
+    assert.ok(!m.includes(tok) && m.includes(pre + '••••…wxyz'));
+    assert.ok(!maskPrompt(prompt, null).includes(tok), 'masked even without the token field');
+  }
   const js = read('../public/js/seatxfer.js');
   assert.match(js, /pr\.textContent = shown \? promptText\(\) : maskPrompt\(promptText\(\), P\.token\);/);
   assert.match(js, /copy\.addEventListener\('click', \(\) => copyButton\(promptText\(\), copy\)\);/, 'the copy is the full prompt');
@@ -97,6 +100,8 @@ test('Settings → Agent 与遥控器: the row, its state line and 「撤销」;
   assert.equal(zh['hmv.rescan'], '扫码配对新的 Agent J 主机');
   for (const k of ['sxf.step1', 'sxf.step2', 'sxf.step3']) assert.ok(zh[k] && en[k]);
   assert.match(zh['sxf.step2'], /「绑定你的席位」/);
+  assert.match(zh['sxf.step2'], /应用市场.*升级到最新版/, 'P576: an Olares app from before P547 refuses ajh_ — upgrade it first');
+  assert.match(en['sxf.step2'], /upgrade Agent J to the latest version in the Olares Market/);
   const app = read('../public/app.js');
   assert.match(app, /case 'host_moved': hostMoved\(m\)/);
   assert.match(app, /const mv = parseHostMoved\(m, allowRelay\);/);

@@ -13,3 +13,6 @@ This product bundles third-party components, each under its own license:
 - host/agentj/config/: data derived from the CMU Pronouncing Dictionary, Copyright (C) 1993-2015 Carnegie Mellon
   University; see host/agentj/config/CMUDICT-LICENSE.txt.
 - android/gradle/wrapper/: the Gradle Wrapper (Apache-2.0).
+- Design ideas adapted from pstack (https://github.com/cursor/plugins/tree/main/pstack), MIT, (c) 2026 Lauren Tan:
+  delegation, the decision log, stuck detection, acceptance and overnight goals; rules and data shapes only, no code
+  copied (host/agentj/core/UPSTREAM.md).

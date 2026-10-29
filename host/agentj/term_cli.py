@@ -430,7 +430,7 @@ def _print(op: str, res: dict) -> None:
             print(f"  {time.strftime('%m-%d %H:%M:%S', time.localtime(r.get('ts', 0)))}  {r.get('action')}  {r.get('result')}  "
                   f"{r.get('device') or ''}")
         for c in res.get("casts") or []:
-            print("  录像 / cast: " + c)
+            print("  操作日志 / operation log: " + c)
     elif op in WIDEN:
         print("✓ 已确认：网页终端" + ("已打开" if op == "enable" else "已临时允许") + "。手机上「设置 → 安全 → 网页终端」进入。/ Confirmed: "
               "open it from the phone's Settings → Security → Web terminal.")

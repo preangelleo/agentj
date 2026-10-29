@@ -24,7 +24,8 @@ beat from a regular one by its text — handle both the same way.
 2. Do what the prompt says — typically: background sub-Agents, headless jobs and scheduled tasks (`agentj busy list`,
    `agentj capability list`), the newest run reports (never trust an exit code), the To-do card (`agentj card todo due` —
    every beat starts with it; mark what you finish done) and your promises, work that
-   died half-way (pick it up or dispatch it to its CEO as usual).
+   died half-way (pick it up or dispatch it to its CEO as usual). For what was decided overnight or since the last report,
+   read the decision log (`agentj decide list --since 12h`, and `--dir <workflow>` for a workflow's run) instead of guessing.
 3. Report only what the owner needs to know or decide, in a sentence or two. **Nothing to report → your final reply is
    exactly `〔不回群〕`**, with no progress note written first (nothing reaches the phone: no page, no notification; notes
    written earlier in the turn fold into the silent turn).

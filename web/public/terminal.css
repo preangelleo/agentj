@@ -8,12 +8,19 @@
 .term *{box-sizing:border-box}
 .term-top{flex:none;position:relative;display:flex;align-items:center;gap:8px;padding:30px 10px 6px 14px}
 .term-title{flex:1;min-width:0;margin:0;font:600 1.0625rem/1.3 var(--font-title);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.term-log{flex:none;min-height:44px;display:inline-flex;align-items:center;gap:6px;color:inherit;text-decoration:none;border-radius:8px}
+.term-log:hover .term-rec,.term-log:focus-visible .term-rec{text-decoration:underline}
+.term-log:focus-visible{outline:2px solid #71bbde;outline-offset:2px}
 .term-rec{flex:none;display:inline-flex;align-items:center;gap:5px;font-size:.75rem;color:#faf9f5}
 .term-rec::before{content:"";width:10px;height:10px;border-radius:50%;background:#f7827e;animation:term-rec 1.6s ease-in-out infinite}
 @keyframes term-rec{50%{opacity:.35}}
 @media (prefers-reduced-motion:reduce){.term-rec::before{animation:none}}
-.term-rec[hidden],.term-left[hidden],.term-end[hidden]{display:none}
+.term-log[hidden],.term-end[hidden]{display:none}
 .term-left{flex:none;font:500 .8125rem/1 var(--font-mono);font-variant-numeric:tabular-nums;color:rgba(250,249,245,.82)}
+.term-left::before{content:"·";margin-right:6px;font-family:var(--font-body)}
+/* P576b/c: a narrow window keeps the whole title — the time goes under 「操作日志记录中」 and the log text may wrap to two lines */
+@media (max-width:560px){.term-title{flex:none;overflow:visible}.term-log{flex:1 1 0;min-width:0;flex-direction:column;align-items:flex-start;justify-content:center;gap:3px}
+  .term-rec{align-items:flex-start;line-height:1.25}.term-rec::before{flex:none;margin-top:3px}.term-left{padding-left:15px}.term-left::before{content:none}}
 .term-end{flex:none;min-height:44px;min-width:56px;padding:0 14px;border-radius:999px;border:1.5px solid #f7827e;background:transparent;
   color:#faf9f5;font:600 .9375rem/1 var(--font-body);cursor:pointer}
 .term-outbox{flex:1;min-height:0;display:flex;flex-direction:column;background:#2c2b26}

@@ -74,10 +74,13 @@ function build() {
   const title = mk('h2', 'term-title'); title.id = 'term-title';
   const rec = mk('span', 'term-rec'); rec.id = 'term-rec';
   const left = mk('span', 'term-left'); left.id = 'term-left';
+  // P576b (#372): 「操作日志记录中 · 还剩 mm:ss」 is one link to the official page on what is logged, why and who can read it
+  const log = mk('a', 'term-log'); log.id = 'term-log'; log.target = '_blank'; log.rel = 'noopener noreferrer';
+  log.append(rec, left);
   // P414 (#179③): the grabber (top centre) and the exit icon (top right) collapse the page; 「结束」 ends the session
   const grab = btn('term-grab', 'term-grab'); grab.append(mk('span'));
   const exit = btn('term-exit', 'term-exit'); exit.append(icon('M6 6l12 12M18 6L6 18'));   // P414: 「右上角叉退出」 (Leo #179③) — collapses; 「结束」 ends
-  top.append(grab, title, rec, left, btn('term-end', 'term-end'), exit);
+  top.append(grab, title, log, btn('term-end', 'term-end'), exit);
   const out = mk('pre', 'term-out'); out.id = 'term-out'; out.tabIndex = 0;
   out.setAttribute('role', 'log'); out.setAttribute('aria-live', 'polite');
   out.append(document.createTextNode(''), mk('span', 'term-cur'));
@@ -160,6 +163,8 @@ function labels() {
   if (!root) return;
   $('term-title').textContent = t('p408.title');
   $('term-rec').textContent = t('p408.rec');
+  $('term-log').href = 'https://agentj.app/docs/web-terminal-log/' + (lang() === 'en' ? '?lang=en' : '');
+  $('term-log').title = t('p576.logTitle');
   $('term-end').textContent = t('p408.end');
   $('term-send').textContent = t('p408.send');
   $('term-input').setAttribute('aria-label', t('p408.inputAria'));
@@ -872,7 +877,7 @@ function paintChrome() {
   const live = S.phase === 'ready';
   $('term-input').disabled = !live; $('term-send').disabled = !live;
   for (const b of $('term-keys').querySelectorAll('button')) b.disabled = !live;
-  $('term-rec').hidden = !live; $('term-left').hidden = !live;
+  $('term-log').hidden = !live;
   $('term-end').hidden = S.phase === 'closed';
   $('term-form').hidden = $('term-keys').hidden = $('term-nopw').hidden = S.phase === 'closed';   // closed: only why + where to go
   root.dataset.phase = S.phase;

@@ -3672,6 +3672,8 @@ def main(argv=None) -> None:
     from . import imessage as imessage_mod
     imessage_mod.add_parser(sub)    # P274: agentj imessage status|doctor|on|off|set|instructions|vip|mute|scan|backfill|open-fda
     busy.add_parser(sub)         # P150 (§22): agentj busy list|start|stop|run — the phone's 「在办事项」 dots
+    from . import decisions as decisions_mod
+    decisions_mod.add_parser(sub)   # P571: agentj decide "<decision>" --why … · decide list — the decision log
     from . import local_model
     local_model.add_parser(sub)
     recall.add_parser(sub)    # F22 (P57): agentj recall <keywords> [--days N] [--date D] — the main Agent finds an earlier conversation

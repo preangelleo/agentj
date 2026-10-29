@@ -11,7 +11,8 @@ import json
 from pathlib import Path
 
 DATA = Path(__file__).with_name("identity")
-VERSION = 23  # P569: update check before support (#368); system-scheduler default (#369)
+VERSION = 24  # P571 (0.26.0): delegation rules after pstack + `agentj decide`; gap / Father detail moved to skills
+# v23 (P569): update check before support (#368); system-scheduler default (#369)
 # v22 (P510): verified source rules plus retained friend-report boundary
 # v15 (P290): v14 (P251/P253/P254) + P269 checked API / browser / Father paths (compressed wording, same limits)
 # v11 = P159 + P186 (0.20.0, v11 never shipped alone): P159 compressed the v10 rules ~10% (zh 4359→3927 chars);
@@ -23,7 +24,7 @@ VERSION = 23  # P569: update check before support (#368); system-scheduler defau
 # v9 (P113, ADR-A193): long tasks — preflight card, brief, CEO routing, report read-back
 # v8 (P82): owner-authorized customer-service bot management
 # v5 (P64): a workflow with a CEO is always dispatched — never run or edited by the main Agent; read-only reporting stays
-HASHES = {'en': '0c3ddd0d4788749ee0620b7ee815827b0a7b26db2550d01530f29a5aee5e5985', 'zh': '3d64319bd645185d930ec96883ee7169ca8749120d37ab197153103ec32a9585'}
+HASHES = {'en': 'b34cd334065f3281975013b89fbbc109a87bd11f7726e7c6ace8c5f4407d895b', 'zh': '38a81482b33b7e0957179c86ac65f569695d4dc8d37e644bb53fcf51a240fcda'}
 MECHANISMS = {"claude": "append-system-prompt", "codex": "developerInstructions", "opencode": "prompt_async.system",
               "kimi": "acp.resource", "qwen": "acp.resource", "dsh": "acp.text"}   # P329: dsh takes no embedded resources (acp._block)   # P305: ACP has no system-prompt field — an embedded resource block (acp.prompt_blocks)
 

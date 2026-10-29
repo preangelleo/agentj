@@ -34,6 +34,9 @@ owner can no longer copy the path. Create the folder if missing (`mkdir -p`).
 - an 〔Agent J 系统提示〕 message asks for it (the phone's /compact does this first when the file is missing or older than
   the current turn);
 - you notice the context is getting long in a long task — write it early, update it later.
+- the owner says stop for now (「先停一下」「我要关电脑了」): stop at a safe point (finish or undo the current step, start no new
+  one, stop the background jobs you started, a local `wip:` commit in a git folder — never pushed), then write this file with
+  section 6 saying how to resume; 「继续」「接着干」 reads it and carries on. This is not 「全部停下」, the emergency stop.
 Write the file. If the owner asked only for a handoff, stop. If they asked you to compact yourself afterward, execute the self-compaction steps below.
 
 ## How
@@ -58,6 +61,7 @@ Write the file. If the owner asked only for a handoff, stop. If they asked you t
 
 ## 3. Decisions
 - <decision — who decided — why>
+- Decision log: <path from `agentj decide list --json`> — point at it, do not copy its lines here
 
 ## 4. Paths and commands
 - <absolute path → what it is>; <commands to rerun as-is>

@@ -416,7 +416,17 @@ export async function runP414({ B, web, fake, out = OUT }) {
       await audit('terminal', '#term button, #term input');
       await save('terminal-full');
       // no double click / double tap: on the output, the top bar and the grabber nothing happens
-      for (const sel of ['#term-out', '#term-left', '#term-rec', '#term-title']) {
+      // P576b (#372): 「操作日志记录中 · 还剩 mm:ss」 is a link (new tab, the official page) — not a double-click target any more
+      const logA = await evaluate(p, `({h:${$('term-log')}.getAttribute('href'),tg:${$('term-log')}.target,rel:${$('term-log')}.rel,rec:${$('term-rec')}.parentNode.id,left:${$('term-left')}.parentNode.id,txt:${$('term-log')}.textContent})`);
+      check(logA.h === 'https://agentj.app/docs/web-terminal-log/' + (lang === 'en' ? '?lang=en' : '') && logA.tg === '_blank' && logA.rel.includes('noopener') && logA.rec === 'term-log' && logA.left === 'term-log'
+        && logA.txt.startsWith(lang === 'zh' ? '操作日志记录中还剩 ' : 'Operation log recording') , 'the log line is one link to web-terminal-log ' + tag + JSON.stringify(logA));
+      // P576c: the whole title shows (no 「Web ter…」) and the log line stays inside its own box, left of 「结束」
+      const tw = await evaluate(p, `(() => { const e = ${$('term-title')}, l = ${$('term-log')}, r = ${$('term-rec')}, end = ${$('term-end')};
+        return { txt: e.textContent, sw: e.scrollWidth, cw: e.clientWidth, rsw: r.scrollWidth, rcw: r.clientWidth,
+          over: l.getBoundingClientRect().right - end.getBoundingClientRect().left, gap: l.getBoundingClientRect().left - e.getBoundingClientRect().right }; })()`);
+      check(tw.txt === (lang === 'zh' ? '网页终端' : 'Web terminal') && tw.sw <= tw.cw && tw.rsw <= tw.rcw && tw.over <= 0 && tw.gap >= 0,
+        'the title is shown whole and the log line fits beside it ' + tag + ' ' + JSON.stringify(tw));
+      for (const sel of ['#term-out', '#term-title']) {
         const r = await rect(p, sel);
         for (const cc of [1, 2]) {
           await p.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: r.x, y: r.y });

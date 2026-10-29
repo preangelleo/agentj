@@ -58,8 +58,8 @@ function host(f) {
       H.state = 'issued';
       const exp = Math.floor(Date.now() / 1000) + 86400;
       await res({ ok: true, token: H.token, expires_at: exp,
-        prompt_zh: `请帮我在这台电脑上安装 Agent J，并把它绑定到我的席位。\n1. 打开 agentj.app 的安装说明，照着装好。\n2. 运行：agentj seat bind ${H.token}\n转移码 24 小时内有效，只能用一次。`,
-        prompt_en: `Please install Agent J on this computer and bind it to my seat.\n1. Follow the install guide on agentj.app.\n2. Run: agentj seat bind ${H.token}\nThe transfer code is valid for 24 hours and works once.` });
+        prompt_zh: H.prompt_zh = `请帮我在这台电脑上安装 Agent J，并把它绑定到我的席位。\n1. 打开 agentj.app 的安装说明，照着装好。\n2. 运行：agentj seat bind ${H.token}\n转移码 24 小时内有效，只能用一次。`,
+        prompt_en: H.prompt_en = `Please install Agent J on this computer and bind it to my seat.\n1. Follow the install guide on agentj.app.\n2. Run: agentj seat bind ${H.token}\nThe transfer code is valid for 24 hours and works once.` });
       return true;
     }
     return false;
@@ -232,10 +232,15 @@ async function seat(p, H, tag, full) {
   await snap(p, tag, '8-seat-result-masked');
   if (full) {
     await evaluate(p, `document.getElementById('sxf-prompt').scrollIntoView({ block: 'start' })`);
+    // P576b: 「复制」 straight from the masked panel (no 「显示转移码」 first) puts the whole prompt with the real code on the clipboard
+    ok((await evaluate(p, `document.getElementById('sxf-prompt').dataset.masked`)) === '1', tag + ' still masked when 「复制」 is tapped');
     await click(p, '#sxf-copy');
     await waitFor(p, `document.getElementById('sxf-copy').dataset.done === '1' || document.getElementById('sxf-copy').dataset.done === 'fail'`);
     const copied = await evaluate(p, `navigator.clipboard.readText().catch(() => '')`);
-    ok(copied.includes(H.token) && copied.includes('agentj seat bind'), tag + ' 「复制」 copies the whole prompt with the code');
+    const whole = await evaluate(p, `import('./js/t.js').then((m) => m.lang())`) === 'en' ? H.prompt_en : H.prompt_zh;
+    ok(copied.includes(H.token) && copied.includes('agentj seat bind') && !copied.includes('••••') && copied === whole,
+      tag + ' 「复制」 copies the whole prompt with the real code, never the mask');
+    ok((await evaluate(p, `document.getElementById('sxf-prompt').dataset.masked`)) === '1', tag + ' and the panel stays masked after copying');
     await click(p, '#sxf-eye');
     ok((await evaluate(p, txt('#sxf-prompt'))).includes(H.token), tag + ' the eye shows the code');
     await click(p, '#sxf-eye');

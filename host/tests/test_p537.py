@@ -53,7 +53,7 @@ class Prompt(unittest.TestCase):
                 text=main_identity.prompt({'language':lang},h)
                 self.assertIn('agentj heartbeat prompt show',text)
                 self.assertNotIn('<!-- agentj:watchlist v1 -->',text)
-        self.assertEqual(main_identity.verify_core()['version'],23)
+        self.assertEqual(main_identity.verify_core()['version'],24)
 
     def test_doctor_read_only_notice(self):
         from agentj.doctor import check_heartbeat_prompt

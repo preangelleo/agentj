@@ -77,7 +77,7 @@ _SECRETS: list[tuple[str, re.Pattern, str]] = [
     ("replicate_token", _re(r"\br8_[A-Za-z0-9]{20,}"), R),
     ("huggingface_token", _re(r"\bhf_[A-Za-z0-9]{30,}"), R),
     ("telegram_bot_token", _re(r"\b\d{8,10}:[A-Za-z0-9_-]{35}\b"), R),
-    ("agentjarvis_id", _re(r"\baj[aijmrst]_[A-Za-z0-9_-]{16,}"), R),   # ajm_ = the plaza admin token (P2)
+    ("agentjarvis_id", _re(r"\baj[ahijmrst]_[A-Za-z0-9_-]{16,}"), R),   # ajm_ = the plaza admin token (P2)
     # review SS-04: more secret shapes the server scan does not know (layer 1 may be stricter than the server, never looser)
     ("mailgun_key", _re(r"\bkey-[0-9a-f]{32}\b"), R),
     ("authorization_header", _re(r"\b(Authorization\s*:\s*(?:Bearer|Basic|token)\s+)(?!<redacted>|\$\(|\$\{|\$[A-Z_])[^\s\"'<>]+", re.I),

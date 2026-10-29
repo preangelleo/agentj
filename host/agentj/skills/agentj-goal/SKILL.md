@@ -84,6 +84,9 @@ also tap 「批准，并加进目标授权」 on a held card, which adds the nar
 
 Prefer reversible ways: commit before deleting, `trash-put` instead of `rm`, push to the existing remote.
 After each milestone: `agentj goal progress '一句进度'` (one line on the phone). Don't flood: a milestone, not every command.
+At the same milestone log the key decision behind it: `agentj decide "<decision>" --why "<reason>" --evidence <file:line | commit | log> --phase <milestone>`
+(one line per milestone; read back with `agentj decide list --since 12h`). The result card and the morning report tell the owner
+what was decided and why from this log, not from memory. Background work for the goal goes through `agentj busy run`.
 `agentj goal status` shows the goal, the grants with their counts, and what is waiting. A heartbeat or a new session (after
 compaction or a restart) first runs `agentj goal status` and continues an active goal.
 

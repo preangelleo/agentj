@@ -147,7 +147,7 @@ agentj --help
 
 ```text
 usage: agentj [-h] [-V] [--migrate-legacy] [--instance N] [--fresh]
-              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,faceid,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,files,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,terminal,provider,sudo-helper,docs-rule,handover,seat,wechat,telegram-cursor,plaza,support,data,diag,preflight,skills,capability,goal,heartbeat,quota,imessage,busy,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
+              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,faceid,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,files,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,terminal,provider,sudo-helper,docs-rule,handover,seat,wechat,telegram-cursor,plaza,support,data,diag,preflight,skills,capability,goal,heartbeat,quota,imessage,busy,decide,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -2248,6 +2248,34 @@ usage: agentj data search [-h] [--top-k TOP_K] [--from FROM_] [--to TO]
 | `--to` | `null` | false | — | `` |
 | `--idem` | `null` | false | — | `idempotency key: a retry with it is free` |
 | `--source` | `null` | false | — | `哪个内容库（见它的广场技能；不写 = 服务器默认）/ which library (see its plaza skill; none = the server's default)` |
+| `--json` | `false` | false | — | `` |
+
+### agentj decide
+
+```text
+the decision log: record key decisions as you go · list
+```
+
+```bash
+agentj decide --help
+```
+
+```text
+usage: agentj decide [-h] [--why WHY] [--evidence EVIDENCE] [--phase PHASE]
+                     [--result RESULT] [--dir DIR] [--since SINCE] [--json]
+                     [text ...]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `text` | `null` | false | — | `the decision in one sentence, or list` |
+| `--why` | `null` | false | — | `why` |
+| `--evidence` | `""` | false | — | `a pointer: file:line, commit, log path` |
+| `--phase` | `""` | false | — | `the stage, e.g. research, build, check` |
+| `--result` | `""` | false | — | `the outcome (optional)` |
+| `--dir` | `null` | false | — | `a workflow folder: writes <dir>/reports/decisions.jsonl; default the working root` |
+| `--since` | `null` | false | — | `list: 12h, 30m, 2d or a date (default today)` |
 | `--json` | `false` | false | — | `` |
 
 ### agentj devices
@@ -7045,7 +7073,7 @@ agentj --help
 
 ```text
 usage: agentj [-h] [-V] [--migrate-legacy] [--instance N] [--fresh]
-              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,faceid,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,files,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,terminal,provider,sudo-helper,docs-rule,handover,seat,wechat,telegram-cursor,plaza,support,data,diag,preflight,skills,capability,goal,heartbeat,quota,imessage,busy,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
+              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,faceid,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,files,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,terminal,provider,sudo-helper,docs-rule,handover,seat,wechat,telegram-cursor,plaza,support,data,diag,preflight,skills,capability,goal,heartbeat,quota,imessage,busy,decide,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -9146,6 +9174,34 @@ usage: agentj data search [-h] [--top-k TOP_K] [--from FROM_] [--to TO]
 | `--to` | `null` | false | — | `` |
 | `--idem` | `null` | false | — | `幂等键：同一个键重试不重复扣点数` |
 | `--source` | `null` | false | — | `哪个内容库（见它的广场技能；不写 = 服务器默认）/ which library (see its plaza skill; none = the server's default)` |
+| `--json` | `false` | false | — | `` |
+
+### agentj decide
+
+```text
+决策流水：边做边记关键决定（agentj decide "<决定>" --why "<理由>"）· list 列出
+```
+
+```bash
+agentj decide --help
+```
+
+```text
+usage: agentj decide [-h] [--why WHY] [--evidence EVIDENCE] [--phase PHASE]
+                     [--result RESULT] [--dir DIR] [--since SINCE] [--json]
+                     [text ...]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `text` | `null` | false | — | `决定（一句话）；或 list 列出流水` |
+| `--why` | `null` | false | — | `理由` |
+| `--evidence` | `""` | false | — | `证据指针：文件:行、提交、日志路径` |
+| `--phase` | `""` | false | — | `阶段，例如 调研、实现、验收` |
+| `--result` | `""` | false | — | `结果（可选）` |
+| `--dir` | `null` | false | — | `工作流目录：写到 <目录>/reports/decisions.jsonl；不写 = 工作根目录` |
+| `--since` | `null` | false | — | `list：12h、30m、2d 或日期（默认今天）` |
 | `--json` | `false` | false | — | `` |
 
 ### agentj devices

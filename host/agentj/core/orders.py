@@ -9,7 +9,8 @@
     events.jsonl    started · step · refused · appended · subagent_start/end · stopping · budget · done/failed/stopped
     report.md       the CEO's report: the head (完成 / ready / 需要上级 / blocked-by) + body + VERDICT line
     result.json     exit code, wall clock, tokens, parsed head, verdict (12.5), failure_kind, root_cause_hash
-    decisions.jsonl the decision log (pstack ③): ts · phase · decision · why · evidence · result, append-only
+    decisions.jsonl the decision log (pstack ③): ts · phase · decision · why · evidence · result, append-only —
+                    `agentj.decision.v1`, the same format `agentj decide` writes (agentj/decisions.py)
     gates.jsonl     open questions with options, a DEFAULT answer and a deadline (pstack ⑤; the card is C19)
     denied.jsonl    step digests the owner refused in this order (O8: no session of the order may retry them)
 
@@ -27,6 +28,8 @@ import re
 import secrets
 import time
 from pathlib import Path
+
+from .. import decisions
 
 SCHEMA = "agentj.order.v1"
 ORIGINS = ("owner_turn", "task", "goal", "bot", "cli")
@@ -65,25 +68,8 @@ def _write(p: Path, data: str) -> None:
     os.replace(tmp, p)
 
 
-def _append(p: Path, obj: dict) -> None:
-    fd = os.open(p, os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
-    with os.fdopen(fd, "a", encoding="utf-8") as f:
-        f.write(json.dumps(obj, ensure_ascii=False) + "\n")
-
-
-def _jsonl(p: Path) -> list[dict]:
-    out = []
-    try:
-        for line in p.read_text(encoding="utf-8").splitlines():
-            try:
-                v = json.loads(line)
-                if isinstance(v, dict):
-                    out.append(v)
-            except ValueError:
-                continue
-    except FileNotFoundError:
-        pass
-    return out
+_append = decisions.append          # P571: one append / read for every decisions.jsonl (agentj/decisions.py)
+_jsonl = decisions.read
 
 
 # ------------------------------------------------------------------------------------------------ brief (pstack ②)
@@ -216,8 +202,7 @@ class Order:
 
     # decisions / gates / refusals ---------------------------------------
     def decide(self, phase: str, decision: str, why: str, evidence: str = "", result: str = "") -> None:
-        _append(self.path / "decisions.jsonl", {"ts": round(time.time(), 3), "phase": phase[:40], "decision": decision[:300],
-                                                "why": why[:500], "evidence": evidence[:300], "result": result[:200]})
+        _append(self.path / "decisions.jsonl", decisions.record(phase, decision, why, evidence, result))
 
     def decisions(self) -> list[dict]:
         return _jsonl(self.path / "decisions.jsonl")
@@ -388,49 +373,9 @@ NEXT = {"done": "report the result to the owner", "incomplete": "act on 需要�
 
 
 # ------------------------------------------------------------------------------------------------ retries (§14.3, pstack ④)
-RETRY = {"budget": "narrow_scope", "context": "narrow_scope", "oom": "narrow_scope", "network": "retry_same",
-         "rate_limit": "retry_same", "server": "retry_same", "tool_error": "switch_model", "auth": "ask_owner",
-         "unknown": "retry_once"}
-
-
-def failure_kind(llm_kind: str | None = None, aborted: str | None = None, exit_code=None) -> str:
-    if aborted == "budget":
-        return "budget"
-    if exit_code in (137, -9):
-        return "oom"
-    if llm_kind in ("network", "rate_limit", "server", "auth", "context"):
-        return llm_kind
-    if llm_kind in ("bad_request", "bad_reply", "model"):
-        return "tool_error"
-    return "unknown"
-
-
-def root_cause_hash(stage: str, err_class: str, places: list[str]) -> str:
-    """sha256(工序|错误类别|前 3 个 file:line)[:12] — the same hash twice in a row after a resume = stop and escalate."""
-    return hashlib.sha256("|".join([stage, err_class] + list(places)[:3]).encode()).hexdigest()[:12]
-
-
-_PLACE = re.compile(r"([\w./-]+\.\w+):(\d+)")
-
-
-def places_of(text: str) -> list[str]:
-    return [f"{m.group(1)}:{m.group(2)}" for m in _PLACE.finditer(text or "")][:3]
-
-
-def retry_advice(history: list[dict]) -> str:
-    """history: result.json of this order's runs, oldest first → the action for the next run."""
-    if not history:
-        return "go"
-    last = history[-1]
-    if last.get("verdict") in ("done",):
-        return "none"
-    fails = [h for h in history if h.get("verdict") in ("failed", "no_report")]
-    if len(history) >= 2 and history[-1].get("root_cause_hash") and \
-            history[-1].get("root_cause_hash") == history[-2].get("root_cause_hash"):
-        return "escalate"                         # the same root cause twice: stop, tell the superior
-    if len(fails) >= 2 and fails[-1] is last:
-        return "escalate"
-    return RETRY.get(last.get("failure_kind") or "unknown", "retry_once")
+# P571: the table and the hash live in agentj/decisions.py, shared with the default path; same names here.
+RETRY, failure_kind, root_cause_hash = decisions.RETRY, decisions.failure_kind, decisions.root_cause_hash
+places_of, retry_advice = decisions.places_of, decisions.retry_advice
 
 
 # ------------------------------------------------------------------------------------------------ tools (12.5, ≤ 500 tokens)

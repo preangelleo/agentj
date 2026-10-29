@@ -26,9 +26,9 @@ export function configure(h) {
 // ---------------------------------------------------------------- the row: state from the host
 let st = null;                                       // {state, expires_at} | null (no answer: an older host)
 export const _state = () => st && { ...st };
-const TOKEN = /\bajt_[A-Za-z0-9_-]{20,64}\b/g;
-/** ajt_••••…末 4 位 — what a screenshot of the panel may show. */
-export const maskToken = (tok) => 'ajt_••••…' + String(tok).slice(-4);
+const TOKEN = /\baj[th]_[A-Za-z0-9_-]{20,64}\b/g;   // P576: the host mints ajh_ (seat_transfer.PREFIX), never ajt_
+/** ajh_••••…末 4 位 (the code's own prefix, like the host's mask) — what a screenshot of the panel may show. */
+export const maskToken = (tok) => String(tok).slice(0, 4) + '••••…' + String(tok).slice(-4);
 export function maskPrompt(text, token) {
   const s = String(text ?? '');
   return token ? s.split(token).join(maskToken(token)) : s.replace(TOKEN, (m) => maskToken(m));
