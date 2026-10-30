@@ -42,7 +42,7 @@ def feedback_snapshot():
 
 ALLOWED = {  # P569: each op is signature-tested
     "diag": set(), "layout_last": set(), "status": set(), "reconnect": {"session", "caller_session", "as_json"},
-    "support": {"kind", "text", "thread", "attach_doctor", "wait", "lang", "owner_confirmed"},
+    "support": {"kind", "text", "thread", "attach_doctor", "wait", "lang"},
     "thread": {"thread", "wait"}, "list": set(),
     "feedback_send": {"raw", "owner_confirmed"}, "feedback_replies": {"as_json"},
 }
@@ -96,8 +96,7 @@ def execute(st, req):
         elif op == "support":
             rc = support.run_send(req.get("kind"), req.get("text"), thread=req.get("thread"),
                                   attach_doctor=req.get("attach_doctor", False), wait=wait, lang=req.get("lang"),
-                                  ch=support.channel_for(st), doctor_fn=feedback_snapshot, out=out,
-                                  owner_confirmed=req.get("owner_confirmed", False))  # P573: as feedback_send
+                                  ch=support.channel_for(st), doctor_fn=feedback_snapshot, out=out)
         elif op == "thread":
             rc = support.run_thread(req.get("thread"), wait=wait, ch=support.channel_for(st), out=out)
         elif op == "list":

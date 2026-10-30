@@ -43,7 +43,7 @@ import * as sendvol from './sendvol.js';   // P154 追加 12: hold the grey Send
 import * as shotclip from './shotclip.js';
 import * as attkeys from './attkeys.js';   // P398 (#156): the same content twice in the tray → once
 import { Upload, TYPES as DROP_TYPES, MAX_BYTES as UPLOAD_MAX, MAX_ATT, ASR_MAX_BYTES, anyMime } from './blobs.js';
-import { renderPage as renderMedia, forgetAll as forgetMedia, renderReader as renderReaderMedia, clearReader as clearReaderMedia, closeViewer as closeMediaViewer, viewerOpen as mediaViewerOpen, setDocReader, fileNeighbour, readsInReader, afterPop, viewerOpener } from './media.js';   // F21: files the reply shows (§13); P59: in the reader too
+import { renderPage as renderMedia, forgetAll as forgetMedia, renderReader as renderReaderMedia, clearReader as clearReaderMedia, closeViewer as closeMediaViewer, viewerOpen as mediaViewerOpen } from './media.js';   // F21: files the reply shows (§13); P59: in the reader too
 import { toWav, GAP_MIN_MS, GAP_SKIP_MS } from './wav.js';
 import * as LR from './longrec.js';   // P182: long takes kept on the phone until the computer has them
 import { Speaker, configureSpeech } from './speak.js';
@@ -457,10 +457,10 @@ function renderCard(s){
 }
 
 // ---- tool approval from the phone (§8, §10.8; relay M2-approve) ---------------------
-// 拒绝 and 批准 are one tap each (P573: no hold any more); a Face ID card (passkey_required) still asks for the passkey.
-// Both are Ed25519-signed by this device's non-extractable key over exactly what the sheet shows (tool + summary; the
-// batch scope for 批量).
+// 拒绝 is one tap; 批准 needs a HOLD of APPR_HOLD_MS — a tap alone never approves. Both are Ed25519-signed by this
+// device's non-extractable key over exactly what the sheet shows (tool + summary; the batch scope for 批量).
 const APPR_FINAL = ["approved", "denied", "terminal", "timeout", "expired", "ended", "stopped"];
+const APPR_HOLD_MS = 1200;
 let apprSent = {id: null, state: null}, apprBusy = false, apprToasted = null, apprDismissed = null;
 // P154 追加: the remote that sends the answer puts the card away at once (other remotes close when the host says so).
 // apprOpt = {id, key, action} while the host has not confirmed; apprFail = the reason the card came back (shown on it).
@@ -543,7 +543,6 @@ function renderPermission(card, p){
   el("apprGoalAdd").disabled = apprBusy;
   if (goalAdd) el("apprGoalAddText").textContent = p.goal_add;
   el("apprBtns").hidden = !open || !sign;
-  paintTaskGrant(p, open);   // P573
   el("apprDeny").disabled = apprBusy;
   // P561 追加 17: a Face ID card on a remote with no key of its own never shows 「用 Face ID 确认」 (it could only fail) — the
   // block under the buttons says so, with 「去设置」 and 「拒绝」 (a TV keeps P387's 「在手机上确认」)
@@ -721,7 +720,7 @@ export function answerRefused(m) {
   apprDismissed = null; foldedCard = null;
   apprFail = {id: m.id, text: t('fr.ask.failed')};
 }
-// P154 追加 2 (owner, 2026-10-12): on a computer ⌘+Enter (Mac) / Ctrl+Enter = a tap on 批准 — the same apprPost, so the
+// P154 追加 2 (owner, 2026-10-12): on a computer ⌘+Enter (Mac) / Ctrl+Enter = 长按批准 finished — the same apprPost, so the
 // same device signature and passkey check; never a way around them. Only while the card is up; it wins over the text
 // box's Enter-to-send. Esc puts the card away (layers.js). Phones (no fine pointer) show no hint.
 const IS_MAC = /Mac|iPhone|iPad|iPod/.test((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || "");
@@ -741,40 +740,53 @@ function apprLive(){
   const p = cur && cur.approval;
   return p && apprState(p) === "open" && !apprBusy ? p : null;
 }
-function apprCancelHold(){ apprHold = null; }
-// P573 (host `task_grant`): approving this card also lets this task's later steps of the same class through — one small line
-// above the buttons says so, in the owner's language (the host's note; `task_grant_en` when the page is English).
-function paintTaskGrant(p, open){
-  let n = el("apprTask");
-  const tx = open && p ? (lang() === "en" && p.task_grant_en ? p.task_grant_en : p.task_grant) : "";
-  if (!n){
-    if (!tx) return;
-    n = document.createElement("p"); n.id = "apprTask"; n.className = "apprtask";
-    el("apprBtns").before(n);
-  }
-  n.textContent = tx || ""; n.hidden = !tx;
+function apprCancelHold(done){
+  if (!apprHold) return;
+  clearTimeout(apprHold.timer);
+  holdFill(apprHold.btn, done ? "done" : "back");
+  apprHold.btn.classList.remove("holding");
+  apprHold = null;
 }
-// P573 (chairman, 10-29: 「新增『点一下』按钮档，不长按」): 批准, 批量批准 and 批准并加进目标授权 answer on one tap — the press
-// and the release on the same button. A finger that slides off before letting go, or a scroll (pointercancel), answers
-// nothing. A Face ID card (passkey_required) still starts the passkey sheet from the press, exactly as before.
-function tapToApprove(btn, action){
+// P565 追加 C (#348, 董事长 10-28 「按下去看不到那个状态栏从左到右」): the fill used to be only a CSS width transition on
+// `.holding`. Every snapshot re-renders the card (any host message: usage, status, activity …), and renderCard hides
+// #apprBtns for a moment while measureCmd reads the command's height (P154) — that style flush cancels the running
+// transition, so the fill jumped straight to full. 追加 C 补充 (10-28 15:1x): the look is the earliest one, exactly
+// (7e45af4f1: width 0 → 100 %, linear, var(--state) at .55, an early release snaps back to 0). Only its clock moved: a Web
+// Animation on `width` started at the press keeps running through any re-render or display flicker.
+function holdFill(btn, mode){
+  const f = btn && btn.querySelector(".fill");
+  if (!f || typeof f.animate !== "function") return;            // no Web Animations: the CSS transition on .holding
+  const prev = f._hold || null;
+  if (mode === "done"){                                          // P567: complete → empty immediately (7e45af4f1)
+    if (prev) prev.cancel();
+    f._hold = null;
+    return;
+  }
+  if (prev) prev.cancel();                                       // "back": let go early → straight back to 0 (as at first)
+  f._hold = mode === "start" ? f.animate([{width: "0%"}, {width: "100%"}], {duration: APPR_HOLD_MS, easing: "linear", fill: "forwards"}) : null;
+}
+// The hold gesture, for 批准 and for 批量批准 (both approve, so neither may fire on a tap).
+function holdToApprove(btn, action){
+  btn.style.setProperty("--hold-ms", APPR_HOLD_MS + "ms");
   btn.addEventListener("pointerdown", e => {
     const p = apprLive();
     if (!p || p.local_only || apprHold || e.button > 0) return;
     e.preventDefault();
     if (p.passkey_required && action === "allow") { apprPost(p, action); return; }
-    apprHold = {id: p.id, btn};
+    btn.classList.add("holding");
+    holdFill(btn, "start");
+    apprHold = {id: p.id, btn, t0: Date.now(), timer: setTimeout(() => {
+      const q = apprLive(), id = apprHold && apprHold.id;
+      apprCancelHold(true);
+      if (q && q.id === id && !q.local_only) apprPost(q, action);
+    }, APPR_HOLD_MS)};
   });
-  btn.addEventListener("pointerup", e => {
-    const h = apprHold;
-    if (!h || h.btn !== btn) return;
-    apprHold = null;
-    const r = btn.getBoundingClientRect();
-    if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) return;   // slid off: no answer
-    const q = apprLive();
-    if (q && q.id === h.id && !q.local_only) apprPost(q, action);
-  });
-  ["pointercancel", "pointerleave"].forEach(ev => btn.addEventListener(ev, () => { if (apprHold && apprHold.btn === btn) apprHold = null; }));
+  ["pointerup", "pointercancel", "pointerleave"].forEach(ev => btn.addEventListener(ev, () => {
+    if (!apprHold || apprHold.btn !== btn) return;
+    const short = Date.now() - apprHold.t0 < APPR_HOLD_MS;
+    apprCancelHold();
+    if (short && ev === "pointerup") toast(t('r.appr.holdHint'), 1800);
+  }));
   btn.addEventListener("contextmenu", e => e.preventDefault());
 }
 async function askPost(a, cancel){
@@ -886,7 +898,7 @@ function meterToast(e){
     ...(x.at ? {at: x.at} : {}), ...(x.stale ? {stale: true} : {}), ...(x.expired ? {expired: true} : {})})) : [];
   const ctx = typeof u.context_pct === 'number' ? u.context_pct : null;
   const ctxText = ctx != null ? null : Number.isFinite(u.context_used) ? `${u.context_used} tokens` : postCompact ? t('p207set.usage.ctxPost') : null;
-  openUsage({source: !!u.source, windows, ctx, ctxText, heartbeat: u.heartbeat_usage, age: u.age_s != null ? u.age_s : null}, e && e.currentTarget);
+  openUsage({source: !!u.source, windows, ctx, ctxText, age: u.age_s != null ? u.age_s : null}, e && e.currentTarget);
 }
 
 // P575 (#390): a change of the page colour plays its sound, the end of all work plays 全部完成 (js/cues.js: settle, merge,
@@ -1329,7 +1341,7 @@ function sourceOf(src){
   if (src.k === "agent") return {kind: "agent", label: src.via === "heartbeat" ? t('r.src.heartbeat') : src.via === "quota" ? t('p314.src') : src.via === "hook" ? t('p366.src') : src.via === "loop" ? t('r.src.loop') : src.via === "task" ? t('r.src.bgTask')
     : src.via === "auto" ? t('p365.src.about', {name: src.name || ''})   // P365: the main Agent's own follow-up about an automation's message
     : t(src.text?.trim() ? 'r.src.agent' : 'r.src.agentReport', {name: C.agentName()})};
-  if (src.k === "task" && src.via === "same-owner") return {kind: "task", label: t('p585.src', {name: src.name || t('r.src.otherDevice')})};
+  if (src.k === "task" && src.via === "same-owner" && src.name) return {kind: "task", label: src.name};
   if (src.k === "task") return {kind: "task", label: src.name ? t('r.src.taskNamed', {name: src.name}) : t('r.src.task')};
   if (src.k === "cmd") return {kind: "cmd", label: t('r.src.cmd')};
   // P365: the owner's own script / timer (`agentj notify --from <name>`): the quiet system colour, its registered name
@@ -1344,7 +1356,7 @@ function showPage(){
   const pinned = ps.findIndex(p => String(p.id === null ? "live" : p.id) === oldId);
   const tail = ps[ps.length - 1];
   if (pinned >= 0 && pinned < ps.length - 1){
-    const onNewest = (follow || tailWait) && !rdAt && !mediaViewerOpen();   // P573: a file open full screen keeps its page too
+    const onNewest = (follow || tailWait) && !rdAt;
     if (!onNewest){ pageAt = pinned; follow = false; tailWait = false; }               // paging history / reading full-screen
     else if (!visibleReply(tail)){ pageAt = pinned; follow = false; tailWait = true; }  // its reply is not here yet
     else { follow = true; tailWait = false; }                                           // P132: newest page → go to the new one
@@ -1362,9 +1374,6 @@ function showPage(){
   paintUnread(ps, p);
   const key = (p.id === null ? "live" : p.id) + "|" + pageAt;
   const om = el("om"), src = p.source;
-  // A completed host broadcast is a notice, not an Agent turn awaiting an answer.
-  const noticeOnly = src?.k === "host" && !!src.text?.trim() && p.end === "done" && !p.reply?.trim() && !p.card && !src.att?.length;
-  el("rm").classList.toggle("host-notice", noticeOnly);
   if (src?.notice_id && !document.hidden && isReady()) {
     const receiptKey = hostId() + ':' + src.notice_id;
     if (!noticeReads.has(receiptKey)) {
@@ -1458,15 +1467,14 @@ function showPage(){
   const open = p.end === "open" && p.id !== null, c = p.card || {};
   const progress = open && typeof c.progress === "string" ? c.progress.trim().slice(0, 300) : "";
   const hostWait = open && (c.wait === true || c.queued === true) || (typeof c.switch === "string" && p === ps[ps.length - 1]);
-  renderWords(chan ? chanWords(p, chan) : (isSilent(p.reply) ? "" : p.reply?.trim()) || (noticeOnly || p.end === "open" || p.id === null ? "" : t('r.noReply')), open,
+  renderWords(chan ? chanWords(p, chan) : (isSilent(p.reply) ? "" : p.reply?.trim()) || (p.end === "open" || p.id === null ? "" : t('r.noReply')), open,
     qd ? t(queueStuck ? 'p481.queueStuck' : 'r.queue.card') + (ahead ? " · " + t('r.queue.ahead', {n: ahead}) : "") : progress, hostWait, sysPage(p), p.source?.k === "friend_report" || !!chan);
-  if (noticeOnly) el("words").replaceChildren();
   paintThinking(visibleReply(p) && !hostWait ? progress : "");
   el("words").classList.toggle("empty", !visibleReply(p));
   renderMedia(el("words"), p);
   wireComponents(el("words"), replyBtn.agentWords(p) && p.end !== "open", text => appendText("\n" + text + "\n"));
   replyBtn.paint(el("words"), p, {pages, say: sayReply, find: search.find});   // P368
-  if (rdAt && rdAt.key === shownKey && !rdAt.file) renderReaderMedia(el("rdWords"), p);   // P59: the reader's slots, same Blobs
+  if (rdAt && rdAt.key === shownKey) renderReaderMedia(el("rdWords"), p);   // P59: the reader's slots, same Blobs
   if (rdOpen()) rdSync();                                                   // P273: the reader follows every jump
   document.body.dataset.pageOpen = p.end === "open" ? "1" : "0";
   paintActs();
@@ -2191,7 +2199,6 @@ function rdBounce(dir){
 }
 async function rdPage(dir){
   if (!rdOpen() || rdPaging) return;
-  if (rdAt?.file){ rdFileStep(dir); return; }   // P573: a file steps to the reply's previous / next file (P196's order)
   rdPaging = true;
   try {
     const before = rdAt?.key, beforeId = currentPage()?.id;
@@ -2208,7 +2215,7 @@ async function rdPage(dir){
 // P273: the header's corners in the reader — double tap the Agent / time = the first reply, double tap the page number =
 // the newest, the unread badge = the first unread. Each lands on a page that has words (empty pages are stepped over).
 async function rdJump(where){
-  if (!rdOpen() || rdPaging || rdAt?.file) return;
+  if (!rdOpen() || rdPaging) return;
   rdPaging = true;
   try {
     const before = rdAt?.key;
@@ -2241,7 +2248,7 @@ function rdHead(){
 function rdSync(){
   if (!rdAt) return;
   rdHead();
-  if (rdAt.key === shownKey || rdAt.file) return;   // P573: a file on screen stays whatever arrives
+  if (rdAt.key === shownKey) return;
   const p = currentPage();
   if (!rdHasText(p)) return;                    // an empty page on the way: the jump that brought us here moves on
   const tx = p.reply.trim();
@@ -2273,23 +2280,19 @@ function rdBuildActs(){
   for (const [s, b] of pairs){ copy(s, b); mo.observe(s, {attributes: true, attributeFilter: [...RD_MIRROR, "class"]}); }
 }
 function rdCopy(){
-  if (rdAt?.file){ copyOut(rdAt.file.f.text, t('r.copy.reply'), el('rdfCopy')); return; }   // P573: the whole file
   const tx = currentPage().reply || "";
   copyOut(tx, t('r.copy.reply'), el('rdCopyBtn'));
 }
 function rdReply(){
   const p = currentPage();
   if (!p || p.id === null) return;
-  if (rdAt?.file?.back) closeReader();   // P573: a file opened from the reply reader → back to the reply, then out
   closeReader();
   startReply(p);
-  // Reply explicitly asks to write, including touch devices (ordinary page changes keep P375).
-  input.focus({preventScroll: true});
   // the reader's layer gives the focus back to its opener in the MutationObserver microtask queued by closeReader;
   // this one runs after it, still inside the tap, so the caret ends in the field (and the phone keyboard opens)
   queueMicrotask(() => {
     if (!quotes.some(q => q.id === p.id) || document.activeElement === input) return;
-    input.focus({preventScroll: true}); input.setSelectionRange(input.value.length, input.value.length);
+    focusComposer(); input.setSelectionRange(input.value.length, input.value.length);
   });
 }
 // The type-size popover (footer, left): − · slider · + — pinch and + / - keep working without it.
@@ -2302,10 +2305,8 @@ function rdFsPop(open){
 }
 function closeReader(fromPop){
   if (!rdOpen()) return;
-  if (rdAt?.file?.back){ rdFileBack(fromPop); return; }   // P573: a file opened from the reply reader → that reply again
   rdGuard = performance.now(); rdPinch = null;
   rdFsPop(false);
-  if (rdAt?.file) rdFilePaint(false);
   const rd = el("rd");
   rd.hidden = true; delete rd.dataset.modalOpen; delete document.body.dataset.reader;
   el("rdWords").replaceChildren();
@@ -2316,149 +2317,9 @@ function closeReader(fromPop){
   rdPushed = false;
 }
 function rdFollow(tx, sys = false, dataOnly = false){
-  if (!rdAt || rdAt.file || rdAt.key !== shownKey || !tx || tx === rdAt.text) return;
+  if (!rdAt || rdAt.key !== shownKey || !tx || tx === rdAt.text) return;
   const sc = el("rdScroll"), top = sc.scrollTop;
   rdAt.text = tx; fill(el("rdWords"), tx, dataOnly, sys); sc.scrollTop = top;
-}
-// ---- P573 (#386): a file in the same reader ----------------------------------------------------------------------
-// A Markdown / text / code file the reply sent opens here (media.js → setDocReader), not in a viewer of its own: the same
-// Noir page, the same md.js rendering (lists, links, code, tables), the same type size, select-to-quote, double tap / Esc /
-// Back to leave. The header is the file's name with 下载 as a thin icon on the right; the footer is the reply card's own
-// icons for the file: 阅读 (leave) · 分享 · Telegram · 邮件 (each the file card's own button) · 复制 (the whole file) · 回复.
-// The page under it stays put while it is open (showPage pins it), so a new message never closes or repaints it.
-let rdFileEls = null;
-function rdActBtn(id, svg){
-  const b = document.createElement("button");
-  b.className = "act"; b.id = id; b.type = "button"; b.dataset.state = "idle";
-  b.append(svg, glyph("ok", "g gok"));
-  const bang = document.createElement("i"); bang.className = "bang"; bang.textContent = "!"; bang.setAttribute("aria-hidden", "true");
-  b.appendChild(bang);
-  return b;
-}
-const RDF_MIRROR = ["disabled", "hidden", "data-state", "aria-label", "title"];
-function rdFileBuild(){
-  if (rdFileEls) return rdFileEls;
-  const hd = document.createElement("div"); hd.className = "rdfhd"; hd.id = "rdFileHd"; hd.hidden = true;
-  const name = document.createElement("b"); name.id = "rdFileName";
-  const dl = rdActBtn("rdfDl", glyph("download")); dl.classList.add("rdfdl");
-  hd.append(glyph("file", "rdfic"), name, dl);
-  el("rdHd").appendChild(hd);
-  const acts = document.createElement("div"); acts.className = "rdacts"; acts.id = "rdFileActs"; acts.hidden = true;
-  acts.setAttribute("role", "toolbar");
-  const read = rdActBtn("rdfRead", el("readBtn").querySelector("svg").cloneNode(true)); read.classList.add("on");
-  const sh = rdActBtn("rdfShare", glyph("share")), tg = rdActBtn("rdfTg", glyph("tg")), mail = rdActBtn("rdfMail", glyph("mail"));
-  const copy = rdActBtn("rdfCopy", el("copyReply").querySelector("svg").cloneNode(true));
-  const reply = rdActBtn("rdfReply", el("replyBtn").querySelector("svg").cloneNode(true));
-  acts.append(read, sh, tg, mail, copy, reply);
-  el("rdActs").after(acts);
-  read.addEventListener("click", () => closeReader());
-  copy.addEventListener("click", rdCopy);
-  reply.addEventListener("click", rdReply);
-  // 下载 · 分享 · Telegram · 邮件 = the file card's own buttons (their loading / sent / failed states shown here too)
-  const pairs = [[dl, ".mact.dl"], [sh, ".mact.sh"], [tg, ".mact.tg"], [mail, ".mact.mail"]];
-  for (const [b, sel] of pairs) b.addEventListener("click", () => rdFileCard()?.querySelector(sel)?.click());
-  const mo = new MutationObserver(() => rdFileMirror());
-  onLang(() => { if (rdAt?.file) rdFileLabels(); });
-  rdFileEls = {hd, name, acts, read, copy, reply, pairs, mo};
-  return rdFileEls;
-}
-// The file's card on the page under the reader. A card opened from inside the reply reader left the DOM when the file
-// replaced the reply's words, and a page re-render swaps cards — so look it up by its media id each time (the stored one
-// is the fallback: its buttons still work, only their state stops updating).
-function rdFileCard(){
-  const c = rdAt?.file?.f.card;
-  if (!c) return null;
-  if (c.isConnected && !el("rd").contains(c)) return c;
-  for (const x of mainEl.querySelectorAll(".mcard")) if (x.dataset.mid === c.dataset.mid) return x;
-  return c;
-}
-function rdFileLabels(){
-  const E = rdFileEls;
-  for (const [b, k] of [[E.read, 'r.rd.exit'], [E.copy, 'sout.copyFile'], [E.reply, 'r.bar.reply']]){ b.setAttribute("aria-label", t(k)); b.title = t(k); }
-}
-function rdFileMirror(){
-  const E = rdFileEls, c = rdFileCard();
-  if (!E || !c) return;
-  for (const [b, sel] of E.pairs){
-    const s = c.querySelector(sel);
-    if (!s){ b.hidden = true; continue; }
-    for (const a of RDF_MIRROR){ const v = s.getAttribute(a); if (v === null) b.removeAttribute(a); else b.setAttribute(a, v); }
-  }
-}
-function rdFilePaint(on){
-  const E = rdFileBuild(), rd = el("rd");
-  E.mo.disconnect();
-  if (!on){ delete rd.dataset.file; E.hd.hidden = true; E.acts.hidden = true; el("rdActs").hidden = false; return; }
-  const f = rdAt.file.f;
-  rd.dataset.file = "1"; E.hd.hidden = false; E.acts.hidden = false; el("rdActs").hidden = true;
-  E.name.textContent = f.name;
-  E.acts.setAttribute("aria-label", f.name);
-  rdFileLabels();
-  rdFileMirror();
-  // the card's buttons change state (loading / sent / failed, mail registered) and the page may re-render its cards: watch the
-  // page under the reader, not one card
-  E.mo.observe(mainEl, {subtree: true, childList: true, attributes: true, attributeFilter: RDF_MIRROR});
-}
-// ← / → / a swipe in the file reader = the viewer's: the same reply's previous / next file that can be previewed. A file
-// to read replaces this one in place; a picture / PDF / player closes the reader first and opens in the viewer.
-async function rdFileStep(dir){
-  const c = rdFileCard(), next = c && fileNeighbour(c, dir);
-  if (!next){
-    const sc = el('rdScroll');
-    if (!matchMedia('(prefers-reduced-motion: reduce)').matches) sc.animate([{transform:'translateX(0)'},{transform:`translateX(${dir < 0 ? 10 : -10}px)`},{transform:'translateX(0)'}],{duration:180});
-    toast(t(dir < 0 ? 'media.pv.first' : 'media.pv.last'), 1400);
-    return;
-  }
-  if (!readsInReader(next)){
-    const pushed = rdPushed || !!rdAt.file.pushed; closeReader(); if (pushed) await afterPop();
-    if (next.isConnected) next.focus?.({preventScroll: true});   // the viewer gives the focus back to the file it showed
-  }
-  await next._preview?.();
-  viewerOpener(next);
-  if (next.isConnected) next.scrollIntoView?.({block: 'nearest'});
-}
-function rdFileFill(f){
-  const w = el("rdWords");
-  if (f.kind === "markdown") fill(w, f.text, false, false);
-  else if (f.kind === "code") fill(w, "```" + (f.lang || "") + "\n" + f.text.replace(/\n$/, "") + "\n```", false, true);
-  else {                                           // plain text / a log: its own line breaks, never reflowed into one line
-    w.replaceChildren();
-    for (const para of f.text.replace(/\n+$/, "").split(/\n\s*\n/)){ const n = document.createElement("p"); n.className = "rdftext"; n.textContent = para; w.appendChild(n); }
-  }
-  if (f.cut){ const n = document.createElement("p"); n.className = "mpvnote"; n.textContent = t('media.pv.more'); w.appendChild(n); }
-}
-function openFileReader(f){
-  const was = rdOpen(), prev = rdAt;
-  rdGuard = performance.now(); rdMuteUntil = rdGuard + 600;
-  try{ const s = getSelection(); if (s && !s.isCollapsed) s.removeAllRanges(); }catch(_){}
-  const back = prev?.file ? prev.file.back : was && prev ? {scroll: el("rdScroll").scrollTop} : null;
-  const pushed = prev?.file ? prev.file.pushed : false;
-  if (was && prev && !prev.file) clearReaderMedia();
-  rdAt = {key: shownKey, scroll: was && prev ? prev.scroll : mainEl.scrollTop, text: null, file: {f, back, pushed}};
-  rdFileFill(f);
-  rdFilePaint(true);
-  const rd = el("rd");
-  if (!was){
-    if (document.activeElement === input) input.blur();
-    rd.hidden = false; rd.dataset.modalOpen = "1"; document.body.dataset.reader = "1";
-    rdSetFs(rdFs, false);
-    try{ history.pushState({ajReader: 1}, ""); rdPushed = true; }catch(_){ rdPushed = false; }
-  } else if (back && !pushed){
-    try{ history.pushState({ajReader: 1, ajRdFile: 1}, ""); rdAt.file.pushed = true; }catch(_){}
-  }
-  el("rdScroll").scrollTop = 0;
-  rdHead();
-}
-function rdFileBack(fromPop){
-  const fl = rdAt.file;
-  rdGuard = performance.now();
-  rdFilePaint(false);
-  const main = rdAt.scroll;
-  rdAt = {key: null, scroll: main, text: ""};
-  rdSync();                                       // the reply under it, drawn as every page the reader follows
-  if (rdAt) rdAt.scroll = main;
-  el("rdScroll").scrollTop = fl.back.scroll;
-  if (!fromPop && fl.pushed && history.state && history.state.ajRdFile){ rdSkipPop = true; history.back(); }
 }
 function dblTap(node, ok, fn){
   let down = null, last = null;
@@ -4759,10 +4620,10 @@ export function init(ctx){
   el("apprGo").addEventListener("click", () => { if (document.body.dataset.sheet === "1") el("sheetClose").click(); scrollToPkRow(); });   // P561 追加 17 · P563 追加 7: fold the card (it stays pending), then Settings' row
   el("cmdMore").addEventListener("click", toggleCmd);
   el("cmdCopy").addEventListener("click", () => copyOut(cmdFull, t('r.appr.cmdCopied')));
-  tapToApprove(el("apprAllow"), "allow");   // @ix appr.approve (+ apprHotkey: ⌘ / Ctrl+Enter)
+  holdToApprove(el("apprAllow"), "allow");   // @ix appr.approve (+ apprHotkey: ⌘ / Ctrl+Enter)
   document.addEventListener("keydown", apprHotkey, true);     // capture: before the text box's Enter-to-send
-  tapToApprove(el("apprBatch"), "batch");
-  tapToApprove(el("apprGoalAdd"), "goaladd");   // P339: approve + add the offered line to the goal's grant (P573: one tap)
+  holdToApprove(el("apprBatch"), "batch");
+  holdToApprove(el("apprGoalAdd"), "goaladd");   // P339: approve + add the offered line to the goal's grant (a tap alone never approves)
   el("cmdToggle").addEventListener("click", toggleGoalCmd);
   el("qs").addEventListener("click", e => {
     const b = e.target.closest && e.target.closest(".opt");
@@ -4898,14 +4759,13 @@ export function init(ctx){
   bindReaderSwipe(el('rdScroll'), {open: rdOpen, step: rdPage}); // @ix read.prev read.next
   addEventListener("popstate", () => {
     if (rdSkipPop){ rdSkipPop = false; return; }
-    if (rdOpen()){ if (!rdAt?.file?.back) rdPushed = false; closeReader(true); }   // P573: Back from a file → its reply
+    if (rdOpen()){ rdPushed = false; closeReader(true); }
   });
   document.addEventListener("pointerdown", e => { rdPtr = e.pointerType || ""; }, true);
   dblTap(el("rm"), rdTarget, openReader);   // @ix card.reader
   dblTap(el("rdScroll"), rdTarget, () => closeReader());   // @ix read.close
   document.addEventListener("click", e => { if (performance.now() - rdGuard < 350){ e.preventDefault(); e.stopPropagation(); } }, true);
   el("readBtn").addEventListener("click", openReader);
-  setDocReader(openFileReader);   // P573: files to read open in this reader
   el("rdClose").addEventListener("click", () => closeReader());
   // P273: header corners + footer
   rdBuildActs();
@@ -5503,8 +5363,7 @@ export function init(ctx){
       const sc = el("rdScroll"), rstep = Math.max(40, Math.round(sc.clientHeight * 0.25)), rscreen = Math.max(40, Math.round(sc.clientHeight * 0.9));
       const f = {f: () => closeReader(), "+": () => rdStep(1), "=": () => rdStep(1), "-": () => rdStep(-1), "_": () => rdStep(-1),
                  g: () => rdJump("last"), G: () => rdJump("first"), u: () => rdJump("unread"), y: rdCopy, r: rdReply,   // @ix read.first read.last read.first_unread read.copy read.reply
-                 l: () => { if (!rdAt?.file) el("rdSpeakBtn").click(); }, t: () => el(rdAt?.file ? "rdfTg" : "rdFwdBtn").click(),
-                 e: () => { const b = el(rdAt?.file ? "rdfMail" : "rdMailBtn"); if (!b.hidden) b.click(); },   // @ix read.speak read.forward read.mail
+                 l: () => el("rdSpeakBtn").click(), t: () => el("rdFwdBtn").click(), e: () => { if (!el("rdMailBtn").hidden) el("rdMailBtn").click(); },   // @ix read.speak read.forward read.mail
                  ArrowLeft: () => rdPage(-1), ArrowRight: () => rdPage(1),
                  ArrowUp: () => sc.scrollBy(0, -rstep), ArrowDown: () => sc.scrollBy(0, rstep),
                  " ": () => sc.scrollBy(0, e.shiftKey ? -rscreen : rscreen)}[e.key];

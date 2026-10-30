@@ -2589,7 +2589,7 @@ agentj friends --help
 
 ```text
 usage: agentj friends [-h] [--json]
-                      {relay-policy,cancel,asks,id,card,add,list,reports,status,pick,pick-rules,history,tell,approve-actions,say,devices,group,groups,block,unblock,remove,discoverable,profile,context,usage,on,off} ...
+                      {relay-policy,cancel,asks,id,card,add,list,reports,status,pick,pick-rules,history,tell,say,devices,group,groups,block,unblock,remove,discoverable,profile,context,usage,on,off} ...
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -2617,26 +2617,6 @@ usage: agentj friends add [-h] [--json] [--note NOTE] id
 | `--json` | `false` | false | — | `machine-readable output` |
 | `id` | `null` | true | — | `` |
 | `--note` | `""` | false | — | `` |
-
-### agentj friends approve-actions
-
-```text
-approve the exact actions of this task once
-```
-
-```bash
-agentj friends approve-actions --help
-```
-
-```text
-usage: agentj friends approve-actions [-h] [--json] actions
-```
-
-| Argument | Default | Required | Choices | Help |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `--json` | `false` | false | — | `machine-readable output` |
-| `actions` | `null` | true | — | `` |
 
 ### agentj friends asks
 
@@ -3109,8 +3089,7 @@ agentj friends tell --help
 ```
 
 ```text
-usage: agentj friends tell [-h] [--json] [--actions ACTIONS] [--grant GRANT]
-                           [--reply-to REPLY_TO]
+usage: agentj friends tell [-h] [--json] [--reply-to REPLY_TO]
                            friend text [text ...]
 ```
 
@@ -3120,8 +3099,6 @@ usage: agentj friends tell [-h] [--json] [--actions ACTIONS] [--grant GRANT]
 | `--json` | `false` | false | — | `machine-readable output` |
 | `friend` | `null` | true | — | `` |
 | `text` | `null` | true | — | `` |
-| `--actions` | `null` | false | — | `exact action plan JSON file` |
-| `--grant` | `null` | false | — | `signed same-owner task grant` |
 | `--reply-to` | `null` | false | — | `task reply id` |
 
 ### agentj friends unblock
@@ -5730,7 +5707,7 @@ usage: agentj seat transfer [-h] [--show] [--out FILE] [--cancel] [--status]
 ### agentj secret
 
 ```text
-request: the human pastes a key on the phone, saved to a file · send: hand the owner their own secret on the phone (Face ID) · result: a card's outcome · log · ask / give：同一个主人的两台 Agent J 主机之间搬密钥（发起的遥控器Face ID 一次）· grant：一张同主人任务授权单 / move a key between Same owner hosts; one signed grant
+request: the human pastes a key on the phone, saved to a file · send: hand the owner their own secret on the phone (Face ID) · result: a card's outcome · log
 ```
 
 ```bash
@@ -5742,16 +5719,14 @@ usage: agentj secret [-h] [--name NAME] [--purpose PURPOSE] [--dest DEST]
                      [--verify-url VERIFY_URL] [--verify-header VERIFY_HEADER]
                      [--verify-cmd VERIFY_CMD] [--file FILE]
                      [--value-from VALUE_FROM] [--ttl TTL] [--wait]
-                     [--replace] [--peer PEER] [--why WHY] [--src SRC]
-                     [--revoke REVOKE] [--json]
-                     {request,send,result,status,log,ask,give,grant,grants}
-                     [id]
+                     [--replace] [--json]
+                     {request,send,result,status,log} [id]
 ```
 
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `action` | `null` | true | `request`, `send`, `result`, `status`, `log`, `ask`, `give`, `grant`, `grants` | `` |
+| `action` | `null` | true | `request`, `send`, `result`, `status`, `log` | `` |
 | `id` | `null` | false | — | `result：卡片 id（request/send 打印的）；不写 = 最近十张 · status：变量名` |
 | `--name` | `null` | false | — | `request：变量名，如 ELEVENLABS_API_KEY · send：手机上显示的名字，如 'Shadowrocket SS 链接'` |
 | `--purpose` | `null` | false | — | `用途（手机上原样显示）` |
@@ -5759,15 +5734,11 @@ usage: agentj secret [-h] [--name NAME] [--purpose PURPOSE] [--dest DEST]
 | `--verify-url` | `null` | false | — | `只读校验：GET 这个 https 地址，2xx = 有效` |
 | `--verify-header` | `null` | false | — | `校验请求头模板，默认 'Authorization: Bearer {value}'` |
 | `--verify-cmd` | `null` | false | — | `已禁用；请使用 --verify-url（不运行沙箱外命令）` |
-| `--file` | `null` | false | — | `send：把这个文件（≤ 256 KiB）交给主人，手机上可下载 · grant：授权单 JSON` |
+| `--file` | `null` | false | — | `send：把这个文件（≤ 256 KiB）交给主人，手机上可下载` |
 | `--value-from` | `null` | false | — | `send：一段文本，从 env:<变量名> 或 file:<路径> 读（不要写在命令行上）` |
 | `--ttl` | `null` | false | — | `send：多少秒内可领（30–600，默认 600）` |
 | `--wait` | `false` | false | — | `send：等到有结果（领取、过期或拒绝）` |
 | `--replace` | `false` | false | — | `request：目标里已经有这个值时仍然发卡换新值（默认不再打扰主人）` |
-| `--peer` | `null` | false | — | `give：同一个主人的另一台 Agent J 主机（好友名或 ID）/ a Same owner friend` |
-| `--why` | `null` | false | — | `give：为什么要搬这把密钥（卡上原样显示）/ why (shown on the card)` |
-| `--src` | `null` | false | — | `give：本机密钥在哪 env:<文件>#KEY 或 file:<路径>（不写 = 本机登记的位置）· ask：对方主机上的位置` |
-| `--revoke` | `null` | false | — | `grants：撤回本机签过的一张授权单（编号）/ withdraw a grant this host signed` |
 | `--json` | `false` | false | — | `` |
 
 ### agentj send
@@ -6143,7 +6114,6 @@ agentj support ask --help
 ```text
 usage: agentj support ask [-h] [--file FILE] [--attach-doctor]
                           [--thread THREAD] [--wait WAIT] [--lang {zh,en}]
-                          [--owner-confirmed]
                           [text ...]
 ```
 
@@ -6156,7 +6126,6 @@ usage: agentj support ask [-h] [--file FILE] [--attach-doctor]
 | `--thread` | `null` | false | — | `continue a thread (st_…)` |
 | `--wait` | `180` | false | — | `等回复的秒数（0 = 不等）/ seconds to wait (0 = do not wait)` |
 | `--lang` | `null` | false | `zh`, `en` | `` |
-| `--owner-confirmed` | `false` | false | — | `主人已读过原文并同意（第 2 层判出个人信息或不可用时才需要）/ the owner read the exact text and said yes` |
 
 ### agentj support feedback
 
@@ -6172,7 +6141,6 @@ agentj support feedback --help
 usage: agentj support feedback [-h] [--kind {bug,report}] [--file FILE]
                                [--attach-doctor] [--thread THREAD]
                                [--wait WAIT] [--lang {zh,en}]
-                               [--owner-confirmed]
                                [text ...]
 ```
 
@@ -6186,7 +6154,6 @@ usage: agentj support feedback [-h] [--kind {bug,report}] [--file FILE]
 | `--thread` | `null` | false | — | `continue a thread (st_…)` |
 | `--wait` | `180` | false | — | `等回复的秒数（0 = 不等）/ seconds to wait (0 = do not wait)` |
 | `--lang` | `null` | false | `zh`, `en` | `` |
-| `--owner-confirmed` | `false` | false | — | `主人已读过原文并同意（第 2 层判出个人信息或不可用时才需要）/ the owner read the exact text and said yes` |
 
 ### agentj support list
 
@@ -6219,7 +6186,7 @@ agentj support report --help
 ```text
 usage: agentj support report [-h] [--kind {bug,report}] [--file FILE]
                              [--attach-doctor] [--thread THREAD] [--wait WAIT]
-                             [--lang {zh,en}] [--owner-confirmed]
+                             [--lang {zh,en}]
                              [text ...]
 ```
 
@@ -6233,7 +6200,6 @@ usage: agentj support report [-h] [--kind {bug,report}] [--file FILE]
 | `--thread` | `null` | false | — | `continue a thread (st_…)` |
 | `--wait` | `180` | false | — | `等回复的秒数（0 = 不等）/ seconds to wait (0 = do not wait)` |
 | `--lang` | `null` | false | `zh`, `en` | `` |
-| `--owner-confirmed` | `false` | false | — | `主人已读过原文并同意（第 2 层判出个人信息或不可用时才需要）/ the owner read the exact text and said yes` |
 
 ### agentj support thread
 
@@ -9550,7 +9516,7 @@ agentj friends --help
 
 ```text
 usage: agentj friends [-h] [--json]
-                      {relay-policy,cancel,asks,id,card,add,list,reports,status,pick,pick-rules,history,tell,approve-actions,say,devices,group,groups,block,unblock,remove,discoverable,profile,context,usage,on,off} ...
+                      {relay-policy,cancel,asks,id,card,add,list,reports,status,pick,pick-rules,history,tell,say,devices,group,groups,block,unblock,remove,discoverable,profile,context,usage,on,off} ...
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -9578,26 +9544,6 @@ usage: agentj friends add [-h] [--json] [--note NOTE] id
 | `--json` | `false` | false | — | `机器可读输出` |
 | `id` | `null` | true | — | `` |
 | `--note` | `""` | false | — | `` |
-
-### agentj friends approve-actions
-
-```text
-一次确认当前任务的具体动作
-```
-
-```bash
-agentj friends approve-actions --help
-```
-
-```text
-usage: agentj friends approve-actions [-h] [--json] actions
-```
-
-| 参数 | 默认值 | 必填 | 可选值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `--json` | `false` | false | — | `机器可读输出` |
-| `actions` | `null` | true | — | `` |
 
 ### agentj friends asks
 
@@ -10070,8 +10016,7 @@ agentj friends tell --help
 ```
 
 ```text
-usage: agentj friends tell [-h] [--json] [--actions ACTIONS] [--grant GRANT]
-                           [--reply-to REPLY_TO]
+usage: agentj friends tell [-h] [--json] [--reply-to REPLY_TO]
                            friend text [text ...]
 ```
 
@@ -10081,8 +10026,6 @@ usage: agentj friends tell [-h] [--json] [--actions ACTIONS] [--grant GRANT]
 | `--json` | `false` | false | — | `机器可读输出` |
 | `friend` | `null` | true | — | `` |
 | `text` | `null` | true | — | `` |
-| `--actions` | `null` | false | — | `具体动作 JSON 文件` |
-| `--grant` | `null` | false | — | `同主人任务授权单编号` |
 | `--reply-to` | `null` | false | — | `回复同一个主人任务的消息 ID（避免当成新任务）` |
 
 ### agentj friends unblock
@@ -12703,16 +12646,14 @@ usage: agentj secret [-h] [--name NAME] [--purpose PURPOSE] [--dest DEST]
                      [--verify-url VERIFY_URL] [--verify-header VERIFY_HEADER]
                      [--verify-cmd VERIFY_CMD] [--file FILE]
                      [--value-from VALUE_FROM] [--ttl TTL] [--wait]
-                     [--replace] [--peer PEER] [--why WHY] [--src SRC]
-                     [--revoke REVOKE] [--json]
-                     {request,send,result,status,log,ask,give,grant,grants}
-                     [id]
+                     [--replace] [--json]
+                     {request,send,result,status,log} [id]
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `action` | `null` | true | `request`, `send`, `result`, `status`, `log`, `ask`, `give`, `grant`, `grants` | `` |
+| `action` | `null` | true | `request`, `send`, `result`, `status`, `log` | `` |
 | `id` | `null` | false | — | `result：卡片 id（request/send 打印的）；不写 = 最近十张 · status：变量名` |
 | `--name` | `null` | false | — | `request：变量名，如 ELEVENLABS_API_KEY · send：手机上显示的名字，如 'Shadowrocket SS 链接'` |
 | `--purpose` | `null` | false | — | `用途（手机上原样显示）` |
@@ -12720,15 +12661,11 @@ usage: agentj secret [-h] [--name NAME] [--purpose PURPOSE] [--dest DEST]
 | `--verify-url` | `null` | false | — | `只读校验：GET 这个 https 地址，2xx = 有效` |
 | `--verify-header` | `null` | false | — | `校验请求头模板，默认 'Authorization: Bearer {value}'` |
 | `--verify-cmd` | `null` | false | — | `已禁用；请使用 --verify-url（不运行沙箱外命令）` |
-| `--file` | `null` | false | — | `send：把这个文件（≤ 256 KiB）交给主人，手机上可下载 · grant：授权单 JSON` |
+| `--file` | `null` | false | — | `send：把这个文件（≤ 256 KiB）交给主人，手机上可下载` |
 | `--value-from` | `null` | false | — | `send：一段文本，从 env:<变量名> 或 file:<路径> 读（不要写在命令行上）` |
 | `--ttl` | `null` | false | — | `send：多少秒内可领（30–600，默认 600）` |
 | `--wait` | `false` | false | — | `result` |
 | `--replace` | `false` | false | — | `request：目标里已经有这个值时仍然发卡换新值（默认不再打扰主人）` |
-| `--peer` | `null` | false | — | `ask` |
-| `--why` | `null` | false | — | `ask` |
-| `--src` | `null` | false | — | `give：本机密钥在哪 env:<文件>#KEY 或 file:<路径>（不写 = 本机登记的位置）· ask：对方主机上的位置` |
-| `--revoke` | `null` | false | — | `grants：撤回本机签过的一张授权单（编号）/ withdraw a grant this host signed` |
 | `--json` | `false` | false | — | `` |
 
 ### agentj send
@@ -13104,7 +13041,6 @@ agentj support ask --help
 ```text
 usage: agentj support ask [-h] [--file FILE] [--attach-doctor]
                           [--thread THREAD] [--wait WAIT] [--lang {zh,en}]
-                          [--owner-confirmed]
                           [text ...]
 ```
 
@@ -13117,7 +13053,6 @@ usage: agentj support ask [-h] [--file FILE] [--attach-doctor]
 | `--thread` | `null` | false | — | `接着一个已有会话问` |
 | `--wait` | `180` | false | — | `等回复的秒数（0 = 不等）/ seconds to wait (0 = do not wait)` |
 | `--lang` | `null` | false | `zh`, `en` | `` |
-| `--owner-confirmed` | `false` | false | — | `主人已读过原文并同意（第 2 层判出个人信息或不可用时才需要）/ the owner read the exact text and said yes` |
 
 ### agentj support feedback
 
@@ -13133,7 +13068,6 @@ agentj support feedback --help
 usage: agentj support feedback [-h] [--kind {bug,report}] [--file FILE]
                                [--attach-doctor] [--thread THREAD]
                                [--wait WAIT] [--lang {zh,en}]
-                               [--owner-confirmed]
                                [text ...]
 ```
 
@@ -13147,7 +13081,6 @@ usage: agentj support feedback [-h] [--kind {bug,report}] [--file FILE]
 | `--thread` | `null` | false | — | `接着一个已有会话问` |
 | `--wait` | `180` | false | — | `等回复的秒数（0 = 不等）/ seconds to wait (0 = do not wait)` |
 | `--lang` | `null` | false | `zh`, `en` | `` |
-| `--owner-confirmed` | `false` | false | — | `主人已读过原文并同意（第 2 层判出个人信息或不可用时才需要）/ the owner read the exact text and said yes` |
 
 ### agentj support list
 
@@ -13180,7 +13113,7 @@ agentj support report --help
 ```text
 usage: agentj support report [-h] [--kind {bug,report}] [--file FILE]
                              [--attach-doctor] [--thread THREAD] [--wait WAIT]
-                             [--lang {zh,en}] [--owner-confirmed]
+                             [--lang {zh,en}]
                              [text ...]
 ```
 
@@ -13194,7 +13127,6 @@ usage: agentj support report [-h] [--kind {bug,report}] [--file FILE]
 | `--thread` | `null` | false | — | `接着一个已有会话问` |
 | `--wait` | `180` | false | — | `等回复的秒数（0 = 不等）/ seconds to wait (0 = do not wait)` |
 | `--lang` | `null` | false | `zh`, `en` | `` |
-| `--owner-confirmed` | `false` | false | — | `主人已读过原文并同意（第 2 层判出个人信息或不可用时才需要）/ the owner read the exact text and said yes` |
 
 ### agentj support thread
 

@@ -2436,7 +2436,7 @@
       },
       "gestures": [
         {
-          "type": "tap",
+          "type": "hold",
           "pointer": "any"
         }
       ],
@@ -2445,10 +2445,10 @@
           "combo": "Mod+Enter"
         }
       ],
-      "zh": "批准，等于点一下「批准」（验证本人照常）；审批卡开着时优先给它，输入框里的发送让位",
-      "en": "Approve, the same as tapping Approve (identity checks as usual); the card wins over the message box",
-      "gesture_zh": "点「批准」",
-      "gesture_en": "Tap Approve",
+      "zh": "批准，等于长按批准走完（验证本人照常）；审批卡开着时优先给它，输入框里的发送让位",
+      "en": "Approve, the same as holding the approve button (identity checks as usual); the card wins over the message box",
+      "gesture_zh": "按住「批准」",
+      "gesture_en": "Hold Approve",
       "common": true
     },
     {

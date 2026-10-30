@@ -261,13 +261,12 @@ class HostLayerTwo(unittest.TestCase):
         return [o for _, o in self.sent if o["t"] == "ask"]
 
     def test_gray_allowed_by_jev(self):
-        """Retained parity id: a Jev allow never skips the card (P573: a one-button card, no longer Face ID)."""
+        """Retained parity id: a Jev allow now requires an independent UV card."""
         judge = mock.Mock(return_value=approval_jev.Result("allow", 0.99, "safe"))
         with mock.patch.object(approval_jev, "available", return_value=True), mock.patch.object(approval_jev, "judge", judge):
             res = self.run_ask("$PY -m unittest discover -s tests")
         self.assertEqual(res["behavior"], "deny")
-        self.assertTrue(self.asks())
-        self.assertNotIn("passkey_required", self.asks()[-1])
+        self.assertTrue(self.asks()[-1]["passkey_required"])
         judge.assert_not_called()
 
     def test_low_p_or_unavailable_shows_the_card(self):

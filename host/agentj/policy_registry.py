@@ -56,13 +56,9 @@ def _table():
         # P551 (#318): mail, calendar edits and same-owner changes can be taken back or corrected — reversible. The table
         # below is the Agent's floor; an owner's own tap on a paired remote is the instruction itself (confirm_tier.py).
         (HOLD, ("file.trash", "settings.write", "memory.restore", "mail.send", "calendar.write", "publish")),
-        (UV, ("file.delete", "payment", "device.pair", "device.revoke")),
-        # P573 (#386 ⑤, chairman 10-29): Face ID only for ① money ② a real key / password shown on the front end ③ an
-        # unrecoverable deletion (+ the trust roots). Reading a key for the Agent, writing .env / credentials, Computer Use
-        # (P539) and admin tools (the sandbox launch, the web terminal card, plaza installs, code the lexer cannot read) are
-        # one button in the owner window; the other layers keep their row unchanged.
-        (Policy("irreversible", "uv", main_confirmation="hold"), ("secrets.read", "secrets.write", "admin",
-                                                                  "computer.control")),
+        (UV, ("file.delete", "secrets.read", "secrets.write",
+              "payment", "admin", "device.pair", "device.revoke",
+              "computer.control")),   # P539: drive this computer's screen, mouse and keyboard (Computer Use)
         (COMPANY_READ, ("company.read",)),
         (COMPANY_WRITE, ("company.write",)),
     ):
@@ -111,7 +107,6 @@ HOST_TOOLS = MappingProxyType({
     "agentj automation resume": "settings.write", "agentj plaza": "admin",
     "agentj tasks migrate": "settings.write",   # P570b: sysmigrate's card (P570c: a plain confirm)
     "AgentJSameOwnerAction": "publish",
-    "agentj secret grant": "secrets.read",   # P574: the same-owner task grant card (owner_grant.TOOL), always Face ID
 })
 
 
@@ -291,7 +286,7 @@ def main_host_card(tool, tool_input=None, *, requirement=None):
     return requirement != "allow"
 
 
-IRREVERSIBLE = frozenset({"credentials", "spend", "price", "delete"})   # the old ③ categories (P551; kept for callers)
+IRREVERSIBLE = frozenset({"credentials", "spend", "price", "delete"})
 _READ_METHODS = {"RemoteTrigger": ("action", frozenset({"list", "get", "list_runs", "get_run_log"})),
                  "DesignSync": ("method", frozenset({"list_projects", "get_project", "list_files", "get_file"}))}
 _SECRET_REF = re.compile(r"\$\{?\w*(?:KEY|TOKEN|SECRET|PASS|CRED|AUTH)\w*|\bprintenv\b", re.I)
@@ -303,9 +298,7 @@ def _own_card(args):
     Anything else under `agentj secret` (send: a value handed out) keeps the shell-layer Face ID."""
     if args[:1] == ["sudo"]:
         return True
-    # P574: ask / give / grant open the one owner-grant card (Face ID) themselves; grants only lists or narrows
-    return args[:1] in (["secret"], ["secrets"]) and args[1:2] in (["request"], ["result"], ["status"], ["log"], ["ask"],
-                                                                   ["give"], ["grant"], ["grants"])
+    return args[:1] in (["secret"], ["secrets"]) and args[1:2] in (["request"], ["result"], ["status"], ["log"])
 
 
 def main_requirement(tool, tool_input=None, *, env=None):
@@ -313,12 +306,6 @@ def main_requirement(tool, tool_input=None, *, env=None):
 
     Known shell tools are classified by content; unknown tools still deny.
     Canonical actions and external-layer decisions keep their own fixed rows.
-
-    P573 (#386 ⑤): "uv" (Face ID) only for the three classes — money, a key going off this machine / shown out
-    (`agentj secret send`), deleting the owner's data for good — plus the trust roots (pairing / unbinding a remote) and a
-    rewrite of the Agent's own hook / approval files (the Agent approving itself). Everything else that used to be Face ID
-    (sudo — its password stays —, reading credentials, .env writes, commands the lexer cannot read, Computer Use, MCP
-    tools named exec / secret / token) is "hold": one button.
     """
     action = tool_action(tool)
     requirement = decision("main", action)
@@ -329,43 +316,37 @@ def main_requirement(tool, tool_input=None, *, env=None):
         # P568: only the main window gets extensible connector classification.
         # Other layers and preauthorization still require a registered action.
         operation = parts[2].lower()
-        requirement = "allow" if re.match(r"^(search|get|list|read|fetch|find|describe|inspect)(?:_|$)", operation) else "hold"
         words = set(re.findall(r"[a-z0-9]+", re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", parts[2]).lower()))
         sensitive = {"secret", "secrets", "password", "passwd", "credential", "credentials", "token", "tokens", "key", "keys", "vault", "env"}
         executable = {"js", "eval", "execute", "run", "code", "shell", "bash", "python", "script", "exec"}
-        if words & (sensitive | executable):
-            requirement = "hold"         # P573: was Face ID by its name alone; a name is no proof of the three classes
-    from . import confirm_tier, danger
+        requirement = "uv" if words & (sensitive | executable) else "allow" if re.match(r"^(search|get|list|read|fetch|find|describe|inspect)(?:_|$)", operation) else "hold"
+    from . import danger
     inp = tool_input if isinstance(tool_input, dict) else {}
     name = tool
     operation = tool.split("__")[-1] if tool.startswith("mcp__") else tool
-    floor = requirement                  # P573: what the content classification below may raise, never lower
     if tool == "Monitor" and "command" not in inp:
         ws = inp.get("ws") if isinstance(inp.get("ws"), dict) else {}
         name, inp, requirement = "WebFetch", {"url": str(ws.get("url", ""))}, "allow"   # P553: a WebSocket read
-        floor = "allow"
     elif tool in _READ_METHODS and inp.get(_READ_METHODS[tool][0]) in _READ_METHODS[tool][1]:
         return "allow"                   # P553: RemoteTrigger / DesignSync read methods
-    elif tool == "RemoteTrigger":
-        return "uv"                      # P553: a cloud run outside Agent J's hook — out of every later check (kept, P573)
     elif tool == "ExitWorktree" and inp.get("action") == "remove" and inp.get("discard_changes"):
         return "uv"                      # P553: uncommitted work and the branch are deleted
     elif operation in ("Bash", "exec_command", "shell_command", "execute_command", "bash", "Monitor"):
         name, inp = "Bash", {"command": inp.get("command", inp.get("cmd", ""))}
-        requirement = floor = "allow"
+        requirement = "allow"
         # The existing lexer handles wrappers and substitutions. Elevation and
         # Agent J's credential executor are sensitive even with harmless operands.
         for command in danger.lex(str(inp["command"])):
             for simple in danger.unwrap(command):
                 if "elevated" in simple.flags or simple.name in ("sudo", "su", "doas", "run0", "pkexec"):
-                    floor = "hold"       # P573: sudo is one button (the admin password card stays); its content decides more
+                    return "uv"
                 if simple.name == "agentj" and simple.args[:1] in (["revoke"], ["unlink"]):
                     return "uv"          # P550: unbinding a remote / taking the host out of the account (its seat) is ③
                 if simple.name == "agentj" and simple.args[:1] in (["secret"], ["secrets"], ["sudo"]):
                     if not _own_card(simple.args):
                         return "uv"
             if command.words and danger._base(command.words[0]) in ("sudo", "su", "doas", "run0", "pkexec"):
-                floor = "hold"
+                return "uv"
     elif action in ("file.write", "file.read"):
         name = tool if tool in danger._FILE_TOOLS else "Write" if action == "file.write" else "Read"
         inp = {**inp, "file_path": inp.get("file_path") or inp.get("path") or inp.get("notebook_path")}
@@ -374,29 +355,18 @@ def main_requirement(tool, tool_input=None, *, env=None):
     if tool == "apply_patch":
         patch = str(inp.get("command", inp.get("patch", inp.get("input", ""))))
         for kind, path in re.findall(r"^\*\*\* (Add|Update|Delete) File: (.+)$", patch, re.M):
-            if kind == "Delete" or danger.hook_path(path):
-                return "uv"              # ③ a file deleted / the Agent's own hook or approval file rewritten
-            if danger.cred_path(path):
-                floor = "hold" if floor == "allow" else floor   # P573: a credential file written: one button
+            if kind == "Delete" or danger.cred_path(path) or danger.hook_path(path):
+                return "uv"
     verdict = danger.classify(name, inp, env=env)
     shared = danger.classify_shared(name, inp, env=env)
     cats = set(verdict.cats) | set(shared.cats)
-    if "cred.hooks" in set(verdict.rules) | set(shared.rules):
-        return "uv"                      # P573 (e): the Agent rewriting its own hook / approval settings — never below Face ID
-    if cats:
-        try:
-            keep = confirm_tier.harness_keeps(tool, tool_input, env=env)
-        except Exception:  # noqa: BLE001 — cannot tell → the strictest step
-            keep = "delete"
-        if keep:
-            return "uv"                  # P573: ① money ② a key going out ③ the owner's data deleted for good — Face ID
+    if cats & IRREVERSIBLE:
+        return "uv"                      # P551 (#318) ③ irreversible: Face ID, whoever started it
     if "send" in cats and name == "Bash" and _SECRET_REF.search(str(inp.get("command", ""))):
         return "uv"                      # P551: a secret-looking variable going out is a key revealed — ③, not ②
-    if requirement == "uv":
-        return "uv"                      # P550: a ③ row (device.pair …) is never lowered by its content
-    if cats or floor == "hold" or requirement == "hold":
-        return "hold"                    # reversible / recoverable, or unclear: one button (incl. `send`, scratch deletes)
-    return requirement
+    if cats and requirement != "uv":     # incl. `send` — outward messages are ② (a long-press card for the Agent)
+        return "hold"  # reversible but unclear/sensitive; no blanket shell UV
+    return requirement                   # P550: a ③ row (computer.control …) is never lowered by its content to ②
 
 
 def unknown_text(tool, lang=None):

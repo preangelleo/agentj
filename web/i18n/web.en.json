@@ -65,7 +65,7 @@
       "title": "A new remote asks to pair",
       "tag": "New remote",
       "tagFace": "New remote · verify it's you",
-      "allow": "Confirm",
+      "allow": "Hold to confirm",
       "allowFace": "Confirm (verify it's you)",
       "deny": "Cancel",
       "where": "Any paired remote can confirm; once one does, this card folds away on the others."
@@ -616,9 +616,9 @@
     "appr": {
       "deny": "Deny",
       "denyAria": "Deny this action",
-      "allowAria": "Approve this action",
-      "hold": "Approve",
-      "batchHold": "Approve, and auto-approve the same low-risk kind for the rest of this turn",
+      "allowAria": "Press and hold to approve this action",
+      "hold": "Hold to approve",
+      "batchHold": "Hold: approve, and auto-approve the same low-risk kind for the rest of this turn",
       "mailAllow": "Handle mail from {a} directly from now on (add to the allowlist)",
       "mailAllowHint": "Ticked: their mail to the Agent is handled directly; mail to them still asks you every time. Unticked (default): nothing changes.",
       "holdHint": "Keep holding to approve",
@@ -2501,7 +2501,7 @@
       "close": "Close the search"
     },
     "appr": {
-      "approve": "Approve, the same as tapping Approve (identity checks as usual); the card wins over the message box",
+      "approve": "Approve, the same as holding the approve button (identity checks as usual); the card wins over the message box",
       "fold": "Put the card away, neither approved nor denied; tap Pending at the top to reopen it"
     }
   },
@@ -2629,7 +2629,7 @@
       "close": "Tap ×; tap outside"
     },
     "appr": {
-      "approve": "Tap Approve",
+      "approve": "Hold Approve",
       "fold": "Tap put away"
     }
   },
@@ -3223,10 +3223,10 @@
   "p339.why": "Why it wasn't approved automatically: {why}",
   "p339.ifNot": "If you don't tap: when time is up this step is skipped and everything else goes on",
   "p339.ifNotAuto": "If you don't tap: approved when the countdown ends (this step can be undone)",
-  "p339.how": "How to approve: tap “Approve” below",
-  "p339.howAdd": "; to let the same kind through from now on: tap “Approve and add to the goal's grant”",
+  "p339.how": "How to approve: hold “Hold to approve” below",
+  "p339.howAdd": "; to let the same kind through from now on: hold “approve and add to the goal's grant”",
   "p339.details": "Details",
-  "p339.addHold": "Approve and add to the goal's grant",
+  "p339.addHold": "Hold: approve and add to the goal's grant",
   "p341.gist.rm": "Delete files or folders",
   "p341.gist.mv": "Move or rename files",
   "p341.gist.cp": "Copy files",
@@ -3632,7 +3632,7 @@
   "ppReset.title": "Reset the remote pairing password",
   "ppReset.tag": "Pairing password",
   "ppReset.tagFace": "Pairing password · verify it's you",
-  "ppReset.allow": "Confirm",
+  "ppReset.allow": "Hold to confirm",
   "ppReset.allowFace": "Confirm (verify it's you)",
   "ppReset.where": "Any paired remote can confirm. The new password is typed on the Agent J host, never here; every remote stays paired.",
   "p393.reconnecting": "Reconnecting…",
@@ -4382,7 +4382,7 @@
     "assistHint": "Details on the Agent J host: `agentj wechat status`",
     "confirmTitle": "Owner confirmation",
     "confirmTag": "Transfer only",
-    "confirm": "Confirm transfer",
+    "confirm": "Hold to confirm transfer",
     "confirmNote": "The main Agent evaluates the request after confirmation. Sensitive actions still need approval.",
     "leftHours": "{n} hours to confirm; no confirmation means no execution",
     "leftMins": "{n} minutes to confirm; no confirmation means no execution"
@@ -4738,35 +4738,5 @@
   "p579.chipGuest": "Guest",
   "p579.addRole": "New sender role",
   "p579.openTerminal": "Open web terminal",
-  "p579.retryModel": "Try again",
-  "p573.autoTask": "Approved under this task's grant: {tool} · {summary}",
-  "p573.act.task": "Approved under this task's grant: {task}{cats}{tool} {t}",
-  "p573.importText": "Agent J copies {name} from {src} into its own key file on this host. The key stays on the host. Agent J uses this copy afterwards; the old source is kept by default. Tap Import to confirm.",
-  "p574.stop": "Not me → remove friend and disable",
-  "p574.stopped": "Friend removed and this grant disabled.",
-  "p574.rosterHere": "Remotes authorized to sign here: {remotes}",
-  "p574.rosterPeer": "Remotes authorized to sign there: {remotes}",
-  "p574.rosterEmpty": "None yet",
-  "p574.bindWhy": "After this upgrade, confirm once with this remote’s existing passkey to bind it to the same-owner task authorization roster. Your passkey stays in place.",
-  "p574.bound": "Existing passkey bound. Choose Same owner again, then compare and confirm both rosters.",
-  "p574.bindFailed": "The passkey security binding did not finish. Please try again.",
-  "p574.rosterPending": "Awaiting approval from a trusted remote: {remotes}",
-  "p574.referenceCode": "Reference code supplied by the host. Compare both rosters and codes on the confirmation cards.",
-  "p574.introduce": "Ask a trusted remote to approve",
-  "p574.introWaitTitle": "Approve on a trusted remote",
-  "p574.introTitle": "Allow “{name}” to sign same-owner task grants?",
-  "p574.introText": "A trusted remote must approve this remote to sign same-owner task grants with its existing passkey. The passkey stays in place.",
-  "p574.introduced": "This remote can now sign same-owner task grants with its existing passkey.",
-  "p585.src": "From Agent · {name}",
-  "p589.quiet": "Quiet hours",
-  "p589.start": "Start",
-  "p589.end": "End",
-  "p589.quietNote": "Uses the computer’s local time. Default: 23:00–07:00; wakes only for pending work.",
-  "p589.note": "The computer checks first without calling a model. Pending work wakes the Agent; large contexts prompt a compaction reminder. View measured heartbeat tokens in Usage.",
-  "p589.usage": "Heartbeat usage",
-  "p589.tokens": "{n} tokens",
-  "p589.detail": "Input {i} · Output {o} · {n} wake-ups",
-  "p589.unavailable": "This tool does not report attributable heartbeat usage",
-  "p589.scope": "Measured total on this computer, including context input; not your remaining subscription allowance",
-  "p589.partial": "Only {m} of {n} wake-ups measured; other turns did not report usage. Total is incomplete."
+  "p579.retryModel": "Try again"
 }

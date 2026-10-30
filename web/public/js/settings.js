@@ -176,7 +176,6 @@ export const PREF_KEYS = ['appearance.language', 'appearance.theme', 'voice.spea
 PREF_KEYS.push('updates.mode', 'heartbeat.enabled', 'heartbeat.interval_minutes', 'approval.jev_threshold', 'approval.goal_auto', 'quota.auto_switch');
 PREF_KEYS.push('updates.auto_install');                 // P203: half of the 升级方式 (自动 = install when idle) choice
 PREF_KEYS.push(...imsg.PREF_KEYS);       // P274: the iMessage card's parameters (host lists them only on a Mac)
-PREF_KEYS.push('heartbeat.quiet_enabled', 'heartbeat.quiet_start', 'heartbeat.quiet_end');
 PREF_KEYS.push('heartbeat.daily_at');   // P207 §3: 「每天固定时间唤醒」 "HH:MM" | "" (host ≥ 0.20.2 lists it in settable)
 PREF_KEYS.push('ui.card_hot_action');   // P285: the reply card's bottom-left hot key (hotkey.js writes it from its own sheet)
 PREF_KEYS.push(toolorder.TOOL_KEY);     // P340: the composer buttons' order (toolsort.js writes it; an older host: this device only)
@@ -393,16 +392,6 @@ function renderHb(on, n) {
   sel.disabled = !on; el('set-hb-custom-n').disabled = !on;
   const dailyKnown = !!(hostInfo && Array.isArray(hostInfo.settable) && hostInfo.settable.includes('heartbeat.daily_at'));
   el('set-hb-daily-row').hidden = !dailyKnown;
-  const quietKnown = ['quiet_enabled', 'quiet_start', 'quiet_end'].every(k => hostInfo?.settable?.includes('heartbeat.' + k));
-  el('set-hb-quiet').hidden = !quietKnown;
-  const quiet = pget('heartbeat.quiet_enabled', true) !== false;
-  tgl('set-hb-quiet-enabled', quiet);
-  el('set-hb-quiet-enabled').disabled = !on;
-  for (const [k, fallback] of [['start', '23:00'], ['end', '07:00']]) {
-    const input = el('set-hb-quiet-' + k);
-    input.disabled = !on || !quiet;
-    if (document.activeElement !== input) input.value = pget('heartbeat.quiet_' + k, fallback);
-  }
   const at = String(pget('heartbeat.daily_at', '') || '');
   const daily = HHMM.test(at) || dailyOn;
   tgl('set-hb-daily', daily);
@@ -749,11 +738,6 @@ export function configure(hooks) {
     dailyOn = next;
     if (next) { el('set-hb-time').focus({ preventScroll: true }); if (HHMM.test(el('set-hb-time').value)) setPref('heartbeat.daily_at', el('set-hb-time').value); }
     else setPref('heartbeat.daily_at', '');
-  });
-  el('set-hb-quiet-enabled').addEventListener('click', () => setPref('heartbeat.quiet_enabled', el('set-hb-quiet-enabled').getAttribute('aria-checked') !== 'true'));
-  for (const k of ['start', 'end']) el('set-hb-quiet-' + k).addEventListener('change', () => {
-    const v = el('set-hb-quiet-' + k).value;
-    if (HHMM.test(v)) setPref('heartbeat.quiet_' + k, v);
   });
   el('set-hb-time').addEventListener('change', () => { const v = el('set-hb-time').value; if (HHMM.test(v)) setPref('heartbeat.daily_at', v); });
   el('set-hostupg').addEventListener('click', () => { if (H.upgradeHost) H.upgradeHost(); });   // P203: impact → card → /update @ix app.upgrade_host

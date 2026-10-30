@@ -40,17 +40,33 @@ class ReadCommands(Base):
                 self.assertEqual(result[-1]['why'], why)
                 self.assertEqual(len(self.calls), count)
 
-    def test_reconnect_is_a_signed_button(self):
-        # P573 (#386 ⑤): reconnect / status / an AI switch from Settings are recoverable — the signed control is the
-        # owner's button; no Face ID (was P507: UV for anything beyond the zero-write doctor). Replay is still refused.
-        self.assertIsNone(self.st.passkey_of_device(self.phone.did))
+    def test_reconnect_still_refuses_no_passkey(self):
+        for name in PROTECTED:
+            with self.subTest(name=name):
+                result = self.send(sign(self.phone, name), verified=False)
+                self.assertEqual(result[-1]['why'], 'no_passkey')
+                self.assertFalse(self.calls)
+
+    def test_reconnect_requires_real_uv_and_cannot_replay(self):
+        auth = Authenticator()
+        self.st.set_passkey(self.phone.pub, pk_record(auth))
         for name in PROTECTED:
             with self.subTest(name=name):
                 self.calls.clear()
                 request = sign(self.phone, name)
-                self.assertTrue(self.send(request, verified=False)[-1]['ok'])
+                result = self.send(request, verified=False)
+                self.assertEqual(result[-1]['why'], 'passkey_required')
+                challenge = wire.unb64u(result[-1]['fa_ch'])
+                self.assertFalse(self.calls)
+                bad = {**request, 'fa': auth.assert_(challenge, b'0', nonce=b'0', flags=1)}
+                self.assertEqual(self.send(bad, verified=False)[-1]['why'], 'passkey_failed')
+                self.assertFalse(self.calls)
+                fresh = sign(self.phone, name)
+                challenge = passkey.elevate_challenge(self.host.channel, self.phone.did, fresh['n'], 'cmd_run', fresh['n'], controls.object_digest('cmd_run', {'cmd': name}))
+                fresh['fa'] = auth.assert_(challenge, b'0', nonce=b'0')
+                self.assertTrue(self.send(fresh, verified=False)[-1]['ok'])
                 self.assertEqual(len(self.calls), 1)
-                self.assertEqual(self.send(request, verified=False)[-1]['why'], 'replay')
+                self.assertEqual(self.send(fresh, verified=False)[-1]['why'], 'replay')
                 self.assertEqual(len(self.calls), 1)
 
 

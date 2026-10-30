@@ -1,4 +1,40 @@
-"""Agent J danger; developer reference: documentation/notes/P0262-HOST-REFERENCE.md."""
+"""The danger list (PROMPT-26 item 2; ADR-A47 – A49): five fixed categories of actions that always need the phone, one by one.
+
+    spend        花钱     money leaves: payments, purchases, trades, transfers, billable cloud resources
+    delete       删除     something is destroyed: files, branches, history, cloud resources, rows, packages on a registry
+    send         对外发送  something leaves the machine for other people: mail, messages, posts, pushes, uploads, deploys
+    credentials  改凭据   a credential changes: .env / keys / ~/.ssh / ~/.aws / keychains, `gh auth`, `aws configure`, passwd …
+    price        改价     a price, discount or budget changes: Stripe prices / coupons, shop listings, ad budgets
+
+`classify(tool, tool_input)` is deterministic (same input → same verdict) and errs towards "dangerous": a command is read
+as a shell would split it (`;` `&&` `||` `|` newlines, `$( )` / backticks / `<( )`, `sh -c` / `bash -c` / `eval` / `su -c` /
+`ssh host …`, `xargs`, `find -exec`, `sudo` / `env` / `timeout` … wrappers, inline `python -c` / `node -e` code), and every
+line is also read on its own (heredoc bodies). What a script or program does when it runs is NOT judged — only its name
+(ARCHITECTURE G-A57).
+
+The rules are code. `config.json` may only ADD (`danger_extra`: {"category", "bash" | "tool" | "path": regex}); every other
+`danger*` key, and anything in `danger_extra` that does not parse, is ignored and reported by `agentj doctor`.
+
+Used twice, with the same verdict:
+- as Claude Code's PreToolUse hook (`python -P -m agentj.danger hook <extras>`, injected by serve with `--settings`):
+  a dangerous call answers `permissionDecision: "ask"`, which Claude Code routes to our permission prompt tool (the phone)
+  even when the human's own settings allow the command or run in bypassPermissions (measured, reports/qa/danger/); anything
+  else prints nothing, so the human's own rules decide (only ever stricter, Invariant 11);
+- by serve, to label the card and to keep dangerous calls out of batch approval.
+
+P157 (owner decision 2026-10-12, 「只有真正危险的动作才弹卡」): a card is for the five categories above on a CLEAR hit — "can't read it" or
+"it is long" is not danger. A heredoc body is not a command line: the shell lexer finds it (quotes respected) and what reads
+it decides how it is judged (heredocs()): a shell → commands; an interpreter / database client → the raw-text URL and SQL rules;
+anything else (`cat >> notes.md <<'EOF'`) → data: only WHERE it is written counts (a credential path / hook file asks), the
+words in it never do — unless a later command of the same call runs that file. MAX_CMD measures the command lines, not the
+bodies. `systemctl --user` / `systemd-run --user`, wait loops, `--dry-run` of a CLI that documents it, `git push -n`,
+read-only subcommands, `nc -z` and Telegram `get*` methods are not danger. What stays "can't tell" (a `$VAR` program name,
+too deep, too long) requires per-request WebAuthn UV in Host.ask. A model opinion,
+Full access or goal authorization cannot clear it. Encoded / piped-into-a-shell
+forms are never "can't tell"-only.
+
+Standard library only (the hook starts once per tool call).
+"""
 from __future__ import annotations
 
 import base64
@@ -1986,11 +2022,6 @@ def hook_main(argv: list[str]) -> int:
                     "hookEventName": "PreToolUse", "permissionDecision": "ask",
                     "permissionDecisionReason": "Agent J：不可逆动作，需要主人 Face ID / Irreversible: owner Face ID required"}},
                     ensure_ascii=False))
-            return 0
-        from .owner_broker import parse as secret_command
-        if secret_command(ev.get("tool_name"), ev.get("tool_input"), ev.get("cwd") or os.getcwd()):
-            sys.stdout.write(json.dumps({"hookSpecificOutput":{"hookEventName":"PreToolUse", "permissionDecision":"ask",
-                "permissionDecisionReason":"Agent J: native secret-call authorization required"}}))
             return 0
         v = classify(ev.get("tool_name"), ev.get("tool_input"), extra) if "policy-only" not in argv[1:] else None
         if v is not None and v.danger:

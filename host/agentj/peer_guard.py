@@ -1,6 +1,17 @@
-"""Deterministic Agent-friend ingress/egress gates (PROTOCOL §17.6).
-Bounded escaped data never grants tool authority. SecretIndex holds salted credential-window hashes only.
-Friend routes use local gates; optional review fails closed for callers that still require it."""
+"""Agent friends: the deterministic gates around the peer session (PROTOCOL §17.6 steps 3, 4 and 6; ADR-0.16 §6.1, §8).
+
+- `inbound(text)`  — before the model: tg_guard's normalisation and its "asks for a credential" rules, plus credential *shapes*
+  (private-key headers, vendor key / token patterns, labelled secrets, high-entropy strings from privacy.py's layer 1). A hit is
+  not given to the model; the owner is told. (The optional Jev second layer is 0.16.1.)
+- `outbound(text, index, never_tell_extra)` — before a reply leaves: fragments of this host's own secrets (SecretIndex), the
+  same credential shapes, private-key headers, and the owner's own 「绝不外说」 additions as keywords. The fixed never-tell list
+  is a rule for the model (peer_session's system prompt), not a keyword filter — matching 「密码」 would only block harmless
+  sentences. Verdict.rule says why in a few words and never contains the matched text.
+- `wrap(friend_id, name, text)` — the friend's words as data: one JSON object, `"untrusted": true`.
+
+SecretIndex keeps no secret: only salted 64-bit hashes of every 16-character window (whole value for 12–15 characters) of each
+secret-looking value, with a random per-process salt.
+"""
 from __future__ import annotations
 
 import glob
@@ -233,7 +244,9 @@ class SecretIndex:
     @classmethod
     def build(cls, environ=None, files=(), workdir: str | None = None, home: str | None = None,
               service_env: bool = True, *, fragment_size=WINDOW) -> "SecretIndex":
-        """Index secret environment values and configured .env files as salted hashes; never retain raw credentials."""
+        """Default sources: this process's environment (names like KEY / TOKEN / SECRET / PASS / CREDENTIAL …), `~/.env`,
+        the Agent working folder's `.env*`, the agentj service environment file, and `files` (the owner's extra list).
+        From files: every value whose name looks secret, plus long token-like values under any name."""
         env = os.environ if environ is None else environ
         idx = cls(fragment_size=fragment_size)
         for k, v in env.items():
@@ -313,7 +326,9 @@ def wrap(friend_id: str, name: str, text: str) -> str:
 
 
 def review(text, *, st=None, prefs=None, env=None, transport=None):
-    """Optional model gate: enabled failures refuse. Local friend routes do not call it; they keep regex gates."""
+    """Optional model gate after local checks. Missing/failed enabled review refuses.
+    Off bypasses only this layer; callers always keep inbound/outbound local gates.
+    """
     from . import jev, approval_jev
     route = jev.resolve(st=st, prefs=prefs, env=env)
     if route.mode == "off": return Verdict(True)

@@ -89,19 +89,6 @@ class Mesh(unittest.IsolatedAsyncioTestCase):
     def log(self, i):
         return self.svcs[i].devices.log_view(mark_read=False)["items"]
 
-    async def test_group_source_label_is_visible_in_both_languages_without_changing_original(self):
-        for lang, marker in (('zh', '设备群'), ('en', 'Devices')):
-            self.hosts[1].lang = lang
-            original = '@Mac M1 group source ' + lang
-            await self.svc.devices.say(original, by='phone')
-            await self.pump()
-            source = self.pages[1][-1][0]
-            self.assertEqual(source['text'], original)
-            self.assertEqual(source['group'], 'my-devices')
-            self.assertEqual(source['via'], 'same-owner')
-            self.assertIn('Studio', source['name'])
-            self.assertIn(marker, source['name'])
-
     async def test_mention_one_device_runs_only_its_main_agent(self):
         res = await self.svc.devices.say("@Mac M1 跑一下测试", by="phone")
         self.assertTrue(res["ok"])
@@ -114,10 +101,8 @@ class Mesh(unittest.IsolatedAsyncioTestCase):
         task = self.sends[1][0]
         self.assertIn("跑一下测试", task.text)
         self.assertIn("「我的设备」群", task.text)
-        self.assertIn(" · 设备群", self.pages[1][0][0]["name"])  # group context belongs in the source label
-        self.assertIn("Studio", self.pages[1][0][0]["name"])
-        self.assertEqual(self.pages[1][0][0]["group"], "my-devices")
-        self.assertEqual(self.pages[1][0][0]["text"], "@Mac M1 跑一下测试")
+        self.assertIn("「我的设备」群", self.pages[1][0][0]["text"])  # 来自本人设备 Studio（「我的设备」群）
+        self.assertIn("Studio", self.pages[1][0][0]["text"])
         # Same owner changes only the destination: never the owner, never an approval
         self.assertFalse(provenance.is_owner(task.source))
         self.assertEqual(provenance.from_name(task.source), provenance.SAME_OWNER)
@@ -200,9 +185,7 @@ class Mesh(unittest.IsolatedAsyncioTestCase):
         await self.pump()
         self.assertEqual(len(self.sends[1]), 1)
         self.assertEqual(self.svcs[1].net.of("relay_state")[-1][1]["state"], "rate")
-        self.assertIn(message("rate", "zh"), self.hosts[0].notices[-1])
-        self.assertIn("Mac M1", self.hosts[0].notices[-1])
-        self.assertIn("@Mac M1 第二件", self.hosts[0].notices[-1])
+        self.assertIn(message("rate", "zh"), self.hosts[0].notices)
         # a chain that already has 4 hops is not handed on (the main Agent posting from inside a delegated turn)
         self.hosts[0].agent.cur_send = SimpleNamespace(source={"relay": {"chain": "c" * 32, "origin": self.ids[2], "hops": 4}})
         res = await self.svc.devices.say("@Warden 再转一下", by="agent")
@@ -217,15 +200,13 @@ class Mesh(unittest.IsolatedAsyncioTestCase):
         await self.pump()
         self.assertEqual(self.svcs[2].net.of("relay_state")[-1][1]["state"], "loop")
         self.assertEqual(self.sends[2], [])
-        # An authenticated same-owner group task bypasses the ordinary hold setting
+        # 「先压着等我批」 on Warden: the group task becomes an approval card, not a turn
         with self.svcs[2].store._edit("friends.json", {}) as fr:
             fr[self.ids[0]]["hold_for_owner"] = True
         await self.svc.devices.say("@Warden 等批", by="phone")
         await self.pump()
-        self.assertEqual(len(self.sends[2]), 1)
-        self.assertFalse(self.svcs[2].ask_msgs())
-        self.assertEqual(self.pages[2][0][0]["text"], "@Warden 等批")
-        self.assertEqual(self.pages[2][0][0]["group"], "my-devices")
+        self.assertEqual(self.sends[2], [])
+        self.assertTrue(self.svcs[2].ask_msgs()[-1]["pq"]["handover"])
 
     async def test_same_owner_back_to_back_mentions_are_not_spaced(self):
         """Jarvis ruling 5: two @ to the same device within a second both run (no 「好友」 3 s interval); a stranger still waits."""
@@ -314,9 +295,7 @@ class RealConfirmation(SameOwnerTests):
         if busy:
             await asyncio.wait(busy, timeout=10)
         self.assertEqual(len(self.other_sends), 1)
-        self.assertIn(" · 设备群", self.other_pages[0][0]["name"])
-        self.assertEqual(self.other_pages[0][0]["group"], "my-devices")
-        self.assertEqual(self.other_pages[0][0]["text"], "@all 检查后台")
+        self.assertIn("「我的设备」群", self.other_pages[0][0]["text"])
         # revoked → out of the group at once
         await self.remote.write('fr_set', {'friend': self.a, 'op': 'group', 'value': 'friend'}, device=self.odid)
         await self.pump()

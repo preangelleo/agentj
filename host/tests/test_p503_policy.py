@@ -165,15 +165,14 @@ class MailFinalExecution(HostExecution):
             smtp={'host':'127.0.0.1','port':smtp.port,'security':'plain'},
             allow=[{'addr':'owner@example.com','role':'owner'}])
         mail.save_config(self.st,mail.validate(cfg));mail.store_secret(self.st,b'fixture-password',cfg['address'])
-        # P573: mail only to the owner goes with no card now — a recipient off the allowlist keeps this action's one-tap card
-        task=asyncio.create_task(self.h.elevate.contacts.agent_send({'to':['colleague@example.com'], 'subject':'fixture', 'body':'hello'}))
+        task=asyncio.create_task(self.h.elevate.contacts.agent_send({'to':['owner@example.com'], 'subject':'fixture', 'body':'hello'}))
         try:
             for _ in range(200):
                 if self.h.asks:break
                 await asyncio.sleep(.005)
             self.assertTrue(self.h.asks)
             a=next(iter(self.h.asks.values()));card=self.h._ask_msg(a,self.session)
-            self.assertNotIn('passkey_required',card);self.assertIn('colleague@example.com',card['summary'])
+            self.assertNotIn('passkey_required',card);self.assertIn('owner@example.com',card['summary'])
             self.assertFalse(task.done());self.assertFalse(smtp.sent)
             obj=self.ph.answer(card,True);obj.pop('fa',None)
             await self.h._answer(self.session,obj)

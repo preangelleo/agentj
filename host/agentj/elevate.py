@@ -1,4 +1,32 @@
+"""Admin password and secret cards on the phone (F17, PROTOCOL §11): `agentj sudo` and `agentj secret request`.
 
+The Agent asks; a paired phone shows the exact command (or the key name, purpose and destination); the human types the
+password / pastes the key into a masked field; the phone seals it to a one-time host key for THIS card and signs the
+decision; `serve` (outside any fence, non-dumpable) opens it, uses it once and wipes it. The Agent only ever gets the
+command's output, or a receipt (key name, length, a short fingerprint, whether the check passed).
+
+Layers, inside the Noise session that already hides everything from the relay (PROTOCOL §3):
+- **Seal**: per card the host makes an X25519 key pair (private half in memory only). The phone makes its own ephemeral
+  pair, `k = HKDF-SHA256(DH, salt = host_epk ‖ phone_epk, info = "agentjarvis-seal-v1")`, AES-256-GCM, 12-byte IV,
+  AAD = `"agentjarvis-seal-v1\\n" channel \\n device \\n id \\n kind \\n nonce \\n digest`. So the value is ciphertext even
+  inside the decrypted app message, bound to this card, this device, this attempt (nonce) and what was shown (digest).
+- **Signature**: Ed25519(device approval key, `"agentjarvis-elevate-v1\\n" channel \\n device \\n id \\n kind \\n
+  allow|deny \\n nonce \\n ts \\n digest \\n hex(SHA-256(ct))|-`). The host checks it against what IT stored for the card.
+- **One time**: a card is good for 120 s (sudo) / 600 s (secret) and one attempt per nonce; a wrong sudo password re-arms the
+  card with a new nonce and a new host key (≤ 3 tries), and consecutive wrong passwords lock all sudo cards (1 min, doubling,
+  ≤ 1 h, persisted in `elevate.json`).
+- **Face ID** (P59, ADR-A163): a device whose record holds a passkey (F20) must add a WebAuthn assertion (user verified)
+  over `passkey.elevate_challenge(card, nonce, digest)` to 「同意」; 「拒绝」 never needs one; devices without a passkey: unchanged.
+- **Never**: the password is not in argv, the environment, a log, the Agent's output or the chat — it goes to `sudo -S -k`
+  on stdin from a bytearray that is zeroed after the write. A secret is written 0600 and only its receipt goes back.
+- **Audit**: `elevate.log` (0600), one line per outcome: time, kind, id, result, device, its key and signature, the digest
+  of what was shown, SHA-256 of argv (sudo) / key name + SHA-256 of the destination (secret). Never a value.
+- **A secret card outlives its CLI** (P73, ADR-A180): an Agent harness may kill `agentj secret request` (a short shell
+  timeout, the turn ended). The card stays open until the phone answers or its 600 s run out, and the outcome (never the value)
+  goes to `secret-results.json` (0600) — `agentj secret result <id>` reads it back through the socket. A sudo card is still
+  withdrawn when its CLI goes away (nobody would get the command's output).
+- **Outbound** (F32, `secret_out.py`): `agentj secret send` — the owner picks up a value on a paired phone after Face ID.
+"""
 from __future__ import annotations
 
 import asyncio
@@ -50,7 +78,8 @@ CMD_TIMEOUT, CMD_TIMEOUT_MAX = 600, 3600
 SOCK_NAME = "elevate.sock"
 ENV = "AGENTJ_ELEVATE_SOCK"
 def refused_word(why: str) -> str:
-
+    """P566 (#354): the reason _check gave → the word the page shows (passkey | late | stale | replay | bad_signature | no_key |
+    shape). Anything else = shape."""
     if why.startswith("passkey"):
         return "passkey"
     return why if why in ("late", "stale", "replay", "bad_signature", "no_key") else "shape"
@@ -74,7 +103,7 @@ _ID = re.compile(r"[0-9a-f]{32}")
 
 
 class Refused(Exception):
-
+    """A request the host will not turn into a card (`why` is a short code, shown to the Agent)."""
     def __init__(self, why: str, detail: str = ""):
         super().__init__(why)
         self.why, self.detail = why, detail
@@ -82,7 +111,8 @@ class Refused(Exception):
 
 # ---------------------------------------------------------------- bytes that must not linger
 def wipe(buf) -> None:
-
+    """Zero a bytearray in place; for an immutable bytes object (what AES-GCM returns) overwrite its buffer — best effort,
+    CPython only; serve is non-dumpable (fence.no_dump), this only shortens how long the value sits in memory."""
     if isinstance(buf, bytearray):
         for i in range(len(buf)):
             buf[i] = 0
@@ -97,7 +127,8 @@ def _h(s: str) -> str:
 
 
 def shown_fields(card: dict) -> list[str]:
-
+    """The texts the phone displays, in a fixed order. sudo: cmd, why, effect. secret: name, purpose, dest, verify.
+    login (P408): the `r` of the pending `term_open` it belongs to (the page shows its own fixed words for this card)."""
     if card["kind"] == "sudo":
         return [card["cmd"], card["why"], card.get("effect") or ""]
     if card["kind"] == "login":
@@ -112,7 +143,7 @@ def shown_fields(card: dict) -> list[str]:
 
 
 def shown_digest(kind: str, fields: list[str]) -> str:
-
+    """hex SHA-256 of `kind` then one line per shown field `sha256(field)` — the phone hashes what it shows."""
     if kind not in KINDS:
         raise ValueError("bad kind")
     return _h("\n".join([SIG_CONTEXT, kind] + [_h(f) for f in fields]))
@@ -120,7 +151,9 @@ def shown_digest(kind: str, fields: list[str]) -> str:
 
 def signed_message(channel: str, device: str, rid: str, kind: str, decision: str, nonce: str, ts: int, digest: str,
                    ct_sha: str | None, grant: str | None = None, save: str | None = None) -> bytes:
-
+    """`grant` (#116, §11.1): the class hash of the card's 10-minute toggle, only when the owner switched it on.
+    `save` (P414 M2, §37.10): hex SHA-256 of the sealed PRF value (`pct`) of a typed answer that remembers the password —
+    the line `save:<hex>` after any `grant:` line (wire.js elevateMessage(..., grant, save))."""
     if decision not in ("allow", "deny") or kind not in KINDS:
         raise ValueError("bad decision")
     tail = ["grant:" + grant] if grant else []
@@ -142,7 +175,7 @@ def _key(shared: bytes, host_epk: bytes, phone_epk: bytes) -> bytes:
 
 
 def seal(host_epk: bytes, plaintext: bytes, aad: bytes) -> tuple[bytes, bytes]:
-
+    """What the phone does (protocol/wire.js `sealValue`); here for tests and tools. → (phone_epk, iv ‖ ciphertext)."""
     e = X25519PrivateKey.generate()
     epk = _raw_pub(e)
     k = _key(e.exchange(X25519PublicKey.from_public_bytes(host_epk)), host_epk, epk)
@@ -151,7 +184,7 @@ def seal(host_epk: bytes, plaintext: bytes, aad: bytes) -> tuple[bytes, bytes]:
 
 
 def open_sealed(host_priv: X25519PrivateKey, phone_epk: bytes, blob: bytes, aad: bytes) -> bytearray:
-
+    """→ the value as a bytearray (the caller wipes it). Raises ValueError for anything that does not open."""
     if len(phone_epk) != 32 or len(blob) < 12 + 16 + 1 or len(blob) > 12 + 16 + MAX_VALUE:
         raise ValueError("shape")
     host_epk = _raw_pub(host_priv)
@@ -183,7 +216,8 @@ _INTERP = re.compile(r"(?:r?bash|sh|ash|dash|zsh|ksh|mksh|t?csh|fish|busybox|pyt
 
 
 def interpreter_command(argv: list[str]) -> bool:
-
+    """Executable identity, including a symlink and the program a bare name resolves to on PATH (#116: rbash, mise shims),
+    never an Agent-supplied risk flag."""
     names = {os.path.basename(argv[0]), os.path.basename(os.path.realpath(argv[0]))}
     if "/" not in argv[0] and (hit := shutil.which(argv[0])):
         names |= {os.path.basename(hit), os.path.basename(os.path.realpath(hit))}
@@ -200,7 +234,9 @@ _MANAGER = re.compile(r"(?:^|[\s/;&|('\"`])(?:launchctl|systemctl)\b([^;&|\n]*)"
 
 
 def own_service_command(cmd: str) -> bool:
-
+    """P339: the command manages Agent J's own service — `agentj service start|restart|stop|install|uninstall`, or
+    launchctl / systemctl acting on its label / unit. That runs as the owner, never as root: a sudo card for it is a
+    misdiagnosis (QA Mac 10-16: a fenced OpenCode could not see launchd, concluded the service was down, asked for sudo)."""
     if _AGENTJ_SVC.search(cmd):
         return True
     labels = {"net.agentj.", "agentj.service"}
@@ -217,7 +253,7 @@ def own_service_command(cmd: str) -> bool:
 
 
 def why_problem(why: str, cmd: str) -> bool:
-
+    """P339: the phone shows `why` first — it must say what the command is for, not repeat it or be a placeholder."""
     w = " ".join(why.split())
     if len(w) < (WHY_MIN_CJK if _CJK.search(w) else WHY_MIN_LATIN):
         return True
@@ -253,7 +289,9 @@ def norm_sudo(req: dict) -> dict:
 
 
 def parse_dest(dest: str, name: str, cwd: str | None, state_root: pathlib.Path) -> dict:
-
+    """`env:<file>[#KEY]` (one KEY=value line, the rest of the file kept) · `file:<path>` (the whole file is the value) ·
+    a bare path: a `.env`-style name → env, else file. Relative → against the Agent's working directory. Never inside the
+    agentj state directory, never through a symlink, never someone else's file; the parent folder must exist."""
     if not isinstance(dest, str) or not dest or len(dest) > 1024 or "\x00" in dest or wire.text_problem(dest, 1024):
         raise Refused("dest", "dest: env:<file>[#KEY] or file:<path>")
     mode, rest = ("env", dest[4:]) if dest.startswith("env:") else ("file", dest[5:]) if dest.startswith("file:") else ("", dest)
@@ -304,7 +342,7 @@ _SYS_PW_TEXT = re.compile(r"(?:电脑|本机|这台(?:电脑|机器|主机)?|sud
 
 
 def system_password_ask(name: str, purpose: str) -> bool:
-
+    """P408 (H4): does this secret request look like the computer's login / sudo password?"""
     return bool(_SYS_PW_NAME.search(name or "") or _SYS_PW_TEXT.search(purpose or ""))
 
 
@@ -348,7 +386,7 @@ LOCAL_AUTH_HINT = ("本机可能弹 Touch ID/Apple Watch 验证，远程时无�
 
 
 def local_auth_risk(pam_dir=None) -> list[str]:
-
+    """Conservative macOS preflight, active lines only; no biometric/PAM writes."""
     if sys.platform != "darwin":
         return []
     root = pathlib.Path(pam_dir or "/etc/pam.d")
@@ -387,7 +425,14 @@ def _cap(b: bytes) -> tuple[str, bool]:
 
 def collect_command(p, timeout: float, cancel=None, input_data=None, gate: bytes | None = None,
                     watch=None) -> tuple[bytes, bytes, bool, bool]:
+    """Drain bounded output off-loop; TERM/KILL and pipe drain have finite grace periods.
 
+    Only byte counts/liveness may reach phones from here; `watch` (P406, elevate_live.Live) sees every chunk read and a tick
+    per loop — it masks what goes to the phone's status strip (§11.2). The full output stays on the CLI path.
+    `gate` (sudo's random prompt marker): `input_data` is written only after the marker shows on stderr before any stdout
+    byte. No marker (sudo did not ask: NOPASSWD / !authenticate) means stdin is closed unwritten once the command prints or
+    PROMPT_WAIT passes, so the password can never become the command's own input.
+    """
     deadline = time.monotonic() + timeout
     buffers = [bytearray(), bytearray()]
     truncated, timed_out, stage = False, False, 0
@@ -474,7 +519,11 @@ def collect_command(p, timeout: float, cancel=None, input_data=None, gate: bytes
 
 
 class _PasswordWatch:
+    """Mask the exact submitted password before any chunk reaches the live display.
 
+    Hold a possible prefix across reads. A final partial prefix is hidden too.
+    The password exists only for this invocation and is never logged.
+    """
     def __init__(self, watch, password):
         self.watch, self.password = watch, bytes(password)
         self.pending = [b"", b""]
@@ -500,7 +549,11 @@ class _PasswordWatch:
 
 def run_sudo(argv: list[str], password: bytearray, cwd: str, timeout: int, sudo: str | None = None, cancel=None,
              watch=None) -> dict:
-
+    """`sudo -S -k -p <random marker> -- argv`; the password + newline goes to stdin once, only after sudo printed the marker
+    (collect_command `gate`), then stdin closes; → {result, code, stdout, stderr, truncated, prompts}. result: done (the
+    command ran; `code` is its exit status) · bad_password · timeout · no_sudo. `prompts` = how many times sudo asked:
+    exactly 1 on a done run means sudo really checked this password (0 = it never asked, NOPASSWD; the password was not
+    sent). A wrong password shows as a second prompt (sudo asks again after "Sorry, try again", then gets EOF)."""
     if local_auth_risk():
         return {"result": "failed", "why": "local_auth_required", "code": None, "stdout": "", "stderr": "", "truncated": False,
                 "detail": LOCAL_AUTH_HINT}
@@ -562,7 +615,8 @@ def _env_value(v: str) -> str:
 
 
 def write_secret(spec: dict, value: bytearray) -> None:
-
+    """Write 0600 through a temp file + rename in the same folder. env: replace every `KEY=` / `export KEY=` line (or append
+    one), keep everything else byte for byte. The value never goes anywhere else."""
     path = pathlib.Path(spec["path"])
     if path.is_symlink():
         raise Refused("dest", "the destination became a symlink")
@@ -612,7 +666,8 @@ def write_secret(spec: dict, value: bytearray) -> None:
 
 
 def dest_has_value(spec: dict) -> bool:
-
+    """P423 #49: does this destination already hold a non-empty value for the key (env: the last `KEY=` line; file: a
+    non-empty regular file)? Yes / no only — never the value, a piece of it or its length. Runs off the event loop."""
     path = pathlib.Path(spec.get("path") or "")
     try:
         if not spec.get("path") or path.is_symlink() or not path.is_file():
@@ -637,7 +692,8 @@ def fingerprint(value: bytearray) -> str:
 
 
 def _key_hint(card: dict, value: bytearray) -> dict:
-
+    """P163: a key whose check failed and that is clearly shorter than its provider issues → {"key_hint": "short"}
+    ("may be incomplete"). Only for a card with a live check (an API key), from the length alone."""
     from . import keyhint
     if card.get("verify_url") and keyhint.looks_short(len(value), card.get("name"), card.get("verify_url"), value):
         return {"key_hint": "short"}
@@ -650,7 +706,8 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 def verify_secret(card: dict, value: bytearray) -> dict:
-
+    """Run the check the human saw on the card; → {"verify": ok|fail|skipped, "detail": "HTTP 200" | "exit 1" | …}.
+    Nothing it prints or returns goes back but that."""
     sval = value.decode("utf-8", "replace")
     try:
         if card.get("verify_url"):
@@ -703,7 +760,7 @@ def locked_for(st, now: float | None = None) -> int:
 
 
 def note_password(st, ok: bool) -> int:
-
+    """Record a sudo attempt; → seconds locked (0 = not locked)."""
     d = read_ledger(st)
     if ok:
         d = {"fails": 0, "level": max(0, d["level"] - 1) if d["until"] < time.time() else d["level"], "until": d["until"]}
@@ -753,7 +810,7 @@ def results_path(st) -> pathlib.Path:
 
 
 def read_results(st) -> dict:
-
+    """id → the last known outcome of a secret card (in or out); never a value. Unreadable → empty."""
     try:
         d = json.loads(results_path(st).read_text())
     except (OSError, ValueError, UnicodeDecodeError):
@@ -762,7 +819,8 @@ def read_results(st) -> dict:
 
 
 def remember(st, rid: str, rec: dict) -> None:
-
+    """Record a secret card's state (`pending` when shown, the outcome when it ends) in secret-results.json (0600), so an
+    Agent whose CLI was killed reads it later (`agentj secret result <id>`). Keeps the newest RESULTS_KEEP."""
     d = read_results(st)
     d[rid] = {**d.get(rid, {}), **rec, "id": rid, "at": int(time.time())}
     keep = sorted(d.items(), key=lambda kv: kv[1].get("at", 0))[-RESULTS_KEEP:]
@@ -771,7 +829,8 @@ def remember(st, rid: str, rec: dict) -> None:
 
 
 def check_record(st, r: dict) -> str:
-
+    """'ok' / 'ok_removed' (signature verifies; device still / no longer paired) · 'bad' · 'unsigned' (host-side outcome) ·
+    'passkey' (F32 pickup: the paired device's Noise session + a user-verified passkey assertion; no Ed25519 line)."""
     if r.get("kind") in ("secret_out", "keys"):   # P352: keys copy / delete — same passkey-only proof
         return "passkey" if r.get("passkey") == "uv" else "unsigned"
     if not r.get("sig"):
@@ -797,7 +856,8 @@ def check_record(st, r: dict) -> str:
 
 # ---------------------------------------------------------------- the serve side
 class Elevator:
-
+    """Owned by serve.Host: the Agent-facing socket `<state>/agentperm/elevate.sock` (the only part of the state directory
+    a fenced Agent sees; same-user peers only) and the phone cards."""
 
     def __init__(self, host):
         self.host = host
@@ -864,7 +924,7 @@ class Elevator:
 
     # ---------------------------------------------------------- phone messages
     def helper_devices(self) -> list[str]:
-
+        """Paired phones the installed admin helper accepts for THIS host (empty = every card needs the password)."""
         try:
             from . import elevate_helper
             h = self.helper_status() if self.helper_status else elevate_helper.status()
@@ -908,13 +968,7 @@ class Elevator:
         # These schemas sign the exact why / purpose field, not action_policy's JSON note block.
         # Host-generated login / vault-sharing cards have no Agent note.
         m["reason"] = c.get("reason", "")
-        # P573 (#386 ⑤): a sudo card is the admin password (or the helper's allow) — no Face ID on top; Face ID stays for a
-        # key / password card and for using or remembering a stored computer password (the vault unwraps with the passkey)
-        m["passkey_required"] = c["kind"] != "sudo" and not c.get("button_only")
-        if c.get("button_only"):
-            m["button_only"] = True
-        if c["kind"] == "sudo":                       # P573: always 0|1, so the page knows this host speaks the new rule
-            m["helper_uv"] = int(s is not None and s.device in (c.get("helper") or []))   # helper approve-only → Face ID
+        m["passkey_required"] = True
         pk = self.st.passkey_of_device(s.device) if s is not None and s.device else None
         if pk:
             m["fa"], m["fa_s"] = pk["id"], passkey.pk_state(pk)   # ADR-A163: this device saved a passkey → 「同意」 needs it (its own credential id only)
@@ -929,7 +983,7 @@ class Elevator:
                 await self.host.send_app(s, obj_fn(s))
 
     async def _deliver_card(self, obj_fn, only=None, rid=None) -> None:
-
+        """P495: transport loss never ends an approval; on_ready replays the live card/result."""
         try:
             await self._to_phones(obj_fn, only)
         except (OSError, ConnectionError):
@@ -950,7 +1004,7 @@ class Elevator:
 
     # ---------------------------------------------------------- P414: the vault on §11 cards (§37.10, §37.11)
     def _temporary(self, device: str | None) -> bool:
-
+        """A temporary (friend) terminal entry never gets or uses a stored password (P408 M5)."""
         with contextlib.suppress(Exception):
             from . import term_store
             e = term_store.entry(term_store.read_config(self.st), device)
@@ -963,7 +1017,8 @@ class Elevator:
             term_vault.has_prf(self.st, device)
 
     def _vault_view(self, c: dict, device: str | None) -> dict | None:
-
+        """`v` for one viewing remote with a passkey: {has, vs[, vn]} (M5: `has` = a `prf` wrap only). `vs` = the wrap's salt
+        when `has`, else a salt this card keeps for this remote (saving); `vn` = the next salt (M3 rotation)."""
         if not device or not self.st.passkey_of_device(device) or self._temporary(device):
             return None
         from . import term_vault
@@ -976,7 +1031,7 @@ class Elevator:
         return {"has": 0, "vs": wire.b64u(vv["save"])}
 
     def _arm(self, c: dict) -> None:
-
+        """A fresh one-time nonce and host key (first show, and after a wrong password)."""
         old = c.get("priv")
         c["priv"] = X25519PrivateKey.generate()
         c["epk"] = _raw_pub(c["priv"])
@@ -985,11 +1040,11 @@ class Elevator:
         del old
 
     def open_msgs(self, s) -> list[dict]:
-
+        """P203: the open sudo / secret cards as this device sees them (on_ready's replay and the cards_get snapshot)."""
         return [self.card_msg(c, s) for c in list(self.cards.values()) if not c["fut"].done() and self._sees(c, s)]
 
     def all_open_msgs(self, s) -> list[dict]:
-
+        """P203: these and the pickup / sign-in / contact cards this module also owns."""
         return (self.open_msgs(s) + self.out.open_msgs(s) + self.login.open_msgs(s) + self.help.open_msgs(s)
                 + self.contacts.open_msgs(s))
 
@@ -1006,7 +1061,8 @@ class Elevator:
         await self.contacts.on_ready(s)
 
     def _saved_elsewhere(self, c: dict, res: dict) -> None:
-
+        """P549 (#314): two cards asked for the same credential (an Agent's request on the computer, a Settings tap on the
+        phone); one saved it — every other open card for that destination ends `saved` too, so each remote folds it."""
         def target(x):
             d = x.get("dest_spec") or {}
             return x.get("name"), d.get("mode"), d.get("path"), d.get("key")
@@ -1030,7 +1086,9 @@ class Elevator:
             self.contacts.end_all(result)
 
     async def request(self, card: dict, gone: asyncio.Future | None = None, on_card=None) -> dict:
-
+        """Show a card, wait for a decision, act; → the result for the Agent (never the value). `on_card(c)` (async) runs
+        once the card exists (the CLI prints its id, so an interrupted Agent can read the outcome later). A secret card's
+        state and outcome go to secret-results.json (`remember`)."""
         if self.host.stopped():
             return {"result": "stopped"}
         from . import provenance
@@ -1237,7 +1295,8 @@ class Elevator:
         task.add_done_callback(self.bg.discard)
 
     async def _progress(self, c) -> None:
-
+        """Liveness every 5 s; P406: at once when the command started (`phase:"started"` → the page closes the card) and
+        the masked output as it comes (`elev_out`, at most every 0.3 s)."""
         live, wake, shown, beat = c.get("live"), c.get("wake"), False, 0.0
         c.setdefault("watch", {})
         c.setdefault("shown_to", set())
@@ -1272,7 +1331,7 @@ class Elevator:
             await asyncio.sleep(.3)                # batch a chatty command's lines
 
     def _watchers(self, c) -> list:
-
+        """The sessions that asked to see this card's output and may still see it: ready, allowlisted, with an approval key."""
         out = []
         for cid, x in list((c.get("watch") or {}).items()):
             if self.host.sessions.get(cid) is x and x.state == "ready" and self.st.is_allowed(x.pub) and self.st.sign_key(x.device):
@@ -1282,7 +1341,10 @@ class Elevator:
         return out
 
     def _watch(self, s, c, obj) -> None:
-
+        """P406 F1 (§11.2): 「展开输出」 on the strip — a signed control action `elev_watch` (object = card id \n on|off) from a
+        ready allowlisted device with an approval key, for a running sudo card. Only that session then gets the masked output
+        (the tail so far, then what follows, then the result's tail); `on:false`, the end of the card or the session closing
+        stops it. Nothing of the output goes to any phone without it."""
         rid, on = obj.get("id"), obj.get("on")
         if c is None or c["kind"] != "sudo" or not c.get("busy") or c["fut"].done() or not self._sees(c, s) \
                 or not isinstance(on, bool):
@@ -1305,7 +1367,9 @@ class Elevator:
             c["wake"].set()
 
     async def _stop(self, s, c, obj) -> None:
-
+        """P406 (§11.2): 「停止」 on the strip — a signed control action (controls.check, object = the card id) from any ready
+        allowlisted device with an approval key, for a sudo card whose command is running. Same path as a timeout:
+        process-group TERM, then KILL; the result is `stopped`."""
         rid = obj.get("id")
         if c is None or c["kind"] != "sudo" or not c.get("busy") or c["fut"].done() or not self._sees(c, s):
             self.st.log("elev_refused", id=rid if isinstance(rid, str) else None, device=s.device, reason="stop_unknown")
@@ -1525,15 +1589,11 @@ class Elevator:
                 return "shape"                      # P414 (M2): a `pct` whose signature lacks the `save:` line
         except (InvalidSignature, ValueError):
             return "bad_signature"
-        if ok and c["kind"] == "sudo" and "ct" in obj and "vault" not in obj and "pct" not in obj and "fa" not in obj:
-            return None                             # P573: sudo is the typed password + one button; no Face ID on top
-        if ok and c["kind"] == "secret" and c.get("button_only") and "fa" not in obj:
-            return None
-        # (the admin helper's approve-only allow has no password: Face ID stays its only user check)
         return self._check_passkey(s, c, obj) if ok else None   # 拒绝 never needs Face ID
 
     def _check_passkey(self, s, c: dict, obj: dict) -> str | None:
-
+        """ADR-A163: a device whose record holds a passkey (F20) approves only with a fresh WebAuthn assertion (UP + UV)
+        over elevate_challenge(this card, this nonce, what was shown). A device without one: unchanged."""
         pk = self.st.passkey_of_device(s.device)
         if not pk:
             return "passkey_required"
@@ -1563,7 +1623,7 @@ class Elevator:
         return {"ev": ev["ev"], "port": ev.get("port")}
 
     async def _reload_saved_env(self, card: dict, result: dict) -> None:
-
+        """Only a saved assignment to the managed service file triggers an in-process reload."""
         from . import service
         dest = card.get("dest_spec") or {}
         managed = os.environ.get("AGENTJ_SERVICE_ENV_FILE") or service.env_file(service.name())
@@ -1605,7 +1665,8 @@ class Elevator:
         return {"result": "saved", "receipt": receipt}
 
     async def result_of(self, req: dict) -> dict:
-
+        """`agentj secret result [<id>] [--wait]`: a card's last known state from secret-results.json (never a value). No id →
+        the newest ten. `wait` → poll until it is no longer pending (≤ the card's own deadline + a little)."""
         rid = req.get("id")
         if rid in (None, ""):
             rows = sorted(read_results(self.st).values(), key=lambda r: r.get("at", 0))[-10:]
@@ -1634,7 +1695,9 @@ class Elevator:
                 self.secret_waiters.pop(rid, None)
 
     async def status_of(self, req: dict) -> dict:
-
+        """P423 #49: `agentj secret status <NAME> [--dest …]` → saved | pending | missing, and when it was saved. Built from
+        secret-results.json and (when known) a look at the destination itself; never the value, a piece of it, its length or
+        its fingerprint."""
         name = req.get("name")
         if not isinstance(name, str) or not NAME_RE.fullmatch(name):
             return {"result": "refused", "why": "shape", "detail": "name: a variable name like ELEVENLABS_API_KEY"}
@@ -1669,14 +1732,16 @@ class Elevator:
         return out
 
     def _last_check_failed(self, name: str) -> bool:
-
+        """P423 #49: the newest saved card for NAME failed its --verify-url check → a new request is a real replacement."""
         rows = [r for r in read_results(self.st).values()
                 if r.get("kind") == "secret" and r.get("name") == name and r.get("result") == "saved"]
         last = max(rows, key=lambda r: r.get("at", 0), default=None)
         return bool(last) and (last.get("receipt") or {}).get("verify") == "fail"
 
     def _secret_settled(self, task: asyncio.Future) -> None:
-
+        """P423 #49: a secret card from `agentj secret request` ended after its CLI stopped listening (bounded wait over, or
+        the harness killed it) → hand the outcome to the Agent as an 〔Agent J 系统提示〕 turn, so it never asks the owner
+        again. Not when a `secret result --wait` is reading it; never the value."""
         if task.cancelled() or task.exception() is not None:
             return
         res = task.result()
@@ -1733,7 +1798,7 @@ class Elevator:
         return res
 
     async def _p131_offer(self) -> None:
-
+        """P131: a browser already running here was proposed — refresh the checklist's browser rows and show it."""
         from . import first_run
         if not hasattr(self.host, "push_setup"):
             return
@@ -1837,13 +1902,6 @@ class Elevator:
                     raise Refused("shape", "upgrade: op")
                 res = await asyncio.to_thread(update.host_op, self.st, req, self._upgrade_mem)
                 w.write((json.dumps(res, ensure_ascii=False) + "\n").encode())
-                await w.drain()
-                w.close()
-                return
-            if isinstance(req, dict) and req.get("t") == "harness_result":
-                from . import switch_harness
-                res = await asyncio.to_thread(switch_harness.host_result, self.st, req)
-                w.write((json.dumps(res) + "\n").encode())
                 await w.drain()
                 w.close()
                 return
@@ -1993,13 +2051,6 @@ class Elevator:
                 res = reading.result()
             elif isinstance(req, dict) and req.get("t") == "secret_status":     # P423 #49: is NAME saved? (never a value)
                 res = await self.status_of(req)
-            elif isinstance(req, dict) and req.get("t") == "sx":                # P574: same-owner grant / key transfer
-                peers = getattr(self.host, "peers", None)
-                cwd = req.get("cwd") if isinstance(req.get("cwd"), str) and os.path.isabs(req["cwd"]) else None
-                if peers is None or getattr(peers, "keys", None) is None:
-                    res = {"result":"refused", "why":"friends_off"}
-                else:
-                    res = peers.xfer.broker.receipt(req)
             else:
                 if not isinstance(req, dict) or req.get("t") not in KINDS:
                     raise Refused("shape", "t: sudo | secret | secret_out | secret_result")
@@ -2069,7 +2120,8 @@ class Elevator:
 
 # ---------------------------------------------------------------- the CLI side (runs as the Agent)
 def client_request(st, req: dict, timeout: float = CMD_TIMEOUT_MAX + 400, on_card=None, path=None) -> dict:
-
+    """One request on elevate.sock → the final JSON line. With `on_card` the request asks for the card id first (`early`):
+    `on_card({"t":"card","id",…})` is called as soon as the host shows the card. `path`: a socket chosen by the caller."""
     def unavailable(error=None):
         res = {"result": "unavailable"}
         if error is not None:
@@ -2155,7 +2207,8 @@ EXIT_MISSING = 1
 
 
 def secret_notice(res: dict, lang: str = "zh") -> str:
-
+    """P423 #49: the host turn that tells the Agent how its secret card ended once nobody was waiting on the command.
+    Name, destination and the check word only — never a value, its length or fingerprint."""
     en = lang == "en"
     r = res.get("receipt") or {}
     name, dest, rid = r.get("name") or res.get("name") or "?", r.get("dest") or "", res.get("id", "")
@@ -2218,7 +2271,7 @@ def cmd_sudo(a) -> int:
 
 
 def _secret_report(res: dict, as_json: bool) -> int:
-
+    """Print a secret card's outcome (never a value) → exit code: 0 saved · 3 saved but the check failed · 75 pending · 125."""
     if as_json:
         print(json.dumps(res, ensure_ascii=False))
     elif res.get("result") == "already_saved":         # P423 #49
@@ -2242,84 +2295,8 @@ def _secret_report(res: dict, as_json: bool) -> int:
     return 0 if res["receipt"]["verify"] != "fail" else 3
 
 
-def _sx_report(res: dict, as_json: bool) -> int:
-
-    if as_json:
-        print(json.dumps(res, ensure_ascii=False))
-    elif res.get("result") == "saved":
-        r = res["receipt"]
-        where = f"← {r['from']}" if r.get("from") else f"→ {r.get('to')}"
-        sig = " · 已签授权单 / grant signed" if res.get("signed") else " · 用已签的授权单 / under a signed grant"
-        print(f"SECRET_MOVED: {r['name']} {where} · {r['dest']} · {r['length']} chars · {r['fingerprint']} · grant {r['grant'][:8]}{sig}")
-    elif res.get("result") == "pending":
-        print("SECRET_TASK_PENDING: " + json.dumps(res, ensure_ascii=False))
-        print("Wait for SECRET_TASK_RESULT; do not retry")
-        return 0
-    elif res.get("result") == "signed":
-        print(f"GRANT_SIGNED: {res['grant']} · {res['steps']} steps · until "
-              f"{time.strftime('%Y-%m-%d %H:%M', time.localtime(res['exp']))} — 对端主机按它执行，不再弹卡 / the other hosts act on it, no more cards")
-    elif res.get("result") == "list":
-        if res.get("usable_after",0) > time.time():
-            print("急停后的授权安全窗口 / Task grants usable after: " + time.strftime("%Y-%m-%d %H:%M:%S",time.localtime(res["usable_after"])))
-        for r in res.get("items") or []:
-            when = time.strftime("%m-%d %H:%M", time.localtime(r.get("exp", 0)))
-            print(f"{r['grant']}  {r['dir']:11} {r.get('by') or '':12} until {when}  {r['title']}")
-            for i, ln in enumerate(r.get("steps") or []):
-                print(f"    {i + 1}. {ln}{'  [used]' if (r.get('used') or {}).get(str(i)) else ''}")
-        for rv in res.get("revocations") or []:
-            if rv.get("pending"):
-                print(f"{rv['grant']}  撤回待确认 / revocation pending: {len(rv['pending'])}")
-        if not res.get("items"):
-            print("（没有生效的授权单 / no live grants）")
-    elif res.get("result") == "revoked":
-        print(f"GRANT_REVOKED: {res['grant']} · 本机已撤回，等待 {res.get('pending', 0)} 台主机确认 / revoked here; waiting for peer acknowledgement")
-    else:
-        why = {"not_same_owner": "对方不是「同一个主人」好友 / not a Same owner friend",
-               "old_peer": "对方的 Agent J 版本太旧，先升级它 / the other host's Agent J is too old: upgrade it first",
-               "owner": "主人拒绝或没有批准 / the owner declined or did not answer",
-               "no_passkey": "批准没有经过 Face ID / 指纹 / the allow carried no Face ID",
-               "unknown_cred": "签名的遥控器对方还不认（请换一台已认可的遥控器签）/ the other host does not know the signing remote",
-               "no_roster": "请先绑定原有 Face ID 的遥控器名单，并重新确认同主人对码 / bind the existing remote key roster, then confirm Same owner again",
-               "not_found": "持有方没有这个名字的密钥 / the holder has no key by that name",
-               "dest": "存放位置不可用 / the destination is not usable",
-               "rate": "太频繁，稍后再试 / too many, try later", "replay": "这一步已经用过 / this step was used",
-               "cooldown": "急停后十分钟内不签新授权，普通任务仍可继续 / new grants wait through the 10-minute post-stop safety window; ordinary tasks may continue",
-               "expired": "授权单已过期 / the grant expired", "timeout": "对方主机没有回应 / no answer from the other host",
-               "offline": "对方主机不在线 / the other host is offline", "estop": "已急停 / Stop everything is on"}.get(
-                   str(res.get("why")), str(res.get("why") or res.get("result")))
-        if res.get("usable_after"):
-            why += " · " + time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(res["usable_after"]))
-        print(f"SECRET_XFER: {res.get('result')} — {why}" + (f" ({res['detail']})" if res.get("detail") else ""), file=sys.stderr)
-    return 0 if res.get("result") in ("saved", "pending", "signed", "list", "revoked") else EXIT_CARD
-
-
-def _sx_cmd(a) -> int:
-    from .state import State
-    req = {"t": "sx", "op": a.action, "cwd": os.getcwd()}
-    if a.action in ("ask", "give"):
-        if not a.peer or not a.name or not a.why:
-            print("需要 --peer <同主人好友> --name <变量名> --why <理由> / needs --peer, --name and --why", file=sys.stderr)
-            return 2
-        req.update(peer=a.peer, name=a.name, why=a.why, dest=a.dest or "", src=a.src or "")
-    elif a.action == "grant":
-        if not a.file:
-            print("需要 --file <授权单.json> / needs --file", file=sys.stderr)
-            return 2
-        try:
-            with open(a.file, encoding="utf-8") as f:
-                req["plan"] = json.load(f)
-        except (OSError, ValueError) as e:
-            print(f"读不了授权单文件 / cannot read the plan: {e}", file=sys.stderr)
-            return 2
-    elif a.action == "grants" and a.revoke:
-        req["revoke"] = a.revoke
-    return _sx_report(client_request(State(), req, timeout=900), a.json)
-
-
 def cmd_secret(a) -> int:
     from .state import State
-    if a.action in ("ask", "give", "grant", "grants"):
-        return _sx_cmd(a)
     if a.action == "log":
         return cmd_log(a)
     if a.action == "send":
@@ -2359,7 +2336,8 @@ def cmd_secret(a) -> int:
 
 
 def _secret_status(a) -> int:
-
+    """P423 #49: `agentj secret status <NAME> [--dest …]` → 0 saved · 75 a card is still on the phone · 1 missing · 125. Never a
+    value, a piece of it, its length or its fingerprint."""
     from .state import State
     name = a.name or a.id or ""
     req = {"t": "secret_status", "name": name, "cwd": os.getcwd()}
@@ -2421,13 +2399,11 @@ def add_parser(sub) -> None:
     sc = sub.add_parser("secret", help="request：请手机上的人把一个 API Key 贴进来，直接存进文件（Agent 看不到值）· send：把主人自己的"
                                        "密钥/配置发到他的手机，Face ID 后领取 · result：查看一张卡的结果 · log / request: the human pastes a "
                                        "key on the phone, saved to a file · send: hand the owner their own secret on the phone (Face ID) · "
-                                       "result: a card's outcome · log · ask / give：同一个主人的两台 Agent J 主机之间搬密钥（发起的遥控器"
-                                       "Face ID 一次）· grant：一张同主人任务授权单 / move a key between Same owner hosts; one signed grant",
+                                       "result: a card's outcome · log",
                         description="request waits for the phone (≤ 10 min) but the card does not depend on it: if the command is "
                                     "interrupted, run `agentj secret result <id>` later. send returns at once; the value never "
-                                    "appears in its output. ask / give / grant (PROTOCOL §17.13): one Face ID on this host's remote "
-                                    "signs the grant, valid 24 h; the other Same owner host checks that signature itself.")
-    sc.add_argument("action", choices=["request", "send", "result", "status", "log", "ask", "give", "grant", "grants"])
+                                    "appears in its output.")
+    sc.add_argument("action", choices=["request", "send", "result", "status", "log"])
     sc.add_argument("id", nargs="?", help="result：卡片 id（request/send 打印的）；不写 = 最近十张 · status：变量名")
     sc.add_argument("--name", help="request：变量名，如 ELEVENLABS_API_KEY · send：手机上显示的名字，如 'Shadowrocket SS 链接'")
     sc.add_argument("--purpose", help="用途（手机上原样显示）")
@@ -2435,14 +2411,10 @@ def add_parser(sub) -> None:
     sc.add_argument("--verify-url", dest="verify_url", help="只读校验：GET 这个 https 地址，2xx = 有效")
     sc.add_argument("--verify-header", dest="verify_header", help="校验请求头模板，默认 'Authorization: Bearer {value}'")
     sc.add_argument("--verify-cmd", dest="verify_cmd", help="已禁用；请使用 --verify-url（不运行沙箱外命令）")
-    sc.add_argument("--file", help="send：把这个文件（≤ 256 KiB）交给主人，手机上可下载 · grant：授权单 JSON")
+    sc.add_argument("--file", help="send：把这个文件（≤ 256 KiB）交给主人，手机上可下载")
     sc.add_argument("--value-from", dest="value_from", help="send：一段文本，从 env:<变量名> 或 file:<路径> 读（不要写在命令行上）")
     sc.add_argument("--ttl", type=int, default=None, help="send：多少秒内可领（30–600，默认 600）")
     sc.add_argument("--wait", action="store_true", help="result / send：等到有结果（领取、过期或拒绝）")
     sc.add_argument("--replace", action="store_true", help="request：目标里已经有这个值时仍然发卡换新值（默认不再打扰主人）")
-    sc.add_argument("--peer", help="ask / give：同一个主人的另一台 Agent J 主机（好友名或 ID）/ a Same owner friend")
-    sc.add_argument("--why", help="ask / give：为什么要搬这把密钥（卡上原样显示）/ why (shown on the card)")
-    sc.add_argument("--src", help="give：本机密钥在哪 env:<文件>#KEY 或 file:<路径>（不写 = 本机登记的位置）· ask：对方主机上的位置")
-    sc.add_argument("--revoke", help="grants：撤回本机签过的一张授权单（编号）/ withdraw a grant this host signed")
     sc.add_argument("--json", action="store_true")
     sc.set_defaults(fn=lambda a: sys.exit(cmd_secret(a)))

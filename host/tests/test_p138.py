@@ -183,14 +183,15 @@ class PhoneSandbox(unittest.IsolatedAsyncioTestCase):
             task=asyncio.create_task(self.a.authorized_launch_argv(['/usr/bin/true']))
             card=await self.wait_ask()
             self.assertIsNone(card.scope)
-            # P573 (#386 ⑤): the launch without isolation is one signed button now (was Face ID); still its own card
-            # every launch, never answered by a level, a grant or an earlier answer
-            self.assertFalse(card.require_passkey)
+            self.assertTrue(card.require_passkey)
             self.assertIn('本次不隔离运行',card.summary)
             self.assertIn('bubblewrap',card.summary)
             msg=self.host._ask_msg(card,self.session)
-            self.assertNotIn('passkey_required',msg)
-            valid=self.phone.answer(msg,True)
+            await self.host._answer(self.session,self.phone.answer(msg,True))
+            self.assertFalse(card.fut.done(),'signature alone is insufficient')
+            await self.host._answer(self.session,self.answer(card,flags=0x01))
+            self.assertFalse(card.fut.done(),'UV off')
+            valid=self.answer(card)
             await self.host._answer(self.session,valid)
             self.assertEqual(await task,['/usr/bin/true'])
             self.assertFalse(self.a.isolation_effective)
@@ -199,7 +200,10 @@ class PhoneSandbox(unittest.IsolatedAsyncioTestCase):
             second=await self.wait_ask()
             await self.host._answer(self.session,valid)
             self.assertFalse(second.fut.done(),'previous launch cannot authorize next launch')
-            await self.host._answer(self.session,self.phone.answer(self.host._ask_msg(second,self.session),False))
+            replay=self.phone.answer(self.host._ask_msg(second,self.session),True);replay['fa']=valid['fa']
+            await self.host._answer(self.session,replay)
+            self.assertFalse(second.fut.done(),'passkey proof binds card id and shown content')
+            await self.host._answer(self.session,self.answer(second,False))
             self.assertIsNone(await task)
             self.assertFalse(self.host.asks)
 

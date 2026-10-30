@@ -110,14 +110,9 @@ async function C(name, fn) {
   rec.record(name, ok);
 }
 const card = (mid) => `document.querySelector('#words .mcard[data-mid="${mid}"], #mstrip .mcard[data-mid="${mid}"]')`;
-// P573 (#386): Markdown / text / code open in the reply's full-screen reader (#rd, file mode) — the same ← / → / swipe order,
-// no viewer bar (so no 「n / N」 count there): state() / at() read the reader for those
-const state = (p) => ev(p, `(() => { const rd = document.getElementById('rd'); if (!rd.hidden && rd.dataset.file === '1') return { open: true, mode: 'reader', title: document.getElementById('rdFileName').textContent, count: 'reader',
-  page: document.getElementById('pg').textContent, words: document.getElementById('words').textContent.slice(0, 40) };
-  const v = document.querySelector('.mview'); return { open: !!v && !v.hidden, mode: v?.dataset.mode, title: v ? document.querySelector('.mvtitle').textContent : '',
+const state = (p) => ev(p, `(() => { const v = document.querySelector('.mview'); return { open: !!v && !v.hidden, mode: v?.dataset.mode, title: v ? document.querySelector('.mvtitle').textContent : '',
   count: !v || document.querySelector('.mvcount').hidden ? '' : document.querySelector('.mvcount').textContent, page: document.getElementById('pg').textContent, words: document.getElementById('words').textContent.slice(0, 40) }; })()`);
-const at = (p, name) => waitFor(p, `(document.querySelector('.mview:not([hidden]) .mvtitle')?.textContent === ${JSON.stringify(name)} && !document.querySelector('.mview .mvloading'))
-  || (!document.getElementById('rd').hidden && document.getElementById('rd').dataset.file === '1' && document.getElementById('rdFileName').textContent === ${JSON.stringify(name)})`, 15000);
+const at = (p, name) => waitFor(p, `document.querySelector('.mvtitle')?.textContent === ${JSON.stringify(name)} && !document.querySelector('.mview .mvloading')`, 15000);
 const center = async (p) => ev(p, `(() => { const r = document.querySelector('.mstage').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width }; })()`);
 async function openImage(p, mid) {
   await ev(p, `${card(mid)}.scrollIntoView({ block: 'center' })`);
@@ -176,7 +171,7 @@ try {
         await key(p, 'ArrowRight', { code: 'ArrowRight' });
         await at(p, NAV[i]);
         s = await state(p);
-        if (s.count !== 'reader') assert.equal(s.count, `${i + 1} / ${NAV.length}`, NAV[i]);
+        assert.equal(s.count, `${i + 1} / ${NAV.length}`, NAV[i]);
         seen.push(s.title);
         if (NAV[i] === 'report.pdf') { await waitFor(p, `!!document.querySelector('.mdoc .mpage[data-drawn=ok] canvas')`, 20000); writeFileSync(join(OUT, 'p196-desktop-pdf-3.png'), await shoot(p)); }
         if (NAV[i] === 'voice.wav') {

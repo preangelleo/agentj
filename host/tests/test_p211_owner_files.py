@@ -81,12 +81,9 @@ class Repro(_Base):
         self.put("out/key.txt", f"用这个 {KEY}\n".encode())
         self.put("out/guess.txt", ENTROPY.encode())
         items, skips, keys = self.m.scan_keys("[e](.env) [k](out/key.txt) [g](out/guess.txt) `.env`", 3)
-        # P573 (#386, replaces key_content here): a key in a text file → the file goes as its masked copy, the value carded
-        self.assertEqual(skips, [{"name": ".env", "why": "key_file"}])
-        self.assertEqual([i["name"] for i in items], ["key.txt", "guess.txt"], "owner: the high-entropy guess never blocks")
+        self.assertEqual(skips, [{"name": ".env", "why": "key_file"}, {"name": "key.txt", "why": "key_content"}])
+        self.assertEqual([i["name"] for i in items], ["guess.txt"], "owner: the high-entropy guess never blocks")
         self.assertEqual([k[1]["name"] for k in keys], [".env", "key.txt"], "explicit links → pickup-card candidates")
-        self.assertEqual(keys[1][0], None)
-        self.assertEqual([v for _k, v in keys[1][1]["values"]], [KEY])
         for ref in media.refs("[e](.env) [k](out/key.txt) [g](out/guess.txt)"):
             self.assertEqual(self.m.check(ref, owner=False)[1], "secret", ref.path)
         # strict() re-checks an owner record before it goes to someone else
@@ -162,14 +159,10 @@ class Cards(_Base):
     def test_no_device_or_a_refused_card_keeps_the_note(self):
         self.put("out/key.txt", f"{KEY}\n".encode())
         for h in (SimpleNamespace(st=self.st, elevate=None), self.host(Box("no_device"))):
-            items, skips, keys = self.m.scan_keys("[k](out/key.txt)", 1)
+            _, skips, keys = self.m.scan_keys("[k](out/key.txt)", 1)
             self.assertEqual(asyncio.run(owner_route.offer_files(h, keys, "zh")), 0)
-            # P573: no card possible → the masked copy still goes, the value stays hidden behind the placeholder
-            self.assertEqual(skips, [])
-            got = b"".join(d for _, d, _ in self.m.window(items[0]["mid"], 0))
-            self.assertNotIn(KEY.encode(), got)
-            self.assertIn(b"<redacted>", got)
-        self.assertIn("领取卡", tg_media.skip_lines([{"name": "key.txt", "why": "key_content"}], "zh"))
+            self.assertEqual(skips, [{"name": "key.txt", "why": "key_content"}])
+        self.assertIn("领取卡", tg_media.skip_lines(skips, "zh"))
 
 
 class Contacts(P184._Svc):

@@ -143,13 +143,9 @@ async def ctl_cfg(desk, req: dict) -> dict:
     hours = (hrs if type(hrs) is int and 1 <= hrs <= HOURS_MAX else HOURS_DEFAULT) if op == "allow" else None
     names = [h._dname(d) or d for d in devs]
     text = card_text(h.lang, op, code, names, minutes, hours, [h._dname(d) or d for d in webs])
-    face = not all(faced(st, d) for d in devs)     # P573 (c): Face ID the first time a remote gets the terminal, then a button
-    res = await host_card(h, text, {"op": op, "devices": devs, "minutes": minutes, "hours": hours, "web": web_flag, "code": code},
-                          face=face)
+    res = await host_card(h, text, {"op": op, "devices": devs, "minutes": minutes, "hours": hours, "web": web_flag, "code": code})
     if res != "allow":
         return {"ok": False, "error": "denied" if res == "deny" else res}
-    if face:
-        await asyncio.to_thread(note_faced, st, devs)
     cfg = await asyncio.to_thread(store.prune, st)
     keep = [e for e in cfg["entries"] if e["device"] not in devs]
     until = int(time.time() + hours * 3600) if hours else None
@@ -164,43 +160,9 @@ async def ctl_cfg(desk, req: dict) -> dict:
     return {"ok": True, "devices": devs, "minutes": minutes, **({"until": until} if until else {})}
 
 
-def _faced_path(st):
-    from pathlib import Path
-    return Path(st.root) / "terminal_faced.json"
-
-
-def faced(st, device: str) -> bool:
-    """P573 (c): this remote already turned the web terminal on once with Face ID, with the approval key it has now."""
-    import hashlib
-    import json
-    try:
-        d = json.loads(_faced_path(st).read_text())
-    except (OSError, ValueError):
-        return False
-    sk = st.sign_key(device)
-    return isinstance(d, dict) and bool(sk) and d.get(device) == hashlib.sha256(sk).hexdigest()
-
-
-def note_faced(st, devices) -> None:
-    import hashlib
-    import json
-    from .state import _write_private
-    try:
-        d = json.loads(_faced_path(st).read_text())
-        d = d if isinstance(d, dict) else {}
-    except (OSError, ValueError):
-        d = {}
-    for dev in devices:
-        sk = st.sign_key(dev)
-        if sk:
-            d[dev] = hashlib.sha256(sk).hexdigest()
-    _write_private(_faced_path(st), json.dumps(d).encode())
-
-
-async def host_card(h, text: str, target: dict, face: bool = True) -> str:
-    """ONE `AgentJTerminal` card on every ready remote; the first signed answer decides. face (P573 c): Face ID — only a
-    remote with a passkey may allow — the first time a remote gets the terminal; after that one signed button.
-    → "allow" · "deny" · "timeout" · "estop" · "serve_stop" · "busy" · "no_device"."""
+async def host_card(h, text: str, target: dict) -> str:
+    """ONE `AgentJTerminal` card on every ready remote; the first signed answer decides; only a remote with a passkey may
+    allow (Face ID). → "allow" · "deny" · "timeout" · "estop" · "serve_stop" · "busy" · "no_device"."""
     from . import approvals
     from .serve import Ask
     from .terminal import CARD_TTL, TOOL
@@ -210,7 +172,7 @@ async def host_card(h, text: str, target: dict, face: bool = True) -> str:
         return "busy"
     rid = secrets.token_hex(16)
     a = Ask(rid, TOOL, text, approvals.shown_digest(TOOL, text), target, approvals.input_digest(target),
-            time.monotonic() + CARD_TTL, asyncio.get_running_loop().create_future(), require_passkey=face, pk_kind="terminal")
+            time.monotonic() + CARD_TTL, asyncio.get_running_loop().create_future(), require_passkey=True, pk_kind="terminal")
     h.asks[rid] = a
     h.st.log("ask", id=rid, tool=TOOL, agent="host", kind="terminal")
     h.activity("ask", id=rid, tool=TOOL, summary=text.split("\n", 1)[0])

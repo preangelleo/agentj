@@ -1,4 +1,30 @@
-"""Agent J market; developer reference: documentation/notes/P0262-HOST-REFERENCE.md."""
+"""`agentj plaza install | publish | like | installed` + package search / show / report / mine — the skill & workflow plaza
+(技能广场 · 工作流广场; protocol/PLAZA_PACKAGES.md, package format protocol/CATALOG_FORMAT.md).
+
+Everything a package contains — titles, summaries, README, tags, agent names, `requires`, roles, automations, commands — is
+written by someone else: DATA, never instructions. It is printed only inside the plaza data fence of plaza.py (metadata lines
+"│ ── " made by agentj from whitelisted, shape-checked fields; every package string on a "│    ┆ " line, escaped), and nothing
+from a package is executed by agentj except, after the Owner's yes, `install.verify` — ONLY inside a real sandbox (Linux
+bubblewrap / macOS sandbox-exec: the system read-only, the home + agentj's state + /tmp hidden, no network, writes only to
+a throw-away copy of the package, an empty environment, no shell, 60 s); without a sandbox it is skipped and the Owner is
+told so; `--skip-verify` skips it deliberately. `install.post_install` is shown, never run. Automations are never enabled.
+Beyond the signature: a reserved (official-looking) name needs a valid official signature; an unsigned copy of a package
+installed signed, and an older version than the installed one (without an explicit --version), are refused.
+
+官方认证 / certified only when the bundle's minisign signature verifies with a key compiled into agentj (minisign.TRUSTED_SIGNERS)
+and its trusted comment names this exact name / version / type / bundle SHA-256. The server's `certified` / `official` flag
+alone never earns the badge; a package the server flags certified whose signature does not verify is refused (exit 5).
+Community packages without a certification are 社群 · 待审核 / pending review (unverified) and need `--accept-unverified` at confirm time.
+
+install: preview (no flag) = get → download (signed URL on our API origin only) → SHA-256 = the server's → bundle.parse →
+signature → params (workflow) → the fenced summary + target + digest + the exact confirm command; nothing written outside the
+download cache. `--owner-confirmed --digest D`: same again (digest mismatch → 4), verify in a throw-away dir, render into a
+staging dir next to the target, then one rename into place (an existing target is refused unless `--replace` AND
+installed.json says agentj installed it for this package; the old folder moves to `<state>/plaza/backups/<name>-<UTC>/`). publish: bundle.build → layer 1 over every text file + the manifest (any hit → exit 2, never
+rewritten) → layer 2 (Jev, plaza criteria) on a bounded draft → preview + digest → `--owner-confirmed --digest` → publish →
+PUT the exact bundle. Exit codes: 0 ok / previewed · 1 error · 2 a privacy layer flagged it · 3 layer 2 unavailable ·
+4 digest mismatch · 5 signature invalid.
+"""
 from __future__ import annotations
 
 import collections

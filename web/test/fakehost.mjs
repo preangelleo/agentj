@@ -155,8 +155,8 @@ export async function startFakeHost() {
     const msg = ['friend_request', 'peer_question'].includes(a.tool) && m.ok && (m.group != null || m.ctx != null)
       ? await wire.friendAnswerMessage(channel, c.devId, m.id, 'allow', a.tool, a.summary, m.group, m.ctx)
       : m.ok && !m.batch && Array.isArray(m.allow_add)   // P296: ticked 「加入白名单」 boxes, signed with the allow (serve._answer)
-        ? await wire.mailAllowMessage(channel, c.devId, m.id, a.tool, a.summary, m.allow_add, a.task_scope)
-        : await wire.approveMessage(channel, c.devId, m.id, decision, a.tool, a.summary, m.batch ? a.batch : undefined, a.task_scope);
+        ? await wire.mailAllowMessage(channel, c.devId, m.id, a.tool, a.summary, m.allow_add)
+        : await wire.approveMessage(channel, c.devId, m.id, decision, a.tool, a.summary, m.batch ? a.batch : undefined);
     const key = await webcrypto.subtle.importKey('raw', unb64u(sk), { name: 'Ed25519' }, false, ['verify']);
     return webcrypto.subtle.verify({ name: 'Ed25519' }, key, unb64u(m.sig), msg);
   }
@@ -863,6 +863,3 @@ export function sampleFriends({ myId = 'AJ-FRGG-6PG6-V1WK-AAQA', now = Date.now(
     page: 50, writes: [], refused: [],
   };
 }
-
-PREF_ENUM['heartbeat.quiet_enabled'] = [true, false];
-for (const k of ['quiet_start', 'quiet_end']) PREF_ENUM['heartbeat.' + k] = v => typeof v === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(v);

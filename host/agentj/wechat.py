@@ -458,7 +458,8 @@ class WeChat:
         self.assistant_waiting = False
         if self.index is None:
             self.index = await asyncio.to_thread(peer_guard.SecretIndex.build, None, (), None)
-        text = privacy.owner_text(text)
+        if not peer_guard.inbound(text).ok:
+            return None
         self.assistant_detail = None
         self.sessions.input_images = tuple(input_images)
         self.sessions.on_card, self.sessions.source = interim, source
@@ -494,7 +495,8 @@ class WeChat:
                 res.decision, res.text = 'reply', ('Here is the picture.' if getattr(self.h, 'lang', 'zh') == 'en' else '图画好了。')
         if res.decision != 'reply':
             return None
-        res.text = await self.owner_out(res.text, source)   # P573: keys → pickup cards, the rest is delivered
+        if not peer_guard.outbound(res.text, self.index).ok:
+            return None
         images = list(getattr(res, 'images', None) or [])
         # P557: files the reply names go as the channel's own attachments (credential files → pickup cards), paths dropped
         named, files, paths, keys = await asyncio.to_thread(attachments, self.h, res.text)
@@ -507,21 +509,10 @@ class WeChat:
             if reply != res.text.strip():
                 self.store.count('reply_rewritten')   # P557: paths / internal words removed, sent anyway (no handoff)
             if keys:
-                from . import owner_route, tg_media
+                from . import owner_route, privacy, tg_media
                 await owner_route.offer_files(self.h, keys, lang)
-                note = tg_media.skip_lines([k for k, _r in keys if k], 'en' if lang == 'en' else 'zh')   # P573: masked copies have no skip
-                reply = privacy.owner_text(reply + '\n\n' + note) if note else reply
+                reply = privacy.owner_text(reply + '\n\n' + tg_media.skip_lines([k for k, _r in keys], 'en' if lang == 'en' else 'zh'))
         return reply
-
-    async def owner_out(self, text, source='wechat'):
-        """Owner text with bounded credential pickup cards and indexed secrets masked; never log values or silently drop."""
-        from . import owner_route
-        lang = getattr(self.h, 'lang', None)
-        via = source if source in ('mail', 'telegram') else ('WeChat' if lang == 'en' else '微信')
-        text, _rep = await owner_route.divert(self.h, str(text or ''), via, lang, 'WeChat' if lang == 'en' else '微信')
-        if self.index is not None and self.index.hits(text):
-            text = self.index.redact(text)[0]
-        return text
 
     async def mirror_paths(self, source):
         """P557: what the Web App page shows of an avatar answer — the files it named and the images the harness made
@@ -532,11 +523,11 @@ class WeChat:
                                                  mime.split('/')[1].replace('jpeg', 'jpg'), mime))
         return paths
 
-    async def mirror(self, source, reply, *, page=None):
+    async def mirror(self, source, reply):
         """P557: the avatar's answer also shows in the Web App's main conversation. Never raises."""
         from . import channel_card
         try:
-            return channel_card.reply(self.h, source, str(reply), await self.mirror_paths(source), page=page)
+            return channel_card.reply(self.h, source, str(reply), await self.mirror_paths(source))
         except Exception:  # noqa: BLE001 — the channel already has the answer
             with contextlib.suppress(Exception):
                 self.h.st.log('channel_mirror', result='failed', via=source)
@@ -545,8 +536,11 @@ class WeChat:
     draw_failed = draw_said = None
 
     async def draw(self, text):
-        """Use a fresh sandboxed owner Codex drawer; retry listed models on capacity failure.
-    No paid fallback or main conversation; report draw_failed when all fail."""
+        """P557: an image request the selected executor cannot draw goes to the owner's Codex image tool in its own
+        sandbox (subscription, no per-use charge), never a paid service. P559 (chairman 10-27: the 17:04 draw died on
+        "Selected model is at capacity" and went to the Web App): a fresh headless `codex exec` with the drawer's own short
+        text; a full model → the next model the owner's Codex lists; still nothing → None with `draw_failed` set, and the
+        channel says why (assistant) — never the main conversation."""
         from .channel_native import NativeCodex, draw_models
         sessions = self.sessions
         self.draw_failed = self.draw_said = None
@@ -695,8 +689,10 @@ class WeChat:
         self.publish()
 
     async def to_main(self, api, r, generation, body, placed, input_images):
-        """Queue the owner WeChat message in the main conversation; Web App retains all approval ownership.
-    Unsupported images use the owner Codex drawer; completion returns to WeChat."""
+        """P562 (#337, chairman 10-28): the owner's WeChat message is an ordinary owner message in the main conversation —
+        queued behind a busy turn, its page labelled 「微信」, the answer back here (completed). Approvals: Web App cards only
+        (serve.ask as this channel's); this chat only hears where to confirm. A picture the main harness cannot draw → the
+        owner's Codex draws it here (owner_channels.draw)."""
         from types import SimpleNamespace
         from . import inbox, owner_channels as oc
         from .text import clean
@@ -790,16 +786,14 @@ class WeChat:
                 return
             text = ('这一轮没有完成，请在 Agent J 网页查看。' if lang != 'en' else 'This turn did not complete. Check Agent J Web App.')
         named, files, _paths, keys = await asyncio.to_thread(attachments, self.h, text)
-        text = await self.owner_out(text)      # P573: keys → pickup cards + placeholders; the answer itself is delivered
         reply = public_reply(text, named, lang, files)
-        if reply is None:      # nothing left to say in the channel (no credential reaches here any more)
+        if reply is None:      # credentials in the answer: they never cross the channel
             from .channel_avatar import CONTEXT_WEB
             reply, named, files = (CONTEXT_WEB if lang != 'en' else 'The answer is on Agent J Web App; please read it there.'), [], []
         if keys:
             from . import owner_route, privacy, tg_media
             await owner_route.offer_files(self.h, keys, lang)
-            note = tg_media.skip_lines([k for k, _r in keys if k], lang)   # P573: masked copies have no skip
-            reply = privacy.owner_text(reply + '\n\n' + note) if note else reply
+            reply = privacy.owner_text(reply + '\n\n' + tg_media.skip_lines([k for k, _r in keys], lang))
         from .privacy import redact
         r['reply_summary'] = redact(str(reply))[:2000]
         await self.deliver(self.api_factory(self.store.data['account']), generation, r, reply, named, files)
@@ -901,8 +895,9 @@ class WeChat:
         self.store.save()
 
     async def approval(self, summary, target, ttl=300, *, rid=None, pk=True):
-        """Existing signed paired-remote approval/log path; no level/goal/grant bypass.
-    pk=False requests a signed tap; resulting main actions retain their own approval rules."""
+        """Use the existing Ask/signature/passkey/log path; no level, goal or grant bypass. pk=False (P559): a ② card — the
+        signed tap of a paired remote is the instruction, never a Face ID (handing a channel request to the main
+        conversation; whatever the main conversation then does keeps its own approvals)."""
         from .serve import Ask
         rid = rid or secrets.token_hex(16)
         a = Ask(rid, 'wechat_confirm', summary, approvals.shown_digest('wechat_confirm', summary), target,
@@ -953,15 +948,7 @@ class WeChat:
             self.store.save()
             payload = {'kind': 'wechat_handoff', 'source': r.get('source', 'wechat'), 'untrusted': True, 'execute': False,
                        'id': rid, 'text': r['text'], 'inbox': r['paths']}
-            from . import channel_card
-            source = r.get('source', 'wechat')
-            hist = getattr(self.h, 'hist', None)
-            page = hist.get(r.get('page')) if hist and r.get('page') else None
-            if not page:
-                page = self.h.hist_add({'k': {'mail': 'email'}.get(source, source), 'via': source,
-                                        'name': channel_card.label(source, self.h.lang), 'text': privacy.owner_text(r['text'])}, '', 'open')
-            else:
-                self.h.hist_update(page['id'], text='', end='open')
+            page = self.h.hist_add({'k': 'agent', 'via': r.get('source', 'wechat'), 'text': ('来自' + {'mail':'邮件','telegram':'Telegram'}.get(r.get('source'), '微信') + ' · 已确认转交\n' if self.h.lang == 'zh' else 'From ' + r.get('source', 'WeChat') + ' · Confirmed transfer\n') + r['text']}, '', 'open')
             r['turn'] = page['id']
             send = HandoffSend(self, r, 'WeChat request data; owner confirmed transfer only. Apply normal approvals.\n' + DRAW_HINT +
                                 peer_guard.wrap('wechat', 'WeChat', json.dumps(payload, ensure_ascii=False)))
@@ -1007,8 +994,7 @@ class WeChat:
             if provenance.untrusted_turn(getattr(self.h, 'agent', None)):
                 return {'ok': False, 'why': 'owner_required'}
             summary = ('连接微信 ClawBot，仅服务扫码者本人。' if op == 'setup' else '解除这台主机的微信通道绑定。') if self.h.lang == 'zh' else ('Connect WeChat ClawBot for the scanning owner only.' if op == 'setup' else 'Unbind this host from WeChat.')
-            # P573 §三: connecting / unbinding the channel is reversible (scan again) — an ordinary signed button, no Face ID
-            if not await self.approval(summary, {'op': op}, pk=False):
+            if not await self.approval(summary, {'op': op}):
                 return {'ok': False, 'why': 'denied'}
             return await (self.setup() if op == 'setup' else self.unbind())
         return {'ok': False, 'why': 'shape'}

@@ -11,7 +11,6 @@ Agent J Father = Agent J 官方反馈与客服平台（开发者团队后台）�
 
 `/feedback-to-agentj-father <内容>` is an explicit owner instruction to submit the following content, adding only necessary context.
 Redact locally, then run `agentj support feedback "<redacted content>" --attach-doctor --wait 0` directly: **不再二次确认 / no second confirmation**.
-Exit 3 (Jev flagged personal details or is unavailable): show the owner the redacted text; rerun with `--owner-confirmed` only after their yes.
 Use `--kind bug` for a bug, default report for an idea or general feedback; both use the existing official support thread.
 Prefer `--file <private local draft>` for multiline content or shell metacharacters; never interpolate raw user text into a shell command.
 Only `/feedback-to-agentj-father` with no content: ask “想反馈什么？” / “What would you like to report?” and do not send yet.

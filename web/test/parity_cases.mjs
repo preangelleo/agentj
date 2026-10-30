@@ -980,11 +980,13 @@ export async function runCases({ B, web, fake, only }) {
     await wait(`document.body.dataset.sheet === '1'`);
   });
   await C('long-press-approve', async () => {
-    // P573 (chairman 10-29, item 3): the hold is retired — one tap approves (a Face ID card keeps its passkey)
-    ok((await text('#apprAllowLbl')) === T('r.appr.hold'), 'the button says 批准');
     await touchTap('#apprAllow');
+    await waitToast(T('r.appr.holdHint'));
+    ok(!fake.st.answers.length, 'a tap never approves');
+    await touchHold('#apprAllow', 1500);
+    await wait(`${'true'}`);
     await sleep(500);
-    ok(fake.st.answers.length === 1 && fake.st.answers[0].ok === true, 'one tap approves');
+    ok(fake.st.answers.length === 1 && fake.st.answers[0].ok === true, 'a hold approves');
     await wait(`document.getElementById('askState').textContent === ${JSON.stringify(T('r.appr.st.approved'))} || document.getElementById('toast').textContent === ${JSON.stringify(T('r.appr.st.approved'))}`);
   });
   await C('aj-signed-approvals', async () => { ok(fake.st.sigOk[0] === true, 'the host verified the Ed25519 signature over what was shown'); });
@@ -1004,7 +1006,7 @@ export async function runCases({ B, web, fake, only }) {
     await fake.ask({ id, tool: 'Bash', summary: 'cat orders.csv', ttl: 120, batch: 'Bash：cat', batch_max: 20, batch_secs: 600 });
     await wait(`!document.getElementById('apprBatch').hidden`, 8000);
     ok((await text('#apprBatchScope')).includes('Bash：cat'), 'the scope is shown');
-    await touchTap('#apprBatch');   // P573: one tap
+    await touchHold('#apprBatch', 1500);
     await sleep(600);
     const a = fake.st.answers[fake.st.answers.length - 1];
     ok(a.id === id && a.batch === true && fake.st.sigOk[fake.st.sigOk.length - 1] === true, 'allow_batch signed over the scope');

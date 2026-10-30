@@ -62,11 +62,7 @@ try {
    ['settings',async()=>{await blur();await page.keyboard.press('Control+Comma');await page.waitForSelector('#settings:not([hidden])');},esc],
    ['slash-menu',async()=>{await page.locator('#input').focus();await page.keyboard.type('/');await page.waitForTimeout(400);},async()=>{await esc();await page.locator('#input').fill('');await blur();}],
    ['mail-dialog',async()=>{await blur();await page.evaluate(()=>window.AgentJMailForward.open({turn:1,whole:true}));await page.waitForSelector('#ctFwd:not([hidden])');await page.waitForTimeout(400);},esc],
-   ['md-preview',async()=>{await page.evaluate(()=>document.querySelector('.mcard .mact.pv, .mcard [class*="pv"]')?.click());await page.waitForSelector('#rd[data-file="1"]:not([hidden])',{timeout:8000});
-     assert.equal(await page.locator('#rdFileName').textContent(),file.name,'the selected Markdown file is open');
-     assert.ok((await page.locator('#rdWords').textContent()).includes('line 120'),'the full preview content is present');
-     assert.equal(await page.locator('.mview:not([hidden])').count(),0,'the unified reader owns the Markdown preview');
-     await page.waitForTimeout(800);},esc],
+   ['md-preview',async()=>{await page.evaluate(()=>document.querySelector('.mcard .mact.pv, .mcard [class*="pv"]')?.click());await page.waitForSelector('.mview:not([hidden])',{timeout:8000});await page.waitForTimeout(800);},esc],
    ['approval',async()=>{await fake.send({t:'status',s:'waiting',agent:'claude',name:'Agent J'});await fake.ask({id:randomBytes(16).toString('hex'),tool:'Bash',summary:CMD,ttl:120,cat:['delete'],why:'rm -rf'});
      await page.waitForFunction(()=>document.body.textContent.includes('step 39'));await page.evaluate(()=>document.getElementById('cmdMore')?.click());await page.waitForTimeout(300);}],
   ];
@@ -75,13 +71,11 @@ try {
    await open();
    const found=await page.evaluate(SCAN);
    results[tag][name]=found;
-   if(name==='md-preview')assert.ok(found.some(f=>f.el==='#rdScroll'&&f.moves===true),'the file reader actually overflows and scrolls');
    const bad=found.filter(f=>f.sw!=='none'||f.barY!==0||f.barX!==0||f.moves===false);
    assert.ok(!bad.length,`${tag} ${name}: a drawn / dead scroller ${JSON.stringify(bad)}`);checks++;
    assert.ok(found.length>0||['keys','search','slash-menu'].includes(name),`${tag} ${name}: something overflows here (else the case proves nothing)`);checks++;
    await page.screenshot({path:`${OUT}/scrollbars-${tag}-${name}.png`});
    if(close)await close();
-   if(name==='md-preview')assert.equal(await page.locator('#rd').evaluate(n=>n.hidden),true,'Escape closes the file reader');
   }
   // the frame inside the Markdown / HTML preview: srcdoc carries the no-bar style (checked statically in p273.test.mjs)
   assert.ok(errors.length===0,errors.join('\n'));checks++;

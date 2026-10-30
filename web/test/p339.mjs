@@ -3,7 +3,7 @@
 //   (a) a goal `hold` card with goal_who / goal_what / goal_why / goal_add: title 「目标进行中：{who} 想{what}，需要你决定」, three plain
 //       lines under it, the raw command folded behind 「详情」 (aria-expanded; closed again for a new card), a second hold button
 //       「长按：批准，并加进目标授权」 whose answer carries allow_add = [goal_add], signed like the P296 mail allowlist (the fake host
-//       checks it with wire.mailAllowMessage); 批准 (one tap since P573) stays above the fold at 390 × 844
+//       checks it with wire.mailAllowMessage); a tap alone never approves; 长按批准 stays above the fold at 390 × 844
 //   (b) an `auto` card: the auto title + 「倒计时结束自动批准」 line, no second button; an older host's card (no goal_what) as before
 //   (c) the goal result notice: its ```details fence → a closed <details> 「详情」 inside the reply, opens on a tap, wraps at 390 px
 //   (d) the sudo card: 「为了做什么」 first, before the command
@@ -30,14 +30,14 @@ const W = {
   zh: { who: 'Claude Code', what: '把 pwone.py 复制到 olares', why: '不在授权范围内，且无法撤回', add: '对外发送：scp 到 olares 的文件 · 最多 20 次 · 到目标结束',
     title: '目标进行中：Claude Code 想把 pwone.py 复制到 olares，需要你决定', autoWhat: '把 old.log 移到回收站', autoWhy: '不在授权范围内，但能撤回',
     autoTitle: '目标进行中：Codex 想把 old.log 移到回收站', ifNot: '不点会怎样：到时不批就跳过这一步，其余照做', ifNotAuto: '不点会怎样：倒计时结束自动批准（这一步能撤回）',
-    how: '怎么批准：点下面的「批准」；以后同类都放行：点「批准，并加进目标授权」', addLbl: '批准，并加进目标授权', details: '详情',   // P573: one tap — no 「长按」 in the copy
+    how: '怎么批准：长按下面的「长按批准」；以后同类都放行：长按「批准，并加进目标授权」', addLbl: '长按：批准，并加进目标授权', details: '详情',
     sudoWhy: '为了做什么', sudoPurpose: '装 ffmpeg，好把录音转成 mp3' },
   en: { who: 'Claude Code', what: 'copy pwone.py to olares', why: "outside the grant and can't be undone", add: 'Send out: scp files to olares · up to 20 times · until the goal ends',
     title: 'Goal running: Claude Code wants to copy pwone.py to olares — your call', autoWhat: 'move old.log to the trash', autoWhy: 'outside the grant, but it can be undone',
     autoTitle: 'Goal running: Codex wants to move old.log to the trash', ifNot: "If you don't tap: when time is up this step is skipped and everything else goes on",
     ifNotAuto: "If you don't tap: approved when the countdown ends (this step can be undone)",
-    how: 'How to approve: tap “Approve” below; to let the same kind through from now on: tap “Approve and add to the goal\'s grant”',
-    addLbl: "Approve and add to the goal's grant", details: 'Details', sudoWhy: "What it's for", sudoPurpose: 'install ffmpeg so the recording can be turned into an mp3' },
+    how: 'How to approve: hold “Hold to approve” below; to let the same kind through from now on: hold “approve and add to the goal\'s grant”',
+    addLbl: "Hold: approve and add to the goal's grant", details: 'Details', sudoWhy: "What it's for", sudoPurpose: 'install ffmpeg so the recording can be turned into an mp3' },
 };
 const NOTICE = {
   zh: '🎯 目标结束 · 到期：在 olares 上跑基准测试\n用到的授权：无\n自动批准 3 次（其中 10 秒倒计时 0 次）\n卡在这里，等你决定（2 件）：\n'
@@ -105,26 +105,26 @@ try {
     check(s.allowBox.bottom <= s.vh && s.allowBox.top >= 0, `${lang}: 长按批准 above the fold ${JSON.stringify(s.allowBox)} vh ${s.vh}`);
     check(s.red && !s.tags.includes(L.why), `${lang}: red sheet kept, the reason not repeated in the tag (${s.tags})`);
     await png(p, ASSETS + `goal-hold-${lang}.png`);
-    // P573: a finger that slides off (released outside the button) sends nothing
+    // a tap on the second button never approves
     let n = fake.st.answers.length;
     await evaluate(p, `(() => { const b = ${$('apprGoalAdd')}; b.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,button:0,pointerType:'touch'})); b.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,button:0,pointerType:'touch'})); })()`);
     await sleep(1600);
-    check(fake.st.answers.length === n && await evaluate(p, `document.body.dataset.sheet`) === '1', `${lang}: released off the button: nothing sent`);
+    check(fake.st.answers.length === n && await evaluate(p, `document.body.dataset.sheet`) === '1', `${lang}: a tap alone sends nothing`);
     // 详情 → the command (tool tag, description) shows
     await evaluate(p, `${$('cmdToggle')}.click()`);
     await sleep(300);
     s = await sheetState(p);
     check(!s.cmdHidden && s.exp === 'true' && s.cmd.includes('scp -q /srv/u/bench-jarvis/pwone.py'), `${lang}: 详情 opens the command ${JSON.stringify([s.cmdHidden, s.exp])}`);
     await png(p, ASSETS + `goal-hold-details-${lang}.png`);
-    // tap 「批准，并加进目标授权」 → allow + allow_add [goal_add], signature verified by the fake host (mailAllowMessage)
+    // hold 「批准，并加进目标授权」 → allow + allow_add [goal_add], signature verified by the fake host (mailAllowMessage)
     n = fake.st.answers.length;
-    await evaluate(p, `(() => { const b = ${$('apprGoalAdd')}, r = b.getBoundingClientRect(), o = {bubbles:true,button:0,pointerType:'touch',clientX:r.left+r.width/2,clientY:r.top+r.height/2}; b.dispatchEvent(new PointerEvent('pointerdown',o)); b.dispatchEvent(new PointerEvent('pointerup',o)); })()`);
+    await evaluate(p, `${$('apprGoalAdd')}.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,button:0,pointerType:'touch'}))`);
     await waitFor(p, `document.body.dataset.sheet==='0'`, 4000);
     for (let i = 0; i < 40 && fake.st.answers.length === n; i++) await sleep(50);
     let ans = fake.st.answers[fake.st.answers.length - 1];
     check(ans && ans.id === card.id && ans.ok === true && JSON.stringify(ans.allow_add) === JSON.stringify([L.add]), `${lang}: allow_add = [goal_add] (${JSON.stringify(ans)})`);
     check(fake.st.sigOk[fake.st.sigOk.length - 1] === true, `${lang}: the allow_add signature verifies`);
-    // a new card: 详情 closed again; a plain 批准 sends no allow_add
+    // a new card: 详情 closed again; a plain 长按批准 sends no allow_add
     card = holdCard(lang);
     await fake.ask(card);
     await waitFor(p, `document.body.dataset.sheet === '1' && !${$('goalInfo')}.hidden && !${$('apprBtns')}.hidden`);
@@ -132,11 +132,11 @@ try {
     s = await sheetState(p);
     check(s.cmdHidden && s.exp === 'false', `${lang}: a new card starts folded`);
     n = fake.st.answers.length;
-    await evaluate(p, `(() => { const b = ${$('apprAllow')}, r = b.getBoundingClientRect(), o = {bubbles:true,button:0,pointerType:'touch',clientX:r.left+r.width/2,clientY:r.top+r.height/2}; b.dispatchEvent(new PointerEvent('pointerdown',o)); b.dispatchEvent(new PointerEvent('pointerup',o)); })()`);
+    await evaluate(p, `${$('apprAllow')}.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,button:0,pointerType:'touch'}))`);
     await waitFor(p, `document.body.dataset.sheet==='0'`, 4000);
     for (let i = 0; i < 40 && fake.st.answers.length === n; i++) await sleep(50);
     ans = fake.st.answers[fake.st.answers.length - 1];
-    check(ans && ans.id === card.id && ans.ok === true && !('allow_add' in ans) && fake.st.sigOk[fake.st.sigOk.length - 1] === true, `${lang}: plain tap = plain allow (${JSON.stringify(ans)})`);
+    check(ans && ans.id === card.id && ans.ok === true && !('allow_add' in ans) && fake.st.sigOk[fake.st.sigOk.length - 1] === true, `${lang}: plain hold = plain allow (${JSON.stringify(ans)})`);
     // ---------------------------------------------------------------- (b) auto card · an older host's card
     await fake.ask({ id: hex(16), tool: 'Bash', summary: 'trash-put old.log', ttl: 10, cat: ['delete'], why: '', goal: 'auto', goal_why: L.autoWhy, goal_who: 'Codex', goal_what: L.autoWhat });
     await waitFor(p, `document.body.dataset.sheet === '1' && !${$('goalInfo')}.hidden`);

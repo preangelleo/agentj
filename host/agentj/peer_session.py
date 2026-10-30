@@ -1,4 +1,42 @@
-"""Agent J peer_session; developer reference: documentation/notes/P0262-HOST-REFERENCE.md."""
+"""Agent friends: the peer session — one fenced, tool-less conversation per friend (PROTOCOL §17.8, ADR-0.16 §6.2).
+
+Each turn is one short harness process that resumes the friend's own conversation (session id in `<state>/peer/sessions.json`):
+Claude Code `claude -p --resume`, Codex `codex exec resume`, OpenCode `opencode run -s`. Nothing stays running between turns,
+so the "idle 10 min → process ends" rule holds trivially; ≤ max_active turns run at once, the rest queue (FIFO per semaphore);
+turns of one friend never overlap.
+
+**No tools** (measured 2026-10-07 on Claude Code 2.1.289, Codex 0.159.2, OpenCode 1.18.32):
+- Claude Code: `--tools ""` (no built-in tool), `--strict-mcp-config --mcp-config '{"mcpServers":{}}'` (no MCP), and when this
+  version has them `--safe-mode` (no CLAUDE.md, skills, plugins, hooks, custom agents), `--setting-sources ""`,
+  `--disable-slash-commands`, `--system-prompt-snapshot off` (the current group / profile apply on every resume). The system
+  prompt *replaces* Claude Code's own (`--system-prompt`). Stream-json output: the init event's `tools` list must be empty and
+  no `tool_use` block may appear.
+- Codex: `--ignore-user-config` (no MCP servers, plugins or hooks from config.toml; the owner's model is carried over by name),
+  `--ignore-rules`, sandbox read-only, approvals never, web search disabled, project docs off, `model_instructions_file` = our
+  system prompt (replaces Codex's base instructions), the permissions / apps / collaboration / environment instruction blocks
+  off, `agents.max_depth=0`, and every tool feature this version knows disabled (shell_tool, unified_exec, apps, plugins,
+  browser_use, computer_use, image_generation, in_app_browser, multi_agent, view_image, code_mode_host, …). Residual, disclosed:
+  current GPT models still *list* `exec` (code mode) and the collaboration tools; with code_mode_host disabled `exec` fails closed
+  ("code-mode host is disabled") before anything runs, and a spawned helper would get the same tool-less configuration. Any tool
+  attempt (an item other than a message, or a tool-router line on stderr) makes the turn `ask_owner` with error "tool_call".
+- OpenCode: `OPENCODE_CONFIG_CONTENT` with `tools: {"*": false}`, `permission: {"*": "deny"}` and our own primary agent
+  `agentj-peer` (its `prompt` = our system prompt, same tool / permission denial), `--pure` (no external plugins), no MCP, no
+  instructions; the owner's provider / model settings are carried over by key name.
+
+**Always fenced** (fence.wrap; fence unavailable → error "fence", never unfenced). cwd = `<state parent>/<state name>-peer-sandbox/
+<friend>` — outside the state dir (which the fence replaces by an empty tmpfs), empty (emptied before every turn), 0700. On top
+of the fence's own rules, the files a harness would load into the model's context by itself are hidden: the owner's global
+CLAUDE.md / AGENTS.md, skills / agents / commands folders and OpenCode's config folder. Environment: only what the harness needs
+(HOME, PATH, locale, its own config / login variables, proxy); every other variable whose name looks like a secret is dropped.
+
+Tokens (one figure per turn, from the harness's own usage report; none → None, the ledger shows 「—」): everything the provider
+processed for this turn — Claude input + cache creation + cache read + output; Codex input (cached included) + output (reasoning
+included); OpenCode `tokens.total` (input + output + reasoning + cache read / write).
+
+The model must answer with one JSON object {"decision": "reply"|"ask_owner"|"silent", "text", "topic"}; the last JSON object in
+its output counts; none → ask_owner with the raw output as the draft (parsed=False). Group mode `off` turns every reply into
+ask_owner here too (not only in the prompt).
+"""
 from __future__ import annotations
 
 from . import resource_policy

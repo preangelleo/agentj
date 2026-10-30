@@ -30,24 +30,14 @@ try{
    await navigate(page,fake.newPairing(web.url+'?lang='+lang));await waitState(page,'awaiting-approval');await fake.approve();await waitState(page,'ready');
    await evaluate(page,"document.getElementById('a2hs-ok')?.click();document.getElementById('phone-env-dismiss')?.click();import('./js/settings.js').then(m=>m.openRescue())");
    await waitFor(page,"!document.getElementById('settings').hidden&&!document.getElementById('rs-cmds').hidden");
-   const click=async selector=>{
-    await evaluate(page,`document.querySelector(${JSON.stringify(selector)}).scrollIntoView({block:'center',behavior:'instant'})`);
-    // A closed details descendant has a rectangle too. Only click a visible, reachable target.
-    await waitFor(page,`(() => {const e=document.querySelector(${JSON.stringify(selector)}),r=e.getBoundingClientRect(),x=r.x+r.width/2,y=r.y+r.height/2;return r.width>0&&r.height>0&&x>=0&&x<innerWidth&&y>=0&&y<innerHeight&&e.contains(document.elementFromPoint(x,y));})()`);
-    const r=await rect(page,selector);
-    for(const type of ['mousePressed','mouseReleased'])await page.send('Input.dispatchMouseEvent',{type,x:r.x,y:r.y,button:'left',clickCount:1});
-   };
-   // P567 folded terminal commands by default; the owner opens the summary before running one.
-   assert.equal(await evaluate(page,"document.getElementById('rs-cmds').open"),false);
-   await click('#rs-cmds > summary');
-   await waitFor(page,"document.getElementById('rs-cmds').open");
+   const click=async id=>{await evaluate(page,`document.getElementById('${id}').scrollIntoView({block:'center'})`);const r=await rect(page,'#'+id);for(const type of ['mousePressed','mouseReleased'])await page.send('Input.dispatchMouseEvent',{type,x:r.x,y:r.y,button:'left',clickCount:1});};
    for(const cmd of reads){
-    await click('#rs-cmd-'+cmd);await waitFor(page,"document.getElementById('rs-cmd-out-text')?.textContent.includes('fixture read result')");
+    await click('rs-cmd-'+cmd);await waitFor(page,"document.getElementById('rs-cmd-out-text')?.textContent.includes('fixture read result')");
     assert.equal(await evaluate(page,"document.getElementById('confirm').hidden"),true);
     assert.equal(calls.filter(c=>c.cmd===cmd).length,1);
    }
    for(const cmd of protectedCmds){
-   await click('#rs-cmd-'+cmd);
+   await click('rs-cmd-'+cmd);
    if(tv)await waitFor(page,"document.getElementById('toast').textContent.length>0");else await waitFor(page,"document.querySelector('#rs-cmd-out .rsfail')?.textContent.length>0");
    }
    assert.equal(calls.length,tv?reads.length:reads.length+protectedCmds.length);assert.equal(await evaluate(page,'window.p507UVCalls'),0);

@@ -43,10 +43,7 @@ class ExternalChannels(WeChat):
             record = self.store.put(rid, [manifest, *paths], text)
             record.update(source=source, state='processing', admission=admission)
             self.store.save()
-            from .channel_card import notice as channel_notice; page = channel_notice(self.h, source, text, list(paths), manifest)  # P543 (#308)
-            if isinstance(page, dict):
-                record["page"] = page["id"]
-                self.store.save()
+            from .channel_card import notice as channel_notice; channel_notice(self.h, source, text, list(paths), manifest)  # P543 (#308)
             reply = None
             try:
                 from .channel_inputs import inputs
@@ -77,9 +74,9 @@ class ExternalChannels(WeChat):
             if reply is None:
                 return handoff(self.h)
             out = Reply(reply, getattr(self, 'reply_images', ()), getattr(self, 'reply_files', ()))
-            if source == 'telegram' or isinstance(page, dict):
-                await self.mirror(source, reply, page=page)
-            if source == 'mail':
+            if source == 'telegram':
+                await self.mirror(source, reply)   # P557: the answer on the Web App too
+            else:                                  # mail writes its own page (it carries the reply route): its files, here
                 with contextlib.suppress(Exception):
                     out.page_files = await self.mirror_paths(source)
             return out
@@ -126,8 +123,7 @@ class ExternalChannels(WeChat):
                             router_bound=bound, model=req.get('model'))
         except ValueError as e:
             return {'ok': False, 'why': str(e)}
-        if not await self.approval('更换外部通道分身套餐 / Change external-channel plan: ' + str(wanted), {'op':'avatar','config':config},
-                                   pk=False):   # P573 (#386 ⑤): reversible — one signed button, no Face ID
+        if not await self.approval('更换外部通道分身套餐 / Change external-channel plan: ' + str(wanted), {'op':'avatar','config':config}):
             return {'ok':False, 'why':'denied'}
         await self.sessions.stop_all()
         if getattr(self.h, 'wechat', None):

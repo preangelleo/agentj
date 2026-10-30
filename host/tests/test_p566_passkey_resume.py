@@ -64,9 +64,9 @@ class KeyCardResume(unittest.TestCase):
             await host._app(s, p59.with_fa(answer(ph, c, True, PW, ts=int(time.time() * 1000) - 3_600_000), f))
             await host._app(s, p59.with_fa(answer(ph, c, True, PW, sk=Ed25519PrivateKey.generate()), f))
             await host._app(s, p59.with_fa(answer(ph, c, True, PW, nonce="0" * 32), f))
-            # (P573: a sudo card needs no Face ID any more, so an allow without an assertion is no refusal here)
+            await host._app(s, answer(ph, c, True, PW))                       # no assertion from a passkey remote
             await host._app(s, answer(ph, c, True, PW, rid="e" * 32))         # a card that is not there
-            self.assertEqual([r["why"] for r in self.refused()], ["stale", "bad_signature", "replay", "gone"])
+            self.assertEqual([r["why"] for r in self.refused()], ["stale", "bad_signature", "replay", "passkey", "gone"])
             self.assertFalse(host.elevate.cards[c["id"]]["fut"].done(), "the card stays open")
             await host._app(s, p59.with_fa(answer(ph, c, True, PW), p59.fa(self.a, ph, c)))
         res, _, _ = self.run_pk({**self.REQ}, script)

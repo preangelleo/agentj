@@ -469,7 +469,7 @@ class RealHost(unittest.IsolatedAsyncioTestCase):
             async def ask(tool, inp, batch=True, **kw):
                 self.assertEqual(tool, "agentj mail"); self.assertTrue(inp["changes"])
                 self.assertIn("before", inp); self.assertIn("after", inp)
-                self.assertTrue(kw["always_ask"]) # P503: full before/after; P573: one button that 全放行 still asks
+                self.assertTrue(kw["require_passkey"]) # P503: full before/after with mandatory UV
                 self.assertIn("allow", inp["after"])
                 asked.set(); return {"behavior": "deny"}
             host.ask = ask

@@ -174,18 +174,14 @@ class Signed(unittest.TestCase):
         asyncio.run(go())
 
     def test_resume_requires_passkey_and_valid_assertion(self):
-        # P573 (#386 ⑤): lifting the emergency stop is the owner's signed tap — no Face ID even on a passkey remote;
-        # the signature and its single use still decide
         async def go():
             self.h.estop={'on':True}
             m=sign(self.ph,'resume',{}, {'t':'resume','r':'ab'*8})
             pk={'id':'credential'}
             with mock.patch.object(self.st,'passkey_of_device',return_value=pk), mock.patch.object(self.h,'do_resume',new_callable=mock.AsyncMock) as resume:
-                await self.h._app(self.s,{**m,'sig':'bad'})
-                resume.assert_not_awaited()
                 await self.h._app(self.s,m)
-                resume.assert_awaited_once()
-                await self.h._app(self.s,m)
-                resume.assert_awaited_once()
-                self.assertEqual(self.sent[-1][1]['why'],'replay')
+                self.assertEqual(self.sent[-1][1]['why'],'passkey_required'); resume.assert_not_awaited()
+                with mock.patch.object(serve.passkey,'approval_fields',return_value={'id':'credential'}),mock.patch.object(serve.passkey,'verify_assertion',return_value=1),mock.patch.object(self.st,'passkey_count'):
+                    await self.h._app(self.s,{**m,'fa':{'test':True}})
+                    resume.assert_awaited_once()
         asyncio.run(go())

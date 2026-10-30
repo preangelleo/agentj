@@ -269,15 +269,6 @@ class OpenCodeV2Agent(OpenCodeAgent):
         elif t == "session.step.ended" and mine:
             if isinstance(p.get("tokens"), dict):
                 self.step_tokens = p["tokens"]
-                from .heartbeat_check import sample
-                tok = self.step_tokens
-                cache = tok.get('cache') or {}
-                inp, out = tok.get('input'), tok.get('output')
-                if type(inp) is int:
-                    inp += sum(cache.get(k, 0) for k in ('read', 'write') if type(cache.get(k, 0)) is int)
-                if type(out) is int and type(tok.get('reasoning', 0)) is int:
-                    out += tok.get('reasoning', 0)
-                sample(self, 'msg:' + str(p.get('assistantMessageID')) + ':' + str(p.get('ordinal')), inp, out)
         elif t == "session.compaction.failed" and mine:
             self._compaction_failed = True
         elif t == "session.execution.started" and mine:

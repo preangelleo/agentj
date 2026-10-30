@@ -194,7 +194,8 @@ class AgentMail(_Svc):
             self.assertIn(keep, got)
         self.assertIn("7F3K-29QX", email.message_from_bytes(raw, policy=email.policy.default)["Subject"])
         self.assertIn("发给你自己：原样发出", self.summary())
-        self.ask.assert_not_awaited()  # P573 (#386-3, replaces P503 / P551 here): mail to the owner's own address — no card
+        self.ask.assert_awaited_once() # P503: same owner still requires action UV
+        self.assertFalse(self.ask.call_args.kwargs.get("require_passkey", False))   # P551: ② long-press, no Face ID
         self.out.send.assert_not_called()
 
     async def test_owner_mail_with_api_key_becomes_a_secret_card(self):

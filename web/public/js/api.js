@@ -12,11 +12,10 @@ import { touch } from './snap.js';
 // the send ("offline"), so nothing meant for one session — or one computer — is ever sent on another (P33-X01 / X02).
 import { sendApp, isReady, peer, ask1, channel, textMax, gen } from './session.js';
 import { Upload, newId } from './blobs.js';
-import { approveMessage, mailAllowMessage, questionMessage, controlMessage, keyOpMessage, b64u, deviceId } from '../proto/wire.js';
+import { approveMessage, mailAllowMessage, questionMessage, controlMessage, b64u, deviceId } from '../proto/wire.js';
 import { deviceKey, signKey } from './store.js';
 import * as snap from './snap.js';
 import { approve as passkeyApprove, canAssert } from './faceid.js';
-import { checkGrantTime } from './ownergrant.js';
 import { put as handIn } from './pkhandin.js';   // P566 (#364): a Face ID approval outlives the socket the sheet drops
 import { unb64u } from '../proto/wire.js';
 
@@ -132,10 +131,6 @@ export async function approve(p, action, allowAdd) {
   if (!g) return { ok: false, why: 'offline' };
   const ch = channel();                                // P566 (#363): null in a drop-reconnect gap — signed for this computer
   let fa = null;
-  if (action !== 'deny' && p.tool === 'agentj secret grant') {
-    try { if (!p.owner_grant_verified) throw new Error('grant metadata'); checkGrantTime(p.owner_grant); }
-    catch { return { ok: false, why: 'passkey_required' }; }
-  }
   if (action !== 'deny' && p.passkey_required) {
     if (action === 'batch' || !p.fa || !p.fa_ch || !canAssert()) return { ok: false, why: 'passkey_required' };
     try { fa = await passkeyApprove(unb64u(p.fa_ch), p.fa); } catch (e) { return { ok: false, why: 'passkey_required', err: errName(e) }; }   // P539: the card says why
@@ -148,8 +143,8 @@ export async function approve(p, action, allowAdd) {
     if (batch && !p.scope) return { ok: false, why: 'no_batch' };
     const decision = batch ? 'allow_batch' : action === 'allow' ? 'allow' : 'deny';
     const picks = decision === 'allow' ? allowPicks(p, allowAdd) : [];
-    const msg = picks.length ? await mailAllowMessage(ch, await myDeviceId(), p.id, p.tool, p.summary, picks, p.task_scope)
-      : await approveMessage(ch, await myDeviceId(), p.id, decision, p.tool, p.summary, batch ? p.scope : undefined, p.task_scope);
+    const msg = picks.length ? await mailAllowMessage(ch, await myDeviceId(), p.id, p.tool, p.summary, picks)
+      : await approveMessage(ch, await myDeviceId(), p.id, decision, p.tool, p.summary, batch ? p.scope : undefined);
     const sig = new Uint8Array(await crypto.subtle.sign({ name: 'Ed25519' }, sk.priv, msg));
     const out = batch ? { t: 'answer', id: p.id, ok: true, batch: true, sig: b64u(sig) } : { t: 'answer', id: p.id, ok: decision === 'allow', sig: b64u(sig), ...(picks.length ? { allow_add: picks } : {}), ...(fa ? { fa } : {}) };
     // P561 (追加 6, #335): the passkey sheet may have cost the socket — the signed answer (bound to the card, not the session)
@@ -289,15 +284,7 @@ export async function keysGet() {
 /** op copy | delete, after Face ID (fa = the assertion over keysDigest). → keys_res (copy: {ok, value, n}) or {ok:false, why}. */
 export async function keysOp(op, name, id, n, fa, more) {   // P362: more = {src, keep, fp} for op import
   if (!isReady()) return {ok:false,why:'offline'};
-  const target = {id,op,name,n,...(op === 'import' && more ? {src:more.src,keep:more.keep === true,fp:more.fp} : {})};
-  let signed = {};
-  if (!fa && ['import','move','unify'].includes(op)) {
-    const ts = Date.now(), sk = await signKey();
-    if (!sk) return {ok:false,why:'no_key'};
-    const msg = await keyOpMessage(channel(), await myDeviceId(), n, ts, target);
-    signed = {ts, sig:b64u(new Uint8Array(await crypto.subtle.sign({name:'Ed25519'},sk.priv,msg)))};
-  }
-  const m = await ask1({t:'keys_op',...target,...(fa ? {fa} : {}),...signed}, 'keys_res', 30000);
+  const m = await ask1({t:'keys_op',op,name,id,n,fa,...(op === 'import' && more ? {src:more.src,keep:more.keep === true,fp:more.fp} : {})}, 'keys_res', 30000);
   return m.t === 'keys_res' ? m : {ok:false,why:m.t};
 }
 /** Edit / Add: the host opens the existing encrypted key card for `name` (its 同意 asks for Face ID itself). */

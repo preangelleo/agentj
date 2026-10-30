@@ -32,17 +32,10 @@ class Privacy(unittest.TestCase):
         self.assertIsNotNone(reason)
 
     def test_support_noncredential_review_is_advisory_after_redaction(self):
-        sent = []
-        ch = type('Channel', (), {'signed': False, 'send': lambda self, fields: sent.append(fields) or (201, {'thread': 'st_' + 't'*22, 'seq': 1})})()
+        ch = type('Channel', (), {'signed': False, 'send': lambda self, fields: (201, {'thread': 'st_' + 't'*22, 'seq': 1})})()
         out = io.StringIO()
         with patch('agentj.support.privacy.layer2', return_value=privacy.Verdict('blocked', .9, 'contact_or_location', 'private')):
-            # P573 (chairman item 6): a personal-details flag now waits for the owner's yes (was: advisory, sent anyway)
-            self.assertEqual(support.run_send('bug', 'mail alice@private.invalid; button broken', ch=ch, wait=0, out=out),
-                             support.EXIT_BLOCKED)
-            self.assertEqual(sent, [])
-            out = io.StringIO()
-            rc = support.run_send('bug', 'mail alice@private.invalid; button broken', ch=ch, wait=0, out=out,
-                                  owner_confirmed=True)
+            rc = support.run_send('bug', 'mail alice@private.invalid; button broken', ch=ch, wait=0, out=out)
         self.assertEqual(rc, support.EXIT_PENDING)
         self.assertIn('已脱敏', out.getvalue())
         self.assertIn('st_' + 't'*22, out.getvalue())

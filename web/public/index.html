@@ -442,14 +442,14 @@
         <p class="askstate" id="askState" hidden role="status" aria-live="polite"></p>
         <button class="asksend" id="askSend" type="button" hidden disabled data-i18n="r.q.confirm">确认</button>
         <div class="apprbtns" id="apprBtns" hidden>
-          <!-- P154: 批准 first — left on a computer, on top on a phone (base.css stacks .apprbtns ≤ 600 px); P573: one tap. -->
-          <button class="apprallow" id="apprAllow" type="button" data-i18n-attr="aria-label=r.appr.allowAria" aria-label="批准这次操作"><span class="fill"></span><span class="lbl" id="apprAllowLbl">批准</span><small class="apprkbd" id="apprKbd" hidden aria-hidden="true"></small></button>
+          <!-- P154: 长按批准 first — left on a computer, on top on a phone (base.css stacks .apprbtns ≤ 600 px). -->
+          <button class="apprallow" id="apprAllow" type="button" data-i18n-attr="aria-label=r.appr.allowAria" aria-label="长按批准这次操作"><span class="fill"></span><span class="lbl" id="apprAllowLbl">长按批准</span><small class="apprkbd" id="apprKbd" hidden aria-hidden="true"></small></button>
           <!-- P563 追加 7: a remote with no Face ID of its own — 「去设置」 takes 「批准」's slot, under the words (#apprPk moves above). -->
           <button class="apprallow apprgo" id="apprGo" type="button" hidden><span class="lbl" data-i18n="p561.pk.go">去设置</span></button>
           <button class="apprdeny" id="apprDeny" type="button" data-i18n-attr="aria-label=r.appr.denyAria" aria-label="拒绝这次操作"><span data-i18n="r.appr.deny">拒绝</span></button>
         </div>
         <div class="pkassist" id="apprPk" hidden role="status" aria-live="polite"></div>
-        <button class="apprbatch apprgoaladd" id="apprGoalAdd" type="button" hidden><span class="fill"></span><span class="lbl"><b data-i18n="p339.addHold">批准，并加进目标授权</b><small id="apprGoalAddText"></small></span></button>
+        <button class="apprbatch apprgoaladd" id="apprGoalAdd" type="button" hidden><span class="fill"></span><span class="lbl"><b data-i18n="p339.addHold">长按：批准，并加进目标授权</b><small id="apprGoalAddText"></small></span></button>
         <button class="apprbatch" id="apprBatch" type="button" hidden><span class="fill"></span><span class="lbl"><b id="apprBatchLbl"></b><small id="apprBatchScope"></small></span></button>
         <p class="askleft" id="askLeft" hidden></p>
         <div class="elsewhere">
@@ -960,13 +960,7 @@
                   <input id="set-hb-time" class="aj-input" type="time" step="300" value="08:00" hidden data-i18n-attr="aria-label=p207set.hb.time" aria-label="每天几点">
                 </div>
               </div>
-              <div class="sethb" id="set-hb-quiet" hidden>
-                <div class="sethb-daily"><span class="setlab2" data-i18n="p589.quiet">夜间安静时段</span><button type="button" id="set-hb-quiet-enabled" class="tgl" role="switch" aria-checked="true" data-i18n-attr="aria-label=p589.quiet" aria-label="夜间安静时段"><i></i></button></div>
-                <label class="sethb-f"><span data-i18n="p589.start">开始</span><input id="set-hb-quiet-start" class="aj-input" type="time" value="23:00"></label>
-                <label class="sethb-f"><span data-i18n="p589.end">结束</span><input id="set-hb-quiet-end" class="aj-input" type="time" value="07:00"></label>
-                <p class="setnote" data-i18n="p589.quietNote">按 Agent J 主机本地时间；默认 23:00–07:00，仅有待处理事项才唤醒。</p>
-              </div>
-              <p class="setnote" data-i18n="p589.note">先由 Agent J 主机检查，无事不调用模型。有事才唤醒；上下文过大时先提醒压缩。实际心跳消耗可在用量中查看。</p>
+              <p class="setnote" data-i18n="set.heartbeatNote">闲置满上面设置的时间才会醒来；忙时不触发。按心跳提示检查定时任务、好友和分身处理记录，没事不打扰。每次心跳都会用掉一次模型调用。</p>
               <div class="sethb-prompt"><button type="button" class="setlink" id="set-hb-prompt" data-i18n="p537.prompt">查看或编辑心跳提示</button>
               <div id="set-hb-update" hidden><p class="setnote" data-i18n="p537.update">出厂清单有更新，可一键合并（保留你的文字）。</p><button type="button" class="setlink" id="set-hb-merge" data-i18n="p537.merge">合并出厂清单</button></div></div>
 

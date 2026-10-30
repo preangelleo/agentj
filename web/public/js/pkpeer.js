@@ -14,7 +14,7 @@
 import { t, locale, onLang, fillText } from './t.js';
 import { mk, toast, notify } from './ui.js';
 import { registerLayer } from './layers.js';
-import { unb64u, b64u } from '../proto/wire.js';
+import { unb64u } from '../proto/wire.js';
 import { keyPlatform } from './phone-env.js';
 
 export const ID = /^[A-Za-z0-9_-]{16,43}$/;          // the host's request id (b64u of 16 bytes = 22 chars)
@@ -43,25 +43,22 @@ function hide() { S.shown = null; (view || domView()).hide(); }
 
 /** 「设置 Face ID」 / a card's 「在本机设置 Face ID」 (app.js setupFaceId): ask the host which way this device goes.
  *  → 'direct' | 'peer' | 'legacy' | 'fail' | 'busy' | 'unsupported'. */
-export const startRosterIntro = () => startPeerSetup({ roster: true });
-export async function startPeerSetup({ roster = false } = {}) {
+export async function startPeerSetup() {
   if (S.busy) return 'busy';
-  if (!(roster ? H.canAssert() : await H.supported())) { H.unsupported?.(); return 'unsupported'; }
+  if (!(await H.supported())) { H.unsupported?.(); return 'unsupported'; }
   S.busy = true;
   let m;
-  try { m = await H.ask({ t: 'pk_peer_req', ...(roster ? { roster: true } : {}) }, 'pk_peer_res', ASK_MS); } finally { S.busy = false; }
-  if ((!m || m.t === 'timeout') && roster) { result('fail'); return 'fail'; }
+  try { m = await H.ask({ t: 'pk_peer_req' }, 'pk_peer_res', ASK_MS); } finally { S.busy = false; }
   if (!m || m.t === 'timeout') { S.direct = false; H.legacy(); return 'legacy'; }   // a host from before P547: the direct offer as before
   if (m.t === 'offline') { toast(t('elev.fail'), 3000); return 'fail'; }
   if (m.ok !== true) { result(WHY.includes(m.why) ? m.why : 'fail'); return 'fail'; }
-  if (m.mode === 'direct' && roster) { result('fail'); return 'fail'; }
   if (m.mode === 'direct') { S.direct = true; return 'direct'; }   // the host's pk_offer follows (app.js offerPasskey, pkForce)
   if (m.mode !== 'peer' || !ID.test(m.id || '') || !CODE.test(String(m.code ?? ''))) { result('fail'); return 'fail'; }
   S.direct = false;
-  S.req = { id: m.id, code: String(m.code), exp: Number(m.exp) || 0, online: Number.isInteger(m.online) ? m.online : 0, host: !roster && m.host === 1, roster, done: false };
+  S.req = { id: m.id, code: String(m.code), exp: Number(m.exp) || 0, online: Number.isInteger(m.online) ? m.online : 0, host: m.host === 1, done: false };
   S.offer = null; S.by = '';
   arm();
-  show({ mode: 'wait', ...(S.req.roster ? { roster: true } : {}), code: S.req.code, online: S.req.online, host: S.req.host, where: keyPlatform(H.ua(), H.touch()) });
+  show({ mode: 'wait', code: S.req.code, online: S.req.online, host: S.req.host, where: keyPlatform(H.ua(), H.touch()) });
   return 'peer';
 }
 function arm() {
@@ -84,13 +81,6 @@ function result(why) {
 /** host → this device: the approval ended. ok → wait for the one-time offer that follows (onOffer). */
 export function onDone(m) {
   if (!m || (S.req && m.id !== S.req.id)) return;
-  if (m.ok === true && S.req?.roster) {
-    clearTimeout(S.timer);
-    if (m.roster !== true) { S.req = null; result('fail'); return; }
-    S.req = null; S.offer = null; hide();
-    notify({ kind: 'success', text: t('p574.introduced'), ms: 6000 });
-    return;
-  }
   if (m.ok === true) {
     if (S.req) S.req.done = true;
     clearTimeout(S.timer);
@@ -103,7 +93,6 @@ export function onDone(m) {
 }
 /** app.js: a pk_offer carrying `peer` (never asked again, never replaces with the old key). */
 export async function onOffer(m) {
-  if (S.req?.roster) return false;
   if (!m || typeof m.n !== 'string' || !ID.test(String(m.peer || ''))) return false;
   if (S.req && m.peer !== S.req.id) return false;
   let n; try { n = unb64u(m.n); } catch { return false; }
@@ -168,24 +157,17 @@ export function onAsk(m) {
   if (!m || !ID.test(String(m.id || '')) || !CODE.test(String(m.code ?? '')) || typeof m.fa !== 'string' || typeof m.fa_ch !== 'string') return false;
   let ch; try { ch = unb64u(m.fa_ch); } catch { return false; }
   if (!ch.length) return false;
-  const a = { id: m.id, name: cleanName(m.name), at: Number(m.at) || 0, exp: Number(m.exp) || 0, code: String(m.code), roster: m.roster === true, fa: m.fa, ch };
-  S.asks.set(m.id, a);
-  if (m.sign_pub) { // P574: bind the introduced Ed25519 key, before showing an approvable card (no await in the tap).
-    a.ch = null;
-    Promise.resolve().then(() => H.prepareAsk(m)).then((prepared) => {
-      if (S.asks.get(m.id) === a && b64u(prepared) === m.fa_ch) { a.ch = prepared; paintAsk(); }
-    }).catch(() => {});
-  }
+  S.asks.set(m.id, { id: m.id, name: cleanName(m.name), at: Number(m.at) || 0, exp: Number(m.exp) || 0, code: String(m.code), fa: m.fa, ch });
   paintAsk();
   return true;
 }
 function paintAsk() {
   if (S.shown && S.shown !== 'ask') return;           // the requester's own sheet first (the two never meet on one device)
-  const a = [...S.asks.values()].find((x) => !x.sent && x.ch);
+  const a = [...S.asks.values()].find((x) => !x.sent);
   if (!a) { if (S.shown === 'ask') hide(); return; }
-  show({ mode: 'ask', id: a.id, name: a.name, ...(a.roster ? { roster: true } : {}), at: a.at, code: a.code, can: H.canAssert() });
+  show({ mode: 'ask', id: a.id, name: a.name, at: a.at, code: a.code, can: H.canAssert() });
 }
-export const currentAsk = () => (S.shown === 'ask' ? [...S.asks.values()].find((x) => !x.sent && x.ch) || null : null);
+export const currentAsk = () => (S.shown === 'ask' ? [...S.asks.values()].find((x) => !x.sent) || null : null);
 /** 「批准（Face ID）」: the assertion starts synchronously inside the tap (iOS gesture rule). */
 export function approveTap() {
   const a = currentAsk();
@@ -276,8 +258,8 @@ function paint() {
   const row = mk('div', 'ajrow pkp-acts');
   if (s.mode === 'wait') {
     const hostOnly = s.host && !(s.online > 0);       // P555: nobody online to approve → the Agent J host's terminal first
-    title.textContent = t(s.roster ? 'p574.introWaitTitle' : hostOnly ? 'pkp.waitHostTitle' : 'pkp.waitTitle');
-    kids.push(mk('p', 'pkp-text', t(s.roster ? 'p574.introText' : hostOnly ? 'pkp.waitHostText' : 'pkp.waitText')), codeRow(s.code));
+    title.textContent = t(hostOnly ? 'pkp.waitHostTitle' : 'pkp.waitTitle');
+    kids.push(mk('p', 'pkp-text', t(hostOnly ? 'pkp.waitHostText' : 'pkp.waitText')), codeRow(s.code));
     if (!hostOnly) kids.push(mk('p', 'elev-note', s.online > 0 ? t('pkp.online', { n: s.online }) : t('pkp.noneOnline')));
     if (s.host) {
       const cmd = mk('p', 'elev-note pkp-host'); cmd.id = 'pkp-host';
@@ -301,10 +283,10 @@ function paint() {
     kids.push(mk('p', 'pkp-text', t('pkp.r.' + s.why)));
     row.append(btn('pkp-ok', 'aj-btn--primary', 'pkp.ok', () => closeResult()));
   } else if (s.mode === 'ask') {
-    title.textContent = t(s.roster ? 'p574.introTitle' : 'pkp.askTitle', { name: s.name });
+    title.textContent = t('pkp.askTitle', { name: s.name });
     const at = when(s.at);
     if (at) kids.push(mk('p', 'elev-note pkp-at', t('pkp.askAt', { time: at })));
-    kids.push(codeRow(s.code), mk('p', 'pkp-text', t(s.roster ? 'p574.introText' : 'pkp.askText')));
+    kids.push(codeRow(s.code), mk('p', 'pkp-text', t('pkp.askText')));
     if (!s.can) kids.push(mk('p', 'elev-note', t('pkp.noAssert')));
     const ok = btn('pkp-approve', 'aj-btn--primary', 'pkp.approve', () => approveTap());
     ok.hidden = !s.can;

@@ -1098,7 +1098,7 @@ class Rescue:
         if ask is None:
             return False
         try:
-            res = await ask("AuthRescue", {"summary": self._summary(kind)}, batch=False, always_ask=True)   # P573: one button
+            res = await ask("AuthRescue", {"summary": self._summary(kind)}, batch=False, require_passkey=True)
         except Exception:  # noqa: BLE001
             return False
         return isinstance(res, dict) and res.get("behavior") == "allow"
@@ -1106,9 +1106,9 @@ class Rescue:
     def _summary(self, kind: str) -> str:
         if self.lang() == "en":
             return (self.t("confirm_title", h=LABEL[kind]) + ".\nAgent J runs the official login command on the Agent J host "
-                    "and shows you its link / code. The new credential is stored only on the Agent J host (0600). The owner confirms on a paired remote.")
+                    "and shows you its link / code. The new credential is stored only on the Agent J host (0600). Owner passkey required.")
         return (self.t("confirm_title", h=LABEL[kind]) + "。\nAgent J 会在这台Agent J 主机上运行官方登录命令，把授权链接 / 设备码给你；"
-                "新凭据只存在这台Agent J 主机上（0600）。需主人在已配对的遥控器上确认。")
+                "新凭据只存在这台Agent J 主机上（0600）。需主人通行密钥批准。")
 
     def _end(self, kind, result, why=None, **extra):
         self.credential_stamp = None  # recheck after any active flow that a foreground poll had to skip

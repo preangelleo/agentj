@@ -52,18 +52,6 @@ UNRECORDED = "[输入给正在运行的程序，未记录]"
 _HEX32 = re.compile(r"[0-9a-f]{32}")
 
 
-
-def line_needs_face(line: str) -> bool:
-    """P573 (#386 ⑤): a confirmed terminal line needs Face ID only for the three classes — money, the owner's data deleted
-    for good, a key going out (or unbinding a remote) — or a rewrite of an Agent's hook / approval files; any other confirmed
-    line is the owner's signed tap (one button). Cannot tell → Face ID."""
-    from . import confirm_tier, policy_registry
-    try:
-        return bool(confirm_tier.harness_keeps("Bash", {"command": line})) or \
-            policy_registry.main_requirement("Bash", {"command": line}) == "uv"
-    except Exception:  # noqa: BLE001
-        return True
-
 class Desk(SudoDesk, BangDesk, VshareDesk):
     """serve's glue (`h` = serve.Host): phone messages, `terminal_cfg`, the host info block, close on e-stop / stop.
     P414: BangDesk (term_bang.py: 「!」, transcript, terminal_go / terminal_read), VshareDesk (term_vshare.py)."""
@@ -510,7 +498,7 @@ class Desk(SudoDesk, BangDesk, VshareDesk):
                 why = "stale"
             else:
                 why = controls.check(self.st, self.h.nonces, self.h.channel, s.device, obj, "term_line", {"id": x.id, "line": line})
-            if not why and c.get("uv", True):          # P573: Face ID only for a line of the three classes
+            if not why:
                 why = self._assert(s, obj, x.id, "term_line", n, _sha(line))
             self._log("term_line", s.device, "refused:" + why if why else "confirmed", {"id": x.id, "line": line},
                       sig=obj.get("sig"), n=n, ts=obj.get("ts"))
@@ -524,17 +512,15 @@ class Desk(SudoDesk, BangDesk, VshareDesk):
         if bad:
             n = secrets.token_hex(16)
             x.confirms = {k: v for k, v in x.confirms.items() if v["exp"] > self.clock()}
-            uv = line_needs_face(line)
-            x.confirms[n] = {"line": line, "exp": self.clock() + CONFIRM_TTL, "uv": uv}
+            x.confirms[n] = {"line": line, "exp": self.clock() + CONFIRM_TTL}
             ch = passkey.elevate_challenge(self.h.channel, s.device, x.id, "term_line", n, _sha(line))
             self._log("term_line", s.device, "confirm:agent" if agent else "confirm", {"id": x.id, "line": line})
             await self.h.send_app(s, {"t": "term_confirm", "id": x.id, "seq": seq, "line": line, "why": bad[0], "why_en": bad[1],
-                                      "n": n, "fa_ch": wire.b64u(ch), "uv": 1 if uv else 0, **({"agent": 1} if agent else {})})
+                                      "n": n, "fa_ch": wire.b64u(ch), **({"agent": 1} if agent else {})})
             return
         await self._write(x, line, bang)
 
     def _assert(self, s, obj, rid, kind, n, digest) -> str | None:
-        """The passkey assertion of a confirmed line (or another Face ID step of the terminal)."""
         pk = self.st.passkey_of_device(s.device)
         if not pk:
             return "no_passkey"

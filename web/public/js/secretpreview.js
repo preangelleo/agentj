@@ -2,7 +2,6 @@ import { copyButton } from './copycode.js';
 // P270: the pickup card's one live preview. DOM only; no secret in navigation state.
 import { RelayMD } from './md.js';
 import { mk } from './ui.js';
-import { glyph } from './icons.js';
 import { copyable } from './copycode.js';   // P292 (P290 merge): the plain-text value is tap-to-copy like every pre
 import { t, onLang } from './t.js';
 import { historyDoubleTap } from './history-corners.js';
@@ -14,16 +13,15 @@ addEventListener('popstate', e => handlePop?.(e), true);
 
 export function createSecretPreview(root, container, copy) {
   const bar = mk('div', 'sout-preview-bar');
-  // P573 (#386): full screen, 返回 and 复制 are thin icons in the top-right corner (as the reader's), never text buttons
-  const back = mk('button', 'ajicon sout-ic'); back.id = 'sout-back'; back.type = 'button'; back.hidden = true; back.append(glyph('close'));
+  const back = mk('button', 'aj-btn'); back.id = 'sout-back'; back.type = 'button'; back.hidden = true;
   // P555: ⛶ is an icon — no border, inside the content box's top-right corner
   const expand = mk('button', 'ajicon sout-expand', '⛶'); expand.id = 'sout-expand'; expand.type = 'button'; expand.hidden = true;
-  const fullCopy = mk('button', 'ajicon sout-ic'); fullCopy.id = 'sout-full-copy'; fullCopy.type = 'button'; fullCopy.hidden = true; fullCopy.append(glyph('copy'));
+  const fullCopy = mk('button', 'aj-btn'); fullCopy.id = 'sout-full-copy'; fullCopy.type = 'button'; fullCopy.hidden = true;
   const content = mk('div', 'sout-content'); content.id = 'sout-content';
-  bar.append(fullCopy, back, expand); container.append(bar, content);
+  bar.append(back, fullCopy, expand); container.append(bar, content);
   let full = false, pushed = false, pendingPop = false;
   const labels = () => {
-    for (const [b, k] of [[back, 'error.back'], [fullCopy, 'sout.copyFile']]) { b.setAttribute('aria-label', t(k)); b.title = t(k); }
+    back.textContent = t('error.back'); fullCopy.textContent = t('sout.copyFile');
     expand.setAttribute('aria-label', t('r.rd.aria')); expand.title = t('r.rd.aria');
   };
   labels(); onLang(labels);

@@ -48,9 +48,10 @@ class NoCard(_Svc):
 
     async def test_owner_only_sends_without_a_card(self):
         res = await self.svc.agent_send({"to_owner": True, "subject": "报告", "body": "done"})
-        self.assertTrue(res["ok"] and res["owner_direct"] and res["no_card"], res)
-        self.ask.assert_not_awaited()      # P573 (#386-3, replaces P551 here): the owner mailing self needs no card
+        self.assertTrue(res["ok"] and res["owner_direct"] and not res["no_card"], res)
+        self.ask.assert_awaited_once()
         self.assertEqual(self.smtp.sent[-1][1], [ALLOW_ME])
+        self.assertFalse(self.ask.await_args.kwargs.get("require_passkey", False))   # P551: ② long-press, no Face ID
 
     async def test_a_second_recipient_brings_the_card_back(self):
         res = await self.svc.agent_send({"to": [OTHER], "to_owner": True, "subject": "s", "body": "b"})
@@ -203,7 +204,7 @@ class AllowFromAgent(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn(FRIEND, self.listed())
         params=self.host.ask.await_args.args[1]
         self.assertIn(FRIEND,[r['addr'] for r in params['after']['allow']])
-        self.assertTrue(self.host.ask.await_args.kwargs['always_ask'])   # P573: a button 全放行 still asks (was Face ID)
+        self.assertTrue(self.host.ask.await_args.kwargs['require_passkey'])
 
     async def test_signed_applies(self):
         self.host.ask = AsyncMock(return_value={"behavior": "allow"})
@@ -217,7 +218,7 @@ class AllowFromAgent(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(self.out[-1]["ok"])
         self.assertNotIn(FRIEND,self.listed())
         self.host.ask.assert_awaited_once()
-        self.assertTrue(self.host.ask.await_args.kwargs['always_ask'])   # P573: a button 全放行 still asks (was Face ID)
+        self.assertTrue(self.host.ask.await_args.kwargs['require_passkey'])
 
 
 class CliExit(unittest.TestCase):

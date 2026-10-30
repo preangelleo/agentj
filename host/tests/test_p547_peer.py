@@ -124,9 +124,9 @@ class Peer(unittest.TestCase):
         self.assertRegex(res["code"], r"^\d{6}$")
         self.assertEqual(self.to(sD, "pk_offer"), [], "no offer before the approval")
         ask = self.to(sB, "pk_peer_ask")[-1]
-        digest = pkpeer.digest(D, "Mac Chrome", res["code"], ask["sign_pub"])
+        digest = pkpeer.digest(D, "Mac Chrome", res["code"])
         self.assertEqual(ask, {"t": "pk_peer_ask", "id": res["id"], "device": D, "name": "Mac Chrome", "at": ask["at"],
-                               "exp": res["exp"], "code": res["code"], "sign_pub": wire.b64u(self.st.sign_key(D)), "fa": wire.b64u(phone_key.id),
+                               "exp": res["exp"], "code": res["code"], "fa": wire.b64u(phone_key.id),
                                "fa_ch": wire.b64u(passkey.elevate_challenge(self.host.channel, B, res["id"], "pk_peer", res["id"], digest))})
         self.assertEqual(self.to(sD, "pk_peer_ask"), [], "D never gets its own card")
         self.assertEqual(self.answer(sB, phone_key, ask), {"t": "pk_peer_answer_res", "id": res["id"], "ok": True})

@@ -16,9 +16,9 @@ class Result(unittest.TestCase):
         clock = Clock()
         waiting = {'status': 'waiting', 'job': 'one'}
         final = {'status': 'rolled_back', 'job': 'one', 'reason': 'no_reply'}
-        with patch.object(sw, '_client_receipt', side_effect=[waiting, dict(waiting, status='switching'), final]):
+        with patch.object(sw, 'read_receipt', side_effect=[waiting, dict(waiting, status='switching'), final]):
             self.assertEqual(sw.wait_result(None, 10, sleep=clock.sleep, clock=clock), final)
-        with patch.object(sw, '_client_receipt', side_effect=[waiting, dict(final, job='other')]):
+        with patch.object(sw, 'read_receipt', side_effect=[waiting, dict(final, job='other')]):
             self.assertEqual(sw.wait_result(None, 10, sleep=clock.sleep, clock=clock), waiting)
 
     def test_rollback_receipt_exists_before_phone_and_original_harness_are_told(self):

@@ -126,9 +126,6 @@ export function add(m) {
     c.cmd = str(m.cmd, 2000); c.why = str(m.why, 300); c.effect = str(m.effect ?? '', 300);
     if (c.cmd === null || c.why === null || c.effect === null) return;
     c.interpreter = m.interpreter === true;
-    // P573: a sudo card is a button (passkey_required false); `helper_uv` 1 = the helper's approve-only path still needs Face ID.
-    // A host that sends `helper_uv` (0 | 1) speaks this tier; an older one keeps ADR-A163 (Face ID whenever it names our passkey).
-    c.tier573 = 'helper_uv' in m; c.helperUv = m.helper_uv === 1 || m.helper_uv === true;
     c.helper = Array.isArray(m.helper) ? m.helper.filter((x) => typeof x === 'string' && x.length <= 64).slice(0, 64) : [];
     // #116 (§11.1): the host's opt-in toggle — program, fixed options, class hash. Off until the owner switches it on.
     const g = m.grant;
@@ -144,7 +141,6 @@ export function add(m) {
     c.v = vaultOf(m.v);
     if (!c.dev || !c.cred || c.paired === null || !c.flags || c.name === null || !c.v || !c.v.has) return;
   } else {
-    c.buttonOnly = m.button_only === true && m.passkey_required === false;
     c.name = str(m.name, 128); c.purpose = str(m.purpose, m.name === 'AGENTJ_MAIL_PASSWORD' ? 2000 : 300); c.dest = str(m.dest, 1100); c.verify = str(m.verify ?? '', 800);
     if (!c.name || c.purpose === null || c.dest === null || c.verify === null) return;
     if (m.auth) { c.auth = authOf(m.auth); if (!c.auth) return; }
@@ -479,8 +475,7 @@ async function decide(ok, how) {
   const save = typed && c.kind === 'sudo' && offerSave(c) && $('elev-save-on').checked;
   let fa = null, prf = null;
   if (ok && c.passkey_required && !c.fa) { setErr(c, 'ask.passkeyRequired'); toast(t('ask.passkeyRequired'), 6000); return; }
-  const needFa = vaultUse || (c.tier573 ? c.passkey_required || (nopw && c.helperUv) : !c.buttonOnly && !!c.fa);   // P573: password + 同意 = one tap
-  if (ok && needFa) {
+  if (ok && (c.fa || vaultUse)) {
     if (!canAssert() && phoneConfirmation()) return;
     if (!canAssert() || !c.fa) { setErr(c, 'elev.fa.none'); toast(t('elev.fa.none'), 5000); return; }
     if (!c.faCh) { setErr(c, 'elev.fail'); toast(t('elev.fail'), 3000); return; }

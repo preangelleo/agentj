@@ -34,7 +34,7 @@ def scope_digest(scope: str) -> str:
     return hashlib.sha256(scope.encode()).hexdigest()
 
 
-def signed_message(channel: str, device: str, rid: str, decision: str, digest_hex: str, scope: str | None = None, *, task_scope: str | None = None) -> bytes:
+def signed_message(channel: str, device: str, rid: str, decision: str, digest_hex: str, scope: str | None = None) -> bytes:
     """allow / deny: unchanged since L1. allow_batch: one more line, hex SHA-256 of the scope text exactly as shown (§8)."""
     if decision not in DECISIONS:
         raise ValueError("bad decision")
@@ -45,10 +45,6 @@ def signed_message(channel: str, device: str, rid: str, decision: str, digest_he
         base += "\n" + scope_digest(scope)
     elif scope is not None:
         raise ValueError("only allow_batch carries a scope")
-    if task_scope is not None:
-        if decision == "allow_batch":
-            raise ValueError("task scope cannot batch")
-        base += "\ntask:" + scope_digest(task_scope)
     return base.encode()
 
 
@@ -60,11 +56,11 @@ def allow_add_line(addrs) -> str:
 
 
 def verify(sign_pub: bytes, sig: bytes, channel: str, device: str, rid: str, decision: str, digest_hex: str,
-           scope: str | None = None, allow_add: list | None = None, *, task_scope: str | None = None) -> bool:
+           scope: str | None = None, allow_add: list | None = None) -> bool:
     if len(sign_pub) != 32 or len(sig) != 64:
         return False
     try:
-        msg = signed_message(channel, device, rid, decision, digest_hex, scope, task_scope=task_scope)
+        msg = signed_message(channel, device, rid, decision, digest_hex, scope)
         if allow_add:
             if decision != "allow":
                 return False
@@ -82,24 +78,16 @@ def input_digest(tool_input) -> str:
 def record(st, *, rid: str, agent: str, tool: str, input_sha256: str, shown_sha256: str, decision: str, reason: str,
            device: str | None = None, sign_pub: bytes | None = None, sig: bytes | None = None, cats: list | None = None,
            scope: str | None = None, grant: str | None = None, auto: str = "batch", control: dict | None = None,
-           scope_sha256: str | None = None, fa: dict | None = None, task_scope: str | None = None, task_action: dict | None = None, task_id: str | None = None, peer_proof: dict | None = None, task_uv: bool | None = None) -> dict:
-    """Append metadata only (0600): signed device/control decisions and their exact-scope automatic children.
-    task_uv records the actual local requirement; task_scope signs the authorization ceiling. Never log tool input.
-    fa contains assertion hashes only. The cloud cannot read this log.
-    """
+           scope_sha256: str | None = None, fa: dict | None = None) -> dict:
+    """Append one decision to approvals.log (0600). reason: device | batch | goal | goal_auto (P158) | goal_grant_add (P339) | level_full / goal_nocard / goal_preauth / parked / offline (P336) | brief (0.18: inside a confirmed brief) | host (0.18: `agentj capability`, host-gated) | owner_direct / allowlist (P296: `agentj mail send` to the owner's own addresses / only allowlisted ones) | timeout | no_device | serve_stop | agent_gone |
+    too_many | estop | own_handoff (P539: a pure read of Agent J's own handoff file, no card) | policy (beyond the harness's own sandbox, never asked: ADR-A73) | unknown_action (P553: no policy row, denied, no card). cats = danger categories ([] = low risk); scope = the signed batch scope (allow_batch); grant = for an
+    automatic approval, the id of the signed allow_batch it relied on. control (P242) = a signed phone control (controls.py,
+    e.g. dev_confirm / dev_unbind): {"n", "sig_ts", "object_sha256"} — the line is then kind "control" and `sig` is the
+    control signature, re-checked with controls.verify. fa (P547, reason "pk_peer"): the approving remote's passkey
+    assertion as SHA-256 hashes only ({"id","cd","ad","sig"}) — a WebAuthn proof, not an Ed25519 one: checked as 'unsigned'."""
     rec = {"ts": int(time.time()), "id": rid, "channel": st.config()["channel"], "agent": agent, "tool": tool,
            "input_sha256": input_sha256, "shown_sha256": shown_sha256, "decision": decision, "reason": reason,
            "device": device, "sk": wire.b64u(sign_pub) if sign_pub else None, "sig": wire.b64u(sig) if sig else None}
-    if task_uv is not None:
-        rec["task_uv"] = task_uv
-    if peer_proof is not None:
-        rec["peer_proof"] = peer_proof
-    if task_id is not None:
-        rec["task_id"] = task_id
-    if task_scope is not None:
-        rec["task_scope"] = task_scope
-    if task_action is not None:
-        rec["task_action"] = task_action
     if cats is not None:
         rec["cats"] = list(cats)
     if scope is not None:
@@ -365,42 +353,6 @@ def check_record(st, r: dict, index: dict | None = None) -> str:
                 or g.get("tool") != r.get("tool") or g.get("input_sha256") != r.get("input_sha256"):
             return "bad"
         return "auto" if check_record(st, g) in ("ok", "ok_removed") else "bad"
-    if r.get("reason") == "same_owner" and r.get("peer_proof"):
-        from .friends import FriendStore
-        try:
-            proof = r["peer_proof"]
-            scope = json.loads(proof["task_scope"])
-            target = scope["target"]
-            row = FriendStore(st)._read("same-owner.json", {}).get(target["sender"], {})
-            action = r["task_action"]
-            valid = (type(scope.get("uv")) is bool and type(r.get("task_uv")) is bool
-                     and (not r["task_uv"] or scope["uv"]) and r.get("task_scope") == proof["task_scope"] and proof["sk"] == row.get("remote_pub")
-                     and target["relationship"] == row.get("verified")
-                     and r.get("task_id") == str(row.get("action_claims", {}).get(proof["id"]))
-                     and action in scope["actions"] and action["tool"] == r.get("tool")
-                     and action["input_sha256"] == r.get("input_sha256")
-                     and action["class"][1] == sorted(r.get("cats", [])) and r["ts"] <= scope["expires"])
-            return "auto" if valid and verify(wire.unb64u(proof["sk"]), wire.unb64u(proof["sig"]), proof["channel"],
-                        proof["device"], proof["id"], "allow", proof["shown_sha256"], task_scope=proof["task_scope"]) else "bad"
-        except (ValueError, TypeError, KeyError, IndexError, AttributeError):
-            return "bad"
-    if r.get("reason") == "task_grant":
-        g = (index or {}).get(str(r.get("grant")))
-        try:
-            scope = json.loads(g["task_scope"])
-            action = r["task_action"]
-            valid = (type(scope.get("uv")) is bool and type(r.get("task_uv")) is bool
-                     and g.get("task_uv") is scope["uv"] and (not r["task_uv"] or scope["uv"])
-                     and g.get("decision") == "allow" and g.get("reason") == "device"
-                     and g.get("device") == r.get("device") and r.get("task_scope") == g["task_scope"]
-                     and r.get("task_id") == g.get("task_id") == scope["task"]
-                     and g["ts"] <= r["ts"] <= scope["expires"]
-                     and action in scope["actions"] and action["tool"] == r.get("tool")
-                     and action["input_sha256"] == r.get("input_sha256")
-                     and action["class"][1] == sorted(r.get("cats", [])))
-        except (KeyError, TypeError, ValueError, IndexError, AttributeError):
-            return "bad"
-        return "auto" if valid and check_record(st, g) in ("ok", "ok_removed") else "bad"
     if r.get("reason") == "batch":
         g = (index or {}).get(str(r.get("grant")))
         if not g or g.get("decision") != "allow_batch" or g.get("tool") != r.get("tool") or g.get("device") != r.get("device"):
@@ -408,21 +360,13 @@ def check_record(st, r: dict, index: dict | None = None) -> str:
         return "auto" if check_record(st, g) in ("ok", "ok_removed") else "bad"
     if r.get("reason") != "device":
         return "unsigned"
-    if r.get("task_scope") is not None:
-        try:
-            uv = json.loads(r["task_scope"])["uv"]
-            if type(uv) is not bool or (r.get("decision") == "allow" and r.get("task_uv") is not uv):
-                return "bad"
-        except (ValueError, TypeError, KeyError):
-            return "bad"
-
     try:
         sk, sig = wire.unb64u(r.get("sk") or ""), wire.unb64u(r.get("sig") or "")
     except ValueError:
         return "bad"
     try:
         msg = signed_message(str(r.get("channel")), str(r.get("device")), str(r.get("id")), str(r.get("decision")),
-                             str(r.get("shown_sha256")), task_scope=r.get("task_scope"))
+                             str(r.get("shown_sha256")))
         if r.get("decision") == "allow" and isinstance(r.get("scope_sha256"), str):
             msg += ("\n" + r["scope_sha256"]).encode()     # P71 friend_request: the group line (§17.7)
     except ValueError:                                  # allow_batch: the scope line is its hash, kept in the log

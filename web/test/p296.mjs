@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // P296: an `agentj mail send` card offers each new recipient as an UNTICKED box 「以后 X 的来信直接处理（加入白名单）」 (P550 wording); a plain
-// tap sends a plain allow (no allow_add); ticking one sends allow_add = [that address], signed with the allow (fakehost checks
+// hold sends a plain allow (no allow_add); ticking one sends allow_add = [that address], signed with the allow (fakehost checks
 // the signature with wire.mailAllowMessage, the same bytes as host approvals.allow_add_line). A Bash card shows no boxes.
 // The real web client against the fake host, independent headless Chromium (never :9222), 390×844, zh and en.
 //   node web/test/p296.mjs   → reports/qa/p296/card-<lang>.png
@@ -27,7 +27,7 @@ const check = (ok, what) => { if (!ok) fails.push(what); };
 try {
   for (const lang of ['zh', 'en']) {
     fake.reset();
-    const p = await newPage(Br, 390, 844, 'light', { touch: true, allow: [web.url, fake.relay + '/'] });
+    const p = await newPage(Br, 390, 844, 'light', { allow: [web.url, fake.relay + '/'] });
     const base = web.url + (lang === 'en' ? '?lang=en' : '');
     await navigate(p, base);
     await waitState(p, 'idle');
@@ -39,31 +39,15 @@ try {
     await evaluate(p, `(() => { const n = document.getElementById('confirm-no'); if (n && !document.getElementById('confirm').hidden) n.click();
       const a = document.getElementById('a2hs-ok'); if (a && !document.getElementById('a2hs').hidden) a.click(); })()`);
     await fake.send({ t: 'status', s: 'waiting', agent: 'claude', name: 'AgentJ' });
-    const tap = async (buttonId, cancel = false) => {
-      await evaluate(p, `document.getElementById('${buttonId}').scrollIntoView({block:'center'})`);
-      const point = await evaluate(p, `(() => { const b = document.getElementById('${buttonId}'), r = b.getBoundingClientRect(), x = r.left+r.width/2, y = r.top+r.height/2;
-        return {x,y,hit:document.elementFromPoint(x,y)?.closest('button')===b}; })()`);
-      if (!point.hit) throw new Error(buttonId + ': the approval control is not reachable');
-      const before = fake.st.answers.length;
-      await p.send('Input.dispatchTouchEvent', {type:'touchStart',touchPoints:[{x:point.x,y:point.y}]});
-      await sleep(100);
-      check(fake.st.answers.length === before, `${lang}: a press alone sends no approval`);
-      await p.send('Input.dispatchTouchEvent', {type:cancel?'touchCancel':'touchEnd',touchPoints:[]});
-      if (cancel) {
-        await sleep(100);
-        check(fake.st.answers.length === before, `${lang}: a cancelled touch sends no approval`);
-        check(await evaluate(p, `document.body.dataset.sheet==='1' && !document.getElementById('sheet').hidden`), `${lang}: cancel keeps the approval visible`);
-      }
-    };
     const box = `document.getElementById('apprMailAllow')`;
-    const tapAllow = async () => {
+    const hold = async () => {
       const n = fake.st.answers.length;
-      await tap('apprAllow');
-      await waitFor(p, `document.body.dataset.sheet==='0' && document.getElementById('sheet').hidden`, 3000);
+      await evaluate(p, `document.getElementById('apprAllow').dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,button:0,pointerType:'touch'}))`);
+      await waitFor(p, `document.body.dataset.sheet==='0'`, 3000);
       for (let i = 0; i < 40 && fake.st.answers.length === n; i++) await sleep(50);
       return fake.st.answers[fake.st.answers.length - 1];
     };
-    // 1. a plain tap: boxes shown unticked, the answer carries no allow_add
+    // 1. a plain hold: boxes shown unticked, the answer carries no allow_add
     let id = hex(16);
     await fake.ask({ id, tool: 'agentj mail send', summary: SUMMARY, ttl: 120, allow_offer: [A, B2] });
     await waitFor(p, `document.body.dataset.sheet === '1' && !${box}.hidden && !document.getElementById('apprBtns').hidden`);
@@ -75,8 +59,7 @@ try {
     check(lang === 'zh' ? seen[0][0].includes('的来信直接处理') : seen[0][0].includes('Handle mail from'), `${lang}: label text`);
     const { data } = await p.send('Page.captureScreenshot', { format: 'png' });
     writeFileSync(join(OUT, `card-${lang}.png`), Buffer.from(data, 'base64'));
-    await tap('apprAllow', true); // P573: a cancelled gesture cannot grant or add a recipient.
-    let ans = await tapAllow();
+    let ans = await hold();
     check(ans && ans.id === id && ans.ok === true && !('allow_add' in ans), `${lang}: plain allow has no allow_add (${JSON.stringify(ans)})`);
     check(fake.st.sigOk[fake.st.sigOk.length - 1] === true, `${lang}: plain allow signature verifies`);
     // 2. tick the second → allow_add = [B2], signature over the extra line verifies
@@ -85,7 +68,7 @@ try {
     await waitFor(p, `document.body.dataset.sheet === '1' && !${box}.hidden && ${box}.dataset.id === '${id}'`);
     await sleep(300);
     await evaluate(p, `${box}.querySelectorAll('input')[1].click()`);
-    ans = await tapAllow();
+    ans = await hold();
     check(ans && ans.id === id && JSON.stringify(ans.allow_add) === JSON.stringify([B2]), `${lang}: ticked → allow_add [B2] (${JSON.stringify(ans)})`);
     check(fake.st.sigOk[fake.st.sigOk.length - 1] === true, `${lang}: allow_add signature verifies`);
     // 3. a Bash card: no boxes

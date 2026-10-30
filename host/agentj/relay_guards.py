@@ -92,12 +92,7 @@ class RelayGuards:
                         self.svc._decided(ask, 'deny', state)
             self.store.hist_set_status(fid, mid, state)
             if state in REASONS:
-                name = self.store.name_of(fid)
-                items, _ = self.store.hist_page(fid, n=500)
-                text = next((x.get('text', '') for x in items if x.get('mid') == mid), '')
-                from . import privacy
-                summary = privacy.owner_text(text).replace('\n', ' ')[:80]
-                self.svc.notice(f'{name} · {mid} · {summary}: ' + message(state, self.svc.lang))
+                self.svc.notice(message(state, self.svc.lang))
             self.svc.changed(fid)
         return changed
 
@@ -220,17 +215,6 @@ class RelayGuards:
             state = r['state']
             if state not in ('pending', 'claimed') or r.get('reply_state') in ('sending', 'unknown'):
                 continue
-            if state == 'pending' and self.svc.same_owner.active(r['friend']):
-                relation = self.svc.same_owner.row(r['friend'])
-                if r['direction'] == 'out' or r['mid'] in relation.get('queue', {}):
-                    continue
-                if r['mid'] in relation.get('forwarded', []):
-                    self.state(r['friend'], r['mid'], 'blocked')
-                    self.receipt(r['friend'], r['mid'], 'blocked')
-                    self.svc.notice(self.store.name_of(r['friend']) + ' · ' + r['mid'] + ': ' +
-                        ('旧版交接结果不明，请先在接收设备核实，再决定是否重发。' if self.svc.lang == 'zh' else
-                         'The earlier handoff is uncertain. Check the receiving device before resending.'))
-                    continue       # authenticated same-owner work waits for its main consumer
             duration = cfg['relay_claim_seconds'] if state == 'claimed' else cfg['relay_pending_seconds']
             if now < r.get('claimed', r['created']) + duration:
                 continue

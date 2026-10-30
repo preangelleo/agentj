@@ -54,12 +54,10 @@ class Scan(_Base):
             self.put(f"out/key{i}.md", text.encode())
         box = Box(); h = SimpleNamespace(st=self.st, elevate=SimpleNamespace(out=box), stopped=lambda: False, _approvers=lambda: ["dev1"])
         items, skips, keys = self.m.scan_keys(" ".join(f"[k](out/key{i}.md)" for i in range(len(values))), 2)
-        # P573 (#386, replaces the whole-file cards here): masked copies go as cards, one value card each, ≤ MAX_CARDS
-        self.assertEqual(len(items), len(values))
-        self.assertEqual(skips, [])
+        self.assertEqual(items, [])
         self.assertEqual(len(keys), len(values))
         self.assertEqual(asyncio.run(owner_route.offer_files(h, keys, "zh")), 3)
-        self.assertEqual([r["value"] for r in box.reqs], values[:3])
+        self.assertEqual([s["why"] for s in skips], ["key_card"] * 3 + ["key_content"] * (len(values) - 3))
 
     def test_strict_direction_unchanged_and_chunk_boundary(self):
         self.assertTrue(taskspec.secret_like('token="replace_me"'))
@@ -81,14 +79,6 @@ class OwnerMail(P184._Svc):
         (self.work / "key.md").write_text("API_TOKEN=" + KEY)
         before = len(self.smtp.sent)
         res = await self.svc.agent_send({"to": [P184.OWNER], "subject": "report", "body": "附件", "files": ["key.md"]})
-        # P573 (#386, replaces the refusal here): to the owner the masked copy is attached; the value never rides the mail
-        self.assertTrue(res["ok"], res)
-        self.assertEqual(len(self.smtp.sent), before + 1)
-        msg = email.message_from_bytes(self.smtp.sent[-1][2], policy=email.policy.default)
-        [att] = list(msg.iter_attachments())
-        self.assertNotIn(KEY.encode(), att.get_content() if isinstance(att.get_content(), bytes) else att.get_content().encode())
-        self.assertNotIn(KEY.encode(), self.smtp.sent[-1][2])
-        (self.work / "env.pem").write_text("x")
-        res = await self.svc.agent_send({"to": [P184.OWNER], "subject": "report", "body": "附件", "files": ["env.pem"]})
         self.assertEqual((res["ok"], res["why"]), (False, "file"))
         self.assertIn("secret send", res["detail"])
+        self.assertEqual(len(self.smtp.sent), before)

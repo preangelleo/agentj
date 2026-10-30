@@ -123,16 +123,6 @@ async function preview(p, mid, mode = 'doc') {
   await ev(p, `${card(mid)}.querySelector('.mact.pv').click()`);
   await waitFor(p, `!!document.querySelector('.mview') && !document.querySelector('.mview').hidden && document.querySelector('.mview').dataset.mode === '${mode}'`, 15000);
 }
-// P573 (#386): Markdown / text / code (JSON) open in the reply's own full-screen reader (#rd, file mode), not the viewer
-async function readIn(p, mid) {
-  await ev(p, `${card(mid)}.querySelector('.mact.pv').click()`);
-  await waitFor(p, `!document.getElementById('rd').hidden && document.getElementById('rd').dataset.file === '1'`, 15000);
-}
-async function closeRd(p) {
-  await key(p, 'Escape', { code: 'Escape' });
-  await waitFor(p, `document.getElementById('rd').hidden`, 3000);
-  await sleep(400);   // the reader's click guard after it closes
-}
 async function closeEsc(p) {
   await key(p, 'Escape', { code: 'Escape' });
   await waitFor(p, `document.querySelector('.mview').hidden`, 3000);
@@ -188,7 +178,7 @@ try {
       assert.deepEqual(gets, [], 'no media_get without a tap');
       assert.equal(await ev(p, `${card(id('M'))}.querySelector('.mtap').textContent`), '点一下加载 · 89 B');
       await ev(p, `${card(id('M'))}.querySelector('.mact.pv').click()`);
-      await waitFor(p, `!document.getElementById('rd').hidden && !!document.querySelector('#rdWords h1')`, 10000);   // P573: the reader
+      await waitFor(p, `!document.querySelector('.mview').hidden && !!document.querySelector('.mdoc .mpvmd h1')`, 10000);
       assert.deepEqual(gets.map((g) => g.mid), [id('M')]);
       assert.deepEqual(p.problems, []);
     } finally { await p.dispose(); }
@@ -207,14 +197,13 @@ try {
         writeFileSync(join(OUT, `p183-preview-pdf-${tag}-${scheme}.png`), await shoot(p));
         await closeEsc(p);
 
-        await readIn(p, id('M'));
-        await waitFor(p, `!!document.querySelector('#rdWords h1') && !!document.querySelector('#rdWords pre[data-rx=ok]')`, 10000);
-        assert.equal(await ev(p, `document.querySelector('#rdWords strong').textContent`), '虚线框');
-        await sleep(700);   // the reader ignores taps for 600 ms after it opens (the opening double tap's tail)
-        await ev(p, `document.querySelector('#rdWords .codeblock .copy').click()`);
-        await waitFor(p, `document.querySelector('#rdWords .codeblock .copy').dataset.done === '1'`, 3000);
+        await preview(p, id('M'));
+        await waitFor(p, `!!document.querySelector('.mdoc .mpvmd h1') && !!document.querySelector('.mdoc .mpvmd pre[data-rx=ok]')`, 10000);
+        assert.equal(await ev(p, `document.querySelector('.mdoc .mpvmd strong').textContent`), '虚线框');
+        await ev(p, `document.querySelector('.mdoc .mpvmd .codeblock .copy').click()`);
+        await waitFor(p, `document.querySelector('.mdoc .mpvmd .codeblock .copy').dataset.done === '1'`, 3000);
         writeFileSync(join(OUT, `p183-preview-md-${tag}-${scheme}.png`), await shoot(p));
-        await closeRd(p);
+        await closeEsc(p);
 
         await preview(p, id('C'));
         await waitFor(p, `!!document.querySelector('.mdoc table')`);
@@ -240,10 +229,10 @@ try {
         writeFileSync(join(OUT, `p183-preview-docx-${tag}-${scheme}.png`), await shoot(p));
         await closeEsc(p);
 
-        await readIn(p, id('J'));
-        await waitFor(p, `!!document.querySelector('#rdWords pre[data-rx=ok] code.hljs span')`, 10000);
+        await preview(p, id('J'));
+        await waitFor(p, `!!document.querySelector('.mdoc pre[data-rx=ok] code.hljs span')`, 10000);
         writeFileSync(join(OUT, `p183-preview-json-${tag}-${scheme}.png`), await shoot(p));
-        await closeRd(p);
+        await closeEsc(p);
 
         await preview(p, id('A'), 'image');
         assert.equal(await ev(p, `document.querySelector('.mview img.mzoom').naturalWidth`), 480);
@@ -252,9 +241,9 @@ try {
         // page two: text, html, audio, pptx
         await page(p, PAGE2, REPLY2);
         await loadAll(p, PAGE2);
-        await readIn(p, id('T'));
-        assert.equal(await ev(p, `document.getElementById('rdWords').innerText.trim()`), '12:00 start\n12:01 load cards\n12:02 done');
-        await closeRd(p);
+        await preview(p, id('T'));
+        assert.equal(await ev(p, `document.querySelector('.mdoc pre.mpvtext').textContent`), '12:00 start\n12:01 load cards\n12:02 done\n');
+        await closeEsc(p);
         await preview(p, id('H'));
         assert.deepEqual(await ev(p, `(() => { const f = document.querySelector('.mview iframe.mframe'); return [f.getAttribute('sandbox'), document.querySelector('.mnote').hidden]; })()`), ['', false]);
         await closeEsc(p);

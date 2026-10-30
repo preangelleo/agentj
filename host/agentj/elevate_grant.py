@@ -1,4 +1,39 @@
-"""Agent J elevate_grant; developer reference: documentation/notes/P0262-HOST-REFERENCE.md."""
+"""10-minute same-format admin approval (backlog #116, PROTOCOL §11.1): when the owner approves one `agentj sudo` card WITH
+the admin password on a paired phone AND switches on the card's own toggle (off by default), later commands of exactly the
+same format run without a new card for up to 600 s.
+
+Allowlist, never a denylist. A command may share a grant only when ALL of these hold (anything else: a card every time):
+- the program resolves (PATH, then realpath) to a root-owned file whose every folder is root-owned and not group/other-
+  writable, its basename is the name the Agent asked for (no multi-call applet / symlinked alias such as unxz → xz), and that
+  basename is in ALLOW below: read / inspect tools that cannot run code or write files from their arguments in the modes
+  listed (no shell, interpreter, editor, pager, package manager, archiver in write mode, sed/awk/find/xargs/env/tar/rsync/cp/
+  dd/tee/chmod, systemctl start …);
+- every option is one the entry lists (exact spelling; combined short flags are split), a value-taking option keeps the
+  value it was approved with, and modes that write are refused (gzip without -c/-l/-t, tail -f, dmesg -c, ss -K …);
+- the class key = (program realpath, systemctl subcommand, the SET of options with their values, and — for every command
+  with path operands — the one approved folder: the folder a file operand sits in, or the folder operand itself). Only
+  operands may differ, and later paths must sit in that same folder (signed scope 2026-10-20: 「同目录」 for every program,
+  not only the READERS that print contents); commands without paths (systemctl status <unit>, journalctl -u, uptime …) have
+  no folder;
+- a program that takes files needs at least one file operand (no operand = it would read stdin, where sudo's password went);
+  du needs -s and never `/` or a top-level folder;
+- every path operand is absolute, has no `..` and no symlink anywhere (path == realpath), is a regular file or folder, sits
+  in folders only root can change (so the Agent cannot swap it after the check), and touches nothing sensitive (SENSITIVE*:
+  /root, other accounts' homes, /proc /sys /dev /run /boot, /etc/ssh, sudoers, shadow, keys, .env, .ssh, tokens …).
+
+The grant is the approval itself, kept smaller than it:
+- created only after the approved command ran with the right password (sudo asked for it exactly once: a NOPASSWD sudo never
+  gets it, run_sudo writes it only after its own prompt), only when the card offered it and the phone signed
+  `grant:<class hash>` into the Ed25519 decision (elevate.signed_message) — the audit line proves the owner chose it; the
+  helper path (approve-only, no password) never creates one;
+- bound to the approving device (its approval key must be unchanged at use) and to the Agent session that asked (harness
+  kind, a random per-agent-object nonce, native session id);
+- auto-runs pin the executable to the resolved path; their timeout is capped by what is left of the window (≤ 600 s);
+- a fixed deadline (use never extends it), memory only, the password copy a bytearray zeroed at the end (serve is non-
+  dumpable); estop, revoke from any paired phone, unpair, a wrong stored password, serve stop all end it;
+- every auto-pass, creation and end is one `elevate.log` line: class, grant id, request id, origin card, device. Never a
+  password or the command text.
+"""
 from __future__ import annotations
 
 import asyncio

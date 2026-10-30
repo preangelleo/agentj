@@ -1,7 +1,26 @@
-"""Read and validate workflows/<id>/task.json (ADR-A61).
-The shared task contract defines inputs, outputs, checks and delivery, never grants authority.
-Secret checks delegate to privacy; owner files omit only the unlabelled entropy guess.
-See agentjarvis/ARCHITECTURE.md for schema and workflow lifecycle."""
+"""The task contract `workflows/<id>/task.json` (ARCHITECTURE ADR-A61). One reader for every component.
+
+Written by `agentj wizard add-template` (from a template package) and by the workflow design wizard; read by the task
+scheduler and the stop-everything switch (later rounds). Shape (exact key set — unknown keys are refused):
+
+    {"v": 1, "id": "<template id>", "title": {"zh": "…", "en": "…"}, "schedule": "<cron, 5 fields>",
+     "tz": "<IANA name or 'local'>", "prompt_file": "RUN.md", "dry_run_prompt_file": "DRYRUN.md",
+     "mode": "normal" | "research", "enabled": false, "needs": ["<which service, never a key>"], "outputs": ["reports/…"]}
+    optional (P254): "harness": "claude" | "codex" | "opencode" | [one or more of them] — the only harnesses this workflow may
+    run on; the quota steward never moves it elsewhere. Absent = any (normally the main Agent's own).
+    optional (P365): "notify_webapp": true | false — decided when the task is made, default false: true = the files this run
+    writes under reports/ go to the phone as file cards on its result page (notify.py; the phone's settings can override).
+    optional (P426 #181-5): "steps": 2–12 nodes [{"id", "prompt_file", optional "title" {zh,en}, "outputs" [reports/…],
+    "idempotent" (default false), "retry" 0–3 (only with idempotent or mode research)}] — each node is its own harness run,
+    checkpointed by wfrun.py; a failed run continues from the failed node (`agentj automation resume`).
+
+- `enabled` is turned on only by a human (the scheduler round); the wizard and `add-template` always write `false`.
+- `mode: "research"` = the read-only run profile (reports only). `normal` workflows may draft, but every step that spends
+  money, sends anything outside, changes a price / listing or deletes is written in RUN.md as "ask on the phone first".
+- `needs` names services ("Amazon SP-API or an ERP export"), never a credential; a value that looks like one is refused.
+- Paths (`prompt_file`, `dry_run_prompt_file`, `outputs`) are relative to the workflow folder `workflows/<id>/`.
+Stdlib only; pure functions (no file writes).
+"""
 from __future__ import annotations
 
 import json
@@ -142,24 +161,82 @@ def steps_problem(steps: object, mode: object = None) -> str | None:
 
 
 def secret_like(text: str, owner: bool = False) -> bool:
-    """Strict privacy secret check; owner files use shared credentials verdict without unlabelled entropy guesses."""
-    from .privacy import credentials, redact_with_report
+    """Layer 1 of the host privacy gate, secret kinds only (keys, tokens, credential assignments, high-entropy strings)."""
+    from .privacy import redact_with_report
     if owner:
-        return bool(credentials(text, entropy=False))   # P211: no unlabelled entropy guess for owner's files
+        from .privacy import _SECRETS
+        for kind, pat, repl in _SECRETS:
+            for match in pat.finditer(text):
+                if kind in {"credential_assignment", "authorization_header", "bearer_token"} and _not_owner_value(match, repl):
+                    continue
+                return True
+        return False                     # P211: no unlabelled entropy guess for owner's files
     _, hits = redact_with_report(text, paths=True)   # P424 #142/#147: paths / names / `$VAR` references are no value
     return any(k in SECRET_KINDS for k in hits)
 
 
 def secret_where(text: str, owner: bool = False) -> dict | None:
-    """Location-only hint for the earliest secret_like hit; never affects authorization."""
-    from .privacy import credentials, secret_at, where
+    """P424 #142: where `secret_like(text, owner)` found its secret — privacy.where's {"kind","line","col","len","hint"} of
+    the earliest fragment that rule would refuse, or None. Only for telling the owner where to look."""
+    from .privacy import _SECRETS, R, secret_at, where
     if not owner:
         return where(text, secret_at(text, SECRET_KINDS))
-    found = credentials(text, entropy=False)
-    if not found:
+    spans = []
+    for kind, pat, repl in _SECRETS:
+        for match in pat.finditer(text):
+            if kind in {"credential_assignment", "authorization_header", "bearer_token"} and _not_owner_value(match, repl):
+                continue
+            rep = match.expand(repl)
+            i = rep.find(R)
+            pre, suf = (rep[:i], rep[i + len(R):]) if i >= 0 else ("", "")
+            spans.append((match.start() + len(pre), max(match.start() + len(pre) + 1, match.end() - len(suf)), kind))
+    if not spans:
         return None
-    kind, _value, s, e = found[0]
+    s, e, kind = min(spans)
     return where(text, (kind, s, e))
+
+
+def _not_owner_value(match, replacement: str) -> bool:
+    """P270 + P424: an OWNER file's labelled match that is documentation / shell / code, not a credential value."""
+    from .privacy import _not_value
+    return _not_value(match, replacement, True) or not _credential_value(match, replacement)
+
+
+def _credential_value(match, replacement: str) -> bool:
+    """P270: an OWNER file's labelled value must resemble a credential, not documentation.
+
+    Provider prefixes/private keys are checked independently, even inside an example.
+    Strict outbound/privacy gates retain their existing rules.
+    """
+    from .privacy import R, _entropy, _pathlike, _CRED_NAMES
+    rendered = match.expand(replacement)
+    pre, _, suffix = rendered.partition(R)
+    value = match.group(0)[len(pre):len(match.group(0)) - len(suffix) if suffix else None]
+    value = value.lstrip("`")
+    if not suffix:                         # an unquoted value ends before prose / Markdown punctuation
+        token = re.match(r"[A-Za-z0-9+/_=.!@#$%^&*?~-]+", value)
+        value = token.group(0) if token else ""
+    value = value.rstrip(",;|`)]}.")
+    if len(value) < 8 or not re.fullmatch(r"[A-Za-z0-9+/_=.!@#$%^&*?~ -]+", value):
+        return False
+    if value.lower() in {"true", "false", "null", "none", "undefined", "password", "changeme", "your_api_key",
+                         "your_token", "replace_me", "placeholder", "redacted", "example", "secret", "not_set"}:
+        return False
+    if re.fullmatch(r"(?:your|example|placeholder|replace|insert)[_-].*", value, re.I):
+        return False
+    if "..." in value or "${" in value or "$HOME" in value or value.startswith(("$", "<", "~/", "./")):
+        return False
+    path = re.match(r"[A-Za-z0-9+/_=-]+", value)
+    if path and _pathlike(path):
+        return False                     # reuse owner-path syntax, not a blanket slash exception
+    if (re.fullmatch(_CRED_NAMES, value, re.I) or
+            re.fullmatch(r"[A-Z][A-Z0-9_]*_(?:KEY|TOKEN|SECRET|PASSWORD|PASS|CREDENTIALS?|VAR|NAME)", value, re.I)):
+        return False                     # APIFY_TOKEN, OPENAI_API_KEY, etc. are names
+    if re.fullmatch(r"[0-9a-fA-F]{16,}", value):
+        return True
+    classes = sum(bool(re.search(pattern, value)) for pattern in (r"[a-z]", r"[A-Z]", r"[0-9]", r"[^A-Za-z0-9 ]"))
+    entropy = _entropy(value)
+    return (classes >= 2 and entropy >= 2.5) or (len(value) >= 32 and entropy >= 4.0)
 
 
 SECRET_KINDS = frozenset({"private_key", "url_credentials", "bearer_token", "jwt", "aws_access_key", "github_token",

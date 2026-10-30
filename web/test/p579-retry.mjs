@@ -3,7 +3,7 @@ import {writeFileSync,mkdirSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {startWebServer} from './serve.mjs';
 import {startFakeHost} from './fakehost.mjs';
-const {chromium}=await import(process.env.AJ_PLAYWRIGHT_MODULE||'/tmp/aj-webmcp-playwright/node_modules/playwright/index.mjs');
+import {chromium} from '/tmp/aj-webmcp-playwright/node_modules/playwright/index.mjs';
 const out=resolve(process.env.P579_RETRY_OUT||'reports/qa/p579/retry');mkdirSync(out,{recursive:true});
 const web=await startWebServer(),fake=await startFakeHost(),b=await chromium.launch({executablePath:'/usr/bin/chromium'});
 const results=[];

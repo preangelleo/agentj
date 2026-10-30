@@ -23,16 +23,7 @@ test('#323 ①: every Face ID entry is app.js setupFaceId, which asks the host (
   assert.equal((APP.match(/t: 'pk_offer_req'/g) || []).length, 1);
   assert.match(APP, /function legacyOffer\(\) \{\n  pkForce = true;\n  session\.sendApp\(\{ t: 'pk_offer_req' \}\)/);
   const peer = src('js/pkpeer.js');
-  // P574 adds an explicit existing-key introduction flag to the SAME host-first request, never a direct creation path.
-  assert.match(peer, /m = await H\.ask\(\{ t: 'pk_peer_req', \.\.\.\(roster \? \{ roster: true \} : \{\}\) \}, 'pk_peer_res', ASK_MS\)/);
-  assert.match(peer, /startRosterIntro = \(\) => startPeerSetup\(\{ roster: true \}\)/);
-  const entry = peer.slice(peer.indexOf('export async function startPeerSetup'), peer.indexOf('function arm()'));
-  assert.doesNotMatch(entry, /H\.register|credentials\.create|onOffer\(/, 'neither setup nor roster introduction creates a key before the host answers');
-  assert.match(entry, /if \(\(!m \|\| m\.t === 'timeout'\) && roster\) \{ result\('fail'\); return 'fail'; \}/, 'roster introduction cannot fall back to legacy key setup');
-  assert.match(peer, /if \(S\.req\?\.roster\) return false;/, 'a roster introduction cannot accept a key-creation offer');
-  const bind = src('js/rosterbind.js');
-  assert.doesNotMatch(bind, /credentials\.create|passkey\.register|H\.register/, 'binding migration keeps the existing credential');
-  assert.match(bind, /await verifyBindingAssertion\(e, fa, challenge, \{ rp: location\.hostname, origin: location\.origin \}\)/, 'migration must verify the actual existing key locally before binding');
+  assert.match(peer, /m = await H\.ask\(\{ t: 'pk_peer_req' \}, 'pk_peer_res', ASK_MS\)/);
   // an approved offer never verifies the old key: register(…, replace: null, peer: true)
   assert.match(peer, /H\.register\(o\.nonce, \{ \.\.\.o\.opts, replace: null, peer: true \}\)/);
   assert.match(src('js/faceid.js'), /const replace_fa = replace && !peer \?/);

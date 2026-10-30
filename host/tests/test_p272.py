@@ -35,9 +35,6 @@ class FileReceipt(FileForward):
         with patch.object(telegram,'upload') as upload:
             self.assertEqual((await self.t.forward_media('invalid','phone'))['why'],'not_found')
             (self.work/'out'/'notes.md').write_text('changed')
-            # P573: the card's scan-time copy is what forwards (the file card persists); without the copy → not_found
-            import shutil
-            shutil.rmtree(self.host.media.store,ignore_errors=True)
             self.assertEqual((await self.t.forward_media(self.mids['notes.md'],'phone'))['why'],'not_found')
             upload.assert_not_called()
 

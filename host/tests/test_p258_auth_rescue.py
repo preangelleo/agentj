@@ -341,9 +341,8 @@ class Manager(Base, unittest.IsolatedAsyncioTestCase):
         res = await self.r.start("codex", "device")
         self.assertEqual(res, {"ok": False, "why": "passkey"})
         tool, batch, pk, summary = self.host.asks[0]
-        # P573 (#386 ⑤): login rescue shows a link / code, never a password — one button that 全放行 still asks
-        self.assertEqual((tool, batch, pk), ("AuthRescue", False, False))
-        self.assertIn("已配对的遥控器上确认", summary)
+        self.assertEqual((tool, batch, pk), ("AuthRescue", False, True))
+        self.assertIn("通行密钥", summary)
         self.assertIsNone(self.r.flow)
 
     async def test_bad_route(self):

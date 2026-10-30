@@ -19,10 +19,8 @@ test('P156 settings: heartbeat keys are phone-settable, interval steps wrap, the
   const i18n = read('../public/i18n.js');
   for (const k of ['r.src.heartbeat', 'set.heartbeat', 'set.heartbeatNote', 'set.heartbeatMin', 'set.heartbeatHour'])
     assert.equal(i18n.split(`"${k}":`).length, 3, k + ' in zh and en');
-  // P589: a host-only preflight replaces the per-interval model call.
-  assert.match(html, /data-i18n="p589.note"/);
-  assert.match(i18n, /无事不调用模型/);
-  assert.match(i18n, /checks first without calling a model/);
+  assert.match(i18n, /每次心跳都会用掉一次模型调用/);
+  assert.match(i18n, /Every heartbeat costs one model call/);
 });
 
 test('P156 pages: via heartbeat gets its own folded label; older hosts (no settable key) never see the row', () => {

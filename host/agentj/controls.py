@@ -59,7 +59,6 @@ ACTIONS += ("host_write",)  # P503d: mail settings/test only
 ACTIONS += ("seat_transfer", "seat_transfer_cancel")   # P547: move the seat to another host (+ Face ID) · revoke that code
 ACTIONS += ("task_migrate",)        # P570c: 「重新迁移」 on the 定时任务 page (sysmigrate.phone)
 ACTIONS += ("forward_set",)         # P554: the forward button's destination (ui.forward_destination), shared by every remote
-ACTIONS += ("keys_op",)
 TS_SKEW_MS = 120_000
 NONCE_KEEP_S = 600
 _NONCE = re.compile(r"[0-9a-f]{32}")
@@ -190,8 +189,6 @@ def object_text(action: str, obj: dict) -> str:
         return f"devices\n{obj['text']}"
     if action == "wechat":
         return f"{obj['op']}\n{obj['id']}\n{obj['code']}"
-    if action == "keys_op":
-        return json.dumps(obj, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
     raise ValueError("bad action")
 
 
@@ -293,9 +290,8 @@ def check(st, nonces: Nonces, channel: str, device: str, obj: dict, action: str,
             return "passkey_required"
     if not nonces.take(n):
         return "replay"
-    if action == "host_write":
-        nonces.mail_offers.pop(n,None)
     if count is not None:
+        nonces.mail_offers.pop(n,None)
         st.passkey_count(device, pk["id"], count)
     return None
 

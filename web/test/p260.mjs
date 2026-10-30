@@ -21,11 +21,11 @@ try {
  const cases=[['chart.png','image/png','image',Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=','base64'),'image'],
  ['video.webm','video/webm','video',readFileSync(join(temp,'video.webm')),'player'],
  ['report.pdf','application/pdf','pdf',fix('report.pdf'),'doc'],['plan.docx','application/vnd.openxmlformats-officedocument.wordprocessingml.document','file',fix('plan.docx'),'doc'],
- ['notes.md','text/markdown','file',Buffer.from('# P260\n\nFile full screen'),'reader'],['code.js','text/javascript','file',Buffer.from('const p260 = true;'),'reader'],
- ['text.txt','text/plain','file',Buffer.from('P260 text reader'),'reader'],['page.html','text/html','html',Buffer.from('<h1>P260 HTML</h1>'),'doc'],
+ ['notes.md','text/markdown','file',Buffer.from('# P260\n\nFile full screen'),'doc'],['code.js','text/javascript','file',Buffer.from('const p260 = true;'),'doc'],
+ ['text.txt','text/plain','file',Buffer.from('P260 text reader'),'doc'],['page.html','text/html','html',Buffer.from('<h1>P260 HTML</h1>'),'doc'],
  ['sales.xlsx','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','file',fix('sales.xlsx'),'doc'],
  ['audio.wav','audio/wav','audio',readFileSync(join(temp,'audio.wav')),'audio']];
- web=await startWebServer({port:0});fake=await startFakeHost();browser=await chromium.launch({executablePath:process.env.CHROMIUM||'/usr/bin/chromium',args:['--autoplay-policy=no-user-gesture-required']});
+ web=await startWebServer({port:0});fake=await startFakeHost();browser=await chromium.launch({executablePath:'/usr/bin/chromium',args:['--autoplay-policy=no-user-gesture-required']});
  for(const touch of [false,true]) {
   fake.reset();const bytes=new Map();
   fake.st.onApp=async(c,m,send)=>{if(m.t!=='media_get')return false;const b=bytes.get(m.mid);for(let i=0;i<8;i++){const o=m.o+i*45056;if(o>=b.length)break;const d=b.subarray(o,o+45056);await send({t:'media_chunk',mid:m.mid,o,d:d.toString('base64url'),last:o+d.length>=b.length});}return true;};
@@ -47,20 +47,7 @@ try {
     await p.locator(card+' video').evaluate(async v=>{v.currentTime=2;await v.play();v.dataset.p260='same-player';});
     await pair(card+' .mvideo-surface');
    } else await pair(card+' .mname');
-   // P573 (#386): Markdown / code / text open in the reply's own full-screen reader (#rd file mode), not the .mview overlay
-   if(mode==='reader') {
-    await p.waitForFunction(()=>!document.getElementById('rd').hidden&&document.getElementById('rd').dataset.file==='1');
-    assert.equal(await p.locator('#rdFileName').textContent(),name);assert.equal(await p.locator('.mview').count()===0||await p.locator('.mview').isHidden(),true);
-    await p.screenshot({path:new URL(`${touch?'touch':'desktop'}-${name}.png`,OUT).pathname});
-    if(i%2)await p.goBack();else await p.keyboard.press('Escape');
-    await p.locator('#rd').waitFor({state:'hidden'});await sleep(450);
-    assert.ok(Math.abs(await p.locator('#main').evaluate(e=>e.scrollTop)-scroll)<2,'reply scroll position retained: '+scroll+' -> '+await p.locator('#main').evaluate(e=>e.scrollTop));
-    const button=p.locator(card+' .pv');assert.equal(await button.innerText(),'全屏查看');
-    await button.focus();await p.keyboard.press('Enter');await p.locator('#rd').waitFor({state:'visible'});await p.keyboard.press('Escape');await p.locator('#rd').waitFor({state:'hidden'});await sleep(450);
-    const dl=await Promise.all([p.waitForEvent('download'),p.locator(card+' .dl').click()]);assert.equal(dl[0].suggestedFilename(),name);
-    await p.locator(card+' .sh').click();await p.waitForFunction(name=>window.__p260Shared.some(files=>files.includes(name)),name);
-    assert.equal(await p.locator('#rd').isHidden(),true);
-   } else if(kind==='audio') {
+   if(kind==='audio') {
     await p.waitForFunction(()=>!document.getElementById('rd').hidden);
     assert.equal(await p.locator('.mview').count()===0||await p.locator('.mview').isHidden(),true);
     await p.keyboard.press('Escape');await sleep(450);

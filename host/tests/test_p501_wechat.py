@@ -209,8 +209,7 @@ class Channel(unittest.IsolatedAsyncioTestCase):
         self.assertIn('没有完成',json.loads(self.tr.calls[-1][0][3])['msg']['item_list'][0]['text_item']['text'])
         await self.receive(message_id=2);await self.complete(202,'key: sk-ant-api03-'+'A'*40)
         said=json.loads(self.tr.calls[-1][0][3])['msg']['item_list'][0]['text_item']['text']
-        # P573 (#387): the owner's channel gets the answer; only the key value is replaced by its pickup-card placeholder
-        self.assertNotIn('sk-ant',said);self.assertIn('密钥 1',said);self.assertTrue(said.startswith('key: '))
+        self.assertNotIn('sk-ant',said);self.assertIn('Agent J 网页',said)
         await self.receive(message_id=3);await self.complete(203,'〔不回群〕')
         self.assertEqual(len(self.tr.calls),2,'a silent answer sends nothing')
     async def test_signed_confirmation_exact_summary_and_once(self):

@@ -262,10 +262,7 @@ class Contract(p408.Rig):
             self.ok(cf["agent"] and tc["why_en"] == "filled in by the Agent", "7 unedited → term_confirm agent:1", tc)
             await self.host._app(A, cf["msg"])
             await self.until(lambda: "go-42" in "".join(o.get("data", "") for _, o in self.sent[n0:] if o.get("t") == "term_out"), 20)
-            if tc.get("uv") == 0:   # P573: a button-tier confirm — signed, no Face ID assertion rides along
-                self.ok("fa" not in cf["msg"], "7 uv 0: signed resend ran without Face ID", cf["msg"])
-            else:
-                self.ok(self.challenges[-1] == tc["fa_ch"], "7 signed resend ran (challenge = the host's)")
+            self.ok(self.challenges[-1] == tc["fa_ch"], "7 signed resend ran (challenge = the host's)")
             self.desk.go_last = -1e9
             got = await self.desk.ctl_go({})
             tg = next(o for _, o in reversed(self.sent) if o.get("t") == "term_go")

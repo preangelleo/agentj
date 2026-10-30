@@ -88,7 +88,7 @@ REASON = {
            "too_soon": "a scan just ran; try again in {x} s"},
 }
 
-
+# P312: why a new Agent stayed silent (serve's status.agent_phase) + the owner's next step
 DETAIL = {
     "zh": {"starting": "：一直还在启动（加载 MCP 服务器 / 插件、打开会话）。下一步：Agent J 主机空一些再切，或在它的配置里停用用不上的 MCP / 插件",
            "prompt": "：卡在终端里的确认提示上。下一步：在 Agent J 的工作目录里手动运行一次 {cmd}，处理掉提示再切",
@@ -134,12 +134,12 @@ REASON["en"].update({
     "config_mismatch": "the setting written did not read back the same (something else changed it)",
     "no_way_back": "there would be no way back to {x}: {x} fails the same check in the background service",
     "nothing_to_undo": "there is no switch to undo", "stale_job": "a stale switch job was not run"})
-
+# P305: Kimi Code's probe (ACP, plan mode, every tool refused)
 REASON["zh"].update({"unknown_model": "{x} 没有这个模型（`kimi` 里 /model 列出可选的）",
                      "native_tool_refused": "{x} 在测试消息里想调用工具（测试只许直接回答）"})
 REASON["en"].update({"unknown_model": "{x} does not offer this model (/model in kimi lists them)",
                      "native_tool_refused": "{x} tried to use a tool on the test message (the test allows a plain answer only)"})
-
+# P423 #138: a used-up quota / a rate limit is never 「没登录」 (Kimi says its monthly limit as auth_required)
 REASON["zh"].update({"quota_exhausted": "{x} 的额度 / 用量已用完——不是没登录，不用重新登录：续费或加量后再试，或先切到别的 Agent",
                      "rate_limited": "{x} 正在限流（请求太频繁）——不是没登录：等一会儿再试"})
 REASON["en"].update({"quota_exhausted": "{x}'s quota / usage is used up — not a sign-in problem, no new login needed: renew or add "
@@ -149,26 +149,26 @@ QUOTA_WHERE = {"kimi": {"zh": "（Kimi 本月额度：用量和套餐看 Kimi Co
                               "https://www.kimi.ai/code/console）",
                         "en": " (Kimi's monthly usage: see the Kimi Code console https://www.kimi.com/code/console , or "
                               "https://www.kimi.ai/code/console for kimi.ai)"}}
-
-
+# P282: no login the SERVICE can see (harness.probe → not_logged_in) — a one-step way, per harness (Mac seat 10-14: Claude
+# Code's token lived only in ~/.zshenv, so the service's probe counted it as "not signed in" while the owner's shell worked)
 LOGIN_HINT = {
     "zh": {"claude": "后台服务找不到 {x} 的登录（登录多半只放在你终端的环境变量里，比如 ~/.zshenv 的 CLAUDE_CODE_OAUTH_TOKEN，"
                      "后台服务读不到）。办法二选一：在终端运行 claude，输入 /login 登录一次（登录会存进{store}，后台也能用）；"
                      "或在能用 claude 的终端里运行 agentj service import-key CLAUDE_CODE_OAUTH_TOKEN，再 agentj service restart",
            "codex": "后台服务找不到 {x} 的登录。在终端运行 codex login 登录一次（存进 ~/.codex/auth.json，后台也能用）；"
                     "用 API key 的话在有这个 key 的终端里运行 agentj service import-key OPENAI_API_KEY，再 agentj service restart",
-
+           # P298: OpenCode is "logged in" with a key store / key variable OR one of its free models
            "opencode": "{x} 没有模型 key，选的也不是它的免费模型。二选一：在终端运行 opencode auth login 存一个 key；"
                        "或者先用免费模型，不用 key：agentj agent switch opencode --model opencode/<免费模型>（opencode models 列出）",
-
+           # P305: Kimi Code — the device-code login (phone Settings → AI login rescue) or a Kimi Code console key on the key card
            "kimi": "后台服务找不到 {x} 的登录。二选一：手机 设置 →「AI 登录救援」走设备码登录（或在终端运行 kimi login --region mainland-cn，"
                    "海外站 kimi.ai 用 --region global）；或让 Agent 发手机密钥卡存 Kimi Code 控制台的 key（KIMI_API_KEY），再 agentj service restart",
            "qwen": "{x} 没有模型 key。让 Agent 发手机密钥卡存阿里百炼 Token Plan 的 key（BAILIAN_TOKEN_PLAN_API_KEY；价格和条款见 "
                    "agentj agent route），再 agentj service restart",
-
+           # P329: DeepSeek Harness — Agent J's OpenAI-compatible route (Olares Router …) or a DeepSeek key on the key card
            "dsh": "{x} 没有模型路线。Olares / 任何 OpenAI 兼容服务：agentj agent dsh --base-url https://<Router>/v1 --model <模型 id>"
                   "（要 key 时让 Agent 发密钥卡存 DSH_ROUTER_API_KEY）；用 DeepSeek 官方 API：密钥卡存 DEEPSEEK_API_KEY，再 agentj service restart",
-
+           # P359: Agent J Harness — built in; it needs one model key (Volcano Ark first, D9)
            "core": "{x} 没有模型 key。让 Agent 发手机密钥卡存一把模型 key（火山方舟 ARK_API_KEY；海外 BytePlus BYTEPLUS_API_KEY），"
                    "再 agentj service restart"},
     "en": {"claude": "the background service finds no {x} login (it probably lives only in your terminal's environment, e.g. "
@@ -184,7 +184,7 @@ LOGIN_HINT = {
            "kimi": "the background service finds no {x} login. Either sign in with the device code (phone Settings → AI login rescue, or "
                    "kimi login --region mainland-cn in a terminal; --region global for kimi.ai), or have the Agent send a key card "
                    "for a Kimi Code console key (KIMI_API_KEY), then agentj service restart",
-
+           # P310: Qwen Code — no login of its own any more (free OAuth ended 2026-04-15): a Bailian key on the key card
            "qwen": "{x} has no model key. Have the Agent send a key card for an Alibaba Cloud Bailian Token Plan key "
                    "(BAILIAN_TOKEN_PLAN_API_KEY; agentj agent route shows prices and terms), then agentj service restart",
            "dsh": "{x} has no model route. Olares or any OpenAI-compatible server: agentj agent dsh --base-url https://<router>/v1 "
@@ -226,9 +226,10 @@ def reason_text(code: str, target: str, lang: str = "zh", detail: str | None = N
     return out
 
 
-
+# ------------------------------------------------------------------ the phone's /switch-harness → the main Agent
 def agent_text(text, lang: str = "zh") -> str | None:
-    """The message the main Agent gets for `/switch-harness [words]` (None for anything else). Never starts with "/":."""
+    """The message the main Agent gets for `/switch-harness [words]` (None for anything else). Never starts with "/":
+    Claude Code (desktop or headless) would take it for one of its own slash commands."""
     if not isinstance(text, str):
         return None
     m = re.match(r"^[/／]switch[-_]harness(?=\s|$)(.*)$", text.strip(), re.S | re.I)
@@ -281,7 +282,11 @@ class HandoffSend(Send):
 
 def hello_prompt(kind: str, req: dict, lang: str = "zh", where: str | None = None, inline: str | None = None,
                  read_why: str | None = None) -> str | None:
-    """Fixed host text for serve's `harness_hello` (the job sends kinds and a code, never free text). P289: `handoff` is."""
+    """Fixed host text for serve's `harness_hello` (the job sends kinds and a code, never free text). P289: `handoff` is
+    "ok" (the previous harness wrote switch.md — read it first; `where` is the host's own path for it) or "none".
+    P539 (#301): `inline` = the file's own text (handoff.switch_inline, already delimited and redacted) → it rides along
+    and no read is needed; `read_why` = why the host could not read it (handoff.READ_WHY key) → one read try, then the
+    local excerpt serve appends."""
     hello = _hello_inline(kind, req, lang, where, inline, read_why)
     if hello is not None:
         return hello
@@ -375,10 +380,10 @@ def _hello_prompt(kind: str, req: dict, lang: str = "zh", where: str | None = No
             "以及下一步建议（原因里写了下一步就照它说，否则再发一次 /switch-harness 让你重新检查）。不要调用工具，不要提这条提示。")
 
 
-
-
-
-
+# ------------------------------------------------------------------ P281: what the owner sees while it runs
+# The job reports a phase code (+ kinds, an index); serve turns it into these fixed host lines, so a /switch-harness that
+# takes minutes never leaves the phone on an empty card. In-turn phases go on the asking page (its wait line); the rest
+# (the turn has ended, Agent J restarts) are pages of their own.
 PROGRESS = {
     "zh": {"scanning": "正在探测这台Agent J 主机上的 harness：Claude Code、Codex、OpenCode、Kimi Code、Qwen Code 各试一次，每个最多 1 分钟…",
            "scan_one": "正在探测 {t}（{k}/{n}），每个最多 1 分钟…",
@@ -420,10 +425,10 @@ def _progress(ctl, phase: str, to: str | None = None, frm: str | None = None, **
         ctl({"cmd": "harness_progress", "phase": phase, **({"to": to} if to else {}), **({"from": frm} if frm else {}), **extra})
 
 
-
-
-
-
+# ------------------------------------------------------------------ P282: progress phases of its own
+# Same protocol as P281's `harness_progress` (a phase code + kinds; serve shows its own fixed line; an older serve answers
+# `unknown command` and the switch goes on). On merge with P281: PROGRESS[lang].update(PROGRESS_P282[lang]) and
+# IN_TURN += ("probe_back",).
 PROGRESS_P282 = {
     "zh": {"probe_back": "{t} 测试通过；再确认切过去以后还能切回 {f}（最多 1 分钟）…",
            "undo": "正在直接切回 {t}（不再预检）：Agent J 重启中，接上后它会先跟您打招呼…"},
@@ -440,9 +445,10 @@ def _phase(ctl, phase: str, to: str | None = None, frm: str | None = None) -> No
             pass
 
 
-
+# ------------------------------------------------------------------ P289: the switch handoff (switch.md)
 def handoff_prompt(kind: str, req: dict, cfg: dict, lang: str = "zh") -> str | None:
-    """Fixed host text for serve's `harness_handoff`: `write` → the running harness (`from`) writes switch.md before the."""
+    """Fixed host text for serve's `harness_handoff`: `write` → the running harness (`from`) writes switch.md before the
+    switch; `resume` → the new one (`to`), switched and introduced, carries on from it. Kinds only, never free text."""
     from . import handoff
     step, frm, to = req.get("step"), req.get("from"), req.get("to")
     if step not in ("write", "resume") or frm not in KINDS or to not in KINDS or frm == to \
@@ -454,9 +460,9 @@ def handoff_prompt(kind: str, req: dict, cfg: dict, lang: str = "zh") -> str | N
     return handoff.switch_resume_text(lang, where)
 
 
-
-
-
+# Same protocol as P281's `harness_progress` (pages of their own: the asking turn is over by now). An older serve or one
+# without these phases answers not-ok → the failure line goes out as a plain phone message instead (`send`).
+# On merge with P281: PROGRESS[lang].update(PROGRESS_P289[lang]).
 PROGRESS_P289 = {
     "zh": {"handoff": "先请 {f} 写好交接（最多 3 分钟），再切换到 {t}…",
            "handoff_ok": "{f} 的交接写好了，正在切换到 {t}；{t} 接上后会先读交接再接着干…",
@@ -485,7 +491,8 @@ def _note(ctl, phase: str, to: str, frm: str, lang: str) -> None:
 
 
 def _write_handoff(st, ctl, cfg: dict, frm: str, to: str, sleep, clock, limit: float | None = None) -> str:
-    """Before the switch: the running harness writes switch.md in a host turn. "ok" = the file is new or changed since the."""
+    """Before the switch: the running harness writes switch.md in a host turn. "ok" = the file is new or changed since the
+    turn was asked for (mtime, size, sha256 — like compactprep); otherwise a reason code. Never blocks the switch."""
     from . import handoff
     lang = cfg.get("language")
     limit = handoff.SWITCH_WAIT if limit is None else limit
@@ -513,24 +520,17 @@ def _write_handoff(st, ctl, cfg: dict, frm: str, to: str, sleep, clock, limit: f
     ok = res in ("ok", "ok_busy")
     st.log("harness_handoff", step="write", result=res, frm=frm, to=to)
     _note(ctl, "handoff_ok" if ok else "handoff_failed", to, frm, lang)
-    if res == "timeout":
-        try:
-            ctl({"cmd": "send", "text": (f"Handoff timed out after {limit:g} seconds. Switching continues with a local redacted "
-                 "conversation excerpt; it may omit progress. Confirm any missing decisions with the owner." if lang == "en" else
-                 f"交接等待已超时（{limit:g} 秒）。继续切换，并向新 Agent 提供本地脱敏对话摘录；摘录可能遗漏进度，缺少的决定需向主人核实。")})
-        except Exception:
-            pass  # Notification failure cannot abort a switch.
     return "ok" if ok else res
 
 
-
+# merged (P290): P282's and P289's phases go through P281's one table; probe_back runs inside the asking turn
 for _l in ("zh", "en"):
     PROGRESS[_l].update(PROGRESS_P282[_l])
     PROGRESS[_l].update(PROGRESS_P289[_l])
 IN_TURN += ("probe_back",)
 
 
-
+# ------------------------------------------------------------------ receipts (fixed codes only)
 SCAN = "harness-scan.json"
 PREVIOUS = "harness-previous.json"   # P282: the agent entry before the last switch — what --undo restores, no gate
 JOB_MAX_AGE = 15 * 60                 # s: a job launched longer ago is stale (a leftover launchd plist replayed at login)
@@ -567,69 +567,7 @@ def read_receipt(st, name: str = RECEIPT) -> dict | None:
     return max(recs, key=lambda r: r["at"]) if recs else None
 
 
-def _result_meta(rec):
-    """Only typed, fixed switch metadata may cross the Agent socket."""
-    from .slash import MODEL_RE
-    from . import privacy
-    enums = {"status": (*LIVE, "ok", "probe_ok", "failed", "rolled_back", "scan"),
-             **dict.fromkeys(("target", "from", "current", "name"), KINDS),
-             "reason": REASON["en"], "back": REASON["en"], "detail": DETAIL["en"], "err": ERR["en"],
-             "kept": ("busy", "card"), "handoff": ("ok", "missing", "unchanged", "timeout", "refused"), "login": ("free",)}
-    out = {}
-    for k, v in rec.items():
-        if k in enums and isinstance(v, str) and v in enums[k]:
-            out[k] = v
-        elif k in ("at", "waited", "start_secs") and type(v) in (int, float) and 0 <= v < 1e12:
-            out[k] = v
-        elif k in ("undo", "installed", "callable") and type(v) is bool:
-            out[k] = v
-        elif isinstance(v, str) and privacy.redact(v) == v and ((k == "job" and _JOB.fullmatch(v)) or
-                (k == "model" and len(v) <= 160 and (_OC_MODEL.fullmatch(v) or MODEL_RE.fullmatch(v))) or
-                (k == "version" and re.fullmatch(r"v?\d+(?:\.\d+){1,3}(?:(?:a|b|rc)\d+|-(?:alpha|beta|rc)\.?\d+)?", v))):
-            out[k] = v
-    return out
-
-
-def host_result(st, req) -> dict:
-    """Same-user read-only receipt metadata; never accepts paths or runs a job."""
-    if set(req) - {"t", "kind", "job"} or req.get("kind") not in ("switch", "scan"):
-        return {"ok": False, "error": "bad_field"}
-    job = req.get("job")
-    if job is not None and not (isinstance(job, str) and _JOB.fullmatch(job)):
-        return {"ok": False, "error": "bad_job"}
-    rec = read_receipt(st, SCAN if req["kind"] == "scan" else RECEIPT)
-    if not rec:
-        return {"ok": False, "error": "no_receipt"}
-    if job and rec.get("job") != job:
-        return {"ok": False, "error": "wrong_job"}
-    if rec.get("status") in LIVE and time.time() - rec["at"] > JOB_MAX_AGE:
-        return {"ok": False, "error": "stale_job"}
-    result = _result_meta(rec)
-    if req["kind"] == "scan":
-        result["harnesses"] = [_result_meta(row) for row in rec.get("harnesses", []) if isinstance(row, dict)]
-    return {"ok": True, "receipt": result}
-
-
-def _client_receipt(st, name=RECEIPT, job=None):
-    rec = read_receipt(st, name)
-    from . import fence
-    if rec and (not job or rec.get("job") == job) and not fence.inside():
-        return rec
-    from .elevate import client_request
-    from .names import elevate_sock
-    try:
-        r = client_request(st, {"t": "harness_result", "kind": "scan" if name == SCAN else "switch",
-                                **({"job": job} if job else {})}, timeout=3, path=elevate_sock(st))
-        if r.get("ok") is True and isinstance(r.get("receipt"), dict):
-            remote = r["receipt"]
-            if isinstance(remote.get("at"), (int, float)) and (not job or remote.get("job") == job):
-                return remote
-    except (OSError, ValueError):
-        pass
-    return rec if not job or (rec or {}).get("job") == job else None
-
-
-
+# ------------------------------------------------------------------ 1. the gate (in the caller)
 def gate(target: str, model: str | None = None, probe=None) -> dict:
     """Installed AND one tool-free headless call answered with the owner's own login. {ok, reason?, version}."""
     d = (probe or harness.probe)(only=(target,), model=model)
@@ -644,7 +582,8 @@ def gate(target: str, model: str | None = None, probe=None) -> dict:
 
 
 def start_probe(st, target: str, cfg: dict, limit: float = START_LIMIT) -> dict | None:
-    """P312: the start the session will make, measured before the switch (Codex: agent_codex.start_probe; P326 OpenCode:."""
+    """P312: the start the session will make, measured before the switch (Codex: agent_codex.start_probe; P326 OpenCode:
+    opencode_start — our own `opencode serve`, or the owner's server named in the settings)."""
     if target == "opencode":
         from .opencode_start import start_probe as opencode
         return opencode(st, cfg, limit)
@@ -661,14 +600,19 @@ def current_kind(st) -> str | None:
         return None
 
 
-
-
+# s the caller waits for the job's verdict: the target's probe + (P282) the way back's, ≤ 60 s each, + (P298) the free tier's
+# warm-up retries for the one of them that is an OpenCode free model
 PROBE_WAIT = 150 + opencode_free.WARM_EXTRA
 
 
 def request(st, target: str | None, model: str | None = None, dry_run: bool = False, *, launch=None,
             sleep=time.sleep, clock=time.monotonic, force: bool = False, undo: bool = False) -> dict:
-    """Pre-checks here; the gate itself runs in the job, because the job has the SERVICE's environment — the one the new."""
+    """Pre-checks here; the gate itself runs in the job, because the job has the SERVICE's environment — the one the new
+    harness will run with (a key that lives only in the service env is invisible to a fenced caller, and the caller's own
+    shell may hold keys the service lacks). The caller waits for the verdict: failed (nothing changed) · probe_ok (dry run) ·
+    waiting (passed; the switch follows when this turn ends).
+    P282: the job also checks the way back (the current harness) unless `force`; `undo` restores the entry from before the
+    last switch with no gate at all (the switch's own restart check and roll-back still apply)."""
     if undo:
         prev = _previous(st)
         if not prev:
@@ -682,7 +626,7 @@ def request(st, target: str | None, model: str | None = None, dry_run: bool = Fa
     cur = current_kind(st)
     if cur == target:
         return {"ok": False, "reason": "same", "target": target, "from": cur}
-
+    # the service check is the job's: inside the fence the unit is invisible (QA-J 10-12)
     spec = {"kind": "switch", "target": None if undo else target, "model": model if model and not undo else None,
             "dry_run": bool(dry_run), "force": bool(force), "undo": bool(undo)}
     try:        # P339 review: serve picks the job id (and writes "probing"); launched here, the caller does as before
@@ -697,11 +641,11 @@ def request(st, target: str | None, model: str | None = None, dry_run: bool = Fa
         return {"ok": False, "reason": "launch_failed", "target": target, "from": cur}
     end = clock() + PROBE_WAIT
     while True:
-        rec = _client_receipt(st, job=job) or {}
+        rec = read_receipt(st) or {}
         if rec.get("job") == job and rec.get("status") != "probing":
             break
         if clock() >= end:
-            return {"ok": False, "pending": True, "reason": "probe_pending", "target": target, "from": cur, "job": job}
+            return {"ok": False, "pending": True, "reason": "probe_pending", "target": target, "from": cur}
         sleep(1.0)
     m = rec.get("model") if isinstance(rec.get("model"), str) else None
     note = opencode_free.privacy_note(m, _lang_of(st)) if target == "opencode" else None
@@ -709,7 +653,7 @@ def request(st, target: str | None, model: str | None = None, dry_run: bool = Fa
         from .bailian import model_note
         from .ark import model_note as ark_note     # P315
         note = model_note(m, "en" if _lang_of(st) == "en" else "zh") or ark_note(m, "en" if _lang_of(st) == "en" else "zh")
-    base = {"target": target, "from": rec.get("from") or cur, "version": rec.get("version"), "job": job,
+    base = {"target": target, "from": rec.get("from") or cur, "version": rec.get("version"),
             **({"model": m} if m else {}), **({"privacy": note} if note else {}),
             **({"back": rec["back"]} if isinstance(rec.get("back"), str) else {}), **({"undo": True} if undo else {}),
             **({"undo_possible": True} if not undo and (_previous(st) or {}).get("kind") == target else {}),
@@ -847,7 +791,8 @@ def _via_serve(st, spec: dict) -> str | None:
 
 
 def _launch(st, spec, launch, before=None) -> str:
-    """→ the job id the caller waits on: serve's, or (no serve / an older one / a test's `launch`) a fresh one launched here."""
+    """→ the job id the caller waits on: serve's, or (no serve / an older one / a test's `launch`) a fresh one launched here
+    after `before(job)` (the receipt a switch caller writes first)."""
     job = None if launch else _via_serve(st, spec)
     if job:
         return job
@@ -864,7 +809,9 @@ def _launch(st, spec, launch, before=None) -> str:
 
 
 def scan(st, *, launch=None, sleep=time.sleep, clock=time.monotonic) -> dict:
-    """`agentj agent switch --scan`: installed / version / callable for all three, probed by the job in the SERVICE's."""
+    """`agentj agent switch --scan`: installed / version / callable for all three, probed by the job in the SERVICE's
+    environment — what the skill reports to the owner. (A fenced Agent's own `agentj agent detect` cannot see harnesses
+    whose path or key lives only in the service environment.) {"ok", "harnesses": [...], "current"} or {"ok": False, reason}."""
     try:
         job = _launch(st, {"kind": "scan"}, launch)
     except HostRefused as e:
@@ -874,7 +821,7 @@ def scan(st, *, launch=None, sleep=time.sleep, clock=time.monotonic) -> dict:
         return {"ok": False, "reason": "launch_failed"}
     end = clock() + SCAN_WAIT
     while True:
-        rec = _client_receipt(st, SCAN, job) or {}
+        rec = read_receipt(st, SCAN) or {}
         if rec.get("job") == job:
             return {"ok": True, "current": rec.get("current"), "harnesses": rec.get("harnesses") or []}
         if clock() >= end:
@@ -883,7 +830,8 @@ def scan(st, *, launch=None, sleep=time.sleep, clock=time.monotonic) -> dict:
 
 
 def scan_worker(st, job: str | None, probe=None, ctl=None) -> int:
-    """Each harness is probed with the model a switch would give it (QA-J 10-12: OpenCode probed without its model had no."""
+    """Each harness is probed with the model a switch would give it (QA-J 10-12: OpenCode probed without its model had no
+    default and timed out, though it ran fine with p155qa/gpt-6): its saved model, or the configured one for the current."""
     cur = _raw_agent(st) or {}
     ctl = ctl if ctl is not None else (_Ctl(st) if probe is None else None)
     rows = []
@@ -907,7 +855,8 @@ def scan_worker(st, job: str | None, probe=None, ctl=None) -> int:
 
 
 def _where(h: dict) -> dict:
-    """P282: which program the service runs (paths only, ~-shortened) — a saved path left behind by a self-update that was."""
+    """P282: which program the service runs (paths only, ~-shortened) — a saved path left behind by a self-update that was
+    bypassed (`pinned`), and other installs with another version (which one is old, so the owner can remove it)."""
     from .service import tilde
     out = {}
     if isinstance(h.get("executable"), str):
@@ -948,12 +897,12 @@ def _say_scan(r: dict, lang: str) -> str:
     can = [LABEL[n] for n in ok]
     lines.append(("→ can switch to: " + ", ".join(can)) if can and en else ("→ 现在能切到：" + "、".join(can)) if can else
                  ("→ only the current one works; install another one first" if en else "→ 只有现在这一个能用，要切换得先装一个别的"))
-
+    # P423 #138: the command to copy, per harness the `agentj agent switch` CLI takes (its argparse choices)
     lines.extend("  agentj agent switch " + n for n in ok if n in SWITCH_CLI)
     return "\n".join(lines)
 
 
-
+# ------------------------------------------------------------------ 2./3. the job (outside the service)
 def _raw_agent(st) -> dict | None:
     try:
         a = st.config().get("agent")
@@ -1036,7 +985,9 @@ def _wait_up(ctl, kind: str, sleep, clock, limit: float = UP_WAIT, model: str | 
 
 
 def _hello(ctl, req: dict, sleep, clock, wait: float = HELLO_WAIT, pending=None) -> dict | None:
-    """None = answered and idle; {"ok", "busy"|"card"} = answered / opened a card, still working: kept (P578); else {"reason",."""
+    """None = answered and idle; {"ok", "busy"|"card"} = answered / opened a card, still working: kept (P578); else {"reason",
+    "detail"?, "err"?, "waited"}. P312: a visibly `starting` Agent is waited for (≤ HELLO_MAX), an open turn gets TURN_MIN, a
+    failed start ends the wait. P578: time serve does not answer is not counted (≤ LOST_MAX)."""
     r = ctl({"cmd": "harness_hello", **req})
     if not r or r.get("ok") is not True or not isinstance(r.get("at"), (int, float)):
         return {"reason": "hello_refused"}
@@ -1073,8 +1024,8 @@ def _hello(ctl, req: dict, sleep, clock, wait: float = HELLO_WAIT, pending=None)
         ts, te = s.get("agent_turn_start_at") or 0, s.get("agent_turn_end_at") or 0
         card = s.get("agent_status") == "waiting" and ts >= t0
         if not said and ts >= t0 and te >= ts and s.get("agent_status") == "idle":
-
-
+            # P326: the hello turn already ended without a word (Mac 10-15: one second, then three minutes of waiting) —
+            # a failed start or an empty turn, said now, not after HELLO_WAIT
             phase = "failed" if phase == "failed" or s.get("agent_turn_failed") else "empty"
             end = clock()
         if not said:
@@ -1183,7 +1134,7 @@ def worker(st, target: str | None, model: str | None = None, *, job: str | None 
     if undo:
         effort = None
     else:
-
+        # the target's own model / effort from when it was last switched away from, unless the owner named one now
         saved = _saved(st)
         mine = saved.get(target) or {}
         if not model and isinstance(mine.get("model"), str):
@@ -1192,7 +1143,7 @@ def worker(st, target: str | None, model: str | None = None, *, job: str | None 
         if default_claude:               # P219: Agent J's Claude Code default, never Claude Code's own pick (a relay may 400 it)
             from .harness_setup import DEFAULT_CLAUDE_MODEL
             model = DEFAULT_CLAUDE_MODEL
-
+        # 1. the gate, in this job's environment = the service's (launch_job), ≤ harness.PROBE_TIMEOUT
         _progress(ctl, "probing", target)
         g = gate(target, model, probe)
         version = g.get("version")
@@ -1205,8 +1156,8 @@ def worker(st, target: str | None, model: str | None = None, *, job: str | None 
             if g.get("line"):
                 extra["line"] = g["line"]         # P395: OpenCode's own error, one redacted line, into the receipt
             return done("failed", g["reason"])
-
-
+        # P282: and the way back — the harness running now must pass the same gate, or a later 「切回」 is refused by it
+        # (Mac seat 10-14: OpenCode was the only one the service could call; switching to it would have been one-way)
         if not force:
             _phase(ctl, "probe_back", target, prev["kind"])
             gb = gate(prev["kind"], _probe_model(st, prev["kind"], raw), probe)
@@ -1235,10 +1186,9 @@ def worker(st, target: str | None, model: str | None = None, *, job: str | None 
     if (stop.get("on") is True) if isinstance(stop, dict) else stop is True:
         ctl({"cmd": "send", "text": reason_text("estop", target) + "：没有切换 / not switched"})
         return done("failed", "estop")
-
-
+    # P289: the harness being left writes switch.md now — after the gate and the way back, before anything changes; a
+    # failed or timed-out handoff never stops the switch (the owner is told, and so is the new harness)
     ho = _write_handoff(st, ctl, prev, prev["kind"], target, sleep, clock)
-    extra["handoff"] = ho
     if undo:
         _phase(ctl, "undo", target, prev["kind"])
         _restore(st, back_raw)
@@ -1259,8 +1209,7 @@ def worker(st, target: str | None, model: str | None = None, *, job: str | None 
             return done("failed", "config_mismatch")
     _remember(st, raw, target)       # P282: what --undo goes back to
     st.log("harness_switch", status="switching", frm=prev["kind"], to=target)
-    write_receipt(st, {"status": "switching", "target": target, "from": prev["kind"],
-                       **({"job": job} if job else {}), **({"undo": True} if undo else {})})
+    write_receipt(st, {"status": "switching", "target": target, "from": prev["kind"], **({"undo": True} if undo else {})})
     _progress(ctl, "switching", target, prev["kind"])
     try:
         restart()
@@ -1296,7 +1245,7 @@ def worker(st, target: str | None, model: str | None = None, *, job: str | None 
             st.log("harness_handoff", step="resume", result="sent" if r and r.get("ok") is True else "refused",
                    frm=prev["kind"], to=target)
         return 0
-
+    # 3. roll back: the previous harness, exactly as it was, then let it explain
     _progress(ctl, "back", target, prev["kind"])
     _restore(st, raw)
     try:
@@ -1320,7 +1269,8 @@ def worker(st, target: str | None, model: str | None = None, *, job: str | None 
 
 
 def stale_job(st, job: str | None, environ=None) -> bool:
-    """P282: a job is run once, right after its caller launched it. A leftover launchd plist (RunAtLoad) replays it at the."""
+    """P282: a job is run once, right after its caller launched it. A leftover launchd plist (RunAtLoad) replays it at the
+    next login (seen on the Mac seat 10-14: three scan jobs left loaded): too old by its launch time — it does nothing."""
     e = os.environ if environ is None else environ
     try:
         at = float(e.get("AGENTJ_JOB_AT") or "")
@@ -1330,7 +1280,10 @@ def stale_job(st, job: str | None, environ=None) -> bool:
 
 
 def service_environment() -> None:
-    """The job's environment := the service's, so the gate probes exactly what the new harness will get. launch_job passes."""
+    """The job's environment := the service's, so the gate probes exactly what the new harness will get. launch_job passes
+    only PATH / state / binary paths; serve itself also has the unit's Environment= and its EnvironmentFile (Linux: every
+    variable, systemd semantics) or the plist's variables + the known-name env file (macOS, load_launch_binary_env).
+    Values are only placed in this process's environment, never printed or logged."""
     import plistlib
     import shlex
     n = service.name()
@@ -1366,7 +1319,7 @@ def service_environment() -> None:
         os.environ[k] = v
 
 
-
+# ------------------------------------------------------------------ the CLI
 def _where_lines(h: dict, lang: str) -> list[str]:
     en, out = lang == "en", []
     if h.get("selection") == "ambiguous_install":
@@ -1488,14 +1441,12 @@ def _choices(rec: dict, lang: str) -> str:
 
 def wait_result(st, seconds=0, *, sleep=time.sleep, clock=time.monotonic):
     end = clock() + min(max(seconds, 0), 900)
-    rec = _client_receipt(st)
+    rec = read_receipt(st)
     job = (rec or {}).get("job")
     while rec and result_code(rec) == 4 and clock() < end:
         sleep(min(1, max(0, end - clock())))
-        latest = _client_receipt(st, job=job)
-        if not latest:
-            continue  # service restart: keep the last pending state and reconnect
-        if job and latest.get("job") != job:
+        latest = read_receipt(st)
+        if not latest or (job and latest.get("job") != job):
             return rec  # another job cannot satisfy this caller's wait
         rec = latest
     return rec
@@ -1537,7 +1488,8 @@ def cli(a, st, lang: str) -> int:
 
 
 def _job(a, st) -> int:
-    """The job side (`--worker`): the service's environment, then (P282) a stale replay does nothing, saved harness paths a."""
+    """The job side (`--worker`): the service's environment, then (P282) a stale replay does nothing, saved harness paths a
+    self-update left behind are healed, and on macOS the one-shot launchd job unloads itself last."""
     from .service_recovery import cleanup_job
     try:
         if stale_job(st, getattr(a, "job", None)):

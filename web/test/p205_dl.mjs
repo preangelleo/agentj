@@ -166,31 +166,17 @@ try {
     } finally { BYTES.set(ITEMS[5].mid, BIGB); await p.dispose(); rmSync(p.dir, { recursive: true, force: true }); }
   });
   await C('p205-dl-viewer: the full-screen preview\'s download icon saves the file too', async () => {
-    // P573/P585: readable files use the unified reply reader; preserve the actual browser download contract.
-    for (const [w, h, touch] of [[1440, 900, false], [390, 844, true]]) {
-      const p = await paired(w, h, touch);
-      try {
-        const m = ITEMS[1];
-        await ev(p, `${card(m.mid)}.querySelector('.mact.pv').click()`);
-        await waitFor(p, `document.getElementById('rd')?.hidden === false && document.getElementById('rd').dataset.file === '1'`, 15000);
-        assert.equal(await ev(p, `document.getElementById('rdFileName').textContent`), m.name);
-        assert.equal(await ev(p, `document.querySelector('#rdWords h1')?.textContent`), '文案');
-        assert.ok(await ev(p, `document.getElementById('rdWords').textContent.includes('思念如歌。')`), 'the selected file is rendered');
-        assert.equal(await ev(p, `!!document.querySelector('.mview:not([hidden])')`), false, 'one reader owns the preview');
-        const before = dls.length;
-        await press(p, `document.getElementById('rdfDl')`, touch);
-        const t0 = Date.now();
-        while (Date.now() - t0 < 10000 && !(dls.length > before && dls.at(-1).state !== 'begun')) await sleep(100);
-        assert.equal(dls.length, before + 1, 'the reader triggers exactly one new browser download');
-        const d = dls[before];
-        assert.equal(d.state, 'completed'); assert.equal(d.name, m.name);
-        const f = join(p.dir, d.guid);
-        assert.ok(existsSync(f), 'the reader download reaches disk');
-        assert.equal(sha(readFileSync(f)), m.sha256, 'the reader saves the selected file with exact bytes');
-        assert.equal(await ev(p, `document.getElementById('rd').hidden`), false, 'downloading keeps the file open');
-        assert.deepEqual(p.offsite, []); assert.deepEqual(p.problems, []);
-      } finally { await p.dispose(); rmSync(p.dir, { recursive: true, force: true }); }
-    }
+    const p = await paired(1440, 900, false);
+    try {
+      const m = ITEMS[1];
+      await ev(p, `${card(m.mid)}.querySelector('.mact.pv').click()`);
+      await waitFor(p, `document.querySelector('.mview')?.hidden === false`, 15000);
+      const before = dls.length;
+      await press(p, `document.querySelector('.mview .mvdl')`, false);
+      const t0 = Date.now();
+      while (Date.now() - t0 < 10000 && !(dls.length > before && dls.at(-1).state !== 'begun')) await sleep(100);
+      assert.equal(dls.at(-1)?.state, 'completed'); assert.equal(dls.at(-1)?.name, m.name);
+    } finally { await p.dispose(); rmSync(p.dir, { recursive: true, force: true }); }
   });
   await C('p205-dl-unsent: a finished page whose [label](~/…/.worktrees/…) never got a file list shows the label and says so — no raw Markdown; a list that arrives later still makes it a card', async () => {
     const p = await paired(390, 844, true);

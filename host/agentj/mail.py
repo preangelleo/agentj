@@ -270,7 +270,8 @@ def secret_upgrade_required(st) -> bool:
 
 
 def migrate_legacy_secret(st) -> str:
-    """Rebind AJM1 only for fixed-provider presets; custom servers remain unopened."""
+    """P549 (#313): P503d's AJM2 had no migration, so an AJM1 password read as missing after the upgrade. Re-bind it only
+    where a preset fixes both servers (it still reaches only its provider); custom servers stay unopened (P503d)."""
     if not secret_upgrade_required(st):
         return ""
     cfg = read_config(st)
@@ -520,7 +521,9 @@ def _dom(v: str) -> str:
 
 
 def authenticate(msg, from_addr: str, level: str, servid: str = "") -> tuple[bool, str]:
-    """Verify pinned authserv-id or the topmost provider header; sender-supplied lower headers cannot authorize."""
+    """(passed, why). `why` is a short word for the log / owner page: dmarc / dkim / spf when passed, else no_results /
+    fail / not_aligned / servid. Only the provider's own header counts: the one with the pinned authserv-id if the owner
+    pinned one, else the topmost (a sender can add headers of its own, but below the ones the receiving server adds)."""
     if level == "off":
         return True, "off"
     headers = msg.get_all("Authentication-Results") or []
@@ -761,6 +764,8 @@ def _imap(cfg: dict):
     return c
 
 
+# P423 #149: NetEase (Coremail) mailboxes — 163 / 126 / yeah / 188 / vip / 企业邮 — answer SELECT with "Unsafe Login" unless the
+# client names itself (RFC 2971 ID) after LOGIN. Matched on the IMAP host or the address domain, at a dot boundary.
 NETEASE_DOMAINS = ("163.com", "126.com", "yeah.net", "188.com", "netease.com")
 
 
@@ -820,7 +825,8 @@ def imap_login(cfg: dict, password: str):
 
 
 def fetch_new(cfg: dict, password: str, uidvalidity, last_uid, limit: int = FETCH_MAX) -> dict:
-    """Read-only EXAMINE → epoch/baseline/max_uid/mails. A changed UIDVALIDITY never delivers older mail."""
+    """One check: → {uidvalidity, baseline: bool, max_uid, mails: [(uid, size, raw | None)]}. Read-only (EXAMINE): no flag
+    changes, so a shared mailbox looks untouched. A new / changed UIDVALIDITY is a baseline: nothing older is delivered."""
     c = imap_login(cfg, password)
     try:
         typ, _ = c.select("INBOX", readonly=True)
@@ -1049,6 +1055,13 @@ def send_many(cfg: dict, password: str, msg: EmailMessage, to: list[str]) -> Non
             c.quit()
 
 
+# ------------------------------------------------------------------ `agentj mail expect` (P206 A): the Agent waits for one mail
+# Leo (10-13): the Agent signs up somewhere with this mailbox and waits for the confirmation mail — a sender that is, of course,
+# not on the allowlist. `expect` is a separate, read-only look (EXAMINE + BODY.PEEK: no \Seen, no cursor of the main check is
+# moved) at mail that arrived in a short window from ONE named sender; the matches go back only to the calling Agent as
+# outside data (never a turn, never answered). Bounded: one sender (an address, or a domain that is not a public mailbox
+# domain), ≤ 3 mails, ≤ 60 minutes, ≤ 10 minutes of look-back, ≤ 3 windows at a time; a sender whose provider check fails
+# (a forged From) is counted, never shown.
 EXPECT_MAX_MAILS = 3
 EXPECT_WITHIN_DEFAULT, EXPECT_WITHIN_MIN, EXPECT_WITHIN_MAX = 15 * 60, 30, 60 * 60
 EXPECT_LOOKBACK_DEFAULT, EXPECT_LOOKBACK_MAX = 120, 600
@@ -1162,7 +1175,8 @@ def _internaldate(blob: bytes) -> int | None:
 
 
 def expect_look(cfg: dict, password: str, examined: set, since: int) -> list[tuple[int, int, bytes | None]]:
-    """BODY.PEEK headers of newest unexamined UIDs since arrival; record every examined UID."""
+    """One read-only look: the newest EXPECT_SCAN UIDs not examined yet → [(uid, arrived_at, header bytes)] for mail the server
+    received at or after `since`. Headers only (BODY.PEEK[HEADER]); `examined` gets every UID looked at."""
     c = imap_login(cfg, password)
     try:
         typ, _ = c.select("INBOX", readonly=True)
@@ -1238,8 +1252,9 @@ def _quote_box(name: str) -> str:
 
 
 def trash_one(cfg: dict, password: str, uidvalidity, uid: int, want: str) -> str:
-    """Move one identity-verified INBOX UID to recoverable trash.
-    Refuse changed UIDVALIDITY/message identity; fallback expunges only that UID when UIDPLUS permits."""
+    """P565 `agentj mail trash`: move ONE delivered mail (INBOX uid, re-identified by its id hash) to the mailbox's trash —
+    recoverable there, never expunged anywhere else. → "moved" / "copied" (no MOVE: copied + \\Deleted, expunged by UID only
+    when UIDPLUS allows it). A changed UIDVALIDITY or a different mail at that uid → `trash_gone`, nothing touched."""
     c = imap_login(cfg, password)
     try:
         with contextlib.suppress(Exception):           # review N5: the capabilities after login (Gmail adds MOVE / UIDPLUS then)
@@ -1653,10 +1668,9 @@ class Mail:
         if used[0] == hour and used[1] >= cfg["reply_per_hour"]:
             self.note(T[lang]["limited"].format(to=route["to"]))
             return drop("limited")
-        pending, keys = [], []
         if row["role"] == "owner":      # P194: owner-directed — as written; credentials → secret pickup cards on the phone
-            from . import owner_route   # P573 (#386-3): placeholders now, the cards only once the reply is confirmed
-            body, pending = owner_route.prepare(self.host, text, "mail", lang)
+            from . import owner_route
+            body, _ = await owner_route.divert(self.host, text, "mail", lang, route.get("subject") or "邮件")
         else:
             from .telegram import group_filter
             body = group_filter(redact(text), "proxy", ())
@@ -1664,10 +1678,9 @@ class Mail:
         avatar_images = getattr(text, 'images', ())
         if row["role"] == "owner":
             files, note = await asyncio.to_thread(self._files, text, True)
-            keys = note.get("keys") or []
-            if keys:                   # P211: credential files → pickup cards on the owner's phone, never mail attachments
+            if note.get("keys"):       # P211: credential files → pickup cards on the owner's phone, never mail attachments
                 from . import owner_route
-                owner_route.expect_files(self.host, keys)     # P573: the cards open after the confirmation below
+                await owner_route.offer_files(self.host, note["keys"], lang)
             held = [k for k in note.get("skips") or [] if k["why"] in ("key_card", "key_file", "key_content")]
             if held:                   # …and never silently: one line each at the end of the mail
                 from . import tg_media
@@ -1686,13 +1699,6 @@ class Mail:
         s = read_state(self.st)
         if read_config(self.st) != cfg or s["routes"].get(str(tid)) != route or self.host.stopped():
             return drop("stale")
-        if getattr(pending, "found", 0) or keys:   # P573: confirmed — now the pickup cards (never before: a refused reply opens none)
-            from . import owner_route
-            rep = await owner_route.deliver(self.host, pending, "mail", lang, route.get("subject") or "邮件")
-            if owner_route.failed_note(rep, lang):
-                self.note(owner_route.failed_note(rep, lang))
-            if keys:
-                await owner_route.offer_files(self.host, keys, lang, owner_route.MAX_CARDS - rep["cards"])
         used = s["hour"].get("out",[0,0])
         if used[0] == hour and used[1] >= cfg["reply_per_hour"]:
             return drop("limited")
@@ -1711,7 +1717,9 @@ class Mail:
         return drop("sent")
 
     async def trash(self, mid) -> dict:
-        """Recoverably trash only notice ids previously handed to the Agent; notify owner, no approval card."""
+        """P565 `agentj mail trash --id`: the owner's standing word (10-28) — mail the Agent judged to be phishing / address
+        poisoning goes to the mailbox's trash without a card. Only notice ids this serve handed to the Agent (never a letter);
+        one mail; recoverable; the owner gets one line that it happened."""
         mid = str(mid or "")
         if not re.fullmatch(r"[0-9a-f]{32}", mid) or mid not in self.delivered:
             self.log("trash", result="unknown_id")
@@ -1734,7 +1742,9 @@ class Mail:
         return {"ok": True, "result": how, "id": mid}
 
     async def send_notes(self, to, subject, body, to_owner: bool = False, quiet: bool = False) -> dict:
-        """Send minutes only to meeting-granted or owner addresses; require configured SMTP and enforce hourly cap."""
+        """P182 `agentj mail notes`: minutes to addresses the owner typed (meeting.grants) or the owner's own allowlisted
+        addresses. The Agent cannot add a recipient: an address nobody named is refused (`not_named`), the mailbox must be
+        set up (address + app password; the inbox check need not be on), and the hourly reply cap counts these too."""
         from . import meeting
         from .privacy import redact
         cfg, lang = read_config(self.st), self.lang()
@@ -1773,9 +1783,8 @@ class Mail:
         with contextlib.suppress(Exception):
             agent_name = self.st.agent_name() or ""
         from . import owner_route
-        pending = []
         if owner_route.all_owner(self.st, rcpt):     # P194: minutes only to the owner — as written, keys → pickup cards
-            text, pending = owner_route.prepare(self.host, body, "mail", lang)   # P573: cards after the confirmation
+            text, _ = await owner_route.divert(self.host, body, "mail", lang, subject or "会议纪要")
         else:
             text = redact(body)
         msg = build_notes(cfg, rcpt, subject, text, agent_name)
@@ -1784,10 +1793,6 @@ class Mail:
             return {'ok':False,'why':'denied'}
         if read_config(self.st) != cfg or self.host.stopped():
             return {'ok':False,'why':'stale'}
-        if getattr(pending, "found", 0):
-            rep = await owner_route.deliver(self.host, pending, "mail", lang, subject or "会议纪要")
-            if owner_route.failed_note(rep, lang):
-                self.note(owner_route.failed_note(rep, lang))
         s = read_state(self.st)
         used = s['hour'].get('out',[0,0])
         if used[0] == hour and used[1] >= cfg['reply_per_hour']:
@@ -1817,7 +1822,7 @@ class Mail:
             return ([], note) if notes else []
         out, total = [], 0
         try:
-            items, note["skips"] = tg_media.collect(media, text, note["keys"], mask=notes)   # P573: masked copies
+            items, note["skips"] = tg_media.collect(media, text, note["keys"])
         except Exception:   # noqa: BLE001
             return ([], note) if notes else []
         for rec in items:

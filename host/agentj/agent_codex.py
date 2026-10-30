@@ -1,4 +1,25 @@
-"""Official Codex app-server adapter; approval and session contracts: ARCHITECTURE ADR-A70."""
+"""Codex adapter (PROTOCOL §8, ADR-A70): the phone talks to the customer's own Codex through its official headless server,
+`codex app-server` (JSON-RPC 2.0, one JSON object per line on stdio), with Codex's approval requests answered on the phone.
+
+Why app-server and not `codex exec` (L1 – PROMPT-26 item 6): `exec` cannot ask anyone — whatever the human's approval policy
+says, nothing reaches the phone (G-A25), so the danger list did not apply to Codex (G-A58). app-server sends
+`item/commandExecution/requestApproval` / `item/fileChange/requestApproval` as JSON-RPC requests and waits for the answer.
+
+What serve does (measured on Codex 0.159.2, `reports/design/v1-slash/`, `reports/qa/slash/`):
+- one long-lived `codex app-server` inside the fence (fence.py, like the other harnesses; on macOS Codex's own sandbox cannot
+  nest inside ours, G-A54), `initialize` + `initialized`, then `config/read {cwd}` (the human's effective settings);
+- one conversation = one Codex thread (id in `agent.json`, the same key `codex exec` used, so an existing conversation goes
+  on): `thread/resume {threadId, excludeTurns}` or `thread/start`, each phone message one `turn/start`; finished
+  `agentMessage` items go to the phone; the turn ends with `turn/completed`;
+- **approvals only get stricter** (Invariant 11): serve asks Codex for `approvalPolicy: "untrusted"` (Codex asks before every
+  command it does not know to be read-only, and before every file change) and `approvalsReviewer: "user"` (a human decides, not
+  Codex's automatic reviewer); a human whose own policy is `granular` keeps it (overriding it could loosen it). The sandbox and
+  everything else stay the human's (`sandbox: "read-only"` is added only for a `mode: research` task). Each request →
+  `Host.ask` (the danger list, the signed phone card, 120 s default deny, batch for low risk) → `"accept"` or `"decline"` — never
+  `acceptForSession`, an execpolicy / network amendment, or a permission grant wider than the request (`scope: "turn"`);
+- the stop switch and `/stop` use `turn/interrupt`; slash commands use `thread/compact/start`, `model/list`,
+  `account/rateLimits/read` and the `thread/tokenUsage/updated` figures (slash.py).
+"""
 from __future__ import annotations
 
 from . import resource_policy
@@ -799,8 +820,6 @@ class CodexAgent(Agent):
                         calls.pop(next(iter(calls)))
                 else:
                     calls.pop(it["id"], None)
-            if method == "item/completed" and it.get("type") == "commandExecution" and th == self.tid and getattr(self.host, "peers", None) is not None:
-                self.host.peers.xfer.broker.complete(it.get("id"), it.get("status") == "completed" and it.get("exitCode") == 0, it.get("aggregatedOutput"), native=(th, p.get("turnId")))
             if isinstance(it.get("id"), str) and it.get("type") in ("fileChange", "commandExecution"):
                 self.items[it["id"]] = it
                 if len(self.items) > 500:
@@ -813,9 +832,6 @@ class CodexAgent(Agent):
         elif method == "thread/compacted" and th == self.tid:     # the older form of the same event (still sent by some)
             self._auto_compacted(p.get("turnId"))
         elif method == "turn/started" and th == self.tid:
-            hb = getattr(getattr(self, 'host', None), 'heartbeat', None)
-            if hb is not None:
-                hb.usage.codex_base = (self.usage or {}).get('total')
             self.usage = None
             if not self.research and self.persist:
                 self.meter(ctx=None)  # a new turn/model must not retain an old percentage
@@ -851,18 +867,6 @@ class CodexAgent(Agent):
                 self.turn_done.set()
         elif method == "thread/tokenUsage/updated" and th == self.tid:
             self.usage = p["tokenUsage"] if isinstance(p.get("tokenUsage"), dict) else {}
-            from .heartbeat_check import sample
-            total, last = self.usage.get('total') or {}, self.usage.get('last') or {}
-            hb = getattr(getattr(self, 'host', None), 'heartbeat', None)
-            if hb is not None and hb.usage.active:
-                base = getattr(hb.usage, 'codex_base', None)
-                if not isinstance(base, dict):
-                    base = {k: total[k] - last[k] for k in ('inputTokens', 'outputTokens')
-                            if type(total.get(k)) is int and type(last.get(k)) is int}
-                    hb.usage.codex_base = base
-                inp, out = total.get('inputTokens'), total.get('outputTokens')
-                sample(self, 'codex_total', inp - base['inputTokens'] if type(inp) is int and 'inputTokens' in base else None,
-                       out - base['outputTokens'] if type(out) is int and 'outputTokens' in base else None)
             used = (self.usage.get("last") or {}).get("totalTokens") if isinstance(self.usage.get("last"), dict) else None
             from .model_limits import codex_context_limit
             win = codex_context_limit(self.cur_model(), self.usage.get("modelContextWindow"), getattr(self, 'context_metadata', None))
@@ -923,9 +927,6 @@ class CodexAgent(Agent):
             why = beyond_sandbox(self.thread.get("sandbox"), method, "Bash", {"command": inner}, p, None, self.cfg["dir"])
             if why:
                 return self._refuse(rid, "Bash", inp, {"decision": "decline"}, why)
-            if getattr(self.host, "peers", None) is not None and not self.research:
-                self.__dict__.setdefault("secret_native_calls", {})[str(rid)] = p.get("itemId")
-                self.host.peers.xfer.broker.register(p.get("itemId"), "Bash", inp, p.get("cwd") or self.cfg["dir"], raw={"command":inner}, native=(self.tid, p.get("turnId")))
             self._bg(self._decide(rid, "Bash", inp, {"decision": "accept"}, {"decision": "decline"}, batch))
         elif method == "item/fileChange/requestApproval":
             it = self.items.get(p.get("itemId")) or {}
@@ -1060,9 +1061,7 @@ class CodexAgent(Agent):
                     return
             name = harness_tool(tool)
             from .approval_jev import low_risk_pass       # P198: P157 layer 1 — low risk runs without a card, like Claude
-            broker = self.host.peers.xfer.broker if getattr(self.host, "peers", None) is not None and not self.cfg.get("_workflow_ceo") else None
-            r = await broker.execute(name, inp, self.__dict__.get("secret_native_calls", {}).pop(str(rid), None), gone) if broker else None
-            r = r if r is not None else ({"behavior": "allow"} if not self.research and low_risk_pass(self.host, self.cfg, name, inp, batch)
+            r = ({"behavior": "allow"} if not self.research and low_risk_pass(self.host, self.cfg, name, inp, batch)
                  else await self.host.ask(name, inp, gone, batch=batch, **({"bind": bind} if bind else {}),
                                          **({"background": "task"} if self.cfg.get("_workflow_ceo") else {})))   # P552
             if r.get("behavior") == "allow":

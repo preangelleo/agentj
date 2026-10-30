@@ -972,12 +972,12 @@ def _authorized_apply(st, code: str | None, target: str | None, *, mail: dict | 
                                                           "at": int(time.time())}).encode())
         st.log("upgrade_authorized", status=target)
     info = install_kind(prefix)
-    from .upgrade_diag import plan_detail, plan_fields, plan_reason, run_step
+    from .upgrade_diag import plan_detail, plan_reason, run_step
     out["step"] = "download"
     try:
         plan = (plan_fn or verified_plan)(st, info, target)
     except Exception as e:  # noqa: BLE001 — P277: download vs signature/hash, the exception type kept (never its text)
-        return done(plan_reason(e), detail=plan_detail(e), **plan_fields(e))
+        return done(plan_reason(e), detail=plan_detail(e))
     _pre_snapshot(st)
     # P192 (B15): the same cached-wheel rollback as `apply` — this path used to leave a half-installed version behind
     old = (rollback_fn or rollback_wheel)(st)
@@ -1116,12 +1116,12 @@ def _apply(st, target=None, *, prefix=None, check_fn=None, run=None, say=None, s
             svc_on = bool(service.status().get("installed") or service.legacy_status().get("installed"))
         except Exception:  # noqa: BLE001 — no service manager: nothing to restart (as authorized_apply)
             svc_on = False
-    from .upgrade_diag import plan_detail, plan_fields, plan_reason, run_step
+    from .upgrade_diag import plan_detail, plan_reason, run_step
     out["step"] = "download"
     try:
         plan = (plan_fn or verified_plan)(st, info, target)
     except Exception as e:  # noqa: BLE001 — P277: download vs signature/hash, the exception type kept (never its text)
-        return done(plan_reason(e), detail=plan_detail(e), **plan_fields(e))
+        return done(plan_reason(e), detail=plan_detail(e))
     if not fenced:
         _pre_snapshot(st)          # P207 (inside the fence the state directory is an empty mount; serve snapshots at start)
     chan = fenced and host_channel(st)
@@ -1235,7 +1235,6 @@ def host_op(st, req: dict, mem: dict, run=None) -> dict:
         if not isinstance(rec, dict) or not upgrade_diag.valid(rec):
             return {"ok": False, "why": "record"}
         keep = {k: rec[k] for k in ("v", "from", "to", "result", "reason", "at", "step") if k in rec}
-        keep.update(upgrade_diag.artifact_fields(rec))
         if isinstance(rec.get("detail"), str):
             keep["detail"] = rec["detail"][:120]
         if isinstance(rec.get("stderr_tail"), str):
@@ -1306,9 +1305,6 @@ def result_block(res: dict) -> str:
         lines.append("failed_checks: " + ", ".join(check_ids(res["failed_checks"])))
     if res.get("detail") and res.get("result") != "ok":
         lines.append(f"detail: {res['detail']}")
-    from .upgrade_diag import artifact_fields
-    for key, value in artifact_fields(res).items():
-        lines.append(f"{key}: {value}")
     if res.get("stderr_tail") and res.get("result") != "ok":
         lines += ["stderr: " + ln for ln in str(res["stderr_tail"]).splitlines()]
     if res.get("latest"):

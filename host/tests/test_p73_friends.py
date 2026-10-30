@@ -461,14 +461,8 @@ class GateStillHolds(Base):
         self.assertEqual(q["tool"], "peer_question")
         self.assertEqual(q["pq"]["draft"], "")
         # the friend's words still arrive wrapped as untrusted data
-        _, _, wrapped = self.sess.calls[0]
+        _, _, wrapped = self.sess.calls[-1]
         self.assertEqual(json.loads(wrapped)["untrusted"], True)
-        # P573 (#387): the hit sent the clone back with the fixed hint (bounded) before the owner's card
-        self.assertEqual(len(self.sess.calls), 1 + peer_service.REWRITE_ROUNDS)
-        for _, _, again in self.sess.calls[1:]:
-            hint, body = again.split("\n", 1)
-            self.assertEqual(hint, peer_service.REWRITE_HINT)
-            self.assertEqual(json.loads(body)["untrusted"], True)
 
 
 # ---------------------------------------------------------------- the phone: signed fr_ctx, fr_ctx_get, accept + ctx

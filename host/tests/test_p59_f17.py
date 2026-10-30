@@ -123,9 +123,12 @@ class FaceId(unittest.TestCase):
         async def script(host, s, ph):
             c = await self.wait_card()
             self.assertNotIn("fa", c)
-            await host._app(s, answer(ph, c, True, PW))      # P573: the typed password + one button, no Face ID
+            await host._app(s, answer(ph, c, True, PW))
+            self.assertTrue(self.refused())
+            self.assertFalse(self.done())
+            await host._app(s, answer(ph,c,False))
         res, _, _ = self.run_flow({**self.REQ}, script)
-        self.assertEqual(res["result"], "done")
+        self.assertEqual(res["result"], "denied")
         self.assertNotIn("passkey", elevate.read_log(self.st)[-1])
 
         # two phones, only one with a passkey: each card message is per device
@@ -142,6 +145,9 @@ class FaceId(unittest.TestCase):
             by = {cid: o for cid, o in self.sent if o["t"] == "elev"}
             self.assertNotIn("fa", by[s.cid])
             self.assertEqual(by[12]["fa"], wire.b64u(self.a.id))
+            await host._app(s, answer(ph, by[s.cid], True, PW))
+            self.assertTrue(self.refused())
+            self.assertFalse(self.done())
             await host._app(s2, with_fa(answer(other, by[12], True, PW),fa(self.a,other,by[12])))
         res, _, _ = self.run_flow({**self.REQ}, script2)
         self.assertEqual(res["result"], "done")
@@ -161,7 +167,8 @@ class FaceId(unittest.TestCase):
         async def script(host, s, ph):
             c = await self.wait_card()
             base = answer(ph, c, True, PW)
-            bad = [   # (P573: no fa at all is accepted on a password sudo card — no Face ID on top of the password)
+            bad = [
+                base,                                                         # no fa at all
                 with_fa(base, "x"),                                           # not an object
                 with_fa(base, fa(self.a, ph, c, flags=0x01)),                 # UP only: no user verification
                 with_fa(base, fa(self.a, ph, c, rp="evil.example")),          # another rp id
@@ -184,7 +191,7 @@ class FaceId(unittest.TestCase):
         res, _, _ = self.run_pk({**self.REQ}, script)
         self.assertEqual(res["result"], "done")
         reasons = [r.get("reason") for r in elevate.read_log(self.st) if r.get("result") == "refused"]
-        self.assertEqual(reasons.count("passkey_missing"), 0)
+        self.assertEqual(reasons.count("passkey_missing"), 1)
         self.assertEqual(reasons.count("passkey_bad"), 11)
         recs = [json.loads(ln) for ln in self.st.log_path.read_text().splitlines()]
         self.assertTrue(any(r.get("ev") == "elev_passkey" and r.get("reason") == "flags" for r in recs))

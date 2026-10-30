@@ -262,11 +262,8 @@ class ScriptCards(unittest.TestCase):
     def test_script_with_a_key_is_refused_with_its_line(self):
         value = "sk-proj-" + fake(40)
         (self.work / "leak.sh").write_text("#!/bin/sh\n# setup\nexport OPENAI_API_KEY=" + value + "\n")
-        items, skips = self.m.scan("[s](leak.sh)", 1)    # P573: the owner's page gets the masked copy, no refusal
-        self.assertEqual(([i["name"] for i in items], skips), (["leak.sh"], []))
-        self.assertNotIn(value.encode(), b"".join(d for _, d, _ in self.m.window(items[0]["mid"], 0)))
-        rec, why = self.m.check(media.Ref("leak.sh", "leak.sh", True), owner=True)     # without mask (WeChat): the note
-        skips = [{"name": "leak.sh", "why": why, **media._at(self.m, why)}]
+        items, skips = self.m.scan("[s](leak.sh)", 1)
+        self.assertEqual(items, [])
         self.assertEqual(skips, [{"name": "leak.sh", "why": "key_content", "line": 3, "hint": "sk…"}])
         rec, why = self.m.check(media.Ref("leak.sh", "leak.sh", True), owner=False)
         self.assertEqual((rec, why, self.m.last_where()["line"]), (None, "secret", 3))

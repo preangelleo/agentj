@@ -22,7 +22,7 @@ import {computerBrowser} from './termhook.js';
 import { channel } from './session.js';
 import * as api from './api.js';
 import { t, lang, onLang } from './t.js';
-import { mk, toast, toastAction, notify, toastOff, confirmSheet } from './ui.js';
+import { mk, toast, toastAction, notify, toastOff } from './ui.js';
 import { SVG } from './icons.js';
 import { registerLayer } from './layers.js';
 import { elevateChallenge, approve, canAssert, keysDigest } from './faceid.js';
@@ -106,7 +106,7 @@ export function parse(m) {
   const third = (Array.isArray(m.third) ? m.third.slice(0, 200) : []).map((r) => row({ ...r, type: 'key', set: r?.set !== false })).filter(Boolean);
   const fa = typeof m.fa === 'string' && m.fa.length > 0 && m.fa.length <= 1400 ? m.fa : null;
   const src = (Array.isArray(m.src) ? m.src.slice(0, 80) : []).map(source).filter(Boolean);
-  return { id: m.id, n: m.n, fa, fa_s: fa ? faState(m.fa_s) : null, base, third, src, routing: parseRouting(m.routing), ...(m.button_ops === true ? {button_ops:true} : {}) };
+  return { id: m.id, n: m.n, fa, fa_s: fa ? faState(m.fa_s) : null, base, third, src, routing: parseRouting(m.routing) };
 }
 
 export function parseRouting(v) {
@@ -377,10 +377,10 @@ async function checkRow(name) {
 }
 async function writeSetup(op,name) {
   if (busy || !S) return;
-  if (!S.button_ops && (!S.fa || !canAssert())) { toast(t('p450.passkey'),4500); return; }
+  if (!S.fa || !canAssert()) { toast(t('p450.passkey'),4500); return; }
   const ch=chs.get(op+'\n'+name);
-  if (!S.button_ops && !ch) { toast(t('p450.again'),4000); return; }
-  const res=await run(op,name,S.button_ops ? Promise.resolve(null) : approve(ch,S.fa));
+  if (!ch) { toast(t('p450.again'),4000); return; }
+  const res=await run(op,name,approve(ch,S.fa));
   if (res.ok) { checks.clear(); toast(t(op==='unify'?'p450.unified':'p450.moved'),4500); await load(); }
   else if (res.err) failNotice(res.err, S && S.fa_s, () => writeSetup(op, name));   // P539
   else if(res.why!=='cancel') toast(t('p450.failed'),4500);
@@ -518,7 +518,7 @@ if (typeof document !== 'undefined') {
 /** P362 「收进 Agent J」: a confirmation (keep the old source by default; a box to comment it out), Face ID in the 「收进来」 tap. */
 async function importKey(r, f) {
   if (busy) return toast(t('p352.busy'));
-  if (!S || (!S.button_ops && (!S.fa || !canAssert()))) return noPasskey();
+  if (!S || !S.fa || !canAssert()) return noPasskey();
   const x = srcOf(f.src);
   const label = srcLabel(f.src);
   const yes = document.getElementById('confirm-yes'), body = document.getElementById('confirm-text');
@@ -532,10 +532,10 @@ async function importKey(r, f) {
   const pre = () => {
     keep = !(opt && opt.querySelector('input').checked);
     const ch = chs.get('import\n' + r.name + '\n' + importExtra(f.src, keep, f.fp));
-    if (S.button_ops || ch) { faP = S.button_ops ? Promise.resolve(null) : approve(ch, S.fa); faP.catch(() => {}); }
+    if (ch) { faP = approve(ch, S.fa); faP.catch(() => {}); }
   };
   yes.addEventListener('click', pre);
-  const shown = S.button_ops ? confirmSheet(t('p362.importTitle', { name: r.name }), t('p573.importText', { name: r.name, src: label }), t('p362.importGo')) : pkSheet(S.fa_s, t('p362.importTitle', { name: r.name }), t('p362.importText', { name: r.name, src: label }), t('p362.importGo'));   // P539
+  const shown = pkSheet(S.fa_s, t('p362.importTitle', { name: r.name }), t('p362.importText', { name: r.name, src: label }), t('p362.importGo'));   // P539
   if (opt) body.after(opt);
   let ok;
   try { ok = await shown; } finally { yes.removeEventListener('click', pre); if (opt) opt.remove(); }

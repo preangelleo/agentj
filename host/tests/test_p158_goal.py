@@ -321,9 +321,8 @@ class HostGoal(unittest.TestCase):
             self.assertEqual(res["behavior"], "deny", cmd)
             card = self.asks("Bash")[-1]
             if cmd.startswith(("curl", "echo")):
-                # Opaque effects are intercepted before all goal shortcuts: always the owner's own card, never automatic.
-                # P573 (#386 ⑤ e): download-and-run / an unreadable command is one button now, not Face ID
-                self.assertNotIn("passkey_required", card, cmd)
+                # Opaque effects are now intercepted before all goal shortcuts.
+                self.assertTrue(card["passkey_required"], cmd)
                 self.assertNotIn("batch", card)
                 self.assertNotIn("goal", card)
             else:

@@ -407,8 +407,6 @@ main::-webkit-scrollbar{display:none}
 .rm{flex:1 1 0;min-height:min(200px,55%);position:relative;z-index:2;margin-top:-12px;display:flex;flex-direction:column;
   border-radius:22px;overflow:hidden;overflow:clip;background:var(--rm-bg);box-shadow:none}
 .deck.open .rm{flex:1 1 0;min-height:100px}
-.rm.host-notice{background:transparent;margin-top:0}
-.rm.host-notice>main,.rm.host-notice>.rmbar{display:none}
 .deck.open .om{max-height:55%;min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:none}
 .rmhd{display:flex;align-items:center;gap:8px;min-height:44px;margin:-6px 0 4px}
 .rmhd .t{font:400 calc(12px*var(--fz))/1 var(--font-title);color:var(--ink-soft);letter-spacing:.04em}
@@ -592,24 +590,6 @@ body[data-reader="1"] .toast:is(.circle,.square){position:fixed;z-index:31}   /*
 .rdfspop button:disabled{opacity:.35;cursor:default;background:none}
 .rdfspop input[type=range]{flex:1;min-width:0;height:44px;margin:0 6px;accent-color:var(--dlg-fg);cursor:pointer;touch-action:none}
 .rdfspop .fs{flex:none;min-width:2.4em;text-align:center;font:500 12px/1 var(--font-mono);color:var(--dlg-muted)}
-/* P573 (#386): a file in the reader — its name, and 下载 as a thin icon on the right, in place of the Agent / unread / page
-   row; the footer swaps the reply's six icons for the file's (#rdFileActs, the same .act look) */
-.rd[data-file="1"] .rdhd>:not(.rdfhd):not(.rdsr){display:none}
-.rdfhd{grid-column:1 / -1;grid-row:1;display:flex;align-items:center;gap:8px;min-width:0;height:44px}
-.rdfhd[hidden],.rdacts[hidden]{display:none}
-.rd[data-file="1"] .rdftext{white-space:pre-wrap;overflow-wrap:anywhere}
-/* P573: the task-grant note above the approval buttons (one small line, the sheet's soft ink) */
-.apprtask{margin:12px 2px 0;font:500 calc(13px*var(--fz))/1.45 var(--font-sans,inherit);color:var(--ink-soft)}
-.apprtask[hidden]{display:none}
-.rdfhd b{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
-.rdfic{flex:none;width:18px;height:18px;opacity:.72}
-.rd .rdfhd .act{flex:none;position:relative;width:44px;height:44px;margin-right:-12px;border-radius:12px;display:grid;place-items:center;color:var(--dlg-muted)}
-.rdfhd .act svg{width:20px;height:20px;grid-area:1/1}
-.rdfhd .act .g{display:none}
-.rdfhd .act .g0{display:block}
-.rdfhd .act .bang{display:none}
-.rdfhd .act:active{background:var(--dlg-chip)}
-.rdfhd .act[data-state=sending] .g0{animation:breathe 1.1s ease-in-out infinite}
 /* a fold's outer screen (~280 px): seven 44 px targets do not fit — 36 / 34 px, tighter edges; nothing folds away */
 @media (max-width:340px){
   .rdft{padding-left:6px;padding-right:6px;gap:0}
@@ -1246,10 +1226,6 @@ body[data-conn=off] .composer{filter:grayscale(1);opacity:.7}
 .toast .nt-title{font:600 var(--dlg-fs-title)/1.3 var(--font-title)}
 .toast .nt-acts{flex:none;display:flex;gap:8px;margin-left:auto}
 .toast.act{pointer-events:auto;padding:6px 6px 6px 11px;gap:12px}
-.toast.rect.act{flex-wrap:wrap}
-.toast.rect.act .nt-text{flex:1 1 12em}
-.toast.rect.act .nt-acts{max-width:100%;flex-wrap:wrap;justify-content:flex-end}
-.toast.rect.act .undo{max-width:100%;white-space:normal;overflow-wrap:anywhere}
 .toast .undo{min-height:44px;padding:0 16px;border-radius:var(--r-pill);font:600 var(--dlg-fs-body)/1 var(--font-body);
   color:var(--dlg-fg);background:var(--dlg-chip);border:1.5px solid var(--nt-accent,var(--state))}
 .toast .undo:focus-visible{outline:2px solid var(--dlg-fg);outline-offset:2px}
@@ -3024,14 +3000,6 @@ code[data-cc],pre[data-cc],.cc-in{cursor:copy}
 .sout-full .sout-value{display:flex;flex-direction:column;flex:1;min-height:0}
 .sout-full .sout-content{flex:1;min-height:0;max-height:none;padding:var(--sp-3) 0}
 .sout-full .sout-content.words{width:100%;align-self:stretch;font-size:calc(19px*var(--fz))}
-/* P573 (#386): full screen reads like the reply reader — 20 px / 1.75, the reader's list marks, its 24 px edges — and the
-   top-right corner holds two thin icons (复制 · 返回) on no bar of their own */
-.ajmodal.sout.sout-full>.box{padding-left:max(24px,env(safe-area-inset-left));padding-right:max(24px,env(safe-area-inset-right))}
-.sout-full .sout-preview-bar{background:none;gap:0;margin-right:-12px}
-.sout-preview-bar .sout-ic{width:44px;height:44px;color:var(--dlg-muted)}
-.sout-preview-bar .sout-ic svg{width:20px;height:20px}
-.sout-preview-bar .sout-ic:active{background:var(--dlg-chip)}
-.sout-full .sout-content.words{font-size:20px;line-height:1.75;--md-mark:var(--peachy-feeling)}
 /* P260: visible, keyboard/reader accessible file full-screen entry. */
 .macts .mact.pv:has(.mfullscreen-label){width:auto;min-width:44px;display:flex;gap:4px;padding:0 6px}
 .mfullscreen-label{font:12px/1.2 var(--font-body)}

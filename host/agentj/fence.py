@@ -1,4 +1,37 @@
-"""Agent J fence; developer reference: documentation/notes/P0262-HOST-REFERENCE.md."""
+"""The agent fence (L2 / G-A8, G-A24; F14 0.15): `agentj serve` starts the customer's agent (Claude Code / Codex) inside a
+bubblewrap mount + PID namespace that hides Agent J's *data* — and only that. Same OS user, same login, same settings
+(Invariant 11). F14: Agent J adds no lock of its own; what the fence keeps is the data-safety floor:
+
+- this host's state directory is an empty tmpfs — keys, allowlist, control socket, passphrase hash, approvals.log, cloud
+  link, paired devices are invisible; only `agentperm/` (the permission tool's socket) is bound back in; the preferences
+  folder and an older state directory likewise;
+- credentials of other programs: ssh-agent / keyring sockets (the runtime dir stays private apart from what is bound back),
+  SSH_AUTH_SOCK / XAUTHORITY are unset, ~/.ssh/authorized_keys and ~/.Xauthority are read-only;
+- other sessions' control sockets (G-A56: herdr, GNU screen, wezterm, emacs / Jupyter folders, tmux, every listening socket
+  this user owns at start) and — unless the owner allowed it — the docker / podman / containerd / lxd / libvirt sockets;
+- a private PID namespace and /proc: agentj's processes (and /proc/<pid>/root, which would lead around the tmpfs) do not exist.
+
+What the Agent may do in its own independent session (F14): change the owner's general configuration (shell start-up files,
+autostart, ~/.config/systemd, environment.d, compositor configs), write Agent J's own code and venv, and manage its own
+services — the user's systemd manager (`$XDG_RUNTIME_DIR/systemd/private`) and session bus (`$XDG_RUNTIME_DIR/bus`) are
+bound back into the private runtime dir (plain `systemctl --user` still refuses the private socket from inside the PID
+namespace — its peer has no PID there — so `agentj service …` falls back to the bus, service.py; `busctl --user` works for
+any unit). Consequence, disclosed: a process started through the user's service manager runs
+outside the fence, so on Linux the fence is a data-visibility layer, not a boundary against a determined Agent; the
+approval signatures (approvals / permtool) and pairing (gate.py) are checked by serve, outside the Agent's reach.
+
+Linux = bubblewrap ≥ 0.4 + unprivileged user namespaces (L2). macOS = `sandbox-exec` with an SBPL profile generated per
+start (L3, `sbpl_profile`): the same rules expressed as a deny-list on top of `(allow default)` — the state directory is
+unreadable and unconnectable except `agentperm/`, authorized_keys is read-only, signals and process information only within
+the Agent's own sandbox, no Apple Events, no LaunchServices, no tmux / ssh-agent sockets, no herdr / screen / zellij / wezterm
+/ emacs / nvim / Jupyter / VS Code / kitty sockets and (unless allowed) no container engine sockets; launchd jobs and
+~/Library/LaunchAgents are the Agent's own to manage (F14). macOS has no PID or mount namespace: the Agent still sees the
+process list's *argv* via sysctl, shares /tmp and $TMPDIR, and shares the network (as on Linux). Elsewhere, or when the
+fence cannot start, independent Agent.launch_argv refuses startup. The phone can authorize one launch without
+isolation only after owner passkey verification; this never persists an unfenced setting. P67's Agent J-owned shared OpenCode path instead refuses startup when requested
+isolation cannot start (provider_runtime.shared_launch); it never silently degrades. An explicitly selected unfenced mode
+remains unfenced. A server the owner started is attached as owner-managed; Agent J cannot rewrap that existing process.
+"""
 from __future__ import annotations
 
 import os

@@ -1,15 +1,15 @@
 ---
 document: agentj-install
-version: 0.28.2
+version: 0.28.1
 released: 2026-10-30
 status: beta (anyone can sign up; not advertised yet, pages are not indexed)
 host_package: agentj (the `agentj` command)
-host_version: 0.26.2a1
-source_tag: v0.26.2a1
-host_wheel: agentj-0.26.2a1-py3-none-any.whl
-host_wheel_sha256: 4e6ccf313a4fe482b9768ae5517e937ef656512d9aa1a953a5de7eeec7d7f13d
-host_sdist: agentj-0.26.2a1.tar.gz
-host_sdist_sha256: 927febef7edf85e9d21647202ee3af4d78a4cdc184268b7a478bd4f202642729
+host_version: 0.26.1a1
+source_tag: v0.26.1a1
+host_wheel: agentj-0.26.1a1-py3-none-any.whl
+host_wheel_sha256: c5480cfcc413f63bce4012a2962fbb40ce1ff8e3d48ab5cb617f59239a3b4a70
+host_sdist: agentj-0.26.1a1.tar.gz
+host_sdist_sha256: dd960e7f2fc81dd9224ec221e2d95a5d3054216d01fe382129cd78540d868bde
 canonical_url: https://agentj.app/install.md
 sha256_url: https://agentj.app/install.md.sha256
 alias: https://agentjarvis.net/install.md (the older address: the same file, kept for one more version)
@@ -117,7 +117,7 @@ Jev 会给客服、好友消息增加模型审核，也会复查脱敏内容。�
    - choosing the AI coding tool when more than one is usable and choosing the work folder — Step 9;
    - pairing: opening the phone page, running `agentj pair`, scanning the QR code or moving the pairing link to the phone,
      on a bound online host: Add a remote on its account seat card, confirm each start and approval with a fresh account passkey (plus the host pairing password when required) and scan; the local terminal route needs the 6-digit code and the remote pairing password (`agentj pair` asks to set it first) — Step 11;
-   - trying it on the phone (sending a message, tapping **批准 / Approve** when asked) — Step 12;
+   - trying it on the phone (sending a message, holding **长按批准**) — Step 12;
    - saying yes or no to the completion feedback (Step 12) and to the docs-first rule (Step 13; with a yes you run
      `agentj docs-rule --write` yourself);
    - saying yes or no to keeping the Agent J host awake (Step 12a; yes is the recommended default), and on a Mac a second
@@ -726,7 +726,7 @@ DeepSeek says a preview may break; Agent J was measured on 0.2.0-rc.2.
 carry over). So start every command line from here on with `export PATH="$HOME/.local/bin:$PATH";` — or call
 `~/.local/bin/agentj` by its full path. This document writes `agentj` for short.
 
-The program is pinned to one release: the tag `v0.26.2a1` (front matter `source_tag`). The tag never moves, and its
+The program is pinned to one release: the tag `v0.26.1a1` (front matter `source_tag`). The tag never moves, and its
 `host/` folder is byte for byte the same code as the two files on our site whose SHA-256 is in this document's front matter.
 ```bash
 cd ~/.agentj-install
@@ -737,7 +737,7 @@ uv tool install "./$W"
 
 Intel Mac: this release keeps `cryptography<49` because newer releases lack an Intel macOS wheel. If an older installer tries to compile OpenSSL (`openssl-sys` / OpenSSL not found), rerun `uv tool install --with "cryptography<49" "./$W"`. The same platform constraint applies to `agentj update apply`.
 
-export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.26.2a1
+export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.26.1a1
 export PATH="$HOME/.local/bin:$PATH"; agentj doctor
 ```
 **Your human's own terminal must find `agentj` too** — they may use `agentj passphrase set` and `agentj pair` as a local alternative
@@ -765,16 +765,16 @@ echo "$WS  $W" | sha256sum -c - && echo "$SS  $S" | sha256sum -c -    # macOS: s
 uv tool install "./$W"          # the wheel; its dependencies come from PyPI or the mirror in UV_DEFAULT_INDEX
 ```
 `uv tool install "./$S"` installs from the checked source archive instead (it builds the same program).
-`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.26.2a1`); it is
+`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.26.1a1`); it is
 numbered separately from this document (`0.27.7`).
 
-Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.26.2a1#subdirectory=host"`.
+Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.26.1a1#subdirectory=host"`.
 
-Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.26.2a1#subdirectory=host"` (needs Python 3.11+).
+Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.26.1a1#subdirectory=host"` (needs Python 3.11+).
 
 **What each route checks.** The wheel and the source archive above are checked against the SHA-256 in this document. Each
 also has a minisign signature beside it (`<file>.minisig`, key `B79F925B0585F9D4` — front matter `signature`), which
-`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.26.2a1`
+`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.26.1a1`
 routes check **neither**: Git trusts GitHub's HTTPS and the tag name, and nothing compares that code with this document.
 Use them only when the checked files cannot be downloaded, and say so in the final feedback.
 `agentj doctor` lists what is ready and what is not (prerequisites, the fence, connectivity, which agents are usable).
@@ -1473,15 +1473,12 @@ Continue there; do not use Face ID to repeatedly take the connection back.
 Ask your human to do these on the phone and tell you the result (the first message there is already the main Agent's
 welcome from Step 11a — let them answer it first; its tour covers points 3 and 4 below):
 1. Send 「list the files in this folder」 (any language) → a reply from their Claude Code (or Codex, or OpenCode) arrives.
-2. **Claude Code or OpenCode:** ask it to create a file `scratch.txt` and then delete it. If the underlying tool asks,
-   the phone shows **「拒绝」 ("Deny")** and **「批准」 ("Approve")** → tap Approve → done. Agent J adds no card for an
-   ordinary action the tool did not stop. Only cards requiring owner verification — spending money, showing or sending
-   a real password or key, unrecoverable deletion, trust-root changes or rewriting approval files/hooks — use Face ID,
-   a fingerprint or the device passkey. A reversible action uses a button; downloading and running also uses a button.
-   A card listing several exact actions in this task is signed once, with owner verification if any listed action requires it;
-   approval never extends to other actions of the same kind. No answer within 120 s = denied.
+2. **Claude Code or OpenCode:** ask it to create a file `scratch.txt` and then delete it → the screen turns orange and a card
+   with **「拒绝」 ("Deny")** and **「长按批准」 ("Hold to approve")** comes up → press and hold the approve button about a
+   second (a tap alone never approves) → done. Deleting is one of the five kinds, so that card is marked ⚠ and its button
+   is still 「长按批准」 ("Hold to approve"). No answer within 120 s = denied.
    **Codex:** ask it to create a file `scratch.txt`. With no `sandbox_mode` of the human's (the default: directly on the
-   system) or `workspace-write`, the file is written; if the underlying tool asks, tap 「批准」 ("Approve") on the phone.
+   system) or `workspace-write`, the file is written — with a card first when high-risk warnings are on → hold 「长按批准」.
    If the human set a read-only sandbox, no card comes; the phone shows 「这一步超出了你 Codex 自己的沙箱设置，已拒绝；…」
    instead. Either answer proves that Codex's requests reach the phone. Where the permissions come from shows on the phone
    with ≡ → 「状态」 ("Status"): 「底层直跑（Agent J 默认）」, 「你的沙箱设置：…（config.toml）」 or 「桌面线程权限：…」.
@@ -1776,7 +1773,7 @@ Nightly automatic installation is enabled by default and verifies the official w
 In a shared session (the default of 0.13–0.19), reinstall directly using Step 4's checked wheel (SHA-256 must match this document and
 its public GitHub copy), preserving the host's identity, paired phones, account and preferences:
 ```bash
-uv tool install --force "./agentj-0.26.2a1-py3-none-any.whl"
+uv tool install --force "./agentj-0.26.1a1-py3-none-any.whl"
 agentj --version
 agentj service install
 agentj service restart
@@ -1785,7 +1782,7 @@ agentj doctor
 The matching published tag is another source, after verifying the tag object against the upgrade email (no signature or
 hash check on this route — Step 4):
 ```bash
-uv tool install --force "git+https://github.com/preangelleo/agentj@v0.26.2a1#subdirectory=host"
+uv tool install --force "git+https://github.com/preangelleo/agentj@v0.26.1a1#subdirectory=host"
 ```
 **0.14 independent session** (`agent.session_mode=independent`): 0.14's fence keeps Agent J's own program read-only and
 hides the service manager, so the Agent on the phone cannot reinstall or restart from inside it (measured: the install
@@ -1811,11 +1808,11 @@ prints something and `uv tool list` (or `pipx list`) shows `agentjarvis-host`, t
 the new name, then:
 ```bash
 jarvis service uninstall      # stop the old service first (Step 10 used tmux / nohup instead? stop that process)
-uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.26.2a1#subdirectory=host"
+uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.26.1a1#subdirectory=host"
 agentj doctor
 agentj service install        # start it again under the new name (or the tmux / nohup fallback, Step 10)
 ```
-With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.26.2a1#subdirectory=host"`.
+With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.26.1a1#subdirectory=host"`.
 - After the move, `agentj` puts back a `jarvis` command (a link to `agentj`, only if no other `jarvis` exists) for one more
   version; it prints a notice that points here. New installs never get `jarvis`.
 - The state moves from `~/.local/state/agentjarvis-alpha` to `~/.local/state/agentj` on the first run of `agentj` **after your

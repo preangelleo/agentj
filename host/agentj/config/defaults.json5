@@ -136,10 +136,6 @@
     "interval_minutes": 60,
     // P207: also wake once a day at this local time, HH:MM; empty = off / 每天固定时间唤醒（HH:MM），留空关闭; default=""
     "daily_at": "",
-    "quiet_enabled": true,
-    "quiet_start": "23:00",
-    "quiet_end": "07:00",
-    "context_max_tokens": 100000,
   },
   // P205: how Agent J addresses you; the phone's working line 「董事长，您的最新指示已经收到…」 uses it.
   "owner":

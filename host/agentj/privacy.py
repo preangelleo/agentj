@@ -82,21 +82,22 @@ _SECRETS: list[tuple[str, re.Pattern, str]] = [
     ("agentj_access_code", _re(r"\bAJUP-[A-Z0-9]{5}(?:-[A-Z0-9]{5}){3}\b", re.I), R),
     # review SS-04: more secret shapes the server scan does not know (layer 1 may be stricter than the server, never looser)
     ("mailgun_key", _re(r"\bkey-[0-9a-f]{32}\b"), R),
-    ("authorization_header", _re(r"\b(Authorization\s*:\s*(?:Bearer|Basic|token)\s+)(?!<redacted>|\$\(|\$\{|\$[A-Z_])[^\s\"'<>\u3000-\u303f\uff00-\uffef]+", re.I),
+    ("authorization_header", _re(r"\b(Authorization\s*:\s*(?:Bearer|Basic|token)\s+)(?!<redacted>|\$\(|\$\{|\$[A-Z_])[^\s\"'<>]+", re.I),
      r"\1" + R),
     ("credential_assignment", _re(
-        r"(?<![A-Za-z0-9])(" + _CRED_NAMES + r"[\"']?\s*[:：=]\s*)([\"'`])(?!<[^<>\r\n]+>\2|\$\(|\$\{|\$[A-Z_])(?:(?!\2)[^\n`\u3000-\u303f\u3400-\u9fff\uff00-\uffef]){6,}\2", re.I),
+        r"(?<![A-Za-z0-9])(" + _CRED_NAMES + r"[\"']?\s*[:：=]\s*)([\"'`])(?!<[^<>\r\n]+>\2|\$\(|\$\{|\$[A-Z_])(?:(?!\2)[^\n`\u3400-\u9fff]){6,}\2", re.I),
      r"\1\2" + R + r"\2"),                                                     # a quoted value, spaces allowed
-    # P573 (#386): a value never runs into full-width / CJK punctuation (「密钥：CredSweeper（MIT，ONNX」 was one 24-byte "value")
     ("credential_assignment", _re(
-        r"(?<![A-Za-z0-9])(" + _CRED_NAMES + r"[\"']?\s*[:：=]\s*[\"']?)(?!<redacted>|\$\(|\$\{|\$[A-Z_])[^\s\"'<>`\u3000-\u303f\u3400-\u9fff\uff00-\uffef]{8,}", re.I), r"\1" + R),
+        r"(?<![A-Za-z0-9])(" + _CRED_NAMES + r"[\"']?\s*[:：=]\s*[\"']?)(?!<redacted>|\$\(|\$\{|\$[A-Z_])[^\s\"'<>`\u3400-\u9fff]{8,}", re.I), r"\1" + R),
     # Public wallet shapes must not bypass an explicit private/secret-key label.
-    ("credential_assignment", _re(r"((?:private[ _-]?key|secret[ _-]?key|私钥|密钥)\s*[:：=]\s*[\"']?)[^\s\"'<>`\u3000-\u303f\u3400-\u9fff\uff00-\uffef]{8,}", re.I), r"\1" + R),
+    ("credential_assignment", _re(r"((?:private[ _-]?key|secret[ _-]?key|私钥|密钥)\s*[:：=]\s*[\"']?)[^\s\"'<>`\u3400-\u9fff]{8,}", re.I), r"\1" + R),
     ("labelled_hex", _re(
         r"(?<![A-Za-z0-9])((?:" + _CRED_NAMES + r"|key)[\"']?(?:\s*[:=]\s*|\s+(?:is\s+)?)[\"']?)[0-9a-fA-F]{32,}(?![0-9A-Za-z])", re.I), r"\1" + R),
 ]
 # Public IDs are PII, not credentials.
 _PERSONAL_IDS = [("agentj_public_id", _re(r"\bAJ-[A-Z0-9]{4}(?:-[A-Z0-9]{4}){3}\b", re.I), R)]
+# P326: starts only where a run of local-part characters starts — the same matches, but a long run without an "@" (a
+# base64 blob, a minified line) is scanned once, not once per position (100 k chars took 7.9 s on the event loop)
 _EMAIL = _re(r"(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@((?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,})")
 _EMAIL_OK_DOMAIN = _re(r"(?:^|\.)(?:agentj\.app|agentjarvis\.net|example\.(?:com|org|net))$", re.I)
 _SEG = r"[^/\\\s\"'`<>:;,()\[\]{}|*?]+"   # one path segment (a user name)
@@ -138,6 +139,9 @@ def _sluglike(tok: str) -> bool:
 
 
 
+# P482: only the owner's paired channel relaxes entropy for public on-chain shapes.
+# Explicit credential labels/vendor/private-key rules run first. Strict disclosure
+# gates still mirror the server and never use this exception.
 _PUBLIC_CHAIN = re.compile(r"(?:[1-9A-HJ-NP-Za-km-z]{32,44}|[1-9A-HJ-NP-Za-km-z]{87,88}|0x(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64}))")
 
 
@@ -156,6 +160,12 @@ def _entropic(tok: str) -> bool:
     return _entropy(tok) >= 4.3
 
 
+# P424 (#142 / #147): what a file path, a file name, a snake_case identifier or an environment-variable name looks like — words
+# joined by `_` `-` `.` `/`: every part is made of word chunks (Capitalised / lower-case runs of ≥ 3 letters, upper-case runs,
+# digits, `v2`-style tags) or is a 1–2 letter part, a part has ≤ 2 digit runs, every alphabetic chunk of ≥ 3 letters carries a
+# vowel (one upper-case acronym of ≤ 4 letters excepted) and ≥ 60 % of the letters sit in chunks of ≥ 4. Measured: 0 of ~900 000
+# random high-entropy base64 / base64url tokens pass (host/tests/test_p424_c142_secret.py samples 3000 on every run). Relaxed modes only (`paths=True`,
+# owner): the strict feedback / plaza scan keeps mirroring the server (worker/src/scan.ts).
 _NAME_CHUNK = re.compile(r"[A-Z][a-z]{2,}|[a-z]{3,}|[A-Z]{2,}(?![a-z])|\d+|[a-z]\d+|[A-Z]\d+")
 _NAME_PART = re.compile(r"(?:" + _NAME_CHUNK.pattern + r")+|[A-Za-z]{1,2}")
 _VOWEL = re.compile(r"[aeiouyAEIOUY]")
@@ -173,6 +183,13 @@ def _namelike(tok: str) -> bool:
     return alpha > 0 and sum(len(w) for w in words if len(w) >= 4) >= 0.6 * alpha
 
 
+# P424: a labelled "value" that is not a value — shell / code around a NAME, not a credential. Relaxed modes only. A reference
+# is the WHOLE token (`$k`, `${K}`, `%ENV_NAME%`, `$env:K`) or opens a substitution (`$(`, `${`): `TOKEN=$ecret!x` stays a value.
+# Security review (P424 #142/#147): `%X%` counts only around an upper-case ENV_NAME (`%Hunter2%` is a value); code counts only
+# UNQUOTED and only as one whole call / subscript of a code-looking callee whose arguments are names, never a random run
+# (`os.environ["X"]`, `getenv('X')` pass; `Winter2025(prod)`, `Qw3rty[42]zz`, `x(<random>)` do not); `KEY=OTHER_ENV_NAME`
+# passes toward others only when OTHER_ENV_NAME is a known variable name (os.environ, or a key NAME of a `.env` the
+# SecretIndex read — names only, never values); the quote-then-space grep shape needs a path / `$` / pipe after the space.
 _ENV_NAME = re.compile(r"[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+")
 _REF_VALUE = re.compile(r"\$\(|\$\{|(?:\$(?:env:)?[A-Za-z_]\w*|(?-i:%[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+%))(?![^\s\"'`;|&)\]},])", re.I)
 _CODE_ARG = r"(?:\"[A-Za-z_][\w.-]*\"|'[A-Za-z_][\w.-]*'|\$\{?[A-Za-z_]\w*\}?|[a-z_][a-z0-9_]{0,23}|" + _ENV_NAME.pattern + r")"
@@ -206,7 +223,9 @@ def _code_value(v: str) -> bool:
 
 
 def _not_value(match: re.Match, repl: str, owner: bool = False) -> bool:
-    """Recognize whole shell/code/name references; owner channels also accept name-shaped environment identifiers."""
+    """`KEY=' ~/.env | cut …'` (the quote closes a grep pattern), `api_key = os.environ[…]`, `TOKEN=$k`, `%TOKEN_NAME%`,
+    `$env:TOKEN`, `KEY=OTHER_ENV_NAME`, `Authorization: Bearer $k`: the part that would be redacted is no value. `owner`:
+    the owner's own channel (an ENV_NAME-shaped value passes there; toward others only a known variable name does)."""
     rendered = match.expand(repl)
     pre = rendered.partition(R)[0]
     rest = match.string[match.start() + len(pre):]
@@ -223,76 +242,10 @@ def _not_value(match: re.Match, repl: str, owner: bool = False) -> bool:
     return _known_env_name(name) or (owner and _namelike(name))
 
 
-VALUE_KINDS = frozenset(("credential_assignment", "authorization_header", "bearer_token"))
-_PW_LABEL = re.compile(r"(?:password|passwd|pass|pwd|pw|密码|口令|助记词|恢复短语|mnemonic|(?:seed|recovery)[ _-]?phrase)[\"'`\s:：=]*$", re.I)
-# (seed words keep their strength too: a mnemonic is lower-case words, never "digit or symbol")
-_PLACEHOLDER_VALUES = frozenset(("true", "false", "null", "none", "undefined", "password", "changeme", "your_api_key", "your_token",
-                                 "replace_me", "placeholder", "redacted", "example", "secret", "not_set"))
-_PLACEHOLDER_WORD = re.compile(r"(?:example|sample|dummy|fake|placeholder|redacted|changeme|change[_-]me|"
-                               r"(?:your|example|placeholder|replace|insert)[_-](?:api[_-]?key|key|token|secret|password)"
-                               r"(?:[_-]here)?)", re.I)
-_BARE_PREFIX = re.compile(r"(?:sk-(?:or-(?:v1-)?|ant-(?:api\d\d-)?|proj-|svcacct-|admin-)?|sk_(?:live|test)_|ghp_|gho_|github_pat_|"
-                          r"glpat-|xox[abposr]-|AKIA|ASIA|AIza|hf_|r8_|aj[ahijmrst]_|whsec_|Bearer)[xX*.…_-]*")
-_NAME_VALUE = re.compile(r"[A-Z][A-Z0-9_]*_(?:KEY|TOKEN|SECRET|PASSWORD|PASS|CREDENTIALS?|VAR|NAME)", re.I)
-
-
-def _label_value(match: re.Match, repl: str) -> tuple[str, str, bool]:
-    """(label part, value part, quoted?) of a labelled match, as the replacement splits it around R."""
-    rendered = match.expand(repl)
-    pre, _, suffix = rendered.partition(R)
-    whole = match.group(0)
-    return pre, whole[len(pre):len(whole) - len(suffix) if suffix else None], bool(suffix)
-
-
-_HEADER_LABEL = re.compile(r"(?:\bBearer\s+|\bAuthorization\s*:\s*(?:Bearer|Basic|token)\s+)$", re.I)
-
-
-def is_secret(value: str, password: bool = False, quoted: bool = False, header: bool = False) -> bool:
-    """P573: does this labelled value look like a real credential (see VALUE_KINDS above)? Never logs or returns the value."""
-    v = value.lstrip("`")
-    if not quoted and not password:            # unquoted: judge its longest key-character run (`x(<random>)` is a value)
-        runs = re.findall(r"[A-Za-z0-9+/_=.!@#$%^&*?~-]+", v)
-        v = max(runs, key=len) if runs else ""
-    v = v.rstrip(",;|`)]}.") if not password else v.rstrip(",;|`]}.")
-    if not v.strip():
-        return False
-    low = v.lower()
-    if low in _PLACEHOLDER_VALUES or _PLACEHOLDER_WORD.fullmatch(v) or re.fullmatch(r"[*xX•.…_-]+", v):
-        return False
-    if "..." in v or "…" in v or "${" in v or "$HOME" in v or v.startswith(("<", "~/", "./")):   # `$x` / `%X%`: _not_value
-        return False
-    path = re.match(r"[A-Za-z0-9+/_=-]+", v)
-    if path and "/" in path.group(0) and _pathlike(path):
-        return False                           # owner-path syntax, not a blanket slash exception
-    if re.fullmatch(_CRED_NAMES, v, re.I) or _NAME_VALUE.fullmatch(v):
-        return False                           # APIFY_TOKEN, OPENAI_API_KEY … are names
-    if _BARE_PREFIX.fullmatch(v):
-        return False                           # `sk-or-`, `sk-ant-` alone: a prefix being talked about
-    if password:
-        return True                            # P573: a password label keeps its strength
-    if header and len(v) >= 20:
-        return True                            # `Authorization: Bearer <20+ chars>` is a token, never prose (as before P573)
-    if len(v) < 8 or not re.fullmatch(r"[A-Za-z0-9+/_=.!@#$%^&*?~ -]+", v):
-        return False
-    if re.fullmatch(r"(?:0x)?[0-9a-fA-F]{16,}", v):
-        return True                            # a hex key (an EVM private key is 0x + 64 hex)
-    if _namelike(v):
-        return False                           # words joined by _ - . / : an identifier, a slug
-    if re.fullmatch(r"[A-Za-z]{1,19}", v):
-        return False                           # 「CredSweeper」: letters only and short — a word, not a key
-    classes = sum(bool(re.search(p, v)) for p in (r"[a-z]", r"[A-Z]", r"[0-9]", r"[^A-Za-z0-9 ]"))
-    entropy = _entropy(v)
-    return (classes >= 2 and entropy >= 2.5) or (len(v) >= 32 and entropy >= 4.0)
-
-
-def credential_value(match: re.Match, repl: str) -> bool:
-    """Shared owner-channel verdict: reject non-value references, then apply is_secret to the labelled value."""
-    if _not_value(match, repl, True):
-        return False
-    pre, value, quoted = _label_value(match, repl)
-    return is_secret(value, bool(_PW_LABEL.search(pre)), quoted, bool(_HEADER_LABEL.search(pre)))
-
-
+# P127 owner channel (`paths=True`): a file path is judged segment by segment, so a session UUID next to a capitalised
+# file name never turns the whole path into one "high-entropy token". Path = slash-bearing, no base64 `+` / `=`, and either
+# absolute (first segment a plain lower-case word: /tmp, /srv …), after `~` / `.`, or ending in a file extension. A
+# slash-bearing secret (AWS secret, base64) has none of these shapes and is still judged whole.
 _PATH_HEAD = re.compile(r"[A-Za-z0-9][a-z0-9._-]*")
 _PATH_EXT = re.compile(r"\.[A-Za-z0-9]{1,8}(?![A-Za-z0-9])")
 SEGMENT_MIN = 24
@@ -321,8 +274,13 @@ def _names(name: str | None) -> list[str]:
 
 def redact_with_report(text: str, host: str | None = None, user: str | None = None,
                        paths: bool = False, owner: bool = False) -> tuple[str, collections.Counter]:
-    """Idempotent layer-1 redaction → (text, kind counts). Strict outbound by default.
-    Owner mode preserves contact details but masks credentials; paths mode judges path segments separately."""
+    """Layer 1. Pure: same input → same output; redact(redact(x)) == redact(x). Returns (text, Counter(kind → count)).
+    One pass can open a boundary for an earlier rule ("10.0.0.1myhost" → "<private-ip>myhost"), so passes repeat until
+    nothing changes; every replacement makes the text shorter in secrets, so this stops after a few passes.
+    `paths=True` (owner channel only): high-entropy is judged per path segment; strict (feedback / plaza) is the default.
+    `owner=True` (P167, the owner's own end-to-end channel — implies `paths`): contact details (e-mail, phone numbers) stay
+    as written, so the owner can copy them; every secret shape (keys, tokens, private keys, passwords, high-entropy) is
+    still redacted. Never for anything that leaves the owner: feedback, plaza, support, friends, bots, Telegram."""
     hits: collections.Counter = collections.Counter()
     paths = paths or owner
     for _ in range(8):
@@ -333,6 +291,10 @@ def redact_with_report(text: str, host: str | None = None, user: str | None = No
     return text, hits
 
 
+# P194 (Leo, 10-13): what goes to the owner's OWN channels (paired remotes, the owner bot's private chat, the owner's own
+# mailbox) keeps links, access codes, one-time codes and private addresses as written — only real credentials go. A link is
+# kept whole except a credential embedded in it (user:password@, or a key of a known provider's shape: `?key=AIza…`,
+# api.telegram.org/bot<token>); outside links every secret rule and the high-entropy rule still apply.
 _LABELLED = frozenset(("credential_assignment", "authorization_header"))
 _LINK = _re(r"\b[a-z][a-z0-9+.-]{0,31}://[^\s<>\"'`]+", re.I)     # P326: bounded scheme (see url_credentials)
 _LINK_HARD = frozenset(("private_key", "url_credentials", "aws_access_key", "github_token", "gitlab_token", "slack_token",
@@ -358,7 +320,7 @@ def _owner_pass(text: str, host: str | None, user: str | None, hits: collections
     return "".join(out)
 
 
-def credentials(text: str, entropy: bool = True) -> list[tuple[str, str, int, int]]:
+def credentials(text: str) -> list[tuple[str, str, int, int]]:
     """P194: the real credentials in an owner-bound text — (kind, value, start, end), in order, not overlapping. The same
     rules as owner mode: access codes and links are not credentials."""
     spans: list[tuple[int, int, str]] = []
@@ -378,14 +340,14 @@ def credentials(text: str, entropy: bool = True) -> list[tuple[str, str, int, in
             if link and kind not in _LINK_HARD:
                 continue
             for m in pat.finditer(seg):
-                if R in m.group(0) or (kind in VALUE_KINDS and not credential_value(m, repl)):
+                if R in m.group(0) or (kind in _LABELLED and _not_value(m, repl, True)):
                     continue
                 add(base, m, repl, kind)
         if link:
             return
         for m in _MNEMONIC.finditer(seg):
             spans.append((base + m.start(2), base + m.end(2), "mnemonic"))
-        for m in _ENTROPIC.finditer(seg) if entropy else ():
+        for m in _ENTROPIC.finditer(seg):
             if _public_chain(m.group(0)) or _pathlike(m) or _namelike(m.group(0)):   # P194 / P424: same as the owner mode — a path / name is no credential
                 continue
             if _entropic(m.group(0)):
@@ -408,7 +370,9 @@ def credentials(text: str, entropy: bool = True) -> list[tuple[str, str, int, in
 
 
 def secret_at(text: str, kinds=None) -> tuple[str, int, int] | None:
-    """Earliest relaxed-rule secret span (kind, start, end), or None; location hints never grant authority."""
+    """P424 (#142 / #147): where the first secret-looking fragment is — (kind, start, end) of the part that would be hidden,
+    by the relaxed (`paths=True`) rules of `redact` (taskspec.secret_like, peer_guard.credential_shape), or None. For telling
+    WHERE a refusal came from (line / column, a masked two-character hint), never for deciding: callers decide as before."""
     spans: list[tuple[int, int, str]] = []
     for kind, pat, repl in _SECRETS:
         if kinds is not None and kind not in kinds:
@@ -465,9 +429,9 @@ def _one_pass(text: str, host: str | None, user: str | None, hits: collections.C
     for kind, pat, repl in _SECRETS + _PERSONAL_IDS:
         if owner and kind == "agentj_access_code":
             continue
-        if (relaxed and kind in _LABELLED) or (owner and kind in VALUE_KINDS):
+        if relaxed and kind in _LABELLED:        # P424: a NAME next to shell / code is not a credential
             def keep(m, repl=repl, kind=kind):
-                if _not_value(m, repl, owner) or (owner and not credential_value(m, repl)):   # P573: one owner verdict
+                if _not_value(m, repl, owner):
                     return m.group(0)
                 hits[kind] += 1
                 return m.expand(repl)
