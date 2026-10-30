@@ -116,6 +116,9 @@ def run_one(cmd):
     ans = json.loads(res["content"][0]["text"])
     if ans["behavior"] == "allow":
         r = subprocess.run(ans["updatedInput"]["command"], shell=True, capture_output=True, text=True)
+        if os.environ.get("FAKE_CLAUDE_TOOL_RESULTS") == "1":
+            out({"type":"user", "message":{"content":[{"type":"tool_result", "tool_use_id":tu,
+                "is_error":r.returncode != 0, "content":r.stdout+r.stderr}]}})
         return f"已执行（退出码 {r.returncode}）：{cmd}"
     return f"被拒绝：{ans['message']}"
 # P57 (F24): the host's compaction preparation and host notes, as a cooperative Agent would treat them.

@@ -73,7 +73,7 @@ class Units(unittest.TestCase):
         for t in (CU, "mcp__computer-use__screenshot", "mcp__computer_use__type_text", "mcp__unified-computer-use__scroll",
                   "mcp__anything__left_click", "mcp__x__press_key", "computer.control"):
             self.assertEqual(P.tool_action(t), "computer.control", t)
-            self.assertEqual(P.main_requirement(t, {}), "uv", t)
+            self.assertEqual(P.main_requirement(t, {}), "hold", t)   # P573: Computer Use is one button
         for t in ("mcp__x__click", "mcp__x__screenshot", "mcp__computer-use__", "mcp____click", "mcp__computer-use__a__b",
                   "computer-use", "click", "mcp__x__unknown"):
             self.assertNotEqual(P.tool_action(t), "computer.control", t)
@@ -218,7 +218,7 @@ class Units(unittest.TestCase):
         self.assertFalse(P.codex_cu_lifecycle("mcp__cua_repl__turn_ended", None))
         self.assertFalse(P.codex_cu_lifecycle(JS, BIND))
         # by name alone the plugin's tools are unknown (deny), as before
-        self.assertEqual(P.main_requirement(JS, {"code": "x"}), "uv")
+        self.assertEqual(P.main_requirement(JS, {"code": "x"}), "hold")   # P573: a name is no proof of the three classes
 
     def test_grant_kinds_never_cross(self):
         self.assertEqual(preauth.binding("computer.control", JS, BIND), BIND)
@@ -401,6 +401,10 @@ class Flow(unittest.TestCase):
         return obj
 
     def run_card(self, host, s, tool, inp, answer=None, **kw):
+        # P573 (#386 ⑤): Computer Use is a one-button card now; the 免问 pick (a standing grant) is offered only on a card
+        # whose caller asks for Face ID, so these flows ask for it explicitly
+        kw.setdefault("require_passkey", True)
+
         async def go():
             n = len(self.cards())
             t = asyncio.create_task(host.ask(tool, inp, batch=False, **kw))

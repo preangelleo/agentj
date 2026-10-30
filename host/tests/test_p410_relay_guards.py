@@ -3,7 +3,7 @@ import _hermetic  # noqa: F401
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from test_p71_peer_service import Base, pmsg, settle, sign_answer
+from test_p71_peer_service import Base, pmsg, settle, sign_answer, settle_pending
 from agentj import controls, provenance, wire
 from agentj.relay_guards import RelayGuards, message
 
@@ -98,7 +98,9 @@ class Guards(Base):
         self.svc.on_app(fid, {'t': 'relay_state', 'mid': mid, 'state': 'released'})
         self.svc.on_app(fid, {'t': 'pack', 'mid': mid, 's': 'got'})
         self.assertEqual(self.store._hist_all(fid)[-1]['s'], 'released')
-        self.assertIn(message('released', 'zh'), self.host.notices)
+        notice = self.host.notices[-1]
+        for expected in (self.store.name_of(fid), mid, '检查任务', message('released', 'zh')):
+            self.assertIn(expected, notice)
         before = len(self.host.notices)
         self.svc.on_app(fid, {'t': 'relay_state', 'mid': '0'*16, 'state': 'loop'})
         self.assertEqual(before, len(self.host.notices))
@@ -220,18 +222,31 @@ class Guards(Base):
         self.assertFalse(self.sess.calls)
         self.assertEqual(self.net.of('relay_state')[-1][1]['state'],'shape')
 
-    async def test_same_owner_hold_overrides_direct_route_and_switch_off_keeps_card(self):
-        fid=self.friend().id
+    async def test_same_owner_bypasses_hold_but_ordinary_switch_off_keeps_card(self):
+        fid = self.friend().id
         await self.hold(fid)
-        with patch.object(self.svc.same_owner,'active',return_value=True):
-            self.svc._on_pmsg(fid,pmsg('检查进度'))
-            await settle()
+        sends, pages = [], []
+        self.host.agent = SimpleNamespace(submit=sends.append)
+        self.host.hist_add = lambda *args: pages.append(args) or {'id': len(pages)}
+        incoming = pmsg('检查进度')
+        with patch.object(self.svc.same_owner, 'active', return_value=True):
+            self.svc._on_pmsg(fid, incoming)
+            await settle_pending(self.svc)
         self.assertFalse(self.sess.calls)
-        ask=self.svc.ask_msgs()[-1]
+        self.assertFalse(self.svc.ask_msgs())
+        self.assertEqual(len(sends), 1)
+        self.assertEqual(pages[0][0]['text'], incoming['text'])
+        self.assertIn(incoming['mid'], self.svc.same_owner.row(fid)['queue'])
+        # The same UI setting still holds an ordinary, unverified friend.
+        other = self.friend().id
+        await self.hold(other)
+        self.svc._on_pmsg(other, pmsg('普通好友等批准'))
+        await settle_pending(self.svc)
+        self.assertEqual(len(sends), 1)
+        ask = self.svc.ask_msgs()[-1]
         self.assertTrue(ask['pq']['handover'])
-        with self.store._edit('friends.json',{}) as rows:
-            rows[fid]['hold_for_owner']=False
-        await settle()
+        with self.store._edit('friends.json', {}) as rows:
+            rows[other]['hold_for_owner'] = False
         self.assertTrue(self.svc.has_ask(ask['id']))
 
     async def test_friend_task_admin_never_reuses_owner_grant(self):

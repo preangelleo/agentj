@@ -32,6 +32,8 @@ import { b64u, unb64u } from './proto/wire.js';
 import * as session from './js/session.js';
 import * as snap from './js/snap.js';
 import * as api from './js/api.js';
+import * as rosterbind from './js/rosterbind.js';
+import { bindRegistration, introductionChallenge } from './js/ownergrant.js';
 import { createAsrSetup } from './js/asr-setup.js';
 import * as blobs from './js/blobs.js';
 import * as media from './js/media.js';       // F21: files the Agent shows (§13)
@@ -434,6 +436,7 @@ session.configure({
   },
 });
 snap.configure({
+  prepareOwnerConfirm: (target) => controls.signed('fr_set', target, { t: 'fr_set', ...target }),
   onChange: (reset) => { if (reset) relay.historyReset(snap.S.hist.epoch); rerender(); },
   onTurn: (p) => relay.upsertTurn(p),
 });
@@ -469,7 +472,7 @@ function onApp(m) {
     case 'res': busy.setRes(m); return;              // P181 (§22.1): the load card's five resources (only while it is open)
     case 'theme': applyTheme(m); rerender(); relay.paintChrome(); return;   // P169 (§23): repaint now (logo, status bar)
     case 'ask':
-      if (snap.addAsk(m)) frontAsk(m);
+      if (snap.addAsk(m)) { frontAsk(m); rosterbind.ensureForCeremony(m).catch(() => {}); }
       return;
     case 'ask_done': friends.answerDone(m); snap.askDone(m); pkhandin.answered('ask:' + m.id); return;   // P566: a handed-in approval ended
     case 'answer_refused': relay.answerRefused(m); friends.answerRefused(m); snap.answerRefused(m); toast(t('fr.ask.failed'), 5000); return;
@@ -477,6 +480,9 @@ function onApp(m) {
     case 'bots_tool_request': bots.toolRequest(m); return;
     case 'bots_proposal': bots.proposal(m); return;
     case 'jcard_open': fivePages.pushOpen(m.id, m.at); return;   // P360 (§34): `agentj card open` — go to that card / place
+    case 'roster_bind_offer': rosterbind.offer(m).catch(() => {}); return;
+    case 'roster_bind_res': rosterbind.result(m); return;
+    case 'owner_grant_notice': friends.ownerGrantNotice(m); return;
     case 'fr_changed': friends.changed(m); return;   // §17.7: something changed on the computer → the friends page re-reads
     case 'hook_changed': webhooks.changed(); return;   // P366: a webhook changed on the computer → the open Webhook page re-reads
     case 'elev': if (m.kind === 'login') termhook.msg(m); else elevate.add(m); return;   // F17 (§11) · P408: the terminal's login card stays in its page
@@ -769,6 +775,12 @@ function legacyOffer() {
   session.sendApp({ t: 'pk_offer_req' }).catch(() => { pkForce = false; toast(t('elev.fail'), 3000); });
 }
 /** P564: this remote's 8-byte passkey tag (the head of its install id for the channel) — one user handle per remote. */
+const bindRosterRegistration = async (reg, ch = session.channel()) => {
+  const dev = await api.myDeviceId();
+  const signed = await bindRegistration(reg, dev, await signKey(), location.hostname);
+  await rosterbind.remember(signed, dev, ch, location.hostname);
+  return signed;
+};
 const pkTag = async (ch) => unb64u(await installId(ch)).slice(0, passkey.TAG_LEN);
 /** What register() needs, read before the 「保存」 tap (P547 peer offers: create() must follow the tap with nothing slow). */
 async function regOpts() {
@@ -784,9 +796,10 @@ pkpeer.configure({
     : o && o.t === 'pk_peer_answer' && o.ok ? pkhandin.put('peer:' + o.id, { send: (g) => session.sendApp(o, g), until: Date.now() + 120000, ch: readyCh }).then((ok) => { if (!ok) throw new Error('offline'); })   // review N1: the computer the card came from
     : session.sendApp(o)),
   approve: passkey.approve,
+  prepareAsk: async (m) => introductionChallenge(m, session.channel(), await api.myDeviceId()),
   // P550 (P545 × P547): a key made after another remote's approval is this seat's Home Screen passkey hint too (pkSaved);
   // register() still reaches navigator.credentials.create in the tap's tick (no await before it)
-  register: (n, o) => passkey.register(n, o).then((reg) => { pkRegId = reg.id; return reg; }),
+  register: (n, o) => passkey.register(n, o).then(reg => bindRosterRegistration(reg, o.channel)).then((reg) => { pkRegId = reg.id; return reg; }),
   notSaved: () => pkassist.osKey('pk.notSaved'),   // P550: P539's per-system steps on the peer path too
   supported: async () => (await passkey.setupSupport()) === 'yes', canAssert: passkey.canAssert, regOpts, legacy: legacyOffer,
   unsupported: () => toast(t('p561.pk.unsupported'), 5000),   // P561 追加 11: setting up, not picking up (sout.noFaceId)
@@ -868,6 +881,7 @@ async function offerPasskey(m) {
   let reg;
   // cancelled / refused by the system (iPhone: no iCloud Keychain → no passkey can be saved): nothing changes; say why once
   try { reg = await passkey.register(nonce, { relayIndex: ri, channel: h.channel, hostPub: h.hostPub, tag, name, displaySuffix: t('pk.computer'), replace: m.replace || null }); } catch { toast(t(pkassist.osKey('pk.notSaved')), 8000); return; }   // P539: Android / Mac / Windows get their own steps
+  try { reg = await bindRosterRegistration(reg, h.channel); } catch { toast(t('pk.saveFail'), 7000); return; }
   pkRegId = reg.id;
   pkhandin.handIn(reg, Date.now(), h.channel);        // P566 (#363): bound to the computer it was made for, never to a gap's null
 }

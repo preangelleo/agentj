@@ -1,33 +1,4 @@
-"""P314: a turn stopped by the AI account's usage limit continues by itself once the limit resets.
-
-Owner (2026-10-15, from the cloudroom study, item 2): 「轮次因额度失败时打标记；到 resetsAt（或「额度告警时交给其他 AI
-账号」开关切到别的账号后）自动发一句「继续」续跑，只续一次、可在手机上取消；手机显示「额度用完，预计 HH:MM 自动继续」；
-共享会话和后台任务都覆盖；避免重复续跑与审批卡复用。」
-
-What counts: only a used-up subscription window (Claude Code 「usage limit reached」 / 「hit your limit」, Codex `usage`).
-A momentary 429 (`rate`), an empty balance (`quota`) or a login problem never resume by time — waiting would not fix them.
-P433 (#196): `judge` is the one verdict for every entry. The limit words must open the line (Claude Code's own wording, see
-_CLAUDE_LIMIT); a per-model cap (Opus / Sonnet / Fable / fast mode) is named as such with the model to switch to. A confirmed
-limit always wins over the readings (#196 correction: the owner's Claude page said 100 % used while the phone said 39 %): readings
-that contradict it are marked 「可能过期」 on the phone (mark_stale) and the notice says so; for Claude the notice also points at a
-free reset (Claude settings → Usage → 「Reset for free」, or one the owner recorded) — never pressed by Agent J.
-
-When: the harness's own reset time — Claude Code's `|<epoch>` / rejected rate_limit_event `resetsAt`, a 「resets 3pm」 /
-「try again at …」 sentence, else the meters' exhausted window (≥ 95 %). No time known → nothing is scheduled (the notice says
-so). Scopes: "main" (the chat, own or shared session) and "task:<id>" (a workflow / dispatched run). One record per scope;
-a new hit replaces it. It fires once, RESUME_MARGIN after the reset: the record is removed (written) before the turn is
-queued, so a restart never sends it twice. It is dropped, never fired, when the owner already spoke (a phone `say`, a new run
-of that task), the Agent is busy, or the stop switch is on. A resumed turn that hits the limit again schedules again only for
-a strictly later reset (never a loop on a stale reading).
-
-Another account: a task whose harness may move (task.json does not pin it) and `quota.auto_switch` on → rerun at once on a
-harness whose readings show room and which answers a handshake (quota.pick_alt). The chat stays on its harness (switching it
-is /switch-harness); when serve comes back on another harness, a waiting chat record fires at once.
-
-The continue is a fresh turn with a fresh page (via "quota"), system provenance, no attachments: it never answers or reuses an
-approval card (batch grants already end with the failed turn, ADR-A48). Cancel = `qr_cancel {r, id}` from a paired phone
-(it only stops an automatic action, like grant_off) or `agentj quota resume cancel`.
-"""
+"""Agent J quota_resume; developer reference: documentation/notes/P0262-HOST-REFERENCE.md."""
 from __future__ import annotations
 
 import asyncio

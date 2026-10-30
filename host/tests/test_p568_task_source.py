@@ -1,6 +1,8 @@
 """P568 A: task delegation must not borrow the main conversation's source or approvals."""
 import _hermetic  # noqa: F401
 import asyncio
+import shlex
+import tempfile
 from types import SimpleNamespace as NS
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
@@ -94,12 +96,14 @@ class TaskSource(Base):
 
     def test_task_outward_secret_delete_need_cards_even_with_background_flag(self):
         with provenance.task_run():
-            for command in ('git push origin main', 'cat .env', 'rm -rf /tmp/task-output'):
+            for command in ('git push origin main', 'cat .env', 'rm -rf ' + shlex.quote(str(Path(tempfile.gettempdir()) / 'task-output'))):
                 n = len(self.cards())
                 self.ask(command, background='task')
                 self.assertEqual(len(self.cards()), n + 1, command)
                 self.assertNotEqual(self.last()['reason'], 'group_source')
-            self.assertTrue(self.cards()[-1]['passkey_required'])
+            self.assertNotIn('passkey_required', self.cards()[-1])   # P573: a scratch removal is one button
+            self.ask('rm -rf ~/Documents/old', background='task')
+            self.assertTrue(self.cards()[-1]['passkey_required'])        # the owner's data: Face ID
 
     def test_three_permission_paths_bash_and_write(self):
         async def run():

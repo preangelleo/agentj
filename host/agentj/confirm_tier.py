@@ -16,6 +16,9 @@ long-press cards. ③ narrows to four kinds there (chairman, 10-26): spending mo
 own temp files / generated build output), unbinding / cancelling / moving a seat, a key going off this machine — harness_keeps().
 Everything else (~/.ssh/config, sudo on the owner's own machines, reading local credentials, commands Jev cannot read, Computer
 Use) is the harness's call: when it does not ask, no card at all. Standard library only.
+
+P573 (#386 ⑤, chairman 10-29): the standard level's Face ID narrows to the same kinds (policy_registry.main_requirement
+asks harness_keeps) plus trust roots and the Agent's own hook / approval files; everything else that was ③ is one button.
 """
 from __future__ import annotations
 
@@ -29,7 +32,8 @@ OWNER_ACTIONS = {
     "mem_rm": "reversible", "mem_undo": "reversible", "task_on": "reversible", "task_off": "reversible", "task_migrate": "reversible",
     "estop": "none",
     # ③ irreversible: Face ID even from the owner's own remote
-    "dev_unbind": "irreversible", "wechat_unbind": "irreversible",
+    "dev_unbind": "irreversible",           # P573 (b): unbinding another remote keeps Face ID (a found phone could do it)
+    "wechat_unbind": "reversible",          # P573: WeChat can be bound again — the owner's signed tap is the instruction
     "approval_widen": "irreversible",       # a level that asks less (full / harness), goal without cards, Jev off
 }
 
@@ -126,6 +130,8 @@ def _owner_delete(command: str, items, workdir) -> bool:
     rules = {r for c, r, _w in items if c == "delete"}
     if not rules:
         return False
+    if rules <= _RECOVERABLE_GIT and _only_refs(command):
+        return False                                 # P573: a local branch / tag comes back from the reflog
     if rules - {"delete.rm", "delete.shred", "delete.srm", "delete.wipe"}:
         return True                                  # git / cloud / SQL / find -delete …: the owner's data
     if re.search(r"(?<![&>|])&(?![&>])", command):
@@ -140,6 +146,17 @@ def _owner_delete(command: str, items, workdir) -> bool:
             if not targets or not all(_scratch(t, workdir, "remote" in s.flags, s.name in _OVERWRITE, rec) for t in targets):
                 return True
     return False
+
+
+# P573 (#386 ⑤, REPORT-573 §三 「去掉」): deleting a local git branch or tag is recoverable (`git reflog`, the commit stays
+# until gc) — not the owner's data lost. Everything else git deletes (reset --hard, clean, stash drop, a remote branch …) is.
+_RECOVERABLE_GIT = frozenset({"delete.git_branch", "delete.git_tag"})
+
+
+def _only_refs(command: str) -> bool:
+    """Every simple command is a plain `git branch …` / `git tag …` (no other program, no `git -C` / push beside it)."""
+    simple = _simple(command)
+    return bool(simple) and all(s.name == "git" and s.args[:1] in (["branch"], ["tag"]) for s in simple)
 
 
 def _names_cred(command: str) -> bool:

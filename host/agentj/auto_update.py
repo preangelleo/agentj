@@ -231,6 +231,19 @@ def download(url, limit):
 
 
 def cached_wheel(st, version, *, fetch=download, require_signature=True):
+    from . import upgrade_diag
+    evidence = {'artifact_stage': 'cache', 'cache_status': 'miss'}
+    try:
+        return _cached_wheel(st, version, fetch=fetch, require_signature=require_signature, evidence=evidence)
+    except Exception as exc:  # Attach only fixed metadata; preserve original exception compatibility.
+        import zipfile
+        if isinstance(exc, zipfile.BadZipFile):
+            evidence['subreason'] = 'bad_zip'
+        exc.artifact_diagnostic = upgrade_diag.artifact_fields(evidence)
+        raise
+
+
+def _cached_wheel(st, version, *, fetch, require_signature, evidence):
     """Published /dl wheel, SHA256, optional minisign bound to host/version/hash.
     Auto installs always require signature. Rollback accepts the previously cached
     verified bytes even if their release has since left the site's latest pointer.
@@ -242,6 +255,14 @@ def cached_wheel(st, version, *, fetch=download, require_signature=True):
     receipt = path.with_suffix('.verified.json')
     try:
         rec = json.loads(receipt.read_text())
+        if (not isinstance(rec, dict) or not isinstance(rec.get('sha256'), str)
+                or len(rec['sha256']) != 64 or any(c not in '0123456789abcdef' for c in rec['sha256'])
+                or type(rec.get('signed')) is not bool
+                or (rec['signed'] and not isinstance(rec.get('signature'), str))
+                or (not rec['signed'] and rec.get('signature') is not None)
+                or (require_signature and not rec['signed'])):
+            evidence.update(cache_status='invalid', subreason='cache_receipt_invalid')
+            raise ValueError('upgrade_cache_unreadable')
         data = path.read_bytes()
         digest = hashlib.sha256(data).hexdigest()
         signature_ok = not require_signature or minisign.verify(data, rec.get('signature', ''), minisign.keyring('release')) == f'agentj-host/v1 version={version} sha256={digest}'
@@ -249,28 +270,46 @@ def cached_wheel(st, version, *, fetch=download, require_signature=True):
             return path
     except (OSError, ValueError, KeyError):
         pass
+    # A cache fault is recoverable; any subsequent refusal describes the downloaded bytes.
+    evidence.pop('subreason', None)
     if not require_signature:
         # Site retains latest only. Repack the exact installed, RECORD-verified
         # distribution if its original published wheel has already disappeared.
         return installed_wheel(st, version)
+    evidence['artifact_stage'] = 'wheel'
     data = fetch(ORIGIN + filename, MAX_WHEEL)
     digest = hashlib.sha256(data).hexdigest()
-    stated = fetch(ORIGIN + filename + '.sha256', 256).decode().split()[0]
+    evidence.update(artifact_stage='sha256', artifact_sha256=digest)
+    stated = fetch(ORIGIN + filename + '.sha256', 256).decode().strip().split()
+    stated = stated[0] if stated else ''
+    evidence['stated_sha256'] = stated
     if stated != digest:
+        evidence['subreason'] = 'hash_mismatch'
         raise ValueError('artifact_hash_mismatch')
     signed = False
     if require_signature:
+        evidence['artifact_stage'] = 'signature'
         signature = fetch(ORIGIN + filename + '.minisig', minisign.MAX_SIG).decode()
-        comment = minisign.verify(data, signature, minisign.keyring('release'))
+        evidence['subreason'] = 'signature_invalid'
+        keys = minisign.keyring('release')
+        parsed = minisign.parse_sig(signature)
+        if parsed['key_id'] not in keys or parsed['key_id'] in minisign.REVOKED:
+            evidence['subreason'] = 'untrusted_key'
+        comment = minisign.verify(data, signature, keys)
         if comment != f'agentj-host/v1 version={version} sha256={digest}':
+            evidence['subreason'] = 'comment_mismatch'
             raise ValueError('artifact_signature_mismatch')
         signed = True
     # Wheel identity is checked before replacement, not inferred from a filename.
     import io, zipfile
+    evidence.update(artifact_stage='identity', subreason='bad_zip')
     with zipfile.ZipFile(io.BytesIO(data)) as z:
+        evidence['subreason'] = 'identity_mismatch'
         meta = z.read(f'agentj-{version}.dist-info/METADATA').decode()
         if f'\nName: agentj\n' not in '\n'+meta or f'\nVersion: {version}\n' not in '\n'+meta:
+            evidence['subreason'] = 'identity_mismatch'
             raise ValueError('artifact_identity_mismatch')
+    evidence.update(artifact_stage='cache', subreason='internal_error')
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     st.write_private(path, data)
     st.write_private(receipt, json.dumps({'sha256': digest, 'signed': signed, 'signature': signature if signed else None}).encode())
@@ -384,6 +423,10 @@ def launch(st):
 
 
 def finish(st, result, diag=None):
+    from . import upgrade_diag
+    result.update(upgrade_diag.artifact_fields(diag or {}))
+    if (diag or {}).get('step') == 'download':
+        result.update(step='download', detail=diag.get('detail', 'Exception'))
     with st.config_lock():
         _finish(st, result)
     _diagnose(st, result, diag or {})
@@ -668,6 +711,11 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
         if reason in ('unknown', 'ValueError'):
             reason = 'uv_failed' if job.get('phase') in ('installing', 'rollback') else (
                 'self_check_failed' if job.get('phase') == 'installed' else upgrade_diag.plan_reason(e))
+        if job.get('phase') is None:
+            # Download failures have identical P277 reason/detail/metadata in both entry paths.
+            reason = upgrade_diag.plan_reason(e) if reason not in ('unsupported_install',) else reason
+            diag.update(upgrade_diag.plan_fields(e))
+            diag['detail'] = upgrade_diag.plan_detail(e)
         result['reason'] = reason
         diag['failure'] = reason
         diag.setdefault('step', 'service' if reason in ('restart_failed', 'service_restart_failed') else {

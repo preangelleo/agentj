@@ -40,8 +40,7 @@ class ToOwner(_Svc):
         self.assertEqual(res["sent"], [ALLOW_ME])
         self.assertEqual(self.smtp.sent[-1][1], [ALLOW_ME])
         self.assertIn("13812345678", body_of(self.smtp.sent[-1][2]), "owner-direct: as written, same as --to <owner>")
-        self.ask.assert_awaited_once()
-        self.assertFalse(self.ask.call_args.kwargs.get("require_passkey", False))   # P551: ② long-press, no Face ID
+        self.ask.assert_not_awaited()      # P573 (#386-3, replaces P551 here): the owner mailing self needs no card
         self.assertIn("发给你自己：原样发出", self.summary())
 
     async def test_slot0_and_allowlist_deduped_same_as_explicit(self):
@@ -128,18 +127,17 @@ class RealCli(unittest.IsolatedAsyncioTestCase):
             code, res = await self.run_cli(d, ["mail", "send", "--to-owner", "--subject", "周报", "--body", "hello", "--json"])
             self.assertEqual((code, res["ok"], res["sent"], res["owner_direct"]), (0, True, [ALLOW_ME], True), res)
             self.assertEqual(smtp.sent[-1][1], [ALLOW_ME])
-            self.assertEqual(host.ask.await_count, 1) # P503: every final SMTP send requires UV
-            self.assertFalse(host.ask.call_args.kwargs.get("require_passkey", False))   # P551
+            self.assertEqual(host.ask.await_count, 0)   # P573 (replaces P503 here): --to-owner alone needs no card
             code, res = await self.run_cli(d, ["mail", "send", "--to", "zs@qq.com", "--to-owner", "--subject", "s",
                                                "--body", "b", "--json"])
             self.assertEqual(res["sent"], ["zs@qq.com", ALLOW_ME], res)
-            self.assertEqual(host.ask.await_count, 2, "one exact-effect approval per send")
+            self.assertEqual(host.ask.await_count, 1, "one exact-effect approval for the send with another recipient")
             cfg["allow"] = []
             M.save_config(st, M.validate(cfg))
             code, res = await self.run_cli(d, ["mail", "send", "--to-owner", "--subject", "s", "--body", "b", "--en", "--json"])
             self.assertEqual((code, res["why"]), (1, "no_owner_address"))
             self.assertIn("slot 0", res["detail"])
-            self.assertEqual(host.ask.await_count, 2)
+            self.assertEqual(host.ask.await_count, 1)
 
 
 if __name__ == "__main__":

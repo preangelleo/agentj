@@ -85,8 +85,10 @@ class TelegramAvatar(_Channel):
     async def test_credential_reply_is_still_held_and_no_image_leaves(self):
         self.answer('reply', '画好了，顺便给你 key ' + CREDENTIAL, images=[('image/png', PNG)])
         reply = await self.channel.receive_owner('telegram', 'g:3', '画猫')
-        self.assertIn('已转给', reply)
-        self.assertEqual(getattr(reply, 'images', ()), ())
+        # P573 (#387): an owner channel is not held for a key — the value becomes a pickup-card placeholder, the rest goes
+        self.assertNotIn(CREDENTIAL, str(reply))
+        self.assertIn('密钥 1', str(reply))
+        self.assertIn('画好了', str(reply))
 
     async def test_executor_without_image_tool_asks_the_owners_codex_to_draw(self):
         self.answer('ask_owner', 'a cat', topic='image')

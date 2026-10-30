@@ -6,7 +6,7 @@ import tempfile
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from test_p71_peer_service import Base, FakeHost, FakeNet, FakeSessions, device, pmsg, settle, sign_answer, SECRET
+from test_p71_peer_service import Base, FakeHost, FakeNet, FakeSessions, device, pmsg, settle, sign_answer, SECRET, settle_pending
 from agentj import peer_service, peer_guard, wire, controls
 from agentj.same_owner import aggregate, clean_status
 
@@ -87,7 +87,7 @@ class SameOwnerTests(Base):
         m = pmsg('请审阅以下稿件。' + '检查论证与表达。' * 460)
         with patch.object(self.svc, '_outbound', review):
             self.svc._on_pmsg(self.b, m)
-            await settle()
+            await settle_pending(self.svc)
         self.assertEqual(len(self.sends), 1)
         ready = asyncio.create_task(self.sends[0].wait_ready())
         with patch.object(self.svc, '_outbound', review):
@@ -96,11 +96,11 @@ class SameOwnerTests(Base):
             self.assertTrue(await ready)
         self.assertIn(m['text'], self.sends[0].text)
         self.assertEqual(self.sends[0].source['kind'], 'same_owner')
-        self.assertTrue(self.host.notices)
+        self.assertEqual(self.pages[0][0]["text"], m["text"])
         self.assertIn('reply', self.host.pushes)
         self.assertTrue((await self.svc.tell(self.b, '审阅完成', m['mid']))['ok'])
         self.svc._on_pmsg(self.b, m)
-        await settle()
+        await settle_pending(self.svc)
         self.assertEqual(len(self.sends), 1)
 
     async def test_p482_reply_to_received_legacy_task_without_forward_mapping(self):
@@ -175,7 +175,7 @@ class SameOwnerTests(Base):
         with patch.object(self.svc, '_outbound', change_name):
             self.assertTrue(await self.svc.same_owner.forward(self.b, pmsg('检查服务')))
         self.assertNotIn(SECRET, self.pages[0][0]['text'])
-        self.assertIn('original-name', self.pages[0][0]['text'])
+        self.assertIn('original-name', self.pages[0][0]['name'])
 
     async def test_revocation_during_status_filter_returns_403(self):
         await self.confirm()
@@ -204,7 +204,7 @@ class SameOwnerTests(Base):
         await self.confirm()
         m = pmsg('检查后台任务进展')
         self.svc._on_pmsg(self.b, m)
-        await settle()
+        await settle_pending(self.svc)
         self.assertFalse(self.svc.asks)
         self.assertFalse(self.sess.calls)
         self.assertEqual(len(self.sends), 1)
@@ -222,7 +222,7 @@ class SameOwnerTests(Base):
         self.assertEqual(len(self.sends), 1)
         self.assertFalse(self.sess.calls)
         self.assertFalse(self.svc.asks)
-        self.assertIn(self.b, self.pages[0][0]['text'])
+        self.assertEqual(self.b, self.pages[0][0]['friend'])
         self.assertFalse(await self.svc.same_owner.forward(self.b, packet))
 
     async def test_remote_phone_popup_confirm_and_reject(self):
@@ -263,7 +263,7 @@ class SameOwnerTests(Base):
         self.svc.answer(self.did, tamper)
         self.assertIn(ask['id'], self.svc.asks)
         self.svc.answer(self.did, ans)
-        await settle()
+        await settle_pending(self.svc)
         self.assertEqual(len(self.sends), 1)
         ready = asyncio.create_task(self.sends[0].wait_ready())
         await settle()
@@ -282,10 +282,10 @@ class SameOwnerTests(Base):
         self.svc._question(self.b, pmsg('检查服务'), '', '')
         ask = self.svc.ask_msgs()[-1]
         self.svc.answer(self.did, sign_answer(self.host.st, self.did, self.dsk, ask, True, 'main'))
-        await settle()
+        await settle_pending(self.svc)
         self.clock.t += 4
         self.svc._on_pmsg(self.b, pmsg('检查下一个服务'))
-        await settle()
+        await settle_pending(self.svc)
         self.assertEqual(len(self.sends), 2)
         self.host.estop = True
         self.assertFalse(await self.sends[-1].wait_ready())
@@ -400,7 +400,7 @@ class SameOwnerTests(Base):
         self.svc._question(self.b, pmsg('检查进度'), '', '')
         ask = self.svc.ask_msgs()[-1]
         self.svc.answer(self.did, Roundtrip.signed(self, ask, True, 'main'))
-        await settle()
+        await settle_pending(self.svc)
         self.assertNotIn(ask['id'], self.svc.asks)
         self.assertTrue(self.svc.same_owner.active(self.b))
         self.assertEqual(len(self.sends), 1)

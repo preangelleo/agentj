@@ -191,3 +191,15 @@ test('review: pk_reg_res {ok:false, why:"peer_required"} starts the peer flow by
   assert.match(app, /restart: \(\) => setupFaceId\(\)/);
   assert.match(read('../public/js/pkpeer.js'), /const ASK_MS = 10000;/, 'the 10 s legacy fallback stays');
 });
+
+test('P574 existing-key roster introduction never requests creation, replacement or a legacy fallback', async () => {
+  const h=harness({res:{t:'pk_peer_res',ok:true,mode:'peer',id:ID,code:'042917',exp:1800000300,online:1}});
+  assert.equal(await P.startRosterIntro(),'peer');
+  assert.deepEqual(h.asked[0].o,{t:'pk_peer_req',roster:true});
+  assert.equal(await P.onOffer({n:NONCE,peer:ID}),false,'setup offer cannot change introduction into key creation');
+  P.onDone({id:ID,ok:true,roster:true,by:'Trusted phone'});
+  assert.equal(h.registered.length,0);assert.equal(h.approved.length,0);
+  assert.equal(P._state().req,null);assert.equal(P._state().offer,null);
+  const old=harness({res:{t:'timeout'}});
+  assert.equal(await P.startRosterIntro(),'fail');assert.equal(old.legacy,0);
+});

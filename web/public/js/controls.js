@@ -164,7 +164,7 @@ export async function revokeGrants() {
 }
 export function showAuto(m) {
   if (typeof m.tool !== 'string' || typeof m.summary !== 'string') return;
-  executionToast(t(m.by === 'jev' ? 'ask.autoJev' : m.by === 'goal' ? 'ask.autoGoal' : m.by === 'full' ? 'p336.autoFull' : 'ask.auto', { tool: m.tool, summary: m.summary.slice(0, 120) }), 2600);
+  executionToast(t(m.by === 'jev' ? 'ask.autoJev' : m.by === 'goal' ? 'ask.autoGoal' : m.by === 'task' ? 'p573.autoTask' : m.by === 'full' ? 'p336.autoFull' : 'ask.auto', { tool: m.tool, summary: m.summary.slice(0, 120) }), 2600);
 }
 
 // ---- 它记住了什么
@@ -273,6 +273,7 @@ function actText(r) {
       : ACT_RESULTS.includes(r.result) ? t('act.result.' + r.result) : r.result ?? '',
   };
   if (r.k === 'decision') v.t = tx ? ' ' + tx : '';
+  if (r.k === 'auto' && r.by === 'task') return t('p573.act.task', v);   // P573: under this task's grant
   if (r.k === 'auto' && ['level_full', 'goal_nocard', 'parked', 'background', 'dispatch_headless'].includes(r.by)) return t('p336.act.' + r.by, v);   // P336 · P552 background
   return t('act.k.' + r.k, v);
 }

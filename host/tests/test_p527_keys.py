@@ -21,7 +21,8 @@ class KeyDelivery(Base):
             self.host.elevate.cancel_all('stopped')
             self.assertIsNotNone(card, 'success must carry a real input card, not a premature toast')
             self.assertEqual(card['name'],'OPENAI_API_KEY')
-            self.assertTrue(card['passkey_required'])
+            self.assertFalse(card['passkey_required'])  # P573: paired owner key editing is a signed button.
+            self.assertTrue(card['button_only'])
             self.assertEqual(self.host.elevate.cards[card['id']]['only'],self.s.device)
             self.host.elevate.cancel_all('stopped')
             await asyncio.gather(*list(self.host.__dict__.get('_bg_tasks', [])), return_exceptions=True)

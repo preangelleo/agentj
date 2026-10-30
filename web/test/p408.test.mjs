@@ -51,7 +51,8 @@ test('a line with a control character (TAB, CR, LF, ESC, DEL, C1, U+2028/9) is n
   assert.match(TERM, /const LINE_MAX = 4096/);
   assert.match(send, /send\(\{ t: 'term_line', id: S\.id, seq, line, \.\.\.\(bang \? \{ bang \} : \{\}\) \}\)/, 'term_line {id, seq, line} (+ P414 bang)');
   assert.equal([...code(TERM).matchAll(/t: 'term_line'/g)].length, 2, 'two places send a line: the plain one and the confirmed one');
-  assert.match(TERM, /send\(\{ t: 'term_line', id: S\.id, seq: m\.seq, line, \.\.\.signed, fa, \.\.\.\(bangSid \? \{ bang: bangSid \} : \{\}\) \}\)/, 'the confirmed line = the line the host showed');
+  // P573: `fa` rides only when the host asked for Face ID (term_confirm uv 1 / no uv); uv 0 = the button, still signed
+  assert.match(TERM, /send\(\{ t: 'term_line', id: S\.id, seq: m\.seq, line, \.\.\.signed, \.\.\.\(fa \? \{ fa \} : \{\}\), \.\.\.\(bangSid \? \{ bang: bangSid \} : \{\}\) \}\)/, 'the confirmed line = the line the host showed');
   assert.match(TERM, /i\.value = String\(v\)\.replace\(CTRL, ' '\)/, 'a prefilled command cannot carry one either');
 });
 
@@ -101,7 +102,8 @@ test('§38 signed object texts = the host (controls.py object_text), in both wir
 });
 
 test('Face ID starts inside the tap (no await before get()); no passkey → the 「设置 Face ID」 offer, no fallback', () => {
-  for (const f of ['function introYes()', "onYes: () => {\n      let p;\n      try { p = assertFa(m.fa_ch, S.fa, null)", "try { p = assertFa(m.fa_ch, S.fa, salt, vn)"]) assert.ok(TERM.includes(f), f);   // P414: + vn
+  // P573: term_confirm uv 0 = no Face ID (Promise.resolve); uv 1 = the assertion still starts inside the tap
+  for (const f of ['function introYes()', "onYes: () => {\n      let p;\n      if (!uv) p = Promise.resolve({ fa: undefined });\n      else try { p = assertFa(m.fa_ch, S.fa, null)", "try { p = assertFa(m.fa_ch, S.fa, salt, vn)"]) assert.ok(TERM.includes(f), f);   // P414: + vn
   const intro = TERM.slice(TERM.indexOf('function introYes()'), TERM.indexOf('function openStep2('));
   assert.ok(intro.indexOf('assertFa(') < intro.indexOf('await'), 'assertion before the first await');
   assert.doesNotMatch(intro.slice(0, intro.indexOf('assertFa(')), /await|async/);

@@ -1,6 +1,6 @@
 ---
 name: agentj-contacts
-description: The owner's address book and sending e-mail to people — 「发邮件给张三」「把这个文件发给李总」「转给老王」「记一下他的邮箱」「存个联系人」「导入通讯录」「导出联系人」「张三的邮箱是多少」, "email this to Zhang", "send it to my accountant", "save this contact", "import my contacts CSV / vCard". Look the person up first (`agentj contacts find`, pinyin and homophones included); nobody found → say so and put a contact card on the phone; send only through `agentj mail send` (every send waits for an approval card on the phone: one tap when every recipient is the owner, this remote's approval passkey for anyone else). Also 「发给我自己」「发我邮箱」 "send it to me": slot 0 = the owner.
+description: The owner's address book and sending e-mail to people — 「发邮件给张三」「把这个文件发给李总」「转给老王」「记一下他的邮箱」「存个联系人」「导入通讯录」「导出联系人」「张三的邮箱是多少」, "email this to Zhang", "send it to my accountant", "save this contact", "import my contacts CSV / vCard". Look the person up first (`agentj contacts find`, pinyin and homophones included); nobody found → say so and put a contact card on the phone; send only through `agentj mail send` (mail only to the owner goes with no card; anyone else waits for a one-tap approval card on the phone). Also 「发给我自己」「发我邮箱」 "send it to me": slot 0 = the owner.
 ---
 # Address book and e-mail (通讯录)
 
@@ -30,14 +30,14 @@ a command.
    file is sent as HTML; scripts / forms are dropped, CSS is inlined for Gmail / Outlook; local images become their alt
    text — `local_images: n` in the answer, so add the published link). web-page-report: `wr render <json> -t <id> -o <dir>`
    writes `<dir>/index.html`. `--format text` only when the owner asks for plain text. Scheduled tasks use the same command:
-   every run gets a fresh card (one tap for owner-only mail, the passkey otherwise).
+   owner-only mail goes with no card; mail to anyone else gets a fresh card every run.
 
 ## Slot 0 = the owner (「发给我自己」)
 - Slot 0 of the book is the owner themself: name, main e-mail (the first), optional phone. `agentj contacts owner show`.
   Every "send it to me" — a web report, meeting minutes, a mail, a file — goes to that main e-mail:
   `agentj mail send --to-owner …` (slot 0 + the 「主人」 allowlist addresses; or `--to me`, which finds slot 0 only).
   `--to-owner` with `--to` sends to both (deduped, 10 at most); no owner address yet → `no_owner_address`: say so and offer
-  `agentj contacts owner set`. Mail only to the owner is approved with one tap on the card; add anyone else and it needs the passkey.
+  `agentj contacts owner set`. Mail only to the owner goes with no card (the owner mails self); add anyone else and it needs the card.
 - Empty → `agentj contacts owner set [--name … --email … --phone …] --why '…'`: a card rises on the phone, pre-filled with what
   you pass (or the 「主人」 address of the e-mail channel); the owner saves or skips. You can never write slot 0 yourself
   (`edit` / `rm` on it are refused): an address there skips the outward filter. The first pairing already shows this card once.
@@ -80,7 +80,7 @@ a command.
   send something to themselves. On a reply card it sits next to the Telegram icon and mails the whole exchange (the
   owner's message on top, the reply below, its files attached; 「不带我的提问」 leaves the message out).
 
-Your mail replies and meeting notes are long-press cards too (no Face ID). The owner's own tap on 「转发到邮箱」 or the Telegram forward on a paired remote needs no card and no passkey (rate limit, 10-minute repeat check and masking for others stay). Server/login/port/encryption changes invalidate the app password. A password saved by an older version is migrated automatically for a fixed provider preset (Gmail, QQ, 163 …); with custom servers it is never used directly: verify saved registered candidates first and ask for entry only if none works. A password that no longer opens pauses mail; host.log says why (absent / legacy / unreadable) and the owner gets one chat line pointing to Settings → 邮件通道 / Email. Never self-confirm, bypass the card or request the app password in chat.
+Your mail replies and meeting notes are one-tap cards too (no Face ID). The owner's own tap on 「转发到邮箱」 or the Telegram forward on a paired remote needs no card and no passkey (rate limit, 10-minute repeat check and masking for others stay). Server/login/port/encryption changes invalidate the app password. A password saved by an older version is migrated automatically for a fixed provider preset (Gmail, QQ, 163 …); with custom servers it is never used directly: verify saved registered candidates first and ask for entry only if none works. A password that no longer opens pauses mail; host.log says why (absent / legacy / unreadable) and the owner gets one chat line pointing to Settings → 邮件通道 / Email. Never self-confirm, bypass the card or request the app password in chat.
 Mailbox sign-in failure / 邮箱登录失败：the host first checks registered sources for app-password candidates, including historical cards without account metadata, using this mailbox account and verifies IMAP + SMTP without sending. A successful check updates the existing encrypted mail secret. Do not ask the owner for the same password again first, print a candidate, or use a separate SMTP script. 历史密钥卡即使没有邮箱账号元数据，也先实测已登记来源里的应用专用密码候选；变量名或账号提示不代表验证通过，必须 IMAP 与 SMTP 双通过才接管。手机发信失败会显示原因，授权问题点「修复并重试」。
 
 Domain visitors / 域名访客：`agentj mail allow @anthropic.com --guest [--subdomains]`. Domains are guest-only, public mailbox domains are rejected, and DMARC or aligned DKIM is mandatory even with auth off; SPF-only fails. Exact legacy addresses remain compatible. 域名只能作为访客，可选包含子域，不能冒充主人；公共邮箱需完整地址。Trash results stay in host.log/local records, without a main-chat note.

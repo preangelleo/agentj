@@ -26,7 +26,7 @@ import { renderDoc } from './preview.js';
 import { glyph } from './icons.js';
 import { unb64u } from '../proto/wire.js';
 
-import { CHUNK, WINDOW, EAGER, LRU_MAX, MAX_ITEMS, CAPS, WHYS, HTML_CSP, sanitize, sandboxAttrs, FRAME_NOBAR, normRef, matchSlot, placeSlots, blobType, autoLoad, previewKind } from './mediawire.js';
+import { CHUNK, WINDOW, EAGER, LRU_MAX, MAX_ITEMS, CAPS, WHYS, HTML_CSP, sanitize, sandboxAttrs, FRAME_NOBAR, normRef, matchSlot, placeSlots, blobType, autoLoad, previewKind, codeLang, PREVIEW } from './mediawire.js';
 export { CHUNK, WINDOW, EAGER, LRU_MAX, MAX_ITEMS, CAPS, WHYS, HTML_CSP, sanitize, sandboxAttrs, normRef, matchSlot, placeSlots, blobType };
 const STALL_MS = 20000;
 const PARALLEL = 2;                          // fetches at once (the computer allows 3 per session)
@@ -471,9 +471,32 @@ function show(m, c, body, blob) {
     body.replaceChildren();                              // a document: name, size and the icons say it all
   }
 }
+// P573 (#386): a file to read (Markdown / plain text / code) opens in the reply's own full-screen reader (relay.js registers it
+// here): the same Noir page, the same md.js rendering, the same footer icons, select-to-quote — one reader, not two.
+let docReader = null;
+export function setDocReader(fn) { docReader = typeof fn === 'function' ? fn : null; }
+const READ_KINDS = new Set(['markdown', 'text', 'code']);
+async function readInReader(m, c, blob, kind) {
+  const cut = blob.size > PREVIEW.TEXT_MAX;
+  const text = new TextDecoder('utf-8', { fatal: false }).decode(await (cut ? blob.slice(0, PREVIEW.TEXT_MAX) : blob).arrayBuffer());
+  if (want !== c) return;
+  if (viewerOpen()) { const pushed = viewerPushed; closeViewer(); want = c; if (pushed) await afterPop(); }   // ← / → from the viewer: its Back lands first
+  if (want !== c) return;
+  want = null;
+  docReader({ name: m.name, text, cut, kind, lang: codeLang(m.name), card: c });
+}
+// history.back() is asynchronous: the next layer pushes its own entry only after the pop (or 300 ms), never before it
+export const afterPop = () => new Promise((r) => { const t = setTimeout(r, 300); addEventListener('popstate', () => { clearTimeout(t); setTimeout(r, 0); }, { once: true }); });
+/** P573: ← / → in the file reader — the previous / next previewable file of the same reply (the viewer's own order). */
+export function fileNeighbour(c, d) { const list = navList(c), i = list.indexOf(c); return i < 0 ? null : list[i + d] || null; }
+export const readsInReader = (c) => READ_KINDS.has(c?.dataset?.pv);
+/** Esc / × on the viewer gives the focus back to this card (the file last shown, as step() does). */
+export function viewerOpener(c) { if (viewer?.layer && viewerOpen()) viewer.layer.opener = c; }
 function openPreview(m, c, blob) {
   c._cancelSingle?.();
-  const url = urlOf(c, blob), kind = previewKind(m);
+  const kind0 = previewKind(m);
+  if (docReader && READ_KINDS.has(kind0)) return readInReader(m, c, blob, kind0);
+  const url = urlOf(c, blob), kind = kind0;
   if (kind === 'image') return viewImage(url, m.name, c, m);
   if (kind === 'html') return blob.arrayBuffer().then((b) => viewHtml(new TextDecoder().decode(b), m, c));
   if (kind === 'audio' || kind === 'video') return viewPlayer(m, url, c);

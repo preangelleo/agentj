@@ -1,29 +1,4 @@
-"""P158 `/goal` — goal mode: one signed opening grant, the goal first, a 10-second card that lets a reversible step through.
-
-Leo (2026-10-12): 「用户可能已经去睡觉了……一旦启动这个 goal，应该特别对待，以目标达成为主。只有极其严格的，可能是被黑客攻击的，或者
-真的有巨大风险的，才弹窗。弹窗 10 秒钟用户没点确认，应该有某种安全机制去执行，比如有备份、有快照、可回滚的这种就可以执行。」
-
-Flow
-- The owner sends `/goal <what, maybe a deadline>` (phone menu). The host hands it to the main Agent with a system note; the
-  Agent writes a proposal (goal, acceptance, deadline, and the dangerous actions it expects, per category with limits) and runs
-  `agentj goal propose --file <json>`. serve shows it as ONE approval card (tool `agentj goal`); the owner's signed allow from a
-  paired phone starts the goal. Only what the card listed is granted.
-- While a goal is active, every approval the main Agent asks for (owned / shared / Codex / OpenCode — they all reach
-  serve.Host.ask) is sorted into a tier, decided HERE by the host, never by what the Agent says:
-    low          not one of the five dangers                          → allowed, logged (no card)
-    granted      matches a signed grant of the goal (within its limit) → allowed, logged, one quiet line on the phone
-    reversible   outside the grant, but the host can undo it           → card with a 10 s countdown; no answer = allowed
-                 (git-tracked files with nothing uncommitted, a move to the trash, a plain push to a remote already known)
-    hold         outside the grant and not provably reversible         → the usual card, never automatic; when it is not
-                 allowed the step is listed in the result card 「卡在哪一步，等你决定」 and the Agent goes on with other work
-    attack       looks like an injection / an attack on the approval itself (`… | sh`, base64 → shell, `source <url>`,
-                 a hook or Agent J approval / security setting being changed)               → red card, never automatic
-- The goal ends at its deadline (default 8 h, at most 72 h), on `/goal stop` (phone) / `agentj goal stop`, on
-  `agentj goal done`, on 「全部停下」, or when the granting phone is unpaired; its one-time grant ends with it. A result card
-  (achieved or not, grants used, automatic approvals, what is waiting for the owner) goes to the phone.
-- State: <state>/goal.json (~/.local/state/agentj/goal.json, 0600) — survives a restart and a compaction until the deadline.
-Never a credential: a proposal that looks like it holds one is refused; credentials are never grantable (always a card).
-"""
+"""Agent J goal; developer reference: documentation/notes/P0262-HOST-REFERENCE.md."""
 from __future__ import annotations
 
 import hashlib

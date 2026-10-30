@@ -116,18 +116,20 @@ export async function shownDigest(tool, summary) { return hex(await sha256(enc.e
 /** The exact bytes a device signs (Ed25519) to answer a request. decision: 'allow' | 'deny' | 'allow_batch'.
  *  allow_batch (batch approval of the same low-risk kind for the rest of the turn) also signs hex SHA-256 of the scope text
  *  exactly as shown, on one more line, so the host can tell the human agreed to THAT scope and no wider one. */
-export async function approveMessage(channel, device, id, decision, tool, summary, scope) {
+export async function approveMessage(channel, device, id, decision, tool, summary, scope, taskScope) {
   if (decision !== 'allow' && decision !== 'deny' && decision !== 'allow_batch') throw new Error('bad decision');
   if ((decision === 'allow_batch') !== (typeof scope === 'string' && scope.length > 0)) throw new Error('scope only with allow_batch');
   const base = `${APPROVE_CONTEXT}\n${channel}\n${device}\n${id}\n${decision}\n${await shownDigest(tool, summary)}`;
-  return enc.encode(decision === 'allow_batch' ? `${base}\n${hex(await sha256(enc.encode(scope)))}` : base);
+  const scoped = decision === 'allow_batch' ? `${base}\n${hex(await sha256(enc.encode(scope)))}` : base;
+  if (taskScope !== undefined && (typeof taskScope !== 'string' || decision === 'allow_batch')) throw new Error('bad task scope');
+  return enc.encode(taskScope ? `${scoped}\ntask:${hex(await sha256(enc.encode(taskScope)))}` : scoped);
 }
 /** P296: an `agentj mail send` allow that also puts the ticked recipients on the mail allowlist: approveMessage('allow'), plus
  *  one more line hex(SHA-256("allow:" + the ticked addresses in the card's offered order, newline-joined)). Mirrors
  *  approvals.allow_add_line; the host checks the picks against what it offered. */
-export async function mailAllowMessage(channel, device, id, tool, summary, picks) {
+export async function mailAllowMessage(channel, device, id, tool, summary, picks, taskScope) {
   if (!Array.isArray(picks) || !picks.length) throw new Error('no picks');
-  return concat(await approveMessage(channel, device, id, 'allow', tool, summary), enc.encode(`\n${hex(await sha256(enc.encode('allow:' + picks.join('\n'))))}`));
+  return concat(await approveMessage(channel, device, id, 'allow', tool, summary, undefined, taskScope), enc.encode(`\n${hex(await sha256(enc.encode('allow:' + picks.join('\n'))))}`));
 }
 // ---------------------------------------------------------------- phone controls (PROTOCOL §8). Mirrors host/agentj/controls.py.
 export const CONTROL_CONTEXT = 'agentjarvis-control-v1';
@@ -204,6 +206,12 @@ export async function controlMessage(channel, device, action, nonce, ts, o) {
   if (!/^[0-9a-f]{32}$/.test(nonce) || !Number.isInteger(ts)) throw new Error('bad nonce / ts');
   const d = hex(await sha256(enc.encode(controlObject(action, o))));
   return enc.encode(`${CONTROL_CONTEXT}\n${channel}\n${device}\n${action}\n${nonce}\n${ts}\n${d}`);
+}
+/** P573 reversible key-management write; target bytes mirror controls.object_text('keys_op'). */
+export async function keyOpMessage(channel, device, nonce, ts, target) {
+  if (!/^[0-9a-f]{32}$/.test(nonce) || !Number.isInteger(ts)) throw new Error('bad nonce / ts');
+  const d = hex(await sha256(enc.encode(canonicalJson(target))));
+  return enc.encode(`${CONTROL_CONTEXT}\n${channel}\n${device}\nkeys_op\n${nonce}\n${ts}\n${d}`);
 }
 /** The device's Ed25519 approval key: private half non-extractable (it can sign, never leave WebCrypto); public half raw 32 B. */
 export async function generateSigningKeypair() {

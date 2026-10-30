@@ -1,6 +1,6 @@
-# Agent J 0.26.1a1 release notes
+# Agent J 0.26.2a1 release notes
 
-Host 0.26.1a1 / install 0.28.1; phone-web scope.
+Host 0.26.2a1 / install 0.28.2; phone-web scope.
 Phone parity must pass --strict. Full Android/Telegram parity is incomplete.
 Full Android/Telegram parity is incomplete.
 No APK is included in this release. Android source is for review, not a released app.
@@ -8,19 +8,21 @@ No APK is included in this release. Android source is for review, not a released
 Publication status: local preparation only. Live site verification is DEFERRED until
 the public commit and tag are pushed, the site is deployed, and cold installation passes.
 
-Release order: C Dashboard support knowledge and plaza redaction, no new D1 migration; A signed host/site/downloads and front Worker credential scanning, then B phone web. Synchronize Olares receivers after A. Preserve existing D1 revocation, action UV, checkout and seat-transfer records; never replay migrations or restore an older database snapshot. Qualification uses one fresh full parity run and freshly derived affected host suites for all seven merged candidates. No full-host or QA-J acceptance is claimed. Local preparation only; public baseline and ready require actual 0.26.0 publication evidence. No push or deployment authorized.
+Release order: C Dashboard support knowledge, then A signed host/site/downloads and front Worker, immediately followed by B phone web. No new D1 migration or relay change. Preserve existing revocation, action approval, checkout and seat-transfer records; never replay migrations. Qualification covers the seven merged candidates, affected host suites and one source-bound full parity run with exact failed-item continuation. No full-host or QA-J acceptance is claimed. Local preparation only; Jev review and publication remain the operator's steps.
 ## Changes
 
-- [All AI coding tools] Move existing scheduled tasks to the host’s system scheduler after confirming on your phone. Review access before moving; move tasks back or move them again after changes.
-- [All AI coding tools] Confirmation cards show the Agent’s note; expand long reasons. Choose notification sounds in Settings.
-- [OpenCode] With no API key, a supported free model is selected before the first message and the header follows the actual model. Switch back to Codex if none is available.
-- [All AI coding tools] The email allowlist consistently says Owner. Release history shows notes that apply to the current host.
-- [All AI coding tools] Fixed stale state during tool switching and recovery after failed switches. Access codes are redacted and scheduled tasks execute validated instructions.
-- 【所有 AI 编程工具】已有定时任务可以在手机确认后改用主机的系统定时；迁移前说明运行权限，迁移后可退回，任务改了需要重新迁移。
-- 【所有 AI 编程工具】确认卡增加「Agent 说明：」，长理由可以展开阅读全文；可在设置里选择提示音。
-- 【OpenCode】没有 API Key 时会预选可用免费模型，顶栏与实际模型保持同步；没有可用模型时提供切回 Codex 的入口。
-- 【所有 AI 编程工具】邮件白名单统一使用「主人」称谓；历史版本说明只展示当前主机适用的内容。
-- 【所有 AI 编程工具】修复切换过程中旧状态回写、失败后状态不一致及重试入口；补齐访问码脱敏，定时任务只执行已核对的指令。
+- [all] Authorize the listed steps of a same-owner task once. Keys travel through a dedicated encrypted channel; steps outside the grant still require approval.
+- [all] Heartbeats check local tasks, calendar items and unfinished work before calling a model. Idle checks use no model tokens; measured heartbeat usage appears in the usage panel.
+- [all] Files and replies share one reader. Input cards retain the original words and source for WeChat, Telegram, email and same-owner tasks.
+- [codex,opencode] Tool switching explains the limits of a fallback handoff excerpt after a timeout. Isolated sessions can query the host result for the same switch.
+- [all] Malformed upgrade-cache receipts trigger a fresh download instead of a misleading verification failure. Signature and package identity checks remain mandatory.
+- [all] Unclaimed same-owner tasks wait while the main Agent is busy or disconnected. Claimed tasks and unknown outcomes are never replayed automatically.
+- [all] 同主人设备可以用一份任务授权单确认具体步骤，密钥通过专用加密通道传递；授权范围外的操作仍需确认。
+- [all] 心跳先在本机检查待办、日历和未完成事项；没事就不调模型，用量弹窗里能看心跳消耗。
+- [all] 文件与回复用同一款阅读器；输入卡保留微信、Telegram、邮件和同主人任务的原文与来源。
+- [codex,opencode] 切换等待超时，说明交接摘录有局限；隔离会话能查同次切换的主机结果。
+- [all] 修复升级缓存收据格式异常导致的误报校验失败；损坏缓存时重新下载，完整签名与身份校验机制依然保留。
+- [all] 主 Agent 忙了或者断了，同主人没认领的任务就留着等；已经认领的，或者结果还看不出来的，就不会自动重放。
 
 ## Material acceptance limits
 

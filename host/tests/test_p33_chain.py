@@ -308,7 +308,9 @@ class _Chain(unittest.TestCase):
             self.assertIn(follow["agent"], ("claude", "codex", "opencode"))
             self.assertRegex(follow["id"], r"^[a-f0-9]{32}$")
         self.assertIsNone(m.get("shared_status"))
-        self.assertEqual(set(m) - {"t", "shared_follow"}, {"model", "model_name", "effort", "ctx", "h5", "week", "at", "shared_status", "shared_writer"})
+        self.assertFalse(m["heartbeat_usage"]["available"])
+        self.assertIsNone(m["heartbeat_usage"]["total_tokens"])
+        self.assertEqual(set(m) - {"t", "shared_follow", "heartbeat_usage"}, {"model", "model_name", "effort", "ctx", "h5", "week", "at", "shared_status", "shared_writer"})
 
 
 # ------------------------------------------------------------------ Claude Code

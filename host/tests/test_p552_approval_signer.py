@@ -339,12 +339,15 @@ class Background(Fixture):
                 self.assertTrue(self.cards()[-1]["passkey_required"], c)
 
     def test_standard_keeps_its_own_face_id_floor(self):
-        # review B2: outside 「减少弹窗」 sudo / reading a credential keep the level's Face ID, background or not
+        # P573 (#386 ⑤): sudo / reading a credential are a button now, and an automation is not asked a button; the
+        # three classes keep Face ID in the background too (review B2's floor, narrowed by the chairman 10-29)
         for c in ("sudo systemctl restart x", "cat .env"):
-            n = len(self.cards())
-            self.assertEqual(self.ask(c, background="task")["behavior"], "deny", c)
-            self.assertEqual(len(self.cards()), n + 1, c)
-            self.assertTrue(self.cards()[-1]["passkey_required"], c)
+            self.assertEqual(self.ask(c, background="task")["behavior"], "allow", c)
+            self.assertEqual(self.last()["reason"], "background")
+        n = len(self.cards())
+        self.assertEqual(self.ask("rm -rf ~/Documents/old", background="task")["behavior"], "deny")
+        self.assertEqual(len(self.cards()), n + 1)
+        self.assertTrue(self.cards()[-1]["passkey_required"])
         # under 「减少弹窗」 only the four kinds: sudo on the owner's own machine runs (chairman 10-26 17:5x)
         self.harness()
         self.assertEqual(self.ask("sudo systemctl restart x", background="task")["behavior"], "allow")

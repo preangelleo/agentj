@@ -118,7 +118,7 @@ class CodexNames(Fixture):
             self.assertEqual(await self.pre(g, "collaborationspawn_agent", CUSTOMER["collaborationspawn_agent"]), {})
             out = (await self.pre(g, "Bash", {"command": "sudo true"}))["hookSpecificOutput"]   # the sub-agent's own call
             self.assertEqual(out["permissionDecision"], "deny")
-            self.assertTrue(self.host.ask.await_args.kwargs["require_passkey"])
+            self.assertFalse(self.host.ask.await_args.kwargs["require_passkey"])   # P573: sudo is one button (+ password)
 
     async def test_computer_use_script_needs_binding(self):
         with tempfile.TemporaryDirectory() as d:
@@ -130,7 +130,7 @@ class CodexNames(Fixture):
             # not computer.control, no 免问 scope, no other layer; only a Face ID card the owner refused here.
             self.assertEqual(self.denied(), [])
             self.host.ask.assert_awaited_once()
-            self.assertTrue(self.host.ask.await_args.kwargs["require_passkey"])
+            self.assertFalse(self.host.ask.await_args.kwargs["require_passkey"])   # P573: a button card, still asked
             self.assertFalse(self.host.ask.await_args.kwargs["batch"])
             self.assertIsNone(p.bound_action("mcp__cua_repl__js", None))
             self.assertIsNone(p.tool_action("mcp__cua_repl__js"))

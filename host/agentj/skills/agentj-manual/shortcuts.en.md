@@ -125,7 +125,7 @@ Function keys also work while a text field is focused. System or input-method sh
 | `↑` · `↓` · `Enter` | Tap a result | Pick a result; Enter opens it |
 | `←` · `→` | Swipe; tap ‹ › | Earlier / later searches |
 | `Esc` | Tap ×; tap outside | Close the search |
-| `⌘+Enter` / `Ctrl+Enter` | Hold Approve | Approve, the same as holding the approve button (identity checks as usual); the card wins over the message box |
+| `⌘+Enter` / `Ctrl+Enter` | Tap Approve | Approve, the same as tapping Approve (identity checks as usual); the card wins over the message box |
 | `Esc` | Tap put away | Put the card away, neither approved nor denied; tap Pending at the top to reopen it |
 
 ## Gestures
@@ -232,5 +232,5 @@ Function keys also work while a text field is focused. System or input-method sh
 | `↑` · `↓` · `Enter` | Tap a result | Pick a result; Enter opens it |
 | `←` · `→` | Swipe; tap ‹ › | Earlier / later searches |
 | `Esc` | Tap ×; tap outside | Close the search |
-| `⌘+Enter` / `Ctrl+Enter` | Hold Approve | Approve, the same as holding the approve button (identity checks as usual); the card wins over the message box |
+| `⌘+Enter` / `Ctrl+Enter` | Tap Approve | Approve, the same as tapping Approve (identity checks as usual); the card wins over the message box |
 | `Esc` | Tap put away | Put the card away, neither approved nor denied; tap Pending at the top to reopen it |

@@ -85,6 +85,12 @@ class _Base(unittest.TestCase):
         return self.m.scan(text, 7)
 
 
+def drop_store(st):
+    """P573: remove the private copies (media_store) so a test reaches the source-file checks underneath."""
+    import shutil
+    shutil.rmtree(st.root / media.STORE_DIR, ignore_errors=True)
+
+
 class Extraction(unittest.TestCase):
     def test_md_image_link_backtick_bare_file_url_and_never_remote(self):
         text = ("看图 ![图表](out/chart.png \"t\")，报告 [下载](<docs/my report.pdf>)，还有 `out/a.mp4` 和 ./b.wav。\n"
@@ -152,14 +158,22 @@ class Refusals(_Base):
                 "![](.agentj/inbox/2026-10-05/a.png) [n](out/notes.md) [p](out/page.html) [ok](out/ok.html) "
                 f"![]({self.st.root / 'x.png'})")
         items, skips = self.scan(refs)
-        # P211: the page is the owner's own — `.git` / `.agentj` are not secrets; credential files and real keys are held
-        # back as pickup-card candidates (key_file / key_content); agentj's state folder stays private
+        # P211: the page is the owner's own — `.git` / `.agentj` are not secrets; credential files are held back as
+        # pickup-card candidates (key_file); agentj's state folder stays private. P573 (#386, replaces P211's key_content
+        # here): a text file holding a real key goes as its MASKED copy — an ordinary card — and only the value is carded
         self.assertEqual([(s["name"], s["why"]) for s in skips], [
             (".env", "key_file"), (".env.local", "key_file"), ("server.pem", "key_file"), ("a.png", "key_file"),
-            ("notes.md", "key_content"), ("page.html", "key_content"), ("x.png", "private")])
-        self.assertEqual([i["name"] for i in items], ["x.png", "a.png", "ok.html"], "a data: picture inside html is not a key")
+            ("x.png", "private")])
+        self.assertEqual([i["name"] for i in items], ["x.png", "a.png", "notes.md", "page.html", "ok.html"],
+                         "a data: picture inside html is not a key")
+        for it in items[2:4]:
+            got = b"".join(d for _, d, _ in self.m.window(it["mid"], 0))
+            self.assertNotIn(KEY.encode(), got)
+            self.assertIn(b"<redacted>", got)
         _, _, keys = self.m.scan_keys(refs, 2)
-        self.assertEqual([k[0]["name"] for k in keys], [".env", ".env.local", "server.pem", "a.png", "notes.md", "page.html"])
+        self.assertEqual([(k[0] or {"name": k[1]["name"]})["name"] for k in keys],
+                         [".env", ".env.local", "server.pem", "a.png", "notes.md", "page.html"])
+        self.assertEqual([[v for _k, v in k[1]["values"]] for k in keys[4:]], [[KEY], [KEY]])
         # everyone else (a contact's mail, owner=False) keeps the full rules
         whys = [self.m.check(r, owner=False)[1] for r in media.refs(refs)]
         self.assertEqual(whys, ["private", "secret", "secret", "secret", "secret", "private", "secret", "secret", None, "private"])
@@ -200,8 +214,12 @@ class Refusals(_Base):
         (items, _), = [self.scan("![](out/chart.png)")]
         mid = items[0]["mid"]
         self.assertEqual(b"".join(d for _, d, _ in self.m.window(mid, 0)), p.read_bytes())
+        orig = p.read_bytes()
         p.unlink()
         os.symlink(self.outside / "secret.png", p)                  # swapped for a link after the scan
+        # P573: the card is served from the private copy made at scan time — never the swapped-in file
+        self.assertEqual(b"".join(d for _, d, _ in self.m.window(mid, 0)), orig)
+        drop_store(self.st)                                         # without the copy: the old no-follow checks
         with self.assertRaises(media.Gone):
             self.m.window(mid, 0)
         p.unlink()
@@ -221,6 +239,8 @@ class Refusals(_Base):
         data[-1] ^= 1
         p.write_bytes(bytes(data))
         os.utime(p, ns=(st.st_atime_ns, st.st_mtime_ns))             # even with the old mtime: the hash at o = 0 differs
+        self.assertEqual(b"".join(d for _, d, _ in self.m.window(mid, 0))[-1], data[-1] ^ 1, "P573: the scanned copy")
+        drop_store(self.st)
         with self.assertRaises(media.Gone):
             self.m.window(mid, 0)
 
@@ -230,7 +250,14 @@ class Refusals(_Base):
         m = media.Media(self.st, str(self.work), clock=lambda: now[0])
         mid = m.scan("![](out/a.png)", 1)[0][0]["mid"]
         now[0] += media.KEEP_SECS + 1
+        self.assertTrue(m.window(mid, 0), "P573: a stored copy outlives 24 h")
+        now[0] += media.STORE_SECS
         with self.assertRaises(media.Gone):
+            m.window(mid, 0)
+        mid = m.scan("![](out/a.png)", 1)[0][0]["mid"]
+        drop_store(self.st)
+        now[0] += media.KEEP_SECS + 1
+        with self.assertRaises(media.Gone):                         # no copy: KEEP_SECS as before
             m.window(mid, 0)
 
 
@@ -268,8 +295,11 @@ class HostWire(_Base):
             # history pages loaded later carry the same list
             turns, _ = h.hist.page()
             self.assertEqual(turns[-1]["media"], page["media"])
-            # the file changes → gone
+            # the file changes → P573: still served from the scan-time copy; without the copy → gone
             (self.work / "out" / "clip.mp4").write_bytes(b"\x00\x00\x00\x18ftypisom" + data[:-1] + b"!")
+            _, errs = await _get(h, s, page["media"][0]["mid"])
+            self.assertEqual(errs, [])
+            drop_store(self.st)
             _, errs = await _get(h, s, page["media"][0]["mid"])
             self.assertEqual([e["why"] for e in errs], ["gone"])
             # bad shapes

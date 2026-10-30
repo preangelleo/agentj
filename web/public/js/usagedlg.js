@@ -82,9 +82,15 @@ function paint() {
   const rows = d.windows.flatMap((w) => quotaRows(w));
   if (typeof d.ctx === 'number') rows.push(row(t('p207set.usage.ctx'), d.ctx, null, tier(d.ctx, null, { pace: false })));
   else if (d.ctxText) rows.push(row(t('p207set.usage.ctx'), null, d.ctxText));
+  if (d.heartbeat) {
+    const h = d.heartbeat;
+    const measured = h.available === true && [h.input_tokens, h.output_tokens, h.total_tokens, h.turns].every(n => Number.isSafeInteger(n) && n >= 0);
+    rows.push(row(t('p589.usage'), null, measured ? t('p589.tokens', {n: h.total_tokens.toLocaleString()}) : '—', '',
+      [measured ? t('p589.detail', {i: h.input_tokens.toLocaleString(), o: h.output_tokens.toLocaleString(), n: Number.isSafeInteger(h.measured_turns) ? h.measured_turns : h.turns}) : t('p589.unavailable'), ...(measured && h.complete === false ? [t('p589.partial', {m: Number.isSafeInteger(h.measured_turns) ? h.measured_turns : '—', n: h.turns})] : []), t('p589.scope')]));
+  }
   list.replaceChildren(...rows);
   el('usageNone').hidden = !!d.source;
-  list.hidden = !d.source;
+  list.hidden = !d.source && !d.heartbeat;
   el('usageAge').textContent = d.source && d.age != null ? t('r.usage.age', { s: Math.round(d.age) }) : '';
 }
 

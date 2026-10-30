@@ -190,18 +190,22 @@ class MediaOut(_Bot, unittest.IsolatedAsyncioTestCase):
         ups = self.bot.sent("sendPhoto", "sendAudio", "sendVideo", "sendDocument")
         self.assertEqual([(c["method"], list(c["files"])[0], list(c["files"].values())[0]["filename"]) for c in ups],
                          [("sendPhoto", "photo", "photo.png"), ("sendAudio", "audio", "song.mp3"),
-                          ("sendVideo", "video", "clip.mp4"), ("sendDocument", "document", "report.pdf")])
+                          ("sendVideo", "video", "clip.mp4"), ("sendDocument", "document", "report.pdf"),
+                          ("sendDocument", "document", "notes.txt")])   # P573: a key in a text file → its masked copy goes
+        masked = ups[-1]["files"]["document"]["data"]
+        self.assertNotIn(b"ghp_", masked)
+        self.assertIn(b"<redacted>", masked)
         self.assertEqual(ups[0]["files"]["photo"]["data"], PNG, "the bytes on disk, multipart intact")
         self.assertEqual(ups[0]["files"]["photo"]["mime"], "image/png")
         self.assertTrue(all(c["fields"]["chat_id"] == "123" for c in ups), "the owner's private chat only")
         [note] = self.bot.texts()
-        # P211: still never uploaded; the note now says why and what to do (no paired phone here → no pickup card)
+        # P211: a credential file is still never uploaded; the note says why and what to do (no paired phone → no card).
+        # P573 (#386, replaces the notes.txt key_content line here): a text file with a key goes masked, no refusal note
         self.assertEqual(note.splitlines(), [
             ".env 是凭据文件（.env、私钥这类），不直接发；要拿到它，跟 Agent J 说「用密钥领取卡发给我」，在手机上用 Face ID 领取。",
-            "notes.txt 里有真实的密钥（如 sk-…），所以没随文件发；要拿到它，跟 Agent J 说「用密钥领取卡发给我」，或删掉密钥后再发。",
             "huge.mp4 太大（48.2 MB），没有发到 Telegram。"])
         log = self.st.log_path.read_text()
-        self.assertIn('"status": "4/3"', log)
+        self.assertIn('"status": "5/2"', log)   # P573: notes.txt went (masked)
         for leak in ("photo.png", "report.pdf", FAKE_KEY[:19], "ghp_", str(self.work)):
             self.assertNotIn(leak, log, "metadata only in the log")
 

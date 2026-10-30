@@ -624,7 +624,7 @@ class Telegram:
         from . import tg_media
         from .media import Gone
         keys=[]
-        items,skips=await asyncio.to_thread(tg_media.collect,self.host.media,text,keys)
+        items,skips=await asyncio.to_thread(tg_media.collect,self.host.media,text,keys,True)   # P573: a key in a text file → its masked copy + value cards
         if keys:   # P211: a credential file the owner's reply linked → a pickup card on the paired phone, never a Telegram file
             from . import owner_route
             await owner_route.offer_files(self.host,keys,getattr(self.host,'lang','zh'))

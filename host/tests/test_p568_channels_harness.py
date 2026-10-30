@@ -56,7 +56,7 @@ class Forms(unittest.TestCase):
 
 class Policy(unittest.TestCase):
     def test_connector_reads_and_writes_never_enable_channels(self):
-        for tool,expected in [('search_threads','allow'),('get_message','allow'),('list_files','allow'),('read_document','allow'),('send_email','hold'),('delete_message','uv'),('get_secret','uv'),('read_api_key','uv'),('execute_script','uv')]:
+        for tool,expected in [('search_threads','allow'),('get_message','allow'),('list_files','allow'),('read_document','allow'),('send_email','hold'),('delete_message','uv'),('get_secret','hold'),('read_api_key','hold'),('execute_script','hold')]:   # P573: by name a button
             name='mcp__claude_ai_Gmail__'+tool
             self.assertEqual(policy.main_requirement(name,{}),expected)
             self.assertIn(policy.channel_tool_decision(name),('deny','handoff'))

@@ -1,4 +1,4 @@
-"""Opaque permissions need fresh real UV, including Full/goal/Jev bypass attempts."""
+"""Opaque permissions always get a fresh signed card (P573: one button, no Face ID), including Full/goal/Jev bypass attempts."""
 import _hermetic
 import asyncio
 import tempfile
@@ -50,26 +50,17 @@ class OpaqueFloor(unittest.IsolatedAsyncioTestCase):
                             self.assertTrue(h.asks, 'automatic bypass reached')
                             a = next(iter(h.asks.values()))
                             card = h._ask_msg(a, s)
-                            self.assertTrue(card['passkey_required'])
+                            # P573 (#386 ⑤): a command Jev cannot read is one button (was Face ID) — still always a card,
+                            # never a model / goal / old-answer bypass
+                            self.assertNotIn('passkey_required', card)
                             self.assertNotIn('batch', card)
                             if old is not None:
                                 await h._answer(s, old)
                                 self.assertFalse(t.done())
-                            missing = ph.answer(card, True)
-                            missing.pop('fa', None)
-                            await h._answer(s, missing)
-                            self.assertFalse(a.fut.done())
-                            if mode == 'no_passkey':
-                                await h._answer(s, ph.answer(card, False))
-                                self.assertEqual((await t)['behavior'], 'deny')
-                            else:
-                                ch = passkey.elevate_challenge(h.channel, ph.did, a.rid, a.pk_kind, a.rid, a.digest)
-                                bad = {**missing, 'fa':ph.auth.assert_(ch, b'0', nonce=b'0', flags=1)}
-                                await h._answer(s, bad)
-                                self.assertFalse(a.fut.done())
-                                old = ph.answer(card, True)
-                                await h._answer(s, old)
-                                self.assertEqual((await t)['behavior'], 'allow')
+                            old = ph.answer(card, True)
+                            old.pop('fa', None)
+                            await h._answer(s, old)
+                            self.assertEqual((await t)['behavior'], 'allow')
                         finally:
                             if not t.done(): t.cancel()
                             await asyncio.gather(t, return_exceptions=True)

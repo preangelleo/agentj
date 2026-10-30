@@ -3,9 +3,13 @@
 // separate end-to-end messages (§8, §10), and this module folds them into the same shape so the ported page logic stays.
 // It also owns the page's view of the history (§10.5): turns from hist_page / hist_turn on a p33 host, or — on a host
 // that did not announce p33 — turns built here in memory from §8's msg stream (never stored).
-import { peer, request, done as reqDone } from './session.js';
+import { channel, peer, request, done as reqDone } from './session.js';
 import { sanitize as mediaOf } from './mediawire.js';   // F21 (§13)
 import { preauthOffer, faState, whyKey } from './pkrules.js';   // P539
+
+import { grantChallenge, pairingScope, ownerConfirmChallenge } from './ownergrant.js';
+import { deviceKey, signKey, dbGet } from './store.js';
+import { deviceId, b64u } from '../proto/wire.js';
 
 export const S = {
   conn: false,                 // a ready session with the host up
@@ -22,7 +26,8 @@ export const S = {
 };
 let onChange = () => {};
 let onTurn = () => {};
-export function configure(h) { onChange = h.onChange; onTurn = h.onTurn; }
+let prepareOwnerConfirm = null;
+export function configure(h) { onChange = h.onChange; onTurn = h.onTurn; prepareOwnerConfirm = h.prepareOwnerConfirm || null; }
 const nowS = () => Date.now() / 1000;
 const CATS = ['spend', 'delete', 'send', 'credentials', 'price', 'opaque'];
 
@@ -52,6 +57,9 @@ export function addAsk(m) {
     scope, batch_max: Number.isInteger(m.batch_max) ? m.batch_max : 20, batch_secs: Number.isInteger(m.batch_secs) ? m.batch_secs : 600,
     task: typeof m.task === 'string' ? m.task.slice(0, 80) : '',
     reason: typeof m.reason === 'string' ? m.reason : null,   // P572: the Agent's reason ("" = none given; absent = an older host)
+    // P573: this task's later steps of the same class will not ask again (host note; shown under the card, not signed)
+    task_scope: typeof m.task_scope === 'string' ? m.task_scope : undefined,
+    task_grant: typeof m.task_grant === 'string' ? m.task_grant.slice(0, 200) : '', task_grant_en: typeof m.task_grant_en === 'string' ? m.task_grant_en.slice(0, 200) : '',
     allow_offer: m.tool === 'agentj mail send' ? (Array.isArray(m.allow_offer) ? m.allow_offer.filter((a) => typeof a === 'string' && a.length <= 254).slice(0, 10) : [])   // P296
       : preauthOffer(m.allow_offer),   // P539: any other tool may offer ≤ 3 `preauth:<action>` lines (「以后这台遥控器批准的 … 不再问」)
     fa_s: faState(m.fa_s),             // P539: local | borrowed | unknown — does this remote hold the passkey itself
@@ -60,6 +68,33 @@ export function addAsk(m) {
     at: nowS(), deadline: Date.now() + ttl * 1000, state: 'open', final_at: null, touched: S.touched.has(m.id),
     ...(m.tool === 'friend_request' && m.fr && typeof m.fr === 'object' ? { fr: m.fr } : {}),     // display-only copies (friends.js)
     ...(m.tool === 'peer_question' && m.pq && typeof m.pq === 'object' ? { pq: m.pq } : {}) });
+  if (m.tool === 'agentj secret grant' && m.passkey_required) {
+    const a = S.asks.get(m.id), ch = channel();
+    a.owner_grant = m.owner_grant; a.owner_grant_verified = false;
+    a.fa_ch = ''; // P574: the assertion must cover the shown authorization, never an opaque host challenge.
+    Promise.resolve().then(async () => grantChallenge(m, ch, await deviceId((await deviceKey()).pub))).then((prepared) => {
+      if (S.asks.get(m.id) === a && b64u(prepared) === m.fa_ch) { a.fa_ch = b64u(prepared); a.owner_grant_verified = true; onChange(); }
+    }).catch(() => {});
+  }
+  if (m.tool === 'peer_question' && m.pq?.pairing && m.pq.pairing_scope !== undefined) {
+    const a = S.asks.get(m.id);
+    a.pairing_scope_ok = false;
+    const prepare = async () => {
+      if (S.asks.get(m.id) !== a) return;
+      const ch = channel(), dev = await deviceId((await deviceKey()).pub), local = await dbGet('owner-roster:' + ch);
+      const roster = await pairingScope(m.pq, b64u((await signKey()).pub), dev, local);
+      const target = { friend: m.pq.friend, op: 'owner-confirm-v3', value: m.pq.challenge };
+      if (!prepareOwnerConfirm) throw new Error('unconfigured owner confirmation');
+      const obj = await prepareOwnerConfirm(target); // local only, sent after the owner's UV tap
+      const challenge = await ownerConfirmChallenge(target, obj.n, ch, dev);
+      if (S.asks.get(m.id) === a) {
+        a.owner_confirm = { obj, ch, challenge, cred: local.id };
+        a.pairing_scope_ok = true; a.pairing_roster = roster; a.pairing_code = roster.code; onChange();
+        setTimeout(() => { prepare().catch(() => {}); }, 60000); // keep the signed request fresh while this card stays open
+      }
+    };
+    Promise.resolve().then(prepare).catch(() => {});
+  }
   S.order.push(m.id);
   onChange();
   return true;                                    // P417: a NEW card (app.js brings it in front of Settings)
@@ -164,7 +199,7 @@ function usage() {
   const m = S.meter;
   if (!m) return {};
   const ctx = m.ctx && Number.isFinite(m.ctx.pct) ? Math.max(0, Math.min(100, Math.round(m.ctx.pct))) : m.ctx && Number.isFinite(m.ctx.used) && Number.isFinite(m.ctx.max) && m.ctx.max > 0 ? Math.max(0, Math.min(100, Math.round(m.ctx.used / m.ctx.max * 100))) : null;
-  return { source: 'meter', shared_follow: m.shared_follow && ['claude','codex','opencode'].includes(m.shared_follow.agent) && typeof m.shared_follow.id === 'string' && /^[a-f0-9]{32}$/.test(m.shared_follow.id) ? {agent:m.shared_follow.agent,id:m.shared_follow.id} : null, shared_writer: m.shared_writer && typeof m.shared_writer === 'object' ? Object.fromEntries(['zh','en'].filter(l => typeof m.shared_writer[l] === 'string').map(l => [l, m.shared_writer[l].slice(0, 600)])) : null, shared_status: ['following','desktop_writer'].includes(m.shared_status) ? m.shared_status : null, model: typeof m.model_name === 'string' && m.model_name ? m.model_name.slice(0, 64) : (typeof m.model === 'string' ? m.model : null),
+  return { heartbeat_usage: m.heartbeat_usage && typeof m.heartbeat_usage === 'object' ? m.heartbeat_usage : null, source: 'meter', shared_follow: m.shared_follow && ['claude','codex','opencode'].includes(m.shared_follow.agent) && typeof m.shared_follow.id === 'string' && /^[a-f0-9]{32}$/.test(m.shared_follow.id) ? {agent:m.shared_follow.agent,id:m.shared_follow.id} : null, shared_writer: m.shared_writer && typeof m.shared_writer === 'object' ? Object.fromEntries(['zh','en'].filter(l => typeof m.shared_writer[l] === 'string').map(l => [l, m.shared_writer[l].slice(0, 600)])) : null, shared_status: ['following','desktop_writer'].includes(m.shared_status) ? m.shared_status : null, model: typeof m.model_name === 'string' && m.model_name ? m.model_name.slice(0, 64) : (typeof m.model === 'string' ? m.model : null),
     model_id: typeof m.model === 'string' ? m.model : null, effort: typeof m.effort === 'string' ? m.effort.slice(0, 16) : null,
     ...(Array.isArray(m.quota_windows) ? {quota_windows:m.quota_windows} : {}),
     context_used:m.ctx?.used, context_limit:m.ctx?.max,

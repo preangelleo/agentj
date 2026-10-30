@@ -1,34 +1,4 @@
-"""P156: the platform heartbeat — Agent J wakes its own main Agent after a quiet spell, on every harness.
-
-Owner (2026-10-12): 「小白用户他也没这个概念，所以我们需要把这个能力预制进去……定时让它醒来……检查一下后台 automation 的
-进程，看看董事长的待办事项……Claude Code 有这个能力不代表其他 harness 也有……每个 Agent J 都可以修改自己的 heartbeat
-频率……每个 heartbeat 后边还可以跟一个固定的 prompt……如果 prompt 的 hash 更新了就重读」.
-
-How it works (all on the Agent J host, never through the relay — a cloud push cannot wake a computer that does not answer):
-- serve's `Heartbeat.loop` looks every TICK s. A beat is due when `heartbeat.interval_minutes` have passed since the last
-  turn of any kind ended (phone, Telegram, desktop, scheduled, an earlier beat) and since serve started. It waits while the
-  Agent works, a message is queued, an approval / question card is open, a compaction runs, a scheduled run or friend
-  session is busy, the emergency stop is on, or inside the nightly upgrade window (03:00–05:00 local, when auto-install is
-  on). A phone conversation therefore pushes it back by itself.
-- A beat is one ordinary queued message (`HeartbeatSend`, host provenance `system`) through the same queue every adapter
-  already takes — own Claude Code / Codex / OpenCode and the three shared sessions. Shared Claude sees the 〔Agent J 系统
-  提示〕 envelope (not the owner's words, grants nothing).
-- Text: 〔Agent J 心跳〕 + the first 8 hex of sha256(heartbeat.md) + 「没变就不用重读」. The full prompt is attached the first
-  time in this serve process (restart), when the hash changed, and after a compaction / clear of that conversation.
-- The prompt lives at a fixed, human path: `~/.config/agentj/heartbeat.md` (next to config.json5). Default template on
-  first start; the owner or the main Agent maintains it (`agentj heartbeat prompt …`).
-- The reply page is marked `via: heartbeat` (folded label on the phone); a final reply of exactly 〔不回群〕 stays silent — no
-  page, no push, no unread; notes written before it in the same turn fold into the silent turn (P351). A Codex beat adds
-  NO_NOTES (no progress note first). Each conversation (own / shared, per harness and session id) keeps its own clock.
-- P207 `heartbeat.daily_at` ("HH:MM" local, "" = off): besides the idle beat, one beat a day once the clock passes HH:MM
-  (it still waits for the same conditions). Rule: due when today's HH:MM has passed, no daily beat is recorded for today
-  in heartbeat.json (`daily`: "YYYY-MM-DD", so a restart never fires twice), and serve was already running at HH:MM or
-  started at most DAILY_GRACE (60 min) after it — a time missed by more than that is skipped until tomorrow. A late beat
-  (Agent busy, night window) still goes the same day; never on the next day. Any timer beat at or after HH:MM counts as
-  the day's beat (no two beats back to back). A daily beat resets the idle clock like every turn.
-- The fenced own Agent cannot see `~/.config/agentj` or the state directory: `agentj heartbeat …` talks to serve over
-  `<state>/agentperm/heartbeat.sock` (like recall.sock); without serve the CLI edits the files directly.
-"""
+"""Local heartbeat scheduler and owner prompt socket; contracts: ARCHITECTURE ADR-P156/P589."""
 from __future__ import annotations
 
 import argparse
@@ -395,6 +365,21 @@ class Heartbeat:
         self.inflight: HeartbeatSend | None = None
         self.last_wait: str | None = None
         self.server = None
+        from .heartbeat_check import Usage
+        self.usage = Usage(host)
+        self.protected = set()
+        self.compacted = set()
+        self.last_checked = {}
+        self.last_precheck = None
+
+    def usage_view(self):
+        return self.usage.view()
+
+    def usage_start(self, send):
+        self.usage.start(send)
+
+    def usage_end(self):
+        self.usage.end()
 
     # ---- settings
     def prefs(self) -> tuple[bool, int]:
@@ -444,6 +429,9 @@ class Heartbeat:
     def forget(self, why: str = "") -> None:
         """The conversation lost its context (compaction / clear / new): the next beat carries the full prompt again."""
         key = session_key(getattr(self.host, "agent", None))
+        self.protected.discard(key)
+        if why == "compact":
+            self.compacted.add(key)
         if self.seen.pop(key, None) is not None:
             self.host.st.log("heartbeat_forget", why=why[:20])
 
@@ -523,9 +511,49 @@ class Heartbeat:
                 self.last_wait = why
                 self.host.st.log("heartbeat_wait", reason=why)
             return {"ok": False, "why": why}
-        return self.fire(now, by="daily" if daily and now < self.next_due() else "timer")
+        check_key = session_key(getattr(self.host, "agent", None))
+        if now < self.last_checked.get(check_key, 0) + TICK:
+            return None
+        self.last_checked = {check_key: now}
+        from .heartbeat_check import collect, quiet
+        reasons, unknown = await asyncio.to_thread(collect, self.host, now)
+        got = await asyncio.to_thread(read_prompt)
+        d = await asyncio.to_thread(self._load)
+        digest = got[1] if got else None
+        if digest and d.get("checked_sha") and digest != d["checked_sha"]:
+            reasons.append("prompt_changed")
+        if digest and not d.get("checked_sha"):
+            d["checked_sha"] = digest
+            await asyncio.to_thread(self._save, d)
+        if not got:
+            unknown.append("prompt")
+        nighttime = quiet(getattr(self.host, "preferences", {}) or {}, now)
+        self.last_precheck = {"at": now, "reasons": reasons, "unknown": unknown}
+        urgent = [r for r in reasons if r not in ("prompt_changed", "daily_schedule")]
+        if not reasons or nighttime and not urgent:
+            label = "quiet" if nighttime else "unknown" if unknown else "no_work"
+            if self.last_wait != label:
+                self.host.st.log("heartbeat_skipped", reason=label, unknown=unknown)
+                self.last_wait = label
+            return {"ok": False, "why": label, "unknown": unknown}
+        h = self.host
+        from . import preferences
+        meter = getattr(h, "meter_state", {}) or {}
+        used = (meter.get("ctx") or {}).get("used")
+        limit = preferences.get(getattr(h, "preferences", {}) or {}, "heartbeat.context_max_tokens", 100000)
+        model = str(meter.get("model") or getattr(h.agent, "cfg", {}).get("model") or "").lower()
+        expensive = any(x in model for x in ("opus", "gpt-6", "-pro"))
+        key = session_key(h.agent)
+        if (type(used) is int and used > limit) or expensive and key not in self.compacted:
+            if key not in self.protected:
+                h.agent_notice(pick(self.lang(),
+                    "心跳已暂停以节省用量。请发送 /compact，主机会先按现有流程保存交接；压缩后再检查待办。",
+                    "Heartbeat paused to save usage. Send /compact; the host saves the handoff through the existing flow before compaction."))
+                self.protected.add(key)
+            return {"ok": False, "why": "context_guard"}
+        return self.fire(now, by="daily" if daily and now < self.next_due() else "timer", reasons=reasons)
 
-    def fire(self, now: float | None = None, by: str = "timer") -> dict:
+    def fire(self, now: float | None = None, by: str = "timer", reasons=None) -> dict:
         """Queue one beat now (the caller checked wait_reason, or this is `agentj heartbeat now`)."""
         h = self.host
         now = time.time() if now is None else now
@@ -541,6 +569,8 @@ class Heartbeat:
         full = self.seen.get(key) != digest
         idle_min = max(1, int((now - max(self.started, self.last_activity)) // 60))
         body = message(lang, text, digest, full, idle_min)
+        if reasons:
+            body += "\n" + pick(lang, "主机预检发现：", "Host preflight found: ") + ", ".join(reasons)
         if getattr(a, "kind", None) == "codex":
             body += "\n" + NO_NOTES[lang]
         with contextlib.suppress(Exception):          # P165 (P158 ask): a goal still running → one line at the end
@@ -568,6 +598,7 @@ class Heartbeat:
         t = daily_target(now, self.daily_at())
         if by in ("timer", "daily") and t is not None and now >= t:
             d["daily"] = day_of(now)                   # P207: today's daily beat is done (survives a restart)
+        d["checked_sha"] = digest
         d["last"] = {"at": now, "key": key, "sha": digest, "full": full, "by": by}
         self._save(d)
         self.last_wait = None
@@ -582,7 +613,7 @@ class Heartbeat:
         key = session_key(getattr(self.host, "agent", None))
         d = self._load()
         got = read_prompt()
-        return {"ok": True, "enabled": on, "interval_minutes": n, "prompt": shown(prompt_path()),
+        return {"ok": True, "precheck": self.last_precheck, "heartbeat_usage": self.usage_view(), "enabled": on, "interval_minutes": n, "prompt": shown(prompt_path()),
                 "sha": got[1] if got else None, "key": key, "last": d.get("last"),
                 "next_due": round(self.next_due(key)) if on else None, "waiting": self.wait_reason() if on else None,
                 "seen_full": self.seen.get(key), "daily_at": self.daily_at(),
@@ -593,7 +624,7 @@ class Heartbeat:
         if not session.p33 or not wire.is_rid(obj.get("r")):
             return
         if obj.get("t") == "heartbeat_get":
-            return await self.host.send_app(session, {"t": "heartbeat_state", "r": obj["r"], **prompt_view(self.lang())})
+            return await self.host.send_app(session, {"t": "heartbeat_state", "r": obj["r"], **prompt_view(self.lang()), "heartbeat_usage": self.usage_view()})
         target = {k: obj.get(k) for k in ("op", "text", "sha")}
         why = controls.check(self.host.st, self.host.nonces, self.host.channel, session.device,
                              obj, "heartbeat_write", target)
@@ -862,7 +893,7 @@ def cmd_heartbeat(a) -> None:
                   + (f" · 现在要等：{res['waiting']}" if res.get("waiting") else ""))
         if res.get("serve") is False:
             print("（Agent J 没在运行：心跳只在 serve 运行时发生）/ (serve is not running)")
-        print("每次心跳会消耗一次模型调用 / every heartbeat costs one model call")
+        print("先本机检查，有事才消耗模型用量 / local preflight; model usage only when work is found")
         return
     if c in ("on", "off"):
         _say(call({"op": c}), "心跳已" + ("打开" if c == "on" else "关闭"), "heartbeat " + c)

@@ -163,6 +163,8 @@ class OwnerGroup:
         members = self.members()
         if not members:
             return {"ok": False, "why": "no_devices"}
+        # P573 (#387): no Jev here — the owner's signed words (by="phone") are not model-judged, and the main Agent's
+        # (by="agent") are Agent <-> Agent, regex only. Both keep the local regex gates: the text goes to other hosts.
         v = await svc._outbound(text)
         if v.ok:
             v = peer_guard.inbound(text)      # what every receiver would refuse anyway
