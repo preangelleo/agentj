@@ -965,6 +965,9 @@ class Elevator:
             m.update(name=c["name"], purpose=c["purpose"], dest=c["dest"], verify=c.get("verify") or "")
         if c.get("auth"):
             m["auth"] = dict(c["auth"])   # host-only rescue metadata, sealed/signature digest above; never persisted
+        # These schemas sign the exact why / purpose field, not action_policy's JSON note block.
+        # Host-generated login / vault-sharing cards have no Agent note.
+        m["reason"] = c.get("reason", "")
         m["passkey_required"] = True
         pk = self.st.passkey_of_device(s.device) if s is not None and s.device else None
         if pk:
@@ -2052,6 +2055,7 @@ class Elevator:
                 if not isinstance(req, dict) or req.get("t") not in KINDS:
                     raise Refused("shape", "t: sudo | secret | secret_out | secret_result")
                 card = norm_sudo(req) if req["t"] == "sudo" else norm_secret(req, self.st.root)
+                card["reason"] = card["why"] if card["kind"] == "sudo" else card["purpose"]
                 on_card = None
                 if req.get("early") is True:                                    # a CLI that prints the card id first
                     async def on_card(c):

@@ -745,7 +745,7 @@ class HookService:
         if h["id"] in self.widening:
             return {"ok": False, "why": "pending"}
         self.widening.add(h["id"])
-        text = (f"给常驻 Webhook「{h['name']}」换密钥（旧密钥再有效 {grace // 3600} 小时）。新密钥{'来自你在密钥卡里存的文件' if key else '由电脑生成，写进本机文件'}。"
+        text = (f"给常驻 Webhook「{h['name']}」换密钥（旧密钥再有效 {grace // 3600} 小时）。新密钥{'来自你在密钥卡里存的文件' if key else '由 Agent J 主机生成，写进本机文件'}。"
                 if self.lang != "en" else f"Rotate the secret of resident webhook 「{h['name']}」 (the old one stays valid "
                 f"{grace // 3600} h). The new secret {'comes from the file you saved with a secret card' if key else 'is generated and written to a file on this computer'}.")
 

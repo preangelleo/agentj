@@ -147,7 +147,7 @@ class Notifier:
                      "never infer success from an exit code. Say when a report is missing and investigate.")
         page = self.host.hist_add({"k": "agent", "via": "background_done", "text": ""}, "", "open")
         send = CompletionSend(page["id"], "\n".join(lines), [k for k, _ in batch])
-        if any(v.get("foreign") for _, v in batch):
+        if any(v.get("foreign", True) for _, v in batch):
             send.source = provenance.normalize(None)    # P570: a non-owner turn's job → the batch's strictest source
         self.host.agent.submit(send)
         self.inflight = send

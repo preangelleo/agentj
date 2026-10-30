@@ -332,7 +332,7 @@ def add_parser(sub):
     p = sub.add_parser("files", help="本机文件访问 / owner-approved local file access")
     commands = p.add_subparsers(dest="action", required=True)
     commands.add_parser("status", help="只读状态 / read-only status")
-    prep = commands.add_parser("prepare", help="主人在电脑前时准备 Mac 权限 / prepare Mac permissions while at the computer")
+    prep = commands.add_parser("prepare", help="主人在 Agent J 主机前时准备 Mac 权限 / prepare Mac permissions while at the computer")
     prep.add_argument("--at-computer", action="store_true")
     commands.add_parser("fetch", help="经手机批准复制文件 / copy a file after phone approval").add_argument("path")
     p.set_defaults(fn=cmd_files)

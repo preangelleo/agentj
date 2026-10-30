@@ -132,7 +132,7 @@ class RebootResume(ClaudeFixture):
             ev = a.host.events("shared_reboot_resume")
             self.assertEqual(ev, [{"agent": "claude", "how": "resume", "result": "same", "session": PIN[:8]}])
             self.assertNotIn(PIN, json.dumps(ev))                       # never the whole id in the log
-            self.assertTrue(any("电脑重启过" in n for n in a.host.notices), a.host.notices)
+            self.assertTrue(any("Agent J 主机重启过" in n for n in a.host.notices), a.host.notices)
             self.assertFalse(any(OLD_TEXT in n for n in a.host.notices))
         finally:
             await self.drop(a)
@@ -356,8 +356,8 @@ class OwnerDown(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(await a._spawn())
         self.assertEqual(len(host.cards), 1)
         q = host.cards[0][0]
-        self.assertIn(f"端口 {self.port}）没在运行——电脑重启后它不会自己起来", q["q"])
-        self.assertEqual([o["l"] for o in q["o"]], ["帮我启动它（推荐）", "我自己在电脑上处理"])   # no 「其他」
+        self.assertIn(f"端口 {self.port}）没在运行——Agent J 主机重启后它不会自己起来", q["q"])
+        self.assertEqual([o["l"] for o in q["o"]], ["帮我启动它（推荐）", "我自己处理"])   # no 「其他」
         argv, kw = self.execs[0]
         self.assertEqual(argv, ["/fake/bin/opencode", "serve", "--hostname", "127.0.0.1", "--port", str(self.port)])
         self.assertTrue(kw["start_new_session"])
@@ -389,7 +389,7 @@ class OwnerDown(unittest.IsolatedAsyncioTestCase):
             host = OCHost(answer=answer)
             a = self.agent(host)
             self.assertFalse(await a._spawn())
-            self.assertIn("电脑重启后它不会自己起来", host.notices[-1])
+            self.assertIn("Agent J 主机重启后它不会自己起来", host.notices[-1])
             self.assertIn(shared._UNSET, host.notices[-1])
 
     async def test_host_without_cards_gets_the_text(self):
@@ -456,8 +456,8 @@ class OwnerDownPassword(OwnerDown):
         host = OCHost(answer=("answer", [[2]]))
         await self.assert_refuses(host)
         q = host.cards[0][0]
-        self.assertIn("需要你的 OpenCode 密码：请在电脑上自己启动它，或用密钥卡把密码交给 Agent J", q["q"])
-        self.assertEqual([o["l"] for o in q["o"]], ["用密钥卡提供密码", "我在电脑上自己启动"])
+        self.assertIn("需要你的 OpenCode 密码：请在 Agent J 主机上自己启动它，或用密钥卡把密码交给 Agent J", q["q"])
+        self.assertEqual([o["l"] for o in q["o"]], ["用密钥卡提供密码", "我自己启动"])
         self.assertNotIn("帮我启动它（推荐）", [o["l"] for o in q["o"]])
         self.assertIn("不会不设密码就替你启动它", host.notices[-1])
 
@@ -498,7 +498,7 @@ class OwnerDownPassword(OwnerDown):
         with patch.object(shared.asyncio, "create_subprocess_exec", new=self.fake_exec):
             self.assertTrue(await a._spawn())
         self.assertEqual(self.execs[0][1]["env"]["OPENCODE_SERVER_PASSWORD"], "p418-test-only")   # same password, kept
-        self.assertEqual([o["l"] for o in host.cards[0][0]["o"]], ["帮我启动它（推荐）", "我自己在电脑上处理"])
+        self.assertEqual([o["l"] for o in host.cards[0][0]["o"]], ["帮我启动它（推荐）", "我自己处理"])
 
     async def test_start_guard_refuses_even_if_called_directly(self):
         (self.work / shared.OWNER_PW_MARK).write_text(json.dumps({str(self.port): {"password": True}}))

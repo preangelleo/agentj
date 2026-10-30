@@ -81,6 +81,7 @@ switching back resumes that one. To switch, the owner just replies 「切换到 
    nothing changed — tell the owner the reason and go back to step 3; exit 4 = still checking, look with `--result` in a
    minute). On ✓ the job waits for this turn to end, switches, restarts, checks that the new harness is up, answers its
    self-introduction and is idle again — and on any failure restores the previous harness exactly and makes it explain.
+   An `ok` receipt with 「还在忙 / still busy」 means the new harness answered and kept working (kept, not a failure).
    A passed preflight / `waiting`, `switching`, `switched` progress is **not success**. The CLI returns 4 while pending.
    From an outside terminal, poll `agentj agent switch --result --wait 900` until final (0 = `ok` or dry-run `probe_ok`,
    3 = `rolled_back` / `failed`, 4 = still pending). Report the receipt's outcome and reason verbatim in plain language.

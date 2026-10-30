@@ -48,7 +48,7 @@ The signed Continue from the failed step button is available on the failed-run r
 
 ## Make a scheduled automation: the system scheduler is the default
 When the owner wants something to run on a schedule or again and again (「每天 9 点帮我…」「做个定时任务」, "run this
-every morning"), build it on the computer's own scheduler, which starts the AI coding tool headless with full access:
+every morning"), build it on the Agent J host's own scheduler, which starts the AI coding tool headless with full access:
 Linux systemd user timer, macOS launchd, Windows Task Scheduler. `agentj tasks` keeps working and stays documented, but
 it is no longer the first choice: an Agent J task can wait on a phone card while the owner is away from the phone.
 
@@ -97,14 +97,30 @@ card; read their reports in the heartbeat. To put a result on the phone, `run.sh
 `agentj notify --from <name> --title "…" --file <report>` after the owner registers the name (see agentj-capability).
 
 ## Move an `agentj tasks` task to the system scheduler
-When the owner decides to run an existing Agent J task with the system scheduler, as Agent J recommends for recurring
-automations (Linux shown; macOS / Windows as above):
+To move an existing Agent J task to the system scheduler, as Agent J recommends for recurring work: `agentj tasks migrate <id>`
+(`--all`). Show the `--dry-run` plan; a real run, yours or the owner's, only sends the phone's plain host approval card
+(no Face ID; also once after an update; Deny = never again); only the owner's approval on a paired remote moves it,
+none without Agent J and a phone online. `agentj wizard add-template` and `enable` print the same suggestion.
+The host keeps instructions and reports in `<state>/sysmigrate/<id>/` (hidden from you), adds the timer (launchd / Task
+Scheduler too), switches the old task off (kept) and runs once; no `VERDICT: PASS` = rolled back. Moved: no phone
+approvals, same fence, read-only stays read-only without web, the emergency stop stops its runs, no catch-up, each
+VERDICT line goes to the owner. An edited task.json or prompt stops it until moved again. The phone's Scheduled tasks page has
+Move back (= `unmigrate`) and Move again (= `migrate`) on a moved task; the web terminal can run both. Off, `unmigrate` or
+`agentj service uninstall` = back in Agent J, off: `agentj tasks enable <id>`, then migrate again. Read-only Codex ignores
+config.toml (a provider only there fails the test run). Not moved, reason printed: multi-step, brief.json, secret-like,
+a foreign scheduler entry, running, fence fails to start, read-only on OpenCode, Kimi / dsh, no exact schedule; no
+systemd user manager = no move, no card; on WSL2 the phone gets one note instead: when the owner says
+「帮我开启 WSL 的 systemd」, turn systemd on in WSL with them, then the move card comes. `Linger=no`: runs only while logged in.
+A Claude Code loop wake-up (ScheduleWakeup / CronCreate, `/loop`) still cannot get approvals; when the phone suggests
+a scheduled task, make one as above.
+
+By hand where `migrate` is missing (Linux shown; macOS / Windows as above):
 1. `agentj tasks list`, `agentj tasks show <id>`: write its steps, working folder, files and outputs into `PROMPT.md`
-   (secret locations and variable names only). If `agentj tasks` is unavailable here, read the workflow's `task.json`.
+   (secret locations and variable names only).
 2. `run.sh` with the headless command above, report and log in `runs/<date>/`.
 3. `<name>.service` + `<name>.timer` as above; `systemctl --user daemon-reload && systemctl --user enable --now <name>.timer`.
 4. `agentj tasks disable <id>` (switch it off; do not delete it), then `systemctl --user start <name>.service` once, read
    `report.md` with the owner, and show `systemctl --user list-timers | grep <name>`.
 5. To go back: `systemctl --user disable --now <name>.timer`, then `agentj tasks enable <id>`.
 
-中文：主人决定改用系统定时器时按上面 1–5 步：读出任务写进 PROMPT.md，建 run.sh、`<name>.service`、`<name>.timer`，`agentj tasks disable <id>` 停用（不删除），手动跑一次和主人看报告；退回就关定时器再 `agentj tasks enable <id>`。一起设计、手动跑通一次即视为主人预先认可。
+中文：主人决定改用系统定时器时用 `agentj tasks migrate <id>`：先跑 `--dry-run` 给主人看；真跑（谁跑都一样）只把普通主机审批卡发到手机（不用 Face ID），主人在已配对遥控器上批准才迁；迁后不经手机审批，隔离、只读、急停照旧，改了任务就停跑等重迁；手机「定时任务」页有「退回」「重新迁移」；停用或 unmigrate 即退回并停用，恢复用 `agentj tasks enable`。WSL2 没开 systemd 时手机收到说明，主人说「帮我开启 WSL 的 systemd」就带他开好。没有这个命令才手工迁：写 PROMPT.md、run.sh、`<name>.timer`，`agentj tasks disable <id>`，跑一次看报告；退回就关定时器再 `agentj tasks enable <id>`，旧任务不删除。一起设计、手动跑通一次即视为主人预先认可。

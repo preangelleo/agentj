@@ -79,9 +79,9 @@ def public_url(base, suffix):
     except (OSError, ValueError):
         return None
     path = u.path.rstrip('/')
-    if path.endswith('/v1'):
-        path = path[:-3]
-    return urllib.parse.urlunsplit((u.scheme, u.netloc, path + '/v1/' + suffix, '', ''))
+    if not re.search(r'/v[0-9]+$', path):
+        path += '/v1'
+    return urllib.parse.urlunsplit((u.scheme, u.netloc, path + '/' + suffix, '', ''))
 
 
 def windows(data):

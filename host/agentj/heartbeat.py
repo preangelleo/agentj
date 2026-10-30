@@ -86,7 +86,7 @@ CHECKLIST = {
     "zh": """<!-- agentj:watchlist v1 -->
 ## 常驻巡检清单
 忙时也顺手巡检，不必等心跳；从上次心跳以来的记录开始，未处理的旧事也要跟进。
-A. 检查这台电脑所有定时任务（Linux 的 systemd timer / cron、macOS 的 launchd / cron、Windows 计划任务）的日志与报告，有无报错、漏跑或报告未交；读实际结果，不只看退出码。
+A. 检查这台 Agent J 主机所有定时任务（Linux 的 systemd timer / cron、macOS 的 launchd / cron、Windows 计划任务）的日志与报告，有无报错、漏跑或报告未交；读实际结果，不只看退出码。
 B. 看看 Agent J 好友的往来，有无卡住的请求、异常或需要你介入的事。
 C. 用 `agentj inbox avatar-log --since 2h` 按时间复核邮件、微信、Telegram 分身与主人的往来和处置结论（可调整起始时间）；有没有该上交却自行处理、处理不理想、挂起无人认领的事。需要就由你补回复或接手，仍遵守原有审批；历史缺失的回复或结论按未知处理，不猜成功。
 <!-- /agentj:watchlist -->
@@ -94,7 +94,7 @@ C. 用 `agentj inbox avatar-log --since 2h` 按时间复核邮件、微信、Tel
     "en": """<!-- agentj:watchlist v1 -->
 ## Standing watchlist
 Check as you work too; do not wait for a heartbeat. Start with records since the last heartbeat and follow up older unresolved work.
-A. Check logs and reports for all scheduled jobs on this computer (Linux systemd timers / cron, macOS launchd / cron, Windows Task Scheduler): errors, missed runs or missing reports. Read actual results, not just exit codes.
+A. Check logs and reports for all scheduled jobs on this Agent J host (Linux systemd timers / cron, macOS launchd / cron, Windows Task Scheduler): errors, missed runs or missing reports. Read actual results, not just exit codes.
 B. Review Agent J friend conversations for stuck requests, unusual events or anything needing your help.
 C. Run `agentj inbox avatar-log --since 2h` to review, in time order, the owner's mail, WeChat and Telegram avatar exchanges and outcomes (adjust the start time as needed). Look for actions that should have been handed over, poor handling and unclaimed requests. Follow up or take over while keeping existing approvals; missing historical replies or outcomes are unknown, never proof of success.
 <!-- /agentj:watchlist -->
@@ -104,9 +104,14 @@ for _lang in TEMPLATE:
     TEMPLATE[_lang] += "\n" + CHECKLIST[_lang]
 
 
+def has_checklist(text: str, lang: str) -> bool:
+    # P570c: recognise the shipped v1 block after wording changes; never duplicate an owner's existing watchlist.
+    return CHECKLIST[lang] in text or ("<!-- agentj:watchlist v1 -->" in text and "<!-- /agentj:watchlist -->" in text)
+
+
 def merge_checklist(text: str, lang: str) -> str:
     """Idempotent append, retaining every byte of the owner's existing instructions."""
-    return text if CHECKLIST[lang] in text else text + "\n\n" + CHECKLIST[lang]
+    return text if has_checklist(text, lang) else text + "\n\n" + CHECKLIST[lang]
 
 
 def prompt_view(lang: str) -> dict:
@@ -114,7 +119,7 @@ def prompt_view(lang: str) -> dict:
     got = read_prompt()
     text = got[0] if got else ""
     return {"ok": True, "text": redact(text), "sha": prompt_revision(got),
-            "default": TEMPLATE[lang], "update_available": CHECKLIST[lang] not in text,
+            "default": TEMPLATE[lang], "update_available": not has_checklist(text, lang),
             "path": shown(prompt_path())}
 
 

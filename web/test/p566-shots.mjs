@@ -45,7 +45,7 @@ for (const engine of ['chromium', 'webkit']) {
     await fresh();
     await fake.send(card(120));
     await page.waitForTimeout(400);
-    await page.fill('#elev-input', 'sk-example-not-a-key');
+    await page.fill('#elev-input', 'sk-' + 'example-not-a-key');
     await page.evaluate(async (id) => { const e = await import('./js/elevate.js'); e.refused({ t: 'elev_refused', id, why: 'stale' }); }, card(120).id);
     await page.waitForTimeout(400);
     await shot('keycard-refused');

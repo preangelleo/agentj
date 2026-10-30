@@ -574,15 +574,17 @@ def brief_problems(brief, folder_id: str | None = None) -> list[str]:
 
 
 def load_brief(wf_dir) -> tuple[dict | None, list[str]]:
-    p = pathlib.Path(wf_dir) / "brief.json"
-    raw = _regular(p)
+    return parse_brief(brief_raw(wf_dir), pathlib.Path(wf_dir).name)
+
+
+def parse_brief(raw: bytes | None, folder_id: str) -> tuple[dict | None, list[str]]:
     if raw is None:
         return None, ["brief.json is missing (or not a regular file ≤ 256 KiB)"]
     try:
         b = json.loads(raw)
     except (ValueError, UnicodeDecodeError):
         return None, ["brief.json is not valid UTF-8 JSON"]
-    probs = brief_problems(b, pathlib.Path(wf_dir).name)
+    probs = brief_problems(b, folder_id)
     return (b, probs)
 
 
@@ -648,10 +650,10 @@ def report_check(wf_dir, brief: dict, raw_brief: bytes, verdict: str | None, sin
 
 def brief_block(e: dict) -> str:
     """0.18 (ADR-A193 §5): a workflow with brief.json gets its contract and the report it must leave."""
-    raw = brief_raw(e["dir"])
+    raw = e["brief_bytes"] if "brief_bytes" in e else brief_raw(e["dir"])
     if raw is None:
         return ""
-    b, probs = load_brief(e["dir"])
+    b, probs = parse_brief(raw, pathlib.Path(e["dir"]).name)
     if b is None or probs:
         return ""
     return ("\n\n---\n[任务书 / brief] brief.json（revision " + str(b["revision"]) + "，digest " + brief_digest(raw)
@@ -676,10 +678,10 @@ def brief_block(e: dict) -> str:
 def check_run_report(e: dict, res: dict, since: float) -> None:
     """0.18: with a brief, an ok VERDICT also needs a matching reports/report.json and readable artifacts — otherwise the
     run is reported as attention with the reason (never as success)."""
-    raw = brief_raw(e["dir"])
+    raw = e["brief_bytes"] if "brief_bytes" in e else brief_raw(e["dir"])
     if raw is None:
         return
-    b, probs = load_brief(e["dir"])
+    b, probs = parse_brief(raw, pathlib.Path(e["dir"]).name)
     if b is None or probs:
         res["report_check"] = "brief"
         if res["verdict"] == "ok":
@@ -910,10 +912,10 @@ BRIEF_FIXED = {"inputs", "documentation", "task.json", "brief.json", "CLAUDE.md"
 def brief_scope_for(st, e: dict) -> dict | None:
     """The scope a run of workflow `e` may act in without a phone card: only when it has a valid brief whose scope the owner
     confirmed (signed receipt) or that is an owner-known workflow on a requested brief. None = the usual cards."""
-    raw = brief_raw(e["dir"])
+    raw = e["brief_bytes"] if "brief_bytes" in e else brief_raw(e["dir"])
     if raw is None:
         return None
-    b, probs = load_brief(e["dir"])
+    b, probs = parse_brief(raw, pathlib.Path(e["dir"]).name)
     if b is None or probs:
         return None
     if receipt_for(st, e["id"], b) is None and not (b["confirmation"]["mode"] == "requested" and existing_workflow(st, e["id"])):

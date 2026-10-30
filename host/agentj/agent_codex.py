@@ -38,6 +38,7 @@ from . import agent as _agentmod
 from .agent import LINE_LIMIT, Agent, _signal_tree
 from .slash import Result
 from .text import clean, clean_line, pick
+from .policy_registry import harness_tool
 
 START_WAIT = 60          # s for initialize / config / thread answers
 CALL_WAIT = 60
@@ -918,10 +919,10 @@ class CodexAgent(Agent):
                 extra.append("（写入一个正在运行的命令）")
             if isinstance(p.get("networkApprovalContext"), dict):
                 extra.append("（要联网：" + clean_line(json.dumps(p["networkApprovalContext"], ensure_ascii=False), 200) + "）")
-            if isinstance(p.get("reason"), str) and p["reason"].strip():
-                extra.append("Codex 说明：" + clean_line(p["reason"], 300))
             if extra:
-                inp["description"] = " ".join(extra)
+                inp["host_note"] = " ".join(extra)
+            if isinstance(p.get("reason"), str) and p["reason"].strip():
+                inp["description"] = p["reason"]
             batch = p.get("kind") != "writeStdin" and not isinstance(p.get("networkApprovalContext"), dict)
             why = beyond_sandbox(self.thread.get("sandbox"), method, "Bash", {"command": inner}, p, None, self.cfg["dir"])
             if why:
@@ -931,7 +932,9 @@ class CodexAgent(Agent):
             it = self.items.get(p.get("itemId")) or {}
             tool, inp = patch_tool(it.get("changes"))
             if isinstance(p.get("grantRoot"), str) and p["grantRoot"]:      # "allow writes under this root": we never grant it
-                inp = {**inp, "description": "（只批准这一次改动，不放开整个目录）"}
+                inp = {**inp, "host_note": "（只批准这一次改动，不放开整个目录）"}
+            if isinstance(p.get("reason"), str) and p["reason"].strip():
+                inp["description"] = p["reason"]
             why = beyond_sandbox(self.thread.get("sandbox"), method, tool, inp, p, it.get("changes"), self.cfg["dir"])
             if why:
                 return self._refuse(rid, tool, inp, {"decision": "decline"}, why)
@@ -940,7 +943,7 @@ class CodexAgent(Agent):
             perms = p.get("permissions") if isinstance(p.get("permissions"), dict) else {}
             inp = {"permissions": perm_text(perms)}
             if isinstance(p.get("reason"), str):
-                inp["reason"] = clean_line(p["reason"], 300)
+                inp["description"] = p["reason"]
             granted = {k: v for k, v in perms.items() if k in ("fileSystem", "network")}
             why = beyond_sandbox(self.thread.get("sandbox"), method, "CodexPermissions", inp, p, None, self.cfg["dir"])
             if why:
@@ -1056,7 +1059,7 @@ class CodexAgent(Agent):
                 ok, _ = danger.readonly(tool, inp)
                 if not ok:                         # a `mode: research` task: anything not read-only is refused outright
                     return
-            name = clean_line(tool, 64) or "?"
+            name = harness_tool(tool)
             from .approval_jev import low_risk_pass       # P198: P157 layer 1 — low risk runs without a card, like Claude
             r = ({"behavior": "allow"} if not self.research and low_risk_pass(self.host, self.cfg, name, inp, batch)
                  else await self.host.ask(name, inp, gone, batch=batch, **({"bind": bind} if bind else {}),

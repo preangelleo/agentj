@@ -1,41 +1,9 @@
-"""P150 在办事项: who is working in the background under this Agent's watch (PROTOCOL §22, wire `{"t":"busy"}`).
+"""Display-only background-work board (PROTOCOL §22); it never starts, stops or approves work.
+Board folds native Claude/Codex/OpenCode events, workflows and outside dispatches, reconciling completion and liveness.
+Item-file text is display data, not proof of a trusted launch. Detail reads are bounded and redacted. Labels are capped;
+load is measured, not inferred. Stable colour assignments and explicit empty task lists drive the phone projection.
 
-The phone shows one coloured dot per item at the right of the reply card's header; a tap opens the centred dialog
-「有 N 个 Agent 在后台干活，<Agent 名> 正在替你监控」 with who · what. Nothing here starts, stops or approves work —
-the list is display only, and an empty list sends `tasks: []` (the dots disappear).
-
-Sources (all folded by `Board` in serve):
-- the owned Claude session's stream-json (agent.py): an `Agent`/`Task` tool_use = a sub-agent (its description is
-  the label), its tool_result ends it, unless it went to the background; then the `task_notification` ends it; a
-  run_in_background Bash (`task_started` task_type local_bash, P291) is an item until its notification;
-- shared Claude sessions' hooks (shared.py): PreToolUse(Agent|Task) remembers the description, SubagentStart /
-  SubagentStop open / close the item, SessionEnd and Stop.background_tasks reconcile it (P291: that list also ADDS what is
-  missing — a lost SubagentStart, a run_in_background Bash, which PostToolUse(backgroundTaskId) shows at once);
-- the Codex app-server (agent_codex.py `_on_note`, owned and shared, P160): a `collabAgentToolCall` spawnAgent opens one
-  item per receiver thread (the prompt's first line is the label), the child thread's `turn/started` / `turn/completed`
-  re-open / close it, `agentsStates` with a final status, a `subAgentActivity` completed/interrupted or closeAgent close
-  it; the app-server exiting clears the session;
-- OpenCode (agent_opencode.py / agent_opencode2.py `on_event`, owned and shared, P160): v1 = the parent session's `task`
-  tool part (pending/running opens with `input.description`, completed/error closes); v2 = a child session
-  (`session.created` with `parentID` = ours) opens, its `session.execution.*` end closes it;
-- a workflow run (tasks.py): its CEO (the workflow's title) is busy for the length of the run;
-- outside dispatches: `agentj busy run --who 掌枢 --label 发布收尾 -- claude -p …` (an item file with the wrapper's
-  pid), `agentj busy start|stop`, and active systemd user units named `agentj-p<digits>…` (Description
-  "who · what" / "who: what"); on macOS the running launchd jobs labelled `agentj-p<digits>…` (P291). Item files live in <state>/agentperm/busy/ (0600), are display text only and are pruned when
-  their pid is gone or after ITEM_TTL.
-
-Detail (P160, PROTOCOL §22 `busy_get`): a tap on one row asks for that item only — `last` = the sub-agent's most recent
-tool description (Claude / Codex / OpenCode child tool calls, noted by `Board.note`), `report` = the REPORT a systemd unit
-or an item file points at (first non-empty line, read on demand), both redacted by privacy.redact. Read-only.
-
-Labels are the whole description on one line (`short`, P154), capped at LABEL_MAX characters against abuse; the phone
-ellipsises each row at its fixed width.
-Load (P154 追加 4): the same message carries `load` = the 1-minute load average ÷ CPU cores, clamped to 0..1 and rounded to
-0.01 (`sys_load`, os.getloadavg: /proc/loadavg on Linux, sysctl vm.loadavg on macOS; absent where there is none). serve
-samples it every LOAD_EVERY seconds and only sends when it moved more than LOAD_STEP; the phone turns it into the speed of
-the line under the reply card's header (busier = faster). Display only.
-Colours: index c (0..8) into Leo's Heavy/Light pairs (web app.css --busy-h<c>/--busy-l<c>); a named worker keeps the
-same index every time (<state>/busy/colors.json), and items on screen never share one while ≤ 9 are running.
+Protocol/history detail: agentjarvis/ARCHITECTURE.md, P0261 source notes / busy.py.
 """
 from __future__ import annotations
 
@@ -760,6 +728,7 @@ class Board:
     def __init__(self, root, on_change=None, verify_sources=False):
         self.verify_sources = verify_sources
         self.trusted = None                    # P570: is the launching turn the owner's / the host's own?
+        self.launched = {}
         self.evidence = {}
         self.claude_transcripts = {}
         self.root = Path(root) if root else None
@@ -790,7 +759,7 @@ class Board:
         from .busy_probe import start_id
         self.context[scope] = {**task_meta({"harness": harness, "cwd": cwd}), **({"pid": pid, "proc_start": start_id(pid)} if isinstance(pid, int) else {})}
 
-    def start(self, key, who, kind="temp", label="", lk=None, session=None, **meta) -> None:
+    def start(self, key, who, kind="temp", label="", lk=None, session=None, late=False, **meta) -> None:
         old = self.mem.get(key)
         it = item(key, who, kind, label, lk, old["since"] if old else None, session=session)
         context = next((v for k,v in self.context.items() if str(session or key)==k or str(session or key).startswith(k+":")), {})
@@ -800,8 +769,12 @@ class Board:
             it.update(task_meta(old))
             if old.get("bg"):
                 it["bg"] = True        # P426: once background, its end is a 「后台活已结束」 one
-        if (old or {}).get("foreign") or not old and session and self.trusted and not self.trusted():
-            it["foreign"] = True       # P570
+        if (old or {}).get("foreign") or (not old and session and (late and self.launched.get(key, True) or self.trusted and not self.trusted())):
+            it["foreign"] = True       # P570; late: first seen in Stop (restart), launcher unknown
+        if session and not old and not (late and key in self.launched):   # P570b: launch trust, kept after the item ends
+            self.launched[key] = bool(it.get("foreign") or not self.trusted)
+            while len(self.launched) > 64:
+                self.launched.pop(next(iter(self.launched)))
         source = str(session or key).lower()
         harness = next((x for x in ("codex", "opencode", "claude") if x in source), None)
         if harness is None and source in ("own", "shared"):
@@ -955,11 +928,11 @@ class Board:
                 if isinstance(t, dict) and t.get("id"):
                     self.mark_bg(f"{scope}:{sid}:{clean(str(t.get('id')), 80)}")
                 if isinstance(t, dict) and t.get("id") and t.get("status") not in BG_DONE:
-                    live.add(self._background(scope, sid, t))
+                    live.add(self._background(scope, sid, t, True))
             # foreground sub-agents are done when the main turn stops; background ones only when the harness drops them
             self.stop_where(lambda k, v: v.get("session") == f"{scope}:{sid}" and k not in live, fg=True)
 
-    def _background(self, scope: str, sid: str, t: dict) -> str:
+    def _background(self, scope: str, sid: str, t: dict, late=False) -> str:
         """P291: one entry of Claude Code's background list (Stop.background_tasks / a launch result) on the board; an item
         already there (SubagentStart's, with its better label) is kept as it is. → its key."""
         key = f"{scope}:{sid}:{clean(str(t.get('id')), 80)}"
@@ -971,13 +944,13 @@ class Board:
         if typ == "subagent":
             role = clean(t.get("agent_type"), WHO_MAX)
             self.start(key, who_of(role), "temp", t.get("description") or role, session=f"{scope}:{sid}",
-                       harness="claude", role=role or None)
+                       harness="claude", role=role or None, late=late)
         else:                                  # "shell" (run_in_background Bash) and anything newer: labelled by its description
             label = t.get("description")
             if not (isinstance(label, str) and label.strip()) and isinstance(t.get("command"), str):
                 from .privacy import redact    # a bare command line may carry a token: scrubbed before it is a label
                 label = redact(clean(t["command"], 4 * LABEL_MAX), paths=True)
-            self.start(key, None, "temp", label or typ, session=f"{scope}:{sid}", harness="claude", role=typ)
+            self.start(key, None, "temp", label or typ, session=f"{scope}:{sid}", harness="claude", role=typ, late=late)
         self.mark_bg(key)
         self.native_status(key, "running")
         return key
@@ -1211,7 +1184,7 @@ class Board:
         files = read_items(self.root) if self.root is not None else []
         if self.root is not None:
             for receipt in finished_items(self.root):
-                self.finish(receipt, receipt.get("exit_code"), receipt.get("ended"))
+                self.finish({**receipt, "foreign": True}, receipt.get("exit_code"), receipt.get("ended"))
         if units:
             try:
                 scanned = scan_units(run, strict=True)
@@ -1227,7 +1200,7 @@ class Board:
                         if result is None:
                             retained.append(it)  # still running, or lookup failed: try next scan
                         else:
-                            self.finish(it, result.get("exit_code"), result.get("ended"))
+                            self.finish({**it, "foreign": True}, result.get("exit_code"), result.get("ended"))
                 for it in scanned:
                     if it["key"] in old:
                         it.update(since=old[it["key"]]["since"], report=old[it["key"]].get("report"))
@@ -1240,7 +1213,7 @@ class Board:
         live = {it["key"] for it in got}
         for it in self.outside:
             if not it["key"].startswith("unit:") and it["key"] not in live:
-                self.finish(it)                   # unwrapped pid/stop: exit code is unknowable
+                self.finish({**it, "foreign": True})   # unwrapped pid/stop: exit code is unknowable
 
         changed = got != self.outside
         self.outside = got

@@ -1,0 +1,347 @@
+{
+ "touchid-zh-light": {
+  "cmdBox": {
+   "top": 240,
+   "h": 187,
+   "bottom": 426
+  },
+  "pre": {
+   "top": 286,
+   "h": 127,
+   "bottom": 412
+  },
+  "reason": {
+   "top": 436,
+   "h": 24,
+   "bottom": 460
+  },
+  "allow": {
+   "top": 474,
+   "h": 64,
+   "bottom": 538
+  },
+  "vh": 844
+ },
+ "hold-zh-light": {
+  "cmdBox": {
+   "top": 318,
+   "h": 105,
+   "bottom": 423
+  },
+  "pre": {
+   "top": 364,
+   "h": 45,
+   "bottom": 409
+  },
+  "reason": {
+   "top": 433,
+   "h": 24,
+   "bottom": 457
+  },
+  "allow": {
+   "top": 471,
+   "h": 64,
+   "bottom": 535
+  },
+  "vh": 844
+ },
+ "noreason-zh-light": {
+  "cmdBox": {
+   "top": 240,
+   "h": 187,
+   "bottom": 426
+  },
+  "pre": {
+   "top": 286,
+   "h": 127,
+   "bottom": 412
+  },
+  "reason": {
+   "top": 436,
+   "h": 24,
+   "bottom": 460
+  },
+  "allow": {
+   "top": 474,
+   "h": 64,
+   "bottom": 538
+  },
+  "vh": 844
+ },
+ "mixed-zh-light": {
+  "cmdBox": {
+   "top": 240,
+   "h": 187,
+   "bottom": 426
+  },
+  "pre": {
+   "top": 286,
+   "h": 127,
+   "bottom": 412
+  },
+  "reason": {
+   "top": 436,
+   "h": 24,
+   "bottom": 460
+  },
+  "allow": {
+   "top": 474,
+   "h": 64,
+   "bottom": 538
+  },
+  "vh": 844
+ },
+ "touchid-zh-dark": {
+  "cmdBox": {
+   "top": 240,
+   "h": 187,
+   "bottom": 426
+  },
+  "pre": {
+   "top": 286,
+   "h": 127,
+   "bottom": 412
+  },
+  "reason": {
+   "top": 436,
+   "h": 24,
+   "bottom": 460
+  },
+  "allow": {
+   "top": 474,
+   "h": 64,
+   "bottom": 538
+  },
+  "vh": 844
+ },
+ "hold-zh-dark": {
+  "cmdBox": {
+   "top": 318,
+   "h": 105,
+   "bottom": 423
+  },
+  "pre": {
+   "top": 364,
+   "h": 45,
+   "bottom": 409
+  },
+  "reason": {
+   "top": 433,
+   "h": 24,
+   "bottom": 457
+  },
+  "allow": {
+   "top": 471,
+   "h": 64,
+   "bottom": 535
+  },
+  "vh": 844
+ },
+ "noreason-zh-dark": {
+  "cmdBox": {
+   "top": 240,
+   "h": 187,
+   "bottom": 426
+  },
+  "pre": {
+   "top": 286,
+   "h": 127,
+   "bottom": 412
+  },
+  "reason": {
+   "top": 436,
+   "h": 24,
+   "bottom": 460
+  },
+  "allow": {
+   "top": 474,
+   "h": 64,
+   "bottom": 538
+  },
+  "vh": 844
+ },
+ "mixed-zh-dark": {
+  "cmdBox": {
+   "top": 240,
+   "h": 187,
+   "bottom": 426
+  },
+  "pre": {
+   "top": 286,
+   "h": 127,
+   "bottom": 412
+  },
+  "reason": {
+   "top": 436,
+   "h": 24,
+   "bottom": 460
+  },
+  "allow": {
+   "top": 474,
+   "h": 64,
+   "bottom": 538
+  },
+  "vh": 844
+ },
+ "touchid-en-light": {
+  "cmdBox": {
+   "top": 240,
+   "h": 187,
+   "bottom": 426
+  },
+  "pre": {
+   "top": 286,
+   "h": 127,
+   "bottom": 412
+  },
+  "reason": {
+   "top": 436,
+   "h": 24,
+   "bottom": 460
+  },
+  "allow": {
+   "top": 474,
+   "h": 64,
+   "bottom": 538
+  },
+  "vh": 844
+ },
+ "hold-en-light": {
+  "cmdBox": {
+   "top": 318,
+   "h": 105,
+   "bottom": 423
+  },
+  "pre": {
+   "top": 364,
+   "h": 45,
+   "bottom": 409
+  },
+  "reason": {
+   "top": 433,
+   "h": 24,
+   "bottom": 457
+  },
+  "allow": {
+   "top": 471,
+   "h": 64,
+   "bottom": 535
+  },
+  "vh": 844
+ },
+ "noreason-en-light": {
+  "cmdBox": {
+   "top": 240,
+   "h": 187,
+   "bottom": 426
+  },
+  "pre": {
+   "top": 286,
+   "h": 127,
+   "bottom": 412
+  },
+  "reason": {
+   "top": 436,
+   "h": 24,
+   "bottom": 460
+  },
+  "allow": {
+   "top": 474,
+   "h": 64,
+   "bottom": 538
+  },
+  "vh": 844
+ },
+ "touchid-en-dark": {
+  "cmdBox": {
+   "top": 240,
+   "h": 187,
+   "bottom": 426
+  },
+  "pre": {
+   "top": 286,
+   "h": 127,
+   "bottom": 412
+  },
+  "reason": {
+   "top": 436,
+   "h": 24,
+   "bottom": 460
+  },
+  "allow": {
+   "top": 474,
+   "h": 64,
+   "bottom": 538
+  },
+  "vh": 844
+ },
+ "hold-en-dark": {
+  "cmdBox": {
+   "top": 318,
+   "h": 105,
+   "bottom": 423
+  },
+  "pre": {
+   "top": 364,
+   "h": 45,
+   "bottom": 409
+  },
+  "reason": {
+   "top": 433,
+   "h": 24,
+   "bottom": 457
+  },
+  "allow": {
+   "top": 471,
+   "h": 64,
+   "bottom": 535
+  },
+  "vh": 844
+ },
+ "noreason-en-dark": {
+  "cmdBox": {
+   "top": 240,
+   "h": 187,
+   "bottom": 426
+  },
+  "pre": {
+   "top": 286,
+   "h": 127,
+   "bottom": 412
+  },
+  "reason": {
+   "top": 436,
+   "h": 24,
+   "bottom": 460
+  },
+  "allow": {
+   "top": 474,
+   "h": 64,
+   "bottom": 538
+  },
+  "vh": 844
+ },
+ "touchid-zh-light-1440": {
+  "cmdBox": {
+   "top": 356,
+   "h": 195,
+   "bottom": 551
+  },
+  "pre": {
+   "top": 402,
+   "h": 135,
+   "bottom": 537
+  },
+  "reason": {
+   "top": 561,
+   "h": 24,
+   "bottom": 585
+  },
+  "allow": {
+   "top": 599,
+   "h": 64,
+   "bottom": 663
+  },
+  "vh": 900
+ }
+}

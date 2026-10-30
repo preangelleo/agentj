@@ -554,7 +554,7 @@ class Desk(SudoDesk, BangDesk, VshareDesk):
         await self._cast(x, "i", shown)
         with contextlib.suppress(Exception):     # never await the pipe here: this runs in the relay receive loop
             if x.writer.transport.get_write_buffer_size() > 64 * 1024:
-                return await self._frame(x, "\n[电脑上的程序没有在读输入，这一行没有送出 / the program is not reading input]\n", False)
+                return await self._frame(x, "\n[Agent J 主机上的程序没有在读输入，这一行没有送出 / the program is not reading input]\n", False)
             x.writer.write((line + "\n").encode())
 
     def _signal_children(self, x: Term, sig) -> None:
@@ -762,7 +762,7 @@ class Desk(SudoDesk, BangDesk, VshareDesk):
         with contextlib.suppress(Exception):
             await self.h.send_app(x.s, {"t": "term_close", "id": x.id, "why": why, "minutes": minutes})
         zh = {"owner": "主动结束", "timeout": "到时间了", "idle": "太久没输入", "background": "手机切到后台", "relay_lost": "连接断了",
-              "estop": "全部停下", "host": "电脑端结束", "disabled": "已在电脑上关闭"}.get(why, why)
+              "estop": "全部停下", "host": "Agent J 主机端结束", "disabled": "已在 Agent J 主机上关闭"}.get(why, why)
         self._notice(f"网页终端已关闭（{zh}，{minutes} 分钟）", f"Web terminal closed ({why}, {minutes} min)")
         self._prefs()
 

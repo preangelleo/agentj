@@ -136,8 +136,38 @@ def summary(tool: str, inp: dict, *, credentials: bool = False, lang: str = "en"
         human = visible(_mail_summary(mail_target, lang)) if mail_target else text
         if len((human + text).encode('utf-8')) > 24000:
             raise ValueError('approval presentation too large')
-        return {"summary": human, "details": text}
+        return {"summary": human, "details": text, **({"level":"signed"} if tool == "host_write" and mail_role_downgrade(inp) else {})}
     return text
+
+
+NOTE_LABELS = ("Agent note:", "Agent 附注：")
+REASON_KEYS = ("description", "summary", "card")
+
+
+def reason(text: str) -> str:
+    """P572 (#385): the Agent's own reason for a card, read back out of the SIGNED card text (never the raw input), so it
+    is already redacted and the phone can check it against what the owner signs. "" = the Agent gave none."""
+    if not isinstance(text, str):
+        return ""
+    for label in NOTE_LABELS:
+        at = text.find("\n" + label + "\n")
+        if at < 0:
+            continue
+        start = at + len(label) + 2
+        try:
+            prose, end = json.JSONDecoder().raw_decode(text, start)
+        except ValueError:
+            continue
+        # The note block summary() writes ends at the FIRST request digest line (fields are JSON, so no raw line inside
+        # them can look like it); a look-alike block after it (an appended origin line) is never read as the note.
+        if not isinstance(prose, dict) or end != text.find("\nRequest SHA-256: "):
+            continue
+        for key in REASON_KEYS:
+            value = prose.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return ""
+    return ""
 
 
 def mail_config(old: dict, raw: dict) -> dict:
@@ -151,6 +181,29 @@ def mail_config(old: dict, raw: dict) -> dict:
         if raw['preset'] == 'custom':
             new.update({k: raw[k] for k in ('imap', 'smtp') if k in raw})
     return mail.validate(new)
+
+
+def mail_role_downgrade(target: dict) -> bool:
+    """Only an exact owner→guest edit can omit UV; signed paired-device authorization is still mandatory."""
+    if target.get('kind') != 'mail_set':
+        return False
+    try:
+        old = target['before']
+        new = mail_config(old, target['cfg'])
+        if {k:v for k,v in old.items() if k != 'allow'} != {k:v for k,v in new.items() if k != 'allow'}:
+            return False
+        if len(old['allow']) != len(new['allow']):
+            return False
+        changed = False
+        for before, after in zip(old['allow'], new['allow']):
+            if before == after:
+                continue
+            if before.get('role') != 'owner' or after != {**before, 'role':'guest'}:
+                return False
+            changed = True
+        return changed
+    except (KeyError, TypeError, ValueError):
+        return False
 
 
 def _mail_summary(target: dict, lang: str) -> str:
@@ -168,6 +221,7 @@ def _mail_summary(target: dict, lang: str) -> str:
     labels = [('address', tr('邮箱', 'Mailbox')), ('preset', tr('服务商', 'Provider')),
               ('username', tr('登录账号', 'Login name')), ('imap', 'IMAP'), ('smtp', 'SMTP'),
               ('poll_minutes', tr('检查频率', 'Check interval')), ('enabled', tr('邮件通道', 'Mail channel')),
+              ('mark_processed_read', tr('处理后标为已读', 'Mark processed mail as read')),
               ('auth', tr('发件人校验', 'Sender verification')), ('auth_servid', tr('可信邮件服务器', 'Trusted mail server')),
               ('allow', tr('允许的发件人', 'Allowed senders')), ('reply_per_hour', tr('每小时回复上限', 'Replies per hour'))]
     def value(key, val):

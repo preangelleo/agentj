@@ -6,6 +6,7 @@ checked against wire.js with node; `agentj friends` offline and through friends.
 Run (in host/tests): ../.venv/bin/python -m unittest test_p71_peer_service
 """
 import _hermetic  # noqa: F401,I001
+import _fixture_disk  # noqa: E402
 import asyncio
 import hashlib
 import json
@@ -197,6 +198,7 @@ class Base(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
+        self.addAsyncCleanup(_fixture_disk.drain_async_disk, self)
         os.environ[peer_service.TEST_CERT_ENV] = wire.b64u(os.urandom(32))
         self.addCleanup(os.environ.pop, peer_service.TEST_CERT_ENV, None)
         self.clock = Clock()

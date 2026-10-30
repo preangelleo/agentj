@@ -22,7 +22,7 @@ agentj keep-awake setup
 
 - **插着电不自动睡眠。** 屏幕照样会关。
 - **合上盖子也不睡。** Linux 上随这次同意一起设好（加 `--no-lid` 就让合盖照常睡）；Mac 会再问你一次，见下文。
-- **Linux：开机自动运行。** 电脑重启后，没人登录 Agent J 也会运行。
+- **Linux：开机自动运行。** Agent J 主机重启后，没人登录 Agent J 也会运行。
 
 每一项系统改动都会在已配对的手机上弹一张密码卡。做完后命令会读回设置，每项打印 ✓ 或 ✗，并告诉你怎么撤销。
 
@@ -187,7 +187,7 @@ agentj keep-awake on --lid --json
 
 `--lid` 会写入 Agent J 自己的 logind 配置文件 `/etc/systemd/logind.conf.d/90-agentj-keep-awake.conf`，内容是 `HandleLidSwitchExternalPower=ignore`（插电合盖时不做任何事）。你自己的 logind.conf 和其他文件都不动，也不重启 logind（重启可能让桌面会话退出）。这个文件在下次重启后正式生效；在那之前，已屏蔽的睡眠 target 同样让合盖不睡。`agentj keep-awake off` 只删除这一个文件。同名文件如果不是 Agent J 建的，命令会停下，不去动它。
 
-开机自动运行：`agentj keep-awake setup` 还会打开 linger（`loginctl enable-linger`），电脑重启后没人登录 Agent J 也会运行。它先试不用密码，不行再弹手机密码卡。撤销：`loginctl disable-linger`。
+开机自动运行：`agentj keep-awake setup` 还会打开 linger（`loginctl enable-linger`），Agent J 主机重启后没人登录 Agent J 也会运行。它先试不用密码，不行再弹手机密码卡。撤销：`loginctl disable-linger`。
 
 验证各 target：
 
@@ -309,10 +309,10 @@ powercfg /change hibernate-timeout-ac 60
 
 ## Agent J 主机重启以后
 
-Agent J 会自己把需要的东西带起来，你不用碰电脑，直接在手机上接着干活：
+Agent J 会自己把需要的东西带起来，你不用碰 Agent J 主机，直接在手机上接着干活：
 
 1. **共享的 Claude 会话。** 你钉了一个共享的 Claude Code 会话，重启后它不在了，Agent J 会在后台把它接回来（`claude --resume`）。重启后你自己关掉的会话，不会再自动打开。
-2. **你自己开的 OpenCode。** 设置里让 Agent J 连你自己在某个端口开的 OpenCode，而它没在运行，手机上会弹卡片问你。选推荐的第一项，Agent J 就在那个端口把它启动并接回；选另一项就由你在电脑上处理。如果它原来设过密码，而 Agent J 手里没有这把密码，它不会不设密码就替你启动，卡片会改为请你在电脑上自己启动，或用密钥卡把密码交给 Agent J。
+2. **你自己开的 OpenCode。** 设置里让 Agent J 连你自己在某个端口开的 OpenCode，而它没在运行，手机上会弹卡片问你。选推荐的第一项，Agent J 就在那个端口把它启动并接回；选另一项就由你在 Agent J 主机上处理。如果它原来设过密码，而 Agent J 手里没有这把密码，它不会不设密码就替你启动，卡片会改为请你在 Agent J 主机上自己启动，或用密钥卡把密码交给 Agent J。
 3. **定时任务。** 关机或休眠期间错过的任务不会一口气补跑。你会收到一条通知，说错过了几次，再加一张卡片，勾选的任务各补跑一次。
 4. **工作目录信任。** Agent J 自己启动 Claude Code 之前，会先确认工作目录已信任，启动不会卡在信任提示上。
 5. **Agent J 专用浏览器。** 被关掉了，下次要用时会自动重新打开。如果 Agent J 用的是你自己的 Chrome，它不会擅自打开，会提示你。

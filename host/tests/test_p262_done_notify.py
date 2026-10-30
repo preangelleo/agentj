@@ -52,7 +52,8 @@ class Completion(unittest.TestCase):
         self.n.complete(send)
         self.assertIn("退出码 7", send.text)
         self.assertIn("/tmp/report.md", send.text)
-        self.assertEqual(provenance.from_name(send.source), provenance.SYSTEM)
+        # P570b (§5 residual 2): a unit's launching turn is not host-attested → foreign, the batch goes out `unknown`
+        self.assertEqual(provenance.from_name(send.source), provenance.UNKNOWN)
         self.assertIn("实际报告与证据", send.text)
         self.assertEqual(send.by, "background_done")
         self.h.busy.refresh_outside(run=lambda *a, **kw: SimpleNamespace(returncode=0, stdout=""))

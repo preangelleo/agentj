@@ -85,14 +85,23 @@ function render(form = true) {
   const tg = el('mail-on');
   tg.setAttribute('aria-checked', String(!!c.enabled));
   tg.disabled = busy || !c.address;
+  el('mail-mark-read').setAttribute('aria-checked', String(c.mark_processed_read !== false));
+  el('mail-mark-read').disabled = busy;
   // allowlist
   el('mail-allow').replaceChildren(...(c.allow || []).map((r) => {
     const li = document.createElement('li');
     const a = document.createElement('span'); a.textContent = r.addr + (r.name ? ' · ' + r.name : '');
-    const role = document.createElement('small'); role.textContent = t(r.role === 'guest' ? 'mail.roleGuest' : 'mail.roleOwner') + (r.subdomains ? ' · ' + t('p567.subdomains') : '');
+    const role = document.createElement('select'); role.className = 'aj-select mail-role';
+    role.setAttribute('aria-label', t('p579.mailRole', {a: r.addr}));
+    for (const value of ['owner', 'guest']) { const o = document.createElement('option'); o.value = value; o.textContent = t(value === 'guest' ? 'p579.chipGuest' : 'p579.chipOwner'); role.append(o); }
+    role.value = r.role === 'guest' ? 'guest' : 'owner';
+    role.disabled = busy || r.addr.startsWith('@');
+    role.addEventListener('change', () => save({allow: (cfg().allow || []).map(x => x.addr === r.addr ? {...x, role: role.value} : x)}));
     const rm = document.createElement('button'); rm.type = 'button'; rm.className = 'setlink setdanger'; rm.textContent = t('mail.remove');
     rm.addEventListener('click', () => save({ allow: (cfg().allow || []).filter((x) => x.addr !== r.addr) }));
-    li.append(a, role, rm);
+    li.append(a);
+    if (r.subdomains) { const note = document.createElement('small'); note.textContent = t('p567.subdomains'); a.append(document.createElement('br'), note); }
+    li.append(rm, role);
     return li;
   }));
   el('mail-allow-empty').hidden = !!(c.allow && c.allow.length);
@@ -106,7 +115,7 @@ function render(form = true) {
     li.append(a, w);
     if (String(b.why).startsWith('not_allowed') && !(cfg().allow || []).some((x) => x.addr.toLowerCase() === String(b.addr).toLowerCase())) {
       const add = document.createElement('button'); add.type = 'button'; add.className = 'setlink'; add.textContent = t('mail.addThis');
-      add.addEventListener('click', () => save({ allow: [...(cfg().allow || []), { addr: b.addr, role: 'owner' }] }));
+      add.addEventListener('click', () => save({ allow: [...(cfg().allow || []), { addr: b.addr, role: 'guest' }] }));
       li.append(add);
     }
     return li;
@@ -198,6 +207,7 @@ export function configure() {
       : t('mail.testFail', { why: why(m.why) }));
   });
   el('mail-on').addEventListener('click', () => save({ enabled: !cfg().enabled }));
+  el('mail-mark-read').addEventListener('click', () => save({mark_processed_read: cfg().mark_processed_read === false}));
   el('mail-pin').addEventListener('click', () => { const s = view && view.auth_sample; if (s && s.servid) save({ auth_servid: s.servid }); });
   el('mail-add-addr').addEventListener('input', () => {
     const domain = el('mail-add-addr').value.trim().startsWith('@');

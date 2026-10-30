@@ -259,6 +259,17 @@ def hhmm(at: float, lang: str = "zh", now: float | None = None) -> str:
     return d.strftime("%m-%d ") + t
 
 
+def host_when(at: float, lang: str = "zh", now: float | None = None) -> str:
+    """P578 (#402, Avon 10-29: card 「预计 20:11」 vs banner 「预计 17:11」): a host text names the wait itself (zone-free) and
+    says whose clock the HH:MM is — the phone's banner renders `at` in the phone's own zone, which can differ."""
+    now = time.time() if now is None else now
+    m = max(1, round((at - now) / 60))
+    rel = (f"{m // 60} h {m % 60} min" if m >= 60 else f"{m} min") if lang == "en" else \
+        (f"{m // 60} 小时 {m % 60} 分钟" if m >= 60 else f"{m} 分钟")
+    t = hhmm(at, lang, now)
+    return f"in about {rel} ({t} on the Agent J host's clock)" if lang == "en" else f"约 {rel}后（Agent J 主机时间 {t}）"
+
+
 def continue_text(rec: dict, lang: str = "zh") -> str:
     name = NAMES.get(rec.get("harness"), rec.get("harness") or "AI")
     if lang == "en":
@@ -452,22 +463,22 @@ class Resumer:
         self._save()
         self.host.st.log("quota_resume", scope=scope.split(":")[0], result="scheduled", agent=harness,
                          to=to, wait=int(max(0, at - time.time())))
-        when = hhmm(at + (0 if to else RESUME_MARGIN), lang)
+        when = host_when(at + (0 if to else RESUME_MARGIN), lang)   # P578: the phone's banner may be in another zone
         what = (f"「{title}」" if title and scope != "main" else "")
         lab = limit_label(harness, limit, lang)
         if to:
-            text = (f"{lab} is used up. Workflow {what} reruns on {NAMES.get(to, to)} at {when} (the 「hand to "
+            text = (f"{lab} is used up. Workflow {what} reruns on {NAMES.get(to, to)} {when} (the 「hand to "
                     "another AI account」 switch is on). Tap ✕ on the bar above to cancel." if lang == "en" else
-                    f"{lab}用完了。工作流{what}将在 {when} 改用 {NAMES.get(to, to)} 接着跑（「额度告警时交给其他 AI 账号」已打开）。"
+                    f"{lab}用完了。工作流{what}将在{when}改用 {NAMES.get(to, to)} 接着跑（「额度告警时交给其他 AI 账号」已打开）。"
                     "不需要的话点上方横条的 ✕ 取消。")
         elif scope == "main":
-            text = (f"{lab} is used up. Expected to continue automatically at {when} (after the reset) with one "
+            text = (f"{lab} is used up. Expected to continue automatically {when}, after the reset, with one "
                     "「continue」. Tap ✕ on the bar above to cancel." if lang == "en" else
-                    f"{lab}用完了，预计 {when}（额度重置后）自动发一句「继续」接着做。不需要的话点上方横条的 ✕ 取消。")
+                    f"{lab}用完了，额度重置后预计{when}自动发一句「继续」接着做。不需要的话点上方横条的 ✕ 取消。")
         else:
-            text = (f"{lab} is used up. Workflow {what} reruns automatically at {when}. Tap ✕ on the bar above "
+            text = (f"{lab} is used up. Workflow {what} reruns automatically {when}. Tap ✕ on the bar above "
                     "to cancel." if lang == "en" else
-                    f"{lab}用完了，工作流{what}预计 {when} 自动重跑。不需要的话点上方横条的 ✕ 取消。")
+                    f"{lab}用完了，工作流{what}预计{when}自动重跑。不需要的话点上方横条的 ✕ 取消。")
         if not to:
             text += switch_advice(harness, limit, lang)
         self._notice(scope, title, text + self._extra(harness, limit, stale, lang))

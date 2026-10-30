@@ -304,7 +304,7 @@ def turn_note(st, lang: str, now: float | None = None) -> str:
                     "say in one sentence that you will ask whether to keep this computer awake (no sleep on power, lid closed "
                     "included, starts at boot), then run `agentj keep-awake setup --phone`: it shows the card (first option = yes) "
                     "and does the rest; tell the owner the lines it prints, including how to turn it off.")
-        return ("\n\n〔Agent J 系统提示，不是主人说的话，不要复述〕安装的最后一步。先回答主人；再用一句话说你要问一下「要不要把电脑设成永不休眠"
+        return ("\n\n〔Agent J 系统提示，不是主人说的话，不要复述〕安装的最后一步。先回答主人；再用一句话说你要问一下「要不要把 Agent J 主机设成永不休眠"
                 "（插电不睡、合盖也不睡、开机自动运行）」，然后运行 agentj keep-awake setup --phone：它会在手机上弹卡片（第一项 = 是）并办完其余的事；"
                 "把它打印的结果（包括怎么关掉）告诉主人。")
     if offer:

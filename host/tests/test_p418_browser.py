@@ -171,7 +171,7 @@ class Wake(unittest.TestCase):
         self.assertFalse(res["ok"])
         self.assertEqual(res["reason"], "adopt_not_running")
         self.assertEqual(res["hint"], browser.ADOPT_DOWN)
-        self.assertIn("请在电脑上打开它", res["hint"])
+        self.assertIn("请在 Agent J 主机上打开它", res["hint"])
         self.assertIn("agentj browser adopt --forget", res["hint"])
         self.assertIn("agentj browser setup --own", res["hint"])
         self.assertEqual(self.calls, [])

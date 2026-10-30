@@ -118,11 +118,13 @@ class SharedV2Chain(_DefaultMode, p60.V2Chain):
             self.assertTrue(res.text.startswith("好，停下了这一轮"), res.text)
             await c.idle()
             self.assertTrue(any(r["p"].endswith("/interrupt") for r in self.requests()))
-            # key failures: no key → names the provider, serve restarted, SAME ordinary session; 401 → phone Models & API keys path
+            # P578b: a missing provider selects a connected configured route; its 401 retains auth recovery.
             before = await self._whoami(c)
             await c.say("NOKEY")
-            await c.wait(lambda: any("「deepseek」的账户授权或 API Key 不可用" in m for m in c.msgs()))
+            await c.wait(lambda: any("已切到已配置的模型「opencode/chat」" in m for m in c.msgs()))
             await c.idle()
+            self.assertEqual(c.host.agent.cur_model(), "opencode/chat")
+            self.assertEqual(self.st.agent_config()["model"], "opencode/chat")
             self.assertNotEqual(await self._whoami(c), before, "a fresh serve after a key failure")
             # the new serve is asked for the same ordinary session first (the stand-in keeps sessions in memory only, so it
             # answers 404 and a new one opens; the real OpenCode keeps them in its database — e2e_p60 --mode shared)

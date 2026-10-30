@@ -1,41 +1,10 @@
-"""P258: AI 登录救援 — re-log a harness whose SUBSCRIPTION login expired, from the paired phone, without touching the Agent J host.
+"""Deterministic subscription-login rescue and renewal through official harness CLIs; no Agent-assisted login.
+Only login failures offer rescue; balance/rate limits do not. A paired phone plus passkey is required. Codes/tokens stay
+out of logs, history, notices, relay plaintext and Agent context; PTY text is inspected only in memory. Authorization
+links go only to paired phones. A real live check must pass before replacing credentials; failed checks retain the old
+ones. Owned harness restart and native-screen verification precede the recovered claim. Never automate provider web pages.
 
-The whole chain is deterministic serve code; the (logged-out) Agent is never asked to help itself.
-
-  detect    every harness failure line goes through `classify()`: login (expired / revoked / not logged in) vs balance
-            (top up on the vendor's site — no rescue) vs rate_limit (wait — no rescue). Only `login` lights the phone's dot.
-  Codex     `codex login --device-auth` (official, beta: the owner turns on "device code login" in ChatGPT → Security once).
-            The link + one-time code go to the phone card; the owner finishes on ANY signed-in device; the CLI itself
-            polls and writes auth.json. Nothing is pasted back.
-  Kimi      (P305) `kimi login --region mainland-cn|global` — Kimi Code CLI's official device-code flow, same shape as Codex:
-            link + code to the phone, the owner approves on any device signed in to kimi.com / kimi.ai, the CLI writes
-            ~/.kimi-code/credentials itself. Its files are backed up first and put back if the live check fails.
-  Claude    route A (default) `claude setup-token` runs HERE in a private PTY → the official authorize URL goes to the phone →
-            the owner approves in any browser signed in to claude.ai → the code it shows is pasted into the sealed secret
-            card (elevate.py: E2E, passkey) → the PTY prints the 1-year token → live-checked (`claude -p`) → written to the
-            service env file (0600) as CLAUDE_CODE_OAUTH_TOKEN. Route B: paste a token made with `claude setup-token` on
-            any other computer (same check, same file). Route C: `claude auth login` (the /login flow; refreshing
-            credentials in ~/.claude/.credentials.json — what the owner's own terminal sessions read).
-  restart   harness_setup.prepare() re-answers the first-run screens (a logout resets onboarding), the env is refreshed in
-            this process, an owned harness restarts, an Agent-J-started shared terminal session is replaced.
-  verify    `screen_check()` opens the harness's own interactive screen in a PTY for a few seconds and walks the known
-            first-run / trust / login screens (BLOCKERS): safe ones are answered by fixed keys, the rest are reported by
-            name (the phone can press the one fixed answer: 「代按确认」); then a real message must get a reply
-            (harness.probe) — only then 「已恢复」.
-
-P288 (到期前主动续期): the 1-year Claude token's expiry is only known because Agent J records the day it stored it (no API
-tells). From 7 days before, one light reminder per expiry on day 7, 3 and 1 (a missed day fires the smallest mark crossed,
-once) — text + push + a 「现在续期」 card on the phone that starts route A. Everything else has no fixed expiry (/login and
-Codex ChatGPT sign-ins refresh themselves, provider keys do not expire), so once a day serve makes ONE real tool-free call
-per signed-in harness (`health_check`, the bots' no-tool contract): a login failure lights the rescue at once (a token can
-die early: "log out of all devices", revoked). A new credential replaces the old one the moment its few-second live check
-passes (owner ruling: no "wait for the old one to run out"); a failed check keeps the old one and asks again. The
-authorize link goes only to paired phones (the view), never into a notice / Telegram; it lives 10 minutes, then a new
-round opens by itself (RENEW_ROUNDS).
-
-Red lines: the code / token never reaches a log, history page, notice, relay plaintext or the Agent; PTY text is scanned in
-memory and dropped. Starting a rescue needs a paired phone AND the owner's passkey (serve.ask require_passkey). Only official
-CLIs and official flows: no cookies, no automation of anyone's web page.
+Protocol/history detail: agentjarvis/ARCHITECTURE.md, P0261 source notes / auth_rescue.py.
 """
 from __future__ import annotations
 

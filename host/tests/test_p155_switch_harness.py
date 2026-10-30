@@ -198,7 +198,7 @@ def mk_state(root, kind="claude", **agent):
     st.init(relay="ws://127.0.0.1:9")
     work = pathlib.Path(root) / "work"
     work.mkdir(exist_ok=True)
-    st.set_agent_config(kind, str(work), agent.pop("model", None), fence=agent.pop("fence", True), docker=agent.pop("docker", False))
+    st.set_agent_config(kind, str(work), agent.pop("model", None), fence=agent.pop("fence", True), docker=agent.pop("docker", False), record_root=False)
     if agent:
         cfg = st.config()
         cfg["agent"].update(agent)

@@ -50,6 +50,12 @@ class Base(unittest.IsolatedAsyncioTestCase):
         a.call=AsyncMock(side_effect=call)
         return a
 
+    def main_agent(self,sid='',**cfg):
+        """Topbar assertions need the current main adapter, rather than a workflow CEO."""
+        a=self.agent(sid,_workflow_ceo=False,**cfg)
+        self.host.agent=a
+        return a
+
     def notices(self):
         return ' '.join(c.args[0] for c in self.host.agent_notice.call_args_list)
 
@@ -271,7 +277,7 @@ class DesktopWriter(Base):
 
     async def test_existing_turn_context_is_read_before_any_rpc(self):
         self.rollout(SID,ctx={'cwd':str(self.proj),'model':'gpt-6-astra'})
-        a=self.agent(SID,model='future-model');a.read_desktop()
+        a=self.main_agent(SID,model='future-model');a.read_desktop()
         self.assertEqual(a.cur_model(),'gpt-6-astra');self.assertEqual(self.calls,[])
         self.host.meter_update.assert_any_call(model='gpt-6-astra',model_name='gpt-6-astra')
 

@@ -403,7 +403,7 @@ NOTE = {
     "no_tab": {"zh": "浏览器里没有可截的页面（--tab 对不上？）。", "en": "No page to capture (does --tab match?)."},
     "no_element": {"zh": "页面上找不到 --selector 指的元素。去掉 --selector 改发整页。",
                    "en": "No visible element for --selector. Drop it to send the whole page."},
-    "no_screen": {"zh": "这台电脑截不了整个屏幕（没有图形界面或缺截图工具）。改用 --page 或给一张图片。",
+    "no_screen": {"zh": "这台 Agent J 主机截不了整个屏幕（没有图形界面或缺截图工具）。改用 --page 或给一张图片。",
                   "en": "Cannot capture the screen here (no display or no screenshot tool). Use --page or a picture file."},
     "too_big": {"zh": f"图片超过 {IMG_MAX // 1000} KB 上限，没有推出去。截小一点的范围（--selector）或压缩后再推。",
                 "en": f"The picture is over {IMG_MAX // 1000} KB: not sent. Capture less (--selector) or compress it."},
@@ -662,7 +662,7 @@ def add_parser(sub) -> None:
                                   "done | cancelled | expired | pending | …；pending 时用 agentj screen wait <id> 继续等。/ The owner "
                                   "scans, taps Done or types a short answer (returned in `answer`).")
     _common(p, "screen")
-    p.add_argument("--screen", action="store_true", help="截整个电脑屏幕（而不是浏览器页面）/ the whole screen")
+    p.add_argument("--screen", action="store_true", help="截整个 Agent J 主机屏幕（而不是浏览器页面）/ the whole screen")
     p.add_argument("--question", "-q", help="问主人的一句话（≤ %d），如「请扫码」「验证码是什么」/ the question" % TEXT_MAX)
     p.add_argument("--reply", choices=("text", "done"), default="text", help="text = 可以回填文字（默认）；done = 只要点完成 / "
                    "whether the owner can type an answer")

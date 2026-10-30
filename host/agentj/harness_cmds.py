@@ -91,30 +91,30 @@ RUN = {"claude": frozenset(n for n, _, _ in _CLAUDE_BASE)}
 _CLAUDE_AGENT = frozenset(_CLAUDE_DESC) - RUN["claude"] | {n for n, _, _ in _CLAUDE_TUI}
 _NONE_ALL = {
     "exit": ("网页里不用退出：要停下这一轮用 /stop，要新对话用 /clear", "No need to exit on the web: /stop ends this turn, /clear starts anew"),
-    "login": ("登录要在电脑上的终端里做（账号凭据不经过手机）", "Log in at the computer's terminal (credentials never pass through the phone)"),
+    "login": ("登录要在 Agent J 主机上的终端里做（账号凭据不经过手机）", "Log in at the computer's terminal (credentials never pass through the phone)"),
     "vim": ("Vim 编辑模式只在终端里有；网页有全屏编辑器（Ctrl+G）", "Vim mode is a terminal thing; the web has the full-screen editor (Ctrl+G)"),
 }
 _NONE_ALL |= {"quit": _NONE_ALL["exit"], "logout": _NONE_ALL["login"]}
 NONE = {
     "claude": _NONE_ALL | {
-        "ide": ("连接 IDE 只对电脑上的终端有意义", "Connecting an IDE only means something in the computer's terminal"),
-        "terminal-setup": ("这是电脑终端的换行键设置；网页里 Shift+Enter 就是换行", "That sets up the computer's terminal; on the web Shift+Enter is a new line"),
-        "ultrareview": ("云端深度审查要主人在电脑终端里亲自启动（计费）", "The billed cloud review is started by the owner at the computer's terminal"),
-        "bug": ("向 Anthropic 报问题会附上对话记录，请在电脑终端里亲自发", "A bug report to Anthropic carries the conversation; send it yourself at the terminal"),
+        "ide": ("连接 IDE 只对 Agent J 主机上的终端有意义", "Connecting an IDE only means something in the computer's terminal"),
+        "terminal-setup": ("这是 Agent J 主机终端的换行键设置；网页里 Shift+Enter 就是换行", "That sets up the computer's terminal; on the web Shift+Enter is a new line"),
+        "ultrareview": ("云端深度审查要主人在 Agent J 主机终端里亲自启动（计费）", "The billed cloud review is started by the owner at the computer's terminal"),
+        "bug": ("向 Anthropic 报问题会附上对话记录，请在 Agent J 主机终端里亲自发", "A bug report to Anthropic carries the conversation; send it yourself at the terminal"),
         "heapdump": ("内存转储会把登录凭据写到磁盘，网页里不做", "A heap dump writes login tokens to disk; not from the web"),
-        "design-consent": ("授权访问要主人在电脑终端里亲自确认", "Granting access is confirmed by the owner at the computer's terminal"),
+        "design-consent": ("授权访问要主人在 Agent J 主机终端里亲自确认", "Granting access is confirmed by the owner at the computer's terminal"),
         "workflow-launch-exec": ("这是 Claude Code 内部用的命令，网页里不做", "An internal Claude Code command; not from the web"),
     },
     "codex": _NONE_ALL | {
         "mention": ("网页里直接在消息里写文件路径，或用附件", "On the web, write the file's path in the message, or attach it"),
-        "feedback": ("给 OpenAI 的反馈会附上对话记录，请在电脑终端里亲自发", "Feedback to OpenAI carries the conversation; send it yourself at the terminal"),
+        "feedback": ("给 OpenAI 的反馈会附上对话记录，请在 Agent J 主机终端里亲自发", "Feedback to OpenAI carries the conversation; send it yourself at the terminal"),
     },
     "opencode": _NONE_ALL | {
         "editor": ("网页自带全屏编辑器（Ctrl+G）", "The web has its own full-screen editor (Ctrl+G)"),
         "themes": ("网页的外观在设置里换，或说「换个主题」", "Change the web's look in Settings, or say \"change the theme\""),
         "details": ("这是终端的显示开关，网页不适用", "A terminal display switch; not on the web"),
         "thinking": ("这是终端的显示开关，网页不适用", "A terminal display switch; not on the web"),
-        "connect": ("连接服务商要在电脑上做（密钥不经过手机），或用 Agent J 的服务商设置", "Connect a provider at the computer (keys never pass through the phone), or in Agent J's provider settings"),
+        "connect": ("连接服务商要在 Agent J 主机上做（密钥不经过手机），或用 Agent J 的服务商设置", "Connect a provider at the computer (keys never pass through the phone), or in Agent J's provider settings"),
     },
 }
 # P495: dedicated native endpoints only. Codex /init is a TUI prompt expansion,
@@ -123,7 +123,7 @@ RUN |= {"codex": frozenset({"review"}), "opencode": frozenset({"init", "review"}
 for _h in ("codex", "opencode"):
     for _n, _, _ in TUI[_h]:
         if _n not in RUN[_h] and _n not in NONE[_h]:
-            NONE[_h][_n] = ("此命令只支持终端界面，当前无头接口不可用；请在电脑终端操作。",
+            NONE[_h][_n] = ("此命令只支持终端界面，当前无头接口不可用；请在 Agent J 主机终端操作。",
                             "This command requires the terminal UI and is unavailable in the headless interface; use the computer terminal.")
 HARNESS = {"claude": "Claude Code", "codex": "Codex", "opencode": "OpenCode"}
 

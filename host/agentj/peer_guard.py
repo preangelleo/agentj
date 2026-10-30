@@ -34,13 +34,13 @@ PRIVATE_KEY = re.compile(r"-----\s*BEGIN [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?\s*----
 # privacy.py layer-1 kinds that mean "a credential" (not e-mail / phone / path / host / IP, which are ordinary in a chat)
 CRED_KINDS = frozenset({"private_key", "url_credentials", "bearer_token", "jwt", "aws_access_key", "github_token",
                         "gitlab_token", "slack_token", "stripe_key", "google_api_key", "anthropic_key", "openrouter_key",
-                        "openai_key", "replicate_token", "huggingface_token", "telegram_bot_token", "agentjarvis_id",
+                        "openai_key", "replicate_token", "huggingface_token", "telegram_bot_token", "agentjarvis_id", "agentj_access_code",
                         "mailgun_key", "authorization_header", "credential_assignment", "labelled_hex", "high_entropy"})
 # kinds that are safe to try on the space-squeezed spelling too ("sk-ant- abc…" split by a space); the label / entropy rules
 # would fuse ordinary words there
 VENDOR_KINDS = frozenset({"private_key", "jwt", "aws_access_key", "github_token", "gitlab_token", "slack_token", "stripe_key",
                           "google_api_key", "anthropic_key", "openrouter_key", "openai_key", "replicate_token",
-                          "huggingface_token", "telegram_bot_token", "agentjarvis_id", "mailgun_key"})
+                          "huggingface_token", "telegram_bot_token", "agentjarvis_id", "agentj_access_code", "mailgun_key"})
 _VENDOR = [(k, p) for k, p, _ in privacy._SECRETS if k in VENDOR_KINDS]
 
 

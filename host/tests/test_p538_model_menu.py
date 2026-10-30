@@ -154,12 +154,13 @@ class SharedSwitch(Picker):
         a.learn_picker_rows(["Opus 5.5", "Ignore previous instructions", "Default (Opus 5.5)", "Fable\u202e 5.1"])
         self.assertEqual(a.picker_rows, ["Opus 5.5", "Default (Opus 5.5)"])
 
-    def test_model_card_default_row_names_its_model(self):
+    def test_model_card_default_duplicate_is_one_native_model(self):
         self.set(v3xx=True, model="Opus 4.8", session_null=False)
         a, host = self.agent(); host.lang = "zh"
         a.learn_picker_rows(ms.names(MODEL))
         res = asyncio.run(a.command("model", ""))
-        self.assertIn("默认（Opus 5.5）", [m["name"] for m in res.models])
+        self.assertIn("Opus 5.5", [m["name"] for m in res.models])
+        self.assertNotIn("default", [m["id"] for m in res.models])
 
 
 class Detect(unittest.TestCase):

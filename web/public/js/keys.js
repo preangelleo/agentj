@@ -282,7 +282,7 @@ function useLine(r) {
   if (r.pending) d.append(mk('span', 'kpending', t('p362.pending')));
   return d;
 }
-/** P362: 「电脑上已有 · 来源 X · ••••abcd」 (+ same / different, in use) and 「收进 Agent J」 when Agent J has none. */
+/** P362: 「Agent J 主机上已有 · 来源 X · ••••abcd」 (+ same / different, in use) and 「收进 Agent J」 when Agent J has none. */
 function foundLine(r, f, vendor) {
   const d = mk('div', 'kfound'); d.dataset.src = f.src;
   const txt = mk('span', 'kfound-t');

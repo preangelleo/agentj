@@ -1,42 +1,9 @@
-"""P184 inside serve: the address book on the phone, the contact card, 「转发到邮箱」 and the Agent's own mail (PROTOCOL §25).
+"""Phone address book, signed contact cards, reply forwarding and Agent mail dispatch (PROTOCOL §25).
+Phone forwarding is the owner's direct action, with duplicate/rate/attachment limits; Agent sends require the existing
+provenance gate and approval (owner-only recipients: tap; others: passkey). No save without the owner's tap on a card.
+Attachment checks and recipient resolution remain authoritative. Logs contain counts/reasons, never addresses or bodies.
 
-Phone (approved devices only, inside the Noise session; routed through elevate.PHONE_TYPES):
-- `ct_list {r, sort?, q?, limit?}` → `ct_res {r, ok, contacts, count, me, mail}` — `me` = the owner's own addresses (the
-  e-mail channel's allowlist rows with role owner), `mail` = can the Agent J host send (P170 SMTP + app password).
-- `ct_save {r, contact, id?}` → `ct_res` — the forward dialog's 「新增」 (address + nickname) or an edit.
-- `mail_fwd {r, to: [{addr, name?}], turn?, mid?, input?, again?}` → `mail_fwd_res {r, ok, why?, sent?, files?, skipped?,
-  skips?, limit?, refused?, ago?}` — a reply
-  page (P189: the input that started it — sender remote, time, quote — unless `input: false`, then the reply, as the
-  mail_template HTML + plain text; its files attached within FILES_MAX, the rest listed 「文件太大未附上」) or one file of it, mailed through the owner's SMTP to exactly the addresses the owner picked in the dialog. Then every
-  address is remembered (new ones as contacts, source `phone`) and counted (last_sent_at, send_count).
-  P295: `skips` = [{name, bytes, why: too_big | secret | gone}] — the owner's phone hears the real reason (the outsider's
-  mail only says 「未附上」), `limit` = FILES_MAX; `refused` = recipients the SMTP server turned down (the rest went);
-  the same page / file to the same recipients again within DUP_WINDOW → why `dup` + `ago` (seconds) until the phone
-  resends with `again: true`. A reply that opens with the Agent's short English work notes before its first tool call
-  (「Need to create worktree first …」 in a Chinese reply) goes without them.
-- `ct_card_answer {id, n, ok, contact?}` — the owner's answer to a contact card.
-- P207 `ct_rm {r, id}` → `ct_res {r, ok, result?, contact?, why?}` — delete one contact (slot 0 / the owner: why `owner`).
-- P207 `ct_export {r, fmt}` (vcf | csv, default vcf) → `ct_res {r, ok, fmt, text, count}`; a whole answer past the §10.1
-  frag ceiling (2 MiB) → why `too_big`.
-- P207 `ct_import {r, name, text, fmt?}` (UTF-8 text ≤ IMPORT_TEXT_MAX, fmt auto | vcf | csv | json; name = the file name
-  for sniffing) → `ct_res {r, ok, format, total, added, merged, same, skipped, skipped_rows, why?}` (source `phone`).
-
-Agent (elevate.sock, visible inside the fence, `agentj contacts` / `agentj mail send`):
-- `{t: contacts, op: list|find|get|add|edit|rm|import|export|ping}` → contacts.local (the file is outside the fence);
-- `{t: contacts, op: card, id?, contact, why}` → a contact card on the paired phones (new, pre-filled with what the owner
-  said; or completing an existing contact). The owner edits and saves (≥ one e-mail or phone) or cancels. → saved | merged |
-  cancelled | timeout | gone. Nothing is saved without the owner's tap;
-- `{t: mail_send, to, cc?, bcc?, format?, to_owner?, subject, body, files}` (P355: cc / bcc like to, every recipient counts
-  below; format markdown (default, mail_template) | html (mail_html) | text) → `to_owner: true` adds the owner's own addresses (slot 0 + the
-  「我本人」 allowlist rows; none → `no_owner_address`) to `to` (union, deduped, ≤ 10 in all); names are looked up in the address book (no unique match → `not_found`, the
-  Agent says so and offers a card); files must be the Agent's own (media.check: inside its folder, no secrets); then an
-  approval card shows recipients, subject and attachments — mail goes out only when the owner allows. P296: when every
-  recipient is the owner's own address (reason `owner_direct`) or on the mail allowlist (P170 rows, any role; reason
-  `allowlist`) there is no card; one other recipient → the card as before, which offers each recipient not yet on the
-  allowlist as an unticked box 「以后发给 X 不用再确认」 — ticked ones are signed with the allow and join as guests. A group member's / guest's turn never sends (provenance check above the card). Sent addresses are
-  remembered with source `agent`. P549 (#316): today every Agent send asks (P503d); only-the-owner recipients approve with a
-  tap, anyone else with the passkey. A phone `mail_fwd` is the owner's own tap: no card, no passkey, no turn provenance.
-Logs carry counts and reason words, never an address, a name or a body.
+Protocol/history detail: agentjarvis/ARCHITECTURE.md, P0261 source notes / contacts_serve.py.
 """
 from __future__ import annotations
 

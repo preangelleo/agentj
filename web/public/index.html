@@ -435,6 +435,8 @@
           <p class="cmddesc" id="cmdDesc" hidden></p><pre id="cmd" data-cc="ext" data-cc-btn="cmdCopy"></pre>
         </div>
         <p class="why" id="why" hidden></p>
+        <!-- P572: the Agent's own reason, in plain words, outside the code block and right above the buttons. -->
+        <p class="reason" id="cmdReason" hidden></p>
         <div class="mailallow" id="apprMailAllow" hidden></div>
         <div class="qs" id="qs" hidden></div>
         <p class="askstate" id="askState" hidden role="status" aria-live="polite"></p>
@@ -1012,7 +1014,36 @@
                 <output id="set-sfx-val" aria-live="polite">15%</output>
                 <button type="button" id="set-sfx-test" class="setlink" data-i18n="set.sfxTest">试听</button>
               </div>
-              <p class="setnote" data-i18n="set.sfxNote">发消息时「嗖」的那一声。它跟着手机的媒体音量走，不是铃声音量，所以调低铃声没用；嫌响就在这里调小，拉到最左就是静音。只存在这台手机上。</p>
+              <p class="setnote" data-i18n="set.sfxNote">所有提示音共用这一个音量：发消息时「嗖」的那一声、状态切换提示音和全部完成提示音。它跟着手机的媒体音量走，不是铃声音量，所以调低铃声没用；嫌响就在这里调小，拉到最左就全部静音。只存在这台手机上。</p>
+            </div>
+            <div class="setrow cuehead" id="set-cues">
+              <span class="setlab" data-i18n="cue.gState">状态切换提示音</span>
+              <p class="setnote" data-i18n="cue.gStateNote">整页底色一变就响一声短促的提示音，不用抬头看也知道 Agent 到了哪一步。不想听哪个就关掉哪个，只存在这台手机上。页面在后台时不出声。</p>
+            </div>
+            <div class="setrow cuerow" data-cue="idle">
+              <span class="setlab" id="set-cue-idle-lab" data-i18n="cue.idle">变绿：做完了</span>
+              <span class="cuectl"><button type="button" class="cueplay" data-cue-play="idle" data-i18n-attr="aria-label=cue.play.idle,title=cue.play.idle" aria-label="试听「变绿」" title="试听「变绿」"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z"/></svg></button><button type="button" id="set-cue-idle" class="tgl" role="switch" aria-checked="true" data-cue="idle" aria-labelledby="set-cue-idle-lab"><i></i></button></span>
+            </div>
+            <div class="setrow cuerow" data-cue="working">
+              <span class="setlab" id="set-cue-working-lab" data-i18n="cue.working">变蓝：开始干活</span>
+              <span class="cuectl"><button type="button" class="cueplay" data-cue-play="working" data-i18n-attr="aria-label=cue.play.working,title=cue.play.working" aria-label="试听「变蓝」" title="试听「变蓝」"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z"/></svg></button><button type="button" id="set-cue-working" class="tgl" role="switch" aria-checked="true" data-cue="working" aria-labelledby="set-cue-working-lab"><i></i></button></span>
+            </div>
+            <div class="setrow cuerow" data-cue="waiting">
+              <span class="setlab" id="set-cue-waiting-lab" data-i18n="cue.waiting">变橙：等你点头</span>
+              <span class="cuectl"><button type="button" class="cueplay" data-cue-play="waiting" data-i18n-attr="aria-label=cue.play.waiting,title=cue.play.waiting" aria-label="试听「变橙」" title="试听「变橙」"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z"/></svg></button><button type="button" id="set-cue-waiting" class="tgl" role="switch" aria-checked="true" data-cue="waiting" aria-labelledby="set-cue-waiting-lab"><i></i></button></span>
+            </div>
+            <div class="setrow cuerow" data-cue="question">
+              <span class="setlab" id="set-cue-question-lab" data-i18n="cue.question">变紫：有问题问你</span>
+              <span class="cuectl"><button type="button" class="cueplay" data-cue-play="question" data-i18n-attr="aria-label=cue.play.question,title=cue.play.question" aria-label="试听「变紫」" title="试听「变紫」"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z"/></svg></button><button type="button" id="set-cue-question" class="tgl" role="switch" aria-checked="true" data-cue="question" aria-labelledby="set-cue-question-lab"><i></i></button></span>
+            </div>
+            <div class="setrow cuerow" data-cue="offline">
+              <span class="setlab" id="set-cue-offline-lab" data-i18n="cue.offline">变灰：离线</span>
+              <span class="cuectl"><button type="button" class="cueplay" data-cue-play="offline" data-i18n-attr="aria-label=cue.play.offline,title=cue.play.offline" aria-label="试听「变灰」" title="试听「变灰」"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z"/></svg></button><button type="button" id="set-cue-offline" class="tgl" role="switch" aria-checked="true" data-cue="offline" aria-labelledby="set-cue-offline-lab"><i></i></button></span>
+            </div>
+            <div class="setrow cuerow" data-cue="all-done">
+              <span class="setlab" id="set-cue-all-done-lab" data-i18n="cue.allDone">全部完成提示音</span>
+              <span class="cuectl"><button type="button" class="cueplay" data-cue-play="all-done" data-i18n-attr="aria-label=cue.play.allDone,title=cue.play.allDone" aria-label="试听「全部完成」" title="试听「全部完成」"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 5.5v13l10.5-6.5z"/></svg></button><button type="button" id="set-cue-all-done" class="tgl" role="switch" aria-checked="true" data-cue="all-done" aria-labelledby="set-cue-all-done-lab"><i></i></button></span>
+              <p class="setnote" data-i18n="cue.allDoneNote">主 Agent 回到空闲、后台任务也全部结束时，响一段稍长的和弦。这时不再响「变绿」那一声。</p>
             </div>
             <div class="setrow">
               <span class="setlab" data-i18n="set.speak">自动朗读</span>
@@ -1279,6 +1310,11 @@
               <option value="1" data-i18n="mail.poll1">每 1 分钟</option><option value="5" data-i18n="mail.poll5">每 5 分钟（推荐）</option>
               <option value="10" data-i18n="mail.poll10">每 10 分钟</option><option value="15" data-i18n="mail.poll15">每 15 分钟</option>
               <option value="30" data-i18n="mail.poll30">每 30 分钟</option><option value="60" data-i18n="mail.poll60">每 60 分钟</option></select></label>
+            <div class="setrow">
+              <span class="setlab" data-i18n="p579.markRead">处理后标为已读</span>
+              <button type="button" id="mail-mark-read" class="tgl" role="switch" aria-checked="true" data-i18n-attr="aria-label=p579.markRead" aria-label="处理后标为已读"><i></i></button>
+              <p class="setnote" data-i18n="p579.markReadNote">只标记白名单内已处理的来信；被拦下的邮件保持未读。</p>
+            </div>
             <p class="mailbtns"><button type="button" id="mail-save" class="aj-btn aj-btn--primary aj-btn--sm" data-i18n="mail.save">保存</button>
               <button type="button" id="mail-key" class="aj-btn aj-btn--sm" data-i18n="mail.key">设置邮箱授权码</button>
               <button type="button" id="mail-test" class="aj-btn aj-btn--sm" data-i18n="mail.test">测试连接</button>
@@ -1290,11 +1326,11 @@
             <ul class="setphones mailallow" id="mail-allow"></ul>
             <p class="setnote" id="mail-allow-empty" data-i18n="mail.allowEmpty">白名单是空的：现在任何邮件都不会交给 Agent。先把你自己常用的邮箱加进来。</p>
             <div class="mailadd"><input id="mail-add-addr" class="aj-input" type="text" inputmode="email" autocomplete="off" autocapitalize="off" spellcheck="false" data-i18n-attr="placeholder=mail.addPh" placeholder="你常用的邮箱">
-              <select id="mail-add-role" class="aj-select"><option value="owner" data-i18n="mail.roleOwner">我本人</option><option value="guest" data-i18n="mail.roleGuest">访客</option></select>
+              <select id="mail-add-role" class="aj-select mail-role" aria-label="新增来信身份" data-i18n-attr="aria-label=p579.addRole"><option value="owner" data-i18n="p579.chipOwner">主人</option><option value="guest" data-i18n="p579.chipGuest">访客</option></select>
               <button type="button" id="mail-add" class="aj-btn aj-btn--sm" data-i18n-attr="aria-label=mail.add,title=mail.add" aria-label="加入" title="加入"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div>
             <label class="mailf mailchk"><input type="checkbox" id="mail-add-subdomains"><span data-i18n="p567.subdomains">包含子域名</span></label>
             <p class="setnote" data-i18n="p567.domainNote">可填 @anthropic.com，域名只能作为访客；通知需通过 DMARC 或对齐 DKIM 校验，不能添加公共邮箱域名。</p>
-            <p class="setnote" data-i18n="mail.roleNote">「我本人」的邮件按你的指令处理；「访客」的邮件不当作你的指令，不能批准任何操作，回信会去掉私人信息。白名单里的人，Agent 给他们发信不用你再确认；加进来之前想清楚：Agent 可以不经你确认给他发信。白名单里的通知邮件（如区块浏览器提醒）也会交给 Agent J 阅读；它只读，不会回信。</p>
+            <p class="setnote" data-i18n="mail.roleNote">「主人」的邮件按你的指令处理；「访客」的邮件不当作你的指令，不能批准任何操作，回信会去掉私人信息。白名单里的人，Agent 给他们发信不用你再确认；加进来之前想清楚：Agent 可以不经你确认给他发信。白名单里的通知邮件（如区块浏览器提醒）也会交给 Agent J 阅读；它只读，不会回信。</p>
 
             </details>
 

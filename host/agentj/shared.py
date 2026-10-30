@@ -369,6 +369,15 @@ class SharedClaudeAgent(Agent):
         if state == "pending":
             self.native_source = provenance.normalize(getattr(self, "pending_source", None))
 
+    def _risk_reset(self):
+        self.risk_epoch += 1
+        for d in (self.permissions, self.risk_requests, self.risk_grants, self.risk_denied):
+            d.clear()
+
+    def _host_turn(self, state="pending"):
+        self.pending_source = self.native_source = provenance.system()   # P570b: host-written, unattended
+        self._mark_untrusted(state, False)
+
     def sync_compacting(self):
         """P127: the native compaction (PreCompact → SessionStart(compact) / PostCompact, or AgentState's stale end) is
         the phone's `compacting` status, at once — its water sinks and its page says so — then the status from before."""
@@ -461,7 +470,7 @@ class SharedClaudeAgent(Agent):
         """P552: a PreToolUse of a headless child session (shared_hook marks it from the process tree). None of the four ③
         kinds → no decision (its own permission mode runs it); one of them → the owner's Face ID card, and only an allow lets
         it through (no answer / deny → denied, the child reports back and the main Agent decides)."""
-        from . import confirm_tier
+        from . import confirm_tier, policy_registry
         tool, inp = event.get("tool_name"), event.get("tool_input")
         try:
             keep = confirm_tier.harness_keeps(tool, inp, workdir=event.get("cwd") or self.cfg.get("dir"))
@@ -474,7 +483,7 @@ class SharedClaudeAgent(Agent):
         ans = {"behavior": "deny"}
         with contextlib.suppress(Exception):   # bounded as a whole (review S2): answered before the hook's 170 s socket timeout
             ans = await asyncio.wait_for(self.host.ask(
-                str(tool)[:64], inp, gone, batch=False, require_passkey=True, ttl=BACKGROUND_WAIT,
+                policy_registry.harness_tool(tool), inp, gone, batch=False, require_passkey=True, ttl=BACKGROUND_WAIT,
                 origin=("From a background run (headless)" if en else "来自后台单（headless 子会话）")), BACKGROUND_WAIT + 10)
         if ans.get("behavior") == "allow":
             return {}
@@ -823,11 +832,7 @@ class SharedClaudeAgent(Agent):
             elif name == "SessionStart" and event.get("source") == "clear" and handoff.mtime(handoff.CLEAR) is not None:
                 self._schedule_recover("clear", True)
         if (name == "UserPromptSubmit" or (name == "SessionStart" and event.get("source") == "clear")) and not event.get("agent_id"):
-            self.risk_epoch += 1
-            self.permissions.clear()
-            self.risk_requests.clear()
-            self.risk_grants.clear()
-            self.risk_denied.clear()
+            self._risk_reset()
         if name == "PostCompact" or (name == "SessionStart" and event.get("source") == "compact"):
             import time
             self.compacted_at = time.time()
@@ -884,7 +889,7 @@ class SharedClaudeAgent(Agent):
         if name == "UserPromptSubmit" and not event.get("agent_id"):
             if provenance.names_untrusted(str(event.get("prompt", ""))):
                 self._mark_untrusted("running", provenance.names_untrusted(str(event.get("prompt", "")), True))
-            elif self.untrusted_state == "running":
+            elif self.untrusted_state == "running" and not str(event.get("prompt", "")).startswith("<task-notification>"):
                 self.untrusted_state = None
         if name == "UserPromptSubmit":
             emit = getattr(self.host, "emit", None)
@@ -998,7 +1003,7 @@ class SharedClaudeAgent(Agent):
                     origin = self.card_origin(self.card_agent[withdraw])
                     try:
                         ctx = approval_jev.transcript_context(event.get("transcript_path")) if event.get("transcript_path") else None
-                        answer = await self.host.ask(tool, inp, batch=False, risk_scope=bool(cats), gone=withdraw,
+                        answer = await self.host.ask(policy_registry.harness_tool(tool), inp, batch=False, risk_scope=bool(cats), gone=withdraw,
                                                      **({"context": ctx} if ctx is not None else {}),
                                                      **({"origin": origin} if origin else {}))
                     finally:
@@ -1209,7 +1214,8 @@ class SharedClaudeAgent(Agent):
                 rows = [{"id": m_["id"], "name": m_.get("name") or m_["id"], "cur": m_["id"] == cur} for m_ in self.models_cache]
                 d = next((r[len("Default ("):-1] for r in self._picker_rows() if r.startswith("Default (") and r.endswith(")")
                           and re.search(r"\d", r)), None)
-                rows.append({"id": "default", "name": pick(getattr(self.host, "lang", "zh"), "默认（" + (d or "你自己的默认模型") + "）",
+                if not d or ms.key_of(d) not in {row["id"] for row in rows}:
+                    rows.append({"id": "default", "name": pick(getattr(self.host, "lang", "zh"), "默认（" + (d or "你自己的默认模型") + "）",
                                                            "Default (" + (d or "your own default model") + ")"), "cur": False})
                 return Result("Claude · " + str(m.get('model_name') or m.get('model') or '—') + " · " + str(m.get('effort') or '—')
                               + " · " + self.state.status + "\n/model <" + names + "|default> [" + "|".join(ms.EFFORTS) + "]", "info",
@@ -1282,7 +1288,7 @@ class SharedClaudeAgent(Agent):
                 why = await asyncio.to_thread(send, self.session, text)
                 if why != 'sent':
                     self.host.st.log("shared_control_failed", command=name, reason=why)
-                    return Result(pick(getattr(self.host, "lang", "zh"), "没清成：无法安全控制这段桌面对话。请在电脑上当前的 Claude Code 终端运行 /" + name + "；以后可在手机设置中把「会话模式」改为「独立会话」，由 Agent J 管理新会话。", "No change: this desktop conversation cannot be controlled safely. Run /" + name + " in its Claude Code terminal on the computer; for future phone controls, choose Use a separate session in Settings so Agent J manages the new session."), "error")
+                    return Result(pick(getattr(self.host, "lang", "zh"), "没清成：无法安全控制这段桌面对话。请在 Agent J 主机上当前的 Claude Code 终端运行 /" + name + "；以后可在手机设置中把「会话模式」改为「独立会话」，由 Agent J 管理新会话。", "No change: this desktop conversation cannot be controlled safely. Run /" + name + " in its Claude Code terminal on the computer; for future phone controls, choose Use a separate session in Settings so Agent J manages the new session."), "error")
             try:
                 await asyncio.wait_for(self.control_ack.wait(), CONTROL_WAIT)
             except asyncio.TimeoutError:
@@ -1377,19 +1383,33 @@ class SharedClaudeAgent(Agent):
             self.host.st.write_private(Path(self.host.st.root) / "claude-picker-rows.json", json.dumps({"v": 2, "rows": rows}).encode())
 
     async def refresh_models(self):
-        """Rows the native picker last showed (learned), else the rows Relay verified; the running model always listed."""
+        """Only native picker rows and the measured current model; no speculative legacy choices."""
         from . import shared_modelswitch as ms
         learned = [r for r in self._picker_rows() if not r.startswith("Default")]
         await self._fresh_native()
         cur, native = self.cur_model(), self._native().get("model_name")
-        lang = getattr(self.host, "lang", "zh")
-        # P538 (#302): every row says its version. Before the picker was ever seen Relay's bare rows are all we have:
-        # they mean "the newest of that family", and the label says so rather than pretending a number.
-        cache = [{"id": ms.slug(r), "name": r, "efforts": list(ms.EFFORTS)} for r in learned] or \
-            [{"id": ms.slug(r), "name": r + pick(lang, "（最新版）", " (latest)"), "efforts": list(ms.EFFORTS)} for r in ms.LEGACY]
+        # Until a real picker is seen, only the measured running model can honestly be offered.
+        cache = list({ms.slug(r): {"id": ms.slug(r), "name": r, "efforts": list(ms.EFFORTS)} for r in learned}.values())
         if cur and cur not in {m["id"] for m in cache}:
             cache.insert(0, {"id": cur, "name": native, "efforts": list(ms.EFFORTS)})
         self.models_cache = [{**m, "name": native} if m["id"] == cur and native else m for m in cache][:40]
+
+    async def model_set(self, d):
+        # Old phones may submit a family alias removed from the deduplicated current catalogue.
+        from . import shared_modelswitch as ms
+        model = d.get("model")
+        if isinstance(model, str):
+            await self.refresh_models()
+            if model not in {row["id"] for row in self.models_cache}:
+                resolved = ms.resolve(model, self._picker_rows())
+                if resolved in {row["id"] for row in self.models_cache}:
+                    d = {**d, "model": resolved}
+                elif model in {ms.slug(row) for row in ms.LEGACY}:
+                    effort = d.get("effort")
+                    if effort is not None and effort not in ms.EFFORTS:
+                        return "unknown_effort"
+                    return await self.apply_model(model, effort)
+        return await super().model_set(d)
 
     async def apply_model(self, model, effort, default=False):
         """None only when the session's own status line reports the target; queued while the desktop is busy."""
@@ -1435,7 +1455,7 @@ class SharedClaudeAgent(Agent):
             if res["result"] in (ms.NO_PANE, ms.UNAVAILABLE):
                 return "unsupported"
             if res["result"] != ms.SENT:
-                return "failed"
+                return "row_missing" if res.get("why") == "row_missing" else "failed"
             ok = await self._model_confirm(res.get("picked") or model, effort, started)
         self.host.st.log("shared_model", result="confirmed" if ok else "unconfirmed", model=model, effort=effort)
         await self.refresh_models()
@@ -1503,8 +1523,10 @@ class SharedClaudeAgent(Agent):
             return Result(humane.of(self, "shared.model_ok", reading=now), "ok")
         if why == "queued":
             return Result(humane.of(self, "shared.model_queued"), "info")
+        if why == "row_missing":
+            return Result(pick(getattr(self.host, "lang", "zh"), "没切成：Claude Code 的模型列表里没有这个选项，当前显示 " + now + "。请重新打开模型列表后重试。", "Not switched: Claude Code does not list this option. Currently displayed: " + now + ". Reopen the model list and retry."), "error")
         if why == "unconfirmed":
-            return Result("未确认：按键已发，但状态栏没报告目标，当前实际：" + now + "。 / Not confirmed by the native status line.", "error")
+            return Result(pick(getattr(self.host, "lang", "zh"), "没切成：Claude Code 还没确认这个选项，当前显示 " + now + "。请重试；若仍失败，打开网页终端核对模型列表。", "Switch not confirmed by Claude Code. Currently displayed: " + now + ". Retry; if it fails again, open the web terminal to check available models."), "error")
         return Result("没切换（" + why + "）：当前实际 " + now + "。 / Not switched.", "error")
 
     async def attach(self, allow_start=True):
@@ -1649,7 +1671,7 @@ class SharedClaudeAgent(Agent):
         if plan == "resume" and new["sessionId"] == pinned:
             log("same")
             lang = getattr(self.host, "lang", "zh")
-            self.host.agent_notice(pick(lang, f"电脑重启过，Agent J 已在后台重新打开你之前的 Claude Code 会话（{pinned[:8]}）并接上了。",
+            self.host.agent_notice(pick(lang, f"Agent J 主机重启过，Agent J 已在后台重新打开你之前的 Claude Code 会话（{pinned[:8]}）并接上了。",
                                         f"The computer restarted; Agent J reopened your previous Claude Code session ({pinned[:8]}) "
                                         "in the background and is attached to it."))
         else:
@@ -1911,12 +1933,17 @@ class SharedClaudeAgent(Agent):
                         self._held_seen(text)
                         self._phone_anchor(text)  # P151b: 2.1.296 writes the peer (phone) message as an isMeta record
                     via = proactive_origin(item, text)
-                    if via == "task":
-                        for tid in re.findall(r"<task-id>\s*([^<\s]+)\s*</task-id>", text):
-                            self.bg_live.pop(tid, None)     # P243: that background task has ended
+                    ids = re.findall(r"<task-id>\s*([^<\s]+)\s*</task-id>", text) if via == "task" else []
+                    for tid in ids:
+                        self.bg_live.pop(tid, None)     # P243: that background task has ended
                     if via:
-                        self.native_source = provenance.system()
-                        self.untrusted_foreign = True   # P570
+                        b = getattr(self.host, "busy", None)
+                        sid = (self.session or {}).get("sessionId")
+                        if ids and proactive_origin(item) == "task" and not self.untrusted() and all(getattr(b, "launched", {}).get(f"shared-{self.kind}:{sid}:{t}") is False for t in ids):
+                            self._host_turn("running")  # P570b: every job it names was launched by a trusted turn
+                        else:
+                            self.native_source = provenance.system()
+                            self.untrusted_foreign = True   # P570
                         self.native_turn = True
                         self.stop_since_end = False   # P151: a harness-started turn begins (loop tick, task notification)
                         self._turn_begins()
@@ -2292,7 +2319,7 @@ class SharedClaudeAgent(Agent):
                 return
         text = handoff.recover_text(lang, kind, bool(has), where)
         try:
-            self.pending_source = self.native_source = provenance.system()
+            self._host_turn()
             await asyncio.to_thread(claude_send, self.session, text, provenance.system())
         except (OSError, ConnectionError, KeyError, TypeError):
             self.host.st.log("shared_handoff_recover", kind=kind, result="send_failed", handoff=bool(has))
@@ -2308,7 +2335,7 @@ class SharedClaudeAgent(Agent):
         before = handoff.mtime(handoff.COMPACT)
         self.system_done.clear()
         try:
-            self.pending_source = self.native_source = provenance.system()
+            self._host_turn()
             await asyncio.to_thread(claude_send, self.session, handoff.prep_text(lang), provenance.system())
         except (OSError, ConnectionError, KeyError, TypeError):
             self.host.st.log("shared_handoff_prep", result="send_failed")
@@ -2341,11 +2368,7 @@ class SharedClaudeAgent(Agent):
             return
         # Cross-session messages need not emit UserPromptSubmit in every native
         # version; the phone turn boundary must also revoke prior risk grants.
-        self.risk_epoch += 1
-        self.permissions.clear()
-        self.risk_requests.clear()
-        self.risk_grants.clear()
-        self.risk_denied.clear()
+        self._risk_reset()
         self.done.clear()
         self.input_seen.clear()
         self.phone_turn = True
@@ -2660,16 +2683,16 @@ OWNER_ATTACH_FAIL = {
 # P418 (#183 ②): the owner's own server is not running at all (nothing listens on the port — after a reboot it does not come
 # back by itself). Told apart from "reachable, but the password / session is wrong" (OWNER_ATTACH_FAIL / password note).
 OWNER_DOWN = {
-    "zh": "你自己开的 OpenCode server（端口 {port}）没在运行——电脑重启后它不会自己起来。",
+    "zh": "你自己开的 OpenCode server（端口 {port}）没在运行——Agent J 主机重启后它不会自己起来。",
     "en": "Your own OpenCode server (port {port}) is not running — it does not come back by itself after the computer restarts."}
 OWNER_DOWN_HOW = {
-    "zh": "在电脑上把它重新打开（端口 {port}），下一条消息就能接上；想让 Agent J 自己启动、管理 OpenCode，在电脑上运行：`" + _UNSET + "`。",
+    "zh": "在 Agent J 主机上把它重新打开（端口 {port}），下一条消息就能接上；想让 Agent J 自己启动、管理 OpenCode，在 Agent J 主机上运行：`" + _UNSET + "`。",
     "en": "Open it again on the computer (port {port}) and the next message gets through; to let Agent J start and manage OpenCode "
           "itself, run on the computer: `" + _UNSET + "`."}
 OWNER_DOWN_ASK = {"zh": "要我现在帮你在这个端口启动它吗？", "en": "Shall I start it on that port for you now?"}
 OWNER_DOWN_OPTS = {
     "zh": [{"label": "帮我启动它（推荐）", "description": "在端口 {port} 启动 OpenCode，再接回你的会话"},
-           {"label": "我自己在电脑上处理", "description": "Agent J 不动它，告诉你怎么做"}],
+           {"label": "我自己处理", "description": "在 Agent J 主机上处理，Agent J 不动它，告诉你怎么做"}],
     "en": [{"label": "Start it (recommended)", "description": "Start OpenCode on port {port}, then reattach your session"},
            {"label": "I'll handle it myself", "description": "Agent J leaves it alone and tells you how"}]}
 OWNER_DOWN_STARTED = {"zh": "已在端口 {port} 重新启动你的 OpenCode，并接回了会话。",
@@ -2679,16 +2702,16 @@ OWNER_DOWN_START_FAIL = {"zh": "没能在端口 {port} 启动你的 OpenCode。"
 # one (it would come back open); the card says the password is needed instead. No password before → we may start it.
 OWNER_DOWN_PW = {
     "zh": "你自己开的 OpenCode server（端口 {port}）没在运行，而且它原来设过密码。Agent J 这里没有这把密码，不会不设密码就替你启动它——"
-          "需要你的 OpenCode 密码：请在电脑上自己启动它，或用密钥卡把密码交给 Agent J。",
+          "需要你的 OpenCode 密码：请在 Agent J 主机上自己启动它，或用密钥卡把密码交给 Agent J。",
     "en": "Your own OpenCode server (port {port}) is not running, and it had a password. Agent J does not have that password and "
           "will not start it without one — it needs your OpenCode password: start it on the computer yourself, or give the "
           "password to Agent J with the secret card."}
 OWNER_DOWN_PW_OPTS = {
-    "zh": [{"label": "用密钥卡提供密码", "description": "告诉你在电脑上请求密钥卡的命令，贴好密码后 Agent J 就能用它启动"},
-           {"label": "我在电脑上自己启动", "description": "Agent J 不动它，下一条消息自动接上"}],
-    "en": [{"label": "Give the password on the secret card", "description": "Shows the command that asks for the secret card; "
+    "zh": [{"label": "用密钥卡提供密码", "description": "告诉你在 Agent J 主机上请求密钥卡的命令，贴好密码后 Agent J 就能用它启动"},
+           {"label": "我自己启动", "description": "在 Agent J 主机上启动，Agent J 不动它，下一条消息自动接上"}],
+    "en": [{"label": "Use a secret card", "description": "Shows the command that asks for the secret card; "
                                                                              "with the password Agent J can start it"},
-           {"label": "I'll start it on the computer", "description": "Agent J leaves it alone; the next message reattaches"}]}
+           {"label": "I'll start it myself", "description": "Start it on the Agent J host; the next message reattaches"}]}
 OWNER_PW_MARK = "owner-opencode.json"   # <state>/…: {"<port>": {"password": true}} — a fact about the server, never the value
 OWNER_PW_HINTS = (".bashrc", ".bash_profile", ".profile", ".zshrc", ".zprofile", ".zshenv", ".config/fish/config.fish",
                   ".config/opencode/opencode.json", ".config/opencode/opencode.jsonc", ".config/opencode/.env")

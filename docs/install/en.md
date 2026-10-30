@@ -335,7 +335,7 @@ It may need you here:
 The AI installs `agentj`, the program on the Agent J host, at one fixed version:
 
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.26.0a1#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.26.1a1#subdirectory=host"
 agentj doctor
 ```
 
@@ -449,7 +449,7 @@ agentj service uninstall
 uv tool uninstall agentj
 ```
 
-This removes only Agent J's own program. Your Claude Code, Codex or OpenCode and the Agent's work folder are left alone. Uninstalling doesn't stop the billing: cancel the seat and the subscription under "Manage billing" in the account dashboard — see [Account and billing](/docs/account/).
+This removes only Agent J's own program. Your Claude Code, Codex or OpenCode and the Agent's work folder are left alone. Agent J scheduled tasks moved to the system scheduler are switched off too. Uninstalling doesn't stop the billing: cancel the seat and the subscription under "Manage billing" in the account dashboard — see [Account and billing](/docs/account/).
 
 
 Every paid, unbound seat has its own one-line installation code. Two empty paid seats can claim two codes. Unused expired or revoked codes can be replaced, subject to the service’s daily allowance (midnight UTC reset).
@@ -537,6 +537,9 @@ First remote: use Add a remote on the account-page seat card, or run `agentj pai
 **After the first remote**: phone first → open https://m.agentj.app in your usual computer browser, scan its code with the paired phone, compare and confirm on the phone; computer first → on the computer open Settings → Remotes → Add a remote, scan with your main phone, compare and confirm on the computer. Finish installation after both remotes and the first message are verified.
 
 ## Upgrade an older installation
+
+<!-- generated: Relay/Codex/P581, 2026-10-29 -->
+After an upgrade, your main Agent's announcement and the phone's update notes show only changes for your current AI coding tool, together with changes shared by all tools.
 
 On an ordinary host, first run `agentj update apply`, then check `agentj --version` and `agentj doctor`. Only when that command is unavailable or the old updater fails, copy the current install command from the account seat card and rerun it as the same OS user and instance. Keep configuration and bindings; do not unlink, delete state or create another seat. Olares Market applications still update through Market.
 

@@ -1464,7 +1464,7 @@ def cmd_templates(a) -> int:
 
 def cmd_add_template(a) -> int:
     root = _dir_arg(a)
-    want, rows = add_template(_state(), root, a.id)
+    want, rows = add_template(st := _state(), root, a.id)
     if a.json:
         print(json.dumps({"id": want["id"], "version": want["version"], "sha256": want["sha256"], "files": rows}, ensure_ascii=False))
         return 0
@@ -1472,6 +1472,9 @@ def cmd_add_template(a) -> int:
     print(f"  每个文件的 SHA-256 已核对 / every file's SHA-256 checked (package {want['sha256'][:16]}…)")
     _say(rows)
     print(f"  演练 / dry run: agentj wizard dry-run {want['id']} --dir {root}")
+    from .. import cli, sysmigrate
+    if sysmigrate.unavailable() is None:        # P570c: recommend the system scheduler when the task is made
+        print("  " + sysmigrate.hint(want["id"], cli._lang(st), True))
     return 0
 
 

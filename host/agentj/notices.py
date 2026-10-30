@@ -1,7 +1,4 @@
-"""F19 official notices: pinned Ed25519 verification, private durable inbox, data-only policy.
-No body is executed. The local policy may ask the main Agent to invoke only the existing updater.
-The snapshot binds host and report seq; local queued notices wait for a fresh snapshot before delivery.
-"""
+"""Verified official inbox; notice prose is data, never update authority."""
 from __future__ import annotations
 import contextlib
 import fcntl
@@ -10,7 +7,7 @@ import os
 import re
 import time
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-from . import wire, minisign, preferences
+from . import wire, minisign, preferences, release_notes
 
 CONTEXT = 'agentj-official-notice-v1'
 TYPES = ('upgrade','security','skill','billing','announce','support_reply')
@@ -21,7 +18,6 @@ MAX_STORED = 1000
 
 
 def official_keys():
-    # Existing compiled-in official signer; no network / env / config public-key replacement.
     return [minisign.parse_pubkey(p)[1] for p in minisign.keyring('control').values()]
 
 
@@ -93,7 +89,6 @@ def write(st,d):
 
 
 def ingest(st,s,host,now=None):
-    """Verified snapshots only. Removed/expired records cannot be delivered; processed ids are retained for dedup."""
     now=int(time.time()*1000) if now is None else now
     with lock(st):
         d=read(st)
@@ -111,7 +106,6 @@ def ingest(st,s,host,now=None):
 
 
 def receipts(st):
-    # Only metadata goes back; no interests, install inventory or local Agent text.
     from . import cloud
     linked=cloud.read_cloud(st)
     d=read(st)
@@ -129,14 +123,12 @@ def acknowledge(st,sent):
 
 
 def processed(st,nid):
-    """Local Agent delivery is separate from the paired phone read receipt."""
     with lock(st):
         d=read(st); r=d['items'].get(nid)
         if r: r.update(processed=True); write(st,d)
 
 
 def presented(st,nid):
-    """One history page/push per notice, including when the main Agent is temporarily absent."""
     with lock(st):
         d=read(st); r=d['items'].get(nid)
         if not r or r.get('presented'): return False
@@ -144,7 +136,6 @@ def presented(st,nid):
 
 
 def mark_read(st,nid):
-    """Called only from an authenticated paired phone when the official history page is visible."""
     from . import cloud
     link=cloud.read_cloud(st)
     with lock(st):
@@ -162,12 +153,10 @@ def active(st,nid,now=None):
 
 from .compose import Send
 class NoticeSend(Send):
-    """Uses the existing withdraw-aware queue; validity and current owner policy are checked at delivery."""
     def __init__(self,host,n,action,lang):
-        super().__init__('official',n['id'],0,text=agent_data(n,action,lang),by='Agent J official')
+        super().__init__('official',n['id'],0,text=agent_data(n,action,lang,release_notes.current(host.st, getattr(host, 'agent', None))),by='Agent J official')
         self.host=host; self.official_notice_id=n['id']
     async def wait_ready(self):
-        # A long queue or temporary disconnect cannot turn an obsolete signed notice into upgrade authority.
         if not active(self.host.st,self.official_notice_id):
             res=await self.host.reporter.send_once('notice_delivery')
             if res is None or res.kind!='ok' or res.notices is None or not active(self.host.st,self.official_notice_id):
@@ -177,7 +166,7 @@ class NoticeSend(Send):
         action=policy(n,self.host.preferences,local_categories(self.host.st,self.host.preferences))
         if action=='silent':
             processed(self.host.st,n['id']); self.host.official_pending.pop(n['id'],None); return False
-        self.text=agent_data(n,action,self.host.lang)
+        self.text=agent_data(n,action,self.host.lang,release_notes.current(self.host.st, getattr(self.host, 'agent', None)))
         return True
 
 
@@ -186,7 +175,6 @@ def relevant(n, categories):
 
 
 def policy(n,prefs,categories=()):
-    """Trusted local policy, independent of the notice's untrusted prose. No billing/install execution."""
     typ=n['type']
     if typ=='skill': return 'ask_install' if relevant(n,categories) else 'silent'
     if typ=='security': return 'upgrade_now'
@@ -194,10 +182,16 @@ def policy(n,prefs,categories=()):
     return 'inform'
 
 
-def agent_data(n,action,lang='zh'):
+def body(n, lang='zh', harness=None):
+    text = n['body_' + lang]
+    if n['type'] == 'security':
+        return release_notes.strip_tags(text)
+    return release_notes.filter_text(text, harness) if n['type'] == 'upgrade' else text
+
+
+def agent_data(n,action,lang='zh',harness=None):
     data={k:n[k] for k in ('id','type','version','priority','category','package','link')}
-    data.update(title=n['title_'+lang],body=n['body_'+lang])
-    # JSON string escaping prevents the notice text from closing the wrapper or forging role boundaries.
+    data.update(title=n['title_'+lang],body=body(n,lang,harness))
     encoded=json.dumps(data,ensure_ascii=True,separators=(',',':'))
     instructions={
         'upgrade_now':'Local owner update policy authorizes upgrading now. Run only `agentj update apply --version '+str(n['version'])+'`; its release checks remain authoritative. After restart/doctor, tell the owner what changed. Never report success without the updater result.',
@@ -210,9 +204,7 @@ def agent_data(n,action,lang='zh'):
 
 
 def local_categories(st,prefs):
-    """Only inspect installed package manifests and explicit preferences; never send this context to the vendor."""
     cats=set(preferences.get(prefs,'updates.skill_categories',[]))
-    # The plaza receipt is local. Categories are manifest metadata, never inferred by uploading memory/conversations.
     from . import market
     try:
         for r in market.read_installed(st):

@@ -37,6 +37,7 @@ from . import agent as _agentmod
 from .agent import LINE_LIMIT, Agent, _signal_tree
 from .slash import Result
 from .text import clean, clean_line
+from .policy_registry import harness_tool
 
 START_WAIT = 60          # s for initialize / session answers
 CALL_WAIT = 60
@@ -616,7 +617,7 @@ class AcpAgent(Agent):
                 ok, _ = danger.readonly(tool, inp)
                 if not ok:                   # a `mode: research` task: anything not read-only is refused outright
                     return
-            name = clean_line(tool, 64) or "?"
+            name = harness_tool(tool)
             from .approval_jev import low_risk_pass
             r = ({"behavior": "allow"} if not self.research and low_risk_pass(self.host, self.cfg, name, inp, batch)
                  else await self.host.ask(name, inp, gone, batch=batch,

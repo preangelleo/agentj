@@ -570,7 +570,7 @@ class Flow(unittest.TestCase):
             res = await self.run_card(host, s, JS, code, lambda ask: self.signed(ph, host, ask, ["preauth:computer.control"]),
                                       bind=BIND)
             ask = self.cards()[-1]
-            self.assertTrue(ask["summary"].startswith("Computer Use：在这台电脑上点击、输入并运行操控脚本\n"))
+            self.assertTrue(ask["summary"].startswith("Computer Use：在这台 Agent J 主机上点击、输入并运行操控脚本\n"))
             self.assertIn(code["code"], ask["summary"])
             self.assertIn("包括它运行的操控脚本", ask["summary"])
             self.assertIn("设置 → 安全 → 免问的动作", ask["summary"])

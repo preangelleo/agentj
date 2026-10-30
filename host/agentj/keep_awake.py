@@ -240,10 +240,10 @@ def execute(action='status', power='ac', dry_run=False, st=None, lid=False):
 
 
 # ------------------------------------------------------------------ P418 (#183): the install-end question
-Q = {'zh': '最后一步：把这台电脑设成「永不休眠」吗？插着电时它不会自动睡眠，合上盖子也不睡，Agent J 随时能干活（屏幕照样会关）。',
+Q = {'zh': '最后一步：把这台 Agent J 主机设成「永不休眠」吗？插着电时它不会自动睡眠，合上盖子也不睡，Agent J 随时能干活（屏幕照样会关）。',
      'en': 'Last step: keep this computer awake? On power it never goes to sleep, not even with the lid closed, so Agent J can '
            'always work (the screen still turns off).'}
-Q_MAC = {'zh': '再确认一下 Mac 合盖：设好后，合上盖子电脑既不睡也不关机。长时间坐飞机 / 离开网络、或者不需要 Agent J 干活时，'
+Q_MAC = {'zh': '再确认一下 Mac 合盖：设好后，合上盖子 Agent J 主机既不睡也不关机。长时间坐飞机 / 离开网络、或者不需要 Agent J 干活时，'
                '一定要主动关机。合盖也不睡？',
          'en': 'One more thing for the Mac lid: once set, a closed Mac neither sleeps nor shuts down. Before a long flight, away '
                'from the network, or when Agent J has nothing to do, always shut it down yourself. Keep it awake with the lid closed?'}
@@ -351,7 +351,7 @@ def setup(st, mode='terminal', lid=None, lang='zh', out=print) -> dict:
     kind = system()
     res = {'ok': True, 'system': kind, 'mode': mode}
     if kind not in ('linux', 'macos'):
-        out(pick(lang, '这台电脑的电源设置要在宿主系统里改：', 'Set power on the host system: ') + one(lang, WINDOWS if kind in ('wsl', 'windows') else
+        out(pick(lang, '这台 Agent J 主机的电源设置要在宿主系统里改：', 'Set power on the host system: ') + one(lang, WINDOWS if kind in ('wsl', 'windows') else
             'No supported systemd host detected; configure the host power manager. / 未检测到支持的 systemd 主机，请设置宿主电源管理。'))
         _remember(st, 'guidance', False, mode)
         return {**res, 'answer': 'guidance'}
@@ -362,7 +362,7 @@ def setup(st, mode='terminal', lid=None, lang='zh', out=print) -> dict:
     elif mode == 'phone':
         answer, picked_lid = _ask_phone(st, kind, lang)
         if answer is None:
-            out(pick(lang, '手机上没弹出 / 没人回答这张卡片；以后在电脑上运行 agentj keep-awake setup。',
+            out(pick(lang, '手机上没弹出 / 没人回答这张卡片；以后在 Agent J 主机上运行 agentj keep-awake setup。',
                      'The card was not shown or not answered; run agentj keep-awake setup on the computer later.'))
             return {**res, 'ok': False, 'answer': None}
         yes, lid = answer == 'yes', picked_lid if lid is None else lid
@@ -429,7 +429,7 @@ def cmd(a):
             print(pick(lang, '防休眠已经问过了（改主意：agentj keep-awake setup）。', 'Keep-awake was already asked (to change it: agentj keep-awake setup).'))
             return 0
         if mode == 'terminal' and not sys.stdin.isatty():
-            print(Q[lang] + '\n' + pick(lang, '（这里不是终端：在电脑终端里运行 agentj keep-awake setup；主人在聊天里已答「是」就加 --yes，'
+            print(Q[lang] + '\n' + pick(lang, '（这里不是终端：在 Agent J 主机终端里运行 agentj keep-awake setup；主人在聊天里已答「是」就加 --yes，'
                                          '或用 --phone 在手机上弹卡片问。）', '(Not a terminal: run agentj keep-awake setup in a '
                                          'terminal; add --yes when the owner already said yes in chat, or --phone to ask on the phone.)'))
             res = {'ok': True, 'answer': None, 'mode': 'no_terminal'}

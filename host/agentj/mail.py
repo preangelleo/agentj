@@ -1,25 +1,11 @@
-"""P170: e-mail as a default channel — the owner's own mailbox (or one registered for the Agent) over plain IMAP / SMTP.
+"""P170 mailbox channel: allowlist and sender authentication precede parsing and delivery.
 
-Gate.judge filters inbox mail before any model sees it.
-
-The gate (`Gate.judge`, pure, in this order — the first failing step decides and nothing after it runs):
-1. loop / automatic mail: our own replies (X-AgentJ), Auto-Submitted ≠ no, Precedence bulk/junk/list, List-*, bounces
-   (multipart/report, MAILER-DAEMON, empty Return-Path), auto-reply markers → `auto` (never answered: no mail loops).
-   P565: automatic mail from an allowlisted sender (Etherscan / no-reply alerts) goes on through steps 3–4 and reaches the
-   Agent as a read-only notice (`Verdict.notice`): no reply route, so nothing is ever mailed back. Our own (X-AgentJ) stays `auto`.
-2. the From address (exactly one) must be on the allowlist → `not_allowed` (counted + address kept for the owner's page).
-3. sender authentication: the provider's Authentication-Results (the topmost one, or the one whose authserv-id the owner pinned)
-   must show DMARC pass, or a DKIM / SPF pass whose domain aligns with the From domain (`standard`, the default); `strict`
-   accepts DMARC pass or aligned DKIM only; `off` is allowlist-only (the page warns). Missing or failing → `auth`.
-4. the same Message-ID twice → `duplicate`.
-Only `ok` mail is parsed further. A forwarded original (inline 「转发 / Forwarded message」 or an attached message/rfc822) is
-cut out and handed to the Agent as a DATA file, never as words of the owner.
-
-Secrets: the app password is sealed by the paired phone (secret card, elevate.py) and stored AES-256-GCM under a key derived
-from this host's identity key (`<state>/mail/secret.bin`, 0600); the key never leaves the state directory, the password never
-reaches a log, the Agent's context, the relay or the cloud. `mail.log`-style lines in host.log carry reason words and counts.
-Replies: plain SMTP to the original sender only (re-checked against the allowlist at send time), threaded (In-Reply-To /
-References), marked `Auto-Submitted: auto-replied`, rate-limited per hour; silent replies send nothing.
+Automatic allowlisted mail is read-only data, never a reply route; outsiders stay unread.
+Authentication-Results must satisfy configured standard/strict policy; duplicate Message-IDs are ignored.
+Forwarded originals are data files, never owner instructions. Processed mail optionally gains Seen
+only after mailbox epoch/message identity verification. Replies recheck allowlist and use threaded,
+rate-limited SMTP; silent replies send nothing. The sealed app password stays encrypted on this host;
+logs contain fixed reason codes and counts. See ADR-P170/P565/P579 for ownership and trust boundaries.
 """
 from __future__ import annotations
 
@@ -208,7 +194,7 @@ def blank_config() -> dict:
     return {"enabled": False, "preset": "", "address": "", "username": "",
             "imap": {"host": "", "port": 993, "security": "ssl"}, "smtp": {"host": "", "port": 465, "security": "ssl"},
             "poll_minutes": POLL_DEFAULT, "auth": "standard", "auth_servid": "", "allow": [], "reply_per_hour": REPLY_PER_HOUR,
-            "generation": ""}
+            "generation": "", "mark_processed_read": True}
 
 
 def read_config(st) -> dict:
@@ -389,6 +375,8 @@ def validate(cfg) -> dict:
     out.update(cfg)
     if type(out["enabled"]) is not bool:
         raise MailError("enabled")
+    if type(out["mark_processed_read"]) is not bool:
+        raise MailError("mark_processed_read")
     if out["preset"] not in ("",) + tuple(PRESETS):
         raise MailError("preset")
     out["address"] = norm_addr(out["address"]) if out["address"] else ""
@@ -873,6 +861,35 @@ def fetch_new(cfg: dict, password: str, uidvalidity, last_uid, limit: int = FETC
             c.logout()
 
 
+def _mail_identity(c, uidvalidity, uid, want, gone):
+    if c.select("INBOX")[0] != "OK":
+        raise MailError("imap_select")
+    uv = c.untagged_responses.get("UIDVALIDITY", [b"0"])[-1]
+    if str(uv, "ascii", "replace") != str(uidvalidity):
+        raise MailError(gone)
+    typ, data = c.uid("FETCH", str(int(uid)), "(BODY.PEEK[HEADER.FIELDS (MESSAGE-ID)] BODY.PEEK[]<0.2048>)")
+    parts = [x[1] for x in data or [] if typ == "OK" and isinstance(x, tuple) and len(x) > 1 and isinstance(x[1], bytes)]
+    if len(parts) != 2 or id_hash(msg_id(email.message_from_bytes(parts[0], policy=email.policy.default)), parts[1][:2048]) != want:
+        raise MailError(gone)
+
+
+def mark_read(cfg: dict, password: str, uidvalidity, uid: int, want: str) -> bool:
+    """Mark one processed allowlisted mail Seen after reconnecting and verifying mailbox epoch and message identity."""
+    c = imap_login(cfg, password)
+    try:
+        _mail_identity(c, uidvalidity, uid, want, "read_gone")
+        if c.uid("STORE", str(int(uid)), "+FLAGS.SILENT", r"(\Seen)")[0] != "OK":
+            raise MailError("read_failed")
+        return True
+    except MailError:
+        raise
+    except Exception as e:
+        raise _fail(e, "imap") from None
+    finally:
+        with contextlib.suppress(Exception):
+            c.logout()
+
+
 def sample_auth(cfg: dict, password: str, n: int = 5) -> dict:
     """For the connection test: do the latest mails carry Authentication-Results, and which authserv-id writes the topmost?"""
     c = imap_login(cfg, password)
@@ -1244,18 +1261,7 @@ def trash_one(cfg: dict, password: str, uidvalidity, uid: int, want: str) -> str
             typ, caps = c.capability()
             if typ == "OK" and caps and isinstance(caps[-1], bytes):
                 c.capabilities = tuple(caps[-1].decode("ascii", "replace").upper().split())
-        if c.select("INBOX")[0] != "OK":
-            raise MailError("imap_select")
-        uv = c.untagged_responses.get("UIDVALIDITY", [b"0"])[-1]
-        if str(uv, "ascii", "replace") != str(uidvalidity):
-            raise MailError("trash_gone")
-        typ, d = c.uid("FETCH", str(int(uid)), "(BODY.PEEK[HEADER.FIELDS (MESSAGE-ID)] BODY.PEEK[]<0.2048>)")
-        parts = [x[1] for x in d or [] if typ == "OK" and isinstance(x, tuple) and len(x) > 1 and isinstance(x[1], bytes)]
-        if len(parts) != 2:
-            raise MailError("trash_gone")
-        head = email.message_from_bytes(parts[0], policy=email.policy.default)
-        if id_hash(msg_id(head), parts[1][:2048]) != want:
-            raise MailError("trash_gone")
+        _mail_identity(c, uidvalidity, uid, want, "trash_gone")
         box = _trash_box(c)
         if not box:
             raise MailError("no_trash")
@@ -1479,6 +1485,10 @@ class Mail:
         msg = email.message_from_bytes(raw, policy=email.policy.default)
         v = judge(msg, cfg, s["seen"], raw)
         if not v.ok:
+            # Own automatic mail is deliberately not delivered. Only an authenticated allowlisted sender is processed.
+            row = allow_row(cfg["allow"], v.addr) if v.addr else None
+            if v.reason == "auto" and row and authenticate(msg, v.addr, "strict" if row["addr"].startswith("@") else cfg["auth"], cfg.get("auth_servid") or "")[0]:
+                await self._mark_processed(cfg, s["uidvalidity"], uid, id_hash(msg_id(msg), raw[:2048]))
             return done(v.reason, v.addr, v.detail)
         hour = _hour()
         used = s["hour"].get("in", [0, 0])
@@ -1504,7 +1514,20 @@ class Mail:
         save_state(self.st, st2)
         if delivered and v.notice:
             self.log("notice", reason=v.notice, id=v.id)     # P565: which automatic marker; never the address or the subject
+        if delivered:
+            await self._mark_processed(cfg, s["uidvalidity"], uid, v.id)
         return done("delivered" if delivered else "not_delivered")
+
+    async def _mark_processed(self, cfg, epoch, uid, mid):
+        # Fetches stay read-only. A reconnect verifies epoch + identity before changing this one Seen flag.
+        if not cfg.get("mark_processed_read", True) or read_config(self.st) != cfg:
+            return
+        pw = self.password(cfg)
+        if pw:
+            try:
+                await asyncio.to_thread(mark_read, cfg, pw, epoch, uid, mid)
+            except MailError as e:
+                self.log("mark_read", result=e.why)
 
     async def deliver(self, cfg: dict, msg, v: Verdict) -> bool:
         from . import inbox, provenance
@@ -2315,7 +2338,7 @@ def add_parser(sub) -> None:
     p.add_argument("--name", help="allow：备注名 / a label")
     p.add_argument("--to", action="append", help="send / notes：收件人——邮箱，或通讯录里的名字 / 昵称 / 拼音（可多次；notes 只能是主人写过的地址）/ "
                                                  "recipient: address or an address-book name (repeatable; notes: only addresses the owner named)")
-    p.add_argument("--to-owner", action="store_true", help="send 和 notes：发给主人本人（通讯录 0 号位 + 白名单里的「我本人」地址）；和 --to 同时给就两边都发（去重，合计最多 10 个）/ "
+    p.add_argument("--to-owner", action="store_true", help="send 和 notes：发给主人本人（通讯录 0 号位 + 白名单里的「主人」地址）；和 --to 同时给就两边都发（去重，合计最多 10 个）/ "
                                                        "the owner's own addresses (slot 0 + the owner allowlist rows); with --to: both (deduped, 10 at most)")
     p.add_argument("--cc", action="append", help="send：抄送——同 --to（可多次；白名单 / 手机批准规则每个收件人都算，合计最多 10 个）/ "
                                                  "Cc: like --to (repeatable; every recipient counts for the approval rule; 10 in all)")

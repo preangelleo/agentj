@@ -1,32 +1,7 @@
-"""OpenCode adapter (PROTOCOL §8, ADR-A55 – A58): the phone talks to the customer's own OpenCode through its official
-headless server, `opencode serve`, with every permission request answered on the phone.
-
-Why `serve` and not `opencode run`: `run` answers its own permission prompts (reject, or once with `--auto`) — nothing outside
-can take part. `serve` publishes `permission.asked` on its event stream (`GET /event`, SSE) and waits for
-`POST /permission/{id}/reply {"reply": "once" | "reject"}`.
-
-What serve does (measured on OpenCode 1.18.32, `reports/qa/opencode/`):
-- starts `opencode serve --hostname 127.0.0.1 --port <random>` inside the fence (fence.py, like Claude Code), with a fresh
-  random `OPENCODE_SERVER_PASSWORD` per start (HTTP Basic, user `opencode`) that lives only in serve's memory and the
-  process's environment; models.dev fetch, LSP downloads, auto-update, share and the embedded web UI are switched off;
-- keeps one conversation (session id in `agent.json`, like the other adapters) and sends each phone message with
-  `POST /session/{id}/prompt_async`; the turn ends with `session.idle`; finished text parts (`message.part.updated` with
-  `time.end`) go to the phone as they complete; the event stream is re-opened when it drops (and missed text / requests are
-  fetched again);
-- **our permission rules ride on the session, not on the config** (ADR-A56): OpenCode evaluates the LAST matching rule of
-  `agent rules (defaults + every config file) + session rules`, while config files are deep-merged (a `deny` the human wrote
-  could be overwritten by an `ask` of ours, and a `"*": "allow"` they wrote lands after ours). The session ruleset = ours
-  (everything asks, except read-only tools and a short read-only bash list; the question tool is allowed; a sub-agent only for
-  the agents opencode_subagents verified carry the same rules — P426) followed by
-  every `deny` rule of the human's own agent ruleset again — so a human `allow` becomes a question to the phone, a human `deny`
-  stays a deny, and no config file (also one the Agent writes) can loosen it;
-- answers `once` or `reject` (with the reason, so the model is told), never `always` (that would add an allow rule inside
-  OpenCode for the rest of the process). A reply that serve did not send (`permission.replied` once / always) means something
-  else used the server's password: OpenCode is stopped at once (G-A66).
-
-The stop switch and `/stop` call `POST /session/{id}/abort` before the process tree ends (ADR-A72); slash commands use
-`POST /session/{id}/summarize`, `GET /config/providers`, `GET /session/{id}` and the messages' token counts (slash.py). A
-scheduled task (`agentj tasks`) runs in its own throw-away session; `mode: research` turns every "ask" of our rules into "deny".
+"""OpenCode headless server adapter (PROTOCOL §8; ADR-A55–A58, A72).
+Loopback, fresh in-memory server password, fenced child, resumable SSE. Session rules retain owner denies;
+phone approvals are once/reject, never always. Foreign approval stops the child. Tasks use separate sessions.
+The official session API carries prompts, abort, compaction and usage; v2 translates in agent_opencode2.
 """
 from __future__ import annotations
 
@@ -49,6 +24,7 @@ from .agent import LINE_LIMIT, UNCERTAIN, Agent, _bin, _signal_tree
 from .slash import Result
 from .envcompat import getenv
 from .text import clean, clean_line, strip_reasoning
+from .policy_registry import harness_tool
 
 START_WAIT = 60          # seconds with no startup output before failing
 START_MAX = 300          # bounded cold start even if output continues
@@ -587,6 +563,14 @@ class OpenCodeAgent(Agent):
         self._set_models({})
         self.meter(model=self.cur_model(), model_name=self.model_name(self.cur_model()))
 
+    def cur_model(self) -> str | None:
+        m = self.cfg.get("model")
+        native = getattr(self, "session_model", None) or {}
+        if not m and isinstance(native, dict):
+            pid, mid = native.get("providerID"), native.get("id")
+            m = f"{pid}/{mid}" if isinstance(pid, str) and isinstance(mid, str) else None
+        return m if isinstance(m, str) and m else None
+
     def provider_note(self, reason, pid, fallback, data=None, model=None):
         from .provider_runtime import key_name, request_key
         zh = self.cfg.get("language", "en").startswith("zh")
@@ -605,8 +589,8 @@ class OpenCodeAgent(Agent):
                     + f"one in Models & API keys on the phone; to keep using {name}, set that provider up there first.")
         if reason in ('login', 'no_key'):
             name = clean_line(pid or ('当前服务商' if zh else 'the selected provider'), 40)
-            return (f'「{name}」的账户授权或 API Key 不可用。请在手机菜单「模型和 API Key」切换到已配置的服务商；若该账户使用 OAuth，需要先完成服务商的账户授权。' if zh else
-                    f'The account authorization or API key for {name} is unavailable. Open Models & API keys on the phone and select a configured provider. If this account uses OAuth, complete the provider account authorization first.')
+            return (f'「{name}」的账户授权或 API Key 不可用。在手机「模型和 API Key」重选，或[切回 Codex](reply:切回 Codex)。也可在「设置 → 紧急修复」执行切换，或在网页终端运行 agentj agent switch codex --force。' if zh else
+                    f'The authorization or API key for {name} is unavailable. Open Models & API keys or [Switch back to Codex](reply:Switch back to Codex). You can also switch in Settings → Emergency repair, or run agentj agent switch codex --force in the web terminal.')
         parts = fallback.split(" / ", 1)
         text = parts[0] if zh else parts[-1]
         if reason in ("balance", "quota_window", "rate_limit"):
@@ -614,10 +598,66 @@ class OpenCodeAgent(Agent):
             return limit_note(model, clean_line(self.cfg.get("model") or "?", 160), data or {}, self.cfg.get("language", "en"))
         return text
 
+    def _recover_model(self, reason, pid) -> bool:
+        """A missing native route uses an already connected provider, once, before the next message."""
+        connected = self.connected_at_start
+        if not isinstance(pid, str) or not pid or reason not in ("login", "no_key") or not isinstance(connected, list) or pid in connected or \
+                not self.owns_harness() or not getattr(self, "persist", False) or self.cfg.get("_workflow_ceo"):
+            return False
+        models = [m for m in self._usable_models() if (split_model(m.get("id")) or {}).get("providerID") in connected]
+        put = getattr(self.host, "set_model", None)
+        if not models or put is None:
+            return False
+        model = models[0]["id"]
+        previous = self.cfg.get("model")
+        if put(model) is False:
+            return False
+        self._recovered(model, previous)
+        self.fail_notice((f"当前服务商没有可用授权，已切到已配置的模型「{model}」。请再发一次消息。" if
+                          self.cfg.get("language", "en").startswith("zh") else
+                          f"The selected provider has no usable authorization. Switched to configured model {model}; send your message again."))
+        return True
+
+    def _recovered(self, model, previous):
+        self.model_recovery = {"from": previous, "to": model}
+        self.cfg["model"] = model
+        self.meter(model=model, model_name=self.model_name(model), ctx=None, quota_windows=[])
+
+    async def _free_before_prompt(self):
+        connected = self.connected_at_start
+        if not self.owns_harness() or not self.persist or self.cfg.get("_workflow_ceo") or not isinstance(connected, list) or \
+                any(p != "opencode" for p in connected) or ((self.cur_model() or "").startswith("opencode/") and
+                                                          (self.cur_model() or "").endswith("-free")):
+            return
+        try:
+            prov = await asyncio.wait_for(self._providers(), 4)
+            if not isinstance(prov, dict) or any(not isinstance(prov.get(k, []), list) for k in
+                                                ("providers", "connected", "anonymous_models")) or "connected" not in prov:
+                return
+            prov = {**prov, "providers": [p for p in prov.get("providers", []) if isinstance(p, dict)],
+                    **{k: [v for v in prov.get(k, []) if isinstance(v, str)] for k in ("connected", "anonymous_models")}}
+            self._set_models(prov)
+        except (OSError, HTTPError, ValueError, asyncio.TimeoutError):
+            return
+        free = sorted(f"opencode/{mid}" for p in prov.get("providers", []) if isinstance(p, dict) and
+                      p.get("id") == "opencode" and isinstance(p.get("models"), dict)
+                      for mid in p.get("models", {}) if isinstance(mid, str) and mid.endswith("-free") and
+                      slash.MODEL_RE.fullmatch(f"opencode/{mid}") and
+                      ("opencode" in (prov.get("connected") or []) or f"opencode/{mid}" in (prov.get("anonymous_models") or [])))
+        if not free:
+            return
+        model = "opencode/glm-5.3-flash-free" if "opencode/glm-5.3-flash-free" in free else free[0]
+        previous = self.cfg.get("model")
+        if getattr(self.host, "set_model", lambda m: False)(model) is False:
+            return
+        self._recovered(model, previous)
+        self.host.agent_notice("现在用的是免费模型，填 API Key 换更强的。" if self.cfg.get("language", "en").startswith("zh") else
+                               "You are using a free model. Add an API Key for a stronger model.")
+
     def _usable_models(self) -> list:
         """Known credential-backed or anonymous free routes, excluding the current failed model.
         This is metadata for the model_missing card, not proof that a key or model call succeeds."""
-        cur = self.cfg.get("model")
+        cur = self.cur_model()
         return [dict(m) for m in getattr(self, "usable_models", []) if m.get("id") != cur][:40]
 
     def _offer_models(self) -> None:
@@ -625,9 +665,14 @@ class OpenCodeAgent(Agent):
         model_missing notice — the phone's normal switch path, no new entry. Owned serve, the owner's conversation only."""
         models = self._usable_models()
         card, turn = getattr(self.host, "cmd_card", None), getattr(self.host, "cmd_turn", None)
-        if not models or not card or not turn or not self.owns_harness() or not getattr(self, "persist", True) or self.cfg.get("_workflow_ceo"):
+        if not self.owns_harness() or not getattr(self, "persist", True) or self.cfg.get("_workflow_ceo"):
             return
         zh = self.cfg.get("language", "en").startswith("zh")
+        if not models:
+            self.host.agent_notice("[切回 Codex](reply:切回 Codex)" if zh else "[Switch back to Codex](reply:Switch back to Codex)")
+            return
+        if not card or not turn:
+            return
         card("model", Result("点一个能用的模型换上（之后的对话都用它）：" if zh else "Tap a working model (used from now on):", "info",
                              models=models), turn=turn(None, "model"))
 
@@ -657,7 +702,8 @@ class OpenCodeAgent(Agent):
 
     def readiness(self) -> dict:
         ready = self._transport_ready() and bool(self.sid) and self.connected.is_set() and not self.failed_start
-        return {"ready": ready, "code": "adapter_ready" if ready else "native_not_ready"}
+        return {"ready": ready, "code": "adapter_ready" if ready else "native_not_ready",
+                "model_recovery": getattr(self, "model_recovery", None)}
 
     def _retire(self, proc) -> bool:
         """Release only this generation; the durable native conversation pin stays intact."""
@@ -1312,11 +1358,13 @@ class OpenCodeAgent(Agent):
                 notes = {**notes, "no_key": notes["no_key"].replace("{provider}", clean_line(pid or "该服务商", 40))}
                 if not self.provider_fail_noted:
                     self.provider_fail_noted = True
+                    if self._recover_model(reason, pid):
+                        return
                     if code == 401 and pid in ('ark-agent-plan', 'ark-coding-plan') and not self.cfg.get('_workflow_ceo'):
                         self.fail_notice(ark_plan_fix.checking_note(self.cfg.get('model'), self.cfg.get('language','en'), data))
                     else:
                         self.fail_notice(self.provider_note(reason, pid, notes[reason], data, failed_model))
-                    if reason == "model_missing":
+                    if reason in ("model_missing", "login", "no_key"):
                         self._offer_models()
         elif t == "session.status" and p.get("sessionID") == self.sid:
             s = p.get("status") if isinstance(p.get("status"), dict) else {}
@@ -1467,7 +1515,7 @@ class OpenCodeAgent(Agent):
             if wd and tool == "Bash" and isinstance(inp.get("command"), str):
                 from .approval_jev import with_cwd        # P198: where OpenCode really runs it (its workdir)
                 inp = {**inp, "command": with_cwd(inp["command"], wd, self.cfg.get("dir"))}
-            name = clean_line(tool, 64) or "?"
+            name = harness_tool(tool)
             from .approval_jev import low_risk_pass       # P198: P157 layer 1 — low risk runs without a card, like Claude
             from .opencode_subagents import origin       # P426: a sub-agent's card says so (P172's last line)
             o = origin(self.children.get(sid), getattr(self.host, "lang", "zh"))
@@ -1599,6 +1647,7 @@ class OpenCodeAgent(Agent):
                 return await self.turn(text)
             if not await self._session_ok():
                 return
+            await self._free_before_prompt()
             self.turn_done, self.turn_proc = asyncio.Event(), self.proc
             self.turn_t0 = time.time() * 1000
             self.turn_progress = time.monotonic()

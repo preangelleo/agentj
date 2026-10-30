@@ -323,16 +323,16 @@ class V2Chain(unittest.TestCase):
             await c.wait(lambda: "ECHO: after clear" in c.msgs())
             await c.idle()
             self.assertNotEqual(c.host.agent.sid, sid)
-            # 5. no key for the provider (v2: provider.no-route) → no_key notice naming it; serve restarted after the turn
+            # P578b: missing provider → the connected configured route, then a fresh serve.
             before = await self._whoami(c)
             await c.say("NOKEY")
-            await c.wait(lambda: any("「deepseek」的账户授权或 API Key 不可用" in m for m in c.msgs()))
+            await c.wait(lambda: any("已切到已配置的模型「opencode/chat」" in m for m in c.msgs()))
             await c.idle()
             self.assertNotEqual(await self._whoami(c), before, "a fresh serve after a key failure")
-            # 6. 401 → single-language phone Models & API keys path
-            previous_key_notices = sum("模型和 API Key" in m for m in c.msgs())
+            # 6. The connected provider's 401 keeps its auth-recovery path.
+            previous_key_notices = len(c.msgs())
             await c.say("BADKEY")
-            await c.wait(lambda: sum("模型和 API Key" in m for m in c.msgs()) > previous_key_notices)
+            await c.wait(lambda: any("模型和 API Key" in m for m in c.msgs()[previous_key_notices:]))
             await c.idle()
             ev = [json.loads(x) for x in self.st.log_path.read_text().splitlines()]
             self.assertIn("v2", [e.get("version") for e in ev if e.get("ev") == "agent_protocol"])

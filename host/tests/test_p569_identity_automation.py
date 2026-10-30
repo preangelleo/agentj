@@ -100,6 +100,7 @@ class AutomationSkill(unittest.TestCase):
                  "agentj tasks disable <id>", "systemctl --user start <name>.service", "systemctl --user list-timers | grep <name>",
                  "systemctl --user disable --now <name>.timer", "agentj tasks enable <id>")
         part = self.text[self.text.index("## Move an `agentj tasks` task to the system scheduler"):]
+        part = part[part.index("By hand where `migrate` is missing"):]     # P570b: `agentj tasks migrate` first, the 5 steps as fallback
         idx = [part.index(s) for s in steps]
         self.assertEqual(idx, sorted(idx))
         zh = part[part.index("中文：主人决定改用系统定时器"):]

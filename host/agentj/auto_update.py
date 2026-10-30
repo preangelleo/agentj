@@ -14,7 +14,7 @@ import subprocess
 import sys
 import time
 import urllib.request
-from . import __version__, activity, controls, minisign, preferences, update
+from . import __version__, activity, controls, minisign, preferences, update, release_notes
 
 RECORD = 'auto-update.json'
 JOB = 'auto-update-job.json'
@@ -26,6 +26,7 @@ ORIGIN = 'https://agentj.app/dl/'
 SELF_CHECK_TRIES = 3
 SELF_CHECK_WAIT = 10
 TRANSIENT_CHECKS = frozenset(('serve', 'service'))
+_UNSET_HARNESS = object()
 
 
 def read(st, name=RECORD):
@@ -421,17 +422,18 @@ def _finish(st, result):
     rec.update(result=result, result_at=int(time.time()), notice_pending=True)
     write(st, rec)
     activity.record(st, 'auto_update', result=result['result'], to=result.get('to'),
-                    reason=result.get('reason'), text=notice(result))
+                    reason=result.get('reason'), text=notice(result, harness=release_notes.current(st)))
     st.log('auto_update_done', status=result['result'])
 
 
-def notice(r, lang='zh', prefs=None):
+def notice(r, lang='zh', prefs=None, harness=None):
     from . import humane, upgrade_diag
+    summary = release_notes.filter_text(r.get('summary_en') if lang == 'en' else r.get('summary'), harness)
     if r.get('result') == 'ok' and r.get('when') == 'idle':
-        return (f"Updated automatically while idle to {r['to']} ({r.get('summary_en') or 'latest published fixes'})." if lang == 'en' else
-                f"Agent J 主机空闲时已自动升级到 {r['to']}（{r.get('summary') or '安装最新正式发布的改进'}）。")
+        return (f"Agent J host updated automatically while idle to {r['to']} ({summary or 'latest published fixes'})." if lang == 'en' else
+                f"Agent J 主机空闲时已自动升级到 {r['to']}（{summary or '安装最新正式发布的改进'}）。")
     if r.get('result') == 'ok':
-        summary = (r.get('summary_en') if lang == 'en' else r.get('summary')) or humane.say('update.auto_ok_default', lang)
+        summary = summary or humane.say('update.auto_ok_default', lang)
         return humane.say('update.auto_ok', lang, prefs, to=r['to'], summary=str(summary).rstrip('。.'))
     if r.get('result') == 'rolled_back':
         return humane.say('update.auto_rollback', lang, prefs, **{'from': r['from'], 'reason': r['reason']})
@@ -447,12 +449,12 @@ def notice(r, lang='zh', prefs=None):
     return text
 
 
-def take_notice(st, lang='zh', prefs=None):
+def take_notice(st, lang='zh', prefs=None, harness=_UNSET_HARNESS):
     with st.config_lock():
-        return _take_notice(st, lang, prefs)
+        return _take_notice(st, lang, prefs, harness)
 
 
-def _take_notice(st, lang='zh', prefs=None):
+def _take_notice(st, lang='zh', prefs=None, harness=_UNSET_HARNESS):
     rec = read(st)
     if not rec.get('notice_pending') or not rec.get('result'):
         return None
@@ -462,7 +464,7 @@ def _take_notice(st, lang='zh', prefs=None):
         return None
     rec['notice_pending'] = False
     write(st, rec)
-    return notice(result, lang, prefs)
+    return notice(result, lang, prefs, release_notes.current(st) if harness is _UNSET_HARNESS else harness)
 
 
 def quiet(argv, **kw):
@@ -625,7 +627,7 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
                     if summary.get('version') == job['to']:
                         for lang, key in (('zh', 'summary'), ('en', 'summary_en')):
                             line = summary.get(lang)
-                            if isinstance(line, str) and 0 < len(line) <= 160 and not any(ord(c) < 32 for c in line):
+                            if isinstance(line, str) and 0 < len(line) <= 160 and not any(ord(c) < 32 and c != '\n' for c in line):
                                 job[key] = line
                 except (KeyError, ValueError):
                     pass

@@ -954,6 +954,8 @@ function pqOf(p) {
 export function renderAsk(p, ctx) {
   const box = el('frAsk'); box.replaceChildren();
   const kind = askKind(p);
+  // Peer and host gate explanations are not this Agent's own note.
+  const note = () => mk('p', 'reason none', t('p572.label') + ' ' + t('p572.noReason'));
   const st = !ctx.open ? p.state : sentAsk.get(p.id) || 'open';
   const final = { approved: 'allow', denied: 'deny', timeout: 'timeout', ended: 'ended', stopped: 'stopped', terminal: 'ended' }[p.state];
   if (kind === 'friend_request') {
@@ -986,6 +988,7 @@ export function renderAsk(p, ctx) {
       cta.addEventListener('input', () => pickedCtx.set(p.id, cta.value));
       more.append(cta, mk('p', 'small', t('fr.ask.ctxHint', { max: FRIEND_CTX_MAX })));
       box.append(more);
+      box.append(note());
       const acts = mk('div', 'fr-askbtns');
       acts.append(btn('', t('fr.ask.deny'), () => answerFriend(p, false, null, ctx), 'frAskDeny'),
         btn('aj-btn--primary', t('fr.ask.allow'), () => answerFriend(p, true, sel.value, ctx, cta.value), 'frAskAllow'));
@@ -1000,6 +1003,7 @@ export function renderAsk(p, ctx) {
       box.append(mk('p', 'fr-owner-code', x.code));
       box.append(mk('p', 'small fr-owner-order', t('p417.so.order')));   // #186: one tap here finishes it
       if (st === 'open' && ctx.sign) {
+        box.append(note());
         const acts = mk('div', 'fr-askbtns');
         const decide = async (on) => {
           pending(p, on ? 'allow' : 'deny', ctx);
@@ -1016,6 +1020,7 @@ export function renderAsk(p, ctx) {
       el('sheetTitle').textContent = t('fr.hold.title', { name: x.name });
       box.append(mk('p', 'fr-askcard__note', x.text), mk('p', 'small', t('fr.hold.scope')));
       if (st === 'open' && ctx.sign) {
+        box.append(note());
         const acts = mk('div', 'fr-askbtns');
         acts.append(btn('', t('fr.ask.deny'), () => answerQuestion(p, 'deny', x, ctx), 'frHoldDeny'),
           btn('aj-btn--primary', t('fr.hold.allow'), () => answerQuestion(p, 'allow', x, ctx), 'frHoldAllow'));
@@ -1031,6 +1036,7 @@ export function renderAsk(p, ctx) {
     if (!p.pq) card.append(copyable(mk('pre', 'fr-askcard__raw', p.summary), { click: false }));   // P292
     box.append(card);
     if (st === 'open' && ctx.sign) {
+      box.append(note());
       const acts = mk('div', 'fr-askbtns fr-askbtns--3');
       const send = btn('aj-btn--primary', t('fr.q.send'), () => answerQuestion(p, 'allow', x, ctx), 'frQSend');
 

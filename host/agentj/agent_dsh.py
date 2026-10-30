@@ -1,33 +1,11 @@
-"""P329: DeepSeek Harness (`dsh`, DeepSeek, MIT, developer preview 0.2.0-rc.2) as Agent J's sixth harness — the third on
-P305's generic ACP adapter (acp.py). It is also the harness inside Olares' own agent Lares (Lares 0.26.42 bundles dsh
-0.2.0-rc.2), so on an Olares box Agent J drives the same engine, pointed at the box's own Router.
+"""DeepSeek Harness ACP adapter; measured against dsh 0.2.0-rc.2 (P329).
+Start read-only so write/escalation requests reach the existing phone card; native bwrap nests inside the host fence.
+Identity uses text because embedded context is unsupported. Model pairs map to plain IDs; cancel/resume remain native.
+Run the process in DSH_HOME so dsh cannot auto-load the working project's .env; session cwd still targets that project.
+Telemetry is disabled. Native login/config stay owner-owned; route keys are named, delivered in memory and excluded
+from task environments. Native automatic compaction has no ACP /compact command.
 
-Measured on 0.2.0-rc.2 in an isolated HOME / DSH_HOME, against an Olares Router (Qwen3.8-27B) — reports/qa/p329/:
-- `dsh --profile acp` answers `initialize` at once: agentInfo deepseek-harness-acp, session list / resume / close (no load,
-  no fork), NO authMethods, promptCapabilities image / embeddedContext false (acp._block sends the identity as text);
-- a session has NO ACP modes: only a `model` config option, whose values are JSON pairs '["<provider>","<model>"]'
-  (shown and stored here as the plain model id);
-- approvals: dsh's default preset `workspace-write` runs shell commands and file writes inside its own bwrap sandbox WITHOUT
-  asking. Agent J starts it with DSH_PERMISSION_MODE=read-only (approval "ask"): anything that writes or runs outside a
-  read-only sandbox becomes an escalation retry, which arrives as `session/request_permission` with exactly allow_once /
-  reject_once → the phone card (acp._permission). Reads run without a card, as with the other harnesses;
-- tool titles are lower case (bash, write, edit, read, glob, grep, web_fetch …) with kind "other": TOOL_ALIAS maps them;
-- `session/cancel` ends a turn with stopReason "cancelled"; `session/resume` in a new process continues the conversation;
-- `/compact` is not an ACP command (sent as a prompt it is just answered): dsh compacts by itself near the window;
-- its own bwrap nests inside Agent J's fence (both unprivileged user namespaces) on Linux;
-- dsh loads `<process cwd>/.env` into its own environment, and the model's shell sees it. So the process starts in DSH_HOME
-  (the owner's own dsh folder, whose .env dsh reads anyway), never in the working folder, which may hold a project's or the
-  owner's keys; each session still opens in the working folder (`session/new` cwd) — shell and edits happen there.
-- telemetry: off (DSH_TELEMETRY_MODE=DISABLED — no session record leaves the Agent J host, not even after /feedback).
-
-Logins (the owner's, never the Agent's):
-- the owner's own dsh setup: `$DSH_HOME/.credentials.yaml` (dsh web's Models page), `$DSH_HOME/.env`, or providers in
-  `$DSH_HOME/cordis.patch.yml` — used as they are;
-- an OpenAI-compatible route Agent J writes (`agentj agent dsh --base-url <…/v1> --model <id>`): `$DSH_HOME/agentj-route.yml`
-  (address + model, the key only by NAME: DSH_ROUTER_API_KEY from the phone's key card; a keyless local server gets a
-  placeholder). This is how an Olares Router, LiteLLM, Ollama or llama.cpp server is used;
-- a DeepSeek platform key from the key card: DEEPSEEK_API_KEY (pay as you go).
-Keys reach dsh only as in-memory variables of this process; tasks never get them (fence.auxiliary_environment).
+Protocol/history detail: agentjarvis/ARCHITECTURE.md, P0261 source notes / agent_dsh.py.
 """
 from __future__ import annotations
 

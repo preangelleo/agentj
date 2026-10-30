@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import contextvars
 import re
+import time
 import unicodedata
 
 from .silent import MARKER as SILENT
@@ -49,22 +50,18 @@ def phone() -> dict:
 
 
 def wechat_task(rid: str) -> dict:
-    """Host-only: owner approved transfer, never owner identity or authority."""
     return {"kind": "wechat_task", "role": "task"}
 
 
-def wechat_owner() -> dict:
-    """P562 (#337): a message of the bound WeChat ClawBot account's owner (wechat.receive checks the sender id)."""
+def wechat_owner() -> dict:   # P562: wechat.receive checks the sender id
     return {"kind": "wechat", "role": "owner"}
 
 
 def terminal() -> dict:
-    """Host-verified native owner input; never inferred from a missing Send."""
     return {"kind": "terminal", "role": "owner"}
 
 
 def terminal_input(record, content, text) -> dict:
-    """A verified native input surface still rejects synthetic/peer envelopes and unknown origin metadata."""
     from .transcript_input import human_input
     if not human_input(record, content, text):
         return normalize(None)
@@ -78,8 +75,7 @@ def terminal_input(record, content, text) -> dict:
     return terminal()
 
 
-def system() -> dict:
-    """P151: a message the owner's own Agent J host writes by itself (〔Agent J 系统提示〕). The owner's side, no person."""
+def system() -> dict:   # P151: written by the owner's own Agent J host
     return {"kind": "system", "role": "owner"}
 
 
@@ -96,19 +92,15 @@ def telegram_group(chat: int, uid: int, profile, owner_id) -> dict:
             "profile": profile if profile in PROFILES else "proxy", "owner_id": type(owner_id) is int and uid == owner_id}
 
 
-def email_owner(addr: str) -> dict:
-    """P170: mail that passed the code-enforced allowlist (role owner) and sender authentication (mail.judge)."""
+def email_owner(addr: str) -> dict:   # P170: allowlisted + sender-authenticated (mail.judge)
     return {"kind": "email", "role": "owner", "sender": addr}
 
 
 def email_guest(addr: str) -> dict:
-    """P170: an allowlisted guest address — handled like a group member: untrusted, never an approval."""
     return {"kind": "email", "role": "group", "sender": addr, "profile": "proxy", "owner_id": False}
 
 
-def automation(name: str) -> dict:
-    """P365: a post of the owner's own automation, handed to the main Agent as data. Scripts often pass third-party
-    content on (feeds, mail subjects, logs): never the owner's words, never an approval — handled like a forward."""
+def automation(name: str) -> dict:   # P365: data the owner's script posted, never the owner's words
     return {"kind": "automation", "role": "data", "name": name}
 
 
@@ -116,20 +108,13 @@ _AUTO_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
 
 
 def normalize(src) -> dict:
-    """Missing or malformed provenance is untrusted. Only explicit host-verified owner surfaces grant authority."""
-    if not isinstance(src, dict):
+    if not isinstance(src, dict):   # missing / malformed = untrusted
         return {"kind": "unknown", "role": "group"}
     kind, role = src.get("kind"), src.get("role")
     if kind in ("same_owner", "friend_task", "wechat_task", "scheduled_task") and role == "task":
         return {"kind": kind, "role": "task"}
-    if kind == "phone" and role == "owner":
-        return phone()
-    if kind == "terminal" and role == "owner":
-        return terminal()
-    if kind == "system" and role == "owner":
-        return system()
-    if kind == "wechat" and role == "owner":
-        return wechat_owner()
+    if role == "owner" and kind in ("phone", "terminal", "system", "wechat"):
+        return {"kind": kind, "role": "owner"}
     if kind == "telegram" and role == "owner" and _int(src.get("sender")) and src.get("sender") == src.get("chat"):
         return telegram_owner(src["sender"])
     if kind == "telegram" and role == "forward" and _int(src.get("sender")) and src.get("sender") == src.get("chat"):
@@ -158,17 +143,13 @@ CHANNELS = {("wechat", "owner"): "wechat", ("telegram", "owner"): "telegram", ("
 
 
 def owner_channel(src) -> str | None:
-    """P562 (#337): "wechat" / "telegram" / "mail" when this is the owner's own message from that channel (host-verified by
-    the adapter: the bound ClawBot sender, the enrolled private chat, an allowlisted + authenticated owner address). It is
-    the owner speaking, but a channel account is weaker than a paired device: such a turn asks the owner on Web App cards
-    (serve.ask, like a delegated task) and never takes an owner-only path, a batch grant or a goal pass."""
+    """P562: the owner's own channel message (adapter-verified); weaker than a paired device: Web App cards, no owner-only path."""
     s = normalize(src)
     return CHANNELS.get((s["kind"], s["role"]))
 
 
 def owner_channel_turn(agent) -> str | None:
-    """The owner channel this turn's Send came from — None if anything stricter is in play (a paired request decides by
-    itself; a request carrying another source, P426 S3, keeps that source's rule)."""
+    """None if anything stricter is in play (a paired request; another request source, P426 S3)."""
     if _paired_source() is not _UNSET:
         return None
     via = owner_channel(turn_source(agent))
@@ -179,15 +160,13 @@ def owner_channel_turn(agent) -> str | None:
 
 
 def rank(src) -> int:
-    """0 the owner's side · 1 a delegated task (same owner / friend: a card, no owner-only path) · 2 anyone else (refused)."""
+    """0 owner · 1 delegated task (card) · 2 anyone else (refused)."""
     s = normalize(src)
     return 0 if is_owner(s) else (1 if s["kind"] in ("same_owner", "friend_task", "wechat_task", "scheduled_task") else 2)
 
 
 def stricter(a, b):
-    """The less trusted of two sources (a on a tie)."""
-    a, b = normalize(a), normalize(b)
-    # P562 (review B1): on a tie an owner channel never masks a group / guest / unknown source (or another channel)
+    a, b = normalize(a), normalize(b)   # the less trusted; a tie keeps a unless an owner channel would mask b (P562)
     return b if rank(b) > rank(a) or (rank(b) == rank(a) and owner_channel(a) and owner_channel(b) != owner_channel(a)) else a
 
 
@@ -203,7 +182,6 @@ def task_scope():
 
 @contextlib.contextmanager
 def task_request(scope):
-    """Host-only task capability; never taken from request JSON."""
     token = _TASK.set(scope)
     try:
         yield
@@ -213,7 +191,6 @@ def task_request(scope):
 
 @contextlib.contextmanager
 def task_run():
-    """Delegation expires for all children when the admitted run ends."""
     scope = {"live": True}
     try:
         with task_request(scope), request_source({"kind": "scheduled_task", "role": "task"}):
@@ -236,8 +213,7 @@ def _paired_source():
 
 @contextlib.contextmanager
 def paired_request(verify):
-    """Only a verified paired transport / admitted signed phone action may establish this request's owner origin.
-    The live-device verifier runs on every check. Authority belongs to this Task, not tasks it creates."""
+    """The live-device verifier runs on every check; authority belongs to this Task only."""
     task = asyncio.current_task()
     if task is None or not callable(verify):
         raise ValueError("a paired request needs its live task and verifier")
@@ -250,7 +226,7 @@ def paired_request(verify):
 
 @contextlib.contextmanager
 def request_source(src):
-    """P426 S3: a request's own origin (e.g. an earlier OpenCode child). Checks take the stricter of this and the turn."""
+    """P426 S3: a request's own origin; checks take the stricter of this and the turn."""
     tok = _REQUEST.set(normalize(src))
     try:
         yield
@@ -305,8 +281,7 @@ def delegated_turn(agent) -> bool:
 
 
 def same_owner_source(agent) -> bool:
-    """Is any same-owner task in play — this turn's Send, or (shared sessions, cur_send already cleared) the source the
-    native session may still be running? Errs towards True: the owner's own turn then just asks again (P405)."""
+    """Any same-owner task in play (errs towards True, P405)."""
     if _paired_source() is not _UNSET:
         return False
     o = _REQUEST.get()
@@ -318,9 +293,7 @@ def same_owner_source(agent) -> bool:
 
 
 def untrusted_turn(agent) -> bool:
-    """Is a non-owner message being handled? This turn's Send, or (shared sessions) a group envelope the native session
-    may still be running after Agent J stopped waiting for it, or (P426 S3) a request carrying a non-owner source.
-    Approval paths refuse while True."""
+    """A non-owner message (Send, a still-live group envelope, a non-owner request source): approvals refuse."""
     paired = _paired_source()
     if paired is not _UNSET:
         return not is_owner(paired)
@@ -358,8 +331,24 @@ def refusal_text(agent) -> str:
     zh, en = {"system": ("系统提示", "System notice"), "email": ("访客邮件", "Guest email"),
               "automation": ("主人的自动化发来的数据", "Data posted by the owner's automation"),
               "telegram": ("群聊或转发", "Group or forwarded message")}.get(s["kind"], ("未核验来源", "Unverified source"))
+    host = getattr(agent, "host", None)
+    if s["kind"] == "system" and getattr(host, "proactive_via", None) == "loop":   # P570c: a ScheduleWakeup / CronCreate tick
+        zh, en = LOOP
+        if time.monotonic() >= host.__dict__.get("_loop_told", 0):   # the phone: one plain line per 6 h, not one per tick
+            host._loop_told = time.monotonic() + 21600
+            from .text import pick
+            host.task_notice(pick(getattr(host, "lang", "zh"), *LOOP_OWNER), guide="loop")
     return (zh + "：不能请求主人批准，没有发卡片；不是主人手动拒绝。 / " +
             en + ": cannot request owner approval; no card was sent. The owner did not reject this action.")
+
+
+LOOP = ("循环唤醒（ScheduleWakeup / CronCreate）。要定时反复做的事请改用定时任务（agentj-automation 技能：系统定时，或 "
+        "workflows/<id>/task.json + agentj tasks enable）", "Loop wake-up (ScheduleWakeup / CronCreate). For recurring work set up "
+        "a scheduled task instead (agentj-automation skill: the system scheduler, or workflows/<id>/task.json + agentj tasks enable)")
+LOOP_OWNER = ("循环唤醒（ScheduleWakeup / CronCreate）要你批准的一步被拒了：这种循环唤醒请改用定时任务。直接回复「把这个循环改成定时任务」，"
+              "也可以点下面的按钮，Agent 会帮你建好，以后按时运行。", "A loop wake-up (ScheduleWakeup / CronCreate) needed your approval for a step and "
+              "was refused: use a scheduled task for this kind of loop. Reply \"turn this loop into a scheduled task\" and the "
+              "Agent sets one up. Or tap the button below.")
 
 
 def names_untrusted(text: str, foreign: bool = False) -> bool:
@@ -367,12 +356,11 @@ def names_untrusted(text: str, foreign: bool = False) -> bool:
 
 
 def body(text: str, src=None) -> str:
-    """What the session sees between our header and our closing tag. Idempotent."""
     s = normalize(src)
     text = text or ""
     if is_owner(s) or s["kind"] == "system":  # host formatting is not permission; tags still cannot escape
         return _TAG.sub("‹", text)
-    # untrusted: one canonical form (fullwidth ＜ → <, no invisible characters), then no angle brackets and no labels at all
+    # untrusted: NFKC, no format characters, no angle brackets, no labels
     text = unicodedata.normalize("NFKC", text)
     text = "".join(c for c in text if unicodedata.category(c) != "Cf")
     text = text.translate(_BRACKETS)
@@ -384,33 +372,18 @@ def body(text: str, src=None) -> str:
     return _IMPERSONATION.sub(_MASK, text)
 
 
+_NAMES = {"wechat_task": WECHAT_TASK, "friend_task": FRIEND_TASK, "same_owner": SAME_OWNER, "wechat": WECHAT_OWNER, "phone": PHONE,
+          "terminal": "owner-terminal-via-agentj(本机终端)", "system": SYSTEM, "automation": AUTOMATION}
+
+
 def from_name(src=None) -> str:
     s = normalize(src)
-    if s["kind"] == "wechat_task":
-        return WECHAT_TASK
-    if s["kind"] == "friend_task":
-        return FRIEND_TASK
-    if s["kind"] == "same_owner":
-        return SAME_OWNER
-    if s["kind"] == "wechat":
-        return WECHAT_OWNER
-    if s["kind"] == "terminal":
-        return "owner-terminal-via-agentj(本机终端)"
-    if s["kind"] == "phone":
-        return PHONE
-    if s["kind"] == "system":
-        return SYSTEM
-    if s["kind"] == "telegram" and s["role"] == "owner":
-        return TG_OWNER
-    if s["kind"] == "telegram" and s["role"] == "forward":
-        return TG_FORWARD
-    if s["kind"] == "email":
+    k = s["kind"]
+    if k == "email":
         return EMAIL_OWNER if s["role"] == "owner" else EMAIL_GUEST
-    if s["kind"] == "automation":
-        return AUTOMATION
-    if s["kind"] == "telegram":
-        return TG_FAMILY if s["profile"] == "family" else TG_PROXY
-    return UNKNOWN
+    if k == "telegram":
+        return {"owner": TG_OWNER, "forward": TG_FORWARD}.get(s["role"]) or (TG_FAMILY if s["profile"] == "family" else TG_PROXY)
+    return _NAMES.get(k, UNKNOWN)
 
 
 # P562: the owner channels' one rule — as the owner's own message, approvals only on Agent J Web App cards

@@ -63,7 +63,7 @@ sys.exit(main())
 '''
 
 
-NO_PYTHON = ("这台电脑上找不到系统自带、只有管理员能改的 python3，网页终端里的 sudo 不能安全地取用记住的密码。/ No system python3 "
+NO_PYTHON = ("这台 Agent J 主机上找不到系统自带、只有管理员能改的 python3，网页终端里的 sudo 不能安全地取用记住的密码。/ No system python3 "
              "that only an administrator can change: sudo in the web terminal cannot use the remembered password safely.")
 _PY_DIRS = ("/usr/bin", "/bin", "/usr/local/bin")
 

@@ -72,7 +72,7 @@ def localize(tool_input, lang: str):
              f"{m}'s safety check flagged this message (it sometimes flags normal conversations). This turn is paused; "
              "nothing was lost. What should happen when this comes up?")
     sw = pick(lang, f"换到 {f} 继续（以后再被拦也自动换，不再问）", f"Switch to {f} and continue (switch automatically from now on)")
-    sw_d = pick(lang, f"现在就用 {f} 接着回答；以后再被拦时自动换，不再问你。可在电脑上 Claude Code 的 /config 里改。",
+    sw_d = pick(lang, f"现在就用 {f} 接着回答；以后再被拦时自动换，不再问你。可在 Agent J 主机上 Claude Code 的 /config 里改。",
                 f"{f} answers this now, and later flags switch without asking. You can change this in Claude Code's /config.")
     st = pick(lang, f"留在 {m}", f"Stay on {m}")
     st_d = pick(lang, f"这一轮不会自动继续：你的原话会放回手机输入框，改一改或原样再发都行。以后再被拦，手机上会给你：换模型继续 / 原话重试 / 改一改再发 / 开新对话。",

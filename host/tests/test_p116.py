@@ -377,6 +377,7 @@ class Picker(Tmp):
         host = Mock(); host.st.root = self.state; host.stopped.return_value = False
         host.st.write_private.side_effect = lambda p, b: Path(p).write_bytes(b)
         a = shared.SharedClaudeAgent(host, {"kind": "claude", "dir": str(self.root), "session_mode": "shared", "_workflow_ceo": True})
+        a.cfg.pop("_workflow_ceo"); a.cfg["shared_identity"] = False; host.agent = a
         a.session = dict(self.sess); a.state.status = "idle"
         a.MODEL_WATCH = 1.0
         act = patch.object(claude_statusline, "active", return_value=True); act.start(); self.addCleanup(act.stop)
@@ -426,7 +427,7 @@ class Picker(Tmp):
         a, _ = self.agent()
         asyncio.run(a.refresh_models())
         ids = [m["id"] for m in a.models_cache]
-        self.assertIn("opus-1m-context", ids); self.assertTrue(all(m["efforts"] == list(ms.EFFORTS) for m in a.models_cache))
+        self.assertIn("opus-5.5-1m-context", ids); self.assertNotIn("opus-1m-context", ids); self.assertTrue(all(m["efforts"] == list(ms.EFFORTS) for m in a.models_cache))
         self.assertEqual(a.cur_model(), "opus-5.5-1m-context"); self.assertEqual(a.cur_effort(), "medium")
         self.assertTrue(a.passthrough("release-notes")); self.assertTrue(a.passthrough("good-morning"))
         for builtin in ("clear", "compact", "model", "cost", "undo_clear"):

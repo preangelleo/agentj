@@ -228,6 +228,7 @@ class OpenCodeV2Agent(OpenCodeAgent):
             raise HTTPError("rules not in place")      # never prompt a session whose last rules are not ours
         self.session_model = _data(s).get("model") if isinstance(_data(s).get("model"), dict) else None
         self.sid = sid
+        self.meter(model=self.cur_model(), model_name=self.model_name(self.cur_model()))
 
     # ------------------------------------------------ the event stream
     def on_event(self, ev: dict) -> None:
@@ -322,7 +323,11 @@ class OpenCodeV2Agent(OpenCodeAgent):
         code = code if type(code) is int and 100 <= code <= 599 else None
         from .provider_setup import error_model
         failed_model = error_model(data)
-        sel = split_model(failed_model or self.cfg.get("model"))
+        if not self.cfg.get("model") and split_model(failed_model):
+            m = split_model(failed_model)
+            self.session_model = {"providerID": m["providerID"], "id": m["modelID"]}
+            self.meter(model=self.cur_model(), model_name=self.model_name(self.cur_model()))
+        sel = split_model(failed_model or self.cur_model())
         pid = sel["providerID"] if sel else None
         reason = provider_error_reason(name, data, self.connected_at_start, pid)
         if failed_model and failed_model != self.cfg.get("model") and reason in ("balance", "quota_window", "rate_limit"):
@@ -341,10 +346,14 @@ class OpenCodeV2Agent(OpenCodeAgent):
         notes = {**notes, "no_key": notes["no_key"].replace("{provider}", clean_line(pid or "该服务商", 40)),
                  "login": notes["login"] + V2_SWITCH.replace("{provider}", clean_line(pid or "<服务商>", 40))}
         self.provider_fail_noted = True
+        if self._recover_model(reason, pid):
+            return
         if code == 401 and pid in ('ark-agent-plan', 'ark-coding-plan') and not self.cfg.get('_workflow_ceo'):
             self.fail_notice(ark_plan_fix.checking_note(failed_model or self.cfg.get('model'), self.cfg.get('language','en'), data))
         else:
             self.fail_notice(self.provider_note(reason, pid, notes[reason], data, failed_model))
+        if reason in ("model_missing", "login", "no_key"):
+            self._offer_models()
 
     async def _form(self, form: dict) -> None:
         """form.created → one question card (choices only); anything else, a cancel / timeout → the form is cancelled and the
@@ -524,6 +533,7 @@ class OpenCodeV2Agent(OpenCodeAgent):
                 return await self.turn(text)
             if not await self._session_ok():
                 return
+            await self._free_before_prompt()
             self.turn_done, self.turn_proc = asyncio.Event(), self.proc
             self.turn_t0 = time.time() * 1000
             self.turn_progress = time.monotonic()

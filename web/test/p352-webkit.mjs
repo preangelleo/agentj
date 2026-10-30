@@ -31,6 +31,13 @@ const press = (sel) => p.evaluate((s) => document.querySelector(s).click(), sel)
 try {
   const calls = keysHandler(fake.st, { fa: FA });
   const ctx = await B.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, userAgent: UA, colorScheme: 'light' });
+  // WPE on this Linux host has no native GStreamer media backend (p181/p205 fixture contract).
+  // P575 primes its cue on the first key as well as the first tap; native audio crashes WPE here.
+  // These six key-manager checks exercise page/clipboard/signature paths; audio playback is not their scope.
+  await ctx.addInitScript(() => {
+    window.Audio = undefined;
+    for (const k of ['play', 'pause', 'load']) HTMLMediaElement.prototype[k] = function () { return k === 'play' ? Promise.resolve() : undefined; };
+  });
   p = await ctx.newPage();
   const problems = [];
   p.on('crash', () => problems.push('web process crashed'));

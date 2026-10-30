@@ -160,7 +160,7 @@ class Chat(Base):
         a = agents.ClaudeAgent(self.host, {"kind": "claude", "dir": "/tmp", "model": None})
         a.halting, a.capture, a.turn_done = False, None, None
         a.native_source = {"kind": "terminal", "role": "owner"}   # P570 F2b: an owner's chat turn
-        self.host.agent.kind = "claude"
+        self.host.agent = a
         return a
 
     def test_the_196_case_limit_wins_readings_marked_stale(self):

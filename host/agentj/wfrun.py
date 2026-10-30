@@ -1,33 +1,11 @@
-"""P426 #181-5: node checkpoints for multi-step automations, and continuing a failed run from its failed node.
+"""Scheduler-owned multi-step checkpoints and failed-node resume (P426 #181-5).
+Hidden private atomic checkpoints bind reports/outputs by hash. Resume starts at the earliest invalidated node and uses
+the stricter saved/current contract; missing snapshots mean non-idempotent. Re-running non-idempotent work or changing
+its contract requires owner approval (an unproven terminal uses the phone card); no implicit grant. A checkpoint claim
+permits one resume, with stale-instance recovery. Missing/damaged checkpoints refuse. Retry only idempotent nodes;
+all execution stays inside Scheduler's existing fence, timeout, approvals and chat lock. No Agent-owned lock is added.
 
-Leo (10-20): 「工作流失败局部修复：自动化中途失败从失败节点续跑，不整条重来。」
-
-A *node* is one entry of `steps` in task.json (taskspec.steps_problem): its own instructions file, run as its own headless
-harness run (tasks.Scheduler._exec, same fence / approvals / timeout as a whole task), ending with its own VERDICT line.
-`fail` (or no VERDICT, a timeout, a stop, an error) = the node failed and the run stops there; later nodes never start.
-
-Checkpoint: <state>/wfruns/<run_id>.json (0600, atomic replace via State.write_private, in the hidden state dir — the Agent
-cannot forge "done"). Rewritten whenever a node starts, finishes or fails: per node state (pending · running · done · failed ·
-reused), attempts, VERDICT sentence, its report file and a fingerprint (sha256 + size) of that report and of the node's
-literal `outputs`; on failure the failed node and the reason in plain words.
-
-Resume (`agentj automation resume <run id | task id>`, control.sock from the owner's terminal, capability.sock from an Agent):
-- a new run reuses every node before the restart point (their sentences and report paths are handed to later nodes) and runs
-  the rest. The restart point is the failed node, or an earlier node whose instructions changed, whose report / outputs were
-  deleted or changed, or when the node list itself changed — said in plain words.
-- S5 (security review): what decides "needs the owner" can not be rewritten by the Agent after a failure. Every run snapshots
-  its contract into the checkpoint (`contract`: the task's mode, each node's idempotent / retry; hidden state) and its `tsha`;
-  a resume takes the STRICTER of that snapshot and the current task.json (non-idempotent in either → still non-idempotent;
-  research only when both say research), and a contract hash that differs from the failed run's counts as needing the owner
-  too, said in plain words (「自动化内容在失败后被改过」). A checkpoint without a snapshot counts as all non-idempotent.
-- a node that will run AGAIN and is not `idempotent: true` (mode research counts as idempotent) needs the owner: at the terminal
-  `--yes`; from an Agent (or a terminal that is not provably the owner's) one approval card on the phone (host.ask, a host card:
-  never batch / goal / full-level automatic). Nodes after the failure never ran, so they need nothing.
-- one resume per run: a claim written into the checkpoint under the `wfruns` flock; a second resume of the same run is refused
-  while the first waits for its card or after it queued. A claim from a previous serve instance that never queued is stale.
-- a missing or damaged checkpoint never guesses: resume is refused with the full-run command instead.
-- `retry` (0–3): an idempotent node that failed is tried again by itself up to that many times within the same run.
-No owner lock is created for an Agent; no step is ever started outside the Scheduler (one run at a time, chat lock).
+Protocol/history detail: agentjarvis/ARCHITECTURE.md, P0261 source notes / wfrun.py.
 """
 from __future__ import annotations
 
@@ -222,8 +200,8 @@ def changed(wf_dir: str, arts: list) -> tuple[str, str] | None:
 
 
 def prompt_sha(e: dict, step: dict) -> str:
-    from .tasks import _regular
-    return hashlib.sha256(_regular(os.path.join(e["dir"], step["prompt_file"])) or b"").hexdigest()
+    from .tasks import prompt_bytes
+    return hashlib.sha256(prompt_bytes(e, step["prompt_file"])).hexdigest()
 
 
 # ------------------------------------------------------------------ the contract snapshot (S5)
@@ -475,8 +453,8 @@ def new_record(rid: str, e: dict, p: dict | None) -> dict:
 def step_text(e: dict, i: int, rec: dict, lang="zh") -> str:
     steps = steps_of(e["task"])
     s = steps[i]
-    from .tasks import _regular
-    body = (_regular(os.path.join(e["dir"], s["prompt_file"])) or b"").decode("utf-8", "replace")
+    from .tasks import prompt_bytes
+    body = prompt_bytes(e, s["prompt_file"]).decode("utf-8", "replace")
     rel = e.get("relative_dir", "workflows/" + e["id"])
     head = (f"\n\n---\n这是分步自动化的第 {i + 1}/{len(steps)} 步「{_title(s, 'zh')}」（{s['prompt_file']}）：只做这一步，别的步骤由 Agent J "
             f"按顺序另行运行。/ This is step {i + 1} of {len(steps)} \"{_title(s, 'en')}\" ({s['prompt_file']}) of a multi-step "
@@ -659,7 +637,7 @@ def hint(res: dict, lang="zh") -> str:
     r = res.get("resume")
     if not isinstance(r, dict) or not r.get("run_id"):
         return ""
-    return _t(lang, f"\n从失败处继续：跟 Agent 说「从失败处继续 {r['id']}」，或在电脑上运行 `agentj automation resume {r['run_id'][:12]}`。",
+    return _t(lang, f"\n从失败处继续：跟 Agent 说「从失败处继续 {r['id']}」，或在 Agent J 主机上运行 `agentj automation resume {r['run_id'][:12]}`。",
               f"\nContinue from where it failed: tell your Agent \"continue {r['id']} from where it failed\", or run "
               f"`agentj automation resume {r['run_id'][:12]}` on the computer.")
 

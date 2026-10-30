@@ -1098,6 +1098,11 @@ textarea::placeholder{color:var(--ink-soft);font-size:calc(13.6px*var(--fz));lin
 .cmd pre{margin:0;max-height:30vh;overflow:auto;white-space:pre-wrap;word-break:break-all;
   font:500 calc(15px*var(--fz))/1.5 var(--font-mono)}
 .why{margin:0 2px 12px;font-size:calc(15px*var(--fz));color:var(--ink-soft);word-break:break-word}
+/* P572: the reason line (host `reason`) — body text, full width; none given → the fallback in the lighter weight (the soft
+   ink is 3.3:1 on the waiting sheet, under the 4.5:1 floor for body text). */
+.reason{margin:0 2px 12px;font:500 calc(16px*var(--fz))/1.5 var(--font-body);color:var(--ink);word-break:break-word}
+.reason.none{font-weight:400}
+.reason[hidden]{display:none}
 .mailallow{display:flex;flex-direction:column;gap:6px;margin:0 2px 12px}
 .mailallow[hidden]{display:none}
 .mailallow label{display:flex;align-items:flex-start;gap:10px;font-size:calc(14.5px*var(--fz));line-height:1.4;color:var(--ink);word-break:break-word;cursor:pointer}
@@ -1171,6 +1176,7 @@ textarea::placeholder{color:var(--ink-soft);font-size:calc(13.6px*var(--fz));lin
 .cmddesc{margin:0 0 6px;font:500 calc(15px*var(--fz))/1.45 var(--font-body);color:var(--ink);word-break:break-word}
 .cmddesc[hidden]{display:none}
 .cmd pre.fold{max-height:calc(2 * 1.5em);overflow:hidden}
+.cmd pre.fold.half{max-height:15vh}   /* P572: a Touch ID card with a reason line folds to half its old 30vh */
 .cmd pre.fold.clip{-webkit-mask-image:linear-gradient(#000 55%,transparent);mask-image:linear-gradient(#000 55%,transparent)}
 .cmdmore{margin:-10px -6px -10px auto;min-height:44px;padding:0 6px;background:none;border:0;color:var(--ink-soft);
   font:500 calc(14px*var(--fz))/1 var(--font-body);text-decoration:underline;text-underline-offset:3px;cursor:pointer}
@@ -1694,6 +1700,15 @@ p.setval{grid-column:1 / -1;text-align:left;margin:0}
 .sfxvol output{min-width:3.2em;text-align:center;font:600 var(--fs-sm)/1 var(--font-mono);color:var(--text)}
 .sfxvol .setlink{flex:none}
 .sfxvol button:focus-visible,.sfxvol input:focus-visible{outline:2px solid var(--focus,var(--accent));outline-offset:2px}
+/* P575 (#390): one switch per sound under 提示音音量 — the five state ticks as a group (head + rows), then 全部完成 */
+.setrow.cuehead{border-bottom:0;padding-bottom:0}
+.setrow.cuerow:not([data-cue="all-done"]){padding-left:var(--sp-3)}
+.setrow.cuerow:not([data-cue="all-done"])>.setlab{font-weight:500}
+.cuectl{display:flex;align-items:center;gap:var(--sp-2)}
+.cueplay{width:44px;height:44px;flex:none;border-radius:50%;display:grid;place-items:center;background:var(--surface-2);border:0;color:var(--text);padding:0;cursor:pointer}
+.cueplay svg{width:20px;height:20px}
+.cueplay:disabled{opacity:.45;cursor:default}
+.cueplay:focus-visible{outline:2px solid var(--focus,var(--accent));outline-offset:2px}
 .setrow>.setsamplelab{grid-column:1 / -1;margin:var(--sp-1) 0 0;color:var(--text-muted);font:600 var(--fs-xs)/1.4 var(--font-body);letter-spacing:.06em;text-transform:uppercase}
 .setrow>.setsamplelab+.setsample{margin-top:0}
 .setrow.setoff>.setlab,.setrow.setoff>.setswitch{opacity:.45}
@@ -3552,3 +3567,11 @@ body:has(.ajmodal.dlgcard:not([hidden]),#confirm:not([hidden])) .toast:is(.circl
    hover painted the button Noir — the label's own colour; a tap on a touch screen leaves the hover on. The dialog keeps the dark
    theme's Salt hover in both themes (palette unchanged; only the hover / focus state of a dialog's primary button) */
 .ajmodal.dlgcard .aj-btn--primary:hover,.ajmodal.dlgcard .aj-btn--primary:focus{background:var(--c-salt);border-color:var(--c-salt);color:var(--primary-fg)}
+
+/* P579L: native two-item picker, compact ink capsule inside a 44px touch target. */
+.setmail .mail-role{--select-pad-end:8px;appearance:none;background-image:none!important;color-scheme:dark;width:auto!important;min-width:52px;max-width:70px;min-height:44px;height:44px;padding:0 8px!important;flex:none;border-radius:999px;text-align:center;font-size:var(--fs-sm);background:var(--surface-2);color:var(--text);cursor:pointer}
+.setmail .mailallow li{flex-wrap:nowrap}
+.setmail .mailadd{grid-template-columns:minmax(0,1fr) 44px auto}
+.setmail .mailadd #mail-add-role{grid-column:3;grid-row:1;justify-self:end}
+.setmail .mailadd #mail-add{grid-column:2;grid-row:1}
+.setmail .mail-role option{background:var(--menu-bg);color:var(--menu-text)}

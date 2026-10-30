@@ -591,7 +591,7 @@ class WeChat:
             return ('分身选用的服务商配置已失效或被删除，请回 Agent J 网页重新选择套餐。' if zh else
                     "The avatar's saved provider profile is missing or changed. Choose a plan again in Agent J Web App.")
         if error == 'login' or detail == 'login':
-            return (f'分身用的 {kind} 没有登录或登录已过期。请在电脑上重新登录 {kind}，{swap}' if zh else
+            return (f'分身用的 {kind} 没有登录或登录已过期。请在 Agent J 主机上重新登录 {kind}，{swap}' if zh else
                     f'{kind} used by the avatar is not signed in or its login expired. Sign in to {kind} on the computer again, {swap}')
         if detail == 'quota':
             return (f'分身用的 {kind} 额度已用完或被限流，请稍后再发，{swap}' if zh else
@@ -600,7 +600,7 @@ class WeChat:
             return (f'分身选用的模型在 {kind} 上不可用，请回 Agent J 网页换一个模型或套餐。' if zh else
                     f'The chosen model is not available on {kind}. Choose another model or plan in Agent J Web App.')
         if error == 'no_harness':
-            return (f'电脑上找不到分身选用的 {kind}。请先安装，{swap}' if zh else
+            return (f'Agent J 主机上找不到分身选用的 {kind}。请先安装，{swap}' if zh else
                     f'{kind} chosen for the avatar is not installed on the computer. Install it, {swap}')
         if error == 'no_tool_off':
             return (f'当前 {kind} 版本无法以无工具的安全方式运行分身。请升级 {kind}，{swap}' if zh else
@@ -610,7 +610,7 @@ class WeChat:
         if error == 'stopped':
             return ('Agent J 已全部停止，恢复后再发一次。' if zh else 'Agent J is stopped. Send the message again after resuming it.')
         reason = ' · '.join(w for w in (error, detail) if _word(w)) or 'unknown'
-        return (f'分身没能用 {kind} 回答（原因：{reason}）。在电脑上运行 agentj wechat status 可看详情，{swap}未启用其他付费服务。' if zh else
+        return (f'分身没能用 {kind} 回答（原因：{reason}）。在 Agent J 主机上运行 agentj wechat status 可看详情，{swap}未启用其他付费服务。' if zh else
                 f'The avatar could not answer with {kind} (reason: {reason}). Run agentj wechat status on the computer for details, {swap} No paid fallback was used.')
 
     async def receive(self, api, msg, generation):

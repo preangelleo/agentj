@@ -4410,7 +4410,7 @@ usage: agentj mail [-h] [--address ADDRESS_OPT]
 | `--guest` | `false` | false | — | `allow：访客（不是主人本人，不能批准）/ a guest, not the owner` |
 | `--name` | `null` | false | — | `a label` |
 | `--to` | `null` | false | — | `notes：收件人——邮箱，或通讯录里的名字 / 昵称 / 拼音（可多次；notes 只能是主人写过的地址）/ recipient: address or an address-book name (repeatable; notes: only addresses the owner named)` |
-| `--to-owner` | `false` | false | — | `send 和 notes：发给主人本人（通讯录 0 号位 + 白名单里的「我本人」地址）；和 --to 同时给就两边都发（去重，合计最多 10 个）/ the owner's own addresses (slot 0 + the owner allowlist rows); with --to: both (deduped, 10 at most)` |
+| `--to-owner` | `false` | false | — | `send 和 notes：发给主人本人（通讯录 0 号位 + 白名单里的「主人」地址）；和 --to 同时给就两边都发（去重，合计最多 10 个）/ the owner's own addresses (slot 0 + the owner allowlist rows); with --to: both (deduped, 10 at most)` |
 | `--cc` | `null` | false | — | `send：抄送——同 --to（可多次；白名单 / 手机批准规则每个收件人都算，合计最多 10 个）/ Cc: like --to (repeatable; every recipient counts for the approval rule; 10 in all)` |
 | `--bcc` | `null` | false | — | `Bcc: like --to, hidden from the others` |
 | `--format` | `null` | false | `markdown`, `html`, `text` | `send：正文格式——markdown（默认，排成带格式的邮件）· html（网页原样，.html 文件自动选它）· text（纯文本）/ body format: markdown (default, a formatted mail) · html (the page as is; picked for .html files) · text` |
@@ -5600,7 +5600,7 @@ usage: agentj screen ask [-h] [--page] [--selector CSS] [--tab TEXT]
 | `--from` | `null` | false | — | `来源名（主人自己的脚本用）/ the source name a script shows` |
 | `--wait-s` | `110` | false | — | `最多等几秒（单次 ≤ 170）/ seconds to wait` |
 | `--compact` | `false` | false | — | `one-line JSON` |
-| `--screen` | `false` | false | — | `截整个Agent J 主机屏幕（而不是浏览器页面）/ the whole screen` |
+| `--screen` | `false` | false | — | `截整个 Agent J 主机屏幕（而不是浏览器页面）/ the whole screen` |
 | `--question / -q` | `null` | false | — | `问主人的一句话（≤ 120），如「请扫码」「验证码是什么」/ the question` |
 | `--reply` | `"text"` | false | `text`, `done` | `whether the owner can type an answer` |
 
@@ -6232,14 +6232,15 @@ agentj tasks --help
 ```
 
 ```text
-usage: agentj tasks [-h] [--dry-run] [--json]
-                    {list,show,enable,disable,run} [id]
+usage: agentj tasks [-h] [--all] [--dry-run] [--json]
+                    {list,show,enable,disable,run,migrate,unmigrate} [id]
 ```
 
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `mode` | `null` | true | `list`, `show`, `enable`, `disable`, `run` | `` |
+| `mode` | `null` | true | `list`, `show`, `enable`, `disable`, `run`, `migrate`, `unmigrate` | `` |
+| `--all` | `false` | false | — | `every enabled task` |
 | `id` | `null` | false | — | `` |
 | `--dry-run` | `false` | false | — | `show the plan only` |
 | `--json` | `false` | false | — | `` |
@@ -9469,7 +9470,7 @@ usage: agentj files fetch [-h] path
 ### agentj files prepare
 
 ```text
-主人在Agent J 主机前时准备 Mac 权限
+主人在 Agent J 主机前时准备 Mac 权限
 ```
 
 ```bash
@@ -11336,7 +11337,7 @@ usage: agentj mail [-h] [--address ADDRESS_OPT]
 | `--guest` | `false` | false | — | `allow：访客（不是主人本人，不能批准）/ a guest, not the owner` |
 | `--name` | `null` | false | — | `allow：备注名` |
 | `--to` | `null` | false | — | `send` |
-| `--to-owner` | `false` | false | — | `send 和 notes：发给主人本人（通讯录 0 号位 + 白名单里的「我本人」地址）；和 --to 同时给就两边都发（去重，合计最多 10 个）/ the owner's own addresses (slot 0 + the owner allowlist rows); with --to: both (deduped, 10 at most)` |
+| `--to-owner` | `false` | false | — | `send 和 notes：发给主人本人（通讯录 0 号位 + 白名单里的「主人」地址）；和 --to 同时给就两边都发（去重，合计最多 10 个）/ the owner's own addresses (slot 0 + the owner allowlist rows); with --to: both (deduped, 10 at most)` |
 | `--cc` | `null` | false | — | `send：抄送——同 --to（可多次；白名单 / 手机批准规则每个收件人都算，合计最多 10 个）/ Cc: like --to (repeatable; every recipient counts for the approval rule; 10 in all)` |
 | `--bcc` | `null` | false | — | `send：密送——同 --to，别的收件人看不到` |
 | `--format` | `null` | false | `markdown`, `html`, `text` | `send：正文格式——markdown（默认，排成带格式的邮件）· html（网页原样，.html 文件自动选它）· text（纯文本）/ body format: markdown (default, a formatted mail) · html (the page as is; picked for .html files) · text` |
@@ -12364,7 +12365,7 @@ usage: agentj remote-unbind [-h] [{on,off,status}]
 ### agentj report
 
 ```text
-不带参数：马上向账号后台报一次这台Agent J 主机的状态 · 带动作：模板化发布 templates · schema · example · validate · render [--email] · send · new-template · publish
+不带参数：马上向账号后台报一次这台 Agent J 主机的状态 · 带动作：模板化发布 templates · schema · example · validate · render [--email] · send · new-template · publish
 ```
 
 ```bash
@@ -12526,7 +12527,7 @@ usage: agentj screen ask [-h] [--page] [--selector CSS] [--tab TEXT]
 | `--from` | `null` | false | — | `来源名（主人自己的脚本用）/ the source name a script shows` |
 | `--wait-s` | `110` | false | — | `最多等几秒（单次 ≤ 170）/ seconds to wait` |
 | `--compact` | `false` | false | — | `单行 JSON` |
-| `--screen` | `false` | false | — | `截整个Agent J 主机屏幕（而不是浏览器页面）/ the whole screen` |
+| `--screen` | `false` | false | — | `截整个 Agent J 主机屏幕（而不是浏览器页面）/ the whole screen` |
 | `--question / -q` | `null` | false | — | `问主人的一句话（≤ 120），如「请扫码」「验证码是什么」/ the question` |
 | `--reply` | `"text"` | false | `text`, `done` | `text = 可以回填文字（默认）；done = 只要点完成` |
 
@@ -13150,7 +13151,7 @@ usage: agentj support thread [-h] [--wait WAIT] id
 ### agentj tasks
 
 ```text
-定时任务：list · show · enable · disable · run [--dry-run]
+定时任务：list · show · enable · disable · run [--dry-run] · migrate <id\|--all> · unmigrate <id>
 ```
 
 ```bash
@@ -13158,14 +13159,15 @@ agentj tasks --help
 ```
 
 ```text
-usage: agentj tasks [-h] [--dry-run] [--json]
-                    {list,show,enable,disable,run} [id]
+usage: agentj tasks [-h] [--all] [--dry-run] [--json]
+                    {list,show,enable,disable,run,migrate,unmigrate} [id]
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `mode` | `null` | true | `list`, `show`, `enable`, `disable`, `run` | `` |
+| `mode` | `null` | true | `list`, `show`, `enable`, `disable`, `run`, `migrate`, `unmigrate` | `` |
+| `--all` | `false` | false | — | `migrate：所有已启用的任务` |
 | `id` | `null` | false | — | `` |
 | `--dry-run` | `false` | false | — | `run：只显示会怎么跑，不运行` |
 | `--json` | `false` | false | — | `` |

@@ -241,7 +241,7 @@ def _credential_value(match, replacement: str) -> bool:
 
 SECRET_KINDS = frozenset({"private_key", "url_credentials", "bearer_token", "jwt", "aws_access_key", "github_token",
                           "gitlab_token", "slack_token", "stripe_key", "google_api_key", "anthropic_key", "openrouter_key",
-                          "openai_key", "replicate_token", "huggingface_token", "telegram_bot_token", "agentjarvis_id",
+                          "openai_key", "replicate_token", "huggingface_token", "telegram_bot_token", "agentjarvis_id", "agentj_access_code",
                           "mailgun_key", "authorization_header", "credential_assignment", "labelled_hex", "high_entropy"})
 
 

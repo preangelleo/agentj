@@ -512,3 +512,8 @@ address, lowercased) — no secret, nothing beyond From. A receiver treats a mai
 marker is bare (pre-0.25.19 hosts: indistinguishable from its own older mail), or any X-AgentJ mail has Auto-Submitted other
 than `no` (another host's meeting notes / auto-replies stay skipped). A deliberate `agentj mail send` from another host (`o`
 foreign, no Auto-Submitted) is an ordinary letter: allowlist, sender authentication and de-duplication apply unchanged.
+
+### P570c — system scheduler task controls and setup guides
+`tasks.items[].sys` is `migrated` or `changed` when a task has moved to the system scheduler; absent on unmoved tasks and older hosts. `changed` means its current contract differs and runs refuse until moved again.
+`task_migrate {r,id,tsha,n,ts,sig}` signs the §8 action `task_migrate`, object `id\ntsha`. A paired signed tap follows the page's plain confirmation (chairman exemption: no passkey), is logged in controls.log, and runs off the relay loop. `ctl_pending {r,action:task_migrate,timeout_ms:2200000}` extends this request only; final `ctl_res {r,action,ok,text? ,why?}` carries the result. Bad signature, replay, stale tsha, stop, no scheduler/agent, or another migration in progress refuses. A test failure rolls back. `task_set on:false` on a moved task removes its system timer and keeps it off in Agent J.
+`Src.guide?: wsl | loop` is set only on host-written `sys` notices. It renders one fixed localized signed-say button: ask for WSL systemd setup or convert the loop to a scheduled task. It grants no approval. No arbitrary Markdown reply link on a sys/task/cmd page is activated; old phones simply show the prose instructions.

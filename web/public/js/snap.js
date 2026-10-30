@@ -51,6 +51,7 @@ export function addAsk(m) {
     passkey_required: m.passkey_required === true, fa: typeof m.fa === 'string' ? m.fa : '', fa_ch: typeof m.fa_ch === 'string' ? m.fa_ch : '',
     scope, batch_max: Number.isInteger(m.batch_max) ? m.batch_max : 20, batch_secs: Number.isInteger(m.batch_secs) ? m.batch_secs : 600,
     task: typeof m.task === 'string' ? m.task.slice(0, 80) : '',
+    reason: typeof m.reason === 'string' ? m.reason : null,   // P572: the Agent's reason ("" = none given; absent = an older host)
     allow_offer: m.tool === 'agentj mail send' ? (Array.isArray(m.allow_offer) ? m.allow_offer.filter((a) => typeof a === 'string' && a.length <= 254).slice(0, 10) : [])   // P296
       : preauthOffer(m.allow_offer),   // P539: any other tool may offer ≤ 3 `preauth:<action>` lines (「以后这台遥控器批准的 … 不再问」)
     fa_s: faState(m.fa_s),             // P539: local | borrowed | unknown — does this remote hold the passkey itself
@@ -143,6 +144,9 @@ export const openCount = () => S.order.length;
 
 // ---------------------------------------------------------------- status / meter / models
 export function setStatus(m) {
+  if (S.agent !== (m.agent || null)) {
+    S.meter = null; S.meterAt = 0; S.models = null;
+  }
   const ok = ['none', 'idle', 'working', 'compacting', 'waiting', 'down', 'stopped'];
   S.status = ok.includes(m.s) ? m.s : 'none';
   if (S.status !== 'waiting') S.handledWaiting = false;
@@ -240,7 +244,7 @@ export function toPage(t) {
   const reply = t.reply && typeof t.reply === 'object' ? t.reply : { text: typeof t.reply === 'string' ? t.reply : '' };
   return {
     id: t.id, ts: typeof t.ts === 'number' ? t.ts / 1000 : null,
-    source: { k, dev: typeof src.dev === 'string' ? src.dev : null, name: typeof src.name === 'string' ? src.name.slice(0, 64) : '',
+    source: { k, ...(k === 'sys' && ['wsl', 'loop'].includes(src.guide) ? { guide: src.guide } : {}), dev: typeof src.dev === 'string' ? src.dev : null, name: typeof src.name === 'string' ? src.name.slice(0, 64) : '',
       text: typeof src.text !== 'string' ? '' : k === 'telegram' ? src.text.replace(TG_SOURCE_LINE, '') : src.text, quote: q, att, local: src.local === true, ...(k === 'sys' && typeof src.notice_id === 'string' && /^[A-Za-z0-9_-]{22}$/.test(src.notice_id) ? {notice_id:src.notice_id} : {}), ...(k === 'agent' && ['loop', 'task', 'quota', 'auto', 'hook'].includes(src.via) ? {via: src.via} : {}), ...(k === 'task' && src.via === 'same-owner' ? {via: src.via} : {}),
       ...(k === 'phone' && src.term && typeof src.term === 'object' ? { term: src.term } : {}) },   // P414 (§37.12): a 「!」 line's result (js/bang.js termOf)
     reply: typeof reply.text === 'string' ? dropReplacement(reply.text) : '',

@@ -1,38 +1,10 @@
-"""Compaction preparation (F24, 0.15.2; PROTOCOL §15): a `/compact` never throws away what the main Agent was holding.
+"""Prepare the main owned Agent's handover before compaction (PROTOCOL §15).
+Use the adapter's ordinary turn; shared sessions and scheduled/workflow runs are excluded. Handover stays under the
+working root's private .agentj directory, outside hidden state and customer git. O_NOFOLLOW dir-fd checks, freshness and
+changed metadata/hash verify preparation. Stop aborts; failed preparation can still compact with an honest notice.
+Per-conversation bounded state tracks epochs, reminders and stale meters. Logs contain result classes, not text/paths.
 
-Leo (2026-10-05): "如果用户直接发来一个压缩，没有准备，那这个压缩前我们应该主动先执行一下准备工作". So when `/compact` (the
-phone's menu, typed `/compact`, or a bare 「压缩」 — slash.parse) reaches the main Agent's queue and this conversation is not
-prepared yet, the host first runs one ordinary turn with a host-built instruction: write the handover file, then the real
-compaction runs exactly as before (Claude Code `/compact`, Codex `thread/compact/start`, OpenCode `summarize`). Same code for
-all three harnesses: the preparation is `agent.turn(text)` — the adapter's own normal turn.
-
-Where the handover lives: `<working root>/.agentj/handover/compact.md` (P151: no session id in the name), NOT the state directory. The fenced Agent
-cannot see the state directory (an empty tmpfs, fence.py), while `.agentj/` in its own folder is already ours: 0700 with a
-`.gitignore` of `*` (inbox.py, PROTOCOL §10.4), so a handover never enters the customer's git. The host only stats and hashes
-the file through the same O_NOFOLLOW dir-fd chain the inbox uses — it never follows a link the Agent planted.
-
-Prepared = the handover file was written after the last compaction of this conversation AND within FRESH seconds (an old
-handover would lose everything said since), either by our preparation turn or by the Agent on its own (the user asked for a
-"compact-prepare"). Verification of our own turn: the file exists, is non-empty and its (mtime, size, sha256) changed during
-the turn. Timeout PREP_TIMEOUT, the stop switch / `/stop` abort the whole `/compact` (nothing compacted), a failed or timed
-out preparation still compacts and the card says so in one line.
-
-After a compaction (ours, or Claude Code's own automatic one — compact_boundary outside a command) the next user message
-carries one host line in front: 「（压缩前的交接在 <path>，先读它再继续。）」 — once, and only when the file was written in
-the epoch that just ended. Context reminder: a user turn that starts with the phone's context meter (`ctx`, the water
-level) above REMIND_AT gets one host line appended asking the Agent to say, at the end of its reply, that the context is past
-half — at most once per compaction epoch. Both lines start with 「（Agent J：」 / "(Agent J: " so they read as host notes.
-
-State (`<state>/compactprep.json`, 0600, ≤ KEEP_KEYS conversations): per session key {n: compactions, at: last compaction
-(unix), prep_at, prep_n, note (path due for the next message), rem_n (epoch reminded in), ctx_at (meter `used` right after
-the compaction: a meter that has not moved since is stale, never a reason to remind)}. /clear drops the conversation's
-record (a new conversation starts clean). Metadata only in the log: event names + result classes, never text or paths.
-
-P59 (ADR-A165): `proactive` — Codex compacts by itself inside a turn with no hook before it, so a meter ≥ AUTO_PREP_AT at
-the end of a user turn runs the preparation turn early (once per epoch, reply hidden); its auto-compaction event calls
-`compacted(auto=True)`. The owner's /compact from Telegram arrives through serve.on_slash like the phone's.
-
-Not here: shared sessions (the owner's own harness; nothing is injected there), workflow CEO sessions and scheduled runs.
+Protocol/history detail: agentjarvis/ARCHITECTURE.md, P0261 source notes / compactprep.py.
 """
 from __future__ import annotations
 

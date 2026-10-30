@@ -7,6 +7,7 @@ wrong tries burn the code; a later stranger never becomes the owner; the owner c
 the code reaches only the phone card — never the terminal / Agent answer, host.log or Telegram; notes are one language.
 """
 import _hermetic  # noqa: F401,I001
+import _fixture_disk  # noqa: E402
 import asyncio
 import json
 import os
@@ -116,6 +117,7 @@ class Pairing(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix="p283-", dir=TEST_TMP)
         self.addCleanup(self.tmp.cleanup)
+        self.addAsyncCleanup(_fixture_disk.drain_async_disk, self)
         self.root = pathlib.Path(self.tmp.name) / "st"
         self.bot = FaithfulBot()
         self.addCleanup(self.bot.close)

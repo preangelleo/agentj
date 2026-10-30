@@ -531,7 +531,7 @@ MSG = {
     "unbound": "这台Agent J 主机没有绑定席位 / this Agent J host is not bound to a seat",
     "no_tty": "要在真正的终端里由你本人输入 Agent J 主机的管理员密码，什么都没做 / run this in a real terminal: you type the Agent J "
               "host's administrator password; nothing was done",
-    "no_sudo": "这台电脑没有 sudo，请在遥控器里转移（设置 → Agent 与遥控器）/ no sudo here: transfer from a remote instead",
+    "no_sudo": "这台 Agent J 主机没有 sudo，请在遥控器里转移（设置 → Agent 与遥控器）/ no sudo here: transfer from a remote instead",
     "bad_password": "管理员密码不对，什么都没做 / wrong administrator password; nothing was done",
     "not_found": "账号后台说这台Agent J 主机没有绑定席位 / the account dashboard says this host holds no seat",
     "billing_busy": "账号的账单正在处理，几分钟后再试 / a billing change is in progress: try again in a few minutes",

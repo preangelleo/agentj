@@ -200,7 +200,7 @@ body:is([data-view="mem"],[data-view="act"],[data-view="tasks"],[data-view="mode
 .menuicon:hover{background:var(--menu-chip)}
 .menuicon:active{background:var(--menu-press)}
 .menuicon svg,.menupage .mi,#settings .mi,#settings .chev,.cmdmenu .mi svg{width:var(--ui-icon);height:var(--ui-icon);flex:none}
-:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-btn,.seg button,.setnav,.setside button,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.menulist button,summary):focus-visible{
+:is(.menupage,.cmdsheet,#settings,.ajpages) :is(.menuicon,.aj-btn,.seg button,.setnav,.setside button,.tgl,.setswitch,.setcopy,.setlink,.fontstep>button,.sfxvol>button,.cueplay,.menulist button,summary):focus-visible{
   outline:var(--ui-focus-w) solid var(--menu-accent);outline-offset:var(--ui-focus-gap)}
 kbd.setesc{background:var(--menu-chip);border-color:var(--menu-line);color:var(--menu-muted)}
 
@@ -238,9 +238,9 @@ kbd.setesc{background:var(--menu-chip);border-color:var(--menu-line);color:var(-
 #settings .setcopy:hover,#settings button.setval.setwide:hover{background:var(--menu-chip);border-color:var(--menu-text)}
 #settings .setlinks a,#settings .setlink{color:var(--menu-text)}
 /* filled icon buttons inside rows (text size −/+, mute): the header's icon button with the chip fill */
-#settings .fontstep>button:not(.setlink),#settings .sfxvol>button:not(.setlink){width:var(--ui-icon-btn);height:var(--ui-icon-btn);
+#settings .fontstep>button:not(.setlink),#settings .sfxvol>button:not(.setlink),#settings .cueplay{width:var(--ui-icon-btn);height:var(--ui-icon-btn);
   border-radius:var(--ui-radius-control);background:var(--menu-chip);color:var(--menu-text)}
-#settings .fontstep svg,#settings .sfxvol svg{width:var(--ui-icon);height:var(--ui-icon)}
+#settings .fontstep svg,#settings .sfxvol svg,#settings .cueplay svg{width:var(--ui-icon);height:var(--ui-icon)}
 
 /* ---- pickers and switches ------------------------------------------------------------------------------------------ */
 #settings .seg{border-color:var(--quiet-border);background:transparent}

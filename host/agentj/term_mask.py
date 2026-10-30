@@ -34,7 +34,7 @@ _PEM_PART = re.compile(r"-----BEGIN[A-Z0-9 ]*-{0,4}\Z")
 
 def _owner(text: str) -> str:
     from .privacy import owner_text
-    return owner_text(text)
+    return owner_text(text, mask_access_codes=True)
 
 
 class Masker:

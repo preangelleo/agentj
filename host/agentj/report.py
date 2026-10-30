@@ -29,7 +29,7 @@ PACKAGE = "web-page-report"
 ENGINE = pathlib.Path("scripts") / "web_report.py"
 PASS = ("templates", "schema", "example", "recommend", "validate", "render", "new-template", "publish")
 INSTALL_HINT = {
-    "zh": "这台电脑还没装广场包 web-page-report（≥ 1.3，含模板化发布协议）。问过主人后安装：agentj plaza install web-page-report "
+    "zh": "这台 Agent J 主机还没装广场包 web-page-report（≥ 1.3，含模板化发布协议）。问过主人后安装：agentj plaza install web-page-report "
           "--harness <claude_code|codex|opencode>，装好再运行本命令。",
     "en": "The plaza package web-page-report (≥ 1.3, with the template publishing protocol) is not installed here. With the "
           "owner's OK: agentj plaza install web-page-report --harness <claude_code|codex|opencode>, then run this again.",
@@ -254,7 +254,7 @@ def cmd(a) -> int:
 def add_parser(sub, status_fn=None) -> None:   # the choices below are spelled out (= PASS + send) for the docs checker
     """`agentj report` alone keeps its old meaning — report this computer's status to the account dashboard now (status_fn,
     cli.cmd_report); with an action it is the template publishing protocol (it runs inside the fence: no state migration)."""
-    p = sub.add_parser("report", help="不带参数：马上向账号后台报一次这台电脑的状态 · 带动作：模板化发布 templates · schema · example · validate · "
+    p = sub.add_parser("report", help="不带参数：马上向账号后台报一次这台 Agent J 主机的状态 · 带动作：模板化发布 templates · schema · example · validate · "
                                       "render [--email] · send · new-template · publish / alone: report this computer's status to the account "
                                       "dashboard now · with an action: template publishing (data JSON → schema check → web page or mail)",
                        description="自动化里发报告/邮件：模型只填 JSON，按模板严格校验（不过关报字段路径、退出码 2、不发送），再渲染成网页或邮件安全版。"

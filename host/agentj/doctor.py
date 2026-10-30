@@ -1236,7 +1236,7 @@ def check_local_files(st):
     rows = tcc.get("folders") or {}
     ready = all(rows.get(k) == "readable" for k in ("Downloads", "Desktop", "Documents")) and tcc.get("automation") == "available"
     return _c("local-files", WARN, "上次主机权限检查可读；系统设置可能已变化 / last host check readable; settings may have changed" if ready else
-              "下次在电脑前时点一下文件夹和 Finder 自动化权限；手机授权不会改变 macOS 权限 / next time at the computer, allow folders and Finder Automation",
+              "下次在 Agent J 主机前时点一下文件夹和 Finder 自动化权限；手机授权不会改变 macOS 权限 / next time at the computer, allow folders and Finder Automation",
               "agentj files prepare --at-computer (owner terminal; optional Full Disk Access)")
 
 

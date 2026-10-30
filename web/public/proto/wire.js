@@ -147,7 +147,8 @@ export const CONTROL_ACTIONS = ['heartbeat_write', 'security_begin','security_ve
   'fr_gsay',                                                                // P426 #170 (§17.7): a message in 「我的设备」
   'fr_report_reply', 'fr_report_remark', 'files_write', 'skill_archive', 'skill_restore', 'wechat',   // P426 #181-3 (§39): 「归档」/「恢复」 on the 技能 page
   'seat_transfer', 'seat_transfer_cancel',                                  // P547: Settings → 转移席位 (object {} → "transfer" / "cancel")
-  'forward_set'];                                                           // P554: 转发去向, one host setting for every remote
+  'forward_set',                                                            // P554: 转发去向, one host setting for every remote
+  'task_migrate'];                                                          // P570c: 定时任务 → 重新迁移 (id \n tsha, like task_on)
 /** The text whose SHA-256 a control signature covers (the target, with the content hash the phone saw). */
 export function controlObject(action, o) {
   if (action === 'fr_report_reply') return `${o.resend === true ? 'resend\n' : ''}${o.id}\n${o.text}`;
@@ -184,7 +185,7 @@ export function controlObject(action, o) {
   if (action === 'mem_rm') return `${o.src}\n${o.file}\n${o.fsha}\n${o.iid}`;
   if (action === 'mem_undo') return String(o.id);
   if (action === 'estop' || action === 'resume') return 'all';
-  if (action === 'task_on' || action === 'task_off') return `${o.id}\n${o.tsha}`;
+  if (action === 'task_on' || action === 'task_off' || action === 'task_migrate') return `${o.id}\n${o.tsha}`;
   if (action === 'fr_set') return `${o.friend}\n${o.op}\n${o.value ?? ''}`;
   if (action === 'pg_set') return canonicalJson(o.group);
   if (action === 'pg_del') return String(o.id);

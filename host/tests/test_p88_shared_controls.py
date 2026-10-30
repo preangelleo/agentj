@@ -27,6 +27,7 @@ class Controls(unittest.IsolatedAsyncioTestCase):
         self.host = Mock(); self.host.st.root = self.root
         self.host.st.agent_session.return_value = None
         self.a = shared.SharedClaudeAgent(self.host, {'kind':'claude', 'dir':str(self.root), 'session_mode':'shared','_workflow_ceo':True})
+        self.a.cfg.pop('_workflow_ceo'); self.a.cfg['shared_identity']=False; self.host.agent=self.a
         self.a.session = {'sessionId':OLD,'pid':123,'status':'idle'}
         self.a.read_statusline = Mock()
         self.registry = patch.object(shared, 'claude_sessions', side_effect=lambda d, sid='': [{**self.a.session,'sessionId': sid or OLD}])
@@ -141,6 +142,7 @@ class OpenCodeControls(unittest.IsolatedAsyncioTestCase):
         for cls,base in [(shared.SharedOpenCodeAgent,OpenCodeAgent),(OwnerOpenCodeV2Agent,OpenCodeV2Agent)]:
             host=Mock();host.st.agent_session.return_value='sesOwner'
             a=cls(host,{'kind':'opencode','dir':'/var/tmp/work','session_mode':'shared','_workflow_ceo':True,'high_risk_warnings':False})
+            a.cfg.pop('_workflow_ceo'); host.agent=a
             a.owned_server=False;a.sid='sesOwner';host.reset_mock()
             if hasattr(a,'_initial'):a._initial=AsyncMock(return_value=True)
             with patch.object(base,'command',new=AsyncMock(return_value=Result('已压缩'))) as native,patch.object(a,'context_meter',new=AsyncMock()) as read:

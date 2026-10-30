@@ -13,6 +13,7 @@ from types import MappingProxyType
 LAYERS = ("main", "channel", "friend", "support")
 # Host-only capability to request a card, never to approve or auto-execute.
 COMPANY_PROPOSAL = object()
+HOST_CARD = object()        # P570b: sysmigrate's own card
 
 
 @dataclass(frozen=True)
@@ -104,6 +105,7 @@ HOST_TOOLS = MappingProxyType({
     "agentj config": "settings.write", "agentj goal": "settings.write",
     "agentj goal grant": "settings.write", "agentj quota switch": "settings.write",
     "agentj automation resume": "settings.write", "agentj plaza": "admin",
+    "agentj tasks migrate": "settings.write",   # P570b: sysmigrate's card (P570c: a plain confirm)
     "AgentJSameOwnerAction": "publish",
 })
 
@@ -415,3 +417,10 @@ def export():
 
 if __name__ == "__main__":
     print(json.dumps(export(), ensure_ascii=False, sort_keys=True, indent=2))
+
+
+def harness_tool(tool) -> str:
+    """A harness adapter's tool name; a host card's `agentj …` is never one (P570b L-b)."""
+    from .text import clean_line
+    name = clean_line(str(tool or ""), 64) or "?"
+    return "?" if name.startswith("agentj ") else name

@@ -28,7 +28,7 @@ DARWIN = sys.platform == "darwin"
 PYTHONS = ("/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/Current/bin/python3",
            "/Library/Developer/CommandLineTools/usr/bin/python3")
 NO_PYTHON = ("这台 Mac 上找不到只有管理员能改的系统 python3（命令行开发工具里的那一份），网页终端里的 sudo 不能安全地取用记住的密码。"
-             "在电脑上运行 xcode-select --install 装上命令行开发工具即可。/ No system python3 that only an administrator can "
+             "在 Agent J 主机上运行 xcode-select --install 装上命令行开发工具即可。/ No system python3 that only an administrator can "
              "change (the Command Line Tools one): sudo in the web terminal cannot use the remembered password safely. Run "
              "xcode-select --install at the computer.")
 NOT_ADMIN = ("你的 Mac 账户不是管理员（系统设置 → 用户与群组），不能用 sudo：网页终端要一个用密码的 sudo。/ Your Mac account is not an "

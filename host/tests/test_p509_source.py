@@ -223,10 +223,11 @@ class Consumers(unittest.IsolatedAsyncioTestCase):
     async def test_shared_recovery_revokes_previous_terminal_source(self):
         from unittest.mock import Mock
         from agentj.shared import SharedClaudeAgent
-        a = NS(cur_send=None, native_source=p.terminal(), phone_turn=False, turn_began_at=None,
+        a = SharedClaudeAgent.__new__(SharedClaudeAgent)   # P570b: the recovery marks a host turn (_mark_untrusted)
+        a.__dict__.update(cur_send=None, native_source=p.terminal(), phone_turn=False, turn_began_at=None,
                session={'sessionId': 'owner'}, native_turn=False, state=NS(status='idle'),
                host=NS(stopped=lambda: False, st=Mock(), lang='en', agent_notice=Mock()),
-               _registry_quiet=lambda: True)
+               _registry_quiet=lambda: True, untrusted_state=None, untrusted_at=0.0)
         def delivery(*args):
             self.assertEqual(a.native_source, p.system())
             self.assertTrue(p.untrusted_turn(a))

@@ -10,7 +10,7 @@ import secrets
 HEX = re.compile(r'[0-9a-f]{32}')
 FINAL = {'done', 'released', 'expired', 'cancelled', 'loop', 'hops', 'rate', 'shape', 'blocked'}
 REASONS = {
-    'loop': ('这条转交绕回了原来的电脑，已停止。', 'This request came back to its starting computer and was stopped.'),
+    'loop': ('这条转交绕回了原来的 Agent J 主机，已停止。', 'This request came back to its starting computer and was stopped.'),
     'hops': ('这条请求已转交超过 4 次，已停止。', 'This request was handed on more than 4 times and was stopped.'),
     'rate': ('这位好友发得太快，请等一分钟再试。', 'This friend is sending too quickly. Try again in a minute.'),
     'shape': ('转交信息不完整，已停止，请重新发起。', 'The handover details are incomplete. Start a new request.'),

@@ -183,6 +183,7 @@ class Statusline(unittest.TestCase):
         self.assertIsNone(tap.read(self.home/'st','session-fixture',1000)['ctx'])
         self.assertIsNotNone(tap.read(self.home/'st','session-fixture',999)['ctx'])
         host=Mock();host.st.root=self.home/'st';a=shared.SharedClaudeAgent(host,{'kind':'claude','dir':str(self.home),'_workflow_ceo':True})
+        a.cfg.pop('_workflow_ceo'); a.cfg['shared_identity']=False; host.agent=a
         a.session={'sessionId':'session-fixture'};a.read_statusline();self.assertEqual(host.meter_update.call_args.kwargs['model_name'],'Opus 4.6')
         file.write_text(json.dumps({'session_id':'wrong','model':'wrong'}));self.assertIsNone(tap.read(self.home/'st','session-fixture')['model'])
         tap.set_enabled(False,self.home/'st');self.assertIsNone(tap.read(self.home/'st','session-fixture')['source_at'])

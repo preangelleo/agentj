@@ -20,3 +20,9 @@
 
 /* P505/P501: an unsupported, hidden English WeChat row must not add a Telegram divider or shift the next card. */
 .setcard:has(>#set-wechat-row[hidden])>.setrow:has(#set-tgpair){border-bottom:0}
+
+/* P579: internal links are prose, including their visible label in native selection/copy. */
+:is(#words,#rdWords,.fp-prose) .fp-link,
+:is(#words,#rdWords,.fp-prose) .fp-link *{
+  user-select:text;-webkit-user-select:text;-webkit-touch-callout:default;
+}

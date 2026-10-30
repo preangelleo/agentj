@@ -115,8 +115,9 @@ class FakeIMAP:
                                 w(tag.encode() + b" OK done\r\n")
                         elif sub == "STORE":
                             u, _, rest2 = a2.partition(" ")
-                            if "\\Deleted" in rest2:
-                                fake.flags.setdefault(int(u), set()).add("\\Deleted")
+                            for flag in ("\\Deleted", "\\Seen"):
+                                if flag in rest2:
+                                    fake.flags.setdefault(int(u), set()).add(flag)
                             w(tag.encode() + b" OK done\r\n")
                         elif sub == "EXPUNGE":
                             gone = {int(x) for x in a2.split(",") if x.isdigit() and "\\Deleted" in fake.flags.get(int(x), set())}

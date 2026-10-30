@@ -19,13 +19,14 @@ const CAT = {models: [{id: 'opus', name: 'Opus 5.5', efforts: ['low', 'medium', 
 function ctx({result = {ok: true}} = {}){
   let now = 0, seq = 0;
   const timers = new Map();
-  const calls = {model: [], toasts: []};
+  const calls = {model: [], toasts: [], actions: []};
   const node = () => ({textContent: '', dataset: {}, hidden: false, classList: {contains: () => false}});
   const nodes = {};
   const c = vm.createContext({
     cur: {status: 'idle', usage: {model: 'Opus 5.5', model_id: 'opus', effort: 'medium'}, switch: CAT},
     C: {connected: () => true, api: {slash: () => true, model: async (w) => { calls.model.push(w); return typeof result === 'function' ? result(w) : result; }}},
     t: (k) => k, toast: (k) => calls.toasts.push(k), toastOff(){}, lang: () => 'zh', hostId: () => 'h',
+    toastAction: (text, label, fn, ms) => { calls.toasts.push(text); calls.actions.push({text, label, fn, ms}); },
     el: (id) => (nodes[id] ||= node()), SharedNotice: class { update(){} },
     setTimeout: (f, ms) => { const id = ++seq; timers.set(id, {f, at: now + ms}); return id; },
     clearTimeout: (id) => timers.delete(id),
@@ -111,8 +112,9 @@ test('P239 halves are independent: model commits at its own 5 s, the waiting eff
   assert.equal(x.calls.model.length, 2);
 });
 
-test('P239 a refusal puts the label back and says one sentence', async () => {
-  const x = ctx({result: {ok: false, why: 'busy'}});
+test('P239 a refusal puts the label back and offers an exact-request retry', async () => {
+  let attempts = 0;
+  const x = ctx({result: () => ++attempts === 1 ? {ok: false, why: 'busy'} : {ok: true}});
   x.run('pillStep("model")');
   assert.equal(x.label(), 'Sonnet 5.5 · medium');
   await x.advance(5000);
@@ -120,6 +122,20 @@ test('P239 a refusal puts the label back and says one sentence', async () => {
   assert.equal(x.label(), 'Opus 5.5 · medium', 'rolled back to what runs');
   assert.deepEqual(x.calls.toasts, ['r.pill.fail']);
   assert.equal(x.nodes.meta.dataset.sw, undefined);
+  assert.equal(x.calls.actions.length, 1, 'a refusal exposes one actionable recovery');
+  const action = x.calls.actions[0];
+  assert.equal(action.label, 'p579.retryModel');
+  assert.equal(typeof action.fn, 'function');
+  assert.equal(action.ms, 10000, 'the recovery stays long enough to tap');
+  action.fn();
+  await x.advance(0);
+  assert.equal(x.calls.model.length, 2, 'actually invoking recovery sends a second model request');
+  assert.equal(JSON.stringify(x.calls.model[1]), JSON.stringify(x.calls.model[0]), 'retry preserves the refused model and effort');
+  assert.equal(x.nodes.meta.dataset.sw, 'pending', 'successful retry waits for measured state');
+  x.meter('sonnet', 'medium');
+  assert.equal(x.label(), 'Sonnet 5.5 · medium', 'successful retry settles from the measured model');
+  assert.equal(x.nodes.meta.dataset.sw, undefined);
+  assert.deepEqual(x.calls.toasts, ['r.pill.fail'], 'successful retry adds no second failure notice');
 });
 
 test('P239 hold = the default at once and drops a waiting tap', async () => {

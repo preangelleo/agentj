@@ -1,0 +1,9 @@
+extract_code() {
+  perl -CSD -0777 -ne '
+    tr/\x{2010}-\x{2015}\x{2212}\x{FE58}\x{FE63}\x{FF0D}\x{30FC}/-/;
+    tr/\x{FF21}-\x{FF3A}\x{FF41}-\x{FF5A}\x{FF10}-\x{FF19}/A-Za-z0-9/;
+    (my $t = $_) =~ s/\s+//g;
+    for my $x ($_, $t) { if ($x =~ /AJI-([0-9a-f]{32})(?![0-9a-f])/i) { print "AJI-" . lc($1); exit 0 } }
+    print "ajt" if /aj[th]_[A-Za-z0-9_-]{43}/;'
+}
+  ajt) die "你粘贴的是 ajt_ / ajh_ 开头的设置码，不是安装码 / You pasted a setup code starting with ajt_ / ajh_, not an installation code" "在账户页点「复制安装码」，粘贴 AJI- 开头的那串 / Paste the AJI- installation code" 2 ;;

@@ -1,39 +1,10 @@
-"""Plaza permission declarations (P426 #181-1): what a skill / workflow says it needs, compared with what this computer's Agent
-is already allowed to do. A declared set that is not a subset of the allowed set is a permission escalation (Agentic Skills
-survey, arxiv 2608.29596): the install stops and the owner decides on the phone, with a signed approval card.
+"""Plaza permission declarations, content inference and signed escalation approvals (P426 #181-1).
+Effective permissions are declared union inferred; omission cannot bypass a card. Unknown manifest fields are refused.
+Read-only native permission sources define the allowed set; secrets require approval unless already under full access.
+Only a paired signed owner decision accepts extra permissions or a publisher change; no serve means refusal. Stored
+grants permit only later versions' already-approved scope. Publisher fingerprints remain bound to the same card.
 
-Manifest (`permissions`, optional; CATALOG_FORMAT addition, checked by bundle.py / dashboard bundle.ts):
-    {"tools": ["Bash", "Write", "WebFetch", …],   ≤ 40 tool names ^[A-Za-z][A-Za-z0-9_]{0,63}$ (the harness's tool names)
-     "network": bool,                             it reaches the internet
-     "exec": bool,                                it runs programs / scripts (its own scripts/, bin/ … included)
-     "secrets": ["OPENAI_API_KEY", …]}            ≤ 60 environment variable names it reads as secrets
-Unknown keys are refused. A package without `permissions` gets one inferred from its content (infer()): exec when it carries
-scripts/ cli/ tools/ bin/ or script files or an install.verify; network when its code talks to the internet or its docs use
-curl / wget / WebFetch; tools from SKILL.md `allowed-tools:` and role files' `tools:` (+ Bash with exec); secrets from
-requires.env entries marked secret. `agentj plaza publish` shows the inferred set and publishes it inside the manifest (the
-owner's yes to the preview is the author's confirmation); `install` of an old package without a declaration uses the inference.
-A declaration never lowers what the content shows (security review S1): install compares declared ∪ inferred (effective());
-when the declaration leaves out something the content shows, the preview and the card say 「包声明的少于实际内容」 and the left-out
-items are asked like any other — writing `"permissions": {}` does not skip the card.
-
-Allowed set (allowed()), the authoritative source per harness, read-only:
-  claude_code  ~/.claude/settings.json + settings.local.json: permissions.defaultMode "bypassPermissions" → everything;
-               else the bare tool names in permissions.allow (a rule with arguments, e.g. "Bash(git:*)", allows only part of
-               the tool, so it does not count); exec = Bash allowed; network = WebFetch allowed (or Bash).
-  codex        ~/.codex/config.toml: sandbox_mode "danger-full-access" with approval_policy "never" → everything;
-               "workspace-write" → its tools + exec, network only with sandbox_workspace_write.network_access = true.
-  opencode     no readable source → nothing counts as allowed (every declared item asks).
-Read-only tools Claude Code itself never asks for (Read, Glob, Grep, LS, NotebookRead, TodoWrite) are always allowed. Secrets
-are never "already allowed" except under full access: the first install of a package that reads a secret asks.
-What the owner approved is recorded in installed.json (`permissions`, `perm_grant`); a later version asks again only for
-what it adds.
-
-The card: `agentj plaza install --owner-confirmed` asks serve over the control socket (`{"cmd": "plaza_perm"}`); serve raises a
-normal approval card (tool "agentj plaza" — a host card, never auto-allowed by any approval level, and in goal.SOFT_EXEMPT so a
-running goal never auto-approves it either) listing every extra item in plain words, and only an allow signed by a paired
-device counts. The same card carries a publisher change (market_guard TOFU, security review N4): the old and the new
-publisher fingerprint (or 「未签名」) are listed and the owner's signed allow is the only way to accept a new publisher. Without serve (a plain CLI, cron) the install is refused
-and says how to approve it from the phone. Standard library only.
+Protocol/history detail: agentjarvis/ARCHITECTURE.md, P0261 source notes / plaza_perms.py.
 """
 from __future__ import annotations
 
@@ -232,10 +203,10 @@ def merge(*sets) -> dict:
 
 
 _TOOL_WORDS = {
-    "Bash": ("运行命令行（Bash）：能在你的电脑上执行任何命令", "run shell commands (Bash): can run any command on your computer"),
-    "Write": ("新建或覆盖你电脑上的文件（Write）", "create or overwrite files on your computer (Write)"),
-    "Edit": ("修改你电脑上的文件（Edit）", "change files on your computer (Edit)"),
-    "MultiEdit": ("修改你电脑上的文件（MultiEdit）", "change files on your computer (MultiEdit)"),
+    "Bash": ("运行命令行（Bash）：能在你的 Agent J 主机上执行任何命令", "run shell commands (Bash): can run any command on your computer"),
+    "Write": ("新建或覆盖你的 Agent J 主机上的文件（Write）", "create or overwrite files on your computer (Write)"),
+    "Edit": ("修改你的 Agent J 主机上的文件（Edit）", "change files on your computer (Edit)"),
+    "MultiEdit": ("修改你的 Agent J 主机上的文件（MultiEdit）", "change files on your computer (MultiEdit)"),
     "NotebookEdit": ("修改笔记本文件（NotebookEdit）", "change notebook files (NotebookEdit)"),
     "WebFetch": ("打开网页、读取网上的内容（WebFetch）", "open web pages and read them (WebFetch)"),
     "WebSearch": ("上网搜索（WebSearch）", "search the web (WebSearch)"),
@@ -291,7 +262,7 @@ def card_text(name: str, version: str, items: list[dict], en: bool, under: bool 
         out += (["⚠ THE PUBLISHER CHANGED — this computer saw another publisher for this package name before. A new computer of "
                  "the author, or someone else using the name.", f"old: {_fp_text(publisher.get('prev'), True)}",
                  f"new: {_fp_text(publisher.get('new'), True)}"] if en else
-                ["⚠ 发布方换了：这台电脑以前见到这个包名时是别的发布方。可能是作者换了电脑，也可能是别人冒名。",
+                ["⚠ 发布方换了：这台 Agent J 主机以前见到这个包名时是别的发布方。可能是作者换了电脑，也可能是别人冒名。",
                  f"旧指纹：{_fp_text(publisher.get('prev'), False)}", f"新指纹：{_fp_text(publisher.get('new'), False)}"])
     if items:
         out.append("Beyond what your Agent may do now:" if en else "超出你现在允许 Agent 做的：")

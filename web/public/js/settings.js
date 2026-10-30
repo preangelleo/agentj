@@ -16,6 +16,7 @@ import { el, noticeSheet, notify, confirmSheet, toast, toastAction } from './ui.
 import { ask1, isReady, peer, sendApp } from './session.js';
 import * as push from './push.js';
 import * as sfx from './sfx.js';
+import * as cues from './cues.js';   // P575: one switch per state / all-done sound (phone-local)
 import * as shotclip from './shotclip.js';
 import * as remotes from './remotes.js';
 import * as mail from './mail.js';
@@ -109,6 +110,9 @@ function renderSfx() {
   el('set-sfx-val').textContent = v ? v + '%' : t('set.sfxOff');
   el('set-sfx-mute').setAttribute('aria-pressed', String(v === 0));
   el('set-sfx-test').disabled = v === 0;
+  // P575: every sound shares this one volume — at 0 % the per-sound 试听 has nothing to play
+  for (const b of document.querySelectorAll('#settings [data-cue-play]')) b.disabled = v === 0;
+  for (const id of cues.CUE_IDS) tgl('set-cue-' + id, cues.enabled(id));
 }
 function setSfx(v, hear) {
   const now = sfx.setVolume(v);
@@ -753,6 +757,14 @@ export function configure(hooks) {
   el('set-sfx').addEventListener('change', () => setSfx(el('set-sfx').value, true));   // let go = hear it once
   el('set-sfx-mute').addEventListener('click', () => setSfx(sfx.volume() ? 0 : sfx.lastLevel(), true));
   el('set-sfx-test').addEventListener('click', () => sfx.preview());
+  for (const id of cues.CUE_IDS) {
+    el('set-cue-' + id).addEventListener('click', () => {
+      const on = cues.setEnabled(id, el('set-cue-' + id).getAttribute('aria-checked') !== 'true');
+      tgl('set-cue-' + id, on);
+      if (on) sfx.previewCue(id);                         // switched on: hear what it is once
+    });
+  }
+  for (const b of document.querySelectorAll('#settings [data-cue-play]')) b.addEventListener('click', () => sfx.previewCue(b.dataset.cuePlay));
   el('set-shot').addEventListener('click', async () => {
     const on = await shotclip.setEnabled(el('set-shot').getAttribute('aria-checked') !== 'true');
     tgl('set-shot', on);

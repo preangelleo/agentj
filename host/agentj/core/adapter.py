@@ -73,7 +73,7 @@ class CoreAgent(Agent):
         try:
             tb = await asyncio.to_thread(self._toolbox)
         except RuntimeError as e:
-            self.local_fail(f"{LABEL} 的隔离没有起来（{e}），这条没有执行。在电脑上运行 agentj doctor 查看。")
+            self.local_fail(f"{LABEL} 的隔离没有起来（{e}），这条没有执行。在 Agent J 主机上运行 agentj doctor 查看。")
             return
         from .loop import Loop, SubAgents
         from .pipeline import Gate

@@ -38,6 +38,7 @@ import { paintPk, preauthShown, preauthLabelKey, mergeDraft, failKey, scrollToPk
 import { t, lang, onLang, fillText, both } from './t.js';
 import { el, toast, executionToast, toastOff, toastAction, human, stamp, mmss, confirmSheet } from './ui.js';
 import * as sfx from './sfx.js';
+import { createCues } from './cues.js';   // P575 (#390): the page colour's sound + 全部完成
 import * as sendvol from './sendvol.js';   // P154 追加 12: hold the grey Send → the send-sound slider
 import * as shotclip from './shotclip.js';
 import * as attkeys from './attkeys.js';   // P398 (#156): the same content twice in the tray → once
@@ -428,7 +429,10 @@ function renderCard(s){
   el("sheet").hidden = document.body.dataset.sheet !== "1";
   // P551: which card the sheet shows — a new one (or the result after it) is a new confirmation for ontop.js: on top, focused
   const shows = document.body.dataset.sheet !== "1" ? "" : pending ? cardKey(card) : result ? "q|" + a.id : presult ? "p|" + p.id : "";
-  if (el("sheet").dataset.card !== shows) el("sheet").dataset.card = shows;
+  if (el("sheet").dataset.card !== shows){
+    el("sheet").dataset.card = shows;
+    if (pending && !folded && shows) cueBox.popup(card.kind === "question" ? "question" : "waiting");   // P575: the card pops up with its sound
+  }
   el("pendTag").hidden = !folded || (!!apprOpt && apprOpt.key === foldedCard);   // P154: a card answered here leaves no tag
   el("apprBtns").hidden = true; el("apprBatch").hidden = true; el("apprGoalAdd").hidden = true;
   el("goalInfo").hidden = true; el("cmdToggle").hidden = true;   // P339: only a goal card in plain words shows them
@@ -436,7 +440,7 @@ function renderCard(s){
   el("frAsk").hidden = true;
   if (result){
     el("askText").textContent = t('r.ask.answer');
-    el("cmdBox").hidden = true; el("qs").hidden = false; el("why").hidden = true; el("cmdCopy").hidden = true;
+    el("cmdBox").hidden = true; el("qs").hidden = false; el("why").hidden = true; el("cmdReason").hidden = true; el("cmdCopy").hidden = true;
     renderQuestion(null, a);
     return;
   }
@@ -448,7 +452,7 @@ function renderCard(s){
   el("cmdBox").hidden = q; el("qs").hidden = !q; el("cmdCopy").hidden = true;
   if (q){
     renderQuestion(card, a && !ASK_FINAL.includes(a.state) ? a : null);
-    el("why").hidden = true;
+    el("why").hidden = true; el("cmdReason").hidden = true;
   } else renderPermission(card, p && p.state === "open" ? p : null);
 }
 
@@ -481,7 +485,7 @@ function renderPermission(card, p){
   if (friendAsk(p)){
     el("sheet").classList.toggle("danger", !!(p.pq && p.pq.high_risk));
     el("sheet").classList.toggle("friend-neutral", !(p.pq && p.pq.high_risk));                                    // §17.7: friends.js draws the card into #frAsk; relay keeps the sheet
-    for (const id of ["cmdBox", "cmdCopy", "why", "qs", "askCancel", "askSend", "apprBtns", "apprBatch", "apprGoalAdd", "goalInfo", "cmdToggle", "askState"]) el(id).hidden = true;
+    for (const id of ["cmdBox", "cmdCopy", "why", "cmdReason", "qs", "askCancel", "askSend", "apprBtns", "apprBatch", "apprGoalAdd", "goalInfo", "cmdToggle", "askState"]) el(id).hidden = true;
     el("frAsk").hidden = false;
     renderFriendAsk(p, {open: apprState(p) === "open", sign: C.canSign(), repaint: () => { if (cur) renderCard(cur); },
       dismiss: () => { apprDismissed = p.id; if (cur && cur.card) foldedCard = cardKey(cur.card); if (cur) renderCard(cur); }});
@@ -513,10 +517,23 @@ function renderPermission(card, p){
   }
   el("tool").textContent = handoffAsk ? t("wc.title") : pairAsk || (p && p.passkey_required) ? "Agent J" : tool;
   const {main} = summarize(p ? p.summary : card.summary);
-  el("cmd").classList.toggle("sandbox", !!(p && (p.passkey_required || pairAsk || handoffAsk)));
-  paintCmd(p && (p.passkey_required || pairAsk || handoffAsk) ? p.summary : main, !(p && (p.passkey_required || pairAsk || handoffAsk)), cardKey(card), tool);
+  const whole = !!(p && (p.passkey_required || pairAsk || handoffAsk));
+  // P572: a card whose host sent `reason` (an action card) shows it above the buttons; its code block folds (a Touch ID card
+  // to half its old height, 展开全部 opens it) and the code's own gist line steps aside. No `reason` = an older host: as before.
+  const reason = p && typeof p.reason === "string" && !human && !pairAsk && !handoffAsk ? signedReason(p.reason, p.summary) : null;
+  el("cmd").classList.toggle("sandbox", whole);
+  el("cmd").classList.toggle("half", whole && reason !== null);
+  paintCmd(whole ? p.summary : main, !whole || reason !== null, cardKey(card), tool, reason !== null);
   const why = p && p.why ? t('ask.why', {why: askWhy(p)}) : "";
   el("why").textContent = why; el("why").hidden = !why;
+  el("cmdReason").textContent = reason === null ? "" : t('p572.label') + " " + (reason.length > 400 ? t('p572.longReason') : reason || t('p572.noReason'));
+  el("cmdReason").hidden = reason === null;
+  // A dense reason below the character limit can still push approval off a narrow screen. Keep its full signed text
+  // in the expandable command, and replace the entire reason line when it would occupy more than three lines.
+  const reasonLine = el("cmdReason"), lineHeight = parseFloat(getComputedStyle(reasonLine).lineHeight);
+  if (reason && reasonLine.getBoundingClientRect().height > lineHeight * 3 + 1)
+    reasonLine.textContent = t('p572.label') + " " + t('p572.longReason');
+  el("cmdReason").classList.toggle("none", reason === "");
   const st = apprState(p), open = st === "open";
   const sign = C.canSign();
   paintMailAllow(p, open && sign);
@@ -608,10 +625,33 @@ function paintMailAllow(p, live){
   box.hidden = false;
 }
 // P154: a long command used to push 长按批准 below the fold. It now shows 2 lines (the sandbox explanation stays whole);
+// Same signed note parser and key priority as action_policy.reason(); the first digest closes the block.
+export function signedReason(reason, summary){
+  const r = typeof reason === "string" ? reason.trim() : "";
+  if (!r || typeof summary !== "string") return "";
+  for (const label of ["Agent note:", "Agent \u9644\u6ce8\uff1a"]){
+    const at = summary.indexOf("\n" + label + "\n");
+    if (at < 0) continue;
+    const start = at + label.length + 2, end = summary.indexOf("\nRequest SHA-256: ");
+    if (end < start) continue;
+    const raw = summary.slice(start, end);
+    // raw_decode starts exactly at the JSON object and ends exactly before the digest (no padding).
+    if (!raw.startsWith("{") || !raw.endsWith("}")) continue;
+    let note;
+    try { note = JSON.parse(raw); } catch { continue; }
+    if (!note || Array.isArray(note) || typeof note !== "object") continue;
+    for (const key of ["description", "summary", "card"]){
+      if (typeof note[key] === "string" && note[key].trim()) return note[key].trim() === r ? r : "";
+    }
+    return "";
+  }
+  return "";
+}
+
 // 展开全部 / 收起 (beside the tool tag) appears only when there is more, and the copy icon (the reply bar's, at the right of
 // the title 「运行一条命令」) copies the whole command — to read it, paste it elsewhere.
 let cmdOpenKey = null, cmdFull = "";
-function paintCmd(text, fold, key, tool){
+function paintCmd(text, fold, key, tool, plain = false){
   const pre = el("cmd");
   // A Bash summary is "<command>\n— <description>" (host agent.summarize): the description is the line people can read,
   // so it stands above the folded command; the copy icon takes the command alone.
@@ -619,7 +659,7 @@ function paintCmd(text, fold, key, tool){
   const cut = fold && tool === "Bash" ? body.lastIndexOf("\n— ") : -1;
   if (cut > 0){ desc = body.slice(cut + 3).trim(); body = body.slice(0, cut); }
   const gist = !desc && fold && tool === "Bash" ? cmdGist(body) : "";   // P341 (#19): no description → a plain line of what it does
-  el("cmdDesc").textContent = desc || gist; el("cmdDesc").hidden = !(desc || gist);
+  el("cmdDesc").textContent = desc || gist; el("cmdDesc").hidden = plain || !(desc || gist);   // P572: the reason line says it
   el("cmdDesc").classList.toggle("gist", !!gist);
   cmdFull = body;
   if (pre.textContent !== cmdFull) pre.textContent = cmdFull;
@@ -861,6 +901,13 @@ function meterToast(e){
   openUsage({source: !!u.source, windows, ctx, ctxText, age: u.age_s != null ? u.age_s : null}, e && e.currentTarget);
 }
 
+// P575 (#390): a change of the page colour plays its sound, the end of all work plays 全部完成 (js/cues.js: settle, merge,
+// no repeat within 2 s; js/sfx.js: the one volume, one sound at a time). Fed by render (status / kind), setConn (grey) and
+// app.js's busy message (cueTasks); a newly popped approval / question card says its colour too (renderCard).
+const cueBox = createCues({ play: (id, started) => sfx.playCue(id, false, started), visible: () => document.visibilityState === "visible" });
+/** app.js: the 在办 count after each busy message (busy.currentCounts().task_count). */
+export function cueTasks(n){ cueBox.set({tasks: Number.isInteger(n) && n > 0 ? n : 0}); }
+export const _cues = () => cueBox._debug();
 /** The single entry: a snapshot from snap.js (relay's render(s)). */
 export function render(s){
   if (!C) return;
@@ -872,6 +919,7 @@ export function render(s){
   kindSeen(s.agentKind);   // P412 (#175)
   if (st === "waiting" && s.kind) document.body.dataset.kind = s.kind;
   else delete document.body.dataset.kind;
+  cueBox.set({status: st, kind: st === "waiting" ? s.kind || null : null});
   paintChrome();
   el("capText").textContent = document.body.dataset.conn !== "on" ? el("capText").textContent
     : st === "waiting" ? t('r.capt.' + (s.kind || 'permission')) : t('r.capt.' + (["working", "idle"].includes(st) ? st : "unknown"));
@@ -1024,7 +1072,8 @@ async function pillSend(pick){
   const r = await C.api.model(pick.isDefault ? {default: true} : {model: pick.model, effort: pick.effort});
   if (r.ok && r.superseded){ if (pill.want === want && !pillWaiting()) pillDrop(); return; }   // another remote's later pick won
   if (!r.ok){
-    toast(t('r.pill.fail', {why: t('r.pill.why.' + (["unknown_model", "unknown_effort", "busy", "unsupported", "stopped", "offline", "timeout", "unconfirmed", "blocked", "failed"].includes(r.why) ? r.why : "other"))}), 2600);
+    const why = t('r.pill.why.' + (["unknown_model", "unknown_effort", "busy", "unsupported", "stopped", "offline", "timeout", "unconfirmed", "blocked", "failed"].includes(r.why) ? r.why : "other"), {model: cur?.usage?.model || '—'});
+    toastAction(t('r.pill.fail', {why}), t('p579.retryModel'), () => { pill.want = pick; pillSend(pick); }, 10000);
     pillDrop(); return;                                            // the label goes back to what the Agent runs
   }
   if (pick.model) pill.sent = {model: pick.model, effort: pick.effort || null};   // the default too, when the catalogue names it
@@ -1961,7 +2010,7 @@ function wordsSelection(){
   const s = document.getSelection ? document.getSelection() : null;
   if (!s || !s.rangeCount || s.isCollapsed) return null;
   const w = rdOpen() ? el("rdWords") : el("words");     // P286: selecting in the full-screen reader quotes too
-  const inside = n => { const e = n && (n.nodeType === 1 ? n : n.parentElement); return !!e && w.contains(e) && !e.closest("button"); };
+  const inside = n => { const e = n && (n.nodeType === 1 ? n : n.parentElement); return !!e && w.contains(e) && (!e.closest("button") || !!e.closest("button.fp-link")); };
   if (!inside(s.anchorNode) || !inside(s.focusNode)) return null;
   const tx = s.toString().trim();
   return tx ? tx.slice(0, EXCERPT_MAX) : null;
@@ -2359,6 +2408,7 @@ export function setConn(on, text){
   if (!C) return;
   const was = document.body.dataset.conn === "on";
   document.body.dataset.conn = on ? "on" : "off";
+  cueBox.set({conn: !!on});
   if (!on){
     historyGeneration++; historySync = true;
     el("capText").textContent = text || "";

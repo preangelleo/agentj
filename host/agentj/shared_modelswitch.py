@@ -1,17 +1,7 @@
-"""Shared Claude model / effort for THIS session only, through the native `/model` picker (P116, B5; Relay ADR-035).
+"""Shared Claude model/effort: read native picker rows, verify cursor, press session-only `s`.
 
-Why the picker: in Claude Code `/model <name>` and `/effort <level>` save the pick as the default for new sessions (a
-settings write). The interactive picker changes model AND effort for the current session only (`s` = "use this session
-only"). This module drives it through Herdr on the exact pane of the served session, reading the screen after every step
-and never sending a key it has not just verified the screen for.
-
-Red lines, checked in this order (same as Relay's modelswitch):
-  * only a quiet pane (Herdr idle / done) — `busy` otherwise;
-  * nothing on screen may look like a permission / question box — `blocked` (an Enter there would answer it);
-  * the prompt line must be empty — the owner's draft is never typed into: `busy`;
-  * the only text sent is the literal "/model"; everything else is a fixed key (up, down, right, s, enter, esc);
-  * the one dialog answered is Claude Code's own "Switch model?" / "Change effort level?" warning our switch raised.
-Truth is not what we typed: success is claimed only when the session's own status line reports the target (shared.py).
+Never writes settings or types model IDs. Refuse busy/blocked panes, permission dialogs and nonempty drafts.
+Only our own model-switch warning may be confirmed. Success requires the session status-line receipt (shared.py).
 """
 from __future__ import annotations
 import re
@@ -19,11 +9,7 @@ import time
 
 from .shared_interrupt import herdr_bin, locate, _run, _QUIET, _BLOCKED
 
-# Picker rows are built by Claude Code from the account's list and change between versions (2.1.280: "Opus", "Fable",
-# "Opus (1M context)"; 2.1.289, probed by P116: "Opus 5.5", "Fable 5.1", "Sonnet 5.5" … with a scrolling list). So a model
-# id is the slug of a row label (or of the status line's display name: the same text), rows are learned from the picker
-# itself, and a row the picker does not show fails honestly (`row_missing`) — never guessed.
-# Before any picker was seen, the 2.1.280 rows Relay verified are offered (LEGACY).
+# Compatibility aliases only; phone choices come from observed native rows (P579).
 LEGACY = ("Opus (1M context)", "Sonnet", "Fable", "Opus", "Haiku")
 FAMILIES = ("opus", "sonnet", "fable", "haiku")
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9.-]{0,63}$")
@@ -51,7 +37,7 @@ def key_of(display_name):
     """Model id for a status-line display name ("Opus 5.5 (1M context)" → "opus-5.5-1m-context"), or None."""
     if not isinstance(display_name, str) or not display_name.strip():
         return None
-    return slug(display_name) or None
+    return slug(re.sub(r"\s*\(default\)\s*$", "", display_name, flags=re.I)) or None
 
 
 def valid_id(model):
@@ -144,7 +130,9 @@ def row_name(label, desc=""):
     fam = label.split()[0].lower() if label.split() else ""
     if re.search(r"\d", re.sub(r"\(.*?\)", "", label)) or fam != v.group(1).lower():   # "(1M context)" is no version
         return label
-    rest = label[len(label.split()[0]):].strip()        # "(1M context)" stays with its row
+    rest = label[len(label.split()[0]):].strip()        # context belongs to the model, including description-only rows
+    if not rest and re.search(r"\b1M\s+context\b", desc, re.I):
+        rest = "(1M context)"
     return full + (" " + rest if rest else "")
 
 
@@ -280,8 +268,6 @@ def apply(session, model, effort, sleep=time.sleep):
             why = _pick(binary, pane, default_index, None, sleep, seen, picked)
             if why is None:
                 why = _pick(binary, pane, lambda t: row_index(t, model), effort, sleep, seen, picked)
-                if why == "row_missing":
-                    why = None if effort is None else _pick(binary, pane, default_index, effort, sleep, seen, picked)
     # P538: which versioned row was actually chosen ("Opus" → "Opus 5.5"), so the receipt is checked against it exactly.
     return {"result": SENT if why is None else FAILED, "why": why, "rows": seen or None,
             "picked": key_of(picked[-1]) if picked and not picked[-1].startswith("Default") else None}

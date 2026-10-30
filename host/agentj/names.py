@@ -30,14 +30,14 @@ class ServeBusy(Exception):
 def transport_failure(code: str) -> dict:
     """Fixed diagnostics only: never echo exception paths, requests or credentials."""
     detail = ("隔离层或文件权限阻止连接主机；请在已配对遥控器「设置 → 沟通渠道 → 邮件通道」设置授权码，"
-              "其它操作请在电脑终端重试（agentj service status）。 / The sandbox or file permissions blocked the host connection. "
+              "其它操作请在 Agent J 主机终端重试（agentj service status）。 / The sandbox or file permissions blocked the host connection. "
               "Set the app password on the paired remote in Settings → Channels → E-mail; retry other operations in the computer terminal (agentj service status).") if code == 'sandbox_blocked' else (
-              "主机通道没有响应，无法确认操作结果；请在电脑终端运行 agentj service status，再按提示处理。 / "
+              "主机通道没有响应，无法确认操作结果；请在 Agent J 主机终端运行 agentj service status，再按提示处理。 / "
               "The host channel did not answer; the operation outcome is unknown. Run agentj service status in the computer terminal and follow its instructions.")
     return {'ok': False, 'error': code, 'detail': detail}
 
 
-def ctl_call(st, req: dict, timeout: float | None = None, max_bytes: int = 64 * 1024) -> dict | None:
+def ctl_call(st, req: dict, timeout: float | None = None, max_bytes: int = 64 * 1024, progress=None) -> dict | None:
     """One request/answer on serve's control socket. None only when serve is certainly not running (no socket file, or
     connection refused); raises ServeBusy when it is there but does not answer in time. A4 (P139): a command that changes
     safety state (ctl_auth.SENSITIVE) first asks for a one-time claim on the same connection; serve refuses it to an Agent."""
@@ -73,6 +73,9 @@ def ctl_call(st, req: dict, timeout: float | None = None, max_bytes: int = 64 * 
                     req = {**req, "claim": claim["claim"]}
             s.sendall((json.dumps(req) + "\n").encode())
             obj = line()
+            while progress and obj.get("sent"):     # P570b QA L3: serve's card is out, the answer follows
+                progress()
+                obj = line()
         except (OSError, ValueError) as e:
             raise ServeBusy('PermissionError' if isinstance(e, OSError) and e.errno in (errno.EPERM, errno.EACCES) else type(e).__name__) from None
         return obj

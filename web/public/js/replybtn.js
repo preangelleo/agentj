@@ -53,7 +53,7 @@ function skipped(n, root) {
   const m = n.parentElement && n.parentElement.closest(SKIP);
   return !!m && m !== root && root.contains(m);
 }
-function upgrade(root) {
+function upgrade(root, ownerRoot = root) {
   const spans = [...root.querySelectorAll('span.rlink[data-say]')].filter((s) => !skipped(s, root));
   const out = [], groups = new Map();
   for (const s of spans.slice(0, GROUP_MAX)) {
@@ -67,7 +67,7 @@ function upgrade(root) {
     b.textContent = s.textContent;                   // the label as plain words (no link / chip nested in a button)
     const shown = b.textContent.replace(/\s+/g, ' ').trim();
     if (shown !== say) { const x = document.createElement('small'); x.className = 'rbtn-say'; x.textContent = say; b.append(x); }   // the words that go, when the label differs
-    b.addEventListener('click', (e) => { e.stopPropagation(); tap(root, b); });
+    b.addEventListener('click', (e) => { e.stopPropagation(); tap(ownerRoot, b); });
     s.replaceWith(b); out.push(b);
   }
   return out;
@@ -142,6 +142,13 @@ export function paint(root, page, ctx) {
   if (root.firstChild !== root._rb) {                 // fill() rebuilt the words: upgrade them once
     root._rb = root.firstChild;
     if (agentWords(page)) upgrade(root);
+    else if (page.source?.k === 'sys' && page.end !== 'open') {
+      if (['wsl', 'loop'].includes(page.source.guide)) {
+        const block = document.createElement('p'), span = document.createElement('span');
+        span.className = 'rlink'; span.dataset.say = t('p570c.' + page.source.guide + 'Guide'); span.textContent = span.dataset.say;
+        block.append(span); root.append(block); upgrade(block, root);
+      }
+    }
     tags(root, ctx.find);
   }
   paintGroup(root, c);

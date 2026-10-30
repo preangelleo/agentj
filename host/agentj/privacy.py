@@ -78,6 +78,8 @@ _SECRETS: list[tuple[str, re.Pattern, str]] = [
     ("huggingface_token", _re(r"\bhf_[A-Za-z0-9]{30,}"), R),
     ("telegram_bot_token", _re(r"\b\d{8,10}:[A-Za-z0-9_-]{35}\b"), R),
     ("agentjarvis_id", _re(r"\baj[ahijmrst]_[A-Za-z0-9_-]{16,}"), R),   # ajm_ = the plaza admin token (P2)
+    ("agentj_access_code", _re(r"\bAJV-[A-Z0-9]{4}-[A-Z0-9]{4}\b", re.I), R),
+    ("agentj_access_code", _re(r"\bAJUP-[A-Z0-9]{5}(?:-[A-Z0-9]{5}){3}\b", re.I), R),
     # review SS-04: more secret shapes the server scan does not know (layer 1 may be stricter than the server, never looser)
     ("mailgun_key", _re(r"\bkey-[0-9a-f]{32}\b"), R),
     ("authorization_header", _re(r"\b(Authorization\s*:\s*(?:Bearer|Basic|token)\s+)(?!<redacted>|\$\(|\$\{|\$[A-Z_])[^\s\"'<>]+", re.I),
@@ -92,6 +94,8 @@ _SECRETS: list[tuple[str, re.Pattern, str]] = [
     ("labelled_hex", _re(
         r"(?<![A-Za-z0-9])((?:" + _CRED_NAMES + r"|key)[\"']?(?:\s*[:=]\s*|\s+(?:is\s+)?)[\"']?)[0-9a-fA-F]{32,}(?![0-9A-Za-z])", re.I), r"\1" + R),
 ]
+# Public IDs are PII, not credentials.
+_PERSONAL_IDS = [("agentj_public_id", _re(r"\bAJ-[A-Z0-9]{4}(?:-[A-Z0-9]{4}){3}\b", re.I), R)]
 # P326: starts only where a run of local-part characters starts — the same matches, but a long run without an "@" (a
 # base64 blob, a minified line) is scanned once, not once per position (100 k chars took 7.9 s on the event loop)
 _EMAIL = _re(r"(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@((?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,})")
@@ -305,8 +309,8 @@ def _owner_pass(text: str, host: str | None, user: str | None, hits: collections
     for m in _LINK.finditer(text):
         out.append(_one_pass(text[at:m.start()], host, user, hits, True, True))
         link = m.group(0)
-        for kind, pat, repl in _SECRETS:
-            if kind in _LINK_HARD:
+        for kind, pat, repl in _SECRETS + _PERSONAL_IDS:
+            if kind in _LINK_HARD or kind == "agentj_public_id":
                 link, n = pat.subn(repl, link)
                 if n:
                     hits[kind] += n
@@ -318,8 +322,7 @@ def _owner_pass(text: str, host: str | None, user: str | None, hits: collections
 
 def credentials(text: str) -> list[tuple[str, str, int, int]]:
     """P194: the real credentials in an owner-bound text — (kind, value, start, end), in order, not overlapping. The same
-    rules as the owner mode (`redact(owner=True)`): what this finds is what that mode would hide. Low-risk codes (an access
-    code, a one-time code, a report's authorization code, a link) are not credentials and are not returned."""
+    rules as owner mode: access codes and links are not credentials."""
     spans: list[tuple[int, int, str]] = []
 
     def add(seg_start, m, repl, kind):
@@ -332,6 +335,8 @@ def credentials(text: str) -> list[tuple[str, str, int, int]]:
 
     def scan(seg: str, base: int, link: bool) -> None:
         for kind, pat, repl in _SECRETS:
+            if kind == "agentj_access_code":
+                continue  # P194 owner transfer
             if link and kind not in _LINK_HARD:
                 continue
             for m in pat.finditer(seg):
@@ -421,7 +426,9 @@ def _one_pass(text: str, host: str | None, user: str | None, hits: collections.C
     # Seed phrases must be consumed whole before a generic labelled-token rule.
     text = sub("mnemonic", _MNEMONIC, r"\1" + R, text)
     relaxed = paths or owner
-    for kind, pat, repl in _SECRETS:
+    for kind, pat, repl in _SECRETS + _PERSONAL_IDS:
+        if owner and kind == "agentj_access_code":
+            continue
         if relaxed and kind in _LABELLED:        # P424: a NAME next to shell / code is not a credential
             def keep(m, repl=repl, kind=kind):
                 if _not_value(m, repl, owner):
@@ -476,9 +483,13 @@ def redact(text: str, host: str | None = None, user: str | None = None, paths: b
     return redact_with_report(text, host, user, paths, owner)[0]
 
 
-def owner_text(text: str) -> str:
-    """P167 / P194: what the owner's OWN channels show — the paired remotes (E2E), the owner bot's private chat and the
-    owner's own mailbox: credentials redacted; e-mail, phone, paths, private IPs, links and low-risk codes as written."""
+def owner_text(text: str, *, mask_access_codes: bool = False) -> str:
+    """P194 owner delivery: keep contact details, paths, links and access codes; hide credentials.
+    Terminals set mask_access_codes to also hide transferable codes."""
+    if mask_access_codes:
+        for kind, pat, repl in _SECRETS:
+            if kind == "agentj_access_code":
+                text = pat.sub(repl, text)
     return redact(text, owner=True)
 
 

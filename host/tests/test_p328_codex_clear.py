@@ -41,6 +41,8 @@ class Base(unittest.IsolatedAsyncioTestCase):
         a = SharedCodexAgent(self.host, {'kind': 'codex', 'dir': str(self.proj), '_workflow_ceo': True,
                                          'session_mode': 'shared', 'shared_session_id': pin})
 
+        a.cfg.pop("_workflow_ceo"); self.host.agent = a
+
         async def call(method, params, timeout=60):
             self.calls.append((method, params))
             if method == 'thread/start':

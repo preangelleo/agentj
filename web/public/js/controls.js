@@ -58,6 +58,8 @@ function command(obj, onSent = null) {               // pending acknowledgement 
       else if (!extended && m.t === 'ctl_pending' && obj.t === 'wf_resume_do' && m.action === 'wf_resume_do' && m.timeout_ms === 620000) { extended = true; arm(620000); }
       else if (!extended && m.t === 'ctl_pending' && obj.t === 'bots_write' && m.action === 'bots_write' && m.timeout_ms === 620000) { extended = true; arm(620000); }
       else if (!extended && m.t === 'ctl_pending' && obj.t === 'cmd_run' && m.action === 'cmd_run' && m.timeout_ms === 150000) { extended = true; arm(150000); }   // P361
+      // P570c: 重新迁移 test-runs the task on the system scheduler (the host's sysmigrate.PENDING_MS = 2 200 000 at most)
+      else if (!extended && m.t === 'ctl_pending' && obj.t === 'task_migrate' && m.action === 'task_migrate' && Number.isInteger(m.timeout_ms) && m.timeout_ms >= 20000 && m.timeout_ms <= 2200000) { extended = true; arm(m.timeout_ms); }
     }, obj[GEN] ?? gen(), onSent);
     if (!r) resolve({ ok: false, why: 'offline' });
     else arm(20000);
@@ -399,14 +401,28 @@ function taskCard(tk, paused) {
   const tags = mk('p', 'ask-tags');
   if (tk.mode === 'research') tags.append(mk('span', 'tag tag-low', t('tasks.readonly')));
   if (tk.mode === 'normal') tags.append(mk('span', 'tag', t('tasks.normal')));
-  tags.append(mk('span', 'tag ' + (tk.enabled ? 'tag-on' : 'tag-off'), t(tk.problems?.length ? 'tasks.invalid' : tk.enabled ? (paused ? 'tasks.onPaused' : 'tasks.on') : tk.stale ? 'tasks.stale' : 'tasks.off')));
+  const sys = SYS_MOVED.includes(tk.sys) ? tk.sys : '';   // P570c: moved to the Agent J host's scheduler (an old host never sends it)
+  if (sys) li.dataset.sys = sys;
+  if (sys) tags.append(mk('span', 'tag ' + (sys === 'migrated' ? 'tag-on' : 'tag-fail'), t('p570c.' + sys)));
+  else tags.append(mk('span', 'tag ' + (tk.enabled ? 'tag-on' : 'tag-off'), t(tk.problems?.length ? 'tasks.invalid' : tk.enabled ? (paused ? 'tasks.onPaused' : 'tasks.on') : tk.stale ? 'tasks.stale' : 'tasks.off')));
   if (tk.running) tags.append(mk('span', 'tag tag-task', t('tasks.running')));
   li.append(tags);
   li.append(mk('p', 'small', t('tasks.when', { when: cronText(tk.schedule), tz: tzText(tk) }) + (Number.isInteger(tk.next) ? t('tasks.next', { at: new Date(tk.next * 1000).toLocaleString(locale(), { hour12: false, month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) }) : '')));
   if (tk.problems?.length) li.append(mk('p', 'error small', t('tasks.bad', { p: tk.problems[0] })));
   if (tk.last && typeof tk.last === 'object') li.append(mk('p', 'small', t('tasks.last', { verdict: tk.last.verdict ?? '', line: tk.last.line ?? '' })));
   if (peer.wfresume1 && /^[0-9a-f]{32}$/.test(tk.resume?.run_id || '')) li.append(resumeButton(tk.resume.run_id));
-  if (!tk.problems?.length || tk.enabled) {
+  if (sys) {                                            // P570c: 退回 (task_set off) · 重新迁移 (task_migrate) — no plain 停用 here
+    const row = mk('div', 'aj-actions task-sys-acts');
+    if (sys === 'changed') {
+      const m = mk('button', 'aj-btn aj-btn--primary aj-btn--sm', t('p570c.remigrate')); m.type = 'button'; m.dataset.act = 'remigrate';
+      m.addEventListener('click', () => remigrateTask(tk, title));
+      row.append(m);
+    }
+    const b = mk('button', sys === 'migrated' ? 'aj-btn aj-btn--primary aj-btn--sm' : 'aj-btn aj-btn--sm', t('p570c.back')); b.type = 'button'; b.dataset.act = 'back';
+    b.addEventListener('click', () => backTask(tk, title));
+    row.append(b);
+    li.append(row);
+  } else if (!tk.problems?.length || tk.enabled) {
     const on = !tk.enabled;
     const b = mk('button', on ? 'aj-btn aj-btn--primary aj-btn--sm' : 'aj-btn aj-btn--sm', t(on ? 'tasks.enable' : 'tasks.disable')); b.type = 'button';
     b.addEventListener('click', () => setTask(tk, on, title));
@@ -429,6 +445,27 @@ export function cronText(expr) {
   if (hm && dom === '*' && mon === '*' && dow === '1-5') return t('cron.weekdays', { hm });
   if (hm && /^\d+$/.test(dom) && mon === '*' && dow === '*') return t('cron.monthly', { d: dom, hm });
   return t('cron.raw', { expr });
+}
+const SYS_MOVED = ['migrated', 'changed'];
+const taskTarget = (tk) => ({ id: String(tk.id), tsha: typeof tk.tsha === 'string' ? tk.tsha : '' });
+/** P570c: 退回 = task_set on:false on a moved task — it comes back to Agent J, still off. */
+async function backTask(tk, title) {
+  if (!await confirmSheet(t('p570c.backTitle'), t('p570c.backText', { title }), t('p570c.back'))) return;
+  const target = taskTarget(tk);
+  let res;
+  try { res = await command(await signed('task_off', target, { t: 'task_set', on: false, ...target })); } catch (e) { res = { ok: false, why: e.message }; }
+  toast(res.ok ? t('p570c.backDone') : t('tasks.fail', { why: why(res.why) }), 3200);
+  loadTasks();
+}
+/** P570c: 重新迁移 = task_migrate {id, tsha} for a moved task that changed since; the host test-runs it and answers {ok, text}. */
+async function remigrateTask(tk, title) {
+  if (!await confirmSheet(t('p570c.migTitle'), t('p570c.migText', { title }), t('p570c.remigrate'))) return;
+  const target = taskTarget(tk);
+  let res;
+  try { res = await command(await signed('task_migrate', target, { t: 'task_migrate', ...target })); } catch (e) { res = { ok: false, why: e.message }; }
+  const said = typeof res.text === 'string' && res.text ? res.text.slice(0, 300) : '';   // the host's summary (moved / rolled back + why)
+  toast(said || (res.ok ? t('p570c.migDone') : t('tasks.fail', { why: why(res.why) })), said ? 6000 : 3200);
+  loadTasks();
 }
 async function setTask(tk, on, title) {
   const text = on ? t('tasks.textOn', { title, when: cronText(tk.schedule), tz: tzText(tk), ro: tk.mode === 'research' ? t('tasks.textOnRo') : '' }) : t('tasks.textOff', { title });

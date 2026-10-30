@@ -57,6 +57,7 @@ ACTIONS += ("files_write",)   # P478: paired phone local-file scopes
 ACTIONS += ("wechat",)  # P501: fixed channel setup/unbind/verification controls
 ACTIONS += ("host_write",)  # P503d: mail settings/test only
 ACTIONS += ("seat_transfer", "seat_transfer_cancel")   # P547: move the seat to another host (+ Face ID) · revoke that code
+ACTIONS += ("task_migrate",)        # P570c: 「重新迁移」 on the 定时任务 page (sysmigrate.phone)
 ACTIONS += ("forward_set",)         # P554: the forward button's destination (ui.forward_destination), shared by every remote
 TS_SKEW_MS = 120_000
 NONCE_KEEP_S = 600
@@ -69,7 +70,7 @@ def object_text(action: str, obj: dict) -> str:
     mem_rm   : source id \\n file name ("" for a single-file source) \\n file SHA-256 \\n item id
     mem_undo : trash id
     estop / resume : "all"
-    task_on / task_off : task id \\n contract SHA-256 (task.json + its prompt file, tasks.contract_sha)
+    task_on / task_off / task_migrate : task id \\n contract SHA-256 (task.json + its prompt file, tasks.contract_sha)
     fr_set   : friend id \\n op (group | block | unblock | delete) \\n value (the group id; "" otherwise)
     pg_set   : the group's canonical JSON (sorted keys, no spaces, UTF-8 — wire.js canonicalJson)
     pg_del   : group id
@@ -168,7 +169,7 @@ def object_text(action: str, obj: dict) -> str:
         return str(obj["id"])
     if action in ("estop", "resume"):
         return "all"
-    if action in ("task_on", "task_off"):
+    if action in ("task_on", "task_off", "task_migrate"):
         return f"{obj['id']}\n{obj['tsha']}"
     if action == "fr_set":
         return f"{obj['friend']}\n{obj['op']}\n{_s(obj.get('value'))}"
@@ -270,6 +271,12 @@ def check(st, nonces: Nonces, channel: str, device: str, obj: dict, action: str,
         offer=nonces.mail_offers.get(n)
         if not offer or offer[:2]!=(device,digest) or not 0<=time.monotonic()-offer[2]<120:
             return "stale"
+        from .action_policy import mail_role_downgrade
+        if mail_role_downgrade(target):
+            if not nonces.take(n):
+                return "replay"
+            nonces.mail_offers.pop(n, None)
+            return None
         pk = st.passkey_of_device(device)
         if not pk:
             return "no_passkey"

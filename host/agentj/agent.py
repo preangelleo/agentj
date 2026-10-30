@@ -1,24 +1,7 @@
-"""Agent bridge (PROTOCOL §8): drives the customer's own, already-logged-in agent through its official headless
-interfaces only — Claude Code: `claude -p` with stream-json in/out and `--permission-prompt-tool` (our MCP tool, see
-permtool.py); Codex: `codex app-server` (agent_codex.py); OpenCode: `opencode serve` (agent_opencode.py). No private sockets,
-no terminal injection.
-
-Slash commands (slash.py, ADR-A70 – A72) ride the same queue as messages (`Cmd`): one at a time, after the turn that is
-running; each adapter implements `cmd_<name>`. Claude Code's stream-json control requests are limited to
-`CONTROL_SUBTYPES` (none of them changes a permission, a mode or a setting).
-
-Bridge ≤ session: the agent runs as this OS user, in the directory the human chose, with the human's own login, settings
-and permission rules. We never pass a bypass / skip-permissions / allowed-tools flag; the phone only answers the questions
-the agent itself would have asked, and an approval returns the tool input unchanged.
-
-Danger list (ADR-A47): Claude Code also gets one PreToolUse hook through `--settings` (`python -P -m agentj.danger hook`)
-that answers "ask" for the five dangerous categories, so they reach the phone card by card even when the human's own rules
-allow them; it never answers "allow" (only ever stricter). `disableAllHooks: false` in the same flag keeps a settings file the
-Agent writes later from switching it off; a human who disabled hooks in their own settings gets a notice instead of a start.
-
-L2 / L3: the agent runs inside the fence (fence.py: bubblewrap on Linux, sandbox-exec on macOS) unless the owner chose `--unfenced`; if the fence cannot start, the agent
-refuses startup. The owner can approve one launch without isolation on the phone with a passkey; no grant is persisted.
-Claude Code gets its first message only after our permission tool has claimed serve's socket.
+"""Official headless Agent bridges (PROTOCOL §8; ADR-A47, A70–A72).
+Claude stream-json/MCP, Codex app-server, OpenCode serve; no terminal injection. Messages and Cmd share one queue.
+The owner chooses folder/login/settings. Session rights are the ceiling; dangerous actions retain phone approval.
+A fenced child fails closed unless the owner approves one unfenced launch. Claude waits for permission-socket claim.
 """
 from __future__ import annotations
 
@@ -506,6 +489,9 @@ class Agent:
 
     def meter(self, **kw) -> None:
         """§10.10: a number the harness reported exactly (never an estimate) → the phones' meters."""
+        current = getattr(self.host, "agent", None)
+        if self.cfg.get("_workflow_ceo") or (current is not None and current is not self):
+            return
         fn = getattr(self.host, "meter_update", None)
         if fn:
             fn(**kw)
@@ -1051,12 +1037,16 @@ class Agent:
         """Store the choice (config.json agent.model / agent.effort) so the next turn uses it; adapters add what the harness
         needs on top."""
         if default:
-            self.host.set_model(None)
-            self.host.set_effort(None)
+            if self.host.set_model(None) is False:
+                return "stopped"
+            if self.host.set_effort(None) is False:
+                return "stopped"
         if model is not None:
-            self.host.set_model(model)
+            if self.host.set_model(model) is False:
+                return "stopped"
         if effort is not None:
-            self.host.set_effort(effort)
+            if self.host.set_effort(effort) is False:
+                return "stopped"
         self.meter(model=self.cur_model(), model_name=self.model_name(self.cur_model()), effort=self.cur_effort())
         return None
 

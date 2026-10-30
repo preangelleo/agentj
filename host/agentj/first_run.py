@@ -100,7 +100,7 @@ ITEMS = [
     ("files", "privacy", "conditional", "auto", ["harness"], "工作文件夹", "Work folder",
      "Agent 能读写的工作文件夹。", "The folder the Agent works in."),
     ("macfiles", "privacy", "conditional", "local", ["files"], "Mac 文件夹与 Finder 权限", "Mac folders and Finder access",
-     "现在在电脑前运行 agentj files prepare --at-computer，允许下载、桌面、文稿及 Finder 自动化；手机不能代替系统授权。",
+     "现在在 Agent J 主机前运行 agentj files prepare --at-computer，允许下载、桌面、文稿及 Finder 自动化；手机不能代替系统授权。",
      "At the computer, run agentj files prepare --at-computer; allow Downloads, Desktop, Documents and Finder Automation."),
     ("fda", "privacy", "optional", "local", ["files"], "Mac 完全磁盘访问", "Mac Full Disk Access",
      "只有确实需要受保护文件时才开。", "Only when a task truly needs protected files."),

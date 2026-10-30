@@ -11,7 +11,7 @@
   var suffix = "@" + seat;
   var raw = null;
   try { raw = window.localStorage; } catch (e) { raw = null; }   // blocked storage: every read keeps failing as before
-  var PREFS = ["aj.lang", "aj.theme", "aj.fontScale", "aj.readerFs", "aj.toolOrder", "aj.sfxVolume", "aj.shotClip", "aj.pageFz"];
+  var PREFS = ["aj.lang", "aj.theme", "aj.fontScale", "aj.readerFs", "aj.toolOrder", "aj.sfxVolume", "aj.cueOff", "aj.shotClip", "aj.pageFz"];
   function scoped(store) {
     function own(k) { return String(k) + suffix; }
     function names() {

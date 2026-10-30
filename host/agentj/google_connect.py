@@ -46,7 +46,7 @@ CONSOLE = [
     ("OAuth 同意屏幕：External，发布状态切到 In production（不是提交验证）",
      "OAuth consent screen: External, publishing status In production (not Submit for verification)",
      "https://console.cloud.google.com/apis/credentials/consent"),
-    ("凭据 → 创建 OAuth 客户端 ID → 桌面应用 → 下载 JSON（存在这台电脑上）",
+    ("凭据 → 创建 OAuth 客户端 ID → 桌面应用 → 下载 JSON（存在这台 Agent J 主机上）",
      "Credentials → Create OAuth client ID → Desktop app → Download JSON (onto this computer)",
      "https://console.cloud.google.com/apis/credentials"),
 ]
@@ -411,7 +411,7 @@ def cli_local(st, req: dict, quiet: bool) -> dict:
     if req["op"] != "connect":
         return execute(req["op"], st, req)
     if req.get("account") and not quiet:
-        print("等待你在这台电脑的浏览器里完成 Google 授权（≤5 分钟）/ waiting for the Google consent in this computer's browser "
+        print("等待你在这台 Agent J 主机的浏览器里完成 Google 授权（≤5 分钟）/ waiting for the Google consent in this computer's browser "
               "(≤5 min)", file=sys.stderr)
     return connect(st, req["purpose"], _client(req), req.get("account"), wait=True)
 

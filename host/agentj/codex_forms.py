@@ -4,6 +4,7 @@ import json
 import math
 import re
 from . import approvals, privacy
+from .policy_registry import harness_tool
 
 FORM_MODES = ('form', 'openai/form', 'openaiForm')
 SECRET = re.compile(r'password|passwd|secret|token|api.?key|credential|密钥|密码|口令', re.I)
@@ -116,7 +117,7 @@ async def answer(agent, rid, p, card, *, approval=None):
     try:
         if approval is not None:
             tool, args, _item, bind = approval
-            decision = await agent.host.ask(tool, args, gone, batch=False, **({'bind': bind} if bind else {}))
+            decision = await agent.host.ask(harness_tool(tool), args, gone, batch=False, **({'bind': bind} if bind else {}))
             if decision.get('behavior') != 'allow':
                 return
         outcome, picks = await agent.host.question(card, gone, task=getattr(agent.host, 'task_label', None))

@@ -13,7 +13,7 @@ try {
   await navigate(p,fake.newPairing(web.url+'?lang='+lang));await waitState(p,'awaiting-approval');await fake.approve();await waitState(p,'ready');
   for (const stage of ['before','after']) {
    const text=stage==='before' ? (lang==='zh'?'没清成：桌面终端未提供安全输入通道（no_exact_pane）':'No change: the desktop terminal has no safe input channel (no_exact_pane)') :
-    (lang==='zh'?'没清成：无法安全控制这段桌面对话。请在电脑上当前的 Claude Code 终端运行 /compact；以后可在手机设置中把「会话模式」改为「独立会话」，由 Agent J 管理新会话。':'No change: this desktop conversation cannot be controlled safely. Run /compact in its Claude Code terminal on the computer; for future phone controls, choose Use a separate session in Settings so Agent J manages the new session.');
+    (lang==='zh'?'没清成：无法安全控制这段桌面对话。请在 Agent J 主机上当前的 Claude Code 终端运行 /compact；以后可在手机设置中把「会话模式」改为「独立会话」，由 Agent J 管理新会话。':'No change: this desktop conversation cannot be controlled safely. Run /compact in its Claude Code terminal on the computer; for future phone controls, choose Use a separate session in Settings so Agent J manages the new session.');
    await fake.addTurn({k:'sys',text:''},text,'done');await waitFor(p,`document.getElementById('words').textContent.includes(${JSON.stringify(stage==='before'?'no_exact_pane':'Claude Code')})`,5000);
    if(stage==='after') assert.equal(await evaluate(p,`document.getElementById('words').textContent.includes('no_exact_pane')`),false);
    writeFileSync(new URL(`${stage}-compact-${lang}.png`,out),await shoot(p,''));

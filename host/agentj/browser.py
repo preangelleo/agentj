@@ -1,37 +1,10 @@
-"""P114 (P90 design, ADR-A194): Agent J's own browser — installed by default, a private profile, loopback-only CDP.
+"""Private-profile Chrome for Testing supervisor and explicitly adopted loopback browsers (ADR-A194).
+Signed manifest pins downloads; ownership and loopback listening are verified before runtime publication. CDP is
+unauthenticated: profile separation is not a same-user sandbox. No endpoint forwarding or cookie/credential logging.
+Adopted browsers are never installed, restarted, killed or modified; only owned tabs may close. A per-profile start lock
+serializes owned launches. Only explicit actions wake the owned service; background checks never wake it. Seats remain isolated.
 
-- `setup` downloads the Chrome for Testing build named in `browser_manifest.json` (it ships inside the signed host package,
-  so the package signature covers every URL, size and SHA-256). Playwright's Chrome-for-Testing CDN (cdn.playwright.dev,
-  `official` below) first; a mirror only serves the same bytes
-  (`browser.download_source` auto | official | approved-mirror, `browser.mirror` for an owner's own mirror). Two retries,
-  a five-minute budget, ≥ 1.5 GB free. A failure never fails the Agent J install: the browser is `attention` and only the
-  work that needs it waits.
-- `run` is the resident supervisor (systemd --user `<service>-browser` / LaunchAgent `<label>.browser`): starts the browser
-  on a private profile (`<state>/browser/profile`, 0700) with `--remote-debugging-port=0` bound to 127.0.0.1, reads the
-  real port from DevToolsActivePort, proves ownership (pid + start time + executable + profile) and that nothing listens
-  on another address, then writes `runtime.json` (0600). No display (a server): headless, QR sign-in still works.
-- CDP has no authentication. Loopback keeps it off the network; a malicious process of the same OS user can still use it
-  and read the profile — the profile isolates data, it is not a sandbox. The endpoint never leaves the Agent J host: no
-  tunnel, no forwarding, never on the relay. Cookies, storage, passwords and auth headers are never read into logs or chat.
-- `enabled=false` stops the service and the checks; the profile stays (deleting it is the owner's explicit delete).
-- P131 adopt: an owner who already runs a CDP browser on the Agent J host (e.g. a long-lived Chromium on 127.0.0.1:9222 with
-  every site signed in) can register it instead — `agentj browser adopt --endpoint http://127.0.0.1:<port>` only proposes it
-  (loopback only, verified to listen on loopback only); the owner confirms once on the paired phone's checklist (signed
-  `setup_mark adopt_browser`). Adopted, it is Agent J's browser for status / check / sign-in, but Agent J never installs a
-  second one, never starts / kills / restarts it, never touches its profile or reads its cookies: it only opens and closes its
-  own tabs. Not answering = "the browser you registered is not running". `setup` that finds such a browser asks first.
-- P521: a per-profile start.lock serializes launch and runtime publication; live pid/starttime/CDP is reused without a new
-  Chrome invocation. Window exit never restarts the service; observer restarts preserve the browser. Upgrade refreshes old
-  service policy without waking a closed browser; only exact former labels for the same state are removed.
-- P521 multi-seat: instances 2+ default to headless, even after a display arrives. Explicit open/host sign-in may
-  show that seat with its own profile; checks and QR cards stay headless.
-- P418 (#183 ⑤), amended by P521: an explicit action that needs the browser (`open`, `check` without `--if-stale`,
-  `endpoint`) first starts Agent J's own service once (`systemctl --user reset-failed` + `start`, launchd `kickstart`; never
-  enable / install / restart), waits for a verified runtime (WAKE_WAIT), carries on and says so (`restarted: true`). It never
-  starts an adopted browser: the answer tells the owner to open it, or how to switch to Agent J's own. A failed start keeps
-  the action's own error and adds one `next` step. Status, doctor and background/stale checks never wake a closed window.
-- P131 recognisable: Agent J's own window carries the title "Agent J 专用浏览器", its own start page and a brand-colour
-  theme, and the checklist's "open and sign in" brings it to the front (Hyprland / X11 / macOS; elsewhere it says so).
+Protocol/history detail: agentjarvis/ARCHITECTURE.md, P0261 source notes / browser.py.
 """
 from __future__ import annotations
 
@@ -1341,7 +1314,7 @@ HINTS = {
 CDP_ACTIONS = ("open", "check", "endpoint")      # the actions that talk to the browser itself
 WAKE_WAIT = 20.0                                 # seconds for a verified runtime after the start
 RESTARTED_NOTE = "浏览器刚才没开，已重新打开。/ The browser was closed; Agent J opened it again."
-ADOPT_DOWN = ("你的 Chrome 现在没开（或没开调试端口）：请在电脑上打开它；或者改用 Agent J 自己的浏览器：agentj browser adopt --forget，"
+ADOPT_DOWN = ("你的 Chrome 现在没开（或没开调试端口）：请在 Agent J 主机上打开它；或者改用 Agent J 自己的浏览器：agentj browser adopt --forget，"
               "再运行 agentj browser setup --own / Your Chrome is not open (or has no debugging port): open it on the computer, "
               "or switch to Agent J's own browser: agentj browser adopt --forget, then agentj browser setup --own")
 WAKE_FAILED = ("没能重新打开浏览器：运行 agentj browser status 看原因，再运行 agentj browser setup / Could not open the browser "

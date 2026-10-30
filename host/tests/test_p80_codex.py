@@ -18,7 +18,7 @@ class PhoneRouting(Base):
         self.assertEqual(params['approvalPolicy'], 'on-request')
 
     async def run_turn(self, **cfg):
-        a = self.agent(SID, **cfg)
+        a = self.main_agent(SID, **cfg)
         a.tid = SID
         a.thread = {'model': 'gpt-5.6-sol', 'reasoningEffort': 'low'}
         a.original = {'approvalPolicy': 'on-request', 'permissions': ':read-only'}
@@ -46,7 +46,7 @@ class PhoneRouting(Base):
         self.assertNotIn('effort', params)
 
     async def test_default_choice_is_sent_once_then_native_thread_is_retained(self):
-        a = self.agent(SID)
+        a = self.main_agent(SID)
         a.revert = {'model': 'gpt-6.1-sol', 'effort': 'medium'}
         self.assertEqual(a.phone_choice(), a.revert)
         # The desktop actor has its own native choice; phone config remains its next phone-turn choice.
@@ -59,7 +59,7 @@ class PhoneRouting(Base):
         self.assertEqual(a.phone_choice(), {'model': 'gpt-6.1-sol', 'effort': 'high'})
 
     async def test_writer_banner_names_terminal_and_unknown_in_both_languages(self):
-        a = self.agent(SID)
+        a = self.main_agent(SID)
         for kind in ('terminal', 'codex_app', 'chatgpt_app', 'app_server', 'unknown'):
             a.writer = {'kind': kind, 'pid': 123}
             a.follow_status('desktop_writer')

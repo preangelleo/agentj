@@ -23,7 +23,7 @@ const JS = files.filter((f) => f.endsWith('.js') || f.endsWith('.mjs'));
 const APP = read(pub('app.js'));
 // PROMPT-33: the page is app.js + the modules under js/ (relay's page ported). Every rule that used to look at app.js
 // alone now looks at all of them (OURS) — the same rules over more code, never fewer.
-const MODULES = ['api', 'blobs', 'boot', 'controls', 'md', 'push', 'relay', 'session', 'settings', 'snap', 'speak', 'store', 't', 'ui', 'wav', 'elevate', 'outbox', 'render', 'friends', 'qr', 'share', 'device-label', 'sfx', 'shotclip', 'sendvol',
+const MODULES = ['api', 'blobs', 'boot', 'controls', 'md', 'push', 'relay', 'session', 'settings', 'snap', 'speak', 'store', 't', 'ui', 'wav', 'elevate', 'outbox', 'render', 'friends', 'qr', 'share', 'device-label', 'sfx', 'cues', 'shotclip', 'sendvol',
   'media', 'mediawire', 'preview', 'mailfwd', 'icons', 'search',   // P183: the file cards, the preview views and the mail-dialog door
   'unread', 'interactions.gen',   // P207: this device's unread mark (turn ids only) + the key table generated from interactions.json
   'version-notice', 'five-pages', 'workflow-compose',
@@ -40,7 +40,8 @@ test('expected files ship, robots.txt disallows all', () => {
     'robots.txt', 'favicon.ico', 'apple-touch-icon.png', 'brand/palette.css', 'brand/base.css', 'brand/lang.js', 'brand/ui.js', 'brand/img/icon-192.png',
     'brand/img/icon-512.png', 'brand/img/icon-512-maskable.png', 'brand/img/logo-mark.png', 'brand/img/status/logo-working.png',
     'brand/img/status/logo-waiting.png', 'brand/img/status/logo-question.png', 'brand/img/status/logo-offline.png',
-    ...OURS_FILES, 'assets/rocket-mask-128.png', 'assets/rocket-mask-256.png', 'assets/rocket-lotion.png', 'assets/rocket-whoosh.mp3']) {
+    ...OURS_FILES, 'assets/rocket-mask-128.png', 'assets/rocket-mask-256.png', 'assets/rocket-lotion.png', 'assets/rocket-whoosh.mp3',
+    ...['idle', 'working', 'waiting', 'question', 'offline', 'all-done'].map((c) => `assets/cue-${c}.mp3`)]) {   // P575
     assert.ok(files.includes(pub(r)), `missing public/${r}`);
   }
   assert.equal(read(pub('robots.txt')), 'User-agent: *\nDisallow: /\n');
@@ -67,7 +68,7 @@ const SUPPORT_LINK = 'https://support.agentj.app/';   // P400: exact, no path / 
 const SITE_LINK = /^https:\/\/agentj\.app\/(?:hotkeys?|(?:[a-z-]+\/)*[a-z-]*(?:#invite|#credits|#brand-kit|#approval-level)?)$/;
 const MAIL_LINK = /^mailto:feedback@agentj\.app$/;   // F13 / P168: Settings → 帮助和反馈, the error / removed pages, the disconnected card (the human fallback mailbox)
 const NEW_WEB_ORIGIN = 'https://m.agentj.app';
-const LICENCE_TEXT = new Set(['brand/fonts/UFL-1.0-ubuntu.txt', 'brand/fonts/OFL-1.1-lexend.txt', 'brand/fonts/README.md',
+const LICENCE_TEXT = new Set(['assets/CUE-LICENSE.md', 'brand/fonts/UFL-1.0-ubuntu.txt', 'brand/fonts/OFL-1.1-lexend.txt', 'brand/fonts/README.md',
   'vendor/VERSIONS.md', 'vendor/hljs/LICENSE.txt', 'vendor/katex/LICENSE.txt', 'vendor/mermaid/LICENSE.txt',
   'vendor/pdfjs/LICENSE.txt', 'vendor/mammoth/LICENSE.txt', 'vendor/xlsx/LICENSE.txt']);   // licence texts cite their sources
 // Upstream bytes, pinned: any change must be reviewed again (P57 adds highlight.js / KaTeX / mermaid, loaded lazily by
@@ -245,14 +246,17 @@ test('app.js + js/*.js: only WebSocket egress, non-extractable keys, no plaintex
     // "aj.verUpdatedSeen.<public version>", "1")
     'removeItem(DONE_KEY)', 'getItem(onceKey)', 'setItem(onceKey)',
     // P340: the composer buttons' order on this device (ORDER_KEY = "aj.toolOrder", the four ids as JSON; an older host's only copy)
-    'getItem(ORDER_KEY)', 'setItem(ORDER_KEY)'].sort());
+    'getItem(ORDER_KEY)', 'setItem(ORDER_KEY)',
+    // P575 (#390): the switched-off sounds (OFF_KEY = "aj.cueOff", a comma list of cue ids; removed when all are on)
+    'getItem(OFF_KEY)', 'setItem(OFF_KEY)', 'removeItem(OFF_KEY)'].sort());
   assert.match(OURS, /const VER_KEY='aj\.verRefresh';/);
   assert.match(read(pub('js/unread.js')), /JSON\.stringify\(\{e:st\.e,m:st\.m\}\)/);
   assert.match(OURS, /export const UNREAD_KEY = 'aj\.unread';/);
   assert.match(OURS, /const VOLUME_KEY = 'aj\.sfxVolume';/); assert.match(OURS, /const SHOT_KEY = 'aj\.shotClip';/);
   assert.match(OURS, /const FZ_KEY = "aj\.pageFz";/); assert.doesNotMatch(OURS, /aj\.recDim/, 'P346: the dim mode is gone');
   assert.match(OURS, /const ORDER_KEY = 'aj\.toolOrder';/);
-  assert.equal(OURS_FILES.reduce((n, r) => n + (code(read(pub(r))).match(/localStorage/g) || []).length, 0), 37, 'P422 removes both aj.chrome calls; localStorage appears only in these calls (P340: aj.toolOrder get + set; P346: aj.recDim gone; P247: host-scoped numeric read receipts; P302 #29: aj.verUpdated consumed + aj.verUpdatedSeen.<version>; P240: aj.verRefresh; P171: + the two aj.theme writes; P182: aj.test.segMs only shortens a recording part, tests only; P205: aj.recDim) (homeInstalled is a boolean, never pairing data)');
+  assert.match(OURS, /export const OFF_KEY = 'aj\.cueOff';/);
+  assert.equal(OURS_FILES.reduce((n, r) => n + (code(read(pub(r))).match(/localStorage/g) || []).length, 0), 40, 'P422 removes both aj.chrome calls; localStorage appears only in these calls (P575: aj.cueOff get + set + remove; P340: aj.toolOrder get + set; P346: aj.recDim gone; P247: host-scoped numeric read receipts; P302 #29: aj.verUpdated consumed + aj.verUpdatedSeen.<version>; P240: aj.verRefresh; P171: + the two aj.theme writes; P182: aj.test.segMs only shortens a recording part, tests only; P205: aj.recDim) (homeInstalled is a boolean, never pairing data)');
   assert.match(OURS, /const IID_KEY = 'aj\.iid';/);
   assert.match(OURS, /const PAIRED_KEY = 'aj\.paired';/);
   assert.match(OURS, /const FONT_KEY = 'aj\.fontScale';/);
@@ -744,4 +748,17 @@ test('icon buttons: no border by default (P555)', () => {
   }
   assert.deepEqual(bad, [], 'icon buttons with a border (remove it, or name the owner\'s ask in ICON_BORDER_OK)');
   assert.match(read(pub('app.css')), /\.ajicon\{[^}]*border:0;[^}]*background:none/);
+});
+
+
+test('cue license notice covers only the shipped cues and exact official provenance sources', () => {
+  const notice = read(pub('assets/CUE-LICENSE.md'));
+  const cited = [...new Set(notice.match(/\bcue-[a-z-]+\.mp3\b/g))].sort();
+  const shipped = files.map(rel).filter(f => /^assets\/cue-[a-z-]+\.mp3$/.test(f)).map(f => f.slice('assets/'.length)).sort();
+  assert.deepEqual(cited, shipped, 'notice scope matches the six shipped cue files');
+  const urls = [...new Set([...notice.matchAll(/\b(?:https?|wss?):\/\/[^\s"'<>)`]*/gi)].map(m => m[0]))].sort();
+  assert.deepEqual(urls, [
+    'https://elevenlabs.io/creative-terms',
+    'https://help.elevenlabs.io/hc/en-us/articles/13313564601361-Can-I-publish-the-content-I-generate-on-the-platform',
+  ], 'license citations are exactly the two reviewed official sources');
 });

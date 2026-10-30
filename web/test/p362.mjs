@@ -1,6 +1,6 @@
 // P362 「模型和 API Key」 finds keys the computer already has — the real page against the local fake host (real Noise), own
 // headless Chromium (never :9222), a CDP virtual platform authenticator as Face ID. Checks:
-//   · 「电脑上已有 · 来源 X」 under a row (tail, same / different, 正在使用), 「收进 Agent J」 only where Agent J has none
+//   · 「Agent J 主机上已有 · 来源 X」 under a row (tail, same / different, 正在使用), 「收进 Agent J」 only where Agent J has none
 //   · the Claude sign-in row says what is really used: 订阅 token CLAUDE_CODE_OAUTH_TOKEN · 来源 environment.d (not 「直接登录」)
 //   · the places checked, a skipped one with its reason
 //   · 收进: confirmation (old source kept by default) → Face ID in the 「收进来」 tap → keys_op import {src, keep:true, fa};
@@ -69,9 +69,9 @@ try {
   ok(use === '正在用：订阅 token（CLAUDE_CODE_OAUTH_TOKEN） · 来源 ~/.config/environment.d/50-claude-oauth.conf', 'Claude row: the subscription token from environment.d is the one in use — ' + use);
   ok(await evaluate(p, `${$('.krow[data-name="codex"] .kuseline')}.textContent==='正在用：账号登录'`), 'Codex row: account sign-in in use');
   const sub = await evaluate(p, `${$('.krow[data-name="CLAUDE_CODE_OAUTH_TOKEN"] .kfound')}.textContent`);
-  ok(sub.startsWith('电脑上已有 · 来源 ~/.config/environment.d/50-claude-oauth.conf · ••••k7Qz') && sub.includes('正在使用') && sub.endsWith('收进 Agent J'), 'subscription row: found in environment.d, tail, in use, 收进 — ' + sub);
+  ok(sub.startsWith('Agent J 主机上已有 · 来源 ~/.config/environment.d/50-claude-oauth.conf · ••••k7Qz') && sub.includes('正在使用') && sub.endsWith('收进 Agent J'), 'subscription row: found in environment.d, tail, in use, 收进 — ' + sub);
   const oa = await evaluate(p, `${$('.krow[data-name="OPENAI_API_KEY"] .kfound')}.textContent`);
-  ok(oa === '电脑上另有一份 · 来源 ~/projects/.env · ••••9a9a · 和 Agent J 的不同，以 Agent J 的为准', 'a set row: the other copy differs, no 收进 — ' + oa);
+  ok(oa === 'Agent J 主机上另有一份 · 来源 ~/projects/.env · ••••9a9a · 和 Agent J 的不同，以 Agent J 的为准', 'a set row: the other copy differs, no 收进 — ' + oa);
   ok(await evaluate(p, `!${$('.krow[data-name="OPENAI_API_KEY"] .kimp')}`), 'no 收进 button when Agent J already has it');
   ok(await evaluate(p, `${$('.krow[data-name="GITHUB_TOKEN"] .kfound')}.textContent.includes('来源 systemd 用户环境')`), 'systemd source named for people');
   const src = await evaluate(p, `[...document.querySelectorAll('.ksrc-i')].map(x=>x.textContent)`);

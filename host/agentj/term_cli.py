@@ -38,13 +38,13 @@ def card_text(lang: str, op: str, code: str, names: list, minutes: int, hours: i
     zh = not str(lang or "").lower().startswith("en")
     c = f"{code[:3]} {code[3:]}"
     if zh:
-        lines = ["打开网页终端（这台电脑上运行了 agentj terminal " + op + "）",
+        lines = ["打开网页终端（这台 Agent J 主机上运行了 agentj terminal " + op + "）",
                  ("临时允许：" if op == "allow" else "能用的遥控器：") + "、".join(names),
                  f"每次最长 {minutes} 分钟" + (f"；{hours} 小时后自动取消" if hours else ""),
-                 "打开后在电脑浏览器里敲的命令会在这台电脑上运行，每次打开都要 Face ID。"]
+                 "打开后在电脑浏览器里敲的命令会在这台 Agent J 主机上运行，每次打开都要 Face ID。"]
         if web:
             lines.append("其中「" + "、".join(web) + "」是网页版：网页被篡改时可能借用 Face ID。")
-        lines.append(f"对照码：{c}（电脑终端上应显示同一串数字；不一致或不是你本人操作就点拒绝）")
+        lines.append(f"对照码：{c}（Agent J 主机终端上应显示同一串数字；不一致或不是你本人操作就点拒绝）")
     else:
         lines = [f"Turn on the web terminal (agentj terminal {op} was run on this computer)",
                  ("Allowed for a while: " if op == "allow" else "Remotes that may use it: ") + ", ".join(names),
@@ -154,7 +154,7 @@ async def ctl_cfg(desk, req: dict) -> dict:
                                                     "minutes": minutes if op == "enable" else cfg["minutes"]})
     st.log("terminal_cfg", action=op, count=len(devs))
     desk._log("terminal_cfg", None, op)
-    h.agent_notice(f"网页终端已在电脑上{'打开' if op == 'enable' else '临时允许'}：{'、'.join(names)} / Web terminal "
+    h.agent_notice(f"网页终端已在 Agent J 主机上{'打开' if op == 'enable' else '临时允许'}：{'、'.join(names)} / Web terminal "
                    f"{'turned on' if op == 'enable' else 'allowed for a while'} at the computer: {', '.join(names)}")
     desk._prefs()
     return {"ok": True, "devices": devs, "minutes": minutes, **({"until": until} if until else {})}
@@ -212,7 +212,7 @@ def _json(line: str):
 
 # ---------------------------------------------------------------- the CLI
 ERR = {
-    "os": "这台电脑的系统暂不支持网页终端（现在支持 Linux、macOS 和 Windows 的 WSL；Windows 本身下一版）。/ Not on this system yet "
+    "os": "这台 Agent J 主机的系统暂不支持网页终端（现在支持 Linux、macOS 和 Windows 的 WSL；Windows 本身下一版）。/ Not on this system yet "
           "(Linux, macOS and WSL now; native Windows next).",
     "no_passkey": "没有设了通行密钥（Face ID / 指纹）的已配对遥控器：先在手机上「设置 → 安全」里开通行密钥。/ No paired remote with a passkey: "
                   "turn one on in the phone's Settings → Security first.",
@@ -270,7 +270,7 @@ def _password_sudo() -> str | None:
     import subprocess
     sudo = shutil.which("sudo")
     if not sudo:
-        return "这台电脑没有 sudo。/ This computer has no sudo."
+        return "这台 Agent J 主机没有 sudo。/ This computer has no sudo."
     try:
         r = subprocess.run([sudo, "-k", "-n", "true"], capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL,
                            env={**os.environ, "LC_ALL": "C", "LANG": "C"})
@@ -288,7 +288,7 @@ def _password_sudo() -> str | None:
 
 
 AGENT_ERR = {
-    "disabled": "网页终端没打开（主人在电脑上运行 agentj terminal enable）。/ The web terminal is off (the owner runs agentj terminal enable).",
+    "disabled": "网页终端没打开（主人在 Agent J 主机上运行 agentj terminal enable）。/ The web terminal is off (the owner runs agentj terminal enable).",
     "nobody": "没有遥控器被允许用网页终端。/ No remote may use the web terminal.",
     "offline": "现在没有能用网页终端的遥控器在线（或它正显示一张确认卡）。/ No allowed remote is online right now (or it shows a card).",
     "rate": "刚打开过：隔 5 秒再试；10 分钟内最多 3 次，主人在终端里操作后重新计。/ Too soon: wait 5 s; at most 3 in 10 min until the owner acts.",

@@ -109,7 +109,7 @@ ELEVATE_LINE = {
 # after the hashed core (core files and HASHES unchanged); prompt_sha256 covers it. zh polished with sinify.
 # P168: plus the human fallback (feedback@agentj.app) when the desk itself is unreachable.
 FILES_LINE = {
-    "zh": "文件被拒先 agentj files fetch '<路径>'，手机批本次/永久/拒绝，只用回执路径；不改沙箱、不 sudo/cp 或代点系统窗。Finder 初次授权须本机，缺了等下次在电脑前准备，继续独立工作；设置可撤销。\n",
+    "zh": "文件被拒先 agentj files fetch '<路径>'，手机批本次/永久/拒绝，只用回执路径；不改沙箱、不 sudo/cp 或代点系统窗。Finder 初次授权须本机，缺了等下次在主机前准备，继续独立工作；设置可撤销。\n",
     "en": "For denied folder access or a macOS permission prompt, first run agentj files fetch '<original path>'; the phone chooses once/always/deny. Use only the returned copy. Never disable isolation, retry sudo/cp or click system prompts. Finder Automation needs initial local consent too; explain missing consent, prepare next time at the computer and continue independent work. Import grants are removable in Settings.\n",
 }
 SUPPORT_LINE = {"zh": "", "en": ""}  # P253: merged into the versioned core; one consent rule.

@@ -157,7 +157,7 @@ class Missed(unittest.TestCase):
         self.assertEqual({m["id"]: m["n"] for m in miss}, {"daily": 3, "quarter": 12})
         self.assertEqual(len(self.h.notices), 1)
         n = self.h.notices[0]
-        self.assertIn("电脑关机或休眠期间", n)
+        self.assertIn("Agent J 主机关机或休眠期间", n)
         self.assertIn("日报（3 次）", n)
         self.assertIn("巡检（12 次）", n)
         for word in ("relay", "serve", "harness"):

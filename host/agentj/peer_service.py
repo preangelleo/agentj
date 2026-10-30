@@ -971,7 +971,9 @@ class PeerService:
 
     def ask_msg(self, a: FriendAsk) -> dict:
         m = {"t": "ask", "id": a.rid, "tool": a.tool, "summary": a.summary, "ttl": max(0, int(a.exp - self.clock())),
-             "cat": ["friend"] if a.tool == "friend_request" else ["send"], "why": a.why}
+             "cat": ["friend"] if a.tool == "friend_request" else ["send"], "why": a.why, "reason": ""}
+        # a.why / pq.reason explain the host's routing gate; a friend's request note is untrusted peer text.
+        # Neither is an Agent note. The phone shows its ordinary missing-note fallback.
         if a.tool == "friend_request":
             m["fr"] = {**a.extra, "groups": [{"id": g["id"], "name": g["name"]} for g in self.store.groups()]}
         else:

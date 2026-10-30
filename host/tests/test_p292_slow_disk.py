@@ -330,6 +330,7 @@ class OffLoopReads(unittest.IsolatedAsyncioTestCase):
         host.st.root = pathlib.Path(self.tmp.name)
         host.lang = "zh"
         a = shared.SharedClaudeAgent(host, {"kind": "claude", "dir": self.tmp.name, "session_mode": "shared", "_workflow_ceo": True})
+        a.cfg.pop("_workflow_ceo"); a.cfg["shared_identity"] = False; host.agent = a
         a.session = {"sessionId": "sess-292", "pid": 1, "status": "idle"}
         return a, host
 

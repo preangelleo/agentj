@@ -100,7 +100,7 @@ try {
       assert.equal(await ev(p, `document.getElementById('elev-input').type`), 'password');
       assert.equal(await ev(p, `document.getElementById('elev-title').textContent`), 'Agent J 想用管理员身份执行一条命令');
       const rows = await ev(p, `[...document.querySelectorAll('#elev-rows dd')].map((x) => x.textContent)`);
-      assert.deepEqual(rows, ['把录音转成 mp3 要用 ffmpeg', 'apt-get install -y ffmpeg', '安装一个系统软件包']);   // P339: what it is for, first
+      assert.deepEqual(rows, ['把录音转成 mp3 要用 ffmpeg', 'apt-get install -y ffmpeg', '安装一个系统软件包', 'Agent 没说明理由']);   // P339 purpose first; P572 keeps a separate signed-reason fallback.
       assert.match(await ev(p, `document.getElementById('elev-left').textContent`), /还剩 1\d\d 秒/);
       // P73: nothing typed → the button says what is missing, nothing is sent (never a decline)
       await ev(p, `document.getElementById('elev-allow').click()`);
@@ -140,7 +140,7 @@ try {
       await fake.send(card.m);
       await waitFor(p, `!!document.getElementById('elev') && !document.getElementById('elev').hidden`);
       assert.equal(await ev(p, `document.getElementById('elev-title').textContent`), 'Agent J wants to run one command as admin');
-      assert.equal(await ev(p, `document.querySelectorAll('#elev-rows dd').length`), 2, 'no empty effect row');
+      assert.deepEqual(await ev(p, `[...document.querySelectorAll('#elev-rows dd')].map((x) => x.textContent)`), ['Apply the new config', 'systemctl restart nginx', 'The agent gave no reason'], 'no empty effect row; P572 reason stays separate');
       writeFileSync(OUT + 'f17-sudo-en-phone.png', await shoot(p, 'unused'));
       await ev(p, `document.getElementById('elev-deny').click()`);
       for (let i = 0; i < 100 && !answers().length; i++) await new Promise((r) => setTimeout(r, 50));
@@ -284,7 +284,9 @@ try {
         await waitFor(p, `!!document.getElementById('elev') && !document.getElementById('elev').hidden`);
         assert.equal(await ev(p, `document.getElementById('elev-title').textContent`),
           lang === 'zh' ? '请把 ELEVENLABS_API_KEY 贴到下面' : 'Paste ELEVENLABS_API_KEY below');
-        assert.equal(await ev(p, `document.querySelectorAll('#elev-rows dd').length`), 4);
+        assert.deepEqual(await ev(p, `[...document.querySelectorAll('#elev-rows dd')].map((x) => x.textContent)`),
+          [card.m.name, card.m.purpose, card.m.dest, card.m.verify, lang === 'zh' ? 'Agent 没说明理由' : 'The agent gave no reason'],
+          'all original secret fields plus the separate P572 reason fallback');
         await type(p, '  ' + KEY + '  ');
         writeFileSync(OUT + `f17-secret-${lang}-phone.png`, await shoot(p, 'unused'));
         await ev(p, `document.getElementById('elev-allow').click()`);

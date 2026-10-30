@@ -26,7 +26,7 @@ EFFECTS = ("none", "reversible", "irreversible")
 OWNER_ACTIONS = {
     # ② reversible: the owner's own tap is the instruction
     "mail_fwd": "reversible", "tg_fwd": "none", "wechat_fwd": "reversible", "bot_mail": "reversible",
-    "mem_rm": "reversible", "mem_undo": "reversible", "task_on": "reversible", "task_off": "reversible",
+    "mem_rm": "reversible", "mem_undo": "reversible", "task_on": "reversible", "task_off": "reversible", "task_migrate": "reversible",
     "estop": "none",
     # ③ irreversible: Face ID even from the owner's own remote
     "dev_unbind": "irreversible", "wechat_unbind": "irreversible",

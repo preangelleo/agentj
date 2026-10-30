@@ -340,7 +340,7 @@ def doctor_rows(state_dir=None, engine_override=None) -> list[dict]:
     """Rows in doctor.py's shape ({"id","status","summary","hint"}, status ok|warn|fail). ASR is optional: never a ✗."""
     s = status(state_dir,engine_override=engine_override)
     if s["state"] == "ready" and s["active"] == "sherpa" and not s["installed"]:
-        row = (OK, "本机转写可用：用这台电脑上已装好的共享模型，第一次说话时接入，不再下载 / local speech-to-text ready: the model "
+        row = (OK, "本机转写可用：用这台 Agent J 主机上已装好的共享模型，第一次说话时接入，不再下载 / local speech-to-text ready: the model "
                    "already on this computer is shared and is linked in on first use, no download", "")
     elif s["state"] == "ready" and s["active"] == "sherpa":
         row = (OK, f"本机转写可用 / local speech-to-text ready · SenseVoice-Small · sherpa-onnx {s['sherpa_version']} · "

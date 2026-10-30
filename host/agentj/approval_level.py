@@ -1,50 +1,10 @@
-"""P336 (Leo, 10-16, backlog #37 + #36): the owner's approval level, goal mode without the opening card, and cards that
-wait while no remote is online.
+"""Owner approval levels and signed goal preauthorization; offline cards remain pending.
+Safe adds checks; standard retains normal checks; legacy signed full aliases harness without rewriting its signature.
+Harness uses the native tool's widest permissions but retains confirm_tier's four UV kinds and its passkey requirement.
+Only a live paired signing key activates a widening switch; unsigned settings notify the owner. Signed phone writes
+are audited. Parked retries consume their signed grant once; revocation and stop still apply.
 
-Level (`approval.level`, default "standard" = the behaviour before P336, unchanged):
-    safe      more cards: no Jev layer 2 (a can't-tell command always asks), no batch grant, no goal countdown (a reversible
-              step waits for the owner), no shared-mode turn-wide category grant, and shared sessions ask like `strict` plus
-              every deletion (local files too).
-    standard  as before.
-    full      P552 (#325 ③): merged into `harness` — one switch, 「全放行」 (P556; P552 called it 「减少弹窗」). A released configuration
-              that says `full` with its live signed switch is in force as `harness` (MERGED; the file is not rewritten,
-              the signature covers the word; no re-confirmation — chairman 10-26). What `full` used to mean, kept for the audit trail of old approvals.log lines:
-              like Claude Code `--dangerously-skip-permissions` / Codex full access: an Agent tool call that would have
-              asked is allowed at once, logged (approvals.log `reason: level_full`, activity, one quiet line on the phone).
-              The red lines still ask the owner, one by one: a suspected attack (goal.suspect — `curl | sh`, decode-and-run,
-              hook / approval files, `agentj config`, Agent J settings or state folders), credentials changed or shown,
-              spending money, price changes. Host cards (`agentj …`, the pairing card, the sandbox / login-rescue cards) and
-              cards with their own wait keep asking. Needs a paired remote with an approval key (none → refused as before).
-    harness   P556 「全放行」 / Full access (P551 #320 「审批跟随底层 Harness」), expert mode — the AI coding tool Agent J starts
-              runs at its widest permissions (MAX_HOW) and Agent J adds no approval layer of its own — its own `agentj …`
-              cards (mail, calendar, same-owner changes), goal countdowns, batch / brief grants and the danger hints of the
-              Claude Code hook are off; nothing the harness would ask comes as a card any more (P556: it runs at its widest
-              permissions; before P556 its own prompts came to the phone as they were).
-              The one layer kept: the four ③ kinds (confirm_tier.harness_keeps: money, the owner's data deleted, a seat, a key
-              going out) need the owner's Face ID, whoever starts them. Switching to it is signed AND needs this remote's
-              passkey (no passkey → refused `no_passkey`); it takes effect when the harness restarts (done at once, before
-              its next turn, conversation kept).
-
-Goal without the opening card (`approval.goal_nocard`, default false = the P158 card): when on, `agentj goal propose`
-starts the goal at once — the owner's signed switch IS the signature (approvals.log `reason: goal_preauth`, `grant` = the
-switch's signed control line) — and inside a live goal every step that would have asked is allowed except the red lines
-above (they still ask). Still logged, the result card still comes. The switch only counts while the remote that signed it
-is still paired with the same approval key (`<state>/approval_signers.json`); a value written any other way (terminal,
-an approved Agent request) leaves the opening card in place.
-
-P552 (#325 ①): a switch the configuration turns on but no live signature backs (the signing remote unpaired or re-keyed)
-is never silent: `unsigned()` names it and why, Settings shows it 「未生效」 with 「用本机重新确认」, and the OWNER is told
-once per change (phone line + security push + Telegram private chat / own e-mail, `tell_owner`), not only the Agent.
-
-Both keys change only by a signed phone control `approval_set` (controls.py; never `pref_set`): the phone confirms, signs
-`key \\n value`, the host checks it like every phone write, logs it in controls.log + approvals.log (kind "control"), tells
-every remote and pushes `security`. An Agent's `agentj config set approval.*` stays an owner card (ctl_auth "approval.").
-
-#36 — no remote online: a card is queued as usual (re-sent first thing when a remote connects), the push goes out, and one
-content-free reminder goes to the owner's Telegram private chat / own e-mail (the existing channels, as the owner set them
-up; ≤ 1 per OFFLINE_GAP). After PARK_GRACE seconds with still nobody online the Agent is told 「主人当前没有遥控器在线」 and
-does the independent work; the card stays on the phone (PARK_SECS). Allowed later → the Agent's identical retry passes once
-(`reason: parked`, `grant` = the signed allow). Standard library only.
+Protocol/history detail: agentjarvis/ARCHITECTURE.md, P0261 source notes / approval_level.py.
 """
 from __future__ import annotations
 
@@ -71,7 +31,7 @@ HOST_CARDS = tuple(tool for tool in policy_registry.HOST_TOOLS if not tool.start
 # (review B1) changing Agent J's own settings, quota account or a paused automation is not an approval the harness has —
 # it keeps its card
 HARNESS_KEEPS = tuple(tool for tool in HOST_CARDS if tool != "AgentJSameOwnerAction") + (
-    "agentj config", "agentj quota switch", "agentj automation resume")
+    "agentj config", "agentj quota switch", "agentj automation resume", "agentj tasks migrate")
 
 
 PARK_GRACE = 20          # seconds a card waits for a remote to come online before the Agent is told nobody is there

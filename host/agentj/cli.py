@@ -45,7 +45,7 @@ from . import docsrule, feedback, handover, plaza, recall, support, wizard
 from . import elevate, elevate_helper
 from .state import DEFAULT_RELAY, DEFAULT_WEB, MAX_DEVICES, State, device_names
 from .envcompat import getenv
-from .text import STARTER_NAMES, ask_yes, clean, clean_label
+from .text import STARTER_NAMES, ask_yes, clean, clean_label, pick
 
 
 def _need_init(st: State) -> None:
@@ -1709,9 +1709,9 @@ def cmd_report_hostname(a) -> None:
 
 
 NEWS_PROBLEM = {   # P374: why `agentj news` did not work — (zh, en)
-    "unlinked": ("这台电脑还没加到 Agent J 账号：先运行 `agentj login`",
+    "unlinked": ("这台 Agent J 主机还没加到 Agent J 账号：先运行 `agentj login`",
                  "This computer is not in an Agent J account yet: run `agentj login` first"),
-    "not_bound": ("账号后台那边已经把这台电脑移除了：`agentj unlink` 后重新 `agentj login`",
+    "not_bound": ("账号后台那边已经把这台 Agent J 主机移除了：`agentj unlink` 后重新 `agentj login`",
                   "The account dashboard no longer has this computer: `agentj unlink`, then `agentj login` again"),
     "rate_limited": ("改得太频繁了，过几分钟再试", "Too many changes; try again in a few minutes"),
     "unreachable": ("连不上 Agent J 账号后台，稍后再试", "Could not reach the Agent J account dashboard; try again later"),
@@ -2590,8 +2590,15 @@ def cmd_tasks(a) -> None:
     _need_init(st)
     c = st.agent_config()
     wd = c["dir"] if c else None
+    if a.mode in ("migrate", "unmigrate"):        # P570b: sysmigrate.py
+        from . import sysmigrate
+        return sysmigrate.cli(st, a, _lang(st))
     if a.mode == "list":
         rows = tasks.rows(st, wd)
+        from . import sysmigrate
+        moved, lang = sysmigrate.migrated(st), _lang(st)
+        for r in rows:
+            r["migrated"] = moved.get(r["id"])
         if a.json:
             print(json.dumps(rows, ensure_ascii=False, indent=1))
             return
@@ -2601,13 +2608,19 @@ def cmd_tasks(a) -> None:
         print(_estop_line(st))
         if not rows:
             print(f"{memory_tilde(wd)}/workflows 下没有任务。")
+        note, stay = sysmigrate.list_note(st, rows, lang)      # P570b: why enabled tasks stay in Agent J
+        if note:
+            print(note)
         for r in rows:
-            state = ("✗ 无效：" + r["problems"][0]) if r["problems"] else ("✓ 已启用" if r["enabled"] else
-                                                                         "! 已改动，需重新启用" if r["stale"] else "· 未启用")
-            nx = time.strftime(" · 下次 %m-%d %H:%M", time.localtime(r["next"])) if r.get("next") else ""
+            state = (pick(lang, "✗ 无效：", "✗ invalid: ") + r["problems"][0]) if r["problems"] else pick(lang, *(
+                ("✓ 已启用", "✓ enabled") if r["enabled"] else ("! 已改动，需重新启用", "! changed, enable again") if r["stale"] else
+                ("· 未启用", "· not enabled")))      # P570b QA L4
+            nx = time.strftime(pick(lang, " · 下次 ", " · next ") + "%m-%d %H:%M", time.localtime(r["next"])) if r.get("next") else ""
             last = r.get("last") or {}
-            lt = f" · 上次 {last.get('verdict')}" if last else ""
-            print(f"  {r['id']:<20} {state}  {r.get('schedule') or ''} ({r.get('tz') or ''}) {r.get('mode') or ''}{nx}{lt}")
+            lt = pick(lang, " · 上次 ", " · last ") + str(last.get("verdict")) if last else ""
+            mv = (pick(lang, " → 已迁到系统定时 ", " → moved to the system scheduler ") + r["migrated"] if r["migrated"] else
+                  " · " + stay[r["id"]] if r["id"] in stay else "")
+            print(f"  {r['id']:<20} {state}  {r.get('schedule') or ''} ({r.get('tz') or ''}) {r.get('mode') or ''}{nx}{lt}{mv}")
         return
     if not a.id:
         sys.exit("要给任务 id（`agentj tasks list`）")
@@ -2631,6 +2644,9 @@ def cmd_tasks(a) -> None:
             tasks.set_enabled(st, wd, a.id, on, "terminal")
         except tasks.TaskError as err:
             sys.exit(f"✗ {err.detail or err.reason}")
+        from . import sysmigrate
+        if on and sysmigrate.unavailable() is None:      # QA d: never recommend what this host refuses
+            print(sysmigrate.hint(a.id, _lang(st)))
         activity.record(st, "task_on" if on else "task_off", by="终端", id=a.id)
         st.log("task_on" if on else "task_off", id=a.id)
         _ctl_quiet(st, {"cmd": "tasks_changed"})
@@ -2821,6 +2837,10 @@ def cmd_service(a) -> None:
             r = service.uninstall(st if st.root.is_dir() else None)
             print(f"✓ 已停止并删除 / stopped and removed: {r['name']}" if r["removed"]
                   else f"{r['name']} 没安装 / was not installed")
+            from . import sysmigrate        # P570b (M1): tasks moved to the system scheduler stop with Agent J
+            if st.root.is_dir() and (n := sysmigrate.remove_all(st)):
+                print(f"✓ {n} 个改用系统定时的任务也停了（重新装好后 agentj tasks migrate --all 再迁） / {n} task{'s' * (n != 1)} moved to the "
+                      "system scheduler were stopped too (after reinstalling: agentj tasks migrate --all)")
             if r.get("restored_disabled"):
                 print("✓ 已恢复安装前的「停用」设置 / launchd's earlier \"disabled\" setting for it is back")
             return
@@ -3601,8 +3621,9 @@ def main(argv=None) -> None:
                                     "local speech-to-text", add_help=False)
     sr.add_argument("args", nargs=argparse.REMAINDER)
     sr.set_defaults(fn=cmd_asr)
-    tk = sub.add_parser("tasks", help="定时任务：list · show · enable · disable · run [--dry-run] / scheduled tasks")
-    tk.add_argument("mode", choices=["list", "show", "enable", "disable", "run"])
+    tk = sub.add_parser("tasks", help="定时任务：list · show · enable · disable · run [--dry-run] · migrate <id|--all> · unmigrate <id> / scheduled tasks")
+    tk.add_argument("mode", choices=["list", "show", "enable", "disable", "run", "migrate", "unmigrate"])
+    tk.add_argument("--all", action="store_true", help="migrate：所有已启用的任务 / every enabled task")
     tk.add_argument("id", nargs="?")
     tk.add_argument("--dry-run", action="store_true", help="run：只显示会怎么跑，不运行 / show the plan only")
     tk.add_argument("--json", action="store_true")

@@ -35,14 +35,14 @@ a command.
 ## Slot 0 = the owner (「发给我自己」)
 - Slot 0 of the book is the owner themself: name, main e-mail (the first), optional phone. `agentj contacts owner show`.
   Every "send it to me" — a web report, meeting minutes, a mail, a file — goes to that main e-mail:
-  `agentj mail send --to-owner …` (slot 0 + the 「我本人」 allowlist addresses; or `--to me`, which finds slot 0 only).
+  `agentj mail send --to-owner …` (slot 0 + the 「主人」 allowlist addresses; or `--to me`, which finds slot 0 only).
   `--to-owner` with `--to` sends to both (deduped, 10 at most); no owner address yet → `no_owner_address`: say so and offer
   `agentj contacts owner set`. Mail only to the owner is approved with one tap on the card; add anyone else and it needs the passkey.
 - Empty → `agentj contacts owner set [--name … --email … --phone …] --why '…'`: a card rises on the phone, pre-filled with what
-  you pass (or the 「我本人」 address of the e-mail channel); the owner saves or skips. You can never write slot 0 yourself
+  you pass (or the 「主人」 address of the e-mail channel); the owner saves or skips. You can never write slot 0 yourself
   (`edit` / `rm` on it are refused): an address there skips the outward filter. The first pairing already shows this card once.
 - Owner-directed = a paired remote, the owner's Telegram private chat, or a mail whose recipients are ALL owner addresses
-  (slot 0 + the 「我本人」 rows of the e-mail channel). That goes as written: e-mail addresses, phone numbers, links, access
+  (slot 0 + the 「主人」 rows of the e-mail channel). That goes as written: e-mail addresses, phone numbers, links, access
   codes, one-time codes, a report's authorization code are not masked. One other recipient → the whole mail is masked.
 - Real credentials (API keys, private keys, passwords, tokens, seed words) never ride in mail or Telegram, not even to the
   owner: Agent J takes them out of the text, leaves 〔密钥 n …〕 in their place and opens a secret pickup card on the phone
@@ -66,7 +66,7 @@ a command.
 - `agentj contacts list --sort recent|frequent|name` · `rm <id>` only when the owner asks to delete.
 - The owner can also do all of this on the phone: Settings → 通讯录 / Contacts lists and searches the book, adds, edits
   and deletes contacts, imports a vCard / CSV / JSON file and exports a vCard, and its envelope icon puts a contact's
-  e-mail on the e-mail channel's allowlist in one tap (as a guest; slot 0 as 「我本人」). Point the owner there when they
+  e-mail on the e-mail channel's allowlist in one tap (as a guest; slot 0 as 「主人」). Point the owner there when they
   want to manage the book themselves or ask how to let a friend e-mail the Agent. Allowlist = their mail is handled AND
   mail to them needs no confirmation. You may run `agentj mail allow <address> --guest` yourself: it waits for the owner's
   card on the phone and exits non-zero (nothing added) unless they confirm.

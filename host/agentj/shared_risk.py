@@ -84,7 +84,7 @@ class RiskGuard:
                 if set(keys) & self.denied:
                     return self._deny('denied_before')
                 epoch=self.epoch
-                answer=await a.host.ask(tool,inp,batch=False,require_passkey=requirement == 'uv')
+                answer=await a.host.ask(policy_registry.harness_tool(tool),inp,batch=False,require_passkey=requirement == 'uv')
                 if answer.get('behavior') != 'allow':
                     if epoch == self.epoch:
                         self.denied.update(keys)
@@ -113,7 +113,7 @@ class RiskGuard:
                         turn=self.turn_id,input_sha256=hashlib.sha256(json.dumps(inp,sort_keys=True).encode()).hexdigest())
                 return True
             epoch=self.epoch
-            answer=await a.host.ask(tool,inp,batch=False,risk_scope=True)
+            answer=await a.host.ask(policy_registry.harness_tool(tool),inp,batch=False,risk_scope=True)
             if answer.get('behavior') != 'allow':
                 if self.epoch == epoch:
                     self.denied.update(keys)

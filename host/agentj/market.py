@@ -1677,12 +1677,12 @@ def _perm_refusal(name: str, res, items: bool = True, publisher: bool = False, a
     if res is None:
         if publisher and not items:
             return ("没有安装：这个包的发布方换了（预览里写着），要你在手机上签名同意，但 Agent J 没在运行，确认卡发不到你的手机；命令行加旗标也不行。"
-                    "先打开 Agent J（让它在这台电脑上运行），再让 Agent 重新运行同一条安装命令，手机上会弹出列着新旧指纹的确认卡，你点「允许」就会装 / "
+                    "先打开 Agent J（让它在这台 Agent J 主机上运行），再让 Agent 重新运行同一条安装命令，手机上会弹出列着新旧指纹的确认卡，你点「允许」就会装 / "
                     "NOT INSTALLED: the publisher of this package changed (see the preview) and only your signed yes on the phone "
                     "accepts that, but Agent J is not running, so no card can reach your phone (no command-line flag replaces "
                     "it). Start Agent J on this computer, then have your Agent run the same install command again.")
         return ("没有安装：这个包要的权限超出你的 Agent 现在允许的" + ("，发布方也换了" if publisher else "")
-                + "，但 Agent J 没在运行，确认卡发不到你的手机。先打开 Agent J（让它在这台电脑上"
+                + "，但 Agent J 没在运行，确认卡发不到你的手机。先打开 Agent J（让它在这台 Agent J 主机上"
                 f"运行），再让 Agent 重新运行同一条安装命令（agentj plaza install {name} … --owner-confirmed --digest …），手机上会弹出"
                 "确认卡，你点「允许」就会装 / NOT INSTALLED: the package needs more than your Agent may do now and Agent J is not "
                 "running, so no card can reach your phone. Start Agent J on this computer, then have your Agent run the same install "
@@ -1708,7 +1708,7 @@ def _install_card(st, m, files, sha, certified, downgrade, *, name, version, rep
     have = jcards.find(st.root, cid)
     mine = have and not have["official"] and (jcards_pkg.source(st.root, cid) or {}).get("name") == m["name"]
     if have and not mine:
-        raise PlazaError(f"这台电脑上已有一张 id 为 {cid} 的卡，不是从这个包装的，不覆盖 / a card {cid} exists here that this package did not install: never replaced")
+        raise PlazaError(f"这台 Agent J 主机上已有一张 id 为 {cid} 的卡，不是从这个包装的，不覆盖 / a card {cid} exists here that this package did not install: never replaced")
     dg = install_digest(sha, pathlib.Path(target), "card", {}, {"replace": bool(replace)})
     if not owner_confirmed:
         q = shlex.quote

@@ -129,7 +129,7 @@ class Session(unittest.TestCase):
             a.on_event({"type": "session.error", "properties": {"sessionID": "ses_1", "error": {
                 "name": "UnknownError", "data": NOT_FOUND}}})
         self.assertEqual(a.last_provider_fail["reason"], "no_key")
-        self.assertEqual(a.cards, [])
+        self.assertEqual([card[0] for card in a.cards], ["model"])  # P578b: key recovery also offers configured models
 
 
 class Probe(unittest.TestCase):

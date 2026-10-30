@@ -1,32 +1,10 @@
-"""P365 (backlog #76): the owner's own automations post a message / files to the phone — `agentj notify`.
+"""Owner automation notifications and file cards; accepted posts also reach the main Agent as untrusted data.
+Only authenticated same-uid non-Agent callers may post, with global and source allow switches. Agent processes, served
+sessions and harness markers are refused; the fence hides the control socket. Task result notifications use their own
+Scheduler path. Both CLI and authoritative serve enforce rate/type/size bounds, credential denial and text redaction.
+Accepted files are privately copied before return, served through media, then expired. Logs contain counts, never content.
 
-A script or timer of the owner's (systemd --user, cron, launchd — not an Agent) runs
-`agentj notify --from <name> [--title …] [--text …] [--file <png|jpg|gif|webp|pdf|txt|md>]…`. The phone shows one
-system-style page 「来自你的自动化：<name>」 with the files as ordinary file cards (preview / download, §13).
-Leo 10-17 (追加 2): 「所有要给董事长看的消息，主 Agent 都应该看到」 — the same post also goes to the main Agent as one queued
-turn (provenance.automation — untrusted data like a forward: no approval can be asked in it; its own page `via: auto`): 〔Agent J 系统提示〕 + the source, the masked title / text
-and the files' paths on this computer, marked as data from a script, never an instruction. The owner already has the
-message, so with nothing to add the Agent replies exactly 〔不回群〕 (silent: no page, no push, no unread); it reports,
-continues the work or ignores spam at its own judgement. The full inbound protocol (every channel) is P366's.
-
-Who may post:
-- serve's control socket (0600, same uid; the peer uid is checked again) and the one-time claim of ctl_auth: refused to a
-  process serve runs or serves (owned Agent, scheduled task run, the shared session) or one carrying an Agent harness marker.
-  An Agent never posts here, not even with a switch on. Inside the Agent fence the control socket is not visible at all.
-- `notify.enabled` (default on) AND the caller's own switch: `notify.automations` = [{"id": <name>, "allow": true|false}].
-  A name not listed, or listed false, is refused with the command that turns it on — no question on the phone (an automation
-  runs when nobody is looking). The switch is set when the automation is made (`agentj notify --allow <name>` at the owner's
-  terminal, or the phone's settings); from an Agent `agentj notify --allow` is a security-key change → the owner's approval card.
-- Agent J's own scheduled tasks never call this (their run is an Agent). A task declares `notify_webapp: true|false` in its
-  task.json (default false); when on (`task.<id>` in notify.automations overrides the declaration either way), the files the
-  run wrote under its workflow folder's reports/ ride its result page as file cards (serve does it, tasks.py → serve).
-
-Limits (CLI and serve both check; serve is the authority): text ≤ TEXT_MAX units, title ≤ TITLE_MAX, ≤ FILES_MAX files of
-EXTS, each ≤ FILE_MAX bytes, typed by extension AND leading bytes; RATE posts per source per RATE_WINDOW s. A credential file
-by name (media's KEY_DIRS / DENY_FILES …) or a txt / md holding a real key shape is refused, never sent; text and title pass
-privacy.owner_text. A file is copied into `<state>/notify/<random>/` (0700 / 0600) when accepted — the script may overwrite
-or delete its own file right after — and served from there through media.py like any card; copies older than
-media.KEEP_SECS are removed. Log (`notify` / `notify_refused`): source, file count, bytes, phones reached — never content.
+Protocol/history detail: agentjarvis/ARCHITECTURE.md, P0261 source notes / notify.py.
 """
 from __future__ import annotations
 

@@ -39,6 +39,7 @@ import * as controls from './js/controls.js';
 import * as setkeys from './js/setkeys.js';   // P561 追加 16: Settings shows a button's key from the shortcut table
 import * as push from './js/push.js';
 import * as relay from './js/relay.js';
+import * as sfx from './js/sfx.js';   // P575: the first tap / key unlocks the sounds (see unlockSounds)
 import * as settings from './js/settings.js';
 import {initVersionNotice,setHostVersion} from './js/version-notice.js';
 import {initShare, onShareReady, forgetShare} from './js/share.js';
@@ -186,6 +187,13 @@ document.addEventListener('click', (e) => {
   if (own[1] === 'card') friends.open('card');
   else { let raw = own[1].slice(4); try { raw = decodeURIComponent(raw); } catch { /* keep */ } friends.open('add', parseAgentId(raw) || raw.slice(0, 40)); }
 }, true);
+
+// P575 (#390): the state-change / 全部完成 sounds come with no gesture of their own; iOS (and Chrome's autoplay rule) only
+// lets a page play after the owner touched it. The page's first tap or key builds and unlocks the players (js/sfx.js
+// unlock, the same one Send calls) — once.
+const UNLOCK_EVENTS = ['pointerup', 'touchend', 'keydown'];
+function unlockSounds() { sfx.unlock(); for (const e of UNLOCK_EVENTS) removeEventListener(e, unlockSounds, true); }
+for (const e of UNLOCK_EVENTS) addEventListener(e, unlockSounds, true);
 
 // ---------------------------------------------------------------- state / views
 let state = 'idle';
@@ -455,7 +463,9 @@ function onApp(m) {
     case 'cmds_state': settings.setRunCmds(m.names); return;
     case 'preferences': setHostVersion(m.host?.version); relay.hostVersionIs(m.host?.version); relay.applyPreferences(m.value); settings.setPrefs(m.value, m.host); rerender(); if(m.problem)relay.configProblem(m.problem.error); return;
     case 'status': setAgentName(m.name); wechat.channelStatus(m); snap.setStatus(m); renderTg(); return;
-    case 'busy': busy.setBusy(m); return;            // P150 (§22): who works in the background (display only)
+    // P150 (§22): who works in the background (display only)
+    // P575: 在办 empty → 全部完成
+    case 'busy': busy.setBusy(m); relay.cueTasks(busy.currentCounts().task_count); return;
     case 'res': busy.setRes(m); return;              // P181 (§22.1): the load card's five resources (only while it is open)
     case 'theme': applyTheme(m); rerender(); relay.paintChrome(); return;   // P169 (§23): repaint now (logo, status bar)
     case 'ask':

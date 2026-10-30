@@ -445,12 +445,12 @@ s=unicodedata.normalize('NFKC',sys.stdin.read()).translate({ord(c):'-' for c in 
 for t in (s,re.sub(r'\s+','',s)):
     m=re.search(r'AJI-([0-9a-f]{32})(?![0-9a-f])',t,re.I)
     if m: print('AJI-'+m.group(1).lower()); sys.exit()
-print('ajt' if re.search(r'ajt_[A-Za-z0-9_-]{43}',s) else '')
+print('ajt' if re.search(r'aj[th]_[A-Za-z0-9_-]{43}',s) else '')
 EXTRACT_CODE
 )")
     if [[ $INSTALL_CODE != AJI-* ]]; then
       printf '没找到安装码。请只粘贴 AJI- 开头的那串码：在账户页点「复制安装码」。 / No installation code found. Paste only the code that starts with AJI- (account page → Copy installation code).\n'
-      [[ $INSTALL_CODE == ajt ]] && printf 'ajt_ 开头的是设置码，只给已经装好 Agent J 的电脑绑定席位用。 / A code starting with ajt_ is a setup code; it only links a computer that already has Agent J.\n'
+      [[ $INSTALL_CODE == ajt ]] && printf 'ajt_ / ajh_ 开头的是设置码，只给已经装好 Agent J 的 Agent J 主机绑定席位用。 / A code starting with ajt_ / ajh_ is a setup code; it only links an Agent J host that already has Agent J installed.\n'
       printf 'See %s#agent-j\n' "$PAGE"; exit 2
     fi
     AJTMP=$(mktemp -d); trap 'rm -rf "$AJTMP"' EXIT

@@ -3,12 +3,7 @@ local control socket (driven by `agentj pair` in a terminal), shows plaintext on
 
 Spec: protocol/PROTOCOL.md. Logs (host.log) carry metadata only, never message text.
 
-Relay parity (PROTOCOL §10, PROMPT-33): a device that announces capability `p33` in its hello gets the bigger limits (60 KiB
-messages, 20 000-unit text, `frag` for anything larger), the persistent history instead of §8's `msg` stream (history.py:
-every message, reply, notice, command result and task run is a page), `say` with attachments / quote / withdraw (compose.py),
-end-to-end blobs (uploads.py → inbox.py), voice transcribed on the Agent J host (asr.py), questions as signed cards, meters, the
-model / effort pill and the menu (menu.py); after it is ready the relay is told to raise its frame budget (op 0x03 BULK). An
-older device keeps exactly §3 / §8.
+Device capability/parity contract: protocol/PROTOCOL.md §10.
 """
 from __future__ import annotations
 
@@ -149,7 +144,7 @@ _RID = re.compile(r"[A-Za-z0-9_-]{1,32}")
 FRIEND_READS = ("fr_list", "fr_hist", "fr_usage", "fr_ctx_get", "fr_glog")   # P71 §17.7 (+ P73 fr_ctx_get); writes = controls.FRIEND_ACTIONS
 WF_READS = ("wf_list", "wf_doc", "skill_get")   # P244 (§30.2): answered to the asking session only, read-only
 SKILL_ACTS = ("skill_archive", "skill_restore")   # P426 #181-3 (§39): the owner's archive / restore taps on the 技能 page
-PHONE_CONTROLS = ("mem_list", "mem_rm", "mem_undo", "act_list", "task_list", "task_set", "estop", "resume",
+PHONE_CONTROLS = ("mem_list", "mem_rm", "mem_undo", "act_list", "task_list", "task_set", "task_migrate", "estop", "resume",
                   "systask_list")   # P207 §2: the Agent J host's own scheduled tasks, read-only (systasks.py)
 # §10 (PROMPT-33)
 Q_TTL = _ttl("AGENTJ_TEST_Q_TTL", 180)     # a question nobody answers is ended (relay's default)
@@ -351,6 +346,8 @@ class Ask:
     park_key: tuple = ()           # P336: (tool, input sha, task, harness, folder) — who may use its allow
     uv_ok: bool = False            # P539: the approving remote's allow passed the passkey (UV) on this card
     pk_fail: bool = False          # P539: a passkey answer on this card was refused (ask_done why "passkey")
+    reason: str | None = None      # P572 (#385): the Agent's reason, read out of the signed summary ("" = none given;
+                                   # None = a host card with no Agent behind it; sent as "" for the fallback)
 
 
 @dataclass
@@ -484,10 +481,10 @@ def policy_registry_bound(tool, bind):
     return policy_registry.bound_action(tool, bind)
 
 
-CU_SCRIPT_HEAD = {"zh": "Computer Use：在这台电脑上点击、输入并运行操控脚本",
+CU_SCRIPT_HEAD = {"zh": "Computer Use：在这台 Agent J 主机上点击、输入并运行操控脚本",
                   "en": "Computer Use: click, type and run a control script on this computer"}
 CU_SCRIPT_GRANT_NOTE = {
-    "zh": "勾选免问后，这台遥控器批准过的 Computer Use 操作（包括它运行的操控脚本）以后不再弹卡，相当于这台电脑上的 Computer Use "
+    "zh": "勾选免问后，这台遥控器批准过的 Computer Use 操作（包括它运行的操控脚本）以后不再弹卡，相当于这台 Agent J 主机上的 Computer Use "
           "完全放开；随时可在 设置 → 安全 → 免问的动作 取消。",
     "en": "If you tick don't-ask-again, Computer Use actions approved from this remote (including the control scripts it "
           "runs) no longer show a card — Computer Use on this computer is fully open; undo it any time in Settings → "
@@ -1207,7 +1204,7 @@ class Host:
                 return await self.send_app(s, {"t":"policy_ready", "r":r, **fields})
             except (KeyError, TypeError, ValueError):
                 return
-        if t in ("msg", "say", "answer", "slash", "blob_open", "blob_chunk", "blob_end", "ask_answer", "estop", "resume", "task_set", "lt_answer") or t in elevate.PHONE_TYPES or t in ("fr_answer", "fr_accept"):
+        if t in ("msg", "say", "answer", "slash", "blob_open", "blob_chunk", "blob_end", "ask_answer", "estop", "resume", "task_set", "task_migrate", "lt_answer") or t in elevate.PHONE_TYPES or t in ("fr_answer", "fr_accept"):
             self._phone_touch()                   # P292: config lock + write, off the loop
         if t == "msg":
             text = obj.get("text")
@@ -2116,12 +2113,9 @@ class Host:
         return False
 
     async def _ctl_config_from_agent(self, w: asyncio.StreamWriter, raw) -> None:
-        """A4: `agentj config set` from inside an Agent. Ordinary keys apply at once; a security key needs the owner's signed
-        approval on the phone (a card now; applied when allowed).
-        P318: the request is kept as a per-key patch {key: (present, value)} plus the value each key had when asked. A new
-        request touching a key of a still-pending card merges into ONE card (the old card ends `gone`, approvals.log reason
-        `superseded`). On allow the patch is replayed on the configuration as it is THEN (unrelated changes meanwhile are
-        kept); a security key someone else set to another value meanwhile → nothing applied (never reverts their change)."""
+        """A4: `agentj config set` from inside an Agent: ordinary keys at once; a security key → the owner's signed card.
+        P318: a per-key patch {key: (present, value)} + each key's value when asked; a request touching a pending card's key
+        merges into ONE card (the old one `superseded`); on allow it is replayed on the config as it is then (see _cfg_replay)."""
         from . import ctl_auth
         try:
             candidate = preferences.validate(preferences.parse(raw) if isinstance(raw, str) else preferences.read()[1])
@@ -2192,7 +2186,7 @@ class Host:
                             result="superseded_after_allow" if ans.get("behavior") == "allow" else "superseded")
                 return
             if ans.get("behavior") != "allow":
-                self.st.log("ctl_config_card_done", result="deny")
+                self.st.log("ctl_config_card_done", result="deny", why=None if self._online_approvers() else "无遥控器在线 / no remote online")
                 return
             res = await self._cfg_replay(patch, base, shown)
             if res.get("code") == "conflict":
@@ -2386,6 +2380,7 @@ class Host:
                                              "relay_last": None if self.relay_up else self.relay_last,   # P317: the host leg's stuck point
                                              "identity_ok": self.identity_ok,
                                              "agent": self.agent.kind if self.agent else None, "agent_status": self.eff_status(),
+                                             "agent_model": self.agent.cur_model() if self.agent else None,
                                              "harness_readiness": getattr(self.agent, "readiness", lambda: {"ready": False, "code": "unverified"})(),
                                              "agent_said_at": getattr(self, "agent_said_at", 0),
                                              **dict(zip(("agent_turn_start_at", "agent_turn_end_at", "agent_turn_failed"),
@@ -2518,6 +2513,12 @@ class Host:
                 elif cmd == "tasks_changed":
                     self.scheduler.wake.set()
                     await self._ctl_send(w, {"ok": True})
+                elif cmd in ("tasks_migrate", "task_migrated_ran"):   # P570b: the owner's terminal only / a moved task's run ended
+                    from . import sysmigrate
+                    if cmd == "task_migrated_ran":
+                        sysmigrate.ran_notice(self, req.get("id"))
+                    await self._ctl_send(w, await sysmigrate.ctl(self, req, lambda: self._ctl_send(w, {"sent": True}))
+                                         if cmd == "tasks_migrate" else {"ok": True})
                 elif cmd == "seat_transfer_notice":  # P547 `agentj seat transfer`: serve re-reads transfer.json (no text taken)
                     await self.seat_xfer.from_terminal()
                     await self._ctl_send(w, {"ok": True})
@@ -2830,7 +2831,7 @@ class Host:
         with contextlib.suppress(OSError):
             bailian.notify_retired(self)
         from . import auto_update
-        note = auto_update.take_notice(self.st, self.lang, self.preferences)
+        note = auto_update.take_notice(self.st, self.lang, self.preferences, notices.release_notes.current(self.st, self.agent))
         if note:
             self.agent_notice(note)
         from . import claude_inbound
@@ -3261,14 +3262,11 @@ class Host:
         return {"ok": True, "when": a.request_restart(why)}
 
     async def reload_config(self, trusted: bool = False, by: str = "cli") -> dict:
-        """P320 `agentj reload` (also the phone's /reload, ≡ Reload, Alt+Shift+L; run by itself after an Agent's `agentj config
-        set` of a reload-tier key): make the configuration file and the service's key file effective WITHOUT restarting serve.
-        1) the private service environment file is read again (key names only; the Telegram bot key added tonight) ·
-        2) the configuration file is activated like `agentj config apply` — a security key changed in the file by an Agent
-        (trusted=False: the phone, an Agent's terminal) goes to the owner's approval card instead · 3) the Agent settings read
-        at harness launch (instructions, isolation, docker, warnings, approvals) are refreshed and the owned harness restarts
-        before its next turn, the conversation kept · 4) the Telegram channel binds again with the new key. RESTART_SERVE_KEYS
-        changed since serve started are named, never applied half-way. Never prints or returns a value."""
+        """P320 `agentj reload` (also the phone's /reload): make the configuration file and the service key file effective
+        without restarting serve — the env file re-read (key names only); the file activated like `agentj config apply`
+        (an Agent's security change, trusted=False, goes to the owner's card); harness launch settings refreshed (restart
+        before its next turn, conversation kept); Telegram binds again. RESTART_SERVE_KEYS are named, never applied
+        half-way. Never prints or returns a value."""
         from . import service, ctl_auth
         out = {"ok": True, "changed": [], "pending": [], "restart_serve": [], "env_changed": 0, "harness": None}
         try:
@@ -3741,13 +3739,9 @@ class Host:
         await self._ctl_res(s, r, "mail_allow", ok, **res)
 
     async def on_forward_set(self, s: Session, obj: dict) -> None:
-        """P554: a signed `forward_set {r, dest, migrate, n, ts, sig}` (controls action, object = dest [\n migrate]) → the
-        owner's `ui.forward_destination` (share | wx | tg), written like `agentj config set`, then every ready remote gets the
-        `preferences` broadcast so all of them show the same choice. `migrate: true` is a remote's own pre-P554 local choice:
-        taken only while the host has none yet (the first one wins), else answered with the host's value and nothing changes.
-        No Face ID: the destination is the owner's own channel and the send itself is still the owner's tap. Not in
-        PREF_SET_KEYS (an unsigned pref_set is refused); at the terminal / for the Agent it is an ordinary user-tier key of
-        `agentj config set` like ui.card_hot_action (only the owner's own bound channels; every forward is still a tap).
+        """P554: a signed `forward_set {r, dest, migrate, n, ts, sig}` → `ui.forward_destination` (share | wx | tg), written
+        like `agentj config set`, then the `preferences` broadcast. `migrate: true` (a remote's pre-P554 local choice) is
+        taken only while the host has none. No Face ID; not in PREF_SET_KEYS (an unsigned pref_set is refused).
         → `ctl_res {r, action: "forward_set", ok, dest?, migrated?, why?}`."""
         r = obj.get("r")
         if not wire.is_rid(r):
@@ -3802,9 +3796,7 @@ class Host:
         uv = widen and confirm_tier.owner_action("approval_widen") == confirm_tier.UV   # P550 (P551 review S4): the table decides
         pk = self.st.passkey_of_device(s.device) if uv else None
         if uv and not pk:
-            # P551 (#320) + P550 (chairman via Jarvis, P551 待拍板 3 → #318 ③): every widening — full, harness, the goal switch
-            # on, Jev off — is switched only with this remote's own Face ID; a remote without one is refused (the phone offers
-            # 「在本机设置（需另一台批准）」). Before P550 full / goal / Jev-off went through on a signature alone.
+            # P550 / P551: every widening (full, harness, goal on, Jev off) needs this remote's own Face ID; none → refused
             self.st.log("control_refused", device=s.device, action="approval_set", reason="no_passkey")
             controls.log(self.st, action="approval_set", device=s.device, result="refused:no_passkey")
             return await self._ctl_res(s, r, "approval_set", False, why="no_passkey")
@@ -4299,7 +4291,7 @@ class Host:
                 notices.processed(self.st, n['id'])
                 continue
             if notices.presented(self.st, n['id']):
-                text = pick(self.lang, "Agent J 官方", "Agent J official") + " · " + n['title_' + self.lang] + "\n" + n['body_' + self.lang]
+                text = pick(self.lang, "Agent J 官方", "Agent J official") + " · " + n['title_' + self.lang] + "\n" + notices.body(n, self.lang, notices.release_notes.current(self.st, self.agent))
                 entry = self._remember("notice", text)
                 self._post(self._send_legacy, lambda s, e=entry: self._render(e, s))
                 self.hist_add({"k": "sys", "text": "", "notice_id": n['id']}, text, "done")
@@ -4447,9 +4439,7 @@ class Host:
         self.activity("turn_start", by=by, text=text[:120])
         self.turn_by = None
         self.cur_turn, self.cur_failed = (send.turn if send is not None else None), False
-        # P282 (追加): the Agent has taken this say off the queue. A shared Codex still spawns its app-server and resumes the
-        # thread before `turn/start` (measured 46–65 s on a busy Mac) — the phone must stop calling it "queued, not handed
-        # to the Agent" while the Agent is already working on it (`delivered` still follows at the write).
+        # P282: the Agent took this say off the queue (a shared Codex may need ~1 min before turn/start): no longer "queued"
         if send is not None and isinstance(getattr(send, "sid", None), str) and not any(
                 getattr(send, k, None) for k in ("heartbeat_key", "bot_handoff_id", "official_notice_id", "quota_resume_id",
                                                  "auto_notify", "hook_notice")):
@@ -4642,6 +4632,8 @@ class Host:
             m["goal"] = "grant"
         if a.allow_offer and not a.goal_add:   # P296: unticked 「以后发给 X 不用再确认」 boxes on the mail card
             m["allow_offer"] = list(a.allow_offer)
+        # P572: every new-host confirmation card gets a note or the missing-note fallback, including host-owned cards.
+        m["reason"] = a.reason or ""
         return m
 
     # ------------------------------------------------------------ batch approval (ADR-A48)
@@ -4865,7 +4857,7 @@ class Host:
             return {"behavior": "allow", "updatedInput": a.tool_input}
         approvals.record(self.st, **base, decision="deny", reason="parked_wait")
         did = a.fut.done() and a.fut.result()[1]          # P570
-        msg = "用户在手机上拒绝了这个操作。" if did else _timeout_text(self.lang, int(self.ask_ttl))
+        msg = pick(self.lang, "用户在手机上拒绝了这个操作。", "The owner declined this on the phone.") if did else _timeout_text(self.lang, int(self.ask_ttl))
         return {"behavior": "deny", "message": msg}
 
     def new_perm_env(self, background: str | None = None) -> dict:
@@ -4986,18 +4978,15 @@ class Host:
                   ttl: float | None = None, grant_info: bool = False, origin: str | None = None,
                   allow_offer: list | None = None, _company_proposal=None, bind: dict | None = None,
                   avatar: str | None = None, background: str | None = None) -> dict:
-        """batch=False: never offered for (or approved by) a batch grant (a Codex sandbox / network escalation).
-        background (P552 #325 ②): "order" = an order CEO's step (core/askbridge.py); a scheduled / dispatched workflow run is
-        known by `task_label`. Background steps get no card except the four ③ kinds (Face ID), see background.py.
-        context (P157): {"owner", "plan"} for layer 2 (approval_jev); None = what this host saw of the current turn.
-        ttl (P158): this card's own wait (the goal card); grant_info: an allow carries {rid, device, sign_pub}.
-        origin (P172): who is asking when it is not the main thread (「来自子 Agent：general-purpose · 写报告」), the card's last line.
-        allow_offer (P296, `agentj mail send`): addresses the card offers as unticked boxes 「以后发给 X 不用再确认」; an allow
-        from a device then carries `allow_add` = the ticked ones (signed, ⊆ the offer).
-        bind (P539): a trusted plugin binding the ADAPTER built from the harness's own record of the call (Codex's
-        mcpToolCall `pluginId`, policy_registry.codex_plugin_bind) — never from model / server text; it maps the bundled
-        Computer Use plugin's script tools to computer.control and scopes a 免问 grant to that plugin."""
-        if avatar is None and (via := provenance.owner_channel_turn(self.agent)):
+        """batch=False: never offered for / approved by a batch grant (a Codex sandbox / network escalation).
+        background (P552): "order" = an order CEO's step; a workflow run is known by `task_label`. context (P157): layer-2
+        facts; None = this host's view. ttl (P158): this card's own wait; grant_info: an allow carries {rid, device, sign_pub}.
+        origin (P172): the asker when not the main thread. allow_offer (P296): addresses offered as unticked boxes (a
+        device allow carries `allow_add` ⊆ the offer). bind (P539): a trusted plugin binding the ADAPTER built from the
+        harness's own record of the call, never from model / server text."""
+        from . import policy_registry
+        own = _company_proposal is policy_registry.HOST_CARD    # P570b L-c: not judged by the main turn's source
+        if avatar is None and not own and (via := provenance.owner_channel_turn(self.agent)):
             # P562 (#337): the owner's own WeChat / Telegram / mail message in the main conversation — the channel's request
             from . import owner_channels
             return await owner_channels.ask(self, via, lambda lbl: self.ask(
@@ -5013,7 +5002,6 @@ class Host:
             own_rid = await asyncio.to_thread(handoff.record_own, self.st, getattr(self.agent, "kind", None), tool, tool_input)
             self.st.log("ask_done", id=own_rid, tool=tool, decision="allow", reason="own_handoff")
             return {"behavior": "allow", "updatedInput": tool_input}
-        from . import policy_registry
         policy_env = getattr(self.agent, "approval_env", None)
         requirement = (policy_registry.decision("main", bound) if bound else
                        policy_registry.main_requirement(tool, tool_input, env=policy_env) if policy_env
@@ -5026,8 +5014,8 @@ class Host:
             batch = False
         if requirement == "uv":
             require_passkey = True
-        delegated = provenance.delegated_turn(self.agent)
-        unattended = provenance.unattended_turn(self.agent) if avatar is None else None
+        delegated = not own and provenance.delegated_turn(self.agent)
+        unattended = provenance.unattended_turn(self.agent) if avatar is None and not own else None
         if unattended:
             delegated = True
         if avatar is not None:
@@ -5046,7 +5034,7 @@ class Host:
         opaque = approval_jev.gray(v)
         require_passkey = require_passkey or opaque
         try:
-            summary = (computer_use_script_summary(tool_input, self.lang) if bound else
+            summary = (tool_input["summary"] if own else computer_use_script_summary(tool_input, self.lang) if bound else
                        action_policy.summary(tool, tool_input, lang=self.lang, workdir=(self.agent_cfg or {}).get("dir")) if opaque or tool in
                        ("agentj mail", "agentj mail send", "agentj mail notes", "agentj mail reply", "agentj calendar", "company.write", "agentj data", "agentj report script")
                        else approval_summary(tool, tool_input, v, self.lang, workdir=(self.agent_cfg or {}).get("dir")))
@@ -5099,7 +5087,7 @@ class Host:
             self.st.log("ask_done", id=rid, tool=tool, decision="deny", reason="estop")
             self.activity("decision", id=rid, tool=tool, result="deny", reason="estop", cats=v.cats, summary=summary)
             return {"behavior": "deny", "message": "已急停（全部停下）：什么都不执行，等人恢复。"}
-        if provenance.untrusted_turn(self.agent) and not delegated:
+        if provenance.untrusted_turn(self.agent) and not delegated and not own:
             # B1 (P117): a Telegram group member's turn never obtains the owner's approval — not asked, not batch-granted
             approvals.record(self.st, **base, decision="deny", reason="group_source")
             self.st.log("ask_done", id=rid, tool=tool, decision="deny", reason="group_source")
@@ -5278,7 +5266,8 @@ class Host:
                 scope=sc[:2] if sc else None, scope_text=sc[2] if sc else None, task=self.task_label, require_passkey=require_passkey,
                 goal={"reversible": "auto", "hold": "hold", "attack": "attack"}.get(gt or "", ""), goal_why=str(gwhy or ""),
                 goal_who=g_who, goal_what=g_what, goal_add=g_add,
-                allow_offer=[g_add["text"]] if g_add else [str(x) for x in allow_offer or []][:10])
+                allow_offer=[g_add["text"]] if g_add else [str(x) for x in allow_offer or []][:10],
+                reason=action_policy.reason(summary))
         if pa_action and not g_add and require_passkey:   # P539: 「以后这台遥控器上 Computer Use 免问」 (signed pick, needs UV)
             a.allow_offer.append(preauth.offer(pa_action))
         self.asks[rid] = a
@@ -5667,6 +5656,9 @@ class Host:
         if self.agent:
             busy = await self.agent.halt(clear_queue=True)
         ran = await self.scheduler.stop_current()
+        from . import sysmigrate      # P570b M1-R
+        with contextlib.suppress(Exception):
+            await asyncio.to_thread(sysmigrate.halt, self.st)
         self.status_changed()
         m = self._estop_msg()
         self._post(self._send_ready, lambda s: m)
@@ -5697,12 +5689,12 @@ class Host:
         self.hist_add({"k": "sys", "text": ""}, note, "done")
         self.scheduler.wake.set()
 
-    def task_notice(self, text: str) -> None:
+    def task_notice(self, text: str, guide: str | None = None) -> None:
         """P418 (#183 ③): one scheduler notice (runs missed while the computer was off) — a page + a content-free push.
         Unlike agent_notice it never marks the chat turn in progress as answered."""
         e = self._remember("notice", clean(text, wire.MAX_TEXT))
         self._post(self._send_legacy, lambda s, e=e: self._render(e, s))
-        self.hist_add({"k": "sys", "text": ""}, clean(text, wire.MAX_TEXT_P33), "done")
+        self.hist_add({"k": "sys", "text": "", **({"guide": guide} if guide in ("wsl", "loop") else {})}, clean(text, wire.MAX_TEXT_P33), "done")
         self.push_notify("reply")
 
     def task_finished(self, res: dict) -> None:
@@ -5798,7 +5790,8 @@ class Host:
                                            {"next": nxt, "on": activity.enabled(self.st)})
         if t == "task_list":
             wd = self.agent_cfg["dir"] if self.agent_cfg else None
-            rows = await asyncio.to_thread(tasks.rows, self.st, wd)
+            from . import sysmigrate
+            rows = await asyncio.to_thread(lambda: sysmigrate.mark(self.st, tasks.rows(self.st, wd)))
             for x in rows:
                 x["running"] = self.scheduler.current_id == x["id"]
                 last = x.get("last") or {}
@@ -5819,14 +5812,14 @@ class Host:
             return await self._send_chunks(s, {"t": "systasks", "r": r}, "items", items, {"max": systasks.MAX})
         # ---- writes: signed like an approval (Invariant 20)
         action = {"mem_rm": "mem_rm", "mem_undo": "mem_undo", "estop": "estop", "resume": "resume",
-                  "task_set": "task_on" if obj.get("on") is True else "task_off"}[t]
+                  "task_set": "task_on" if obj.get("on") is True else "task_off", "task_migrate": t}[t]
         target = {k: obj.get(k) for k in ("src", "file", "fsha", "iid", "id", "tsha")}
         if action in ("mem_rm",) and not all(isinstance(target[k], str) and len(target[k]) <= 300
                                               for k in ("src", "file", "fsha", "iid")):
             return await self._ctl_res(s, r, action, False, why="shape")
-        if action in ("mem_undo", "task_on", "task_off") and not (isinstance(target["id"], str) and len(target["id"]) <= 64):
+        if action in ("mem_undo", "task_on", "task_off", "task_migrate") and not (isinstance(target["id"], str) and len(target["id"]) <= 64):
             return await self._ctl_res(s, r, action, False, why="shape")
-        if action in ("task_on", "task_off") and not isinstance(target["tsha"], str):
+        if action in ("task_on", "task_off", "task_migrate") and not isinstance(target["tsha"], str):
             target["tsha"] = ""
         pk = self.st.passkey_of_device(s.device) if action == "resume" else None
         ch = None
@@ -5853,6 +5846,10 @@ class Host:
             controls.log(self.st, action=action, device=s.device, result="refused:" + why)
             self.activity("control_refused", action=action, by=s.name or s.device, why=why)
             return await self._ctl_res(s, r, action, False, why=why)
+        if action == "task_migrate":    # P570c: the signed tap is the owner's confirmation; the move + test run off this loop
+            from . import sysmigrate
+            controls.log(self.st, action=action, device=s.device, result="ok", obj=target, sig=sig, n=obj.get("n"), ts=obj.get("ts"))
+            return self._bg(sysmigrate.phone(self, s, r, target), action)
         name = s.name or s.device
         result, extra = "ok", {}
         try:
@@ -5886,6 +5883,9 @@ class Host:
         self.st.log("control", device=s.device, action=action, result=result)
         controls.log(self.st, action=action, device=s.device, result=result, obj=target, sig=sig, n=obj.get("n"),
                      ts=obj.get("ts"))
+        if result == "migrated":                # P570b: the phone shows an unknown code as it is — a sentence, not `migrated`
+            from .sysmigrate import why as mwhy
+            result = mwhy("migrated_on", card_lang(self.lang))
         await self._ctl_res(s, r, action, result == "ok", **({} if result == "ok" else {"why": result}), **extra)
 
     # ------------------------------------------------------------ P115: first-run checklist (first_run.py, ADR-A196)
@@ -6334,11 +6334,13 @@ class Host:
             else:
                 self.hist_update(item.turn, end="stopped")
 
-    def set_model(self, model: str) -> None:
+    def set_model(self, model: str | None) -> bool:
         """/model <name>: kept in config.json (`agent.model`), so a restart uses it too."""
-        self.st.set_agent_model(model)
+        if self.st.set_agent_model(model, expected=self.agent_cfg) is False:
+            return False
         if self.agent_cfg is not None:
             self.agent_cfg["model"] = model
+        return True
 
     async def on_slash(self, s: Session, name: str, arg: str, confirm: bool, typed: bool, authorization=None) -> int:
         """A command from a ready session of a paired device (the only place one can come from). /stop and /help at once;
@@ -7738,10 +7740,12 @@ class Host:
         m = self._models_msg()
         self._post(self._send_p33, lambda s: m)
 
-    def set_effort(self, effort: str | None) -> None:
-        self.st.set_agent_effort(effort)
+    def set_effort(self, effort: str | None) -> bool:
+        if self.st.set_agent_effort(effort, expected=self.agent_cfg) is False:
+            return False
         if self.agent_cfg is not None:
             self.agent_cfg["effort"] = effort
+        return True
 
     async def on_model_set(self, s: Session, obj: dict) -> None:
         r = obj.get("r")
@@ -8268,5 +8272,5 @@ def _keep_progress(page) -> dict:
 
 
 def clean_line_tool(tool: str) -> str:
-    from .text import clean_line
-    return clean_line(tool, 64) or "?"
+    from .policy_registry import harness_tool
+    return harness_tool(tool)

@@ -1,37 +1,10 @@
-"""Media out — files the Agent shows to the phone (PROTOCOL §13, F21, 0.15.2): the reverse of §10.3, inside the Noise session.
+"""Private file cards from local Agent replies over Noise (PROTOCOL §13).
+No HTTP fetches. Written and resolved paths obey owner/outsider policy; credential files use secret pickup, never plain
+cards. Open through an O_NOFOLLOW dir-fd chain; require regular user-owned files and recheck inode/size/mtime on every
+read. Type, per-file/page limits and secret checks gate offers. A zero-offset read rehashes bytes; the phone verifies
+SHA-256. Expired or changed files fail closed. Persist only bounded private media references; refused contents never leave.
 
-When a page ends, serve hands its reply text to `Media.scan` (in a thread). The scan finds local file references — Markdown
-images / links `![a](p)` `[a](p)` (explicit), `` `p` `` and bare paths (implicit), `file://` URLs; never http(s) (nothing is
-fetched) and nothing inside a fenced code block (what the phone shows as code is not an attachment) — and checks each one:
-
-  * resolved with every symlink (`realpath`) against the Agent's folder (`agentj agent … --dir` / agent.working_root; P424
-    #64: toward the owner also the session's current folder, `Media.current` — a `cd` never narrows it): the
-    result must lie inside that folder, outside agentj's state dir, and no component may be `.agentj` `.git` `credentials`
-    `.ssh` `.aws` `.gnupg`, nor the file `.env` `.env.*` `*.key` `*.pem` `*.p12` `*.pfx` `id_rsa*` `id_ed25519*` `.netrc`
-    `.npmrc` `.pypirc` (checked on the path as written AND as resolved);
-  * opened through an O_NOFOLLOW directory-fd chain from the folder along the resolved components (a link planted between
-    the realpath and the open fails closed), the file itself O_NOFOLLOW | O_NONBLOCK, then fstat: a regular file of this
-    user — every later read re-opens the same way and compares (dev, inode, size, mtime) with what was scanned;
-  * typed by extension AND leading bytes (KINDS); capped per kind (CAPS), ≤ MAX_ITEMS per page, ≤ PAGE_BYTES per page;
-  * text-type content (svg, html, txt/md/csv/json …) runs through the host's secret-fragment detector
-    (taskspec.secret_like = privacy layer 1, secret kinds only) before anything is offered; `data:` payloads inside
-    html / svg are dropped from that scan (they are pictures, and a base64 picture always looks "high entropy").
-  * P211: that scan and the `.agentj` / `.git` folder rule apply to OTHERS (owner=False). Toward the owner a file goes as it
-    is, except a credential file (by name / KEY_DIRS) or a text file holding a real key shape, which is offered as a secret
-    pickup card instead (see WHYS). Audio / video / pictures are typed by their leading bytes and never read as text.
-
-Implicit references (backticks / bare paths) offer only media (image, audio, video, pdf, html) and deliverables (zip, office
-files, csv …) — an Agent that lists the source files it edited does not fill the phone with cards — and are silent when the
-file is missing or outside the folder (the Agent names system paths all the time). Explicit links offer every allowed type
-and every refusal is a `media_skip` note on the page. Never the content of a refused file.
-
-Wire (§13): the finished page gains `media` [{mid, name, mime, kind, bytes, sha256, ref}] and `media_skip` [{name, why}].
-The phone pulls lazily: `media_get {mid, o}` → ≤ WINDOW `media_chunk {mid, o, d, last}` (45 056 raw bytes each) or
-`media_err {mid, why}`. Integrity: a get at o = 0 re-hashes the whole file and answers `gone` when the SHA-256 differs from the
-page's; every get re-checks dev / inode / size / mtime; the phone verifies the SHA-256 of what it assembled before showing it.
-The table mid → (page, folder, components, size, sha256, …) is `<state>/media.json` (0600, survives a restart), newest
-KEEP_N, KEEP_SECS old at most; an expired mid → `gone` → the phone says 「已过期」.
-Stdlib only.
+Protocol/history detail: agentjarvis/ARCHITECTURE.md, P0261 source notes / media.py.
 """
 from __future__ import annotations
 

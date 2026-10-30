@@ -1,6 +1,6 @@
-# Agent J 0.26.0a1 release notes
+# Agent J 0.26.1a1 release notes
 
-Host 0.26.0a1 / install 0.28.0; phone-web scope.
+Host 0.26.1a1 / install 0.28.1; phone-web scope.
 Phone parity must pass --strict. Full Android/Telegram parity is incomplete.
 Full Android/Telegram parity is incomplete.
 No APK is included in this release. Android source is for review, not a released app.
@@ -8,19 +8,19 @@ No APK is included in this release. Android source is for review, not a released
 Publication status: local preparation only. Live site verification is DEFERRED until
 the public commit and tag are pushed, the site is deployed, and cold installation passes.
 
-Release order: C Dashboard (support knowledge and the plaza redaction table), no D1 migration (app 0039-0041 are live since 0.25.13 and are never replayed); then A signed host/site/downloads together with the front Worker (credential scan table), immediately followed by B phone web, in the same window. No relay change, no feedback D1 change. Preserve0036 revocation state,0037 action UV data,0038 checkout pending records,0041 seat transfer records and local security journals permanently. Never replay migrations or restore an older database snapshot. Use compatible rollback only, otherwise repair forward. Qualified by one fresh full parity run on this tree plus the affected suites of the merged tickets under the owner's 10-27 rule (no full host or real-install acceptance run for this release). Local preparation only; no push or deployment authorized.
+Release order: C Dashboard support knowledge and plaza redaction, no new D1 migration; A signed host/site/downloads and front Worker credential scanning, then B phone web. Synchronize Olares receivers after A. Preserve existing D1 revocation, action UV, checkout and seat-transfer records; never replay migrations or restore an older database snapshot. Qualification uses one fresh full parity run and freshly derived affected host suites for all seven merged candidates. No full-host or QA-J acceptance is claimed. Local preparation only; public baseline and ready require actual 0.26.0 publication evidence. No push or deployment authorized.
 ## Changes
 
-- [All AI coding tools] The main Agent now writes down its key decisions as it works: what it decided, why, and what it based that on. To see why it did something, just ask it, or run `agentj decide list` in a terminal on your Agent J host. The log stays on your own Agent J host, and e-mail addresses and phone numbers are masked before they are written.
-- [All AI coding tools] The main Agent hands out work more carefully: each task says what counts as done and what proof to bring back; with a batch of similar tasks it gets one working before starting the rest; when it needs your decision it gives its recommendation, reasons and risks; when you say "stop for now" it stops at a safe point, saves progress and notes how to continue.
-- [All AI coding tools] Work the main Agent runs in the background is meant to be started with `agentj busy run`; only work started that way shows a background robot on your phone, anything else does not. From 0.26.1 this happens automatically.
-- [All AI coding tools] The top of the web terminal used to say "Recording"; it now says the activity log is recording, and the English title fits in full on a narrow phone screen. Tap it for a page that explains what your Agent J host records (text only, no screen or sound recording), why, where on your Agent J host it is kept, who can read it and for how long.
-- [All AI coding tools] When you move a seat to another Agent J host, the host's transfer code (starting with ajh_) was refused by the "Bind your seat" box on Olares; your Agent J host, the command line and Olares now accept it. While the code is hidden, the phone's transfer card shows its real beginning, and Copy always copies the whole code. On Olares, first update Agent J in the Olares Market.
-- 【适用：所有 AI 编程工具】主 Agent 现在会边做边记下关键决定：定了什么、为什么、依据在哪。你想知道它为什么这么做，直接问它，或者在 Agent J 主机的终端里运行 `agentj decide list` 翻出来看。记录只存在你自己的 Agent J 主机上，邮箱和电话写进去之前会自动打码。
-- 【适用：所有 AI 编程工具】主 Agent 派活更有章法：每次派活都写清楚做到什么样才算完成、要交什么证据；同一类活先跑通一单再铺开；需要你拍板时，会附上它的推荐、理由和风险；你说「先停」，它会停在安全的地方，存好进度，写清楚之后怎么接着做。
-- 【适用：所有 AI 编程工具】主 Agent 放到后台跑的活，要用 `agentj busy run` 启动来登记；登记过的，你的手机上才会出现对应的后台小机器人，没登记的不显示。从 0.26.1 起改为自动登记。
-- 【适用：所有 AI 编程工具】网页终端顶上原来写「录像中」，现在改成「操作日志记录中」，手机窄屏上的英文标题也能完整显示。点它会打开一页说明：Agent J 主机记录了什么（只有文字，不录屏、不录声音）、为什么要记、存在 Agent J 主机的哪里、谁能看、保留多久。
-- 【适用：所有 AI 编程工具】把席位从一台 Agent J 主机转到另一台时，主机生成的转移码（ajh_ 开头）以前会被 Olares 的「绑定你的席位」框拒收；现在 Agent J 主机、命令行和 Olares 都认这种码。手机上的转移卡遮住码时会显示码本来的开头，点复制永远拿到完整的码。Olares 用户请先在 Olares 应用市场把 Agent J 升级到最新版，再粘贴。
+- [All AI coding tools] Move existing scheduled tasks to the host’s system scheduler after confirming on your phone. Review access before moving; move tasks back or move them again after changes.
+- [All AI coding tools] Confirmation cards show the Agent’s note; expand long reasons. Choose notification sounds in Settings.
+- [OpenCode] With no API key, a supported free model is selected before the first message and the header follows the actual model. Switch back to Codex if none is available.
+- [All AI coding tools] The email allowlist consistently says Owner. Release history shows notes that apply to the current host.
+- [All AI coding tools] Fixed stale state during tool switching and recovery after failed switches. Access codes are redacted and scheduled tasks execute validated instructions.
+- 【所有 AI 编程工具】已有定时任务可以在手机确认后改用主机的系统定时；迁移前说明运行权限，迁移后可退回，任务改了需要重新迁移。
+- 【所有 AI 编程工具】确认卡增加「Agent 说明：」，长理由可以展开阅读全文；可在设置里选择提示音。
+- 【OpenCode】没有 API Key 时会预选可用免费模型，顶栏与实际模型保持同步；没有可用模型时提供切回 Codex 的入口。
+- 【所有 AI 编程工具】邮件白名单统一使用「主人」称谓；历史版本说明只展示当前主机适用的内容。
+- 【所有 AI 编程工具】修复切换过程中旧状态回写、失败后状态不一致及重试入口；补齐访问码脱敏，定时任务只执行已核对的指令。
 
 ## Material acceptance limits
 

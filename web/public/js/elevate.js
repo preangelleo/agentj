@@ -145,6 +145,8 @@ export function add(m) {
     if (!c.name || c.purpose === null || c.dest === null || c.verify === null) return;
     if (m.auth) { c.auth = authOf(m.auth); if (!c.auth) return; }
   }
+  const signed = c.kind === 'sudo' ? c.why : c.kind === 'secret' ? c.purpose : '';
+  c.reason = typeof m.reason === 'string' && m.reason.trim() === signed.trim() ? signed.trim() : '';
   // ADR-A163: this device saved a passkey (F20) → 「同意」 needs Face ID. The host names our own credential id; the challenge
   // (card id + this arming's nonce + what is shown) is made now, so the tap can go straight to the system sheet.
   if (m.state !== 'running' && typeof m.fa === 'string' && m.fa.length > 0 && m.fa.length <= 1400) {
@@ -351,6 +353,7 @@ function render() {
       row(dl, t('elev.secret.dest'), c.dest, 'mono');
       row(dl, t('elev.secret.verify'), c.verify, 'mono');
     }
+    row(dl, t('p572.label'), c.reason.length > 400 ? t('p572.longReason') : c.reason || t('p572.noReason'));
     $('elev-label').textContent = t(sudo || vs ? 'elev.sudo.label' : 'elev.secret.label', { name: c.name || '' });
     const mail = paintMailPassword(c, $('elev-label'), $('elev-input'), $('elev-rows'));
     if (mail) { $('elev-title').textContent = c.purpose.split('\n')[0]; $('elev-kicker').textContent = t('mail.key'); }

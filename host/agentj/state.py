@@ -709,7 +709,7 @@ class State:
                 "region": a.get("region") if a.get("region") in ("mainland-cn", "global") else None}
 
     def set_agent_config(self, kind: str | None, directory: str | None = None, model: str | None = None,
-                         fence: bool = True, docker: bool = False, effort: str | None = None) -> None:
+                         fence: bool = True, docker: bool = False, effort: str | None = None, record_root: bool = True) -> None:
         with self.config_lock():
             cfg = self.config()
             if kind is None:
@@ -733,7 +733,7 @@ class State:
         # An explicit folder is a human/API root selection, not a legacy fallback.
         # Record it in the one JSON5 owner so older saved preferences cannot silently
         # send the next session to a different (possibly deleted) directory.
-        if kind is not None and directory is not None:
+        if record_root and kind is not None and directory is not None:
             from . import working_root
             working_root.record(self, pathlib.Path(d))
 
@@ -748,24 +748,35 @@ class State:
                     cfg["agent"].pop("region", None)
                 _write_private(self.config_path, json.dumps(cfg, indent=1, ensure_ascii=False).encode())
 
-    def set_agent_model(self, model: str | None) -> None:
+    def set_agent_model(self, model: str | None, *, expected: dict | None = None) -> bool:
         """/model from the phone (slash.py): only the model of the configured Agent changes."""
         with self.config_lock():
             cfg = self.config()
-            if isinstance(cfg.get("agent"), dict):
-                cfg["agent"]["model"] = model or None
+            a = cfg.get("agent")
+            if expected is not None and (not isinstance(a, dict) or
+                    any(a.get(k) != expected.get(k) for k in ("kind", "model"))):
+                return False
+            if isinstance(a, dict):
+                a["model"] = model or None
                 _write_private(self.config_path, json.dumps(cfg, indent=1, ensure_ascii=False).encode())
+                return True
+            return False
 
-    def set_agent_effort(self, effort: str | None) -> None:
+    def set_agent_effort(self, effort: str | None, *, expected: dict | None = None) -> bool:
         """The phone's effort pill (PROMPT-33 §10.11): stored like the model; None = the harness's own default."""
         with self.config_lock():
             cfg = self.config()
+            if expected is not None and (not isinstance(cfg.get("agent"), dict) or
+                    any(cfg["agent"].get(k) != expected.get(k) for k in ("kind", "model"))):
+                return False
             if isinstance(cfg.get("agent"), dict):
                 if effort:
                     cfg["agent"]["effort"] = effort
                 else:
                     cfg["agent"].pop("effort", None)
                 _write_private(self.config_path, json.dumps(cfg, indent=1, ensure_ascii=False).encode())
+                return True
+            return False
 
     def agent_session(self, kind: str) -> str | None:
         try:

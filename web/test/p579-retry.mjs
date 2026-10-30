@@ -1,0 +1,36 @@
+import assert from 'node:assert/strict';
+import {writeFileSync,mkdirSync} from 'node:fs';
+import {resolve} from 'node:path';
+import {startWebServer} from './serve.mjs';
+import {startFakeHost} from './fakehost.mjs';
+import {chromium} from '/tmp/aj-webmcp-playwright/node_modules/playwright/index.mjs';
+const out=resolve(process.env.P579_RETRY_OUT||'reports/qa/p579/retry');mkdirSync(out,{recursive:true});
+const web=await startWebServer(),fake=await startFakeHost(),b=await chromium.launch({executablePath:'/usr/bin/chromium'});
+const results=[];
+try {for(const lang of ['zh','en']){
+ const name='phone-'+lang,terminal={on:false,kind:'phone'},mobile=true;
+ fake.reset();fake.st.terminal=terminal;fake.st.prefs={appearance:{language:lang,theme:'light'}};
+ const page=await b.newPage({viewport:{width:mobile?390:1440,height:900},isMobile:mobile,hasTouch:mobile});
+ const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.goto(fake.newPairing(web.url+'?lang='+lang));await page.waitForFunction(()=>window.__ajState==='awaiting-approval');await fake.approve();await page.waitForFunction(()=>window.__ajState==='ready');
+ await page.evaluate(()=>{document.querySelector('#phone-env-dismiss')?.click();document.querySelector('#a2hs-ok')?.click();});
+ await fake.send({t:'status',s:'idle',agent:'claude',name:'Fixture'});
+ await fake.send({t:'models',models:[{id:'opus',name:'Opus 5.5',efforts:['medium']},{id:'sonnet',name:'Sonnet 5',efforts:['medium']}],default:{model:'opus',effort:'medium'},effort:'medium'});
+ await fake.send({t:'meter',model:'opus',model_name:'Opus 5.5',effort:'medium',ctx:{used:40,max:100},h5:{pct:30,reset:0},week:{pct:55,reset:0},at:0});
+ await page.waitForFunction(()=>document.getElementById('metaModel').textContent==='Opus 5.5');
+ fake.st.modelWhy='unconfirmed';await page.locator('#metaModel').click();
+ await page.waitForFunction(()=>document.querySelector('#toast.on button'),{timeout:10000});
+ const before=await page.locator('#toast').innerText();
+ assert.match(before,lang==='zh'?/当前显示的是 Opus 5\.5/:/Currently displayed: Opus 5\.5/);
+ assert.match(before,lang==='zh'?/再试一次/:/Try again/);
+ await page.screenshot({path:out+'/'+name+'-before-click.png'});
+ assert.equal(fake.st.modelSets.length,1);const first=fake.st.modelSets[0];
+ const initial=await page.evaluate(()=>({state:document.querySelector('#terminal')?.hidden,body:document.body.innerText,loaded:!!document.querySelector('script[src$="/terminal.js"]')}));
+ await page.locator('#toast button').click();await page.waitForFunction(()=>!document.querySelector('#toast.on button'));
+ for(let n=0;n<40&&fake.st.modelSets.length<2;n++)await page.waitForTimeout(50);
+ assert.equal(fake.st.modelSets.length,2);const next=fake.st.modelSets[1];assert.equal(next.model,first.model);assert.equal(next.effort,first.effort);assert.equal(next.default,first.default);assert.equal(fake.st.modelWhy,null);
+ const after=await page.evaluate(()=>({state:document.querySelector('#terminal')?.hidden,body:document.body.innerText,loaded:!!document.querySelector('script[src$="/terminal.js"]')}));
+ assert.equal(errors.length,0);
+ const result={name,before,retried:true,sameRequest:true,initialLoaded:initial.loaded,afterLoaded:after.loaded,bodyChanged:initial.body!==after.body,modelRequests:fake.st.modelSets.length,errors};results.push(result);console.log(JSON.stringify(result));
+ await page.screenshot({path:out+'/'+name+'-after-click.png'});await page.close();
+ }}finally{writeFileSync(out+'/toast-click-results.json',JSON.stringify(results,null,2));await b.close();await fake.stop();await web.stop();}

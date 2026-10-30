@@ -1,5 +1,5 @@
 {
-  "version": "0.26.0a1",
-  "zh": "主 Agent 边做边记关键决定，你随时能回看原因；派活规矩更清楚；Olares 收得下主机转移码了；网页终端写明「操作日志记录中」。",
-  "en": "The main Agent logs key decisions you can read back; clearer delegation rules; Olares accepts host transfer codes; the web terminal says its log is on."
+  "version": "0.26.1a1",
+  "zh": "切换 AI 工具和免费模型更稳；已有定时任务可改用系统定时；确认卡展示 Agent 说明；新增提示音，历史版本说明更清楚。",
+  "en": "Reliable AI-tool switching and free models; system-scheduled tasks; Agent notes on confirmation cards; notification sounds and clearer release notes."
 }

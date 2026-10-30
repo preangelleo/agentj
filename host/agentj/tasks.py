@@ -37,6 +37,7 @@ import stat
 import time
 import tempfile
 import uuid
+from types import MappingProxyType
 
 from . import taskspec
 from .envcompat import getenv
@@ -126,12 +127,16 @@ def _discover_legacy(workdir: str | None, direct: bool = False) -> list[dict]:
             continue
         probs = taskspec.problems(task, name)
         prompt = None
+        bodies = {}
         if not probs:
             prompt = _regular(os.path.join(d, task["prompt_file"]))
+            bodies[task["prompt_file"]] = prompt
             if prompt is None:
                 probs = [f"{task['prompt_file']} is missing, not a regular file or larger than 100 KiB"]
             for step in task.get("steps") or ():   # P426 #181-5: every node's instructions join the contract
-                body = None if probs else _regular(os.path.join(d, step["prompt_file"]))
+                prompt_name = step["prompt_file"]
+                body = None if probs else bodies.get(prompt_name) if prompt_name in bodies else _regular(os.path.join(d, prompt_name))
+                bodies[prompt_name] = body
                 if body is None:
                     probs = probs or [f"{step['prompt_file']} (step {step['id']}) is missing, not a regular file or larger than 100 KiB"]
                     break
@@ -139,12 +144,17 @@ def _discover_legacy(workdir: str | None, direct: bool = False) -> list[dict]:
         ent["task"] = task if isinstance(task, dict) else None
         extra = b""
         if not probs:                          # 0.18 (ADR-A193): a brief.json joins the contract with its scope digest
-            from .capability import contract_part
-            extra, bprobs = contract_part(d)
-            probs = bprobs
+            from .capability import brief_raw, parse_brief, scope_digest
+            raw_brief = brief_raw(d)
+            ent["brief_bytes"] = raw_brief
+            if raw_brief is not None or os.path.lexists(os.path.join(d, "brief.json")):
+                brief, probs = parse_brief(raw_brief, name)
+                if not probs:
+                    extra = ("\0brief\0" + scope_digest(brief)).encode()
         ent["problems"] = probs
         if not probs:
             ent["tsha"] = contract_sha(raw, prompt, extra)
+            ent["prompt_bytes"] = MappingProxyType(bodies)
         out.append(ent)
     return out
 
@@ -219,6 +229,11 @@ def set_enabled(st, workdir: str | None, tid: str, on: bool, by: str, tsha: str 
             raise TaskError("invalid", e["problems"][0])
         if tsha is not None and tsha != e["tsha"]:
             raise TaskError("changed")
+    from . import sysmigrate                 # P570b: never two schedulers for one task; off = the system timer off too (M1)
+    if tid in sysmigrate.migrated(st):
+        if on:
+            raise TaskError("migrated", f"已迁到系统定时：先 `agentj tasks unmigrate {tid}` / moved to the system scheduler")
+        sysmigrate.unmigrate(st, tid)
     def change(d):
         if on:
             d["on"][tid] = {"tsha": e["tsha"], "at": int(time.time()), "by": by[:80]}
@@ -432,7 +447,7 @@ def missed_text(miss: list[dict], lang: str, offer: bool, stopped: bool = False)
     more = len(miss) - len(items)
     lst = pick(lang, "、".join(items) + (f" 等 {len(miss)} 个" if more > 0 else ""),
                ", ".join(items) + (f" and {more} more" if more > 0 else ""))
-    text = pick(lang, f"电脑关机或休眠期间，定时任务错过了：{lst}。", f"While the computer was off or asleep, scheduled tasks missed: {lst}.")
+    text = pick(lang, f"Agent J 主机关机或休眠期间，定时任务错过了：{lst}。", f"While the computer was off or asleep, scheduled tasks missed: {lst}.")
     if stopped:
         text += pick(lang, "现在是「全部停下」状态，不会补跑。", " Everything is stopped right now, so nothing is run to make up.")
     elif offer:
@@ -473,7 +488,7 @@ def catchup_card(miss: list[dict], lang: str) -> tuple[list, list[str | None]]:
         ids.append(m["id"])
     opts.append({"label": pick(lang, "都不补跑", "Run none"), "description": ""})
     ids.append(None)
-    q = {"question": pick(lang, "电脑关机或休眠期间错过了这些定时任务。要补跑哪些？每个只补跑一次。",
+    q = {"question": pick(lang, "Agent J 主机关机或休眠期间错过了这些定时任务。要补跑哪些？每个只补跑一次。",
                           "These scheduled tasks were missed while the computer was off or asleep. Run which ones now? "
                           "Each runs once."),
          "header": pick(lang, "错过的定时任务", "Missed tasks"), "multiSelect": True, "options": opts, "other": False}
@@ -489,10 +504,19 @@ def parse_verdict(text: str) -> tuple[str, str] | None:
     return v.lower(), why.strip()
 
 
-def prompt_for(e: dict, research: bool, step: str = "") -> str:
-    """`step` (P426 #181-5, wfrun.step_text): one node's instructions + what the earlier nodes left, after RUN.md."""
-    task = e["task"]
-    body = (_regular(os.path.join(e["dir"], task["prompt_file"])) or b"").decode("utf-8", "replace") + step
+def prompt_bytes(e: dict, name: str) -> bytes:
+    """Only instructions frozen by discovery and bound to this entry's tsha may run."""
+    try:
+        return e["prompt_bytes"][name]
+    except KeyError:
+        raise TaskError("changed", "Missing validated instructions; did not run") from None
+
+
+def prompt_for(e: dict, research: bool, step: str = "", body: bytes | None = None) -> str:
+    """`step` (P426 #181-5, wfrun.step_text): one node's instructions + what the earlier nodes left, after RUN.md. `body`
+    (P570b): RUN.md as the caller already read and hash-checked it — not read again, no brief."""
+    task, raw = e["task"], body
+    body = (prompt_bytes(e, task["prompt_file"]) if raw is None else raw).decode("utf-8", "replace") + step
     relative = e.get("relative_dir", "workflows/" + e["id"])
     head = (f"[agentj 定时任务 / scheduled task] {relative}/{task['prompt_file']} — {task['title']['zh']} / "
             f"{task['title']['en']}. 说明里的相对路径以 {relative}/ 为准 / paths in the instructions are relative to "
@@ -502,7 +526,7 @@ def prompt_for(e: dict, research: bool, step: str = "") -> str:
                  "writes, changes or sends is refused; put everything in your answer.")
     tail = ("\n\n---\n回答的最后一行必须是 `VERDICT: ok|attention|fail — 一句话`。/ End your answer with exactly one line "
             "`VERDICT: ok|attention|fail — <one sentence>`.")
-    return head + "\n\n" + body.rstrip() + brief_block(e) + tail + "\n"
+    return head + "\n\n" + body.rstrip() + (brief_block(e) if raw is None else "") + tail + "\n"
 
 
 
@@ -612,6 +636,8 @@ class Scheduler:
         self.recover()
         if self.ticker is None:              # P418 (#183 ③): its own task — a 30-minute run must not look like a gap
             self.ticker = asyncio.create_task(self._ticker())
+            from .sysmigrate import offer    # P570b: the one "move to the system scheduler" card
+            self.migrate_card = asyncio.create_task(offer(self.host))
         while True:
             try:
                 if not self.host.stopped():

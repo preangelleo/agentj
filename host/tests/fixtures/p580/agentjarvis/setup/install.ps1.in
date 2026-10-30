@@ -1,0 +1,11 @@
+function Get-InstallCode([string]$Text) {
+    if (-not $Text) { return '' }
+    $t = $Text.Normalize([Text.NormalizationForm]::FormKC) -replace '[‐-―−﹘﹣－ー]', '-'
+    foreach ($s in @($t, ($t -replace '\s', ''))) {
+        $m = [regex]::Match($s, 'AJI-([0-9a-fA-F]{32})(?![0-9a-fA-F])')
+        if ($m.Success) { return 'AJI-' + $m.Groups[1].Value.ToLowerInvariant() }
+    }
+    if ($t -match 'aj[th]_[A-Za-z0-9_-]{43}') { return 'ajt' }
+    return ''
+}
+if ($code -eq 'ajt') { Fail '你粘贴的是 ajt_ / ajh_ 开头的设置码，不是安装码 / You pasted a setup code starting with ajt_ / ajh_, not an installation code' '在账户页点「复制安装码」，粘贴 AJI- 开头的那串 / Copy the installation code from the account page and paste the code starting with AJI-' }
