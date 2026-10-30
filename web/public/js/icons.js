@@ -12,6 +12,9 @@ export const GLYPH = {
   mail: [['rect', { x: 3.5, y: 5.5, width: 17, height: 13, rx: 2.5 }], ['path', { d: 'm4.5 7.5 7.5 5.5 7.5-5.5' }]],
   ok: [['path', { d: 'm5 12.5 4.5 4.5L19 7.5' }]],
   file: [['path', { d: 'M14 3.5H7.5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V8z' }], ['path', { d: 'M14 3.5V8h4.5' }]],
+  // P573: the pickup card's full-screen icons — 关闭 (a thin ×) and 复制 (the reply card's copy glyph)
+  close: [['path', { d: 'M6.5 6.5l11 11M17.5 6.5l-11 11' }]],
+  copy: [['rect', { x: 8, y: 8, width: 12, height: 12, rx: 2.5 }], ['path', { d: 'M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2' }]],
 };
 // P201: 转发到 Telegram is a solid paper plane (Leo's pick, re-drawn here as a plain path from measured vertices — no third-party
 // artwork), one colour = currentColor, so it takes the same theme colour as the stroked glyphs above.

@@ -1288,6 +1288,17 @@ class OpenCodeAgent(Agent):
     def on_event(self, ev: dict) -> None:
         t = ev.get("type")
         p = ev.get("properties") if isinstance(ev.get("properties"), dict) else {}
+        info = p.get('info') or {}
+        if t == 'message.updated' and info.get('sessionID') == self.sid and info.get('role') == 'assistant':
+            from .heartbeat_check import sample
+            tok = info.get('tokens') or {}
+            cache = tok.get('cache') or {}
+            inp, out = tok.get('input'), tok.get('output')
+            if type(inp) is int:
+                inp += sum(cache.get(k, 0) for k in ('read', 'write') if type(cache.get(k, 0)) is int)
+            if type(out) is int and type(tok.get('reasoning', 0)) is int:
+                out += tok.get('reasoning', 0)
+            sample(self, 'msg:' + str(info.get('id')), inp, out)
         if self.sid is not None and self.sid in (p.get("sessionID"), (p.get("part") or {}).get("sessionID"),
                                                  (p.get("info") or {}).get("sessionID") if isinstance(p.get("info"), dict) else None):
             self.touch()                   # P219: progress on our session (stall watch)
@@ -1320,6 +1331,10 @@ class OpenCodeAgent(Agent):
             if p.get("reply") in ("once", "always") and rid not in self.ours:
                 self._tamper("foreign_reply")
         elif t == "message.part.updated":
+            part = p.get("part") or {}
+            state = part.get("state") or {}
+            if part.get("sessionID") == self.sid and part.get("type") == "tool" and state.get("status") in ("completed", "error") and getattr(self.host, "peers", None) is not None:
+                self.host.peers.xfer.broker.complete(part.get("callID"), state.get("status") == "completed", state.get("output"))
             self._tool_dir(p.get("part"))
             self._text_part(p.get("part"))
         elif t == "session.error" and p.get("sessionID") in (self.sid, None):
@@ -1510,6 +1525,7 @@ class OpenCodeAgent(Agent):
         sid = getattr(self, "perm_sid", {}).pop(rid, None)
         try:
             tool, inp = to_tool(req, self.root)
+            secret_raw = dict(inp)
             call = (req.get("tool") or {}).get("callID") if isinstance(req.get("tool"), dict) else None
             wd = getattr(self, "tool_dirs", {}).get(call) if isinstance(call, str) else None
             if wd and tool == "Bash" and isinstance(inp.get("command"), str):
@@ -1520,7 +1536,11 @@ class OpenCodeAgent(Agent):
             from .opencode_subagents import origin       # P426: a sub-agent's card says so (P172's last line)
             o = origin(self.children.get(sid), getattr(self.host, "lang", "zh"))
             with self._src_ctx(sid):       # S3: a sub-agent / OpenCode's own wake turn is judged by its source
-                ans = ({"behavior": "allow"} if low_risk_pass(self.host, self.cfg, name, inp)
+                broker = self.host.peers.xfer.broker if getattr(self.host, "peers", None) is not None and sid == self.sid and not self.cfg.get("_workflow_ceo") else None
+                if broker:
+                    broker.register(call, name, inp, wd or self.cfg["dir"], raw=secret_raw)
+                ans = await broker.execute(name, inp, call, gone) if broker else None
+                ans = ans if ans is not None else ({"behavior": "allow"} if low_risk_pass(self.host, self.cfg, name, inp)
                        else await self.host.ask(name, inp, gone, **({"origin": o} if o else {}),
                                          **({"background": "task"} if self.cfg.get("_workflow_ceo") else {})))   # P552
             if ans.get("behavior") == "allow":

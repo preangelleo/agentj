@@ -29,6 +29,9 @@ def legacy_canonical_floor(layer, action):
 
 # P539 (#300): canonical actions added after P512, each explicitly reviewed: main = UV card, other layers no wider.
 P539_REVIEWED = frozenset({'computer.control'})
+# P573 (#386 ⑤, chairman 10-29, REPORT-573-draft §三 「降为按钮」): exactly these rows drop from Face ID to one button in the
+# owner window (main_confirmation="hold"); every other layer keeps its row. Reviewed here, never by a looser rank check.
+P573_BUTTON = frozenset({'secrets.read', 'secrets.write', 'admin', 'computer.control'})
 # P553 (#326): native names that were unknown (deny) until reviewed into the P551 tiers; never lower than ① on main
 P553_UNKNOWN_BEFORE = frozenset({
     'ToolSearch', 'ListMcpResourcesTool', 'ReadMcpResourceTool', 'NotebookRead', 'BashOutput', 'TaskOutput', 'TaskGet',
@@ -50,8 +53,8 @@ class Matrix(unittest.TestCase):
             'image.generate': ('allow','allow','handoff','deny'),
             'file.write': ('allow','handoff','handoff','deny'),
             'mail.send': ('hold','handoff','handoff','deny'),   # P551 (#318): ② reversible — long-press for the Agent
-            'secrets.read': ('uv','handoff','handoff','deny'),
-            'admin': ('uv','handoff','handoff','deny'),
+            'secrets.read': ('hold','handoff','handoff','deny'),   # P573: main window one button; other layers unchanged
+            'admin': ('hold','handoff','handoff','deny'),
             'payment': ('uv','handoff','handoff','deny'),
             'company.read': ('allow','deny','handoff','allow'),
             'company.write': ('uv','handoff','handoff','uv'),
@@ -117,7 +120,7 @@ class Matrix(unittest.TestCase):
         for tool, inp, floor in (
             ('Bash', {'command': '$PY -m tests'}, 'hold'),
             ('Bash', {'command': 'bash -c "$CMD"'}, 'hold'),
-            ('Bash', {'command': 'sudo ls'}, 'uv'),
+            ('Bash', {'command': 'sudo ls'}, 'hold'),          # P573: sudo is one button (+ its password card)
             ('invented.action', {}, 'deny'),
             ('Bash', {'command': 'printf hello'}, 'allow'),
             ('Bash', {'command': 'ls'}, 'allow'),
@@ -134,14 +137,17 @@ class Matrix(unittest.TestCase):
             for cmd in ('printf hello','ls','git status','echo done > notes.md'):
                 self.assertEqual(p.main_requirement(tool, {'command':cmd, 'cmd':cmd}), 'allow')
                 self.assertEqual(p.channel_tool_decision(tool), 'handoff')
-            for cmd in ('rm -rf ~','agentj secret get fixture','sudo ls','stripe payment_intents create', 'env sudo ls', "bash -c 'sudo ls'", 'X=1 sudo ls'):
+            for cmd in ('rm -rf ~','agentj secret get fixture','stripe payment_intents create'):
                 self.assertEqual(p.main_requirement(tool, {'command':cmd, 'cmd':cmd}), 'uv')
+            for cmd in ('sudo ls', 'env sudo ls', "bash -c 'sudo ls'", 'X=1 sudo ls'):   # P573: sudo → one button, every spelling
+                self.assertEqual(p.main_requirement(tool, {'command':cmd, 'cmd':cmd}), 'hold')
+            self.assertEqual(p.main_requirement(tool, {'command':'sudo rm -rf ~', 'cmd':'sudo rm -rf ~'}), 'uv')
         for tool in ('Write','Edit','MultiEdit','file.write','mcp__fixture__write_file'):
             self.assertEqual(p.main_requirement(tool, {'file_path':'notes.md'}), 'allow')
-            self.assertEqual(p.main_requirement(tool, {'file_path':'.env'}), 'uv')
+            self.assertEqual(p.main_requirement(tool, {'file_path':'.env'}), 'hold')   # P573: a credential write is one button
             self.assertEqual(p.channel_tool_decision(tool), 'handoff')
         self.assertEqual(p.main_requirement('NotebookEdit', {'notebook_path':'notes.ipynb', 'edit_mode':'delete'}), 'uv')
-        self.assertEqual(p.main_requirement('Read', {'file_path':'.env'}), 'uv')
+        self.assertEqual(p.main_requirement('Read', {'file_path':'.env'}), 'hold')   # P573: a key read for the Agent
         self.assertEqual(p.main_requirement('apply_patch', {'patch':'*** Begin Patch\n*** Delete File: notes.md\n*** End Patch'}), 'uv')
         self.assertEqual(p.main_requirement('apply_patch', {'patch':'*** Begin Patch\n*** Add File: notes.md\n+hello\n*** End Patch'}), 'allow')
 
@@ -178,7 +184,7 @@ class MainExecution(unittest.IsolatedAsyncioTestCase):
         from agentj import approval_jev
         from test_l1 import _state, _owner_host, Phone, _ready
         cases = [('$PY -m tests', 'hold'), ('bash -c "$CMD"', 'hold'),
-                 ('sudo ls', 'uv'), ('invented.action', 'deny'),
+                 ('sudo ls', 'hold'), ('invented.action', 'deny'),   # P573: sudo is one button (+ its password card)
                  ('printf hello', 'allow'), ('ls', 'allow'), ('git status', 'allow')]
         for level in ('standard', 'full'):
             for command, floor in cases:
@@ -205,7 +211,8 @@ class MainExecution(unittest.IsolatedAsyncioTestCase):
                         judge.assert_not_called()
                     lookup.assert_called_once_with(tool, inp)
                     if cards:
-                        self.assertEqual(cards[0].get('passkey_required', False), floor == 'uv' or approval_jev.gray(h._classify(tool, inp)))
+                        # P573 (#386 ⑤): an opaque command is one button now — Face ID only for a uv floor
+                        self.assertEqual(cards[0].get('passkey_required', False), floor == 'uv')
 
     async def test_real_uv_proof_rejects_missing_uv_and_replay(self):
         import tempfile
@@ -321,6 +328,8 @@ class LegacyFloors(unittest.TestCase):
                         self.assertEqual(p.decision(layer, action), 'allow')  # chairman #274 / F14
                     elif layer == 'main' and action in p551:
                         self.assertEqual(p.decision(layer, action), 'hold')   # chairman #318 (P551)
+                    elif layer == 'main' and action in P573_BUTTON:
+                        self.assertEqual(p.decision(layer, action), 'hold')   # P573: Face ID → one button, never silent
                     else:
                         self.assertGreaterEqual(rank[p.decision(layer,action)],rank[old[layer]])
 
@@ -348,6 +357,8 @@ class LegacyFloors(unittest.TestCase):
                     self.assertNotEqual(actual, 'allow', (layer, tool))
                 if layer == 'main' and action == 'file.write':
                     self.assertEqual(actual, 'allow')  # #274/F14 intentional owner-only change
+                elif layer == 'main' and action in P573_BUTTON:
+                    self.assertEqual(actual, 'hold')   # P573 (#386 ⑤): Face ID → one button, never silent
                 elif layer == 'main' and action in P539_REVIEWED:
                     self.assertEqual(actual, 'uv')     # P539 #300: a reviewed new action asks with a passkey
                 elif layer == 'main' and action in ('mail.send', 'calendar.write', 'publish'):
@@ -365,7 +376,10 @@ class LegacyFloors(unittest.TestCase):
 
     def test_exact_native_mapping_and_no_tool_masquerading(self):
         for tool,action in {**p.NATIVE_TOOLS,**p.HOST_TOOLS}.items():
-            self.assertEqual(p.main_requirement(tool), 'allow' if tool in ('Bash','exec_command','shell_command','Monitor') else p.decision('main',action),tool)
+            want = 'allow' if tool in ('Bash','exec_command','shell_command','Monitor') else p.decision('main',action)
+            if tool == 'RemoteTrigger':
+                want = 'uv'   # P573: kept above its (now one-button) admin row — a cloud run outside Agent J's hook
+            self.assertEqual(p.main_requirement(tool), want, tool)
         for tool,action in p.MCP_TOOLS.items():
             self.assertEqual(p.main_requirement('mcp__fixture__'+tool), 'allow' if tool in ('execute_command','bash') else p.decision('main',action))
         for tool in ('mcp__fixture__unregistered_read','mcp__fixture__read_file__delete',
@@ -483,10 +497,10 @@ class EntryMatrix(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(out.getvalue(), '', (warnings, tool))
             for tool, inp, requirement in (
                 ('Bash', {'command': 'rm -rf ~'}, 'uv'),
-                ('Write', {'file_path': '.env'}, 'uv'),
-                ('Write', {'file_path': '~/.aws/credentials'}, 'uv'),
+                ('Write', {'file_path': '.env'}, 'hold'),                    # P573: a credential write is one button
+                ('Write', {'file_path': '~/.aws/credentials'}, 'hold'),
                 ('Bash', {'command': 'agentj secret get fixture'}, 'uv'),
-                ('Bash', {'command': 'sudo ls'}, 'uv'),
+                ('Bash', {'command': 'sudo ls'}, 'hold'),                    # P573: sudo is one button
                 ('Bash', {'command': 'stripe payment_intents create'}, 'uv'),
                 ('settings.write', {}, 'hold'),
             ):

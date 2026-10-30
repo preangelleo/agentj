@@ -46,6 +46,9 @@ class FileForward(_Base):
 
     async def test_changed_unknown_too_big_and_switched_off(self):
         (self.work / 'out' / 'notes.md').write_text('# 改过了\n')
+        # P573: the card's scan-time copy is what forwards (the file card persists); without the copy → not_found as before
+        import shutil
+        shutil.rmtree(self.host.media.store, ignore_errors=True)
         self.assertEqual((await self.t.forward_media(self.mids['notes.md'], 'dev2'))['why'], 'not_found')
         self.assertEqual((await self.t.forward_media('A' * 22, 'dev2'))['why'], 'not_found')
         with patch.object(tg_media, 'UPLOAD_MAX', 10):
@@ -76,6 +79,8 @@ class FileForward(_Base):
         self.assertEqual(self.host.media.get(self.mids['chart.png'])['name'], 'chart.png')
         self.assertIsNone(self.host.media.get('B' * 22))
         self.host.media.clock = lambda: time.time() + media_mod.KEEP_SECS + 1
+        self.assertIsNotNone(self.host.media.get(self.mids['chart.png']), 'P573: a stored copy outlives 24 h')
+        self.host.media.clock = lambda: time.time() + media_mod.STORE_SECS + 1
         self.assertIsNone(self.host.media.get(self.mids['chart.png']))
 
 

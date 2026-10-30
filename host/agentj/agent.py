@@ -1,8 +1,4 @@
-"""Official headless Agent bridges (PROTOCOL §8; ADR-A47, A70–A72).
-Claude stream-json/MCP, Codex app-server, OpenCode serve; no terminal injection. Messages and Cmd share one queue.
-The owner chooses folder/login/settings. Session rights are the ceiling; dangerous actions retain phone approval.
-A fenced child fails closed unless the owner approves one unfenced launch. Claude waits for permission-socket claim.
-"""
+
 from __future__ import annotations
 
 from . import resource_policy
@@ -46,7 +42,7 @@ RETRY_NOTICE_AT = 5           # Claude Code's api_retry attempt (≈ 9 s in; a b
 
 @dataclass
 class Cmd:
-    """A slash command in the Agent's queue (slash.py): runs after the turn in front of it, never in parallel."""
+
     name: str
     arg: str = ""
     by: str | None = None
@@ -62,11 +58,11 @@ UNCERTAIN = object()        # Agent.deliver: fn's answer "maybe delivered" (e.g.
 
 
 class Withdrawn(Exception):
-    """The phone took the message back (`say_cancel`) before it reached the harness: nothing was written."""
+    pass
 
 
 def split_text(text: str, limit: int = MAX_TEXT) -> list[str]:
-    """Split a reply into chunks of ≤ limit UTF-16 units, preferring line breaks. Never drops text."""
+
     out, cur, n = [], [], 0
     for ch in text:
         u = 2 if ord(ch) > 0xFFFF else 1
@@ -87,7 +83,7 @@ def split_text(text: str, limit: int = MAX_TEXT) -> list[str]:
 
 
 def summarize(tool: str, tool_input) -> str:
-    """What the phone shows for a permission request (and what the device's signature covers, §8)."""
+
     inp = tool_input if isinstance(tool_input, dict) else {}
     s = None
     if tool == "Bash" and isinstance(inp.get("command"), str):
@@ -121,15 +117,14 @@ def _num(v) -> bool:
 
 
 def _unix(v) -> int | None:
-    """A reset time in unix seconds (harnesses report seconds or milliseconds); None when it is not a number."""
+
     if not _num(v) or v <= 0:
         return None
     return int(v / 1000) if v > 10_000_000_000 else int(v)
 
 
 def _signal_tree(p, sig: int) -> None:
-    """The Agent runs in its own session (start_new_session): signal its whole process group, so what it started in the
-    background goes with it. Linux's fence also ends the PID namespace; macOS has none (G-A53)."""
+
     try:
         os.killpg(p.pid, sig)
     except (ProcessLookupError, PermissionError, OSError):
@@ -169,14 +164,14 @@ CODEX_FEEDBACK = "feedback@agentj.app"   # P168/P341: the one public support mai
 
 
 def _codex_retry_at(raw: str) -> str | None:
-    """`… or try again at 3:05 PM.` / `try again in 2 days 3 hours` → the time, as Codex wrote it (never invented)."""
+
     import re
     m = re.search(r"try again (at|in) ([^.\n()]{1,60}?)\s*(?:[.\n(]|$)", raw, re.I)
     return clean_line(m.group(2), 60) if m else None
 
 
 def _codex_exit(raw: str) -> str | None:
-    """Our own wording for a Codex process that died ("Codex 退出了（137）…" / "没有启动") → the exit code, or "start"."""
+
     import re
     m = re.search(r"Codex 退出了（(-?\d+)）", raw)
     if m:
@@ -185,9 +180,7 @@ def _codex_exit(raw: str) -> str | None:
 
 
 def _codex_relay_hint(kind: str, provider: dict | None, stale: bool, en: bool) -> str:
-    """P309: the tail of a usage / rate / quota / auth line — which service Codex really talks to, and the way out when the
-    owner already topped up or changed the key (a thread loaded in the running app-server keeps the provider settings it
-    was opened with; a new conversation, or a fresh app-server resuming it, reads config.toml again — measured on 0.162.1)."""
+
     out = ""
     if provider and not provider.get("relay") and kind in ("usage", "rate", "quota"):
         out += (" (Agent J's Codex is using OpenAI itself. If you normally use a relay, the background service does not "
@@ -206,11 +199,7 @@ def _codex_relay_hint(kind: str, provider: dict | None, stale: bool, en: bool) -
 
 def codex_failure(raw, model: str | None, lang: str = "zh", provider: dict | None = None, stale: bool = False,
                   retried: bool = False) -> tuple[str, str, str | None]:
-    """P78/P175: classify native failures into a line the owner can act on, retain bounded redacted details, never log
-    the body. Kinds: model · region · usage · rate · quota · plan · workspace · auth · context · policy · server · sandbox ·
-    access · network · crash · missing · other. P309: `provider` (codex_perm.provider) names a relay instead of
-    ChatGPT where it matters; `stale` = the loaded thread predates a config.toml change; `retried` = the one automatic
-    retry of a momentary limit already ran."""
+
     import re
     from .privacy import redact
     if isinstance(raw, dict):
@@ -393,8 +382,7 @@ _CLAUDE_ID = re.compile(r"claude-(opus|sonnet|haiku|fable)-(\d+)(?:-(\d{1,2}))?(
 
 
 def pretty_model(mid) -> str | None:
-    """P219: a concrete Claude model id → the name with its version, as the phone shows it: claude-opus-5-5 → "Opus 5.5"
-    (an alias such as "opus" alone never says which Opus). None for anything else."""
+
     m = _CLAUDE_ID.fullmatch(mid.strip()) if isinstance(mid, str) else None
     if not m:
         return None
@@ -402,8 +390,7 @@ def pretty_model(mid) -> str | None:
 
 
 def tty_waiting(pid: int) -> bool:
-    """Linux: some process of the Agent's session (it runs in its own, start_new_session) is blocked reading a terminal.
-    Read-only /proc look (same user); False wherever that cannot be seen."""
+
     try:
         names = os.listdir("/proc")
     except OSError:
@@ -426,7 +413,7 @@ def tty_waiting(pid: int) -> bool:
 
 
 def stall_text(kind: str, reason: str, excerpt: str, secs: int, lang: str = "zh") -> str:
-    """The phone's card for a stalled turn (P219): where it is stuck, the harness's own words, what to do at the Agent J host."""
+
     cmd = HARNESS_CMD.get(kind, kind)
     en = lang == "en"
     shown = ("\n```text\n" + excerpt.replace("```", "` ` `") + "\n```") if excerpt else ""
@@ -445,14 +432,13 @@ def stall_text(kind: str, reason: str, excerpt: str, secs: int, lang: str = "zh"
 
 
 class Agent:
-    """Base: a queue of user messages, one turn at a time, status reported to the host."""
+
     kind = "?"
     halt_quiet = False      # P328: serve.stop_turn is asking — the reason goes into /stop's own answer, not a second notice
     halt_note = None        # P328: why the last halt() could not stop the running turn (None = it could, or nothing ran)
 
     def cannot_halt(self, text: str) -> None:
-        """P328: a running turn the phone cannot stop (an owner's desktop turn, a terminal without a safe interrupt route):
-        say what to do instead — once: as /stop's answer when stop_turn asked, else as a notice."""
+
         self.halt_note = text
         if not self.halt_quiet:
             self.host.agent_notice(text)
@@ -488,7 +474,7 @@ class Agent:
         self.task = asyncio.create_task(self.run())
 
     def meter(self, **kw) -> None:
-        """§10.10: a number the harness reported exactly (never an estimate) → the phones' meters."""
+
         current = getattr(self.host, "agent", None)
         if self.cfg.get("_workflow_ceo") or (current is not None and current is not self):
             return
@@ -497,13 +483,13 @@ class Agent:
             fn(**kw)
 
     def _auth_signal(self, text) -> None:
-        """P258: hand a native failure line to serve's AI 登录救援 (login expired vs balance vs rate limit)."""
+
         fn = getattr(self.host, "auth_signal", None)
         if fn and not self.cfg.get("_workflow_ceo"):
             fn(self.kind, text)
 
     def fail_notice(self, text: str, *, recovery=False) -> None:
-        """A notice that means this turn did not finish normally (its page ends `failed`)."""
+
         fn = getattr(self.host, "turn_failed", None)
         if fn:
             fn()
@@ -514,21 +500,19 @@ class Agent:
         (notice or self.host.agent_notice)(text)
 
     def local_fail(self, text: str) -> None:
-        """A turn that cannot run until the human changes something on the Agent J host (fence / hooks): failed + 「在Agent J 主机上处理」."""
+
         fn = getattr(self.host, "turn_failed", None)
         if fn:
             fn()
         self.local_only(text)
 
     def local_only(self, text: str) -> None:
-        """§10.8: something only the human at the Agent J host can answer — a page with relay's 「在Agent J 主机上处理」 card."""
+
         fn = getattr(self.host, "local_notice", None)
         (fn or self.host.agent_notice)(text)
 
     async def deliver(self, fn):
-        """The "delivered" moment (§10.2): fn = the write to the harness (Claude Code's stdin line, Codex `turn/start`, OpenCode
-        `prompt_async`). Run under the say's lock, so a `say_cancel` either wins before it (Withdrawn, nothing written) or
-        waits and reads already_delivered. fn returning False = refused by the harness (the say is `failed`)."""
+
         s = self.cur_send
         if s is None:
             return await fn()
@@ -538,7 +522,9 @@ class Agent:
                 if not notices.active(self.host.st, s.official_notice_id):
                     self.host.official_pending.pop(s.official_notice_id, None)
                     raise Withdrawn()
-            if s.state == "cancelled":
+            guard = getattr(s, 'delivery_allowed', None)
+            if s.state == "cancelled" or (callable(guard) and not guard()):
+                s.state = "cancelled"
                 raise Withdrawn()
             if s.state == "delivered":          # a retry of the same message after the process died
                 return await fn()
@@ -623,6 +609,8 @@ class Agent:
                             except Exception as exc:
                                 self.host.st.log('task_receipt_failed', error=type(exc).__name__)
                                 self.host.agent_notice('任务回执未发出 / Task receipt was not sent')
+                        if getattr(self.host, "peers", None) is not None:
+                            await self.host.peers.xfer.broker.drain()
                         self.cur_send = None
                     self.host.agent_turn_end()
                     try:                                    # P59: context nearly full → the handover before the harness
@@ -695,11 +683,11 @@ class Agent:
 
     # ------------------------------------------------ P219: never a silent wait
     def touch(self) -> None:
-        """The harness made progress on this turn (a reply, a tool step, the turn's end)."""
+
         self.touched = True
 
     async def watched(self, coro):
-        """Run one turn with the stall watch beside it."""
+
         self.touched = False
         w = asyncio.create_task(self._stall_watch())
         try:
@@ -737,14 +725,14 @@ class Agent:
                 return
 
     def stall_probe(self):
-        """Why the harness has said nothing: ("tty" | "prompt", excerpt), "skip" (already on the phone) or None (no sign)."""
+
         p = getattr(self, "proc", None)
         if p is None or p.returncode is not None:
             return None
         return ("tty", self.printed_tail()) if tty_waiting(p.pid) else None
 
     def printed_tail(self) -> str:
-        """What the harness printed outside its protocol (stdout that is not protocol, stderr): the last lines, redacted."""
+
         raw = (getattr(self, "raw_tail", "") or "") + "\n" + (getattr(self, "err_tail", "") or "")
         lines = [ln for ln in raw.splitlines() if ln.strip()][-6:]
         if not lines:
@@ -753,10 +741,7 @@ class Agent:
         return clean(redact("\n".join(lines)), 600)
 
     async def halt(self, clear_queue: bool = True) -> bool:
-        """Stop everything (ADR-A51) — or make room for a scheduled task run (clear_queue=False, called while holding
-        turn_lock, so no turn is running): drop the messages still queued (they never ran and never will), ask the harness
-        to interrupt the turn (`interrupt_request`), then end the Agent's whole process tree. The conversation itself is
-        kept (Claude Code --resume / Codex thread id). Returns True when a turn was running."""
+
         if clear_queue:
             while not self.q.empty():
                 item = self.q.get_nowait()
@@ -784,19 +769,17 @@ class Agent:
         return busy
 
     async def interrupt_request(self, p) -> None:
-        """The harness's own "stop this turn" (none by default; the process tree is ended right after anyway)."""
+        pass
 
     def is_down(self) -> bool:
         return False
 
     def session_open(self) -> bool:
-        """P312: the harness's session is ready for a turn (adapters: Codex thread loaded, Claude Code init seen)."""
+
         return True
 
     def phase(self) -> str:
-        """P312: where the Agent stands, a fixed code for the harness-switch job's diagnosis (never native output):
-        failed · idle · prompt (a terminal prompt waits for someone, Linux /proc) · approval (a card is on the phone) ·
-        starting (working, the session not open yet) · turn (session open, the turn running)."""
+
         if self.is_down():
             return "failed"
         if self.status != "working":
@@ -810,14 +793,14 @@ class Agent:
         return "turn" if alive and self.session_open() else "starting"
 
     def err_kind(self) -> str | None:
-        """P312: the class of what the harness printed on stderr (a fixed code; None = nothing / not classified)."""
+
         return None
 
     def perm_lost(self) -> None:
-        """The permission tool's connection to serve dropped (ClaudeAgent restarts; others have none)."""
+        pass
 
     def launch_argv(self, argv: list[str]) -> list[str] | None:
-        """Fail closed. Only an explicit owner --unfenced choice skips isolation."""
+
         self._fence_failure = None
         if not self.cfg.get("_workflow_ceo"):
             try:
@@ -851,7 +834,7 @@ class Agent:
             return wrapped
         # Keep the phone available when the harness is down. This grant is consumed
         # by THIS spawn only: no configuration write and no remembered permission.
-        answer = await self.host.ask("SandboxOnce", {"reason": why}, batch=False, require_passkey=True)
+        answer = await self.host.ask("SandboxOnce", {"reason": why}, batch=False, always_ask=True)   # P573: one button
         if answer.get("behavior") == "allow":
             self.host.st.log("agent_unfenced_once", agent=self.kind, reason=why)
             return argv
@@ -871,7 +854,7 @@ class Agent:
 
     # ------------------------------------------------ slash commands (slash.py)
     def passthrough(self, name: str) -> bool:
-        """May `/name` go to the harness as an ordinary message? (Claude Code: one of its skills.)"""
+
         return False
 
     async def command(self, name: str, arg: str) -> Result:
@@ -889,14 +872,14 @@ class Agent:
         return await fn(arg)
 
     async def drop_conversation(self) -> None:
-        """Forget the loaded conversation (the next turn opens the one agent.json names)."""
+        pass
 
     # ------------------------------------------------ A1 (P44): the injected main identity changed (the owner's language)
     identity_stale = False
     _private_key = None
 
     def identity_changed(self) -> None:
-        """serve: the text main_identity.prompt(self.cfg) yields changed. Applied before the next turn (hot, never mid-turn)."""
+
         if not self.cfg.get("_workflow_ceo"):
             self.identity_stale = True
 
@@ -928,11 +911,11 @@ class Agent:
     restart_why = ""
 
     def owns_harness(self) -> bool:
-        """Is the harness process Agent J's own child (independent mode)? A shared session is the owner's process."""
+
         return self.cfg.get("session_mode") != "shared" and hasattr(self, "proc")
 
     def request_restart(self, why: str) -> str:
-        """Before the next turn (never mid-turn: the main Agent may be the one asking). → "next_turn" | "next_start"."""
+
         p = getattr(self, "proc", None)
         if p is None or p.returncode is not None:
             return "next_start"
@@ -940,8 +923,7 @@ class Agent:
         return "next_turn"
 
     async def reload_identity(self) -> None:
-        """Default: nothing (OpenCode sends `system` with every prompt; a shared session is the owner's own harness — we
-        inject nothing there and never restart it). ClaudeAgent / CodexAgent override this."""
+        pass
 
     async def _end_proc(self) -> None:
         p = getattr(self, "proc", None)
@@ -966,7 +948,7 @@ class Agent:
         return Result(humane.of(self, "clear.kept"), sep=True, undo=True)
 
     def record_session(self, sid: str) -> None:
-        """Persist a real harness id; one optional continuation hint after /clear."""
+
         st = self.host.st
         cleared = not st.agent_session(self.kind) and bool(st.agent_session(self.kind + ".prev"))
         st.set_agent_session(self.kind, sid)
@@ -974,8 +956,7 @@ class Agent:
             self.host.clear_resume(self.kind, sid)
 
     async def cmd_undo_clear(self, arg: str) -> Result:
-        """「撤销清空」 works until the new conversation starts (P280): once a message opened a new session, the undo window
-        is over — the phone has already taken the button away, and an older phone's tap is refused here, never half-done."""
+
         st = self.host.st
         prev = st.agent_session(self.kind + ".prev")
         if not prev:
@@ -1001,7 +982,7 @@ class Agent:
         return self.cfg.get("effort")
 
     async def list_models(self) -> list[dict]:
-        """[{"id", "name", "efforts": [...] | None}] — what the harness offers (cached; [] when it gave no list)."""
+
         if not self.models_cache:
             with contextlib.suppress(Exception):
                 await self.refresh_models()
@@ -1014,7 +995,7 @@ class Agent:
         return list(self.EFFORTS) if self.EFFORTS else None
 
     async def model_set(self, d: dict) -> str | None:
-        """None = applied; else why not: unknown_model | unknown_effort | unsupported."""
+
         if d.get("default") is True:
             await self.apply_model(None, None, default=True)
             return None
@@ -1034,8 +1015,7 @@ class Agent:
         return await self.apply_model(model, effort)
 
     async def apply_model(self, model: str | None, effort: str | None, default: bool = False) -> str | None:
-        """Store the choice (config.json agent.model / agent.effort) so the next turn uses it; adapters add what the harness
-        needs on top."""
+
         if default:
             if self.host.set_model(None) is False:
                 return "stopped"
@@ -1057,13 +1037,11 @@ class Agent:
         return None
 
     async def refresh_models(self) -> None:
-        """Ask the harness for its list once it runs (adapters); the host sends `models` to the phones."""
+        pass
 
 
 def source_root() -> str | None:
-    """The directory holding `agentj/` when it is a source checkout; None when the package is installed in a venv's
-    site-packages (`uv tool` / pipx / pip): then the venv's interpreter finds it alone and nothing extra goes into the
-    agent's environment (L3)."""
+
     import site
     root = os.path.realpath(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     installed = {os.path.realpath(p) for p in site.getsitepackages() + [site.getusersitepackages()]}
@@ -1071,13 +1049,7 @@ def source_root() -> str | None:
 
 
 def hook_settings(extra: list | None = None, research: bool = False, warnings: bool = True, harness: bool = False) -> dict:
-    """The only settings serve adds to Claude Code (`--settings`, flag level — above user / project / local, below managed
-    policy): one PreToolUse hook for every tool, and hooks kept on. No permission rule, no mode (Invariant 11).
-    research (a scheduled `mode: research` task, ADR-A53): the same hook also denies every call that is not read-only.
-    warnings controls additional danger hints only; the common policy check is always installed.
-    harness (P551 #320, the signed `harness` level, P556 「全放行」): the hook forces the phone only for the four ③ kinds;
-    everything else reaches the permission tool as Claude Code asks it, and Agent J answers it (Host.ask); Claude Code's own
-    bash sandbox is off for this start. Never bypassPermissions: its prompts would no longer reach Host.ask (approval_level.MAX_HOW)."""
+
     cmd = (f"{shlex.quote(sys.executable)} -P -m agentj.danger hook {danger.encode_extra(extra or [])}"
            + (" research" if research else "")
            + ("" if warnings else " policy-only")
@@ -1091,10 +1063,7 @@ def hook_settings(extra: list | None = None, research: bool = False, warnings: b
 
 
 def with_reminder(settings: dict, cfg: dict) -> dict:
-    """P159: the main Agent's hidden per-turn line (main_identity.turn_reminder) as a UserPromptSubmit hook in the same
-    `--settings`: a fixed `printf` of the hook answer (ASCII-escaped JSON, no interpreter start per turn). Claude Code
-    keeps it as a hook_additional_context attachment — not a user message, not shown in its view, not in phone history.
-    Adds no permission and never re-enables hooks the human switched off (no disableAllHooks key here)."""
+
     if cfg.get("_workflow_ceo"):
         return settings
     from . import main_identity
@@ -1109,8 +1078,7 @@ _MANAGED = ("/etc/claude-code/managed-settings.json", "/Library/Application Supp
 
 
 def hooks_blocked(workdir: str) -> str | None:
-    """Why the danger hook would not run (or would re-enable hooks the human switched off), else None. Read once per start:
-    managed policy `allowManagedHooksOnly` / `disableAllHooks`; the human's or the folder's `disableAllHooks: true`."""
+
     cfg_dir = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude")
     files = [(p, "managed") for p in _MANAGED] + [(os.path.join(cfg_dir, "settings.json"), "user")] + [
         (os.path.join(workdir, ".claude", n), "project") for n in ("settings.json", "settings.local.json")]
@@ -1135,12 +1103,11 @@ def _bin(env: str, name: str) -> str | None:
 
 
 class ClaudeAgent(Agent):
-    """One long-lived `claude -p --input-format stream-json` process; restarted with --resume <session id> if it exits."""
+
     kind = "claude"
 
     async def reload_identity(self) -> None:
-        """A1: --append-system-prompt is read at start: end the idle process; the next turn starts Claude Code again with
-        --resume (same conversation) and the new identity text."""
+
         await self._end_proc()
 
     def __init__(self, host, cfg: dict):
@@ -1262,7 +1229,7 @@ class ClaudeAgent(Agent):
         return True
 
     async def control(self, subtype: str, **kw) -> dict:
-        """One stream-json control request (what the Agent SDK sends) → its response. Only CONTROL_SUBTYPES."""
+
         if subtype not in CONTROL_SUBTYPES:
             raise ValueError("control subtype not allowed: " + subtype)
         p = self.proc
@@ -1283,9 +1250,7 @@ class ClaudeAgent(Agent):
         return r.get("response") if isinstance(r.get("response"), dict) else {}
 
     async def interrupt_request(self, p) -> None:
-        """Claude Code's stream-json control request `interrupt` (what the Agent SDK sends), then ≤ 2 s for the turn's
-        result. Measured (2.1.285): the turn ends at once but a backgrounded Bash keeps running — so halt() always ends the
-        process tree after this."""
+
         td = self.turn_done
         if td is None or td.is_set() or p.stdin is None:
             return
@@ -1357,8 +1322,7 @@ class ClaudeAgent(Agent):
             await asyncio.to_thread(b.reconcile_claude, "own", self.transcript_path())
 
     def _busy(self, ev) -> None:
-        """P150: the chat session's sub-agents → the phone's 「在办事项」 dots (busy.py). A workflow CEO run is one item
-        of its own (tasks.py); None = the process ended, so nothing of it is running any more."""
+
         b = getattr(self.host, "busy", None)
         if b is None or self.cfg.get("_workflow_ceo"):
             return
@@ -1434,15 +1398,31 @@ class ClaudeAgent(Agent):
                 self.replay = False
             if not synthetic:
                 self._note_tools(msg.get("content"), ev.get("parent_tool_use_id"))
+            if not synthetic and not ev.get("parent_tool_use_id") and getattr(self.host, "peers", None) is not None:
+                for block in msg.get("content") or []:
+                    if isinstance(block, dict) and block.get("type") == "tool_use":
+                        self.host.peers.xfer.broker.register(block.get("id"), block.get("name"), block.get("input"), self.cfg["dir"])
             for block in msg.get("content") or []:
                 if isinstance(block, dict) and block.get("type") == "text" and isinstance(block.get("text"), str):
                     if self.capture is not None:
                         self.capture.append(block["text"])
                     else:
                         self.host.agent_text(block["text"])
+        elif t == "user" and getattr(self.host, "peers", None) is not None:
+            message = ev.get("message") if isinstance(ev.get("message"), dict) else {}
+            for block in message.get("content") or []:
+                if isinstance(block, dict) and block.get("type") == "tool_result":
+                    self.host.peers.xfer.broker.complete(block.get("tool_use_id"), not block.get("is_error", False), block.get("content"))
         elif t == "result":
             self.replay = False
             self.last_result = ev
+            from .heartbeat_check import sample
+            u = ev.get('usage') or {}
+            inp = u.get('input_tokens')
+            out = u.get('output_tokens')
+            if type(inp) is int:
+                inp += sum(u.get(k, 0) for k in ('cache_read_input_tokens', 'cache_creation_input_tokens') if type(u.get(k, 0)) is int)
+            sample(self, 'result', inp, out)
             if (ev.get("is_error") or ev.get("subtype") not in ("success", None)) and not self.halting \
                     and self.capture is None and self._unsupported_model(ev):
                 pass                               # P219: turn() switches to the default model and sends it again
@@ -1461,9 +1441,7 @@ class ClaudeAgent(Agent):
                 self.turn_done.set()
 
     def _refusal_notice(self, ev: dict) -> None:
-        """P539 (#299): the model's safeguards flagged this turn (stream-json, Claude Code 2.1.296): `model_refusal_fallback`
-        = the turn was answered by the fallback model instead; `model_refusal_no_fallback` = the turn stopped. Either way
-        the owner learns what happened and how to go on from the phone. Model ids only; never the message."""
+
         lang = self.cfg.get("language", "zh")
         if ev.get("subtype") == "model_refusal_fallback" and ev.get("scope") == "local":
             return                                  # a subagent / side question fell back; the session model is unchanged
@@ -1483,9 +1461,7 @@ class ClaudeAgent(Agent):
                                     "pick another model and resend; or send /clear for a new conversation."))
 
     def _note_tools(self, content, parent) -> None:
-        """P426 #181 (§39): an exact skill run (the Skill tool) and the main thread's shell commands worth a skill — names and
-        normalised signatures only (skill_usage / skill_ops); P553: a call the hook denies as unknown is logged. Never costs
-        the turn."""
+
         try:
             from . import skill_ops, skill_usage
             for b in content or []:
@@ -1505,8 +1481,7 @@ class ClaudeAgent(Agent):
             pass
 
     def _api_retry(self, ev: dict) -> None:
-        """P219: Claude Code retries a failing model request by itself (measured 2.1.296: 10 attempts, ≈ 3 min when the
-        service cannot be reached) and says so only in `api_retry` events — the phone hears about it once per turn."""
+
         attempt, most = ev.get("attempt"), ev.get("max_retries")
         if self.retry_told or not isinstance(attempt, int) or attempt < RETRY_NOTICE_AT or self.capture is not None:
             return
@@ -1528,8 +1503,7 @@ class ClaudeAgent(Agent):
             "在Agent J 主机上可以运行 `agentj doctor`，并检查服务商（例如 Agents Relay）是否正常。")
 
     def _unsupported_model(self, ev: dict) -> bool:
-        """P219: a 400 that says the model is not served (a relay without Fable: 「Claude Fable 5.1 is not supported」) on a
-        model other than Agent J's default → remembered for turn() to retry once on the default."""
+
         from . import harness_setup
         r = ev.get("result") if isinstance(ev.get("result"), str) else ""
         status = ev.get("api_error_status")
@@ -1545,7 +1519,7 @@ class ClaudeAgent(Agent):
         return True
 
     def stall_probe(self):
-        """P219: a terminal read by Claude Code (or something it started), or text it printed outside stream-json."""
+
         if self.retry_told:
             return "skip"
         p = self.proc
@@ -1568,9 +1542,7 @@ class ClaudeAgent(Agent):
         return None
 
     async def clear_native_goal(self) -> bool:
-        """P198: before 0.20.1 the phone's `/goal <what>` reached Claude Code verbatim and set its native goal, whose Stop hook
-        then re-asked every turn 「…发 /goal clear」. A session left that way is cleaned once per process: `/goal clear` as a
-        local command (no model call, no phone page), before the owner's message. True when one was cleared."""
+
         from . import goal as goal_mod
         t = self.transcript_path()
         if not t or not await asyncio.to_thread(goal_mod.native_goal_active, t):
@@ -1638,7 +1610,7 @@ class ClaudeAgent(Agent):
                                     f"model {nice}, which stays selected; tap the model label on the phone to change it."))
 
     async def context_meter(self) -> None:
-        """§10.10: `get_context_usage` after each turn end (and compaction) — the exact numbers Claude Code reports."""
+
         if self.proc is None or self.proc.returncode is not None:
             self.meter(ctx=None)
             return
@@ -1687,7 +1659,7 @@ class ClaudeAgent(Agent):
         self.meter(model=cur, model_name=self.model_name(cur))
 
     def model_name(self, model: str | None) -> str | None:
-        """P219: always with its version ("Opus 5.5"): a concrete id names itself; an alias / "default" by what it resolves to."""
+
         if pretty_model(model):
             return pretty_model(model)
         for m in self.models_cache:
@@ -1696,9 +1668,7 @@ class ClaudeAgent(Agent):
         return None
 
     async def apply_model(self, model: str | None, effort: str | None, default: bool = False) -> str | None:
-        """Model: the `set_model` control request (already allowed, CONTROL_SUBTYPES). Effort: no allowed control request
-        exists (apply_flag_settings stays forbidden, Invariant 26), so the idle process is restarted with
-        `--resume <id> --effort <level>`. Default (long press): both cleared, the process restarted without the flags."""
+
         if model is not None and not default and self.proc is not None and self.proc.returncode is None:
             try:
                 await self.control("set_model", model=model)
@@ -1730,7 +1700,7 @@ class ClaudeAgent(Agent):
         return self.proc is not None or await self._spawn()
 
     async def local(self, text: str) -> dict:
-        """Send a command Claude Code executes itself (`/compact`, `/cost`); its output is collected for the card."""
+
         self.capture, self.boundary, self.last_result = [], None, {}
         try:
             await self.turn(text)

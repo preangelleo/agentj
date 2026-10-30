@@ -358,14 +358,20 @@ try {
     } finally { await p.dispose(); }
   });
 
-  await C('settings-heartbeat', async () => {           // P156: switch + idle interval + cost note
+  await C('settings-heartbeat', async () => {           // P156/P589: switch + idle interval + zero-model precheck note
     const p = await paired({ before: (st) => { st.prefs = { ...structuredClone(PREFS), heartbeat: { enabled: true, interval_minutes: 60 } }; } });
     try {
       await click(p, '#setBtn');
       await waitFor(p, `!document.getElementById('set-hb-row').hidden`);
       assert.equal(await ev(p, `document.getElementById('set-hb').getAttribute('aria-checked')`), 'true');
       assert.equal(await ev(p, `document.getElementById('set-hb-every').value + ' ' + document.getElementById('set-hb-every').selectedOptions[0].textContent`), '60 空闲 1 小时后');   // P207: a dropdown
-      assert.match(await ev(p, `document.querySelector('#set-hb-row .setnote').textContent`), /每次心跳都会用掉一次模型调用/);
+      // P589 adds a quiet-hours note before the cost note: bind this check to the actual precheck explanation.
+      const note = await ev(p, `document.querySelector('#set-hb-row .setnote[data-i18n="p589.note"]').textContent`);
+      assert.match(note, /先由 Agent J 主机检查，无事不调用模型/, 'idle prechecks do not call a model');
+      assert.match(note, /有事才唤醒/, 'pending work wakes the Agent');
+      assert.match(note, /上下文过大时先提醒压缩/, 'large-context protection is explained');
+      assert.match(note, /实际心跳消耗可在用量中查看/, 'usage reports measured heartbeat consumption');
+      assert.doesNotMatch(note, /每次心跳都会用掉一次模型调用/, 'no unconditional model-call claim');
       await ev(p, `document.getElementById('set-hb-row').scrollIntoView({block:'center'})`);
       mkdirSync(OUT_P156, { recursive: true });
       writeFileSync(OUT_P156 + 'settings-heartbeat-zh.png', await shoot(p));
@@ -380,6 +386,20 @@ try {
       assert.ok(JSON.parse(r).height >= 24, 'the switch is visible');
       noProblems(p);
     } finally { await p.dispose(); }
+    const en = await paired({ lang: 'en', before: (st) => {
+      st.prefs = { ...structuredClone(PREFS), appearance: { ...PREFS.appearance, language: 'en' }, heartbeat: { enabled: true, interval_minutes: 60 } };
+    } });
+    try {
+      await click(en, '#setBtn');
+      await waitFor(en, `!document.getElementById('set-hb-row').hidden`);
+      const note = await ev(en, `document.querySelector('#set-hb-row .setnote[data-i18n="p589.note"]').textContent`);
+      assert.match(note, /checks first without calling a model/);
+      assert.match(note, /Pending work wakes the Agent/);
+      assert.match(note, /large contexts prompt a compaction reminder/);
+      assert.match(note, /View measured heartbeat tokens in Usage/);
+      assert.doesNotMatch(note, /Every heartbeat costs one model call|[一-鿿]/);
+      noProblems(en);
+    } finally { await en.dispose(); }
     const old = await paired({ before: (st) => { st.prefs = structuredClone(PREFS); st.prefSet = false; } });
     try {                                                  // an older host cannot set it: no row
       await click(old, '#setBtn');

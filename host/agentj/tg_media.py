@@ -1,16 +1,6 @@
-"""F21 over Telegram (P59, ADR-A165): files an Agent reply shows go to the owner's private Telegram chat as well.
-
-Same detection and the same safety checks as the phone (media.py, PROTOCOL §13): `media.refs` finds the references,
-`Media.check` resolves each one (realpath inside the Agent's folder, outside the state dir, the deny list, an O_NOFOLLOW
-dir-fd chain, a regular file of this user, extension + leading bytes, the per-kind caps, `taskspec.secret_like` for text
-kinds). On top: Telegram's own bot upload limits (UPLOAD_MAX; a photo above PHOTO_MAX goes as a document instead), ≤
-MAX_ITEMS (8) files and ≤ media.PAGE_BYTES per reply. Right before each upload the file is re-opened the same safe way and
-(dev, inode, size, mtime) and the SHA-256 of what is sent must equal what was checked — otherwise it is `gone`.
-
-Who gets files: ONLY the owner's private chat. A reply to a turn that came from a Telegram group never carries files (a group
-is not owner-only: its members are not the owner, and a file in the owner's folder is the owner's data). zip contents are not
-scanned (same as the phone). Logs: counts only, never names, paths or content.
-"""
+"""Deliver checked reply attachments to the owner private channel (ADR-A165).
+Reuse media checks, no-follow reads and bounded uploads. Credential files use pickup cards;
+masked copies never fall back to their unmasked source. Hashing/scanning runs off the event loop."""
 from __future__ import annotations
 
 import hashlib
@@ -58,10 +48,10 @@ def method_of(rec: dict) -> tuple[str, str]:
     return m
 
 
-def collect(media: "media_mod.Media", text: str, keys: list | None = None) -> tuple[list[dict], list[dict]]:
-    """A reply → (records to upload, skips {name, why, bytes?}). Blocking (hashing, the secret scan): run in a thread.
-    Only the owner's channels call it (the owner bot's private chat, a mail reply to the owner): owner=True (P211). A
-    credential file an explicit link named is appended to `keys` as (skip, record) for a pickup card."""
+def collect(media: "media_mod.Media", text: str, keys: list | None = None, mask: bool = False) -> tuple[list[dict], list[dict]]:
+    """Blocking owner attachment scan → records/skips. Run in a thread.
+    With keys+mask, offer masked text copies and transient value-card pairs; credential files stay whole cards."""
+    mask = mask and keys is not None
     items: list[dict] = []
     skips: list[dict] = []
     total, seen = 0, set()
@@ -76,9 +66,10 @@ def collect(media: "media_mod.Media", text: str, keys: list | None = None) -> tu
                 skips.append({"name": name, "why": "masked"})
             continue
         try:
-            rec, why = media.check(ref, owner=True)
+            rec, why = media.check(ref, owner=True, mask=True) if mask else media.check(ref, owner=True)
         except OSError:
             rec, why = None, None
+        values = media.last_values() if mask else []
         if why:
             skip = {"name": name, "why": why, **({"bytes": rec["bytes"]} if rec and why == "too_big" else {}),
                     **media_mod._at(media, why)}
@@ -88,6 +79,8 @@ def collect(media: "media_mod.Media", text: str, keys: list | None = None) -> tu
             continue
         if rec is None or (rec["dev"], rec["ino"]) in seen:
             continue
+        if values and ref.explicit:
+            keys.append((None, {"name": rec["name"], "sha256": rec["sha256"], "values": values}))
         if rec["bytes"] > UPLOAD_MAX or total + rec["bytes"] > media_mod.PAGE_BYTES:
             skips.append({"name": rec["name"], "why": "too_big", "bytes": rec["bytes"]})
             continue
@@ -98,7 +91,13 @@ def collect(media: "media_mod.Media", text: str, keys: list | None = None) -> tu
 
 
 def read_checked(rec: dict) -> bytes:
-    """The bytes to upload, re-opened through the no-follow chain; raises media.Gone when the file is not the one checked."""
+    """No-follow revalidated bytes or Gone; stored masked copies never fall back to their source."""
+    if rec.get("blob"):
+        data = media_mod.read_blob(rec)
+        if data is not None:
+            return data
+        if rec.get("masked"):
+            raise media_mod.Gone("store")
     fd = media_mod.open_rel(rec["root"], list(rec["parts"]))
     try:
         s = os.fstat(fd)

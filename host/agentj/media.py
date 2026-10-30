@@ -2,12 +2,14 @@
 No HTTP fetches. Written and resolved paths obey owner/outsider policy; credential files use secret pickup, never plain
 cards. Open through an O_NOFOLLOW dir-fd chain; require regular user-owned files and recheck inode/size/mtime on every
 read. Type, per-file/page limits and secret checks gate offers. A zero-offset read rehashes bytes; the phone verifies
-SHA-256. Expired or changed files fail closed. Persist only bounded private media references; refused contents never leave.
+SHA-256. Persist bounded private copies for history; changed sources cannot replace scanned bytes.
+Masked copies never fall back to source; refused contents never leave.
 
 Protocol/history detail: agentjarvis/ARCHITECTURE.md, P0261 source notes / media.py.
 """
 from __future__ import annotations
 
+import contextlib
 import errno
 import hashlib
 import json
@@ -20,7 +22,7 @@ import time
 import urllib.parse
 from dataclasses import dataclass
 
-from . import taskspec, uploads, wire
+from . import privacy, taskspec, uploads, wire
 
 CHUNK = 45_056                    # raw bytes per media_chunk → 60 075 base64url chars → one 60 160-byte padded frame (§10.3)
 WINDOW = 8                        # chunks answered per media_get (the phone asks for the next window when it has them)
@@ -29,20 +31,18 @@ MIB = 1024 * 1024
 CAPS = {"image": 10 * MIB, "audio": 25 * MIB, "video": 50 * MIB, "pdf": 25 * MIB, "html": 2 * MIB, "file": 25 * MIB}
 MAX_ITEMS = 24                    # P194: a gallery reply (14 pictures + 3 pages) is one page, not 8 cards and silence
 PAGE_BYTES = 100 * MIB
-KEEP_SECS = 24 * 3600
-KEEP_N = 500
+KEEP_SECS = 24 * 3600              # a record served from its source file (no stored copy)
+KEEP_N = 2000                      # P573: ≥ the history's 500 pages × a few cards each
+STORE_DIR = "media_store"          # P573: content-addressed private copies, <sha256 hex> each
+STORE_SECS = 30 * 24 * 3600        # a record with a stored copy
+STORE_BYTES = 512 * MIB            # total bytes of stored copies
+STORE_GRACE = 3600                 # s: an unreferenced copy (a mail attachment, a racing scan) stays this long
+COPY_MAX = 25 * MIB                # larger items (videos) stay source-backed (24 h, as before)
+MASK_MAX = 4 * MIB                 # a text file larger than this is not masked: the old `key_content` note / card
 MAX_REFS = 64                     # candidate references examined per page
 NAME_MAX = 128
 REF_MAX = 512
 WHYS = ("too_big", "outside", "secret", "type", "gone", "masked", "too_many", "private", "key_file", "key_content", "key_card")
-# P211: toward the owner (Media.scan = the owner's own remote, the owner bot's private chat, mail to the owner's own address) a
-# file is NOT run through the secret guess. The floor that stays is deterministic: a credential file by name / folder
-# (KEY_DIRS, DENY_FILES …) → `key_file`, a text file holding a real key shape (OWNER_KINDS — never `high_entropy`) →
-# `key_content`; an explicit link to either becomes a secret pickup card (`key_card`, owner_route.offer_files) instead of
-# being dropped. agentj's own per-folder workspace (`.agentj/`, where an Agent may keep an outbox) and `.git` are not secrets:
-# open to the owner, `private` to anyone else. Everyone else (owner=False: friends, contacts, groups) keeps the full scan.
-# P194: a reference whose path a privacy placeholder replaced (the reply text was masked before the scan) is `masked`, never
-# `gone` — the file may be right there; one past MAX_ITEMS is `too_many`, never silently dropped.
 _PLACEHOLDER = re.compile(r"<(?:redacted|email|phone|private-ip|host|user)>")
 SCAN_SLICE = MIB                  # the secret scan reads text in slices of this much …
 SCAN_OVERLAP = 8 * 1024           # … overlapping by this much, so a token across a boundary is still seen
@@ -69,15 +69,11 @@ KINDS = {
     ".odt": ("file", "application/vnd.oasis.opendocument.text"),
     ".ods": ("file", "application/vnd.oasis.opendocument.spreadsheet"),
     ".epub": ("file", "application/epub+zip"),
-    # P184: what the Agent produces and the owner may want on the phone / by e-mail — contacts, calendars, mail, legacy
-    # Office, OpenDocument slides, RTF, archives. Text kinds go through the same secret scan (TEXTY).
     ".vcf": ("file", "text/vcard"), ".vcard": ("file", "text/vcard"), ".ics": ("file", "text/calendar"),
     ".eml": ("file", "message/rfc822"), ".mbox": ("file", "application/mbox"), ".rtf": ("file", "application/rtf"),
     ".doc": ("file", "application/msword"), ".xls": ("file", "application/vnd.ms-excel"),
     ".ppt": ("file", "application/vnd.ms-powerpoint"), ".odp": ("file", "application/vnd.oasis.opendocument.presentation"),
     ".tar": ("file", "application/x-tar"), ".7z": ("file", "application/x-7z-compressed"),
-    # P424 #142: scripts and source files are text cards — previewed as text on the phone (web/js/mediawire previewKind), never
-    # run; explicit links only (not DELIVERABLE), and like every text kind they go through the secret scan
     **{e: ("file", "text/plain") for e in (".sh", ".bash", ".zsh", ".fish", ".ps1", ".psm1", ".bat", ".cmd", ".py", ".js",
                                           ".mjs", ".ts", ".rb", ".pl", ".lua", ".sql", ".diff", ".patch")},
 }
@@ -110,6 +106,67 @@ _UNESC = re.compile(r"\\([!-/:-@\[-`{-~])")
 
 class Gone(Exception):
     """The file vanished, changed or was swapped since the scan, or the mid is unknown / expired: answered `gone`."""
+
+
+_HEX64 = re.compile(r"[0-9a-f]{64}")
+
+
+def _blob_fd(rec: dict) -> int | None:
+    """P573: fd of the record's stored copy (O_NOFOLLOW, a regular file of this user, the recorded size), or None."""
+    sha, store = rec.get("blob"), rec.get("store")
+    if not (isinstance(sha, str) and _HEX64.fullmatch(sha) and isinstance(store, str) and os.path.isabs(store)):
+        return None
+    try:
+        fd = os.open(os.path.join(store, sha), os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0))
+    except OSError:
+        return None
+    try:
+        s = os.fstat(fd)
+        if stat.S_ISREG(s.st_mode) and s.st_uid == os.getuid() and s.st_size == rec.get("bytes"):
+            return fd
+    except OSError:
+        pass
+    os.close(fd)
+    return None
+
+
+def read_blob(rec: dict) -> bytes | None:
+    """P573: the whole stored copy, SHA-256 checked, or None (no copy / gone / not the one recorded)."""
+    fd = _blob_fd(rec)
+    if fd is None:
+        return None
+    try:
+        out = bytearray()
+        while len(out) < rec["bytes"]:
+            b = os.pread(fd, SCAN_SLICE, len(out))
+            if not b:
+                break
+            out += b
+    finally:
+        os.close(fd)
+    if len(out) != rec["bytes"] or hashlib.sha256(out).hexdigest() != rec.get("sha256"):
+        return None
+    return bytes(out)
+
+
+def _data_spans(text: str) -> list[tuple[int, int]]:
+    return [(m.start(), m.end()) for m in _DATA_URI.finditer(text)]
+
+
+def mask_text(text: str, html: bool = False) -> tuple[str, list[tuple[str, str]]]:
+    """Mask owner-file credential spans (entropy=False), preserving HTML/SVG data images; return text and value pairs."""
+    found = privacy.credentials(text, entropy=False)
+    if html:
+        data = _data_spans(text)
+        found = [f for f in found if not any(a < f[3] and f[2] < b for a, b in data)]
+    out, at, values = [], 0, []
+    for kind, value, s, e in found:
+        out.append(text[at:s])
+        out.append(privacy.R)
+        values.append((kind, value))
+        at = e
+    out.append(text[at:])
+    return "".join(out), values
 
 
 @dataclass
@@ -212,9 +269,7 @@ def _inner(parts) -> bool:
 
 
 def _dot_part(parts: list[str]) -> bool:
-    """P424 #64 security: a folder below home with a dot-folder in its path (`~/.config/x`, `~/.docker`, `~/.kube`,
-    `~/.password-store`, `~/.local/share`, `~/.mozilla` …) never widens the scan by a `cd`. Only a project's worktree folder
-    (`<proj>/.worktrees/…`, `<proj>/.claude/worktrees/…`, never the first folder under home) is no dot-folder here."""
+    """Reject hidden home subfolders except project worktrees; these must never widen the current-folder scan."""
     for i, x in enumerate(parts):
         if not x.startswith("."):
             continue
@@ -229,8 +284,7 @@ def _inside(path: str, root: str) -> bool:
 
 
 def open_rel(root: str, parts: list[str]) -> int:
-    """fd of `root/parts…` without following any link below root (each directory O_NOFOLLOW | O_DIRECTORY relative to
-    the one before, the file O_NOFOLLOW | O_NONBLOCK — a FIFO never blocks). Raises Gone on a link / anything missing."""
+    """Open root-relative directories/file with O_NOFOLLOW and O_NONBLOCK; Gone for links or missing components."""
     cloexec = getattr(os, "O_CLOEXEC", 0)
     try:
         d = os.open(root, os.O_RDONLY | os.O_DIRECTORY | cloexec)
@@ -286,9 +340,7 @@ def _sniff(mime: str, ext: str, head: bytes) -> bool:
 
 
 def _hash_and_scan(fd: int, size: int, texty: bool, html: bool, owner: bool = False, where: dict | None = None) -> tuple[str, bool]:
-    """(sha256 hex, secret?) of the whole file read from fd (from offset 0). P424 #142: `where` (a dict) receives the hit's
-    line and masked hint (taskspec.secret_where) — what the refusal note shows; left empty for a one-line file (its line
-    number says nothing)."""
+    """Hash and scan the whole fd from zero; populate where with a masked location hint for multiline hits."""
     h = hashlib.sha256()
     tail = ""
     secret = False
@@ -367,9 +419,14 @@ class Media:
             pass
         self._prune()
 
+    @staticmethod
+    def _live(rec: dict, now: float) -> bool:
+        """P573: a record with a stored copy lives STORE_SECS; one served from its source file KEEP_SECS."""
+        return now - rec.get("ts", 0) < (STORE_SECS if rec.get("blob") else KEEP_SECS)
+
     def _prune(self) -> None:
         now = self.clock()
-        live = sorted(((v.get("ts", 0), k) for k, v in self.table.items() if now - v.get("ts", 0) < KEEP_SECS), reverse=True)
+        live = sorted(((v.get("ts", 0), k) for k, v in self.table.items() if self._live(v, now)), reverse=True)
         self.table = {k: self.table[k] for _, k in sorted(live[:KEEP_N])}
 
     def _save(self) -> None:
@@ -379,11 +436,8 @@ class Media:
             self.st.log("media_table_fail")
 
     def current(self) -> str | None:
-        """P424 #64: the session's current folder when it may widen the scan, else None. The configured folder stays the
-        floor (a `cd` into a sub-project never narrows it); the current one counts only when it is a plain folder of this
-        user whose written path has no link in it, is not `/`, the home folder or above it, is not inside / around agentj's
-        state, no component is a credential folder (KEY_DIRS), and — below home — no component is a dot-folder other than a
-        project's worktree folder (`_dot_part`). The configured working root's own rules are unchanged."""
+        """Validated current folder, or None; widens owner scan only.
+    No links, credential/hidden home folders, home/ancestors or state overlap; configured root stays the floor."""
         f = self.cwd
         if not callable(f):
             return None
@@ -410,13 +464,12 @@ class Media:
             return None
         return r
 
-    def check(self, ref: Ref, owner: bool = False, root: str | None = None) -> tuple[dict | None, str | None]:
-        """One reference → (record, None) | (None, why) | (None, None) = not a file reference (silently ignored).
-        owner=True (P211): the destination is the owner's own channel — see WHYS. A credential file / a text file with a real
-        key → (record, "key_file" | "key_content"): the record (hashed, re-readable) is what a pickup card would carry.
-        P424 #64: toward the owner the allowed folders are the configured one ∪ the session's current one (`current`); a
-        relative path is read from the current folder first. Toward anyone else only the configured folder."""
+    def check(self, ref: Ref, owner: bool = False, root: str | None = None, mask: bool = False) -> tuple[dict | None, str | None]:
+        """Reference → (record, why), or (None, None) when implicit/nonfile.
+    Owner roots include validated current; others use configured root. Credential files keep pickup cards.
+    mask=True emits only a private masked copy; transient values leave via last_values, never the record."""
         self._tl.where = None
+        self._tl.values = None
         explicit_root = root is not None
         root = root or self.workdir
         if not root:
@@ -490,12 +543,181 @@ class Media:
                 if not owner:
                     return None, "secret"
                 rec = self._rec(parts, mime, kind, s, sha, ref, rroot)
+                if mask and mime in TEXTY and s.st_size <= MASK_MAX:
+                    masked = self._mask(fd, s.st_size, sha, rec, mime in ("text/html", "image/svg+xml"))
+                    if masked is not None:
+                        return masked, None
                 return (rec if s.st_size <= CARD_MAX else {"name": rec["name"], "bytes": s.st_size}), "key_content"
         except Gone:
             return None, "gone"
         finally:
             os.close(fd)
         return self._rec(parts, mime, kind, s, sha, ref, rroot), None
+
+    def _mask(self, fd: int, size: int, sha: str, rec: dict, html: bool) -> dict | None:
+        """Store a masked UTF-8 copy of the scanned bytes by its hash; None preserves the key_content refusal."""
+        raw = bytearray()
+        while len(raw) < size:
+            b = os.pread(fd, SCAN_SLICE, len(raw))
+            if not b:
+                break
+            raw += b
+        if len(raw) != size or hashlib.sha256(raw).hexdigest() != sha:
+            raise Gone("changed")
+        try:
+            text = bytes(raw).decode("utf-8")
+        except UnicodeDecodeError:
+            return None
+        finally:
+            raw = bytearray()
+        out, values = mask_text(text, html)
+        if not values:
+            return None
+        data = out.encode("utf-8")
+        msha = self._put(data)
+        if msha is None:
+            return None
+        self._tl.values = values
+        return {**rec, "bytes": len(data), "sha256": msha, "blob": msha, "store": str(self.store), "masked": len(values)}
+
+    def last_values(self) -> list[tuple[str, str]]:
+        """P573: the (kind, value) list the last `check(mask=True)` on this thread took out of a file — once, then cleared."""
+        v = getattr(self._tl, "values", None) or []
+        self._tl.values = None
+        return list(v)
+
+    # ------------------------------------------------------------ P573: the private store
+    @property
+    def store(self):
+        return self.st.root / STORE_DIR
+
+    def _store_dir(self) -> str:
+        d = str(self.store)
+        os.makedirs(d, mode=0o700, exist_ok=True)
+        os.chmod(d, 0o700)
+        return d
+
+    def _put(self, data: bytes) -> str | None:
+        """Bytes → `<store>/<sha256>` (0600, atomic). Blocking: scan threads only. → the hex digest, or None."""
+        sha = hashlib.sha256(data).hexdigest()
+        try:
+            d = self._store_dir()
+            path = os.path.join(d, sha)
+            if self._have(path, len(data)):
+                return sha
+            tmp = os.path.join(d, ".tmp-" + secrets.token_hex(8))
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+            try:
+                view = memoryview(data)
+                while view:
+                    view = view[os.write(fd, view):]
+            finally:
+                os.close(fd)
+            os.replace(tmp, path)
+            return sha
+        except OSError:
+            self.st.log("media_store_fail")
+            return None
+
+    @staticmethod
+    def _have(path: str, size: int) -> bool:
+        try:
+            s = os.lstat(path)
+        except OSError:
+            return False
+        if stat.S_ISREG(s.st_mode) and s.st_size == size and s.st_uid == os.getuid():
+            os.utime(path, follow_symlinks=False)      # a fresh mtime: the grace period starts again
+            return True
+        return False
+
+    def _persist(self, rec: dict) -> None:
+        """A scanned item (≤ COPY_MAX) → its content copied into the store, streamed and re-hashed through the same
+        no-follow open as the scan; `blob` / `store` set only when the copy is exactly what was scanned."""
+        if rec.get("blob") or rec.get("bytes", 0) > COPY_MAX:
+            return
+        sha = rec["sha256"]
+        try:
+            d = self._store_dir()
+            path = os.path.join(d, sha)
+            if not self._have(path, rec["bytes"]):
+                src = open_rel(rec["root"], list(rec["parts"]))
+                tmp = os.path.join(d, ".tmp-" + secrets.token_hex(8))
+                try:
+                    s = os.fstat(src)
+                    if (not stat.S_ISREG(s.st_mode) or (s.st_dev, s.st_ino) != (rec["dev"], rec["ino"])
+                            or s.st_size != rec["bytes"] or s.st_mtime_ns != rec["mtime"]):
+                        return
+                    out = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+                    h, pos = hashlib.sha256(), 0
+                    try:
+                        while pos < rec["bytes"]:
+                            b = os.pread(src, SCAN_SLICE, pos)
+                            if not b:
+                                break
+                            h.update(b)
+                            view = memoryview(b)
+                            while view:
+                                view = view[os.write(out, view):]
+                            pos += len(b)
+                    finally:
+                        os.close(out)
+                    if pos != rec["bytes"] or h.hexdigest() != sha:
+                        return
+                    os.replace(tmp, path)
+                finally:
+                    os.close(src)
+                    if os.path.lexists(tmp):
+                        os.unlink(tmp)
+        except (OSError, Gone):
+            return
+        rec["blob"], rec["store"] = sha, str(self.store)
+
+    def _gc(self) -> None:
+        """Blocking (scan threads): copies no live record names go after STORE_GRACE; over STORE_BYTES the oldest
+        records lose their copy (they fall back to the source file and KEEP_SECS)."""
+        try:
+            d = str(self.store)
+            names = os.listdir(d)
+        except OSError:
+            return
+        now_wall = time.time()
+        with self.lock:
+            refs: dict[str, float] = {}
+            for v in self.table.values():
+                b = v.get("blob")
+                if isinstance(b, str):
+                    refs[b] = max(refs.get(b, 0), v.get("ts", 0))
+        sizes: dict[str, int] = {}
+        for n in names:
+            p = os.path.join(d, n)
+            try:
+                s = os.lstat(p)
+            except OSError:
+                continue
+            if n not in refs and now_wall - s.st_mtime >= STORE_GRACE:
+                with contextlib.suppress(OSError):
+                    os.unlink(p)
+                continue
+            if n in refs:
+                sizes[n] = s.st_size
+        total, drop = sum(sizes.values()), []
+        for n in sorted(sizes, key=lambda x: refs[x]):
+            if total <= STORE_BYTES:
+                break
+            total -= sizes[n]
+            drop.append(n)
+        if drop:
+            gone = set(drop)
+            with self.lock:
+                for v in self.table.values():
+                    if v.get("blob") in gone:
+                        v.pop("blob", None)
+                        v.pop("store", None)
+                self._prune()
+                self._save()
+            for n in drop:
+                with contextlib.suppress(OSError):
+                    os.unlink(os.path.join(d, n))
 
     def last_where(self) -> dict | None:
         """P424 #142: {"line", "hint"} of the secret this thread's last `check` refused (a masked two-character hint), or None."""
@@ -508,8 +730,7 @@ class Media:
                 "mtime": s.st_mtime_ns}
 
     def strict(self, rec: dict) -> str | None:
-        """P211: a record checked toward the owner, about to go to someone else (a contact's mail) → None when it also
-        passes the strict checks (no secret guess hit, no `.agentj` / `.git`), else the why."""
+        """Recheck an owner record for outsider delivery: strict secrets and private folders still refuse."""
         p = os.path.join(rec["root"], *rec["parts"])
         try:
             again, why = self.check(Ref(p, p, True), owner=False)
@@ -527,8 +748,7 @@ class Media:
         return items, skips
 
     def scan_keys(self, text: str, page: int) -> tuple[list[dict], list[dict], list[tuple[dict, dict]]]:
-        """scan + the credential files an explicit link named: [(the skip on the wire, the record)] — serve offers each as a
-        pickup card and turns that skip's why into `key_card` (P211). The page is the owner's: owner=True."""
+        """Owner scan plus explicit credential references as (skip, record) pairs for pickup cards."""
         items, skips, keys, total, seen = [], [], [], 0, set()
         for ref in refs(text):
             name = os.path.basename(ref.path.rstrip("/"))[:NAME_MAX] or ref.path[:NAME_MAX]
@@ -541,9 +761,10 @@ class Media:
                     skips.append({"name": name, "why": "too_many"})
                 continue
             try:
-                rec, why = self.check(ref, owner=True)
+                rec, why = self.check(ref, owner=True, mask=True)
             except OSError:
                 rec, why = None, None
+            values = self.last_values()
             if why:
                 skip = {"name": name, "why": why, **({"bytes": rec["bytes"]} if rec and why == "too_big" else {}),
                         **_at(self, why)}
@@ -553,11 +774,14 @@ class Media:
                 continue
             if rec is None or (rec["dev"], rec["ino"]) in seen:
                 continue
+            if values and ref.explicit:   # P573: the masked copy goes as a card; each value → its own pickup card
+                keys.append((None, {"name": rec["name"], "sha256": rec["sha256"], "values": values}))
             if total + rec["bytes"] > PAGE_BYTES:
                 skips.append({"name": rec["name"], "why": "too_big", "bytes": rec["bytes"]})
                 continue
             seen.add((rec["dev"], rec["ino"]))
             total += rec["bytes"]
+            self._persist(rec)            # P573: the card stays openable after 24 h / a changed source
             mid = wire.b64u(secrets.token_bytes(16))
             with self.lock:
                 self.table[mid] = {**rec, "page": page, "ts": self.clock()}
@@ -566,8 +790,9 @@ class Media:
             with self.lock:
                 self._prune()
                 self._save()
+            self._gc()
         skips = skips[:MAX_ITEMS * 2]
-        return items, skips, [(sk, r) for sk, r in keys if any(sk is x for x in skips)]
+        return items, skips, [(sk, r) for sk, r in keys if sk is None or any(sk is x for x in skips)]
 
     def register(self, rec: dict, page: int) -> dict:
         """P365: a file serve itself copied for the owner (notify.stage — private copy, already typed and checked) → the §13
@@ -583,17 +808,24 @@ class Media:
         """≤ WINDOW chunks from offset o, re-opened safely and re-checked. Raises Gone."""
         with self.lock:
             rec = self.table.get(mid)
-            if rec is None or self.clock() - rec.get("ts", 0) >= KEEP_SECS:
+            if rec is None or not self._live(rec, self.clock()):
                 raise Gone("mid")
             rec = dict(rec)
         size = rec["bytes"]
         if o < 0 or o >= size:
             raise Gone("offset")
-        fd = open_rel(rec["root"], list(rec["parts"]))
+        fd = _blob_fd(rec)                # P573: the stored copy first — it outlives the source file
+        if fd is None:
+            if rec.get("masked") or (rec.get("blob") and self.clock() - rec.get("ts", 0) >= KEEP_SECS):
+                raise Gone("store")       # a masked copy never falls back to the unmasked source
+            fd = open_rel(rec["root"], list(rec["parts"]))
+            src = True
+        else:
+            src = False
         try:
             s = os.fstat(fd)
-            if (not stat.S_ISREG(s.st_mode) or s.st_uid != os.getuid() or (s.st_dev, s.st_ino) != (rec["dev"], rec["ino"])
-                    or s.st_size != size or s.st_mtime_ns != rec["mtime"]):
+            if src and (not stat.S_ISREG(s.st_mode) or s.st_uid != os.getuid() or (s.st_dev, s.st_ino) != (rec["dev"], rec["ino"])
+                        or s.st_size != size or s.st_mtime_ns != rec["mtime"]):
                 raise Gone("changed")
             if o == 0:
                 h = hashlib.sha256()
@@ -623,7 +855,7 @@ class Media:
         """P183: a live record (a copy) for the file-card → Telegram forward; None when unknown or past KEEP_SECS."""
         with self.lock:
             rec = self.table.get(mid)
-            if rec is None or self.clock() - rec.get("ts", 0) >= KEEP_SECS:
+            if rec is None or not self._live(rec, self.clock()):
                 return None
             return dict(rec)
 

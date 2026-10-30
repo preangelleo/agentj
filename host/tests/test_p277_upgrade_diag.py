@@ -243,7 +243,7 @@ class Report(_Env):
                 return 200, {"thread": "st_" + "C" * 22, "seq": 1}
         with mock.patch.object(support, "channel_for", return_value=Ch()), mock.patch.object(support, "remember"), \
                 mock.patch.object(support, "doctor_text", return_value="agentj 0.20.3a1 · /ho" "me/winuser/x\n✗ service: down"), \
-                mock.patch.object(privacy, "layer2", return_value=privacy.Verdict("unavailable")):
+                mock.patch.object(privacy, "layer2", return_value=privacy.Verdict("ok", 0.01)):
             res = upgrade_diag.after_failure(self.st, self.failed(), lang="zh")
         self.assertEqual(res["support"], "sent (st_" + "C" * 22 + ")")
         f = fields[0]
@@ -252,6 +252,23 @@ class Report(_Env):
         self.assertIn("service: down", f["attach"])
         for leak in ("winuser", "DESKTOP-TEST123"):
             self.assertNotIn(leak, f["body"] + f["attach"])
+
+    def test_p573_jev_unavailable_holds_the_automatic_report(self):
+        from agentj import privacy, support
+        sent = []
+
+        class Ch:
+            signed, st = True, None
+
+            def send(self, f):
+                sent.append(f)
+                return 200, {"thread": "st_" + "C" * 22, "seq": 1}
+        with mock.patch.object(support, "channel_for", return_value=Ch()), mock.patch.object(support, "remember"), \
+                mock.patch.object(support, "doctor_text", return_value="agentj 0.20.3a1\n✗ service: down"), \
+                mock.patch.object(privacy, "layer2", return_value=privacy.Verdict("unavailable")):
+            res = upgrade_diag.after_failure(self.st, self.failed(), lang="zh")
+        self.assertEqual(sent, [])                      # P573 chairman item 6: Jev unavailable → never sent directly
+        self.assertTrue(res["support"].startswith("not_sent"))
 
     def test_off_by_preference_and_env(self):
         cfg = pathlib.Path(os.environ["XDG_CONFIG_HOME"]) / "agentj"

@@ -1,5 +1,5 @@
 import { copyButton } from './copycode.js';
-import { touch, askDone } from './snap.js';
+import { S, touch, askDone } from './snap.js';
 // Agent friends (PROTOCOL §17.7, 0.16): the /friends page and the two cards the host puts in the main chat.
 // The page is READ-ONLY for conversations: there is no field that sends text to a friend (the host would refuse it anyway,
 // `fr_send_refused`); the owner speaks to a friend only through the main Agent. What the page can do is what Leo asked for:
@@ -11,10 +11,11 @@ import { ask1, isReady, gen, sendApp, channel, peer } from './session.js';
 import { friendAnswer, parseAgentId, friendLink, GROUP_ID_RE, FRIEND_CTX_MAX } from '../proto/wire.js';
 import { signKey } from './store.js';
 import { myDeviceId } from './api.js';
-import { signedWrite, whyText } from './controls.js';
+import { signedWrite, commandFa, whyText } from './controls.js';
 import { qrSvg } from './qr.js';
 import { t, locale, fillText } from './t.js';
-import { el, mk, toast, confirmSheet } from './ui.js';
+import { el, mk, toast, notify, confirmSheet } from './ui.js';
+import { approve as passkeyApprove } from './faceid.js';
 import { copyable } from './copycode.js';   // P292
 import { mentionAt } from './five-pages.js';   // P426 #170: the same @ detection as the main chat's mentions
 const cmdNote = (cls, key) => { const p = mk('p', cls); fillText(p, t(key)); return p; };   // P292: `agentj friends on` as code + ⧉
@@ -465,7 +466,11 @@ function sameOwnerState(box, f) {
   } else if (f.sameOwner === 'pending' && f.soCode === null) {
     so.append(mk('p', 'small', t('fr.sameOwner.pending')));              // a host that does not send the code yet
   } else if (f.sameOwner === 'pending') {
-    if (f.soCode) { const c = mk('p', 'fr-owner-code', f.soCode); c.id = 'fr-so-code'; c.setAttribute('aria-label', t('p417.so.codeLabel') + ' ' + f.soCode.split('').join(' ')); so.append(c); }
+    const verified = [...S.asks.values()].find(a => a.pq?.friend === f.id && a.pairing_scope_ok === true);
+    const code = verified?.pairing_code || f.soCode;
+    if (code) { const c = mk('p', 'fr-owner-code', code); c.id = 'fr-so-code'; c.setAttribute('aria-label', t('p417.so.codeLabel') + ' ' + code.split('').join(' ')); so.append(c);
+      if (!verified) so.append(mk('p', 'small', t('p574.referenceCode')));
+    }
     if (f.soWait) so.append(mk('p', 'fr-so__state', t('p417.so.wait')), mk('p', 'small', t(f.soCode ? 'p417.so.waitHint' : 'p417.so.reaching')));
     else so.append(mk('p', 'fr-so__state', t('p417.so.yourTurn')), mk('p', 'small', t('p417.so.onCard')));
   } else if (f.soEnd) {
@@ -1000,18 +1005,34 @@ export function renderAsk(p, ctx) {
     if (x.pairing) {
       el('sheetTitle').textContent = t('fr.sameOwner');
       box.append(mk('p', 'fr-askcard__note', t('fr.sameOwner.request', { name: x.name })));
-      box.append(mk('p', 'fr-owner-code', x.code));
+      const modern = p.pq?.pairing_scope !== undefined;
+      box.append(mk('p', 'fr-owner-code', modern ? p.pairing_code || '' : x.code));
+      if (p.pairing_roster) for (const roster of p.pairing_roster) {
+        box.append(mk('p', 'fr-askcard__note', t(roster.here ? 'p574.rosterHere' : 'p574.rosterPeer', { remotes: roster.remotes.join(' · ') || t('p574.rosterEmpty') })));
+        if (roster.pendingRemotes.length) box.append(mk('p', 'small', t('p574.rosterPending', { remotes: roster.pendingRemotes.join(' · ') })));
+      }
       box.append(mk('p', 'small fr-owner-order', t('p417.so.order')));   // #186: one tap here finishes it
       if (st === 'open' && ctx.sign) {
         box.append(note());
         const acts = mk('div', 'fr-askbtns');
         const decide = async (on) => {
+          if (on && p.pairing_scope_ok === false) return;
+          const prepared = p.owner_confirm;
+          if (on && modern && (!prepared || Date.now() - prepared.obj.ts > 90000)) return;
+          // The prepared challenge and actual local credential are ready before this tap. No host challenge is signed.
+          let assertion;
+          try { if (on && modern) assertion = passkeyApprove(prepared.challenge, prepared.cred); }
+          catch { toast(t('pkp.approveFail'), 5000); return; }
           pending(p, on ? 'allow' : 'deny', ctx);
-          const res = await write('fr_set', { friend: x.friend, op: on ? 'owner-confirm' : 'owner-reject', value: x.challenge });
+          let res;
+          try { res = on && modern ? await commandFa({ ...prepared.obj, fa: await assertion }, prepared.ch)
+            : await write('fr_set', { friend: x.friend, op: on ? 'owner-confirm' : 'owner-reject', value: x.challenge }); }
+          catch { res = { ok: false, why: 'passkey_failed' }; }
           if (!res.ok) { pairingRefused(p, res.why); ctx.repaint(); }
         };
         acts.append(btn('', t('fr.ask.deny'), () => decide(false), 'frOwnerDeny'),
           btn('aj-btn--primary', t('fr.sameOwner.confirmAction'), () => decide(true), 'frOwnerAllow'));
+        if (p.pairing_scope_ok === false) acts.querySelector('#frOwnerAllow').disabled = true;
         box.append(acts);
       }
       return;
@@ -1093,3 +1114,15 @@ export function forget() {
   Object.assign(V, { view: 'list', friend: null, group: null, addId: '', addNote: '', sent: false });
 }
 export { V as _state };
+
+// P574: the existing notice with one owner action; the holding host never opens an approval card.
+export function ownerGrantNotice(m) {
+  if (typeof m.peer !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(m.peer) || !/^[0-9a-f]{32}$/.test(m.grant || '')
+      || typeof m.text !== 'string' || !m.text.trim() || m.text.length > 2000) return false;
+  notify({ kind: 'confirm', text: m.text, ms: 0, actions: [{ label: t('p574.stop'), fn: async () => {
+    const res = await write('fr_set', { friend: m.peer, op: 'owner-stop', value: m.grant });
+    toast(res.ok ? t('p574.stopped') : t('fr.fail', { why: why(res.why) }), 5000);
+    if (res.ok) changed();
+  } }] });
+  return true;
+}

@@ -94,7 +94,9 @@ class Support(unittest.TestCase):
 
     def run_send(self, api, **kw):
         out = io.StringIO()
-        args = dict(ch=self.chan(api), identity=(HOST, USER), env={}, out=out, clock=Clock(), wait=60)
+        # P573: a clean layer-2 verdict by default — unavailable / flagged now wait for the owner (tested on their own)
+        args = dict(ch=self.chan(api), identity=(HOST, USER), env={"OPENROUTER_API_KEY": OR_KEY}, transport=FakeJev(0.1),
+                    out=out, clock=Clock(), wait=60)
         args.update(kw)
         rc = support.run_send(kw.pop("kind", "question"), self.text, **{k: v for k, v in args.items() if k != "kind"})
         text = out.getvalue()
@@ -129,12 +131,19 @@ class Support(unittest.TestCase):
         self.assertIn("NOT SENT", out)
         self.assertNotIn(OR_KEY, json.dumps(jev.seen), "Jev only sees the layer-1 text")
 
-    def test_layer2_ok_and_unavailable_both_send(self):
-        for env, jev in (({"OPENROUTER_API_KEY": OR_KEY}, FakeJev(0.1)), ({}, None)):
-            api = FakeAPI(self.st, [answered("ok")])
-            rc, out = self.run_send(api, env=env, transport=jev)
-            self.assertEqual(rc, support.EXIT_OK)
-            self.assertEqual(len(api.sent), 1)
+    def test_layer2_ok_sends_and_unavailable_waits_for_the_owner(self):
+        api = FakeAPI(self.st, [answered("ok")])
+        rc, out = self.run_send(api, env={"OPENROUTER_API_KEY": OR_KEY}, transport=FakeJev(0.1))
+        self.assertEqual(rc, support.EXIT_OK)
+        self.assertEqual(len(api.sent), 1)
+        # P573 (chairman item 6): Jev unavailable is never a direct send; after the owner's yes it goes
+        api = FakeAPI(self.st, [answered("ok")])
+        rc, out = self.run_send(api, env={}, transport=None)
+        self.assertEqual(rc, support.EXIT_UNAVAILABLE)
+        self.assertEqual(api.sent, [])
+        rc, out = self.run_send(api, env={}, transport=None, owner_confirmed=True)
+        self.assertEqual(rc, support.EXIT_OK)
+        self.assertEqual(len(api.sent), 1)
 
     def test_timeout_prints_the_thread_id_and_exit_5(self):
         api = FakeAPI(self.st)
@@ -196,7 +205,12 @@ class Support(unittest.TestCase):
             ch = support.channel_for(self.st)
             self.assertFalse(ch.signed)
             out = io.StringIO()
-            rc = support.run_send("bug", self.text, ch=ch, identity=(HOST, USER), env={}, out=out, clock=Clock(), wait=30)
+            # P573: no Jev during the install → the owner's yes is required before the ticket leaves
+            self.assertEqual(support.run_send("bug", self.text, ch=ch, identity=(HOST, USER), env={}, out=out, clock=Clock(),
+                                              wait=30), support.EXIT_UNAVAILABLE)
+            self.assertEqual(calls, [])
+            rc = support.run_send("bug", self.text, ch=ch, identity=(HOST, USER), env={}, out=out, clock=Clock(), wait=30,
+                                  owner_confirmed=True)
         self.assertEqual(rc, support.EXIT_OK)
         self.assertEqual(calls[0][0], "POST")
         self.assertNotIn("nonce", calls[0][3])

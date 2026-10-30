@@ -10,14 +10,14 @@ Application policy does not isolate code already running under the same OS accou
 
 | Action | Effect | Confirmation | Main | Channel | Friend | Support |
 |---|---|---|---|---|---|---|
-| admin | irreversible | uv | uv | handoff | handoff | deny |
+| admin | irreversible | uv | hold | handoff | handoff | deny |
 | agent.dispatch | none | none | allow | deny | handoff | deny |
 | agent.session | none | none | allow | deny | handoff | deny |
 | answer | none | none | allow | allow | allow | allow |
 | calendar.write | reversible | hold | hold | handoff | handoff | deny |
 | company.read | none | none | allow | deny | handoff | allow |
 | company.write | irreversible | uv | uv | handoff | handoff | uv |
-| computer.control | irreversible | uv | uv | handoff | handoff | deny |
+| computer.control | irreversible | uv | hold | handoff | handoff | deny |
 | device.pair | irreversible | uv | uv | handoff | handoff | deny |
 | device.revoke | irreversible | uv | uv | handoff | handoff | deny |
 | file.delete | irreversible | uv | uv | handoff | handoff | deny |
@@ -31,8 +31,8 @@ Application policy does not isolate code already running under the same OS accou
 | payment | irreversible | uv | uv | handoff | handoff | deny |
 | publish | reversible | hold | hold | handoff | handoff | deny |
 | rewrite | none | none | allow | allow | allow | allow |
-| secrets.read | irreversible | uv | uv | handoff | handoff | deny |
-| secrets.write | irreversible | uv | uv | handoff | handoff | deny |
+| secrets.read | irreversible | uv | hold | handoff | handoff | deny |
+| secrets.write | irreversible | uv | hold | handoff | handoff | deny |
 | settings.write | reversible | hold | hold | handoff | handoff | deny |
 | summarize | none | none | allow | allow | allow | allow |
 | translate | none | none | allow | allow | allow | allow |

@@ -54,16 +54,18 @@ def code(rid: str, device: str, x25519_b64u: str) -> str:
     return f"{int.from_bytes(h[:4], 'big') % 10**6:06d}"
 
 
-def digest(device: str, name: str, code_: str) -> str:
-    return hashlib.sha256(f"{DIGEST_LABEL}\n{device}\n{name}\n{code_}".encode()).hexdigest()
+def digest(device: str, name: str, code_: str, sign_pub: str = "", roster: bool = False) -> str:
+    return hashlib.sha256((f"{DIGEST_LABEL}\n{device}\n{name}\n{code_}" + ("\n" + sign_pub if sign_pub else "") + ("\nroster" if roster else "")).encode()).hexdigest()
 
 
 class Req:
-    __slots__ = ("id", "device", "name", "code", "digest", "at", "exp", "state", "by", "timer")
+    __slots__ = ("id", "device", "name", "code", "digest", "at", "exp", "state", "by", "timer", "x", "via", "sign_pub", "intro")
 
-    def __init__(self, rid, device, name, code_, now):
+    def __init__(self, rid, device, name, code_, now, x="", sign_pub="", intro=False):
+        self.intro = intro
         self.id, self.device, self.name, self.code = rid, device, name, code_
-        self.digest = digest(device, name, code_)
+        self.x, self.via, self.sign_pub = x, None, sign_pub       # P574: D's X25519 key; the approver's assertion (owner_grant.via_ok checks it)
+        self.digest = digest(device, name, code_, sign_pub, intro)
         self.at, self.exp, self.state, self.by, self.timer = int(now), int(now) + PEER_TTL, "open", "", None
 
 
@@ -127,7 +129,7 @@ class Desk:
         h = self.host
         ch = passkey.elevate_challenge(h.channel, s.device, r.id, KIND, r.id, r.digest)
         return {"t": "pk_peer_ask", "id": r.id, "device": r.device, "name": r.name, "at": r.at, "exp": r.exp, "code": r.code,
-                "fa": self._pk_id(s.device), "fa_ch": wire.b64u(ch)}
+                **({"roster": True} if r.intro else {}), "sign_pub": r.sign_pub, "fa": self._pk_id(s.device), "fa_ch": wire.b64u(ch)}
 
     async def _close(self, r: Req, skip=None) -> None:
         for x in self._sessions():
@@ -139,6 +141,13 @@ class Desk:
             await self.host.send_app(x, msg)
 
     async def _offer(self, r: Req) -> None:
+        if r.intro:
+            pk = self.host.st.passkey_of_device(r.device)
+            if pk and r.via and self.host.peers is not None and self.host.peers.xfer.bound(r.device):
+                self.host.peers.xfer.note_via(pk["id"], r.via)
+                await self._to_d(r, {"t":"pk_peer_done", "id":r.id, "ok":True, "by":r.by, "roster":True})
+                self._drop(r)
+            return
         await self._to_d(r, {"t": "pk_peer_done", "id": r.id, "ok": True, "by": r.by})
         for x in self._sessions(r.device):
             await self.host._pk_offer(x, peer=r.id)
@@ -164,6 +173,11 @@ class Desk:
         """Did THIS host mark request `rid` approved for `device` (and is it still valid, not yet used)?"""
         r = self.reqs.get(rid) if isinstance(rid, str) else None
         return bool(r) and r.device == device and r.state == "approved" and r.exp > self.clock()
+
+    def via_of(self, rid: str) -> dict | None:
+        """P574: the approving remote's assertion for request `rid` (None: approved at the terminal, or gone)."""
+        r = self.reqs.get(rid)
+        return r.via if r is not None and r.state == "approved" and r.by != HOST_BY else None
 
     def used(self, rid: str) -> None:
         r = self.reqs.get(rid)
@@ -303,6 +317,9 @@ class Desk:
         if not wire.is_rid(rid):
             return
         res = {"t": "pk_peer_res", "r": rid}
+        intro = obj.get("roster") is True
+        if intro and (h.peers is None or not h.peers.xfer.bound(s.device)):
+            return await h.send_app(s, {**res, "ok":False, "why":"roster_binding_required"})
         mine = self._pk_id(s.device)
         others = self.keyed_others(s.device)
         if not others and not mine:
@@ -311,7 +328,7 @@ class Desk:
         # P555: nobody can approve (D holds the only key but it failed here, or every other key was restored onto its
         # record) → the request still opens; the owner approves it at the Agent J host's terminal (host_approve)
         live = self._live()
-        r = next((x for x in live if x.device == s.device), None)
+        r = next((x for x in live if x.device == s.device and x.intro == intro), None)
         if r is None:
             now = self.clock()
             hits = [t for t in self.hits.get(s.device, []) if now - t < RATE_WINDOW]
@@ -323,7 +340,7 @@ class Desk:
             hits.append(now)
             name = clean_label(h._dev_label(s.device)) or s.device
             new = secrets.token_bytes(16)
-            r = Req(wire.b64u(new), s.device, name, code(wire.b64u(new), s.device, wire.b64u(s.pub)), now)
+            r = Req(wire.b64u(new), s.device, name, code(wire.b64u(new), s.device, wire.b64u(s.pub)), now, wire.b64u(s.pub), wire.b64u(h.st.sign_key(s.device) or b""), intro)
             self.reqs[r.id] = r
             self._arm(r)
             h.st.log("pk_peer", device=s.device, result="asked", id=r.id)
@@ -357,6 +374,10 @@ class Desk:
                          reason=getattr(e, "detail", type(e).__name__), id=r.id)
                 return await h.send_app(s, {**reply, "ok": False, "why": "passkey_failed"})
             fa = {k: hashlib.sha256(f[k] if isinstance(f[k], bytes) else f[k].encode()).hexdigest() for k in ("id", "cd", "ad", "sig")}
+            # P574 (§17.13): kept whole (public data: an assertion over this request) so a same-owner friend can check that
+            # an already trusted remote's Face ID approved this device before it trusts the device's new key
+            r.via = {"cred": f["id"], "dev": s.device, "channel": h.channel, "rid": r.id, "device": r.device, "name": r.name,
+                     "x": r.x, "sign_pub": r.sign_pub, "roster": r.intro, "cd": wire.b64u(f["cd"]), "ad": wire.b64u(f["ad"]), "sig": wire.b64u(f["sig"])}
         by = s.name or h._dname(s.device) or s.device
         try:
             approvals.record(h.st, rid=r.id, agent="phone", tool=KIND, input_sha256=r.digest, shown_sha256=r.digest,

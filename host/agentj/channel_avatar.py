@@ -75,7 +75,7 @@ def attachments(host, text):
     if not media or not getattr(media, 'workdir', None) or not isinstance(text, str):
         return [], [], [], keys
     try:
-        items, _skips = tg_media.collect(media, text, keys)
+        items, _skips = tg_media.collect(media, text, keys, True)   # P573: a key in a text file → masked copy + value cards
     except Exception:   # noqa: BLE001 — no attachment is the old behaviour, never a lost reply
         return [], [], [], keys
     images, files, paths, total = [], [], [], 0

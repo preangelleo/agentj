@@ -107,7 +107,7 @@ try {
       check(await ev(p, TOP('#sheet', '#apprAllow')), 'approval card topmost over the e-mail dialog ' + name);
       check(await ev(p, `document.activeElement && document.activeElement.id==='apprAllow'`), 'focus on 长按批准 ' + name + ' :: ' + await ev(p, `document.activeElement?.id`));
       check(!(await ev(p, `document.getElementById('ctFwd').hidden`)), 'the dialog stays open under the card ' + name);
-      check(await ev(p, `document.getElementById('apprAllowLbl').textContent`) === (lang === 'zh' ? '长按批准' : 'Hold to approve'), 'a normal card says 长按批准 ' + name);
+      check(await ev(p, `document.getElementById('apprAllowLbl').textContent`) === (lang === 'zh' ? '批准' : 'Approve'), 'a normal card says 批准 (P573: one tap) ' + name);
       // Esc → the card folds; the dialog, its words and the focus come back
       await key(p, 'Escape'); await sleep(300);
       check(await ev(p, `document.body.dataset.sheet!=='1'`), 'Esc folds the card first ' + name);

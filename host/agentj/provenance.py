@@ -10,6 +10,8 @@ import time
 import unicodedata
 
 from .silent import MARKER as SILENT
+from . import owner_grant
+from .owner_grant import owner_task_source, owner_grant_required, owner_grants
 
 PROFILES = ("family", "proxy")
 PHONE = "owner-via-agentj(手机)"
@@ -112,9 +114,15 @@ def normalize(src) -> dict:
         return {"kind": "unknown", "role": "group"}
     kind, role = src.get("kind"), src.get("role")
     if kind in ("same_owner", "friend_task", "wechat_task", "scheduled_task") and role == "task":
-        return {"kind": kind, "role": "task"}
-    if role == "owner" and kind in ("phone", "terminal", "system", "wechat"):
-        return {"kind": kind, "role": "owner"}
+        return owner_grant.task_source(src)
+    if kind == "phone" and role == "owner":
+        return phone()
+    if kind == "terminal" and role == "owner":
+        return terminal()
+    if kind == "system" and role == "owner":
+        return owner_grant.resume_source(src)
+    if kind == "wechat" and role == "owner":
+        return wechat_owner()
     if kind == "telegram" and role == "owner" and _int(src.get("sender")) and src.get("sender") == src.get("chat"):
         return telegram_owner(src["sender"])
     if kind == "telegram" and role == "forward" and _int(src.get("sender")) and src.get("sender") == src.get("chat"):

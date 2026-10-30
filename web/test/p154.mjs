@@ -167,7 +167,7 @@ export async function runP154() {
               await fake.ask({ id, tool: 'Bash', summary, ttl: 120 });
               await waitFor(p, `document.body.dataset.sheet==='1' && ${$('cmd')}.textContent===${JSON.stringify(summary)} && !${$('apprBtns')}.hidden`);
               await sleep(200);
-              await evaluate(p, `${$('apprAllow')}.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,button:0,pointerType:'touch'}))`);
+              await evaluate(p, `(() => { const b = ${$('apprAllow')}, r = b.getBoundingClientRect(), o = {bubbles:true,button:0,pointerType:'touch',clientX:r.left+r.width/2,clientY:r.top+r.height/2}; b.dispatchEvent(new PointerEvent('pointerdown',o)); b.dispatchEvent(new PointerEvent('pointerup',o)); })()`);
               await waitFor(p, `document.body.dataset.sheet==='0'`, 2500);
               const n = fake.st.answers.length;
               check(n && fake.st.answers[n - 1].id === id && fake.st.answers[n - 1].ok === true, 'the hold was sent');
@@ -634,7 +634,7 @@ export async function runP154() {
           await waitFor(p, `document.body.dataset.sheet==='1' && !${$('apprBtns')}.hidden && ${$('sheet')}.classList.contains('danger')`);
           await sleep(300);
           const lbl = await evaluate(p, `${$('apprAllowLbl')}.textContent`);
-          check(lbl === (lang === 'zh' ? '长按批准' : 'Hold to approve'), `⚠ card: the short label (${lbl})`);
+          check(lbl === (lang === 'zh' ? '批准' : 'Approve'), `⚠ card: the short label (${lbl}) — P573: one tap`);
           check(await evaluate(p, `${$('apprAllow')}.contains(${$('apprKbd')}) && !${$('apprKbd')}.hidden && ${$('apprKbd')}.textContent`) === 'Ctrl↩', 'the hint inside the button');
           const al = await box(p, '#apprAllow'), lb = await box(p, '#apprAllowLbl'), kb = await box(p, '#apprKbd');
           check(lb.l >= al.l && kb.r <= al.r + 0.5 && lb.t >= al.t - 0.5 && lb.b <= al.b + 0.5 && kb.l >= lb.r - 0.5, `label + hint fit in one row (${JSON.stringify([al, lb, kb])})`);

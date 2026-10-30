@@ -46,7 +46,7 @@ class Pure(unittest.TestCase):
 
     def test_schema_defaults_and_settable(self):
         d = preferences.defaults()
-        self.assertEqual(d["heartbeat"], {"enabled": True, "interval_minutes": 60, "daily_at": ""})   # + P207 daily_at
+        self.assertEqual(d["heartbeat"], {"enabled": True, "interval_minutes": 60, "daily_at": "", "quiet_enabled": True, "quiet_start": "23:00", "quiet_end": "07:00", "context_max_tokens": 100000})   # + P207 daily_at
         m = preferences.SCHEMA["heartbeat.interval_minutes"]
         self.assertEqual((m["minimum"], m["maximum"], m["tier"]), (5, 1440, "user"))
         self.assertIn("heartbeat.enabled", serve.PREF_SET_KEYS)
@@ -132,6 +132,9 @@ class Decide(unittest.TestCase):
         self.agent = FakeAgent()
         self.host.agent = self.agent
         self.h = self.host.heartbeat
+        # P589: these delivery tests have a real pending completion signal.
+        self.host.background_done.pending = {"fixture": {"exit_code": 0}}
+        self.host.preferences = preferences.merge(self.host.preferences or {}, {"heartbeat": {"quiet_enabled": False}})
         p = patch.object(hb, "_night", return_value=False)
         p.start()
         self.addCleanup(p.stop)

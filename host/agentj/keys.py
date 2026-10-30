@@ -353,7 +353,7 @@ def listing(host, s, path: str | None = None) -> dict:
     """The `keys` message body (without t / r): {id, n, fa?, base, third}."""
     tid, n = issue(host, s.device)
     body = scan(host, path, tid)
-    m = {"id": tid, "n": n}
+    m = {"id": tid, "n": n, "button_ops": True}
     pk = host.st.passkey_of_device(s.device) if getattr(s, "device", None) else None
     if pk:
         m["fa"], m["fa_s"] = pk["id"], passkey.pk_state(pk)
@@ -379,6 +379,18 @@ def check(host, s, obj: dict) -> str | None:
     toks[tid] = None                                    # one attempt per nonce
     if not n or obj.get("n") != n:
         return "passkey"
+    if op in ("import", "move", "unify") and "sig" in obj:
+        from . import controls
+        target = {k: obj[k] for k in ("id", "op", "name", "n", "src", "keep", "fp") if k in obj}
+        ts = obj.get("ts")
+        try:
+            if type(ts) is not int or abs(time.time() * 1000 - ts) > controls.TS_SKEW_MS:
+                return "stale"
+            sk = host.st.sign_key(s.device)
+            return None if sk and controls.verify(sk, wire.unb64u(obj.get("sig", "")), host.channel, s.device,
+                                                  "keys_op", n, ts, controls.object_digest("keys_op", target)) else "bad_signature"
+        except (ValueError, TypeError, KeyError):
+            return "bad_signature"
     pk = host.st.passkey_of_device(s.device)
     if not pk:
         return "no_passkey"
@@ -466,11 +478,11 @@ async def _op(host, s, r, obj: dict) -> None:
                 res = await asyncio.to_thread(provider_setup.move_key, host, shown)
         except (OSError, ValueError):
             res = {"ok": False, "why": "write"}
-        audit(host, opv, shown, "ok" if res.get("ok") else "refused", s.device, passkey="uv")
+        audit(host, opv, shown, "ok" if res.get("ok") else "refused", s.device, confirmation="button")
         return await reply(bool(res.get("ok")), res.get("why"))
     if opv == "import":
         res, why, extra = await asyncio.to_thread(do_import, host, shown, obj["src"], obj["keep"], obj["id"], obj["fp"])
-        audit(host, opv, shown, res, s.device, passkey="uv", **extra)
+        audit(host, opv, shown, res, s.device, confirmation="button", **extra)
         host.st.log("keys_import", device=s.device, result=res)
         if why:
             return await reply(False, why)
@@ -608,5 +620,7 @@ def build_card(host, name: str) -> dict:
     if not p.parent.exists():
         with contextlib.suppress(OSError):
             p.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    return elevate.norm_secret({"name": name, "purpose": _purpose(host, name), "dest": "env:" + str(p) + "#" + name},
+    card = elevate.norm_secret({"name": name, "purpose": _purpose(host, name), "dest": "env:" + str(p) + "#" + name},
                                host.st.root)
+    card["button_only"] = True
+    return card

@@ -183,7 +183,7 @@ async def reply_report(svc, req):
             return False
         if svc.store.get(fid) is None or svc.store.is_blocked(fid):
             return False
-        verdict = await svc._outbound(text)
+        verdict = await svc._outbound(text)        # P573 (#387): regex only, no Jev
         if not verdict.ok or not peer_guard.inbound(text).ok:
             return False
         if not authorized() or svc.host.stopped() or svc.seat_refusal() or not svc.store.settings().get("on") or svc.same_owner.active(fid) or svc.store.get(fid) is None or svc.store.is_blocked(fid):

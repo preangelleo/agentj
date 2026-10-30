@@ -319,6 +319,9 @@ class Phone(_Svc):
             res = await self.phone({"t": "mail_fwd", **obj})
             self.assertEqual((res["ok"], res["why"]), (False, why), obj)
         (self.work / "report.pdf").write_bytes(b"%PDF-1.4\nchanged")
+        # P573: the card's scan-time copy would forward (the card persists); without it a changed file is not sent
+        import shutil
+        shutil.rmtree(pathlib.Path(self.st.root) / media_mod.STORE_DIR, ignore_errors=True)
         res = await self.phone({"t": "mail_fwd", "to": [{"addr": OWNER}], "mid": self.mids["report.pdf"]})
         self.assertEqual(res["why"], "not_found", "a file changed since the page is not sent")
         self.svc.rate["dev1"].extend([__import__("time").monotonic()] * 30)

@@ -3,7 +3,7 @@
 The first step towards a web terminal (the second one is only a spec: docs/specs/WEB-TERMINAL-SPEC.md). The phone never sends
 a command line: it sends one NAME from `RUN_CMDS`; the argv is fixed here. Every run:
   - is a signed control (control-v1 action `cmd_run`, object {"cmd": name}) from an approved device, AND
-  - for repair commands, carries a passkey assertion (Face ID / fingerprint, UP + UV) over `passkey.elevate_challenge(channel, device, n,
+  - (before P573) for repair commands, carried a passkey assertion (Face ID / fingerprint, UP + UV) over `passkey.elevate_challenge(channel, device, n,
     "cmd_run", n, object_digest)` — two steps like `approval_set`: without `fa` the host answers `passkey_required` + the
     challenge (nonce untouched). Repair without a passkey is refused (`no_passkey`). The closed READ_CMDS set needs only the device signature; output is still masked.
   - runs one at a time, as this same user (never more rights than serve), stdin closed, a hard timeout, output capped,
@@ -100,7 +100,8 @@ class Desk:
             controls.log(h.st, action="cmd_run", device=s.device, result="refused:shape")
             return await res(False, why="shape")
         target = {"cmd": name}
-        require_uv = name not in READ_CMDS
+        # P573 (#386 ⑤): reconnect / an AI switch is recoverable — the signed control is the owner's button; no Face ID
+        require_uv = False
         if require_uv:
             pk = h.st.passkey_of_device(s.device)
             if not pk:

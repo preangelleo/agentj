@@ -35,31 +35,36 @@ test('app.css: the fill lines are the 7e45af4f1 lines, byte for byte, and nothin
   assert.doesNotMatch(css, /scaleX/, 'no scaleX fill left over');
 });
 
-test('长按批准 keeps its resting colours under the finger; the Noir pair is the sudo card\'s only (P458 #223)', () => {
+test('批准 keeps its resting colours under the finger; the Noir pair is the sudo card\'s only (P458 #223)', () => {
   assert.match(controls, /\n#elev-allow:is\(:hover,:active,:focus\)\{background:var\(--c-noir\);color:#faf9f5\}/);
   for (const f of [css, controls]) assert.doesNotMatch(f, /\.apprallow[^{,]*:(hover|active|focus)|:is\([^)]*\.apprallow[^)]*\):is\(:hover/);
 });
 
-test('the fill is a width Web Animation from the press: 0 % → 100 %, linear, the hold time', () => {
-  const f = fn('holdFill');
-  assert.match(f, /f\.animate\(\[\{width: "0%"\}, \{width: "100%"\}\], \{duration: APPR_HOLD_MS, easing: "linear", fill: "forwards"\}\)/);
-  assert.match(f, /typeof f\.animate !== "function"\) return;/, 'no Web Animations → the .holding CSS transition still draws it');
-  assert.doesNotMatch(relay, /holdScale|HOLD_BACK_MS|scaleX/, 'no roll-back animation: an early release snaps back like the earliest');
+// P573 (chairman 10-29, item 3: 「新增『点一下』按钮档，不长按」): the hold is gone — 批准 / 批量批准 / 加进目标授权 answer on
+// one tap; a Face ID card still starts its passkey sheet from the press. The fill lines above stay (CSS untouched), unused.
+const tap = fn('tapToApprove');
+test('P573: one tap approves — press and release on the same button, no timer, no hold hint, no fill animation', () => {
+  assert.doesNotMatch(relay, /APPR_HOLD_MS|function holdToApprove|function holdFill|r\.appr\.holdHint|classList\.add\("holding"\)/);
+  assert.match(tap, /addEventListener\("pointerdown"/);
+  assert.match(tap, /addEventListener\("pointerup", e => \{[^]*?apprPost\(q, action\)/, 'the release on the button sends the answer');
+  assert.doesNotMatch(tap, /setTimeout/, 'no timer: a tap, not a hold');
+  for (const b of ['apprAllow', 'apprBatch', 'apprGoalAdd']) assert.match(relay, new RegExp(`tapToApprove\\(el\\("${b}"\\)`), b + ' is a one-tap button');
 });
-
-test('press starts it; an early release cancels it (straight back to 0); a finished hold clears immediately', () => {
-  const h = fn('holdToApprove');
-  assert.match(h, /btn\.classList\.add\("holding"\);\s*holdFill\(btn, "start"\);/, 'start at pointerdown');
-  assert.match(h, /apprCancelHold\(true\);\s*if \(q && q\.id === id/, 'the timer ends the hold as done');
-  assert.match(fn('apprCancelHold'), /holdFill\(apprHold\.btn, done \? "done" : "back"\)/);
-  const f = fn('holdFill');
-  assert.match(f, /if \(prev\) prev\.cancel\(\);[^\n]*\n\s*f\._hold = mode === "start" \? f\.animate\([^\n]*\) : null;\n\}/, 'back = cancel, nothing animated');
-  assert.match(f, /if \(mode === "done"\)\{[^]*?if \(prev\) prev\.cancel\(\);\s*f\._hold = null;\s*return;/, 'done: clears immediately');
-  assert.doesNotMatch(f, /setTimeout|HOLD_DONE_MS/);
+test('P573: a finger that slides off, or a scroll, answers nothing; a Face ID card keeps its passkey path', () => {
+  assert.match(tap, /getBoundingClientRect\(\);\s*if \(e\.clientX < r\.left \|\| e\.clientX > r\.right \|\| e\.clientY < r\.top \|\| e\.clientY > r\.bottom\) return;/);
+  assert.match(tap, /\["pointercancel", "pointerleave"\]\.forEach/);
+  assert.match(tap, /if \(p\.passkey_required && action === "allow"\) \{ apprPost\(p, action\); return; \}/, 'Face ID: the passkey sheet from the press, as before');
+  assert.match(tap, /if \(!p \|\| p\.local_only/, 'a host-only card never approves from the phone');
 });
-
-test('the trigger is still there: a re-render hides #apprBtns while measureCmd reads layout — the fill must not depend on CSS continuity', () => {
+test('P573: the copy says tap, not hold (zh + en)', async () => {
+  const d = (await import('../public/i18n.js')).default;
+  assert.equal(d.zh['r.appr.hold'], '批准'); assert.equal(d.en['r.appr.hold'], 'Approve');
+  for (const k of ['r.appr.allowAria', 'r.appr.batchHold', 'p339.how', 'p339.howAdd', 'p339.addHold', 'wc.confirm', 'pair.card.allow', 'ppReset.allow', 'ix.appr.approve', 'ixges.appr.approve']) {
+    assert.doesNotMatch(d.zh[k], /长按|按住/, 'zh ' + k + ': ' + d.zh[k]);
+    assert.doesNotMatch(d.en[k], /\bhold/i, 'en ' + k + ': ' + d.en[k]);
+  }
+});
+test('the trigger is still there: a re-render hides #apprBtns while measureCmd reads layout — a tap must survive it (p565_hold.mjs)', () => {
   assert.match(fn('renderCard'), /el\("apprBtns"\)\.hidden = true;/, 'renderCard resets the buttons hidden first');
   assert.match(fn('paintCmd'), /measureCmd\(\);/, 'paintCmd measures (scrollHeight) before renderPermission shows the buttons again');
-  assert.ok(relay.indexOf('holdFill(btn, "start")') > 0, 'so the fill runs on its own clock');
 });

@@ -1,0 +1,154 @@
+{
+  "zh": {
+    "tool": "agentj secret grant",
+    "otg": {
+      "v": 1,
+      "origin": "work",
+      "hosts": {
+        "work": "工作主机",
+        "spare": "备用主机"
+      },
+      "lang": "zh",
+      "title": "部署示例",
+      "why": "完成这次测试任务",
+      "iat": 1800000000,
+      "exp": 1800086400,
+      "nonce": "00000000000000000000000000000000",
+      "steps": [
+        {
+          "i": 0,
+          "cat": "secret",
+          "name": "DEMO_KEY",
+          "from": "spare",
+          "to": "work",
+          "dest": "",
+          "src": ""
+        },
+        {
+          "i": 1,
+          "cat": "delete",
+          "host": "spare",
+          "what": "测试文件",
+          "match": [],
+          "paths": [
+            "/tmp/agentj-p574-demo.txt"
+          ],
+          "max": 1
+        },
+        {
+          "i": 2,
+          "cat": "spend",
+          "host": "spare",
+          "what": "测试资源",
+          "match": [
+            "demo-pay --order fixture-order"
+          ],
+          "paths": [],
+          "max": 1,
+          "exact": "demo-pay --order fixture-order"
+        },
+        {
+          "i": 3,
+          "cat": "send",
+          "host": "spare",
+          "what": "测试报告",
+          "match": [
+            "demo-send --report fixture"
+          ],
+          "paths": [],
+          "max": 1
+        },
+        {
+          "i": 4,
+          "cat": "price",
+          "host": "spare",
+          "what": "示例商品",
+          "match": [
+            "demo-price --sku fixture --value 12"
+          ],
+          "paths": [],
+          "max": 1,
+          "exact": "demo-price --sku fixture --value 12"
+        }
+      ],
+      "tid": "d0aee81f0887498622792a897564a71b"
+    },
+    "summary": "同主人任务授权：部署示例\n理由：完成这次测试任务\n发起：「工作主机」· 签一次，24 小时内有效，其它主机不再弹卡\n1. 密钥 DEMO_KEY：从「备用主机」→「工作主机」，存到 对方默认位置\n2. 在「备用主机」上删除：测试文件 · 限：/tmp/agentj-p574-demo.txt（最多 1 次）\n3. 在「备用主机」上花钱：测试资源 · 限：demo-pay --order fixture-order，demo-pay --order fixture-order（最多 1 次）\n4. 在「备用主机」上对外发送：测试报告 · 限：demo-send --report fixture（最多 1 次）\n5. 在「备用主机」上改价：示例商品 · 限：demo-price --sku fixture --value 12，demo-price --sku fixture --value 12（最多 1 次）\n编号 d0aee81f0887498622792a897564a71b\n不是你发起的？点拒绝，并到好友页删除该好友。"
+  },
+  "en": {
+    "tool": "agentj secret grant",
+    "otg": {
+      "v": 1,
+      "origin": "work",
+      "hosts": {
+        "work": "Work host",
+        "spare": "Spare host"
+      },
+      "lang": "en",
+      "title": "Deploy sample",
+      "why": "Complete this test task",
+      "iat": 1800000000,
+      "exp": 1800086400,
+      "nonce": "00000000000000000000000000000000",
+      "steps": [
+        {
+          "i": 0,
+          "cat": "secret",
+          "name": "DEMO_KEY",
+          "from": "spare",
+          "to": "work",
+          "dest": "",
+          "src": ""
+        },
+        {
+          "i": 1,
+          "cat": "delete",
+          "host": "spare",
+          "what": "test file",
+          "match": [],
+          "paths": [
+            "/tmp/agentj-p574-demo.txt"
+          ],
+          "max": 1
+        },
+        {
+          "i": 2,
+          "cat": "spend",
+          "host": "spare",
+          "what": "test resource",
+          "match": [
+            "demo-pay --order fixture-order"
+          ],
+          "paths": [],
+          "max": 1,
+          "exact": "demo-pay --order fixture-order"
+        },
+        {
+          "i": 3,
+          "cat": "send",
+          "host": "spare",
+          "what": "test report",
+          "match": [
+            "demo-send --report fixture"
+          ],
+          "paths": [],
+          "max": 1
+        },
+        {
+          "i": 4,
+          "cat": "price",
+          "host": "spare",
+          "what": "sample item",
+          "match": [
+            "demo-price --sku fixture --value 12"
+          ],
+          "paths": [],
+          "max": 1,
+          "exact": "demo-price --sku fixture --value 12"
+        }
+      ],
+      "tid": "6f63c1f8e00dffa0abfa7c5546408578"
+    },
+    "summary": "Same-owner task grant: Deploy sample\nWhy: Complete this test task\nStarted on “Work host” · one signature, valid 24 h; the other hosts ask no more\n1. Key DEMO_KEY: from “Spare host” → “Work host”, saved to its default place\n2. On “Spare host” — Delete: test file · only: /tmp/agentj-p574-demo.txt (at most 1)\n3. On “Spare host” — Spend: test resource · only: demo-pay --order fixture-order，demo-pay --order fixture-order (at most 1)\n4. On “Spare host” — Send out: test report · only: demo-send --report fixture (at most 1)\n5. On “Spare host” — Change prices: sample item · only: demo-price --sku fixture --value 12，demo-price --sku fixture --value 12 (at most 1)\nGrant 6f63c1f8e00dffa0abfa7c5546408578\nNot you? Deny, then remove this friend on the friends page."
+  }
+}

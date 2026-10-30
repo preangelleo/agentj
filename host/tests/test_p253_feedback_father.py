@@ -68,7 +68,10 @@ class Father(unittest.TestCase):
         try:
             api=fixture.FakeAPI(case.st)
             output=io.StringIO()
-            with patch("builtins.input",side_effect=AssertionError("no second confirmation")):
+            # P573: a ticket goes without the owner's yes only on a clean Jev verdict (unavailable → held, exit 3)
+            from agentj import privacy
+            with patch("builtins.input",side_effect=AssertionError("no second confirmation")), \
+                    patch.object(privacy,"layer2",return_value=privacy.Verdict("ok",0.01)):
                 rc=support.run_send("report","Please add a shortcut",ch=case.chan(api),env={},wait=0,out=output,
                                     attach_doctor=True,doctor_fn=lambda:"doctor ok /srv/Alice/customer.txt")
             self.assertEqual(rc,5)

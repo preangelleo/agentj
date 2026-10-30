@@ -11,7 +11,8 @@ class Lifecycle(existing.SameOwnerTests):
         self.assertTrue(await self.svc.same_owner.forward(self.b, message))
         send = self.sends[-1]
         self.assertEqual(self.pages[-1][0]['k'], 'task')
-        self.assertIn('派来任务', self.pages[-1][0]['name'])
+        self.assertTrue(self.pages[-1][0]['name'])
+        self.assertEqual(self.pages[-1][0]['text'], message['text'])
         self.host.hist_update = lambda *args, **kw: None
         self.host.hist = type('Hist', (), {'get':lambda _, tid: {'reply':{'text':'合成检查完成'}}})()
         self.host.cur_failed = False
@@ -51,13 +52,14 @@ class Lifecycle(existing.SameOwnerTests):
         await send.completed()
         self.assertEqual(len(self.net.of('pmsg')), 1)
 
-    async def test_disconnected_agent_has_visible_failed_card(self):
+    async def test_disconnected_agent_has_visible_pending_card(self):
         await self.confirm()
         self.host.agent = None
         updates=[]
         self.host.hist_update=lambda *a,**kw: updates.append((a,kw))
         self.assertFalse(await self.svc.same_owner.forward(self.b, pmsg('检查服务')))
-        self.assertEqual(updates[-1][1]['end'], 'failed')
+        self.assertNotIn('end', updates[-1][1])
+        self.assertTrue(self.svc.same_owner.row(self.b).get('queue'))
         self.assertIn('未连接', updates[-1][1]['text'])
 
     async def test_failed_turn_returns_failure_not_success(self):

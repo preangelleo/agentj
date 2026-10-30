@@ -146,7 +146,8 @@ const OPS = {
   async confirm({ name, msg, cred, bang }) {
     const p = phone(name);
     const signed = await signCtl(p, 'term_line', { id: msg.id, line: msg.line }, msg.n);
-    return { msg: { t: 'term_line', id: msg.id, seq: msg.seq, line: msg.line, ...signed, fa: fa(p, msg.fa_ch, cred), ...(bang ? { bang } : {}) },
+    const uv = msg.uv === 0 ? 0 : 1;   // P573: uv 0 = the button tier — signed, no Face ID (as confirmLine)
+    return { msg: { t: 'term_line', id: msg.id, seq: msg.seq, line: msg.line, ...signed, ...(uv ? { fa: fa(p, msg.fa_ch, cred) } : {}), ...(bang ? { bang } : {}) },
       agent: msg.agent === 1 || msg.agent === true };
   },
   /** vaultrow.js share() step 2 from the host's passkey_required answer (PRF over the fresh salt, prf1 only). */

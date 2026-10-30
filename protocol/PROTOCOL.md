@@ -3125,6 +3125,7 @@ line is signed and throws otherwise. Older hosts ignore `dg`; the signed bytes a
 
 
 ### §17.10 — Same owner (P405, quiet source candidate)
+P574 §17.13 supersedes the legacy ceremony below for OTG signing roots: complete roster scope, exact root device and initial UV on both sides; task-specific OTGs are the only added approval exception. Legacy Ed-only relationships retain messaging, without an OTG roster.
 Selecting signed `fr_set {friend,op:"group",value:"same-owner"}` creates a pairing proposal, not consent.
 Authenticated friend frames `same_owner {seq,nonce,pub,token,echo,proof}` exchange random 128-bit nonces and enrolled
 phone public keys. Each host derives the same SHA-256 challenge from the sorted endpoint IDs, pinned host signing
@@ -3137,8 +3138,7 @@ and echoed local token are required. A new nonce/key invalidates confirmation. I
 refuse replay. Pairing cards persist a 24h deadline across restart, distinct from ordinary 120s friend questions.
 Expiry says Same owner invitation expired; it never acts as a normal no-reply decision.
 
-Confirmed messages go directly to main Agent J as non-owner request data. This changes destination only, never approval
-authority. Owner batch/goal/Jev/full-level/parked exemptions and mail allowlists do not authorize these actions; sensitive
+Confirmed messages go directly to main Agent J as non-owner request data. Same owner alone changes destination; §17.13 adds only explicitly attached and verified task-step approval. Owner batch/goal/Jev/full-level/parked exemptions and mail allowlists do not authorize these actions; sensitive
 operations need individual signed phone cards, including sudo, iMessage and heartbeat changes. Admin grants cannot be used
 or created. Only confirmed peers see the legacy signed `main` handover option; there is no `main-auto` option.
 Inbound and outbound credential/private/never-tell filters and metadata-only handover audits remain mandatory.
@@ -3161,7 +3161,7 @@ Signed `fr_set {friend,op:"hold-for-owner",value:"on"|"off"}` uses the existing 
 **pick** (`host/agentj/friends_pick.py`, CLI only, recommendation only): friends.sock `{"t":"pick","size":null|"small"|"medium"|"large"[,"rules":true]}`. Candidates = friends with bilateral Same owner (§17.10) plus this host (`self`); all `owner_status` requests run concurrently, each ≤ 10 s; a failure or 403 = `reachable:false`, never picked. Answer `{ok, task_size, rules:"owner"|"default", pace, pick:{id,name,self}|null, machines:[{id,name,self,reachable,eligible,recommended,rank,listed,rule,reasons:[code],facts:{week_used_pct,week_expected_pct,load_per_core,memory_available_gib,in_use,agents,background,harness,model},why:{zh,en}}], summary:{zh,en}, next, lang}`. `week_expected_pct = min(100, elapsed_days × pace)` from the weekly window's `reset_at`. Rules live in `peer/settings.json` key `pick_rules` = `{order:[id|"self"…≤32], pace:1..100 (% per day, default 100/7), machines:{id|"self":{week:0.05..10|null, load:0..64|null, mem:0..4096 GiB|null, in_use:bool, sizes:[small|medium|large]}}}`, validated by FriendStore.set_setting; edited with `{"t":"pick-rules","action":"show"|"order"|"set"|"unset"|"pace"|"reset","args":[…]}` (also without serve). Order: listed devices first in order, then unlisted ones by lowest load per core and most weekly headroom, this host last. Defaults without rules: not in use, load ≤ 1 per core; this host has no threshold and is never excluded for being in use (the asking Agent is itself a turn). An unknown number never passes a threshold. Reason codes: offline, size, in_use, in_use_unknown, load, load_unknown, mem, mem_unknown, week, week_unknown.
 
 **「我的设备」 group** (`host/agentj/owner_group.py`): members = friends with bilateral Same owner, not blocked — computed, never stored; nobody else can post or read. History `peer/my-devices.json` `{items:[{gid,from,by:"phone"|"agent",text,to:[id],re,mid,kind:"msg"|"reply",ts}] (newest 500), unread, rate}`, atomic writes under the friends lock. Posting: device → host signed `fr_gsay{r,text}` (§8 action `fr_gsay`, object text `"devices
-" + text`, `ctl_res`; Stop everything / no members / outbound or inbound filter hit → `ok:false` with `stopped` / `no_devices` / `gate`) or friends.sock `{"t":"say","text"}` from the main Agent. Mentions: `@<friend name>` (longest match, case-insensitive), `@<Agent ID>`, `@all` / `@everyone` / `@所有设备` / `@全部设备` / `@全部` / `@所有人`; an `@` right after an ASCII letter or digit is not a mention. Per member: mentioned → an ordinary `pmsg` plus `"grp":{"gid":hex16,"to":[id],"by","re":null}` (the full §17.6 / §17.10 / §17.11 path: relay envelope — a phone post starts a fresh chain —, rate, lease, hold-for-owner, filters, main-Agent delivery as `same_owner/role=task`, label 「来自本人设备 X（「我的设备」群）」); not mentioned → app message `{"t":"grp","gid","to","by","text","ts","re"}`, history only, no turn, ≤ 60 records a minute per member, credential-looking text kept as withheld. A malformed `grp`, or one from a friend that is not bilaterally Same owner, is ignored (the pmsg continues as an ordinary friend message). The receiving main Agent replies with `friends tell <friend> --reply-to <mid>`; that reply carries `grp {gid:new, to:[asker], by:"agent", re:<gid>}`, is recorded locally and sent as a `grp` record to every other member. On the asking host a reply whose `re` is a phone post is recorded, acknowledged `pack got` and announced (a notice without the text) with no Agent turn; a reply to an Agent post continues as the usual informational result (§17.10). Reads: `fr_list_res.devices = {n, unread, last:{ts,text}|null}`; device → host `{"t":"fr_glog","r","before"?}` → `{"t":"fr_glog_res","r","me":{id,name},"members":[{id,name}],"items":[{gid,from,self,name,by,text,to:[{id,name}],re,kind,ts,mid}],"more"}` (newest 50, read marks the group read); friends.sock `{"t":"devices"}` (untrusted-data wrapper). Same owner changes only the destination; it never grants approval authority.
+" + text`, `ctl_res`; Stop everything / no members / outbound or inbound filter hit → `ok:false` with `stopped` / `no_devices` / `gate`) or friends.sock `{"t":"say","text"}` from the main Agent. Mentions: `@<friend name>` (longest match, case-insensitive), `@<Agent ID>`, `@all` / `@everyone` / `@所有设备` / `@全部设备` / `@全部` / `@所有人`; an `@` right after an ASCII letter or digit is not a mention. Per member: mentioned → an ordinary `pmsg` plus `"grp":{"gid":hex16,"to":[id],"by","re":null}` (the full §17.6 / §17.10 / §17.11 path: relay envelope — a phone post starts a fresh chain —, rate, lease, hold-for-owner, filters, main-Agent delivery as `same_owner/role=task`, label 「来自本人设备 X（「我的设备」群）」); not mentioned → app message `{"t":"grp","gid","to","by","text","ts","re"}`, history only, no turn, ≤ 60 records a minute per member, credential-looking text kept as withheld. A malformed `grp`, or one from a friend that is not bilaterally Same owner, is ignored (the pmsg continues as an ordinary friend message). The receiving main Agent replies with `friends tell <friend> --reply-to <mid>`; that reply carries `grp {gid:new, to:[asker], by:"agent", re:<gid>}`, is recorded locally and sent as a `grp` record to every other member. On the asking host a reply whose `re` is a phone post is recorded, acknowledged `pack got` and announced (a notice without the text) with no Agent turn; a reply to an Agent post continues as the usual informational result (§17.10). Reads: `fr_list_res.devices = {n, unread, last:{ts,text}|null}`; device → host `{"t":"fr_glog","r","before"?}` → `{"t":"fr_glog_res","r","me":{id,name},"members":[{id,name}],"items":[{gid,from,self,name,by,text,to:[{id,name}],re,kind,ts,mid}],"more"}` (newest 50, read marks the group read); friends.sock `{"t":"devices"}` (untrusted-data wrapper). Same owner alone changes only the destination; task-specific signed OTG approval is the narrow §17.13 exception.
 ## 37. 屏幕求助 / 扫码求助 — screen-help cards (P411; the number is provisional until the merge)
 
 Browser automation stopped at a sign-in QR code, a captcha or a human check. The caller (the main Agent, or the owner's own
@@ -3789,3 +3789,141 @@ foreign, no Auto-Submitted) is an ordinary letter: allowlist, sender authenticat
 `tasks.items[].sys` is `migrated` or `changed` when a task has moved to the system scheduler; absent on unmoved tasks and older hosts. `changed` means its current contract differs and runs refuse until moved again.
 `task_migrate {r,id,tsha,n,ts,sig}` signs the §8 action `task_migrate`, object `id\ntsha`. A paired signed tap follows the page's plain confirmation (chairman exemption: no passkey), is logged in controls.log, and runs off the relay loop. `ctl_pending {r,action:task_migrate,timeout_ms:2200000}` extends this request only; final `ctl_res {r,action,ok,text? ,why?}` carries the result. Bad signature, replay, stale tsha, stop, no scheduler/agent, or another migration in progress refuses. A test failure rolls back. `task_set on:false` on a moved task removes its system timer and keeps it off in Agent J.
 `Src.guide?: wsl | loop` is set only on host-written `sys` notices. It renders one fixed localized signed-say button: ask for WSL systemd setup or convert the loop to a scheduled task. It grants no approval. No arbitrary Markdown reply link on a sys/task/cmd page is activated; old phones simply show the prose instructions.
+
+## P573 exact task approval plans
+
+An `ask` may include `task_scope`, the exact canonical JSON string the host offered. It is distinct from legacy low-risk `batch` scope. For `allow` and `deny`, append `"\ntask:" + hex(SHA-256(UTF-8(task_scope)))` to the §8 approval signature message. `allow_batch` cannot carry `task_scope`. A changed, missing or added scope invalidates the signature. The shown-summary digest also binds the complete numbered list of concrete action summaries; any listed UV action makes the whole card require UV.
+
+The scope is `{task,actions,target,expires,uv}`. `uv` is a required boolean calculated by the host and bound by the signature: true records a plan requiring user verification. `task` identifies the host epoch, current turn, harness and working directory. Each of 1–20 `actions` is `{tool,input_sha256,class}`; `input_sha256` hashes the canonical exact tool input and `class` contains the policy action and sorted danger categories/rules. `target` is null locally or `{sender,receiver,text_sha256,relationship}` for a bilaterally verified Same owner task. Expiry is at most 1800 seconds. A local grant permits at most 20 uses, ends with its owner turn, revocation, emergency stop or signing-device/key change, and matches the exact tool, input digest and class, never other same-class inputs.
+
+`agentj friends approve-actions <file>` requests the local plan without execution. `agentj friends tell <friend> --actions <file> <text>` signs the receiver's concrete list on the initiating phone for a new task only. Input files are UTF-8 JSON arrays of strict `{tool,input}` entries, ≤24 KB; tools need policy mappings and cannot be own-card/trust-root tools. Do not store credential values in these files.
+
+The Same owner proof includes the §8 signed request metadata and scope. The receiving host verifies it against the remote approval key bound by bilateral pairing, exact sender/receiver, task-text hash and relationship generation; its nonce is consumed once. During that receiver task it permits only the listed exact tool/input/class while the relationship and expiry remain valid. Unlisted/changed/expired actions retain their normal confirmation. Ordinary friends, reply messages and group mentions gain no plan authority.
+
+Local `task_grant` and peer-plan audit rows retain the signed scope, parent proof and exact action metadata (digests, no input bodies). `agentj approvals --verify` checks the parent signature and scope, task linkage and exact membership, including peer relationship proof. This extends the §8 metadata-only log schema: the canonical task scope contains identifiers and hashes, never command bodies.
+
+The receiver recalculates each action's current verification requirement, including its harness floor. If it requires UV but the signed plan has `uv:false`, it denies the action and asks the originator to obtain sufficient authorization; it never opens a second receiving-device card. Missing or non-boolean `uv` invalidates a plan. Audit verification binds the parent's recorded verification level to signed `uv` and rejects child actions exceeding it. 清单签名绑定主机计算的本人验证等级；接收端要求更高时直接拒绝，提示发起端重新授权，不补第二张卡。缺失或非布尔等级无效，审计同时校验父授权等级与子动作要求。
+
+任务清单与旧的低风险批量范围分开：`allow`/`deny` 的签名额外绑定 `task_scope` 的 SHA-256，`allow_batch` 不可携带。卡面列出全部具体动作，任一项须本人验证则整卡验证一次。清单只按当前任务、具体工具、完整输入哈希和权限分类匹配，不扩展到同类其它输入。本机最多 30 分钟、20 次，回合结束或撤回即失效。同主人清单还绑定发起端、接收端、任务文字哈希与双边关系代次；接收端核验配对时固定的远端审批公钥，单次消费证明，只在对应任务中放行清单内动作。普通好友、回复和群 @ 不获得该授权。审计保留签名范围、父证明与动作哈希，不记命令正文。
+
+P573 final refusal contract: explicit peer plans carry `task_plan:true` and `task_proof`. Presence of either marker requires a valid proof before ordinary routing. A missing, malformed, modified, oversized, expired or wrong-root proof is blocked before delivery/execution and returns the fixed `task_refused {mid,why:"root_reconfirm"}` receipt. Sender signatures must use the current approval root bound by bilateral pairing; another paired remote's signature returns `root_reconfirm` without sending. Reconfirm the Same owner approval root before retrying. Never downgrade a refused explicit plan into an ordinary task or ask for a second card on the receiver. A queued plan with expired scope or turn drift is denied by `Host.ask`. Legacy tasks with neither marker retain their ordinary route.
+
+显式清单以 `task_plan:true` 与 `task_proof` 标记；任一标记存在就必须先验有效证明。证明缺失、无效、篡改、超长、过期或根不符时，路由前拒收并返回固定 `task_refused` 回执，不投递、不执行、不降级、不补接收端卡。发起签名须为双边配对固定的当前审批根，其它已配对遥控器也不能代替；根不符返回 `root_reconfirm`，须重新确认同主人审批根。排队清单过期或回合漂移直接拒绝。两标记都没有的旧任务保持原路由。
+
+### 17.13 Owner Task Grants and same-owner key transfer (P574, #388 / #389 / #392)
+
+This section adds a narrow exception to §17.10–17.12: a verified Owner Task Grant (OTG) covers the explicitly listed
+steps of one same-owner task, for **24 hours**, including secret steps. Ordinary same-owner data remains non-owner
+provenance. No ordinary friend, external/temporary peer, group text, unsigned claim, batch/goal setting or mail exemption
+creates an OTG. Sudo/admin commands retain their fresh approval and cannot use a ten-minute sudo grant.
+
+**Enrollment and compatibility.** Same-owner packets retain `v:2` and add `caps:["otg1","sx1"]`, `roster_v:3` and
+`roster`. With both ends at roster-v3, `pairing_scope` is the exact Python `json.dumps(ends, separators=(',',':'))`
+string, where sorted ends each contain `[host_id,host_ed_pub,device_ed_pub,nonce,roster]`. Challenge is
+SHA-256(scope UTF-8)[:32]; the six-digit code is `int(challenge,16) % 1000000`, zero padded. The browser verifies both
+end descriptors and entry bindings, requires its own tuple public key to equal its locally held Ed public key and its
+complete local credential descriptor to match, and recomputes challenge and code locally. Missing modern scope cannot
+approve an OTG signing roster. `fr_set {friend,op:"owner-confirm-v3",value:challenge}` uses `controls.signedWriteFa` and must be signed by the exact
+device Ed key in that end's tuple. Its existing `{channel,device,pub,n,ts,sig}` proof adds `fa:{id,cd,ad,sig}`. Setup UV
+challenge is `passkey.elevate_challenge(channel,device,n,"fr_set",n,controls.object_digest("fr_set",target))`, with target
+`{friend:<other host id>,op:"owner-confirm-v3",value:SHA256(pairing_scope)[:32]}`. Both ends verify Ed signature, credential
+id/device match and the UV assertion against that unique root's SPKI, requiring UP+UV. Initial root setup therefore takes
+one existing-passkey UV confirmation on each side; daily OTG use still takes only the initiating remote's one UV signature.
+Legacy Ed-only consent can retain natural-language Same owner behavior but cannot establish OTG signing roots.
+Modern enrollment requires both sides' explicit confirmation; a `group:same-owner` start
+alone is not consent. The old `owner-confirm` opcode cannot authorize a modern roster.
+
+The **initial root is exactly one Ed→SPKI tuple per end**, matching that end's actual confirming Ed key. Other entries may
+be displayed in the complete scope, but remain untrusted, labelled pending approval by a recognized remote. Neither a
+self-signed descriptor nor its inclusion in a host-supplied list grants introducer authority. No first-sight/TOFU roster
+trust. Existing same-owner relationships repeat the ceremony before OTG/key use. Check capabilities first (`old_peer`),
+then established roster (`no_roster`); unsupported operations do not fall back to secret text or host account claims.
+
+A core entry carries `{id,alg,spki,rp,dev,name,sign_pub,bind}`. The Ed binding signs
+`"agentj-owner-roster-v1\n" + canonical JSON({id,alg,spki,rp,dev})`. `roster {list,caps}` / `roster_ack {h}` synchronize
+over Noise KK. Updates may narrow established trust. Additions require a UV introducer proof from an already pinned
+remote over the new device and `sign_pub`, plus that device's exact Ed→credential binding; self-binding alone cannot
+introduce. Existing passkeys migrate with `roster_bind_get` / `roster_bind_offer` and a UV assertion over the binding
+challenge, then `roster_bind` with `fa` and `roster_sig`; this uses WebAuthn get, not credential creation or vault reset.
+An existing other remote is introduced with `pk_peer_req {roster:true}`, reusing the original introducer card and UV
+approval. Ending, removing or blocking a relationship clears trusted grants/roster and advances the local
+`owner-epochs.json` cutoff at `now+600`; received OTGs issued at or before it are refused, including old grants never
+previously seen. Stop cutoff uses the same conservative future skew window. It also temporarily blocks newly issued grants
+for approximately ten minutes after either cutoff event; ordinary chat is unaffected. `roster.grant_after` and
+`sx_err.usable_after` advertise/cache the usable-after boundary, allowing CLI refusal with the deadline before asking for a
+signature. `usable_after` is one integer second beyond the persisted cutoff.
+Re-pairing cannot revive an earlier relationship's authority.
+
+**Signed object.** OTG v1 has exactly `{v,origin,hosts,lang,title,why,iat,exp,nonce,steps,tid}`. `origin` is the initiating
+host; `hosts` maps host ids to displayed names (2–6); `steps` contains 1–12 indexed entries. `exp-iat` is positive and at most
+86400 seconds; future issuance tolerance is 600 seconds. `nonce` is random 128-bit hex. `tid` is the first 32 hex digits of
+SHA-256(`"agentj-owner-grant-v1\n"` + canonical JSON of every field except `tid`), using sorted keys, compact separators and
+UTF-8 unescaped Unicode. Secret entries are `{i,cat:"secret",name,from,to,dest,src}`; one endpoint must be the origin. An A-origin B→C step is rejected; express B→A and A→C as two listed steps under one signature. Other
+entries have `cat:spend|delete|send|price`, `host`, `what` and `max`. Delete/send retain applicable goal-structured
+`match/dir/paths/prefix/upload` scope. Spend/price additionally require `exact`, the complete action text; `usd` is refused.
+Only identical full action text and remaining use count can match: changing parameters, command chaining, amount or currency
+is uncovered. This is not a dollar-budget enforcement mechanism. The older goal `usd` matcher gap is separate existing
+behavior, not fixed or relied on by this OTG path.
+
+The existing approval `ask` frame adds public `owner_grant:otg`. Before producing its assertion the browser locally recomputes
+canonical sorted JSON and tid, validates the summary's final id/warning lines, requires integer timestamps with
+`iat <= now+600`, `exp-iat == 86400`, and `exp > now`. Missing or changed metadata is refused.
+The existing approval card displays `owner_grant.card_text(otg)` under tool `agentj secret grant`, including the reason,
+origin, all steps, validity and tid. Only the paired remote that started this owner task can answer. Its existing WebAuthn
+UV assertion signs the existing approval digest and challenge. Forwarded proof is exactly
+`{tool,summary,channel,device,rid,kind,sig,fa:{id,cd,ad,sig}}`; the receiving host independently reconstructs the displayed text,
+checks tid/lifetime, looks up the credential in that friend's pinned roster, derives the ordinary elevate challenge and
+verifies the assertion. `kind` must be sandbox or perm. Required outer `sig` is the existing Ed approval-answer signature,
+verified against the same roster entry's `sign_pub` with `approvals.signed_message(channel,device,rid,"allow",shown_digest(TOOL,summary))`;
+the roster dev must equal proof.device. Both the Ed allow answer and FA assertion must verify. A generic control-card UV
+assertion repackaged as an OTG is insufficient. A claimed device name or boolean approval is not proof. `otg_put {otg,proof}` sends the signed
+object to named target hosts; duplicates do not reset persisted usage. `otg_put {otg:null,proof:null,revoke:tid}` requests withdrawal; the receiver tombstones it and answers
+`otg_revoke_ack {tid}`. The origin records `grant-revokes.json` retry intent before removing its local live grant, retains
+per-target acknowledgements, and resends unacknowledged revocations after restart/reconnect until expiry. CLI reports local
+withdrawal and the remaining pending-target count; it does not promise instantaneous global revocation. Tombstones prevent replay.
+
+**Task binding and use.** Local `agentj secret grant --file <plan.json>` signs `{title,why,steps}`; `secret ask/give` can
+create a single secret-step grant or use a matching unused step of the same initiating phone task. Local task scope uses the active named goal id when present, otherwise a stable owner-task id separate from the execution id. An authenticated paired-phone message joins that ordinary task only in the original device/session by replying to its recorded message, or by the exact whole-message continuation “继续同一任务” / “continue the same task” when exactly one signed task is eligible. Other new messages create a fresh task; ambiguous continuation does not select a grant. Continuation preserves the original 24-hour expiry and remaining counts. A fresh execution admits only the registered native tool call in that live turn; the UDS CLI alone, same-UID callers, old background processes and external sources cannot claim another execution or continuation. PID ancestry is not an authorization proof. A named
+goal persists `owner-task-context.json` with original device, session, goal scope, grant ids and expiry. Only host-managed
+compaction/reconnection `recovery_source` can issue an `otg_resume` handle for that same live context. The handle resumes
+existing grants; ordinary system/scheduled/foreign sources cannot mint it, reuse unrelated grants or sign new grants. Only an explicit `agentj friends tell <friend> --grant <tid> <task>` attaches
+`pmsg.otg:[tid]` plus `otg_bundle:[{otg,proof}]`; ordinary tell/group traffic does not automatically attach live grants.
+The public signed bundle permits idempotent verification/recovery when the earlier otg_put was not seen; it carries no
+secret values. Provenance retains only verified tid/fid and `otg_required`, never the full bundle. The sender binds that grant to one
+outbound task message per target. On receipt, the host validates ids (at most four), origin, target and live roster and binds
+them to that inbound task message before preserving `fid/otg` in same_owner provenance. Receiving approval policy checks
+this verified task source and the constrained matcher, then durably consumes the matched step count. A nonempty `_REQUEST`
+source must match the current same_owner `fid` and entire `otg` list; a child cannot borrow another task’s authority. Unmatched,
+exhausted, opaque, suspicious or credential-bearing tool calls receive no grant exemption. Reuse in another task, replies,
+ordinary friends or a different owner source does not gain approval authority. An `otg_required` task cannot open a holder-side approval card. For an unlisted key step, the verified receiving task sends `otg_more {r,tid,op,name,why,dest}` only to the original origin (`op:ask|give`, random 128-bit `r`). The origin requires the original task still active, the original signing device, a live grant, Same owner, rate limits and a previously unseen request id. It reverses ask/give and requests fresh UV on that original device for a new 24-hour OTG, without changing the old OTG. Standard `sx_*` frames carry the key; `otg_more_res {r,result}` returns only metadata or refusal. A changed task, revoked signer or confirmation timeout refuses; no alternative device or broadcast is permitted. Other uncovered/invalid sensitive steps are refused and reported for a new explicit plan.
+`origin_tier` also consumes listed self-host goal steps only in the current origin task or exact named-goal recovery context,
+rechecking the original live signer/assertion, nonce-bound OTG, 24-hour expiry and durable usage. Avatar/background calls or
+a different `_REQUEST` cannot borrow that authority. Stop everything takes priority.
+
+**Native execution receipt.** Secret CLI calls and `friends tell --grant` require a live admitted native tool call. They first return only `{result:"pending",ticket,request_sha256}` (grant-bearing tell also has `ok:true`); this is neither key delivery nor task dispatch. The broker matches the trusted successful tool result/PostToolUse to that exact call and its issued receipt, rechecks the live execution, then executes the operation. Native denial/failure/cancellation performs no transfer, dispatch or grant-count consumption. A bare UDS CLI/friends.sock call cannot attach grants. Final metadata arrives through `SECRET_TASK_RESULT`; grant-bearing tell returns its existing `{ok,friend,name,mid,route}` result there. Ordinary chat tell keeps its existing path and receipt. No second UV or new card layout is added. Harness qualification remains in REPORT-574.
+
+**Transfer frames, all inside Noise KK.** `sx_req {r,otg,proof,i,rk}` pulls a key; holder replies
+`sx_give {r,tid,i,epk,n,ct,fp}`. A push starts `sx_offer {r,otg,proof,i}`, receiver answers `sx_rk {r,rk}`, then holder sends
+`sx_put {r,epk,n,ct}`. `sx_ack {r,fp}` completes a move; `sx_err {r,code}` refuses. `r` is a random 128-bit request id;
+`rk` is a one-time receiving X25519 public key. The authenticated friend channel binds that key to the peer; it is not a
+standalone unauthenticated key claim. Sender generates an ephemeral X25519 key `epk`, derives AES-256-GCM key via
+HKDF-SHA256 with salt SHA-256(`tid + "\n" + i`), info `agentj-secret-xfer-v1`, and a random 12-byte nonce `n`.
+AAD is `tid + "\n" + i + "\n" + name + "\n" + from + "\n" + to`. These inner sealed bytes remain inside Noise KK;
+the relay sees ciphertext. Values are limited to 16384 bytes. Incoming transfers are limited to 5/600 seconds and 20/day
+per friend, with at most 3 open requests and a 120-second peer wait; consuming a secret step is durable and one-use.
+
+A **remote holder** reads only a registered name. A supplied `src` must canonicalize to that name’s registered source;
+remote authorization does not open arbitrary same-user readable files. The origin may explicitly select a local `src` for a
+newly signed give; the card shows it. When reusing a grant, including an empty CLI src, the writer must use the signed src
+or registered source, and a different CLI src is refused. The receiver writes through the existing `agentj secret` destination validation, file permissions, registry and audit path.
+The Agent sees names, result, length and fingerprint, never value bytes. Logs contain names, state, hashes and fingerprints;
+no secret value is written to conversation, audit or activity. This is encrypted transfer, **not encrypted-at-rest storage**:
+existing local secret files remain accessible to software with the same OS-user authority. A compromised authorized host
+can access what that user can access; a lost remote needs WebAuthn user verification to sign a new task, but a compromised
+unlocked remote is not made harmless. Holder notifications reuse existing notices: `owner_grant_notice {peer,grant,text}`. Signed
+`fr_set {friend,op:"owner-stop",value:grant}` requires a currently paired device and a received grant from that friend; it
+tombstones the grant, ends Same owner, clears requests/roster/grants, blocks the friend and disconnects its transport. This
+disables this host’s recognition of that peer’s signatures; it does not delete the peer’s phone or globally revoke passkeys. Stop everything records a persistent stop epoch, queues withdrawal of outgoing grants, tombstones/clears incoming grants,
+clears pending transfers and settles current transfer waits with estop, without ending the friendship. A later resume cannot
+revive those existing grants or a pre-stop OTG. Revocation/stop prevent future use and cannot reverse completed actions or
+undo an OS command already executed.

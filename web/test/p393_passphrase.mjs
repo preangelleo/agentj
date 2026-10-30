@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // #118: `agentj passphrase reset --phone` puts a `passphrase_reset` card on every paired remote. The phone shows it as an
 // Agent J card (title 「重设遥控器配对密码」 / "Reset the remote pairing password", the host's text with the match code in
-// full, a pairing-password tag), never a field to type a password into; holding sends a signed allow (fakehost verifies the
+// full, a pairing-password tag), never a field to type a password into; one tap sends a signed allow (fakehost verifies the
 // signature, the same bytes as serve._answer); Deny sends a signed deny. A card with passkey_required gets the
 // 「需验证本人」 tag and label. The real web client against the fake host, headless Chromium (never :9222), 390×844, zh/en.
 //   node web/test/p393_passphrase.mjs   → reports/qa/p393/passphrase-<lang>.png
@@ -22,8 +22,8 @@ const SUMMARY = {
   en: "Reset this host's remote pairing password\nSomeone ran agentj passphrase reset --phone in a terminal on this Agent J host. After you confirm, the new remote pairing password is typed in that terminal; every remote stays paired.\nMatch code: 482 913 (the terminal shows the same digits; if not, or it isn't you, tap Deny)",
 };
 const WANT = {
-  zh: { title: '重设遥控器配对密码', tag: '遥控器配对密码', allow: '按住确认', where: '新密码在Agent J 主机上输入' },
-  en: { title: 'Reset the remote pairing password', tag: 'Pairing password', allow: 'Hold to confirm', where: 'typed on the Agent J host' },
+  zh: { title: '重设遥控器配对密码', tag: '遥控器配对密码', allow: '确认', where: '新密码在Agent J 主机上输入' },
+  en: { title: 'Reset the remote pairing password', tag: 'Pairing password', allow: 'Confirm', where: 'typed on the Agent J host' },
 };
 
 const web = await startWebServer({ port: 0, relayCsp: 'ws://127.0.0.1:*' });
@@ -34,7 +34,7 @@ const check = (ok, what) => { if (!ok) fails.push(what); };
 try {
   for (const lang of ['zh', 'en']) {
     fake.reset();
-    const p = await newPage(Br, 390, 844, 'light', { allow: [web.url, fake.relay + '/'] });
+    const p = await newPage(Br, 390, 844, 'light', { touch: true, allow: [web.url, fake.relay + '/'] });
     const base = web.url + (lang === 'en' ? '?lang=en' : '');
     await navigate(p, base);
     await waitState(p, 'idle');
@@ -46,9 +46,25 @@ try {
     await evaluate(p, `(() => { const n = document.getElementById('confirm-no'); if (n && !document.getElementById('confirm').hidden) n.click();
       const a = document.getElementById('a2hs-ok'); if (a && !document.getElementById('a2hs').hidden) a.click(); })()`);
     await fake.send({ t: 'status', s: 'waiting', agent: 'claude', name: 'AgentJ' });
+    const tap = async (buttonId, cancel = false) => {
+      await evaluate(p, `document.getElementById('${buttonId}').scrollIntoView({block:'center'})`);
+      const point = await evaluate(p, `(() => { const b = document.getElementById('${buttonId}'), r = b.getBoundingClientRect(), x = r.left+r.width/2, y = r.top+r.height/2;
+        return {x,y,hit:document.elementFromPoint(x,y)?.closest('button')===b}; })()`);
+      if (!point.hit) throw new Error(buttonId + ': the approval control is not reachable');
+      const before = fake.st.answers.length;
+      await p.send('Input.dispatchTouchEvent', {type:'touchStart',touchPoints:[{x:point.x,y:point.y}]});
+      await sleep(100);
+      check(fake.st.answers.length === before, `${lang}: a press alone sends no approval`);
+      await p.send('Input.dispatchTouchEvent', {type:cancel?'touchCancel':'touchEnd',touchPoints:[]});
+      if (cancel) {
+        await sleep(100);
+        check(fake.st.answers.length === before, `${lang}: a cancelled touch sends no approval`);
+        check(await evaluate(p, `document.body.dataset.sheet==='1' && !document.getElementById('sheet').hidden`), `${lang}: cancel keeps the approval visible`);
+      }
+    };
     const W = WANT[lang];
     const last = async (n) => { for (let i = 0; i < 40 && fake.st.answers.length === n; i++) await sleep(50); return fake.st.answers[fake.st.answers.length - 1]; };
-    // 1. the card: Agent J's own title, the host text in full (match code), a tag, no input field; hold → signed allow
+    // 1. the card: Agent J's own title, the host text in full (match code), a tag, no input field; tap → signed allow
     let id = hex(16);
     await fake.ask({ id, tool: 'passphrase_reset', summary: SUMMARY[lang], ttl: 300, cat: [], why: '' });
     await waitFor(p, `document.body.dataset.sheet === '1' && !document.getElementById('apprBtns').hidden`);
@@ -70,10 +86,11 @@ try {
     const { data } = await p.send('Page.captureScreenshot', { format: 'png' });
     writeFileSync(join(OUT, `passphrase-${lang}.png`), Buffer.from(data, 'base64'));
     let n = fake.st.answers.length;
-    await evaluate(p, `document.getElementById('apprAllow').dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,button:0,pointerType:'touch'}))`);
-    await waitFor(p, `document.body.dataset.sheet==='0'`, 3000);
+    await tap('apprAllow', true); // A cancelled press must leave this password-reset card untouched.
+    await tap('apprAllow');
+    await waitFor(p, `document.body.dataset.sheet==='0' && document.getElementById('sheet').hidden`, 3000);
     let ans = await last(n);
-    check(ans && ans.id === id && ans.ok === true, `${lang}: hold → allow (${JSON.stringify(ans)})`);
+    check(ans && ans.id === id && ans.ok === true, `${lang}: tap → allow (${JSON.stringify(ans)})`);
     check(fake.st.sigOk[fake.st.sigOk.length - 1] === true, `${lang}: the allow is signed by this paired remote`);
     // 2. Deny → a signed deny
     id = hex(16);
@@ -81,7 +98,8 @@ try {
     await waitFor(p, `document.body.dataset.sheet === '1' && !document.getElementById('apprBtns').hidden`);
     await sleep(300);
     n = fake.st.answers.length;
-    await evaluate(p, `document.getElementById('apprDeny').click()`);
+    await tap('apprDeny');
+    await waitFor(p, `document.body.dataset.sheet==='0' && document.getElementById('sheet').hidden`, 3000);
     ans = await last(n);
     check(ans && ans.id === id && ans.ok === false, `${lang}: deny (${JSON.stringify(ans)})`);
     check(fake.st.sigOk[fake.st.sigOk.length - 1] === true, `${lang}: the deny is signed`);
@@ -93,6 +111,7 @@ try {
     const face = JSON.parse(await evaluate(p, `JSON.stringify({tags: [...document.getElementById('askTags').querySelectorAll('.atag')].map((x) => x.textContent),
       title: document.getElementById('sheetTitle').textContent})`));
     check(face.tags.some((x) => x.includes(lang === 'zh' ? '需验证本人' : "verify it's you")), `${lang}: passkey tag (${JSON.stringify(face.tags)})`);
+    check(await evaluate(p, `document.getElementById('apprAllowLbl').textContent`) === (lang === 'zh' ? '确认（验证本人）' : "Confirm (verify it's you)"), `${lang}: user-verification confirmation label remains explicit`);
     check(face.title === W.title, `${lang}: never the sandbox title on this card (${face.title})`);
     await p.dispose();
   }

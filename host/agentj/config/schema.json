@@ -1083,7 +1083,7 @@
    "type": "boolean",
    "default": true,
    "tier": "user",
-   "description": "Wake the main Agent after an idle spell to check background work and to-dos (one model call each) / 空闲一段时间后自动醒来检查后台和待办（每次消耗一次模型调用）",
+   "description": "Check locally first; wake the Agent only for pending work / 先由主机检查，有事才唤醒模型",
    "aliases": [
     "heartbeat",
     "心跳"
@@ -1540,6 +1540,72 @@
    "apply": "hot",
    "verify": "agentj skills suggest",
    "since": "0.25.1"
+  },
+  "heartbeat.quiet_enabled": {
+   "type": "boolean",
+   "default": true,
+   "tier": "user",
+   "description": "Defer routine heartbeat prompts during quiet hours / 安静时段延后常规心跳",
+   "aliases": [
+    "heartbeat quiet",
+    "心跳安静时段"
+   ],
+   "needs": [],
+   "apply": "hot",
+   "verify": "agentj heartbeat status",
+   "since": "0.20.2",
+   "patternHint": "HH:MM (24-hour, local time) or empty"
+  },
+  "heartbeat.quiet_start": {
+   "type": "string",
+   "default": "23:00",
+   "tier": "user",
+   "description": "Quiet hours begin (local HH:MM) / 安静时段开始",
+   "aliases": [
+    "heartbeat quiet start",
+    "心跳安静开始"
+   ],
+   "needs": [],
+   "apply": "hot",
+   "verify": "agentj heartbeat status",
+   "since": "0.20.2",
+   "patternHint": "HH:MM (24-hour, local time) or empty",
+   "pattern": "^(?:[01][0-9]|2[0-3]):[0-5][0-9]$",
+   "maxLength": 5
+  },
+  "heartbeat.quiet_end": {
+   "type": "string",
+   "default": "07:00",
+   "tier": "user",
+   "description": "Quiet hours end (local HH:MM) / 安静时段结束",
+   "aliases": [
+    "heartbeat quiet end",
+    "心跳安静结束"
+   ],
+   "needs": [],
+   "apply": "hot",
+   "verify": "agentj heartbeat status",
+   "since": "0.20.2",
+   "patternHint": "HH:MM (24-hour, local time) or empty",
+   "pattern": "^(?:[01][0-9]|2[0-3]):[0-5][0-9]$",
+   "maxLength": 5
+  },
+  "heartbeat.context_max_tokens": {
+   "type": "integer",
+   "default": 100000,
+   "tier": "user",
+   "description": "Pause automatic heartbeat above this context size; compact first / 上下文超过此值暂停心跳，先压缩",
+   "aliases": [
+    "heartbeat context limit",
+    "心跳上下文上限"
+   ],
+   "needs": [],
+   "apply": "hot",
+   "verify": "agentj heartbeat status",
+   "since": "0.20.2",
+   "patternHint": "HH:MM (24-hour, local time) or empty",
+   "minimum": 1000,
+   "maximum": 2000000
   }
  }
 }

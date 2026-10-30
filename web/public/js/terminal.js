@@ -772,7 +772,9 @@ function onMsg(m) {
   if (m.t === 'term_close') return closed(CLOSE_WHY.includes(m.why) ? m.why : 'host');
 }
 function confirmLine(m) {
-  if (typeof m.line !== 'string' || !HEX32.test(m.n || '') || typeof m.fa_ch !== 'string' || !Number.isInteger(m.seq) || !S.fa) return;
+  // P573: `uv` 1 = Face ID, 0 = the button alone (the signed line still goes); no `uv` (an older host) = Face ID as before
+  const uv = m.uv === 0 ? 0 : 1;
+  if (typeof m.line !== 'string' || !HEX32.test(m.n || '') || !Number.isInteger(m.seq) || (uv && (typeof m.fa_ch !== 'string' || !S.fa))) return;
   const why = (lang() === 'en' && typeof m.why_en === 'string' ? m.why_en : typeof m.why === 'string' ? m.why : '').slice(0, 400);
   const line = m.line.slice(0, LINE_MAX);
   // P414 (H1): a line the Agent filled in and the owner sent unedited — always this card, whatever the classifier said
@@ -780,15 +782,16 @@ function confirmLine(m) {
   const bangSid = S.bang && S.bang.seq === m.seq ? S.bang.sid : null;   // §37.12: the signed resend keeps `bang`
   openSheet({ kind: agent ? 'agent' : 'confirm', title: t(agent ? 'p414.agentTitle' : 'p408.confirmTitle'), pre: line,
     text: agent ? t('p414.agentText') : why ? t('p408.confirmWhy', { why }) : '', yes: t('p408.run'), no: t('sheet.cancel'),
-    ttl: 120000, pk: { fa: S.faS || null }, onExpire: () => { out(t('p408.expired') + '\n'); notRun(m.seq); if (bangSid) bangEnd(bangSid); },
+    ttl: 120000, pk: uv ? { fa: S.faS || null } : null, onExpire: () => { out(t('p408.expired') + '\n'); notRun(m.seq); if (bangSid) bangEnd(bangSid); },
     onNo: () => { out(t('p408.notRun') + '\n'); notRun(m.seq); if (bangSid) { bangEnd(bangSid); restore(line); } },
     onYes: () => {
       let p;
-      try { p = assertFa(m.fa_ch, S.fa, null); } catch { p = Promise.reject(new Error('webauthn')); }
+      if (!uv) p = Promise.resolve({ fa: undefined });
+      else try { p = assertFa(m.fa_ch, S.fa, null); } catch { p = Promise.reject(new Error('webauthn')); }
       sheetBusy(true);
       p.then(async ({ fa }) => {
         const signed = await signCtl('term_line', { id: S.id, line }, m.n);
-        send({ t: 'term_line', id: S.id, seq: m.seq, line, ...signed, fa, ...(bangSid ? { bang: bangSid } : {}) });
+        send({ t: 'term_line', id: S.id, seq: m.seq, line, ...signed, ...(fa ? { fa } : {}), ...(bangSid ? { bang: bangSid } : {}) });
         // §37.12: the host's 120 s for a 「!」 line start when it runs (now), not when it was first sent
         if (bangSid && S.bang && S.bang.sid === bangSid) { clearTimeout(S.bang.timer); S.bang.timer = setTimeout(() => bangEnd(bangSid), BANG_MS); }
         closeSheet();

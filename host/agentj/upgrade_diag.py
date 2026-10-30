@@ -119,14 +119,51 @@ def plan_reason(e: BaseException) -> str:
     return "signature_or_hash_mismatch"
 
 
+# P586: immutable metadata vocabulary, never arbitrary exception messages or receipt content.
+SUBREASONS = frozenset(('hash_mismatch', 'signature_invalid', 'untrusted_key', 'comment_mismatch',
+                       'identity_mismatch', 'bad_zip', 'cache_receipt_invalid', 'internal_error'))
+ARTIFACT_STAGES = frozenset(('wheel', 'sha256', 'signature', 'identity', 'cache'))
+PLAN_CODES = frozenset(('artifact_hash_mismatch', 'artifact_signature_mismatch', 'artifact_identity_mismatch',
+                        'artifact_too_large', 'insecure_update_redirect', 'unsupported_install',
+                        'upgrade_cache_unreadable', 'bad_version'))
+PLAN_EXCEPTIONS = frozenset(('ValueError', 'MinisignError', 'BadZipFile', 'KeyError', 'TypeError', 'AttributeError',
+                            'UnicodeDecodeError', 'URLError', 'HTTPError', 'TimeoutError', 'OSError',
+                            'ConnectionError', 'ConnectionResetError', 'FileNotFoundError', 'PermissionError'))
+
+
+def artifact_fields(res):
+    """Only bounded enums and public artifact SHA256 digests may leave the verification boundary."""
+    out = {}
+    for key, allowed in (('subreason', SUBREASONS), ('artifact_stage', ARTIFACT_STAGES),
+                         ('cache_status', ('miss', 'invalid'))):
+        value = res.get(key)
+        if isinstance(value, str) and value in allowed:
+            out[key] = value
+    for key in ('artifact_sha256', 'stated_sha256'):
+        value = res.get(key)
+        if isinstance(value, str) and re.fullmatch(r'[0-9a-f]{64}', value):
+            out[key] = value
+    return out
+
+
+def plan_fields(e):
+    evidence = getattr(e, 'artifact_diagnostic', {})
+    out = artifact_fields(evidence if isinstance(evidence, dict) else {})
+    if 'subreason' not in out:
+        codes = {'artifact_hash_mismatch': 'hash_mismatch', 'artifact_signature_mismatch': 'comment_mismatch',
+                 'artifact_identity_mismatch': 'identity_mismatch', 'upgrade_cache_unreadable': 'cache_receipt_invalid'}
+        out['subreason'] = codes.get(str(e), 'internal_error') if isinstance(e, ValueError) else 'internal_error'
+    return out
+
+
 def plan_detail(e: BaseException) -> str:
-    """A fixed, non-identifying line for the download step: exception type (+ HTTP status), never its message (URLs,
-    proxies and paths can be in there)."""
-    code = getattr(e, "code", None)
+    """Fixed exception classes / codes only; no exception text, paths, URLs or receipt content."""
+    code = getattr(e, 'code', None)
     name = type(e).__name__
-    if isinstance(e, ValueError) and REASON_RE.fullmatch(str(e) or "-"):
+    name = name if name in PLAN_EXCEPTIONS else 'Exception'
+    if isinstance(e, ValueError) and str(e) in PLAN_CODES:
         return f"{name}: {e}"
-    return f"{name}" + (f" HTTP {code}" if isinstance(code, int) else "")
+    return name + (f" HTTP {code}" if type(code) is int and 100 <= code <= 599 else '')
 
 
 def redact(text: str, identity=None) -> str:
@@ -188,6 +225,7 @@ def entry(res: dict, now: float | None = None) -> dict | None:
     if result != "ok":
         rec["step"] = res["step"] if res.get("step") in STEPS else "install"
         rec.update(installer_fields(res))
+        rec.update(artifact_fields(res))
         if res.get("stderr_tail"):
             rec["stderr_tail"] = str(res["stderr_tail"])[-TAIL_MAX:]
         if res.get("detail"):
@@ -306,7 +344,7 @@ def body(res: dict, kind: str | None = None) -> str:
              + (f" · rollback: {res['rollback']}" if res.get("rollback") else "")
              + (f" · service: {res['service']}" if res.get("service") else ""),
              f"install: {kind or '?'} · {_platform()}"]
-    for key, value in installer_fields(res).items():
+    for key, value in {**installer_fields(res), **artifact_fields(res)}.items():
         lines.append(f"{key}: {value}")
     checks = failed_checks(res)
     if checks:

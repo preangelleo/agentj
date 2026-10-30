@@ -30,8 +30,14 @@ HOST_CARDS = tuple(tool for tool in policy_registry.HOST_TOOLS if not tool.start
 # not an approval layer (pairing, sandbox, login rescue, resident hooks, the terminal); a same-owner change is Agent J's own ②
 # (review B1) changing Agent J's own settings, quota account or a paused automation is not an approval the harness has —
 # it keeps its card
-HARNESS_KEEPS = tuple(tool for tool in HOST_CARDS if tool != "AgentJSameOwnerAction") + (
-    "agentj config", "agentj quota switch", "agentj automation resume", "agentj tasks migrate")
+# P573 (#386 ⑤): the OpenCode doom-loop card, a quota account switch and resuming a paused automation are a button that
+# 「全放行」 does not ask; what lets the Agent widen its own permissions (`agentj config` security keys, resident hooks,
+# pairing, the sandbox launch, login rescue, the web terminal) still asks there.
+HARNESS_FREE = ("AgentJSameOwnerAction", "DoomLoop")
+HARNESS_KEEPS = tuple(tool for tool in HOST_CARDS if tool not in HARNESS_FREE) + ("agentj config", "agentj tasks migrate")
+# P573 (e): harness_floor reasons that keep Face ID — the Agent approving itself or a key going out; a fetch run in the
+# same call ("injection") is one button instead (still asked under 「全放行」)
+FLOOR_FACE = ("hooks", "settings", "credentials")
 
 
 PARK_GRACE = 20          # seconds a card waits for a remote to come online before the Agent is told nobody is there

@@ -65,9 +65,10 @@ def media_refs(files) -> str:
 def notice(host, source: str, text: str, files, manifest: str) -> None:
     lang = "en" if getattr(host, "lang", "zh") == "en" else "zh"
     fallback, card, files = build(source, text, files, manifest, lang)
+    card["_input"] = privacy.owner_text(text or "")  # local-only full input; Host consumes it before wire/storage
     fn = getattr(host, "channel_notice", None)
     if callable(fn):
-        fn(fallback, card, files)
+        return fn(fallback, card, files)
     else:
         host.agent_notice(fallback)
 
@@ -79,12 +80,15 @@ def attach(host, page, files) -> None:
         fn(page, list(files))
 
 
-def reply(host, source: str, text: str, files=()):
+def reply(host, source: str, text: str, files=(), *, page=None):
     """P557: an owner-channel avatar answered in its channel → the same answer on the Web App's main conversation, as a
     `sys` page under the 「微信分身已回复」 line, with what it attached. → the page (or None)."""
     if source not in SOURCES:
         raise ValueError("channel_source")
     head = REPLIED[source][1 if getattr(host, "lang", "zh") == "en" else 0]
-    page = host.hist_add({"k": "sys", "via": source, "text": head}, privacy.owner_text(text or ""), "done")
+    if isinstance(page, dict) and type(page.get('id')) is int:
+        host.hist_update(page['id'], text=privacy.owner_text(text or ""), end="done")
+    else:
+        page = host.hist_add({"k": "sys", "via": source, "text": head}, privacy.owner_text(text or ""), "done")
     attach(host, page, files)
     return page

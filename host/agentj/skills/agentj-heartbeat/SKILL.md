@@ -4,13 +4,14 @@ description: The heartbeat — Agent J wakes you after an idle spell to check ba
 ---
 
 The heartbeat is Agent J's own wake-up call, the same on Claude Code, Codex and OpenCode. When nothing has happened
-for the interval (default 60 minutes: no phone message, no turn, no desktop input), the computer sends you one message
-starting with `〔Agent J 心跳〕` (English: `[Agent J heartbeat]`). It is not the owner's words and grants nothing new.
+for the interval (default 60 minutes: no phone message, no turn, no desktop input), the host checks local records without
+calling a model. With nothing to handle it logs a skipped check. When a reason needs attention and cost protection allows it,
+the computer sends you one message, including the wake-up reasons, starting with `〔Agent J 心跳〕` (English: `[Agent J heartbeat]`). It is not the owner's words and grants nothing new.
 It never comes while you work, a message waits, an approval card is open, a compaction runs, the stop switch is on, or
 in the nightly upgrade window (03:00–05:00).
 
 Optionally there is also one beat a day at a fixed local time (`heartbeat.daily_at`, "HH:MM", off by default). It waits
-for the same conditions but still comes the same day; if Agent J started more than an hour after that time (computer
+for the same conditions, local precheck and cost protection; a call that day is not guaranteed; if Agent J started more than an hour after that time (computer
 off), the day is skipped. A restart never gives two daily beats on one day, and a regular beat at or after the time
 counts as the day's beat. It follows the main switch: `agentj heartbeat off` silences it too. You cannot tell a daily
 beat from a regular one by its text — handle both the same way.
@@ -94,9 +95,17 @@ agentj heartbeat prompt reset                # back to the default template
   group member or another non-owner source is being handled, changes are refused.
 - The next heartbeat carries the full new text (its hash changed).
 
-Every heartbeat costs one model call; on a metered plan a longer interval costs less. The phone's Settings → Heartbeat
+Empty prechecks cost no model call; an actual wake-up uses model quota. Tap usage in the phone’s top bar for accumulated heartbeat input/output tokens and turns; missing tool usage stays unknown. The phone's Settings → Heartbeat
 has the same switch, the idle interval as a drop-down (30 minutes … 24 hours, or 「自定义…」/ "Custom…" for 5–1440
 minutes) and 「每天固定时间唤醒」/ "Also wake up every day at" with a time.
+
+## Cost protection / 费用保护
+
+The host prechecks due to-dos/calendar entries, completion reports, failed local units and pending avatar messages, plus changed heartbeat prompts. A wake-up carries the detected reasons; this is a local signal check, not a claim that the entire watchlist was reviewed. Quiet hours default to 23:00–07:00 in host-local time (`heartbeat.quiet_enabled`, `quiet_start`, `quiet_end`), editable under Settings → Heartbeat. Non-urgent prompt-change reasons wait; due items, reports and pending avatar messages can still wake you.
+
+Automatic heartbeats pause for context above `heartbeat.context_max_tokens` (default 100000) or a recognised expensive model. The host notifies the owner to use `/compact` through the existing handoff flow. Do not clear the chat or promise automatic compaction. Successful compaction releases the initial expensive-model guard for this conversation; measured context above the threshold still pauses beats.
+
+主机先查到期待办/日历、完成报告、失败单元、待处理分身消息等本机信号；没有发现事情就不调用模型。有事才在心跳里附上原因，这不表示整份巡检清单都已经查过。默认按主机本地时间 23:00–07:00 延后提示变更等非紧急原因；到期事项、报告和待处理消息仍可唤醒。在设置 → 心跳调整安静时段。上下文超过 `heartbeat.context_max_tokens`（默认 100000）或识别为高价模型时，先暂停自动心跳并提示主人按原有交接流程 `/compact`；不要自动清空或承诺自动压缩。本次会话成功压缩后解除首次高价模型保护；实测上下文仍超过阈值时继续暂停。点手机顶栏用量查看心跳输入/输出 token 和轮次，工具没有提供的用量标未知。
 
 ## Background work ended (P262)
 

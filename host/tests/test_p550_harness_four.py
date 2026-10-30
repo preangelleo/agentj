@@ -107,8 +107,8 @@ class Kinds(unittest.TestCase):
         got = {at: self.keeps(tool, inp) for at, tool, inp, _ in CARDS}
         self.assertEqual(got, {at: kind for at, _t, _i, kind in CARDS})
         self.assertEqual([at for at, k in got.items() if k], ["15:26:30"])          # 20 → 1 Face ID
-        # the default level still treats them as before (P551): the level alone narrows ③
-        self.assertGreaterEqual(sum(reg.main_requirement(t, _inp(t, i)) == "uv" for _a, t, i, _k in CARDS), 12)
+        # P573 (#386 ⑤): the standard level asks Face ID for the same one step now (the rest is a button or nothing)
+        self.assertEqual([a for a, t, i, _k in CARDS if reg.main_requirement(t, _inp(t, i)) == "uv"], ["15:26:30"])
 
     def test_four_kinds_stay(self):
         for tool, inp, kind in STAYS:
@@ -214,7 +214,7 @@ class AskFollowsTheFour(Base):
 
     def test_default_level_unchanged(self):
         self.ask("printf 'Host x\\n' >> ~/.ssh/config")
-        self.assertTrue(self.cards()[-1]["passkey_required"])
+        self.assertNotIn("passkey_required", self.cards()[-1])     # P573: a credential file written is one button
         self.assertEqual(reg.main_requirement("Bash", {"command": "agentj revoke 3f2a"}), "uv")    # a seat is ③ here too
 
 

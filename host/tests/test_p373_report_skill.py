@@ -47,8 +47,9 @@ class Skill(unittest.TestCase):
     def test_final_approvals_and_freeze_are_explicit(self):
         text = SKILL.read_text(encoding="utf-8")
         self.assertNotIn("no approval needed", text)
-        for phrase in ("final-message passkey approval required", "Workspace template names resolve before approval",
-                       "自定义模板在审批期间有变化", "发给主人也需要"):
+        # P573 (#386-3, replaces P503's "final-message approval … 发给主人也需要"): only mail to others gets a card
+        for phrase in ("final-message approval", "Workspace template names resolve before approval",
+                       "自定义模板在审批期间有变化", "只发给主人本人（--to-owner）不弹卡", "by default"):
             self.assertIn(phrase, text)
 
     def test_capability_points_recurring_reports_here(self):
