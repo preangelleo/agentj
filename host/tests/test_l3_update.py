@@ -400,7 +400,8 @@ class Sbpl(unittest.TestCase):
             unset = a[i + 1:]
             for k in ("TMUX", "SSH_AUTH_SOCK", "DISPLAY", "AGENTJ_STATE_DIR"):
                 self.assertIn(k, unset[1::2])
-            self.assertNotIn("DBUS_SESSION_BUS_ADDRESS", unset[1::2])
+            # P591: shared launch-environment sanitization removes bus discovery on every platform.
+            self.assertIn("DBUS_SESSION_BUS_ADDRESS", unset[1::2])
             with mock.patch.object(sys, "platform", "darwin"):
                 w = fence.wrap(st, ["claude", "-p"], d)
                 self.assertEqual((w[0], w[-2:]), (fence.SANDBOX_EXEC, ["claude", "-p"]))

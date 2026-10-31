@@ -1,27 +1,6 @@
 """P254: the quota steward — each harness's weekly quota pace and reset opportunities, in the heartbeat and the morning brief.
 
-Owner (2026-10-14): 「所有的 Agent J 都应该在自己的 routine job 里查一下，他有义务提醒用户……一般的额度是分 7 天……每天可以用
-14%，如果平均每天用不到 14%，就提醒用户……可以多给你派点活……到了后半周，剩余的额度更多的时候，可以给用户派大活……Reset 按钮……
-要尽早提醒用户……如果额度消耗到底这个见底了，马上 Reset……有些 Command line 查不出来，查不出来就算了，但是只要有这个信息，
-就有这个提醒的义务。」
-
-Sources — local, read-only, official only (no web cookies, no private endpoints, no credentials):
-- Claude Code: the `rate_limits.seven_day` {used_percentage, resets_at} Claude Code itself feeds its status-line command,
-  already tapped by `agentj config claude-statusline on` into `<state>/claude-statusline/<session>.json` (newest file wins).
-- Codex: the `rate_limits` event Codex writes into its own session logs (`$CODEX_HOME/sessions/**/rollout-*.jsonl`): the
-  window with `window_minutes == 10080`, plus `credits` (has_credits / balance) when present.
-- OpenCode: none — OpenCode keeps no provider quota locally (it depends on the provider behind it): unknown.
-- "Extra resets" (the owner's reset button): no harness exposes them locally (Claude Code shows its reset grant only in its
-  own UI, fed by a non-public endpoint; Codex has none). So the owner — or the main Agent at the owner's word — records
-  them: `agentj quota reset add claude --expires 2026-10-20`. Recorded data is data: the reminder duty applies to it too.
-
-RESUME 1 (2026-10-14): the 5-hour window too — Claude's `rate_limits.five_hour` (tap key `h5`), Codex's 300-minute window;
-at ≥ 80 % it warns that a big job may be cut off by the server at any moment, once per window, naming any other harness
-whose own readings still show headroom (new work could go there). OpenCode providers expose no 5-hour window.
-
-Rules are deterministic (`assess`), never a model's guess; each (harness, kind) reminds at most once per local day
-(`<state>/quota.json`), and `quota.reminders` (default on) turns all of them off. A failing source is `unknown`, never an
-error. Projections are labelled as such and never shown on the dashboard (only exact numbers go there).
+Developer reference: documentation/notes/P0263-HOST-REFERENCE.md#quota.
 """
 from __future__ import annotations
 

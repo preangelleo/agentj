@@ -1,10 +1,11 @@
 """#114 verification: the two reported friend messages pass verbatim (guard, local `friends tell` precheck and the receiving
 host), real credential requests / credential-bearing messages stay blocked, and a block reaches the sender with advice."""
 import _hermetic  # noqa: F401
+import json
 import unittest
 
 from agentj import peer_guard
-from test_p71_peer_service import Base, pmsg, settle
+from test_p71_peer_service import Base, pmsg, settle_pending
 
 REDIS = "Redis 密码挪进配置文件那件事，进展如何？"
 REDIS_FULL = "Warden，上次说的 Redis 密码挪进配置文件那件事，进展如何？"
@@ -38,11 +39,20 @@ class Guard(unittest.TestCase):
 class Service(Base):
     async def test_reported_messages_reach_the_receiving_agent(self):
         f = self.friend()
+        mids = []
         for text in (REDIS, NINE):
-            self.svc.on_app(f.id, pmsg(text))
-        await settle()
+            message = pmsg(text)
+            mids.append(message["mid"])
+            self.svc.on_app(f.id, message)
+            await settle_pending(self.svc)
+            # Ordinary friends retain the default 10-second interval guard.
+            self.clock.t += 11
         packs = [o for _, o in self.net.of("pack")]
         self.assertNotIn("blocked", [o.get("s") for o in packs])
+        self.assertEqual(len(self.sess.calls), 2)
+        self.assertEqual([json.loads(call[2])["text"] for call in self.sess.calls], [REDIS, NINE])
+        for mid in mids:
+            self.assertEqual([o.get("s") for o in packs if o.get("mid") == mid].count("replied"), 1)
 
     async def test_sender_precheck_passes_reported_and_refuses_real_with_advice(self):
         f = self.friend()

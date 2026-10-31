@@ -43,8 +43,10 @@ class Fence(unittest.TestCase):
     def test_general_config_writable_credentials_read_only(self):
         a = self.argv()
         ro = {a[i + 1] for i, x in enumerate(a) if x == "--ro-bind" and a[i + 1] != "/dev/null"}
-        for rel in (".bashrc", ".zshrc", ".config/autostart", ".config/systemd"):
+        for rel in (".bashrc", ".zshrc", ".config/autostart"):
             self.assertNotIn(os.path.realpath(self.home / rel), ro, f"F14: {rel} is the owner's general config")
+        self.assertIn(os.path.realpath(self.home / ".config/systemd"), ro,
+                      "P591: user manager configuration cannot delegate execution outside the fence")
         self.assertIn(os.path.realpath(self.home / ".ssh/authorized_keys"), ro, "who may log in: read-only")
 
     def test_service_manager_and_bus_come_back_keyring_stays_hidden(self):
@@ -52,11 +54,11 @@ class Fence(unittest.TestCase):
         rt = os.path.realpath(self.rt)
         self.assertIn(rt, [a[i + 1] for i, x in enumerate(a) if x == "--tmpfs"], "runtime dir still private")
         binds = [a[i + 1] for i, x in enumerate(a) if x == "--bind"]
-        self.assertIn(os.path.join(rt, "systemd"), binds)
-        self.assertIn(os.path.join(rt, "bus"), binds)
+        self.assertNotIn(os.path.join(rt, "systemd"), binds, "P591: no outside-fence manager authority")
+        self.assertNotIn(os.path.join(rt, "bus"), binds, "P591: no raw session-bus route to the manager")
         self.assertNotIn(os.path.join(rt, "keyring"), binds, "credential sockets stay hidden")
         unset = a[a.index("--unsetenv"):]
-        self.assertNotIn("DBUS_SESSION_BUS_ADDRESS", unset)
+        self.assertIn("DBUS_SESSION_BUS_ADDRESS", unset)
         for k in ("SSH_AUTH_SOCK", "XAUTHORITY", "AGENTJ_STATE_DIR", "GNOME_KEYRING_CONTROL"):
             self.assertIn(k, unset)
 

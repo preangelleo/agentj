@@ -1,6 +1,6 @@
-# Agent J 0.26.2a1 release notes
+# Agent J 0.26.3a1 release notes
 
-Host 0.26.2a1 / install 0.28.2; phone-web scope.
+Host 0.26.3a1 / install 0.28.3; phone-web scope.
 Phone parity must pass --strict. Full Android/Telegram parity is incomplete.
 Full Android/Telegram parity is incomplete.
 No APK is included in this release. Android source is for review, not a released app.
@@ -8,21 +8,13 @@ No APK is included in this release. Android source is for review, not a released
 Publication status: local preparation only. Live site verification is DEFERRED until
 the public commit and tag are pushed, the site is deployed, and cold installation passes.
 
-Release order: C Dashboard support knowledge, then A signed host/site/downloads and front Worker, immediately followed by B phone web. No new D1 migration or relay change. Preserve existing revocation, action approval, checkout and seat-transfer records; never replay migrations. Qualification covers the seven merged candidates, affected host suites and one source-bound full parity run with exact failed-item continuation. No full-host or QA-J acceptance is claimed. Local preparation only; Jev review and publication remain the operator's steps.
+Scope: P590 same-owner admission visibility and heartbeat signals; P591 Linux user service bus isolation, protected service configuration and supported diagnostics. Release order: C Dashboard generated support knowledge (no new D1 migration), then A signed host/site/downloads and front Worker, immediately followed by B phone web. No relay change. On failure restore compatible v0.26.2a1 host/site/phone assets and the captured Dashboard Worker version; otherwise repair forward. Preserve0036 revocation state,0037 action UV data,0038 checkout pending records,0041 seat transfer records and local security journals permanently. Never replay migrations or restore an older database snapshot. Qualification requires the two frozen candidates, freshly derived affected host and version-reader suites, one source-bound full strict parity run, and exact failed-item continuation. Full-host, QA-J, physical Mac and customer-machine acceptance remain unperformed. Local preparation only; actual public export, secret scans, root public Jev and publication receipts remain required. Synchronize Olares receivers after A under the existing operator authorization.
 ## Changes
 
-- [all] Authorize the listed steps of a same-owner task once. Keys travel through a dedicated encrypted channel; steps outside the grant still require approval.
-- [all] Heartbeats check local tasks, calendar items and unfinished work before calling a model. Idle checks use no model tokens; measured heartbeat usage appears in the usage panel.
-- [all] Files and replies share one reader. Input cards retain the original words and source for WeChat, Telegram, email and same-owner tasks.
-- [codex,opencode] Tool switching explains the limits of a fallback handoff excerpt after a timeout. Isolated sessions can query the host result for the same switch.
-- [all] Malformed upgrade-cache receipts trigger a fresh download instead of a misleading verification failure. Signature and package identity checks remain mandatory.
-- [all] Unclaimed same-owner tasks wait while the main Agent is busy or disconnected. Claimed tasks and unknown outcomes are never replayed automatically.
-- [all] 同主人设备可以用一份任务授权单确认具体步骤，密钥通过专用加密通道传递；授权范围外的操作仍需确认。
-- [all] 心跳先在本机检查待办、日历和未完成事项；没事就不调模型，用量弹窗里能看心跳消耗。
-- [all] 文件与回复用同一款阅读器；输入卡保留微信、Telegram、邮件和同主人任务的原文与来源。
-- [codex,opencode] 切换等待超时，说明交接摘录有局限；隔离会话能查同次切换的主机结果。
-- [all] 修复升级缓存收据格式异常导致的误报校验失败；损坏缓存时重新下载，完整签名与身份校验机制依然保留。
-- [all] 主 Agent 忙了或者断了，同主人没认领的任务就留着等；已经认领的，或者结果还看不出来的，就不会自动重放。
+- [all] Same-owner tasks show admission and waiting status. Heartbeats show unfinished work so you can check whether a task reached the main Agent.
+- [all] Linux isolation blocks access to the user service bus and changes to service configuration. Diagnostics report results only for supported checks.
+- [all] 同主人任务显示接收与等待状态，心跳显示未完成事项，方便核对任务是否进入主 Agent。
+- [all] Linux 隔离区阻止访问用户服务总线与修改服务配置；诊断按实际支持的检查报告结果。
 
 ## Material acceptance limits
 

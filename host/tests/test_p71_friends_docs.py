@@ -32,7 +32,7 @@ class FriendsSkill(unittest.TestCase):
         # every command line in the skill uses a §17.9 subcommand (another agent owns cli.py; this pins the contract)
         subs = {"id", "card", "add", "list", "history", "tell", "group", "groups", "block", "unblock", "remove",
                 "discoverable", "profile", "usage", "on", "off", "context", "status", "relay-policy", "cancel", "asks",
-                "pick", "pick-rules", "say", "devices", "reports", "approve-actions"}   # Includes concrete task plans.
+                "pick", "pick-rules", "say", "devices", "reports", "approve-actions", "requests"}   # Includes concrete task plans.
         for sub in re.findall(r"agentj friends ([\w-]+)", t):
             self.assertIn(sub, subs, sub)
 

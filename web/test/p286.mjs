@@ -74,6 +74,7 @@ try {
   const clip=await page.evaluate(()=>navigator.clipboard.readText().catch(()=>null));
   if(clip!==null)check(clip===A.slice(10,16).trim(),'the clipboard holds the latest selection: '+clip);
   await unselect(page);await page.keyboard.press('Escape');await page.waitForSelector('#rd',{state:'hidden'});
+  await page.waitForTimeout(500); // The reader deliberately swallows clicks for 350 ms after closing.
   check(await nq(page)===5,'closing the reader keeps the quotes (Esc closed the reader first)');
   // five equal chips, each with its own ×, words cut with an ellipsis
   const g=await page.$$eval('#qbar .qc',cs=>cs.map(c=>{const r=c.getBoundingClientRect(),w=c.querySelector('.qw');return {w:r.width,l:r.left,r:r.right,x:!!c.querySelector('.qcx'),cut:w.scrollWidth>w.clientWidth};}));

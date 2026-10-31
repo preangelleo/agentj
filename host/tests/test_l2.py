@@ -307,11 +307,11 @@ class FencedChain(unittest.TestCase):
                                                                                     *fence.code_paths()] if p.startswith("/tmp/")}
             self.assertEqual(set(r["tmp"]), under_tmp,
                              "a private /tmp: only the path to the agent's folder (and agentj's code, read-only)")
-        # F14: the private runtime dir carries back only the user's service manager and session bus
+        # P591: the private runtime dir does not expose the user service manager or session bus
         self.assertLessEqual(set(r["runtime"]), set(fence._RUNTIME_BACK))
         rt = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
         if sys.platform != "darwin" and os.path.isdir(os.path.join(rt, "systemd")):
-            self.assertIn("systemd", r["runtime"], "F14: systemctl --user reachable")
+            self.assertNotIn("systemd", r["runtime"], "P591: no unfenced user manager")
         for k, v in r.items():
             if k.startswith("write ~/"):
                 self.assertTrue(v.startswith("open:"), f"F14: {k} is the owner's general configuration")
@@ -667,7 +667,7 @@ class FenceConfig(unittest.TestCase):
         self.assertFalse(any(pkg == r or pkg.startswith(r + "/") for r in ro), "F14: self-code is writable")
         for k in ("TMUX", "SSH_AUTH_SOCK", "WAYLAND_DISPLAY", "DISPLAY", "XAUTHORITY", "AGENTJ_STATE_DIR"):
             self.assertIn(k, a[a.index("--unsetenv"):])
-        self.assertNotIn("DBUS_SESSION_BUS_ADDRESS", a, "F14: the session bus stays reachable (service management)")
+        self.assertIn("DBUS_SESSION_BUS_ADDRESS", a[a.index("--unsetenv"):], "P591: do not inherit the session bus")
 
 
 class Package(unittest.TestCase):

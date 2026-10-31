@@ -139,3 +139,7 @@ The factory watchlist checks all local scheduled-job logs and reports since the 
 Upgrades preserve your heartbeat.md. When doctor or Settings reports a factory checklist update, **Merge factory checklist** appends the missing checklist while keeping your text.
 
 The main Agent can run `agentj inbox avatar-log --since 2h` (or an ISO date/time; add `--json`) for retained local exchanges, replies, handling outcomes and delivery status. Cover the period since the last heartbeat. Missing historical replies or delivery evidence are unknown. Retention and size limits apply; truncation and unavailable channels are explicit. Absence of a record never proves everything was handled.
+
+好友巡检先读 `agentj friends list --json` 与 `agentj friends requests --json`，只看申请和转交状态元数据，不认领或自动重发。零模型预检会为收到的好友申请、未完成 incoming pending 和最近一小时内变为失败的请求提供理由；老终态不会永久唤醒。submitted 不证明模型已执行，claimed/unknown 必须先核实，不能重放。
+
+Inspect `agentj friends list --json` and `agentj friends requests --json` without claiming or resending. Local preflight signals incoming invitations, pending tasks and failures updated within one hour; old terminal records do not wake every heartbeat. Submitted is queue admission only; verify claimed/unknown work before any resend.

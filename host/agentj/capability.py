@@ -1,33 +1,6 @@
 """Long tasks (0.18, ADR-A193): registry, opening card, brief and CEO report.
 
-agentj-capability drives local-only contracts: no new owner command/button, no clear
-account-dashboard/D1/log copy (PR1). Full details: ARCHITECTURE ADR-A193, ltschema,
-the packaged skill and the signature domains below.
-
-Registry: state/capabilities/registry.json (0700/0600). Only configured harness/CLI
-allowlist, packaged/root skills, .mcp.json, web, local files, paired phone, secret
-names and CEOs. No home crawl/history/secret reads. Trusted structured adapters
-cannot pay/send/delete/write credentials; ready requires verification. TTL browser
-15min, credential 24h, CLI/skill/MCP 7d or source change; CEO checked on dispatch.
-Expired entries recheck automatically, without asking again.
-
-Opening card: <=5 required items; optional never blocks. Overflow refuses and narrows
-the goal. Paired-device Ed25519 signs canonical agentj.preflight.v1 binding the full
-channel/device/card/task/revision/digest/nonce/expiry/action/picks context. TTL 30min,
-nonce once. Expired/replayed/unpaired/changed-brief answers grant nothing; submit
-rechecks before ready. Secrets use the separate existing secret card.
-
-brief.json beside task.json v1 joins its scope digest to tasks.contract_sha. Owner
-scope decisions void prior enable; wording/technical edits do not. New workflows and
-schedules need signed agentj.brief.v1 on the same card; scheduling also requires its
-own verified/logged task_on control. Any failure enables nothing. Only host-state
-receipts count, never an Agent-written confirmed:true.
-
-reports/report.json must match brief task/revision/digest/acceptance ids, VERDICT and
-readable artifacts. Dispatch rechecks brief/receipt/capabilities and queued/running
-idempotency before Scheduler. No owner lock or danger.py exception: spend/delete/
-send/credentials/price remain per-action. The fence uses agentperm/capability.sock;
-without serve, list/sync/check/digest/report-check remain local read-only commands.
+Developer reference: documentation/notes/P0263-HOST-REFERENCE.md#capability.
 """
 from __future__ import annotations
 

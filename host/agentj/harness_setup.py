@@ -1,30 +1,6 @@
 """P219: the one-time "first run" answers a harness would otherwise ask in a terminal nobody is watching.
 
-Measured on Claude Code 2.1.296 (fresh HOME, Ubuntu 24.04 container, root and non-root): Agent J's own `claude -p
---input-format stream-json` never stops for the trust-this-folder dialog, the onboarding / theme picker, the bypass-mode
-confirmation or the custom API key question — those are interactive-terminal screens. They DO stop the owner's own
-terminal session, which is what a shared session (and the owner's next `claude`) attaches to, so `agentj agent <harness>`
-and serve's start answer them once, ahead of time:
-
-  Claude Code  `<CLAUDE_CONFIG_DIR or ~>/.claude.json`: hasCompletedOnboarding, a theme, and the working folder's
-               projects[<dir>].hasTrustDialogAccepted / hasCompletedProjectOnboarding;
-               `<CLAUDE_CONFIG_DIR or ~/.claude>/settings.json`: skipDangerousModePermissionPrompt (only the confirmation
-               screen of a bypass mode the owner turns on themselves — it grants nothing).
-  Codex        `<CODEX_HOME or ~/.codex>/config.toml`: [projects."<dir>"] trust_level = "trusted".
-  OpenCode     nothing to answer.
-
-Merge only: a key the owner set is never changed (an explicit Codex "untrusted" stays), nothing is removed, a symlink or
-a file that is not a JSON object / valid TOML is left alone and reported. API keys are never read: Claude Code's custom
-API key approval stores part of the key, so it is not pre-answered (and `-p` uses the key without asking).
-
-What DID stop the first message (measured, the reasons this module also exists):
-  * root + `permissions.defaultMode: bypassPermissions` (setup-agents' full-access default) → Claude Code exits at once
-    ("--dangerously-skip-permissions cannot be used with root/sudo privileges") — `root_bypass()`; the adapter then starts
-    it with `--permission-mode default` (stricter, never wider).
-  * the model service unreachable / failing → Claude Code retries silently up to 10 times (≈ 3 min, only `api_retry`
-    events) — the adapter turns those into a phone card (agent.py).
-  * no bubblewrap (stock WSL2 Ubuntu) → the fence refuses; the phone gets the 「本次不隔离运行」 card — `fence_deps()`.
-  * a model the account / relay does not serve (400 "Claude Fable 5.1 is not supported") — DEFAULT_CLAUDE_MODEL.
+Developer reference: documentation/notes/P0263-HOST-REFERENCE.md#harness-setup.
 """
 from __future__ import annotations
 

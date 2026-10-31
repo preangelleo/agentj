@@ -9,7 +9,8 @@ import sys
 
 _HIDE_ENV = ("WAYLAND_DISPLAY", "DISPLAY", "XAUTHORITY", "HYPRLAND_INSTANCE_SIGNATURE",
              "SWAYSOCK", "I3SOCK", "TMUX", "TMUX_PANE", "STY", "SSH_AUTH_SOCK", "GNOME_KEYRING_CONTROL", "KITTY_LISTEN_ON",
-             "AGENTJ_STATE_DIR", "AGENTJARVIS_STATE_DIR", "EMACS_SOCKET_NAME", "SCREENDIR", "JUPYTER_RUNTIME_DIR")
+             "AGENTJ_STATE_DIR", "AGENTJARVIS_STATE_DIR", "EMACS_SOCKET_NAME", "SCREENDIR", "JUPYTER_RUNTIME_DIR",
+             "DBUS_SESSION_BUS_ADDRESS", "DBUS_STARTER_ADDRESS", "DBUS_STARTER_BUS_TYPE", "SYSTEMD_BUS_ADDRESS")
 # terminal multiplexers / editors that let a client run something in *their* (unfenced) panes: every variable they export
 # (herdr: HERDR_SOCKET_PATH, HERDR_PANE_ID …; zellij: ZELLIJ_SESSION_NAME …; wezterm: WEZTERM_UNIX_SOCKET …; kitty; nvim;
 # VS Code's IPC handles). Unset by prefix, so a new variable of the same tool is covered too (fixed after L3, G-A56).
@@ -28,10 +29,10 @@ _CONTAINER_SOCKETS = ("/run/docker.sock", "/var/run/docker.sock", "/run/containe
 _SYSTEM_SOCKETS = ("/run/ssh-unix-local/socket",)   # systemd's AF_UNIX sshd entry: a login as this user, outside the fence
 MAX_SOCKETS = 256                                   # bound on the per-start socket list (argv size)
 # F14: only credential files stay read-only (who may log in as this user, the X cookie). Shell start-up files, autostart,
-# systemd user units, environment.d and compositor configs are the owner's general configuration: the Agent may change them.
+# environment.d and compositor configs remain general configuration; user unit paths are protected below.
 _RO_FILES = (".ssh/authorized_keys", ".ssh/authorized_keys2", ".Xauthority")
-# F14: the user's service manager and session bus, bound back into the otherwise private runtime dir (service management)
-_RUNTIME_BACK = ("systemd", "bus")
+# P591: no host session bus or user manager is mounted into an Agent fence.
+_RUNTIME_BACK = ()
 
 
 # P205: set inside every fence this version starts (bwrap --setenv / sandbox-exec's env). The fenced `agentj` reads it to know
@@ -43,12 +44,7 @@ MOUNTINFO = "/proc/self/mountinfo"
 
 
 def inside(environ=None) -> bool:
-    """True when this process runs inside an Agent fence, so the host's state directory is hidden from it (P205).
-
-    1. the explicit marker `AGENTJ_FENCED=1` (fences started by a serve with P205);
-    2. a fence started by an older serve has no marker: serve exports the Agent's socket paths (`<state>/agentperm/*.sock`)
-       before the harness starts; that state directory being an empty tmpfs mount point (Linux) or unreadable (macOS
-       sandbox) is the fence itself. A visible state directory (shared / unfenced session) → False."""
+    """Developer reference: documentation/notes/P591-FENCE-REFERENCE.md."""
     env = os.environ if environ is None else environ
     if env.get(FENCED_ENV) == "1":
         return True
@@ -83,10 +79,7 @@ def _real(p: str) -> str:
 
 
 def code_paths() -> list[str]:
-    """agentj's own code as this process runs it, wherever it was installed (L3): the package, its source checkout (host/
-    with the launcher), the venv (`uv tool` → ~/.local/share/uv/tools/agentj, pipx → ~/.local/[share/]pipx/venvs/…,
-    or the checkout's .venv) and the interpreter that venv points at when the user owns it (uv-managed / Homebrew Python):
-    everything that runs inside `serve` next time. Only paths this user can write matter (the rest is read-only anyway)."""
+    """Developer reference: documentation/notes/P591-FENCE-REFERENCE.md."""
     pkg = os.path.dirname(os.path.abspath(__file__))
     out = [pkg]
     parent = os.path.dirname(pkg)
@@ -247,7 +240,8 @@ def _env_dirs(env) -> list[str]:
     for k in ("HERDR_SOCKET_PATH", "HERDR_CLIENT_SOCKET_PATH"):
         if env.get(k, "").startswith("/"):
             out.append(os.path.dirname(env[k]))
-    for k in ("SCREENDIR", "JUPYTER_RUNTIME_DIR"):
+    for k in ("SCREENDIR", "JUPYTER_RUNTIME_DIR",
+             "DBUS_SESSION_BUS_ADDRESS", "DBUS_STARTER_ADDRESS", "DBUS_STARTER_BUS_TYPE", "SYSTEMD_BUS_ADDRESS"):
         if env.get(k, "").startswith("/"):
             out.append(env[k])
     if env.get("TMUX_TMPDIR", "").startswith("/"):
@@ -259,8 +253,7 @@ def _env_dirs(env) -> list[str]:
 
 def control_dirs(home: str, environ=None, allow_docker: bool = False, workdir: str | None = None,
                  mac: bool | None = None, uid: int | None = None) -> list[str]:
-    """Directories (real paths) that hold another program's control sockets and are hidden from the Agent whole. Never the
-    home directory itself, nor a directory that contains the Agent's folder (those sockets are hidden one by one instead)."""
+    """Developer reference: documentation/notes/P591-FENCE-REFERENCE.md."""
     env = os.environ if environ is None else environ
     cand = [os.path.join(home, rel) for rel in _CTL_DIRS] + _env_dirs(env)
     if not allow_docker:
@@ -285,10 +278,7 @@ def control_dirs(home: str, environ=None, allow_docker: bool = False, workdir: s
 
 
 def control_sockets(environ=None, allow_docker: bool = False) -> list[str]:
-    """Single socket files to hide (Linux): the container engines' (unless allowed) and systemd's local sshd entry when this
-    user can connect to them, a unix: DOCKER_HOST, and every listening socket this user owns right now (from /proc/net/unix —
-    a tmux `-S`, an emacs / nvim server, an ssh-agent, … in any folder). Sockets created after the Agent started are not in
-    this list (their usual directories are hidden whole: control_dirs, the runtime dir, /tmp)."""
+    """Developer reference: documentation/notes/P591-FENCE-REFERENCE.md."""
     env = os.environ if environ is None else environ
     out: list[str] = []
 
@@ -329,10 +319,7 @@ def control_sockets(environ=None, allow_docker: bool = False) -> list[str]:
 
 
 def ancestors(paths) -> list[str]:
-    """Directories above the protected paths that this user could rename (their parent is writable), parents first.
-    Renaming one would move agentj's code / state / a start-up file out of the way and let the Agent plant a new one at the
-    old path (`mv ~/.local/share/uv/tools x && mkdir … && plant`): the fence pins each of them (bwrap: a bind mount on itself,
-    which makes rename fail with EBUSY; SBPL: no write on that exact directory). Creating files inside them stays allowed."""
+    """Developer reference: documentation/notes/P591-FENCE-REFERENCE.md."""
     out = set()
     for p in paths:
         a = os.path.dirname(p)
@@ -344,10 +331,142 @@ def ancestors(paths) -> list[str]:
     return sorted(out, key=lambda x: (x.count(os.sep), x))
 
 
+def _manager_unit_paths(environ) -> list[str]:
+    """Developer reference: documentation/notes/P591-FENCE-REFERENCE.md."""
+    if os.environ.get("AGENTJ_TEST") == "1":
+        return []
+    canonical = f"/run/user/{os.getuid()}"
+    runtime = canonical if any(os.path.exists(os.path.join(canonical, p)) for p in
+                               ("bus", "systemd/private")) else environ.get("XDG_RUNTIME_DIR") or canonical
+    if not any(os.path.exists(os.path.join(runtime, p)) for p in ("bus", "systemd/private")):
+        return []
+    busctl = shutil.which("busctl", path="/usr/bin:/bin")
+    if not busctl:
+        raise OSError("cannot verify user manager unit paths")
+    env = {"PATH": "/usr/bin:/bin", "LANG": "C", "XDG_RUNTIME_DIR": runtime}
+    import json
+    if not os.path.exists(os.path.join(runtime, "systemd/private")):
+        probe = subprocess.run([busctl, "--user", "--json=short", "call", "org.freedesktop.DBus",
+                                "/org/freedesktop/DBus", "org.freedesktop.DBus", "NameHasOwner", "s",
+                                "org.freedesktop.systemd1"], env=env, capture_output=True, text=True, timeout=5)
+        try:
+            owner = json.loads(probe.stdout) if probe.returncode == 0 and len(probe.stdout) < 1024 else {}
+            if owner == {"type": "b", "data": [False]}:
+                return []
+            if owner != {"type": "b", "data": [True]}:
+                raise ValueError
+        except (ValueError, TypeError):
+            raise OSError("cannot verify user manager presence") from None
+    r = subprocess.run([busctl, "--user", "--json=short", "get-property", "org.freedesktop.systemd1",
+                        "/org/freedesktop/systemd1", "org.freedesktop.systemd1.Manager", "UnitPath"],
+                       env=env, capture_output=True, text=True, timeout=5)
+    import json
+    try:
+        v = json.loads(r.stdout) if r.returncode == 0 and len(r.stdout) <= 1048576 else {}
+        paths = v.get("data")
+        if v.get("type") != "as" or not isinstance(paths, list) or len(paths) > 2048 or any(
+                not isinstance(p, str) or not p.startswith("/") or len(p) > 4096 for p in paths):
+            raise ValueError
+        return paths
+    except (ValueError, AttributeError):
+        raise OSError("cannot verify user manager unit paths") from None
+
+
+def service_paths(home: str, environ=None) -> list[str]:
+    """Developer reference: documentation/notes/P591-FENCE-REFERENCE.md."""
+    env = os.environ if environ is None else environ
+    roots = [os.path.join(home, ".config/systemd"), os.path.join(home, ".local/share/systemd")]
+    roots += [os.path.join(env[k], "systemd") for k in ("XDG_CONFIG_HOME", "XDG_DATA_HOME")
+              if env.get(k, "").startswith("/")]
+    for key, default in (("XDG_CONFIG_DIRS", "/etc/xdg"), ("XDG_DATA_DIRS", "/usr/local/share:/usr/share")):
+        roots += [os.path.join(p, "systemd/user") for p in (env.get(key) or default).split(":") if p.startswith("/")]
+    # Empty override entries retain defaults; retaining them even without an empty
+    # entry narrows authority and also covers a live manager with an older env.
+    roots += [os.path.abspath(p) for p in env.get("SYSTEMD_UNIT_PATH", "").split(":") if p]
+    roots += _manager_unit_paths(env)
+    return sorted(set(roots + [_real(p) for p in roots]))
+
+
+def service_mounts(home: str, environ=None, visible=lambda p: True) -> list[str]:
+    """Developer reference: documentation/notes/P591-FENCE-REFERENCE.md."""
+    roots, views, a = [p for p in service_paths(home, environ) if visible(p)], set(), []
+    if any(p == "/" or _under(_real(p), "/proc") for p in roots):
+        raise OSError("unit path conflicts with process isolation")
+    # A unit symlink may point to a writable project file outside these directories.
+    # Protect its resolved target too; a read-only directory alone cannot do that.
+    targets, seen = set(), set()
+    pending = list(roots)
+    while pending:
+        base = pending.pop()
+        real = _real(base)
+        if real in seen or not os.path.isdir(base):
+            continue
+        seen.add(real)
+        if len(seen) > 1024:
+            raise ValueError("user service alias tree too large")
+        for entry in os.scandir(base):
+            if entry.is_symlink() and (entry.is_file() or entry.is_dir()):
+                targets.add(_real(entry.path))
+            if entry.is_dir():
+                pending.append(entry.path)
+    roots += sorted(p for p in targets if visible(p) and p not in roots)
+
+    for root in roots:
+        p = root
+        while not os.path.exists(p):
+            p = os.path.dirname(p)
+        if p != root:
+            views.add(p)
+        alias = root
+        while alias != os.path.dirname(alias):
+            if os.path.islink(alias):
+                views.add(os.path.dirname(alias))
+            alias = os.path.dirname(alias)
+    if "/" in views:
+        raise OSError("unit path needs unsupported root directory view")
+    views = sorted(p for p in views if not any(q != p and _under(p, q) for q in views))
+    def mount(p):
+        if p in roots:
+            if os.path.exists(p):
+                a.extend(["--ro-bind", _real(p), p])
+            else:
+                a.extend(["--tmpfs", p, "--remount-ro", p])
+            return
+        a.extend(["--tmpfs", p])
+        children = set(os.listdir(p)) if os.path.isdir(p) else set()
+        children |= {q[len(p.rstrip("/")) + 1:].split("/", 1)[0] for q in roots if _under(q, p) and q != p}
+        if len(children) > 1024:
+            raise ValueError("user service directory view too large")
+        for name in sorted(children):
+            child = os.path.join(p, name)
+            if any(_under(q, child) for q in roots):
+                mount(child)
+            elif os.path.islink(child):
+                a.extend(["--symlink", os.readlink(child), child])
+            else:
+                a.extend(["--bind", child, child])
+        a.extend(["--remount-ro", p])
+    # Do this before control-socket hiding: ancestor binds must never undo a deny mount.
+    pins = set()
+    for root in roots:
+        p = os.path.dirname(root)
+        while p != os.path.dirname(p):
+            if os.path.isdir(p) and visible(p):
+                pins.add(p)
+            p = os.path.dirname(p)
+    for p in sorted(pins, key=lambda p: (p.count(os.sep), p)):
+        a.extend(["--bind", p, p])
+    for p in views:
+        mount(p)
+    for p in roots:
+        if not any(_under(p, view) for view in views):
+            mount(p)
+    return a
+
+
 def bwrap_argv(st, workdir: str, home: str | None = None, runtime: str | None = None, allow_docker: bool = False,
                environ=None) -> list[str]:
-    """The bubblewrap prefix (ends with "--"). Order matters: later mounts sit on top of earlier ones, so the state
-    directory is hidden *after* everything that is put back, and only the permission folder returns on top of it."""
+    """Developer reference: documentation/notes/P591-FENCE-REFERENCE.md."""
     env = os.environ if environ is None else environ
     home = _real(home or os.path.expanduser("~"))
     runtime = runtime if runtime is not None else env.get("XDG_RUNTIME_DIR", "")
@@ -362,11 +481,6 @@ def bwrap_argv(st, workdir: str, home: str | None = None, runtime: str | None = 
             hidden.append(_real(rt))
     for d in hidden:
         a += ["--tmpfs", d]
-    for rt in (d for d in hidden if d not in ("/tmp", "/var/tmp")):   # the runtime dir(s)
-        for rel in _RUNTIME_BACK:
-            p = os.path.join(rt, rel)
-            if os.path.exists(p):
-                a += ["--bind", p, p]
     back = [p for p in (home, work) if any(_under(p, d) for d in hidden)]   # a HOME or folder under /tmp (tests)
     for p in sorted(set(back), key=len):
         a += ["--bind", p, p]
@@ -380,6 +494,7 @@ def bwrap_argv(st, workdir: str, home: str | None = None, runtime: str | None = 
         a += ["--ro-bind", p, p]
     for p in code:
         a += ["--bind", p, p]
+    a += service_mounts(home, env, visible)
     # other programs' control sockets (G-A56): whole folders become an empty tmpfs, single sockets a read-only /dev/null
     dirs = [d for d in control_dirs(home, env, allow_docker, work) if os.path.isdir(d) and visible(d) and not _under(d, root)]
     for d in dirs:
@@ -409,9 +524,7 @@ _MAC_TMP_SOCKETS = r"^/private/(tmp|var/folders/[^/]+/[^/]+/T)/(vscode-ipc-|vsco
 
 def sbpl_profile(st, workdir: str, home: str | None = None, uid: int | None = None, allow_docker: bool = False,
                  environ=None) -> tuple[str, dict]:
-    """(profile text, -D parameters) for `sandbox-exec` (macOS). Paths travel as parameters, never spliced into the profile,
-    so a folder name cannot change the rules. Later rules win in SBPL: the permission folder is allowed back after the state
-    directory is denied, exactly like the bwrap mount order."""
+    """Developer reference: documentation/notes/P591-FENCE-REFERENCE.md."""
     home = _real(home or os.path.expanduser("~"))
     uid = os.getuid() if uid is None else uid
     from .preferences import path as preferences_path

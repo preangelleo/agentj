@@ -71,6 +71,9 @@ class FakeHarness(unittest.TestCase):
                "FOO_PLAIN": "bar", "ANTHROPIC_API_KEY": "sk-ant-test-" + "y" * 20, "LANG": "C.UTF-8",
                "XDG_CONFIG_HOME": str(self.home / ".config")}
         for kind in ("claude", "codex", "opencode"):
+            # P591 materializes absent unit roots in a readonly parent view: existing siblings stay writable.
+            # Prepare the fake's log, retaining real bubblewrap and every hidden-state/environment assertion.
+            (self.home / f"fake-{kind}.jsonl").write_text("")
             p = bindir / kind
             p.write_text(f'#!/bin/sh\nexec {shutil.which("python3")} {FAKE} {kind} "$@"\n')
             p.chmod(0o755)

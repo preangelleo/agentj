@@ -62,6 +62,7 @@ class ForwardSend(Send):
         svc = self.owner.svc
         if (not self.allowed() or svc.host.stopped() or not await self.owner.delivery_gate(self.data.get("text") or "", self.text, self.payload)):
             self.cancel()
+            svc.guards.block(self.fid, self.data.get('mid'), 'delivery_guard', retry=svc.host.stopped())
             return False
         if self.approved:
             if not self.allowed() or svc.host.stopped() or not svc.guards.claim(self.fid, self.data):
@@ -71,6 +72,7 @@ class ForwardSend(Send):
         if (not self.owner.active(self.fid) or self.owner.row(self.fid).get('token') != self.token
                 or svc.host.stopped() or not await self.owner.delivery_gate(self.data.get("text") or "", self.text, self.payload)):
             self.cancel()
+            svc.guards.block(self.fid, self.data.get('mid'), 'delivery_guard', retry=svc.host.stopped())
             return False
         status = await self.owner.status(self.fid)
         if (not status.get('ok') or not self.owner.active(self.fid)
@@ -78,18 +80,24 @@ class ForwardSend(Send):
                 or not await self.owner.delivery_gate(self.data.get("text") or "", self.text, self.payload)):
             self.cancel()
             svc.log('peer_forward', result='cancelled')
+            transient = not status.get('ok') or svc.host.stopped()
+            svc.guards.block(self.fid, self.data.get('mid'), 'main_unavailable' if transient else 'delivery_guard',
+                             retry=transient and self.owner.active(self.fid) and self.owner.row(self.fid).get('token') == self.token)
             return False
         if not self.allowed() or svc.host.stopped() or not svc.guards.claim(self.fid, self.data):
             self.cancel()
+            svc.guards.block(self.fid, self.data.get('mid'), 'delivery_guard', retry=svc.host.stopped())
             return False
         from . import diskq
         if not await diskq.aflush():
             self.cancel()       # claim may be durable: never reset it or repeat this task
+            svc.guards.block(self.fid, self.data.get('mid'), 'durability')
             return False
         if (not self.owner.active(self.fid) or self.owner.row(self.fid).get('token') != self.token
                 or svc.host.stopped() or not await self.owner.delivery_gate(self.data.get('text') or '', self.text, self.payload)
                 or not self.owner.active(self.fid) or self.owner.row(self.fid).get('token') != self.token or svc.host.stopped()):
             self.cancel()
+            svc.guards.block(self.fid, self.data.get('mid'), 'delivery_guard', retry=svc.host.stopped())
             return False
         update = getattr(svc.host, 'hist_update', None)
         if callable(update) and not (self.data.get('irt') or self.data.get('end')):
@@ -489,9 +497,7 @@ class SameOwner:
 
     def refuse_plan(self, fid, data):
         svc, mid = self.svc, data["mid"]
-        svc.guards.state(fid, mid, "blocked")
-        svc.guards.receipt(fid, mid, "blocked")
-        svc._finish(fid, mid, "blocked")
+        svc.guards.block(fid, mid, 'task_plan')
         svc._send(fid, {"t":"task_refused", "mid":mid, "why":"root_reconfirm"})
         svc.log("peer_forward", result="blocked", reason="task_plan")
         return False
@@ -537,12 +543,27 @@ class SameOwner:
                     await self.forward(fid, entry['data'], auto=True)
 
     async def forward(self, fid, data, auto=False, approved=False):
+        try:
+            return await self._forward(fid, data, auto, approved)
+        except Exception:
+            current = self.queued.pop((fid, data['mid']), None)
+            if current:
+                current[1].cancel()
+            self.svc.guards.block(fid, data['mid'], 'admission_error',
+                                  retry=data['mid'] in self.row(fid).get('queue', {}))
+            return False
+        finally:
+            from . import diskq
+            if not await diskq.aflush():
+                self.svc.log('peer_forward', result='durability_unconfirmed')
+
+    async def _forward(self, fid, data, auto=False, approved=False):
         svc = self.svc
         if self.explicit_plan(data) and (approved or not self.valid_plan(fid, data)):
             return self.refuse_plan(fid, data)
         if ((not approved and not self.active(fid)) or not svc.store.on or not svc.store.get(fid)
                 or svc.store.is_blocked(fid) or (approved and svc.host.stopped())):
-            return False
+            return svc.guards.block(fid, data['mid'], 'relationship')
         current = self.queued.get((fid, data['mid']))
         if current and current[0] is getattr(svc.host, 'agent', None) and current[1].state not in ('cancelled', 'failed'):
             return False
@@ -552,10 +573,10 @@ class SameOwner:
         v = peer_guard.inbound(text)
         if not v.ok or not (await svc._outbound(payload)).ok:
             svc.log('peer_forward', result='filtered')
-            return False
+            return svc.guards.block(fid, data['mid'], 'admission_filter')
         if ((not approved and not self.active(fid)) or not svc.store.on or not svc.store.get(fid)
                 or svc.store.is_blocked(fid) or (approved and svc.host.stopped())):
-            return False
+            return svc.guards.block(fid, data['mid'], 'relationship')
         if data.get("relay") is None:
             data.pop("relay", None)
         if not (data.get("irt") or data.get("end")) and not svc.guards.row(fid, data["mid"]):
@@ -589,30 +610,27 @@ class SameOwner:
         body = note + '\n' + payload
         if not peer_guard.outbound(body, svc.index, svc.store.never_tell_extra).ok:
             svc.log('peer_forward', result='filtered')
-            return False
+            return svc.guards.block(fid, data['mid'], 'admission_filter')
         if not approved and not is_reply and key not in r.get('queue', {}):
             queues = [v.get('queue', {}) for v in svc.store._read('same-owner.json', {}).values()]
             size = sum(len(q) for q in queues)
             nbytes = len(json.dumps([*queues, data], ensure_ascii=False).encode('utf-8'))
             if size >= 128 or nbytes + 1024 > 1048576:
-                svc.guards.state(fid, key, 'blocked')
-                svc.guards.receipt(fid, key, 'blocked')
-                svc.notice(name + f' · {key}: ' + ('等待队列已满，请稍后重新发送。' if zh else 'The waiting queue is full. Send again later.'))
-                return False
+                return svc.guards.block(fid, key, 'queue_full')
         # Inspect dedup before creating a page; latch and payload are committed together below.
         prior = self.row(fid)
         if key in prior.get('forwarded', []) and key not in prior.get('queue', {}):
-            return False
+            return svc.guards.block(fid, key, 'handoff_unknown')
         if action_proof:
             used = prior.get('action_nonces', {})
             nonce = action_proof['id']
             claim = prior.get('action_claims', {}).get(nonce)
             pending = prior.get('queue', {}).get(key)
             if nonce in used and not (pending and claim == pending.get('turn')):
-                return False
+                return svc.guards.block(fid, key, 'action_nonce')
             live = {k: v for k, v in used.items() if type(v) is int and v > svc.clock()}
             if nonce not in used and len(live) >= 1024:
-                return False
+                return svc.guards.block(fid, key, 'action_capacity')
         label = (('来自好友 ' if zh else 'From friend ') if approved else ('来自同一个主人设备 ' if zh else 'From same-owner device ')) + name + f' ({fid})'
         if isinstance(data.get('grp'), dict) and not approved:   # P426 #170: a 「我的设备」 group message
             label = svc.devices.label(name) + f' ({fid})'
@@ -622,7 +640,7 @@ class SameOwner:
             src.update(group='my-devices', name=name + (' · 设备群' if zh else ' · Devices'))
         entry = self.row(fid).get('queue', {}).get(key)
         if entry and (entry.get('token') != r.get('token') or approved):
-            return False
+            return svc.guards.block(fid, key, 'relationship')
         hist = getattr(svc.host, 'hist', None)
         old = hist.get(entry['turn']) if entry and hist else None
         if entry and (not hist or (old and (old.get('src') or {}).get('mid') == key)):
@@ -652,7 +670,7 @@ class SameOwner:
         if not approved and not is_reply:
             from . import diskq
             if not await diskq.aflush():
-                return False
+                return svc.guards.block(fid, key, 'durability')
         current = self.queued.get((fid, key))
         agent = getattr(svc.host, 'agent', None)
         if current and current[0] is agent and current[1].state not in ('cancelled', 'failed'):
@@ -662,9 +680,7 @@ class SameOwner:
         send.action_proof = action_proof
         if not agent and (approved or is_reply):
             svc.host.hist_update(page['id'], text=('暂时无法办理：主 Agent 未连接。' if zh else 'Cannot start: the main Agent is disconnected.'), end='failed')
-            svc.guards.state(fid, key, 'blocked')
-            svc.guards.receipt(fid, key, 'blocked')
-            return False
+            return svc.guards.block(fid, key, 'main_unavailable')
         if not agent or svc.host.stopped():
             update = getattr(svc.host, 'hist_update', None)
             if callable(update):
@@ -681,7 +697,11 @@ class SameOwner:
         except Exception:
             send.cancel()       # even an adapter that enqueued then raised cannot deliver this instance
             svc.log('peer_forward', result='submit_failed')
-            return False
+            return svc.guards.block(fid, key, 'submit_failed', retry=True)
+        with svc.store._edit('relay-requests.json', {}) as rows:
+            row = rows.get(svc.guards.key(fid, key))
+            if row and row['state'] == 'pending':
+                row['submitted'] = svc.clock()
         if not entry and not is_reply:
             svc.host.push_notify('reply')
         svc.log('peer_forward', result='queued', automatic=auto, task_sha256=hashlib.sha256((fid + ':' + key).encode()).hexdigest())

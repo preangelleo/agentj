@@ -1,29 +1,7 @@
 """P547 (PROTOCOL "P547 §A", ADR-P547): a remote's Face ID key set up with ANOTHER remote's approval.
 
-The host decides, never the page. A device D that asks (`pk_peer_req`) gets a direct `pk_offer` only when it is the first one
-with a key (no other listed device has a `pk` record and neither has D). Otherwise another listed device with its OWN key, in a
-ready p33 session, must approve with an assertion of that key over
-
-    passkey.elevate_challenge(channel, approver device, id, "pk_peer", id, digest)
-    digest = hex SHA-256("agentj-pk-peer-v1\\n" + D + "\\n" + D's name + "\\n" + code)
-
-where `code` (6 digits) is derived from the request id, D and D's X25519 key and shown on both screens. D's old key is not
-asked for (#300 a borrowed key, #317 a key lost with a reinstall): the approval replaces it. One approval = one device, one
-registration (`pk_offer.peer` → the next `pk_reg` of D replaces the record without `replace_fa`; State.set_passkey(peer_ok)).
-Limits: PEER_TTL s per request, one per device, MAX_OPEN per host, RATE_N requests per device per RATE_WINDOW s (in memory —
-a restart ends every request, which only narrows). Every decision: approvals.log (reason "pk_peer", the assertion as hashes),
-host.log, activity, a notice to every remote and a `security` push.
-
-P555 (PASSKEY-SEAT-MODEL §2 revised): a device whose record already holds a key is never sent to another remote first.
-- A key saved before P539 under the device's own id counts as this device's own (State.passkey_of_device): zero taps.
-- A record whose key is truly `unknown` (a restore moved it here) gets a self-check with its `pk_state`: `fa` (its own
-  credential id) + `fa_ch` over elevate_challenge(channel, device, n, "pk_check", n, CHECK_DIGEST). One Face ID tap →
-  `pk_check {n, fa, aa}`; verified → `local` is noted (State.passkey_local) and no pk_peer request is made. Only a failed /
-  cancelled check (or no key) goes on to a pk_peer request.
-- Nobody can approve (the only keyed remote lost its key, or no other remote holds one): the request still opens; the owner
-  approves it at the Agent J host's terminal with the 对照码 (`agentj faceid approve <code>`, ctl `pk_peer_host`: a
-  claim like `resume` — never an Agent — plus ALWAYS the remote pairing password, the bar of `agentj pair`; a terminal alone
-  is no proof against a same-uid Agent, security review B1). Only while no eligible remote could approve instead."""
+Developer reference: documentation/notes/P0263-HOST-REFERENCE.md#pkpeer.
+"""
 from __future__ import annotations
 
 import asyncio

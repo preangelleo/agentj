@@ -374,14 +374,14 @@ def main_requirement(tool, tool_input=None, *, env=None):
     if tool == "apply_patch":
         patch = str(inp.get("command", inp.get("patch", inp.get("input", ""))))
         for kind, path in re.findall(r"^\*\*\* (Add|Update|Delete) File: (.+)$", patch, re.M):
-            if kind == "Delete" or danger.hook_path(path):
+            if kind == "Delete" or danger.hook_path(path) or danger.service_path(path):
                 return "uv"              # ③ a file deleted / the Agent's own hook or approval file rewritten
             if danger.cred_path(path):
                 floor = "hold" if floor == "allow" else floor   # P573: a credential file written: one button
     verdict = danger.classify(name, inp, env=env)
     shared = danger.classify_shared(name, inp, env=env)
     cats = set(verdict.cats) | set(shared.cats)
-    if "cred.hooks" in set(verdict.rules) | set(shared.rules):
+    if {"cred.hooks", "cred.service"} & (set(verdict.rules) | set(shared.rules)):
         return "uv"                      # P573 (e): the Agent rewriting its own hook / approval settings — never below Face ID
     if cats:
         try:

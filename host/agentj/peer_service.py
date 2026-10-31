@@ -1,37 +1,3 @@
-"""Agent friends inside `agentj serve` (PROTOCOL §17.5 – §17.9, ADR-0.16 §5 – §8): the glue between the transport (peer.PeerNet),
-the store (friends.FriendStore), the gates (peer_guard) and the per-friend session (peer_session.PeerSessions) — it is the `cb`
-object PeerNet hands every request, message and receipt to.
-
-What it owns:
-- **Start-up**: friends on (default) and this host is in an Agent J account (cloud.json) → peer keys, a seat certificate from
-  `POST /v1/host/peer/cert` (cached in `<state>/peer/cert.json`, renewed daily / when < 2 days remain; 403 / 402 → state
-  `need_seat`, no mailbox, asked again after an hour), the mailbox on the host's own relay. Tests only: AGENTJ_TEST_PEER_CERT_KEY
-  (b64url 32-byte seed) self-signs the certificate — honoured only when the relay URL is loopback.
-- **Requests** (B side): dropped silently when blocked (ID or mailbox), not discoverable, or over 20 new requests a day; else
-  `pending_in` (7 days) + a `friend_request` card on every ready p33 phone (pushed). The card comes back after a restart with the
-  same ask id. Allow (signed, optional group line) → friend + `facc`; deny / expiry → nothing at all goes back.
-- **Messages**: the §17.6 pipeline, fixed order — dedupe by mid → pre-check (counts only; `limited` once per window, the turn is
-  never called) → stop-everything (kept as `held`, nothing answered) → inbound gate (not given to the model; the owner is told;
-  the text is not kept) → wrap → one peer-session turn → outbound gate (hit: not sent, a `peer_question` card without the draft)
-  → ledger → `pmsg` / `pack`. `ask_owner` → `pack queued_for_owner` + a `peer_question` card (allow = send the draft, deny =
-  say nothing; 1 day). Consecutive automatic replies ≥ the group's max_auto_rounds → the last one carries `end:true`, automatic
-  replies to that friend pause, one notice; any owner action (a card answer, `friends tell`, a group change) resets the count.
-  A friend's `end:true` arriving while this side is mid-exchange (1 ≤ its own count < max) → one notice to this owner too, and
-  the count restarts (ADR §9.6: both owners hear about an exchange that stopped by itself).
-- **Friend cards are not permission requests**: they live in their own table (never in serve's 16 MAX_ASKS, never "waiting"
-  in the status, never blocking the harness), deadlines 7 days / 1 day, decided by a callback. approvals.log keeps one line per
-  decision (tool friend_request / peer_question, hashes only — never a name or a text).
-- **fr_changed** to every ready p33 phone whenever something the friends page shows changed (same second).
-- `<state>/agentperm/friends.sock` for `agentj friends …` (also from inside the fence: the main Agent's way to friends).
-- host.log gets metadata only (event, result, reason); a friend's words live only in `peer/hist/`.
-
-Host interface used (serve.Host; tests pass a stand-in): st, channel, cfg["relay"], lang, agent_cfg / preferences
-(PeerSessions), stopped(), peer_broadcast(obj) (to every ready p33 session), agent_notice(text), push_notify(kind).
-
-Notices go to the phone's main chat as `sys` pages; they are not fed into the harness as a turn (the main Agent reads a friend's
-messages with `agentj friends history` when the owner asks — feeding every event in would wake the Agent and spend the owner's
-tokens).
-"""
 from __future__ import annotations
 
 import argparse
@@ -200,6 +166,9 @@ def _ms(ts) -> int:
 def local_cmd(st, store: FriendStore, req: dict, lang: str = "zh") -> dict | None:
     """`id` · `card` · `profile` · `groups` · `on` / `off` straight on the files. None = not one of these."""
     t = req.get("t")
+    if t == "requests":
+        from .relay_guards import requests
+        return requests(store)
     if t == "pick-rules":                    # P426 #117: the owner's dispatch rules (friends settings, like relay-policy)
         from . import friends_pick
         return friends_pick.edit(store, req.get("action"), req.get("args") or [])
@@ -752,6 +721,7 @@ class PeerService:
             elif self.store.should_send_limited(fid, scope):
                 self._send(fid, {"t": "limited", "scope": scope, "retry": int(retry)})
             self.log("peer_msg", result="limited", reason=scope)
+            self.guards.block(fid, mid, 'quota')
             return
         self.store.record_in(fid)
         self._count("n_in")
@@ -763,7 +733,11 @@ class PeerService:
             return self.changed(fid)
         v = peer_guard.inbound(text)
         if not v.ok:
-            self.guards.state(fid, mid, "blocked")
+            self.guards.state(fid, mid, 'blocked')
+            with self.store._edit('relay-requests.json', {}) as rows:
+                row = rows.get(self.guards.key(fid, mid))
+                if row:
+                    row['reason'] = 'admission_filter'
             self.store.hist_add(fid, {"mid": mid, "dir": "in", "text": self.tx("withheld"), "ts": int(self.clock() * 1000), "s": "withheld"})
             self._seen_put(key, "blocked")
             self._send(fid, {"t": "pack", "mid": mid, "s": "blocked", "rule": "secret_policy"})
@@ -1686,6 +1660,9 @@ class PeerService:
 
     async def cli(self, req: dict) -> dict:
         t = req.get("t")
+        if t == "requests":
+            from .relay_guards import requests
+            return requests(self.store)
         if t == "reports":
             from . import report_actions
             return report_actions.listing(self)
@@ -1913,6 +1890,7 @@ def add_parser(sub) -> None:
     a.add_argument("id")
     a.add_argument("--note", default="")
     s.add_parser("list", help="好友、请求、组")
+    s.add_parser("requests", help="只读转交状态（不含正文）/ read-only request metadata")
     s.add_parser("reports", help="好友直报记录（不可信数据）/ friend reports (untrusted data)")
     s.add_parser("status", help="同一个主人好友的聚合状态 / same-owner aggregate status").add_argument("friend")
     pk = s.add_parser("pick", help="派活前：在同一个主人的设备里按规则推荐一台（只推荐，不派活） / recommend one of your own "
@@ -2075,7 +2053,7 @@ def cmd_friends(a) -> None:
     if res is None:
         from .state import State
         st = State()
-        if req["t"] in ("id", "card", "profile", "groups", "on", "off", "context", "relay-policy", "pick-rules") and st.exists():
+        if req["t"] in ("id", "card", "profile", "groups", "on", "off", "context", "relay-policy", "pick-rules", "requests") and st.exists():
             res = local_cmd(st, FriendStore(st), req)
         else:
             if a.json or getattr(a, "json_sub", False):
@@ -2088,7 +2066,7 @@ def cmd_friends(a) -> None:
         print("SECRET_TASK_PENDING: " + json.dumps(res, ensure_ascii=False))
         print("Wait for SECRET_TASK_RESULT; do not retry")
         return
-    if a.json or req["t"] in ("history", "devices", "reports"):
+    if a.json or req["t"] in ("history", "devices", "reports", "requests"):
         print(json.dumps(res, ensure_ascii=False, indent=1))
         sys.exit(0 if res.get("ok") else 1)
     if req["t"] == "pick" and res.get("ok") and "machines" in res:

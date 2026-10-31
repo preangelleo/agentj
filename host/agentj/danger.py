@@ -31,6 +31,7 @@ _EN_RULE = {
     "send.gh": "Publishes on GitHub", "send.gh_api": "gh api write: changes content on GitHub", "send.publish": "Publishes a package",
     "send.deploy": "Deploys to production", "send.mail": "Sends mail or a message", "send.upload": "Uploads files elsewhere",
     "send.code": "Code that sends a request / mail / message", "delete.gh_api": "gh api DELETE", "delete.s3": "Deletes S3 objects / buckets",
+    "cred.service": "Runs or changes code outside the Agent fence through the user service manager",
     "cred.path": "Writes a credential file", "cred.hooks": "Rewrites the Agent's hook / approval settings", "cred.gh_auth": "Changes the GitHub sign-in", "cred.aws": "Changes AWS credentials / permissions",
     "cred.sql": "Changes database users / passwords / grants", "cred.mcp": "Changes credentials / permissions",
     "shared.credential_show": "Shows credential contents on screen", "shared.credential_access": "Reads credentials",
@@ -476,6 +477,8 @@ def unwrap(cmd: Cmd, depth: int = 0) -> list[Simple]:
                 k += 2 if rest[k] in ("--with", "--from", "-p", "--python", "--package", "--env-file") else 1
             words = rest[k:]
             continue
+        if name == "systemd-run" and "--user" in words[1:]:
+            out.append(Simple(name, words[1:], list(words), list(cmd.redirs), set(flags)))
         if name in _WRAP_ARG:
             if name in ("sudo", "doas", "run0", "pkexec"):
                 flags.add("elevated")
@@ -617,7 +620,7 @@ _HOOK_FILES = re.compile(r"(?:^|/)(?:\.claude/settings(?:\.local)?\.json|\.codex
 _HOOK_TEXT = re.compile(r"\.claude/settings(?:\.local)?\.json|\.codex/hooks\.json|\.codex/config\.toml|opencode\.jsonc?\b|" + _DSH)
 _HOOK_CODE = re.compile(r"(?:^|[\s;&|(])(?:python[0-9.]*|node|nodejs|perl|ruby|deno|bun|php)(?:\s|$)")
 _HOOK_WRITE = re.compile(r"open\(|write|dump|unlink|remove|rename|replace|truncate|>")
-ALWAYS_CARD = frozenset({"credentials:hooks"})
+ALWAYS_CARD = frozenset({"credentials:hooks", "credentials:service"})
 
 
 def hook_path(p: str) -> str | None:
@@ -631,7 +634,14 @@ def hook_path(p: str) -> str | None:
     return f"Agent 的钩子 / 审批设置 {'/'.join(q.rsplit('/', 2)[-2:])}" if _HOOK_FILES.search(q) else None
 
 
+def service_path(p: str) -> bool:
+    return bool(isinstance(p, str) and re.search(r"(?:^|/)systemd/(?:user(?:\.control)?)(?:/|$)", posixpath.normpath(p)))
+
+
 def _write_hit(hits, p: str, verb: str = "写入") -> bool:
+    if service_path(p):
+        hits.add("credentials", "cred.service", "修改隔离外运行的用户服务")
+        return True
     why = cred_path(p)
     if why:
         hits.add("credentials", "cred.path", verb + why)
@@ -1110,6 +1120,12 @@ def _opaque_rules(sc: Simple, hits: _Hits, text: str) -> None:
 def _simple(sc: Simple, hits: _Hits, depth: int, text: str) -> None:
     name, args = sc.name, sc.args
     low = [a.lower() for a in args]
+    if "--user" in args and (name == "systemd-run" or (name == "systemctl" and
+            any(a in {"start", "restart", "try-restart", "reload", "try-reload-or-restart", "reload-or-try-restart", "force-reload",
+                      "reload-or-restart", "isolate", "default", "enable", "reenable", "link", "edit",
+                      "daemon-reload", "daemon-reexec", "set-property", "preset", "preset-all", "revert", "import-environment",
+                      "set-environment", "add-wants", "add-requires"} for a in low))):
+        hits.add("credentials", "cred.service", "通过用户服务管理器在隔离外运行或修改程序")
     _opaque_rules(sc, hits, text)
     # ---- delete
     if name in ("rm", "rmdir", "unlink", "shred", "srm", "wipe", "trash", "trash-put", "trash-rm", "trash-empty", "rmtrash",
@@ -1503,6 +1519,8 @@ def _bash(cmd: str, hits: _Hits, depth: int = 0, collect: list | None = None, li
         hits.add("send", "send.dev_net", "写入网络连接（/dev/tcp、/dev/udp）：把数据发到别处")
     raw = cmd[:MAX_CMD]                      # A5 (P139) unchanged: the hook rule reads the whole text, heredoc bodies too
     m = _HOOK_TEXT.search(raw)
+    if re.search(r"systemd/user(?:\.control)?(?:/|\b)", raw) and _HOOK_CODE.search(raw) and _HOOK_WRITE.search(raw):
+        hits.add("credentials", "cred.service", "用脚本修改隔离外运行的用户服务")
     if m and _HOOK_CODE.search(raw) and _HOOK_WRITE.search(raw):
         hits.add("credentials", "cred.hooks", "用脚本改写 Agent 的钩子 / 审批设置 " + m.group(0))
     seen: set[tuple] = set()
@@ -2775,7 +2793,7 @@ def classify_shared(tool: str, tool_input, extra=None, mode: str = "standard", c
     if tool == 'apply_patch':
         inp = tool_input if isinstance(tool_input, dict) else {}
         paths = re.findall(r'^\*\*\* (?:Add|Update|Delete) File: (.+)$', str(inp.get('command', '')), re.M)
-        credential = next((p for p in paths if cred_path(p) or hook_path(p)), None)
+        credential = next((p for p in paths if cred_path(p) or hook_path(p) or service_path(p)), None)
         if credential:
             tool, tool_input = 'Edit', {'file_path': credential}
     v = classify(tool, tool_input, extra, env=env)
@@ -2787,7 +2805,7 @@ def classify_shared(tool: str, tool_input, extra=None, mode: str = "standard", c
         hits = _Hits(no_in=True)
         _bash(code_text(command[:MAX_CMD]), hits, lines=False)
         real = [x for x in hits.items if x[1].startswith("cred.")]
-        items = [x for x in items if not x[1].startswith("cred.") or x[1] in ("cred.sql", "cred.hooks")
+        items = [x for x in items if not x[1].startswith("cred.") or x[1] in ("cred.sql", "cred.hooks", "cred.service")
                  or x[1] in {r for _, r, _ in real}]
         items += [x for x in real if x[1] not in {r for _, r, _ in items}]
     rules = [r for _, r, _ in items]
@@ -2857,6 +2875,8 @@ def grant_keys(v: Verdict) -> list:
         if not any(r.startswith("cred.") and r != "cred.hooks" or r == "extra.credentials" for r in v.rules):
             keys = [k for k in keys if k != "credentials"]
         keys.append("credentials:hooks")
+    if "cred.service" in v.rules:
+        keys.append("credentials:service")
     return keys
 
 

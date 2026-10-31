@@ -1,26 +1,7 @@
 """P366 webhooks, the host's half (AGENTJ-HOOKS-SPEC): the hook registry, the signature checks, replay / dedupe, the seat
 quotas and the envelope the main Agent reads. No network and no serve here — `hook_service.py` wires this into serve.
 
-Two routes (the one-line choice the skill and the CLI help repeat): no cloud / domain of your own → the hosted hooks here
-(`https://hook.agentj.app/<hb>/<id>`); your own Cloudflare / AWS and full control wanted → build it yourself and forward the
-checked event in (`agentj hook forward`, or an HMAC-signed POST to a hosted hook).
-
-Storage (all under `<state>/hooks/`, dir 0700, files 0600; the Agent fence hides the whole state dir):
-  hooks.json            {"v":1,"hooks":{id: hook}, "usage":{"day":"YYYY-MM-DD","n":int}, "triage":{delivery: verdict}}
-  secrets/<id>.json     {"cur": b64url, "old": b64url|null, "old_until": unix s|null}   — never logged, never printed
-  secrets/<id>.seal.json  the same shape: the hook's X25519 delivery key (only for an end-to-end encrypted hook)
-  seen/<id>.json        {key_hash: unix s}  (dedupe keys, ≤ SEEN_MAX, 7 days)
-  deliveries/<id>/<d>.json   one accepted delivery: meta (method, header names + the signature-free headers), body text
-                              or base64, result — 7 days, then removed
-A hook (hooks.schema.json): id, name, preset, life once|ttl|resident, expires, target, auth{kind,…}, ip_allow, enabled, note,
-created{by,at}, approved{device,at}|null, state active|pending|used|revoked|expired, ended (unix s|null), last {at,result},
-e2e (bool) + seal {pub, kid} when the sender encrypts the body to the hook's own public key.
-
-End-to-end encrypted delivery (P366 add-on 3, Leo 10-17 12:4x): a sender that controls its own request seals the body with
-RFC 9180 HPKE base mode — DHKEM(X25519, HKDF-SHA256), HKDF-SHA256, ChaCha20-Poly1305; info = "agentj-hook-seal-v1\n" + hook
-id; no aad; body = enc (32 bytes) ‖ ciphertext; header `X-AgentJ-Seal: v1; kid=<kid>` — so the relay forwards ciphertext only.
-The plaintext is then checked with the hook's HMAC as usual (HPKE alone says nothing about who sent it). Stripe / GitHub and
-other services that cannot shape their request stay plain through the relay; the CLI and the phone say which one a hook is.
+Developer reference: documentation/notes/P0263-HOST-REFERENCE.md#hooks.
 """
 from __future__ import annotations
 

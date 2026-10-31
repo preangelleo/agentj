@@ -1,25 +1,6 @@
 """`agentj tasks` — the scheduler for `workflows/<id>/task.json` (PROMPT-26 item 3; ADR-A53; contract ADR-A61 / taskspec.py).
 
-Source: the Agent's folder (`agentj agent … --dir D`) → `D/workflows/*/task.json`, each checked with taskspec.problems();
-an invalid task is listed with its reason and never runs. Its `enabled` is read only as a suggestion: whether a task runs is
-the human's decision, stored in the state directory (`tasks.json`, 0600), made at the terminal (`agentj tasks enable`, with
-the remote pairing password) or on a paired phone (signed, controls.py). An enabling is bound to the task's contract hash
-(task.json + its prompt file): when either changes, the task stops running until a human enables it again.
-
-`serve` runs enabled tasks when their cron fields match the minute (in the task's `tz`), at most once per minute. P418 (#183 ③):
-minutes missed while serve was not running (computer off / asleep) are never replayed on their own: serve keeps a 0600
-`tasks_tick.json` (the last minute it was alive, written once a minute); after a gap it counts, per enabled task, the cron
-minutes it missed (since that tick, its enabling and 7 days ago at most; capped at 1000), sends the phones ONE summary
-notice and — unless everything is stopped — one multiple-choice card "run once: <task>"; each task the owner ticks runs
-once (trigger `catch_up`, the normal run path below). No answer / no phone = the notice only. A run waits until the chat turn is over (it takes the same lock — never two
-users of one Agent), then runs the configured harness once, headless, in the workspace root, inside the fence; Claude Code
-gets the usual permission tool + danger hook (approvals go to the phone as usual), and for `mode: research` the hook denies
-everything that is not read-only (danger.readonly); Codex (app-server) and OpenCode (serve) run their chat adapter once in a
-throw-away conversation, approvals to the phone too — research: Codex's own sandbox read-only + every request that is not
-read-only declined, OpenCode session rules that deny where they would ask. The answer is saved to `workflows/<id>/reports/run-<run_id>.md`; its last
-`VERDICT: ok|attention|fail — …` line goes to the phones as one notice (task name + that sentence) and into activity.log.
-No VERDICT line = fail. 30 minutes at most, then it is ended (fail). Stop everything ends a running task at once and keeps
-the scheduler paused until resume.
+Developer reference: documentation/notes/P0263-HOST-REFERENCE.md#tasks.
 """
 from __future__ import annotations
 

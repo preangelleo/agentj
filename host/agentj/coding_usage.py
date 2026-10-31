@@ -1,23 +1,6 @@
 """P340 D (FEEDBACK #42, 2026-10-16): the Coding Plans' own usage windows on the phone's WEEKLY / 5H rules.
 
-「如果本身有这个数据还是要接进来的。如果是有这个数据咱们没接进来，是咱们的 bug。」 — so each OpenCode provider whose plan
-publishes a usage read that works with the very API key OpenCode already uses is read here, after every turn, through the
-same `provider_runtime.probe` path as P67's compatible `/v1/usage` (key by NAME from the service env file, never logged,
-never sent anywhere but the provider's own host, no redirects, 8 s, ≤ 64 KiB).
-
-| plan (base URL host)                       | read                                                     | windows            |
-|--------------------------------------------|----------------------------------------------------------|--------------------|
-| Kimi Code (api.kimi.com / api.kimi.ai …/coding) | GET <base>/usages, Bearer — what the official kimi-cli `/usage` calls | 5h, weekly, monthly |
-| Zhipu GLM / Z.ai Coding Plan (open.bigmodel.cn / api.z.ai) | GET /api/monitor/usage/quota/limit — Zhipu's own usage plugin | 5h (+ weekly)  |
-| MiniMax Coding Plan (api.minimaxi.com / .cn / api.minimax.io) | GET /v1/api/openplatform/coding_plan/remains        | 5h, weekly         |
-
-Not here, on purpose (evidence in reports/qa/p340/d/providers.md): Volcano Ark Coding Plan — its usage
-(`GetCodingPlanUsage`, `arkcli usage plan`) is a control-plane OpenAPI signed with AK/SK or SSO, the plan's API key is
-data-plane only; Alibaba Bailian Coding Plan — usage is on the console page only (the console call refuses an API key with
-ConsoleNeedLogin). Those return [] and the phone keeps both rules with no text.
-
-Each window: {window: '5h'|'weekly'|'monthly'|'daily', pct: 0…100, used?, limit?, reset?: unix s}; ordered longest first is
-not required (the phone puts 5h on the bottom rule).
+Developer reference: documentation/notes/P0263-HOST-REFERENCE.md#coding-usage.
 """
 from __future__ import annotations
 

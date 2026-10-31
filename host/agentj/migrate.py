@@ -1,28 +1,6 @@
 """0.9 → 0.10 state migration (the rename to Agent J): `~/.local/state/agentjarvis-alpha` → `~/.local/state/agentj`.
 
-Runs at the start of every `agentj` command that opens state (cli.main → auto()), `serve` included — so a service unit
-written by 0.9 that now starts the new code moves its own state before it binds the control socket. Rules (never lose a
-key, a paired device, the remote pairing password or a log):
-  * only when neither AGENTJ_STATE_DIR nor AGENTJARVIS_STATE_DIR is set, the old path is a real directory and the new path
-    does not exist;
-  * never while a serve is running on the old directory (its control socket answers): then the old directory stays in use
-    and the reason is printed once;
-  * one os.rename (same parent directory, so the same filesystem — atomic; nothing is copied, nothing deleted). If it fails
-    the old directory stays in use. Afterwards a symlink at the old path points to the new one, so an older `jarvis`
-    (rolled back) still finds everything; `migrated.json` in the new directory records from where, when and by which
-    version; the directory stays 0700.
-  * inside the state, the ≤ 0.9 default URLs (relay / web in config.json; api / app in config.json; api in cloud.json) are
-    replaced by the new defaults. A value that is not exactly an old default (a custom relay, a test server) is left alone.
-    The old values go into migrated.json, so `agentj migrate rollback` puts them back. devices.json is never touched:
-    paired phones keep working because the relay answers on both host names.
-`agentj migrate rollback` (no serve running): URLs restored, symlink removed, directory renamed back.
-P127 (Leo 10-10: a 10-02 test leftover was adopted silently by a brand-new install): the move is never silent. With the
-new path absent, the old one present and no serve running on it, the owner decides: a terminal lists what the old state
-holds (Agent name, paired phones, account, last used — never a key) and asks y/N (Enter = no = a fresh identity; the old
-directory stays where it is, untouched); without a terminal (install assistant, headless, service) nothing moves and nothing
-is created: the command stops with exit 2 and names `--migrate-legacy` / `--fresh` (or AGENTJ_LEGACY_STATE=migrate|fresh).
-A real upgrade that already has the new state never gets here; a serve still running on the old directory keeps using it.
-Every message goes to stderr: stdout stays the command's own (`--json` output is never mixed with a notice).
+Developer reference: documentation/notes/P0263-HOST-REFERENCE.md#migrate.
 """
 from __future__ import annotations
 

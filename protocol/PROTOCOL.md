@@ -1924,7 +1924,7 @@ outbound gate (§17.6 step 6), the data wrapping (step 4). It never sees the mai
 untrusted data) · `tell <friend> <text>` · `group <friend> <group>` · `groups` · `block|unblock|remove <friend>` ·
 `discoverable on|off` · `profile [--edit|--show]` · `context <friend> [--set TEXT|--append TEXT|--file F|--show|--clear]` (P73;
 also without serve) · `usage [<friend>]` · `on|off` · (P426, §17.12) `pick [--task-size small|medium|large] [--explain] [--rules]` ·
-`pick-rules [show|order|set|unset|pace|reset] …` · `say <text>` · `devices [--before]`. `<friend>` = an ID or a unique name prefix.
+`pick-rules [show|order|set|unset|pace|reset] …` · `say <text>` · `devices [--before]` · `requests [--json]` (P590: read-only local lifecycle metadata, no message bodies; works without serve). `<friend>` = an ID or a unique name prefix.
 Stop-everything (§8) also stops every peer session and the mailbox sends; inbound messages are then answered nothing and kept
 for the owner.
 

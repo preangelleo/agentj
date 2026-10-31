@@ -108,11 +108,17 @@ def indep(cmd):
 class LayerOne(unittest.TestCase):
     def test_todays_four_commands_no_longer_ask(self):
         for name, cmd in TODAY.items():
-            self.assertEqual(shared(cmd).cats, [], name)
+            service = name == "prompt_append_and_restart"
+            self.assertEqual(shared(cmd).cats, ["credentials"] if service else [], name)
             v = indep(cmd)
             self.assertNotIn("send", v.cats, name)
             self.assertNotIn("opaque", v.cats, name)
-            self.assertNotIn("credentials", v.cats, name)
+            if service:  # P591: the heredoc is still data; the following manager writes require the owner.
+                self.assertIn("cred.service", v.rules, name)
+                self.assertIn("cred.service", shared(cmd).rules, name)
+                self.assertEqual(shared(cmd.split("EOF\n", 1)[0] + "EOF\n").cats, [], name)
+            else:
+                self.assertNotIn("credentials", v.cats, name)
 
     def test_clear_dangers_still_ask(self):
         for cmd, cat in STILL_ASK:
@@ -123,7 +129,11 @@ class LayerOne(unittest.TestCase):
 
     def test_quiet(self):
         for cmd in QUIET:
-            self.assertEqual(shared(cmd).cats, [], cmd)
+            service = cmd == "systemctl --user restart agentj-p157"
+            self.assertEqual(shared(cmd).cats, ["credentials"] if service else [], cmd)
+            if service:
+                self.assertIn("cred.service", shared(cmd).rules, cmd)
+                self.assertIn("cred.service", indep(cmd).rules, cmd)
             self.assertNotIn("send", indep(cmd).cats, cmd)
 
     def test_heredoc_split(self):

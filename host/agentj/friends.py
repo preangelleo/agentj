@@ -1,27 +1,6 @@
 """Agent friends (PROTOCOL §17, ADR-0.16 §6): the host-side store — friends, requests, policy groups, the ledger, history.
 
-Everything lives in `<state>/peer/` (dir 0700, files 0600; the fence hides the whole state dir from every Agent, the peer
-sessions included). Plain JSON files, each read-modify-write under one flock (`peer.lock`), so `agentj friends …` (CLI) and
-`serve` never interleave — the same pattern as State.config_lock.
-
-- `friends.json`  {id: {id, x, pk, mbox, card, group, blocked, added_at, last, auto_rounds, unread}} — x / pk = the friend's
-  X25519 / Ed25519 public keys (b64url), mbox = its mailbox (§17.1). A friend is never more than this.
-- `blocked.json`  {id: {mbox, ts}} — every blocked ID, friend or not: a blocked requester's mbox is kept so the XX stage can drop
-  its frames silently (§17.4).
-- `pending.json`  {"in": {rid: {..., ask_id, exp}}, "out": {rid: {id, note, ts, exp, state}}} — requests, 7 days.
-- `groups.json`   {gid: Group} — custom groups and the owner's edits of the built-ins (§17 Group; built-ins can change numbers,
-  never their id, never disappear).
-- `settings.json` on (default on: serve opens the mailbox once the seat certificate comes), discoverable (Q10: default on), owner (Q11: default ""), intro, global_tok_day, never_tell_extra, relay_* (P410), pick_rules (P426: `friends pick`).
-- `ledger.json`   fixed-window counters per friend (minute / hour / calendar day / calendar month in the owner's time zone)
-  and the account-wide daily token total. Counts only — never text.
-- `sessions.json` {friend: {harness: session id}} — the peer session to resume (peer_session.py).
-- `hist/<id>.jsonl` one line per message {mid, dir, text, ts, s, auto} — the only place a friend's words are kept.
-- `profile.md`    「可以告诉好友的事」, written by the owner (or the main Agent for them).
-- `friends/<id>/context.md` (P73, ADR-A176) the owner's 「补充设定」 for this one friend (≤ 4000 characters): extra context,
-  persona, wording to keep — the last layer of that friend's peer-session prompt. Never leaves the Agent J host.
-
-Tokens come only from the harness's own usage report (record_turn); a turn without one marks the friend's tokens 「—」 (null)
-and only the message limits apply to them — never an estimate (ADR §6.1 step 7).
+Developer reference: documentation/notes/P0263-HOST-REFERENCE.md#friends.
 """
 from __future__ import annotations
 

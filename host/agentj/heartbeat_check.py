@@ -58,6 +58,19 @@ def collect(host, now):
                 reasons.append('failed_units')
     except (OSError, subprocess.TimeoutExpired):
         unknown.append('failed_units')
+    try:
+        peer = getattr(host, 'peers', None)
+        if peer and peer.store.on:
+            from .relay_guards import requests
+            if peer.store.pending_in(now):
+                reasons.append('friends_pending')
+            rows = requests(peer.store)['requests']
+            if any(r['state'] == 'pending' or
+                   (r['state'] in ('blocked', 'released', 'expired') and now - (r.get('updated') or r['created']) < 3600)
+                   for r in rows if r['direction'] == 'in'):
+                reasons.append('friend_requests')
+    except Exception:
+        unknown.append('friends')
     from . import quota, auth_rescue
     try:
         if quota.reminders_on(getattr(host, 'preferences', {})):

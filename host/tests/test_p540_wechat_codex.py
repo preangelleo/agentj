@@ -175,6 +175,9 @@ class WeChatCodex(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(shutil.rmtree, self.tmp, True)
         self.home = self.tmp / "home"
         (self.home / ".codex").mkdir(parents=True)
+        # P591 readonly parent views permit existing sibling writes, not new HOME entries.
+        # Seed only the stand-in's output log; its execution still crosses the real fence.
+        (self.home / "codex-argv.jsonl").write_text("")
         work = self.tmp / "work"
         work.mkdir()
         exe = self.tmp / "bin" / "codex"

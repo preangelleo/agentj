@@ -1,26 +1,6 @@
 """P92 / ADR-A196: the first-run "at the Agent J host" checklist — `agentj setup checklist [--resume | --check | --item ID]`.
 
-One main Agent walks the owner through everything that later needs them at the Agent J host, once, while they are still there
-(Leo approved the four P92 defaults, 2026-10-09): offered automatically after the FIRST installation's welcome, on demand for
-existing hosts; "I won't use this" is remembered per item; the leave-the-computer confirmation covers only the selected, verified
-items and lists the rest; 0.18.0 is the first P86 scenario, the full Google API connection follows in 0.18.1 (P91) and the remote
-viewer in 0.19 (P90) — those rows say so instead of pretending.
-
-Journal: `<state>/setup/checklist.json` (0700 dir, 0600 file) — a companion file next to the P86 registry, never a second
-registry: item id / choice (selected | unused | undecided) / state (pending | waiting_local | verified | attention | deferred |
-unsupported | not_applicable) / reason word / check and expiry times / the owner-decision reference. No e-mail, token, password,
-cookie, QR, callback URL or system file content. Writes take one lock and a revision compare-and-swap; a phone answering an older
-revision gets `changed` and re-reads (never last-writer-wins).
-
-Who decides what: the host's adapters decide `verified` (a probe that reads the real state back). The owner decides choices,
-only through the signed phone/desktop card (`setup_mark`, controls.py); the CLI and the Agent cannot mark anything ready, unused
-or skipped. "I'm done" from the owner only triggers a check. A failed item pauses its dependants only, never the main Agent.
-
-P131 (Leo, 10-11): the checklist never blocks the chat — the phone / desktop page shows it as its own screen behind a thin,
-closable banner; "close" (`--close`, the banner's ✕) stops it coming back by itself until it is reopened. Every row says where
-it is done (computer / phone / me / not in this version), and a failed row states the fact, what it affects and the next step
-(`explain`), naming WHICH browser was checked. Owner actions from the card: install Agent J's browser, use the browser already
-running here (adopt), open the sign-in page in Agent J's browser and bring it to the front — each a signed `setup_mark`.
+Developer reference: documentation/notes/P0263-HOST-REFERENCE.md#first-run.
 """
 from __future__ import annotations
 

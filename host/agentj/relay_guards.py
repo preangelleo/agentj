@@ -9,6 +9,8 @@ import secrets
 
 HEX = re.compile(r'[0-9a-f]{32}')
 FINAL = {'done', 'released', 'expired', 'cancelled', 'loop', 'hops', 'rate', 'shape', 'blocked'}
+ADMISSION = {'admission_filter', 'admission_error', 'relationship', 'queue_full', 'handoff_unknown',
+             'action_nonce', 'action_capacity', 'durability', 'main_unavailable', 'submit_failed', 'task_plan', 'quota', 'delivery_guard', 'admission_interrupted'}
 REASONS = {
     'loop': ('这条转交绕回了原来的 Agent J 主机，已停止。', 'This request came back to its starting computer and was stopped.'),
     'hops': ('这条请求已转交超过 4 次，已停止。', 'This request was handed on more than 4 times and was stopped.'),
@@ -22,6 +24,21 @@ REASONS = {
 
 def message(reason, lang):
     return REASONS[reason][lang != 'zh']
+
+
+def diagnostic(fid, mid, state, reason, lang):
+    zh = lang == 'zh'
+    if reason == 'durability_unconfirmed':
+        text = '持久化未确认，请先核实，勿重发。' if zh else 'Persistence unconfirmed. Check before resending.'
+    elif state == 'claimed':
+        text = '请求已认领，请先核实接收设备，避免重复执行。' if zh else 'Claimed. Check the receiving device before resending.'
+    elif state == 'pending':
+        text = '请求已保留，等待主 Agent 恢复，无需重发。' if zh else 'Saved; waiting for the main Agent. No resend needed.'
+    elif reason == 'queue_full':
+        text = '等待队列已满，请稍后重新发送。' if zh else 'The waiting queue is full. Send again later.'
+    else:
+        text = '请求未交给主 Agent，请核对原因后重新发起。' if zh else 'Not handed to the main Agent. Check the reason before resending.'
+    return f'{fid} · {mid}: {text} ({reason})'
 
 
 class RelayGuards:
@@ -68,7 +85,9 @@ class RelayGuards:
         return True
 
     def receipt(self, fid, mid, state):
-        self.svc._send(fid, {'t': 'relay_state', 'mid': mid, 'state': state})
+        reason = (self.row(fid, mid) or {}).get('reason')
+        self.svc._send(fid, {'t': 'relay_state', 'mid': mid, 'state': state,
+                             **({'why': reason} if isinstance(reason, str) and reason in ADMISSION else {})})
         # Stop the transport retry too. The richer state is an app receipt.
         self.svc._send(fid, {'t': 'pack', 'mid': mid, 's': 'got'})
 
@@ -78,6 +97,7 @@ class RelayGuards:
             r = d.get(self.key(fid, mid, direction))
             if r and r['state'] not in FINAL and r['state'] != state and not (r['state'] == 'claimed' and state == 'pending'):
                 r['state'] = state
+                r['updated'] = self.svc.clock()
                 if state == 'claimed':
                     r['claimed'] = self.svc.clock()
                 changed = True
@@ -100,6 +120,49 @@ class RelayGuards:
                 self.svc.notice(f'{name} · {mid} · {summary}: ' + message(state, self.svc.lang))
             self.svc.changed(fid)
         return changed
+
+    def block(self, fid, mid, reason, *, retry=False):
+        # Local fixed codes only; never persist a peer reason or exception/body.
+        if reason not in ADMISSION:
+            raise ValueError('invalid admission reason')
+        with self.store._edit('relay-requests.json', {}) as rows:
+            row = rows.get(self.key(fid, mid))
+            if not row or row['state'] not in ('pending', 'claimed') or row.get('reply_state') in ('sending', 'unknown', 'done'):
+                return False
+            row['reason'] = reason
+            row['updated'] = self.svc.clock()
+            claimed = row['state'] == 'claimed'
+        if claimed:
+            self.svc.notice(diagnostic(fid, mid, 'claimed', reason, self.svc.lang))
+            return False
+        state = 'pending' if retry else 'blocked'
+        if retry or self.state(fid, mid, state):
+            import asyncio
+            from . import diskq
+            if diskq.on_loop():
+                job = asyncio.create_task(self.blocked_notice(fid, mid, state, reason))
+                self.svc.jobs.add(job)
+                job.add_done_callback(self.svc.jobs.discard)
+            else:
+                self.publish_block(fid, mid, state, reason, diskq.flush())
+        return False
+
+    async def blocked_notice(self, fid, mid, state, reason):
+        from . import diskq
+        self.publish_block(fid, mid, state, reason, await diskq.aflush())
+
+    def publish_block(self, fid, mid, state, reason, durable):
+        row = self.row(fid, mid) or {}
+        if row.get('state') != state or row.get('reason') != reason:
+            return  # Another transition owns its own receipt; never publish stale state.
+        if not durable:
+            self.svc.notice(diagnostic(fid, mid, state, 'durability_unconfirmed', self.svc.lang))
+            return
+        if callable(getattr(self.svc, '_send', None)):
+            self.receipt(fid, mid, state)
+        if state == 'blocked' and callable(getattr(self.svc, '_finish', None)):
+            self.svc._finish(fid, mid, state)
+        self.svc.notice(diagnostic(fid, mid, state, reason, self.svc.lang))
 
     def accept(self, fid, m):
         old = self.row(fid, m['mid'])
@@ -210,8 +273,14 @@ class RelayGuards:
         mid, state = obj.get('mid'), obj.get('state')
         if not isinstance(mid, str) or not isinstance(state, str) or state not in FINAL | {'claimed', 'pending'}:
             return
-        if not self.row(fid, mid, 'out'):
+        prior = self.row(fid, mid, 'out')
+        if not prior or prior.get('state') in FINAL or (prior.get('state') == 'claimed' and state == 'pending'):
             return
+        why = obj.get('why')
+        if isinstance(why, str) and why in ADMISSION and (self.row(fid, mid, 'out') or {}).get('state') not in FINAL and self.row(fid, mid, 'out').get('reason') != why:
+            with self.store._edit('relay-requests.json', {}) as rows:
+                rows[self.key(fid, mid, 'out')]['reason'] = why
+            self.svc.notice(diagnostic(fid, mid, state, why, self.svc.lang))
         self.state(fid, mid, state, 'out')
 
     def sweep(self):
@@ -225,12 +294,11 @@ class RelayGuards:
                 if r['direction'] == 'out' or r['mid'] in relation.get('queue', {}):
                     continue
                 if r['mid'] in relation.get('forwarded', []):
-                    self.state(r['friend'], r['mid'], 'blocked')
-                    self.receipt(r['friend'], r['mid'], 'blocked')
-                    self.svc.notice(self.store.name_of(r['friend']) + ' · ' + r['mid'] + ': ' +
-                        ('旧版交接结果不明，请先在接收设备核实，再决定是否重发。' if self.svc.lang == 'zh' else
-                         'The earlier handoff is uncertain. Check the receiving device before resending.'))
-                    continue       # authenticated same-owner work waits for its main consumer
+                    self.block(r['friend'], r['mid'], 'handoff_unknown')
+                    continue
+                if now >= r['created'] + cfg['relay_pending_seconds']:
+                    self.block(r['friend'], r['mid'], 'admission_interrupted')
+                    continue
             duration = cfg['relay_claim_seconds'] if state == 'claimed' else cfg['relay_pending_seconds']
             if now < r.get('claimed', r['created']) + duration:
                 continue
@@ -240,3 +308,19 @@ class RelayGuards:
             elif r['direction'] == 'out':
                 self.svc._send(r['friend'], {'t': 'relay_cancel', 'mid': r['mid']})
         # Never submit, replay, or kill a running task here.
+
+
+def requests(store):
+    """Read-only bounded lifecycle projection; no text, names, proofs or queue payloads."""
+    relations = store._read('same-owner.json', {})
+    result = []
+    for row in store._read('relay-requests.json', {}).values():
+        state = row.get('state')
+        queued = row.get('mid') in relations.get(row.get('friend'), {}).get('queue', {})
+        stage = ('answered' if state == 'done' else 'claimed' if state == 'claimed' else
+                 'submitted' if state == 'pending' and queued and row.get('submitted') else
+                 'queued' if state == 'pending' and queued else 'received' if state == 'pending' else 'failed')
+        result.append({**{k: row.get(k) for k in ('friend', 'mid', 'direction', 'created', 'updated', 'claimed', 'state')},
+                       'stage': stage, 'reason': row.get('reason') if isinstance(row.get('reason'), str) and row['reason'] in ADMISSION else None,
+                       'reply_state': row.get('reply_state', 'pending')})
+    return {'ok': True, 'requests': result}

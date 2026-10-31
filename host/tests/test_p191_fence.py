@@ -1,6 +1,6 @@
 """P191 (audit B3 / B6): pin the facts the privacy page and 12_ZERO_ACCESS §8b ③ state about the fence and Agent J's own
-browser, so the disclosure cannot drift from the code. No behaviour change in P191: the session bus and the systemd user
-manager stay bound back in (F14), the browser's debugging port stays random and loopback-only. All I/O hermetic."""
+browser, so the disclosure cannot drift from the code. P591 supersedes the F14 runtime bus exception: the session bus and systemd user
+manager stay hidden, the browser's debugging port stays random and loopback-only. All I/O hermetic."""
 import _hermetic  # noqa: F401
 from _testtmp import TEST_TMP  # noqa: E402  P202: fixtures on tmpfs, not the system disk
 import os
@@ -37,9 +37,9 @@ class Fixture(unittest.TestCase):
 
 
 class BusAndServiceManager(Fixture):
-    """B3: bound back (F14), the keyring's own control folder is not; nothing is bound when it does not exist."""
+    """B3: hidden (P591), the keyring's own control folder is not; nothing is bound when it does not exist."""
 
-    def test_bus_and_systemd_bound_back_keyring_folder_hidden(self):
+    def test_bus_and_systemd_hidden_with_keyring_folder(self):
         (self.rt / "systemd").mkdir()
         (self.rt / "bus").write_text("")
         (self.rt / "keyring").mkdir()
@@ -48,12 +48,10 @@ class BusAndServiceManager(Fixture):
         rt = os.path.realpath(self.rt)
         self.assertIn(rt, self.after(a, "--tmpfs"), "the runtime dir itself stays private")
         binds = self.after(a, "--bind")
-        self.assertIn(os.path.join(rt, "bus"), binds)
-        self.assertIn(os.path.join(rt, "systemd"), binds)
+        self.assertNotIn(os.path.join(rt, "bus"), binds)
+        self.assertNotIn(os.path.join(rt, "systemd"), binds)
         for hidden in ("keyring", "gnupg"):
             self.assertNotIn(os.path.join(rt, hidden), binds + self.after(a, "--ro-bind"), hidden)
-        self.assertLess(a.index("--tmpfs", a.index("--new-session")), a.index(os.path.join(rt, "bus")),
-                        "the bus is put back on top of the private runtime dir, not under it")
 
     def test_absent_bus_and_systemd_are_not_invented(self):
         a = self.argv()
@@ -63,7 +61,7 @@ class BusAndServiceManager(Fixture):
         self.assertNotIn(os.path.join(rt, "systemd"), binds)
 
     def test_only_the_two_documented_entries_come_back(self):
-        self.assertEqual(fence._RUNTIME_BACK, ("systemd", "bus"))
+        self.assertEqual(fence._RUNTIME_BACK, ())
 
 
 class BrowserEndpoint(Fixture):
@@ -102,10 +100,10 @@ class Disclosure(unittest.TestCase):
     def test_privacy_page_names_keyring_service_manager_and_browser_port(self):
         en = (DOCS / "en.md").read_text()
         zh = (DOCS / "zh.src.md").read_text()
-        for needle in ("keyring for secrets over the session bus", "runs outside the fence", "picked at random",
+        for needle in ("user service manager and session bus (D-Bus) are hidden", "user unit configuration is read-only", "picked at random",
                        "127.0.0.1 only", "no password"):
             self.assertIn(needle, en)
-        for needle in ("钥匙串", "在隔离之外运行", "随机选", "没有密码"):
+        for needle in ("用户服务配置只读", "不能直接运行", "随机选", "没有密码"):
             self.assertIn(needle, zh)
         self.assertFalse(re.search(r"absolutely secure|zero-knowledge", en.split("We won't call it")[0]))
 

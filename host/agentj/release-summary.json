@@ -1,5 +1,5 @@
 {
-  "version": "0.26.2a1",
-  "zh": "同主人设备可以用一份任务授权单确认具体步骤，密钥通过专用加密通道传递；授权范围外的操作仍需确认。 心跳先在本机检查待办、日历和未完成事项；没事就不调模型，用量弹窗里能看心跳消耗。",
-  "en": "Authorize the listed steps of a same-owner task once. Idle checks use no model tokens; measured heartbeat usage appears in the usage panel."
+  "version": "0.26.3a1",
+  "zh": "同主人任务显示接收与等待状态；心跳提示未完成事项。Linux 隔离区阻止访问用户服务总线与修改服务配置，诊断按实际支持范围报告。",
+  "en": "See same-owner admission and heartbeat status. Linux isolation blocks user service control and config edits; diagnostics report actual support."
 }

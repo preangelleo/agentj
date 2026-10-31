@@ -1,25 +1,6 @@
 """P411 (#172 + #76): screen help — `agentj qr push` and `agentj screen ask` put a picture on the owner's phones.
 
-Browser automation stops at a sign-in QR code, a captcha or a "are you human" page. The Agent (or the owner's own script —
-systemd / cron, no Agent session) sends the picture to the owner's paired remotes and waits:
-  * `agentj qr push [<png> | --page [--selector CSS]]` — the QR code cut out of the picture (qrcrop.py: local zxing-cpp,
-    the owner's vision model only as an opt-in fallback, the cut decoded again and used only when it matches; else the
-    original), shown large with a countdown; 「我扫好了」 / 「取消」. `--wait-until page-change` watches the browser tab and
-    closes the card by itself when the page moves on (the scan worked).
-  * `agentj screen ask [<png> | --page | --screen] --question …` — the whole page / screen in high resolution with one
-    question; the owner scans, taps 「已完成」, or types a short answer (a verification code) that goes back to the caller.
-
-The card (help_card) is NOT chat history: like P114's sign-in card it lives in serve's memory only, goes only to this
-seat's paired remotes inside the end-to-end encrypted session (never friends, Bots, Telegram or e-mail), and is wiped when it
-ends (answer / cancel / expiry ≤ TTL_MAX / Stop everything / restart). Only a device holding an approval key answers. The
-typed answer is kept in memory until the caller reads it (≤ KEEP_S) and is never logged; one that looks like a key or
-password is refused on the phone (credentials go through `agentj secret request`, never through this card).
-
-The channel is narrow on purpose (#76): elevate.sock (same uid only, reachable from inside the Agent fence); pictures only
-(PNG / JPEG / WebP by their leading bytes), ≤ IMG_MAX bytes; RATE cards a minute per source and RATE_ALL in total;
-MAX_OPEN open at once; a local log line per card and per outcome (id, kind, caller, bytes — never the picture, the
-question or the answer). Untrusted pixels are parsed only in the caller's process (the crop), never in serve; serve's
-browser capture is fixed CDP calls (the selector travels as JSON data into a fixed function, like browser_cdp.find_qr).
+Developer reference: documentation/notes/P0263-HOST-REFERENCE.md#screenhelp.
 """
 from __future__ import annotations
 

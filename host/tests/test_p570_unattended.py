@@ -75,11 +75,22 @@ class Unattended(Base):
                           ("Write", {"file_path": str(pathlib.Path(self.host.agent_cfg["dir"]) / "notes.md"), "content": "x"}),
                           ("Bash", {"command": "agentj card todo add 'call the bank'"}),
                           ("Bash", {"command": "systemd-run --user --unit=demo true"})):
+            self.assertEqual(self.cards(), [], "ordinary operations did not ask for a card")
             res, took = self.timed(inp, tool=tool)
+            if inp.get("command") == "systemd-run --user --unit=demo true":
+                # P591: unattended ordinary work still runs; manager activation remains signed owner authority.
+                self.assertEqual(res["behavior"], "deny", (tool, inp, res))
+                self.assertIn(NOBODY_ZH, res["message"])
+                self.assertNotIn(OWNER_NO, res["message"])
+                self.assertLess(took, 1.0, "parked after the grace, not the card's lifetime")
+                self.assertTrue(self.parked()[-1].require_passkey)
+                self.assertEqual((self.last()["decision"], self.last()["reason"]), ("deny", "offline"))
+                self.assertEqual(self.no_device_deny(), [])
+                continue
             self.assertEqual(res["behavior"], "allow", (tool, inp, res))
             self.assertLess(took, 0.12, "no remote is waited for")
             self.assertEqual(self.last()["reason"], "level_harness")
-        self.assertEqual(self.cards(), [])
+        self.assertEqual(len(self.parked()), 1, "only user-manager activation needs the owner")
         done = [r for r in self.host_log("ask_done") if r.get("reason") == "level_harness"]
         self.assertTrue(done and all(r.get("via") == "system" for r in done), done)
 

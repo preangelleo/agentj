@@ -2589,7 +2589,7 @@ agentj friends --help
 
 ```text
 usage: agentj friends [-h] [--json]
-                      {relay-policy,cancel,asks,id,card,add,list,reports,status,pick,pick-rules,history,tell,approve-actions,say,devices,group,groups,block,unblock,remove,discoverable,profile,context,usage,on,off} ...
+                      {relay-policy,cancel,asks,id,card,add,list,requests,reports,status,pick,pick-rules,history,tell,approve-actions,say,devices,group,groups,block,unblock,remove,discoverable,profile,context,usage,on,off} ...
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -3051,6 +3051,25 @@ agentj friends reports --help
 
 ```text
 usage: agentj friends reports [-h] [--json]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `machine-readable output` |
+
+### agentj friends requests
+
+```text
+只读转交状态（不含正文）/ read-only request metadata
+```
+
+```bash
+agentj friends requests --help
+```
+
+```text
+usage: agentj friends requests [-h] [--json]
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -9550,7 +9569,7 @@ agentj friends --help
 
 ```text
 usage: agentj friends [-h] [--json]
-                      {relay-policy,cancel,asks,id,card,add,list,reports,status,pick,pick-rules,history,tell,approve-actions,say,devices,group,groups,block,unblock,remove,discoverable,profile,context,usage,on,off} ...
+                      {relay-policy,cancel,asks,id,card,add,list,requests,reports,status,pick,pick-rules,history,tell,approve-actions,say,devices,group,groups,block,unblock,remove,discoverable,profile,context,usage,on,off} ...
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -10012,6 +10031,25 @@ agentj friends reports --help
 
 ```text
 usage: agentj friends reports [-h] [--json]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `机器可读输出` |
+
+### agentj friends requests
+
+```text
+只读转交状态（不含正文）/ read-only request metadata
+```
+
+```bash
+agentj friends requests --help
+```
+
+```text
+usage: agentj friends requests [-h] [--json]
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |

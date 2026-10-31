@@ -409,7 +409,7 @@ def suspect(tool: str, tool_input, verdict) -> str | None:
     rules = set(getattr(verdict, "rules", []) or [])
     if rules & ATTACK_RULES:
         return "injection"                 # … | sh, base64 -d | bash, source <url>, python -c "$(…)", $'\x72m'
-    if "cred.hooks" in rules:
+    if rules & {"cred.hooks", "cred.service"}:
         return "hooks"                     # a hook / approver file being rewritten
     if tool == "agentj config":
         return "settings"                  # an Agent J security / approval setting (only those ever reach a card)
