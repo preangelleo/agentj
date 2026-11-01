@@ -42,7 +42,7 @@ MASK_MAX = 4 * MIB                 # a text file larger than this is not masked:
 MAX_REFS = 64                     # candidate references examined per page
 NAME_MAX = 128
 REF_MAX = 512
-WHYS = ("too_big", "outside", "secret", "type", "gone", "masked", "too_many", "private", "key_file", "key_content", "key_card")
+WHYS = ("failed", "too_big", "outside", "secret", "type", "gone", "masked", "too_many", "private", "key_file", "key_content", "key_card")
 _PLACEHOLDER = re.compile(r"<(?:redacted|email|phone|private-ip|host|user)>")
 SCAN_SLICE = MIB                  # the secret scan reads text in slices of this much …
 SCAN_OVERLAP = 8 * 1024           # … overlapping by this much, so a token across a boundary is still seen
@@ -418,6 +418,7 @@ class Media:
         except (OSError, ValueError):
             pass
         self._prune()
+        self._checked = {}
 
     @staticmethod
     def _live(rec: dict, now: float) -> bool:
@@ -427,7 +428,10 @@ class Media:
     def _prune(self) -> None:
         now = self.clock()
         live = sorted(((v.get("ts", 0), k) for k, v in self.table.items() if self._live(v, now)), reverse=True)
-        self.table = {k: self.table[k] for _, k in sorted(live[:KEEP_N])}
+        kept = {k for _, k in live[:KEEP_N]}
+        for k in list(self.table):
+            if k not in kept:
+                self.table.pop(k, None)
 
     def _save(self) -> None:
         try:
@@ -490,6 +494,8 @@ class Media:
             if here and os.path.lexists(os.path.join(here, p)):
                 raw = os.path.normpath(os.path.join(here, p))
         quiet = not ref.explicit
+        if privacy.credentials(raw, entropy=False):
+            return None, (None if quiet else "secret")
         if not os.path.lexists(raw):
             return None, (None if quiet else "gone")
         real = os.path.realpath(raw)
@@ -535,6 +541,11 @@ class Media:
                 return {"name": parts[-1], "bytes": s.st_size}, "too_big"
             if s.st_size == 0:
                 return None, None
+            version = (bool(owner), bool(mask), rroot, tuple(parts), s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns, s.st_ctime_ns)
+            with self.lock:
+                cached = self._checked.get(version)
+            if cached is not None:
+                return self._rec(parts, mime, kind, s, cached, ref, rroot), None
             # binary media (typed by leading bytes above) is never read as text: only TEXTY kinds are scanned
             at: dict = {}
             sha, secret = _hash_and_scan(fd, s.st_size, mime in TEXTY, mime in ("text/html", "image/svg+xml"), owner, at)
@@ -552,6 +563,10 @@ class Media:
             return None, "gone"
         finally:
             os.close(fd)
+        with self.lock:
+            self._checked[version] = sha
+            while len(self._checked) > KEEP_N:
+                self._checked.pop(next(iter(self._checked)))
         return self._rec(parts, mime, kind, s, sha, ref, rroot), None
 
     def _mask(self, fd: int, size: int, sha: str, rec: dict, html: bool) -> dict | None:
@@ -751,7 +766,7 @@ class Media:
         """Owner scan plus explicit credential references as (skip, record) pairs for pickup cards."""
         items, skips, keys, total, seen = [], [], [], 0, set()
         for ref in refs(text):
-            name = os.path.basename(ref.path.rstrip("/"))[:NAME_MAX] or ref.path[:NAME_MAX]
+            name = privacy.owner_text(os.path.basename(ref.path.rstrip("/")) or ref.path)[:NAME_MAX]
             if _PLACEHOLDER.search(ref.path):
                 if ref.explicit:
                     skips.append({"name": name, "why": "masked"})
@@ -781,6 +796,14 @@ class Media:
                 continue
             seen.add((rec["dev"], rec["ino"]))
             total += rec["bytes"]
+            with self.lock:
+                old = next(((mid, row) for mid, row in self.table.items()
+                            if row.get('page') == page and row.get('ref') == rec['ref']
+                            and row.get('sha256') == rec['sha256'] and self._live(row, self.clock())), None)
+            if old:
+                mid, _ = old
+                items.append({"mid": mid, **{k: rec[k] for k in ("name", "mime", "kind", "bytes", "sha256", "ref")}})
+                continue
             self._persist(rec)            # P573: the card stays openable after 24 h / a changed source
             mid = wire.b64u(secrets.token_bytes(16))
             with self.lock:

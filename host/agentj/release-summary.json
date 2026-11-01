@@ -1,5 +1,5 @@
 {
-  "version": "0.26.3a1",
-  "zh": "同主人任务显示接收与等待状态；心跳提示未完成事项。Linux 隔离区阻止访问用户服务总线与修改服务配置，诊断按实际支持范围报告。",
-  "en": "See same-owner admission and heartbeat status. Linux isolation blocks user service control and config edits; diagnostics report actual support."
+  "version": "0.26.4a1",
+  "zh": "[all] 完整本地图片引用可在回合进行中显示；获准的主人手机回合可用 agentj file show 附加文件。排队或附到页面不代表客户端已下载或主人已看到。",
+  "en": "[all] Show local images while a turn runs; file show attaches files in an admitted owner turn. Queued or attached does not mean downloaded or seen."
 }

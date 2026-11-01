@@ -1,6 +1,6 @@
-# Agent J 0.26.3a1 release notes
+# Agent J 0.26.4a1 release notes
 
-Host 0.26.3a1 / install 0.28.3; phone-web scope.
+Host 0.26.4a1 / install 0.28.4; phone-web scope.
 Phone parity must pass --strict. Full Android/Telegram parity is incomplete.
 Full Android/Telegram parity is incomplete.
 No APK is included in this release. Android source is for review, not a released app.
@@ -8,15 +8,21 @@ No APK is included in this release. Android source is for review, not a released
 Publication status: local preparation only. Live site verification is DEFERRED until
 the public commit and tag are pushed, the site is deployed, and cold installation passes.
 
-Scope: P590 same-owner admission visibility and heartbeat signals; P591 Linux user service bus isolation, protected service configuration and supported diagnostics. Release order: C Dashboard generated support knowledge (no new D1 migration), then A signed host/site/downloads and front Worker, immediately followed by B phone web. No relay change. On failure restore compatible v0.26.2a1 host/site/phone assets and the captured Dashboard Worker version; otherwise repair forward. Preserve0036 revocation state,0037 action UV data,0038 checkout pending records,0041 seat transfer records and local security journals permanently. Never replay migrations or restore an older database snapshot. Qualification requires the two frozen candidates, freshly derived affected host and version-reader suites, one source-bound full strict parity run, and exact failed-item continuation. Full-host, QA-J, physical Mac and customer-machine acceptance remain unperformed. Local preparation only; actual public export, secret scans, root public Jev and publication receipts remain required. Synchronize Olares receivers after A under the existing operator authorization.
+Scope: live local-image delivery and current-owner-page file show only. Release order: C generated Dashboard support knowledge (no new D1 migration), then A newly signed host/site/downloads and front Worker, immediately followed by B phone web. Use the new 0.26.4a1 artifacts; the earlier 0.26.3a1 INTERNAL wheel is not a published upgrade. Preserve existing D1 records and security journals; never replay migrations. Local release preparation only: publication, installation on the owner's host and service restarts remain separate operator actions.
 ## Changes
 
-- [all] Same-owner tasks show admission and waiting status. Heartbeats show unfinished work so you can check whether a task reached the main Agent.
-- [all] Linux isolation blocks access to the user service bus and changes to service configuration. Diagnostics report results only for supported checks.
-- [all] 同主人任务显示接收与等待状态，心跳显示未完成事项，方便核对任务是否进入主 Agent。
-- [all] Linux 隔离区阻止访问用户服务总线与修改服务配置；诊断按实际支持的检查报告结果。
+- [all] Use agentj file show in an admitted owner phone turn to attach a local file to the current page; without a live owner turn it fails explicitly.
+- [all] Complete local image references can appear while a turn is running, without waiting for tools and the reply to finish.
+- [all] Image preparation and failure states are clearer. A queued or attached-to-page receipt does not mean the client downloaded the file or the owner saw it.
+- [all] 在当前获准的主人手机回合，用 agentj file show 把本地文件附到当前页；无有效主人回合会明确失败。
+- [all] 回复中的完整本地图片引用可在回合进行中显示，继续执行工具时无需等到回复结束。
+- [all] 图片准备和失败状态更清楚；排队或附到页面的回执不代表客户端已下载或主人已看到。
 
 ## Material acceptance limits
+
+- This fix was tested with isolated Linux subprocesses/owner sockets and a real Chromium page using a synthetic image while the turn remained active. Physical phones, macOS, WSL and end-to-end real Claude Code/Codex/OpenCode model sessions remain untested; Kimi/Qwen ACP file-show admission is not integrated or accepted.
+- file show requires a live admitted owner phone turn; it cannot choose a device, group or friend or create an outgoing message from a standalone desktop turn. queued / attached_to_page do not prove client download or owner visibility.
+- 中文：本修复已在 Linux 隔离子进程、主人套接字及真实 Chromium 合成图片页面验证，回合未结束即可成图。实体手机、macOS、WSL 和 Claude Code/Codex/OpenCode 真实模型回合端到端未验；Kimi/Qwen ACP 未接入或验收 file show。无有效主人手机回合会失败，不能指定设备、群、好友或另建外发消息；排队或已附到页面不代表客户端下载或主人已看到。
 
 - Android arbitrary-name wake recognition, false-accept/false-reject rates, background operation,
   battery behavior and speech-model licensing are not cleared for a released app.

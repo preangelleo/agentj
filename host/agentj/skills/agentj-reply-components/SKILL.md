@@ -13,6 +13,10 @@ For structured components use one complete JSON object per fenced `agentj` block
 
 结构化组件每个 `agentj` 围栏只放一个完整 JSON 对象。表单不收密码、密钥或其他秘密。表单、确认卡按钮只填入草稿，主人检查后按发送；已有 reply: 选项保持单击发送。持久待办继续用官方待办卡。
 
+Local files / 本地文件：Write a complete Markdown link or image reference; absolute paths and ~/ both work. For a deterministic current-page attachment, run `agentj file show PATH --label LABEL --json` in the admitted owner phone turn. It reuses host path/type/secret checks and cannot select a device, group or friend. No live owner turn returns failure (including standalone desktop turns). `queued` is pending; wait for FILE_SHOW_RESULT with `attached_to_page` or `failure`. All carry client_downloaded:false: never claim the owner saw it. Do not use owner-only notify/send as a fallback.
+
+写完整的 Markdown 本地链接或图片引用，绝对路径和 ~/ 都支持。需要明确附到当前页时，在获准的主人手机回合运行 `agentj file show PATH --label 说明 --json`；沿用主机路径、类型和秘密检查，不能指定设备、群或好友。无有效主人回合（包括独立桌面回合）即失败。queued 只是排队，等 FILE_SHOW_RESULT 返回 attached_to_page 或 failure；client_downloaded 始终为 false，不能声称主人已看到。不要借主人专用 notify/send 绕过。
+
 Limits: 16000 characters per block, 20 components per reply. Unknown properties/types, oversized data, dangling flowchart edges and duplicate IDs fall back to text. Numbers must be finite. Links keep the existing URL filter and host-authorized local media path.
 
 ## link

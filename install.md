@@ -1,15 +1,15 @@
 ---
 document: agentj-install
-version: 0.28.3
-released: 2026-10-31
+version: 0.28.4
+released: 2026-11-01
 status: beta (anyone can sign up; not advertised yet, pages are not indexed)
 host_package: agentj (the `agentj` command)
-host_version: 0.26.3a1
-source_tag: v0.26.3a1
-host_wheel: agentj-0.26.3a1-py3-none-any.whl
-host_wheel_sha256: 14a26c7b248597b0395aa8928e94d24b48c8770e58978baa9f899e806a547a9a
-host_sdist: agentj-0.26.3a1.tar.gz
-host_sdist_sha256: 97dd74153ce7e15b75190108b9aa56742ee5a0d76a6323caf7abf457c878d5da
+host_version: 0.26.4a1
+source_tag: v0.26.4a1
+host_wheel: agentj-0.26.4a1-py3-none-any.whl
+host_wheel_sha256: bf95c2a57e870bca2a7bd4d9f1f16d07c6576bfe9add8a5d847c60622d48ded2
+host_sdist: agentj-0.26.4a1.tar.gz
+host_sdist_sha256: 76cab105de3bd86d020a1467c4d4e4e8ef8758c9ba140393dfdacb8c4d6f463c
 canonical_url: https://agentj.app/install.md
 sha256_url: https://agentj.app/install.md.sha256
 alias: https://agentjarvis.net/install.md (the older address: the same file, kept for one more version)
@@ -726,7 +726,7 @@ DeepSeek says a preview may break; Agent J was measured on 0.2.0-rc.2.
 carry over). So start every command line from here on with `export PATH="$HOME/.local/bin:$PATH";` — or call
 `~/.local/bin/agentj` by its full path. This document writes `agentj` for short.
 
-The program is pinned to one release: the tag `v0.26.3a1` (front matter `source_tag`). The tag never moves, and its
+The program is pinned to one release: the tag `v0.26.4a1` (front matter `source_tag`). The tag never moves, and its
 `host/` folder is byte for byte the same code as the two files on our site whose SHA-256 is in this document's front matter.
 ```bash
 cd ~/.agentj-install
@@ -737,7 +737,7 @@ uv tool install "./$W"
 
 Intel Mac: this release keeps `cryptography<49` because newer releases lack an Intel macOS wheel. If an older installer tries to compile OpenSSL (`openssl-sys` / OpenSSL not found), rerun `uv tool install --with "cryptography<49" "./$W"`. The same platform constraint applies to `agentj update apply`.
 
-export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.26.3a1
+export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.26.4a1
 export PATH="$HOME/.local/bin:$PATH"; agentj doctor
 ```
 **Your human's own terminal must find `agentj` too** — they may use `agentj passphrase set` and `agentj pair` as a local alternative
@@ -765,16 +765,16 @@ echo "$WS  $W" | sha256sum -c - && echo "$SS  $S" | sha256sum -c -    # macOS: s
 uv tool install "./$W"          # the wheel; its dependencies come from PyPI or the mirror in UV_DEFAULT_INDEX
 ```
 `uv tool install "./$S"` installs from the checked source archive instead (it builds the same program).
-`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.26.3a1`); it is
+`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.26.4a1`); it is
 numbered separately from this document (`0.27.7`).
 
-Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.26.3a1#subdirectory=host"`.
+Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.26.4a1#subdirectory=host"`.
 
-Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.26.3a1#subdirectory=host"` (needs Python 3.11+).
+Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.26.4a1#subdirectory=host"` (needs Python 3.11+).
 
 **What each route checks.** The wheel and the source archive above are checked against the SHA-256 in this document. Each
 also has a minisign signature beside it (`<file>.minisig`, key `B79F925B0585F9D4` — front matter `signature`), which
-`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.26.3a1`
+`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.26.4a1`
 routes check **neither**: Git trusts GitHub's HTTPS and the tag name, and nothing compares that code with this document.
 Use them only when the checked files cannot be downloaded, and say so in the final feedback.
 `agentj doctor` lists what is ready and what is not (prerequisites, the fence, connectivity, which agents are usable).
@@ -1776,7 +1776,7 @@ Nightly automatic installation is enabled by default and verifies the official w
 In a shared session (the default of 0.13–0.19), reinstall directly using Step 4's checked wheel (SHA-256 must match this document and
 its public GitHub copy), preserving the host's identity, paired phones, account and preferences:
 ```bash
-uv tool install --force "./agentj-0.26.3a1-py3-none-any.whl"
+uv tool install --force "./agentj-0.26.4a1-py3-none-any.whl"
 agentj --version
 agentj service install
 agentj service restart
@@ -1785,7 +1785,7 @@ agentj doctor
 The matching published tag is another source, after verifying the tag object against the upgrade email (no signature or
 hash check on this route — Step 4):
 ```bash
-uv tool install --force "git+https://github.com/preangelleo/agentj@v0.26.3a1#subdirectory=host"
+uv tool install --force "git+https://github.com/preangelleo/agentj@v0.26.4a1#subdirectory=host"
 ```
 **0.14 independent session** (`agent.session_mode=independent`): 0.14's fence keeps Agent J's own program read-only and
 hides the service manager, so the Agent on the phone cannot reinstall or restart from inside it (measured: the install
@@ -1811,11 +1811,11 @@ prints something and `uv tool list` (or `pipx list`) shows `agentjarvis-host`, t
 the new name, then:
 ```bash
 jarvis service uninstall      # stop the old service first (Step 10 used tmux / nohup instead? stop that process)
-uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.26.3a1#subdirectory=host"
+uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.26.4a1#subdirectory=host"
 agentj doctor
 agentj service install        # start it again under the new name (or the tmux / nohup fallback, Step 10)
 ```
-With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.26.3a1#subdirectory=host"`.
+With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.26.4a1#subdirectory=host"`.
 - After the move, `agentj` puts back a `jarvis` command (a link to `agentj`, only if no other `jarvis` exists) for one more
   version; it prints a notice that points here. New installs never get `jarvis`.
 - The state moves from `~/.local/state/agentjarvis-alpha` to `~/.local/state/agentj` on the first run of `agentj` **after your
@@ -3789,3 +3789,14 @@ On macOS keep the work folder under `~/coding`, outside Downloads, Desktop, Docu
 
 Enabled background tasks use delegated authority: low-risk tools follow existing safety checks; external sends, secrets and irreversible actions still need confirmation. A source refusal is not a user rejection. Update the Agent J host and run `agentj service restart` before retrying.
 已启用后台任务按委托来源执行；对外发送、秘密和不可逆动作仍须确认。来源检查拒绝不代表主人点了拒绝；更新 Agent J 主机并运行 `agentj service restart` 后重试。
+
+
+### Local-image delivery and file show: validation boundary (0.26.4a1)
+
+Use `agentj file show PATH --label LABEL --json` only in the current admitted owner phone turn. It fails without that turn and cannot choose a device, group or friend or create a separate outgoing message. `queued` means pending; inspect the later `FILE_SHOW_RESULT` for `attached_to_page` or `failure`. Neither receipt proves client download or owner visibility. Complete local image references can appear while the turn continues.
+
+This fix was tested with isolated Linux subprocesses/owner sockets and a real Chromium page using a synthetic image before the turn ended. Physical phones, macOS, WSL and end-to-end real Claude Code/Codex/OpenCode model sessions remain untested. Kimi/Qwen ACP file-show admission is not integrated or accepted. Windows uses WSL. Install only the new signed release artifacts; the earlier 0.26.3a1 INTERNAL wheel is not a published upgrade.
+
+本地图片与文件展示验证边界：在当前获准的主人手机回合运行 `agentj file show PATH --label LABEL --json`，没有有效回合就会失败。不能指定设备、群、好友或另建外发消息。`queued` 只是排队，后续 `FILE_SHOW_RESULT` 的 `attached_to_page` 表示已附到页面，`failure` 表示失败；它们都不证明客户端已下载或主人已看到。完整本地图片引用可在回合进行中显示。
+
+本修复已用 Linux 隔离子进程、主人套接字和真实 Chromium 合成图片页面验证，回合未结束即可成图。实体手机、macOS、WSL 和 Claude Code/Codex/OpenCode 真实模型回合端到端未验；Kimi/Qwen ACP 未接入或验收 file show。Windows 须使用 WSL。只安装新版正式签名工件；此前 0.26.3a1 INTERNAL 轮子不是已发布升级包。

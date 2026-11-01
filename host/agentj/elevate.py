@@ -1993,11 +1993,11 @@ class Elevator:
                 res = reading.result()
             elif isinstance(req, dict) and req.get("t") == "secret_status":     # P423 #49: is NAME saved? (never a value)
                 res = await self.status_of(req)
-            elif isinstance(req, dict) and req.get("t") == "sx":                # P574: same-owner grant / key transfer
+            elif isinstance(req, dict) and req.get("t") in ("sx", "file_show"):                # P574: same-owner grant / key transfer
                 peers = getattr(self.host, "peers", None)
                 cwd = req.get("cwd") if isinstance(req.get("cwd"), str) and os.path.isabs(req["cwd"]) else None
-                if peers is None or getattr(peers, "keys", None) is None:
-                    res = {"result":"refused", "why":"friends_off"}
+                if peers is None or (req.get("t") == "sx" and getattr(peers, "keys", None) is None):
+                    res = {"result":"failure", "why":"no_owner_session", "client_downloaded":False} if req.get("t") == "file_show" else {"result":"refused", "why":"friends_off"}
                 else:
                     res = peers.xfer.broker.receipt(req)
             else:

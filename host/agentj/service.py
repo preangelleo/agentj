@@ -1,22 +1,4 @@
-"""`agentj service install|uninstall|status` (L3-min): keep `agentj serve` running after logout / reboot.
-
-Linux = a systemd *user* unit (`~/.config/systemd/user/agentj.service`); macOS = a LaunchAgent
-(`~/Library/LaunchAgents/net.agentj.host.plist`). Both start the absolute path of the agentj that ran `install`
-(inside its venv, which the fence keeps read-only), with `serve --events quiet --no-stdin`: no terminal, and the log
-(journal / `service.log` in the state dir) gets metadata lines only — never a message, a reply or a command.
-
-Harness binary paths live only in the owner environment file; units/plists never bake in binary overrides.
-Never a secret in the unit / plist: only PATH (built from stable login-shell and user directories so `claude` / `codex` / `bwrap` resolve) and, when set,
-AGENTJ_STATE_DIR / AGENTJ_CLAUDE_BIN / AGENTJ_CODEX_BIN (paths). The Agent uses its own login (~/.claude,
-~/.codex). If the only Claude Code login is the CLAUDE_CODE_OAUTH_TOKEN variable, the human puts it into an environment
-file they create themselves (0600, next to the unit, read-only for the fenced Agent) — we print how, we never copy it.
-
-`AGENTJ_SERVICE_NAME` overrides the unit name / launchd label (tests); `vibe-remote*` names are refused.
-
-0.10 rename: the unit / label used to be `agentjarvis` / `net.agentjarvis.host`. `install` stops, disables and deletes
-that old one (only with the default name; tests name a throwaway old unit with AGENTJ_SERVICE_LEGACY_NAME) and installs
-the new one, which starts `agentj serve`; `doctor` warns while only the old one exists.
-"""
+"""Reference: documentation/notes/inline-media-docstrings.md (service.py: module)."""
 from __future__ import annotations
 
 import contextlib
@@ -132,9 +114,7 @@ SERVE_ARGS = ["serve", "--events", "quiet", "--no-stdin"]
 
 
 def ensure_agentj_on_path(environ: dict | None = None, exe: str | None = None) -> str | None:
-    """P155: every bundled skill has the Agent run `agentj …` in its own shell, which inherits serve's PATH. A service PATH
-    captured without the install's bin directory (QA-J 10-12: ~/.local/bin missing → 「找不到 agentj 命令」) gets the running
-    package's own bin directory APPENDED (never shadows anything). Returns the directory added, else None."""
+    """Reference: documentation/notes/inline-media-docstrings.md (service.py: ensure_agentj_on_path)."""
     e = os.environ if environ is None else environ
     if shutil.which("agentj", path=e.get("PATH", "")):
         return None
@@ -184,19 +164,14 @@ def service_env(environ: dict | None = None) -> tuple[dict, list[str]]:
 
 
 def stable_path(resolution: dict) -> str:
-    """P282: what to save for a resolved harness: the PATH entry the owner's shell uses (a symlink a self-updating harness
-    moves to its new version: ~/.local/bin/codex → ~/.codex/packages/standalone/current/bin/codex, ~/.local/bin/claude →
-    ~/.local/share/claude/versions/<v>), never the versioned folder behind it, which the next update leaves behind. A
-    mise / asdf shim keeps the bypassed real path (a shim must never be executed)."""
+    """Reference: documentation/notes/inline-media-docstrings.md (service.py: stable_path)."""
     via = resolution.get("via") or resolution.get("reason")
     req = resolution.get("requested")
     return req if via == "path" and req and os.path.isabs(req) else resolution["path"]
 
 
 def heal_binary_pins(n: str, environ: dict | None = None) -> list[dict]:
-    """P282: saved harness paths a self-update left behind (binaries.resolve → pin_stale / pin_missing) are rewritten to
-    the PATH entry the service finds now. Only those AGENTJ_<NAME>_BIN lines change; every other byte (keys included) is
-    kept, 0600. → [{"kind", "old", "new"}] (paths only). Never raises: a file that cannot be read or written heals nothing."""
+    """Reference: documentation/notes/inline-media-docstrings.md (service.py: heal_binary_pins)."""
     from .binaries import ENV, resolve
     path = env_file(n, environ)
     try:
@@ -445,10 +420,7 @@ def _service_env_names(cfg=None) -> set:
 
 
 def reload_service_env(cfg=None) -> list:
-    """P320 `agentj reload`: read the service's private environment file again into serve's own environment, so a key added
-    with `agentj service import-key` (or by hand) works without restarting serve. Linux: systemd read the EnvironmentFile only
-    at start (the reason the Telegram channel needed a restart, Leo 10-15); macOS: the plist's file. Known names only, values
-    never returned or logged. → the NAMES whose value was added or changed (sorted). A missing file changes nothing."""
+    """Reference: documentation/notes/inline-media-docstrings.md (service.py: reload_service_env)."""
     path = os.environ.get("AGENTJ_SERVICE_ENV_FILE") or env_file(name())
     fresh = private_env(path, _service_env_names(cfg))
     changed = sorted(k for k, v in fresh.items() if os.environ.get(k) != v)
@@ -491,10 +463,7 @@ def env_file_has(path: str, key: str) -> bool | None:
 
 
 def import_key(n: str, key: str, environ: dict | None = None) -> str:
-    """P198 (I): one step, no hand-editing — copy `key` from the invoking shell's environment into the service env file
-    (owner's regular file, never through a symlink, 0600; every other byte kept). The value is never printed, logged or put
-    on a command line. → "present" (the file already has it) · "imported" · "absent" (this shell does not have it either).
-    Raises ServiceError("bad_service_env") for a file that is not safely ours or a value that cannot be one line."""
+    """Reference: documentation/notes/inline-media-docstrings.md (service.py: import_key)."""
     import stat
     if not isinstance(key, str) or not KEY_ENV_RE.fullmatch(key):
         raise ServiceError("bad_key_name")
@@ -644,9 +613,7 @@ def _unit_path(unit: str) -> str:
 
 
 def _bus_systemctl(args: tuple, timeout: int) -> subprocess.CompletedProcess | None:
-    """F14: the same `systemctl --user` verbs over the user's session bus (busctl). Inside the Agent's fence (a private PID
-    namespace) systemctl refuses the manager's private socket — its peer has no PID there (ENODATA) — while the bus
-    broker relays fine. Only the verbs this module uses; None = not one of them, or no busctl."""
+    """Reference: documentation/notes/inline-media-docstrings.md (service.py: _bus_systemctl)."""
     exe = shutil.which("busctl")
     if not exe or not args:
         return None
@@ -728,9 +695,7 @@ def pid1_systemd() -> bool:
 
 
 def classify_no_manager(environ: dict | None = None, wsl_conf: str = WSL_CONF, osrelease: str = OSRELEASE) -> str:
-    """Why there is no systemd user manager here (call only after reaching it failed): wsl_systemd_off (WSL, wsl.conf
-    does not turn systemd on) · wsl_systemd_restart (it does, but this WSL started before: `wsl --shutdown`) ·
-    no_systemd (PID 1 is not systemd: a container, another init) · no_user_manager (systemd runs, the user manager not)."""
+    """Reference: documentation/notes/inline-media-docstrings.md (service.py: classify_no_manager)."""
     if is_wsl(environ, osrelease):
         return "wsl_systemd_restart" if wsl_systemd_enabled(wsl_conf) and not pid1_systemd() else (
             "wsl_systemd_off" if not pid1_systemd() else "no_user_manager")
@@ -752,9 +717,7 @@ def systemd_problem() -> str | None:
 
 
 def user_runtime_dir(environ=None) -> str | None:
-    """P329 live (Olares: its sshd runs without PAM): an SSH login gets no XDG_RUNTIME_DIR although the user manager runs
-    (linger), and `systemctl --user` says "No medium found". The manager's own socket /run/user/<uid>/bus (ours, a socket)
-    is the standard place: set XDG_RUNTIME_DIR to its folder for this process and its children. → the folder set, or None."""
+    """Reference: documentation/notes/inline-media-docstrings.md (service.py: user_runtime_dir)."""
     import stat
     e = os.environ if environ is None else environ
     if e.get("XDG_RUNTIME_DIR") or platform() != "linux" or not hasattr(os, "getuid"):
@@ -843,10 +806,7 @@ def _job_running(label: str) -> bool:
 
 
 def sweep_jobs(*, everything: bool = False, now: float | None = None) -> list[str]:
-    """P323: unload + delete finished one-shot job plists — those older versions left in ~/Library/LaunchAgents (each one
-    a Login Items row) and any in job_dir() whose job died before its own cleanup. Never the running job, never the
-    caller's own job, never one younger than JOB_GRACE; `everything` (uninstall) takes running ones too, still not the
-    caller's own. → the labels removed. macOS only; never raises."""
+    """Reference: documentation/notes/inline-media-docstrings.md (service.py: sweep_jobs)."""
     import time
     if platform() != "macos":
         return []

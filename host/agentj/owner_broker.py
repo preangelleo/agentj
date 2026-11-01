@@ -26,6 +26,20 @@ def parse(tool, inp, cwd):
         return None
     if len(words) < 3 or not (words[0] == 'agentj' or (shutil.which('agentj') and os.path.realpath(words[0]) == os.path.realpath(shutil.which('agentj')))):
         return None
+    if words[1:3] == ['file', 'show']:
+        import argparse
+        parser = argparse.ArgumentParser(exit_on_error=False, add_help=False)
+        parser.add_argument('path')
+        parser.add_argument('--label', default='')
+        parser.add_argument('--json', action='store_true')
+        try:
+            args, unknown = parser.parse_known_args(words[3:])
+        except (argparse.ArgumentError, SystemExit):
+            return None
+        if unknown or not args.path or len(args.path) > 512 or len(args.label) > 128:
+            return None
+        from .file_show import request
+        return request(args.path, args.label, cwd)
     if words[1:3] == ['friends','tell']:
         args = words[3:]
         if args.count('--grant') != 1:
@@ -77,7 +91,8 @@ class Broker:
         if not req or not isinstance(call, str) or not execution or not execution.live or execution.send is None:
             return
         self.calls[call] = {'request':req, 'tool':tool, 'input':inp, 'execution':execution,
-                            'source':provenance.turn_source(x.svc.host.agent), 'native':native}
+                            'source':provenance.turn_source(x.svc.host.agent), 'native':native,
+                            'project_root': os.path.realpath((x.svc.host.agent_cfg or {}).get('dir') or '')}
         while len(self.calls) > 64:
             self.calls.pop(next(iter(self.calls)))
 
@@ -105,6 +120,14 @@ class Broker:
         if policy_registry.main_requirement(tool, inp) == 'deny':
             return {'behavior':'deny', 'message':'Native secret call blocked by policy'}
         req = dict(row['request'])
+        if req['t'] == 'file_show':
+            host = x.svc.host
+            page = host.hist.get(getattr(host, 'cur_turn', None))
+            ids = next((ids for ids in host.hist.parts.values() if page and page['id'] in ids), [page['id']] if page else [])
+            if (os.path.realpath((host.agent_cfg or {}).get('dir') or '') != row['project_root']
+                    or not provenance.is_owner(row['source']) or not page or page.get('end') != 'open'
+                    or execution.send.turn not in ids):
+                return {'behavior': 'deny', 'message': 'No active owner page'}
         if req.get('op') == 'grant':
             path = pathlib.Path(req.pop('file')).expanduser()
             if not path.is_absolute():
@@ -158,12 +181,18 @@ class Broker:
         x = self.xfer
         req = row['request']
         with owner_call.request(row['check']), provenance.request_source(row['source']):
-            result = (await x.svc.tell(req['friend'], req['text'], grant=req['grant']) if req['t'] == 'tell'
-                      else await x.cli(req, req['cwd']))
-        self.receipts[key(req)] = (time.monotonic() + 120, result)
+            from . import file_show
+            if req['t'] == 'file_show':
+                result = await file_show.attach(x.svc.host, req, row['check'], row['project_root'])
+            elif req['t'] == 'tell':
+                result = await x.svc.tell(req['friend'], req['text'], grant=req['grant'])
+            else:
+                result = await x.cli(req, req['cwd'])
+        if req['t'] != 'file_show':
+            self.receipts[key(req)] = (time.monotonic() + 120, result)
         while len(self.receipts) > 64:
             self.receipts.pop(next(iter(self.receipts)))
-        x.svc.host.agent_notice('SECRET_TASK_RESULT: ' + json.dumps(result, ensure_ascii=False))
+        x.svc.host.agent_notice(('FILE_SHOW_RESULT: ' if req['t'] == 'file_show' else 'SECRET_TASK_RESULT: ') + json.dumps(result, ensure_ascii=False))
 
     async def drain(self):
         if self.jobs:
@@ -177,7 +206,7 @@ class Broker:
             return receipt[1]
         rows = [row for row in self.calls.values() if row.get('admitted') and key(row['request']) == key(req) and row['check']()]
         if len(rows) != 1:
-            return {'ok':False, 'result':'refused', 'why':'caller'} if req.get('t') == 'tell' else {'result':'refused', 'why':'caller'}
+            return {'result': 'failure', 'why': 'no_owner_session', 'client_downloaded': False} if req.get('t') == 'file_show' else ({'ok':False, 'result':'refused', 'why':'caller'} if req.get('t') == 'tell' else {'result':'refused', 'why':'caller'})
         row = rows[0]
         row['issued'] = True
         return _pending(row)
@@ -208,6 +237,8 @@ def _contains(output, pending, depth=0):
 
 def _pending(row):
     result = {'result':'pending', 'ticket':row['ticket'], 'request_sha256':key(row['request'])}
+    if row['request']['t'] == 'file_show':
+        result.update(result='queued', client_downloaded=False)
     if row['request']['t'] == 'tell':
         result['ok'] = True
     return result

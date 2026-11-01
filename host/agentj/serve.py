@@ -3802,33 +3802,12 @@ class Host:
         return c if isinstance(c, str) else None
 
     def media_later(self, tid: int | None) -> None:
-
-        if tid is None or not self.media.workdir:
-            return
-        try:
-            job = asyncio.get_running_loop().create_task(self._attach_media(tid))
-        except RuntimeError:            # not inside the loop (a unit test calling a callback directly)
-            return
-        self.media_jobs.add(job)
-        job.add_done_callback(self.media_jobs.discard)
+        from .media_live import schedule
+        schedule(self, tid)
 
     async def _attach_media(self, tid: int) -> None:
-        t = self.hist.get(tid)
-        if t is None:
-            return
-        ids = next((ids for ids in self.hist.parts.values() if tid in ids), [tid])   # a long reply: every part's text
-        text = "\n\n".join(x["reply"]["text"] for x in (self.hist.get(i) for i in ids) if x)
-        try:
-            items, skips, keys = await asyncio.to_thread(self.media.scan_keys, text, tid)
-        except Exception:  # noqa: BLE001 — a scan that fails offers nothing; the page stays as it is
-            self.st.log("media_scan_fail", turn=tid)
-            return
-        if keys:          # P211: a credential file the owner's page linked → a secret pickup card, never a plain card
-            from . import owner_route
-            await owner_route.offer_files(self, keys, getattr(self, "lang", "zh"))
-        if items or skips:
-            self.hist_update(tid, media=(items, skips))
-            self.st.log("media_page", turn=tid, status=f"{len(items)}/{len(skips)}")
+        self.media_later(tid)
+        await asyncio.gather(*list(self.media_jobs))
 
     def on_media_get(self, s: Session, obj: dict) -> None:
 
@@ -3964,6 +3943,7 @@ class Host:
             changed = self.hist_update(self.cur_turn, append=text)
             if changed:
                 self.cur_turn = changed[-1]["id"]
+            self.media_later(self.cur_turn)
         elif not _echo_page(self, text):    # the Agent spoke outside a turn of ours (e.g. a background task finished)
             self.media_later(self.hist_add(self._agent_src(), text, "done")["id"])
 
@@ -4040,6 +4020,7 @@ class Host:
             changed = self.hist_update(tid, append=text)
             if changed:
                 self.desktop_turn = changed[-1]["id"]
+            self.media_later(self.desktop_turn)
 
     def desktop_end(self) -> None:
         self.proactive_via = None

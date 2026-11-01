@@ -42,13 +42,13 @@ class DesktopPageIsScanned(unittest.TestCase):
         self.assertEqual(h.added[0][2], 'done')
         self.assertEqual(h.scanned, [1], 'the finished page is offered its files (was: never scanned)')
 
-    def test_an_open_desktop_turn_is_scanned_at_its_end_only(self):
+    def test_an_open_desktop_turn_schedules_incremental_and_final_scans(self):
         h = self.fake()
         h.desktop_turn = 5
         h.desktop_text('part')
-        self.assertEqual(h.scanned, [])
-        h.desktop_end()
         self.assertEqual(h.scanned, [7])
+        h.desktop_end()
+        self.assertEqual(h.scanned, [7, 7])
 
 
 class RealHost(unittest.TestCase):

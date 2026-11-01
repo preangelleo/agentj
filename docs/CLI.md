@@ -147,7 +147,7 @@ agentj --help
 
 ```text
 usage: agentj [-h] [-V] [--migrate-legacy] [--instance N] [--fresh]
-              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,faceid,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,files,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,terminal,provider,sudo-helper,docs-rule,handover,seat,wechat,telegram-cursor,plaza,support,data,diag,preflight,skills,capability,goal,heartbeat,quota,imessage,busy,decide,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
+              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,faceid,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,files,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,terminal,provider,sudo-helper,docs-rule,handover,seat,wechat,telegram-cursor,file,plaza,support,data,diag,preflight,skills,capability,goal,heartbeat,quota,imessage,busy,decide,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -2502,6 +2502,45 @@ usage: agentj feedback send [-h] [--owner-confirmed]
 | `checked` | `null` | true | — | `the .checked.json written by 'agentj feedback check'` |
 | `--owner-confirmed` | `false` | false | — | `your human read this exact JSON and said yes (required when layer 2 is unavailable or blocked)` |
 | `--session-file` | `"~/.agentj-install/feedback-id"` | false | — | `install session id file (default ~/.agentj-install/feedback-id)` |
+
+### agentj file
+
+```text
+Files in the active admitted owner turn
+```
+
+```bash
+agentj file --help
+```
+
+```text
+usage: agentj file [-h] {show} ...
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj file show
+
+```text
+Attach to current page; not a download receipt
+```
+
+```bash
+agentj file show --help
+```
+
+```text
+usage: agentj file show [-h] [--label LABEL] [--json] path
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `path` | `null` | true | — | `` |
+| `--label` | `""` | false | — | `` |
+| `--json` | `false` | false | — | `` |
 
 ### agentj files
 
@@ -7127,7 +7166,7 @@ agentj --help
 
 ```text
 usage: agentj [-h] [-V] [--migrate-legacy] [--instance N] [--fresh]
-              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,faceid,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,files,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,terminal,provider,sudo-helper,docs-rule,handover,seat,wechat,telegram-cursor,plaza,support,data,diag,preflight,skills,capability,goal,heartbeat,quota,imessage,busy,decide,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
+              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,faceid,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,files,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,terminal,provider,sudo-helper,docs-rule,handover,seat,wechat,telegram-cursor,file,plaza,support,data,diag,preflight,skills,capability,goal,heartbeat,quota,imessage,busy,decide,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -9482,6 +9521,45 @@ usage: agentj feedback send [-h] [--owner-confirmed]
 | `checked` | `null` | true | — | `the .checked.json written by 'agentj feedback check'` |
 | `--owner-confirmed` | `false` | false | — | `your human read this exact JSON and said yes (required when layer 2 is unavailable or blocked)` |
 | `--session-file` | `"~/.agentj-install/feedback-id"` | false | — | `install session id file (default ~/.agentj-install/feedback-id)` |
+
+### agentj file
+
+```text
+当前主人回合的文件
+```
+
+```bash
+agentj file --help
+```
+
+```text
+usage: agentj file [-h] {show} ...
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj file show
+
+```text
+附到当前页；不代表手机已下载
+```
+
+```bash
+agentj file show --help
+```
+
+```text
+usage: agentj file show [-h] [--label LABEL] [--json] path
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `path` | `null` | true | — | `` |
+| `--label` | `""` | false | — | `` |
+| `--json` | `false` | false | — | `` |
 
 ### agentj files
 

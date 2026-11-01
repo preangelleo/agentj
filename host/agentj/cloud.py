@@ -1,19 +1,4 @@
-"""Host ↔ control plane (PROTOCOL.md §7): signed envelopes.
-
-The host *pushes* metadata. Answers are parsed through explicit whitelists (login / poll status fields, an `error`
-code, `ok`, F19 pinned-signature official data in notices.json, and — A3.1 sync — a list of unbind requests {id, device}), and binding answers are written only to cloud.json — and only after the human at this terminal confirmed the tenant (`agentj login`). This module must never
-touch the allowlist (devices.json) — enforced by tests/test_cloud.py (AST check): P547 (ADR-P547) a seat-bind answer's
-seat-transfer handover is only *returned* (shape-checked); seat_transfer.apply_handover adds those remotes and ONLY after the
-HMAC under the setup code (which the Dashboard never saw) verifies. Unbind requests are only *returned* to
-`serve`, which checks them against its own allowlist, switch and hourly limit before revoking anything. A3.2: the Agent
-name in poll / sync / rename answers is whitelisted through text.agent_name_problem (§1) and only *returned*; the caller
-(CLI after the human's y, serve, `agentj name`) stores it — it is a display string and never reaches devices.json. Every cloud.json mutation (login, seq update, unlink) runs under one fcntl lock file in the
-state dir (cloud.lock, 0600), so the CLI and `serve` never interleave (A3-04).
-Seat setup (contract seat-setup §4): `seat_bind` sends a setup code the human handed to this host (`ajt_…`, checked locally
-against its shape, never logged, never printed, never sent anywhere but `/v1/host/seat-bind`); the answer goes through the
-same bound-answer whitelist as `poll` and is written only to cloud.json (`via: "seat"`). There is no y/N: possession of the
-code is the human's decision.
-"""
+"""Reference: documentation/notes/inline-media-docstrings.md (cloud.py: module)."""
 from __future__ import annotations
 
 import contextlib
@@ -485,14 +470,7 @@ _NO_UPGRADE: dict[str, float] = {}  # P277: the same for `last_upgrade`
 
 
 def send_report(st, online, pending, *, post: Callable = report_post_json, now: Callable = time.time) -> ReportResult:
-    """One signed report (blocking; serve runs it off the event loop). A 409 replay is retried once with a bigger seq.
-    F19 back-compat first retries without notice capability/receipts/harness, preserving F13 language.
-    A1 back-compat: a ≤ 0.14 server refuses unknown inner keys with 400 bad_request (before its seq gate, so the seq is not
-    spent there); a report carrying `language` / `language_at` that gets that answer is retried once at once without them
-    (fresh, bigger seq). If that one is accepted, cloud.json remembers it (`no_language`) and later reports leave the keys out
-    until the marker is a day old, agentj's version changes or the API URL changes (a relink writes a fresh file).
-    P179: a server older than `device_names` refuses that key the same way: the report is retried at once without it
-    (before any other back-compat step), and this process leaves it out for that server for a day."""
+    """Reference: documentation/notes/inline-media-docstrings.md (cloud.py: send_report)."""
     cloud = read_cloud(st)
     if not cloud:
         return ReportResult("unlinked")
@@ -592,11 +570,7 @@ def send_report(st, online, pending, *, post: Callable = report_post_json, now: 
 # ------------------------------------------------------------------ login (RFC 8628 shape)
 def login(st, api: str, *, show: Callable[[dict], None], confirm: Callable[[dict, str | None], bool], post: Callable = post_json,
           sleep: Callable = time.sleep, now: Callable = time.time, on_poll: Callable[[str], None] | None = None) -> dict:
-    """Signed login, then poll every `interval` s (≥ 4; 429 → +5 s) until bound / rejected / expired.
-    Returns {"status": bound|declined|rejected|expired|already_bound|rate_limited|error, ...}. On bound, `confirm(tenant)`
-    asks the human whether this is their tenant (F5); only a yes writes cloud.json, a no writes nothing ("declined").
-    A3.2: confirm(tenant, agent_name) also shows the Agent name the Dashboard gave this host; a bound result carries it
-    (`agent_name`, None if absent / invalid) so the caller sets the local name after the yes — this module never does."""
+    """Reference: documentation/notes/inline-media-docstrings.md (cloud.py: login)."""
     base = check_url(api)
     sk, ch = st.signing_key(), channel_of(st)
     status, obj = post(base + "/v1/host/login", envelope(CTX_LOGIN, {"v": 1, "t": "login", "channel": ch, "ts": int(now())}, sk))
@@ -663,12 +637,7 @@ def seat_code_ok(code) -> bool:
 
 
 def seat_bind(st, api: str, token: str, name: str, *, post: Callable = post_json, now: Callable = time.time) -> dict:
-    """Signed `/v1/host/seat-bind` (PROTOCOL §7). Refuses locally — nothing sent — a code that is not `ajt_` + 43 base64url
-    characters (`bad_code`) and a name that fails the Agent-name rules (`bad_name` / `name_required`); the name is sent
-    normalised. Returns {"status": one of SEAT_RESULTS, ...}. On bound, cloud.json is written (`via: "seat"`) exactly like
-    the code path and `cloud_linked kind=seat` is logged; the caller sets the local Agent name. The code is never logged,
-    never put in a result and never sent anywhere else; the answer passes the same whitelist as a bound poll answer, and
-    nothing in it can add or approve a device (this module never touches the allowlist)."""
+    """Reference: documentation/notes/inline-media-docstrings.md (cloud.py: seat_bind)."""
     if not (seat_code_ok(token) or isinstance(token, str) and re.fullmatch(r"AJI-[a-f0-9]{32}", token)):
         return {"status": "bad_code"}
     problem = agent_name_problem(name)
@@ -725,11 +694,7 @@ def seat_bind(st, api: str, token: str, name: str, *, post: Callable = post_json
 
 
 def seat_leave(st, base: str, *, post: Callable = post_json, now: Callable = time.time) -> dict:
-    """Signed `/v1/host/seat-leave` (PROTOCOL §7, review SS-02): take this host — bound through a seat setup — out of its
-    company (host unbound there, the setup revoked, the seat freed). It can only take the host *out*; nothing in the answer
-    is acted on but its status. Returns {"status": "left" | "not_found" | "rate_limited" | "fail", "http": …}; never raises
-    (a transport failure is "fail" with the class in "http"). Does not touch cloud.json — the caller (`agentj unlink`)
-    removes it afterwards whatever the answer."""
+    """Reference: documentation/notes/inline-media-docstrings.md (cloud.py: seat_leave)."""
     inner = {"v": 1, "t": "seat_leave", "channel": channel_of(st), "ts": int(now())}
     try:
         status, obj = post(check_url(base) + "/v1/host/seat-leave", envelope(CTX_SEAT_LEAVE, inner, st.signing_key()))
@@ -830,13 +795,7 @@ UPGRADE_AUTH_ERRORS = ("invalid_authorization", "version_mismatch", "expired", "
 
 
 def upgrade_auth(st, code: str, version: str, *, post: Callable = post_json, now: Callable = time.time) -> dict:
-    """Signed `POST /v1/host/upgrade-auth` (PROTOCOL §7, F12): spend the owner's upgrade authorization code (from the
-    upgrade email) for exactly `version`. The caller has already checked the code's shape and that `version` is the newest
-    published release. Returns {"status": "ok" | "unlinked" | "invalid_authorization" | "version_mismatch" | "expired" |
-    "already_used" | "not_bound" | "rate_limited" | "unsupported" (bare 404: the server predates upgrade-auth) | "unreachable" |
-    "fail", "http": …} (+ "version": the grant's version on a mismatch,
-    "expires_at" on ok). Never raises. The code is never logged, printed or stored; nothing in the answer is acted on but
-    its status — the answer cannot pick what gets installed (the caller pins `version`)."""
+    """Reference: documentation/notes/inline-media-docstrings.md (cloud.py: upgrade_auth)."""
     cloud = read_cloud(st)
     if not cloud:
         return {"status": "unlinked", "http": ""}
@@ -1068,9 +1027,7 @@ def parse_relay_cert(obj: dict, channel: str, now: float) -> tuple[str, int] | N
 
 
 def relay_cert(st, *, post: Callable = post_json, now: Callable = time.time) -> PeerCertResult:
-    """P185: one signed `/v1/host/relay/cert` (blocking) — a 72-hour relay seat certificate for this host's channel, or why
-    not: unlinked (no cloud.json) · not_bound (403) · payment_required (402 agent_suspended) · rate_limited · unreachable ·
-    unsupported (404: the Dashboard predates the route — P198) · fail."""
+    """Reference: documentation/notes/inline-media-docstrings.md (cloud.py: relay_cert)."""
     cloud = read_cloud(st)
     if not cloud:
         return PeerCertResult("unlinked")
@@ -1183,10 +1140,7 @@ def _news_call(st, path: str, ctx: str, inner: dict, post: Callable) -> tuple[Ne
 
 
 def _news_state(st, api: str, obj: dict) -> NewsResult:
-    """A 200 news answer (a read / switch, or a successful verify), whitelisted: on (bool), email (≤ 254, one '@', no
-    controls), sample_url (on our API / Dashboard origin, else the configured Dashboard's /news/sample — a compromised
-    control plane cannot send the owner to a look-alike page), queued / seats (ints in range, else None). P393: `need_email:
-    true` with on false and no e-mail = this seat has no person yet → kind need_email (the e-mail is never taken from it)."""
+    """Reference: documentation/notes/inline-media-docstrings.md (cloud.py: _news_state)."""
     got, need = obj.get("on"), obj.get("need_email") is True
     email = None if need else _news_email(obj.get("email"))
     if obj.get("ok") is not True or not isinstance(got, bool) or (need and got) or (not need and email is None):
@@ -1228,9 +1182,7 @@ def _news_error(status: int, obj: dict) -> NewsResult:
 
 
 def news(st, on: bool | None, *, post: Callable = post_json, now: Callable = time.time) -> NewsResult:
-    """P374: one signed `/v1/host/news` (blocking). on=None reads this host's person's Daily AI News switch (free); True /
-    False switches it (the Dashboard's host_sync_write budget). Writes nothing locally. The answer: `_news_state`. P393:
-    the person is the seat's own (never the company owner by default); none yet → need_email (200 on a read, 409 on ON)."""
+    """Reference: documentation/notes/inline-media-docstrings.md (cloud.py: news)."""
     if on is not None and not isinstance(on, bool):
         raise ValueError("on")
     early, api, status, obj = _news_call(st, "/v1/host/news", CTX_NEWS, {"t": "news", "ts": int(now()), "on": on}, post)
@@ -1276,9 +1228,7 @@ def news_verify(st, email, code, *, post: Callable = post_json, now: Callable = 
 
 # ------------------------------------------------------------------ Agent plaza P2 (agentj/plaza.py builds and renders)
 def plaza_call(st, kind: str, fields: dict, *, post: Callable = post_json, now: Callable = time.time) -> tuple[int, dict]:
-    """One signed `/v1/host/plaza/<kind>` (PROTOCOL §7). Needs a Dashboard link (cloud.json): raises CloudError("unlinked")
-    otherwise. Returns (status, answer object) — the caller whitelists the answer; nothing in it is ever executed, written to
-    the allowlist or used as a path (plaza text is data). Transport errors raise CloudError."""
+    """Reference: documentation/notes/inline-media-docstrings.md (cloud.py: plaza_call)."""
     if kind not in PLAZA_KINDS:
         raise ValueError(kind)
     cloud = read_cloud(st)
@@ -1317,10 +1267,7 @@ def plaza_pkg_call(st, route: str, fields: dict, *, post: Callable = post_json, 
 
 
 def transfer_url(st, url, kind: str) -> str:
-    """A signed download (`dl`) / upload (`up`) URL from a server answer is accepted only when it is exactly
-    `<the configured API base>/v1/plaza/<kind>/<token>` (base = origin + its path, e.g. https://agentj.app/api): same scheme, host and port as the API this host signs to (https;
-    plain http only when that API is itself a loopback test server), no credentials, query or fragment. Else
-    CloudError("refused_url") — a compromised answer cannot make the host fetch from, or upload to, anywhere else."""
+    """Reference: documentation/notes/inline-media-docstrings.md (cloud.py: transfer_url)."""
     if kind not in ("dl", "up"):
         raise ValueError(kind)
     base = api_url(st, read_cloud(st))
@@ -1418,9 +1365,7 @@ DATA_TIMEOUT = 25                     # the Dashboard waits ≤ 10 s for the lib
 
 
 def data_call(st, fields: dict, *, post: Callable = post_json, now: Callable = time.time) -> tuple[int, dict]:
-    """One signed `POST /v1/host/data` (`fields` = op [+ source] + its fields; a fresh nonce is added here). The Dashboard
-    holds the owner's credits, forwards with its own key for that library and answers what it charged. Same rules as
-    plaza_call; the answer is whitelisted by library.py and never executed."""
+    """Reference: documentation/notes/inline-media-docstrings.md (cloud.py: data_call)."""
     # Freeze the exact paid request before asking. Client --yes and a CLI card
     # never authorize this final charging boundary.
     from . import action_policy, library

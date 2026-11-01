@@ -220,6 +220,38 @@ try {
     } finally { await p.dispose(); }
   });
 
+  await C('p196-reader-nav: a newly opened viewer owns its bar immediately after leaving the file reader', async () => {
+    const p = await paired(1280, 860);
+    try {
+      await ev(p, `${card(id('M'))}._preview()`);
+      await at(p, 'notes.md');
+      // Keep both click-through guards active independently of CPU speed; real history / timers keep running.
+      await ev(p, `window.__navClock = performance.now(); Object.defineProperty(performance, 'now', {configurable:true, value:() => window.__navClock})`);
+      try {
+      await key(p, 'ArrowRight', { code: 'ArrowRight' });
+      await at(p, 'wide.csv');
+      const immediate = await ev(p, `(() => {
+        const behind = document.createElement('button'); let leaked = false;
+        behind.addEventListener('click', () => { leaked = true; }); document.body.append(behind); behind.click(); behind.remove();
+        document.querySelector('.mstage').click();
+        const stillOpen = !document.querySelector('.mview').hidden;
+        document.querySelector('.mvnext').click();
+        return {leaked, stillOpen};
+      })()`);
+      assert.equal(immediate.leaked, false, 'the reader still suppresses a click through to the page');
+      assert.equal(immediate.stillOpen, true, 'the viewer still suppresses a click on its newly opened backdrop');
+      await at(p, 'voice.wav');
+      await key(p, 'Escape', {code:'Escape'});
+      await waitFor(p, `document.querySelector('.mview').hidden`);
+      assert.equal(await ev(p, `document.activeElement === ${card(id('W'))}`), true);
+      assert.equal(await ev(p, `(() => { const behind = document.createElement('button'); let leaked = false;
+        behind.addEventListener('click', () => { leaked = true; }); document.body.append(behind); behind.click(); behind.remove(); return leaked; })()`), false,
+        'the reader guard still suppresses a page click after the viewer closes');
+      assert.deepEqual(p.offsite, []);
+      } finally { await ev(p, `delete performance.now; delete window.__navClock`); }
+    } finally { await p.dispose(); }
+  });
+
   await C('p196-space: Space still closes (Quick Look); a focused card\'s Space opens, ← / → then move, Space closes', async () => {
     const p = await paired(1280, 860);
     try {

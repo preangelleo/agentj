@@ -3186,7 +3186,7 @@ def main_jarvis(argv=None) -> None:
 
 # `migrate status` reports, `migrate rollback` undoes, `docs-rule` prints (or, with --write and the human's y, appends to the
 # AI's own memory file), `handover` only reads: none may move the state directory first
-NO_MIGRATE = ("files", "diag", "preflight", "migrate", "docs-rule", "handover", "recall", "friends", "codex-sandbox", "capability", "google", "setup", "busy", "mail", "contacts", "imessage", "ask", "order", "core")   # recall / friends / codex-sandbox / capability: usually inside the fence
+NO_MIGRATE = ("file", "files", "diag", "preflight", "migrate", "docs-rule", "handover", "recall", "friends", "codex-sandbox", "capability", "google", "setup", "busy", "mail", "contacts", "imessage", "ask", "order", "core")   # recall / friends / codex-sandbox / capability: usually inside the fence
 
 
 APPROVALS_HELP = {
@@ -3673,6 +3673,8 @@ def main(argv=None) -> None:
     from . import wechat
     wechat.add_parser(sub)
     tg_cursor.add_parser(sub)   # B3 (P117): agentj telegram-cursor status · fence · import · export (ids only)
+    from . import file_show
+    file_show.add_parser(sub)
     plaza.add_parser(sub)
     support.add_parser(sub)   # F18: agentj support ask | report | thread | list
     from . import library

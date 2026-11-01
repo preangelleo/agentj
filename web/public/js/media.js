@@ -188,20 +188,21 @@ const observer = (sc) => (typeof IntersectionObserver === 'function' ? new Inter
   for (const e of es) if (e.isIntersecting) { sc.io.unobserve(e.target); e.target._load?.(); }
 }, { rootMargin: '200px 0px' }) : null);
 
-// P205 (6): a [label](local file) the computer never sent with a finished page (a page written before the host scanned
-// shared-session text, or a file it did not offer) kept its raw Markdown — a dead link. After UNSENT_MS (the file list
-// follows the page's end) the slot shows the label and one line saying so; a list that arrives later still fills it.
+// Complete local references wait for opaque media metadata, including on active pages. Never turn a local path
+// into an href. A delay is not a rejection: later media / media_skip replaces this note through fillSlots.
 export const UNSENT_MS = 6000;
 function unsent(words, p) {
-  if (!p || p.end === 'open') return;
-  const late = p.ts && Date.now() / 1000 - p.ts > 600 ? 0 : UNSENT_MS;
-  for (const s of words.querySelectorAll('.mslot[data-link="1"]')) {
+  if (!p) return;
+  const late = p.end !== 'open' && p.ts && Date.now() / 1000 - p.ts > 600 ? 0 : UNSENT_MS;
+  for (const s of words.querySelectorAll('.mslot')) {
     if (s.dataset.mid || s.dataset.skip || s.dataset.unsent) continue;
     s.dataset.unsent = 'wait';
+    const label = () => mk('span', 'mlabel', (s.dataset.label || '').trim() || String(s.dataset.ref || '').split(/[/\\]/).filter(Boolean).pop() || '');
+    s.replaceChildren(label(), mk('span', 'mskip mpending', t('media.preparing')));
     const show = () => {
       if (!s.isConnected || s.dataset.mid || s.dataset.skip) return;
       s.dataset.unsent = '1';
-      s.replaceChildren(mk('span', 'mlabel', (s.dataset.label || '').trim() || String(s.dataset.ref || '').split(/[/\\]/).filter(Boolean).pop() || ''), mk('span', 'mskip', t('media.unsent')));
+      s.replaceChildren(label(), mk('span', 'mskip mpending', t(p.end === 'open' ? 'media.pending' : 'media.unsent')));
     };
     if (late) setTimeout(show, late); else show();
   }

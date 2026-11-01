@@ -157,13 +157,41 @@ def _entropic(tok: str) -> bool:
 
 
 _NAME_CHUNK = re.compile(r"[A-Z][a-z]{2,}|[a-z]{3,}|[A-Z]{2,}(?![a-z])|\d+|[a-z]\d+|[A-Z]\d+")
-_NAME_PART = re.compile(r"(?:" + _NAME_CHUNK.pattern + r")+|[A-Za-z]{1,2}")
+# States track chunk prefixes; only accepted endpoints may start another chunk.
+_NAME_STEPS = (
+    {'s': ('l1', 'letter'), 'l1': ('l2',), 'l2': ('l3',), 'l3': ('l3',),
+     't1': ('t2',), 't2': ('t3',), 't3': ('t3',)},
+    {'s': ('t1', 'u1', 'letter'), 'u1': ('u2',), 'u2': ('u2',)},
+    {'s': ('digit',), 'letter': ('digit',), 'digit': ('digit',)},
+)
+
+
+def _name_part(part: str) -> bool:
+    """Recognize the original chunk+ language with constant states and linear work."""
+    if 1 <= len(part) <= 2 and all('A' <= c <= 'Z' or 'a' <= c <= 'z' for c in part):
+        return True
+    states = {'s'}
+    accepted = False
+    for i, char in enumerate(part):
+        kind = 0 if 'a' <= char <= 'z' else 1 if 'A' <= char <= 'Z' else 2 if char.isdecimal() else -1
+        if kind < 0:
+            return False
+        states = {n for state in states for n in _NAME_STEPS[kind].get(state, ())}
+        upper_end = 'u2' in states and (i + 1 == len(part) or not 'a' <= part[i + 1] <= 'z')
+        accepted = bool(states & {'l3', 't3', 'digit'}) or upper_end
+        if accepted:
+            states.add('s')
+        if not states:
+            return False
+    return accepted
+
+
 _VOWEL = re.compile(r"[aeiouyAEIOUY]")
 
 
 def _namelike(tok: str) -> bool:
     parts = [p for p in re.split(r"[_\-./]", tok) if p]
-    if len(parts) < 2 or not all(_NAME_PART.fullmatch(p) and len(re.findall(r"\d+", p)) <= 2 for p in parts):
+    if len(parts) < 2 or not all(_name_part(p) and len(re.findall(r"\d+", p)) <= 2 for p in parts):
         return False
     words = [c for p in parts for c in _NAME_CHUNK.findall(p) if c.isalpha()] + [p for p in parts if len(p) <= 2 and p.isalpha()]
     novowel = [w for w in words if len(w) >= 3 and not _VOWEL.search(w)]

@@ -1923,6 +1923,7 @@ div.math.display{text-align:center}
 /* P59 (ADR-A164): a [label](local file) keeps its words above the card; a refused file's note sits where it was written */
 .mslot .mlabel{display:block;margin:0 0 6px}
 .mslot .mskip{display:block}
+.mslot .mpending{color:var(--ink)}
 /* The viewer (P183: every 预览): full screen, a bar on top (name · 下载 · ×), Esc / Space close. Pictures and players sit
    on the dark veil; documents on a paper sheet (lotion / sooty from the palette; noir / lotion in the dark theme). */
 .mview{position:fixed;inset:0;z-index:60;display:flex;flex-direction:column;background:rgba(20,20,20,.96);color:var(--c-lotion)}

@@ -1052,6 +1052,7 @@ export default {
   "media.skip.key_file": "{name} 是凭据文件（.env、私钥这类），不直接发；要拿到它，跟 Agent J 说「用密钥领取卡发给我」。",
   "media.skip.key_content": "{name} 里有真实的密钥（如 sk-…），所以没随文件发；要拿到它，跟 Agent J 说「用密钥领取卡发给我」，或删掉密钥后再发。",
   "media.skip.key_card": "{name} 含密钥，没有直接发：已弹出密钥领取卡，验证 Face ID 后领取。",
+  "media.skip.failed": "{name} 准备失败，没有发到手机。请让 Agent 重试。",
   "media.tapSize": "点一下加载 · {size}",
   "media.shareAgain": "文件已取好，再点一次分享",
   "media.act.preview": "预览（空格）",
@@ -4280,7 +4281,9 @@ export default {
   "p589.detail": "输入 {i} · 输出 {o} · {n} 次唤醒",
   "p589.unavailable": "当前工具未提供可归因的心跳用量",
   "p589.scope": "这台 Agent J 主机累计实测用量，包含上下文输入；不代表订阅剩余额度",
-  "p589.partial": "仅测得 {m}/{n} 次唤醒；其余回合未提供用量，总量不完整"
+  "p589.partial": "仅测得 {m}/{n} 次唤醒；其余回合未提供用量，总量不完整",
+  "media.preparing": "正在准备文件…",
+  "media.pending": "文件还没传过来，可能仍在准备中"
  },
  "en": {
   "fr.ask.failed": "Your confirmation did not take effect. Please try again.",
@@ -5334,6 +5337,7 @@ export default {
   "media.skip.key_file": "{name} is a credential file (.env, a private key …) and isn't sent as a file — ask Agent J to send it as a secret pickup card.",
   "media.skip.key_content": "{name} holds a real key (like sk-…), so it wasn't sent as a file — ask Agent J to send it as a secret pickup card, or remove the key and send again.",
   "media.skip.key_card": "{name} holds a key and wasn't sent as a file: a secret pickup card is waiting (Face ID to open).",
+  "media.skip.failed": "{name} could not be prepared and was not sent. Ask the Agent to retry.",
   "media.tapSize": "Tap to load · {size}",
   "media.shareAgain": "The file is ready — tap share again",
   "media.act.preview": "Preview (Space)",
@@ -8562,6 +8566,8 @@ export default {
   "p589.detail": "Input {i} · Output {o} · {n} wake-ups",
   "p589.unavailable": "This tool does not report attributable heartbeat usage",
   "p589.scope": "Measured total on this computer, including context input; not your remaining subscription allowance",
-  "p589.partial": "Only {m} of {n} wake-ups measured; other turns did not report usage. Total is incomplete."
+  "p589.partial": "Only {m} of {n} wake-ups measured; other turns did not report usage. Total is incomplete.",
+  "media.preparing": "Preparing file…",
+  "media.pending": "This file has not arrived yet; it may still be preparing"
  }
 };

@@ -181,6 +181,10 @@ Replies are laid out for you:
   card opens on the phone instead (Face ID to open); when no card opens, the line says why and how to get the file. Image
   links to the web are never opened automatically.
 
+To include a local image, the Agent writes a complete `[label](absolute-path)` reference, optionally with an exclamation mark before it for an image. Both forms accept absolute paths and `~/`. Once the host receives the complete reference, it prepares the file while work continues. The slot shows preparation or a failure reason until the file card is ready. Path, file-type and secret checks still apply.
+
+For an explicit attachment to the current page, the Agent can run `agentj file show PATH --label LABEL --json` in an admitted owner phone turn. Without a live owner turn it fails; a standalone desktop turn cannot use it to create an outgoing message. `queued` means pending. The later `FILE_SHOW_RESULT` reports `attached_to_page` or `failure`. Neither receipt means you have seen or downloaded the file. This fix was tested in isolated Linux processes and a real Chromium page with a synthetic image. Physical phones, macOS, WSL and end-to-end real Claude Code/Codex/OpenCode model sessions remain untested. Kimi/Qwen ACP has no accepted file-show integration; Windows must use WSL.
+
 （Screenshot：A picture, a formula and highlighted code in a reply — https://agentj.app/docs/manual/rich.en.webp）
 （Screenshot：Further down: a diagram, a file to download and a line about a file that was not sent — https://agentj.app/docs/manual/rich-more.en.webp）
 ### Search the chat

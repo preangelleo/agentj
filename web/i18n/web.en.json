@@ -1269,7 +1269,8 @@
       "private": "{name} is in Agent J's internal folder and doesn't go to others.",
       "key_file": "{name} is a credential file (.env, a private key …) and isn't sent as a file — ask Agent J to send it as a secret pickup card.",
       "key_content": "{name} holds a real key (like sk-…), so it wasn't sent as a file — ask Agent J to send it as a secret pickup card, or remove the key and send again.",
-      "key_card": "{name} holds a key and wasn't sent as a file: a secret pickup card is waiting (Face ID to open)."
+      "key_card": "{name} holds a key and wasn't sent as a file: a secret pickup card is waiting (Face ID to open).",
+      "failed": "{name} could not be prepared and was not sent. Ask the Agent to retry."
     },
     "tapSize": "Tap to load · {size}",
     "shareAgain": "The file is ready — tap share again",
@@ -4768,5 +4769,7 @@
   "p589.detail": "Input {i} · Output {o} · {n} wake-ups",
   "p589.unavailable": "This tool does not report attributable heartbeat usage",
   "p589.scope": "Measured total on this computer, including context input; not your remaining subscription allowance",
-  "p589.partial": "Only {m} of {n} wake-ups measured; other turns did not report usage. Total is incomplete."
+  "p589.partial": "Only {m} of {n} wake-ups measured; other turns did not report usage. Total is incomplete.",
+  "media.preparing": "Preparing file…",
+  "media.pending": "This file has not arrived yet; it may still be preparing"
 }

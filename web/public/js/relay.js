@@ -4903,7 +4903,8 @@ export function init(ctx){
   document.addEventListener("pointerdown", e => { rdPtr = e.pointerType || ""; }, true);
   dblTap(el("rm"), rdTarget, openReader);   // @ix card.reader
   dblTap(el("rdScroll"), rdTarget, () => closeReader());   // @ix read.close
-  document.addEventListener("click", e => { if (performance.now() - rdGuard < 350){ e.preventDefault(); e.stopPropagation(); } }, true);
+  // A newly opened viewer owns its clicks; keep the reader guard on the page behind it.
+  document.addEventListener("click", e => { if (performance.now() - rdGuard < 350 && !e.target.closest?.('.mview:not([hidden])')){ e.preventDefault(); e.stopPropagation(); } }, true);
   el("readBtn").addEventListener("click", openReader);
   setDocReader(openFileReader);   // P573: files to read open in this reader
   el("rdClose").addEventListener("click", () => closeReader());

@@ -1447,15 +1447,7 @@ def _run_later(line: list, rest: list) -> str:
 
 
 def heredocs(text: str) -> tuple[str, list]:
-    """P157: (the command lines with every top-level heredoc body cut out, [(kind, body, expands)]). The delimiter lines stay,
-    so lexing the result again finds each heredoc empty and never swallows the command lines after it.
-
-    kind — "shell": a shell / ssh / su / eval / xargs / at / crontab reads it (bash <<EOF, cat <<EOF | sh): judged as commands;
-    "code:<interpreter>": an interpreter reads its program from stdin (python3 - <<EOF, node <<EOF) and "sql": a database
-    client reads it (psql <<EOF): the raw-text rules only (messaging / payment / price URLs, SQL DROP / GRANT …), as before; "data": anything else (cat > notes.md <<EOF,
-    git commit -F - <<EOF, python3 tool.py <<EOF): the text is not a command — only WHERE it is written counts (the
-    redirect / tee target stays on the command line), plus what an unquoted body runs while expanding ($( ) / backticks).
-    A body written to a file that a later command of the same call runs (cat > x.sh <<EOF … ; bash x.sh) is that program."""
+    """Reference: documentation/notes/inline-media-docstrings.md (danger.py: heredocs)."""
     cmds = lex(text)
     cuts, out = [], []
     for idx, c in enumerate(cmds):
@@ -1739,10 +1731,7 @@ def _under(p: str, root: str) -> bool:
 
 
 def batch_scope(tool: str, tool_input, workdir: str | None, extra: list | None = None) -> tuple[str, tuple, str] | None:
-    """(kind, key, text) of "the same kind of action" for a low-risk request, or None when it cannot be batched. Bash: the
-    set of command names (with the sub-command for npm / git / cargo …, the script for an interpreter); a wrapper, an
-    inline program, a substitution, `sh -c`, `eval`, `ssh host …` or a heredoc → None. File tools: the same tool inside the
-    Agent's folder. WebFetch: the same host. Anything else (incl. MCP tools): the same tool name."""
+    """Reference: documentation/notes/inline-media-docstrings.md (danger.py: batch_scope)."""
     inp = tool_input if isinstance(tool_input, dict) else {}
     if classify(tool, tool_input, extra).danger:
         return None
@@ -1926,12 +1915,7 @@ _DELIM_END = re.compile(r"[ \t;|&<>)]|$")
 
 
 def _quoted_data_out(cmd: str) -> str:
-    """P172: the command with the bodies of QUOTED heredocs (<<'EOF' / <<"EOF" / <<\\EOF) taken out when nothing in the
-    command could run them. Such a body is not expanded: no $( ), no backticks, no variables — it is data (a Markdown report
-    with `code`, [links](https://…), | tables |), so reading its lines as commands only finds things that never run
-    (opaque.dynamic_name on `ossutil`). Unquoted bodies (whose $( ) / backticks DO run) and anything fed to a shell, an
-    interpreter, ssh, xargs, docker exec … keep the old line-by-line reading; so does a command that also runs a program by
-    path (a script it may just have written). The raw-text rules (_text_rules) still see the whole command."""
+    """Reference: documentation/notes/inline-media-docstrings.md (danger.py: _quoted_data_out)."""
     if "<<" not in cmd:
         return cmd
     lines, out, k, cut = cmd.split("\n"), [], 0, False
@@ -1973,10 +1957,7 @@ def _quoted_data_out(cmd: str) -> str:
 
 
 def hook_main(argv: list[str]) -> int:
-    """Claude Code PreToolUse hook. Prints {"hookSpecificOutput": {"permissionDecision": "ask"}} for a dangerous call,
-    or a registry hold/UV row; unknown actions deny. policy-only disables extra danger hints, never table checks.
-    Any failure → exit 2 (Claude Code treats that as a blocking error: the call does not run).
-    `hook <extras> research` (a scheduled read-only run, ADR-A53): anything not read-only is denied outright."""
+    """Reference: documentation/notes/inline-media-docstrings.md (danger.py: hook_main)."""
     try:
         ev = json.load(sys.stdin)
         extra = decode_extra(argv[0]) if argv else []
@@ -2083,10 +2064,7 @@ def _substs(body: str) -> list[str]:
 
 
 def code_text(cmd: str) -> str:
-    """The command with heredoc bodies that are DATA (cat >> notes <<EOF, git commit -F - <<EOF …) or a program for an
-    interpreter (python - <<EOF: not judged, G-A57) taken out; a body read by a shell (bash <<EOF, cat <<EOF | sh) stays.
-    Commands an unquoted body runs while expanding ($( ) / backticks) are kept as lines of their own. P157: the bodies are
-    found by the shell lexer (quotes respected), see heredocs()."""
+    """Reference: documentation/notes/inline-media-docstrings.md (danger.py: code_text)."""
     text, docs = heredocs(cmd)
     out = [text]
     for kind, body, expands in docs:
@@ -2256,10 +2234,7 @@ def _feeds_reader(cs: list, ci: int, c) -> list | None:
 
 def _find_cred_read(args: list, piped_prog: list | None, cwds: list | None = None, remote: bool = False,
                     dump_prog: list | None = None, dump: bool = True) -> str | None:
-    """P358 (#68): find only names files; its -name / -path / -not -path … patterns are filters, not files it reads. It reads
-    credentials when it runs a content reader (-exec cat {}, | xargs cat) on a selection aimed at credential files — or
-    (addendum) on an untargeted selection (`find . -type f -exec cat {} +`) that, walked on this computer, holds one.
-    `dump_prog`: the downstream reader for that walk (a `> list` nobody reads later is not one)."""
+    """Reference: documentation/notes/inline-media-docstrings.md (danger.py: _find_cred_read)."""
     k, starts = 0, []
     while k < len(args) and (args[k] in ("-H", "-L", "-P") or re.fullmatch(r"-O\d", args[k]) or args[k] == "-D"):
         k += 2 if args[k] == "-D" else 1          # find -L ~/.ssh …: options before the start points
@@ -2503,9 +2478,7 @@ def _glob_opts(src: str) -> set:
 
 
 def _glob_dump(word: str, cwds: list, deep: bool = False, remote: bool = False, odd=frozenset()) -> str | None:
-    """`cat *` / `head */*` / `tar czf x.tgz *`: why when the glob, expanded on this computer, reaches a credential file (deep:
-    also inside a folder it matches — tar / zip / grep -r), or the host cannot look; None = it reads none.
-    odd: _glob_opts of the line (dotglob / globstar mirrored; anything else → ask)."""
+    """Reference: documentation/notes/inline-media-docstrings.md (danger.py: _glob_dump)."""
     import glob as globmod
     raw = word.strip("'\"")
     hidden = "hidden" in odd
@@ -2578,10 +2551,7 @@ def _expand_assign(text: str) -> str:
 
 
 def _shared_cred_read(command: str, cwd: str | None = None) -> tuple[str, str] | None:
-    """P137 A3: in shared standard mode, a credential read that is VISIBLE in the command through a glob, a variable, a
-    substitution, an env dump, or a non-whitelist program's operand → ask (strict here). A program that merely reads a
-    credential by a name it never shows (python app.py) is still judged by its name only (G-A57) and does not ask.
-    `cwd` (P358 addendum): the folder the command runs in, where an untargeted dump (`cat *`) is looked at; None = unknown."""
+    """Reference: documentation/notes/inline-media-docstrings.md (danger.py: _shared_cred_read)."""
     text = code_text(command[:MAX_CMD])
     cmds = lex(text)
     for idx, c in enumerate(cmds):                        # env dump: `env`/`printenv` with no program after it
@@ -2776,15 +2746,7 @@ def _shown_creds(text: str) -> list[str]:
 
 
 def classify_shared(tool: str, tool_input, extra=None, mode: str = "standard", cwd: str | None = None, *, env=None) -> Verdict:
-    """Only spending, public deletion, external delivery and credentials.
-
-    Uses the independent classifier/lexer/path rules; local file deletion and price edits are not a new shared-mode approval
-    policy. P128 `mode`: "standard" (default) asks for a credential only when it CHANGES or is SHOWN on screen — a program
-    reading .env by name, or a note / commit message that merely mentions it, does not ask; "strict" = the P40 rule (any
-    credential path anywhere in the call asks). Spend / send / public delete rules are the same in both modes.
-    P336 "safe" (the owner's safe approval level) = strict + every deletion, local files too.
-    P358 `cwd`: the folder a shell command runs in — an untargeted dump (`cat *`) asks when it really holds a credential file.
-    """
+    """Reference: documentation/notes/inline-media-docstrings.md (danger.py: classify_shared)."""
     strict = mode in ("strict", "safe")
     alldel = mode == "safe"
     if tool in ('exec_command', 'shell_command'):
@@ -2881,9 +2843,7 @@ def grant_keys(v: Verdict) -> list:
 
 
 def shared_guard(cfg) -> bool:
-    """P198: does the shared-mode guard ask the phone for the five clear dangers before the harness runs them? Yes, unless the
-    owner chose `agent.approvals = native` (only the harness's own permission prompts — what every shared session did from
-    0.15 / F14 to 0.20.0, contradicting P128's documented `standard`) and did not opt into agent.high_risk_warnings."""
+    """Reference: documentation/notes/inline-media-docstrings.md (danger.py: shared_guard)."""
     cfg = cfg or {}
     return cfg.get("approvals", "standard") != "native" or bool(cfg.get("high_risk_warnings"))
 

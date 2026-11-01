@@ -47,12 +47,13 @@ test('dictionaries: started / failed / again (zh = src = override, en)', () => {
 });
 // 追加 12:2x: a [label](local file) on a finished page that never got a file list (a 「后台任务完成」 page the host did not scan
 // before 0.20.2) kept its raw Markdown. Now, after a grace, the label and one line; a list that comes later still fills it.
-test('an unsent local link: the label and a note once the page is over (grace, or at once for an old page); both views', () => {
+test('local references: preparing in both views, delay during active turns, unsent after end', () => {
   const u = fn('unsent');
-  assert.match(u, /if \(!p \|\| p\.end === 'open'\) return;/);
-  assert.match(u, /\.mslot\[data-link="1"\]/);
+  assert.match(u, /if \(!p\) return;/);
+  assert.match(u, /querySelectorAll\('.mslot'\)/);
   assert.match(u, /if \(s\.dataset\.mid \|\| s\.dataset\.skip \|\| s\.dataset\.unsent\) continue;/);
-  assert.match(u, /mk\('span', 'mskip', t\('media\.unsent'\)\)/);
+  assert.match(u, /t\('media\.preparing'\)/);
+  assert.match(u, /p\.end === 'open' \? 'media\.pending' : 'media\.unsent'/);
   assert.match(src, /export const UNSENT_MS = 6000;/);
   assert.match(fn('renderPage'), /^function renderPage\(words, p\) \{\n  unsent\(words, p\);/);
   assert.match(fn('renderReader'), /^function renderReader\(words, p\) \{\n  unsent\(words, p\);/);
