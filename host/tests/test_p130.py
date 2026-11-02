@@ -1,4 +1,4 @@
-"""P130 migration and live PID-1 environment regression, isolated from owner state."""
+"""P130 migration and v2 launch/environment contracts, isolated from owner state."""
 import sys
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
@@ -123,20 +123,31 @@ class FenceEnvironment(unittest.TestCase):
             self.assertNotIn('OWNER_MODEL_KEY',fence.launch_environment(env,kind='claude'))
             (cfg/'config.toml').write_text('model_provider="chosen"\n[model_providers.chosen]\nenv_key="SSH_AUTH_SOCK"\n')
             self.assertNotIn('SSH_AUTH_SOCK',fence.launch_environment(env,kind='codex'))
-    @unittest.skipUnless(sys.platform.startswith('linux') and shutil.which('bwrap'),'Linux bwrap required')
     def test_live_proc_pid1_environ_hides_variables(self):
-        with tempfile.TemporaryDirectory(prefix='p130-fence-',dir=TEST_TMP) as d:
+        """Contract v2: build isolation argv and synthetic clean env; never launch/read proc."""
+        with tempfile.TemporaryDirectory(prefix='p130-fence-', dir=TEST_TMP) as d:
             home=Path(d);work=home/'work';work.mkdir()
-            env={'HOME':d,'PATH':os.environ['PATH'],'XDG_CONFIG_HOME':str(home/'config'),
+            env={'HOME':d,'PATH':'/usr/bin','XDG_CONFIG_HOME':str(home/'config'),
                  'HERDR_TEST_HIDDEN':'fixture-p130-hidden','SSH_AUTH_SOCK':'fixture-p130-hidden','DISPLAY':'fixture-p130-hidden'}
-            with patch.dict(os.environ,env):
-                st=State(home/'state');st.init();st.perm_dir.mkdir(exist_ok=True)
-                argv=fence.bwrap_argv(st,str(work),environ=env)
-                self.assertIn('--as-pid-1',argv)
-                code="import os; b=open('/proc/1/environ','rb').read(); assert b'fixture-p130-hidden' not in b; assert not any(k in os.environ for k in ('HERDR_TEST_HIDDEN','SSH_AUTH_SOCK','DISPLAY')); print('PASS pid1 clean')"
-                r=subprocess.run(argv+[sys.executable,'-c',code],env=fence.launch_environment(env),capture_output=True,text=True,timeout=15)
-                self.assertEqual(r.returncode,0,r.stderr)
-                self.assertIn('PASS pid1 clean',r.stdout)
+            st=State(home/'state');st.init();st.perm_dir.mkdir(exist_ok=True)
+            # Discovery is synthetic: no host sockets, service manager or state scan.
+            with patch.object(fence, 'service_mounts', return_value=[]), patch.object(fence, 'control_dirs', return_value=[]), \
+                 patch.object(fence, 'control_sockets', return_value=[]), patch.object(fence, 'other_states', return_value=[]), \
+                 patch.object(fence, 'code_paths', return_value=[]), patch('agentj.preferences.path', return_value=home/'config'/'preferences.json'):
+                argv=fence.bwrap_argv(st,str(work),home=d,runtime='',environ=env)
+            clean=fence.launch_environment(env)
+            def verify(args, child_env):
+                for flag in ('--unshare-pid', '--as-pid-1'):
+                    self.assertIn(flag,args)
+                self.assertEqual(args[args.index('--proc')+1],'/proc')
+                self.assertFalse({'HERDR_TEST_HIDDEN','SSH_AUTH_SOCK','DISPLAY'} & child_env.keys())
+                self.assertNotIn('fixture-p130-hidden',child_env.values())
+            verify(argv,clean)
+            for flag in ('--unshare-pid','--as-pid-1','--proc'):
+                with self.assertRaises((AssertionError,ValueError)):
+                    verify([a for a in argv if a!=flag],clean)
+            with self.assertRaises(AssertionError):
+                verify(argv,{**clean,'HERDR_TEST_HIDDEN':'fixture-p130-hidden'})
 
 from test_p78_remote_pair import HostFlow
 from agentj import remote_pair, wire

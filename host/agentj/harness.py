@@ -53,9 +53,23 @@ def agent_bin(kind: str) -> str | None:
 
 def version_of(exe: str) -> str | None:
     """First line of `<exe> --version`, cleaned (no control characters, ≤ 40 chars); None when it does not answer."""
+    from . import olares_probe
+    if olares_probe.required():
+        return None  # arbitrary caller paths never execute in the Olares host
     try:
-        r = subprocess.run([exe, "--version"], capture_output=True, text=True, timeout=VERSION_TIMEOUT,
-                           stdin=subprocess.DEVNULL)
+        if olares_probe.inside():
+            from . import scratch
+            with scratch.home('agentj-oc2-probe-') as home:
+                env = olares_probe.environment(olares_probe._CHILD, metadata=True)
+                for name in ('CLAUDE_CONFIG_DIR', 'CODEX_HOME', 'KIMI_CODE_HOME', 'QWEN_HOME', 'DSH_HOME'):
+                    env.pop(name, None)
+                env.update(HOME=home, **{'XDG_' + k + '_HOME': home + '/' + k.lower()
+                                        for k in ('CONFIG', 'DATA', 'CACHE', 'STATE')})
+                r = subprocess.run([exe, "--version"], capture_output=True, text=True, timeout=VERSION_TIMEOUT,
+                                   stdin=subprocess.DEVNULL, env=env)
+        else:
+            r = subprocess.run([exe, "--version"], capture_output=True, text=True, timeout=VERSION_TIMEOUT,
+                               stdin=subprocess.DEVNULL)
     except (OSError, subprocess.TimeoutExpired, ValueError):
         return None
     if r.returncode != 0:
@@ -63,6 +77,18 @@ def version_of(exe: str) -> str | None:
     out = (r.stdout or r.stderr or "").splitlines()
     line = clean_line(out[0], 200) if out else ""
     return (line if len(line) <= 40 else line[:39] + "…") or "?"
+
+
+def selected_version(kind: str, exe: str | None) -> str | None:
+    """Known harness selection uses semantic metadata; arbitrary paths remain refused."""
+    from . import olares_probe
+    if olares_probe.required():
+        if kind not in NAMES or not exe:
+            return None
+        h = olares_probe.run('detect', kind)['harnesses'][0]
+        selected = h.get('executable')
+        return h.get('version') if selected and os.path.realpath(selected) == os.path.realpath(exe) else None
+    return version_of(exe) if exe else None
 
 
 def claude_login(environ=None) -> tuple[str, str]:
@@ -246,6 +272,9 @@ def _one(name: str, environ=None) -> dict:
     if name == "core":                  # P359: built in — nothing to install; "logged in" = a preset key name is set
         from .core.presets import record
         return record(environ)
+    from . import olares_probe
+    if olares_probe.required():
+        return olares_probe.run('detect', name, environ=environ)['harnesses'][0]
     from .binaries import resolve, installations, wrapper
     resolution = resolve(name, environ)
     exe = resolution["path"]
@@ -337,7 +366,9 @@ def _one(name: str, environ=None) -> dict:
 
 def detect(environ=None) -> dict:
     """{"harnesses": [{name, installed, logged_in, supported, version[, note]}], "usable": [...], "decision": ...}."""
-    hs = [_one(n, environ) for n in names()]
+    from . import olares_probe
+    kinds = (olares_probe._CHILD,) if olares_probe.inside() else names()
+    hs = [_one(n, environ) for n in kinds]
     usable = [h["name"] for h in hs if h["supported"] and h["installed"] and h["logged_in"] is not False]
     decision = "none" if not usable else f"use:{usable[0]}" if len(usable) == 1 else "ask_owner"
     return {"harnesses": hs, "usable": usable, "decision": decision}
@@ -432,6 +463,18 @@ def probe(only: tuple | list | None = None, model: str | None = None, timeout: f
     "not_probed"); `model` is passed to the single harness probed; each call is bounded by `timeout` seconds and a failure
     carries a fixed code in probe_reason (never native output).
     """
+    from . import olares_probe
+    if olares_probe.required():
+        hs = []
+        for kind in NAMES:
+            op = 'probe' if only is None or kind in only else 'detect'
+            r = olares_probe.run(op, kind, model if only is not None and len(only) == 1 else None, timeout)
+            for h in r['harnesses']:
+                if op == 'detect':
+                    h.update(callable=False, probe_reason='not_probed')
+                hs.append(h)
+        usable = [h['name'] for h in hs if h.get('callable')]
+        return {'harnesses': hs, 'usable': usable, 'decision': 'use:' + usable[0] if len(usable) == 1 else 'ask_owner' if usable else 'none'}
     from types import SimpleNamespace
     from .bots import native
     from .bots.store import BotError

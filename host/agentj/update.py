@@ -123,11 +123,35 @@ def _uv_tool_name(prefix: str) -> str | None:
     return os.path.basename(os.path.normpath(prefix)) or None
 
 
+def market_managed(prefix=None) -> bool:
+    """Existing Market chart layout, not a guess based on Linux, Router or missing systemd."""
+    return (sys.platform == "linux" and os.path.realpath(prefix or sys.prefix) == "/opt/agentj"
+            and all((Path("/opt/agentj-olares") / n).is_file()
+                    for n in ("entry.sh", "setup_page.py", "serve_env.py")))
+
+
+def market_text(lang="zh") -> str:
+    return ("Agent J is managed by Olares Market. Open Market → Manage → Updates → Agent J to upgrade."
+            if lang == "en" else "Agent J 由 Olares 应用市场管理。请打开应用市场 → 管理 → 更新 → Agent J 升级。")
+
+
+def market_result() -> dict:
+    return {"result": "refused", "reason": "market_managed", "exit": 2,
+            "from": __version__, "to": None, "service": "unchanged"}
+
+
+def require_native_install(info=None):
+    if (info or {}).get("kind") == "olares" or market_managed():
+        raise ValueError("market_managed")
+
+
 def install_kind(prefix: str | None = None) -> dict:
     """{"kind": "uv" | "pipx" | "checkout" | "pip", "where": path, "legacy": bool, ...}. Decided by files the installers
     leave in the venv (uv-receipt.toml / pipx_metadata.json), else a source checkout (host/ with bin/agentj), else a plain
     pip venv. legacy = the uv / pipx tool is still registered under the ≤ 0.9 name `agentjarvis-host`."""
     prefix = prefix or sys.prefix
+    if market_managed(prefix):
+        return {"kind": "olares", "where": prefix, "legacy": False}
     if os.path.isfile(os.path.join(prefix, "uv-receipt.toml")):
         return {"kind": "uv", "where": prefix, "legacy": _uv_tool_name(prefix) == LEGACY_DIST}
     if os.path.isfile(os.path.join(prefix, "pipx_metadata.json")):
@@ -167,6 +191,7 @@ def installer_binary(name: str) -> str:
 def commands(info: dict, latest: str | None = None) -> list[list[str]]:
     """The upgrade, as argv lists run one after the other (stop at the first failure). With `latest` known, uv / pipx / pip
     install exactly the tag `v<latest>` (spec_at) — the version the check reported, also for a copy pinned to an older tag."""
+    require_native_install(info)
     k = info["kind"]
     pinned = spec_at(latest) if latest else None
     if k == "uv":
@@ -195,6 +220,7 @@ def verified_plan(st, info, target):
     from pathlib import Path
     from .state import State
     from . import auto_update
+    require_native_install(info)
     root = Path(os.environ.get('XDG_CACHE_HOME') or Path.home()/'.cache') / 'agentj-upgrade'
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
     wheel = auto_update.cached_wheel(State(root), target, require_signature=True)
@@ -280,8 +306,11 @@ def command_text(info: dict, latest: str | None = None) -> str:
 
 def check(timeout: float = TIMEOUT) -> dict:
     """{"current", "latest", "status": "newer" | "current" | "ahead" | "unknown", "why", "install", "command"}."""
-    latest, why = fetch_latest(timeout)
     info = install_kind()
+    if info["kind"] == "olares":
+        return {"current": __version__, "latest": None, "status": "market_managed",
+                "why": "market_managed", "install": "olares", "command": ""}
+    latest, why = fetch_latest(timeout)
     c = compare(latest, __version__) if latest else None
     status = "unknown" if c is None else {1: "newer", 0: "current", -1: "ahead"}[c]
     out = {"current": __version__, "latest": latest, "status": status, "why": why if status == "unknown" else "ok",
@@ -291,6 +320,7 @@ def check(timeout: float = TIMEOUT) -> dict:
 
 # ------------------------------------------------------------------ what each status means, in plain words (C-10 / S-8)
 EXPLAIN = {
+    "market_managed": market_text() + " / " + market_text("en"),
     "newer": "有新版本，Agent 自己运行 `agentj update apply`，重启并自检后回报。/ A newer version is available; the Agent upgrades, restarts and self-checks.",
     "current": "已经是最新版，不用做什么。/ Up to date. Nothing to do.",
     "ahead": "这台Agent J 主机上的版本比公开仓库里最新的发布版还新。这不是错误，不用做什么：通常是从 agentj.app 下载安装的版本比 GitHub "
@@ -338,6 +368,8 @@ def phone_view(st) -> dict:
 
 
 def auto_enabled(st) -> bool:
+    if market_managed():
+        return False
     try:
         return st.config().get("update_check", True) is not False and latest_url() is not None
     except (OSError, ValueError):
@@ -831,6 +863,7 @@ def check_ids(ids) -> list:
 
 # result block reasons: (exit code, 中文, English)
 AUTH_REASONS = {
+    "market_managed": (2, market_text(), market_text("en")),
     "bad_code": (2, "授权码格式不对（应为 AJUP- 加 4 组、每组 5 个字符）。把升级邮件整封交给 `--from-email`，不要手抄",
                  "the authorization code is malformed (AJUP- and 4 groups of 5 characters); pass the whole upgrade email to --from-email instead of retyping it"),
     "no_code": (2, "邮件里没有找到授权码（AJUP-…）", "no authorization code (AJUP-…) found in the email"),
@@ -908,6 +941,8 @@ def _exit_of(reason: str) -> int:
 
 def authorized_apply(st, code: str | None, target: str | None, **kw) -> dict:
     """Contract C3 (see _authorized_apply). P277: an attempt that got as far as the download is remembered (last upgrade)."""
+    if market_managed() or market_managed(kw.get("prefix")):
+        return market_result()
     from . import upgrade_diag
     res = _authorized_apply(st, code, target, **kw)
     upgrade_diag.remember(st, res)
@@ -920,6 +955,8 @@ def _authorized_apply(st, code: str | None, target: str | None, *, mail: dict | 
     target → signed upgrade-auth → only on 200: install pinned to target (no y/N, no terminal), verify the new version,
     marker for serve's phone notice, service re-install. → {"result": "ok" | "refused" | "failed", "reason", "from", "to",
     "service", "exit", "latest"?}. `say` prints progress lines (the restart may end the caller's process)."""
+    if market_managed() or market_managed(prefix):
+        return market_result()
     from . import cloud
     check_fn = check_fn or check
     auth_fn = auth_fn or cloud.upgrade_auth
@@ -1070,6 +1107,8 @@ def _pre_snapshot(st) -> None:
 def apply(st, target=None, *, fenced=None, **kw):
     """Explicit caller-requested upgrade (see _apply). P277: an attempt that got as far as the download is remembered as the
     last upgrade — in the state directory, or inside the fence by the host (elevate.sock op `record`)."""
+    if market_managed() or market_managed(kw.get("prefix")):
+        return market_result()
     from . import upgrade_diag
     if fenced is None:
         from . import fence
@@ -1088,6 +1127,8 @@ def _apply(st, target=None, *, prefix=None, check_fn=None, run=None, say=None, s
     writes the marker last and rolls back itself when the new service does not come up.
     P205: inside the Agent fence the host does the state-directory parts and the health check (see host_op).
     """
+    if market_managed() or market_managed(prefix):
+        return market_result()
     run, say = run or subprocess.run, say or (lambda line: None)
     if fenced is None:
         from . import fence
@@ -1225,6 +1266,8 @@ def host_op(st, req: dict, mem: dict, run=None) -> dict:
     op, to = req.get("op"), req.get("to")
     if op == "ping":
         return {"ok": True, "version": __version__}
+    if market_managed():
+        return {"ok": False, "why": "market_managed"}
     if op == "clear":
         (st.root / UPGRADED).unlink(missing_ok=True)
         (st.root / PENDING).unlink(missing_ok=True)
@@ -1287,6 +1330,8 @@ def result_block(res: dict) -> str:
     """The fixed block the Agent copies back to its human (install.md section U)."""
     lines = [f"UPGRADE_RESULT {res['result']}", f"reason: {res['reason']}", f"from: {res['from']}",
              f"to: {res.get('to') or '?'}", f"service: {res['service']}"]
+    if res.get("reason") == "market_managed":
+        lines.append("message: " + market_text() + " / " + market_text("en"))
     if res.get("rollback"):
         lines.append(f"rollback: {res['rollback']}" + (f" (back on {res['from']})" if res["rollback"] == "ok" else ""))
     if res.get("health"):

@@ -236,7 +236,9 @@ class QwenAgent(AcpAgent):
 def probe(exe: str, env: dict, timeout: float = 60, model: str | None = None) -> str:
     """The switch gate: one tool-free greeting over ACP in plan mode, every permission refused (agent_kimi.probe's loop,
     `qwen --acp`, the key-card key as Qwen's OpenAI variables). → the reply text, or agent_kimi.ProbeError(code)."""
-    from . import agent_kimi
+    from . import agent_kimi, olares_probe
+    if olares_probe.required():
+        raise agent_kimi.ProbeError('fence_unavailable')
     env = dict(env)
     keyed = key_environment(env, model, source=env)
     env.update(keyed)

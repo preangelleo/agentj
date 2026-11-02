@@ -193,8 +193,10 @@ class OpenCodeAuthentication(unittest.IsolatedAsyncioTestCase):
         class Attached(OpenCodeAgent):
             pass
         agent=object.__new__(Attached);agent.failed_start=False;agent.cfg={'model':'deepseek/chat'};agent.fail_notice=Mock()
-        with patch('agentj.agent_opencode._bin',return_value='/var/tmp/fake-opencode'),patch('agentj.harness.version_of',return_value='opencode v2.0.23'),patch('asyncio.create_subprocess_exec') as spawn:
+        agent.host=SimpleNamespace(st=SimpleNamespace(log=Mock()))
+        with patch('agentj.olares_runtime.prepare',return_value=True) as prepare,patch('agentj.agent_opencode._bin',return_value='/var/tmp/fake-opencode'),patch('agentj.harness.selected_version',return_value='opencode v2.0.23'),patch('asyncio.create_subprocess_exec') as spawn:
             self.assertFalse(await agent._spawn())
+        prepare.assert_called_once_with(agent.host.st,agent.cfg)
         spawn.assert_not_called();self.assertIn('v2',agent.fail_notice.call_args.args[0]);self.assertIn('not an invalid',agent.fail_notice.call_args.args[0])
         own=object.__new__(OpenCodeAgent);own.host=SimpleNamespace(st=SimpleNamespace(log=Mock()))
         self.assertTrue(own._switch('opencode v2.0.23'));self.assertIs(type(own),OpenCodeV2Agent)

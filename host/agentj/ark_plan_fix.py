@@ -73,7 +73,9 @@ def _models(url, key):
 
 def _native_probe(target, model, source_name, key, *, detail=False):
     # Some plan endpoints do not publish GET /models. Use the owner's OpenCode, isolated and tool-free, never our own chat client.
-    from . import harness, agent_opencode2, opencode_free
+    from . import harness, agent_opencode2, opencode_free, olares_probe
+    if olares_probe.required():
+        return {'ok': False} if detail else False
     exe = harness.agent_bin('opencode')
     if not exe:
         return {"ok":False} if detail else False

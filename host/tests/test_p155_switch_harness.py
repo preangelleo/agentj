@@ -337,7 +337,7 @@ class Job(unittest.TestCase):
         self.assertEqual(self.run_job(st, fake, "codex"), 2)
         self.check_rolled_back(st, raw, fake, "no_reply")
 
-    def test_restart_failure_rolls_back_and_phone_told_when_old_cannot_answer(self):
+    def test_restart_failure_restores_config_but_reports_unrecovered_when_old_cannot_answer(self):
         st = mk_state(self.tmp.name, "claude")
         raw = st.config()["agent"]
         fake = FakeServe(st, "claude")
@@ -350,9 +350,11 @@ class Job(unittest.TestCase):
             fake.restart()
             fake.answers = False                                     # the old one is up but silent: a phone notice
         self.assertEqual(sw.worker(st, "codex", probe=fake_probe(), ctl=fake, restart=restart, status=UP,
-                                   ready=lambda st, limit: "idle", sleep=self.clock.sleep, clock=self.clock), 2)
+                                   ready=lambda st, limit: "idle", sleep=self.clock.sleep, clock=self.clock), 1)
         self.assertEqual(st.config()["agent"], raw)
-        self.assertEqual(sw.read_receipt(st)["reason"], "restart_failed")
+        rec = sw.read_receipt(st)
+        self.assertEqual((rec["status"], rec["reason"], rec["back"]), ("failed", "rollback_failed", "no_reply"))
+        self.assertNotIn("已切回", fake.sent[-1])
         self.assertTrue(fake.sent and "Codex" in fake.sent[-1] and "Claude Code" in fake.sent[-1])
 
     def test_gate_in_the_job_failed_probe_changes_nothing(self):

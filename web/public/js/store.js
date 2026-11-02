@@ -56,8 +56,15 @@ export async function adoptRootStore() {
     tx.onerror = tx.onabort = () => { from.close(); rej(tx.error); };
   });
   if (!recs.some(([k, v]) => k === 'host' && v && v.approved)) return false;
-  const to = await idb();
-  return new Promise((res, rej) => {
+  // Finish an existing initializer before copying, and hold new callers until the copy settles.
+  while (devKeyBarrier) await devKeyBarrier;
+  let release;
+  const barrier = new Promise((res) => { release = res; });
+  devKeyBarrier = barrier;
+  try {
+    if (devKeyFlight) await devKeyFlight.catch(() => {});
+    const to = await idb();
+    return await new Promise((res, rej) => {
     const tx = to.transaction('kv', 'readwrite'), st = tx.objectStore('kv');
     const has = st.get('host');
     has.onsuccess = () => {
@@ -66,7 +73,11 @@ export async function adoptRootStore() {
     };
     tx.oncomplete = () => { to.close(); devKey = null; signKp = undefined; localKey = null; res(true); };
     tx.onerror = tx.onabort = () => { to.close(); rej(tx.error); };
-  });
+    });
+  } finally {
+    if (devKeyBarrier === barrier) devKeyBarrier = null;
+    release();
+  }
 }
 /** P550 (P545 × P547): the seat moved to a new host whose channel names another seat id. This seat page's records go to that
  *  seat's own database (a copy, like adoptRootStore: structured clones, the non-extractable keys stay CryptoKeys) with `host`
@@ -166,8 +177,17 @@ async function wrappedKeypair() {
 const unwrapDevice = (d) => crypto.subtle.unwrapKey('pkcs8', d.ct, d.kek, WRAP(d.iv), { name: 'X25519' }, false, ['deriveBits']);
 
 let devKey = null;
+let devKeyFlight = null;
+let devKeyBarrier = null;
 export async function deviceKey() {
+  while (devKeyBarrier) await devKeyBarrier;
   if (devKey) return devKey;
+  // Publish before the first await: every caller shares the same persisted identity.
+  const flight = devKeyFlight ?? (devKeyFlight = loadDeviceKey());
+  try { return await flight; }
+  finally { if (devKeyFlight === flight) devKeyFlight = null; }
+}
+async function loadDeviceKey() {
   const w = await dbGet('device2');
   if (w && w.v === 2 && w.kek && w.ct && w.iv && w.pub) {
     try { return (devKey = { priv: await unwrapDevice(w), pub: new Uint8Array(w.pub) }); } catch { /* unusable: a new key below */ }

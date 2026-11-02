@@ -629,33 +629,42 @@ class FenceLegacyPath(unittest.TestCase):
                           if str(home) == os.path.expanduser("~") else
                           [*fence.other_states(st, str(home)), *fence.protected_paths(st)])
 
-    @unittest.skipUnless(sys.platform.startswith("linux") and shutil.which("bwrap"), "bubblewrap")
     def test_bwrap_hides_the_state_under_both_paths(self):
+        """Contract v2: real mount-plan construction for aliases, never read hidden keys."""
         with tempfile.TemporaryDirectory() as d:
-            fence._probe_cache.clear()
             home, st = self._home(d)
-            work = pathlib.Path(d) / "work"
-            work.mkdir()
-            if fence.problem(st, str(work)) is not None:
-                self.skipTest("bubblewrap cannot start here")
-            old_real = pathlib.Path(d) / "second"     # a real old directory elsewhere is covered by other_states too
-            probe = ("import os, sys\nout = []\nfor p in sys.argv[1:]:\n"
-                     "    try:\n        out.append(sorted(os.listdir(p)))\n    except OSError as e:\n        out.append(type(e).__name__)\n"
-                     "    try:\n        open(os.path.join(p, 'host_ed25519.key'), 'rb').read(); out.append('KEY READ')\n"
-                     "    except OSError:\n        out.append('no key')\nprint(out)\n")
+            work = pathlib.Path(d)/'work';work.mkdir()
             paths = [str(state.legacy_state(str(home))), str(state.default_state(str(home)))]
-            argv = fence.bwrap_argv(st, str(work), home=str(home), runtime="") + [sys.executable, "-c", probe, *paths]
-            r = subprocess.run(argv, capture_output=True, text=True, timeout=60)
-            self.assertEqual(r.returncode, 0, r.stderr)
-            self.assertEqual(r.stdout.strip(), str([["agentperm"], "no key", ["agentperm"], "no key"]))
-            # the legacy path as a REAL directory beside the new one (not moved): hidden whole
-            os.unlink(paths[0])
-            State(pathlib.Path(paths[0])).init(relay="ws://127.0.0.1:1")
-            argv = fence.bwrap_argv(st, str(work), home=str(home), runtime="") + [sys.executable, "-c", probe, *paths]
-            r = subprocess.run(argv, capture_output=True, text=True, timeout=60)
-            self.assertEqual(r.stdout.strip(), str([[], "no key", ["agentperm"], "no key"]), r.stderr)
-            del old_real
-        fence._probe_cache.clear()
+            def build():
+                with mock.patch.object(fence,'service_mounts',return_value=[]), \
+                     mock.patch.object(fence,'control_dirs',return_value=[]), \
+                     mock.patch.object(fence,'control_sockets',return_value=[]), \
+                     mock.patch.object(fence,'code_paths',return_value=[]):
+                    return fence.bwrap_argv(st,str(work),home=str(home),runtime='',environ={'HOME':str(home)})
+            def verify(argv):
+                root, perm = os.path.realpath(st.root), os.path.realpath(st.perm_dir)
+                for path in paths:
+                    resolved = os.path.realpath(path)
+                    matches = [i for i in range(len(argv)-1) if argv[i:i+2]==['--tmpfs',resolved]]
+                    self.assertTrue(matches, 'each resolved State must be hidden')
+                    hide = matches[-1]
+                    # No later bind may expose State again; only its perm subdir.
+                    for i, flag in enumerate(argv):
+                        if i > hide and flag in ('--bind','--ro-bind'):
+                            self.assertNotEqual(argv[i+2],resolved)
+                bind = next(i for i in range(len(argv)-2) if argv[i:i+3]==['--bind',perm,perm])
+                self.assertGreater(bind,argv.index(root,argv.index('--tmpfs')))
+            for separate in (False,True):
+                if separate:
+                    os.unlink(paths[0]);State(pathlib.Path(paths[0])).init(relay='ws://127.0.0.1:1')
+                argv=build();verify(argv)
+                root=os.path.realpath(st.root)
+                i=next(i for i in range(len(argv)-1) if argv[i:i+2]==['--tmpfs',root])
+                with self.assertRaises(AssertionError):
+                    verify(argv[:i]+argv[i+2:])
+                with self.assertRaises(AssertionError):
+                    verify(argv+['--bind',root,root])
+
 
 
 if __name__ == "__main__":

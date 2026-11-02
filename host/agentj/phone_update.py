@@ -11,6 +11,8 @@ RESULT = "phone-update-result.json"
 LOCK = "phone-update-running.json"
 
 def launch(st):
+    if update.market_managed():
+        return False
     from . import service_recovery
     service_recovery.launch_job(st, [sys.executable, "-m", "agentj.phone_update"], "update")
 
@@ -43,6 +45,8 @@ def take(st):
     return rec
 
 def text(rec, lang="zh", web="older", machine=None):
+    if rec.get("reason") == "market_managed":
+        return update.market_text(lang)
     if rec.get("reason") in ("upgraded", "doctor_failed"):
         return update.completion_text(rec, rec.get("counts"), lang, rec.get("checks"), web, machine)
     if rec.get("reason") == "already_current":
@@ -73,6 +77,8 @@ def _lang(st):
 
 
 def run(st, apply_fn=None, restart_fn=None):
+    if update.market_managed():
+        return update.market_result()
     from . import doctor, service
     def quiet(argv, **kw):
         kw.pop("capture_output", None)

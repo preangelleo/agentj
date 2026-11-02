@@ -263,6 +263,9 @@ def start_probe(st, cfg: dict, limit: float = 150, *, clock=time.monotonic) -> d
     """P312 (ADR-P312): the exec probe proves the login, not the start the session makes (config.toml MCP / plugins / hooks,
     the Agent's folder, fence or shared launch): `codex app-server` as serve starts it, timed through initialize →
     config/read → thread/start {ephemeral} — no turn, nothing kept. {"secs"[, "reason", "err"]}; None = not measured."""
+    from . import olares_probe
+    if olares_probe.required():
+        return olares_probe.run('start', 'codex', cfg.get('model'), limit, cfg=cfg)
     if not os.path.isdir(d := str(cfg.get("dir") or "")):
         return None
     import selectors

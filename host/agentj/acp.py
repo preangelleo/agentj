@@ -1,26 +1,4 @@
-"""P305: a generic Agent Client Protocol (ACP v1, https://agentclientprotocol.com) adapter — one long-lived `<agent> acp`
-(JSON-RPC 2.0, one JSON object per line on stdio) per Agent J host; Kimi Code CLI (agent_kimi.py) is the first harness on it,
-Qwen Code (agent_qwen.py) the second, DeepSeek Harness (`dsh --profile acp`, agent_dsh.py, P329) the third.
-
-What serve does:
-- the harness runs inside the fence (fence.py) like the others; `initialize` with NO client capabilities for files or
-  terminals — the agent reads, writes and runs commands itself, inside the fence, never through serve (which runs outside it);
-- one conversation = one ACP session (id in `agent.json`): `session/resume` (no history replay), else `session/load`, else
-  `session/new`; each phone message one `session/prompt`, whose answer (`stopReason`) ends the turn. Text arrives as
-  `agent_message_chunk` updates; it is collected and sent to the phone in whole pieces — at every tool call and at the end of
-  the turn (no character-by-character pushes);
-- **every approval is ours**: the session is put in the harness's manual mode (`MODE_DEFAULT`) on every open, so it asks
-  before anything that is not read-only; each `session/request_permission` → `Host.ask` (the danger list, the signed phone
-  card, 120 s default deny, batch for low risk) → the `allow_once` option or the `reject_once` option. Never an `allow_always`
-  option (it would install a session-wide rule the phone never saw). A harness's own hooks are never relied on (Kimi's fail
-  open on error / timeout) — the permission request is the gate;
-- a permission request with several `allow_once` options is a question (Kimi's AskUserQuestion: one option per answer and a
-  `reject_once` "Skip") → the §10.7 question card; nobody answers → the reject option;
-- the stop switch and `/stop` send `session/cancel`; `/model` uses the session's `model` config option
-  (`session/set_config_option`); `/context` the last `usage_update`.
-The identity (main_identity.prompt) rides the first prompt of each process's session as an embedded `resource` block, the
-per-turn reminder as one more (ACP has no system-prompt field; the harness shows them to the model as attached context).
-"""
+'Developer reference: documentation/notes/OLARES-20261101-HOST-REFERENCE.md.'
 from __future__ import annotations
 
 from . import resource_policy

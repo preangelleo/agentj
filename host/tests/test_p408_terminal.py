@@ -19,6 +19,7 @@ import json
 import os
 import pathlib
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -41,6 +42,51 @@ FA = {"id": wire.b64u(b"\x07" * 16), "cd": "e30", "ad": "AA", "sig": "AA"}
 GOOD = "-".join(("fake", "login", "pw", "4711"))          # a stand-in, never a real password
 BAD = "-".join(("wrong", "pw"))
 R = "abcdef0123456789"
+
+def _verify_spawn_contract(row):
+    """Only launch parameters and this test's owned FD metadata; no process reads."""
+    if not all(stat.S_ISSOCK(mode) for mode in row['stdio_modes']):
+        raise AssertionError('terminal stdio must be an owned socket')
+    if len(set(row['stdio_fds'])) != 1 or not row['session']:
+        raise AssertionError('terminal stdio/session contract')
+    for forbidden in (GOOD, wire.b64u(GOOD.encode())):
+        if forbidden in json.dumps([row['argv'],row['env']]):
+            raise AssertionError('fixture password in spawn parameters')
+    if 'AGENTJ_STATE_DIR' in row['env'] or 'AGENTJ_TERM_TOKEN' not in row['env']:
+        raise AssertionError('terminal environment contract')
+
+
+@contextlib.contextmanager
+def _ordinary_spawn_observer():
+    """Keep ordinary echo/fake-sudo path, observe parameters before its own spawn.
+
+    This replaces the old proc/fd reopening assertions, not a kernel-isolation test.
+    Ambient credentials/service files are never consulted in this synthetic lane.
+    """
+    original = asyncio.create_subprocess_exec
+    rows = []
+    async def spawn(*argv, **kwargs):
+        fds = [kwargs[k] for k in ('stdin','stdout','stderr')]
+        row = {'argv':argv,'env':dict(kwargs['env']), 'stdio_fds':fds,
+               'stdio_modes':[os.fstat(fd).st_mode for fd in fds], 'session':kwargs.get('start_new_session')}
+        _verify_spawn_contract(row)
+        rows.append(row)
+        return await original(*argv, **kwargs)
+    with mock.patch.object(asyncio, 'create_subprocess_exec', side_effect=spawn), \
+         mock.patch('agentj.terminal.service_keys', return_value=set()):
+        yield rows
+    if len(rows) != 1:
+        raise AssertionError('exactly one ordinary shell spawn expected')
+    row = rows[0]
+    for bad in ({**row,'stdio_modes':[stat.S_IFIFO]*3},
+                {**row,'env':{**row['env'],'PASSWORD':GOOD}},
+                {**row,'argv':[*row['argv'],GOOD]}):
+        try:
+            _verify_spawn_contract(bad)
+        except AssertionError:
+            continue
+        raise AssertionError('spawn contract negative control failed')
+
 SUDO_STUB = r"""#!/bin/bash
 # stand-in sudo for the P408 tests: -k · -S -k -p MARK -- cmd · -A cmd (asks $SUDO_ASKPASS)
 good=$(cat "$(dirname "$0")/good")
@@ -411,32 +457,32 @@ class Askpass(unittest.TestCase):
         self.assertIsNone(term_askpass.safe_python([str(fake)]))
 
     def test_a_planted_pth_in_a_venv_does_not_run_in_the_helper(self):
-        real = term_askpass.safe_python()
-        if not real:
-            self.skipTest("no system python3 on this machine")
+        """Contract v2: interpreter trust and -IS helper parameters, no planted code."""
         base = pathlib.Path(self.tmp.name)
-        venv, marker = base / "venv", base / "pwned"
-        ver = subprocess.run([real, "-IS", "-c", "import sys; print('%d.%d' % sys.version_info[:2])"], capture_output=True,
-                             text=True).stdout.strip()
-        sp = venv / "lib" / f"python{ver}" / "site-packages"
-        sp.mkdir(parents=True)
-        (venv / "bin").mkdir()
-        (venv / "bin" / "python").symlink_to(real)
-        (venv / "pyvenv.cfg").write_text(f"home = {os.path.dirname(real)}\n")
-        (sp / "evil.pth").write_text(f"import os; open({str(marker)!r}, 'w').close()\n")
-        subprocess.run([str(venv / "bin" / "python"), "-I", "-c", "pass"], capture_output=True, timeout=20)
-        planted_runs = marker.exists()                           # the attack the fix closes: -I alone still runs .pth
-        with contextlib.suppress(FileNotFoundError):
-            marker.unlink()
-        self.assertEqual(term_askpass.python_ok(str(venv / "bin" / "python")), real)   # the real path, never the venv's
-        for py in (str(venv / "bin" / "python"), real):
-            h = term_askpass.Helper(base / "t", base / "t" / "nosock", py)
-            self.assertTrue(h.path.read_text().startswith(f"#!{py} -IS\n"))
-            r = subprocess.run([str(h.path), "[sudo] pw"], capture_output=True, timeout=20, env={})
-            self.assertEqual(r.returncode, 1)                    # no socket: refused, nothing printed
-            self.assertFalse(marker.exists(), py)
-        if not planted_runs:
-            self.skipTest("this python does not process venv .pth under -I (the negative part still passed)")
+        candidate = str(base / 'venv' / 'bin' / 'python')
+        real = '/usr/bin/python3'
+        metadata = subprocess.CompletedProcess([], 0, '/usr/lib/python3 /usr/lib/python3/lib-dynload\n', '')
+        with mock.patch.object(term_askpass.os.path, 'realpath', return_value=real), \
+             mock.patch.object(term_askpass.os.path, 'isfile', return_value=True), \
+             mock.patch.object(term_askpass, '_root_owned', return_value=True), \
+             mock.patch.object(term_askpass.subprocess, 'run', return_value=metadata) as run:
+            self.assertEqual(term_askpass.python_ok(candidate), real)
+            args, kwargs = run.call_args
+            self.assertEqual(args[0][:3], [real,'-I','-S'])
+            self.assertEqual(kwargs['env'], {})
+            self.assertEqual(kwargs['stdin'], subprocess.DEVNULL)
+            with mock.patch.object(term_askpass, '_root_owned', return_value=False):
+                self.assertIsNone(term_askpass.python_ok(candidate))
+        (base/'contract').mkdir()
+        h = term_askpass.Helper(base/'contract', base/'contract'/'nosock', real)
+        source = h.path.read_text()
+        self.assertTrue(source.startswith(f'#!{real} -IS\n'))
+        def verify(text):
+            self.assertTrue(text.startswith(f'#!{real} -IS\n'))
+        for bad in (source.replace(' -IS\n',' -I\n',1), source.replace(real,candidate,1)):
+            with self.assertRaises(AssertionError):
+                verify(bad)
+        h.remove()
 
     @unittest.skipUnless(os.environ.get("AGENTJ_P408_REAL_SUDO") == "1", "L1: set AGENTJ_P408_REAL_SUDO=1")
     def test_l1_proc_shape_of_this_process_tree(self):
@@ -654,12 +700,12 @@ class Open(Rig):
             self.assertEqual(ready["sudo"], "local")             # fenced + independent, no PRF
             self.assertEqual(len(ready["id"]), 16)
             x = self.desk.term
-            env = pathlib.Path(f"/proc/{x.proc.pid}/environ").read_bytes()
-            cmd = pathlib.Path(f"/proc/{x.proc.pid}/cmdline").read_bytes()
             out = await self.line("echo hi", "hi")
             self.assertTrue(any(o.get("prompt") for o in out if o["t"] == "term_out"))
-            return env, cmd
-        env, cmd = self.run_async(go)
+        with _ordinary_spawn_observer() as rows, mock.patch.dict(os.environ, {'HOME':str(self.home),'PATH':'/usr/bin:/bin'}, clear=True):
+            self.run_async(go)
+        env = json.dumps(rows[0]['env']).encode()
+        cmd = json.dumps(rows[0]['argv']).encode()
         self.assertEqual(self.msgs("elev", cid=12), [])         # the login card: the opening device only
         self.assertTrue(self.msgs("elev", cid=self.s.cid))
         closes = self.msgs("term_close")
@@ -850,8 +896,10 @@ class Open(Rig):
         self.assertNotIn(GOOD.encode(), blob + files)
 
     def test_r3_socket_stdio_sudo_k_each_time_and_a_forged_marker(self):
-        """R3: M-1 /proc/<bash>/fd/0 cannot be reopened (a socket) · H-2 two sudo = two cards, `-k` passed each time ·
-        LOW a program printing the bare OSC 133 marker is not "at the prompt"."""
+        """Contract v2: own socket metadata + ordinary signed two-card fake sudo.
+
+        No proc read/reopen. A bare OSC marker remains ordinary output, not a prompt.
+        """
         self.passkey()
         self.enable()
         if not term_askpass.safe_python():
@@ -860,11 +908,7 @@ class Open(Rig):
         async def go():
             await self.open()
             x = self.desk.term
-            for fd in (0, 1, 2):
-                with self.assertRaises(OSError) as e:
-                    open(f"/proc/{x.proc.pid}/fd/{fd}", "rb").close()
-                self.assertEqual(e.exception.errno, errno.ENXIO)
-            self.assertNotIn(x.prompt[8:-1].encode(), pathlib.Path(f"/proc/{x.proc.pid}/environ").read_bytes())
+            self.assertNotIn(x.prompt[8:-1], json.dumps(rows[0]['env']))
             await self.until(lambda: x.at_prompt)
             await self.desk.on_phone(self.s, {"t": "term_line", "id": x.id, "seq": 1, "line": "printf '\\033]133;A\\007'; sleep 1"})
             await asyncio.sleep(0.6)
@@ -882,7 +926,8 @@ class Open(Rig):
                                                       **signed(self.phone, "term_sudo", {"id": x.id, "rid": ask["rid"]}, ask["n"])})
                 await self.until(lambda: "two-ok" in "".join(o.get("data", "") for _, o in self.sent[n0:] if o["t"] == "term_out"))
                 self.assertEqual(len([o for _, o in self.sent[n0:] if o["t"] == "term_sudo"]), 2)
-        self.run_async(go)
+        with _ordinary_spawn_observer() as rows, mock.patch.dict(os.environ, {'HOME':str(self.home),'PATH':'/usr/bin:/bin'}, clear=True):
+            self.run_async(go)
         calls = [ln for ln in (pathlib.Path(self.desk.sudo).parent / "args.log").read_text().splitlines() if "-A" in ln]
         self.assertEqual(calls, ["-k -A true", "-k -A true"])
 

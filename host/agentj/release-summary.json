@@ -1,5 +1,5 @@
 {
-  "version": "0.26.4a1",
-  "zh": "[all] 完整本地图片引用可在回合进行中显示；获准的主人手机回合可用 agentj file show 附加文件。排队或附到页面不代表客户端已下载或主人已看到。",
-  "en": "[all] Show local images while a turn runs; file show attaches files in an admitted owner turn. Queued or attached does not mean downloaded or seen."
+  "version": "0.26.5a1",
+  "zh": "[all] Olares 支持 AI 工具扫描切换、重启确认与失败恢复，应用经 Market 升级。OpenCode 2.2.5；原生 Claude Code 与 OpenCode 内 Claude Agent 分别用本人账号登录。",
+  "en": "[all] Olares: AI scan/switch, verified restart/recovery, Market upgrades. OpenCode 2.2.5; sign in separately to native Claude Code and OpenCode’s Claude Agent."
 }

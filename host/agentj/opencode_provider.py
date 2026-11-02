@@ -27,7 +27,7 @@ MODEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,119}$")
 NPM = {"openai": "@ai-sdk/openai-compatible", "anthropic": "@ai-sdk/anthropic"}
 HEADER = {"openai": "Authorization: Bearer {value}", "anthropic": "x-api-key: {value}"}
 # OpenCode's own catalogue ids: a custom block with the same id would silently change the built-in provider
-RESERVED = ("opencode", "openai", "anthropic", "openrouter", "deepseek", "google", "zhipuai", "moonshotai", "github-copilot")
+RESERVED = ("opencode", "openai", "anthropic", "openrouter", "deepseek", "google", "zhipuai", "moonshotai", "github-copilot", "claude-agent")
 
 
 class ProviderError(Exception):
@@ -87,6 +87,11 @@ def block(pid: str, base_url: str, models: list[str], api: str = "openai", name:
           env: str | None = None, caps: dict | None = None) -> dict:
     if not ID_RE.match(pid or ""):
         raise ProviderError("服务商 id 只能用小写字母、数字、- 和 _（例如 myrelay） / provider id: lowercase letters, digits, - and _")
+    if pid == "claude-agent":
+        raise ProviderError("Claude Agent 用 Claude Code 本人登录：先安装 Claude Code，运行 `claude auth login`，再在 OpenCode 的 "
+                            "`/connect` 选 Claude Agent；与 `agentj agent claude` 是两个入口 / Install Claude Code, run "
+                            "`claude auth login` yourself, then select Claude Agent in OpenCode `/connect`; this is "
+                            "separate from `agentj agent claude`")
     if pid in RESERVED:
         raise ProviderError(f"「{pid}」是 OpenCode 自带的服务商：它的 key 用 `opencode auth login {pid}` 存，不需要这条命令 / "
                             f"{pid} is built into OpenCode: store its key with `opencode auth login {pid}`")

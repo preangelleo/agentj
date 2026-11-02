@@ -556,7 +556,9 @@ def probe(exe: str, env: dict, timeout: float = 60, model: str | None = None) ->
     """The switch gate: one tool-free greeting over ACP, every permission refused (agent_kimi.probe's loop) — in an empty
     temporary folder (so no project .env is read), the read-only preset, telemetry off, the route's key by name.
     → the reply text, or agent_kimi.ProbeError(code)."""
-    from . import agent_kimi
+    from . import agent_kimi, olares_probe
+    if olares_probe.required():
+        raise agent_kimi.ProbeError('fence_unavailable')
     why = prepare(env)
     if why:
         raise agent_kimi.ProbeError("dsh_config_unsafe")

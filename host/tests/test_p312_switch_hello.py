@@ -136,7 +136,7 @@ class Phases(FakeServe):
 
     def __call__(self, req):
         r = super().__call__(req)
-        if req["cmd"] == "harness_hello":
+        if req["cmd"] == "harness_hello" and self.kind == "codex":
             self.said = 0
             self.base = self.clock()
         if req["cmd"] == "status" and self.kind == "codex":
@@ -227,6 +227,10 @@ class Hello(unittest.TestCase):
         self.assertLessEqual(rec["waited"], sw.HELLO_WAIT + sw.POLL)
 
     def test_start_probe_gates_and_stretches(self):
+        self.st.set_agent_config("claude", self.raw["dir"], "fixture-source-model", record_root=False)
+        self.raw = self.st.config()["agent"]
+        source_config = dict(self.st.agent_config())
+        config_bytes = self.st.config_path.read_bytes()
         fake = Phases(self.st, "claude", self.clock, [(9999, "starting", None)])
         self.assertEqual(self.job(fake, start=lambda st, t, cfg: {"secs": 3, "reason": "start_failed", "err": "auth"}), 1)
         rec = sw.read_receipt(self.st)
@@ -234,13 +238,26 @@ class Hello(unittest.TestCase):
         self.assertEqual(self.st.config()["agent"], self.raw)                 # nothing changed
         self.assertIn("codex login", sw._say_receipt(rec, "zh"))
         seen = []
+        launch_configs = []
+        agent_config = self.st.agent_config
+
+        def read_launch_config():
+            cfg = agent_config()
+            launch_configs.append(cfg)
+            return cfg
 
         def slow(st, t, cfg):
+            self.assertEqual(st.config()["agent"], self.raw)  # target launch copy; persistent config has not changed
+            self.assertEqual(st.config_path.read_bytes(), config_bytes)
+            self.assertIsNot(cfg, launch_configs[0])
+            self.assertEqual(launch_configs[0], source_config)
+            self.assertEqual((cfg["kind"], cfg["model"]), ("codex", None))  # target default, never the source model
             seen.append((t, cfg["dir"], cfg["kind"]))
             return {"secs": 70.4}
         fake = Phases(self.st, "claude", self.clock, old=True, answer_at=300)  # old serve: only the measured start stretches
-        self.assertEqual(self.job(fake, start=slow), 0)
-        self.assertEqual(seen, [("codex", self.raw["dir"], "claude")])        # measured before anything changed
+        with mock.patch.object(self.st, "agent_config", side_effect=read_launch_config):
+            self.assertEqual(self.job(fake, start=slow), 0)
+        self.assertEqual(seen, [("codex", self.raw["dir"], "codex")])  # target is measured before persistent apply
         self.assertEqual(sw.read_receipt(self.st)["start_secs"], 70)
 
     def test_dry_run_runs_the_start_probe_too(self):

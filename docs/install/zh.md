@@ -259,9 +259,10 @@ agentj support ask "<你的问题>" --attach-doctor
 
 Agent J 也能装在 Olares 盒子上（Olares 1.12 或更新），数据留在盒子里。
 
-- **装在盒子自己的 Ubuntu 上，用普通用户**（不用 root），和装云服务器一样。不要装进 Olares 应用里：在那些容器里，Agent J 的安全围栏起不来。
-- **让它一直运行：** AI 会请你运行一次 `sudo loginctl enable-linger <用户名>`（密码你自己输），再重新登录一次，然后它把服务装好。
-- **模型：** 用盒子自带的 **Olares Router**。在 Router 应用里新建一把 API key，AI 通过 DeepSeek 的 dsh 或 OpenCode 接上它，key 只粘贴在手机卡片里。见 [DeepSeek dsh](/docs/setup-agents/#dsh)。
+- **从 Olares 应用市场安装 Agent J**，打开应用，把[账户页](https://agentj.app/account)空席位的整段安装提示词粘进设置页。应用自带 OpenCode，默认接 Olares Router，无需另填 Router API key。
+- **到应用市场「管理 → 更新」升级 Agent J**。手机 `/update` 和 `agentj update apply` 会提示去应用市场；不要在应用内重装 Agent J 或安装 systemd。
+- **直接装在盒子 Ubuntu 上的普通安装：** 用普通用户（不用 root），按云服务器步骤安装和升级；不要装进其他应用的容器。AI 会请你运行一次 `sudo loginctl enable-linger <用户名>`（密码你自己输），重新登录后安装服务。
+- **为 Ubuntu 普通安装接模型：** 在 Olares Router 应用里新建 API key，通过 DeepSeek 的 dsh 或 OpenCode 接上，key 只粘贴在手机卡片里。见 [DeepSeek dsh](/docs/setup-agents/#dsh)。
 - **远程维护：** 用官方的 LarePass VPN。助记词由你自己在 LarePass 里导入，绝不交给 AI。手机连 Agent J 不需要这个 VPN。
 - **买来时已经预装了 Agent J？** 预装的只有软件。激活以后，你用自己的 Agent J 账号登录，自己建席位。
 
@@ -324,7 +325,7 @@ Ubuntu 24.04 还会检查 AppArmor 对用户命名空间的限制，并实际试
 AI 安装Agent J 主机端程序 `agentj`，装的是固定的一个版本：
 
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.26.4a1#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.26.5a1#subdirectory=host"
 agentj doctor
 ```
 

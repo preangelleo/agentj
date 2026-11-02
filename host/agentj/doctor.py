@@ -560,7 +560,8 @@ def check_agent_cli(st: State, svc: dict) -> dict:
         exe = resolution["path"] if svc.get("installed") else _agent_bin(k)
         if not exe:
             continue
-        ver = _version_of(exe)
+        from . import olares_probe
+        ver = harness.selected_version(k, exe) if olares_probe.required() else _version_of(exe)
         if ver is None:
             return _c("agent_cli", FAIL, f"{AGENT_LABEL[k]} {tilde(exe)} 运行失败 / does not run (`{k} --version`)",
                       f"重装 {AGENT_LABEL[k]} / reinstall {AGENT_LABEL[k]}")

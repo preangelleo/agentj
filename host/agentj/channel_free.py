@@ -27,6 +27,9 @@ def catalogue(exe):
     The same bytes enter the isolated server: a bundled, withdrawn catalogue
     must not qualify a free route. No paid model or credential is a fallback.
     """
+    from . import olares_probe
+    if olares_probe.required():
+        return [], None
     hit = _CATALOGUE.get(exe)
     if hit and time.monotonic() - hit[0] < 300:
         return hit[1], hit[2]

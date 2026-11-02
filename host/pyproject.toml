@@ -50,5 +50,8 @@ packages = ["agentj", "jarvis_host"]   # the package + its data files (admin/ pa
 # copy source (polished into admin.zh.json by agentjarvis/i18n/polish.py) stays in the repo.
 exclude = ["agentj/admin/i18n/*.src.json", "agentj/admin/i18n/*.override.json"]
 
+[tool.hatch.build.targets.wheel.hooks.custom]
+path = "hatch_build.py"
+
 [tool.hatch.build.targets.sdist]
-include = ["agentj", "jarvis_host", "pyproject.toml", "LICENSE", "NOTICE"]
+include = ["agentj", "jarvis_host", "pyproject.toml", "hatch_build.py", "LICENSE", "NOTICE"]

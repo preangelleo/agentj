@@ -744,8 +744,13 @@ class OpenCodeAgent(Agent):
             self.fail_notice("后台环境里没找到 OpenCode（opencode 命令）/ OpenCode executable missing in the background environment.\n" +
                              guidance("opencode", "launch", getattr(self.host, "lang", "zh")))
             return False
-        from .harness import version_of, opencode_v2
-        version = await asyncio.to_thread(version_of, _bin('AGENTJ_OPENCODE_BIN', 'opencode'))
+        from . import olares_runtime
+        if not await asyncio.to_thread(olares_runtime.prepare, self.host.st, self.cfg):
+            self.failed_start = True
+            self._startup_failure('launch', 'native_runtime_unavailable')
+            return False
+        from .harness import selected_version, opencode_v2
+        version = await asyncio.to_thread(selected_version, 'opencode', _bin('AGENTJ_OPENCODE_BIN', 'opencode'))
         own = self._own_protocol()
         if own:
             self._switch(version)
@@ -1622,8 +1627,8 @@ class OpenCodeAgent(Agent):
             return False
         if getattr(self, "_proto_key", None) == key:
             return False
-        from .harness import version_of
-        version = await asyncio.to_thread(version_of, exe)
+        from .harness import selected_version
+        version = await asyncio.to_thread(selected_version, 'opencode', exe)
         if not version:
             return False  # A failed version probe must not select v1 or end a healthy process.
         self._proto_key = key

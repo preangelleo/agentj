@@ -1220,6 +1220,10 @@ def _restore_disabled(st, n: str) -> bool:
 
 def restart() -> dict:
     """Restart only the named Agent J service; never a relay or foreign harness."""
+    from . import olares_supervisor
+    if olares_supervisor.enabled():
+        olares_supervisor.call({"cmd": "restart"})
+        return {"name": name(), "kind": "olares"}
     n = name()
     if platform() == "linux":
         _systemctl("restart", f"{n}.service", check=True)
@@ -1350,6 +1354,12 @@ def uninstall(st=None) -> dict:
 def status() -> dict:
     """{"kind", "name", "path", "installed": bool, "active": "active" | "inactive" | "failed" | …}. Never raises for
     a missing service manager: kind = "none"."""
+    from . import olares_supervisor
+    if olares_supervisor.enabled():
+        try:
+            return {**olares_supervisor.call({"cmd": "status"}), "kind": "olares", "name": name()}
+        except ServiceError:
+            return {"kind": "olares", "name": name(), "installed": True, "active": "inactive"}
     try:
         n = name()
     except ServiceError:

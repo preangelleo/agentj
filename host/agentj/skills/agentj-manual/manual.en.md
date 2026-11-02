@@ -618,6 +618,8 @@ See [Android sharing and the iPhone clipboard Shortcut](https://agentj.app/docs/
 
 ## Updating the phone page
 
+Upgrade Agent J installed from Olares Market in Market → Manage → Updates. The phone’s `/update` and `agentj update apply` direct you to Market; do not reinstall Agent J or install systemd inside the app. A separate installation directly on the Olares host’s Ubuntu keeps the ordinary host upgrade flow.
+
 Host and page updates are checked separately. In other cases, when a newer web version is detected, a square opens in the middle of the screen: **Server upgraded**. Tap **Refresh** to use the new version; **Later**, ESC or a tap outside closes it, and you can still tap the settings icon at the top right → **Update and reload** later. When the host and page server both have the same newer version, the page reloads after ten seconds without input, preserving the draft; recording and unsubmitted card actions block it. Otherwise only offer a refresh. Keyboard: `Alt+Shift+U` upgrades the host (phone confirmation unchanged); `Alt+Shift+R` updates and reloads the page.
 
 
@@ -832,3 +834,9 @@ For a task needing several confirmations, ask the Agent to list every exact acti
 For a local task use `agentj friends approve-actions <actions.json>`; for a verified Same owner device use `agentj friends tell <friend> --actions <actions.json> <task text>`. Sign once on the initiating phone; the receiver accepts only the listed exact actions. The JSON array has 1–20 items, each `{"tool":"Bash","input":{"command":"<exact command>"}}`; never include credential values. Requesting approval does not execute the actions. Local approval lasts at most 30 minutes / 20 uses and ends with the task or revocation.
 
 An explicit Same owner plan must use the approval root fixed by bilateral pairing. A different signing root returns `root_reconfirm`: reconfirm that relationship’s approval root first. Missing, invalid, changed, oversized or expired plan proof is refused with `task_refused`, without delivery, execution, a fallback ordinary task or another receiver card. Queued plans also refuse on expiry or turn drift. Ordinary handovers without a plan are unchanged.
+
+### Switch AI tools in the Olares app
+
+AI tool scanning, switching, restart and failure recovery in the Olares app use the image-owned read-only process manager, retaining paired-phone signed confirmation. A failed switch restores the original configuration; rollback is confirmed only after the original AI returns to service, and failed recovery is reported. Do not install systemd inside the app. Bundled OpenCode is pinned to 2.2.5; existing working owner-installed tools are not silently replaced.
+
+For native Claude Code, install and personally sign in to Claude Code inside this app, then switch with `agentj agent claude`. Claude Agent inside OpenCode is a separate route: install Claude Code 2.1.248 or newer, personally run `claude auth login`, then choose Claude Agent in OpenCode `/connect`. Agent J does not copy OAuth tokens; completing login does not establish a verified model reply.

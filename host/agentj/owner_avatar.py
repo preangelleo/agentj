@@ -1,26 +1,4 @@
-"""P543 (#307): the owner's own channels — WeChat, the owner's private Telegram chat, allowlisted owner mail — get an
-avatar with the main conversation's tools and permissions, not a tool-less assistant.
-
-Whatever native plan the avatar uses (the main conversation's, or a saved Claude / Codex / OpenCode plan — P557), each
-message runs that harness itself, in the main working folder, inside the same fence, with the owner's own settings, MCP and
-skills:
-- Claude Code: `ClaudeAgent.argv` unchanged (the danger PreToolUse hook, `--permission-prompt-tool`, no `--tools ""`), plus
-  this avatar's system text; its permission tool claims serve's socket with a one-time side token (serve.side_perm_env), so
-  the main Agent's claimed connection is never cut. The avatar conversation resumes (`--resume`) per channel.
-- Codex: `codex app-server` through CodexAgent (owner sandbox, `untrusted` approvals, low-risk pass as in the main chat);
-  its own thread resumes per channel. Images it generates are picked up from `$CODEX_HOME/generated_images/<thread>/`.
-- OpenCode: the chat adapter once (tasks.py's run_once), one fresh conversation per message.
-
-Approvals: every request is `serve.ask(..., avatar=label)` — the main floor (policy_registry.main_requirement), the danger
-list, passkey for red lines, cards only on paired devices. Unlike a main-conversation turn it never takes a batch grant, a
-goal pass or a parked approval: those were given for the main conversation. P559: under 「全放行」 its steps are decided like the
-main conversation's (chairman 10-27): ① ② / hold pass without a card; the four ③ kinds and attacks on Agent J keep Face ID. A card that
-stays open more than CARD_NOTICE_AFTER seconds calls `on_card` once per turn, so the channel can say "confirm in Agent J
-Web App"; nothing typed in the channel ever answers a card (the card's only answer is a signed device decision).
-
-Friends of another owner and customer service keep their tool-less executors (peer_session.py); same-owner friend tasks
-already run in the main conversation (same_owner.forward).
-"""
+'Developer reference: documentation/notes/OLARES-20261101-HOST-REFERENCE.md.'
 from __future__ import annotations
 
 import asyncio

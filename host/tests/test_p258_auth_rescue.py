@@ -183,16 +183,29 @@ class ClaudeFlowT(Base):
             f.close()
 
     def test_old_credentials_never_reach_the_flow(self):
-        os.environ["ANTHROPIC_API_KEY"] = "sk-ant-api-old"
-        f = ar.ClaudeFlow("setup_token", str(self.work))
-        try:
-            f.start()
-            with open(f"/proc/{f.pty.pid}/environ", "rb") as fh:
-                env = fh.read()
-            self.assertNotIn(b"sk-ant-api-old", env)
-            self.assertIn(b"BROWSER=true", env)
-        finally:
+        """Contract v2: intercept the actual Pty boundary, no child or environ read."""
+        old = 'fixture-old-login'
+        seed = {name: old for name in ('ANTHROPIC_API_KEY','ANTHROPIC_AUTH_TOKEN','CLAUDE_CODE_OAUTH_TOKEN')}
+        def verify(env):
+            self.assertFalse(set(seed) & env.keys())
+            self.assertNotIn(old, env.values())
+            self.assertEqual(env['BROWSER'], 'true')
+        with mock.patch.object(ar, 'harness_env', return_value={**seed,'PATH':'/usr/bin'}), \
+             mock.patch.object(ar, 'Pty') as pty, mock.patch.object(ar.subprocess, 'Popen', side_effect=AssertionError('no child in mock contract')):
+            pty.return_value.wait_for.return_value.group.return_value = 'https://claude.ai/oauth/authorize'
+            f = ar.ClaudeFlow('setup_token', str(self.work))
+            self.assertEqual(f.start(), 'https://claude.ai/oauth/authorize')
+            self.assertEqual(pty.call_args.args[0][-1], 'setup-token')
+            self.assertEqual(pty.call_args.args[1], str(self.work))
+            env = pty.call_args.args[2]
+            verify(env)
+            for name in seed:
+                with self.assertRaises(AssertionError):
+                    verify({**env,name:old})
+            with self.assertRaises(AssertionError):
+                verify({**env,'BROWSER':'browser'})
             f.close()
+
 
 
 # ------------------------------------------------------------------ ④ Codex device flow

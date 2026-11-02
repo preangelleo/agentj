@@ -1,30 +1,4 @@
-"""OpenCode v2 adapter (P60): the same `opencode serve` child as v1 (agent_opencode.py) — same fence, same random
-`OPENCODE_SERVER_PASSWORD`, same startup line — but v2's server speaks a different protocol. Two lines ship side by side
-(as of 2026-10-17): `https://opencode.ai/install` and `npm i -g opencode-ai` install 1.x (since 1.19.2 the curl installer
-refuses 2.x; 1.x never updates itself to 2.x), `https://opencode.ai/v2/install`, `@opencode/cli`, Homebrew core and mise
-≥ 2026.10.9 install 2.x — so a Mac user's `brew upgrade` lands on v2. Before P60 Agent J refused v2 outright ("OpenCode v2
-的 /api 协议尚未接入"). Measured on 2.0.23 (reports/qa/p60/), rules re-checked on 2.0.31 source (P357):
-
-- every legacy route (`/session`, `/event`, `/provider` …) answers 200 with the web UI's HTML; the JSON API is `/api/*`
-  (OpenAPI at `/openapi.json`), each answer wrapped as `{"data": …}`;
-- `POST /api/session {title, location: {directory}, model: {id, providerID}, permissions}` → a session; a message is
-  `POST /api/session/{id}/prompt {text}` (accepted = 200; it runs in the background); `POST …/interrupt`, `POST …/compact`,
-  `POST …/model {model}`; Agent J's main-Agent identity rides as a session instruction entry
-  (`PUT /api/experimental/session/{id}/instructions/entries/agentj.identity`);
-- the event stream `GET /api/event` sends `{type, data: {sessionID, …}}`: `session.text.ended` (a finished text block),
-  `session.execution.started / succeeded / failed / interrupted` (the turn), `session.step.ended` (tokens / cost),
-  `session.step.failed` / `session.execution.failed` with `error: {type: "provider.auth" | "provider.no-route" | …, status,
-  message}`, `permission.asked {id, action, resources}` answered by `POST /api/session/{sid}/permission/{id}/reply
-  {decision: once | reject, message}`, `form.created` (the v1 question tool);
-- permission rules are `{action, resource, effect}`; the shell tool's action is `shell` (v1: `bash`), a subagent's
-  `subagent` (v1: `task`), write / patch ask as `edit` — renamed by `rules_to_v2` (P357, checked on 2.0.31 source);
-- which providers have a key: `GET /api/integration` → `connections` (env / key / oauth), never a value;
-- a sub-agent's session takes its parent's session rules (P426, opencode_subagents): its `permission.asked` / `form.created`
-  carry the CHILD's sessionID (routed by `session.created` parentID, answered on the child's own route).
-
-Everything else (the fence, the phone's cards, danger.classify, the turn queue, tamper checks, key-failure restart) is the
-v1 adapter's, inherited. `OpenCodeAgent._spawn` switches an instance to this class when `opencode --version` says 2.x.
-"""
+'Developer reference: documentation/notes/OLARES-20261101-HOST-REFERENCE.md.'
 from __future__ import annotations
 
 import asyncio
@@ -795,6 +769,9 @@ def probe(exe: str, model: str | None, env: dict, timeout: float, *, waits=(), s
     from . import scratch
     from .agent_opencode import _rule, opencode_env
     from .opencode_free import PROMPT, START_WAIT, ProbeError, _env, _port, _stop, serve
+    from . import olares_probe
+    if olares_probe.required():
+        raise ProbeError('fence_unavailable')
     deadline = clock() + timeout + sum(waits)
     password = secrets.token_urlsafe(32)
     port = _port()

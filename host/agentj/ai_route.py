@@ -1,31 +1,4 @@
-"""P279 (Leo, 2026-10-14): which AI route to recommend at install / first run — `agentj agent route [--json]`.
-
-Decided by what actually works from the Agent J host, not by guessing: one unauthenticated GET each to api.anthropic.com
-(Claude Code), api.openai.com (Codex, chatgpt_reach) and api.kimi.com (the Kimi route itself). No key is sent; only the
-status code and the provider's error type are read — the same answer the provider gives to every unsupported region
-(Anthropic 403 "Request not allowed", OpenAI 403 unsupported_country). Optional local signals (time zone, locale) only
-break a tie; they are read on the Agent J host and never sent anywhere.
-
-  any official service answers        → "official"  (the install.md harness rule as before: Claude Code / Codex)
-  both refused or unreachable         → "kimi"      (P335: mainland → Volcano Ark Coding Plan first (ark.py), Hong Kong /
-                                                      Macau → Kimi membership Plus or higher in OpenCode or, P305, Kimi's own
-                                                      CLI `kimi`; Bailian side by side; + alternatives. The route keeps its
-                                                      name "kimi": first-run journals and caches already store it)
-  … and Kimi unreachable as well      → "offline"   (no network: recommend nothing, check the network first)
-  one refused by REGION, other unknown → "kimi"     (partial)
-  nothing measured, zone HK / MO / CN → "kimi"      (hint only — the text says so)
-  otherwise                           → "unsure"    (official rule; Kimi named as the fallback)
-
-P328 (Leo, 2026-10-16) — what the "kimi" route recommends, by the local region hint (cn-coding-plans 1.0.1):
-  mainland China, starting from zero → Volcano Ark Agent Plan, Medium first (P395; Kimi K3 from Medium up; ark.py)
-  Hong Kong / Macau / overseas        → a Kimi membership (billed in USD outside the mainland)
-  already paying for one of them      → keep it (said in words: this module never reads keys or configs)
-  region unknown                      → both, each labelled with where it applies (Ark first)
-
-The invite link lives in ONE place: ai_route.json next to this file; a bound host prefers the platform's partner entry
-(slot ai-coding, name Kimi — changeable without a release). Every link is printed with its disclosure right next to it.
-The key goes only through the phone key card into the service environment; this module never reads any key.
-"""
+'Developer reference: documentation/notes/OLARES-20261101-HOST-REFERENCE.md.'
 from __future__ import annotations
 
 import json

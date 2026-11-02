@@ -52,6 +52,7 @@ REASON = {
            "bad_model": "OpenCode 的模型要写成「服务商/模型」，例如 zhipuai/glm-5.3",
            "no_service": "Agent J 没有作为后台服务运行（切换要靠它自动重启；先运行 agentj service install）",
            "no_agent": "Agent J 还没接任何 Agent", "not_running": "Agent J 没在运行", "estop": "Agent J 正处于急停状态",
+           "rollback_failed": "原配置已恢复，但原来的 AI 服务尚未恢复；运行 agentj doctor 检查",
            "launch_failed": "安排不了切换任务", "restart_failed": "重启 Agent J 失败",
            "wrong_agent": "重启后接上的不是 {x}", "agent_down": "重启后 {x} 没有接上",
            "hello_refused": "重启后 {x} 不接收消息", "no_reply": "{x} 切换后一直没有自报家门", "not_idle": "{x} 回答后一直没有空下来",
@@ -75,6 +76,7 @@ REASON = {
            "bad_target": "only Claude Code, Codex, OpenCode, Kimi Code or Qwen Code", "bad_model": "an OpenCode model is written provider/model, e.g. zhipuai/glm-5.3",
            "no_service": "Agent J is not running as a background service (the switch needs it to restart by itself; run agentj service install first)",
            "no_agent": "Agent J has no Agent configured", "not_running": "Agent J is not running", "estop": "Agent J is emergency-stopped",
+           "rollback_failed": "the original configuration was restored, but the original AI service has not recovered; run agentj doctor",
            "launch_failed": "the switch job could not be scheduled", "restart_failed": "restarting Agent J failed",
            "wrong_agent": "after the restart the Agent was not {x}", "agent_down": "after the restart {x} did not come up",
            "hello_refused": "after the restart {x} did not take messages", "no_reply": "{x} never introduced itself after the switch",
@@ -1213,7 +1215,10 @@ def worker(st, target: str | None, model: str | None = None, *, job: str | None 
             if not gb["ok"]:
                 back_reason = gb["reason"]
                 extra["back_unavailable"] = back_reason  # P567: escaping a broken harness must remain possible
-        m = start(st, target, prev)  # P312: the start the session will make (same folder / launch), before anything changes
+        from . import shared_pin
+        start_cfg = {**prev, "kind": target, "model": model,
+                     "shared_session_id": shared_pin.resolve(st, target, prev.get("shared_pin_owner", ""), prev["dir"])}
+        m = start(st, target, start_cfg)  # target model/pin, same folder / launch
         if m:
             extra["start_secs"] = int(m.get("secs") or 0)
             if m.get("err"):
@@ -1304,19 +1309,17 @@ def worker(st, target: str | None, model: str | None = None, *, job: str | None 
         back = _wait_up(ctl, prev["kind"], sleep, clock, model=raw.get("model"))
     except Exception:  # noqa: BLE001
         back = "restart_failed"
-    if back is None:
-        _progress(ctl, "back_ok", target, prev["kind"])
-    result = done("rolled_back", reason)
     why = {k: extra[k] for k in ("detail", "err") if k in extra}
-    told = back is None and _alive(_hello(ctl, {"outcome": "rolled_back", "from": prev["kind"], "to": target, "reason": reason,
-                                                **why}, sleep, clock))
-    if not told:
-        lang = (prev or {}).get("language")
-        ctl({"cmd": "send", "text": ("Switching to {t} failed ({r}); switched back to {f}." if lang == "en" else
-                                     "切换到 {t} 没成功（{r}），已切回 {f}。").format(
-            t=LABEL[target], f=LABEL[prev["kind"]], r=reason_text(reason, target, "en" if lang == "en" else "zh",
-                                                                  why.get("detail"), why.get("err")))})
-    return result
+    if back is None:
+        told = _alive(_hello(ctl, {"outcome": "rolled_back", "from": prev["kind"], "to": target, "reason": reason,
+                                  **why}, sleep, clock))
+        if not told:
+            back = "no_reply"
+    if back is not None:
+        back_reason = back
+        return done("failed", "rollback_failed")
+    _progress(ctl, "back_ok", target, prev["kind"])
+    return done("rolled_back", reason)
 
 
 def stale_job(st, job: str | None, environ=None) -> bool:
@@ -1420,6 +1423,8 @@ def _say(r: dict, lang: str) -> str:
                 f"then goes back with no check). Nothing was changed." if lang == "en" else
                 f"✗ 没有切到 {T}：{T} 能用，但切过去以后就切不回 {F} 了，{F} 在后台服务里过不了同样的检查。原因：{why}。"
                 f"先把 {F} 修好；确定要切就加 --force，之后用 agentj agent switch --undo 不经检查直接切回。没有改任何东西。")
+    if r.get("reason") == "rollback_failed":
+        return "✗ " + reason_text("rollback_failed", r.get("target") or "", lang)
     why = reason_text(r.get("reason") or "call_failed", r.get("target") or "", lang, None, r.get("err"), r.get("line"))
     undo = ((" It is the harness used before the last switch: agentj agent switch --undo goes back to it with no check "
              "(if it does not come up, Agent J returns here by itself).") if lang == "en" else

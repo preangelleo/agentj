@@ -1,29 +1,4 @@
-"""P426 #170 ③: 「我的设备」 — the owner's own devices as one group chat, with @ to hand a message to a device's main Agent.
-
-Nobody creates this group: its members are exactly the friends whose Same owner relationship is active on BOTH sides
-(same_owner.SameOwner.active) and not blocked. Anybody else is not in it, cannot post to it and never sees it.
-
-A group message comes from the owner's paired phone (signed `fr_gsay`, PROTOCOL §17.7) or from the main Agent
-(`agentj friends say …`). Then, per member:
-
-- **@-mentioned** (`@Mac M1`, several names, `@all` / `@所有设备`): the message travels as an ordinary friend message (`pmsg`)
-  with a `grp` field, so it takes the existing Same owner delivery path unchanged — P410 chain ID / hops / per-friend rate /
-  lease, the receiver's 「先压着等我批」 switch, the inbound secret filter, Stop everything, and delivery to the receiver's
-  **main Agent** as same-owner request data (provenance kind `same_owner`: never the owner, never an approval). The only
-  difference is the label: 「来自本人设备 X（「我的设备」群）」.
-- **Not mentioned**: a `grp` record (app message `{"t": "grp", …}`) — it shows in that device's group history and wakes no
-  Agent, starts no turn.
-
-The mentioned device's main Agent answers with the usual `agentj friends tell <device> --reply-to <message-id> <result>`. The
-host sees that the message it answers came from the group: the reply carries `grp.re` (the group message it answers), is
-recorded in the group here, and a `grp` record of it goes to every other member. On the sender's side a reply to a message the
-owner typed on the phone stays in the group (the phone is told; no Agent turn); a reply to a message the main Agent sent with
-`friends say` also reaches that Agent as the usual informational result, so it learns the outcome.
-
-The history is this host's own file `peer/my-devices.json` (atomic writes under the friends lock, newest 500). Every text is
-checked like a friend message both ways (outbound filter before sending; inbound filter on arrival — a hit is kept as
-「（疑似密钥，已拦下）」, never shown). Records from a member are limited to 60 a minute.
-"""
+'Developer reference: documentation/notes/OLARES-20261101-HOST-REFERENCE.md.'
 from __future__ import annotations
 
 import re

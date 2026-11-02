@@ -1,6 +1,6 @@
-# Agent J 0.26.4a1 release notes
+# Agent J 0.26.5a1 release notes
 
-Host 0.26.4a1 / install 0.28.4; phone-web scope.
+Host 0.26.5a1 / install 0.28.5; phone-web scope.
 Phone parity must pass --strict. Full Android/Telegram parity is incomplete.
 Full Android/Telegram parity is incomplete.
 No APK is included in this release. Android source is for review, not a released app.
@@ -8,21 +8,20 @@ No APK is included in this release. Android source is for review, not a released
 Publication status: local preparation only. Live site verification is DEFERRED until
 the public commit and tag are pushed, the site is deployed, and cold installation passes.
 
-Scope: live local-image delivery and current-owner-page file show only. Release order: C generated Dashboard support knowledge (no new D1 migration), then A newly signed host/site/downloads and front Worker, immediately followed by B phone web. Use the new 0.26.4a1 artifacts; the earlier 0.26.3a1 INTERNAL wheel is not a published upgrade. Preserve existing D1 records and security journals; never replay migrations. Local release preparation only: publication, installation on the owner's host and service restarts remain separate operator actions.
+Local unpublished candidate: Olares lifecycle management and isolated AI-tool discovery, bundled OpenCode2.2.5, and app upgrades through Olares Market. Deployment order is Dashboard support knowledge, signed host/installer/site, then the phone web page. This version introduces no D1 migration. Existing0.26.4 download files and the featured/Story website remain available.
 ## Changes
 
-- [all] Use agentj file show in an admitted owner phone turn to attach a local file to the current page; without a live owner turn it fails explicitly.
-- [all] Complete local image references can appear while a turn is running, without waiting for tools and the reply to finish.
-- [all] Image preparation and failure states are clearer. A queued or attached-to-page receipt does not mean the client downloaded the file or the owner saw it.
-- [all] 在当前获准的主人手机回合，用 agentj file show 把本地文件附到当前页；无有效主人回合会明确失败。
-- [all] 回复中的完整本地图片引用可在回合进行中显示，继续执行工具时无需等到回复结束。
-- [all] 图片准备和失败状态更清楚；排队或附到页面的回执不代表客户端已下载或主人已看到。
+- [opencode] Bundled OpenCode is now 2.2.5, with separate owner login guidance for native Claude Code and Claude Agent inside OpenCode.
+- [all] The Olares app uses its trusted startup layer for AI tool scans and switches, verifies restart results, and restores the previous tool if startup fails.
+- [all] App upgrades on Olares now point to Olares Market instead of the ordinary Linux host updater.
+- [opencode] 随包 OpenCode 升至 2.2.5，区分原生 Claude Code 与 OpenCode 内 Claude Agent 的本人登录入口。
+- [all] Olares 应用通过受信启动层处理 AI 工具扫描和切换，确认重启结果；启动失败时恢复原工具。
+- [all] Olares 应用升级明确转到 Olares Market，不再误入普通 Linux 主机升级。
 
 ## Material acceptance limits
 
-- This fix was tested with isolated Linux subprocesses/owner sockets and a real Chromium page using a synthetic image while the turn remained active. Physical phones, macOS, WSL and end-to-end real Claude Code/Codex/OpenCode model sessions remain untested; Kimi/Qwen ACP file-show admission is not integrated or accepted.
-- file show requires a live admitted owner phone turn; it cannot choose a device, group or friend or create an outgoing message from a standalone desktop turn. queued / attached_to_page do not prove client download or owner visibility.
-- 中文：本修复已在 Linux 隔离子进程、主人套接字及真实 Chromium 合成图片页面验证，回合未结束即可成图。实体手机、macOS、WSL 和 Claude Code/Codex/OpenCode 真实模型回合端到端未验；Kimi/Qwen ACP 未接入或验收 file show。无有效主人手机回合会失败，不能指定设备、群、好友或另建外发消息；排队或已附到页面不代表客户端下载或主人已看到。
+- Candidate validation is incomplete. Automated mock and synthetic local-account results do not establish real paid-seat acceptance. Native Claude Code and Claude Agent inside OpenCode require separate authentication and model/tool validation.
+- Linux amd64 lifecycle coverage, arm64 executable/tool smoke and physical macOS/WSL/phone testing are separate acceptance areas; a result in one area does not establish the others.
 
 - Android arbitrary-name wake recognition, false-accept/false-reject rates, background operation,
   battery behavior and speech-model licensing are not cleared for a released app.

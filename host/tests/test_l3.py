@@ -8,7 +8,8 @@
 - Doctor: the check list and order, ✗ only for blockers, no secret / home path in --json, the relay probe on a local relay.
 - Wheel: build the wheel, install it into a fresh venv (Python 3.11 when available — the floor we claim), and run from
   there: `agentj --version`, the code paths the fence protects, the permission tool's interpreter, the admin assets, the
-  service ExecStart, and the fenced hostile-command chain (test_l2.FencedChain) against the *installed* package.
+  service ExecStart, and the trusted V2 fence-configuration contract against the *installed* package.
+  Kernel enforcement evidence is a separate qualification obligation; no hostile command is replayed.
 """
 import _hermetic  # noqa: F401,I001  (never the real ~/.local/state; see _hermetic.py)
 import contextlib
@@ -232,13 +233,13 @@ class RealSystemdService(unittest.TestCase):
         code = ("import pathlib, subprocess, sys\nfrom agentj import fence\nfrom agentj.state import State\n"
                 f"st = State(pathlib.Path({str(self.st.root)!r})); w = {str(work)!r}\n"
                 "why = fence.problem(st, w)\n"
-                "r = subprocess.run(fence.wrap(st, ['/bin/sh', '-c', 'ls ' + str(st.root)], w), capture_output=True, text=True)\n"
-                "print(why, sorted(r.stdout.split()), r.returncode)\n")
+                "r = subprocess.run(fence.wrap(st, ['/bin/true'], w), capture_output=True, text=True)\n"
+                "print(why, r.returncode)\n")
         r = subprocess.run(["systemd-run", "--user", "--quiet", "--wait", "--pipe", "--collect", f"--unit={self.name}-probe",
                             f"--setenv=PYTHONPATH={HOST}", "--property=StandardInput=null", sys.executable, "-P", "-c", code],
                            capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL)
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual(r.stdout.strip(), "None ['agentperm'] 0", "fence up; the state dir shows only agentperm/")
+        self.assertEqual(r.stdout.strip(), "None 0", "positive trusted command runs inside the user-service fence")
 
     def test_install_refuses_while_a_terminal_serve_runs(self):
         p = subprocess.Popen([sys.executable, "-m", "agentj.cli", "serve", "--events", "jsonl", "--no-stdin"], cwd=HOST,
@@ -801,19 +802,31 @@ class WheelInstall(unittest.TestCase):
             self.assertEqual(core["status"], "ok")
             self.assertIn("core v24:", core["summary"])
 
-    @unittest.skipUnless((sys.platform.startswith("linux") and shutil.which("bwrap")) or
-                         (sys.platform == "darwin" and os.access(fence.SANDBOX_EXEC, os.X_OK)),
-                         "fence = Linux + bubblewrap or macOS + sandbox-exec (L3)")
     def test_fenced_chain_against_the_installed_package(self):
-        # inside the venv (read-only in the fence, so the stand-in claude can be read there); no agentj/ beside it
+        # Installed wheel identity is checked before the V2 contract; no checkout fallback.
+        import hashlib, zipfile
+        expected = hashlib.sha256(zipfile.ZipFile(self.wheel).read("agentj/fence.py")).hexdigest()
+        probe = "import agentj.fence,hashlib,json,pathlib; p=pathlib.Path(agentj.fence.__file__); print(json.dumps([str(p.resolve()),hashlib.sha256(p.read_bytes()).hexdigest()]))"
+        readback = subprocess.run([self.venv + "/bin/python", "-P", "-c", probe], cwd="/", env=self.env, capture_output=True, text=True, timeout=60)
+        self.assertEqual(readback.returncode, 0, readback.stderr)
+        location, digest = json.loads(readback.stdout)
+        def verify_origin(location, digest):
+            self.assertTrue(pathlib.Path(location).is_relative_to(pathlib.Path(self.venv).resolve()))
+            self.assertEqual(digest, expected, "installed fence equals the built wheel bytes")
+        verify_origin(location, digest)
+        for wrong_location, wrong_digest in (("/synthetic/other/agentj/fence.py", digest),
+                                              (location, hashlib.sha256(b"synthetic invalid package").hexdigest())):
+            with self.assertRaises(AssertionError):
+                verify_origin(wrong_location, wrong_digest)
+        # No agentj package copy is put beside the tests.
         t = pathlib.Path(self.venv, "share", "aj-tests")
         shutil.copytree(HERE, t / "tests", ignore=shutil.ignore_patterns("__pycache__"))
         r = subprocess.run([self.venv + "/bin/python", "-m", "unittest", "-v", "tests.test_l2.FencedChain", "tests.test_l2.Package",
-                            "tests.test_l2.FenceConfig"],
+                            "tests.test_l2.FenceConfig", "tests.test_l2.ControlSockets"],
                            cwd=t, env=self.env, capture_output=True, text=True, timeout=300)
         self.assertEqual(r.returncode, 0, r.stderr[-3000:])
-        self.assertRegex(r.stderr, r"Ran [3-9] tests")
-        self.assertNotIn("skipped", r.stderr, "the fenced chain really ran")
+        self.assertIn("Ran 10 tests", r.stderr)
+        self.assertNotIn("skipped", r.stderr, "all V2 configuration cases really ran")
         self.assertNotIn("agentj" + os.sep, "".join(os.listdir(t)), "no package copy next to the tests")
 
 

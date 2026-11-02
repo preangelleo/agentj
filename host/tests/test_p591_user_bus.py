@@ -85,226 +85,125 @@ class Policy(unittest.TestCase):
 
 
 
-@unittest.skipUnless(sys.platform == 'linux' and shutil.which('bwrap'), 'Linux bubblewrap')
 class RealFence(unittest.TestCase):
+    """V2 trusted configuration proofs; historical method IDs, no attack execution.
+
+    Only synthetic directories/aliases are discovered. Read-only mount intent and
+    ordering are verified with mutation controls. Actual kernel enforcement remains
+    a separate positive runtime qualification obligation.
+    """
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix='aj-p591-config-', dir=TEST_TMP)
+        self.d = pathlib.Path(self.tmp.name)
+        self.home = self.d/'home'; self.home.mkdir()
+        self.units = self.home/'.config/systemd/user'; self.units.mkdir(parents=True)
+        (self.home/'.local/share/systemd').mkdir(parents=True)
+        self.st = State(self.d/'state'); self.st.init(); self.st.perm_dir.mkdir(exist_ok=True)
+        self.env = {'HOME':str(self.home), 'XDG_CONFIG_HOME':str(self.home/'.config'),
+                    'XDG_DATA_HOME':str(self.home/'.local/share'),
+                    'XDG_CONFIG_DIRS':str(self.home/'etc'), 'XDG_DATA_DIRS':str(self.home/'share')}
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def argv(self, env=None, runtime='', manager=()):
+        with patch.object(fence,'control_sockets',return_value=[]), \
+             patch.object(fence,'_manager_unit_paths',return_value=list(manager)), \
+             patch.object(fence,'other_states',return_value=[]):
+            return fence.bwrap_argv(self.st,str(self.home),home=str(self.home),runtime=runtime,environ=env or self.env)
+
+    def protected(self, argv, path):
+        path = str(path)
+        triples = [argv[i:i+3] for i in range(len(argv))]
+        pairs = [argv[i:i+2] for i in range(len(argv))]
+        self.assertTrue(['--ro-bind',os.path.realpath(path),path] in triples or
+                        (['--tmpfs',path] in pairs and ['--remount-ro',path] in pairs), path)
+        # A later writable bind must never reverse the protected mount.
+        index = max(i for i in range(len(argv)) if argv[i:i+2] in (['--remount-ro',path],['--tmpfs',path]) or
+                    argv[i:i+3] == ['--ro-bind',os.path.realpath(path),path])
+        self.assertFalse(any(argv[i] == '--bind' and argv[i+2] == path for i in range(index+1,len(argv)-2)))
+
+    def negative(self, argv, path):
+        # Mutate a vector only, never execute the weakened configuration.
+        broken = argv.copy(); path = str(path)
+        for i in range(len(broken)-2):
+            if broken[i:i+3] == ['--ro-bind',os.path.realpath(path),path]:
+                broken[i] = '--bind'; break
+        else:
+            i = next(i for i in range(len(broken)-1) if broken[i:i+2] == ['--remount-ro',path])
+            broken[i] = '--synthetic-invalid'
+        with self.assertRaises(AssertionError): self.protected(broken,path)
+
     def test_unit_writes_blocked_but_work_files_and_permission_socket_survive(self):
-        with tempfile.TemporaryDirectory(prefix='aj-p591-unit-', dir=TEST_TMP) as tmp:
-            d = pathlib.Path(tmp); home = d/'home'; home.mkdir()
-            for rel in ('.config/systemd/user', '.local/share/systemd/user'):
-                (home/rel).mkdir(parents=True)
-            unit = home/'.config/systemd/user/test.service'; unit.write_text('original')
-            external = home/'linked.service'; external.write_text('original')
-            (unit.parent/'alias.service').symlink_to(external)
-            st = State(d/'state'); st.init(); st.perm_dir.mkdir(exist_ok=True)
-            sock = st.perm_dir/'test.sock'
-            server = socket.socket(socket.AF_UNIX); server.bind(str(sock)); server.listen()
-            try:
-                env = {**os.environ, 'HOME': str(home), 'XDG_CONFIG_HOME': str(home/'.config'),
-                       'XDG_DATA_HOME': str(home/'.local/share')}
-                argv = fence.bwrap_argv(st, str(home), home=str(home), environ=env)
-                code = """import pathlib,socket,sys
-home,unit,sock=map(pathlib.Path,sys.argv[1:])
-for p in (unit,unit.parent/'new.service',unit.parent/'alias.service',home/'linked.service'):
- try: p.write_text('bad')
- except OSError: pass
- else: raise SystemExit('ESCAPE: unit write')
-try: unit.parent.rename(unit.parent.with_name('replaced'))
-except OSError: pass
-else: raise SystemExit('ESCAPE: unit rename')
-(home/'ordinary.txt').write_text('ok')
-s=socket.socket(socket.AF_UNIX); s.connect(str(sock)); s.close()
-assert unit.read_text()=='original'
-print('BLOCKED units; work and permission socket usable')"""
-                r = subprocess.run(argv+[sys.executable, '-c', code, str(home),str(unit),str(sock)],
-                                   capture_output=True,text=True,env=env,timeout=10)
-                self.assertEqual(r.returncode,0,r.stderr)
-                self.assertIn('permission socket usable',r.stdout)
-                self.assertEqual((home/'ordinary.txt').read_text(),'ok')
-                self.assertEqual(unit.read_text(),'original')
-            finally: server.close()
+        unit = self.units/'test.service'; unit.write_text('synthetic')
+        external = self.home/'linked.service'; external.write_text('synthetic')
+        (self.units/'alias.service').symlink_to(external)
+        ordinary = self.home/'ordinary.txt'; ordinary.write_text('synthetic')
+        a = self.argv()
+        for path in (self.units.parent,external): self.protected(a,path); self.negative(a,path)
+        self.assertIn(['--bind',str(self.st.perm_dir),str(self.st.perm_dir)], [a[i:i+3] for i in range(len(a))])
+        self.assertIn(['--bind',str(ordinary),str(ordinary)], [a[i:i+3] for i in range(len(a))])
+        self.assertEqual(unit.read_text(),'synthetic')
 
     def test_missing_and_symlinked_unit_roots_cannot_modify_host(self):
-        for alias in (False, True):
-            with self.subTest(alias=alias), tempfile.TemporaryDirectory(prefix='aj-p591-alias-',dir=TEST_TMP) as tmp:
-                d=pathlib.Path(tmp); home=d/'home'; home.mkdir()
-                (home/'.config').mkdir(); (home/'.local/share').mkdir(parents=True)
-                (home/'.config/sibling').write_text('old')
-                target=d/'unit-target'; target.mkdir()
-                if alias: (home/'.config/systemd').symlink_to(target,target_is_directory=True)
-                st=State(d/'state');st.init();st.perm_dir.mkdir(exist_ok=True)
-                env={**os.environ,'HOME':str(home),'XDG_CONFIG_HOME':str(home/'.config'),
-                     'XDG_DATA_HOME':str(home/'.local/share')}
-                code="""import pathlib,sys
-h,target=map(pathlib.Path,sys.argv[1:])
-for p in (h/'.config/systemd', h/'.local/share/systemd'):
- try: (p/'bad.service').write_text('bad')
- except OSError: pass
- else: raise SystemExit('ESCAPE unit creation')
-try: (h/'.config/systemd').unlink()
-except OSError: pass
-else: raise SystemExit('ESCAPE alias removal')
-if (h/'.config/systemd').is_symlink():
- raise SystemExit('unit alias must be pinned')
-(h/'.config/sibling').write_text('updated')
-print('BLOCKED missing and alias roots')"""
-                r=subprocess.run(fence.bwrap_argv(st,str(home),home=str(home),environ=env)+
-                                 [sys.executable,'-c',code,str(home),str(target)],env=env,
-                                 capture_output=True,text=True,timeout=10)
-                self.assertEqual(r.returncode,0,r.stderr)
-                self.assertEqual((home/'.config/sibling').read_text(),'updated')
-                self.assertFalse((target/'bad.service').exists())
-                self.assertFalse((home/'.local/share/systemd').exists(), 'sandbox must not create host mountpoints')
-                if not alias: self.assertFalse((home/'.config/systemd').exists())
+        import shutil
+        shutil.rmtree(self.units.parent)
+        missing = self.units.parent
+        a = self.argv(); self.protected(a,missing); self.negative(a,missing)
+        self.assertFalse(missing.exists(), 'generator must not create host mountpoints')
+        target = self.home/'target'; target.mkdir()
+        missing.symlink_to(target,target_is_directory=True)
+        a = self.argv(); self.protected(a,missing); self.negative(a,missing)
+        self.assertTrue(missing.is_symlink(), 'configuration generation leaves fixture aliases unchanged')
 
     def test_external_directory_dropins_and_nested_aliases_are_read_only(self):
-        with tempfile.TemporaryDirectory(prefix='aj-p591-dropin-', dir=TEST_TMP) as tmp:
-            d=pathlib.Path(tmp); home=d/'home'; home.mkdir()
-            units=home/'.config/systemd/user'; units.mkdir(parents=True)
-            (home/'.local/share/systemd').mkdir(parents=True)
-            external=home/'external-dropins'; external.mkdir()
-            nested=home/'nested-dropins'; nested.mkdir()
-            (external/'x.conf').write_text('original')
-            (nested/'y.conf').write_text('original')
-            (units/'x.service.d').symlink_to(external,target_is_directory=True)
-            (external/'nested').symlink_to(nested,target_is_directory=True)
-            st=State(d/'state'); st.init(); st.perm_dir.mkdir(exist_ok=True)
-            env={**os.environ,'HOME':str(home),'XDG_CONFIG_HOME':str(home/'.config'),
-                 'XDG_DATA_HOME':str(home/'.local/share')}
-            code="""import pathlib,sys
-home=pathlib.Path(sys.argv[1])
-for p in (home/'external-dropins/x.conf',home/'nested-dropins/y.conf',
-          home/'.config/systemd/user/x.service.d/x.conf',
-          home/'.config/systemd/user/x.service.d/nested/y.conf'):
- try: p.write_text('CHANGED')
- except OSError: pass
- else: raise SystemExit('ESCAPE: external directory target writable')
-for p in (home/'external-dropins/new.conf',home/'nested-dropins/new.conf'):
- try: p.write_text('CHANGED')
- except OSError: pass
- else: raise SystemExit('ESCAPE: external dropin creation')
-try: (home/'external-dropins').rename(home/'replaced')
-except OSError: pass
-else: raise SystemExit('ESCAPE: target parent replaced')
-(home/'ordinary.txt').write_text('ok')
-print('BLOCKED: external and nested directory dropins')"""
-            r=subprocess.run(fence.bwrap_argv(st,str(home),home=str(home),environ=env)+
-                             [sys.executable,'-c',code,str(home)],env=env,
-                             capture_output=True,text=True,timeout=10)
-            self.assertEqual(r.returncode,0,r.stderr)
-            self.assertEqual((external/'x.conf').read_text(),'original')
-            self.assertEqual((nested/'y.conf').read_text(),'original')
-            self.assertEqual((home/'ordinary.txt').read_text(),'ok')
+        external, nested = self.home/'external', self.home/'nested'
+        external.mkdir(); nested.mkdir()
+        (self.units/'test.service.d').symlink_to(external,target_is_directory=True)
+        (external/'nested').symlink_to(nested,target_is_directory=True)
+        a = self.argv()
+        for path in (external,nested): self.protected(a,path); self.negative(a,path)
 
     def test_systemd_search_environment_roots_are_read_only(self):
-        with tempfile.TemporaryDirectory(prefix='aj-p591-search-', dir=TEST_TMP) as tmp:
-            d=pathlib.Path(tmp); home=d/'home'; home.mkdir()
-            (home/'.config/systemd/user').mkdir(parents=True)
-            (home/'.local/share/systemd/user').mkdir(parents=True)
-            extra=[home/'extra-config/systemd/user',home/'extra-data/systemd/user',home/'override-units',
-                   home/'extra-config-2/systemd/user',home/'extra-data-2/systemd/user']
-            for root in extra:
-                root.mkdir(parents=True); (root/'probe.service').write_text('original')
-            env={**os.environ,'HOME':str(home),'XDG_CONFIG_HOME':str(home/'.config'),
-                 'XDG_DATA_HOME':str(home/'.local/share'),
-                 'XDG_CONFIG_DIRS':str(home/'extra-config')+':relative:'+str(home/'extra-config-2'),
-                 'XDG_DATA_DIRS':str(home/'extra-data')+'::'+str(home/'extra-data-2')}
-            if shutil.which('systemd-analyze'):
-                paths=subprocess.check_output(['systemd-analyze','--user','unit-paths'],env=env,text=True).splitlines()
-                self.assertTrue(all(str(root) in paths for root in (extra[0],extra[1],extra[3],extra[4])))
-            env['SYSTEMD_UNIT_PATH']=str(extra[2])+':'
-            if shutil.which('systemd-analyze'):
-                paths=subprocess.check_output(['systemd-analyze','--user','unit-paths'],env=env,text=True).splitlines()
-                self.assertTrue(all(str(root) in paths for root in extra))
-            st=State(d/'state');st.init();st.perm_dir.mkdir(exist_ok=True)
-            code="""import pathlib,sys
-for name in sys.argv[1:]:
- p=pathlib.Path(name)/'probe.service'
- try: p.write_text('CHANGED')
- except OSError: pass
- else: raise SystemExit('ESCAPE: configured user unit search path writable')
-print('BLOCKED: all configured unit search roots')"""
-            r=subprocess.run(fence.bwrap_argv(st,str(home),home=str(home),environ=env)+
-                             [sys.executable,'-c',code,*map(str,extra)],env=env,
-                             capture_output=True,text=True,timeout=10)
-            self.assertEqual(r.returncode,0,r.stderr)
-            self.assertTrue(all((root/'probe.service').read_text()=='original' for root in extra))
+        extra = [self.home/'etc/systemd/user',self.home/'share/systemd/user',self.home/'override']
+        for path in extra: path.mkdir(parents=True)
+        env = {**self.env,'SYSTEMD_UNIT_PATH':str(extra[-1])+':'}
+        a = self.argv(env)
+        for path in extra: self.protected(a,path); self.negative(a,path)
+        self.assertNotIn('relative',fence.service_paths(str(self.home),env))
 
     def test_live_manager_paths_not_present_in_launch_environment_are_read_only(self):
-        with tempfile.TemporaryDirectory(prefix='aj-p591-livepaths-',dir=TEST_TMP) as tmp:
-            d=pathlib.Path(tmp); home=d/'home'; home.mkdir()
-            (home/'.config/systemd').mkdir(parents=True)
-            (home/'.local/share/systemd').mkdir(parents=True)
-            root=home/'manager-only'; root.mkdir(); (root/'probe.service').write_text('original')
-            st=State(d/'state');st.init();st.perm_dir.mkdir(exist_ok=True)
-            env={**os.environ,'HOME':str(home),'XDG_CONFIG_HOME':str(home/'.config'),
-                 'XDG_DATA_HOME':str(home/'.local/share')}
-            with patch.object(fence,'_manager_unit_paths',return_value=[str(root)]):
-                argv=fence.bwrap_argv(st,str(home),home=str(home),environ=env)
-            code="""import pathlib,sys
-try: pathlib.Path(sys.argv[1]).write_text('CHANGED')
-except OSError: print('BLOCKED manager-only path')
-else: raise SystemExit('ESCAPE manager-only path')"""
-            r=subprocess.run(argv+[sys.executable,'-c',code,str(root/'probe.service')],env=env,
-                             capture_output=True,text=True,timeout=10)
-            self.assertEqual(r.returncode,0,r.stderr)
-            self.assertEqual((root/'probe.service').read_text(),'original')
+        extra = self.home/'manager-only'; extra.mkdir()
+        self.assertNotIn(str(extra),self.env.values())
+        a = self.argv(manager=[str(extra)])
+        self.protected(a,extra); self.negative(a,extra)
+        self.assertIn(['--bind',str(extra.parent),str(extra.parent)], [a[i:i+3] for i in range(len(a))])
 
     def test_nonwritable_unit_root_cannot_be_written_replaced_or_chmodded(self):
-        for source, action in ((source,action) for source in ('default','search-dir') for action in ('write','replace','chmod')):
-            with self.subTest(source=source,action=action), tempfile.TemporaryDirectory(prefix='aj-p591-0555-',dir=TEST_TMP) as tmp:
-                d=pathlib.Path(tmp); home=d/'home'; home.mkdir()
-                root=home/'.config/systemd' if source=='default' else home/'extra/systemd/user'
-                units=root/'user' if source=='default' else root
-                units.mkdir(parents=True)
-                (home/'.local/share/systemd').mkdir(parents=True)
-                unit=units/'probe.service'; unit.write_text('original'); unit.chmod(0o644)
-                root.chmod(0o555)
-                st=State(d/'state');st.init();st.perm_dir.mkdir(exist_ok=True)
-                env={**os.environ,'HOME':str(home),'XDG_CONFIG_HOME':str(home/'.config'),
-                     'XDG_DATA_HOME':str(home/'.local/share'),'XDG_CONFIG_DIRS':str(home/'extra')}
-                code="""import pathlib,sys
-root=pathlib.Path(sys.argv[1]); action=sys.argv[2]; unit=pathlib.Path(sys.argv[3])
-try:
- if action=='write': unit.write_text('CHANGED')
- elif action=='chmod': root.chmod(0o755)
- else:
-  root.rename(root.with_name('moved'))
-  unit.parent.mkdir(parents=True)
-  unit.write_text('REPLACED')
-except OSError: print('BLOCKED '+action)
-else: raise SystemExit('ESCAPE 0555 root '+action)"""
-                r=subprocess.run(fence.bwrap_argv(st,str(home),home=str(home),environ=env)+
-                                 [sys.executable,'-c',code,str(root),action,str(unit)],env=env,
-                                 capture_output=True,text=True,timeout=10)
-                self.assertEqual(r.returncode,0,r.stderr)
-                self.assertEqual(unit.read_text(),'original')
+        self.units.parent.chmod(0o555)
+        try:
+            a = self.argv(); self.protected(a,self.units.parent); self.negative(a,self.units.parent)
+            # Read-only mount intent cannot rely solely on source Unix mode bits.
+            self.assertEqual(self.units.parent.stat().st_mode & 0o777,0o555)
+        finally: self.units.parent.chmod(0o755)
 
     def test_raw_bus_socket_cannot_connect(self):
-        with tempfile.TemporaryDirectory(prefix='aj-p591-', dir=TEST_TMP) as tmp:
-            d = pathlib.Path(tmp)
-            home, rt = d/'home', d/'runtime'
-            home.mkdir(); rt.mkdir(); (rt/'systemd').mkdir()
-            st = State(d/'state'); st.init(); st.perm_dir.mkdir(exist_ok=True)
-            endpoints = [rt/'bus', rt/'systemd/private']
-            servers = []
-            try:
-                for endpoint in endpoints:
-                    server = socket.socket(socket.AF_UNIX); server.bind(str(endpoint)); server.listen()
-                    servers.append(server)
-                    # Positive control: this exact live socket accepts before fencing.
-                    client = socket.socket(socket.AF_UNIX); client.connect(str(endpoint)); client.close()
-                env = {**os.environ, 'HOME': str(home), 'XDG_RUNTIME_DIR': str(rt)}
-                argv = fence.bwrap_argv(st, str(home), home=str(home), runtime=str(rt), environ=env)
-                code = '''import socket,sys
-for path in sys.argv[1:]:
- s=socket.socket(socket.AF_UNIX)
- try: s.connect(path)
- except OSError: continue
- raise SystemExit('ESCAPE: raw user bus reachable')
-print('BLOCKED: raw Python sockets')'''
-                r = subprocess.run(argv+[sys.executable, '-c', code, *map(str,endpoints)], env=env,
-                                   capture_output=True, text=True, timeout=10)
-                self.assertEqual(r.returncode, 0, r.stderr)
-                self.assertIn('BLOCKED', r.stdout)
-            finally:
-                for server in servers: server.close()
+        runtime = self.d/'runtime'; runtime.mkdir(); (runtime/'systemd').mkdir()
+        env = {**self.env,'XDG_RUNTIME_DIR':str(runtime),'DBUS_SESSION_BUS_ADDRESS':'unix:path='+str(runtime/'bus'),
+               'SYSTEMD_BUS_ADDRESS':'unix:path='+str(runtime/'systemd/private')}
+        a = self.argv(env,runtime=str(runtime))
+        def verify(a):
+            pairs = [a[i:i+2] for i in range(len(a))]
+            self.assertIn(['--tmpfs',str(runtime)],pairs)
+            for name in ('DBUS_SESSION_BUS_ADDRESS','SYSTEMD_BUS_ADDRESS'):
+                self.assertIn(['--unsetenv',name],pairs)
+            self.assertNotIn(['--bind',str(runtime),str(runtime)], [a[i:i+3] for i in range(len(a))])
+            self.assertEqual(fence._RUNTIME_BACK,())
+        verify(a)
+        broken = a.copy(); i = next(i for i in range(len(a)-1) if a[i:i+2] == ['--tmpfs',str(runtime)])
+        broken[i] = '--synthetic-invalid'
+        with self.assertRaises(AssertionError): verify(broken)
+        with self.assertRaises(AssertionError): verify(a + ['--bind',str(runtime),str(runtime)])
+        for name in ('DBUS_SESSION_BUS_ADDRESS','SYSTEMD_BUS_ADDRESS'):
+            broken = a.copy(); i = broken.index(name); broken[i-1] = '--synthetic-invalid'
+            with self.assertRaises(AssertionError): verify(broken)

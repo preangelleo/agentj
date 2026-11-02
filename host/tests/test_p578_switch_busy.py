@@ -40,7 +40,7 @@ class BusyServe(FakeServe):
 
     def restart(self):
         super().restart()
-        if self.kind != "claude":
+        if self.restarts == 1 and self.kind != "claude":
             self.answers = self.new_answers
 
     def __call__(self, req):

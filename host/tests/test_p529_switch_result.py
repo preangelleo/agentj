@@ -21,7 +21,7 @@ class Result(unittest.TestCase):
         with patch.object(sw, '_client_receipt', side_effect=[waiting, dict(final, job='other')]):
             self.assertEqual(sw.wait_result(None, 10, sleep=clock.sleep, clock=clock), waiting)
 
-    def test_rollback_receipt_exists_before_phone_and_original_harness_are_told(self):
+    def test_rollback_is_final_only_after_original_hello_and_before_phone_notice(self):
         from test_p155_switch_harness import Clock, FakeServe, fake_probe, mk_state, UP
         with tempfile.TemporaryDirectory() as tmp, patch.object(sw, 'receipt_path', return_value=Path(tmp)/'receipt.json'):
             st = mk_state(tmp, 'codex')
@@ -33,7 +33,8 @@ class Result(unittest.TestCase):
                 if req.get('cmd') == 'send' and '已切回' in req.get('text', ''):
                     seen.append(sw.read_receipt(st))
                 if req.get('cmd') == 'harness_hello' and req.get('outcome') == 'rolled_back':
-                    self.assertEqual(sw.read_receipt(st)['status'], 'rolled_back')
+                    self.assertEqual(sw.read_receipt(st)['status'], 'switching')
+                    self.assertEqual(st.agent_config()['kind'], 'codex')
                 return original(req)
             clock = Clock()
             rc = sw.worker(st, 'claude', probe=fake_probe(), ctl=ctl, restart=fake.restart,

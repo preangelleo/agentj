@@ -175,11 +175,15 @@ async def run(order_id: str, st_root=None, environ=None, call=None, fenced: bool
         busy.remove_item(st.root, item_key)
     except OSError:
         pass
-    try:
-        from .dispatcher import drain
-        drain(st_root, env)
-    except Exception:  # noqa: BLE001
-        pass
+    # New proc/unit generations hand off only after whole-tree quiescence.
+    # Legacy/non-Linux launchers retain their original completion drain.
+    last_launch = next((e for e in reversed(o.events()) if e.get("ev") == "launch"), {})
+    if last_launch.get("supervision") not in ("guardian-v1", "unit-v1"):
+        try:
+            from .dispatcher import drain
+            drain(st_root, env)
+        except Exception:  # noqa: BLE001
+            pass
     return code
 
 

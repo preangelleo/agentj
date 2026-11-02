@@ -1,26 +1,4 @@
-"""P305: Kimi Code CLI (`kimi`, Moonshot AI, MIT, 2.2.0+) as Agent J's fourth harness, on the generic ACP adapter (acp.py).
-
-Measured in an isolated HOME on 2.2.0 (reports/qa/p305/): `kimi acp` answers `initialize` at once (agentInfo "Kimi Code CLI",
-loadSession, session list / resume / close / delete / fork, one `terminal` auth method "login" = `kimi login`), and with no
-login `session/new` is refused with ACP `auth_required` (-32000) — that answer is the login-rescue signal.
-
-Logins (both the owner's own, both outside the Agent's reach):
-- the Kimi membership: `kimi login` — the official device-code flow (a link + a one-time code; the owner approves on any device
-  signed in to Kimi; the CLI polls and writes `~/.kimi-code/credentials/<name>.json` itself). Two sites: `--region mainland-cn`
-  (kimi.com, the default) and `--region global` (kimi.ai); a kimi.com member key also works on api.kimi.ai (measured 10-16). auth_rescue.KimiFlow runs it.
-- an API key, only through the phone's key card (`agentj secret request`, P279): `KIMI_API_KEY` = a Kimi Code console key
-  (the membership's key: api.kimi.com/coding/v1, or api.kimi.ai/coding/v1 for kimi.ai), `MOONSHOT_API_KEY` = the open platform
-  pay-as-you-go key (api.moonshot.cn/v1 · api.moonshot.ai/v1). Kimi never reads a key from the shell by itself; Agent J hands
-  it over as Kimi's own in-memory model variables (`KIMI_MODEL_*`) for this process only — nothing is written to Kimi's
-  config — and only when Kimi has no login and no provider of its own. The owner's own scheduled tasks / workflow CEOs get
-  the membership key too (P348, fence.PLAN_KEY_ENV), never MOONSHOT_API_KEY; support bots get none.
-
-Security (the owner's computer, the owner's Kimi): Kimi has no OS sandbox and its hooks fail open on error / timeout, so
-neither is relied on — the fence is Agent J's, every approval is an ACP permission request that serve answers from the phone
-(acp.py), the session is forced to Kimi's "default" (manual) mode, and its dangerous-command guard is forced on
-(KIMI_CODE_DANGEROUS_COMMAND_GUARD=true). The owner's own explicit `allow` rules in ~/.kimi-code/config.toml stay theirs (bridge ≤
-session): `agentj doctor` / `agentj agent detect` say when they exist.
-"""
+'Developer reference: documentation/notes/OLARES-20261101-HOST-REFERENCE.md.'
 from __future__ import annotations
 
 import json
@@ -204,6 +182,9 @@ def probe(exe: str, env: dict, timeout: float = 60, model: str | None = None, re
     """initialize → session/new in an empty temporary folder → the harness's plan mode (read-only, no tool runs) → one
     greeting. Every permission request is refused; the prompt goes over stdin (never argv). → the reply text, or
     ProbeError(code). P310: `argv` / `key_env=False` = another ACP harness (agent_qwen.probe) that set its own variables."""
+    from . import olares_probe
+    if olares_probe.required():
+        raise ProbeError('fence_unavailable')
     env = dict(env)
     if key_env:
         env[GUARD_ENV] = "true"

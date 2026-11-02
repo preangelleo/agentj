@@ -159,19 +159,26 @@ class Tools(Tmp):
                            "LC_ALL": "C.UTF-8"})
         self.assertNotIn(SENTINEL, json.dumps(env))
         self.assertFalse({"AGENTSRELAY_OPENAI_KEY", "OPENAI_API_KEY", "AGENTJ_PERM_TOKEN", "SSH_AUTH_SOCK"} & set(env))
-        tb = Toolbox(str(self.proj), environ={**KEYENV, "OPENAI_API_KEY": SENTINEL})
-        try:
-            ok, out = tb.call("bash", {"command": "env; cat /proc/self/environ | tr '\\0' '\\n'"})
-            self.assertTrue(ok)
-            self.assertNotIn(SENTINEL, out, "spec M0: the model key is not in the toolbox environment")
-            self.assertIn("AGENTJ_CORE_TOOLBOX=1", out)
-            ok, out = tb.call("read", {"path": "../x"})
-            self.assertFalse(ok)
-            ok, out = tb.call("bash", {"bogus": 1})
-            self.assertFalse(ok)
-            self.assertIn("bad arguments", out)
-        finally:
-            tb.close()
+        # Contract v2: inspect the real constructor's Popen boundary with synthetic
+        # data, then normal project argument checks. No env/proc command is run.
+        def verify(kwargs):
+            child = kwargs['env']
+            self.assertNotIn(SENTINEL, json.dumps(child))
+            self.assertEqual(child['AGENTJ_CORE_TOOLBOX'], '1')
+            self.assertFalse({'AGENTSRELAY_OPENAI_KEY','OPENAI_API_KEY','AGENTJ_PERM_TOKEN','SSH_AUTH_SOCK'} & child.keys())
+        with mock.patch('agentj.core.toolbox.subprocess.Popen') as spawn:
+            tb = Toolbox(str(self.proj), environ={'PATH':'/usr/bin','HOME':str(self.proj),
+                         'OPENAI_API_KEY':SENTINEL,'AGENTJ_PERM_TOKEN':SENTINEL,'SSH_AUTH_SOCK':'/fixture'})
+            self.assertEqual(spawn.call_args.args[0][-3:], ['-m','agentj.core.toolbox',str(self.proj.resolve())])
+            kwargs = spawn.call_args.kwargs
+            verify(kwargs)
+            with self.assertRaises(AssertionError):
+                verify({**kwargs,'env':{**kwargs['env'],'OPENAI_API_KEY':SENTINEL}})
+        with self.assertRaises(tools.ToolError):
+            tools.run(str(self.proj), 'read', {'path':'../x'})
+        with self.assertRaises(TypeError):
+            tools.run(str(self.proj), 'bash', {'bogus':1})
+
 
 
 # ------------------------------------------------------------------------------------------------ the gate
@@ -543,6 +550,480 @@ class Bridge(Tmp):
             self.assertEqual(asyncio.run(go()), {"t": "refused"})
 
 
+class DispatcherLifecycle(Tmp):
+    """Exit/report synchronization controls: no real PID, signal, unit or model request."""
+    def snapshot(self, o):
+        return {p.name: p.read_bytes() for p in o.path.iterdir() if p.is_file()}
+
+    def test_live_terminal_resume_refuses_without_mutation(self):
+        for state in ("running", "stopped", "done", "failed"):
+            with self.subTest(state=state):
+                o = self.order()
+                o.event("started")
+                if state != "running":
+                    o.write_result({"state": state, "verdict": "aborted"})
+                before = self.snapshot(o)
+                with mock.patch.object(dispatcher, "alive", return_value=True):
+                    with self.assertRaises(orders.OrderError) as caught:
+                        dispatcher.resume(o, "more", environ={}, st_root=self.st)
+                self.assertEqual(caught.exception.code, "still_running")
+                self.assertEqual(self.snapshot(o), before)
+
+    def test_bound_execution_or_unknown_identity_blocks_resume_before_mutation(self):
+        o = self.order()
+        o.write_result({"state": "stopped"})
+        before = self.snapshot(o)
+        execution = mock.Mock()
+        execution.quiet.return_value = False
+        for value in (execution, orders.OrderError("stop_unconfirmed")):
+            with self.subTest(value=type(value).__name__), mock.patch.object(dispatcher, "alive", return_value=False), \
+                    mock.patch.object(dispatcher, "_execution", side_effect=value if isinstance(value, Exception) else None,
+                                      return_value=value), mock.patch.object(dispatcher, "_release"):
+                with self.assertRaises(orders.OrderError):
+                    dispatcher.resume(o, "more", environ={}, st_root=self.st)
+                self.assertEqual(self.snapshot(o), before)
+
+    def clock(self):
+        now = [0.0]
+        self.enterContext(mock.patch.object(dispatcher.time, "monotonic", side_effect=lambda: now[0]))
+        self.enterContext(mock.patch.object(dispatcher.time, "sleep", side_effect=lambda n: now.__setitem__(0, now[0] + n)))
+        return now
+
+    def test_stop_publishes_only_after_bound_execution_quiet(self):
+        o = self.order()
+        execution = mock.Mock(kind="proc")
+        done = [False]
+        execution.quiet.side_effect = lambda: done[0]
+        def acknowledge(**kw):
+            self.assertIsNone(o.result(), "signal request alone must not publish success")
+            done[0] = True
+        execution.kill.side_effect = acknowledge
+        self.clock()
+        with mock.patch.object(dispatcher, "_execution", return_value=execution), \
+                mock.patch.object(dispatcher, "_release"):
+            self.assertEqual(dispatcher.stop(o, grace=0.5), "stopped")
+        execution.kill.assert_called_once()
+        self.assertTrue(done[0])
+
+    def test_stop_never_exits_fails_closed_with_original_ceiling(self):
+        o = self.order()
+        execution = mock.Mock(kind="proc")
+        execution.quiet.return_value = False
+        now = self.clock()
+        with mock.patch.object(dispatcher, "_execution", return_value=execution), \
+                mock.patch.object(dispatcher, "_release"):
+            with self.assertRaises(orders.OrderError) as caught:
+                dispatcher.stop(o, grace=0.5)
+        self.assertEqual(caught.exception.code, "stop_unconfirmed")
+        self.assertIsNone(o.result())
+        self.assertFalse(any(e["ev"] == "stopped" for e in o.events()))
+        self.assertAlmostEqual(now[0], 30.5)
+        self.assertEqual(o.control(), "stop")
+
+    def test_existing_terminal_report_is_not_exit_proof(self):
+        o = self.order()
+        result = {"state": "done", "verdict": "done"}
+        o.write_result(result)
+        execution = mock.Mock(kind="proc")
+        execution.quiet.return_value = False
+        self.clock()
+        with mock.patch.object(dispatcher, "_execution", return_value=execution), \
+                mock.patch.object(dispatcher, "_release"):
+            with self.assertRaises(orders.OrderError):
+                dispatcher.stop(o, grace=0)
+        self.assertEqual(o.result(), result)
+
+    def test_systemd_and_exit_confirmation_share_one_deadline(self):
+        o = self.order()
+        now = self.clock()
+        def systemctl(argv, **kw):
+            self.assertEqual(argv, ["systemctl", "--user", "stop", "--no-block", f"agentj-{o.id}"])
+            self.assertLessEqual(kw["timeout"], 30)
+            now[0] += 29
+            return subprocess.CompletedProcess(argv, 0)
+        execution = dispatcher._Unit(o, systemctl)
+        with mock.patch.object(dispatcher, "_execution", return_value=execution), \
+                mock.patch.object(execution, "quiet", return_value=False):
+            with self.assertRaises(orders.OrderError):
+                dispatcher.stop(o, grace=0.5, run=systemctl)
+        self.assertAlmostEqual(now[0], 30.5)
+        self.assertIsNone(o.result())
+
+    def test_systemd_failure_cannot_publish_stopped(self):
+        o = self.order()
+        self.clock()
+        execution = dispatcher._Unit(o, lambda *a, **k: subprocess.CompletedProcess(a, 1))
+        with mock.patch.object(dispatcher, "_execution", return_value=execution), \
+                mock.patch.object(execution, "quiet", return_value=False):
+            with self.assertRaises(orders.OrderError):
+                dispatcher.stop(o, grace=0)
+        self.assertIsNone(o.result())
+
+    def test_reused_guardian_pid_never_receives_request(self):
+        o = self.order()
+        p = mock.Mock(pid=424242)
+        p.poll.return_value = None
+        e = dispatcher._Execution(p.pid, "10", proc=p, o=o, generation="1")
+        record = {**e.expected(), "runner_pid": 88, "runner_start": "88"}
+        orders._write(o.path / "execution.json", json.dumps(record))
+        orders._write(o.path / "runner.json", json.dumps({k: record[k] for k in ("generation", "runner_pid", "runner_start")}))
+        with mock.patch("agentj.codex_procs.start_token", return_value="20"):
+            with self.assertRaises(orders.OrderError):
+                e.kill(deadline=30)
+        self.assertFalse((o.path / "hard-stop.json").exists())
+
+    def test_missing_stale_or_failed_guardian_proof_is_not_success(self):
+        o = self.order()
+        p = mock.Mock(pid=424242, returncode=0)
+        p.poll.return_value = 0
+        e = dispatcher._Execution(p.pid, "10", proc=p, o=o, generation="2")
+        record = {**e.expected(), "runner_pid": 88, "runner_start": "88"}
+        orders._write(o.path / "execution.json", json.dumps(record))
+        orders._write(o.path / "runner.json", json.dumps({k: record[k] for k in ("generation", "runner_pid", "runner_start")}))
+        orders._write(o.path / "exit-status.json", json.dumps({**record, "returncode": 0}))
+        for proof in (None, {**e.expected(), "generation": "1", "quiet": True}, {**e.expected(), "quiet": False}):
+            with self.subTest(proof=proof):
+                if proof is not None:
+                    orders._write(o.path / "exit-proof.json", json.dumps(proof))
+                with self.assertRaises(orders.OrderError):
+                    e.quiet()
+        orders._write(o.path / "exit-proof.json", json.dumps({**e.expected(), "quiet": True}))
+        orders._write(o.path / "exit-status.json", json.dumps({**record, "returncode": 97}))
+        with self.assertRaises(orders.OrderError):
+            e.quiet()
+        orders._write(o.path / "exit-status.json", json.dumps({**record, "returncode": 0}))
+        self.assertTrue(e.quiet())
+
+    def test_legacy_stop_only_requests_and_resume_never_mutates(self):
+        o = self.order()
+        o.event("launch", launcher="proc")
+        o.write_result({"state": "done"})
+        result = (o.path / "result.json").read_bytes()
+        with mock.patch.object(dispatcher, "alive", return_value=False):
+            with self.assertRaises(orders.OrderError) as caught:
+                dispatcher.stop(o, grace=0)
+            self.assertEqual(caught.exception.code, "legacy_stop_unconfirmed")
+            self.assertEqual(o.control(), "stop")
+            self.assertEqual((o.path / "result.json").read_bytes(), result)
+            self.assertFalse((o.path / "history.jsonl").exists())
+            before = self.snapshot(o)
+            with self.assertRaises(orders.OrderError):
+                dispatcher.resume(o, "more")
+            self.assertEqual(self.snapshot(o), before)
+        self.assertFalse(dispatcher._occupied(o), "legacy scheduling retains its old predicate, without a fake proof")
+
+    def test_terminal_guardian_still_blocks_same_project_and_capacity(self):
+        a, b = self.order(), self.order()
+        a.event("started")
+        a.write_result({"state": "done"})
+        orders._write(a.path / "execution.json", "{}")
+        execution = mock.Mock()
+        execution.quiet.return_value = False
+        with mock.patch.object(dispatcher, "_execution", return_value=execution), \
+                mock.patch.object(dispatcher, "_release"), mock.patch.object(dispatcher, "alive", return_value=False):
+            self.assertEqual([o.id for o in dispatcher.running(self.st)], [a.id])
+            self.assertEqual(dispatcher.launch(b, environ={"AGENTJ_ORDER_LAUNCHER": "proc"}, st_root=self.st), "queued")
+            self.assertIn(a.id, b.events()[-1]["blocked_by"])
+            before = self.snapshot(a)
+            with self.assertRaises(orders.OrderError):
+                dispatcher.resume(a, "more", st_root=self.st)
+            self.assertEqual(self.snapshot(a), before)
+
+    def test_systemd_leader_exit_does_not_prove_cgroup_empty_or_ownership(self):
+        o = self.order()
+        fields = {"Id": f"agentj-{o.id}.service", "Transient": "yes", "Description": f"agentj order {o.id}",
+                  "KillMode": "control-group", "ActiveState": "failed", "MainPID": "0",
+                  "ControlGroup": f"/user.slice/agentj-{o.id}.service"}
+        def run(*a, **kw):
+            return subprocess.CompletedProcess(a, 0, "\n".join(f"{k}={v}" for k, v in fields.items()))
+        unit = dispatcher._Unit(o, run)
+        with mock.patch.object(dispatcher, "_record", return_value=None), mock.patch.object(dispatcher.Path, "read_text", return_value="populated 1\n"):
+            self.assertFalse(unit.quiet())
+        with mock.patch.object(dispatcher, "_record", return_value=None), mock.patch.object(dispatcher.Path, "read_text", return_value="populated 0\n"):
+            self.assertTrue(unit.quiet())
+            for key in ("Description", "KillMode", "Transient"):
+                before = fields[key]
+                fields[key] = "wrong"
+                with self.assertRaises(orders.OrderError):
+                    unit.quiet()
+                fields[key] = before
+        with mock.patch.object(dispatcher, "_record", return_value=None), mock.patch.object(dispatcher.Path, "read_text", side_effect=PermissionError):
+            with self.assertRaises(orders.OrderError):
+                unit.quiet()
+
+    def test_non_linux_keeps_original_launch_but_never_invents_tree_proof(self):
+        o = self.order()
+        child = mock.Mock(pid=424242)
+        child.wait.return_value = 0
+        with mock.patch.object(dispatcher.sys, "platform", "darwin"), \
+                mock.patch.object(dispatcher, "ceo_argv", return_value=["python", "fake-ceo", o.id]):
+            popen = mock.Mock(return_value=child)
+            self.assertEqual(dispatcher.launch(o, environ={"AGENTJ_ORDER_LAUNCHER": "proc"}, st_root=self.st, popen=popen), "started")
+        self.assertEqual(popen.call_args.args[0], ["python", "fake-ceo", o.id])
+        self.assertFalse((o.path / "execution.json").exists())
+        with mock.patch.object(dispatcher, "alive", return_value=False):
+            with self.assertRaises(orders.OrderError):
+                dispatcher.stop(o, grace=0)
+            self.assertEqual(o.control(), "stop")
+            before = self.snapshot(o)
+            with self.assertRaises(orders.OrderError):
+                dispatcher.resume(o, "more")
+            self.assertEqual(self.snapshot(o), before)
+
+    def test_strict_receipts_reject_bool_float_wrong_runner_and_duplicate_fields(self):
+        o = self.order()
+        e = dispatcher._Execution(424242, "10", o=o, generation="2", exited=True)
+        record = {**e.expected(), "runner_pid": 88, "runner_start": "88"}
+        orders._write(o.path / "execution.json", json.dumps(record))
+        orders._write(o.path / "runner.json", json.dumps({k: record[k] for k in ("generation", "runner_pid", "runner_start")}))
+        orders._write(o.path / "exit-proof.json", json.dumps({**e.expected(), "quiet": True, "ceo_exit": 0}))
+        valid = {**record, "returncode": 0}
+        for change in ({"returncode": False}, {"returncode": 0.0}, {"returncode": "0"},
+                       {"runner_pid": True}, {"runner_pid": 89}, {"runner_start": ""},
+                       {"guardian_pid": True}, {"guardian_start": ""}):
+            with self.subTest(change=change):
+                orders._write(o.path / "exit-status.json", json.dumps({**valid, **change}))
+                with self.assertRaises(orders.OrderError):
+                    e.quiet()
+        orders._write(o.path / "exit-status.json", json.dumps(valid))
+        self.assertTrue(e.quiet())
+        for name in ("execution.json", "runner.json", "exit-proof.json", "exit-status.json"):
+            original = (o.path / name).read_text()
+            for malformed in ('[]', '{"generation":"2","generation":"2"}'):
+                with self.subTest(name=name, malformed=malformed):
+                    orders._write(o.path / name, malformed)
+                    with self.assertRaises(orders.OrderError):
+                        e.quiet()
+            orders._write(o.path / name, original)
+
+    def test_collected_unit_requires_same_generation_and_exact_cgroup_absence(self):
+        o = self.order()
+        o.event("launch", launcher="systemd", supervision="unit-v1", generation="10")
+        binding = {"generation": "10", "unit": f"agentj-{o.id}.service",
+                   "cgroup": f"/user.slice/app.slice/agentj-{o.id}.service"}
+        orders._write(o.path / "unit-execution.json", json.dumps(binding))
+        def run(*a, **kw):
+            return subprocess.CompletedProcess(a, 1, f"Id=agentj-{o.id}.service\nLoadState=not-found\n")
+        unit = dispatcher._Unit(o, run)
+        with mock.patch.object(dispatcher, "_group_absent", return_value=False):
+            self.assertFalse(unit.quiet(), "collected manager entry alone is not proof")
+        with mock.patch.object(dispatcher, "_group_absent", return_value=True):
+            self.assertTrue(unit.quiet())
+            orders._write(o.path / "unit-execution.json", json.dumps({**binding, "generation": "9"}))
+            with self.assertRaises(orders.OrderError):
+                unit.quiet()
+        for group in ("relative/app.slice/x", "/user.slice/../app.slice/x"):
+            with self.assertRaises(orders.OrderError):
+                dispatcher._group_path(group)
+        with mock.patch.object(dispatcher.Path, "stat", side_effect=PermissionError):
+            with self.assertRaises(orders.OrderError):
+                dispatcher._group_absent(binding["cgroup"])
+
+    def test_owned_slice_first_activation_and_metadata_failures(self):
+        replies = [subprocess.CompletedProcess([], 0, "Id=app.slice\nLoadState=loaded\nActiveState=inactive\nControlGroup=\n"),
+                   subprocess.CompletedProcess([], 0),
+                   subprocess.CompletedProcess([], 0, "Id=app.slice\nLoadState=loaded\nActiveState=active\nControlGroup=/user.slice/app.slice\n")]
+        run = mock.Mock(side_effect=replies)
+        self.assertEqual(dispatcher._slice_group(run, time.monotonic() + 30), "/user.slice/app.slice")
+        self.assertEqual(run.call_args_list[1].args[0], ["systemctl", "--user", "start", "app.slice"])
+        for stdout in ("Id=wrong.slice\nLoadState=loaded\nControlGroup=/user.slice/app.slice\n",
+                       "Id=app.slice\nLoadState=loaded\nControlGroup=relative/app.slice\n",
+                       "Id=app.slice\nLoadState=loaded\nControlGroup=/user.slice/../app.slice\n"):
+            with self.subTest(stdout=stdout), self.assertRaises(orders.OrderError):
+                dispatcher._slice_group(mock.Mock(return_value=subprocess.CompletedProcess([], 0, stdout)),
+                                        time.monotonic() + 30)
+        with self.assertRaises(orders.OrderError):
+            dispatcher._slice_group(mock.Mock(side_effect=PermissionError), time.monotonic() + 30)
+
+    def test_old_reaper_does_not_remove_new_execution(self):
+        o = self.order()
+        old, new = mock.Mock(), mock.Mock()
+        dispatcher._OWNED[dispatcher._key(o)] = new
+        try:
+            dispatcher._release(o, old)
+            self.assertIs(dispatcher._OWNED[dispatcher._key(o)], new)
+        finally:
+            dispatcher._OWNED.pop(dispatcher._key(o), None)
+
+
+class OwnedSupervisorControls(Tmp):
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Linux directory-flock contract")
+    def test_two_callers_cannot_launch_or_resume_through_same_order_claim(self):
+        import threading
+        o = self.order()
+        entered, release = threading.Event(), threading.Event()
+        result, failures = [], []
+        def prepare(*a, **kw):
+            entered.set()
+            if not release.wait(15):
+                raise AssertionError("owned caller synchronization timed out")
+            return "started"
+        def first():
+            try:
+                result.append(dispatcher.launch(o))
+            except BaseException as e:
+                failures.append(e)
+        with mock.patch.object(dispatcher, "_launch_unlocked", side_effect=prepare) as launched:
+            worker = threading.Thread(target=first)
+            worker.start()
+            try:
+                self.assertTrue(entered.wait(15))
+                before = {p.name: p.read_bytes() for p in o.path.iterdir() if p.is_file()}
+                for operation in (lambda: dispatcher.launch(o), lambda: dispatcher.resume(o, "extra")):
+                    with self.assertRaises(orders.OrderError) as caught:
+                        operation()
+                    self.assertEqual(caught.exception.code, "order_busy")
+                    self.assertEqual({p.name: p.read_bytes() for p in o.path.iterdir() if p.is_file()}, before)
+            finally:
+                release.set()
+                worker.join(15)
+            self.assertFalse(worker.is_alive())
+            self.assertEqual(failures, [])
+            self.assertEqual(result, ["started"])
+            launched.assert_called_once()
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Linux cross-process directory-flock contract")
+    def test_separate_cli_claim_blocks_before_any_order_file_changes(self):
+        import select
+        o = self.order()
+        code = ("import pathlib,sys\nfrom agentj.core import dispatcher,orders\n"
+                "with dispatcher._claim(orders.Order(pathlib.Path(sys.argv[1]))):\n"
+                " print('claimed',flush=True)\n sys.stdin.readline()\n")
+        child = subprocess.Popen([sys.executable, "-c", code, str(o.path)],
+                                 env={**os.environ, "PYTHONPATH": str(HERE.parent)},
+                                 stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            self.assertTrue(select.select([child.stdout], [], [], 15)[0], "owned CLI did not claim its directory")
+            self.assertEqual(child.stdout.readline().strip(), "claimed")
+            before = {p.name: p.read_bytes() for p in o.path.iterdir() if p.is_file()}
+            with self.assertRaises(orders.OrderError) as caught:
+                dispatcher.resume(o, "extra")
+            self.assertEqual(caught.exception.code, "order_busy")
+            self.assertEqual({p.name: p.read_bytes() for p in o.path.iterdir() if p.is_file()}, before)
+        finally:
+            try:
+                child.communicate(input="release\n", timeout=15)
+            except subprocess.TimeoutExpired:
+                child.kill()  # only this test's own Popen, never a PID search
+                child.communicate(timeout=15)
+        self.assertEqual(child.returncode, 0)
+
+    def test_guardian_signals_only_same_start_direct_child_pidfd(self):
+        from agentj.core import _guardian as g
+        for changed in (False, True):
+            with self.subTest(changed=changed), mock.patch.object(g.os, "getpid", return_value=100), \
+                    mock.patch.object(g, "identity", side_effect=[(100, "10"), (100, "11" if changed else "10")]), \
+                    mock.patch.object(g.os, "pidfd_open", return_value=9), \
+                    mock.patch.object(g.signal, "pidfd_send_signal") as send, mock.patch.object(g.os, "close") as close:
+                if changed:
+                    with self.assertRaises(ValueError):
+                        g.end_child(200)
+                    send.assert_not_called()
+                else:
+                    g.end_child(200)
+                    send.assert_called_once_with(9, g.signal.SIGKILL)
+                close.assert_called_once_with(9)
+        with mock.patch.object(g, "identity", return_value=(999, "10")), \
+                mock.patch.object(g.os, "getpid", return_value=100), mock.patch.object(g.os, "pidfd_open") as opened:
+            with self.assertRaises(ValueError):
+                g.end_child(200)
+            opened.assert_not_called()
+
+    def test_guardian_adopts_until_empty_and_deadline_never_becomes_success(self):
+        from agentj.core import _guardian as g
+        with mock.patch.object(g, "children", side_effect=[[10], [20], [30], []]), \
+                mock.patch.object(g, "_reap", return_value=None), mock.patch.object(g, "end_child") as end, \
+                mock.patch.object(g.time, "sleep"):
+            g.cleanup(time.monotonic() + 30)
+            self.assertEqual([call.args[0] for call in end.call_args_list], [10, 20, 30])
+        with mock.patch.object(g, "children", return_value=[10]), mock.patch.object(g, "end_child") as end:
+            with self.assertRaises(TimeoutError):
+                g.cleanup(time.monotonic() - 1)
+            end.assert_not_called()
+
+    def test_guardian_normal_poll_rejects_generation_drift_and_cleans_only_owned_tree(self):
+        from agentj.core import _guardian as g
+        o = self.order()
+        o.event("launch", launcher="proc", supervision="guardian-v1", generation="10")
+        runner = {"generation": "10", "runner_pid": 50, "runner_start": "5"}
+        expected = {"generation": "10", "guardian_pid": 100, "guardian_start": "10"}
+        record = {**runner, **expected}
+        orders._write(o.path / "runner.json", json.dumps(runner))
+        orders._write(o.path / "execution.json", json.dumps(record))
+        child = mock.Mock(pid=200)
+        def poll():
+            orders._write(o.path / "execution.json", json.dumps({**record, "generation": "11"}))
+            return None
+        child.poll.side_effect = poll
+        ids = {100: (50, "10"), 50: (1, "5"), 200: (100, "20")}
+        libc = mock.Mock()
+        libc.prctl.return_value = 0
+        with mock.patch.object(g.os, "getpid", return_value=100), mock.patch.object(g.os, "getppid", return_value=50), \
+                mock.patch.object(g, "identity", side_effect=lambda pid: ids.get(pid)), \
+                mock.patch.object(g.ctypes, "CDLL", return_value=libc), \
+                mock.patch.object(g.subprocess, "Popen", return_value=child), \
+                mock.patch.object(g, "cleanup") as cleanup, mock.patch.object(g.time, "sleep"):
+            self.assertEqual(g.supervise(o.path, "10", ["synthetic-ceo"]), 97)
+        cleanup.assert_called_once()
+        self.assertFalse((o.path / "exit-proof.json").exists())
+        self.assertEqual(json.loads((o.path / "execution.json").read_text())["generation"], "11")
+
+    def test_runner_wait_then_handoff_normal_cooperative_hardstop_and_failure(self):
+        from agentj.core import _guardian as g, _order_runner as r
+        for mode in ("normal", "cooperative", "hard", "stale-hard", "failed", "changed"):
+            with self.subTest(mode=mode):
+                o = self.order()
+                expected_runner = {"generation": "10", "runner_pid": 100, "runner_start": "10"}
+                expected = {"generation": "10", "guardian_pid": 200, "guardian_start": "20"}
+                orders._write(o.path / "runner.json", json.dumps(expected_runner))
+                if mode == "cooperative":
+                    o.write_result({"state": "stopped"})
+                if mode in ("hard", "stale-hard"):
+                    orders._write(o.path / "hard-stop.json", json.dumps({**expected,
+                                 "generation": "9" if mode == "stale-hard" else "10", "deadline": time.monotonic() + 30}))
+                child = mock.Mock(pid=200)
+                def wait():
+                    orders._write(o.path / "exit-proof.json", json.dumps({**expected, "quiet": True}))
+                    if mode == "changed":
+                        orders._write(o.path / "execution.json", json.dumps({**expected, "generation": "11"}))
+                    return 97 if mode == "failed" else 0
+                child.wait.side_effect = wait
+                with mock.patch.object(r.os, "getpid", return_value=100), \
+                        mock.patch.object(g, "identity", side_effect=[(1, "10"), (100, "20")]), \
+                        mock.patch.object(r.subprocess, "Popen", return_value=child), \
+                        mock.patch.object(dispatcher, "drain") as drain:
+                    code = r.run(o.path, "10", ["synthetic-ceo"])
+                child.wait.assert_called_once()
+                if mode in ("normal", "cooperative", "stale-hard"):
+                    self.assertEqual(code, 0)
+                    drain.assert_called_once()
+                else:
+                    drain.assert_not_called()
+                if mode == "changed":
+                    self.assertFalse((o.path / "exit-status.json").exists())
+                else:
+                    status = json.loads((o.path / "exit-status.json").read_text())
+                    self.assertEqual(status["returncode"], 97 if mode == "failed" else 0)
+
+    def test_unit_handoff_requires_quiet_and_preserves_hardstop_policy(self):
+        from agentj.core import _unit_handoff as h
+        for hard in (False, True):
+            with self.subTest(hard=hard):
+                o = self.order()
+                binding = {"generation": "10", "unit": f"agentj-{o.id}.service",
+                           "cgroup": f"/user.slice/app.slice/agentj-{o.id}.service"}
+                orders._write(o.path / "unit-execution.json", json.dumps(binding))
+                if hard:
+                    orders._write(o.path / "unit-hard-stop.json", json.dumps({**binding, "deadline": time.monotonic() + 30}))
+                unit = mock.Mock()
+                unit.quiet.side_effect = [False, True]
+                with mock.patch.object(dispatcher, "_Unit", return_value=unit), \
+                        mock.patch.object(dispatcher, "drain") as drain, mock.patch.object(h.time, "sleep"):
+                    self.assertEqual(h.run(o.path, "10"), 0)
+                self.assertEqual(unit.quiet.call_count, 2)
+                self.assertEqual(drain.call_count, 0 if hard else 1)
+
+
 # ------------------------------------------------------------------------------------------------ dispatcher
 class Dispatch(Tmp):
     def setUp(self):
@@ -566,10 +1047,31 @@ class Dispatch(Tmp):
         self.env = {**os.environ, "AGENTJ_ORDER_LAUNCHER": "proc", "AGENTJ_STATE_DIR": str(self.st)}
 
     def kill_all(self):
+        import select
+        from agentj.codex_procs import start_token
+        supervised = []
         for o in orders.all_orders(self.st):
-            pid = dispatcher.pid_of(o)
-            if pid and dispatcher.alive(o):
-                os.killpg(pid, 9)
+            if dispatcher._last_launch(o).get("supervision") == "guardian-v1":
+                dispatcher.stop(o, grace=0)  # product exit barrier, not a sleep or test-only reaper
+                supervised.append(json.loads((o.path / "execution.json").read_text()))
+            else:
+                pid = dispatcher.pid_of(o)
+                if pid and dispatcher.alive(o):
+                    os.killpg(pid, 9)
+        # Only recorded launch-owned runner identities are observed. Every watcher must actually exit.
+        for record in supervised:
+            pid, token = record["runner_pid"], record["runner_start"]
+            if start_token(pid) != token:
+                continue
+            try:
+                fd = os.pidfd_open(pid)
+            except ProcessLookupError:
+                continue
+            try:
+                if start_token(pid) == token:
+                    self.assertTrue(select.select([fd], [], [], 15)[0], "owned scheduling runner did not exit")
+            finally:
+                os.close(fd)
 
     def proj2(self, n):
         p = self.d / f"p{n}"
@@ -598,7 +1100,7 @@ class Dispatch(Tmp):
     def test_same_project_queues_and_resume_appends(self):
         a, b = self.order(), self.order()
         self.assertEqual(dispatcher.launch(a, environ=self.env, st_root=self.st), "started")
-        dispatcher.wait_started(a)
+        self.assertTrue(dispatcher.wait_started(a))
         self.assertEqual(dispatcher.launch(b, environ=self.env, st_root=self.st), "queued", "§14.1 preflight")
         with self.assertRaises(orders.OrderError):
             dispatcher.resume(a, "more", environ=self.env, st_root=self.st)
@@ -606,8 +1108,58 @@ class Dispatch(Tmp):
         self.assertEqual(dispatcher.resume(a, "please also do X", environ=self.env, st_root=self.st), "started")
         self.assertEqual(a.inbox_all()[-1][1], "please also do X")
         self.assertTrue((a.path / "history.jsonl").is_file(), "the previous result is kept for the retry table")
-        dispatcher.wait_started(a)
+        self.assertTrue(dispatcher.wait_started(a))
         dispatcher.stop(a, grace=0.5)
+
+    def test_normal_guardian_exit_automatically_drains_same_project_queue(self):
+        a, b = self.order(), self.order()
+        self.assertEqual(dispatcher.launch(a, environ={**self.env, "FAKE_SLEEP": "0.6"}, st_root=self.st), "started")
+        self.assertTrue(dispatcher.wait_started(a))
+        self.assertEqual(dispatcher.launch(b, environ=self.env, st_root=self.st), "queued")
+        end = time.monotonic() + 15  # same original startup ceiling
+        while not any(e.get("ev") == "started" for e in b.events()) and time.monotonic() < end:
+            time.sleep(0.02)
+        self.assertTrue(any(e.get("ev") == "started" for e in b.events()), "normal completion must advance the queued order")
+        if dispatcher.alive(b):
+            dispatcher.stop(b, grace=0.5)
+
+    def test_hard_stop_reaps_ordinary_toolbox_and_active_bash_descendants(self):
+        # Exercise the existing ordinary Toolbox -> Bash start_new_session paths, with only owned fixtures.
+        project = str(self.proj)
+        command = (f"{sys.executable} -c \"import os,time,pathlib; "
+                   "pathlib.Path('bash-child.pid').write_text(str(os.getpid())); time.sleep(60)\"")
+        self.sleeper.write_text(
+            "import os,sys,pathlib\nfrom agentj.core.toolbox import Toolbox\n"
+            "d=pathlib.Path(os.environ['AGENTJ_STATE_DIR'])/'orders'/sys.argv[1]\n"
+            "(d/'pid').write_text(str(os.getpid()))\n"
+            "open(d/'events.jsonl','a').write('{\"ev\":\"started\"}\\n')\n"
+            f"tb=Toolbox({project!r},environ=os.environ,fenced=False)\n"
+            f"pathlib.Path({project!r},'toolbox.pid').write_text(str(tb.proc.pid))\n"
+            f"tb.call('bash',{{'command':{command!r}}})\n")
+        o = self.order()
+        self.assertEqual(dispatcher.launch(o, environ=self.env, st_root=self.st), "started")
+        self.assertTrue(dispatcher.wait_started(o))
+        end = time.monotonic() + 15  # original startup observation ceiling, unchanged
+        paths = [self.proj / "toolbox.pid", self.proj / "bash-child.pid"]
+        while not all(p.exists() for p in paths) and time.monotonic() < end:
+            time.sleep(0.02)
+        self.assertTrue(all(p.exists() for p in paths), "ordinary owned Toolbox/Bash fixture did not start")
+        from agentj.codex_procs import start_token
+        owned = [(int(p.read_text()), start_token(int(p.read_text()))) for p in paths]
+        self.assertTrue(all(token for _, token in owned))
+        self.assertEqual(dispatcher.stop(o, grace=0.5), "stopped")
+        for pid, token in owned:
+            self.assertNotEqual(start_token(pid), token, "stop returned before an owned ordinary descendant exited")
+        record = json.loads((o.path / "execution.json").read_text())
+        proof = json.loads((o.path / "exit-proof.json").read_text())
+        status = json.loads((o.path / "exit-status.json").read_text())
+        for key in ("generation", "guardian_pid", "guardian_start"):
+            self.assertEqual(proof[key], record[key])
+            self.assertEqual(status[key], record[key])
+        self.assertTrue(proof["quiet"])
+        self.assertEqual(status["returncode"], 0)
+        self.assertTrue(all((o.path / name).stat().st_mode & 0o777 == 0o600 for name in
+                            ("runner.json", "execution.json", "hard-stop.json", "exit-proof.json", "exit-status.json")))
 
     def test_systemd_argv_passes_the_key_by_name_only(self):
         o = self.order()
@@ -615,10 +1167,12 @@ class Dispatch(Tmp):
 
         def run(argv, **kw):
             seen.append((argv, kw))
+            if argv[0] == "systemctl":
+                return subprocess.CompletedProcess(argv, 0, "Id=app.slice\nLoadState=loaded\nActiveState=active\nControlGroup=/user.slice/app.slice\n", "")
             return subprocess.CompletedProcess(argv, 0, "", "")
         env = {**self.env, "AGENTJ_ORDER_LAUNCHER": "systemd", "AGENTSRELAY_OPENAI_KEY": SENTINEL}
-        self.assertEqual(dispatcher.launch(o, environ=env, st_root=self.st, run=run), "started")
-        argv, kw = seen[0]
+        self.assertEqual(dispatcher.launch(o, environ=env, st_root=self.st, run=run, popen=mock.Mock()), "started")
+        argv, kw = next(item for item in seen if item[0][0] == "systemd-run")
         self.assertEqual(argv[:4], ["systemd-run", "--user", "--unit", f"agentj-{o.id}"])
         self.assertFalse([x for x in argv if "AGENTSRELAY_OPENAI_KEY" in x],
                          "review H1: no key name or value in the transient unit (systemd keeps --setenv values on the bus)")

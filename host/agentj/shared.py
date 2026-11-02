@@ -3017,9 +3017,9 @@ class SharedOpenCodeAgent(OpenCodeAgent):
         return "not_listening"
 
     async def _installed_v2(self):
-        from .harness import version_of, opencode_v2
+        from .harness import selected_version, opencode_v2
         exe = _bin("AGENTJ_OPENCODE_BIN", "opencode")
-        return bool(exe) and opencode_v2(await asyncio.to_thread(version_of, exe))
+        return bool(exe) and opencode_v2(await asyncio.to_thread(selected_version, 'opencode', exe))
 
     async def _owner_v2(self):
 

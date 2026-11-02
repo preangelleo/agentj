@@ -70,6 +70,9 @@ def _owner(cfg: dict, port) -> dict:
 
 
 def start_probe(st, cfg: dict, limit: float = 150, *, clock=time.monotonic) -> dict | None:
+    from . import olares_probe
+    if olares_probe.required():
+        return olares_probe.run('start', 'opencode', cfg.get('model'), limit, cfg=cfg)
     d = str(cfg.get("dir") or "")
     if not os.path.isdir(d):
         return None

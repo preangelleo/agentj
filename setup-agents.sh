@@ -183,7 +183,7 @@ FAILED=0 SUCCESS=
 for cli in "${CLIS[@]}"; do
   STEP=$cli
   if python3 - "$cli" "$PREFIX/npm" "$REGISTRY" "$OS" "$ARCH" <<'P105_RUNTIME'
-import base64, hashlib, json, os, pathlib, platform, re, shutil, subprocess, sys, tempfile, urllib.request
+import base64, hashlib, io, json, os, pathlib, platform, re, shutil, subprocess, sys, tarfile, tempfile, urllib.request, zipfile
 cli,prefix,registry,osname,arch=sys.argv[1:]; prefix=pathlib.Path(prefix)
 OFFICIAL='https://registry.npmjs.org'; MIRROR='https://registry.npmmirror.com'
 pkg={'codex':'@openai/codex','claude':'@anthropic-ai/claude-code','opencode':'@opencode/cli','gemini':'@google/gemini-cli'}[cli]
@@ -255,6 +255,46 @@ def verify(command):
     if not native: raise ValueError('platform native binary '+system+'-'+cpu+'-'+libc)
     if cli=='codex' and not any(p.name=='rg' for p in candidates): raise ValueError('bundled ripgrep')
 
+
+# Official immutable v2.2.5 release (9bbb8ce18c80f099e0e448775f59d965ead40a21).
+# Never releases/latest: that endpoint follows the maintained v1 branch.
+OPENCODE_VERSION='2.2.5'
+OPENCODE_SHA256={
+    'linux-x64': '09f44302c10fd036912f59c81fd1aef5df45dd06f649197f9dfc9bbe2a79614e',
+    'linux-arm64': '5a528f42caf576c6cdece6a191eb273d3db54effa5518e0402684d8f8026aeb6',
+    'linux-x64-musl': '889389e99ffa39fa41d512b2c9c15316522d97398fb912503ef667f80e22a827',
+    'linux-arm64-musl': 'bbf927e3f7a92040f25fd78436c251f41deb25cefac1c906e79c01aa572bf73b',
+    'darwin-x64': '4d4419022e6ffbd48afc97c5101bdf001d38b0499f516169b9a80a87a340fd56',
+    'darwin-arm64': '25ba9908979fa7d764792c82589b4b5768ab1511154e0317d98aa77d216ce767',
+}
+def install_opencode():
+    target=system+'-'+cpu+('-musl' if libc=='musl' else '')
+    ext='.zip' if system=='darwin' else '.tar.gz'
+    url='https://github.com/anomalyco/opencode/releases/download/v'+OPENCODE_VERSION+'/opencode-'+target+ext
+    request=urllib.request.Request(url,headers={'User-Agent':'agentj-setup'})
+    with urllib.request.urlopen(request,timeout=120) as response:
+        archive=response.read(256*1024*1024+1)
+    if len(archive)>256*1024*1024 or hashlib.sha256(archive).hexdigest()!=OPENCODE_SHA256[target]:
+        raise ValueError('OpenCode official archive SHA256 mismatch')
+    # Extract one known member only, never archive paths or symlinks.
+    if ext=='.zip':
+        with zipfile.ZipFile(io.BytesIO(archive)) as bundle:
+            data=bundle.read('opencode')
+    else:
+        with tarfile.open(fileobj=io.BytesIO(archive),mode='r:gz') as bundle:
+            member=bundle.getmember('opencode')
+            if not member.isfile(): raise ValueError('OpenCode archive binary type')
+            data=bundle.extractfile(member).read()
+    bindir=prefix/'bin'; bindir.mkdir(parents=True,exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix='.opencode-',dir=bindir) as tmp:
+        binary=pathlib.Path(tmp)/'opencode'; binary.write_bytes(data); binary.chmod(0o755)
+        verify(str(binary))
+        result=run([str(binary),'--version'])
+        if result.returncode or not re.fullmatch(r'(?:opencode\s+)?v?'+re.escape(OPENCODE_VERSION),result.stdout.strip()):
+            raise ValueError('OpenCode pinned version mismatch')
+        os.replace(binary,bindir/'opencode')
+    print('OpenCode '+OPENCODE_VERSION+': official native archive SHA256 verified',flush=True)
+
 def integrity_pair(name,version):
     name,version=canonical(name,version)
     official=meta(OFFICIAL,name,version); mirror=meta(MIRROR,name,version)
@@ -277,6 +317,8 @@ try:
     existing=shutil.which(cli)
     if existing:
         verify(existing)
+    elif cli=='opencode':
+        install_opencode()
     else:
         # The canonical endpoint is separate from a user-supplied download registry.
         # If official metadata cannot be obtained, fail closed: never assert equality without evidence.
@@ -406,7 +448,8 @@ if full:
         write(home/'.local/bin/gemini-full-access','#!/bin/sh\nexec gemini --yolo --sandbox=false "$@"\n',0o700)
 print('PATH and selected settings ready. Backups stay beside changed files; open a new terminal.')
 PY
-printf 'Log in in your own terminal: opencode auth login / codex login / claude.\n'
+printf 'Log in in your own terminal: opencode auth login / codex login / claude auth login.\n'
+printf 'OpenCode 2.2.5 Claude Agent: install Claude Code 2.1.248+, run claude auth login yourself, then open opencode and choose /connect → Claude Agent. This differs from agentj agent claude. Login alone does not verify a model reply. / Claude Agent：先安装 Claude Code 2.1.248+，本人运行 claude auth login，再在 opencode 的 /connect 选 Claude Agent；与 agentj agent claude 是两个入口，登录不等于模型已验证可用。\n'
 if [[ ,$SELECT, == *,gemini,* ]]; then printf 'Gemini: Google has discontinued personal login; a paid Gemini API key is required. Enter it only in your own terminal.\n'; fi
 printf 'Launch your selected tool: opencode --auto; codex --dangerously-bypass-approvals-and-sandbox; claude --dangerously-skip-permissions\n'
 if [[ ,$SELECT, == *,gemini,* ]]; then printf 'Optional Gemini launch: gemini-full-access\n'; fi

@@ -91,6 +91,10 @@ def parse_verbose(text: str) -> list[str]:
 
 def listed(exe: str | None, timeout: float = LIST_TIMEOUT) -> list[str] | None:
     """The free models OpenCode offers right now (cached per executable for this process); None when it cannot tell."""
+    from . import olares_probe
+    if olares_probe.required():
+        rows = olares_probe.run('detect', 'opencode', timeout=timeout)['harnesses']
+        return rows[0].get('free_models') if rows else None
     if not exe or os.environ.get("AGENTJ_OC_FREE_LIST") == "off":      # tests: no stand-in binary is asked for its list
         return None
     if exe in _cache:
@@ -193,6 +197,9 @@ def _stop(proc) -> None:
 def serve(exe: str, senv: dict, root: str, port: int, up_by: float, clock=time.monotonic):
     """`opencode serve` on 127.0.0.1:<port> in `root`, once it says it listens (by `up_by`); else ProbeError. P395: shared by
     the 2.x probe (agent_opencode2.probe) — the caller stops the process (_stop)."""
+    from . import olares_probe
+    if olares_probe.required():
+        raise ProbeError('fence_unavailable')
     try:
         proc = subprocess.Popen(resource_policy.work_argv([exe, "serve", "--hostname", "127.0.0.1", "--port", str(port)]), cwd=root, env=senv,
                                 stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
@@ -223,6 +230,9 @@ def probe(exe: str, model: str | None, env: dict, timeout: float, *, sleep=time.
     """One greeting through `opencode serve` with Agent J's read-only session rules, in an empty scratch folder; the
     session is deleted afterwards. Returns the reply text; raises ProbeError(code). A FreeTierError / 429 is retried after
     each of `waits` (the warm-up) while the overall bound `timeout + sum(waits)` allows."""
+    from . import olares_probe
+    if olares_probe.required():
+        raise ProbeError('fence_unavailable')
     from .agent_opencode import opencode_env, session_rules, split_model, _rule
     waits = WARM_WAITS if waits is None else waits
     deadline = clock() + timeout + sum(waits)

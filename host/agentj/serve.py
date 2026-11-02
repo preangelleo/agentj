@@ -6364,6 +6364,8 @@ class Host:
                          sig=(authorization or {}).get("sig"), n=(authorization or {}).get("n"), ts=(authorization or {}).get("ts"))
             if why or arg:
                 return done(slash.Result("Send /update from a paired phone" if self.lang == "en" else "请从已配对手机发送 /update", "refused"))
+            if update.market_managed():
+                return done(slash.Result(update.market_text(self.lang), "info"))
             if not phone_update.reserve(self.st):
                 return done(slash.Result("Upgrade in progress" if self.lang == "en" else "正在升级，请稍候", "info"))
             self.upg_end("started", by=s.device)    # P203: the confirmation card (if any) is answered by this signed /update
@@ -6405,6 +6407,9 @@ class Host:
         return turn
 
     async def phone_upgrade(self, turn, by):
+        if update.market_managed():
+            self.cmd_card("update", slash.Result(update.market_text(self.lang), "info"), by, turn)
+            return
         from . import phone_update
         launched = False
         try:

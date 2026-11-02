@@ -42,6 +42,8 @@ def write(st, rec, name=RECORD):
 
 
 def enabled(st):
+    if update.market_managed():
+        return False
     try:
         return preferences.get(preferences.effective(st), 'updates.auto_install', True) is not False
     except (OSError, ValueError):
@@ -376,6 +378,7 @@ def command_line(cmd):
 
 
 def install_commands(info, wheel):
+    update.require_native_install(info)
     if info.get('legacy') or info['kind'] == 'checkout':
         raise ValueError('unsupported_install')
     if info['kind'] == 'uv':
@@ -401,6 +404,8 @@ def install_template(info):
 
 
 def launch(st):
+    if update.market_managed():
+        return False
     from . import phone_update, service_recovery
     if not phone_update.reserve(st):
         return False
@@ -548,6 +553,8 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
     """Journal before mutations. A killed installing worker restores the cached old wheel.
     A manager retries abnormal termination; a file lock excludes competing workers.
     """
+    if update.market_managed():
+        return update.market_result()
     # Load result/notice/redaction code before uv can remove this tool environment.
     from . import phone_update, service_recovery, upgrade_diag, humane, privacy  # noqa: F401
     fd = os.open(st.root/'auto-update-worker.lock', os.O_CREAT | os.O_RDWR, 0o600)

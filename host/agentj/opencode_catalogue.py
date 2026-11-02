@@ -45,6 +45,9 @@ def free_models(rows) -> list[str] | None:
 
 
 def native_models(exe: str, timeout: float = 20) -> list[str] | None:
+    from . import olares_probe
+    if olares_probe.required():
+        return None
     from .agent_opencode import opencode_env
     from .opencode_free import ProbeError, _port, _stop, serve
     deadline = time.monotonic() + timeout

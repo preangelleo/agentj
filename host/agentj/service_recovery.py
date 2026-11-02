@@ -59,6 +59,11 @@ def record(st, status, target, reason=None, *, external=False):
 
 def launch_job(st, argv, purpose='recovery', *, restart=False, extra_env=None):
     """Ask a manager to spawn; never fork the worker in the host's cgroup/job."""
+    from . import olares_supervisor
+    if olares_supervisor.enabled():
+        if restart:
+            raise service.ServiceError('olares_bad_job')
+        return olares_supervisor.submit(st, argv, purpose, extra_env)
     label = 'net.agentj.' + purpose + '.' + uuid.uuid4().hex
     env, _ = service.service_env()
     env['AGENTJ_STATE_DIR'] = str(st.root)

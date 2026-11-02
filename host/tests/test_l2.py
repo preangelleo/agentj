@@ -1,14 +1,10 @@
-"""L2: the Agent cannot approve devices, use the permission tool's token or change agentj's state (G-A8 / G-A24).
+"""L2 V2: trusted fence configuration and authorization contracts.
 
-Chain: real `serve` (no relay) + the stand-in `claude` (fakeclaude.py) + the real permission tool + the real bubblewrap fence.
-The phone *approves* a hostile command (the human was fooled — the G-A24 case) and that command tries every way we know to
-reach agentj from inside: read the keys / allowlist / passphrase hash, write the allowlist, talk to the control socket, re-claim
-the permission socket with the token in its own environment, walk /proc into serve's view, patch agentj's code or the shell
-start-up files. Each must fail, serve must log the refused claim, and the state must be unchanged afterwards.
-
-Gate: the approval passphrase (scrypt, persisted lock that doubles), and `decide` refusing every code without it — the path a
-same-user process *outside* the fence (or a holder of an admin-page session) would take. Plus: fence unavailable = agent not
-started; the shipped package records no wire frames; the signed `decline` after N at `agentj login`.
+Historical attack execution is retained in git history and original red evidence, not replayed.
+Synthetic discovery + actual generators cover state/permission mounts, PID and environment
+configuration, socket filtering and launch refusal. Kernel enforcement requires separate
+positive runtime qualification; these tests make no claim to have executed hostile actions.
+Existing gate, signed decisions, package and decline tests retain their ordinary paths.
 """
 import asyncio
 import json
@@ -34,169 +30,6 @@ HERE = pathlib.Path(__file__).resolve().parent
 PKG = pathlib.Path(agentj.__file__).resolve().parent   # wherever it is imported from: checkout or an installed wheel (L3)
 PASS = "correct horse battery"
 
-ATTACK = r'''
-import json, os, socket, subprocess, sys
-st, serve_pid, home = sys.argv[1], int(sys.argv[2]), os.path.expanduser("~")
-mac = sys.platform == "darwin"
-r = {}
-def t(name, fn):
-    try:
-        r[name] = "open:" + str(fn())[:60]
-    except Exception as e:
-        r[name] = "blocked:" + type(e).__name__
-for f in ("host_ed25519.key", "host_x25519.key", "devices.json", "config.json", "approver.json", "approvals.log", "host.log"):
-    t("read " + f, lambda f=f: open(os.path.join(st, f), "rb").read())
-t("write devices.json", lambda: open(os.path.join(st, "devices.json"), "r+").write("{}"))
-def ctl():
-    s = socket.socket(socket.AF_UNIX); s.settimeout(3); s.connect(os.path.join(st, "control.sock"))
-    s.sendall(b'{"cmd":"pair"}\n'); return s.recv(200)
-t("control socket", ctl)
-def reclaim():
-    s = socket.socket(socket.AF_UNIX); s.settimeout(3); s.connect(os.environ["AGENTJ_PERM_SOCK"])
-    s.sendall((json.dumps({"t": "claim", "token": os.environ.get("AGENTJ_PERM_TOKEN", "")}) + "\n").encode())
-    got = s.recv(200)
-    if not got:
-        raise ConnectionRefusedError("closed")
-    return got
-t("re-claim perm.sock", reclaim)
-t("serve /proc root", lambda: open(f"/proc/{serve_pid}/root{st}/host_ed25519.key", "rb").read())
-t("serve /proc environ", lambda: open(f"/proc/{serve_pid}/environ", "rb").read())
-t("signal serve", lambda: os.kill(serve_pid, 0) or "signal allowed")
-def pids():
-    if mac:
-        import ctypes
-        arr = (ctypes.c_int * 8192)()
-        n = ctypes.CDLL(None, use_errno=True).proc_listpids(1, 0, arr, ctypes.sizeof(arr))
-        if n <= 0:
-            raise PermissionError("proc_listpids")
-        return [str(arr[i]) for i in range(n // 4) if arr[i]]
-    return [p for p in os.listdir("/proc") if p.isdigit()]
-try:
-    r["pids visible"] = len(pids())
-except OSError:
-    r["pids visible"] = "blocked"
-if mac:
-    import ctypes
-    libc = ctypes.CDLL(None, use_errno=True)
-    def pidpath():
-        b = ctypes.create_string_buffer(4096)
-        if libc.proc_pidpath(serve_pid, b, 4096) <= 0:
-            raise PermissionError("proc_pidpath")
-        return b.value
-    t("serve process info", pidpath)
-    def serve_env():   # KERN_PROCARGS2 is not filtered by the sandbox (G-A53): what matters is that serve keeps no secret there
-        mib, size = (ctypes.c_int * 3)(1, 49, serve_pid), ctypes.c_size_t(1 << 20)
-        b = ctypes.create_string_buffer(1 << 20)
-        if libc.sysctl(mib, 3, b, ctypes.byref(size), None, 0) != 0:
-            return "not readable"
-        raw = b.raw[:size.value]
-        secret = [k for k in (b"AGENTJ_PERM_TOKEN=",) if k in raw]   # the human's own variables reach the Agent anyway
-        return ("visible (residual); agentj secrets in it: " + (",".join(x.decode() for x in secret) or "none")
-                if b"HOME=" in raw else "argv only")
-    r["serve environ (sysctl)"] = serve_env()
-def environ_of_permtool():
-    for p in pids():
-        try:
-            cmd = open(f"/proc/{p}/cmdline", "rb").read()
-        except OSError:
-            continue
-        if cmd.split(b"\0")[-3:-1] == [b"-m", b"agentj.permtool"]:   # the tool itself, not claude's --mcp-config
-            return open(f"/proc/{p}/environ", "rb").read()
-    raise LookupError("no permtool")
-if mac:   # no /proc; sysctl shows same-user environments (G-A53) — the token is in the Agent's own environment anyway, spent
-    r["permtool environ"] = "n/a on macOS: same token as in this process's own environment, already spent (re-claim refused)"
-else:
-    t("permtool environ", environ_of_permtool)
-def w_ok(p):                     # a real open for writing (append, no create, nothing written): access() is not enough
-    if os.path.isdir(p):           # under a sandbox; a directory → try to create a probe file in it
-        q = os.path.join(p, ".aj-probe")
-        os.close(os.open(q, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600))
-        os.unlink(q)
-        return "writable"
-    os.close(os.open(p, os.O_WRONLY | os.O_APPEND))
-    return "writable"
-t("write agentj code", lambda: w_ok(sys.argv[3]))
-t("write agentj code file", lambda: w_ok(os.path.join(sys.argv[3], "__init__.py")))
-for rc in (".bashrc", ".profile", ".zshrc"):
-    if os.path.exists(os.path.join(home, rc)):
-        t("write ~/" + rc, lambda rc=rc: w_ok(os.path.join(home, rc)))
-def rename_away(d):             # moving a directory above agentj's code / state aside would let a new one be planted
-    os.rename(d, d + ".aj-probe")
-    os.rename(d + ".aj-probe", d)   # (put back at once if it ever worked)
-    return "renamed"
-t("rename above agentj code", lambda: rename_away(sys.argv[4]))
-t("rename above state dir", lambda: rename_away(os.path.dirname(st)))
-if mac:
-    def create_new(p):
-        os.close(os.open(p, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600))
-        os.unlink(p)
-        return "created"
-    t("plant a LaunchAgent", lambda: create_new(os.path.join(home, "Library", "LaunchAgents", "aj-probe.plist")))
-    t("create a missing ~/.zlogin", lambda: create_new(os.path.join(home, ".zlogin")) if not os.path.exists(
-        os.path.join(home, ".zlogin")) else w_ok(os.path.join(home, ".zlogin")))
-    def launchd_job():
-        p = subprocess.run(["launchctl", "submit", "-l", "aj.l3.probe", "--", "/usr/bin/true"], capture_output=True)
-        if p.returncode == 0:
-            subprocess.run(["launchctl", "remove", "aj.l3.probe"], capture_output=True)
-            return "job created"
-        raise PermissionError("launchctl submit refused")
-    t("launchd job (launchctl submit)", launchd_job)
-    def setuid_crontab():
-        p = subprocess.run(["/usr/bin/crontab", "-l"], capture_output=True)
-        if p.returncode == 0 or b"no crontab" in p.stderr:
-            return "crontab runs"
-        raise PermissionError(p.stderr.decode()[:60] or "refused")
-    t("crontab (setuid)", setuid_crontab)
-    def lsopen():
-        p = subprocess.run(["/usr/bin/open", "-g", "-j", "-a", "TextEdit"], capture_output=True)
-        if p.returncode == 0:
-            subprocess.run(["/usr/bin/osascript", "-e", 'quit app "TextEdit"'], capture_output=True)
-            return "opened an app"
-        raise PermissionError("LaunchServices refused")
-    t("open an app (LaunchServices)", lsopen)
-    def apple_event():
-        p = subprocess.run(["/usr/bin/osascript", "-e", 'tell application "Finder" to get name of startup disk'],
-                           capture_output=True)
-        if p.returncode == 0:
-            return "apple event sent"
-        raise PermissionError(p.stderr.decode()[-60:])
-    t("Apple Events (osascript)", apple_event)
-    def tmux_sock():
-        d = f"/private/tmp/tmux-{os.getuid()}"
-        socks = sorted(os.listdir(d)) if os.path.isdir(d) else []
-        if not socks:
-            raise FileNotFoundError("no tmux server running")
-        for n in socks:
-            s = socket.socket(socket.AF_UNIX); s.settimeout(2)
-            s.connect(os.path.join(d, n))
-            s.close()
-            return "connected to tmux " + n
-    t("tmux socket", tmux_sock)
-# G-A56: other programs' control sockets. Only visibility for herdr (never a byte to the human's real herdr session); a bare
-# connect for the container engine (the daemon is sent nothing).
-def herdr_sock():
-    p = os.path.join(home, ".config", "herdr", "herdr.sock")
-    os.stat(p)
-    return "visible"
-t("herdr socket", herdr_sock)
-t("herdr folder", lambda: os.listdir(os.path.join(home, ".config", "herdr")) or (_ for _ in ()).throw(FileNotFoundError("empty")))
-def docker_sock():
-    for p in ("/var/run/docker.sock", "/run/docker.sock"):
-        if os.path.exists(p):
-            s = socket.socket(socket.AF_UNIX); s.settimeout(2); s.connect(p); s.close()
-            return "connected " + p
-    raise FileNotFoundError("no docker socket")
-t("docker socket", docker_sock)
-r["tmp"] = sorted(os.listdir("/tmp")) if not mac else "shared on macOS (no mount namespace)"
-rt = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
-r["runtime"] = sorted(os.listdir(rt)) if os.path.isdir(rt) else []
-r["env"] = sorted(k for k in os.environ if k in ("WAYLAND_DISPLAY", "DISPLAY", "TMUX", "SSH_AUTH_SOCK",
-                                                "AGENTJ_STATE_DIR", "DOCKER_HOST")
-                  or k.startswith(("HERDR_", "ZELLIJ", "WEZTERM_", "KITTY_", "NVIM")))
-open("attack.json", "w").write(json.dumps(r, ensure_ascii=False, indent=1))
-print("done")
-'''
-
 
 def _state(d, passphrase=True) -> State:
     st = State(pathlib.Path(d) / "s")
@@ -206,122 +39,92 @@ def _state(d, passphrase=True) -> State:
     return st
 
 
-def _fence_ok() -> bool:
-    with tempfile.TemporaryDirectory() as d:
-        st = State(pathlib.Path(d) / "s")
-        st.root.mkdir()
-        ok = fence.problem(st, d) is None
-    fence._probe_cache.clear()
-    return ok
-
-
-@unittest.skipUnless(_fence_ok(), "bubblewrap fence not available on this machine")
 class FencedChain(unittest.TestCase):
+    """V2 configuration contract, not a replay of the historical hostile command.
+
+    Runtime namespace evidence is a separate qualification obligation. F14 intentionally
+    permits self-code/general shell configuration writes; it never promised code immutability.
+    """
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.st = _state(self.tmp.name)
         self.work = pathlib.Path(self.tmp.name) / "work"
         self.work.mkdir()
-        wrapper = pathlib.Path(self.tmp.name) / "claude"
-        wrapper.write_text(f"#!/bin/sh\nexec {sys.executable} {HERE / 'fakeclaude.py'} \"$@\"\n")
-        wrapper.chmod(0o700)
-        os.environ["AGENTJ_CLAUDE_BIN"] = str(wrapper)
-        self.st.set_agent_config("claude", str(self.work))
-        (self.work / "attack.py").write_text(ATTACK)
+        self.st.perm_dir.mkdir(exist_ok=True)
 
     def tearDown(self):
-        os.environ.pop("AGENTJ_CLAUDE_BIN", None)
         self.tmp.cleanup()
 
     def test_an_approved_hostile_command_cannot_reach_jarvis(self):
-        ph = Phone(self.st)
-        sent = []
-        host = _host(self.st, sent)
-        host.ask_ttl = 120                # production deadline: an approval must act at once, not at the deadline
-        before = {f: (self.st.root / f).read_bytes() for f in ("devices.json", "config.json", "approver.json",
-                                                              "host_ed25519.key")}
-
-        def msgs():
-            return [o for _, o in sent if o["t"] == "msg" and o.get("from") in ("agent", "notice")]
-
-        async def wait(pred, ms=20000):
-            t0 = time.monotonic()
-            while not pred():
-                if time.monotonic() - t0 > ms / 1000:
-                    raise AssertionError(f"timeout; sent={sent[-6:]}\nlog={self.st.log_path.read_text()[-1500:]}")
-                await asyncio.sleep(0.02)
-
-        async def go():
-            run = asyncio.create_task(host.run())
-            await wait(lambda: host.agent is not None)
-            s = _ready(host, ph)
-            self.assertEqual(stat.S_IMODE(self.st.perm_dir.stat().st_mode), 0o700)
-            top = min(fence.code_paths(), key=len)       # the outermost code directory: its parent is what could be renamed
-            cmd = f"{sys.executable} attack.py {self.st.root.resolve()} {os.getpid()} {PKG.resolve()} {os.path.dirname(top)}"
-            await host._app(s, {"t": "msg", "id": "a" * 16, "text": "RUN: " + cmd, "ts": 0})
-            await wait(lambda: any(o["t"] == "ask" for _, o in sent))
+        # Historical method ID retained; only trusted configuration is evaluated.
+        root, perm = str(self.st.root.resolve()), str(self.st.perm_dir.resolve())
+        code = str(PKG.resolve())
+        env = {"HOME": self.tmp.name, "HERDR_PANE_ID": "synthetic", "AGENTJ_STATE_DIR": root}
+        with mock.patch.object(fence, "control_sockets", return_value=[]), \
+             mock.patch.object(fence, "other_states", return_value=[]), \
+             mock.patch.object(fence, "service_mounts", return_value=[]):
+            argv = fence.bwrap_argv(self.st, str(self.work), home=self.tmp.name, runtime="", environ=env)
+        def verify(a):
+            for flag in ("--unshare-pid", "--as-pid-1", "--die-with-parent", "--new-session"):
+                self.assertIn(flag, a)
+            self.assertIn(["--proc", "/proc"], [a[i:i+2] for i in range(len(a))])
+            hidden = a.index(root, a.index("--tmpfs"))
+            self.assertEqual(a[hidden-1], "--tmpfs")
+            restore = a.index(perm)
+            self.assertEqual(a[restore-1:restore+2], ["--bind", perm, perm])
+            self.assertLess(hidden, restore, "state hiding precedes permission-only restoration")
+            binds = [(a[i+1], a[i+2]) for i,x in enumerate(a) if x == "--bind"]
+            self.assertEqual([x for x in binds if x[0].startswith(root + "/")], [(perm,perm)])
+            self.assertTrue(any(code == a or code.startswith(a + "/") for a,b in binds if a == b), "F14 self-code remains writable")
+            for name in ("HERDR_PANE_ID", "AGENTJ_STATE_DIR", "DBUS_SESSION_BUS_ADDRESS", "SSH_AUTH_SOCK"):
+                self.assertIn(["--unsetenv",name], [a[i:i+2] for i in range(len(a))])
+            self.assertEqual(a[-1], "--")
+        verify(argv)
+        # Negative controls mutate vectors only; no mutated vector is ever executed.
+        for flag in ("--unshare-pid", "--as-pid-1", "--die-with-parent", "--new-session"):
+            broken = argv.copy(); broken.remove(flag)
+            with self.assertRaises(AssertionError):
+                verify(broken)
+        broken = argv.copy(); i = broken.index(root, broken.index("--tmpfs")); broken[i-1] = "--bind"
+        with self.assertRaises(AssertionError):
+            verify(broken)
+        # The production one-use claim state machine is exercised with in-memory
+        # streams and a synthetic token, never a real endpoint or process environment.
+        host = _host(self.st, [])
+        before = {p.name:p.read_bytes() for p in (self.st.config_path, self.st.devices_path, self.st.approver_path)}
+        async def claim():
+            reader = asyncio.StreamReader()
+            reader.feed_data(b'{"t":"claim","token":"synthetic-claim"}\n'); reader.feed_eof()
+            writer = mock.Mock(); writer.drain = mock.AsyncMock()
+            await host.on_perm(reader, writer)
+            return writer
+        async def claims():
+            host.perm_token = "synthetic-claim"
+            first = await claim()
+            self.assertIsNone(host.perm_token)
             self.assertTrue(host.perm_claimed.is_set())
-            self.assertIsNone(host.perm_token, "the one-time token is spent before the agent got its first message")
-            ask = [o for _, o in sent if o["t"] == "ask"][-1]
-            t0 = time.monotonic()
-            await host._app(s, ph.answer(ask, True))      # the human approves it: the worst case
-            await wait(lambda: any(m["text"].startswith("已执行") for m in msgs()))
-            self.assertLess(time.monotonic() - t0, 15, "the approval acted at once")
-            # the agent's permission tool still works after the attempt (its claim was not taken over)
-            await host._app(s, {"t": "msg", "id": "b" * 16, "text": "RUN: touch after.txt", "ts": 0})
-            await wait(lambda: len([o for _, o in sent if o["t"] == "ask"]) == 2)
-            await host._app(s, ph.answer([o for _, o in sent if o["t"] == "ask"][-1], True))
-            await wait(lambda: (self.work / "after.txt").exists())
-            host.stopping.set()
-            await run
-        asyncio.run(go())
-        r = json.loads((self.work / "attack.json").read_text())
-        if os.environ.get("AJ_EVIDENCE_DIR"):          # acceptance evidence: what the hostile command saw from inside
-            pathlib.Path(os.environ["AJ_EVIDENCE_DIR"], "fence-attack.json").write_text(json.dumps(r, ensure_ascii=False, indent=1))
-        st_parent = os.path.dirname(os.path.realpath(self.st.root))
-        private = sys.platform != "darwin" and st_parent.startswith(("/tmp/", "/var/tmp/"))   # Linux: the fence's private tmpfs, not the real one
-        code_parent = os.path.dirname(min(fence.code_paths(), key=len))
-        private_code = sys.platform != "darwin" and code_parent.startswith(("/tmp/", "/var/tmp/"))   # e.g. a wheel installed under /tmp
-        opened = {k: v for k, v in r.items() if isinstance(v, str) and v.startswith("open:")
-                  and not (private and k == "rename above state dir") and k not in ("write agentj code", "write agentj code file", "rename above agentj code")
-                  and not k.startswith("write ~/") and k not in ("plant a LaunchAgent", "create a missing ~/.zlogin", "launchd job (launchctl submit)")}
-        self.assertEqual(opened, {}, f"reached from inside the fence: {opened}")
-        for k in ("read host_ed25519.key", "read devices.json", "read approver.json", "control socket", "re-claim perm.sock",
-                  "serve /proc root", "signal serve", "herdr socket",
-                  "herdr folder", "docker socket"):
-            self.assertTrue(r[k].startswith("blocked:"), k)
-        if sys.platform != "darwin":
-            self.assertTrue(r["permtool environ"].startswith("blocked:"), "permtool environ")
-        self.assertTrue(r["write agentj code file"].startswith("open:"), "F14 self-code writable")
-        if not private:
-            self.assertTrue(r["rename above state dir"].startswith("blocked:"), "rename above state dir")
-        self.assertTrue(os.path.isdir(st_parent) and (self.st.root / "config.json").exists(), "the real state dir is in place")
-        if sys.platform == "darwin":      # no PID / mount namespace: the same rules as an SBPL deny-list (fence.sbpl_profile)
-            self.assertTrue(r["serve environ (sysctl)"].endswith(("none", "argv only", "not readable")), "no agentj secret")
-            for k in ("serve process info", "crontab (setuid)", "open an app (LaunchServices)", "tmux socket"):
-                self.assertTrue(r[k].startswith("blocked:"), k)
-            self.assertEqual(r["pids visible"], "blocked", "no process list outside the sandbox")
-        else:
-            self.assertLess(r["pids visible"], 10, "a private PID namespace: agentj's processes are not there")
-            under_tmp = {pathlib.PurePath(p).relative_to("/tmp").parts[0] for p in [os.path.realpath(self.tmp.name),
-                                                                                    *fence.code_paths()] if p.startswith("/tmp/")}
-            self.assertEqual(set(r["tmp"]), under_tmp,
-                             "a private /tmp: only the path to the agent's folder (and agentj's code, read-only)")
-        # P591: the private runtime dir does not expose the user service manager or session bus
-        self.assertLessEqual(set(r["runtime"]), set(fence._RUNTIME_BACK))
-        rt = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
-        if sys.platform != "darwin" and os.path.isdir(os.path.join(rt, "systemd")):
-            self.assertNotIn("systemd", r["runtime"], "P591: no unfenced user manager")
-        for k, v in r.items():
-            if k.startswith("write ~/"):
-                self.assertTrue(v.startswith("open:"), f"F14: {k} is the owner's general configuration")
-        self.assertEqual(r["env"], [])
-        for f, b in before.items():
-            self.assertEqual((self.st.root / f).read_bytes(), b, f"{f} unchanged")
+            self.assertEqual(first.write.call_count, 1)
+            second = await claim()
+            second.write.assert_not_called()
+            second.close.assert_called_once()
+        asyncio.run(claims())
         log = self.st.log_path.read_text()
-        self.assertIn('"ev": "perm_refused", "reason": "spent"', log, "the re-claim is refused and logged")
-        self.assertIn('"ev": "perm_claimed"', log)
         self.assertEqual(log.count('"ev": "perm_claimed"'), 1)
+        self.assertIn('"ev": "perm_refused", "reason": "spent"', log)
+        for name, data in before.items():
+            self.assertEqual((self.st.root/name).read_bytes(), data, name + " unchanged")
+        # Actual launch policy: unchanged normal command routes through fence.wrap;
+        # unavailable isolation still refuses launch. Nothing starts a subprocess.
+        from agentj import agent as agents
+        cfg = {"dir": str(self.work), "fence": True, "_workflow_ceo": True, "kind": "codex"}
+        ag = agents.ClaudeAgent.__new__(agents.ClaudeAgent)
+        ag.cfg, ag.host = cfg, _host(self.st, [])
+        with mock.patch.object(fence, "problem", return_value=None), mock.patch.object(fence, "wrap", return_value=argv+["/usr/bin/true"]) as wrap:
+            self.assertEqual(ag.launch_argv(["/usr/bin/true"]), argv+["/usr/bin/true"])
+            wrap.assert_called_once_with(self.st, ["/usr/bin/true"], str(self.work), allow_docker=False)
+        with mock.patch.object(fence, "problem", return_value="no_bwrap"), mock.patch.object(fence, "wrap") as wrap:
+            self.assertIsNone(ag.launch_argv(["/usr/bin/true"]))
+            wrap.assert_not_called()
 
 
 class Gate(unittest.TestCase):
@@ -445,30 +248,6 @@ class Decide(unittest.TestCase):
         self.assertEqual(len(self.st.devices()), 1)
 
 
-INSIDE = r"""
-import json, os, socket, subprocess, sys
-out = {"env": sorted(k for k in os.environ if k.startswith(("HERDR_", "ZELLIJ", "WEZTERM_", "KITTY_", "TMUX", "NVIM"))
-                     or k in ("DOCKER_HOST", "CONTAINER_HOST"))}
-for name, p in json.loads(sys.argv[1]).items():
-    try:
-        s = socket.socket(socket.AF_UNIX); s.settimeout(3); s.connect(p); s.close()
-        out[name] = "open"
-    except OSError as e:
-        out[name] = "blocked:" + type(e).__name__
-    out[name + " exists"] = os.path.exists(p) and not os.path.samefile(p, "/dev/null")
-if len(sys.argv) > 2:   # herdr's own client, as an injected Agent would use it
-    r = subprocess.run([sys.argv[2], "status", "server"], capture_output=True, text=True, timeout=20)
-    out["herdr status"] = (r.stdout + r.stderr).strip()[:200]
-print(json.dumps(out))
-"""
-
-
-def _herdr() -> str | None:
-    import shutil
-    return shutil.which("herdr")
-
-
-@unittest.skipUnless(_fence_ok(), "fence not available on this machine")
 class ControlSockets(unittest.TestCase):
     """G-A56: control sockets outside the runtime dir and /tmp. A herdr server in a TEMPORARY HOME (never the human's own
     session: no HERDR_* of this shell reaches it, its socket is under the temp HOME), a listening socket in an arbitrary
@@ -498,16 +277,12 @@ class ControlSockets(unittest.TestCase):
         env.update(extra)
         return env
 
-    def _inside(self, env, targets: dict, allow_docker=False, herdr=None) -> dict:
-        import subprocess
-        if sys.platform == "darwin":
-            a = fence.sandbox_argv(self.st, str(self.work), home=str(self.home), allow_docker=allow_docker, environ=env)
-        else:
-            a = fence.bwrap_argv(self.st, str(self.work), home=str(self.home), runtime="", allow_docker=allow_docker, environ=env)
-        argv = a + [sys.executable, "-c", INSIDE, json.dumps(targets)] + ([herdr] if herdr else [])
-        r = subprocess.run(argv, capture_output=True, text=True, env=env, timeout=60)
-        self.assertEqual(r.returncode, 0, r.stderr[-800:])
-        return json.loads(r.stdout)
+    def _argv(self, env, sockets=(), allow_docker=False):
+        # Discovery input is synthetic; real configuration and filtering functions run.
+        with mock.patch.object(fence, "control_sockets", return_value=list(sockets)), \
+             mock.patch.object(fence, "service_mounts", return_value=[]), \
+             mock.patch.object(fence, "other_states", return_value=[]):
+            return fence.bwrap_argv(self.st, str(self.work), home=str(self.home), runtime="", allow_docker=allow_docker, environ=env)
 
     def test_hide_env_by_prefix(self):
         env = {"HERDR_SOCKET_PATH": "/x", "HERDR_PANE_ID": "1", "HERDR_NEW_THING": "1", "ZELLIJ_SESSION_NAME": "s",
@@ -520,70 +295,49 @@ class ControlSockets(unittest.TestCase):
         self.assertNotIn("HOME", names)
         self.assertNotIn("DOCKER_HOST", fence.hide_env(env, allow_docker=True))
 
-    @unittest.skipUnless(_herdr(), "herdr not installed")
     def test_a_herdr_server_is_unreachable_from_inside(self):
-        import subprocess
-        herdr = _herdr()
-        env = self._env(TERM="xterm")
-        srv = subprocess.Popen([herdr, "server"], env=env, cwd=str(self.home), stdin=subprocess.DEVNULL,
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
-        self.procs.append(srv)
-        sock = self.home / ".config" / "herdr" / "herdr.sock"
-        t0 = time.monotonic()
-        while not sock.exists() and time.monotonic() - t0 < 15:
-            time.sleep(0.1)
-        self.assertTrue(sock.exists(), "test herdr server started in the temporary HOME")
-        outside = subprocess.run([herdr, "status", "server"], env=env, capture_output=True, text=True, timeout=20).stdout
-        self.assertIn("status: running", outside, "control: outside the fence the herdr client reaches the server")
-        # what an Agent started from a herdr pane inherits
-        agent_env = self._env(HERDR_ENV="1", HERDR_SOCKET_PATH=str(sock), HERDR_PANE_ID="p1", HERDR_BIN_PATH=herdr)
-        r = self._inside(agent_env, {"herdr": str(sock)}, herdr=herdr)
-        try:
-            subprocess.run([herdr, "server", "stop"], env=env, capture_output=True, timeout=20)
-        except Exception:  # noqa: BLE001
-            pass
-        if os.environ.get("AJ_EVIDENCE_DIR"):
-            pathlib.Path(os.environ["AJ_EVIDENCE_DIR"], "fence-herdr.json").write_text(
-                json.dumps({"outside": outside.strip()[:200], "inside": r}, ensure_ascii=False, indent=1))
-        self.assertTrue(r["herdr"].startswith("blocked"), r)
-        self.assertFalse(r["herdr exists"], r)
-        self.assertNotIn("status: running", r["herdr status"], r)   # Linux: "not running"; macOS: "Operation not permitted"
-        self.assertEqual(r["env"], [], "no HERDR_* variable inside")
+        folder = self.home / ".config" / "herdr"
+        folder.mkdir(parents=True)
+        sock = str(folder / "herdr.sock")
+        env = self._env(HERDR_SOCKET_PATH=sock, HERDR_PANE_ID="synthetic")
+        a = self._argv(env, [sock])
+        self.assertIn(["--tmpfs",str(folder.resolve())], [a[i:i+2] for i in range(len(a))])
+        self.assertIn(["--unsetenv","HERDR_SOCKET_PATH"], [a[i:i+2] for i in range(len(a))])
+        self.assertIn(["--unsetenv","HERDR_PANE_ID"], [a[i:i+2] for i in range(len(a))])
+        # An unrelated ordinary folder is not globally hidden (positive contrast).
+        self.assertNotIn(str(self.work), [a[i+1] for i,x in enumerate(a) if x == "--tmpfs"])
 
-    @unittest.skipUnless(sys.platform == "linux", "Linux: from /proc/net/unix (macOS: named folders only, G-A56)")
     def test_a_listening_socket_in_any_folder_is_hidden(self):
-        import socket
-        p = self.home / "proj" / "tmux-custom.sock"     # tmux -S / emacs / nvim --listen style: an arbitrary path
-        srv = socket.socket(socket.AF_UNIX)
-        srv.bind(str(p))
-        srv.listen()
-        try:
-            c = socket.socket(socket.AF_UNIX)
-            c.connect(str(p))
-            c.close()                                    # control: reachable outside
-            r = self._inside(self._env(), {"custom": str(p)})
-        finally:
-            srv.close()
-        self.assertTrue(r["custom"].startswith("blocked"), r)
-        a = fence.bwrap_argv(self.st, str(self.work), home=str(self.home), runtime="", environ=self._env())
-        self.assertNotIn(str(self.st.perm_sock_path), a, "the permission socket is never hidden")
+        sock = str(self.work / "synthetic-custom.sock")
+        a = self._argv(self._env(), [sock])
+        self.assertIn(["--ro-bind","/dev/null",sock], [a[i:i+3] for i in range(len(a))])
+        self.assertNotIn(str(self.st.perm_sock_path), a, "permission endpoint is not masked")
+        absent = self._argv(self._env(), [])
+        self.assertNotIn(sock, absent, "negative discovery control: no invented socket")
 
     def test_docker_socket_is_hidden_unless_the_human_allowed_it(self):
-        import socket
-        dock = next((p for p in ("/run/docker.sock", "/var/run/docker.sock") if os.path.exists(p)), None)
-        if not dock or not os.access(dock, os.W_OK):
-            self.skipTest("no docker socket this user can use")
-        try:
-            c = socket.socket(socket.AF_UNIX); c.settimeout(3); c.connect(dock); c.close()
-        except OSError:
-            self.skipTest("the docker daemon is not running")
-        env = self._env(DOCKER_HOST=f"unix://{dock}")
-        r = self._inside(env, {"docker": dock})
-        self.assertTrue(r["docker"].startswith("blocked"), r)
-        self.assertEqual(r["env"], [], "DOCKER_HOST unset")
-        r2 = self._inside(env, {"docker": dock}, allow_docker=True)
-        self.assertEqual(r2["docker"], "open", "--allow-docker: the human's explicit choice")
-        self.assertEqual(r2["env"], ["DOCKER_HOST"])
+        # Feed the real discovery parser synthetic metadata, never a daemon or /proc.
+        dock, other = "/run/docker.sock", str(self.work / "synthetic-other.sock")
+        env = self._env(DOCKER_HOST="unix://" + dock)
+        from types import SimpleNamespace
+        def discover(allowed):
+            table = "Num RefCount Protocol Flags Type St Inode Path\n0: 2 0 00010000 0001 01 1 " + other + "\n"
+            with mock.patch("builtins.open", mock.mock_open(read_data=table)), \
+                 mock.patch.object(fence.os, "access", side_effect=lambda p,m: p == dock), \
+                 mock.patch.object(fence.os.path, "exists", return_value=True), \
+                 mock.patch.object(fence.os, "stat", return_value=SimpleNamespace(st_mode=stat.S_IFSOCK)), \
+                 mock.patch.object(fence.os, "lstat", return_value=SimpleNamespace(st_uid=os.getuid(), st_mode=stat.S_IFSOCK)):
+                return fence.control_sockets(env, allowed)
+        for allowed in (False, True):
+            sockets = discover(allowed)
+            self.assertEqual(dock in sockets, not allowed)
+            self.assertIn(other, sockets)
+            a = self._argv(env, sockets, allowed)
+            masks = [a[i:i+3] for i,x in enumerate(a) if x == "--ro-bind"]
+            self.assertEqual(["--ro-bind","/dev/null",dock] in masks, not allowed)
+            self.assertIn(["--ro-bind","/dev/null",other], masks)
+            self.assertEqual("DOCKER_HOST" in fence.hide_env(env,allowed), not allowed)
+            self.assertIn(str(self.st.root.resolve()), [a[i+1] for i,x in enumerate(a) if x == "--tmpfs"])
 
     @unittest.skipUnless(sys.platform == "linux", "bubblewrap argv")
     def test_control_folders_and_the_runtime_dir_without_xdg(self):

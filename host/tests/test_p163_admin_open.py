@@ -6,10 +6,12 @@ stdout (so never an Agent transcript), the command returns at once and the detac
   closes once its session ends.
 """
 import _hermetic  # noqa: F401,I001
+import ctypes
 import http.client
 import json
 import os
 import pathlib
+import signal
 import subprocess
 import sys
 import tempfile
@@ -160,15 +162,29 @@ class RealCli(unittest.TestCase):
         self.env.pop("SSH_CONNECTION", None)
         self.env.pop("SSH_TTY", None)
         self.pid = None
+        self.pidfd = None
+        # The CLI returns before its detached child. Own that child here rather than
+        # relying on PID 1 (or an outer gate subreaper) to reap it for this assertion.
+        self.libc = ctypes.CDLL(None, use_errno=True)
+        self.was_subreaper = ctypes.c_int()
+        self.assertEqual(self.libc.prctl(37, ctypes.byref(self.was_subreaper), 0, 0, 0), 0)
+        self.assertEqual(self.libc.prctl(36, 1, 0, 0, 0), 0)
 
     def tearDown(self):
-        if self.pid:
-            try:
-                os.kill(self.pid, 15)
-            except ProcessLookupError:
-                pass
-        import shutil
-        shutil.rmtree(self.dir, True)
+        try:
+            if self.pid is not None:
+                # waitpid proves this is still our child; pidfd pins the identity
+                # before a signal, so a recycled PID can never receive cleanup.
+                got, _ = os.waitpid(self.pid, os.WNOHANG)
+                if not got:
+                    signal.pidfd_send_signal(self.pidfd, signal.SIGKILL)
+                    os.waitpid(self.pid, 0)
+            if self.pidfd is not None:
+                os.close(self.pidfd)
+        finally:
+            self.libc.prctl(36, self.was_subreaper.value, 0, 0, 0)
+            import shutil
+            shutil.rmtree(self.dir, True)
 
     def _run(self, *extra):
         return subprocess.run([sys.executable, "-P", "-m", "agentj.cli", "admin", "--open", *extra], cwd=HOST,
@@ -181,6 +197,7 @@ class RealCli(unittest.TestCase):
         self.assertLess(time.monotonic() - t0, 30)            # returned without waiting for the page
         ev = json.loads(r.stdout)
         self.pid = ev["pid"]
+        self.pidfd = os.pidfd_open(self.pid)
         self.assertEqual(ev["ev"], "opened")
         for _ in range(100):
             if self.got.exists() and self.got.read_text():
@@ -200,16 +217,20 @@ class RealCli(unittest.TestCase):
         sid = json.loads(c.getresponse().read())["session"]
         c.request("POST", "/api/session/end", "{}", {**h, "Authorization": f"Bearer {sid}"})
         self.assertEqual(c.getresponse().status, 200)
-        os.kill(self.pid, 0)                                  # still alive right now …
         deadline = time.monotonic() + cli.ADMIN_OPEN_POLL + 15
-        while time.monotonic() < deadline:                    # … and gone within one poll once the page is closed
-            try:
-                os.kill(self.pid, 0)
-            except ProcessLookupError:
+        exit_status = None
+        while time.monotonic() < deadline:
+            got, status = os.waitpid(self.pid, os.WNOHANG)
+            if got:
+                exit_status = os.waitstatus_to_exitcode(status)
                 self.pid = None
                 break
             time.sleep(0.3)
         self.assertIsNone(self.pid, "the detached admin page did not close after its session ended")
+        self.assertEqual(exit_status, 0, "the detached page must exit normally, not crash or be killed")
+        c.close()
+        with self.assertRaises(ConnectionRefusedError):
+            http.client.HTTPConnection("127.0.0.1", ev["port"], timeout=10).connect()
 
     def test_url_file_conflict(self):
         r = self._run("--url-file", os.path.join(self.dir, "x"))

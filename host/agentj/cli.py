@@ -2067,6 +2067,9 @@ def _first_connect(st: State, a) -> bool:
     """P220 (HK owner 10-13): `agentj agent switch claude` on a computer with no Agent connected yet said only 「Agent J 还没接任何
     Agent」. Nothing to switch from is a first connection: do exactly what `agentj agent <harness>` does, then restart the
     background service so it takes effect now. False = a real switch (or --scan / --result / the worker): unchanged."""
+    from . import fence
+    if fence.inside():
+        return False
     target = getattr(a, "target", None)
     if (target not in ("claude", "codex", "opencode", "kimi", "qwen", "dsh") or getattr(a, "worker", False) or getattr(a, "scan", False)
             or getattr(a, "result", False) or getattr(a, "dry_run", False)):
@@ -3010,6 +3013,12 @@ SERVICE_NEXT = ("下一步：运行 `agentj doctor`，把每一行以 ! 或 ✗ 
 
 def cmd_update(a) -> None:
     from . import service, update
+    if update.market_managed() and a.mode != "auto":
+        if a.mode == "apply":
+            print(update.result_block(update.market_result()))
+            raise SystemExit(2)
+        print(json.dumps(update.check(), ensure_ascii=False) if a.mode == "check" and a.json else update.EXPLAIN["market_managed"])
+        return
     if a.mode == "auto":
         st = State()
         _need_init(st)

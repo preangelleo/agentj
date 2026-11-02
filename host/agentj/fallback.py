@@ -36,6 +36,9 @@ def safe_error(text):
 
 def free_models(exe):
     """No process-lifetime catalog cache; uncertain/offline is None, not a removal notification."""
+    from . import olares_probe
+    if olares_probe.required():
+        return None
     if not exe or os.environ.get('AGENTJ_OC_FREE_LIST') == 'off': return None
     try:
         env = {k: os.environ[k] for k in ('PATH', 'LANG', 'SSL_CERT_FILE', 'SSL_CERT_DIR', 'HTTPS_PROXY', 'HTTP_PROXY', 'NO_PROXY') if k in os.environ}

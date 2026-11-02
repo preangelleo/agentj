@@ -1,15 +1,15 @@
 ---
 document: agentj-install
-version: 0.28.4
+version: 0.28.5
 released: 2026-11-01
 status: beta (anyone can sign up; not advertised yet, pages are not indexed)
 host_package: agentj (the `agentj` command)
-host_version: 0.26.4a1
-source_tag: v0.26.4a1
-host_wheel: agentj-0.26.4a1-py3-none-any.whl
-host_wheel_sha256: bf95c2a57e870bca2a7bd4d9f1f16d07c6576bfe9add8a5d847c60622d48ded2
-host_sdist: agentj-0.26.4a1.tar.gz
-host_sdist_sha256: 76cab105de3bd86d020a1467c4d4e4e8ef8758c9ba140393dfdacb8c4d6f463c
+host_version: 0.26.5a1
+source_tag: v0.26.5a1
+host_wheel: agentj-0.26.5a1-py3-none-any.whl
+host_wheel_sha256: f98c3a931417cafbce8ade04f539535992a6745657623b1c84ec6e37227b7646
+host_sdist: agentj-0.26.5a1.tar.gz
+host_sdist_sha256: 3f7114a67b970e2c7cba5960dbac2478b00fbe2f09b586e01459299002589416
 canonical_url: https://agentj.app/install.md
 sha256_url: https://agentj.app/install.md.sha256
 alias: https://agentjarvis.net/install.md (the older address: the same file, kept for one more version)
@@ -726,7 +726,7 @@ DeepSeek says a preview may break; Agent J was measured on 0.2.0-rc.2.
 carry over). So start every command line from here on with `export PATH="$HOME/.local/bin:$PATH";` — or call
 `~/.local/bin/agentj` by its full path. This document writes `agentj` for short.
 
-The program is pinned to one release: the tag `v0.26.4a1` (front matter `source_tag`). The tag never moves, and its
+The program is pinned to one release: the tag `v0.26.5a1` (front matter `source_tag`). The tag never moves, and its
 `host/` folder is byte for byte the same code as the two files on our site whose SHA-256 is in this document's front matter.
 ```bash
 cd ~/.agentj-install
@@ -737,7 +737,7 @@ uv tool install "./$W"
 
 Intel Mac: this release keeps `cryptography<49` because newer releases lack an Intel macOS wheel. If an older installer tries to compile OpenSSL (`openssl-sys` / OpenSSL not found), rerun `uv tool install --with "cryptography<49" "./$W"`. The same platform constraint applies to `agentj update apply`.
 
-export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.26.4a1
+export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.26.5a1
 export PATH="$HOME/.local/bin:$PATH"; agentj doctor
 ```
 **Your human's own terminal must find `agentj` too** — they may use `agentj passphrase set` and `agentj pair` as a local alternative
@@ -765,16 +765,16 @@ echo "$WS  $W" | sha256sum -c - && echo "$SS  $S" | sha256sum -c -    # macOS: s
 uv tool install "./$W"          # the wheel; its dependencies come from PyPI or the mirror in UV_DEFAULT_INDEX
 ```
 `uv tool install "./$S"` installs from the checked source archive instead (it builds the same program).
-`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.26.4a1`); it is
+`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.26.5a1`); it is
 numbered separately from this document (`0.27.7`).
 
-Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.26.4a1#subdirectory=host"`.
+Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.26.5a1#subdirectory=host"`.
 
-Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.26.4a1#subdirectory=host"` (needs Python 3.11+).
+Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.26.5a1#subdirectory=host"` (needs Python 3.11+).
 
 **What each route checks.** The wheel and the source archive above are checked against the SHA-256 in this document. Each
 also has a minisign signature beside it (`<file>.minisig`, key `B79F925B0585F9D4` — front matter `signature`), which
-`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.26.4a1`
+`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.26.5a1`
 routes check **neither**: Git trusts GitHub's HTTPS and the tag name, and nothing compares that code with this document.
 Use them only when the checked files cannot be downloaded, and say so in the final feedback.
 `agentj doctor` lists what is ready and what is not (prerequisites, the fence, connectivity, which agents are usable).
@@ -1776,7 +1776,7 @@ Nightly automatic installation is enabled by default and verifies the official w
 In a shared session (the default of 0.13–0.19), reinstall directly using Step 4's checked wheel (SHA-256 must match this document and
 its public GitHub copy), preserving the host's identity, paired phones, account and preferences:
 ```bash
-uv tool install --force "./agentj-0.26.4a1-py3-none-any.whl"
+uv tool install --force "./agentj-0.26.5a1-py3-none-any.whl"
 agentj --version
 agentj service install
 agentj service restart
@@ -1785,7 +1785,7 @@ agentj doctor
 The matching published tag is another source, after verifying the tag object against the upgrade email (no signature or
 hash check on this route — Step 4):
 ```bash
-uv tool install --force "git+https://github.com/preangelleo/agentj@v0.26.4a1#subdirectory=host"
+uv tool install --force "git+https://github.com/preangelleo/agentj@v0.26.5a1#subdirectory=host"
 ```
 **0.14 independent session** (`agent.session_mode=independent`): 0.14's fence keeps Agent J's own program read-only and
 hides the service manager, so the Agent on the phone cannot reinstall or restart from inside it (measured: the install
@@ -1811,11 +1811,11 @@ prints something and `uv tool list` (or `pipx list`) shows `agentjarvis-host`, t
 the new name, then:
 ```bash
 jarvis service uninstall      # stop the old service first (Step 10 used tmux / nohup instead? stop that process)
-uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.26.4a1#subdirectory=host"
+uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.26.5a1#subdirectory=host"
 agentj doctor
 agentj service install        # start it again under the new name (or the tmux / nohup fallback, Step 10)
 ```
-With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.26.4a1#subdirectory=host"`.
+With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.26.5a1#subdirectory=host"`.
 - After the move, `agentj` puts back a `jarvis` command (a link to `agentj`, only if no other `jarvis` exists) for one more
   version; it prints a notice that points here. New installs never get `jarvis`.
 - The state moves from `~/.local/state/agentjarvis-alpha` to `~/.local/state/agentj` on the first run of `agentj` **after your
@@ -1880,12 +1880,27 @@ Supported: the host can run on the human's own cloud server instead of their com
 
 ## O. On an Olares box (Olares 1.12+) — stage `6-host`
 
-Supported: the host runs on the Olares box itself; the data stays there.
-- **Install on the box's Ubuntu, as a normal user (not root)** — exactly as section S. Not inside an Olares app: those
-  containers (e.g. the official OpenCode app) are Alpine, without systemd, with a 4 CPU / 4 GiB quota, and the fence cannot
-  start there ("Can't mount proc on /proc: Operation not permitted", `agentj doctor`: `bwrap_failed`). Never bypass the
-  fence. Inside a container `agentj doctor` reports the container's quota, not the machine.
-- **Always on:** the `olares` user is usually not lingering, so over SSH `systemctl --user` is missing: ✋ `sudo loginctl
+AI tool scanning, switching, restart and failure recovery in the Olares app use the image-owned read-only process manager, retaining paired-phone signed confirmation. A failed switch restores the original configuration; rollback is confirmed only after the original AI returns to service, and failed recovery is reported. Do not install systemd inside the app. Bundled OpenCode is pinned to 2.2.5; existing working owner-installed tools are not silently replaced.
+
+For native Claude Code, install and personally sign in to Claude Code inside this app, then switch with `agentj agent claude`. Claude Agent inside OpenCode is a separate route: install Claude Code 2.1.248 or newer, personally run `claude auth login`, then choose Claude Agent in OpenCode `/connect`. Agent J does not copy OAuth tokens; completing login does not establish a verified model reply.
+
+中文：Olares 应用内的 AI 工具扫描、切换、重启与失败恢复由镜像内只读进程管理器执行；保留已配对手机的签名确认。切换失败时会恢复原配置，并在原 AI 恢复服务后确认回退；未恢复会明确报告。应用内无需安装 systemd。随包 OpenCode 固定为 2.2.5，已有可用的自装工具不会被静默替换。
+
+直接选择原生 Claude Code：先在本应用内安装并由本人登录 Claude Code，再用 `agentj agent claude` 切换。OpenCode 内的 Claude Agent 是另一入口：需 Claude Code 2.1.248 或以上，由本人运行 `claude auth login`，再在 OpenCode 的 `/connect` 选择 Claude Agent。Agent J 不复制 OAuth token；登录完成不等于模型调用已经验证成功。
+
+Install **Agent J from Olares Market**, open the app and paste the entire installation prompt from an empty seat on
+[the account page](https://agentj.app/account) into its setup page. Your data stays on the box. The app includes OpenCode
+and connects to Olares Router through its app identity; no Router API key is needed for this default setup.
+**Upgrade the Market app in Olares Market → Manage → Updates.** The phone's `/update` and `agentj update apply` direct you
+to Market before installation. Do not reinstall Agent J inside the app or install systemd there.
+
+中文：在 Olares 应用市场安装 Agent J，打开应用，把账户页空席位的整段安装提示词粘进设置页。应用自带 OpenCode，默认连接 Olares Router，无需另填 Router API key。升级到应用市场「管理 → 更新」操作；手机 `/update` 和 `agentj update apply` 会先提示去应用市场，不要在应用内重装 Agent J 或安装 systemd。
+
+The following instructions apply only to a separate installation directly on the box's Ubuntu:
+- **Install as a normal user (not root)** — exactly as section S. Do not install inside another app such as OpenCode:
+  those containers may prevent the fence from starting (`bwrap_failed`). Never bypass the fence. The Agent J Market app
+  has its own chart and isolation setup. Inside a container `agentj doctor` reports the container's quota, not the machine.
+- **Always on (Ubuntu host installation only):** the `olares` user is usually not lingering, so over SSH `systemctl --user` is missing: ✋ `sudo loginctl
   enable-linger <user>` once, log in again, then `agentj service install`; `agentj doctor` shows `✓ linger`. Olares' SSH
   logins have no `XDG_RUNTIME_DIR` (its sshd runs without PAM): `agentj` finds the user manager by itself; for a plain
   `systemctl --user` / `journalctl --user` in that shell first `export XDG_RUNTIME_DIR=/run/user/$(id -u)`. Ubuntu 24.04's
@@ -1905,7 +1920,7 @@ Supported: the host runs on the Olares box itself; the data stays there.
   type or relay it. Agent J's phone link goes out to the relay, so it does not need the VPN or any other private network.
 - **Pre-installed at the factory:** software and dependencies only. Never clone a seat identity or device key, never share a
   seat; after activation the owner signs in to their own Agent J account and creates a seat (Steps 5–8).
-- **Inside an app container — only if the Olares app package grants all of this:** unprivileged user namespaces (no seccomp
+- **For custom app packages only** (the Agent J Market chart already supplies its supported setup): the package must grant all of this: unprivileged user namespaces (no seccomp
   or AppArmor profile blocking `unshare(CLONE_NEWUSER)` / `clone3` with namespaces; `kernel.unprivileged_userns_clone` or an
   AppArmor `userns` rule allowed for `/usr/bin/bwrap`); mounting a new `/proc` in the new PID namespace (no masked or
   read-only `/proc` paths that forbid it — Kubernetes `procMount: Unmasked`, or a pod security context that allows it);
@@ -3142,9 +3157,9 @@ When the host and page server both have the same newer version, the page reloads
 
 ### DeepSeek Harness 与 Olares / DeepSeek Harness and Olares
 
-下一版主机：DeepSeek Harness（`dsh`，0.2.0-rc.2 预览版及以上，也是 Olares 自带 Agent Lares 的引擎）成为第六个可接的 AI 编程工具：`agentj agent dsh --base-url https://<服务>/v1 --model <模型>` 接 Olares Router 或任何 OpenAI 兼容服务，key 只走手机密钥卡；只读预设 + 每次都问，审批全走手机，遥测关闭。新增第 O 节：在 Olares 盒子上装到宿主 Ubuntu（普通用户 + linger），不装进应用容器。
+下一版主机：DeepSeek Harness（`dsh`，0.2.0-rc.2 预览版及以上，也是 Olares 自带 Agent Lares 的引擎）成为第六个可接的 AI 编程工具：`agentj agent dsh --base-url https://<服务>/v1 --model <模型>` 接 Olares Router 或任何 OpenAI 兼容服务，key 只走手机密钥卡；只读预设 + 每次都问，审批全走手机，遥测关闭。新增第 O 节（当时的宿主机安装路线）：在 Olares 盒子的宿主 Ubuntu 上安装（普通用户 + linger），不装进其他应用容器；当前 Agent J 应用版见第 O 节，从 Market 安装和升级。
 
-Next host version: DeepSeek Harness (`dsh`, preview 0.2.0-rc.2 or newer, the engine inside Olares' Lares) is the sixth agent (Step 3i): `agentj agent dsh --base-url https://<server>/v1 --model <id>` uses an Olares Router or any OpenAI-compatible server, keys only through the phone key card; read-only preset with approval "ask", every approval on the phone, telemetry off. New section O: on an Olares box install on the host's Ubuntu (normal user + linger), not inside an app container.
+Next host version: DeepSeek Harness (`dsh`, preview 0.2.0-rc.2 or newer, the engine inside Olares' Lares) is the sixth agent (Step 3i): `agentj agent dsh --base-url https://<server>/v1 --model <id>` uses an Olares Router or any OpenAI-compatible server, keys only through the phone key card; read-only preset with approval "ask", every approval on the phone, telemetry off. New section O originally covered installation on the box's Ubuntu (normal user + linger), outside other app containers. For the current Agent J Market app, see section O: install and upgrade through Market.
 
 ### Agent J Cards（卡片）/ Agent J Cards
 
@@ -3791,7 +3806,7 @@ Enabled background tasks use delegated authority: low-risk tools follow existing
 已启用后台任务按委托来源执行；对外发送、秘密和不可逆动作仍须确认。来源检查拒绝不代表主人点了拒绝；更新 Agent J 主机并运行 `agentj service restart` 后重试。
 
 
-### Local-image delivery and file show: validation boundary (0.26.4a1)
+### Local-image delivery and file show: validation boundary (0.26.5a1)
 
 Use `agentj file show PATH --label LABEL --json` only in the current admitted owner phone turn. It fails without that turn and cannot choose a device, group or friend or create a separate outgoing message. `queued` means pending; inspect the later `FILE_SHOW_RESULT` for `attached_to_page` or `failure`. Neither receipt proves client download or owner visibility. Complete local image references can appear while the turn continues.
 
