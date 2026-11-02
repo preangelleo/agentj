@@ -1,6 +1,6 @@
-# Agent J 0.26.5a1 release notes
+# Agent J 0.26.6a1 release notes
 
-Host 0.26.5a1 / install 0.28.5; phone-web scope.
+Host 0.26.6a1 / install 0.28.6; phone-web scope.
 Phone parity must pass --strict. Full Android/Telegram parity is incomplete.
 Full Android/Telegram parity is incomplete.
 No APK is included in this release. Android source is for review, not a released app.
@@ -8,20 +8,16 @@ No APK is included in this release. Android source is for review, not a released
 Publication status: local preparation only. Live site verification is DEFERRED until
 the public commit and tag are pushed, the site is deployed, and cold installation passes.
 
-Local unpublished candidate: Olares lifecycle management and isolated AI-tool discovery, bundled OpenCode2.2.5, and app upgrades through Olares Market. Deployment order is Dashboard support knowledge, signed host/installer/site, then the phone web page. This version introduces no D1 migration. Existing0.26.4 download files and the featured/Story website remain available.
+Scope: closed offline local report operations and owner-approved fixed-recipient native task artifact mail. Deployment order: C Dashboard support knowledge, A signed host/site, then B phone web. No new D1 migration. Preserve all existing security journals and the published0.26.5 rollback downloads.
 ## Changes
 
-- [opencode] Bundled OpenCode is now 2.2.5, with separate owner login guidance for native Claude Code and Claude Agent inside OpenCode.
-- [all] The Olares app uses its trusted startup layer for AI tool scans and switches, verifies restart results, and restores the previous tool if startup fails.
-- [all] App upgrades on Olares now point to Olares Market instead of the ordinary Linux host updater.
-- [opencode] 随包 OpenCode 升至 2.2.5，区分原生 Claude Code 与 OpenCode 内 Claude Agent 的本人登录入口。
-- [all] Olares 应用通过受信启动层处理 AI 工具扫描和切换，确认重启结果；启动失败时恢复原工具。
-- [all] Olares 应用升级明确转到 Olares Market，不再误入普通 Linux 主机升级。
+- [all] Preview local reports without repeated confirmation; send artifact mail through a native task and owner-approved fixed recipients.
+- [all] 本地报告预览免重复确认；素材邮件按原生任务和本人批准的固定名单发送。
 
 ## Material acceptance limits
 
-- Candidate validation is incomplete. Automated mock and synthetic local-account results do not establish real paid-seat acceptance. Native Claude Code and Claude Agent inside OpenCode require separate authentication and model/tool validation.
-- Linux amd64 lifecycle coverage, arm64 executable/tool smoke and physical macOS/WSL/phone testing are separate acceptance areas; a result in one area does not establish the others.
+- Signed isolated Linux installation, report namespaces and synthetic signature/local-SMTP safety checks do not establish a real owner UV grant, production native task activation, external SMTP acceptance or customer upgrade. Those require the installed production task and the owner's physical approval.
+- The unchanged real Scheduler IPC source-test original is reused by exact source and artifact hashes, retaining its original execution identity; it is not a new installed Scheduler run or a repeated Olares cold chain.
 
 - Android arbitrary-name wake recognition, false-accept/false-reject rates, background operation,
   battery behavior and speech-model licensing are not cleared for a released app.

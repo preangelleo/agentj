@@ -1,9 +1,3 @@
-"""Host-owned action policy shared by all four entry layers (P512).
-
-Identifiers come from executors, never model safety/approval claims. This is an
-application boundary, not protection from code running under the host's own uid.
-Run ``python -m agentj.policy_registry`` to export the authoritative JSON table.
-"""
 from __future__ import annotations
 from dataclasses import asdict, dataclass
 import json
@@ -102,6 +96,7 @@ HOST_TOOLS = MappingProxyType({
     "pair_device": "device.pair", "SandboxOnce": "admin", "AuthRescue": "secrets.read",
     "DoomLoop": "settings.write", "task": "agent.dispatch", "AskUserQuestion": "settings.write",
     "AgentJHook": "settings.write", "AgentJTerminal": "admin",
+    "agentj mail workflow-grant": "settings.write",
     "agentj mail": "mail.send", "agentj mail send": "mail.send",
     "agentj mail notes": "mail.send", "agentj mail reply": "mail.send",
     "agentj calendar": "calendar.write",
@@ -267,11 +262,6 @@ def tool_action(tool, *, canonical=True):
 
 
 def channel_tool_decision(tool):
-    """Preserve old native-tool denial except the owner's intentional search opening.
-
-    Canonical executor actions retain their table row. Native spellings that used
-    to be unknown may only become automatic for read-only web search/fetch.
-    """
     action = tool_action(tool)
     result = decision("channel", action)
     if result == "allow" and tool != action and action != "web.search":
@@ -298,9 +288,6 @@ _SECRET_REF = re.compile(r"\$\{?\w*(?:KEY|TOKEN|SECRET|PASS|CRED|AUTH)\w*|\bprin
 
 
 def _own_card(args):
-    """P551 (#321): `agentj sudo` and `agentj secret request|result|status|log` open their own owner card on the phone (the
-    admin password / the key typed there, Face ID where the remote has it) — no second Face ID card in front of them.
-    Anything else under `agentj secret` (send: a value handed out) keeps the shell-layer Face ID."""
     if args[:1] == ["sudo"]:
         return True
     # P574: ask / give / grant open the one owner-grant card (Face ID) themselves; grants only lists or narrows
@@ -309,17 +296,6 @@ def _own_card(args):
 
 
 def main_requirement(tool, tool_input=None, *, env=None):
-    """Owner-window floor from real arguments, never a model's safety claim.
-
-    Known shell tools are classified by content; unknown tools still deny.
-    Canonical actions and external-layer decisions keep their own fixed rows.
-
-    P573 (#386 ⑤): "uv" (Face ID) only for the three classes — money, a key going off this machine / shown out
-    (`agentj secret send`), deleting the owner's data for good — plus the trust roots (pairing / unbinding a remote) and a
-    rewrite of the Agent's own hook / approval files (the Agent approving itself). Everything else that used to be Face ID
-    (sudo — its password stays —, reading credentials, .env writes, commands the lexer cannot read, Computer Use, MCP
-    tools named exec / secret / token) is "hold": one button.
-    """
     action = tool_action(tool)
     requirement = decision("main", action)
     if requirement == "deny":
@@ -400,8 +376,6 @@ def main_requirement(tool, tool_input=None, *, env=None):
 
 
 def unknown_text(tool, lang=None):
-    """P553 (#326): the reason given for an unknown action — a plain denial naming the tool, never 「需要主人确认」 (no card is
-    shown for it). lang None → both languages (a hook process does not know the owner's language)."""
     from .text import clean_line
     name = clean_line(tool if isinstance(tool, str) else "?", 64) or "?"
     zh = f"Agent J：未知动作，已拒绝：{name}（这是 Agent J 的缺陷，请反馈）"
@@ -412,8 +386,6 @@ def unknown_text(tool, lang=None):
 
 
 def log_unknown(st, tool, tool_input=None, *, agent="?"):
-    """P553: an unknown-action denial leaves one approvals.log line (reason unknown_action, input hash only) and one host.log
-    line naming the tool, so support can find it. Best effort: logging never turns the denial into anything else."""
     from .text import clean_line
     if st is None:
         return

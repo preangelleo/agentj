@@ -232,6 +232,8 @@ class AcpAgent(Agent):
                                                              stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
                                                              stderr=asyncio.subprocess.PIPE, limit=LINE_LIMIT,
                                                              start_new_session=True)
+        from . import workflow_mail
+        workflow_mail.pin_current(p)
         self.failed_start, self.err_tail, self.sid, self.session = False, "", None, {}
         self.waits, self.pending, self.identity_sent = {}, {}, False
         self.fresh = True
@@ -314,8 +316,6 @@ class AcpAgent(Agent):
         return o.get("currentValue") if o else None
 
     async def _strict_mode(self) -> None:
-        """Approvals only ever get stricter: whatever mode the owner's settings start a session in, this one asks.
-        MODE_DEFAULT None (P329, dsh): the harness has no ACP modes — its subclass makes the process itself ask."""
         if self.MODE_DEFAULT is None or self._mode() == self.MODE_DEFAULT:
             return
         try:
@@ -637,8 +637,6 @@ class AcpAgent(Agent):
 
     # ------------------------------------------------ turns
     def _block(self, uri: str, mime: str, text: str) -> dict:
-        """An embedded resource — or, when the agent says it takes none (P329: dsh's embeddedContext false; ACP: a client
-        must not send what is not advertised), the same text as a plain text block that names its source."""
         pc = self.caps.get("promptCapabilities") if isinstance(self.caps.get("promptCapabilities"), dict) else {}
         if pc.get("embeddedContext") is False:
             return {"type": "text", "text": f"<{uri}>\n{text}\n</{uri}>"}

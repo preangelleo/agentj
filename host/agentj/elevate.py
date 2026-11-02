@@ -1948,6 +1948,17 @@ class Elevator:
                 await w.drain()
                 w.close()
                 return
+            if isinstance(req, dict) and (req.get("t") == "workflow_mail" or
+                                          req.get("t") == "mail_send" and "delivery_manifest" in req):
+                from . import workflow_mail
+                if not hasattr(self, "workflow_mail"):
+                    self.workflow_mail = workflow_mail.Service(self.contacts)
+                res = await (self.workflow_mail.send(req, peer) if req["t"] == "mail_send" else
+                             self.workflow_mail.control(req, peer))
+                w.write((json.dumps(res, ensure_ascii=False) + "\n").encode())
+                await w.drain()
+                w.close()
+                return
             if isinstance(req, dict) and req.get("t") in ("contacts", "mail_send"):
                 # P184: the address book lives outside the Agent fence; fixed operations. A contact card waits for the owner
                 # (early: the CLI prints CONTACT_CARD: <id> first); `mail_send` waits for the owner's approval card.

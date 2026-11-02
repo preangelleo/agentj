@@ -19,7 +19,7 @@ a command.
    the owner declined (do not send another card for the same person) · `timeout` / `gone` = ask again later.
 4. Send: `agentj mail send --to '<name or address>' [--to …] --subject '…' --body-file - [--attach <file>]` (body on
    stdin; files only from your working folder). It goes out only after
-   the approval card, confirmed with a long press (no Face ID). Every message, including mail to the owner or allowlist, needs fresh confirmation. Attachments are scanned before sending.
+   the approval card, confirmed with a long press (no Face ID). Owner-directed ordinary requests may send to the owner without a card; other recipients need confirmation. This does not authorize background workflow mail. / 主人本人发起的普通请求可给本人免卡发信；后台工作流不能借用这个来源权限。 Attachments are scanned before sending.
    `not_found` → step 3; `denied` (exit 1: declined or nobody confirmed in time) → tell the owner it was NOT sent;
    `mail_not_configured` / `no_password` → the mailbox is not set up: read the e-mail section of agentj-config.
    Every address that went out is remembered automatically (new ones as contacts with source `agent`).
@@ -67,8 +67,7 @@ a command.
 - The owner can also do all of this on the phone: Settings → 通讯录 / Contacts lists and searches the book, adds, edits
   and deletes contacts, imports a vCard / CSV / JSON file and exports a vCard, and its envelope icon puts a contact's
   e-mail on the e-mail channel's allowlist in one tap (as a guest; slot 0 as 「主人」). Point the owner there when they
-  want to manage the book themselves or ask how to let a friend e-mail the Agent. Allowlist = their mail is handled AND
-  mail to them needs no confirmation. You may run `agentj mail allow <address> --guest` yourself: it waits for the owner's
+  want to manage the book themselves or ask how to let a friend e-mail the Agent. Allowlist controls incoming mail; it does not grant background workflows outgoing mail authority. / 白名单只管来信，不授予后台工作流发信权限。 You may run `agentj mail allow <address> --guest` yourself: it waits for the owner's
   card on the phone and exits non-zero (nothing added) unless they confirm.
 
 ## Never
@@ -84,3 +83,15 @@ Your mail replies and meeting notes are one-tap cards too (no Face ID). The owne
 Mailbox sign-in failure / 邮箱登录失败：the host first checks registered sources for app-password candidates, including historical cards without account metadata, using this mailbox account and verifies IMAP + SMTP without sending. A successful check updates the existing encrypted mail secret. Do not ask the owner for the same password again first, print a candidate, or use a separate SMTP script. 历史密钥卡即使没有邮箱账号元数据，也先实测已登记来源里的应用专用密码候选；变量名或账号提示不代表验证通过，必须 IMAP 与 SMTP 双通过才接管。手机发信失败会显示原因，授权问题点「修复并重试」。
 
 Domain visitors / 域名访客：`agentj mail allow @anthropic.com --guest [--subdomains]`. Domains are guest-only, public mailbox domains are rejected, and DMARC or aligned DKIM is mandatory even with auth off; SPF-only fails. Exact legacy addresses remain compatible. 域名只能作为访客，可选包含子域，不能冒充主人；公共邮箱需完整地址。Trash results stay in host.log/local records, without a main-chat note.
+
+
+## Native workflow artifact delivery / 原生工作流产物交付（发行候选）
+This source candidate needs a separately qualified and installed release; it is not enabled by an old installation or a diagnostic patch. / 本段是未发行候选；旧安装和诊断补丁不能启用它。
+Only a host-verified native scheduled task may request `agentj mail workflow-grant --workflow <id> --artifact-root <absolute-artifact-directory> --days 30 --max 100 --per-day 3`. Obtain one real paired-device signed card with passkey user verification; no synthetic approval, opening card or external systemd source can replace it. / 仅宿主核验的原生定时任务能申请；主人须在真实已配对设备上签名并验证通行密钥一次。
+Linux only; macOS/other platforms fail closed. / 仅支持Linux，其他平台不能启用。
+Check `agentj mail workflow-status --workflow <id>`; revoke with `agentj mail workflow-revoke --workflow <id>`. / 查看状态；exhausted时先停下，不上传；主人要求撤销时立即撤销。
+Send only with `agentj mail send --to-owner --delivery-manifest <manifest.json> --format html --subject <subject> --body-file <body.html> --attach <artifact>`. Bind the exact workflow/task/root, account, signed artifact directory, slot 0 first mailbox, purpose `artifact_delivery`, body/subject hashes and ordered attachment paths/sizes/SHA-256/roles (`cover`, `materials`, `captions`). No To/Cc/Bcc; not the owner allowlist union. / 只给0号位第一邮箱交付绑定产物，禁止追加收件人。
+The grant lasts at most 30 days, 100 deliveries, 3 per UTC day, 0–10 files/25 MiB per mail. Owner/mailbox/task/device/signing-root changes invalidate reuse; expiry/revocation stops it. / 到期、撤销或身份/邮箱/任务/签名根变化后须重新授权。
+Reuse the configured mail channel and secret filters. A duplicate, reserved or unknown delivery never means safe retry; inspect the original receipt and coordinate with the workflow owner. Never route a blocked workflow through the main chat or another SMTP tool. / 复用已有邮箱，保留密钥检查；重复、已保留或受理未知时禁止自动重发，不能借主会话或另写SMTP绕过。
+
+Accept only ZIP, txt/md/json/srt/vtt/csv or jpg/jpeg/png/webp; ZIP has at most 100 members/25 MiB decoded, no nested or encrypted containers. `binding_sha256` is the caller manifest digest, not publication evidence. Research/disabled/stopped native runs cannot send. / 附件仅限以上格式；压缩包限100项、解包共25 MiB，不能嵌套或加密。产物摘要不证明发布完成；research、停用或已停止任务不能发信。

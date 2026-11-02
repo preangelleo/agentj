@@ -479,9 +479,6 @@ TASK_GRANT_NOTE = {"zh": "（批准后，这个任务里仅上述具体动作不
 
 
 def _same_owner_turn(agent) -> bool:
-    """P573 (f): this turn is a task from another of the owner's own devices (the same-owner relationship: two signed owner
-    consents, same_owner.py) — not a friend's or WeChat request, not a scheduled task, and no stricter request source
-    (P426 S3) rides on it."""
     if agent is None or not provenance.delegated_turn(agent):
         return False
     o = provenance._REQUEST.get()
@@ -4046,9 +4043,6 @@ class Host:
                       card={"recovery": "restart_session"} if recovery else None)
 
     def channel_notice(self, text: str, card: dict, files=()) -> dict:
-        """P543 (#308, channel_card.py): an owner-channel message — `text` (「来自微信：<first words>」, never the inbox
-        path) for older phones and §8 devices, `card.channel` for a phone that shows the words, and the attachments as
-        §13 media of that page (scanned like a reply's files, in a thread). The text is never split as "中文 / English"."""
         from .system_text import remote
         from . import channel_card
         text = remote(text)
@@ -5300,10 +5294,6 @@ class Host:
     # ------------------------------------------------------------ P573 (#389): one signature per task and action class
     def _task_grant_key(self, tool: str, v, *, delegated: bool, same_owner: bool, avatar, ttl, own_pk: bool,
                         lv: str) -> tuple | None:
-        """(turn, harness, action class) a signed allow may cover for the rest of this task, or None. Only the owner's own
-        turn (or a same-owner task, f) in the main conversation; never under `safe`, never a card with its own wait or its
-        own decision (pairing, sandbox, login rescue, hooks, the terminal, `agentj config`, goals, questions), never a friend /
-        WeChat / channel-avatar / scheduled / system turn. The class comes from the host's own reading of the call."""
         if lv == "safe" or ttl is not None or own_pk or avatar is not None or (delegated and not same_owner):
             return None
         if self.task_label is not None or self.cur_turn is None:
@@ -5444,7 +5434,7 @@ class Host:
                 await self._answer_refused(s, a, "passkey_required")
                 return
             a.uv_ok = True                 # P539: this allow passed the passkey (a preauth pick needs it)
-            if a.tool == owner_grant.TOOL:  # P574: the assertion itself travels to the other same-owner hosts
+            if a.tool in (owner_grant.TOOL, "agentj mail workflow-grant"):  # P574 + narrow workflow mail: the assertion itself travels to the other same-owner hosts
                 a.fa = {k: obj["fa"][k] for k in ("id", "cd", "ad", "sig")}
         a.allow_add = list(picks or [])
         a.fut.set_result((decision, s.device, sk, sigb))

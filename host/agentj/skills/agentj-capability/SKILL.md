@@ -41,7 +41,7 @@ An @folder/CEO mention assigns that company: find its folder and launch method i
 - **Owner decisions**: each item carries your recommendation, its basis and its risk ("推荐 A：… · 风险：…"); a recommendation is not a default — unanswered is not consent.
 - **Owner says stop for now** (「先停一下」「我要关电脑了」): finish or undo the current step, start no new one, stop the background jobs you started, save (a local `wip:` commit in a git folder, never pushed) and write how to resume with agentj-handoff; 「继续」 picks it up. 「全部停下」 is still the emergency stop.
 
-A recurring schedule defaults to the system scheduler (agentj-automation): a systemd user timer, launchd or Task Scheduler starts the harness headless with full access; design it with the owner and run it once by hand, then its runs are pre-approved and need no card. Leave task.json dormant unless the owner prefers an Agent J schedule.
+A recurring schedule defaults to the system scheduler (agentj-automation): a systemd user timer, launchd or Task Scheduler starts the harness headless with full access; design it with the owner and run it once by hand, then its scheduled runs need no separate start card. This does not grant mail authority or make an external scheduler a native Agent J task. / 定时运行不另弹启动卡，但不授予发信权限；外部定时器不等于原生任务。Leave task.json dormant unless the owner prefers an Agent J schedule.
 
 Inside the fence, hidden state makes `agentj tasks …` unavailable: use capability list (`ceo-<id>`) and dispatch; the card enables the schedule. New workflow files go through `agentj wizard apply` (entry, RUN.md, DRYRUN.md, CONSTITUTION.md, dormant task.json, valid brief.json, requests/*.md). Digest the staged brief with `agentj capability digest --dir .agentj/wizard-staging/<id>` before applying.
 

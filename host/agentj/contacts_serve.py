@@ -1,10 +1,3 @@
-"""Phone address book, signed contact cards, reply forwarding and Agent mail dispatch (PROTOCOL §25).
-Phone forwarding is the owner's direct action, with duplicate/rate/attachment limits; Agent sends require the existing
-provenance gate (owner-only recipients: no card; others: signed tap). No save without the owner's tap on a card.
-Attachment checks and recipient resolution remain authoritative. Logs contain counts/reasons, never addresses or bodies.
-
-Protocol/history detail: agentjarvis/ARCHITECTURE.md, P0261 source notes / contacts_serve.py.
-"""
 from __future__ import annotations
 
 import asyncio
@@ -31,7 +24,24 @@ DUP_WINDOW = 600                      # P295: the same page to the same recipien
 _NOTE = re.compile(r"[A-Z][^\n`|#>*\[\]]{8,200}[.:…!]")   # P295: one English sentence of work notes
 _CJK = re.compile(r"[\u3400-\u9fff\uf900-\ufaff]")
 _ID = re.compile(r"[0-9a-f]{32}")
-PHONE_TYPES = ("ct_list", "ct_save", "ct_card_answer", "mail_fwd")
+_UNVERIFIED = ("这次发信请求不在任何经核验的主人或委托回合里（例如主机外自起的后台进程）；没有发卡片，也不是主人拒绝。"
+               "定时/后台工作流要发信，请登记为 Agent J 定时任务（workflows/<id>/task.json + agentj tasks enable），"
+               "发信时主人会在手机上收到批准卡片 / This mail request ran outside any verified owner or delegated turn (e.g. a "
+               "background process Agent J did not start); no card was sent and the owner did not reject it. A scheduled "
+               "workflow that mails should run as an Agent J scheduled task (workflows/<id>/task.json + agentj tasks "
+               "enable); its send then asks the owner on a phone card.")
+
+
+def group_refusal(src) -> dict:
+    from . import provenance
+    kind = provenance.normalize(src)["kind"]
+    out = {"ok": False, "why": "group_source", "source": kind}
+    if kind == "unknown":
+        out["detail"] = _UNVERIFIED
+    return out
+
+
+PHONE_TYPES = ("ct_list","ct_save", "ct_card_answer", "mail_fwd")
 PHONE_TYPES += ("ct_rm", "ct_export", "ct_import")   # P207: delete one contact, export the book, import a file's text
 IMPORT_TEXT_MAX = 1024 * 1024         # P207: ct_import text, UTF-8 bytes
 EXPORT_FMTS = ("vcf", "csv")
@@ -453,7 +463,7 @@ class ContactService:
         if why:
             return {"ok": False, "why": why}
         if provenance.untrusted_turn(getattr(self.host, "agent", None)) and not provenance.delegated_turn(getattr(self.host, "agent", None)):
-            return {"ok": False, "why": "group_source"}
+            return group_refusal(provenance.turn_source(getattr(self.host, "agent", None)))
         recips, missing = [], []
         for key, who in [("to", w) for w in to_raw] + [(k, w) for k in ("cc", "bcc") for w in lists[k]]:
             addr, c = await asyncio.to_thread(self.resolve, who)

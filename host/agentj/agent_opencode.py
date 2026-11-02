@@ -1,8 +1,3 @@
-"""OpenCode headless server adapter (PROTOCOL §8; ADR-A55–A58, A72).
-Loopback, fresh in-memory server password, fenced child, resumable SSE. Session rules retain owner denies;
-phone approvals are once/reject, never always. Foreign approval stops the child. Tasks use separate sessions.
-The official session API carries prompts, abort, compaction and usage; v2 translates in agent_opencode2.
-"""
 from __future__ import annotations
 
 from . import resource_policy
@@ -51,8 +46,6 @@ def _rule(permission: str, pattern: str, action: str) -> dict:
 
 
 def our_rules(subagents=()) -> list[dict]:
-    """The rules serve adds to the session, in order (last match wins). subagents (P426): agents whose own rules were seen
-    to carry exactly ours (opencode_subagents) — `task <name> allow` after the deny; every other agent stays denied."""
     r = [_rule("*", "*", "ask"),
          _rule("read", "*", "allow"), _rule("read", "*.env", "ask"), _rule("read", "*.env.*", "ask"),
          _rule("read", "*.env.example", "allow")]
@@ -74,8 +67,6 @@ def _own_dir_rule(rule: dict) -> bool:
 
 
 def session_rules(agent_rules, research: bool = False, subagents=()) -> list[dict]:
-    """Ours, then OpenCode's own scratch-folder allows, then every deny of the human's agent ruleset (so it stays deny).
-    research (a scheduled `mode: research` run): every "ask" of ours is a "deny" — only the read-only allows remain."""
     agent_rules = [r for r in (agent_rules or []) if isinstance(r, dict) and all(isinstance(r.get(k), str)
                                                                                 for k in ("permission", "pattern", "action"))]
     own = [_rule(r["permission"], r["pattern"], r["action"]) for r in agent_rules if _own_dir_rule(r)]
@@ -131,10 +122,6 @@ def config_content(user: str | None) -> str:
 
 
 def turn_body(text: str, cfg: dict, main: bool) -> dict:
-    """The prompt body of one phone turn (v1 API, owned and shared): `main` = Agent J's full constitution as `system`, else
-    only the language line (an attached owner keeps their own identity). P142/P159: a hidden (synthetic) last part carries
-    the per-turn reminder — the main Agent's address, delegate triage and language (main_identity.IDENTITY_REMINDER), or
-    only the language for an attached owner — so OpenCode's own long agent prompt cannot outweigh them."""
     from . import main_identity
     lang = main_identity.language_of(cfg)
     return {"parts": [{"type": "text", "text": text},
@@ -150,20 +137,6 @@ _NETWORK = ("fetch failed", "certificate", "enotfound", "econnrefused", "econnre
 
 
 def provider_error_reason(name, data, connected=None, provider=None, set_up=None):
-    """session.error → one class (research 2026-10-04 §5: APIError.statusCode, ProviderAuthError, ProviderModelNotFoundError,
-    UnknownError). The provider's own message / body is read only to classify, never logged or shown.
-    P60 (measured, 1.18.32): a provider without a key in serve's view is no auth error but `UnknownError` "Model not found:
-    <provider>/<model>" (the provider is missing from serve's provider state) — a model-not-found whose provider was not in
-    serve's `connected` list at start (`connected`, `provider`) is `no_key`, never 「OpenCode 内部错误」.
-    P423 #146: OpenCode's message cannot tell "the owner's key is invisible" from "a provider nobody ever set up": both are
-    "Model not found: <p>/<m>. Did you mean: …" (1.18.34 getModel: a provider missing from serve's state suggests models of
-    its CATALOGUE entry — deepinfra/google/gemma-4-31B-it suggested google/gemma-4-31B-it). Neither "Did you mean" nor a
-    3-part model string separates them (P60's real case was openrouter/deepseek/…), and being in OpenCode's catalogue
-    (GET /provider `all`, ~230 models.dev providers) proves nothing either. What does: whether the owner set the provider up
-    anywhere we can see by NAME — `set_up` = auth.json entries + provider blocks of the configs (adapter: `set_up_providers`).
-    Given that list, a provider in none of it is `model_missing` (wrong / ghost model: never a key card, never auth_rescue);
-    one that is set up but absent from serve's view stays P60's `no_key`. `set_up` None (OpenCode v2, whose credential
-    database is never read; a caller that cannot look) keeps P60's rule."""
     code = data.get('statusCode')
     code = code if type(code) is int and 100 <= code <= 599 else None
     body = str(data.get('responseBody') or '')[:2000]
@@ -195,10 +168,6 @@ def provider_error_reason(name, data, connected=None, provider=None, set_up=None
 
 
 def set_up_providers(extra=()) -> set:
-    """P423 #146: provider ids the owner set up anywhere this host can see — names only, never a value: the keys of OpenCode
-    v1's auth.json (each entry's content is dropped unread), `provider` blocks of the global opencode.json (Agent J's
-    `agentj provider add` file) and of OPENCODE_CONFIG_CONTENT, plus `extra` (serve's own /config providers — project
-    configs included — and `connected`)."""
     from .provider_runtime import configured
     out = {x for x in extra if isinstance(x, str)}
     out |= set(configured())
@@ -661,8 +630,6 @@ class OpenCodeAgent(Agent):
         return [dict(m) for m in getattr(self, "usable_models", []) if m.get("id") != cur][:40]
 
     def _offer_models(self) -> None:
-        """P423 #146: the existing /model card (one button per working model; a tap is `/model <id>`) right under the
-        model_missing notice — the phone's normal switch path, no new entry. Owned serve, the owner's conversation only."""
         models = self._usable_models()
         card, turn = getattr(self.host, "cmd_card", None), getattr(self.host, "cmd_turn", None)
         if not self.owns_harness() or not getattr(self, "persist", True) or self.cfg.get("_workflow_ceo"):
@@ -798,6 +765,8 @@ class OpenCodeAgent(Agent):
             self.failed_start = True
             self._startup_failure("launch", type(e).__name__)
             return False
+        from . import workflow_mail
+        workflow_mail.pin_current(proc)
         self.proc, self.client, self.sid = proc, None, None
         ready = False
         try:
@@ -951,9 +920,6 @@ class OpenCodeAgent(Agent):
 
     # ------------------------------------------------ P426: sub-agents (opencode_subagents)
     def _sub_plan(self, agents: list, primary, primary_rules: list) -> list:
-        """Which agents may run as sub-agents (→ `task <n> allow`) and the primary agent's own rules without our injection.
-        v2: every agent that can (a child takes our session rules). v1: those whose live rules end with exactly the rules
-        we injected for them; asks _spawn for one restart when the injection should change (opencode_subagents)."""
         from . import opencode_subagents as osa
         self.sub_primary = primary
         if not self._sub_mode():
@@ -978,9 +944,6 @@ class OpenCodeAgent(Agent):
         return [a for a in ags if isinstance(a, dict)] if st == 200 and isinstance(ags, list) else []
 
     async def _sub_recheck(self) -> None:
-        """Before a turn: the agents' live rules still end with what we injected and still give the same injection (the
-        owner edited a config, a v2 serve reloaded it, a new agent appeared) — else restart serve (the turn starts a new one
-        that re-plans)."""
         p = self.proc
         if not (self._sub_mode() and not self.v2 and self.client and p is not None and getattr(p, "returncode", 0) is None):
             return
@@ -997,8 +960,6 @@ class OpenCodeAgent(Agent):
             self.proc, self.client = None, None
 
     def _child_seen(self, cid, parent, agent, title, created: bool, perms=None) -> None:
-        """A session whose parent is ours (or one of its children): its requests and questions go to the phone, labelled.
-        perms (v2 session.created): the child's own rules — they must end with ours (inherited), else it is stopped."""
         from .opencode_subagents import OC_TITLE
         if not isinstance(cid, str) or cid == self.sid or cid in self.children or self.sid is None:
             return
@@ -1022,8 +983,6 @@ class OpenCodeAgent(Agent):
                 self._bg(self._sub_stop(cid))
 
     async def _sub_child(self, cid: str, agent: str) -> None:
-        """A sub-agent just started: its agent must be one we verified, and still carry our rules — else it is stopped
-        (and serve restarts before the next turn). A short race by nature; the session's `task` rule is the gate."""
         from .opencode_subagents import plan
         with contextlib.suppress(OSError, HTTPError, ValueError, AttributeError, asyncio.TimeoutError):
             want, ok, _ = plan(await self._sub_agents(), self.sub_primary, self.sub_inject)
@@ -1071,10 +1030,6 @@ class OpenCodeAgent(Agent):
         return provenance.normalize(getattr(send, "source", None) if send is not None else self.out_src)
 
     def _req_src(self, sid):
-        """P426 (S3): the source a request / question is judged by. A sub-agent's: the turn that started it, never the
-        current one's alone (a friend's turn ended, cur_send is None — not the owner). The main session outside our turns
-        (OpenCode woke it after a sub-agent finished): out_src. A session we no longer track: the strictest we dropped.
-        None = this turn's Send decides, as before."""
         c = self.children.get(sid) if isinstance(sid, str) else None
         if c is not None and "src" in c:
             return provenance.normalize(c["src"])
@@ -1512,8 +1467,6 @@ class OpenCodeAgent(Agent):
         self._bg(self._decide(rid, req, gone))
 
     def _tool_dir(self, part) -> None:
-        """P198 (P164 G): a bash call's `workdir` (OpenCode runs it there, not in the project root), by call id — its
-        permission request carries only the command, so the card / the goal tiers would resolve relative paths wrongly."""
         if not isinstance(part, dict) or part.get("type") != "tool" or not isinstance(part.get("callID"), str):
             return
         st = part.get("state") if isinstance(part.get("state"), dict) else {}
@@ -1586,8 +1539,6 @@ class OpenCodeAgent(Agent):
         return getattr(self, "owned_server", self.cfg.get("session_mode") != "shared")
 
     async def _creds_check(self) -> None:
-        """P59 (A167): `opencode auth login` (or a config edit) since our serve started → restart it before this turn; the
-        next spawn re-attaches the same session id (the conversation lives in OpenCode's own store). Owned serve only."""
         await self._sub_recheck()
         p = self.proc
         if (p is None or getattr(p, "returncode", 0) is not None or not hasattr(p, "pid") or self.auth_fp is None

@@ -1,18 +1,4 @@
-"""P373: `agentj report templates | schema | example | validate | render | send | new-template | publish` — the template
-publishing protocol for the owner's automations: the model only fills a JSON file, the template owns the look.
-
-    data JSON → strict JSON Schema check (field-path errors, exit 2, nothing rendered or sent) → web page | mail-safe e-mail
-
-The engine and the 15 templates live in the plaza package web-page-report (≥ 1.3; its references/protocol.md is the
-protocol text); this module only finds the installed package and runs its CLI, so the host carries no templates.
-`send` renders the mail version and hands it to `agentj mail send --format html` in-process: recipients, the allowlist and
-final passkey approval are exactly mail's, including `--to-owner`. Invalid data → the engine's exit 2 and nothing is sent.
-No --template = the package's default (R15 Agent J Noir). A custom template is a folder (template + schema + example)
-by path, or by id under $AGENT_WORKSPACE/report-templates/; the engine refuses scripts and external loads in it.
-
-Exit codes: 0 ok · 1 the mail did not go out · 2 data / argument error · 3 the package is missing (the message says how to
-install it) · 4 network / cloud error (publish).
-"""
+"""See ARCHITECTURE."""
 from __future__ import annotations
 
 import json
@@ -66,11 +52,7 @@ def find_engine() -> pathlib.Path | None:
 
 
 def _template_path(engine: pathlib.Path, name: str) -> pathlib.Path | None:
-    """Resolve the package's v1.3 template contract without running unsigned code.
-
-    Built-ins are already inside the frozen package. Custom IDs must become
-    explicit private paths, never be resolved again against the live workspace.
-    """
+    """See ARCHITECTURE."""
     raw = name.strip()
     registry = json.loads((engine / "templates" / "registry.json").read_text(encoding="utf-8"))
     for row in registry["templates"]:
@@ -138,6 +120,10 @@ def _run(engine: pathlib.Path, args: list[str], capture=False) -> subprocess.Com
                 freeze(path, target, content=True)
                 template_rows = manifest[first:]
                 final[template_index] = str(target)
+        from . import report_local
+        local = report_local.run(frozen, args, final, root, capture=capture)
+        if local is not None:
+            return local
         env = dict(os.environ)
         request = {"argv": [sys.executable, "-I", str(engine / ENGINE), *args], "cwd": os.getcwd(),
                    "inputs": manifest, "environment_sha256": hashlib.sha256(json.dumps(env, sort_keys=True).encode()).hexdigest()}
@@ -212,8 +198,10 @@ def send(a, engine: pathlib.Path, lang: str) -> int:
         if a.dry_run:
             keep = pathlib.Path(a.out).expanduser() if a.out else None
             if keep:
-                keep.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copyfile(mail_file, keep)
+                from .report_local import check_email, export_email
+                content = mail_file.read_bytes()
+                check_email(content, allow_https_images=True)
+                keep = export_email(str(keep), content)
             print(json.dumps({"ok": True, "dry_run": True, "subject": subject, "to_owner": bool(a.to_owner), "to": a.to or [],
                               "bytes": mail_file.stat().st_size, "file": str(keep) if keep else None}, ensure_ascii=False))
             return 0
@@ -252,8 +240,7 @@ def cmd(a) -> int:
 
 
 def add_parser(sub, status_fn=None) -> None:   # the choices below are spelled out (= PASS + send) for the docs checker
-    """`agentj report` alone keeps its old meaning — report this computer's status to the account dashboard now (status_fn,
-    cli.cmd_report); with an action it is the template publishing protocol (it runs inside the fence: no state migration)."""
+    """See ARCHITECTURE."""
     p = sub.add_parser("report", help="不带参数：马上向账号后台报一次这台 Agent J 主机的状态 · 带动作：模板化发布 templates · schema · example · validate · "
                                       "render [--email] · send · new-template · publish / alone: report this computer's status to the account "
                                       "dashboard now · with an action: template publishing (data JSON → schema check → web page or mail)",

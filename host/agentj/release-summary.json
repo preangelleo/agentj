@@ -1,5 +1,5 @@
 {
-  "version": "0.26.5a1",
-  "zh": "[all] Olares 支持 AI 工具扫描切换、重启确认与失败恢复，应用经 Market 升级。OpenCode 2.2.5；原生 Claude Code 与 OpenCode 内 Claude Agent 分别用本人账号登录。",
-  "en": "[all] Olares: AI scan/switch, verified restart/recovery, Market upgrades. OpenCode 2.2.5; sign in separately to native Claude Code and OpenCode’s Claude Agent."
+  "version": "0.26.6a1",
+  "zh": "[all] 本地报告预览免重复确认；素材邮件绑定原生任务、固定名单和本人批准。",
+  "en": "[all] Preview local reports without repeated confirmation; artifact mail binds the native task, fixed recipients and owner approval."
 }

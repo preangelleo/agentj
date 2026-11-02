@@ -1,12 +1,4 @@
-"""P170 mailbox channel: allowlist and sender authentication precede parsing and delivery.
-
-Automatic allowlisted mail is read-only data, never a reply route; outsiders stay unread.
-Authentication-Results must satisfy configured standard/strict policy; duplicate Message-IDs are ignored.
-Forwarded originals are data files, never owner instructions. Processed mail optionally gains Seen
-only after mailbox epoch/message identity verification. Replies recheck allowlist and use threaded,
-rate-limited SMTP; silent replies send nothing. The sealed app password stays encrypted on this host;
-logs contain fixed reason codes and counts. See ADR-P170/P565/P579 for ownership and trust boundaries.
-"""
+"""See ARCHITECTURE."""
 from __future__ import annotations
 
 import asyncio
@@ -161,7 +153,7 @@ T = {
 
 
 class MailError(ValueError):
-    """A fixed reason word only (never a server reply, an address or a password)."""
+    """See ARCHITECTURE."""
 
     def __init__(self, why: str):
         super().__init__(why)
@@ -240,8 +232,7 @@ def secret_aad(st, address: str) -> bytes:
 
 
 def store_secret(st, value: bytes | bytearray, address: str) -> None:
-    """AES-256-GCM, the key derived from this host's identity key; AAD = the account address (a copied file for another
-    account does not open)."""
+    """See ARCHITECTURE."""
     iv = secrets.token_bytes(12)
     ct = AESGCM(_kek(st)).encrypt(iv, bytes(value), secret_aad(st, address))
     _write(st, SECRET, b"AJM2" + iv + ct)
@@ -261,7 +252,7 @@ def load_secret(st, address: str) -> str | None:
 
 
 def secret_upgrade_required(st) -> bool:
-    """Inspect the envelope marker only; never decrypt or migrate unbound AJM1."""
+    """See ARCHITECTURE."""
     try:
         with (st.root / DIR / SECRET).open('rb') as f:
             return f.read(4) == b'AJM1'
@@ -270,7 +261,7 @@ def secret_upgrade_required(st) -> bool:
 
 
 def migrate_legacy_secret(st) -> str:
-    """Rebind AJM1 only for fixed-provider presets; custom servers remain unopened."""
+    """See ARCHITECTURE."""
     if not secret_upgrade_required(st):
         return ""
     cfg = read_config(st)
@@ -288,7 +279,7 @@ def migrate_legacy_secret(st) -> str:
 
 
 def secret_status(st, address: str) -> str:
-    """ok | absent | legacy | unreadable — a word, never the value."""
+    """See ARCHITECTURE."""
     if address and load_secret(st, address) is not None:
         return "ok"
     if secret_upgrade_required(st):
@@ -318,7 +309,7 @@ def norm_addr(a) -> str:
 
 
 def norm_allow(a) -> str:
-    """P567: exact legacy addresses or a private domain; a domain never identifies the owner."""
+    """See ARCHITECTURE."""
     if isinstance(a, str) and a.strip().startswith("@"):
         domain = a.strip()[1:].lower()
         if len(domain) > 253 or not ADDR.fullmatch("x@" + domain):
@@ -330,7 +321,7 @@ def norm_allow(a) -> str:
 
 
 def allow_row(rows, addr):
-    """Exact entries take precedence. Domain matching is inbound only, with a label boundary."""
+    """See ARCHITECTURE."""
     exact = next((r for r in rows if _same(r["addr"], addr)), None)
     if exact:
         return exact
@@ -423,7 +414,7 @@ def validate(cfg) -> dict:
 
 
 def apply_preset(cfg: dict, preset: str, address: str) -> dict:
-    """The preset's servers for an address (user name = the address); `custom` keeps what was entered."""
+    """See ARCHITECTURE."""
     p = PRESETS.get(preset)
     if p is None:
         raise MailError("preset")
@@ -445,8 +436,7 @@ def guess_preset(address: str) -> str:
 
 
 def widening(old: dict, new: dict) -> list[str]:
-    """Security-relevant changes that widen who can reach the Agent: new allowlist rows / guest → owner, weaker sender
-    checks, a newly enabled channel. From inside an Agent these need the owner's approval on the phone."""
+    """See ARCHITECTURE."""
     out = []
     before = {r["addr"].lower(): r["role"] for r in old.get("allow", [])}
     for r in new.get("allow", []):
@@ -499,7 +489,7 @@ _PROP = re.compile(r"(?i)\b(header\.from|header\.d|header\.i|smtp\.mailfrom|smtp
 
 
 def parse_ar(value: str) -> dict:
-    """One Authentication-Results header → {servid, results: [(method, result, {prop: value})]} (RFC 8601, tolerant)."""
+    """See ARCHITECTURE."""
     v = re.sub(r"\([^()]*\)", " ", value.replace("\r", " ").replace("\n", " "))
     head, _, rest = v.partition(";")
     servid = head.strip().split()[0].lower() if head.strip() else ""
@@ -520,7 +510,7 @@ def _dom(v: str) -> str:
 
 
 def authenticate(msg, from_addr: str, level: str, servid: str = "") -> tuple[bool, str]:
-    """Verify pinned authserv-id or the topmost provider header; sender-supplied lower headers cannot authorize."""
+    """See ARCHITECTURE."""
     if level == "off":
         return True, "off"
     headers = msg.get_all("Authentication-Results") or []
@@ -558,7 +548,7 @@ def authenticate(msg, from_addr: str, level: str, servid: str = "") -> tuple[boo
 
 # ------------------------------------------------------------------ the gate
 def mark(cfg: dict, kind: str) -> str:
-    """P569: o = the sending mailbox, hashed; `own` = ours, a bare (older) mark or Agent J automatic mail."""
+    """See ARCHITECTURE."""
     return f"{kind}; o=" + hashlib.sha256(b"aj:" + str(cfg.get("address", "")).lower().encode()).hexdigest()[:12]
 
 
@@ -609,8 +599,7 @@ def id_hash(mid: str, raw_head: bytes = b"") -> str:
 
 
 class Verdict(SimpleNamespace):
-    """ok / reason (auto · not_allowed · auth · duplicate · bad) / addr / role / auth (how it passed) / notice (P565: the
-    is_automatic word of an allowlisted sender's automatic mail — data only, never answered)."""
+    """See ARCHITECTURE."""
 
 
 def judge(msg, cfg: dict, seen: list[str], raw: bytes = b"") -> Verdict:
@@ -693,7 +682,7 @@ QUOTE = re.compile(r"(?im)^(?:On .{4,200} wrote:|在 .{2,200}写道[：:]|.{2,80
 
 
 def split_forward(text: str) -> tuple[str, str]:
-    """(the sender's own words, the forwarded original or '')."""
+    """See ARCHITECTURE."""
     m = FWD.search(text)
     if not m:
         return text, ""
@@ -701,7 +690,7 @@ def split_forward(text: str) -> tuple[str, str]:
 
 
 def strip_quote(text: str) -> str:
-    """Drop the quoted thread under a reply (our own earlier reply, usually) — it is not new instructions."""
+    """See ARCHITECTURE."""
     m = QUOTE.search(text)
     if m:
         text = text[:m.start()]
@@ -720,7 +709,7 @@ def _rfc822_text(part) -> str:
 
 
 def attachments(msg) -> list[tuple[str, str, bytes]]:
-    """(name, mime, bytes) of real attachments (not the text bodies); a message/rfc822 is a forwarded original, handled apart."""
+    """See ARCHITECTURE."""
     out = []
     for part in msg.iter_attachments():
         ctype = part.get_content_type()
@@ -776,8 +765,7 @@ def _id_args() -> str:
 
 
 def _imap_id(c, cfg: dict | None = None, after_login: bool = False) -> None:
-    """Send the IMAP ID command (never fatal). Servers that advertise ID get it as before; NetEase gets it after LOGIN even when
-    its pre-login CAPABILITY does not list ID — otherwise SELECT / EXAMINE fails with "Unsafe Login"."""
+    """See ARCHITECTURE."""
     imaplib.Commands.setdefault("ID", ("NONAUTH", "AUTH", "SELECTED"))
     if "ID" in getattr(c, "capabilities", ()) or (after_login and cfg is not None and _netease(cfg)):
         with contextlib.suppress(Exception):
@@ -820,7 +808,7 @@ def imap_login(cfg: dict, password: str):
 
 
 def fetch_new(cfg: dict, password: str, uidvalidity, last_uid, limit: int = FETCH_MAX) -> dict:
-    """Read-only EXAMINE → epoch/baseline/max_uid/mails. A changed UIDVALIDITY never delivers older mail."""
+    """See ARCHITECTURE."""
     c = imap_login(cfg, password)
     try:
         typ, _ = c.select("INBOX", readonly=True)
@@ -868,7 +856,7 @@ def _mail_identity(c, uidvalidity, uid, want, gone):
 
 
 def mark_read(cfg: dict, password: str, uidvalidity, uid: int, want: str) -> bool:
-    """Mark one processed allowlisted mail Seen after reconnecting and verifying mailbox epoch and message identity."""
+    """See ARCHITECTURE."""
     c = imap_login(cfg, password)
     try:
         _mail_identity(c, uidvalidity, uid, want, "read_gone")
@@ -885,7 +873,7 @@ def mark_read(cfg: dict, password: str, uidvalidity, uid: int, want: str) -> boo
 
 
 def sample_auth(cfg: dict, password: str, n: int = 5) -> dict:
-    """For the connection test: do the latest mails carry Authentication-Results, and which authserv-id writes the topmost?"""
+    """See ARCHITECTURE."""
     c = imap_login(cfg, password)
     try:
         c.select("INBOX", readonly=True)
@@ -936,7 +924,7 @@ def smtp_open(cfg: dict, password: str):
 
 
 def test_connection(cfg: dict, password: str) -> dict:
-    """IMAP login + SELECT, SMTP login (no mail is sent) and the Authentication-Results sample. Never raises."""
+    """See ARCHITECTURE."""
     out = {"imap": "ok", "smtp": "ok", "auth_sample": None}
     try:
         c = imap_login(cfg, password)
@@ -1001,8 +989,7 @@ NOTES_TO_MAX = 10
 
 
 def build_notes(cfg: dict, to: list[str], subject: str, body: str, agent_name: str) -> EmailMessage:
-    """P182: meeting minutes to the owner-named addresses — not a reply (no thread), marked automatic so nobody's
-    auto-responder answers and our own inbox check never takes it as a task."""
+    """See ARCHITECTURE."""
     from .mail_template import agent_label
     m = EmailMessage(policy=email.policy.SMTP)
     m["From"] = email.utils.formataddr((agent_label(agent_name), cfg["address"]))
@@ -1018,7 +1005,7 @@ def build_notes(cfg: dict, to: list[str], subject: str, body: str, agent_name: s
 
 
 def send_target(cfg: dict, msg: EmailMessage, recipients: list[str]) -> dict:
-    """Bind final envelope, rendered body and each attachment; bytes never change after this."""
+    """See ARCHITECTURE."""
     raw = msg.as_bytes()
     bodies, attachments = [], []
     for part in msg.walk():
@@ -1072,7 +1059,7 @@ _LINK_HINT = re.compile(r"(?i)verif|confirm|activat|validate|magic|login|signin|
 
 
 def parse_duration(v, default: int, lo: int, hi: int) -> int:
-    """'30m' / '90s' / '1h' / 120 → seconds within [lo, hi]; MailError('window') otherwise."""
+    """See ARCHITECTURE."""
     if v is None or v == "":
         return default
     if isinstance(v, int) and not isinstance(v, bool):
@@ -1089,7 +1076,7 @@ def parse_duration(v, default: int, lo: int, hi: int) -> int:
 
 
 def expect_pattern(v) -> str:
-    """An address (exact) or a domain (and its sub-domains). → the normalized pattern; MailError('from' / 'broad_domain')."""
+    """See ARCHITECTURE."""
     if not isinstance(v, str) or not v.strip():
         raise MailError("from")
     v = v.strip().strip("<>").strip().lstrip("@")
@@ -1114,7 +1101,7 @@ def expect_match(pattern: str, addr: str | None) -> bool:
 
 
 def extract_codes(subject: str, text: str) -> list[str]:
-    """Verification codes: 4–8 digits (or 6–8 upper-case letters + digits) near a code word; else one lone 6-digit number."""
+    """See ARCHITECTURE."""
     out = []
     for src in (subject, text[:6000]):
         for m in _CODE.finditer(src):
@@ -1129,8 +1116,7 @@ def extract_codes(subject: str, text: str) -> list[str]:
 
 
 def extract_links(msg, text: str) -> list[str]:
-    """http(s) links from the text and the HTML hrefs (a confirmation link often only lives in an href); likely confirmation
-    links first, ≤ 10."""
+    """See ARCHITECTURE."""
     found = [u.rstrip(".,;:!?。，") for u in _URL.findall(text)]
     rich = msg.get_body(preferencelist=("html",))
     if rich is not None:
@@ -1145,7 +1131,7 @@ def extract_links(msg, text: str) -> list[str]:
 
 
 def auth_detail(msg, servid: str = "") -> dict:
-    """The provider's own SPF / DKIM / DMARC words (the topmost Authentication-Results, or the pinned authserv-id's)."""
+    """See ARCHITECTURE."""
     headers = [parse_ar(str(h)) for h in (msg.get_all("Authentication-Results") or [])]
     if servid:
         headers = [p for p in headers if p["servid"] == servid or p["servid"].endswith("." + servid)]
@@ -1162,7 +1148,7 @@ def _internaldate(blob: bytes) -> int | None:
 
 
 def expect_look(cfg: dict, password: str, examined: set, since: int) -> list[tuple[int, int, bytes | None]]:
-    """BODY.PEEK headers of newest unexamined UIDs since arrival; record every examined UID."""
+    """See ARCHITECTURE."""
     c = imap_login(cfg, password)
     try:
         typ, _ = c.select("INBOX", readonly=True)
@@ -1215,8 +1201,7 @@ TRASH_KEEP = 200                                  # P565: delivered notice ids `
 
 
 def _trash_box(c) -> str | None:
-    """The mailbox's trash folder: the RFC 6154 \\Trash special-use flag first, then the usual names. Never a guess that
-    could be another real folder (no name → `no_trash`, nothing moved)."""
+    """See ARCHITECTURE."""
     typ, rows = c.list()
     names = {}
     for r in (rows or []) if typ == "OK" else []:
@@ -1238,8 +1223,7 @@ def _quote_box(name: str) -> str:
 
 
 def trash_one(cfg: dict, password: str, uidvalidity, uid: int, want: str) -> str:
-    """Move one identity-verified INBOX UID to recoverable trash.
-    Refuse changed UIDVALIDITY/message identity; fallback expunges only that UID when UIDPLUS permits."""
+    """See ARCHITECTURE."""
     c = imap_login(cfg, password)
     try:
         with contextlib.suppress(Exception):           # review N5: the capabilities after login (Gmail adds MOVE / UIDPLUS then)
@@ -1270,7 +1254,7 @@ def trash_one(cfg: dict, password: str, uidvalidity, uid: int, want: str) -> str
 
 
 def expect_card(msg, addr: str, at: int, how: str, servid: str = "") -> dict:
-    """What the Agent gets for one matched mail — plain text, truncated, labelled as outside data."""
+    """See ARCHITECTURE."""
     from .text import clean, clean_line
     text = body_text(msg)
     subject = clean_line(decode_subject(msg), 300)
@@ -1282,7 +1266,7 @@ def expect_card(msg, addr: str, at: int, how: str, servid: str = "") -> dict:
 
 
 class Expect(SimpleNamespace):
-    """One waiting window, in serve's memory only (the bodies never reach a file)."""
+    """See ARCHITECTURE."""
 
     def public(self) -> dict:
         return {"id": self.id, "from": self.pattern, "subject_has": self.subject_has, "started": self.started,
@@ -1299,7 +1283,7 @@ def _day() -> str:
 
 
 class Mail:
-    """One poller per serve. The configuration and the state file are re-read every check (the CLI and the phone change them)."""
+    """See ARCHITECTURE."""
 
     def __init__(self, host):
         self.host = host
@@ -1342,7 +1326,7 @@ class Mail:
                 self.log("password", result="migrated")
 
     async def _lost(self, cfg: dict) -> str | None:
-        """P549 (#313): no readable password. Migrate, else one recovery try, one event and one owner line per loss."""
+        """See ARCHITECTURE."""
         if not cfg.get("address"):
             return None
         self._migrate()
@@ -1365,7 +1349,7 @@ class Mail:
         return None
 
     def view(self) -> dict:
-        """The owner's page / `agentj mail status`: settings (never the password), health and counts."""
+        """See ARCHITECTURE."""
         cfg, s = read_config(self.st), read_state(self.st)
         c = s["counts"] if s["counts"].get("day") == _day() else {}
         return {"config": cfg, "password_upgrade_required":secret_upgrade_required(self.st),
@@ -1397,7 +1381,7 @@ class Mail:
             self.wake.clear()
 
     def _watch_allow(self, cfg: dict) -> None:
-        """Any allowlist change (phone, CLI, an edited file, even while serve was down) shows one line on the owner's page."""
+        """See ARCHITECTURE."""
         now = [dict(r) for r in cfg["allow"]]
         s = read_state(self.st)
         seen = s.get("allow_seen")
@@ -1412,7 +1396,7 @@ class Mail:
         save_state(self.st, s)
 
     async def check(self) -> dict:
-        """One inbox check (the timer, the phone's 「立即检查」, `agentj mail check`). → a counts summary."""
+        """See ARCHITECTURE."""
         async with self.busy:
             cfg = read_config(self.st)
             if not cfg["enabled"]:
@@ -1711,7 +1695,7 @@ class Mail:
         return drop("sent")
 
     async def trash(self, mid) -> dict:
-        """Recoverably trash only notice ids previously handed to the Agent; notify owner, no approval card."""
+        """See ARCHITECTURE."""
         mid = str(mid or "")
         if not re.fullmatch(r"[0-9a-f]{32}", mid) or mid not in self.delivered:
             self.log("trash", result="unknown_id")
@@ -1734,7 +1718,7 @@ class Mail:
         return {"ok": True, "result": how, "id": mid}
 
     async def send_notes(self, to, subject, body, to_owner: bool = False, quiet: bool = False) -> dict:
-        """Send minutes only to meeting-granted or owner addresses; require configured SMTP and enforce hourly cap."""
+        """See ARCHITECTURE."""
         from . import meeting
         from .privacy import redact
         cfg, lang = read_config(self.st), self.lang()
@@ -1809,7 +1793,7 @@ class Mail:
         return {"ok": True, "to": rcpt}
 
     def _files(self, text: str, notes: bool = False):
-        """The owner's reply → its files (owner direction, tg_media.collect); with notes → (files, {skips, keys}) (P211)."""
+        """See ARCHITECTURE."""
         from . import tg_media
         media = getattr(self.host, "media", None)
         note: dict = {"skips": [], "keys": []}
@@ -1832,8 +1816,7 @@ class Mail:
         return (out, note) if notes else out
 
     async def recover(self, cfg: dict, s: dict) -> None:
-        """Once per process: a reply cut by a crash while `sending` is reported, never repeated; an `awaiting` reply whose turn
-        finished meanwhile goes out once from the history page."""
+        """See ARCHITECTURE."""
         if not self.recovering:
             return
         self.recovering = False
@@ -1859,8 +1842,7 @@ class Mail:
 
     # ---------------- `agentj mail expect` (P206 A)
     async def expect(self, req: dict) -> dict:
-        """Open a window (or keep waiting on one by `id`) and wait ≤ `wait` seconds. → found (the mails, handed out once) /
-        waiting (call again with the id) / timeout / a reason word."""
+        """See ARCHITECTURE."""
         now = time.time()
         for k, e in list(self.expects.items()):
             if e.status != "waiting" and now > max(e.until, e.done_at or 0) + EXPECT_KEEP:
@@ -2013,7 +1995,7 @@ class Mail:
         return cfg
 
     async def secret_card(self, *, recover: bool = True, only: str | None = None) -> dict:
-        """Sealed app-password entry: encrypt on host, test both logins; return only the receipt."""
+        """See ARCHITECTURE."""
         cfg = read_config(self.st)
         if not cfg["address"] or not cfg["imap"]["host"] or not cfg["smtp"]["host"]:
             return {"result": "refused", "why": "incomplete"}
@@ -2177,6 +2159,10 @@ def cmd(a) -> int:
             return ctl_call(st, req, timeout, max_bytes)
         except ServeBusy as e:
             return e.response()
+    if a.action in ("workflow-status", "workflow-grant", "workflow-revoke"):
+        from .elevate import client_request
+        return out(client_request(st, {"t": "workflow_mail", "op": a.action.removeprefix("workflow-"),
+                    "workflow_id": a.workflow, "artifact_root": a.artifact_root, "cc_contacts": a.workflow_cc_contact, "days": a.days, "max": a.workflow_max, "per_day": a.per_day}, timeout=700))
     if a.action == "presets":
         return out({"ok": True, "presets": preset_list(lang)})
     if a.action == "send":                     # P184: the Agent mails someone — the owner approves on the phone first
@@ -2192,7 +2178,16 @@ def cmd(a) -> int:
         if fmt is None:
             from .mail_html import looks_html
             fmt = "html" if (a.body_file or "").lower().endswith((".html", ".htm")) or looks_html(body) else "markdown"
-        res = client_request(st, {"t": "mail_send", "to": a.to or ([a.address] if a.address else []),
+        extra = {}
+        if a.delivery_manifest:
+            try:
+                raw = pathlib.Path(a.delivery_manifest).expanduser().read_bytes()
+                if len(raw) > 65536:
+                    raise ValueError("manifest too large")
+                extra["delivery_manifest"] = json.loads(raw)
+            except (ValueError, OSError):
+                return out({"ok": False, "why": "manifest"})
+        res = client_request(st, {**extra, "t": "mail_send", "to": a.to or ([a.address] if a.address else []),
                                   "cc": a.cc or [], "bcc": a.bcc or [], "format": fmt,
                                   "to_owner": bool(a.to_owner), "subject": a.subject or "",
                                   "body": body, "files": files}, timeout=700)
@@ -2316,8 +2311,15 @@ def add_parser(sub) -> None:
                                    " / Command Agent J by e-mail: mail outside the allowlist is only counted, never shown to a model; "
                                    "the app password is entered on the paired phone and stored encrypted here.")
     p.add_argument("action", choices=["status", "presets", "setup", "allow", "deny", "password", "test", "check", "on", "off", "send", "notes",
-                                      "expect", "trash"])
+                                      "expect", "trash", "workflow-status", "workflow-grant", "workflow-revoke"])
     p.add_argument("address", nargs="?", help="allow / deny：发件地址 / the sender address")
+    p.add_argument("--workflow", help="exact native workflow id for workflow-status/grant/revoke")
+    p.add_argument("--artifact-root", help="workflow-grant: exact artifact folder (default: native task folder)")
+    p.add_argument("--workflow-cc-contact", action="append", default=[], help="workflow-grant: fixed CC contact ID (1–4), separately signed")
+    p.add_argument("--delivery-manifest", help="send: hash-bound v1/v2 artifact manifest JSON")
+    p.add_argument("--days", type=int, default=30, help="workflow-grant: expiry in days (1–30)")
+    p.add_argument("--max", dest="workflow_max", type=int, default=100, help="workflow-grant: total uses (1–100)")
+    p.add_argument("--per-day", type=int, default=3, help="workflow-grant: uses per UTC day (1–3)")
     p.add_argument("--address", dest="address_opt", help="setup：Agent 用的邮箱地址 / the mailbox address")
     p.add_argument("--preset", choices=sorted(PRESETS), help="setup：邮箱预设（默认按域名猜）/ preset (guessed from the domain)")
     p.add_argument("--username", help="setup：登录名（默认 = 邮箱地址）/ sign-in name (default: the address)")
@@ -2334,7 +2336,9 @@ def add_parser(sub) -> None:
     p.add_argument("--to", action="append", help="send / notes：收件人——邮箱，或通讯录里的名字 / 昵称 / 拼音（可多次；notes 只能是主人写过的地址）/ "
                                                  "recipient: address or an address-book name (repeatable; notes: only addresses the owner named)")
     p.add_argument("--to-owner", action="store_true", help="send 和 notes：发给主人本人（通讯录 0 号位 + 白名单里的「主人」地址）；和 --to 同时给就两边都发（去重，合计最多 10 个）/ "
-                                                       "the owner's own addresses (slot 0 + the owner allowlist rows); with --to: both (deduped, 10 at most)")
+                                                       "the owner's own addresses (slot 0 + the owner allowlist rows); with --to: both (deduped, 10 at most). "
+                                                       "带 --delivery-manifest：0号主邮箱；v1禁CC，v2仅签名固定CC / "
+                                                       "with --delivery-manifest: slot-0 primary; v1 no CC, explicit signed v2 exact fixed CC only")
     p.add_argument("--cc", action="append", help="send：抄送——同 --to（可多次；白名单 / 手机批准规则每个收件人都算，合计最多 10 个）/ "
                                                  "Cc: like --to (repeatable; every recipient counts for the approval rule; 10 in all)")
     p.add_argument("--bcc", action="append", help="send：密送——同 --to，别的收件人看不到 / Bcc: like --to, hidden from the others")

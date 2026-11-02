@@ -184,8 +184,6 @@ def save(st, d: dict) -> None:
 
 
 def update(st, change) -> dict:
-    """P142 (B19): the one read-modify-write of tasks.json — under its own flock (`tasks.lock`), so the scheduler, a phone card,
-    the account page and the terminal never lose each other's change. `change(d)` mutates the loaded dict."""
     with st.file_lock("tasks"):
         d = load(st)
         change(d)
@@ -730,6 +728,8 @@ class Scheduler:
         t = self.current
         if t is None or t.done():
             return False
+        if getattr(self, 'mail_scope', None):
+            self.mail_scope['live'] = False
         t.cancel()
         with contextlib.suppress(BaseException):
             await asyncio.wait_for(asyncio.shield(t), 8)
@@ -747,6 +747,8 @@ class Scheduler:
         t = self.current
         if t is None or t.done():
             return False
+        if getattr(self, 'mail_scope', None):
+            self.mail_scope['live'] = False
         t.cancel()
         with contextlib.suppress(BaseException):
             await asyncio.wait_for(asyncio.shield(t), 8)
@@ -850,7 +852,13 @@ class Scheduler:
                         await host.agent.halt(clear_queue=False)   # resumes on the next message; queued controls stay
                     self.cur_resume, self.limit = resume, None
                     from . import provenance
-                    with provenance.task_run():
+                    with provenance.task_run() as mail_scope:
+                        from . import workflow_mail
+                        mail_scope['mail_contract'] = workflow_mail.task_contract(e)
+                        mail_scope['mail_admission'] = {'run_id': rid, 'instance_id': self.instance_id,
+                            'scheduled': trigger in ('schedule', 'catch_up') or (resume or {}).get('trigger') in ('schedule', 'catch_up'),
+                            'research': research}
+                        self.mail_scope = mail_scope
                         if e["task"].get("steps"):         # P426 #181-5: node by node, each checkpointed (wfrun.py)
                             from . import wfrun
                             out, code = await wfrun.run_steps(self, kind, e, research, rid, trigger)
@@ -1056,6 +1064,8 @@ class Scheduler:
         self.proc = p = await asyncio.create_subprocess_exec(*resource_policy.work_argv(argv), cwd=wd, env=env, stdin=asyncio.subprocess.PIPE,
                                                              stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
                                                              limit=agents.LINE_LIMIT, start_new_session=True)
+        from . import workflow_mail
+        workflow_mail.pin_current(p)
         texts: list[str] = []
         try:
             await asyncio.wait_for(host.perm_claimed.wait(), agents.CLAIM_WAIT)

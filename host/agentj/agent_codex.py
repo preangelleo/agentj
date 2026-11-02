@@ -54,8 +54,6 @@ def _diff_sides(diff: str) -> tuple[str, str]:
 
 
 def patch_tool(changes) -> tuple[str, dict]:
-    """A Codex `fileChange` item → (tool, input) in the names the danger list knows. One file: add → Write, update → Edit,
-    delete → Delete. Several files: the riskiest one decides (a delete, else a credential path), every file is shown."""
     ch = [c for c in (changes or []) if isinstance(c, dict) and isinstance(c.get("path"), str)]
     if not ch:
         return "Edit", {"file_path": "?", "old_string": "", "new_string": "（Codex 没给出改动内容）"}
@@ -94,18 +92,6 @@ def _mcp_name(x) -> bool:
 
 
 def mcp_tool_approval(p, calls: dict | None = None) -> tuple[str, dict, str, dict | None] | None:
-    """P539 (#300): an `mcpServer/elicitation/request` that is Codex asking to run one MCP tool → ("mcp__<server>__<tool>",
-    its arguments, the item id, the plugin binding or None); anything else → None (still declined: nobody on the phone can
-    fill a form). The binding (policy_registry.codex_plugin_bind) is built from the item's `pluginId` + server — Codex's
-    own fields, set from the plugin it loaded — only for the bundled Computer Use plugin.
-
-    M2 (P539 review, probed with codex 0.162.1, reports/qa/p539/codex-mcp-probe/): a server's OWN
-    elicitation/create reaches us in the same shape — `_meta` (codex_approval_kind, tool_params) and `message` pass through
-    verbatim, so neither is authority. What a server cannot write: the mcpToolCall item Codex announces (item/started,
-    status inProgress) BEFORE it asks — server / tool / arguments set by Codex. So the request must match one such open
-    item of this thread (server = serverName, tool = the one the message names, same turn), each item is approved at most
-    once (Codex asks first; a look-alike the server sends during its own running call finds the item used), and the
-    server, tool and arguments come from that item — never from the message or `_meta`."""
     p = p if isinstance(p, dict) else {}
     meta = p.get("_meta") if isinstance(p.get("_meta"), dict) else {}
     schema = p.get("requestedSchema")
@@ -260,9 +246,6 @@ class RPCError(Exception):
 
 
 def start_probe(st, cfg: dict, limit: float = 150, *, clock=time.monotonic) -> dict | None:
-    """P312 (ADR-P312): the exec probe proves the login, not the start the session makes (config.toml MCP / plugins / hooks,
-    the Agent's folder, fence or shared launch): `codex app-server` as serve starts it, timed through initialize →
-    config/read → thread/start {ephemeral} — no turn, nothing kept. {"secs"[, "reason", "err"]}; None = not measured."""
     from . import olares_probe
     if olares_probe.required():
         return olares_probe.run('start', 'codex', cfg.get('model'), limit, cfg=cfg)
@@ -388,8 +371,6 @@ class CodexAgent(Agent):
             return None
 
     def config_stale(self) -> bool:
-        """P309: config.toml changed after this thread was loaded — the loaded thread still runs on the old provider
-        settings (measured on 0.162.1: same app-server + same thread keeps them; a new thread or a fresh resume re-reads)."""
         at = getattr(self, "thread_at", None)
         try:
             return bool(at and self.tid and codex_perm.config_path().stat().st_mtime > at)
@@ -504,6 +485,8 @@ class CodexAgent(Agent):
             from .startup_help import guidance
             self.fail_notice(guidance("codex", "launch", getattr(self.host, "lang", "zh")))
             return False
+        from . import workflow_mail
+        workflow_mail.pin_current(p)
         self.failed_start, self.err_tail, self.tid, self.thread = False, "", None, {}
         self.waits, self.pending = {}, {}                      # this process's calls / open cards (its reader fails them)
         from . import codex_procs                              # ADR-A178: a leftover is recognised (and ended) later
@@ -536,11 +519,6 @@ class CodexAgent(Agent):
         return self.proc is p
 
     def policy(self) -> dict:
-        """What serve asks of a thread (start and resume alike, so a changed setting applies to the same conversation after
-        a restart — Codex 0.159.2 keeps an old thread's sandbox on a resume that names none, ADR-A175).
-        P513d supersedes the independent F14 approval-policy exemption: request user review on start/resume.
-        F30: the sandbox is the owner's explicit `sandbox_mode`, else `danger-full-access` (the main Agent runs directly on
-        the system, like the owner's terminal; the danger list and phone cards still apply); research tasks read-only."""
         from . import codex_perm
         p = {}
         sandbox, self.perm_source = codex_perm.main_sandbox(self.human.get("sandbox_mode"), self.research)
@@ -737,8 +715,6 @@ class CodexAgent(Agent):
         return ("shared-" if self.__class__.__name__.startswith("Shared") else "") + self.kind
 
     def _busy(self, method, p) -> None:
-        """P160 (§22): this thread's sub-agents (collab spawnAgent → child threads) → the phone's robots (busy.py), like
-        Claude's. A scheduled / research run is the workflow's own item (tasks.py); None = the app-server ended."""
         b = getattr(self.host, "busy", None)
         if b is None or self.cfg.get("_workflow_ceo") or self.research:
             return
@@ -888,9 +864,6 @@ class CodexAgent(Agent):
                 f.set_result(True)
 
     def _auto_compacted(self, turn_id) -> None:
-        """P59 (ADR-A165): Codex compacted this thread by itself (its auto-compaction inside a turn: a `contextCompaction`
-        item, or the older `thread/compacted`). Ours (`/compact`, quiet) is counted by compactprep.compact itself. A new
-        epoch: the next user message carries the handover note when one was written before (compactprep.compacted)."""
         if self.quiet or not self.persist or self.research:
             return
         if turn_id is not None and turn_id == getattr(self, "_compacted_turn", None):
@@ -1088,10 +1061,6 @@ class CodexAgent(Agent):
 
     # ------------------------------------------------ turns
     async def remind(self, main: bool) -> None:
-        """P159: the hidden per-turn line (main_identity.turn_reminder) as one developer item appended to the thread's
-        model-visible history (`thread/inject_items`, app-server 0.159.2), right before turn/start. Measured: the model
-        follows it; thread/read and the desktop mirror (user/assistant roles only) never show it. A Codex without the
-        method only logs; the turn still goes."""
         from . import main_identity
         item = {"type": "message", "role": "developer",
                 "content": [{"type": "input_text", "text": main_identity.turn_reminder(self.cfg, main)}]}
@@ -1146,9 +1115,6 @@ class CodexAgent(Agent):
     RATE_RETRY_WAIT = 8.0
 
     async def _retry_rate(self, why: str) -> None:
-        """P309: a 429 / momentary limit ended the turn. Codex itself does not retry a 429 (measured: one request per turn),
-        so wait a few seconds and continue the same thread once; the owner's message is already in its history. A second
-        failure — or a halt meanwhile — is told as usual, saying the retry already ran."""
         self.host.st.log("agent_rate_retry", agent=self.kind)
         await asyncio.sleep(self.RATE_RETRY_WAIT)
         if self.halting or self.proc is None or self.turn_proc is not self.proc:
@@ -1178,10 +1144,6 @@ class CodexAgent(Agent):
         self.last_note = time.monotonic()
 
     async def await_turn(self) -> None:
-        """P282 (Mac 10-14): `turn/completed` ends the turn. Fallback: the reply came, nothing is still running (no item
-        open, no approval card or question waiting) and the app-server has said nothing for TAIL_QUIET s → the turn is
-        over: interrupt it on Codex's side (so the next turn/start is not refused) and hand the queue on. Never cuts a
-        command or a card — those are open items / pending requests."""
         td = self.turn_done
         while not td.is_set():
             with contextlib.suppress(asyncio.TimeoutError):
