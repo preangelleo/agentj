@@ -4283,7 +4283,10 @@ export default {
   "p589.scope": "这台 Agent J 主机累计实测用量，包含上下文输入；不代表订阅剩余额度",
   "p589.partial": "仅测得 {m}/{n} 次唤醒；其余回合未提供用量，总量不完整",
   "media.preparing": "正在准备文件…",
-  "media.pending": "文件还没传过来，可能仍在准备中"
+  "media.pending": "文件还没传过来，可能仍在准备中",
+  "olaresTerm.state": "在 Agent J 应用容器里打开交互式终端，用同一个用户、主目录和配置。",
+  "olaresTerm.note": "在新标签页打开 Olares 私有入口，让 Olares 验证登录身份。",
+  "olaresTerm.open": "打开 Olares 网页终端"
  },
  "en": {
   "fr.ask.failed": "Your confirmation did not take effect. Please try again.",
@@ -8568,6 +8571,9 @@ export default {
   "p589.scope": "Measured total on this computer, including context input; not your remaining subscription allowance",
   "p589.partial": "Only {m} of {n} wake-ups measured; other turns did not report usage. Total is incomplete.",
   "media.preparing": "Preparing file…",
-  "media.pending": "This file has not arrived yet; it may still be preparing"
+  "media.pending": "This file has not arrived yet; it may still be preparing",
+  "olaresTerm.state": "Open an interactive shell in the Agent J app container, with the same user, home folder and configuration.",
+  "olaresTerm.note": "Opens the private Olares entrance in a new tab. Olares verifies your sign-in.",
+  "olaresTerm.open": "Open Olares web terminal"
  }
 };

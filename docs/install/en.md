@@ -260,6 +260,7 @@ What to do today:
 Agent J runs on an Olares box (Olares 1.12 or newer) too, and your data stays on the box.
 
 - **Install Agent J from Olares Market**, open the app and paste the entire installation prompt from an empty seat on [the account page](https://agentj.app/account) into its setup page. The app includes OpenCode and connects to Olares Router by default, without a Router API key.
+- **Open the terminal inside the Olares app:** choose **Open web terminal** on the Agent J app’s setup page, or **Open Olares web terminal** under Settings → Safety on a paired remote. Olares verifies sign-in in the new tab. The shell uses the same user, home and configuration inside the Agent J app. Use `agentj status` for status and `agentj tasks list --json` for your background tasks; do not print passwords, keys, tokens or complete process command lines. This does not require enabling Agent J’s line-mode terminal or an extra Agent J Face ID check, and does not provide line mode’s output masking, operation log or command confirmation. See [Olares web terminal](/docs/web-terminal/#olares).
 - **Upgrade Agent J in Market → Manage → Updates.** The phone's `/update` and `agentj update apply` direct you to Market; do not reinstall Agent J or install systemd inside the app.
 - **For a separate installation directly on the box's Ubuntu:** use a normal user (not root), following the cloud-server installation and upgrade steps. Do not install inside another app's container. The AI asks you to run `sudo loginctl enable-linger <user>` once (you type your password), log in again, and then installs the service.
 - **Connect a model for the Ubuntu installation:** create an API key in Olares Router and connect it through DeepSeek's dsh or OpenCode; paste the key only into the card on your phone. See [DeepSeek dsh](/docs/setup-agents/#dsh).
@@ -336,7 +337,7 @@ It may need you here:
 The AI installs `agentj`, the program on the Agent J host, at one fixed version:
 
 ```bash
-uv tool install "git+https://github.com/preangelleo/agentj@v0.26.6a1#subdirectory=host"
+uv tool install "git+https://github.com/preangelleo/agentj@v0.26.7a1#subdirectory=host"
 agentj doctor
 ```
 

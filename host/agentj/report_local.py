@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 
 # Reviewed web-page-report installation, 2026-11-03. Includes scripts, registry,
 # schemas, examples and assets, not merely a same-directory self-reported hash.
@@ -110,21 +111,7 @@ def check_email(data: bytes, *, allow_https_images=False) -> None:
     Check(convert_charrefs=True).feed(data.decode('utf-8'))
 
 
-def run(engine: Path, original: list[str], args: list[str], root: Path, *, capture=False):
-    """See ARCHITECTURE."""
-    if not args or args[0] not in ('templates', 'schema', 'example', 'validate', 'render'):
-        return None
-    if args[0] == 'render' and '--email' not in args:
-        return None
-    def system_helper(name):
-        path = Path('/usr/bin') / name
-        real = path.resolve()
-        if Path('/usr') not in real.parents or not real.is_file():
-            return False
-        info = real.stat()
-        return info.st_uid == 0 and not info.st_mode & 0o022
-    if digest(engine) != TRUSTED_SHA256 or not all(system_helper(n) for n in ('bwrap', 'python3')):
-        return None
+def validate_args(args):
     action = args[0]
     # Only exact argv emitted by report._engine_args/send. No extra switches,
     # duplicate flags or positional flags can reach a different package action.
@@ -144,6 +131,33 @@ def run(engine: Path, original: list[str], args: list[str], root: Path, *, captu
         at += 2 if flag in ('--template', '--out') else 1
     if at != len(final) or action == 'render' and '--out' not in seen:
         raise ValueError('report local arguments refused')
+    return final
+
+
+def run(engine: Path, original: list[str], args: list[str], root: Path, *, capture=False, _host=False):
+    """See ARCHITECTURE."""
+    if not args or args[0] not in ('templates', 'schema', 'example', 'validate', 'render'):
+        return None
+    if args[0] == 'render' and '--email' not in args:
+        return None
+    def system_helper(name):
+        path = Path('/usr/bin') / name
+        real = path.resolve()
+        if Path('/usr') not in real.parents or not real.is_file():
+            return False
+        info = real.stat()
+        return info.st_uid == 0 and not info.st_mode & 0o022
+    if digest(engine) != TRUSTED_SHA256:
+        return None
+    if not all(system_helper(n) for n in ('bwrap', 'python3')):
+        if sys.platform != 'linux':
+            return None
+        from . import report_host
+        if _host:
+            raise report_host.LocalFailure('helper_integrity')
+        return report_host.request(engine, original, args, root, capture=capture)
+    final = validate_args(args)
+    action = args[0]
     if action in ('validate', 'render'):
         safe_path(original[1])
     # Every custom input was frozen by report._run; guard its original root too.
@@ -170,11 +184,19 @@ def run(engine: Path, original: list[str], args: list[str], root: Path, *, captu
     argv += ['--proc', '/proc', '--dev', '/dev', '--tmpfs', '/tmp', '--dir', '/workspace', '--ro-bind', str(root), '/job',
              '--bind', str(output), '/out', '--chdir', '/workspace', '/usr/bin/python3', '-I', '-B',
              '/job/engine/scripts/web_report.py', *final]
+    if _host:
+        at = argv.index('/usr/bin/python3')
+        argv[at:at] = ['/usr/bin/prlimit', '--nproc=16', '--']
     env = {'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8', 'HOME': '/nonexistent', 'AGENT_WORKSPACE': '/workspace', 'TMPDIR': '/tmp'}
     try:
-        result = subprocess.run(argv, env=env, text=True, capture_output=True, timeout=30)
+        if _host:
+            from . import report_host
+            result = report_host.bounded_run(argv, env)
+        else:
+            result = subprocess.run(argv, env=env, text=True, capture_output=True, timeout=30)
     except subprocess.TimeoutExpired as exc:
-        raise ValueError('report local execution timed out') from exc
+        from .report_host import LocalFailure
+        raise LocalFailure('sandbox_timeout') from exc
     if result.returncode == 0 and dest is not None:
         file = output / 'email.html'
         if file.is_symlink() or not file.is_file() or file.stat().st_size > 8 * 1024 * 1024:
@@ -187,6 +209,5 @@ def run(engine: Path, original: list[str], args: list[str], root: Path, *, captu
     if not capture:
         print(result.stdout, end='')
         if result.stderr:
-            import sys
             print(result.stderr, end='', file=sys.stderr)
     return result

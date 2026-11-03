@@ -939,6 +939,19 @@ def _exit_of(reason: str) -> int:
     return AUTH_REASONS.get(reason, (1,))[0]
 
 
+def _diagnostic_runner(run, out):
+    """Keep original exception metadata before a command wrapper discards it."""
+    def measured(*args, **kw):
+        try:
+            return run(*args, **kw)
+        except (OSError, subprocess.SubprocessError) as exc:
+            from .upgrade_diag import exception_evidence
+            if "exception_type" not in out:
+                out.update(exception_evidence(exc, out.get("step")))
+            raise
+    return measured
+
+
 def authorized_apply(st, code: str | None, target: str | None, **kw) -> dict:
     """Contract C3 (see _authorized_apply). P277: an attempt that got as far as the download is remembered (last upgrade)."""
     if market_managed() or market_managed(kw.get("prefix")):
@@ -963,6 +976,8 @@ def _authorized_apply(st, code: str | None, target: str | None, *, mail: dict | 
     run = run or subprocess.run
     say = say or (lambda line: None)
     out = {"from": __version__, "to": target, "service": "unchanged"}
+    original_run = run
+    run = _diagnostic_runner(run, out)
 
     def done(reason: str, result: str | None = None, **kw) -> dict:
         ex = _exit_of(reason)
@@ -1014,12 +1029,13 @@ def _authorized_apply(st, code: str | None, target: str | None, *, mail: dict | 
     try:
         plan = (plan_fn or verified_plan)(st, info, target)
     except Exception as e:  # noqa: BLE001 — P277: download vs signature/hash, the exception type kept (never its text)
-        return done(plan_reason(e), detail=plan_detail(e), **plan_fields(e))
+        from .upgrade_diag import exception_evidence
+        return done(plan_reason(e), detail=plan_detail(e), **plan_fields(e), **exception_evidence(e, "download"))
     _pre_snapshot(st)
     # P192 (B15): the same cached-wheel rollback as `apply` — this path used to leave a half-installed version behind
     old = (rollback_fn or rollback_wheel)(st)
     def back(reason, **kw):
-        ok = roll_back(st, info, old, __version__, run)
+        ok = roll_back(st, info, old, __version__, original_run)
         rb = "ok" if ok else "failed" if old else "unavailable"
         st.log("upgrade_rollback", status=rb, reason=reason)
         return done(reason, rollback=rb, **recover_of(info, old, rb, st=st), **kw)
@@ -1136,6 +1152,8 @@ def _apply(st, target=None, *, prefix=None, check_fn=None, run=None, say=None, s
     r = (check_fn or check)()
     target = target or r.get("latest")
     out = {"from": __version__, "to": target, "service": "unchanged"}
+    original_run = run
+    run = _diagnostic_runner(run, out)
     def done(reason, result=None, **kw):
         ex = _exit_of(reason)
         return {**out, **kw, "result": result or ("ok" if ex == 0 else "failed" if ex == 1 else "refused"),
@@ -1162,7 +1180,8 @@ def _apply(st, target=None, *, prefix=None, check_fn=None, run=None, say=None, s
     try:
         plan = (plan_fn or verified_plan)(st, info, target)
     except Exception as e:  # noqa: BLE001 — P277: download vs signature/hash, the exception type kept (never its text)
-        return done(plan_reason(e), detail=plan_detail(e), **plan_fields(e))
+        from .upgrade_diag import exception_evidence
+        return done(plan_reason(e), detail=plan_detail(e), **plan_fields(e), **exception_evidence(e, "download"))
     if not fenced:
         _pre_snapshot(st)          # P207 (inside the fence the state directory is an empty mount; serve snapshots at start)
     chan = fenced and host_channel(st)
@@ -1178,7 +1197,7 @@ def _apply(st, target=None, *, prefix=None, check_fn=None, run=None, say=None, s
             rb = res["rollback"] if res and res.get("rollback") in ("ok", "failed", "unavailable") else (
                 "failed" if old else "unavailable")
             return done(reason, rollback=rb, **kw)
-        ok = roll_back(st, info, old, __version__, run) if st.exists() else False
+        ok = roll_back(st, info, old, __version__, original_run) if st.exists() else False
         rb = "ok" if ok else "failed" if old else "unavailable"
         if st.exists():
             st.log("upgrade_rollback", status=rb, reason=reason)
@@ -1279,6 +1298,7 @@ def host_op(st, req: dict, mem: dict, run=None) -> dict:
             return {"ok": False, "why": "record"}
         keep = {k: rec[k] for k in ("v", "from", "to", "result", "reason", "at", "step") if k in rec}
         keep.update(upgrade_diag.artifact_fields(rec))
+        keep.update(upgrade_diag.exception_fields(rec))
         if isinstance(rec.get("detail"), str):
             keep["detail"] = rec["detail"][:120]
         if isinstance(rec.get("stderr_tail"), str):

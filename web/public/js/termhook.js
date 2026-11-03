@@ -13,11 +13,19 @@ import { scrollToPkRow } from './pkassist.js';   // P561 追加 14
 
 let info = null, mod = null, waiting = null, H = { setupFaceId() {}, openSettings() {}, openRescue() {}, changed() {}, attach() {}, insert() {}, goChat() {} };
 const MODES = ['prf', 'local', 'session'];
+/** The trusted host supplies the chart's private entrance. Accept only its canonical HTTPS DNS origin.
+ * Custom Olares zones are supported; no path, token, credentials, port or normalization is accepted. */
+export function externalUrl(value) {
+  if (typeof value !== 'string' || value.length > 261 || !/^https:\/\/[a-z0-9.-]+$/.test(value)) return null;
+  const host = value.slice(8), labels = host.split('.');
+  if (host.length > 253 || labels.length < 2 || /^[0-9.]+$/.test(host) || labels.some(x => !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(x))) return null;
+  try { return new URL(value).origin === value ? value : null; } catch { return null; }
+}
 /** The host block `terminal` (absent on an older host → null; no row). */
 function parse(x) {
   if (!x || typeof x !== 'object' || typeof x.on !== 'boolean' || typeof x.os !== 'boolean') return null;
   const minutes = Number.isInteger(x.minutes) && x.minutes >= 1 && x.minutes <= 60 ? x.minutes : 15;
-  return { on: x.on, os: x.os, me: x.me === true, web_ok: x.web_ok !== false, sudo: MODES.includes(x.sudo) ? x.sudo : null,
+  return { external_url: externalUrl(x.external_url), on: x.on, os: x.os, me: x.me === true, web_ok: x.web_ok !== false, sudo: MODES.includes(x.sudo) ? x.sudo : null,
     minutes, idle_s: Number.isInteger(x.idle_s) && x.idle_s > 0 ? x.idle_s : 300, open: x.open === true,
     until: Number.isInteger(x.until) ? x.until : null, pk: x.pk !== false,   // P417 #185: pk absent (older host) → no Face ID line
     kind: ['phone', 'desktop', 'unknown'].includes(x.kind) ? x.kind : null };   // P417 #185: null = an older host (no remote enable)
@@ -35,10 +43,11 @@ export function computerBrowser(env = globalThis) {
   if (touch && !mm('(pointer: fine)')) return false;               // a touch screen and no mouse / trackpad
   return !(touch && Math.min(sc.width || 9999, sc.height || 9999) < 600);   // a phone-sized touch screen
 }
-/** 'none' (older host: no row) · 'os' (macOS / Windows host: not yet) · 'phone' · 'off' · 'notme' · 'noweb' · 'ok'. P417 #185:
+/** 'external' (Olares private PTY navigation only) · 'none' (older host: no row) · 'os' (macOS / Windows host: not yet) · 'phone' · 'off' · 'notme' · 'noweb' · 'ok'. P417 #185:
  *  the row stays in 安全 whenever the host knows the feature, so the owner finds it without reading the docs. */
 export function state() {
   if (!info) return 'none';
+  if (info.external_url) return 'external';
   if (!info.os) return 'os';
   if (info.kind === 'phone' || !computerBrowser()) return 'phone';
   if (!info.on) return 'off';
@@ -53,6 +62,10 @@ export const canEnable = () => !!info && info.kind === 'desktop' && ['off', 'not
 
 export function configure(h) {
   H = { ...H, ...h };
+  el('set-term-external-open')?.addEventListener('click', () => {
+    const url = externalUrl(info?.external_url);
+    if (state() === 'external' && url) window.open(url, '_blank', 'noopener,noreferrer');
+  });
   el('set-term-open')?.addEventListener('click', () => open(''));
   el('set-term-enable')?.addEventListener('click', enable);   // P417 #185
   el('set-term-faceid')?.addEventListener('click', () => scrollToPkRow());   // P417 #185 · P561 追加 14: the one entry is Settings' top row
@@ -74,7 +87,15 @@ export function paint() {
   if (!row) return;
   const s = state();
   row.hidden = s === 'none';
+  el('set-term-external').hidden = s !== 'external';
   if (s === 'none') return;
+  if (s === 'external') {
+    for (const id of ['set-term-en', 'set-term-or', 'set-term-cmdline', 'set-term-acts', 'set-term-pk', 'set-term-last']) el(id).hidden = true;
+    el('set-term-cmd').textContent = '';
+    el('set-term-state').textContent = t('olaresTerm.state');
+    el('set-term-note').textContent = t('olaresTerm.note');
+    return;
+  }
   const en = canEnable();
   const cmd = s === 'off' ? 'agentj terminal enable' : s === 'notme' ? `agentj terminal allow ${myIdSync() || '<device>'}`
     : s === 'noweb' ? `agentj terminal allow ${myIdSync() || '<device>'} --allow-web` : '';

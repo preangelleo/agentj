@@ -430,6 +430,7 @@ def launch(st):
 def finish(st, result, diag=None):
     from . import upgrade_diag
     result.update(upgrade_diag.artifact_fields(diag or {}))
+    result.update(upgrade_diag.exception_fields(diag or {}))
     if (diag or {}).get('step') == 'download':
         result.update(step='download', detail=diag.get('detail', 'Exception'))
     with st.config_lock():
@@ -442,7 +443,7 @@ def _diagnose(st, result, diag):
     the redacted installer tail; `updates.report_failures`). Never raises: the phone notice above is already recorded."""
     try:
         from . import upgrade_diag
-        res = {**result, **upgrade_diag.installer_fields(diag), 'reason': upgrade_diag.category(result.get('reason')), 'step': diag.get('step') or 'install',
+        res = {**result, **upgrade_diag.exception_fields(diag), **upgrade_diag.installer_fields(diag), 'reason': upgrade_diag.category(result.get('reason')), 'step': diag.get('step') or 'install',
                **({'stderr_tail': diag['stderr_tail']} if diag.get('stderr_tail') else {}),
                **({'failed_checks': update.check_ids(diag['failed_checks'])} if diag.get('failed_checks') else {}),
                **({'detail': diag['detail']} if diag.get('detail') else {}),
@@ -561,12 +562,15 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
     fcntl.flock(fd, fcntl.LOCK_EX)
     job = read(st, JOB)
     diag = job.get('diagnostic') or {}  # Preserve the first failure across a manager retry during rollback.
+    stage = 'download'
     rb = {}                             # #166/#192: the rollback's own failure evidence (category, exit, redacted tail)
     def save(phase):
         job['phase'] = phase
         write(st, job, JOB)
     def install(wheel, *, diagnose=True):
         # A rollback (diagnose=False) records into its own `rb` dict: the first failure's evidence in `diag` stays intact.
+        nonlocal stage
+        stage = 'install'
         d = diag if diagnose else rb
         from .credential_revoke import require_compatible_version
         require_compatible_version(st, job['to'] if diagnose else job['from'])
@@ -593,6 +597,7 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
                 r = runner(argv)
             except (OSError, subprocess.SubprocessError) as e:
                 # Never stringify the exception: it can contain argv, URLs or owner paths.
+                d.update(upgrade_diag.exception_evidence(e, stage))
                 d['exception'] = type(e).__name__
                 if type(getattr(e, 'returncode', None)) is int:
                     d['exit'] = e.returncode
@@ -607,12 +612,15 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
                 d['failure'] = upgrade_diag.installer_reason(stderr=d['stderr_tail'])
                 raise ValueError('install_failed')
     def verify(version, *, diagnose=True):
+        nonlocal stage
+        stage = 'verify'
         argv = job['argv']
         v = runner(argv + ['--version'])
         if v.returncode or version not in (v.stdout or '').split():
             if diagnose:            # P423 (#193): what --version said (redacted tail) and why it is not the target
                 diag.update(update.version_diag(v, version, job.get('from'), job['install']))
             raise ValueError('version_mismatch')
+        stage = 'service'
         if restart:
             restart(version)
         else:
@@ -629,6 +637,7 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
                 if rec.get('status') in ('failed', 'rolled_back') or time.monotonic() >= end:
                     raise ValueError('restart_failed')
                 time.sleep(.25)
+        stage = 'health'
         for attempt in range(SELF_CHECK_TRIES):
             h = runner(argv + ['doctor', '--upgrade-only', '--post-upgrade', '--json'])
             try:
@@ -708,6 +717,8 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
             raise ValueError(upgrade_diag.category(job.get('failure', 'worker_interrupted')))
     except Exception as e:
         # Exception details may contain URLs or owner content: fixed codes only.
+        if 'exception_type' not in diag and job.get('phase') != 'rollback':
+            diag.update(upgrade_diag.exception_evidence(e, stage))
         reason = str(e) if isinstance(e, ValueError) and str(e) in fixed_reasons() else upgrade_diag.category(e)
         result = {'attempt': job.get('attempt'), 'from': job.get('from', __version__), 'to': job.get('to'), 'result': 'failed', 'reason': reason,
                   'phase': job.get('phase')}

@@ -4770,5 +4770,8 @@
   "p589.scope": "这台 Agent J 主机累计实测用量，包含上下文输入；不代表订阅剩余额度",
   "p589.partial": "仅测得 {m}/{n} 次唤醒；其余回合未提供用量，总量不完整",
   "media.preparing": "正在准备文件…",
-  "media.pending": "文件还没传过来，可能仍在准备中"
+  "media.pending": "文件还没传过来，可能仍在准备中",
+  "olaresTerm.state": "在 Agent J 应用容器中打开交互式终端，使用同一个用户、主目录和配置。",
+  "olaresTerm.note": "将在新标签页打开 Olares 私有入口，由 Olares 验证登录身份。",
+  "olaresTerm.open": "打开 Olares 网页终端"
 }

@@ -302,14 +302,14 @@ class Job(unittest.TestCase):
         self.assertEqual(self.run_job(st, fake, "codex", "gpt-6"), 0)    # a model named now wins
         self.assertEqual(st.agent_config()["model"], "gpt-6")
 
-    def test_p219_switching_to_claude_without_a_model_gets_opus_medium(self):
+    def test_switching_to_claude_without_a_model_uses_native_default(self):
         st = mk_state(self.tmp.name, "codex")
         fake = FakeServe(st, "codex")
         seen = []
         self.assertEqual(self.run_job(st, fake, "claude", probe=fake_probe(seen=seen)), 0)
         cfg = st.agent_config()
-        self.assertEqual((cfg["kind"], cfg["model"], cfg["effort"]), ("claude", "claude-opus-5-5", "medium"))
-        self.assertEqual(seen, [(("claude",), "claude-opus-5-5"), (("codex",), None)])     # P282: + the way back
+        self.assertEqual((cfg["kind"], cfg["model"], cfg["effort"]), ("claude", None, None))
+        self.assertEqual(seen, [(("claude",), None), (("codex",), None)])     # P282: + the way back
 
     def check_rolled_back(self, st, raw_before, fake, reason):
         self.assertEqual(st.config()["agent"], raw_before)          # the previous entry, byte for byte (model, effort)
@@ -429,7 +429,7 @@ class Request(unittest.TestCase):
     def test_pass_switches_through_the_job(self):
         r = self.req("opencode", model="zhipuai/glm-5.3")
         self.assertTrue(r["ok"] and r["scheduled"], r)
-        self.assertEqual(self.seen, [(("opencode",), "zhipuai/glm-5.3"), (("claude",), "claude-opus-5-5")])  # P282: + way back
+        self.assertEqual(self.seen, [(("opencode",), "zhipuai/glm-5.3"), (("claude",), None)])  # P282: + way back
         argv = self.launched[0]
         self.assertIn("--worker", argv)
         self.assertEqual(argv[argv.index("switch") + 1], "opencode")
@@ -468,8 +468,8 @@ class Request(unittest.TestCase):
         self.assertEqual([(h["name"], h["callable"]) for h in r["harnesses"]], [("claude", False), ("codex", True), ("opencode", False),
                                                                                     ("kimi", False), ("qwen", False), ("dsh", False)])
         self.assertEqual(r["current"], "claude")
-        self.assertEqual(asked, [(("claude",), "claude-opus-5-5"), (("codex",), None), (("opencode",), "fixture-provider/gpt-6"),
-                                (("kimi",), None), (("qwen",), None), (("dsh",), None)])  # its own model; P219: Claude's default
+        self.assertEqual(asked, [(("claude",), None), (("codex",), None), (("opencode",), "fixture-provider/gpt-6"),
+                                (("kimi",), None), (("qwen",), None), (("dsh",), None)])  # configured/saved model, otherwise the native default
         zh = sw._say_scan(r, "zh")
         self.assertIn("现在能切到：Codex", zh)
         self.assertIn("没装", zh)

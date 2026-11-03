@@ -25,7 +25,11 @@ class Naming(unittest.TestCase):
 class FencedName(unittest.TestCase):
     def test_status_returns_current_registered_name_only_and_never_a_preset(self):
         name=['贾维斯']
-        st=SimpleNamespace(agent_name=lambda:name[0])
+        import tempfile
+        from pathlib import Path
+        tmp=tempfile.TemporaryDirectory(prefix='p502-');self.addCleanup(tmp.cleanup)
+        # Since source recovery (e4b43047d) status also reads the last upgrade record under st.root.
+        st=SimpleNamespace(agent_name=lambda:name[0],root=Path(tmp.name),log=lambda *a,**k:None)
         with patch('agentj.names.ctl_call',return_value={'ok':True,'agent':'claude','secret':'never project me'}):
             for current in ['贾维斯','Wren',None]:
                 name[0]=current

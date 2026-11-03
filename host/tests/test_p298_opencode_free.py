@@ -359,15 +359,14 @@ class Switch(unittest.TestCase):
 
     def test_the_job_reads_the_config_back(self):
         st = self.mk_state(self.tmp.name, "claude", model="claude-opus-5-5")
-        self.assertTrue(sw._reads_back(st, "claude", "claude-opus-5-5"))
-        self.assertFalse(sw._reads_back(st, "claude", None))
-        self.assertFalse(sw._reads_back(st, "opencode", "claude-opus-5-5"))
+        self.assertTrue(sw._reads_back(st, "claude"))
+        self.assertFalse(sw._reads_back(st, "opencode"))
         from test_p155_switch_harness import FakeServe, fake_probe
         fake = FakeServe(st, "claude")
         before = (st.root / "config.json").read_bytes()
 
         def apply_wrong(st_, target, directory, model, effort, raw):     # something rewrites the entry in between
-            st_.set_agent_config(target, directory, "opencode/other-free")
+            st_.set_agent_config("codex", directory, None, record_root=False)
         with mock.patch.object(sw, "_apply", apply_wrong):
             code = sw.worker(st, "opencode", "opencode/space-bunny-free", job="j1", probe=fake_probe(), ctl=fake,
                              restart=lambda: None, ready=lambda st_, limit: "ready",

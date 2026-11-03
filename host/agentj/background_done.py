@@ -29,6 +29,8 @@ class CompletionSend(Send):
 class Notifier:
     def __init__(self, host):
         self.host = host
+        from .completion_recovery import Book
+        self.recovery = Book(host)
         self.path = Path(host.st.root) / "busy" / "completion.json"
         self.pending = {}
         self.seen = []
@@ -68,11 +70,12 @@ class Notifier:
             self.seen.append(key)
             self.seen = self.seen[-512:]
             changed = True
-            if self.enabled() and not v.get("fg"):   # P426: a foreground sub-agent's result is already in the turn
+            if (self.enabled() or v.get("foreign") is not False) and not v.get("fg"):   # P426: a foreground sub-agent's result is already in the turn
                 self.pending[key] = {
                     "label": privacy.redact(v.get("label") or v.get("who") or "后台活", paths=True),
                     "since": v["since"], "ended": v["ended"], "exit_code": v.get("exit_code"),
                     "report": privacy.redact(v.get("report") or "", paths=True), "foreign": v.get("foreign"),
+                    "report_path": (v.get("report") or "") if privacy.owner_text(v.get("report") or "") == (v.get("report") or "") else "", "task_id": privacy.owner_text(v["key"]), "generation": v.get("generation"), "ended": v["ended"],
                 }
         if not self.enabled() and self.inflight is not None and self.inflight.state == "pending":
             dropped = getattr(self.host, "queue_dropped", None)
@@ -81,7 +84,10 @@ class Notifier:
             else:
                 self.inflight.state = "cancelled"
         if not self.enabled() and self.pending:
-            self.pending.clear()
+            for key, value in self.pending.items():
+                if value.get("foreign") is not False:
+                    self.recovery.capture(key, value, snapshot=False)
+            self.pending = {k:v for k,v in self.pending.items() if v.get("foreign") is not False and k not in self.recovery.rows}
             changed = True
         if changed or receipts:
             self.save()
@@ -91,9 +97,18 @@ class Notifier:
             p = items_dir(self.host.st.root) / "finished" / (_safe(key) + ".json")
             p.unlink(missing_ok=True)
 
+    async def prepare(self):
+        import asyncio
+        self.collect()
+        for key, value in list(self.pending.items()):
+            if value.get("foreign") is not False:
+                await asyncio.to_thread(self.recovery.capture, key, value)
+
     def complete(self, send):
         for key in send.background_done_ids:
-            self.pending.pop(key, None)
+            value = self.pending.get(key, {})
+            if value.get("foreign") is False or key in self.recovery.rows:
+                self.pending.pop(key, None)
         self.save()
 
     def ready(self):
@@ -132,7 +147,13 @@ class Notifier:
         if self.last_sent and now < self.last_sent + WINDOW:
             return None
         # Bound each prompt; any remainder goes in the next minute's batch.
-        batch = list(self.pending.items())[:16]
+        for key, value in self.pending.items():
+            if value.get("foreign") is not False and key not in self.recovery.rows:
+                self.recovery.capture(key, value, snapshot=False)
+        known = [(k, v) for k, v in self.pending.items() if v.get("foreign") is False]
+        batch = (known or [(k, v) for k, v in self.pending.items() if v.get("foreign") is not False and k in self.recovery.rows])[:16]
+        if not batch:
+            return None
         zh = getattr(self.host, "lang", "zh") == "zh"
         lines = ["〔Agent J 系统提示〕" if zh else "[Agent J system notice]"]
         for _, v in batch:
@@ -147,7 +168,7 @@ class Notifier:
                      "never infer success from an exit code. Say when a report is missing and investigate.")
         page = self.host.hist_add({"k": "agent", "via": "background_done", "text": ""}, "", "open")
         send = CompletionSend(page["id"], "\n".join(lines), [k for k, _ in batch])
-        if any(v.get("foreign", True) for _, v in batch):
+        if any(v.get("foreign") is not False for _, v in batch):
             send.source = provenance.normalize(None)    # P570: a non-owner turn's job → the batch's strictest source
         self.host.agent.submit(send)
         self.inflight = send

@@ -34,18 +34,18 @@ from . import diskq, passkey, provenance, wire
 
 SIG_CONTEXT = "agentjarvis-elevate-v1"
 SEAL_CONTEXT = "agentjarvis-seal-v1"
-KINDS = ("sudo", "secret", "login")   # P408: `login` = the computer password for the web terminal (terminal.py), host-internal
-KINDS += ("vshare",)   # P414 (§37.11): another remote may use the stored computer password (term_vshare.py), host-internal
+KINDS = ("sudo", "secret", "login")
+KINDS += ("vshare",)
 TTL = {"sudo": 120, "secret": 600, "login": 120, "vshare": 120}
-TRIES = 3                       # wrong sudo passwords per card before it ends
-LOCK_AFTER = 3                  # consecutive wrong sudo passwords (any card) before the lock
+TRIES = 3
+LOCK_AFTER = 3
 LOCK_BASE, LOCK_MAX = 60, 3600
 TS_SKEW_MS = 120_000
 MAX_OPEN = 4
-MAX_VALUE = 8192                # bytes of a password / secret
-MAX_OUT = 256 * 1024            # bytes of stdout / stderr returned to the Agent (each)
-PROMPT_WAIT = 5.0               # s to wait for sudo's own prompt before closing its stdin unwritten
-MAX_FRAME = 2 * 1024 * 1024     # one request line from the CLI (P411: a screen-help picture ≤ 1.4 MB travels base64 in it)
+MAX_VALUE = 8192
+MAX_OUT = 256 * 1024
+PROMPT_WAIT = 5.0
+MAX_FRAME = 2 * 1024 * 1024
 CMD_TIMEOUT, CMD_TIMEOUT_MAX = 600, 3600
 SOCK_NAME = "elevate.sock"
 ENV = "AGENTJ_ELEVATE_SOCK"
@@ -56,18 +56,18 @@ def refused_word(why: str) -> str:
     return why if why in ("late", "stale", "replay", "bad_signature", "no_key") else "shape"
 
 
-PHONE_TYPES = ("elev_answer", "secret_out_open", "secret_out_decline")   # the last two: F32 (secret_out.py)
-PHONE_TYPES += ("elev_revoke",)   # #116: 「收回授权」 (elevate_grant.py)
-PHONE_TYPES += ("elev_stop", "elev_watch")   # P406 #173 (§11.2): Stop / show the output on the running-command strip (signed)
-PHONE_TYPES += ("login_qr_check", "login_qr_cancel", "login_qr_tg", "login_qr_refresh")   # P114: browser_login.py
-PHONE_TYPES += ("help_done", "help_text", "help_cancel")   # P411: screen-help cards (screenhelp.py)
-PHONE_TYPES += ("ct_list", "ct_save", "ct_card_answer", "mail_fwd")   # P184: contacts_serve.py (address book, forward to e-mail)
-PHONE_TYPES += ("ct_rm", "ct_export", "ct_import")   # P207: contacts_serve.py (delete one, export vcf/csv, import a file)
+PHONE_TYPES = ("elev_answer", "secret_out_open", "secret_out_decline")
+PHONE_TYPES += ("elev_revoke",)
+PHONE_TYPES += ("elev_stop", "elev_watch")
+PHONE_TYPES += ("login_qr_check", "login_qr_cancel", "login_qr_tg", "login_qr_refresh")
+PHONE_TYPES += ("help_done", "help_text", "help_cancel")
+PHONE_TYPES += ("ct_list", "ct_save", "ct_card_answer", "mail_fwd")
+PHONE_TYPES += ("ct_rm", "ct_export", "ct_import")
 RESULTS_NAME = "secret-results.json"
 RESULTS_KEEP = 100
-# P423 #49: `agentj secret request` waits this long for the phone, then answers `pending` — under a harness's usual 2-minute
-# shell timeout, so the Agent hears back instead of being killed. The card stays; its outcome reaches the Agent as an
-# 〔Agent J 系统提示〕 turn (nobody listening any more) or through `agentj secret result <id>` / `agentj secret status <NAME>`.
+
+
+
 REQUEST_WAIT = 100
 NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}")
 _ID = re.compile(r"[0-9a-f]{32}")
@@ -80,7 +80,7 @@ class Refused(Exception):
         self.why, self.detail = why, detail
 
 
-# ---------------------------------------------------------------- bytes that must not linger
+
 def wipe(buf) -> None:
 
     if isinstance(buf, bytearray):
@@ -91,7 +91,7 @@ def wipe(buf) -> None:
             ctypes.memset(id(buf) + sys.getsizeof(buf) - len(buf) - 1, 0, len(buf))
 
 
-# ---------------------------------------------------------------- what the phone shows, signs and seals
+
 def _h(s: str) -> str:
     return hashlib.sha256(s.encode()).hexdigest()
 
@@ -102,7 +102,7 @@ def shown_fields(card: dict) -> list[str]:
         return [card["cmd"], card["why"], card.get("effect") or ""]
     if card["kind"] == "login":
         return [card["term"]]
-    if card["kind"] == "vshare":           # P414 (M4): the requesting remote's id, credential id, pairing date, flags
+    if card["kind"] == "vshare":
         return [card["dev"], card["cred"], str(card["paired"]), ",".join(card["flags"])]
     fields = [card["name"], card["purpose"], card["dest"], card.get("verify") or ""]
     if card.get("auth"):
@@ -166,7 +166,7 @@ def open_sealed(host_priv: X25519PrivateKey, phone_epk: bytes, blob: bytes, aad:
     return out
 
 
-# ---------------------------------------------------------------- request validation (from the Agent's CLI)
+
 def _text(v, limit: int, *, required: bool, field: str) -> str:
     if v is None or v == "":
         if required:
@@ -207,7 +207,7 @@ def own_service_command(cmd: str) -> bool:
     try:
         from . import service
         labels.add(service.name())
-    except Exception:  # noqa: BLE001 — the default patterns still apply
+    except Exception:
         pass
     for m in _MANAGER.finditer(cmd):
         tail = m.group(1)
@@ -293,14 +293,14 @@ def parse_dest(dest: str, name: str, cwd: str | None, state_root: pathlib.Path) 
             "show": (f"{target} ({key}=…)" if mode == "env" else str(target))}
 
 
-# P408 (H4): the computer's own login / sudo password is asked for only by the host's `login` card (the web terminal) or an
-# `agentj sudo` card — never by an Agent's secret card, where it would be written to a file the Agent chose. Narrow on
-# purpose: a service's password (SMTP_PASSWORD, DB_PASSWORD, a mail app password) is still an ordinary secret.
+
+
+
 _SYS_PW_NAME = re.compile(r"^(?:SUDO|ROOT|COMPUTER|SYSTEM|LOGIN|MAC|LINUX)(?:_LOGIN|_USER)?_?(?:PASS|PASSWORD|PW|PASSWD)$|"
-                          r"^LOGIN_(?:PASS|PASSWORD|PW)$", re.I)   # R3 (M-3): the WHOLE name (MYSQL_ROOT_PASSWORD is a service's)
+                          r"^LOGIN_(?:PASS|PASSWORD|PW)$", re.I)
 _SYS_PW_TEXT = re.compile(r"(?:电脑|本机|这台(?:电脑|机器|主机)?|sudo|系统登录)\s*的?\s*(?:登录|开机|用户)?\s*密码|"
                           r"\b(?:computer|sudo)(?:'s)?\s+password\b|\b(?:computer|mac|linux|system)(?:'s)?\s+login\s+password\b", re.I)
-# R3: no bare 管理员 / root (a router's admin); R4: no bare "login password" (Gmail / a NAS) and no USER_PASSWORD (an app's user)
+
 
 
 def system_password_ask(name: str, purpose: str) -> bool:
@@ -340,7 +340,7 @@ def norm_secret(req: dict, state_root: pathlib.Path) -> dict:
             "verify": verify, "verify_url": vu or "", "verify_header": vh if vu else "", "verify_cmd": vc or ""}
 
 
-# ---------------------------------------------------------------- running sudo
+
 LOCAL_AUTH_HINT = ("本机可能弹 Touch ID/Apple Watch 验证，远程时无法继续；请在Agent J 主机前用 sudoedit /etc/pam.d/sudo_local "
                    "注释启用的 pam_tid.so/pam_reattach.so 行（旧配置检查 /etc/pam.d/sudo），保留密码认证；不要远程自动修改 PAM。"
                    " / Local Touch ID/Watch authorization may block remote use. At the Agent J host, use sudoedit to disable the "
@@ -413,13 +413,13 @@ def collect_command(p, timeout: float, cancel=None, input_data=None, gate: bytes
         while sel.get_map() or p.poll() is None:
             now = time.monotonic()
             if not armed and now >= wait_until:
-                armed = True                       # sudo never asked: the command gets EOF, never the password
+                armed = True
                 close_input()
             if now >= deadline or (not stage and cancel is not None and cancel.is_set()):
                 timed_out = True
                 close_input()
                 if stage == 2:
-                    break  # A privileged descendant may hold a pipe; never wait forever for EOF.
+                    break
                 with contextlib.suppress(ProcessLookupError, PermissionError):
                     os.killpg(p.pid, 15 if stage == 0 else 9)
                 stage += 1
@@ -453,7 +453,7 @@ def collect_command(p, timeout: float, cancel=None, input_data=None, gate: bytes
                     watch.data(key.data, data)
                 if not armed:
                     if key.data == 0:
-                        armed = True               # the command already runs (sudo did not ask): close, never write
+                        armed = True
                         close_input()
                     elif gate in tail + data:
                         armed = True
@@ -509,7 +509,7 @@ def run_sudo(argv: list[str], password: bytearray, cwd: str, timeout: int, sudo:
         return {"result": "no_sudo", "code": None, "stdout": "", "stderr": "", "truncated": False}
     marker = "[agentj-" + secrets.token_hex(8) + "]"
     if watch is not None:
-        watch.gate = marker.encode()           # P406: a second prompt = wrong password, never "started"
+        watch.gate = marker.encode()
     env = {k: v for k, v in os.environ.items() if k in ("PATH", "HOME", "USER", "LOGNAME", "TZ", "TMPDIR")}
     env.update(LC_ALL="C", LANG="C")
     buf = bytearray(len(password) + 1)
@@ -539,13 +539,13 @@ def run_sudo(argv: list[str], password: bytearray, cwd: str, timeout: int, sudo:
             return {"result": "timeout", "code": None, "stdout": o, "stderr": e, "truncated": overflow or t1 or t2}
     finally:
         wipe(buf)
-    # P414 (R2-N3): exactly one prompt = sudo accepted the password and the command ran — its own stderr ("Sorry, try
-    # again" echoed by the elevated command) is never read as a wrong password (no lock try, no deleted kid).
+
+
     bad = p.returncode != 0 and (prompts >= 2 or (prompts != 1 and not out and re.search(
         rb"incorrect password attempt|Sorry, try again|no password was provided|a password is required", err) is not None))
-    if bad:   # P414 (L2): `wrong` = sudo's own wrong-password words (English / zh_CN) — only that may delete a stored password
+    if bad:
         from .term_askpass import SUDO_WRONG
-        # P414 (R2-N3): … AND sudo asked again (prompts ≥ 2): the message alone never deletes the kid
+
         return {"result": "bad_password", "code": p.returncode, "stdout": "", "stderr": "", "truncated": False,
                 "wrong": prompts >= 2 and SUDO_WRONG.search(err.decode("utf-8", "replace")) is not None}
     o, t1 = _cap(out)
@@ -554,7 +554,7 @@ def run_sudo(argv: list[str], password: bytearray, cwd: str, timeout: int, sudo:
             "prompts": prompts}
 
 
-# ---------------------------------------------------------------- writing a secret
+
 def _env_value(v: str) -> str:
     if re.fullmatch(r"[A-Za-z0-9_./:@+=,-]*", v):
         return v
@@ -598,7 +598,7 @@ def write_secret(spec: dict, value: bytearray) -> None:
         with os.fdopen(fd, "wb") as f:
             f.write(data)
             f.flush()
-            diskq.fsync(f.fileno())   # P142: never on the event loop
+            diskq.fsync(f.fileno())
         os.chmod(tmp, 0o600)
         os.replace(tmp, path)
         diskq.settle(path)
@@ -607,7 +607,7 @@ def write_secret(spec: dict, value: bytearray) -> None:
             os.unlink(tmp)
         raise
     finally:
-        sval = None  # noqa: F841 — drop the reference; str cannot be wiped
+        sval = None
     os.chmod(path, 0o600)
 
 
@@ -645,7 +645,7 @@ def _key_hint(card: dict, value: bytearray) -> dict:
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, *a, **k):  # the key must not follow a redirect to another host
+    def redirect_request(self, *a, **k):
         return None
 
 
@@ -668,16 +668,16 @@ def verify_secret(card: dict, value: bytearray) -> dict:
                 return {"verify": "fail", "detail": "network"}
             return {"verify": "ok" if 200 <= code < 300 else "fail", "detail": f"HTTP {code}"}
         if card.get("verify_cmd"):
-            # Defense in depth: even an old or internal card cannot run a command.
+
             return {"verify": "fail", "detail": "command_disabled"}
         return {"verify": "skipped", "detail": ""}
     except (urllib.error.URLError, OSError, ValueError):
         return {"verify": "fail", "detail": "network"}
     finally:
-        sval = None  # noqa: F841
+        sval = None
 
 
-# ---------------------------------------------------------------- lock ledger (elevate.json) and audit log (elevate.log)
+
 def ledger_path(st) -> pathlib.Path:
     return st.root / "elevate.json"
 
@@ -692,8 +692,8 @@ def read_ledger(st) -> dict:
     except (FileNotFoundError, ValueError, UnicodeDecodeError):
         return {"fails": 0, "level": 0, "until": 0}
     except OSError:
-        return {"fails": LOCK_AFTER, "level": 1, "until": time.time() + LOCK_MAX}   # unreadable reads as locked
-    num = lambda k: d.get(k) if isinstance(d.get(k), (int, float)) and not isinstance(d.get(k), bool) else 0  # noqa: E731
+        return {"fails": LOCK_AFTER, "level": 1, "until": time.time() + LOCK_MAX}
+    num = lambda k: d.get(k) if isinstance(d.get(k), (int, float)) and not isinstance(d.get(k), bool) else 0
     return {"fails": int(num("fails")), "level": int(num("level")), "until": float(num("until"))}
 
 
@@ -772,13 +772,13 @@ def remember(st, rid: str, rec: dict) -> None:
 
 def check_record(st, r: dict) -> str:
 
-    if r.get("kind") in ("secret_out", "keys"):   # P352: keys copy / delete — same passkey-only proof
+    if r.get("kind") in ("secret_out", "keys"):
         return "passkey" if r.get("passkey") == "uv" else "unsigned"
     if not r.get("sig"):
         return "unsigned"
     try:
         sk, sig = wire.unb64u(r.get("sk") or ""), wire.unb64u(r["sig"])
-        if r.get("decision") == "stop":            # P406: 「停止」 is a signed control action over the card id (controls.py)
+        if r.get("decision") == "stop":
             from . import controls
             ok = controls.verify(sk, sig, r["channel"], r["device"], "elev_stop", r["n"], r["sig_ts"],
                                  controls.object_digest("elev_stop", {"id": r["id"]}))
@@ -795,7 +795,7 @@ def check_record(st, r: dict) -> str:
     return "ok_removed" if cur is None else ("ok" if cur == sk else "bad")
 
 
-# ---------------------------------------------------------------- the serve side
+
 class Elevator:
 
 
@@ -805,29 +805,29 @@ class Elevator:
         self.cards: dict[str, dict] = {}
         self.bg: set[asyncio.Task] = set()
         self.completed: dict[str, dict] = {}
-        self.secret_waiters: dict[str, int] = {}   # P423 #49: card id → `agentj secret result --wait` calls reading it now
+        self.secret_waiters: dict[str, int] = {}
         self.server = None
-        self.sudo = None             # tests: a stand-in sudo; else AGENTJ_SUDO_BIN / PATH
-        self.helper_status = None    # tests: a stand-in for elevate_helper.status()
-        self.helper_cmd = None       # tests: a stand-in for the installed helper command line
+        self.sudo = None
+        self.helper_status = None
+        self.helper_cmd = None
         from .secret_out import Outbox
-        self.out = Outbox(self)      # F32: outbound pickup cards (`agentj secret send`)
+        self.out = Outbox(self)
         from .browser_login import LoginCards
-        self.login = LoginCards(self)  # P114: login QR cards (`agentj browser login`)
+        self.login = LoginCards(self)
         from .screenhelp import HelpCards
-        self.help = HelpCards(self)    # P411: `agentj qr push` / `agentj screen ask` (screen-help cards)
+        self.help = HelpCards(self)
         from .contacts_serve import ContactService
-        self.contacts = ContactService(self)  # P184: address book, contact cards, 「转发到邮箱」, `agentj mail send`
-        self._upgrade_mem: dict = {}  # P205: the fenced `update apply`'s cached old wheel (update.host_op)
+        self.contacts = ContactService(self)
+        self._upgrade_mem: dict = {}
         from .elevate_grant import GrantBook
-        self.grants = GrantBook(self)  # #116: 10-minute same-class approval (memory only)
+        self.grants = GrantBook(self)
 
     @property
     def sock_path(self) -> pathlib.Path:
         return self.st.perm_dir / SOCK_NAME
 
     async def start(self) -> None:
-        # a card shown by a previous serve died with it (its one-time key lived only in that process's memory)
+
         for rid, r in read_results(self.st).items():
             if r.get("result") == "pending":
                 remember(self.st, rid, {"result": "gone", "why": "restart"})
@@ -862,13 +862,13 @@ class Elevator:
             with contextlib.suppress(FileNotFoundError):
                 self.sock_path.unlink()
 
-    # ---------------------------------------------------------- phone messages
+
     def helper_devices(self) -> list[str]:
 
         try:
             from . import elevate_helper
             h = self.helper_status() if self.helper_status else elevate_helper.status()
-        except Exception:  # noqa: BLE001 — no helper is the normal case
+        except Exception:
             return []
         if not h.get("installed") or h.get("channel") != self.host.channel:
             return []
@@ -880,23 +880,23 @@ class Elevator:
         if c.get("busy"):
             m.update(state="running", ttl=0, elapsed=max(0, int(time.monotonic() - c["started"])), timeout=c.get("timeout", 0))
             if c.get("live") is not None and c["live"].started:
-                m["phase"] = "started"                # P406: the command runs — the page shows its strip, not the card
+                m["phase"] = "started"
         if c["fails"]:
             m["bad"] = c["fails"]
         if c["kind"] == "sudo":
             m.update(cmd=c["cmd"], why=c["why"], effect=c.get("effect") or "", interpreter=interpreter_command(c["argv"]))
             if c.get("helper"):
-                m["helper"] = list(c["helper"])       # these phones may approve without a password (elevate_helper)
+                m["helper"] = list(c["helper"])
             if c.get("grant"):
-                m["grant"] = dict(c["grant"])         # #116: the opt-in toggle (off by default): program, options, hash
+                m["grant"] = dict(c["grant"])
             v = self._vault_view(c, s.device if s is not None else None)
             if v is not None:
-                m["v"] = v                            # P414 (§37.10): use / remember the stored computer password
+                m["v"] = v
             if c.get("stale"):
                 m["stale"] = 1
         elif c["kind"] == "login":
-            m["term"] = c["term"]                     # P408: the pending term_open this password belongs to
-        elif c["kind"] == "vshare":                   # P414 (§37.11, M4): who asks, shown and covered by the digest
+            m["term"] = c["term"]
+        elif c["kind"] == "vshare":
             m.update(dev=c["dev"], name=c["name"], cred=c["cred"], paired=c["paired"], flags=list(c["flags"]), tries=1)
             v = self._vault_view(c, s.device if s is not None else None)
             if v is not None:
@@ -904,27 +904,27 @@ class Elevator:
         else:
             m.update(name=c["name"], purpose=c["purpose"], dest=c["dest"], verify=c.get("verify") or "")
         if c.get("auth"):
-            m["auth"] = dict(c["auth"])   # host-only rescue metadata, sealed/signature digest above; never persisted
-        # These schemas sign the exact why / purpose field, not action_policy's JSON note block.
-        # Host-generated login / vault-sharing cards have no Agent note.
+            m["auth"] = dict(c["auth"])
+
+
         m["reason"] = c.get("reason", "")
-        # P573 (#386 ⑤): a sudo card is the admin password (or the helper's allow) — no Face ID on top; Face ID stays for a
-        # key / password card and for using or remembering a stored computer password (the vault unwraps with the passkey)
+
+
         m["passkey_required"] = c["kind"] != "sudo" and not c.get("button_only")
         if c.get("button_only"):
             m["button_only"] = True
-        if c["kind"] == "sudo":                       # P573: always 0|1, so the page knows this host speaks the new rule
-            m["helper_uv"] = int(s is not None and s.device in (c.get("helper") or []))   # helper approve-only → Face ID
+        if c["kind"] == "sudo":
+            m["helper_uv"] = int(s is not None and s.device in (c.get("helper") or []))
         pk = self.st.passkey_of_device(s.device) if s is not None and s.device else None
         if pk:
-            m["fa"], m["fa_s"] = pk["id"], passkey.pk_state(pk)   # ADR-A163: this device saved a passkey → 「同意」 needs it (its own credential id only)
+            m["fa"], m["fa_s"] = pk["id"], passkey.pk_state(pk)
         return m
 
     async def _to_phones(self, obj_fn, only=None) -> None:
         if not only:
             return await self.host._send_ready(obj_fn)
-        targets = {only} if isinstance(only, str) else set(only)   # P414: a `vshare` card goes to a list of remotes
-        for s in list(self.host.sessions.values()):     # P408: a `login` card goes to the opening device only
+        targets = {only} if isinstance(only, str) else set(only)
+        for s in list(self.host.sessions.values()):
             if s.state == "ready" and s.device in targets and self.st.is_allowed(s.pub):
                 await self.host.send_app(s, obj_fn(s))
 
@@ -948,7 +948,7 @@ class Elevator:
             return True
         return s is not None and (s.device == only if isinstance(only, str) else s.device in only)
 
-    # ---------------------------------------------------------- P414: the vault on §11 cards (§37.10, §37.11)
+
     def _temporary(self, device: str | None) -> bool:
 
         with contextlib.suppress(Exception):
@@ -1022,8 +1022,8 @@ class Elevator:
         for c in list(self.cards.values()):
             if not c.get("busy"):
                 self._finish(c, {"result": result})
-        if result == "stopped":                    # Stop everything also voids pickup cards (and wipes their values)
-            self.grants.clear(result)              # … and every 10-minute approval
+        if result == "stopped":
+            self.grants.clear(result)
             self.out.end_all(result)
             self.login.end_all(result)
             self.help.end_all(result)
@@ -1034,11 +1034,14 @@ class Elevator:
         if self.host.stopped():
             return {"result": "stopped"}
         from . import provenance
-        unattended = provenance.unattended_turn(getattr(self.host, "agent", None))   # P570
+        unattended = provenance.unattended_turn(getattr(self.host, "agent", None))
         if card["kind"] not in ("login", "vshare") and provenance.untrusted_turn(getattr(self.host, "agent", None)) \
                 and not provenance.delegated_turn(getattr(self.host, "agent", None)) and not unattended:
             audit(self.st, None, kind=card.get("kind"), result="group_source", reason="group_source")
-            return {"result": "group_source"}      # B1 (P117): a group member's turn never reaches the owner's card
+            recovery = getattr(getattr(self.host, 'background_done', None), 'recovery', None)
+            if recovery is not None:
+                await asyncio.to_thread(recovery.refusal, 'elevate:' + card['kind'], card, 'group_source')
+            return {"result": "group_source"}
         if len([c for c in self.cards.values() if not c["fut"].done()]) >= MAX_OPEN:
             return {"result": "busy"}
         if card["kind"] == "sudo" and (left := locked_for(self.st)):
@@ -1049,7 +1052,7 @@ class Elevator:
             return {"result": "no_device"}
         same_owner_task = provenance.same_owner_source(getattr(self.host, "agent", None)) or bool(unattended)
         if card["kind"] == "sudo" and not same_owner_task and (auto := await self.grants.auto(card, gone)) is not None:
-            return auto                            # #116: same class within the owner's 10-minute approval, logged
+            return auto
         c = dict(card, id=secrets.token_hex(16), fails=0, fut=asyncio.get_running_loop().create_future())
         if c["kind"] == "sudo":
             c["helper"] = [] if interpreter_command(c["argv"]) else self.helper_devices()
@@ -1065,15 +1068,15 @@ class Elevator:
             mail_account = card_account(c)
             remember(self.st, c["id"], {"kind": "secret", "name": c["name"], "result": "pending",
                                         **({"mail_account": mail_account} if mail_account else {}),
-                                        "until": int(time.time() + TTL["secret"]),   # P423 #49: where, for `secret status`
+                                        "until": int(time.time() + TTL["secret"]),
                                         **({"where": {k: d.get(k) for k in ("mode", "path", "key")}} if d.get("path") else {})})
         if on_card is not None:
             try:
                 await on_card(c)
-            except Exception as e:  # noqa: BLE001 — P192 (B18): the card stays; its delivery hook failing is logged
+            except Exception as e:
                 from . import bg
                 bg.swallowed(self.st.log, "elev_card_hook_failed", e, why=c["kind"], every=0)
-        if c["kind"] != "login":                   # P408: the login card shows inside the open terminal page only
+        if c["kind"] != "login":
             self.host.push_notify("ask")
         only = c.get("only")
         cancelled=False
@@ -1087,7 +1090,7 @@ class Elevator:
                 await asyncio.wait(waits, timeout=min(1.0, max(0.0, left)), return_when=asyncio.FIRST_COMPLETED)
                 if c["fut"].done():
                     res = c["fut"].result()
-                    if res.get("result") == "retry":       # wrong password: re-armed, shown again
+                    if res.get("result") == "retry":
                         c["fut"] = asyncio.get_running_loop().create_future()
                         await self._deliver_card(lambda s: self.card_msg(c, s), only, c["id"])
                         continue
@@ -1098,7 +1101,7 @@ class Elevator:
                 if time.monotonic() >= c["deadline"] and not c.get("busy"):
                     res = {"result": "timeout"}
                     break
-                if c.get("busy"):                          # running: the deadline no longer applies
+                if c.get("busy"):
                     res = await c["fut"]
                     if res.get("result") == "retry":
                         c["fut"] = asyncio.get_running_loop().create_future()
@@ -1126,15 +1129,15 @@ class Elevator:
         if c["kind"] == "secret" and res.get("receipt"):
             done_msg["verify"] = res["receipt"]["verify"]
         if res.get("elsewhere"):
-            done_msg["elsewhere"] = 1              # P549 (#314): the same credential was saved through another card
+            done_msg["elsewhere"] = 1
         if c["kind"] == "sudo" and res.get("saved"):
-            done_msg["saved"] = 1                  # P414 (§37.10): the typed password is now remembered for that remote
+            done_msg["saved"] = 1
         if c["kind"] == "secret" and (res.get("key_hint") or (res.get("receipt") or {}).get("key_hint")):
-            done_msg["key_hint"] = "short"          # P163: one word from the length, never the key
-        if not only:                               # P408: a login card's end is replayed to nobody else
+            done_msg["key_hint"] = "short"
+        if not only:
             self.completed[c["id"]] = dict(done_msg)
         live, tail = c.get("live"), None
-        if live is not None and live.started:      # P406 (§11.2): only a phone watching the output gets the masked tail
+        if live is not None and live.started:
             from .elevate_live import fit, DONE_TAIL
             tail = fit(live.tail[-DONE_TAIL:])
             if c.get("stop_by"):
@@ -1143,7 +1146,7 @@ class Elevator:
         while len(self.completed) > RESULTS_KEEP:
             self.completed.pop(next(iter(self.completed)))
         if c["kind"] in ("secret", "vshare") and res["result"] == "timeout" and not only:
-            # P566 (#357, 董事长 10-28 18:4x): the card left every screen at 0 — the chat keeps why, and what to do next
+
             self.host.agent_notice(f"这张卡已过期，请让 Agent 重发 · {c['id'][:8]} / This card has expired — ask the Agent to send it again · {c['id'][:8]}")
         if c["kind"] == "sudo":
             labels = {"done": ("已完成", "completed") if res.get("code") == 0 else ("执行失败", "failed"),
@@ -1163,22 +1166,22 @@ class Elevator:
         if cancelled:raise asyncio.CancelledError
         return res
 
-    contacts_types = ("ct_list", "ct_save", "ct_card_answer", "mail_fwd", "ct_rm", "ct_export", "ct_import")   # + P207
+    contacts_types = ("ct_list", "ct_save", "ct_card_answer", "mail_fwd", "ct_rm", "ct_export", "ct_import")
 
     async def on_phone(self, s, obj: dict) -> None:
-        if obj.get("t") == "elev_revoke":                                # #116
+        if obj.get("t") == "elev_revoke":
             return await self.grants.on_phone(s, obj)
-        if obj.get("t") in ("secret_out_open", "secret_out_decline"):   # F32
+        if obj.get("t") in ("secret_out_open", "secret_out_decline"):
             return await self.out.on_phone(s, obj)
-        if isinstance(obj.get("t"), str) and obj["t"].startswith("login_qr_"):   # P114: may wait on the browser (≤ 15 s) —
-            task = asyncio.create_task(self.login.on_phone(s, obj))          # never hold the relay receive loop (P99 B1)
+        if isinstance(obj.get("t"), str) and obj["t"].startswith("login_qr_"):
+            task = asyncio.create_task(self.login.on_phone(s, obj))
             self.login.bg.add(task)
             task.add_done_callback(self.login.bg.discard)
             return
-        if obj.get("t") in ("help_done", "help_text", "help_cancel"):        # P411: screen-help cards
+        if obj.get("t") in ("help_done", "help_text", "help_cancel"):
             return await self.help.on_phone(s, obj)
-        if obj.get("t") in self.contacts_types:                              # P184: SMTP / file reads take seconds
-            async def signed_tap():      # P549 (#319): the new task keeps this remote's own authority, never the Agent's turn
+        if obj.get("t") in self.contacts_types:
+            async def signed_tap():
                 live = getattr(self.host, "_paired_live", None)
                 if not callable(live):
                     return await self.contacts.on_phone(s, obj)
@@ -1196,9 +1199,9 @@ class Elevator:
             return self._watch(s, c, obj)
         if c is None or c["fut"].done() or c.get("busy") or not self._sees(c, s):
             self.st.log("elev_refused", id=rid if isinstance(rid, str) else None, device=s.device, reason="unknown")
-            # P566 (#354 / #364): the page hands an answer in again after a reconnect that swallowed the reply — a card that
-            # ended answers with its end (elev_done, as replayed after ready); a card gone without one says so. A card that
-            # runs (busy) stays quiet: its progress already goes to every remote. Nothing about the card is re-checked here.
+
+
+
             if c is None and isinstance(rid, str) and _ID.fullmatch(rid) and obj.get("t") == "elev_answer":
                 end = self.completed.get(rid)
                 await self.host.send_app(s, dict(end) if end else {"t": "elev_refused", "id": rid, "why": "gone"})
@@ -1207,8 +1210,8 @@ class Elevator:
         if why:
             self.st.log("elev_refused", id=rid, device=s.device, reason=why)
             audit(self.st, c, result="refused", reason=why, device=s.device, channel=self.host.channel)
-            # ADR-A163: tell this phone, so its card leaves "sending" and stays open. P566 (#354, elevate.py:1240-1248 wrote only
-            # the log): every refusal now says why on the card — one coarse word, never the card's contents
+
+
             await self.host.send_app(s, {"t": "elev_refused", "id": c["id"], "why": refused_word(why)})
             return
         sk = self.st.sign_key(s.device)
@@ -1216,22 +1219,22 @@ class Elevator:
         ct_sha = hashlib.sha256(wire.unb64u(obj["ct"])).hexdigest() if ok and "ct" in obj else None
         signed = dict(device=s.device, sk=wire.b64u(sk), sig=obj["sig"], n=obj["n"], sig_ts=obj["ts"],
                       decision="allow" if ok else "deny", ct_sha256=ct_sha, channel=self.host.channel,
-                      grant_sha256=obj.get("grant") if ok else None,   # #116: signed — the owner switched the toggle on
+                      grant_sha256=obj.get("grant") if ok else None,
                       passkey="uv" if ok and self.st.passkey_of_device(s.device) else None)
         if not ok:
             audit(self.st, c, result="denied", reason="device", **signed)
             return self._finish(c, {"result": "denied", "_logged": True})
         c["busy"] = True
-        c["want_grant"] = obj.get("grant") if ok else None   # #116: checked and signed in _check
+        c["want_grant"] = obj.get("grant") if ok else None
         c["started"] = time.monotonic()
         c["cancel"] = threading.Event()
-        if c["kind"] == "sudo":                    # P406: the approve-only helper has no password to check: running at once
+        if c["kind"] == "sudo":
             from .elevate_live import Live
             c["live"], c["wake"] = Live(started="ct" not in obj), asyncio.Event()
             loop, ev = asyncio.get_running_loop(), c["wake"]
             c["live"].wake = lambda: loop.call_soon_threadsafe(ev.set)
         nonce, priv = c["nonce"], c.pop("priv")
-        c["nonce"] = None  # reserve the one-time approval BEFORE returning to the receive loop
+        c["nonce"] = None
         task = asyncio.create_task(self._execute(c, s, obj, signed, nonce, priv))
         self.bg.add(task)
         task.add_done_callback(self.bg.discard)
@@ -1243,7 +1246,7 @@ class Elevator:
         c.setdefault("shown_to", set())
         while c.get("busy") and not c["fut"].done():
             if wake is not None:
-                wake.clear()                       # before reading: a chunk arriving from now on wakes the wait below
+                wake.clear()
             now = time.monotonic()
             started = live is not None and live.started
             if now >= beat or (started and not shown):
@@ -1254,7 +1257,7 @@ class Elevator:
                     m["phase"] = "started"
                 with contextlib.suppress(Exception):
                     await self._to_phones(lambda s: dict(m), c.get("only"))
-            if started:                            # P406 F1: output only to the phones that asked (signed elev_watch)
+            if started:
                 text, tail = live.take()
                 for x in self._watchers(c):
                     new = x.cid not in c["shown_to"]
@@ -1269,7 +1272,7 @@ class Elevator:
                 continue
             with contextlib.suppress(asyncio.TimeoutError):
                 await asyncio.wait_for(wake.wait(), max(.05, beat - time.monotonic()))
-            await asyncio.sleep(.3)                # batch a chatty command's lines
+            await asyncio.sleep(.3)
 
     def _watchers(self, c) -> list:
 
@@ -1328,10 +1331,10 @@ class Elevator:
                 await asyncio.shield(worker)
             except asyncio.CancelledError:
                 c["cancel"].set()
-                # to_thread cannot be cancelled: let the bounded child stop before wiping its input.
+
                 await worker
                 raise
-        except Exception:  # never log exception strings: a verifier / subprocess may include private data
+        except Exception:
             c["busy"] = False
             audit(self.st, c, result="failed", reason="execution", **signed)
             self._finish(c, {"result": "failed", "why": "execution", "_logged": True})
@@ -1344,23 +1347,23 @@ class Elevator:
         if c.get('revoked') or not self.st.is_allowed(s.pub):
             c['busy']=False
             return self._finish(c, {'result':'denied'})
-        if "ct" not in obj:                        # approve-only: the admin helper checks the same signature as root
+        if "ct" not in obj:
             from . import elevate_helper
             req = {"channel": self.host.channel, "device": s.device, "id": c["id"], "n": nonce, "ts": obj["ts"], "sig": obj["sig"],
                    "argv": c["argv"], "why": c["why"], "effect": c.get("effect") or "", "cwd": c["cwd"]}
             res = await asyncio.to_thread(elevate_helper.run, req, c["timeout"], self.sudo, self.helper_cmd, c["cancel"])
             if c.get("stop_by") and res.get("result") == "timeout":
-                res["result"] = "stopped"          # P406: the owner's Stop, not the time limit
+                res["result"] = "stopped"
             audit(self.st, c, result=res["result"], reason="helper", code=res.get("code"), **signed)
             res["_logged"] = True
             c["busy"] = False
             return self._finish(c, res)
-        vault_ans = c["kind"] == "sudo" and obj.get("vault") == 1          # P414 (§37.10): 「用 Face ID 填入电脑密码」
+        vault_ans = c["kind"] == "sudo" and obj.get("vault") == 1
         aad = seal_aad(self.host.channel, s.device, c["id"], "vault" if vault_ans else c["kind"], nonce, c["digest"])
         save_prf = kid = None
         try:
             value = open_sealed(priv, wire.unb64u(obj["epk"]), wire.unb64u(obj["ct"]), aad)
-            if "pct" in obj:                       # P414 (M2): the PRF to remember a typed password, bound to THIS answer's ct
+            if "pct" in obj:
                 ct_sha = hashlib.sha256(wire.unb64u(obj["ct"])).hexdigest()
                 try:
                     save_prf = open_sealed(priv, wire.unb64u(obj["pepk"]), wire.unb64u(obj["pct"]), seal_aad(
@@ -1373,7 +1376,7 @@ class Elevator:
             audit(self.st, c, result="refused", reason="seal", **signed)
             return self._finish(c, {"result": "failed", "why": "seal", "_logged": True})
         vv = (c.get("vv") or {}).get(s.device) or {}
-        if vault_ans:                              # the PRF value → K → the stored password (M3: rotated on the way)
+        if vault_ans:
             from . import term_vault
             pk = self.st.passkey_of_device(s.device) or {}
             try:
@@ -1381,7 +1384,7 @@ class Elevator:
                                               vv.get("vn"))
             finally:
                 wipe(value)
-            if got is None:                        # the wrap does not open: this card asks for the typed password (no lock)
+            if got is None:
                 c.setdefault("no_vault", set()).add(s.device)
                 c["busy"] = False
                 audit(self.st, c, result="refused", reason="vault", **signed)
@@ -1393,14 +1396,14 @@ class Elevator:
             if save_prf is not None: wipe(save_prf)
             c['busy']=False
             return self._finish(c, {'result':'denied'})
-        keep = bytearray(value) if c.get("want_grant") and c["kind"] == "sudo" else None   # #116: zeroed unless granted
+        keep = bytearray(value) if c.get("want_grant") and c["kind"] == "sudo" else None
         res = None
         try:
             if c["kind"] == "sudo":
                 res = await asyncio.to_thread(run_sudo, c["argv"], value, c["cwd"], c["timeout"], self.sudo, c["cancel"],
                                               c.get("live"))
                 if save_prf is not None and res.get("result") == "done" and res.get("prompts") == 1 and vv.get("save"):
-                    from . import term_vault           # P414: verified by sudo (exactly one prompt) → a NEW kid for this remote
+                    from . import term_vault
                     pk = self.st.passkey_of_device(s.device)
                     if pk and not self._temporary(s.device):
                         p1, p2 = term_vault.split_prf(save_prf)
@@ -1409,10 +1412,10 @@ class Elevator:
                                 await asyncio.to_thread(term_vault.create, self.st, self.host.channel, s.device, pk["id"],
                                                         "prf", vv["save"], value, p1)
                                 res["saved"] = 1
-                        finally:                       # P414 (R2-N5): split_prf's halves are new bytearrays — both wiped
+                        finally:
                             wipe(p1)
                             wipe(p2)
-            elif c["kind"] == "vshare":            # P414 (§37.11): the approving remote's PRF → K → wrapped for the requester
+            elif c["kind"] == "vshare":
                 res = await asyncio.to_thread(c["sink"], value, s.device, vv.get("vn"))
             else:
                 res = await asyncio.to_thread(self._save, c, value)
@@ -1422,17 +1425,17 @@ class Elevator:
             wipe(value)
             wipe(save_prf)
             if keep is not None and ((res or {}).get("result") != "done" or res.get("prompts") != 1):
-                # #116: only a password sudo actually asked for and accepted (exactly one prompt) may be kept
+
                 wipe(keep)
                 keep = None
         if c.get("live") is not None:
-            c["live"].close()                      # P406: release what the masker still holds (masked)
+            c["live"].close()
         if c.get("stop_by") and res.get("result") == "timeout":
-            res["result"] = "stopped"              # P406: the owner's Stop on the strip, not the time limit
-        if keep is not None:                       # the password was right: the approving device's 10-minute window
+            res["result"] = "stopped"
+        if keep is not None:
             self.grants.create(c, s.device, wire.unb64u(signed["sk"]), keep)
         if c["kind"] == "login" and res.get("result") in ("retry", "locked", "bad_password"):
-            c["fails"] += 1                        # P408: terminal.py counts its own locks (term_store.note), never elevate.json
+            c["fails"] += 1
             audit(self.st, c, result="bad_password", reason="device", **signed)
             c["busy"] = False
             if res["result"] == "retry" and c["fails"] < TRIES:
@@ -1441,21 +1444,21 @@ class Elevator:
             return self._finish(c, {**res, "result": "locked" if res["result"] == "locked" else "bad_password", "_logged": True})
         if vault_ans and res["result"] == "bad_password":
             c["busy"] = False
-            if res.get("wrong"):                   # L2: sudo's own wrong-password words → the kid and its wraps go; re-armed
+            if res.get("wrong"):
                 from . import term_vault
                 await asyncio.to_thread(term_vault.kill_kid, self.st, kid)
                 c.setdefault("no_vault", set()).add(s.device)
-                c["stale"] = True                  # … `stale:1`, not a wrong-password try / lock (the owner typed nothing)
+                c["stale"] = True
                 audit(self.st, c, result="stale", reason="vault", **signed)
                 self._arm(c)
                 with contextlib.suppress(Exception):
-                    self.host.term_desk._prefs()   # P414: the `vault` host block changed
+                    self.host.term_desk._prefs()
                 return self._finish(c, {"result": "retry"})
-            audit(self.st, c, result="failed", reason="sudo_failed", **signed)   # another failure: the stored password stays
+            audit(self.st, c, result="failed", reason="sudo_failed", **signed)
             return self._finish(c, {"result": "failed", "why": "sudo_failed", "_logged": True})
         if res["result"] == "bad_password":
             c["fails"] += 1
-            c.pop("live", None)                    # P406: a wrong password never started anything (the card comes back)
+            c.pop("live", None)
             lock = note_password(self.st, False)
             audit(self.st, c, result="bad_password", reason="device", **signed)
             c["busy"] = False
@@ -1469,7 +1472,7 @@ class Elevator:
             note_password(self.st, True)
         if res.get("saved"):
             with contextlib.suppress(Exception):
-                self.host.term_desk._prefs()   # P414: the `vault` host block changed
+                self.host.term_desk._prefs()
         audit(self.st, c, result=res["result"], reason="vault" if vault_ans else "device", code=res.get("code"),
               verify=(res.get("receipt") or {}).get("verify"), **signed)
         res["_logged"] = True
@@ -1483,21 +1486,21 @@ class Elevator:
             return "shape"
         if ok and "ct" not in obj and "epk" not in obj:
             if c["kind"] != "sudo" or interpreter_command(c["argv"]) or s.device not in (c.get("helper") or []):
-                return "shape"                      # approve-only exists only for a phone the admin helper accepts
+                return "shape"
         elif ok and (not isinstance(obj.get("epk"), str) or not isinstance(obj.get("ct"), str) or len(obj["ct"]) > 12000):
             return "shape"
         if "grant" in obj and not (ok and "ct" in obj and c.get("grant") and obj["grant"] == c["grant"]["h"]):
-            return "shape"                          # #116: only the hash this card offered, only with the password
+            return "shape"
         pk = self.st.passkey_of_device(s.device)
         if "vault" in obj and not (obj["vault"] == 1 and ok and c["kind"] == "sudo" and "ct" in obj and "pct" not in obj
                                    and pk and "fa" in obj and self._vault_has(c, s.device)):
-            return "shape"                          # P414 (M5): a `prf` wrap of this remote, a passkey assertion, a sudo card
+            return "shape"
         if ("pct" in obj or "pepk" in obj) and not (ok and c["kind"] == "sudo" and "ct" in obj and "vault" not in obj and pk
                                                     and isinstance(obj.get("pct"), str) and isinstance(obj.get("pepk"), str)
                                                     and len(obj["pct"]) <= 2000 and not self._temporary(s.device)):
-            return "shape"                          # P414 (§37.10): remember a typed password — sudo cards, passkey remotes
+            return "shape"
         if c["kind"] == "vshare" and ok and not self._vault_has(c, s.device):
-            return "shape"                          # P414 (M4): only a `prf` wrap approves
+            return "shape"
         if time.monotonic() > c["deadline"]:
             return "late"
         if abs(time.time() * 1000 - ts) > TS_SKEW_MS:
@@ -1522,15 +1525,15 @@ class Elevator:
                     raise
                 Ed25519PublicKey.from_public_bytes(sk).verify(sigb, signed_message(
                     self.host.channel, s.device, c["id"], c["kind"], "allow", n, ts, c["digest"], ct_sha, obj.get("grant")))
-                return "shape"                      # P414 (M2): a `pct` whose signature lacks the `save:` line
+                return "shape"
         except (InvalidSignature, ValueError):
             return "bad_signature"
         if ok and c["kind"] == "sudo" and "ct" in obj and "vault" not in obj and "pct" not in obj and "fa" not in obj:
-            return None                             # P573: sudo is the typed password + one button; no Face ID on top
+            return None
         if ok and c["kind"] == "secret" and c.get("button_only") and "fa" not in obj:
             return None
-        # (the admin helper's approve-only allow has no password: Face ID stays its only user check)
-        return self._check_passkey(s, c, obj) if ok else None   # 拒绝 never needs Face ID
+
+        return self._check_passkey(s, c, obj) if ok else None
 
     def _check_passkey(self, s, c: dict, obj: dict) -> str | None:
 
@@ -1582,10 +1585,10 @@ class Elevator:
     def _save(self, c: dict, value: bytearray) -> dict:
         if len(value) > MAX_VALUE:
             return {"result": "failed", "why": "value"}
-        if callable(c.get("sink")):     # P170: a host-internal card (the mail password) — the host checks and stores it itself
+        if callable(c.get("sink")):
             try:
                 return c["sink"](value)
-            except Exception:   # noqa: BLE001 — a fixed word only, never the value or a server reply
+            except Exception:
                 return {"result": "failed", "why": "io"}
         verified = None
         if c.get('verify_before_write'):
@@ -1612,10 +1615,10 @@ class Elevator:
             return {"result": "list", "items": [{k: v for k, v in r.items() if k != "where"} for r in rows]}
         if not isinstance(rid, str) or not _ID.fullmatch(rid):
             return {"result": "refused", "why": "shape", "detail": "id: 32 hex characters (printed by the first command)"}
-        wait = req.get("wait")       # True (older CLIs) = up to the card's end; P423 #49: a number = at most that many s
+        wait = req.get("wait")
         stop_at = time.monotonic() + (min(float(wait), TTL["secret"] + 30) if isinstance(wait, (int, float))
                                       and not isinstance(wait, bool) else TTL["secret"] + 30)
-        self.secret_waiters[rid] = self.secret_waiters.get(rid, 0) + 1   # P423 #49: a reader → no hand-over turn too
+        self.secret_waiters[rid] = self.secret_waiters.get(rid, 0) + 1
         try:
             while True:
                 r = read_results(self.st).get(rid)
@@ -1663,7 +1666,7 @@ class Elevator:
         elif pending is not None:
             out.update(status="pending", id=pending.get("id"), secs=max(0, int(pending["until"] - now)))
         elif saved is not None:
-            out["gone_from_dest"] = True        # saved once, but the destination no longer has it
+            out["gone_from_dest"] = True
         if pending is not None and out["status"] == "saved":
             out["pending_id"] = pending.get("id")
         return out
@@ -1691,14 +1694,14 @@ class Elevator:
             h.agent.submit(Send("agentj-secret", rid, 0, text=secret_notice(res, getattr(h, "lang", "zh")), by="Agent J",
                                 source=system()))
             self.st.log("secret_handover", id=rid, result=res["result"])
-        except Exception as e:  # noqa: BLE001 — the outcome stays readable with `agentj secret result` / `status`
+        except Exception as e:
             from . import bg
             bg.swallowed(self.st.log, "secret_handover_failed", e, every=0)
 
     async def _p115(self, req: dict) -> dict:
         if req["t"] == "google":
             from . import google
-            bad = google.request_shape(req)     # P428: connect / connect_status / disconnect carry fixed typed fields
+            bad = google.request_shape(req)
             if bad:
                 return {"ok": False, "why": "shape", "detail": bad}
             try:
@@ -1717,9 +1720,9 @@ class Elevator:
                 res = await asyncio.to_thread(first_run.status_, self.st)
             elif op == "resume":
                 res = await asyncio.to_thread(first_run.resume, self.st, serve)
-            elif op == "close":          # P131: the owner said "close it" in chat — the pages hide it at once
+            elif op == "close":
                 res = await asyncio.to_thread(first_run.close, self.st)
-            elif op == "open":           # P131 追加2: only the owner's own ask reopens a closed checklist
+            elif op == "open":
                 res = await asyncio.to_thread(first_run.reopen, self.st)
             else:
                 res = await asyncio.to_thread(first_run.check, self.st, [item] if item else None, serve, None, bool(item))
@@ -1745,7 +1748,7 @@ class Elevator:
             return
         self.host.push_setup(res, show=True)
 
-    # ---------------------------------------------------------- the Agent's socket
+
     async def on_client(self, r: asyncio.StreamReader, w: asyncio.StreamWriter) -> None:
         gone = asyncio.get_running_loop().create_future()
         watch = None
@@ -1755,16 +1758,17 @@ class Elevator:
             if sock is not None and hasattr(socket, "SO_PEERCRED"):
                 peer, uid, _ = struct.unpack("3i", sock.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
                 if uid != os.getuid():
+                    w.close()
                     return
             line = await asyncio.wait_for(r.readline(), 10)
             req = json.loads(line)
             if isinstance(req, dict) and req.get("t") == "keep_awake":
                 from . import keep_awake
                 if req.get("action") not in ("status", "on", "off") or req.get("power") not in ("ac", "battery", "all") or type(req.get("dry_run")) is not bool \
-                        or type(req.get("lid", False)) is not bool:      # P418: lid optional (older clients omit it)
+                        or type(req.get("lid", False)) is not bool:
                     raise Refused("shape", "keep_awake: fixed action/power and boolean dry_run / lid")
-                # User state is outside the Agent fence. Each root change still creates
-                # its own normal signed phone card through this same socket.
+
+
                 res = await asyncio.to_thread(keep_awake.execute, req["action"], req["power"], req["dry_run"], self.st,
                                               req.get("lid", False))
                 w.write((json.dumps(res, ensure_ascii=False) + "\n").encode())
@@ -1773,18 +1777,26 @@ class Elevator:
                 return
             if isinstance(req, dict) and req.get("t") == "browser":
                 from . import browser
-                # P114: the browser's state lives outside the Agent fence; fixed actions with structured arguments only.
+
                 res = await asyncio.to_thread(browser.execute, req, self.st)
                 if res.get("result") in ("confirm_on_phone", "existing_found"):
-                    await self._p131_offer()      # the owner answers on the checklist page ("use it" / "install another")
+                    await self._p131_offer()
                 w.write((json.dumps(res, ensure_ascii=False) + "\n").encode())
                 await w.drain()
                 w.close()
                 return
             if isinstance(req, dict) and req.get("t") in ("google", "setup"):
-                # P115: Google tools (google.py) and the first-run checklist (first_run.py) keep their state outside the
-                # Agent fence; the Agent asks here. Fixed operations only; the checklist cannot mark choices from here.
+
+
                 res = await self._p115(req)
+                w.write((json.dumps(res, ensure_ascii=False) + "\n").encode())
+                await w.drain()
+                w.close()
+                return
+            if isinstance(req, dict) and req.get("t") == "report_local":
+                from . import report_host
+                res = (await asyncio.to_thread(report_host.execute, req) if peer is not None
+                       else report_host.failure("peer_unverified"))
                 w.write((json.dumps(res, ensure_ascii=False) + "\n").encode())
                 await w.drain()
                 w.close()
@@ -1825,13 +1837,20 @@ class Elevator:
                     tool = "agentj report script"
                 else:
                     raise Refused("shape", "policy action")
-                # P551 (#318): the host policy decides — calendar create/update ② long-press, delete / payment / script ③ Face ID
-                ans = await self.host.ask(tool, params, batch=False)
-                w.write((json.dumps({"result":"approved" if ans.get("behavior") == "allow" else "denied"})+"\n").encode())
+
+                observation = {}
+                ans = await self.host.ask(tool, params, batch=False, **({'_receipt':observation} if action == 'broker.execute' else {}))
+                res = {"result":"approved" if ans.get("behavior") == "allow" else "denied"}
+                if action == 'broker.execute':
+                    from .action_policy import CLI_REASONS
+                    reason = observation.get('reason')
+                    res.update(reason=reason if isinstance(reason, str) and reason in CLI_REASONS else 'unknown',
+                               approval_card_shown=False if observation.get('approval_card_shown') is False else None)
+                w.write((json.dumps(res)+"\n").encode())
                 await w.drain(); w.close(); return
             if isinstance(req, dict) and req.get("t") == "upgrade":
-                # P205: `agentj update apply` inside the Agent fence cannot see the state directory: the host caches the old
-                # wheel, writes the pending record / marker, rolls back and runs the post-upgrade doctor (update.host_op).
+
+
                 from . import update
                 if not isinstance(req.get("op"), str):
                     raise Refused("shape", "upgrade: op")
@@ -1848,9 +1867,9 @@ class Elevator:
                 w.close()
                 return
             if isinstance(req, dict) and req.get("t") in ("harness_job", "serve_ping"):
-                # P339: `agentj agent switch` (any harness, fenced or not) — serve launches the switch / scan job itself from
-                # semantic fields (switch_harness.check_spec); inside the fence launchd / systemd cannot be reached.
-                # serve_ping: "is serve running?" answered by serve itself (`agentj service status` inside the fence).
+
+
+
                 if req["t"] == "serve_ping":
                     res = {"ok": True, "serve": "answering"}
                 else:
@@ -1861,9 +1880,9 @@ class Elevator:
                 w.close()
                 return
             if isinstance(req, dict) and req.get("t") == "skills":
-                # P426 #181 (§39): `agentj skills health|archive|restore|suggest` — the ledgers live in the state directory,
-                # outside the Agent fence. Fixed operations only (skills_cli.OPS). Whoever asks on this socket is the Agent
-                # side: `by` is set here, never taken from the request (N1).
+
+
+
                 from . import skills_cli
                 h = self.host
                 res = await asyncio.to_thread(skills_cli.execute, self.st, {**req, "by": "agent"}, getattr(h, "agent_cfg", None) or {},
@@ -1880,8 +1899,8 @@ class Elevator:
                 w.close()
                 return
             if isinstance(req, dict) and req.get("t") == "calsync":
-                # P428 §4: two-way calendar sync / connect / disconnect / kick — gog and Google's state live outside the
-                # Agent fence; fixed shapes (jcards_cal_remote.request_shape), counts and fixed words come back.
+
+
                 from . import jcards_cal_remote
                 res = await jcards_cal_remote.elevate_request(self.host, self.st, req)
                 w.write((json.dumps(res, ensure_ascii=False) + "\n").encode())
@@ -1889,16 +1908,16 @@ class Elevator:
                 w.close()
                 return
             if isinstance(req, dict) and req.get("t") == "jcard_open":
-                # P360 (§34): `agentj card open` — inside the Agent fence too (control.sock is hidden there). Navigation only:
-                # serve checks the target, throttles, and pushes {"t":"jcard_open"} to the phones; no card, no data.
+
+
                 res = await self.host.jcard_open(req)
                 w.write((json.dumps(res) + "\n").encode())
                 await w.drain()
                 w.close()
                 return
             if isinstance(req, dict) and req.get("t") in ("terminal_go", "terminal_read"):
-                # P414 (§37.13): `agentj terminal open|output` inside the Agent fence too (control.sock is hidden there) —
-                # the same handlers as control.sock's terminal_go / terminal_read (H2 checks the peer process).
+
+
                 desk = self.host.term_desk
                 res = await (desk.ctl_go(req, peer) if req["t"] == "terminal_go" else desk.ctl_read(req, peer))
                 w.write((json.dumps(res, ensure_ascii=False) + "\n").encode())
@@ -1912,16 +1931,16 @@ class Elevator:
                 elif req.get("op") == "status":
                     res = {"ok": True, **local_files.snapshot(self.st)}
                 else:
-                    # Permission prompts are local-onboarding only, never Agent socket authority.
+
                     res = {"ok": False, "why": "local_prepare_required"}
                 w.write((json.dumps(res, ensure_ascii=False) + "\n").encode())
                 await w.drain()
                 w.close()
                 return
             if isinstance(req, dict) and req.get("t") == "admin_open":
-                # P163: `agentj admin --open` from inside the Agent fence (state hidden, own pid namespace): serve opens
-                # the local admin page in the owner's default browser. The one-time link stays in the page process;
-                # only {"ev","port"} comes back. One page at a time: a new one replaces the previous one.
+
+
+
                 res = await asyncio.to_thread(self._admin_open)
                 w.write((json.dumps(res, ensure_ascii=False) + "\n").encode())
                 await w.drain()
@@ -1929,14 +1948,14 @@ class Elevator:
                 return
             if isinstance(req,dict) and req.get('t')=='provider_profile':
                 from . import provider_profiles
-                # Same-user Agent-facing socket; fixed native provider targets only.
-                # Secret values stay entirely in the host; metadata is the receipt.
+
+
                 result=await asyncio.to_thread(provider_profiles.execute,req.get('spec'))
                 self.st.log('provider_profile',result='ok' if result.get('ok') else 'failed')
                 w.write((json.dumps(result)+'\n').encode());await w.drain();w.close()
                 return
             if isinstance(req, dict) and req.get("t") in ("mail_key", "mail_status"):
-                # Agent-facing fixed operations. No paired authority is manufactured here.
+
                 mail = self.host.mail
                 if mail is None:
                     res = {"ok": False, "why": "not_running"}
@@ -1960,8 +1979,8 @@ class Elevator:
                 w.close()
                 return
             if isinstance(req, dict) and req.get("t") in ("contacts", "mail_send"):
-                # P184: the address book lives outside the Agent fence; fixed operations. A contact card waits for the owner
-                # (early: the CLI prints CONTACT_CARD: <id> first); `mail_send` waits for the owner's approval card.
+
+
                 async def early(c):
                     w.write((json.dumps({"t": "card", "id": c["id"], "kind": "contact", "ttl": 600}) + "\n").encode())
                     await w.drain()
@@ -1971,24 +1990,24 @@ class Elevator:
                     res = await self.contacts.card(req, early if req.get("early") is True else None)
                 else:
                     res = await self.contacts.agent(req)
-            elif isinstance(req, dict) and req.get("t") == "secret_out":          # F32: a pickup card; answers at once
+            elif isinstance(req, dict) and req.get("t") == "secret_out":
                 res = await self.out.send(req)
-            elif isinstance(req, dict) and req.get("t") == "browser_login":     # P114: a login QR card; answers at once
+            elif isinstance(req, dict) and req.get("t") == "browser_login":
                 res = await self.login.request(req)
             elif isinstance(req, dict) and req.get("t") == "browser_login_result":
                 res = self.login.result(req)
-            elif isinstance(req, dict) and req.get("t") == "help_push":         # P411: a screen-help card (+ optional wait)
+            elif isinstance(req, dict) and req.get("t") == "help_push":
                 res = await self.help.push(req)
             elif isinstance(req, dict) and req.get("t") == "help_wait":
                 res = await self.help.wait(req)
             elif isinstance(req, dict) and req.get("t") == "help_end":
                 res = await self.help.end_req(req)
-            elif isinstance(req, dict) and req.get("t") == "help_capture":      # the browser page, fixed CDP calls only
+            elif isinstance(req, dict) and req.get("t") == "help_capture":
                 res = await self.help.capture(req)
             elif isinstance(req, dict) and req.get("t") == "help_page":
                 res = await self.help.page(req)
-            elif isinstance(req, dict) and req.get("t") == "secret_result":     # P73: the outcome of an earlier card
-                # P423 #49: a `--wait` whose CLI is gone stops reading, so the outcome is handed to the Agent instead
+            elif isinstance(req, dict) and req.get("t") == "secret_result":
+
                 reading = asyncio.ensure_future(self.result_of(req))
                 cli_gone = asyncio.ensure_future(r.read())
                 try:
@@ -2002,9 +2021,9 @@ class Elevator:
                     w.close()
                     return
                 res = reading.result()
-            elif isinstance(req, dict) and req.get("t") == "secret_status":     # P423 #49: is NAME saved? (never a value)
+            elif isinstance(req, dict) and req.get("t") == "secret_status":
                 res = await self.status_of(req)
-            elif isinstance(req, dict) and req.get("t") in ("sx", "file_show"):                # P574: same-owner grant / key transfer
+            elif isinstance(req, dict) and req.get("t") in ("sx", "file_show"):
                 peers = getattr(self.host, "peers", None)
                 cwd = req.get("cwd") if isinstance(req.get("cwd"), str) and os.path.isabs(req["cwd"]) else None
                 if peers is None or (req.get("t") == "sx" and getattr(peers, "keys", None) is None):
@@ -2017,13 +2036,13 @@ class Elevator:
                 card = norm_sudo(req) if req["t"] == "sudo" else norm_secret(req, self.st.root)
                 card["reason"] = card["why"] if card["kind"] == "sudo" else card["purpose"]
                 on_card = None
-                if req.get("early") is True:                                    # a CLI that prints the card id first
+                if req.get("early") is True:
                     async def on_card(c):
                         w.write((json.dumps({"t": "card", "id": c["id"], "kind": c["kind"], "ttl": TTL[c["kind"]]}) + "\n").encode())
                         await w.drain()
                 if card["kind"] == "sudo":
-                    # sudo: the CLI going away withdraws the card (nobody would get the output). A secret card does NOT
-                    # depend on its CLI (P73): it stays until the phone answers or it expires, the outcome is remembered.
+
+
                     async def eof():
                         with contextlib.suppress(Exception):
                             await r.read()
@@ -2033,12 +2052,12 @@ class Elevator:
                     res = await self.request(card, gone, on_card)
                 elif req.get("replace") is not True and not self._last_check_failed(card["name"]) \
                         and await asyncio.to_thread(dest_has_value, card["dest_spec"]):
-                    # P423 #49: the key is already there — say so instead of asking the owner again (`--replace` re-asks;
-                    # so does a key whose last host-side check failed)
+
+
                     res = {"result": "already_saved", "name": card["name"], "dest": card["dest"]}
                 else:
-                    # A secret card does not depend on its CLI (P73). P423 #49: the CLI waits at most `wait` s (old CLIs:
-                    # the whole card); if it stops listening first, the outcome is handed to the Agent when the card ends.
+
+
                     shown: dict = {}
 
                     async def note_card(c, inner=on_card):
@@ -2046,7 +2065,7 @@ class Elevator:
                         if inner is not None:
                             await inner(c)
                     task = asyncio.ensure_future(self.request(card, None, note_card))
-                    self.bg.add(task)                   # held until it ends (stop() waits for it, as for other cards)
+                    self.bg.add(task)
                     task.add_done_callback(self.bg.discard)
                     wait = req.get("wait")
                     wait = min(max(float(wait), 0.0), TTL["secret"] + 30.0) \
@@ -2078,7 +2097,7 @@ class Elevator:
         w.close()
 
 
-# ---------------------------------------------------------------- the CLI side (runs as the Agent)
+
 def client_request(st, req: dict, timeout: float = CMD_TIMEOUT_MAX + 400, on_card=None, path=None) -> dict:
 
     def unavailable(error=None):
@@ -2086,7 +2105,7 @@ def client_request(st, req: dict, timeout: float = CMD_TIMEOUT_MAX + 400, on_car
         if error is not None:
             from .names import ServeBusy
             failure = ServeBusy(type(error).__name__).response()
-            failure.pop("ok")  # no answer is not a host refusal; legacy routing checks whether ok exists
+            failure.pop("ok")
             res.update(failure)
         return res
 
@@ -2141,7 +2160,7 @@ MSG = {
     "failed": "没有完成：{why}。/ Not done: {why}.",
     "refused": "请求不合格：{detail}。/ Request refused: {detail}.",
 }
-# P73: what a secret card's outcome means, worded so the Agent tells the owner the right thing.
+
 SECRET_MSG = {
     "gone": "卡片被撤回了：Agent J 服务停止或重启，手机上的提交没有保存。（命令被中断不会再撤回密钥卡。）请重新运行同一条命令，发一张新卡。"
             "/ The card was withdrawn because Agent J stopped or restarted; nothing was saved. (An interrupted command no longer "
@@ -2154,7 +2173,7 @@ SECRET_MSG = {
                "也可运行 `agentj secret result {id} --wait` 或 `agentj secret status {name}` 查看。/ Still waiting on the phone ({secs} s "
                "left). Do not send another card or ask the owner again: the outcome reaches you as an [Agent J system notice] once "
                "the owner submits; or run `agentj secret result {id} --wait` / `agentj secret status {name}`.",
-    # P423 #49: the destination already holds the key → no card
+
     "already_saved": "{name} 已经保存在 {dest}，没有再发卡。直接使用，不要让主人重填；确实要换新值时加 --replace 重新运行。/ {name} is "
                      "already saved in {dest}; no card was sent. Use it and do not ask the owner again; add --replace only to "
                      "replace it with a new value.",
@@ -2232,7 +2251,7 @@ def _secret_report(res: dict, as_json: bool) -> int:
 
     if as_json:
         print(json.dumps(res, ensure_ascii=False))
-    elif res.get("result") == "already_saved":         # P423 #49
+    elif res.get("result") == "already_saved":
         print(f"SECRET_ALREADY_SAVED: {res.get('name')} → {res.get('dest')} — {_say(res, 'secret')}")
     elif res.get("result") == "saved":
         r = res["receipt"]
@@ -2338,7 +2357,7 @@ def cmd_secret(a) -> int:
         return secret_out.cmd_send(a)
     if a.action == "status":
         return _secret_status(a)
-    if a.action == "result":     # P423 #49: --wait is bounded (REQUEST_WAIT s) so a shell timeout does not cut it off
+    if a.action == "result":
         res = client_request(State(), {"t": "secret_result", "id": a.id or "", "wait": REQUEST_WAIT if a.wait else False})
         if res.get("result") == "list":
             if a.json:

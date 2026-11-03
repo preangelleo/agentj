@@ -1,24 +1,4 @@
-"""P184: the owner's address book — kept by the Agent, on the Agent J host only (`<state>/contacts/contacts.json`, 0600).
-
-Leo (10-12): the Agent remembers every address its owner had it mail, imports a whole CSV / vCard export once, and finds
-「张珊」 when the owner says 「张三」. Fields follow vCard 4.0 (RFC 6350) and the Google / Outlook CSV exports:
-name (FN), nicknames (NICKNAME), several e-mails / phones / addresses with a label (TYPE), organisation, title, birthday,
-note — plus what only we know: source (owner · agent · phone · import:<format>), last_sent_at, send_count.
-
-Search (`find`) is a plain table walk with a pinyin index, no vector store: an address book holds hundreds of names,
-the questions are names and spellings, and what a voice transcript gets wrong is the characters, not the meaning — an
-embedding model would not know 「李思」 and 「李四」 sound the same, pinyin does. Scoring (highest wins, one per contact):
-exact name / nickname / address → prefix / substring → same pinyin (every reading of a polyphone: 单 dan/shan, 曾 zeng/ceng)
-→ fuzzy pinyin (zh=z ch=c sh=s, n=l, r=l, f=h, -ng=-n: the southern merges an ASR also makes) → initials (zs → 张三)
-→ edit distance on the fuzzy pinyin / Latin name. pypinyin is already a dependency (wake words).
-
-Dedupe on import and add: the same e-mail or the same phone number (digits; a +86 / 0086 prefix ignored) = the same
-person → fields are merged (union of e-mails, phones, addresses, nicknames; an empty name / org / title is filled; notes
-are appended once). Same name and nothing that disagrees (no two different e-mails, no two different phones) → merged; same
-name with different e-mails → two contacts (two 张伟 are common).
-
-Nothing here leaves the Agent J host: no cloud, no relay copy; the phone reads it inside the Noise session (contacts_serve).
-"""
+"""P184 owner address book on the Agent J host only; see ARCHITECTURE contacts.py <module>."""
 from __future__ import annotations
 
 import contextlib
@@ -74,7 +54,6 @@ def norm_email(a) -> str:
 
 
 def norm_phone(p) -> str:
-    """As written, minus noise (keeps a leading +, digits, spaces, dashes, brackets, `ext`)."""
     p = _s(p, 40)
     if p.lower().startswith("tel:"):
         p = p[4:]
@@ -114,7 +93,6 @@ def _labeled(items, norm, limit: int) -> list[dict]:
 
 
 def clean(raw: dict, *, partial: bool = False) -> dict:
-    """Any contact-shaped dict (ours, or a simple {name, email, phone}) → our record's fields. Raises ContactError."""
     if not isinstance(raw, dict):
         raise ContactError("shape")
     emails = raw.get("emails", [])
@@ -183,7 +161,6 @@ def write(st, book: dict) -> None:
 
 @contextlib.contextmanager
 def edit_book(st):
-    """Read-modify-write under an exclusive lock (the CLI, serve and the phone may write at the same time)."""
     import fcntl
     fd = os.open(root(st) / LOCK, os.O_RDWR | os.O_CREAT, 0o600)
     try:
@@ -209,8 +186,6 @@ def owner(book: dict) -> dict | None:
 
 
 def set_owner(book: dict, raw: dict) -> tuple[dict, str]:
-    """Slot 0 ← the owner's own answer: name, e-mails (the first is the main one), phones replace what was there. → (it,
-    "added" | "updated" | "same"). At least one e-mail."""
     c = clean(raw, partial=True)
     if not c["emails"]:
         raise ContactError("no_email", "the owner's main e-mail is required / 至少填主邮箱")
@@ -232,8 +207,6 @@ def set_owner(book: dict, raw: dict) -> tuple[dict, str]:
 
 
 def owner_emails(st) -> list[str]:
-    """The owner's own addresses: slot 0 first (main e-mail first), then the e-mail channel's allowlist rows marked 「我本人」
-    (P170). Lower case, no duplicates."""
     out = [e["v"].lower() for e in (owner(read(st)) or {}).get("emails", [])]
     with contextlib.suppress(Exception):
         from . import mail as M
@@ -311,7 +284,6 @@ def add(book: dict, raw: dict, source: str = "owner", merge: bool = True) -> tup
 
 
 def update(book: dict, cid: str, changes: dict) -> dict:
-    """Replace the given fields (a whole list replaces the list); `add_*` / `rm_*` keys add or remove single values."""
     o = get(book, cid)
     if o is None:
         raise ContactError("not_found")
@@ -343,8 +315,6 @@ def remove(book: dict, cid: str) -> dict:
 
 
 def record_sent(st, recipients: list, source: str = "agent") -> list[dict]:
-    """After a mail went out: each address is remembered (a new contact, marked with its source) and counted.
-    recipients: [addr | {addr, name}]. → [{addr, id, added}]."""
     out, now = [], int(time.time())
     with edit_book(st) as book:
         for r in recipients:
@@ -396,7 +366,6 @@ SURNAME = {"曾": "zeng", "单": "shan", "解": "xie", "区": "ou", "仇": "qiu"
 
 
 def segment(run: str) -> list[str]:
-    """"zhangsan" → ["zhang", "san"] (fewest syllables); a run that is not all pinyin stays one word."""
     n = len(run)
     if n < 2 or n > 40 or not run.isalpha():
         return [run]
@@ -412,7 +381,6 @@ def segment(run: str) -> list[str]:
 
 
 def syllables(text: str, cap: int = 16) -> list[list[str]]:
-    """Every reading of `text` as a list of syllables (CJK → pinyin, other runs → lower-case words), ≤ cap variants."""
     key = (text, cap)
     if key in _PY_CACHE:
         return _PY_CACHE[key]
@@ -566,7 +534,6 @@ def ordered(book: dict, how: str = "recent") -> list[dict]:
 
 
 def view(c: dict) -> dict:
-    """What the phone / the Agent sees of one contact (everything but internal bookkeeping)."""
     return {k: c.get(k) for k in ("id", "name", "nicks", "emails", "phones", "addresses", "org", "title", "bday", "note", "source",
                                   "last_sent_at", "send_count")} | {"letter": letter(c)} | ({"slot": 0} if c.get("id") == OWNER_ID else {})
 
@@ -617,7 +584,6 @@ def _split(v: str, sep: str) -> list[str]:
 
 
 def parse_vcard(text: str) -> list[dict]:
-    """vCard 2.1 / 3.0 / 4.0 (Apple, Google, Outlook, Android, QQ / 163 exports) → simple dicts for `clean`."""
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     text = re.sub(r"=\n", "=\x01", text)                       # 2.1 quoted-printable soft breaks (joined below)
     text = re.sub(r"\n[ \t]", "", text)                       # RFC 6350 §3.2 unfolding
@@ -747,8 +713,6 @@ def _label_of(h: str) -> str:
 
 
 def parse_csv(text: str) -> list[dict]:
-    """Google Contacts (old and new), Outlook / Outlook.com, Apple-tool, QQ / 163 / Foxmail CSV → simple dicts.
-    The columns are recognised by name (English and Chinese), not by position."""
     sample = text[:4096]
     try:
         dialect = csv.Sniffer().sniff(sample, delimiters=",;\t")
@@ -824,7 +788,6 @@ def parse_json(text: str) -> list[dict]:
 
 
 def import_data(st, data: bytes, name: str = "", fmt: str = "auto", dry_run: bool = False, source: str = "") -> dict:
-    """Bytes of a .vcf / .csv / .json export → counts {added, merged, same, skipped, total, format}."""
     if len(data) > IMPORT_MAX:
         raise ContactError("too_big", f"≤ {IMPORT_MAX // (1024 * 1024)} MB")
     text = decode(data)
@@ -872,7 +835,6 @@ VC_TYPES = {"cell": "CELL", "mobile": "CELL", "home": "HOME", "work": "WORK", "o
 
 
 def to_vcard(cs: list[dict], version: str = "3.0") -> str:
-    """vCard 3.0 by default: what Apple Contacts, Google Contacts and Outlook all import; 4.0 on request."""
     lines = []
     for c in cs:
         name = c.get("name", "")
@@ -905,7 +867,6 @@ GOOGLE_HEAD = ["Name", "Nickname", "Birthday", "Notes", "Organization 1 - Name",
 
 
 def to_csv(cs: list[dict]) -> str:
-    """Google Contacts CSV (Google and Outlook import it; Excel opens it — UTF-8 with BOM)."""
     ne = max([len(c.get("emails", [])) for c in cs] + [1])
     np_ = max([len(c.get("phones", [])) for c in cs] + [1])
     na = max([len(c.get("addresses", [])) for c in cs] + [1])
@@ -942,14 +903,12 @@ def export_text(book: dict, fmt: str = "vcf", version: str = "3.0") -> str:
 
 # ------------------------------------------------------------------ CLI
 def _call(st, req: dict, timeout: float = 30) -> dict | None:
-    """Through serve (elevate.sock, visible inside the Agent's fence); None when serve is not running."""
     from .elevate import client_request
     res = client_request(st, {"t": "contacts", **req}, timeout=timeout)
     return None if res.get("result") == "unavailable" else res
 
 
 def local(st, req: dict) -> dict:
-    """The same operations on the file itself (serve calls this; the CLI too when serve is not running)."""
     op = req.get("op")
     try:
         if op == "list":
@@ -1109,10 +1068,6 @@ def cmd(a) -> int:
 
 
 def owner_cmd(st, a, zh: bool, out, run) -> int:
-    """P194 `agentj contacts owner show|set`: slot 0 = the owner. `show` prints it (or what could be suggested); `set` never
-    writes by itself from the Agent: it opens the owner card on the paired phone (pre-filled with --name / --email / --phone,
-    else with the 「我本人」 address of the e-mail channel) and the owner saves or skips. Only the owner's own terminal (a TTY,
-    Agent J not running) writes directly."""
     import sys
     sub_ = (a.query or "show").lower()
     if sub_ not in ("show", "set"):

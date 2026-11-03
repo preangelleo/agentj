@@ -58,6 +58,7 @@ PHONE_COMMANDS = (
     ('reset', '逐步修复连接（照常确认）', 'Repair the connection (normal confirmation)'),
     ('switch-harness', '检查并切换 AI', 'Check and switch the AI'),
     ('goal', '设置要完成的目标', 'Set a goal'),
+    ('recover-background', '核对后台结果', 'Verify background results'),
 )
 
 

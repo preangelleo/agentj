@@ -127,8 +127,18 @@ def _run(engine: pathlib.Path, args: list[str], capture=False) -> subprocess.Com
         env = dict(os.environ)
         request = {"argv": [sys.executable, "-I", str(engine / ENGINE), *args], "cwd": os.getcwd(),
                    "inputs": manifest, "environment_sha256": hashlib.sha256(json.dumps(env, sort_keys=True).encode()).hexdigest()}
-        if not action_policy.confirm_cli("broker.execute", request):
-            return subprocess.CompletedProcess(args, 1, "", "report execution was not confirmed")
+        observation = {}
+        if not action_policy.confirm_cli("broker.execute", request, receipt=observation):
+            reason = observation.get('reason', 'unknown')
+            code = {'offline':'interaction_unavailable', 'no_device':'interaction_unavailable', 'host_unavailable':'interaction_unavailable',
+                    'device':'authorization_denied', 'timeout':'authorization_timeout', 'estop':'execution_stopped',
+                    'group_source':'authorization_source_refused', 'owner_grant_scope':'authorization_scope_missing',
+                    'serve_stop':'interaction_interrupted', 'agent_gone':'interaction_interrupted',
+                    'superseded':'interaction_interrupted', 'too_many':'interaction_unavailable'}.get(reason, 'authorization_unknown')
+            receipt = {'code':code, 'reason':reason, 'receipt':'report-execution/' + code,
+                       'approval_card_shown':observation.get('approval_card_shown'),
+                       'recovery':'Return this receipt to the original workflow owner and preserve the original inputs. Do not automatically resubmit or request another mail grant.'}
+            return subprocess.CompletedProcess(args, 1, "", json.dumps(receipt))
         # A changed custom template invalidates this approval. Execution still
         # reads only the snapshot, including if the original changes after here.
         for row in template_rows:

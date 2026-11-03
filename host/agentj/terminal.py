@@ -1,19 +1,4 @@
-"""P408 (ADR-P408-terminal, PROTOCOL §38): 设置 → 安全 →「网页终端」 — a line-mode shell on this computer from a paired phone.
-
-Default off; `agentj terminal enable|allow` widens only from the owner's terminal + a passkey remote's card (serve
-`terminal_cfg`, term_store.py). Every open: a host nonce, a signed `term_open` and a passkey assertion (two steps like
-cmd_run); the computer password comes once through an end-to-end §11 card of kind `login` (only to the opening device),
-checked with `sudo -S -k true` (exactly one prompt) and cached per term_store (prf / local / session). One terminal at a time.
-
-The shell: `bash --noprofile --norc --noediting -i` (macOS, P437: the owner's `zsh -f -i`, term_mac) on PIPES (no PTY,
-stderr merged, start_new_session), a scrubbed environment, a setup serve writes itself (`set +H +m`, PS1 with an OSC 133
-marker — a UI hint only, HISTFILE under <state>/terminal/, `sudo(){ <checked sudo> -A "$@"; }`, `sudo -k`). Lines are
-classified (danger + redline + this module's own list): a dangerous one waits for a signed + Face ID resend (`term_confirm`). sudo asks serve through term_askpass.py and
-the phone (`term_sudo` → Face ID → `term_sudo_ok`); a password never travels in a `term_*` message, a log, the cast, argv or
-the environment. Output: term_mask.Masker, ≤ 16 KiB frames, ≤ 64 KiB/s. Close: 15 (≤ 60) min, idle 5 min, hidden 60 s, the
-opening session gone (`relay_lost`), e-stop, serve stop, disable / deny; SIGHUP then SIGKILL to the group + the session /
-token sweep. Audit: controls.log (digests only) and an asciicast v2 file (0600, 30 days) under <state>/terminal/casts/.
-"""
+"""Paired-phone line terminal; security contract in agentjarvis/ARCHITECTURE.md (P408)."""
 from __future__ import annotations
 
 import asyncio
@@ -124,6 +109,10 @@ class Desk(SudoDesk, BangDesk, VshareDesk):
                "idle_s": store.IDLE_S, "open": t is not None,
                "pk": bool(device) and self.st.passkey_of_device(device) is not None,   # P417 #185: 「先设置 Face ID」
                "kind": store.device_kind(self.st, device)}   # P417 #185: phone → 「只能在电脑浏览器里操控」; desktop may enable
+        from .olares_terminal import external_url
+        url = external_url()
+        if url:
+            out["external_url"] = url
         if e and "until" in e:
             out["until"] = e["until"]
         return out

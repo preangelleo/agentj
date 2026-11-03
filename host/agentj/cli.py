@@ -194,9 +194,9 @@ def _forced_exit() -> None:
 
 
 def _serve_exit_guard() -> None:
-    """P292: on a saturated disk serve's stop (queued fsyncs, a worker thread parked in a read, the default executor join at
-    the end of asyncio.run) can outlast the service manager's stop timeout, which then SIGKILLs it (launchd: exit -9). Leave
-    by ourselves first; everything renamed is already on disk, a line still queued would be lost to SIGKILL just the same."""
+
+
+
     global _exit_timer
     if _exit_timer is None:
         _exit_timer = threading.Timer(SERVE_EXIT_GRACE, _forced_exit)
@@ -238,8 +238,8 @@ UTF8_TERMINALS = ("Apple_Terminal", "iTerm.app", "vscode", "WezTerm", "ghostty")
 
 
 def _qr_mode(out=None, environ=None) -> str:
-    """How to draw the pairing QR on this terminal: "compact" (Unicode half blocks, needs a UTF-8 terminal), "ansi" (colour
-    blocks, any ANSI terminal — also a plain SSH session with LANG=C), "ascii" (no colours either: TERM=dumb / not a tty)."""
+
+
     out = out or sys.stdout
     e = os.environ if environ is None else environ
     enc = (getattr(out, "encoding", None) or "ascii").lower()
@@ -595,10 +595,10 @@ def _prompt_thread(run) -> None:
 
 
 def _run_prompting(coro) -> None:
-    """asyncio.run for a command that races keyboard prompts against serve (P153). A daemon thread still blocked in
-    input() / getpass on a terminal keeps Python from finishing its exit: `agentj pair` printed 「✗ 手机断开了」 and then
-    hung until Ctrl-C. When a prompt is still waiting at the end: put the terminal back (getpass turns echo off), flush,
-    and leave with os._exit and the same status sys.exit would have given."""
+
+
+
+
     saved = None
     try:
         import termios
@@ -880,10 +880,10 @@ def ssh_tunnel_hint(port: int, environ=None) -> str | None:
 
 
 def _desktop_env(environ=None) -> dict | None:
-    """`--open` needs a desktop browser on the Agent J host → the environment to open it with, or None. Never over SSH without
-    a desktop. On Linux/BSD the Agent usually runs under the background service, whose environment may lack the display:
-    find the owner's own Wayland socket / X display (without one Python's webbrowser falls back to a console browser,
-    which would hang a detached process)."""
+
+
+
+
     e = dict(os.environ if environ is None else environ)
     if _remote_session(e):
         return None
@@ -1079,31 +1079,35 @@ def cmd_admin(a) -> None:
             print(json.dumps({"ev": "stopped"}), flush=True)
 
 
-def cmd_devices(a) -> None:
-    st = State()
-    _need_init(st)
-    try:   # P179: pre-P179 records → self_name / owner_name (same audit-based rule as serve's start)
-        st.migrate_device_names()
-    except (OSError, ValueError):
-        pass
+def cmd_devices(a, st=None, status=None, records=None, out=None) -> None:
+    out = out or sys.stdout
+    if st is None:
+        from . import host_diagnostics
+        rc = host_diagnostics.request('devices', as_json=a.json)
+        if rc is not None:
+            raise SystemExit(rc)
+        st = State()
+        if not st.exists():
+            print(host_diagnostics.devices_unavailable(a.json)['output'], end='', file=out)
+            raise SystemExit(1)
     from .devnames import public_device
-    devs = st.devices()
-    status = _ctl_quiet(st, {"cmd": "status"}) or {}
+    devs = st.devices() if records is None else records
+    status = status if status is not None else (_ctl_quiet(st, {"cmd": "status"}) or {})
     online = {s["device"] for s in status.get("sessions", []) if s.get("state") == "ready"}
     devs = {d: public_device(d, v, d in online) for d, v in devs.items()}
     if a.json:
         print(json.dumps(devs,
-                         ensure_ascii=False, indent=1))
+                         ensure_ascii=False, indent=1), file=out)
         return
-    print(f"Agent：{_name_or_unset(st)}")
-    print(_link_line(st))
-    print(f"遥控器 {len(devs)}/{MAX_DEVICES}" + ("（已满：再批准新设备会自动解绑最久没用的那台；想自己挑就先 `agentj revoke <设备>`）" if len(devs) >= MAX_DEVICES else ""))
+    print(f"Agent：{_name_or_unset(st)}", file=out)
+    print(_link_line(st), file=out)
+    print(f"遥控器 {len(devs)}/{MAX_DEVICES}" + ("（已满：再批准新设备会自动解绑最久没用的那台；想自己挑就先 `agentj revoke <设备>`）" if len(devs) >= MAX_DEVICES else ""), file=out)
     if not devs:
-        print("还没有已批准的设备。用 `agentj pair` 配对。")
+        print("还没有已批准的设备。用 `agentj pair` 配对。", file=out)
     for did, v in devs.items():
         when = time.strftime("%Y-%m-%d %H:%M", time.localtime(v.get("paired_at", 0)))
         fid = "  Face ID ✓" if v.get("has_passkey") else ""   # F20: this phone can reconnect with its passkey
-        print(f"{did}  {'在线' if did in online else '离线'}  {v.get('name', '')}{_name_note(v)}  配对于 {when}{fid}{' · 经账户页添加 / Added from account page' if v.get('source') == 'account' else ''}")
+        print(f"{did}  {'在线' if did in online else '离线'}  {v.get('name', '')}{_name_note(v)}  配对于 {when}{fid}{' · 经账户页添加 / Added from account page' if v.get('source') == 'account' else ''}", file=out)
 
 
 def _name_note(v) -> str:
@@ -1373,8 +1377,8 @@ def _pasted_code(text: str) -> str:
 
 
 def _read_paste(prompt: str) -> str:
-    """P214 (Leo 10-13): `agentj login` at a terminal asks for the code first. Hidden input; a pasted prompt spans lines, so
-    take everything that arrives within a moment (else the rest would answer the next question). Never echoed or logged."""
+
+
     import select
     fd, old = sys.stdin.fileno(), None
     try:
@@ -1540,9 +1544,9 @@ def _choose_name(st: State, a, *, ask: bool) -> bool:
 
 
 def _after_bind(st: State) -> None:
-    """P214 (Leo 10-13): right after a seat bind, bring the Agent online (the account page's 「添加遥控器」 needs a running
-    serve) and say the one next step. Only for the Agent J host's own install: a custom state directory without its own
-    service name (tests, a second instance) never touches the service."""
+
+
+
     from . import service
     url = "https://agentj.app/account/"
     try:
@@ -2064,9 +2068,9 @@ def cmd_agent(a) -> None:
 
 
 def _first_connect(st: State, a) -> bool:
-    """P220 (HK owner 10-13): `agentj agent switch claude` on a computer with no Agent connected yet said only 「Agent J 还没接任何
-    Agent」. Nothing to switch from is a first connection: do exactly what `agentj agent <harness>` does, then restart the
-    background service so it takes effect now. False = a real switch (or --scan / --result / the worker): unchanged."""
+
+
+
     from . import fence
     if fence.inside():
         return False
@@ -2985,9 +2989,9 @@ def _rescue_undo(st: State) -> None:
 
 
 def _offer_key_import(service) -> None:
-    """P198 (I): Jev's key (P157 approval layer 2) in this shell but not in the service env file → a person at a terminal is
-    asked once (y/N) and it is imported in one step; an Agent (no terminal) gets the one command to run. Neither has it →
-    one line on how to add it from the phone. Never a value; never fails the install."""
+
+
+
     try:
         n = service.name()
         note = service.key_note(n)
@@ -3072,11 +3076,11 @@ def _upgrade_failed(st, res: dict) -> None:
 
 
 def _upgrade_gate(r: dict) -> dict | None:
-    """P203: before a manual upgrade, ask the running serve what a restart now would interrupt (running turn — not the
-    caller's own when an Agent runs this —, queued messages, open cards, scheduled / background tasks, friend sessions).
-    Nothing → None (go on, one step). Something → the owner decides: at a terminal a y/N here; from an Agent or a script
-    a confirmation card on the phone (its 「现在升级」 is the phone's own signed /update) and a result block, nothing
-    installed. No serve / no answer → None, as before (the restart waits for an idle serve anyway). --yes skips this."""
+
+
+
+
+
     from . import auto_update, ctl_auth, update
     from .names import ctl_call
     st = State()
@@ -3277,16 +3281,25 @@ def main(argv=None) -> None:
     from . import instance
     try:   # P180: `--instance N` / AGENTJ_INSTANCE first — everything below reads the state dir / preferences / unit name
         inst, rest = instance.split_argv(list(sys.argv[1:] if argv is None else argv))
+        from . import host_diagnostics
+        if rest and rest[0] == 'devices' and host_diagnostics.agent_side() and inst is not None and inst != instance.current():
+            print(host_diagnostics.devices_unavailable('--json' in rest)['output'], end='')
+            raise SystemExit(1)
         inst = instance.apply(inst)
     except instance.InstanceError as e:
         sys.exit("✗ " + str(e))
     if rest != list(sys.argv[1:] if argv is None else argv):
         argv = rest
-    if inst > 1 and not instance.exists(inst) and rest and rest[0] in instance.AUTO_CREATE:
+    if inst > 1 and rest and rest[0] in instance.AUTO_CREATE and not instance.exists(inst):
         try:
             instance.create(inst)
         except instance.InstanceError as e:
             sys.exit("✗ " + str(e))
+    if rest and rest[0] == 'devices' and host_diagnostics.agent_side():
+        parser = argparse.ArgumentParser(prog='agentj devices')
+        parser.add_argument('--json', action='store_true')
+        device_args = parser.parse_args(rest[1:])
+        raise SystemExit(host_diagnostics.request('devices', as_json=device_args.json))
     from .service import load_launch_binary_env, ServiceError, user_runtime_dir
     user_runtime_dir()   # P329: an SSH login without PAM (Olares) still reaches the user manager, journalctl and systemd-run
     try:
@@ -3744,7 +3757,7 @@ def main(argv=None) -> None:
     ob.set_defaults(fn=cmd_onboarding)
     a = p.parse_args(argv)
     from . import host_diagnostics
-    host_owned = a.cmd in ("diag", "status", "support", "feedback") or (a.cmd == "doctor" and a.reconnect)
+    host_owned = a.cmd in ("diag", "status", "support", "feedback", "devices") or (a.cmd == "doctor" and a.reconnect)
     host_owned = host_owned and host_diagnostics.agent_side()
     if not host_owned and a.cmd not in NO_MIGRATE and not (a.cmd == "report" and getattr(a, "action", None)) and a.cmd not in ("keep-awake", "browser") and not (a.cmd == "doctor" and (a.isolation_only or a.read_only)):
         from . import migrate

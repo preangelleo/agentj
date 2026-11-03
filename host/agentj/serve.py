@@ -332,7 +332,7 @@ class Ask:
     uv_ok: bool = False            # P539: the approving remote's allow passed the passkey (UV) on this card
     pk_fail: bool = False          # P539: a passkey answer on this card was refused (ask_done why "passkey")
     reason: str | None = None      # P572 (#385): the Agent's reason, read out of the signed summary ("" = none given;
-                                   # None = a host card with no Agent behind it; sent as "" for the fallback)
+
     tg_key: tuple | None = None    # P573 (#389): (turn, action class) a signed allow of this card opens a task grant for
     task_scope: str | None = None
     tg_by: str = ""                # P573: the task grant (its signed parent rid) that answered this still-open card
@@ -506,7 +506,7 @@ def approval_summary(tool, tool_input, verdict, lang="zh", *, workdir=None):
 
 
 
-# ---------------------------------------------------------------- P313: say receipts on disk (receipts.py, PROTOCOL §14)
+
 async def _rcpt_recv(host, device: str, sid: str) -> None:
 
     rc = getattr(host, "receipts", None)
@@ -700,7 +700,7 @@ class Host:
         self.res_task: asyncio.Task | None = None
         self.theme_stamp = self.theme_cached = None   # P169 (§23): the phone's look, re-read when current.json changes
 
-    # ------------------------------------------------------------ output
+
     def emit(self, ev: str, **kw) -> None:
         if self.events == "jsonl":
             print(json.dumps({"ev": ev, **kw}, ensure_ascii=False), flush=True)
@@ -758,7 +758,7 @@ class Host:
     def _tap(self, direction: str, data) -> None:
         pass
 
-    # ------------------------------------------------------------ relay plumbing
+
     async def _ws_send(self, data) -> None:
         if self.ws is None:
             raise ConnectionError("relay down")
@@ -981,7 +981,7 @@ class Host:
             s.timer.cancel()
         s.timer = asyncio.create_task(coro) if coro else None
 
-    # ------------------------------------------------------------ frames
+
     def _new_session(self, cid: int) -> Session | None:
         if cid in self.sessions:
             return self.sessions[cid]
@@ -1311,7 +1311,7 @@ class Host:
             if isinstance(name, str) and isinstance(arg, str) and len(name) <= 32 and text_units(arg) <= slash.ARG_MAX:
                 await self.on_slash(s, name.lower(), arg.strip(), confirm=obj.get("confirm") is True, typed=False, authorization=obj)
 
-    # ------------------------------------------------------------ deadlines
+
     async def _handshake_timeout(self, s: Session) -> None:
         await asyncio.sleep(HS_TTL)
         if self.sessions.get(s.cid) is s and s.state in ("new", "hello"):
@@ -1435,7 +1435,7 @@ class Host:
         res.update({k: got[k] for k in ("replaced", "evicted") if got[k]})
         return res
 
-    # ------------------------------------------------------------ P153: add a remote from a remote (PROTOCOL §3.3)
+
     async def _send_pair1(self, obj_fn) -> None:
         for x in list(self.sessions.values()):
             if x.state == "ready" and x.pair1 and self.st.is_allowed(x.pub):
@@ -1518,7 +1518,7 @@ class Host:
         self.push_notify("ask")
         self._bg(self._pair_card_wait(p, s, a), "pair_card")
 
-    # ------------------------------------------------------------ #118: reset the remote pairing password, keep every remote
+
     async def _pass_consent(self, req: dict, pid) -> dict:
 
         from . import pass_reset
@@ -1649,7 +1649,7 @@ class Host:
         if reason == "device" and result == "allow":   # the chat line is onboarding's 「…也连上了」 (one per new remote)
             self.push_notify("security")
 
-    # ------------------------------------------------------------ F28 (P72): first-use onboarding (agentj/onboarding.py)
+
     def onboarding_lang(self) -> str:
         return "en" if str(preferences.get(self.preferences, "appearance.language", "zh")).lower().startswith("en") else "zh"
 
@@ -1744,7 +1744,7 @@ class Host:
         self.reporter.trigger("online")
         await self.on_ready(s, since)
 
-    # ------------------------------------------------------------ F20 passkey (PROTOCOL §12) — proves "the same phone", nothing more
+
     @staticmethod
     def _pk_hello(payload: bytes) -> bool:
 
@@ -1808,7 +1808,7 @@ class Host:
         await self._accept_resume(s, s.since)
         await self._rt_issue(s, force=True)       # P122: the old context's ticket died with it (State.passkey_restore)
 
-    # ------------------------------------------------------------ P122 renewal ticket (PROTOCOL §12.1) — §12's restore, by cookie
+
     async def _rt_restore(self, s: Session, obj: dict) -> None:
 
         old = None
@@ -1964,7 +1964,7 @@ class Host:
         task.add_done_callback(done)
         return task
 
-    # ------------------------------------------------------------ control socket (local, 0600)
+
     def _touch_seen(self, did: str) -> None:
         with contextlib.suppress(OSError):
             self.st.touch_seen(did)
@@ -2313,6 +2313,9 @@ class Host:
                                              "identity_ok": self.identity_ok,
                                              "agent": self.agent.kind if self.agent else None, "agent_status": self.eff_status(),
                                              "agent_model": self.agent.cur_model() if self.agent else None,
+                                             "agent_hello_deferred": isinstance(self.agent, SharedClaudeAgent) and self.agent.hello_deferred(),
+                                             "agent_hello_at": getattr(self.agent, "_hello_at", 0),
+                                             "agent_hello_failed": getattr(self.agent, "_hello_failed", False),
                                              "harness_readiness": getattr(self.agent, "readiness", lambda: {"ready": False, "code": "unverified"})(),
                                              "agent_said_at": getattr(self, "agent_said_at", 0),
                                              **dict(zip(("agent_turn_start_at", "agent_turn_end_at", "agent_turn_failed"),
@@ -3475,6 +3478,7 @@ class Host:
                 if n % 5 == 0 and hasattr(agent, "refresh_busy"):
                     await agent.refresh_busy()
                 await asyncio.to_thread(self.busy.refresh_sources)
+                await self.background_done.prepare()
                 self.background_done.tick()
                 await asyncio.to_thread(self.busy.sample_load)   # P331: load / memory probes (vm_stat …) never on the loop
                 self.busy_changed()
@@ -4641,13 +4645,15 @@ class Host:
             with contextlib.suppress(Exception):
                 self.agent.submit(ReadBackSend(note))
 
-    async def _parked_rewait(self, a: Ask, base: dict, gone, key: tuple) -> dict:
+    async def _parked_rewait(self, a: Ask, base: dict, gone, key: tuple, _receipt: dict | None = None) -> dict:
 
         if not self._online_approvers():
+            if type(_receipt) is dict:
+                _receipt.update(reason='offline', approval_card_shown=None)
             approvals.record(self.st, **base, decision="deny", reason="offline")
             self.st.log("ask_done", id=base["rid"], tool=a.tool, decision="deny", reason="offline")
             return {"behavior": "deny", "message": approval_level.nobody_text(card_lang(self.lang), again=True)}
-        await asyncio.wait({a.fut} | ({gone} if gone else set()), timeout=self.ask_ttl, return_when=asyncio.FIRST_COMPLETED)
+        done, _ = await asyncio.wait({a.fut} | ({gone} if gone else set()), timeout=self.ask_ttl, return_when=asyncio.FIRST_COMPLETED)
         await asyncio.sleep(0)                  # the done-callback (_park_settle) runs first
         ok = self._parked_take(key)
         if ok is not None:
@@ -4658,6 +4664,12 @@ class Host:
             return {"behavior": "allow", "updatedInput": a.tool_input}
         approvals.record(self.st, **base, decision="deny", reason="parked_wait")
         did = a.fut.done() and a.fut.result()[1]          # P570
+        if type(_receipt) is dict:
+            reason = ('device' if did and a.fut.result()[0] == 'deny' else
+                      'agent_gone' if gone is not None and gone.done() else
+                      'estop' if self.stopped() else 'serve_stop' if self.stopping.is_set() else
+                      'timeout' if not done else 'unknown')
+            _receipt.update(reason=reason, approval_card_shown=None)
         msg = pick(self.lang, "用户在手机上拒绝了这个操作。", "The owner declined this on the phone.") if did else _timeout_text(self.lang, int(self.ask_ttl))
         return {"behavior": "deny", "message": msg}
 
@@ -4773,15 +4785,19 @@ class Host:
     async def ask(self, tool: str, tool_input: dict, gone: asyncio.Future | None = None, batch: bool = True, risk_scope: bool = False, require_passkey: bool = False, context: dict | None = None,
                   ttl: float | None = None, grant_info: bool = False, origin: str | None = None,
                   allow_offer: list | None = None, _company_proposal=None, bind: dict | None = None,
-                  avatar: str | None = None, background: str | None = None, always_ask: bool = False, task_actions: list | None = None, task_target: dict | None = None, only: str | None = None) -> dict:
+                  avatar: str | None = None, background: str | None = None, always_ask: bool = False, task_actions: list | None = None, task_target: dict | None = None, only: str | None = None, _receipt: dict | None = None) -> dict:
 
+        def observe(reason, shown=None):
+            if type(_receipt) is dict:
+                _receipt.update(reason=reason, approval_card_shown=shown)
+        observe('unknown')
         from . import policy_registry
         own = _company_proposal is policy_registry.HOST_CARD    # P570b L-c: not judged by the main turn's source
         if avatar is None and not own and (via := provenance.owner_channel_turn(self.agent)):
             from . import owner_channels
             return await owner_channels.ask(self, via, lambda lbl: self.ask(
                 tool, tool_input, gone, batch, risk_scope, require_passkey, context, ttl, grant_info, origin, allow_offer,
-                _company_proposal, bind, avatar=lbl, background=background, always_ask=always_ask, task_actions=task_actions, task_target=task_target, only=only))
+                _company_proposal, bind, avatar=lbl, background=background, always_ask=always_ask, task_actions=task_actions, task_target=task_target, only=only, _receipt=_receipt))
         if avatar is not None and tool == "AskUserQuestion":            # P543: the channel asks in its reply instead
             return {"behavior": "deny", "message": "这条消息来自主人的通道，不能弹出提问卡，请直接在回复里问主人。 / Ask the owner in your reply instead."}
         always_ask = always_ask or task_actions is not None
@@ -4905,11 +4921,16 @@ class Host:
         sc = None if v.danger or not batch or lv == "safe" else danger.batch_scope(tool, tool_input, workdir, self.danger_extra)
         base = dict(rid=rid, agent=kind, tool=tool, input_sha256=isha, shown_sha256=digest, cats=v.cats)
         if self.stopped():                # stopped: nothing is asked, nothing runs
+            observe('estop', False)
             approvals.record(self.st, **base, decision="deny", reason="estop")
             self.st.log("ask_done", id=rid, tool=tool, decision="deny", reason="estop")
             self.activity("decision", id=rid, tool=tool, result="deny", reason="estop", cats=v.cats, summary=summary)
             return {"behavior": "deny", "message": "已急停（全部停下）：什么都不执行，等人恢复。"}
         if provenance.untrusted_turn(self.agent) and not delegated and not own:
+            observe('group_source', False)
+            recovery = getattr(getattr(self, "background_done", None), "recovery", None)
+            if recovery is not None:
+                await asyncio.to_thread(recovery.refusal, tool, tool_input, "group_source")
             approvals.record(self.st, **base, decision="deny", reason="group_source")
             self.st.log("ask_done", id=rid, tool=tool, decision="deny", reason="group_source")
             self.activity("decision", id=rid, tool=tool, result="deny", reason="group_source", cats=v.cats, summary=summary)
@@ -4937,6 +4958,7 @@ class Host:
             except Exception:  # noqa: BLE001 — a receiving OTG task fails closed below
                 hit = None
             if self.stopped():
+                observe('estop', False)
                 approvals.record(self.st, **base, decision="deny", reason="estop")
                 self.emit("ask_done", id=rid, result="deny", reason="estop")
                 return {"behavior":"deny", "message":"已急停 / Stop everything is on"}
@@ -4953,6 +4975,7 @@ class Host:
         if (avatar is None and provenance.owner_grant_required(self.agent)
                 and (v.danger or require_passkey or requirement in ("hold", "uv"))):
             # A delegated OTG task returns to its origin for extra scope; the receiving host never opens another card.
+            observe('owner_grant_scope', False)
             approvals.record(self.st, **base, decision="deny", reason="owner_grant_scope")
             self.st.log("ask_done", id=rid, tool=tool, decision="deny", reason="owner_grant_scope")
             self.emit("ask_done", id=rid, result="deny", reason="owner_grant_scope")
@@ -5126,10 +5149,12 @@ class Host:
             self._post(self._send_ready, lambda s: {"t": "auto", "id": rid, "tool": tool, "summary": line, "by": by})
             return {"behavior": "allow", "updatedInput": tool_input}
         if avatar is None and provenance.owner_grant_required(self.agent):
+            observe('owner_grant_scope', False)
             approvals.record(self.st, **base, decision="deny", reason="owner_grant_scope")
             self.emit("ask_done", id=rid, result="deny", reason="owner_grant_scope")
             return {"behavior":"deny", "message":"请回发起主机补授权。 / Return to the originating host for added scope."}
         if not self._approvers():
+            observe('no_device', False)
             approvals.record(self.st, **base, decision="deny", reason="no_device")
             self.st.log("ask_done", id=rid, tool=tool, decision="deny", reason="no_device")
             self.activity("decision", id=rid, tool=tool, result="deny", reason="no_device", cats=v.cats, summary=summary)
@@ -5140,8 +5165,9 @@ class Host:
             (bool(unattended) and (tool == "AgentJSameOwnerAction" or tool not in approval_level.HOST_CARDS + approval_level.HARNESS_KEEPS)))
         prev = self._parked_find(pkey) if parkable else None
         if prev is not None:                    # P336 (#36): the same step's card is already waiting on the phone
-            return await self._parked_rewait(prev, base, gone, pkey)
+            return await self._parked_rewait(prev, base, gone, pkey, _receipt=_receipt)
         if sum(1 for a in self.asks.values() if not a.fut.done()) >= MAX_ASKS:
+            observe('too_many', False)
             approvals.record(self.st, **base, decision="deny", reason="too_many")
             return {"behavior": "deny", "message": "同时等待批准的请求太多：默认拒绝。"}
         wait = goal_mod.auto_secs() if gt == "reversible" else (ttl if ttl else self.ask_ttl)
@@ -5185,6 +5211,7 @@ class Host:
                                                                           approval_level.PARK_GRACE)),
                                              return_when=asyncio.FIRST_COMPLETED)
                 if not done and not self._online_approvers() and not self.stopped() and not self.stopping.is_set():
+                    observe('offline')
                     return self._park(a, base, summary, pkey, unattended)   # the card waits on; the Agent does the independent work
             done, _ = await asyncio.wait(waiters, timeout=max(0.0, a.deadline - time.monotonic()),
                                          return_when=asyncio.FIRST_COMPLETED)
@@ -5238,6 +5265,7 @@ class Host:
         why = _done_why(reason, decision, a)
         self._post(self._send_ready, lambda s: {"t": "ask_done", "id": rid, "result": result, **why})
         self.status_changed()
+        observe(reason)
         if decision == "allow":
             answer = {"behavior": "allow", "updatedInput": tool_input}
             if risk_scope and reason == "device" and lv != "safe":   # P158: never from a countdown; P336: not under safe
@@ -6297,6 +6325,15 @@ class Host:
 
     async def on_slash(self, s: Session, name: str, arg: str, confirm: bool, typed: bool, authorization=None) -> int:
 
+        if name == 'recover-background':
+            from . import completion_recovery, diskq
+            recovered = await completion_recovery.owner_command(self, s, '/recover-background' + (' ' + arg if arg else ''))
+            recovered = recovered or {'result':'refused', 'why':'shape'}
+            turn = self.cmd_turn(s, name)
+            self.cmd_card(name, slash.Result(json.dumps(recovered, ensure_ascii=False), 'info'), s.name or s.device, turn)
+            if recovered.get('result') == 'reconciled' and await diskq.aflush():
+                await asyncio.to_thread(self.background_done.recovery.acknowledge, recovered['id'])
+            return turn
         if name in ("stop-all", "stop_all", "estop"):
             turn = self.cmd_turn(s, name)
             self.cmd_card(name, slash.Result(pick(self.lang, "请到「设置 → 安全」操作「紧急停止所有 Agent」。", "Go to Settings → Safety → Emergency stop all Agents."), "info"), turn=turn)
@@ -7144,6 +7181,11 @@ class Host:
         if extra_src:
             src.update(extra_src)
         turn = self.hist_add(src, "", "open" if self.agent else "done")
+        from .report_actions import phone_source
+        if phone_source(self, s) is not None:
+            note = await asyncio.to_thread(self.background_done.recovery.notice)
+            if note:
+                self.agent_notice(note)
         if not self.agent:
             return None
         send = compose.Send(s.device, sid or secrets.token_urlsafe(16), turn["id"], blobs=blobs, by=s.name or s.device)
@@ -7232,7 +7274,7 @@ class Host:
         is_meeting = meeting.parse(text) is not None      # P182: /会议总结 · /meeting-notes is a message for the Agent, never refused
         hc = slash.parse(text) if not att and reply_to is None and not is_meeting else None
         if hc and (friend_cmds.name_of(hc[0]) or hc[0] in TG_PAIR_CMDS or hc[0] in RELOAD_CMDS or hc[0] in reset_mod.RESET_CMDS
-                   or hc[0] == "goal" and goal_mod.host_cmd(hc[1])):
+                   or hc[0] == "recover-background" or hc[0] == "goal" and goal_mod.host_cmd(hc[1])):
             self.sends.add(compose.Send(s.device, sid, 0, state="delivered"))
             await _rcpt_recv(self, s.device, sid)
             turn = await self.on_slash(s, hc[0], hc[1], confirm=False, typed=True)

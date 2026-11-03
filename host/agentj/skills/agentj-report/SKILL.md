@@ -18,8 +18,10 @@ Only R15/R02/R14 and custom templates with email.html support mail.
 
 Linux local lane: a complete engine-package digest pinned in the signed host admits templates/schema/example/validate
 and render --email in a mandatory offline namespace sandbox without repeated cards. Engine/template/data bytes are
-frozen first. Missing sandbox or changed/unrecognized package retains the old approval policy; a sandbox execution
-failure refuses without unconfined retry. Inputs and fresh outputs belong in ordinary working folders under HOME or
+frozen first. Fenced helper checks delegate bounded bytes to the same-user host's fixed offline operation. Host/helper,
+integrity, input, resource and sandbox failures return receipts: give them to the workflow owner, resume original inputs,
+and do not request another mail grant or claim a card was shown. Changed/unrecognized packages retain the existing
+approval policy; sandbox failure never retries unconfined. Inputs and fresh outputs belong in working folders under HOME or
 /tmp, without symlinks or hidden/credential paths. No existing output is overwritten. Custom HTML cannot run scripts
 or load external resources. Built-in HTTPS cover-image references remain; the mail client may later fetch them.
 Other actions, including install, scaffold, web render and publish, retain their approval boundary.

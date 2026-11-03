@@ -242,6 +242,8 @@ class EveryOpBindsItsTarget(unittest.TestCase):
         "list": ({}, (support, "run_list", 0)),
         "feedback_send": ({"raw": "{}", "owner_confirmed": False}, (feedback, "run_send", 0)),
         "feedback_replies": ({"as_json": True}, (feedback, "run_replies", 0)),
+        # Source recovery (2684d013f): devices is read through the selected host; instance 1 is pinned below.
+        "devices": ({"as_json": True, "selected_instance": 1}, (names, "ctl_call", {"ok": True, "sessions": []})),
     }
 
     def test_cases_cover_every_allowed_op(self):
@@ -252,7 +254,8 @@ class EveryOpBindsItsTarget(unittest.TestCase):
             with self.subTest(op=op):
                 real = getattr(mod, name)
                 with patch.object(mod, name, autospec=True, return_value=ret) as target, \
-                     patch.object(support, "channel_for", autospec=True, return_value=object()):
+                     patch.object(support, "channel_for", autospec=True, return_value=object()), \
+                     patch.object(hd, "host_instance", return_value=1 if op == "devices" else hd.host_instance(self.st)):
                     res = hd.execute(self.st, {"t": "host_diagnostics", "op": op, **fields})
                 self.assertEqual(res["exit"], 0, res)
                 self.assertNotIn("Background request", res["output"])

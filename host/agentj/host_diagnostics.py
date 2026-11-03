@@ -10,18 +10,44 @@ def agent_side():
     return bool(os.environ.get(elevate.ENV)) or fence.inside()
 
 
+def host_instance(st):
+    from . import instance
+    from pathlib import Path
+    if not isinstance(getattr(st, 'root', None), (str, Path)):
+        return None
+    root = Path(st.root).absolute()
+    if root.resolve() != root:
+        return None
+    return next((n for n in range(1, instance.MAX + 1) if root == instance.state_root(n).absolute()), None)
+
+
+def devices_unavailable(as_json):
+    import json
+    obj = {'ok':False, 'error':'host_state_unavailable', 'detail':'Settings → Remotes / 设置 → 遥控器管理'}
+    return {'exit':1, 'output':(json.dumps(obj, ensure_ascii=False) if as_json else obj['error'] + ': ' + obj['detail']) + '\n'}
+
+
 def request(op, **fields):
     from . import elevate, fence, names
     from .state import State
-    st = State()
     required = agent_side()
     if not required:
         return None
+    if op == 'devices' and not os.environ.get(elevate.ENV):
+        res = devices_unavailable(fields.get('as_json'))
+        print(res['output'], end='')
+        return 1
+    st = None if op == 'devices' else State()
+    from . import instance
+    if op == 'devices':
+        fields['selected_instance'] = instance.current()
     try:
         res = elevate.client_request(st, {"t": "host_diagnostics", "op": op, **fields},
                                      timeout=(90 + min(max(fields.get("wait", 0), 0), 180) if op in ("support", "feedback_send") else 300), path=os.environ.get(elevate.ENV) or names.elevate_sock(st))
     except (OSError, ValueError) as e:
         res = {"error": type(e).__name__}  # class name only
+    if op == 'devices' and (not isinstance(res, dict) or type(res.get('host_instance')) is not int or res.get('host_instance') != instance.current()):
+        res = devices_unavailable(fields.get('as_json'))
     if isinstance(res, dict) and type(res.get("exit")) is int and isinstance(res.get("output"), str):
         print(res["output"], end="")
         return res["exit"]
@@ -41,7 +67,7 @@ def feedback_snapshot():
 
 
 ALLOWED = {  # P569: each op is signature-tested
-    "diag": set(), "layout_last": set(), "status": set(), "reconnect": {"session", "caller_session", "as_json"},
+    "devices": {"as_json", "selected_instance"}, "diag": set(), "layout_last": set(), "status": set(), "reconnect": {"session", "caller_session", "as_json"},
     "support": {"kind", "text", "thread", "attach_doctor", "wait", "lang", "owner_confirmed"},
     "thread": {"thread", "wait"}, "list": set(),
     "feedback_send": {"raw", "owner_confirmed"}, "feedback_replies": {"as_json"},
@@ -69,6 +95,24 @@ def execute(st, req):
         return {"exit": 1, "output": "Request refused: support fields\n"}
     out = io.StringIO()
     try:
+        if op == 'devices':
+            from . import instance, names, cli
+            from types import SimpleNamespace
+            if type(req.get('selected_instance')) is not int or req['selected_instance'] != host_instance(st):
+                return devices_unavailable(req.get('as_json'))
+            import json
+            records = json.loads(st.devices_path.read_text())
+            if not isinstance(records, dict) or any(not isinstance(v, dict) for v in records.values()):
+                return devices_unavailable(req.get('as_json'))
+            status = names.ctl_call(st, {'cmd':'status'}, 10)
+            if not status or status.get('ok') is not True or not isinstance(status.get('sessions'), list) or any(
+                    not isinstance(v, dict) or not isinstance(v.get('state'), str) or v['state'] == 'ready' and not isinstance(v.get('device'), str) for v in status['sessions']):
+                return devices_unavailable(req.get('as_json'))
+            from . import credential_revoke
+            journal = credential_revoke.read(st)
+            records = {k:v for k,v in records.items() if not credential_revoke.blocked(st,k,v,journal)}
+            cli.cmd_devices(SimpleNamespace(json=req.get('as_json', False)), st=st, status=status, records=records, out=out)
+            return {'exit':0, 'output':out.getvalue(), 'host_instance':host_instance(st), 'host_pid':os.getpid(), 'host_ppid':os.getppid()}
         if op == "diag":
             from . import field_tools
             import json
@@ -82,9 +126,17 @@ def execute(st, req):
             import json
             res = names.ctl_call(st, {"cmd": "status"}, 10) or {}
             safe = {k: res.get(k) for k in ("ok", "agent", "agent_status", "relay_up", "relay_state", "identity_ok", "harness_readiness")}
+            safe.update(host_instance=host_instance(st) or "unknown", host_pid=os.getpid(), host_ppid=os.getppid())
             safe["agent_name"] = st.agent_name()  # P502: current owner-defined display data, including inside the fence
             from .text import agent_label
             safe["agent_display_name"] = agent_label(safe["agent_name"])
+            from . import upgrade_diag
+            last = upgrade_diag.read(st)
+            if last:
+                evidence = upgrade_diag.exception_fields(last)
+                safe["last_upgrade"] = {k: last.get(k) for k in ("from", "to", "result", "reason", "at")}
+                safe["last_upgrade"].update({k: evidence.get(k, "unknown") for k in
+                                             ("exception_type", "errno", "failure_stage", "failure_at")})
             print(json.dumps(safe), file=out)
             rc = 0 if res.get("ok") else 1
         elif op == "reconnect":
@@ -107,10 +159,14 @@ def execute(st, req):
         else:
             rc = feedback.run_replies(as_json=req.get("as_json", False), out=out)
     except (support.SupportError, cloud.CloudError, feedback.FeedbackError) as exc:
+        if op == 'devices':
+            return devices_unavailable(req.get('as_json'))
         # Existing errors are safe, but arbitrary OS errors may contain private paths.
         rc = support.EXIT_SEAT if isinstance(exc, support.SupportSeatError) else 1
         print(str(exc), file=out)
     except Exception as exc:  # P569: class name only, never the text
+        if op == 'devices':
+            return devices_unavailable(req.get('as_json'))
         rc, name = 1, type(exc).__name__
         try:
             st.log("host_diagnostics_failed", action=op, exception_type=name)

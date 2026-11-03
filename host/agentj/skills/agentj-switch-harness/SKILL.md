@@ -77,6 +77,8 @@ switching back resumes that one. To switch, the owner just replies 「切换到 
    approval card. First tell them: 「Agent J 会重启，手机断开几秒后自动重连，然后 X 会先跟你打招呼；如果 X 没起来，会自动切回
    我这里并说明原因」. Then run:
    `agentj agent switch <claude|codex|opencode|kimi|qwen|dsh>` (OpenCode may add `--model provider/model`; Kimi `--region global`).
+   Without `--model`, Claude Code uses its own default or current model. Preserve an explicit `--model`.
+   Switch checks confirm the target harness and its ability to respond; a different model name does not trigger rollback.
    It starts a job outside Agent J that probes the target again in the service's environment (the gate: exit 3 + reason =
    nothing changed — tell the owner the reason and go back to step 3; exit 4 = still checking, look with `--result` in a
    minute). On ✓ the job waits for this turn to end, switches, restarts, checks that the new harness is up, answers its
@@ -122,7 +124,7 @@ handoff's next step (nothing in progress → wait for the owner).
 同意按 setup-agents 文档帮装，登录由主人在自己的终端完成（你一步步指导；密钥走 `agentj secret request` 手机卡片，绝不进聊天），
 Kimi Code 用 `kimi login --region mainland-cn`（海外站 `global`）或手机 设置 →「紧急修复」→ ③ →「AI 登录救援」设备码，只支持独立会话，审批全走手机；Qwen Code（`qwen`）没有自己的登录，用手机密钥卡存阿里百炼 Token Plan 的 key（`BAILIAN_TOKEN_PLAN_API_KEY`），同样只支持独立会话；DeepSeek Harness（`dsh`）用主人自己的 dsh 设置，或 `agentj agent dsh --base-url https://<服务>/v1 --model <模型>` 接 Olares Router 等 OpenAI 兼容服务（要 key 走密钥卡 `DSH_ROUTER_API_KEY`），只支持独立会话；装好登好再回到 ①；④ 目标探测通过、主人明确要切，先说「会断开几秒自动重连，新 harness 会先自报家门，不通会自动切回」，再运行
 `agentj agent switch <目标>`——Agent J 主机上的独立任务用服务的环境再探测一次（闸门；`--dry-run` 只探测不切），切换、重启、自检
-都由它完成，失败自动切回原 harness 并说明；原 harness 自检失败不阻止切换。应急用 `--force` 跳过预检，支持全部六种 harness；切换前 Agent J 会发〔Agent J 系统提示〕让你按 agentj-handoff 格式把交接写进它点名的 `switch.md`（只留要点、≤ 150 行、
+都由它完成；未指定 `--model` 时，Claude Code 使用自己的默认或当前模型，明确指定时照常写入。切换只核对目标 harness 是否正确、能否应答，不因模型名不同回退。失败自动切回原 harness 并说明；原 harness 自检失败不阻止切换。应急用 `--force` 跳过预检，支持全部六种 harness；切换前 Agent J 会发〔Agent J 系统提示〕让你按 agentj-handoff 格式把交接写进它点名的 `switch.md`（只留要点、≤ 150 行、
 不写凭据），写完回一句就停；新 harness 的第一条提示里直接带着交接（没带上才读文件），看完再打招呼，随后接着干；3 分钟没写成也照切，超时明确说明已等 180 秒，改用更完整的本机脱敏摘录（最多最近 16 轮请求和回复，过长处标出省略），遗漏进度和决定须核实；⑤ `agentj agent switch --result` 看结果（带原因和下一步，照着转告主人）；⑥ 切回上一个却过不了检查时，用 `agentj agent switch --undo`
 不经预检原样切回（起不来自动回到现在这个）。「没登录」指后台服务看不到登录：照扫描结果那句一步做法讲给主人（`claude` 里 `/login`
 一次，或 `agentj service import-key CLAUDE_CODE_OAUTH_TOKEN` 再 `agentj service restart`）；你自己会话里能用不算数。「OpenCode · 火山方舟」一步到位：先问主人用 Coding Plan 套餐（只给编程 Agent 用，别的程序调用会被判滥用封号）还是按量付费（…/api/v3），再运行 `agentj agent switch opencode --preset ark --plan coding|payg`，缺 key 它会给密钥卡命令，实测一次才切、不通自动切回。OpenCode 没 key 时可以先用它的免费模型（`--model opencode/<免费模型>`），切换结果里那句数据提示原样转告主人。绝不绕过闸门直接改配置或重启服务。
@@ -147,3 +149,6 @@ P529 / 切换结果：只能根据 `agentj agent switch --result` 的最终收�
 `probe_ok` 只是演练。`waiting`、`switching`、已启动、idle、退出码 4 都不能说切换成功。发起切换的 Agent J 回合
 要先以「已安排，尚未完成」结束以让后台继续，下一回合必查收据；外部终端用 `--result --wait 900` 等待。
 回退如实说「已回退到 Codex（或实际原 harness），原因：…」。交接失败会提供本地脱敏摘录，不增加工具权限。
+
+`ok` with `kept=deferred`: the target is retained; its introduction is queued until the shared session is confirmed idle. Do not claim it answered. Pending messages are cancelled on service restart.
+`ok` 且 `kept=deferred`：目标已保留，自报家门待确认共享会话空闲后发送；不能说已经回答。服务重启会取消未发送消息。

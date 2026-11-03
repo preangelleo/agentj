@@ -18,6 +18,9 @@ FIXED_PURPOSE = 'fixed_recipient_artifact_delivery'
 FIXED_CAPABILITY = 'workflow-fixed-recipient-mail-v2'
 ROLES = ['captions', 'cover', 'materials']
 MAX_BYTES = 25 * 1024 * 1024
+STATS = ('last_sent_at', 'send_count', 'updated', 'nicks')
+CARD_TTL, WAIT, COOLDOWN = 1800, 600, 6 * 3600
+RENEW = ('contact_changed', 'account_changed', 'contract_changed', 'expired', 'proof_invalid')
 HEX = re.compile(r'[0-9a-f]{64}')
 ID = re.compile(r'[A-Za-z0-9][A-Za-z0-9._-]{0,127}')
 
@@ -28,6 +31,33 @@ def canonical(obj):
 
 def digest(obj):
     return hashlib.sha256(canonical(obj)).hexdigest()
+
+
+def ident(rec):
+    return digest({k: v for k, v in rec.items() if k not in STATS})
+
+
+def same(old, rec):
+    return bool(rec) and (old == ident(rec) or any(old == digest({**rec, **x}) for x in
+                          [{}, {'last_sent_at': None, 'send_count': 0}] + [{'last_sent_at': (rec.get('created') or 0) - d, 'send_count': 1} for d in (0, 1)]))
+
+
+def drift(st, core):
+    book, now, b = contacts.read(st), owner_binding(st), core['binding']
+    if set(b) != set(now) or b['host'] != now['host'] or b['account_sha256'] != now['account_sha256']:
+        return 'account_changed'
+    if b['primary'] != now['primary'] or not same(b['owner_sha256'], contacts.owner(book)):
+        return 'contact_changed'
+    for x in core.get('cc_contacts') or []:
+        rec = contacts.get(book, x['id'])
+        em = (rec or {}).get('emails') or [{}]
+        if x['id'] == contacts.OWNER_ID or contacts.norm_email(em[0].get('v')) != x['address'] or x['address'] == now['primary'] or not same(x['sha256'], rec):
+            return 'contact_changed'
+    return None
+
+
+def card_key(c):
+    return digest([c.get(k) for k in ('contract', 'artifact_root', 'binding', 'cc_contacts', 'purpose', 'max', 'per_day')])
 
 
 def pin_current(proc):
@@ -99,7 +129,7 @@ def owner_binding(st):
     account = {k: linked.get(k) for k in ('api', 'host_id', 'linked_at')} if linked else None
     if account is not None:
         account['tenant'] = linked['tenant']['slug']
-    return {'primary': address, 'owner_sha256': digest(own), 'host': st.config()['channel'],
+    return {'primary': address, 'owner_sha256': ident(own), 'host': st.config()['channel'],
             'account_sha256': digest(account)}
 
 
@@ -115,7 +145,7 @@ def cc_binding(st, ids):
         address = contacts.norm_email(emails[0].get('v')) if emails else ''
         if not rec or cid == contacts.OWNER_ID or not address or address == primary or address in [x['address'] for x in rows]:
             raise ValueError('cc_contacts')
-        rows.append({'id': cid, 'address': address, 'sha256': digest(rec)})
+        rows.append({'id': cid, 'address': address, 'sha256': ident(rec)})
     return rows
 
 
@@ -150,7 +180,19 @@ def shown(core):
         lines += [('Purpose: artifact delivery to this fixed To/Cc list' if core.get('lang') == 'en' else '用途：向此固定收件人与抄送名单交付素材'),
                   'Cc: ' + ', '.join(x['address'] for x in core['cc_contacts']),
                   ('Recipient/contact changes require a new approval.' if core.get('lang') == 'en' else '收件人或联系人记录变更须重新授权。')]
+    if core.get('renew'):
+        lines.append(('Renewal reason: ' if core.get('lang') == 'en' else '重新授权原因：') + NOTE[core.get('lang') == 'en'][core['renew']])
     return '\n'.join(lines + ['Grant: ' + core['id'], 'SHA256: ' + digest(core)])
+
+
+NOTE = ({'contact_changed': '联系人记录变化（旧版误把发信计数算入，已修复）', 'account_changed': '账号变化', 'contract_changed': '任务定义变化',
+         'expired': '已到期', 'proof_invalid': '遥控器或通行密钥变化', 'grant_invalid': '记录无效', 'never_granted': '未授权：任务运行中执行 workflow-grant',
+         'revoked': '主人已撤销', 'sent': '已自动发授权卡，批准即生效', 'pending': '授权卡等待批准', 'cooldown': '上张卡未获批准，card_retry_at 后的运行自动重发',
+         'unverified': '只读查询，不发卡', 'unavailable': '联系人或产物文件夹不可用，需修正'},
+        {'contact_changed': 'contact changed (send counts no longer count)', 'account_changed': 'account changed', 'contract_changed': 'task changed',
+         'expired': 'expired', 'proof_invalid': 'remote or passkey changed', 'grant_invalid': 'invalid record', 'never_granted': 'not granted: run workflow-grant in the task run',
+         'revoked': 'revoked by owner', 'sent': 'grant card sent automatically', 'pending': 'grant card awaiting approval', 'cooldown': 'card not approved; a run after card_retry_at re-sends',
+         'unverified': 'read-only query, no card', 'unavailable': 'contact or artifact folder unavailable: fix it'})
 
 
 def proof_ok(st, core, proof):
@@ -246,6 +288,7 @@ class Service:
         self.contacts = contact_service
         self.host, self.st = contact_service.host, contact_service.st
         self.lock = asyncio.Lock()
+        self.pending = {}
 
     def load(self):
         p = self.st.root / 'workflow-mail.json'
@@ -260,15 +303,68 @@ class Service:
     def save(self, d):
         self.st.write_private(self.st.root / 'workflow-mail.json', canonical(d))
 
-    def live(self, row, contract):
-        c = (row or {}).get('core') or {}
+    def why(self, row, contract):
+        if not row:
+            return 'never_granted'
+        if row.get('revoked'):
+            return 'revoked'
+        c = row.get('core') or {}
         try:
-            return (bool(row) and not row.get('revoked') and c['expires'] > time.time() and ((c.get('v') == 1 and c['purpose'] == PURPOSE and 'cc_contacts' not in c) or
-                       (fixed_core(c) and c['cc_contacts'] == cc_binding(self.st, [x['id'] for x in c['cc_contacts']])))
-                    and c['contract'] == contract and c['binding'] == owner_binding(self.st)
-                    and proof_ok(self.st, c, row['proof']))
+            if not ((c.get('v') == 1 and c['purpose'] == PURPOSE and 'cc_contacts' not in c) or fixed_core(c)):
+                return 'grant_invalid'
+            if contract is None or c['contract'] != contract:
+                return 'contract_changed'
+            if c['expires'] <= time.time():
+                return 'expired'
+            return drift(self.st, c) or (None if proof_ok(self.st, c, row['proof']) else 'proof_invalid')
         except (KeyError, TypeError, ValueError):
-            return False
+            return 'grant_invalid'
+
+    def live(self, row, contract):
+        return self.why(row, contract) is None
+
+    def make(self, contract, artifact_root, cc_ids, days, count, daily, renew=None):
+        cc_rows = cc_binding(self.st, cc_ids) if cc_ids else None
+        binding, now = owner_binding(self.st), int(time.time())
+        core = {'artifact_root': checked_artifact_root(artifact_root), 'v': 1, 'id': secrets.token_hex(16), 'host': binding['host'], 'binding': binding,
+                'contract': contract, 'purpose': PURPOSE, 'manifest': 1, 'roles': ROLES, 'issued': now, 'expires': now + days * 86400,
+                'max': count, 'per_day': daily, 'max_bytes': MAX_BYTES, 'max_files': 10, 'lang': 'en' if self.contacts.lang() == 'en' else 'zh'}
+        if cc_rows is not None:
+            core.update(v=2, purpose=FIXED_PURPOSE, manifest=2, cc_contacts=cc_rows)
+        if renew:
+            core['renew'] = renew
+        return core
+
+    def offer(self, data, wid, core):
+        p = self.pending.get(wid)
+        if p and not p.done():
+            return p, False
+        data.setdefault('cards', {})[wid] = {'at': int(time.time()), 'key': card_key(core)}
+        self.pending[wid] = asyncio.create_task(self.card(wid, core, data.get('epochs', {}).get(wid, 0)))
+        return self.pending[wid], True
+
+    async def card(self, wid, core, epoch):
+        from . import policy_registry, tasks
+        ans = await self.host.ask(TOOL, {'summary': shown(core)}, batch=False, grant_info=True, always_ask=True,
+                                  require_passkey=True, ttl=CARD_TTL, _company_proposal=policy_registry.HOST_CARD)
+        proof = {k: v for k, v in (ans.get('grant_info') or {}).items() if k in
+                 ('rid', 'device', 'sig', 'fa', 'summary', 'kind', 'channel')}
+        async with self.lock:
+            try:
+                e = await asyncio.to_thread(tasks.find, self.host.scheduler.workdir(), wid)
+                if (ans.get('behavior') != 'allow' or self.host.stopped() or e['problems'] or task_contract(e) != core['contract']
+                        or await asyncio.to_thread(drift, self.st, core)
+                        or not await asyncio.to_thread(proof_ok, self.st, core, proof)):
+                    return {'ok': False, 'why': 'grant_required'}
+                data = await asyncio.to_thread(self.load)
+                if data.get('epochs', {}).get(wid, 0) != epoch:
+                    return {'ok': False, 'why': 'grant_stale'}
+                data['grants'][wid] = {'core': core, 'proof': proof}
+                await asyncio.to_thread(self.save, data)
+            except (tasks.TaskError, KeyError, TypeError, ValueError, OSError):
+                return {'ok': False, 'why': 'grant_required'}
+            self.st.log('workflow_mail_grant', task=wid, id=core['id'], sha=digest(core), device=proof['device'])
+            return {'ok': True, 'workflow_id': wid, 'grant': {'status': 'active', 'expires': core['expires']}}
 
     async def control(self, req, peer):
         op, wid = req.get('op'), req.get('workflow_id')
@@ -293,68 +389,57 @@ class Service:
                     contract = None
                 row = data['grants'].get(wid)
                 if op == 'status':
-                    active = contract is not None and await asyncio.to_thread(self.live, row, contract)
+                    why = await asyncio.to_thread(self.why, row, contract)
+                    active, verified, card, retry = why is None, contract is not None and await asyncio.to_thread(source, self.host, peer) == contract, None, None
+                    if not active and why in RENEW and not verified:
+                        card = 'unverified'
+                    elif not active and why in RENEW:
+                        c, last = row['core'], data.get('cards', {}).get(wid) or {}
+                        try:
+                            core = await asyncio.to_thread(self.make, contract, c['artifact_root'], [x['id'] for x in c.get('cc_contacts', [])],
+                                                           max(1, min(30, (c['expires'] - c['issued']) // 86400)), c['max'], c['per_day'], why)
+                        except (ValueError, OSError):
+                            card = 'unavailable'
+                        else:
+                            busy = self.pending.get(wid) and not self.pending[wid].done()
+                            if not busy and last.get('key') == card_key(core) and time.time() < last.get('at', 0) + COOLDOWN:
+                                card, retry = 'cooldown', last['at'] + COOLDOWN
+                            else:
+                                card = 'sent' if self.offer(data, wid, core)[1] else 'pending'
+                                await asyncio.to_thread(self.save, data)
                     used = [x for x in data['deliveries'].values() if row and x['grant'] == row['core']['id']]
                     remaining = max(0, row['core']['max'] - len(used)) if row else 0
                     today = sum(x['day'] == int(time.time()) // 86400 for x in used)
                     available = active and remaining > 0 and today < row['core']['per_day']
                     return {'ok': True, 'capability': CAPABILITY, 'capabilities': [CAPABILITY, FIXED_CAPABILITY], 'workflow_id': wid,
-                            'source_verified': contract is not None and await asyncio.to_thread(source, self.host, peer) == contract,
+                            'source_verified': verified,
                             'grant': {'capability': (FIXED_CAPABILITY if fixed_core(row['core']) else CAPABILITY) if row else None,
                                       'cc_contact_ids': [x['id'] for x in row['core'].get('cc_contacts', [])] if row else [],
                                       'status': 'active' if available else 'exhausted' if active else 'inactive',
-                                      'remaining': remaining,
+                                      'remaining': remaining, 'reason': why, 'card': card, 'card_retry_at': retry,
+                                      'note': None if active else ' — '.join(NOTE[self.contacts.lang() == 'en'].get(x, x) for x in (why, card) if x),
                                       'expires': ((row or {}).get('core') or {}).get('expires')}}
                 verified = await asyncio.to_thread(source, self.host, peer)
                 if op != 'grant' or verified != contract or contract is None:
                     return {'ok': False, 'why': 'workflow_source'}
                 raw_root = req.get('artifact_root')
-                artifact_root = checked_artifact_root(contract['root'] if raw_root is None else raw_root)
                 cc_ids = req.get('cc_contacts') or []
-                cc_rows = await asyncio.to_thread(cc_binding, self.st, cc_ids) if cc_ids else None
-                if (await asyncio.to_thread(self.live, row, contract) and row['core'].get('cc_contacts') == cc_rows
-                        and row['core']['artifact_root'] == artifact_root):
-                    return {'ok': True, 'workflow_id': wid, 'grant': {'status': 'active'}, 'unchanged': True}
                 days, count, daily = req.get('days', 30), req.get('max', 100), req.get('per_day', 3)
                 if not all(type(x) is int and 1 <= x <= top for x, top in ((days, 30), (count, 100), (daily, 3))):
                     return {'ok': False, 'why': 'shape'}
-                epoch = data.get('epochs', {}).get(wid, 0)
-                binding = await asyncio.to_thread(owner_binding, self.st)
-                core = {'artifact_root': artifact_root, 'v': 1, 'id': secrets.token_hex(16), 'host': binding['host'], 'binding': binding,
-                        'contract': contract, 'purpose': PURPOSE, 'manifest': 1, 'roles': ROLES,
-                        'issued': int(time.time()), 'expires': int(time.time()) + days * 86400,
-                        'max': count, 'per_day': daily, 'max_bytes': MAX_BYTES, 'max_files': 10,
-                        'lang': 'en' if self.contacts.lang() == 'en' else 'zh'}
-                if cc_rows is not None:
-                    core.update(v=2, purpose=FIXED_PURPOSE, manifest=2, cc_contacts=cc_rows)
+                core = await asyncio.to_thread(self.make, contract, contract['root'] if raw_root is None else raw_root, cc_ids, days, count, daily)
+                if (await asyncio.to_thread(self.live, row, contract) and [x['id'] for x in row['core'].get('cc_contacts', [])] == sorted(cc_ids)
+                        and row['core']['artifact_root'] == core['artifact_root']):
+                    return {'ok': True, 'workflow_id': wid, 'grant': {'status': 'active'}, 'unchanged': True}
+                p, new = self.offer(data, wid, core)
+                if not new:
+                    return {'ok': False, 'why': 'card_pending', 'grant': {'status': 'inactive', 'card': 'pending'}}
+                await asyncio.to_thread(self.save, data)
             except (ValueError, OSError):
                 return {'ok': False, 'why': 'grant_stale'}
-        # Revoke stays live while awaiting the card.
-        from . import policy_registry
-        ans = await self.host.ask(TOOL, {'summary': shown(core)}, batch=False, grant_info=True,
-                                  always_ask=True, require_passkey=True, _company_proposal=policy_registry.HOST_CARD)
-        proof = {k: v for k, v in (ans.get('grant_info') or {}).items() if k in
-                 ('rid', 'device', 'sig', 'fa', 'summary', 'kind', 'channel')}
-        async with self.lock:
-            try:
-                current_binding = await asyncio.to_thread(owner_binding, self.st)
-                current_cc = await asyncio.to_thread(cc_binding, self.st, cc_ids) if cc_rows is not None else None
-            except (ValueError, OSError):
-                current_binding = None
-                current_cc = None
-            if (ans.get('behavior') != 'allow' or self.host.stopped()
-                    or await asyncio.to_thread(source, self.host, peer) != contract
-                    or current_binding != binding
-                    or current_cc != cc_rows
-                    or not await asyncio.to_thread(proof_ok, self.st, core, proof)):
-                return {'ok': False, 'why': 'grant_required'}
-            data = await asyncio.to_thread(self.load)
-            if data.get('epochs', {}).get(wid, 0) != epoch:
-                return {'ok': False, 'why': 'grant_stale'}
-            data['grants'][wid] = {'core': core, 'proof': proof}
-            await asyncio.to_thread(self.save, data)
-            self.st.log('workflow_mail_grant', task=wid, id=core['id'], sha=digest(core), device=proof['device'])
-            return {'ok': True, 'workflow_id': wid, 'grant': {'status': 'active', 'expires': core['expires']}}
+        # Revoke stays live while awaiting the card; the card outlives this call.
+        done, _ = await asyncio.wait({p}, timeout=WAIT)
+        return p.result() if p in done else {'ok': False, 'why': 'card_pending', 'grant': {'status': 'inactive', 'card': 'pending'}}
 
     async def send(self, req, peer):
         async with self.lock:
@@ -365,8 +450,9 @@ class Service:
                     return {'ok': False, 'why': 'workflow_source', 'provider_acceptance': False}
                 data = await asyncio.to_thread(self.load)
                 row = data['grants'].get(contract['workflow_id'])
-                if not await asyncio.to_thread(self.live, row, contract):
-                    return {'ok': False, 'why': 'grant_required', 'provider_acceptance': False}
+                why = await asyncio.to_thread(self.why, row, contract)
+                if why:
+                    return {'ok': False, 'why': 'grant_required', 'reason': why, 'provider_acceptance': False}
                 manifest, files = await asyncio.to_thread(self.snapshot, req, contract, row['core']['artifact_root'], row['core'])
                 key = digest({'host': row['core']['host'], 'workflow_id': contract['workflow_id'],
                               'root': contract['root'], 'delivery': manifest['idempotency_key']})

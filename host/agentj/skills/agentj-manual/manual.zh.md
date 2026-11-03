@@ -139,6 +139,8 @@ Agent 回复里的内容会自动排好版：
 
 需要明确附到当前页时，让 Agent 在当前获准的主人手机回合运行 `agentj file show PATH --label 说明 --json`。没有有效主人回合会失败；桌面独立回合不能借这个命令新建外发消息。`queued` 只表示排队，后续 `FILE_SHOW_RESULT` 的 `attached_to_page` 表示已附到页，`failure` 表示失败；它们都不表示您已看到或下载文件。 本修复已用 Linux 隔离进程和真实 Chromium 合成图片页面验证。实体手机、macOS、WSL 和 Claude Code/Codex/OpenCode 真实模型回合端到端尚未验证；Kimi/Qwen ACP 尚无已验收的 file-show 接入。Windows 须在 WSL 中使用。
 
+`PATH` 支持绝对路径和 `~/`，文件仍须位于本轮获准的工作目录内。失败说明：`broker_unavailable` 表示无法连接本机附图服务；`no_owner_session` 表示无法确认当前主人回合或其上下文；`native_admission_missing` 表示 AI 工具尚未准入这条具体请求；`native_admission_expired` 表示准入已失效；`native_admission_ambiguous` 表示匹配到多条有效准入。这些失败都没有附上文件。保留当前主人回合并说明原因，不换目标页、不绕过检查。
+
 （截图：回复里的图片、公式和高亮的代码 — https://agentj.app/docs/manual/rich.zh.webp）
 （截图：往下翻：流程图、可以下载的文件，和一行没有发出的说明 — https://agentj.app/docs/manual/rich-more.zh.webp）
 ### 搜索聊天记录
@@ -232,7 +234,7 @@ Agent J 主机上的 Codex App 打开会话时，手机会从本机记录显示�
 | `/my-agent-id` | Agent J 主机直接回你的 Agent 号码（点一下代码块就能复制）、分享链接和「打开我的名片」按钮，不经过 AI，不花 tokens |
 | `/add-friend 号码 [附言]` | 加好友，和好友页上的「加好友」一样由手机签名发出；号码抄错一位会当场提醒；不带号码就打开「加好友」 |
 
-「一键执行」一组里换 AI 编程工具的命令（`/switch-harness`）点一下就发给主 Agent；也可以在输入框里打这条命令，后面补一句「切换到 Codex」再发。它不会马上切换，而是交给主 Agent：主 Agent 先说明要换的是哪种工具，扫描这台Agent J 主机装了哪些、用无头方式试一下各自的登录还能不能用，告诉你现在能切到哪些，你确认了才切。切换时手机会断开几秒再自动连上，新的工具会先自报家门；那边没起来，会自动切回原来的，并告诉你原因。详见 [换 AI 编程工具](https://agentj.app/docs/switch-harness/)。
+「一键执行」一组里换 AI 编程工具的命令（`/switch-harness`）点一下就发给主 Agent；也可以在输入框里打这条命令，后面补一句「切换到 Codex」再发。它不会马上切换，而是交给主 Agent：主 Agent 先说明要换的是哪种工具，扫描这台Agent J 主机装了哪些、用无头方式试一下各自的登录还能不能用，告诉你现在能切到哪些，你确认了才切。切换时遥控器会断开几秒再自动连上，新的工具会先自报家门；那边没起来，会自动切回原来的，并告诉你原因。详见 [换 AI 编程工具](https://agentj.app/docs/switch-harness/)。
 想加自己的命令？点列表里的 `/customize`（定制命令），或者直接按住 ≡ 不放：等于你给 Agent 发了一条消息说想定制 slash 命令，它会先列出现有的，再问你想加、删还是改哪一条，改好校验通过才生效。
 
 切换前，现在这个工具会先把对话要点写进交接文件；新的工具接上后先读它，再接着干。3 分钟内没写成，切换照常继续，改用本机最近请求和回复的脱敏摘录。手机会说明正在用摘录，内容可能不完整；进度缺失时，新工具会向你核实。
@@ -353,6 +355,10 @@ Agent J 主机上的 Agent J 不响应时，Agent J 主机上有个小小的救�
 「紧急修复」下面的「终端指令」提供固定的终端检查，每条旁边都有「执行」。只读自检 `doctor --read-only` 只验已配对设备签名，不用 Face ID，大屏也能运行。`status`、`service status`、`rescue status`、`update check` 和重连修复 `doctor --reconnect` 仍要用通行密钥验证；大屏没有验证能力时请回手机确认。旧版主机的检查可能仍要求 Face ID。结果先在主机遮住凭据，再以文字显示，并留下操作记录；点 × 可关闭结果。
 
 ### 网页终端
+
+**打开 Olares 应用内的终端：** 在 Agent J 应用设置页点「打开网页终端」，或在已配对遥控器的「设置」→「安全」点「打开 Olares 网页终端」。新标签页由 Olares 验证登录，终端使用 Agent J 应用内同一个用户、主目录和配置。用 `agentj status` 查看状态，用 `agentj tasks list --json` 查看自己的后台任务；不要打印密码、密钥、令牌或完整进程命令行。它不要求开启 Agent J 行模式终端或额外的 Agent J Face ID，也不提供行模式的输出遮挡、操作日志和命令确认。见 [Olares 网页终端](https://agentj.app/docs/web-terminal/#olares)。
+
+以下是普通主机的行模式终端。
 
 在「设置」→「安全」→「网页终端」里，可以在电脑浏览器里用 Agent J 主机的命令行：你敲一整行，主机运行，结果显示在浏览器里。它只能在电脑浏览器里用；手机上只写着「因为安全性和便捷性的原因，网页终端只能在电脑浏览器里操控。」它默认关。在电脑浏览器里点「开启并打开网页终端」，用 Face ID 确认，再输入一次 Agent J 主机的登录密码，就为这个浏览器开启并马上全屏打开；也可以在主机的终端里运行 `agentj terminal enable`，核对 6 位对照码后在一台设了 Face ID 的遥控器上确认。Agent 和脚本开不了它。这台设备还没设 Face ID 时，先点「设置 Face ID」。之后每次点「打开网页终端」都要 Face ID；还没记住 Agent J 主机登录密码时，要在终端页里输入一次，它加密后才发出。每次最长 15 分钟（最多 60），5 分钟不输入、浏览器切到别的标签页或最小化超过 60 秒、连接断了都会自动关，全程记录操作日志，日志只留在主机上 30 天（[记录什么、谁能看](https://agentj.app/docs/web-terminal-log/)）。不要在终端里输入密码；`sudo` 会改成用 Face ID 允许。危险的行要再点「运行」并用 Face ID 确认，这只防手滑。连接断了它也用不了，那时用上面的「紧急修复」。Agent J 主机是 Linux、macOS 或 WSL 都能用（Mac 上默认用 zsh）。急用时可以借朋友电脑的浏览器扫码配对，用完在「遥控器管理」里解绑，解绑那一刻它的终端就关了。朋友帮忙、网页版遥控器、三种密码保存方式和它们各防什么，见 [网页终端](https://agentj.app/docs/web-terminal/)。
 

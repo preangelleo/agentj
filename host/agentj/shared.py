@@ -934,6 +934,10 @@ class SharedClaudeAgent(Agent):
                 and not provenance.unattended_turn(self):   # P570
             # B1: a group member's turn never reaches the owner's approval, nor a category grant from an owner turn
             self.host.st.log("ask_done", tool=event.get("tool_name"), decision="deny", reason="group_source")
+            recovery = getattr(getattr(self.host, "background_done", None), "recovery", None)
+            if recovery is not None:
+                await asyncio.to_thread(recovery.refusal, event.get("tool_name") or "?", event.get("tool_input") or {},
+                                        "group_source", event.get("agent_id"))
             return {"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": {"behavior": "deny",
                 "message": provenance.refusal_text(self)}}}
         if name == "SessionStart" and not event.get("agent_id"):
@@ -2333,10 +2337,49 @@ class SharedClaudeAgent(Agent):
         live = claude_sessions(self.cfg["dir"], (self.session or {}).get("sessionId", "")) if self.session else []
         return bool(live) and live[0].get("status") == "idle"
 
+    def submit(self, text):
+        from .switch_harness import HelloSend, HandoffSend
+        if isinstance(text, (HelloSend, HandoffSend)):
+            text._switch_epoch = getattr(self, "_switch_epoch", 0)
+        if isinstance(text, HelloSend):
+            self._hello_pending, self._hello_failed = True, False
+        super().submit(text)
+
+    def hello_deferred(self):
+        return bool(getattr(self, "_hello_pending", False) or getattr(self, "_hello_waiting", False))
+
+    def _hello_dropped(self):
+        from .switch_harness import HelloSend
+        if isinstance(self.cur_send, HelloSend):
+            self._hello_pending, self._hello_failed = False, True
+
+    async def _switch_idle(self):
+        # The existing adapter queue owns this fixed host turn; cancellation drops it.
+        from .switch_harness import HelloSend, HandoffSend
+        if not isinstance(self.cur_send, (HelloSend, HandoffSend)):
+            return True
+        if getattr(self.cur_send, "_switch_epoch", 0) != getattr(self, "_switch_epoch", 0):
+            return False
+        self._hello_waiting = isinstance(self.cur_send, HelloSend)
+        try:
+            while self.native_busy() or not await asyncio.to_thread(self._registry_idle):
+                if self.halting or self.host.stopped() or getattr(self.host, "agent", None) is not self or getattr(self.cur_send, "_switch_epoch", 0) != getattr(self, "_switch_epoch", 0):
+                    return False
+                await asyncio.sleep(.25)
+            return (not self.halting and not self.host.stopped() and getattr(self.host, "agent", None) is self
+                    and getattr(self.cur_send, "_switch_epoch", 0) == getattr(self, "_switch_epoch", 0))
+        finally:
+            self._hello_waiting = False
+
     async def turn(self, text):
         if self.session is None and not await self.attach():
+            self._hello_dropped()
             return
         if not await self.menu_desk.wait_clear():
+            self._hello_dropped()
+            return
+        if not await self._switch_idle():
+            self._hello_dropped()
             return
         # Cross-session messages need not emit UserPromptSubmit in every native
         # version; the phone turn boundary must also revoke prior risk grants.
@@ -2353,6 +2396,10 @@ class SharedClaudeAgent(Agent):
         if not provenance.is_owner(source):
             self._mark_untrusted("pending")
         try:
+            from .switch_harness import HelloSend
+            if isinstance(self.cur_send, HelloSend):
+                self._hello_at = time.time()
+                self._hello_pending = False
             await self.deliver(lambda: asyncio.to_thread(claude_send, self.session, text, source))
             try:
                 await asyncio.wait_for(self.input_seen.wait(), CLAUDE_INPUT_WAIT)
@@ -2510,6 +2557,9 @@ class SharedClaudeAgent(Agent):
 
         q = getattr(self.q, "_queue", None)
         nxt = q[0] if q else None
+        from .switch_harness import HelloSend, HandoffSend
+        if isinstance(nxt, (HelloSend, HandoffSend)):
+            return
         if getattr(nxt, "sid", None) is None or self.halting or not self.session:
             return
         self.q.get_nowait()
@@ -2537,6 +2587,9 @@ class SharedClaudeAgent(Agent):
             self.control_ack.set()  # wake the wait; halting prevents a success claim
         busy = self.status == "working" or self.state.status == "working"
         if clear_queue:
+            self._switch_epoch = getattr(self, "_switch_epoch", 0) + 1
+            if self.hello_deferred():
+                self._hello_pending, self._hello_waiting, self._hello_failed = False, False, True
             while not self.q.empty():
                 item = self.q.get_nowait()
                 if getattr(self.host, "queue_dropped", None):

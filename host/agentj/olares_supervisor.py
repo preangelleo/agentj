@@ -133,7 +133,7 @@ class Supervisor:
         from .olares_probe import BASE_ENV, CONFIG_ENV, OWNER_SERVER_ENV, login_names
         from .harness import BIN_ENV, NAMES
         names = set(BASE_ENV) | set(BIN_ENV.values()) | set(OWNER_SERVER_ENV) | {'XDG_RUNTIME_DIR',
-                 'AGENTJ_ACCOUNT_URL', 'OLARES_ROUTER_URL', 'OLARES_API_KEY'}
+                 'AGENTJ_ACCOUNT_URL', 'AGENTJ_OLARES_TERMINAL_URL', 'OLARES_ROUTER_URL', 'OLARES_API_KEY'}
         for kind in NAMES:
             names |= CONFIG_ENV.get(kind, set()) | login_names(kind)
         self.base_env = {k: v for k, v in os.environ.items() if k in names or re.fullmatch(r'LC_[A-Z_]+', k)}

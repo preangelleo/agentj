@@ -216,7 +216,37 @@ PLAN_KEY_ENV = ("ARK_CODING_PLAN_API_KEY", "BAILIAN_TOKEN_PLAN_API_KEY", "KIMI_A
                 "ARK_AGENT_PLAN_API_KEY")   # P395: Ark's Agent Plan
 
 
-def auxiliary_environment(base=None, kind: str = "claude", extra_keep=(), plan_keys: bool = False) -> dict:
+def _host_elevate_socket(host_state):
+    from .state import State
+    from .elevate import SOCK_NAME
+    if not isinstance(host_state, State):
+        return None
+    try:
+        raw = os.fspath(host_state.perm_dir)
+        if '..' in raw.split(os.sep):
+            return None
+        directory = os.path.abspath(raw)
+        current = directory
+        while True:
+            if stat.S_ISLNK(os.lstat(current).st_mode):
+                return None
+            parent = os.path.dirname(current)
+            if parent == current:
+                break
+            current = parent
+        folder = os.lstat(directory)
+        path = os.path.join(directory, SOCK_NAME)
+        endpoint = os.lstat(path)
+        if not stat.S_ISDIR(folder.st_mode) or folder.st_uid != os.getuid() or stat.S_IMODE(folder.st_mode) != 0o700:
+            return None
+        if not stat.S_ISSOCK(endpoint.st_mode) or endpoint.st_uid != os.getuid() or stat.S_IMODE(endpoint.st_mode) != 0o600:
+            return None
+        return path
+    except (OSError, TypeError, ValueError):
+        return None
+
+
+def auxiliary_environment(base=None, kind: str = "claude", extra_keep=(), plan_keys: bool = False, host_state=None) -> dict:
     """Tasks/bots authenticate from native storage, never serve's secret environment — except the plan keys
     (PLAN_KEY_ENV) when `plan_keys` (the owner's own tasks; bots never pass it).
 
@@ -226,6 +256,13 @@ def auxiliary_environment(base=None, kind: str = "claude", extra_keep=(), plan_k
     env = dict(os.environ if base is None else base)
     plans = set(PLAN_KEY_ENV) if plan_keys else set()
     extra_keep = set(extra_keep) | {k for k in _MAIN_ENV if k.startswith("FAKE_")} | {"AGENTJ_INSTANCE"}
+    if host_state is not None:
+        env.pop("AGENTJ_ELEVATE_SOCK", None)
+        extra_keep.discard("AGENTJ_ELEVATE_SOCK")
+        endpoint = _host_elevate_socket(host_state)
+        if endpoint is not None:
+            env["AGENTJ_ELEVATE_SOCK"] = endpoint
+            extra_keep.add("AGENTJ_ELEVATE_SOCK")
     clean = clean_env(kind, env, extra_keep=extra_keep | plans)
     hidden = set(hide_env(env))
     return {k: v for k, v in clean.items() if k not in hidden

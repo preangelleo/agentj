@@ -1,5 +1,5 @@
 {
-  "version": "0.26.6a1",
-  "zh": "[all] 本地报告预览免重复确认；素材邮件绑定原生任务、固定名单和本人批准。",
-  "en": "[all] Preview local reports without repeated confirmation; artifact mail binds the native task, fixed recipients and owner approval."
+  "version": "0.26.7a1",
+  "zh": "[all] Olares 网页终端入口；工作流邮件授权不再因发信计数失效、需批准时必有卡；离线报告走主机隔离入口；来源不明结果可核对；切换 AI 不再因模型名回退；共享 Claude 会话本机图片显示为文件卡。",
+  "en": "[all] Olares web terminal; mail grants survive send counts and always show a card; sandboxed host reports; source recovery; switch fixes; shared file cards."
 }

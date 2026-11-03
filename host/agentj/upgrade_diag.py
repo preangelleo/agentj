@@ -108,6 +108,38 @@ def installer_fields(res):
     return out
 
 
+# Fixed exception evidence only: no message, traceback, filenames or command arguments.
+EXCEPTION_TYPES = frozenset((
+    "Exception", "OSError", "FileNotFoundError", "PermissionError", "TimeoutError",
+    "ConnectionError", "ConnectionResetError", "BrokenPipeError", "BlockingIOError",
+    "IsADirectoryError", "NotADirectoryError", "InterruptedError", "ProcessLookupError",
+    "ChildProcessError", "FileExistsError", "SubprocessError", "CalledProcessError",
+    "TimeoutExpired", "ValueError", "TypeError", "KeyError", "AttributeError",
+    "URLError", "HTTPError", "BadZipFile", "MinisignError", "UnicodeDecodeError"))
+
+
+def exception_fields(res):
+    """Project only allowlisted classes/stages, OS errno and Unix UTC seconds."""
+    out = {}
+    for key, allowed in (("exception_type", EXCEPTION_TYPES), ("failure_stage", STEPS)):
+        value = res.get(key)
+        if isinstance(value, str) and value in allowed:
+            out[key] = value
+    value = res.get("errno")
+    if type(value) is int and value in errno.errorcode:
+        out["errno"] = value
+    value = res.get("failure_at")
+    if type(value) is int and 0 <= value < 253402300800:  # UTC through year 9999
+        out["failure_at"] = value
+    return out
+
+
+def exception_evidence(exc, stage):
+    return exception_fields({"exception_type": type(exc).__name__ if type(exc).__name__ in EXCEPTION_TYPES else "Exception",
+                             "errno": getattr(exc, "errno", None), "failure_stage": stage,
+                             "failure_at": int(time.time())})
+
+
 def plan_reason(e: BaseException) -> str:
     """verified_plan's exception → the result reason. Getting the bytes (network, HTTP, timeouts, a redirect refused, too
     large) is download_failed; the installation kind auto-update cannot handle is unsupported_install; every other refusal
@@ -225,6 +257,7 @@ def entry(res: dict, now: float | None = None) -> dict | None:
     if result != "ok":
         rec["step"] = res["step"] if res.get("step") in STEPS else "install"
         rec.update(installer_fields(res))
+        rec.update(exception_fields(res))
         rec.update(artifact_fields(res))
         if res.get("stderr_tail"):
             rec["stderr_tail"] = str(res["stderr_tail"])[-TAIL_MAX:]
@@ -344,7 +377,7 @@ def body(res: dict, kind: str | None = None) -> str:
              + (f" · rollback: {res['rollback']}" if res.get("rollback") else "")
              + (f" · service: {res['service']}" if res.get("service") else ""),
              f"install: {kind or '?'} · {_platform()}"]
-    for key, value in {**installer_fields(res), **artifact_fields(res)}.items():
+    for key, value in {**installer_fields(res), **artifact_fields(res), **exception_fields(res)}.items():
         lines.append(f"{key}: {value}")
     checks = failed_checks(res)
     if checks:

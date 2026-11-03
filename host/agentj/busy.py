@@ -1,10 +1,10 @@
-"""Display-only background-work board (PROTOCOL §22); it never starts, stops or approves work.
-Board folds native Claude/Codex/OpenCode events, workflows and outside dispatches, reconciling completion and liveness.
-Item-file text is display data, not proof of a trusted launch. Detail reads are bounded and redacted. Labels are capped;
-load is measured, not inferred. Stable colour assignments and explicit empty task lists drive the phone projection.
 
-Protocol/history detail: agentjarvis/ARCHITECTURE.md, P0261 source notes / busy.py.
-"""
+
+
+
+
+
+
 from __future__ import annotations
 
 import argparse
@@ -49,9 +49,9 @@ def clean(s, n: int) -> str:
 
 
 def short(text) -> str:
-    """The label (P154): the whole description on one line — control characters out, runs of whitespace (newlines too)
-    become one space — capped at LABEL_MAX characters (a longer one ends in "…"). The phone gives every row a fixed
-    width and ellipsises it there; nothing is squeezed here any more. No model, no network."""
+
+
+
     if isinstance(text, str):
         text = re.sub(r"[\t\n\r\v\f\u2028\u2029]+", " ", text)     # line breaks are spaces, not glue (clean drops them)
     s = " ".join(clean(text, 4 * LABEL_MAX).split())
@@ -59,13 +59,13 @@ def short(text) -> str:
 
 
 def who_of(agent_type) -> str | None:
-    """A named sub-agent keeps its name; a generic one (general-purpose, Explore, …) is the phone's 「临时助理」 (None)."""
+
     s = clean(agent_type, WHO_MAX)
     return None if s.lower() in GENERIC else s
 
 
 def pidns() -> str:
-    """This process's PID namespace (the fenced Agent has its own: its pids mean nothing to serve)."""
+
     try:
         return os.readlink("/proc/self/ns/pid")[:64]
     except OSError:
@@ -100,15 +100,15 @@ META_LIMITS = {"harness": 32, "model": 100, "effort": 24, "cwd": 400, "workflow"
 
 
 def task_meta(meta):
-    """Only declared display metadata; never infer a child's model from its parent."""
+
     from .privacy import redact
     return {k: redact(clean(meta.get(k), n)) for k, n in META_LIMITS.items()
             if isinstance(meta.get(k), str) and clean(meta[k], n)}
 
 
 def sys_load(getloadavg=getattr(os, "getloadavg", None), cpus=os.cpu_count) -> float | None:
-    """P154: how busy the Agent J host is, 0..1 — the 1-minute load average per core (1 = every core has work). None where
-    the system has no load average (Windows) or it cannot be read."""
+
+
     if getloadavg is None:
         return None
     try:
@@ -120,15 +120,15 @@ def sys_load(getloadavg=getattr(os, "getloadavg", None), cpus=os.cpu_count) -> f
     return round(min(1.0, one / max(1, cpus() or 1)), 2)
 
 
-# ------------------------------------------------------------------------------------------- item files (outside)
+
 def busy_dir(root) -> Path:
-    """serve's own memory (colors.json)."""
+
     return Path(root) / "busy"
 
 
 def items_dir(root) -> Path:
-    """Item files: under agentperm/, the one part of the state dir the fenced Agent sees (fence.py), so `agentj busy run`
-    from inside the Agent's sandbox lands where serve reads."""
+
+
     return Path(root) / "agentperm" / "busy"
 
 
@@ -167,7 +167,7 @@ def _alive(pid: int) -> bool:
 
 
 def read_items(root, now: float | None = None) -> list[dict]:
-    """Item files, pruned: a dead pid, an expired one or garbage is removed."""
+
     now = time.time() if now is None else now
     d = items_dir(root)
     me = pidns()
@@ -213,9 +213,9 @@ def read_items(root, now: float | None = None) -> list[dict]:
     return out
 
 
-# P200 追加 1: systemd-run without --description names the unit after its command line ("[systemd-run] /usr/bin/bash
-# …/run-px.sh 165 …"; systemd < 256: the bare command line). That is not a title: a known launcher (`run-<name>.sh|py`)
-# is asked for its PROMPT file's first "# " heading; else the unit name. The command line itself is detail only (`cmd`).
+
+
+
 SYSTEMD_RUN = re.compile(r"^\[systemd-run\]\s+")
 LAUNCHER_RE = re.compile(r"^run-[\w.-]{1,40}\.(?:sh|bash|py)$")
 PROMPT_ARG = re.compile(r"^[\w.-]{1,40}$")
@@ -223,7 +223,7 @@ CMD_MAX = 400
 
 
 def cmdline_desc(desc: str) -> str | None:
-    """The command line when a Description is systemd-run's default (prefixed, or an absolute path first); else None."""
+
     m = SYSTEMD_RUN.match(desc or "")
     if m:
         return desc[m.end():].strip() or None
@@ -231,7 +231,7 @@ def cmdline_desc(desc: str) -> str | None:
 
 
 def prompt_title(path) -> str | None:
-    """The first markdown H1 ("# …", outside ``` fences) of a regular file (lstat, ≤ REPORT_READ bytes); else None."""
+
     try:
         import stat as _stat
         if not _stat.S_ISREG(os.lstat(path).st_mode):
@@ -250,8 +250,8 @@ def prompt_title(path) -> str | None:
 
 
 def launcher_title(cmd: str, num: str | None = None) -> str | None:
-    """The PROMPT title of a known launcher on a command line: `…/run-px.sh 165 …` → PROMPT-165.md next to the script,
-    `…/run-shotfable.sh [name]` → PROMPT-<name>.md, else PROMPT-<launcher name>.md / PROMPT-<unit number>.md."""
+
+
     argv = cmd.split()
     for i, tok in enumerate(argv[:4]):
         p = Path(tok)
@@ -267,15 +267,15 @@ def launcher_title(cmd: str, num: str | None = None) -> str | None:
 
 
 def _drop_who(who: str, title: str) -> str:
-    """"P165 — 0.20.0 集成" under who P165 → "0.20.0 集成" (the card already shows who); unchanged when nothing is left."""
+
     rest = re.sub(rf"^{re.escape(who)}(?![\w])\s*(?:[—–\-:：·|]\s*)?", "", title, flags=re.I).strip()
     return rest or title
 
 
 def unit_names(unit: str, desc: str) -> tuple[str | None, str, str | None]:
-    """(who, label, cmd) for a dispatch unit: ① Description "who · what" / "who: what" or any other written title (who =
-    the unit's P-number); ② systemd-run's default (a command line): a launcher's PROMPT title, the leading "P<N> —" cut
-    when it repeats who; ③ the unit name. `cmd` = the command line (detail only), else None."""
+
+
+
     who = unit[len("agentj-"):].split(".")[0].split("-")[0].upper()
     cmd = cmdline_desc(desc)
     if cmd is None:
@@ -290,15 +290,15 @@ def unit_names(unit: str, desc: str) -> tuple[str | None, str, str | None]:
 
 
 # P302 (owner 09:47: P290 / P302 / P303 sat under 「临时帮手 · 不属于任何工作流」): a dispatch unit runs a CEO in some folder
-# of the working root — systemd-run's own cwd is $HOME, the launcher cd's later, so the unit's place is the deepest working
-# directory among the processes of its control group (serve's task_assignment maps it to the folder → the company). Its
-# title is the heading of the nearest PROMPT-<N>.md (in a `.jarvis` folder) above that directory.
+
+
+
 CG_ROOT = Path("/sys/fs/cgroup")
 CG_PIDS = 64
 
 
 def cg_pids(cg: str, root: Path = CG_ROOT) -> list[int]:
-    """The pids of a control group and its children (≤ CG_PIDS); [] off Linux / unreadable."""
+
     pids: list[int] = []
     base = root / cg.lstrip("/")
     for d, _dirs, _files in os.walk(base):
@@ -322,7 +322,7 @@ def deepest_cwd(pids, readlink=os.readlink) -> str | None:
 
 
 def unit_places(units, run=subprocess.run, pids_of=cg_pids, readlink=os.readlink) -> dict:
-    """unit → {"cg": its control group, "cwd"?: where it works} — one `systemctl show` for all units."""
+
     if not units:
         return {}
     try:
@@ -347,7 +347,7 @@ def unit_places(units, run=subprocess.run, pids_of=cg_pids, readlink=os.readlink
 
 
 def prompt_near(cwd: str, num: str, up: int = 6) -> str | None:
-    """The first heading of PROMPT-<num>.md in the `.jarvis` folder of cwd or one of its parents (≤ up levels)."""
+
     d = Path(cwd)
     for _ in range(up):
         t = prompt_title(d / ".jarvis" / f"PROMPT-{num}.md")
@@ -360,7 +360,7 @@ def prompt_near(cwd: str, num: str, up: int = 6) -> str | None:
 
 
 def in_cgroup(pid, cg: str | None) -> bool:
-    """The pid runs inside the control group cg (or one of its children)."""
+
     if not isinstance(pid, int) or not cg:
         return False
     try:
@@ -370,9 +370,9 @@ def in_cgroup(pid, cg: str | None) -> bool:
     return any((ln.split(":", 2)[-1] + "/").startswith(cg.rstrip("/") + "/") for ln in lines)
 
 
-# P423 #160: a serve restart (upgrade) ends serve's own process tree and, under systemd (agentj.service, default
-# KillMode=control-group), everything in serve's control group. A worker started elsewhere — a `systemd-run --user` unit,
-# a launchd job, another terminal — keeps running and is not "interrupted". Anything we cannot prove counts (as before).
+
+
+
 def _proc_ppid(pid: int, proc: Path) -> int | None:
     try:
         stat_ = (proc / str(pid) / "stat").read_text()
@@ -390,7 +390,7 @@ def _own_cg(proc: Path) -> str | None:
 
 
 def ps_parents(run=subprocess.run) -> dict[int, int] | None:
-    """macOS / BSD: pid → ppid of every process from one `ps` call; None when ps is unavailable."""
+
     try:
         r = run(["ps", "-A", "-o", "pid=,ppid="], capture_output=True, text=True, timeout=3)
     except (OSError, subprocess.SubprocessError):
@@ -404,9 +404,9 @@ def ps_parents(run=subprocess.run) -> dict[int, int] | None:
 
 
 def survives_restart(it: dict, serve_pid: int | None = None, proc: Path = Path("/proc"), parents=None) -> bool:
-    """True only when this outside item is known to run outside serve: a systemd unit / launchd job (`unit:`), or a pid
-    (in serve's PID namespace) whose parent chain does not reach serve and — when serve is a systemd service — that is not
-    in serve's control group. No pid, a fenced pid, an unreadable /proc or ps → False (it counts as interrupted)."""
+
+
+
     if str(it.get("key", "")).startswith("unit:"):
         return True
     pid = it.get("pid")
@@ -447,8 +447,8 @@ def survives_restart(it: dict, serve_pid: int | None = None, proc: Path = Path("
 
 
 def same_job(f: dict, u: dict) -> bool:
-    """P302: an `agentj busy run` item (the 10-15 run-px2.sh convention) and the dispatch unit it runs in are one job —
-    its pid sits in the unit's control group, or its REPORT is the unit's REPORT-<N>.md."""
+
+
     if in_cgroup(f.get("pid"), u.get("cg")):
         return True
     m = re.match(r"^unit:agentj-p(\d+)", u.get("key", ""))
@@ -459,9 +459,9 @@ LAUNCHD_RE = re.compile(r"^agentj-p(\d+)([\w.-]*)$")
 
 
 def scan_launchd(run=subprocess.run) -> list[dict]:
-    """P291: macOS has no systemd — running launchd jobs labelled `agentj-p<digits>…` are the same convention
-    (`launchctl submit -l agentj-p291-busy-fix -- …` or a LaunchAgent plist with that Label). who = P<N>; what = the rest of
-    the label, dashes as spaces. A job without a pid (loaded, not running) is not work."""
+
+
+
     try:
         r = run(["launchctl", "list"], capture_output=True, text=True, timeout=3)
     except (OSError, subprocess.SubprocessError):
@@ -482,10 +482,10 @@ def scan_launchd(run=subprocess.run) -> list[dict]:
 
 
 def scan_units(run=subprocess.run, platform=None, strict=False, places=unit_places) -> list[dict]:
-    """Active systemd user units `agentj-p<digits>…` (the CEO dispatch convention). Names: see unit_names (P150 / P200).
-    macOS (P291): no systemctl there → the running launchd jobs of the same name (scan_launchd). strict (P262): a failed
-    scan raises instead of looking like "nothing runs". P302: where each works (cwd → its workflow), the PROMPT heading as
-    its title, role CEO."""
+
+
+
+
     try:
         r = run(["systemctl", "--user", "list-units", "--type=service", "--state=active,activating", "--plain", "--no-legend",
                  "--no-pager", "--full", "agentj-p*"], capture_output=True, text=True, timeout=3)
@@ -526,13 +526,13 @@ def scan_units(run=subprocess.run, platform=None, strict=False, places=unit_plac
     return out
 
 
-# ------------------------------------------------------------------------------------------- detail (P160)
+
 _DESC_KEYS = ("description", "title", "command", "cmd", "file_path", "filePath", "path", "pattern", "query", "url", "prompt")
 
 
 def tool_desc(name, inp=None) -> str:
-    """One line for a sub-agent's latest tool call: the tool's own description when it has one, else its main argument
-    (the command, the file, the pattern …), prefixed with the tool name. Display only; redacted again on the way out."""
+
+
     n = clean(name, 40)
     inp = inp if isinstance(inp, dict) else {}
     arg = ""
@@ -551,7 +551,7 @@ def tool_desc(name, inp=None) -> str:
 
 
 def codex_item_desc(it: dict) -> str:
-    """A Codex child thread's item → one line (command / file / tool / search), like tool_desc."""
+
     typ = it.get("type") if isinstance(it, dict) else None
     if typ == "commandExecution":
         cmd = it.get("command")
@@ -573,13 +573,13 @@ def codex_item_desc(it: dict) -> str:
 
 
 def path_label(path) -> str:
-    """Codex's agentPath "/root/file_count" → "file count" (its last segment, made readable)."""
+
     seg = clean(path, 200).rstrip("/").rsplit("/", 1)[-1]
     return " ".join(seg.replace("_", " ").replace("-", " ").split())
 
 
 def _find(obj, name: str, depth: int = 0):
-    """The first dict value under key `name` anywhere in a small JSON tree (Codex nests the thread source)."""
+
     if depth > 4:
         return None
     if isinstance(obj, dict):
@@ -599,8 +599,8 @@ def _state(it: dict, tid: str):
 
 
 def report_head(path) -> dict | None:
-    """{path, head, at} for a REPORT file: its first non-empty line (markdown heading marks off). Regular files only (no
-    symlink, no device); None when the path is not a readable file — the phone then shows the path as 「还没有报告」."""
+
+
     if not isinstance(path, str) or not path.strip():
         return None
     p = Path(os.path.expanduser(path.strip()))
@@ -624,9 +624,9 @@ def report_head(path) -> dict | None:
 
 
 def unit_report(unit: str, run=subprocess.run) -> str | None:
-    """Where a dispatch unit `agentj-p<N>…` writes its REPORT: Environment AGENTJ_REPORT=<path> (the documented way), else
-    REPORT-<N>.md next to the script it runs or in its WorkingDirectory (./ , .jarvis/ , reports/). The first that
-    exists; else the first candidate (shown as 「还没有报告」); None when nothing points anywhere."""
+
+
+
     if not UNIT_RE.match(unit or ""):
         return None
     try:
@@ -692,7 +692,7 @@ def finished_items(root):
 
 
 def unit_since(unit, run=subprocess.run):
-    # systemd monotonic start gives real elapsed time and stable dedup across serve restarts.
+
     try:
         r = run(["systemctl", "--user", "show", unit, "-p", "ExecMainStartTimestampMonotonic", "--value"],
                 capture_output=True, text=True, timeout=3)
@@ -721,9 +721,9 @@ def unit_end(unit, run=subprocess.run):
     return {"exit_code": int(code) if mode in ("1", "exited") and code.isdigit() else None}
 
 
-# ------------------------------------------------------------------------------------------- the board (serve)
+
 class Board:
-    """serve's view: in-memory items (owned / shared sessions, workflow runs) + item files + systemd units."""
+
 
     def __init__(self, root, on_change=None, verify_sources=False):
         self.verify_sources = verify_sources
@@ -753,9 +753,9 @@ class Board:
                 c = json.loads((busy_dir(self.root) / "colors.json").read_text(encoding="utf-8"))
                 self.colors = {str(k)[:64]: int(v) % COLORS for k, v in c.items()} if isinstance(c, dict) else {}
 
-    # -- in-process sources
+
     def set_context(self, scope, harness=None, cwd=None, pid=None):
-        # Default working directory / tool only; a child's model is always its own event.
+
         from .busy_probe import start_id
         self.context[scope] = {**task_meta({"harness": harness, "cwd": cwd}), **({"pid": pid, "proc_start": start_id(pid)} if isinstance(pid, int) else {})}
 
@@ -771,6 +771,8 @@ class Board:
                 it["bg"] = True        # P426: once background, its end is a 「后台活已结束」 one
         if (old or {}).get("foreign") or (not old and session and (late and self.launched.get(key, True) or self.trusted and not self.trusted())):
             it["foreign"] = True       # P570; late: first seen in Stop (restart), launcher unknown
+        elif old and old.get("foreign") is False or not old and session and not late and self.trusted and self.trusted():
+            it["foreign"] = False      # explicit host-observed launch; absence is never proof
         if session and not old and not (late and key in self.launched):   # P570b: launch trust, kept after the item ends
             self.launched[key] = bool(it.get("foreign") or not self.trusted)
             while len(self.launched) > 64:
@@ -788,12 +790,12 @@ class Board:
             for field in ("pid", "proc_start", "native_id"):
                 if old.get(field):
                     it.setdefault(field, old[field])
-        # Native registration is machine evidence; external CLI text is handled separately.
+
         if session and not str(key).startswith("wf:"):
             it["native"] = True
             it["native_child"] = True
             it["activity_at"] = time.time()
-            # Registration itself is native activity; no first tool call is required.
+
             for field in ("native_status", "checked_at", "native_started_at"):
                 if old and field in old:
                     it[field] = old[field]
@@ -820,8 +822,8 @@ class Board:
             self.on_change()
 
     def finish(self, it, exit_code=None, ended=None, fg=False):
-        """P426: `fg` = a foreground sub-agent (it ended inside the main turn that waited for it) — the main Agent already
-        has its result, so P262 does not wake it again; only background work ends with 「后台活已结束」."""
+
+
         fg = (fg or it.get("fg") is True) and not it.get("bg")
         self.finished.append({**it, "ended": ended or time.time(), "exit_code": exit_code, "fg": fg})
 
@@ -854,15 +856,15 @@ class Board:
             self.alias.pop(next(iter(self.alias)))
 
     def note(self, key, text) -> None:
-        """P160: the latest thing this item's sub-agent did (a tool description), for the row's detail only — the list
-        does not change, so nothing is sent."""
+
+
         key = self.alias.get(key, key)
         if key in self.mem and isinstance(text, str) and text.strip():
             self.last[key] = {"text": text[:LAST_MAX], "at": int(time.time())}
             self.mem[key]["activity_at"] = time.time()
             self.native_status(key, "running")
 
-    # -- shared Claude sessions' hook events (shared.py)
+
     def hook_event(self, ev: dict, scope: str = "shared") -> None:
         if not isinstance(ev, dict):
             return
@@ -904,7 +906,7 @@ class Board:
             if aid:            # P426: foreground unless it was launched / listed as background work
                 self.stop(f"{scope}:{sid}:{aid}", fg=True)
         elif name == "PostToolUse" and not ev.get("agent_id"):
-            # P291: the main thread's background work as soon as it is launched — a run_in_background Bash
+
             # (backgroundTaskId) is an item of its own; an async Agent whose SubagentStart never arrived is caught up here
             resp = ev.get("tool_response") if isinstance(ev.get("tool_response"), dict) else {}
             ti = ev.get("tool_input") if isinstance(ev.get("tool_input"), dict) else {}
@@ -921,7 +923,7 @@ class Board:
         elif name == "SessionEnd":
             self.stop_where(lambda k, v: v.get("session") == f"{scope}:{sid}")
         elif name == "Stop" and not ev.get("agent_id") and isinstance(ev.get("background_tasks"), list):
-            # Claude Code's own list of live background work (sub-agents, run_in_background shells, …). P291: it also ADDS
+
             # what is missing — a lost / refused SubagentStart, a background Bash — so the phone never under-reports.
             live = set()
             for t in ev["background_tasks"]:
@@ -929,12 +931,12 @@ class Board:
                     self.mark_bg(f"{scope}:{sid}:{clean(str(t.get('id')), 80)}")
                 if isinstance(t, dict) and t.get("id") and t.get("status") not in BG_DONE:
                     live.add(self._background(scope, sid, t, True))
-            # foreground sub-agents are done when the main turn stops; background ones only when the harness drops them
+
             self.stop_where(lambda k, v: v.get("session") == f"{scope}:{sid}" and k not in live, fg=True)
 
     def _background(self, scope: str, sid: str, t: dict, late=False) -> str:
-        """P291: one entry of Claude Code's background list (Stop.background_tasks / a launch result) on the board; an item
-        already there (SubagentStart's, with its better label) is kept as it is. → its key."""
+
+
         key = f"{scope}:{sid}:{clean(str(t.get('id')), 80)}"
         if key in self.mem:
             self.mark_bg(key)
@@ -955,7 +957,7 @@ class Board:
         self.native_status(key, "running")
         return key
 
-    # -- the owned Claude session's stream-json (agent.py)
+
     def stream_event(self, ev: dict, scope: str = "own") -> None:
         if not isinstance(ev, dict):
             return
@@ -989,7 +991,7 @@ class Board:
         elif t == "system" and ev.get("subtype") == "task_started":
             tid = clean(ev.get("task_id"), 80)
             if tid and f"{scope}:task:{tid}" not in self.mem and ev.get("task_type") in (None, "local_agent", "agent", "local_bash"):
-                # P291: a run_in_background Bash (local_bash) is background work too, labelled by its description
+
                 self.start(f"{scope}:task:{tid}", None, "temp", ev.get("description") or "", session=scope,
                            **({"role": "shell"} if ev.get("task_type") == "local_bash" else {}))
         elif t == "system" and ev.get("subtype") == "task_updated":
@@ -1000,14 +1002,14 @@ class Board:
                 self.stop(f"{scope}:task:{clean(ev.get('task_id'), 80)}")
 
     def session_gone(self, scope: str = "own") -> None:
-        """The owned Claude process ended (halt, /clear, crash): nothing of it runs any more. Codex / OpenCode (P160): the
-        app-server / serve child ended — its sub-agents are gone with it."""
+
+
         self.stop_where(lambda k, v: v.get("session") == scope)
         self.claude_transcripts.pop(scope, None)
         for k in [k for k in self.child if k.startswith(scope + ":")]:
             del self.child[k]
 
-    # -- Codex app-server notifications (agent_codex.py, owned and shared; P160)
+
     def codex_event(self, method: str, p: dict, scope: str = "codex") -> None:
         if not isinstance(p, dict) or not isinstance(method, str):
             return
@@ -1023,8 +1025,8 @@ class Board:
                 if it.get("kind") in ("completed", "interrupted"):
                     self.stop(k)
                 elif it.get("kind") == "started" and tid:
-                    # Codex 0.159 (measured, tests/fixtures): the spawn arrives only as this item; agentPath "/root/<task_name>"
-                    # is the label (underscores → spaces); the child's turn/started / turn/completed then open / close it.
+
+
                     c = self.child.setdefault(k, {})
                     c.setdefault("label", path_label(it.get("agentPath")))
                     while len(self.child) > 128:
@@ -1095,11 +1097,11 @@ class Board:
             for r in recv:
                 self.stop(f"{scope}:th:{r}")
 
-    # -- OpenCode events (agent_opencode.py v1 / agent_opencode2.py v2, owned and shared; P160)
+
     def opencode_event(self, ev: dict, sid, scope: str = "opencode", turn_on: bool = False) -> None:
-        """v1 (`/event`, `{type, properties}`): the parent session's `task` tool part is the sub-agent — pending/running
-        opens it (`input.description`, `input.subagent_type`), completed/error closes it; the child session's tool parts
-        (child id from `state.metadata.sessionId`, or a `session.created` with our `parentID`) are its detail."""
+
+
+
         if not isinstance(ev, dict) or not sid:
             return
         t = ev.get("type")
@@ -1141,9 +1143,9 @@ class Board:
                     self._alias(f"{scope}:s:{cid}", free[-1])
 
     def opencode2_event(self, ev: dict, sid, scope: str = "opencode", turn_on: bool = False) -> None:
-        """v2 (`/api/event`, `{type, data}`): a child session (`session.created` whose `parentID` is ours) is the sub-agent;
-        its title "<description> (@<agent> subagent)" is the label and who; its `session.execution.succeeded / failed /
-        interrupted` closes it, `session.execution.started` re-opens it; its tool events are the detail."""
+
+
+
         if not isinstance(ev, dict) or not sid:
             return
         t = ev.get("type")
@@ -1172,15 +1174,15 @@ class Board:
             self.stop(k, fg=turn_on)
         elif t == "session.execution.started":
             self.start(k, self.child[k].get("who"), "temp", self.child[k].get("label") or "", session=scope)
-            # Replace even an identical row: an in-flight poll belongs to the previous execution.
+
             self.mem[k] = {**self.mem[k], "native_started_at": time.time()}
             self.native_status(k, "running")
         elif t.startswith("session.tool"):
             self.note(k, tool_desc(p.get("tool") or p.get("name"), p.get("input")))
 
-    # -- outside sources (poll, off the event loop)
+
     def refresh_outside(self, units: bool = True, run=subprocess.run) -> bool:
-        """Re-read item files (and, when `units`, the systemd units; otherwise the last scan stays). True = changed."""
+
         files = read_items(self.root) if self.root is not None else []
         if self.root is not None:
             for receipt in finished_items(self.root):
@@ -1208,7 +1210,7 @@ class Board:
                         it["report"] = unit_report(it["key"][5:], run)
                         it["since"] = unit_since(it["key"][5:], run) or it["since"]
                 self.units = scanned + retained
-        # P302: a unit whose job already registered itself (`agentj busy run` inside it) is shown once — as that item
+
         got = files + [u for u in getattr(self, "units", []) if not any(same_job(f, u) for f in files)]
         live = {it["key"] for it in got}
         for it in self.outside:
@@ -1220,7 +1222,7 @@ class Board:
         return changed
 
     def native_status(self, key, status, now=None):
-        """A child-state observation, separate from evidence that its host process exists."""
+
         v = self.mem.get(key)
         if v is None:
             return
@@ -1233,9 +1235,9 @@ class Board:
                 v["activity_at"] = v["checked_at"]
 
     def reconcile_claude(self, scope, transcript=None):
-        """Read bounded native task results; missing/truncated state remains unknown (never infer idle).
-        Only terminal records for existing IDs are consumed; no prompt, body or path reaches the wire.
-        """
+
+
+
         paths = {scope: transcript} if transcript else dict(self.claude_transcripts)
         for owner, path in paths.items():
             if not path or not any(v.get("session") == owner for v in list(self.mem.values())):
@@ -1257,14 +1259,14 @@ class Board:
                     continue
                 if not isinstance(ev, dict):
                     continue
-                # Use the same parser for a missed foreground result / terminal task notification.
+
                 if ev.get("type") == "user":
                     message = ev.get("message")
                     content = message.get("content") if isinstance(message, dict) else None
                     origin = ev.get("origin") if isinstance(ev.get("origin"), dict) else {}
                     native = origin.get("kind") == "task-notification" or ev.get("turnOrigin") == "task_notification"
                     text = content if native and isinstance(content, str) else ""
-                    # Native origin is required: an ordinary user quoting XML is not a task result.
+
                     for notification in re.findall(r"<task-notification>(.*?)</task-notification>", text, re.S):
                         tid = re.search(r"<task-id>([A-Za-z0-9_-]{1,80})</task-id>", notification)
                         status = re.search(r"<status>(completed|failed|stopped|killed|error)</status>", notification)
@@ -1301,7 +1303,7 @@ class Board:
                 evidence[v["key"]] = f
         self.evidence = evidence
 
-    # -- the wire list
+
     def items(self, now: float | None = None) -> list[dict]:
         now = time.time() if now is None else now
         def uncertain(v):
@@ -1333,9 +1335,9 @@ class Board:
         return out
 
     def restart_split(self, survives=survives_restart) -> tuple[int, int]:
-        """P423 #160: (items a serve restart would interrupt, items that keep running) — the upgrade card counts only the
-        first. In-process items (owned / shared sessions, workflow runs) always count; an outside one only unless
-        `survives_restart` proves it runs on its own. One `ps` call at most (macOS)."""
+
+
+
         listed = {v["id"] for v in self.items()}
         outside = [v for v in self.outside if v["key"][-40:] in listed]
         kw = {}
@@ -1345,7 +1347,7 @@ class Board:
         return len(listed) - keep, keep
 
     def find(self, wid) -> tuple[dict, dict | None] | None:
-        """P160: the item behind a wire id (a copy) and its latest step (a copy) — cheap, on the event loop."""
+
         if not isinstance(wid, str) or not wid:
             return None
         v = next((x for x in list(self.mem.values()) + list(self.outside) if x["key"][-40:] == wid), None)
@@ -1356,20 +1358,20 @@ class Board:
         return dict(v), (dict(last) if last else None)
 
     def detail(self, wid, run=subprocess.run) -> dict | None:
-        """P160 (§22 `busy_get`): one row's detail, read-only. None = not running. See detail_of."""
+
         f = self.find(wid)
         return detail_of(f[0], f[1], run) if f else None
 
     def take_colors(self) -> dict | None:
-        """The colour memory to save (once per change), or None."""
+
         if not self.colors_dirty:
             return None
         self.colors_dirty = False
         return dict(list(self.colors.items())[-64:])
 
     def sample_load(self, now: float | None = None, read=None, cap_read=None) -> bool:
-        """P154: read the load at most every LOAD_EVERY s; True when the published value moved (> LOAD_STEP, or appeared /
-        went away)."""
+
+
         now = time.monotonic() if now is None else now
         if self.load_at and now - self.load_at < LOAD_EVERY:
             return False
@@ -1388,8 +1390,8 @@ class Board:
         return changed
 
     def sample_cap(self) -> int | None:
-        """P154 追加 11: how many background Agents the Agent J host can run at once = what runs now + P156's `capacity()`
-        can_start. None until that function exists (it ships with P156) or when it fails; the phone then shows 6 robots."""
+
+
         fn = globals().get("capacity")
         if fn is None:
             return None
@@ -1410,9 +1412,9 @@ class Board:
 
 
 def detail_of(v: dict, last: dict | None, run=subprocess.run) -> dict:
-    """One item's detail: who / label / since / src, the sub-agent's latest tool call (`last`) and, for a dispatch unit or
-    an item file that names one, its REPORT (path + first line). Display text is redacted (privacy.redact). Blocking
-    (systemctl, a file read): serve calls it off the event loop with the copies Board.find made there."""
+
+
+
     from . import privacy
 
     def red(s):
@@ -1446,7 +1448,7 @@ def save_colors(root, colors: dict) -> None:
         os.replace(tmp, d / "colors.json")
 
 
-# ------------------------------------------------------------------------------------------- P156 追加 1: capacity
+
 PER_JOB_MIB = 700            # a headless Agent (claude -p / codex exec / opencode run) and its tools, typical resident size
 RESERVE_MIB = 1024           # kept free for the owner's own programs
 CPU_SHARE = 0.8              # never plan past 80 % of the cores
@@ -1454,8 +1456,8 @@ CAP_MAX = 16
 
 
 def _mem_available_mib() -> int | None:
-    """Available memory (MiB) on Linux / WSL (MemAvailable), macOS (vm_stat free + inactive + speculative), Windows
-    (GlobalMemoryStatusEx); None when it cannot be read."""
+
+
     with contextlib.suppress(OSError, ValueError):
         with open("/proc/meminfo") as f:
             for line in f:
@@ -1485,9 +1487,9 @@ def _mem_available_mib() -> int | None:
 
 
 def capacity(running: int = 0, cores: int | None = None, load: float | None = -1.0, avail_mib: int | None = -1) -> dict:
-    """How many more background Agents the Agent J host can take now — by load, not a fixed number (the owner, 2026-10-12: 「按负载的
-    动态规则……主机配置高就多起一些」). CPU room = 80 % of the cores minus the 1-minute load (without a load average: half the
-    cores minus what runs); memory room = (available − 1 GiB) / 700 MiB. The smaller wins; a harness's own limit still applies."""
+
+
+
     cores = cores if cores is not None else (os.cpu_count() or 1)
     if load == -1.0:
         load = None
@@ -1505,18 +1507,18 @@ def capacity(running: int = 0, cores: int | None = None, load: float | None = -1
             "advice_en": (f"room for {more} more" if more else "busy: queue new work until something finishes")}
 
 
-# ------------------------------------------------------------------------------------------- CLI
+
 def _root(a):
     from .state import state_dir
     return state_dir()
 
 
 def counts(tasks: list[dict]) -> dict:
-    """Count the published snapshot, independent of transport or presentation flags.
 
-    Unknown children remain visible but are not active tasks. Their verified host
-    processes are still alive; deduplicate PIDs across every published row.
-    """
+
+
+
+
     unknown = sum(t.get("status") == "unknown" for t in tasks)
     return {"task_count": len(tasks) - unknown, "unknown_count": unknown,
             "live_process_count": len({p for t in tasks for p in t.get("live_pids", [])})}

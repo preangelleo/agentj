@@ -204,9 +204,16 @@ class Broker:
         receipt = self.receipts.pop(key(req), None)
         if receipt and receipt[0] > time.monotonic():
             return receipt[1]
-        rows = [row for row in self.calls.values() if row.get('admitted') and key(row['request']) == key(req) and row['check']()]
+        matching = [row for row in self.calls.values() if row.get('admitted') and key(row['request']) == key(req)]
+        rows = [row for row in matching if row['check']()]
         if len(rows) != 1:
-            return {'result': 'failure', 'why': 'no_owner_session', 'client_downloaded': False} if req.get('t') == 'file_show' else ({'ok':False, 'result':'refused', 'why':'caller'} if req.get('t') == 'tell' else {'result':'refused', 'why':'caller'})
+            if req.get('t') == 'file_show':
+                execution = getattr(self.xfer, 'execution', None)
+                why = ('native_admission_ambiguous' if len(rows) > 1 else 'native_admission_expired' if matching
+                       else 'native_admission_missing' if execution and execution.live and execution.send is not None
+                       else 'no_owner_session')
+                return {'result': 'failure', 'why': why, 'client_downloaded': False}
+            return {'ok':False, 'result':'refused', 'why':'caller'} if req.get('t') == 'tell' else {'result':'refused', 'why':'caller'}
         row = rows[0]
         row['issued'] = True
         return _pending(row)

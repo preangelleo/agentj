@@ -752,7 +752,7 @@ class OpenCodeAgent(Agent):
             from .native_commands import main_config
             env["OPENCODE_CONFIG_CONTENT"] = main_config(env["OPENCODE_CONFIG_CONTENT"], self.cfg)
         if self.cfg.get("_workflow_ceo"):
-            env = fence.auxiliary_environment(env, self.kind, extra_keep=("AGENTJ_PERM_SOCK", "AGENTJ_PERM_CLAIM", "AGENTJ_PERM_WAIT", "OPENCODE_SERVER_PASSWORD", "OPENCODE_SERVER_USERNAME", "OPENCODE_CONFIG_CONTENT"), plan_keys=True)   # P348
+            env = fence.auxiliary_environment(env, self.kind, extra_keep=("AGENTJ_PERM_SOCK", "AGENTJ_PERM_CLAIM", "AGENTJ_PERM_WAIT", "OPENCODE_SERVER_PASSWORD", "OPENCODE_SERVER_USERNAME", "OPENCODE_CONFIG_CONTENT"), plan_keys=True, host_state=self.host.st)   # P348
         if self.cfg.get("fence", True):
             env = fence.launch_environment(env, self.cfg.get("docker", False), self.kind)
         from .static_shell import interpreter_env

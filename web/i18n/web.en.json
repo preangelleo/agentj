@@ -4771,5 +4771,8 @@
   "p589.scope": "Measured total on this computer, including context input; not your remaining subscription allowance",
   "p589.partial": "Only {m} of {n} wake-ups measured; other turns did not report usage. Total is incomplete.",
   "media.preparing": "Preparing file…",
-  "media.pending": "This file has not arrived yet; it may still be preparing"
+  "media.pending": "This file has not arrived yet; it may still be preparing",
+  "olaresTerm.state": "Open an interactive shell in the Agent J app container, with the same user, home folder and configuration.",
+  "olaresTerm.note": "Opens the private Olares entrance in a new tab. Olares verifies your sign-in.",
+  "olaresTerm.open": "Open Olares web terminal"
 }

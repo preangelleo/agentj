@@ -43,7 +43,7 @@ REASON = {
            "native_timeout": "{x} 60 秒内没有回答（多半是没登录、token 失效，或网络 / 代理不通）",
            "native_failed": "{x} 没能完成一次调用（多半是没登录或 token 失效）", "call_failed": "{x} 没能完成一次调用（多半是没登录或 token 失效）",
            "empty_probe_reply": "{x} 回了空话", "provider_unavailable": "{x} 配置的模型服务不可用",
-           "model_missing": "{x} 找不到所选的模型（服务商没配置，或模型名写错）——不是登录或 Key 的问题。下一步：在手机「模型和 API Key」换一个能用的模型再切",
+           "model_missing": "{x} 找不到所选的模型（服务商没配置，或模型名写错）——不是登录或 Key 的问题。下一步：在遥控器「模型和 API Key」换一个能用的模型再切",
            "invalid_native_config": "{x} 的配置文件有问题", "invalid_provider": "{x} 配置的模型服务地址不合规",
            "native_executable_missing": "找不到 {x} 的程序", "native_executable_not_executable": "{x} 的程序不能运行",
            "native_executable_selection_failed": "{x} 有多个安装、选不出该用哪一个", "native_spawn_failed": "{x} 启动不了",
@@ -67,7 +67,7 @@ REASON = {
            "call_failed": "{x} could not complete a call (usually not signed in or an expired token)",
            "empty_probe_reply": "{x} replied with nothing", "provider_unavailable": "{x}'s configured model service is unavailable",
            "model_missing": "{x} cannot find the selected model (its provider is not set up, or the model name is wrong) — not a "
-                            "sign-in or key problem. Next: pick a working model in Models & API keys on the phone, then switch again",
+                            "sign-in or key problem. Next: pick a working model in Models & API keys on the remote, then switch again",
            "invalid_native_config": "{x}'s config file has a problem", "invalid_provider": "{x}'s model service address is not allowed",
            "native_executable_missing": "{x}'s program was not found", "native_executable_not_executable": "{x}'s program cannot run",
            "native_executable_selection_failed": "{x} is installed more than once and none could be chosen",
@@ -94,7 +94,7 @@ REASON = {
 DETAIL = {
     "zh": {"starting": "：一直还在启动（加载 MCP 服务器 / 插件、打开会话）。下一步：Agent J 主机空一些再切，或在它的配置里停用用不上的 MCP / 插件",
            "prompt": "：卡在终端里的确认提示上。下一步：在 Agent J 的工作目录里手动运行一次 {cmd}，处理掉提示再切",
-           "approval": "：在等手机上的批准卡。下一步：处理掉那张卡再切",
+           "approval": "：在等遥控器上的批准卡。下一步：处理掉那张卡再切",
            "failed": "：启动失败。下一步：运行 agentj doctor，修好再切",
            "turn": "：会话已打开但一直没说话（多半是模型服务慢或网络 / 代理不稳）。下一步：稍后再切；还不行在工作目录里运行 {cmd} 计时",
            "idle": "：没有接手自报家门的消息。下一步：再切一次；还不行运行 agentj doctor",
@@ -103,7 +103,7 @@ DETAIL = {
     "en": {"starting": ": still starting (loading MCP servers / plugins, opening the session). Next: switch again when the Agent J host "
                        "is less busy, or turn off unused MCP servers / plugins in its config",
            "prompt": ": stuck on a terminal prompt. Next: run {cmd} once by hand in Agent J's working folder, answer it, switch again",
-           "approval": ": waiting for an approval card on the phone. Next: answer it, then switch again",
+           "approval": ": waiting for an approval card on the remote. Next: answer it, then switch again",
            "failed": ": it failed to start. Next: run agentj doctor, fix it, then switch again",
            "turn": ": the session opened but it never spoke (usually a slow model service or an unstable network / proxy). Next: "
                    "switch again later; if it persists, time {cmd} in the working folder",
@@ -127,13 +127,15 @@ _TTY = {"codex": "codex", "claude": "claude", "opencode": "opencode"}
 SWITCH_CLI = ("claude", "codex", "opencode", "kimi", "qwen", "dsh")   # cli.py `agentj agent switch <target>` choices
 
 REASON["zh"].update({
+    "config_write_failed": "写入设置失败，已恢复原设置",
     "free_tier": "{x} 的免费通道暂时不让用（刚装好的头一两分钟常见，也可能是免费额度用完或这个免费模型下线了）：过一两分钟再试，或换一个免费模型（opencode models 列出）",
-    "config_mismatch": "写进去的设置读回来对不上（被别的程序改了）",
+    "config_mismatch": "写进去的设置读回来对不上",
     "no_way_back": "切过去以后就切不回 {x} 了：{x} 在后台服务里也过不了同样的检查",
     "nothing_to_undo": "没有可以撤回的切换", "stale_job": "这是一个过期的切换任务，没有执行"})
 REASON["en"].update({
+    "config_write_failed": "writing the configuration failed; the original settings were restored",
     "free_tier": "{x}'s free tier refused for now (common in the first minute or two after installing; or the free quota is used up, or this free model was withdrawn): try again in a minute or two, or pick another free model (opencode models lists them)",
-    "config_mismatch": "the setting written did not read back the same (something else changed it)",
+    "config_mismatch": "the setting written did not read back the same",
     "no_way_back": "there would be no way back to {x}: {x} fails the same check in the background service",
     "nothing_to_undo": "there is no switch to undo", "stale_job": "a stale switch job was not run"})
 
@@ -387,7 +389,7 @@ PROGRESS = {
            "probing": "正在测试 {t}：先发一条测试消息，能正常回答才切换（最多 1 分钟）…",
            "waiting": "{t} 测试通过，等这一轮说完就开始切换…",
            "switching": "正在切换到 {t}：Agent J 重启中，新的 Agent 接上后会先跟您打招呼…",
-           "switched": "{t} 已启动，正在验证手机消息能否正常回复…",
+           "switched": "{t} 已启动，正在验证能否正常回复你的消息…",
            "back": "切换到 {t} 没成功，正在切回 {f}…",
            "back_ok": "已切回 {f}，它马上跟您说明原因。"},
     "en": {"scanning": "Probing the harnesses on the Agent J host: Claude Code, Codex, OpenCode, Kimi Code and Qwen Code, one try each, up to 1 minute each…",
@@ -395,7 +397,7 @@ PROGRESS = {
            "probing": "Trying {t}: one test message first; it switches only if that is answered (up to 1 minute)…",
            "waiting": "{t} passed the test; the switch starts when this turn is done…",
            "switching": "Switching to {t}: Agent J is restarting; the new Agent will say hello once it is up…",
-           "switched": "{t} started; verifying that it can reply to a phone message…",
+           "switched": "{t} started; verifying that it can reply to your messages…",
            "back": "Switching to {t} did not work; switching back to {f}…",
            "back_ok": "Back on {f}; it will tell you why in a moment."},
 }
@@ -576,7 +578,7 @@ def _result_meta(rec):
     enums = {"status": (*LIVE, "ok", "probe_ok", "failed", "rolled_back", "scan"),
              **dict.fromkeys(("target", "from", "current", "name"), KINDS),
              "reason": REASON["en"], "back": REASON["en"], "detail": DETAIL["en"], "err": ERR["en"],
-             "kept": ("busy", "card"), "handoff": ("ok", "missing", "unchanged", "timeout", "refused"), "login": ("free",)}
+             "kept": ("busy", "card", "deferred"), "handoff": ("ok", "missing", "unchanged", "timeout", "refused"), "login": ("free",)}
     out = {}
     for k, v in rec.items():
         if k in enums and isinstance(v, str) and v in enums[k]:
@@ -984,12 +986,9 @@ def _saved(st) -> dict:
         return {}
 
 
-def _reads_back(st, target: str, model) -> bool:
-    """P298: the agent entry read back from config.json is the harness (and model) just written."""
-    a = _raw_agent(st) or {}
-    want = model if isinstance(model, str) and model else None
-    have = a.get("model") if isinstance(a.get("model"), str) and a.get("model") else None
-    return a.get("kind") == target and have == want
+def _reads_back(st, target: str) -> bool:
+    """P298: read back the selected harness kind; model names are observational."""
+    return (_raw_agent(st) or {}).get("kind") == target
 
 
 def _lang_of(st) -> str:
@@ -1019,15 +1018,15 @@ class _Ctl:
             return None
 
 
-def _wait_up(ctl, kind: str, sleep, clock, limit: float = UP_WAIT, model: str | None = None) -> str | None:
+def _wait_up(ctl, kind: str, sleep, clock, limit: float = UP_WAIT, verify=None) -> str | None:
     end, last = clock() + limit, "not_running"
     while True:
+        if verify and not verify():
+            return "config_mismatch"
         s = ctl({"cmd": "status"})
         if s and s.get("ok") is True:
             if s.get("agent") != kind:
                 last = "wrong_agent"
-            elif model and s.get("agent_model", model) != model:
-                last = "config_mismatch"
             elif s.get("agent_status") in ("idle", "working", "waiting", "compacting"):
                 return None
             else:
@@ -1037,16 +1036,18 @@ def _wait_up(ctl, kind: str, sleep, clock, limit: float = UP_WAIT, model: str | 
         sleep(POLL)
 
 
-def _hello(ctl, req: dict, sleep, clock, wait: float = HELLO_WAIT, pending=None) -> dict | None:
-    """None = answered and idle; {"ok", "busy"|"card"} = answered / opened a card, still working: kept (P578); else {"reason",."""
+def _hello(ctl, req: dict, sleep, clock, wait: float = HELLO_WAIT, pending=None, verify=None) -> dict | None:
+    """Verify the queued hello; explicit failure outranks deferred or answered work."""
     r = ctl({"cmd": "harness_hello", **req})
     if not r or r.get("ok") is not True or not isinstance(r.get("at"), (int, float)):
         return {"reason": "hello_refused"}
     t0, start = r["at"], clock()
     end, cap = start + wait, start + HELLO_MAX
     said, phase, err, turn_seen = False, None, None, False
-    lost_at, card = None, False
+    lost_at, card, deferred, anchored = None, False, False, False
     while True:
+        if verify and not verify():
+            return {"reason": "config_mismatch", "waited": int(clock() - start)}
         s = ctl({"cmd": "status"})
         if not s or s.get("ok") is not True:
             lost_at = lost_at if lost_at is not None else clock()
@@ -1061,13 +1062,24 @@ def _hello(ctl, req: dict, sleep, clock, wait: float = HELLO_WAIT, pending=None)
             gone = clock() - lost_at
             end, cap, lost_at = max(end + gone, clock() + RECONNECT_GRACE), cap + gone, None
         s = s or {}
+        if s.get("agent") is not None and s["agent"] != req.get("from" if req.get("outcome") == "rolled_back" else "to"):
+            return {"reason": "wrong_agent", "waited": int(clock() - start)}
         ph, er = s.get("agent_phase"), s.get("agent_err")
         if isinstance(ph, str) and ph in DETAIL["zh"]:
             phase = ph
         if isinstance(er, str) and er in ERR["zh"]:
             err = er
-        if ph == "failed" or s.get("agent_turn_failed") or s.get("agent_status") in ("down", "stopped", "failed") or er == "auth":
+        if s.get("agent_hello_failed") or ph == "failed" or s.get("agent_turn_failed") or s.get("agent_status") in ("down", "stopped", "failed") or er == "auth":
             return {"reason": "no_reply", "detail": "failed", "waited": int(clock() - start), **({"err": err} if err else {})}
+        if s.get("agent_hello_deferred") is True or (deferred and (s.get("agent_hello_at") or 0) <= t0):
+            deferred = True
+            if clock() >= end:
+                return {"ok": True, "deferred": True, "waited": int(clock() - start)}
+            sleep(POLL)
+            continue
+        if deferred or (not anchored and (s.get("agent_hello_at") or 0) >= t0):
+            t0, end, cap, deferred, anchored = s["agent_hello_at"], clock() + wait, clock() + HELLO_MAX, False, True
+            said, turn_seen = False, False
         if not said and (s.get("agent_said_at") or 0) > t0:
             said, end = True, clock() + IDLE_WAIT
         if said and s.get("agent_status") == "idle":
@@ -1116,13 +1128,9 @@ def _remember(st, raw: dict, to: str) -> None:
 
 
 def _probe_model(st, kind: str, raw: dict | None):
-    """The model a probe of `kind` should use: the configured one for the current harness, else the saved one, else (Claude)
-    Agent J's default — what a switch to it would run."""
+    """Configured, saved, or default model for the probe."""
     raw = raw or {}
     model = raw.get("model") if raw.get("kind") == kind else (_saved(st).get(kind) or {}).get("model")
-    if kind == "claude" and not model:
-        from .harness_setup import DEFAULT_CLAUDE_MODEL
-        model = DEFAULT_CLAUDE_MODEL
     return model if isinstance(model, str) and model else None
 
 
@@ -1188,12 +1196,8 @@ def worker(st, target: str | None, model: str | None = None, *, job: str | None 
 
         saved = _saved(st)
         mine = saved.get(target) or {}
-        if not model and isinstance(mine.get("model"), str):
+        if target != "claude" and not model and isinstance(mine.get("model"), str):
             model = mine["model"]
-        default_claude = target == "claude" and not model
-        if default_claude:               # P219: Agent J's Claude Code default, never Claude Code's own pick (a relay may 400 it)
-            from .harness_setup import DEFAULT_CLAUDE_MODEL
-            model = DEFAULT_CLAUDE_MODEL
 
         _progress(ctl, "probing", target)
         g = gate(target, model, probe)
@@ -1251,15 +1255,12 @@ def worker(st, target: str | None, model: str | None = None, *, job: str | None 
         saved[prev["kind"]] = {"model": raw.get("model"), "effort": raw.get("effort")}
         st.write_private(st.root / SAVED, json.dumps(saved).encode())
         effort = mine.get("effort") if model == mine.get("model") else None
-        if default_claude and not effort:
-            from .harness_setup import DEFAULT_CLAUDE_EFFORT
-            effort = DEFAULT_CLAUDE_EFFORT
         try:
             _apply(st, target, prev["dir"], model, effort, raw)
         except Exception:
             _restore(st, raw)
-            return done("failed", "config_mismatch")
-        if not _reads_back(st, target, model):     # P298: the script checks what it wrote, not anyone's account of it
+            return done("failed", "config_write_failed")
+        if not _reads_back(st, target):     # P298: the script checks what it wrote, not anyone's account of it
             _restore(st, raw)
             return done("failed", "config_mismatch")
     _remember(st, raw, target)       # P282: what --undo goes back to
@@ -1269,30 +1270,26 @@ def worker(st, target: str | None, model: str | None = None, *, job: str | None 
     _progress(ctl, "switching", target, prev["kind"])
     try:
         restart()
-        reason = _wait_up(ctl, target, sleep, clock, model=(back_raw if undo else {"model": model}).get("model"))
+        reason = _wait_up(ctl, target, sleep, clock, verify=lambda: _reads_back(st, target))
     except Exception:  # noqa: BLE001
         reason = "restart_failed"
     if reason is None:
         _progress(ctl, "switched", target, prev["kind"])
         h = _hello(ctl, {"outcome": "ok", "from": prev["kind"], "to": target, "handoff": "ok" if ho == "ok" else "none"},
-                   sleep, clock, wait, pending=lambda: write_receipt(st, {**(read_receipt(st) or {}), "detail": "lost"}))
+                   sleep, clock, wait, pending=lambda: write_receipt(st, {**(read_receipt(st) or {}), "detail": "lost"}),
+                   verify=lambda: _reads_back(st, target))
         if h is not None and h.get("ok") is True:     # P578: kept
-            extra.update(kept="busy" if h.get("busy") else "card", waited=h.get("waited"))
+            extra.update(kept="deferred" if h.get("deferred") else "busy" if h.get("busy") else "card", waited=h.get("waited"))
         elif h is not None:
             reason = h["reason"]
             extra.update({k: h[k] for k in ("detail", "err", "waited") if k in h})
     if reason is None:
         if not undo and target == "opencode":
             actual = ctl({"cmd": "status"}) or {}
-            recovery = (actual.get("harness_readiness") or {}).get("model_recovery")
             if actual.get("ok") is not True or actual.get("agent_status") in ("down", "stopped", "failed") or \
                     actual.get("agent_phase") == "failed" or actual.get("agent_turn_failed") or actual.get("agent_err") == "auth":
                 reason = "no_reply"
-            if actual.get("ok") is True and actual.get("agent") == target and isinstance(recovery, dict) and \
-                    recovery.get("from") == model and recovery.get("to") == actual.get("agent_model") and \
-                    isinstance(recovery.get("to"), str) and _reads_back(st, target, recovery["to"]):
-                model = recovery["to"]
-        if not undo and not _reads_back(st, target, model):
+        if reason is None and not _reads_back(st, target):
             reason = "config_mismatch"
     if reason is None:
         done("ok")
@@ -1306,7 +1303,7 @@ def worker(st, target: str | None, model: str | None = None, *, job: str | None 
     _restore(st, raw)
     try:
         restart()
-        back = _wait_up(ctl, prev["kind"], sleep, clock, model=raw.get("model"))
+        back = _wait_up(ctl, prev["kind"], sleep, clock, verify=lambda: _reads_back(st, prev["kind"]))
     except Exception:  # noqa: BLE001
         back = "restart_failed"
     why = {k: extra[k] for k in ("detail", "err") if k in extra}
@@ -1408,9 +1405,9 @@ def _say(r: dict, lang: str) -> str:
         mine = bool(set(os.environ) & set(AGENT_ENV))      # P578: else a terminal: no turn to wait for
         when_en = "when this turn ends" if mine else "right away when idle"
         when_zh = "这一轮结束后" if mine else "空闲时马上"
-        return (f"… {T} passed the check; the switch is not complete. Switch scheduled: {when_en} Agent J restarts with {T}; the phone disconnects "
+        return (f"… {T} passed the check; the switch is not complete. Switch scheduled: {when_en} Agent J restarts with {T}; the remote disconnects "
                 f"for a few seconds and reconnects by itself, then {T} introduces itself.{back}" if lang == "en" else
-                f"… {T} 检查通过，尚未完成切换。已安排切换：{when_zh} Agent J 重启并换成 {T}，手机会断开几秒再自动连上，然后 {T} 会先自报家门。{back}"
+                f"… {T} 检查通过，尚未完成切换。已安排切换：{when_zh} Agent J 重启并换成 {T}，遥控器会断开几秒再自动连上，然后 {T} 会先自报家门。{back}"
                ) + r.get("note", "") + (" Read the final outcome: agentj agent switch --result --wait 900." if lang == "en" else
                                            "最终结果请查：agentj agent switch --result --wait 900。")
     if r.get("pending"):
@@ -1450,7 +1447,7 @@ def _say_receipt(rec: dict | None, lang: str) -> str:
         plan = "Agent Plan" if model.startswith("ark-agent-plan/") else "Coding Plan" if model.startswith("ark-coding-plan/") else None
         out = f"{when} ✓ {F} → {T}" + ((f" · Now using Volcano {plan}" if lang == "en" else f" · 已改用火山 {plan}") if plan else "")
         k = KEPT["en" if lang == "en" else "zh"]
-        if rec.get("kept") in ("busy", "card"):
+        if rec.get("kept") in ("busy", "card", "deferred"):
             out += (" · " + T + " " + k[rec["kept"]] + k[""]).format(t=T, f=F)
         return out
     if st == "switching" and rec.get("detail") == "lost":
@@ -1473,9 +1470,9 @@ def _say_receipt(rec: dict | None, lang: str) -> str:
 
 
 KEPT = {   # P578: answered (or opened a card) but not idle in time — kept
-    "zh": {"busy": "已经回答，还在忙后面的消息", "card": "已经接上，在等你处理手机上的卡片",
+    "zh": {"deferred": "自报家门已排队，确认共享会话空闲后发送", "busy": "已经回答，还在忙后面的消息", "card": "已经接上，在等你处理遥控器上的卡片",
            "": "，就先留在 {t}。想回去：跟它说「切回 {f}」，或在网页终端运行 agentj agent switch --undo"},
-    "en": {"busy": "answered and is still busy with the messages after it", "card": "is up and waiting for its card on the phone",
+    "en": {"deferred": "has its introduction queued until the shared session is confirmed idle", "busy": "answered and is still busy with the messages after it", "card": "is up and waiting for its card on the remote",
            "": ", so it stays. To go back: tell it \"switch back to {f}\", or run agentj agent switch --undo in the web terminal"},
 }
 

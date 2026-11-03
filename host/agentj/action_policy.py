@@ -251,10 +251,19 @@ def _mail_summary(target: dict, lang: str) -> str:
                       *(changes or [tr('设置未改变', 'Settings unchanged')])])
 
 
-def confirm_cli(action: str, params: dict, *, st=None) -> bool:
+CLI_REASONS = frozenset(('unknown', 'offline', 'no_device', 'host_unavailable', 'estop', 'group_source', 'owner_grant_scope',
+                         'timeout', 'device', 'serve_stop', 'agent_gone', 'superseded', 'too_many'))
+
+
+def confirm_cli(action: str, params: dict, *, st=None, receipt=None) -> bool:
     from .state import State
     from . import elevate, names
     st = st if st is not None else State()
     res = elevate.client_request(st, {"t":"policy_cli", "action":action, "params":params}, timeout=620,
                                  path=names.elevate_sock(st))
+    if type(receipt) is dict:
+        reason = res.get('reason')
+        receipt.update(result=res.get('result') if res.get('result') in ('approved', 'denied', 'unavailable', 'refused') else 'unknown',
+                       reason=reason if isinstance(reason, str) and reason in CLI_REASONS else ('host_unavailable' if res.get('result') == 'unavailable' else 'unknown'),
+                       approval_card_shown=False if res.get('approval_card_shown') is False else None)
     return res.get("result") == "approved"

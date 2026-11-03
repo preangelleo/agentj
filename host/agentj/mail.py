@@ -2161,8 +2161,11 @@ def cmd(a) -> int:
             return e.response()
     if a.action in ("workflow-status", "workflow-grant", "workflow-revoke"):
         from .elevate import client_request
-        return out(client_request(st, {"t": "workflow_mail", "op": a.action.removeprefix("workflow-"),
-                    "workflow_id": a.workflow, "artifact_root": a.artifact_root, "cc_contacts": a.workflow_cc_contact, "days": a.days, "max": a.workflow_max, "per_day": a.per_day}, timeout=700))
+        res = client_request(st, {"t": "workflow_mail", "op": a.action.removeprefix("workflow-"),
+                    "workflow_id": a.workflow, "artifact_root": a.artifact_root, "cc_contacts": a.workflow_cc_contact, "days": a.days, "max": a.workflow_max, "per_day": a.per_day}, timeout=700)
+        if (res.get("grant") or {}).get("note"):
+            human(res["grant"]["note"])
+        return out(res)
     if a.action == "presets":
         return out({"ok": True, "presets": preset_list(lang)})
     if a.action == "send":                     # P184: the Agent mails someone — the owner approves on the phone first
