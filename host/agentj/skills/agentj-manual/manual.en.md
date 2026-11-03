@@ -482,6 +482,18 @@ fixed date. Once a day the Agent J host sends each signed-in AI one very short, 
 works (for example you signed out of all devices on the web), you are told at once to rescue it; running out of balance or
 hitting a rate limit never asks you to sign in again.
 
+### Several accounts per AI tool {#accounts}
+
+Have two Claude Code or two Codex accounts? Keep both: when one runs out, switch to the other with one tap instead of signing in again over the old one. Open Settings → "Agent tools" → "AI accounts".
+
+- Tap "Add account", give it a name (1–24 characters, up to 8 per tool), confirm with your passkey, then sign in on the phone as usual: Claude Code sends an authorize link and its code goes into the key card; Codex shows a link and a one-time code. The new account is saved on its own and never replaces an existing one. The first time, the login in use now is saved as the first account, "Main", with no new sign-in.
+- Tap "Make current" to switch, no Face ID needed: the main Agent uses the new account from its next message and continues the same conversation. Background tasks already running finish on the old account; tasks started after that use the new one.
+- Or just say “switch to my Claude backup account” in the chat. At the Agent J host, `agentj account list` shows the accounts and `agentj account use claude Backup` switches; to add one, run `agentj account add claude Backup` in your own terminal.
+- Quota is kept per account: the account in use shows its live reading, the others the last one read.
+- The account in use can't be deleted; switch to another first. Deleting asks on a confirmation card and also removes that account's saved login.
+- If the Agent J host's environment sets `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN`, it overrides the Claude account chosen here and switching stays off until it is removed.
+- Never paste a token into the chat.
+
 ## Remotes
 
 At the bottom of Settings, "Download Agent J Brand Kit" opens the [official Brand Kit](https://agentj.app/docs/robots/#brand-kit) on the

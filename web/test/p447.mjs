@@ -13,13 +13,17 @@ try{
   try{
    await navigate(p,fake.newPairing(web.url+'?lang='+lang));await waitState(p,'awaiting-approval');
    await fake.approve();await waitState(p,'ready');
+   // #435: exactly one remote → the shared bottom toast (10 s), never a resident line
+   await fake.send({t:'devs',limit:10,can_add:true,busy:false,items:[{id:'d0',name:'x',paired_at:1,seen:0,online:true,me:true,source:'local',named_by:'device',self_name:'x',pk:'none'}]});
    await fake.send({t:'pair_guide',kind});await sleep(300);
-   const r=await evaluate(p,`(()=>{const e=document.getElementById('pair-guide');const b=e.getBoundingClientRect();return {hidden:e.hidden,text:e.textContent,width:b.width,scroll:document.documentElement.scrollWidth,win:innerWidth}})()`);
-   assert.equal(r.hidden,false);assert.ok(r.width>0);assert.ok(r.scroll<=r.win+1);
+   const look=`(()=>{const e=document.getElementById('toast');const b=e.getBoundingClientRect();return {on:e.classList.contains('on'),text:e.textContent,width:b.width,scroll:document.documentElement.scrollWidth,win:innerWidth,resident:!!document.getElementById('pair-guide')}})()`;
+   const r=await evaluate(p,look);
+   assert.equal(r.on,true);assert.equal(r.resident,false);assert.ok(r.width>0);assert.ok(r.scroll<=r.win+1);
    assert.ok(r.text.includes(kind==='phone'?'m.agentj.app':lang==='zh'?'添加遥控器':'Add a remote'));checks+=4;
    writeFileSync(out+'/'+lang+'-'+kind+'.png',await shoot(p,out+'/'+lang+'-'+kind+'.png'));
    await navigate(p,web.url+'?lang='+lang);await waitState(p,'ready');
-   assert.equal(await evaluate(p,"document.getElementById('pair-guide').hidden"),true);checks++;
+   await fake.send({t:'pair_guide',kind});await sleep(300);
+   const again=await evaluate(p,look);assert.ok(!(again.on&&again.text===r.text));assert.equal(again.resident,false);checks++;   // #435: once per device
   }finally{await p.close();}
  }
  console.log('PASS P447 real page '+checks+' assertions');

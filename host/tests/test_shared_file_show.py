@@ -44,6 +44,17 @@ class RequestBinding(unittest.TestCase):
             self.assertEqual(raised.exception.code, 1)
             self.assertEqual(json.loads(out.getvalue()), file_show.failure('broker_unavailable'))
 
+    def test_compound_command_is_not_admitted_and_cli_says_run_it_alone(self):
+        # 0.26.7a1: `cd ~/x && agentj file show … --json 2>&1 | head` is no native file_show call → missing + fixed hint
+        self.assertIsNone(owner_broker.parse('Bash', {'command': 'cd /tmp && agentj file show /tmp/a.png --json 2>&1 | head -c 600'}, '/tmp'))
+        import io
+        for as_json in (True, False):
+            out = io.StringIO()
+            with patch('agentj.elevate.client_request', return_value=file_show.failure('native_admission_missing')), \
+                    patch('sys.stdout', out), self.assertRaises(SystemExit):
+                file_show.cli(SimpleNamespace(path='/tmp/a.png', label='', json=as_json))
+            self.assertIn(file_show.HINT, out.getvalue())
+
     def test_receipt_reasons_and_replay(self):
         req = file_show.request('/tmp/a.png', cwd='/tmp')
         x = SimpleNamespace(execution=None)
@@ -98,7 +109,7 @@ class NativeFlows(unittest.IsolatedAsyncioTestCase):
         self.addAsyncCleanup(self.host.elevate.stop)
         self.addCleanup(self.host.stopping.set)
 
-    async def shared_call(self, command, *, success=True, mutate=None):
+    async def shared_call(self, command, *, success=True, mutate=None, wd=None):
         """Real authenticated hook, host-read transcript, shell CLI, UDS and completion."""
         import asyncio
         import socket
@@ -121,7 +132,7 @@ import json,sys,subprocess,pathlib
 hook,path,transcript,command,wd=sys.argv[1:]
 sys.stdin.readline()
 block={'type':'tool_use','id':'file-call','name':'Bash','input':{'command':command}}
-pathlib.Path(transcript).write_text(json.dumps({'type':'assistant','message':{'id':'msg','role':'assistant','content':[block]}})+'\n')
+pathlib.Path(transcript).write_text(json.dumps({'type':'assistant','cwd':wd,'message':{'id':'msg','role':'assistant','content':[block]}})+'\n')
 event={'session_id':'file-session','cwd':wd,'tool_name':'Bash','tool_input':{'command':command},'tool_use_id':'file-call'}
 def emit(kind,**extra):
     p=subprocess.run([sys.executable,hook,path,kind],input=json.dumps(dict(event,hook_event_name=kind,**extra)),capture_output=True,text=True)
@@ -139,7 +150,7 @@ if answer.get('hookSpecificOutput',{}).get('decision',{}).get('behavior')=='allo
                    AGENTJ_ELEVATE_SOCK=str(self.host.elevate.sock_path),
                    PYTHONDONTWRITEBYTECODE='1', PYTHONPATH=str(pathlib.Path(__file__).resolve().parents[1]))
         proc = await asyncio.create_subprocess_exec(sys.executable, '-c', code, str(pathlib.Path(shared_hook.__file__)),
-            str(hookpath), str(self.transcript), command, str(self.work), env=env,
+            str(hookpath), str(self.transcript), command, str(wd or self.work), env=env,
             stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
         try:
             self.native.session = {'sessionId': 'file-session', 'pid': proc.pid, 'cwd': str(self.work),
@@ -182,6 +193,22 @@ if answer.get('hookSpecificOutput',{}).get('decision',{}).get('behavior')=='allo
         broker.complete('file-call', True, queued)
         await broker.drain()
         self.assertEqual(len(self.page['media']), 1)
+
+    async def test_shared_owner_turn_bash_after_cd_attaches(self):
+        # the shared session's shell had cd'd below the project: native cwd (transcript line) is the request cwd
+        sub = self.work / 'notes'; sub.mkdir()
+        behavior, queued = await self.shared_call('agentj file show ~/work/a.png --label 图片 --json', wd=sub)
+        self.assertEqual(behavior, 'allow')
+        self.assertEqual(len(self.page['media']), 1)
+        self.assertEqual(json.loads(self.notices[-1].removeprefix('FILE_SHOW_RESULT: '))['result'], 'attached_to_page')
+
+    async def test_shared_owner_turn_cwd_outside_project_still_refused(self):
+        out = self.root / 'elsewhere'; out.mkdir()
+        (out / 'a.png').write_bytes(self.image.read_bytes())
+        behavior, queued = await self.shared_call('agentj file show a.png --json', wd=out)
+        self.assertEqual(behavior, 'allow')
+        self.assertFalse(self.page.get('media'))
+        self.assertEqual(json.loads(self.notices[-1].removeprefix('FILE_SHOW_RESULT: '))['why'], 'outside')
 
     async def test_shared_native_failure_never_attaches(self):
         await self.shared_call('agentj file show ~/work/a.png --json', success=False)

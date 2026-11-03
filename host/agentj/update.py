@@ -24,9 +24,6 @@ SPEC = f"git+{REPO}#subdirectory=host"
 
 
 def spec_at(version: str | None) -> str:
-    """The install spec pinned to the public export's tag `v<version>` (0.10.1+: every export is tagged). A copy installed
-    from a pinned tag (or from our site's wheel) would not move with `uv tool upgrade`, so the upgrade names the new tag.
-    Unknown / unparsable version → the unpinned `main` spec."""
     if version and parse(version) is not None:
         return f"git+{REPO}@v{version}#subdirectory=host"
     return SPEC
@@ -36,18 +33,17 @@ TIMEOUT = 6
 MAX_BYTES = 64 * 1024
 DAY = 24 * 3600
 _VER_RE = re.compile(r'^__version__\s*=\s*["\']([0-9A-Za-z.+-]{1,32})["\']\s*$', re.M)
-_PARSE_RE = re.compile(r"^(\d+)\.(\d+)(?:\.(\d+))?(?:(a|b|rc)(\d+))?(?:\.dev(\d+))?$")
+_PARSE_RE = re.compile(r"^(\d+)\.(\d+)(?:\.(\d+))?(?:(a|b|rc)(\d+))?(?:\.dev(\d+))?(\+[0-9A-Za-z.]+)?$")
 
 
 def parse(v: str) -> tuple | None:
-    """PEP 440 subset used by this project: 0.8.0, 0.8.0a1, 0.8.0b2, 0.8.0rc1, 0.8.0.dev3. None = not understood."""
     m = _PARSE_RE.match((v or "").strip())
     if not m:
         return None
-    major, minor, patch, pre, pre_n, dev = m.groups()
+    major, minor, patch, pre, pre_n, dev, local = m.groups()
     rank = {"a": 0, "b": 1, "rc": 2, None: 3}[pre]
     return (int(major), int(minor), int(patch or 0), -1 if dev is not None and pre is None else rank,
-            int(pre_n or 0), int(dev) if dev is not None else 1 << 30)
+            int(pre_n or 0), int(dev) if dev is not None else 1 << 30, not local)
 
 
 def compare(a: str, b: str) -> int | None:
@@ -146,9 +142,6 @@ def require_native_install(info=None):
 
 
 def install_kind(prefix: str | None = None) -> dict:
-    """{"kind": "uv" | "pipx" | "checkout" | "pip", "where": path, "legacy": bool, ...}. Decided by files the installers
-    leave in the venv (uv-receipt.toml / pipx_metadata.json), else a source checkout (host/ with bin/agentj), else a plain
-    pip venv. legacy = the uv / pipx tool is still registered under the ≤ 0.9 name `agentjarvis-host`."""
     prefix = prefix or sys.prefix
     if market_managed(prefix):
         return {"kind": "olares", "where": prefix, "legacy": False}
@@ -265,10 +258,6 @@ VERIFY_KINDS = ("old_version", "other_version", "no_version", "exit_nonzero", "n
 
 
 def version_diag(v, target: str, frm: str | None, info: dict, environ: dict | None = None) -> dict:
-    """P423 (#193): why the verify step did not see `target`. `v` = the `--version` CompletedProcess, or the OSError that
-    kept it from starting. → {"verify": one of VERIFY_KINDS, "detail": fixed words (P277 carries it to support), and
-    "stderr_tail": the redacted, bounded output when there was any}. For a uv install the detail also says whether this
-    environment's own uv tool directory is the running venv's (same / differs) — a category, never a path."""
     from .upgrade_diag import tail
     out = {}
     if isinstance(v, OSError):
@@ -331,7 +320,8 @@ EXPLAIN = {
                "be reached; run `agentj update check` again later.",
 }
 WHY = {"off": "检查已关闭 / checking is switched off (AGENTJ_UPDATE_URL=off)", "network": "网络不通 / no network",
-       "unparsable": "看不懂返回的版本号 / the answer had no version"}
+       "unparsable": "看不懂返回的版本号 / the answer had no version",
+       "local": "这是本地构建；同号正式版算更新 / a local build; the release of the same number counts as newer"}
 
 
 # ------------------------------------------------------------------ daily check in `serve` (state: update.json, 0600)
@@ -596,9 +586,6 @@ RECOVERY_BLOCKED_WHY = (
 
 
 def recover_of(info: dict, wheel, rb: str, *, st=None) -> dict:
-    """P277 (container check of the WSL case): a failed `uv tool install --force` can delete the tool's own environment, so
-    `agentj` itself is gone and the automatic rollback fails with it. Then the block names the one command that puts the
-    cached previous version back (a local path on the Agent J host; never sent anywhere)."""
     if rb != "failed" or not wheel or wheel == HOST_WHEEL:
         return {}
     from .credential_revoke import require_compatible_version
@@ -640,9 +627,6 @@ def take_marker(st, now: float | None = None) -> dict | None:
 
 
 def web_state(web: str | None, version: str | None = None, timeout: float = 5.0) -> str | None:
-    """P320 (Leo 10-15 22:49): what the phone/web page serves right now, before the upgrade receipt talks about it. Reads
-    `<web>/version.json` (the page's own file, HTTPS only). → "same" (the page already serves the Agent J host's version or a
-    newer one: just refresh) · "older" (the page's new version is still on its way) · None (could not tell)."""
     version = version or __version__
     try:
         p = urllib.parse.urlparse(str(web or ""))
@@ -964,10 +948,6 @@ def authorized_apply(st, code: str | None, target: str | None, **kw) -> dict:
 
 def _authorized_apply(st, code: str | None, target: str | None, *, mail: dict | None = None, prefix: str | None = None,
                       check_fn=None, auth_fn=None, run=None, svc_on=None, say=None, plan_fn=None, rollback_fn=None) -> dict:
-    """Contract C3. Order: local checks (code shape, read-only, identity, account link) → check() says newer and latest ==
-    target → signed upgrade-auth → only on 200: install pinned to target (no y/N, no terminal), verify the new version,
-    marker for serve's phone notice, service re-install. → {"result": "ok" | "refused" | "failed", "reason", "from", "to",
-    "service", "exit", "latest"?}. `say` prints progress lines (the restart may end the caller's process)."""
     if market_managed() or market_managed(prefix):
         return market_result()
     from . import cloud
@@ -1136,13 +1116,6 @@ def apply(st, target=None, *, fenced=None, **kw):
 
 def _apply(st, target=None, *, prefix=None, check_fn=None, run=None, say=None, svc_on=None, plan_fn=None, rollback_fn=None,
            fenced=None):
-    """Explicit caller-requested upgrade. No terminal or cloud grant is required.
-    Native filesystem restrictions and exact published target checks still apply.
-    P142 (A12/B15): the old version's wheel is cached first; a failed version check or service hand-off rolls back to it
-    here, and the recovery worker (a manager job) waits until serve is idle (no sudo/secret card, no turn, ≤ 10 min),
-    writes the marker last and rolls back itself when the new service does not come up.
-    P205: inside the Agent fence the host does the state-directory parts and the health check (see host_op).
-    """
     if market_managed() or market_managed(prefix):
         return market_result()
     run, say = run or subprocess.run, say or (lambda line: None)
@@ -1277,10 +1250,6 @@ def _apply(st, target=None, *, prefix=None, check_fn=None, run=None, say=None, s
 
 
 def host_op(st, req: dict, mem: dict, run=None) -> dict:
-    """Serve's side of the fenced apply (elevate.sock `{"t": "upgrade", "op": …}`; serve runs outside the fence). Only what
-    the unfenced apply would do itself: cache this version's wheel, write the pending record / marker naming this version as
-    `from`, roll back to that wheel, run the new `agentj doctor --json`. The target must be a version newer than this host;
-    the install kind and the wheel are the host's own (nothing path-like is taken from the request). Logs: op + result."""
     run = run or subprocess.run
     op, to = req.get("op"), req.get("to")
     if op == "ping":

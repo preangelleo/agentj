@@ -344,8 +344,8 @@ class InstallWorkflow(Base):
         self.assertFalse((t / ".codex").exists(), "claude_code: no Codex role files")
         self.assertTrue((t / ".handoff").exists() and (t / "reports/.gitkeep").exists())
         self.assertEqual(stat.S_IMODE(os.stat(t / "tools/check.py").st_mode), 0o755)
-        self.assertIn("agentj plaza install demo-skill", out2)
-        self.assertIn("agentj plaza install secret-scan", out2)
+        self.assertIn("agentj plaza request demo-skill", out2)
+        self.assertIn("agentj plaza request secret-scan", out2)
         self.assertIn("python3 tools/check.py", out2)
 
     def test_sign_as_and_codex_roles(self):

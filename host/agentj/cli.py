@@ -3047,7 +3047,7 @@ def cmd_update(a) -> None:
             print(json.dumps(r, ensure_ascii=False))
             return
         print(_update_line(r))
-        print("  " + update.EXPLAIN[r["status"]])
+        print("  " + update.EXPLAIN[r["status"]] + (" " + update.WHY["local"] if "+" in r["current"] else ""))
         if r["status"] == "newer":
             print(f"  （agentj update apply 会运行 / it runs:  {r['command']}）")
         return
@@ -3714,6 +3714,8 @@ def main(argv=None) -> None:
     heartbeat_mod.add_parser(sub)   # P156: agentj heartbeat status|on|off|set|now|prompt show|edit|set|reset
     from . import quota as quota_mod
     quota_mod.add_parser(sub)       # P254: agentj quota [--json] [--remind] · on · off · reset add|used
+    from . import accounts as accounts_mod
+    accounts_mod.add_parser(sub)    # #427: agentj account list|add|use|rename|remove (several accounts per harness)
     from . import imessage as imessage_mod
     imessage_mod.add_parser(sub)    # P274: agentj imessage status|doctor|on|off|set|instructions|vip|mute|scan|backfill|open-fda
     busy.add_parser(sub)         # P150 (§22): agentj busy list|start|stop|run — the phone's 「在办事项」 dots

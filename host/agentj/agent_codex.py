@@ -121,6 +121,50 @@ def mcp_tool_approval(p, calls: dict | None = None) -> tuple[str, dict, str, dic
     return None
 
 
+def cu_access_approval(p, calls: dict | None = None) -> tuple[str, dict, dict] | None:
+    """#420: the bundled Computer Use plugin asks for app / browser access (getApp / getState on Chrome…) as an empty-form
+    elicitation of its own — not Codex's mcp_tool_call approval, so mcp_tool_approval() cannot bind it. It is a plain
+    yes / no: a computer.control card, but only while Codex's own record shows an open call of that trusted plugin
+    (the binding comes from Codex's mcpToolCall item, never from the server's message). → (tool, card input, bind)."""
+    from .policy_registry import CODEX_CU_SCRIPT_OPS, CODEX_CU_SERVER, codex_plugin_bind
+    p = p if isinstance(p, dict) else {}
+    meta = p.get("_meta") if isinstance(p.get("_meta"), dict) else {}
+    schema = p.get("requestedSchema")
+    if schema is None and p.get("mode") in ("openai/form", "openaiForm"):
+        schema = {"type": "object", "properties": {}}
+    if meta.get("codex_approval_kind") == "mcp_tool_call" or p.get("mode", "form") not in ("form", "openai/form", "openaiForm") \
+            or not isinstance(schema, dict) or schema.get("properties") or schema.get("required"):
+        return None
+    if p.get("serverName") != CODEX_CU_SERVER:
+        return None
+    turn = p.get("turnId")
+    for c in reversed(list((calls or {}).values())):
+        if c.get("server") != CODEX_CU_SERVER or c.get("tool") not in CODEX_CU_SCRIPT_OPS:
+            continue
+        if isinstance(turn, str) and isinstance(c.get("turn"), str) and c["turn"] != turn:
+            continue
+        bind = codex_plugin_bind(c.get("plugin"), c["server"])
+        if bind is None:
+            continue
+        msg = p.get("message") if isinstance(p.get("message"), str) else ""
+        return (f"mcp__{CODEX_CU_SERVER}__{c['tool']}", {"access_request": msg}, bind)
+    return None
+
+
+def elicitation_shape(p) -> dict:
+    """#420: what to log about a refused elicitation — mode, field count / types, approval kind; never the values."""
+    p = p if isinstance(p, dict) else {}
+    schema = p.get("requestedSchema") if isinstance(p.get("requestedSchema"), dict) else {}
+    props = schema.get("properties") if isinstance(schema.get("properties"), dict) else {}
+    meta = p.get("_meta") if isinstance(p.get("_meta"), dict) else {}
+    kind = meta.get("codex_approval_kind")
+    server = p.get("serverName")
+    return {"mode": str(p.get("mode", "form"))[:40], "count": len(props),
+            "types": sorted({str(f.get("type"))[:20] for f in props.values() if isinstance(f, dict)})[:6],
+            "kind": kind[:40] if isinstance(kind, str) else None,
+            "server": server[:64] if isinstance(server, str) and _mcp_name(server) else None}
+
+
 MCP_TOO_BIG_WHY = "参数太长，手机卡放不下完整内容"
 MCP_TOO_BIG_NOTICE = "Codex 要运行的 MCP 工具参数太长，手机上没法完整确认，已拒绝；需要的话在Agent J 主机上处理"
 
@@ -943,26 +987,44 @@ class CodexAgent(Agent):
                                     MCP_TOO_BIG_NOTICE)
             self._bg(self._decide(rid, ap[0], ap[1], {"action": "accept", "content": {}}, {"action": "decline"}, False,
                                   bind=ap[3]))
+        elif method == "mcpServer/elicitation/request" and p.get("threadId") == self.tid and not self.research \
+                and (cu := cu_access_approval(p, self.__dict__.get("mcp_open"))) is not None:
+            # #420: Computer Use app / browser access during a trusted plugin call → a normal computer.control card.
+            if (n := mcp_args_too_big(cu[1])):
+                return self._refuse(rid, cu[0], {"arguments_size": n}, {"action": "decline"}, MCP_TOO_BIG_WHY,
+                                    MCP_TOO_BIG_NOTICE)
+            self.host.st.log("codex_elicitation_card", kind="computer_use_access", plugin=cu[2]["id"])
+            self._bg(self._decide(rid, cu[0], cu[1], {"action": "accept", "content": {}}, {"action": "decline"}, False,
+                                  bind=cu[2]))
         elif method == "mcpServer/elicitation/request":
             from . import codex_forms
+            stage = "scope"
             try:
                 if p.get("threadId") != self.tid or self.research:
                     raise codex_forms.Unsupported("scope")
                 # A used empty approval must never turn into a generic confirmation.
+                stage = "form"
                 card = codex_forms.card_for(p)
                 approval = None
                 meta = p.get("_meta") if isinstance(p.get("_meta"), dict) else {}
                 if meta.get("codex_approval_kind") == "mcp_tool_call":
                     approval = mcp_tool_approval({**p, "requestedSchema": {"type": "object", "properties": {}}},
                                                  self.__dict__.get("mcp_open"))
+                    stage = "bind"
                     if approval is None or mcp_args_too_big(approval[1]):
                         raise codex_forms.Unsupported("unbound_approval")
             except codex_forms.Unsupported as e:
-                self.host.st.log("codex_elicitation", reason=str(e))
+                shape = elicitation_shape(p)
+                # #420: log why and where it was refused (never the values); bound = an open call of that server existed
+                self.host.st.log("codex_elicitation", reason=str(e), phase=stage, **shape,
+                                 bound=any(c.get("server") == p.get("serverName")
+                                           for c in (self.__dict__.get("mcp_open") or {}).values()))
                 self._answer(rid, {"action": "decline"})
                 if not self.research:
-                    self.local_only(codex_forms.notice(getattr(self.host, "lang", "zh"),
-                                                      p.get("mode") if p.get("mode") == "openai/userVerification" else str(e)))
+                    why = p.get("mode") if p.get("mode") == "openai/userVerification" else str(e)
+                    if why in ("fields", "unbound_approval") and shape["count"] == 0:
+                        why = "empty"          # a yes / no approval Agent J could not tie to a known tool call
+                    self.local_only(codex_forms.notice(getattr(self.host, "lang", "zh"), why, server=shape["server"]))
             else:
                 self._bg(codex_forms.answer(self, rid, p, card, approval=approval))
         elif method == "item/tool/requestUserInput":                      # §10.7: a question card on the phone

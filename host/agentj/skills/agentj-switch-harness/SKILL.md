@@ -1,6 +1,6 @@
 ---
 name: agentj-switch-harness
-description: Switch the AI harness under Agent J — the phone menu's `/switch-harness` (with or without words), 「切换 harness」「换底层」「切换到 Codex / OpenCode / Claude Code / Kimi Code / Qwen Code / DeepSeek Harness」「切换到 OpenCode · 火山方舟 / 豆包」「切回 Claude Code」「能换成别的 AI 吗」, "switch harness", "switch to Codex / OpenCode / Claude Code / Kimi Code / Qwen Code / DeepSeek Harness", "use another agent". Explains what a harness is, scans which harnesses are installed, probes each one headless with the owner's own login (≤ 60 s, nothing written), reports what can be switched to, helps install and guides the owner through login, and switches only through the `agentj agent switch` gate (auto switch-back on failure).
+description: Switch the AI harness under Agent J — the phone menu's `/switch-harness` (with or without words), 「切换 harness」「换底层」「切换到 Codex / OpenCode / Claude Code / Kimi Code / Qwen Code / DeepSeek Harness」「切换到 OpenCode · 火山方舟 / 豆包」「切回 Claude Code」「能换成别的 AI 吗」「换 Claude 备用账号」「切换 Codex 账号」, "switch harness", "switch to Codex / OpenCode / Claude Code / Kimi Code / Qwen Code / DeepSeek Harness", "use another agent", "switch Claude account". Explains what a harness is, scans which harnesses are installed, probes each one headless with the owner's own login (≤ 60 s, nothing written), reports what can be switched to, helps install and guides the owner through login, and switches only through the `agentj agent switch` gate (auto switch-back on failure).
 ---
 # Switch the harness — carefully (切换底层 harness)
 
@@ -132,6 +132,11 @@ Kimi Code 用 `kimi login --region mainland-cn`（海外站 `global`）或手机
 Ark401: Agent Plan and Coding Plan keys are not interchangeable. A confirmed mismatch exposes a signed one-use phone button in the failure banner and Emergency repair: Use Agent Plan/Coding Plan and retry. Direct the owner to tap it; never request the same key again, copy it yourself, bypass the probe, or replay the failed message. The host reuses the exact local key, configures the matching provider and verifies the same model with native OpenCode before switching. Existing different target credentials/providers are retained. Show the redacted upstream error line from the switch result.
 
 方舟套餐误配时，把主人引导到失败提示或「紧急修复」的「改用 Agent Plan / Coding Plan 并重试」按钮；不用再贴 key，验证成功才切。
+
+**Same harness, other account (#427)** — 「换 Claude 备用账号」 is no harness switch: `agentj account list`, then
+`agentj account use claude 备用` (codex too; no scan, no card). The main Agent restarts before the next message, same
+conversation; running background tasks finish on the old account. Adding one is the owner's: Settings → AI or
+`agentj account add` in their own terminal.
 
 Docs: https://agentj.app/docs/switch-harness/zh.md · https://agentj.app/docs/switch-harness/en.md
 

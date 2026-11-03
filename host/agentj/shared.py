@@ -1904,7 +1904,7 @@ class SharedClaudeAgent(Agent):
                             hb.usage.observe('msg:' + str(msg.get('id') or ident))
                     if not ended:
                         self.native_turn = True   # P135: a native turn is producing; its Stop clears this
-                    self._turn_output(msg, blocks)
+                    self._turn_output(msg, blocks, item.get("cwd"))
                 elif role == "user" and isinstance(blocks, list):
                     self._tool_results(blocks)
                 if not text or role not in ("user", "assistant"):
@@ -2037,7 +2037,7 @@ class SharedClaudeAgent(Agent):
         self.endturn_ids.clear()
         self.last_tool = None
 
-    def _turn_output(self, msg, blocks):
+    def _turn_output(self, msg, blocks, cwd=None):
         if not isinstance(blocks, list):
             blocks = [{"type": "text", "text": blocks}] if isinstance(blocks, str) else []
         if self.turn_closed:
@@ -2054,7 +2054,9 @@ class SharedClaudeAgent(Agent):
             elif b.get("type") == "tool_use" and isinstance(b.get("name"), str):
                 self._stream_texts()
                 if self.phone_turn and self.phone_seen and getattr(self.host, "peers", None) is not None:
-                    self.host.peers.xfer.broker.register(b.get("id"), b["name"], b.get("input"), self.cfg["dir"])
+                    # the native Bash cwd (Claude records it per line; the shell may have cd'd); attach keeps the root ceiling
+                    self.host.peers.xfer.broker.register(b.get("id"), b["name"], b.get("input"),
+                                                         cwd if isinstance(cwd, str) and os.path.isabs(cwd) else self.cfg["dir"])
                 self.last_tool = (b["name"][:40], tool_what(b["name"], b.get("input")), handoff.now(), b.get("id"))
                 if isinstance(b.get("id"), str):
                     self.tool_digests[b["id"]] = card_digest(b["name"], b.get("input"))

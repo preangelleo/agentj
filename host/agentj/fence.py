@@ -424,9 +424,9 @@ def service_paths(home: str, environ=None) -> list[str]:
     return sorted(set(roots + [_real(p) for p in roots]))
 
 
-def service_mounts(home: str, environ=None, visible=lambda p: True) -> list[str]:
-    """Developer reference: documentation/notes/P591-FENCE-REFERENCE.md."""
-    roots, views, a = [p for p in service_paths(home, environ) if visible(p)], set(), []
+def service_roots(home: str, environ=None, visible=lambda p: True) -> list[str]:
+    """The user service dirs + the resolved targets of unit symlinks inside them (the fence makes all of them read-only)."""
+    roots = [p for p in service_paths(home, environ) if visible(p)]
     if any(p == "/" or _under(_real(p), "/proc") for p in roots):
         raise OSError("unit path conflicts with process isolation")
     # A unit symlink may point to a writable project file outside these directories.
@@ -446,8 +446,12 @@ def service_mounts(home: str, environ=None, visible=lambda p: True) -> list[str]
                 targets.add(_real(entry.path))
             if entry.is_dir():
                 pending.append(entry.path)
-    roots += sorted(p for p in targets if visible(p) and p not in roots)
+    return roots + sorted(p for p in targets if visible(p) and p not in roots)
 
+
+def service_mounts(home: str, environ=None, visible=lambda p: True) -> list[str]:
+    """Developer reference: documentation/notes/P591-FENCE-REFERENCE.md."""
+    roots, views, a = service_roots(home, environ, visible), set(), []
     for root in roots:
         p = root
         while not os.path.exists(p):
@@ -501,6 +505,64 @@ def service_mounts(home: str, environ=None, visible=lambda p: True) -> list[str]
     return a
 
 
+def _tmp_hidden(runtime) -> list[str]:
+    hidden = [d for d in ("/tmp", "/var/tmp") if os.path.isdir(d)]
+    for rt in (runtime, f"/run/user/{os.getuid()}"):    # also when XDG_RUNTIME_DIR is not set (a bare service / ssh)
+        if rt and os.path.isdir(rt) and _real(rt) not in hidden:
+            hidden.append(_real(rt))
+    return hidden
+
+
+def guard_parts(st, home: str, environ=None, workdir: str | None = None, allow_docker: bool = False, mac: bool = False,
+                visible=lambda p: True, uid: int | None = None, service: bool = True) -> dict:
+    """ONE list (#428 round 2, Info2): what the fence hides or makes read-only besides the temp dirs — bwrap_argv mounts it,
+    host_write_refusal refuses serve's host writes into it. Paths: root / perm / prefs / other real; ro joined (not resolved)."""
+    from .preferences import path as preferences_path
+    return {"root": _real(str(st.root)), "perm": _real(str(st.perm_dir)), "prefs": _real(str(preferences_path().parent)),
+            "other": other_states(st, home), "ro": [os.path.join(home, r) for r in _RO_FILES + (_MAC_RO if mac else ())],
+            "service": service_roots(home, environ, visible) if service else [],
+            "control": control_dirs(home, environ, allow_docker, workdir, mac=True if mac else None, uid=uid)}
+
+
+def _ident(p):
+    try:
+        s = os.stat(p)
+    except (OSError, ValueError):
+        return None
+    return s.st_dev, s.st_ino
+
+
+def host_write_refusal(st, path: str, home: str | None = None, environ=None, fold: bool | None = None) -> str | None:
+    """#428: serve writes for the Agent (a plaza request) only where the Agent's own fence would let it write: never inside
+    guard_parts or a temp / runtime dir (unless under HOME, which the fence binds back). Round 2 (new-H1): compared by
+    identity — every existing ancestor of `path` is stat-ed against the (st_dev, st_ino) of each guarded path, so a case /
+    Unicode variant (APFS, ext4 casefold) or another name for the same folder is refused too. → "guarded" | "temp" | None."""
+    env = os.environ if environ is None else environ
+    home = _real(home or os.path.expanduser("~"))
+    g = guard_parts(st, home, env, mac=sys.platform == "darwin")
+    guarded = [g["root"], g["perm"], g["prefs"], *g["other"], *g["ro"], *g["service"], *g["control"]]
+    tmp = _tmp_hidden(env.get("XDG_RUNTIME_DIR", ""))
+    import unicodedata
+    fold = sys.platform == "darwin" if fold is None else fold      # round 3 (new-L2): APFS names, also not created yet
+    norm = (lambda x: unicodedata.normalize("NFC", x).casefold()) if fold else (lambda x: x)
+    if any(_under(norm(path), norm(_real(x))) for x in guarded):
+        return "guarded"
+    if any(_under(path, d) for d in tmp) and not _under(path, home):
+        return "temp"
+    gid, tid, hid = ({i for x in xs if (i := _ident(x))} for xs in (guarded, tmp, [home]))
+    p, in_home = path, False
+    while True:
+        i = _ident(p)
+        if i in gid:
+            return "guarded"
+        in_home = in_home or i in hid
+        if i in tid and not in_home:
+            return "temp"
+        if p == os.path.dirname(p):
+            return None
+        p = os.path.dirname(p)
+
+
 def bwrap_argv(st, workdir: str, home: str | None = None, runtime: str | None = None, allow_docker: bool = False,
                environ=None) -> list[str]:
     """Developer reference: documentation/notes/P591-FENCE-REFERENCE.md."""
@@ -512,17 +574,15 @@ def bwrap_argv(st, workdir: str, home: str | None = None, runtime: str | None = 
     prefs = _real(str(preferences_path().parent))
     a = [shutil.which("bwrap") or "bwrap", "--dev-bind", "/", "/", "--unshare-pid", "--as-pid-1", "--proc", "/proc",
          "--die-with-parent", "--new-session"]
-    hidden = [d for d in ("/tmp", "/var/tmp") if os.path.isdir(d)]
-    for rt in (runtime, f"/run/user/{os.getuid()}"):    # also when XDG_RUNTIME_DIR is not set (a bare service / ssh)
-        if rt and os.path.isdir(rt) and _real(rt) not in hidden:
-            hidden.append(_real(rt))
+    hidden = _tmp_hidden(runtime)
     for d in hidden:
         a += ["--tmpfs", d]
     back = [p for p in (home, work) if any(_under(p, d) for d in hidden)]   # a HOME or folder under /tmp (tests)
     for p in sorted(set(back), key=len):
         a += ["--bind", p, p]
     visible = lambda p: not any(_under(p, d) for d in hidden) or any(_under(p, b) for b in back)  # noqa: E731
-    ro = [p for p in (os.path.join(home, rel) for rel in _RO_FILES) if os.path.lexists(p) and visible(_real(p))]
+    g = guard_parts(st, home, env, work, allow_docker, visible=visible)    # the same list host_write_refusal refuses
+    ro = [p for p in g["ro"] if os.path.lexists(p) and visible(_real(p))]
     code = code_paths()  # F14: bind back writable when installed under private /tmp.
     for d in ancestors([_real(p) for p in ro] + code + [root, prefs]):   # pinned: cannot be renamed away (still writable inside)
         if visible(d):
@@ -533,14 +593,14 @@ def bwrap_argv(st, workdir: str, home: str | None = None, runtime: str | None = 
         a += ["--bind", p, p]
     a += service_mounts(home, env, visible)
     # other programs' control sockets (G-A56): whole folders become an empty tmpfs, single sockets a read-only /dev/null
-    dirs = [d for d in control_dirs(home, env, allow_docker, work) if os.path.isdir(d) and visible(d) and not _under(d, root)]
+    dirs = [d for d in g["control"] if os.path.isdir(d) and visible(d) and not _under(d, root)]
     for d in dirs:
         a += ["--tmpfs", d]
     socks = [p for p in control_sockets(env, allow_docker)
              if visible(p) and not _under(p, root) and not any(_under(p, d) for d in dirs)]
     for p in socks[:MAX_SOCKETS]:
         a += ["--ro-bind", "/dev/null", p]
-    for d in other_states(st, home):     # a second (old) state directory: hidden whole; the legacy symlink resolves to root
+    for d in g["other"]:     # a second (old) state directory: hidden whole; the legacy symlink resolves to root
         if visible(d):
             a += ["--tmpfs", d]
     if os.path.isdir(prefs) and visible(prefs):
@@ -566,11 +626,11 @@ def sbpl_profile(st, workdir: str, home: str | None = None, uid: int | None = No
     uid = os.getuid() if uid is None else uid
     from .preferences import path as preferences_path
     params = {"PREFERENCES": _real(str(preferences_path().parent)), "STATE": _real(str(st.root)), "PERM": _real(str(st.perm_dir)), "TMUX": f"/private/tmp/tmux-{uid}"}
-    alt = list(dict.fromkeys(other_states(st, home) + [p for p in state_aliases(st, home) if p != params["STATE"]]))
+    g = guard_parts(st, home, environ, workdir, allow_docker, mac=True, uid=uid, service=False)   # the one list (round 3)
+    alt = list(dict.fromkeys(g["other"] + [p for p in state_aliases(st, home) if p != params["STATE"]]))
     for i, p in enumerate(alt):
         params[f"STATE_ALT_{i}"] = p
-    ro = [os.path.join(home, rel) for rel in _RO_FILES + _MAC_RO]
-    ro = [_real(p) if os.path.lexists(p) else p for p in ro]   # a start-up file that does not exist yet stays protected
+    ro = [_real(p) if os.path.lexists(p) else p for p in g["ro"]]   # a start-up file that does not exist yet stays protected
     ro = list(dict.fromkeys(ro))
     for i, p in enumerate(ro):
         params[f"RO_{i}"] = p
@@ -578,7 +638,7 @@ def sbpl_profile(st, workdir: str, home: str | None = None, uid: int | None = No
     for i, p in enumerate(pin):
         params[f"PIN_{i}"] = p
     n_ro = len(ro)
-    ctl = control_dirs(home, environ, allow_docker, workdir, mac=True, uid=uid)   # absent ones too: a server may start later
+    ctl = g["control"]   # absent ones too: a server may start later
     for i, p in enumerate(ctl):
         params[f"CTL_{i}"] = p
     lines = [

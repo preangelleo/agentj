@@ -202,12 +202,14 @@ def service_env_path() -> str | None:
         return None
 
 
-def effective_auth_env() -> dict:
+def effective_auth_env(process: bool = True, service: bool = True) -> dict:
     """Read only exact Claude auth names. Loaded environment.d and set-environment are reflected by the user manager;
-    the service EnvironmentFile overrides manager values. Values stay in memory, never in views/logs or metadata."""
+    the service EnvironmentFile overrides manager values. Values stay in memory, never in views/logs or metadata.
+    #427: process=False / service=False = only the sources Agent J does not write (a token there outlives a switch)."""
+    use_service = service
     from . import service
     keys = (*OUTRANK, "CLAUDE_CODE_OAUTH_TOKEN")
-    result = {k: os.environ[k] for k in keys if k in os.environ}
+    result = {k: os.environ[k] for k in keys if k in os.environ} if process else {}
     from . import keys_found
     # Reuse the existing no-follow/owner/size-checked source reader; no new credential parser or storage.
     try:
@@ -227,7 +229,7 @@ def effective_auth_env() -> dict:
         pass
     manager = keys_found.manager_env()
     result.update({k: manager[k] for k in keys if k in manager})
-    path = service_env_path()
+    path = service_env_path() if use_service else None
     if path:
         result.update(service.private_env(path, keys, "bad_claude_env"))
     return result
@@ -403,13 +405,15 @@ class ClaudeFlow:
 
 # ------------------------------------------------------------------ Codex: device code
 class CodexFlow:
-    def __init__(self):
+    def __init__(self, home: Path | None = None):
+        """home: #427 a new account's own CODEX_HOME slot (the login in use is never touched); None = $CODEX_HOME."""
         self.proc: subprocess.Popen | None = None
         self.url = self.code = None
         self.expires = 15 * 60
         self.backup: bytes | None = None
         self.out = ""
-        self.auth = Path(os.environ.get("CODEX_HOME") or os.path.expanduser("~/.codex")) / "auth.json"
+        self.slot = Path(home) if home is not None else None
+        self.auth = (self.slot or Path(os.environ.get("CODEX_HOME") or os.path.expanduser("~/.codex"))) / "auth.json"
 
     def start(self) -> tuple[str, str, int]:
         exe = binary("codex")
@@ -422,6 +426,8 @@ class CodexFlow:
             self.backup = None
         env = harness_env("codex")
         env["NO_COLOR"] = "1"
+        if self.slot is not None:
+            env["CODEX_HOME"] = str(self.slot)
         self.proc = subprocess.Popen([exe, "login", "--device-auth"], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                      stderr=subprocess.STDOUT, env=env, start_new_session=True, cwd=tempfile.gettempdir())
         os.set_blocking(self.proc.stdout.fileno(), False)
@@ -780,7 +786,7 @@ def expiry_kind(kind: str, meta: dict) -> str:
 _HEALTH_ENV_DROP = ("AGENTJ_", "AGENTJARVIS_", "HERDR_", "VIBE_REMOTE_", "TMUX", "SSH_")
 
 
-def health_check(kind: str, timeout: float = HEALTH_TIMEOUT) -> dict:
+def health_check(kind: str, timeout: float = HEALTH_TIMEOUT, env_extra: dict | None = None) -> dict:
     """P288: ONE real tool-free call with the harness's current login (the bots' no-tool command: no tools, no MCP, no
     session saved). → {"ok": bool, "cls": "login" | "balance" | "rate_limit" | None, "why": fixed word}. The output is
     classified in memory and dropped; nothing of it is logged or returned."""
@@ -793,6 +799,7 @@ def health_check(kind: str, timeout: float = HEALTH_TIMEOUT) -> dict:
            if not k.startswith(_HEALTH_ENV_DROP) and not (kind == "claude" and k in CLAUDE_STRIP)}
     if kind == "claude":
         env.update(effective_auth_env())
+    env.update(env_extra or {})           # #427: a new account's own CODEX_HOME slot
     if kind == "kimi":                    # P305: no one-shot print mode — one ACP session in plan mode (agent_kimi.probe)
         from . import agent_kimi
         try:
@@ -877,6 +884,7 @@ TEXT = {
         "recovered": "{h} 已重新登录并恢复：重启后没有待确认的界面，测试消息已拿到回复。",
         "partial": "{h} 新登录已写入，但自检没有通过：{why}",
         "confirm_title": "AI 登录救援：重新登录 {h}",
+        "account_added": "已登记 {h} 账号「{n}」：正在用的账号没变。要换过去：设置 → AI 里点它，或说「换 {h} {n}」。",
     },
     "en": {
         "alert_login": "{h}'s subscription login expired; Agent J cannot reply. Open Settings → Emergency repair → AI login rescue to sign in "
@@ -891,6 +899,8 @@ TEXT = {
         "recovered": "{h} is signed in again: no prompt waiting after the restart, and a test message got a reply.",
         "partial": "{h}'s new login is written, but the self-check failed: {why}",
         "confirm_title": "AI login rescue: sign in to {h} again",
+        "account_added": "Added the {h} account 「{n}」; the account in use did not change. To switch: tap it in Settings → AI, or say "
+                         "\"switch {h} to {n}\".",
     },
 }
 LABEL = {"claude": "Claude Code", "codex": "Codex", "opencode": "OpenCode", "kimi": "Kimi Code"}
@@ -950,7 +960,11 @@ class Rescue:
         return TEXT[self.lang()][key].format(**kw)
 
     def why(self, code, **kw) -> str:
-        return WHY[self.lang()].get(code, code).format(**kw)
+        text = WHY[self.lang()].get(code)
+        if text is None:                               # #427: name_taken / same_account / unsupported_store / full …
+            from . import accounts
+            text = accounts.WHY[self.lang()].get(code, code)
+        return text.format(**{"n": "", **kw})
 
     def workdir(self) -> str:
         cfg = getattr(self.host, "agent_cfg", None) or {}
@@ -1029,7 +1043,7 @@ class Rescue:
         flow = None
         if f:
             flow = {k: f[k] for k in ("kind", "route", "stage", "url", "code", "expires_at", "why", "round", "rounds",
-                                                 "reopened", "region", "saved")
+                                                 "reopened", "region", "saved", "account")
                     if f.get(k) is not None}
         dot = any(r["state"] == "login" or r.get("warn") for r in rows)
         out = {"harnesses": rows, "flow": flow, "dot": dot}
@@ -1066,7 +1080,8 @@ class Rescue:
         (bg(go(), "auth_view") if bg else asyncio.ensure_future(go()))
 
     # ---- start (passkey) and the flows
-    async def start(self, kind: str, route: str, *, remote=None) -> dict:
+    async def start(self, kind: str, route: str, *, remote=None, account=None) -> dict:
+        """account: #427 {"name"} = sign a NEW account in (its own slot); the login in use is never overwritten."""
         if kind not in KINDS:
             return {"ok": False, "why": "unsupported"}
         allowed = {"claude": ("setup_token", "paste", "login"), "codex": ("device",), "opencode": ("provider_key",),
@@ -1075,13 +1090,22 @@ class Rescue:
             return {"ok": False, "why": "unsupported"}
         if self.flow and self.flow.get("stage") not in ("done", "failed"):
             return {"ok": False, "why": "busy"}
+        name = None
+        if account is not None:
+            from . import accounts
+            if not isinstance(account, dict) or kind not in accounts.HARNESSES or route == "login":
+                return {"ok": False, "why": "unsupported"}        # `claude auth login` would replace the /login in use
+            try:
+                name = await asyncio.to_thread(accounts.check_new, self.host.st.root, kind, account.get("name"), self.lang())
+            except accounts.AccountError as e:
+                return {"ok": False, "why": e.args[0]}
         if kind == "opencode":
             return await self._opencode(remote=remote)
-        ok = await self._confirm(kind)
+        ok = await self._confirm(kind, name)
         if not ok:
             return {"ok": False, "why": "passkey"}
         self.cancel.clear()
-        self.flow = {"kind": kind, "route": route, "stage": "starting", "_remote": remote}
+        self.flow = {"kind": kind, "route": route, "stage": "starting", "_remote": remote, **({"account": name} if name else {})}
         self.broadcast()
         try:
             self.host.st.log("auth_rescue_start", agent=kind, status=route)
@@ -1093,17 +1117,24 @@ class Rescue:
         (bg(coro(), "auth_rescue") if bg else asyncio.ensure_future(coro()))
         return {"ok": True}
 
-    async def _confirm(self, kind: str) -> bool:
+    async def _confirm(self, kind: str, account: str | None = None) -> bool:
         ask = getattr(self.host, "ask", None)
         if ask is None:
             return False
         try:
-            res = await ask("AuthRescue", {"summary": self._summary(kind)}, batch=False, always_ask=True)   # P573: one button
+            res = await ask("AuthRescue", {"summary": self._summary(kind, account)}, batch=False, always_ask=True)   # P573: one button
         except Exception:  # noqa: BLE001
             return False
         return isinstance(res, dict) and res.get("behavior") == "allow"
 
-    def _summary(self, kind: str) -> str:
+    def _summary(self, kind: str, account: str | None = None) -> str:
+        if account:
+            if self.lang() == "en":
+                return (f"Add a {LABEL[kind]} account 「{account}」.\nAgent J runs the official login command on the Agent J host and "
+                        "shows you its link / code; sign in with the NEW account. The account in use is not touched; the new "
+                        "sign-in is stored only on the Agent J host (0600). The owner confirms on a paired remote.")
+            return (f"登记新的 {LABEL[kind]} 账号「{account}」。\nAgent J 会在这台Agent J 主机上运行官方登录命令，把授权链接 / 设备码给你，"
+                    "请用要新增的那个账号登录。正在用的账号不受影响；新凭据只存在这台Agent J 主机上（0600）。需主人在已配对的遥控器上确认。")
         if self.lang() == "en":
             return (self.t("confirm_title", h=LABEL[kind]) + ".\nAgent J runs the official login command on the Agent J host "
                     "and shows you its link / code. The new credential is stored only on the Agent J host (0600). The owner confirms on a paired remote.")
@@ -1112,8 +1143,10 @@ class Rescue:
 
     def _end(self, kind, result, why=None, **extra):
         self.credential_stamp = None  # recheck after any active flow that a foreground poll had to skip
-        self.flow = {"kind": kind, "route": (self.flow or {}).get("route"), "stage": "done" if result == "recovered" else "failed",
-                     **({"why": self.why(why, **extra.pop("fmt", {}))} if why else {})}
+        acct = (self.flow or {}).get("account")
+        self.flow = {"kind": kind, "route": (self.flow or {}).get("route"),
+                     "stage": "done" if result in ("recovered", "added") else "failed",
+                     **({"account": acct} if acct else {}), **({"why": self.why(why, **extra.pop("fmt", {}))} if why else {})}
         self.last[kind] = {"result": result, "at": int(time.time()), **({"why": why} if why else {}), **extra}
         try:
             self.host.st.log("auth_rescue_end", agent=kind, status=result, reason=why)
@@ -1122,6 +1155,8 @@ class Rescue:
         self.broadcast()
 
     async def _codex(self):
+        if self.flow.get("account"):
+            return await self._codex_account(self.flow["account"])
         flow = CodexFlow()
         try:
             url, code, ttl = await asyncio.to_thread(flow.start)
@@ -1141,6 +1176,50 @@ class Rescue:
             return self._end("codex", "failed", "quota" if hc.get("cls") in ("balance", "rate_limit") else "verify_codex")
         self._health_mark("codex", hc)
         await self.recover("codex")
+
+    async def _codex_account(self, name: str):
+        """#427: `codex login --device-auth` with CODEX_HOME = a fresh slot; live check with that slot; then registered.
+        ~/.codex/auth.json (the account in use) is never read or written here. No restart: nothing in use changed."""
+        from . import accounts
+        root = self.host.st.root
+        try:
+            iid, slot = await asyncio.to_thread(accounts.new_codex_slot, root)
+        except (OSError, accounts.AccountError):
+            return self._end("codex", "failed", "io")
+        flow = CodexFlow(home=slot)
+        try:
+            url, code, ttl = await asyncio.to_thread(flow.start)
+        except RescueError as e:
+            await asyncio.to_thread(accounts.discard_slot, root, "codex", iid)
+            return self._end("codex", "failed", e.args[0])
+        self.flow.update(stage="device", url=url, code=code, expires_at=int(time.time()) + ttl, round=1, rounds=1)
+        self.broadcast()
+        res = await asyncio.to_thread(flow.wait, self.cancel)
+        if res != "ok":
+            await asyncio.to_thread(accounts.discard_slot, root, "codex", iid)
+            return self._end("codex", "failed", res)
+        self.flow.update(stage="verifying")
+        self.broadcast()
+        hc = await asyncio.to_thread(health_check, "codex", HEALTH_TIMEOUT, {"CODEX_HOME": str(slot)})
+        if not hc["ok"]:
+            await asyncio.to_thread(accounts.discard_slot, root, "codex", iid)
+            return self._end("codex", "failed", "quota" if hc.get("cls") in ("balance", "rate_limit") else "verify_codex")
+        try:
+            item = await asyncio.to_thread(accounts.commit_codex, root, iid, name, self.lang())
+        except accounts.AccountError as e:
+            return self._end("codex", "failed", e.args[0])
+        self.flow["saved"] = True
+        self._account_added("codex", item)
+
+    def _account_added(self, kind: str, item: dict) -> None:
+        from . import accounts
+        try:
+            self.host.st.log("account", harness=kind, op="add", name_hash=accounts.name_hash(item["name"]),
+                             device=getattr((self.flow or {}).get("_remote"), "device", None))
+        except Exception:  # noqa: BLE001
+            pass
+        self._end(kind, "added")
+        self.host.agent_notice(self.t("account_added", h=LABEL[kind], n=item["name"]))
 
     async def _kimi(self):
         """P305: `kimi login --region <the configured site>` — the Codex shape; a failed live check puts the files back."""
@@ -1183,6 +1262,8 @@ class Rescue:
             res = await self._claude_round(flow, route, outcome)
             if res.get("result") == "saved":
                 self.flow["saved"] = True
+                if outcome.get("item"):
+                    return self._account_added("claude", outcome["item"])
                 return await self.recover("claude", route=route)
             if self.cancel.is_set():
                 return None                       # cancel_flow already ended it
@@ -1254,12 +1335,17 @@ class Rescue:
         if res.get("result") != "saved":
             return self._end("claude", "failed", outcome.get("why") or "cancelled")
         self.flow["saved"] = True
+        if outcome.get("item"):
+            return self._account_added("claude", outcome["item"])
         await self.recover("claude", route="paste")
 
     def _card(self, name, purpose, sink) -> dict:
         zh = self.lang() == "zh"
+        acct = (self.flow or {}).get("account")
+        dest = (f"本机新账号「{acct}」的凭据槽（0600）" if zh else f"the new account 「{acct}」's slot on the Agent J host (0600)") if acct \
+            else "本机 Agent J 服务 env 文件（0600）" if zh else "the Agent J host's Agent J service env file (0600)"
         return {"kind": "secret", "name": name, "purpose": purpose,
-                "dest": "本机 Agent J 服务 env 文件（0600）" if zh else "the Agent J host's Agent J service env file (0600)",
+                "dest": dest,
                 "dest_spec": {"mode": "auth", "path": service_env_path() or "", "key": name, "show": "auth"},
                 "cwd": "/", "verify": "claude -p (live)", "verify_url": "", "verify_header": "", "verify_cmd": "", "sink": sink}
 
@@ -1274,6 +1360,17 @@ class Rescue:
             if not live_claude(tok):
                 outcome["why"] = "verify"
                 return {"result": "failed", "why": "verify", "detail": self.why("verify")}
+            acct = (self.flow or {}).get("account")
+            if acct:                                   # #427: a new account's slot; the service env file is untouched
+                from . import accounts
+                try:
+                    outcome["item"] = accounts.add_claude_token(self.host.st.root, acct, tok, self.lang())
+                except (accounts.AccountError, OSError) as e:
+                    outcome["why"] = e.args[0] if isinstance(e, accounts.AccountError) else "io"
+                    return {"result": "failed", "why": "io", "detail": self.why(outcome["why"])}
+                outcome["ok"] = True
+                return {"result": "saved", "receipt": {"name": "CLAUDE_CODE_OAUTH_TOKEN", "dest": "account slot", "length": len(tok),
+                                                       "fingerprint": elevate.fingerprint(tok), "verify": "ok"}}
             path = service_env_path()
             if not path:
                 outcome["why"] = "io"
@@ -1285,6 +1382,11 @@ class Rescue:
                 outcome["why"] = "io"
                 return {"result": "failed", "why": "io"}
             os.environ["CLAUDE_CODE_OAUTH_TOKEN"] = s
+            try:
+                from . import accounts
+                accounts.on_rescue_token(self.host.st.root, tok)   # #427: the active account's slot follows the renewal
+            except Exception:  # noqa: BLE001 — the renewal itself already succeeded
+                pass
             meta = read_meta(self.host.st)
             old = token_due(meta)
             # P288: replaced at once, the expiry recounted from today; the reminder marks start over for the new expiry

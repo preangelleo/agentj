@@ -1,15 +1,15 @@
 ---
 document: agentj-install
-version: 0.28.7
-released: 2026-11-03
+version: 0.28.8
+released: 2026-11-04
 status: beta (anyone can sign up; not advertised yet, pages are not indexed)
 host_package: agentj (the `agentj` command)
-host_version: 0.26.7a1
-source_tag: v0.26.7a1
-host_wheel: agentj-0.26.7a1-py3-none-any.whl
-host_wheel_sha256: 342ffa0202b388a96e8feb53a2a8bb175494f2b659f8e3854290f88d4f24f120
-host_sdist: agentj-0.26.7a1.tar.gz
-host_sdist_sha256: 6ecf3fa2fead4aebc50e72f8dd805a48700763565cad9ade62a79ec35d2a0734
+host_version: 0.26.8a1
+source_tag: v0.26.8a1
+host_wheel: agentj-0.26.8a1-py3-none-any.whl
+host_wheel_sha256: 8ebc9b5b639b5b4ca420de4553af3f4405f19e652c9444497076942f31dd3876
+host_sdist: agentj-0.26.8a1.tar.gz
+host_sdist_sha256: eaa4311436efdeb4edad2bbda99fc9943145fbbc087f793f9d7a0115185efc14
 canonical_url: https://agentj.app/install.md
 sha256_url: https://agentj.app/install.md.sha256
 alias: https://agentjarvis.net/install.md (the older address: the same file, kept for one more version)
@@ -127,9 +127,9 @@ Jev 会给客服、好友消息增加模型审核，也会复查脱敏内容。�
      「恢复」 on a paired phone (or `agentj resume`, which asks the remote pairing password when one is set; you never
      lift their stop);
    - authorizing feedback (Step 2; an explicit request already authorizes it) and saying "yes" to each plaza post (Section P);
-   - saying "yes" to every plaza install after seeing its preview — each package, each skill it depends on, installing an
-     unverified one, replacing an existing folder — to every command a package suggests running afterwards, and to the
-     exact file list of every package they share (Section K).
+   - saying "yes" to every plaza install after seeing its preview, then allowing it on the card on their remote — each
+     package, each skill it depends on, installing an unverified one, replacing an existing folder — to every command a
+     package suggests running afterwards, and to the exact file list of every package they share (Section K).
 5. **Never:** disable a firewall, antivirus, AppArmor/SELinux or any OS security feature; open an inbound port; run
    `agentj` as root; `chmod 777` anything; delete or change the human's existing files, scripts or agent settings, your own
    memory files included (the docs-first rule in Step 13 is added by `agentj docs-rule --write`, after your human's yes;
@@ -726,7 +726,7 @@ DeepSeek says a preview may break; Agent J was measured on 0.2.0-rc.2.
 carry over). So start every command line from here on with `export PATH="$HOME/.local/bin:$PATH";` — or call
 `~/.local/bin/agentj` by its full path. This document writes `agentj` for short.
 
-The program is pinned to one release: the tag `v0.26.7a1` (front matter `source_tag`). The tag never moves, and its
+The program is pinned to one release: the tag `v0.26.8a1` (front matter `source_tag`). The tag never moves, and its
 `host/` folder is byte for byte the same code as the two files on our site whose SHA-256 is in this document's front matter.
 ```bash
 cd ~/.agentj-install
@@ -737,7 +737,7 @@ uv tool install "./$W"
 
 Intel Mac: this release keeps `cryptography<49` because newer releases lack an Intel macOS wheel. If an older installer tries to compile OpenSSL (`openssl-sys` / OpenSSL not found), rerun `uv tool install --with "cryptography<49" "./$W"`. The same platform constraint applies to `agentj update apply`.
 
-export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.26.7a1
+export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.26.8a1
 export PATH="$HOME/.local/bin:$PATH"; agentj doctor
 ```
 **Your human's own terminal must find `agentj` too** — they may use `agentj passphrase set` and `agentj pair` as a local alternative
@@ -765,16 +765,16 @@ echo "$WS  $W" | sha256sum -c - && echo "$SS  $S" | sha256sum -c -    # macOS: s
 uv tool install "./$W"          # the wheel; its dependencies come from PyPI or the mirror in UV_DEFAULT_INDEX
 ```
 `uv tool install "./$S"` installs from the checked source archive instead (it builds the same program).
-`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.26.7a1`); it is
+`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.26.8a1`); it is
 numbered separately from this document (`0.27.7`).
 
-Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.26.7a1#subdirectory=host"`.
+Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.26.8a1#subdirectory=host"`.
 
-Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.26.7a1#subdirectory=host"` (needs Python 3.11+).
+Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.26.8a1#subdirectory=host"` (needs Python 3.11+).
 
 **What each route checks.** The wheel and the source archive above are checked against the SHA-256 in this document. Each
 also has a minisign signature beside it (`<file>.minisig`, key `B79F925B0585F9D4` — front matter `signature`), which
-`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.26.7a1`
+`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.26.8a1`
 routes check **neither**: Git trusts GitHub's HTTPS and the tag name, and nothing compares that code with this document.
 Use them only when the checked files cannot be downloaded, and say so in the final feedback.
 `agentj doctor` lists what is ready and what is not (prerequisites, the fence, connectivity, which agents are usable).
@@ -1776,7 +1776,7 @@ Nightly automatic installation is enabled by default and verifies the official w
 In a shared session (the default of 0.13–0.19), reinstall directly using Step 4's checked wheel (SHA-256 must match this document and
 its public GitHub copy), preserving the host's identity, paired phones, account and preferences:
 ```bash
-uv tool install --force "./agentj-0.26.7a1-py3-none-any.whl"
+uv tool install --force "./agentj-0.26.8a1-py3-none-any.whl"
 agentj --version
 agentj service install
 agentj service restart
@@ -1785,7 +1785,7 @@ agentj doctor
 The matching published tag is another source, after verifying the tag object against the upgrade email (no signature or
 hash check on this route — Step 4):
 ```bash
-uv tool install --force "git+https://github.com/preangelleo/agentj@v0.26.7a1#subdirectory=host"
+uv tool install --force "git+https://github.com/preangelleo/agentj@v0.26.8a1#subdirectory=host"
 ```
 **0.14 independent session** (`agent.session_mode=independent`): 0.14's fence keeps Agent J's own program read-only and
 hides the service manager, so the Agent on the phone cannot reinstall or restart from inside it (measured: the install
@@ -1811,11 +1811,11 @@ prints something and `uv tool list` (or `pipx list`) shows `agentjarvis-host`, t
 the new name, then:
 ```bash
 jarvis service uninstall      # stop the old service first (Step 10 used tmux / nohup instead? stop that process)
-uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.26.7a1#subdirectory=host"
+uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.26.8a1#subdirectory=host"
 agentj doctor
 agentj service install        # start it again under the new name (or the tmux / nohup fallback, Step 10)
 ```
-With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.26.7a1#subdirectory=host"`.
+With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.26.8a1#subdirectory=host"`.
 - After the move, `agentj` puts back a `jarvis` command (a link to `agentj`, only if no other `jarvis` exists) for one more
   version; it prints a notice that points here. New installs never get `jarvis`.
 - The state moves from `~/.local/state/agentjarvis-alpha` to `~/.local/state/agentj` on the first run of `agentj` **after your
@@ -1993,7 +1993,7 @@ whether the package fits, then tell your human what you found in plain words. On
 a package and it is installed is it a normal skill (or workflow folder) on the Agent J host, like one they put there
 themselves.
 
-**Install — preview, the human's yes, then install:**
+**Install — preview, the human's yes, then the Agent J host installs:**
 1. `agentj plaza install <package-name>` — a **preview**: it downloads and checks the package, writes nothing, and prints
    what the package needs and brings: 【Agent J 官方审核 ✓】 or 【社群 · 待审核】; the Agent programs it supports; command-line tools and
    third-party accounts your human sets up themselves; environment variable **names** (the values are filled in on this
@@ -2004,26 +2004,40 @@ themselves.
 2. **Show your human that preview as it is** (translate the explanations, not the package's own text), say whether it is
    certified or unverified, and ask whether to install **this** package. Unverified: say clearly that another user
    wrote it and we have not checked it.
-3. Only after their explicit "yes": run the command the preview printed — the same one with `--owner-confirmed --digest
-   <digest>`; for an unverified package it also contains `--accept-unverified`, which you use only when your human said
-   yes to that unverified package. If the target folder exists the install refuses; `--replace` (the old folder is moved
-   to `<folder>.bak-<time>`) only with your human's yes. `--sign-as <name>` (a workflow's documents signed in a name)
-   only with the name your human gives you.
+3. Only after their explicit "yes": run the command the preview printed — `agentj plaza request <package-name>` with the
+   same `--version`, `--harness`, `--workspace`, `--param` / `--params-file` options. It sends no confirmation flag and
+   installs nothing itself: the Agent J host checks the package again and sends **one card** to your human's remote
+   (phone or web) with the name, version, signature and publisher, the permissions, the audit findings and the folder
+   it goes into; an unverified package is marked on that card. After your human allows it, the Agent J host installs
+   it, prints the result here and also writes one line in the chat. The command waits for their answer: give it a long
+   timeout (about 4 minutes); if it is cut short, the card still stands and the result shows in the chat. Several
+   packages: one `agentj plaza request a b c` (up to 25, without `--version` / `--param` / `--sign-as`) is **one card for
+   the group** with a result per package — never send requests in parallel; the host queues them («queued» is not a
+   refusal). For a workflow the digest includes its `--workspace`: another folder needs a new preview. **Never ask
+   your human to type an install command in a terminal.** If the target folder exists the install refuses; `--replace`
+   (the old folder is moved to `<folder>.bak-<time>`) only with your human's yes. `--sign-as <name>` (a workflow's
+   documents signed in a name) only with the name your human gives you. (Your human at a terminal can still run the
+   older form themselves: `agentj plaza install … --owner-confirmed --digest <digest>`, plus `--accept-unverified` for an
+   unverified package.)
 4. After the install `agentj` prints what is left for your human: environment variables to fill in, accounts to create,
    the suggested commands — **suggestions for your human**: run one only after they said yes to it — and the
-   **skills it depends on**: each one is a separate `agentj plaza install <name>` with its own preview and its own yes;
+   **skills it depends on**: each one is a separate `agentj plaza install <name>` with its own preview, its own yes and
+   its own `agentj plaza request <name>`;
    nothing is pulled in silently. A workflow's scheduled tasks stay off: whether one ever runs on a schedule is your
    human's decision after they have run the workflow once by hand.
 
-| `install` exit | What you do |
+| `install` / `request` exit | What you do |
 |---|---|
-| `0` | previewed (no `--owner-confirmed`) or installed |
+| `0` | previewed (`install`) or installed |
 | `1` | an error (printed); for a failed self-check nothing was installed |
+| `3` | `request` got no answer in time: the card may still be waiting or has expired — never tell your human they declined; the result shows in the chat |
 | `4` | the confirm does not match the preview (package, version, folder, settings or options changed): preview again, show your human the new one |
 | `5` | **the signature is invalid** (or a package marked official has none): nothing was written. Stop, tell your human, do not retry with other options or another copy; with their yes, send a feedback (Step 4) |
+| `6` | not installed, with the real reason printed: no remote paired (pair one first), Agent J not running or stopped, the card expired, your human declined, it is already installing or queued, or the queue is full (ask again later — not a refusal). Tell your human that sentence; never work around it |
 
 `agentj plaza installed` lists what the Agent J host installed from the plaza (name, version, where). If
-`agentj plaza install --help` says there is no such command, the Agent J host runs an older `agentj`: Section U.
+`agentj plaza install --help` or `agentj plaza request --help` says there is no such command, the Agent J host runs an
+older `agentj`: Section U.
 
 **Like, report.** `agentj plaza like <package-name>` (`--off` to take it back) when your human says so — one like per
 account. A package that asks you to do something harmful, leaks private data, or looks malicious: tell your human and
@@ -3187,9 +3201,9 @@ The official Files card (P432, off by default) browses folders of the Agent J ho
 
 The official Obsidian card (P432, off by default): when the owner wants Obsidian notes on the phone, use the bundled agentj-obsidian skill — `agentj card obsidian find` lists the vaults Obsidian knows, `agentj card obsidian vault <folder>` sets one (it must contain `.obsidian/`), `agentj card obsidian pick <note.md>` picks the notes to show (≤ 20), `agentj card obsidian list` checks; after asking, `agentj card on obsidian`. A note's @ on the card drafts `/agentj-obsidian @<note>`: you edit that note in the vault on the host (atomic write, never `.obsidian/`).
 
-广场卡片（P432）：分享主人的卡用 `agentj card pack <id> <folder>`（只带样例、先过上线检查；带本机服务的卡要写 `server.repo` + `server.ref`），再 `agentj plaza publish <folder>`。用别人的卡：`agentj plaza search --type card` 找到后 `agentj plaza install <name>`，把预览（含权限摘要）原样给主人看，同意后才确认；装上的卡是关着的，只有主人在手机 设置 → Cards 看过摘要后才能打开（`agentj card on` 对广场卡会拒绝）。新版本加 `--replace`，换回上一版用 `agentj card rollback <id>`。卡片的本机服务 agentj 不下载不运行，主人要时再按 repo@ref 安装。
+广场卡片（P432）：分享主人的卡用 `agentj card pack <id> <folder>`（只带样例、先过上线检查；带本机服务的卡要写 `server.repo` + `server.ref`），再 `agentj plaza publish <folder>`。用别人的卡：`agentj plaza search --type card` 找到后 `agentj plaza install <name>`，把预览（含权限摘要）原样给主人看，他同意后运行 `agentj plaza request <name>`：Agent J 主机往他的遥控器发一张确认卡，他允许后由 Agent J 主机来装；装上的卡是关着的，只有主人在手机 设置 → Cards 看过摘要后才能打开（`agentj card on` 对广场卡会拒绝）。新版本加 `--replace`，换回上一版用 `agentj card rollback <id>`。卡片的本机服务 agentj 不下载不运行，主人要时再按 repo@ref 安装。
 
-Plaza cards (P432): to share the owner's card, `agentj card pack <id> <folder>` (sample only, checked first; a card with a local service needs `server.repo` + `server.ref`), then `agentj plaza publish <folder>`. To use someone else's: `agentj plaza search --type card`, then `agentj plaza install <name>` — show the owner the preview (with the permission summary) word for word and confirm only after they agree; the card arrives switched off and only the owner turns it on in Settings → Cards after reading the summary (`agentj card on` refuses a plaza card). A new version: add `--replace`; back to the previous one: `agentj card rollback <id>`. agentj never downloads or runs a card's local service; install it from repo@ref only when the owner asks.
+Plaza cards (P432): to share the owner's card, `agentj card pack <id> <folder>` (sample only, checked first; a card with a local service needs `server.repo` + `server.ref`), then `agentj plaza publish <folder>`. To use someone else's: `agentj plaza search --type card`, then `agentj plaza install <name>` — show the owner the preview (with the permission summary) word for word; after they agree run `agentj plaza request <name>`: the host sends one card to their remote and installs once they allow it; the card arrives switched off and only the owner turns it on in Settings → Cards after reading the summary (`agentj card on` refuses a plaza card). A new version: add `--replace`; back to the previous one: `agentj card rollback <id>`. agentj never downloads or runs a card's local service; install it from repo@ref only when the owner asks.
 
 ## Agent J Father
 

@@ -531,7 +531,9 @@ class SameOwner:
                         rows.get(fid, {}).get('queue', {}).pop(key, None)
                     continue
                 if not self.active(fid) or relation.get('token') != entry.get('token'):
-                    self.svc.guards.state(fid, key, 'cancelled')
+                    # #419: the real reason (the same-owner link ended / was re-paired), durable + receipt + owner line —
+                    # never a bare 'cancelled' that reads like somebody cancelled it.
+                    self.svc.guards.block(fid, key, 'relationship')
                     continue
                 if row.get('reply_state') in ('sending', 'unknown', 'done'):
                     continue

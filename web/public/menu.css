@@ -549,6 +549,28 @@ body:not([data-view="chat"]) #set-actions .bulb{display:flex}
 #set-auth .arrow .mailadv>*+*{margin-top:var(--ui-space-control)}
 #set-auth #ar-list+.setnote{margin-top:var(--ui-space-content)}
 #set-auth .arflow{margin:var(--ui-space-content) 0}
+/* #427 · Settings → AI 账号 (js/accounts.js): one block per harness, one row per account (name · 「当前」 chip · method and quota
+   line · actions); the inline name field; spacing = the P302 tokens, the flow card = AI 登录救援's */
+#set-accts .arrow{display:flex;flex-direction:column;gap:var(--ui-space-control);padding-block:var(--ui-space-content)}
+#set-accts .arrow>*{margin:0}
+#set-accts .acctgrp{align-items:stretch;text-align:start}
+#set-accts .acctgrp>.arhead{justify-content:flex-start}
+#set-accts .acctlist{width:100%}
+#set-accts .arflow{margin:var(--ui-space-content) 0}
+#set-accts .acctlist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:var(--ui-space-control)}
+#set-accts .acctrow{display:flex;flex-direction:column;gap:var(--ui-space-control);padding:var(--ui-space-control) var(--sp-3);border:1px solid var(--menu-line,currentColor);border-radius:var(--ui-radius-control,12px)}
+#set-accts .acctrow[data-active]{border-color:var(--menu-accent)}
+#set-accts .acctrow>*{margin:0}
+#set-accts .acctrow .mailbtns{margin:0}
+#set-accts .acctname{overflow-wrap:anywhere}
+#set-accts .acctcur{color:var(--menu-accent);border-color:var(--menu-accent)}
+#set-accts .acctmeta{font-variant-numeric:tabular-nums}
+#set-accts .aj-btn:disabled{opacity:.55;cursor:not-allowed}
+#set-accts .acctform{display:flex;flex-direction:column;gap:var(--ui-space-control)}
+#set-accts .acctform>*{margin:0}
+#set-accts .acctform .aj-input{font-size:max(16px,var(--ui-fs-body));max-width:24rem}
+#set-accts .acctform__err[hidden]{display:none}
+#set-accts #acct-list+.setnote{margin-top:var(--ui-space-content)}
 /* P366 · Settings → Webhook (js/webhooks.js): today's count + connection, live rows (name · state chip · plain-words lines ·
    actions), ended rows in the muted ink (still ≥ 4.5:1 on Sooty), 「最近投递」 one line per delivery; spacing = the P302 tokens */
 #set-hooks .hooks-box>*{margin:0}

@@ -25,7 +25,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from agentj import google, google_connect as gc  # noqa: E402
 
-from test_l1 import _host, _state  # noqa: E402
+from test_l1 import _owner_host, _state  # noqa: E402
 
 EMAIL = "owner.p428@example.com"
 CLIENT = b'{"installed": {"client_id": "p428.apps.googleusercontent.com", "note": "P428-CLIENT-BYTES"}}'
@@ -169,11 +169,12 @@ class Steps(Base):
         self.assertEqual(add[3:6], ["--services", "calendar", "--readonly"])
 
     def test_purpose_not_connectable(self):
-        for pid in ("gmail-read", "drive-file", "youtube-publish", "nope"):
+        # #436: every defined purpose is connectable now (test_p436_google_all); only an unknown one is refused
+        for pid in ("nope", "gmail-full", None):
             self.assertEqual(google.connect(self.st, pid)["why"], "purpose_not_connectable")
             self.assertEqual(google.disconnect(self.st, pid)["why"], "purpose_not_connectable")
         self.assertEqual(self.calls(), [])
-        self.assertEqual(google.connect_status(self.st, "gmail-read")["connections"]["gmail-read"]["step"], "not_connectable")
+        self.assertEqual(google.connect_status(self.st, "gmail-read")["connections"]["gmail-read"]["step"], "client_needed")
 
     def test_not_installed(self):
         with mock.patch.object(google, "installed", return_value=False):
@@ -378,8 +379,8 @@ class Projection(Base):
                 self.assertNotEqual(row["status"], "ready", pid)
                 self.assertEqual(row["check"]["status"], "unsupported", pid)
         s = google.status(self.st)
-        self.assertEqual(s["api_authorization"]["state"], "calendar_ready")
-        self.assertEqual(s["api_authorization"]["others"], "not_available_yet")
+        self.assertEqual(s["api_authorization"]["state"], "some_ready")      # #436: was calendar_ready / others
+        self.assertNotIn("others", s["api_authorization"])
         self.assertEqual(s["stage"], "0.18.0")
         from agentj import ltschema
         self.assertEqual(ltschema.problems("registry", {"schema_version": 1, "host_id": "h", "revision": 1,
@@ -399,7 +400,7 @@ class Projection(Base):
 class Elevate(Base):
     def test_socket_shapes(self):
         sent = []
-        host = _host(self.st, sent)
+        host = _owner_host(self.st, sent)    # #436 round 1 (L1): connect / disconnect only from the owner's turn
 
         async def go():
             p = host.elevate._p115
@@ -426,7 +427,7 @@ class Elevate(Base):
                          "client_b64": base64.b64encode(b'{"web": {"client_id": "x"}}').decode()})
             self.assertEqual(r["why"], "client_file_refused")
             r = await p({"t": "google", "op": "connect", "purpose": "gmail-read"})
-            self.assertEqual(r["why"], "purpose_not_connectable")
+            self.assertEqual(r["step"], "client_needed", "#436: every defined purpose is connectable")
             self.assertEqual((await p({"t": "google", "op": "status"}))["stage"], "0.18.0")
         asyncio.run(go())
 

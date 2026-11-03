@@ -741,11 +741,23 @@ def add_codex_mirrors(files: dict[str, bytes]) -> dict[str, bytes]:
     return out
 
 
-def secret_hits(files: dict[str, bytes]) -> list[str]:
+def _root_forms(root: Path) -> list[str]:
+    rs = {str(root), os.path.realpath(root)}
+    home = os.path.expanduser("~").rstrip(os.sep)
+    rs |= {"~" + r[len(home):] for r in list(rs) if home and r.startswith(home + os.sep)}
+    rs |= {json.dumps(r)[1:-1] for r in list(rs)}
+    return sorted((r for r in rs if len(r) > 2), key=len, reverse=True)
+
+
+def secret_hits(files: dict[str, bytes], root: Path | None = None) -> list[str]:
+    """root: its own path (STRUCTURE.json working_root) is masked first — a hex-named folder is not a key."""
     from ..privacy import redact_with_report
-    out = []
+    out, forms = [], _root_forms(root) if root else []
     for rel, data in sorted(files.items()):
-        _, hits = redact_with_report(data.decode("utf-8", "replace"))
+        text = data.decode("utf-8", "replace")
+        for r in forms:
+            text = text.replace(r, "<root>")
+        _, hits = redact_with_report(text)
         kinds = sorted(k for k in hits if k in taskspec.SECRET_KINDS)
         if kinds:
             out.append(f"{rel}: {', '.join(kinds)}")
@@ -766,7 +778,7 @@ def apply(root: Path, staging: Path) -> list[dict]:
                 files[rel] += b"\n" + core_reference().encode()
             on_disk = None if (root / rel).is_symlink() else docsrule.extract(_read_regular(root / rel))
             files[rel] = docsrule.merged(files[rel], on_disk or docsrule.block().encode()) or files[rel]
-    hits = secret_hits(files)
+    hits = secret_hits(files, root)
     if hits:
         raise WizardError("refused — looks like a key / password / token (the wizard never writes one; write 待定 / TBD and "
                           "name the service only): " + "; ".join(hits))
@@ -956,7 +968,7 @@ def doctor(root: Path, today: str | None = None) -> list[dict]:
                 scope[p.relative_to(root).as_posix()] = p.read_bytes()
     ph = [rel for rel in list(entries) + docs if _PLACEHOLDER.search(scope[rel].decode("utf-8", "replace"))]
     add("placeholders", "fail" if ph else "ok", ("unfilled {{…}} in " + ", ".join(ph)) if ph else "none left")
-    hits = secret_hits(scope)
+    hits = secret_hits(scope, root)
     add("secrets", "fail" if hits else "ok", ("looks like a key / token: " + "; ".join(hits[:5])) if hits
         else f"none in {len(scope)} files (privacy layer 1)")
 
@@ -1439,7 +1451,7 @@ def cmd_starters(a) -> int:
     for r in rows:
         extra = f"（{why.get(r['why'], r['why'])}）" if r.get("why") else ""
         print(f"{r['name']:<26} {r['company']:<12} {word.get(r['state'], r['state'])}{extra}")
-    print("重新安装 / reinstall: agentj plaza install <name> --workspace <working-root>（先预览后确认 / preview then confirm）")
+    print("重新安装 / reinstall: agentj plaza request <name> --workspace <working-root>（主人手机上确认 / the owner confirms）")
     return 0
 
 

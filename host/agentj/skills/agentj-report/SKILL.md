@@ -32,6 +32,6 @@ On the approval lane, Workspace template names resolve before approval; 自定�
 Reports go to the owner's mailbox by default: when a primary mailbox is bound and mail works, also send the report
 file with `agentj mail send --to-owner --attach <file>`; errors/no_owner_address mean silently keep the file in the reply.
 
-Missing/old package (exit 3): ask the owner, then `agentj plaza install web-page-report --harness <claude_code|codex|opencode>`.
+Missing/old package (exit 3): ask the owner, then `agentj plaza request web-page-report --harness <claude_code|codex|opencode>` (one card on their remote; the host installs).
 Mail setup: agentj-config. Owner's custom look: `agentj report new-template ~/agent-workspace/report-templates/<id>`;
 use `-t <id>` or its directory. Scripts and external resource loads are refused in custom local mail templates.

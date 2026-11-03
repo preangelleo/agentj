@@ -169,6 +169,7 @@ P33_ONLY = ("say", "say_cancel", "say_sync", "cmd_cancel", "blob_open", "blob_ch
             "dev_rename",    # P179 (§10.16a): a remote renames itself
             "hist_find", "hist_read",     # P188 · P247 (owner-level read sync) (§28): chat search, a read like hist_get
             "auth_get", "auth_start", "auth_cancel", "auth_press",   # P258 (§31): AI 登录救援
+            "acct_get", "acct_use", "acct_rename", "acct_del",       # #427: several accounts per harness (accounts.py)
             "imsg_check", "imsg_fda",   # P274 (§10.21): the iMessage card's 「重新检测」 / 「在Agent J 主机上打开授权页」
             "qr_cancel",                # P314 (§32): cancel the automatic continue after a used-up usage limit
             "keys_get", "keys_op", "keys_set",   # P352: 「模型和 API Key」 key manager (keys.py)
@@ -2375,7 +2376,12 @@ class Host:
                     await self._ctl_mail(w, req, claimed=True)
                 elif cmd == "plaza_perm":           # P426 #181-1: a plaza package wants more than the Agent may do → signed card
                     from . import plaza_perms
-                    await self._ctl_send(w, await plaza_perms.serve_card(self, req))
+                    await self._ctl_send(w, await plaza_perms.serve_card(     # #437: queued cards keep the CLI's line alive
+                        self, req, lambda ev: asyncio.ensure_future(self._ctl_send(w, {"sent": True, **ev}))))
+                elif cmd == "plaza_install":        # #428: `agentj plaza request` — serve checks, asks one signed card, installs
+                    from . import plaza_host
+                    await self._ctl_send(w, await plaza_host.handle(
+                        self, req, lambda ev: asyncio.ensure_future(self._ctl_send(w, {"sent": True, **ev}))))
                 elif cmd == "mail_status":
                     await self._ctl_send(w, {"ok": True, **(self.mail.view() if self.mail else {})})
                 elif cmd == "mail_check":
@@ -4801,11 +4807,13 @@ class Host:
         if avatar is not None and tool == "AskUserQuestion":            # P543: the channel asks in its reply instead
             return {"behavior": "deny", "message": "这条消息来自主人的通道，不能弹出提问卡，请直接在回复里问主人。 / Ask the owner in your reply instead."}
         always_ask = always_ask or task_actions is not None
+        strict = always_ask and grant_info      # #428 Info: only a paired device's signed allow may answer this card
+        batch = batch and not strict
         bound, own_pk = policy_registry_bound(tool, bind), require_passkey or always_ask   # own_pk: the caller's own card
         if tool == "AskUserQuestion" and self.agent and self.agent.kind == "claude" and isinstance(tool_input, dict) and avatar is None:
             return await self._ask_user_question(tool_input, gone)       # §10.7: a question card, not an approval card
         from . import handoff           # P539 (#301): reading Agent J's own handoff file never needs the owner
-        if not self.stopped() and handoff.owner_side(self.agent) and handoff.own_read(tool, tool_input, self._switch_cfg()):
+        if not strict and not self.stopped() and handoff.owner_side(self.agent) and handoff.own_read(tool, tool_input, self._switch_cfg()):
             own_rid = await asyncio.to_thread(handoff.record_own, self.st, getattr(self.agent, "kind", None), tool, tool_input)
             self.st.log("ask_done", id=own_rid, tool=tool, decision="allow", reason="own_handoff")
             return {"behavior": "allow", "updatedInput": tool_input}
@@ -4925,7 +4933,7 @@ class Host:
             approvals.record(self.st, **base, decision="deny", reason="estop")
             self.st.log("ask_done", id=rid, tool=tool, decision="deny", reason="estop")
             self.activity("decision", id=rid, tool=tool, result="deny", reason="estop", cats=v.cats, summary=summary)
-            return {"behavior": "deny", "message": "已急停（全部停下）：什么都不执行，等人恢复。"}
+            return {"behavior": "deny", "message": "已急停（全部停下）：什么都不执行，等人恢复。", **({"reason": "estop"} if grant_info else {})}
         if provenance.untrusted_turn(self.agent) and not delegated and not own:
             observe('group_source', False)
             recovery = getattr(getattr(self, "background_done", None), "recovery", None)
@@ -4935,7 +4943,7 @@ class Host:
             self.st.log("ask_done", id=rid, tool=tool, decision="deny", reason="group_source")
             self.activity("decision", id=rid, tool=tool, result="deny", reason="group_source", cats=v.cats, summary=summary)
             self.emit("ask_done", id=rid, result="deny", reason="group_source")
-            return {"behavior": "deny", "message": provenance.refusal_text(self.agent)}
+            return {"behavior": "deny", "message": provenance.refusal_text(self.agent), **({"reason": "group_source"} if grant_info else {})}
         if same_owner and self.peers is not None:
             sender = getattr(self.agent, "cur_send", None)
             owner = self.peers.same_owner
@@ -4961,7 +4969,7 @@ class Host:
                 observe('estop', False)
                 approvals.record(self.st, **base, decision="deny", reason="estop")
                 self.emit("ask_done", id=rid, result="deny", reason="estop")
-                return {"behavior":"deny", "message":"已急停 / Stop everything is on"}
+                return {"behavior":"deny", "message":"已急停 / Stop everything is on", **({"reason": "estop"} if grant_info else {})}
             if hit:
                 approvals.record(self.st, **base, decision="allow", reason="owner_grant", grant=hit["tid"], auto="owner_grant")
                 self.st.log("ask_done", id=rid, tool=tool, decision="allow", reason="owner_grant", steps=hit["steps"])
@@ -4979,8 +4987,8 @@ class Host:
             approvals.record(self.st, **base, decision="deny", reason="owner_grant_scope")
             self.st.log("ask_done", id=rid, tool=tool, decision="deny", reason="owner_grant_scope")
             self.emit("ask_done", id=rid, result="deny", reason="owner_grant_scope")
-            return {"behavior":"deny", "message":"授权单未覆盖这一步或已失效，请回发起主机补授权。 / The grant does not cover this step or is no longer valid; ask the originating host for added scope."}
-        if policy_registry.dispatch(tool):
+            return {"behavior":"deny", "message":"授权单未覆盖这一步或已失效，请回发起主机补授权。 / The grant does not cover this step or is no longer valid; ask the originating host for added scope.", **({"reason": "owner_grant_scope"} if grant_info else {})}
+        if policy_registry.dispatch(tool) and not strict:
             approvals.record(self.st, **base, decision="allow", reason="dispatch")
             self.st.log("ask_done", id=rid, tool=tool, decision="allow", reason="dispatch")
             return {"behavior": "allow", "updatedInput": tool_input}
@@ -5008,7 +5016,7 @@ class Host:
         from . import preauth
         pa_action = bound or policy_registry.tool_action(tool)
         pa_bind = preauth.binding(pa_action, tool, bind) if pa_action in preauth.GRANTABLE else None
-        pa_action = pa_action if pa_bind is not None and not delegated and ttl is None and lv != "safe" else None
+        pa_action = pa_action if pa_bind is not None and not delegated and ttl is None and lv != "safe" and not strict else None
         if pa_action and (pg := await asyncio.to_thread(preauth.live, self.st, pa_action, pa_bind)) is not None:
             return self._preauth_use(pg, base, tool, tool_input, summary, v)   # P539: 「<remote> 批准过：Computer Use 免问」
         harness_card = False
@@ -5055,7 +5063,7 @@ class Host:
                 self._post(self._send_ready, lambda s: {"t": "auto", "id": rid, "tool": tool, "summary": line, "by": "harness"})
                 return {"behavior": "allow", "updatedInput": tool_input}
         pkey = self._park_key(tool, isha)       # P336 N5: who is asking, fixed before any await
-        if (not delegated or unattended) and (not require_passkey or unattended) and ttl is None:
+        if not always_ask and (not delegated or unattended) and (not require_passkey or unattended) and ttl is None:
             ok = self._parked_take(pkey, uv=require_passkey)
             if ok is not None:                # P336 (#36): the owner allowed this exact step on its parked card
                 approvals.record(self.st, **base, decision="allow", reason="parked", device=ok["device"], grant=ok["rid"],
@@ -5106,7 +5114,7 @@ class Host:
             self._post(self._send_ready, lambda s: {"t": "auto", "id": rid, "tool": tool, "summary": line, "by": "task"})
             return {"behavior": "allow", "updatedInput": tool_input}
         gt, gwhy, gd = None, None, None
-        if not delegated and not harness_card and requirement not in ("hold", "uv") and not require_passkey and self.task_label is None and tool not in goal_mod.SOFT_EXEMPT:
+        if not strict and not delegated and not harness_card and requirement not in ("hold", "uv") and not require_passkey and self.task_label is None and tool not in goal_mod.SOFT_EXEMPT:
             gd = self.goals.current()
             if gd is not None:                  # P158: the host sorts the request; the Agent's own words decide nothing
                 gt, gwhy = await asyncio.to_thread(goal_mod.tier, gd, tool, tool_input, v, (self.agent_cfg or {}).get("dir"),
@@ -5128,7 +5136,7 @@ class Host:
         if gt == "reversible" and (lv == "safe" or not preferences.get(self.preferences, "approval.goal_auto", True)):
             gt, gwhy = "hold", gwhy             # the owner (enterprise / the safe level) switched the countdown off: a card
         free = None                             # P336: full level / a goal without cards — everything but the red lines
-        if not delegated and not harness_card and not require_passkey and ttl is None and gt != "attack" and not host_card and self._approvers():
+        if not strict and not delegated and not harness_card and not require_passkey and ttl is None and gt != "attack" and not host_card and self._approvers():
             if lv == "full":
                 free = "level_full"
             elif gd is not None and approval_level.goal_preauth(self.st, self.preferences):
@@ -5152,14 +5160,14 @@ class Host:
             observe('owner_grant_scope', False)
             approvals.record(self.st, **base, decision="deny", reason="owner_grant_scope")
             self.emit("ask_done", id=rid, result="deny", reason="owner_grant_scope")
-            return {"behavior":"deny", "message":"请回发起主机补授权。 / Return to the originating host for added scope."}
+            return {"behavior":"deny", "message":"请回发起主机补授权。 / Return to the originating host for added scope.", **({"reason": "owner_grant_scope"} if grant_info else {})}
         if not self._approvers():
             observe('no_device', False)
             approvals.record(self.st, **base, decision="deny", reason="no_device")
             self.st.log("ask_done", id=rid, tool=tool, decision="deny", reason="no_device")
             self.activity("decision", id=rid, tool=tool, result="deny", reason="no_device", cats=v.cats, summary=summary)
             self.emit("ask_done", id=rid, result="deny", reason="no_device")
-            return {"behavior": "deny", "message": "没有能批准的已配对手机：默认拒绝。先用 agentj pair 配对一台手机。"}
+            return {"behavior": "deny", "message": "没有能批准的已配对手机：默认拒绝。先用 agentj pair 配对一台手机。", **({"reason": "no_device"} if grant_info else {})}
         parkable = ttl is None and gt != "reversible" and (
             (not delegated and not require_passkey and not host_card) or
             (bool(unattended) and (tool == "AgentJSameOwnerAction" or tool not in approval_level.HOST_CARDS + approval_level.HARNESS_KEEPS)))
@@ -5169,7 +5177,7 @@ class Host:
         if sum(1 for a in self.asks.values() if not a.fut.done()) >= MAX_ASKS:
             observe('too_many', False)
             approvals.record(self.st, **base, decision="deny", reason="too_many")
-            return {"behavior": "deny", "message": "同时等待批准的请求太多：默认拒绝。"}
+            return {"behavior": "deny", "message": "同时等待批准的请求太多：默认拒绝。", **({"reason": "too_many"} if grant_info else {})}
         wait = goal_mod.auto_secs() if gt == "reversible" else (ttl if ttl else self.ask_ttl)
         g_who, g_what, g_add = "", "", None
         if gt in ("reversible", "hold", "attack"):   # P339: who wants to do what, in plain words; maybe one-tap 加进目标授权
@@ -5284,7 +5292,7 @@ class Host:
                                                                          owner_text(a.why_en if gl == "en" and a.why_en else a.why))}
         msg = {"device": "用户在手机上拒绝了这个操作。", "timeout": _timeout_text(self.lang, int(self.ask_ttl), a.pk_fail),
                "serve_stop": "agentj serve 已停止：默认拒绝。", "estop": "已急停（全部停下）：默认拒绝。"}.get(reason, "已拒绝。")
-        return {"behavior": "deny", "message": msg}
+        return {"behavior": "deny", "message": msg, **({"reason": reason} if grant_info else {})}
 
     def _classify(self, tool, tool_input):
         cfg = self.agent_cfg or {}
@@ -6663,9 +6671,12 @@ class Host:
             return await answer({"ok": False, "why": "unsupported"})
         self.st.log("auth_rescue_req", device=s.device, agent=kind, status=t)
         if t == "auth_start":
+            acct = obj.get("account")              # #427: {"name"} = a new account's own slot, never over the one in use
+
             async def go():
                 with provenance.paired_request(lambda: self._paired_live(s)):
-                    await answer(await ar.start(kind, route if isinstance(route, str) else "", remote=s))
+                    await answer(await ar.start(kind, route if isinstance(route, str) else "", remote=s,
+                                                account=acct if acct is not None else None))
             self._bg(go(), "auth_start")     # the passkey card waits for the owner; never hold the relay reader
             return
         if t == "auth_press":
@@ -6673,6 +6684,24 @@ class Host:
                 await answer(await ar.press(kind, bid if isinstance(bid, str) else ""))
             self._bg(go2(), "auth_press")
             return
+
+    def on_acct(self, s: Session, t: str, obj: dict) -> None:
+
+        r = obj.get("r")
+        if not wire.is_rid(r) or t not in ("acct_get", "acct_use", "acct_rename", "acct_del"):
+            return
+        from . import accounts
+
+        def live() -> bool:
+            return self.sessions.get(s.cid) is s and s.state == "ready" and self.st.is_allowed(s.pub)
+
+        async def go():
+            if not live():
+                return
+            res = await accounts.phone(self, s, t, obj)
+            if live():
+                await self.send_app(s, {"t": "acct_res", "r": r, **res})
+        self._bg(go(), "acct")          # a remove waits for the owner's card; never hold the relay reader
 
     def auth_signal(self, kind: str, text) -> None:
 
@@ -6911,6 +6940,8 @@ class Host:
             return self.on_news(s, t, obj)
         if t.startswith("auth_"):          # P258: AI 登录救援
             return await self.on_auth(s, t, obj)
+        if t.startswith("acct_"):          # #427: several accounts per harness
+            return self.on_acct(s, t, obj)
         if t in ("imsg_check", "imsg_fda"):  # P274 (§10.21): the iMessage card
             return await self.on_imsg(s, t, obj)
         if t == "qr_cancel":               # P314 (§32): only stops an automatic action (like grant_off): no signature

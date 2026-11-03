@@ -689,9 +689,13 @@ class Heartbeat:
         from . import quota as quota_mod
         if op in quota_mod.READ_OPS:                   # P254: agentj quota (the fenced Agent cannot read the state directory)
             return await quota_mod.handle(self.host, req)
+        from . import accounts
+        if op in accounts.READ_OPS:                    # #427: agentj account list | use (switching is allowed in any turn)
+            return await accounts.handle(self.host, req)
         # changes: never while a message that is not the owner's is being handled (a group member cannot rewrite them)
         if provenance.untrusted_turn(getattr(self.host, "agent", None)) and not provenance.delegated_turn(getattr(self.host, "agent", None)):
-            self.host.st.log("heartbeat_refused", op=str(op)[:16], reason="untrusted_turn")
+            known = (*quota_mod.READ_OPS, *quota_mod.WRITE_OPS, *accounts.WRITE_OPS, *OWN_OPS)
+            self.host.st.log("heartbeat_refused", op=op if op in known else "other", reason="untrusted_turn")   # F7: names only
             return {"ok": False, "why": "untrusted_turn"}
         if provenance.delegated_turn(getattr(self.host, "agent", None)):
             ans = await self.host.ask("AgentJSameOwnerAction", {"summary": "Same owner: heartbeat " + str(op), "request": req}, batch=False)
@@ -699,6 +703,8 @@ class Heartbeat:
                 return {"ok": False, "why": "denied", "hint": ans.get("message")}
         if op in quota_mod.WRITE_OPS:                  # P254: reminders on/off, recorded resets, today's reminders marked given
             return await quota_mod.handle(self.host, req)
+        if op in accounts.WRITE_OPS:                   # #427: rename · remove (remove also asks the owner's card)
+            return await accounts.handle(self.host, req)
         if op == "now":
             why = self.wait_reason()
             if why in ("no_agent", "stopped", "agent_down", "pending"):
@@ -737,6 +743,9 @@ class Heartbeat:
 
 
 # ------------------------------------------------------------------ CLI (the owner, or the main Agent fenced or not)
+OWN_OPS = ("now", "on", "off", "set", "daily", "prompt_set")   # #427 F7: the op names a refusal may log
+
+
 def sock_paths() -> list[str]:
     out = []
     if os.environ.get(ENV):

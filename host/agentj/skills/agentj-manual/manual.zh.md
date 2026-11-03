@@ -378,6 +378,18 @@ Agent J 主机上的 Claude Code 或 Codex 登录过期，Agent 就回不了话�
 
 订阅 /login、Codex 的 ChatGPT 登录会自己续期，服务商密钥一般不过期，这些没有固定到期日。Agent J 主机每天对每个已登录的 AI 发一条不带工具的极短测试消息。登录失效（比如你在网页上退出了全部设备）就立刻提醒你去救援；只是余额不足或限流，不会让你重新登录。
 
+### 一个 AI 存多个账号 {#accounts}
+
+有两个 Claude Code 或两个 Codex 账号，就都存起来：一个额度用完，一键切到另一个，不用在旧账号上重新登录。打开 设置 →「Agent 的功能」→「AI 账号」。
+
+- 点「添加账号」，起个名字（1–24 个字，每个 AI 最多 8 个），用通行密钥确认，再照常在手机上登录：Claude Code 发来授权链接，授权码贴进密钥卡；Codex 给你链接和一次性码。新账号单独保存，不会覆盖已有的账号。第一次添加时，现在正在用的登录会自动存成第一个账号「主号」，不用重新登录。
+- 点「设为当前」就切过去，不用 Face ID：主 Agent 从下一条消息起用新账号，接着原来的对话。正在跑的后台任务用完原来的账号为止，之后新开的任务用新账号。
+- 也可以直接在聊天里说「换 Claude 备用账号」。在 Agent J 主机上：`agentj account list` 看账号，`agentj account use claude 备用` 切换；添加账号用 `agentj account add claude 备用`，要在你自己的终端里运行。
+- 额度按账号分开记：正在用的账号显示实时读数，其他账号显示上次读到的。
+- 正在用的账号不能删除，先切到另一个。删除前会弹确认卡，这个账号存的登录凭据也一起删掉。
+- Agent J 主机的环境里设了 `ANTHROPIC_API_KEY` 或 `ANTHROPIC_AUTH_TOKEN` 时，它会盖过这里选的 Claude 账号，暂时不能切换。
+- 不要把 token 发进聊天。
+
 ## 遥控器管理
 
 设置最下面有「下载 Agent J Brand Kit」：点一下会在新标签页打开官网的[官方 Brand Kit](https://agentj.app/docs/robots/#brand-kit)，可以下载主 Logo 和 16 个机器人的透明 PNG（256、512、1024 三种尺寸，推荐 512），拿去做 Telegram、邮箱或其他 bot 的头像。

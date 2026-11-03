@@ -291,7 +291,6 @@
 
   <!-- ================================================================ chat (relay's page) -->
   <div class="chatv" id="chat-view">
-    <p id="pair-guide" class="ver-later" role="status" hidden></p>
     <p id="shared-status" class="shared-status" role="status" hidden></p>
     <!-- P240: the computer runs a newer Agent J than any page a refresh can fetch yet (batch B not out) — one quiet line, no dialog. -->
     <p id="version-later" class="ver-later" role="status" hidden></p>
@@ -932,6 +931,8 @@
           <section class="setcard" id="set-s-tools" data-paired aria-labelledby="set-h-tools">
             <h3 class="setg" id="set-h-tools" data-i18n="set.gTools">Agent 的功能</h3>
             <button type="button" id="open-models" class="setnav"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/><path d="M9 3v3M15 3v3M9 18v3M15 18v3M3 9h3M3 15h3M18 9h3M18 15h3"/></svg><span><b data-i18n="models.title">模型和 API Key</b><small data-i18n="set.modelsNote">换模型，管理你的 API Key。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
+            <!-- #427: Settings → AI 账号 — several named accounts per harness, one tap makes one current (js/accounts.js) -->
+            <button type="button" id="set-accts-nav" class="setnav" data-keywords="account claude codex token device switch 账号 切换 备用 额度"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5l3 3-3 3M22 7.5h-6"/></svg><span><b data-i18n="acct.nav">AI 账号</b><small data-i18n="acct.navNote">Claude Code、Codex 各存几个账号，额度用完一键切到另一个。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
             <button type="button" id="open-mem" class="setnav"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 3H18a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H6.5A2.5 2.5 0 0 1 4 18.5v-13A2.5 2.5 0 0 1 6.5 3z"/><path d="M8 3v18M11.5 8H16M11.5 12H16"/></svg><span><b data-i18n="nav.mem">记忆</b><small data-i18n="set.memNote">Agent 记住了什么，不想要的可以删。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
             <button type="button" id="open-act" class="setnav"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></svg><span><b data-i18n="nav.act">记录</b><small data-i18n="set.actNote">Agent 做过的每件事。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
             <button type="button" id="open-tasks" class="setnav"><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M9 2h6"/></svg><span><b data-i18n="nav.tasks">定时任务</b><small data-i18n="set.tasksNote">按时自动跑的任务，可以开关。</small></span><svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
@@ -1366,6 +1367,18 @@
             <div id="ar-flow" class="arflow" hidden></div>
             <div id="ar-list"></div>
             <p class="setnote" data-i18n="ar.safety">开始救援需要主人的通行密钥确认；授权码和 token 只在密钥卡里填写，端到端加密直达Agent J 主机，不会出现在聊天、日志或中继里。</p>
+          </section>
+        </div>
+      </div>
+      <!-- #427: AI 账号 — the host's named accounts per harness; adding one runs the AI 登录救援 flow into a new slot (js/accounts.js) -->
+      <div id="set-accts" class="setsub" hidden>
+        <div class="setsub__in">
+          <section class="setcard">
+            <p class="setnote" data-i18n="acct.intro">每个 AI 编程工具可以存几个账号。点「设为当前」就切过去：主 Agent 从下一条消息起用新账号，接着原来的对话；正在跑的后台任务用完原来的账号为止。</p>
+            <p class="setnote mailmsg" id="acct-msg" role="status" aria-live="polite"></p>
+            <div id="acct-flow" class="arflow" hidden></div>
+            <div id="acct-list"></div>
+            <p class="setnote" data-i18n="acct.safety">登录凭据只存在 Agent J 主机上，这里只显示名字、登录方式和额度。添加账号需要主人的通行密钥确认。</p>
           </section>
         </div>
       </div>

@@ -18,7 +18,9 @@
   an empty environment). No usable sandbox → it is not run and the preview and the result say so (「本机没有可用的沙箱，没有运行包的
   自检」); `--skip-verify` lets the Owner skip it deliberately. `install.post_install` is **never** run by us — it is shown to the
   Owner. Server-supplied names (Agent names) are printed without quote / badge / check-mark / `@` / `·` / line characters, ≤ 32.
-- **Install only after the Owner said yes to the exact package**: preview → 16-hex digest → `--owner-confirmed --digest`.
+- **Install only after the Owner said yes to the exact package**: preview → the Owner's yes → the Agent runs `agentj plaza request`
+  (#428: the host checks again, raises one signed card on the Owner's remote, installs after the allow; ARCHITECTURE ADR-428).
+  An Owner at a terminal can still run the preview's 16-hex digest form `--owner-confirmed --digest`.
 - **Publish only after both privacy layers and the Owner's yes**: layer 1 (deterministic; any hit refuses — we never silently
   rewrite code) + layer 2 (Jev on the customer's machine) → exact file list + digest → `--owner-confirmed --digest`.
 - **Official = signed.** A package is shown as 官方认证 / certified by the host **only** if its bundle carries a valid minisign
@@ -179,9 +181,15 @@ Audit kinds: `pkg_published`, `pkg_rejected`, `pkg_imported`, `pkg_certified`, `
   `all`: packages first, then Q&A posts, each in the data fence.
 - `show <pz_id | package-name> [--version V] [--json]` — a post, or a package (manifest summary + README, fenced).
 - `install <name> [--version V] [--harness claude_code|codex|opencode] [--workspace DIR] [--param k=v]… [--params-file F]
-  [--accept-unverified] [--sign-as NAME] [--replace] [--skip-verify] [--owner-confirmed --digest D]`. The preview lists
+  [--accept-unverified] [--sign-as NAME] [--replace] [--skip-verify] [--owner-confirmed --digest D]`. Without the confirm flags
+  it only previews; its next step for the Agent is `request`. The preview lists
   **every file path** it would write (install-relative: a workflow's scaffold files without `scaffold/`, Codex role files
   included), says whether `install.verify` will run (in which sandbox / skipped / no sandbox) and flags a downgrade.
+- `request <name> [--version V] [--harness …] [--workspace DIR] [--param k=v]… [--params-file F] [--sign-as NAME] [--replace]`
+  (#428) — the Agent's install: no owner flag; serve (`plaza_install` on control.sock, or elevate.sock inside the fence) runs
+  every install check, raises ONE signed `agentj plaza` card (name, version, signature / publisher, permissions, audit,
+  target, sha256 + digest) and installs after the allow. Exit 0 installed · 6 not allowed or no card possible (real reason
+  printed) · 3 no answer yet (the card may still stand; the result goes to the chat) · 1 older serve.
 - `publish <dir> [--show-agent-name] [--owner-confirmed --digest D]` · `like <name> [--off]` · `report <pz_|pr_ id | name>
   --reason …` · `mine` (posts + packages) · `installed` (this machine's record).
 - Install targets (FORMAT §3): skill → Claude Code `~/.claude/skills/<skill_dir_name>/`, Codex `~/.agents/skills/…` (in `.md`

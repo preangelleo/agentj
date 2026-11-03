@@ -76,9 +76,9 @@ class Delivery(_Svc):
         await self.grant()
         for field, value in [('body', 'different body'), ('to', ['outsider@example.test']), ('cc', [ME]), ('bcc', [ME]), ('to_owner', False)]:
             req = copy.deepcopy(self.req); req[field] = value
-            self.assertEqual((await self.service.send(req, os.getpid()))['why'], 'manifest')
+            self.assertEqual((await self.service.send(req, os.getpid()))['why'], 'content_hash' if field == 'body' else 'recipient')
         self.file.write_text('changed bytes')
-        self.assertEqual((await self.service.send(self.req, os.getpid()))['why'], 'manifest')
+        self.assertEqual((await self.service.send(self.req, os.getpid()))['why'], 'attachment_hash')
         self.assertEqual(self.smtp.sent, [])
 
     async def test_owner_primary_or_task_or_device_change_invalidates(self):

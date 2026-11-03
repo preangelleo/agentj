@@ -99,7 +99,15 @@ def content_for(p, picks, card):
     return out
 
 
-def notice(lang, why):
+def notice(lang, why, server=None):
+    if why == 'empty':
+        # #420: nobody declined it on the phone — Agent J could not show it as a card. Say so, and how to continue.
+        src = f'（来自 {server}）' if server and lang != 'en' else f' (from {server})' if server else ''
+        return (f'Codex 发来一个没有可填内容的授权请求{src}，Agent J 对不上是哪一次已知的工具调用，没能做成手机卡，'
+                '已按未批准退回 Codex——这不是你拒绝的。要继续：在 Agent J 主机上的 Codex 里允许这次请求后重试。' if lang != 'en' else
+                f'Codex sent an approval request with nothing to fill in{src}. Agent J could not tie it to a known tool call, '
+                'so it could not show it as a card and returned it to Codex as not approved — you did not decline it. '
+                'To continue: allow it in Codex on the Agent J host, then retry.')
     if why == 'secret':
         return ('这张表需要密钥，不能通过普通表单或对话提交。请让 Agent 用 `agentj secret request` 发密钥卡，写入明确的本机配置后再重试；密钥不会作为 MCP 表单答案发送。' if lang != 'en' else
                 'This form asks for a secret. Ask the Agent to open an `agentj secret request` card with an explicit local configuration destination, then retry. A secret is never returned as an MCP form answer.')

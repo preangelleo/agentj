@@ -1,6 +1,6 @@
 import * as wechat from './js/wechat.js';
 import { floatAuthAsk } from './js/auth-overlay.js';
-import { showPairGuide } from './js/pair-guide.js';
+import { showPairGuide, noteRemotes } from './js/pair-guide.js';
 import { copyButton } from './js/copycode.js';
 
 import {initControlGestures} from './js/control-gestures.js';
@@ -377,7 +377,6 @@ session.configure({
     const host = { relay: ctx.relay, channel: ctx.channel, hostPub: ctx.hostPub, approved: true, dk: b64u((await deviceKey()).pub) };
     if (restoreKind === 'pk') host.pk = true;         // P198: restored with a passkey, so the taken-over page can offer it again
     if (restoreKind === 'pk' && pkCred) seats.setInstallHints({ pk: pkCred });   // P545: the installed seat app asks for this one
-    $('pair-guide').hidden = true;
     await forgetLocal();                              // a new pairing starts empty: nothing of the previous computer goes to it
     await dbPut('host', host);
     markPaired(true);
@@ -508,7 +507,7 @@ function onApp(m) {
     case 'seat_xfer_state': seatxfer.onState(m); return;   // P547: the transfer code was issued / revoked / used
     case 'host_moved': hostMoved(m).catch(() => {}); return;    // P547: the seat moved to a new Agent J host
     case 'setup_card': setupcard.card(m); return;     // P115: the first-run checklist (host snapshot)
-    case 'devs': case 'dev_pending': case 'dev_pair_end': if (!rvpair.onRemotes(m)) settings.onRemotes(m); return;   // P171 (§24) · P190 (§27)
+    case 'devs': case 'dev_pending': case 'dev_pair_end': if (m.t === 'devs') noteRemotes(m); if (!rvpair.onRemotes(m)) settings.onRemotes(m); return;   // P171 (§24) · P190 (§27)
     case 'secret_out': secretout.add(m); return;       // F32 (§18): a pickup card (no value)
     case 'secret_out_val': secretout.value(m); pkhandin.answered('sout:' + m.id); return; // the value, after Face ID, to this session only
     case 'secret_out_done': secretout.done(m); pkhandin.answered('sout:' + m.id); return;

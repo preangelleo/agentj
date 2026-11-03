@@ -176,6 +176,10 @@ discovered calendar href and partition host stay in calendar.json; no `jcard_cal
 Host sends encrypted `{t:"pair_guide",kind:"phone"|"computer"|null}` to ready p33 allowlisted sessions on device
 changes and reconnect. The existing device-name classifier derives the currently paired kinds: computer without phone suggests a phone;
 phone without computer suggests a computer; both kinds present or neither recognized sends null to hide it. Unknown kinds remain ignored by the web client. The hint carries no authority.
+#435 (2026-11-03) supersedes the kind rule: a kind is sent only while exactly ONE remote is paired (that device's kind,
+from its own `self_name` label, not an owner rename); two or more remotes always send null. The web shows it as the shared
+bottom notice (`notifyOnce`, rect, 10 s) once per device (`aj.pairGuide.seen`), only when its last `devs` list has one
+item; there is no resident element, and nothing of it enters the composer or any message.
 `Remotes.changed` sends `devs`, preferences and device-dependent setup rows after successful pairing (every route),
 unbinding and renaming; passkey registration also refreshes the setup rows. Eviction/replacement sends the final list.
 No checklist is started or reopened automatically; closed flags and signed owner choices are preserved. Reconnect

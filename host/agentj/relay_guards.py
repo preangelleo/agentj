@@ -289,6 +289,14 @@ class RelayGuards:
             state = r['state']
             if state not in ('pending', 'claimed') or r.get('reply_state') in ('sending', 'unknown'):
                 continue
+            if state == 'pending' and r['direction'] == 'in' and not self.svc.same_owner.active(r['friend']):
+                # #419: a same-owner request whose link is no longer active must not age into a silent 'expired'
+                # ("nobody claimed") — it was never handed to the main Agent because the link ended.
+                relation = self.svc.same_owner.row(r['friend'])
+                # queue = same-owner only; forwarded also holds owner-approved handovers of plain friends (no link token)
+                if r['mid'] in relation.get('queue', {}) or (relation.get('token') and r['mid'] in relation.get('forwarded', [])):
+                    self.block(r['friend'], r['mid'], 'relationship')
+                    continue
             if state == 'pending' and self.svc.same_owner.active(r['friend']):
                 relation = self.svc.same_owner.row(r['friend'])
                 if r['direction'] == 'out' or r['mid'] in relation.get('queue', {}):

@@ -58,7 +58,7 @@ await waitState(p,'awaiting-approval');await fake.approve();await waitState(p,'r
  ok(await evaluate(p,`document.getElementById('water').dataset.lvl==='25' && document.getElementById('water').title==='32000 / 128000'`),'context reports exact used/limit and 25% waterline');
  await fake.send({t:'status',v:'idle',name:'QA-J'});
  await evaluate(p,`document.getElementById('setBtn').click()`);
- ok(await evaluate(p,`(()=>{const e=document.getElementById('brand-name');return e.textContent==='QA-J' && e.getBoundingClientRect().height>=20 && e.scrollWidth<=e.clientWidth+1})()`),'Settings shows the Agent name whole (P171: the ≡ menu moved here)');
+ ok(await evaluate(p,`(()=>{const e=document.getElementById('brand-name');return e.textContent==='Agent J - QA-J' && e.getBoundingClientRect().height>=20 && e.scrollWidth<=e.clientWidth+1})()`),'Settings shows the Agent name whole (P171: the ≡ menu moved here)');   // #443: P502b (5d471ff72) labels it "Agent J - <name>" (app.js displayAgentName)
  await shoot(p,'').then(x=>writeFileSync(new URL('menu.png',out),x));
  await evaluate(p,`document.getElementById('open-models').click()`);
  await waitFor(p,`document.querySelectorAll('#keys-box .krow').length===1`);

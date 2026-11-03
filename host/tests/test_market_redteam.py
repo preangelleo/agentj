@@ -216,11 +216,14 @@ class HostileVerify(unittest.TestCase):
             rc = market.run_install("demo-skill", harness="claude_code", st=e.st, post=srv, get=srv.get, out=out)
             self.assertEqual(rc, 0, "the preview shows the command (as data)")
             d = out.getvalue().split("digest: ")[1].split()[0]
-            with self.assertRaisesRegex(plaza.PlazaError, "metacharacters"):
-                market.run_install("demo-skill", harness="claude_code", st=e.st, post=srv, get=srv.get, out=io.StringIO(),
-                                   owner_confirmed=True, digest=d, accept_unverified=True)
+            # #437: a refused grammar never runs; it skips the self-test (said with the exact characters), the install goes on
+            out = io.StringIO()
+            rc = market.run_install("demo-skill", harness="claude_code", st=e.st, post=srv, get=srv.get, out=out,
+                                    owner_confirmed=True, digest=d, accept_unverified=True)
+            self.assertEqual(rc, 0, out.getvalue())
+            self.assertIn("metacharacters `;`", out.getvalue())
+            self.assertIn("已跳过自检", out.getvalue())
             self.assertFalse((e.root / "pwned").exists())
-            self.assertFalse((e.home / ".claude").exists())
 
 
 class HostileBundles(unittest.TestCase):

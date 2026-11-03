@@ -128,6 +128,19 @@ class MainAgentRoot(Base):
 
 
 # ================================================================== task contract
+class HexRoot(Base):
+    """The working root's own path (STRUCTURE.json working_root) is not a key, even under a sha-named folder."""
+
+    def test_bootstrap_under_a_40_hex_path_passes_doctor_secrets(self):
+        self.root = pathlib.Path(self.tmp) / "8caedc93e90fd823de9260264fa0ea6309919639" / "Zq3xK9vLm2Pw7RtY4nB8"
+        self.root.mkdir(parents=True)
+        wizard.bootstrap_root(self.root)
+        self.assertIn(str(self.root), (self.root / "documentation/STRUCTURE.json").read_text())
+        c = {c["name"]: c for c in wizard.doctor(self.root)}["secrets"]
+        self.assertEqual(c["status"], "ok", c)
+        self.assertEqual(wizard.secret_hits({"STRUCTURE.json": str(self.root).encode()}, self.root), [])
+
+
 class TaskSpec(unittest.TestCase):
     def test_valid_and_each_violation(self):
         self.assertEqual(taskspec.problems(task(), "daily-report"), [])

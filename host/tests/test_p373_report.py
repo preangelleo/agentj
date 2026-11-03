@@ -174,7 +174,7 @@ class EngineDiscovery(unittest.TestCase):
             err = io.StringIO()
             with contextlib.redirect_stderr(err):
                 self.assertEqual(R.cmd(_parse(["report", "templates"])), 3)
-        self.assertIn("agentj plaza install web-page-report", err.getvalue())
+        self.assertIn("agentj plaza request web-page-report", err.getvalue())
 
     def test_old_package(self):
         eng = _Engine(self.tmp, new=False)

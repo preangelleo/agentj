@@ -1,6 +1,6 @@
-# Agent J 0.26.7a1 release notes
+# Agent J 0.26.8a1 release notes
 
-Host 0.26.7a1 / install 0.28.7; phone-web scope.
+Host 0.26.8a1 / install 0.28.8; phone-web scope.
 Phone parity must pass --strict. Full Android/Telegram parity is incomplete.
 Full Android/Telegram parity is incomplete.
 No APK is included in this release. Android source is for review, not a released app.
@@ -8,25 +8,35 @@ No APK is included in this release. Android source is for review, not a released
 Publication status: local preparation only. Live site verification is DEFERRED until
 the public commit and tag are pushed, the site is deployed, and cold installation passes.
 
-Scope: authenticated application-container terminal entrance from Olares setup and paired remote settings. Release order: C Dashboard support knowledge, then A signed host/site/downloads, immediately followed by B phone web. No new D1 migration or relay change. Preserve all existing security journals and the published0.26.5/0.26.6 rollback downloads.
+Scope: owner-mail binary attachments and specific refusal reasons, the same-owner / Computer Use / Jev key fixes, image preview zoom, signed plaza installation from the host with one card, several accounts per AI tool, and a one-time first-remote pairing hint. Release order: C Dashboard support knowledge, then A signed host/site/downloads, immediately followed by B phone web. No new D1 migration or relay change. Preserve all existing security journals and the published0.26.6/0.26.7 rollback downloads.
 ## Changes
 
-- [all] Open the application terminal from Olares setup and paired remote settings.
-- [all] Workflow artifact-mail grants no longer lapse when send counts change; when a new approval is needed, an approval card always appears on your remote.
-- [all] Offline reports are rendered through the Agent J host's fixed sandboxed entry, with explicit failure reasons and no repeated confirmations.
-- [all] Background results of uncertain origin are kept for review; send /recover-background from a remote to see them. The device list no longer wrongly asks you to initialise first.
-- [all] Switching AI tools checks only the tool kind and whether it replies, so a different model name no longer triggers a rollback; switch prompts now say "remote".
-- [claude] Local images and videos (including ~/ paths) in shared Claude session replies show as file cards in the web app.
-- [all] Olares 初始设置与已配对遥控器设置提供应用内网页版终端入口。
-- [all] 工作流素材邮件的授权不再因发信计数变化而失效；需要你重新批准时，一定会在遥控器上出现一张批准卡。
-- [all] 离线报告由 Agent J 主机的固定入口在隔离环境里生成；失败时给出明确原因，不再要你重复确认。
-- [all] 来源不明的后台完成结果会保留待核对，可在遥控器发 /recover-background 查看；设备列表不再误报要先初始化。
-- [all] 切换 AI 工具只核对工具种类和能否回复，换了模型名不再被误判回退；切换提示改说「遥控器」。
-- [claude] 共享 Claude 会话回复里的本机图片和视频（含 ~/ 路径）能在网页上显示成文件卡。
+- [all] Register several accounts per AI tool (Claude Code, Codex) and switch with one tap in Settings → AI accounts on your remote.
+- [all] Plaza skills and workflows are installed by the Agent J host: one signed approval card on your remote, queued requests one at a time.
+- [all] Image preview zooms: fit to screen, wheel or pinch zoom at the cursor, zoom buttons and full screen.
+- [all] Pairing your first remote shows a one-time 10-second notice at the bottom instead of a resident hint.
+- [all] Every Google purpose can be connected; each send on your behalf asks for an approval card on your remote.
+- [all] Images attached to owner mail are no longer scanned as text and refused; a refusal now names its specific reason.
+- [all] A same-owner request whose connection ended is blocked with a reason instead of showing as cancelled or expired.
+- [codex] When Codex asks to use desktop apps or the browser, an approval card for controlling the computer appears on your remote.
+- [all] Local builds upgrade to the published release normally.
+- [all] Feedback with an attached diagnosis now sends in typesafe mode too.
+- [claude] In a shared Claude session, agentj file show attaches a local file to the current page even when the shell is in a subdirectory.
+- [all] 一个 AI 工具可以登记多个账号（Claude Code、Codex），在遥控器设置的 AI 账号里一键切换。
+- [all] 广场里的技能和工作流由 Agent J 主机安装：遥控器上只出现一张签名批准卡，排队的请求按顺序一张一张来。
+- [all] 图片预览可以缩放：适应屏幕、滚轮或双指在光标处缩放、缩放按钮和全屏。
+- [all] 第一次配对遥控器时，底部只出现一次 10 秒提示，不再常驻。
+- [all] Google 的每种用途都能连接；每次代你发信前都会在遥控器上给你一张批准卡。
+- [all] 邮件附件里的图片不再被误当成文字扫描而拒发；拒发时会说清具体原因。
+- [all] 同一主人的请求在连接结束后会被拦下并说明原因，不再显示为取消或过期。
+- [codex] Codex 访问电脑应用或浏览器时，会在遥控器上出现一张控制电脑的批准卡。
+- [all] 本地构建的版本也能正常升级到正式版。
+- [all] 在「类型安全」模式下也能正常发送反馈和附带诊断。
+- [claude] 共享 Claude 会话里用 agentj file show 把本机文件附到当前页面，即使终端停在子目录也能成功。
 
 ## Material acceptance limits
 
-- Signed Linux package tests and local captured navigation are not authenticated Olares PTY acceptance. Runtime qualification separately binds the immutable dual-architecture image, source/chart, real authorization, PTY, resize, reconnect and restart evidence. Owner-controlled test acceptance makes no customer-site upgrade claim.
+- Signed Linux package tests and stand-in services do not establish real external mail acceptance, a real second paid account or customer upgrades. Olares chart and image are unchanged in this release.
 
 - Android arbitrary-name wake recognition, false-accept/false-reject rates, background operation,
   battery behavior and speech-model licensing are not cleared for a released app.

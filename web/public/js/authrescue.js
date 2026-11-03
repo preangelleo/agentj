@@ -15,7 +15,10 @@ import { ask1, isReady } from './session.js';
 let view = null;          // the host's last view: {harnesses, flow, dot, renew?}
 let hooks = {};           // app.js: {openAuth} (Settings → AI 登录救援)
 const RENEW_KEY = 'aj.arRenew';
-let timer = null, poll = null, loadId = 0;
+let timers = [], poll = null, loadId = 0;
+// #427: the same flow card is drawn on Settings → AI 登录救援 and on Settings → AI 账号 (adding an account = this flow)
+const FLOW_BOXES = ['ar-flow', 'acct-flow'];
+const stopTimers = () => { for (const x of timers) clearInterval(x); timers = []; };
 const LONG = 11 * 60 * 1000;   // auth_start answers after the passkey card (up to its 10 minutes)
 
 function say(s) { const m = el('ar-msg'); if (m) m.textContent = s || ''; }
@@ -47,6 +50,7 @@ function setView(v) {
   // Long multi-harness pages preserve their scroll anchor. Bring a new device/code card into view once; health polling
   // never pulls the owner away from what they are reading, and a hidden Settings page is never opened here.
   if (moved && el('set-auth')?.getClientRects().length) el('ar-flow')?.scrollIntoView({ block:'start' });
+  else if (moved && el('set-accts')?.getClientRects().length) el('acct-flow')?.scrollIntoView({ block:'start' });
   for (const f of watchers) { try { f(view); } catch { /* a painter must not stop the rest */ } }
 }
 /** P332: card ③ of 紧急修复 follows the view (flow stage → progress / green / failure). */
@@ -183,15 +187,20 @@ function copyBtn(text) {
 }
 
 function flowCard(f) {
-  const box = el('ar-flow');
+  stopTimers();
+  for (const id of FLOW_BOXES) { const box = el(id); if (box) flowInto(box, f); }
+}
+function flowInto(box, f) {
   box.replaceChildren();
-  clearInterval(timer); timer = null;
   if (!f) { box.hidden = true; return; }
   box.hidden = false;
-  const h = document.createElement('h3'); h.className = 'setg'; h.textContent = t('ar.flowTitle').replace('{h}', { codex: 'Codex', kimi: 'Kimi Code' }[f.kind] || 'Claude Code');
+  // #427: a flow that adds an account names it (`account`: the name, or {name})
+  const here = box.id === 'acct-flow', acct = typeof f.account === 'string' ? f.account : (f.account && typeof f.account.name === 'string' ? f.account.name : ''), adding = !!acct;
+  const h = document.createElement('h3'); h.className = 'setg'; h.textContent = t(adding ? 'acct.flowTitle' : 'ar.flowTitle').replace('{h}', { codex: 'Codex', kimi: 'Kimi Code' }[f.kind] || 'Claude Code');
   box.append(h);
+  if (adding) box.append(line(t('acct.flowFor', { name: acct })));
   const link = (u) => { const a = document.createElement('a'); a.href = u; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.className = 'arlink'; a.textContent = t('ar.openLink'); return a; };
-  if (['url','device'].includes(f.stage)) box.append(line(t('p332.auth.wait')));
+  if (!here && ['url','device'].includes(f.stage)) box.append(line(t('p332.auth.wait')));   // #427: on AI 账号 the steps are right here
   if (f.stage === 'starting') box.append(line(t('ar.stStarting')));
   if (f.stage === 'device' && authOf({...f,round:f.round||1,rounds:f.rounds||1}) && f.code) {
     box.append(line(t('ar.deviceStep1')));
@@ -203,7 +212,7 @@ function flowCard(f) {
     box.append(line(t('ar.round', { n: f.round || 1, max: f.rounds || 1 })));
     const left = line(''); box.append(left, line(t('ar.deviceNote')));
     const tick = () => { const s = Math.max(0, (f.expires_at || 0) - Math.floor(Date.now() / 1000)); left.textContent = t('ar.left').replace('{m}', String(Math.floor(s / 60))).replace('{s}', String(s % 60).padStart(2, '0')); };
-    tick(); timer = setInterval(tick, 1000);
+    tick(); timers.push(setInterval(tick, 1000));
   }
   if (f.reopened && ['starting', 'url'].includes(f.stage)) box.append(line(t(f.reopened === 'expired' ? 'ar.reopenedExpired' : 'ar.reopenedRejected'), 'arreopen'));
   if (f.stage === 'url' && authOf({...f,code:f.code||'',round:f.round||1,rounds:f.rounds||3})) {
@@ -217,7 +226,7 @@ function flowCard(f) {
         left.textContent = t('ar.urlLeft').replace('{m}', String(Math.floor(s / 60))).replace('{s}', String(s % 60).padStart(2, '0'))
           + (f.round ? ' · ' + t('ar.round').replace('{n}', String(f.round)).replace('{max}', String(f.rounds || 3)) : '');
       };
-      tick(); timer = setInterval(tick, 1000);
+      tick(); timers.push(setInterval(tick, 1000));
     }
   }
   if (f.stage === 'paste') box.append(line(t('ar.pasteStep')));
@@ -244,4 +253,4 @@ export function configure(h = {}) {
   el('ar-renew-open')?.addEventListener('click', renewNow);
   el('ar-renew-x')?.addEventListener('click', renewLater);
 }
-export function close() { ++loadId; clearInterval(timer); clearInterval(poll); timer = poll = null; }
+export function close() { ++loadId; stopTimers(); clearInterval(poll); poll = null; }

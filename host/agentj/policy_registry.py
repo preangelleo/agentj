@@ -100,6 +100,9 @@ HOST_TOOLS = MappingProxyType({
     "agentj mail": "mail.send", "agentj mail send": "mail.send",
     "agentj mail notes": "mail.send", "agentj mail reply": "mail.send",
     "agentj calendar": "calendar.write",
+    # #436 (google_api): each send / upload with a connected Google purpose — one always-asked signed card
+    "agentj google gmail send": "mail.send", "agentj google youtube upload": "publish",
+    "agentj google drive upload": "publish",
     "agentj data": "payment", "agentj report script": "payment",
     "agentj config": "settings.write", "agentj goal": "settings.write",
     "agentj goal grant": "settings.write", "agentj quota switch": "settings.write",

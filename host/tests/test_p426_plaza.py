@@ -220,7 +220,7 @@ class InstallGuards(Base):
         calls, call = self.card({"ok": False, "why": "denied"})
         rc, out = self.install(owner_confirmed=True, digest=dg, accept_unverified=True, replace=True, perm_call=call)
         self.assertEqual(rc, market.EXIT_PERMISSION, out)
-        self.assertIn("没有在手机上允许新的发布方", out)
+        self.assertIn("你已在手机上拒绝这次安装", out)
         calls, call = self.card({"ok": True, "approved": True, "rid": "r_p", "device": "d_p"})
         rc, out = self.install(owner_confirmed=True, digest=dg, accept_unverified=True, replace=True, perm_call=call)
         self.assertEqual(rc, 0, out)
@@ -304,7 +304,7 @@ class InstallGuards(Base):
         calls, call = self.card({"ok": False, "why": "denied"})
         rc, out = self.preview_and_confirm(keyring=key.keyring, perm_call=call)
         self.assertEqual(rc, market.EXIT_PERMISSION)
-        self.assertIn("没有在手机上允许审计拦下的这几处", out)
+        self.assertIn("你已在手机上拒绝这次安装", out)
         self.assertEqual(self.e.tree(), [])
 
     def test_the_owners_signed_card_allows_it_once_and_is_recorded(self):
@@ -413,7 +413,7 @@ class Permissions(Base):
         calls, call = self.card({"ok": False, "why": "denied"})
         rc, out = self.preview_and_confirm(accept_unverified=True, perm_call=call)
         self.assertEqual(rc, market.EXIT_PERMISSION)
-        self.assertIn("没有在手机上允许", out)
+        self.assertIn("你已在手机上拒绝这次安装", out)
         self.assertEqual([i["name"] for i in calls[0]["items"]], ["WebFetch", "DEMO_TOKEN"])
 
     def test_approved_on_the_phone_installs_and_records_and_an_upgrade_asks_only_for_more(self):
@@ -534,12 +534,15 @@ class PermissionUnits(unittest.TestCase):
         self.assertEqual(asyncio.run(plaza_perms.serve_card(h, req)), {"ok": True, "approved": True, "rid": "r", "device": "d"})
         tool, inp, kw = h.asked[0]
         self.assertEqual((tool, kw["batch"], kw["grant_info"]), ("agentj plaza", False, True))
+        self.assertTrue(kw["always_ask"])
+        self.assertEqual(inp["sha256"], req["sha256"])
+        self.assertIn(req["sha256"], inp["summary"])
         self.assertIn("运行命令行（Bash）", inp["summary"])
         self.assertIn("读取密钥 DEMO_TOKEN", inp["summary"])
         from agentj import approval_level
         self.assertTrue(approval_level.HOST_CARDS is not None and "agentj plaza".startswith("agentj "), "a host card: never auto-allowed")
         for ans in ({"behavior": "deny"}, {"behavior": "allow"}):            # an allow without a device signature does not count
-            self.assertEqual(asyncio.run(plaza_perms.serve_card(Host(ans), req)), {"ok": False, "why": "denied"})
+            self.assertEqual(asyncio.run(plaza_perms.serve_card(Host(ans), req)), {"ok": False, "why": "no_signature"})
         self.assertEqual(asyncio.run(plaza_perms.serve_card(Host({}), {**req, "items": [{"kind": "tool", "name": "a b"}]})),
                          {"ok": False, "why": "bad_request"})
         # S1: the card says the package declared less; N4: a publisher change rides on the same card (or alone)

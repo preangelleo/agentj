@@ -23,6 +23,10 @@ CARD_TTL, WAIT, COOLDOWN = 1800, 600, 6 * 3600
 RENEW = ('contact_changed', 'account_changed', 'contract_changed', 'expired', 'proof_invalid')
 HEX = re.compile(r'[0-9a-f]{64}')
 ID = re.compile(r'[A-Za-z0-9][A-Za-z0-9._-]{0,127}')
+IMG = ('.jpg', '.jpeg', '.png', '.webp')
+KINDS = ('.txt', '.md', '.json', '.srt', '.vtt', '.csv') + IMG
+REFUSE = ('manifest recipient binding format content content_hash files attachment path attachment_hash artifact_secret artifact_type '
+             'archive archive_size archive_path archive_type archive_secret archive_image').split()
 
 
 def canonical(obj):
@@ -244,15 +248,22 @@ def secret_content(text):
         return True
 
 
+def image(ext, data):
+    return (data.startswith(b'\xff\xd8\xff') if ext in IMG[:2] else data.startswith(b'\x89PNG\r\n\x1a\n') if ext == '.png' else
+            data.startswith(b'RIFF') and data[8:12] == b'WEBP')
+
+
 def check_archive(name, blob):
     import io
     import zipfile
-    from . import privacy
-    if secret_content(blob.decode('utf-8', 'replace')):
-        raise ValueError('artifact_secret')
     ext = pathlib.Path(name).suffix.lower()
-    if ext not in ('.zip', '.txt', '.md', '.json', '.srt', '.vtt', '.csv', '.jpg', '.jpeg', '.png', '.webp'):
+    if ext not in KINDS + ('.zip',):
         raise ValueError('artifact_type')
+    if ext in IMG:
+        if not image(ext, blob):
+            raise ValueError('artifact_type')
+    elif ext != '.zip' and secret_content(blob.decode('utf-8', 'replace')):
+        raise ValueError('artifact_secret')
     if ext != '.zip' and not zipfile.is_zipfile(io.BytesIO(blob)):
         return
     try:
@@ -260,6 +271,8 @@ def check_archive(name, blob):
             items = z.infolist()
             if len(items) > 100 or sum(i.file_size for i in items) > MAX_BYTES:
                 raise ValueError('archive_size')
+            if secret_content('\n'.join([z.comment.decode('utf-8', 'replace')] + z.namelist())):
+                raise ValueError('archive_secret')
             for i in items:
                 p = pathlib.PurePosixPath(i.filename)
                 if i.flag_bits & 1 or p.is_absolute() or '..' in p.parts or any(x.startswith('.') for x in p.parts):
@@ -267,18 +280,17 @@ def check_archive(name, blob):
                 if i.is_dir():
                     continue
                 suffix = p.suffix.lower()
-                if suffix not in ('.txt', '.md', '.json', '.srt', '.vtt', '.csv', '.jpg', '.jpeg', '.png', '.webp'):
+                if suffix not in KINDS:
                     raise ValueError('archive_type')
                 with z.open(i) as member:
                     data = member.read(MAX_BYTES + 1)
-                if len(data) > MAX_BYTES or secret_content(data.decode('utf-8', 'replace')):
-                    raise ValueError('archive_secret')
-                if suffix in ('.jpg', '.jpeg', '.png', '.webp'):
-                    magic = (data.startswith(b'\xff\xd8\xff') if suffix in ('.jpg', '.jpeg') else
-                             data.startswith(b'\x89PNG\r\n\x1a\n') if suffix == '.png' else
-                             data.startswith(b'RIFF') and data[8:12] == b'WEBP')
-                    if not magic:
+                if len(data) > MAX_BYTES:
+                    raise ValueError('archive_size')
+                if suffix in IMG:
+                    if not image(suffix, data) or zipfile.is_zipfile(io.BytesIO(data)):
                         raise ValueError('archive_image')
+                elif secret_content(data.decode('utf-8', 'replace')):
+                    raise ValueError('archive_secret')
     except (zipfile.BadZipFile, RuntimeError, UnicodeError, NotImplementedError) as exc:
         raise ValueError('archive') from exc
 
@@ -498,8 +510,10 @@ class Service:
                 self.st.log('workflow_mail_send', task=contract['workflow_id'], id=c['id'], sha=rec['manifest_sha256'], result='sent')
                 return {'ok': True, 'provider_acceptance': True, 'sent': recipients, 'manifest_sha256': rec['manifest_sha256'],
                         'no_card': True, 'owner_direct': False, 'workflow_grant': True, 'workflow_id': contract['workflow_id']}
-            except (ValueError, KeyError, TypeError, OSError):
-                return {'ok': False, 'why': 'send_unknown' if attempted else 'manifest',
+            except (ValueError, KeyError, TypeError, OSError) as e:
+                w = (e.args or [0])[0]
+                w = w if isinstance(e, ValueError) and w in REFUSE else 'file_unreadable' if isinstance(e, OSError) else 'request_invalid'
+                return {'ok': False, 'why': 'send_unknown' if attempted else w,
                         'provider_acceptance': None if attempted else False}
 
     def snapshot(self, req, contract, artifact_root=None, core=None):

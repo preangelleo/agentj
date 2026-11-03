@@ -399,14 +399,22 @@ class Klass(unittest.TestCase):
         self.assertIsNone(elevate_grant.parse("systemctl", ["status", "/etc/x"]))
 
     def test_sensitive_paths(self):
-        for p in ("/etc/shadow", "/etc/gshadow-", "/etc/sudoers", "/etc/sudoers.d/x", "/root", "/root/x", "/home/bob/notes",
-                  "/var/backups/.ssh/x", "/srv/app/.env", "/srv/app/prod.env", "/opt/tls/server.pem", "/opt/id_rsa",
-                  "/proc/1/environ", "/etc/ssh/ssh_host_ed25519_key", "/var/backups/shadow.bak", "/dev/sda"):
-            with self.subTest(p=p):
-                self.assertTrue(elevate_grant.sensitive(p))
-        for p in ("/etc/hosts", "/var/log/pacman.log", "/var/backups/nightly.gz", "/usr/share/man/man1/ls.1.gz"):
-            with self.subTest(p=p):
-                self.assertFalse(elevate_grant.sensitive(p))
+        # #443: the account homes come from this machine's passwd. Debian / Ubuntu ship a `backup` account whose home is
+        # /var/backups, Arch does not — so the fixed lists run against a pinned account table, and the home rule is
+        # checked on its own below; the verdicts no longer depend on which distribution runs the test.
+        with mock.patch.object(elevate_grant, "_homes", return_value={os.path.dirname("/home/bob/notes"), "/root"}):
+            for p in ("/etc/shadow", "/etc/gshadow-", "/etc/sudoers", "/etc/sudoers.d/x", "/root", "/root/x", "/home/bob/notes",
+                      "/var/backups/.ssh/x", "/srv/app/.env", "/srv/app/prod.env", "/opt/tls/server.pem", "/opt/id_rsa",
+                      "/proc/1/environ", "/etc/ssh/ssh_host_ed25519_key", "/var/backups/shadow.bak", "/dev/sda"):
+                with self.subTest(p=p):
+                    self.assertTrue(elevate_grant.sensitive(p))
+            for p in ("/etc/hosts", "/var/log/pacman.log", "/var/backups/nightly.gz", "/usr/share/man/man1/ls.1.gz"):
+                with self.subTest(p=p):
+                    self.assertFalse(elevate_grant.sensitive(p))
+        # an account home is sensitive wherever it lives (Ubuntu's backup account: /var/backups)
+        with mock.patch.object(elevate_grant, "_homes", return_value={"/var/backups"}):
+            self.assertTrue(elevate_grant.sensitive("/var/backups/nightly.gz"))
+            self.assertFalse(elevate_grant.sensitive("/var/log/pacman.log"))
 
     def test_signed_message_grant_line(self):
         base = elevate.signed_message("C", "D", "r" * 32, "sudo", "allow", "n", 1, "d", "c")

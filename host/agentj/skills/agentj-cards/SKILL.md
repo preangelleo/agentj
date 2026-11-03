@@ -91,9 +91,10 @@ into another card.
 ## Share a card / install a shared one (the plaza)
 Share: `agentj card pack <id> <new folder>` (sample only, never the data folder; a card with a server needs `repo` + `ref`)
 → `agentj plaza publish <folder>` (privacy checks + the owner's yes). Install: `agentj plaza search --type card …`, then
-`agentj plaza install <name>` — show the owner the preview; the card arrives **switched off** and only the owner turns it on
-in Settings → Cards after reading its summary (`agentj card on` refuses a plaza card). New version: `--replace`; go back:
-`agentj card rollback <id>`. Never install its server unless the owner asks (use exactly `repo` @ `ref`).
+`agentj plaza install <name>` — show the owner the preview; after their yes `agentj plaza request <name>` (one card on their
+remote, the host installs). The card arrives **switched off**; only the owner turns it on in Settings → Cards after
+reading its summary (`agentj card on` refuses a plaza card). New version: `--replace`; go back: `agentj card rollback <id>`.
+Never install its server unless the owner asks (use exactly `repo` @ `ref`).
 
 ## Install-and-card (the core use)
 When the owner wants a tool on the computer "as a card" (an Obsidian vault, a local app's status, a report): install /

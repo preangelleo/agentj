@@ -24,9 +24,11 @@ def cli(args):
         result = failure('broker_unavailable')
     if result.get('result') == 'unavailable':
         result = failure('broker_unavailable')
+    if result.get('why') == 'native_admission_missing':
+        result['hint'] = HINT
     print(json.dumps(result, ensure_ascii=False) if args.json else result.get('result', 'failure') + ': ' + result.get('why', ''))
-    if not args.json and result.get('result') == 'queued':
-        print(json.dumps(result, ensure_ascii=False))
+    if not args.json and (result.get('result') == 'queued' or 'hint' in result):
+        print(result.get('hint') or json.dumps(result, ensure_ascii=False))
     sys.exit(0 if result.get('result') in ('queued', 'attached_to_page') else 1)
 
 
@@ -38,6 +40,10 @@ def add_parser(sub):
     show.add_argument('--label', default='')
     show.add_argument('--json', action='store_true')
     show.set_defaults(fn=cli)
+
+
+HINT = ('Run `agentj file show PATH --label L --json` as the whole Bash command: no cd, &&, pipes or redirects. '
+        '整条 Bash 命令只写这一句：不加 cd、&&、管道或重定向。')
 
 
 def failure(why):

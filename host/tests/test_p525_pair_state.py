@@ -72,19 +72,21 @@ class PairState(unittest.TestCase):
             self.assertFalse(any(c in (71, 72) and m['t'] == 'devs' for c, m in self.sent[self.sent.index((72, self.last(72, 'devs'))) + 1:]))
         asyncio.run(asyncio.wait_for(go(), 4))
 
-    def test_multiple_computers_still_need_phone_and_last_phone_unbind_restores_hint(self):
+    def test_multiple_remotes_never_get_the_hint_even_after_the_phone_unbinds(self):
+        # #435 (owner 11-03): with two or more remotes paired the first-remote hint never appears, whatever their kinds
         async def go():
             self.host.agent = None
             await self.pair(71, PC)
+            self.assertEqual(self.last(71, 'pair_guide')['kind'], 'computer')
             await self.pair(72, "网页 · macOS Safari")
             for cid in (71, 72):
-                self.assertEqual(self.last(cid, 'pair_guide')['kind'], 'computer')
+                self.assertIsNone(self.last(cid, 'pair_guide')['kind'])
             ph = await self.pair(73, PHONE)
             for cid in (71, 72, 73):
                 self.assertIsNone(self.last(cid, 'pair_guide')['kind'])
             await self.host.revoke(ph.device)
             for cid in (71, 72):
-                self.assertEqual(self.last(cid, 'pair_guide')['kind'], 'computer')
+                self.assertIsNone(self.last(cid, 'pair_guide')['kind'])
                 self.assertEqual(len(self.last(cid, 'devs')['items']), 2)
         asyncio.run(asyncio.wait_for(go(), 4))
 

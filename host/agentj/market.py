@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import collections
+import contextlib
 import datetime
 import hashlib
 import html
@@ -61,6 +62,9 @@ _NO_MODULE = frozenset(("pip", "ensurepip", "venv", "http.server", "smtpd"))   #
 # contract §9 reserved names: only a package signed by a key compiled into agentj may use them (name or skill_dir_name)
 RESERVED = re.compile(r"^(agentj|agent-j|agentjarvis|agent-jarvis|jarvis|official|admin|moderator|plaza)(-|$)")
 NO_SANDBOX = "本机没有可用的沙箱，没有运行包的自检"
+VERIFY_SKIPPED = ("自检格式不被接受（{}），已跳过自检", "the self-test's format is not accepted ({}): skipped")      # #437
+WS_DIGEST = ("工作流：digest 包含装到哪（--workspace）；换 --workspace 要重新预览拿新 digest / a workflow's digest includes where it "
+             "goes (--workspace): another --workspace needs a new preview and its new digest")
 _INLINE = re.compile(r"(?:ba|da|z|k|fi)?sh|python[0-9.]*|node|perl|ruby|php|deno|bun|lua")
 TRACK_TEXT = {
     "official": "官方（服务器标记；签名在安装时于本机核验）/ official (server flag; the signature is checked on this machine at install)",
@@ -434,8 +438,8 @@ def run_search(words, *, type_="all", sort=None, tag=None, track=None, limit=20,
         print(render_list(pkgs, f"广场{label}「{escape_data(q)}」：{len(pkgs)} 个 / plaza packages: {len(pkgs)}"), file=out)
     if posts is not None:
         print(plaza.render_list(posts, f"广场问答「{escape_data(q)}」：{len(posts)} 条 / plaza Q&A: {len(posts)} post(s)"), file=out)
-    print("下一步 / next: agentj plaza show <包名 name | pz_id> · 安装 install: agentj plaza install <name>（先预览给你的人看 / "
-          "preview first, your human decides）", file=out)
+    print("下一步 / next: agentj plaza show <包名 name | pz_id> · 预览 preview: agentj plaza install <name> → 主人同意后 / "
+          "owner's yes: agentj plaza request <name>", file=out)
     return EXIT_OK
 
 
@@ -459,8 +463,9 @@ def run_show_pkg(name: str, *, version=None, as_json=False, st=None, post=None, 
         print(json_out({"package": d}), file=out)
         return EXIT_OK
     print(render_detail(d), file=out)
-    print(f"安装 install（先预览，不写任何东西 / preview first, writes nothing）: agentj plaza install {d['name']}"
-          + (f" --version {version}" if version else ""), file=out)
+    v = f" --version {version}" if version else ""
+    print(f"预览 preview（不写任何东西 / writes nothing）: agentj plaza install {d['name']}{v} → 主人同意后 / owner's yes: "
+          f"agentj plaza request {d['name']}{v}", file=out)
     return EXIT_OK
 
 
@@ -706,7 +711,11 @@ def _x_auto(rule: str, harness: str, now: datetime.datetime):
     raise PlazaError(f"这个包的 x-auto 规则 agentj 不认识 / unknown x-auto rule {rule[:30]!r}")
 
 
-def read_params_file(path: str) -> dict:
+def read_params_file(path) -> dict:
+    if isinstance(path, dict):           # #428: `agentj plaza request` read the file on the Agent's side and sent the object
+        if len(json.dumps(path, ensure_ascii=False).encode()) > PARAMS_FILE_MAX:
+            raise PlazaError("--params-file 太大 / too large")
+        return path
     raw = plaza.read_body_file(path) if path else "{}"
     if len(raw.encode()) > PARAMS_FILE_MAX:
         raise PlazaError("--params-file 太大 / too large")
@@ -908,79 +917,177 @@ def _mode(path: str) -> int:
     return 0o644
 
 
-def write_tree(root: pathlib.Path, files: dict) -> None:
-    """Into a NEW directory `root` (0755): every file created O_EXCL | O_NOFOLLOW, 0644 (0755 for *.sh and *.py under
-    scripts/ cli/ tools/ bin/), folders 0755. Paths were checked by bundle.check_path (relative, no `..`)."""
-    os.mkdir(root, 0o755)
-    os.chmod(root, 0o755)
-    for p in sorted(files, key=lambda x: x.encode()):
-        segs = p.split("/")
-        d = root
-        for s in segs[:-1]:
-            d = d / s
-            if not d.is_dir():
-                os.mkdir(d, 0o755)
-                os.chmod(d, 0o755)
-        mode = _mode(p)
-        fd = os.open(d / segs[-1], os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), mode)
-        try:
-            os.write(fd, files[p])
-            os.fchmod(fd, mode)
-        finally:
+def write_tree(root: pathlib.Path, files: dict, dir_fd: int | None = None) -> None:
+    """Into a NEW directory `root` (0755; `dir_fd`: its parent's fd, #428): every file created O_EXCL | O_NOFOLLOW, 0644
+    (0755 for *.sh and *.py under scripts/ cli/ tools/ bin/), folders 0755, each entered through an O_NOFOLLOW fd (a symlink
+    swapped in meanwhile is refused). Paths were checked by bundle.check_path (relative, no `..`)."""
+    D = market_guard._DIR
+    root = pathlib.Path(root)
+    pfd = os.open(root.parent, D) if dir_fd is None else dir_fd
+    fds = {}
+    try:
+        os.mkdir(root.name, 0o755, dir_fd=pfd)
+        fds[""] = os.open(root.name, D, dir_fd=pfd)
+        for p in sorted(files, key=lambda x: x.encode()):
+            segs, key = p.split("/"), ""
+            for s in segs[:-1]:
+                sub = key + "/" + s
+                if sub not in fds:
+                    with contextlib.suppress(FileExistsError):
+                        os.mkdir(s, 0o755, dir_fd=fds[key])
+                    fds[sub] = os.open(s, D, dir_fd=fds[key])
+                key = sub
+            mode = _mode(p)
+            fd = os.open(segs[-1], os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), mode, dir_fd=fds[key])
+            try:
+                os.write(fd, files[p])
+                os.fchmod(fd, mode)
+            finally:
+                os.close(fd)
+        for fd in fds.values():
+            os.fchmod(fd, 0o755)
+    finally:
+        for fd in fds.values():
             os.close(fd)
+        if dir_fd is None:
+            os.close(pfd)
 
 
 # ------------------------------------------------------------------ install.verify
-def parse_verify(cmd: str) -> list[list[str]]:
+class VerifyRefused(PlazaError):
+    """#437: install.verify's grammar is refused. str = the exact reason (characters / program / argument, for the Agent's
+    output); `short` = (zh, en) fixed words only (the host card: never package text)."""
+
+    def __init__(self, msg: str, short: tuple[str, str]):
+        super().__init__(msg)
+        self.short = short
+
+
+_META = frozenset(";|&$`<>(){}[]*?!~#\\")         # shell syntax outside quotes (#437: inside quotes = literal text)
+_SHOW = {" ": "空格 space", "\t": "\\t", "\n": "\\n", "\r": "\\r"}
+
+
+def _chars(cs) -> str:
+    seen = list(dict.fromkeys(cs))
+    return " ".join(f"`{_SHOW.get(c, c if c.isprintable() else f'U+{ord(c):04X}')}`" for c in seen[:8]) + (" …" if len(seen) > 8 else "")
+
+
+def _vr(zh: str, en: str, detail: str = "") -> VerifyRefused:
+    return VerifyRefused(f"install.verify {zh}{detail}，拒绝运行 / {en}{detail}: refused", (zh, en))
+
+
+def _meta_refusal(cs) -> VerifyRefused:
+    shown = _chars(cs)
+    return VerifyRefused(f"install.verify 含 shell 元字符 {shown}，拒绝运行 / contains shell metacharacters {shown}: refused",
+                         (f"含 shell 元字符 {shown}", f"shell metacharacters {shown}"))
+
+
+def _split_quoted(cmd: str) -> list[str | None]:
+    """#437, officially signed packages: quote-aware words. Outside quotes every shell syntax character is refused (named);
+    '…' and "…" are literal parts of one argument (no shell runs it), except $ ` \\ inside "…" (a shell would expand those).
+    `&&` → None (the separator); `>/dev/null` / `2>&1` … are dropped."""
+    words, bad, i, n = [], [], 0, len(cmd)
+    while i < n:
+        if cmd[i] in " \t":
+            i += 1
+            continue
+        parts, raw, rawbad = [], True, []
+        while i < n and cmd[i] not in " \t":
+            c = cmd[i]
+            if c in "'\"":
+                j = cmd.find(c, i + 1)
+                if j < 0:
+                    raise _vr("引号不配对", "unbalanced quotes")
+                if c == '"':
+                    bad += [x for x in cmd[i + 1:j] if x in "$`\\"]
+                parts.append(cmd[i + 1:j])
+                raw, i = False, j + 1
+                continue
+            if c in _META:
+                rawbad.append(c)
+            parts.append(c)
+            i += 1
+        w = "".join(parts)
+        if raw and w == "&&":
+            words.append(None)
+        elif raw and w in _DISCARD:
+            pass
+        else:
+            bad += rawbad
+            if not w:
+                raise _vr("含空参数", "an empty argument")
+            words.append(w)
+    if bad:
+        raise _meta_refusal(bad)
+    return words
+
+
+def parse_verify(cmd: str, *, certified: bool = False) -> list[list[str]]:
     """`install.verify` → argv lists. No shell: `&&` between simple commands and a trailing `>/dev/null` / `2>&1` are the
-    only syntax understood; any other shell metacharacter (`;|&$\\`<>(){}[]*?!~#`, quotes that join words, backslashes,
-    newlines), absolute paths, `..`, `-c` / `-e` code strings, and network / privilege / wrapper programs are refused."""
+    only syntax understood; absolute paths, `..`, and network / privilege / wrapper programs are refused. Unsigned packages:
+    any other shell metacharacter (`;|&$\\`<>(){}[]*?!~#`, quotes that join words, backslashes, newlines) and `-c` / `-e` code
+    strings are refused. #437 — officially signed (`certified`, signature checked): the same characters only OUTSIDE quotes,
+    quoted text is one literal argument, and `python3 -c` / `node -e` … inline code is allowed (it is the package's own code,
+    run in the same sandbox as its scripts); that code argument skips the path rule. Every refusal names what it refused."""
     if not isinstance(cmd, str) or not cmd.strip() or len(cmd) > VERIFY_MAX:
-        raise PlazaError("install.verify: 空的或太长 / empty or too long")
-    if any(c in cmd for c in "$`\n\r\\;|"):
-        raise PlazaError("install.verify 含 shell 元字符，拒绝运行 / contains shell metacharacters: refused")
-    try:
-        toks = shlex.split(cmd, posix=True)
-    except ValueError:
-        raise PlazaError("install.verify: 引号不配对 / unbalanced quotes: refused") from None
+        raise _vr("是空的或太长", "is empty or too long")
+    if any(unicodedata.category(c).startswith("C") and c not in " \t" for c in cmd):
+        raise _vr("含控制字符或换行", "contains control characters or newlines")
+    if certified:
+        toks = _split_quoted(cmd)
+    else:
+        if any(c in cmd for c in "$`\\;|"):
+            raise _meta_refusal([c for w in cmd.split() if w != "&&" and w not in _DISCARD for c in w if c in _SHELL_CHARS])
+        try:
+            toks = shlex.split(cmd, posix=True)
+        except ValueError:
+            raise _vr("引号不配对", "unbalanced quotes") from None
+        bad = [c for t in toks if t != "&&" and t not in _DISCARD for c in t if c in _SHELL_CHARS]
+        if bad or any(not t for t in toks):
+            quotes = [c for c in cmd if c in "'\""] if any(" " in t for t in toks) else []
+            raise _meta_refusal(quotes + bad if bad else ["'"])
+        toks = [None if t == "&&" else t for t in toks if t not in _DISCARD]
     cmds, cur = [], []
     for t in toks:
-        if t == "&&":
+        if t is None:
             if not cur:
-                raise PlazaError("install.verify: 空命令 / empty command: refused")
+                raise _vr("有空命令", "has an empty command")
             cmds.append(cur)
             cur = []
             continue
-        if t in _DISCARD:
-            continue
-        if not t or any(c in _SHELL_CHARS for c in t) or any(unicodedata.category(c).startswith("C") for c in t):
-            raise PlazaError("install.verify 含 shell 元字符，拒绝运行 / contains shell metacharacters: refused")
         cur.append(t)
     if not cur:
-        raise PlazaError("install.verify: 空命令 / empty command: refused")
+        raise _vr("有空命令", "has an empty command")
     cmds.append(cur)
     if len(cmds) > 4 or any(len(c) > 32 for c in cmds):
-        raise PlazaError("install.verify: 太复杂 / too complex: refused")
+        raise _vr("太复杂（最多 4 条命令、每条 32 个参数）", "is too complex (4 commands, 32 arguments each)")
     for argv in cmds:
         prog = argv[0]
         base = prog.rsplit("/", 1)[-1]
         if base in _NO_RUN:
-            raise PlazaError(f"install.verify: 不运行 {base} / {base} is never run: refused")
+            raise _vr(f"要运行 {base}（自检不运行它）", f"runs {base} (never run by a self-test)")
+        code = -1                                    # index of the inline-code argument (certified only)
         if _INLINE.fullmatch(base):
             for i, a in enumerate(argv[1:-1], 1):
                 if a == "-m" and argv[i + 1] in _NO_MODULE:
-                    raise PlazaError(f"install.verify: 不运行 -m {argv[i + 1]} / -m {argv[i + 1]} is never run: refused")
-            for a in argv[1:]:
+                    raise _vr(f"要运行 -m {argv[i + 1]}（自检不运行它）", f"runs -m {argv[i + 1]} (never run by a self-test)")
+            for i, a in enumerate(argv[1:], 1):
                 if not a.startswith("-"):
                     break                      # the script / module: what follows are its own arguments
-                if a in ("-e", "-E", "--eval", "-p", "--print") or (a.startswith("-c") and not a.startswith("--")) or \
-                        (a.startswith("-") and not a.startswith("--") and "c" in a[1:] and base.startswith("python")):
-                    raise PlazaError("install.verify: 不接受内联代码 / inline code (-c / -e) refused")
+                inline = a in ("-e", "-E", "--eval", "-p", "--print") or (a.startswith("-c") and not a.startswith("--")) or \
+                    (a.startswith("-") and not a.startswith("--") and "c" in a[1:] and base.startswith("python"))
+                if inline:
+                    if not certified:
+                        raise _vr("用了内联代码", "uses inline code", f" {clean_line(a, 8)}（只接受包里的脚本 / "   # round 1 (L4):
+                                  "package scripts only）")                                              # short = fixed words
+                    attached = a not in ("-e", "-E", "--eval", "-p", "--print") and not a.endswith("c")
+                    code = i if attached else i + 1
+                    break
                 if a == "-m":
                     break
-        for a in argv:
-            if a.startswith("/") or a == ".." or a.startswith("../") or "/../" in a or a.endswith("/.."):
-                raise PlazaError("install.verify: 只能用包内相对路径 / package-relative paths only: refused")
+        for i, a in enumerate(argv):
+            if i != code and (a.startswith("/") or a == ".." or a.startswith("../") or "/../" in a or a.endswith("/..")):
+                raise _vr("只能用包内相对路径", "may use package-relative paths only", f"（{clean_line(a, 60)}）")
     return cmds
 
 
@@ -1122,12 +1229,12 @@ def sandbox_kind() -> str | None:
 
 
 def run_verify(cmd: str, pkg_root: pathlib.Path, scratch: pathlib.Path, timeout: float | None = None, *, kind: str,
-               hide=()) -> tuple[int, str]:
+               hide=(), certified: bool = False) -> tuple[int, str]:
     """Run `install.verify` in `pkg_root` (inside `scratch`) in the `kind` sandbox, with PATH + a temporary HOME / TMPDIR +
     LANG and nothing else. → (exit code, last output). Timeout → (124, …). There is no unsandboxed path."""
     if kind not in SANDBOX_TEXT:
         raise ValueError("run_verify needs a sandbox")
-    cmds = parse_verify(cmd)
+    cmds = parse_verify(cmd, certified=certified)
     env = verify_env(scratch)
     for d in ("home", "tmp"):
         os.makedirs(scratch / d, mode=0o700, exist_ok=True)
@@ -1236,9 +1343,17 @@ def _cache_put(st, sha: str, data: bytes) -> None:
     d = _plaza_dir(st) / "cache"
     d.mkdir(mode=0o700, exist_ok=True)
     st.write_private(d / f"{sha}.ajpkg", data)
-    old = sorted(d.glob("*.ajpkg"), key=lambda p: p.stat().st_mtime)[:-CACHE_KEEP]
-    for p in old:
-        p.unlink(missing_ok=True)
+    seen = []
+    for p in d.glob("*.ajpkg"):  # best effort: a parallel install may delete p first
+        try:
+            seen.append((p.stat().st_mtime, p))
+        except OSError:
+            pass
+    for _, p in sorted(seen)[:-CACHE_KEEP]:
+        try:
+            p.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 def fetch(st, name: str, version: str | None, *, post=None, get=None) -> tuple[dict, bytes, dict, dict]:
@@ -1327,7 +1442,7 @@ def trust_check(st, m: dict, certified: bool, version_arg: str | None) -> str | 
 
 def _owned(st, target: pathlib.Path, name: str) -> bool:
     """installed.json says agentj installed `target` for this package name (the only case --replace may move it)."""
-    return any(r["target"] == str(target) and r["name"] == name for r in read_installed(st))
+    return any(r["name"] == name and str(target) in (r["target"], os.path.realpath(r["target"])) for r in read_installed(st))
 
 
 NOT_OURS = "这个目录不是这个包装的，不替换 / this folder was not installed by agentj for this package: not replaced"
@@ -1345,35 +1460,15 @@ def _backup_path(st, name: str) -> pathlib.Path:
     return bak
 
 
-def _confirm_cmd(name, *, version, harness, workspace, params, params_file, sign_as, replace, accept, digest,
-                 skip_verify=False) -> str:
-    q = shlex.quote
-    parts = ["agentj", "plaza", "install", name]
-    if version:
-        parts += ["--version", version]
-    parts += ["--harness", harness]
-    if workspace:
-        parts += ["--workspace", q(workspace)]
-    for p in params or []:
-        parts += ["--param", q(p)]
-    if params_file:
-        parts += ["--params-file", q(params_file)]
-    if sign_as:
-        parts += ["--sign-as", q(sign_as)]
-    if replace:
-        parts.append("--replace")
-    if skip_verify:
-        parts.append("--skip-verify")
-    if accept:
-        parts.append("--accept-unverified")
-    parts += ["--owner-confirmed", "--digest", digest]
-    return " ".join(parts)
-
-
 def run_install(name: str, *, version=None, harness=None, workspace=None, params=None, params_file=None, accept_unverified=False,
                 sign_as=None, replace=False, skip_verify=False, owner_confirmed=False, digest=None, st=None, post=None, get=None,
-                keyring=None, now=None, out=None, _starter=False, perm_call=None) -> int:
+                keyring=None, now=None, out=None, _starter=False, perm_call=None, host_ask=None) -> int:
+    """host_ask (#428, serve only — plaza_host): the Agent J host runs this install. No preview step: ONE signed card
+    (host_ask(info) → {ok, rid, device} | {ok: False, why}) stands for the owner's yes to exactly this package, sha256 and
+    digest — including an unverified community package; every check below stays as it is."""
     out = out or sys.stdout
+    if host_ask is not None and _starter:
+        raise PlazaError("starter installs are not host requests")
     if owner_confirmed and not (digest and _DIGEST.fullmatch(digest)):
         raise PlazaError("--owner-confirmed 要和预览时打印的 --digest 一起用：先不带它运行一次，把预览给你的人看 / "
                          "--owner-confirmed needs the --digest printed by the preview")
@@ -1405,7 +1500,7 @@ def run_install(name: str, *, version=None, harness=None, workspace=None, params
             raise PlazaError("卡片没有参数、签名人和工作目录 / a card takes no --param, --sign-as or --workspace")
         return _install_card(st, m, files, sha, certified, downgrade, name=name, version=version, replace=replace,
                              accept_unverified=accept_unverified, owner_confirmed=owner_confirmed, digest=digest, post=post, out=out,
-                             pubr=pubr, findings=findings, audit_blk=audit_blk, perm_call=perm_call)
+                             pubr=pubr, findings=findings, audit_blk=audit_blk, perm_call=perm_call, host_ask=host_ask)
     h = resolve_harness(harness, st)
     if _starter:
         from .starters import STARTERS
@@ -1418,7 +1513,9 @@ def run_install(name: str, *, version=None, harness=None, workspace=None, params
     s = summarize(m)
     if s["harness"] and h not in s["harness"]:
         raise PlazaError(f"这个包只支持 / the package supports only: {', '.join(s['harness'])}")
-    target = target_of(m, h, workspace)
+    target, pin = market_guard.pin_target(target_of(m, h, workspace))    # #428 H1: the real path, on card / digest / record
+    if host_ask is not None and (why := fence.host_write_refusal(st, str(target))):
+        raise PlazaError(f"不装到 {target}：那是 Agent J 受保护的位置（{why}），Agent 自己也写不了 / refused: a protected location")
     now = now or datetime.datetime.now().astimezone()
     values, auto = {}, set()
     if m["type"] == "workflow":
@@ -1443,13 +1540,19 @@ def run_install(name: str, *, version=None, harness=None, workspace=None, params
     perm_prev = plaza_perms.merge(*[r.get("permissions") for r in read_installed(st)
                                     if r["name"] == m["name"] and r["harness"] == h and isinstance(r.get("permissions"), dict)])
     perm_extra = plaza_perms.excess(perm, perm_allow, perm_prev)
-    if _starter:
+    if _starter or host_ask is not None:
         owner_confirmed, digest = True, dg
     exists = os.path.lexists(target)
     owned = exists and _owned(st, target, m["name"])
     if exists and replace and not owned:
         raise PlazaError(f"{target}: {NOT_OURS}")
     sandbox = None if (skip_verify or not s["verify"]) else sandbox_kind()
+    vref = None                       # #437: the grammar is judged BEFORE any card; refused → the self-test is skipped
+    if s["verify"] and not skip_verify:
+        try:
+            parse_verify(m["install"]["verify"], certified=certified)
+        except VerifyRefused as e:
+            vref, sandbox = e, None
 
     if not owner_confirmed:
         out_lines = [FENCE_OPEN, f"{META}{NOTE}",
@@ -1466,6 +1569,9 @@ def run_install(name: str, *, version=None, harness=None, workspace=None, params
             out_lines.append(
                 f"{META}install.verify：你选了 --skip-verify，确认安装时不运行 / skipped by --skip-verify: it will not run"
                 if skip_verify else
+                f"{META}install.verify：{VERIFY_SKIPPED[0].format(vref.short[0])}（确认安装时不运行，安装继续）/ "
+                f"{VERIFY_SKIPPED[1].format(vref.short[1])} (not run at confirm; the install goes on). {vref}"
+                if vref else
                 f"{META}install.verify：确认安装时在{SANDBOX_TEXT[sandbox]}里运行（无网络、看不到家目录、只能写临时副本）/ runs at "
                 f"confirm inside the {sandbox} sandbox (no network, home hidden, writes only to the throw-away copy)"
                 if sandbox else
@@ -1502,18 +1608,22 @@ def run_install(name: str, *, version=None, harness=None, workspace=None, params
             print("这是待审核的社群包：没有 Agent J 官方签名，内容由别的客户写。确认时必须加 --accept-unverified / an UNVERIFIED community "
                   "package written by another customer: the confirm needs --accept-unverified", file=out)
         print(f"digest: {dg}", file=out)
-        print("NOT INSTALLED. 把上面的预览原样给你的人看；只有他明确同意安装这个包后才运行 / Show your human the preview above; only "
-              "after they explicitly agree to install exactly this package: "
-              + _confirm_cmd(name, version=version, harness=h, workspace=workspace, params=params, params_file=params_file,
-                             sign_as=sign_as, replace=replace, accept=not certified, digest=dg, skip_verify=skip_verify),
+        if m["type"] == "workflow":
+            print(WS_DIGEST, file=out)
+        print(_next_step(name, version=version, harness=h, workspace=workspace, params=params, params_file=params_file,
+                         sign_as=sign_as, replace=replace), file=out)
+        flags = ("--skip-verify " if skip_verify else "") + ("" if certified else "--accept-unverified ") + f"--owner-confirmed --digest {dg}"
+        print(f"（主人在终端自己确认也可：同一条 agentj plaza install 加 {flags} / the owner at a terminal: the same install + {flags}）",
               file=out)
         return EXIT_OK
 
     if digest != dg:
         print("refused: this is not the install your human confirmed (digest mismatch — the package, version, target, harness, "
-              "params or options changed). Run the preview again and show your human the new one.", file=out)
+              "params or options changed; for a workflow often --workspace or a --param: the digest includes both). Run the "
+              "preview again and show your human the new one. / digest 不符：包、版本、装到哪（工作流的 --workspace）、参数或选项变了，"
+              "重新预览拿新 digest", file=out)
         return EXIT_DIGEST
-    if not certified and not accept_unverified:
+    if not certified and not accept_unverified and host_ask is None:     # #428: the host card says it and stands for it
         raise PlazaError("待审核的社群包要加 --accept-unverified（你的人看过并同意了）/ an unverified community package needs "
                          "--accept-unverified (your human saw it and agreed)")
     if exists and not replace:
@@ -1524,7 +1634,26 @@ def run_install(name: str, *, version=None, harness=None, workspace=None, params
     #    refused, with the way); no command-line flag replaces it
     grant = pub_grant = audit_grant = None
     pub_changed = pubr["changed"] and not _starter
-    if (perm_extra and not _starter) or pub_changed or audit_blk:
+    if host_ask is not None:
+        res = host_ask({"name": m["name"], "version": m["version"], "type": m["type"], "sha256": sha, "digest": dg,
+                        "certified": certified, "publisher": pubr, "perm": perm, "extra": perm_extra, "under": bool(perm_under),
+                        "audit": [{k: f[k] for k in ("rule", "path", "line", "level")} for f in findings[:30]],
+                        "target": str(target), "harness": h, "replace": bool(exists and replace),
+                        "verify": ("skip" if skip_verify else "refused" if vref else sandbox or "none") if s["verify"] else None,
+                        "verify_why": vref.short if vref else None,
+                        "params": {k: _as_text(v) for k, v in shown_params.items()}, "sign_as": sign_as,
+                        "downgrade": downgrade, "files": sorted(rendered, key=lambda x: x.encode())})
+        if not res.get("ok"):
+            print(_perm_refusal(name, res, bool(perm_extra), pub_changed, bool(audit_blk)), file=out)
+            st.log("plaza_pkg_install", name=m["name"], result="host_" + str(res.get("why"))[:20])
+            return EXIT_PERMISSION
+        g = {"rid": res.get("rid"), "device": res.get("device")}
+        grant, pub_grant = (g if perm_extra else None), (g if pub_changed else None)
+        audit_grant = {**g, "findings": [a["rule"] for a in audit_blk]} if audit_blk else None
+        print("主人已在手机上签名允许这次安装 / the owner allowed this install on the phone (signed)", file=out)
+        if m["type"] == "workflow":
+            print(WS_DIGEST, file=out)
+    elif (perm_extra and not _starter) or pub_changed or audit_blk:
         items = perm_extra if not _starter else []
         under = bool(perm_under) and any(i in perm_under for i in items)
         res = plaza_perms.ask_owner(st, m["name"], m["version"], sha, items, call=perm_call, under=under,
@@ -1548,8 +1677,10 @@ def run_install(name: str, *, version=None, harness=None, workspace=None, params
     if s["verify"]:
         if skip_verify:
             print("install.verify: 已按 --skip-verify 跳过，没有运行 / skipped (--skip-verify): not run", file=out)
+        elif vref:
+            print(f"install.verify: {VERIFY_SKIPPED[0].format(vref.short[0])}，安装继续 / {VERIFY_SKIPPED[1].format(vref.short[1])}, "
+                  f"the install goes on. {vref}", file=out)
         else:
-            parse_verify(m["install"]["verify"])          # refuse before writing anything
             if not sandbox:
                 print(f"install.verify: {NO_SANDBOX} / no usable sandbox on this machine: the package's self-test was not run",
                       file=out)
@@ -1558,7 +1689,8 @@ def run_install(name: str, *, version=None, harness=None, workspace=None, params
                     scratch = pathlib.Path(tmp)
                     pkg_root = scratch / "pkg"
                     write_tree(pkg_root, files)
-                    rc, tail = run_verify(m["install"]["verify"], pkg_root, scratch, kind=sandbox, hide=[str(st.root)])
+                    rc, tail = run_verify(m["install"]["verify"], pkg_root, scratch, kind=sandbox, hide=[str(st.root)],
+                                          certified=certified)
                 if rc != 0:
                     print(f"install.verify 失败（exit {rc}），什么都没装 / install.verify failed (exit {rc}): nothing installed. "
                           "Its output (data):", file=out)
@@ -1567,40 +1699,42 @@ def run_install(name: str, *, version=None, harness=None, workspace=None, params
                 print(f"install.verify: OK（{SANDBOX_TEXT[sandbox]}，无网络 / sandboxed, no network）", file=out)
 
     # 2. staging next to the target, then one rename; a replaced folder goes to <state>/plaza/backups/
-    parent = target.parent
-    os.makedirs(parent, mode=0o755, exist_ok=True)
-    staging = parent / f".{target.name}.agentj-staging-{secrets.token_hex(4)}"
-    old = None
+    # #428 H1: through the real parent's fd pinned at the card (mkdirat / renameat; a swapped path is refused)
+    parent, pfd = target.parent, market_guard.open_pinned(pin)
+    staging, old, bak, at = f".{target.name}.agentj-staging-{secrets.token_hex(4)}", None, None, {"src_dir_fd": pfd, "dst_dir_fd": pfd}
     try:
-        write_tree(staging, rendered)
-        if os.path.lexists(target):
-            if not (replace and _owned(st, target, m["name"])):
-                raise PlazaError(f"{target}: {NOT_OURS}" if replace else f"{target} 已存在 / exists")
-            old = parent / f".{target.name}.agentj-old-{secrets.token_hex(4)}"
-            os.rename(target, old)
         try:
-            os.rename(staging, target)
-        except OSError:
-            if old is not None:
-                os.rename(old, target)
-                old = None
-            raise
-    except BaseException:
-        shutil.rmtree(staging, ignore_errors=True)
-        raise
-    bak = None
-    if old is not None:
-        bak = _backup_path(st, m["name"])
-        try:
+            write_tree(parent / staging, rendered, dir_fd=pfd)
             try:
-                os.rename(old, bak)
-            except OSError:              # another filesystem: copy, then remove
-                shutil.copytree(old, bak, symlinks=True)
-                shutil.rmtree(old)
-        except OSError as e:
-            print(f"warning: 旧目录没能移到备份处，还在 {old} / the old folder could not be moved to the backups and is still at "
-                  f"{old} ({e.strerror})", file=out)
-            bak = old
+                os.lstat(target.name, dir_fd=pfd)
+                there = True
+            except FileNotFoundError:
+                there = False
+            if there:                    # round 2 (Info4): a rename race is an error, never a silently wrong `old`
+                if not (replace and _owned(st, target, m["name"])):
+                    raise PlazaError(f"{target}: {NOT_OURS}" if replace else f"{target} 已存在 / exists")
+                old = f".{target.name}.agentj-old-{secrets.token_hex(4)}"
+                os.rename(target.name, old, **at)
+            try:
+                os.rename(staging, target.name, **at)
+            except OSError:
+                if old is not None:
+                    os.rename(old, target.name, **at)
+                    old = None
+                raise
+        except BaseException:
+            shutil.rmtree(staging, ignore_errors=True, dir_fd=pfd)
+            raise
+        if old is not None:
+            bak = _backup_path(st, m["name"])
+            try:          # round 4: one rename only — never a copy out of a folder the Agent can still change
+                os.rename(old, bak, src_dir_fd=pfd)
+            except OSError as e:
+                bak = parent / old
+                print(f"warning: 旧目录没能移到备份处（不在同一个磁盘上时 Agent J 不复制），还在 {bak} / the old folder could not be "
+                      f"moved to the backups (no copy across disks) and is still at {bak} ({e.strerror})", file=out)
+    finally:
+        os.close(pfd)
     rec = {"name": m["name"], "type": m["type"], "version": m["version"], "sha256": sha, "harness": h, "target": str(target),
            "requires": {k: v for k, v in summarize(m).items() if k in ("harness", "os", "cli", "env", "accounts", "python_requirements", "skills")},
            "category": m.get("category"), "certified": certified, "installed_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -1641,35 +1775,110 @@ def _perm_lines(perm: dict, inferred: bool, allow, src: str, extra: list, under:
     return out
 
 
-def _perm_refusal(name: str, res, items: bool = True, publisher: bool = False, audit: bool = False) -> str:
-    if res is None and audit and not items and not publisher:
-        return ("没有安装：这个官方签名包被静态审计拦下（预览里列着），只有你在手机上签名才能放行一次，但 Agent J 没在运行，确认卡发不到你的手机。"
-                "先打开 Agent J，再让 Agent 重新运行同一条安装命令，手机上会弹出逐条列出审计发现的确认卡 / NOT INSTALLED: the static "
-                "audit blocks this officially signed package (see the preview) and only your signed yes on the phone allows it "
-                "once, but Agent J is not running, so no card can reach your phone. Start Agent J, then have your Agent run the "
-                "same install command again.")
+REFUSALS = ("denied", "timeout", "no_signature", "no_device", "estop", "serve_stop", "group_source", "owner_grant_scope",
+            "too_many", "busy", "secret_path", "queue_full")
+
+
+def _next_step(name, *, version, harness, workspace, params, params_file, sign_as, replace) -> str:
+    """#428: what the Agent does after the owner agrees — ask the host; never send the owner to a terminal."""
+    q = shlex.quote
+    parts = ["agentj", "plaza", "request", name, *(["--version", version] if version else []), "--harness", harness,
+             *(["--workspace", q(workspace)] if workspace else []), *[x for p in params or [] for x in ("--param", q(p))],
+             *(["--params-file", q(params_file)] if params_file else []), *(["--sign-as", q(sign_as)] if sign_as else []),
+             *(["--replace"] if replace else [])]
+    return ("NOT INSTALLED. 预览给你的人看，他同意后你运行 " + " ".join(parts) + "：主机给他的遥控器发卡，他允许后由主机安装，"
+            "不用他去终端敲命令 / once they agree, run that: one card on their remote, the host installs")
+
+
+REQUEST_WAIT = 600            # per answer line: fetch + the card (ASK_TTL) + install.verify + install
+
+
+def run_request(name, *, version=None, harness=None, workspace=None, params=None, params_file=None, sign_as=None,
+                replace=False, st=None, out=None, call=None) -> int:
+    """#428 `agentj plaza request`: ask the Agent J host to install `name`. This process downloads nothing, writes nothing
+    and runs nothing: serve does every check, sends ONE signed card to the owner's remote and installs after the allow.
+    #437: `name` may be a list (≤ 25): one card approves the group, each package gets its own receipt; per-package options
+    (--version / --param / --params-file / --sign-as) only for a single package. Requests queue on the host (FIFO).
+    Exit = the install's exit (0 installed; 6 not allowed / no card possible, with the real reason; 3 no answer yet)."""
+    from . import humane, names, plaza_host
+    from .state import State
+    out = out or sys.stdout
+    group = list(name) if isinstance(name, (list, tuple)) else [name]
+    if len(group) > plaza_host.GROUP_MAX or len(set(group)) != len(group):
+        raise PlazaError(f"一次最多 {plaza_host.GROUP_MAX} 个不重复的包名 / at most {plaza_host.GROUP_MAX} distinct package names")
+    if len(group) > 1 and (version or params or params_file or sign_as):
+        raise PlazaError("多个包一起请求时不能带 --version / --param / --params-file / --sign-as：带参数的工作流单独请求 / "
+                         "several packages take no per-package option: request a workflow with parameters on its own")
+    st = st or State()
+    ws = workspace or os.environ.get("AGENT_WORKSPACE")
+    req = {"cmd": "plaza_install", **({"name": group[0]} if len(group) == 1 else {"names": group}), "version": version,
+           "harness": harness, "workspace": str(workspace_root(ws)) if ws else None, "params": list(params or []),
+           "params_obj": read_params_file(params_file) if params_file else None, "sign_as": sign_as, "replace": bool(replace)}
+    say = lambda key, **kw: humane.say("plaza.install." + key, "zh", **kw) + " / " + humane.say("plaza.install." + key, "en", **kw)
+    shown = " ".join(group)
+    print(f"已请 Agent J 主机安装 {shown}：主机先校验签名、审计和权限，再给主人的遥控器发一张确认卡 / asked the Agent J host to install "
+          f"{shown}: it checks signature, audit and permissions, then sends one card to the owner's remote", file=out, flush=True)
+    last = [None]
+
+    def progress(ev):
+        stage = ev.get("stage")
+        key = (stage, ev.get("position"), ev.get("ahead"), ev.get("done"))
+        if key == last[0]:
+            return                                  # a keep-alive: nothing new to say
+        last[0] = key
+        if stage == "card":
+            secs = int(ev.get("ttl") or 120)
+            print(say("sent" if ev.get("online") else "waiting", secs=secs), file=out, flush=True)
+            print("（这条命令会等到主人处理；命令若被提前结束，卡照样有效，结果会出现在聊天里 / this command waits for the "
+                  "owner; if it is cut short the card still stands and the result shows in the chat）", file=out, flush=True)
+        elif stage == "queued":
+            n = ev.get("ahead") if ev.get("card") else max(0, int(ev.get("position") or 1) - 1)
+            print(say("queued", n=n), file=out, flush=True)
+        elif stage == "checking" and ev.get("done") != ev.get("total"):
+            print(say("checking", done=ev.get("done"), total=ev.get("total")), file=out, flush=True)
+    try:
+        res = (call or plaza_perms._call)(st, req, REQUEST_WAIT, progress)
+    except names.ServeBusy:
+        print(say("cli_timeout"), file=out)
+        return EXIT_UNAVAILABLE
     if res is None:
-        if publisher and not items:
-            return ("没有安装：这个包的发布方换了（预览里写着），要你在手机上签名同意，但 Agent J 没在运行，确认卡发不到你的手机；命令行加旗标也不行。"
-                    "先打开 Agent J（让它在这台 Agent J 主机上运行），再让 Agent 重新运行同一条安装命令，手机上会弹出列着新旧指纹的确认卡，你点「允许」就会装 / "
-                    "NOT INSTALLED: the publisher of this package changed (see the preview) and only your signed yes on the phone "
-                    "accepts that, but Agent J is not running, so no card can reach your phone (no command-line flag replaces "
-                    "it). Start Agent J on this computer, then have your Agent run the same install command again.")
-        return ("没有安装：这个包要的权限超出你的 Agent 现在允许的" + ("，发布方也换了" if publisher else "")
-                + "，但 Agent J 没在运行，确认卡发不到你的手机。先打开 Agent J（让它在这台 Agent J 主机上"
-                f"运行），再让 Agent 重新运行同一条安装命令（agentj plaza install {name} … --owner-confirmed --digest …），手机上会弹出"
-                "确认卡，你点「允许」就会装 / NOT INSTALLED: the package needs more than your Agent may do now and Agent J is not "
-                "running, so no card can reach your phone. Start Agent J on this computer, then have your Agent run the same install "
-                "command again: a card comes to your phone, and it installs once you allow it.")
-    if res.get("why") == "denied":
-        what = "和".join(x for x in (("这些权限" if items else ""), ("新的发布方" if publisher else ""),
-                                    ("审计拦下的这几处" if audit else "")) if x)
-        return (f"没有安装：你没有在手机上允许{what}（或确认卡超时了）/ NOT INSTALLED: it was not allowed on the phone "
-                "(or the card timed out)")
+        print(say("not_running") + "（agentj service start）", file=out)
+        return EXIT_PERMISSION
+    if not isinstance(res.get("rc"), int) or res.get("why") == "bad_request":      # an older serve, or a refused shape
+        print("没有安装：Agent J 主机不认这个请求（版本太旧？先更新 Agent J）/ NOT INSTALLED: the host does not know this request "
+              f"(an older Agent J? update it) ({clean_line(str(res.get('why') or res.get('error')), 40)})", file=out)
+        return EXIT_ERROR
+    if res.get("out"):
+        print(res["out"].rstrip("\n"), file=out)
+    elif res.get("why") in REFUSALS:
+        print(_perm_refusal(group[0], res), file=out)
+    for r in res.get("results") or ():               # a group: one receipt line per package
+        why = r.get("why")
+        print(f"  ✓ {r['name']}：已安装 / installed" if r.get("rc") == 0 else
+              f"  ✗ {r['name']}：没有安装 / NOT installed（"
+              + (humane.say("plaza.install." + why, "zh") if why in REFUSALS else f"exit {r.get('rc')}") + "）", file=out)
+    return res["rc"]
+
+
+def _perm_refusal(name: str, res, items: bool = True, publisher: bool = False, audit: bool = False) -> str:
+    if res is None:                      # no serve: no card can reach the phone; say which consent it needed
+        zh = "、".join(x for x, on in (("要的权限超出你的 Agent 现在允许的", items), ("发布方换了", publisher),
+                                       ("官方签名包被静态审计拦下", audit)) if on)
+        en = ", ".join(x for x, on in (("needs more than your Agent may do now", items), ("its publisher changed", publisher),
+                                       ("the static audit blocks this officially signed package", audit)) if on)
+        return (f"没有安装：这个包{zh}，要你在手机上签名同意（命令行加旗标也不行），但 Agent J 没在运行，确认卡发不到你的手机。"
+                f"先打开 Agent J，再让 Agent 运行 agentj plaza request {name} …，手机上会弹出确认卡，你点「允许」就会装 / "
+                f"NOT INSTALLED: the package {en}; only your signed yes on the phone accepts that (no flag replaces it), but "
+                f"Agent J is not running, so no card can reach your phone. Start Agent J, then have your Agent run "
+                f"agentj plaza request {name} …: a card comes to your phone and it installs once you allow it.")
+    if res.get("why") in REFUSALS:
+        from . import humane
+        key = "plaza.install." + res["why"]
+        return humane.template(key, "zh") + " / " + humane.template(key, "en")
     return f"没有安装：权限确认没完成 / NOT INSTALLED: the permission check did not complete ({clean_line(str(res.get('why')), 40)})"
 
 def _install_card(st, m, files, sha, certified, downgrade, *, name, version, replace, accept_unverified, owner_confirmed, digest,
-                  post, out, pubr=None, findings=(), audit_blk=(), perm_call=None) -> int:
+                  post, out, pubr=None, findings=(), audit_blk=(), perm_call=None, host_ask=None) -> int:
     """P432: a card package → the owner's deck, switched OFF until the owner reads its permission summary on the phone."""
     from . import jcards, jcards_pkg
     pubr = pubr or {"known": True, "changed": False, "prev": None, "fp": None}
@@ -1684,8 +1893,9 @@ def _install_card(st, m, files, sha, certified, downgrade, *, name, version, rep
     if have and not mine:
         raise PlazaError(f"这台 Agent J 主机上已有一张 id 为 {cid} 的卡，不是从这个包装的，不覆盖 / a card {cid} exists here that this package did not install: never replaced")
     dg = install_digest(sha, pathlib.Path(target), "card", {}, {"replace": bool(replace)})
+    if host_ask is not None:
+        owner_confirmed, digest = True, dg
     if not owner_confirmed:
-        q = shlex.quote
         print("\n".join([FENCE_OPEN, f"{META}{NOTE}",
                          f"{META}安装预览 install preview: {m['name']} · {_kind('card')} · v{m['version']} · " + (CERT_BADGE if certified else UNVERIFIED),
                          f"{META}包 bundle sha256 {sha} · {len(files)} 个文件 files",
@@ -1701,22 +1911,28 @@ def _install_card(st, m, files, sha, certified, downgrade, *, name, version, rep
         if not certified:
             print("这是待审核的社群卡：没有 Agent J 官方签名。确认时必须加 --accept-unverified / an UNVERIFIED community card: the confirm needs --accept-unverified", file=out)
         print(f"digest: {dg}", file=out)
-        print("NOT INSTALLED. 把上面的预览原样给你的人看；他明确同意后才运行 / Show your human the preview; only after they agree: "
-              + " ".join(["agentj", "plaza", "install", q(name), *(["--version", q(version)] if version else []), *(["--replace"] if replace else []),
-                          *([] if certified else ["--accept-unverified"]), "--owner-confirmed", "--digest", dg]), file=out)
+        flags = ("" if certified else "--accept-unverified ") + f"--owner-confirmed --digest {dg}"
+        print(_next_step(name, version=version, harness="card", workspace=None, params=None, params_file=None, sign_as=None,
+                         replace=replace).replace(" --harness card", "")
+              + f"（主人在终端自己确认也可：同一条 agentj plaza install 加 {flags} / the owner at a terminal: the same install + {flags}）",
+              file=out)
         return EXIT_OK
     if digest != dg:
         print("refused: this is not the install your human confirmed (digest mismatch). Run the preview again.", file=out)
         return EXIT_DIGEST
-    if not certified and not accept_unverified:
+    if not certified and not accept_unverified and host_ask is None:
         raise PlazaError("待审核的社群卡要加 --accept-unverified（你的人看过并同意了）/ an unverified community card needs --accept-unverified")
     if have and not replace:
         raise PlazaError(f"{target} 已装过；换新版加 --replace / installed already: add --replace for the new version")
     pub_grant = audit_grant = None
-    if pubr["changed"] or audit_blk:
-        res = plaza_perms.ask_owner(st, m["name"], m["version"], sha, [], call=perm_call,
-                                    publisher={"prev": pubr["prev"], "new": pubr["fp"]} if pubr["changed"] else None,
-                                    audit=audit_blk or None)
+    if pubr["changed"] or audit_blk or host_ask is not None:
+        res = host_ask({"name": m["name"], "version": m["version"], "type": "card", "sha256": sha, "digest": dg,
+                        "certified": certified, "publisher": pubr, "perm": plaza_perms.EMPTY, "extra": [], "under": False,
+                        "audit": [{k: f[k] for k in ("rule", "path", "line", "level")} for f in list(findings)[:30]],
+                        "target": target, "harness": "card", "replace": bool(have and replace), "verify": None}) \
+            if host_ask is not None else plaza_perms.ask_owner(
+                st, m["name"], m["version"], sha, [], call=perm_call,
+                publisher={"prev": pubr["prev"], "new": pubr["fp"]} if pubr["changed"] else None, audit=audit_blk or None)
         if res is None or not res.get("ok"):
             print(_perm_refusal(name, res, False, pubr["changed"], bool(audit_blk)), file=out)
             return EXIT_PERMISSION
@@ -1766,9 +1982,9 @@ def _todo(m: dict, s: dict, target: pathlib.Path, workspace, st, out) -> None:
             body += _t(c)
     if s["skills"]:
         have = {r["name"] for r in read_installed(st)}
-        body.append(f"{META}依赖的技能 dependent skills（每个单独预览 + 你的同意 / each with its own preview and yes）:")
+        body.append(f"{META}依赖的技能 dependent skills（每个单独一张确认卡 / each with its own card）:")
         for dep in s["skills"]:
-            body.append(f"{META}  agentj plaza install {dep}" + ("（本机已装 installed）" if dep in have else ""))
+            body.append(f"{META}  agentj plaza request {dep}" + ("（本机已装 installed）" if dep in have else ""))
     if s["automations"]:
         body.append(f"{META}定时任务 {len(s['automations'])} 个全部休眠：第一次手动跑通后再由你的人启用 / {len(s['automations'])} "
                     "automations stay dormant until your human enables them after a first manual run")
@@ -1964,7 +2180,7 @@ def run_publish(directory: str, *, show_name=False, owner_confirmed=False, diges
             fp = plaza_trust.fingerprint(plaza_trust.unb64u(signed["host_pubkey"], 32))
             print(f"发布方签名 / publisher signature: {plaza_trust.short_fp(fp)}（本机身份密钥签的，别人安装时会核对；完整指纹 / full "
                   f"fingerprint {fp}）", file=out)
-        print(f"别人这样装 / others install it with: agentj plaza install {m['name']}", file=out)
+        print(f"别人这样装 / others install it with: agentj plaza request {m['name']}", file=out)
         if warns:
             print("\n".join(["发布回执里的审计提示（装的人也会看到）/ audit notes in this receipt (installers see them too):",
                              FENCE_OPEN, *warns, FENCE_CLOSE]), file=out)
@@ -2032,6 +2248,16 @@ def add_arguments(ps, search, show, report) -> None:
                    "run the package's self-test")
     s.add_argument("--owner-confirmed", action="store_true", help="你的人看过预览并同意安装 / your human saw the preview and agreed")
     s.add_argument("--digest", help="预览打印的 digest / the digest the preview printed")
+    s = ps.add_parser("request", help="请 Agent J 主机安装（主人手机上签一张确认卡，主机来装；Agent 不带确认旗标）/ ask the Agent J "
+                      "host to install: one signed card on the owner's remote, the host installs")
+    s.add_argument("name", nargs="+", help="包名；多个 = 一张卡批一组（最多 25 个）/ package names; several = one card for the group")
+    s.add_argument("--version")
+    s.add_argument("--harness", choices=list(HARNESSES), help="默认 = 接的 Agent / default: the configured Agent")
+    s.add_argument("--workspace", help="工作流落地的工作区 / workflow workspace")
+    s.add_argument("--param", action="append", default=[], metavar="K=V", help="工作流参数（可多次）/ workflow parameter (repeatable)")
+    s.add_argument("--params-file", help="JSON 对象的参数文件（本命令读，内容交给主机）/ a JSON object of parameters")
+    s.add_argument("--sign-as", help="以这个称呼签署工作流文档 / sign the workflow documents in this name")
+    s.add_argument("--replace", action="store_true", help="替换 agentj 为这个包装的旧版 / replace this package's earlier install")
     s = ps.add_parser("publish", help="把一个包目录公开发到广场（两层隐私闸 + 预览，--owner-confirmed --digest 才发）/ publish a "
                       "package folder (privacy gate + preview)")
     s.add_argument("dir")
@@ -2065,6 +2291,9 @@ def cmd(a, run) -> bool:
         run(run_install, a.name, version=a.version, harness=a.harness, workspace=a.workspace, params=a.param,
             params_file=a.params_file, accept_unverified=a.accept_unverified, sign_as=a.sign_as, replace=a.replace,
             skip_verify=a.skip_verify, owner_confirmed=a.owner_confirmed, digest=a.digest)
+    elif c == "request":
+        run(run_request, a.name, version=a.version, harness=a.harness, workspace=a.workspace, params=a.param,
+            params_file=a.params_file, sign_as=a.sign_as, replace=a.replace)
     elif c == "publish":
         run(run_publish, a.dir, show_name=a.show_agent_name, owner_confirmed=a.owner_confirmed, digest=a.digest)
     elif c == "like":

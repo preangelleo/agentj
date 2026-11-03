@@ -15,6 +15,13 @@ export const GLYPH = {
   // P573: the pickup card's full-screen icons — 关闭 (a thin ×) and 复制 (the reply card's copy glyph)
   close: [['path', { d: 'M6.5 6.5l11 11M17.5 6.5l-11 11' }]],
   copy: [['rect', { x: 8, y: 8, width: 12, height: 12, rx: 2.5 }], ['path', { d: 'M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2' }]],
+  // #424: the picture preview's zoom row — 放大 · 缩小 · 适应窗口 · 原始尺寸 · 全屏 / 退出全屏
+  zoomIn: [['circle', { cx: 10.5, cy: 10.5, r: 6 }], ['path', { d: 'm15 15 5 5M8 10.5h5M10.5 8v5' }]],
+  zoomOut: [['circle', { cx: 10.5, cy: 10.5, r: 6 }], ['path', { d: 'm15 15 5 5M8 10.5h5' }]],
+  fit: [['rect', { x: 3.5, y: 4.5, width: 17, height: 15, rx: 2 }], ['path', { d: 'M7.5 10V8h2.5M16.5 10V8H14M7.5 14v2h2.5M16.5 14v2H14' }]],
+  actual: [['path', { d: 'M5.5 9 8 7.5v9M15.5 9 18 7.5v9M12 10.5h.01M12 14h.01' }]],
+  fullscreen: [['path', { d: 'M4 9V5.5A1.5 1.5 0 0 1 5.5 4H9M15 4h3.5A1.5 1.5 0 0 1 20 5.5V9M20 15v3.5a1.5 1.5 0 0 1-1.5 1.5H15M9 20H5.5A1.5 1.5 0 0 1 4 18.5V15' }]],
+  unfull: [['path', { d: 'M9 4v3.5A1.5 1.5 0 0 1 7.5 9H4M20 9h-3.5A1.5 1.5 0 0 1 15 7.5V4M15 20v-3.5a1.5 1.5 0 0 1 1.5-1.5H20M4 15h3.5A1.5 1.5 0 0 1 9 16.5V20' }]],
 };
 // P201: 转发到 Telegram is a solid paper plane (Leo's pick, re-drawn here as a plain path from measured vertices — no third-party
 // artwork), one colour = currentColor, so it takes the same theme colour as the stroked glyphs above.

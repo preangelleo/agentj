@@ -2646,7 +2646,7 @@ Additive, same capability `wf1` (an older page ignores the new fields; an older 
   `p276.reviewPrompt`: agentj-workflow-wizard, list unorganised projects before touching them, `agentj wizard register` +
   `doctor`, report the cards). The P267 light confirmation card is not out yet: the prompt is sent at once and the note under the
   button says so. `counts.wdb == 0` → the three workflows that come with Agent J on the Plaza (`llm-wiki`,
-  `script-article-writing`, `ebook-writing`) as cards; 「装上它」 sends a prompt to preview `agentj plaza install <id>` first.
+  `script-article-writing`, `ebook-writing`) as cards; 「装上它」 sends a prompt to preview `agentj plaza install <id>` first, then (after the Owner's yes) `agentj plaza request <id>` (#428).
   A WDB card with `reg: false` shows 「未登记到 CEO 花名册」.
 
 
@@ -2735,6 +2735,24 @@ command) per harness that is installed and not known to be signed out; output cl
 `health {at, ok, cls}`; `cls:"login"` → the rescue notice + dot at once; `balance` → the top-up state; rate limit /
 network → recorded only; a pass clears a stale login dot. Never a model call before `HEALTH_DELAY`; reminders and the
 health check wait outside the quiet hours (22:00–07:00 local, `browser_login.QUIET`).
+
+**#427 — several accounts per harness (0.26.8 candidate, ADR-427).** Settings → AI 账号 keeps several named accounts for
+`claude` and `codex` (host `host/agentj/accounts.py`, page `web/public/js/accounts.js`). Same session rules as above
+(`P33_ONLY`, paired + ready + allowlisted, answered to the asking session only):
+`{"t":"acct_get","r"}` · `{"t":"acct_use","r","harness":"claude|codex","id"}` · `{"t":"acct_rename","r","harness","id","name"}` ·
+`{"t":"acct_del","r","harness","id"}` → `{"t":"acct_res","r","ok","view"[,"why"][,"conflict":[names]][,"restart"]}`.
+`id` = 8 hex; `name` 1–24 characters, unique per harness (case-folded), ≤ 8 accounts per harness. `view = {claude|codex:
+{active, items:[{id, name, method: token|login|device, added, quota:{pct, window, at}|null}]}, conflict:[names]}` — names,
+methods and quota only; never a token, path or auth.json byte. `why`: `unsupported` · `not_found` · `name_taken` · `bad_name`
+· `full` · `active` (the account in use cannot be removed) · `conflict` (`ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` by
+name) · `unsupported_store` (Codex keeps its login in the keyring) · `unregistered_login` · `slot_missing` · `denied` · `io`.
+`acct_use` needs no card; the main Agent restarts before its next turn and keeps the conversation (`restart`); background
+work already running finishes on the old account, work started later uses the new one. `acct_del` raises the `AuthRescue`
+confirm card (paired-request bound). **Adding** reuses the rescue flow: `auth_start` gains an optional `"account":{"name"}`
+→ the official sign-in writes a NEW slot, never the login in use (`route:"login"` with `account` → `why:"unsupported"`;
+the same ChatGPT account twice → `same_account`); `flow.account` = the name being added; the flow ends `stage:"done"`,
+`last.result:"added"`, no harness restart. `auth_press` / `auth_cancel` / `auth_res` are unchanged. The first account added
+turns the login in use into 「主号」 / "Main"; with no account added the wire is exactly 0.26.6.
 
 ## 32. 额度用完自动续跑 — continue after the usage limit resets (P314; the number is provisional until the merge)
 
@@ -3448,6 +3466,10 @@ discovered calendar href and partition host stay in calendar.json; no `jcard_cal
 Host sends encrypted `{t:"pair_guide",kind:"phone"|"computer"|null}` to ready p33 allowlisted sessions on device
 changes and reconnect. The existing device-name classifier derives the currently paired kinds: computer without phone suggests a phone;
 phone without computer suggests a computer; both kinds present or neither recognized sends null to hide it. Unknown kinds remain ignored by the web client. The hint carries no authority.
+#435 (2026-11-03) supersedes the kind rule: a kind is sent only while exactly ONE remote is paired (that device's kind,
+from its own `self_name` label, not an owner rename); two or more remotes always send null. The web shows it as the shared
+bottom notice (`notifyOnce`, rect, 10 s) once per device (`aj.pairGuide.seen`), only when its last `devs` list has one
+item; there is no resident element, and nothing of it enters the composer or any message.
 `Remotes.changed` sends `devs`, preferences and device-dependent setup rows after successful pairing (every route),
 unbinding and renaming; passkey registration also refreshes the setup rows. Eviction/replacement sends the final list.
 No checklist is started or reopened automatically; closed flags and signed owner choices are preserved. Reconnect

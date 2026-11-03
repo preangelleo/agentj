@@ -416,12 +416,57 @@ def report(state_root, now: float | None = None, env=None, sources=None, meter_s
                 pass
     seen = {s["harness"] for s in srcs}
     srcs += [unknown(h, "source_failed") for h in HARNESSES if h not in seen]
+    acc = _accounts(state_root)
     out = []
     for s in srcs:
+        s = since_switch(s, acc)
         a = analyse(s, live_resets(d, s["harness"], now), now)
         a["reminders"] = assess(a)
+        rows = account_rows(acc, s["harness"], a)
+        if rows:
+            a["accounts"] = rows
         out.append(a)
     return {"ok": True, "at": now, "day_share_pct": round(DAY_SHARE, 2), "harnesses": out}
+
+
+# ------------------------------------------------------------------ #427: readings per account (accounts.py)
+def _accounts(state_root) -> dict:
+    try:
+        from . import accounts
+        return accounts.load(state_root)["harness"]
+    except Exception:  # noqa: BLE001 — no registry = one account, exactly as before
+        return {}
+
+
+def since_switch(src: dict, acc: dict) -> dict:
+    """After an account switch only readings taken later belong to the new account (Codex rate_limits events,
+    Claude's tapped status line); an older one is `since_switch` — never shown as the new account's."""
+    hd = acc.get(src.get("harness")) or {}
+    t = hd.get("switched")
+    if not t or not hd.get("items"):
+        return src
+    out = dict(src)
+    h5 = out.get("h5")
+    if isinstance(h5, dict) and (not _num(h5.get("source_at")) or h5["source_at"] < t):
+        out.pop("h5", None)
+    at = out.get("source_at")
+    if out.get("status") in ("ok", "stale") and (not _num(at) or at < t):      # no timestamp = cannot be the new account's
+        out = {**unknown(out["harness"], "since_switch"), **({"h5": out["h5"]} if out.get("h5") else {})}
+    return out
+
+
+def account_rows(acc: dict, harness: str, a: dict) -> list[dict]:
+    """[{id, name, active, quota:{pct, window, at}|None}]: the account in use = this reading; the others = their last one."""
+    hd = acc.get(harness) or {}
+    rows = []
+    for it in hd.get("items") or []:
+        if it["id"] == hd.get("active"):
+            q = {"pct": round(a["used_pct"], 1), "window": "week", "at": int(a["source_at"])} \
+                if a.get("status") == "ok" and _num(a.get("used_pct")) and _num(a.get("source_at")) else None
+        else:
+            q = it.get("last_quota")
+        rows.append({"id": it["id"], "name": it["name"], "active": it["id"] == hd.get("active"), "quota": q})
+    return rows
 
 
 def due(rep: dict, state_root, day: str | None = None, mark: bool = True) -> list[dict]:
@@ -676,6 +721,7 @@ WHY = {"no_statusline_tap": ("查不到：Claude 状态栏接入没开（agentj 
        "not_exposed": ("查不到：OpenCode 不在本地记录服务商额度", "unknown: OpenCode keeps no provider quota locally"),
        "window_rolled_over": ("查不到：上次读数之后已过重置时间，等下一次读数", "unknown: the window reset since the last reading"),
        "source_failed": ("查不到：数据源出错", "unknown: the source failed"),
+       "since_switch": ("查不到：切换账号后还没有新读数", "unknown: no reading since the account switch"),
        "stale_reading": ("额度读数已过期：Claude 一直在用，状态栏读数却停了（agentj doctor 检查）",
                          "usage reading expired: Claude kept working but its status-line reading stopped (check agentj doctor)"),
        "no_reset_time": ("服务商没给重置时间，算不了均分进度", "the provider gives no reset time, so no pace")}
@@ -712,6 +758,15 @@ def render(rep: dict, lang: str = "zh") -> str:
         for r in a.get("resets", []):
             lines.append((f"  extra reset recorded, expires {_when(r['expires'], lang)}" if en else
                           f"  额外 reset（登记）：{_when(r['expires'], lang)} 过期") + (f" · {r['note']}" if r.get("note") else ""))
+        for r in a.get("accounts", []):          # #427: one line per account; no reading = 「—」, never an estimate
+            q = r.get("quota")
+            when = time.strftime("%m-%d %H:%M", time.localtime(q["at"])) if q else ""
+            if r["active"]:
+                val = (f"{q['pct']:.0f}% used ({when})" if en else f"已用 {q['pct']:.0f}%（{when}）") if q else "—"
+                lines.append(f"  · {r['name']}" + (" (in use)" if en else "（当前）") + f": {val}")
+            else:
+                val = (f"last read {q['pct']:.0f}% ({when})" if en else f"上次读到 {q['pct']:.0f}%（{when}）") if q else "—"
+                lines.append(f"  · {r['name']}: {val}")
         for k in a.get("reminders", []):
             lines.append("  ⚑ " + reminder_text(a, k, lang, headroom(rep, a["harness"])))
     if rep.get("reminders_on") is False:

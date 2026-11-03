@@ -621,15 +621,16 @@ def layer2(draft, *, threshold: float = THRESHOLD, env=None, transport=None, tim
     """Jev on the (already layer-1) draft. Never raises: every failure is Verdict(status="unavailable").
     `gate` = "feedback" (privacy_criteria.md, state key feedback_draft) or "plaza" (plaza_criteria.md, plaza_draft)."""
     crit_path, state_key, _ = GATES[gate]
-    env = os.environ if env is None else env
     transport = transport or urllib_transport
     from . import jev
+    # #421: env=None must reach jev.resolve as None so it reads the service env file (fresh_environment), as doctor does.
     route = jev.resolve(env=env)
     if route.mode == "off":
         return Verdict("ok", reason="Jev off: owner confirmed; local redaction only")
     key = route.key
     if not key:
-        return Verdict("unavailable", reason=f"no {KEY_ENV} in the environment")
+        names = jev.ROUTES[route.mode][0] if route.mode in jev.ROUTES else " / ".join(r[0] for r in jev.ROUTES.values())
+        return Verdict("unavailable", reason=f"jev.mode={route.mode or 'unset'}: no {names} in the shell or the Agent J service environment file")
     try:
         crit = criteria or load_criteria(crit_path)
     except (OSError, ValueError) as e:

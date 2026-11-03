@@ -185,6 +185,8 @@ class PkgServer:
         self.upload_url = f"{API}/v1/plaza/up/{URL_PART}"
         self.serve_bytes = None        # override what the download returns
         self.put_answer = (200, {"name": "x", "version": "1.0.0", "state": "live"})
+        import threading
+        self._tl = threading.local()   # #437: parallel host installs — each thread downloads the package it asked for
 
     def add(self, data: bytes, *, signature=None, detail_over=None, **kw) -> dict:
         m, files = bundle.parse(data)
@@ -205,7 +207,7 @@ class PkgServer:
             return 200, {"items": []}
         if route == "get":
             p = self.packages.get(inner.get("name"))
-            self.last_get = inner.get("name")
+            self.last_get = self._tl.name = inner.get("name")
             if not p:
                 return 404, {"error": "not_found"}
             return 200, {"package": p["detail"], "download": {"url": self.download_url, "expires_at": 1}}
@@ -225,7 +227,7 @@ class PkgServer:
         self.gets.append(url)
         if self.serve_bytes is not None:
             return 200, self.serve_bytes
-        return 200, self.packages[self.last_get]["data"]
+        return 200, self.packages[getattr(self._tl, "name", None) or self.last_get]["data"]
 
     def put(self, url, body, timeout=None):
         self.puts.append((url, body))

@@ -1956,6 +1956,10 @@ div.math.display{text-align:center}
 .mstage{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;overflow:hidden;touch-action:none}
 .mview[data-mode=doc] .mstage,.mview[data-mode=player] .mstage{touch-action:auto;align-items:stretch}
 .mzoom{max-width:100%;max-height:100%;transform-origin:center center;user-select:none;-webkit-user-select:none}
+/* #424: the picture's zoom row (缩小 · 放大 · 适应窗口 · 原始尺寸 · 全屏) under the stage, pictures only; zoomable() sizes the
+   picture to fit the stage itself (inline width / height, max-width:none over base.css's img rule) */
+.mvzoom{flex:none;display:flex;justify-content:center;gap:8px;background:var(--c-sooty);padding:6px 8px calc(6px + env(safe-area-inset-bottom))}
+.mview:not([data-mode=image]) .mvzoom{display:none}
 .mplayer{align-self:center;max-width:100%;max-height:100%}
 audio.mplayer{width:min(560px,92vw)}
 .mframe{width:100%;height:100%;border:0;background:var(--c-lotion)}

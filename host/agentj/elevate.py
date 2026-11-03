@@ -1699,11 +1699,22 @@ class Elevator:
             bg.swallowed(self.st.log, "secret_handover_failed", e, every=0)
 
     async def _p115(self, req: dict) -> dict:
+        if req["t"] == "google_api":            # #436: a connected purpose's calls; uploads / sends raise the owner's card
+            from . import google_api
+            res = await google_api.serve(self.host, self.st, req)
+            self.st.log("google_cli", result=req.get("op") if req.get("op") in google_api.OPS else "shape")
+            return res
         if req["t"] == "google":
             from . import google
             bad = google.request_shape(req)
             if bad:
                 return {"ok": False, "why": "shape", "detail": bad}
+            if req["op"] in ("connect", "disconnect", "install", "on", "off"):    # #436 round 1 (L1): google_api's turn gate
+                from .google_api import refusal
+                no = refusal(getattr(self.host, "agent", None))
+                if no:
+                    self.st.log("google_cli", result=no["why"])
+                    return no
             try:
                 res = await asyncio.to_thread(google.execute, req["op"], self.st, None, req)
             except google.GoogleError as e:
@@ -1785,7 +1796,7 @@ class Elevator:
                 await w.drain()
                 w.close()
                 return
-            if isinstance(req, dict) and req.get("t") in ("google", "setup"):
+            if isinstance(req, dict) and req.get("t") in ("google", "google_api", "setup"):
 
 
                 res = await self._p115(req)
@@ -1903,6 +1914,20 @@ class Elevator:
 
                 from . import jcards_cal_remote
                 res = await jcards_cal_remote.elevate_request(self.host, self.st, req)
+                w.write((json.dumps(res, ensure_ascii=False) + "\n").encode())
+                await w.drain()
+                w.close()
+                return
+            if isinstance(req, dict) and req.get("t") in ("plaza_install", "plaza_perm"):
+                # #428: inside the Agent fence control.sock is hidden — `agentj plaza request` (and the older install's
+                # permission card) reach serve here. Same handlers as control.sock: one signed card, serve installs.
+                from . import plaza_host, plaza_perms
+
+                def emit(ev, w=w):
+                    w.write((json.dumps({"t": "card", **ev}) + "\n").encode())
+                h = self.host
+                res = await (plaza_host.handle(h, req, emit) if req["t"] == "plaza_install" else
+                             plaza_perms.serve_card(h, req, emit))
                 w.write((json.dumps(res, ensure_ascii=False) + "\n").encode())
                 await w.drain()
                 w.close()

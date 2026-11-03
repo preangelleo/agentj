@@ -34,7 +34,7 @@ HOST_CARDS = tuple(tool for tool in policy_registry.HOST_TOOLS if not tool.start
 # 「全放行」 does not ask; what lets the Agent widen its own permissions (`agentj config` security keys, resident hooks,
 # pairing, the sandbox launch, login rescue, the web terminal) still asks there.
 HARNESS_FREE = ("AgentJSameOwnerAction", "DoomLoop")
-HARNESS_KEEPS = tuple(tool for tool in HOST_CARDS if tool not in HARNESS_FREE) + ("agentj config", "agentj tasks migrate")
+HARNESS_KEEPS = tuple(tool for tool in HOST_CARDS if tool not in HARNESS_FREE) + ("agentj config", "agentj tasks migrate", "agentj plaza")
 # P573 (e): harness_floor reasons that keep Face ID — the Agent approving itself or a key going out; a fetch run in the
 # same call ("injection") is one button instead (still asked under 「全放行」)
 FLOOR_FACE = ("hooks", "settings", "credentials")

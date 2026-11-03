@@ -528,7 +528,24 @@ function viewerEl() {
   const stage = mk('div', 'mstage');
   const note = mk('div', 'mnote');
   const hint = mk('div', 'mvhint'); hint.setAttribute('role', 'status'); hint.setAttribute('aria-live', 'polite');
-  v.append(bar, stage, note, hint);
+  // #424: the picture's zoom row under the stage (pictures only; the fitted picture never sits under it)
+  const zbar = mk('div', 'mvzoom'); zbar.setAttribute('role', 'toolbar');
+  const zb = {};
+  for (const k of ['zoomOut', 'zoomIn', 'fit', 'actual', 'fullscreen']) {
+    const b = mk('button', 'mvact mvz-' + k); b.type = 'button'; b.dataset.z = k; b.append(glyph(k));
+    zb[k] = b; zbar.appendChild(b);
+  }
+  zb.fullscreen.hidden = !(document.fullscreenEnabled || document.webkitFullscreenEnabled);   // iPhone Safari: none for pictures
+  zbar.addEventListener('click', (e) => {
+    const b = e.target.closest?.('button[data-z]'), z = stage._zoom;
+    if (!b || b.disabled) return;
+    if (b.dataset.z === 'fullscreen') toggleFull();
+    else if (z) z[b.dataset.z]();
+  });
+  stage.addEventListener('wheel', (e) => { if (v.dataset.mode === 'image' && stage._zoom) stage._zoom.wheel(e); }, { passive: false });
+  const onFull = () => paintFull();
+  document.addEventListener('fullscreenchange', onFull); document.addEventListener('webkitfullscreenchange', onFull);
+  v.append(bar, stage, zbar, note, hint);
   x.addEventListener('click', closeViewer);   // @ix viewer.close (+ Space / Esc, a tap outside the file)
   prev.addEventListener('click', () => step(-1));   // @ix viewer.step (+ swipeable below, ← → in viewerKey)
   next.addEventListener('click', () => step(1));
@@ -542,15 +559,43 @@ function viewerEl() {
   v.addEventListener('click', e => { if (performance.now() - viewer.openedAt < 400 && !e.target.closest('button,a,input,textarea,select,[role=link]')) { e.preventDefault(); e.stopImmediatePropagation(); } }, true);
   swipeable(v, stage);
   document.body.appendChild(v);
-  viewer = { v, x, dl, title, stage, note, hint, prev, next, count, card: null, m: null, cleanup: null, dragAt: 0, hintT: 0 };
+  viewer = { v, x, dl, title, stage, note, hint, prev, next, count, zb, card: null, m: null, cleanup: null, dragAt: 0, hintT: 0 };
   viewer.layer = registerLayer({element:()=>v,open:()=>!v.hidden,close:closeViewer,fallback:()=>document.getElementById(document.body.dataset.reader==='1'?'rdReadBtn':'readBtn'),rank:90});
   return viewer;
+}
+/** #424: 全屏 is the whole preview (bar + picture + zoom row); Esc leaves it first, the next Esc closes the preview. */
+const fullEl = () => document.fullscreenElement || document.webkitFullscreenElement || null;
+function exitFull() { try { (document.exitFullscreen || document.webkitExitFullscreen)?.call(document)?.catch?.(() => {}); } catch { /* not ours */ } }
+function toggleFull() {
+  const v = viewer && viewer.v;
+  if (!v) return;
+  if (fullEl()) { exitFull(); return; }
+  try { (v.requestFullscreen || v.webkitRequestFullscreen)?.call(v)?.catch?.(() => {}); } catch { /* refused */ }
+}
+function paintFull() {
+  const b = viewer && viewer.zb.fullscreen;
+  if (!b) return;
+  const on = !!fullEl() && fullEl() === viewer.v, k = on ? 'media.pv.fullExit' : 'media.pv.full';
+  b.replaceChildren(glyph(on ? 'unfull' : 'fullscreen'));
+  b.setAttribute('aria-label', t(k)); b.title = t(k);
+}
+function paintZoomLabels() {
+  const V = viewer;
+  V.zb.fullscreen.parentElement.setAttribute('aria-label', t('media.pv.zoomBar'));
+  for (const [k, key] of [['zoomOut', 'media.pv.zoomOut'], ['zoomIn', 'media.pv.zoomIn'], ['fit', 'media.pv.fit'], ['actual', 'media.pv.actual']]) {
+    V.zb[k].setAttribute('aria-label', t(key)); V.zb[k].title = t(key);
+  }
+  paintFull();
 }
 /** The preview layer's keys (capture, before the chat screen's shortcuts and the layers' own handler): ← / → step,
  *  Space closes (Quick Look) unless a player or a field has it; Esc and Tab go on to the layers (close, focus trap);
  *  every other key reaches only the preview itself (its default action: scroll the document, press the button). */
 function viewerDownload() { const c = viewer && viewer.card; if (c && c._blob && viewer.m) download(viewer.m, c, c._blob); }
 function viewerKey(e) {
+  if (viewerOpen() && e.key === 'Escape' && !e.isComposing && fullEl() === viewer.v) {
+    e.preventDefault(); e.stopImmediatePropagation(); exitFull();
+    return;
+  }
   if (!viewerOpen() || e.key === 'Escape' || e.key === 'Tab' || e.isComposing) return;
   const tg = e.target && e.target.closest ? e.target : null;
   const mods = e.ctrlKey || e.metaKey || e.altKey;
@@ -684,7 +729,7 @@ function openViewer(label, c, mode = 'image', m = null) {
   if (V.cleanup) { try { V.cleanup(); } catch { /* gone */ } V.cleanup = null; }
   V.stage.style.transition = ''; V.stage.style.transform = '';
   V.card = c || null; V.m = m;
-  if (mode !== 'image') V.stage.onpointerdown = V.stage.onpointermove = V.stage.onpointerup = V.stage.onpointercancel = null;
+  if (mode !== 'image') { V.stage.onpointerdown = V.stage.onpointermove = V.stage.onpointerup = V.stage.onpointercancel = null; V.stage._zoom = null; }
   V.v.dataset.mode = mode;
   V.v.setAttribute('aria-label', label || t('media.viewer'));
   V.title.textContent = label || '';
@@ -692,6 +737,7 @@ function openViewer(label, c, mode = 'image', m = null) {
   V.dl.setAttribute('aria-label', t('media.act.download')); V.dl.title = t('media.act.download');
   V.dl.hidden = !(c && c._blob);
   V.note.textContent = ''; V.note.hidden = true;
+  paintZoomLabels();
   const was = !V.v.hidden;
   V.openedAt = performance.now();
   if (!was && !viewerSkipPop) { try { history.pushState({ ...history.state, ajFile: 1 }, ''); viewerPushed = true; } catch { viewerPushed = false; } }
@@ -704,6 +750,8 @@ export function closeViewer(fromPop = false) {
   if (!viewer || viewer.v.hidden) return;
   if (viewer.cleanup) { try { viewer.cleanup(); } catch { /* gone */ } viewer.cleanup = null; }
   pausePlayers(viewer); want = null;
+  if (fullEl() === viewer.v) exitFull();
+  viewer.stage._zoom = null;
   if (fromPop !== true && viewerPushed && history.state?.ajFile) { viewerSkipPop = true; history.back(); }
   viewerPushed = false;
   viewer.hint.classList.remove('on');
@@ -716,7 +764,7 @@ function viewImage(url, name, c, m = null) {
   const V = openViewer(name, c, 'image', m);
   const img = mk('img', 'mzoom'); img.alt = name; img.src = url; img.draggable = false;
   V.stage.replaceChildren(img);
-  zoomable(V.stage, img);
+  V.cleanup = zoomable(V.stage, img, V.zb);
 }
 function viewPlayer(m, url, c) {
   const V = openViewer(m.name, c, 'player', m);
@@ -765,13 +813,59 @@ function unsupported(m, c, blob, key = 'media.pv.none') {
 }
 /** Two-finger pinch, one-finger pan when zoomed, double-tap / double-click toggles 2.5×. P196: not zoomed, a one-finger
  *  sideways drag follows the finger and, past SWIPE_PX (or a fling), steps to the previous / next file; a gesture that
- *  started zoomed, or had two fingers at any point, only pans / zooms. */
-function zoomable(stage, img) {
-  let s = 1, x = 0, y = 0;
+ *  started zoomed, or had two fingers at any point, only pans / zooms.
+ *  #424: the picture is laid out at the size that fits the stage (small ones scaled up, aspect kept) and `s` is relative to
+ *  that fit (1 = 适应窗口); the wheel / a trackpad pinch (ctrl+wheel) zooms at the cursor; the zoom row's buttons drive the
+ *  same model. 原始尺寸 = 1 / fit, below 1 for a picture smaller than the stage: centred, nothing to pan (a pinch stops at 1).
+ *  → the cleanup (stops following the stage's size). */
+function zoomable(stage, img, zb = null) {
+  let s = 1, x = 0, y = 0, fit = 0;
   const pts = new Map();
   let start = null, lastTap = 0, g = null;
-  const paint = () => { img.style.transform = `translate(${x}px, ${y}px) scale(${s})`; };
+  const one = () => (fit ? 1 / fit : 1);                         // 原始尺寸 in fit units
+  const lo = () => Math.min(1, one()), hi = () => Math.max(5, one());
+  const clamp = (v) => Math.min(hi(), Math.max(lo(), v));
+  const near = (a, b) => Math.abs(a - b) < 1e-3;
+  const bar = () => {
+    if (!zb) return;
+    zb.zoomIn.disabled = s >= hi() - 1e-3; zb.zoomOut.disabled = s <= lo() + 1e-3;
+    zb.fit.disabled = near(s, 1) && !x && !y; zb.actual.disabled = !fit || (near(s, one()) && !x && !y);
+  };
+  const paint = () => { img.style.transform = `translate(${x}px, ${y}px) scale(${s})`; bar(); };
   const dist = () => { const [a, b] = [...pts.values()]; return Math.hypot(a.x - b.x, a.y - b.y); };
+  const layout = () => {
+    const nw = img.naturalWidth, nh = img.naturalHeight, sw = stage.clientWidth, sh = stage.clientHeight;
+    if (!nw || !nh || !sw || !sh) return;
+    fit = Math.min(sw / nw, sh / nh);
+    // base.css caps every img at max-width:100%; the preview sizes its own picture (contain, small ones scaled up)
+    img.style.maxWidth = 'none'; img.style.maxHeight = 'none';
+    img.style.width = `${nw * fit}px`; img.style.height = `${nh * fit}px`;
+    s = clamp(s); if (s <= 1) { x = 0; y = 0; }
+    paint();
+  };
+  /** Zoom to `ns` keeping the stage point (cx, cy) where it is; back at or below the fit the picture re-centres. */
+  const zoomTo = (ns, cx, cy, ease = false, snap = true) => {
+    ns = clamp(ns);
+    if (snap && (s - 1) * (ns - 1) < 0) ns = 1;                // passing the fit stops there (swipes step again at 1)
+    const r = stage.getBoundingClientRect(), ox = r.left + r.width / 2, oy = r.top + r.height / 2;
+    if (cx === undefined) { cx = ox; cy = oy; }
+    if (ns <= 1) { x = 0; y = 0; } else { const k = ns / s; x = cx - ox - k * (cx - ox - x); y = cy - oy - k * (cy - oy - y); }
+    s = ns;
+    img.style.transition = ease && !(typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches) ? 'transform .16s ease-out' : 'none';
+    paint();
+  };
+  stage._zoom = {
+    zoomIn: () => zoomTo(s * 1.5, undefined, undefined, true),
+    zoomOut: () => zoomTo(s / 1.5, undefined, undefined, true),
+    fit: () => { x = 0; y = 0; zoomTo(1, undefined, undefined, true); },
+    actual: () => { x = 0; y = 0; zoomTo(one(), undefined, undefined, true, false); },
+    wheel: (e) => {
+      if (e.cancelable) e.preventDefault();               // not the page's scroll, nor the browser's own ctrl+wheel zoom
+      const dy = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? stage.clientHeight : 1);
+      if (!dy) return;
+      zoomTo(s * Math.exp(-dy * (e.ctrlKey ? 0.01 : 0.002)), e.clientX, e.clientY);
+    },
+  };
   stage.onpointerdown = (e) => {
     if (!pts.size) g = { x: e.clientX, y: e.clientY, s, multi: false, moved: false, lx: e.clientX, lt: performance.now(), v: 0 };
     pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -784,7 +878,7 @@ function zoomable(stage, img) {
     if (!pts.has(e.pointerId) || !start) return;
     pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (g && Math.hypot(e.clientX - g.x, e.clientY - g.y) > CLICK_SLOP) g.moved = true;
-    if (pts.size === 2 && start.d) s = Math.min(5, Math.max(1, start.s * dist() / start.d));
+    if (pts.size === 2 && start.d) s = Math.min(hi(), Math.max(1, start.s * dist() / start.d));   // a pinch stops at the fit
     else if (pts.size === 1 && s > 1) { x = start.x + e.clientX - start.px; y = start.y + e.clientY - start.py; }
     if (s === 1) {
       y = 0;
@@ -817,7 +911,12 @@ function zoomable(stage, img) {
     if (!pts.size) g = null;
   };
   stage.onpointercancel = (e) => { up(e); if (!pts.size) { g = null; if (s === 1) { x = 0; y = 0; img.style.transition = ''; paint(); } } };
+  img.addEventListener('load', layout);
+  if (img.complete) layout();
+  const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(layout) : null;
+  ro?.observe(stage);
   paint();
+  return () => { ro?.disconnect(); img.removeEventListener('load', layout); };
 }
 
 function viewHtml(html, m, c) {

@@ -15,14 +15,14 @@ PACKAGE = "web-page-report"
 ENGINE = pathlib.Path("scripts") / "web_report.py"
 PASS = ("templates", "schema", "example", "recommend", "validate", "render", "new-template", "publish")
 INSTALL_HINT = {
-    "zh": "这台 Agent J 主机还没装广场包 web-page-report（≥ 1.3，含模板化发布协议）。问过主人后安装：agentj plaza install web-page-report "
-          "--harness <claude_code|codex|opencode>，装好再运行本命令。",
+    "zh": "这台 Agent J 主机还没装广场包 web-page-report（≥ 1.3，含模板化发布协议）。问过主人后请主机安装：agentj plaza request "
+          "web-page-report --harness <claude_code|codex|opencode>（主人手机上确认），装好再运行本命令。",
     "en": "The plaza package web-page-report (≥ 1.3, with the template publishing protocol) is not installed here. With the "
-          "owner's OK: agentj plaza install web-page-report --harness <claude_code|codex|opencode>, then run this again.",
+          "owner's OK: agentj plaza request web-page-report --harness <claude_code|codex|opencode> (a card on the owner's phone), then run this again.",
 }
 OLD_HINT = {
-    "zh": "已装的 web-page-report 太旧（没有模板化发布协议）。问过主人后升级：agentj plaza install web-page-report --harness …",
-    "en": "The installed web-page-report predates the template protocol. With the owner's OK: agentj plaza install web-page-report --harness …",
+    "zh": "已装的 web-page-report 太旧（没有模板化发布协议）。问过主人后升级：agentj plaza request web-page-report --harness … --replace",
+    "en": "The installed web-page-report predates the template protocol. With the owner's OK: agentj plaza request web-page-report --harness … --replace",
 }
 
 

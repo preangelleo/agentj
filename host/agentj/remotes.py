@@ -89,13 +89,13 @@ class Remotes:
                 await self.send_state(s)
 
     async def send_state(self, s) -> None:
-        """Same current state on change and resume; suggest the required remote kind still missing."""
+        """Same current state on change and resume. #435: a pairing suggestion only while exactly ONE remote is paired —
+        that device's kind from its own label (an owner rename is not evidence); two or more remotes: never."""
         from . import onboarding
         h = self.host
         snap = self.snapshot(s)
-        kinds = {onboarding.kind_of(row['name']) for row in snap['items']}
-        kind = 'computer' if 'computer' in kinds and 'phone' not in kinds else (
-            'phone' if 'phone' in kinds and 'computer' not in kinds else None)
+        items = snap['items']
+        kind = onboarding.kind_of(items[0]['self_name'] or items[0]['name']) if len(items) == 1 else None
         await h.send_app(s, {"t": "devs", **snap})
         await h.send_app(s, {"t": "pair_guide", "kind": kind if kind in ('phone', 'computer') else None})
         await h.send_app(s, {"t": "pk_state", "s": h.st.passkey_state(s.device), **(h.pkpeer.check_fields(s) if getattr(h, "pkpeer", None) else {})})   # P539 · P555: + self-check

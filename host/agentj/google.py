@@ -7,9 +7,8 @@ What 0.18.0 does (Leo approved the five P91 defaults, 2026-10-09):
 - A failed or skipped install never blocks binding, pairing or chat (the owner can say "I won't use Google": `agentj google off`).
 - Reads (never changes) what already exists on the Agent J host: gog / gcloud / gws on PATH and whether their config files exist.
   It never runs the owner's own tools and never opens a keyring, so no token, email or client secret is read.
-- Lists Google purposes with the minimum scope each needs, API and website sign-in as separate rows. In 0.18.0 no purpose is
-  authorized by Agent J: the own-project / In production / PKCE / local token-owner flow is 0.18.1 (approved staging), so API
-  purposes stay `unavailable` (check `unsupported`) in the P86 projection — never a green "Google ready".
+- Lists Google purposes with the minimum scope each needs, API and website sign-in as separate rows; each purpose is
+  authorized on its own (`agentj google connect`, P428 / #436) and is `ready` only after its check — never "Google ready".
 
 Nothing here prints or stores a token, authorization code, callback URL, client JSON or e-mail address. State is
 `<state>/google/state.json` (0600) in a 0700 directory, outside the Agent fence; the fenced Agent reaches it through
@@ -424,7 +423,7 @@ def purposes(existing: dict | None = None, conns: dict | None = None) -> list[di
         c = effective(conns, pid)
         rows.append({"id": pid, "title": {"zh": p["zh"], "en": p["en"]}, "api": p["api"], "scopes": list(p["scopes"]),
                      "class": p["class"], "api_state": "existing_unverified" if seen else "not_configured",
-                     "authorize_in": API_STAGE, "browser": "separate", "connectable": pid.startswith("calendar-"),
+                     "authorize_in": API_STAGE, "browser": "separate", "connectable": True,
                      "step": (c or {}).get("step"), "verified_at": _iso(c["at"]) if c and c["step"] == "ready" else None})
     return rows
 
@@ -445,10 +444,9 @@ def status(st, existing: dict | None = None) -> dict:
                                                "last_attempt": rec.get("attempt"), "corrupt": bool(rec.get("corrupt"))},
         "existing": existing,
         "purposes": purposes(existing, rec["connections"]),
-        # P428: only Calendar is connectable (`agentj google connect`); every other purpose is still not available.
-        "api_authorization": {"available_in": API_STAGE, "state": "calendar_ready" if any(
-            c["step"] == "ready" for c in rec["connections"].values()) else "calendar_connectable",
-            "others": "not_available_yet", "connections": rec["connections"]},
+        # #436: every purpose is connectable (`agentj google connect --purpose P`), each with its own grant.
+        "api_authorization": {"available_in": API_STAGE, "state": "some_ready" if any(
+            c["step"] == "ready" for c in rec["connections"].values()) else "connectable", "connections": rec["connections"]},
         "browser_signin": "separate: the browser login health check, not this command",
     }
 
@@ -456,8 +454,7 @@ def status(st, existing: dict | None = None) -> dict:
 # ------------------------------------------------------------------ P86 projection (proposed registry schema, closed fields)
 def registry_entries(st, s: dict | None = None) -> list[dict]:
     """Entries in the P86 registry shape (schemas/registry.schema.json): one `cli` row for gog and one `credential` row per
-    purpose. Only a Calendar purpose can be `ready` (P428: after `agentj google connect` verified it); the others cannot be
-    authorized yet (check `unsupported`)."""
+    purpose, `ready` only after `agentj google connect` verified that purpose (P428 / #436)."""
     s = s or status(st)
     t = s["tool"]
     at = t["checked_at"]
@@ -518,7 +515,7 @@ def doctor_row(st) -> tuple[str, str, str]:
         chk = rec.get("check") or {}
         if chk.get("result") not in (None, "ok"):
             return "warn", f"Google 工具 gog {GOG_VERSION} 自检未通过 / gog self-check failed", "agentj google check"
-        return "ok", f"Google 工具 gog {GOG_VERSION}（API 授权 {API_STAGE} 提供）/ gog {GOG_VERSION} (API authorization in {API_STAGE})", ""
+        return "ok", f"Google 工具 gog {GOG_VERSION}（API 授权：agentj google connect）/ gog {GOG_VERSION} (API: agentj google connect)", ""
     att = rec.get("attempt") or {}
     hint = "agentj google install"
     if att.get("result") == "failed":
@@ -563,7 +560,7 @@ def _say(res: dict) -> str:
         line = {"installed": f"✓ gog {GOG_VERSION} 已预装 / installed", "absent": "· gog 尚未预装 / not pre-installed yet",
                 "disabled": "· 主人选择不用 Google 工具 / off by the owner's choice",
                 "unsupported_platform": "· 此平台不预装 / not available on this platform"}[t["state"]]
-        rows = [line, f"  API 授权：{API_STAGE} 提供（自有项目 + In production + 本机授权）/ API authorization arrives in {API_STAGE}",
+        rows = [line, "  API 授权：agentj google connect --purpose <用途>（自有项目 + 本机授权）/ API: agentj google connect",
                 "  网页登录与 API 授权分开检查 / website sign-in is checked separately"]
         ex = res["existing"]
         found = [k for k, v in ex.items() if v["on_path"] or v["config"]]
@@ -579,6 +576,9 @@ def cmd(a) -> int:
     from .state import State
     st = State()
     from .google_connect import cli_request
+    if a.action in API_WORDS:                  # #436: youtube / search-console / gmail / drive (google_api)
+        from .google_api import cmd as api_cmd
+        return api_cmd(a)
     res, req = cli_request(a) if a.action in ("connect", "disconnect") else (None, {"t": "google", "op": a.action})
     if res is None and a.action == "plan":
         try:
@@ -605,16 +605,21 @@ def cmd(a) -> int:
     return 0 if res.get("ok") else 1
 
 
+API_WORDS = ("youtube", "search-console", "gmail", "drive")
+
+
 def add_parser(sub) -> None:
-    p = sub.add_parser("google", help="Google 工具：预装 gog、只读状态、用途与权限计划 / Google tools: pinned gog, read-only status, purpose plan")
+    p = sub.add_parser("google", help="Google 工具：预装 gog、只读状态、用途授权与调用 / Google tools: pinned gog, status, authorization, calls")
     p.add_argument("action", nargs="?", choices=["status", "check", "install", "plan", "on", "off", "registry", "connect",
-                                                 "disconnect"], default="status",
-                   help="status 只读 · check 实测 gog · install 预装 · plan 某些用途的建置计划 · on/off 用不用 · connect/disconnect 日历授权 / "
-                        "status read-only · check probes gog · install pre-installs · plan shows a setup plan · on/off use it or "
-                        "not · connect/disconnect Calendar authorization")
+                                                 "disconnect", "youtube", "search-console", "gmail", "drive"], default="status",
+                   help="status 只读 · check 实测 gog · install 预装 · plan 建置计划 · on/off 用不用 · connect/disconnect 某用途授权 · "
+                        "youtube/search-console/gmail/drive 调用 / status · check · install · plan · on/off · connect/disconnect "
+                        "a purpose · youtube/search-console/gmail/drive calls")
     p.add_argument("--purpose", action="append", choices=sorted(PURPOSES), help="plan：用途，可重复；connect：一个 / plan: "
                    "purpose, repeatable; connect: one")
     from .google_connect import add_args
     add_args(p)
+    from .google_api import add_args as api_args
+    api_args(p)
     p.add_argument("--json", action="store_true")
     p.set_defaults(fn=lambda a: sys.exit(cmd(a)))

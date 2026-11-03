@@ -17,13 +17,18 @@ import sys
 
 SOFT = 0.10
 MIN_CEILING = 4096          # smaller numbers in that test are counts, not byte budgets
+# One named row may pass above its 10 % band only up to an exact byte cap Jarvis approved for one release.
+# P0268_BUDGET_WAIVER (贾维斯 11-03 定，0.26.8 具名豁免，瘦身另单): combined measured 4,440,764 B on the 0.26.8 integration
+# (0dac0b0b1 base 4,382,675 B, +10.0 %); cap = measured + 8 KiB. Remove this row in the slimming ticket.
+WIDER = {'combined bounded allocations': 4448956}   # P0268_BUDGET_WAIVER
 
 
 def judge(measured: int, ceiling: int, strict: bool, label: str = '') -> str:
     """'pass' | 'soft' | 'fail' for measured against ceiling (strict: measured must be < ceiling, else ≤)."""
     if measured < ceiling or (not strict and measured == ceiling):
         return 'pass'
-    return 'soft' if measured <= ceiling * (1 + SOFT) else 'fail'
+    cap = next((v for k, v in WIDER.items() if label == k), None)
+    return 'soft' if measured <= ceiling * (1 + SOFT) or (cap is not None and measured <= cap) else 'fail'
 
 
 def _record(row: dict) -> None:

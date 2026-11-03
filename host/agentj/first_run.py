@@ -321,8 +321,10 @@ def probe(st, iid: str, ctx: dict) -> tuple[str, str | None]:
         return browser_sites.first_run_probe(st, iid, ctx)
     if iid == "google":
         from . import google
-        t = google.status(st)["tool"]
-        return "unsupported", "api_in_0.18.1" if t["state"] in ("installed", "absent") else "google_off"
+        s = google.status(st)
+        if any(c.get("step") == "ready" for c in s["api_authorization"]["connections"].values()):
+            return "verified", None                     # #436: a connected purpose (agentj google connect)
+        return "unsupported", "api_in_0.18.1" if s["tool"]["state"] in ("installed", "absent") else "google_off"
     if iid == "keyring":
         return _keyring_ok()
     if iid == "files":

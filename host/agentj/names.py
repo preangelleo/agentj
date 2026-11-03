@@ -37,7 +37,7 @@ def transport_failure(code: str) -> dict:
     return {'ok': False, 'error': code, 'detail': detail}
 
 
-def ctl_call(st, req: dict, timeout: float | None = None, max_bytes: int = 64 * 1024, progress=None) -> dict | None:
+def ctl_call(st, req: dict, timeout: float | None = None, max_bytes: int = 64 * 1024, progress=None, on_sent=None) -> dict | None:
     """One request/answer on serve's control socket. None only when serve is certainly not running (no socket file, or
     connection refused); raises ServeBusy when it is there but does not answer in time. A4 (P139): a command that changes
     safety state (ctl_auth.SENSITIVE) first asks for a one-time claim on the same connection; serve refuses it to an Agent."""
@@ -73,8 +73,8 @@ def ctl_call(st, req: dict, timeout: float | None = None, max_bytes: int = 64 * 
                     req = {**req, "claim": claim["claim"]}
             s.sendall((json.dumps(req) + "\n").encode())
             obj = line()
-            while progress and obj.get("sent"):     # P570b QA L3: serve's card is out, the answer follows
-                progress()
+            while (progress or on_sent) and obj.get("sent"):     # P570b QA L3: serve's card is out, the answer follows
+                on_sent(obj) if on_sent else progress()           # #428: on_sent gets the event (where the card waits)
                 obj = line()
         except (OSError, ValueError) as e:
             raise ServeBusy('PermissionError' if isinstance(e, OSError) and e.errno in (errno.EPERM, errno.EACCES) else type(e).__name__) from None

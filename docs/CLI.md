@@ -147,7 +147,7 @@ agentj --help
 
 ```text
 usage: agentj [-h] [-V] [--migrate-legacy] [--instance N] [--fresh]
-              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,faceid,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,files,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,terminal,provider,sudo-helper,docs-rule,handover,seat,wechat,telegram-cursor,file,plaza,support,data,diag,preflight,skills,capability,goal,heartbeat,quota,imessage,busy,decide,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
+              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,faceid,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,files,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,terminal,provider,sudo-helper,docs-rule,handover,seat,wechat,telegram-cursor,file,plaza,support,data,diag,preflight,skills,capability,goal,heartbeat,quota,account,imessage,busy,decide,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -157,6 +157,124 @@ usage: agentj [-h] [-V] [--migrate-legacy] [--instance N] [--fresh]
 | `--migrate-legacy` | `false` | false | — | `keep using an older identity found on the Agent J host` |
 | `--instance` | `null` | false | — | `instance N on this OS user (1–10; 1 = the original): one seat and one folder per instance — see agentj instances` |
 | `--fresh` | `false` | false | — | `不用旧身份，开一个全新的（旧目录原样保留）/ ignore an older identity and start fresh (the old folder stays as it is)` |
+
+### agentj account
+
+```text
+several sign-ins per harness
+```
+
+```bash
+agentj account --help
+```
+
+```text
+usage: agentj account [-h] {list,add,use,rename,remove} ...
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj account add
+
+```text
+登记一个新账号（官方登录，不覆盖现有账号；需要在终端里）/ add one (official sign-in, in a terminal)
+```
+
+```bash
+agentj account add --help
+```
+
+```text
+usage: agentj account add [-h] {claude,codex} name
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `harness` | `null` | true | `claude`, `codex` | `` |
+| `name` | `null` | true | — | `` |
+
+### agentj account list
+
+```text
+列出账号（当前 / 额度）/ list accounts
+```
+
+```bash
+agentj account list --help
+```
+
+```text
+usage: agentj account list [-h] [--json]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `` |
+
+### agentj account remove
+
+```text
+删除账号和它存的凭据（不能删正在用的）/ remove it and its stored sign-in
+```
+
+```bash
+agentj account remove --help
+```
+
+```text
+usage: agentj account remove [-h] {claude,codex} ref
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `harness` | `null` | true | `claude`, `codex` | `` |
+| `ref` | `null` | true | — | `` |
+
+### agentj account rename
+
+```text
+rename
+```
+
+```bash
+agentj account rename --help
+```
+
+```text
+usage: agentj account rename [-h] {claude,codex} ref name
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `harness` | `null` | true | `claude`, `codex` | `` |
+| `ref` | `null` | true | — | `` |
+| `name` | `null` | true | — | `` |
+
+### agentj account use
+
+```text
+切到这个账号（主 Agent 下一条消息前重启，对话接着）/ switch to it
+```
+
+```bash
+agentj account use --help
+```
+
+```text
+usage: agentj account use [-h] {claude,codex} ref
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `harness` | `null` | true | `claude`, `codex` | `` |
+| `ref` | `null` | true | — | `name or id` |
 
 ### agentj activity
 
@@ -3375,7 +3493,7 @@ usage: agentj goal stop [-h] [--json]
 ### agentj google
 
 ```text
-Google tools: pinned gog, read-only status, purpose plan
+Google tools: pinned gog, status, authorization, calls
 ```
 
 ```bash
@@ -3386,18 +3504,41 @@ agentj google --help
 usage: agentj google [-h]
                      [--purpose {calendar-read,calendar-write,drive-file,gmail-read,gmail-send,search-console-read,youtube-publish}]
                      [--status] [--client-file PATH] [--account EMAIL]
-                     [--json]
-                     [{status,check,install,plan,on,off,registry,connect,disconnect}]
+                     [--title TITLE] [--description DESCRIPTION]
+                     [--privacy {private,unlisted,public}] [--publish-at ISO]
+                     [--start YYYY-MM-DD] [--end YYYY-MM-DD]
+                     [--dimension {query,page,country,device,date,searchAppearance}]
+                     [--rows ROWS] [--max MAX] [--to EMAIL] [--cc EMAIL]
+                     [--subject SUBJECT] [--body BODY] [--body-file PATH]
+                     [--name NAME] [--json]
+                     [{status,check,install,plan,on,off,registry,connect,disconnect,youtube,search-console,gmail,drive}]
+                     [ARG ...]
 ```
 
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `action` | `"status"` | false | `status`, `check`, `install`, `plan`, `on`, `off`, `registry`, `connect`, `disconnect` | `status read-only · check probes gog · install pre-installs · plan shows a setup plan · on/off use it or not · connect/disconnect Calendar authorization` |
+| `action` | `"status"` | false | `status`, `check`, `install`, `plan`, `on`, `off`, `registry`, `connect`, `disconnect`, `youtube`, `search-console`, `gmail`, `drive` | `status · check · install · plan · on/off · connect/disconnect a purpose · youtube/search-console/gmail/drive calls` |
 | `--purpose` | `null` | false | `calendar-read`, `calendar-write`, `drive-file`, `gmail-read`, `gmail-send`, `search-console-read`, `youtube-publish` | `plan: purpose, repeatable; connect: one` |
 | `--status` | `false` | false | — | `connect: show the authorization progress only` |
 | `--client-file` | `null` | false | — | `connect：主人下载的桌面 OAuth 客户端 JSON 路径（交给 gog 保存，不打印）/ connect: path of the downloaded Desktop OAuth client JSON (handed to gog, never printed)` |
 | `--account` | `null` | false | — | `connect：要授权的 Google 账号（只交给 gog，不保存）/ connect: the Google account to authorize (passed to gog only, never stored)` |
+| `args` | `null` | false | — | `youtube upload FILE \| youtube get ID \| search-console sites \| search-console query SITE \| gmail search QUERY \| gmail get ID \| gmail send \| drive ls \| drive upload FILE` |
+| `--title` | `null` | false | — | `title` |
+| `--description` | `null` | false | — | `description` |
+| `--privacy` | `null` | false | `private`, `unlisted`, `public` | `default private; shown on the owner's card` |
+| `--publish-at` | `null` | false | — | `youtube upload：定时公开（需 private）/ scheduled publish (private only)` |
+| `--start` | `null` | false | — | `search-console query` |
+| `--end` | `null` | false | — | `search-console query` |
+| `--dimension` | `null` | false | `query`, `page`, `country`, `device`, `date`, `searchAppearance` | `repeatable）` |
+| `--rows` | `null` | false | — | `row limit` |
+| `--max` | `null` | false | — | `drive ls` |
+| `--to` | `null` | false | — | `repeatable）` |
+| `--cc` | `null` | false | — | `gmail send` |
+| `--subject` | `null` | false | — | `gmail send` |
+| `--body` | `null` | false | — | `gmail send` |
+| `--body-file` | `null` | false | — | `body file, - = stdin` |
+| `--name` | `null` | false | — | `name in Drive` |
 | `--json` | `false` | false | — | `` |
 
 ### agentj handover
@@ -4742,7 +4883,7 @@ agentj plaza --help
 
 ```text
 usage: agentj plaza [-h]
-                    {search,show,mine,post,reply,resolve,report,install,publish,like,installed,partners} ...
+                    {search,show,mine,post,reply,resolve,report,install,request,publish,like,installed,partners} ...
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -4958,6 +5099,37 @@ usage: agentj plaza report [-h]
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `id` | `null` | true | — | `pr_… 或包名 / or a package name` |
 | `--reason` | `null` | true | `spam`, `privacy`, `abuse`, `injection`, `other`, `malware`, `license` | `帖子 posts: spam, privacy, abuse, injection, other · 包 packages: spam, malware, privacy, injection, license, other` |
+
+### agentj plaza request
+
+```text
+请 Agent J 主机安装（主人手机上签一张确认卡，主机来装；Agent 不带确认旗标）/ ask the Agent J host to install: one signed card on the owner's remote, the host installs
+```
+
+```bash
+agentj plaza request --help
+```
+
+```text
+usage: agentj plaza request [-h] [--version VERSION]
+                            [--harness {claude_code,codex,opencode}]
+                            [--workspace WORKSPACE] [--param K=V]
+                            [--params-file PARAMS_FILE] [--sign-as SIGN_AS]
+                            [--replace]
+                            name [name ...]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `name` | `null` | true | — | `包名；多个 = 一张卡批一组（最多 25 个）/ package names; several = one card for the group` |
+| `--version` | `null` | false | — | `` |
+| `--harness` | `null` | false | `claude_code`, `codex`, `opencode` | `default: the configured Agent` |
+| `--workspace` | `null` | false | — | `workflow workspace` |
+| `--param` | `[]` | false | — | `工作流参数（可多次）/ workflow parameter (repeatable)` |
+| `--params-file` | `null` | false | — | `JSON 对象的参数文件（本命令读，内容交给主机）/ a JSON object of parameters` |
+| `--sign-as` | `null` | false | — | `sign the workflow documents in this name` |
+| `--replace` | `false` | false | — | `replace this package's earlier install` |
 
 ### agentj plaza resolve
 
@@ -7177,7 +7349,7 @@ agentj --help
 
 ```text
 usage: agentj [-h] [-V] [--migrate-legacy] [--instance N] [--fresh]
-              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,faceid,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,files,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,terminal,provider,sudo-helper,docs-rule,handover,seat,wechat,telegram-cursor,file,plaza,support,data,diag,preflight,skills,capability,goal,heartbeat,quota,imessage,busy,decide,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
+              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,faceid,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,files,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,terminal,provider,sudo-helper,docs-rule,handover,seat,wechat,telegram-cursor,file,plaza,support,data,diag,preflight,skills,capability,goal,heartbeat,quota,account,imessage,busy,decide,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -7187,6 +7359,124 @@ usage: agentj [-h] [-V] [--migrate-legacy] [--instance N] [--fresh]
 | `--migrate-legacy` | `false` | false | — | `把旧身份搬过来继续用` |
 | `--instance` | `null` | false | — | `同一系统用户下的第 N 个实例（1–10，1 = 原来那套）：一个实例一个席位、一个工作目录` |
 | `--fresh` | `false` | false | — | `不用旧身份，开一个全新的（旧目录原样保留）/ ignore an older identity and start fresh (the old folder stays as it is)` |
+
+### agentj account
+
+```text
+每个 AI 登记多个账号、一键切换 · list · add · use · rename · remove
+```
+
+```bash
+agentj account --help
+```
+
+```text
+usage: agentj account [-h] {list,add,use,rename,remove} ...
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+
+### agentj account add
+
+```text
+登记一个新账号（官方登录，不覆盖现有账号；需要在终端里）/ add one (official sign-in, in a terminal)
+```
+
+```bash
+agentj account add --help
+```
+
+```text
+usage: agentj account add [-h] {claude,codex} name
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `harness` | `null` | true | `claude`, `codex` | `` |
+| `name` | `null` | true | — | `` |
+
+### agentj account list
+
+```text
+列出账号（当前 / 额度）/ list accounts
+```
+
+```bash
+agentj account list --help
+```
+
+```text
+usage: agentj account list [-h] [--json]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `--json` | `false` | false | — | `` |
+
+### agentj account remove
+
+```text
+删除账号和它存的凭据（不能删正在用的）/ remove it and its stored sign-in
+```
+
+```bash
+agentj account remove --help
+```
+
+```text
+usage: agentj account remove [-h] {claude,codex} ref
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `harness` | `null` | true | `claude`, `codex` | `` |
+| `ref` | `null` | true | — | `` |
+
+### agentj account rename
+
+```text
+改名
+```
+
+```bash
+agentj account rename --help
+```
+
+```text
+usage: agentj account rename [-h] {claude,codex} ref name
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `harness` | `null` | true | `claude`, `codex` | `` |
+| `ref` | `null` | true | — | `` |
+| `name` | `null` | true | — | `` |
+
+### agentj account use
+
+```text
+切到这个账号（主 Agent 下一条消息前重启，对话接着）/ switch to it
+```
+
+```bash
+agentj account use --help
+```
+
+```text
+usage: agentj account use [-h] {claude,codex} ref
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `harness` | `null` | true | `claude`, `codex` | `` |
+| `ref` | `null` | true | — | `名字或 id` |
 
 ### agentj activity
 
@@ -10405,7 +10695,7 @@ usage: agentj goal stop [-h] [--json]
 ### agentj google
 
 ```text
-Google 工具：预装 gog、只读状态、用途与权限计划
+Google 工具：预装 gog、只读状态、用途授权与调用
 ```
 
 ```bash
@@ -10416,18 +10706,41 @@ agentj google --help
 usage: agentj google [-h]
                      [--purpose {calendar-read,calendar-write,drive-file,gmail-read,gmail-send,search-console-read,youtube-publish}]
                      [--status] [--client-file PATH] [--account EMAIL]
-                     [--json]
-                     [{status,check,install,plan,on,off,registry,connect,disconnect}]
+                     [--title TITLE] [--description DESCRIPTION]
+                     [--privacy {private,unlisted,public}] [--publish-at ISO]
+                     [--start YYYY-MM-DD] [--end YYYY-MM-DD]
+                     [--dimension {query,page,country,device,date,searchAppearance}]
+                     [--rows ROWS] [--max MAX] [--to EMAIL] [--cc EMAIL]
+                     [--subject SUBJECT] [--body BODY] [--body-file PATH]
+                     [--name NAME] [--json]
+                     [{status,check,install,plan,on,off,registry,connect,disconnect,youtube,search-console,gmail,drive}]
+                     [ARG ...]
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `action` | `"status"` | false | `status`, `check`, `install`, `plan`, `on`, `off`, `registry`, `connect`, `disconnect` | `status 只读 · check 实测 gog · install 预装 · plan 某些用途的建置计划 · on/off 用不用 · connect/disconnect 日历授权` |
+| `action` | `"status"` | false | `status`, `check`, `install`, `plan`, `on`, `off`, `registry`, `connect`, `disconnect`, `youtube`, `search-console`, `gmail`, `drive` | `status 只读 · check 实测 gog · install 预装 · plan 建置计划 · on/off 用不用 · connect/disconnect 某用途授权 · youtube/search-console/gmail/drive 调用` |
 | `--purpose` | `null` | false | `calendar-read`, `calendar-write`, `drive-file`, `gmail-read`, `gmail-send`, `search-console-read`, `youtube-publish` | `plan：用途，可重复；connect：一个` |
 | `--status` | `false` | false | — | `connect：只看授权进度` |
 | `--client-file` | `null` | false | — | `connect：主人下载的桌面 OAuth 客户端 JSON 路径（交给 gog 保存，不打印）/ connect: path of the downloaded Desktop OAuth client JSON (handed to gog, never printed)` |
 | `--account` | `null` | false | — | `connect：要授权的 Google 账号（只交给 gog，不保存）/ connect: the Google account to authorize (passed to gog only, never stored)` |
+| `args` | `null` | false | — | `youtube upload FILE \| youtube get ID \| search-console sites \| search-console query SITE \| gmail search QUERY \| gmail get ID \| gmail send \| drive ls \| drive upload FILE` |
+| `--title` | `null` | false | — | `youtube upload：标题` |
+| `--description` | `null` | false | — | `youtube upload：简介` |
+| `--privacy` | `null` | false | `private`, `unlisted`, `public` | `youtube upload：默认 private；卡片上写明` |
+| `--publish-at` | `null` | false | — | `youtube upload：定时公开（需 private）/ scheduled publish (private only)` |
+| `--start` | `null` | false | — | `search-console query` |
+| `--end` | `null` | false | — | `search-console query` |
+| `--dimension` | `null` | false | `query`, `page`, `country`, `device`, `date`, `searchAppearance` | `search-console query（可重复` |
+| `--rows` | `null` | false | — | `search-console query：行数` |
+| `--max` | `null` | false | — | `gmail search` |
+| `--to` | `null` | false | — | `gmail send（可重复` |
+| `--cc` | `null` | false | — | `gmail send` |
+| `--subject` | `null` | false | — | `gmail send` |
+| `--body` | `null` | false | — | `gmail send` |
+| `--body-file` | `null` | false | — | `gmail send：正文文件，- 为标准输入` |
+| `--name` | `null` | false | — | `drive upload：云盘里的文件名` |
 | `--json` | `false` | false | — | `` |
 
 ### agentj handover
@@ -11772,7 +12085,7 @@ agentj plaza --help
 
 ```text
 usage: agentj plaza [-h]
-                    {search,show,mine,post,reply,resolve,report,install,publish,like,installed,partners} ...
+                    {search,show,mine,post,reply,resolve,report,install,request,publish,like,installed,partners} ...
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -11988,6 +12301,37 @@ usage: agentj plaza report [-h]
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `id` | `null` | true | — | `pz_…` |
 | `--reason` | `null` | true | `spam`, `privacy`, `abuse`, `injection`, `other`, `malware`, `license` | `帖子 posts: spam, privacy, abuse, injection, other · 包 packages: spam, malware, privacy, injection, license, other` |
+
+### agentj plaza request
+
+```text
+请 Agent J 主机安装（主人手机上签一张确认卡，主机来装；Agent 不带确认旗标）/ ask the Agent J host to install: one signed card on the owner's remote, the host installs
+```
+
+```bash
+agentj plaza request --help
+```
+
+```text
+usage: agentj plaza request [-h] [--version VERSION]
+                            [--harness {claude_code,codex,opencode}]
+                            [--workspace WORKSPACE] [--param K=V]
+                            [--params-file PARAMS_FILE] [--sign-as SIGN_AS]
+                            [--replace]
+                            name [name ...]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `name` | `null` | true | — | `包名；多个 = 一张卡批一组（最多 25 个）/ package names; several = one card for the group` |
+| `--version` | `null` | false | — | `` |
+| `--harness` | `null` | false | `claude_code`, `codex`, `opencode` | `默认 = 接的 Agent` |
+| `--workspace` | `null` | false | — | `工作流落地的工作区` |
+| `--param` | `[]` | false | — | `工作流参数（可多次）/ workflow parameter (repeatable)` |
+| `--params-file` | `null` | false | — | `JSON 对象的参数文件（本命令读，内容交给主机）/ a JSON object of parameters` |
+| `--sign-as` | `null` | false | — | `以这个称呼签署工作流文档` |
+| `--replace` | `false` | false | — | `替换 agentj 为这个包装的旧版` |
 
 ### agentj plaza resolve
 

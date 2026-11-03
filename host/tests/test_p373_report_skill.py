@@ -34,7 +34,7 @@ class Skill(unittest.TestCase):
     def test_steps_name_the_real_commands(self):
         t = SKILL.read_text(encoding="utf-8")
         for needle in ("https://agentj.app/web-report/", "R15", "R02", "R14", "real data only", "never hand-write HTML",
-                       "--to-owner", "brief", "agentj plaza install web-page-report --harness", "agentj report new-template"):
+                       "--to-owner", "brief", "agentj plaza request web-page-report --harness", "agentj report new-template"):
             self.assertIn(needle, t)
         actions = set(re.findall(r"agentj report ([a-z-]+)", t))
         self.assertTrue({"example", "validate", "send", "templates", "new-template"} <= actions, actions)

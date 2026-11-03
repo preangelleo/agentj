@@ -22,6 +22,7 @@ import * as remotes from './remotes.js';
 import * as mail from './mail.js';
 import * as wechat from './wechat.js';
 import * as authrescue from './authrescue.js';   // P258
+import * as accounts from './accounts.js';       // #427: Settings → AI 账号
 import * as contacts from './contacts.js';
 import * as ctmanage from './ctmanage.js';   // P207 §3: Settings → 通讯录
 import * as imsg from './imessage.js';      // P274: Settings → iMessage 助手 (Mac hosts only)
@@ -517,7 +518,7 @@ export function setPrefs(value, host) {
 
 // ---------------------------------------------------------------- open / close / sub-view
 export const isOpen = () => !el('settings').hidden;
-const SUB_TITLE = { main: 'set.title', ios: 'set.iosTitle', remotes: 'rm.title', mail: 'mail.nav', contacts: 'p207set.ct.nav', auth: 'ar.nav', imessage: 'imsg.nav', cards: 'p360.nav', notify: 'p365.nav', hooks: 'p366.nav', files: 'p478.nav' };
+const SUB_TITLE = { main: 'set.title', ios: 'set.iosTitle', remotes: 'rm.title', mail: 'mail.nav', contacts: 'p207set.ct.nav', auth: 'ar.nav', imessage: 'imsg.nav', cards: 'p360.nav', notify: 'p365.nav', hooks: 'p366.nav', files: 'p478.nav', accts: 'acct.nav' };
 function showSub(v, add = false) {
   const from = sub;
   pagefind.close();
@@ -533,20 +534,23 @@ function showSub(v, add = false) {
   el('set-notify').hidden = v !== 'notify';
   el('set-hooks').hidden = v !== 'hooks';
   el('set-local-files').hidden = v !== 'files';
+  el('set-accts').hidden = v !== 'accts';
   el('set-back').hidden = v === 'main';
   el('set-title').textContent = t(SUB_TITLE[v]);
   el('settings').dataset.sub = v;
   if (from === 'remotes' && v !== 'remotes') remotes.close();
   if (from === 'contacts' && v !== 'contacts') ctmanage.close();
   if (from === 'auth' && v !== 'auth') authrescue.close();
+  if (from === 'accts' && v !== 'accts') accounts.close();
   if (from === 'hooks' && v !== 'hooks') webhooks.close();
   if (from === 'notify' && v !== 'notify') ntf.close();
   if (v === 'remotes') { remotes.open({add}); return; }
-  const back = { ios: 'set-a2hs', remotes: 'set-remotes-open', mail: 'set-mail-nav', contacts: 'set-contacts-nav', auth: 'set-auth-nav', imessage: 'set-imsg-nav', cards: 'set-cards-nav', notify: 'set-notify-nav', hooks: 'set-hooks-nav', files: 'set-local-files-nav' }[from];
+  const back = { ios: 'set-a2hs', remotes: 'set-remotes-open', mail: 'set-mail-nav', contacts: 'set-contacts-nav', auth: 'set-auth-nav', imessage: 'set-imsg-nav', cards: 'set-cards-nav', notify: 'set-notify-nav', hooks: 'set-hooks-nav', files: 'set-local-files-nav', accts: 'set-accts-nav' }[from];
   (v === 'main' ? el(back || 'set-close') : el('set-back')).focus({ preventScroll: v === 'main' && !back });
   if (v === 'main') renderRemotesRow();
   if (v === 'mail') mail.load();   // P170
   if (v === 'auth') authrescue.load();   // P258
+  if (v === 'accts') accounts.load();     // #427
   if (v === 'contacts') ctmanage.open();   // P207
   if (v === 'imessage') imsg.load();       // P274
   if (v === 'cards') { jcards.renderSettings(cardHooks); jcards.refresh().then(() => { if (sub === 'cards') jcards.renderSettings(cardHooks); }); }   // P360
@@ -568,6 +572,7 @@ export function open(page = 'main', add = false) {
   sub = 'main'; el('set-main').hidden = false; el('set-ios').hidden = true; el('set-remotes').hidden = true; el('set-mail').hidden = true; el('set-auth').hidden = true; el('set-back').hidden = true;
   el('set-contacts').hidden = true;
   el('set-local-files').hidden = true;
+  el('set-accts').hidden = true;
   el('set-imessage').hidden = true;
   el('set-cards').hidden = true;
   el('set-notify').hidden = true;
@@ -600,7 +605,7 @@ async function revokePre(item) {
   } catch { toast(t('elev.fail'), 3000); }
 }
 onLang(paintPre);
-export function back() { if (sub !== 'main') showSub('main'); else close(); }
+export function back() { if (sub === 'accts' && accounts.escape()) return; if (sub !== 'main') showSub('main'); else close(); }   // #427: Esc / Back puts an open name field away first
 /** P184: 「转发到邮箱」 with no mailbox yet → Settings → 邮件通道. */
 export function openMail() { open(); if (isOpen()) showSub('mail'); }
 /** P332: Settings → 紧急修复 (the offline card, the rescue banner, ≡ 重置连接, /reset): open on the block itself. */
@@ -620,6 +625,7 @@ export function close() {
   if (box.hidden) return;
   if (sub === 'remotes') remotes.close();
   if (sub === 'contacts') ctmanage.close();
+  if (sub === 'accts') accounts.close();   // #427
   webhooks.close();   // P366
   toolsort.close();   // P340: a picked-up button is put down
   sub = 'main';
@@ -796,6 +802,7 @@ export function configure(hooks) {
   el('set-a2hs').addEventListener('click', onA2hs);
   el('set-mail-nav').addEventListener('click', () => showSub('mail'));   // P170
   el('set-auth-nav').addEventListener('click', () => showSub('auth'));   // P258
+  el('set-accts-nav').addEventListener('click', () => showSub('accts'));   // #427
   el('set-owner-nav').addEventListener('click', () => contacts.openOwner());   // P194: 我的联系方式 (slot 0)
   el('set-contacts-nav').addEventListener('click', () => showSub('contacts'));   // P207: 通讯录
   mail.configure();
@@ -890,7 +897,7 @@ export function searchItems(query) {
     [...n.querySelectorAll('.setlab, .setnote, b, small, a')].map(x => x.textContent).join(' ').concat(' ', n.dataset.keywords || '', n.closest('.setcard')?.querySelector('h3')?.textContent || '').toLocaleLowerCase().includes(q)));
 }
 // the sub-pages a main-page row opens (only those whose row is there for this computer)
-const SUBS = [['ios', 'set-a2hs'], ['mail', 'set-mail-nav'], ['contacts', 'set-contacts-nav'], ['auth', 'set-auth-nav'], ['imessage', 'set-imsg-nav'], ['cards', 'set-cards-nav'], ['notify', 'set-notify-nav'], ['hooks', 'set-hooks-nav'], ['files', 'set-local-files-nav']];
+const SUBS = [['ios', 'set-a2hs'], ['mail', 'set-mail-nav'], ['contacts', 'set-contacts-nav'], ['auth', 'set-auth-nav'], ['imessage', 'set-imsg-nav'], ['cards', 'set-cards-nav'], ['notify', 'set-notify-nav'], ['hooks', 'set-hooks-nav'], ['files', 'set-local-files-nav'], ['accts', 'set-accts-nav']];
 const SUB_UNIT = '.setrow, .setnav, h3.setg, label.mailf, .setnote, .jc-setrow';
 /** Rows of the Settings sub-pages that match (public labels / notes only, never input values) → [{sub, node, label}]. */
 export function subItems(query) {

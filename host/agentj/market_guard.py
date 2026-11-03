@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import datetime
 import json
+import os
+import stat
 
 from . import plaza_audit, plaza_trust
 from .plaza import META, FENCE_CLOSE, FENCE_OPEN, PlazaError
@@ -121,3 +123,53 @@ def refusal(findings: list, what: str) -> str:
     return "\n".join([head, FENCE_OPEN, *audit_lines(findings, False), FENCE_CLOSE,
                       "这些规则拦的是偷钥匙、下载后直接运行、藏起来的命令和想操纵 AI 的话。觉得是误判，可以在广场发反馈 / these rules "
                       "stop key theft, run-from-the-internet, hidden commands and words that steer the AI; a false alarm? send feedback"])
+
+
+# ------------------------------------------------------------------ #428 security round 1 (H1): where an install really lands
+_DIR = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+
+
+def pin_target(target):
+    """Symlinks in the target's parent resolved NOW → (real target, pin). The card / digest / record use the real path; the
+    write walks it again through no-follow fds (open_pinned), so a symlink or another folder swapped in later is refused."""
+    import pathlib
+    p, rest = pathlib.Path(target).parent, []
+    while not os.path.lexists(p):
+        rest.insert(0, p.name)
+        p = p.parent
+    try:
+        anchor = pathlib.Path(os.path.realpath(p, strict=True))
+        s = os.stat(anchor)
+    except OSError as e:
+        raise PlazaError(f"目标路径不可用 / the target path is unusable: {clean_line(str(p), 200)} ({e.strerror})") from None
+    if not stat.S_ISDIR(s.st_mode):
+        raise PlazaError(f"不是目录 / not a folder: {clean_line(str(anchor), 200)}")
+    return anchor.joinpath(*rest, pathlib.Path(target).name), {"anchor": str(anchor), "ident": (s.st_dev, s.st_ino), "rest": rest}
+
+
+MOVED = "没有安装：确认之后目标路径被改动了（换成了软链或别的目录），不装 / NOT INSTALLED: the target path changed after the card"
+
+
+def open_pinned(pin) -> int:
+    """fd of the real parent: every component opened O_DIRECTORY | O_NOFOLLOW from "/", the anchor checked against the
+    st_dev / st_ino seen at the card, missing folders created through the fd (mkdirat). PlazaError(MOVED) otherwise."""
+    import pathlib
+    fd = os.open("/", _DIR)
+    try:
+        for part in pathlib.Path(pin["anchor"]).parts[1:]:
+            fd, old = os.open(part, _DIR, dir_fd=fd), fd
+            os.close(old)
+        s = os.fstat(fd)
+        if (s.st_dev, s.st_ino) != tuple(pin["ident"]):
+            raise OSError("moved")
+        for part in pin["rest"]:
+            try:
+                os.mkdir(part, 0o755, dir_fd=fd)
+            except FileExistsError:
+                pass
+            fd, old = os.open(part, _DIR, dir_fd=fd), fd
+            os.close(old)
+        return fd
+    except OSError:
+        os.close(fd)
+        raise PlazaError(MOVED) from None

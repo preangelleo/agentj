@@ -34,8 +34,9 @@ TOUR_SECS = 2 * 86400           # a tour nobody continued is not resumed days la
 REMIND_SECS = 6 * 3600          # a missing required remote is mentioned at most this often (and never after both are paired)
 MANUAL = {"zh": "https://agentj.app/docs/manual/", "en": "https://agentj.app/docs/manual/"}
 
-_PHONE = re.compile(r"\b(ios|ipados|android|iphone|ipad)\b", re.I)
-_COMPUTER = re.compile(r"\b(macos|mac|windows|linux|chromeos|cros)\b", re.I)
+# #435: ASCII word edges, not \b — every CJK character is a word character, so 「张伟的iPhone」 had no \b before "i"
+_PHONE = re.compile(r"(?<![a-z0-9])(ios|ipados|android|iphone|ipad)(?![a-z0-9])", re.I)
+_COMPUTER = re.compile(r"(?<![a-z0-9])(macos|mac|windows|linux|chromeos|cros)(?![a-z0-9])", re.I)
 
 
 def kind_of(label: str) -> str:
@@ -48,6 +49,14 @@ def kind_of(label: str) -> str:
     if _COMPUTER.search(s):
         return "computer"
     return "other"
+
+
+def _paired_count(st) -> int:
+    try:
+        devs = st.devices()
+    except (OSError, ValueError):
+        return 0
+    return len(devs) if isinstance(devs, dict) else 0
 
 
 def _path(st):
@@ -280,6 +289,8 @@ def turn_note(st, lang: str, now: float | None = None) -> str:
         tour = rec["welcomed"] is not None and rec["tour_left"] > 0 and now < rec["tour_until"]
         seat = cloud.read_cloud(st) is not None
         s = {"computer": rec["computer"] is not None, "phone": rec["phone"] is not None, "seat": seat}
+        if _paired_count(st) >= 2:      # #435: two remotes are paired — never ask the Agent to suggest another one
+            s["computer"] = s["phone"] = True
         # only an install whose first remote was welcomed here is still onboarding; a host that already had remotes when
         # F28 arrived (legacy), or one not paired at all yet (the installing Agent leads that, install.md Step 11), is not
         fresh = isinstance(rec["welcomed"], dict) and rec["welcomed"].get("kind") != "legacy"

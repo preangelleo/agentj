@@ -1,6 +1,11 @@
-"""P428 §1: guided Google authorization through Agent J's pinned gog — `agentj google connect|disconnect`.
+"""P428 §1 + #436: guided Google authorization — `agentj google connect|disconnect` for EVERY purpose in google.PURPOSES.
 
-Only the existing flow: our gog 0.43.0 in its isolated GOG_HOME and its own keyring namespace (google.KEYRING_SERVICE, F3),
+#436: Calendar keeps gog's default token bucket; gmail-read / gmail-send / drive-file run the same gog flow in their own
+bucket (`--client agentj-<purpose>`, its own stored client + token, so one purpose's consent or disconnect never touches
+another's); youtube-publish / search-console-read (no minimum-scope gog path) run google_oauth's local PKCE adapter with the
+same steps, reasons and boundaries. Each purpose asks only its own scopes.
+
+The gog flow: our gog 0.43.0 in its isolated GOG_HOME and its own keyring namespace (google.KEYRING_SERVICE, F3),
 the owner's own Desktop OAuth client, browser consent on the Agent J host. The host never opens a client path (F4): the CLI
 reads the file with the caller's own permissions and sends its bytes (`client_b64`); the host checks the JSON shape, hands the
 bytes to gog through stdin (gog keeps them in its keyring) and zeroes them. The token stays in gog's store and is never read,
@@ -25,9 +30,10 @@ import threading
 
 from . import google as g
 
-CONNECTABLE = ("calendar-read", "calendar-write")
+CONNECTABLE = tuple(g.PURPOSES)          # #436: every defined purpose (the adapter ones through google_oauth)
 STEPS = ("client_needed", "client_saved", "oauth_consent_required", "token_verified", "ready")
-REASONS = ("consent_timeout", "consent_failed", "api_disabled", "probe_failed", "client_file_refused", "not_installed")
+REASONS = ("consent_timeout", "consent_failed", "api_disabled", "probe_failed", "client_file_refused", "not_installed",
+           "scope_denied", "auth_expired")
 CLIENT_MAX = 64 << 10
 B64_MAX = 4 * (CLIENT_MAX // 3 + 1)
 _B64 = re.compile(r"[A-Za-z0-9+/]+={0,2}")
@@ -35,14 +41,16 @@ _HEX = re.compile(r"[0-9a-f]{64}")
 CONSENT = "5m"
 CONSENT_SECS = 330                      # gog's own --timeout 5m, plus a margin before we stop waiting
 CAL_COMMANDS = "calendar.events,calendar.create,calendar.update,calendar.delete,calendar.calendars"
+# #436: the exact gog commands each non-Calendar gog purpose may run (sending mail only under gmail-send)
+EXACT = {"gmail-read": "gmail.search,gmail.get", "gmail-send": "gmail.send", "drive-file": "drive.ls,drive.upload"}
+PROBE = {"gmail-read": ["gmail", "search", "--max=1", "--", "in:inbox"], "drive-file": ["drive", "ls", "--max=1"]}
 _EMAIL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._%+-]{0,63}@[A-Za-z0-9][A-Za-z0-9.-]{0,189}\.[A-Za-z]{2,63}")
 _RUNNING: dict[str, threading.Thread] = {}
 _GUARD = threading.Lock()
 CONSOLE = [
     ("新建（或选）你自己的 Google Cloud 项目", "create (or pick) your own Google Cloud project",
      "https://console.cloud.google.com/projectcreate"),
-    ("启用 Google Calendar API", "enable the Google Calendar API",
-     "https://console.cloud.google.com/apis/library/calendar-json.googleapis.com"),
+    ("启用 {zh}", "enable the {en}", "https://console.cloud.google.com/apis/library/{api}"),
     ("OAuth 同意屏幕：External，发布状态切到 In production（不是提交验证）",
      "OAuth consent screen: External, publishing status In production (not Submit for verification)",
      "https://console.cloud.google.com/apis/credentials/consent"),
@@ -50,6 +58,30 @@ CONSOLE = [
      "Credentials → Create OAuth client ID → Desktop app → Download JSON (onto this computer)",
      "https://console.cloud.google.com/apis/credentials"),
 ]
+API_NAMES = {"calendar-json.googleapis.com": "Google Calendar API", "gmail.googleapis.com": "Gmail API",
+             "drive.googleapis.com": "Google Drive API", "youtube.googleapis.com": "YouTube Data API v3",
+             "searchconsole.googleapis.com": "Google Search Console API"}
+
+
+def adapter(pid: str) -> bool:
+    """youtube-publish / search-console-read: google_oauth (gog 0.43.0 has no minimum-scope path for them)."""
+    return not g.PURPOSES[pid]["gog"]
+
+
+def cargs(pid: str) -> list[str]:
+    """gog's token bucket: Calendar = the default one (P428), every other gog purpose its own."""
+    return [] if pid.startswith("calendar-") else ["--client", "agentj-" + pid]
+
+
+def _bucket(pid: str) -> tuple[str, ...]:
+    """The purposes that share one grant: both Calendar purposes (one full-Calendar token), else the purpose alone."""
+    return ("calendar-read", "calendar-write") if pid.startswith("calendar-") else (pid,)
+
+
+def _console(pid: str) -> list[dict]:
+    api = g.PURPOSES[pid]["api"]
+    name = API_NAMES.get(api, api)
+    return [{"zh": z.format(zh=name), "en": e.format(en=name), "url": u.format(api=api)} for z, e, u in CONSOLE]
 
 
 def clean(conns) -> dict:
@@ -62,7 +94,7 @@ def clean(conns) -> dict:
 
 
 def effective(conns: dict, pid: str) -> dict | None:
-    """A Calendar purpose's own connection; calendar-read is also served by a ready calendar-write grant (full Calendar)."""
+    """A purpose's own connection; calendar-read is also served by a ready calendar-write grant (full Calendar)."""
     if pid not in CONNECTABLE:
         return None
     c = conns.get(pid)
@@ -72,7 +104,7 @@ def effective(conns: dict, pid: str) -> dict | None:
 
 
 def projection(row: dict) -> tuple[str, dict]:
-    """P86 status + check for one purpose row: `ready` only for a verified Calendar connection (7-day expiry)."""
+    """P86 status + check for one purpose row: `ready` only for a verified connection (7-day expiry)."""
     step, ver = row.get("step"), row.get("verified_at")
     if step == "ready" and ver:
         from datetime import datetime
@@ -199,8 +231,61 @@ def gog_calendar(st, argv: list[str], timeout: float = g.PROBE_TIMEOUT, allow: s
         return p.returncode, None
 
 
+def gog_run(st, purpose: str, argv: list[str], timeout: float = g.PROBE_TIMEOUT, allow: str | None = None,
+            stdin=None, data: bytes | None = None, flags: tuple = ()) -> tuple[int, object]:
+    """#436: every gmail / drive call: `--client agentj-<purpose> -a auto --json --no-input [flags] --enable-commands-exact
+    <that purpose's commands>`; gmail-send alone may send. stdin = a no-follow fd we opened, or `data` bytes."""
+    allow = allow or EXACT[purpose]
+    if not set(allow.split(",")) <= set(EXACT[purpose].split(",")):
+        return -1, None
+    g._private_dir(g.gog_home(st))
+    try:
+        p = subprocess.run([str(g.binary(st)), *cargs(purpose), "-a", "auto", "--json", "--no-input", *flags,
+                            "--enable-commands-exact", allow, *argv], capture_output=True, timeout=timeout, env=g.env(st),
+                           **({"input": data} if data is not None else {"stdin": stdin if stdin is not None else subprocess.DEVNULL}))
+    except subprocess.TimeoutExpired:
+        return -2, None
+    except OSError:
+        return -1, None
+    try:
+        return p.returncode, json.loads(p.stdout) if p.stdout.strip() else None
+    except ValueError:
+        return p.returncode, None
+
+
+def _check(st, purpose: str) -> tuple[int, object]:
+    """The read-only check of one purpose → (code, body): Calendar lists one calendar; gmail-read searches one thread
+    (never sends); drive-file lists one file; gmail-send (no read scope) asks gog to refresh its token (`auth list --check`)."""
+    if purpose.startswith("calendar-"):
+        return gog_calendar(st, ["calendar", "calendars", "--max", "1"], allow="calendar.calendars")
+    if purpose == "gmail-send":
+        code, out, _ = _gog(st, [*cargs(purpose), "--json", "--no-input", "auth", "list", "--check"], g.PROBE_TIMEOUT + 20)
+        mine = (g.read(st).get("connections") or {}).get(purpose, {}).get("acct")
+        try:
+            rows = json.loads(out).get("accounts") or []
+            ok = code == 0 and any(isinstance(a, dict) and a.get("valid") is True and isinstance(a.get("email"), str)
+                                   and _acct(a["email"]) == mine for a in rows)
+        except (ValueError, AttributeError):
+            ok = False
+        return (0, None) if ok else (4, None)
+    flags = ("--wrap-untrusted", "--gmail-no-send") if purpose == "gmail-read" else ("--gmail-no-send",)
+    return gog_run(st, purpose, PROBE[purpose], allow=EXACT[purpose].split(",")[0], flags=flags)
+
+
 def _probe(st, purpose: str, acct: str | None = None) -> dict:
-    code, body = gog_calendar(st, ["calendar", "calendars", "--max", "1"], allow="calendar.calendars")
+    if adapter(purpose):
+        from . import google_oauth
+        if acct:
+            _set(st, purpose, "token_verified", acct=acct)
+        why = google_oauth.probe(st, purpose)
+        if why is None:
+            if not acct:
+                _set(st, purpose, "token_verified")
+            return _set(st, purpose, "ready")
+        return _set(st, purpose, "oauth_consent_required", why, acct=acct)
+    if acct:
+        _set(st, purpose, "token_verified", acct=acct)      # the account hash first: the gmail-send check matches it
+    code, body = _check(st, purpose)
     if code == 0:
         _set(st, purpose, "token_verified", acct=acct)
         return _set(st, purpose, "ready")
@@ -211,12 +296,20 @@ def _probe(st, purpose: str, acct: str | None = None) -> dict:
 
 def _consent(st, purpose: str, account: str) -> None:
     try:
-        code, out, err = _gog(st, ["auth", "add", account, *g.PURPOSES[purpose]["gog"], "--force-consent", "--timeout",
-                                   CONSENT], CONSENT_SECS)
+        if adapter(purpose):
+            from . import google_oauth
+            why, _granted = google_oauth.consent(st, purpose, account, CONSENT_SECS)
+            if why is None:
+                _probe(st, purpose, _acct(account))
+            else:
+                _set(st, purpose, "oauth_consent_required", why)
+            return
+        code, out, err = _gog(st, [*cargs(purpose), "auth", "add", account, *g.PURPOSES[purpose]["gog"], "--force-consent",
+                                   "--timeout", CONSENT], CONSENT_SECS)
         if code == 0:
-            for other in _accounts(st) or []:      # one Google account (P428 scope): `-a auto` needs exactly one token;
+            for other in _accounts(st, purpose) or []:   # one Google account per bucket: `-a auto` needs exactly one token;
                 if isinstance(other, str) and other.casefold() != account.casefold() and _EMAIL.fullmatch(other):
-                    _gog(st, ["--no-input", "auth", "remove", other, "-y"], g.PROBE_TIMEOUT)   # our keyring namespace only
+                    _gog(st, [*cargs(purpose), "--no-input", "auth", "remove", other, "-y"], g.PROBE_TIMEOUT)   # this bucket only
             _probe(st, purpose, _acct(account))
             return
         low = (out + err).lower()
@@ -239,14 +332,19 @@ def connect(st, purpose, client=None, account=None, wait: bool = False) -> dict:
 def _connect(st, purpose, client, account, wait: bool) -> dict:
     if purpose not in CONNECTABLE:
         return {"ok": False, "why": "purpose_not_connectable", "connectable": list(CONNECTABLE)}
-    if not g.installed(st):
+    if not adapter(purpose) and not g.installed(st):
         return _out(purpose, {**_conn(st, purpose), "reason": "not_installed"})
     p = g.PURPOSES[purpose]
     info = {"scopes": list(p["scopes"]), "scope_note": p.get("scope_note")}
     if client is not None:
         code = -1
         if isinstance(client, (bytes, bytearray)) and 0 < len(client) <= CLIENT_MAX and client_ok(client):
-            code = _gog(st, ["--no-input", "--json", "auth", "credentials", "set", "-"], g.PROBE_TIMEOUT, bytes(client))[0]
+            if adapter(purpose):
+                from . import google_oauth
+                code = 0 if google_oauth.save_client(st, purpose, client) else -1
+            else:
+                code = _gog(st, [*cargs(purpose), "--no-input", "--json", "auth", "credentials", "set", "-"], g.PROBE_TIMEOUT,
+                            bytes(client))[0]
         if code != 0:               # a wrong file never downgrades a connection that already got further
             cur = _conn(st, purpose)
             if cur["step"] == "client_needed":
@@ -254,7 +352,8 @@ def _connect(st, purpose, client, account, wait: bool) -> dict:
             return _out(purpose, {**cur, "reason": "client_file_refused"})
         conn = _set(st, purpose, "client_saved")
         if account is None:
-            return _out(purpose, conn, **info, delete_download="the downloaded JSON is stored now; you may delete it",
+            return _out(purpose, conn, **info, delete_download="the downloaded JSON is stored now; keep it only to connect "
+                        "another Google purpose, otherwise you may delete it",
                         next=f"agentj google connect --purpose {purpose} --account EMAIL")
     if account is not None:
         if not isinstance(account, str) or len(account) > 254 or not _EMAIL.fullmatch(account):
@@ -274,7 +373,7 @@ def _connect(st, purpose, client, account, wait: bool) -> dict:
         return _out(purpose, _conn(st, purpose), **info, running=True,
                     owner=["a Google sign-in page opens in the browser on this computer: sign in and do 2-step there",
                            "on the unverified-app warning check it is YOUR project, then Advanced → Continue (yourself)",
-                           "approve the Calendar permission"],
+                           f"approve only the {p['en']} permission"],
                     next=f"agentj google connect --status --purpose {purpose}")
     conn = _conn(st, purpose)
     if running(st):
@@ -282,7 +381,7 @@ def _connect(st, purpose, client, account, wait: bool) -> dict:
     if conn["step"] in ("ready", "token_verified") or conn.get("reason") in ("api_disabled", "probe_failed"):
         return _out(purpose, _probe(st, purpose), **info)       # re-check after enabling the API / refresh `ready`
     if conn["step"] == "client_needed":
-        return _out(purpose, conn, **info, owner=[{"zh": z, "en": e, "url": u} for z, e, u in CONSOLE],
+        return _out(purpose, conn, **info, owner=_console(purpose),
                     next=f"agentj google connect --purpose {purpose} --client-file /absolute/path/client.json")
     return _out(purpose, conn, **info, next=f"agentj google connect --purpose {purpose} --account EMAIL")
 
@@ -294,51 +393,65 @@ def connect_status(st, purpose=None) -> dict:
     run = running(st)
     out = {}
     for pid in CONNECTABLE if purpose is None else (purpose,):
-        c = {k: v for k, v in (conns.get(pid) or {"step": "client_needed"}).items() if k != "acct"} if pid in CONNECTABLE \
-            else {"step": "not_connectable"}
+        c = {k: v for k, v in (conns.get(pid) or {"step": "client_needed"}).items() if k != "acct"}
         if run and c["step"] == "oauth_consent_required" and not c.get("reason"):
             c["running"] = True
         out[pid] = c
     return {"ok": True, "connections": out, "connectable": list(CONNECTABLE)}
 
 
-def _accounts(st) -> list[str] | None:
-    code, out, _ = _gog(st, ["--json", "--no-input", "auth", "list"], g.PROBE_TIMEOUT)
+def _accounts(st, purpose: str = "calendar-write") -> list[str] | None:
+    """The e-mails in this purpose's gog token bucket (gog's plain `auth list` lists every bucket, with `client`)."""
+    code, out, _ = _gog(st, [*cargs(purpose), "--json", "--no-input", "auth", "list"], g.PROBE_TIMEOUT)
     try:
         rows = json.loads(out) if code == 0 else None
     except ValueError:
         return None
     accs = rows.get("accounts") if isinstance(rows, dict) else None
-    return [a if isinstance(a, str) else a.get("email") for a in accs or [] if isinstance(a, (str, dict))] \
-        if isinstance(accs, list) else None
+    want = (cargs(purpose) or [None, "default"])[1]
+    return [a if isinstance(a, str) else a.get("email") for a in accs or [] if isinstance(a, str) or
+            isinstance(a, dict) and a.get("client", "default") == want] if isinstance(accs, list) else None
 
 
 def disconnect(st, purpose) -> dict:
-    """Removes the account Agent J connected (sha256 match, F3) from OUR gog's isolated store and keyring namespace (one
-    Calendar grant serves both calendar purposes) and clears both connections; no match → nothing removed (`removed: 0`).
-    The owner's client stays in gog's keyring; nothing outside GOG_HOME / our keyring namespace is touched."""
+    """Removes the account Agent J connected (sha256 match, F3) from this purpose's token bucket of OUR gog (one Calendar
+    grant serves both calendar purposes) and clears only those connections; no match → nothing removed (`removed: 0`).
+    The owner's client stays in gog's keyring; nothing outside GOG_HOME / our keyring namespace is touched. Adapter purposes:
+    google_oauth revokes the refresh token and deletes only that purpose's files."""
     if purpose not in CONNECTABLE:
         return {"ok": False, "why": "purpose_not_connectable", "connectable": list(CONNECTABLE)}
-    if not g.installed(st):
-        return {"ok": False, "purpose": purpose, "why": "not_installed"}
     if running(st):
         return {"ok": False, "purpose": purpose, "why": "busy", "step": "oauth_consent_required"}
-    accs = _accounts(st)
+    mine_ = _bucket(purpose)
+    if adapter(purpose):
+        from . import google_oauth
+        removed = int(google_oauth.has_token(st, purpose))
+        google_oauth.forget(st, purpose)
+        _drop(st, mine_)
+        st.log("google_connect", kind=purpose, result="disconnected", count=removed)
+        return {"ok": True, "purpose": purpose, "step": "client_needed", "removed": removed}
+    if not g.installed(st):
+        return {"ok": False, "purpose": purpose, "why": "not_installed"}
+    accs = _accounts(st, purpose)
     if accs is None:
         return {"ok": False, "purpose": purpose, "why": "probe_failed"}
     conns = g.read(st).get("connections") or {}
-    mine = {c.get("acct") for k, c in conns.items() if k in CONNECTABLE and isinstance(c, dict) and c.get("acct")}
+    mine = {c.get("acct") for k, c in conns.items() if k in mine_ and isinstance(c, dict) and c.get("acct")}
     accs = [a for a in accs if isinstance(a, str) and _EMAIL.fullmatch(a) and _acct(a) in mine]
     removed = 0
     for a in accs:
-        removed += _gog(st, ["--no-input", "auth", "remove", a, "-y"], g.PROBE_TIMEOUT)[0] == 0
-    with g._lock(st):
-        rec = g.read(st)
-        rec["connections"] = {k: v for k, v in (rec.get("connections") or {}).items() if k not in CONNECTABLE}
-        g._write(st, rec)
+        removed += _gog(st, [*cargs(purpose), "--no-input", "auth", "remove", a, "-y"], g.PROBE_TIMEOUT)[0] == 0
+    _drop(st, mine_)
     st.log("google_connect", kind=purpose, result="disconnected", count=removed)
     return {"ok": removed == len(accs), "purpose": purpose, "step": "client_needed", "removed": removed,
             **({} if removed == len(accs) else {"why": "remove_failed"})}
+
+
+def _drop(st, pids) -> None:
+    with g._lock(st):
+        rec = g.read(st)
+        rec["connections"] = {k: v for k, v in (rec.get("connections") or {}).items() if k not in pids}
+        g._write(st, rec)
 
 
 def request_shape(req: dict) -> str | None:
@@ -373,7 +486,7 @@ def cli_request(a) -> tuple[dict | None, dict]:
             return {"ok": False, "why": "shape", "detail": "at most one --purpose"}, {}
         return None, {"t": "google", "op": "connect_status", "purpose": pur[0] if pur else None}
     if len(pur) != 1:
-        return {"ok": False, "why": "shape", "detail": "exactly one --purpose (calendar-write)"}, {}
+        return {"ok": False, "why": "shape", "detail": "exactly one --purpose (" + " | ".join(CONNECTABLE) + ")"}, {}
     req = {"t": "google", "op": a.action, "purpose": pur[0]}
     if a.action == "connect":
         if a.client_file:

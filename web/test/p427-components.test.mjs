@@ -1,8 +1,10 @@
 import test from 'node:test';import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
 globalThis.window={};
 const {parseComponent,contract}=await import('../public/js/components.js');
-test('P427 registry and generated phone/Agent contracts cannot drift',()=>execFileSync(process.execPath,['web/generate-components.mjs','--check']));
+// #443: the generator is located from this file, not from the caller's cwd (repo root, agentjarvis/ or an export tree)
+test('P427 registry and generated phone/Agent contracts cannot drift',()=>execFileSync(process.execPath,[fileURLToPath(new URL('../generate-components.mjs',import.meta.url)),'--check']));
 for(const c of contract.components.filter(x=>x.schema))test('P427 '+c.name+' schema and adversarial data',()=>{
  const good=JSON.stringify(c.example);assert.deepEqual(parseComponent(good),c.example);
  for(const src of [good.slice(0,-1),good.slice(0,-1)+',"onclick":"run"}',JSON.stringify({...c.example,component:'HTML'}),'null','[]','x'.repeat(contract.maxChars+1)])assert.equal(parseComponent(src),null);
