@@ -114,8 +114,15 @@ def proc_table() -> list[tuple[int, str]]:
     return out
 
 
+def _mine(pid) -> bool:
+    try:
+        return os.stat(f"/proc/{pid}").st_uid == os.getuid()
+    except OSError:
+        return False
+
+
 def fd_holders(path) -> list[int] | None:
-    """PIDs with this file open; None = this platform gives no answer (no /proc, no lsof)."""
+    """PIDs with this file open; None = no answer: no /proc and no lsof, a Codex whose fds are unreadable, lsof failing."""
     real = os.path.realpath(str(path))
     if _linux():
         out = []
@@ -123,14 +130,21 @@ def fd_holders(path) -> list[int] | None:
             if not d.isdigit():
                 continue
             fdd = f"/proc/{d}/fd"
-            with contextlib.suppress(OSError):
-                for fd in os.listdir(fdd):
-                    with contextlib.suppress(OSError):
-                        if os.readlink(f"{fdd}/{fd}") == real:
-                            out.append(int(d))
-                            break
+            try:
+                fds = os.listdir(fdd)
+            except PermissionError:        # #461 round 3: our own Codex we cannot look into may be the writer → unknown
+                if _mine(d) and classify(cmdline(int(d))):
+                    return None
+                continue
+            except OSError:
+                continue
+            for fd in fds:
+                with contextlib.suppress(OSError):
+                    if os.readlink(f"{fdd}/{fd}") == real:
+                        out.append(int(d))
+                        break
         return out
-    r = _lsof(["-t", "--", real])
+    r = _lsof(["-t", "--", real], ok=(0, 1))
     if r is None:
         return None
     return [int(x) for x in r.split() if x.isdigit()]
@@ -140,14 +154,15 @@ def _lsof_exe() -> str | None:
     return shutil.which("lsof") or next((p for p in LSOF_PATHS if os.access(p, os.X_OK)), None)
 
 
-def _lsof(args) -> str | None:
-    """lsof's stdout, None = no lsof / it never answered (P330: one retry after a timeout)."""
+def _lsof(args, ok=None) -> str | None:
+    """lsof's stdout, None = no lsof / it never answered (P330: one retry after a timeout) / exit code not in `ok`."""
     exe = _lsof_exe()
     if not exe:
         return None
     for _ in range(2):
         try:
-            return subprocess.run([exe, *args], capture_output=True, text=True, timeout=LSOF_TIMEOUT).stdout
+            r = subprocess.run([exe, *args], capture_output=True, text=True, timeout=LSOF_TIMEOUT)
+            return r.stdout if ok is None or r.returncode in ok else None
         except subprocess.TimeoutExpired:
             continue
         except (OSError, subprocess.SubprocessError):

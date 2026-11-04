@@ -33,6 +33,7 @@ CONTROL_WARN_S = 30
 OBSERVE_RETRIES = 5     # P142 (B17): consecutive failed observe passes before the shared session is down
 FRESH_MS = 30 * 60 * 1000   # P147: a registered session this young may not have written its transcript yet
 CLAUDE_INPUT_WAIT = 10  # acceptance, not completion; never retry an uncertain socket write
+NATIVE_FLUSH_WAIT = 2.0  # 0.26.8a2: Claude appends its transcript every ~100 ms, after PermissionRequest may fire
 # P243: a background Bash keeps Claude Code's registry at "shell", a background sub-agent at "busy", although the turn has
 # ended and the prompt takes input. Phone /compact and /clear go once our hooks say the main thread is idle and has been
 # quiet this long — with background work known (Stop.background_tasks, a run_in_background call, registry "shell")...
@@ -251,6 +252,7 @@ class SharedClaudeAgent(Agent):
         self.native_turn = False       # P135: the transcript shows a native turn in progress (no UserPromptSubmit came)
         self.ended_at = None           # P198: wall clock of the last turn end; assistant lines written before it are that turn's
         self._native_idle_since = None  # P198: monotonic start of "native_turn, yet the session and its registry entry are idle"
+        self.bg_parent = {}             # 0.26.8a2: background shell id → the sub-agent that launched it
         self.bg_live = {}               # P243: background task id → type ("shell" / "subagent" / …), main thread's own
         self.main_seen_at = __import__("time").monotonic()   # P243: main thread's last hook event / transcript line (start = now)
         self.pending_text = ""
@@ -261,6 +263,7 @@ class SharedClaudeAgent(Agent):
         self.held = []                  # P424 #75: [(page id, pending text)] phone messages not taken in time (≤ 5)
         self.untrusted_state = None    # B1: None | "pending" (group envelope sent) | "running" (native turn seen)
         self.untrusted_foreign = False
+        self.peer_low = False           # #455 B1: this turn already met outside input — no peer record lifts it before turn end
         self.untrusted_at = 0.0
         self.failed_start = False
         self._observe_errors = 0       # P142 (B17): consecutive failed observe passes
@@ -395,7 +398,7 @@ class SharedClaudeAgent(Agent):
         emit = getattr(self.host, "emit", None)
         if emit:
             emit("shared_stop", agent="claude", phone=self.phone_turn, phone_input=self.phone_turn and self.phone_seen, source=source)
-        self.native_turn = False
+        self.native_turn = self.peer_low = False
         self._limit_check(reply)
         if self.phone_turn and (self.phone_seen or self.phone_claim):
             self.phone_reply_seen = True
@@ -593,6 +596,10 @@ class SharedClaudeAgent(Agent):
                     self.bg_live.pop(str(inp.get(k)), None)
         elif name == "SubagentStop" and aid:
             self.bg_live.pop(str(aid), None)
+        if name == "PostToolUse" and aid and isinstance(event.get("tool_response"), dict) and event["tool_response"].get("backgroundTaskId"):
+            self.bg_parent[str(event["tool_response"]["backgroundTaskId"])] = str(aid)
+            while len(self.bg_parent) > 128:
+                self.bg_parent.pop(next(iter(self.bg_parent)))
         elif name in ("SessionEnd",) or (name == "SessionStart" and event.get("source") in ("clear", "startup")):
             self.bg_live = {}
         while len(self.bg_live) > 64:
@@ -809,7 +816,8 @@ class SharedClaudeAgent(Agent):
                     hb.forget("compact")
         if name == "UserPromptSubmit" and not event.get("agent_id"):
             prompt = str(event.get("prompt") or "")
-            if not self._phone_echo(event, prompt):
+            if not self._phone_echo(event, prompt) and not (self.native_source.get("kind") == "same_host"
+                                                            and prompt.strip() == self.__dict__.get("_peer_text")):
                 self.native_source = provenance.terminal_input(event, prompt, prompt)
         elif name == "SessionStart" or name == "PreCompact":
             self.native_source = provenance.normalize(None)
@@ -959,7 +967,11 @@ class SharedClaudeAgent(Agent):
                 # Refresh the host-read transcript, not a tool record supplied by this hook.
                 if getattr(self, "transcript", None) is not None:
                     self.read_transcript()
+                    await self._await_native_call(event.get("tool_use_id"), gone)
                 decision = await self.host.peers.xfer.broker.execute(event.get("tool_name"), event.get("tool_input"), event.get("tool_use_id"), gone)
+                if decision is not None and decision.get("message") == "No live native secret-call admission" and self._owner_call_open():
+                    decision = {**decision, "message": pick(getattr(self.host, "lang", "zh"), "这个会话是升级前开的，请在本机对它 /clear 或开新会话。",
+                                                            "This session was opened before the upgrade: run /clear in it on this computer, or open a new session.")}
                 if decision is not None:
                     return {"hookSpecificOutput":{"hookEventName":"PermissionRequest", "decision":decision}}
             from . import policy_registry
@@ -1092,6 +1104,35 @@ class SharedClaudeAgent(Agent):
             emit = getattr(self.host, "emit", None)
             if emit:
                 emit("shared_identity_read", agent="claude", session=m[1])
+
+    def _native_done(self, item):
+        from .completion_recovery import native_ids
+        ids = native_ids(item, self.__dict__.setdefault("_enqueued", set()))
+        book = getattr(getattr(self.host, "background_done", None), "recovery", None)
+        if not ids or book is None or not self.session:
+            return
+        ids += [c for c, parent in self.bg_parent.items() if parent in ids]   # shells a finished sub-agent launched
+        scope = f"shared-{self.kind}:{self.session.get('sessionId')}:"
+        keys, at = [scope + t for t in ids], item.get("timestamp") if isinstance(item.get("timestamp"), str) else None
+        try:
+            asyncio.get_running_loop().run_in_executor(None, book.native_done, keys, at)
+        except RuntimeError:
+            book.native_done(keys, at)
+
+    def _owner_call_open(self):
+        x = getattr(getattr(self.host, "peers", None), "xfer", None)
+        e = getattr(x, "execution", None)
+        return bool(self.phone_turn and self.phone_seen and e and e.live and e.send is not None)
+
+    async def _await_native_call(self, call, gone=None):
+        # an owner turn's exact call may reach the hook before Claude flushes its transcript line; never a hook-supplied record
+        calls = self.host.peers.xfer.broker.calls
+        deadline = asyncio.get_running_loop().time() + NATIVE_FLUSH_WAIT
+        while (isinstance(call, str) and call not in calls and self._owner_call_open() and not (gone is not None and gone.done())
+               and asyncio.get_running_loop().time() < deadline):
+            await asyncio.sleep(.05)
+            with contextlib.suppress(OSError, ValueError):
+                self.read_transcript()
 
     async def prepare_channel(self):
         if self.channel:
@@ -1727,6 +1768,9 @@ class SharedClaudeAgent(Agent):
             return False
         self.offset = self.transcript.stat().st_size if self.transcript.exists() else 0
         self.host.st.set_agent_session(self.kind, sid)
+        book = getattr(getattr(self.host, "background_done", None), "recovery", None)
+        if book is not None and self.transcript.is_file():   # 0.26.8a2: once per earlier record, off the event loop
+            self._native_scan = asyncio.create_task(asyncio.to_thread(book.scan_native, self.transcript, f"shared-{self.kind}:{sid}"))
         self.failed_start = False
         self.heal_told = None
         if self.status == "down":
@@ -1876,6 +1920,8 @@ class SharedClaudeAgent(Agent):
                 role = item.get("type")
                 if item.get("isSidechain"):
                     continue
+                if role in ("user", "queue-operation"):
+                    self._native_done(item)
                 if role == "system" and item.get("subtype") == "turn_duration":
                     self._turn_recorded_end()
                     continue
@@ -1925,7 +1971,7 @@ class SharedClaudeAgent(Agent):
                             self._host_turn("running")  # P570b: every job it names was launched by a trusted turn
                         else:
                             self.native_source = provenance.system()
-                            self.untrusted_foreign = True   # P570
+                            self.untrusted_foreign = self.peer_low = True   # P570; #455 B1
                         self.native_turn = True
                         self.stop_since_end = False   # P151: a harness-started turn begins (loop tick, task notification)
                         self._turn_begins()
@@ -1941,8 +1987,11 @@ class SharedClaudeAgent(Agent):
                             self.input_seen.set()
                             self._phone_anchor(text)
                         continue
+                    if self._peer_source(item, text):
+                        continue
                     if not human_input(item, blocks, text):
                         self.native_source = provenance.normalize(None)
+                        self.peer_low = self.peer_low or self.native_turn
                         continue
                     self.stop_since_end = False   # P151: a new turn begins
                     self._turn_begins()
@@ -1951,6 +2000,7 @@ class SharedClaudeAgent(Agent):
                         self._mark_untrusted("running", provenance.names_untrusted(text, True))   # a native version that runs it without UserPromptSubmit
                     if self._from_phone(item, text):
                         self.native_source = provenance.normalize(None)  # labels cannot authenticate a new request
+                        self.peer_low = self.peer_low or self.native_turn
                         if self.phone_turn and self.pending_text in text:
                             self.phone_seen = True
                             self.input_seen.set()
@@ -1994,6 +2044,33 @@ class SharedClaudeAgent(Agent):
                 and self.native_source == self.pending_source == provenance.phone()
                 and provenance.normalize(getattr(send, "source", None)) == provenance.phone()
                 and not any(item.get(k) for k in ("synthetic", "ignored", "isCompactSummary", "isSidechain")))
+
+    def _peer_source(self, item, text) -> bool:
+        from . import peer_origin
+        o = item.get("origin")
+        if not (isinstance(o, dict) and o.get("kind") == "peer" and item.get("isMeta") is True):
+            return False
+        src, why = provenance.normalize(None), "agentj_names"
+        cur = provenance.normalize(self.native_source)["kind"]
+        if self._from_phone(item, text):
+            pass                                         # Agent J's own envelopes (and anything quoting their names)
+        elif self.cur_send is not None or self.phone_turn or self.untrusted():
+            why = "host_delivery"
+        elif self.peer_low or self.native_turn and cur not in ("phone", "terminal", "same_host"):
+            why = "untrusted_turn_live"                  # B1: trust only goes down within a turn, until its end
+        else:
+            launches = getattr(self.host, "peer_launch", None)
+            unit, why = launches.verify(o, self.session) if launches is not None else (None, "off")
+            if unit:
+                src = peer_origin.source(unit)
+                if launches.dirty:                       # M1: the pinned unit root survives a restart
+                    with contextlib.suppress(RuntimeError):
+                        asyncio.get_running_loop().run_in_executor(None, launches.save)
+        self.peer_low = self.peer_low or src["kind"] != "same_host"
+        self.native_source = src
+        self._peer_text = text.strip() if src["kind"] == "same_host" else None
+        self.host.st.log("shared_peer_source", result=src["kind"], reason=why)
+        return True
 
     def _held_seen(self, text):
 
@@ -2205,7 +2282,7 @@ class SharedClaudeAgent(Agent):
             return
         if self.untrusted_state == "running":
             self.untrusted_state = None
-        self.native_turn = False
+        self.native_turn = self.peer_low = False
         self.ended_at = time.time()
         emit = getattr(self.host, "emit", None)
         if emit:

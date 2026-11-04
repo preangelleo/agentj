@@ -388,6 +388,10 @@ class Desk:
                 text = pick(lang, "AI 会话已重开，可以继续聊天，不需要到 Agent J 主机前。", "The AI session is ready. Continue chatting without going to the computer.") if res.get("ok") else pick(lang, "没能重开 AI 会话，请试「请 Agent J Father 远程帮忙」。", "Could not reopen the AI session. Try Ask Agent J Father for remote help.")
                 if res.get("new"):
                     text = pick(lang, "原会话没能恢复，已开新会话并接好手机；之前的对话保存着，不需要到 Agent J 主机前。", "The old session could not resume. A new session is connected to your phone; the old conversation is kept. No need to go to the computer.")
+                if res.get("ok"):          # #462: a pending Claude sign-in hand-over is proven in the reopened process
+                    from . import claude_live
+                    live = await claude_live.after_reopen(h)
+                    text += ("\n" + live) if live else ""
                 await emit(1, "ok" if res.get("ok") else "fail", text)
                 await finish({**res, "step": 1, "text": text})
             elif flow in ("reset", "reconnect", "new_session", "restart"):

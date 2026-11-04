@@ -168,6 +168,7 @@ class Notifier:
                      "never infer success from an exit code. Say when a report is missing and investigate.")
         page = self.host.hist_add({"k": "agent", "via": "background_done", "text": ""}, "", "open")
         send = CompletionSend(page["id"], "\n".join(lines), [k for k, _ in batch])
+        send.report_paths = [v["report_path"] for _, v in batch if v.get("report_path")]   # #450: own_report scope
         if any(v.get("foreign") is not False for _, v in batch):
             send.source = provenance.normalize(None)    # P570: a non-owner turn's job → the batch's strictest source
         self.host.agent.submit(send)
@@ -176,3 +177,102 @@ class Notifier:
         self.save()
         self.host.st.log("background_done_queued", count=len(batch))
         return send
+
+
+OWN_SHOWN = "own_report: no card (this completion turn's own report, read only)"
+_SUFFIX = (".md", ".txt", ".json", ".log", ".csv")
+
+
+OWN_MAX = 1 << 20
+
+
+def own_clean(path, workdir) -> bool:   # M3 (ADR-#455 round 1): no-follow walk, one link, ≤ 1 MiB, no secret; worker thread
+    import hashlib, os, stat as _stat
+    from pathlib import Path
+    from .media import _hash_and_scan
+    from .peer_guard import SecretIndex
+    fd = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for part in Path(path).parts[1:-1]:
+            nxt = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+            os.close(fd)
+            fd = nxt
+        f = os.open(Path(path).name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=fd)
+        with os.fdopen(f, "rb") as stream:
+            st = os.fstat(stream.fileno())
+            if not _stat.S_ISREG(st.st_mode) or st.st_nlink != 1 or st.st_uid != os.getuid() or st.st_size > OWN_MAX:
+                return False
+            sha, secret = _hash_and_scan(stream.fileno(), st.st_size, True, False)
+            data = stream.read(OWN_MAX + 1)
+            return not (secret or hashlib.sha256(data).hexdigest() != sha
+                        or SecretIndex.build(workdir=os.path.realpath(workdir)).hits(data.decode("utf-8", "replace")))
+    except Exception:  # noqa: BLE001 — media.Gone (changed while read), OSError …: cannot tell → the card
+        return False
+    finally:
+        os.close(fd)
+
+
+def own_report(agent, tool, tool_input, workdir):
+    """#450 1b: in a known completion turn, a pure read of the batch's own report (or a plain sibling file in a dedicated
+    report folder inside the workspace) and `agentj busy list/show` need no card. Everything else → the ordinary path."""
+    send = getattr(agent, "cur_send", None)
+    paths = getattr(send, "report_paths", None)
+    if (not isinstance(send, CompletionSend) or not paths or provenance.normalize(send.source)["kind"] != "system"
+            or provenance.unattended_turn(agent) != "system" or not isinstance(workdir, str) or not isinstance(tool_input, dict)):
+        return None
+    import os
+    from . import danger, handoff
+    if tool in ("Bash", "shell", "bash", "exec_command") and not set(tool_input) - {"command", "description", "timeout"}:
+        argv = handoff._canon(tool_input.get("command") or "")
+        if argv and argv[:2] == ["agentj", "busy"] and (
+                argv[2:3] == ["list"] and set(argv[3:]) <= {"--json", "--no-units"}
+                or argv[2:3] == ["show"] and len(argv) >= 4 and not argv[3].startswith("-") and set(argv[4:]) <= {"--json", "--no-units"}):
+            return "busy"
+    t = handoff._read_target(tool, tool_input, workdir)
+    if t is None:
+        return None
+    try:
+        root = os.path.realpath(workdir)
+
+        def place(p):          # the real path, only when no component below the workspace is a link and it stays inside
+            lex = os.path.normpath(os.path.join(workdir, p))
+            rel = os.path.relpath(lex, os.path.normpath(workdir))
+            real = os.path.realpath(lex)
+            if rel.startswith("..") or os.path.isabs(rel) or real != os.path.join(root, rel) or real == root:
+                return None
+            return real, rel
+        got = place(t[0])
+        if got is None or danger.cred_path(got[0]):
+            return None
+        parts = got[1].split(os.sep)
+        for r in paths:
+            own = place(r)
+            if own is None:
+                continue
+            if got[0] == own[0]:
+                return got[0]                                  # the report itself (even under .jarvis/)
+            folder = os.path.dirname(own[0])
+            if (os.path.dirname(got[0]) == folder and folder != root and got[0].lower().endswith(_SUFFIX)
+                    and not any(x.startswith(".") or x.lower() in ("credentials", "secrets") for x in parts)):
+                return got[0]                                  # evidence beside it in a dedicated report folder
+    except (OSError, ValueError, TypeError):
+        return None
+    return None
+
+
+RETRY = ("后台活已经结束，结果已就绪；这一轮是系统通知，读报告要你在场。回我一句「看结果」我就读给你。[看结果](reply:看结果)",
+         "A background job has finished and its result is ready. This turn was a system notice, so reading the report needs "
+         "you. Reply \"show the result\" and I will read it to you. [Show the result](reply:Show the result)")
+
+
+def retry_notice(agent, message):
+    """#450 1c: the owner-facing line for a source refusal in a completion turn — None = not one (show the host's reason),
+    "" = already told this turn. The model still gets the host's full reason."""
+    send = getattr(agent, "cur_send", None)
+    if not isinstance(send, CompletionSend) or "cannot request owner approval" not in str(message):
+        return None
+    if getattr(send, "retry_told", False):
+        return ""
+    send.retry_told = True
+    from .text import pick
+    return pick(getattr(agent.host, "lang", "zh"), *RETRY)

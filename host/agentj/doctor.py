@@ -542,6 +542,36 @@ def check_shared_statusline(st: State) -> dict | None:
     return _c("shared_statusline", WARN, zh + " / " + en, "agentj config claude-statusline on")
 
 
+def _codex_cli_version(svc: dict) -> str | None:
+    """The version of the `codex` Agent J runs (same resolution as check_agent_cli), None = not found / does not run."""
+    from .binaries import resolve
+    from . import codex_daemon
+    try:
+        exe = resolve("codex", service.effective_binary_environment(svc))["path"] if svc.get("installed") else _agent_bin("codex")
+    except (OSError, service.ServiceError):
+        return None
+    return codex_daemon.version_of(_version_of(exe)) if exe else None
+
+
+def check_codex_daemon(st: State, svc: dict) -> dict | None:
+    """#461f: the owner's shared Codex app-server daemon updates itself (measured 0.166.0: `daemon pid-update-loop`), so it
+    can run another Codex than the CLI Agent J starts (customer: CLI 0.160.0, daemon 0.166.0). Named, with the fix; no row
+    when there is no daemon. Read-only: the running version from one `initialize`, else the managed release link."""
+    c = st.agent_config() if st.exists() else None
+    if not c or c.get("kind") != "codex":
+        return None
+    from . import codex_daemon
+    daemon = codex_daemon.server_version() or codex_daemon.managed_version()
+    if not daemon:
+        return None
+    cli = _codex_cli_version(svc)
+    if not cli or cli == daemon:
+        return _c("codex_daemon", OK, f"Codex 后台服务 / app-server daemon {daemon}" + (f" = CLI {cli}" if cli else ""))
+    zh, zh_fix = codex_daemon.mismatch_text(cli, daemon, True)
+    en, en_fix = codex_daemon.mismatch_text(cli, daemon, False)
+    return _c("codex_daemon", WARN, f"{zh} / {en}", f"{zh_fix} / {en_fix}")
+
+
 def check_agent_cli(st: State, svc: dict) -> dict:
     c = st.agent_config() if st.exists() else None
     kinds = [c["kind"]] if c else ["claude", "codex", "opencode"]
@@ -1286,6 +1316,9 @@ def run(st: State | None = None, offline: bool = False) -> list[dict]:
     shared_row = check_codex_shared(st)
     if shared_row:
         out.append(shared_row)
+    daemon_row = check_codex_daemon(st, svc)
+    if daemon_row:
+        out.append(daemon_row)
     perm_row = check_codex_perm(st)
     if perm_row:
         out.append(perm_row)
@@ -1432,8 +1465,10 @@ def main(as_json: bool = False, offline: bool = False, isolation_only: bool = Fa
     upgrade_context = not read_only and not offline and not isolation_only and (post_upgrade or update.upgrade_due(st))
     if upgrade_context:
         findings = checks + (check_main_identity(st) if upgrade_only else [])
-        if update.repair_upgrade(st, findings):
+        if ids := update.repair_upgrade(st, findings):
             checks = run_upgrade(st) if upgrade_only else run(offline=False)
+        if "upgrade-handoff" in ids:    # #460: read by service_recovery.via_host through the host's `health` op
+            checks.append(_c("upgrade-handoff", OK, "升级后的服务重启已安排 / the upgraded service's restart is scheduled"))
         if upgrade_only:
             checks += [r for r in check_main_identity(st) if r["id"].startswith(("root-", "work-root"))]
     failed = bool(update.upgrade_blockers(checks)[0]) if upgrade_context else any(c["status"] == FAIL for c in checks)

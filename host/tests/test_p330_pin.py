@@ -285,7 +285,7 @@ class Who(unittest.TestCase):
             runs.append(argv)
             if len(runs) == 1:
                 raise subprocess.TimeoutExpired(argv, kw.get('timeout'))
-            return Mock(stdout='93912\n')
+            return Mock(stdout='93912\n', returncode=0)
         with patch.object(codex_procs, '_linux', return_value=False), \
              patch.object(codex_procs.shutil, 'which', return_value=None), \
              patch.object(codex_procs.os, 'access', side_effect=lambda p, m: p == '/usr/sbin/lsof'), \

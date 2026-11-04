@@ -1,5 +1,6 @@
 """Bounded local reconciliation; never an authority to replay an action."""
 import asyncio
+import contextlib
 import hashlib
 import json
 import math
@@ -42,6 +43,37 @@ def valid_row(row):
         and isinstance(action['input_sha256'], str) and re.fullmatch(r'[a-f0-9]{64}', action['input_sha256']))
 
 
+def native_ids(item, enqueued=None):
+    """Task ids of Claude's own finished-task notification: delivered on the main thread (record-level origin only), or a
+    queue removal whose identical enqueue this reader saw (`enqueued`: the caller's set of content digests; None → never)."""
+    if not isinstance(item, dict) or item.get('isSidechain'):
+        return []
+    from .transcript_input import proactive_origin
+    if item.get('type') == 'queue-operation' and item.get('operation') in ('enqueue', 'remove'):
+        text = item.get('content')
+        if not isinstance(text, str) or not text.lstrip().startswith('<task-notification>') or enqueued is None:
+            return []
+        h = hashlib.sha256(text.encode('utf-8', 'surrogatepass')).hexdigest()
+        if item['operation'] == 'enqueue':
+            enqueued.add(h)
+            while len(enqueued) > 256:
+                enqueued.pop()
+            return []
+        if h not in enqueued:
+            return []
+        enqueued.discard(h)
+    elif item.get('type') == 'user':
+        c = (item.get('message') or {}).get('content') if isinstance(item.get('message'), dict) else None
+        text = c if isinstance(c, str) else ''.join(b.get('text', '') for b in c if isinstance(b, dict)) if isinstance(c, list) else ''
+        if proactive_origin(item) != 'task':      # M2: Claude Code's record markers, never the words
+            return []
+    else:
+        return []
+    if not isinstance(text, str) or not text.lstrip().startswith('<task-notification>') or re.search(r'<status>\s*(running|pending)\b', text):
+        return []
+    return re.findall(r'<task-id>\s*([^<\s]+)\s*</task-id>', text)
+
+
 class Book:
     def __init__(self, host):
         self.host = host
@@ -67,6 +99,59 @@ class Book:
         except (OSError, ValueError):
             self.rows = {}
             self.corrupt = True
+        self.native = {}
+        if self._settle():
+            with contextlib.suppress(OSError):
+                self.save()
+
+    def _settle(self):
+        # 0.26.8a2: no reminder where the owner has nothing to verify; rows are kept and stay listed
+        changed = False
+        for row in self.rows.values():
+            if row.get('state') != 'awaiting_owner_verification' or row.get('recovery_point') != 'reconcile_only' or row.get('report_sha256'):
+                continue
+            at = self.native.get(row.get('task_id'))
+            if at is not None and str(row['task_id']).startswith('shared-'):
+                row.update(state='reconciled', notified=True, settled={'by':'native_task_notification', 'at':at})
+                changed = True
+            elif row.get('stage') == 'source_gate' and row.get('original_error') == 'group_source' and not row.get('quiet'):
+                row.update(notified=True, quiet='group_source')
+                changed = True
+        return changed
+
+    def native_done(self, keys, at=None):
+        """Claude's own delivered task notification for its native background task (host-read main transcript)."""
+        with self.lock:
+            for k in keys:
+                self.native[k] = str(at)[:40] if at else int(time.time())
+            while len(self.native) > 256:
+                self.native.pop(next(iter(self.native)))
+            if self._settle():
+                with contextlib.suppress(OSError):
+                    self.save()
+
+    def scan_native(self, path, scope):
+        """Once per row: the served transcript is the only evidence read; nothing else is kept."""
+        with self.lock:
+            rows = [r for r in self.rows.values() if str(r.get('task_id')).startswith(scope + ':') and not r.get('native_scan')
+                    and r.get('state') == 'awaiting_owner_verification' and r.get('recovery_point') == 'reconcile_only']
+            want = {str(r['task_id'])[len(scope) + 1:] for r in rows}
+        if not want:
+            return
+        found, enq = {}, set()
+        with contextlib.suppress(OSError), open(path, 'rb') as f:
+            for line in f:
+                if b'<task-id>' in line:
+                    with contextlib.suppress(ValueError):
+                        item = json.loads(line)
+                        found.update((t, item.get('timestamp')) for t in want.intersection(native_ids(item, enq)))
+        with self.lock:
+            for r in rows:
+                r['native_scan'] = int(time.time())
+            for t, at in found.items():
+                self.native_done([scope + ':' + t], at if isinstance(at, str) else None)
+            with contextlib.suppress(OSError):
+                self.save()
 
     def binding(self):
         h = self.host
@@ -94,6 +179,7 @@ class Book:
                 self.host.st.log('recovery_capacity', result='awaiting_owner_verification')
                 return
             self.rows[key] = {**row, 'binding':self.binding(), 'state':'awaiting_owner_verification', 'notified':False, 'created_at':int(time.time())}
+            self._settle()
             self.save()
 
     def capture(self, key, value, snapshot=True):
@@ -216,8 +302,9 @@ class Book:
                 return {'result':'awaiting_owner_verification', 'items':[
                     {'id':k, 'task_id':v.get('task_id'), 'state':v.get('state'), 'original_error':v.get('original_error'),
                      'recovery_point':v.get('recovery_point'), 'report_available':bool(v.get('report_sha256')),
-                     'artifact':v.get('artifact'), 'report_sha256':v.get('report_sha256'), 'exit_code':v.get('exit_code'), 'created_at':v.get('created_at')}
-                    for k,v in self.rows.items() if v.get('binding') == self.binding() and v.get('state') == 'awaiting_owner_verification'] + [
+                     'artifact':v.get('artifact'), 'report_sha256':v.get('report_sha256'), 'exit_code':v.get('exit_code'), 'created_at':v.get('created_at'),
+                     'settled':v.get('settled') or v.get('quiet')}
+                    for k,v in self.rows.items() if v.get('binding') == self.binding() and (v.get('state') == 'awaiting_owner_verification' or v.get('settled'))] + [
                     {'id':k, 'task_id':v.get('task_id'), 'state':'awaiting_owner_verification', 'recovery_point':'capacity_wait', 'report_available':False}
                     for k,v in self.overflow()]}
             row = self.rows.get(key)

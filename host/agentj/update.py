@@ -691,6 +691,8 @@ def repair_upgrade(st, rows):
                 wizard.refresh_root(root, hs, lang, st=st)
         except (OSError, ValueError, wizard.WizardError):
             pass  # the second doctor preserves the unresolved finding
+    if resume_handoff(st):
+        ids.append("upgrade-handoff")
     if any(k in findings for k in ("serve", "service")):
         ids.append("serve")
         try:
@@ -699,6 +701,26 @@ def repair_upgrade(st, rows):
         except (OSError, ValueError):
             pass
     return ids
+
+
+def resume_handoff(st) -> bool:
+    """#460: an apply inside the Agent fence (P591: no service manager there) whose host has no upgrade op `service` left
+    the host's pending record for this version and no restart job. This doctor runs outside the fence (the host's `health`
+    op) and schedules that restart. Never inside the fence, never twice, only onto the version running this code."""
+    from . import fence, service, service_recovery
+    p = read_pending(st, __version__)
+    r = service_recovery.read(st) or {}
+    if not p or fence.inside() or r.get("target") == __version__ and r.get("at", 0) >= p.get("at", 0):
+        return False
+    try:
+        if not service.status().get("installed"):
+            return False
+        service_recovery.schedule(st, service.agentj_argv(), __version__)
+    except Exception as e:  # noqa: BLE001 — the doctor rows still say what is wrong
+        _logged(st, "upgrade_handoff_failed", e)
+        return False
+    st.log("upgrade_handoff", status="scheduled")
+    return True
 
 
 def upgrade_due(st):
@@ -1292,10 +1314,25 @@ def host_op(st, req: dict, mem: dict, run=None) -> dict:
         keep = ("id", "status", "summary", "hint", "unverifiable")
         st.log("upgrade_host", op=op, result="ok")
         return {"ok": True, "checks": [{k: r[k] for k in keep if k in r} for r in rows if isinstance(r, dict)]}
-    if op not in ("prepare", "pending", "marker", "rollback"):
+    if op not in ("prepare", "pending", "marker", "rollback", "service"):
         return {"ok": False, "why": "op"}
     if not isinstance(to, str) or parse(to) is None or compare(__version__, to) != -1:
         return {"ok": False, "why": "version"}
+    if op == "service":      # #460: the fenced `--deferred` hand-off, run here outside the fence (fixed argv; to = newer)
+        from .upgrade_diag import tail
+        rec = read_pending(st, to)       # N4: only inside an upgrade the host itself recorded (op `pending`) for exactly `to`
+        if not rec or rec.get("from") != __version__:
+            st.log("upgrade_host", op=op, result="refused")
+            return {"ok": False, "why": "pending"}
+        try:
+            r = run(new_argv(install_kind()) + ["service", "install", "--deferred", to], stdin=subprocess.DEVNULL,
+                    capture_output=True, text=True, timeout=120)
+            rc, tl = r.returncode, (tail(r.stderr) or tail(r.stdout)) if r.returncode else ""
+        except (OSError, subprocess.SubprocessError) as e:
+            from .service import os_error_note
+            rc, tl = 127, "✗ " + os_error_note(e)
+        st.log("upgrade_host", op=op, result="ok" if rc == 0 else "failed")
+        return {"ok": True, "rc": rc, "tail": tl}
     if op == "prepare":
         old = rollback_wheel(st)
         mem["old"] = (to, str(old) if old else None)

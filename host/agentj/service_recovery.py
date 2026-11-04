@@ -141,13 +141,46 @@ def cleanup_job(st):
 
 
 def schedule(st, argv, target):
-    record(st, 'pending', target, external=True)
+    try:
+        record(st, 'pending', target, external=True)
+    except OSError as e:     # #460: name the step in the receipt (a P591 fence pins the unit folder read-only: EROFS)
+        e.step = 'write ' + receipt_path().name
+        raise
     try:
         launch_job(st, argv + ['service', 'install', '--recovery-worker', target])
     except Exception as e:
         reason = e.reason if isinstance(e, service.ServiceError) and e.reason in service.NO_MANAGER else 'launch_failed'
         record(st, 'failed', target, reason, external=True)
         raise
+
+
+HANDOFF = 'upgrade-handoff'     # #460: doctor's row when its upgrade repair scheduled the restart (update.resume_handoff)
+HANDED = ('✓ 服务重启已由主机（隔离外）交给独立任务 / the host (outside the Agent fence) scheduled the service restart')
+
+
+def via_host(st, target):
+    """#460: inside the Agent fence (P591) the user's service manager is out of reach; the host outside the fence does this
+    hand-off over elevate.sock. Upgrade op `service` (0.26.8a2+ host: it runs this same `--deferred` itself); an older host
+    lacks it, so its `health` op runs this version's doctor outside the fence, whose upgrade repair schedules the restart from
+    the host's own pending record. Fixed ops only, no argv crosses. → exit code."""
+    import sys
+    from . import update
+    r = update._host(st, 'service', 180, to=target)
+    if r is not None:
+        if r.get('tail'):
+            print(r['tail'], file=sys.stderr)
+        rc = r['rc'] if isinstance(r.get('rc'), int) else 1
+        if rc == 0:
+            print(HANDED)
+        return rc
+    h = update._host(st, 'health', update.HEALTH_TIMEOUT + 30) if update._host(st, 'ping', 10) else None
+    if any(isinstance(x, dict) and x.get('id') == HANDOFF and x.get('status') == 'ok' for x in (h or {}).get('checks') or []):
+        print(HANDED)
+        return 0
+    print('✗ 在 Agent 的隔离环境里够不到 systemd，主机（隔离外）也没能安排服务重启（command=elevate.sock upgrade phase=service at=' + time.strftime('%Y-%m-%dT%H:%M:%S%z') + '）；'
+          '请从已配对手机发 /update，由主机来升级 / inside the Agent fence systemd is out of reach and the host outside the fence '
+          'could not schedule the restart either; send /update from the paired phone so the host upgrades', file=sys.stderr)
+    return 1
 
 
 READY_LIMIT = 600     # s (P142 A12): longest the restart waits for an idle serve; then it restarts anyway

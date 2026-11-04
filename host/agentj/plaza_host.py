@@ -241,10 +241,12 @@ async def handle(host, req: dict, emit=None, **run_kw) -> dict:
         why = None if rc == 0 else pre.get(n) or (card.get("why") if n in infos and card and not card.get("ok") else "error")
         host.st.log("plaza_request", name=n, result="ok" if rc == 0 else str(why), rc=rc)
         results.append({"name": n, "rc": rc, **({"why": why} if why else {})})
+    pending = _deps_task(host, [r["name"] for r in results if r["rc"] == 0], en)      # #466
     if not group:
         r, out = results[0], bufs[first].getvalue()
         if card or pre:                           # the owner saw a card (or it was refused at it): the chat hears the outcome
-            _notice(host, _say(host, "done", name=first, version=infos[first]["version"]) if r["rc"] == 0 else
+            _notice(host, _say(host, "deps_pending", name=first, deps="、".join(pending[first])) if first in pending else
+                    _say(host, "done", name=first, version=infos[first]["version"]) if r["rc"] == 0 else
                     market._perm_refusal(first, card if card else {"why": r["why"]}) if card.get("why") or pre else
                     _say(host, "failed", name=first, why=f"exit {r['rc']}"))     # fixed words: package text never reaches the chat
         return {"ok": r["rc"] == 0, "rc": r["rc"], **({"why": r["why"]} if "why" in r else {}), "out": out[-MAX_OUT:]}
@@ -259,6 +261,48 @@ async def handle(host, req: dict, emit=None, **run_kw) -> dict:
     rc = 0 if not bad else card.get("why") and market.EXIT_PERMISSION or next(r["rc"] for r in results if r["rc"])
     return {"ok": not bad, "rc": rc, **({"why": card["why"]} if card.get("why") else {}), "out": out[-MAX_OUT:],
             "results": results}
+
+
+def _deps_task(host, names: list, en: bool) -> dict:
+    """#466: ONE system task for the pending packages → {name: [missing]}."""
+    from . import market, plaza_deps
+    recs = {n: r for n in names if (r := market.pending_of(host.st, n))}
+    if not recs:
+        return {}
+    cli = {n: [c.get("name") for c in (r.get("requires") or {}).get("cli") or () if isinstance(c, dict)] for n, r in recs.items()}
+    text = "\n\n".join(plaza_deps.task_text(n, r["version"], [{"name": d, "user": plaza_deps.user_copies(d)}
+                                                              for d in r["verify"]["missing"]], en, market.VERIFY_PATH, cli[n])
+                        for n, r in recs.items())
+    try:
+        import secrets
+        from .compose import Send
+        from .provenance import system
+        page = host.hist_add({"k": "agent", "via": "plaza_deps", "text": ""}, "", "open")
+        send = Send("plaza_deps", secrets.token_urlsafe(16), page["id"], text=text, by="plaza_deps", source=system())
+        host.agent.submit(send)
+        host.st.log("plaza_deps_task", count=len(recs))
+    except Exception as e:  # noqa: BLE001 — the CLI receipt carries the same task text
+        host.st.log("plaza_deps_task", result="failed", error=type(e).__name__)
+    return {n: [plaza_deps.label(d, cli[n], en) for d in r["verify"]["missing"]] for n, r in recs.items()}   # N4-6: chat too
+
+
+async def verify(host, req: dict) -> dict:
+    from . import market, plaza
+    name, harness = req.get("name"), req.get("harness")
+    if not (isinstance(name, str) and _NAME.fullmatch(name)) or not (harness is None or harness in market.HARNESSES):
+        return {"ok": False, "rc": market.EXIT_ERROR, "why": "bad_request", "out": ""}
+    buf = io.StringIO()
+
+    def body() -> int:
+        try:
+            return market.run_reverify(name, harness=harness, st=host.st, out=buf, local=True)
+        except plaza.PlazaError as e:
+            print(f"agentj plaza: {e}", file=buf)
+            return market.EXIT_ERROR
+    rc = await asyncio.to_thread(body)
+    if rc == 0:
+        _notice(host, _say(host, "verified", name=name))
+    return {"ok": rc == 0, "rc": rc, "out": buf.getvalue()[-MAX_OUT:]}
 
 
 def _notice(host, line: str) -> None:

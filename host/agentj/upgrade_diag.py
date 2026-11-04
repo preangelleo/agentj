@@ -491,12 +491,23 @@ def owner_sentence(res: dict, rep: dict, lang: str = "zh") -> str:
                  f"失败原因和脱敏日志已自动发给 Agent J 客服（{rep['thread']}），你不用做什么")
     elif s == "off":
         tail_ = ("automatic reporting is off, so support was not told" if en else "你关闭了自动上报，没有发给客服")
+    elif rep.get("why") == "exit_3":     # #460
+        tail_ = ("it was not sent to support: the privacy check was unavailable, so I need you to read the text and say yes first"
+                 if en else "没有发给客服：隐私检查这会儿用不了，要你先看过原文、同意了我才发")
     else:
         tail_ = ("it could not be sent to support automatically; I can send it with `agentj support ask --attach-doctor`" if en else
                  "没能自动发给客服，我可以用 agentj support ask --attach-doctor 再发")
     if en:
         return f"The upgrade to {to} did not go through ({why}); {where}; {tail_}."
     return f"升级到 {to} 没成功（{why}）；{where}；{tail_}。"
+
+
+NOT_SENT = {  # #460: support.run_send's exit codes in plain words (the receipt's `support:` line)
+    "exit_3": " — 上报前的第 2 层隐私检查（Jev）这会儿用不了，按规矩先不发；主人看过原文、同意后可用 agentj support ask --attach-doctor "
+              "--owner-confirmed 发 / privacy check layer 2 (Jev) was unavailable, so nothing was sent; it goes out only after the "
+              "owner reads the text and says yes (agentj support ask --attach-doctor --owner-confirmed)",
+    "exit_6": " — 这台主机没有可用的 Agent J 席位，发不了 / no usable Agent J seat on this host, so it could not be sent",
+    "exit_1": " — 客服通道出错，没发出 / the support channel failed, nothing was sent"}
 
 
 def after_failure(st, res: dict, *, lang: str = "zh", send=None) -> dict:
@@ -513,7 +524,8 @@ def after_failure(st, res: dict, *, lang: str = "zh", send=None) -> dict:
             pass
         rep = report(st, res, send=send, kind=kind, lang=lang)
         res["support"] = {"sent": f"sent ({rep.get('thread')})", "already": f"already sent ({rep.get('thread')})",
-                          "off": "off (updates.report_failures = false)"}.get(rep.get("status"), f"not_sent ({rep.get('why', '?')})")
+                          "off": "off (updates.report_failures = false)"}.get(rep.get("status"), f"not_sent ({rep.get('why', '?')}"
+                                                                                 + NOT_SENT.get(rep.get("why"), "") + ")")
         res["tell_owner"] = owner_sentence(res, rep, lang)
     except Exception:  # noqa: BLE001
         pass

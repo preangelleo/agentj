@@ -150,8 +150,12 @@ BLOCKERS = (
      "有新版本提示（不阻塞）", "update notice (does not block)"),
     ("claude", "expiring", ("yourloginexpiresin",), "info", "",
      "登录即将到期提示（不阻塞）", "login expiring notice (does not block)"),
+    # #461 (0.162.1): Esc = skip, nothing trusted; Down+Enter would be 「Trust all and continue」 (blanket, never).
+    # Ahead of trust (round 3): when both texts are in the accumulated view, Enter never lands on the hooks screen.
+    ("codex", "hooks_review", ("hooksneedreview", "hooksareneworchanged", "hookisneworchanged"), "auto", ESC,
+     "Codex 提示有 hook 需要审核（代按：跳过，这些 hook 不信任、不运行）", "hooks need review (pressed: skip; not trusted, not run)"),
     ("codex", "trust", ("doyoutrustthecontentsofthisdirectory", "allowcodextoworkinthisfolder",
-                        "doyoutrustthisdirectory"), "auto", ENTER,
+                        "doyoutrustthisdirectory", "codexcanread,edit,andrunfileshere"), "auto", ENTER,
      "信任此目录（Codex）", "trust this directory (Codex)"),
     ("codex", "exec_trust", ("notinsideatrusteddirectory",), "fail", "",
      "不在受信任目录（已预写 trust_level，仍被拒）", "not inside a trusted directory (trust_level written, still refused)"),
@@ -164,8 +168,9 @@ BLOCKERS = (
     ("opencode", "login", ("opencodeauthlogin", "noproviders"), "fail", "",
      "OpenCode 没有可用的服务商登录", "OpenCode has no provider login"),
 )
+HEADLESS = ("<headless reply>",)    # #458: no screen to read; ready = health_check's real headless reply (both generations)
 READY = {"claude": ("shift+tabtocycle", "forshortcuts", "❯try\""), "codex": ("askcodextodoanything", "forshortcuts"),
-         "opencode": ()}
+         "opencode": HEADLESS}
 
 
 def scan(kind: str, text: str) -> list[dict]:
@@ -657,7 +662,7 @@ def screen_check(kind: str, workdir: str, press: tuple = (), secs: float = SCREE
     """Open the harness's own interactive screen in `workdir` for up to `secs`, answer the `auto` screens (and the `confirm`
     ids in `press`) by their fixed keys, never send a message. → {"ready": bool, "answered": [ids], "blocker": {..} | None,
     "info": [ids], "last": scrubbed last line}. OpenCode has no interactive first-run screen (serve) → ready."""
-    if kind not in ("claude", "codex"):
+    if kind not in ("claude", "codex") or READY.get(kind) is HEADLESS:
         return {"ready": True, "answered": [], "blocker": None, "info": [], "last": ""}
     exe = binary(kind)
     if not exe:
@@ -784,6 +789,55 @@ def expiry_kind(kind: str, meta: dict) -> str:
 
 
 _HEALTH_ENV_DROP = ("AGENTJ_", "AGENTJARVIS_", "HERDR_", "VIBE_REMOTE_", "TMUX", "SSH_")
+HEALTH_WHY = ("cli", "config")        # #458: health failures that are neither login nor quota (their own phone line)
+_FLAG_REFUSED = re.compile(r"(?:unrecognized|unknown)\s+(?:flag|option|argument)|unexpected argument", re.I)
+
+
+def _oc_generation(exe: str, env: dict) -> tuple[int | None, str | None]:
+    """#458: (2 | 1 | None, version line). `--version` first (harness.version_of, as detect and the switch gate); a line that
+    names neither generation → `run --help`: a `run` that lists --format but not --pure is 2.x."""
+    from . import harness, olares_probe
+    v = harness.version_of(exe)
+    if harness.opencode_v2(v):
+        return 2, v
+    if v and re.search(r"(?:^|\s)v?1\.", v):
+        return 1, v
+    if olares_probe.required():
+        return None, v
+    try:
+        r = subprocess.run([exe, "run", "--help"], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                           env=env, timeout=15, text=True, errors="replace", start_new_session=True)
+    except (OSError, subprocess.SubprocessError):
+        return None, v
+    h = (r.stdout or "")[-100_000:]
+    return (1 if "--pure" in h else 2) if "--format" in h else None, v
+
+
+def _oc_result(e, free: bool) -> dict:
+    """An OpenCode ProbeError(code, line) → the health result: login / quota words in OpenCode's own line first; a server
+    or API that is not what Agent J speaks → "cli"; a configured model nothing can route → "config"."""
+    code = str(e.args[0]) if e.args else "native_failed"
+    line = e.args[1] if len(e.args) > 1 and isinstance(e.args[1], str) else ""
+    cls = classify("opencode", line)
+    if code == "free_tier" and not cls:
+        cls = "rate_limit"
+    if cls == "login" and free:
+        cls = None                         # OpenCode's own free models need no login: a re-login cannot help
+    if cls:
+        return {"ok": False, "cls": cls, "why": cls}
+    why = {"native_timeout": "timeout", "provider_unavailable": "config", "native_spawn_failed": "cli"}.get(code)
+    return {"ok": False, "cls": None, "why": why or ("cli" if code == "native_failed" and not line else "failed")}
+
+
+def _oc_api(exe: str, model, env: dict, timeout: float, free: bool) -> dict:
+    """#458: 2.x through agent_opencode2's own serve + session probe (its read-only rules, the session deleted)."""
+    from . import agent_opencode2, opencode_free
+    try:
+        reply = agent_opencode2.probe(exe, model, env, timeout, waits=opencode_free.WARM_WAITS if free else ())
+    except opencode_free.ProbeError as e:
+        return _oc_result(e, free)
+    ok = bool(reply.strip())
+    return {"ok": ok, "cls": None, "why": "ok" if ok else "failed"}
 
 
 def health_check(kind: str, timeout: float = HEALTH_TIMEOUT, env_extra: dict | None = None) -> dict:
@@ -809,6 +863,21 @@ def health_check(kind: str, timeout: float = HEALTH_TIMEOUT, env_extra: dict | N
             cls = {"not_logged_in": "login", "quota_exhausted": "balance", "rate_limited": "rate_limit"}.get(why)
             return {"ok": False, "cls": cls, "why": cls or ("timeout" if why == "native_timeout" else "failed")}
         return {"ok": ok, "cls": None, "why": "ok" if ok else "failed"}
+    gen, free, model = None, False, None
+    if kind == "opencode":                # #458: 2.x refuses `run --pure`; free models are refused as a tool-free agent
+        from . import harness, opencode_free
+        gen, version = _oc_generation(exe, env)
+        model = harness.opencode_model(env)
+        free = bool(opencode_free.status(model, exe)) if model else (
+            gen != 2 and harness.opencode_login(version, exe=exe)[0] == "free")
+        if gen == 2:
+            return _oc_api(exe, model, env, timeout, free)
+        if free:
+            try:
+                ok = bool(opencode_free.probe(exe, model, env, timeout).strip())
+            except opencode_free.ProbeError as e:
+                return _oc_result(e, True)
+            return {"ok": ok, "cls": None, "why": "ok" if ok else "failed"}
     out = err = ""
     with tempfile.TemporaryDirectory(prefix="agentj-p288-") as d:
         root = Path(d)
@@ -843,8 +912,12 @@ def health_check(kind: str, timeout: float = HEALTH_TIMEOUT, env_extra: dict | N
             ok = isinstance(reply, str) and bool(reply.strip())
         except Exception:  # noqa: BLE001
             ok = False
-    cls = None if ok else classify(kind, out + "\n" + err)
+    refused = kind == "opencode" and not ok and bool(_FLAG_REFUSED.search(err[-4000:]))
+    cls = None if ok or refused else classify(kind, out + "\n" + err)
     out = err = ""
+    if refused:                           # #458: the v1 flags were refused → its own API probe, else "CLI incompatible"
+        res = _oc_api(exe, model, env, timeout, free)
+        return res if res["ok"] or res["cls"] else {"ok": False, "cls": None, "why": "cli"}
     return {"ok": ok, "cls": cls, "why": "ok" if ok else (cls or "failed")}
 
 
@@ -917,7 +990,10 @@ WHY = {
            "no_code_kimi": "Kimi Code 没有给出设备码（kimi 版本太旧或连不上 kimi.com / kimi.ai）",
            "verify_kimi": "新的 Kimi Code 登录发测试消息没有拿到回复：已恢复原来的登录文件，请重新开始",
            "quota": "登录本身没问题，是额度 / 用量已用完（例如 Kimi 本月额度）：不用再重新登录，续费或加量后再试，或先切到别的 Agent",
-           "owner_session": "你在Agent J 主机上自己开的 {h} 窗口要重开一次才会用到新登录（Agent J 自己的会话已恢复）"},
+           "main_session": "主对话还没用上新登录",
+           "owner_session": "你在Agent J 主机上自己开的 {h} 窗口要重开一次才会用到新登录（Agent J 自己的会话已恢复）",
+           "cli": "命令行不兼容：这台Agent J 主机上的 {h} 不认 Agent J 的检查参数。这不是登录或额度问题，不用重新登录、不用换密钥；把 Agent J 升到最新版后再点「现在检查」",
+           "config": "配置有问题：{h} 配置的模型或服务商现在用不了（或配置文件有错）。这不是登录或额度问题；在 {h} 里换一个能用的模型，再点「现在检查」"},
     "en": {"no_binary": "this program is not installed here", "no_url": "the official login did not print an authorize link",
            "no_code": "Codex did not print a device code",
            "device_disabled": "Codex device-code login is off: turn on 'device code login' in ChatGPT → Settings → Security (official requirement), then retry",
@@ -932,7 +1008,10 @@ WHY = {
            "verify_kimi": "a test message with the new Kimi Code login got no reply: the previous login files are back, start again",
            "quota": "the login is fine — the plan's quota / usage is used up (e.g. Kimi's monthly limit): no new sign-in needed; renew or add usage, then retry, or switch to another Agent for now",
            "unsupported": "not supported for this AI",
-           "owner_session": "the {h} window you opened yourself on the Agent J host must be reopened to use the new login (Agent J's own session is back)"},
+           "main_session": "the main conversation is not on the new login yet",
+           "owner_session": "the {h} window you opened yourself on the Agent J host must be reopened to use the new login (Agent J's own session is back)",
+           "cli": "CLI incompatible: {h} on the Agent J host does not accept Agent J's check flags. This is not a login or quota problem — no new sign-in or key needed; update Agent J, then tap Check now",
+           "config": "Configuration error: the model or provider {h} is set to cannot be used right now (or its config file has an error). This is not a login or quota problem; pick a working model in {h}, then tap Check now"},
 }
 
 
@@ -1025,7 +1104,9 @@ class Rescue:
             if not self.checking and isinstance(hc, dict) and not hc.get("ok") and not st.get("cls"):
                 r["state"] = "unknown"
             if isinstance(hc, dict) and not (self.checking or self.invalid_health):
-                r["health"] = {x: hc[x] for x in ("at", "ok", "cls") if x in hc}
+                r["health"] = {x: hc[x] for x in ("at", "ok", "cls", "why") if x in hc}
+                if hc.get("why") in HEALTH_WHY:          # #458: CLI / config, never shown as "not logged in"
+                    r["health"]["detail"] = self.why(hc["why"], h=LABEL[k])
             if k == "claude":
                 due = token_due(meta)
                 if due:
@@ -1438,7 +1519,12 @@ class Rescue:
                 self._end(kind, "partial", "conflict", fmt={"n": "、".join(bad) if self.lang() == "zh" else ", ".join(bad)})
                 self.host.agent_notice(self.t("partial", h=LABEL[kind], why=self.why("conflict", n=", ".join(bad))))
                 return {"ok": False, "why": "conflict"}
-        note = self._restart(kind)
+        live, note = None, None
+        if kind == "claude":            # #462: the main session itself gets the login and is checked there, not a side process
+            from . import claude_live
+            live = await claude_live.deliver(self.host, "auth_rescue", wait=True)
+        else:
+            note = self._restart(kind)
         screen = await asyncio.to_thread(screen_check, kind, wd, tuple(press))
         if screen.get("blocker"):
             b = screen["blocker"]
@@ -1457,6 +1543,16 @@ class Rescue:
             self._end(kind, "partial", "probe", screen={"answered": screen.get("answered", [])})
             self.host.agent_notice(self.t("partial", h=LABEL[kind], why=self.why("probe")))
             return {"ok": False, "why": "probe"}
+        if live is not None and live["verified"] is False:
+            from . import claude_live
+            owner = live["restart"] == "owner_session"
+            msg = claude_live.text(self.lang(), "owner" if owner else "bad", live.get("live"))
+            self._end(kind, "partial", "main_session", main=live.get("live"))
+            self.flow["why"] = msg
+            self.broadcast()
+            say = getattr(self.host, "agent_recovery_notice", None) if owner else None   # owner: the one-tap P435 card
+            (say or self.host.agent_notice)(self.t("partial", h=LABEL[kind], why=msg))
+            return {"ok": False, "why": "main_session"}
         self.health_generation += 1  # invalidate any daily/foreground call that began before this real reply
         self._health_mark(kind, {"ok": True})
         self.invalid_health = False
@@ -1468,6 +1564,9 @@ class Rescue:
         msg = self.t("recovered", h=LABEL[kind])
         if note:
             msg += "\n" + self.why(note, h=LABEL[kind])
+        if live is not None and live["verified"]:
+            from . import claude_live
+            msg += "\n" + claude_live.text(self.lang(), "ok")
         self.host.agent_notice(msg)
         return {"ok": True}
 
@@ -1541,7 +1640,8 @@ class Rescue:
     def _health_mark(self, kind: str, res: dict) -> None:
         meta = read_meta(self.host.st)
         h = meta.get("health") if isinstance(meta.get("health"), dict) else {}
-        h[kind] = {"at": int(time.time()), "ok": bool(res.get("ok")), **({"cls": res["cls"]} if res.get("cls") else {})}
+        h[kind] = {"at": int(time.time()), "ok": bool(res.get("ok")), **({"cls": res["cls"]} if res.get("cls") else {}),
+                   **({"why": res["why"]} if not res.get("ok") and res.get("why") in HEALTH_WHY else {})}
         meta["health"] = h
         write_meta(self.host.st, meta)
 

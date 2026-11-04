@@ -102,6 +102,10 @@ def email_guest(addr: str) -> dict:
     return {"kind": "email", "role": "group", "sender": addr, "profile": "proxy", "owner_id": False}
 
 
+class SameHost(dict):   # #455: only peer_origin.source builds one; JSON / copies are plain dicts
+    pass
+
+
 def automation(name: str) -> dict:   # P365: data the owner's script posted, never the owner's words
     return {"kind": "automation", "role": "data", "name": name}
 
@@ -112,6 +116,8 @@ _AUTO_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
 def normalize(src) -> dict:
     if not isinstance(src, dict):   # missing / malformed = untrusted
         return {"kind": "unknown", "role": "group"}
+    if type(src) is SameHost:
+        return SameHost(src)
     kind, role = src.get("kind"), src.get("role")
     if kind in ("same_owner", "friend_task", "wechat_task", "scheduled_task") and role == "task":
         return owner_grant.task_source(src)
@@ -151,13 +157,11 @@ CHANNELS = {("wechat", "owner"): "wechat", ("telegram", "owner"): "telegram", ("
 
 
 def owner_channel(src) -> str | None:
-    """P562: the owner's own channel message (adapter-verified); weaker than a paired device: Web App cards, no owner-only path."""
     s = normalize(src)
     return CHANNELS.get((s["kind"], s["role"]))
 
 
 def owner_channel_turn(agent) -> str | None:
-    """None if anything stricter is in play (a paired request; another request source, P426 S3)."""
     if _paired_source() is not _UNSET:
         return None
     via = owner_channel(turn_source(agent))
@@ -168,7 +172,6 @@ def owner_channel_turn(agent) -> str | None:
 
 
 def rank(src) -> int:
-    """0 owner · 1 delegated task (card) · 2 anyone else (refused)."""
     s = normalize(src)
     return 0 if is_owner(s) else (1 if s["kind"] in ("same_owner", "friend_task", "wechat_task", "scheduled_task") else 2)
 
@@ -221,7 +224,6 @@ def _paired_source():
 
 @contextlib.contextmanager
 def paired_request(verify):
-    """The live-device verifier runs on every check; authority belongs to this Task only."""
     task = asyncio.current_task()
     if task is None or not callable(verify):
         raise ValueError("a paired request needs its live task and verifier")
@@ -234,7 +236,6 @@ def paired_request(verify):
 
 @contextlib.contextmanager
 def request_source(src):
-    """P426 S3: a request's own origin; checks take the stricter of this and the turn."""
     tok = _REQUEST.set(normalize(src))
     try:
         yield
@@ -247,7 +248,6 @@ def _delegated(agent) -> bool:
 
 
 def turn_source(agent):
-    """Current Send wins. A pending native delivery and verified desktop input remain explicit after it clears."""
     paired = _paired_source()
     if paired is not _UNSET:
         return paired
@@ -289,7 +289,6 @@ def delegated_turn(agent) -> bool:
 
 
 def same_owner_source(agent) -> bool:
-    """Any same-owner task in play (errs towards True, P405)."""
     if _paired_source() is not _UNSET:
         return False
     o = _REQUEST.get()
@@ -301,7 +300,6 @@ def same_owner_source(agent) -> bool:
 
 
 def untrusted_turn(agent) -> bool:
-    """A non-owner message (Send, a still-live group envelope, a non-owner request source): approvals refuse."""
     paired = _paired_source()
     if paired is not _UNSET:
         return not is_owner(paired)
@@ -314,7 +312,6 @@ def unattended_send(send) -> bool:
 
 
 def unattended_turn(agent) -> str | None:
-    """P570: "scheduled_task" | "system" (a host Send; no group envelope live) | None (ADR-P570)."""
     if _paired_source() is not _UNSET:
         return None
     s = turn_source(agent)
@@ -323,6 +320,8 @@ def unattended_turn(agent) -> str | None:
         return None
     if s["kind"] == "scheduled_task":
         return "scheduled_task"
+    if s["kind"] == "same_host":   # #455
+        return None if getattr(agent, "cur_send", None) or getattr(agent, "phone_turn", 0) or getattr(agent, "untrusted", bool)() or getattr(agent, "peer_low", True) else s["kind"]
     if s["kind"] != "system":
         return None
     fn = getattr(agent, "untrusted", None)
@@ -462,7 +461,6 @@ def envelope(addr: str, text: str, src=None) -> str:
 
 
 def hook_context(src=None) -> str:
-    """UserPromptSubmit additionalContext for the verified pending delivery."""
     s = normalize(src)
     tail = (" The cross-session envelope is owner-bridge transport only; no peer agent requested this action. "
             "Only this verified pending request is covered."

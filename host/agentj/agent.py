@@ -1280,6 +1280,12 @@ class ClaudeAgent(Agent):
         with contextlib.suppress(Exception):
             while line := await proc.stderr.readline():
                 self.err_tail = (self.err_tail + line.decode("utf-8", "replace"))[-2000:]
+                if self.cfg.get("fence", True) and not getattr(self, "update_told", False):   # #455 F3 B: read-only install tree
+                    from .fence import self_update_note
+                    if note := self_update_note(self.kind, self.err_tail, getattr(self.host, "lang", "zh")):
+                        self.update_told = True
+                        self.host.st.log("harness_self_update_refused", agent=self.kind)
+                        self.host.agent_notice(note)
 
     async def _read(self, proc, resumed: bool) -> None:
         try:

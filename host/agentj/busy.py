@@ -748,6 +748,7 @@ class Board:
         self.last: dict[str, dict] = {}        # P160: key → {text, at}, a sub-agent's latest tool call (detail only)
         self.alias: dict[str, str] = {}        # P160: a child id (Claude tool_use, Codex thread, OpenCode session) → item key
         self.child: dict[str, dict] = {}       # P160: Codex child thread / OpenCode v2 child session → {who, label}
+        self.launch = None                     # #450: serve's busy_launch.Launch (the CLI never judges launches)
         if self.root is not None:
             with contextlib.suppress(OSError, ValueError, TypeError):
                 c = json.loads((busy_dir(self.root) / "colors.json").read_text(encoding="utf-8"))
@@ -1184,9 +1185,15 @@ class Board:
     def refresh_outside(self, units: bool = True, run=subprocess.run) -> bool:
 
         files = read_items(self.root) if self.root is not None else []
+        L = getattr(self, "launch", None)
+        if L is not None:
+            table, sids = L.scan(self.context)
+            for it in files:
+                L.judge(it, self.context, table, sids)
+        known = lambda it: {**it, **L.fields(it["key"]), "foreign": False} if L is not None and L.ok(it["key"]) else {**it, "foreign": True}   # noqa: E731 — #450
         if self.root is not None:
             for receipt in finished_items(self.root):
-                self.finish({**receipt, "foreign": True}, receipt.get("exit_code"), receipt.get("ended"))
+                self.finish(known(receipt), receipt.get("exit_code"), receipt.get("ended"))
         if units:
             try:
                 scanned = scan_units(run, strict=True)
@@ -1215,10 +1222,12 @@ class Board:
         live = {it["key"] for it in got}
         for it in self.outside:
             if not it["key"].startswith("unit:") and it["key"] not in live:
-                self.finish({**it, "foreign": True})   # unwrapped pid/stop: exit code is unknowable
+                self.finish(known(it))   # unwrapped pid/stop: exit code is unknowable
 
         changed = got != self.outside
         self.outside = got
+        if L is not None:
+            L.save()
         return changed
 
     def native_status(self, key, status, now=None):
@@ -1625,7 +1634,9 @@ def cmd_busy(a) -> int:
         threading.Thread(target=beat, daemon=True).start()
         code = 127
         try:
-            code = subprocess.call(cmd)
+            from . import binaries, peer_origin
+            n = peer_origin.pin_name(cmd)   # #455 F3 B pin: a dispatched harness runs from its read-only install folder
+            code = subprocess.call(cmd, env=binaries.pinned(n) if n else None)
             return code
         except OSError as e:
             print(e, file=sys.stderr)

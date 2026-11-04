@@ -4883,7 +4883,7 @@ agentj plaza --help
 
 ```text
 usage: agentj plaza [-h]
-                    {search,show,mine,post,reply,resolve,report,install,request,publish,like,installed,partners} ...
+                    {search,show,mine,post,reply,resolve,report,install,request,publish,like,verify,installed,partners} ...
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -5200,6 +5200,26 @@ usage: agentj plaza show [-h] [--json] [--version VERSION] id
 | `id` | `null` | true | — | `pz_… or a package name` |
 | `--json` | `false` | false | — | `` |
 | `--version` | `null` | false | — | `包的版本（只对包）/ package version` |
+
+### agentj plaza verify
+
+```text
+依赖补齐后重跑已装包的自检（同一包同一 digest，不用再签名）/ rerun an installed package's self-check after adding its dependencies (same package and digest, no new signature)
+```
+
+```bash
+agentj plaza verify --help
+```
+
+```text
+usage: agentj plaza verify [-h] [--harness {claude_code,codex,opencode}] name
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `name` | `null` | true | — | `` |
+| `--harness` | `null` | false | `claude_code`, `codex`, `opencode` | `` |
 
 ### agentj preflight
 
@@ -12085,7 +12105,7 @@ agentj plaza --help
 
 ```text
 usage: agentj plaza [-h]
-                    {search,show,mine,post,reply,resolve,report,install,request,publish,like,installed,partners} ...
+                    {search,show,mine,post,reply,resolve,report,install,request,publish,like,verify,installed,partners} ...
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -12402,6 +12422,26 @@ usage: agentj plaza show [-h] [--json] [--version VERSION] id
 | `id` | `null` | true | — | `pz_… 或包名` |
 | `--json` | `false` | false | — | `` |
 | `--version` | `null` | false | — | `包的版本（只对包）/ package version` |
+
+### agentj plaza verify
+
+```text
+依赖补齐后重跑已装包的自检（同一包同一 digest，不用再签名）/ rerun an installed package's self-check after adding its dependencies (same package and digest, no new signature)
+```
+
+```bash
+agentj plaza verify --help
+```
+
+```text
+usage: agentj plaza verify [-h] [--harness {claude_code,codex,opencode}] name
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `name` | `null` | true | — | `` |
+| `--harness` | `null` | false | `claude_code`, `codex`, `opencode` | `` |
 
 ### agentj preflight
 

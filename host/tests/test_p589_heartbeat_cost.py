@@ -42,16 +42,13 @@ class Cost(Decide):
         self.assertEqual(self.h.status()['precheck']['unknown'], ['todo'])
         self.assertFalse(self.agent.got)
 
-    def test_context_guard_notice_once_then_compact(self):
+    def test_context_never_pauses_the_beat(self):
+        # #449 supersedes the P589 guard (>100k or expensive model → pause + owner /compact notice); see test_p449
         self.collect.return_value = (['todo_due'], [])
         self.host.agent_notice = Mock()
         self.host.meter_state = {'ctx': {'used': 120000}, 'model': 'gpt-6'}
-        self.assertEqual(asyncio.run(self.h.tick())['why'], 'context_guard')
-        self.assertEqual(asyncio.run(self.h.tick(time.time()+60))['why'], 'context_guard')
-        self.host.agent_notice.assert_called_once()
-        self.host.meter_state['ctx']['used'] = 5000
-        self.h.forget('compact')
-        self.assertTrue(asyncio.run(self.h.tick(time.time()+120))['ok'])
+        self.assertTrue(asyncio.run(self.h.tick())['ok'])
+        self.host.agent_notice.assert_not_called()
 
     def test_daily_is_check_not_unconditional_wake(self):
         with patch.object(self.h, 'daily_is_due', return_value=True):

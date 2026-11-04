@@ -1110,7 +1110,10 @@ class CodexAgent(Agent):
                 # Tell both the owner and the model the actual host decision before answering the native request.
                 from .privacy import owner_text
                 why = owner_text(r["message"])[:2000]
-                self.host.agent_notice(why)
+                from .background_done import retry_notice
+                told = retry_notice(self, r["message"])     # #450 1c: a completion turn's refusal → 「看结果」, once
+                if told != "":
+                    self.host.agent_notice(told or why)
                 with contextlib.suppress(Exception):
                     await self.call("thread/inject_items", {"threadId": self.tid, "items": [{"type": "message",
                         "role": "developer", "content": [{"type": "input_text", "text": "Agent J approval result: " + why}]}]}, timeout=3)

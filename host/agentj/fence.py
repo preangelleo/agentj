@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -92,6 +93,47 @@ def code_paths() -> list[str]:
         out.append(base)            # its interpreter + stdlib, when that is a dedicated directory (kept only if writable)
     paths = sorted({_real(p) for p in out if os.access(p, os.W_OK)})
     return [p for p in paths if not any(q != p and _under(p, q) for q in paths)]   # a parent covers its children
+
+
+def code_ro(home: str | None = None) -> list[str]:
+    """#455 F3 B / N4-1: an installed agentj's venv + uv interpreter folder, read-only in the fence (not a checkout)."""
+    pkg = os.path.dirname(os.path.abspath(__file__))
+    parent = os.path.dirname(pkg)
+    if sys.prefix == sys.base_prefix or (os.path.exists(os.path.join(parent, "agentj"))
+                                         and os.path.exists(os.path.join(parent, "pyproject.toml"))):
+        return []
+    h, venv, base = _real(home or "~"), _real(sys.prefix), _real(sys.base_prefix)
+    if not _under(_real(pkg), venv):
+        return []
+    up = os.path.dirname(base)       # uv: …/uv/python holds the cpython-3.13 link and its target
+    out = [venv, up if os.path.basename(up) == "python" and os.path.basename(os.path.dirname(up)) == "uv" else base]
+    return sorted({p for p in out if _under(p, h) and p != h and p not in (_real(h + "/.local"), _real(h + "/.local/share"))})
+
+
+def ro_trees(home: str | None = None, environ=None) -> list[str]:
+    """#455 F3 B: harness install trees + the installed agentj (read-only in every fence)."""
+    from .binaries import trees
+    env = dict(os.environ if environ is None else environ)
+    if home:
+        env["HOME"] = home
+    if not sys.platform.startswith("linux"):
+        return []
+    return sorted({t for _, t in trees(env)} | set(code_ro(env.get("HOME"))))
+
+
+SELF_UPDATE = re.compile(r"(?is)(?:auto-?update|self-?update|upgrade|update failed).{0,300}?(?:read-only file system|erofs|eacces|"
+                         r"permission denied)|(?:read-only file system|erofs).{0,300}?(?:/installs/|/versions/|\.opencode)")
+SELF_UPDATE_TEXT = {"zh": "在隔离环境里不能自更新 {name}（安装目录在隔离里只读）。请在手机发 /update，或让主机更新。",
+                    "en": "{name} cannot update itself inside the fence (its install folder is read-only there). "
+                          "Send /update from the phone, or let the Agent J host update it."}
+_NAMES = {"claude": "Claude Code", "codex": "Codex", "opencode": "OpenCode"}
+
+
+def self_update_note(kind: str, text: str, lang: str = "zh") -> str | None:
+    """#455 F3 B ②: a harness's own update failed on its read-only tree → one clear line."""
+    if not isinstance(text, str) or not SELF_UPDATE.search(text[-4000:]):
+        return None
+    return SELF_UPDATE_TEXT["en" if lang == "en" else "zh"].format(name=_NAMES.get(kind, kind))
 
 
 def other_states(st, home: str | None = None) -> list[str]:
@@ -584,7 +626,8 @@ def bwrap_argv(st, workdir: str, home: str | None = None, runtime: str | None = 
     g = guard_parts(st, home, env, work, allow_docker, visible=visible)    # the same list host_write_refusal refuses
     ro = [p for p in g["ro"] if os.path.lexists(p) and visible(_real(p))]
     code = code_paths()  # F14: bind back writable when installed under private /tmp.
-    for d in ancestors([_real(p) for p in ro] + code + [root, prefs]):   # pinned: cannot be renamed away (still writable inside)
+    locked = [t for t in ro_trees(home, env) if visible(t)]   # #455 F3 B: harness trees + installed agentj, read-only
+    for d in ancestors([_real(p) for p in ro] + code + locked + [root, prefs]):   # pinned: cannot be renamed away (still writable inside)
         if visible(d):
             a += ["--bind", d, d]
     for p in ro:
@@ -592,6 +635,8 @@ def bwrap_argv(st, workdir: str, home: str | None = None, runtime: str | None = 
     for p in code:
         a += ["--bind", p, p]
     a += service_mounts(home, env, visible)
+    for p in locked:              # after service_mounts (it binds HOME's children back)
+        a += ["--ro-bind", p, p]
     # other programs' control sockets (G-A56): whole folders become an empty tmpfs, single sockets a read-only /dev/null
     dirs = [d for d in g["control"] if os.path.isdir(d) and visible(d) and not _under(d, root)]
     for d in dirs:

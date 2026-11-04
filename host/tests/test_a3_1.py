@@ -127,7 +127,8 @@ class Cap(unittest.TestCase):
         res = asyncio.run(go())
         self.assertEqual(res["ev"], "approved")
         self.assertEqual(sent[0], {"t": "approved"})        # L1: then the Agent status + push key (on_ready)
-        self.assertEqual([m["t"] for m in sent[1:]], ["preferences", "status", "estop_state", "push_key"])
+        # #461f: cmds_state (terminal-command detection, a background task since its TypeError fix) may land in between
+        self.assertEqual([m["t"] for m in sent[1:] if m["t"] != "cmds_state"], ["preferences", "status", "estop_state", "push_key"])
         self.assertEqual(len(self.st.devices()), MAX_DEVICES)
         self.assertNotIn(ids[2], self.st.devices())
 

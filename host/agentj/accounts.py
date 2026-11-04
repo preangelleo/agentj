@@ -736,8 +736,14 @@ async def use(host, h: str, ref, device=None, untrusted=False) -> dict:
     _log(host, h, "use", device, res.get("name", ""), "untrusted" if untrusted else None)
     a = getattr(host, "agent", None)
     rescue = getattr(host, "auth_rescue", None)
-    note = rescue._restart(h) if rescue is not None else None
-    res["restart"] = note or ("next_turn" if a is not None and getattr(a, "kind", None) == h else "none")
+    if h == "claude":                    # #462: into the main session itself, then proven in its own context
+        from . import claude_live
+        live = await claude_live.deliver(host, "auth_rescue")
+        claude_live.tell(host, live)
+        res.update(live)
+    else:
+        note = rescue._restart(h) if rescue is not None else None
+        res["restart"] = note or ("next_turn" if a is not None and getattr(a, "kind", None) == h else "none")
     if rescue is not None:
         with contextlib.suppress(Exception):
             rescue.credential_stamp = None
@@ -847,8 +853,9 @@ async def phone(host, s, t: str, obj: dict) -> dict:
         out["why"] = res["why"]
     if res.get("conflict"):
         out["conflict"] = res["conflict"]
-    if res.get("restart"):
-        out["restart"] = res["restart"]
+    for k in ("restart", "verified", "live"):
+        if res.get(k) is not None:
+            out[k] = res[k]
     return out
 
 
@@ -1061,7 +1068,11 @@ def cmd_account(a) -> None:
         tail = {"owner_session": ("reopen your own terminal session to use it" if lang == "en" else "你自己终端里的会话要重开一次才用新账号"),
                 "next_turn": ("the main Agent restarts before its next message, same conversation" if lang == "en"
                               else "主 Agent 在下一条消息前重启，对话接着"),
+                "reopening": ("the main conversation reopens with it now, same conversation" if lang == "en" else "主对话正用新账号重开，对话接着"),
                 "none": "", None: ("takes effect when Agent J starts" if lang == "en" else "Agent J 下次启动时生效")}
+        if res.get("verified") is False:       # #462: never a silent success
+            from .claude_live import text
+            tail[res.get("restart")] = text(lang, "owner" if res.get("restart") == "owner_session" else "bad", res.get("live"))
         print((f"{LABEL[a.harness]} → 「{res.get('name')}」" + (f" · {tail.get(res.get('restart'), '')}" if tail.get(res.get("restart")) else "")
                + (" · running background tasks finish on the old account" if lang == "en" else " · 正在跑的后台任务用完旧账号为止")))
         return

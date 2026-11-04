@@ -120,6 +120,41 @@ def interactive():
     time.sleep(60)
 
 
+def stored_login():
+    """#462: the /login store — macOS (FAKE258_PLATFORM=darwin) = the keychain via `security`, else .credentials.json."""
+    if os.environ.get("FAKE258_PLATFORM") == "darwin":
+        import subprocess
+        r = subprocess.run(["security", "find-generic-password", "-s", "Claude Code-credentials", "-w"], capture_output=True, text=True)
+        raw = r.stdout if r.returncode == 0 else ""
+    else:
+        cfg = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(os.environ.get("HOME", "/"), ".claude")
+        try:
+            raw = open(os.path.join(cfg, ".credentials.json")).read()
+        except OSError:
+            raw = ""
+    if not raw:
+        return None
+    try:
+        return json.loads(raw) or {"email": None}
+    except ValueError:
+        return {"email": None}
+
+
+def auth_status():
+    """`claude auth status --json`, same order as Claude Code 2.1.316 ua(): ANTHROPIC_AUTH_TOKEN > CLAUDE_CODE_OAUTH_TOKEN >
+    the stored /login; ANTHROPIC_API_KEY → api_key."""
+    e = os.environ
+    if e.get("ANTHROPIC_AUTH_TOKEN") or e.get("CLAUDE_CODE_OAUTH_TOKEN"):
+        d = {"loggedIn": True, "authMethod": "oauth_token"}
+    elif e.get("ANTHROPIC_API_KEY"):
+        d = {"loggedIn": True, "authMethod": "api_key", "apiKeySource": "ANTHROPIC_API_KEY"}
+    else:
+        got = stored_login()
+        d = {"loggedIn": True, "authMethod": "claude.ai", "email": got.get("email")} if got else {"loggedIn": False, "authMethod": "none"}
+    log("auth_status " + d["authMethod"] + (" good" if e.get("CLAUDE_CODE_OAUTH_TOKEN") == GOOD else ""))
+    return {**d, "apiProvider": "firstParty"}
+
+
 def claude():
     if args[:1] == ["setup-token"] or args[:2] == ["auth", "login"]:
         raw()
@@ -146,6 +181,9 @@ def claude():
         if cfg:
             with open(os.path.join(cfg, ".credentials.json"), "w") as f:
                 f.write("{}")
+        return
+    if args[:2] == ["auth", "status"]:
+        print(json.dumps(auth_status()))
         return
     if "-p" in args:
         mode = os.environ.get("FAKE258_PROBE", "")

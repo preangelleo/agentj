@@ -1918,6 +1918,12 @@ class Elevator:
                 await w.drain()
                 w.close()
                 return
+            if isinstance(req, dict) and req.get("t") == "plaza_verify":      # #466: the fenced `agentj plaza verify`
+                from . import plaza_host
+                w.write((json.dumps(await plaza_host.verify(self.host, req), ensure_ascii=False) + "\n").encode())
+                await w.drain()
+                w.close()
+                return
             if isinstance(req, dict) and req.get("t") in ("plaza_install", "plaza_perm"):
                 # #428: inside the Agent fence control.sock is hidden — `agentj plaza request` (and the older install's
                 # permission card) reach serve here. Same handlers as control.sock: one signed card, serve installs.

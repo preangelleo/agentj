@@ -367,8 +367,6 @@ class Heartbeat:
         self.server = None
         from .heartbeat_check import Usage
         self.usage = Usage(host)
-        self.protected = set()
-        self.compacted = set()
         self.last_checked = {}
         self.last_precheck = None
 
@@ -429,9 +427,6 @@ class Heartbeat:
     def forget(self, why: str = "") -> None:
         """The conversation lost its context (compaction / clear / new): the next beat carries the full prompt again."""
         key = session_key(getattr(self.host, "agent", None))
-        self.protected.discard(key)
-        if why == "compact":
-            self.compacted.add(key)
         if self.seen.pop(key, None) is not None:
             self.host.st.log("heartbeat_forget", why=why[:20])
 
@@ -536,24 +531,31 @@ class Heartbeat:
                 self.host.st.log("heartbeat_skipped", reason=label, unknown=unknown)
                 self.last_wait = label
             return {"ok": False, "why": label, "unknown": unknown}
-        h = self.host
-        from . import preferences
-        meter = getattr(h, "meter_state", {}) or {}
-        used = (meter.get("ctx") or {}).get("used")
-        limit = preferences.get(getattr(h, "preferences", {}) or {}, "heartbeat.context_max_tokens", 100000)
-        model = str(meter.get("model") or getattr(h.agent, "cfg", {}).get("model") or "").lower()
-        expensive = any(x in model for x in ("opus", "gpt-6", "-pro"))
-        key = session_key(h.agent)
-        if (type(used) is int and used > limit) or expensive and key not in self.compacted:
-            if key not in self.protected:
-                h.agent_notice(pick(self.lang(),
-                    "心跳已暂停以节省用量。请发送 /compact，主机会先按现有流程保存交接；压缩后再检查待办。",
-                    "Heartbeat paused to save usage. Send /compact; the host saves the handoff through the existing flow before compaction."))
-                self.protected.add(key)
-            return {"ok": False, "why": "context_guard"}
-        return self.fire(now, by="daily" if daily and now < self.next_due() else "timer", reasons=reasons)
+        note = self.context_note(now, d)              # #449: never pauses; >= half the window → one line to the main Agent
+        r = self.fire(now, by="daily" if daily and now < self.next_due() else "timer", reasons=reasons, note=note)
+        if note and r.get("ok"):
+            d = await asyncio.to_thread(self._load)
+            marks = d.get("ctx_notice") if isinstance(d.get("ctx_notice"), dict) else {}
+            marks = {k: v for k, v in marks.items() if v == day_of(now)}   # yesterday's markers fall out
+            marks[r["key"]] = day_of(now)
+            d["ctx_notice"] = dict(list(marks.items())[-32:])
+            await asyncio.to_thread(self._save, d)
+        return r
 
-    def fire(self, now: float | None = None, by: str = "timer", reasons=None) -> dict:
+    def context_note(self, now: float, d: dict) -> str | None:
+        """#449: context used / the model's window from the meter; < 50 % or unknown window → None. At most once per
+        session per day (marker in heartbeat.json). The line rides inside the beat (a system turn), never to the owner."""
+        c = (getattr(self.host, "meter_state", None) or {}).get("ctx")
+        used, top = (c.get("used"), c.get("max")) if isinstance(c, dict) else (None, None)
+        if type(used) not in (int, float) or type(top) not in (int, float) or top <= 0 or used < top / 2:
+            return None
+        marks = d.get("ctx_notice")
+        if isinstance(marks, dict) and marks.get(session_key(getattr(self.host, "agent", None))) == day_of(now):
+            return None
+        return pick(self.lang(), "主机提示：上下文已用过半。找空闲时自写交接再压缩。",
+                    "Host notice: over half the context window is used. When idle, write your own handoff, then compact.")
+
+    def fire(self, now: float | None = None, by: str = "timer", reasons=None, note=None) -> dict:
         """Queue one beat now (the caller checked wait_reason, or this is `agentj heartbeat now`)."""
         h = self.host
         now = time.time() if now is None else now
@@ -571,6 +573,8 @@ class Heartbeat:
         body = message(lang, text, digest, full, idle_min)
         if reasons:
             body += "\n" + pick(lang, "主机预检发现：", "Host preflight found: ") + ", ".join(reasons)
+        if note:
+            body += "\n" + note
         if getattr(a, "kind", None) == "codex":
             body += "\n" + NO_NOTES[lang]
         with contextlib.suppress(Exception):          # P165 (P158 ask): a goal still running → one line at the end

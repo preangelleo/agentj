@@ -22,7 +22,7 @@ import tomllib
 import unicodedata
 import urllib.parse
 
-from . import bundle, cloud, fence, market_guard, minisign, plaza, plaza_audit, plaza_perms, plaza_trust, privacy
+from . import bundle, cloud, fence, market_guard, minisign, plaza, plaza_audit, plaza_deps, plaza_perms, plaza_trust, privacy
 from .plaza import FENCE_CLOSE, FENCE_OPEN, META, NOTE, PlazaError, escape_data, json_out, plaza_clean
 from .text import clean_line
 
@@ -558,7 +558,7 @@ def read_installed(st) -> list[dict]:
     for r in items if isinstance(items, list) else []:
         if isinstance(r, dict) and isinstance(r.get("name"), str) and _NAME.fullmatch(r["name"]):
             out.append({k: r.get(k) for k in ("name", "type", "version", "sha256", "harness", "target", "certified", "installed_at", "category")}
-                       | {k: r[k] for k in ("permissions", "perm_grant", "publisher_grant", "audit_grant", "requires") if isinstance(r.get(k), dict)})  # P426 #181-1
+                       | {k: r[k] for k in ("permissions", "perm_grant", "publisher_grant", "audit_grant", "requires", "verify") if isinstance(r.get(k), dict)})  # P426 #181-1
     return out
 
 
@@ -1547,12 +1547,13 @@ def run_install(name: str, *, version=None, harness=None, workspace=None, params
     if exists and replace and not owned:
         raise PlazaError(f"{target}: {NOT_OURS}")
     sandbox = None if (skip_verify or not s["verify"]) else sandbox_kind()
-    vref = None                       # #437: the grammar is judged BEFORE any card; refused → the self-test is skipped
+    vref, vcmds = None, []            # #437: the grammar is judged BEFORE any card; refused → the self-test is skipped
     if s["verify"] and not skip_verify:
         try:
-            parse_verify(m["install"]["verify"], certified=certified)
+            vcmds = parse_verify(m["install"]["verify"], certified=certified)
         except VerifyRefused as e:
             vref, sandbox = e, None
+    deps = plaza_deps.missing(plaza_deps.wanted(s, vcmds), VERIFY_PATH)     # #466: known before the card; never a blocker
 
     if not owner_confirmed:
         out_lines = [FENCE_OPEN, f"{META}{NOTE}",
@@ -1577,6 +1578,8 @@ def run_install(name: str, *, version=None, harness=None, workspace=None, params
                 if sandbox else
                 f"{META}install.verify：{NO_SANDBOX}（确认安装时也不会运行）/ no usable sandbox on this machine: the package's "
                 "self-test is NOT run (not at confirm either)")
+        if deps:
+            out_lines.append(_deps_line(deps))
         out_lines += [f"{META}装到 target ({h}): {target}" + ("（已存在 EXISTS）" if exists else ""),
                       f"{META}将写入的文件 files to write（{len(rendered)} 个，装到 target 下的相对路径 / paths under the target）:",
                       *_t("\n".join(sorted(rendered, key=lambda x: x.encode())))]
@@ -1640,7 +1643,7 @@ def run_install(name: str, *, version=None, harness=None, workspace=None, params
                         "audit": [{k: f[k] for k in ("rule", "path", "line", "level")} for f in findings[:30]],
                         "target": str(target), "harness": h, "replace": bool(exists and replace),
                         "verify": ("skip" if skip_verify else "refused" if vref else sandbox or "none") if s["verify"] else None,
-                        "verify_why": vref.short if vref else None,
+                        "verify_why": vref.short if vref else None, "deps": [x["name"] for x in deps],
                         "params": {k: _as_text(v) for k, v in shown_params.items()}, "sign_as": sign_as,
                         "downgrade": downgrade, "files": sorted(rendered, key=lambda x: x.encode())})
         if not res.get("ok"):
@@ -1673,6 +1676,7 @@ def run_install(name: str, *, version=None, harness=None, workspace=None, params
         print("和".join(z for z, _ in what) + "：主人已在手机上签名允许 / the owner allowed " + " and ".join(e for _, e in what)
               + " on the phone (signed)", file=out)
 
+    vran = False
     # 1. install.verify — in a throw-away copy of the raw package (before rendering, FORMAT §7.7), only inside a real sandbox
     if s["verify"]:
         if skip_verify:
@@ -1685,18 +1689,20 @@ def run_install(name: str, *, version=None, harness=None, workspace=None, params
                 print(f"install.verify: {NO_SANDBOX} / no usable sandbox on this machine: the package's self-test was not run",
                       file=out)
             else:
-                with tempfile.TemporaryDirectory(prefix="agentj-verify-") as tmp:
-                    scratch = pathlib.Path(tmp)
-                    pkg_root = scratch / "pkg"
-                    write_tree(pkg_root, files)
-                    rc, tail = run_verify(m["install"]["verify"], pkg_root, scratch, kind=sandbox, hide=[str(st.root)],
-                                          certified=certified)
-                if rc != 0:
+                rc, tail = _sandboxed(st, m, files, sandbox, certified)
+                if _dep_exit(rc, tail):        # #466: "not found" is a dependency to add, not a broken package
+                    deps = _add_tail(deps, tail)
+                    rc = 0
+                    print(f"install.verify: exit 127 — 缺依赖 {', '.join(x['name'] for x in deps)}，安装继续 / missing "
+                          "dependencies, the install goes on", file=out)
+                elif rc != 0:
                     print(f"install.verify 失败（exit {rc}），什么都没装 / install.verify failed (exit {rc}): nothing installed. "
                           "Its output (data):", file=out)
                     print("\n".join([FENCE_OPEN, *_t("\n".join(tail.splitlines()[-20:])), FENCE_CLOSE]), file=out)
                     return EXIT_ERROR
-                print(f"install.verify: OK（{SANDBOX_TEXT[sandbox]}，无网络 / sandboxed, no network）", file=out)
+                else:
+                    print(f"install.verify: OK（{SANDBOX_TEXT[sandbox]}，无网络 / sandboxed, no network）", file=out)
+                vran = True
 
     # 2. staging next to the target, then one rename; a replaced folder goes to <state>/plaza/backups/
     # #428 H1: through the real parent's fd pinned at the card (mkdirat / renameat; a swapped path is refused)
@@ -1739,7 +1745,9 @@ def run_install(name: str, *, version=None, harness=None, workspace=None, params
            "requires": {k: v for k, v in summarize(m).items() if k in ("harness", "os", "cli", "env", "accounts", "python_requirements", "skills")},
            "category": m.get("category"), "certified": certified, "installed_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
            "permissions": perm, **({"perm_grant": grant} if grant else {}), **({"publisher_grant": pub_grant} if pub_grant else {}),
-           **({"audit_grant": audit_grant} if audit_grant else {})}
+           **({"audit_grant": audit_grant} if audit_grant else {}),
+           "verify": {"state": "pending" if deps else "ok" if vran else "not_run", "missing": [x["name"] for x in deps],
+                      "digest": dg, "files": plaza_deps.tree_sha(rendered), "paths": sorted(rendered, key=lambda x: x.encode())}}
     _record_install(st, rec)
     if not pubr["known"] or pub_grant:
         market_guard.record_publisher(st, m["name"], pubr["fp"])    # TOFU: the first publisher seen (unsigned too), or the allowed new one
@@ -1752,7 +1760,111 @@ def run_install(name: str, *, version=None, harness=None, workspace=None, params
     except PlazaError as e:
         print(f"warning: 安装计数没报上去（不影响安装）/ the install count was not reported (the install is fine): {e}", file=out)
     _todo(m, s, target, workspace, st, out)
+    _verify_outcome(m["name"], m["version"], deps, vran, out)
     return EXIT_OK
+
+
+def _sandboxed(st, m, files, sandbox, certified) -> tuple[int, str]:
+    with tempfile.TemporaryDirectory(prefix="agentj-verify-") as tmp:
+        scratch = pathlib.Path(tmp)
+        write_tree(scratch / "pkg", files)
+        return run_verify(m["install"]["verify"], scratch / "pkg", scratch, kind=sandbox, hide=[str(st.root)], certified=certified)
+
+
+def _dep_exit(rc: int, tail: str) -> bool:
+    return rc == 127 and "not in the package" not in tail
+
+
+def _add_tail(deps: list, tail: str) -> list:
+    have = {x["name"] for x in deps}
+    deps = deps + [{"name": n, "user": plaza_deps.user_copies(n)} for n in plaza_deps.from_tail(tail) if n not in have]
+    return deps or [{"name": "? (exit 127)", "user": []}]       # unnamed: still pending, never "ok"
+
+
+def _deps_line(deps: list) -> str:
+    zh = "；".join(x["name"] + (f"（用户目录有：{'、'.join(x['user'])}，沙箱看不到）" if x["user"] else "（本机没找到）") for x in deps)
+    return (f"{META}依赖待补 dependencies missing on the self-check PATH {VERIFY_PATH}: {zh}。不阻断安装：装好后 Agent 补齐再重跑自检，"
+            "不用再签名 / not a blocker: after the install the Agent adds them and reruns the self-check, no new signature")
+
+
+def _verify_outcome(name, version, deps, vran, out) -> None:
+    if deps:
+        print(f"状态 status: {plaza_deps.PENDING[0]} / {plaza_deps.PENDING[1]}", file=out)
+        print(plaza_deps.task_text(name, version, deps, False, VERIFY_PATH), file=out)
+        print(plaza_deps.task_text(name, version, deps, True, VERIFY_PATH), file=out)
+    elif vran:
+        print(f"{plaza_deps.PASSED[0]} / {plaza_deps.PASSED[1]} · {plaza_deps.ACCEPT[0]} / {plaza_deps.ACCEPT[1]}", file=out)
+
+
+def pending_of(st, name: str) -> dict | None:
+    recs = [r for r in read_installed(st) if r["name"] == name and (r.get("verify") or {}).get("state") == "pending"]
+    return recs[-1] if recs else None
+
+
+def run_reverify(name: str, *, harness=None, st=None, out=None, local=False, post=None, get=None, call=None) -> int:
+    """#466 `agentj plaza verify`: same sha256 + installed files → rerun the self-test, no new signature (ADR-#466)."""
+    out = out or sys.stdout
+    if not isinstance(name, str) or not _NAME.fullmatch(name):
+        raise PlazaError("包名不对 / not a package name")
+    if not local:
+        from .state import State
+        res = (call or plaza_perms._call)(st or State(), {"cmd": "plaza_verify", "name": name, "harness": harness}, REQUEST_WAIT)
+        if res is not None and isinstance(res.get("rc"), int):
+            print((res.get("out") or "").rstrip("\n"), file=out)
+            return res["rc"]
+        if fence.inside() or res is not None:
+            print("没有重跑：Agent J 主机没在运行或版本太旧（agentj service start / 更新）/ not rerun: the Agent J host is not "
+                  "running or too old", file=out)
+            return EXIT_UNAVAILABLE
+    st = st or _state()
+    recs = [r for r in read_installed(st) if r["name"] == name and r["type"] != "card" and (harness is None or r["harness"] == harness)]
+    v = (recs[-1].get("verify") if recs else None) or {}
+    if not recs or not isinstance(v.get("paths"), list) or not isinstance(v.get("files"), str):
+        raise PlazaError(f"{name} 没有可重跑的安装记录：用 agentj plaza request {name} --replace 重新安装 / no install record to "
+                         f"rerun: agentj plaza request {name} --replace")
+    r = recs[-1]
+    again = f"agentj plaza request {name} --replace"
+    data = _cache_get(st, r["sha256"])
+    if data is None:
+        try:
+            _, data, _, _ = fetch(st, name, r["version"], post=post, get=get)
+        except PlazaError as e:
+            print(f"没有重跑：取不到当初签名的那个包 / not rerun: the signed package is not available ({e})", file=out)
+            return EXIT_ERROR
+    if bundle.sha256(data) != r["sha256"]:
+        print(f"refused: 现在的包不是主人签名安装的那个（sha256 变了），不重跑；要装新版用 {again} / not the bundle the owner "
+              f"signed for: {again}", file=out)
+        return EXIT_DIGEST
+    tree = plaza_deps.read_tree(r["target"], v["paths"])
+    if tree is None or plaza_deps.tree_sha(tree) != v["files"]:
+        print(f"refused: 装好的文件和签名安装时不一样了（被改过或缺了），不重跑；用 {again} 重新安装 / the installed files changed "
+              f"since the signed install: {again}", file=out)
+        return EXIT_DIGEST
+    m, files = bundle.parse(data)
+    s = summarize(m)
+    try:
+        vcmds = parse_verify(m["install"]["verify"], certified=bool(r["certified"])) if s["verify"] else []
+    except VerifyRefused:
+        vcmds = None
+    deps, sandbox, vran = plaza_deps.missing(plaza_deps.wanted(s, vcmds), VERIFY_PATH), sandbox_kind(), False
+    if vcmds and sandbox:
+        rc, tail = _sandboxed(st, m, files, sandbox, bool(r["certified"]))
+        if _dep_exit(rc, tail):
+            deps = _add_tail(deps, tail)
+        elif rc != 0:
+            print(f"install.verify 失败（exit {rc}）/ failed (exit {rc}). Its output (data):", file=out)
+            print("\n".join([FENCE_OPEN, *_t("\n".join(tail.splitlines()[-20:])), FENCE_CLOSE]), file=out)
+            _record_install(st, {**r, "verify": {**v, "state": "failed", "missing": []}})
+            return EXIT_ERROR
+        else:
+            vran = True
+    _record_install(st, {**r, "verify": {**v, "state": "pending" if deps else "ok" if vran else "not_run",
+                                         "missing": [x["name"] for x in deps]}})
+    st.log("plaza_pkg_verify", name=name, result="pending" if deps else "ok")
+    _verify_outcome(name, r["version"], deps, vran, out)
+    if not deps and not vran:
+        print("自检没有运行（没有自检命令或本机没有沙箱）/ the self-check did not run (none declared, or no sandbox here)", file=out)
+    return EXIT_ERROR if deps else EXIT_OK
 
 
 def _perm_lines(perm: dict, inferred: bool, allow, src: str, extra: list, under: list = ()) -> list[str]:
@@ -2267,6 +2379,10 @@ def add_arguments(ps, search, show, report) -> None:
     s = ps.add_parser("like", help="给包点赞（每个账号一票）/ like a package (one per account)")
     s.add_argument("name")
     s.add_argument("--off", action="store_true", help="取消点赞 / unlike")
+    s = ps.add_parser("verify", help="依赖补齐后重跑已装包的自检（同一包同一 digest，不用再签名）/ rerun an installed package's "
+                      "self-check after adding its dependencies (same package and digest, no new signature)")
+    s.add_argument("name")
+    s.add_argument("--harness", choices=list(HARNESSES))
     s = ps.add_parser("installed", help="本机从广场装过的包 / what this machine installed from the plaza")
     s.add_argument("--json", action="store_true")
     s = ps.add_parser("partners", help="优先推荐伙伴（推荐第三方服务前先查；链接旁必须带披露）/ preferred partners: check before "
@@ -2300,6 +2416,8 @@ def cmd(a, run) -> bool:
         run(run_like, a.name, not a.off)
     elif c == "installed":
         run(run_installed, as_json=a.json)
+    elif c == "verify":
+        run(run_reverify, a.name, harness=a.harness)
     elif c == "partners":
         run(run_partners, a.slot, as_json=a.json)
     else:

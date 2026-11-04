@@ -542,6 +542,23 @@ def _rcpt_turn(host, tid) -> None:
         rc.done_turn(tid)
 
 
+def _peer_floor(host, tool, tool_input, v, requirement, opaque, host_card, asks, bound, ttl, lv, dispatch=False) -> bool:   # #455 ADR: True = card
+    from . import peer_origin, policy_registry
+    if host_card or asks or bound or ttl is not None or lv == "safe":
+        return True
+    if dispatch:                            # the CEO-dispatch whitelist shape, judged before (ADR-#455)
+        return False
+    if (v.danger or opaque or requirement != "allow" or not peer_origin.allowed(tool, tool_input, (host.agent_cfg or {}).get("dir"), host.st.root)
+            or tool in approval_level.HARNESS_KEEPS or tool in approval_level.HOST_CARDS or tool in policy_registry.HOST_TOOLS):
+        return True
+    try:
+        return bool(confirm_tier.harness_keeps(tool, tool_input, env=getattr(host.agent, "approval_env", None))
+                    or approval_level.harness_floor(tool, tool_input, v)
+                    or approval_level.redline(tool, tool_input, v, host.danger_extra))
+    except Exception:  # noqa: BLE001 — cannot tell → the card
+        return True
+
+
 class Host:
     def __init__(self, st: State, events: str = "text", read_stdin: bool = True):
         self.st = st
@@ -685,7 +702,13 @@ class Host:
         self.upg: dict | None = None            # P203: the open upgrade confirmation card (one at a time, §29)
         from . import busy as busy_mod
         self.busy = busy_mod.Board(st.root, on_change=self.busy_changed, verify_sources=True)   # P150 (§22): who works in the background
-        self.busy.trusted = lambda: not provenance.untrusted_turn(self.agent) or bool(provenance.unattended_turn(self.agent))
+        self.busy.trusted = lambda: not provenance.untrusted_turn(self.agent) or provenance.unattended_turn(self.agent) in ("system", "scheduled_task")
+        from .busy_launch import Launch
+        self.busy.launch = Launch(st.root)      # #450: outside jobs inherit a trusted launching turn (ADR-#450)
+        from .peer_origin import Launches, register
+        self.peer_launch = Launches(st.root)    # #455: owner-signed systemd-run units whose sessions may speak same_host
+        with contextlib.suppress(Exception):    # #455 F3 B: the dispatch registry, before any fence starts (stat only)
+            register()
         from .background_done import Notifier
         self.background_done = Notifier(self)
         self.busy_sent: str | None = None
@@ -2382,6 +2405,9 @@ class Host:
                     from . import plaza_host
                     await self._ctl_send(w, await plaza_host.handle(
                         self, req, lambda ev: asyncio.ensure_future(self._ctl_send(w, {"sent": True, **ev}))))
+                elif cmd == "plaza_verify":         # #466: rerun an installed package's self-check (same sha256 + files)
+                    from . import plaza_host
+                    await self._ctl_send(w, await plaza_host.verify(self, req))
                 elif cmd == "mail_status":
                     await self._ctl_send(w, {"ok": True, **(self.mail.view() if self.mail else {})})
                 elif cmd == "mail_check":
@@ -2975,7 +3001,9 @@ class Host:
         try:
             names = await asyncio.to_thread(cmdrun.available_commands)
             self._cmdrun_available = (time.monotonic(), names)
-            await self._send_ready({"t":"cmds_state", "names":names})  # facts only; never race the pref_res/preferences pair
+            # facts only; never race the pref_res/preferences pair. #461f: _send_ready takes a function of the session — the
+            # dict itself was 'not callable' (bg_task_failed why=cmd_detect TypeError) and the phone never got the list.
+            await self._send_ready(lambda s: {"t": "cmds_state", "names": names})
         finally:
             self._cmdrun_detecting = False
 
@@ -4245,6 +4273,8 @@ class Host:
         self._fallback_error, self._fallback_used = "", False
         if getattr(self, "heartbeat", None) is not None:
             self.heartbeat.usage_start(send)
+        if (launch := getattr(getattr(self, "busy", None), "launch", None)) is not None:
+            launch.turn(self.busy.trusted())
         self.turn_t0 = time.monotonic()
         self.turn_shown, self.turn_at = False, (time.time(), 0.0, False)
         _hb_touch(self)
@@ -4266,6 +4296,8 @@ class Host:
             peers.xfer.end_execution()
         if getattr(self, "heartbeat", None) is not None:
             self.heartbeat.usage_end()
+        if (launch := getattr(getattr(self, "busy", None), "launch", None)) is not None:
+            launch.end()
         self.st.log("turn_end", agent=self.agent.kind if self.agent else None)
         _hb_touch(self)
         halted = bool(self.agent and self.agent.halting)
@@ -4817,6 +4849,15 @@ class Host:
             own_rid = await asyncio.to_thread(handoff.record_own, self.st, getattr(self.agent, "kind", None), tool, tool_input)
             self.st.log("ask_done", id=own_rid, tool=tool, decision="allow", reason="own_handoff")
             return {"behavior": "allow", "updatedInput": tool_input}
+        from . import background_done as bd_mod   # #450 1b: a known completion turn reads its own report (ADR-#450)
+        own_t = None if strict or self.stopped() or avatar is not None or own else bd_mod.own_report(self.agent, tool, tool_input, (self.agent_cfg or {}).get("dir"))
+        if own_t and (own_t == "busy" or await asyncio.to_thread(bd_mod.own_clean, own_t, (self.agent_cfg or {}).get("dir"))):
+            own_rid = secrets.token_hex(16)
+            await asyncio.to_thread(approvals.record, self.st, rid=own_rid, agent=getattr(self.agent, "kind", "?"), tool=tool,
+                                    input_sha256=approvals.input_digest(tool_input), shown_sha256=approvals.shown_digest(tool, bd_mod.OWN_SHOWN),
+                                    decision="allow", reason="own_report", cats=[])
+            self.st.log("ask_done", id=own_rid, tool=tool, decision="allow", reason="own_report", via="system")
+            return {"behavior": "allow", "updatedInput": tool_input}
         policy_env = getattr(self.agent, "approval_env", None)
         requirement = (policy_registry.decision("main", bound) if bound else
                        policy_registry.main_requirement(tool, tool_input, env=policy_env) if policy_env
@@ -4825,6 +4866,18 @@ class Host:
             policy_registry.log_unknown(self.st, tool, tool_input, agent=getattr(self.agent, "kind", "?"))   # P553
             return {"behavior": "deny", "message": UNKNOWN_ACTION}
         v = self._classify(tool, tool_input)
+        from . import peer_origin
+        dispatch = False
+        if tool == "Bash" and set(v.rules) == {"cred.service"} and isinstance(tool_input, dict) and not set(tool_input) - {"command", "description", "timeout"}:
+            unit, why = await asyncio.to_thread(self._dispatch_check, tool_input.get("command"))
+            if unit and why == "ok" and not self._dispatch_turn():
+                why = "turn"
+            dispatch = why == "ok" and requirement == "uv" and not strict and not bound and avatar is None and not own
+            if unit and not dispatch:           # #469: the shape is not 「改凭据」 — the card names its class and why (ADR-#455 F3 B)
+                v = peer_origin.unproven(why if why != "ok" else "turn", card_lang(self.lang))
+                self.st.log("dispatch_unproven", why=why)
+        if dispatch:                            # #455: CEO dispatch whitelist — owner: no Face ID; same_host: no card (ADR-#455)
+            v, requirement = danger.Verdict(), "allow"
         opaque = approval_jev.gray(v)
         if opaque and requirement == "allow":
             requirement = "hold"
@@ -4837,6 +4890,9 @@ class Host:
         unattended = provenance.unattended_turn(self.agent) if avatar is None and not own else None
         if unattended:
             delegated = True
+        peer = unattended == "same_host"        # #455: never an auto path below this branch (ADR-#455)
+        if peer:
+            origin = origin or pick(self.lang, "来源：同机 Agent 会话 ", "Asked during: same-computer Agent session ") + str(provenance.turn_source(self.agent).get("unit"))[:80]
         if avatar is not None:
             delegated, batch = True, False
             origin = origin or avatar
@@ -4944,6 +5000,14 @@ class Host:
             self.activity("decision", id=rid, tool=tool, result="deny", reason="group_source", cats=v.cats, summary=summary)
             self.emit("ask_done", id=rid, result="deny", reason="group_source")
             return {"behavior": "deny", "message": provenance.refusal_text(self.agent), **({"reason": "group_source"} if grant_info else {})}
+        if peer and not _peer_floor(self, tool, tool_input, v, requirement, opaque, host_card, require_passkey or own_pk or always_ask, bound, ttl, lv, dispatch):
+            approvals.record(self.st, **base, decision="allow", reason="same_host")
+            if dispatch:
+                await self._peer_launch_note(tool, tool_input, avatar, own, unattended)
+            self.st.log("ask_done", id=rid, tool=tool, decision="allow", reason="same_host", via="same_host")
+            self.activity("auto", id=rid, tool=tool, summary=summary, by="same_host", cats=v.cats, task=self.task_label)
+            self.emit("auto", id=rid, tool=tool, grant=None)
+            return {"behavior": "allow", "updatedInput": tool_input}
         if same_owner and self.peers is not None:
             sender = getattr(self.agent, "cur_send", None)
             owner = self.peers.same_owner
@@ -4992,7 +5056,7 @@ class Host:
             approvals.record(self.st, **base, decision="allow", reason="dispatch")
             self.st.log("ask_done", id=rid, tool=tool, decision="allow", reason="dispatch")
             return {"behavior": "allow", "updatedInput": tool_input}
-        if lv != "safe" and (not delegated or (unattended and lv == "harness")) and avatar is None and ttl is None and not own_pk:
+        if lv != "safe" and (not delegated or (unattended and lv == "harness")) and avatar is None and ttl is None and not own_pk and not peer:
             from . import background as bgmod   # P552 (#325 ②): background work, decided from the real call — never the model's words
             bgk = (("headless:" + h) if (h := bgmod.headless(tool, tool_input)) else
                    background if background in ("order", "task") else None)
@@ -5040,7 +5104,7 @@ class Host:
             self.st.log("ask_done", id=rid, tool=tool, decision="allow", reason="same_owner")
             self.activity("auto", id=rid, tool=tool, summary=summary, by="same_owner", cats=v.cats, task=self.task_label)
             return {"behavior": "allow", "updatedInput": tool_input}
-        if lv == "harness" and (not delegated or avatar is not None or unattended) and ttl is None and not own_pk \
+        if lv == "harness" and (not delegated or avatar is not None or unattended) and ttl is None and not own_pk and not peer \
                 and tool not in approval_level.HARNESS_KEEPS and not (unattended and tool == "AgentJSameOwnerAction"):
             try:   # no folder: the Agent may have cd'd, and a `cwd` field is the model's — relative paths are not scratch
                 keep = confirm_tier.harness_keeps(tool, tool_input, env=policy_env) or approval_level.harness_floor(
@@ -5055,6 +5119,8 @@ class Host:
                 grant = approval_level.level_grant(self.st)
                 approvals.record(self.st, **base, decision="allow", reason="level_harness",
                                  **({"grant": grant, "auto": "level"} if grant else {}))
+                if dispatch:
+                    await self._peer_launch_note(tool, tool_input, avatar, own, unattended)
                 self.st.log("ask_done", id=rid, tool=tool, decision="allow", reason="level_harness",
                             **({"via": "avatar"} if avatar is not None else {"via": unattended} if unattended else {}))
                 self.activity("auto", id=rid, tool=tool, summary=summary, by="level_harness", cats=v.cats, task=self.task_label)
@@ -5068,6 +5134,7 @@ class Host:
             if ok is not None:                # P336 (#36): the owner allowed this exact step on its parked card
                 approvals.record(self.st, **base, decision="allow", reason="parked", device=ok["device"], grant=ok["rid"],
                                  auto="parked")
+                await self._peer_launch_note(tool, tool_input, avatar, own, unattended)
                 self.st.log("ask_done", id=rid, tool=tool, decision="allow", reason="parked", device=ok["device"])
                 self.activity("auto", id=rid, tool=tool, summary=summary, by="parked", task=self.task_label)
                 return {"behavior": "allow", "updatedInput": tool_input}
@@ -5275,6 +5342,8 @@ class Host:
         self.status_changed()
         observe(reason)
         if decision == "allow":
+            if reason == "device":
+                await self._peer_launch_note(tool, tool_input, avatar, own, unattended)
             answer = {"behavior": "allow", "updatedInput": tool_input}
             if risk_scope and reason == "device" and lv != "safe":   # P158: never from a countdown; P336: not under safe
                 answer["risk_grant"] = {"rid": rid, "device": did, "sign_pub": sk}
@@ -5293,6 +5362,33 @@ class Host:
         msg = {"device": "用户在手机上拒绝了这个操作。", "timeout": _timeout_text(self.lang, int(self.ask_ttl), a.pk_fail),
                "serve_stop": "agentj serve 已停止：默认拒绝。", "estop": "已急停（全部停下）：默认拒绝。"}.get(reason, "已拒绝。")
         return {"behavior": "deny", "message": msg, **({"reason": reason} if grant_info else {})}
+
+    def _dispatch_turn(self) -> bool:   # #455: the owner's own turn or a verified same_host turn, nothing else
+        u = provenance.unattended_turn(self.agent)
+        return u == "same_host" or (u is None and not provenance.untrusted_turn(self.agent) and not provenance.delegated_turn(self.agent)
+                                    and provenance.is_owner(provenance.turn_source(self.agent)) and not _same_owner_turn(self.agent))
+
+    def _dispatch_ctx(self) -> dict:   # #455 F3 B (thread): where the dispatch's bare words resolve, read by the host
+        from . import peer_origin
+        cfg = self.agent_cfg or {}
+        if cfg.get("session_mode") == "shared":    # an unfenced desktop session: its own PATH (point-in-time rule)
+            caller, strict = peer_origin.session_path(getattr(self.agent, "session", None)), False
+        else:                                      # serve started it with serve's PATH; fenced → the strict rule
+            caller, strict = os.environ.get("PATH"), bool(cfg.get("fence", True))
+        return {"caller": caller, "strict": strict, "unit": peer_origin.manager_env}   # read only if a unit-side word is bare
+
+    def _dispatch_check(self, command):
+        from . import peer_origin
+        return peer_origin.check(command, (self.agent_cfg or {}).get("dir"), self.st.root, self._dispatch_ctx())
+
+    async def _peer_launch_note(self, tool, tool_input, avatar, own, unattended):
+        launches = getattr(self, "peer_launch", None)
+        if (launches is None or tool != "Bash" or avatar is not None or own or not isinstance(tool_input, dict)
+                or unattended not in (None, "same_host") or not self._dispatch_turn()):
+            return
+        cmd, root = tool_input.get("command"), (self.agent_cfg or {}).get("dir")
+        if await asyncio.to_thread(lambda: launches.note(cmd, root, ctx=self._dispatch_ctx())):   # proof + hashing off the loop
+            await asyncio.to_thread(launches.save)
 
     def _classify(self, tool, tool_input):
         cfg = self.agent_cfg or {}

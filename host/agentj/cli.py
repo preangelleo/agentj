@@ -2783,6 +2783,9 @@ def cmd_service(a) -> None:
             from . import service_recovery, update
             if a.mode != "install" or a.deferred != __version__:
                 raise service.ServiceError("recovery_version_mismatch")
+            from . import fence
+            if fence.inside():       # #460: P591 hides the service manager; the host outside the fence hands off
+                raise SystemExit(service_recovery.via_host(State(), a.deferred))
             service_recovery.schedule(State(), service.agentj_argv(), a.deferred)
             print("✓ 服务重启已交给独立任务 / service restart scheduled independently")
             return
@@ -2874,8 +2877,8 @@ def cmd_service(a) -> None:
             sys.exit(service.NO_MANAGER_EXIT)
         sys.exit("✗ " + service.MESSAGES.get(e.reason, e.reason) + (f"\n  {e.detail}" if e.detail else ""))
     except (OSError, subprocess.SubprocessError) as e:     # P278: a service-manager command that cannot run is never a traceback
-        sys.exit(f"✗ 服务管理命令没能运行（{type(e).__name__}），运行 agentj doctor / a service-manager command could not run "
-                 f"({type(e).__name__}): run agentj doctor")
+        n = service.os_error_note(e)                       # #460: errno, command, phase, time
+        sys.exit(f"✗ 服务管理命令没能运行（{n}），运行 agentj doctor / a service-manager command could not run ({n}): run agentj doctor")
     print(f"✓ 已安装 / installed: {r['name']} ({r['kind']}) → {service.tilde(r['path'])}")
     print("  " + " ".join(r["argv"]))
     for n in r["notes"]:

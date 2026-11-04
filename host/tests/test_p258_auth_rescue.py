@@ -431,12 +431,16 @@ class Manager(Base, unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("并恢复", self.host.notices[-1])
 
     async def test_owner_session_note(self):
+        # #462: a side-process check used to report 「已恢复（Agent J 自己的会话已恢复）」 while the owner's own session was
+        # untouched; an unverifiable owner session is now partial with the one-tap reopen, never "recovered"
         os.environ["FAKE258_SCREENS"] = "ready"
         self.host.agent = _Agent(owns=False)
         with self.probe(True):
-            await self.r.recover("claude", route="login")
-        self.assertEqual(self.r.last["claude"]["note"], "owner_session")
-        self.assertIn("重开一次", self.host.notices[-1])
+            res = await self.r.recover("claude", route="login")
+        self.assertEqual(res, {"ok": False, "why": "main_session"})
+        self.assertEqual((self.r.last["claude"]["result"], self.r.last["claude"]["why"]), ("partial", "main_session"))
+        self.assertIn("重开 AI 会话", self.host.notices[-1])
+        self.assertNotIn("已恢复", self.host.notices[-1])
 
     async def test_expiry_reminder(self):
         today = date(2026, 10, 14)

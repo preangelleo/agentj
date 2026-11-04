@@ -1,5 +1,5 @@
 {
-  "version": "0.26.8a1",
-  "zh": "[all] 一个 AI 工具可登记多个账号一键切换；广场技能由主机安装、只一张签名卡；图片预览可缩放；邮件图片附件不再误拒、拒发说明原因；同主人请求、Codex 控制电脑、首次配对提示等修复。",
-  "en": "[all] Several accounts per AI tool; host-installed plaza skills, one signed card; image zoom; mail image attachments no longer refused; same-owner, Codex fixes."
+  "version": "0.26.8a2",
+  "zh": "[all] 后台任务完成后主 Agent 自动读回报告；同主人同机来源不再弹卡；升级后的文件卡、OpenCode 2.x 登录检查、受限环境升级、Claude 换号、Codex 死回合、广场缺依赖、心跳不再暂停等修复。",
+  "en": "[all] Background tasks report back by themselves; same-owner tier; file card, OpenCode 2.x, fenced upgrade, Claude switch, Codex, plaza deps, heartbeat fixes."
 }

@@ -253,7 +253,9 @@ class HostLevel(unittest.TestCase):
         return self.loop.run_until_complete(coro)
 
     def to(self, cid):
-        return [o for c, o in self.sent if c == cid]
+        # #461f: cmds_state (terminal-command detection, a background task since its TypeError fix) lands whenever the
+        # detection thread finishes; these frame-order checks are about pairing / passkey frames, so it is left out here.
+        return [o for c, o in self.sent if c == cid and o.get("t") != "cmds_state"]
 
     # -------------------------------------------------------------- helpers
     def paired(self, auth=None):

@@ -19,6 +19,7 @@ import json
 import os
 from pathlib import Path
 import re
+import time
 
 from .text import pick
 from .agent_codex import CodexAgent, RPCError
@@ -32,6 +33,8 @@ KEEP_WAIT = 10              # P282: s a kept app-server waits for the queued nex
 DISCOVER_LIMIT = 400        # newest rollouts inspected when no thread is selected
 HEAL_GAP = 10*60            # P330: s the newest thread must lead the next one by to be followed without asking
 HEAL_CHOICES = 4            # P330: threads offered on the 「接哪个」 card
+ORPHAN_IDLE = 120           # #461: s a rollout's open turn must be untouched, with no process holding the file, to be dead
+ORPHAN_CHECK = 15           # #461: s between those checks while a phone message waits
 
 
 class Refusal(ValueError):
@@ -137,6 +140,36 @@ def scan(path):
     return meta, context, active
 
 
+def orphaned(path, sid=None):
+    """#461: why the rollout's open turn is dead, None = not known to be. Untouched for ORPHAN_IDLE s and then either no
+    process has it open (a killed Codex leaves task_started without turn_aborted; a live thread keeps its rollout open,
+    measured 0.162.1) — or (#461f, measured 0.166.0) the only holder is the owner's shared app-server daemon and the daemon
+    itself says this thread runs no turn (it keeps a resumed thread's rollout open while idle). No answer from the platform
+    (no /proc, no lsof) or the daemon (no socket, no reply, another holder too) = not orphaned."""
+    from . import codex_procs
+    try:
+        if time.time() - path.stat().st_mtime < ORPHAN_IDLE:
+            return None
+        pids = codex_procs.fd_holders(path)
+    except Exception:  # noqa: BLE001
+        return None
+    if pids is None:
+        return None
+    others = {p for p in pids if p != os.getpid()}
+    if not others:
+        return 'desktop turn writer gone'
+    if not sid:
+        return None
+    from . import codex_daemon
+    try:
+        st = codex_daemon.thread_status(sid)
+    except Exception:  # noqa: BLE001
+        return None
+    if st and st.get('status') in ('idle', 'notLoaded') and others == {st.get('pid')}:
+        return 'daemon shows no running turn'
+    return None
+
+
 def effective_pin(st, pin):
     """P328: the owner's `agent.shared_session_id` unless a phone /clear superseded it (`codex.clear_from`): then the thread
     the phone moved to (per-harness state, `codex`), '' while the next message is still to open it. The global pin is never
@@ -228,8 +261,9 @@ def selected_rollout(directory, sid):
     return matches[0]
 
 
-def owner_context(path, directory, sid):
+def owner_context(path, directory, sid, dead=False):
     meta, context, active = scan(path)
+    active = active and not dead      # #461: a turn whose writer is gone (wait_desktop) is not a desktop turn
     if not meta or meta.get('id')!=sid or os.path.realpath(meta.get('cwd',''))!=os.path.realpath(directory):
         raise Refusal('wrong thread/project')
     if not context or context.get('cwd')!=meta.get('cwd'):
@@ -283,6 +317,7 @@ class SharedCodexAgent(CodexAgent):
         self.writer = {}                 # ADR-A178: who held the writer at the last refusal ({"kind", "pid", "how"})
         self.perm_source = "pending"     # F30: desktop / config / agentj / codex, known once the thread is resumed
         self.kept = False                # P282: the app-server stayed up for the next queued phone turn (thread still loaded)
+        self.dead_turn = None            # #461: (rollout, size) whose open turn has no writer: deliver past it
         self.desktop_wait = False        # P328: a phone message is waiting behind the owner's desktop turn (wait_desktop)
         self.owner_pin = self.cfg.get("shared_session_id") or ""     # P328: the owner's configured pin as serve read it
         st = self.host.st
@@ -428,7 +463,8 @@ class SharedCodexAgent(CodexAgent):
         active = False
         if path is not None:
             with contextlib.suppress(OSError):
-                active = (await asyncio.to_thread(scan, path))[2]
+                # #461f: an open turn nobody runs (its writer gone, or the daemon says idle) does not block a clear
+                active = await asyncio.to_thread(lambda: scan(path)[2] and not orphaned(path, old))
         if active:
             # The desktop is mid-answer on this thread: nothing is changed (not half a clear); the same command works after.
             self.note('shared_clear_refused', 'desktop turn active; alternate turns')
@@ -543,6 +579,9 @@ class SharedCodexAgent(CodexAgent):
         """Who holds the writer (ADR-A178); unknown holders never assume an App."""
         zh = str(self.cfg.get('language', 'en')).startswith('zh')
         w = getattr(self, 'writer', None) or {}
+        if w.get('daemon_idle'):         # #461f: the owner's shared daemon keeps the thread loaded with no turn in it
+            from . import codex_daemon
+            return codex_daemon.text('daemon_writer', zh).format(pid=w.get('pid') or '?')
         from . import codex_procs
         return codex_procs.text(w.get('kind') or 'unknown', w.get('pid'), zh, w.get('via'))
 
@@ -731,15 +770,31 @@ class SharedCodexAgent(CodexAgent):
         self.told.add(key)
         self.host.agent_notice(f'{a}{zh} / {b} {en}')
 
-    async def wait_desktop(self, path):
+    async def wait_desktop(self, path, sid=None):
         """Queue behind a running desktop turn instead of refusing. /stop ends the wait."""
         loop = asyncio.get_running_loop()
         deadline = loop.time() + DESKTOP_WAIT
         told = False
         active = scan(path)[2]
         pos = path.stat().st_size
+        if (str(path), pos) == self.dead_turn:
+            return
         self.desktop_wait = active      # P328: the phone's message waits behind the owner's desktop turn
+        check = 0
         while active:
+            if loop.time() >= check:
+                check = loop.time() + ORPHAN_CHECK
+                why = await asyncio.to_thread(orphaned, path, sid or self.cfg.get('shared_session_id'))
+                if why:
+                    self.dead_turn = (str(path), pos)
+                    self.note('shared_orphan_turn', why)
+                    if why == 'daemon shows no running turn':
+                        from . import codex_daemon
+                        self.host.agent_notice(codex_daemon.text('daemon_idle_turn', self._zh()))
+                    else:
+                        self.host.agent_notice(humane.of(self, 'codex.orphan_turn'))
+                    self.desktop_wait = False
+                    return
             if not told:
                 told = True
                 self.note('shared_waiting', 'desktop turn active; alternate turns')
@@ -767,7 +822,7 @@ class SharedCodexAgent(CodexAgent):
         from . import codex_perm
         self.perm_source = 'codex'
         try:
-            original,context=owner_context(path,self.cfg['dir'],sid)
+            original,context=owner_context(path,self.cfg['dir'],sid,self.dead_turn==(str(path),path.stat().st_size))
             self.perm_source = 'desktop'
         except Refusal as why:
             if why.code in ('wrong thread/project', 'desktop turn active; alternate turns'): raise
@@ -873,7 +928,7 @@ class SharedCodexAgent(CodexAgent):
         res=None
         healed=False
         while path and res is None:
-            await self.wait_desktop(path)
+            await self.wait_desktop(path, sid)
             try:
                 res=await self._resume(sid,path)
             except Refusal as r:
@@ -883,6 +938,13 @@ class SharedCodexAgent(CodexAgent):
                 if active_writer(e):
                     # ADR-A178: who holds it; our own leftover app-server is ended and the resume retried once
                     self.writer = await self.find_writer(path)
+                    if self.writer.get('kind') == 'app_server' and self.dead_turn and self.dead_turn[0] == str(path):
+                        # #461f (measured 0.166.0): the daemon that holds this idle thread refuses every other writer
+                        from . import codex_daemon
+                        with contextlib.suppress(Exception):
+                            d = await asyncio.to_thread(codex_daemon.thread_status, sid)
+                            if d and d.get('pid') == self.writer.get('pid') and d.get('status') == 'idle':
+                                self.writer['daemon_idle'] = True
                     if self.writer.get('kind') == 'agentj' and not healed:
                         healed = True
                         if await self.end_leftover(self.writer):
@@ -969,6 +1031,24 @@ class SharedCodexAgent(CodexAgent):
             if self.rollout is not None and self.shared_status != 'desktop_writer':
                 self.follow_status('following')
 
+    def submit(self, item):
+        """#461 (customer 12:44): /clear (/new is its alias) sent while a phone message waits behind a desktop turn must not
+        sit behind that turn (「等这一轮忙完就办」 forever when it never ends): the wait ends — that message is withdrawn and
+        said so, as /stop does — and the command runs next, before what queued behind the wait. cmd_clear still refuses
+        on a desktop turn that is really running (nothing half-cleared)."""
+        from .agent import Cmd
+        if not (isinstance(item, Cmd) and item.name == 'clear' and self.desktop_wait and not self.phone_turn):
+            return super().submit(item)
+        rest = []
+        while not self.q.empty():
+            rest.append(self.q.get_nowait())
+        for x in (item, *rest):
+            self.q.put_nowait(x)
+        if self.turn_done is not None:
+            self.turn_done.set()                     # wait_desktop: Stopped at its next tick
+        self.note('shared_wait_preempted', 'clear')
+        self.host.agent_notice(humane.of(self, 'codex.cant_stop_withdrawn'))
+
     async def _release_kept(self, p):
         await asyncio.sleep(KEEP_WAIT)
         if self.kept and self.proc is p and not self.phone_turn:
@@ -1001,10 +1081,10 @@ class SharedCodexAgent(CodexAgent):
 
     async def _desktop_running(self):
         """P328: the followed rollout shows a desktop turn in progress (read off the event loop)."""
-        path=self.rollout
+        path,sid=self.rollout,self.rollout_sid or self.cfg.get('shared_session_id')
         if path is None:
             return False
         try:
-            return bool(await asyncio.to_thread(lambda:scan(path)[2]))
+            return bool(await asyncio.to_thread(lambda:scan(path)[2] and not orphaned(path,sid)))
         except (OSError,ValueError):
             return False

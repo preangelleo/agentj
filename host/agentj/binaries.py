@@ -141,3 +141,47 @@ def _resolve(name, e):
             if ranked:
                 result["path"] = max(ranked)[1]
     return result
+
+
+def trees(environ=None):
+    """#455 F3 B: [(name, real dir)] of harness install trees in known layouts (ADR-#455 F3 B)."""
+    e = os.environ if environ is None else environ
+    home = Path(e.get("HOME", str(Path.home())))
+    cands = [(n, m / "installs" / n) for n in ("claude", "codex", "opencode")
+             for m in (Path(e.get("MISE_DATA_DIR", str(home / ".local/share/mise"))), Path(e.get("ASDF_DATA_DIR", str(home / ".asdf"))))]
+    cands += [("opencode", home / ".opencode/bin"), ("claude", home / ".local/share/claude/versions")]
+    out, h = [], os.path.realpath(home).rstrip("/") + "/"
+    for n, p in cands:
+        r = os.path.realpath(p)
+        if os.path.isdir(r) and not h.startswith(r.rstrip("/") + "/") and all(r != t for _, t in out):
+            out.append((n, r))
+    return out
+
+
+SYS_DIRS = ("/usr/local/bin", "/usr/bin", "/bin", "/usr/local/sbin", "/usr/sbin", "/sbin")   # seam: tests use a fake root
+
+
+def pin_dir(name, environ=None):
+    """#455 pin: the folder of `name`'s install tree (`trees`) holding it — the tree, `latest`, else the highest version."""
+    for t in (t for n, t in trees(environ) if n == name):
+        try:
+            vs = sorted((v for v in os.listdir(t) if re.fullmatch(r"v?\d+(\.\d+)*", v)),
+                        key=lambda v: [int(x) for x in re.findall(r"\d+", v)])
+        except OSError:
+            continue
+        for d in (os.path.join(t, v, b).rstrip("/") for v in ("", "latest", *vs[::-1]) for b in ("", "bin")):
+            f = os.path.join(d, name)
+            if os.path.isfile(f) and os.access(f, os.X_OK):
+                return d
+    return None
+
+
+def pinned(name, environ=None):
+    """#455 `busy run` pin (ADR-#455 F3 B pin): PATH = that folder, the sealed system dirs, then the old entries (only the
+    order changes); BASH_ENV ENV SHELLOPTS BASHOPTS BASH_FUNC_* LD_* PYTHON* dropped."""
+    from .peer_origin import _sealed
+    e = dict(os.environ if environ is None else environ)
+    head = [d for d in (pin_dir(name, e),) if d] + [d for d in SYS_DIRS if _sealed(d, want="dir")]
+    e["PATH"] = os.pathsep.join(dict.fromkeys(head + (e["PATH"].split(os.pathsep) if e.get("PATH") else [])))
+    return {k: v for k, v in e.items() if k not in ("BASH_ENV", "ENV", "SHELLOPTS", "BASHOPTS")
+            and not k.startswith(("LD_", "PYTHON", "BASH_FUNC_"))}

@@ -1403,6 +1403,17 @@ def tilde(p: str) -> str:
     return "~" + p[len(h):] if h and (p == h or p.startswith(h + "/")) else p
 
 
+def os_error_note(e, phase: str = "service") -> str:
+    """#460: errno, the failed command / file (a base name, never argv or a value), phase and time for the receipt line."""
+    import errno
+    import time
+    code, cmd = getattr(e, "errno", None), getattr(e, "cmd", None)
+    what = getattr(e, "step", None) or os.path.basename(str(getattr(e, "filename", None) or (
+        cmd[0] if isinstance(cmd, (list, tuple)) and cmd else cmd) or "?"))
+    return (f"{type(e).__name__} errno={errno.errorcode.get(code, '-') if code else '-'}"
+            f"{f'({code})' if code else ''} command={what} phase={phase} at={time.strftime('%Y-%m-%dT%H:%M:%S%z')}")
+
+
 def _write(path: str, data: bytes, mode: int) -> None:
     tmp = f"{path}.{os.getpid()}.tmp"
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
