@@ -614,9 +614,7 @@ class Gate(Rig):
         self.passkey()
         info = self.host.preferences_msg(self.s)["host"]["terminal"]
         self.assertEqual(info, {"on": False, "os": True, "me": False, "sudo": None, "web_ok": False, "minutes": 15,
-                                "idle_s": 300, "open": False, "pk": True, "kind": "unknown",
-                                # 0.26.9 (§38.15): the modes this host runs (line is always there)
-                                "modes": ["line", "pty"] if __import__("agentj.term_pty").term_pty.pty_ok() else ["line"]})
+                                "idle_s": 300, "open": False, "pk": True, "kind": "unknown"})
         self.enable(until=int(time.time()) + 3600)
         info = self.host.preferences_msg(self.s)["host"]["terminal"]
         self.assertTrue(info["on"] and info["me"] and info["web_ok"])

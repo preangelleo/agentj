@@ -433,8 +433,6 @@
           <div class="cmdtop"><span class="tool" id="tool"></span><button class="cmdmore" id="cmdMore" type="button" hidden aria-expanded="false" aria-controls="cmd"><span id="cmdMoreLbl" data-i18n="r.appr.cmdMore">展开全部</span></button></div>
           <p class="cmddesc" id="cmdDesc" hidden></p><pre id="cmd" data-cc="ext" data-cc-btn="cmdCopy"></pre>
         </div>
-        <!-- 0.26.9 #472 ②: the card's class + the host's one line "why your task scope does not cover this" (cls / why_scope) -->
-        <p class="cp-scope" id="apprScope" hidden></p>
         <p class="why" id="why" hidden></p>
         <!-- P572: the Agent's own reason, in plain words, outside the code block and right above the buttons. -->
         <p class="reason" id="cmdReason" hidden></p>
@@ -1114,19 +1112,6 @@
               <p class="setlinks"><a id="set-level-more" href="https://agentj.app/docs/phone/#approval-level" target="_blank" rel="noopener" data-i18n="p556.more">了解更多</a></p>
               <!-- P552 (#325 ①): configured but not in force (the remote that signed it is gone / re-keyed) → say so + one way on -->
               <div class="setunsigned" id="set-level-unsigned" hidden><p class="setnote setunsigned__why" id="set-level-unsigned-why" role="status"></p><button type="button" class="aj-btn" id="set-level-resign" data-i18n="p552.resign">用本机重新确认</button></div>
-            </div>
-            <!-- 0.26.9 §E3 (#473 ③): the day / month budget — in-budget spending runs without a card, beyond it asks Face ID; raising it
-                 asks Face ID, lowering does not (host decides; js/budget.js). Shown only once the host sent budget_state (own visibility, not data-paired). -->
-            <div class="setrow budget" id="set-budget-row" hidden>
-              <span class="setlab" data-i18n="p0269c.budget.title">预算</span>
-              <p class="setnote" data-i18n="p0269c.budget.note">预算内的花钱直接去办，不弹卡；超出预算才要你用 Face ID 确认。调高预算要 Face ID，调低不用。</p>
-              <div class="budget__grid">
-                <label class="budget__f"><span data-i18n="p0269c.budget.day">每天</span><input id="set-budget-day" class="aj-input" type="number" inputmode="decimal" min="0" step="any"></label>
-                <label class="budget__f"><span data-i18n="p0269c.budget.month">每月</span><input id="set-budget-month" class="aj-input" type="number" inputmode="decimal" min="0" step="any"></label>
-              </div>
-              <p class="setnote budget__spent" id="set-budget-spent"><span data-i18n="p0269c.budget.spentDay">今天已花</span> <b id="set-budget-spent-day">—</b> · <span data-i18n="p0269c.budget.spentMonth">本月已花</span> <b id="set-budget-spent-month">—</b></p>
-              <p class="setnote" id="set-budget-msg" role="status" aria-live="polite" hidden></p>
-              <button type="button" class="aj-btn aj-btn--primary" id="set-budget-save" disabled data-i18n="p0269c.budget.save">保存预算</button>
             </div>
             <!-- P539: 「免问的动作」 — what the owner ticked 「以后这台遥控器批准的 … 不再问」 for (host `preauth`); empty → hidden -->
             <div class="setrow preauth" id="set-preauth-row" hidden>

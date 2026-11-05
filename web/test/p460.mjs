@@ -29,11 +29,6 @@ try{
      await p.send('Page.bringToFront');
      await evaluate(p,`(()=>{const n=document.getElementById('${id}');getComputedStyle(n).transform;n.getAnimations().forEach(a=>a.finish());})()`);
      await waitFor(p,`new DOMMatrixReadOnly(getComputedStyle(document.getElementById('${id}')).transform).isIdentity`);
-     // 0.26.9 #472: the execution cards share the reply's slot with the approval / question card — measure only once the page has
-     // no card open (a question's result stays ASK_RESULT_S = 6 s) and the element's box held still for 5 frames (slow hosts settle later)
-     if(id!=='sheet')await waitFor(p,`document.body.dataset.sheet!=='1'&&(document.getElementById('sheet')?.hidden!==false||!document.getElementById('sheet').getClientRects().length)`,15000);
-     await evaluate(p,`new Promise((res)=>{const n=document.getElementById('${id}');let last='',same=0,k=0;const tick=()=>{const r=n.getBoundingClientRect(),v=[r.x,r.y,r.width,r.height].map(Math.round).join();same=v===last?same+1:0;last=v;
-       if((same>=5&&!document.getAnimations().some(a=>a.playState==='running'&&a.effect&&a.effect.target&&(a.effect.target===n||a.effect.target.contains?.(n)||n.contains?.(a.effect.target))))||++k>600)res();else requestAnimationFrame(tick);};requestAnimationFrame(tick);})`);
      measured[source][name]=await evaluate(p,`(()=>{const n=document.getElementById('${id}'),r=n.getBoundingClientRect(),c=getComputedStyle(n);return {x:r.x,y:r.y,w:r.width,h:r.height,bg:c.backgroundColor,color:c.color,radius:c.borderRadius,position:c.position,inReply:!!n.closest('#reply-notices')}})()`);
      writeFileSync(out+'/'+key+'-'+source+'-'+name+'.png',await shoot(p));
     };
@@ -43,8 +38,7 @@ try{
      await fake.send({t:'status',s:'waiting',kind:'question',agent:'codex',name:'Agent J'});
      await fake.send({t:'question',id,qs:[{q:zh?'防休眠':'Keep awake',h:'',m:false,o:Array.from({length:count},(_,j)=>({l:zh?['是，合盖也不睡','是，但合盖照常睡','仅使用电源时','关闭'][j]:['Yes, even with lid closed','Yes, sleep with lid closed','Only on external power','Off'][j],d:desc}))}],ttl:180});
      await waitFor(p,`document.body.dataset.sheet==='1'&&document.querySelectorAll('#qs .opt').length===${count}`);
-     // 0.26.9 #472 (chairman 11-04) supersedes P460's historical stage sheet: the question card now sits under the reply card
-     assert.equal(await evaluate(p,`!!document.querySelector('#reply-notices .sheet')`),source==='after');
+     assert.equal(await evaluate(p,`!!document.querySelector('#reply-notices .sheet')`),false);
      await evaluate(p,`import('./js/ui.js').then(m=>m.toastOff())`);
      await capture(name,'sheet');
      if(name==='long'){
@@ -69,9 +63,7 @@ try{
   for(const name of ['two','four','long','terminal','sudo']){
    const baseline=['terminal','sudo'].includes(name)?'live':'original';const a=measured[baseline][name],b=measured.after[name];
    // Geometry includes placement, dimensions, palette and the clipping owner.
-   // #472: the question sheet's placement / frame changed on purpose (under the reply card); its palette still matches the original
-   const properties=['terminal','sudo'].includes(name)?['x','y','w','h','bg','color','radius','position','inReply']:['bg','color'];
-   if(!['terminal','sudo'].includes(name)&&b.inReply!==true)failures.push({key,name,why:'#472 question card not under the reply card'});
+   const properties=['x','y','w','h','bg','color','radius','position','inReply'];
    const differences=properties.filter(k=>typeof a[k]==='number'?Math.abs(a[k]-b[k])>1:a[k]!==b[k]);
    const row={key,name,baseline,before:a,after:b,differences,pass:!differences.length};results.push(row);if(!row.pass)failures.push(row);
   }

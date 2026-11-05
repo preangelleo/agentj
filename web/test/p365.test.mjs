@@ -6,7 +6,6 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
-import { isAssistSrc } from '../public/js/assistsrc.js';   // 0.26.9 #468: relay.js sourceOf's import, given to the vm
 
 globalThis.window ??= globalThis;
 const { toPage } = await import('../public/js/snap.js');
@@ -41,7 +40,7 @@ function sourceOf(lang = 'zh') {
   const D = lang === 'en' ? en : zh;
   const flat = (k) => k.split('.').reduce((v, p) => (v && typeof v === 'object' ? v[p] : undefined), D) ?? D[k] ?? k;
   const t = (k, v) => String(flat(k)).replace(/\{(\w+)\}/g, (m, n) => (v && n in v ? String(v[n]) : m));
-  const c = { t, C: { myDev: () => 'me', agentName: () => 'Agent J' }, deviceInfo: () => null, isAssistSrc };
+  const c = { t, C: { myDev: () => 'me', agentName: () => 'Agent J' }, deviceInfo: () => null };
   vm.runInNewContext(body + '\nthis.sourceOf = sourceOf;', c);
   return c.sourceOf;
 }

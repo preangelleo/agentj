@@ -37,21 +37,9 @@ def user_copies(prog: str) -> list[str]:
     return found[:4]
 
 
-# #478: a declared browser is there when any of its usual names or macOS app bundles is (Google Chrome counts for chromium)
-_CHROME = ("chromium", "chromium-browser", "google-chrome", "google-chrome-stable", "chrome")
-ALIASES = {n: _CHROME for n in _CHROME}
-APPS = ("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/Applications/Chromium.app/Contents/MacOS/Chromium")
-
-
-def found(n: str, path: str) -> bool:
-    if n not in ALIASES:
-        return bool(shutil.which(n, path=path))
-    return any(shutil.which(a, path=path) for a in ALIASES[n]) or any(os.access(a, os.X_OK) for a in APPS)
-
-
 def missing(names, path: str) -> list[dict]:
     return [{"name": n, "user": user_copies(n)} for n in dict.fromkeys(n for n in names if _PROG.fullmatch(n or ""))
-            if not found(n, path)]
+            if not shutil.which(n, path=path)]
 
 
 def wanted(s: dict, cmds) -> list[str]:
@@ -84,24 +72,18 @@ def task_text(name: str, version: str, deps: list[dict], en: bool, path: str, de
               "Status: {s}.") if en else "〔Agent J 系统任务〕广场包 {n} {v} 已装好，但自检缺依赖。状态：{s}。"]
     lines[0] = lines[0].format(n=name, v=version, s=PENDING[1 if en else 0])
     for d in deps or [{"name": "?", "user": []}]:
-        rc = re.fullmatch(r"\? \((exit \d{1,3})\)", d["name"] or "")
         d = {**d, "name": label(d["name"], declared, en)}
-        if rc:
-            lines.append(f"- the self-test failed ({rc.group(1)}) without naming a missing program: run `agentj plaza verify {name}` "
-                         "to see its output." if en else f"- 自检没通过（{rc.group(1)}），没说缺什么：先运行 `agentj plaza verify {name}` 看输出。")
-        elif d["user"]:
+        if d["user"]:
             lines.append(f"- {d['name']}: not on the self-check PATH ({path}); a user-level copy exists in {', '.join(d['user'])}, "
                          "but the sandbox never sees user directories." if en else
                          f"- {d['name']}：自检的系统 PATH（{path}）里没有；你的用户目录里有（{'、'.join(d['user'])}），但自检沙箱看不到用户目录。")
         else:
             lines.append(f"- {d['name']}: not found on this computer." if en else f"- {d['name']}：本机没找到。")
     lines.append(("Fix it with your normal permissions (sudo goes through the sudo card): " + _howto(True)
-                  + f". Then run `agentj plaza verify {name}` — the same package and digest, no new signature. When it passes, "
-                  "Agent J updates the install message on the owner's phone itself: say nothing more. Only if you give up, tell "
-                  "the owner in one sentence what is still missing.") if en else
+                  + f". Then run `agentj plaza verify {name}` — the same package and digest, no new signature. Tell the owner "
+                  "the result in one sentence.") if en else
                  ("用你的常规权限补齐（要 sudo 的走 sudo 确认卡）：" + _howto(False)
-                  + f"。然后运行 `agentj plaza verify {name}` 重跑自检（同一个包、同一个 digest，不用再签名）。通过后 Agent J 会自己更新"
-                  "主人手机上那条安装消息，你不用再说；只有补不齐、放弃时，才用一句话告诉主人还缺什么。"))
+                  + f"。然后运行 `agentj plaza verify {name}` 重跑自检（同一个包、同一个 digest，不用再签名）。最后用一句话告诉主人结果。"))
     return "\n".join(lines)
 
 

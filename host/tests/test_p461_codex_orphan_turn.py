@@ -154,9 +154,7 @@ class OrphanTurn(Base):
 
     async def test_stop_on_live_desktop_turn_still_says_esc(self):
         a = self.agent()
-        # 0269 (ADR-0269-watchdog): a held rollout untouched for STUCK_IDLE with no tool child is a stuck turn (that case
-        # is test_p0269_selfheal); a live desktop turn keeps writing — fresh file, held.
-        a.rollout = self.rollout(mtime=None)
+        a.rollout = self.rollout()
         self.holder(a.rollout)
         a.status, a.phone_turn = 'idle', False
         self.assertFalse(await a.halt(clear_queue=True))

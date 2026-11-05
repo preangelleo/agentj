@@ -147,7 +147,7 @@ agentj --help
 
 ```text
 usage: agentj [-h] [-V] [--migrate-legacy] [--instance N] [--fresh]
-              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,budget,feedback,stop,resume,faceid,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,files,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,terminal,assist,provider,sudo-helper,docs-rule,handover,seat,wechat,telegram-cursor,file,plaza,support,data,diag,preflight,skills,capability,goal,heartbeat,quota,account,imessage,busy,decide,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
+              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,faceid,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,files,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,terminal,provider,sudo-helper,docs-rule,handover,seat,wechat,telegram-cursor,file,plaza,support,data,diag,preflight,skills,capability,goal,heartbeat,quota,account,imessage,busy,decide,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -401,7 +401,6 @@ agentj approvals --help
 
 ```text
 usage: agentj approvals [-h] [--verify] [--json] [--last LAST]
-                        [--interruptions]
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -410,7 +409,6 @@ usage: agentj approvals [-h] [--verify] [--json] [--last LAST]
 | `--verify` | `false` | false | — | `逐条核对设备签名` |
 | `--json` | `false` | false | — | `` |
 | `--last` | `0` | false | — | `只看最后 N 条` |
-| `--interruptions` | `false` | false | — | `昨天和今天每个任务弹了几张卡、问了主人几次（只有数字，晨报用）/ cards and questions per task, counts only` |
 
 ### agentj ask
 
@@ -558,27 +556,6 @@ usage: agentj asr test [-h] [wav]
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `wav` | `null` | false | — | `` |
-
-### agentj assist
-
-```text
-Agent J 官方远程协助：status 查看 · log 留档 · revoke 收回（授权只能在手机上用 Face ID）/ official remote assist: status · log · revoke (granting is Face ID on the phone only)
-```
-
-```bash
-agentj assist --help
-```
-
-```text
-usage: agentj assist [-h] [--lines LINES] [--json] {status,log,revoke}
-```
-
-| Argument | Default | Required | Choices | Help |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `action` | `null` | true | `status`, `log`, `revoke` | `` |
-| `--lines` | `50` | false | — | `log：最后几行（1–2000）/ the last N lines` |
-| `--json` | `false` | false | — | `` |
 
 ### agentj automation
 
@@ -1229,64 +1206,6 @@ usage: agentj browser telegram-qr [-h] [--json] [{status,off}]
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `value` | `"status"` | false | `status`, `off` | `` |
-| `--json` | `false` | false | — | `` |
-
-### agentj budget
-
-```text
-the owner's budget
-```
-
-```bash
-agentj budget --help
-```
-
-```text
-usage: agentj budget [-h] {show,set} ...
-```
-
-| Argument | Default | Required | Choices | Help |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-
-### agentj budget set
-
-```text
-lower or clear the budget
-```
-
-```bash
-agentj budget set --help
-```
-
-```text
-usage: agentj budget set [-h] [--day DAY] [--month MONTH] [--json]
-```
-
-| Argument | Default | Required | Choices | Help |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `--day` | `null` | false | — | `day limit, or clear` |
-| `--month` | `null` | false | — | `month limit, or clear` |
-| `--json` | `false` | false | — | `` |
-
-### agentj budget show
-
-```text
-the budget in force
-```
-
-```bash
-agentj budget show --help
-```
-
-```text
-usage: agentj budget show [-h] [--json]
-```
-
-| Argument | Default | Required | Choices | Help |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--json` | `false` | false | — | `` |
 
 ### agentj busy
@@ -2293,7 +2212,8 @@ agentj contacts --help
 usage: agentj contacts [-h] [--name NAME] [--nick NICK] [--email EMAIL]
                        [--phone PHONE] [--address ADDRESS] [--org ORG]
                        [--title TITLE] [--note NOTE] [--rm-email RM_EMAIL]
-                       [--rm-phone RM_PHONE] [--rm-nick RM_NICK] [--why WHY]
+                       [--rm-phone RM_PHONE] [--rm-nick RM_NICK]
+                       [--source {owner,phone,agent,import,mail}] [--why WHY]
                        [--sort {recent,frequent,name}] [--limit LIMIT]
                        [--format {auto,vcf,csv,json}]
                        [--vcard-version {3.0,4.0}] [--dry-run] [--en] [--json]
@@ -2317,6 +2237,7 @@ usage: agentj contacts [-h] [--name NAME] [--nick NICK] [--email EMAIL]
 | `--rm-email` | `null` | false | — | `` |
 | `--rm-phone` | `null` | false | — | `` |
 | `--rm-nick` | `null` | false | — | `` |
+| `--source` | `null` | false | `owner`, `phone`, `agent`, `import`, `mail` | `add：来源（默认 agent）` |
 | `--why` | `null` | false | — | `why (shown on the card)` |
 | `--sort` | `"recent"` | false | `recent`, `frequent`, `name` | `list：recent 最近发送 · frequent 最常用 · name 按名字字母` |
 | `--limit` | `null` | false | — | `` |
@@ -7448,7 +7369,7 @@ agentj --help
 
 ```text
 usage: agentj [-h] [-V] [--migrate-legacy] [--instance N] [--fresh]
-              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,budget,feedback,stop,resume,faceid,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,files,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,terminal,assist,provider,sudo-helper,docs-rule,handover,seat,wechat,telegram-cursor,file,plaza,support,data,diag,preflight,skills,capability,goal,heartbeat,quota,account,imessage,busy,decide,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
+              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,feedback,stop,resume,faceid,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,files,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,terminal,provider,sudo-helper,docs-rule,handover,seat,wechat,telegram-cursor,file,plaza,support,data,diag,preflight,skills,capability,goal,heartbeat,quota,account,imessage,busy,decide,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -7702,7 +7623,6 @@ agentj approvals --help
 
 ```text
 usage: agentj approvals [-h] [--verify] [--json] [--last LAST]
-                        [--interruptions]
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -7711,7 +7631,6 @@ usage: agentj approvals [-h] [--verify] [--json] [--last LAST]
 | `--verify` | `false` | false | — | `逐条核对设备签名` |
 | `--json` | `false` | false | — | `` |
 | `--last` | `0` | false | — | `只看最后 N 条` |
-| `--interruptions` | `false` | false | — | `昨天和今天每个任务弹了几张卡、问了主人几次（只有数字，晨报用）/ cards and questions per task, counts only` |
 
 ### agentj ask
 
@@ -7859,27 +7778,6 @@ usage: agentj asr test [-h] [wav]
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `wav` | `null` | false | — | `` |
-
-### agentj assist
-
-```text
-Agent J 官方远程协助：status 查看 · log 留档 · revoke 收回（授权只能在手机上用 Face ID）/ official remote assist: status · log · revoke (granting is Face ID on the phone only)
-```
-
-```bash
-agentj assist --help
-```
-
-```text
-usage: agentj assist [-h] [--lines LINES] [--json] {status,log,revoke}
-```
-
-| 参数 | 默认值 | 必填 | 可选值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `action` | `null` | true | `status`, `log`, `revoke` | `` |
-| `--lines` | `50` | false | — | `log：最后几行（1–2000）/ the last N lines` |
-| `--json` | `false` | false | — | `` |
 
 ### agentj automation
 
@@ -8530,64 +8428,6 @@ usage: agentj browser telegram-qr [-h] [--json] [{status,off}]
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `value` | `"status"` | false | `status`, `off` | `` |
-| `--json` | `false` | false | — | `` |
-
-### agentj budget
-
-```text
-主人的日 / 月花钱预算：查看；终端只能调低或清除，提高要在手机上 Face ID
-```
-
-```bash
-agentj budget --help
-```
-
-```text
-usage: agentj budget [-h] {show,set} ...
-```
-
-| 参数 | 默认值 | 必填 | 可选值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-
-### agentj budget set
-
-```text
-调低或清除（clear）预算
-```
-
-```bash
-agentj budget set --help
-```
-
-```text
-usage: agentj budget set [-h] [--day DAY] [--month MONTH] [--json]
-```
-
-| 参数 | 默认值 | 必填 | 可选值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `--day` | `null` | false | — | `每天上限，或 clear` |
-| `--month` | `null` | false | — | `每月上限，或 clear` |
-| `--json` | `false` | false | — | `` |
-
-### agentj budget show
-
-```text
-当前预算
-```
-
-```bash
-agentj budget show --help
-```
-
-```text
-usage: agentj budget show [-h] [--json]
-```
-
-| 参数 | 默认值 | 必填 | 可选值 | 说明 |
-| --- | --- | --- | --- | --- |
-| `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--json` | `false` | false | — | `` |
 
 ### agentj busy
@@ -9594,7 +9434,8 @@ agentj contacts --help
 usage: agentj contacts [-h] [--name NAME] [--nick NICK] [--email EMAIL]
                        [--phone PHONE] [--address ADDRESS] [--org ORG]
                        [--title TITLE] [--note NOTE] [--rm-email RM_EMAIL]
-                       [--rm-phone RM_PHONE] [--rm-nick RM_NICK] [--why WHY]
+                       [--rm-phone RM_PHONE] [--rm-nick RM_NICK]
+                       [--source {owner,phone,agent,import,mail}] [--why WHY]
                        [--sort {recent,frequent,name}] [--limit LIMIT]
                        [--format {auto,vcf,csv,json}]
                        [--vcard-version {3.0,4.0}] [--dry-run] [--en] [--json]
@@ -9618,6 +9459,7 @@ usage: agentj contacts [-h] [--name NAME] [--nick NICK] [--email EMAIL]
 | `--rm-email` | `null` | false | — | `` |
 | `--rm-phone` | `null` | false | — | `` |
 | `--rm-nick` | `null` | false | — | `` |
+| `--source` | `null` | false | `owner`, `phone`, `agent`, `import`, `mail` | `add：来源（默认 agent）` |
 | `--why` | `null` | false | — | `card：一句话说明为什么要存` |
 | `--sort` | `"recent"` | false | `recent`, `frequent`, `name` | `list：recent 最近发送 · frequent 最常用 · name 按名字字母` |
 | `--limit` | `null` | false | — | `` |

@@ -127,8 +127,7 @@ and briefly, then return to the goal and the decision — never lecture, never w
   `| 工作流 | 目录 | 程度（报告 / 起草 / 不要） | 状态（休眠 / 计划中） | 需要什么服务 |`.
   A template installed under `<working_root>/<id>/` is 休眠 (dormant) — read its `TEMPLATE.md` for what it needs. An area
   they want but with no template installed is 计划中 (planned). 「不要」 areas: list them once under "not now".
-- **路由 / Route** — identify the owner in ROLES, pass the request, acceptance criteria and one pre-written acceptance
-  command (验收命令, prints PASS/FAIL or a VERDICT) to that CEO in its folder; the main Agent only runs that command.
+- **路由 / Route** — identify the owner in ROLES, pass the request and acceptance criteria to that CEO in its folder.
   No owner: propose a new workflow through this wizard; do not silently execute its business work in the root session.
 - **读报告 / Read reports** — each CEO writes `<id>/reports/YYYY-MM-DD.md`, ending with
   `VERDICT: ok|attention|fail — …`. The main Agent reads the actual report and evidence, never concludes success from exit 0.
@@ -151,10 +150,8 @@ and briefly, then return to the goal and the decision — never lecture, never w
 - **最耗时的活** — question 8, and which workflow addresses each (or 待定).
 
 ## documentation/ROLES.md
-- **分工 / Who does what** — Chairman (direction, decisions, authorisation) · chief of staff (carries the Chairman's load,
-  not a CEO's: designs each CEO's / sub-Agent's duties, capabilities, acceptance criteria and acceptance command; dispatch,
-  supervise, run the acceptance command, technical decisions, every workflow has its full rules; never a CEO, never
-  investigates, diagnoses, fixes or releases itself) · workflow CEO (runs one workflow, its
+- **分工 / Who does what** — Chairman (direction, decisions, authorisation) · chief of staff (dispatch, supervise, read
+  reports, technical decisions, every workflow has its full rules; never a CEO) · workflow CEO (runs one workflow, its
   sub-Agents, documents and skills; VERDICT reports) · sub-Agents (concrete work from the CEO's brief) · junior assistant.
 - **人** — table: role · who (title is fine) · approves what (questions 10, 12).
 - **CEO 花名册 / CEO roster** — one row per workflow: id · CEO entry file in its own folder · execution method
@@ -231,7 +228,5 @@ tools: Read, Write, Edit, Grep, Glob
 {{the company's red lines that touch this role; no keys, no outside messages without approval}}
 ## 交付
 {{what it hands back to the CEO, ending with a one-line VERDICT}}
-## 验收命令
-{{one pre-written command the CEO runs to check the hand-back, printing PASS/FAIL or a VERDICT}}
 ```
 Read-only roles (a reviewer, a researcher) get `tools: Read, Grep, Glob` (plus web fetch / search when they need it).

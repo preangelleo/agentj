@@ -62,7 +62,7 @@ class Flight {
     try { d = unb64u(m.d); } catch { return this.fail('shape'); }
     if (!d.length || d.length > CHUNK || this.got + d.length > this.item.bytes) return this.fail('size');
     this.parts.push(d); this.got += d.length; this.arm();
-    if (m.last === true || this.got === this.item.bytes) return this.finish().catch(() => this.fail('verify'));   // #483: a throw while assembling / hashing (memory) must settle, never leave 「正在取…」 forever
+    if (m.last === true || this.got === this.item.bytes) return this.finish();
     if (this.got - this.win >= WINDOW * CHUNK) this.ask();
   }
   async finish() {

@@ -1,10 +1,5 @@
 import { paintReportActions } from './report-actions.js';
-import {reopenSession, setStuck} from './rescue.js';
-import * as chatheal from './chatheal.js';
-import * as selfheal from './selfheal.js';   // 0.26.9 (CONTRACT §C): 「重新登录」 under a signed-out reply, waited time + 强制结束这一轮
-import { open as openLogin } from './loginsheet.js';
-import { createSplit, pageKey, contIndex, contOfText } from './turnsplit.js';   // 0.26.9 #471 (§D): a long turn talked past → a new card below
-import { isAssistSrc } from './assistsrc.js';   // 0.26.9 #468 (§B3): 「官方远程协助」 on a task's turn
+import {reopenSession} from './rescue.js';
 import { QueueWatch } from './queue-watch.js';
 import { paintIOSChrome } from './ios-chrome.js';
 import { createMicrophone } from './microphone.js';
@@ -70,7 +65,6 @@ import * as replyBtn from './replybtn.js';   // P368 (#78): [派](reply:派) one
 
 import {glyph} from './icons.js';
 import * as forwarding from './forward-choice.js';
-import { paintScope } from './cardplace.js';   // 0.26.9 #472 ②
 let C = null;                        // ctx from app.js: api, myDev(), estopOn(), canSign(), panels …
 const VERBS = ['Bash', 'Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Read', 'WebFetch', 'WebSearch', 'Delete', 'ExternalDirectory', 'CodexPermissions'];
 const verb = (tool) => (VERBS.includes(tool) ? t('r.verb.' + tool) : t('r.verb.other', { tool }));
@@ -446,7 +440,7 @@ function renderCard(s){
   el("frAsk").hidden = true;
   if (result){
     el("askText").textContent = t('r.ask.answer');
-    el("cmdBox").hidden = true; el("qs").hidden = false; el("why").hidden = true; el("apprScope").hidden = true; el("cmdReason").hidden = true; el("cmdCopy").hidden = true;
+    el("cmdBox").hidden = true; el("qs").hidden = false; el("why").hidden = true; el("cmdReason").hidden = true; el("cmdCopy").hidden = true;
     renderQuestion(null, a);
     return;
   }
@@ -458,7 +452,7 @@ function renderCard(s){
   el("cmdBox").hidden = q; el("qs").hidden = !q; el("cmdCopy").hidden = true;
   if (q){
     renderQuestion(card, a && !ASK_FINAL.includes(a.state) ? a : null);
-    el("why").hidden = true; el("apprScope").hidden = true; el("cmdReason").hidden = true;
+    el("why").hidden = true; el("cmdReason").hidden = true;
   } else renderPermission(card, p && p.state === "open" ? p : null);
 }
 
@@ -491,7 +485,7 @@ function renderPermission(card, p){
   if (friendAsk(p)){
     el("sheet").classList.toggle("danger", !!(p.pq && p.pq.high_risk));
     el("sheet").classList.toggle("friend-neutral", !(p.pq && p.pq.high_risk));                                    // §17.7: friends.js draws the card into #frAsk; relay keeps the sheet
-    for (const id of ["cmdBox", "cmdCopy", "why", "apprScope", "cmdReason", "qs", "askCancel", "askSend", "apprBtns", "apprBatch", "apprGoalAdd", "goalInfo", "cmdToggle", "askState"]) el(id).hidden = true;
+    for (const id of ["cmdBox", "cmdCopy", "why", "cmdReason", "qs", "askCancel", "askSend", "apprBtns", "apprBatch", "apprGoalAdd", "goalInfo", "cmdToggle", "askState"]) el(id).hidden = true;
     el("frAsk").hidden = false;
     renderFriendAsk(p, {open: apprState(p) === "open", sign: C.canSign(), repaint: () => { if (cur) renderCard(cur); },
       dismiss: () => { apprDismissed = p.id; if (cur && cur.card) foldedCard = cardKey(cur.card); if (cur) renderCard(cur); }});
@@ -532,7 +526,6 @@ function renderPermission(card, p){
   paintCmd(whole ? p.summary : main, !whole || reason !== null, cardKey(card), tool, reason !== null);
   const why = p && p.why ? t('ask.why', {why: askWhy(p)}) : "";
   el("why").textContent = why; el("why").hidden = !why;
-  paintScope(el("apprScope"), p, t);   // 0.26.9 #472 ②: 「{class}」 + why the task scope does not cover this (host cls / why_scope)
   el("cmdReason").textContent = reason === null ? "" : t('p572.label') + " " + (reason.length > 400 ? t('p572.longReason') : reason || t('p572.noReason'));
   el("cmdReason").hidden = reason === null;
   // A dense reason below the character limit can still push approval off a narrow screen. Keep its full signed text
@@ -1138,12 +1131,11 @@ let histSettled = () => false;   // P398: settleQueued (the queue section sets i
 let pageAt = -1, follow = true, tailWait = false, pagesCache = null, shownKey = null, unreadReply = false;
 const noticeReads = new Set();
 const isSilent = text => typeof text === "string" && text.trim() === "\u3014\u4e0d\u56de\u7fa4\u3015";
-const tailSeen = {primed: false, id: 0, reply: "", virt: false, seg: ""};
+const tailSeen = {primed: false, id: 0, reply: "", virt: false};
 function newTurnArrived(ps){
   const tt = ps.findLast(p => visibleReply(p)) || {id: null, reply: ""};
   let arrived = false;
-  if (tailSeen.primed && tt.id !== null) arrived = tt.id > tailSeen.id || (!!tt.seg && pageKey(tt) !== tailSeen.seg);   // 0.26.9 #471: a continuation card is a new page
-  if (tt.seg) tailSeen.seg = pageKey(tt);
+  if (tailSeen.primed && tt.id !== null) arrived = tt.id > tailSeen.id;
   if (tt.id !== null) tailSeen.id = Math.max(tailSeen.id, tt.id);
   tailSeen.reply = tt.reply; tailSeen.virt = tt.id === null; tailSeen.primed = true;
   return arrived && !isSilent(tt.reply);
@@ -1171,18 +1163,10 @@ function echoPage(p, prev){
   return !!prev && !p.card && !!s && (s.k === "agent" || s.k === "sys") && !s.text?.trim() && !s.att?.length && !s.quote
     && visibleReply(p) && typeof prev.reply === "string" && prev.reply.trim() === p.reply.trim();
 }
-// 0.26.9 #471 (§D): once the owner says something after a running turn's reply card, the rest of that turn goes to a new
-// card at the bottom (js/turnsplit.js); the old card says 「继续见下方」. `steered` = this phone's messages the host put into
-// the running turn (msg_steered) — never shown as queued.
-const split = createSplit();
-const steered = new Set();
-const isSteered = p => !!p && Number.isInteger(p.id) && (steered.has(p.id) || (p.card?.steered === true || Number.isInteger(p.card?.steered)));
 function pages(){
   if (pagesCache) return pagesCache;
-  let out = [];
+  const out = [];
   for (const p of hist.turns) if (visiblePage(p) && !echoPage(p, out[out.length - 1])) out.push(p);
-  split.note(hist.turns, visibleReply);
-  out = split.layout(out, p => visibleReply(p) && !isSteered(p));
   if (!out.length) out.push({id: null, reply: "", source: null, ts: null});
   return (pagesCache = out);
 }
@@ -1200,8 +1184,7 @@ function noteHistory(s){
 function resetHistory(ep){
   search.onEpoch(ep);                                // P188: a /clear empties the search cache
   hist.count = 0; hist.epoch = ep; hist.turns = []; hist.lastId = 0; hist.firstId = 0; hist.want = 0;
-  pagesCache = null; follow = true; tailWait = false; pageAt = -1; shownKey = null; tailSeen.id = 0; tailSeen.primed = false; tailSeen.seg = ""; unreadReply = false;
-  split.reset(); steered.clear();   // 0.26.9 #471
+  pagesCache = null; follow = true; tailWait = false; pageAt = -1; shownKey = null; tailSeen.id = 0; tailSeen.primed = false; unreadReply = false;
 }
 /** A turn pushed by the host (hist_turn): new, a reply part appended, or its end. */
 export function upsertTurn(p){
@@ -1329,20 +1312,6 @@ function hhmm(ts){
   const d = new Date((ts + skew) * 1000);
   return String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
 }
-/** 0.26.9 #468: the loaded history (the assist feed reads a task's reply from it). */
-export function loadedTurns(){ return hist.turns; }
-/** 0.26.9 #471: the host steered one of this phone's messages into the running turn (`msg_steered {mid, turn}`) — mid = the
-    message's page (turn id) or its send id. It is no longer queued; its page says 「已插入当前这一轮」. */
-export function onSteered(m){
-  if (!m) return;
-  let id = Number.isInteger(m.mid) ? m.mid : null;
-  const q = queued.find(x => (typeof m.mid === "string" && x.sid === m.mid) || (id !== null && x.turn === id));
-  if (q){ if (id === null && Number.isInteger(q.turn)) id = q.turn; if (Number.isInteger(m.turn)) activeTurn = m.turn; sawDelivered(); queued.splice(queued.indexOf(q), 1); }
-  if (!Number.isInteger(id)) return;
-  steered.add(id); if (steered.size > 64) steered.delete(steered.values().next().value);
-  pagesCache = null;
-  paintQueued();
-}
 function currentPage(){ const ps = pages(); return ps[Math.min(ps.length - 1, Math.max(0, follow ? ps.length - 1 : pageAt))]; }
 /** Who spoke, as the source card says it: the colour key and the label. */
 function sourceOf(src){
@@ -1360,7 +1329,6 @@ function sourceOf(src){
   if (src.k === "agent") return {kind: "agent", label: src.via === "heartbeat" ? t('r.src.heartbeat') : src.via === "quota" ? t('p314.src') : src.via === "hook" ? t('p366.src') : src.via === "loop" ? t('r.src.loop') : src.via === "task" ? t('r.src.bgTask')
     : src.via === "auto" ? t('p365.src.about', {name: src.name || ''})   // P365: the main Agent's own follow-up about an automation's message
     : t(src.text?.trim() ? 'r.src.agent' : 'r.src.agentReport', {name: C.agentName()})};
-  if (isAssistSrc(src)) return {kind: "task", label: t('p0269.assist.src')};   // 0.26.9 #468: a task official remote assist sent your Agent
   if (src.k === "task" && src.via === "same-owner") return {kind: "task", label: t('p585.src', {name: src.name || t('r.src.otherDevice')})};
   if (src.k === "task") return {kind: "task", label: src.name ? t('r.src.taskNamed', {name: src.name}) : t('r.src.task')};
   if (src.k === "cmd") return {kind: "cmd", label: t('r.src.cmd')};
@@ -1368,18 +1336,12 @@ function sourceOf(src){
   if (src.k === "auto") return {kind: "sys", label: t('p365.src.auto', {name: src.name || ''})};
   return {kind: "sys", label: src.local ? t('r.src.local') : t('r.src.sys')};
 }
-// 0.26.9 (CONTRACT §C): what js/chatheal.js needs from this page
-const HEAL = { pages: () => pages(), queuedTurn: (id) => queuedTurn(id), repaint: () => showPage(), live: () => document.body.dataset.conn === "on" && !C.estopOn(),
-  queuedSince: (id) => queuedSince(id), stop: () => stopTurn(),
-  // 0.26.9 #471: 「停下上一件」 = the signed end_turn on a host that runs the turn watchdog (it puts waited_s on its queued notices);
-  // an older host keeps P481's /stop
-  signedEnd: () => hist.turns.some(x => !!selfheal.queueOf(x)) };
 function showPage(){
   if (!C) return;
   const ps = pages();
   const arrived = newTurnArrived(ps);
   const oldId = shownKey === null ? null : shownKey.split("|")[0];
-  const pinned = ps.findIndex(p => pageKey(p) === oldId);   // 0.26.9 #471: a continuation card has its own key
+  const pinned = ps.findIndex(p => String(p.id === null ? "live" : p.id) === oldId);
   const tail = ps[ps.length - 1];
   if (pinned >= 0 && pinned < ps.length - 1){
     const onNewest = (follow || tailWait) && !rdAt && !mediaViewerOpen();   // P573: a file open full screen keeps its page too
@@ -1398,7 +1360,7 @@ function showPage(){
   el("pgCorner").dataset.unread = unreadReply ? "1" : "0";
   const p = ps[pageAt];
   paintUnread(ps, p);
-  const key = pageKey(p) + "|" + pageAt;
+  const key = (p.id === null ? "live" : p.id) + "|" + pageAt;
   const om = el("om"), src = p.source;
   // A completed host broadcast is a notice, not an Agent turn awaiting an answer.
   const noticeOnly = src?.k === "host" && !!src.text?.trim() && p.end === "done" && !p.reply?.trim() && !p.card && !src.att?.length;
@@ -1431,7 +1393,6 @@ function showPage(){
   const header = !tx && !src?.att?.length && !src?.quote;
   om.dataset.header = header ? "1" : "0";
   if (header) ot.textContent = t('r.om.noInput');
-  if (p.seg){ const w = contOfText(src); ot.textContent = w ? t('p0269.split.contOf', {text: w}) : t('p0269.split.contOfNone'); }   // 0.26.9 #471: what this card continues
   paintOmAttachments(src);
   const q = src && src.quote ? src.quote : null;
   el("omQuote").hidden = !q;
@@ -1467,9 +1428,7 @@ function showPage(){
   queueStuck = queueWatch.check(queueList, hist.turns);
   const chan = chanCard(p);                              // P543 (#308): an owner-channel message shows its words
   el("words").dataset.chan = chan ? "1" : "0";
-  if (chan) paintChan(el("cmdx"), p, chan);
-  else if (p.cont) paintCont(el("cmdx"), p, ps);         // 0.26.9 #471: 「继续见下方」 — this card gets nothing more
-  else if (!chatheal.paint(el("cmdx"), p, HEAL)){ paintCmdx(p); chatheal.tail(el("cmdx"), p, HEAL); }   // 0.26.9: 重新登录 / 已等 N 分钟 / 强制结束这一轮
+  if (chan) paintChan(el("cmdx"), p, chan); else paintCmdx(p);
   if (p.source?.k === 'cmd' && p.card?.kind === 'refused') {
     commandLinks(el('words'), async cmd => {
       if (cmd === 'reset') { C.resetConn?.(); return; }
@@ -1490,7 +1449,7 @@ function showPage(){
   document.body.dataset.pageQueued = qd ? "1" : "0";
   // P282 (追加): the working dots belong to the page being worked on. A closed page shown while another page is still open
   // (e.g. the Agent's 「切换已完成」 report landed after the owner's queued message) does not look busy itself.
-  document.body.dataset.workElsewhere = p.split === "head" && p.end !== "open" ? "1" : p.end !== "open" && Number.isInteger(activeTurn) && activeTurn !== p.id
+  document.body.dataset.workElsewhere = p.end !== "open" && Number.isInteger(activeTurn) && activeTurn !== p.id
     && hist.turns.some(x => x.id === activeTurn && x.end === "open") ? "1" : "0";
   const ahead = qd ? queuedAhead(p.id) : 0;              // P152 (P149 plan B): 「前面还有 N 条」 when this device queued more than one
   // P281: what a running /switch-harness is doing (host card.progress on the open page) — the wait line itself while no
@@ -1499,13 +1458,9 @@ function showPage(){
   const open = p.end === "open" && p.id !== null, c = p.card || {};
   const progress = open && typeof c.progress === "string" ? c.progress.trim().slice(0, 300) : "";
   const hostWait = open && (c.wait === true || c.queued === true) || (typeof c.switch === "string" && p === ps[ps.length - 1]);
-  const absorbed = isSteered(p) && !visibleReply(p);   // 0.26.9 #471: steered into the running turn — its answer is that turn's
-  if (absorbed) renderWords(t('p0269.queue.steered'), false, "", false, false, true);
-  else renderWords(chan ? chanWords(p, chan) : (isSilent(p.reply) ? "" : p.reply?.trim()) || (noticeOnly || p.end === "open" || p.id === null ? "" : t('r.noReply')), open,
+  renderWords(chan ? chanWords(p, chan) : (isSilent(p.reply) ? "" : p.reply?.trim()) || (noticeOnly || p.end === "open" || p.id === null ? "" : t('r.noReply')), open,
     qd ? t(queueStuck ? 'p481.queueStuck' : 'r.queue.card') + (ahead ? " · " + t('r.queue.ahead', {n: ahead}) : "") : progress, hostWait, sysPage(p), p.source?.k === "friend_report" || !!chan);
   if (noticeOnly) el("words").replaceChildren();
-  { const lg = selfheal.loginOf(p); if (lg) selfheal.linkLogin(el("words"), t('p0269.login.btn'), () => openLogin(lg.agent, lg.why)); }   // 0.26.9: `/login` = 「重新登录」
-  setStuck(hist.turns.slice(-6).some(x => { const q = selfheal.queueOf(x); return !!q && (x.end === "open" || x === hist.turns[hist.turns.length - 1]) && selfheal.canEnd(q, selfheal.waitedNow(x.id, q, true)); }));
   paintThinking(visibleReply(p) && !hostWait ? progress : "");
   el("words").classList.toggle("empty", !visibleReply(p));
   renderMedia(el("words"), p);
@@ -1516,18 +1471,6 @@ function showPage(){
   document.body.dataset.pageOpen = p.end === "open" ? "1" : "0";
   paintActs();
   if (!el("silent").hidden) renderSilent();
-}
-// 0.26.9 #471 (§D): the old card of a turn the owner talked past — one button to the card its words continue on.
-function paintCont(box, p, ps){
-  box.replaceChildren(); box.hidden = false;
-  const b = document.createElement("button"); b.type = "button"; b.className = "cmdundo sh-cont"; b.dataset.cont = pageKey({id: p.cont.id, seg: p.cont.seg});
-  b.textContent = t('p0269.split.cont'); b.setAttribute("aria-label", t('p0269.split.contAria'));
-  b.addEventListener("click", () => {
-    const all = pages(), i = contIndex(all, p);
-    if (i < 0) return;
-    pageAt = i; follow = i === all.length - 1; tailWait = false; shownKey = null; stick = true; showPage();
-  });
-  box.append(b);
 }
 // P543 (#308): a message from the owner's WeChat / email / Telegram (host card.channel, channel_card.py) shows what was
 // sent — plain text (never Markdown: it is outside data) under the source line and the low-trust mark; long text folds
@@ -1577,7 +1520,16 @@ function paintCmdx(p){
   const resume = isCmd && c.cmd === "clear" && c.resume && typeof c.resume.title === "string" && typeof c.resume.command === "string" ? c.resume : null;
   const cancelWait = isCmd && c.cancel_wait === true && p.end === "open" && p.source.dev === C.myDev();
   const openBtn = isCmd && typeof c.open === "string" && (c.open === "upgrade_repair" || /^fr_(card|add)(:[A-Z0-9-]{1,40})?$/.test(c.open));   // P73
-  // P151b / P481 「停下上一件」 on a queued page: js/chatheal.js draws it with the waited time (0.26.9 #471, merged notice)
+  // P151b: a phone turn the shared Claude has not ended after 5 min — 「继续等」 (another round) or 「中断」 (/stop)
+  if (p.end === "open" && queuedTurn(p.id) && document.body.dataset.conn === "on" && !C.estopOn()){
+    box.hidden = false;
+    const stop = document.createElement("button"); stop.type = "button"; stop.className = "cmdundo";
+    stop.dataset.queueStop = String(p.id); stop.textContent = t('p481.stopPrevious');
+    stop.addEventListener("click", () => {
+      if (queuedTurn(p.id) && document.body.dataset.conn === "on" && !C.estopOn()) stopTurn();
+    });
+    box.append(stop); return;
+  }
   const stall = !isCmd && !!c && c.wait === true && c.stall === true && p.end === "open" && p.id !== null;
   if (stall){
     box.hidden = false;
@@ -1740,7 +1692,7 @@ function sendRead(){
 function retryRead(){ if (!readTimer && Date.now() - readSentAt >= READ_RETRY_MS) sendRead(); }
 const UNREAD_FILL_BATCHES = 10;
 let unreadFilling = false;
-const replyIds = ps => ps.filter(x => x.id !== null && !x.seg && visibleReply(x)).map(x => x.id);   // 0.26.9 #471: one id per turn
+const replyIds = ps => ps.filter(x => x.id !== null && visibleReply(x)).map(x => x.id);
 function unreadCovered(){
   const m = unread.mark();
   return !olderLeft() || (m !== null && hist.turns.length > 0 && hist.turns[0].id <= m + 1);
@@ -3086,7 +3038,7 @@ const queueWatch = new QueueWatch();
 let queueStuck = false;
 const observedQueue = new Map();
 function queuedWatchList(){
-  const rows = hist.turns.filter(p => p.end === "open" && p.card?.queued === true && !isSteered(p));   // 0.26.9 #471: steered = not queued
+  const rows = hist.turns.filter(p => p.end === "open" && p.card?.queued === true);
   const ids = new Set(rows.map(p => p.id));
   for (const id of observedQueue.keys()) if (!ids.has(id)) observedQueue.delete(id);
   for (const p of rows) if (!observedQueue.has(p.id)) observedQueue.set(p.id, Date.now());
@@ -3095,9 +3047,7 @@ function queuedWatchList(){
   return [...list.values()].sort((a,b) => a.turn - b.turn);
 }
 const queuedShown = () => { const now = Date.now(); return queued.filter(q => now - (q.at || 0) >= QUEUE_QUIET_MS); };
-function queuedTurn(id){ return Number.isInteger(id) && !steered.has(id) && queuedWatchList().some(q => q.turn === id); }
-/** 0.26.9 #471: when this page started waiting behind the running turn (ms; the host's own count wins in chatheal.js). */
-function queuedSince(id){ const q = queuedWatchList().find(x => x.turn === id); return q ? q.at || null : null; }
+function queuedTurn(id){ return Number.isInteger(id) && queuedWatchList().some(q => q.turn === id); }
 function queuedAhead(id){ const i = queued.findIndex(q => q.turn === id); return i > 0 ? i : 0; }
 // P328 (Leo, 0.22.0a1): the × is one control with three jobs — take back this phone's send in flight (send), take back a
 // message still queued behind a busy session (queued), and, while the Agent works (blue) with nothing of ours to take back,

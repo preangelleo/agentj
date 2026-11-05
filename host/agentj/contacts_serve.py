@@ -95,24 +95,6 @@ class ContactService:
         """P194: slot 0's e-mails first, then the e-mail channel's 「我本人」 rows (P170)."""
         return C.owner_emails(self.st)
 
-    def _agent_touched(self, cid: str) -> None:
-        with C.edit_book(self.st) as book:
-            c = C.get(book, cid)
-            if c is not None and c.get("id") != C.OWNER_ID:
-                c["source"] = "agent"
-
-    def known(self, addrs) -> bool:
-        """E1 mail_known (security r6 B1, "remove, don't rewrite"): every recipient is the owner's own address or on the
-        inbound allowlist the owner set on the phone. The contacts store is never consulted — any contact, however saved,
-        is carded (send_new)."""
-        try:
-            if not addrs:
-                return False
-            own = {str(a).lower() for a in C.owner_emails(self.st)}
-            return all(str(a).lower() in own for a in addrs) or self.allowlisted(addrs)
-        except Exception:  # noqa: BLE001 — cannot tell → new
-            return False
-
     def allowlisted(self, addrs) -> bool:
         """P296: every address is on the e-mail channel's allowlist (P170, any role) — the same rows that let their mail in."""
         from . import mail as M
@@ -425,11 +407,9 @@ class ContactService:
             return await self.card(req)
         req = {k: v for k, v in req.items() if k != "owner_ok"}     # P194: only the owner's own paths may change slot 0
         if op in ("list", "find", "get", "add", "edit", "rm", "import", "export", "owner_get", "owner_set"):
-            if op in ("add", "import"):     # security r5 N4: whatever the Agent writes is the Agent's, never owner / phone / import
-                req = {**req, "source": "agent"}
+            if op == "add":
+                req = {**req, "source": req.get("source") if req.get("source") in C.SOURCES else "agent"}
             res = await asyncio.to_thread(C.local, self.st, req)
-            if op == "edit" and res.get("ok") and set(req.get("changes") or {}) & {"emails", "add_email"}:
-                await asyncio.to_thread(self._agent_touched, str(req.get("id") or ""))   # N4: a new address on an owner contact
             if op in ("add", "edit", "rm", "import"):
                 self.st.log("contacts_" + op, result=res.get("result") or ("ok" if res.get("ok") else res.get("why")),
                             **({"added": res.get("added"), "merged": res.get("merged")} if op == "import" else {}))
@@ -452,7 +432,6 @@ class ContactService:
         recipient is the owner's own or on the mail allowlist."""
         from . import media as media_mod
         from . import provenance, tg_media
-        from .background_done import chain_turn as _chain_turn
         from . import mail_template as MT
         lists = {}
         for key in ("to", "cc", "bcc"):      # P355: --cc / --bcc take the same addresses or address-book names as --to
@@ -483,8 +462,7 @@ class ContactService:
         cfg, pw, why = self.mail_state()
         if why:
             return {"ok": False, "why": why}
-        if provenance.untrusted_turn(getattr(self.host, "agent", None)) and not provenance.delegated_turn(getattr(self.host, "agent", None)) \
-                and not _chain_turn(getattr(self.host, "agent", None)):   # E2: the owner's own words started it
+        if provenance.untrusted_turn(getattr(self.host, "agent", None)) and not provenance.delegated_turn(getattr(self.host, "agent", None)):
             return group_refusal(provenance.turn_source(getattr(self.host, "agent", None)))
         recips, missing = [], []
         for key, who in [("to", w) for w in to_raw] + [(k, w) for k in ("cc", "bcc") for w in lists[k]]:
@@ -573,8 +551,7 @@ class ContactService:
                 self.host.activity("auto", id=secrets.token_hex(8), tool="agentj mail send", summary=target["summary"],
                                    by="owner_self")
         else:
-            known = await asyncio.to_thread(self.known, [r["addr"] for r in recips])
-            ans = await self.host.ask("agentj mail send", target, batch=False, known_recipients=known)
+            ans = await self.host.ask("agentj mail send", target, batch=False)
         if ans.get("behavior") != "allow":
             self.st.log("mail_send",result="denied",to=len(recips))
             return {"ok":False,"why":"denied","detail":DENIED[self.lang()]}
@@ -606,8 +583,7 @@ class ContactService:
     # ------------------------------------------------------------------ the contact card
     def card_msg(self, c: dict) -> dict:
         return {"t": "ct_card", "id": c["id"], "n": c["nonce"], "mode": c["mode"], "contact": c["contact"], "base": c.get("base"),
-                "why": c["why"], "ttl": max(0, int(c["deadline"] - time.monotonic())),
-                **({"proposed": c["proposed"]} if c.get("proposed") else {})}
+                "why": c["why"], "ttl": max(0, int(c["deadline"] - time.monotonic()))}
 
     def open_msgs(self, s) -> list[dict]:
         return [self.card_msg(c) for c in list(self.cards.values()) if not c["fut"].done()]   # P203: shared with cards_get
@@ -639,11 +615,6 @@ class ContactService:
             pre = C.clean(req.get("contact") or {}, partial=True)
         except C.ContactError as e:
             return {"ok": False, "result": "refused", "why": e.why}
-        given = req.get("contact") if isinstance(req.get("contact"), dict) else {}
-        # w3-cards add-on (PROTOCOL §42.5): slot 0's e-mail / phone typed by the Agent, not the owner — the card says so. The
-        # host's own allowlist suggestion and a real terminal (`agentj contacts owner set` with a TTY) are not marked.
-        proposed = "agent" if own and (pre.get("emails") or pre.get("phones")) and (given.get("emails") or given.get("phones")) \
-            and req.get("from_tty") is not True else None
         if own and not pre["emails"] and not (base or {}).get("emails"):
             pre["emails"] = [{"v": a, "label": ""} for a in C.owner_emails(self.st)[:1]]   # a suggestion; the owner confirms
         if len(self.cards) >= 4:
@@ -653,8 +624,7 @@ class ContactService:
         why = C._s(req.get("why"), 200) or (L["why_owner"] if own else L["why_update"] if base else L["why_new"])
         c = {"id": cid, "nonce": secrets.token_hex(8), "mode": "owner" if own else "update" if base else "new",
              "contact": {k: v for k, v in pre.items() if v}, "base": C.view(base) if base else None, "why": why,
-             "deadline": time.monotonic() + TTL, "fut": asyncio.get_running_loop().create_future(),
-             **({"proposed": proposed} if proposed else {})}
+             "deadline": time.monotonic() + TTL, "fut": asyncio.get_running_loop().create_future()}
         self.cards[cid] = c
         self.st.log("contact_card", id=cid, mode=c["mode"])
         if on_card is not None:

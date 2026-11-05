@@ -28,8 +28,7 @@ function parse(x) {
   return { external_url: externalUrl(x.external_url), on: x.on, os: x.os, me: x.me === true, web_ok: x.web_ok !== false, sudo: MODES.includes(x.sudo) ? x.sudo : null,
     minutes, idle_s: Number.isInteger(x.idle_s) && x.idle_s > 0 ? x.idle_s : 300, open: x.open === true,
     until: Number.isInteger(x.until) ? x.until : null, pk: x.pk !== false,   // P417 #185: pk absent (older host) → no Face ID line
-    kind: ['phone', 'desktop', 'unknown'].includes(x.kind) ? x.kind : null,   // P417 #185: null = an older host (no remote enable)
-    pty: Array.isArray(x.modes) && x.modes.includes('pty') };   // 0.26.9 #463: the host can run a real terminal (cap term_pty1)
+    kind: ['phone', 'desktop', 'unknown'].includes(x.kind) ? x.kind : null };   // P417 #185: null = an older host (no remote enable)
 }
 /** P417 #185: is this a computer browser? A combined judgement — a phone / tablet user agent, an iPad asking for the desktop
  *  site, a finger as the main pointer, a touch screen without a mouse / trackpad, or a phone-sized touch screen all say
@@ -181,4 +180,3 @@ export function gone() { if (mod) mod.gone(); }
 export const isOpen = () => !!(mod && mod.isOpen());
 // tests
 export const _debug = () => ({ info: info && { ...info }, loaded: !!mod, state: state() });
-export const _page = () => (mod ? { dbg: mod._debug(), link: mod._link } : null);   // 0.26.9 L-2 (tests): the loaded terminal page

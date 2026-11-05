@@ -11,7 +11,6 @@ import sys
 import shlex
 
 from . import opencode_provider as op
-from . import opencode_install
 
 DATA = pathlib.Path(__file__).with_name("ark.json")
 PROFILE = "ark-claude"
@@ -347,7 +346,7 @@ def switch(st, plan: str = DEFAULT_PLAN, model: str | None = None, dry_run: bool
     d = plan_data(plan)
     base = {"preset": "ark", "plan": plan, "target": "opencode", "arkcli": found.get("arkcli")}
     if not found.get("opencode"):
-        return {**base, "ok": False, "reason": "not_installed", "install": opencode_install.NPM}
+        return {**base, "ok": False, "reason": "not_installed", "install": "npm i -g @opencode/cli"}
     try:
         model = _model(model, plan)
     except op.ProviderError as e:
@@ -387,8 +386,7 @@ def say_switch(r: dict, lang: str = "zh") -> str:
     head = (f"OpenCode · 火山方舟（{way}）· {tool}" if zh else f"OpenCode · Volcano Ark ({way}) · {tool}")
     reason = r.get("reason")
     if reason == "not_installed":
-        body = ("还没装 OpenCode：先" + opencode_install.install_text("zh") + "，再来切。" if zh else
-                "OpenCode is not installed: " + opencode_install.install_text("en") + " first.")
+        body = ("还没装 OpenCode：先装 `npm i -g @opencode/cli`，再来切。" if zh else "OpenCode is not installed: `npm i -g @opencode/cli` first.")
     elif reason == "need_key":
         body = ("服务环境里还没有 " + r["key_env"] + "：先让主人在手机密钥卡里填 key（Agent 看不到值），再重新切换：\n  " if zh else
                 r["key_env"] + " is not in the service's environment yet: the owner fills the key card first, then switch again:\n  ") \

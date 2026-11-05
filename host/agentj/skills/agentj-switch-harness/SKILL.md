@@ -47,8 +47,8 @@ switching back resumes that one. To switch, the owner just replies 「切换到 
    detected), prints the key card when the key is missing (run it, then the same command again), writes the provider and
    switches only after one real call; on failure it switches back and removes the provider it added. A failed check (any
    harness) may end with OpenCode's own one-line error — read it to the owner as it is (credentials are already redacted).
-3. **Not installed / not signed in**:
-   - The owner asked to switch to it (or to use it) → install it directly, no extra yes; if they only asked what is available, offer it. Follow https://agentj.app/docs/setup-agents/en.md (one-command `setup-agents.sh`
+3. **Not installed / not signed in** — offer, never push:
+   - Install only after the owner says yes: follow https://agentj.app/docs/setup-agents/en.md (one-command `setup-agents.sh`
      with `--cli <name>`, or that page's per-OS steps). Needs admin rights → `agentj sudo --why '…' -- <cmd>`.
    - Login is the owner's own act. Guide them step by step: Claude Code `claude auth login` (or `claude` then `/login`), Codex
      `codex login`, OpenCode `opencode auth login <provider>`, Kimi Code `kimi login --region mainland-cn` (kimi.ai:
@@ -120,8 +120,8 @@ service start` or launchctl. `agentj service status` says serve answers → the 
 one sentence what you picked up, and use no other tool in that turn; the next 〔Agent J 系统提示〕 says carry on — do the
 handoff's next step (nothing in progress → wait for the owner).
 
-中文：主人发 `/switch-harness`（没带话就先解释什么是 harness），或说「切换到 X」时：① 先说一句「我先扫描一下，大约 1–3 分钟」，再扫描 + 无头探测（`agentj agent switch --scan`，用服务的环境，每个 ≤ 60 秒、只读、不打印凭据；手机上会自己显示「正在探测 / 正在切换 / 已切回」）；② 告诉主人现在能切到哪些，只有一个就说没法切、要先装别的；③ 主人要切到（或要用）没装的，直接按
-setup-agents 文档帮装（只是问有哪些就提一句可以装），登录由主人在自己的终端完成（你一步步指导；密钥走 `agentj secret request` 手机卡片，绝不进聊天），
+中文：主人发 `/switch-harness`（没带话就先解释什么是 harness），或说「切换到 X」时：① 先说一句「我先扫描一下，大约 1–3 分钟」，再扫描 + 无头探测（`agentj agent switch --scan`，用服务的环境，每个 ≤ 60 秒、只读、不打印凭据；手机上会自己显示「正在探测 / 正在切换 / 已切回」）；② 告诉主人现在能切到哪些，只有一个就说没法切、要先装别的；③ 没装的经主人
+同意按 setup-agents 文档帮装，登录由主人在自己的终端完成（你一步步指导；密钥走 `agentj secret request` 手机卡片，绝不进聊天），
 Kimi Code 用 `kimi login --region mainland-cn`（海外站 `global`）或手机 设置 →「紧急修复」→ ③ →「AI 登录救援」设备码，只支持独立会话，审批全走手机；Qwen Code（`qwen`）没有自己的登录，用手机密钥卡存阿里百炼 Token Plan 的 key（`BAILIAN_TOKEN_PLAN_API_KEY`），同样只支持独立会话；DeepSeek Harness（`dsh`）用主人自己的 dsh 设置，或 `agentj agent dsh --base-url https://<服务>/v1 --model <模型>` 接 Olares Router 等 OpenAI 兼容服务（要 key 走密钥卡 `DSH_ROUTER_API_KEY`），只支持独立会话；装好登好再回到 ①；④ 目标探测通过、主人明确要切，先说「会断开几秒自动重连，新 harness 会先自报家门，不通会自动切回」，再运行
 `agentj agent switch <目标>`——Agent J 主机上的独立任务用服务的环境再探测一次（闸门；`--dry-run` 只探测不切），切换、重启、自检
 都由它完成；未指定 `--model` 时，Claude Code 使用自己的默认或当前模型，明确指定时照常写入。切换只核对目标 harness 是否正确、能否应答，不因模型名不同回退。失败自动切回原 harness 并说明；原 harness 自检失败不阻止切换。应急用 `--force` 跳过预检，支持全部六种 harness；切换前 Agent J 会发〔Agent J 系统提示〕让你按 agentj-handoff 格式把交接写进它点名的 `switch.md`（只留要点、≤ 150 行、

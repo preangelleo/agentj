@@ -82,7 +82,7 @@ def input_digest(tool_input) -> str:
 def record(st, *, rid: str, agent: str, tool: str, input_sha256: str, shown_sha256: str, decision: str, reason: str,
            device: str | None = None, sign_pub: bytes | None = None, sig: bytes | None = None, cats: list | None = None,
            scope: str | None = None, grant: str | None = None, auto: str = "batch", control: dict | None = None,
-           scope_sha256: str | None = None, fa: dict | None = None, task_scope: str | None = None, task_action: dict | None = None, task_id: str | None = None, peer_proof: dict | None = None, task_uv: bool | None = None, policy: str | None = None) -> dict:
+           scope_sha256: str | None = None, fa: dict | None = None, task_scope: str | None = None, task_action: dict | None = None, task_id: str | None = None, peer_proof: dict | None = None, task_uv: bool | None = None) -> dict:
     """Append metadata only (0600): signed device/control decisions and their exact-scope automatic children.
     task_uv records the actual local requirement; task_scope signs the authorization ceiling. Never log tool input.
     fa contains assertion hashes only. The cloud cannot read this log.
@@ -92,8 +92,6 @@ def record(st, *, rid: str, agent: str, tool: str, input_sha256: str, shown_sha2
            "device": device, "sk": wire.b64u(sign_pub) if sign_pub else None, "sig": wire.b64u(sig) if sig else None}
     if task_uv is not None:
         rec["task_uv"] = task_uv
-    if policy is not None:                  # 0269-w3-policy: the default policy row (approval_policy.ROWS) that decided
-        rec["policy"] = str(policy)[:32]
     if peer_proof is not None:
         rec["peer_proof"] = peer_proof
     if task_id is not None:

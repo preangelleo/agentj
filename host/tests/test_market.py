@@ -179,15 +179,15 @@ class InstallSkill(Base):
         with self.assertRaisesRegex(plaza.PlazaError, "supports only"):
             self.install(harness="claude_code")
 
-    def test_verify_failure_installs_as_pending(self):
-        """ADR-0269-w4-plaza (#479): a failing self-test no longer blocks; installed, pending, output shown as data."""
+    def test_verify_failure_installs_nothing(self):
         files = {**fx.SKILL_FILES, "scripts/demo.py": "import sys\nprint('broken: ' + str(sys.argv))\nsys.exit(3)\n"}
         self.add_skill(files=files)
         rc, out = self.preview_and_confirm(accept_unverified=True)
-        self.assertEqual(rc, market.EXIT_OK, out)
+        self.assertEqual(rc, market.EXIT_ERROR)
         self.assertIn("exit 3", out)
         self.assertIn(plaza.TEXT + "broken", out, "the verify output is printed as data")
-        self.assertEqual(market.read_installed(self.e.st)[0]["verify"]["state"], "pending")
+        self.assertFalse((self.e.home / ".claude").exists())
+        self.assertEqual(market.read_installed(self.e.st), [])
 
     def test_verify_runs_with_an_empty_environment_offline(self):
         probe = ("import os, sys, socket, pathlib\n"
@@ -210,9 +210,8 @@ class InstallSkill(Base):
         self.add_skill(files={**fx.SKILL_FILES, "scripts/demo.py": "import time\ntime.sleep(30)\n"})
         with mock.patch.object(market, "VERIFY_TIMEOUT", 1):
             rc, out = self.preview_and_confirm(accept_unverified=True)
-        self.assertEqual(rc, market.EXIT_OK, out)             # ADR-0269-w4-plaza (#479): pending, not blocked
+        self.assertEqual(rc, market.EXIT_ERROR)
         self.assertIn("timeout", out)
-        self.assertEqual(market.read_installed(self.e.st)[0]["verify"]["missing"], ["? (exit 124)"])
 
     def test_download_url_and_bytes_checked(self):
         self.add_skill()

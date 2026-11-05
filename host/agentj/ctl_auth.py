@@ -50,28 +50,6 @@ def _environ(pid: int) -> set:
     return {kv.split(b"=", 1)[0].decode("ascii", "replace") for kv in raw.split(b"\0") if b"=" in kv}
 
 
-def from_web_terminal(pid) -> bool:
-    """w2-sec N-3: `pid` was started from a web terminal, also after leaving its process tree (setsid, script, nohup, a new tmux
-    server, double fork): it carries the session's AGENTJ_TERM_TOKEN in its environment, or (Linux, where serve may make
-    one) it lives in a web-terminal cgroup — which `env -i` does not leave. A process that drops the token AND moves itself
-    out of the cgroup (or that a pre-existing tmux server / systemd-run / at starts) is not recognised: same-uid code can
-    reach the owner's terminal by other means (module docstring)."""
-    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
-        return False
-    from .term_askpass import TOKEN_ENV
-    from .term_pty import in_web_cgroup
-    if TOKEN_ENV in _environ(pid) or in_web_cgroup(pid):
-        return True
-    if sys.platform == "darwin":
-        try:
-            from .term_mac import LIB
-            got = LIB.args(pid)
-        except Exception:  # noqa: BLE001 — unreadable: not provable either way
-            return False
-        return bool(got) and any(e.startswith(TOKEN_ENV + "=") for e in got[1])
-    return False
-
-
 def refusal(pid, serve_pid: int, agent_pids) -> str | None:
     """None = the peer may claim; else a short reason (logged, never shown with details)."""
     if not isinstance(pid, int) or pid <= 0:
@@ -85,40 +63,13 @@ def refusal(pid, serve_pid: int, agent_pids) -> str | None:
         return "agent"                       # inside the served (shared) session's process tree
     if pid != serve_pid and _environ(pid) & set(AGENT_ENV):
         return "agent"                       # run from an Agent harness (another Claude/Codex/OpenCode session)
-    if pid != serve_pid and from_web_terminal(pid):
-        return "terminal"                    # w2-sec N-3: started from a web terminal, then left serve's tree
     return None
 
 
-def ctty(pid) -> int | None:
-    """w2-sec M-1: the controlling terminal's device number (Linux /proc/<pid>/stat field 7, tty_nr); 0 = none, None = unreadable."""
-    try:
-        with open(f"/proc/{int(pid)}/stat", "rb") as f:
-            s = f.read().decode("utf-8", "replace")
-        nr = int(s[s.rindex(")") + 2:].split()[4])
-    except (OSError, ValueError, IndexError, TypeError):
-        return None
-    return os.makedev((nr >> 8) & 0xFFF, (nr & 0xFF) | ((nr >> 12) & 0xFFF00)) if nr else 0
-
-
 def has_tty(pid) -> bool:
-    """The peer's stdin is a terminal (Linux /proc). P176: macOS has no /proc — there the peer's controlling terminal (`ps`).
-    w2-sec M-1: on Linux the controlling terminal decides too: a process whose controlling terminal is a live web-terminal
-    PTY is never "at the computer" (`</dev/tty` there has rdev 5,0, not the PTY's), and stdin = /dev/tty means "use the
-    controlling terminal" (none → no terminal)."""
-    from .term_pty import live_tty      # 0.26.9 (ADR-0269-pty): a web terminal's PTY is never "a terminal at the computer"
-    if from_web_terminal(pid):          # w2-sec N-3: nor a new terminal (script, tmux, setsid) opened from inside one
-        return False
+    """The peer's stdin is a terminal (Linux /proc). P176: macOS has no /proc — there the peer's controlling terminal (`ps`)."""
     try:
-        link = os.readlink(f"/proc/{pid}/fd/0")
-        if link.startswith(("/dev/pts/", "/dev/tty")):
-            c = ctty(pid)
-            if c is None or (c and live_tty(rdev=c)):
-                return False
-            if link == "/dev/tty":
-                return bool(c)
-            return not live_tty(rdev=os.stat(f"/proc/{pid}/fd/0").st_rdev)
-        return False
+        return os.readlink(f"/proc/{pid}/fd/0").startswith(("/dev/pts/", "/dev/tty"))
     except (OSError, TypeError):
         pass
     if sys.platform != "darwin" or not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
@@ -127,7 +78,7 @@ def has_tty(pid) -> bool:
         tty = subprocess.run(["/bin/ps", "-o", "tty=", "-p", str(pid)], capture_output=True, text=True, timeout=3).stdout.strip()
     except (OSError, subprocess.SubprocessError):
         return False
-    return bool(tty) and tty not in ("?", "??", "-") and not live_tty(name=tty)
+    return bool(tty) and tty not in ("?", "??", "-")
 
 
 class DuplicateKey(ValueError):

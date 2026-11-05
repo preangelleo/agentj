@@ -47,7 +47,6 @@ import {initVersionNotice,setHostVersion} from './js/version-notice.js';
 import {initShare, onShareReady, forgetShare} from './js/share.js';
 import * as elevate from './js/elevate.js';     // F17: sudo / secret cards (§11)
 import * as authrescue from './js/authrescue.js';   // P258: AI 登录救援 (red dot + pushes)
-import * as loginsheet from './js/loginsheet.js';   // 0.26.9 (#464): 「重新登录」 over the chat
 import * as webhooks from './js/webhooks.js';   // P366: Settings → Webhook re-reads on hook_changed
 import * as qresume from './js/qresume.js';         // P314 (§32): 「额度用完，预计 HH:MM 自动继续」 banner
 import * as rescue from './js/rescue.js';           // P332 (§33): Settings → 紧急修复 + the rescue-mode banner
@@ -56,8 +55,6 @@ import * as contacts from './js/contacts.js';   // P184 (§25): contact cards + 
 import * as secretout from './js/secretout.js'; // F32: secret pickup cards (§18)
 import * as cmdrun from './js/cmdrun.js';     // P361: Settings 「执行」
 import * as termhook from './js/termhook.js'; // P408 (§38): Settings → 安全 → 网页终端 (the page itself loads on first open)
-import * as budget from './js/budget.js';   // 0.26.9 §E3: Settings → 安全 → 预算 (budget_state / signed budget_set)
-import * as assist from './js/assist.js';     // 0.26.9 #468 (§B3): official remote assist — grant in 紧急修复 ②, banner, read-only task feed
 import * as bang from './js/bang.js';         // P414 (§38.12): 「!」 commands + their result card
 import * as pkassist from './js/pkassist.js';   // P539 (#300 / #299): own passkey state, card hints, pre-authorization, draft_restore
 import * as vaultrow from './js/vaultrow.js'; // P414 (§38.9): Settings → 安全 → 电脑密码
@@ -94,7 +91,6 @@ import * as pairpage from './js/pairpage.js'; // P210: the numbered method cards
 
 import { registerLayer, initLayers, TOP_RANK } from './js/layers.js';
 import { initOntop } from './js/ontop.js';   // P551: confirmation cards on the top tier, with focus
-import { initCardPlace } from './js/cardplace.js';   // 0.26.9 #472: every popped card under the reply card
 import { initEdgeBack } from './js/edgeback.js';   // P302: left-edge swipe = back on every sub-page
 import { wireTopFit } from './js/topfit.js';      // P340: header icon gaps follow the gear's margin on narrow screens
 import { applyViewport, watchViewport } from './js/viewport.js';
@@ -441,7 +437,7 @@ session.configure({
 snap.configure({
   prepareOwnerConfirm: (target) => controls.signed('fr_set', target, { t: 'fr_set', ...target }),
   onChange: (reset) => { if (reset) relay.historyReset(snap.S.hist.epoch); rerender(); },
-  onTurn: (p) => { relay.upsertTurn(p); assist.onTurn(p); },   // 0.26.9 #468: a task's reply grows in the assist feed too
+  onTurn: (p) => relay.upsertTurn(p),
 });
 api.onState((m) => relay.onSayState(m));
 controls.configure({ faceId: settings.faceIdStep, show, estopChanged: () => { relay.onEstop(); rerender(); }, friends: () => friends.refresh(), bots: () => bots.refresh() });
@@ -454,10 +450,7 @@ elevate.configure({ onSecretSaved: keys.saved, recover: () => cardsync.sync() })
 contacts.configure({ openSettingsMail: () => settings.openMail() });   // P184: no mailbox yet → Settings → 邮件通道
 upgcard.configure({ upgrade: () => api.upgradeNow() });   // P203: 「现在升级」 = this phone's signed /update
 authrescue.configure({ openAuth: () => settings.openAuth() });   // P288: the chat's 「现在续期」 banner → Settings → AI 登录救援
-loginsheet.configure({ openAuth: () => settings.openAuth() });   // 0.26.9 (#464): the chat's login sheet → 其他登录方式
 qresume.configure();                                           // P314: ✕ on the quota banner = qr_cancel
-assist.configure({ turns: () => relay.loadedTurns() });          // 0.26.9 #468 (§B3): the feed reads a task's reply from the loaded history
-budget.init();                                                      // 0.26.9 §E3: Settings → 安全 → 预算
 rescue.configure({                                             // P332: 紧急修复 — the block, ≡ 重置连接, /reset, the banner
   openSettings: () => settings.openRescue(),
   linkState: () => (session.isReady() ? 'up' : link.state() === 'quiet' ? 'quiet' : 'down'),   // P393: wait out a blink
@@ -467,7 +460,6 @@ api.setUpgradeFlow(() => upgcard.start());                 // ≡ /update and Se
 
 function onApp(m) {
   if (api.route(m) || blobs.handle(m) || media.handle(m)) return;
-  if (m.assist === true && typeof m.t === 'string' && m.t.startsWith('term_')) return;   // 0.26.9 #468 (§B3): nothing terminal-shaped from the helper — never the owner's terminal
   switch (m.t) {
     case 'pair_guide': showPairGuide(m.kind); return;
     case 'cmds_state': settings.setRunCmds(m.names); return;
@@ -503,11 +495,6 @@ function onApp(m) {
     case 'elev_out': elevate.output(m); return;        // P406 (§11.2): a running sudo command's masked output (the strip)
     case 'elev_done': termhook.msg(m); elevate.done(m); pkhandin.answered('elev:' + m.id); return;
     case 'elev_refused': termhook.msg(m); elevate.refused(m); pkhandin.answered('elev:' + m.id); return;   // ADR-A163: Face ID not accepted, the card stays open
-    case 'assist_state': assist.onState(m); return;      // 0.26.9 #468 (§B2): a grant is active / over → the banner on every page
-    case 'assist_notice': assist.onNotice(m); return;    // 0.26.9 #468: granted / connected / closed / expired / taken back / blocked
-    case 'assist_task': assist.onTask(m); return;        // 0.26.9 #468 (§B3): a task the helper sent to this Agent, as it moves → the read-only feed
-    case 'budget_state': budget.onState(m); return;     // 0.26.9 §E3: the day / month budget (Settings → 安全 → 预算)
-    case 'msg_steered': relay.onSteered(m); return;      // 0.26.9 #471 (§D): an owner message went into the running turn → 「已插入当前这一轮」
     case 'term_out': case 'term_confirm': case 'term_sudo': case 'term_close': termhook.msg(m); return;   // P408 (§38)
     case 'term_bang': case 'term_go': termhook.msg(m); return;   // P414 (§38.12 / §38.13): a 「!」 line's answer · the Agent opens the terminal
     case 'elev_grants': elevate.grants(m); return;     // #116 (§11.1): 10-minute same-class approvals + 「收回授权」
@@ -1508,7 +1495,6 @@ function wire() {
   initRemote({card:fivePages.remoteStep,message:relay.remoteMessage,reader:relay.remoteReader,reading:relay.remoteReading,scroll:relay.remoteScroll});
   initLayers({onEscape:relay.resetEscape});
   initOntop();
-  initCardPlace(t);   // 0.26.9 #472: after ontop.js (it calls cardplace.sync on every pass; the sheet moves home here)
   initEdgeBack();
   wireTopFit();
   const layer = (id, close, fallback, rank = 20, trap = true) => registerLayer({element: () => $(id), open: () => !$(id).hidden, close, fallback: () => $(fallback), rank, trap});

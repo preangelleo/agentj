@@ -10,10 +10,9 @@ class InstallAdvice(unittest.TestCase):
     def test_ark_missing_cli_recommends_v2_in_both_languages(self):
         with tempfile.TemporaryDirectory() as root:
             result = ark.switch(_state(root), detector=lambda: {})
-        self.assertEqual(result['install'], 'npm i -g @opencode/cli@2')   # #459 newest 2.x; A-N3 never curl | bash
+        self.assertEqual(result['install'], 'npm i -g @opencode/cli')
         for lang in ('zh', 'en'):
-            self.assertIn('npm i -g @opencode/cli@2', ark.say_switch(result, lang))
-            self.assertNotIn('curl', ark.say_switch(result, lang))
+            self.assertIn('npm i -g @opencode/cli', ark.say_switch(result, lang))
 
     def test_doctor_keeps_v1_usable_and_explains_optional_upgrade(self):
         with tempfile.TemporaryDirectory() as root:
@@ -28,11 +27,9 @@ class InstallAdvice(unittest.TestCase):
                 mock.patch('agentj.names.ctl_call', return_value={'known': True, 'selected_connected': True}):
                 row = doctor.check_agent_cli(st, {})
         self.assertEqual(row['status'], 'warn', row)  # Connected metadata never proves key validity.
-        # #459 (chairman 2026-11-04): v1 still runs, but the hint always moves it to the newest 2.x
-        self.assertIn('1.19.3 是 1.x', row['summary'])
-        self.assertIn('never upgrades itself', row['summary'])
-        self.assertIn('npm i -g @opencode/cli@2', row['summary'])
-        self.assertNotIn('curl', row['summary'])
+        self.assertIn('1.x 也能用', row['summary'])
+        self.assertIn('no automatic major upgrade', row['summary'])
+        self.assertIn('npm i -g @opencode/cli', row['summary'])
 
 
 class NativeDiscovery(unittest.TestCase):

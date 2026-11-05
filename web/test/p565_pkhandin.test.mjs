@@ -125,7 +125,7 @@ test('words: zh / en, the {bio} word, no trial wording', () => {
 
 test('a centred notice sits below an open dialog (never over its text and buttons)', () => {
   const css = read('../public/app.css');
-  const rule = /body:has\(\.ajmodal\.dlgcard:not\(\[hidden\]\):not\(\.cp-docked\),#confirm:not\(\[hidden\]\):not\(\.cp-docked\)\) \.toast:is\(\.circle,\.square\)\{top:auto;bottom:/;
+  const rule = /body:has\(\.ajmodal\.dlgcard:not\(\[hidden\]\),#confirm:not\(\[hidden\]\)\) \.toast:is\(\.circle,\.square\)\{top:auto;bottom:/;
   assert.match(css, rule);
-  assert.match(css, /body:has\(\.ajmodal\.dlgcard:not\(\[hidden\]\):not\(\.cp-docked\),#confirm:not\(\[hidden\]\):not\(\.cp-docked\)\) \.toast:is\(\.circle,\.square\)\.on\{transform:translate\(-50%,0\)\}/);
+  assert.match(css, /body:has\(\.ajmodal\.dlgcard:not\(\[hidden\]\),#confirm:not\(\[hidden\]\)\) \.toast:is\(\.circle,\.square\)\.on\{transform:translate\(-50%,0\)\}/);
 });

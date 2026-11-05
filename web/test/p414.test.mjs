@@ -169,7 +169,7 @@ test('result card and vault blocks: parsers (pure), the card above the reply, th
   assert.equal(vaultOf(null), null); assert.equal(vaultOf({ has: 1 }), null, 'no salt → no vault offer');
   assert.deepEqual(plain(Object.keys(vaultOf({ has: 1, vs: s32 }))), ['has', 'vs', 'vn']);
   assert.equal(vaultOf({ has: 1, vs: s32 }).has, true); assert.equal(vaultOf({ has: 0, vs: s32, vn: s32 }).vn.length, 32);
-  assert.match(ELEV, /const useVault = \(c\) => c\.kind === 'sudo' && !!c\.v && c\.v\.has && !!c\.fa && !viaHelper\(c\) && !c\.vaultMiss;/, 'M5 (+ 0.26.9 #482: not after this Face ID gave no PRF on the card): `has` = a prf wrap; Face ID needed');
+  assert.match(ELEV, /const useVault = \(c\) => c\.kind === 'sudo' && !!c\.v && c\.v\.has && !!c\.fa && !viaHelper\(c\);/, 'M5: `has` = a prf wrap; Face ID needed');
   assert.match(ELEV, /if \(!c\.dev \|\| !c\.cred \|\| c\.paired === null \|\| !c\.flags \|\| c\.name === null \|\| !c\.v \|\| !c\.v\.has\) return;/, 'M4: a vshare card shows who asks or is not shown');
   // host build: a vshare card ends `saved`; a vault answer the wrap does not open → the card again with has 0 and no stale
   assert.match(ELEV, /if \(c\.kind === 'vshare' && \(m\.result === 'saved' \|\| m\.result === 'done'\)\) text = t\('p414\.e\.vsDone'\);/);

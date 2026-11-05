@@ -800,7 +800,7 @@ class WheelInstall(unittest.TestCase):
             self.assertEqual({c["id"]: c["status"] for c in d_["checks"]}["state"], "ok")
             core = next(c for c in d_["checks"] if c["id"] == "main-core")
             self.assertEqual(core["status"], "ok")
-            self.assertIn("core v25:", core["summary"])
+            self.assertIn("core v24:", core["summary"])
 
     def test_fenced_chain_against_the_installed_package(self):
         # Installed wheel identity is checked before the V2 contract; no checkout fallback.

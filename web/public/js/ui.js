@@ -3,7 +3,6 @@
 import { fillText } from './t.js';
 import { SVG } from './icons.js';
 import { configureCopyNotice } from './copycode.js';
-import { slotShow } from './cardplace.js';   // 0.26.9 #472: a notice above a docked card scrolls only the reply's slot
 export const el = (id) => document.getElementById(id);
 export function mk(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
 
@@ -117,7 +116,7 @@ export function notify(spec) {
   box.classList.add(f.shape);
   // P566 (#354, Sammi 10-28 17:50 「点了没反应」): a card on screen (key / pickup / Face ID dialog) covers the reply's notice slot
   // (.stage, z 1, under its scrim) — while one is open, an execution notice floats above the card instead
-  const dlg = f.shape === 'rect' && document.querySelector('.ajmodal.dlgcard:not([hidden]):not(.cp-docked),#confirm:not([hidden]):not(.cp-docked)');
+  const dlg = f.shape === 'rect' && document.querySelector('.ajmodal.dlgcard:not([hidden]),#confirm:not([hidden])');
   if (dlg) { document.body.appendChild(box); box.classList.add('over-dlg'); }
   else if (f.shape === 'rect') {
     // A non-chat page owns its local result card; do not hide errors behind Settings / the terminal.
@@ -127,12 +126,7 @@ export function notify(spec) {
       let area = local.querySelector('.page-notices');
       if (!area) { area = mk('div', 'reply-notices page-notices'); local.appendChild(area); }
       area.appendChild(box);
-    } else {
-      replyNotice(box);
-      // 0.26.9 #472: a card open under the reply card — the notice goes right above it (never below its fold) and into view
-      const slot = el('reply-notices'), card = slot && [...slot.children].find((n) => n.classList.contains('cp-docked') && !n.hidden && n.getClientRects().length);
-      if (card) { if (box.nextElementSibling !== card) slot.insertBefore(box, card); slotShow(box); }
-    }
+    } else replyNotice(box);
   }
   else if (box.parentElement && box.parentElement !== document.body) document.body.appendChild(box);
   box.classList.toggle('cmd', cmd); box.classList.toggle('act', !!acts.length && f.shape === 'rect');

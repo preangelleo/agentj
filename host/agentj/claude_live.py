@@ -8,7 +8,6 @@ import hashlib
 import hmac
 import json
 import os
-import stat
 import subprocess
 import sys
 import tempfile
@@ -24,8 +23,7 @@ TEXT = {"zh": {"ok": "已在主对话自己的环境里核对：Claude Code 用�
                "bad": "主对话没有用上新登录（{why}）：请在 设置 → 紧急修复 → AI 登录救援 里重新检查。",
                "stale": "主对话进程里的登录不是新的", "outranked": "主对话里有优先级更高的凭据", "not_logged_in": "主对话里未登录",
                "unreadable": "读不到主对话进程的环境", "status": "claude auth status 没有结果",
-               "context": "主对话用的不是 Agent J 的 Claude 配置目录",
-               "refused": "主对话用的 Claude 配置目录无法确认是它自己的，为了安全没有在那里登录。请在 Agent J 主机上主对话的终端里输入 /login 登录。"},
+               "context": "主对话用的不是 Agent J 的 Claude 配置目录"},
         "en": {"ok": "Checked in the main conversation's own environment: Claude Code uses the new login.",
                "owner": "The new login is stored, but the main conversation is a Claude Code you started in a terminal and it still "
                         "runs on the old login. Tap Reopen AI session below: Agent J reopens the same conversation with the new login "
@@ -33,9 +31,7 @@ TEXT = {"zh": {"ok": "已在主对话自己的环境里核对：Claude Code 用�
                "bad": "The main conversation is not on the new login ({why}): check again in Settings → Emergency repair → AI login rescue.",
                "stale": "its process holds another login", "outranked": "a higher-priority credential is set there",
                "not_logged_in": "it is not logged in", "unreadable": "its process environment is unreadable",
-               "status": "claude auth status gave no answer", "context": "it uses another Claude config directory than Agent J",
-               "refused": "The main conversation's Claude config directory cannot be confirmed as its own, so no login was written "
-                          "there. Type /login in the main conversation's terminal on the Agent J host."}}
+               "status": "claude auth status gave no answer", "context": "it uses another Claude config directory than Agent J"}}
 
 
 def text(lang: str, key: str, why: str | None = None) -> str:
@@ -107,67 +103,25 @@ def _under(p, d) -> bool:
     return p == d or p.startswith(d.rstrip("/") + "/")
 
 
-def proven(host, kind: str, a) -> bool:
-    """0.26.9 merge ruling 2: the environment is the main session's own process, provably — our own PTY child handle
-    (native), or the registered owner session whose start time matches the live process (`procStart` + `_same_process`,
-    as P435's restart requires). Never a path from an Agent, a reply or a request."""
-    if kind not in ("owner", "native") or a is None:
-        return False
-    s = getattr(a, "session", None) or {}
-    n = getattr(a, "native", None)
-    if kind == "native" and n is not None and getattr(n, "pid", None) == s.get("pid"):
-        return True
-    from .shared import _same_process
-    try:
-        return type(s.get("pid")) is int and bool(s.get("procStart")) and _same_process(s)
-    except Exception:  # noqa: BLE001
-        return False
-
-
-def _safe_dir(p: str) -> bool:
-    """An existing directory of ours that nobody else can write (a real path: symlinks already resolved)."""
-    try:
-        st = os.stat(p)
-    except OSError:
-        return False
-    return stat.S_ISDIR(st.st_mode) and st.st_uid == os.getuid() and not st.st_mode & 0o022
-
-
-def context(env: dict, cwd, is_proven: bool = False) -> dict | None:
-    """L-462a + merge ruling 2 → the HOME / CLAUDE_CONFIG_DIR to read the login from: {} = serve's own; a dict = the main
-    session's own other config dir (only when `is_proven`, a safe dir of ours, outside an Agent-writable workspace);
-    None = refused (reason `context`). A workspace holding serve's whole HOME holds ~/.claude too (no new exposure)."""
+def context_ok(env: dict, cwd) -> bool:
+    """L-462a: the target's HOME / CLAUDE_CONFIG_DIR must be serve's own (by real path), never a config dir in the workspace."""
     home = os.path.realpath(os.environ.get("HOME") or os.path.expanduser("~"))
     cfg = os.path.realpath(os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(home, ".claude"))
     th = os.path.realpath(env.get("HOME") or home)
-    tc = os.path.realpath(env.get("CLAUDE_CONFIG_DIR") or os.path.join(th, ".claude"))
+    if (th, os.path.realpath(env.get("CLAUDE_CONFIG_DIR") or os.path.join(th, ".claude"))) != (home, cfg):
+        return False
     ws = os.path.realpath(cwd) if cwd else None
-    in_ws = (lambda p: bool(ws) and not _under(home, ws) and _under(p, ws))
-    if (th, tc) == (home, cfg):
-        return None if in_ws(cfg) else {}
-    if not is_proven or in_ws(tc) or in_ws(th) or not _safe_dir(tc) or (th != home and not _safe_dir(th)):
-        return None
-    return {"HOME": th, **({"CLAUDE_CONFIG_DIR": tc} if env.get("CLAUDE_CONFIG_DIR") else {})}
+    return not ws or _under(home, ws) or not _under(cfg, ws)     # a workspace holding the whole home holds ~/.claude too
 
 
-def context_ok(env: dict, cwd, is_proven: bool = False) -> bool:
-    """L-462a: the target's HOME / CLAUDE_CONFIG_DIR must be serve's own (by real path), never a config dir in the workspace;
-    merge ruling 2: or, provably, the main session's own (see `context`)."""
-    return context(env, cwd, is_proven) is not None
-
-
-def auth_status(env: dict, ctx: dict | None = None) -> dict | None:
-    """`claude auth status` with the target's credentials only, serve's own HOME / config (or `ctx`: the main session's own
-    proven one from `context`, real paths), cwd a fresh empty dir."""
+def auth_status(env: dict) -> dict | None:
+    """`claude auth status` with the target's credentials only, serve's own HOME / config, cwd a fresh empty dir."""
     from .auth_rescue import CLAUDE_STRIP, binary
     exe = binary("claude")
     if not exe:
         return None
     run = {k: v for k, v in os.environ.items() if k not in AUTH and k not in CLAUDE_STRIP}
     run.update({k: v for k, v in env.items() if k not in ("HOME", "CLAUDE_CONFIG_DIR")})
-    if ctx:
-        run.pop("CLAUDE_CONFIG_DIR", None)
-        run.update(ctx)
     try:
         with tempfile.TemporaryDirectory(prefix="agentj-auth-") as scratch:
             r = subprocess.run([exe, "auth", "status", "--json"], cwd=scratch, env=run, capture_output=True, text=True,
@@ -178,7 +132,7 @@ def auth_status(env: dict, ctx: dict | None = None) -> dict | None:
     return d if isinstance(d, dict) else None
 
 
-def check(env: dict | None, exp: dict, cwd=None, is_proven: bool = False) -> str | None:
+def check(env: dict | None, exp: dict, cwd=None) -> str | None:
     if env is None:
         return "unreadable"
     if any(env.get(k) for k in OUTRANK):
@@ -187,10 +141,9 @@ def check(env: dict | None, exp: dict, cwd=None, is_proven: bool = False) -> str
         return "stale"
     if exp["method"] == "login" and env.get(TOKEN):
         return "stale"
-    ctx = context(env, cwd, is_proven)
-    if ctx is None:
+    if not context_ok(env, cwd):
         return "context"
-    st = auth_status(env, ctx)
+    st = auth_status(env)
     if st is None:
         return "status"
     if not st.get("loggedIn"):
@@ -204,7 +157,7 @@ async def verify(host, kind: str | None = None) -> str | None:
     kind = kind or k
     cwd = (getattr(a, "cfg", None) or {}).get("dir") or (getattr(host, "agent_cfg", None) or {}).get("dir")
     env = session_env(host, kind, a)
-    why = await asyncio.to_thread(check, env, expected(), cwd, env is not None and proven(host, kind, a))
+    why = await asyncio.to_thread(check, env, expected(), cwd)
     with contextlib.suppress(Exception):
         host.st.log("claude_live", where=kind, result="ok" if why is None else "failed", reason=why)
     return why

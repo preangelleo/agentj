@@ -553,7 +553,7 @@ export async function runP414({ B, web, fake, out = OUT }) {
       // ---- 6. §11 sudo card with the vault (§37.10)
       const c1 = await card('sudo', { v: V(1) });
       await waitFor(p, `${$('elev')} && !${$('elev')}.hidden && !${$('elev-vault')}.hidden`, 5000);
-      check((await evaluate(p, `${$('elev-vault')}.textContent`)) === s.use && !(await shown('elev-input')) && !(await shown('elev-allow')), '「用 Face ID 填入电脑密码」 only — no field, no 同意 (0.26.9 #482: 以后只刷 Face ID) ' + tag);
+      check((await evaluate(p, `${$('elev-vault')}.textContent`)) === s.use && await shown('elev-input'), '「用 Face ID 填入电脑密码」 first, the field as the second way ' + tag);
       check((await evaluate(p, `${$('elev-note')}.textContent`)).includes(s.useNote), 'the note says the remembered password is used for this one command ' + tag);
       await sleep(500);   // the card's entry animation (scale) settles first
       await audit('sudo card', '#elev button');

@@ -1148,16 +1148,15 @@ class Elevator:
         if c["kind"] in ("secret", "vshare") and res["result"] == "timeout" and not only:
 
             self.host.agent_notice(f"这张卡已过期，请让 Agent 重发 · {c['id'][:8]} / This card has expired — ask the Agent to send it again · {c['id'][:8]}")
-        if c["kind"] == "sudo" and not (res["result"] == "done" and res.get("code") == 0):     # #480: success is silent
-            labels = {"done": ("执行失败", "failed"), "timeout": ("执行超时", "timed out"), "denied": ("已拒绝", "denied"),
+        if c["kind"] == "sudo":
+            labels = {"done": ("已完成", "completed") if res.get("code") == 0 else ("执行失败", "failed"),
+                      "timeout": ("执行超时", "timed out"), "denied": ("已拒绝", "denied"),
                       "gone": ("已取消", "cancelled"), "stopped": ("已停止", "stopped")}
             zh, en = labels.get(res["result"], ("执行失败", "failed"))
-            from .report_privacy import stderr_summary, sudo_notice
-            what = (await asyncio.to_thread(stderr_summary, c.get("why") or ""))[:80].replace(" / ", " ／ ")   # the card's "why", redacted
-            lang = getattr(self.host, 'lang', 'zh')
-            notice = sudo_notice(done_msg, lang, what)
-            self.host.agent_notice(notice or (f"管理员命令{zh}（“{what}”）" if what else f"管理员命令{zh} · {c['id'][:8]}") + " / " +
-                                   (f'Admin command {en} ("{what}")' if what else f"Admin command {en} · {c['id'][:8]}"))
+            code = f" ({res['code']})" if res.get("code") is not None else ""
+            from .report_privacy import sudo_notice
+            notice = sudo_notice(done_msg, getattr(self.host, 'lang', 'zh'))
+            self.host.agent_notice((notice + f" · {c['id'][:8]}") if notice else f"管理员命令{zh}{code} · {c['id'][:8]} / Admin command {en}{code} · {c['id'][:8]}")
         await self._deliver_card(lambda s: dict(done_msg, tail=tail) if s.cid in watching else dict(done_msg), only, c["id"])
         self.st.log("elev_done", id=c["id"], kind=c["kind"], result=res["result"])
         if c["kind"] == "secret":
@@ -1403,27 +1402,19 @@ class Elevator:
             if c["kind"] == "sudo":
                 res = await asyncio.to_thread(run_sudo, c["argv"], value, c["cwd"], c["timeout"], self.sudo, c["cancel"],
                                               c.get("live"))
-                why = None   # 0.26.9 #482: a requested save that is not kept is logged (names only), never silent
                 if save_prf is not None and res.get("result") == "done" and res.get("prompts") == 1 and vv.get("save"):
                     from . import term_vault
                     pk = self.st.passkey_of_device(s.device)
-                    why = "no_passkey" if not pk else "temporary" if self._temporary(s.device) else None
-                    if why is None:
+                    if pk and not self._temporary(s.device):
                         p1, p2 = term_vault.split_prf(save_prf)
                         try:
-                            try:
+                            with contextlib.suppress(OSError, ValueError):
                                 await asyncio.to_thread(term_vault.create, self.st, self.host.channel, s.device, pk["id"],
                                                         "prf", vv["save"], value, p1)
                                 res["saved"] = 1
-                            except (OSError, ValueError) as e:
-                                why = "store:" + type(e).__name__
                         finally:
                             wipe(p1)
                             wipe(p2)
-                elif save_prf is not None and res.get("result") == "done":
-                    why = "unverified" if res.get("prompts") != 1 else "no_salt"
-                if why:
-                    self.st.log("vault_save", id=c["id"], device=s.device, result="not_saved", why=why)
             elif c["kind"] == "vshare":
                 res = await asyncio.to_thread(c["sink"], value, s.device, vv.get("vn"))
             else:

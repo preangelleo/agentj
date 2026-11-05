@@ -515,10 +515,7 @@ class Agent:
 
         s = self.cur_send
         if s is None:
-            r = await fn()
-            if r is not False and r is not UNCERTAIN:
-                self._heal_delivered()
-            return r
+            return await fn()
         async with s.lock:
             if getattr(s, 'official_notice_id', None):
                 from . import notices
@@ -543,8 +540,6 @@ class Agent:
                     fn3(s)
                 raise
             s.state = "uncertain" if r is UNCERTAIN else "failed" if r is False else "delivered"
-            if s.state == "delivered":
-                self._heal_delivered()
         if s.state == "uncertain":
             fn3 = getattr(self.host, "say_uncertain", None)
             if fn3:
@@ -554,12 +549,6 @@ class Agent:
         if fn2 and s.state == "delivered":
             fn2(s)
         return r
-
-    def _heal_delivered(self) -> None:
-        heal = getattr(self.host, "turn_heal", None)     # 0269: proof that a message reached the harness after a heal
-        if heal is not None and not self.cfg.get("_workflow_ceo"):
-            with contextlib.suppress(Exception):
-                heal.delivered(self)
 
     @contextlib.asynccontextmanager
     async def _command_lock(self, cmd):
@@ -696,13 +685,10 @@ class Agent:
     def touch(self) -> None:
 
         self.touched = True
-        self.ever_touched = True               # 0269: this adapter reports events (the turn watchdog may judge silence)
-        self.event_at = time.monotonic()
 
     async def watched(self, coro):
 
         self.touched = False
-        self.event_at = time.monotonic()       # 0269: the turn's event clock starts with the turn
         w = asyncio.create_task(self._stall_watch())
         try:
             return await coro

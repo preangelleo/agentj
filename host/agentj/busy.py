@@ -749,7 +749,6 @@ class Board:
         self.alias: dict[str, str] = {}        # P160: a child id (Claude tool_use, Codex thread, OpenCode session) → item key
         self.child: dict[str, dict] = {}       # P160: Codex child thread / OpenCode v2 child session → {who, label}
         self.launch = None                     # #450: serve's busy_launch.Launch (the CLI never judges launches)
-        self.chain = None                      # 0269-w3-policy E2: serve's "owner chain of the running turn" (or None)
         if self.root is not None:
             with contextlib.suppress(OSError, ValueError, TypeError):
                 c = json.loads((busy_dir(self.root) / "colors.json").read_text(encoding="utf-8"))
@@ -775,12 +774,6 @@ class Board:
             it["foreign"] = True       # P570; late: first seen in Stop (restart), launcher unknown
         elif old and old.get("foreign") is False or not old and session and not late and self.trusted and self.trusted():
             it["foreign"] = False      # explicit host-observed launch; absence is never proof
-            if old and old.get("chain"):
-                it["chain"] = old["chain"]
-            elif not old and callable(self.chain):
-                with contextlib.suppress(Exception):
-                    if c := self.chain():
-                        it["chain"] = c       # E2: launched in an owner turn — its completion may carry the owner's words
         if session and not old and not (late and key in self.launched):   # P570b: launch trust, kept after the item ends
             self.launched[key] = bool(it.get("foreign") or not self.trusted)
             while len(self.launched) > 64:

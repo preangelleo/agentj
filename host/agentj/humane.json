@@ -22,11 +22,6 @@
     "plaza.install.done": {"zh": "已由 Agent J 主机安装：{name} {version}", "en": "Installed by the Agent J host: {name} {version}"},
     "plaza.install.deps_pending": {"zh": "已装好 {name}，正在补依赖：{deps}（已安装·依赖待补，补齐后自检）", "en": "{name} is installed; adding its dependencies: {deps} (Installed · dependencies pending; self-check after)"},
     "plaza.install.verified": {"zh": "{name} 自检通过，可以用了", "en": "{name} passed its self-check and is ready to use"},
-    "plaza.install.ready": {"zh": "已装好 {name}：自检通过，可以用了", "en": "{name} is installed: self-check passed, ready to use"},
-    "plaza.install.group_ok": {"zh": "Agent J 主机装好 {n} 个：{ok}", "en": "Agent J host installed {n}: {ok}"},
-    "plaza.install.not_run": {"zh": "已装好 {name}，自检没有运行", "en": "{name} is installed; its self-check did not run"},
-    "plaza.install.pending_mark": {"zh": "（补依赖中）", "en": " (adding dependencies)"},
-    "plaza.install.deps_unknown": {"zh": "自检要的东西", "en": "what its self-check needs"},
     "plaza.install.failed": {"zh": "没有安装 {name}：{why}", "en": "{name} was NOT installed: {why}"},
     "plaza.install.secret_path": {"zh": "没有安装：安装路径里像有本机密钥，不发卡；换一个目录再请求。", "en": "NOT INSTALLED: the install path looks like it holds a local secret; no card sent. Use another folder."},
     "plaza.install.no_signature": {"zh": "没有安装：未取得有效的手机签名授权，请重新发起安装确认。", "en": "NOT INSTALLED: no valid phone authorization was obtained. Request installation approval again."},
@@ -89,17 +84,7 @@
     "update.current": {"zh": "已经是最新的 {to}，不用升级。", "en": "Already on the latest, {to}."},
     "update.auto_ok": {"zh": "{title}，我夜里自己升级到 {to} 了：{summary}。", "en": "{title}, I updated myself to {to} overnight: {summary}."},
     "update.auto_ok_default": {"zh": "装上了最新正式版的改进", "en": "the latest published fixes"},
-    "update.auto_rollback": {"zh": "{title}，夜里升级没成功，已回滚到 {from}，原因：{reason}。", "en": "{title}, last night's update failed; I rolled back to {from} ({reason})."},
-    "selfheal.recovered": {"zh": "刚才卡住了，已自动恢复。", "en": "It got stuck just now — recovered automatically."},
-    "selfheal.failed": {"zh": "刚才卡住了，自动恢复没成功；请点「接管卡住的会话」。", "en": "It got stuck and did not recover by itself; tap Take over the stuck session."},
-    "steer.uncertain": {"zh": "已发给 Codex，但它没确认收到：可能已插进这一轮，也可能没有。不会重发。", "en": "Sent to Codex but not confirmed: it may or may not be in this turn. It will not be re-sent."},
-    "login.ok": {"zh": "已重新登录，并在主对话里核对过：可以接着聊了。", "en": "Signed in again and checked in the main conversation itself: carry on."},
-    "login.failed": {"zh": "这次没有登录成功：{why}", "en": "The sign-in did not finish: {why}"},
-    "login.main": {"zh": "登录完成了，但主对话还没用上：{why}", "en": "The sign-in finished, but the main conversation is not on it yet: {why}"},
-    "login.masked": {"zh": "主对话读的是环境里的 token，会盖住普通登录，所以改发新的长期 token。", "en": "The main conversation runs on an environment token that masks a stored login; minting a new token instead."},
-    "login.estop": {"zh": "已急停：先恢复，再重新登录。", "en": "Agent J is stopped (emergency stop): resume first, then sign in again."},
-    "login.busy": {"zh": "已有一次登录在进行，等它结束再点。", "en": "A sign-in is already running; wait for it to finish, then tap again."},
-    "login.not_main": {"zh": "只能给主对话正在用的 AI 重新登录。", "en": "Only the AI the main conversation is using can be signed in from here."}
+    "update.auto_rollback": {"zh": "{title}，夜里升级没成功，已回滚到 {from}，原因：{reason}。", "en": "{title}, last night's update failed; I rolled back to {from} ({reason})."}
   },
   "clear_resume": {"codex": {"command": "codex resume", "zh": "如果您也想在终端或 Codex App 里接着用这个对话", "en": "To continue this same conversation in a terminal or the Codex app"}, "claude": {"command": "claude --resume", "zh": "如果您也想在终端的 Claude Code 里接着用这个对话", "en": "To continue this same conversation in Claude Code in a terminal"}, "opencode": {"command": "opencode -s", "zh": "如果您也想在终端或 OpenCode 里接着用这个对话", "en": "To continue this same conversation in a terminal or OpenCode"}}
 }

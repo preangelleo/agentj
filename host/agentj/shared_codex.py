@@ -140,41 +140,6 @@ def scan(path):
     return meta, context, active
 
 
-_CALLS = ('function_call', 'custom_tool_call', 'local_shell_call')
-_CALL_DONE = ('function_call_output', 'custom_tool_call_output', 'local_shell_call_output')
-_ASKS = ('exec_approval_request', 'apply_patch_approval_request', 'request_permissions', 'request_user_input',
-         'elicitation_request', 'dynamic_tool_call_request')
-_ASK_DONE = ('exec_command_end', 'patch_apply_end', 'mcp_tool_call_end', 'dynamic_tool_call_response')
-
-
-def pending_approval(path):
-    """0269 L-6: the rollout's open turn may be waiting on its owner — an approval / question event, or a tool call with no
-    output yet (Codex records the call before it asks; no output = not run or not answered), since the last task_started.
-    A desktop turn in that state is never "stuck" (no writes, no tool child, but a person is being asked). Unreadable → True."""
-    open_ = set()
-    try:
-        with path.open('rb') as f:
-            while line := f.readline(2*1024*1024+1):
-                if len(line) > 2*1024*1024:
-                    while line and not line.endswith(b'\n'):
-                        line = f.readline(2*1024*1024+1)
-                    continue
-                try: item = json.loads(line)
-                except ValueError: continue
-                p = item.get('payload') if isinstance(item, dict) else None
-                if not isinstance(p, dict): continue
-                kind, cid = p.get('type'), p.get('call_id') or p.get('id') or '?'
-                if item.get('type') == 'event_msg' and kind in ('task_started', 'task_complete', 'turn_aborted'):
-                    open_.clear()
-                elif kind in _CALLS or (item.get('type') == 'event_msg' and kind in _ASKS):
-                    open_.add((kind in _ASKS, str(cid)))
-                elif kind in _CALL_DONE or kind in _ASK_DONE:
-                    open_ = {k for k in open_ if k[1] != str(cid)}
-    except OSError:
-        return True
-    return bool(open_)
-
-
 def orphaned(path, sid=None):
     """#461: why the rollout's open turn is dead, None = not known to be. Untouched for ORPHAN_IDLE s and then either no
     process has it open (a killed Codex leaves task_started without turn_aborted; a live thread keeps its rollout open,
@@ -354,9 +319,6 @@ class SharedCodexAgent(CodexAgent):
         self.kept = False                # P282: the app-server stayed up for the next queued phone turn (thread still loaded)
         self.dead_turn = None            # #461: (rollout, size) whose open turn has no writer: deliver past it
         self.desktop_wait = False        # P328: a phone message is waiting behind the owner's desktop turn (wait_desktop)
-        self.heal_release = False        # 0269: the turn watchdog judged that desktop turn stuck: deliver past it
-        self.wait_path = None            # 0269: the rollout wait_desktop is waiting on
-        self.wait_sid = None             # merge ruling: its thread id (the owner's daemon is asked whether it runs)
         self.owner_pin = self.cfg.get("shared_session_id") or ""     # P328: the owner's configured pin as serve read it
         st = self.host.st
         pin = effective_pin(st, self.owner_pin)
@@ -503,10 +465,6 @@ class SharedCodexAgent(CodexAgent):
             with contextlib.suppress(OSError):
                 # #461f: an open turn nobody runs (its writer gone, or the daemon says idle) does not block a clear
                 active = await asyncio.to_thread(lambda: scan(path)[2] and not orphaned(path, old))
-        if active:
-            from .turn_heal import desktop_stuck       # 0269: a stuck desktop turn (no writes, no tool child) is not "mid-answer"
-            with contextlib.suppress(Exception):
-                active = not await asyncio.to_thread(lambda: orphaned(path) or desktop_stuck(path, self._own_pids(), old))
         if active:
             # The desktop is mid-answer on this thread: nothing is changed (not half a clear); the same command works after.
             self.note('shared_clear_refused', 'desktop turn active; alternate turns')
@@ -822,21 +780,8 @@ class SharedCodexAgent(CodexAgent):
         if (str(path), pos) == self.dead_turn:
             return
         self.desktop_wait = active      # P328: the phone's message waits behind the owner's desktop turn
-        self.heal_release, self.wait_path = False, path      # 0269: the watchdog measures this rollout
-        self.wait_sid = sid or self.cfg.get('shared_session_id')     # merge ruling: the daemon is asked about this thread
-        heal = getattr(self.host, 'turn_heal', None)
         check = 0
         while active:
-            if self.heal_release:           # 0269: the watchdog / an owner-signed end_turn judged it stuck
-                self.heal_release = False
-                if await asyncio.to_thread(pending_approval, path):     # L-6: the desktop turn is asking its owner
-                    self.note('shared_stuck_refused', 'desktop approval pending')
-                    await asyncio.sleep(1)
-                    continue
-                self.dead_turn = (str(path), pos)
-                self.note('shared_stuck_turn', 'desktop turn stuck')
-                self.desktop_wait = False
-                return
             if loop.time() >= check:
                 check = loop.time() + ORPHAN_CHECK
                 why = await asyncio.to_thread(orphaned, path, sid or self.cfg.get('shared_session_id'))
@@ -853,14 +798,10 @@ class SharedCodexAgent(CodexAgent):
             if not told:
                 told = True
                 self.note('shared_waiting', 'desktop turn active; alternate turns')
-                tid = self.host.agent_notice(humane.of(self, 'codex.waiting'), card={'queued': True, 'waited_s': 0})
-                with contextlib.suppress(Exception):
-                    heal.saw_loop(); heal.queued_page(tid)
+                self.host.agent_notice(humane.of(self, 'codex.waiting'))
             if self.turn_done is not None and self.turn_done.is_set():
                 raise Stopped()
             if loop.time() > deadline:
-                with contextlib.suppress(Exception):
-                    heal.saw_loop()
                 raise Refusal('desktop turn did not finish')
             await asyncio.sleep(1)
             with path.open('rb') as f:                     # only the new complete lines
@@ -1090,10 +1031,6 @@ class SharedCodexAgent(CodexAgent):
             if self.rollout is not None and self.shared_status != 'desktop_writer':
                 self.follow_status('following')
 
-    def release_stuck(self):
-        """0269: the turn watchdog (or the owner's signed end_turn / takeover) treats the desktop turn as ended."""
-        self.heal_release = True
-
     def submit(self, item):
         """#461 (customer 12:44): /clear (/new is its alias) sent while a phone message waits behind a desktop turn must not
         sit behind that turn (「等这一轮忙完就办」 forever when it never ends): the wait ends — that message is withdrawn and
@@ -1132,12 +1069,6 @@ class SharedCodexAgent(CodexAgent):
                 if getattr(self.host,'queue_dropped',None):self.host.queue_dropped(item)
         asked=clear_queue or self.halt_quiet      # a person asked (/stop, stop-everything) — not a task / compaction making room
         waiting=asked and busy and self.desktop_wait and not self.phone_turn
-        if waiting and self.rollout is not None:     # 0269: a stuck desktop turn is ended for the phone, not 「按 Esc」
-            from .turn_heal import desktop_stuck
-            with contextlib.suppress(Exception):
-                sid = self.rollout_sid or self.cfg.get('shared_session_id')
-                if await asyncio.to_thread(desktop_stuck, self.rollout, self._own_pids(), sid):
-                    self.dead_turn, waiting = (str(self.rollout), self.rollout.stat().st_size), False
         desktop=waiting or (asked and not self.phone_turn and await self._desktop_running())
         if not desktop:
             await self.interrupt_request(self.proc)
@@ -1154,7 +1085,6 @@ class SharedCodexAgent(CodexAgent):
         if path is None:
             return False
         try:
-            from .turn_heal import desktop_stuck
-            return bool(await asyncio.to_thread(lambda:scan(path)[2] and not orphaned(path,sid) and not desktop_stuck(path, self._own_pids(), sid)))
+            return bool(await asyncio.to_thread(lambda:scan(path)[2] and not orphaned(path,sid)))
         except (OSError,ValueError):
             return False

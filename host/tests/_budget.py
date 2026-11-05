@@ -20,22 +20,9 @@ MIN_CEILING = 4096          # smaller numbers in that test are counts, not byte 
 # One named row may pass above its 10 % band only up to an exact byte cap Jarvis approved for one release.
 # P0268_BUDGET_WAIVER (贾维斯 11-03 定，0.26.8 具名豁免，瘦身另单): combined measured 4,440,764 B on the 0.26.8 integration
 # (0dac0b0b1 base 4,382,675 B, +10.0 %); cap = measured + 8 KiB. Remove this row in the slimming ticket.
-# P0268_BUDGET_WAIVER (0.26.8a2 hotfix row, 贾维斯 11-04 定，瘦身另单): same named row, combined measured 4,480,053 B at 78c6fa0fb9 (Olares, test_l3 -k
+# 贾维斯 11-04 定，0.26.8a2，瘦身另单: same named row, combined measured 4,480,053 B at 78c6fa0fb9 (Olares, test_l3 -k
 # test_wheel_contents; 0.26.8a1 head 7d49d4339 4,441,609 B); new exact cap = measured + 8 KiB = 4,488,245 B.
-# (0.26.8a2 row superseded on the same label by P0269_BUDGET_WAIVER below once both branches merged.)
-# P0269_BUDGET_WAIVER (supersedes the 0.26.8 cap for the same row): 0.26.9 selfheal (#461 watchdog, #463 full PTY terminal,
-# #462/#464 login rescue, #468 signed-task assist, #471 Codex steer) per 贾维斯 2026-11-04; slimming is a separate ticket.
-# Combined measured 4,523,248 B on the merged selfheal-0269 tree ec144c4771 (wave-1 base d2020a1155 4,499,229 B);
-# re-measured after merging hotfix-0268a2: 4,550,642 B at 0da33f33d9 (Olares, l0-budgets);
-# cap = measured + 8 KiB (8,192 B) = 4,558,834 B.
-# Re-measured after all lanes (0.26.9 selfheal #461 #462 #463 #464 #468 #471 #472 #473 #469 per 贾维斯 2026-11-04;
-# slimming separate ticket): 4,572,169 B at d269abbdda (Olares, l0-budgets); cap = measured + 8 KiB = 4,580,361 B.
-# Re-measured at release (0.26.9 selfheal #461 #462 #463 #464 #468 #471 #472 #473 #469 + #476 #477 + paid #475/#459/#478/#465/#466/
-# #479/#480 + #482 per 贾维斯 2026-11-04; slimming separate ticket): the 0.26.9 freeze wheel (version 0.26.9, on 0164eeb023) is
-# 4,587,732 B (combined = wheel bytes, hatchling reproducible); cap = measured + 8 KiB = 4,595,924 B. Final tip after the four
-# regression fixes (w3-policy rm card, approval_policy.py): 4,587,777 B → cap = measured + 8 KiB = 4,595,969 B.
-# Remove this row in the slimming ticket.
-WIDER = {'combined bounded allocations': 4595969}   # P0269_BUDGET_WAIVER
+WIDER = {'combined bounded allocations': 4488245}   # P0268_BUDGET_WAIVER
 
 
 def judge(measured: int, ceiling: int, strict: bool, label: str = '') -> str:

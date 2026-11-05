@@ -114,7 +114,7 @@ try {
       check(!(await ev(p, `document.getElementById('ctFwd').hidden`)), 'Esc did not close the dialog under it ' + name);
       check(await ev(p, `document.getElementById('ctFwd-addr').value`) === 'half-typed@exa', 'typed words kept ' + name);
       check(await ev(p, `document.activeElement && document.activeElement.id==='ctFwd-addr'`), 'focus back in the dialog field ' + name + ' :: ' + await ev(p, `document.activeElement?.id`));
-      check(await ev(p, `!document.getElementById('sheet').classList.contains('ontop-float') && document.getElementById('sheet').parentElement.id==='reply-notices'`), 'the sheet went home under the reply card (#472) ' + name);
+      check(await ev(p, `!document.getElementById('sheet').classList.contains('ontop-float') && document.getElementById('sheet').parentElement.id==='stage'`), 'the sheet went home into the stage ' + name);
       // 2) a second card over the dialog: a real tap on 拒绝 reaches it
       fake.st.answers.length = 0;
       await fake.askDone(id1, 'ended');
@@ -170,7 +170,7 @@ try {
       await key(p, 'Escape'); await sleep(300);
       check(await ev(p, `document.body.dataset.sheet!=='1' && document.getElementById('p551dlg').open && document.getElementById('p551in').value==='draft words'`), 'Esc folds the card; the dialog and its words stay ' + name);
       check(await ev(p, `document.activeElement && document.activeElement.id==='p551in'`), 'focus back in the modal dialog ' + name);
-      check(await ev(p, `document.getElementById('sheet').parentElement.id==='reply-notices'`), 'the card went home out of the dialog, under the reply card (#472) ' + name);
+      check(await ev(p, `document.getElementById('sheet').parentElement.id==='stage'`), 'the card went home out of the dialog ' + name);
       await ev(p, `import(new URL('js/ui.js', document.baseURI).href).then(m=>{window.__c=m.confirmSheet('P551','over a modal dialog','OK');})`);
       await waitFor(p, `!document.getElementById('confirm').hidden`); await sleep(150);
       check(await ev(p, TOP('#confirm .box', '#confirm-yes')) && await ev(p, `document.activeElement.id==='confirm-yes'`), 'confirm sheet topmost + focused over a modal dialog ' + name);
@@ -180,8 +180,7 @@ try {
       await ev(p, `import(new URL('js/ui.js', document.baseURI).href).then(m=>{window.__c=m.confirmSheet('P551','dialog closes','OK');})`);
       await waitFor(p, `!document.getElementById('confirm').hidden`);
       await ev(p, `(()=>{const d=document.getElementById('p551dlg');d.close();d.remove();})()`); await sleep(200);
-      // #472: once the dialog is gone the chat is in front again — the open confirm comes home under the reply card
-      check(await ev(p, `document.getElementById('confirm')?.isConnected && document.getElementById('confirm').parentElement.id==='reply-notices'`), 'confirm survives its dialog closing, under the reply card (#472) ' + name);
+      check(await ev(p, `document.getElementById('confirm')?.parentElement===document.body && document.getElementById('confirm').isConnected`), 'confirm survives its dialog closing ' + name);
       check(await ev(p, TOP('#confirm .box', '#confirm-yes')), 'and is still on top ' + name);
       await key(p, 'Escape'); await sleep(200);
       check(!p.problems.length, 'no console errors ' + name + ' ' + p.problems.join(' | '));

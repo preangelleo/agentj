@@ -1013,7 +1013,7 @@ def cmd(a) -> int:
     contact = {"name": a.name or "", "nicks": a.nick or [], "emails": a.email or [], "phones": a.phone or [],
                "addresses": a.address or [], "org": a.org or "", "title": a.title or "", "note": a.note or ""}
     if a.action == "add":
-        return out(run({"op": "add", "contact": contact, "source": "agent"}))
+        return out(run({"op": "add", "contact": contact, "source": a.source or "agent"}))
     if a.action == "card":
         served = _call(st, {"op": "ping"}, 5) is not None
         cid = _resolve(st, a.query, served) if a.query else None
@@ -1049,7 +1049,7 @@ def cmd(a) -> int:
         except OSError as e:
             return out({"ok": False, "why": "read", "detail": type(e).__name__})
         return out(run({"op": "import", "data": base64.b64encode(data).decode(), "name": os.path.basename(a.query),
-                        "format": a.format or "auto", "dry_run": a.dry_run, "source": "agent"}, 120))
+                        "format": a.format or "auto", "dry_run": a.dry_run, "source": "import"}, 120))
     if a.action == "export":
         fmt = a.format if a.format in ("vcf", "csv", "json") else (
             "csv" if (a.query or "").lower().endswith(".csv") else "json" if (a.query or "").lower().endswith(".json") else "vcf")
@@ -1095,8 +1095,7 @@ def owner_cmd(st, a, zh: bool, out, run) -> int:
             return out(local(st, {"op": "owner_set", "contact": contact, "owner_ok": True}))   # the owner at their own terminal
         return out({"ok": False, "why": "not_running", "detail": "0 号位要主人在手机上确认：Agent J 要在运行（agentj service status）"
                     if zh else "slot 0 is confirmed by the owner on the phone: Agent J must be running (agentj service status)"})
-    req = {"op": "card", "owner": True, "contact": contact, "why": a.why or "",
-           **({"from_tty": True} if sys.stdin.isatty() and sys.stdout.isatty() else {})}   # the owner typing (display hint only)
+    req = {"op": "card", "owner": True, "contact": contact, "why": a.why or ""}
 
     def early(m):
         print(f"CONTACT_CARD: {m.get('id')}", flush=True)
@@ -1125,6 +1124,7 @@ def add_parser(sub) -> None:
     p.add_argument("--rm-email", action="append")
     p.add_argument("--rm-phone", action="append")
     p.add_argument("--rm-nick", action="append")
+    p.add_argument("--source", choices=SOURCES, help="add：来源（默认 agent）")
     p.add_argument("--why", help="card：一句话说明为什么要存 / why (shown on the card)")
     p.add_argument("--sort", choices=SORTS, default="recent", help="list：recent 最近发送 · frequent 最常用 · name 按名字字母")
     p.add_argument("--limit", type=int)

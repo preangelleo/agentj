@@ -881,10 +881,6 @@ AUTH_REASONS = {
     "read_only": (2, "程序目录是只读的：在 Agent 隔离（独立模式的 fence）里升级不了，也看不到主机的密钥。要在隔离外运行：由 Agent 在现有共享会话运行，"
                      "或由共享会话里的 Agent 运行", "agentj's own files are read-only here: inside the Agent fence (independent mode) it cannot "
                      "upgrade and cannot see the host key. Run it outside the fence: the Agent of the existing shared session"),
-    # #475: another account (usually root) owns the program files; `fix:` is the one agentj sudo line (phone card)
-    "not_owner": (2, "程序目录属于另一个账号（多半是 root，以前用 sudo 装过），这个账号改不了它，什么都没动。运行 fix 那一行（手机弹一张管理员密码卡），再升级",
-                  "the program folder belongs to another account (usually root, from an earlier sudo install), so this account "
-                  "cannot replace it; nothing was changed. Run the fix line (one administrator card on the phone), then upgrade again"),
     "not_initialised": (2, "这台Agent J 主机还没有 Agent J 身份（agentj init）", "the Agent J host has no Agent J identity yet (agentj init)"),
     "not_linked": (2, "这台Agent J 主机没有加到 Agent J 账号，授权码验证不了。先 `agentj login`（主人在场），或由 Agent 运行 `agentj update apply`",
                    "the Agent J host is not added to an Agent J account, so the code cannot be checked: `agentj login` first (with your human), "
@@ -967,29 +963,8 @@ def authorized_apply(st, code: str | None, target: str | None, **kw) -> dict:
     if market_managed() or market_managed(kw.get("prefix")):
         return market_result()
     from . import upgrade_diag
-    res = owner_check(_authorized_apply(st, code, target, **kw), kw.get("prefix"))
+    res = _authorized_apply(st, code, target, **kw)
     upgrade_diag.remember(st, res)
-    return res
-
-
-def owner_check(res: dict, prefix=None) -> dict:
-    """#475: a refusal for an unwritable program folder, or an installer's permission error, names the other account that
-    owns the files and the one fix line (agentj sudo → an administrator card on the phone). Never raises."""
-    if not isinstance(res, dict):
-        return res
-    denied = res.get("reason") == "uv_failed" and any(n in str(res.get("stderr_tail") or "").lower()
-                                                     for n in ("permission denied", "os error 13", "operation not permitted"))
-    if res.get("reason") not in ("read_only", "permission_denied") and not denied:
-        return res
-    try:
-        from .upgrade_owner import blocked
-        own = blocked(prefix)
-    except Exception:  # noqa: BLE001 — the original result stands
-        own = None
-    if own:
-        res.update(owner_kind=own["owner_kind"], fix=own["fix"])
-        if res["reason"] == "read_only":
-            res.update(reason="not_owner", exit=_exit_of("not_owner"))
     return res
 
 
@@ -1156,7 +1131,7 @@ def apply(st, target=None, *, fenced=None, **kw):
     if fenced is None:
         from . import fence
         fenced = fence.inside()
-    res = owner_check(_apply(st, target, fenced=fenced, **kw), kw.get("prefix"))
+    res = _apply(st, target, fenced=fenced, **kw)
     upgrade_diag.remember(st, res, fenced=fenced)
     return res
 
@@ -1282,11 +1257,6 @@ def _apply(st, target=None, *, prefix=None, check_fn=None, run=None, say=None, s
                 blockers, existing = upgrade_blockers(rows)
             except (ValueError, TypeError, KeyError, AttributeError):
                 blockers, existing = ([DOCTOR_UNPARSABLE] if health.returncode else []), []
-            if fenced and blockers == [DOCTOR_UNPARSABLE]:
-                # ADR-0269-fenced-doctor: the version is already verified; a fenced doctor that could not even produce its
-                # document (an older doctor crashing on host-only files the fence hides, EPERM on macOS) proves nothing
-                # about the host — "unverifiable in fence", never "the upgrade failed". The id stays among pending_checks.
-                out["health"], blockers, rows = "unverifiable", [], [{"id": DOCTOR_UNPARSABLE, "status": "warn"}]
         out["existing_issues"] = existing
         out["pending_count"] = sum(r.get("status") != "ok" for r in rows or [] if isinstance(r, dict))
         out["pending_checks"] = check_ids([r.get("id") for r in rows or [] if isinstance(r, dict) and r.get("status") != "ok"])
@@ -1434,13 +1404,11 @@ def result_block(res: dict) -> str:
         lines.append(f"support: {res['support']}")
     if res.get("tell_owner"):
         lines.append(f"tell_owner: {res['tell_owner']}")
-    lines.append("next: " + (UNVERIFIABLE_NEXT if res["reason"] == "unverifiable_in_fence" else OWNER_NEXT if res.get("owner_kind") and res.get("fix") else "none" if res["result"] == "ok" else
+    lines.append("next: " + (UNVERIFIABLE_NEXT if res["reason"] == "unverifiable_in_fence" else "none" if res["result"] == "ok" else
                              "agentj doctor; tell your human this block" if res["result"] == "failed" else "tell your human this block"))
     return "\n".join(lines)
 
 
-OWNER_NEXT = ("run the fix line now (agentj sudo: one administrator card on the phone, no terminal for your human), then "
-              "agentj update apply again; tell your human the tell_owner line")
 UNVERIFIABLE_NEXT = ("tell your human: the program is upgraded; please confirm the version on the phone (Settings), or run "
                      "`agentj doctor` in a terminal outside the Agent fence / 请主人在手机「设置」里确认版本，或在Agent J 主机终端（隔离外）运行 agentj doctor")
 REASON_EXTRA = {

@@ -78,23 +78,8 @@ class Phone:
         return obj
 
 
-def explicit_standard(st, on=True):
-    """0269-w3-policy: these fixtures test the 「中等」 level's own cards (batch, goal, timeouts, Jev …). Since 0.26.9 the
-    DEFAULT level is the owner-scope table (approval_policy, ADR-0269-w3-policy); an owner who picked 中等 on a paired phone
-    keeps the old rules — recorded here as that choice. test_p0269_w3_policy clears it to test the default itself."""
-    import json as _json
-    from agentj import approval_level
-    d = approval_level.signers(st)
-    if on:
-        d.setdefault(approval_level.KEY, {"value": "standard", "device": "fixture"})
-    else:
-        d.pop(approval_level.KEY, None)
-    approval_level._path(st).write_text(_json.dumps(d))
-
-
 def _host(st, sent):
     host = serve.Host(st, events="jsonl", read_stdin=False)
-    explicit_standard(st)
     # These SDK/stream-json fixtures exercise the still-supported independent
     # fence, not interactive shared sessions. Select their mode explicitly;
     # production default/upgrade and native shared paths have separate tests.

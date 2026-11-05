@@ -73,15 +73,13 @@ class Pending(tm.Base):
         self.assertIn("install.verify: OK", out)
         self.assertEqual(self.rec()["verify"]["state"], "pending")
 
-    def test_a_real_failure_installs_as_pending(self):
-        """ADR-0269-w4-plaza (#479, superseding the a2 rule): only signature / digest / audit block; a failing self-test is
-        「已安装·依赖待补」 with a system task, like a missing dependency."""
+    def test_a_real_failure_still_installs_nothing(self):
         need_sandbox(self)
         files = {**tm.fx.SKILL_FILES, "scripts/demo.py": "import sys\nsys.exit(3)\n"}
         self.add_skill(files=files)
         rc, out = self.preview_and_confirm(accept_unverified=True)
-        self.assertEqual(rc, market.EXIT_OK, out)
-        self.assertEqual(self.rec()["verify"]["state"], "pending")
+        self.assertEqual(rc, market.EXIT_ERROR, out)
+        self.assertEqual(market.read_installed(self.e.st), [])
 
     def test_passing_install_shows_self_check_apart_from_acceptance(self):
         need_sandbox(self)
@@ -147,7 +145,7 @@ class Pending(tm.Base):
         self.assertIn("用户目录里有", text)
         self.assertNotIn(str(self.e.home), text)
         self.assertNotIn(str(self.e.home), market.verify_env(self.e.root)["PATH"])
-        self.assertTrue(market.VERIFY_PATH.startswith("/usr/local/bin:/usr/bin:/bin"))     # + Homebrew bins (ADR-0269-w4-plaza)
+        self.assertEqual(market.VERIFY_PATH, "/usr/local/bin:/usr/bin:/bin")
 
 
 class HostTask(unittest.TestCase):
@@ -174,7 +172,7 @@ class HostTask(unittest.TestCase):
         with mock.patch("shutil.which", new=which_with(FAKE)):
             res = asyncio.run(plaza_host.verify(t.host, {"name": "demo-skill", "harness": None}))
         self.assertEqual(res["rc"], 0, res)
-        self.assertIn("demo-skill 自检通过", t.notices[-1])     # no install line recorded (fake notice): a new line says so
+        self.assertIn("demo-skill 自检通过", t.notices[-1])
         self.assertEqual(asyncio.run(plaza_host.verify(t.host, {"name": "../x"}))["why"], "bad_request")
 
     def test_cli_asks_the_host_and_prints_its_receipt(self):

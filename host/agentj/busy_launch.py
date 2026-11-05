@@ -16,8 +16,6 @@ MARGIN = 1.0      # s: trusted windows shrink by this, untrusted episodes grow b
 CORE = 10.0       # s: the harness's own launch-time children (bwrap's inner process, a node shim's binary)
 KEEP = 128
 FIELDS = ("who", "label", "report")   # what a completion says comes from first sight, never a later item rewrite
-CHAIN_TTL = 24 * 3600   # 0269-w3-policy E2: the owner's words that opened a task authorise its follow-ups this long
-CHAIN_WORDS = 300
 HZ = os.sysconf("SC_CLK_TCK") if hasattr(os, "sysconf") else 100
 
 
@@ -71,34 +69,21 @@ class Launch:
         self.path = Path(root) / "busy" / "launch.json"
         self.lock = threading.Lock()
         self.trusted, self.taint, self.jobs, self.open, self.dirty = [], [], {}, None, False
-        self.owner, self.chains = {}, {}       # E2: trusted-window start → chain id; chain id → [at, the owner's words]
         try:
             d = json.loads(self.path.read_text())
             self.trusted = [[float(s), float(e)] for s, e in d.get("trusted", [])][-KEEP:]
             self.taint = [[float(s), None if e is None else float(e)] for s, e in d.get("taint", [])][-KEEP:]
             self.jobs = {str(k): ({f: str(v.get(f) or "")[:400] for f in FIELDS} if isinstance(v, dict) else False)
                          for k, v in d.get("jobs", {}).items()}
-            for k, v in (d.get("jobs") or {}).items():
-                if isinstance(v, dict) and isinstance(v.get("chain"), str) and isinstance(self.jobs.get(str(k)), dict):
-                    self.jobs[str(k)]["chain"] = v["chain"][:32]
-            self.owner = {str(k): str(v)[:32] for k, v in (d.get("owner") or {}).items()}
-            self.chains = {str(k): [float(v[0]), str(v[1])[:CHAIN_WORDS]] for k, v in (d.get("chains") or {}).items()}
         except (OSError, ValueError, TypeError, AttributeError):
             pass
 
     # ---------------------------------------------------------------- turn boundaries (event loop: memory only)
-    def turn(self, trusted, now=None, words=None):
-        """`words`: the owner's own message when this is an owner turn (E2) — it opens an owner chain."""
+    def turn(self, trusted, now=None):
         now = time.time() if now is None else now
-        cid = None
-        if trusted and isinstance(words, str) and words.strip():
-            import secrets
-            cid = secrets.token_hex(8)
         with self.lock:
             self._close(now)
-            self.open = [now, bool(trusted), cid]
-            if cid:
-                self.chains[cid] = [now, words.strip()[:CHAIN_WORDS]]
+            self.open = [now, bool(trusted)]
             if not trusted:
                 self.taint.append([now, None])     # closed by a scan that finds none of its processes alive
             self.dirty = True
@@ -110,8 +95,6 @@ class Launch:
 
     def _close(self, now):
         if self.open and self.open[1]:
-            if len(self.open) > 2 and self.open[2]:
-                self.owner["%.6f" % self.open[0]] = self.open[2]
             self.trusted.append([self.open[0], now])
             self.trusted = self.trusted[-KEEP:]
         self.open = None
@@ -170,17 +153,12 @@ class Launch:
         with self.lock:
             # first sight while an untrusted turn or its processes may still write item files: never known (forgery)
             ok = ok and not (self.open and not self.open[1]) and all(e is not None and now > e + MARGIN for _, e in self.taint)
-            chain = None
             if ok:
                 t = row[3]
                 spans = self.trusted + ([[self.open[0], float("inf")]] if self.open and self.open[1] else [])   # still open
-                hit = [s for s, e in spans if s + MARGIN <= t <= e - MARGIN]
-                ok = (bool(hit) and not any(s - MARGIN <= t <= (now if e is None else e) + MARGIN for s, e in self.taint))
-                if ok:
-                    s0 = hit[-1]
-                    chain = (self.open[2] if self.open and len(self.open) > 2 and self.open[0] == s0 and self.open[1]
-                             else self.owner.get("%.6f" % s0))
-            self.jobs[key] = ({f: str(it.get(f) or "")[:400] for f in FIELDS} | ({"chain": chain} if chain else {})) if ok else False
+                ok = (any(s + MARGIN <= t <= e - MARGIN for s, e in spans)
+                      and not any(s - MARGIN <= t <= (now if e is None else e) + MARGIN for s, e in self.taint))
+            self.jobs[key] = {f: str(it.get(f) or "")[:400] for f in FIELDS} if ok else False
             while len(self.jobs) > 4 * KEEP:
                 self.jobs.pop(next(iter(self.jobs)))
             self.dirty = True
@@ -197,19 +175,7 @@ class Launch:
         """A known job's first-sight who / label / report (overrides a rewritten item or receipt); {} otherwise."""
         with self.lock:
             v = self.jobs.get(key)
-            return ({f: v[f] or None for f in FIELDS} | ({"chain": v["chain"]} if v.get("chain") else {})) if isinstance(v, dict) else {}
-
-    def current_chain(self):
-        """E2: the owner chain of the turn running now (None outside an owner turn)."""
-        with self.lock:
-            return self.open[2] if self.open and len(self.open) > 2 and self.open[1] else None
-
-    def chain(self, cid, now=None):
-        """E2: (opened at, the owner's words) of a live chain, else None."""
-        now = time.time() if now is None else now
-        with self.lock:
-            v = self.chains.get(cid) if isinstance(cid, str) else None
-            return (v[0], v[1]) if v and 0 <= now - v[0] <= CHAIN_TTL else None
+            return {f: v[f] or None for f in FIELDS} if isinstance(v, dict) else {}
 
     def save(self):
         with self.lock:
@@ -218,11 +184,7 @@ class Launch:
             old = time.time() - 48 * 3600
             self.trusted = [w for w in self.trusted if w[1] >= old]
             self.taint = [w for w in self.taint if w[1] is None or w[1] >= old]
-            live = time.time() - CHAIN_TTL
-            self.chains = {k: v for k, v in self.chains.items() if v[0] >= live}
-            self.owner = {k: v for k, v in self.owner.items() if v in self.chains}
-            body = json.dumps({"trusted": self.trusted, "taint": self.taint, "jobs": self.jobs, "owner": self.owner,
-                               "chains": self.chains}, ensure_ascii=False).encode()
+            body = json.dumps({"trusted": self.trusted, "taint": self.taint, "jobs": self.jobs}).encode()
             self.dirty = False
         try:
             from .state import _write_private

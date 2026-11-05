@@ -378,16 +378,11 @@ class CustomerServiceMailUV(unittest.IsolatedAsyncioTestCase):
 
 
 class IntegratedMailIdentity(unittest.TestCase):
-    def test_identity_mail_line_follows_the_0269_mail_rule(self):
-        # 0.26.9 #473 (ADR-0269-w3-policy, security r6 B1) replaces P503's "every send needs the passkey": mail to the owner's
-        # own address or the phone allowlist needs no card, any other recipient one confirmation card, never Face ID; paid
-        # queries / report scripts keep the passkey card.
+    def test_identity_requires_final_uv_for_owner_and_allowlisted_mail(self):
         from agentj.main_identity import MAIL_LINE
-        self.assertIn("默认发给主人或白名单不弹卡", MAIL_LINE["zh"])
-        self.assertIn("其他收件人弹确认卡核对收件人、正文和附件，不用 Face ID", MAIL_LINE["zh"])
-        self.assertIn("付费查询/报告脚本每次须通行密钥确认", MAIL_LINE["zh"])
-        self.assertNotIn("每次发送", MAIL_LINE["zh"])
-        self.assertIn("owner or allowlisted addresses needs no card", MAIL_LINE["en"])
-        self.assertIn("any other recipient gets one confirmation card", MAIL_LINE["en"])
-        self.assertIn("Paid queries and report scripts each need a final passkey card", MAIL_LINE["en"])
-        self.assertNotIn("every outgoing message", MAIL_LINE["en"])
+        self.assertIn("每次发送", MAIL_LINE["zh"])
+        self.assertIn("审批通行密钥", MAIL_LINE["zh"])
+        self.assertNotIn("白名单直接发", MAIL_LINE["zh"])
+        self.assertIn("every outgoing message", MAIL_LINE["en"])
+        self.assertIn("approval passkey", MAIL_LINE["en"])
+        self.assertNotIn("owner / allowlisted: at once", MAIL_LINE["en"])

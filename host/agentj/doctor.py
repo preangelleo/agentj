@@ -7,7 +7,6 @@ the API probe posts an empty body and expects `400 bad_request` (no ledger is wr
 """
 from __future__ import annotations
 
-import contextlib
 import json
 import os
 import re
@@ -190,47 +189,10 @@ def _fenced() -> bool:
     return fence.inside()
 
 
-# ADR-0269-fenced-doctor: bwrap hides the state directory behind an empty tmpfs (ENOENT, which Path.exists tolerates); the
-# macOS sandbox denies it (EPERM, which Path.exists raises) — the 0.26.8a1 Mac Intel upgrade matrix crashed the whole
-# doctor in check_wechat → _serve_status → State.exists(). Every check_* below is wrapped once (end of module): a
-# PermissionError becomes the same ! "unverifiable" row inside the fence, and a plain row naming the denial outside it
-# (never hidden as unverifiable there). One check that cannot read never takes the other rows down with it.
-_LIST_CHECKS = frozenset(("check_asr", "check_preferences", "check_main_identity"))
-_CHECK_IDS = {"check_harness_setup": "first-setup", "check_session_mode": "session", "check_jev_key": "jev",
-              "check_onboarding": "onboard", "check_migration": "migrate", "check_heartbeat_prompt": "heartbeat-template",
-              "check_main_identity": "main-core", "check_preferences": "config"}
-
-
-def _denied(cid: str, e: PermissionError) -> dict:
-    if _fenced():
-        return _unverifiable(cid)
-    return _c(cid, FAIL if cid in update.UPGRADE_CHECKS else WARN, "读不了：没有权限 / cannot read: permission denied",
-              f"ls -ld {tilde(str(e.filename))}" if e.filename else "")
-
-
-def _tolerant(name: str, fn):
-    import functools
-    cid = _CHECK_IDS.get(name) or name.removeprefix("check_").replace("_", "-" if name in (
-        "check_keep_awake", "check_upgrade_restart", "check_login_session", "check_service_environment",
-        "check_launchd_environment", "check_shared_controls", "check_local_files", "check_first_run") else "_")
-
-    @functools.wraps(fn)
-    def checked(*a, **k):
-        try:
-            return fn(*a, **k)
-        except PermissionError as e:
-            return [_denied(cid, e)] if name in _LIST_CHECKS else _denied(cid, e)
-    return checked
-
-
 def check_state(st: State) -> dict:
     if _fenced():
         return _unverifiable("state")
-    try:
-        present = st.exists()
-    except PermissionError as e:       # ADR-0269-fenced-doctor: outside the fence a denied state directory is a real fault
-        return _c("state", FAIL, "权限不对 / permission denied", f"chmod 700 {tilde(str(st.root))}; files 600 ({tilde(str(e.filename or e))})")
-    if not present:
+    if not st.exists():
         return _c("state", FAIL, f"没初始化 / not initialised ({tilde(str(st.root))})", "agentj init")
     try:
         st.check_perms()
@@ -668,9 +630,8 @@ def check_agent_cli(st: State, svc: dict) -> dict:
         for f in ark.facts():
             s += (f" · 火山方舟 {f['provider']}: key {f['key_env'] or '—'} " +
                   ("已存 / set" if f["key_set"] else "未存 / not set (agentj provider ark → key card)"))
-    if k == "opencode" and not harness.opencode_v2(ver):           # #459: always the newest 2.x
-        from . import opencode_install
-        s += " · " + opencode_install.upgrade_text(ver, "zh") + " / " + opencode_install.upgrade_text(ver, "en")
+    if k == "opencode" and not harness.opencode_v2(ver):
+        s += " · 1.x 也能用；想升 2.x：npm i -g @opencode/cli（不会自动升） / 1.x still works; optional v2: npm i -g @opencode/cli (no automatic major upgrade)"
     if k == 'opencode' and harness.opencode_v2(ver):
         s += ' · v2 (/api)'                         # P60: supported (agent_opencode2); the live check below asks the server
     if k == "opencode" and c:
@@ -905,10 +866,7 @@ def check_seat(st: State) -> dict:
 
 
 def _serve_status(st: State) -> dict | None:
-    try:                       # ADR-0269-fenced-doctor: control.sock is hidden in the fence; EPERM there is "not visible"
-        if _fenced() or not st.exists():
-            return None
-    except PermissionError:
+    if not st.exists():
         return None
     try:
         return names.ctl_call(st, {"cmd": "status"}, 5)
@@ -937,84 +895,6 @@ def check_jev_key(svc: dict) -> dict | None:
         return _c("jev", WARN, f"Jev 不生效：{key} 只在这个终端里，后台服务没有 / Jev is off: {key} is only in this terminal, "
                   "not in the background service", service.key_note(n, key) or "")
     return _c("jev", OK, f"Jev 尚未配置：没有 {key}；请完成安全审核选择 / Jev setup pending: no {key}; choose a review route or confirm skip")
-
-
-def _bin_ids(pid: int, words: list) -> set:
-    """Real paths that name the binary of process `pid` — WITHOUT running anything: the codex word of its command line and,
-    when it is a codex binary itself, /proc/<pid>/exe (realpath only reads links)."""
-    ids = set()
-    exe = next((w for w in words[:3] if os.path.basename(w) == "codex" or os.path.basename(w).startswith("codex-")), None)
-    if exe and os.path.isabs(exe):
-        ids.add(os.path.realpath(exe))
-    with contextlib.suppress(OSError, ValueError):
-        real = os.path.realpath(os.readlink(f"/proc/{int(pid)}/exe"))
-        if os.path.basename(real).startswith("codex"):
-            ids.add(real)
-    return ids
-
-
-def codex_servers(cli_exe=None, st=None) -> dict:
-    """0269 (#461): the Codex CLI Agent J runs vs. every running `codex app-server` (a shared background daemon too) — the
-    customer had daemon 0.166.0 and CLI 0.160.0. Versions only; nothing is stopped or written.
-    w2-sec C-1: nothing named by another process's command line is ever EXECUTED (a fenced Agent can start
-    `exec -a <workdir>/codex-x … app-server`, and doctor runs unfenced after every update / in rescue ②). Only Agent J's
-    own resolved CLI is asked `--version`; a server whose binary (command-line path or /proc exe, compared by real path)
-    is that CLI or the binary of one of Agent J's own recorded app-servers (codex_procs.ours_alive) shows the CLI's
-    version; any other shows "?" and `other: true` — a background daemon on another install is the #461 mismatch."""
-    from . import codex_procs
-    cli_path = cli_exe or _agent_bin("codex")
-    m = re.search(r"(\d+\.\d+\.\d+)", (_version_of(cli_path) or "") if cli_path else "")
-    cli = m.group(1) if m else None
-    table = codex_procs.proc_table()
-    ours = set()
-    if st is not None:
-        with contextlib.suppress(Exception):
-            ours = set(codex_procs.ours_alive(st))
-    mine = {os.path.realpath(cli_path)} if cli_path else set()
-    rows = []
-    for pid, cmd in table:
-        if codex_procs.classify(cmd) != "app_server":
-            continue
-        ids = _bin_ids(pid, cmd.split())
-        if pid in ours:
-            mine |= ids
-        rows.append((pid, cmd, ids))
-    servers = []
-    for pid, cmd, ids in rows:
-        same = bool(ids & mine) or pid in ours
-        servers.append({"pid": pid, "version": cli if same else None, "daemon": "daemon" in cmd.split(),
-                        "ours": pid in ours, "other": bool(ids) and not same})
-    mismatch = any(x["daemon"] and x["other"] for x in servers)
-    return {"cli": cli, "servers": servers[:8], "mismatch": mismatch}
-
-
-def check_turn(st: State, serve_status: dict | None = None) -> dict | None:
-    """0269 (#461): the running turn as serve's watchdog sees it (waited, last event, tool children, stuck) + Codex versions."""
-    turn = (serve_status or {}).get("turn") if isinstance(serve_status, dict) else None
-    c = st.agent_config() if st.exists() else None
-    codex = codex_servers(st=st) if (c or {}).get("kind") == "codex" else None
-    if not isinstance(turn, dict) and not codex:
-        return None
-    turn = turn if isinstance(turn, dict) else {}
-    parts = []
-    if turn.get("busy"):
-        parts.append(f"回合进行中 / turn running · {turn.get('waited_s', '?')} s · 最后事件 / last event {turn.get('idle_s', '?')} s 前 / ago"
-                     f" · 子进程 / tool children {turn.get('children', '?')}" + (" · 卡住 / stuck: " + str(turn.get('why')) if turn.get("stuck") else ""))
-    else:
-        parts.append("没有进行中的回合 / no turn running")
-    if codex:
-        parts.append(f"Codex CLI {codex['cli'] or '?'} · app-server " + (", ".join(f"{x['version'] or '?'}" + (" daemon" if x["daemon"] else "") + (" other" if x.get("other") else "")
-                                                                             for x in codex["servers"]) or "—"))
-    bad = turn.get("stuck") or (codex or {}).get("mismatch")
-    hint = ""
-    if (codex or {}).get("mismatch"):
-        hint = ("Codex 后台服务用的不是 Agent J 的 Codex CLI（另一份安装）：把两份更新到同一版本后运行 `agentj service restart` / "
-                "the Codex background server runs another Codex install than Agent J's CLI: update both to one version")
-    elif turn.get("stuck"):
-        hint = "手机「设置 → 紧急修复 → 接管卡住的会话」/ phone: Settings → Emergency repair → Take over the stuck session"
-    row = _c("turn", WARN if bad else OK, " · ".join(parts), hint)
-    row["data"] = {"turn": turn, **({"codex": codex} if codex else {})}
-    return row
 
 
 def check_onboarding(st: State) -> dict:
@@ -1218,34 +1098,6 @@ def check_migration(st: State) -> dict | None:
     return None
 
 
-def check_plaza(st: State) -> dict | None:
-    """#466/#478: only while a plaza package's self-check waits for dependencies — which ones, and the PATH it searched."""
-    try:
-        from . import market
-        recs = [r for r in market.read_installed(st) if (r.get("verify") or {}).get("state") == "pending"]
-    except Exception:  # noqa: BLE001 — a doctor row, never a crash
-        return None
-    if not recs:
-        return None
-    what = "；".join(f"{r['name']}: {', '.join(map(str, r['verify'].get('missing') or ['?']))}" for r in recs[:6])
-    return _c("plaza", WARN, f"广场包依赖待补 / plaza dependencies pending — {what}",
-              f"自检 PATH / self-check PATH {market.VERIFY_PATH}（不含用户目录 / no user folders）；补齐后 / then: agentj plaza verify <name>")
-
-
-def check_install_dir() -> dict | None:
-    """#475: program files under home that another account (usually root) owns block every upgrade with read_only. Only
-    shown when that is the case (outside the fence, POSIX); the hint is the one agentj sudo line (a phone admin card)."""
-    if _fenced() or update.market_managed():
-        return None
-    from .upgrade_owner import blocked
-    own = blocked()
-    if not own:
-        return None
-    who = "root" if own["owner_kind"] == "root" else "另一个账号 / another account"
-    return _c("install-dir", WARN, f"程序目录属于 {who}，这个账号升级不了 / the program folder belongs to {who}: upgrades "
-              "cannot replace it", own["fix"] + "  （手机弹一张管理员密码卡 / one administrator card on the phone）")
-
-
 def check_linger(svc: dict, environ=None) -> dict | None:
     """Linux + systemd: is the user manager kept after logout (`loginctl enable-linger`)? Needed on a server, where nobody
     stays logged in; on a desktop session it is fine either way. None = not applicable."""
@@ -1435,10 +1287,7 @@ def check_heartbeat_prompt():
 
 def run(st: State | None = None, offline: bool = False) -> list[dict]:
     st = st or State()
-    try:
-        svc = service.status()
-    except PermissionError:    # ADR-0269-fenced-doctor
-        svc = {"installed": False, "kind": "unknown"}
+    svc = service.status()
     out = [check_version(), check_python(), check_websockets(), check_platform(), check_state(st), check_keep_awake(), check_browser(st)]
     if offline:
         out += [_c("relay", WARN, "跳过 / skipped (--offline)"), _c("dashboard", WARN, "跳过 / skipped (--offline)")]
@@ -1447,7 +1296,7 @@ def run(st: State | None = None, offline: bool = False) -> list[dict]:
     mig = check_migration(st)
     if mig:
         out.append(mig)
-    out += list(filter(None, [check_local_files(st), check_wechat(st), check_install_dir()]))
+    out += list(filter(None, [check_local_files(st), check_wechat(st)]))
     out += [check_agent(st), check_heartbeat_prompt()]
     setup_row = check_harness_setup(st)
     if setup_row:
@@ -1477,8 +1326,8 @@ def run(st: State | None = None, offline: bool = False) -> list[dict]:
     if reach_row:
         out.append(reach_row)
     out += [check_agent_cli(st, svc), check_harness(svc), check_fence(st), check_danger(st), check_passphrase(st), check_bound(st), check_seat(st), *filter(None, [check_jev_key(svc)]), check_onboarding(st),
-            check_serve(st), check_friends(st, _serve_status(st)), *filter(None, [check_turn(st, _serve_status(st))]), check_service(_seen(st, svc), service.legacy_status()), check_resources(svc), check_alias(),
-            check_estop(st), check_tasks(st), check_activity(st), *filter(None, [check_plaza(st)])]
+            check_serve(st), check_friends(st, _serve_status(st)), check_service(_seen(st, svc), service.legacy_status()), check_resources(svc), check_alias(),
+            check_estop(st), check_tasks(st), check_activity(st)]
     out += check_asr(st)
     out += check_preferences(st)
     out += check_main_identity(st)
@@ -1584,8 +1433,6 @@ def run_upgrade(st=None):
             expected_refresh = reason == 'restart main Agent: identity metadata differs' or reason.startswith('no verified main Agent launch')
             rows.append(_c('main-inject', OK if ok else WARN if expected_refresh else FAIL,
                            reason, 'Send a phone message; if shared Claude needs a new session, tell the owner; never force /clear'))
-    except PermissionError as e:   # ADR-0269-fenced-doctor: the launch audit lives in the hidden state directory
-        rows.append(_denied('main-inject', e))
     except (main_identity.IdentityError, OSError, ValueError):
         rows.append(_c('main-core', FAIL, 'Packaged identity integrity failed', 'Reinstall the verified wheel'))
     recovery = check_upgrade_restart(st, svc)
@@ -1603,7 +1450,7 @@ def run_read_only(st=None):
     st = st or State()
     rows = [check_version(), check_python(), check_platform(), check_state(st), check_heartbeat_prompt()]
     rows += list(filter(None, [check_session_mode(st), check_shared_inbound(st, read_only=True),
-                              check_shared_hooks(st, read_only=True), check_shared_statusline(st), check_install_dir()]))
+                              check_shared_hooks(st, read_only=True), check_shared_statusline(st)]))
     rows += check_main_identity(st)
     rows.append(check_skills())
     rows.append(_c("read-only", OK, "只读检查；未运行安装、修复、重连或主动探测 / Read-only: installation, repair, reconnect and active probes skipped",
@@ -1615,8 +1462,7 @@ def main(as_json: bool = False, offline: bool = False, isolation_only: bool = Fa
     checks = run_read_only() if read_only else [isolation_preflight()] if isolation_only else run_upgrade() if upgrade_only else run(offline=offline)
     # Also handles old apply versions that only know plain `doctor --json`.
     st = State()
-    # ADR-0269-fenced-doctor: inside the fence the upgrade records are hidden (empty on Linux, EPERM on macOS): no repair there.
-    upgrade_context = not read_only and not offline and not isolation_only and not _fenced() and (post_upgrade or update.upgrade_due(st))
+    upgrade_context = not read_only and not offline and not isolation_only and (post_upgrade or update.upgrade_due(st))
     if upgrade_context:
         findings = checks + (check_main_identity(st) if upgrade_only else [])
         if ids := update.repair_upgrade(st, findings):
@@ -1669,8 +1515,6 @@ def check_preferences(st):
             rows.append(_c("voice-command",OK,"local speech command is available; stdout/stderr stay private"))
     except preferences.ConfigError as e:
         rows.append(_c("config",FAIL,str(e),"agentj config validate --json; agentj config rollback"))
-    except PermissionError as e:   # ADR-0269-fenced-doctor: migration markers live in the hidden state directory
-        rows.append(_denied("config", e))
     except OSError:
         rows.append(_c("config",FAIL,"configuration unreadable","agentj config validate --json"))
     hw=voice.hardware()
@@ -1741,8 +1585,6 @@ def check_main_identity(st):
             rows.append(_c("main-inject", status, detail, "从手机发一句话 / Send a message from your phone" if waiting else "Restart serve and send a message" if not ok else ""))
             if old and str(pathlib.Path(old).resolve()) != str(root):
                 rows.append(_c("root-migrate", WARN, "Old files were kept in the previous work folder", "Review CEO roster and paths; no automatic move"))
-    except PermissionError as e:   # ADR-0269-fenced-doctor: the core already verified above; the work-root part could not read
-        rows.append(_denied("work-root", e) if rows else _denied("main-core", e))
     except (main_identity.IdentityError, preferences.ConfigError, OSError, ValueError):
         rows.append(_c("main-core", FAIL, "Main-Agent core or root configuration integrity failed", "Reinstall the trusted package; agentj config validate --json"))
     return rows
@@ -1771,8 +1613,3 @@ def check_skills(home=None) -> dict:
             ([f"同名的是你自己的，保留 / your own copy kept: {', '.join(foreign)}"] if foreign else []) + \
             ([f"技能别名重名，后来的没用上 / alias clash, the later one dropped: {', '.join(clash)}"] if clash else [])
     return _c("skills", WARN, "随包技能 / bundled skills — " + "; ".join(parts), "agentj skill install" if missing else "")
-
-
-for _name in [n for n in list(globals()) if n.startswith("check_") and callable(globals()[n])]:
-    globals()[_name] = _tolerant(_name, globals()[_name])
-del _name

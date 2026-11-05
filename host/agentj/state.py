@@ -137,15 +137,7 @@ class State:
     def migrated_path(self): return self.root / "migrated.json"   # the 0.9 → 0.10 move: from where, when, replaced URLs
 
     def exists(self) -> bool:
-        try:
-            return self.x25519_path.exists() and self.ed25519_path.exists() and self.config_path.exists()
-        except PermissionError:
-            # ADR-0269-fenced-doctor: the macOS fence denies the hidden state directory (EPERM) where bwrap shows an empty
-            # tmpfs (ENOENT → False). Inside the fence both mean "not visible here"; outside it a denial is a real fault.
-            from . import fence
-            if fence.inside():
-                return False
-            raise
+        return self.x25519_path.exists() and self.ed25519_path.exists() and self.config_path.exists()
 
     # ------------------------------------------------------------ init
     def init(self, relay: str = DEFAULT_RELAY, web: str = DEFAULT_WEB, force: bool = False) -> dict:
@@ -854,8 +846,7 @@ class State:
                   "via", "plugin",   # P539: a 免问 grant's binding kind and the harness plugin id ("<name>@<marketplace>")
                   "tier", "ret", "age_h",   # P559: P551's ask `tier` (uv | hold | card) was dropped before this; wechat_forward ret / age_h
                   "mode", "types", "server", "bound",   # #420: a refused Codex elicitation's mode / field types / MCP server name / bound (no values)
-                  "harness", "op", "name_hash",   # #427: account add / use / rename / remove (name as sha256 8 hex, never a token)
-                  "into", "uncertain", "outcome"}   # w2-sec R3-6: msg_steered's target turn id + uncertain flag; bot_handoff outcome word
+                  "harness", "op", "name_hash"}   # #427: account add / use / rename / remove (name as sha256 8 hex, never a token)
 
     def log(self, ev: str, **kw) -> None:
         rec = {"ts": int(time.time()), "ev": ev, **{k: v for k, v in kw.items() if k in self.LOG_FIELDS}}

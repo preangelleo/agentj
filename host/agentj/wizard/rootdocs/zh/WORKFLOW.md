@@ -14,8 +14,7 @@
 - 只经向导落盘：先写到 `.agentj/wizard-staging/`，再 `agentj wizard apply`、`agentj wizard doctor`。董事长改过的文件不会被覆盖。建好后登记进 ROLES.md 花名册和 STRUCTURE.json。
 
 ## 派活、读报告、返工
-- 派活时附上董事长原话和查到的证据。每张派单写清四样：职责、能力（可用的技能、命令、目录）、验收标准，以及一条预先写好的**验收命令**（一跑就输出 PASS/FAIL 或 VERDICT，如 `agentj capability report-check --dir <工作流> --verdict ok --json`）。写不出验收命令，就还没到派的时候。
-- 助理只跑验收命令、看结论，不下场排查、诊断、修改或发布；后台活完成后的核对归助理，不推给董事长。
+- 派活时附上董事长原话和查到的证据。
 - 读实际报告和末尾的 VERDICT: ok | attention | fail。退出码不能证明成功；缺报告、被跳过都算未完成。
 - 失败：把证据派给所属 CEO 修复并重跑，读新报告再关闭。同一个错修进它的源头（文档、技能或命令行），不让它犯第二次。
 

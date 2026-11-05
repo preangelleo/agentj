@@ -372,7 +372,6 @@ class CodexAgent(Agent):
     """One long-lived `codex app-server`; one thread per conversation; approvals to the phone."""
     kind = "codex"
     said, last_note, tail_cut = False, 0.0, None          # P282 defaults (instance values set in __init__ / tail_reset)
-    turn_review, steer_off, steer_n = False, None, 0      # 0269-w2-steer: review turn · pid without turn/steer · in flight
 
     def __init__(self, host, cfg: dict, persist: bool = True, research: bool = False):
         if not persist:
@@ -462,17 +461,6 @@ class CodexAgent(Agent):
 
     def argv(self) -> list[str]:
         return [_agentmod._bin("AGENTJ_CODEX_BIN", "codex") or "codex", "app-server"]
-
-    def submit(self, text) -> None:
-        """0269-w2-steer (#471): an owner's message during the owner's running turn goes into it (codex_steer), else queued."""
-        from . import codex_steer
-        if codex_steer.eligible(self, text) is None:
-            self.steer_n += 1
-            self._bg(codex_steer.steer_or_queue(self, text, super().submit))
-        elif self.steer_n:
-            self._bg(codex_steer.after_steers(self, text, super().submit))
-        else:
-            super().submit(text)
 
     def _bg(self, coro) -> None:
         t = asyncio.create_task(coro)
@@ -1161,7 +1149,6 @@ class CodexAgent(Agent):
             params = {"threadId": self.tid, "delivery": "inline", "target":
                       {"type": "custom", "instructions": native[1]} if native[1] else {"type": "uncommittedChanges"}}
         method = "review/start" if review else "turn/start"
-        self.turn_review = review
         rev = getattr(self, "revert", None)
         if not review and self.cfg.get("model"):
             params["model"] = self.cfg["model"]

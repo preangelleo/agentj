@@ -38,9 +38,8 @@ def _owner(text: str) -> str:
 
 
 class Masker:
-    def __init__(self, mask=None, raw: bool = False):
+    def __init__(self, mask=None):
         self.mask = mask or _owner
-        self.raw = raw           # 0.26.9 (ADR-0269-pty): term_pty.VtMasker feeds visible text only — keep \r, strip nothing
         self.carriage_count = 0  # P455: metadata only; CR semantics survive owner-output normalization
         self.esc = ""        # an escape sequence cut at the end of the last chunk
         self.held = ""       # stripped text not released yet (a token run / a partial PEM header)
@@ -65,8 +64,6 @@ class Masker:
 
     def _strip(self, text: str) -> str:
         self.carriage_count += text.count("\r")
-        if self.raw:
-            return text
         text = self.esc + text
         self.esc = ""
         i = text.rfind("\x1b")
@@ -133,17 +130,13 @@ class Masker:
             return self._join(text, False)
         return self._scan(text, False)
 
-    def flush(self, force: bool = False) -> str:
-        """Idle: release a held run only when it is too short to be a key (a prompt, `50%`, `y/N`). 0.26.9 `force`
-        (term_pty only): the held text is the echo of what the owner just typed, or the shell's own line editor is in
-        front — released whole (still through owner_text with its context) and no run is left open."""
-        if self.pem or not self.held or "-----" in self.held:
-            return ""
-        if not force and (self.run or len(self.held) >= FLUSH_MAX):
+    def flush(self) -> str:
+        """Idle: release a held run only when it is too short to be a key (a prompt, `50%`, `y/N`)."""
+        if self.pem or self.run or not self.held or len(self.held) >= FLUSH_MAX or "-----" in self.held:
             return ""
         held, self.held = self.held, ""
         t = _TOKEN_TAIL.search(held)
-        self.run = "" if force else (t.group() if t else "")
+        self.run = t.group() if t else ""
         return self._release(held)
 
     def close(self) -> str:

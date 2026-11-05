@@ -25,8 +25,7 @@ _WRAPPERS = {"sudo", "env", "nohup", "time", "command", "builtin", "nice", "ioni
              "doas", "chrt", "taskset", "unbuffer"}
 _SAFE_ARGS = {"--version", "-V", "--help", "-h", "-v"}
 DROP_ENV = {"BASH_ENV", "ENV", "PROMPT_COMMAND", "LD_PRELOAD", "LD_LIBRARY_PATH", "PS1", "PS2", "PS4", "HISTFILE", "SHELLOPTS",
-            "BASHOPTS", "CDPATH", "GLOBIGNORE", "SUDO_ASKPASS", "INPUTRC",
-            "PS0", "MAIL", "MAILPATH", "MAILCHECK"}   # w2-sec R3-1: PS0 / a MAILPATH message expand $(…) before / between commands
+            "BASHOPTS", "CDPATH", "GLOBIGNORE", "SUDO_ASKPASS", "INPUTRC"}
 _DROP_ENV = re.compile(r"(?:_KEY|_TOKEN|_SECRET)$|PASSWORD|^AGENTJ_|^BASH_FUNC_|^DYLD_|^LD_|^GCONV_PATH$", re.I)   # R3: every LD_* and GCONV_PATH
 REDLINE = {"injection": ("下载后直接运行，或者像是注入的指令", "downloads and runs code, or looks injected"),
            "credentials": ("会读出或发出密码、密钥", "reads or sends a password or key"),
@@ -151,14 +150,6 @@ class Term:
         self.reader = self.writer = None      # R3 (M-1): our end of the shell's socketpair (no /proc-reopenable pipe)
         mark = secrets.token_hex(8)           # R3: the OSC 133 markers carry a per-session nonce PS1 holds (never exported)
         self.prompt, self.ready = f"\x1b]133;A;{mark}\x07", f"\x1b]133;R;{mark}\x07"
-        # 0.26.9 (ADR-0269-pty): "line" (P408) or "pty"; contract §B — who gets term_out, whose term_in is taken
-        self.kind, self.viewers, self.writers = "line", [s], {s.device}
-        self.lpre = f"\x1b]133;L;{mark};"     # the shell's report of the line being edited (pty)
-        self.io = self.tty = self.rc_dir = self.report = self.early = self.vmask = self.hold = self.hold_n = None
-        self.cols, self.rows, self.edit, self.edit_ok, self.paste, self.pending = 80, 24, "", True, False, ""
-        self.in_win, self.in_bytes, self.in_note, self.enter_seq, self.resized, self.typed = 0.0, 0, False, 0, -1e9, ""
-        self.cg = None                        # w2-sec N-3: this session's cgroup.procs (term_pty.cg_make), None = none here
-        self.hold_key, self.alt, self.after_task = "\r", False, None   # 0.26.9 w2-sec: held key (H-1), alt screen (M-4), M-2 poll
 
 
 # ---------------------------------------------------------------- history (#184)

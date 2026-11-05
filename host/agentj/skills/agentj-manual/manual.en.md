@@ -447,10 +447,6 @@ When Agent J on the Agent J host stops answering, a small rescue helper there an
 
 Under Emergency repair, Terminal Commands offers fixed terminal checks with Run. The read-only health check (`doctor --read-only`) uses the paired device signature and needs no Face ID, including on a large screen. Status, service status, rescue status, update check and reconnect still require passkey verification; a large screen without it asks you to confirm on your phone. Older hosts may still require Face ID for checks. Output is masked on the host, shown below as text and recorded in the operation log. Tap × to close the result.
 
-**Take over the stuck session** (in **Emergency repair**): for an AI that keeps answering and ignores Stop. It interrupts the turn, restarts the AI background program Agent J uses if it is still busy after 10 seconds, and reconnects the same conversation; nothing is lost.
-
-**Official remote assist: built, not open yet.** It does not show on the phone until it opens. Then, under ② in **Emergency repair**, you allow 15, 30 or 60 minutes with Face ID. Agent J support can only send task text to your Agent, which follows its usual rules with no extra permissions; spending, deleting, sending or password steps still ask you one by one. **Watch live** shows every task and reply; **Take back** stops it at once. Only your Agent's replies to those tasks go to support, with password- or key-like text held back. Logged on the Agent J host for 30 days: `agentj assist status`, `agentj assist log`, `agentj assist revoke`.
-
 ### Web terminal
 
 **Open the terminal inside the Olares app:** choose **Open web terminal** on the Agent J app’s setup page, or **Open Olares web terminal** under Settings → Safety on a paired remote. Olares verifies sign-in in the new tab. The shell uses the same user, home and configuration inside the Agent J app. Use `agentj status` for status and `agentj tasks list --json` for your background tasks; do not print passwords, keys, tokens or complete process command lines. This does not require enabling Agent J’s line-mode terminal or an extra Agent J Face ID check, and does not provide line mode’s output masking, operation log or command confirmation. See [Olares web terminal](https://agentj.app/docs/web-terminal/#olares).
@@ -460,8 +456,6 @@ The following describes the line-mode terminal on ordinary hosts.
 Settings → Safety → Web terminal gives you the Agent J host's command line in a computer browser: you type a whole line, the host runs it and the output shows in the browser. It works only in a computer browser; a phone says only **For safety and convenience, the web terminal can only be used from a computer browser.** It is off by default. In a computer browser, tap **Switch on and open**, confirm with Face ID and type the Agent J host's login password once: it is switched on for this browser and opens full screen right away. Or run `agentj terminal enable` in the host's terminal, check the 6-digit match code and confirm with Face ID on a remote that has it. The Agent and scripts cannot switch it on. A device without Face ID gets **Set up Face ID** first. After that, every tap on **Open web terminal** needs Face ID; while no Agent J host login password is remembered, you type it once in the terminal page, encrypted before it leaves. A session lasts at most 15 minutes (up to 60) and closes after 5 minutes without input, after 60 seconds with the browser on another tab or minimised, or when the connection drops; it keeps a full operation log, which stays on the host for 30 days ([what is logged and who can read it](https://agentj.app/docs/web-terminal-log/)). Never type passwords into the terminal: `sudo` asks for Face ID instead. Risky lines need Run plus Face ID once more — that only catches slips. It does not work while the connection is down; use Emergency repair above then. It works on Linux, macOS (zsh by default) and WSL hosts. In an emergency, scan-pair a friend's computer browser and unbind it in Remotes afterwards; its terminal closes the moment you do. Friends, web-version remotes, the three ways the password is kept and what each protects against: [Web terminal](https://agentj.app/docs/web-terminal/).
 
 A message that starts with `!` (for example `!df -h`) runs as a line in the web terminal instead of going to the Agent as chat: a result card shows the output, then the command and its output go to the Agent. The terminal opens full screen; click the ✕ at the top right, press Esc or drag the handle at the top down to collapse it, and it keeps running behind **Terminal · N min left** above the message box. The Agent can open the terminal with a command filled in (you check it and press Enter yourself) and can read its output. That output, like the output of `!` commands, goes to your AI model provider after an attempt to hide common passwords and keys, so do not print secrets there. Details: [`!` commands](https://agentj.app/docs/web-terminal/#bang).
-
-**Full terminal (from 0.26.9)**: with the Agent J host and page on 0.26.9 or newer, the web terminal is a full terminal: Tab completion, arrow keys, Ctrl+C/D/Z, and `vim`, `top` or `claude` run. It does not read your `~/.bashrc` or `~/.zshrc`. See [Full terminal](https://agentj.app/docs/web-terminal/#full-terminal).
 
 ### Models & API keys
 
@@ -487,8 +481,6 @@ Subscription /login and Codex's ChatGPT sign-in renew themselves, and provider k
 fixed date. Once a day the Agent J host sends each signed-in AI one very short, tool-free test message. If the login no longer
 works (for example you signed out of all devices on the web), you are told at once to rescue it; running out of balance or
 hitting a rate limit never asks you to sign in again.
-
-**Sign in again under the reply**: when a reply says the AI is signed out, expired or needs device confirmation, **Sign in again** appears under it (so does a `/login` in the reply). Tap it, confirm with Face ID and approve on the authorization page: for Claude Code paste the code into **Paste the authorisation code**, for Codex enter its code on that page. It counts as signed in only once a test message in your current conversation gets a reply. OpenCode: **Other ways to sign in**.
 
 ### Several accounts per AI tool {#accounts}
 
@@ -814,11 +806,7 @@ Centred circular notices show one short status word: Sent, Copied or Saved (up t
 
 ## Queued messages and quiet periods
 
-A queued message shows **Previous task still running · waiting N min** and **Stop previous task**: on a 0.26.9 Agent J host it first asks you to confirm **Force-end this turn**, interrupts the earlier task and after 10 seconds ends that turn's processes; the conversation is kept. On a queued notice from the Agent J host the button appears once the task is stuck or has waited 2 minutes. `/clear`, `/new` and **Reset connection** no longer wait behind a stuck turn.
-
-After three minutes both queued and without new earlier-task output, the page reports that quiet period; this does not prove the task is stuck. New output resets the timer, and a reload or reconnection starts a new observation. A working task is never stopped automatically. From 0.26.9 a turn that is really stuck (no card waiting, no tool running, yet nothing for 5 minutes or your message waiting 10) recovers by itself: the Agent J host interrupts it, restarts the AI program Agent J started if needed, continues the same conversation and says: It got stuck just now — recovered automatically. Stop retains its existing handling of unsent messages.
-
-**Sending while the AI works**: with Codex, when supported, your message joins the running turn (**Added to the current turn**); otherwise it queues and is never dropped. The rest of the earlier turn's output continues in a new card at the bottom; the old card says **Continued below**.
+Use Stop previous task on a queued message when you want to interrupt the earlier task. After three minutes both queued and without new earlier-task output, the page reports that quiet period; this does not prove the task is stuck. New output resets the timer, and a reload or reconnection starts a new observation. Tasks are never stopped automatically; Stop retains its existing handling of unsent messages.
 
 ## Continue from the failed step
 
