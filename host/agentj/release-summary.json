@@ -1,5 +1,5 @@
 {
-  "version": "0.26.9",
-  "zh": "[all] 回合卡住自动恢复；网页终端成了完整终端；聊天里一键重新登录；可授权官方远程协助；少打扰与预算；sudo 卡「用 Face ID 记住」真的会记住；广场自检、程序目录属主、OpenCode 2.x 等修复。",
-  "en": "[all] Stuck turns self-heal; full web terminal; sign in again from chat; official remote help; fewer prompts; budget; sudo Face ID remember; plaza fixes."
+  "version": "0.26.10a1",
+  "zh": "[all] 联系页英文措辞微调；这是发布流程整改后的第一版（一条命令自动发完）。",
+  "en": "[all] A small wording fix on the Contact page; the first release shipped by the new one-command release process."
 }
