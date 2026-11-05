@@ -13,7 +13,8 @@ does (the text of the message):
     PATCH: add|update|delete <file>   one file change (an item/started fileChange, then item/fileChange/requestApproval)
     PERM: <path>           item/permissions/requestApproval for write access to <path>
     NET: <cmd>             a command with a networkApprovalContext
-    SLEEP: <s>             works for s seconds (turn/interrupt ends it: status "interrupted")
+    SLEEP: <s>             works for s seconds (turn/interrupt ends it: status "interrupted"); input steered into it
+                           (`turn/steer`, steer mode 1) is answered in the turn as "STEERED: <text>"
     ASK: <json questions>  item/tool/requestUserInput; replies "ANSWERS: <the answers it got>"   (PROTOCOL §10.7)
     FORM                   mcpServer/elicitation/request; replies "FORM: <the answer>"
     AUTOCOMPACT [legacy]   Codex's own compaction inside the turn (contextCompaction item, meter → 5000; `legacy` adds
@@ -25,6 +26,11 @@ approval_policy for config/read (JSON); FAKE_CX_THREADS = thread ids that "alrea
 human's effective sandbox (read-only | workspace-write | danger-full-access, default the last), reported by thread/start|resume,
 and config/read's `sandbox_mode` (an explicit owner setting); FAKE_CX_THREAD_SANDBOX = the sandbox a pre-existing thread kept
 (what a resume without `sandbox` gets, like Codex 0.159.2).
+Steer mode (0269-w2-steer) = the file `$FAKE_CX_LOG.steer` (inside the Agent's folder, so it reaches the fenced stand-in
+without a new environment name): absent = no `turn/steer` (-32601, like a server without it); `1` = `turn/steer {threadId,
+expectedTurnId, input}` → `{turnId}` while that turn runs, else -32600 「no active turn to steer」 / 「expected active turn id」;
+`refuse` = every steer answers -32600 「cannot steer a review turn」 (a refusal mid-way); `hang` = the input goes into the
+turn but the request is never answered (security-r2 N-4: an unanswered steer).
 """
 import json
 import os
@@ -38,7 +44,7 @@ import uuid
 LOCK = threading.Lock()
 WAITS: dict = {}            # server request id → [Event, response]
 THREADS: dict = {}          # id → {"policy", "sandbox", "model", "total", "last", "ephemeral"}
-STATE = {"n": 0, "interrupt": False, "turn": None}
+STATE = {"n": 0, "interrupt": False, "turn": None, "active": False, "steer": []}
 SAFE = ("ls", "pwd", "cat", "echo")
 
 
@@ -197,7 +203,7 @@ def p57_notes(text, logf):
 
 def run_turn(tid, turn, text):
     STATE["interrupt"] = False
-    STATE["turn"] = turn
+    STATE["turn"], STATE["active"] = turn, True
     note("turn/started", {"threadId": tid, "turn": {"id": turn, "status": "inProgress"}})
     status = "completed"
     if ("（Agent J：" in text or "(Agent J: " in text) and not text.startswith("[agentj:"):
@@ -238,6 +244,8 @@ def run_turn(tid, turn, text):
                 if STATE["interrupt"]:
                     status = "interrupted"
                     break
+                while STATE["steer"]:
+                    say(tid, turn, "STEERED: " + STATE["steer"].pop(0))
                 time.sleep(0.05)
             if status == "completed":
                 say(tid, turn, "slept")
@@ -262,6 +270,8 @@ def run_turn(tid, turn, text):
             say(tid, turn, f"ECHO: {text}")
         usage(tid, 1000)
     finally:
+        with LOCK:
+            STATE["active"] = False
         note("turn/completed", {"threadId": tid, "turn": {"id": turn, "status": status, "items": []}})
 
 
@@ -278,6 +288,14 @@ def thread_answer(tid, p):
     return {"thread": {"id": tid, "cwd": p.get("cwd")}, "model": t["model"], "cwd": p.get("cwd"),
             "approvalPolicy": t["policy"], "approvalsReviewer": p.get("approvalsReviewer") or "auto_review",
             "sandbox": SANDBOX[sb]}
+
+
+def steer_mode():
+    try:
+        with open(os.environ.get("FAKE_CX_LOG", "") + ".steer") as f:
+            return f.read().strip()
+    except OSError:
+        return ""
 
 
 def handle(m):
@@ -316,6 +334,16 @@ def handle(m):
         text = "".join(x.get("text", "") for x in p.get("input") or [])
         threading.Thread(target=run_turn, args=(tid, turn, text), daemon=True).start()
         return {"turn": {"id": turn, "status": "inProgress", "items": []}}
+    if method == "turn/steer" and steer_mode():
+        if steer_mode() == "refuse":
+            return {"__error": {"code": -32600, "message": "cannot steer a review turn"}}
+        with LOCK:
+            if not STATE["active"]:
+                return {"__error": {"code": -32600, "message": "no active turn to steer"}}
+            if p.get("expectedTurnId") != STATE["turn"]:
+                return {"__error": {"code": -32600, "message": f"expected active turn id `{p.get('expectedTurnId')}` but found `{STATE['turn']}`"}}
+            STATE["steer"].append("".join(x.get("text", "") for x in p.get("input") or []))
+            return {"__noreply": True} if steer_mode() == "hang" else {"turnId": STATE["turn"]}
     if method == "turn/interrupt":
         STATE["interrupt"] = True
         return {}
@@ -380,6 +408,8 @@ def main():
         if "id" not in m:                                       # a notification (initialized)
             continue
         r = handle(m)
+        if isinstance(r, dict) and r.get("__noreply"):
+            continue
         if isinstance(r, dict) and "__error" in r:
             out({"id": m["id"], "error": r["__error"]})
         else:

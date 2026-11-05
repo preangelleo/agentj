@@ -22,6 +22,7 @@ from . import term_mac
 from .term_askpass import NO_PYTHON, TOKEN_ENV, Helper, SudoDesk, in_session, safe_python
 from .term_bang import BangDesk, line_problem
 from .term_vshare import VshareDesk
+from .term_pty import CAP as PTY_CAP, PtyDesk, VtMasker, pick_shell as pty_shell, size_ok   # 0.26.9 (ADR-0269-pty): the PTY mode
 from .term_mask import Masker
 from .term_shell import (HIST_SETUP, Term, _sha, checked_sudo, classify, local_ok, platform_ok, scrub_history, service_keys,
                          shell_env)
@@ -29,6 +30,7 @@ from .term_shell import (HIST_SETUP, Term, _sha, checked_sudo, classify, local_o
 TOOL = "AgentJTerminal"            # the host card for `enable` / `allow` (approval_level.HOST_CARDS, never auto-allowed)
 PHONE_TYPES = ("term_open", "term_line", "term_keys", "term_close", "term_forget", "term_sudo_ok", "term_sudo_no")
 PHONE_TYPES += ("vault_share",)     # P414 (§37.11): term_vshare.py
+PHONE_TYPES += ("term_in", "term_resize", "term_confirm_no")   # 0.26.9 (§38.15): PTY keys / size / 「取消」 (term_pty.py)
 ESTOP_OK = ("term_close", "term_forget")
 NONCE_TTL, CONFIRM_TTL, PENDING_MS, CARD_TTL = 120, 120, 180000, 300
 HIDDEN_S, KILL_GRACE, CAST_DAYS = 60, 3.0, 30
@@ -49,7 +51,7 @@ def line_needs_face(line: str) -> bool:
     except Exception:  # noqa: BLE001
         return True
 
-class Desk(SudoDesk, BangDesk, VshareDesk):
+class Desk(SudoDesk, BangDesk, VshareDesk, PtyDesk):
     """serve's glue (`h` = serve.Host): phone messages, `terminal_cfg`, the host info block, close on e-stop / stop.
     P414: BangDesk (term_bang.py: 「!」, transcript, terminal_go / terminal_read), VshareDesk (term_vshare.py)."""
 
@@ -64,6 +66,8 @@ class Desk(SudoDesk, BangDesk, VshareDesk):
         self.proc = "/proc"
         self.python: str | None = None       # R3 (H-1): the helper's system interpreter ("" = none; tests may set it)
         self.shell: str | None = None        # P437: "bash" / "zsh" (None = this platform's: zsh on macOS, bash elsewhere)
+        self.pty_ok = None                   # 0.26.9: tests may force the PTY answer (None = term_pty.pty_ok())
+        self.pty_shell: str | None = None    # 0.26.9: tests may pin the PTY shell (None = the owner's login shell)
         self.watch: asyncio.Task | None = None
         self._bang_init()
         self._vshare_init()
@@ -108,7 +112,11 @@ class Desk(SudoDesk, BangDesk, VshareDesk):
                "web_ok": bool(e) and (e["web"] or not store.is_web(self.st, device)), "minutes": cfg["minutes"],
                "idle_s": store.IDLE_S, "open": t is not None,
                "pk": bool(device) and self.st.passkey_of_device(device) is not None,   # P417 #185: 「先设置 Face ID」
-               "kind": store.device_kind(self.st, device)}   # P417 #185: phone → 「只能在电脑浏览器里操控」; desktop may enable
+               "kind": store.device_kind(self.st, device),   # P417 #185: phone → 「只能在电脑浏览器里操控」; desktop may enable
+               "modes": ["line", "pty"] if self.pty_supported() else ["line"]}   # 0.26.9 (§38.15): cap term_pty1
+        why = self.pty_blocked()
+        if why:                                  # w2-sec H-3: the page says why the full terminal is not offered
+            out["pty_why"] = why
         from .olares_terminal import external_url
         url = external_url()
         if url:
@@ -136,12 +144,31 @@ class Desk(SudoDesk, BangDesk, VshareDesk):
         if t == "term_forget":
             return await self.on_forget(s, obj)
         x = self.term
-        if x is None or obj.get("id") != x.id or s.device != x.device or x.closing:
+        if x is None or obj.get("id") != x.id or x.closing:
             self.st.log("control_refused", device=s.device, action=t, reason="not_open")
+            return
+        if t == "term_in":                                   # 0.26.9 (§B): only from a device on this session's writer list
+            if s.device not in x.writers:
+                self.refused(s.device, t, "not_writer")      # w2-sec L-4: once per minute, not once per frame
+                return
+            return await self.on_term_in(x, s, obj)
+        if s.device != x.device:
+            self.st.log("control_refused", device=s.device, action=t, reason="not_open")
+            return
+        if t == "term_resize":
+            return await self.on_resize(x, s, obj)
+        if t == "term_confirm_no":                           # 0.26.9: 「取消」 on a confirm — a held PTY Enter is erased now
+            n = obj.get("n")
+            if isinstance(n, str) and x.kind == "pty" and x.hold == "confirm" and n == x.hold_n:
+                self._pty_cancel(x, "owner")
+            elif isinstance(n, str):
+                x.confirms.pop(n, None)
             return
         if t == "term_line":
             return await self.on_line(x, s, obj)
         if t == "term_keys":
+            if obj.get("key") in ("int", "quit") and x.kind == "pty":    # 0.26.9: the line discipline sends the signal
+                return await self.on_term_in(x, s, {"d": "\x03" if obj["key"] == "int" else "\x1c"})
             if obj.get("key") in ("int", "quit"):
                 await asyncio.to_thread(self._signal_children, x, signal.SIGINT if obj["key"] == "int" else signal.SIGQUIT)
             return
@@ -199,7 +226,12 @@ class Desk(SudoDesk, BangDesk, VshareDesk):
         if not wire.is_rid(r):
             return
         mode = obj.get("mode", "line")       # P417 #185: "enable" = switch on for this remote, then open
-        if mode not in ("line", "enable"):
+        if mode not in ("line", "enable", "pty"):
+            return await self._res(s, r, "term_open", False, why="shape")
+        size = (obj.get("cols"), obj.get("rows"))     # 0.26.9 (§38.15): pty needs the window size (enable + size = pty)
+        if mode == "pty" and not self.pty_supported():
+            return await self._res(s, r, "term_open", False, why="fence_dev" if self.pty_blocked() else "os")
+        if mode == "pty" and not size_ok(*size):
             return await self._res(s, r, "term_open", False, why="shape")
         why, extra = self._refusal(s, mode == "enable")
         if why:
@@ -215,10 +247,12 @@ class Desk(SudoDesk, BangDesk, VshareDesk):
             n = secrets.token_hex(16)
             m = store.meta(self.st, s.device)
             salt = m["salt"] if m and m["mode"] == "prf" else secrets.token_bytes(32)
-            vn = secrets.token_bytes(32) if m and m["mode"] == "prf" and m["cred"] == pk["id"] and mode == "line" else None   # P414 (M3)
+            vn = secrets.token_bytes(32) if m and m["mode"] == "prf" and m["cred"] == pk["id"] and mode in ("line", "pty") else None   # P414 (M3)
             priv = X25519PrivateKey.generate()
             from .elevate import _raw_pub
             self.opens[n] = {"device": s.device, "r": r, "at": now, "salt": salt, "priv": priv, "vn": vn, "mode": mode}
+            if self.pty_supported() and size_ok(*size) and mode in ("pty", "enable"):
+                self.opens[n]["size"] = size
             ch = passkey.elevate_challenge(self.h.channel, s.device, n, "term_open", n, controls.object_digest("term_open", target))
             return await self._res(s, r, "term_open", False, why="passkey_required", n=n, fa=pk["id"], fa_s=passkey.pk_state(pk), fa_ch=wire.b64u(ch),
                                    salt=wire.b64u(salt), epk=wire.b64u(_raw_pub(priv)), **({"vn": wire.b64u(vn)} if vn else {}))
@@ -255,6 +289,8 @@ class Desk(SudoDesk, BangDesk, VshareDesk):
             self.st.log("control_refused", device=s.device, action="term_open", reason=why)
             self._log("term_open", s.device, "refused:" + why, target)
             return await self._res(s, r, "term_open", False, why=why, **(extra if why == "locked" else {}))
+        if size_ok(*size) and "size" in pend:
+            pend["size"] = size                   # step 2's size (the window may have changed since step 1)
         self._log("term_open", s.device, "start", target, sig=obj.get("sig"), n=n, ts=obj.get("ts"))
         self.opening = s.device
         self.h._bg(self._open(s, r, pend, prf, pk), "term_open")
@@ -312,7 +348,7 @@ class Desk(SudoDesk, BangDesk, VshareDesk):
                 why = "estop" if self.h.stopped() else "busy"
             if not why:
                 try:
-                    await self._start(s, r, mode, pw)
+                    await self._start(s, r, mode, pw, pend.get("size"))
                     pw = None
                 except Exception:
                     pw = None                         # the Term owns it now; close() wipes it
@@ -387,9 +423,11 @@ class Desk(SudoDesk, BangDesk, VshareDesk):
             wipe(v)
         return res
 
-    async def _start(self, s, r, mode, pw) -> None:
+    async def _start(self, s, r, mode, pw, size=None) -> None:
         cfg = store.read_config(self.st)
         x = Term(s, r, mode, pw, cfg["minutes"], self.clock, self.wall)
+        if size is not None and self.pty_supported():          # 0.26.9 (ADR-0269-pty)
+            x.kind, (x.cols, x.rows), x.vmask = "pty", size, VtMasker()
         self.term = x
         self.tr_start(x, store.entry(cfg, s.device) or {})        # P414: the transcript (none for a friend's session, L3)
         self.owner_acted()
@@ -418,6 +456,14 @@ class Desk(SudoDesk, BangDesk, VshareDesk):
         if sys.platform == "darwin":
             env = term_mac.fix_env(env)                  # P437: launchd's bare PATH and C locale
         env.update(INPUTRC="/dev/null", TERM="dumb", **{TOKEN_ENV: x.token})
+        from . import term_pty as _tp                # w2-sec N-3: the session's own cgroup where serve may make one (Linux)
+        env["PATH"] = _tp.system_first(env.get("PATH"))      # w2-sec R3-4: system dirs before user-writable ones
+        x.cg = await asyncio.to_thread(_tp.cg_make, secrets.token_hex(8))
+        if x.cg:
+            env["AJ_TERM_CG"] = x.cg
+        if x.kind == "pty":
+            shell = pty_shell(self.pty_shell)
+            x.shell = shell
         # #184: the shell reads this file at start-up, not ~/.bash_history / ~/.zsh_history, and the space-led setup lines
         # are not recorded
         env.update(HISTFILE=str(hist), HISTSIZE="2000", HISTFILESIZE="2000", HISTCONTROL="ignorespace")
@@ -427,7 +473,11 @@ class Desk(SudoDesk, BangDesk, VshareDesk):
         mark = x.prompt[len("\x1b]133;A;"):-1]
         await asyncio.to_thread(self._scrub, hist, shell)   # #184: a file an older version wrote is cleaned too
         nopy = term_mac.NO_PYTHON if sys.platform == "darwin" else NO_PYTHON
-        if shell == "zsh":
+        if x.kind == "pty":
+            from .term_shell import HIST_IGNORE
+            await self._pty_spawn(x, cwd, env, str(hist), sudo, x.helper is not None, mark, HIST_IGNORE, nopy, shell)
+            argv = setup = None
+        elif shell == "zsh":
             from .term_shell import HIST_IGNORE
             argv = list(term_mac.ZSH_ARGV)
             setup = term_mac.zsh_setup(str(hist), sudo, x.helper is not None, mark, HIST_IGNORE, nopy)
@@ -444,33 +494,43 @@ class Desk(SudoDesk, BangDesk, VshareDesk):
             # sent right after it never takes a stale setup prompt as its own (an empty 「!」 result); zsh_setup ends the same way
             setup += [f"PS1=$'\\\\[\\e]133;A;{mark}\\a\\\\]\\\\w \\\\$ '; PS2='> '",
                       f"set -o history; printf '\\033]133;R;{mark}\\007'"]
-        ours, theirs = socket.socketpair()   # R3 (M-1): a socket, not a pipe — /proc/<pid>/fd/0 cannot be reopened (ENXIO)
-        try:
-            x.proc = await asyncio.create_subprocess_exec(*argv, stdin=theirs.fileno(), stdout=theirs.fileno(),
-                                                          stderr=theirs.fileno(), cwd=cwd, env=env, start_new_session=True)
-        finally:
-            theirs.close()
-        x.reader, x.writer = await asyncio.open_unix_connection(sock=ours)
-        x.writer.write(("\n".join(setup) + "\n").encode())
-        await x.writer.drain()
+        if x.kind == "line":
+            ours, theirs = socket.socketpair()   # R3 (M-1): a socket, not a pipe — /proc/<pid>/fd/0 cannot be reopened (ENXIO)
+            if x.cg:                                 # w2-sec N-3: into the session's cgroup before bash runs anything
+                argv = [sys.executable, "-I", "-S", "-c", _tp.CG_SHIM, *argv]
+            try:
+                x.proc = await asyncio.create_subprocess_exec(*argv, stdin=theirs.fileno(), stdout=theirs.fileno(),
+                                                              stderr=theirs.fileno(), cwd=cwd, env=env, start_new_session=True)
+            finally:
+                theirs.close()
+            x.reader, x.writer = await asyncio.open_unix_connection(sock=ours)
+            x.writer.write(("\n".join(setup) + "\n").encode())
+            await x.writer.drain()
         x.cast = await asyncio.to_thread(self._cast_open, x)
-        x.tasks.append(self.h._bg(self._pump(x), "term_pump"))
+        x.tasks.append(self.h._bg(self._pty_pump(x) if x.kind == "pty" else self._pump(x), "term_pump"))
         if self.watch is None or self.watch.done():
             self.watch = self.h._bg(self._watch(), "term_watch")
-        self.st.log("term_open", device=x.device, result="ready", status=mode)
+        self.st.log("term_open", device=x.device, result="ready", status=mode, kind=x.kind)
         self._notice(f"网页终端已打开（{self.h._dname(x.device) or x.device}，最长 {cfg['minutes']} 分钟）",
                      f"Web terminal opened ({self.h._dname(x.device) or x.device}, up to {cfg['minutes']} min)")
         m = {"t": "term_ready", "r": r, "id": x.id, "expires_at": x.expires_at, "idle_s": store.IDLE_S, "sudo": mode,
-             "cwd": service.tilde(cwd)}
+             "cwd": service.tilde(cwd), "mode": x.kind}
         await self.h.send_app(s, m)
         self._prefs()
 
     # ------------------------------------------------------------ lines
     async def on_line(self, x: Term, s, obj: dict) -> None:
         line, seq = obj.get("line"), obj.get("seq")
-        if not isinstance(line, str) or type(seq) is not int or len(line.encode("utf-8", "replace")) > LINE_MAX or \
+        # 0.26.9: the signed answer to a held PTY Enter carries the shell's own line (a bracketed paste may hold \n / TAB);
+        # it must equal the held copy exactly (checked below), so only its size is limited here
+        held = x.kind == "pty" and x.hold == "confirm" and isinstance(obj.get("n"), str) and obj.get("n") == x.hold_n
+        if held and isinstance(line, str) and type(seq) is int and len(line.encode("utf-8", "replace")) <= 8 * LINE_MAX:
+            pass
+        elif not isinstance(line, str) or type(seq) is not int or len(line.encode("utf-8", "replace")) > LINE_MAX or \
                 any(ord(c) < 32 or ord(c) == 127 for c in line) or wire.text_problem(line, LINE_MAX):
             self.st.log("control_refused", device=s.device, action="term_line", reason="shape")
+            if held:
+                self._pty_cancel(x, "shape")
             return
         x.last = self.clock()
         self.owner_acted()                                   # P414 (L4): an owner action resets the term_go budget
@@ -478,12 +538,19 @@ class Desk(SudoDesk, BangDesk, VshareDesk):
         if bang is not None and not wire.is_id22(bang):
             self.st.log("control_refused", device=s.device, action="term_line", reason="shape")
             return
-        if line_problem(line):                               # P414 (H1c): invisible / direction characters, > 8 spaces
+        if line_problem(line) and not held:                  # P414 (H1c): invisible / direction characters, > 8 spaces
             self.st.log("control_refused", device=s.device, action="term_line", reason="invisible")
             return await self._frame(x, "\n[这一行含有看不见的字符或一长串空格，没有运行 / the line has invisible characters or a long run "
                                         "of spaces: not run]\n", False)
         if bang is not None and getattr(x, "bang", None) is not None:
             return await self.bang_refuse(x, bang)          # P414 (§37.12): one running 「!」 at a time
+        if x.kind == "pty" and "n" not in obj:               # 0.26.9: a whole line into the PTY only at the shell prompt
+            if not x.at_prompt and not x.running and x.hold is None:
+                x.early = (s, obj)                           # before the first prompt: sent when it comes
+                return
+            if not x.at_prompt or x.hold is not None:
+                self.st.log("control_refused", device=s.device, action="term_line", reason="program")
+                return await self.bang_refuse(x, bang, "program") if bang is not None else None
         if bang is not None and not x.at_prompt and x.running:   # (before the first prompt nothing runs yet: not refused)
             # P414 (R3-1): a program is reading input (a password, a passphrase…) — the line must reach neither the Agent nor
             # the owner page as `$ line`, and is not written: the owner answers the program in the full-screen terminal.
@@ -503,8 +570,13 @@ class Desk(SudoDesk, BangDesk, VshareDesk):
                 why = self._assert(s, obj, x.id, "term_line", n, _sha(line))
             self._log("term_line", s.device, "refused:" + why if why else "confirmed", {"id": x.id, "line": line},
                       sig=obj.get("sig"), n=n, ts=obj.get("ts"))
+            held = x.kind == "pty" and x.hold == "confirm" and n == x.hold_n
             if why:
+                if held:
+                    self._pty_cancel(x, why)                 # 0.26.9: a failed answer erases the held line
                 return
+            if held and c.get("pty") == "enter":
+                return self._pty_release(x, line)            # 0.26.9: the held Enter goes, nothing is retyped
             return await self._write(x, line, bang)
         bad = classify(line)
         agent = self.go_match(line)                          # P414 (H1): the Agent's term_go line, unedited → always confirmed
@@ -538,6 +610,8 @@ class Desk(SudoDesk, BangDesk, VshareDesk):
         return None
 
     async def _write(self, x: Term, line: str, bang: str | None = None) -> None:
+        if x.kind == "pty":
+            return None if x.proc is None or x.closing else await self.pty_line(x, line, bang)
         if x.proc is None or x.writer is None or x.closing:
             return
         early = not x.at_prompt and not x.running            # P414 (R3-1): before the first prompt — a shell line, not N5 input
@@ -634,11 +708,12 @@ class Desk(SudoDesk, BangDesk, VshareDesk):
 
     async def _frame(self, x: Term, data: str, prompt: bool) -> None:
         x.seq += 1
-        m = {"t": "term_out", "id": x.id, "seq": x.seq, "data": data}
+        m = {"t": "term_out", "id": x.id, "seq": x.seq, ("d" if x.kind == "pty" else "data"): data}
         if prompt:
             m["prompt"] = True
-        with contextlib.suppress(Exception):
-            await self.h.send_app(x.s, m)
+        for v in list(x.viewers):                            # 0.26.9 (§B): every viewer of this session (today: the opener)
+            with contextlib.suppress(Exception):
+                await self.h.send_app(v, m)
 
     # ------------------------------------------------------------ the recording (asciicast v2, M4)
     def _cast_open(self, x: Term):
@@ -652,8 +727,10 @@ class Desk(SudoDesk, BangDesk, VshareDesk):
         p = d / f"{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime(self.wall()))}-{x.device}.cast"
         x.cast_name = p.name
         fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
-        os.write(fd, (json.dumps({"version": 2, "width": 80, "height": 24, "timestamp": int(self.wall()),
-                                  "env": {"TERM": "dumb"}, "title": "agentj web terminal"}) + "\n").encode())
+        pty = x.kind == "pty"
+        os.write(fd, (json.dumps({"version": 2, "width": x.cols if pty else 80, "height": x.rows if pty else 24,
+                                  "timestamp": int(self.wall()), "env": {"TERM": "xterm-256color" if pty else "dumb"},
+                                  "title": "agentj web terminal"}) + "\n").encode())
         return fd
 
     async def _cast(self, x: Term, kind: str, data: str) -> None:
@@ -702,6 +779,10 @@ class Desk(SudoDesk, BangDesk, VshareDesk):
         if now - x.last >= store.IDLE_S:
             return await self.close("idle")
         self.bang_tick(x)
+        if x.kind == "pty" and self.pty_blocked():        # w2-sec H-3: a fenced Agent started without a private /dev
+            return await self.close("disabled")
+        if x.kind == "pty":
+            self.pty_tick(x)                                 # 0.26.9: an unanswered confirm erases the held line after 120 s
         x.hidden = None if s.fg else (x.hidden if x.hidden is not None else now)
         if x.hidden is not None and now - x.hidden >= HIDDEN_S:
             return await self.close("background")
@@ -739,7 +820,8 @@ class Desk(SudoDesk, BangDesk, VshareDesk):
         if x.writer is not None:
             with contextlib.suppress(Exception):
                 x.writer.close()
-        tail = x.masker.close()
+        self.pty_closed(x)                                   # 0.26.9: the master, the tty registry, the start-up files
+        tail = (x.vmask or x.masker).close()
         if tail:
             self.tr_add(x, tail)
             self.bang_out(x, tail, False)
@@ -782,6 +864,8 @@ class Desk(SudoDesk, BangDesk, VshareDesk):
         for p in await asyncio.to_thread(in_session, pid, x.token, self.proc):
             with contextlib.suppress(OSError):
                 os.kill(p, signal.SIGKILL)
+        from .term_pty import cg_kill                # w2-sec N-3: also what left the session AND dropped the token;
+        await asyncio.to_thread(cg_kill, getattr(x, "cg", None))   # R3-2: cgroup.kill when the kernel has it
         with contextlib.suppress(Exception):
             await asyncio.wait_for(x.proc.wait(), 2)
 

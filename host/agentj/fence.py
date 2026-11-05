@@ -605,6 +605,40 @@ def host_write_refusal(st, path: str, home: str | None = None, environ=None, fol
         p = os.path.dirname(p)
 
 
+# 0.26.9 (ADR-0269-pty H1): a private /dev with its own devpts instance — the host's terminals (the web terminal's PTY, the
+# owner's own terminal windows: /dev/pts/N, 0620 and this user's) cannot be opened from inside; every other device node and
+# directory of the host's /dev is bound back (-try: one unplugged in between is skipped), its symlinks are recreated.
+_DEV_OWN = frozenset(("pts", "ptmx", "tty", "console", "null", "zero", "full", "random", "urandom", "fd", "stdin", "stdout",
+                      "stderr", "core", "shm"))
+PRIVATE_DEV = [True]     # problem(): False when this kernel / bwrap cannot mount a devpts instance (then the old --dev-bind)
+
+
+def dev_args(dev: str = "/dev") -> list[str]:
+    if not PRIVATE_DEV[0]:
+        return []
+    a = ["--dev", "/dev"]
+    try:
+        names = sorted(os.listdir(dev))
+    except OSError:
+        return a
+    import re
+    for n in names:
+        # virtual consoles and their screen memory (tty1…, vcs*) stay out too: someone logged in there owns them;
+        # w2-sec L-7: so do keyboards / mice / HID (input/, uinput, hidraw*, hiddev*): reading them is a keylogger, uinput
+        # types into the owner's desktop
+        if n in _DEV_OWN or re.fullmatch(r"tty\d+|vcs[au]?\d*|input|uinput|hidraw\d*|hiddev\d*", n):
+            continue
+        p = os.path.join(dev, n)
+        if os.path.islink(p):
+            try:
+                a += ["--symlink", os.readlink(p), "/dev/" + n]
+            except OSError:
+                pass
+        else:
+            a += ["--dev-bind-try", p, "/dev/" + n]
+    return a
+
+
 def bwrap_argv(st, workdir: str, home: str | None = None, runtime: str | None = None, allow_docker: bool = False,
                environ=None) -> list[str]:
     """Developer reference: documentation/notes/P591-FENCE-REFERENCE.md."""
@@ -615,7 +649,7 @@ def bwrap_argv(st, workdir: str, home: str | None = None, runtime: str | None = 
     from .preferences import path as preferences_path
     prefs = _real(str(preferences_path().parent))
     a = [shutil.which("bwrap") or "bwrap", "--dev-bind", "/", "/", "--unshare-pid", "--as-pid-1", "--proc", "/proc",
-         "--die-with-parent", "--new-session"]
+         "--die-with-parent", "--new-session", *dev_args()]
     hidden = _tmp_hidden(runtime)
     for d in hidden:
         a += ["--tmpfs", d]
@@ -796,6 +830,14 @@ def problem(st, workdir: str) -> str | None:
                 _probe_cache[key] = None if r.returncode == 0 else "sandbox_failed"
             else:
                 r = subprocess.run(bwrap_argv(st, workdir) + ["/bin/sh", "-c", "exit 0"], capture_output=True, timeout=10, env=launch_environment())
+                if r.returncode != 0 and PRIVATE_DEV[0]:    # 0.26.9: no devpts instance here → the host /dev as before
+                    PRIVATE_DEV[0] = False
+                    r = subprocess.run(bwrap_argv(st, workdir) + ["/bin/sh", "-c", "exit 0"], capture_output=True, timeout=10,
+                                       env=launch_environment())
+                    if r.returncode != 0:
+                        PRIVATE_DEV[0] = True
+                    else:
+                        st.log("fence_private_dev", result="unavailable")
                 _probe_cache[key] = None if r.returncode == 0 else ("apparmor_userns" if apparmor_userns_restricted() else "bwrap_failed")
         except (OSError, subprocess.TimeoutExpired):
             _probe_cache[key] = "sandbox_failed" if sys.platform == "darwin" else "bwrap_failed"

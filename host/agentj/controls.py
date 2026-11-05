@@ -60,6 +60,9 @@ ACTIONS += ("seat_transfer", "seat_transfer_cancel")   # P547: move the seat to 
 ACTIONS += ("task_migrate",)        # P570c: 「重新迁移」 on the 定时任务 page (sysmigrate.phone)
 ACTIONS += ("forward_set",)         # P554: the forward button's destination (ui.forward_destination), shared by every remote
 ACTIONS += ("keys_op",)
+ACTIONS += ("assist_grant", "assist_revoke")   # 0269-w2-assist (§41): official remote assist grant (+ Face ID) · revoke (assist.py)
+ACTIONS += ("budget_set",)          # 0269-w3-policy (§42): the owner's day / month budget — raising needs Face ID (budget.py)
+ACTIONS += ("auth_rescue",)         # 0269-login: 「重新登录」 under a reply — login / code / cancel (login_flow.py)
 TS_SKEW_MS = 120_000
 NONCE_KEEP_S = 600
 _NONCE = re.compile(r"[0-9a-f]{32}")
@@ -97,6 +100,8 @@ def object_text(action: str, obj: dict) -> str:
     skill_archive / skill_restore : op (archive | restore) \\n skill name   (P426 #181-3, §39)
     seat_transfer : "transfer"          seat_transfer_cancel : "cancel"          (P547; object {})
     forward_set : share | wx | tg, plus "\nmigrate" for a remote's own earlier local choice   (P554)
+    auth_rescue : "login\\n" agent · "code\\n" the code as sent · "cancel"   (0269-login; controls.log never keeps a code's hash)
+    assist_grant : minutes \n pinned assist key id \n seat id          assist_revoke : "revoke"   (0269-w2-assist, §41)
     (a missing / null text field is "", as wire.js `?? ''`)
     """
     if action == "fr_report_reply":
@@ -192,6 +197,17 @@ def object_text(action: str, obj: dict) -> str:
         return f"{obj['op']}\n{obj['id']}\n{obj['code']}"
     if action == "keys_op":
         return json.dumps(obj, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    if action == "assist_grant":     # 0269-w2-assist (§41): minutes \n key id \n seat (key id + seat from the host's step 1)
+        return f"{int(obj['minutes'])}\n{obj['key_id']}\n{obj['seat']}"
+    if action == "assist_revoke":    # object {} — only narrows (no Face ID)
+        return "revoke"
+    if action == "budget_set":       # 0269-w3-policy (§42.2): canonical JSON of the fields sent ({day?, month?}, wire.js)
+        from .budget import canonical
+        return canonical(obj)
+    if action == "auth_rescue":      # 0269-login: "login\n<agent>" · "code\n<the code as sent>" · "cancel"
+        a = obj["action"]
+        return {"login": lambda: f"login\n{obj['agent']}", "code": lambda: f"code\n{obj['code']}",
+                "cancel": lambda: "cancel"}[a]()
     raise ValueError("bad action")
 
 

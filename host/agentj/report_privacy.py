@@ -50,12 +50,14 @@ def stderr_summary(text):
     return ' '.join(''.join(c if c.isprintable() else ' ' for c in draft).split())[:600]
 
 
-def sudo_notice(res, lang='zh'):
-    """Fixed classification plus the already-redacted summary, never raw stderr."""
+def sudo_notice(res, lang='zh', what=''):
+    """Fixed classification plus the already-redacted summary, never raw stderr. `what` (#480) = the card's redacted "why":
+    which thing failed, in the Agent's own words the owner already saw on the card."""
     if res.get('result') == 'bad_password':
         return ('管理员密码未通过。可能是浏览器自动填入的旧密码，请手动输入。' if lang == 'zh' else
                 'Password authentication failed. Browser autofill may have supplied an old password; type it manually.')
     if res.get('result') == 'done' and res.get('code') not in (None, 0):
-        label = (f"管理员命令执行失败（退出码 {res['code']}）" if lang == 'zh' else f"Admin command failed (exit code {res['code']})")
+        label = ((f"没做成（“{what}”）：管理员命令退出码 {res['code']}" if what else f"管理员命令执行失败（退出码 {res['code']}）") if lang == 'zh'
+                 else (f'Not done ("{what}"): admin command exit code {res["code"]}' if what else f"Admin command failed (exit code {res['code']})"))
         return label + (': ' + res['summary'] if res.get('summary') else '')
     return None

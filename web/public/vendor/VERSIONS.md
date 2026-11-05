@@ -17,6 +17,8 @@ without 'unsafe-eval' would refuse it anyway (`static.test.mjs` pins that count)
 | pdf.js (`pdfjs-dist`, `legacy/build/pdf.min.mjs` + `pdf.worker.min.mjs`; P183 PDF preview) | 6.4.299 | Apache-2.0 (`pdfjs/LICENSE.txt`) | https://registry.npmjs.org/pdfjs-dist/-/pdfjs-dist-6.4.299.tgz | 86269b40170eb41740ea05ad2102d71d33de4f122b34eb2f478be0ea7779c415 |
 | mammoth (`mammoth`, `mammoth.browser.min.js`; P183 .docx preview) | 1.13.0 | BSD-2-Clause (`mammoth/LICENSE.txt`) | https://registry.npmjs.org/mammoth/-/mammoth-1.13.0.tgz | fe778792e43b06dbbff93d20e22951fe1bc55a05eb04ec823961e8639c62260b |
 | SheetJS CE (`xlsx`, `dist/xlsx.core.min.js`; P183 xlsx / xls / ods preview — the official CDN tarball, NOT the stale npm 0.18.5) | 0.20.3 | Apache-2.0 (`xlsx/LICENSE.txt`) | https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz | 8dc73fc3b00203e72d176e85b50938627c7b086e607c682e8d3c22c02bb99fe8 |
+| xterm.js (`@xterm/xterm`, `lib/xterm.mjs` ES module + `css/xterm.css`; 0.26.9 #463 full web terminal, loaded by `js/termpty.js` on the first PTY open) | 6.0.0 | MIT (`xterm/LICENSE.txt`) | https://registry.npmjs.org/@xterm/xterm/-/xterm-6.0.0.tgz | 908e66e04af6c8dc6b00dd3b54de088e2e81e5ed866284fd6c2fb3c2d1c7a3f6 |
+| xterm.js fit addon (`@xterm/addon-fit`, `lib/addon-fit.mjs`; same page) | 0.11.0 | MIT (`xterm/addon-fit-LICENSE.txt`) | https://registry.npmjs.org/@xterm/addon-fit/-/addon-fit-0.11.0.tgz | 26003b4517a132b64e4ff228fd88a5fda3fff5e606c76093f6dcff772e9ecec0 |
 
 ## Files (sha256)
 
@@ -55,4 +57,9 @@ bccc24ea711db8e44503629519904a5292d73b9daaa214bbe7cdcc282b0f4259  pdfjs/pdf.min.
 92914a3708cfdf1e62cb553d1856a7fedab21da83d8ee82845de2f897b368cab  mammoth/mammoth.browser.min.js
 4d2a38ac35cda06a555c84074a819d413339cd3691b822cae50f8f322fe01f64  xlsx/LICENSE.txt
 197255b0c278588117e45c14c1b25398562864cd9ffa9752c4b4d29f6d9bfd27  xlsx/xlsx.core.min.js
+2d87e1bddc73be9111de8beee5370c3bb7aac9c94e18e6f245f02ca741ef1769  xterm/addon-fit.mjs
+e256f01188af527e4d06d21d06fbf785ae9c50d4b328bf03cbe0ba7f0aa4228f  xterm/addon-fit-LICENSE.txt
+b569f629d00f2626a8100df2a1798210535621e42164dfd426a6fe5aac7b0ccd  xterm/LICENSE.txt
+854a7c0fb70e8b1a083c16797ab827299fb18744f5ad34f227b48337e33293c6  xterm/xterm.css
+b336ec65a086c056d4804b3d4c2347da5663d3f23c3f25be866467bd8857ad59  xterm/xterm.mjs
 ```

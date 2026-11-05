@@ -21,7 +21,12 @@ hand it to that CEO (sub-session, headless or scheduled); never touch its files 
   STRUCTURE.json.
 
 ## Dispatch, read the report, rework
-- Dispatch with the Chairman's own words and the evidence you found.
+- Dispatch with the Chairman's own words and the evidence you found. Every dispatch names four things: the duty, the
+  capabilities it may use (skills, commands, folders), the acceptance criteria and one pre-written **acceptance command** that
+  prints PASS/FAIL or a VERDICT (e.g. `agentj capability report-check --dir <workflow> --verdict ok --json`). No acceptance
+  command yet means it is not ready to dispatch.
+- The chief of staff only runs the acceptance command and reads the verdict; it never investigates, diagnoses, fixes or
+  releases itself. Checking finished background work is its job, never pushed to the Chairman.
 - Read the actual report and its closing VERDICT: ok | attention | fail. Exit codes alone prove nothing; a missing or skipped
   report is unfinished work.
 - On failure: send the evidence to the owning CEO for repair and a rerun, read the new report, then close it. Fix the same

@@ -1,0 +1,8 @@
+{
+  "_doc": "0.26.9 (#468, ADR-0269-assist): the PUBLIC halves of the official Agent J remote-assist key. Shipped inside the signed host package and never fetched from the network; a list so a key can be rotated (each entry: id, x25519 = Noise static public key, ed25519 = signing public key, both b64url 32 bytes, not_after = unix seconds). An entry whose keys are null is never usable.",
+  "v": 1,
+  "keys": [
+    {"id": "assist-2026-1", "x25519": null, "ed25519": null, "not_after": 0,
+     "status": "PLACEHOLDER — key ceremony pending — CEO. No assist key is pinned: remote assist stays off in this build."}
+  ]
+}

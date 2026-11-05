@@ -14,6 +14,7 @@ import secrets
 import shlex
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
@@ -976,6 +977,13 @@ def _vr(zh: str, en: str, detail: str = "") -> VerifyRefused:
     return VerifyRefused(f"install.verify {zh}{detail}，拒绝运行 / {en}{detail}: refused", (zh, en))
 
 
+def _verify_files_shipped(m, files) -> None:
+    """#465: a self-test naming a file the package lacks is the author's mistake: skipped like a refused grammar, never a failure."""
+    miss = [p for k, p in bundle.missing_entry_files(m, files) if k == "install.verify"]
+    if miss:
+        raise _vr("指向包里没有的文件", "names a file the package does not have", f" {clean_line(miss[0], 60)}")
+
+
 def _meta_refusal(cs) -> VerifyRefused:
     shown = _chars(cs)
     return VerifyRefused(f"install.verify 含 shell 元字符 {shown}，拒绝运行 / contains shell metacharacters {shown}: refused",
@@ -1095,7 +1103,28 @@ def parse_verify(cmd: str, *, certified: bool = False) -> list[list[str]]:
 # install.verify runs package code. It runs ONLY inside a real sandbox (Linux: bubblewrap, macOS: sandbox-exec) that sees
 # the system read-only, not the user's home / agentj's state / /tmp, has no network and can write only into the throw-away
 # copy; without one it is skipped and the Owner is told so (NO_SANDBOX). The command grammar (parse_verify) is a second layer.
-VERIFY_PATH = "/usr/local/bin:/usr/bin:/bin"
+VERIFY_BASE = "/usr/local/bin:/usr/bin:/bin"
+# ADR-0269-w4-plaza (#478/#466): Homebrew's bin folders (Apple silicon /opt/homebrew, Linuxbrew; Intel Homebrew is /usr/local)
+# join the self-check PATH — after the system folders, read-only inside the sandbox (bwrap --ro-bind / ; sandbox-exec denies
+# every write but the scratch copy). Only these fixed folders, never the user's PATH: real folders outside every home, owned by
+# root or this user, not writable by group / others.
+BREW_BINS = ("/opt/homebrew/bin", "/home/linuxbrew/.linuxbrew/bin")
+
+
+def _brew_ok(d: str) -> bool:
+    try:
+        r = os.path.realpath(d)
+        st = os.stat(r)
+    except OSError:
+        return False
+    return (stat.S_ISDIR(st.st_mode) and st.st_uid in (0, os.getuid()) and not st.st_mode & 0o022
+            and not any(fence._under(r, os.path.realpath(h)) for h in _homes()))
+
+
+def verify_path() -> str:
+    return ":".join([VERIFY_BASE, *(d for d in BREW_BINS if _brew_ok(d))])
+
+
 SANDBOX_EXEC = fence.SANDBOX_EXEC
 SANDBOX_TEXT = {"bubblewrap": "bubblewrap 沙箱 sandbox", "sandbox-exec": "macOS sandbox-exec 沙箱 sandbox"}
 # what python (and the usual self-test tools) read on macOS; outside any home, listed so a deny on the home cannot hide them
@@ -1112,6 +1141,9 @@ def _homes() -> list[str]:
     except (ImportError, KeyError, OSError):
         pass
     return [h for h in out if h]
+
+
+VERIFY_PATH = verify_path()
 
 
 def verify_env(scratch) -> dict:
@@ -1228,8 +1260,39 @@ def sandbox_kind() -> str | None:
     return _SANDBOX["kind"]
 
 
+def min_python(m) -> tuple[int, int] | None:
+    """#478: the lowest Python a package declares — `requires.cli` python3 / python `version` like ">=3.12", "3.12+", "3.12"."""
+    for c in summarize(m)["cli"]:
+        hit = c["name"] in ("python3", "python") and re.fullmatch(r"\s*(?:>=|≥|~=|\^)?\s*3\.(\d{1,2})(?:\.\d+)?\s*\+?\s*", c["version"] or "")
+        if hit:
+            return 3, int(hit.group(1))
+    return None
+
+
+def pick_python(want, prefix, env, cwd, deadline=None) -> str | None:
+    """#478: the first python3 / python3.N on the self-check PATH whose version (asked inside the same sandbox) is ≥ `want`.
+    Security r1 L3: each probe ≤ min(10 s, what is left of the self-check `deadline`); a spent deadline probes nothing."""
+    seen = []
+    for n in ["python3", *(f"python3.{x}" for x in range(20, want[1] - 1, -1))]:
+        exe = shutil.which(n, path=VERIFY_PATH)
+        if not exe or os.path.realpath(exe) in seen:
+            continue
+        seen.append(os.path.realpath(exe))
+        left = 10.0 if deadline is None else min(10.0, deadline - _now_mono())
+        if left <= 0:
+            return None
+        try:
+            r = subprocess.run(prefix + [exe, "-I", "-S", "-c", "import sys;print(*sys.version_info[:2])"], cwd=cwd, env=env,
+                               stdin=subprocess.DEVNULL, capture_output=True, timeout=left, start_new_session=True)
+            if r.returncode == 0 and tuple(map(int, r.stdout.split())) >= want:
+                return exe
+        except (OSError, ValueError, subprocess.SubprocessError):
+            continue
+    return None
+
+
 def run_verify(cmd: str, pkg_root: pathlib.Path, scratch: pathlib.Path, timeout: float | None = None, *, kind: str,
-               hide=(), certified: bool = False) -> tuple[int, str]:
+               hide=(), certified: bool = False, python=None) -> tuple[int, str]:
     """Run `install.verify` in `pkg_root` (inside `scratch`) in the `kind` sandbox, with PATH + a temporary HOME / TMPDIR +
     LANG and nothing else. → (exit code, last output). Timeout → (124, …). There is no unsandboxed path."""
     if kind not in SANDBOX_TEXT:
@@ -1247,6 +1310,12 @@ def run_verify(cmd: str, pkg_root: pathlib.Path, scratch: pathlib.Path, timeout:
             exe = str(pkg_root / prog)
             if not os.path.isfile(exe):
                 return 127, f"{prog}: not in the package"
+        elif python and prog in ("python3", "python"):
+            exe = pick_python(python, prefix, env, pkg_root, deadline)
+            if not exe and deadline - _now_mono() <= 0:
+                return 124, "timeout"
+            if not exe:
+                return 127, f"python3.{python[1]}: not found on PATH (needs Python ≥ {python[0]}.{python[1]})"
         else:
             exe = shutil.which(prog, path=VERIFY_PATH)
             if not exe:
@@ -1551,6 +1620,7 @@ def run_install(name: str, *, version=None, harness=None, workspace=None, params
     if s["verify"] and not skip_verify:
         try:
             vcmds = parse_verify(m["install"]["verify"], certified=certified)
+            _verify_files_shipped(m, files)
         except VerifyRefused as e:
             vref, sandbox = e, None
     deps = plaza_deps.missing(plaza_deps.wanted(s, vcmds), VERIFY_PATH)     # #466: known before the card; never a blocker
@@ -1695,11 +1765,11 @@ def run_install(name: str, *, version=None, harness=None, workspace=None, params
                     rc = 0
                     print(f"install.verify: exit 127 — 缺依赖 {', '.join(x['name'] for x in deps)}，安装继续 / missing "
                           "dependencies, the install goes on", file=out)
-                elif rc != 0:
-                    print(f"install.verify 失败（exit {rc}），什么都没装 / install.verify failed (exit {rc}): nothing installed. "
-                          "Its output (data):", file=out)
+                elif rc != 0:                  # ADR-0269-w4-plaza (#479): a failing self-test does not block either
+                    deps = _add_tail(deps, tail, rc)
+                    print(f"install.verify: exit {rc} — 自检没通过，安装继续（{plaza_deps.PENDING[0]}）/ the self-test failed, "
+                          f"the install goes on ({plaza_deps.PENDING[1]}). Its output (data):", file=out)
                     print("\n".join([FENCE_OPEN, *_t("\n".join(tail.splitlines()[-20:])), FENCE_CLOSE]), file=out)
-                    return EXIT_ERROR
                 else:
                     print(f"install.verify: OK（{SANDBOX_TEXT[sandbox]}，无网络 / sandboxed, no network）", file=out)
                 vran = True
@@ -1768,17 +1838,18 @@ def _sandboxed(st, m, files, sandbox, certified) -> tuple[int, str]:
     with tempfile.TemporaryDirectory(prefix="agentj-verify-") as tmp:
         scratch = pathlib.Path(tmp)
         write_tree(scratch / "pkg", files)
-        return run_verify(m["install"]["verify"], scratch / "pkg", scratch, kind=sandbox, hide=[str(st.root)], certified=certified)
+        return run_verify(m["install"]["verify"], scratch / "pkg", scratch, kind=sandbox, hide=[str(st.root)], certified=certified,
+                          python=min_python(m))
 
 
 def _dep_exit(rc: int, tail: str) -> bool:
     return rc == 127 and "not in the package" not in tail
 
 
-def _add_tail(deps: list, tail: str) -> list:
+def _add_tail(deps: list, tail: str, rc: int = 127) -> list:
     have = {x["name"] for x in deps}
     deps = deps + [{"name": n, "user": plaza_deps.user_copies(n)} for n in plaza_deps.from_tail(tail) if n not in have]
-    return deps or [{"name": "? (exit 127)", "user": []}]       # unnamed: still pending, never "ok"
+    return deps or [{"name": f"? (exit {rc})", "user": []}]       # unnamed: still pending, never "ok"
 
 
 def _deps_line(deps: list) -> str:
@@ -1844,6 +1915,7 @@ def run_reverify(name: str, *, harness=None, st=None, out=None, local=False, pos
     s = summarize(m)
     try:
         vcmds = parse_verify(m["install"]["verify"], certified=bool(r["certified"])) if s["verify"] else []
+        _verify_files_shipped(m, files)
     except VerifyRefused:
         vcmds = None
     deps, sandbox, vran = plaza_deps.missing(plaza_deps.wanted(s, vcmds), VERIFY_PATH), sandbox_kind(), False

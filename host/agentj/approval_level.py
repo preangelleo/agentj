@@ -460,6 +460,14 @@ def nobody_text(lang, again: bool = False) -> str:
             "已经提醒主人。先做不依赖这一步的活；稍后原样重试这一步——主人批准后，重试会直接执行。")
 
 
+def waiting_text(lang) -> str:
+    """0269-w3-policy E1: an owner-scoped step whose card was not answered in time — it waits, it is not refused."""
+    if _en(lang):
+        return ("The owner has not answered this card yet: it stays on the owner's phone and this step waits — it was not "
+                "refused. Do the work that does not depend on it; once the owner allows it you are told to retry it exactly.")
+    return ("主人还没处理这张卡：卡片留在主人手机上，这一步先等着，不是拒绝。先做不依赖这一步的活；主人批准后会提醒你原样重试。")
+
+
 def reminder_text(n: int, lang) -> str:
     """The content-free Telegram / e-mail line: how many cards, never what they ask."""
     if _en(lang):

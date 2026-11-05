@@ -1,15 +1,15 @@
 ---
 document: agentj-install
-version: 0.28.9
-released: 2026-11-04
+version: 0.28.10
+released: 2026-11-05
 status: beta (anyone can sign up; not advertised yet, pages are not indexed)
 host_package: agentj (the `agentj` command)
-host_version: 0.26.8a2
-source_tag: v0.26.8a2
-host_wheel: agentj-0.26.8a2-py3-none-any.whl
-host_wheel_sha256: b1d87343f78d712d67fe301aadc7ad26bfcdc59e70fbce8b4bd3c2b787a611e9
-host_sdist: agentj-0.26.8a2.tar.gz
-host_sdist_sha256: f74a7cc6439504f1699804f43f97e4531ab3c6c23badcb6f4801e6a5a031ea13
+host_version: 0.26.9
+source_tag: v0.26.9
+host_wheel: agentj-0.26.9-py3-none-any.whl
+host_wheel_sha256: 40ff3601c08c95577986b69cd7ebcd2702bbfba39ffb40e451dd3e22c521b5ca
+host_sdist: agentj-0.26.9.tar.gz
+host_sdist_sha256: 70516a74e1d69afc598a50a2398eb6dfd80b1aef4697e8842fe09b36a81ca17b
 canonical_url: https://agentj.app/install.md
 sha256_url: https://agentj.app/install.md.sha256
 alias: https://agentjarvis.net/install.md (the older address: the same file, kept for one more version)
@@ -467,12 +467,12 @@ If the command is still missing, open a new terminal and check `opencode --versi
 
 The npm alternatives require Node.js first:
 ```bash
-npm i -g @opencode/cli
-npm i -g @opencode/cli --registry=https://registry.npmmirror.com
+npm i -g @opencode/cli@2
+npm i -g @opencode/cli@2 --registry=https://registry.npmmirror.com
 ```
 The command is still `opencode` (npm also provides `opencode2`); allow the package's postinstall script and optional platform packages. As of 2026-10-21, npmmirror provides `@opencode/cli` 2.1.2; if the mirror is unavailable, use the official npm registry above. On macOS, another option is `brew install anomalyco/tap/opencode-v2`.
 
-OpenCode 1.x still works; migration is optional. To move to v2, use the new command above: 1.x does not automatically upgrade to 2.x. / OpenCode 1.x 也能用，不必迁移；想升 2.x 用上面的新命令，1.x 不会自动升到 2.x。
+Always install the newest OpenCode 2.x: the official script above (or `@opencode/cli@2`). Do not use mise/asdf `latest`, GitHub `releases/latest` or the `opencode-ai` npm package — they give 1.x. If `opencode --version` shows 1.x, run the official script, check `agentj agent detect --json` shows 2.x as the executable Agent J uses, then `agentj agent restart`; 1.x does not upgrade itself to 2.x. / 一律装最新的 OpenCode 2.x：用上面的官方脚本（或 `@opencode/cli@2`）。不要用 mise/asdf 的 `latest`、GitHub `releases/latest` 或 npm 的 `opencode-ai`，它们给的是 1.x。`opencode --version` 显示 1.x 时运行官方脚本，确认 `agentj agent detect --json` 里 Agent J 用的是 2.x，再 `agentj agent restart`；1.x 不会自己升到 2.x。
 
 For your own paid DeepSeek account, use `/connect` → DeepSeek (or `opencode auth login`) and select its model with `/models`. Enter keys only in your own terminal, never in chat, seat cards or screenshots. The OpenCode free model above needs none of these credentials. / 使用自己的付费 DeepSeek 账号才需要连接和 key；上面的免费模型不需要。
 
@@ -726,7 +726,7 @@ DeepSeek says a preview may break; Agent J was measured on 0.2.0-rc.2.
 carry over). So start every command line from here on with `export PATH="$HOME/.local/bin:$PATH";` — or call
 `~/.local/bin/agentj` by its full path. This document writes `agentj` for short.
 
-The program is pinned to one release: the tag `v0.26.8a2` (front matter `source_tag`). The tag never moves, and its
+The program is pinned to one release: the tag `v0.26.9` (front matter `source_tag`). The tag never moves, and its
 `host/` folder is byte for byte the same code as the two files on our site whose SHA-256 is in this document's front matter.
 ```bash
 cd ~/.agentj-install
@@ -737,7 +737,7 @@ uv tool install "./$W"
 
 Intel Mac: this release keeps `cryptography<49` because newer releases lack an Intel macOS wheel. If an older installer tries to compile OpenSSL (`openssl-sys` / OpenSSL not found), rerun `uv tool install --with "cryptography<49" "./$W"`. The same platform constraint applies to `agentj update apply`.
 
-export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.26.8a2
+export PATH="$HOME/.local/bin:$PATH"; agentj --version     # → agentj 0.26.9
 export PATH="$HOME/.local/bin:$PATH"; agentj doctor
 ```
 **Your human's own terminal must find `agentj` too** — they may use `agentj passphrase set` and `agentj pair` as a local alternative
@@ -765,16 +765,16 @@ echo "$WS  $W" | sha256sum -c - && echo "$SS  $S" | sha256sum -c -    # macOS: s
 uv tool install "./$W"          # the wheel; its dependencies come from PyPI or the mirror in UV_DEFAULT_INDEX
 ```
 `uv tool install "./$S"` installs from the checked source archive instead (it builds the same program).
-`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.26.8a2`); it is
+`https://agentj.app/dl/latest.txt` and `https://agentj.app/dl/latest-sdist.txt` name the same two files. `agentj --version` is the program's own version (`0.26.9`); it is
 numbered separately from this document (`0.27.7`).
 
-Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.26.8a2#subdirectory=host"`.
+Alternative from the matching published source tag: `uv tool install "git+https://github.com/preangelleo/agentj@v0.26.9#subdirectory=host"`.
 
-Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.26.8a2#subdirectory=host"` (needs Python 3.11+).
+Alternative without uv: `pipx install "git+https://github.com/preangelleo/agentj@v0.26.9#subdirectory=host"` (needs Python 3.11+).
 
 **What each route checks.** The wheel and the source archive above are checked against the SHA-256 in this document. Each
 also has a minisign signature beside it (`<file>.minisig`, key `B79F925B0585F9D4` — front matter `signature`), which
-`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.26.8a2`
+`agentj update apply` and the nightly automatic upgrade verify before they install (Section U). The two `git+https://…@v0.26.9`
 routes check **neither**: Git trusts GitHub's HTTPS and the tag name, and nothing compares that code with this document.
 Use them only when the checked files cannot be downloaded, and say so in the final feedback.
 `agentj doctor` lists what is ready and what is not (prerequisites, the fence, connectivity, which agents are usable).
@@ -1776,7 +1776,7 @@ Nightly automatic installation is enabled by default and verifies the official w
 In a shared session (the default of 0.13–0.19), reinstall directly using Step 4's checked wheel (SHA-256 must match this document and
 its public GitHub copy), preserving the host's identity, paired phones, account and preferences:
 ```bash
-uv tool install --force "./agentj-0.26.8a2-py3-none-any.whl"
+uv tool install --force "./agentj-0.26.9-py3-none-any.whl"
 agentj --version
 agentj service install
 agentj service restart
@@ -1785,7 +1785,7 @@ agentj doctor
 The matching published tag is another source, after verifying the tag object against the upgrade email (no signature or
 hash check on this route — Step 4):
 ```bash
-uv tool install --force "git+https://github.com/preangelleo/agentj@v0.26.8a2#subdirectory=host"
+uv tool install --force "git+https://github.com/preangelleo/agentj@v0.26.9#subdirectory=host"
 ```
 **0.14 independent session** (`agent.session_mode=independent`): 0.14's fence keeps Agent J's own program read-only and
 hides the service manager, so the Agent on the phone cannot reinstall or restart from inside it (measured: the install
@@ -1811,11 +1811,11 @@ prints something and `uv tool list` (or `pipx list`) shows `agentjarvis-host`, t
 the new name, then:
 ```bash
 jarvis service uninstall      # stop the old service first (Step 10 used tmux / nohup instead? stop that process)
-uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.26.8a2#subdirectory=host"
+uv tool uninstall agentjarvis-host && uv tool install "git+https://github.com/preangelleo/agentj@v0.26.9#subdirectory=host"
 agentj doctor
 agentj service install        # start it again under the new name (or the tmux / nohup fallback, Step 10)
 ```
-With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.26.8a2#subdirectory=host"`.
+With pipx instead of uv: `pipx uninstall agentjarvis-host && pipx install "git+https://github.com/preangelleo/agentj@v0.26.9#subdirectory=host"`.
 - After the move, `agentj` puts back a `jarvis` command (a link to `agentj`, only if no other `jarvis` exists) for one more
   version; it prints a notice that points here. New installs never get `jarvis`.
 - The state moves from `~/.local/state/agentjarvis-alpha` to `~/.local/state/agentj` on the first run of `agentj` **after your
@@ -2434,7 +2434,7 @@ A proxy that needs a username and password is not written into the settings. Ask
 
 OpenCode needs a provider connection and a matching `provider/model`. An existing v1 `auth.json` or v2 `opencode.db` does not prove a working key. The v1 runtime diagnostic uses `GET /provider` and its `connected` list; this records configured connections, not a live balance or key test. After you replace a key with `opencode auth login`, Agent J restarts the OpenCode it started before your next message and keeps the conversation; you can also ask the Agent to run `agentj agent restart`. If Agent J is attached to your own desktop OpenCode server, restart that server yourself. Phone failure lines and `agentj doctor` name the kind of failure: sign-in or key (401), region (403/451), access (403), balance or quota, rate limit, model name, network.
 
-Both OpenCode v1 and v2 work: the v2 official script and `npm i -g @opencode/cli` install v2, and Agent J detects the version when it starts OpenCode, in the default settings (shared session) and in the independent mode alike. v2 can store several keys for one provider (for example "DeepSeek 2"), but only the selected one is used; after adding a new key, run `opencode auth switch <provider>` to select it. If OpenCode has no key at all for the selected provider (for example, the key is only exported in your terminal, which the background service cannot see), the phone says so and names the provider; use the provider-specific secret card offered on the phone, then send again. For an env-backed custom provider, the host reloads its service environment before starting its owned OpenCode child; `opencode auth login` is not the recovery path for that environment variable. An OpenCode server you started yourself (`agent.shared_opencode_port` and `agent.shared_session_id` set) can be attached on v1 and v2: the phone sends text and answers approvals, and what you type at the Agent J host (and the replies) shows up on the phone; configured OpenCode models can be selected from the phone’s Models & Key menu; unsupported native slash commands stay on the Agent J host. On a v2 server of your own, high-risk warnings are unavailable — to use them, remove the port setting so Agent J starts OpenCode itself. If your server has a password, Agent J never reads another program's environment: the phone shows an `agentj secret request --name OPENCODE_SERVER_PASSWORD --purpose "Your OpenCode server password" --dest "env:<Agent J service env file>#OPENCODE_SERVER_PASSWORD"` line — run it on the Agent J host, paste the password on the phone's secret card, then `agentj service restart`. HTTP 403 can mean region or account/model access restrictions, not necessarily an invalid key.
+Both OpenCode v1 and v2 work: the v2 official script and `npm i -g @opencode/cli@2` install the newest 2.x (what Agent J recommends), and Agent J detects the version when it starts OpenCode, in the default settings (shared session) and in the independent mode alike. v2 can store several keys for one provider (for example "DeepSeek 2"), but only the selected one is used; after adding a new key, run `opencode auth switch <provider>` to select it. If OpenCode has no key at all for the selected provider (for example, the key is only exported in your terminal, which the background service cannot see), the phone says so and names the provider; use the provider-specific secret card offered on the phone, then send again. For an env-backed custom provider, the host reloads its service environment before starting its owned OpenCode child; `opencode auth login` is not the recovery path for that environment variable. An OpenCode server you started yourself (`agent.shared_opencode_port` and `agent.shared_session_id` set) can be attached on v1 and v2: the phone sends text and answers approvals, and what you type at the Agent J host (and the replies) shows up on the phone; configured OpenCode models can be selected from the phone’s Models & Key menu; unsupported native slash commands stay on the Agent J host. On a v2 server of your own, high-risk warnings are unavailable — to use them, remove the port setting so Agent J starts OpenCode itself. If your server has a password, Agent J never reads another program's environment: the phone shows an `agentj secret request --name OPENCODE_SERVER_PASSWORD --purpose "Your OpenCode server password" --dest "env:<Agent J service env file>#OPENCODE_SERVER_PASSWORD"` line — run it on the Agent J host, paste the password on the phone's secret card, then `agentj service restart`. HTTP 403 can mean region or account/model access restrictions, not necessarily an invalid key.
 
 If a third-party provider gave you a base_url and a key (OpenAI-compatible or Anthropic-compatible), run `agentj provider add <name> --base-url <url> --model <model>`: it declares the provider in OpenCode's config, which references the key by variable name only (`{env:<NAME>_API_KEY}`); then run the `agentj secret request` line it prints so the owner pastes the key on the phone's secret card (you never see it), switch with `agentj agent opencode --dir <dir> --model <name>/<model>` and `agentj service restart`.
 

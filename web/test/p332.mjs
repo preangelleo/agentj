@@ -91,7 +91,8 @@ export async function runP332({ B, web, fake, out = OUT }) {
       check(await evaluate(p, `${$('set-h-rescue')}.textContent`) === s.title, 'block title ' + tag);
       check(await evaluate(p, `!!${$('set-auth-nav')}.closest('#rs-auth') && !${$('set-s-agent')}.querySelector('#set-auth-nav')`), '③ = the moved AI login entry ' + tag);
       // P569 integration: P567 made 终端指令 (rs-cmds) a folded .rscard of its own, after ③ login and before the layout check.
-      check(await evaluate(p, `[...document.querySelectorAll('#set-s-rescue .rscard[id]')].map(c=>c.id).join()`) === 'rs-reset,rs-session,rs-help,rs-auth,rs-cmds,layout-diag-card,rs-restart', 'reset → reopen session → help → login → restart ' + tag);
+      // 0.26.9 (CONTRACT §C): 接管卡住的会话 (rs-takeover) sits under 重开 AI 会话 while no turn is stuck (first while one is: p0269-chat).
+      check(await evaluate(p, `[...document.querySelectorAll('#set-s-rescue .rscard[id]')].map(c=>c.id).join()`) === 'rs-reset,rs-session,rs-takeover,rs-help,rs-auth,rs-cmds,layout-diag-card,rs-restart', 'reset → reopen session → takeover → help → login → restart ' + tag);
       check(await evaluate(p, `${$('rs-help')}.hasAttribute('data-dim') && !${$('rs-help')}.hasAttribute('data-hl')`), '② dimmed before ① failed ' + tag);
       if (w >= 900) check(await evaluate(p, `[...document.querySelectorAll('.setside [data-set-jump]')].filter(b=>!b.hidden).map(b=>b.dataset.setJump).slice(0,2).join()`) === 'set-s-agent,set-s-rescue', 'side navigation: 紧急修复 second ' + tag);
       // every pressable thing in the block ≥ 44 px, nothing wider than the screen

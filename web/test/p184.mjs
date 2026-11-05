@@ -34,6 +34,8 @@ export const CASES = { a: 'forward-me', b: 'forward-other', c: 'forward-no-mail'
 const esc = (p) => p.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
 const box = (p, sel) => evaluate(p, `(()=>{const r=document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect();return {l:r.left,r:r.right,t:r.top,b:r.bottom,w:r.width,h:r.height}})()`);
 async function tapEl(p, sel) {
+  // 0.26.9 #472: the contact card sits under the reply card in a scrolling slot — a finger scrolls to the button first
+  await evaluate(p, `document.querySelector(${JSON.stringify(sel)})?.scrollIntoView({block:'nearest'})`);
   const r = await box(p, sel), x = r.l + r.w / 2, y = r.t + r.h / 2;
   await p.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
   await p.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });

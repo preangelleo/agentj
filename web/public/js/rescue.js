@@ -22,12 +22,13 @@ import { signed } from './controls.js';
 import { t, fillText, onLang } from './t.js';
 import { el, mk, confirmSheet } from './ui.js';
 import * as authrescue from './authrescue.js';
+import * as assist from './assist.js';   // 0.26.9 #468 (§B2): ② gains 「请 Agent J 官方远程协助」
 import { registerLayer } from './layers.js';
 
 export const HELPER_CMD = 'curl -fsSL https://agentj.app/rescue | sh';
-export const STEPS = { reset: 4, help: 3, offer: 1, restart: 1, restart_session: 1, clear: 1, ark: 1 };          // §33: the reset ladder has four steps, the help flow three
+export const STEPS = { reset: 4, help: 3, offer: 1, restart: 1, restart_session: 1, clear: 1, ark: 1, end_turn: 1, takeover: 4 };          // §33: the reset ladder has four steps, the help flow three
 export const FIRST_MS = 30000;                       // no answer at all this long → the host is stuck or too old
-export const IDLE_MS = { reset: 120000, help: 240000, offer: 240000, restart: 120000, restart_session: 120000, clear: 120000, ark: 240000 };   // then: silence this long between two messages = no answer
+export const IDLE_MS = { reset: 120000, help: 240000, offer: 240000, restart: 120000, restart_session: 120000, clear: 120000, ark: 240000, end_turn: 120000, takeover: 180000 };   // then: silence this long between two messages = no answer
 const WHY = ['shape', 'stale', 'no_key', 'bad_signature', 'replay', 'busy', 'unavailable'];
 const STATES = ['run', 'ok', 'fail', 'skip'];
 const TICKET = /^st_[A-Za-z0-9_-]{8,40}$/;
@@ -45,8 +46,8 @@ export const FOLD_MS = 30000;
 let H = { openSettings() {}, closeSettings() {}, toChat() {}, linkState: () => (isReady() ? 'up' : 'down') };
 const fresh = () => ({ st: 'idle', step: 0, text: '', steps: [], details: [], ticket: '', old: '', why: '', r: null, timer: 0, heard: false, dropped: false,
   offers: [], used: [], name: '', advice: false, fold: false, foldTimer: 0, wait: false, at: 0 });
-const S = { reset: fresh(), help: fresh(), offer: fresh(), restart: fresh(), restart_session: fresh(), clear: fresh(), ark: fresh(), failedOnce: false, askFirst: false, rescue: null, auth: null, authFold: '', authHide: '', bannerHide: '' };
-const FLOWS = ['reset', 'help', 'offer', 'restart', 'restart_session', 'clear', 'ark'];
+const S = { reset: fresh(), help: fresh(), offer: fresh(), restart: fresh(), restart_session: fresh(), clear: fresh(), ark: fresh(), end_turn: fresh(), takeover: fresh(), stuck: false, failedOnce: false, askFirst: false, rescue: null, auth: null, authFold: '', authHide: '', bannerHide: '' };
+const FLOWS = ['reset', 'help', 'offer', 'restart', 'restart_session', 'clear', 'ark', 'end_turn', 'takeover'];
 
 const str = (v, n = 400) => (typeof v === 'string' ? v.replace(/[\u0000-\u0008\u000B-\u001F\u007F]/g, '').slice(0, n) : '');
 const tx = (k, vars) => t(k, vars);
@@ -123,6 +124,8 @@ function step(flow, m) {
 }
 function stepText(flow, n) {
   if (flow === 'offer') return tx('p332.reset.start');
+  if (flow === 'end_turn') return tx('p0269.queue.ending');
+  if (flow === 'takeover') return tx('p0269.take.s' + Math.min(4, Math.max(1, n)));
   if (flow === 'reset') return tx('p332.reset.s' + Math.min(4, Math.max(1, n)));
   return tx('p332.help.s' + Math.min(3, Math.max(1, n)));
 }
@@ -472,11 +475,12 @@ function paintRestart() {
   card.replaceChildren(node('h4', 'rstitle', tx('p385.restart.go')), node('small', 'rsnote', tx('p438.recommended')), note, acts(go, clear), status, clearStatus);
 }
 export function paint() {
-  paintReset(); paintHelp(); paintAuth(); paintMode(); paintRestart(); paintSession(); paintArk();
+  paintReset(); paintHelp(); assist.paintCard(el('rs-help-body')); paintAuth(); paintMode(); paintRestart(); paintSession(); paintTakeover(); paintArk();
   const block = el('set-s-rescue');
   if (block && !el('rs-detail-help')) block.append(helperLine('rs-detail-help'));
   const sup = el('rs-support-box');   // P400: 在线客服 (index.html) stays the block's last line, under the cards painted here
   if (block && sup && block.lastElementChild !== sup) block.append(sup);
+  for (const f of changed) { try { f(); } catch { /* one painter never stops the rest */ } }
 }
 
 // ---------------------------------------------------------------- entry points (app.js / relay.js / settings.js)
@@ -494,7 +498,7 @@ export function onRescue(m) {
 }
 /** app.js: a broadcast `reset_done` (another remote's run, or an answer that outlived its request). */
 export function onDone(m) {
-  const flow = m && m.flow === 'restart_session' ? 'restart_session' : m && /^ark_fix_[0-9a-f]{24}$/.test(m.flow || '') ? 'ark' : m && m.flow === 'clear_friend_asks' ? 'clear' : m && m.flow === 'restart' ? 'restart' : m && m.flow === 'help' ? 'help' : m && OFFERS.includes(m.flow) ? 'offer' : 'reset';
+  const flow = m && (m.flow === 'end_turn' || m.flow === 'takeover') ? m.flow : m && m.flow === 'restart_session' ? 'restart_session' : m && /^ark_fix_[0-9a-f]{24}$/.test(m.flow || '') ? 'ark' : m && m.flow === 'clear_friend_asks' ? 'clear' : m && m.flow === 'restart' ? 'restart' : m && m.flow === 'help' ? 'help' : m && OFFERS.includes(m.flow) ? 'offer' : 'reset';
   if (flow === 'offer' && m.flow !== S.offer.name) return;
   if (flow === 'ark' && m.flow !== S.ark.name) return;
   if (S[flow].st === 'run' && S[flow].dropped) { if (flow === 'ark') onMsg(flow,m); else finish(flow,m); }
@@ -507,12 +511,13 @@ export function onReady() {
   for (const flow of FLOWS) {
     const F = S[flow];
     if (F.st === 'run' && F.wait) { F.st = 'idle'; F.wait = false; start(flow, F.name); continue; }   // P393: tapped while reconnecting
-    if (flow !== 'ark' && F.st === 'fail' && F.why === 'offline' && !peer.rescue) finish(flow, { ok: true, text: tx('p392.restored') });
+    if (!['ark', 'end_turn', 'takeover'].includes(flow) && F.st === 'fail' && F.why === 'offline' && !peer.rescue) finish(flow, { ok: true, text: tx('p392.restored') });
     if (flow !== 'ark' && F.st === 'run' && F.dropped && !peer.rescue) finish(flow, { ok: true, step: F.step, ticket: F.ticket, text: tx('p332.reset.back') });
     if ((F.st === 'ok' || F.st === 'fail') && !F.fold && !F.foldTimer) foldLater(flow);   // the link is back: ended results fold
   }
   refreshArk();
   paintMode();
+  assist.paintCard(el('rs-help-body'));   // 0.26.9 #468: the step follows this host's `assist1` cap
 }
 /** P393 (app.js): the link has been unreachable for the full five seconds: a tap that was waiting for it says why now. */
 export function onLinkDown() { for (const flow of FLOWS) if (S[flow].st === 'run' && S[flow].wait) finish(flow, { ok: false, why: 'offline' }); }
@@ -536,9 +541,64 @@ export function configure(hooks) {
   onLang(paint);
   paint();
 }
+// ---------------------------------------------------------------- 0.26.9 selfheal (CONTRACT §C, #461)
+// 「接管卡住的会话」: signed `rescue_do {action:"takeover"}` — the host interrupts the turn, restarts the AI coding tool's
+// background service if it is still busy after 10 s, resumes the same conversation and reconnects (reset_step / reset_done
+// as for ①). The card is the first of 紧急修复 while a turn is stuck (the chat's queued notice says so), else under ①.
+// 「强制结束这一轮」 (the chat's queued notice): signed `rescue_do {action:"end_turn"}` — only the interrupt step.
+const changed = [];
+/** relay.js: repaint the chat when an end_turn / takeover run moves on. */
+export function onChange(fn) { changed.push(fn); }
+/** relay.js: is a turn stuck right now (host `stuck`, or waited past the threshold)? Puts 「接管」 first. */
+export function setStuck(on) { on = !!on; if (S.stuck === on) return; S.stuck = on; paintTakeover(); }
+export const flowState = (flow) => (flow === 'end_turn' || flow === 'takeover' ? { st: S[flow].st, text: S[flow].text, why: S[flow].why, step: S[flow].step } : null);
+export const whyLine = (why) => whyText(why);
+export async function endTurn() {
+  if (S.end_turn.st === 'run') return;
+  if (!await confirmSheet(tx('p0269.queue.end'), tx('p0269.queue.endConfirm'), tx('p0269.queue.end'), true)) return;
+  start('end_turn', 'end_turn');
+}
+/** The chat's end_turn result line was read: back to idle (the next stuck notice offers it again). */
+export function clearEndTurn() { if (S.end_turn.st !== 'run') { clearTimeout(S.end_turn.foldTimer); S.end_turn = fresh(); } }
+export async function takeover() {
+  if (S.takeover.st === 'run') return;
+  if (!await confirmSheet(tx('p0269.take.title'), tx('p0269.take.confirm'), tx('p0269.take.title'))) return;
+  start('takeover', 'takeover');
+}
+function paintTakeover() {
+  const reset = el('rs-reset');
+  if (!reset) return;
+  let card = el('rs-takeover');
+  if (!card) { card = node('li', 'rscard'); card.id = 'rs-takeover'; }
+  const F = S.takeover;
+  // first while a turn is stuck; otherwise right under ① (and its 重开 AI 会话 row)
+  const anchor = S.stuck ? null : (el('rs-session') || reset);
+  if (S.stuck) { if (reset.previousElementSibling !== card) reset.before(card); }
+  else if (anchor.nextElementSibling !== card) anchor.after(card);
+  card.dataset.state = F.st;
+  card.toggleAttribute('data-hl', S.stuck && F.st === 'idle');
+  const parts = [node('h4', 'rstitle', tx('p0269.take.title'))];
+  if (S.stuck && F.st === 'idle') { const tag = node('p', 'rstag', tx('p0269.take.stuck')); tag.id = 'rs-takeover-tag'; parts.push(tag); }
+  const note = node('p', 'rsnote', tx('p0269.take.note')); note.id = 'rs-takeover-note'; parts.push(note);
+  const busy = FLOWS.some((f) => f !== 'takeover' && S[f].st === 'run');
+  const go = (label, cls) => { const b = btn('rs-takeover-go', label, cls, takeover); b.disabled = busy; b.setAttribute('aria-describedby', note.id); return b; };
+  if (F.fold && (F.st === 'ok' || F.st === 'fail')) { card.replaceChildren(parts[0], ...folded('takeover', F, logOf(F), () => clearFlow('takeover')), acts(go(tx('p0269.take.title'), ''))); return; }
+  if (F.st === 'run') parts.push(bar('takeover', F, STEPS.takeover));
+  if (F.st === 'ok') { const [first, ...rest] = okBlock('takeover', F); parts.push(headBar('takeover', first, () => clearFlow('takeover')), ...rest, acts(backBtn('takeover'))); }
+  if (F.st === 'fail') {
+    const known = whyText(F.why);
+    const msg = node('p', 'rsmsg rsfail', known || (F.why === 'timeout' && !F.heard ? tx('p332.noAnswer') : tx('p0269.take.fail'))); msg.id = 'rs-takeover-msg';
+    parts.push(headBar('takeover', msg, () => clearFlow('takeover')));
+    if (!known && F.text) parts.push(node('p', 'rsmsg', F.text));
+    parts.push(acts(go(tx('p332.again'), '')));
+  }
+  if (F.st === 'idle') parts.push(acts(go(tx('p0269.take.title'), S.stuck ? 'aj-btn--primary' : '')));
+  card.replaceChildren(...parts);
+}
+
 // tests
-export const _debug = () => ({ reset: { ...S.reset, timer: !!S.reset.timer, foldTimer: !!S.reset.foldTimer }, help: { ...S.help, timer: !!S.help.timer, foldTimer: !!S.help.foldTimer }, offer: { ...S.offer, timer: !!S.offer.timer }, failedOnce: S.failedOnce, askFirst: S.askFirst, rescue: S.rescue });
-export function _reset() { arkOffer=null; arkDismissed=''; for (const f of FLOWS) { clearTimeout(S[f].timer); clearTimeout(S[f].foldTimer); if (S[f].r) done(S[f].r); S[f] = fresh(); } S.failedOnce = false; S.askFirst = false; S.authFold = S.authHide = ''; paint(); }
+export const _debug = () => ({ reset: { ...S.reset, timer: !!S.reset.timer, foldTimer: !!S.reset.foldTimer }, help: { ...S.help, timer: !!S.help.timer, foldTimer: !!S.help.foldTimer }, offer: { ...S.offer, timer: !!S.offer.timer }, failedOnce: S.failedOnce, askFirst: S.askFirst, rescue: S.rescue, stuck: S.stuck, end_turn: { ...S.end_turn, timer: !!S.end_turn.timer }, takeover: { ...S.takeover, timer: !!S.takeover.timer } });
+export function _reset() { arkOffer=null; arkDismissed=''; for (const f of FLOWS) { clearTimeout(S[f].timer); clearTimeout(S[f].foldTimer); if (S[f].r) done(S[f].r); S[f] = fresh(); } S.failedOnce = false; S.askFirst = false; S.stuck = false; S.authFold = S.authHide = ''; paint(); }
 export function _foldNow() { for (const f of FLOWS) { const F = S[f]; if (F.foldTimer) { clearTimeout(F.foldTimer); F.foldTimer = 0; if (F.st === 'ok' || F.st === 'fail') F.fold = true; } } paint(); }
 
 
