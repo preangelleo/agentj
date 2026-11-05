@@ -147,7 +147,7 @@ agentj --help
 
 ```text
 usage: agentj [-h] [-V] [--migrate-legacy] [--instance N] [--fresh]
-              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,budget,feedback,stop,resume,faceid,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,files,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,terminal,assist,provider,sudo-helper,docs-rule,handover,seat,wechat,telegram-cursor,file,plaza,support,data,diag,preflight,skills,capability,goal,heartbeat,quota,account,imessage,busy,decide,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
+              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,budget,feedback,stop,resume,faceid,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,files,trash,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,terminal,assist,provider,sudo-helper,docs-rule,handover,seat,wechat,telegram-cursor,file,plaza,support,data,diag,preflight,skills,capability,goal,heartbeat,quota,account,imessage,busy,decide,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
 ```
 
 | Argument | Default | Required | Choices | Help |
@@ -4690,16 +4690,16 @@ usage: agentj mail [-h] [--workflow WORKFLOW] [--artifact-root ARTIFACT_ROOT]
                    [--from EXPECT_FROM] [--subject-has SUBJECT_HAS]
                    [--within WITHIN] [--lookback LOOKBACK] [--wait WAIT]
                    [--id ID] [--en] [--json]
-                   {status,presets,setup,allow,deny,password,test,check,on,off,send,notes,expect,trash,workflow-status,workflow-grant,workflow-revoke,workflow-retry}
+                   {status,presets,setup,allow,deny,password,test,check,on,off,send,notes,expect,trash,workflow-status,workflow-grant,workflow-revoke,workflow-retry,workflow-migrate}
                    [address]
 ```
 
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `action` | `null` | true | `status`, `presets`, `setup`, `allow`, `deny`, `password`, `test`, `check`, `on`, `off`, `send`, `notes`, `expect`, `trash`, `workflow-status`, `workflow-grant`, `workflow-revoke`, `workflow-retry` | `` |
+| `action` | `null` | true | `status`, `presets`, `setup`, `allow`, `deny`, `password`, `test`, `check`, `on`, `off`, `send`, `notes`, `expect`, `trash`, `workflow-status`, `workflow-grant`, `workflow-revoke`, `workflow-retry`, `workflow-migrate` | `` |
 | `address` | `null` | false | — | `deny：发件地址 / the sender address` |
-| `--workflow` | `null` | false | — | `exact native workflow id for workflow-status/grant/revoke` |
+| `--workflow` | `null` | false | — | `exact native workflow id for workflow-status/grant/revoke/migrate` |
 | `--artifact-root` | `null` | false | — | `workflow-grant: exact artifact folder (default: native task folder)` |
 | `--workflow-cc-contact` | `[]` | false | — | `workflow-grant: fixed CC contact ID (1–4), separately signed` |
 | `--delivery-manifest` | `null` | false | — | `send: hash-bound v1/v2 artifact manifest JSON` |
@@ -6928,6 +6928,26 @@ usage: agentj theme validate [-h] [--json] folder
 | `folder` | `null` | true | — | `主题文件夹（theme.json 所在的文件夹）/ the theme folder (where theme.json is)` |
 | `--json` | `false` | false | — | `` |
 
+### agentj trash
+
+```text
+move to system trash, restore there
+```
+
+```bash
+agentj trash --help
+```
+
+```text
+usage: agentj trash [-h] [--json] paths [paths ...]
+```
+
+| Argument | Default | Required | Choices | Help |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `paths` | `null` | true | — | `local paths, use -- before option-like names` |
+| `--json` | `false` | false | — | `` |
+
 ### agentj unlink
 
 ```text
@@ -7451,7 +7471,7 @@ agentj --help
 
 ```text
 usage: agentj [-h] [-V] [--migrate-legacy] [--instance N] [--fresh]
-              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,budget,feedback,stop,resume,faceid,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,files,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,terminal,assist,provider,sudo-helper,docs-rule,handover,seat,wechat,telegram-cursor,file,plaza,support,data,diag,preflight,skills,capability,goal,heartbeat,quota,account,imessage,busy,decide,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
+              {doctor,reload,service,rescue,update,init,serve,protocol,pair,devices,revoke,send,notify,status,name,admin,login,unlink,news,report-hostname,remote-pair,remote-unbind,agent,passphrase,approvals,budget,feedback,stop,resume,faceid,memory,activity,config,history,inbox,asr,tasks,wizard,automation,keep-awake,browser,files,trash,setup,google,mail,report,contacts,hook,ask,qr,screen,workflows,sudo,secret,terminal,assist,provider,sudo-helper,docs-rule,handover,seat,wechat,telegram-cursor,file,plaza,support,data,diag,preflight,skills,capability,goal,heartbeat,quota,account,imessage,busy,decide,local-model,recall,bots,friends,codex-sandbox,migrate,alias,instances,label,onboarding} ...
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
@@ -11994,16 +12014,16 @@ usage: agentj mail [-h] [--workflow WORKFLOW] [--artifact-root ARTIFACT_ROOT]
                    [--from EXPECT_FROM] [--subject-has SUBJECT_HAS]
                    [--within WITHIN] [--lookback LOOKBACK] [--wait WAIT]
                    [--id ID] [--en] [--json]
-                   {status,presets,setup,allow,deny,password,test,check,on,off,send,notes,expect,trash,workflow-status,workflow-grant,workflow-revoke,workflow-retry}
+                   {status,presets,setup,allow,deny,password,test,check,on,off,send,notes,expect,trash,workflow-status,workflow-grant,workflow-revoke,workflow-retry,workflow-migrate}
                    [address]
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `action` | `null` | true | `status`, `presets`, `setup`, `allow`, `deny`, `password`, `test`, `check`, `on`, `off`, `send`, `notes`, `expect`, `trash`, `workflow-status`, `workflow-grant`, `workflow-revoke`, `workflow-retry` | `` |
+| `action` | `null` | true | `status`, `presets`, `setup`, `allow`, `deny`, `password`, `test`, `check`, `on`, `off`, `send`, `notes`, `expect`, `trash`, `workflow-status`, `workflow-grant`, `workflow-revoke`, `workflow-retry`, `workflow-migrate` | `` |
 | `address` | `null` | false | — | `allow` |
-| `--workflow` | `null` | false | — | `exact native workflow id for workflow-status/grant/revoke` |
+| `--workflow` | `null` | false | — | `exact native workflow id for workflow-status/grant/revoke/migrate` |
 | `--artifact-root` | `null` | false | — | `workflow-grant: exact artifact folder (default: native task folder)` |
 | `--workflow-cc-contact` | `[]` | false | — | `workflow-grant: fixed CC contact ID (1–4), separately signed` |
 | `--delivery-manifest` | `null` | false | — | `send: hash-bound v1/v2 artifact manifest JSON` |
@@ -14230,6 +14250,26 @@ usage: agentj theme validate [-h] [--json] folder
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `folder` | `null` | true | — | `主题文件夹（theme.json 所在的文件夹）/ the theme folder (where theme.json is)` |
+| `--json` | `false` | false | — | `` |
+
+### agentj trash
+
+```text
+移入系统废纸篓（在系统废纸篓恢复）；不永久删除
+```
+
+```bash
+agentj trash --help
+```
+
+```text
+usage: agentj trash [-h] [--json] paths [paths ...]
+```
+
+| 参数 | 默认值 | 必填 | 可选值 | 说明 |
+| --- | --- | --- | --- | --- |
+| `-h / --help` | `null` | false | — | `show this help message and exit` |
+| `paths` | `null` | true | — | `本机路径；-- 后可放以 - 开头的文件名` |
 | `--json` | `false` | false | — | `` |
 
 ### agentj unlink

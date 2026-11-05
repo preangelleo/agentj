@@ -32,3 +32,20 @@ test('denial is retryable and simultaneous acquire is single-flight',async()=>{
  await assert.rejects(mic.acquire(),/denied/);const a=mic.acquire(),b=mic.acquire();resolve({getTracks:()=>[track],getAudioTracks:()=>[track]});
  const x=await a,y=await b;x.release();assert.equal(track.enabled,true);y.release();assert.equal(track.enabled,false);assert.equal(calls,2);mic.close();
 });
+test('cancelled permission resolving after a newer successful take cannot stop or replace it',async()=>{
+ const pending=[]; const mic=createMicrophone({visible:()=>true,getUserMedia:()=>new Promise((resolve,reject)=>pending.push({resolve,reject}))});
+ const source=()=>{const tracks=[0,1].map(()=>({readyState:'live',enabled:true,stop(){this.readyState='ended';}}));return {getTracks:()=>tracks,getAudioTracks:()=>tracks};};
+ const old=mic.acquire();const rejected=assert.rejects(old,{name:'AbortError'});mic.close();
+ const newer=mic.acquire(),fresh=source();pending[1].resolve(fresh);const take=await newer;
+ const late=source();pending[0].resolve(late);await rejected;
+ assert.ok(late.getTracks().every(t=>t.readyState==='ended'&&!t.enabled));assert.ok(fresh.getTracks().every(t=>t.readyState==='live'&&t.enabled));
+ take.release();assert.ok(fresh.getTracks().every(t=>t.readyState==='ended'&&!t.enabled));
+});
+test('late denial from a cancelled permission cannot clear a newer in-flight request',async()=>{
+ const pending=[];let calls=0;const mic=createMicrophone({visible:()=>true,getUserMedia:()=>{calls++;return new Promise((resolve,reject)=>pending.push({resolve,reject}));}});
+ const old=mic.acquire();const denied=assert.rejects(old,{name:'NotAllowedError'});mic.close();const next=mic.acquire();
+ pending[0].reject(new DOMException('Denied','NotAllowedError'));await denied;
+ const also=mic.acquire();assert.equal(calls,2);
+ const track={readyState:'live',enabled:true,stop(){this.readyState='ended';}};pending[1].resolve({getTracks:()=>[track],getAudioTracks:()=>[track]});
+ const a=await next,b=await also;a.release();assert.equal(track.readyState,'live');b.release();assert.equal(track.readyState,'ended');
+});

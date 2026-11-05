@@ -6927,7 +6927,7 @@ class Host:
         caps.append("sk1")                                     # P426 §39: skill health on the 技能 page + skill_archive / skill_restore
         caps.append(jcards.CAP)                                # P360 §34: Agent J Cards (jcard_list / jcard_get / jcard_set)
         caps.append(compose.CAP_MQ)                            # P286 §10.6: takes quote_more (≤ 5 quotes in one say)
-        caps.append("hooks1")                                  # P366: answers hook_list / hook_set (Settings → Webhook)
+        caps.extend(("hooks1", "externalmcp1"))                                  # P366: answers hook_list / hook_set (Settings → Webhook)
         caps.append(compose.CAP_SYNC)                          # P398 §10.2: answers say_sync (queued sends after a reconnect)
         caps.append("heartbeat_prompt")  # P537: append-only capability for prompt editing
         with contextlib.suppress(Exception):     # 0269-w2-assist (§41): only while a pinned official key ships (placeholder = off)

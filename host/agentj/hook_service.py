@@ -89,6 +89,8 @@ class HookService:
     def __init__(self, host, store: hooks.Store | None = None, orders: OrderSink | None = None, clock=time.time):
         self.host, self.st, self.clock = host, host.st, clock
         self.store = store or hooks.Store(self.st.root, clock=clock)
+        from .external_mcp import Service
+        self.mcp = Service(self)
         self.orders = orders or OrderSink(self.st.root)
         self.queues: dict[str, collections.deque] = {}           # hook id → deliveries waiting for `agentj hook wait`
         self.waiters: dict[str, list[asyncio.Future]] = {}
@@ -128,7 +130,8 @@ class HookService:
     def ids_text(self) -> str:
         """The live (active) hook ids for the relay: an unknown id is answered 404 at the edge without using the box's
         window (review M4). The ids are in the public URLs anyway; nothing else about a hook is sent."""
-        return json.dumps({"t": "ids", "h": [h["id"] for h in self.store.live() if h["state"] == "active"][:32]},
+        return json.dumps({"t": "ids", "h": [h["id"] for h in self.store.live() if h["state"] == "active"][:32],
+                           "mcp": self.mcp.ids()},
                           separators=(",", ":"))
 
     def changed(self) -> None:
@@ -255,6 +258,8 @@ class HookService:
     # ------------------------------------------------------------ one public request
     async def handle(self, meta: dict, body: bytes, test: bool = False) -> tuple[int, dict]:
         hid = meta.get("h")
+        if isinstance(hid, str) and self.mcp.get(hid):
+            return await self.mcp.handle(meta, body)
         h = self.store.get(hid) if isinstance(hid, str) and hooks.ID_RE.fullmatch(hid) else None
         if h is None or h["state"] == "pending":
             return 404, {"error": "not_found"}
@@ -486,6 +491,8 @@ class HookService:
                 return self._triage_set(req)
             if h is None:
                 return {"ok": False, "why": "no_hook"}
+            if self.mcp.get(h["id"]):
+                return {"ok": False, "why": "phone_only"}
             if not self._owns(h, req):            # review M2: an order reads, waits on and changes only its own hooks
                 return {"ok": False, "why": "not_yours"}
             if t == "show":
@@ -844,10 +851,18 @@ class HookService:
         r = obj.get("r")
         if not wire.is_rid(r):
             return
+        if t == "hook_set" and str(obj.get("op", "")).startswith("mcp-"):
+            async def manage():
+                result = await self.mcp.manage(obj.get("op"), obj)
+                await self.host.send_app(s, {"t": "hook_list_res", "r": r, **result, "connectors": self.mcp.views()})
+            task = asyncio.ensure_future(manage())
+            self.cards.add(task)
+            task.add_done_callback(self.cards.discard)
+            return
         if t == "hook_set":
             h = self.store.find(obj.get("id"))
             op = obj.get("op")
-            if h is None or op not in ("pause", "resume", "revoke"):
+            if h is None or self.mcp.get(h["id"]) or op not in ("pause", "resume", "revoke"):
                 return await self.host.send_app(s, {"t": "hook_list_res", "r": r, "ok": False, "why": "shape"})
             if op == "revoke":
                 await self.cli({"t": "revoke", "id": h["id"]})
@@ -859,8 +874,9 @@ class HookService:
                 self.store.save()
             self.log("hook_phone", device=s.device, op=op)
         rows = self.store.all()
-        body = {"hooks": [{**self.view(h), "auth": h["auth"]["kind"], "seal": None} for h in rows if h["state"] in ("active", "pending")
-                          or (h.get("ended") and self.clock() - h["ended"] < 86400)][:40],
+        body = {"hooks": [{**self.view(h), "auth": h["auth"]["kind"], "seal": None} for h in rows if not self.mcp.get(h["id"]) and (h["state"] in ("active", "pending")
+                          or (h.get("ended") and self.clock() - h["ended"] < 86400))][:40],
+                "connectors": self.mcp.views(),
                 "recent": self.store.deliveries(None, 50), "up": self.up,
                 "quota": {"used": self.store.used_today(), "day_max": hooks.DAY_MAX, "hooks_max": hooks.HOOKS_MAX}}
         await self.host.send_app(s, {"t": "hook_list_res", "r": r, "ok": True, **body})

@@ -487,3 +487,5 @@ P529: Feedback is not harness diagnosis. For an explicit owner report, redact an
 
 
 P530 mail troubleshooting: `mail password` / `mail status` use the Agent-facing socket inside isolation. A Settings password card is restricted to the clicking paired remote; no card means failure. `sandbox_blocked` means sandbox/file permissions denied the channel, not busy: guide the owner to Settings → Channels → E-mail on their paired remote to enter the code. `host_unreachable` means the connection/outcome is unknown; check `agentj service status` in the computer terminal. Other mail control operations may still be unavailable inside isolation. Never weaken isolation or ask for the code in chat.
+
+本机文件需要删除且系统废纸篓可用时，优先 `agentj trash -- <路径>`，恢复在系统废纸篓进行；失败或结果未知先核对原路径和废纸篓，不自动改用永久删除。For ordinary local deletion with native trash available, prefer `agentj trash -- <path>` and restore through the system trash; inspect failed/unknown outcomes before retrying. This command does not intercept arbitrary `rm` or scripted deletion.

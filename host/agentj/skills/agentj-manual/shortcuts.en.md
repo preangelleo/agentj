@@ -187,6 +187,10 @@ Function keys also work while a text field is focused. System or input-method sh
 | `Alt+Shift+S` | Tap the button, then confirm | Stop all Agents (confirm first) |
 | — | Tap the button, then confirm | Reopen AI session (confirm first) |
 | — | Tap | Send layout diagnostic |
+| — | Tap Create connection | Create a connection and confirm its signed card |
+| — | Tap Rotate credential | Rotate a connection credential |
+| — | Tap Revoke connection | Revoke a connection |
+| — | Tap Copy connection URL | Copy the connection URL |
 | `/` · `⌘+K` / `Ctrl+K` | Tap the magnifier at the top right of the list | Search the shortcut list: type a word to filter by action, key or gesture, in Chinese or English |
 | `Esc` | Tap the magnifier again | Clear and close the search box; Esc again closes the shortcut list |
 | `i` · `Esc` | Tap the message box | Into the message box; Esc in it leaves (the draft stays) |

@@ -1,3 +1,4 @@
+import { connectorsSection, parseConnectors } from './externalmcp.js';
 import { copyButton } from './copycode.js';
 // P366 · Settings → Webhook (AGENTJ-HOOKS-SPEC §8.3): the computer's webhooks as a list the owner can read and steer, inside
 // the paired session (`hook_list` → `hook_list_res`; `hook_set {id, op: pause | resume | revoke}` → the same fresh list;
@@ -54,7 +55,7 @@ export function parse(m) {
   const hooks = (Array.isArray(m.hooks) ? m.hooks.slice(0, 40) : []).map(hook).filter(Boolean);
   const recent = (Array.isArray(m.recent) ? m.recent.slice(0, 50) : []).map(delivery).filter(Boolean).sort((a, b) => b.at - a.at);
   const q = m.quota && typeof m.quota === 'object' ? m.quota : {};
-  return { hooks, recent, up: m.up === true, quota: { used: num(q.used) ?? 0, day_max: num(q.day_max) ?? 1000, hooks_max: num(q.hooks_max) ?? 20 } };
+  return { hooks, recent, connectors: parseConnectors(m.connectors), up: m.up === true, quota: { used: num(q.used) ?? 0, day_max: num(q.day_max) ?? 1000, hooks_max: num(q.hooks_max) ?? 20 } };
 }
 
 /** Live (active / pending; resident first, then newest) and ended within 24 h (newest end first). */
@@ -222,6 +223,7 @@ function draw(status) {
       kids.push(ul);
     }
   }
+  if (S && peer.externalmcp1 === true) kids.push(connectorsSection(S.connectors, { ask: D.ask, ready: D.ready, confirm: D.confirm, toast: D.toast, refresh: load }));
   kids.push(mk('p', 'setnote whroutes', t('p366.routes')));
   kids.push(mk('p', 'setnote whsafe', t('p366.safe')));
   kids.push(mk('p', 'setnote whhonest', t('p366.honest')));

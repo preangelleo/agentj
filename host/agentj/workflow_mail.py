@@ -362,6 +362,15 @@ class Service:
             core['renew'] = renew
         return core
 
+    def replacement(self, contract, old, why):
+        finite = old.get('never_expires') is not True
+        days = max(1, min(30, (old['expires'] - old['issued']) // 86400)) if finite else None
+        core = self.make(contract, old['artifact_root'], [x['id'] for x in old.get('cc_contacts', [])],
+                         days, old['max'], old['per_day'], why)
+        if finite and why != 'expired':
+            core.update(issued=old['issued'], expires=old['expires'])
+        return core
+
     def offer(self, data, wid, core):
         p = self.pending.get(wid)
         if p and not p.done():
@@ -386,7 +395,10 @@ class Service:
                 data = await asyncio.to_thread(self.load)
                 if data.get('epochs', {}).get(wid, 0) != epoch:
                     return {'ok': False, 'why': 'grant_stale'}
+                previous = data['grants'].get(wid)
                 data['grants'][wid] = {'core': core, 'proof': proof}
+                if previous and core.get('renew') == 'account_changed' and not previous['core'].get('mail_account'):
+                    data['grants'][wid]['migrated_from'] = previous
                 await asyncio.to_thread(self.save, data)
             except (tasks.TaskError, KeyError, TypeError, ValueError, OSError):
                 return {'ok': False, 'why': 'grant_required'}
@@ -449,7 +461,25 @@ class Service:
                 except tasks.TaskError:
                     contract = None
                 row = data['grants'].get(wid)
-                if op == 'status':
+                if op == 'migrate':
+                    agent = getattr(self.host, 'agent', None)
+                    owner = (type(peer) is int and codex_procs.start_token(peer) and agent is not None
+                             and provenance.is_owner(provenance.turn_source(agent)) and not provenance.untrusted_turn(agent))
+                    if not owner and (contract is None or await asyncio.to_thread(source, self.host, peer) != contract):
+                        return {'ok': False, 'why': 'workflow_source'}
+                    why = await asyncio.to_thread(self.why, row, contract)
+                    if why is None:
+                        return {'ok': True, 'workflow_id': wid, 'unchanged': True}
+                    if (why != 'account_changed' or row['core'].get('mail_account') or contract is None
+                            or await asyncio.to_thread(drift, self.st, row['core'])
+                            or not await asyncio.to_thread(proof_ok, self.st, row['core'], row['proof'])):
+                        return {'ok': False, 'why': 'migration_unavailable'}
+                    core = await asyncio.to_thread(self.replacement, contract, row['core'], why)
+                    p, new = self.offer(data, wid, core)
+                    if not new:
+                        return {'ok': False, 'why': 'card_pending'}
+                    await asyncio.to_thread(self.save, data)
+                elif op == 'status':
                     why = await asyncio.to_thread(self.why, row, contract)
                     active, verified, card, retry = why is None, contract is not None and await asyncio.to_thread(source, self.host, peer) == contract, None, None
                     if not active and why in RENEW and not verified:
@@ -457,8 +487,7 @@ class Service:
                     elif not active and why in RENEW:
                         c, last = row['core'], data.get('cards', {}).get(wid) or {}
                         try:
-                            core = await asyncio.to_thread(self.make, contract, c['artifact_root'], [x['id'] for x in c.get('cc_contacts', [])],
-                                                           None if c.get('never_expires') is not False else max(1, min(30, (c['expires'] - c['issued']) // 86400)), c['max'], c['per_day'], why)
+                            core = await asyncio.to_thread(self.replacement, contract, c, why)
                         except (ValueError, OSError):
                             card = 'unavailable'
                         else:
@@ -480,27 +509,27 @@ class Service:
                                       'remaining': None, 'unlimited': True, 'reason': why, 'card': card, 'card_retry_at': retry,
                                       'note': None if active else ' — '.join(NOTE[self.contacts.lang() == 'en'].get(x, x) for x in (why, card) if x),
                                       'expires': ((row or {}).get('core') or {}).get('expires')}}
-                verified = await asyncio.to_thread(source, self.host, peer)
-                if op != 'grant' or verified != contract or contract is None:
+                elif op != 'grant' or await asyncio.to_thread(source, self.host, peer) != contract or contract is None:
                     return {'ok': False, 'why': 'workflow_source'}
-                raw_root = req.get('artifact_root')
-                cc_ids = req.get('cc_contacts') or []
-                days, count, daily = req.get('days'), req.get('max', 100), req.get('per_day', 0)
-                if not ((days is None or type(days) is int and 1 <= days <= 30) and type(count) is int and 1 <= count <= 100):
-                    return {'ok': False, 'why': 'shape'}
-                old = (row or {}).get('core') or {}
-                # An omitted deadline preserves an existing finite policy; never silently widens it.
-                old_days = max(1, min(30, (old.get('expires', 0) - old.get('issued', 0)) // 86400)) if old else None
-                effective_days = old_days if days is None and old.get('never_expires') is False else days
-                core = await asyncio.to_thread(self.make, contract, contract['root'] if raw_root is None else raw_root, cc_ids, effective_days, count, daily)
-                if (await asyncio.to_thread(self.live, row, contract) and [x['id'] for x in row['core'].get('cc_contacts', [])] == sorted(cc_ids)
-                        and row['core']['artifact_root'] == core['artifact_root']
-                        and (days is None or not old.get('never_expires') and days == old_days)):
-                    return {'ok': True, 'workflow_id': wid, 'grant': {'status': 'active', 'expires': old['expires'], 'never_expires': bool(old.get('never_expires'))}, 'unchanged': True}
-                p, new = self.offer(data, wid, core)
-                if not new:
-                    return {'ok': False, 'why': 'card_pending', 'grant': {'status': 'inactive', 'card': 'pending'}}
-                await asyncio.to_thread(self.save, data)
+                if op == 'grant':
+                    raw_root = req.get('artifact_root')
+                    cc_ids = req.get('cc_contacts') or []
+                    days, count, daily = req.get('days'), req.get('max', 100), req.get('per_day', 0)
+                    if not ((days is None or type(days) is int and 1 <= days <= 30) and type(count) is int and 1 <= count <= 100):
+                        return {'ok': False, 'why': 'shape'}
+                    old = (row or {}).get('core') or {}
+                    # An omitted deadline preserves an existing finite policy; never silently widens it.
+                    old_days = max(1, min(30, (old.get('expires', 0) - old.get('issued', 0)) // 86400)) if old else None
+                    effective_days = old_days if days is None and old and old.get('never_expires') is not True else days
+                    core = await asyncio.to_thread(self.make, contract, contract['root'] if raw_root is None else raw_root, cc_ids, effective_days, count, daily)
+                    if (await asyncio.to_thread(self.live, row, contract) and [x['id'] for x in row['core'].get('cc_contacts', [])] == sorted(cc_ids)
+                            and row['core']['artifact_root'] == core['artifact_root']
+                            and (days is None or not old.get('never_expires') and days == old_days)):
+                        return {'ok': True, 'workflow_id': wid, 'grant': {'status': 'active', 'expires': old['expires'], 'never_expires': bool(old.get('never_expires'))}, 'unchanged': True}
+                    p, new = self.offer(data, wid, core)
+                    if not new:
+                        return {'ok': False, 'why': 'card_pending', 'grant': {'status': 'inactive', 'card': 'pending'}}
+                    await asyncio.to_thread(self.save, data)
             except (ValueError, OSError):
                 return {'ok': False, 'why': 'grant_stale'}
         # Revoke stays live while awaiting the card; the card outlives this call.

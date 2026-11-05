@@ -542,6 +542,7 @@ function showSub(v, add = false) {
   el('set-local-files').hidden = v !== 'files';
   el('set-accts').hidden = v !== 'accts';
   el('set-back').hidden = v === 'main';
+  el('set-title').dataset.i18n = SUB_TITLE[v];
   el('set-title').textContent = t(SUB_TITLE[v]);
   el('settings').dataset.sub = v;
   if (from === 'remotes' && v !== 'remotes') remotes.close();
@@ -584,6 +585,7 @@ export function open(page = 'main', add = false) {
   el('set-notify').hidden = true;
   el('set-hooks').hidden = true;
   box.dataset.sub = 'main';
+  el('set-title').dataset.i18n = 'set.title';
   el('set-title').textContent = t('set.title');
   el('setBtn').setAttribute('aria-expanded', 'true');
   el('srchBtn').setAttribute('aria-label', t('p264.search')); el('srchBtn').title = t('p264.search');

@@ -873,3 +873,11 @@ An explicit Same owner plan must use the approval root fixed by bilateral pairin
 AI tool scanning, switching, restart and failure recovery in the Olares app use the image-owned read-only process manager, retaining paired-phone signed confirmation. A failed switch restores the original configuration; rollback is confirmed only after the original AI returns to service, and failed recovery is reported. Do not install systemd inside the app. Bundled OpenCode is pinned to 2.2.5; existing working owner-installed tools are not silently replaced.
 
 For native Claude Code, install and personally sign in to Claude Code inside this app, then switch with `agentj agent claude`. Claude Agent inside OpenCode is a separate route: install Claude Code 2.1.248 or newer, personally run `claude auth login`, then choose Claude Agent in OpenCode `/connect`. Agent J does not copy OAuth tokens; completing login does not establish a verified model reply.
+
+## External assistants: one-way MCP requests
+
+On your phone, open Settings → Agent tools → Webhooks → External assistant · One-way requests. Enter a connection name and allowed website origins, one exact HTTPS origin per line, such as `https://assistant.example`, without a path, query or trailing slash. Tap Create connection, confirm the signed card on your phone, then verify with Face ID on the pickup card to collect the credential once. Copy the connection URL from the list.
+
+An external assistant can send requests and receive fixed receipts. It cannot read Agent J replies, conversations or work results, or approve actions for you. Incoming requests and authentication pass through hosted relay memory; replies and work results stay on your host and phone. The list shows metadata only. If you lose a credential, choose Rotate credential, confirm the signed card and collect its replacement; the old credential stops working immediately. Choose Revoke connection and confirm its signed card when you no longer need the connection.
+
+This version supports MCP `2025-06-18` with stateless JSON requests, without SSE or two-way result delivery. Connecting a Muse account and completing platform review still require the owner's authorization and live verification. This page does not claim Muse approval or compatibility.

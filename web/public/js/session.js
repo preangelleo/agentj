@@ -189,6 +189,7 @@ function readCaps(m) {
   peer.jpalette1 = Array.isArray(m.caps) && m.caps.includes('jpalette1'); // P420 global palette library
   peer.sk1 = peer.wf1 && m.caps.includes('sk1');   // P426 (§39): skill health + skill_archive / skill_restore
   peer.jcards1 = Array.isArray(m.caps) && m.caps.includes('jcards1');   // P360 (§34): Agent J Cards
+  peer.externalmcp1 = Array.isArray(m.caps) && m.caps.includes('externalmcp1');
   peer.hooks1 = Array.isArray(m.caps) && m.caps.includes('hooks1');   // P366: Settings → Webhook (hook_list / hook_set)
   peer.heartbeat_prompt = Array.isArray(m.caps) && m.caps.includes('heartbeat_prompt');
   peer.heartbeat = Array.isArray(m.caps) && m.caps.includes('heartbeat');

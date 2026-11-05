@@ -2175,7 +2175,7 @@ def cmd(a) -> int:
             return ctl_call(st, req, timeout, max_bytes)
         except ServeBusy as e:
             return e.response()
-    if a.action in ("workflow-status", "workflow-grant", "workflow-revoke", "workflow-retry"):
+    if a.action in ("workflow-status", "workflow-grant", "workflow-revoke", "workflow-retry", "workflow-migrate"):
         from .elevate import client_request
         res = client_request(st, {"t": "workflow_mail", "op": a.action.removeprefix("workflow-"),
                     "workflow_id": a.workflow, "delivery": a.delivery, "artifact_root": a.artifact_root, "cc_contacts": a.workflow_cc_contact, "days": a.days, "max": a.workflow_max, "per_day": a.per_day}, timeout=700)
@@ -2330,9 +2330,9 @@ def add_parser(sub) -> None:
                                    " / Command Agent J by e-mail: mail outside the allowlist is only counted, never shown to a model; "
                                    "the app password is entered on the paired phone and stored encrypted here.")
     p.add_argument("action", choices=["status", "presets", "setup", "allow", "deny", "password", "test", "check", "on", "off", "send", "notes",
-                                      "expect", "trash", "workflow-status", "workflow-grant", "workflow-revoke", "workflow-retry"])
+                                      "expect", "trash", "workflow-status", "workflow-grant", "workflow-revoke", "workflow-retry", "workflow-migrate"])
     p.add_argument("address", nargs="?", help="allow / deny：发件地址 / the sender address")
-    p.add_argument("--workflow", help="exact native workflow id for workflow-status/grant/revoke")
+    p.add_argument("--workflow", help="exact native workflow id for workflow-status/grant/revoke/migrate")
     p.add_argument("--artifact-root", help="workflow-grant: exact artifact folder (default: native task folder)")
     p.add_argument("--workflow-cc-contact", action="append", default=[], help="workflow-grant: fixed CC contact ID (1–4), separately signed")
     p.add_argument("--delivery-manifest", help="send: hash-bound v1/v2 artifact manifest JSON")

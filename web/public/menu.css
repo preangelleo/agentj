@@ -951,3 +951,10 @@ body[data-assist] .setpage .box.setbox,body[data-assist] .menupage{padding-botto
 .asfeed__reply::-webkit-scrollbar{display:none}
 .asfeed__reply--none{color:var(--c-elephant)}
 body[data-assist-view]{overflow:hidden}
+
+/* #474: lifecycle controls reuse the Webhook page's Noir/Lotion surface. */
+#set-hooks .mcp474{margin-top:var(--ui-space-section);color:var(--menu-text)}
+#set-hooks .mcp474-form{display:flex;flex-direction:column;gap:12px;margin-top:var(--ui-space-section)}
+#set-hooks .mcp474-form input,#set-hooks .mcp474-form textarea{box-sizing:border-box;width:100%;min-height:44px;padding:12px;border:1px solid var(--menu-text);border-radius:var(--ui-radius-control);background:var(--noir);color:var(--lotion);font:inherit}
+#set-hooks .mcp474-form button{align-self:flex-start;min-height:44px}
+#set-hooks .mcp474 .whline{white-space:pre-wrap;color:var(--menu-text)}

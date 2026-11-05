@@ -1,5 +1,5 @@
-# Agent J v0.26.10
+# Agent J v0.26.11
 
-[host/web] Your Olares can transcribe voice. Delegate-first assistant; fixes for recording, settings, mail and quota picks. Active goals make the robot dance.
+[host/web] One-way assistant requests with phone-managed connectors. Native trash, legacy mail-grant migration, and stronger recording and approval checks.
 
-[主机/网页] 语音可接自己的 Olares；助理专注派活和验收。修复录音、未配对设置、工作流邮件与额度选择；目标进行时机器人跳舞。
+[主机/网页] 外部助理可单向发送任务，手机管理连接与凭据。新增系统废纸篓、旧邮件授权迁移，补齐录音和审批边界验收。

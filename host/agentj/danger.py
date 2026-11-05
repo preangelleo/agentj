@@ -1128,6 +1128,24 @@ def _simple(sc: Simple, hits: _Hits, depth: int, text: str) -> None:
         hits.add("credentials", "cred.service", "通过用户服务管理器在隔离外运行或修改程序")
     _opaque_rules(sc, hits, text)
     # ---- delete
+    native_args = list(args)
+    native_name = name in ("agentj", "aj", "jarvis")
+    if name in ("python", "python3", "pypy", "pypy3") and "-m" in args:
+        mi = args.index("-m")
+        if len(args) > mi + 1 and args[mi + 1] in ("agentj", "agentj.cli") and all(
+                x in ("-I", "-S", "-E", "-s", "-B", "-u") for x in args[:mi]):
+            native_name, native_args = True, args[mi + 2:]
+    while native_args and native_name:
+        if native_args[0] in ("--fresh", "--migrate-legacy") or native_args[0].startswith("--instance="):
+            native_args = native_args[1:]
+        elif native_args[0] == "--instance" and len(native_args) > 1:
+            native_args = native_args[2:]
+        else:
+            break
+    if native_name and native_args[:1] == ["trash"]:
+        hits.add("delete", "delete.agentj_trash", "移入系统废纸篓 / move to system trash")
+        for path in native_args[1:]:
+            _write_hit(hits, path, "移入废纸篓")
     if name in ("rm", "rmdir", "unlink", "shred", "srm", "wipe", "trash", "trash-put", "trash-rm", "trash-empty", "rmtrash",
                 "del", "erase", "rd", "Remove-Item", "wipefs", "sfdisk", "fdisk", "parted", "blkdiscard") or name.startswith(
             "mkfs"):

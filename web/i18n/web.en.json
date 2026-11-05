@@ -2434,7 +2434,11 @@
       "palette_copy": "Copy swatch HEX",
       "stop_all": "Stop all Agents (confirm first)",
       "restart_session": "Reopen AI session (confirm first)",
-      "layout_diagnostic": "Send layout diagnostic"
+      "layout_diagnostic": "Send layout diagnostic",
+      "mcp_create": "Create a connection and confirm its signed card",
+      "mcp_rotate": "Rotate a connection credential",
+      "mcp_revoke": "Revoke a connection",
+      "mcp_copy": "Copy the connection URL"
     },
     "keys": {
       "search": "Search the shortcut list: type a word to filter by action, key or gesture, in Chinese or English",
@@ -2570,7 +2574,11 @@
       "palette_copy": "Hold a swatch to copy HEX; move to cancel",
       "stop_all": "Tap the button, then confirm",
       "restart_session": "Tap the button, then confirm",
-      "layout_diagnostic": "Tap"
+      "layout_diagnostic": "Tap",
+      "mcp_create": "Tap Create connection",
+      "mcp_rotate": "Tap Rotate credential",
+      "mcp_revoke": "Tap Revoke connection",
+      "mcp_copy": "Tap Copy connection URL"
     },
     "keys": {
       "search": "Tap the magnifier at the top right of the list",
@@ -5029,5 +5037,29 @@
     "sendAudio": "Over {s} seconds: send as a voice attachment with transcription when finished.",
     "sendText": "Up to {s} seconds: convert to text when finished.",
     "agentSetup": "Ask your Agent to configure transcription on the Agent J host: endpoint {url}, model {model}, key name {name}. Enter the key itself only in the phone key card, never in chat. These settings have not been saved."
-  }
+  },
+  "mcp474.title": "External assistant · One-way requests",
+  "mcp474.disclosure": "Incoming requests pass through hosted relay memory before reaching your Agent. Replies and work results stay on your host and phone and are not returned to the external assistant. External requests cannot approve actions for you.",
+  "mcp474.pickup": "After creating or rotating, confirm the signed card on your phone, then use Face ID on the pickup card to collect the credential once. Rotate if lost; the old credential stops working immediately.",
+  "mcp474.name": "Connection name",
+  "mcp474.origins": "Allowed website origins (one exact HTTPS origin per line)",
+  "mcp474.example": "For example https://assistant.example, without a path or trailing slash",
+  "mcp474.create": "Create connection",
+  "mcp474.rotate": "Rotate credential",
+  "mcp474.revoke": "Revoke connection",
+  "mcp474.empty": "No external assistant connections yet.",
+  "mcp474.pending": "Waiting for signed confirmation on your phone…",
+  "mcp474.invalid": "Enter a name and 1–16 exact HTTPS origins, without paths, queries or trailing slashes.",
+  "mcp474.failed": "The action did not complete. Check your host is online and retry; if you already signed, reopen this page to refresh.",
+  "mcp474.done": "Action confirmed. Collect a created or rotated credential from its pickup card.",
+  "mcp474.confirm": "Confirm action for “{name}”?",
+  "mcp474.rotateNote": "Rotating immediately invalidates the old credential. You will also confirm the signed card on your phone.",
+  "mcp474.revokeNote": "After revoking, this connection cannot send requests. You will also confirm the signed card on your phone.",
+  "mcp474.scope": "Scope: send requests only",
+  "mcp474.state.active": "Active",
+  "mcp474.state.pending": "Pending approval",
+  "mcp474.state.revoked": "Revoked",
+  "mcp474.created": "Created {time}",
+  "mcp474.last": "Last request {time}",
+  "mcp474.copy": "Copy connection URL"
 }

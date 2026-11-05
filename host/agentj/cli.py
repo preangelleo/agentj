@@ -3233,7 +3233,7 @@ def main_jarvis(argv=None) -> None:
 
 # `migrate status` reports, `migrate rollback` undoes, `docs-rule` prints (or, with --write and the human's y, appends to the
 # AI's own memory file), `handover` only reads: none may move the state directory first
-NO_MIGRATE = ("file", "files", "diag", "preflight", "migrate", "docs-rule", "handover", "recall", "friends", "codex-sandbox", "capability", "google", "setup", "busy", "mail", "contacts", "imessage", "ask", "order", "core")   # recall / friends / codex-sandbox / capability: usually inside the fence
+NO_MIGRATE = ("trash", "file", "files", "diag", "preflight", "migrate", "docs-rule", "handover", "recall", "friends", "codex-sandbox", "capability", "google", "setup", "busy", "mail", "contacts", "imessage", "ask", "order", "core")   # recall / friends / codex-sandbox / capability: usually inside the fence
 
 
 APPROVALS_HELP = {
@@ -3706,6 +3706,8 @@ def main(argv=None) -> None:
     from . import first_run, google
     from . import local_files
     local_files.add_parser(sub)
+    from . import trash
+    trash.add_parser(sub)
     first_run.add_parser(sub)   # P115 / P92: agentj setup checklist
     google.add_parser(sub)      # P115 / P91: agentj google status|check|install|plan|on|off
     from . import mail

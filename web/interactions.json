@@ -3263,6 +3263,98 @@
       "gesture_zh": "点一下",
       "gesture_en": "Tap",
       "nokey": "settings-only"
+    },
+    {
+      "id": "app.mcp_create",
+      "since": "0.26.11",
+      "impl": "code",
+      "scope": "sheet",
+      "target": {
+        "selector": ".mcp474-create",
+        "zh": "创建外部助手连接",
+        "en": "Create external assistant connection"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "创建连接并签名确认",
+      "en": "Create a connection and confirm its signed card",
+      "gesture_zh": "点创建连接",
+      "gesture_en": "Tap Create connection",
+      "nokey": "Infrequent settings action; use standard form keyboard navigation"
+    },
+    {
+      "id": "app.mcp_rotate",
+      "since": "0.26.11",
+      "impl": "code",
+      "scope": "sheet",
+      "target": {
+        "selector": ".mcp474-rotate",
+        "zh": "轮换外部助手凭据",
+        "en": "Rotate external assistant credential"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "轮换连接凭据",
+      "en": "Rotate a connection credential",
+      "gesture_zh": "点轮换凭据",
+      "gesture_en": "Tap Rotate credential",
+      "nokey": "Infrequent settings action; use standard form keyboard navigation"
+    },
+    {
+      "id": "app.mcp_revoke",
+      "since": "0.26.11",
+      "impl": "code",
+      "scope": "sheet",
+      "target": {
+        "selector": ".mcp474-revoke",
+        "zh": "撤销外部助手连接",
+        "en": "Revoke external assistant connection"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "撤销连接",
+      "en": "Revoke a connection",
+      "gesture_zh": "点撤销连接",
+      "gesture_en": "Tap Revoke connection",
+      "nokey": "Infrequent settings action; use standard form keyboard navigation"
+    },
+    {
+      "id": "app.mcp_copy",
+      "since": "0.26.11",
+      "impl": "code",
+      "scope": "sheet",
+      "target": {
+        "selector": ".mcp474-copy",
+        "zh": "复制外部助手连接地址",
+        "en": "Copy external assistant connection URL"
+      },
+      "gestures": [
+        {
+          "type": "tap",
+          "pointer": "any"
+        }
+      ],
+      "keys": [],
+      "zh": "复制连接地址",
+      "en": "Copy the connection URL",
+      "gesture_zh": "点复制连接地址",
+      "gesture_en": "Tap Copy connection URL",
+      "nokey": "Infrequent settings action; use standard form keyboard navigation"
     }
   ]
 }

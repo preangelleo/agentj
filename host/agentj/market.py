@@ -95,10 +95,21 @@ class SignatureError(PlazaError):
 
 # ------------------------------------------------------------------ calls
 def _call(st, route: str, fields: dict, post=None) -> dict:
-    try:
-        status, obj = cloud.plaza_pkg_call(st, route, fields, **({"post": post} if post else {}))
-    except cloud.CloudError as e:
-        raise PlazaError(ERRORS.get(e.kind) or f"连不上 Agent J 服务器 / cannot reach the Agent J server ({e.kind})")
+    for attempt in range(1, 4 if route == "get" else 2):
+        try:
+            status, obj = cloud.plaza_pkg_call(st, route, fields, **({"post": post} if post else {}))
+        except cloud.CloudError as e:
+            raise PlazaError(ERRORS.get(e.kind) or f"连不上 Agent J 服务器 / cannot reach the Agent J server ({e.kind})")
+        if route != "get" or status not in (500, 502, 503, 504):
+            if route == "get" and attempt > 1:
+                with contextlib.suppress(Exception):
+                    st.log("plaza_get_retry_finished", count=attempt, status=status)
+            break
+        with contextlib.suppress(Exception):
+            st.log("plaza_get_retry" if attempt < 3 else "plaza_get_retry_exhausted", count=attempt, status=status)
+        if attempt == 3:
+            break
+        time.sleep((.5, 1.5)[attempt - 1])
     if 200 <= status < 300:
         return obj
     e = cloud.parse_error(obj) or f"http_{status}"
