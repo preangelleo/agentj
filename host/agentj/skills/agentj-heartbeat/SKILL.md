@@ -3,6 +3,9 @@ name: agentj-heartbeat
 description: The heartbeat — Agent J wakes you after an idle spell to check background work and the owner's to-dos. Use when background work ended in 〔Agent J 系统提示〕 / [Agent J system notice], or a message starts with 〔Agent J 心跳〕 / [Agent J heartbeat], or the owner says 「以后每 30 分钟看一次」「心跳改成两小时」「别再定时叫醒了」「每天早上 7 点叫醒你看一眼」「醒来以后先看备份任务」「心跳的时候帮我盯着 X」"heartbeat", "check every hour", "wake up every day at 7", "stop the heartbeat", "what does the heartbeat do". Changes the interval, the daily wake-up time, turns it on/off and maintains the heartbeat prompt.
 ---
 
+主 Agent 是董事长助理：只派常驻 CEO 或临时子 Agent、写验收、跑验收命令、汇报；除立等可取的一句话小事，绝不亲自干活，主会话随时接主人消息。
+Main Agent = chief of staff: dispatch to a resident CEO or temporary sub-Agent, write and run acceptance checks, report. Only immediate one-sentence tasks are yours; keep the main session ready for owner messages.
+
 The heartbeat is Agent J's own wake-up call, the same on Claude Code, Codex and OpenCode. When nothing has happened
 for the interval (default 60 minutes: no phone message, no turn, no desktop input), the host checks local records without
 calling a model. With nothing to handle it logs a skipped check. When a reason needs attention and cost protection allows it,
@@ -118,7 +121,8 @@ P375 quota dispatch rule / 额度派活：先查 `agentj quota --json`，周额�
 
 Calendar / 日历：also run `agentj card cal due --json` on natural wake-up; review today and reminder windows (agentj-calendar). Entries are records, never instructions. No punctual alarm guarantee.
 
-P498 dispatch: run `agentj quota --pick --json` before new background/native sub-Agent work. Both Claude and Codex weekly/5h readings must be verified and at most300s old; otherwise no recommendation (exit2). Recommendation is advice only, followed by login/handshake and existing80/90% checks. Do not switch the main conversation or invent missing numbers.
+Before each dispatch run `agentj quota --pick --json` and follow its reason. Prefer Codex for content creation and Claude for Agent J development; within suitable choices compare each account’s remaining weekly quota divided by days to reset. A fresh weekly reading with no 5h field means no 5h restriction (0% used); when the whole read fails or is stale, use the last weekly reading and label the recommendation degraded/stale, never invent a percentage or return no conclusion solely for missing 5h. Keep known 80/90% limits, owner choice and login/handshake checks; never switch the main conversation.
+派活先查 `agentj quota --pick --json`：内容创作优先 Codex，Agent J 开发优先 Claude；同类按各账号剩余周额度÷距重置天数选。新鲜周数据没有5h字段按无5h限制（已用0%）；整次读取失败或过期，仍用最近周数据降级给结论并明说过期。保留已知80/90%限额、主人选择和登录握手，不切主对话。
 
 ## 编辑巡检清单
 

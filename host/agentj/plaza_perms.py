@@ -597,6 +597,8 @@ def install_card_text(info: dict, en: bool, index=None) -> str:
             out.append("Allow = install despite the blocked findings, this one time." if en else "允许 = 不顾拦截项安装（只这一次）。")
     else:
         out.append("Static audit: nothing found" if en else "静态审计：没发现问题")
+    if info.get("os_warning"):
+        out.append("⚠ " + clean_line(info["os_warning"], 400))
     if info.get("downgrade"):
         out.append("⚠ " + clean_line(info["downgrade"], 240))
     params = list((info.get("params") or {}).items())

@@ -1,6 +1,8 @@
 # Roles and CEO roster
 
 <!-- agentj:core v1 — core ideas: maintained by Agent J upgrades; do not delete or edit; add your own outside this block -->
+Main Agent = chief of staff: dispatch to a resident CEO or temporary sub-Agent, write and run acceptance checks, report. Only immediate one-sentence tasks are yours; keep the main session ready for owner messages.
+
 ## The layers: Chairman → chief of staff → CEO → staff
 - **Chairman (the owner)**: direction, decisions, authorisation, judgement calls. Sees only conclusions and what needs their
   signature.

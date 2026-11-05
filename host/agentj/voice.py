@@ -235,7 +235,8 @@ def hardware():
     return {'tier':tier,'cpu_logical':cpus,'memory_mib':mem,'free_disk_mib':disk,'gpu_required':False,'recommendation':'sensevoice CPU' if tier=='local' else 'your cloud ASR key, or phone keyboard dictation','assessment':'capacity estimate; run a real voice sample to measure latency'}
 
 def _request(url,key,body,content_type,timeout,max_bytes,auth_header='Authorization'):
-    headers={auth_header:('Bearer '+key if auth_header=='Authorization' else key),'Content-Type':content_type}
+    headers={'Content-Type':content_type}
+    if key: headers[auth_header]=('Bearer '+key if auth_header=='Authorization' else key)
     req=urllib.request.Request(url,data=body,headers=headers,method='POST')
     # Explicitly prohibit redirects (credentials/audio must stay at the selected official provider).
     class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -245,21 +246,92 @@ def _request(url,key,body,content_type,timeout,max_bytes,auth_header='Authorizat
         if len(data)>max_bytes:raise ValueError('provider response exceeds limit')
         return data
 
-def cloud_asr(path,cfg,timeout=60):
-    name=p.get(cfg,'voice.asr.key_env'); key=os.environ.get(name)
-    if not key:return {'ok':False,'reason':'broken'}
-    data=pathlib.Path(path).read_bytes()
-    if len(data)>25*1024*1024:return {'ok':False,'reason':'bad_audio'}
-    boundary='agentj'+uuid.uuid4().hex
-    model=p.get(cfg,'voice.asr.model')
-    body=(f'--{boundary}\r\nContent-Disposition: form-data; name="model"\r\n\r\n{model}\r\n--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="audio.wav"\r\nContent-Type: audio/wav\r\n\r\n'.encode()+data+f'\r\n--{boundary}--\r\n'.encode())
+def asr_endpoint(base_url):
+    """Validate owner-selected destinations without retaining or echoing invalid URL text."""
     try:
-        url=ASR_URL if p.get(cfg,'voice.asr.provider')=='openrouter' else ASR_OPENAI_URL
+        u=urllib.parse.urlsplit(base_url)
+        if (u.scheme not in ('http','https') or not u.hostname or u.username is not None or
+                u.password is not None or u.query or u.fragment or any(ord(c)<33 for c in base_url)):
+            raise ValueError()
+        _=u.port
+    except (ValueError,TypeError):
+        raise p.ConfigError('voice.asr.base_url','expected http(s) base URL without credentials, query or fragment') from None
+    path=u.path.rstrip('/')
+    if path.endswith('/audio/transcriptions'): return urllib.parse.urlunsplit((u.scheme,u.netloc,path,'',''))
+    if not path.endswith('/v1'): path+='/v1'
+    return urllib.parse.urlunsplit((u.scheme,u.netloc,path+'/audio/transcriptions','',''))
+
+
+def correct_transcript(text,cfg):
+    # Deliberately exact: never fuzzy-rewrite ordinary speech into guessed product names.
+    replacements={'Olayris':'Olares', **p.get(cfg,'voice.asr.corrections',{})}
+    if not replacements: return text
+    pattern=re.compile('|'.join(re.escape(x) for x in sorted(replacements,key=len,reverse=True)))
+    return pattern.sub(lambda match: replacements[match[0]],text)
+
+
+def cloud_asr(path,cfg,timeout=60):
+    custom=p.get(cfg,'voice.asr.mode')=='custom'
+    name=p.get(cfg,'voice.asr.key_env'); key=os.environ.get(name,'')
+    if (name or not custom) and not key:return {'ok':False,'reason':'engine_failed'}
+    try:
+        data=pathlib.Path(path).read_bytes()
+        if len(data)>25*1024*1024:return {'ok':False,'reason':'bad_audio'}
+        boundary='agentj'+uuid.uuid4().hex
+        fields={'model':p.get(cfg,'voice.asr.model')}
+        if not isinstance(fields['model'],str) or any(ord(c)<32 for c in fields['model']): return {'ok':False,'reason':'engine_failed'}
+        words=list(dict.fromkeys(['Olares', *p.get(cfg,'voice.asr.hotwords',[])]))
+        if words: fields['prompt']=', '.join(words)
+        body=b''.join(f'--{boundary}\r\nContent-Disposition: form-data; name="{field}"\r\n\r\n{value}\r\n'.encode() for field,value in fields.items())
+        body+=(f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="audio.wav"\r\nContent-Type: audio/wav\r\n\r\n'.encode()+data+f'\r\n--{boundary}--\r\n'.encode())
+        url=asr_endpoint(p.get(cfg,'voice.asr.base_url')) if custom else (ASR_URL if p.get(cfg,'voice.asr.provider')=='openrouter' else ASR_OPENAI_URL)
         res=json.loads(_request(url,key,body,'multipart/form-data; boundary='+boundary,timeout,256*1024))
         text=res.get('text')
         if not isinstance(text,str) or len(text)>64000:return {'ok':False,'reason':'engine_failed'}
-        return {'ok':True,'text':text,'engine':p.get(cfg,'voice.asr.provider')}
+        return {'ok':True,'text':correct_transcript(text,cfg),'engine':'custom' if custom else p.get(cfg,'voice.asr.provider')}
     except Exception:return {'ok':False,'reason':'engine_failed'}
+
+
+
+def phone_asr_change_allowed(before,after):
+    """Unsigned phone settings may configure anonymous ASR, never rebind an environment secret.
+
+    Called under serve's config-apply lock with the complete effective candidate. A trusted
+    local CLI remains responsible for keyed destinations; the existing secret card still owns key input.
+    """
+    old_key=p.get(before,'voice.asr.key_env','')
+    new_key=p.get(after,'voice.asr.key_env','')
+    if old_key!=new_key and new_key: return False
+    route=('base_url','provider','model','mode')
+    changed={name for name in route if p.get(before,'voice.asr.'+name)!=p.get(after,'voice.asr.'+name)}
+    if changed=={'mode'} and p.get(after,'voice.asr.mode')=='local': return True
+    return not (changed and (old_key or new_key))
+
+def transcribe(path,cfg,timeout=60,*,state_dir=None,local_asr=None):
+    """One routing boundary shared by serve and CLI. Local workers are demand-only in custom mode."""
+    from . import asr
+    import time
+    local_asr=local_asr or asr
+    mode=p.get(cfg,'voice.asr.mode')
+    if mode in ('custom','cloud'):
+        local_asr.shutdown()
+        deadline=time.monotonic()+timeout
+        remote=cloud_asr(path,cfg,max(0.1,min(timeout/2,asr.remote_timeout(path))))
+        if remote.get('ok'): return remote
+        remaining=deadline-time.monotonic()
+        if remaining<=0: return {'ok':False,'reason':'timeout','notice':'remote_unavailable'}
+        try:
+            result=local_asr.transcribe(str(path),timeout_s=remaining,state_dir=state_dir,
+                                        engine_override='off' if p.get(cfg,'voice.asr.engine')=='off' else 'sensevoice')
+        except Exception:
+            result={'ok':False,'reason':'engine_failed'}
+        finally:
+            local_asr.shutdown()
+        result['notice']='local_fallback' if result.get('ok') else 'remote_unavailable'
+    else:
+        result=local_asr.transcribe(str(path),timeout_s=timeout,state_dir=state_dir,engine_override=p.get(cfg,'voice.asr.engine'))
+    if result.get('ok'): result['text']=correct_transcript(result.get('text',''),cfg)
+    return result
 
 def synthesize(text,cfg,timeout=60):
     if not isinstance(text,str) or not text.strip() or len(text)>4000: raise p.ConfigError('voice.tts','text must be 1..4000 characters')

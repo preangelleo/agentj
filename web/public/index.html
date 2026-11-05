@@ -543,6 +543,7 @@
         <button type="button" id="grant-off" class="grant-off" data-i18n="grant.off">收回授权</button>
       </div>
       <div class="outbox" id="outbox" hidden role="list" aria-live="polite" data-i18n-attr="aria-label=offline.aria" aria-label="等网络恢复后发送的消息"></div>
+      <p id="asrNotice" class="asr-notice" role="status" hidden></p>
       <div class="row">
         <input id="fPhoto" type="file" hidden multiple accept="image/*">
         <input id="fCamera" type="file" hidden accept="image/*" capture="environment">
@@ -836,7 +837,7 @@
        side navigation + section cards in columns; narrow: one column. Rows that would lower safety are read-only with the
        command to run on the computer; host-side values go through pref_set (PROTOCOL §10.16). 遥控器管理 is its own
        second-level page (#set-remotes, js/remotes.js, PROTOCOL §24). -->
-  <section id="settings" class="ajmodal setpage" role="dialog" aria-modal="true" aria-labelledby="set-title" hidden>
+  <section id="settings" data-unpaired="1" class="ajmodal setpage" role="dialog" aria-modal="true" aria-labelledby="set-title" hidden>
     <div class="box setbox" tabindex="-1">
       <div class="sethead menuhead">
         <button type="button" id="set-back" class="setx menuicon" hidden data-i18n-attr="aria-label=set.back,title=set.back" aria-label="返回设置" title="返回设置"><svg class="" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
@@ -846,6 +847,13 @@
         <div id="set-actions" class="set-actions"></div>
       </div>
       <div id="set-find" class="set-find" hidden><input id="set-find-input" type="search" data-i18n-attr="placeholder=p264.search,aria-label=p264.search" placeholder="搜索设置" aria-label="搜索设置"><div id="set-find-results" role="status"></div></div>
+      <nav class="unpaired-links" aria-label="Agent J">
+        <a href="https://agentj.app/account/" target="_blank" rel="noopener" data-i18n="set.accountOpen">打开账号后台</a>
+        <a href="https://agentj.app/docs/phone/" target="_blank" rel="noopener" data-i18n="set.helpDocs">手机怎么用</a>
+        <a href="https://agentj.app/security/" target="_blank" rel="noopener" data-i18n="menu.security">数据安全</a>
+        <a href="https://agentj.app/privacy/" target="_blank" rel="noopener" data-i18n="menu.privacy">隐私</a>
+        <a href="https://agentj.app/terms/" target="_blank" rel="noopener" data-i18n="menu.terms">条款</a>
+      </nav>
       <div id="set-main" class="setmain">
         <nav class="setside" data-i18n-attr="aria-label=set.nav" aria-label="设置分区">
           <button type="button" data-set-jump="set-s-agent" data-paired><svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="7" width="16" height="12" rx="3"/><path d="M12 7V3M9 13h.01M15 13h.01"/></svg><span data-i18n="set.gAgent">Agent 与遥控器</span></button>
@@ -1063,6 +1071,15 @@
               <span class="setlab" data-i18n="set.wake">语音唤起</span>
               <button type="button" id="set-wake" class="tgl" role="switch" aria-checked="false" data-pref="voice.wake_enabled" data-i18n-attr="aria-label=set.wake" aria-label="语音唤起"><i></i></button>
               <p class="setnote" data-i18n="set.wakeNote">说出唤醒词就能开始说话。只在 Agent J 的安卓 App 里起作用，网页版没有这个功能。</p>
+            </div>
+            <div id="set-asr" hidden>
+              <h4 class="setg" data-i18n="asr440.title">语音转写</h4>
+              <div class="setrow"><label class="setlab" for="set-asr-mode" data-i18n="asr440.source">转写来源</label><select id="set-asr-mode"><option value="local" data-i18n="asr440.local">本机内置模型</option><option value="cloud" data-i18n="asr440.cloud">已配置的服务商</option><option value="custom" data-i18n="asr440.custom">自定义转写端点</option></select></div>
+              <div class="setrow" data-asr-custom><label class="setlab" for="set-asr-url" data-i18n="asr440.url">端点地址</label><input class="asr-input" id="set-asr-url" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="http(s)://…/v1"></div>
+              <div class="setrow" data-asr-remote><label class="setlab" for="set-asr-model" data-i18n="asr440.model">模型名称</label><input class="asr-input" id="set-asr-model" type="text" autocomplete="off" spellcheck="false"></div>
+              <div class="setrow" data-asr-remote><label class="setlab" for="set-asr-key-env" data-i18n="asr440.keyName">密钥名称（可不填）</label><input class="asr-input" id="set-asr-key-env" type="text" autocomplete="off" spellcheck="false" placeholder="ASR_API_KEY"><p class="setnote" data-i18n="asr440.keyNote">这里只填密钥的名称。密钥内容请在手机密钥卡里填写，再请 Agent 配置转写。无需认证的自定义端点可留空并直接保存。</p><button type="button" id="set-asr-key" class="aj-btn aj-btn--sm" data-i18n="asr440.key">打开密钥卡</button></div>
+              <div class="setrow"><label class="setlab" for="set-asr-hotwords" data-i18n="asr440.hotwords">语音热词</label><textarea class="asr-input" id="set-asr-hotwords" rows="3" spellcheck="false"></textarea><p class="setnote" data-i18n="asr440.hotwordsNote">每行一个专有名词。远端服务是否采用热词取决于模型支持。</p></div>
+              <div class="setrow"><button type="button" id="set-asr-save" class="aj-btn" data-i18n="asr440.save">保存转写设置</button><p class="setnote" data-i18n="asr440.note">远端转写成功时不加载本机模型；连接失败会尝试本机转写，并提示结果。配好后请先录一小段试试。</p></div>
             </div>
             <p class="setcmd" id="set-pref-cmd" hidden><span class="setnote" data-i18n="set.readOnly">这台Agent J 主机上的程序还不能从手机改设置。要改，在Agent J 主机上运行：</span><code id="set-pref-cmd-code" data-cc="ext"></code><button type="button" class="setcopy" data-copy="set-pref-cmd-code" data-i18n-attr="aria-label=set.copy,title=set.copy" aria-label="复制命令" title="复制命令"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect class="ic-copy" x="8.5" y="8.5" width="11.5" height="11.5" rx="2.5"/><path class="ic-copy" d="M15.5 8.5V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v7.5a2 2 0 0 0 2 2h2.5"/><path class="ic-done" d="M5 12.5l4.5 4.5L19 7.5"/></svg></button></p>
           </section>
@@ -1602,7 +1619,7 @@
     <div class="pttc"><span class="pttring" aria-hidden="true"></span><span class="pttring r2" aria-hidden="true"></span>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" class="pttmic" aria-hidden="true"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3z"/><path d="M19 11a7 7 0 0 1-14 0M12 18v3"/></svg><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" class="pttx" aria-hidden="true"><path d="M7 7l10 10M17 7 7 17"/></svg>
     </div>
-    <div class="pttcopy" role="status" aria-live="assertive"><b id="pttTime">0:00</b><span id="pttHint"></span><span id="pttSeg" class="pttseg" hidden></span></div>
+    <div class="pttcopy" role="status" aria-live="assertive"><b id="pttTime">0:00</b><span id="pttHint"></span><span id="pttMode" class="pttseg"></span><span id="pttSeg" class="pttseg" hidden></span></div>
     <div class="pttact" id="pttAct" role="group" data-i18n-attr="aria-label=r.ptt.actions" aria-label="录音操作" hidden>
       <button type="button" class="pttbtn" id="pttCancel" data-i18n-attr="aria-label=r.ptt.cancelBtn,title=r.ptt.cancelBtn" aria-label="取消录音" title="取消录音"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
       <button type="button" class="pttbtn" id="pttEnd" data-i18n-attr="aria-label=r.ptt.end,title=r.ptt.end" aria-label="结束录音" title="结束录音"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2.2" fill="currentColor"/></svg></button>

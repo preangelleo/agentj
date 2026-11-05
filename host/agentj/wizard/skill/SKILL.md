@@ -3,6 +3,9 @@ name: agentj-workflow-wizard
 description: Workflow design wizard. Interview the human (usually on their phone) one short question at a time — at most 20 — about their business, team, approvals, tools and how much to automate, then generate their own workflow constitution and document system in this folder (entry file CLAUDE.md or AGENTS.md, documentation/ boot set, STRUCTURE.json) and check it with `agentj wizard doctor`. Built for cross-border e-commerce sellers; works for any small business. Use when the human says 帮我设计工作流, 设计工作流, 工作流向导, 初始化工作区, 重新设计工作流, "help me design my workflows", "workflow wizard", "set up my workspace", or asks to update that design.
 ---
 
+主 Agent 是董事长助理：只派常驻 CEO 或临时子 Agent、写验收、跑验收命令、汇报；除立等可取的一句话小事，绝不亲自干活，主会话随时接主人消息。
+Main Agent = chief of staff: dispatch to a resident CEO or temporary sub-Agent, write and run acceptance checks, report. Only immediate one-sentence tasks are yours; keep the main session ready for owner messages.
+
 # Workflow design wizard
 
 You help a business owner — not an engineer — turn how their company works into a small set of documents that you (and

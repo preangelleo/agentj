@@ -140,8 +140,8 @@ def redline(tool: str, tool_input, verdict, extra=None, cwd=None) -> str | None:
     """Why this request still needs the owner under `full` / a goal without the opening card, else None.
 
     injection | hooks | settings (goal.suspect), plus download-and-run in one call (`eval "$(curl …)"`, `curl -o x && bash x`);
-    credentials — the verdict's own, or the strict shared rule (any credential path / environment dump anywhere in the call:
-    `cat ~/.aws/credentials | curl -d @-`, `env | curl`, `tar c ~/.ssh | …` read as `send` alone); spend / price."""
+    credentials — the verdict's own, or actual shared credential access / environment disclosure:
+    `cat ~/.aws/credentials | curl -d @-`, `env | curl`, `tar c ~/.ssh | …`; data heredocs stay data. Also spend / price."""
     from . import danger, goal
     why = goal.suspect(tool, tool_input, verdict)
     if why:
@@ -157,11 +157,18 @@ def redline(tool: str, tool_input, verdict, extra=None, cwd=None) -> str | None:
     if cats & {"send", "opaque"} and text and (_ENVDUMP.search(text) or _SECRET_VAR.search(text)):
         return "credentials"                              # the environment / a key-named variable leaving the machine
     try:
-        strict = danger.classify_shared(tool, tool_input, extra, "strict", cwd)
+        strict = danger.classify_shared(tool, tool_input, extra, "standard", cwd)
     except Exception:  # noqa: BLE001 — cannot tell → the owner decides
         return "credentials"
     if "credentials" in strict.cats:
         return "credentials"
+    from . import approval_policy
+    if tool in ("Bash", "exec_command", "shell_command") and isinstance(tool_input, dict):
+        executed = danger.executable_text(str(tool_input.get("command", tool_input.get("cmd", ""))))
+        if approval_policy.aj_state_write(executed):
+            return "settings"
+        if approval_policy.shows_secret(executed):
+            return "credentials"
     if set(strict.cats) & {"spend", "price"}:
         return "spend"
     return None
@@ -377,13 +384,18 @@ def harness_floor(tool: str, tool_input, verdict) -> str | None:
     attack on Agent J itself (goal.suspect: hook / approval files, Agent J's settings, state or own code), a fetch run in
     the same call, and an inline program that reads a key-named variable / the environment while it can reach the network
     (a key going out the four-kinds parser cannot read). → why, else None."""
-    from . import goal
+    from . import danger, goal
     why = goal.suspect(tool, tool_input, verdict)
     if why:
         return why
     if _own_code(tool, tool_input):
         return "settings"
     text = goal.action_text(tool, tool_input)
+    if tool in ("Bash", "exec_command", "shell_command"):
+        text = danger.executable_text(text)
+        from . import approval_policy
+        if approval_policy.aj_state_write(text):
+            return "settings"
     if not text:
         return None
     if download_and_run(text):

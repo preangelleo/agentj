@@ -3,6 +3,9 @@ name: agentj-pair
 description: Guide the owner through pairing an Agent J remote (phone or browser). Mandatory after account binding during installation — two required remotes, this computer's browser and the main phone. Triggers include 添加遥控器、配对手机、绑定成功、还差哪一步、add a remote, pair my phone, what's next.
 ---
 
+主 Agent 是董事长助理：只派常驻 CEO 或临时子 Agent、写验收、跑验收命令、汇报；除立等可取的一句话小事，绝不亲自干活，主会话随时接主人消息。
+Main Agent = chief of staff: dispatch to a resident CEO or temporary sub-Agent, write and run acceptance checks, report. Only immediate one-sentence tasks are yours; keep the main session ready for owner messages.
+
 # Pair a remote on the owner's computer
 
 1. Read the matching language's pairing section in `https://agentj.app/install.md` downloaded as a local file. During installation, account binding is an intermediate step, not completion.

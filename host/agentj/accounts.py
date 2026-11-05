@@ -159,7 +159,7 @@ def _clean_quota(q) -> dict | None:
     pct, at = q.get("pct"), q.get("at")
     if not isinstance(pct, (int, float)) or isinstance(pct, bool) or not isinstance(at, (int, float)):
         return None
-    return {"pct": round(float(pct), 1), "window": "h5" if q.get("window") == "h5" else "week", "at": int(at)}
+    return {"pct": round(float(pct), 1), "window": "h5" if q.get("window") == "h5" else "week", "at": int(at), **({"reset_at": q["reset_at"]} if isinstance(q.get("reset_at"), (int, float)) else {})}
 
 
 def load(root) -> dict:
@@ -511,7 +511,7 @@ def snapshot(root, h: str, since: float | None = None) -> dict | None:
     at = src.get("source_at")
     if src.get("status") != "ok" or not isinstance(at, (int, float)) or (since and at < since):
         return None
-    return {"pct": round(float(src["used_pct"]), 1), "window": "week", "at": int(at)}
+    return {"pct": round(float(src["used_pct"]), 1), "window": "week", "at": int(at), "reset_at": src.get("reset_at")}
 
 
 def public(it: dict, quota: dict | None = None) -> dict:

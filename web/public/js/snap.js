@@ -263,8 +263,9 @@ export function dropReplacement(s) {
 /** P363 (#72): a voice attachment's transcript (host ≥ 0.23, PROTOCOL §10.5) → {asr: {ok, text, cut} | {ok: false, why}}. */
 export function asrOf(a) {
   if (!a || typeof a !== 'object') return {};
-  if (a.ok === true && typeof a.text === 'string' && a.text.trim()) return { asr: { ok: true, text: dropReplacement(a.text.slice(0, 20000)), cut: a.cut === true } };
-  if (a.ok === false) return { asr: { ok: false, why: typeof a.why === 'string' ? a.why.slice(0, 32) : 'broken' } };
+  const notice = ['local_fallback', 'remote_unavailable'].includes(a.notice) ? { notice: a.notice } : {};
+  if (a.ok === true && typeof a.text === 'string' && a.text.trim()) return { asr: { ok: true, text: dropReplacement(a.text.slice(0, 20000)), cut: a.cut === true, ...notice } };
+  if (a.ok === false) return { asr: { ok: false, why: typeof a.why === 'string' ? a.why.slice(0, 32) : 'broken', ...notice } };
   return {};
 }
 /** Agent J turn (wire) → the page's turn {id, ts (s), source, reply, end, card, part, pre?}. */

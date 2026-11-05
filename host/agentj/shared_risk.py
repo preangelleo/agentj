@@ -71,7 +71,7 @@ class RiskGuard:
             rid=await asyncio.to_thread(handoff.record_own, a.host.st, getattr(a,'kind',None), tool, inp)
             a.host.st.log('ask_done', id=rid, tool=tool, decision='allow', reason='own_handoff')
             return True
-        requirement=policy_registry.main_requirement(tool, inp)
+        requirement=policy_registry.main_requirement(tool, inp, cwd=a.cfg.get('dir'))
         if requirement == 'deny':
             policy_registry.log_unknown(getattr(a.host,'st',None), tool, inp, agent=getattr(a,'kind','?'))   # P553: support can find it
             return self._deny('unknown', tool)

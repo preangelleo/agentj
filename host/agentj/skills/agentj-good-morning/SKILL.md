@@ -3,6 +3,9 @@ name: agentj-good-morning
 description: The owner's good morning — 「早上好」「我起来了」「醒了」「检查一下自动化的登录」, "good morning", "I'm up", "check my automation logins". Checks that the websites the automations use are still signed in, walks the owner through any sign-in (phone QR card or the computer), then gives a short morning brief from real reports (plus quota reminders when the weekly quota is going to waste or an extra reset is about to expire). A greeting is a login check, never permission to publish.
 ---
 
+主 Agent 是董事长助理：只派常驻 CEO 或临时子 Agent、写验收、跑验收命令、汇报；除立等可取的一句话小事，绝不亲自干活，主会话随时接主人消息。
+Main Agent = chief of staff: dispatch to a resident CEO or temporary sub-Agent, write and run acceptance checks, report. Only immediate one-sentence tasks are yours; keep the main session ready for owner messages.
+
 Only you (the main Agent) speak; there is no button for this. Reply in the owner's language.
 
 1. **What is configured.** `agentj browser status --json` (+ `--registry` when a task tool needs capability entries) and the

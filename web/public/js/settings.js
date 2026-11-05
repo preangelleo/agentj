@@ -1,6 +1,7 @@
 import {watchSettings} from './text-editor.js';
 import * as heartbeatPrompt from './heartbeat-prompt.js';
 import { keysSet } from './api.js';
+import { ASR_KEYS, renderAsr, bindAsr } from './asr-settings.js';
 import { copyButton } from './copycode.js';
 // F13 · P171 · Settings (the top-right gear, `s`, ⌘, / Ctrl+,): ONE full-screen page for everything — the ≡ menu is gone and
 // its rows live here, grouped in section cards (wide screens: side navigation + cards in columns; narrow: one column).
@@ -174,6 +175,7 @@ async function onA2hs() {
 
 // ---------------------------------------------------------------- host preferences (pref_set)
 export const PREF_KEYS = ['appearance.language', 'appearance.theme', 'voice.speak_replies', 'voice.wake_enabled', 'agent.high_risk_warnings', 'agent.session_mode', 'agent.isolation', 'agent.allow_docker'];
+PREF_KEYS.push(...ASR_KEYS);
 PREF_KEYS.push('updates.mode', 'heartbeat.enabled', 'heartbeat.interval_minutes', 'approval.jev_threshold', 'approval.goal_auto', 'quota.auto_switch');
 PREF_KEYS.push('updates.auto_install');                 // P203: half of the 升级方式 (自动 = install when idle) choice
 PREF_KEYS.push(...imsg.PREF_KEYS);       // P274: the iMessage card's parameters (host lists them only on a Mac)
@@ -426,6 +428,7 @@ export function render() {
   for (const b of document.querySelectorAll('[data-set-theme]')) b.setAttribute('aria-pressed', String(b.dataset.setTheme === theme));
   tgl('set-speak', pget('voice.speak_replies', false) === true);
   tgl('set-wake', pget('voice.wake_enabled', false) === true);
+  renderAsr({ get: pget, paired: H.paired(), settable: prefSettable, t });
   renderFont();
   renderSfx();
   renderShot();
@@ -435,6 +438,8 @@ export function render() {
   const hv = hostInfo && typeof hostInfo.version === 'string' && /^[0-9A-Za-z.+-]{1,32}$/.test(hostInfo.version) ? hostInfo.version : null;
   el('set-hostver').textContent = hv ? t('set.hostVer', { v: hv }) : t('set.hostVerNone');
   const paired = H.paired();
+  el('settings').dataset.unpaired = paired ? '0' : '1';
+  el('setBtn').setAttribute('aria-disabled', String(!paired));
   for (const n of el('settings').querySelectorAll('[data-paired]')) n.hidden = !paired;
   paintPre();   // P539
   el('keysBtn').hidden = !paired || H.view() !== 'chat';
@@ -520,6 +525,7 @@ export function setPrefs(value, host) {
 export const isOpen = () => !el('settings').hidden;
 const SUB_TITLE = { main: 'set.title', ios: 'set.iosTitle', remotes: 'rm.title', mail: 'mail.nav', contacts: 'p207set.ct.nav', auth: 'ar.nav', imessage: 'imsg.nav', cards: 'p360.nav', notify: 'p365.nav', hooks: 'p366.nav', files: 'p478.nav', accts: 'acct.nav' };
 function showSub(v, add = false) {
+  if (!H.paired()) return;
   const from = sub;
   pagefind.close();
   sub = v;
@@ -702,15 +708,15 @@ export function configure(hooks) {
   let raf = 0;
   el('set-main').addEventListener('scroll', () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(followScroll); }, { passive: true });
   el('set-remotes-open').addEventListener('click', () => showSub('remotes'));
-  el('setBtn').addEventListener('click', () => (isOpen() ? close() : open()));
+  el('setBtn').addEventListener('click', () => { if (H.paired()) (isOpen() ? close() : open()); });
   // P340 #27: on release, not on the timer — the screenshot also writes the clipboard, which needs the user activation of the
   // lift (touchend / mouseup; Safari never counts a timer after touchstart). The vibration still marks the hold.
-  longPress(el('setBtn'), () => H.screenshot?.(), { at: 'release' }); // @ix app.screenshot
+  longPress(el('setBtn'), () => { if (H.paired()) H.screenshot?.(); }, { at: 'release' }); // @ix app.screenshot
   el('setBtn').addEventListener('contextmenu', e => {
     e.preventDefault();
     // Touch browsers may emit contextmenu during a hold: the gear's hold is exclusively capture.
     if (e.pointerType === 'touch' || (!e.pointerType && matchMedia('(pointer:coarse)').matches)) return;
-    H.gearHelp?.();
+    if (H.paired()) H.gearHelp?.();
   });
   el('set-back').addEventListener('click', () => showSub('main'));
   el('settings').addEventListener('click', (e) => { if (e.target === el('settings')) close(); });
@@ -721,6 +727,7 @@ export function configure(hooks) {
     render();
     setPref('appearance.theme', b.dataset.setTheme);
   });
+  bindAsr({ set: setPref, failed: explainPrefFail, keysSet, t, notify });
   for (const id of ['set-speak', 'set-wake', 'set-risk', 'set-goal', 'set-qswitch', 'set-iso', 'set-docker', 'set-hb']) el(id).addEventListener('click', () => {
     const b = el(id), next = b.getAttribute('aria-checked') !== 'true';
     tgl(id, next);
@@ -843,7 +850,7 @@ export function onPairEv() {}
 export function onPairCard() { remotes.onPairCard(); }
 
 /** P265/P264 integration seam: the shortcut and gear hold invoke the same configured capture callback. */
-export function screenshotFromKey() { if (H.screenshot) return H.screenshot(); say(t('ixw.capturePending')); }
+export function screenshotFromKey() { if (!H.paired()) return; if (H.screenshot) return H.screenshot(); say(t('ixw.capturePending')); }
 
 /** P265: the same configured owner action as the upgrade button, without a synthetic click. */
 export function upgradeFromKey() { return H.upgradeHost?.(); }
@@ -964,6 +971,8 @@ let connectionState = null, connectionRecovered = false, connectionPending = fal
 /** P392 live dot; P393 `pending` = a drop still inside the five-second window (reconnect.js): an amber 「正在重新连接…」,
  *  no notice and no red — the red line and 「连接已断开」 only come once the window is over. */
 export function connectionChanged(on, pending = false) {
+  el('settings').dataset.unpaired = H.paired() ? '0' : '1';
+  el('setBtn').setAttribute('aria-disabled', String(!H.paired()));
   if (!H.paired()) { hostInfo = null; remotes.reset(); }
   const refreshCount = on && !countReady;
   countReady = on;

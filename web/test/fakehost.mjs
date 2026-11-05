@@ -373,8 +373,9 @@ export async function startFakeHost() {
       if (st.prefRefuse) return sendApp(c, { t: 'pref_res', r: m.r, ok: false, key: m.key, problem: st.prefRefuse });   // P207: a refused save
       if (!(typeof allowed === 'function' ? allowed(m.value) : allowed.includes(m.value))) return sendApp(c, { t: 'pref_res', r: m.r, ok: false, key: m.key, problem: 'bad_value' });
       st.prefs = st.prefs || { appearance: { language: 'zh', theme: 'system' }, voice: { speak_replies: false, wake_enabled: false }, agent: { high_risk_warnings: true, session_mode: 'shared' } };
-      const [a, b] = m.key.split('.');
-      st.prefs[a] = { ...(st.prefs[a] || {}), [b]: m.value };
+      const parts = m.key.split('.'); let obj = st.prefs;
+      for (const key of parts.slice(0, -1)) obj = obj[key] ||= {};
+      obj[parts.at(-1)] = m.value;
       await sendApp(c, { t: 'pref_res', r: m.r, ok: true, key: m.key });
       await broadcast(prefsMsg());
       return;
@@ -638,7 +639,7 @@ export async function startFakeHost() {
         if (st.asrWhy) return sendApp(c, { t: 'asr_res', bid: m.bid, ok: false, why: st.asrWhy });
         const text = st.asrTexts.length ? st.asrTexts.shift() : st.asrText;
         const delay = st.asrDelays.length ? st.asrDelays.shift() : 0;
-        setTimeout(() => sendApp(c, { t: 'asr_res', bid: m.bid, ok: true, text, engine: 'sherpa', ms: 40 }).catch(() => {}), delay);
+        setTimeout(() => sendApp(c, { t: 'asr_res', bid: m.bid, ok: true, text, engine: 'sherpa', ms: 40, notice: st.asrNotice }).catch(() => {}), delay);
         return;
       }
       st.staged.add(m.bid);
@@ -803,6 +804,7 @@ export async function startFakeHost() {
 const PREF_ENUM = { 'updates.mode': ['auto', 'ask'], 'appearance.language': ['zh', 'en'], 'appearance.theme': ['system', 'light', 'dark'], 'voice.speak_replies': [true, false], 'voice.wake_enabled': [true, false], 'agent.high_risk_warnings': [true, false], 'agent.session_mode': ['shared', 'independent'], 'agent.isolation': [true, false], 'agent.allow_docker': [true, false],
   'heartbeat.enabled': [true, false], 'heartbeat.interval_minutes': [15, 30, 60, 120, 240, 480, 1440],   // P156
   'updates.auto_install': [true, false] };   // P203
+Object.assign(PREF_ENUM, { 'voice.asr.mode': ['local','cloud','custom'], 'voice.asr.base_url': v => typeof v === 'string', 'voice.asr.model': v => typeof v === 'string', 'voice.asr.key_env': v => typeof v === 'string', 'voice.asr.hotwords': v => Array.isArray(v) });
 PREF_ENUM['quota.auto_switch'] = [true, false];   // P302: the host whitelists it from 0.21.2 (P254 drew the switch, never whitelisted)
 PREF_ENUM['approval.goal_auto'] = [true, false];   // P302: the real host whitelists it since P158; the fake now matches (every switch is clicked)
 // P207: any whole number of minutes 5–1440 (the dropdown + custom input) and the daily wake-up time "HH:MM" | ""

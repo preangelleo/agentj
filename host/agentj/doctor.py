@@ -1552,7 +1552,11 @@ def check_asr(st: State) -> list[dict]:
     try:
         from . import asr
         from . import preferences
-        rows = asr.doctor_rows(st.root,engine_override=preferences.get(preferences.effective(st),"voice.asr.engine"))
+        cfg=preferences.effective(st)
+        if preferences.get(cfg,'voice.asr.mode')=='custom':
+            return [_c('asr', OK, '自定义语音转写已配置；本地模型按需回退 / custom ASR configured; local model only on fallback',
+                       'agentj asr test --json')]
+        rows = asr.doctor_rows(st.root,engine_override=preferences.get(cfg,"voice.asr.engine"))
     except Exception as e:  # noqa: BLE001
         return [_c("asr", WARN, f"本地语音转写：检查失败（{_why(e)}）/ local transcription: check failed")]
     out = []

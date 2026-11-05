@@ -76,7 +76,7 @@ class Roster(unittest.TestCase):
         self.assertTrue(all(c[w]["reg"] for w in ("music-studio", "old-shop", "video-studio")))
         self.assertNotIn("reg", c["notes"])
         self.assertEqual(pic["tail"]["org"], {"registry": True, "ready": True, "unreg": 0, "nostaff": 3})
-        self.assertEqual(c["video-studio"]["ceo"], "导演阿影", "the code-name row is not mistaken for a CEO name")
+        self.assertNotIn("ceo", c["video-studio"], "a folder-only roster row must not guess a CEO name from prose")
         self.assertEqual(sorted(self.sc.added), ["music-studio", "video-studio"])
 
     def test_idempotent_and_deleted_row_stays_deleted(self):

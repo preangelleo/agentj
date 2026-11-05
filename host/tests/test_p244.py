@@ -26,12 +26,14 @@ class Catalogue(unittest.TestCase):
   self.assertTrue(self.sc.conflicts); self.assertFalse(self.sc.skill('global::api-token-tool')['ok'])
  def test_colour_stability_and_rename(self):
   p=self.scan(); old={w['folder']:w['ci'] for w in p['items'] if w['wdb']}
-  (self.root/'video-studio').rename(self.root/'new-video'); p=self.scan()
+  (self.root/'video-studio').rename(self.root/'new-video')
+  roles=self.root/'documentation/ROLES.md';roles.write_text(roles.read_text().replace('`video-studio`','`new-video`'));p=self.scan()
   self.assertEqual(next(w['ci'] for w in p['items'] if w['folder']=='new-video'),old['video-studio'])
   self.assertEqual(next(w['ci'] for w in p['items'] if w['folder']=='music-studio'),old['music-studio'])
  def test_cache_edit_and_symlink_replacement(self):
   p=self.scan(); path=self.root/'video-studio/documentation/IDENTITY.md';path.write_text('# IDENTITY — New CEO\n');os.utime(path,ns=(T0*10**9,(T0+1000)*10**9))
-  q=self.scan();self.assertNotEqual(p['tail']['etag'],q['tail']['etag']); self.assertEqual(next(w['ceo'] for w in q['items'] if w['folder']=='video-studio'),'New CEO')
+  q=self.scan();self.assertNotEqual(p['tail']['etag'],q['tail']['etag']); self.assertEqual(next(w['ceo'] for w in q['items'] if w['folder']=='video-studio'),'导演阿影')
+  roles=self.root/'documentation/ROLES.md';roles.write_text(roles.read_text().replace('导演阿影','New CEO'));q=self.scan();self.assertEqual(next(w['ceo'] for w in q['items'] if w['folder']=='video-studio'),'New CEO')
   path.unlink();path.symlink_to(pathlib.Path(self.tmp.name)/'outside/documentation/CONSTITUTION.md');self.assertFalse(self.sc.doc('video-studio','IDENTITY.md')['ok'])
  def test_external_documentation_not_certified(self):
   p=self.root/'escape-doc';p.mkdir();(p/'documentation').symlink_to(pathlib.Path(self.tmp.name)/'outside/documentation');q=self.scan();w=next(w for w in q['items'] if w['folder']=='escape-doc');self.assertFalse(w['wdb']);self.assertEqual(w['docs'],[])

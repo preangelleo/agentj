@@ -551,7 +551,47 @@ def voxtype_clean(stdout: str) -> str:
     return asr_worker.clean_text("\n".join(lines))
 
 
+def remote_timeout(wav_path: str) -> float:
+    """Allow long remote takes to finish, while the caller reserves local recovery time."""
+    try:
+        seconds = check_wav(str(wav_path))["seconds"]
+    except (BadAudio, OSError, ValueError):
+        return 15.0
+    return min(180.0, max(15.0, 15.0 + seconds))
+
+
 def transcribe(wav_path: str, *, timeout_s: float, state_dir=None, engine_override=None) -> dict:
+    """An explicitly selected voxtype may be remote; every failure gets local recovery.
+
+    Keep configuration unchanged and release a recovery model after use. Automatic
+    selection still never invokes voxtype or sends audio off the owner's machine.
+    """
+    selected = engine_override if engine_override in ("sensevoice", "voxtype", "off") else settings(state_dir)["engine"]
+    if selected != "voxtype":
+        return _transcribe_once(wav_path, timeout_s=timeout_s, state_dir=state_dir, engine_override=engine_override)
+    deadline = time.monotonic() + max(0.1, float(timeout_s))
+    try:
+        result = _transcribe_once(wav_path, timeout_s=max(0.1, min(timeout_s / 2, remote_timeout(wav_path))),
+                                  state_dir=state_dir, engine_override="voxtype")
+    except Exception:
+        result = _fail("engine_failed", "voxtype failed")
+    if result.get("ok") or result.get("reason") == "bad_audio":
+        return result
+    try:
+        recovered = _transcribe_once(wav_path, timeout_s=max(0.1, deadline - time.monotonic()),
+                                     state_dir=state_dir, engine_override="sensevoice")
+    except Exception:
+        recovered = _fail("engine_failed", "local recovery failed")
+    finally:
+        shutdown()
+    if recovered.get("ok"):
+        return {**recovered, "notice": "local_fallback"}
+    # Retain the original diagnostic when no recovery engine is installed.
+    return {**(result if recovered.get("reason") == "not_installed" else recovered),
+            "notice": "remote_unavailable"}
+
+
+def _transcribe_once(wav_path: str, *, timeout_s: float, state_dir=None, engine_override=None) -> dict:
     """→ {"ok": True, "text", "engine", "ms"} or {"ok": False, "reason", "detail"}; reason ∈ REASONS (`why(reason)` is the
     asr_res word). The WAV is checked here (header only; 16 kHz mono PCM16, or 8–48 kHz mono/stereo PCM16 that the worker
     converts). timeout_s covers waiting in the queue too. Thread-safe; never raises for audio or engine problems."""

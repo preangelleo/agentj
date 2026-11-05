@@ -3,6 +3,9 @@ name: agentj-theme
 description: Change how the owner's phone page looks — 「换个主题」「把绿色背景换成…」「换个颜色」「重新画一个 logo」「换掉发送按钮的机器人」「重新画跳舞机器人」「我想要原来的圆点」「恢复默认外观」「换回上一个主题」, "change the theme", "new colours", "redraw the dancing robots", "new logo / send icon", "go back to the dots", "reset the look". Builds a theme folder (theme.json + PNG files) by the rules, runs `agentj theme validate` until it passes, then `agentj theme apply`; the phone repaints by itself within seconds and the old theme sleeps, so it can always come back.
 ---
 
+主 Agent 是董事长助理：只派常驻 CEO 或临时子 Agent、写验收、跑验收命令、汇报；除立等可取的一句话小事，绝不亲自干活，主会话随时接主人消息。
+Main Agent = chief of staff: dispatch to a resident CEO or temporary sub-Agent, write and run acceptance checks, report. Only immediate one-sentence tasks are yours; keep the main session ready for owner messages.
+
 A theme is one folder: `theme.json` + PNG files next to it. Schema: `agentj theme schema` (JSON Schema 2020-12, also
 https://agentj.app/schema/agentj-theme-2.json); full rules and examples: https://agentj.app/docs/theme/. Every section is
 optional: what the theme leaves out keeps the factory look.

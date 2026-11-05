@@ -60,7 +60,8 @@
    "since": "0.12",
    "enum": [
     "local",
-    "cloud"
+    "cloud",
+    "custom"
    ]
   },
   "voice.asr.engine": {
@@ -124,7 +125,7 @@
    "apply": "hot",
    "verify": "agentj config validate --json",
    "since": "0.12",
-   "pattern": "^[A-Z][A-Z0-9_]{0,79}$"
+   "pattern": "^(?:[A-Z][A-Z0-9_]{0,79})?$"
   },
   "voice.tts.mode": {
    "type": "string",
@@ -1606,6 +1607,51 @@
    "patternHint": "HH:MM (24-hour, local time) or empty",
    "minimum": 1000,
    "maximum": 2000000
+  },
+  "voice.asr.base_url": {
+   "type": "string",
+   "default": "",
+   "description": "Your OpenAI compatible ASR base URL / 自定义转写端点",
+   "aliases": [
+    "voice asr base_url",
+    "转写端点"
+   ],
+   "tier": "user",
+   "apply": "hot",
+   "verify": "agentj config validate --json",
+   "since": "0.26.10"
+  },
+  "voice.asr.hotwords": {
+   "type": "array",
+   "default": [
+    "Agent J",
+    "Olares",
+    "Claude Code",
+    "Codex",
+    "OpenCode"
+   ],
+   "description": "Speech vocabulary / 语音热词",
+   "aliases": [
+    "voice asr hotwords",
+    "语音热词"
+   ],
+   "tier": "user",
+   "apply": "hot",
+   "verify": "agentj config validate --json",
+   "since": "0.26.10"
+  },
+  "voice.asr.corrections": {
+   "type": "object",
+   "default": {},
+   "description": "Exact transcript corrections / 转写纠错词表",
+   "aliases": [
+    "voice asr corrections",
+    "转写纠错"
+   ],
+   "tier": "user",
+   "apply": "hot",
+   "verify": "agentj config validate --json",
+   "since": "0.26.10"
   }
  }
 }

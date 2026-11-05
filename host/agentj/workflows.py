@@ -219,8 +219,8 @@ def roster(root: str) -> list[list[str]]:
 def _from_roster(rows, folder: str) -> dict:
     pat = re.compile(r"(^|[/\s`])" + re.escape(folder) + r"($|[/\s`])")
     for r in rows:
-        if len(r) >= 2 and any(pat.search(c) for c in r[1:]) and r[0] and "CEO" not in r[0] and r[0] != folder:
-            return {"ceo": sentence(r[0], 40), **({"company": sentence(r[1], 40)} if not pat.search(r[1]) else {})}
+        if len(r) >= 2 and any(pat.search(c) for c in r[1:]) and r[0] and r[0] != "CEO" and r[0] != folder:
+            return {"ceo": sentence(re.sub(r"^CEO\s*[:：]?\s*", "", r[0]), 40), **({"company": sentence(r[1], 40)} if not pat.search(r[1]) else {})}
     return {}
 
 
@@ -464,8 +464,10 @@ def scan_folder(root: str, name: str, rows) -> dict:
     wdb = is_wdb(d)
     w: dict = {"folder": name, "wdb": wdb}
     if wdb:
+        meta = identity(d)
+        meta.pop("ceo", None)
+        w.update(meta)
         w.update(_from_roster(rows, name))
-        w.update(identity(d))
     agents, h1 = _agents(d)
     w["staff"] = len(agents)                 # P308: before fit() cuts the list
     docs, paths, h2 = _docs(d)

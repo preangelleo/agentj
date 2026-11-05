@@ -219,7 +219,7 @@ def harness_keeps(tool: str, tool_input=None, *, env=None, workdir=None):
                         _moved_away(src, pos[-1], workdir) or not _scratch(src, workdir, "remote" in s.flags)
                         and _scratch(pos[-1].rstrip("/") + "/x", workdir, "remote" in s.flags) for src in pos[:-1]):
                     return "delete"
-    v, sh = danger.classify(name, inp, env=env), danger.classify_shared(name, inp, env=env)
+    v, sh = danger.classify(name, inp, env=env), danger.classify_shared(name, inp, cwd=workdir, env=env)
     cats, rules = set(v.cats) | set(sh.cats), set(v.rules) | set(sh.rules)
     if cats & {"spend", "price"}:
         return "spend"

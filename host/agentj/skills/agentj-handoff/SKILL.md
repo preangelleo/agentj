@@ -3,6 +3,9 @@ name: agentj-handoff
 description: Write a handoff file before the context is compacted or cleared, and read it back right after — 「要压缩了」「上下文过半了」「先写个交接」「compact 之前存一下」「我要 /clear 了」, "write a handoff then compact yourself", 「写好交接然后自己压缩」, "write a handoff", "context is past half", "about to compact", an Agent J message 〔Agent J 系统提示〕 asking for the handoff, or a compaction / clear that just finished. Keeps the owner's own words, progress, decisions, absolute paths and pitfalls on disk so nothing is lost.
 ---
 
+主 Agent 是董事长助理：只派常驻 CEO 或临时子 Agent、写验收、跑验收命令、汇报；除立等可取的一句话小事，绝不亲自干活，主会话随时接主人消息。
+Main Agent = chief of staff: dispatch to a resident CEO or temporary sub-Agent, write and run acceptance checks, report. Only immediate one-sentence tasks are yours; keep the main session ready for owner messages.
+
 A compaction turns the conversation into a summary and drops details: exact numbers, IDs, absolute paths, ideas the owner
 rejected, attempts that failed. A file on disk is not compacted. Write it before, read it after.
 

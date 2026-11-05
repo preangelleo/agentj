@@ -89,6 +89,11 @@ def task_text(name: str, version: str, deps: list[dict], en: bool, path: str, de
         if rc:
             lines.append(f"- the self-test failed ({rc.group(1)}) without naming a missing program: run `agentj plaza verify {name}` "
                          "to see its output." if en else f"- 自检没通过（{rc.group(1)}），没说缺什么：先运行 `agentj plaza verify {name}` 看输出。")
+        elif any(p.startswith(("/opt/homebrew/", "/home/linuxbrew/")) for p in d["user"]):
+            from .market import brew_problem
+            reason = "; ".join(filter(None, (brew_problem(p) for p in d["user"] if p.startswith(("/opt/homebrew/", "/home/linuxbrew/"))))) or "self-check PATH differs / 自检 PATH 不同"
+            lines.append(f"- {d['name']}: a Homebrew copy exists ({', '.join(d['user'])}), but it is not on the self-check PATH: {reason}. Inspect directory permissions with the owner; do not change them automatically. The official installer in /usr/local/bin is another option." if en else
+                         f"- {d['name']}：Homebrew 目录里有（{'、'.join(d['user'])}），但未进入自检 PATH：{reason}。这不是用户目录不可见；先和主人检查目录权限，不自动改权限，也可使用装到 /usr/local/bin 的官方安装包。")
         elif d["user"]:
             lines.append(f"- {d['name']}: not on the self-check PATH ({path}); a user-level copy exists in {', '.join(d['user'])}, "
                          "but the sandbox never sees user directories." if en else

@@ -360,6 +360,11 @@ def main_requirement(tool, tool_input=None, *, env=None, cwd=None):
     verdict = danger.classify(name, inp, env=env)
     shared = danger.classify_shared(name, inp, cwd=cwd, env=env)
     cats = set(verdict.cats) | set(shared.cats)
+    # Actual credential access and writes to our approval/state boundary must
+    # reach Host.ask even when the shared guard would otherwise return early.
+    from . import approval_level
+    if "credentials" in shared.cats or approval_level.harness_floor(name, inp, shared):
+        return "uv"
     if {"cred.hooks", "cred.service"} & (set(verdict.rules) | set(shared.rules)):
         return "uv"                      # P573 (e): the Agent rewriting its own hook / approval settings — never below Face ID
     if cats:

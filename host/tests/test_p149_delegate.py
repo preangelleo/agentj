@@ -31,17 +31,17 @@ class CoreV10(unittest.TestCase):
 
     def test_three_way_triage_and_harness_tools(self):
         for needle in ("一定派 CEO", "派子 Agent", "Agent/Task", "OpenCode 用 task", "headless", "`codex exec`",
-                       "立等可取且无 CEO 的小事才亲做"):
+                       "仅立等可取且无 CEO 的一句话小事亲做"):
             self.assertIn(needle, self.zh)
         for needle in ("always dispatch to the CEO", "dispatch a sub-Agent", "Agent/Task", "OpenCode task",
-                       "headless", "`codex exec`", "only immediate small work with no CEO is yours"):
+                       "headless", "`codex exec`", "only an immediate one-sentence task with no CEO is yours"):
             self.assertIn(needle, self.en)
 
     def test_handed_off_then_standby_and_progress_card(self):
-        for needle in ("已交代给 X，有结论再报", "并待命", "退出码不够", "同回合叠同卡", "随时接主人插话", "避免消息排队", "派活、监督、汇报"):
+        for needle in ("已交代给 X，有结论再报", "并待命", "退出码不够", "主会话随时接主人消息", "只派活、写验收、跑验收、汇报"):
             self.assertIn(needle, self.zh)
-        for needle in ("Handed to X; I will report when there is a result", "return to standby", "not exit code", "same card",
-                       "stay interruptible", "keep messages from queueing", "Dispatch, supervise and report"):
+        for needle in ("Handed to X; I will report when there is a result", "return to standby", "not exit code", "Keep the main session ready for owner messages",
+                       "dispatch, write acceptance checks, run them and report"):
             self.assertIn(needle, self.en)
 
     def test_address_and_hierarchy(self):

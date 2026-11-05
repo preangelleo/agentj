@@ -35,6 +35,9 @@
     "wake_threshold": 0.25,
     "asr":
     {
+      "base_url": "",
+      "hotwords": ["Agent J", "Olares", "Claude Code", "Codex", "OpenCode"],
+      "corrections": {},
       // Local audio stays on host; cloud sends to your provider / 云端会把语音发给所选服务商; default="local"
       "mode": "local",
       // Local ASR implementation / 本地识别引擎; default="sensevoice"

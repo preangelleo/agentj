@@ -1,5 +1,6 @@
 // Small page helpers shared by the modules: element lookup, the Noir Notification (notify / toast / toastAction), the
 // two-step confirm dialog of Agent J's signed writes.
+import { initSurfaceOutlines } from './surface-outline.js';
 import { fillText } from './t.js';
 import { SVG } from './icons.js';
 import { configureCopyNotice } from './copycode.js';
@@ -191,3 +192,5 @@ export function mmss(s) { s = Math.round(s); return Math.floor(s / 60) + ':' + S
 
 // Copy primitives remain usable by pure renderers without importing page event handlers.
 configureCopyNotice(spec => notify(spec));
+
+if (typeof document !== "undefined") initSurfaceOutlines();

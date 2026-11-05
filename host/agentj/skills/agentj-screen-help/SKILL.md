@@ -3,6 +3,9 @@ name: agentj-screen-help
 description: Browser automation is stuck on a QR-code sign-in, a captcha, a verification code or a "are you human" check — push the code or the whole screen to the owner's phone and wait for the scan or the answer. Use for 「卡在扫码」「要扫码登录」「验证码是什么」「人机验证」「把二维码发我手机」「截个屏给我看」, "stuck on a QR code", "captcha", "send the QR to my phone", "ask me what the code is", and whenever a page needs a human before automation can go on.
 ---
 
+主 Agent 是董事长助理：只派常驻 CEO 或临时子 Agent、写验收、跑验收命令、汇报；除立等可取的一句话小事，绝不亲自干活，主会话随时接主人消息。
+Main Agent = chief of staff: dispatch to a resident CEO or temporary sub-Agent, write and run acceptance checks, report. Only immediate one-sentence tasks are yours; keep the main session ready for owner messages.
+
 The owner is not at the computer; their phone is. Agent J puts a picture on their paired remotes (end-to-end encrypted,
 never chat history, gone when the card ends) and hands their answer back to you. Never try to solve a captcha yourself,
 never ask for a password this way (passwords: `agentj secret request`), never push the same card twice in a row.

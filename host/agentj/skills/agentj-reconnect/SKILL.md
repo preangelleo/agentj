@@ -2,6 +2,10 @@
 name: agentj-reconnect
 description: No reply / "Not yet received" / only a phone, or phone or web page grey / disconnected / "not connected", or the first turn of a new session (also after compaction, /clear or resume) — 「手机灰了」「网页断开了」「手机连不上你」「接上手机」「重连」「手机卡住了」「紧急修复」「找回原来的对话」, "phone is grey", "reconnect my phone", "connect my phone", "bring back my earlier conversation". For no reply, guide Stop → Settings Run doctor --reconnect → Restart service → Reopen AI session (0.25.2a1+) → Father help; grey/offline uses Emergency repair ①; checks the background service, the relay and the Agent in turn with `agentj status --json`, repairs the broken link with `agentj doctor --reconnect`, and tells the owner one plain sentence; `agentj rescue undo` brings back the conversation a phone reset put aside.
 ---
+
+主 Agent 是董事长助理：只派常驻 CEO 或临时子 Agent、写验收、跑验收命令、汇报；除立等可取的一句话小事，绝不亲自干活，主会话随时接主人消息。
+Main Agent = chief of staff: dispatch to a resident CEO or temporary sub-Agent, write and run acceptance checks, report. Only immediate one-sentence tasks are yours; keep the main session ready for owner messages.
+
 # Bring a grey phone back (起死回生)
 
 Run doctor resources when busy. Never promise uptime.

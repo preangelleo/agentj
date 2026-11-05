@@ -1509,7 +1509,7 @@ def _bash(cmd: str, hits: _Hits, depth: int = 0, collect: list | None = None, li
     _text_rules(text, hits)
     if re.search(r"/dev/(tcp|udp)/", text):
         hits.add("send", "send.dev_net", "写入网络连接（/dev/tcp、/dev/udp）：把数据发到别处")
-    raw = cmd[:MAX_CMD]                      # A5 (P139) unchanged: the hook rule reads the whole text, heredoc bodies too
+    raw = executable_text(cmd[:MAX_SPLIT])[:MAX_CMD]  # data heredocs cannot change approval files
     m = _HOOK_TEXT.search(raw)
     if re.search(r"systemd/user(?:\.control)?(?:/|\b)", raw) and _HOOK_CODE.search(raw) and _HOOK_WRITE.search(raw):
         hits.add("credentials", "cred.service", "用脚本修改隔离外运行的用户服务")
@@ -2075,6 +2075,25 @@ def code_text(cmd: str) -> str:
     return "\n".join(out)
 
 
+def executable_text(cmd: str) -> str:
+    """Commands and interpreter programs, plus expansions of unquoted data heredocs."""
+    text, docs = heredocs(cmd)
+    out = [text]
+    for kind, body, expands in docs:
+        if kind == "shell":
+            out.append(executable_text(body))
+        elif kind.startswith("code:") or kind == "sql":
+            out.append(body)
+        elif expands:
+            out.extend(_substs(body))
+            # Unlike command substitutions, parameter expansion is data, but may
+            # still put a secret into the output file or send it to a process.
+            for expansion in re.finditer(r"(\\*)\$(\{!?[A-Za-z_][A-Za-z0-9_]*|[A-Za-z_][A-Za-z0-9_]*)", body):
+                if len(expansion.group(1)) % 2 == 0:
+                    out.append("$" + expansion.group(2))
+    return "\n".join(out)
+
+
 _NAME_PATTERN = re.compile(r"\^(?:[A-Za-z0-9_]|\[[A-Za-z0-9_\-]+\])+(?:[+*]|\{\d*,?\d*\})?(?:(?:[A-Za-z0-9_]|\[[A-Za-z0-9_\-]+\])+(?:[+*]|\{\d*,?\d*\})?)*")
 
 
@@ -2553,6 +2572,14 @@ def _expand_assign(text: str) -> str:
 def _shared_cred_read(command: str, cwd: str | None = None) -> tuple[str, str] | None:
     """Reference: documentation/notes/inline-media-docstrings.md (danger.py: _shared_cred_read)."""
     text = code_text(command[:MAX_CMD])
+    # Interpreter heredocs are programs, unlike cat/tee document bodies. Use
+    # the same credential-path literal rule as inline interpreter arguments.
+    for kind, body, _expands in heredocs(command[:MAX_SPLIT])[1]:
+        if kind.startswith("code:"):
+            for lit in _STR_LIT.finditer(body):
+                val = next(g for g in lit.groups() if g is not None)
+                if cred_path(val):
+                    return ("shared.credential_show", f"读取{cred_path(val)}")
     cmds = lex(text)
     for idx, c in enumerate(cmds):                        # env dump: `env`/`printenv` with no program after it
         w = [x for x in c.words if not _ASSIGN.match(x)]
@@ -2618,9 +2645,19 @@ def _shared_cred_read(command: str, cwd: str | None = None) -> tuple[str, str] |
                         pos = _positionals(sc.args)
                         if sc.name == "ls":              # `ls`, `ls dir`: the folder's names
                             dot = any(re.fullmatch(r"-[a-zA-Z]*[aA][a-zA-Z]*", a) for a in sc.args)
-                            pos = [g for w in (pos or ["."]) for g in (
-                                [w] if re.search(r"[*?\[]", w) else
-                                [w.rstrip("/") + "/*"] + ([w.rstrip("/") + "/.*"] if dot else []))]
+                            listed = []
+                            for w in pos or ["."]:
+                                places = [p for x in cwds if (p := _place(w, x))]
+                                # `ls report.md` produces that file's name, not
+                                # the contents of a hypothetical report.md/ folder.
+                                files = [p for p in places if os.path.isfile(p)]
+                                for p in files:
+                                    if secret := _cred_file(p):
+                                        return ("shared.credential_show", f"读取{secret}")
+                                plain_file = places and not any(os.path.isdir(p) for p in places)
+                                listed += ([w] if plain_file or re.search(r"[*?\[]", w) else
+                                           [w.rstrip("/") + "/*"] + ([w.rstrip("/") + "/.*"] if dot else []))
+                            pos = listed
                         for w in pos:
                             why = _glob_dump(w, cwds, remote=remote, odd=odd) or (named and _could_cred(w) and
                                                                                  "读取这条命令里碰过凭据文件之后的整个文件夹")

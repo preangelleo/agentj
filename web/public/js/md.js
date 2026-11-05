@@ -305,6 +305,11 @@ const MOD = { LABELS: { copy: "Copy", copyAria: "Copy code", copied: "Copied", i
         flush(); out.push({ tag: "code", children: [text(c)] });
         i = e + n; continue;
       }
+      // #495: known harness metadata aliases disappear from prose; code spans/fences remain literal.
+      if (ch === ":") {
+        const citation = /^:(?:codex-file-citation|codex-citation|file-citation)\{[^}\n]{0,4096}\}/.exec(s.slice(i, i + 4128));
+        if (citation) { i += citation[0].length; continue; }
+      }
       if (ch === "[" || (ch === "!" && s[i + 1] === "[")) {
         const img = ch === "!";
         const L = linkPossible ? tryLink(s, img ? i + 1 : i) : null;

@@ -4675,7 +4675,7 @@ usage: agentj mail [-h] [--workflow WORKFLOW] [--artifact-root ARTIFACT_ROOT]
                    [--workflow-cc-contact WORKFLOW_CC_CONTACT]
                    [--delivery-manifest DELIVERY_MANIFEST] [--days DAYS]
                    [--max WORKFLOW_MAX] [--per-day PER_DAY]
-                   [--address ADDRESS_OPT]
+                   [--delivery DELIVERY] [--address ADDRESS_OPT]
                    [--preset {126,163,aliyun,aliyun_biz,custom,exmail,gmail,icloud,netease_biz,outlook,qq,yahoo}]
                    [--username USERNAME] [--imap-host IMAP_HOST]
                    [--imap-port IMAP_PORT]
@@ -4690,22 +4690,23 @@ usage: agentj mail [-h] [--workflow WORKFLOW] [--artifact-root ARTIFACT_ROOT]
                    [--from EXPECT_FROM] [--subject-has SUBJECT_HAS]
                    [--within WITHIN] [--lookback LOOKBACK] [--wait WAIT]
                    [--id ID] [--en] [--json]
-                   {status,presets,setup,allow,deny,password,test,check,on,off,send,notes,expect,trash,workflow-status,workflow-grant,workflow-revoke}
+                   {status,presets,setup,allow,deny,password,test,check,on,off,send,notes,expect,trash,workflow-status,workflow-grant,workflow-revoke,workflow-retry}
                    [address]
 ```
 
 | Argument | Default | Required | Choices | Help |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `action` | `null` | true | `status`, `presets`, `setup`, `allow`, `deny`, `password`, `test`, `check`, `on`, `off`, `send`, `notes`, `expect`, `trash`, `workflow-status`, `workflow-grant`, `workflow-revoke` | `` |
+| `action` | `null` | true | `status`, `presets`, `setup`, `allow`, `deny`, `password`, `test`, `check`, `on`, `off`, `send`, `notes`, `expect`, `trash`, `workflow-status`, `workflow-grant`, `workflow-revoke`, `workflow-retry` | `` |
 | `address` | `null` | false | — | `deny：发件地址 / the sender address` |
 | `--workflow` | `null` | false | — | `exact native workflow id for workflow-status/grant/revoke` |
 | `--artifact-root` | `null` | false | — | `workflow-grant: exact artifact folder (default: native task folder)` |
 | `--workflow-cc-contact` | `[]` | false | — | `workflow-grant: fixed CC contact ID (1–4), separately signed` |
 | `--delivery-manifest` | `null` | false | — | `send: hash-bound v1/v2 artifact manifest JSON` |
-| `--days` | `30` | false | — | `workflow-grant: expiry in days (1–30)` |
-| `--max` | `100` | false | — | `workflow-grant: total uses (1–100)` |
-| `--per-day` | `3` | false | — | `workflow-grant: uses per UTC day (1–3)` |
+| `--days` | `null` | false | — | `workflow-grant: optional explicit expiry (1–30 days); otherwise valid until revoked` |
+| `--max` | `100` | false | — | `compatibility only; total message-count limit removed` |
+| `--per-day` | `0` | false | — | `compatibility only; daily limit removed` |
+| `--delivery` | `null` | false | — | `workflow-retry: exact delivery key from failed send; owner approval required` |
 | `--address` | `null` | false | — | `the mailbox address` |
 | `--preset` | `null` | false | `126`, `163`, `aliyun`, `aliyun_biz`, `custom`, `exmail`, `gmail`, `icloud`, `netease_biz`, `outlook`, `qq`, `yahoo` | `setup：邮箱预设（默认按域名猜）/ preset (guessed from the domain)` |
 | `--username` | `null` | false | — | `setup：登录名（默认 = 邮箱地址）/ sign-in name (default: the address)` |
@@ -5591,7 +5592,8 @@ agentj quota --help
 ```
 
 ```text
-usage: agentj quota [-h] [--json] [--pick | --remind]
+usage: agentj quota [-h] [--json] [--task {content,agentj}] [--pick |
+                    --remind]
                     {on,off,reset,resume} ...
 ```
 
@@ -5599,6 +5601,7 @@ usage: agentj quota [-h] [--json] [--pick | --remind]
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--json` | `false` | false | — | `` |
+| `--task` | `""` | false | `content`, `agentj` | `Agent J 开发` |
 | `--pick` | `false` | false | — | `pick from fresh measured quota` |
 | `--remind` | `false` | false | — | `只输出今天还没提醒过的提醒，并记为已提醒（晨报 / 例行用）/ only today's not-yet-given reminders, marked given` |
 
@@ -11976,7 +11979,7 @@ usage: agentj mail [-h] [--workflow WORKFLOW] [--artifact-root ARTIFACT_ROOT]
                    [--workflow-cc-contact WORKFLOW_CC_CONTACT]
                    [--delivery-manifest DELIVERY_MANIFEST] [--days DAYS]
                    [--max WORKFLOW_MAX] [--per-day PER_DAY]
-                   [--address ADDRESS_OPT]
+                   [--delivery DELIVERY] [--address ADDRESS_OPT]
                    [--preset {126,163,aliyun,aliyun_biz,custom,exmail,gmail,icloud,netease_biz,outlook,qq,yahoo}]
                    [--username USERNAME] [--imap-host IMAP_HOST]
                    [--imap-port IMAP_PORT]
@@ -11991,22 +11994,23 @@ usage: agentj mail [-h] [--workflow WORKFLOW] [--artifact-root ARTIFACT_ROOT]
                    [--from EXPECT_FROM] [--subject-has SUBJECT_HAS]
                    [--within WITHIN] [--lookback LOOKBACK] [--wait WAIT]
                    [--id ID] [--en] [--json]
-                   {status,presets,setup,allow,deny,password,test,check,on,off,send,notes,expect,trash,workflow-status,workflow-grant,workflow-revoke}
+                   {status,presets,setup,allow,deny,password,test,check,on,off,send,notes,expect,trash,workflow-status,workflow-grant,workflow-revoke,workflow-retry}
                    [address]
 ```
 
 | 参数 | 默认值 | 必填 | 可选值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
-| `action` | `null` | true | `status`, `presets`, `setup`, `allow`, `deny`, `password`, `test`, `check`, `on`, `off`, `send`, `notes`, `expect`, `trash`, `workflow-status`, `workflow-grant`, `workflow-revoke` | `` |
+| `action` | `null` | true | `status`, `presets`, `setup`, `allow`, `deny`, `password`, `test`, `check`, `on`, `off`, `send`, `notes`, `expect`, `trash`, `workflow-status`, `workflow-grant`, `workflow-revoke`, `workflow-retry` | `` |
 | `address` | `null` | false | — | `allow` |
 | `--workflow` | `null` | false | — | `exact native workflow id for workflow-status/grant/revoke` |
 | `--artifact-root` | `null` | false | — | `workflow-grant: exact artifact folder (default: native task folder)` |
 | `--workflow-cc-contact` | `[]` | false | — | `workflow-grant: fixed CC contact ID (1–4), separately signed` |
 | `--delivery-manifest` | `null` | false | — | `send: hash-bound v1/v2 artifact manifest JSON` |
-| `--days` | `30` | false | — | `workflow-grant: expiry in days (1–30)` |
-| `--max` | `100` | false | — | `workflow-grant: total uses (1–100)` |
-| `--per-day` | `3` | false | — | `workflow-grant: uses per UTC day (1–3)` |
+| `--days` | `null` | false | — | `workflow-grant: optional explicit expiry (1–30 days); otherwise valid until revoked` |
+| `--max` | `100` | false | — | `compatibility only; total message-count limit removed` |
+| `--per-day` | `0` | false | — | `compatibility only; daily limit removed` |
+| `--delivery` | `null` | false | — | `workflow-retry: exact delivery key from failed send; owner approval required` |
 | `--address` | `null` | false | — | `setup：Agent 用的邮箱地址` |
 | `--preset` | `null` | false | `126`, `163`, `aliyun`, `aliyun_biz`, `custom`, `exmail`, `gmail`, `icloud`, `netease_biz`, `outlook`, `qq`, `yahoo` | `setup：邮箱预设（默认按域名猜）/ preset (guessed from the domain)` |
 | `--username` | `null` | false | — | `setup：登录名（默认 = 邮箱地址）/ sign-in name (default: the address)` |
@@ -12892,7 +12896,8 @@ agentj quota --help
 ```
 
 ```text
-usage: agentj quota [-h] [--json] [--pick | --remind]
+usage: agentj quota [-h] [--json] [--task {content,agentj}] [--pick |
+                    --remind]
                     {on,off,reset,resume} ...
 ```
 
@@ -12900,6 +12905,7 @@ usage: agentj quota [-h] [--json] [--pick | --remind]
 | --- | --- | --- | --- | --- |
 | `-h / --help` | `null` | false | — | `show this help message and exit` |
 | `--json` | `false` | false | — | `` |
+| `--task` | `""` | false | `content`, `agentj` | `派单类型：内容创作` |
 | `--pick` | `false` | false | — | `按新鲜的两账号读数选派活账号` |
 | `--remind` | `false` | false | — | `只输出今天还没提醒过的提醒，并记为已提醒（晨报 / 例行用）/ only today's not-yet-given reminders, marked given` |
 

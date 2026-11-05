@@ -3660,3 +3660,19 @@ body[data-sheet="1"]:has(.reply-notices>#sheet.cp-docked) .scrim{opacity:0}
 .ct-proposed[hidden]{display:none}
 .reply-notices>.gdlg.cp-docked>.sq>.cp-host{background:var(--dbg,var(--dlg-bg));align-self:stretch}
 .reply-notices>.ajmodal.cp-docked>.box>.cp-host{background:var(--dlg-bg)}
+
+/* #440: ordinary preference fields; key material stays in the existing secret card. */
+#set-asr .asr-input{grid-column:1 / -1;width:100%;min-width:0;min-height:44px;padding:10px 12px;border:1px solid var(--border-soft);border-radius:var(--radius-sm,8px);background:var(--surface-2);color:var(--text);font:inherit;box-sizing:border-box}
+#set-asr select{max-width:100%;min-width:0;min-height:44px}
+.asr-notice{width:100%;flex-basis:100%;margin:0 0 6px;color:var(--text);font-size:var(--fs-sm)}
+.asr-notice[hidden]{display:none}
+
+/* #494: forced entry on an unpaired browser exposes public website links only. */
+#settings[data-unpaired="1"] .setbox > :not(.sethead):not(.unpaired-links){display:none!important}
+#settings[data-unpaired="1"] .sethead button,#settings[data-unpaired="1"] .set-actions{visibility:hidden}
+#settings[data-unpaired="1"] .unpaired-links{display:flex;flex-direction:column;gap:var(--sp-3);padding:var(--sp-4)}
+.unpaired-links a{min-height:44px;display:flex;align-items:center;color:var(--lotion)}
+/* #490: the same separation rule applies to every low-contrast surface. */
+.toast.aj-surface-outline,.sheet.aj-surface-outline,.ajmodal .box.aj-surface-outline{outline:2px solid var(--emerald-oasis);outline-offset:-2px}
+
+#settings:not([data-unpaired="1"]) .unpaired-links{display:none}

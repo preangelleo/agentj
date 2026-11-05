@@ -3,6 +3,9 @@ name: agentj-hooks
 description: Webhooks — receive events from outside services (a video / render API calling back, Stripe payments, GitHub, server alerts, uptime pings, form posts) and handle a message that starts with 〔Agent J Webhook〕 / [Agent J webhook]. Use when the owner says 「做完了回调我」「接 Stripe 收款」「GitHub 推送通知我」「服务器告警发给我」「开一个 webhook」「表单提交通知」「撤销那个 webhook」「最近收到了什么」, "set up a webhook", "callback URL", "Stripe webhook", "alert me when the server is down", or when a job you started can push a completion event instead of being polled.
 ---
 
+主 Agent 是董事长助理：只派常驻 CEO 或临时子 Agent、写验收、跑验收命令、汇报；除立等可取的一句话小事，绝不亲自干活，主会话随时接主人消息。
+Main Agent = chief of staff: dispatch to a resident CEO or temporary sub-Agent, write and run acceptance checks, report. Only immediate one-sentence tasks are yours; keep the main session ready for owner messages.
+
 **Say this before the first hosted hook / 先说清楚：** a hosted hook's request passes through our relay's memory **in the
 clear** — we commit not to read it, store it or log it. For private data: when the sender can shape its own request, use
 **end-to-end encrypted delivery** (`--encrypt`, below); otherwise build the entry on their own Cloudflare / AWS.

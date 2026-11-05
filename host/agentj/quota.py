@@ -11,6 +11,7 @@ import os
 import re
 import sys
 import time
+import threading
 from datetime import datetime
 from pathlib import Path
 
@@ -268,10 +269,15 @@ def analyse(src: dict, resets: list[dict], now: float) -> dict:
     out["resets"] = [{"expires": r["expires"], **({"note": r["note"]} if r.get("note") else {})} for r in resets]
     h5 = src.get("h5")
     # Keep validity separate from display clamping: --pick must not use a repaired reading.
+    out["weekly_valid"] = (src.get("weekly_valid") is not False and src.get("status") in ("ok", "stale") and src.get("weekly_valid") is not False
+            and not ("weekly_valid" not in src and src.get("reading_valid") is False) and _num(src.get("used_pct")) and 0 <= src["used_pct"] <= 100
+                           and _num(src.get("reset_at")) and _num(src.get("source_at")))
+    out["h5_present"] = isinstance(h5, dict)
+    out["h5_valid"] = not isinstance(h5, dict) or all(_num(h5.get(k)) for k in ("used_pct", "reset_at", "source_at")) and 0 <= h5["used_pct"] <= 100
     out["reading_valid"] = not src.get("stale") and all(_num(w.get("used_pct")) and 0 <= w["used_pct"] <= 100
                                                         for w in (src, h5) if isinstance(w, dict))
     out.pop("h5", None)
-    if isinstance(h5, dict) and not src.get("stale") and h5["reset_at"] > now and h5["reset_at"] - now <= H5_S + 600:   # a stale window is no reading
+    if isinstance(h5, dict) and (not src.get("stale") or src.get("weekly_cached")) and h5["reset_at"] > now and h5["reset_at"] - now <= H5_S + 600:   # a stale window is no reading
         out["h5"] = {"used_pct": round(min(100.0, max(0.0, h5["used_pct"])), 1), "reset_at": h5["reset_at"],
                      "source_at": h5.get("source_at")}
     if src.get("status") == "partial":
@@ -404,6 +410,55 @@ def reminders_on(prefs: dict | None) -> bool:
     return preferences.get(prefs or {}, "quota.reminders", True) is not False
 
 
+_WEEKLY_CACHE_LOCK = threading.Lock()
+
+
+def _weekly_sample(src, now):
+    kind = src.get("harness")
+    return (kind in ("claude", "codex") and src.get("source") == {"claude": "statusline", "codex": "session_log"}.get(kind)
+            and src.get("status") in ("ok", "stale") and src.get("weekly_valid") is not False
+            and not ("weekly_valid" not in src and src.get("reading_valid") is False) and _num(src.get("used_pct")) and 0 <= src["used_pct"] <= 100
+            and _num(src.get("source_at")) and 0 <= src["source_at"] <= now and _num(src.get("reset_at"))
+            and now < src["reset_at"] <= now + WEEK_S)
+
+
+def last_weekly(state_root, src, acc, now):
+    """Keep only genuine unexpired native weekly samples, isolated by harness and managed account id."""
+    kind = src["harness"]
+    if kind not in ("claude", "codex"):
+        return src
+    key = kind + ":" + str((acc.get(kind) or {}).get("active") or "@unmanaged")
+    path = Path(state_root) / "quota-weekly-cache.json"
+    with _WEEKLY_CACHE_LOCK:
+        cache = {}
+        try:
+            if not path.is_symlink() and path.stat().st_size <= 65536:
+                cache = json.loads(path.read_text())
+        except (OSError, ValueError):
+            pass
+        if not isinstance(cache, dict):
+            cache = {}
+        cache = {k: v for k, v in cache.items() if isinstance(k, str) and isinstance(v, dict) and k.partition(":")[0] == v.get("harness") and _weekly_sample(v, now)}
+        for account in (acc.get(kind) or {}).get("items", []):
+            historical = cache.get(kind + ":" + account["id"])
+            previous = account.get("last_quota") or {}
+            if historical and historical['source_at'] > (previous.get('at') or -1):
+                account['last_quota'] = {'pct': historical['used_pct'], 'window': 'week',
+                                         'at': historical['source_at'], 'reset_at': historical['reset_at']}
+        if _weekly_sample(src, now):
+            old = cache.get(key)
+            if not old or src['source_at'] > old['source_at']:
+                cache[key] = {k: src[k] for k in ('harness', 'source', 'status', 'used_pct', 'reset_at', 'source_at')}
+                cache = dict(sorted(cache.items(), key=lambda kv: kv[1]['source_at'])[-64:])
+                from .state import _write_private
+                with contextlib.suppress(OSError):
+                    _write_private(path, json.dumps(cache).encode())
+            return src
+        old = cache.get(key)
+        return {**old, 'status': 'stale', 'stale': True, 'weekly_cached': True, 'why': 'last_weekly_reading',
+                **({'h5': src['h5']} if isinstance(src.get('h5'), dict) else {})} if old else src
+
+
 def report(state_root, now: float | None = None, env=None, sources=None, meter_state: dict | None = None) -> dict:
     now = time.time() if now is None else now
     d = load_state(state_root)
@@ -419,7 +474,7 @@ def report(state_root, now: float | None = None, env=None, sources=None, meter_s
     acc = _accounts(state_root)
     out = []
     for s in srcs:
-        s = since_switch(s, acc)
+        s = last_weekly(state_root, since_switch(s, acc), acc, now)
         a = analyse(s, live_resets(d, s["harness"], now), now)
         a["reminders"] = assess(a)
         rows = account_rows(acc, s["harness"], a)
@@ -461,8 +516,8 @@ def account_rows(acc: dict, harness: str, a: dict) -> list[dict]:
     rows = []
     for it in hd.get("items") or []:
         if it["id"] == hd.get("active"):
-            q = {"pct": round(a["used_pct"], 1), "window": "week", "at": int(a["source_at"])} \
-                if a.get("status") == "ok" and _num(a.get("used_pct")) and _num(a.get("source_at")) else None
+            q = {"pct": round(a["used_pct"], 1), "window": "week", "at": int(a["source_at"]), "reset_at": a.get("reset_at")} \
+                if a.get("status") in ("ok", "stale") and a.get("weekly_valid") is not False and _num(a.get("used_pct")) and _num(a.get("source_at")) else it.get("last_quota")
         else:
             q = it.get("last_quota")
         rows.append({"id": it["id"], "name": it["name"], "active": it["id"] == hd.get("active"), "quota": q})
@@ -778,6 +833,7 @@ def add_parser(sub) -> None:
     p = sub.add_parser("quota", help="额度管家：各 harness 周额度进度、均分线、reset 机会 · --json · --remind · on · off · "
                                      "reset add|used / weekly quota pace and reset opportunities per harness")
     p.add_argument("--json", action="store_true")
+    p.add_argument("--task", choices=("content", "agentj"), default="", help="派单类型：内容创作 / Agent J 开发")
     choice = p.add_mutually_exclusive_group()
     choice.add_argument("--pick", action="store_true", help="按新鲜的两账号读数选派活账号 / pick from fresh measured quota")
     choice.add_argument("--remind", action="store_true",
@@ -835,7 +891,7 @@ def cmd_quota(a) -> None:
               ("没有等着自动继续的 / nothing waiting" if not a.cancel else "")))
         return
     if getattr(a, "pick", False):
-        res = pick(call({"op": "quota"}))
+        res = pick(call({"op": "quota"}), task=getattr(a, "task", ""))
         print(json.dumps(res, ensure_ascii=False) if a.json else render_pick(res, lang))
         if not res["harness"]:
             raise SystemExit(2)
@@ -862,63 +918,64 @@ def cmd_quota(a) -> None:
 PICK_MAX_AGE = 300
 
 
-def pick(rep: dict, now: float | None = None) -> dict:
-    """Compare measured weekly pace only when BOTH accounts have fresh weekly and 5h readings.
-
-    source_at is an official event timestamp (Codex) or the host tap write time (Claude).
-    Missing / invalid / stale data means no recommendation, never zero usage.
-    Rates are normalized to the time elapsed in each account's own weekly window.
-    """
+def pick(rep: dict, now: float | None = None, task: str = "") -> dict:
+    """Recommend from weekly headroom per remaining day; stale readings stay labelled stale."""
     now = time.time() if now is None else now
     rows = []
-    raw = rep.get("harnesses", []) if isinstance(rep, dict) else []
-    for kind in ("claude", "codex"):
-        found = [r for r in raw if isinstance(r, dict) and r.get("harness") == kind] if isinstance(raw, list) else []
-        row = {"harness": kind, "eligible": False, "why": "missing_reading"}
-        rows.append(row)
-        if len(found) != 1:
+    for r in rep.get("harnesses", []) if isinstance(rep, dict) else []:
+        kind = r.get("harness")
+        if kind not in ("claude", "codex"):
             continue
-        r = found[0]
-        h = r.get("h5")
-        if r.get("reading_valid") is False or r.get("status") != "ok" or r.get("source") != {"claude": "statusline", "codex": "session_log"}[kind]:
-            row["why"] = "unverified_reading"
-            continue
-        if not isinstance(h, dict):
-            row["why"] = "missing_5h"
-            continue
-        if any(not _num(w.get("source_at")) or not 0 <= now - w["source_at"] <= PICK_MAX_AGE for w in (r, h)):
-            row["why"] = "stale_reading"
-            continue
-        if any(not _num(w.get("used_pct")) or not 0 <= w["used_pct"] <= 100 for w in (r, h)):
-            row["why"] = "invalid_usage"
-            continue
-        if any(not _num(w.get("reset_at")) or not 0 < w["reset_at"] - now <= length
-               for w, length in ((r, WEEK_S), (h, H5_S))):
-            row["why"] = "invalid_window"
-            continue
-        left = (r["reset_at"] - now) / DAY_S
-        elapsed = 7 - left
-        if elapsed <= 0:
-            row["why"] = "window_just_started"
-            continue
-        speed = r["used_pct"] / (elapsed * DAY_SHARE)
-        row.update(speed=speed, per_day=(100-r["used_pct"]) / left,
-                   used_pct=r["used_pct"], h5_used_pct=h["used_pct"], source_at=r["source_at"],
-                   eligible=h["used_pct"] < H5_WARN_PCT and r["used_pct"] < 100,
-                   why="available" if h["used_pct"] < H5_WARN_PCT and r["used_pct"] < 100 else "quota_high")
-    if any(r["why"] not in ("available", "quota_high") for r in rows):
-        return {"harness": None, "why": "incomplete_fresh_pair", "max_age_s": PICK_MAX_AGE, "accounts": rows}
-    candidates = sorted((r for r in rows if r["eligible"]), key=lambda r: (round(r["speed"], 2), -r["per_day"], r["harness"]))
-    return {"harness": candidates[0]["harness"] if candidates else None,
-            "why": "slower_weekly_pace_then_daily_headroom" if len(candidates) == 2 else
-                   "only_eligible_account" if candidates else "both_quota_high", "max_age_s": PICK_MAX_AGE, "accounts": rows}
+        readings = [(r, None)]
+        for account in r.get("accounts", []):
+            q = account.get("quota") or {}
+            live_week = r.get("status") in ("ok", "stale") and r.get("weekly_valid") is not False and _num(r.get("used_pct")) and _num(r.get("reset_at"))
+            if q.get("window") == "week" and (not account.get("active") or not live_week):
+                readings.append(({"used_pct": q.get("pct"), "reset_at": q.get("reset_at"),
+                                  "source_at": q.get("at"), "source": {"claude": "statusline", "codex": "session_log"}[kind], "status": "stale"}, account))
+        for reading, account in readings:
+            row = {"harness": kind, "eligible": False, "why": "missing_reading"}
+            if account:
+                row.update(account_id=account["id"], account_name=account["name"], switch_account=not account.get("active"))
+            rows.append(row)
+            used, reset, at = (reading.get(k) for k in ("used_pct", "reset_at", "source_at"))
+            if reading.get("source") != {"claude": "statusline", "codex": "session_log"}[kind] or reading.get("weekly_valid") is False or ("weekly_valid" not in reading and reading.get("reading_valid") is False) or not _num(used) or not 0 <= used <= 100:
+                row["why"] = "invalid_usage"
+                continue
+            if not _num(at) or at > now or not _num(reset) or not now < reset <= now + WEEK_S:
+                row["why"] = "missing_reset" if reset is None else "invalid_window"
+                continue
+            fresh = now - at <= PICK_MAX_AGE and reading.get("status") == "ok" and not reading.get("stale")
+            h = reading.get("h5")
+            h_used = h.get("used_pct") if isinstance(h, dict) else None
+            h_fresh = isinstance(h, dict) and _num(h.get("source_at")) and 0 <= now-h["source_at"] <= PICK_MAX_AGE
+            h_valid = reading.get("h5_valid") is not False and h_fresh and _num(h_used) and 0 <= h_used <= 100
+            left = (reset-now) / DAY_S
+            row.update(used_pct=used, source_at=at, fresh=fresh, per_day=(100-used)/left,
+                       speed=used / (max(.001, 7-left) * DAY_SHARE),
+                       h5_used_pct=h_used if h_valid else 0 if fresh and h is None and not reading.get("h5_present") else None,
+                       h5_unlimited=fresh and h is None and not reading.get("h5_present"),
+                       eligible=used < 100 and (not h_valid or h_used < H5_WARN_PCT),
+                       why="available" if fresh else "last_weekly_reading")
+    affinity = "codex" if task in ("content", "内容创作") else "claude" if task in ("agentj", "Agent J") else None
+    candidates = sorted((r for r in rows if r["eligible"]),
+                        key=lambda r: (affinity is not None and r["harness"] != affinity, -r["per_day"], r["harness"]))
+    chosen = candidates[0] if candidates else None
+    why = "task_affinity" if chosen and affinity == chosen["harness"] else "daily_headroom" if chosen else "no_weekly_reading" if not any("per_day" in r for r in rows) else "both_quota_high"
+    reason = (f"{chosen['harness']} 每天可用 {chosen['per_day']:.1f}%" + ("（最近一次周读数，已降级）" if not chosen['fresh'] else "") + ("，按任务类型优先" if why == "task_affinity" else "，剩余日均额度最多")) if chosen else "没有可用的周额度读数，请先读取账号额度"
+    reason_en = (f"{chosen['harness']}: {chosen['per_day']:.1f}% available per day" + (" (degraded: last weekly reading)" if not chosen['fresh'] else "") + (", preferred for this task" if why == "task_affinity" else ", largest daily headroom")) if chosen else "No usable weekly reading; read account quota first"
+    return {"harness": chosen["harness"] if chosen else None, "account_id": chosen.get("account_id") if chosen else None,
+            "switch_account": bool(chosen and chosen.get("switch_account")), "why": why, "reason": reason,
+            "reason_en": reason_en, "max_age_s": PICK_MAX_AGE, "accounts": rows,
+            "more_work": bool(chosen and chosen["per_day"] > DAY_SHARE and chosen["used_pct"] < 80)}
 
 
 def render_pick(result: dict, lang="zh") -> str:
-    lines = []
-    for r in result["accounts"]:
-        lines.append(f"{NAMES[r['harness']]}: {r['why']}" +
-                     (f" · weekly pace {r['speed']:.2f}x · daily headroom {r['per_day']:.1f}% · 5h {r['h5_used_pct']:.1f}%"
-                      if "speed" in r else ""))
-    lines.append(("推荐 / Pick: " + result["harness"]) if result["harness"] else "读数不足或额度高，暂不推荐 / No recommendation")
+    lines = [f"{NAMES[r['harness']]}{(' · '+r['account_name']) if r.get('account_name') else ''}: {r['why']}" +
+             (f" · daily headroom {r['per_day']:.1f}%" if "per_day" in r else "") for r in result["accounts"]]
+    lines.append(result.get("reason_en", result["reason"]) if lang == "en" else result["reason"])
+    if result.get("switch_account"):
+        lines.append(("Switch account: " if lang == "en" else "建议切到账号：") + result["account_id"])
+    if result.get("more_work"):
+        lines.append("More work can use quota before reset" if lang == "en" else "可多派一些任务，避免额度到期浪费")
     return "\n".join(lines)

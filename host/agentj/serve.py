@@ -182,6 +182,7 @@ P33_ONLY = ("say", "say_cancel", "say_sync", "cmd_cancel", "blob_open", "blob_ch
             "preauth_list", "preauth_revoke")     # P539: 「Computer Use 免问」 list / revoke (narrowing only)
 PREF_SET_KEYS = ("updates.mode", "appearance.language", "appearance.theme", "voice.wake_enabled", "voice.speak_replies",
                  "agent.high_risk_warnings", "agent.session_mode", "agent.isolation", "agent.allow_docker")
+PREF_SET_KEYS += tuple("voice.asr."+key for key in ("mode", "engine", "provider", "base_url", "model", "key_env", "hotwords", "corrections"))
 PREF_SET_KEYS += ("heartbeat.enabled", "heartbeat.interval_minutes")    # P156: the settings panel's heartbeat switch
 PREF_SET_KEYS += ("approval.jev_threshold",)     # P157: the phone's Jev threshold stepper (number, schema range and step)
 PREF_SET_KEYS += ("approval.goal_auto",)         # P158: the phone's goal-mode countdown switch (enterprise: off)
@@ -227,6 +228,8 @@ def page_asr(files: list) -> dict:
                 r["partial"] = str(a["partial"])[:32]
         else:
             r = {"ok": False, "why": str(a.get("why") or "broken")[:32] if not a.get("ok") else "no_speech"}
+        if a.get("notice") in ("local_fallback", "remote_unavailable"):
+            r["notice"] = a["notice"]
         if a.get("secs"):
             r["secs"] = round(float(a["secs"]), 1)
         out[i] = r
@@ -3008,7 +3011,7 @@ class Host:
     def _status_msg(self) -> dict:
 
         m = {"t": "status", "s": self.eff_status(), "agent": self.agent.kind if self.agent else None,
-             "name": self.st.agent_name()}
+             "name": self.st.agent_name(), "goal_active": bool(getattr(self, "goals", None) and self.goals.current())}
         if m["s"] == "waiting" and self._open_question():
             m["kind"] = "question"
         if self.telegram is not None and self.telegram.error:   # P129: the phone's status area says it; gone on recovery
@@ -3102,7 +3105,7 @@ class Host:
                 info["imessage"] = im.brief()
         return info
 
-    async def apply_preferences(self, raw=None, ack=None, language_at=None, build=None):
+    async def apply_preferences(self, raw=None, ack=None, language_at=None, build=None, asr_phone=False):
 
         async with self.config_apply_lock:
             if build is not None:
@@ -3114,6 +3117,10 @@ class Host:
             old = self.preferences
             try:
                 candidate = preferences.validate(preferences.parse(raw) if isinstance(raw,str) else preferences.read()[1])
+                if asr_phone:
+                    from .voice import phone_asr_change_allowed
+                    if not phone_asr_change_allowed(old,candidate):
+                        raise preferences.ConfigError('voice.asr','keyed ASR settings require the trusted local configuration command')
                 from . import claude_auth
                 await asyncio.to_thread(claude_auth.require_transition, self.st, old, candidate, running=True)
                 from . import voice
@@ -3142,6 +3149,8 @@ class Host:
                     await ack(self.config_problem)
                 await self._send_ready(lambda x: self.preferences_msg(x))
                 return self.config_problem
+            if preferences.get(candidate, "voice.asr.mode") == "custom":
+                await asyncio.to_thread(self.asr.shutdown)
             lang_changed = preferences.get(old, "appearance.language") != preferences.get(candidate, "appearance.language")
             preferences.note_language(self.st, candidate, language_at)
             if lang_changed:
@@ -3360,7 +3369,7 @@ class Host:
         if not from_account:
             self.reporter.trigger("language")
 
-    async def set_pref(self, key: str, value, ack=None, language_at=None) -> dict:
+    async def set_pref(self, key: str, value, ack=None, language_at=None, asr_phone=False) -> dict:
 
         import fcntl
         fd = os.open(self.st.root / "preferences.lock", os.O_RDWR | os.O_CREAT, 0o600)
@@ -3385,7 +3394,7 @@ class Host:
                 if ack:
                     await ack(res)
                 return res
-            return await self.apply_preferences(newraw, ack=ack, language_at=language_at)
+            return await self.apply_preferences(newraw, ack=ack, language_at=language_at, **({"asr_phone": True} if asr_phone else {}))
         finally:
             os.close(fd)
 
@@ -3437,6 +3446,9 @@ class Host:
                 m["reload"] = True
             if self.sessions.get(s.cid) is s and s.state == "ready" and self.st.is_allowed(s.pub):
                 await self.send_app(s, m)
+        if self.sessions.get(s.cid) is not s or s.state != "ready" or not self.st.is_allowed(s.pub):
+            self.st.log("pref_set_refused", device=s.device)
+            return await res(False, "not_paired")
         if key not in PREF_SET_KEYS:
             self.st.log("pref_set_refused", device=s.device)
             return await res(False, "not_allowed")
@@ -3448,7 +3460,8 @@ class Host:
         typ_ok = {"boolean": type(value) is bool, "string": isinstance(value, str),
                   "number": type(value) in (int, float) and math.isfinite(value),
                   "integer": type(value) is int,
-                  "array": key == "ui.composer_buttons" and preferences.composer_order_ok(value)}.get(meta["type"], False)
+                  "object": key == "voice.asr.corrections" and isinstance(value, dict),
+                  "array": (key == "ui.composer_buttons" and preferences.composer_order_ok(value)) or (key == "voice.asr.hotwords" and isinstance(value, list))}.get(meta["type"], False)
         if not typ_ok or ("enum" in meta and value not in meta["enum"]) or (meta["type"] in ("number", "integer") and not (
                 meta.get("minimum", -math.inf) <= value <= meta.get("maximum", math.inf) and (not meta.get("multipleOf") or abs(
                     value / meta["multipleOf"] - round(value / meta["multipleOf"])) < 1e-6))):
@@ -3456,6 +3469,8 @@ class Host:
         if meta["type"] == "string" and (len(value) > meta.get("maxLength", 1000) or any(ord(c) < 32 for c in value) or (
                 meta.get("pattern") and not re.fullmatch(meta["pattern"], value))):
             return await res(False, "bad_value")
+        if key == 'voice.asr.key_env' and value:
+            return await res(False, 'not_allowed')  # Secret references never travel through unsigned phone prefs.
         if preferences.get(self.preferences, key) == value:
             return await res(True)
 
@@ -3466,7 +3481,7 @@ class Host:
                 from . import claude_auth
                 self.agent_notice(claude_auth.failure_notice(self.lang))
         self.st.log("pref_set", device=s.device, status=key)
-        await self.set_pref(key, value, ack=ack)
+        await self.set_pref(key, value, ack=ack, **({"asr_phone": True} if key.startswith("voice.asr.") else {}))
         if key.startswith("imessage.") and getattr(self, "imessage", None) is not None:
             self.imessage.kick()                     # P274: a switch / interval change takes effect at once
 
@@ -3993,12 +4008,13 @@ class Host:
         st = self.eff_status()
         if st == "waiting" and self._open_question():
             st = "waiting:question"
-        if st == self.sent_status:
+        msg = self._status_msg()
+        if st == self.sent_status and msg["goal_active"] == getattr(self, "sent_goal_active", None):
             return
         self.sent_status = st
+        self.sent_goal_active = msg["goal_active"]
         st = st.split(":")[0]
         self.emit("agent_status", s=st)
-        msg = self._status_msg()
         self._post(self._send_ready, lambda s: msg)
 
     def push_status(self) -> None:
@@ -5617,7 +5633,7 @@ class Host:
 
     def _dispatch_check(self, command):
         from . import peer_origin
-        return peer_origin.check(command, (self.agent_cfg or {}).get("dir"), self.st.root, self._dispatch_ctx())
+        return peer_origin.check_batch(command, (self.agent_cfg or {}).get("dir"), self.st.root, self._dispatch_ctx())
 
     async def _peer_launch_note(self, tool, tool_input, avatar, own, unattended):
         launches = getattr(self, "peer_launch", None)
@@ -7762,7 +7778,7 @@ class Host:
         deadline = time.monotonic() + budget
         d = self.uploads.root / device
         d.mkdir(mode=0o700, parents=True, exist_ok=True)
-        texts, why, cut = [], None, False
+        texts, why, cut, notice = [], None, False, None
         for k in range(FF_MAX_SEGS + 1):
             left = deadline - time.monotonic()
             if k == FF_MAX_SEGS:
@@ -7786,6 +7802,7 @@ class Host:
                 with contextlib.suppress(OSError):
                     os.unlink(tmp)
             res = self._asr_result(r, None)
+            notice = res.get("notice") or notice
             if res["ok"]:
                 texts.append(res["text"])
             elif res["why"] != "no_speech":
@@ -7794,11 +7811,11 @@ class Host:
             if size < 44 + FF_SEG_SECS * 32_000 - 64_000:          # shorter than a full segment: that was the last one
                 break
         if texts:
-            out = {"ok": True, "text": "\n".join(texts), "secs": f.get("secs")}
+            out = {"ok": True, "text": "\n".join(texts), "secs": f.get("secs"), **({"notice": notice} if notice else {})}
             if why or cut:
                 out["partial"] = "cut" if cut else why
             return out
-        return {"ok": False, "why": why or "no_speech", "secs": f.get("secs")}
+        return {"ok": False, "why": why or "no_speech", "secs": f.get("secs"), **({"notice": notice} if notice else {})}
 
     def _transcript_file(self, device: str, f: dict) -> str:
 
@@ -7818,8 +7835,8 @@ class Host:
     @staticmethod
     def _asr_result(r: dict, secs) -> dict:
         if r.get("ok") and (r.get("text") or "").strip():
-            return {"ok": True, "text": wire.well_formed(r["text"]), "secs": secs}
-        return {"ok": False, "why": "no_speech" if r.get("ok") else ASR_WHY.get(r.get("reason"), "broken"), "secs": secs}
+            return {"ok": True, "text": wire.well_formed(r["text"]), "secs": secs, **({"notice": r["notice"]} if r.get("notice") in ("local_fallback", "remote_unavailable") else {})}
+        return {"ok": False, "why": "no_speech" if r.get("ok") else ASR_WHY.get(r.get("reason"), "broken"), "secs": secs, **({"notice": r["notice"]} if r.get("notice") in ("local_fallback", "remote_unavailable") else {})}
 
     async def _ffmpeg(self, ff: str, demux: str, src: str, dst: str, timeout: float, start: float = 0,
                       secs: float = FF_MAX_SECS) -> str:
@@ -7953,6 +7970,8 @@ class Host:
     # ------------------------------------------------------------ voice (§10.9)
     def asr_state(self) -> str:
 
+        if preferences.get(self.preferences, "voice.asr.mode") == "custom":
+            return "ready"  # Reachability is tested on the take; failures can still use local fallback.
         if preferences.get(self.preferences, "voice.asr.mode") == "cloud":
             from . import voice
             return "ready" if voice.has_key(preferences.get(self.preferences, "voice.asr.key_env")) else "broken"
@@ -7969,8 +7988,9 @@ class Host:
         async with self.asr_lock:
             try:
                 from . import voice
-                if not local_only and preferences.get(self.preferences, "voice.asr.mode") == "cloud":
-                    r = await asyncio.wait_for(asyncio.to_thread(voice.cloud_asr, path, self.preferences, timeout), timeout + 5)
+                if not local_only:
+                    r = await asyncio.wait_for(asyncio.to_thread(voice.transcribe, path, self.preferences, timeout,
+                                                                         state_dir=self.st.root, local_asr=self.asr), timeout + 5)
                 else:
                     r = await asyncio.wait_for(asyncio.to_thread(self.asr.transcribe, path, timeout_s=timeout,
                                                                         state_dir=self.st.root, engine_override=preferences.get(self.preferences, "voice.asr.engine")), timeout + 5)
@@ -7997,6 +8017,8 @@ class Host:
                     r = await self._transcribe(str(self.uploads.part_path(b)), min(ASR_TAKE, compose.asr_budget(b.secs)))
                 finally:
                     self.asr_waiting[device] -= 1
+                if r.get("notice") in ("local_fallback", "remote_unavailable"):
+                    res["notice"] = r["notice"]
                 text = wire.well_formed(r.get("text") or "") if r.get("ok") else ""
                 if r.get("ok") and text.strip():
                     cut = history._cut_units(text, wire.MAX_TEXT_P33)

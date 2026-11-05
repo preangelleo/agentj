@@ -25,8 +25,9 @@ class Renew(Delivery):
             return await self.service.control(req, None)
 
     def rename_owner(self):
+        self.rename_n = getattr(self, 'rename_n', 0) + 1
         contacts.local(self.st, {'op': 'owner_set', 'owner_ok': True,
-                                 'contact': {'name': 'Renamed', 'emails': [ME], 'phones': ['13800001111']}})
+                                 'contact': {'name': 'Renamed', 'emails': [f'changed{self.rename_n}@example.test'], 'phones': ['13800001111']}})
 
     def hold(self):
         """The phone card stays open until the test answers it."""
@@ -119,7 +120,8 @@ class Renew(Delivery):
             await self.grant()
         row = self.service.load()['grants']['story']
         contacts.record_sent(self.st, [ME])                        # owner had sends before the grant: not provable
-        self.assertEqual(self.service.why(row, self.contract), 'contact_changed')
+        self.assertIsNone(self.service.why(row, self.contract))
+        self.rename_owner()
         self.hold()
         self.assertEqual((await self.status())['grant']['card'], 'sent')
         self.assertEqual(await self.settle(1), 1)

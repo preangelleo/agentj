@@ -256,6 +256,37 @@ class HostGoal(unittest.TestCase):
         self.assertEqual(oct(os.stat(goal.path(self.st)).st_mode & 0o777), "0o600")
         self.assertEqual(goal.path(self.st).name, "goal.json")
 
+    def test_real_goal_start_end_expiry_emit_when_status_stays_idle(self):
+        self.host.eff_status=lambda:'idle'
+        def statuses():
+            return [obj for _,obj in self.sent if obj.get('t')=='status']
+        async def begin():
+            before=len(self.asks(goal.TOOL))
+            task=asyncio.create_task(self.host.goals.propose(PROP,wait=True))
+            for _ in range(100):
+                await asyncio.sleep(.01)
+                if len(self.asks(goal.TOOL))>before:
+                    break
+            card=self.asks(goal.TOOL)[-1]
+            await self.host._answer(self.s,self.phone.answer(card,True))
+            self.assertEqual((await task)['result'],'active')
+            await asyncio.sleep(.03)
+            self.assertTrue(statuses()[-1]['goal_active'])
+        async def run():
+            self.host.push_status();await asyncio.sleep(.02)
+            self.assertFalse(statuses()[-1]['goal_active'])
+            await begin()
+            self.host.goals.end('achieved');await asyncio.sleep(.03)
+            self.assertFalse(statuses()[-1]['goal_active'])
+            count=len(statuses());self.host.status_changed();await asyncio.sleep(.02)
+            self.assertEqual(len(statuses()),count)
+            await begin()
+            data=goal.load(self.st);data['deadline']=time.time()-1;goal.save(self.st,data)
+            self.host.goals.check();await asyncio.sleep(.03)
+            self.assertFalse(statuses()[-1]['goal_active'])
+            self.assertEqual(goal.load(self.st)['ended'],'expired')
+        asyncio.run(run())
+
     def test_declined_card_grants_nothing(self):
         self.assertEqual(self.start_goal(ok=False)["result"], "declined")
         self.assertIsNone(self.host.goals.current())
@@ -354,7 +385,7 @@ class HostGoal(unittest.TestCase):
         # no goal: a reversible step is an ordinary card, never automatic
         self.assertEqual(self.run_ask("trash-put old.log")["behavior"], "deny")
         notices = [o.get("text", "") for _, o in self.sent if o.get("from") == "notice"]
-        self.assertTrue(any("目标结束" in n and "用到的授权" in n for n in notices), notices[-3:])
+        self.assertTrue(any("已停止，尚未完成" in n and "已按你的授权执行" in n for n in notices), notices[-3:])
 
     def test_deadline_ends_it(self):
         self.start_goal()
@@ -421,7 +452,7 @@ class Words(unittest.TestCase):
         d = _active(PROP, used={"0": 2}, counts={"granted": 2, "low": 5, "auto": 1},
                     blocked=[{"summary": "wrangler deploy", "why": "irreversible"}], ended="not_achieved")
         t = goal.result_text(d)
-        for want in ("未达成", "推到 GitHub 仓库 ×2", "自动批准 8 次（其中 10 秒倒计时 1 次）", "wrangler deploy", "无法撤回"):
+        for want in ("尚未完成", "推到 GitHub 仓库 ×2", "按已获授权处理了 8 个操作，没有打扰你。", "wrangler deploy", "无法撤回"):
             self.assertIn(want, t)
 
     def test_pieces(self):

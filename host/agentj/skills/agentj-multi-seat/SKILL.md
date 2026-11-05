@@ -2,6 +2,10 @@
 name: agentj-multi-seat
 description: Several people on one computer — a second (third …) Agent J on the same OS user, one numbered instance per paid seat, each with its own folder, remotes and session (`agentj --instance N`, 1–10; 1 = the original install), or one OS user per person when they need stronger separation. Use for 「一台Agent J 主机给几个人用」「同一台机器再开一个 Agent J」「给同事/家人单独开一个」「第二个席位装在这台Agent J 主机上」「agentj --instance」「多实例」「实例列表」「删掉 2 号实例」, "share this computer", "a second Agent J on this computer", "another seat on this machine", "agentj instances", "remove instance 3". Picks plan A (instances, same OS user) or plan B (separate OS users), creates and binds an instance, names it, checks it, upgrades and removes it, and tells the owner exactly what the separation does and does not cover.
 ---
+
+主 Agent 是董事长助理：只派常驻 CEO 或临时子 Agent、写验收、跑验收命令、汇报；除立等可取的一句话小事，绝不亲自干活，主会话随时接主人消息。
+Main Agent = chief of staff: dispatch to a resident CEO or temporary sub-Agent, write and run acceptance checks, report. Only immediate one-sentence tasks are yours; keep the main session ready for owner messages.
+
 # agentj-multi-seat — one computer, several people
 
 Guide: https://agentj.app/docs/multi-seat/en.md (中文 https://agentj.app/docs/multi-seat/zh.md). Needs Agent J **0.20.0 or later**

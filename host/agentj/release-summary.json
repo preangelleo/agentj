@@ -1,5 +1,5 @@
 {
-  "version": "0.26.10a4",
-  "zh": "[主机] 全放行按设置生效；自家后台任务完成后可直接读报告、验收、派 Codex，秒退与重启也能识别。敏感操作仍需确认。",
-  "en": "[host] Allow All follows settings. Your jobs can check reports and delegate to Codex after instant exits or restarts. Sensitive actions still ask."
+  "version": "0.26.10",
+  "zh": "[主机/网页] 语音可接自己的 Olares；助理专注派活和验收。修复录音、未配对设置、工作流邮件与额度选择；目标进行时机器人跳舞。",
+  "en": "[host/web] Your Olares can transcribe voice. Delegate-first assistant; fixes for recording, settings, mail and quota picks. Active goals make the robot dance."
 }

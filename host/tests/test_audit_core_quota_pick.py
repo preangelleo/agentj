@@ -30,7 +30,7 @@ class Pick(unittest.TestCase):
         r = quota.pick(self.rep, NOW)
         self.assertEqual(r["harness"], "claude")
         self.assertEqual(r["accounts"][0]["speed"], .4)
-        self.assertIn("0.40x", quota.render_pick(r))
+        self.assertIn("daily headroom", quota.render_pick(r))
 
     def test_only_eligible_and_both_high(self):
         self.rep["harnesses"][0]["h5"]["used_pct"] = 80
@@ -44,31 +44,91 @@ class Pick(unittest.TestCase):
         self.rep["harnesses"] = [row("codex"), row("claude")]
         self.assertEqual(quota.pick(self.rep, NOW)["harness"], "claude")
 
-    def test_incomplete_pair_never_guesses(self):
-        for key, value in (("source_at", NOW-301), ("source_at", NOW+1), ("source_at", None),
-                           ("source", "fixture"), ("used_pct", -1), ("used_pct", 101),
-                           ("used_pct", True), ("used_pct", float("nan")), ("reset_at", NOW),
-                           ("reset_at", NOW+8*86400), ("status", "partial")):
-            rep = copy.deepcopy(self.rep)
-            rep["harnesses"][0][key] = value
-            with self.subTest(key=key, value=value):
-                self.assertIsNone(quota.pick(rep, NOW)["harness"])
-        for h5 in (None, {}, {"source_at": NOW, "used_pct": 0, "reset_at": NOW-1}):
-            rep = copy.deepcopy(self.rep)
-            rep["harnesses"][0]["h5"] = h5
-            self.assertIsNone(quota.pick(rep, NOW)["harness"])
-        self.assertIsNone(quota.pick({"harnesses": [row("codex")]}, NOW)["harness"])
-        self.assertIsNone(quota.pick({"harnesses": [row("claude"), row("claude"), row("codex")]}, NOW)["harness"])
+    def test_partial_or_stale_pair_still_uses_available_weekly_data(self):
+        for value in (None, {}, {"used_pct": 10, "source_at": NOW-999}):
+            self.rep["harnesses"][0]["h5"] = value
+            self.assertEqual(quota.pick(self.rep, NOW)["harness"], "claude")
+        self.rep["harnesses"][0]["source_at"] = NOW-999
+        self.assertEqual(quota.pick(self.rep, NOW)["harness"], "claude")
+        self.assertIn("降级", quota.pick(self.rep, NOW)["reason"])
+        self.assertEqual(quota.pick({"harnesses": [row("codex")]}, NOW)["harness"], "codex")
 
-    def test_display_clamping_cannot_make_bad_usage_a_valid_pick(self):
-        for pct in (-1, 101):
-            src = row("claude", pct)
-            rep = {"harnesses": [quota.analyse(src, [], NOW), row("codex")]}
-            self.assertIsNone(quota.pick(rep, NOW)["harness"])
-            src = row("claude")
-            src["h5"]["used_pct"] = pct
-            rep["harnesses"][0] = quota.analyse(src, [], NOW)
-            self.assertIsNone(quota.pick(rep, NOW)["harness"])
+    def test_invalid_reading_is_not_repaired_but_other_account_can_be_selected(self):
+        for pct in (-1, 101, True, float("nan")):
+            self.rep["harnesses"][0]["used_pct"] = pct
+            self.assertEqual(quota.pick(self.rep, NOW)["harness"], "codex")
+        self.assertIsNone(quota.pick({}, NOW)["harness"])
+
+    def test_owner_daily_headroom_example_and_affinity(self):
+        rep = {"harnesses": [row("claude", 30, 4), row("codex", 73, 1)]}
+        for r in rep["harnesses"]:
+            r.pop("h5")
+        result = quota.pick(rep, NOW)
+        self.assertEqual(result["harness"], "codex")
+        self.assertIn("largest daily headroom", quota.render_pick(result,"en"))
+        self.assertNotIn("每天", quota.render_pick(result,"en"))
+        self.assertEqual([r["per_day"] for r in result["accounts"]], [17.5, 27])
+        self.assertTrue(result["accounts"][0]["h5_unlimited"])
+        self.assertEqual(quota.pick(rep, NOW, "agentj")["harness"], "claude")
+        self.assertEqual(quota.pick(rep, NOW, "content")["harness"], "codex")
+        rep["harnesses"][0]["accounts"] = [{"id": "spare", "name": "备用", "active": False,
+            "quota": {"pct": 10, "window": "week", "at": NOW-1000, "reset_at": NOW+86400}}]
+        result = quota.pick(rep, NOW)
+        self.assertEqual((result["account_id"], result["switch_account"]), ("spare", True))
+
+    def test_analysed_stale_weekly_is_not_invalid_and_clamped_values_stay_invalid(self):
+        src={**row('claude',10,1),'status':'stale','stale':True}
+        analysed=quota.analyse(src,[],NOW)
+        self.assertFalse(analysed['reading_valid'])
+        self.assertTrue(analysed['weekly_valid'])
+        result=quota.pick({'harnesses':[analysed,quota.analyse(row('codex',50,4),[],NOW)]},NOW)
+        self.assertEqual(result['harness'],'claude')
+        self.assertIn('降级',result['reason'])
+        for value in (-1,101,True,float('nan')):
+            bad=quota.analyse({**src,'used_pct':value,'status':'ok','stale':False},[],NOW)
+            self.assertFalse(bad['weekly_valid'])
+            self.assertEqual(quota.pick({'harnesses':[bad,row('codex')]},NOW)['harness'],'codex')
+        bad_source=quota.analyse({**src,'source':'untrusted'},[],NOW)
+        self.assertIsNone(quota.pick({'harnesses':[bad_source]},NOW)['harness'])
+        bad_h5=row('claude',10,1);bad_h5['h5']['used_pct']=-10
+        result=quota.pick({'harnesses':[quota.analyse(bad_h5,[],NOW)]},NOW)
+        self.assertEqual(result['harness'],'claude')
+        self.assertIsNone(result['accounts'][0]['h5_used_pct'])
+        self.assertFalse(result['accounts'][0]['h5_unlimited'])
+
+    def test_report_source_failure_uses_only_unexpired_same_account_weekly_cache(self):
+        from _testtmp import TEST_TMP
+        with tempfile.TemporaryDirectory(dir=TEST_TMP) as tmp:
+            accounts={'claude':{'active':'a','switched':NOW-100,'items':[
+                {'id':'a','name':'A','last_quota':{'pct':10,'window':'week','at':NOW-1000,'reset_at':NOW+86400}},
+                {'id':'b','name':'B','last_quota':None}]}}
+            failed=quota.unknown('claude','source_failed')
+            with patch.object(quota,'_accounts',return_value=accounts):
+                rep=quota.report(tmp,NOW,sources=[failed])
+                result=quota.pick(rep,NOW)
+                self.assertEqual((result['harness'],result['account_id'],result['switch_account']),('claude','a',False))
+                self.assertIn('降级',result['reason'])
+                # New native reading is cached against a, never the future b account.
+                quota.report(tmp,NOW,sources=[row('claude',8,1)])
+                result=quota.pick(quota.report(tmp,NOW,sources=[failed]),NOW)
+                self.assertEqual(result['harness'],'claude')
+                self.assertIn('降级',result['reason'])
+                accounts['claude'].update(active='b',switched=NOW+1)
+                result=quota.pick(quota.report(tmp,NOW+2,sources=[row('claude',8,1)]),NOW+2)
+                self.assertEqual((result['account_id'],result['switch_account']),('a',True))
+                accounts['claude']['items']=accounts['claude']['items'][1:]
+                self.assertIsNone(quota.pick(quota.report(tmp,NOW+2,sources=[failed]),NOW+2)['harness'])
+            with patch.object(quota,'_accounts',return_value={}):
+                quota.report(tmp,NOW,sources=[row('codex',20,1)])
+                rep=quota.report(tmp,NOW+10,sources=[quota.unknown('codex','source_failed')])
+                self.assertEqual(quota.pick(rep,NOW+10)['harness'],'codex')
+                self.assertIn('降级',quota.pick(rep,NOW+10)['reason'])
+                # A failed weekly source can still carry a measured current 5h limit; keep that floor.
+                current_h5={'harness':'codex','status':'unknown','h5':{'used_pct':95,'reset_at':NOW+3600,'source_at':NOW}}
+                result=quota.pick(quota.report(tmp,NOW+10,sources=[current_h5]),NOW+10)
+                self.assertIsNone(result['harness'])
+                self.assertEqual(next(r for r in result['accounts'] if r['harness']=='codex')['h5_used_pct'],95)
+                self.assertIsNone(quota.pick(quota.report(tmp,NOW+2*86400,sources=[failed]),NOW+2*86400)['harness'])
 
     def test_cli_existing_parser_and_callback(self):
         p = argparse.ArgumentParser()
@@ -102,7 +162,7 @@ class Pick(unittest.TestCase):
             os.utime(p, (NOW, NOW))
             src = quota.codex_source({"CODEX_HOME": tmp}, NOW)
             self.assertEqual(src["source_at"], NOW-3600)
-            self.assertIsNone(quota.pick({"harnesses": [row("claude"), src]}, NOW)["harness"])
+            self.assertEqual(quota.pick({"harnesses": [row("claude"), src]}, NOW)["harness"], "codex")
             for stamp in (None, "bad", "2026-10-24T10:00:00"):
                 event["timestamp"] = stamp
                 p.write_text(json.dumps(event)+'\n')

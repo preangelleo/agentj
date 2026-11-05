@@ -1,4 +1,4 @@
-// Foreground-only microphone lease. Idle tracks output silence; hidden/pagehide/reset
+// Foreground-only microphone lease. Every completed take stops its tracks; hidden/pagehide/reset
 // destroys the source. No permission request or recording starts on visibility return.
 export function createMicrophone({getUserMedia, visible}) {
   let stream = null, pending = null, epoch = 0, owner = null;
@@ -33,7 +33,8 @@ export function createMicrophone({getUserMedia, visible}) {
     return {stream: held, release() {
       if (owner !== token) return;
       owner = null;
-      held.getAudioTracks().forEach(t => { t.enabled = false; });
+      stop(held);
+      if (stream === held) stream = null;
     }};
   }
   return {acquire, close};

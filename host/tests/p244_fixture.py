@@ -58,7 +58,7 @@ def build(base) -> dict:
     _w(root / "credentials/key.pem", "x\n")
     _w(root / "only-env/.env", "A=1\n")
     _w(root / "my-secrets/x.md", "x\n")
-    _w(root / "documentation/ROLES.md", "# ROLES\n\n| CEO | 项目 | 路径 |\n|---|---|---|\n| 乐师阿律 | 律动音乐 | `music-studio` |\n")
+    _w(root / "documentation/ROLES.md", "# ROLES\n\n| CEO | 项目 | 路径 |\n|---|---|---|\n| 乐师阿律 | 律动音乐 | `music-studio` |\n| 导演阿影 | 影棚 | `video-studio` |\n| Scribe | Script Room | `script-room` |\n")
     _w(root / "documentation/MEMORY.md", "# MEMORY\n\n- 董事长叫 Leo。\n- 早上 9 点发晨报。\n")
     _w(root / "documentation/WORKFLOW.md", "# WORKFLOW\n\n开工、收工。\n")
     _w(root / "documentation/CREDENTIALS.md", f"{SECRET}\n")

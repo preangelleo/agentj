@@ -457,6 +457,181 @@ def check(command, root, state=None, ctx=None):
     return unit, pf.why[0] if pf.why else "ok"
 
 
+
+def _note_target(path, bases, root, state):
+    """A plain CEO note cannot shadow an executable or alter a control file."""
+    if not isinstance(path, str) or not re.fullmatch(r"\.jarvis/[A-Za-z0-9][A-Za-z0-9_.-]*\.md", path):
+        return False
+    return all(_writes(path, base, root, state) and os.path.basename(_real(path, base) or "").endswith(".md")
+               for base in bases)
+
+
+def _notes_python(body, bases, root, state):
+    """Validate a note-only AST without executing it."""
+    import ast
+    unknown = object()
+    values = {}
+
+    def value(node):
+        if isinstance(node, ast.Constant) and isinstance(node.value, (str, int)):
+            return node.value
+        if isinstance(node, ast.Name) and node.id in values:
+            return values[node.id]
+        if isinstance(node, ast.Call) and not node.keywords:
+            args = [value(a) for a in node.args]
+            if isinstance(node.func, ast.Name) and node.func.id == "open" and len(args) in (1, 2):
+                path, mode = args[0], args[1] if len(args) == 2 else "r"
+                if mode in ("r", "w") and _note_target(path, bases, root, state):
+                    return ("note", mode)
+            if isinstance(node.func, ast.Attribute):
+                obj = value(node.func.value)
+                if obj == ("note", "r") and node.func.attr == "read" and not args:
+                    return unknown
+                if obj == ("note", "w") and node.func.attr == "write" and len(args) == 1 and (args[0] is unknown or isinstance(args[0], str)):
+                    return unknown
+                if (obj is unknown or isinstance(obj, str)) and node.func.attr == "replace" and len(args) == 2 and all(isinstance(x, str) for x in args):
+                    return unknown
+        raise ValueError("not a note operation")
+
+    try:
+        nodes = ast.parse(body).body
+        for node in nodes:
+            if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name) and node.targets[0].id != "open":
+                values[node.targets[0].id] = value(node.value)
+            elif isinstance(node, ast.Expr):
+                value(node.value)
+            else:
+                return False
+        return bool(nodes)
+    except (SyntaxError, ValueError, TypeError, RecursionError):
+        return False
+
+
+def _absent_user_unit(unit, launches=()):
+    """Only a host-observed absent/dead unit makes stop a provable no-op."""
+    import shutil
+    import subprocess
+    binary = shutil.which("systemctl")
+    if not UNIT.fullmatch(unit) or not binary or not _pin(os.path.realpath(binary)):
+        return False
+    try:
+        p = subprocess.run([binary, "--user", "show", unit, "--property=LoadState", "--property=ActiveState",
+                            "--property=SubState", "--property=Job", "--property=ExecStop", "--property=ExecStopPost",
+                            "--property=Id", "--property=Names"],
+                           capture_output=True, text=True, timeout=2)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    if p.returncode or len(p.stdout) > 4096:
+        return False
+    props = dict(line.split("=", 1) for line in p.stdout.splitlines() if "=" in line)
+    required = {"Id", "Names", "LoadState", "ActiveState", "SubState", "Job"}
+    normalize = lambda u: u if u.endswith(".service") else u + ".service"
+    names = set(props.get("Names", "").split()) | {props.get("Id", ""), normalize(unit)}
+    return (required <= props.keys() and normalize(unit) == props["Id"] and bool(props["Names"])
+            and not names.intersection(map(normalize, launches))
+            and props.get("LoadState") == "not-found" and props.get("ActiveState") == "inactive"
+            and props.get("SubState") == "dead" and not any(props.get(k) for k in ("Job", "ExecStop", "ExecStopPost")))
+
+
+def check_batch(command, root, state=None, ctx=None):
+    """Prove CEO launches and their finite note-only companions."""
+    unit, why = check(command, root, state, ctx)
+    if unit:
+        return unit, why
+    root = os.path.realpath(root) if isinstance(root, str) and root else None
+    state = os.path.realpath(state) if state else None
+    from . import approval_level, approval_policy, danger, policy_registry
+    if not isinstance(command, str) or not root or len(command) > danger.MAX_CMD:
+        return None, "shape"
+    code, _ = danger.heredocs(command)
+    if re.search(r"(?:^|[\s;])(?:HOME|PATH|BASH_ENV|ENV|LD_[A-Z_]+|PYTHON[A-Z_]*)=", code):
+        return None, "shape"
+    remainder, units_found = command, []
+    for line in code.splitlines():
+        m = re.fullmatch(r"\s*(?:(cd\s+[^\s;&]+)\s*&&\s*)?(systemd-run\s+.+)", line)
+        if not m:
+            continue
+        launch = m.group(2)
+        if any("$HOME" in x or "${HOME}" in x for x in re.findall(r"'([^']*)'", launch)):
+            return None, "shape"
+        try:
+            words = shlex.split(launch)
+        except ValueError:
+            return None, "shape"
+        if not any(os.path.basename(w) == "agentj" and words[i + 1:i + 3] == ["busy", "run"]
+                   for i, w in enumerate(words)) or "--kind" not in words or words[words.index("--kind") + 1:][:1] != ["ceo"]:
+            return None, "shape"
+        expanded = re.sub(r"\$(?:HOME\b|\{HOME\})", lambda _: os.path.expanduser("~"), launch)
+        parsed = _one(expanded)
+        if not parsed or parsed.redirs or not any(w.startswith("WorkingDirectory=") or w.startswith("--property=WorkingDirectory=")
+                                                  for w in parsed.words):
+            return None, "shape"
+        u, reason = check(expanded, root, state, ctx)
+        if not u or reason != "ok":
+            return u, reason
+        units_found.append(u)
+        remainder = remainder.replace(line, m.group(1) or "true", 1)
+    if not units_found:
+        return None, "shape"
+    if re.search(r"(?:^|[\s;])(?:function\b|[A-Za-z_][A-Za-z0-9_-]*\s*\(\s*\))", code):
+        return None, "shape"
+    mutations = {"read", "readarray", "mapfile", "export", "declare", "typeset", "local", "unset", "set", "shopt",
+                 "alias", "unalias", "enable", "trap", "eval", "source", ".", "hash"}
+    bases = [os.path.realpath(root)]
+    cmds = danger.lex(remainder)
+    routine = {"cd", "cat", "python3", "systemctl", "agentj", "echo", "true", "false"}
+    for c in cmds:
+        if c.subst or not c.words or danger._base(c.words[0]) not in routine:
+            return None, "shape"
+        name, args = danger._base(c.words[0]), c.words[1:]
+        if name in {"cd", "echo", "true", "false"}:
+            if c.words[0] != name:
+                return None, "shape"
+        else:
+            proof = _Proof(ctx)
+            if not proof.word(c.words[0], name, "caller") or proof.why:
+                return None, "shape"
+        if any("$" in w or "`" in w for w in c.words + c.redirs):
+            return None, "shape"
+        if name == "cd":
+            if len(args) != 1 or not (base := _abs(args[0], bases[-1])) or not _under(_real(base, None) or "", root):
+                return None, "shape"
+            bases.append(base)
+        if any(p != "/dev/null" and not _note_target(p, bases, root, state) for p in c.redirs):
+            return None, "shape"
+        if name == "printf" and any(a.startswith("-v") for a in args):
+            return None, "shape"
+        if name == "systemctl":
+            words = [a for a in args if a != "--user"]
+            ro = {"is-active", "is-enabled", "is-failed", "status", "show", "list-units", "list-unit-files"}
+            monitor_stop = ("--user" in args and words[:1] == ["stop"] and len(words) == 2
+                            and re.fullmatch(r"agentj-after-[A-Za-z0-9_.-]+", words[1])
+                            and words[1].removesuffix(".service") + ".service" not in units_found
+                            and _absent_user_unit(words[1], units_found))
+            if not words or words[0] not in ro and not monitor_stop:
+                return None, "shape"
+        if name == "agentj" and args[:2] != ["goal", "progress"]:
+            return None, "shape"
+        if name == "python3":
+            # Pinning Python does not suppress implicit startup imports. Only this exact
+            # isolated/no-site stdin form is eligible; all other argv retain approval.
+            if args != ["-I", "-S", "-"] or not c.docs or any(not quoted or not _notes_python(body, bases, root, state)
+                                                  for _d, quoted, body, _a, _b in c.docs):
+                return None, "shape"
+        elif c.docs and (name != "cat" or any(not quoted for _d, quoted, _body, _a, _b in c.docs)):
+            return None, "shape"
+        for sc in danger.unwrap(c):
+            if sc.name in mutations:
+                return None, "shape"
+    inp = {"command": remainder}
+    v = danger.classify_shared("Bash", inp, cwd=root)
+    req = policy_registry.main_requirement("Bash", inp, cwd=root)
+    if req != "allow" or v.danger or approval_level.redline("Bash", inp, v, cwd=root):
+        return None, "shape"
+    tier, _ = approval_policy.decide("Bash", inp, v, requirement=req, workdir=root)
+    return (units_found[0], "ok") if tier == approval_policy.NONE else (None, "shape")
+
+
 def dispatch(command, root, state=None, ctx=None):
     unit, why = check(command, root, state, ctx)
     return unit if why == "ok" else None

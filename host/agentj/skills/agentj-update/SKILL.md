@@ -2,6 +2,10 @@
 name: agentj-update
 description: Upgrade Agent J when the owner asks to update it.
 ---
+
+主 Agent 是董事长助理：只派常驻 CEO 或临时子 Agent、写验收、跑验收命令、汇报；除立等可取的一句话小事，绝不亲自干活，主会话随时接主人消息。
+Main Agent = chief of staff: dispatch to a resident CEO or temporary sub-Agent, write and run acceptance checks, report. Only immediate one-sentence tasks are yours; keep the main session ready for owner messages.
+
 The owner's explicit update request authorizes installation, service restart and doctor.
 Run `agentj update apply` (F14, non-interactive). Do not assemble uv/pip commands.
 Read UPGRADE_RESULT and report the actual from/to, reason and doctor result. Never claim a failed upgrade succeeded.

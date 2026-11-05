@@ -41,19 +41,20 @@ export function paintHeader() {
   const b=document.body, orb=document.getElementById('orb');
   if (!orb) return;
   const outside=b.dataset.view!=='chat' || (b.dataset.fivePage && b.dataset.fivePage!=='chat') || document.getElementById('settings')?.hidden===false || document.getElementById('five-menu')?.hidden===false;
+  const dancing=outside || b.dataset.goalActive==='1';
   const {state,hex:colour}=pageState();
   const own=!outside && themeLogo(state), single=!outside && singleThemeLogo();
   const src=own ? (single && colour!==OFFICIAL.idle && tinted(colour,single,[98,152,135])) || own
     : (!outside && colour!==OFFICIAL[state] && tinted(colour)) || LOGOS[state];
   if(orb.getAttribute('src')!==src) orb.setAttribute('src',src);
   if(orb.dataset.v!==state)orb.dataset.v=state;
-  if(orb.classList.contains('father-dance')!==!!outside)orb.classList.toggle('father-dance',!!outside);
+  if(orb.classList.contains('father-dance')!==!!dancing)orb.classList.toggle('father-dance',!!dancing);
   const sheet=`url("${sheets[state]}")`;
   if(orb.style.getPropertyValue('--father-sheet')!==sheet)orb.style.setProperty('--father-sheet',sheet);
 }
 export function initHeaderLogo() {
   const obs=new MutationObserver(()=>paintHeader());
-  obs.observe(document.body,{attributes:true,attributeFilter:['data-view','data-five-page','data-conn','data-status','data-kind','data-agent','style','class']});
+  obs.observe(document.body,{attributes:true,attributeFilter:['data-goal-active','data-view','data-five-page','data-conn','data-status','data-kind','data-agent','style','class']});
   const settings=document.getElementById('settings');
   if(settings)obs.observe(settings,{attributes:true,attributeFilter:['hidden']});
   const menuReady=()=>{const menu=document.getElementById('five-menu');if(!menu)return false;

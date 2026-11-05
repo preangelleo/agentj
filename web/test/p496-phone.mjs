@@ -21,7 +21,7 @@ try{for(const mode of ['safari','crios','standalone']){
  const safari=pw.devices['iPhone 13'].userAgent,ctx=await browser.newContext({...pw.devices['iPhone 13'],userAgent:mode==='crios'?safari.replace(/Version\/[\d.]+/,'CriOS/131.0'):safari,serviceWorkers:'block'});
  await ctx.addInitScript(stubs);await ctx.addInitScript(s=>Object.defineProperty(navigator,'standalone',{get:()=>s}),mode==='standalone');
  const p=await ctx.newPage(),errors=[];p.on('pageerror',e=>errors.push(e.message));
- fake.reset();fake.setUp(true);await p.goto(fake.newPairing(web.url+'?lang=en'));await p.waitForFunction(()=>window.__ajState==='awaiting-approval');await fake.approve();await p.waitForFunction(()=>window.__ajState==='ready');await p.evaluate(()=>document.getElementById('phone-env-dismiss')?.click());
+ fake.reset();fake.setUp(true);await p.goto(fake.newPairing(web.url+'?lang=en'));await p.waitForFunction(()=>window.__ajState==='awaiting-approval').catch(async e=>{console.error(JSON.stringify({phase:'pairing',state:await p.evaluate(()=>window.__ajState),errors}));throw e;});await fake.approve();await p.waitForFunction(()=>window.__ajState==='ready');await p.evaluate(()=>document.getElementById('phone-env-dismiss')?.click());
  const begin=async()=>{const n=await p.evaluate(()=>window.__recs.length);await p.evaluate(()=>document.getElementById('mic').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter'})));await p.waitForFunction(n=>window.__recs.length>n,n);};
  const end=async()=>{await p.evaluate(()=>document.getElementById('mic').dispatchEvent(new KeyboardEvent('keyup',{key:'Enter'})));await p.waitForTimeout(50);};
  const vis=v=>p.evaluate(v=>{window.__vis=v;document.dispatchEvent(new Event('visibilitychange'));},v);
@@ -47,6 +47,6 @@ try{for(const mode of ['safari','crios','standalone']){
  const row={mode,foregroundTakes:10,calls:count,idleEnabled,nextEnabled,hiddenStopped,hiddenCalls,returnCalls,cycles,errors};rows.push(row);console.log(JSON.stringify(row));await p.screenshot({path:`${out}/${mode}.png`});await ctx.close();
 }}finally{await browser.close();await fake.stop();await web.stop();rmSync(temp,{recursive:true,force:true});}
 writeFileSync(out+'/results.json',JSON.stringify({baseline,rows},null,2)+'\n');
-for(const r of rows){assert.equal(r.calls,1,`${r.mode}: foreground acquisitions`);assert.equal(r.idleEnabled,false);assert.equal(r.nextEnabled,true);assert.equal(r.hiddenStopped,true);assert.equal(r.returnCalls,r.hiddenCalls);assert.deepEqual(r.errors,[]);}
+for(const r of rows){assert.equal(r.calls,10,`${r.mode}: every completed take releases its source`);assert.equal(r.idleEnabled,false);assert.equal(r.nextEnabled,true);assert.equal(r.hiddenStopped,true);assert.equal(r.returnCalls,r.hiddenCalls);assert.deepEqual(r.errors,[]);}
 
 const rec=parityRecorder('web/test/p496-phone.mjs');rec.record('foreground-reuse-hide-stop',true);rec.write();

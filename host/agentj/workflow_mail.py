@@ -50,12 +50,12 @@ def drift(st, core):
     book, now, b = contacts.read(st), owner_binding(st), core['binding']
     if set(b) != set(now) or b['host'] != now['host'] or b['account_sha256'] != now['account_sha256']:
         return 'account_changed'
-    if b['primary'] != now['primary'] or not same(b['owner_sha256'], contacts.owner(book)):
+    if b['primary'] != now['primary']:
         return 'contact_changed'
     for x in core.get('cc_contacts') or []:
         rec = contacts.get(book, x['id'])
         em = (rec or {}).get('emails') or [{}]
-        if x['id'] == contacts.OWNER_ID or contacts.norm_email(em[0].get('v')) != x['address'] or x['address'] == now['primary'] or not same(x['sha256'], rec):
+        if x['id'] == contacts.OWNER_ID or contacts.norm_email(em[0].get('v')) != x['address'] or x['address'] == now['primary']:
             return 'contact_changed'
     return None
 
@@ -95,6 +95,11 @@ def descendant(pid, root, token):
 
 def task_contract(e):
     return {'workflow_id': e['id'], 'root': str(pathlib.Path(e['dir']).resolve()), 'tsha': e['tsha']}
+
+
+def same_contract(a, b):
+    # The live Scheduler source still binds tsha; durable mail authority binds purpose and recipients instead.
+    return bool(a and b) and all(a.get(k) == b.get(k) for k in ('workflow_id', 'root'))
 
 
 def source(host, peer):
@@ -160,7 +165,7 @@ def fixed_core(core):
 def shown(core):
     from datetime import datetime, timezone
     c, bind = core['contract'], core['binding']
-    until = datetime.fromtimestamp(core['expires'], timezone.utc).isoformat()
+    until = ('until you revoke it' if core.get('lang') == 'en' else '直到你撤销') if core.get('never_expires') else datetime.fromtimestamp(core['expires'], timezone.utc).isoformat()
     if core.get('lang') == 'en':
         lines = ['Authorize workflow artifact delivery', f"Workflow: {c['workflow_id']}", f"Task folder: {c['root']}", f"Artifact folder: {core['artifact_root']}",
                  f"Your primary mailbox: {bind['primary']}", 'Purpose: deliver published artifacts to yourself',
@@ -184,6 +189,10 @@ def shown(core):
         lines += [('Purpose: artifact delivery to this fixed To/Cc list' if core.get('lang') == 'en' else '用途：向此固定收件人与抄送名单交付素材'),
                   'Cc: ' + ', '.join(x['address'] for x in core['cc_contacts']),
                   ('Recipient/contact changes require a new approval.' if core.get('lang') == 'en' else '收件人或联系人记录变更须重新授权。')]
+    if core.get('limit_policy') == 'deduplicate':
+        lines = [x for x in lines if not x.startswith(('Limits:', '次数：'))]
+        lines += [('No daily message limit; each delivery is sent once.' if core.get('lang') == 'en' else '不设每日封数上限；同一份交付只发一次。'),
+                  ('Mail account binding: ' if core.get('lang') == 'en' else '发信账号绑定：') + str(core.get('mail_account'))]
     if core.get('renew'):
         lines.append(('Renewal reason: ' if core.get('lang') == 'en' else '重新授权原因：') + NOTE[core.get('lang') == 'en'][core['renew']])
     return '\n'.join(lines + ['Grant: ' + core['id'], 'SHA256: ' + digest(core)])
@@ -324,10 +333,12 @@ class Service:
         try:
             if not ((c.get('v') == 1 and c['purpose'] == PURPOSE and 'cc_contacts' not in c) or fixed_core(c)):
                 return 'grant_invalid'
-            if contract is None or c['contract'] != contract:
+            if not same_contract(c['contract'], contract) or c.get('roles') != ROLES:
                 return 'contract_changed'
             if c['expires'] <= time.time():
                 return 'expired'
+            if not c.get('mail_account') or c['mail_account'] != self.mail_account():
+                return 'account_changed'
             return drift(self.st, c) or (None if proof_ok(self.st, c, row['proof']) else 'proof_invalid')
         except (KeyError, TypeError, ValueError):
             return 'grant_invalid'
@@ -335,12 +346,16 @@ class Service:
     def live(self, row, contract):
         return self.why(row, contract) is None
 
+    def mail_account(self):
+        cfg, _, _ = self.contacts.mail_state()
+        return digest({k: cfg.get(k) for k in ('address', 'smtp')}) if cfg else None
+
     def make(self, contract, artifact_root, cc_ids, days, count, daily, renew=None):
         cc_rows = cc_binding(self.st, cc_ids) if cc_ids else None
         binding, now = owner_binding(self.st), int(time.time())
         core = {'artifact_root': checked_artifact_root(artifact_root), 'v': 1, 'id': secrets.token_hex(16), 'host': binding['host'], 'binding': binding,
-                'contract': contract, 'purpose': PURPOSE, 'manifest': 1, 'roles': ROLES, 'issued': now, 'expires': now + days * 86400,
-                'max': count, 'per_day': daily, 'max_bytes': MAX_BYTES, 'max_files': 10, 'lang': 'en' if self.contacts.lang() == 'en' else 'zh'}
+                'contract': contract, 'purpose': PURPOSE, 'manifest': 1, 'roles': ROLES, 'issued': now, 'expires': now + days * 86400 if days else 253402300799, 'never_expires': days is None,
+                'max': count, 'per_day': daily, 'limit_policy': 'deduplicate', 'mail_account': self.mail_account(), 'max_bytes': MAX_BYTES, 'max_files': 10, 'lang': 'en' if self.contacts.lang() == 'en' else 'zh'}
         if cc_rows is not None:
             core.update(v=2, purpose=FIXED_PURPOSE, manifest=2, cc_contacts=cc_rows)
         if renew:
@@ -364,7 +379,7 @@ class Service:
         async with self.lock:
             try:
                 e = await asyncio.to_thread(tasks.find, self.host.scheduler.workdir(), wid)
-                if (ans.get('behavior') != 'allow' or self.host.stopped() or e['problems'] or task_contract(e) != core['contract']
+                if (ans.get('behavior') != 'allow' or self.host.stopped() or e['problems'] or not same_contract(task_contract(e), core['contract'])
                         or await asyncio.to_thread(drift, self.st, core)
                         or not await asyncio.to_thread(proof_ok, self.st, core, proof)):
                     return {'ok': False, 'why': 'grant_required'}
@@ -378,7 +393,41 @@ class Service:
             self.st.log('workflow_mail_grant', task=wid, id=core['id'], sha=digest(core), device=proof['device'])
             return {'ok': True, 'workflow_id': wid, 'grant': {'status': 'active', 'expires': core['expires']}}
 
+    async def retry(self, req, peer):
+        agent = getattr(self.host, 'agent', None)
+        if (type(peer) is not int or not codex_procs.start_token(peer) or agent is None
+                or not provenance.is_owner(provenance.turn_source(agent)) or provenance.untrusted_turn(agent)):
+            return {'ok': False, 'why': 'workflow_source'}
+        wid, key = req.get('workflow_id'), req.get('delivery')
+        async with self.lock:
+            data = await asyncio.to_thread(self.load)
+            rec = data['deliveries'].get(key)
+            row = data['grants'].get(wid)
+            if not row or not rec or rec.get('grant') != row['core']['id'] or rec.get('retried') or rec.get('status') not in ('unknown', 'blocked'):
+                return {'ok': False, 'why': 'retry_unavailable'}
+            digest_before = digest(rec)
+        from . import policy_registry
+        preview = rec.get('subject') or '(legacy delivery: subject unavailable / 旧投递无主题)'
+        recipients = [row['core']['binding']['primary']] + [x['address'] for x in row['core'].get('cc_contacts', [])]
+        attachments = '; '.join(f"{a['name']} ({a['size']} bytes)" for a in rec.get('attachments', [])) or 'none / 无'
+        summary = f"Subject / 主题: {preview}\nTo/Cc / 收件人: {', '.join(recipients)}\nAttachments / 附件: {attachments}\nRetry one workflow email / 补发一次工作流邮件: {wid}\nDelivery: {key}\nManifest: {rec['manifest_sha256']}\nThe first result was uncertain; this may deliver a duplicate. / 首次结果不确定，补发可能重复。"
+        ans = await self.host.ask('agentj mail workflow-retry', {'summary': summary}, batch=False,
+                                  always_ask=True, require_passkey=True, _company_proposal=policy_registry.HOST_CARD)
+        if ans.get('behavior') != 'allow':
+            return {'ok': False, 'why': 'denied'}
+        async with self.lock:
+            data = await asyncio.to_thread(self.load)
+            rec = data['deliveries'].get(key)
+            if not rec or digest(rec) != digest_before:
+                return {'ok': False, 'why': 'retry_stale'}
+            rec['retry_allowed'] = True
+            await asyncio.to_thread(self.save, data)
+            self.st.log('workflow_mail_retry', task=wid, delivery=key)
+        return {'ok': True, 'retry_once': True, 'delivery': key}
+
     async def control(self, req, peer):
+        if req.get('op') == 'retry':
+            return await self.retry(req, peer)
         op, wid = req.get('op'), req.get('workflow_id')
         if not isinstance(wid, str) or not ID.fullmatch(wid):
             return {'ok': False, 'why': 'shape'}
@@ -409,7 +458,7 @@ class Service:
                         c, last = row['core'], data.get('cards', {}).get(wid) or {}
                         try:
                             core = await asyncio.to_thread(self.make, contract, c['artifact_root'], [x['id'] for x in c.get('cc_contacts', [])],
-                                                           max(1, min(30, (c['expires'] - c['issued']) // 86400)), c['max'], c['per_day'], why)
+                                                           None if c.get('never_expires') is not False else max(1, min(30, (c['expires'] - c['issued']) // 86400)), c['max'], c['per_day'], why)
                         except (ValueError, OSError):
                             card = 'unavailable'
                         else:
@@ -422,13 +471,13 @@ class Service:
                     used = [x for x in data['deliveries'].values() if row and x['grant'] == row['core']['id']]
                     remaining = max(0, row['core']['max'] - len(used)) if row else 0
                     today = sum(x['day'] == int(time.time()) // 86400 for x in used)
-                    available = active and remaining > 0 and today < row['core']['per_day']
+                    available = active
                     return {'ok': True, 'capability': CAPABILITY, 'capabilities': [CAPABILITY, FIXED_CAPABILITY], 'workflow_id': wid,
                             'source_verified': verified,
                             'grant': {'capability': (FIXED_CAPABILITY if fixed_core(row['core']) else CAPABILITY) if row else None,
                                       'cc_contact_ids': [x['id'] for x in row['core'].get('cc_contacts', [])] if row else [],
                                       'status': 'active' if available else 'exhausted' if active else 'inactive',
-                                      'remaining': remaining, 'reason': why, 'card': card, 'card_retry_at': retry,
+                                      'remaining': None, 'unlimited': True, 'reason': why, 'card': card, 'card_retry_at': retry,
                                       'note': None if active else ' — '.join(NOTE[self.contacts.lang() == 'en'].get(x, x) for x in (why, card) if x),
                                       'expires': ((row or {}).get('core') or {}).get('expires')}}
                 verified = await asyncio.to_thread(source, self.host, peer)
@@ -436,13 +485,18 @@ class Service:
                     return {'ok': False, 'why': 'workflow_source'}
                 raw_root = req.get('artifact_root')
                 cc_ids = req.get('cc_contacts') or []
-                days, count, daily = req.get('days', 30), req.get('max', 100), req.get('per_day', 3)
-                if not all(type(x) is int and 1 <= x <= top for x, top in ((days, 30), (count, 100), (daily, 3))):
+                days, count, daily = req.get('days'), req.get('max', 100), req.get('per_day', 0)
+                if not ((days is None or type(days) is int and 1 <= days <= 30) and type(count) is int and 1 <= count <= 100):
                     return {'ok': False, 'why': 'shape'}
-                core = await asyncio.to_thread(self.make, contract, contract['root'] if raw_root is None else raw_root, cc_ids, days, count, daily)
+                old = (row or {}).get('core') or {}
+                # An omitted deadline preserves an existing finite policy; never silently widens it.
+                old_days = max(1, min(30, (old.get('expires', 0) - old.get('issued', 0)) // 86400)) if old else None
+                effective_days = old_days if days is None and old.get('never_expires') is False else days
+                core = await asyncio.to_thread(self.make, contract, contract['root'] if raw_root is None else raw_root, cc_ids, effective_days, count, daily)
                 if (await asyncio.to_thread(self.live, row, contract) and [x['id'] for x in row['core'].get('cc_contacts', [])] == sorted(cc_ids)
-                        and row['core']['artifact_root'] == core['artifact_root']):
-                    return {'ok': True, 'workflow_id': wid, 'grant': {'status': 'active'}, 'unchanged': True}
+                        and row['core']['artifact_root'] == core['artifact_root']
+                        and (days is None or not old.get('never_expires') and days == old_days)):
+                    return {'ok': True, 'workflow_id': wid, 'grant': {'status': 'active', 'expires': old['expires'], 'never_expires': bool(old.get('never_expires'))}, 'unchanged': True}
                 p, new = self.offer(data, wid, core)
                 if not new:
                     return {'ok': False, 'why': 'card_pending', 'grant': {'status': 'inactive', 'card': 'pending'}}
@@ -468,19 +522,24 @@ class Service:
                 manifest, files = await asyncio.to_thread(self.snapshot, req, contract, row['core']['artifact_root'], row['core'])
                 key = digest({'host': row['core']['host'], 'workflow_id': contract['workflow_id'],
                               'root': contract['root'], 'delivery': manifest['idempotency_key']})
-                if key in data['deliveries']:
+                previous = data['deliveries'].get(key)
+                if previous and not previous.get('retry_allowed'):
                     return {'ok': False, 'why': 'duplicate', 'status': data['deliveries'][key]['status'],
-                            'provider_acceptance': data['deliveries'][key].get('provider_acceptance')}
+                            'provider_acceptance': data['deliveries'][key].get('provider_acceptance'), 'delivery': key, 'error': data['deliveries'][key].get('error')}
                 c = row['core']
                 used = [x for x in data['deliveries'].values() if x['grant'] == c['id']]
-                if len(used) >= c['max'] or sum(x['day'] == int(time.time()) // 86400 for x in used) >= c['per_day']:
-                    return {'ok': False, 'why': 'limit', 'provider_acceptance': False}
                 cfg, pw, why = self.contacts.mail_state()
                 if why:
                     return {'ok': False, 'why': why, 'provider_acceptance': False}
                 # Persist before SMTP; uncertain results cannot retry.
                 rec = {'grant': c['id'], 'manifest_sha256': digest(manifest), 'day': int(time.time()) // 86400,
-                       'status': 'reserved', 'provider_acceptance': None}
+                       'status': 'reserved', 'provider_acceptance': None,
+                       'subject': req['subject'][:200],
+                       'attachments': [{'name': pathlib.Path(a['path']).name, 'size': a['size'], 'role': a['role']} for a in manifest['attachments']]}
+                if previous and previous.get('manifest_sha256') != rec['manifest_sha256']:
+                    return {'ok': False, 'why': 'retry_manifest_changed', 'provider_acceptance': False}
+                if previous:
+                    rec.update(retried=True, previous={k: v for k, v in previous.items() if k != 'retry_allowed'})
                 data['deliveries'][key] = rec
                 await asyncio.to_thread(self.save, data)
                 from . import mail, mail_template
@@ -499,12 +558,20 @@ class Service:
                     return {'ok': False, 'why': 'grant_stale', 'provider_acceptance': False}
                 try:
                     attempted = True
-                    await asyncio.to_thread(self.contacts.smtp_send, cfg, pw, msg, recipients)
-                except Exception:
+                    receipt = await asyncio.to_thread(self.contacts.smtp_send, cfg, pw, msg, recipients)
+                    if receipt and receipt[0]:
+                        rec.update(status='unknown', error={'type': 'RecipientsRefused', 'stage': 'smtp', 'timeout': False})
+                        await asyncio.to_thread(self.save, data)
+                        return {'ok': False, 'why': 'send_partial', 'provider_acceptance': None, 'delivery': key, 'error': rec['error']}
+                except Exception as exc:
                     rec['status'] = 'unknown'
+                    rec['error'] = {'type': type(exc).__name__, 'stage': 'smtp', 'timeout': isinstance(exc, TimeoutError)}
+                    code = getattr(exc, 'why', None)
+                    if code in ('smtp_login', 'smtp_network', 'smtp_tls', 'smtp_timeout', 'smtp_error'):
+                        rec['error'].update(code=code, timeout=code == 'smtp_timeout')
                     await asyncio.to_thread(self.save, data)
                     self.st.log('workflow_mail_send', task=contract['workflow_id'], id=c['id'], sha=rec['manifest_sha256'], result='unknown')
-                    return {'ok': False, 'why': 'send_unknown', 'provider_acceptance': None}
+                    return {'ok': False, 'why': 'send_unknown', 'provider_acceptance': None, 'error': rec['error'], 'delivery': key}
                 rec.update(status='sent', provider_acceptance=True)
                 await asyncio.to_thread(self.save, data)
                 self.st.log('workflow_mail_send', task=contract['workflow_id'], id=c['id'], sha=rec['manifest_sha256'], result='sent')

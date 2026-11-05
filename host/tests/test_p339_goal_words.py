@@ -242,10 +242,11 @@ class ReviewFixes(unittest.TestCase):
                     "rsync -a dist/ olares:~"):
             p = Probe()
             service = cmd == "scp evil olares:x/systemd/user/a.service"
-            self.assertEqual(_tier(cmd, p)[0], "attack" if service else "hold", cmd)
-            if service:  # P591: a unit-file write is an authority change, not a reusable goal hold.
+            self.assertEqual(_tier(cmd, p)[0], "hold", cmd)
+            if service:  # #502: remote unrelated service remains a hold; actual Agent J is still self-protected.
                 self.assertIn("cred.service", danger.classify("Bash", {"command": cmd}).rules)
             self.assertEqual(p.calls, [], cmd)
+        self.assertEqual(_tier("systemctl --user restart agentj.service")[0], "attack")
         for cmd in ("scp -rpqC -P 22 -i ~/olares_id -l 800 a.py olares:x/a.py", "rsync -avzh --progress --partial --mkpath a.py olares:x/",
                     "scp -P22 a.py olares:x/a.py", "scp -- a.py olares:x/a.py"):
             self.assertEqual(_tier(cmd), ("reversible", "new_remote_file"), cmd)

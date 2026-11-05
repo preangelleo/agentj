@@ -415,8 +415,10 @@ def suspect(tool: str, tool_input, verdict) -> str | None:
     except (OSError, ValueError, service.ServiceError):
         names = {"agentj", "agentjarvis", "net.agentj.host", "net.agentjarvis.host"}
     text = action_text(tool, tool_input)
-    own_service = any(re.search(r"(?<![\w.-])" + re.escape(n) + r"\.(?:service|plist)(?![\w.-])", text) for n in names)
     from . import danger
+    if tool == "Bash":
+        text = danger.executable_text(text)
+    own_service = any(re.search(r"(?<![\w.-])" + re.escape(n) + r"\.(?:service|plist)(?![\w.-])", text) for n in names)
     own_control = False
     mutations = {"start", "stop", "restart", "try-restart", "reload", "try-reload-or-restart", "reload-or-restart",
                  "reload-or-try-restart", "force-reload", "enable", "disable", "reenable", "mask", "unmask", "edit",
@@ -433,7 +435,6 @@ def suspect(tool: str, tool_input, verdict) -> str | None:
         return "hooks"                     # a hook / approver file or Agent J's own service being changed
     if tool == "agentj config":
         return "settings"                  # an Agent J security / approval setting (only those ever reach a card)
-    text = action_text(tool, tool_input)
     if _SETTINGS.search(text) or (tool == "Bash" and _AJ_WRITE.search(text)):
         return "settings"
     if tool in _WRITE_TOOLS and isinstance(tool_input, dict) and re.search(
@@ -1265,7 +1266,13 @@ def result_text(d: dict, lang: str = "zh") -> str:
     en = lang == "en"
     k = "en" if en else "zh"
     how = d.get("ended") or "stopped"
-    lines = [("🎯 Goal ended — " if en else "🎯 目标结束 · ") + RESULT[k].get(how, how) + ("：" if not en else ": ") + d["goal"]]
+    headline = ("Completed: " if en else "已完成：") if how in ("achieved", "completed") else (("Not finished before the deadline: " if en else "没在截止前完成：") if how == "expired" else ("Stopped before completion: " if en else "已停止，尚未完成："))
+    lines = ["🎯 " + headline + d["goal"]]
+    milestones = d.get("milestones") or []
+    if not d.get("summary"):
+        lines.append(("Progress: " if en else "当前进度：") + (milestones[-1].get("text", "") if milestones else ("No progress report received yet." if en else "暂未收到执行者的进度报告。")))
+    if how not in ("achieved", "completed"):
+        lines.append("Next: check the worker's report and continue the unfinished parts." if en else "下一步：核对执行者报告，接着处理未完成的部分。")
     if d.get("summary"):
         lines.append(d["summary"])
     used = d.get("used") or {}
@@ -1274,11 +1281,12 @@ def result_text(d: dict, lang: str = "zh") -> str:
         n = int(used.get(str(i), 0))
         if n:
             parts.append(f"[{CAT[k][g['cat']]}] {g['what']} ×{n}")
-    lines.append(("Grants used: " if en else "用到的授权：") + ("; ".join(parts) if parts else ("none" if en else "无")))
+    if parts:
+        lines.append(("Permissions used: " if en else "已按你的授权执行：") + "; ".join(parts))
     c = d.get("counts") or {}
-    lines.append(f"Approved automatically: {c.get('granted', 0) + c.get('low', 0) + c.get('auto', 0)} "
-                 f"(10-second countdown {c.get('auto', 0)})" if en else
-                 f"自动批准 {c.get('granted', 0) + c.get('low', 0) + c.get('auto', 0)} 次（其中 10 秒倒计时 {c.get('auto', 0)} 次）")
+    total = c.get('granted', 0) + c.get('low', 0) + c.get('auto', 0)
+    if total:
+        lines.append(f"Handled {total} approved actions without interrupting you." if en else f"按已获授权处理了 {total} 个操作，没有打扰你。")
     blocked = (d.get("blocked") or [])[-10:]
     if not blocked:
         lines.append("Nothing is waiting for you." if en else "没有卡住等你决定的事。")
@@ -1476,6 +1484,8 @@ class Goals:
         self.st.log("goal_end", id=d.get("id"), how=how, by=by)
         self.host.activity("goal_end", how=how, by=by, text=d["goal"][:120])
         if was == "active":
+            if hasattr(self.host, "status_changed"):
+                self.host.status_changed()
             self.host.emit("goal_end", how=how)
             self.host.agent_notice(result_text(d, self.lang()))
             self.host.push_notify("reply")
@@ -1528,6 +1538,8 @@ class Goals:
             self.st.log("goal_start", id=gid, device=info["device"])
             self.host.activity("goal_start", text=g["goal"][:120], grants=len(g["grants"]))
             self.host.emit("goal_start", id=gid)
+            if hasattr(self.host, "status_changed"):
+                self.host.status_changed()
             en = self.lang() == "en"
             self.host.agent_notice((f"🎯 Goal mode on until {_when(g['deadline'])}: " if en else
                                     f"🎯 目标模式开始，截止 {_when(g['deadline'])}：") + g["goal"])
@@ -1571,6 +1583,8 @@ class Goals:
         self.st.log("goal_start", id=gid, device=pre["device"], how="preauth")
         h.activity("goal_start", text=g["goal"][:120], grants=len(g["grants"]), by="goal_nocard")
         h.emit("goal_start", id=gid)
+        if hasattr(h, "status_changed"):
+            h.status_changed()
         en = self.lang() == "en"
         h.agent_notice((f"🎯 Goal mode on until {_when(g['deadline'])} (no opening card — your switch): " if en else
                         f"🎯 目标模式开始，截止 {_when(g['deadline'])}（「设了目标就不弹窗」已打开，没有弹开工卡）：") + g["goal"])

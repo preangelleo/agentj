@@ -124,7 +124,7 @@ class Delivery(_Svc):
         await self.grant(max=1)
         self.assertTrue((await self.service.send(self.req, os.getpid()))['ok'])
         res = await self.service.control({'op': 'status', 'workflow_id': 'story'}, None)
-        self.assertEqual(res['grant']['status'], 'exhausted')
+        self.assertEqual(res['grant']['status'], 'active')
 
     async def test_revoke_while_card_waits_cannot_resurrect(self):
         entered, release = asyncio.Event(), asyncio.Event()

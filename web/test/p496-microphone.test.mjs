@@ -10,14 +10,14 @@ function fixture(){
  return {mic,tracks,get calls(){return calls;},hide(){visible=false;mic.close();},show(){visible=true;},gum,
   deferred(){return createMicrophone({getUserMedia:()=>{calls++;return new Promise(r=>resolve=r);},visible:()=>visible});},resolve(s){resolve(s);}};
 }
-test('ten foreground takes use one acquisition; idle is disabled, hide stops it, return does not acquire',async()=>{
+test('ten foreground takes stop every source; foreground return acquires only on a gesture',async()=>{
  const f=fixture();
- for(let i=0;i<10;i++){const take=await f.mic.acquire();assert.equal(take.stream.getAudioTracks()[0].enabled,true);take.release();assert.equal(f.tracks[0].enabled,false);}
- assert.equal(f.calls,1);f.hide();assert.equal(f.tracks[0].readyState,'ended');f.show();assert.equal(f.calls,1);
- const take=await f.mic.acquire();assert.equal(f.calls,2);take.release();
+ for(let i=0;i<10;i++){const take=await f.mic.acquire();assert.equal(take.stream.getAudioTracks()[0].enabled,true);take.release();assert.equal(f.tracks[i].readyState,'ended');}
+ assert.equal(f.calls,10);f.hide();assert.equal(f.tracks[0].readyState,'ended');f.show();assert.equal(f.calls,10);
+ const take=await f.mic.acquire();assert.equal(f.calls,11);take.release();
 });
 test('ended track reacquires; release from an old recorder cannot mute the next take',async()=>{
- const f=fixture(),a=await f.mic.acquire();a.release();const b=await f.mic.acquire();a.release();assert.equal(f.tracks[0].enabled,true);b.release();f.tracks[0].stop();await f.mic.acquire();assert.equal(f.calls,2);f.mic.close();
+ const f=fixture(),a=await f.mic.acquire();a.release();const b=await f.mic.acquire();a.release();assert.equal(f.tracks[1].enabled,true);b.release();await f.mic.acquire();assert.equal(f.calls,3);f.mic.close();
 });
 test('pending authorization cannot deliver live audio after hide and return',async()=>{
  const f=fixture(),mic=f.deferred();const p=mic.acquire();mic.close();const stream=await f.gum();f.resolve(stream);

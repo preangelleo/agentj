@@ -472,7 +472,7 @@ function onApp(m) {
     case 'pair_guide': showPairGuide(m.kind); return;
     case 'cmds_state': settings.setRunCmds(m.names); return;
     case 'preferences': setHostVersion(m.host?.version); relay.hostVersionIs(m.host?.version); relay.applyPreferences(m.value); settings.setPrefs(m.value, m.host); rerender(); if(m.problem)relay.configProblem(m.problem.error); return;
-    case 'status': setAgentName(m.name); wechat.channelStatus(m); snap.setStatus(m); renderTg(); return;
+    case 'status': setAgentName(m.name); document.body.dataset.goalActive = m.goal_active === true ? '1' : '0'; wechat.channelStatus(m); snap.setStatus(m); renderTg(); return;
     // P150 (§22): who works in the background (display only)
     // P575: 在办 empty → 全部完成
     case 'busy': busy.setBusy(m); relay.cueTasks(busy.currentCounts().task_count); return;

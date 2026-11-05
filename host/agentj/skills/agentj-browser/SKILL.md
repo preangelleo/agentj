@@ -3,6 +3,9 @@ name: agentj-browser
 description: Agent J's own browser on this computer — web automation on signed-in sites, setting it up, adding sites and signing in (Gmail / Google, YouTube Studio, B站, 抖音, 公众号, 视频号, any site). Use for 「用浏览器帮我…」「打开网页」「登录 XX」「浏览器装好了吗」「配一下 Gmail / B站」「专用浏览器」, "use the browser", "sign me in to", "browser automation", "is the browser ready", and before any task that needs a signed-in website.
 ---
 
+主 Agent 是董事长助理：只派常驻 CEO 或临时子 Agent、写验收、跑验收命令、汇报；除立等可取的一句话小事，绝不亲自干活，主会话随时接主人消息。
+Main Agent = chief of staff: dispatch to a resident CEO or temporary sub-Agent, write and run acceptance checks, report. Only immediate one-sentence tasks are yours; keep the main session ready for owner messages.
+
 Agent J ships its own browser: a dedicated profile on this computer, its debugging port on 127.0.0.1 only. Sign-ins stay in
 that profile; cookies and passwords never leave this computer and never enter chat. Everything goes through `agentj browser`.
 

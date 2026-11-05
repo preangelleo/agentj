@@ -2585,9 +2585,21 @@ def cmd_asr(a) -> None:
         if selected:sys.exit(preferences.command(['set','voice.asr.engine',selected]))
     # P393: status / test follow the same engine setting as serve, doctor and the phone (voice.asr.engine)
     try:
-        override=preferences.get(preferences.effective(st),'voice.asr.engine')
+        cfg=preferences.effective(st)
+        override=preferences.get(cfg,'voice.asr.engine')
     except Exception:  # noqa: BLE001 — unreadable preferences: config.json's asr.engine alone, as before
         override=None
+        cfg={}
+    if preferences.get(cfg,'voice.asr.mode')=='custom' and args and args[0] in ('status','test'):
+        from . import voice
+        if args[0]=='status':
+            result={'state':'ready','engine':'custom','active':'custom','model':preferences.get(cfg,'voice.asr.model'),
+                    'local_fallback':True}
+        else:
+            wav=next((x for x in args[1:] if not x.startswith('-')),str(asr.asr_dir(st.root)/'model'/'zh.wav'))
+            result=voice.transcribe(wav,cfg,120,state_dir=st.root)
+        print(json.dumps(result,ensure_ascii=False) if '--json' in args else (result.get('text') or 'custom ASR: '+result.get('state',result.get('reason','failed'))))
+        sys.exit(0 if result.get('ok',result.get('state')=='ready') else 1)
     sys.exit(asr.cli_main(args, state_dir=st.root, engine_override=override))
 
 

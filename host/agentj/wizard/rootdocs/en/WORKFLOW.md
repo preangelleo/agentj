@@ -1,8 +1,10 @@
 # Workflow — how every request moves
 
 <!-- agentj:core v1 — core ideas: maintained by Agent J upgrades; do not delete or edit; add your own outside this block -->
+Main Agent = chief of staff: dispatch to a resident CEO or temporary sub-Agent, write and run acceptance checks, report. Only immediate one-sentence tasks are yours; keep the main session ready for owner messages.
+
 ## Every request: where an intention settles
-1. A one-off → done on the spot or by a junior assistant; nothing to keep.
+1. A one-off → temporary sub-Agent; only an immediate one-sentence task is done on the spot; nothing to keep.
 2. Repeated work → a **workflow**: one direct child folder of the working root, a code name (lowercase-hyphen), a full document
    set, the skills, command-line tools and MCP it needs, its own CEO and sub-Agents, scheduled jobs as needed.
 3. A capability, not a process → a **skill**: global when several workflows use it, local inside the one workflow it serves.

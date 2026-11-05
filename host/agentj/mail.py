@@ -52,7 +52,7 @@ REPLY_PER_HOUR = 20                               # replies per hour, all sender
 REPLY_FILES_MAX = 20 * 1024 * 1024
 KEEP_IDS = 500
 KEEP_BLOCKED = 20
-TIMEOUT = 30
+TIMEOUT = 180
 EHLO = "[127.0.0.1]"        # an address literal: no reverse-DNS wait (getfqdn), and the Agent J host's name is not sent out
 MARK = "X-AgentJ"                                 # on every mail we send (mark())
 ADDR = re.compile(r"[A-Za-z0-9._%+'=-]{1,64}@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+")
@@ -2175,10 +2175,10 @@ def cmd(a) -> int:
             return ctl_call(st, req, timeout, max_bytes)
         except ServeBusy as e:
             return e.response()
-    if a.action in ("workflow-status", "workflow-grant", "workflow-revoke"):
+    if a.action in ("workflow-status", "workflow-grant", "workflow-revoke", "workflow-retry"):
         from .elevate import client_request
         res = client_request(st, {"t": "workflow_mail", "op": a.action.removeprefix("workflow-"),
-                    "workflow_id": a.workflow, "artifact_root": a.artifact_root, "cc_contacts": a.workflow_cc_contact, "days": a.days, "max": a.workflow_max, "per_day": a.per_day}, timeout=700)
+                    "workflow_id": a.workflow, "delivery": a.delivery, "artifact_root": a.artifact_root, "cc_contacts": a.workflow_cc_contact, "days": a.days, "max": a.workflow_max, "per_day": a.per_day}, timeout=700)
         if (res.get("grant") or {}).get("note"):
             human(res["grant"]["note"])
         return out(res)
@@ -2330,15 +2330,16 @@ def add_parser(sub) -> None:
                                    " / Command Agent J by e-mail: mail outside the allowlist is only counted, never shown to a model; "
                                    "the app password is entered on the paired phone and stored encrypted here.")
     p.add_argument("action", choices=["status", "presets", "setup", "allow", "deny", "password", "test", "check", "on", "off", "send", "notes",
-                                      "expect", "trash", "workflow-status", "workflow-grant", "workflow-revoke"])
+                                      "expect", "trash", "workflow-status", "workflow-grant", "workflow-revoke", "workflow-retry"])
     p.add_argument("address", nargs="?", help="allow / deny：发件地址 / the sender address")
     p.add_argument("--workflow", help="exact native workflow id for workflow-status/grant/revoke")
     p.add_argument("--artifact-root", help="workflow-grant: exact artifact folder (default: native task folder)")
     p.add_argument("--workflow-cc-contact", action="append", default=[], help="workflow-grant: fixed CC contact ID (1–4), separately signed")
     p.add_argument("--delivery-manifest", help="send: hash-bound v1/v2 artifact manifest JSON")
-    p.add_argument("--days", type=int, default=30, help="workflow-grant: expiry in days (1–30)")
-    p.add_argument("--max", dest="workflow_max", type=int, default=100, help="workflow-grant: total uses (1–100)")
-    p.add_argument("--per-day", type=int, default=3, help="workflow-grant: uses per UTC day (1–3)")
+    p.add_argument("--days", type=int, default=None, help="workflow-grant: optional explicit expiry (1–30 days); otherwise valid until revoked")
+    p.add_argument("--max", dest="workflow_max", type=int, default=100, help="compatibility only; total message-count limit removed")
+    p.add_argument("--per-day", type=int, default=0, help="compatibility only; daily limit removed")
+    p.add_argument("--delivery", help="workflow-retry: exact delivery key from failed send; owner approval required")
     p.add_argument("--address", dest="address_opt", help="setup：Agent 用的邮箱地址 / the mailbox address")
     p.add_argument("--preset", choices=sorted(PRESETS), help="setup：邮箱预设（默认按域名猜）/ preset (guessed from the domain)")
     p.add_argument("--username", help="setup：登录名（默认 = 邮箱地址）/ sign-in name (default: the address)")

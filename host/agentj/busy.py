@@ -1649,6 +1649,7 @@ def cmd_busy(a) -> int:
         key = "run:" + uuid.uuid4().hex[:12]
         path = None
         try:
+            print("派新任务前先运行 agentj quota --pick（内容创作加 --task content，Agent J 开发加 --task agentj）/ Check dispatch quota first", file=sys.stderr)
             path = write_item(root, item(key, a.who, a.kind, a.label, pid=os.getpid(), ns=pidns(), report=a.report, cwd=os.getcwd(), **task_meta({k:v for k,v in vars(a).items() if k != "cwd"})))
         except OSError as e:              # e.g. no state dir: the work still runs, only unseen on the phone
             print(f"agentj busy: 手机上不会显示这件事 / not shown on the phone ({e.__class__.__name__})", file=sys.stderr)

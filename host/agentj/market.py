@@ -336,10 +336,18 @@ def render_list(items: list[dict], heading: str) -> str:
     return "\n".join(out)
 
 
+def os_warning(declared):
+    current = "darwin" if sys.platform == "darwin" else "windows" if sys.platform == "win32" else "linux"
+    return (f"警告：包声明系统与本机 {current} 不匹配；可能无法使用，请发布者校正元数据。 / Warning: declared OS does not include {current}; ask the publisher to correct it."
+            if declared and current not in declared and "any" not in declared else None)
+
+
 def _summary_lines(s: dict) -> list[str]:
     out = [f"{META}需要 needs — Agent: " + (", ".join(s["harness"]) or "（未声明 not stated）")]
     if s["os"]:
         out += [f"{META}系统 os:", *_t(", ".join(s["os"]))]
+    if warning := os_warning(s["os"]):
+        out += [f"{META}{warning}"]
     if s["cli"]:
         out.append(f"{META}命令行工具 cli（你自己装 / you install them）:")
         for c in s["cli"]:
@@ -1111,14 +1119,25 @@ VERIFY_BASE = "/usr/local/bin:/usr/bin:/bin"
 BREW_BINS = ("/opt/homebrew/bin", "/home/linuxbrew/.linuxbrew/bin")
 
 
-def _brew_ok(d: str) -> bool:
+def brew_problem(d: str) -> str | None:
     try:
         r = os.path.realpath(d)
         st = os.stat(r)
     except OSError:
-        return False
-    return (stat.S_ISDIR(st.st_mode) and st.st_uid in (0, os.getuid()) and not st.st_mode & 0o022
-            and not any(fence._under(r, os.path.realpath(h)) for h in _homes()))
+        return "directory unavailable / 目录不可读"
+    if not stat.S_ISDIR(st.st_mode):
+        return "not a directory / 不是目录"
+    if st.st_uid not in (0, os.getuid()):
+        return "directory owner is neither root nor this user / 目录属主不是 root 或当前用户"
+    if st.st_mode & 0o022:
+        return f"group/other write permission / 组或其他人可写 (mode {stat.S_IMODE(st.st_mode):04o})"
+    if any(fence._under(r, os.path.realpath(h)) for h in _homes()):
+        return "real path is inside a home / 真实路径在用户目录内"
+    return None
+
+
+def _brew_ok(d: str) -> bool:
+    return brew_problem(d) is None
 
 
 def verify_path() -> str:
@@ -1713,7 +1732,7 @@ def run_install(name: str, *, version=None, harness=None, workspace=None, params
                         "audit": [{k: f[k] for k in ("rule", "path", "line", "level")} for f in findings[:30]],
                         "target": str(target), "harness": h, "replace": bool(exists and replace),
                         "verify": ("skip" if skip_verify else "refused" if vref else sandbox or "none") if s["verify"] else None,
-                        "verify_why": vref.short if vref else None, "deps": [x["name"] for x in deps],
+                        "verify_why": vref.short if vref else None, "os_warning": os_warning(s["os"]), "deps": [x["name"] for x in deps],
                         "params": {k: _as_text(v) for k, v in shown_params.items()}, "sign_as": sign_as,
                         "downgrade": downgrade, "files": sorted(rendered, key=lambda x: x.encode())})
         if not res.get("ok"):
@@ -1853,7 +1872,7 @@ def _add_tail(deps: list, tail: str, rc: int = 127) -> list:
 
 
 def _deps_line(deps: list) -> str:
-    zh = "；".join(x["name"] + (f"（用户目录有：{'、'.join(x['user'])}，沙箱看不到）" if x["user"] else "（本机没找到）") for x in deps)
+    zh = "；".join(x["name"] + (f"（另有副本：{'、'.join(x['user'])}，未进入自检 PATH，请检查目录权限/真实路径）" if x["user"] else "（本机没找到）") for x in deps)
     return (f"{META}依赖待补 dependencies missing on the self-check PATH {VERIFY_PATH}: {zh}。不阻断安装：装好后 Agent 补齐再重跑自检，"
             "不用再签名 / not a blocker: after the install the Agent adds them and reruns the self-check, no new signature")
 

@@ -2,6 +2,10 @@
 name: agentj-google
 description: Google tools on Agent J — the pinned gog CLI, connecting Gmail / Calendar / Drive / YouTube / Search Console with the owner's own Google project, and using them (YouTube upload, Search Console reports, Gmail, Drive). Use when the owner asks to connect Gmail, Calendar, Drive, YouTube or Search Console, asks "连接 Google", "授权 Gmail", "YouTube 上传", "Google 授权过期", or when a task needs a Google API.
 ---
+
+主 Agent 是董事长助理：只派常驻 CEO 或临时子 Agent、写验收、跑验收命令、汇报；除立等可取的一句话小事，绝不亲自干活，主会话随时接主人消息。
+Main Agent = chief of staff: dispatch to a resident CEO or temporary sub-Agent, write and run acceptance checks, report. Only immediate one-sentence tasks are yours; keep the main session ready for owner messages.
+
 Check first, separately: `agentj google status --json` (API side, read-only) and the browser login check (website side). Gmail
 website sign-in is not Gmail API access; YouTube API access does not sign in to YouTube Studio. Never report "Google is ready".
 

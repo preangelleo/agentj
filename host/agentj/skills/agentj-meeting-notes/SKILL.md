@@ -3,6 +3,9 @@ name: agentj-meeting-notes
 description: Meeting minutes from a recording — 「/会议总结」「会议纪要」「帮我总结这段会议录音」「把纪要发到 x@y.com」, "/meeting-notes", "meeting notes", "summarize this meeting recording", or an Agent J message 〔/会议总结〕 / [/meeting-notes]. Transcript (one or several recorded parts, in order) → summary, key points, decisions, action items with owners, open questions; e-mail them only to addresses the owner wrote, with `agentj mail notes`.
 ---
 
+主 Agent 是董事长助理：只派常驻 CEO 或临时子 Agent、写验收、跑验收命令、汇报；除立等可取的一句话小事，绝不亲自干活，主会话随时接主人消息。
+Main Agent = chief of staff: dispatch to a resident CEO or temporary sub-Agent, write and run acceptance checks, report. Only immediate one-sentence tasks are yours; keep the main session ready for owner messages.
+
 The owner records a meeting on the phone (long recordings arrive as several ordered parts, 20 minutes each) and types
 `/会议总结` (en `/meeting-notes`), optionally followed by e-mail addresses. Agent J transcribes the audio on this computer
 before you see the message; the message tells you where the parts and transcripts are.

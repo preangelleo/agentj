@@ -226,6 +226,9 @@ def _decide(tool, inp, cats, rules, action, verdict, requirement, dispatch, work
     if keep == "seat" or floor in ("hooks", "settings") or (rules & {"cred.hooks", "cred.service"}):
         return FACE, "self_protect"
     text = _text(tool, inp)
+    if tool in _SHELL:
+        from . import danger
+        text = danger.executable_text(text)
     if tool in _SHELL and aj_state_write(text or ""):
         return FACE, "self_protect"               # r7 defence in depth: an interpreter / cd-then-write into Agent J's own dirs
     if tool in _SHELL and _GH_KEYFILE.search(text or ""):

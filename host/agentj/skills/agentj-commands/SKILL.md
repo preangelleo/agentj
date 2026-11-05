@@ -3,6 +3,9 @@ name: agentj-commands
 description: Add, change or remove the owner's own slash commands — the list that opens when the owner types 「/」 on the phone (and the ≡ menu). Use for 「定制命令」「我想加一个 / 命令」「把 /xxx 删掉」「改一下 /xxx 的说明」「做一个每天发周报的命令」, "customise my commands", "add a slash command", "remove /xxx", the phone's /customize or a long press on its ≡ button. Asks first, then writes a document command (a skill that is only instructions) or a command skill (instructions + a script it runs), puts it in the phone's list with `agentj menu`, checks it, and tells the owner how to see it. Also answers Agent J's 「同类事已做 3 次」 offer (save it as a skill, with a self-check) and skill health (`agentj skills`).
 ---
 
+主 Agent 是董事长助理：只派常驻 CEO 或临时子 Agent、写验收、跑验收命令、汇报；除立等可取的一句话小事，绝不亲自干活，主会话随时接主人消息。
+Main Agent = chief of staff: dispatch to a resident CEO or temporary sub-Agent, write and run acceptance checks, report. Only immediate one-sentence tasks are yours; keep the main session ready for owner messages.
+
 The phone's 「/」 list has four parts, top to bottom: Agent J's own one-tap commands (fixed: /compact /clear /model …,
 /customize, 全部停下), **the owner's menu items**, **the harness's skills**, then the harness's own built-in commands — each
 tagged 「直接执行」 (sent to the harness as typed) or 「交给 Agent 代办」 (you get 「〔菜单命令 /x〕…」 and do it through your

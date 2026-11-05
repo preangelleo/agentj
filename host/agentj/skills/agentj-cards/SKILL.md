@@ -3,6 +3,9 @@ name: agentj-cards
 description: Make, change or remove an Agent J card — the owner's own cards in the phone's top-left logo menu, below the five system pages (「做一张卡」「加一张卡片」「把 X 做成卡片」「我想在手机上看 X」「改一下那张卡」「删掉那张卡」「打开日历」「打开待办卡片」, "make a card", "add a card for X", "show X on my phone", "remove that card", "open my notes"), the phone's 「让 Agent J 帮我做一张卡」 button and its + (`/agentj-cards …`), `@<card>` / `card/<id>` mentions, and every card button the owner sends (messages that start with 〔来自卡片：…〕 / [From card: …]). Builds a card folder (card.json + sample data) by the rules, runs `agentj card validate` until it passes, then `agentj card apply`; keeps the card's data file current; opens a card on the phone with `agentj card open`.
 ---
 
+主 Agent 是董事长助理：只派常驻 CEO 或临时子 Agent、写验收、跑验收命令、汇报；除立等可取的一句话小事，绝不亲自干活，主会话随时接主人消息。
+Main Agent = chief of staff: dispatch to a resident CEO or temporary sub-Agent, write and run acceptance checks, report. Only immediate one-sentence tasks are yours; keep the main session ready for owner messages.
+
 A card = one folder with `card.json` (+ `sample/<data file>`). Schema: `agentj card schema`; spec:
 `agentjarvis/docs/specs/AGENTJ-CARDS-SPEC.md`. **Phase 1 opens template cards only**: no code, no web page, no image —
 the phone draws one of two built-in templates from one data file on this computer. You do all the work here; the

@@ -1683,6 +1683,12 @@ const asrWhy = (w) => { const k = 'p363.why.' + w, v = t(k); return v === k ? t(
 function asrBlock(a){
   const d = document.createElement("details"); d.className = "omasr"; d.open = true;
   const sm = document.createElement("summary"); sm.textContent = t(a.ok ? 'p363.asrTitle' : 'p363.asrFailTitle');
+  if (a.ok && a.notice === 'local_fallback') {
+    const notice = document.createElement("span"); notice.className = "omasr-notice";
+    notice.textContent = t('asr440.local_fallback');
+    sm.style.flexWrap = "wrap"; notice.style.flexBasis = "100%"; notice.style.fontWeight = "normal";
+    sm.appendChild(notice);
+  }
   const p = document.createElement("p"); p.className = "omasr-text";
   p.textContent = a.ok ? a.text + (a.cut ? "\n" + t('p363.asrCut') : "") : t('p363.asrFail', {why: asrWhy(a.why)});
   d.append(sm, p);
@@ -3889,6 +3895,7 @@ function pttUI(p){
   const long = p.rec && recTotalMs(p) / 1000 > p.T;
   const keyboardTake = p.viaM || p.id === "key";
   const left = capMs(p) - recTotalMs(p);
+  el("pttMode").textContent = t(long ? 'asr440.sendAudio' : 'asr440.sendText', {s: Math.round(p.T || voiceThresholdS())});
   if (p.locked){
     const stop = p.viaM ? t('r.ptt.anyKey') : t('r.ptt.tapEnd');
     el("pttHint").textContent = p.cancel ? t('r.ptt.releaseCancel')
@@ -4252,10 +4259,14 @@ async function takeFinished(blob, dur, p){
   intNote(p, "text");
   asrBusy++; asrUI();
   const ep = localEpoch;
+  el("asrNotice").hidden = true;
   const job = transcribe(blob, dur);
   asrQueue = asrQueue.then(() => job).then(async r => {
     asrBusy--;
     if (ep !== localEpoch || takeEpoch !== localEpoch){ asrUI(); return; }           // unpaired / removed meanwhile: the words belong to no one now
+    const notice = el("asrNotice");
+    notice.hidden = !['local_fallback', 'remote_unavailable'].includes(r.notice);
+    notice.textContent = notice.hidden ? '' : t('asr440.' + r.notice);
     const tx = r.ok && typeof r.text === "string" ? r.text.trim() : "";
     if (tx){ appendText(tx); forget(); }
     else toast(asrError(r), 3400);

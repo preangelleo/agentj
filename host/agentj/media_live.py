@@ -1,6 +1,7 @@
 """Page-local, serialized media scans. History and owner routes keep their authorities."""
 import asyncio
 import copy
+import re
 from . import media, privacy
 
 
@@ -47,6 +48,7 @@ async def scan(host, tid, row):
             return
         ids = next((ids for ids in host.hist.parts.values() if tid in ids), [tid])
         text = '\n\n'.join(x['reply']['text'] for x in (host.hist.get(i) for i in ids) if x)
+        text = re.sub(r':(?:codex-(?:file-)?citation|file-citation)\{[^}]*\}', '', text)
         if page.get('end') == 'open':
             text = explicit(text)
         try:

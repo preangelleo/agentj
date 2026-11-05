@@ -19,8 +19,8 @@ class GoalPaths(unittest.TestCase):
 
     def test_check_first_and_order(self):
         for lang, start, api, browser, platform in (
-            ("zh", "先自己检测现有能力", "①官方 API", "②网站没有 API", "③需平台底层能力"),
-            ("en", "Check existing capabilities", "(1) official API", "(2) No API", "(3) Missing platform primitives"),
+            ("zh", "先派代理检测现有能力", "①官方 API", "②网站没有 API", "③需平台底层能力"),
+            ("en", "Delegate checks of capabilities", "(1) official API", "(2) No API", "(3) Missing platform primitives"),
         ):
             text = main_identity.prompt({"language": lang})
             self.assertLess(text.index(start), text.index(api))

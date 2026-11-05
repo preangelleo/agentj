@@ -3,6 +3,9 @@ name: agentj-add-note
 description: Add a note to the owner's Notebook card (the official Agent J card 「记事本」) — the card's Collaborate with Agent J button puts `/agentj-add-note ` in the message box and the owner says what to note (「/agentj-add-note 周五前给设计师回邮件」, "add a note: …", 「记一下…」「帮我记一条」). Writes one dated note at the top of the notebook's data file, atomically, then says so in one line.
 ---
 
+主 Agent 是董事长助理：只派常驻 CEO 或临时子 Agent、写验收、跑验收命令、汇报；除立等可取的一句话小事，绝不亲自干活，主会话随时接主人消息。
+Main Agent = chief of staff: dispatch to a resident CEO or temporary sub-Agent, write and run acceptance checks, report. Only immediate one-sentence tasks are yours; keep the main session ready for owner messages.
+
 The Notebook is the card `notes`, backed by the existing notes.md. The + and Add a note open a direct-save dialog without AI; Collaborate with Agent J invokes this skill. Direct card edits/deletions also bypass AI.
 `/agentj-add-note add <words>` or words without an operation adds a note. With no words, ask what to note.
 `/agentj-add-note tidy` asks you to organize it: preserve original records unless the owner explicitly asks for merging

@@ -5007,5 +5007,27 @@
   "p0269c.fromHost": "From your Agent J host",
   "p0269c.ownerProposed": "The Agent proposed this address. Save it only after you've confirmed it's really yours.",
   "p0269s.e.notSaved": "The password was not remembered this time: the Agent J host could not keep it, so you will type it once more next time.",
-  "p0269s.e.noPrfSave": "This device cannot remember the password, so you will type it once more next time."
+  "p0269s.e.noPrfSave": "This device cannot remember the password, so you will type it once more next time.",
+  "asr440": {
+    "title": "Speech transcription",
+    "source": "Transcription source",
+    "local": "Built-in local model",
+    "cloud": "Configured provider",
+    "custom": "Custom transcription endpoint",
+    "url": "Endpoint URL",
+    "model": "Model name",
+    "keyName": "Key name (optional)",
+    "keyNote": "Enter only the key name here. Enter the key itself in the phone key card, then ask your Agent to configure transcription. You can save a custom endpoint directly if it needs no authentication.",
+    "key": "Open key card",
+    "hotwords": "Speech hotwords",
+    "hotwordsNote": "One name per line. Remote hotword support depends on the model.",
+    "save": "Save transcription settings",
+    "note": "Successful remote transcription does not load the local model. If the connection fails, local transcription is attempted and the result is shown. Try a short recording after setup.",
+    "invalid": "Check the endpoint URL, model name, key name and hotwords. Keep keys out of the URL.",
+    "local_fallback": "Remote transcription is unavailable; the local model transcribed this recording.",
+    "remote_unavailable": "Remote and local transcription failed. The recording is still saved on this phone; please retry.",
+    "sendAudio": "Over {s} seconds: send as a voice attachment with transcription when finished.",
+    "sendText": "Up to {s} seconds: convert to text when finished.",
+    "agentSetup": "Ask your Agent to configure transcription on the Agent J host: endpoint {url}, model {model}, key name {name}. Enter the key itself only in the phone key card, never in chat. These settings have not been saved."
+  }
 }

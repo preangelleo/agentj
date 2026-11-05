@@ -163,7 +163,7 @@ def validate(doc,raw=''):
             raise ConfigError(k,'security floor is locked' if m['tier']=='locked' else 'human-only; use the existing human command',line,2 if m['tier']=='human' else 1)
         if k=='version' and v!=1: raise ConfigError(k,'supported version: 1',line)
         typ=m['type']
-        valid={'boolean':type(v) is bool,'integer':type(v) is int,'number':type(v) in (int,float) and math.isfinite(v),'string':isinstance(v,str),'array':isinstance(v,list)}.get(typ,False)
+        valid={'boolean':type(v) is bool,'integer':type(v) is int,'number':type(v) in (int,float) and math.isfinite(v),'string':isinstance(v,str),'array':isinstance(v,list),'object':isinstance(v,dict)}.get(typ,False)
         if not valid: raise ConfigError(k,'expected '+typ,line)
         if 'enum' in m and v not in m['enum']: raise ConfigError(k,'allowed: '+', '.join(m['enum']),line)
         if isinstance(v,str):
@@ -193,6 +193,8 @@ def validate(doc,raw=''):
     out=merge(defaults(),{k:v for k,v in doc.items() if k!='version'})
     if order is not None and len(order) == 4: put(out, 'ui.composer_buttons', [*order, 'full'])
     # Defaults belong to the selected provider; explicit model/key choices always win.
+    if get(out,'voice.asr.mode')=='custom' and get(doc,'voice.asr.key_env') is None:
+        put(out,'voice.asr.key_env','')
     provider=get(out,'voice.tts.provider')
     for key in ('voice.tts.model','voice.tts.key_env'):
         if get(doc,key) is None:
@@ -264,6 +266,20 @@ def validate(doc,raw=''):
         if why: raise ConfigError('proxy.'+field,why,_line(raw,'proxy.'+field))
     why=bypass_problem(get(out,'proxy.no_proxy',''))
     if why: raise ConfigError('proxy.no_proxy',why,_line(raw,'proxy.no_proxy'))
+    # #440: only an endpoint and a key NAME enter preferences, never authentication material.
+    from .voice import asr_endpoint
+    endpoint=get(out,'voice.asr.base_url','')
+    if endpoint or get(out,'voice.asr.mode')=='custom': asr_endpoint(endpoint)
+    if get(out,'voice.asr.mode') in ('custom','cloud') and not get(out,'voice.asr.model'):
+        raise ConfigError('voice.asr.model','remote ASR requires a model ID')
+    hotwords=get(out,'voice.asr.hotwords',[])
+    if len(hotwords)>100 or any(not isinstance(x,str) or not x.strip() or len(x)>80 or any(ord(c)<32 for c in x) for x in hotwords):
+        raise ConfigError('voice.asr.hotwords','up to 100 plain words, each 1–80 characters')
+    corrections=get(out,'voice.asr.corrections',{})
+    if len(corrections)>100 or any(not isinstance(x,str) or not x.strip() or len(x)>80 or any(ord(c)<32 for c in x) for pair in corrections.items() for x in pair):
+        raise ConfigError('voice.asr.corrections','up to 100 plain wrong-word to correct-word pairs')
+    if get(out,'voice.asr.mode')=='cloud' and not get(out,'voice.asr.key_env'):
+        raise ConfigError('voice.asr.key_env','cloud ASR requires a key variable NAME')
     if get(out,'voice.asr.mode')=='cloud' and not get(out,'voice.asr.model'): raise ConfigError('voice.asr.model','cloud ASR requires an audio-capable model ID')
     if get(out,'voice.tts.mode')=='cloud' and not get(out,'voice.tts.voice'): raise ConfigError('voice.tts.voice','cloud TTS requires a provider voice ID')
     if len(json.dumps(out).encode()) > 12000: raise ConfigError("/", "effective configuration must be at most 12 KiB")

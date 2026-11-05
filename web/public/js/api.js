@@ -102,7 +102,7 @@ export async function transcribe(blob, secs) {
   if (!isReady()) return { ok: false, why: 'net' };
   const u = new Upload(blob, { purpose: 'asr', origin: 'recording', name: `voice-${Math.round(secs)}s.wav`, mime: 'audio/wav', secs });
   const r = await u.start();
-  return r.ok ? { ok: true, text: r.text } : { ok: false, why: r.why };
+  return r.ok ? { ok: true, text: r.text, notice: r.notice } : { ok: false, why: r.why, notice: r.notice };
 }
 
 export const history = (q) => snap.history(q);

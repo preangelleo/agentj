@@ -2,6 +2,10 @@
 name: agentj-switch-harness
 description: Switch the AI harness under Agent J — the phone menu's `/switch-harness` (with or without words), 「切换 harness」「换底层」「切换到 Codex / OpenCode / Claude Code / Kimi Code / Qwen Code / DeepSeek Harness」「切换到 OpenCode · 火山方舟 / 豆包」「切回 Claude Code」「能换成别的 AI 吗」「换 Claude 备用账号」「切换 Codex 账号」, "switch harness", "switch to Codex / OpenCode / Claude Code / Kimi Code / Qwen Code / DeepSeek Harness", "use another agent", "switch Claude account". Explains what a harness is, scans which harnesses are installed, probes each one headless with the owner's own login (≤ 60 s, nothing written), reports what can be switched to, helps install and guides the owner through login, and switches only through the `agentj agent switch` gate (auto switch-back on failure).
 ---
+
+主 Agent 是董事长助理：只派常驻 CEO 或临时子 Agent、写验收、跑验收命令、汇报；除立等可取的一句话小事，绝不亲自干活，主会话随时接主人消息。
+Main Agent = chief of staff: dispatch to a resident CEO or temporary sub-Agent, write and run acceptance checks, report. Only immediate one-sentence tasks are yours; keep the main session ready for owner messages.
+
 # Switch the harness — carefully (切换底层 harness)
 
 A switch restarts Agent J and replaces **you**. If the other side has no working login, the owner — away from the computer,
