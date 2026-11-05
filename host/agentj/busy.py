@@ -189,6 +189,7 @@ def read_items(root, now: float | None = None) -> list[dict]:
             it = item(it["key"], it.get("who"), it.get("kind"), it.get("label", ""), it.get("lk"), it.get("since"),
                       it.get("pid"), it.get("session"), it.get("ns"), it.get("report"), **task_meta(it))
             it["self_reported"] = True
+            it["_ctime"] = p.stat().st_ctime        # hotfix #455 R2-S1: kernel-set, judged at first sight, never kept
             if isinstance(raw.get("proc_start"), str):
                 it["proc_start"] = raw["proc_start"][:80]
             if "pid" in it and it.get("ns", me) != me:      # another PID namespace (inside the fence): its heartbeat
@@ -1197,6 +1198,8 @@ class Board:
             table, sids = L.scan(self.context)
             for it in files:
                 L.judge(it, self.context, table, sids)
+        for it in files:
+            it.pop("_ctime", None)
         known = lambda it: {**it, **L.fields(it["key"]), "foreign": False} if L is not None and L.ok(it["key"]) else {**it, "foreign": True}   # noqa: E731 — #450
         if self.root is not None:
             for receipt in finished_items(self.root):
@@ -1215,17 +1218,21 @@ class Board:
                         result = unit_end(it["key"][5:], run)
                         if result is None:
                             retained.append(it)  # still running, or lookup failed: try next scan
-                        else:
+                        elif not it.get("covered"):  # hotfix #455: a unit wrapping a `busy run` ends through that job's receipt
                             self.finish({**it, "foreign": True}, result.get("exit_code"), result.get("ended"))
                 for it in scanned:
                     if it["key"] in old:
-                        it.update(since=old[it["key"]]["since"], report=old[it["key"]].get("report"))
+                        it.update(since=old[it["key"]]["since"], report=old[it["key"]].get("report"),
+                                  **({"covered": True} if old[it["key"]].get("covered") else {}))
                     else:
                         it["report"] = unit_report(it["key"][5:], run)
                         it["since"] = unit_since(it["key"][5:], run) or it["since"]
                 self.units = scanned + retained
 
-        got = files + [u for u in getattr(self, "units", []) if not any(same_job(f, u) for f in files)]
+        for u in getattr(self, "units", []):
+            if any(in_cgroup(f.get("pid"), u.get("cg")) for f in files):   # kernel match only (a report name can be forged)
+                u["covered"] = True
+        got = files + [u for u in getattr(self, "units", []) if not u.get("covered") and not any(same_job(f, u) for f in files)]
         live = {it["key"] for it in got}
         for it in self.outside:
             if not it["key"].startswith("unit:") and it["key"] not in live:

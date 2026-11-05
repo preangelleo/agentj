@@ -217,12 +217,17 @@ class LaunchSource(Base):
         res = self.ask("cat reports/review.md")
         self.assertEqual((res["behavior"], self.last()["reason"]), ("deny", "group_source"))
 
-    def test_job_from_another_session_stays_unknown(self):
+    def test_job_from_another_session_is_same_machine_without_chain(self):
+        # hotfix #455 (chairman 11-05): another of the owner's sessions on this computer (a shared desktop session, a
+        # dispatched CEO unit) outside every untrusted episode is the same-computer tier — a system notice, never 来源不明;
+        # only a launch inside this harness's owner turn carries the owner chain (E2)
         self.away()
         other = self.spawner(new_session=True)             # same user, same moment, not this host's harness
         key, pid = self.turn(self.owner(), launch=lambda: self.spawn(other))
         self.finish(key, pid)
-        self.assertEqual(self.completion().source["kind"], "unknown")
+        send = self.completion()
+        self.assertEqual(send.source["kind"], "system")
+        self.assertIsNone(getattr(send, "owner_chain", None))
 
     def test_job_started_while_a_group_turn_process_lives_stays_unknown(self):
         self.away()

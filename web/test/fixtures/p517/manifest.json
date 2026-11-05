@@ -1,7 +1,9 @@
 {
   "desktop-home-dark": {
-    "sha256": "31db9fb1756fa956313ce74133af28ff6f342c058a1bc05e77cfc0a47cf42e2d",
-    "approval": "董事长：遥控器角标效果图批准；P517 RESUME"
+    "sha256": "610ed0c6bd26965efd486c86bebb0dda7eb6f8d724013ac944474c1b7e0bb20d",
+    "approval": "董事长：遥控器角标效果图批准；P517 RESUME",
+    "previous_sha256": "31db9fb1756fa956313ce74133af28ff6f342c058a1bc05e77cfc0a47cf42e2d",
+    "rerendered": "2026-11-05 re-rendered on Olares (qualification host; fontconfig 10-sub-pixel-rgb) for release-overhaul pixel-olares; same approved design, only glyph antialiasing differs"
   },
   "desktop-home-light": {
     "sha256": "b1be6f864cc0c2d307c8cf95be5d42ab873dc71603d0b905a120407ed2426cca",

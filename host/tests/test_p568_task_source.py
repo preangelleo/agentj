@@ -85,14 +85,14 @@ class TaskSource(Base):
         self.ask('date')
         self.assertEqual(self.last()['reason'], 'group_source')
         self.assertEqual(self.cards(), [])
-        # P570: a host-written system turn (heartbeat Send) gets no low-risk pass either, but it ASKS — a card
+        # P570: a host-written system turn (heartbeat Send) gets no low-risk pass; hotfix #455: it is the same-computer
+        # tier — an allowlisted step runs with no card (reason same_machine), never a source refusal
         from agentj.heartbeat import HeartbeatSend
         self.host.agent.cur_send = HeartbeatSend(0, 'heartbeat', 'k', 'd')
         self.assertFalse(approval_jev.low_risk_pass(self.host, cfg, 'Bash', {'command': 'date'}))
-        self.ask('date')
-        self.assertNotEqual(self.last()['reason'], 'group_source')
-        self.assertEqual(len(self.cards()), 1)
-        self.assertNotIn('batch', self.cards()[-1])
+        self.assertEqual(self.ask('date')['behavior'], 'allow')
+        self.assertEqual(self.last()['reason'], 'same_machine')
+        self.assertEqual(self.cards(), [])
 
     def test_task_outward_secret_delete_need_cards_even_with_background_flag(self):
         with provenance.task_run():

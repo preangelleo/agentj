@@ -27,12 +27,14 @@
     "approved_outbox_sha256": "644b750ac8afae7e34333a153d2440136634f86b84bcd7f41c118c1e1d404081"
   },
   "code-excluded": {
-    "sha256": "1ac4399c3e26502996883b8ba1bbe946c61da21ab7811b6f024439f770436012",
+    "sha256": "c7416cbc518663c8bf91ab701d2b9b13885485d1a961c5e138064ce3db06e031",
     "approval": "approved",
     "approved_at": "2026-10-25",
     "approved_by": "Leo",
     "approval_via": "贾维斯 10-25 16:3x RESUME",
     "approval_quote": "卡名自动链接批准",
-    "approved_outbox_sha256": "e89eb5e28a5c76c4d61a840cac99b2075252526b19758c27c4bc7feeda6a8857"
+    "approved_outbox_sha256": "e89eb5e28a5c76c4d61a840cac99b2075252526b19758c27c4bc7feeda6a8857",
+    "previous_sha256": "1ac4399c3e26502996883b8ba1bbe946c61da21ab7811b6f024439f770436012",
+    "rerendered": "2026-11-05 re-rendered on Olares (qualification host; fontconfig 10-sub-pixel-rgb) for release-overhaul pixel-olares; same approved design, only glyph antialiasing differs"
   }
 }

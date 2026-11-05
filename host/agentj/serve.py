@@ -564,6 +564,23 @@ def _peer_floor(host, tool, tool_input, v, requirement, opaque, host_card, asks,
         return True
 
 
+SAME_MACHINE_CARD = frozenset({"send", "spend", "price", "delete", "credentials"})
+
+
+def _same_machine_card(host, tool, tool_input, v, requirement, dispatch, env, known_recipients) -> bool:
+    """hotfix #455: the five dangerous kinds (pay, delete, send out, change credentials, change prices) in a same-computer
+    turn always ask the owner on the phone — whatever the approval level frees in the owner's own turn. True = the card."""
+    if set(getattr(v, "cats", None) or ()) & SAME_MACHINE_CARD:
+        return True
+    try:
+        tier, _ = approval_policy.decide(tool, tool_input, v, requirement=requirement, dispatch=dispatch,
+                                          workdir=(host.agent_cfg or {}).get("dir"), env=env, classify=host._classify,
+                                          budget=budget_mod.state(host.st), known_recipients=known_recipients, chain=True)
+    except Exception:  # noqa: BLE001 — cannot tell → the card
+        return True
+    return tier is not None and tier != approval_policy.NONE
+
+
 class Host:
     def __init__(self, st: State, events: str = "text", read_stdin: bool = True):
         self.st = st
@@ -4353,6 +4370,14 @@ class Host:
             owner_words = (text if send is not None and provenance.is_owner(getattr(send, "source", None))
                            and isinstance(text, str) else None)
             launch.turn(self.busy.trusted(), words=privacy.redact(owner_words) if owner_words else None)   # E2: owner chain
+        if getattr(self, "agent", None) is not None:
+            try:    # hotfix #455 S2: foreign content since the owner last spoke (not cleared by time); cannot tell → set
+                if provenance.is_owner(provenance.turn_source(self.agent)) and not provenance.untrusted_turn(self.agent):
+                    self._foreign_seen(False)
+                elif provenance.untrusted_turn(self.agent) and provenance.unattended_turn(self.agent) not in ("system", "scheduled_task"):
+                    self._foreign_seen(True)
+            except Exception:  # noqa: BLE001
+                self._foreign_seen(True)
         self.turn_t0 = time.monotonic()
         self.turn_shown, self.turn_at = False, (time.time(), 0.0, False)
         _hb_touch(self)
@@ -4368,6 +4393,25 @@ class Host:
                 getattr(send, k, None) for k in ("heartbeat_key", "bot_handoff_id", "official_notice_id", "quota_resume_id",
                                                  "auto_notify", "hook_notice")):
             self._post(self._send_device, send.device, {"t": "say_state", "sid": send.sid, "s": "taken"})
+
+    def _foreign_seen(self, value=None) -> bool:
+        """hotfix #455 S2: did untrusted content (group / guest mail / friend / unknown) enter the session since the owner's
+        last own turn? Kept on disk (a restart does not forget it); only an owner turn clears it."""
+        st = getattr(self, "st", None)
+        if st is None:
+            return True if value is None else bool(value)     # no state: cannot tell → seen
+        p = st.root / "busy" / "foreign_seen"
+        if value is None:
+            return p.exists() or bool(getattr(self.agent, "untrusted_foreign", False)) or bool(getattr(self.agent, "peer_low", False))
+        try:
+            if value:
+                p.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+                p.touch()
+            else:
+                p.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return bool(value)
 
     def agent_turn_end(self) -> None:
         if (peers := getattr(self, "peers", None)) is not None:
@@ -5095,6 +5139,26 @@ class Host:
             self.activity("auto", id=rid, tool=tool, summary=summary, by="same_host", cats=v.cats, task=self.task_label)
             self.emit("auto", id=rid, tool=tool, grant=None)
             return {"behavior": "allow", "updatedInput": tool_input}
+        # hotfix #455: a host system notice turn (a background completion, a heartbeat, a compaction recovery) is the
+        # same-computer tier, like a verified same_host session: the same allowlist runs without a card; any step with a
+        # dangerous row (delete / send / publish / spend / price / secrets) always raises the owner's card, parked so the
+        # rest goes on. A loop wake-up keeps P570c. External sources never reach here (unattended is None for them).
+        sm_card = False
+        if (unattended == "system" and avatar is None and not own and getattr(self, "proactive_via", None) != "loop"
+                and not strict and not always_ask and ttl is None and not bound and task_actions is None):
+            # S2: the no-card path only when no outside text entered the session since the owner spoke
+            # at 「减少弹窗」 the level's own path allows these as before (label level_harness); here only the default levels
+            if lv != "harness" and not await asyncio.to_thread(self._foreign_seen) and not _peer_floor(self, tool, tool_input, v, requirement, opaque, host_card, require_passkey or own_pk, bound, ttl, lv, dispatch):
+                approvals.record(self.st, **base, decision="allow", reason="same_machine")
+                if dispatch:
+                    await self._peer_launch_note(tool, tool_input, avatar, own, unattended)
+                self.st.log("ask_done", id=rid, tool=tool, decision="allow", reason="same_machine", via="system")
+                self.activity("auto", id=rid, tool=tool, summary=summary, by="same_machine", cats=v.cats, task=self.task_label)
+                self.emit("auto", id=rid, tool=tool, grant=None)
+                return {"behavior": "allow", "updatedInput": tool_input}
+            sm_card = await asyncio.to_thread(_same_machine_card, self, tool, tool_input, v, requirement, dispatch, policy_env, known_recipients)
+            if sm_card:
+                batch = False
         if same_owner and self.peers is not None:
             sender = getattr(self.agent, "cur_send", None)
             owner = self.peers.same_owner
@@ -5180,7 +5244,8 @@ class Host:
                 summary += "\n" + quote
                 digest = approvals.shown_digest(tool, summary)
                 base["shown_sha256"] = digest
-        if lv != "safe" and (not delegated or (unattended and lv == "harness")) and avatar is None and ttl is None and not own_pk and not peer:
+        if lv != "safe" and (not delegated or (unattended and lv == "harness")) and avatar is None and ttl is None and not own_pk and not peer \
+                and not sm_card:     # hotfix #455: a same-computer card stays a card
             from . import background as bgmod   # P552 (#325 ②): background work, decided from the real call — never the model's words
             bgk = (("headless:" + h) if (h := bgmod.headless(tool, tool_input)) else
                    background if background in ("order", "task") else None)
@@ -5229,7 +5294,7 @@ class Host:
             self.activity("auto", id=rid, tool=tool, summary=summary, by="same_owner", cats=v.cats, task=self.task_label)
             return {"behavior": "allow", "updatedInput": tool_input}
         if lv == "harness" and (not delegated or avatar is not None or unattended) and ttl is None and not own_pk and not peer \
-                and tool not in approval_level.HARNESS_KEEPS and not (unattended and tool == "AgentJSameOwnerAction"):
+                and not sm_card and tool not in approval_level.HARNESS_KEEPS and not (unattended and tool == "AgentJSameOwnerAction"):
             try:   # no folder: the Agent may have cd'd, and a `cwd` field is the model's — relative paths are not scratch
                 keep = confirm_tier.harness_keeps(tool, tool_input, env=policy_env) or approval_level.harness_floor(
                     tool, tool_input, v)    # P556: + an attack on Agent J itself / fetch-and-run / an inline key going out
@@ -5509,9 +5574,9 @@ class Host:
         except Exception as e:  # noqa: BLE001 — a metric never blocks a card
             bg.swallowed(self.st.log, "interrupts_failed", e, every=0)
 
-    def _dispatch_turn(self) -> bool:   # #455: the owner's own turn or a verified same_host turn, nothing else
+    def _dispatch_turn(self) -> bool:   # #455: the owner's own turn or a same-computer turn (hotfix #455: + a host system notice)
         u = provenance.unattended_turn(self.agent)
-        return u == "same_host" or (u is None and not provenance.untrusted_turn(self.agent) and not provenance.delegated_turn(self.agent)
+        return u == "same_host" or (u == "system" and getattr(self, "proactive_via", None) != "loop" and not self._foreign_seen()) or (u is None and not provenance.untrusted_turn(self.agent) and not provenance.delegated_turn(self.agent)
                                     and provenance.is_owner(provenance.turn_source(self.agent)) and not _same_owner_turn(self.agent))
 
     def _dispatch_ctx(self) -> dict:   # #455 F3 B (thread): where the dispatch's bare words resolve, read by the host
@@ -5530,7 +5595,7 @@ class Host:
     async def _peer_launch_note(self, tool, tool_input, avatar, own, unattended):
         launches = getattr(self, "peer_launch", None)
         if (launches is None or tool != "Bash" or avatar is not None or own or not isinstance(tool_input, dict)
-                or unattended not in (None, "same_host") or not self._dispatch_turn()):
+                or unattended not in (None, "same_host", "system") or not self._dispatch_turn()):
             return
         cmd, root = tool_input.get("command"), (self.agent_cfg or {}).get("dir")
         if await asyncio.to_thread(lambda: launches.note(cmd, root, ctx=self._dispatch_ctx())):   # proof + hashing off the loop

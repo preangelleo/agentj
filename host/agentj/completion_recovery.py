@@ -263,6 +263,8 @@ class Book:
                           'original_error':reason, 'action':{'tool':tool, 'input_sha256':digest},
                           'recovery_point':'reconcile_only', 'task_label':getattr(self.host, 'task_label', None),
                           'native_session':getattr(a, 'sid', None) or getattr(a, 'tid', None), 'child_id':child_id, 'stage':'source_gate'})
+            if key in self.rows and self.rows[key].get('state') == 'awaiting_owner_verification':
+                self.rows[key].update(notified=True, quiet='group_source')   # hotfix #455 ③: a refusal is listed, never a 「待本人核对」 reminder
             self.save()
 
     def overflow(self):

@@ -87,10 +87,15 @@ class Unattended(Base):
                 self.assertEqual((self.last()["decision"], self.last()["reason"]), ("deny", "offline"))
                 self.assertEqual(self.no_device_deny(), [])
                 continue
+            if inp.get("command") == "git push origin main":
+                # hotfix #455 ③: sending out from a same-computer turn always asks the phone (parked), whatever the level
+                self.assertEqual((res["behavior"], self.last()["reason"]), ("deny", "offline"), (tool, inp, res))
+                self.assertIn(NOBODY_ZH, res["message"])
+                continue
             self.assertEqual(res["behavior"], "allow", (tool, inp, res))
             self.assertLess(took, 0.12, "no remote is waited for")
             self.assertEqual(self.last()["reason"], "level_harness")
-        self.assertEqual(len(self.parked()), 1, "only user-manager activation needs the owner")
+        self.assertEqual(len(self.parked()), 2, "user-manager activation and the push need the owner")
         done = [r for r in self.host_log("ask_done") if r.get("reason") == "level_harness"]
         self.assertTrue(done and all(r.get("via") == "system" for r in done), done)
 

@@ -1,5 +1,5 @@
-# Agent J v0.26.10a1
+# Agent J v0.26.10a2
 
-[all] A small wording fix on the Contact page; the first release shipped by the new one-command release process.
+[host] Your own finished background jobs are no longer 'unknown source'; the Agent checks the result. Recognised payments, deletes, sends still ask your phone.
 
-[all] 联系页英文措辞微调；这是发布流程整改后的第一版（一条命令自动发完）。
+[主机] 自己派出的后台任务完成后不再被当成「来源不明」，主 Agent 能直接核对结果；能识别出的花钱、删除、对外发送仍要手机批准。

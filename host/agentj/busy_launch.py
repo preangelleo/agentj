@@ -13,6 +13,7 @@ import time
 from pathlib import Path
 
 MARGIN = 1.0      # s: trusted windows shrink by this, untrusted episodes grow by it (clock / tick precision)
+LAUNCH_SKEW = 10.0   # s: `agentj busy run` writes its item right after it starts (hotfix #455 S1)
 CORE = 10.0       # s: the harness's own launch-time children (bwrap's inner process, a node shim's binary)
 KEEP = 128
 FIELDS = ("who", "label", "report")   # what a completion says comes from first sight, never a later item rewrite
@@ -165,25 +166,46 @@ class Launch:
             from .busy_probe import Processes
             pid = Processes().namespace_pid(pid, it.get("source_ns"))
         row = table.get(pid) if isinstance(pid, int) else None
-        ok = bool(row and it.get("proc_start") == row[2] and row[1] in (sids or ()) and pid not in core)
+        alive = bool(row and it.get("proc_start") == row[2])
+        ok = alive and row[1] in (sids or ()) and pid not in core
         now = time.time()
         with self.lock:
             # first sight while an untrusted turn or its processes may still write item files: never known (forgery)
-            ok = ok and not (self.open and not self.open[1]) and all(e is not None and now > e + MARGIN for _, e in self.taint)
+            clean = alive and not (self.open and not self.open[1]) and all(e is not None and now > e + MARGIN for _, e in self.taint)
             chain = None
-            if ok:
+            ok = ok and clean
+            if clean:
                 t = row[3]
                 spans = self.trusted + ([[self.open[0], float("inf")]] if self.open and self.open[1] else [])   # still open
                 hit = [s for s, e in spans if s + MARGIN <= t <= e - MARGIN]
-                ok = (bool(hit) and not any(s - MARGIN <= t <= (now if e is None else e) + MARGIN for s, e in self.taint))
+                clean = not any(s - MARGIN <= t <= (now if e is None else e) + MARGIN for s, e in self.taint)
+                ok = ok and bool(hit) and clean
+                # hotfix #455 (security r1 S1): the same-computer path needs the job's own fresh process — never a harness
+                # core process or an old long-lived one an item merely names (it started when the item says, ± LAUNCH_SKEW),
+                # and no ancestor of it was started during an untrusted episode
+                since = it.get("_ctime")     # R2-S1: the item file's kernel ctime, not the item's own `since`
+                clean = (clean and pid not in core and pid != os.getpid() and isinstance(since, (int, float)) and abs(t - since) <= LAUNCH_SKEW
+                         and not self._tainted_ancestor(pid, table, core, now))
+                # hotfix #455: a job the owner's own processes started on this computer (a shared desktop session, a
+                # dispatched CEO unit, the terminal) outside every untrusted episode is the same-computer tier — its
+                # completion is a host system notice. Only a trusted-window launch carries the owner chain (E2).
                 if ok:
                     s0 = hit[-1]
                     chain = (self.open[2] if self.open and len(self.open) > 2 and self.open[0] == s0 and self.open[1]
                              else self.owner.get("%.6f" % s0))
-            self.jobs[key] = ({f: str(it.get(f) or "")[:400] for f in FIELDS} | ({"chain": chain} if chain else {})) if ok else False
+            self.jobs[key] = ({f: str(it.get(f) or "")[:400] for f in FIELDS} | ({"chain": chain} if chain else {})) if ok or clean else False
             while len(self.jobs) > 4 * KEEP:
                 self.jobs.pop(next(iter(self.jobs)))
             self.dirty = True
+
+    def _tainted_ancestor(self, pid, table, core, now) -> bool:   # caller holds the lock
+        q, n = table.get(pid, (None,))[0], 0
+        while q in table and q not in core and n < 64:
+            st = table[q][3]
+            if any(s - MARGIN <= st <= (now if e is None else e) + MARGIN for s, e in self.taint):
+                return True
+            q, n = table[q][0], n + 1
+        return False
 
     def starts(self):
         with self.lock:
