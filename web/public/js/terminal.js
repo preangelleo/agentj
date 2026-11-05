@@ -18,6 +18,11 @@
 // message box's attachments (sent only when the owner sends). PRF: eval.second = the host's next salt `vn` (M3).
 // P417 #185: o.enable — the same two steps with object {"mode":"enable"} (a computer browser switching the terminal on for
 // itself); the host then always asks for the login password and opens the terminal right after.
+// 0.26.9 #463 (ADR-0269-w-term, PROTOCOL §38 PTY): when the host's `terminal.modes` has "pty" the page is a real terminal —
+// js/termpty.js (xterm.js, our own pinned copy) is loaded as a module script next to this file on the first such open; the
+// open is signed over {"mode":"pty"} with the size; keystrokes / pastes → `term_in` (≤ 8 KiB a frame, ≤ 64 KiB/s), the grid →
+// `term_resize`, `term_out.d` → xterm. Face ID, the login card, limits, 结束, the confirm / sudo sheets stay this page's.
+// A host without "pty", a 「!」 line or a module that did not load → the line mode above.
 import { register } from './termhook.js';
 import { request, done, sendApp, gen, channel } from './session.js';
 import { controlMessage, controlObject, sealValue, elevateFields, elevateDigest, elevateMessage, sha256hex, b64u, unb64u } from '../proto/wire.js';
@@ -43,6 +48,8 @@ const OPEN_WHY = ['disabled', 'os', 'device_not_allowed', 'web_not_allowed', 'no
   'bad_signature', 'busy', 'estop', 'locked', 'bad_password', 'cancelled', 'shape', 'timeout', 'offline', 'phone', 'device_type'];
 const CLOSE_WHY = ['owner', 'timeout', 'idle', 'background', 'relay_lost', 'estop', 'host', 'disabled'];
 const HEX32 = /^[0-9a-f]{32}$/, HEX16 = /^[0-9a-f]{16}$/;
+// 0.26.9 #463: term_in frame / rate caps (contract §A) and the most the page holds back while the rate cap drains
+export const PTY_FRAME = 8192, PTY_RATE = 65536, PTY_QUEUE = 1 << 20;
 const enc = new TextEncoder();
 
 let H = { setupFaceId() {}, openSettings() {}, openRescue() {}, attach() { return null; }, insert() {}, goChat() {} };
@@ -52,7 +59,8 @@ function fresh() {
   return { phase: 'idle', minutes: 15, G: null, ch: null, r1: null, r2: null, id: null, expires: 0, fa: null, seq: 0, atPrompt: true,
     hist: [], hi: -1, draft: '', prefill: '', login: null, hiddenAt: 0,
     view: 'full', origin: 'settings', bang: null, pendBang: null, go: null, reCollapse: false,   // P414
-    enable: false };   // P417 #185
+    enable: false,   // P417 #185
+    pty: false, px: null, sentSize: null, inSeq: 0, inQ: [], inQb: 0, budget: PTY_RATE, budgetAt: 0, inTimer: 0, size: null, rsTimer: 0 };   // 0.26.9 #463
 }
 let root = null, tick = 0, hideTimer = 0, closeTimer = 0;
 const $ = (id) => root.querySelector('#' + id);
@@ -85,6 +93,7 @@ function build() {
   out.setAttribute('role', 'log'); out.setAttribute('aria-live', 'polite');
   out.append(document.createTextNode(''), mk('span', 'term-cur'));
   const outBox = mk('div', 'term-outbox'); outBox.append(copyable(out, { variant: 'bare', click: false }));   // P414: 「复制输出」 below replaces P292's corner icon
+  const xt = mk('div', 'term-xt'); xt.id = 'term-xt'; xt.hidden = true; outBox.append(xt);   // 0.26.9 #463: the PTY's xterm goes here
   const bottom = mk('div', 'term-bottom');
   const status = mk('p', 'term-status'); status.id = 'term-status'; status.hidden = true; status.setAttribute('role', 'status');
   const stActs = mk('div', 'term-acts term-stacts'); stActs.id = 'term-stacts'; stActs.hidden = true;
@@ -101,12 +110,13 @@ function build() {
   keys.append(btn('term-k-int', 'term-key', KEYS.int), btn('term-k-quit', 'term-key', KEYS.quit), btn('term-k-up', 'term-key', '↑'),
     btn('term-k-down', 'term-key', '↓'), ...INSERT.map((c, i) => { const b = btn('term-k-ins' + i, 'term-key', c); b.dataset.ins = c; return b; }));
   const warn = mk('p', 'term-warn'); warn.id = 'term-nopw';
+  const lineOnly = mk('p', 'term-warn'); lineOnly.id = 'term-lineonly'; lineOnly.hidden = true;   // 0.26.9 #463: line mode says what it cannot run
   // P414: the Agent's line waiting while the owner's own input is not empty (H1b) · 复制输出 / 截屏发到聊天 · who can read this
   const go = btn('term-gochip', 'term-gochip'); go.hidden = true;
   const goNote = mk('p', 'term-hint term-gonote'); goNote.id = 'term-gonote'; goNote.hidden = true;
   const tools = mk('div', 'term-tools'); tools.id = 'term-tools';
   tools.append(btn('term-copy', 'term-tool'), btn('term-shot', 'term-tool'));
-  bottom.append(status, stActs, prog, bad, go, goNote, form, keys, tools, warn);
+  bottom.append(status, stActs, prog, bad, go, goNote, form, keys, tools, warn, lineOnly);
   // the one sheet of this page: intro, the login card, a confirm, sudo, 「结束？」
   const wrap = mk('div', 'term-sheetwrap'); wrap.id = 'term-sheetwrap'; wrap.hidden = true;
   const sheet = mk('form', 'term-sheet'); sheet.id = 'term-sheet'; sheet.autocomplete = 'off'; sheet.noValidate = true;
@@ -155,7 +165,7 @@ function build() {
   registerLayer({ element: () => root, open: () => !!root && !root.hidden && $('term-sheetwrap').hidden, rank: 50,
     close: () => escape(), fallback: () => document.getElementById('input') || document.getElementById('set-term-open') });
   registerLayer({ element: () => $('term-sheetwrap'), open: () => !!root && !root.hidden && !$('term-sheetwrap').hidden, rank: 52,
-    close: () => sheetNo(), fallback: () => $('term-input') });
+    close: () => sheetNo(), fallback: () => (S.px ? S.px.term.textarea : $('term-input')) });
   onLang(labels);
   labels();
 }
@@ -180,7 +190,8 @@ function labels() {
   for (const [id, k] of [['term-grab', 'p414.grab'], ['term-exit', 'p414.exit']]) { $(id).setAttribute('aria-label', t(k)); $(id).title = t(k); }
   $('term-copy').textContent = t('p414.copy');
   $('term-shot').textContent = t('p414.shot');
-  $('term-nopw').textContent = t('p408.noPw') + ' ' + t('p414.reads');
+  $('term-nopw').textContent = S.pty ? t('p414.reads') : t('p408.noPw') + ' ' + t('p414.reads');   // 0.26.9: a PTY hides password prompts itself
+  $('term-lineonly').textContent = t('pty.lineOnly');
   paintGo();
   paintLeft();
   paintChip();
@@ -209,6 +220,7 @@ function show() {
   root.style.transform = ''; root.classList.remove('leaving', 'drag');
   if (!root.hidden) return;
   root.hidden = false; document.body.dataset.term = '1';
+  S.px?.refit();   // 0.26.9 #463: collapsed = display:none, the grid is measured again
   if (!pushed) { try { history.pushState({ ...(history.state || {}), ajTerm: 1 }, ''); pushed = true; } catch { pushed = false; } }
 }
 /** Leave the page (after a close): back to Settings (P414: or the chat, when it was opened from there), the closed line under
@@ -323,6 +335,7 @@ function wipe() {
   out.firstChild.data = ''; out.lastChild.textContent = '';
   $('term-input').value = ''; $('term-sh-pw').value = '';
   S.hist.length = 0; S.draft = ''; S.prefill = '';
+  ptyDrop();   // 0.26.9 #463: the xterm buffer (screen + scrollback) is disposed with the session
 }
 
 // ---------------------------------------------------------------- the sheet (one at a time; a later one waits)
@@ -360,7 +373,7 @@ function closeSheet() {
   const next = queue.shift();
   if (next) openSheet(next);
   else if (S.phase === 'ready' && S.reCollapse) collapse();   // P414: a card brought the collapsed page up; answered → down again
-  else if (S.phase === 'ready') try { $('term-input').focus({ preventScroll: true }); } catch { /* old browsers */ }
+  else if (S.phase === 'ready') try { if (S.px) S.px.focus(); else $('term-input').focus({ preventScroll: true }); } catch { /* old browsers */ }
 }
 /** P539: under the sheet's buttons — the quiet line when this remote has no passkey of its own (o.pk.fa = fa_s), or why the
  *  last tap failed + 再试一次 (sheetYes: the assertion starts again inside that tap). 在本机设置 only on the intro sheet. */
@@ -421,6 +434,7 @@ function open(prefill, info, o = {}) {
   build(); wipe(); S.prefill = prefill || '';
   S.origin = o.bang || o.go ? 'chat' : 'settings'; S.pendBang = o.bang || null; S.go = o.go || null;
   S.enable = !!o.enable && !o.bang && !o.go;
+  S.pty = !!info?.pty && !o.bang && !S.enable;   // 0.26.9 #463: a 「!」 line keeps line mode (its result card needs term_line)
   if (S.origin === 'chat') H.goChat();
   S.phase = 'intro'; S.G = gen();
   paintChrome(); show();
@@ -428,7 +442,9 @@ function open(prefill, info, o = {}) {
     : S.enable ? t('p417.intro', { n: S.minutes }) : t('p408.intro', { n: S.minutes });
   openSheet({ kind: 'intro', title: t('p408.title'), text, yes: t('p408.preparing'), no: t('sheet.cancel'), wait: true,
     onYes: introYes, onNo: () => { const b = S.pendBang; S.phase = 'idle'; abandon(); if (b) restore(b.line); } });
-  fetchChallenge();
+  if (!S.pty) fetchChallenge();
+  else loadPty().then(() => { if (S.phase === 'intro') fetchChallenge(); },
+    () => { if (S.phase !== 'intro') return; S.pty = false; paintChrome(); toast(t('pty.loadFail'), 5000, 'error'); fetchChallenge(); });   // fallback: line mode
   return true;
 }
 function abandon() { if (S.r1) done(S.r1); if (S.r2) done(S.r2); S.phase = 'idle'; hideQuiet(); }
@@ -437,7 +453,7 @@ function hideQuiet() { S.phase = 'idle'; hide(); }
 function fetchChallenge() {
   S.ch = null;
   let timer = 0;
-  const r = request(S.enable ? { t: 'term_open', mode: 'enable' } : { t: 'term_open' }, (m) => {
+  const r = request(S.enable ? { t: 'term_open', mode: 'enable' } : S.pty ? { t: 'term_open', ...ptyOpen() } : { t: 'term_open' }, (m) => {
     if (m.t !== 'ctl_res' && m.t !== 'offline') return;
     clearTimeout(timer); done(r); if (S.r1 === r) S.r1 = null;
     if (S.phase !== 'intro') return;
@@ -465,12 +481,14 @@ function introYes() {
     try {   // P414 (R3-4): the PRF is zeroed even when signing throws before the seal
       if (S.phase !== 'intro') return;
       S.fa = c.fa; S.faS = c.fa_s;   // P539: the later sheets (confirm / sudo) say the same about this passkey
-      const obj = { mode: S.enable ? 'enable' : 'line' };   // P417 #185: the signature names what it is for
+      const obj = { mode: S.enable ? 'enable' : S.pty ? 'pty' : 'line' };   // P417 #185 · 0.26.9 #463: the signature names what it is for
       const signed = await signCtl('term_open', obj, c.n);
       const sealed = prf ? await sealPrf(c.epk, prf, c.n, 'term_open', obj) : {};
       closeSheet();
       S.phase = 'opening'; paintChrome(); status(t('p408.opening'));
-      openStep2({ t: 'term_open', ...(S.enable ? { mode: 'enable' } : {}), ...signed, fa, ...sealed });
+      const size = S.pty ? ptyOpen() : null;
+      if (size) S.sentSize = { cols: size.cols, rows: size.rows };
+      openStep2({ t: 'term_open', ...(S.enable ? { mode: 'enable' } : size || {}), ...signed, fa, ...sealed });
     } finally { prf?.fill(0); }
   }, (e) => {
     if (S.phase !== 'intro') return;
@@ -510,13 +528,15 @@ function ready(m) {
   status('');
   paintChrome();
   clearInterval(tick); tick = setInterval(onTick, 1000);
-  if (typeof m.cwd === 'string' && m.cwd) out(t('p408.cwd', { cwd: m.cwd.slice(0, 300) }) + '\n');
+  if (S.pty) ptyStart();   // 0.26.9 #463: the shell prints its own prompt (and cwd)
+  else if (typeof m.cwd === 'string' && m.cwd) out(t('p408.cwd', { cwd: m.cwd.slice(0, 300) }) + '\n');
   setInput(S.prefill); S.prefill = '';
   if (S.go) { const g = S.go; S.go = null; goInto(g); }
   const b = S.pendBang; S.pendBang = null;
   if (b) { collapse(); sendLine(b.line, b.sid); }   // P414: opened for a 「!」 line — it runs behind the chip
 }
 function setInput(v) {
+  if (S.pty && S.px) { if (v) { S.go = { cmd: String(v).replace(CTRL, ' ').slice(0, LINE_MAX), h: '', own: true }; paintGo(); } S.px.focus(); return; }   // 0.26.9: typed in only on a tap
   const i = $('term-input');
   if (v) i.value = String(v).replace(CTRL, ' ').slice(0, LINE_MAX);
   try { i.focus({ preventScroll: true }); i.setSelectionRange(i.value.length, i.value.length); } catch { /* old browsers */ }
@@ -625,6 +645,7 @@ function bang(line, sid, info) {
     // P414 (R3-1): a program is reading input — the line is never sent (it would be the program's input, e.g. a password);
     // the owner answers it in the full-screen terminal
     if (!S.atPrompt) { programWaits(); return false; }
+    if (S.pty) { expand(); ptyType(line); toast(t('pty.typed'), 4000); return true; }   // 0.26.9: typed into the PTY, Enter is the owner's
     return sendLine(line, sid);
   }
   if (S.phase !== 'idle') { toast(t('p414.opening'), 3000); return false; }
@@ -660,6 +681,7 @@ function go(m, info) {
 /** Empty input → the Agent's line goes in (not sent) with its note; the owner's own words stay → a chip to tap it in (H1b). */
 function goInto(g) {
   if (!g || !g.cmd) return;
+  if (S.pty) { S.go = g; paintGo(); return; }   // 0.26.9: never typed into the PTY without the owner's tap
   const i = $('term-input');
   if (!i.value) { i.value = g.cmd; S.go = null; S.goNote = true; setInput(''); }
   else S.go = g;
@@ -668,6 +690,7 @@ function goInto(g) {
 function takeGo() {
   const g = S.go;
   if (!g) return;
+  if (S.pty) { S.go = null; ptyType(g.cmd); S.goNote = true; paintGo(); return; }
   const i = $('term-input');
   if (i.value && S.hist[S.hist.length - 1] !== i.value) S.hist.push(i.value);   // the owner's words stay reachable with ↑
   i.value = g.cmd; S.go = null; S.goNote = true;
@@ -677,13 +700,13 @@ function paintGo() {
   if (!root) return;
   const c = $('term-gochip'), g = S.go;
   c.hidden = !g || S.phase !== 'ready';
-  c.textContent = g ? t('p414.goChip', { cmd: g.cmd.slice(0, 200) }) : '';
-  $('term-gonote').textContent = t('p414.goNote');
-  $('term-gonote').hidden = !(S.goNote && $('term-input').value) || S.phase !== 'ready';
+  c.textContent = g ? t(S.pty ? (g.own ? 'pty.ownChip' : 'pty.goChip') : 'p414.goChip', { cmd: g.cmd.slice(0, 200) }) : '';
+  $('term-gonote').textContent = t(S.pty ? 'pty.typed' : 'p414.goNote');
+  $('term-gonote').hidden = !(S.goNote && (S.pty || $('term-input').value)) || S.phase !== 'ready';
 }
 
 // ---------------------------------------------------------------- P414: 复制输出 · 截屏发到聊天
-const outText = () => { const pre = $('term-out'); return pre.firstChild.data + pre.lastChild.textContent; };
+const outText = () => { if (S.px) return S.px.text(); const pre = $('term-out'); return pre.firstChild.data + pre.lastChild.textContent; };
 async function copyOut() {
   const ok = await copyNow(outText()).catch(() => false);
   toast(t(ok ? 'p414.copied' : 'p414.copyFail'), 2600, ok ? 'success' : 'error');
@@ -691,7 +714,8 @@ async function copyOut() {
 /** The visible part of the output, drawn as it is shown (Noir ground, Lotion monospace), as a PNG in the message box's
  *  attachments; then the page collapses. Never sent by itself. */
 async function shot() {
-  const pre = $('term-out'), cs = getComputedStyle(pre);
+  const pty = S.px ? S.px.viewRows() : null;   // 0.26.9 #463: the PTY's rows on screen, one canvas row each
+  const pre = pty ? $('term-xt') : $('term-out'), cs = getComputedStyle(pre);
   const W = pre.clientWidth, Hh = pre.clientHeight, dpr = Math.min(2, globalThis.devicePixelRatio || 1);
   if (!W || !Hh) return;
   const c = document.createElement('canvas');
@@ -699,10 +723,12 @@ async function shot() {
   const g = c.getContext('2d');
   g.scale(dpr, dpr);
   g.fillStyle = '#2c2b26'; g.fillRect(0, 0, W, Hh);
-  const fs = parseFloat(cs.fontSize) || 14, lh = parseFloat(cs.lineHeight) || fs * 1.5;
+  let fs = parseFloat(cs.fontSize) || 14, lh = parseFloat(cs.lineHeight) || fs * 1.5;
   const pl = parseFloat(cs.paddingLeft) || 16, pr = parseFloat(cs.paddingRight) || 16, pt = parseFloat(cs.paddingTop) || 12;
-  g.font = `${cs.fontWeight || 400} ${fs}px ${cs.fontFamily}`; g.fillStyle = '#faf9f5'; g.textBaseline = 'middle';
-  const rows = wrapRows(g, outText(), W - pl - pr);
+  if (pty) { lh = (Hh - pt) / Math.max(1, pty.length); fs = Math.max(8, Math.floor(lh / 1.2)); }
+  g.font = `${cs.fontWeight || 400} ${fs}px ${pty ? S.px.term.options.fontFamily : cs.fontFamily}`; g.fillStyle = '#faf9f5'; g.textBaseline = 'middle';
+  if (pty) pty.forEach((r, k) => g.fillText(r, pl, pt + k * lh + lh / 2));
+  const rows = pty ? [] : wrapRows(g, outText(), W - pl - pr);
   const first = Math.max(0, Math.floor((pre.scrollTop - pt) / lh)), n = Math.ceil(Hh / lh) + 1;
   rows.slice(first, first + n).forEach((r, k) => g.fillText(r, pl, pt + (first + k) * lh - pre.scrollTop + lh / 2));
   const blob = await new Promise((res) => c.toBlob(res, 'image/png'));
@@ -730,6 +756,7 @@ export function wrapRows(g, text, maxW) {
 // ---------------------------------------------------------------- output: text only, \r / \b handled, memory only
 let col = 0;
 function out(data) {
+  if (S.px) return;   // 0.26.9: never drawn into the program's screen (and no toast over the next sheet's buttons)
   const pre = $('term-out'), done_ = pre.firstChild, cur = pre.lastChild;
   const near = pre.scrollHeight - pre.scrollTop - pre.clientHeight < 48;
   let line = cur.textContent;
@@ -765,6 +792,12 @@ function onMsg(m) {
     if (m.t === 'term_close' && S.phase === 'opening') refuse(CLOSE_WHY.includes(m.why) ? m.why : 'host');
     return;
   }
+  if (m.t === 'term_out' && S.pty) {   // 0.26.9 #463: the raw VT stream (masked by the host), escape sequences kept
+    const d = typeof m.d === 'string' ? m.d : typeof m.data === 'string' ? m.data : '';
+    if (d && S.px) S.px.write(d.slice(0, 65536));
+    if (m.prompt === true) S.atPrompt = true;
+    return;
+  }
   if (m.t === 'term_out') { if (typeof m.data === 'string') out(m.data.slice(0, 65536)); if (m.prompt === true) { S.atPrompt = true; paintProg(); } return; }
   if (m.t === 'term_bang') return onBang(m);                               // P414 (§37.12)
   if (m.t === 'term_confirm') { expand(true); return confirmLine(m); }      // P414: a card that needs the owner brings the page up
@@ -782,8 +815,8 @@ function confirmLine(m) {
   const bangSid = S.bang && S.bang.seq === m.seq ? S.bang.sid : null;   // §37.12: the signed resend keeps `bang`
   openSheet({ kind: agent ? 'agent' : 'confirm', title: t(agent ? 'p414.agentTitle' : 'p408.confirmTitle'), pre: line,
     text: agent ? t('p414.agentText') : why ? t('p408.confirmWhy', { why }) : '', yes: t('p408.run'), no: t('sheet.cancel'),
-    ttl: 120000, pk: uv ? { fa: S.faS || null } : null, onExpire: () => { out(t('p408.expired') + '\n'); notRun(m.seq); if (bangSid) bangEnd(bangSid); },
-    onNo: () => { out(t('p408.notRun') + '\n'); notRun(m.seq); if (bangSid) { bangEnd(bangSid); restore(line); } },
+    ttl: 120000, pk: uv ? { fa: S.faS || null } : null, onExpire: () => { out(t('p408.expired') + '\n'); notRun(m.seq); ptyRefuse(true); if (bangSid) bangEnd(bangSid); },
+    onNo: () => { out(t('p408.notRun') + '\n'); notRun(m.seq); ptyRefuse(); if (bangSid) { bangEnd(bangSid); restore(line); } },
     onYes: () => {
       let p;
       if (!uv) p = Promise.resolve({ fa: undefined });
@@ -886,7 +919,102 @@ function paintChrome() {
   root.dataset.phase = S.phase;
   $('term-tools').hidden = S.phase !== 'ready';
   $('term-exit').hidden = $('term-grab').hidden = S.phase !== 'ready';
+  // 0.26.9 #463: the PTY replaces the line input and its keys; line mode says plainly what it cannot run
+  root.dataset.mode = S.pty ? 'pty' : 'line';
+  if (S.pty) $('term-form').hidden = $('term-keys').hidden = true;
+  $('term-lineonly').hidden = S.pty || S.phase !== 'ready';
+  $('term-nopw').textContent = S.pty ? t('p414.reads') : t('p408.noPw') + ' ' + t('p414.reads');
   paintLeft(); paintProg(); paintGo(); paintChip();
+}
+
+// ---------------------------------------------------------------- 0.26.9 #463: the PTY (js/termpty.js + vendor/xterm)
+let ptyMod = null, ptyWait = null;
+/** termpty.js calls this once it has loaded (it imports this module back — the same instance). */
+export function registerPty(api) { ptyMod = api; ptyWait?.ok(api); ptyWait = null; }
+/** The xterm page, as a module script next to this file (like termhook.js loads this one): never before a PTY open. */
+function loadPty() {
+  if (ptyMod) return Promise.resolve(ptyMod);
+  if (ptyWait) return ptyWait.p;
+  let ok, no;
+  const w = { p: new Promise((a, b) => { ok = a; no = b; }) };
+  w.ok = ok; ptyWait = w;
+  const s = document.createElement('script');
+  s.type = 'module'; s.src = new URL('./termpty.js', import.meta.url).href;
+  s.onerror = () => { if (ptyWait === w) ptyWait = null; s.remove(); no(new Error('load')); };
+  document.head.appendChild(s);
+  setTimeout(() => { if (ptyWait === w) { ptyWait = null; no(new Error('timeout')); } }, 15000);
+  return w.p;
+}
+/** §A: cols 20..400, rows 5..200. */
+export const clampSize = (c, r) => ({ cols: Math.max(20, Math.min(400, Math.floor(Number(c) || 80))), rows: Math.max(5, Math.min(200, Math.floor(Number(r) || 24))) });
+function ptyOpen() { const g = S.size || ptyMod?.guess() || { cols: 80, rows: 24 }; return { mode: 'pty', ...clampSize(g.cols, g.rows) }; }
+function ptyStart() {
+  if (!ptyMod || S.px) return;
+  const host = $('term-xt');
+  host.hidden = false; host.parentElement.firstElementChild.hidden = true;   // the line-mode output steps aside
+  S.px = ptyMod.mount(host, { data: ptyIn, resize: ptyResize });
+  root.querySelector('.term-bottom').insertBefore(S.px.bar, $('term-tools'));
+  const z = S.px.fit();
+  ptyResize(z.cols, z.rows);
+  S.px.focus();
+}
+/** Everything xterm hands over (keys, a paste, its replies to the program) → term_in, in order. Nothing while a sheet is up. */
+function ptyIn(d) {
+  if (S.phase !== 'ready' || !S.pty || !d || sheet) return;
+  const n = utf8Len(d);
+  if (S.inQb + n > PTY_QUEUE) { toast(t('pty.tooMuch'), 4000, 'error'); return; }
+  S.inQ.push(d); S.inQb += n;
+  if (/[\r\n]/.test(d)) { S.atPrompt = false; if (S.goNote) { S.goNote = false; paintGo(); } }
+  ptyFlush();
+}
+/** ≤ PTY_FRAME bytes a frame, ≤ PTY_RATE bytes a second (a token bucket); the rest waits, in order. */
+function ptyFlush() {
+  clearTimeout(S.inTimer); S.inTimer = 0;
+  if (S.phase !== 'ready') { S.inQ = []; S.inQb = 0; return; }
+  const now = Date.now();
+  S.budget = Math.min(PTY_RATE, S.budget + (S.budgetAt ? (now - S.budgetAt) * PTY_RATE / 1000 : 0)); S.budgetAt = now;
+  while (S.inQ.length) {
+    const [part, rest] = cut(S.inQ[0], Math.min(PTY_FRAME, Math.floor(S.budget)));
+    if (!part) break;
+    send({ t: 'term_in', id: S.id, seq: ++S.inSeq, d: part });
+    const b = utf8Len(part); S.budget -= b; S.inQb -= b;
+    if (rest) S.inQ[0] = rest; else S.inQ.shift();
+  }
+  if (S.inQ.length) S.inTimer = setTimeout(ptyFlush, 50);
+}
+export function utf8Len(s) { let n = 0; for (const ch of String(s)) { const c = ch.codePointAt(0); n += c < 0x80 ? 1 : c < 0x800 ? 2 : c < 0x10000 ? 3 : 4; } return n; }
+/** The longest head of `s` whose UTF-8 is ≤ max bytes, cut between code points. → [head, rest]. */
+export function cut(s, max) {
+  let n = 0, i = 0;
+  for (const ch of s) { const k = utf8Len(ch); if (n + k > max) break; n += k; i += ch.length; }
+  return [s.slice(0, i), s.slice(i)];
+}
+/** The grid changed (fit: the window, the soft keyboard, the orientation) → term_resize once it settles, only when it differs. */
+function ptyResize(cols, rows) {
+  const z = clampSize(cols, rows);
+  S.size = z;
+  if (S.phase !== 'ready' || !S.pty) return;
+  clearTimeout(S.rsTimer);
+  S.rsTimer = setTimeout(() => {
+    if (S.phase !== 'ready' || (S.sentSize && S.sentSize.cols === z.cols && S.sentSize.rows === z.rows)) return;
+    S.sentSize = z;
+    send({ t: 'term_resize', id: S.id, cols: z.cols, rows: z.rows });
+  }, 120);
+}
+/** A command typed in for the owner — never with Enter (the host's confirm still sees the line when Enter comes). */
+function ptyType(cmd) { if (S.px && cmd) { S.px.type(cmd); S.px.focus(); } }
+/** A dangerous line refused / expired in the PTY: Ctrl+U clears it at the prompt (§A: the host holds the Enter). */
+function ptyRefuse(expired = false) {
+  if (!S.pty || !S.px || S.phase !== 'ready') return;
+  send({ t: 'term_in', id: S.id, seq: ++S.inSeq, d: '\u0015' });
+  if (expired && !sheet) toast(t('p408.expired'), 3600);   // the owner did not answer: say so once (取消 needs no words)
+}
+function ptyDrop() {
+  clearTimeout(S.inTimer); clearTimeout(S.rsTimer); S.inQ = []; S.inQb = 0;
+  if (S.px) { try { S.px.dispose(); } catch { /* already gone */ } S.px = null; }
+  if (!root) return;
+  const host = $('term-xt');
+  host.hidden = true; host.parentElement.firstElementChild.hidden = false;
 }
 function paintLeft() {
   if (!root || S.phase !== 'ready') return;
@@ -900,5 +1028,10 @@ register({
   gone: () => dropped(),
   isOpen: () => S.phase === 'ready',
   _debug: () => ({ phase: S.phase, id: S.id, seq: S.seq, hist: [...S.hist], atPrompt: S.atPrompt, login: !!S.login, sheet: sheet && sheet.kind, queued: queue.length,
-    view: S.view, bang: S.bang && S.bang.sid, go: !!S.go }),
+    view: S.view, bang: S.bang && S.bang.sid, go: !!S.go,
+    pty: S.pty, px: !!S.px, size: S.px ? S.px.size() : null, sentSize: S.sentSize, inSeq: S.inSeq, mods: S.px ? S.px.mods() : null,
+    screen: S.px ? S.px.viewRows() : null,
+    link: S.px ? !!S.px.term.options.linkHandler && S.px.term.options.linkHandler.allowNonHttpProtocols === false : null }),   // 0.26.9 L-2
+  /** 0.26.9 L-2 (tests): what the live xterm's OSC 8 handler does with a link — true = opened (https only). */
+  _link: (uri) => (S.px ? S.px.term.options.linkHandler?.activate?.({ preventDefault() {} }, uri) === true : null),
 });

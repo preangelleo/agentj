@@ -223,10 +223,33 @@ def _due(st, *, now=None, blocked=False, stopped=False, rand=secrets.randbelow, 
     return reason == 'check'
 
 
-def download(url, limit):
+# #475: a slow or flaky link (a paid macOS host: download_failed after 30 s) gets a longer read timeout and a bounded
+# same-URL retry with backoff. Only transport failures retry; 4xx answers, a refused redirect or an oversized artifact do not.
+DOWNLOAD_TIMEOUT = 90
+DOWNLOAD_TRIES = 3
+DOWNLOAD_BACKOFF = (3, 10)
+
+
+def _transient(e):
+    import http.client
+    import urllib.error
+    if isinstance(e, urllib.error.HTTPError):
+        return e.code >= 500 or e.code in (408, 429)
+    return isinstance(e, (OSError, http.client.HTTPException))
+
+
+def download(url, limit, *, sleep=time.sleep, opener=None):
     req = urllib.request.Request(url, headers={'User-Agent': 'agentj-upgrade/1'})
-    with update.open_download(req, timeout=30) as r:
-        data = r.read(limit + 1)
+    for attempt in range(1, DOWNLOAD_TRIES + 1):
+        try:
+            with (opener or update.open_download)(req, timeout=DOWNLOAD_TIMEOUT) as r:
+                data = r.read(limit + 1)
+            break
+        except Exception as e:  # noqa: BLE001 — re-raised unchanged; only the attempt count is attached
+            if attempt == DOWNLOAD_TRIES or not _transient(e):
+                e.download_attempts = attempt
+                raise
+            sleep(DOWNLOAD_BACKOFF[attempt - 1])
     if len(data) > limit:
         raise ValueError('artifact_too_large')
     return data
@@ -241,6 +264,8 @@ def cached_wheel(st, version, *, fetch=download, require_signature=True):
         import zipfile
         if isinstance(exc, zipfile.BadZipFile):
             evidence['subreason'] = 'bad_zip'
+        if type(getattr(exc, 'download_attempts', None)) is int:   # #475
+            evidence['download_attempts'] = exc.download_attempts
         exc.artifact_diagnostic = upgrade_diag.artifact_fields(evidence)
         raise
 
@@ -433,6 +458,9 @@ def finish(st, result, diag=None):
     result.update(upgrade_diag.exception_fields(diag or {}))
     if (diag or {}).get('step') == 'download':
         result.update(step='download', detail=diag.get('detail', 'Exception'))
+    if result.get('result') != 'ok' and (diag or {}).get('failure') == 'permission_denied':   # #475: who owns the files
+        own = update.owner_check({'reason': 'permission_denied'})
+        result.update({k: own[k] for k in ('owner_kind', 'fix') if k in own})
     with st.config_lock():
         _finish(st, result)
     _diagnose(st, result, diag or {})
@@ -476,7 +504,7 @@ def _finish(st, result):
 
 
 def notice(r, lang='zh', prefs=None, harness=None):
-    from . import humane, upgrade_diag
+    from . import humane, upgrade_diag, upgrade_owner
     summary = release_notes.filter_text(r.get('summary_en') if lang == 'en' else r.get('summary'), harness)
     if r.get('result') == 'ok' and r.get('when') == 'idle':
         return (f"Agent J host updated automatically while idle to {r['to']} ({summary or 'latest published fixes'})." if lang == 'en' else
@@ -485,7 +513,8 @@ def notice(r, lang='zh', prefs=None, harness=None):
         summary = summary or humane.say('update.auto_ok_default', lang)
         return humane.say('update.auto_ok', lang, prefs, to=r['to'], summary=str(summary).rstrip('。.'))
     if r.get('result') == 'rolled_back':
-        return humane.say('update.auto_rollback', lang, prefs, **{'from': r['from'], 'reason': r['reason']})
+        own = (' ' + upgrade_owner.sentence(r, lang)) if r.get('owner_kind') and r.get('fix') else ''   # #475
+        return humane.say('update.auto_rollback', lang, prefs, **{'from': r['from'], 'reason': r['reason']}) + own
     text = (f"Automatic update did not complete ({r['reason']}); run agentj doctor." if lang == 'en' else
             f"自动升级未完成，原因：{r['reason']}；请运行 agentj doctor。")
     if upgrade_diag.install_unchanged(r):
@@ -557,7 +586,7 @@ def run(st, *, check_fn=update.check, cache=cached_wheel, runner=quiet, restart=
     if update.market_managed():
         return update.market_result()
     # Load result/notice/redaction code before uv can remove this tool environment.
-    from . import phone_update, service_recovery, upgrade_diag, humane, privacy  # noqa: F401
+    from . import phone_update, service_recovery, upgrade_diag, humane, privacy, upgrade_owner  # noqa: F401
     fd = os.open(st.root/'auto-update-worker.lock', os.O_CREAT | os.O_RDWR, 0o600)
     fcntl.flock(fd, fcntl.LOCK_EX)
     job = read(st, JOB)

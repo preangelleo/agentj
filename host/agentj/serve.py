@@ -27,13 +27,15 @@ from websockets.asyncio.client import connect
 from .text import one, pick
 from . import agent as agents
 from .shared import SharedClaudeAgent
-from . import action_policy, confirm_tier, harness_cmds, notices, activity, approvals, cloud, controls, danger, fence, gate, memory, slash, tasks, update, webpush, wire
+from . import action_policy, confirm_tier, harness_cmds, notices, activity, approvals, cloud, controls, danger, fence, gate, login_flow, memory, slash, tasks, update, webpush, wire
 from . import asr as asr_mod
 from . import terminal as term_mod   # P408 (§38): the web terminal (terminal.py, term_*.py)
 from . import cmdrun, compose, history, hsearch, humane, inbox, menu, uploads, preferences, proxy, provenance
 from . import receipts as receipts_mod  # P313: say receipts on disk — a restart never runs a phone message twice
 from . import meeting  # P182: /会议总结 → minutes, recipients only from the owner's words
 from . import diskq  # P142: fsync'ed state writes off the loop (one ordered writer)
+from . import approval_policy, budget as budget_mod, interrupts as interrupts_mod, privacy   # 0269-w3-policy E1 / E3 / E4
+from .background_done import chain_turn as _chain_turn   # E2
 from . import approval_jev  # opaque verdict metadata; model opinions never authorize effects
 from . import owner_grant  # P574: same-owner task grant (one Face ID, checked by the other hosts)
 from . import goal as goal_mod  # P158: /goal — one signed grant, reversible steps pass after a 10 s card
@@ -43,6 +45,7 @@ from . import loopwatch  # P136: what was running when the loop stalled
 from . import jcards  # P360 (§34): Agent J Cards — the logo menu from card 6 on (template cards, read-only data)
 from . import relaydiag  # P317: why a relay leg is not up (journal / status / doctor)
 from . import reset as reset_mod  # P332 (§33): 紧急修复 — the reset ladder, support help, repair actions
+from . import assist as assist_mod  # 0269-w2-assist (#468, §41): official remote assist — signed tasks over the friend path
 from . import media as media_mod  # F21: files the Agent shows to the phone (PROTOCOL §13)
 from . import elevate  # F17: sudo + secret cards (PROTOCOL §11)
 from . import pair_card  # P153: add a remote from a remote (PROTOCOL §3.3)
@@ -169,6 +172,7 @@ P33_ONLY = ("say", "say_cancel", "say_sync", "cmd_cancel", "blob_open", "blob_ch
             "dev_rename",    # P179 (§10.16a): a remote renames itself
             "hist_find", "hist_read",     # P188 · P247 (owner-level read sync) (§28): chat search, a read like hist_get
             "auth_get", "auth_start", "auth_cancel", "auth_press",   # P258 (§31): AI 登录救援
+            "auth_rescue",              # 0269-login (§31.1): 「重新登录」 under a reply — signed login / code / cancel
             "acct_get", "acct_use", "acct_rename", "acct_del",       # #427: several accounts per harness (accounts.py)
             "imsg_check", "imsg_fda",   # P274 (§10.21): the iMessage card's 「重新检测」 / 「在Agent J 主机上打开授权页」
             "qr_cancel",                # P314 (§32): cancel the automatic continue after a used-up usage limit
@@ -339,6 +343,7 @@ class Ask:
     tg_by: str = ""                # P573: the task grant (its signed parent rid) that answered this still-open card
     only: str | None = None        # P574: origin remote alone may see or answer a task grant
     fa: dict | None = None         # P574: the verified assertion of an owner-grant card (owner_grant.proof_of)
+    prow: str = ""                 # 0269-w3-policy: the card's class (approval_policy.ROWS) — shown with why the task does not cover it
 
 
 @dataclass
@@ -691,7 +696,11 @@ class Host:
         self.elevate = elevate.Elevator(self)   # F17: admin password / secret cards (PROTOCOL §11)
         from .auth_rescue import Rescue
         self.auth_rescue = Rescue(self)          # P258: AI 登录救援 (subscription login expired → re-login from the phone)
+        from .assist import Assist
+        self.assist = Assist(self)               # 0269-w2-assist (#468, §41): official remote assist = signed tasks, never a terminal
         self.reset_desk = reset_mod.Desk(self)    # P332 (§33): reset / rescue_do, one run at a time, also during an e-stop
+        from .turn_heal import TurnHeal
+        self.turn_heal = TurnHeal(self)           # 0269 (#461): stuck-turn watchdog; /clear /new / reset preempt the turn
         self.cmd_desk = cmdrun.Desk(self)         # P361 (§34): Settings 「执行」, one run at a time
         self.term_desk = term_mod.Desk(self)      # P408 (§38): 网页终端 — one line-mode terminal at a time
         from .capability import Capabilities
@@ -705,6 +714,8 @@ class Host:
         self.busy.trusted = lambda: not provenance.untrusted_turn(self.agent) or provenance.unattended_turn(self.agent) in ("system", "scheduled_task")
         from .busy_launch import Launch
         self.busy.launch = Launch(st.root)      # #450: outside jobs inherit a trusted launching turn (ADR-#450)
+        self.busy.chain = self.busy.launch.current_chain   # 0269-w3-policy E2: native jobs started in an owner turn
+        self.interrupts = interrupts_mod.Counter(st.root)  # E4: cards / questions per task, counts only
         from .peer_origin import Launches, register
         self.peer_launch = Launches(st.root)    # #455: owner-signed systemd-run units whose sessions may speak same_host
         with contextlib.suppress(Exception):    # #455 F3 B: the dispatch registry, before any fence starts (stat only)
@@ -1235,6 +1246,9 @@ class Host:
         elif t in PKPEER_TYPES:                # P547: Face ID set up with another remote's approval (pkpeer.py)
             if s.p33:
                 await self.pkpeer.on_phone(s, t, obj)
+        elif t in assist_mod.PHONE_TYPES:      # 0269-w2-assist (§41): assist_grant (signed + Face ID) · assist_revoke (signed)
+            if s.p33:
+                await self.assist.on_phone(s, t, obj)
         elif t in SEAT_XFER_TYPES:             # P547: seat transfer — signed + this remote's Face ID (seat_transfer.py)
             if s.p33:
                 await self.seat_xfer.on_phone(s, t, obj)
@@ -1321,6 +1335,9 @@ class Host:
         elif t == "approval_set":       # P336 (§8): approval level / goal without the opening card — signed, never pref_set
             if s.p33:
                 await self.on_approval_set(s, obj)
+        elif t in ("budget_get", "budget_set"):   # 0269-w3-policy (§42): the owner's day / month budget (budget.py)
+            if s.p33:
+                await self.on_budget(s, t, obj)
         elif t == "forward_set":        # P554 (§8): the forward button's destination, one host setting for every remote (signed)
             if s.p33:
                 await self.on_forward_set(s, obj)
@@ -2347,6 +2364,7 @@ class Host:
                                              **self._agent_phase(),
                                              "asks": len(self.asks), "estop": self.estop,
                                              "task_running": self.scheduler.current_id,
+                                             "turn": self.turn_heal.view(),     # 0269: stuck-turn state for doctor
                                              "friends": self.peers.status_view() if self.peers is not None else None,
                                              "wechat": self.wechat.status() if self.wechat is not None else None,
                                              "telegram": self.telegram.status_view() if self.telegram is not None else None,
@@ -2794,6 +2812,8 @@ class Host:
         if s.p33: await self.send_app(s, self.preferences_msg(s))
         if s.p33: await self.remotes.send_state(s)    # P525: repair changes missed while disconnected
         await self.send_app(s, self._estop_msg())
+        with contextlib.suppress(Exception):           # 0269-w2-assist (§41): the grant's state + recent tasks
+            await self.assist.on_ready(s)
         if s.p33 and self.auth_rescue.needs_dot():       # P258: the red dot reaches a phone that was away
             await self.send_app(s, {"t": "auth_rescue", "view": await asyncio.to_thread(self.auth_rescue.view)})
         if s.p33 and self.quota_resume.items:            # P314 (§32): 「额度用完，预计 HH:MM 自动继续」
@@ -3024,6 +3044,7 @@ class Host:
         from . import jev
         info["jev"] = jev.resolve(st=self.st, prefs=self.preferences).public()
         info["signed_prefs"] = list(approval_level.KEYS)   # P336: changed only by the signed `approval_set` control
+        info["budget"] = 1                                   # 0269-w3-policy (§42): budget_get / budget_set (budget.py)
         info["forward_set"] = True                          # P554: a phone changes ui.forward_destination only by the signed `forward_set`
         info["run_cmds"] = self._terminal_commands()           # P361 (§34): the names Settings may 「执行」
         with contextlib.suppress(Exception):               # P408 (§38): this device's row (me / sudo mode / web_ok)
@@ -3660,6 +3681,56 @@ class Host:
         await self._send_ready(lambda x: self.preferences_msg(x))
         await self._ctl_res(s, r, "forward_set", True, dest=dest, migrated=migrate)
 
+    async def on_budget(self, s: Session, t: str, obj: dict) -> None:
+        """0269-w3-policy E3 (PROTOCOL §42): `budget_get` → `budget_state`; `budget_set` signed (§8 control-v1) — raising
+        (a first / higher limit, another currency) also needs this remote's Face ID, lowering / clearing does not."""
+        r = obj.get("r")
+        if not wire.is_rid(r):
+            return
+        if t == "budget_get":
+            return await self.send_app(s, await asyncio.to_thread(budget_mod.phone_msg, self.st, r))
+        tgt = budget_mod.fields(obj)            # only the fields the phone sent (web wire.js), e.g. {"day": 10}
+        if not tgt or any(isinstance(v, bool) or not budget_mod.amount_ok(v) for v in tgt.values()):
+            return await self._ctl_res(s, r, "budget_set", False, why="shape")
+        if self.stopped():
+            return await self._ctl_res(s, r, "budget_set", False, why="estop")
+        old = await asyncio.to_thread(budget_mod.state, self.st)
+        widen = budget_mod.raises(old, budget_mod.apply(old, tgt))   # from none counts as from 0
+        pk = self.st.passkey_of_device(s.device) if widen else None
+        if widen and not pk:
+            controls.log(self.st, action="budget_set", device=s.device, result="refused:no_passkey")
+            return await self._ctl_res(s, r, "budget_set", False, why="no_passkey")
+        ch = None
+        if pk:
+            n = obj.get("n")
+            if not isinstance(n, str) or not re.fullmatch(r"[0-9a-f]{32}", n):
+                return await self._ctl_res(s, r, "budget_set", False, why="shape")
+            ch = passkey.elevate_challenge(self.channel, s.device, n, "budget_set", n, controls.object_digest("budget_set", tgt))
+            if obj.get("fa") is None:
+                return await self._ctl_res(s, r, "budget_set", False, why="passkey_required", fa=pk["id"],
+                                           fa_s=passkey.pk_state(pk), fa_ch=wire.b64u(ch))
+        why = controls.check(self.st, self.nonces, self.channel, s.device, obj, "budget_set", tgt)
+        if not why and pk:
+            try:
+                f = passkey.approval_fields(obj.get("fa"))
+                if f["id"] != pk["id"]:
+                    raise passkey.PasskeyError("bad", "credential")
+                self.st.passkey_count(s.device, pk["id"], passkey.verify_assertion(pk, f, ch))
+            except (passkey.PasskeyError, ValueError):
+                why = "passkey_failed"
+        if why:
+            controls.log(self.st, action="budget_set", device=s.device, result="refused:" + why,
+                         extra={"passkey": "uv"} if pk else None)
+            return await self._ctl_res(s, r, "budget_set", False, why=why)
+        await asyncio.to_thread(budget_mod.store_signed, self.st, tgt, s.device,
+                                {"n": obj["n"], "ts": obj["ts"], "sig": obj["sig"]})
+        controls.log(self.st, action="budget_set", device=s.device, result="ok", obj=tgt, sig=obj.get("sig"), n=obj.get("n"),
+                     ts=obj.get("ts"), extra={"passkey": "uv"} if pk else None)
+        self.st.log("budget_set", device=s.device, status="raise" if widen else "lower")
+        msg = await asyncio.to_thread(budget_mod.phone_msg, self.st)
+        self._post(self._send_p33, lambda x: msg)
+        await self._ctl_res(s, r, "budget_set", True, **{k: v for k, v in msg.items() if k != "t"})
+
     async def on_approval_set(self, s: Session, obj: dict) -> None:
 
         r = obj.get("r")
@@ -3974,13 +4045,15 @@ class Host:
             self.emit("agent_msg", text=clean(chunk, wire.MAX_TEXT))
             e = self._remember("agent", chunk)
             self._post(self._send_legacy, lambda s, e=e: self._render(e, s))
+        tid = None
         if self.cur_turn is not None and self.hist.get(self.cur_turn) is not None:
             changed = self.hist_update(self.cur_turn, append=text)
             if changed:
                 self.cur_turn = changed[-1]["id"]
-            self.media_later(self.cur_turn)
+            self.media_later(tid := self.cur_turn)
         elif not _echo_page(self, text):    # the Agent spoke outside a turn of ours (e.g. a background task finished)
-            self.media_later(self.hist_add(self._agent_src(), text, "done")["id"])
+            self.media_later(tid := self.hist_add(self._agent_src(), text, "done")["id"])
+        login_flow.on_text(self, tid, text)    # 0269-login: a harness login failure → 「重新登录」 under this page
 
     def proactive_turn(self, via: str) -> None:
 
@@ -4050,12 +4123,13 @@ class Host:
         if tid is None:     # P205 (6): a finished page of its own (e.g. 后台任务完成) — its files are offered like any page's
             if _echo_page(self, text):
                 return
-            self.media_later(self.hist_add(self._agent_src(), text, "done")["id"])
+            self.media_later(tid := self.hist_add(self._agent_src(), text, "done")["id"])
         else:
             changed = self.hist_update(tid, append=text)
             if changed:
                 self.desktop_turn = changed[-1]["id"]
-            self.media_later(self.desktop_turn)
+            self.media_later(tid := self.desktop_turn)
+        login_flow.on_text(self, tid, text)
 
     def desktop_end(self) -> None:
         self.proactive_via = None
@@ -4069,7 +4143,7 @@ class Host:
     def agent_recovery_notice(self, text: str) -> None:
         self.agent_notice(text, recovery=True)
 
-    def agent_notice(self, text: str, *, recovery=False) -> None:
+    def agent_notice(self, text: str, *, recovery=False, card: dict | None = None) -> int | None:
         from .system_text import remote
         text = remote(one(self.lang, text))       # P128: a legacy "中文 / English" notice reaches the phone in one language
         local, self.notice_local = getattr(self, "notice_local", False), False
@@ -4077,8 +4151,10 @@ class Host:
         self.emit("agent_notice", text=text)
         e = self._remember("notice", text)
         self._post(self._send_legacy, lambda s, e=e: self._render(e, s))
-        self.hist_add({"k": "sys", "text": "", **({"local": True} if local else {})}, text, "done",
-                      card={"recovery": "restart_session"} if recovery else None)
+        t = self.hist_add({"k": "sys", "text": "", **({"local": True} if local else {})}, text, "done",
+                          card={"recovery": "restart_session"} if recovery else card)
+        login_flow.mark(self, t["id"], login_flow.take_pending(self))   # 0269-login: an adapter's login failure notice
+        return t["id"]
 
     def channel_notice(self, text: str, card: dict, files=()) -> dict:
         from .system_text import remote
@@ -4274,7 +4350,9 @@ class Host:
         if getattr(self, "heartbeat", None) is not None:
             self.heartbeat.usage_start(send)
         if (launch := getattr(getattr(self, "busy", None), "launch", None)) is not None:
-            launch.turn(self.busy.trusted())
+            owner_words = (text if send is not None and provenance.is_owner(getattr(send, "source", None))
+                           and isinstance(text, str) else None)
+            launch.turn(self.busy.trusted(), words=privacy.redact(owner_words) if owner_words else None)   # E2: owner chain
         self.turn_t0 = time.monotonic()
         self.turn_shown, self.turn_at = False, (time.time(), 0.0, False)
         _hb_touch(self)
@@ -4299,6 +4377,8 @@ class Host:
         if (launch := getattr(getattr(self, "busy", None), "launch", None)) is not None:
             launch.end()
         self.st.log("turn_end", agent=self.agent.kind if self.agent else None)
+        if getattr(self, "turn_heal", None) is not None:
+            self.turn_heal.turn_ended()
         _hb_touch(self)
         halted = bool(self.agent and self.agent.halting)
         secs = time.monotonic() - self.turn_t0 if self.turn_t0 else None
@@ -4481,6 +4561,9 @@ class Host:
         if a.allow_offer and not a.goal_add:   # P296: unticked 「以后发给 X 不用再确认」 boxes on the mail card
             m["allow_offer"] = list(a.allow_offer)
         m["reason"] = a.reason or ""
+        if a.prow:                        # 0269-w3-policy (PROTOCOL §42): class + why the owner's task does not cover it
+            from . import approval_policy
+            m.update(approval_policy.card_fields(a.prow, card_lang(self.lang)))
         return m
 
     # ------------------------------------------------------------ batch approval (ADR-A48)
@@ -4546,7 +4629,7 @@ class Host:
             return None
         return rec
 
-    def _park(self, a: Ask, base: dict, summary: str, key: tuple, unattended: str | None = None) -> dict:
+    def _park(self, a: Ask, base: dict, summary: str, key: tuple, unattended: str | None = None, why: str = "no_remote") -> dict:
 
         parked = [x for x in self.asks.values() if x.parked and not x.fut.done()]
         for old in parked[:max(0, len(parked) - approval_level.PARK_MAX + 1)]:
@@ -4557,12 +4640,14 @@ class Host:
         loop = asyncio.get_running_loop()
         timer = loop.call_later(approval_level.PARK_SECS, lambda: a.fut.done() or a.fut.set_result(("deny", None, None, None)))
         a.fut.add_done_callback(lambda f: (timer.cancel(), self._park_settle(a, base, summary)))
-        approvals.record(self.st, **base, decision="deny", reason="offline")
-        self.st.log("ask_parked", id=a.rid, tool=a.tool, reason="no_remote", **({"via": unattended} if unattended else {}))
-        self.activity("decision", id=a.rid, tool=a.tool, result="parked", reason="offline", cats=a.cats, task=a.task,
+        r = "unanswered" if why == "unanswered" else "offline"
+        approvals.record(self.st, **base, decision="deny", reason=r)
+        self.st.log("ask_parked", id=a.rid, tool=a.tool, reason=why, **({"via": unattended} if unattended else {}))
+        self.activity("decision", id=a.rid, tool=a.tool, result="parked", reason=r, cats=a.cats, task=a.task,
                       summary=summary[:200])
         self.emit("ask_parked", id=a.rid)
-        return {"behavior": "deny", "message": approval_level.nobody_text(card_lang(self.lang))}
+        return {"behavior": "deny", "message": approval_level.waiting_text(card_lang(self.lang)) if why == "unanswered"
+                else approval_level.nobody_text(card_lang(self.lang))}
 
     # ------------------------------------------------------------ P539 (#300): 「这台遥控器上 Computer Use 免问」 (preauth.py)
     def _preauth_use(self, g: dict, base: dict, tool: str, tool_input: dict, summary: str, v) -> dict:
@@ -4823,7 +4908,8 @@ class Host:
     async def ask(self, tool: str, tool_input: dict, gone: asyncio.Future | None = None, batch: bool = True, risk_scope: bool = False, require_passkey: bool = False, context: dict | None = None,
                   ttl: float | None = None, grant_info: bool = False, origin: str | None = None,
                   allow_offer: list | None = None, _company_proposal=None, bind: dict | None = None,
-                  avatar: str | None = None, background: str | None = None, always_ask: bool = False, task_actions: list | None = None, task_target: dict | None = None, only: str | None = None, _receipt: dict | None = None) -> dict:
+                  avatar: str | None = None, background: str | None = None, always_ask: bool = False, task_actions: list | None = None, task_target: dict | None = None, only: str | None = None, _receipt: dict | None = None,
+                  known_recipients: bool = False) -> dict:
 
         def observe(reason, shown=None):
             if type(_receipt) is dict:
@@ -4835,7 +4921,8 @@ class Host:
             from . import owner_channels
             return await owner_channels.ask(self, via, lambda lbl: self.ask(
                 tool, tool_input, gone, batch, risk_scope, require_passkey, context, ttl, grant_info, origin, allow_offer,
-                _company_proposal, bind, avatar=lbl, background=background, always_ask=always_ask, task_actions=task_actions, task_target=task_target, only=only, _receipt=_receipt))
+                _company_proposal, bind, avatar=lbl, background=background, always_ask=always_ask, task_actions=task_actions, task_target=task_target, only=only, _receipt=_receipt,
+                known_recipients=known_recipients))
         if avatar is not None and tool == "AskUserQuestion":            # P543: the channel asks in its reply instead
             return {"behavior": "deny", "message": "这条消息来自主人的通道，不能弹出提问卡，请直接在回复里问主人。 / Ask the owner in your reply instead."}
         always_ask = always_ask or task_actions is not None
@@ -5056,6 +5143,43 @@ class Host:
             approvals.record(self.st, **base, decision="allow", reason="dispatch")
             self.st.log("ask_done", id=rid, tool=tool, decision="allow", reason="dispatch")
             return {"behavior": "allow", "updatedInput": tool_input}
+        prow, scope_park = "", False        # 0269-w3-policy E1 / E2: the default policy table (ADR-0269-w3-policy)
+        chain = _chain_turn(self.agent) if unattended == "system" and avatar is None and not own else None
+        if (not strict and not always_ask and not own_pk and avatar is None and not own and not peer and ttl is None and not bound
+                and task_actions is None and self.task_label is None
+                and (chain or (not delegated and not same_owner and not provenance.untrusted_turn(self.agent)))
+                and self._approvers() and approval_policy.in_force(self.preferences, self.st)):   # no paired phone: deny as before
+            try:   # worker thread: reversibility may ask git; the budget file is read there too
+                ptier, prow = await asyncio.to_thread(lambda: approval_policy.decide(
+                    tool, tool_input, v, requirement=requirement, dispatch=dispatch, workdir=workdir, env=policy_env,
+                    classify=self._classify, budget=budget_mod.state(self.st), known_recipients=known_recipients, chain=bool(chain)))
+            except Exception:  # noqa: BLE001 — cannot tell → the strictest step
+                ptier, prow = approval_policy.FACE, "self_protect"
+            if self.stopped():
+                observe('estop', False)
+                approvals.record(self.st, **base, decision="deny", reason="estop")
+                return {"behavior": "deny", "message": "已急停 / Stop everything is on", **({"reason": "estop"} if grant_info else {})}
+            if ptier == approval_policy.NONE:
+                observe('owner_scope', False)
+                approvals.record(self.st, **base, decision="allow", reason="owner_scope", policy=prow)
+                if dispatch:
+                    await self._peer_launch_note(tool, tool_input, avatar, own, unattended)
+                self.st.log("ask_done", id=rid, tool=tool, decision="allow", reason="owner_scope", policy=prow,
+                            **({"via": "chain"} if chain else {}))
+                self.activity("auto", id=rid, tool=tool, summary=summary, by="owner_scope", cats=v.cats, task=self.task_label)
+                self.emit("auto", id=rid, tool=tool, grant=None)
+                return {"behavior": "allow", "updatedInput": tool_input}
+            if ptier == approval_policy.TAP:
+                requirement, require_passkey, batch = "hold", False, False
+            elif ptier == approval_policy.FACE:
+                require_passkey, batch = True, False
+            scope_park = ptier is not None
+            if chain and ptier is not None:     # E2: the card says whose words authorised the chain (signed with the summary)
+                quote = pick(self.lang, "主人原话：「", "The owner's words: “") + str((chain.get("words") or [""])[0])[:80] + \
+                    pick(self.lang, "」", "”") + " · " + pick(self.lang, "任务链 ", "chain ") + str((chain.get("ids") or ["?"])[0])[:8]
+                summary += "\n" + quote
+                digest = approvals.shown_digest(tool, summary)
+                base["shown_sha256"] = digest
         if lv != "safe" and (not delegated or (unattended and lv == "harness")) and avatar is None and ttl is None and not own_pk and not peer:
             from . import background as bgmod   # P552 (#325 ②): background work, decided from the real call — never the model's words
             bgk = (("headless:" + h) if (h := bgmod.headless(tool, tool_input)) else
@@ -5129,7 +5253,7 @@ class Host:
                 self._post(self._send_ready, lambda s: {"t": "auto", "id": rid, "tool": tool, "summary": line, "by": "harness"})
                 return {"behavior": "allow", "updatedInput": tool_input}
         pkey = self._park_key(tool, isha)       # P336 N5: who is asking, fixed before any await
-        if not always_ask and (not delegated or unattended) and (not require_passkey or unattended) and ttl is None:
+        if not always_ask and (not delegated or unattended) and (not require_passkey or unattended or scope_park) and ttl is None:
             ok = self._parked_take(pkey, uv=require_passkey)
             if ok is not None:                # P336 (#36): the owner allowed this exact step on its parked card
                 approvals.record(self.st, **base, decision="allow", reason="parked", device=ok["device"], grant=ok["rid"],
@@ -5237,7 +5361,8 @@ class Host:
             return {"behavior": "deny", "message": "没有能批准的已配对手机：默认拒绝。先用 agentj pair 配对一台手机。", **({"reason": "no_device"} if grant_info else {})}
         parkable = ttl is None and gt != "reversible" and (
             (not delegated and not require_passkey and not host_card) or
-            (bool(unattended) and (tool == "AgentJSameOwnerAction" or tool not in approval_level.HOST_CARDS + approval_level.HARNESS_KEEPS)))
+            (bool(unattended) and (tool == "AgentJSameOwnerAction" or tool not in approval_level.HOST_CARDS + approval_level.HARNESS_KEEPS))
+            or scope_park)      # 0269-w3-policy E1: an owner-scoped step that needs a card waits; the rest of the task goes on
         prev = self._parked_find(pkey) if parkable else None
         if prev is not None:                    # P336 (#36): the same step's card is already waiting on the phone
             return await self._parked_rewait(prev, base, gone, pkey, _receipt=_receipt)
@@ -5265,6 +5390,8 @@ class Host:
                 reason=action_policy.reason(summary))
         a.tg_key = tgk if not gt else None
         a.task_scope = plan_scope if a.tg_key else None
+        a.prow = prow or approval_policy.card_row(tool, v, requirement, require_passkey, tool_input)
+        self._interrupt("cards", face=require_passkey, chain=chain)
         if pa_action and not g_add and require_passkey:   # P539: 「以后这台遥控器上 Computer Use 免问」 (signed pick, needs UV)
             a.allow_offer.append(preauth.offer(pa_action))
         self.asks[rid] = a
@@ -5290,6 +5417,10 @@ class Host:
                     return self._park(a, base, summary, pkey, unattended)   # the card waits on; the Agent does the independent work
             done, _ = await asyncio.wait(waiters, timeout=max(0.0, a.deadline - time.monotonic()),
                                          return_when=asyncio.FIRST_COMPLETED)
+            if (not done and scope_park and parkable and not self.stopped() and not self.stopping.is_set()
+                    and not (a.goal == "auto")):
+                observe('unanswered')            # E1: no 120 s timeout-as-refusal for an owner-scoped step — it waits
+                return self._park(a, base, summary, pkey, unattended, why="unanswered")
             if a.fut in done:
                 decision, did, sk, sig = a.fut.result()
                 reason = "device" if did else ("task_grant" if a.tg_by else "estop" if self.stopped() else "serve_stop")
@@ -5362,6 +5493,21 @@ class Host:
         msg = {"device": "用户在手机上拒绝了这个操作。", "timeout": _timeout_text(self.lang, int(self.ask_ttl), a.pk_fail),
                "serve_stop": "agentj serve 已停止：默认拒绝。", "estop": "已急停（全部停下）：默认拒绝。"}.get(reason, "已拒绝。")
         return {"behavior": "deny", "message": msg, **({"reason": reason} if grant_info else {})}
+
+    def _interrupt(self, what: str, face: bool = False, chain=None) -> None:
+        """E4 (ADR-0269-w3-policy): one card / question shown to the owner, counted per task — counts only."""
+        try:
+            if chain is None and provenance.unattended_turn(self.agent) == "system":
+                chain = _chain_turn(self.agent)
+            if chain:
+                task, kind = "c:" + str(chain["ids"][0]), "chain"
+            else:
+                src = provenance.turn_source(self.agent)["kind"] if self.agent is not None else "none"
+                task, kind = "t:" + str(self.cur_turn if self.cur_turn is not None else src), src
+            self.interrupts.bump(task, kind, what, face=face)
+            self.interrupts.save()      # one small 0600 file, written in step with approvals.record's own append (no late write)
+        except Exception as e:  # noqa: BLE001 — a metric never blocks a card
+            bg.swallowed(self.st.log, "interrupts_failed", e, every=0)
 
     def _dispatch_turn(self) -> bool:   # #455: the owner's own turn or a verified same_host turn, nothing else
         u = provenance.unattended_turn(self.agent)
@@ -5758,6 +5904,8 @@ class Host:
         self.elevate.cancel_all("stopped")            # F17: open sudo / secret cards end (a running command finishes)
         with contextlib.suppress(Exception):           # P408: the web terminal closes at once
             await self.term_desk.close("estop")
+        with contextlib.suppress(Exception):           # 0269-w2-assist: the official assist grant ends, its task stops
+            await self.assist.end("estop", by=by)
         if self.peers is not None:                    # P71 §17.9: no mailbox frame leaves, every peer session ends
             await self.peers.estop(True)
         if self.hooks is not None:                    # P366: every hook answers 423, `agentj hook wait` returns stopped
@@ -6521,14 +6669,18 @@ class Host:
             return done(slash.Result("已急停：恢复之后再用这个命令。", "refused"))
         if name == "clear" and not confirm:
             return done(slash.Result(humane.of(self, "clear.phone_only"), "info"))
+        if name == "clear":             # 0269 (#461): /clear and /new interrupt and discard the running turn, never queue
+            await self.turn_heal.preempt(by, "clear")
         from . import command_queries
         if command_queries.applies(self.agent) and command_queries.readonly(name, arg):
             async def answer_query(agent):
                 done(await command_queries.query(agent, name, arg))
             self._bg(answer_query(self.agent), "slash_query")
             return turn
+        preempted = name == "clear"     # 0269: the running turn was interrupted above — not 「等这一轮忙完就办」
         if self.agent.status in ("working", "compacting") or not self.agent.q.empty():
-            self.cmd_card(name, slash.Result(humane.of(self, "cmd.after_turn"), "info"), by, turn, interim=True)
+            if not preempted:
+                self.cmd_card(name, slash.Result(humane.of(self, "cmd.after_turn"), "info"), by, turn, interim=True)
         cmd = agents.Cmd(name, arg, by, turn)
         self.agent.submit(cmd)
         if command_queries.applies(self.agent):
@@ -6670,6 +6822,12 @@ class Host:
         caps.append("hooks1")                                  # P366: answers hook_list / hook_set (Settings → Webhook)
         caps.append(compose.CAP_SYNC)                          # P398 §10.2: answers say_sync (queued sends after a reconnect)
         caps.append("heartbeat_prompt")  # P537: append-only capability for prompt editing
+        with contextlib.suppress(Exception):     # 0269-w2-assist (§41): only while a pinned official key ships (placeholder = off)
+            if self.assist.available():
+                caps.append(assist_mod.CAP)
+        with contextlib.suppress(Exception):     # 0.26.9 (§38.15, ADR-0269-pty): the web terminal also runs as a real PTY
+            if self.term_desk.pty_supported():
+                caps.append(term_mod.PTY_CAP)
         m = {"caps": caps, "asr": self.asr_state(), "hist": "on" if self.hist.on else "off"}
         m.update(self._host_kind())
         return m
@@ -6751,6 +6909,8 @@ class Host:
         if not wire.is_rid(r):
             return
         ar = self.auth_rescue
+        if t == "auth_rescue":             # 0269-login: signed; its answers go to this device only (login_flow.py)
+            return await ar.login.on_phone(s, obj)
 
         async def answer(res: dict) -> None:
             if self.sessions.get(s.cid) is s and s.state == "ready" and self.st.is_allowed(s.pub):
@@ -7654,6 +7814,20 @@ class Host:
         self.st.log("say_delivered", device=send.device, id=send.turn)
         self._post(self._send_device, send.device, {"t": "say_state", "sid": send.sid, "s": "delivered"})
 
+    def msg_steered(self, send: compose.Send, uncertain: bool = False) -> None:
+        """0269-w2-steer (#471, PROTOCOL §10.2a): the owner's message went into the running Codex turn — its page is closed
+        as absorbed (card.steered = the running turn's page) and every phone hears `msg_steered {mid, turn}`. `uncertain`
+        (security-r2 N-4, P33-X08): written but Codex never confirmed — never re-sent; the page says so."""
+        into = self.cur_turn
+        self.st.log("msg_steered", device=send.device, id=send.turn, into=into, **({"uncertain": True} if uncertain else {}))
+        page = self.hist.get(send.turn)
+        card = {**((page or {}).get("card") or {}), "steered": into if into is not None else True, **({"uncertain": True} if uncertain else {})}
+        self.hist_update(send.turn, end="done", card=card, **({"text": humane.of(self, "steer.uncertain")} if uncertain else {}))
+        obj = {"t": "msg_steered", "mid": send.turn, "turn": into, **({"uncertain": True} if uncertain else {})}
+        self._post(self._send_p33, lambda s: obj)
+        if uncertain:     # like say_sync's answer for an uncertain send: no 「取消」 any more (say_cancel → already_delivered)
+            self._post(self._send_device, send.device, {"t": "say_state", "sid": send.sid, "s": "delivered"})
+
     def say_uncertain(self, send: compose.Send) -> None:
 
         if getattr(send, 'bot_handoff_id', None):
@@ -7908,6 +8082,7 @@ class Host:
             return "no_device", None
         q = Question(qid, qs, digest, time.monotonic() + Q_TTL, asyncio.get_running_loop().create_future(), task)
         self.questions[qid] = q
+        self._interrupt("questions")
         self.st.log("question", id=qid, agent=kind)
         self.activity("question", id=qid, n=len(qs), task=task)
         self.emit("question", id=qid, n=len(qs))
@@ -8123,7 +8298,8 @@ class Host:
         jobs = [asyncio.create_task(self.relay_loop()), asyncio.create_task(self.loop_watch()), asyncio.create_task(self.reporter.run()),
                  asyncio.create_task(self.sync_loop()), asyncio.create_task(self.credential_revocations.run()), asyncio.create_task(self.remote_pair.run()), asyncio.create_task(self.post_loop()),
                  asyncio.create_task(self.update_loop()), asyncio.create_task(self.preferences_loop()),
-                 asyncio.create_task(self.busy_loop()), asyncio.create_task(self.seat_loop()), asyncio.create_task(self.seat_xfer.run())]
+                 asyncio.create_task(self.busy_loop()), asyncio.create_task(self.seat_loop()), asyncio.create_task(self.seat_xfer.run()),
+                 asyncio.create_task(self.turn_heal.run())]
         perm_server = None
         order_server = None
         from .core import enabled as _core_on
@@ -8243,6 +8419,7 @@ class Host:
         jobs.append(asyncio.create_task(self.sweep_loop()))
         from .browser_login import daily_loop     # P114: the daily read-only sign-in check (status only, never a QR)
         jobs.append(asyncio.create_task(daily_loop(self)))
+        jobs.append(asyncio.create_task(self.assist.loop()))   # 0269-w2-assist: expiry / CLI revoke / unpair / seat sweep
         jobs.append(asyncio.create_task(self.auth_rescue.loop()))   # P258/P288: expiry reminders (7/3/1 days) + daily login health check
         if self.read_stdin:
             jobs.append(asyncio.create_task(self.stdin_loop()))

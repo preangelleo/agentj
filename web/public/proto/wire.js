@@ -150,7 +150,10 @@ export const CONTROL_ACTIONS = ['heartbeat_write', 'security_begin','security_ve
   'fr_report_reply', 'fr_report_remark', 'files_write', 'skill_archive', 'skill_restore', 'wechat',   // P426 #181-3 (§39): 「归档」/「恢复」 on the 技能 page
   'seat_transfer', 'seat_transfer_cancel',                                  // P547: Settings → 转移席位 (object {} → "transfer" / "cancel")
   'forward_set',                                                            // P554: 转发去向, one host setting for every remote
-  'task_migrate'];                                                          // P570c: 定时任务 → 重新迁移 (id \n tsha, like task_on)
+  'task_migrate',                                                           // P570c: 定时任务 → 重新迁移 (id \n tsha, like task_on)
+  'auth_rescue',                                                            // 0.26.9 (#464): the chat's 重新登录 — login / code / cancel
+  'assist_grant', 'assist_revoke',                                          // 0.26.9 (#468, CONTRACT §B2): official remote assist
+  'budget_set'];                                                            // 0.26.9 §E3 (#473 ③): day / month budget, {day?, month?}; raising = + fa
 /** The text whose SHA-256 a control signature covers (the target, with the content hash the phone saw). */
 export function controlObject(action, o) {
   if (action === 'fr_report_reply') return `${o.resend === true ? 'resend\n' : ''}${o.id}\n${o.text}`;
@@ -197,6 +200,18 @@ export function controlObject(action, o) {
   if (action === 'fr_ctx') return `${o.friend}\n${o.text ?? ''}`;
   if (action === 'fr_gsay') return `devices\n${o.text}`;          // P426 #170: the group is fixed, the text exactly as sent
   if (action === 'wechat') return `${o.op}\n${o.id}\n${o.code}`;
+  // 0.26.9 (#468, CONTRACT §B2): the owner's grant of official remote assist — minutes \n the pinned assist key id \n this
+  // seat (key_id + seat come from the host's passkey_required step; the host builds the same text in controls.object_text)
+  if (action === 'assist_grant') return `${o.minutes}\n${o.key_id}\n${o.seat}`;
+  if (action === 'assist_revoke') return 'revoke';                // object {} (only narrows: no Face ID)
+  // 0.26.9 §E3 (lane w3-cards): the day / month budget — canonical JSON of the fields sent (only the changed ones), e.g.
+  // {"day":10} or {"day":10,"month":400}; numbers ≥ 0, ≤ 2 decimals. The host mirrors it in controls.object_text('budget_set').
+  if (action === 'budget_set') { const b = {}; for (const k of ['day', 'month']) if (o[k] !== undefined) b[k] = o[k]; return canonicalJson(b); }
+  if (action === 'auth_rescue') {                                 // 0.26.9 (#464): mirrors controls.object_text('auth_rescue')
+    if (o.action === 'login') return `login\n${o.agent}`;
+    if (o.action === 'code') return `code\n${o.code}`;
+    if (o.action === 'cancel') return 'cancel';
+  }
   throw new Error('bad action');
 }
 /** The exact bytes a device signs for a write command: delete / undo a memory item, stop everything, resume, enable / disable a

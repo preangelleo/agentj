@@ -138,7 +138,8 @@ test('#354 every failure on the key card is said on the card and above it; a bus
   assert.match(elev, /if \(busy \|\| c\.running \|\| c\.sending\) \{ toast\(t\(c\.sending \? 'p566\.handing' : 'p566\.busy'\), 3000\); return; \}/);
   for (const w of ['late', 'stale', 'replay', 'gone', 'bad_signature', 'no_key', 'shape', 'passkey']) assert.match(elev, new RegExp(`\\b${w}: '`), w);
   const ui = read('../public/js/ui.js'), css = read('../public/app.css');
-  assert.match(ui, /document\.querySelector\('\.ajmodal\.dlgcard:not\(\[hidden\]\),#confirm:not\(\[hidden\]\)'\)/);
+  // 0.26.9 #472: a card docked under the reply card has no scrim over the slot — only a still-centred card lifts the notice
+  assert.match(ui, /document\.querySelector\('\.ajmodal\.dlgcard:not\(\[hidden\]\):not\(\.cp-docked\),#confirm:not\(\[hidden\]\):not\(\.cp-docked\)'\)/);
   assert.match(ui, /if \(dlg\) \{ document\.body\.appendChild\(box\); box\.classList\.add\('over-dlg'\); \}/);
   assert.match(css, /\.toast\.rect\.over-dlg\{position:fixed;[^}]*z-index:calc\(var\(--z-confirm\) \+ var\(--ontop-n,0\) \+ 60\)/);
 });

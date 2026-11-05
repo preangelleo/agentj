@@ -1,3 +1,4 @@
+import { paintScope } from './cardplace.js';   // 0.26.9 #472 ②: class + why the task scope does not cover it
 import { copyButton } from './copycode.js';
 import { paintPk, faState, errName } from './pkassist.js';   // P539: no own passkey here · why a passkey tap failed
 import {phoneConfirmation} from './tvremote.js';
@@ -53,7 +54,7 @@ function build() {
   main.append(open, setup, copy, dl, fin);
   // 「不要了」 is a quiet text button on its own line, away from the main action
   const decline = node('button', 'sout-decline', 'aj-btn aj-btn--quiet sout-decline'); decline.type = 'button';
-  box.append(node('p', 'sout-kicker', 'elev-kicker'), node('h2', 'sout-title'), node('dl', 'sout-rows', 'elev-rows'), mask, val,
+  box.append(node('p', 'sout-kicker', 'elev-kicker'), node('h2', 'sout-title'), node('p', 'sout-scope', 'cp-scope'), node('dl', 'sout-rows', 'elev-rows'), mask, val,
     node('p', 'sout-note', 'elev-note'), node('p', 'sout-left', 'elev-left'), main, node('div', 'sout-pk', 'pkassist'), decline);
   root.appendChild(box);
   document.body.appendChild(root);
@@ -89,6 +90,7 @@ export function add(m) {
   // P566 (#364): the Agent J host re-sends open cards after a reconnect — the same nonce is the same card, its tap still under way
   const same = !!old && old.n === c.n;
   if (same) { c.sending = old.sending; c.faErr = old.faErr; }
+  c.cls = typeof m.cls === 'string' ? m.cls : ''; c.why_scope = typeof m.why_scope === 'string' ? m.why_scope : '';   // 0.26.9 #472 ② (optional)
   cards.set(m.id, c);
   if (old && shownId === m.id && !opened && !same) { shownId = null; busy = false; }
   render();
@@ -187,6 +189,7 @@ function render() {
     root.dataset.state = isOpen ? 'open' : 'closed';
     $('sout-kicker').textContent = t('sout.kicker');
     $('sout-title').textContent = c.name;
+    paintScope($('sout-scope'), c, t);   // 0.26.9 #472 ②
     const dl = $('sout-rows'); dl.replaceChildren();
     row(dl, t('sout.purpose'), c.purpose);
     row(dl, t('sout.what'), c.kind === 'file' ? t('sout.file', { name: c.filename, size: human(c.size) }) : t('sout.text', { size: human(c.size) }));

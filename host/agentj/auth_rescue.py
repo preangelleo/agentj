@@ -78,7 +78,8 @@ _RATE = ("ratelimit", "rate_limit", "toomanyrequests", "usagelimit", "usage_limi
 _LOGIN = ("notloggedin", "pleaserun/login", "loginexpired", "authenticationrequired", "oauthtokenhasexpired",
           "tokenhasexpired", "tokenexpired", "invalidapikey", "invalidbearertoken", "authentication_error",
           "unauthorized", "unauthorised", "refreshtoken", "signinagain", "loginagain", "pleaselogin", "loggedout",
-          "revoked", "登录已失效", "还没登录", "没有claude登录", "未登录")
+          "revoked", "登录已失效", "还没登录", "没有claude登录", "未登录",
+          "hasdisabledclaudesubscriptionaccess")   # 0269 #462: the account's org turned subscriptions off → sign in with another
 
 
 # P423 #138: a plan's usage / quota used up is never a login, whatever status it comes with (Kimi Code 2.2.0 over ACP sends
@@ -343,8 +344,9 @@ class ClaudeFlow:
     """route "setup_token" → `claude setup-token` (prints a 1-year token) · "login" → `claude auth login --claudeai`
     (writes ~/.claude/.credentials.json itself). Both print the official authorize URL and wait for the pasted code."""
 
-    def __init__(self, route: str, cwd: str | None = None):
+    def __init__(self, route: str, cwd: str | None = None, ctx: dict | None = None):
         self.route = route
+        self.ctx = ctx          # 0269-login: the main session's own HOME / CLAUDE_CONFIG_DIR (the login lands where it reads)
         self.cwd = cwd or tempfile.gettempdir()
         self.pty: Pty | None = None
         self.url: str | None = None
@@ -359,6 +361,9 @@ class ClaudeFlow:
         for k in ("CLAUDE_CODE_OAUTH_TOKEN", *OUTRANK):
             env.pop(k, None)          # the flow mints a new login; an old credential must not short-circuit it
         env["BROWSER"] = "true"       # no browser on a remote host: the URL is the only way, never open one here
+        if self.ctx is not None:
+            env.pop("CLAUDE_CONFIG_DIR", None)
+            env.update({k: v for k, v in self.ctx.items() if k in ("HOME", "CLAUDE_CONFIG_DIR")})
         self.pty = Pty(argv, self.cwd, env)
         m = self.pty.wait_for(CLAUDE_URL_RE, URL_WAIT)
         if not m:
@@ -1030,6 +1035,9 @@ class Rescue:
         self.credential_stamp = None
         self.health_generation = 0
         self.invalid_health = False
+        self.pending_login = None              # 0269-login: (hit, monotonic) → the next notice page gets 「重新登录」
+        from .login_flow import Login
+        self.login = Login(self)
 
     # ---- helpers
     def lang(self) -> str:
@@ -1058,6 +1066,8 @@ class Rescue:
         """A harness failure was classified. login → dot + one alert (≤ 1 per ALERT_GAP); balance → a top-up hint, no dot."""
         if kind not in KINDS or cls not in ("login", "balance", "rate_limit"):
             return
+        if cls == "login" and kind != "kimi":
+            self.pending_login = (getattr(self, "_hit", None) or {"agent": kind, "why": "expired"}, time.monotonic())
         self.state[kind] = {"cls": cls, "at": int(time.time())}
         try:
             self.host.st.log("auth_rescue_signal", agent=kind, status=cls)
@@ -1080,7 +1090,12 @@ class Rescue:
     def text_signal(self, kind: str, text) -> str | None:
         cls = classify(kind, text)
         if cls:
-            self.signal(kind, cls)
+            from .login_flow import detect
+            self._hit = detect(kind, text) if cls == "login" else None
+            try:
+                self.signal(kind, cls)
+            finally:
+                self._hit = None
         return cls
 
     def clear(self, kind):

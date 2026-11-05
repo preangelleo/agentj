@@ -11,6 +11,7 @@ import { t, fillText } from './t.js';
 import { el } from './ui.js';
 import { copyable, copyNow } from './copycode.js';   // P292
 import { ask1, isReady } from './session.js';
+import { onView as loginSheet } from './loginsheet.js';   // 0.26.9: a login step view goes to the chat's sheet
 
 let view = null;          // the host's last view: {harnesses, flow, dot, renew?}
 let hooks = {};           // app.js: {openAuth} (Settings → AI 登录救援)
@@ -34,7 +35,11 @@ async function call(obj, ms = 20000) {
 }
 
 /** app.js: the host's `auth_rescue` push (a flow moved on, a new alert, a reminder; on ready only while the dot is on). */
-export function onPush(m) { if (m && m.view && typeof m.view === 'object') setView(m.view); }
+export function onPush(m) {
+  if (!m || !m.view || typeof m.view !== 'object') return;
+  if (typeof m.view.step === 'string') { loginSheet(m.view); return; }   // 0.26.9 (CONTRACT §C): the chat's login sheet (loginsheet.js)
+  setView(m.view);
+}
 export async function load() {
   close(); const id = ++loadId; view = null; el('ar-list')?.replaceChildren(); el('ar-flow')?.replaceChildren(); say(t('ar.checking'));
   const m = await call({ t: 'auth_get' }); if (m) say('');

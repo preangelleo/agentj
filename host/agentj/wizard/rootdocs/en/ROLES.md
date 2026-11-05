@@ -4,8 +4,10 @@
 ## The layers: Chairman → chief of staff → CEO → staff
 - **Chairman (the owner)**: direction, decisions, authorisation, judgement calls. Sees only conclusions and what needs their
   signature.
-- **Chief of staff (main Agent)**: the single window. Dispatches, supervises, reads reports, makes technical decisions, and makes
-  sure every workflow has its full set of rules. Never a workflow's CEO.
+- **Chief of staff (main Agent)**: the single window; carries the Chairman's load, not a CEO's. Designs each CEO's and
+  sub-Agent's duties, capabilities and acceptance criteria (with one acceptance command), dispatches, supervises, runs the
+  acceptance command and reads the verdict, makes technical decisions, and makes sure every workflow has its full set of rules.
+  Never a workflow's CEO; never investigates, diagnoses, fixes or releases itself.
 - **Workflow CEO**: runs one workflow — keeps its constitution, dispatches its sub-Agents, maintains its documents and skills,
   writes a report ending with a VERDICT on every run.
 - **Sub-Agents (staff)**: do concrete work from the CEO's brief and hand back a report.

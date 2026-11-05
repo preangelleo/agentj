@@ -349,13 +349,15 @@ function buildCard() {
   const sq = K.root.sq;
   const h = mk('h2'); h.id = 'ctCard-title';
   const sub = mk('p', 'gdlg-sub'); sub.id = 'ctCard-why';
+  // 0.26.9 security r7: the owner card pre-filled by the Agent (`agentj contacts owner set --email …`) says so — host `proposed: "agent"`
+  const prop = mk('p', 'ct-proposed'); prop.id = 'ctCard-proposed'; prop.setAttribute('role', 'note'); prop.hidden = true;
   const form = mk('form', 'ct-form'); form.id = 'ctCard-form'; form.noValidate = true; form.autocomplete = 'off';
   const note = mk('p', 'ct-note'); note.id = 'ctCard-note'; note.setAttribute('aria-live', 'polite');
   const row = mk('div', 'gdlg-row');
   const no = mk('button'); no.type = 'button'; no.id = 'ctCard-no';
   const go = mk('button', 'go'); go.type = 'submit'; go.id = 'ctCard-save'; go.setAttribute('form', 'ctCard-form');
   row.append(no, go);
-  sq.append(icon(PERSON), h, sub, form, note, row);
+  sq.append(icon(PERSON), h, sub, form, note, prop, row);   // the Agent-proposed warning sits right above 保存 (seen with it)
   no.addEventListener('click', () => answer(false));
   form.addEventListener('submit', (e) => { e.preventDefault(); answer(true); });
   form.addEventListener('input', () => { if (K.err) { K.err = ''; sq.querySelector('#ctCard-note').textContent = ''; } });
@@ -401,6 +403,7 @@ function renderCard(keepValues) {
   sq.querySelector('#ctCard-title').textContent = own ? t('ct.cardOwner') : c.mode === 'update' ? t('ct.cardUpdate', { name }) : t('ct.cardNew');
   sq.querySelector('#ctCard-why').textContent = own ? (c.local ? t('ct.ownerWhy') : c.why || t('ct.ownerWhy')) : c.why || '';
   sq.querySelector('#ctCard-why').classList.toggle('ct-wrap', own);
+  const prop = sq.querySelector('#ctCard-proposed'); prop.hidden = !(own && c.proposed); prop.textContent = prop.hidden ? '' : t('p0269c.ownerProposed');
   sq.querySelector('#ctCard-no').textContent = t(own ? 'ct.cardSkip' : 'ct.cardNo');
   sq.querySelector('#ctCard-save').textContent = t('ct.cardSave');
   sq.querySelector('#ctCard-note').textContent = K.err;
@@ -475,7 +478,7 @@ async function answer(ok) {
 export function card(m) {
   if (!m || typeof m.id !== 'string' || !/^[0-9a-f]{32}$/.test(m.id)) return;
   const known = K.cards.has(m.id);
-  K.cards.set(m.id, { id: m.id, n: String(m.n || ''), mode: m.mode === 'update' || m.mode === 'owner' ? m.mode : 'new', contact: m.contact || {},
+  K.cards.set(m.id, { id: m.id, n: String(m.n || ''), mode: m.mode === 'update' || m.mode === 'owner' ? m.mode : 'new', contact: m.contact || {}, proposed: m.mode === 'owner' && m.proposed === 'agent',
     base: m.base || null, why: typeof m.why === 'string' ? m.why : '' });
   if (!known && !K.shown) showNext();
 }

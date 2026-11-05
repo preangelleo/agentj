@@ -1,6 +1,6 @@
-# Agent J 0.26.8a2 release notes
+# Agent J 0.26.9 release notes
 
-Host 0.26.8a2 / install 0.28.9; phone-web scope.
+Host 0.26.9 / install 0.28.10; phone-web scope.
 Phone parity must pass --strict. Full Android/Telegram parity is incomplete.
 Full Android/Telegram parity is incomplete.
 No APK is included in this release. Android source is for review, not a released app.
@@ -8,37 +8,45 @@ No APK is included in this release. Android source is for review, not a released
 Publication status: local preparation only. Live site verification is DEFERRED until
 the public commit and tag are pushed, the site is deployed, and cold installation passes.
 
-Scope: host hotfix — background completions read their own report back, the shared file card after a restart, quiet old owner-check records, a same-owner same-host source tier, the OpenCode 2.x sign-in check, the fenced upgrade's service restart run by the host, Claude account switches delivered to the main conversation, shared Codex no longer waiting on a dead desktop turn or a dead turn held by an idle Codex daemon, plaza installs no longer blocked by missing dependencies (agentj plaza verify), no Face ID for work dispatched to the owner's own workflow CEO session once the host has verified the AI tool, read-only AI tool install folders in the Agent's restricted environment (self-updates through the host, /update), and a heartbeat that no longer pauses for context. Release order: C Dashboard support knowledge, then A signed host/site/downloads, immediately followed by B phone web. No new D1 migration or relay change. Preserve all existing security journals and the published 0.26.7/0.26.8a1 rollback downloads.
+Scope: a stuck AI turn recovers by itself in the conversation the owner is using (with force-end and take-over buttons), a real full terminal in the web app, signing the AI tool in again from the chat with the result checked in the main conversation, an official remote help session the owner grants for a fixed time, Codex replies to a newer message in a new reply card, every card the remote pops placed under the reply card, fewer confirmations (the owner's request is the authorisation; a spending budget), the sudo card's 'remember with Face ID' that really remembers, plaza self-checks that see Homebrew tools and the declared Python, one install line per plaza install, silent successful admin commands, a clear fix line when the program folder belongs to another account, and OpenCode always the newest 2.x. Release order: C Dashboard support knowledge, then A signed host/site/downloads, immediately followed by B phone web. No new D1 migration or relay change. Preserve all existing security journals and the published 0.26.7/0.26.8a1/0.26.8a2 rollback downloads.
 ## Changes
 
-- [all] Same-owner, same-computer sources get their own tier: host notices, background-task completions and hand-offs from Agent sessions this host started do ordinary work without a card; payments, deletions, outbound sends, credential and price changes still need your remote's approval and queue while you are away. External sources stay data only.
-- [all] Work dispatched to your own workflow CEO session no longer asks for Face ID when the host has verified that AI tool; AI tool install folders are read-only inside the Agent's restricted environment, and AI tool self-updates go through the host: send /update from your remote.
-- [all] The heartbeat no longer pauses for context use and no longer asks you to /compact; past half the window the main Agent tidies its own context.
-- [codex,claude] When a background task your conversation started (agentj busy run / busy start, Linux hosts) finishes, the main Agent reads its own report back and reports to you, no longer refused as an unverified source and without you asking for the result; a real refusal shows one sentence and a See result button.
-- [claude] A standalone agentj file show in a shared Claude session attaches its file card after a host upgrade or restart too; when it really cannot attach, it asks you to /clear that session on the computer or start a new one.
-- [all] Old pending owner-check background records: those already confirmed finished settle by themselves and reconcile-only ones no longer remind you; the original records are kept and still listed by /recover-background.
-- [opencode] The AI sign-in rescue's Check now passes for OpenCode 2.x and free models; an incompatible CLI or a configuration error is told apart from being signed out or out of quota instead of always asking you to sign in again.
-- [codex] When Codex upgrades the host inside its restricted environment, the host now restarts the service outside it, so the upgrade no longer rolls back for that reason; a failure names the error number, command, step and time. If an upgrade has trouble, send /update from your remote and the host upgrades directly.
-- [claude] After switching Claude accounts or finishing a sign-in rescue, the new account reaches the main conversation and is checked in its own environment before success is shown; a session you opened in your own terminal gets a Reopen AI session card.
-- [codex] Shared Codex sessions: when the desktop turn's process is gone (for example force-quit), Agent J stops waiting for it and handles messages from your remote after about two minutes; the sign-in rescue skips Codex's Hooks need review start screen without trusting any hook.
-- [codex] When the Codex daemon is idle, a dead turn it still holds is released so your remote's messages no longer wait behind it; agentj doctor reports when the Codex CLI and daemon versions differ; the terminal-command list no longer fails to open.
-- [all] Missing dependencies no longer block a plaza install: the status shows Installed · dependencies pending, and once they are in place agentj plaza verify reruns the self-check without signing again.
-- [all] 同一主人、同一台电脑上的来源单独成一档：主机系统提示、后台任务完成通知、本主机启动的 Agent 会话发来的交接，可以直接做普通工作，不再弹卡或被拦；付款、删除、对外发送、改凭据、改价仍要在遥控器上批准，你不在线时只排队、不挡其他工作。外部来源仍只当作资料。
-- [all] 派给你自己工作流 CEO 会话的工作，在主机已核验该 AI 工具时不再要求 Face ID；Agent 受限环境里 AI 工具的安装目录改为只读，AI 工具自身的升级改由主机完成，在遥控器上发送 /update 即可。
-- [all] 心跳不再因为上下文占用而暂停，也不再提示你手动 /compact；上下文用过一半时，由主 Agent 自己整理。
-- [codex,claude] 由你的对话发起的后台任务（agentj busy run / busy start，Linux 主机）完成后，主 Agent 会直接读回它自己的报告并向你汇报，不再被「未核验来源」拦下，也不用你手动去要结果；真被拦时只显示一句说明和「看结果」按钮。
-- [claude] 共享 Claude 会话里单独运行 agentj file show，在主机升级或重启后也能把文件卡发到页面；确实接不上时会提示你在本机对这个会话 /clear 或开新会话。
-- [all] 旧的「待本人核对」后台记录：已经确认完成的会自动收讫，只用于对账的不再提醒；原始记录保留，仍可用 /recover-background 查看。
-- [opencode] OpenCode 2.x 和免费模型的 AI 登录救援「现在检查」可以通过；命令行不兼容或配置错误与未登录、额度不足分开判断，不再一律要求重新登录。
-- [codex] Codex 在受限环境里执行主机升级时，服务重启改由主机在受限环境外完成，不再因此失败回滚；失败时会写明错误号、命令、阶段和时间。升级遇到问题时，在遥控器上发送 /update，由主机直接升级。
-- [claude] 切换 Claude 账号或完成登录救援后，新账号会送到主对话，并在主对话自己的环境里核实生效后才显示成功；你自己在终端里开的会话会收到「重开 AI 会话」卡片。
-- [codex] 共享 Codex 会话：桌面端那一轮的进程已经不在（例如被强制结束）时，Agent J 不再一直等它，约两分钟后照常处理遥控器发来的消息；登录救援会跳过 Codex 的「Hooks need review」启动画面，不信任任何钩子。
-- [codex] Codex 后台进程空闲时，它还占着的已失效回合会被释放，遥控器消息不再一直排在它后面；agentj doctor 会指出 Codex 命令行与后台进程版本不一致；终端指令列表不再报错打不开。
-- [all] 广场技能缺少依赖时不再挡住安装：状态显示「已安装·依赖待补」，依赖补齐后运行 agentj plaza verify 重新自检，不用重新签名。
+- [all] When an AI turn gets stuck, the host recovers it by itself in the conversation you are using and tells you so; the queued notice shows how many minutes you have waited with a Force-end this turn button, and emergency repair gains Take over the stuck session.
+- [all] The web terminal is now a full terminal: vim, top, claude and other interactive programs display and work properly and follow your phone's screen size; dangerous commands still need your signed confirmation.
+- [claude,codex] When a reply says the AI tool is signed out, a button under it lets you sign in again right in the chat (paste the authorisation code); success shows only after the host checks it in your main conversation.
+- [all] Emergency repair can ask Agent J official remote help: grant 15, 30 or 60 minutes with Face ID; meanwhile the official side can only send tasks to your Agent, which run under your existing limits and approvals; a banner lets you take it back at any time, it expires by itself, and everything is logged.
+- [all] Fewer interruptions: what you ask for is the authorisation, so the Agent does the follow-up steps without asking you to reply on / confirm / send again; only spending beyond your budget and showing a key need Face ID. Set a daily and monthly budget in Settings → Security → Budget.
+- [all] Every card your remote pops now appears under the reply card, never from the message box, and says why it is asking you.
+- [all] The main Agent shares your load: it designs and supervises the duties and acceptance of your workflow CEOs and sub-Agents instead of doing the work itself, and it checks finished background work instead of passing that to you.
+- [codex] When you send a message during a long Codex answer, it goes straight into the current turn; the rest of the answer lands in a new card at the bottom and the old card says Continued below.
+- [all] Ticking Remember with Face ID on the sudo card now really remembers: next time the same kind of command needs Face ID only.
+- [all] Plaza skill and workflow self-checks can use Homebrew tools such as node and ffmpeg and the Python version a package declares, and accept Google Chrome; a package missing its self-check file installs with the self-check skipped.
+- [all] A plaza install sends you one message: no early not installed while the first self-check failed and the Agent is still adding dependencies; the same line turns into Installed once they are in.
+- [all] Successful admin commands no longer post Admin command finished; only a failure says, in one sentence, which thing failed.
+- [all] When the program folder belongs to another account (installed with sudo before), the upgrade says why, changes nothing and gives one fix line (an admin password card); agentj doctor gains a program folder row; failed downloads are retried automatically.
+- [opencode] Installing or upgrading OpenCode always picks the newest 2.x; a 1.x install gets the upgrade command.
+- [all] After a successful upgrade inside the macOS restricted environment, agentj doctor no longer reports the upgrade as failed.
+- [all] When the last check of a big file upload fails, the page now says so instead of hanging.
+- [all] AI 一轮回答卡住时，主机会在你正在用的这个对话里自动恢复，并告诉你「刚才卡住了，已自动恢复」；排队提示显示已等几分钟，可以点「强制结束这一轮」，紧急修复里多了「接管卡住的会话」。
+- [all] 网页终端升级为完整终端：vim、top、claude 等交互程序能正常显示和操作，大小跟着手机屏幕变；危险命令仍要你签名确认。
+- [claude,codex] 回复里提示没登录或登录失效时，下面有「重新登录」按钮，就在聊天页登录、粘贴授权码；主机在你正在用的主对话里核实生效后才显示成功。
+- [all] 紧急修复里可以请 Agent J 官方远程协助：Face ID 授权 15、30 或 60 分钟，期间官方只能给你的 Agent 发任务，照你原有的限制和审批执行，顶部横幅可随时收回，到期自动失效，全程留档。
+- [all] 少打扰：你交代的事就是授权，后续步骤 Agent 直接做，不再要你回「开」「确认」「再发」；只有预算外花钱、显示密钥这类才要 Face ID。设置 → 安全 → 预算 可以设每日、每月预算。
+- [all] 遥控器弹出的卡片统一出现在回复卡下方，不再从输入框那边弹出；卡片会写明为什么要问你。
+- [all] 主 Agent 替你分担：它设计并监督各工作流 CEO 和子 Agent 的分工与验收，自己不下场干活；后台活完成后由它核对，不推给你。
+- [codex] Codex 长回答进行中你又发了消息时，消息直接插进当前这一轮；之后的回答放到底部新卡片里，旧卡片写「继续见下方」。
+- [all] sudo 卡勾选「用 Face ID 记住」现在真的会记住，下次同类命令只要 Face ID。
+- [all] 广场技能和工作流的安装自检能用上 Homebrew 装的 node、ffmpeg 等工具和包声明的 Python 版本，也认 Google Chrome；包里缺自检文件时跳过自检照常安装。
+- [all] 广场安装只给你一条消息：第一次自检没过、Agent 还在补依赖时不再先报「没装」，补齐后同一行改成「已装好」。
+- [all] 管理员命令成功时不再发「管理员命令已完成」，只在失败时用一句话说明是哪件事。
+- [all] 程序目录属于另一个账号（以前用 sudo 装过）时，升级会说清原因、什么都不动，并给出一行修复（弹管理员密码卡）；agentj doctor 多了程序目录一行；下载失败会自动重试。
+- [opencode] 安装或升级 OpenCode 一律装最新 2.x；装的是 1.x 时会提示升级命令。
+- [all] macOS 受限环境里升级成功后，agentj doctor 不再误报升级失败。
+- [all] 上传大文件时最后一步校验失败会直接提示失败，不再一直卡住。
 
 ## Material acceptance limits
 
-- Signed Linux package tests and stand-in services do not establish customer upgrades, a real second Claude account on macOS or real desktop Codex sessions. Background-completion read-back applies to Linux hosts; shared desktop sessions, systemd units and other platforms keep /recover-background. Olares chart and image are unchanged in this release.
+- Signed Linux package tests and stand-in services do not establish customer upgrades, real desktop Codex or Claude sessions, a real macOS sudo card or a real remote help session. Olares chart and image are unchanged in this release.
 
 - Android arbitrary-name wake recognition, false-accept/false-reject rates, background operation,
   battery behavior and speech-model licensing are not cleared for a released app.

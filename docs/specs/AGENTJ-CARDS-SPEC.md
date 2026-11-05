@@ -659,3 +659,137 @@ disables this host’s recognition of that peer’s signatures; it does not dele
 clears pending transfers and settles current transfer waits with estop, without ending the friendship. A later resume cannot
 revive those existing grants or a pre-stop OTG. Revocation/stop prevent future use and cannot reverse completed actions or
 undo an OS command already executed.
+
+## 41. Official remote assist — signed tasks, never a terminal (0.26.9 #468; ADR-0269-w2-assist; number provisional until the merge)
+
+Host: `host/agentj/assist.py` (+ `assist_keys.py`, `assets/assist_keys.json`). Page: `web/public/js/assist.js`. The helper is a
+PeerNet peer (§17) whose authenticated static key equals a pinned `assist_keys.json` key, accepted ONLY while a grant for that
+key id is live on this seat. Nothing terminal-shaped exists for it: no RESUME as a device, no `term_*`, no key input.
+
+**Capability.** `ready` / `approved` caps carry `assist1` only while a usable key is pinned (the shipped placeholder = absent).
+
+**Grant (phone → host, p33, passkey remotes only).** Step 1 `assist_grant {r, minutes}` (minutes ∈ 15 | 30 | 60, default 30) →
+`ctl_res {action:"assist_grant", ok:false, why:"passkey_required", n, fa, fa_s, fa_ch, key_id, seat}`; `seat` = the §40 seat id;
+`fa_ch` = `elevate_challenge(channel, device, n, "assist_grant", n, SHA-256hex("assist_grant_uv\n" key_id "\n" seat))` (minutes are
+not in the Face ID challenge: the chip may change between the steps; they are in the signature). Step 2 `assist_grant {r, minutes,
+n, ts, sig, fa}`: §8 control-v1 signature, action `assist_grant`, object text `minutes \n key_id \n seat` (wire.js
+`controlObject`), nonce = the host's `n` (120 s, once). → `ctl_res {ok:true, until, id}` (`until` unix seconds) or `ok:false, why`
+∈ shape | estop | unavailable (no pinned key / no usable seat) | no_passkey | busy (a grant is live) | replay | stale |
+bad_signature | no_key | passkey_failed | io. Revoke: `assist_revoke {r, n, ts, sig}` (page nonce, object text `revoke`, no Face ID)
+→ `ctl_res {ok}`. controls.log: action, device, result, object SHA-256, grant id, minutes — never text.
+
+**Host → phones.**
+- `assist_state {active, until, id?, key_id?, tasks:[{id, state}]}` — on grant, end, every task change and on (re)connect;
+  `active:false` = no live grant (`until` 0). `tasks` = the live grant's last 20.
+- `assist_task {id, ts (ms), gid, text, state: queued|running|done|refused|stopped, why?, turn?}` — `id` = the helper's message id
+  (hex 16); `turn` = the history page carrying the task and its reply; `why` on refused/stopped/done-with-problem ∈ length |
+  admission_filter | busy | quota | main_unavailable | submit_failed | ended | interrupted | failed | outbound_gate | not_sent. Sent
+  on every change and replayed (live grant only) after a reconnect.
+- `assist_notice {what: grant|expired|revoked|refused, minutes?, why?}` — `revoked` carries why ∈ revoked | estop | seat |
+  unpaired | key; `refused` = a grant step refused.
+- The task's chat page: src `{"k":"task", "via":"official_assist", "name", "text", "assist": <task id>}`; the reply fills that page.
+
+**Helper ↔ host (PeerNet app frames, KK session with the pinned x25519 key).**
+- `assist_hello {ts, sig}` — sig = pinned Ed25519 over `"agentj-assist-hello-v1\n" ‖ canonical_json({"to": <this host's Agent ID>,
+  "ts"})` → `assist_ready {gid, seat, until, seq}` (grant id, seat id, end, last accepted seq). Nothing else is offered.
+- task = `pmsg {mid, thread, text, ts, assist:{gid, seat, seq, ts, sig}}`, sig = pinned Ed25519 over `"agentj-assist-task-v1\n" ‖
+  canonical_json({"gid","seat","seq","ts","mid","text"})` (sorted keys, no spaces, UTF-8). Accepted only when: the session peer is
+  the live grant's key, signature valid, gid = grant id, seat = grant seat, |ts − now| ≤ 120 s and inside the grant, seq > last
+  seq (persisted in grant.json before the task runs) and the `mid` not seen before in this grant (else `replay`). Then text ≤ the friend-task limit (8000), the friend admission filter, ≤ 4
+  waiting, ≤ 64 per grant. → `pack {mid, s:"got"}` or `pack {mid, s:"blocked", rule:<why>}`.
+- result = `pmsg {mid, thread, irt:<task mid>, text, ts, assist:{gid, seq}}` — the page's reply (≤ 6000) after the outbound
+  credential gate AND the friend admission filter, like a same-owner `tell` (a hit → a fixed "withheld" line, why `outbound_gate`). Exactly one per finished task; none after the grant ended.
+- Any other peer, frame, a frame outside a live grant or failing a check: no row, no answer, one host.log line
+  `assist_refused reason=<no_grant|type|shape|bad_signature|wrong_grant|other_seat|stale|replay|bad_hello>`.
+
+**End.** Revoke, expiry, stop everything, unpairing of the granting remote, a seat change or the key leaving the pinned list end
+the grant: queued tasks cancelled, a running task's turn interrupted (state `stopped`), the helper's session and outbox dropped.
+A serve restart keeps an unexpired grant; every ended grant id is appended to `revoke.json` (all reasons) and is never live
+again. Files `<state>/assist/` (0700): `grant.json` (0600: id, key_id, seat, granted_by,
+minutes, not_before, until, seq, revoked?), `revoke.json` (0600, append-only: every ended grant id; flock `revoke.lock`), `log.jsonl` (0600, 30 days, the owner's own audit incl.
+task text). CLI `agentj assist status|log|revoke` — there is no grant from the CLI.
+
+### 0269 wave 2 — phone side of #468 (§B3) and #471 (§D) (lane w2-web; CANDIDATE, the CEO aligns the host lanes)
+What the page reads; the host lanes own the emitting side. Unknown fields are ignored, malformed messages dropped.
+- `assist_state {active, until, id, key_id, tasks:[{id, state}]}` — `until` in s or ms; `tasks[].state` ∈ queued · running ·
+  done · refused · stopped (others dropped); inactive or past `until` = no banner, feed wiped. The wave-1 fields `opened`,
+  `viewers`, `cols`, `rows` are no longer read.
+- `assist_task {id, ts, text, state, why?}` (host → phones, every state change; a later frame may omit `text`) — `id`
+  `[A-Za-z0-9._:-]{1,64}`, `ts` s or ms, `text` display text (control characters stripped, ≤ 4000 shown), `why` a code
+  `[a-z_]{1,32}` (worded on the page: expired · revoked · estop · too_long · replay · stale · busy, else a generic line). Read
+  only while a grant is active; the page sends nothing back for it.
+- The task's turn in history: `src.k:"official_assist"` or `src.k:"task", via:"official_assist"` (both labelled
+  「官方远程协助」 / "Agent J support"); optional `src.assist_id` (or `task_id`) = the `assist_task` id links the feed entry to
+  its reply; without it the page matches the newest such turn whose `src.text` contains the task text.
+- Terminal frames carrying `assist:true` are dropped by the page (never routed to the owner's terminal). The page never
+  sends `term_*` for assist.
+- `msg_steered {mid, turn}` — `mid` = the owner message's turn id (integer) or its send id (`sid` string); the page drops it
+  from its queue, shows 「已插入当前这一轮」 on that page, never the queued notice. A history `card.steered:true` on the
+  message's turn reads the same (survives a reload).
+- #471 card split is page-only (no wire): an open turn with a visible reply followed by an owner message (`src.k` phone ·
+  telegram · wechat) → later output on a continuation page (same turn id). 「停下上一件」 on the owner's own queued page sends
+  the signed `rescue_do {action:"end_turn"}` when the host has shown the turn watchdog (any turn carrying `waited_s`/`stuck`),
+  else `/stop` as in P481.
+
+## 42. Card placement, card scope line, day / month budget (0.26.9 #472 / #473 ③, CONTRACT §E6 / §E3; lane w3-cards, phone side; number provisional until the merge)
+- **Placement (page-only, no wire):** every card the page pops renders under the current reply card (`#reply-notices`); registry
+  `web/public/js/cardplace.js` `CARDS`. Registered full-screen exceptions: the operating system's passkey / Face ID sheet (WebAuthn),
+  the owner-opened 「全屏」 reading of an unlocked key, the page's own disconnected state.
+- **Optional card fields (host → phone, additive; older pages ignore them):** on `ask`, `elev`, `secret_out`: `cls` string (one of
+  `spend_over_budget` · `secret_reveal` · `new_recipient` · `public_publish` · `permanent_delete` · `irreversible`; other values show no
+  label) and `why_scope` string (one line, ≤ 300 shown) = why the owner's task scope does not cover this step. Not signed, display only.
+- **`budget_state` (host → phone):** `{t:"budget_state", day, month, spent_day?, spent_month?, currency}` — `day` / `month` number ≥ 0
+  or `null` (= no budget, nothing runs without asking), `spent_*` number ≥ 0 only when the host knows it (the page never estimates),
+  `currency` ISO 4217 (3 capitals). Sent on connect and after every change. No `budget_state` = the page hides 预算.
+- **`budget_set` (phone → host, §8 control-v1):** `{t:"budget_set", r, day?, month?, n, ts, sig[, fa]}` — only the changed fields;
+  signed object = canonical JSON of the sent fields, e.g. `{"day":10}` / `{"day":10,"month":400}` (wire.js `controlObject`; the host
+  mirrors it in `controls.object_text('budget_set')`). Raising either value → `ctl_res {ok:false, why:"passkey_required", fa, fa_ch}`,
+  the page asks Face ID and resends the SAME signed object with `fa`; lowering → `ctl_res {ok:true}` without Face ID; then a fresh
+  `budget_state`. Refusals: `bad_signature`, `shape`, `passkey_failed`, `no_passkey`.
+
+
+## 43. Fewer interruptions — card class, owner budget (0.26.9 #473 / #469; ADR-0269-w3-policy; number provisional until the merge)
+Host lane w3-policy. Unknown fields are ignored by older pages; nothing here changes what a signature covers.
+
+### 42.1 Card class on every approval card (`ask`, additive; web lane w3-cards renders `cls` + `why_scope`)
+- `cls` ∈ `spend_over_budget` · `secret_reveal` · `new_recipient` · `public_publish` · `permanent_delete` · `irreversible`
+  (every other table row: self_protect, fetch_run, secret_read, opaque, admin, own_config, other).
+- `why_scope` — one line (≤ 300 chars, card language): why the owner's task does not cover this step.
+- finer, optional: `policy_class` (the row id of `host/agentj/approval_policy.py` ROWS), `policy_name` (plain words),
+  `policy_provisional` (boolean: the row waits for the chairman's signature).
+Display only: the signed `summary` / `shown_sha256`, `passkey_required`, `cat`, `why`, `reason` keep their meaning. Face ID
+is still exactly `passkey_required`. In an owner-authorised completion turn (§42.3) the signed `summary` gains one last line
+「主人原话：「…」」 / "The owner's words: “…”" (≤ 80 chars of the owner's message).
+
+### 42.2 Budget (`host_info.budget: 1`)
+- `budget_get {r}` (paired, p33) → `budget_state {r, day, month, currency}`; also pushed to every paired remote after a
+  change (no `r`). `day` / `month`: number ≥ 0, ≤ 1 000 000, at most 2 decimals, or `null` (both `null` = no budget: every
+  spend asks with Face ID). `currency` ISO (`USD` default, `CNY`; not settable from the phone yet). `spent_day` /
+  `spent_month` appear only when the host knows the exact amount (constitution: never estimated) — today never.
+- `budget_set {r, day?, month?, n, ts, sig[, fa]}` — only the changed fields; §8 control-v1, action `budget_set`, object
+  text = wire.js `canonicalJson` of the fields sent (sorted keys, no spaces, integral numbers without `.0`), e.g.
+  `{"day":10}` or `{"day":10,"month":400}` (host: `controls.object_text` → `budget.canonical`). The result = the budget in
+  force with those fields replaced. Raising (any higher limit; from none counts as from 0; dropping one limit while the
+  other stays) needs this remote's Face ID, two steps like `approval_set`: without `fa` → `ctl_res {action:"budget_set",
+  ok:false, why:"passkey_required", fa, fa_s, fa_ch}` with `fa_ch` = `passkey.elevate_challenge(channel, device, n,
+  "budget_set", n, object_digest)`; then the same signed object + `fa`. Lowering / clearing: one signed message. Results:
+  `ctl_res {ok:true, day, month, currency}` or `ok:false, why` ∈ shape · estop · no_passkey · passkey_required ·
+  passkey_failed · stale · replay · no_key · bad_signature.
+- The host keeps the newest signed record per axis and re-verifies each with the device's current key on every read; a
+  hand-edited file or an unpaired / re-keyed signer = no budget. The terminal (`agentj budget set --day N|clear --month
+  N|clear`) can only lower.
+
+### 42.5 Slot 0 card: who typed the values
+- `ct_card {mode:"owner", …, proposed?:"agent"}` — present when the e-mail / phone on the owner's own card came from the Agent
+  (`agentj contacts owner set --email/--phone` from an Agent shell); absent for the host's own allowlist suggestion and for the
+  owner at a real terminal (a TTY; display hint only — the owner still confirms on the phone either way).
+
+### 42.3 Owner-authorised follow-ups (host only, no new frame)
+A background completion turn (`CompletionSend`, source `system`) whose every job was launched in an owner turn carries that
+turn's own words (host-recorded, ≤ 300 chars, credentials redacted) for 24 h: the Agent may do the follow-ups the owner
+asked for (e.g. `agentj mail send`); a step that needs confirmation raises the owner's normal card (parked while nobody
+answers), never `group_source`. Group / visitor / friend / official-assist / unknown sources are unchanged.
+
+### 42.4 Waiting instead of refusing
+At the default level an owner-scoped card nobody answers within the approval timeout stays on the phone (parked, as when no
+remote is online): `ask_done` is not sent until it is answered or withdrawn after 30 min; approvals.log `unanswered`.

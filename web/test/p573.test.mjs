@@ -37,7 +37,8 @@ test('term_confirm: uv 0 = the button alone (no WebAuthn, no fa sent); uv 1 or n
 });
 test('sudo card: password + 同意 = one tap on a P573 host; the helper path with helper_uv still asks Face ID; older hosts unchanged', () => {
   assert.match(elev, /c\.tier573 = 'helper_uv' in m; c\.helperUv = m\.helper_uv === 1 \|\| m\.helper_uv === true;/);
-  assert.match(elev, /const needFa = vaultUse \|\| \(c\.tier573 \? c\.passkey_required \|\| \(nopw && c\.helperUv\) : !c\.buttonOnly && !!c\.fa\);/);
+  // 0.26.9 #482: 「用 Face ID 记住」 ticked (`save`) needs the assertion — its PRF is what remembers the password; unticked stays one tap
+  assert.match(elev, /const needFa = vaultUse \|\| save \|\| \(c\.tier573 \? c\.passkey_required \|\| \(nopw && c\.helperUv\) : !c\.buttonOnly && !!c\.fa\);/);
   assert.match(elev, /if \(ok && needFa\) \{/);
   assert.match(elev, /allow = node\('button', 'elev-allow', 'aj-btn aj-btn--primary'\); allow\.type = 'submit';/, '同意 is a plain submit button (no hold)');
 });

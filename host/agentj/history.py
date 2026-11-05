@@ -6,7 +6,7 @@ of a turn, appended (the last line of an id wins), rewritten atomically to the n
 lines — and `<state>/history/meta.json` {epoch, next_id, undo}. `history off` = the newest MEM_KEEP turns in memory only
 (epoch = the serve start time, so a phone never mixes two runs).
 
-A turn: {"id", "ts" (ms), "src": Src, "reply": {"text", "part"?: [k, N], "pre"?}, "end": open|done|stopped|failed, "card"?,
+A turn: {"id", "ts" (ms), "src": Src, "reply": {"text", "part"?: [k, N], "pre"?}, "end": open|done|stopped|failed, "card"?, "login"? (0269: {agent, why}),
 "media"?, "media_skip"? (F21, PROTOCOL §13: files the finished reply shows — media.py)}.
 Src = {"k": phone|host|agent|sys|task|cmd|telegram|auto|friend_report, "dev"?, "name"?, "text", "quote"?, "att"?, "local"?, "via"? (agent only, P132: loop|task)}. The reply of a turn = every
 finished reply text of that Agent turn joined by a blank line — results only, never tool calls; a reply over PART_MAX UTF-16
@@ -219,7 +219,7 @@ class History:
 
     def update(self, tid: int, *, append: str | None = None, end: str | None = None, card: dict | None = None,
                text: str | None = None, media: tuple | None = None, pre: str | None = None,
-               att_asr: dict | None = None) -> list[dict]:
+               att_asr: dict | None = None, login: dict | None = None) -> list[dict]:
         """Change one turn; returns every turn that changed (an append past PART_MAX adds a continuation page and renumbers
         the parts), the last one being where the next append goes. [] when the id is gone. text = replace the reply (a
         command's interim line → its result). pre (P351) = the process notes a silent turn folds away ("" drops them)."""
@@ -263,6 +263,8 @@ class History:
                 x["end"] = end
         if card is not None:
             t["card"] = card
+        if login is not None:                  # 0269-login: {agent, why} — the page draws 「重新登录」 under this reply
+            t["login"] = login
         if media is not None:                  # F21 (§13): (media, media_skip) of a finished page — set as a whole
             for k, v in zip(("media", "media_skip"), media):
                 if v:

@@ -277,9 +277,22 @@ def wait_answer(ch: Channel, thread: str, after: int, wait: int, *, clock=time.m
 
 
 # ------------------------------------------------------------------ commands
+META_MAX_LINES = 20
+
+
+def metadata_ok(text, attach_doctor=False, thread=None) -> bool:
+    """#475 + the P573 ruling: the only body that may skip layer 2 — upgrade_diag.metadata_body's exact header, then only
+    keys from the closed upgrade_diag.META_FIELDS set, each value passing its own closed check; no attachment, no thread."""
+    from .upgrade_diag import META_HEAD, meta_line_ok
+    lines = text.split("\n") if isinstance(text, str) else []
+    keys = [ln.partition(": ")[0] for ln in lines[1:]]
+    return (not attach_doctor and not thread and 1 < len(lines) <= META_MAX_LINES and lines[0] == META_HEAD
+            and len(keys) == len(set(keys)) and all(meta_line_ok(ln) for ln in lines[1:]))
+
+
 def run_send(kind: str, text: str, *, thread: str | None = None, attach_doctor=False, wait=DEFAULT_WAIT, lang: str | None = None,
              ch: Channel | None = None, env=None, transport=None, identity=None, doctor_fn=None, out=None, clock=time.monotonic,
-             owner_confirmed: bool = False) -> int:
+             owner_confirmed: bool = False, metadata_only: bool = False) -> int:
     out = out or sys.stdout
     if kind not in KINDS:
         raise SupportError("kind = question | bug | report")
@@ -287,12 +300,16 @@ def run_send(kind: str, text: str, *, thread: str | None = None, attach_doctor=F
         raise SupportError("会话 id 形如 st_ 加 22 个字符 / a thread id looks like st_ + 22 characters")
     if not text or not text.strip():
         raise SupportError("问题是空的 / the question is empty")
+    if metadata_only and not metadata_ok(text, attach_doctor, thread):
+        raise SupportError("不是固定格式的升级元数据 / not the fixed upgrade metadata form")
     ch = ch or channel_for()
     attach = (doctor_fn or doctor_text)() if attach_doctor else None
     draft, hits = prepare(text, attach, identity=identity)
     if not draft["body"].strip():
         raise SupportError("脱敏后正文是空的 / nothing left after redaction")
-    v = privacy.layer2(draft, env=env, transport=transport, gate="feedback")
+    # #475: fixed-vocabulary upgrade metadata needs no Jev judgement (nothing free-form, no attachment); everything else does
+    v = (privacy.Verdict("metadata_only", reason="fixed upgrade metadata") if metadata_only else
+         privacy.layer2(draft, env=env, transport=transport, gate="feedback"))
     if v.status == "blocked" and v.kind in ("credential", None):
         print(f"NOT SENT — layer 2 (Jev) flagged it: {v.reason}; most likely {v.kind or '?'} ({privacy.kind_text(v.kind)}). "
               "Remove that and run again. / 没发出：第 2 层判定仍含隐私，请删掉后重发。", file=out)

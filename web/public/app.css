@@ -3586,9 +3586,9 @@ html[data-ios-safari="1"] body::before{content:"";position:absolute;inset:0;back
   max-height:85dvh;width:min(100%,720px);margin:auto}
 body[data-ontop="1"] #toast{z-index:var(--z-notice-top)!important}
 /* P565 追加 A (华为 Pad 10-28 13:17): a centred notice never covers an open centred dialog — it sits below it, above the scrim */
-body:has(.ajmodal.dlgcard:not([hidden]),#confirm:not([hidden])) .toast:is(.circle,.square){top:auto;bottom:calc(16px + env(safe-area-inset-bottom,0px));
+body:has(.ajmodal.dlgcard:not([hidden]):not(.cp-docked),#confirm:not([hidden]):not(.cp-docked)) .toast:is(.circle,.square){top:auto;bottom:calc(16px + env(safe-area-inset-bottom,0px));
   max-height:40dvh;z-index:calc(var(--z-confirm) + 60)}
-body:has(.ajmodal.dlgcard:not([hidden]),#confirm:not([hidden])) .toast:is(.circle,.square).on{transform:translate(-50%,0)}
+body:has(.ajmodal.dlgcard:not([hidden]):not(.cp-docked),#confirm:not([hidden]):not(.cp-docked)) .toast:is(.circle,.square).on{transform:translate(-50%,0)}
 /* P566 (#354): an execution notice raised while a card is open floats above that card's scrim — at the bottom, like P565's
    centred notices under an open dialog (P440: never a top popup); the card's own reason line stays the first place to read */
 .toast.rect.over-dlg{position:fixed;left:50%;right:auto;top:auto;bottom:calc(16px + env(safe-area-inset-bottom,0px));
@@ -3612,3 +3612,51 @@ body:has(.ajmodal.dlgcard:not([hidden]),#confirm:not([hidden])) .toast:is(.circl
 .setmail .mailadd #mail-add-role{grid-column:3;grid-row:1;justify-self:end}
 .setmail .mailadd #mail-add{grid-column:2;grid-row:1}
 .setmail .mail-role option{background:var(--menu-bg);color:var(--menu-text)}
+
+/* 0.26.9 #472 (CONTRACT §E6, js/cardplace.js): every card that pops sits under the current reply card, in the reply's notice
+   slot — the approval / question sheet (its home is the slot now) and the password / key / sign-in / help / goal / contact /
+   confirm cards (moved in while the chat is in front). In the slot a card is an in-flow block: no fixed position, no scrim,
+   no blur of the reply, its own rounded box; the slot grows to make room and scrolls by itself (the reply row stays). */
+.reply-notices:has(>.cp-docked:not([hidden])){max-height:70%;flex-shrink:0}
+/* the reply's own words keep about three lines above its card (the card scrolls inside the slot) */
+.rm:has(>.reply-notices>.cp-docked:not([hidden]))>main{min-height:min(30%,calc(96px*var(--fz,1)))}
+.reply-notices>.cp-docked{position:relative;inset:auto;top:auto;left:auto;right:auto;bottom:auto;height:auto;width:100%;max-width:100%;
+  box-sizing:border-box;flex-shrink:0;margin:0;padding:0;z-index:auto;display:block;
+  -webkit-backdrop-filter:none;backdrop-filter:none;transform:none;visibility:visible;animation:none}
+/* a centred card's root was its own scrim: no fill in the slot (the approval sheet keeps its own colour) */
+.reply-notices>:is(.ajmodal,.gdlg).cp-docked{background:none}
+.reply-notices>.cp-docked[hidden]{display:none}
+.reply-notices>.ajmodal.cp-docked>.box,.reply-notices>.gdlg.cp-docked>.sq{width:100%;max-width:100%;min-height:0;max-height:none;
+  margin:0;box-sizing:border-box;border-radius:var(--dlg-radius-rect);animation:none;overflow:visible}
+.reply-notices>.ajconfirm.cp-docked>.box{box-shadow:none}
+/* the approval / question sheet keeps its colours; only the frame changes */
+.reply-notices>.sheet.cp-docked{max-height:none;overflow:visible;border:1px solid var(--line);border-radius:var(--dlg-radius-rect);
+  box-shadow:none;padding:10px 16px 16px;transition:none}
+body[data-sheet="1"]:has(.reply-notices>#sheet.cp-docked) .deck{filter:none;opacity:1}
+body[data-sheet="1"]:has(.reply-notices>#sheet.cp-docked) .scrim{opacity:0}
+/* the card's class + the host's "why your task scope does not cover this" (#472 ②) */
+.cp-scope{margin:var(--sp-2,8px) 0 0;font-size:calc(14px*var(--fz,1));line-height:1.5}
+.cp-scope[hidden]{display:none}
+.cp-scope .cp-cls{font-weight:600;margin-inline-end:.5em}
+/* 0.26.9 §E3: Settings → 安全 → 预算 */
+.budget__grid{display:grid;grid-template-columns:1fr 1fr;gap:var(--space-control,12px);margin-top:var(--sp-2,8px)}
+.budget__grid .aj-input{width:100%;min-height:44px;box-sizing:border-box}
+.budget__spent b{font-weight:600}
+#set-budget-save{margin-top:var(--sp-3,12px);min-height:44px}
+#settings .budget__f{display:flex;flex-direction:column;align-items:stretch;gap:6px;min-width:0;color:var(--menu-text);font-size:var(--ui-fs-small)}
+#settings .budget__f>span{white-space:nowrap}
+/* #472: a docked card is as wide as the reply text — long button labels wrap inside it, nothing scrolls sideways */
+.reply-notices>.ajmodal.cp-docked>.box{padding:var(--sp-4,16px);overflow-x:clip;overflow-y:visible}
+.reply-notices>.cp-docked .aj-btn{white-space:normal;max-width:100%;min-width:0;height:auto;text-wrap:balance;line-height:1.3}   /* keeps each card's own ≥ 56 px target (--tap) */
+/* security r4 F8: the host-only badge on every card under the reply card (built by cardplace.js, never by reply Markdown) */
+.cp-host{display:flex;align-items:center;gap:6px;margin:0 0 var(--sp-2,8px);font:600 calc(12px*var(--fz,1))/1.4 var(--font-body);letter-spacing:.02em}
+.cp-host svg{width:16px;height:16px;flex:none;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linejoin:round}
+.reply-notices>:not(.cp-docked) .cp-host,.ajmodal:not(.cp-docked)>.box>.cp-host,.gdlg:not(.cp-docked)>.sq>.cp-host{display:none}
+.reply-notices>.sheet.cp-docked>.cp-host{padding-right:150px;min-height:28px}
+/* F8: the badge stays at the top of the card's visible part while the slot scrolls to its buttons (never scrolled away) */
+.reply-notices>.cp-docked .cp-host{position:sticky;top:0;z-index:2;background:inherit;margin-inline:-4px;padding:6px 4px;border-radius:8px}
+/* security r7: the Agent proposed the owner card's address — say so above the fields (host `proposed: "agent"`) */
+.ct-proposed{margin:var(--space-control,12px) 0 0;padding:8px 12px;border-left:3px solid var(--c-peachy-feeling,currentColor);text-align:left;font:600 var(--dlg-fs-sub,14px)/1.5 var(--font-body);opacity:1}
+.ct-proposed[hidden]{display:none}
+.reply-notices>.gdlg.cp-docked>.sq>.cp-host{background:var(--dbg,var(--dlg-bg));align-self:stretch}
+.reply-notices>.ajmodal.cp-docked>.box>.cp-host{background:var(--dlg-bg)}

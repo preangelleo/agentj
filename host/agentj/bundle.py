@@ -398,6 +398,69 @@ def check_manifest(m, paths=None) -> dict:
     return m
 
 
+_RUNNER = re.compile(r"(?:ba|da|z|k)?sh|python[0-9.]*|node|perl|ruby|php|deno|bun|lua")
+_SCRIPT_EXT = (".py", ".js", ".mjs", ".cjs", ".ts", ".sh", ".rb", ".pl", ".php", ".lua")
+_VERIFY_JOIN = frozenset(("&&", ">/dev/null", "2>/dev/null", "2>&1", "&>/dev/null", "1>/dev/null"))
+
+
+def _verify_files(cmd) -> list[str]:
+    """Package files `install.verify` runs (program with a "/", or an interpreter's script). Anything beyond `&&` and the
+    trailing redirects (market.parse_verify judges that grammar) → [] — this gate only checks the files it can name."""
+    import shlex
+    try:
+        toks = shlex.split(cmd, posix=True) if isinstance(cmd, str) else []
+    except ValueError:
+        return []
+    if any(t not in _VERIFY_JOIN and set(t) & set(";|&$`<>(){}[]*?!~#\\") for t in toks):
+        return []
+    out, argv = [], []
+    for t in toks + ["&&"]:
+        if t not in _VERIFY_JOIN:
+            argv.append(t)
+            continue
+        if argv:
+            prog, base = argv[0], argv[0].rsplit("/", 1)[-1]
+            if "/" in prog:
+                out.append(prog)
+            elif _RUNNER.fullmatch(base):
+                for a in argv[1:]:
+                    if a in ("-m", "--eval", "--print") or (a[:1] == "-" and a[1:2] != "-" and set(a[1:]) & set("cemp")):
+                        break                  # security r1 I1: -c / -e / -m / -p, also in a cluster (-ec, -Bc): not judged
+                    if not a.startswith("-"):
+                        if "/" in a or a.endswith(_SCRIPT_EXT):
+                            out.append(a)
+                        break
+        argv = []
+    return [p[2:] if p.startswith("./") else p for p in out]
+
+
+def missing_entry_files(m, paths) -> list[tuple[str, str]]:
+    """#465: [(manifest field, path)] the manifest names but the package does not ship: `entry`, every file `install.verify`
+    runs (paths are relative to the package root — a workflow's tools sit under scaffold/), `roles[].file`, `params_schema`,
+    `requires.python_requirements`."""
+    have, out = set(paths), []
+    m = m if isinstance(m, dict) else {}
+    inst, req = m.get("install") if isinstance(m.get("install"), dict) else {}, m.get("requires") if isinstance(m.get("requires"), dict) else {}
+    refs = [("entry", m.get("entry"))] + [("install.verify", p) for p in _verify_files(inst.get("verify"))]
+    refs += [("roles[].file", r.get("file")) for r in (m.get("roles") if isinstance(m.get("roles"), list) else []) if isinstance(r, dict)]
+    refs += [("params_schema", m.get("params_schema")), ("requires.python_requirements", req.get("python_requirements"))]
+    for k, p in refs:
+        if isinstance(p, str) and p and p not in have and (k, p) not in out:
+            out.append((k, p))
+    return out
+
+
+def check_entry_files(m, paths) -> None:
+    """#465 signing / publishing gate (build(): `tools/plaza import`, `agentj plaza publish`): every file the manifest names
+    must be in the package, else BundleError naming each (with the scaffold/ hint for a workflow)."""
+    bad = missing_entry_files(m, paths)
+    if bad:
+        have = set(paths)
+        raise BundleError("manifest names files the package does not have: " + "; ".join(
+            f"{k} {p!r}" + (f" (in the package as 'scaffold/{p}': paths are relative to the package root)" if f"scaffold/{p}" in have else "")
+            for k, p in bad[:6]))
+
+
 def _check_params_schema(raw: bytes) -> None:
     try:
         s = json.loads(raw.decode("utf-8"))
@@ -503,6 +566,7 @@ def build(directory, manifest_override: dict | None = None) -> tuple[bytes, dict
         raise BundleError(f"files total {total} bytes > 8 MiB")
     m = {**m, **(manifest_override or {}), "files": files_list(files)}
     check_manifest(m, set(files))
+    check_entry_files(m, set(files))
     if m["type"] == "workflow":
         _check_params_schema(files["params.schema.json"])
     data = pack(m, files)

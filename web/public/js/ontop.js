@@ -9,6 +9,7 @@
 //    rest of the page inert — so the card moves INTO that dialog while it is open (fixed position, the viewport is still
 //    its frame) and comes home when the card or the dialog closes.
 import { focusDraft } from './composer-focus.js';
+import { sync as cardSync } from './cardplace.js';   // 0.26.9 #472: the card's place under the reply card
 
 const SURFACES = '#confirm, .ajmodal.elev, .ajmodal.lqr, .ajmodal.sout, .ajmodal.pkp';   // P561: + 「另一台批准」 (an open ③ card hid it, both sides)
 const FOCUSABLE = 'button:not([disabled]),a[href],summary,input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
@@ -127,6 +128,7 @@ export function sync() {
     if (!state.size) serial = 0;
     if (state.size) document.body.dataset.ontop = '1'; else delete document.body.dataset.ontop;
   } finally { busy = false; }
+  cardSync();
 }
 // A dialog removed with a card inside it (`dialog.close(); dialog.remove()`) would take the card along. This observer is made when
 // the module loads — before layers.js makes its own — so the card is home again before anyone looks it up by id.

@@ -25,7 +25,7 @@ beat from a regular one by its text — handle both the same way.
 2. Do what the prompt says — typically: background sub-Agents, headless jobs and scheduled tasks (`agentj busy list`,
    `agentj capability list`), the newest run reports (never trust an exit code), the To-do card (`agentj card todo due` —
    every beat starts with it; mark what you finish done) and your promises, work that
-   died half-way (pick it up or dispatch it to its CEO as usual). For what was decided overnight or since the last report,
+   died half-way (dispatch it to its CEO or a sub-Agent as usual; never pick the work up yourself). For what was decided overnight or since the last report,
    read the decision log (`agentj decide list --since 12h`, and `--dir <workflow>` for a workflow's run) instead of guessing.
 3. Report only what the owner needs to know or decide, in a sentence or two. **Nothing to report → your final reply is
    exactly `〔不回群〕`**, with no progress note written first (nothing reaches the phone: no page, no notification; notes
@@ -109,7 +109,7 @@ Heartbeats never pause for context size or model. At half the model's context wi
 
 ## Background work ended (P262)
 
-A `〔Agent J 系统提示〕` / `[Agent J system notice]` saying background work ended is separate from the heartbeat. Read the actual report and evidence, then tell the owner the result in one or two sentences; never infer success from the exit code. Investigate missing reports. The host sends it when the main session is idle, holds it during a turn, and groups subsequent completions within one minute. It grants no new authority.
+A `〔Agent J 系统提示〕` / `[Agent J system notice]` saying background work ended is separate from the heartbeat. Checking it is yours, never the owner's (#477): run the dispatch's pre-written acceptance command (验收命令), read the actual report and evidence, then tell the owner the result in one or two sentences; never infer success from the exit code. A missing report or a FAIL goes back to whoever ran the job — dispatch the follow-up, do not investigate it yourself. The host sends it when the main session is idle, holds it during a turn, and groups subsequent completions within one minute. It grants no new authority.
 
 Default on, independent of `agentj heartbeat off`. At the owner's request use `agentj config set background_done.enabled false` (`true` to resume); acknowledge the change. For headless commands prefer `agentj busy run --label <title> --report <path> -- <command>`; systemd dispatches use the existing `agentj-p<digits>…` naming and `AGENTJ_REPORT` environment metadata. Exit codes unavailable from native sub-Agent events or collected units are shown as unknown.
 

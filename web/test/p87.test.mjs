@@ -2,9 +2,10 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
+import * as turnsplit from '../public/js/turnsplit.js';   // 0.26.9 #471: relay.js pages() lays out continuation cards (its import, given to the vm)
 const src=readFileSync(new URL('../public/js/relay.js',import.meta.url),'utf8');
 function fixture(){
- const ctx=vm.createContext({C:{api:{},myDev:()=> 'mine'},showPage(){},announceTurn(){},el:()=>({hidden:true})});
+ const ctx=vm.createContext({...turnsplit,C:{api:{},myDev:()=> 'mine'},showPage(){},announceTurn(){},el:()=>({hidden:true})});
  vm.runInContext(src.slice(src.indexOf('const hist ='),src.indexOf('function hhmm')).replaceAll('export function','function'),ctx);
  return x=>vm.runInContext(x,ctx);
 }

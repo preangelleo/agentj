@@ -33,7 +33,8 @@ from . import controls, wire
 from .text import pick
 
 OK_AGENT = ("idle", "working", "waiting", "compacting")
-RESCUE_ACTIONS = ("help", "report", "reconnect", "restart", "linger", "rollback", "new_session", "clear_friend_asks", "restart_session")
+RESCUE_ACTIONS = ("help", "report", "reconnect", "restart", "linger", "rollback", "new_session", "clear_friend_asks", "restart_session",
+                  "end_turn", "takeover")    # 0269 (#461): owner-signed only — never offered, never run by support
 RESET_CMDS = ("reset",)
 UNDO = "reset_undo.json"
 RELAY_WAIT = 25.0        # s: the relay link back after a re-dial
@@ -78,6 +79,17 @@ WORDS = {   # executor results → plain sentences
 UNAVAILABLE = ("这台Agent J 主机上没有这一步可做。", "This step is not available on the Agent J host.")
 RESTART_SCHEDULED = ("马上重启Agent J 主机上的 Agent J（报告发出后）。", "Agent J on the Agent J host restarts right after this report.")
 OFFERABLE = ("reconnect", "restart", "linger", "rollback", "new_session")
+HEAL = {   # 0269: end_turn / takeover — (run, ok) and the failures
+    "end_turn": (("正在强制结束这一轮…", "Ending this turn…"), ("这一轮已结束，可以接着发消息了。", "This turn is ended; you can send again.")),
+    "takeover": (("正在接管卡住的会话…", "Taking over the stuck session…"),
+                 ("接管好了：同一个对话接着用，排队的消息已递过去。", "Taken over: the same conversation goes on and queued messages were handed over.")),
+    "estop": ("Agent J 现在是「全部停下」状态，点「恢复」后再接管。", "Agent J is stopped — tap Resume, then take over."),
+    "foreign": ("卡住的那一轮在您自己开的程序里（比如终端里的 codex），Agent J 不会关掉它；请在 Agent J 主机上退出它后重发。",
+                "The stuck turn runs in a program you started yourself (e.g. codex in a terminal); Agent J never closes it. "
+                "Quit it on the Agent J host, then resend."),
+    "fail": ("还没恢复，请再点一次「接管卡住的会话」，或试「请 Agent J Father 远程帮忙」。",
+             "Not recovered yet; tap Take over again, or try Ask Agent J Father for remote help."),
+}
 
 
 def clean_offer(offer) -> list:
@@ -394,7 +406,11 @@ class Desk:
                     text += ("\n" + live) if live else ""
                 await emit(1, "ok" if res.get("ok") else "fail", text)
                 await finish({**res, "step": 1, "text": text})
+            elif flow in ("end_turn", "takeover"):
+                await self._heal(device, flow, emit, finish, ops, lang)
             elif flow in ("reset", "reconnect", "new_session", "restart"):
+                if flow in ("reset", "new_session") and getattr(h, "turn_heal", None) is not None:
+                    await h.turn_heal.preempt(device, flow)      # 0269: never wait behind the running turn
                 steps = {"reset": (1, 2, 3, 4), "reconnect": (1, 2), "new_session": (3,), "restart": (4,)}[flow]
                 await ladder(ops, emit, finish, lang, steps)
             elif flow in ("linger", "rollback"):
@@ -471,6 +487,22 @@ class Desk:
                 await emit(4, "fail", text, (res or {}).get("why") or (res or {}).get("detail"))
             with contextlib.suppress(Exception):
                 await finish({"ok": False, "step": 4, "text": text, "why": "restart_failed"})
+
+    async def _heal(self, device, flow, emit, finish, ops, lang) -> None:
+        """0269 (#461): 「强制结束这一轮」 (end_turn) · 「接管卡住的会话」 (takeover): turn_heal.heal, then (takeover) the relay
+        link back if it is down and the same conversation re-pinned."""
+        h = self.h
+        await emit(1, "run", pick(lang, *HEAL[flow][0]))
+        res = await h.turn_heal.heal(device or "owner", None, action=flow)
+        if flow == "takeover" and res.get("ok"):
+            if not h.relay_up:
+                await ops.reconnect()
+            with contextlib.suppress(Exception):
+                await ops.repin()
+        why = res.get("why")
+        text = pick(lang, *(HEAL[flow][1] if res.get("ok") else HEAL["estop" if why == "estop" else "foreign" if why == "foreign" else "fail"]))
+        await emit(1, "ok" if res.get("ok") else "fail", text, why)
+        await finish({"ok": bool(res.get("ok")), "step": 1, "text": text, **({"why": why} if why else {})})
 
     async def _help(self, emit, finish, ops, lang) -> bool:
         """② in a worker thread (rescue_kit.help_flow); its actions map to the same executors. A restart (asked by support

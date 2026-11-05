@@ -271,7 +271,7 @@ Everything above holds; these fill gaps or tighten it (the host and the page rel
 - **Verify sandbox** (`market.py` `sandbox_kind` probes once per process; there is no unsandboxed path). Linux: `bwrap
   --ro-bind / / --dev /dev --proc /proc`, `--tmpfs` over `$HOME`, the passwd home, agentj's state dir, `/tmp`, `/run`, `/var/tmp`
   (a folder inside another hidden one is skipped), then `--bind <scratch> <scratch>` on top, `--unshare-all` (network
-  included), `--die-with-parent --new-session --clearenv`, only `PATH=/usr/local/bin:/usr/bin:/bin`, `HOME=<scratch>/home`,
+  included), `--die-with-parent --new-session --clearenv`, only `PATH=/usr/local/bin:/usr/bin:/bin` (+ `/opt/homebrew/bin`, `/home/linuxbrew/.linuxbrew/bin` when root/own-uid owned, not group/other-writable, outside every home — read-only like the rest; ADR-0269-w4-plaza), `HOME=<scratch>/home`,
   `TMPDIR=<scratch>/tmp`, `LANG=C.UTF-8` (bwrap adds `PWD`), `--chdir <scratch>/pkg`; bwrap missing or unable to create the
   namespaces (probe) → no sandbox. macOS: `sandbox-exec -p <profile per run> -D SCRATCH=… -D HIDE_n=…` (paths as parameters,
   never spliced): `(allow default) (deny network*) (deny file-write* (subpath "/"))`, writes allowed back for the scratch folder

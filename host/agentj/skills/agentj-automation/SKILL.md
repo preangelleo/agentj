@@ -60,6 +60,10 @@ add approval steps or limits the owner did not ask for.
 In the workflow's folder (a new workflow is a direct child of the working root, as usual):
 - `PROMPT.md`: steps, working folder, files read and written; it ends with a short report whose last line is
   `VERDICT: PASS <one line>` or `VERDICT: FAIL <reason>`. Secrets: only where they are stored and the variable names, never a value.
+  Its first lines name the acceptance command (验收命令), written before the first run, e.g.
+  `tail -n 1 runs/$(date +%F)/report.md | grep -q '^VERDICT: PASS'`. Afterwards you only run that command and read the
+  verdict; a FAIL goes back to the workflow's CEO with the report — you do not investigate or fix it yourself, and
+  checking a run is yours, never handed to the owner.
 - `run.sh` (Windows `run.ps1`): runs the headless command and keeps the report and log in `runs/<YYYY-MM-DD>/`; no PASS
   line means it appends `VERDICT: FAIL`, so failures are visible. Use the tool's full path (`command -v codex`): a
   scheduler does not load the owner's shell PATH.

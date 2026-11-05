@@ -16,7 +16,8 @@ import { copyable } from './copycode.js';   // P292
 import { paintMailPassword } from './mail-password.js';
 import { elevateChallenge, canAssert, approve } from './faceid.js';
 import { paintPk, errName } from './pkassist.js';   // P539: no own passkey here · why a passkey tap failed
-import { put as handIn } from './pkhandin.js';   // P566 (#364): the answer outlives the socket the sheet drops
+import { put as handIn } from './pkhandin.js';
+import { paintScope } from './cardplace.js';   // 0.26.9 #472 ②   // P566 (#364): the answer outlives the socket the sheet drops
 // P414 (PROTOCOL §37.10 / §37.11, ADR-P414-bang): the computer-password vault on sudo cards — 「用 Face ID 填入电脑密码」 (the
 // PRF value sealed with kind `vault`, answer `vault:1`), a typed answer that also remembers it (`pepk`/`pct`, kind `vault_save`,
 // signed `save:` tail, M2), 「记住的电脑密码不对了」 after `stale`, and the `vshare` card (another remote asks to use it; 「同意」 =
@@ -89,7 +90,7 @@ function build() {
   // P406 #173: 「收起」 (down arrow) at every stage — the card leaves the screen, nothing is declined, the strip brings it back
   const hide = node('button', 'elev-hide', 'elev-hide'); hide.type = 'button';
   hide.append(chevron());
-  form.append(hide, node('p', 'elev-kicker', 'elev-kicker'), node('h2', 'elev-title'), node('dl', 'elev-rows', 'elev-rows'), node('section', 'elev-auth', 'elev-auth'), bad, stale, vault, label, input,
+  form.append(hide, node('p', 'elev-kicker', 'elev-kicker'), node('h2', 'elev-title'), node('p', 'elev-scope', 'cp-scope'), node('dl', 'elev-rows', 'elev-rows'), node('section', 'elev-auth', 'elev-auth'), bad, stale, vault, label, input,
     empty, opt, saveOpt, node('p', 'elev-note', 'elev-note'), node('p', 'elev-left', 'elev-left'), err, acts, deny);
   acts.after(node('div', 'elev-pk', 'pkassist'));   // P539: right under 「同意」, above the quiet 「拒绝」
   root.appendChild(form);
@@ -122,6 +123,7 @@ export function add(m) {
   const ttl = Number.isInteger(m.ttl) && m.ttl >= 0 && m.ttl <= 600 ? m.ttl : 120;
   const c = { id: m.id, kind: m.kind, n: m.n, epk, passkey_required: m.passkey_required === true, deadline: Date.now() + ttl * 1000, bad: Number.isInteger(m.bad) ? m.bad : 0,
     tries: Number.isInteger(m.tries) ? m.tries : 3 };
+  c.cls = typeof m.cls === 'string' ? m.cls : ''; c.why_scope = typeof m.why_scope === 'string' ? m.why_scope : '';   // 0.26.9 #472 ② (optional)
   if (m.kind === 'sudo') {
     c.cmd = str(m.cmd, 2000); c.why = str(m.why, 300); c.effect = str(m.effect ?? '', 300);
     if (c.cmd === null || c.why === null || c.effect === null) return;
@@ -172,7 +174,7 @@ export function add(m) {
   // The same arming (same nonce) is the same card: its typed field, its 「正在补交…」 and its reason stay; only a new nonce
   // (a wrong password, a re-armed card) is a new card.
   const same = !!old && old.n === c.n && !c.running;
-  if (same) { c.sending = old.sending; c.err = old.err; c.faErr = old.faErr; c.faHow = old.faHow; }
+  if (same) { c.sending = old.sending; c.err = old.err; c.faErr = old.faErr; c.faHow = old.faHow; c.wantSave = old.wantSave; }
   // P414 (§37.10, host build): the same card re-armed after this remote's 「用 Face ID 填入电脑密码」 with `v.has` 0 and no
   // `stale` = the remembered password did not open with this Face ID (nothing counted); say so above the field
   if (c.kind === 'sudo' && c.v && !c.v.has && !c.stale && old && (old.sentVault || old.vaultMiss)) c.vaultMiss = true;
@@ -233,6 +235,8 @@ export function done(m) {
     if (c.kind === 'vshare' && (m.result === 'saved' || m.result === 'done')) text = t('p414.e.vsDone');   // P414: the host ends it `saved`
     if (m.elsewhere === 1) text = t('p549.elsewhere') + ' ' + text;          // P549 (#314): saved through another card
     if (m.saved === 1 || m.saved === true) text += ' ' + t('p414.e.saved');       // P414 (§37.10): the typed password is remembered
+    // 0.26.9 #482: ticked but not remembered (no PRF here, or the host did not keep it) is said, never silent; the no-PRF words name no biometric
+    else if (c.kind === 'sudo' && c.wantSave && m.result === 'done') text += ' ' + t(c.wantSave === 'prf' ? 'p0269s.e.noPrfSave' : 'p0269s.e.notSaved');
     if (m.verify === 'ok') text += ' ' + t('elev.r.verifyOk');
     if (m.verify === 'fail') text += ' ' + t('elev.r.verifyFail');
     if (c.kind === 'secret' && m.key_hint === 'short') text += ' ' + t('elev.r.keyShort');   // P163: from the length only
@@ -338,6 +342,7 @@ function render() {
     root.classList.toggle('secret', c.kind === 'secret');
     $('elev-kicker').textContent = t(sudo ? 'elev.sudo.kicker' : vs ? 'p414.e.vsKicker' : 'elev.secret.kicker');
     $('elev-title').textContent = sudo ? t('elev.sudo.title') : vs ? t('p414.e.vsTitle', { name: c.name || c.dev }) : t('elev.secret.title', { name: c.name });
+    paintScope($('elev-scope'), c, t);   // 0.26.9 #472 ②: the card's class + why the task scope does not cover it
     paintAuth($('elev-auth'), c.auth);
     const dl = $('elev-rows'); dl.replaceChildren();
     if (vs) {   // P414 (§37.11, M4): the requesting remote, as the digest covers it
@@ -368,6 +373,10 @@ function render() {
     const useV = useVault(c);
     $('elev-vault').hidden = !useV;
     $('elev-vault').textContent = t('p414.e.use');
+    // 0.26.9 #482 (chairman: 以后只刷 Face ID): no field and no 同意 beside it; a Face ID that cannot open it (vaultMiss) or a
+    // `stale` re-arm (has 0) brings the field back
+    if (!nopw) { $('elev-label').hidden = useV; $('elev-input').hidden = useV; }
+    $('elev-allow').hidden = useV;
     $('elev-allow').classList.toggle('aj-btn--primary', !useV);
     if (useV) $('elev-label').textContent = t('p414.e.orType');
     const save = offerSave(c);
@@ -407,7 +416,7 @@ function paintPkFor(c) {
   paintPk($('elev-pk'), c && c.fa && !c.running ? { fa: c.fa_s, err: c.faErr || null, retry: () => decide(true, c.faHow) } : {});
 }
 /** P414: this remote holds the vault for its passkey (M5: `prf` wraps only) and the card asks for a typed password. */
-const useVault = (c) => c.kind === 'sudo' && !!c.v && c.v.has && !!c.fa && !viaHelper(c);
+const useVault = (c) => c.kind === 'sudo' && !!c.v && c.v.has && !!c.fa && !viaHelper(c) && !c.vaultMiss;
 /** P414: it could remember a typed one (a passkey; the browser does not say it lacks PRF). */
 const offerSave = (c) => c.kind === 'sudo' && !!c.v && !c.v.has && !!c.fa && !viaHelper(c) && prfCap !== false;
 /** The computer's admin helper accepts this phone's signature: 同意 alone, no password (elevate_helper on the host). */
@@ -479,7 +488,8 @@ async function decide(ok, how) {
   const save = typed && c.kind === 'sudo' && offerSave(c) && $('elev-save-on').checked;
   let fa = null, prf = null;
   if (ok && c.passkey_required && !c.fa) { setErr(c, 'ask.passkeyRequired'); toast(t('ask.passkeyRequired'), 6000); return; }
-  const needFa = vaultUse || (c.tier573 ? c.passkey_required || (nopw && c.helperUv) : !c.buttonOnly && !!c.fa);   // P573: password + 同意 = one tap
+  // 0.26.9 #482: `save` needs the assertion — the PRF over `vs` IS what remembers the password (P573 dropped it: no pct, ever)
+  const needFa = vaultUse || save || (c.tier573 ? c.passkey_required || (nopw && c.helperUv) : !c.buttonOnly && !!c.fa);   // P573: password + 同意 = one tap
   if (ok && needFa) {
     if (!canAssert() && phoneConfirmation()) return;
     if (!canAssert() || !c.fa) { setErr(c, 'elev.fa.none'); toast(t('elev.fa.none'), 5000); return; }
@@ -506,6 +516,7 @@ async function decide(ok, how) {
     if (vaultUse && !prf) {   // this authenticator gave no PRF: nothing sent, the typed field is the way
       busy = false; paintButtons();
       toast(t(c.kind === 'vshare' ? 'p414.e.vsNoPrf' : 'p414.e.noPrf'), 5000);
+      if (c.kind === 'sudo') { c.vaultMiss = true; shownId = null; render(); }   // #482: the field comes back (it was hidden)
       return;
     }
   }
@@ -546,6 +557,8 @@ async function decide(ok, how) {
     // P566 (#364): on this connection, or on the first one after the drop the Face ID sheet caused (「正在补交…」 on the card);
     // again after a reconnect that swallowed its answer, while this arming is open. The host checks it all as before.
     const id = c.id, n = c.n;
+    if (save) c.wantSave = m.pct ? 'host' : 'prf';
+    if (save && !m.pct) prfCap = false;   // #482: this device gives no PRF — no box (and no extra Face ID) on later cards   // #482: ticked — done() says it when this did not end remembered
     c.sending = true; paintButtons();
     const sent = await handIn('elev:' + id, { send: (g2) => sendApp(m, g2), until: c.deadline, ch,
       live: () => { const x = cards.get(id); return !!x && x.n === n && !completed.has(id); },

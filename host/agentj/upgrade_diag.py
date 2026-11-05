@@ -175,12 +175,22 @@ def artifact_fields(res):
         value = res.get(key)
         if isinstance(value, str) and re.fullmatch(r'[0-9a-f]{64}', value):
             out[key] = value
+    value = res.get('download_attempts')            # #475: bounded same-target retries actually made
+    if type(value) is int and 1 <= value <= 9:
+        out['download_attempts'] = value
+    if res.get('owner_kind') in OWNER_KINDS:        # #475: never the paths or the account name
+        out['owner_kind'] = res['owner_kind']
     return out
+
+
+OWNER_KINDS = ('root', 'other')
 
 
 def plan_fields(e):
     evidence = getattr(e, 'artifact_diagnostic', {})
-    out = artifact_fields(evidence if isinstance(evidence, dict) else {})
+    evidence = dict(evidence) if isinstance(evidence, dict) else {}
+    evidence.setdefault('download_attempts', getattr(e, 'download_attempts', None))     # #475
+    out = artifact_fields(evidence)
     if 'subreason' not in out:
         codes = {'artifact_hash_mismatch': 'hash_mismatch', 'artifact_signature_mismatch': 'comment_mismatch',
                  'artifact_identity_mismatch': 'identity_mismatch', 'upgrade_cache_unreadable': 'cache_receipt_invalid'}
@@ -398,7 +408,55 @@ def body(res: dict, kind: str | None = None) -> str:
     return "\n".join(lines)
 
 
-def report(st, res: dict, *, send=None, now: float | None = None, kind: str | None = None, lang: str = "zh") -> dict:
+META_HEAD = ("[auto] agentj upgrade failed - metadata only (privacy check layer 2 unavailable: fixed fields, no installer "
+             "output, no doctor)")
+
+
+def _known_reason(v):
+    from .update import AUTH_REASONS
+    return v in KNOWN_REASONS or v in AUTH_REASONS
+
+
+KNOWN_REASONS = frozenset({*CATEGORY.values(), *(r for r, _ in UV_STDERR), "uv_failed", "read_only_filesystem",
+                           "permission_denied", "rollback_failed", "unknown"})
+# 贾维斯 ruling (reports/decisions.jsonl ts 1793803157.003, P573 amended): when Jev is unavailable only this fixed-field
+# report may leave — version, stage, error code, hash; no path, user name, body or attachment. LOCKED by test_p475:
+# every key has a closed-vocabulary check, and support.metadata_ok re-applies the same checks before sending.
+META_FIELDS = {
+    "from": lambda v: _clean_version(v) == v, "to": lambda v: _clean_version(v) == v,
+    "result": lambda v: v in (*RESULTS, "refused"), "reason": _known_reason, "step": lambda v: v in STEPS,
+    "failure_stage": lambda v: v in STEPS, "artifact_stage": lambda v: v in ARTIFACT_STAGES,
+    "subreason": lambda v: v in SUBREASONS, "cache_status": lambda v: v in ("miss", "invalid"),
+    "exception_type": lambda v: v in EXCEPTION_TYPES,
+    "errno": lambda v: v.isdigit() and int(v) in errno.errorcode,
+    "artifact_sha256": lambda v: bool(re.fullmatch(r"[0-9a-f]{64}", v)),
+    "stated_sha256": lambda v: bool(re.fullmatch(r"[0-9a-f]{64}", v)),
+}
+
+
+def meta_line_ok(line: str) -> bool:
+    key, sep, value = line.partition(": ")
+    check = META_FIELDS.get(key)
+    try:
+        return bool(sep) and check is not None and bool(check(value))
+    except Exception:  # noqa: BLE001 — anything odd is refused
+        return False
+
+
+def metadata_body(res: dict, kind: str | None = None) -> str:
+    """#475 / the ruling above: the report that may leave without Jev — only META_FIELDS keys whose value passes its
+    closed check (never the installer tail, doctor, platform, command, paths, names or free text)."""
+    rec = entry(res) or {}
+    fields = {"from": res.get("from"), "to": res.get("to"), "result": rec.get("result"),
+              "reason": category(res.get("reason")), "step": rec.get("step"),
+              **artifact_fields(res), **exception_fields(res)}
+    lines = [META_HEAD] + [f"{k}: {fields[k]}" for k in META_FIELDS
+                           if fields.get(k) is not None and meta_line_ok(f"{k}: {fields[k]}")]
+    return "\n".join(lines)
+
+
+def report(st, res: dict, *, send=None, now: float | None = None, kind: str | None = None, lang: str = "zh",
+           send_meta=None) -> dict:
     """→ {"status": "sent", "thread"} | {"status": "off"} | {"status": "already", "thread"} | {"status": "not_sent", "why"}.
     `send(text) -> (exit, printed)` is the seam (default: support.run_send kind bug, doctor attached, no waiting)."""
     if not isinstance(res, dict) or res.get("result") == "ok" or not res.get("step") or not res.get("to"):
@@ -415,6 +473,7 @@ def report(st, res: dict, *, send=None, now: float | None = None, kind: str | No
             and last.get("reported") and now - float(last.get("reported_at") or 0) < REPORT_EVERY):
         return {"status": "already", "thread": last["reported"]}
     text = body(res, kind)
+    meta = False
     try:
         if send is None:
             from . import support
@@ -423,6 +482,16 @@ def report(st, res: dict, *, send=None, now: float | None = None, kind: str | No
             printed = buf.getvalue()
         else:
             rc, printed = send(text)
+        # #475: layer 2 unavailable holds the full report (P573); the fixed-field metadata still reaches support (PR1)
+        if rc == 3 and (send is None or send_meta is not None):
+            if send_meta is None:
+                from . import support
+                buf = io.StringIO()
+                rc = support.run_send("bug", metadata_body(res, kind), wait=0, lang=lang, out=buf, metadata_only=True)
+                printed = buf.getvalue()
+            else:
+                rc, printed = send_meta(metadata_body(res, kind))
+            meta = True
     except Exception as e:  # noqa: BLE001 — a report that cannot go out never hides the upgrade result
         return {"status": "not_sent", "why": type(e).__name__}
     m = re.search(r"st_[A-Za-z0-9_-]{22}", printed or "")
@@ -433,7 +502,7 @@ def report(st, res: dict, *, send=None, now: float | None = None, kind: str | No
             st.write_private(st.root / LAST, json.dumps({**last, "reported": m.group(0), "reported_at": int(now)}).encode())
         except Exception:  # noqa: BLE001
             pass
-    return {"status": "sent", "thread": m.group(0)}
+    return {"status": "sent", "thread": m.group(0), **({"metadata_only": True} if meta else {})}
 
 
 REASON_WORDS = {
@@ -469,6 +538,9 @@ def install_unchanged(res: dict) -> bool:
 def owner_sentence(res: dict, rep: dict, lang: str = "zh") -> str:
     """One plain sentence for the owner: what failed, where the Agent J host is now, whether support already has it."""
     en = lang == "en"
+    if res.get("reason") == "not_owner":            # #475: a refusal, nothing to report — the one fix step
+        from .upgrade_owner import sentence
+        return sentence(res, lang)
     why = REASON_WORDS.get(res.get("reason"), (f"原因 {res.get('reason')}", f"reason {res.get('reason')}"))[1 if en else 0]
     to, frm = res.get("to") or "?", res.get("from") or __version__
     if res.get("rollback") == "ok" or install_unchanged(res):
@@ -489,6 +561,10 @@ def owner_sentence(res: dict, rep: dict, lang: str = "zh") -> str:
     if s in ("sent", "already"):
         tail_ = (f"the details went to Agent J support automatically ({rep['thread']}); nothing for you to do" if en else
                  f"失败原因和脱敏日志已自动发给 Agent J 客服（{rep['thread']}），你不用做什么")
+        if rep.get("metadata_only"):
+            tail_ = (f"the version and error category (no logs) went to Agent J support automatically ({rep['thread']}); "
+                     "nothing for you to do" if en else
+                     f"版本和错误类别（不含日志）已自动发给 Agent J 客服（{rep['thread']}），你不用做什么")
     elif s == "off":
         tail_ = ("automatic reporting is off, so support was not told" if en else "你关闭了自动上报，没有发给客服")
     elif rep.get("why") == "exit_3":     # #460
@@ -497,9 +573,13 @@ def owner_sentence(res: dict, rep: dict, lang: str = "zh") -> str:
     else:
         tail_ = ("it could not be sent to support automatically; I can send it with `agentj support ask --attach-doctor`" if en else
                  "没能自动发给客服，我可以用 agentj support ask --attach-doctor 再发")
+    own = ""
+    if res.get("owner_kind") and res.get("fix"):    # #475: the installer hit files another account owns
+        from .upgrade_owner import sentence
+        own = " " + sentence(res, lang)
     if en:
-        return f"The upgrade to {to} did not go through ({why}); {where}; {tail_}."
-    return f"升级到 {to} 没成功（{why}）；{where}；{tail_}。"
+        return f"The upgrade to {to} did not go through ({why}); {where}; {tail_}.{own}"
+    return f"升级到 {to} 没成功（{why}）；{where}；{tail_}。{own}"
 
 
 NOT_SENT = {  # #460: support.run_send's exit codes in plain words (the receipt's `support:` line)
@@ -514,6 +594,9 @@ def after_failure(st, res: dict, *, lang: str = "zh", send=None) -> dict:
     """The CLI / phone / worker step after a finished attempt: report a failure and put the support / tell_owner lines into
     the result (result_block prints them). Never raises."""
     try:
+        if isinstance(res, dict) and res.get("reason") == "not_owner":     # #475: refused before anything ran
+            res["tell_owner"] = owner_sentence(res, {}, lang)
+            return res
         if not isinstance(res, dict) or res.get("result") == "ok" or not res.get("step"):
             return res
         kind = None
@@ -523,7 +606,7 @@ def after_failure(st, res: dict, *, lang: str = "zh", send=None) -> dict:
         except Exception:  # noqa: BLE001
             pass
         rep = report(st, res, send=send, kind=kind, lang=lang)
-        res["support"] = {"sent": f"sent ({rep.get('thread')})", "already": f"already sent ({rep.get('thread')})",
+        res["support"] = {"sent": f"sent ({rep.get('thread')})" + (" metadata only" if rep.get("metadata_only") else ""), "already": f"already sent ({rep.get('thread')})",
                           "off": "off (updates.report_failures = false)"}.get(rep.get("status"), f"not_sent ({rep.get('why', '?')}"
                                                                                  + NOT_SENT.get(rep.get("why"), "") + ")")
         res["tell_owner"] = owner_sentence(res, rep, lang)

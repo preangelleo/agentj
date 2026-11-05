@@ -243,22 +243,23 @@ class RootParser(unittest.TestCase):
 
 
 class IdentityV24(unittest.TestCase):
-    NEW = {"zh": ("派单写清完成证据", "同类活先跑通一单再铺开", "范围变了另派新单", "后台活超时算卡住", "按动静判卡、按原因重试",
-                  "同因两次重新规划再报", "关键决定边做边记（`agentj decide`）", "能亲跑验收就亲跑", "路由靠证据，对不上说不明",
+    # #477: 「派单写清完成证据」「能亲跑验收就亲跑」 became the acceptance-command rule (the assistant only runs it).
+    NEW = {"zh": ("每张派单带预先写好的验收命令", "同类活先跑通一单再铺开", "范围变了另派新单", "后台活超时算卡住", "按动静判卡、按原因重试",
+                  "同因两次重新规划再报", "关键决定边做边记（`agentj decide`）", "只跑验收命令、看结论再报", "路由靠证据，对不上说不明",
                   "拍板附推荐、依据、风险", "停在安全点、存档、写续跑说明"),
-           "en": ("Every dispatch names its completion evidence", "finish one first, then fan out", "a changed scope gets a new dispatch",
+           "en": ("Every dispatch carries a pre-written acceptance command", "finish one first, then fan out", "a changed scope gets a new dispatch",
                   "Background work past its time is stuck", "judge by activity", "retry by cause", "replan and report",
-                  "Log key decisions as you go (`agentj decide`)", "rerun acceptance when you can", "Route by evidence",
+                  "Log key decisions as you go (`agentj decide`)", "only run the acceptance command and read its verdict", "Route by evidence",
                   "recommendation, basis and risk", "stop at a safe point, save, write how to resume")}
 
     def core(self, lang):
         return (main_identity.DATA / f"core.{lang}.md").read_text(encoding="utf-8")
 
     def test_v24_manifest_and_new_rules_in_both_languages(self):
-        self.assertEqual((main_identity.VERSION, main_identity.verify_core()["version"]), (24, 24))
+        self.assertEqual((main_identity.VERSION, main_identity.verify_core()["version"]), (25, 25))
         for lang, needles in self.NEW.items():
             text = self.core(lang)
-            self.assertTrue(text.splitlines()[0].endswith("v24"))
+            self.assertTrue(text.splitlines()[0].endswith("v25"))
             for n in needles:
                 self.assertIn(n, text, (lang, n))
 

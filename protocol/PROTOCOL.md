@@ -760,6 +760,25 @@ a revoke in the middle stops the message there (P33-X07).
   withdraws that device's own unsent message (it narrows, like `grant_off`).
 - The old device `msg` stays valid (text ≤ 4 000, or ≤ 20 000 from a `p33` device); a `p33` phone sends `say` only.
 
+### 10.2a `msg_steered` — the owner's message went into the running Codex turn (0.26.9, #471; ADR-0269-w2-steer)
+| direction | message | meaning |
+|---|---|---|
+| host → device (every ready p33 phone) | `{"t":"msg_steered","mid":<turn id>,"turn":<turn id>\|true[,"uncertain":true]}` | the say whose page is `mid` was not queued: the host handed it to the Codex turn that is running (app-server `turn/steer`), whose page is `turn` (`true` when no page is known). The page `mid` is closed `"end":"done"` with `"card":{"steered":<turn>}` (persisted — a reconnecting phone reads the card, the event is not replayed). The sender also gets the usual `say_state` `delivered` first. Later output of that turn keeps going to page `turn` (the web renders it as a continuation, CONTRACT §D). Older phones ignore the type and see the say as delivered. `uncertain` (security-r2 N-4, P33-X08): the steer was written but Codex never answered (15 s timeout / link broken mid-way) — it may or may not be in the turn; never re-sent, never queued again. Its page carries `card.uncertain:true` and the reply text 「已发给 Codex，但它没确认收到：可能已插进这一轮，也可能没有。不会重发。」 (humane `steer.uncertain`); the sender gets `say_state delivered` (no 「取消」; `say_cancel` → `already_delivered`, `say_sync` → `delivered`) |
+- **When** (host `codex_steer.py`): only Codex (own app-server and the shared-session actor's own phone turn); only the owner's own
+  phone/terminal say (`provenance.is_owner`) into a turn started by the owner's own phone/terminal say; never a scheduled /
+  research / workflow run, a review / compaction / rate-retry turn, a voice note still transcribing, a native slash command,
+  a say behind an earlier queued item, or a shared session still waiting behind the desktop's turn. One steer at a time, in
+  arrival order. Claude Code / OpenCode unchanged.
+- **Probe, fallback**: `turn/steer {threadId, expectedTurnId, input}`; JSON-RPC `-32601` / unknown method / unknown variant /
+  experimental-only = unsupported for that app-server process (cached by pid; a relaunch probes again); any other JSON-RPC
+  error, or an app-server not running (nothing written) = this message only, queued exactly as before (`say_res`
+  `state:"queued"`, §8, the 0269 queued card with `waited_s`) — never dropped. Written but unanswered (timeout, the process
+  died mid-request, a broken pipe) = `uncertain` above — never re-queued (no double execution). host.log `codex_steer
+  {agent, result: ok|unsupported|refused|gone|timeout|uncertain, version}` and `msg_steered {device, id, into, uncertain?}` —
+  no text.
+- **Withdraw**: the steer holds the send's lock (as `deliver` does), so `say_cancel` answers `cancelled` only when the steer
+  did not go out and `already_delivered` after it did.
+
 ### 10.3 Blobs — files, photos and voice, end to end
 | direction | message |
 |---|---|
@@ -2754,6 +2773,49 @@ the same ChatGPT account twice → `same_account`); `flow.account` = the name be
 `last.result:"added"`, no harness restart. `auth_press` / `auth_cancel` / `auth_res` are unchanged. The first account added
 turns the login in use into 「主号」 / "Main"; with no account added the wire is exactly 0.26.6.
 
+### 31.1 「重新登录」 under a reply — login from the chat, proven in the main session (0.26.9, #464 / #462; ADR-0269-login)
+
+**Host → page, on a history page.** A turn (`hist_turn.turn`, §10.5) may carry `"login": {"agent": "claude"|"codex"|"opencode",
+"why": "not_logged_in"|"org_disabled"|"expired"|"device"}` when the reply on it is the harness's own login failure
+(`host/agentj/login_flow.detect`: a short reply — ≤ 600 characters, ≤ 4 lines, no code fence — with a whole line in the
+catalogued wording, two lines of the harness's own sign-in screen (`auth_rescue.BLOCKERS`), or a `/login` instruction
+("run /login", 「运行 /login」); balance / rate-limit wording never; the phrase quoted inside the Agent's own sentence never), or
+when an adapter's failure line classified `login` just before that notice page. The page draws 「重新登录」 under it and renders
+the `/login` text in it as the same button. The field is written once with `History.update(login=…)` and survives reloads.
+
+**Page → host** (p33, paired + ready + allowlisted; `P33_ONLY` `auth_rescue`; signed like §33 `rescue_do`:
+`controls.check(…, action "auth_rescue", object)`, ±120 s, one nonce):
+`{"t":"auth_rescue","r","action":"login","agent","n","ts","sig"}` — object text `login\n<agent>` ·
+`{"t":"auth_rescue","r","action":"code","code","n","ts","sig"}` — object text `code\n<the code exactly as sent>` (only from the
+device that started the flow; 8–512 characters of `[A-Za-z0-9._~#+/=-]`, trimmed; one use) ·
+`{"t":"auth_rescue","r","action":"cancel","n","ts","sig"}` — object text `cancel` (same device).
+The code is an OAuth one-time authorization code, not sealed (contract §C): it is typed into the CLI's PTY and dropped; it is
+never in host.log, controls.log (that line keeps `step:"code"`, nonce and ts — no object hash, no signature), history, notices,
+the activity log or any file in the state dir.
+
+**Host → that device only** (`_send_device`): `{"t":"auth_rescue","r","view":{"step":…}}` with
+`starting {agent}` · `url {agent, url, expires_at, [code] (Codex device code), [route: login|setup_token], [masked:"env_token",
+note]}` (a refused code shape → the same `url` view again with `again:"bad_code"`) · `verifying` · `cancelling` ·
+`done {ok, [why], [text], [live], [route]}`. A page that never sent `auth_rescue` never receives these (other phones see only
+the §31 `view.flow` row `{kind, route:"chat_login", stage}`, without link or code).
+
+**Flow.** e-stop on → `why:"estop"`; `opencode` → `unsupported` (the page opens §31's provider-key route); an agent that is not
+the main session's → `not_main`; any rescue / login already running → `busy` (and §31 `auth_start` answers `busy` meanwhile);
+then the §31 `AuthRescue` passkey ask (`passkey`). Claude: where the main session reads its login (`claude_live.where` +
+`session_env`): an outranking `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` → `conflict` (names in `text`); a
+`CLAUDE_CODE_OAUTH_TOKEN` in that process or in serve's own env (ADR-462: env token > stored /login) → `claude setup-token`
+(`route:"setup_token"`, `masked:"env_token"`; the token is live-checked and stored as in §31); otherwise
+`claude auth login --claudeai` in a private PTY with **that process's** `HOME` / `CLAUDE_CONFIG_DIR`. Codex:
+`codex login --device-auth` (link + device code; no `code` action). Whole flow ≤ 600 s (`timeout`); cancel / e-stop end it at
+the next half second. **`ok:true` only after the main session itself**: Claude = `claude_live.deliver` (owned restart / native
+reopen / owner verify, ADR-462) **and** one tool-free `claude -p` in exactly that session's auth context; Codex = a side
+`codex exec` (failure → previous auth.json restored, `verify_codex`) and then the main agent's own app-server connection
+(owned: restarted first) answering `account/read` with an account and, for ChatGPT, `account/rateLimits/read`. Otherwise
+`ok:false, why:"main_session", live:<reason word>` (the owner's own terminal on an old env token also gets the signed P435
+「重开 AI 会话」 card). `why` words: `shape · stale · replay · no_key · bad_signature · not_requester · no_flow · used · estop ·
+unsupported · not_main · busy · passkey · conflict · unreadable · no_binary · no_url · no_code · device_disabled · bad_code ·
+rejected · expired · timeout · cancelled · failed · verify · verify_codex · quota · main_session`.
+
 ## 32. 额度用完自动续跑 — continue after the usage limit resets (P314; the number is provisional until the merge)
 
 A chat turn (own or shared session, any phone or desktop turn) or a workflow / dispatched run that stopped because the AI
@@ -2839,6 +2901,34 @@ attempt fails serve sends `reset_step {step:4, state:"fail"}` and a second `rese
 (`busy` is cleared either way — review P332 MEDIUM-5). Results go back with
 the support API's `thread` field (FEEDBACK_API.md: a follow-up on the same ticket). `/reset` (typed or ≡; `menu` carries
 `reset:true`) is signed like `/update` — action `reset`, the same object; unsigned → a refused command card.
+
+**0269 (#461, ADR-0269-watchdog) — stuck turns (serve only; host/agentj/turn_heal.py).**
+- `rescue_do end_turn` (「强制结束这一轮」) and `rescue_do takeover` (「接管卡住的会话」): same envelope / signature / one
+  `controls.log` line as every `rescue_do`; owner-signed only — never offered by support, never in `rescue_kit.AUTO_ACTIONS`,
+  refused by the rescue watchdog (no adapter). `end_turn` = interrupt the running turn (Codex app-server `turn/interrupt`,
+  Claude control interrupt, OpenCode abort; a shared Codex wait behind a desktop turn = that open turn is treated as ended
+  for the phone), after 10 s SIGTERM to that turn's tool children (descendants of Agent J's harness started after the turn).
+  `takeover` = interrupt → after 10 s still busy: stop the harness process Agent J started (never one it did not start:
+  own child handle, a recorded app-server with the same start time, or serve in its parent chain) → the next turn relaunches
+  it with Agent J's own settings and resumes the same conversation id; queued messages are kept and delivered → relay
+  re-dialled only when it is down, conversation re-pinned. During an e-stop `takeover` → `ok:false, why:"estop"`; `end_turn`
+  still runs (it only stops). Progress: `reset_step {flow, step:1}` + `reset_done {flow:"end_turn"|"takeover", ok, step:1,
+  text, why?}`; `why`: `estop` · `foreign` (the turn runs in a program the owner started — nothing signalled) ·
+  `not_recovered` · `busy` · `no_agent`.
+- `reset` (and `rescue_do new_session`) first interrupt and discard the running turn, then run the ladder; `/clear` and `/new`
+  (confirmed) do the same before the command is queued — no 「收到，等这一轮忙完就办」 card for them. `/stop` was already direct.
+- Queued notice: the history page of 「…正在回答，等它说完…」 carries `card: {"queued": true, "waited_s": <int s since the turn
+  started>, "stuck"?: true}`, refreshed every 15 s while the turn runs (`stuck` once the watchdog judges it stuck). Older
+  pages ignore the fields.
+- Self-heal (no phone action): watchdog judges stuck (5 min no event and no tool child; or ≥ 3 「desktop turn active / did
+  not finish」 within 30 min, or an owner message waiting ≥ 10 min, each with ≥ 2 min quiet and no tool child; never while a
+  card waits for the owner; never during an e-stop; at most one automatic heal per turn and per 10 min) → same steps as
+  `takeover` → only when the queued owner message reached the harness in the same conversation id: one ordinary notice
+  「刚才卡住了，已自动恢复。」 (humane `selfheal.recovered`), else 「…自动恢复没成功；请点「接管卡住的会话」。」 (`selfheal.failed`).
+  host.log `turn_selfheal` {agent, phase, by: watchdog|owner, action, why, queued, step, result} — metadata only.
+- `status` (control socket) gains `turn: {busy, waited_s?, idle_s?, children?, stuck?, why?, desktop?}`; `agentj doctor --json`
+  row `turn` with `data: {turn, codex?: {cli, servers:[{pid, version, daemon}], mismatch}}` (Codex CLI vs. running app-server /
+  daemon versions).
 
 **② Agent J Father help** (`rescue_do help`; serve when alive, else the watchdog). 1 diagnose (rescue_kit, read-only, no
 `agentj doctor` when serve is the stuck part) → 2 redact on this computer and send to the support desk as
@@ -3366,6 +3456,38 @@ No new messages. Collapse (grabber drag, exit icon, Esc) keeps the session; `ter
 still sends `term_close {why:"background"}` after the document is hidden 60 s, as before.
 P474 supersedes P415 for the official Notebook: jcard_note add stores the host local date separately from text. To-do responses include item.id; jcard_get supplies its full-file revision. Secret-shaped text is refused with looks_like_a_secret; no mutation dispatches to the Agent.
 
+
+### 38.15 PTY mode — a real terminal (0.26.9, #463; ADR-0269-pty)
+
+Additive; line mode above is unchanged and stays the fallback. Host block `terminal` gains `"modes": ["line"]` or
+`["line","pty"]`; the capability list gains **`term_pty1`** when `pty` is there (Linux / WSL / macOS; not native Windows).
+- **Open:** `term_open {r, mode:"pty", cols, rows}` (cols 20..400, rows 5..200; both steps carry them, step 2's win) — the same
+  nonce / passkey / `login` card flow; the signed object is `{"mode":"pty"}` (text `pty`). why adds nothing new: `os` = this host
+  has no pty, `shape` = bad size. `term_open {mode:"enable", cols, rows}` on a pty host opens a pty session after enabling.
+  `term_ready` gains `"mode":"line"|"pty"`.
+- **Input:** `{"t":"term_in","id","seq","d"}` — `d` = xterm `onData` text (control bytes and escapes allowed), ≤ 8 KiB UTF-8,
+  ≤ 64 KiB/s (excess refused, one notice line); accepted only from a device on the session's writer list (today: the opener).
+  `term_keys` on a pty session = the bytes Ctrl+C / Ctrl+\.
+- **Resize:** `{"t":"term_resize","id","cols","rows"}` (opener only, ≤ 20/s) → TIOCSWINSZ (the kernel sends SIGWINCH); recorded as
+  an asciicast `"r"` event.
+- **Output:** `{"t":"term_out","id","seq","d","prompt"?:true}` — the masked VT stream (escapes kept, OSC 52 removed), ≤ 16 KiB per
+  frame; over 64 KiB/s the host stops reading the program (back-pressure) rather than dropping bytes.
+- **Confirm at the prompt:** an Enter at the shell prompt is held and the shell's own line classified; dangerous →
+  `term_confirm {id, seq (of the term_in with the Enter), line, why, why_en, n, fa_ch, uv[, agent]}` exactly as line mode; the
+  answer is line mode's signed `term_line {id, seq, line, n, ts, sig[, fa]}` (object `{"id","line"}`; `line` may hold `\n` from a
+  bracketed paste) → the held Enter is sent. **New, optional:** `{"t":"term_confirm_no","id","n"}` (「取消」) erases the held line at
+  once; without it, typing over the card, a failed answer or 120 s erase it (Ctrl+E Ctrl+U).
+- `term_line` on a pty session: only at the prompt (the host erases what was typed, types the line, Enter; a line sent before the
+  first prompt waits for it); with a program in front it is refused (`term_bang why:"program"` for a 「!」 line).
+- Cast header `width`/`height` = the open size, `env.TERM` = `xterm-256color`; events `"o"` (masked output) and `"r"` only.
+- **w2-sec additions (0.26.9 selfheal wave 2, ADR-0269-w2-sec; additive, older pages ignore them):** host block `terminal`
+  may carry `"pty_why": "<zh / en text>"` when PTY mode is withheld for a security reason (today: Linux, Agent fenced, no private
+  /dev) — `modes` is then `["line"]`, `term_pty1` is absent and `term_open {mode:"pty"}` answers `ctl_res why:"fence_dev"`; an
+  open pty session closes with `term_close why:"disabled"` if that state appears. At the prompt the hold above covers every key
+  that is not plain editing (allowed straight through: BS, DEL, Ctrl+U/W/A/E/C, TAB, arrows), so a `term_confirm` may follow a
+  `term_in` without `\r` (its `seq`), and the signed answer releases that key, not an Enter; a line that re-runs history (`fc`,
+  `r`, leading `^`) always confirms. `term_line` on a pty session is refused unless nothing is typed at the prompt
+  (`term_bang why:"edited"` for a 「!」 line; a one-line notice in `term_out` otherwise).
 
 ### §34.4 P420 global palette library
 
@@ -3949,3 +4071,137 @@ disables this host’s recognition of that peer’s signatures; it does not dele
 clears pending transfers and settles current transfer waits with estop, without ending the friendship. A later resume cannot
 revive those existing grants or a pre-stop OTG. Revocation/stop prevent future use and cannot reverse completed actions or
 undo an OS command already executed.
+
+## 41. Official remote assist — signed tasks, never a terminal (0.26.9 #468; ADR-0269-w2-assist; number provisional until the merge)
+
+Host: `host/agentj/assist.py` (+ `assist_keys.py`, `assets/assist_keys.json`). Page: `web/public/js/assist.js`. The helper is a
+PeerNet peer (§17) whose authenticated static key equals a pinned `assist_keys.json` key, accepted ONLY while a grant for that
+key id is live on this seat. Nothing terminal-shaped exists for it: no RESUME as a device, no `term_*`, no key input.
+
+**Capability.** `ready` / `approved` caps carry `assist1` only while a usable key is pinned (the shipped placeholder = absent).
+
+**Grant (phone → host, p33, passkey remotes only).** Step 1 `assist_grant {r, minutes}` (minutes ∈ 15 | 30 | 60, default 30) →
+`ctl_res {action:"assist_grant", ok:false, why:"passkey_required", n, fa, fa_s, fa_ch, key_id, seat}`; `seat` = the §40 seat id;
+`fa_ch` = `elevate_challenge(channel, device, n, "assist_grant", n, SHA-256hex("assist_grant_uv\n" key_id "\n" seat))` (minutes are
+not in the Face ID challenge: the chip may change between the steps; they are in the signature). Step 2 `assist_grant {r, minutes,
+n, ts, sig, fa}`: §8 control-v1 signature, action `assist_grant`, object text `minutes \n key_id \n seat` (wire.js
+`controlObject`), nonce = the host's `n` (120 s, once). → `ctl_res {ok:true, until, id}` (`until` unix seconds) or `ok:false, why`
+∈ shape | estop | unavailable (no pinned key / no usable seat) | no_passkey | busy (a grant is live) | replay | stale |
+bad_signature | no_key | passkey_failed | io. Revoke: `assist_revoke {r, n, ts, sig}` (page nonce, object text `revoke`, no Face ID)
+→ `ctl_res {ok}`. controls.log: action, device, result, object SHA-256, grant id, minutes — never text.
+
+**Host → phones.**
+- `assist_state {active, until, id?, key_id?, tasks:[{id, state}]}` — on grant, end, every task change and on (re)connect;
+  `active:false` = no live grant (`until` 0). `tasks` = the live grant's last 20.
+- `assist_task {id, ts (ms), gid, text, state: queued|running|done|refused|stopped, why?, turn?}` — `id` = the helper's message id
+  (hex 16); `turn` = the history page carrying the task and its reply; `why` on refused/stopped/done-with-problem ∈ length |
+  admission_filter | busy | quota | main_unavailable | submit_failed | ended | interrupted | failed | outbound_gate | not_sent. Sent
+  on every change and replayed (live grant only) after a reconnect.
+- `assist_notice {what: grant|expired|revoked|refused, minutes?, why?}` — `revoked` carries why ∈ revoked | estop | seat |
+  unpaired | key; `refused` = a grant step refused.
+- The task's chat page: src `{"k":"task", "via":"official_assist", "name", "text", "assist": <task id>}`; the reply fills that page.
+
+**Helper ↔ host (PeerNet app frames, KK session with the pinned x25519 key).**
+- `assist_hello {ts, sig}` — sig = pinned Ed25519 over `"agentj-assist-hello-v1\n" ‖ canonical_json({"to": <this host's Agent ID>,
+  "ts"})` → `assist_ready {gid, seat, until, seq}` (grant id, seat id, end, last accepted seq). Nothing else is offered.
+- task = `pmsg {mid, thread, text, ts, assist:{gid, seat, seq, ts, sig}}`, sig = pinned Ed25519 over `"agentj-assist-task-v1\n" ‖
+  canonical_json({"gid","seat","seq","ts","mid","text"})` (sorted keys, no spaces, UTF-8). Accepted only when: the session peer is
+  the live grant's key, signature valid, gid = grant id, seat = grant seat, |ts − now| ≤ 120 s and inside the grant, seq > last
+  seq (persisted in grant.json before the task runs) and the `mid` not seen before in this grant (else `replay`). Then text ≤ the friend-task limit (8000), the friend admission filter, ≤ 4
+  waiting, ≤ 64 per grant. → `pack {mid, s:"got"}` or `pack {mid, s:"blocked", rule:<why>}`.
+- result = `pmsg {mid, thread, irt:<task mid>, text, ts, assist:{gid, seq}}` — the page's reply (≤ 6000) after the outbound
+  credential gate AND the friend admission filter, like a same-owner `tell` (a hit → a fixed "withheld" line, why `outbound_gate`). Exactly one per finished task; none after the grant ended.
+- Any other peer, frame, a frame outside a live grant or failing a check: no row, no answer, one host.log line
+  `assist_refused reason=<no_grant|type|shape|bad_signature|wrong_grant|other_seat|stale|replay|bad_hello>`.
+
+**End.** Revoke, expiry, stop everything, unpairing of the granting remote, a seat change or the key leaving the pinned list end
+the grant: queued tasks cancelled, a running task's turn interrupted (state `stopped`), the helper's session and outbox dropped.
+A serve restart keeps an unexpired grant; every ended grant id is appended to `revoke.json` (all reasons) and is never live
+again. Files `<state>/assist/` (0700): `grant.json` (0600: id, key_id, seat, granted_by,
+minutes, not_before, until, seq, revoked?), `revoke.json` (0600, append-only: every ended grant id; flock `revoke.lock`), `log.jsonl` (0600, 30 days, the owner's own audit incl.
+task text). CLI `agentj assist status|log|revoke` — there is no grant from the CLI.
+
+### 0269 wave 2 — phone side of #468 (§B3) and #471 (§D) (lane w2-web; CANDIDATE, the CEO aligns the host lanes)
+What the page reads; the host lanes own the emitting side. Unknown fields are ignored, malformed messages dropped.
+- `assist_state {active, until, id, key_id, tasks:[{id, state}]}` — `until` in s or ms; `tasks[].state` ∈ queued · running ·
+  done · refused · stopped (others dropped); inactive or past `until` = no banner, feed wiped. The wave-1 fields `opened`,
+  `viewers`, `cols`, `rows` are no longer read.
+- `assist_task {id, ts, text, state, why?}` (host → phones, every state change; a later frame may omit `text`) — `id`
+  `[A-Za-z0-9._:-]{1,64}`, `ts` s or ms, `text` display text (control characters stripped, ≤ 4000 shown), `why` a code
+  `[a-z_]{1,32}` (worded on the page: expired · revoked · estop · too_long · replay · stale · busy, else a generic line). Read
+  only while a grant is active; the page sends nothing back for it.
+- The task's turn in history: `src.k:"official_assist"` or `src.k:"task", via:"official_assist"` (both labelled
+  「官方远程协助」 / "Agent J support"); optional `src.assist_id` (or `task_id`) = the `assist_task` id links the feed entry to
+  its reply; without it the page matches the newest such turn whose `src.text` contains the task text.
+- Terminal frames carrying `assist:true` are dropped by the page (never routed to the owner's terminal). The page never
+  sends `term_*` for assist.
+- `msg_steered {mid, turn}` — `mid` = the owner message's turn id (integer) or its send id (`sid` string); the page drops it
+  from its queue, shows 「已插入当前这一轮」 on that page, never the queued notice. A history `card.steered:true` on the
+  message's turn reads the same (survives a reload).
+- #471 card split is page-only (no wire): an open turn with a visible reply followed by an owner message (`src.k` phone ·
+  telegram · wechat) → later output on a continuation page (same turn id). 「停下上一件」 on the owner's own queued page sends
+  the signed `rescue_do {action:"end_turn"}` when the host has shown the turn watchdog (any turn carrying `waited_s`/`stuck`),
+  else `/stop` as in P481.
+
+## 42. Card placement, card scope line, day / month budget (0.26.9 #472 / #473 ③, CONTRACT §E6 / §E3; lane w3-cards, phone side; number provisional until the merge)
+- **Placement (page-only, no wire):** every card the page pops renders under the current reply card (`#reply-notices`); registry
+  `web/public/js/cardplace.js` `CARDS`. Registered full-screen exceptions: the operating system's passkey / Face ID sheet (WebAuthn),
+  the owner-opened 「全屏」 reading of an unlocked key, the page's own disconnected state.
+- **Optional card fields (host → phone, additive; older pages ignore them):** on `ask`, `elev`, `secret_out`: `cls` string (one of
+  `spend_over_budget` · `secret_reveal` · `new_recipient` · `public_publish` · `permanent_delete` · `irreversible`; other values show no
+  label) and `why_scope` string (one line, ≤ 300 shown) = why the owner's task scope does not cover this step. Not signed, display only.
+- **`budget_state` (host → phone):** `{t:"budget_state", day, month, spent_day?, spent_month?, currency}` — `day` / `month` number ≥ 0
+  or `null` (= no budget, nothing runs without asking), `spent_*` number ≥ 0 only when the host knows it (the page never estimates),
+  `currency` ISO 4217 (3 capitals). Sent on connect and after every change. No `budget_state` = the page hides 预算.
+- **`budget_set` (phone → host, §8 control-v1):** `{t:"budget_set", r, day?, month?, n, ts, sig[, fa]}` — only the changed fields;
+  signed object = canonical JSON of the sent fields, e.g. `{"day":10}` / `{"day":10,"month":400}` (wire.js `controlObject`; the host
+  mirrors it in `controls.object_text('budget_set')`). Raising either value → `ctl_res {ok:false, why:"passkey_required", fa, fa_ch}`,
+  the page asks Face ID and resends the SAME signed object with `fa`; lowering → `ctl_res {ok:true}` without Face ID; then a fresh
+  `budget_state`. Refusals: `bad_signature`, `shape`, `passkey_failed`, `no_passkey`.
+
+
+## 43. Fewer interruptions — card class, owner budget (0.26.9 #473 / #469; ADR-0269-w3-policy; number provisional until the merge)
+Host lane w3-policy. Unknown fields are ignored by older pages; nothing here changes what a signature covers.
+
+### 42.1 Card class on every approval card (`ask`, additive; web lane w3-cards renders `cls` + `why_scope`)
+- `cls` ∈ `spend_over_budget` · `secret_reveal` · `new_recipient` · `public_publish` · `permanent_delete` · `irreversible`
+  (every other table row: self_protect, fetch_run, secret_read, opaque, admin, own_config, other).
+- `why_scope` — one line (≤ 300 chars, card language): why the owner's task does not cover this step.
+- finer, optional: `policy_class` (the row id of `host/agentj/approval_policy.py` ROWS), `policy_name` (plain words),
+  `policy_provisional` (boolean: the row waits for the chairman's signature).
+Display only: the signed `summary` / `shown_sha256`, `passkey_required`, `cat`, `why`, `reason` keep their meaning. Face ID
+is still exactly `passkey_required`. In an owner-authorised completion turn (§42.3) the signed `summary` gains one last line
+「主人原话：「…」」 / "The owner's words: “…”" (≤ 80 chars of the owner's message).
+
+### 42.2 Budget (`host_info.budget: 1`)
+- `budget_get {r}` (paired, p33) → `budget_state {r, day, month, currency}`; also pushed to every paired remote after a
+  change (no `r`). `day` / `month`: number ≥ 0, ≤ 1 000 000, at most 2 decimals, or `null` (both `null` = no budget: every
+  spend asks with Face ID). `currency` ISO (`USD` default, `CNY`; not settable from the phone yet). `spent_day` /
+  `spent_month` appear only when the host knows the exact amount (constitution: never estimated) — today never.
+- `budget_set {r, day?, month?, n, ts, sig[, fa]}` — only the changed fields; §8 control-v1, action `budget_set`, object
+  text = wire.js `canonicalJson` of the fields sent (sorted keys, no spaces, integral numbers without `.0`), e.g.
+  `{"day":10}` or `{"day":10,"month":400}` (host: `controls.object_text` → `budget.canonical`). The result = the budget in
+  force with those fields replaced. Raising (any higher limit; from none counts as from 0; dropping one limit while the
+  other stays) needs this remote's Face ID, two steps like `approval_set`: without `fa` → `ctl_res {action:"budget_set",
+  ok:false, why:"passkey_required", fa, fa_s, fa_ch}` with `fa_ch` = `passkey.elevate_challenge(channel, device, n,
+  "budget_set", n, object_digest)`; then the same signed object + `fa`. Lowering / clearing: one signed message. Results:
+  `ctl_res {ok:true, day, month, currency}` or `ok:false, why` ∈ shape · estop · no_passkey · passkey_required ·
+  passkey_failed · stale · replay · no_key · bad_signature.
+- The host keeps the newest signed record per axis and re-verifies each with the device's current key on every read; a
+  hand-edited file or an unpaired / re-keyed signer = no budget. The terminal (`agentj budget set --day N|clear --month
+  N|clear`) can only lower.
+
+### 42.5 Slot 0 card: who typed the values
+- `ct_card {mode:"owner", …, proposed?:"agent"}` — present when the e-mail / phone on the owner's own card came from the Agent
+  (`agentj contacts owner set --email/--phone` from an Agent shell); absent for the host's own allowlist suggestion and for the
+  owner at a real terminal (a TTY; display hint only — the owner still confirms on the phone either way).
+
+### 42.3 Owner-authorised follow-ups (host only, no new frame)
+A background completion turn (`CompletionSend`, source `system`) whose every job was launched in an owner turn carries that
+turn's own words (host-recorded, ≤ 300 chars, credentials redacted) for 24 h: the Agent may do the follow-ups the owner
+asked for (e.g. `agentj mail send`); a step that needs confirmation raises the owner's normal card (parked while nobody
+answers), never `group_source`. Group / visitor / friend / official-assist / unknown sources are unchanged.
+
+### 42.4 Waiting instead of refusing
+At the default level an owner-scoped card nobody answers within the approval timeout stays on the phone (parked, as when no
+remote is online): `ask_done` is not sent until it is answered or withdrawn after 30 min; approvals.log `unanswered`.

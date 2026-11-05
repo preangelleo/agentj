@@ -92,7 +92,8 @@ try {
     try {
       const b = await btns(p);
       assert.equal(b.length, 6, JSON.stringify(b));
-      assert.deepEqual(b.map((x) => x.say), ['派', '先不派', '用方案 A', '用方案 B', '按默认', '我再想想']);
+      // 0.26.9 #473 (identity v25): REPLY_LINE's first example is a business choice now; 「派不派？」 taught asking before dispatching
+      assert.deepEqual(b.map((x) => x.say), ['先做 A 店', '先做 B 店', '用方案 A', '用方案 B', '按默认', '我再想想']);
     } finally { await p.dispose(); }
   });
 

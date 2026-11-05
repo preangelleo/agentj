@@ -183,8 +183,11 @@ try {
     await waitFor(p, `${txt('#elev-err')} === ${JSON.stringify(why)}`, 5000);
     assert.ok(await evaluate(p, visible('#elev-err')));
     const z = await evaluate(p, `(() => { const t = document.getElementById('toast'), e = document.getElementById('elev');
-      return { over: t.classList.contains('over-dlg') && t.parentElement === document.body, t: +getComputedStyle(t).zIndex, e: +getComputedStyle(e).zIndex, text: t.textContent }; })()`);
-    assert.ok(z.over && z.t > z.e, JSON.stringify(z));
+      // 0.26.9 #472: the card now sits under the reply card with no scrim — the notice goes right above it in the same slot, on screen
+      const s = document.getElementById('reply-notices'), r = t.getBoundingClientRect(), q = s.getBoundingClientRect();
+      const above = t.parentElement === s && t.nextElementSibling === e && e.classList.contains('cp-docked') && r.height > 0 && r.top >= q.top - 1 && r.bottom <= q.bottom + 1;
+      return { over: t.classList.contains('over-dlg') && t.parentElement === document.body, above, t: +getComputedStyle(t).zIndex, e: +getComputedStyle(e).zIndex, text: t.textContent }; })()`);
+    assert.ok((z.over && z.t > z.e) || z.above, JSON.stringify(z));
     assert.ok(z.text.includes(why));
     assert.equal(await evaluate(p, visible('#elev')), true, 'the card stays for another try');
     fake.st.onApp = null;

@@ -358,7 +358,7 @@ class PeerService:
     async def apply(self) -> None:
         """Bring the mailbox in line with the settings: off → no mailbox; on + (account or loopback test key) → connect."""
         async with self._lock:
-            if not self.store.on:
+            if not self.store.on and not self._assist_live():   # 0269-w2-assist: a live grant keeps the mailbox up
                 await self._stop_net()
                 self.state = "off"
                 return
@@ -506,13 +506,49 @@ class PeerService:
     def accepting(self) -> bool:
         return self.store.on
 
+    # ------------------------------------------------------------ 0269-w2-assist (#468, ADR-0269-w2-assist): the pinned
+    # official helper is a PeerNet peer ONLY while a Face ID grant for its key is live on this seat; no friend row, ever.
+    def _assist(self):
+        return getattr(self.host, "assist", None)
+
+    def _assist_live(self) -> bool:
+        a = self._assist()
+        try:
+            return bool(a is not None and a.live())
+        except Exception:  # noqa: BLE001 — no verdict = no grant
+            return False
+
+    def _assist_peer(self, pid: str) -> bool:
+        """`pid` is one of the pinned official keys (a frame from it never reaches the friend pipeline)."""
+        a = self._assist()
+        try:
+            return bool(a is not None and self.store.get(pid) is None and pid in a.pinned_ids())
+        except Exception:  # noqa: BLE001
+            return False
+
     def friend_by_mbox(self, mb: str) -> str | None:
+        a = self._assist()
+        if a is not None:
+            with contextlib.suppress(Exception):
+                pid = a.peer_of_mbox(mb)
+                if pid and self.store.get(pid) is None:
+                    return pid
+        if not self.store.on:            # friends off: the mailbox runs only for the assist grant
+            return None
         for fid, f in self.store.friends().items():
             if isinstance(f, dict) and f.get("mbox") == mb:
                 return None if self.store.is_blocked(fid) else fid
         return None
 
     def friend_keys(self, pid: str):
+        a = self._assist()
+        if a is not None and self.store.get(pid) is None:
+            with contextlib.suppress(Exception):
+                k = a.keys_of(pid)
+                if k:
+                    return k
+        if not self.store.on:
+            return None
         f = self.store.get(pid)
         if f and not self.store.is_blocked(pid):
             x, ed = _b64(f.get("x")), _b64(f.get("pk"))
@@ -577,6 +613,10 @@ class PeerService:
         self.changed(None)
 
     def on_app(self, fid: str, obj: dict) -> None:
+        if self._assist_peer(fid):           # 0269-w2-assist: signed tasks only, never the friend pipeline
+            return self._assist().on_app(fid, obj)
+        if not self.store.on:
+            return
         t = obj.get("t")
         if t == "facc":
             return self._on_facc(fid, obj)

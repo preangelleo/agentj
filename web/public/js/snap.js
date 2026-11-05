@@ -3,6 +3,8 @@
 // separate end-to-end messages (§8, §10), and this module folds them into the same shape so the ported page logic stays.
 // It also owns the page's view of the history (§10.5): turns from hist_page / hist_turn on a p33 host, or — on a host
 // that did not announce p33 — turns built here in memory from §8's msg stream (never stored).
+import { carry as selfhealCarry } from './selfheal.js';
+import { assistCarry } from './assistsrc.js';   // 0.26.9 #468 (§B3): a turn an official remote assist task started
 import { channel, peer, request, done as reqDone } from './session.js';
 import { sanitize as mediaOf } from './mediawire.js';   // F21 (§13)
 import { preauthOffer, faState, whyKey } from './pkrules.js';   // P539
@@ -56,6 +58,7 @@ export function addAsk(m) {
     passkey_required: m.passkey_required === true, fa: typeof m.fa === 'string' ? m.fa : '', fa_ch: typeof m.fa_ch === 'string' ? m.fa_ch : '',
     scope, batch_max: Number.isInteger(m.batch_max) ? m.batch_max : 20, batch_secs: Number.isInteger(m.batch_secs) ? m.batch_secs : 600,
     task: typeof m.task === 'string' ? m.task.slice(0, 80) : '',
+    cls: oneLine(m.cls, 60), why_scope: oneLine(m.why_scope, 300),   // 0.26.9 #472 ②: the card's class + why the task scope does not cover it (optional)
     reason: typeof m.reason === 'string' ? m.reason : null,   // P572: the Agent's reason ("" = none given; absent = an older host)
     // P573: this task's later steps of the same class will not ask again (host note; shown under the card, not signed)
     task_scope: typeof m.task_scope === 'string' ? m.task_scope : undefined,
@@ -281,12 +284,14 @@ export function toPage(t) {
     id: t.id, ts: typeof t.ts === 'number' ? t.ts / 1000 : null,
     source: { k, ...(k === 'sys' && ['wsl', 'loop'].includes(src.guide) ? { guide: src.guide } : {}), dev: typeof src.dev === 'string' ? src.dev : null, name: typeof src.name === 'string' ? src.name.slice(0, 64) : '',
       text: typeof src.text !== 'string' ? '' : k === 'telegram' ? src.text.replace(TG_SOURCE_LINE, '') : src.text, quote: q, att, local: src.local === true, ...(k === 'sys' && typeof src.notice_id === 'string' && /^[A-Za-z0-9_-]{22}$/.test(src.notice_id) ? {notice_id:src.notice_id} : {}), ...(k === 'agent' && ['loop', 'task', 'quota', 'auto', 'hook'].includes(src.via) ? {via: src.via} : {}), ...(k === 'task' && src.via === 'same-owner' ? {via: src.via} : {}),
+      ...assistCarry(src),   // 0.26.9 #468: k = official_assist (+ the task id) whichever way the host wrote it
       ...(k === 'phone' && src.term && typeof src.term === 'object' ? { term: src.term } : {}) },   // P414 (§37.12): a 「!」 line's result (js/bang.js termOf)
     reply: typeof reply.text === 'string' ? dropReplacement(reply.text) : '',
     part: Array.isArray(reply.part) && reply.part.length === 2 ? reply.part.map(Number) : null,
     ...(typeof reply.pre === 'string' && reply.pre ? { pre: dropReplacement(reply.pre) } : {}),   // P351: a silent turn's notes
     end: ['open', 'done', 'stopped', 'failed'].includes(t.end) ? t.end : 'done',
     card: t.card && typeof t.card === 'object' ? t.card : null,
+    ...selfhealCarry(t),   // 0.26.9 (CONTRACT §C): `login` / `waited_s` / `stuck` a host put on the turn instead of its card
     ...((m) => ({ media: m.media, mediaSkip: m.skip }))(mediaOf(t)),   // F21: files the reply shows (§13)
   };
 }

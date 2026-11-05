@@ -81,7 +81,7 @@ workflows/<name>/                  # type = workflow
 - **harness 统一写法**：manifest `requires.harness` 与 params 里的 `harness` 参数一律用 `claude_code` / `codex` / `opencode`（下划线，不用 `claude-code`）。由安装器自动填的 harness 参数写 `"x-auto": "harness"`，不再用 `installer-harness`。
 - **日期一律安装时生成**：scaffold 里出现的安装日期、`stale_after` 等日期参数必须带 `x-auto`（`today` / `today+Nd`）且 `readOnly: true`；`default` 里的静态日期只是兜底，安装器不得直接使用。
 - **只读巡检用 `read-only`**：只读工作区、唯一的写入是 `reports/` 下自己的报告、不调用付费 API、不对外的定时任务标 `read-only`，不标 `none`（agent 运行本身消耗的模型额度不算付费 API）。会改工作区内容（起草、编译、写稿、写状态库）的至少 `review`；调用付费 API（TTS、生图、云构建等）或对外的标 `publish`。
-- `install.verify` 的路径相对于**包根目录**（workflow 包里通常是 `scaffold/tools/...`）。安装器应在解包后、渲染前跑它；渲染后的工作区里，同一个工具路径会去掉 `scaffold/` 前缀。
+- `install.verify` 的路径相对于**包根目录**（workflow 包里通常是 `scaffold/tools/...`）。安装器应在解包后、渲染前跑它；渲染后的工作区里，同一个工具路径会去掉 `scaffold/` 前缀。签名 / 上架前 `bundle.check_entry_files` 核对 manifest 点名的每个文件（`entry`、verify 运行的脚本、`roles[].file`、`params_schema`、`requires.python_requirements`）都在包里，缺一个就拒签（0.26.9 #465）。自检要特定 Python 时在 `requires.cli` 写 `{"name": "python3", "version": ">=3.12"}`，安装器会挑一个够新的解释器（#478）。
 - 安装到已有目录时，`scaffold/` 里的 `CLAUDE.md` / `AGENTS.md` / `.gitignore` 可能和用户已有文件冲突：安装器先备份，再走三方合并（与 `15` §4「基线 / 参数 / 覆盖层」同一机制），不得静默覆盖。
 - Bible 要求五个生命周期 skill 放在项目本地。首批包只在 `scaffold/.claude/skills/` 放了 `start-session` 和 `finalize-session`，另外三个（`self-reflection`、`self-reflection-cli`、`slim-docs`）写在 `requires.skills` 里，由广场装成全局版。安装器可以选择把这三个也渲染进项目本地。
 

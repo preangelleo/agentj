@@ -267,8 +267,14 @@ class Report(_Env):
                 mock.patch.object(support, "doctor_text", return_value="agentj 0.20.3a1\n✗ service: down"), \
                 mock.patch.object(privacy, "layer2", return_value=privacy.Verdict("unavailable")):
             res = upgrade_diag.after_failure(self.st, self.failed(), lang="zh")
-        self.assertEqual(sent, [])                      # P573 chairman item 6: Jev unavailable → never sent directly
-        self.assertTrue(res["support"].startswith("not_sent"))
+        # P573 chairman item 6: Jev unavailable → the full report (installer tail, doctor) is never sent directly.
+        # #475 (CEO brief, PR1): only the fixed-vocabulary metadata form goes out instead — no tail, no attachment.
+        self.assertEqual(len(sent), 1)
+        self.assertNotIn("attach", sent[0])
+        self.assertTrue(sent[0]["body"].startswith(upgrade_diag.META_HEAD))
+        self.assertNotIn("installer stderr", sent[0]["body"])
+        self.assertNotIn("Permission denied", sent[0]["body"])
+        self.assertTrue(res["support"].endswith("metadata only"))
 
     def test_off_by_preference_and_env(self):
         cfg = pathlib.Path(os.environ["XDG_CONFIG_HOME"]) / "agentj"

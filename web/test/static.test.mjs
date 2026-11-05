@@ -29,7 +29,7 @@ const MODULES = ['api', 'blobs', 'boot', 'controls', 'md', 'push', 'relay', 'ses
   'version-notice', 'five-pages', 'workflow-compose',
   'toolorder', 'toolsort',   // P340: the composer buttons' order (aj.toolOrder, four ids) + its Settings row   // P240: the version check (its one metadata GET had a branch below but the file was never in this list)
   'jcards',   // P360: Agent J Cards (deck cards 6+, one card's template page, Settings → Cards)
-  'termhook', 'terminal',   // P408: the web terminal's Settings row + its lazily loaded page (same rules: no storage, no import())
+  'termhook', 'terminal', 'termpty',   // 0.26.9 #463: + the full terminal (xterm) · P408: the web terminal's Settings row + its lazily loaded page (same rules: no storage, no import())
   'bang', 'vault', 'vaultrow'];   // P414: 「!」 lines + their result card, the PRF vault helpers, Settings → 电脑密码
 const OURS_FILES = ['app.js', ...MODULES.map((m) => `js/${m}.js`)];
 const OURS = OURS_FILES.map((r) => read(pub(r))).join('\n');
@@ -70,7 +70,7 @@ const MAIL_LINK = /^mailto:feedback@agentj\.app$/;   // F13 / P168: Settings →
 const NEW_WEB_ORIGIN = 'https://m.agentj.app';
 const LICENCE_TEXT = new Set(['assets/CUE-LICENSE.md', 'brand/fonts/UFL-1.0-ubuntu.txt', 'brand/fonts/OFL-1.1-lexend.txt', 'brand/fonts/README.md',
   'vendor/VERSIONS.md', 'vendor/hljs/LICENSE.txt', 'vendor/katex/LICENSE.txt', 'vendor/mermaid/LICENSE.txt',
-  'vendor/pdfjs/LICENSE.txt', 'vendor/mammoth/LICENSE.txt', 'vendor/xlsx/LICENSE.txt']);   // licence texts cite their sources
+  'vendor/pdfjs/LICENSE.txt', 'vendor/mammoth/LICENSE.txt', 'vendor/xlsx/LICENSE.txt', 'vendor/xterm/LICENSE.txt', 'vendor/xterm/addon-fit-LICENSE.txt']);   // licence texts cite their sources
 // Upstream bytes, pinned: any change must be reviewed again (P57 adds highlight.js / KaTeX / mermaid, loaded lazily by
 // js/render.js; every file + its source is in vendor/VERSIONS.md, re-checked by p57_render.test.mjs).
 const VENDORED = {
@@ -85,6 +85,10 @@ const VENDORED = {
   'vendor/pdfjs/pdf.worker.min.mjs': '145d2dd3ab0c86151011dba95acfa2d5336e2accd59388ea43dbee0efddaaec6',
   'vendor/mammoth/mammoth.browser.min.js': '92914a3708cfdf1e62cb553d1856a7fedab21da83d8ee82845de2f897b368cab',
   'vendor/xlsx/xlsx.core.min.js': '197255b0c278588117e45c14c1b25398562864cd9ffa9752c4b4d29f6d9bfd27',
+  // 0.26.9 #463: the full web terminal (js/termpty.js, loaded on the first PTY open only)
+  'vendor/xterm/xterm.mjs': 'b336ec65a086c056d4804b3d4c2347da5663d3f23c3f25be866467bd8857ad59',
+  'vendor/xterm/xterm.css': '854a7c0fb70e8b1a083c16797ab827299fb18744f5ad34f227b48337e33293c6',
+  'vendor/xterm/addon-fit.mjs': '2d87e1bddc73be9111de8beee5370c3bb7aac9c94e18e6f245f02ca741ef1769',
 };
 // P183: mammoth bundles underscore, whose _.template builds a `new Function` — mammoth's convertToHtml never calls it, and
 // CSP script-src 'self' (no 'unsafe-eval') would refuse it anyway. Exactly this many, nowhere else.

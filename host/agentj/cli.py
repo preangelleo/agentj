@@ -2100,9 +2100,26 @@ def _first_connect(st: State, a) -> bool:
     return True
 
 
+def _cmd_budget(a) -> None:
+    from . import budget
+    _need_init(State())
+    budget.cmd(a)
+
+
 def cmd_approvals(a) -> None:
     from . import approvals
     st = State()
+    if getattr(a, "interruptions", False) is True:     # 0269-w3-policy E4: the morning brief's counts (no content)
+        from . import interrupts
+        _need_init(st)
+        rep = interrupts.report(st.root)
+        if a.json:
+            print(json.dumps(rep, ensure_ascii=False))
+        else:
+            for k, lab in (("yesterday", "昨天 / yesterday"), ("today", "今天 / today")):
+                d = rep[k]
+                print(f"{lab} {d['day']}: 任务 {d['tasks']} · 卡片 {d['cards']}（Face ID {d['face_id']}）· 提问 {d['questions']}")
+        return
     try:
         _need_init(st)
         every = approvals.read_log(st)
@@ -2136,11 +2153,13 @@ def cmd_approvals(a) -> None:
                     f"（{str(r.get('grant'))[:8]}…）"
             elif r.get("reason") == "goal_grant_add":         # P339
                 who = f"目标模式：手机 {r.get('device')} 批准并加进目标授权（{str(r.get('grant'))[:8]}…）"
-            elif r.get("reason") in ("level_full", "goal_nocard", "goal_preauth", "parked", "offline", "parked_wait"):   # P336
+            elif r.get("reason") in ("level_full", "goal_nocard", "goal_preauth", "parked", "offline", "parked_wait",
+                                     "owner_scope", "unanswered"):   # P336; 0269-w3-policy
                 who = {"level_full": "全放行档位：自动批准", "goal_nocard": "设了目标就不弹窗：自动批准",
                        "goal_preauth": "设了目标就不弹窗：目标直接开始（没有开工卡）",
                        "parked": "主人批准了离线时留下的卡，重试直接执行", "offline": "主人没有遥控器在线，先告诉 Agent",
-                       "parked_wait": "离线卡仍未批准"}[r["reason"]] + (f"（{str(r.get('grant'))[:8]}…）" if r.get("grant") else "")
+                       "parked_wait": "离线卡仍未批准", "owner_scope": "主人的任务范围内，不用弹卡（" + str(r.get("policy") or "") + "）",
+                       "unanswered": "主人还没处理，这一步先等着（不是拒绝）"}[r["reason"]] + (f"（{str(r.get('grant'))[:8]}…）" if r.get("grant") else "")
             mark = {"ok": " ✓签名有效", "ok_removed": " ✓签名有效（设备已移除）", "bad": " ✗签名无效", "unsigned": "",
                     "legacy": " ·旧版记录未存签名（controls.log 里也已找不到可核对的那一行）",
                     "auto": " ✓授权签名有效"}.get(v, "")
@@ -3069,7 +3088,7 @@ def cmd_update(a) -> None:
 def _upgrade_failed(st, res: dict) -> None:
     """P277: a failed attempt goes to support by itself (unless the owner switched it off) and the block gets the
     `support:` / `tell_owner:` lines. Never changes the result or the exit code."""
-    if not isinstance(res, dict) or res.get("result") == "ok" or not res.get("step"):
+    if not isinstance(res, dict) or res.get("result") == "ok" or not (res.get("step") or res.get("reason") == "not_owner"):
         return
     try:
         from . import upgrade_diag
@@ -3604,7 +3623,19 @@ def main(argv=None) -> None:
     ap.add_argument("--verify", action="store_true", help="逐条核对设备签名")
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--last", type=int, default=0, help="只看最后 N 条")
+    ap.add_argument("--interruptions", action="store_true",
+                    help="昨天和今天每个任务弹了几张卡、问了主人几次（只有数字，晨报用）/ cards and questions per task, counts only")
     ap.set_defaults(fn=cmd_approvals)
+    bp = sub.add_parser("budget", help="主人的日 / 月花钱预算：查看；终端只能调低或清除，提高要在手机上 Face ID / the owner's budget")
+    bsub = bp.add_subparsers(dest="op", required=True)
+    bs = bsub.add_parser("show", help="当前预算 / the budget in force")
+    bs.add_argument("--json", action="store_true")
+    bs.set_defaults(fn=_cmd_budget)
+    bset = bsub.add_parser("set", help="调低或清除（clear）预算 / lower or clear the budget")
+    bset.add_argument("--day", help="每天上限，或 clear / day limit, or clear")
+    bset.add_argument("--month", help="每月上限，或 clear / month limit, or clear")
+    bset.add_argument("--json", action="store_true")
+    bset.set_defaults(fn=_cmd_budget)
     feedback.add_parser(sub)
     sub.add_parser("stop", help="⛔ 全部停下：中断 Agent、拒绝待批准、收回批量授权、暂停定时任务（重启后仍停）/ stop everything"
                    ).set_defaults(fn=cmd_stop)
@@ -3686,7 +3717,9 @@ def main(argv=None) -> None:
         core_cli.add_parser(sub)    # P359: agentj order … · agentj core … (Agent J Harness, AGENTJ_CORE=1 only)   # P244 (§30): agentj workflows [--json] — what the phone's five pages read, read-only
     elevate.add_parser(sub)   # F17: agentj sudo · agentj secret request
     from . import term_cli
-    term_cli.add_parser(sub)  # P408: agentj terminal status|enable|allow|deny|disable|forget|logs (the web terminal)
+    term_cli.add_parser(sub)
+    from . import assist as assist_cli
+    assist_cli.add_parser(sub)   # 0269-w2-assist (#468): agentj assist status|log|revoke — no grant here (Face ID on the phone only)  # P408: agentj terminal status|enable|allow|deny|disable|forget|logs (the web terminal)
     from . import opencode_provider
     opencode_provider.add_parser(sub)   # P60 / F25: agentj provider add|list|remove (OpenCode base_url + key)
     elevate_helper.add_parser(sub)   # F17: agentj sudo-helper install · sync · uninstall · status
