@@ -13,31 +13,36 @@
 //     Face ID sheet (drawn by the operating system, WebAuthn), the 「全屏」 reading of a revealed key the owner tapped, and the
 //     disconnected state (not a card from the Agent J host — the page itself cannot reach it). `place: 'page'` = a card that
 //     belongs to the page the owner is working in (the terminal's own login / confirm lines) or a dialog he opened there.
+// #500 ROLLBACK (chairman 11-05 22:5x): the docking above is rolled back for every card the owner acts on (`place: 'own'`) —
+// they are drawn where 0.26.8a2 drew them again; only the short notices and banners (`place: 'reply'`) live in the slot.
 // Card text (#472 ② / §E1): `scopeLine()` draws the card's class and the host's one-line "why your task scope does not cover
 // this" when the host sends `cls` / `why_scope` (optional; nothing extra when absent).
 
 import { SVG } from './icons.js';   // the one SVG namespace constant (static.test: no URLs in shipped files)
 
-export const PLACE = Object.freeze({ REPLY: 'reply', PAGE: 'page', EXCEPTION: 'exception' });
+// #500 rollback (chairman 11-05): `own` = the card is drawn where 0.26.8a2 drew it (the approval / question sheet from the bottom of
+// the chat stage across the screen, the other action cards as centred dialogs) — #472's move under the reply card is rolled back.
+export const PLACE = Object.freeze({ REPLY: 'reply', PAGE: 'page', EXCEPTION: 'exception', OWN: 'own' });
+const OWN_WHY = '#500 rollback (chairman 11-05): a card the owner acts on is drawn where 0.26.8a2 drew it, not under the reply card';
 
 /** kind → { place, surface (CSS selector of its root, null = drawn by the platform), msgs (host → phone types), was, why? }.
  *  `was` = where it was drawn before #472 (the inventory the report lists). */
 export const CARDS = Object.freeze({
-  approval:      { place: 'reply', surface: '#sheet', msgs: ['ask', 'ask_done', 'answer_refused'], was: 'sheet rising from the bottom of the chat stage over a scrim' },
-  question:      { place: 'reply', surface: '#sheet', msgs: ['question', 'question_done'], was: 'sheet rising from the bottom of the chat stage over a scrim' },
-  sudo:          { place: 'reply', surface: '#elev', msgs: ['elev'], was: 'centred dialog over the whole screen (on the composer with the keyboard up)' },   // kind sudo · secret · vshare
+  approval:      { place: 'own', surface: '#sheet', msgs: ['ask', 'ask_done', 'answer_refused'], was: 'sheet rising from the bottom of the chat stage over a scrim', why: OWN_WHY },
+  question:      { place: 'own', surface: '#sheet', msgs: ['question', 'question_done'], was: 'sheet rising from the bottom of the chat stage over a scrim', why: OWN_WHY },
+  sudo:          { place: 'own', surface: '#elev', msgs: ['elev'], was: 'centred dialog over the whole screen (on the composer with the keyboard up)', why: OWN_WHY },   // kind sudo · secret · vshare
   sudo_run:      { place: 'reply', surface: '#elev-run', msgs: ['elev_progress', 'elev_out', 'elev_done', 'elev_refused'], was: 'reply notice slot (P440)' },
   sudo_grants:   { place: 'reply', surface: '#elev-grant', msgs: ['elev_grants', 'elev_auto'], was: 'reply notice slot (P440)' },
-  mail_servers:  { place: 'reply', surface: '#mail-servers', msgs: [], was: 'centred dialog over the whole screen' },
-  secret_out:    { place: 'reply', surface: '.ajmodal.sout', msgs: ['secret_out', 'secret_out_val', 'secret_out_done', 'secret_out_err'], was: 'centred dialog over the whole screen' },
-  login_qr:      { place: 'reply', surface: '.ajmodal.lqr', msgs: ['login_qr', 'login_qr_done', 'login_qr_state', 'login_qr_err'], was: 'centred dialog over the whole screen' },
-  login_sheet:   { place: 'reply', surface: '.ajmodal.lgs', msgs: ['auth_rescue'], was: 'centred dialog over the chat' },
-  help_card:     { place: 'reply', surface: '.ajmodal.hlp', msgs: ['help_card', 'help_end', 'help_err'], was: 'centred dialog over the whole screen' },
-  goal_opening:  { place: 'reply', surface: '.ajmodal.lt:not(.lt-caps)', msgs: ['lt_card', 'lt_done', 'lt_res'], was: 'centred dialog over the whole screen' },
-  agent_caps:    { place: 'reply', surface: '.ajmodal.lt-caps', msgs: ['lt_caps'], was: 'centred dialog over the whole screen' },
-  peer_approval: { place: 'reply', surface: '.ajmodal.pkp', msgs: ['pk_peer_ask', 'pk_peer_done', 'pk_peer_close', 'pk_peer_answer_res'], was: 'centred dialog over the whole screen' },
-  contact_card:  { place: 'reply', surface: '#ctCard', msgs: ['ct_card', 'ct_card_done', 'ct_card_err'], was: 'centred square dialog over the whole screen' },
-  confirm:       { place: 'reply', surface: '#confirm', msgs: ['upg_card', 'upg_card_done', 'pk_offer', 'roster_bind_offer', 'roster_bind_res'], was: 'centred dialog over the whole screen' },
+  mail_servers:  { place: 'own', surface: '#mail-servers', msgs: [], was: 'centred dialog over the whole screen', why: OWN_WHY },
+  secret_out:    { place: 'own', surface: '.ajmodal.sout', msgs: ['secret_out', 'secret_out_val', 'secret_out_done', 'secret_out_err'], was: 'centred dialog over the whole screen', why: OWN_WHY },
+  login_qr:      { place: 'own', surface: '.ajmodal.lqr', msgs: ['login_qr', 'login_qr_done', 'login_qr_state', 'login_qr_err'], was: 'centred dialog over the whole screen', why: OWN_WHY },
+  login_sheet:   { place: 'own', surface: '.ajmodal.lgs', msgs: ['auth_rescue'], was: 'centred dialog over the chat', why: OWN_WHY },
+  help_card:     { place: 'own', surface: '.ajmodal.hlp', msgs: ['help_card', 'help_end', 'help_err'], was: 'centred dialog over the whole screen', why: OWN_WHY },
+  goal_opening:  { place: 'own', surface: '.ajmodal.lt:not(.lt-caps)', msgs: ['lt_card', 'lt_done', 'lt_res'], was: 'centred dialog over the whole screen', why: OWN_WHY },
+  agent_caps:    { place: 'own', surface: '.ajmodal.lt-caps', msgs: ['lt_caps'], was: 'centred dialog over the whole screen', why: OWN_WHY },
+  peer_approval: { place: 'own', surface: '.ajmodal.pkp', msgs: ['pk_peer_ask', 'pk_peer_done', 'pk_peer_close', 'pk_peer_answer_res'], was: 'centred dialog over the whole screen', why: OWN_WHY },
+  contact_card:  { place: 'own', surface: '#ctCard', msgs: ['ct_card', 'ct_card_done', 'ct_card_err'], was: 'centred square dialog over the whole screen', why: OWN_WHY },
+  confirm:       { place: 'own', surface: '#confirm', msgs: ['upg_card', 'upg_card_done', 'pk_offer', 'roster_bind_offer', 'roster_bind_res'], was: 'centred dialog over the whole screen', why: OWN_WHY },
   version_notice:{ place: 'exception', surface: '#version-notice', msgs: [], was: 'centred square over the whole screen',
                    why: 'the page\'s own 「我升级了 · 刷新」 notice about this web page (P150), not a card from the Agent J host; it never takes focus' },
   notice:        { place: 'reply', surface: '#toast', msgs: ['auto', 'approval_resign', 'owner_grant_notice'], was: 'reply notice slot (P440 rect); short status = centred circle (P461, not a card)' },
@@ -133,15 +138,6 @@ export function badge(node) {
   frame.prepend(b);
   return b;
 }
-function dock(node, slot) {
-  badge(node);
-  if (!homes.has(node) && node.parentNode && node.parentNode !== slot) {
-    const mark = document.createComment('p0269 card home'); node.before(mark); homes.set(node, mark);
-  }
-  if (node.parentNode !== slot) slot.append(node);
-  if (!node.classList.contains('cp-docked')) node.classList.add('cp-docked');
-  if (node.getAttribute('aria-modal') === 'true') { node.dataset.cpModal = '1'; node.setAttribute('aria-modal', 'false'); }
-}
 function undock(node, slot) {
   if (node.classList.contains('cp-docked')) node.classList.remove('cp-docked');
   if (node.dataset.cpModal) { node.setAttribute('aria-modal', 'true'); delete node.dataset.cpModal; }
@@ -162,61 +158,29 @@ export function slotShow(el, mode = 'nearest') {
   else if (r.top < q.top) d = r.top - q.top;
   if (d) slot.scrollTop += d;
 }
-const ACTION_SEL = '#apprBtns:not([hidden]),#apprGoalAdd:not([hidden]),#apprBatch:not([hidden]),.confirm-row,.elev-acts,.gdlg-row,'
-  + '.aj-btn--primary:not([hidden]),button[type=submit]:not([hidden])';
-/** Show a card in the slot with its decision on screen: the slot scrolls just enough that the action row is visible (the card's
- *  top stays as far as room allows — 'nearest'), so 批准 / 同意 never waits below the fold. */
-export function reveal(node) {
-  const go = () => {
-    const slot = $('reply-notices');
-    if (!slot || !node.isConnected || node.parentNode !== slot || !shown(node)) return;
-    // only the slot scrolls (scrollIntoView would also shift the overflow-hidden stage / deck around it)
-    slotShow(node, 'start');
-    // every decision button on screen when they fit (the last first, then the first: 'nearest' keeps both when there is room)
-    const acts = [...node.querySelectorAll(ACTION_SEL)].filter((n) => n.getClientRects().length && !n.closest('[hidden]'));
-    if (acts.length) { slotShow(acts.at(-1)); slotShow(acts[0]); }
-  };
-  // at once (in the same task the card opened in: nothing moves under a finger that is already on its way), and once more
-  // after the next frame only if its decision is still off screen (late content)
-  go();
-  requestAnimationFrame(() => {
-    const slot = $('reply-notices'), q = slot && slot.getBoundingClientRect();
-    const acts = q ? [...node.querySelectorAll(ACTION_SEL)].filter((n) => n.getClientRects().length && !n.closest('[hidden]')) : [];
-    if (acts.some((n) => { const r = n.getBoundingClientRect(); return r.bottom > q.bottom + 1 || r.top < q.top - 1; })) go();
-  });
-}
-let sheetCard = '';
-/** One pass: open reply-placed cards under the reply card while the chat is in front, home otherwise. */
+/** #500 rollback (chairman 11-05 22:5x, 「这个不是重新设计，这个是roll back，因为以前的就很好」): the cards the owner acts on
+ *  (approval / question sheet, confirm, password / key / sign-in / help / goal / contact / peer Face ID cards) are back where
+ *  0.26.8a2 drew them — the approval / question sheet rises from the bottom of the chat stage across the whole screen width,
+ *  the others are the centred dialogs P551 (ontop.js) keeps on top. Nothing is moved into #reply-notices any more; the short
+ *  notices (#toast, banners, sudo strip, grants) stay in that slot as before (P440). One pass: a card left docked by an older
+ *  build of this page goes home, and every open host card carries the security r4 F8 host-only badge (55ca571c5f). */
 export function sync() {
   if (busy || typeof document === 'undefined') return;
   const slot = $('reply-notices');
-  if (!slot) return;
   busy = true;
   try {
-    const front = chatInFront();
-    const sheet = $('sheet'), sc = sheet && shown(sheet) && sheet.parentNode === slot ? sheet.dataset.card || 'open' : '';
-    if (sc !== sheetCard) { sheetCard = sc; if (sc) reveal(sheet); }   // a new approval / question card in its home: decision on screen
     for (const node of document.querySelectorAll(DOCK_SEL)) {
-      if (node.id === 'sheet') continue;                      // its home IS the slot (initCardPlace); ontop.js floats it when covered
-      const kind = kindOf(node);
-      const want = front && shown(node) && kind && CARDS[kind].place === PLACE.REPLY
-        && !node.classList.contains('ontop-float') && !node.classList.contains('auth-approval');
-      if (want) {
-        const fresh = node.parentNode !== slot;
-        dock(node, slot);
-        if (fresh) reveal(node);
-      } else if (node.classList.contains('cp-docked') || node.parentNode === slot) {
-        undock(node, slot);
-      }
+      // the sheet's badge is built by initCardPlace (ontop.js calls this pass before the dictionary function is handed over)
+      if (node.id !== 'sheet' && shown(node) && kindOf(node)) badge(node);
+      if (slot && (node.classList.contains('cp-docked') || (node.id !== 'sheet' && node.parentNode === slot))) undock(node, slot);
     }
   } finally { busy = false; }
 }
-/** The approval / question sheet's home is the slot itself (it never was a body card): moved once at start. */
+/** #500 rollback: the approval / question sheet stays in its 0.26.8a2 home (the chat stage); only the F8 badge is added. */
 export function initCardPlace(t) {
   if (typeof t === 'function') tr = t;
-  const sheet = $('sheet'), slot = $('reply-notices');
-  if (sheet && slot && sheet.parentNode !== slot) slot.append(sheet);
-  if (sheet) { sheet.classList.add('cp-docked'); badge(sheet); }
+  const sheet = $('sheet');
+  if (sheet) badge(sheet);
   const go = () => sync();
   if (typeof MutationObserver !== 'undefined') new MutationObserver(go).observe(document.body, { subtree: true, childList: true, attributes: true,
     attributeFilter: ['hidden', 'open', 'class', 'data-view', 'data-sheet'] });

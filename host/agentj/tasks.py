@@ -37,6 +37,9 @@ def _ttl(env: str, default: float) -> float:
 
 RUN_TIMEOUT = _ttl("AGENTJ_TEST_TASK_TIMEOUT", 1800)
 TICK = _ttl("AGENTJ_TEST_TASK_TICK", 20)
+# #492: a run never waits forever for the chat turn, and a run that outlives every bound of its own is cut so the queue moves
+LOCK_WAIT = _ttl("AGENTJ_TEST_TASK_LOCK_WAIT", 7200)
+ERR_LOG_EVERY = 600                  # the same scheduler error is written to host.log at most once per 10 minutes
 # P418 (#183 ③): missed runs while the computer was off / asleep
 CATCHUP_DAYS = 7                 # look back at most this far
 CATCHUP_MAX = 1000               # stop counting one task here ("1000+")
@@ -175,6 +178,7 @@ def load(st) -> dict:
     for k in ("on", "last", "ran", "runs"):
         if not isinstance(d.get(k), dict):
             d[k] = {}
+    d["runs"] = {k: v for k, v in d["runs"].items() if isinstance(v, dict)}   # #492: one bad record never breaks every reader
     return d
 
 
@@ -515,6 +519,21 @@ def brief_block(e: dict) -> str:
 
 
 # ------------------------------------------------------------------ the runner inside serve
+@contextlib.asynccontextmanager
+async def _held(lock: asyncio.Lock, wait: float):
+    """#492: the chat-turn lock, waited for at most `wait` s — a turn that never ends no longer parks the whole queue."""
+    try:
+        await asyncio.wait_for(lock.acquire(), wait)
+    except asyncio.TimeoutError:
+        mins = max(1, int(wait // 60))
+        raise TaskError("busy", f"对话一直占用 Agent 超过 {mins} 分钟，这次没有运行 / The chat turn held the Agent for over "
+                                f"{mins} min; did not run") from None
+    try:
+        yield
+    finally:
+        lock.release()
+
+
 class Scheduler:
     """Lives in serve. One run at a time; runs only while the stop switch is off."""
 
@@ -556,6 +575,10 @@ class Scheduler:
             for rec in d["runs"].values():
                 if rec.get("status") not in ("queued", "running") or rec.get("instance_id") == self.instance_id:
                     continue
+                if not isinstance(rec.get("id"), str):
+                    rec.update(status="interrupted", ended_at=int(time.time()), uncertain=rec.get("status") == "running",
+                               verdict="attention", line="unreadable run record / 运行记录不完整")
+                    continue
                 uncertain = rec["status"] == "running"
                 lang = getattr(self.host, "lang", "zh")
                 if uncertain:
@@ -581,10 +604,27 @@ class Scheduler:
                     res["resume"] = r
         caps = getattr(self.host, "capabilities", None)
         if caps is not None:
-            recovered.extend(caps.recover_runs(load(self.st)["runs"]))
+            try:
+                recovered.extend(caps.recover_runs(load(self.st)["runs"]))
+            except Exception as exc:  # noqa: BLE001 — the dispatch projection is repaired next start; scheduling goes on
+                self._error("recover_dispatch", exc)
         self.recovered = True
         for res in recovered:
-            self.host.task_finished(res)
+            try:
+                self.host.task_finished(res)
+            except Exception as exc:  # noqa: BLE001 — a notice that cannot be shown never stops the queue
+                self._error("recover_notice", exc)
+
+    def _error(self, where: str, exc: BaseException) -> None:
+        """#492: a scheduler error is logged (host.log `task_sched_error`), never swallowed; the loop goes on."""
+        key = (where, type(exc).__name__)
+        now = time.monotonic()
+        seen = self.__dict__.setdefault("_errs", {})
+        if now - seen.get(key, -ERR_LOG_EVERY) < ERR_LOG_EVERY:
+            return
+        seen[key] = now
+        with contextlib.suppress(Exception):
+            self.st.log("task_sched_error", where=where, exception_type=type(exc).__name__)
 
     def request(self, tid: str, trigger: str = "manual", minute: str | None = None) -> str:
         if self.current_id == tid or any(t == tid for t, _ in self.waiting):
@@ -612,28 +652,86 @@ class Scheduler:
         return rid
 
     async def loop(self) -> None:
-        self.recover()
+        """#492: never dies. recover() / _due() / one run failing is logged and retried; the queue is served every tick."""
         if self.ticker is None:              # P418 (#183 ③): its own task — a 30-minute run must not look like a gap
             self.ticker = asyncio.create_task(self._ticker())
-            from .sysmigrate import offer    # P570b: the one "move to the system scheduler" card
-            self.migrate_card = asyncio.create_task(offer(self.host))
+            try:
+                from .sysmigrate import offer    # P570b: the one "move to the system scheduler" card
+                self.migrate_card = asyncio.create_task(offer(self.host))
+            except Exception as exc:  # noqa: BLE001
+                self._error("migrate_card", exc)
         while True:
             try:
-                if not self.host.stopped():
-                    self._due()
-                while self.waiting and not self.host.stopped():
-                    tid, trigger = self.waiting.pop(0)
-                    self.current_id = tid
-                    self.current = asyncio.create_task(self.run(tid, trigger))
-                    with contextlib.suppress(asyncio.CancelledError, Exception):
-                        await self.current
-                    self.queued.pop(tid, None)
-                    self.current, self.current_id = None, None
-            except Exception:  # noqa: BLE001 — a scheduler bug must never reach serve
-                pass
+                await self._step()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001 — a scheduler bug must never reach serve, nor stop scheduling
+                self._error("loop", exc)
             self.wake.clear()
             with contextlib.suppress(asyncio.TimeoutError):
                 await asyncio.wait_for(self.wake.wait(), TICK)
+            me = asyncio.current_task()      # a cancel landing as the tick times out can surface as TimeoutError: honour it
+            if me is not None and me.cancelling():
+                raise asyncio.CancelledError
+
+    def _budget(self, tid: str) -> float:
+        """The longest one run may take before the loop cuts it: chat-turn wait + every step's own timeout + slack."""
+        steps = 1
+        with contextlib.suppress(Exception):
+            steps = len((find(self.workdir(), tid)["task"] or {}).get("steps") or ()) or 1
+        return LOCK_WAIT + RUN_TIMEOUT * steps + max(60.0, TICK * 3)
+
+    async def _step(self) -> None:
+        if not self.recovered:               # old queued / running records are fenced before anything new starts
+            try:
+                self.recover()
+            except Exception as exc:  # noqa: BLE001 — retried next tick, logged; nothing runs over an unfenced journal
+                self._error("recover", exc)
+                return
+        if not self.host.stopped():
+            try:
+                self._due()
+            except Exception as exc:  # noqa: BLE001 — a schedule check failing must not starve 「立即运行」 / dispatch
+                self._error("due", exc)
+        while self.waiting and not self.host.stopped():
+            tid, trigger = self.waiting.pop(0)
+            self.current_id = tid
+            self.current = asyncio.create_task(self.run(tid, trigger))
+            try:
+                await asyncio.wait_for(asyncio.shield(self.current), self._budget(tid))
+            except asyncio.TimeoutError:
+                await self._cut_stuck(tid)
+            except asyncio.CancelledError:
+                if not self.current.done():  # the loop itself is being cancelled (serve stopping)
+                    raise
+            except Exception as exc:  # noqa: BLE001
+                self._error("run", exc)
+            finally:
+                rid = self.queued.pop(tid, None)
+                if rid and self.current is not None and self.current.done():
+                    self._close_orphan(rid, tid)
+                self.current, self.current_id = None, None
+
+    async def _cut_stuck(self, tid: str) -> None:
+        """#492: a run past its whole budget is cancelled so later runs are not blocked behind it forever."""
+        self._error("stuck", TimeoutError())
+        t = self.current
+        t.cancel()
+        with contextlib.suppress(BaseException):
+            await asyncio.wait_for(asyncio.shield(t), 8)
+        rid = self.queued.get(tid)
+        if rid and not t.done():             # it ignores cancellation: its effects are unknown → uncertain, owner checks
+            with contextlib.suppress(Exception):
+                self._end_run(rid, {"id": tid, "status": "interrupted", "verdict": "attention", "uncertain": True,
+                                    "line": "运行卡住，已中断；请核对产物 / Run stuck and was cut; check its effects"})
+
+    def _close_orphan(self, rid: str, tid: str) -> None:
+        """A run that crashed before writing its end leaves no queued / running record behind."""
+        with contextlib.suppress(Exception):
+            rec = load(self.st)["runs"].get(rid)
+            if rec and rec.get("status") in ("queued", "running"):
+                self._end_run(rid, {"id": tid, "status": "interrupted", "verdict": "fail",
+                                    "line": "运行异常中断 / Run interrupted by an error"})
 
     def _due(self) -> None:
         if not self.host.agent_cfg:
@@ -650,7 +748,10 @@ class Scheduler:
                 continue
             if d["ran"].get(r["id"]) == key:
                 continue
-            self.request(r["id"], "schedule", minute=key)
+            try:
+                self.request(r["id"], "schedule", minute=key)
+            except Exception as exc:  # noqa: BLE001 — #492: one task failing never skips the others
+                self._error("due_request", exc)
 
     # P418 (#183 ③): runs missed while the computer was off / asleep → one notice + an optional "run once" card
     async def _ticker(self) -> None:
@@ -802,7 +903,7 @@ class Scheduler:
         run_started = time.time()
         lock = host.turn_lock
         try:
-            async with lock:                         # waits for the chat turn to end; nothing else uses the Agent meanwhile
+            async with _held(lock, LOCK_WAIT):       # waits for the chat turn to end; nothing else uses the Agent meanwhile
                 if host.stopped():
                     res["line"] = "已急停，没有运行"
                     raise asyncio.CancelledError
@@ -936,7 +1037,7 @@ class Scheduler:
     def _end_run(self, rid: str, res: dict) -> None:
         def change(d):
             rec = d["runs"][rid]
-            rec.update({k: res[k] for k in ("verdict", "line", "readonly", "secs", "report_check") if k in res})
+            rec.update({k: res[k] for k in ("verdict", "line", "readonly", "secs", "report_check", "uncertain") if k in res})
             rec.update(status="interrupted" if res.get("stopped") else res.get("status", "finished"), ended_at=int(time.time()))
             d["last"][rec["id"]] = dict(rec, at=rec["ended_at"])
         update(self.st, change)

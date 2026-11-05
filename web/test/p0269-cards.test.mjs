@@ -62,10 +62,11 @@ test('every kind declares a valid placement; pages and exceptions say why; reply
   // only what the platform / the owner forces full screen is an exception
   assert.deepEqual(Object.entries(CP.CARDS).filter(([, c]) => c.place === 'exception').map(([k]) => k).sort(), ['faceid', 'offline', 'secret_full', 'version_notice']);
   assert.equal(CP.CARDS.faceid.surface, null, 'Face ID is drawn by the operating system');
-  // the chairman's list (#472): approval, sudo/password, key, login, goal opening, system notices — all under the reply card
-  for (const k of ['approval', 'question', 'sudo', 'secret_out', 'login_qr', 'login_sheet', 'goal_opening', 'confirm', 'notice', 'banner', 'contact_card', 'peer_approval', 'help_card'])
-    assert.equal(CP.CARDS[k].place, 'reply', k);
-  for (const sel of CP.DOCKABLE) assert.ok(Object.values(CP.CARDS).some((c) => c.place === 'reply' && c.surface.split(',').map((s) => s.trim()).some((s) => s === sel || s.startsWith(sel))), sel + ' is a reply card');
+  // #500 rollback (chairman 11-05): the cards the owner acts on are drawn where 0.26.8a2 drew them; notices / banners stay in the slot
+  for (const k of ['approval', 'question', 'sudo', 'secret_out', 'login_qr', 'login_sheet', 'goal_opening', 'confirm', 'contact_card', 'peer_approval', 'help_card'])
+    assert.equal(CP.CARDS[k].place, 'own', k);
+  for (const k of ['notice', 'banner', 'sudo_run', 'sudo_grants']) assert.equal(CP.CARDS[k].place, 'reply', k);
+  for (const sel of CP.DOCKABLE) assert.ok(Object.values(CP.CARDS).some((c) => c.place === 'own' && c.surface.split(',').map((s) => s.trim()).some((s) => s === sel || s.startsWith(sel))), sel + ' is an action card in its own place');
 });
 
 test('every dialog-shaped card root built by the modules or index.html is declared (new kinds fail)', () => {
@@ -93,6 +94,16 @@ test('every dialog-shaped card root built by the modules or index.html is declar
   assert.equal(kindOf({ id: 'mail-servers', cls: ['ajmodal', 'dlgcard', 'elev'] }), 'mail_servers');
   assert.equal(kindOf({ id: '', cls: ['ajmodal', 'dlgcard', 'sout', 'sout-full'] }), 'secret_full');
   assert.equal(kindOf({ id: '', cls: ['ajmodal', 'dlgcard', 'lt', 'lt-caps'] }), 'agent_caps');
+});
+
+test('#500 rollback: no action card is moved under the reply card; the sheet keeps its 0.26.8a2 home; the badge stays', () => {
+  const cp = read('../public/js/cardplace.js');
+  assert.doesNotMatch(cp, /slot\.append\(/, 'nothing is appended into #reply-notices');
+  assert.doesNotMatch(cp, /classList\.add\('cp-docked'\)/, 'no card is marked docked');
+  assert.match(cp, /if \(sheet\) badge\(sheet\);/, 'security r4 F8 badge on the approval / question sheet (55ca571c5f)');
+  const html = read('../public/index.html');
+  const stage = html.indexOf('id="stage"'), sheet = html.indexOf('id="sheet"');
+  assert.ok(stage > 0 && sheet > stage, 'the sheet lives in the chat stage (0.26.8a2)');
 });
 
 test('the docked card is an in-flow block in the slot; the over-a-dialog toast ignores docked cards', () => {
@@ -156,7 +167,8 @@ test('dictionaries: every new key in zh and en with the same placeholders; gloss
 test('security r4 F8: the host badge is built only by cardplace.js — no reply renderer can produce its class / marker', () => {
   const cp = read('../public/js/cardplace.js');
   assert.match(cp, /b\.className = 'cp-host'; b\.dataset\.cpHost = '1';/);
-  assert.match(cp, /function dock\(node, slot\) \{\n  badge\(node\);/, 'every docked card gets the badge');
+  // #500 rollback: no card docks any more; every open action card (and the sheet at start) still gets the badge
+  assert.match(cp, /if \(node\.id !== 'sheet' && shown\(node\) && kindOf\(node\)\) badge\(node\);/, 'every open action card gets the badge');
   const dir = new URL('../public/js/', import.meta.url);
   for (const f of readdirSync(dir).filter((f) => f.endsWith('.js') && f !== 'cardplace.js'))
     assert.doesNotMatch(readFileSync(new URL(f, dir), 'utf8'), /cp-host|cpHost|data-cp-host/, f + ' must not build the host badge');

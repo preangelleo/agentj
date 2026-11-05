@@ -1,4 +1,4 @@
-# Agent J v0.26.10a2
+# Agent J v0.26.10a3
 
 [host] Your own finished background jobs are no longer 'unknown source'; the Agent checks the result. Recognised payments, deletes, sends still ask your phone.
 

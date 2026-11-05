@@ -1,8 +1,8 @@
 // 0.26.9 #472 / §E6 + §E3 (lane w3-cards) — the real phone page against the local fake host (real Noise, own headless Chromium,
 // never :9222); no customer machine, no real sudo, no credentials (every id / key / password below is made up).
-//   · the sudo / admin-password card (the ufw case), the API-key card, the approval card, the goal opening card and an upgrade
-//     confirm all render UNDER the current reply card: inside #reply-notices, between the reply's top and its 阅读 · 朗读 row,
-//     in the flow (not position:fixed), the composer uncovered and still reachable; the password field takes typing there
+//   · #500 ROLLBACK (chairman 11-05): the sudo / admin-password card, the API-key card, the approval card, the goal opening card
+//     and the upgrade confirm are drawn where 0.26.8a2 drew them again — never in #reply-notices; the approval sheet is the
+//     stage's bottom sheet across the phone's width with the F8 host badge; the password field takes typing
 //   · the card names its class and the host's why-scope line when the host sends cls / why_scope; nothing extra without them
 //   · something else in front (Settings): the card follows the owner over it; back on the chat it is under the reply again
 //   · Settings → 安全 → 预算: hidden until budget_state; spent 「—」 until the host sends it; lowering = one signed budget_set
@@ -39,15 +39,19 @@ const GEO = (sel) => `(()=>{const n=document.querySelector(${J(sel)});if(!n)retu
   return {inSlot:slot.contains(n),pos:getComputedStyle(n).position,top:r.top,bottom:r.bottom,h:r.height,rmTop:rm.top,barTop:bar.top,compTop:comp.top,slotTop:q.top,slotBottom:q.bottom,
     actionOnScreen:!a||(a.top>=q.top-1&&a.bottom<=q.bottom+1),
     composerFree:!!hit&&!!hit.closest('.composer'),slotScroll:slot.scrollHeight>slot.clientHeight}})()`;
+// #500 rollback (chairman 11-05 22:5x, 「这个不是重新设计，这个是roll back」): a card the owner acts on is drawn where 0.26.8a2
+// drew it again — never in the reply's notice slot; the approval / question sheet is the stage's bottom sheet, the full screen
+// width on a phone; the other cards are the centred overlays (P551 keeps them on top). The F8 badge stays on the sheet.
 async function under(p, sel, name) {
   const g = await ev(p, GEO(sel));
-  check(g && g.inSlot, `${name}: inside the reply's notice slot ${J(g)}`);
-  check(g && g.pos !== 'fixed', `${name}: in the flow, not a fixed overlay`);
-  // the slot (the card's visible frame — a tall card scrolls inside it) lies between the reply's top and its button row
-  check(g && g.h > 0 && g.slotTop >= g.rmTop - 1 && g.slotBottom <= g.barTop + 1 && g.bottom > g.slotTop && g.top < g.slotBottom, `${name}: under the reply card's top, above its button row ${J(g)}`);
-  check(await ev(p, `(()=>{const n=document.querySelector(${J(sel)}),b=n&&n.querySelectorAll('.cp-host');return !!b&&b.length===1&&getComputedStyle(b[0]).display!=='none'&&b[0].textContent.length>0&&(()=>{const r=b[0].getBoundingClientRect(),q=document.getElementById('reply-notices').getBoundingClientRect();return r.height>0&&r.top>=q.top-1&&r.bottom<=q.bottom+1})()})()`), `${name}: carries the host-only badge, on screen at the top of the card (security r4 F8)`);
-  check(g && g.actionOnScreen, `${name}: its decision button is on screen without scrolling ${J(g)}`);
-  check(g && g.composerFree, `${name}: the composer is not covered`);
+  const w = await ev(p, `(()=>{const n=document.querySelector(${J(sel)});if(!n)return null;const r=n.getBoundingClientRect();
+    return {vw:innerWidth,vh:innerHeight,left:r.left,right:r.right,parent:n.parentElement?.id||'',dlgParent:!!n.parentElement?.closest('dialog')}})()`);
+  check(g && !g.inSlot, `${name}: not in the reply's notice slot (#500 rollback) ${J(g)}`);
+  if (sel === '#sheet') {
+    check(w && w.parent === 'stage', `${name}: the 0.26.8a2 sheet in the chat stage ${J(w)}`);
+    if (w && w.vw < 600) check(w.left <= 0.5 && w.right >= w.vw - 0.5, `${name}: spans the phone's width ${J(w)}`);
+    check(await ev(p, `(()=>{const b=document.querySelectorAll('#sheet>.cp-host');return b.length===1&&getComputedStyle(b[0]).display!=='none'&&b[0].textContent.length>0&&b[0].getBoundingClientRect().height>0})()`), `${name}: carries the host-only badge (security r4 F8)`);
+  } else check(g && (g.pos === 'fixed' || (w && w.dlgParent)), `${name}: a 0.26.8a2 overlay card ${J(g)}`);
   return g;
 }
 async function snap(p, name, id) {
@@ -124,7 +128,7 @@ try {
         await snap(p, '1-sudo', id);
         await ev(p, `document.getElementById('elev-input').focus()`);
         await key(p, 'x', { text: 'x' });
-        check(await ev(p, `document.activeElement.id==='elev-input'&&document.getElementById('elev-input').value.length===1&&document.getElementById('reply-notices').contains(document.activeElement)`), `the password is typed under the reply card ${id}`);
+        check(await ev(p, `document.activeElement.id==='elev-input'&&document.getElementById('elev-input').value.length===1`), `the password is typed into the card ${id}`);
         await ev(p, `document.getElementById('elev-input').value=''`);
       } else await snap(p, '1-sudo', id);
 
@@ -135,7 +139,7 @@ try {
         check(await ev(p, `(()=>{const n=document.getElementById('elev'),b=n.querySelector('.box').getBoundingClientRect(),hit=document.elementFromPoint(b.left+b.width/2,b.top+Math.min(40,b.height/2));return !document.getElementById('reply-notices').contains(n)&&!!hit&&n.contains(hit)})()`), `over Settings the card stays on top ${id}`);
         await ev(p, `import('./js/settings.js').then(m=>m.close())`);
         await waitFor(p, `document.getElementById('settings').hidden`); await sleep(300);
-        await under(p, '#elev', `sudo card back on the chat ${id}`);
+        await under(p, '#elev', `sudo card back on the chat ${id}`);   // #500: in its own place again
       }
       await key(p, 'Escape');   // 收起: never a deny (P406)
       await waitFor(p, `document.getElementById('elev').hidden`);
@@ -159,7 +163,7 @@ try {
       await waitFor(p, `document.body.dataset.sheet==='1'`); await sleep(500);
       if (CHECK) {
         await under(p, '#sheet', `approval card ${id}`);
-        check(await ev(p, `getComputedStyle(document.getElementById('deck')).filter==='none'`), `the reply is not blurred behind its card ${id}`);
+        check(await ev(p, `getComputedStyle(document.getElementById('deck')).filter`) === 'blur(1.5px)', `the reply behind the sheet is blurred as in 0.26.8a2 (P440) ${id}`);
         check(await ev(p, `document.getElementById('apprScope').textContent.includes(${J(L('发给新的收件人', 'Sending to a new recipient'))})&&!document.getElementById('apprScope').hidden`), `approval names its class ${id}`);
       }
       await snap(p, '3-approval', id);
