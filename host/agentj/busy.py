@@ -733,6 +733,13 @@ class Board:
         self.evidence = {}
         self.claude_transcripts = {}
         self.root = Path(root) if root else None
+        if self.root is not None:
+            try:
+                saved = json.loads((self.root / "busy/native-launches.json").read_text())
+                self.launched = {k: v for k, v in saved.items() if isinstance(k, str) and ":" in k and type(v) is bool}
+                self.launched = dict(list(self.launched.items())[-64:])
+            except (OSError, ValueError, TypeError, AttributeError):
+                pass
         self.context: dict[str, dict] = {}
         self.mem: dict[str, dict] = {}
         self.outside: list[dict] = []
@@ -786,6 +793,12 @@ class Board:
             self.launched[key] = bool(it.get("foreign") or not self.trusted)
             while len(self.launched) > 64:
                 self.launched.pop(next(iter(self.launched)))
+            if self.root is not None:
+                from .state import _write_private
+                with contextlib.suppress(OSError):
+                    p = self.root / "busy/native-launches.json"
+                    p.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+                    _write_private(p, json.dumps(self.launched).encode())
         source = str(session or key).lower()
         harness = next((x for x in ("codex", "opencode", "claude") if x in source), None)
         if harness is None and source in ("own", "shared"):
@@ -1639,6 +1652,11 @@ def cmd_busy(a) -> int:
             path = write_item(root, item(key, a.who, a.kind, a.label, pid=os.getpid(), ns=pidns(), report=a.report, cwd=os.getcwd(), **task_meta({k:v for k,v in vars(a).items() if k != "cwd"})))
         except OSError as e:              # e.g. no state dir: the work still runs, only unseen on the phone
             print(f"agentj busy: 手机上不会显示这件事 / not shown on the phone ({e.__class__.__name__})", file=sys.stderr)
+        if path is not None:
+            from . import names
+            from .state import State
+            with contextlib.suppress(OSError, ValueError, names.ServeBusy):
+                names.ctl_call(State(root), {"cmd": "busy_launch", "key": key}, 3)
         stop = threading.Event()
 
         def beat():

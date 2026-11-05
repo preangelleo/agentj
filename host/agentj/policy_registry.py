@@ -298,7 +298,7 @@ def _own_card(args):
                                                                    ["give"], ["grant"], ["grants"])
 
 
-def main_requirement(tool, tool_input=None, *, env=None):
+def main_requirement(tool, tool_input=None, *, env=None, cwd=None):
     action = tool_action(tool)
     requirement = decision("main", action)
     if requirement == "deny":
@@ -358,7 +358,7 @@ def main_requirement(tool, tool_input=None, *, env=None):
             if danger.cred_path(path):
                 floor = "hold" if floor == "allow" else floor   # P573: a credential file written: one button
     verdict = danger.classify(name, inp, env=env)
-    shared = danger.classify_shared(name, inp, env=env)
+    shared = danger.classify_shared(name, inp, cwd=cwd, env=env)
     cats = set(verdict.cats) | set(shared.cats)
     if {"cred.hooks", "cred.service"} & (set(verdict.rules) | set(shared.rules)):
         return "uv"                      # P573 (e): the Agent rewriting its own hook / approval settings — never below Face ID

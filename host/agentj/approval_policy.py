@@ -241,7 +241,7 @@ def _decide(tool, inp, cats, rules, action, verdict, requirement, dispatch, work
     if keep == "spend" or cats & {"spend", "price"} or action == "payment":
         from . import budget as budget_mod
         return (NONE, "spend_in_budget") if budget_mod.verdict(budget, amount) == "in" else (FACE, "spend_over_budget")
-    if "credentials" in cats or _shared_cred(tool, inp, env) or (tool in _SHELL and bool(text) and confirm_tier._names_cred(text)):
+    if "credentials" in cats or _shared_cred(tool, inp, env, workdir) or (tool in _SHELL and bool(text) and confirm_tier._names_cred(text)):
         return FACE, "secret_read"                # CEO r4: reading / rewriting / copying a key file — Face ID (provisional)
     rc_path = " " + str(inp.get("file_path") or inp.get("path") or inp.get("notebook_path") or "")
     if (tool in _SHELL and _RC_FILES.search(text or "")) or (tool not in _SHELL and _RC_FILES.search(rc_path)):
@@ -300,11 +300,11 @@ def _bulk_or_remote_delete(tool, inp, rules, text, workdir) -> bool:
     return bool(outside) and bulk
 
 
-def _shared_cred(tool, inp, env=None) -> bool:
+def _shared_cred(tool, inp, env=None, workdir=None) -> bool:
     """The strict shared rule sees a credential file / environment read (what makes `cat ~/.env` a one-button card)."""
     from . import danger
     try:
-        return "credentials" in danger.classify_shared(tool, inp, env=env).cats
+        return "credentials" in danger.classify_shared(tool, inp, cwd=workdir, env=env).cats
     except Exception:  # noqa: BLE001
         return False
 

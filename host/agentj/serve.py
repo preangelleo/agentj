@@ -549,17 +549,17 @@ def _rcpt_turn(host, tid) -> None:
 
 def _peer_floor(host, tool, tool_input, v, requirement, opaque, host_card, asks, bound, ttl, lv, dispatch=False) -> bool:   # #455 ADR: True = card
     from . import peer_origin, policy_registry
-    if host_card or asks or bound or ttl is not None or lv == "safe":
+    if host_card or asks or bound or ttl is not None:
         return True
     if dispatch:                            # the CEO-dispatch whitelist shape, judged before (ADR-#455)
         return False
-    if (v.danger or opaque or requirement != "allow" or not peer_origin.allowed(tool, tool_input, (host.agent_cfg or {}).get("dir"), host.st.root)
+    if (v.danger or opaque or requirement != "allow"
             or tool in approval_level.HARNESS_KEEPS or tool in approval_level.HOST_CARDS or tool in policy_registry.HOST_TOOLS):
         return True
     try:
         return bool(confirm_tier.harness_keeps(tool, tool_input, env=getattr(host.agent, "approval_env", None))
                     or approval_level.harness_floor(tool, tool_input, v)
-                    or approval_level.redline(tool, tool_input, v, host.danger_extra))
+                    or approval_level.redline(tool, tool_input, v, host.danger_extra, (host.agent_cfg or {}).get("dir")))
     except Exception:  # noqa: BLE001 — cannot tell → the card
         return True
 
@@ -2242,6 +2242,20 @@ class Host:
             return text
         return await self.apply_preferences(build=build)
 
+    def _busy_launch_request(self, req, pid, uid):
+        """Pin a live wrapper before its command runs; never accept caller-supplied process facts."""
+        from . import busy as busy_mod
+        if uid != os.getuid() or not isinstance(pid, int) or isinstance(pid, bool):
+            return False
+        table, sids = self.busy.launch.scan(self.busy.context)
+        found = next((it for it in busy_mod.read_items(self.st.root)
+                      if it.get("key") == req.get("key") and it.get("pid") == pid), None)
+        if found is None:
+            return False
+        self.busy.launch.judge(found, self.busy.context, table, sids)
+        self.busy.launch.save()
+        return self.busy.launch.ok(found["key"])
+
     async def on_ctl(self, r: asyncio.StreamReader, w: asyncio.StreamWriter) -> None:
         from . import ctl_auth
         from .shared_hook import peer_pid
@@ -2267,7 +2281,9 @@ class Host:
                     continue
                 if cmd in ctl_auth.SENSITIVE and not await self._ctl_gate(w, req, pid):
                     continue
-                if cmd == "opencode_auth":
+                if cmd == "busy_launch":
+                    await self._ctl_send(w, {"ok": await asyncio.to_thread(self._busy_launch_request, req, pid, puid)})
+                elif cmd == "opencode_auth":
                     agent = self.agent
                     result = await agent.authentication() if agent and hasattr(agent, "authentication") else {"known": False}
                     fail = getattr(agent, "last_provider_fail", None)     # P59: the last turn's failure class (doctor)
@@ -4370,12 +4386,16 @@ class Host:
             owner_words = (text if send is not None and provenance.is_owner(getattr(send, "source", None))
                            and isinstance(text, str) else None)
             launch.turn(self.busy.trusted(), words=privacy.redact(owner_words) if owner_words else None)   # E2: owner chain
+        self._foreign_consumed = False
         if getattr(self, "agent", None) is not None:
-            try:    # hotfix #455 S2: foreign content since the owner last spoke (not cleared by time); cannot tell → set
+            try:    # #502: external content plus its immediate follow-up; cannot tell → set
                 if provenance.is_owner(provenance.turn_source(self.agent)) and not provenance.untrusted_turn(self.agent):
                     self._foreign_seen(False)
                 elif provenance.untrusted_turn(self.agent) and provenance.unattended_turn(self.agent) not in ("system", "scheduled_task"):
-                    self._foreign_seen(True)
+                    if not getattr(send, "verified_mail_notice", False):
+                        self._foreign_seen(True)
+                else:
+                    self._foreign_consumed = self._foreign_seen()
             except Exception:  # noqa: BLE001
                 self._foreign_seen(True)
         self.turn_t0 = time.monotonic()
@@ -4395,14 +4415,13 @@ class Host:
             self._post(self._send_device, send.device, {"t": "say_state", "sid": send.sid, "s": "taken"})
 
     def _foreign_seen(self, value=None) -> bool:
-        """hotfix #455 S2: did untrusted content (group / guest mail / friend / unknown) enter the session since the owner's
-        last own turn? Kept on disk (a restart does not forget it); only an owner turn clears it."""
+        """External content taints the next turn only. Own completion and verified read-only mail do not add taint."""
         st = getattr(self, "st", None)
         if st is None:
             return True if value is None else bool(value)     # no state: cannot tell → seen
         p = st.root / "busy" / "foreign_seen"
         if value is None:
-            return p.exists() or bool(getattr(self.agent, "untrusted_foreign", False)) or bool(getattr(self.agent, "peer_low", False))
+            return p.exists()
         try:
             if value:
                 p.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -4414,6 +4433,9 @@ class Host:
         return bool(value)
 
     def agent_turn_end(self) -> None:
+        if getattr(self, "_foreign_consumed", False):
+            self._foreign_seen(False)
+            self._foreign_consumed = False
         if (peers := getattr(self, "peers", None)) is not None:
             peers.xfer.end_execution()
         if getattr(self, "heartbeat", None) is not None:
@@ -4991,19 +5013,18 @@ class Host:
             return {"behavior": "allow", "updatedInput": tool_input}
         policy_env = getattr(self.agent, "approval_env", None)
         requirement = (policy_registry.decision("main", bound) if bound else
-                       policy_registry.main_requirement(tool, tool_input, env=policy_env) if policy_env
-                       else policy_registry.main_requirement(tool, tool_input))
+                       policy_registry.main_requirement(tool, tool_input, env=policy_env, cwd=(self.agent_cfg or {}).get("dir")))
         if requirement == "deny":
             policy_registry.log_unknown(self.st, tool, tool_input, agent=getattr(self.agent, "kind", "?"))   # P553
             return {"behavior": "deny", "message": UNKNOWN_ACTION}
         v = self._classify(tool, tool_input)
         from . import peer_origin
         dispatch = False
-        if tool == "Bash" and set(v.rules) == {"cred.service"} and isinstance(tool_input, dict) and not set(tool_input) - {"command", "description", "timeout"}:
+        if tool == "Bash" and set(v.rules) <= {"cred.service"} and isinstance(tool_input, dict) and not set(tool_input) - {"command", "description", "timeout"}:
             unit, why = await asyncio.to_thread(self._dispatch_check, tool_input.get("command"))
             if unit and why == "ok" and not self._dispatch_turn():
                 why = "turn"
-            dispatch = why == "ok" and requirement == "uv" and not strict and not bound and avatar is None and not own
+            dispatch = why == "ok" and requirement in ("uv", "allow") and not strict and not bound and avatar is None and not own
             if unit and not dispatch:           # #469: the shape is not 「改凭据」 — the card names its class and why (ADR-#455 F3 B)
                 v = peer_origin.unproven(why if why != "ok" else "turn", card_lang(self.lang))
                 self.st.log("dispatch_unproven", why=why)
@@ -5131,7 +5152,13 @@ class Host:
             self.activity("decision", id=rid, tool=tool, result="deny", reason="group_source", cats=v.cats, summary=summary)
             self.emit("ask_done", id=rid, result="deny", reason="group_source")
             return {"behavior": "deny", "message": provenance.refusal_text(self.agent), **({"reason": "group_source"} if grant_info else {})}
-        if peer and not _peer_floor(self, tool, tool_input, v, requirement, opaque, host_card, require_passkey or own_pk or always_ask, bound, ttl, lv, dispatch):
+        if dispatch and unattended is None and avatar is None and not own:
+            approvals.record(self.st, **base, decision="allow", reason="dispatch")
+            await self._peer_launch_note(tool, tool_input, avatar, own, unattended)
+            self.st.log("ask_done", id=rid, tool=tool, decision="allow", reason="dispatch")
+            self.emit("auto", id=rid, tool=tool, grant=None)
+            return {"behavior": "allow", "updatedInput": tool_input}
+        if peer and lv != "harness" and not _peer_floor(self, tool, tool_input, v, requirement, opaque, host_card, require_passkey or own_pk or always_ask, bound, ttl, lv, dispatch):
             approvals.record(self.st, **base, decision="allow", reason="same_host")
             if dispatch:
                 await self._peer_launch_note(tool, tool_input, avatar, own, unattended)
@@ -5144,11 +5171,11 @@ class Host:
         # dangerous row (delete / send / publish / spend / price / secrets) always raises the owner's card, parked so the
         # rest goes on. A loop wake-up keeps P570c. External sources never reach here (unattended is None for them).
         sm_card = False
-        if (unattended == "system" and avatar is None and not own and getattr(self, "proactive_via", None) != "loop"
+        if (unattended == "system" and avatar is None and not own
                 and not strict and not always_ask and ttl is None and not bound and task_actions is None):
             # S2: the no-card path only when no outside text entered the session since the owner spoke
             # at 「减少弹窗」 the level's own path allows these as before (label level_harness); here only the default levels
-            if lv != "harness" and not await asyncio.to_thread(self._foreign_seen) and not _peer_floor(self, tool, tool_input, v, requirement, opaque, host_card, require_passkey or own_pk, bound, ttl, lv, dispatch):
+            if lv != "harness" and not _peer_floor(self, tool, tool_input, v, requirement, opaque, host_card, require_passkey or own_pk, bound, ttl, lv, dispatch):
                 approvals.record(self.st, **base, decision="allow", reason="same_machine")
                 if dispatch:
                     await self._peer_launch_note(tool, tool_input, avatar, own, unattended)
@@ -5156,7 +5183,7 @@ class Host:
                 self.activity("auto", id=rid, tool=tool, summary=summary, by="same_machine", cats=v.cats, task=self.task_label)
                 self.emit("auto", id=rid, tool=tool, grant=None)
                 return {"behavior": "allow", "updatedInput": tool_input}
-            sm_card = await asyncio.to_thread(_same_machine_card, self, tool, tool_input, v, requirement, dispatch, policy_env, known_recipients)
+            sm_card = lv != "harness" and await asyncio.to_thread(_same_machine_card, self, tool, tool_input, v, requirement, dispatch, policy_env, known_recipients)
             if sm_card:
                 batch = False
         if same_owner and self.peers is not None:
@@ -5244,7 +5271,7 @@ class Host:
                 summary += "\n" + quote
                 digest = approvals.shown_digest(tool, summary)
                 base["shown_sha256"] = digest
-        if lv != "safe" and (not delegated or (unattended and lv == "harness")) and avatar is None and ttl is None and not own_pk and not peer \
+        if lv != "safe" and (not delegated or (unattended and lv == "harness")) and avatar is None and ttl is None and not own_pk and (not peer or lv == "harness") \
                 and not sm_card:     # hotfix #455: a same-computer card stays a card
             from . import background as bgmod   # P552 (#325 ②): background work, decided from the real call — never the model's words
             bgk = (("headless:" + h) if (h := bgmod.headless(tool, tool_input)) else
@@ -5293,7 +5320,7 @@ class Host:
             self.st.log("ask_done", id=rid, tool=tool, decision="allow", reason="same_owner")
             self.activity("auto", id=rid, tool=tool, summary=summary, by="same_owner", cats=v.cats, task=self.task_label)
             return {"behavior": "allow", "updatedInput": tool_input}
-        if lv == "harness" and (not delegated or avatar is not None or unattended) and ttl is None and not own_pk and not peer \
+        if lv == "harness" and (not delegated or avatar is not None or unattended) and ttl is None and not own_pk and (not peer or lv == "harness") \
                 and not sm_card and tool not in approval_level.HARNESS_KEEPS and not (unattended and tool == "AgentJSameOwnerAction"):
             try:   # no folder: the Agent may have cd'd, and a `cwd` field is the model's — relative paths are not scratch
                 keep = confirm_tier.harness_keeps(tool, tool_input, env=policy_env) or approval_level.harness_floor(
@@ -5576,7 +5603,7 @@ class Host:
 
     def _dispatch_turn(self) -> bool:   # #455: the owner's own turn or a same-computer turn (hotfix #455: + a host system notice)
         u = provenance.unattended_turn(self.agent)
-        return u == "same_host" or (u == "system" and getattr(self, "proactive_via", None) != "loop" and not self._foreign_seen()) or (u is None and not provenance.untrusted_turn(self.agent) and not provenance.delegated_turn(self.agent)
+        return u == "same_host" or (u == "system" and not self._foreign_seen()) or (u is None and not provenance.untrusted_turn(self.agent) and not provenance.delegated_turn(self.agent)
                                     and provenance.is_owner(provenance.turn_source(self.agent)) and not _same_owner_turn(self.agent))
 
     def _dispatch_ctx(self) -> dict:   # #455 F3 B (thread): where the dispatch's bare words resolve, read by the host
@@ -7541,6 +7568,7 @@ class Host:
         if not self.agent:
             return None
         send = compose.Send(s.device, sid or secrets.token_urlsafe(16), turn["id"], blobs=blobs, by=s.name or s.device)
+        send.verified_mail_notice = getattr(s, "verified_mail_notice", False) is True
         send.onboarding_note = (self.speaker_note(s) if getattr(s, "source_kind", None) != "telegram" else "") + self.onboarding_note()
         if not slash.parse(text) and provenance.is_owner(getattr(s, "provenance", None)):
             send.onboarding_note += await self.key_import_note()

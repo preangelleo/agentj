@@ -114,7 +114,9 @@ class Book:
             if at is not None and str(row['task_id']).startswith('shared-'):
                 row.update(state='reconciled', notified=True, settled={'by':'native_task_notification', 'at':at})
                 changed = True
-            elif row.get('stage') == 'source_gate' and row.get('original_error') == 'group_source' and not row.get('quiet'):
+            elif row.get('original_error') == 'group_source' and not row.get('quiet'):
+                # hotfix #455b: any row a source-gate refusal touched — the refusal's own row AND the background completion
+                # row of that turn (task_id run:…, annotated by refusal()) — is listed locally, never a 「待本人核对」 reminder
                 row.update(notified=True, quiet='group_source')
                 changed = True
         return changed
@@ -259,6 +261,10 @@ class Book:
                 if tid in self.rows:
                     self.rows[tid]['original_error'] = reason
                     self.rows[tid]['action'] = {'tool':tool, 'input_sha256':digest}
+                    if self.rows[tid].get('state') == 'awaiting_owner_verification' and not self.rows[tid].get('quiet'):
+                        # hotfix #455b: 0.26.10a2 quieted only the source_gate row below; this completion row kept
+                        # notified=False and the owner's next phone message pushed the reminder (23:59, run:5ee2f098a2ce)
+                        self.rows[tid].update(notified=True, quiet='group_source')
             self.add(key, {'task_id':getattr(self.host, 'cur_turn', None), 'source':'unknown',
                           'original_error':reason, 'action':{'tool':tool, 'input_sha256':digest},
                           'recovery_point':'reconcile_only', 'task_label':getattr(self.host, 'task_label', None),

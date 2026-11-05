@@ -1572,7 +1572,8 @@ class Mail:
         if drawn is not None:
             send = drawn
         else:
-            session = SimpleNamespace(device=device, name=who[:64], cid=0, source_kind="email", provenance=source)
+            session = SimpleNamespace(device=device, name=who[:64], cid=0, source_kind="email", provenance=source,
+                                      verified_mail_notice=notice and authenticate(msg, v.addr, "strict", now.get("auth_servid") or "")[0])
             send = await self.host._accept(session, clean(text, TEXT_MAX + 2000), None, blobs=blobs) if blobs else \
                 await self.host._accept(session, clean(text, TEXT_MAX + 2000), None)
         if send is None or type(getattr(send, "turn", None)) is not int:

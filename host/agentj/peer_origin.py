@@ -402,7 +402,12 @@ def check(command, root, state=None, ctx=None):
     if c is None or not top or c.ins or not all(_writes(t, None, top, state) for t in c.redirs):
         return None, "shape"
     w, i, seen, unit, wd = c.words, 1, set(), None, None
-    if not w or not pf.word(w[0], "systemd-run", "caller"):
+    direct = len(w) > 3 and w[1:3] == ["busy", "run"] and pf.word(w[0], "agentj", "caller")
+    if direct:
+        # Reuse the exact busy options + pinned harness grammar below. No peer unit is authorised.
+        w = ["systemd-run", "--user", "--collect", "--unit=agentj-busy-direct", *w]
+        wd = top
+    if not w or not direct and not pf.word(w[0], "systemd-run", "caller"):
         return None, "shape"
     while i < len(w) and w[i].startswith("-"):
         a, v = w[i], w[i + 1] if i + 1 < len(w) else ""
@@ -479,6 +484,9 @@ def unproven(why, lang="zh"):
 
 
 def units(command, root=None, ctx=None) -> list:
+    c = _one(command)
+    if c and c.words[1:3] == ["busy", "run"]:
+        return []  # direct wrapper proof never authorises a systemd peer unit
     u = dispatch(command, root, ctx=ctx)
     return [u] if u else []
 

@@ -136,7 +136,7 @@ def download_and_run(text: str) -> bool:
     return False
 
 
-def redline(tool: str, tool_input, verdict, extra=None) -> str | None:
+def redline(tool: str, tool_input, verdict, extra=None, cwd=None) -> str | None:
     """Why this request still needs the owner under `full` / a goal without the opening card, else None.
 
     injection | hooks | settings (goal.suspect), plus download-and-run in one call (`eval "$(curl …)"`, `curl -o x && bash x`);
@@ -157,7 +157,7 @@ def redline(tool: str, tool_input, verdict, extra=None) -> str | None:
     if cats & {"send", "opaque"} and text and (_ENVDUMP.search(text) or _SECRET_VAR.search(text)):
         return "credentials"                              # the environment / a key-named variable leaving the machine
     try:
-        strict = danger.classify_shared(tool, tool_input, extra, "strict")
+        strict = danger.classify_shared(tool, tool_input, extra, "strict", cwd)
     except Exception:  # noqa: BLE001 — cannot tell → the owner decides
         return "credentials"
     if "credentials" in strict.cats:

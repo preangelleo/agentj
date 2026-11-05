@@ -409,8 +409,28 @@ def suspect(tool: str, tool_input, verdict) -> str | None:
     rules = set(getattr(verdict, "rules", []) or [])
     if rules & ATTACK_RULES:
         return "injection"                 # … | sh, base64 -d | bash, source <url>, python -c "$(…)", $'\x72m'
-    if rules & {"cred.hooks", "cred.service"}:
-        return "hooks"                     # a hook / approver file being rewritten
+    from . import service
+    try:
+        names = {service.name(), "agentj", "agentjarvis", "net.agentj.host", "net.agentjarvis.host"}
+    except (OSError, ValueError, service.ServiceError):
+        names = {"agentj", "agentjarvis", "net.agentj.host", "net.agentjarvis.host"}
+    text = action_text(tool, tool_input)
+    own_service = any(re.search(r"(?<![\w.-])" + re.escape(n) + r"\.(?:service|plist)(?![\w.-])", text) for n in names)
+    from . import danger
+    own_control = False
+    mutations = {"start", "stop", "restart", "try-restart", "reload", "try-reload-or-restart", "reload-or-restart",
+                 "reload-or-try-restart", "force-reload", "enable", "disable", "reenable", "mask", "unmask", "edit",
+                 "revert", "set-property", "kill", "bootstrap", "bootout", "load", "unload", "kickstart", "remove", "install", "uninstall", "import-key"}
+    for command in danger.lex(text):
+        for c in danger.unwrap(command):
+            if c.name in ("systemctl", "launchctl") and any(a in mutations for a in c.args) and any(
+                    a.rsplit("/", 1)[-1].removesuffix(".service").removesuffix(".plist") in names or re.fullmatch(
+                        r"(?:agentj|agentjarvis)-[1-9][0-9]*(?:\.service)?|net\.(?:agentj|agentjarvis)\.host\.[1-9][0-9]*(?:\.plist)?", a.rsplit("/", 1)[-1]) for a in c.args):
+                own_control = True
+            if c.name == "agentj" and (c.args[:1] == ["serve"] or c.args[:1] == ["service"] and any(a in mutations for a in c.args[1:])):
+                own_control = True
+    if "cred.hooks" in rules or own_control or "cred.service" in rules and own_service:
+        return "hooks"                     # a hook / approver file or Agent J's own service being changed
     if tool == "agentj config":
         return "settings"                  # an Agent J security / approval setting (only those ever reach a card)
     text = action_text(tool, tool_input)

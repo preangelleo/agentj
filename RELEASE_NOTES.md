@@ -1,5 +1,5 @@
-# Agent J v0.26.10a3
+# Agent J v0.26.10a4
 
-[host] Your own finished background jobs are no longer 'unknown source'; the Agent checks the result. Recognised payments, deletes, sends still ask your phone.
+[host] Allow All follows settings. Your jobs can check reports and delegate to Codex after instant exits or restarts. Sensitive actions still ask.
 
-[主机] 自己派出的后台任务完成后不再被当成「来源不明」，主 Agent 能直接核对结果；能识别出的花钱、删除、对外发送仍要手机批准。
+[主机] 全放行按设置生效；自家后台任务完成后可直接读报告、验收、派 Codex，秒退与重启也能识别。敏感操作仍需确认。

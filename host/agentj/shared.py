@@ -351,7 +351,7 @@ class SharedClaudeAgent(Agent):
         import time   # P570: sticky while live
         if foreign is None:
             foreign = not provenance.unattended_send(getattr(self, "cur_send", None))
-        self.untrusted_foreign = (self.untrusted() and getattr(self, "untrusted_foreign", True)) or foreign
+        self.untrusted_foreign = (getattr(self, "native_turn", False) and getattr(self, "untrusted_foreign", False)) or foreign
         self.untrusted_state, self.untrusted_at = state, time.monotonic()
         if state == "pending":
             self.native_source = provenance.normalize(getattr(self, "pending_source", None))
@@ -905,7 +905,7 @@ class SharedClaudeAgent(Agent):
                 return {"hookSpecificOutput":{"hookEventName":"PreToolUse", "permissionDecision":"ask",
                     "permissionDecisionReason":"Agent J: native secret-call authorization required"}}
             from . import policy_registry
-            requirement = policy_registry.main_requirement(event.get("tool_name"), event.get("tool_input"))
+            requirement = policy_registry.main_requirement(event.get("tool_name"), event.get("tool_input"), cwd=self.cfg.get("dir"))
             if requirement != "allow":
                 if requirement != "deny":
                     # Preserve denial suppression and late-answer revocation checks,
@@ -989,7 +989,7 @@ class SharedClaudeAgent(Agent):
                         self.risk_grants.pop(cat, None)
                 if set(cats) & self.risk_denied:
                     answer = {'behavior': 'deny'}
-                elif cats and set(cats) <= self.permissions and policy_registry.main_requirement(tool, inp) == "allow" \
+                elif cats and set(cats) <= self.permissions and policy_registry.main_requirement(tool, inp, cwd=self.cfg.get("dir")) == "allow" \
                         and not provenance.unattended_turn(self):
                     answer = {"behavior": "allow"}
                 else:

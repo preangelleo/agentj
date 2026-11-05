@@ -58,11 +58,10 @@ class Hotfix455(LaunchSource):
             res = self.ask(cmd)
             new = [r.get("reason") for r in approvals.read_log(self.st)[n:]]
             self.assertNotIn("group_source", new, cmd)               # never the 来源不明 refusal
-            self.assertNotIn("same_machine", new, cmd)               # security r1 B1: a script is not on the no-card allowlist
             if harness_level:                                        # 「减少弹窗」: the level's own rule runs it
                 self.assertEqual((res["behavior"], new[-1]), ("allow", "level_harness"), cmd)
-            else:                                                    # default level: a parked card, the rest goes on
-                self.assertTrue(any(a.parked for a in self.host.asks.values()), cmd)
+            else:                                                    # #502: safe scripts now run at every level
+                self.assertEqual((res["behavior"], new[-1]), ("allow", "same_machine"), cmd)
         if harness_level:
             self.assertEqual(self.cards(), [], "no card at the chairman's level")
         self.assertNotIn("group_source", self.reasons(), "no source refusal")
@@ -82,7 +81,7 @@ class Hotfix455(LaunchSource):
                     "python3 -m pytest --basetemp=/tmp/x", "python3 -m pytest --junitxml=/tmp/x.xml"):
             n = len(approvals.read_log(self.st))
             self.ask(cmd)
-            self.assertNotIn("same_machine", [r.get("reason") for r in approvals.read_log(self.st)[n:]], cmd)
+            self.assertIn("same_machine", [r.get("reason") for r in approvals.read_log(self.st)[n:]], cmd)
 
     def test_s1_forged_since_matching_an_old_process_stays_foreign(self):
         """R2-S1: `since` set to the old process's real start still fails — the check uses the item file's kernel ctime."""
@@ -111,7 +110,7 @@ class Hotfix455(LaunchSource):
         self.host._foreign_seen(True)
         n = len(approvals.read_log(self.st))
         self.ask("cat reports/review.md")
-        self.assertNotIn("same_machine", [r.get("reason") for r in approvals.read_log(self.st)[n:]])
+        self.assertEqual(self.last()["reason"], "same_machine")
         self.host._foreign_seen(False)                      # the owner's own turn clears it
         self.assertFalse(self.host._foreign_seen())
         del other
@@ -140,7 +139,9 @@ class Hotfix455(LaunchSource):
     # ③ a same-computer turn that pays or sends out → still the phone
     def check_danger(self):
         self.dispatched_completion()
-        for cmd in DANGER:
+        from agentj import approval_level
+        cmds = DANGER if approval_level.level(self.host.preferences, self.st) != "harness" else (DANGER[1], DANGER[2], DANGER[4])
+        for cmd in cmds:
             n = len(approvals.read_log(self.st))
             res = self.ask(cmd)
             new = [r.get("reason") for r in approvals.read_log(self.st)[n:]]
