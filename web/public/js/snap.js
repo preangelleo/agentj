@@ -31,7 +31,7 @@ let onTurn = () => {};
 let prepareOwnerConfirm = null;
 export function configure(h) { onChange = h.onChange; onTurn = h.onTurn; prepareOwnerConfirm = h.prepareOwnerConfirm || null; }
 const nowS = () => Date.now() / 1000;
-const CATS = ['spend', 'delete', 'send', 'credentials', 'price', 'opaque'];
+const CATS = ['spend', 'delete', 'send', 'credentials', 'price', 'opaque', 'service'];
 
 // ---------------------------------------------------------------- requests that need a human
 // P339: a goal card in plain words — who wants it (≤ 60), what, as a verb phrase in the host's language (≤ 160), and on a

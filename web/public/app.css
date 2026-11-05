@@ -3676,3 +3676,6 @@ body[data-sheet="1"]:has(.reply-notices>#sheet.cp-docked) .scrim{opacity:0}
 .toast.aj-surface-outline,.sheet.aj-surface-outline,.ajmodal .box.aj-surface-outline{outline:2px solid var(--emerald-oasis);outline-offset:-2px}
 
 #settings:not([data-unpaired="1"]) .unpaired-links{display:none}
+
+/* #509 r2: bottom action/question sheets grow from the composer on the page colour, without a frame. */
+.sheet:not(.cp-docked){background:var(--pg);border:0;outline:none}

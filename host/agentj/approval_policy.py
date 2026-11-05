@@ -30,6 +30,9 @@ ROWS = {
                      "动的是 Agent J 自己的审批 / 钩子文件、代码或配对与席位：Agent 不能替自己放宽权限",
                      "it touches Agent J's own approval / hook files, its code, or pairing and seats: an Agent never "
                      "widens its own permissions"),
+    "service_restart": (FACE, False, "重启 Agent J 服务", "Restarts the Agent J service",
+                        "重启 Agent J 服务会短暂断开连接",
+                        "restarting the Agent J service briefly disconnects this remote"),
     "fetch_run": (TAP, False, "下载后直接运行", "Runs what it downloads",
                   "同一条命令里下载并运行别人的代码，主机看不到要运行什么",
                   "it downloads code and runs it in one command; the host cannot see what will run"),
@@ -208,6 +211,15 @@ def decide(tool, tool_input, verdict, *, requirement, dispatch=False, workdir=No
     return tier, row
 
 
+def _restart_row(tool, inp, cats, rules):
+    if cats != {"service"} or rules != {"service.restart"}:
+        return False
+    from . import danger, goal
+    text = danger.executable_text(_text(tool, inp))
+    # Display only: mixed state/security operations retain their existing row and UV.
+    return not (shows_secret(text) or aj_state_write(text) or re.search(goal._AJ_DIRS, text))
+
+
 def _decide(tool, inp, cats, rules, action, verdict, requirement, dispatch, workdir, env, classify, amount, budget,
             known_recipients, approval_level, confirm_tier, goal, policy_registry):
     if dispatch:
@@ -223,7 +235,9 @@ def _decide(tool, inp, cats, rules, action, verdict, requirement, dispatch, work
         return FACE, "self_protect"
     if "opaque" in cats and "cred.service" in rules:
         return FACE, "opaque"         # #469: a dispatch the host could not prove (peer_origin.unproven) — Face ID, as before
-    if keep == "seat" or floor in ("hooks", "settings") or (rules & {"cred.hooks", "cred.service"}):
+    if _restart_row(tool, inp, cats, rules):
+        return FACE, "service_restart"
+    if keep == "seat" or floor in ("hooks", "settings") or (rules & {"cred.hooks", "cred.service", "service.restart"}):
         return FACE, "self_protect"
     text = _text(tool, inp)
     if tool in _SHELL:
@@ -322,7 +336,9 @@ def card_row(tool, verdict, requirement=None, require_passkey=False, tool_input=
         return "own_config" if tool == "agentj config" else "admin"
     if "opaque" in cats and "cred.service" in rules:
         return "opaque"
-    if rules & {"cred.hooks", "cred.service"} or action in ("device.pair", "device.revoke"):
+    if isinstance(tool_input, dict) and _restart_row(tool, tool_input, cats, rules):
+        return "service_restart"
+    if rules & {"cred.hooks", "cred.service", "service.restart"} or action in ("device.pair", "device.revoke"):
         return "self_protect"
     if cats & {"spend", "price"} or action == "payment":
         return "spend_over_budget"
@@ -342,7 +358,7 @@ def card_row(tool, verdict, requirement=None, require_passkey=False, tool_input=
 
 
 # the web's card classes (lane w3-cards, PROTOCOL §42.1): `cls` + `why_scope`; every other row reads as `irreversible`
-WEB_CLS = {"spend_over_budget": "spend_over_budget", "secret_out": "secret_reveal", "send_new": "new_recipient",
+WEB_CLS = {"service_restart": "reversible", "spend_over_budget": "spend_over_budget", "secret_out": "secret_reveal", "send_new": "new_recipient",
            "publish": "public_publish", "delete_permanent": "permanent_delete"}
 
 

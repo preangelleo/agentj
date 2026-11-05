@@ -182,6 +182,7 @@ class OwnRead(Base):
         h = object.__new__(Host)
         hello = sw.HelloSend("hello")             # the hello turn after a switch: Agent J's own host turn
         h.agent = SimpleNamespace(kind="codex", cfg=self.cfg, cur_send=hello)
+        h.agent_cfg = self.cfg
         h.st = SimpleNamespace(log=Mock(), agent_config=lambda: self.cfg)
         h.stopped = lambda: False
         with patch("agentj.approvals.record") as rec:

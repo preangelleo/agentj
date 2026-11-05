@@ -39,6 +39,7 @@ import { RelayMD } from './md.js';
 import { copyable } from './copycode.js';   // P292: every code / pre can be copied
 import { upgrade as upgradeWords, forget as forgetRendered } from './render.js';   // P57: lazy code / math / diagrams
 import { cmdGist } from './cmdgist.js';
+import { approvalNote } from './approval-note.js';
 import { paintPk, preauthShown, preauthLabelKey, mergeDraft, failKey, scrollToPkRow } from './pkassist.js';   // P539   // P341: the approval card's plain line when the Agent gave none
 import { t, lang, onLang, fillText, both } from './t.js';
 import { el, toast, executionToast, toastOff, toastAction, human, stamp, mmss, confirmSheet } from './ui.js';
@@ -533,7 +534,8 @@ function renderPermission(card, p){
   const why = p && p.why ? t('ask.why', {why: askWhy(p)}) : "";
   el("why").textContent = why; el("why").hidden = !why;
   paintScope(el("apprScope"), p, t);   // 0.26.9 #472 ②: 「{class}」 + why the task scope does not cover this (host cls / why_scope)
-  el("cmdReason").textContent = reason === null ? "" : t('p572.label') + " " + (reason.length > 400 ? t('p572.longReason') : reason || t('p572.noReason'));
+  const shownReason = approvalNote(reason, p, lang(), t, verb(tool));
+  el("cmdReason").textContent = reason === null ? "" : t('p572.label') + " " + (shownReason.length > 400 ? t('p572.longReason') : shownReason || t('p572.noReason'));
   el("cmdReason").hidden = reason === null;
   // A dense reason below the character limit can still push approval off a narrow screen. Keep its full signed text
   // in the expandable command, and replace the entire reason line when it would occupy more than three lines.
@@ -5330,7 +5332,17 @@ export function init(ctx){
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState !== "visible") microphoneAway();
   });
-  window.addEventListener("blur", () => { if (ptt && !ptt.locked && !ptt.pend && !ptt.seg) pttEnd(ptt, "cancel"); });   // P181: not between the two taps; P182: not mid-take
+  window.addEventListener("blur", () => {
+    // #508: a native microphone permission sheet can blur a visible iOS page
+    // before the first tap's pointerup, and can swallow that release. Lock the
+    // pending take so cancel/end stay accessible even without pointerup. Actual
+    // page departure, explicit cancel and timeout still revoke capture.
+    if (ptt?.touch && !ptt.cancel && !ptt.rec && document.visibilityState === "visible") {
+      if (!ptt.locked) pttLock(ptt);
+      return;
+    }
+    if (ptt && !ptt.locked && !ptt.pend && !ptt.seg) pttEnd(ptt, "cancel");
+  });   // P181: not between the two taps; P182: not mid-take
   window.addEventListener("pagehide", microphoneAway);
 
   // native shell hooks (relay's window.relayNative, same four methods)

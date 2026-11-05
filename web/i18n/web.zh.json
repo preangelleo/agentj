@@ -5060,5 +5060,7 @@
   "mcp474.state.revoked": "已撤销",
   "mcp474.created": "创建于 {time}",
   "mcp474.last": "最近请求 {time}",
-  "mcp474.copy": "复制连接地址"
+  "mcp474.copy": "复制连接地址",
+  "ask.cat.service": "重启 Agent J 服务",
+  "p510.categoryNote": "{category}；Agent 原始说明见「展开全部」"
 }

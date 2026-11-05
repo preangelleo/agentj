@@ -119,6 +119,10 @@ class Book:
                 # row of that turn (task_id run:…, annotated by refusal()) — is listed locally, never a 「待本人核对」 reminder
                 row.update(notified=True, quiet='group_source')
                 changed = True
+        for row in self.rows.values():
+            if not row.get('notified'):
+                row.update(notified=True, quiet=row.get('quiet') or 'archive_only')
+                changed = True
         return changed
 
     def native_done(self, keys, at=None):
@@ -261,7 +265,7 @@ class Book:
                 if tid in self.rows:
                     self.rows[tid]['original_error'] = reason
                     self.rows[tid]['action'] = {'tool':tool, 'input_sha256':digest}
-                    if self.rows[tid].get('state') == 'awaiting_owner_verification' and not self.rows[tid].get('quiet'):
+                    if self.rows[tid].get('state') == 'awaiting_owner_verification' and self.rows[tid].get('quiet') in (None, 'archive_only'):
                         # hotfix #455b: 0.26.10a2 quieted only the source_gate row below; this completion row kept
                         # notified=False and the owner's next phone message pushed the reminder (23:59, run:5ee2f098a2ce)
                         self.rows[tid].update(notified=True, quiet='group_source')
@@ -278,21 +282,22 @@ class Book:
         return [(k,v) for k,v in list(pending.items()) if k not in self.rows and v.get('foreign') is not False]
 
     def notice(self):
+        # #505: uncertain-source recovery is an explicit-owner list, never an interruption.
+        # Keep this entry point for callers/old persisted rows, including capacity overflow.
         with self.lock:
-            ids = [k for k,v in self.rows.items() if v.get('binding') == self.binding() and v.get('state') == 'awaiting_owner_verification' and not v.get('notified')]
-            overflow = [(k,v) for k,v in self.overflow() if not v.get('capacity_notified')]
-            if not ids and not overflow:
-                return ''
-            for k,v in overflow:
-                v['capacity_notified'] = True
+            changed = False
+            for row in self.rows.values():
+                if not row.get('notified'):
+                    row.update(notified=True, quiet=row.get('quiet') or 'archive_only')
+                    changed = True
+            overflow = [(k, v) for k, v in self.overflow() if not v.get('capacity_notified')]
+            for _, value in overflow:
+                value['capacity_notified'] = True
             if overflow:
                 self.host.background_done.save()
-            for k in ids:
-                self.rows[k]['notified'] = True
-            self.save()
-            return ('有后台结果待本人核对，原操作未重试。发送 /recover-background 查看，再用 /recover-background <编号> 读取固定报告。'
-                    ' / Background results await your verification; no action was replayed. Send /recover-background to list them, '
-                    'then /recover-background <id> to read the bound report.')
+            if changed:
+                self.save()
+            return ''
 
     def acknowledge(self, key):
         with self.lock:

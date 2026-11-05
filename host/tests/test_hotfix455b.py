@@ -91,7 +91,7 @@ class StoredRows(unittest.TestCase):
             book = Book(host)
             self.assertEqual(book.rows["a" * 64].get("quiet"), "group_source")
             self.assertTrue(book.rows["a" * 64]["notified"])
-            self.assertFalse(book.rows["b" * 64]["notified"], "a completion no refusal touched is unchanged")
+            self.assertTrue(book.rows["b" * 64]["notified"], "#505: all unknown-source completions are archive-only")
 
 
 def load_tests(loader, tests, pattern):   # only this file's cases, not the inherited #450 suite

@@ -480,8 +480,8 @@ interfaces only:
   returns the tool input unchanged (`updatedInput` = input).
 - **Danger list (PROMPT-26 item 2)**: `--settings` = `{"hooks":{"PreToolUse":[{"matcher":"*","hooks":[{"type":"command",
   "command":"<venv python> -P -m agentj.danger hook <b64url JSON of config danger_extra, or -> || exit 2","timeout":30}]}]},
-  "disableAllHooks":false}` and nothing else. For a call in one of five fixed categories — `spend` (花钱), `delete` (删除),
-  `send` (对外发送), `credentials` (改凭据), `price` (改价), or `opaque` (看不清要做什么 — a command whose real intent is hidden
+  "disableAllHooks":false}` and nothing else. For a call in one of the fixed categories — `spend` (花钱), `delete` (删除),
+  `send` (对外发送), `credentials` (改凭据), `price` (改价), `service` (精确重启 Agent J 服务; #510), or `opaque` (看不清要做什么 — a command whose real intent is hidden
 behind encoding / assembly: a pipe into a shell or interpreter, a base64 / ANSI-C / variable / substitution command name,
 `eval` nested past the depth limit, `python -c "$(…)"`; P137); `agentj/danger.py` — the hook prints
   `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"ask","permissionDecisionReason":…}}`, which Claude Code
@@ -2103,8 +2103,8 @@ The host accepts an answer once (nonce), only from a paired device with an appro
 brief on disk still has the signed digest. Then: picks → `<workflow>/inputs/owner-choices.json` (0600, local); a brief
 receipt (state directory, never written by the Agent); status *verifying* → re-check every required capability → *ready*
 or *needs_input*; the schedule is enabled only when the brief and `task_on` signatures both verified and nothing is
-missing. `capabilities/audit.log` keeps ids, hashes and results only. None of this is an approval of the five dangerous
-categories (spend / delete / send / credentials / price / opaque): those keep their own per-action cards (§8, §11).
+missing. `capabilities/audit.log` keeps ids, hashes and results only. None of this is an approval of the dangerous
+categories (spend / delete / send / credentials / price / opaque / service): those keep their own per-action cards (§8, §11).
 ## 21. First-run checklist card and Google tools (P115, host 0.18.0a1, ADR-A196 / ADR-A195)
 
 **Checklist (`first_run.py`).** The host owns `<state>/setup/checklist.json` (0700/0600, revision CAS). Device → host over the
@@ -4205,3 +4205,7 @@ answers), never `group_source`. Group / visitor / friend / official-assist / unk
 ### 42.4 Waiting instead of refusing
 At the default level an owner-scoped card nobody answers within the approval timeout stays on the phone (parked, as when no
 remote is online): `ask_done` is not sent until it is answered or withdrawn after 30 min; approvals.log `unanswered`.
+
+
+<!-- generated: Relay/Codex/509-510-r2, 2026-11-06 -->
+#510 r2 service restart: `service` / `service.restart` identifies the exact own-service restart or recognised bounded user-timer wrapper; classification alone does not remove UV. Only the Linux live host proof admits the exception. Signed Full access executes the host's fixed restart action and emits one short `auto` line; other levels require the existing paired-device signed answer, `require_passkey:false`, with the brief-disconnection warning. Proof failure, unsupported platform, overrides, mixed secret/hook/approval writes and dangerous combinations retain their existing rules. The original shell is suppressed: successful host scheduling returns `behavior:"deny",host_handled:"service_restart"`, never permission to execute it again. An uncertain scheduling result explicitly forbids retry. Approval audit, source, nonce, signature, stop, expiry and timeout-refusal checks remain. Private read-only ctl `service_restart_ready` exposes only `{ok:true,ready:boolean}` and changes no authority. The short note follows appearance language; the original signed description remains in expanded details. Evidence and runtime acceptance: `.jarvis/REPORT-509-510-r2-20261106.md`.

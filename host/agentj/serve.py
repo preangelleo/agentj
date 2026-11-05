@@ -1,7 +1,7 @@
 
 from __future__ import annotations
 
-from . import resource_policy
+from . import resource_policy, restart_guard
 
 import asyncio
 import contextlib
@@ -2367,6 +2367,9 @@ class Host:
                 elif cmd == "telegram_pair":        # P283: a one-time Telegram pairing code → the phone's card only
                     res = await self.telegram_pair(req.get("key_env"), by="terminal")
                     await self._ctl_send(w, res)
+                elif cmd == "service_restart_ready":
+                    proof = await asyncio.to_thread(restart_guard.prove, "Bash", {"command": "agentj service restart"})
+                    await self._ctl_send(w, {"ok": True, "ready": proof is not None})
                 elif cmd == "upgrade_ready":        # P142 (A12): the recovery worker restarts only an idle serve
                     from . import auto_update
                     await self._ctl_send(w, {"ok": True, "ready": not auto_update.busy(self)})
@@ -5014,7 +5017,7 @@ class Host:
         if tool == "AskUserQuestion" and self.agent and self.agent.kind == "claude" and isinstance(tool_input, dict) and avatar is None:
             return await self._ask_user_question(tool_input, gone)       # §10.7: a question card, not an approval card
         from . import handoff           # P539 (#301): reading Agent J's own handoff file never needs the owner
-        if not strict and not self.stopped() and handoff.owner_side(self.agent) and handoff.own_read(tool, tool_input, self._switch_cfg()):
+        if not strict and not self.stopped() and handoff.owner_side(self.agent) and (handoff.own_read(tool, tool_input, self._switch_cfg()) or handoff.own_state(tool, tool_input, self._switch_cfg())):
             own_rid = await asyncio.to_thread(handoff.record_own, self.st, getattr(self.agent, "kind", None), tool, tool_input)
             self.st.log("ask_done", id=own_rid, tool=tool, decision="allow", reason="own_handoff")
             return {"behavior": "allow", "updatedInput": tool_input}
@@ -5034,6 +5037,10 @@ class Host:
             policy_registry.log_unknown(self.st, tool, tool_input, agent=getattr(self.agent, "kind", "?"))   # P553
             return {"behavior": "deny", "message": UNKNOWN_ACTION}
         v = self._classify(tool, tool_input)
+        # #510: only the host can prove this installed running service; never a model flag.
+        restart_input = None
+        if not strict and not always_ask and not own_pk and not bound and avatar is None and not own:
+            restart_input = await asyncio.to_thread(restart_guard.prove, tool, tool_input)
         from . import peer_origin
         dispatch = False
         if tool == "Bash" and set(v.rules) <= {"cred.service"} and isinstance(tool_input, dict) and not set(tool_input) - {"command", "description", "timeout"}:
@@ -5168,6 +5175,10 @@ class Host:
             self.activity("decision", id=rid, tool=tool, result="deny", reason="group_source", cats=v.cats, summary=summary)
             self.emit("ask_done", id=rid, result="deny", reason="group_source")
             return {"behavior": "deny", "message": provenance.refusal_text(self.agent), **({"reason": "group_source"} if grant_info else {})}
+        if (restart_input is not None and set(v.cats) == {"service"} and set(v.rules) == {"service.restart"}
+                and not provenance.owner_grant_required(self.agent)):
+            return await self._restart_request(tool, tool_input, restart_input, v, base, summary, gone, lv,
+                                               full=not delegated or bool(unattended))
         if dispatch and unattended is None and avatar is None and not own:
             approvals.record(self.st, **base, decision="allow", reason="dispatch")
             await self._peer_launch_note(tool, tool_input, avatar, own, unattended)
@@ -5601,6 +5612,66 @@ class Host:
         msg = {"device": "用户在手机上拒绝了这个操作。", "timeout": _timeout_text(self.lang, int(self.ask_ttl), a.pk_fail),
                "serve_stop": "agentj serve 已停止：默认拒绝。", "estop": "已急停（全部停下）：默认拒绝。"}.get(reason, "已拒绝。")
         return {"behavior": "deny", "message": msg, **({"reason": reason} if grant_info else {})}
+
+    async def _restart_request(self, tool, original, pinned, verdict, base, summary, gone, lv, *, full):
+        """#510: paired tap or signed full; execute only the fixed host action, never the original shell."""
+        from subprocess import SubprocessError
+        rid = base["rid"]
+        reason, did, sk, sig = "level_harness", None, None, None
+        decision = "allow" if full and lv in ("harness", "full") and self._approvers() else "deny"
+        if decision != "allow":
+            if not self._approvers():
+                approvals.record(self.st, **base, decision="deny", reason="no_device")
+                return {"behavior": "deny", "message": "没有能批准的已配对手机 / No paired approver"}
+            a = Ask(rid, tool, summary, base["shown_sha256"], original, base["input_sha256"],
+                    time.monotonic() + self.ask_ttl, asyncio.get_running_loop().create_future(),
+                    cats=verdict.cats, why=verdict.why, why_en=verdict.why_en, require_passkey=False,
+                    reason=action_policy.reason(summary))
+            a.prow = "service_restart"
+            self.asks[rid] = a
+            self.st.log("ask", id=rid, tool=tool, agent=base["agent"], kind="danger", tier="hold")
+            self.emit("ask", id=rid, tool=tool, summary=summary)
+            self._post(lambda fn: self._send_ready(fn), lambda session: self._ask_msg(a, session))
+            self.status_changed()
+            self.push_notify("ask")
+            self._interrupt("cards", face=False)
+            try:
+                done, _ = await asyncio.wait({a.fut} | ({gone} if gone else set()), timeout=self.ask_ttl,
+                                             return_when=asyncio.FIRST_COMPLETED)
+                if a.fut in done:
+                    decision, did, sk, sig = a.fut.result()
+                    reason = "device" if did else "serve_stop"
+                else:
+                    decision, reason = "deny", "agent_gone" if gone in done else "timeout"
+            finally:
+                self.asks.pop(rid, None)
+            self.status_changed()
+        if decision == "allow":
+            current = await asyncio.to_thread(restart_guard.prove, tool, original)
+            if current != pinned or self.stopped() or self.stopping.is_set() or (gone is not None and gone.done()):
+                decision, reason = "deny", "restart_proof_changed"
+            else:
+                try:
+                    await asyncio.to_thread(restart_guard.schedule, tool, original, self.st)
+                except RuntimeError as exc:
+                    decision, reason = "deny", ("restart_schedule_unknown_do_not_retry" if
+                        str(exc) == "restart_schedule_unknown_do_not_retry" else "restart_schedule_failed")
+                except (OSError, ValueError, SubprocessError):
+                    decision, reason = "deny", "restart_schedule_failed"
+        approvals.record(self.st, **base, decision=decision, reason=reason, device=did, sign_pub=sk, sig=sig,
+                         **({"grant": approval_level.level_grant(self.st)} if reason == "level_harness" else {}))
+        self.st.log("ask_done", id=rid, tool=tool, decision=decision, reason=reason, device=did)
+        self.emit("ask_done", id=rid, result=decision, reason=reason, device=did)
+        self._post(self._send_ready, lambda session: {"t": "ask_done", "id": rid, "result": decision, "reason": reason})
+        if decision == "allow":
+            line = pick(self.lang, "已安排重启 Agent J，连接会短暂断开。", "Agent J restart scheduled; this remote will briefly disconnect.")
+            self._post(self._send_ready, lambda session: {"t": "auto", "id": rid, "tool": tool, "summary": line, "by": "host_restart"})
+            return {"behavior": "deny", "message": line + pick(self.lang,
+                    "主机已处理此请求，不要执行或重试原命令。", " The host handled this request; do not run or retry the original command."),
+                    "host_handled": "service_restart"}
+        if reason == "restart_schedule_unknown_do_not_retry":
+            return {"behavior": "deny", "message": pick(self.lang, "重启安排结果不确定，请勿重复执行。", "Restart scheduling is uncertain; do not retry."), "reason": reason}
+        return {"behavior": "deny", "message": pick(self.lang, "重启未执行：", "Restart was not scheduled: ") + reason}
 
     def _interrupt(self, what: str, face: bool = False, chain=None) -> None:
         """E4 (ADR-0269-w3-policy): one card / question shown to the owner, counted per task — counts only."""
@@ -6067,18 +6138,27 @@ class Host:
         for gid in list(self.grants):
             self.end_grant(gid, "turn_end")
         title = res.get("title") or res["id"]
-        if res.get("status") == "interrupted" and not res.get("stopped"):
-            text = f"工作流「{title}」：{res['line']}"
-        elif res.get("stopped"):
-            text = f"定时任务「{title}」：被急停中断"
-        else:
-            text = f"定时任务「{title}」：{res['verdict']} — {res['line']}" + ("（只读运行）" if res.get("readonly") else "")
-        if res.get("resume"):                 # P426 #181-5: a multi-step run that failed offers 「从失败处继续」
-            from . import wfrun
-            text += wfrun.hint(res, self.lang)
+        run = tasks.load(self.st)["runs"].get(res.get("run_id")) or {}
+        owner_notify = (run.get("id") == res["id"] and run.get("owner_notify") is True
+                        and run.get("trigger") in ("schedule", "catch_up"))
+        if not owner_notify:
+            # #506: journal/report is the result; the main session reviews it through the existing system queue.
+            self.st.log("task_done", id=res["id"], result=res["verdict"])
+            rid = res.get("run_id") or secrets.token_hex(16)
+            ended = time.time()
+            self.busy.finish({"key": "task-result:" + rid, "generation": rid, "kind": "ceo", "label": title,
+                              "since": ended - max(0, res.get("secs") or 0),
+                              "foreign": not (run.get("id") == res["id"] and run.get("completion_known") is True),
+                              "report": os.path.join(self.agent_cfg["dir"], res["report"]) if self.agent_cfg and res.get("report") else res.get("report")},
+                             exit_code=res.get("exit_code"), ended=ended)
+            return
+        state = ("stopped" if res.get("stopped") else "attention" if res.get("status") == "interrupted" else res["verdict"])
+        words = {"ok": ("已完成", "completed"), "attention": ("需要留意", "needs attention"),
+                 "fail": ("未完成", "failed"), "stopped": ("已中断", "was stopped")}.get(state, ("需要留意", "needs attention"))
+        text = pick(self.lang, f"定时任务「{title}」{words[0]}。", f'Scheduled task “{title}” {words[1]}.')
         self.st.log("task_done", id=res["id"], result=res["verdict"])
-        self.emit("task_done", id=res["id"], verdict=res["verdict"], line=res["line"], report=res.get("report"))
-        self.activity("task_done", id=res["id"], title=title, verdict=res["verdict"], line=res["line"], secs=res.get("secs"),
+        self.emit("task_done", id=res["id"], verdict=res["verdict"], line=text, report=res.get("report"))
+        self.activity("task_done", id=res["id"], title=title, verdict=res["verdict"], line=text, secs=res.get("secs"),
                       readonly=res.get("readonly"), report=res.get("report"), stopped=res.get("stopped"))
         e = self._remember("notice", clean(text, wire.MAX_TEXT))
         self._post(self._send_legacy, lambda s, e=e: self._render(e, s))

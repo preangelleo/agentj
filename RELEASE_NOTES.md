@@ -1,5 +1,5 @@
-# Agent J v0.26.11
+# Agent J v0.26.12
 
-[host/web] One-way assistant requests with phone-managed connectors. Native trash, legacy mail-grant migration, and stronger recording and approval checks.
+[host/web] Background-result routing, accurate restart notices, iPhone mic startup, borderless cards and fingerprint-free service restarts.
 
-[主机/网页] 外部助理可单向发送任务，手机管理连接与凭据。新增系统废纸篓、旧邮件授权迁移，补齐录音和审批边界验收。
+[主机/网页] 后台结果交主会话核对，修复重启后通知与退出码；改善 iPhone 首次开麦，底部卡片去边框，自身重启免指纹。

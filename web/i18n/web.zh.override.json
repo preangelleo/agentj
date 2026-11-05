@@ -3142,5 +3142,7 @@
   "ixges.app.mcp_create": "点创建连接",
   "ixges.app.mcp_rotate": "点轮换凭据",
   "ixges.app.mcp_revoke": "点撤销连接",
-  "ixges.app.mcp_copy": "点复制连接地址"
+  "ixges.app.mcp_copy": "点复制连接地址",
+  "ask.cat.service": "重启 Agent J 服务",
+  "p510.categoryNote": "{category}；Agent 原始说明见「展开全部」"
 }

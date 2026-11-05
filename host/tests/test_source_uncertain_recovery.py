@@ -166,7 +166,7 @@ class CompletionRecovery(unittest.TestCase):
             book.capture(overflow_key, self.n.pending[overflow_key])
             self.assertNotIn(overflow_key, book.rows)
             self.assertIn('capacity_wait', [x['recovery_point'] for x in book.recover()['items']])
-            self.assertTrue(book.notice())
+            self.assertEqual(book.notice(), '')
             self.assertFalse(book.notice())
             book.recover(key)
             book.acknowledge(key)

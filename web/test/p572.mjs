@@ -64,7 +64,7 @@ const CARDS = [
   ['unsigned', 'with', true, () => 'Delete the whole home folder'],   // not in the signed summary → the fallback
 ];
 const POLISHED = (card, lang) => card === 'noreason' && lang === 'zh';   // step 2 polished the zh fallback words (same line, same box)
-const SHOWN = (card, lang, reason) => card === 'unsigned' ? '' : reason(lang);   // what the reason line must say ('' = fallback)
+const SHOWN = (card, lang, reason) => card === 'unsigned' ? '' : card === 'mixed' && lang === 'zh' ? '运行一条命令；Agent 原始说明见「展开全部」' : reason(lang);   // what the reason line must say ('' = fallback)
 const approvedMetrics = TAG === 'after' && existsSync(APPROVED_METRICS) ? JSON.parse(readFileSync(APPROVED_METRICS, 'utf8')) : null;
 let cmpPage = null;
 // The share of pixels that differ (any channel by more than 16) between two PNGs of the same size; 1 when sizes differ.

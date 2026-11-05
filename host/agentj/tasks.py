@@ -639,6 +639,14 @@ class Scheduler:
         rec = {"run_id": rid, "id": tid, "tsha": e["tsha"], "trigger": trigger,
                "instance_id": self.instance_id, "status": "queued", "queued_at": int(time.time()),
                "report": f"{e.get('relative_dir', 'workflows/' + tid)}/reports/{name}"}
+        on = load(self.st)["on"].get(tid) or {}
+        # Only the host's authenticated phone/account enable is owner notification provenance.
+        # CLI/manual/dispatch tasks remain main-session work, including an impossible-date one-shot.
+        from . import notify, provenance
+        owner_schedule = bool(trigger in ("schedule", "catch_up") and on.get("tsha") == e["tsha"]
+                              and str(on.get("by", "")).startswith(("phone:", "account:")))
+        rec["owner_notify"] = owner_schedule and notify.task_allowed(getattr(self.host, "preferences", None), tid, e["task"])
+        rec["completion_known"] = owner_schedule or (trigger == "dispatch" and not provenance.untrusted_turn(getattr(self.host, "agent", None)))
         def change(d):
             if len(d["runs"]) >= 1000:
                 raise TaskError("busy", "运行记录已满；请先核对未确认的运行 / Run journal full; review uncertain runs first")
@@ -873,6 +881,8 @@ class Scheduler:
             self._end_run(rid, res)
             return res
         title = (e["task"] or {}).get("title", {}).get("zh", tid) if isinstance((e["task"] or {}).get("title"), dict) else tid
+        if getattr(host, "lang", "zh") == "en":
+            title = (e["task"] or {}).get("title", {}).get("en") or title
         res["title"] = title
         if e["problems"]:
             res["line"] = "task.json 无效：" + e["problems"][0]
@@ -968,10 +978,11 @@ class Scheduler:
                 finally:
                     if busy is not None:
                         with contextlib.suppress(Exception):
-                            busy.stop("wf:" + tid)
+                            busy.stop("wf:" + tid, fg=True)
                     host.task_label = None
                     host.brief_scope = None
                     await self._kill()
+            res["exit_code"] = code if type(code) is int else None
             v = parse_verdict(out)
             if v:
                 res["verdict"], res["line"] = v[0], v[1][:300]
@@ -1037,7 +1048,7 @@ class Scheduler:
     def _end_run(self, rid: str, res: dict) -> None:
         def change(d):
             rec = d["runs"][rid]
-            rec.update({k: res[k] for k in ("verdict", "line", "readonly", "secs", "report_check", "uncertain") if k in res})
+            rec.update({k: res[k] for k in ("verdict", "line", "readonly", "secs", "report_check", "uncertain", "exit_code") if k in res})
             rec.update(status="interrupted" if res.get("stopped") else res.get("status", "finished"), ended_at=int(time.time()))
             d["last"][rec["id"]] = dict(rec, at=rec["ended_at"])
         update(self.st, change)

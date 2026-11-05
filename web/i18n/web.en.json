@@ -5061,5 +5061,7 @@
   "mcp474.state.revoked": "Revoked",
   "mcp474.created": "Created {time}",
   "mcp474.last": "Last request {time}",
-  "mcp474.copy": "Copy connection URL"
+  "mcp474.copy": "Copy connection URL",
+  "ask.cat.service": "Restart the Agent J service",
+  "p510.categoryNote": "{category}; expand to read the agent's original note"
 }

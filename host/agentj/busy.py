@@ -723,6 +723,25 @@ def unit_end(unit, run=subprocess.run):
 
 
 
+def notification_label(body, saved=None):
+    """Prefer the observed launch description; old launches recover only native command-summary descriptions."""
+    if isinstance(saved, str) and saved.strip():
+        return saved
+    summary = re.search(r"<summary>(.*?)</summary>", body, re.S)
+    match = re.fullmatch(r'Background command "([^\r\n]+)" (?:completed|failed|stopped|killed|error)(?: \(exit code -?\d{1,4}\))?',
+                         summary.group(1).strip()) if summary else None
+    return clean(match.group(1), 200) if match else "后台活"
+
+
+def notification_exit(body):
+    """Native task-notification metadata only; an absent code is never assumed successful."""
+    match = re.search(r"<exit-code>\s*(-?\d{1,4})\s*</exit-code>", body)
+    if match is None:
+        summary = re.search(r"<summary>(.*?)</summary>", body, re.S)
+        match = re.search(r"\(exit code (-?\d{1,4})\)\s*$", summary.group(1)) if summary else None
+    return int(match.group(1)) if match else None
+
+
 class Board:
 
 
@@ -730,6 +749,7 @@ class Board:
         self.verify_sources = verify_sources
         self.trusted = None                    # P570: is the launching turn the owner's / the host's own?
         self.launched = {}
+        self.native_starts = {}                # timing only; native-launches remains the source authority
         self.evidence = {}
         self.claude_transcripts = {}
         self.root = Path(root) if root else None
@@ -738,6 +758,10 @@ class Board:
                 saved = json.loads((self.root / "busy/native-launches.json").read_text())
                 self.launched = {k: v for k, v in saved.items() if isinstance(k, str) and ":" in k and type(v) is bool}
                 self.launched = dict(list(self.launched.items())[-64:])
+                starts = json.loads((self.root / "busy/native-starts.json").read_text())
+                self.native_starts = {k: v for k, v in starts.items() if k in self.launched and isinstance(v, dict)
+                                      and type(v.get("since")) is int and 0 < v["since"] <= time.time()
+                                      and isinstance(v.get("generation"), str) and re.fullmatch(r"[0-9a-f]{32}", v["generation"])}
             except (OSError, ValueError, TypeError, AttributeError):
                 pass
         self.context: dict[str, dict] = {}
@@ -771,15 +795,18 @@ class Board:
 
     def start(self, key, who, kind="temp", label="", lk=None, session=None, late=False, **meta) -> None:
         old = self.mem.get(key)
-        it = item(key, who, kind, label, lk, old["since"] if old else None, session=session)
+        saved = self.native_starts.get(key, {}) if not old and session and late and key in self.launched else {}
+        it = item(key, who, kind, label, lk, old["since"] if old else saved.get("since"), session=session)
         context = next((v for k,v in self.context.items() if str(session or key)==k or str(session or key).startswith(k+":")), {})
         it.update(context)
-        it["generation"] = old.get("generation") if old else uuid.uuid4().hex
+        it["generation"] = old.get("generation") if old else saved.get("generation") or uuid.uuid4().hex
         if old:
             it.update(task_meta(old))
             if old.get("bg"):
                 it["bg"] = True        # P426: once background, its end is a 「后台活已结束」 one
-        if (old or {}).get("foreign") or (not old and session and (late and self.launched.get(key, True) or self.trusted and not self.trusted())):
+        if not old and session and late:
+            it["foreign"] = self.launched.get(key) is not False  # historical launch, independent of this recovery turn
+        elif (old or {}).get("foreign") or (not old and session and self.trusted and not self.trusted()):
             it["foreign"] = True       # P570; late: first seen in Stop (restart), launcher unknown
         elif old and old.get("foreign") is False or not old and session and not late and self.trusted and self.trusted():
             it["foreign"] = False      # explicit host-observed launch; absence is never proof
@@ -791,14 +818,17 @@ class Board:
                         it["chain"] = c       # E2: launched in an owner turn — its completion may carry the owner's words
         if session and not old and not (late and key in self.launched):   # P570b: launch trust, kept after the item ends
             self.launched[key] = bool(it.get("foreign") or not self.trusted)
+            self.native_starts[key] = {"since": it["since"], "generation": it["generation"], "label": it["label"]}
             while len(self.launched) > 64:
                 self.launched.pop(next(iter(self.launched)))
+            self.native_starts = {k: v for k, v in self.native_starts.items() if k in self.launched}
             if self.root is not None:
                 from .state import _write_private
                 with contextlib.suppress(OSError):
                     p = self.root / "busy/native-launches.json"
                     p.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
                     _write_private(p, json.dumps(self.launched).encode())
+                    _write_private(p.with_name("native-starts.json"), json.dumps(self.native_starts).encode())
         source = str(session or key).lower()
         harness = next((x for x in ("codex", "opencode", "claude") if x in source), None)
         if harness is None and source in ("own", "shared"):
@@ -837,10 +867,10 @@ class Board:
                 self.mem[key] = it
                 self.on_change()
 
-    def stop(self, key, exit_code=None, fg=False) -> None:
+    def stop(self, key, exit_code=None, fg=False, ended=None) -> None:
         it = self.mem.pop(key, None)
         if it is not None:
-            self.finish(it, exit_code=exit_code, fg=fg)
+            self.finish(it, exit_code=exit_code, fg=fg, ended=ended)
             self.on_change()
 
     def finish(self, it, exit_code=None, ended=None, fg=False):
@@ -1276,7 +1306,8 @@ class Board:
 
         paths = {scope: transcript} if transcript else dict(self.claude_transcripts)
         for owner, path in paths.items():
-            if not path or not any(v.get("session") == owner for v in list(self.mem.values())):
+            if not path or not (any(v.get("session") == owner for v in list(self.mem.values()))
+                                or any(k.startswith(owner + ":") for k in self.native_starts)):
                 continue
             try:
                 with open(path, 'rb') as f:
@@ -1295,6 +1326,8 @@ class Board:
                     continue
                 if not isinstance(ev, dict):
                     continue
+                if ev.get("isSidechain"):
+                    continue
 
                 if ev.get("type") == "user":
                     message = ev.get("message")
@@ -1307,8 +1340,26 @@ class Board:
                         tid = re.search(r"<task-id>([A-Za-z0-9_-]{1,80})</task-id>", notification)
                         status = re.search(r"<status>(completed|failed|stopped|killed|error)</status>", notification)
                         if tid and status:
-                            self.stop(f"{owner}:task:{tid.group(1)}")
-                            self.stop(f"{owner}:{tid.group(1)}")
+                            key = f"{owner}:{tid.group(1)}"
+                            task_key = f"{owner}:task:{tid.group(1)}"
+                            recovered_end = None
+                            # Restart may see completion before any running Stop. Only the exact
+                            # host-recorded launch + generation can reconstruct that missing item.
+                            if key not in self.mem and task_key not in self.mem and key in self.launched and key in self.native_starts:
+                                from datetime import datetime
+                                try:
+                                    ended = datetime.fromisoformat(str(ev.get("timestamp") or "").replace("Z", "+00:00")).timestamp()
+                                except (ValueError, OverflowError, OSError):
+                                    continue
+                                if not self.native_starts[key]["since"] <= ended <= time.time() + 1:
+                                    continue
+                                self.start(key, None, session=owner, late=True,
+                                           label=notification_label(notification, self.native_starts[key].get("label")))
+                                self.mark_bg(key)
+                                recovered_end = ended
+                            code = notification_exit(notification)
+                            self.stop(task_key, exit_code=code)
+                            self.stop(key, exit_code=code, ended=recovered_end)
                     for part in content if isinstance(content, list) else []:
                         if isinstance(part, dict) and part.get("type") == "tool_result":
                             key = f"{owner}:tu:{clean(part.get('tool_use_id'), 80)}"

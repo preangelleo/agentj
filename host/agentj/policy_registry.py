@@ -365,7 +365,7 @@ def main_requirement(tool, tool_input=None, *, env=None, cwd=None):
     from . import approval_level
     if "credentials" in shared.cats or approval_level.harness_floor(name, inp, shared):
         return "uv"
-    if {"cred.hooks", "cred.service"} & (set(verdict.rules) | set(shared.rules)):
+    if {"cred.hooks", "cred.service", "service.restart"} & (set(verdict.rules) | set(shared.rules)):
         return "uv"                      # P573 (e): the Agent rewriting its own hook / approval settings — never below Face ID
     if cats:
         try:

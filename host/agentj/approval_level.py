@@ -150,6 +150,8 @@ def redline(tool: str, tool_input, verdict, extra=None, cwd=None) -> str | None:
     if text and download_and_run(text):
         return "injection"
     cats = set(getattr(verdict, "cats", None) or [])
+    if "service.restart" in (getattr(verdict, "rules", None) or []):
+        return "hooks"                                   # service classification never lowers the existing UV floor
     if "credentials" in cats:
         return "credentials"
     if cats & {"spend", "price"}:
@@ -162,6 +164,8 @@ def redline(tool: str, tool_input, verdict, extra=None, cwd=None) -> str | None:
         return "credentials"
     if "credentials" in strict.cats:
         return "credentials"
+    if "service.restart" in strict.rules:
+        return "hooks"
     from . import approval_policy
     if tool in ("Bash", "exec_command", "shell_command") and isinstance(tool_input, dict):
         executed = danger.executable_text(str(tool_input.get("command", tool_input.get("cmd", ""))))
@@ -388,6 +392,8 @@ def harness_floor(tool: str, tool_input, verdict) -> str | None:
     why = goal.suspect(tool, tool_input, verdict)
     if why:
         return why
+    if "service.restart" in (getattr(verdict, "rules", None) or []):
+        return "hooks"
     if _own_code(tool, tool_input):
         return "settings"
     text = goal.action_text(tool, tool_input)

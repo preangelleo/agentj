@@ -11,16 +11,16 @@ import stat
 import sys
 from dataclasses import dataclass, field
 
-CATEGORIES = ("spend", "delete", "send", "credentials", "price", "opaque")
+CATEGORIES = ("spend", "delete", "send", "credentials", "price", "opaque", "service")
 LABEL = {"spend": "花钱 · Spend", "delete": "删除 · Delete", "send": "对外发送 · Send", "credentials": "改凭据 · Credentials",
-         "price": "改价 · Price", "opaque": "看不清要做什么 · Can't tell what this does"}
+         "price": "改价 · Price", "opaque": "看不清要做什么 · Can't tell what this does", "service": "重启 Agent J 服务 · Restart Agent J"}
 LOW_LABEL = "低风险 · Low risk"
 # P128: card text in ONE language (the owner's appearance.language); the phone picks why / why_en by its language
 CAT_TEXT = {"zh": {"spend": "花钱", "delete": "删除", "send": "对外发送", "credentials": "改密码或密钥", "price": "改价",
-                   "credentials_read": "查看密码或密钥", "opaque": "看不清要做什么"},
+                   "credentials_read": "查看密码或密钥", "opaque": "看不清要做什么", "service": "重启 Agent J 服务"},
             "en": {"spend": "Spends money", "delete": "Deletes", "send": "Sends out", "credentials": "Changes passwords or keys",
                    "price": "Changes prices", "credentials_read": "Shows passwords or keys",
-                   "opaque": "Can't tell what this does"}}
+                   "opaque": "Can't tell what this does", "service": "Restarts the Agent J service"}}
 _EN_CAT = {"spend": "Spends money", "delete": "Deletes something", "send": "Sends something out of the Agent J host",
            "credentials": "Changes a password, key or sign-in", "price": "Changes a price, discount or budget",
            "opaque": "This command is encoded or assembled; Agent J cannot confirm what it will do"}
@@ -32,6 +32,7 @@ _EN_RULE = {
     "send.deploy": "Deploys to production", "send.mail": "Sends mail or a message", "send.upload": "Uploads files elsewhere",
     "send.code": "Code that sends a request / mail / message", "delete.gh_api": "gh api DELETE", "delete.s3": "Deletes S3 objects / buckets",
     "cred.service": "Runs or changes code outside the Agent fence through the user service manager",
+    "service.restart": "Restarts the Agent J service",
     "cred.path": "Writes a credential file", "cred.hooks": "Rewrites the Agent's hook / approval settings", "cred.gh_auth": "Changes the GitHub sign-in", "cred.aws": "Changes AWS credentials / permissions",
     "cred.sql": "Changes database users / passwords / grants", "cred.mcp": "Changes credentials / permissions",
     "shared.credential_show": "Shows credential contents on screen", "shared.credential_access": "Reads credentials",
@@ -402,7 +403,7 @@ _WRAP_ARG = {
     "strace": {"-o", "-e", "-p", "-s", "-E"}, "ltrace": {"-o", "-e", "-p", "-s"}, "torsocks": set(), "proxychains": {"-f"},
     "proxychains4": {"-f"}, "firejail": set(), "noglob": set(), "nocorrect": set(), "catchsegv": set(), "valgrind": set(),
     "systemd-run": {"-p", "--property", "-u", "--unit", "-E", "--setenv", "--uid", "--gid", "--slice", "-M", "--machine",
-                    "--description", "--working-directory"},
+                    "--description", "--working-directory", "--on-active"},
     "xargs": {"-I", "-i", "-n", "-P", "-L", "-l", "-d", "-E", "-e", "-s", "-a", "--arg-file", "--delimiter", "--max-args",
               "--max-procs", "--replace"},
     "parallel": {"-j", "-n", "-I", "-S", "--jobs", "-a", "--arg-file"},
@@ -620,7 +621,7 @@ _HOOK_FILES = re.compile(r"(?:^|/)(?:\.claude/settings(?:\.local)?\.json|\.codex
 _HOOK_TEXT = re.compile(r"\.claude/settings(?:\.local)?\.json|\.codex/hooks\.json|\.codex/config\.toml|opencode\.jsonc?\b|" + _DSH)
 _HOOK_CODE = re.compile(r"(?:^|[\s;&|(])(?:python[0-9.]*|node|nodejs|perl|ruby|deno|bun|php)(?:\s|$)")
 _HOOK_WRITE = re.compile(r"open\(|write|dump|unlink|remove|rename|replace|truncate|>")
-ALWAYS_CARD = frozenset({"credentials:hooks", "credentials:service"})
+ALWAYS_CARD = frozenset({"credentials:hooks", "credentials:service", "service:restart"})
 
 
 def hook_path(p: str) -> str | None:
@@ -1117,10 +1118,36 @@ def _opaque_rules(sc: Simple, hits: _Hits, text: str) -> None:
                 break
 
 
+def _service_restart(sc: Simple) -> bool:
+    """An exact restart argv; no shell, environment, property or executable override."""
+    if sc.name != "systemd-run":
+        return sc.name == "agentj" and sc.args == ["service", "restart"]
+    args, i = sc.args, 0
+    if "--user" not in args:
+        return False
+    while i < len(args):
+        a = args[i]
+        if a in ("--user", "--collect"):
+            i += 1
+            continue
+        key, eq, value = a.partition("=")
+        if key not in ("--unit", "--on-active"):
+            break
+        if not eq:
+            i += 1
+            value = args[i] if i < len(args) else ""
+        if not re.fullmatch(r"[A-Za-z0-9_.-]+" if key == "--unit" else r"[0-9]+(?:\.[0-9]+)?(?:s|m|h|d|ms|us)?", value):
+            return False
+        i += 1
+    return args[i:] == ["agentj", "service", "restart"]
+
+
 def _simple(sc: Simple, hits: _Hits, depth: int, text: str) -> None:
     name, args = sc.name, sc.args
     low = [a.lower() for a in args]
-    if "--user" in args and (name == "systemd-run" or (name == "systemctl" and
+    if _service_restart(sc):
+        hits.add("service", "service.restart", "重启 Agent J 服务")
+    elif "--user" in args and (name == "systemd-run" or (name == "systemctl" and
             any(a in {"start", "restart", "try-restart", "reload", "try-reload-or-restart", "reload-or-try-restart", "force-reload",
                       "reload-or-restart", "isolate", "default", "enable", "reenable", "link", "edit",
                       "daemon-reload", "daemon-reexec", "set-property", "preset", "preset-all", "revert", "import-environment",
@@ -2827,7 +2854,7 @@ def classify_shared(tool: str, tool_input, extra=None, mode: str = "standard", c
         items += [x for x in real if x[1] not in {r for _, r, _ in items}]
     rules = [r for _, r, _ in items]
     cred_rules = [r for r in rules if r.startswith("cred.") or r == "extra.credentials"]
-    cats = [c for c in v.cats if c in ('spend', 'send', 'opaque') or (c == 'delete' and (alldel or 'too_long' in v.rules)) or
+    cats = [c for c in v.cats if c in ('spend', 'send', 'opaque', 'service') or (c == 'delete' and (alldel or 'too_long' in v.rules)) or
             (c == 'delete' and any(r in _SHARED_PUBLIC_DELETE or
              r.startswith(('delete.gh_', 'delete.npm', 'delete.pypi', 'delete.cargo')) for r in rules))]
     if cred_rules:
@@ -2894,6 +2921,8 @@ def grant_keys(v: Verdict) -> list:
         keys.append("credentials:hooks")
     if "cred.service" in v.rules:
         keys.append("credentials:service")
+    if "service.restart" in v.rules:
+        keys.append("service:restart")
     return keys
 
 

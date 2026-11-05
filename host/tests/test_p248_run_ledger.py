@@ -193,10 +193,10 @@ class Ledger(unittest.TestCase):
             h2.agent_cfg = dict(self.h.agent_cfg)
             h2.scheduler.recover()
             pages, _ = h2.hist.page()
-            self.assertEqual(len(pages), 1)
-            self.assertEqual(pages[0]['src']['k'], 'task')
-            self.assertIn('中断', json.dumps(pages[0], ensure_ascii=False))
-            self.assertNotIn('VERDICT: ok', json.dumps(pages[0]))
+            self.assertEqual(pages, [])  # #506: internal/legacy result is reviewed by the main session
+            self.assertEqual(len(h2.busy.finished), 1)
+            self.assertTrue(h2.busy.finished[0]['foreign'])
+            self.assertEqual(h2.busy.finished[0]['label'], 'daily')
             self.assertEqual(tasks.load(st)['last']['daily']['run_id'], rid)
         asyncio.run(go())
 

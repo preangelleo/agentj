@@ -4571,7 +4571,9 @@ export default {
   "mcp474.state.revoked": "已撤销",
   "mcp474.created": "创建于 {time}",
   "mcp474.last": "最近请求 {time}",
-  "mcp474.copy": "复制连接地址"
+  "mcp474.copy": "复制连接地址",
+  "ask.cat.service": "重启 Agent J 服务",
+  "p510.categoryNote": "{category}；Agent 原始说明见「展开全部」"
  },
  "en": {
   "fr.ask.failed": "Your confirmation did not take effect. Please try again.",
@@ -9144,6 +9146,8 @@ export default {
   "mcp474.state.revoked": "Revoked",
   "mcp474.created": "Created {time}",
   "mcp474.last": "Last request {time}",
-  "mcp474.copy": "Copy connection URL"
+  "mcp474.copy": "Copy connection URL",
+  "ask.cat.service": "Restart the Agent J service",
+  "p510.categoryNote": "{category}; expand to read the agent's original note"
  }
 };

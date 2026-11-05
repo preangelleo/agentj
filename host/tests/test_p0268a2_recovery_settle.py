@@ -96,7 +96,7 @@ class Rows(unittest.TestCase):
             self.assertEqual(b.rows[k]['settled']['by'], 'native_task_notification')
         self.assertEqual(b.rows['a' * 64]['settled']['at'], '2026-11-04T01:00:00.000Z')
         self.assertEqual(b.rows['c' * 64]['state'], 'awaiting_owner_verification')
-        self.assertTrue(b.notice())
+        self.assertEqual(b.notice(), '')
         self.assertEqual(b.notice(), '')
         listed = {i['id']: i for i in b.recover()['items']}
         self.assertEqual(set(listed), {'a' * 64, 'b' * 64, 'c' * 64, 'd' * 64})
@@ -140,7 +140,7 @@ class Rows(unittest.TestCase):
         transcript.write_text(json.dumps(delivered('b9')) + '\n')
         b.scan_native(transcript, SCOPE)                 # once per record: no second full read
         self.assertEqual(b.rows['3' * 64]['state'], 'awaiting_owner_verification')
-        self.assertTrue(b.notice(), 'the unexplained record still reminds once')
+        self.assertEqual(b.notice(), '', 'unknown-source records are archive-only')
         self.assertEqual(len(self.book().rows), 3)
         self.assertTrue(all(completion_recovery.valid_row(v) for v in self.book().rows.values()))
 

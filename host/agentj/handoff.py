@@ -418,17 +418,75 @@ def own_read(tool, tool_input, cfg: dict | None) -> bool:
         p = os.path.join(cwd, p)
     try:
         lex = os.path.normpath(p)
-        if os.path.islink(lex):
+        if any(part.is_symlink() for part in (Path(lex), *Path(lex).parents)):
             return False
         rp = os.path.realpath(lex)
         st = os.lstat(rp)
     except (OSError, ValueError):
         return False
     import stat as _stat
-    return rp in own_paths(cfg) and _stat.S_ISREG(st.st_mode) and st.st_uid == os.getuid()
+    return rp in own_paths(cfg) and _stat.S_ISREG(st.st_mode) and st.st_uid == os.getuid() and st.st_nlink == 1
 
 
-OWN_SHOWN = "own_handoff: no card (Agent J's own handoff file, read only)"
+def own_state(tool, tool_input, cfg: dict | None) -> bool:
+    """Owner/system-only caller: handoff text writes and exact non-security state reads.
+
+    No shell writes, symlink ancestors, hard links, traversal or arbitrary state/config files.
+    The ordinary source/permission path remains authoritative for everything else.
+    """
+    import stat
+    if not isinstance(tool_input, dict):
+        return False
+    writing = tool in ("Write", "Edit")
+    if writing:
+        allowed = {"file_path", "content"} if tool == "Write" else {"file_path", "old_string", "new_string", "replace_all"}
+        if set(tool_input) - allowed or not isinstance(tool_input.get("file_path"), str):
+            return False
+        raw, cwd = tool_input["file_path"], (cfg or {}).get("dir")
+    else:
+        target = _read_target(tool, tool_input, (cfg or {}).get("dir"))
+        if target is None:
+            return False
+        raw, cwd = target
+    p = Path(os.path.expanduser(raw))
+    if ".." in p.parts:
+        return False
+    if not p.is_absolute():
+        if not cwd:
+            return False
+        p = Path(cwd) / p
+    root = state.state_dir().absolute()
+    try:
+        rel = p.relative_to(root)
+    except ValueError:
+        return False
+    handoff_text = len(rel.parts) == 2 and rel.parts[0] == DIR and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*\.(?:md|txt)", rel.parts[1])
+    state_read = not writing and str(rel) in {"host.log", "heartbeat.json", "interrupts.json"}
+    if not (handoff_text or state_read):
+        return False
+    for ancestor in (*reversed(p.parents), p):
+        try:
+            st = ancestor.lstat()
+        except FileNotFoundError:
+            if not writing:
+                return False
+            continue
+        except OSError:
+            return False
+        if stat.S_ISLNK(st.st_mode):
+            return False
+        if ancestor == p:
+            if not stat.S_ISREG(st.st_mode) or st.st_uid != os.getuid() or st.st_nlink != 1:
+                return False
+        elif not stat.S_ISDIR(st.st_mode):
+            return False
+        elif ancestor == root or root in ancestor.parents:
+            if st.st_uid != os.getuid():
+                return False
+    return True
+
+
+OWN_SHOWN = "own_handoff: no card (Agent J's handoff text or non-security state)"
 
 
 def record_own(st, agent_kind, tool: str, tool_input: dict) -> str:

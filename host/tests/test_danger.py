@@ -36,6 +36,7 @@ S, D, X, C, P, O = "spend", "delete", "send", "credentials", "price", "opaque"
 
 # (tool, input or command string, expected categories (a set that must be ⊆ the verdict; empty = must be low risk))
 CASES = [
+    ("Bash", "systemd-run --user --on-active=45 agentj service restart", {"service"}),
     # ---------------------------------------------------------------- delete
     ("Bash", "rm -rf build", {D}),
     ("Bash", "rm victim.txt", {D}),

@@ -535,7 +535,10 @@ class Dispatch(Base):
         h = self.host()
 
         async def go():
-            h.task_finished({"id": d.name, "title": "每周竞品简报", "verdict": "ok", "line": "完成", "deliver": res["deliver"]})
+            record=tasks.load(h.st)
+            record["runs"]["owner-delivery"]={"id":d.name,"trigger":"schedule","owner_notify":True}
+            tasks.save(h.st,record)
+            h.task_finished({"id": d.name, "run_id":"owner-delivery", "title": "每周竞品简报", "verdict": "ok", "line": "完成", "deliver": res["deliver"]})
             for _ in range(100):
                 if h.media_jobs:
                     await asyncio.gather(*list(h.media_jobs))

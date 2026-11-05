@@ -1767,6 +1767,9 @@ class SharedClaudeAgent(Agent):
             self.failed_start = True
             return False
         self.offset = self.transcript.stat().st_size if self.transcript.exists() else 0
+        busy = getattr(self.host, "busy", None)
+        if busy is not None:
+            busy.claude_transcripts[f"shared-{self.kind}:{sid}"] = str(self.transcript)
         self.host.st.set_agent_session(self.kind, sid)
         book = getattr(getattr(self.host, "background_done", None), "recovery", None)
         if book is not None and self.transcript.is_file():   # 0.26.8a2: once per earlier record, off the event loop
